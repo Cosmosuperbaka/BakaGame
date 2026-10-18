@@ -23,7 +23,7 @@ test("房间号校验：四位数字与测试房间号合法，其余一律拒�
   for (const invalid of ["", "12", "12345", "abcd", "12a4", "room", "１２３４"]) {
     expect(isValidRoomId(invalid)).toBe(false);
     expect(() => ensureRoomId(invalid)).toThrow(
-      expect.objectContaining({ code: "INVALID_ROOM_ID" }),
+      expect.objectContaining({ code: "INVALID_ROOM_ID" })
     );
   }
 
@@ -48,7 +48,7 @@ test("弃权票会单独统计且不会成为最高票玩家", () => {
 test("词对会修剪空白并按无序去重规则归一化", () => {
   expect(normalizeWordPair([" 狗 ", "猫"])).toHaveLength(2);
   expect(() => normalizeWordPair(["猫", "猫"])).toThrow(
-    expect.objectContaining({ code: "INVALID_WORD_PAIR" }),
+    expect.objectContaining({ code: "INVALID_WORD_PAIR" })
   );
 });
 
@@ -60,8 +60,8 @@ test("阵营配置会校验人数上限", () => {
         hasAngel: false,
         hasBlank: false,
       },
-      4,
-    ),
+      4
+    )
   ).toThrow(expect.objectContaining({ code: "INVALID_ROLE_CONFIG" }));
 });
 
@@ -79,7 +79,7 @@ test("天使与白板在任意房间人数下都只会各分配一人", () => {
     "水果",
     {
       nextInt: (maxExclusive: number) => maxExclusive - 1,
-    },
+    }
   );
   const roles = Object.values(result.assignments).map((assignment) => assignment.role);
 
@@ -95,7 +95,7 @@ test("天使与白板在任意房间人数下都只会各分配一人", () => {
 test("手动身份不能绕过单天使单白板约束", () => {
   const playerIds = Array.from({ length: 12 }, (_, index) => `p${index + 1}`);
   const manualRoles = Object.fromEntries(
-    playerIds.map((playerId) => [playerId, "civilian"]),
+    playerIds.map((playerId) => [playerId, "civilian"])
   ) as Record<string, "civilian" | "undercover" | "angel" | "blank">;
   manualRoles.p1 = "undercover";
   manualRoles.p2 = "undercover";
@@ -115,8 +115,8 @@ test("手动身份不能绕过单天使单白板约束", () => {
       ["苹果", "香蕉"],
       "水果",
       { nextInt: (maxExclusive: number) => maxExclusive - 1 },
-      manualRoles,
-    ),
+      manualRoles
+    )
   ).toThrow(expect.objectContaining({ code: "INVALID_MANUAL_ROLES" }));
 });
 
@@ -142,7 +142,7 @@ test("角色分配在固定随机源下具有稳定顺序", () => {
     undefined,
     {
       nextInt: (maxExclusive: number) => maxExclusive - 1,
-    },
+    }
   );
 
   expect(result.assignments.p1.role).toBe("undercover");
@@ -217,13 +217,22 @@ test("白板猜词会按词对本身判断是否正确", () => {
     history: [],
   };
 
-  expect(
-    evaluateBlankGuess(round, ["香蕉", "苹果"], Date.now(), "eliminated").success,
-  ).toBe(true);
-  for (const words of [["", ""], ["苹果", ""], ["苹果", "苹果"], ["苹果", " 苹果\u200b"], ["\u0000", "\u200b"]] as [string, string][]) {
-    expect(evaluateBlankGuessDraft(round, words, 123, "eliminated")).toMatchObject({ playerId: "blank", success: false, createdAt: 123 });
-    expect(() => evaluateBlankGuess(round, words, 123, "eliminated")).toThrow(expect.objectContaining({ code: "INVALID_WORD_PAIR" }));
+  expect(evaluateBlankGuess(round, ["香蕉", "苹果"], Date.now(), "eliminated").success).toBe(true);
+  for (const words of [
+    ["", ""],
+    ["苹果", ""],
+    ["苹果", "苹果"],
+    ["苹果", " 苹果\u200b"],
+    ["\u0000", "\u200b"],
+  ] as [string, string][]) {
+    expect(evaluateBlankGuessDraft(round, words, 123, "eliminated")).toMatchObject({
+      playerId: "blank",
+      success: false,
+      createdAt: 123,
+    });
+    expect(() => evaluateBlankGuess(round, words, 123, "eliminated")).toThrow(
+      expect.objectContaining({ code: "INVALID_WORD_PAIR" })
+    );
   }
   expect(evaluateBlankGuessDraft(round, [" 香蕉 ", "苹果"], 123, "eliminated").success).toBe(true);
-
 });

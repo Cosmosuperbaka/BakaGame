@@ -9,8 +9,12 @@ export function stubMatchMedia(matches: boolean) {
   const queries: string[] = [];
   const query = {
     matches,
-    addEventListener: (_: string, listener: () => void) => { listeners.add(listener); },
-    removeEventListener: (_: string, listener: () => void) => { listeners.delete(listener); },
+    addEventListener: (_: string, listener: () => void) => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_: string, listener: () => void) => {
+      listeners.delete(listener);
+    },
   };
   vi.stubGlobal("matchMedia", (media: string) => {
     queries.push(media);
@@ -20,7 +24,9 @@ export function stubMatchMedia(matches: boolean) {
     /** 创建过的媒体查询串，按调用顺序 */
     queries,
     /** 当前挂着的 change 监听器数量 */
-    get listenerCount() { return listeners.size; },
+    get listenerCount() {
+      return listeners.size;
+    },
     /** 模拟视口越过断点，`next` 为越过后的匹配结果 */
     crossBreakpoint(next: boolean) {
       query.matches = next;

@@ -39,11 +39,16 @@ export function TargetOption({
         onClick={onSelect}
         className={cn(
           "flex min-w-0 cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors",
-          tone === "night" ? "hover:bg-destructive/5" : "hover:bg-accent/40",
+          tone === "night" ? "hover:bg-destructive/5" : "hover:bg-accent/40"
         )}
       >
         <span className="truncate text-sm font-medium">{name}</span>
-        <Icon className={cn("ml-2 h-4 w-4 shrink-0", tone === "night" ? "text-destructive" : "text-muted-foreground")} />
+        <Icon
+          className={cn(
+            "ml-2 h-4 w-4 shrink-0",
+            tone === "night" ? "text-destructive" : "text-muted-foreground"
+          )}
+        />
       </motion.button>
     </Hint>
   );
@@ -78,7 +83,7 @@ export function ActionReceipt({
       if (typeof ref === "function") ref(node);
       else if (ref) ref.current = node;
     },
-    [ref],
+    [ref]
   );
   return (
     <motion.div

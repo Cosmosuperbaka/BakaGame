@@ -18,11 +18,21 @@ export const Playground: Story = { name: "调试", tags: ["no-shot"] };
 
 const ROLES = Object.keys(ROLE_LABELS) as WhoIsFakerRole[];
 
-function Row({ label, muted = false, children }: { label: string; muted?: boolean; children: ReactNode }) {
+function Row({
+  label,
+  muted = false,
+  children,
+}: {
+  label: string;
+  muted?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="flex items-center gap-3">
       <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <div className={cn("flex items-center gap-2 rounded-md px-2 py-1.5", muted && "bg-muted")}>{children}</div>
+      <div className={cn("flex items-center gap-2 rounded-md px-2 py-1.5", muted && "bg-muted")}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -36,13 +46,19 @@ export const Surfaces: Story = {
   render: () => (
     <div className="flex w-fit flex-col gap-2 rounded-md border bg-panel p-4">
       <Row label="真实身份">
-        {ROLES.map((role) => <RoleBadge key={role} role={role} />)}
+        {ROLES.map((role) => (
+          <RoleBadge key={role} role={role} />
+        ))}
       </Row>
       <Row label="本人预测">
-        {ROLES.map((role) => <RoleBadge key={role} role={role} predicted />)}
+        {ROLES.map((role) => (
+          <RoleBadge key={role} role={role} predicted />
+        ))}
       </Row>
       <Row label="实色块内" muted>
-        {ROLES.map((role) => <RoleBadge key={role} role={role} inset />)}
+        {ROLES.map((role) => (
+          <RoleBadge key={role} role={role} inset />
+        ))}
       </Row>
     </div>
   ),

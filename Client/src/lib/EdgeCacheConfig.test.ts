@@ -62,9 +62,7 @@ function matchesSource(source: string, urlPath: string): boolean {
     const sourceParts = source.split("/");
     const pathParts = urlPath.split("/");
     if (sourceParts.length !== pathParts.length) return false;
-    return sourceParts.every(
-      (part, index) => part.startsWith(":") || part === pathParts[index],
-    );
+    return sourceParts.every((part, index) => part.startsWith(":") || part === pathParts[index]);
   }
 
   const prefix = source.slice(0, star);
@@ -175,7 +173,7 @@ describe("edgeone.json 边缘缓存配置", () => {
       if (maxAge === undefined) continue;
       expect(
         entry.cacheTtl,
-        `${entry.source} 的 cacheTtl=${entry.cacheTtl} 与 Cache-Control 的 max-age=${maxAge} 不一致`,
+        `${entry.source} 的 cacheTtl=${entry.cacheTtl} 与 Cache-Control 的 max-age=${maxAge} 不一致`
       ).toBe(Number(maxAge));
     }
   });

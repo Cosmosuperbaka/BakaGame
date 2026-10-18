@@ -29,7 +29,7 @@ function message(
   playerName: string,
   text: string,
   offsetSeconds: number,
-  extra: Partial<ChatMessage> = {},
+  extra: Partial<ChatMessage> = {}
 ): ChatMessage {
   chatCounter += 1;
   return {
@@ -43,7 +43,8 @@ function message(
   };
 }
 
-const system = (text: string, offsetSeconds: number) => message("", "", text, offsetSeconds, { system: true });
+const system = (text: string, offsetSeconds: number) =>
+  message("", "", text, offsetSeconds, { system: true });
 
 /**
  * 一段覆盖常见形态的聊天：系统提示、本人与他人消息、@提及、长文本换行。
@@ -64,7 +65,7 @@ export function storyChat(myId: string = STORY_PLAYERS[1].id, stickerPath?: stri
       azumi.id,
       azumi.name,
       "这局我想试试把描述说得模糊一点，看看大家能不能从上一轮的线索里推出来，别一上来就把关键词说破了哈哈",
-      58,
+      58
     ),
     message(self.id, self.name, "好的，开始吧", 76),
   ];
@@ -72,9 +73,10 @@ export function storyChat(myId: string = STORY_PLAYERS[1].id, stickerPath?: stri
 
 /** 纯色占位图（角色立绘、歌曲封面），用数据 URL 保证截图不依赖外网。 */
 export function placeholderImage(label: string, hue: number, width = 120, height = 160): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
-    + `<rect width="100%" height="100%" fill="hsl(${hue} 35% 72%)"/>`
-    + `<text x="50%" y="54%" text-anchor="middle" font-family="serif" font-size="${Math.round(width / 4)}" fill="hsl(${hue} 30% 28%)">${label}</text>`
-    + `</svg>`;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    `<rect width="100%" height="100%" fill="hsl(${hue} 35% 72%)"/>` +
+    `<text x="50%" y="54%" text-anchor="middle" font-family="serif" font-size="${Math.round(width / 4)}" fill="hsl(${hue} 30% 28%)">${label}</text>` +
+    `</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

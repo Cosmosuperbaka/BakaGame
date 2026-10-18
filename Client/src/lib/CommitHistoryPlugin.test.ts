@@ -10,7 +10,11 @@ const GITHUB_PAYLOAD = [
     sha: HEAD_SHA,
     commit: {
       message: "feat(CEE): 队伍面板与分队玩家栏\n\n正文不该进时间线",
-      author: { name: "Cosmosuperbaka", email: "someone@example.com", date: "2026-10-06T01:20:30Z" },
+      author: {
+        name: "Cosmosuperbaka",
+        email: "someone@example.com",
+        date: "2026-10-06T01:20:30Z",
+      },
     },
     author: { login: "Cosmosuperbaka" },
   },
@@ -145,7 +149,7 @@ describe("commitHistoryPlugin", () => {
   it("degrades to an empty list when the remote call fails and git has no history", async () => {
     const fetchMock = stubFetch({ ok: false });
     const history = await loadHistory(
-      commitHistoryPlugin({ useRemote: true, execGit: revisionOnlyGit }),
+      commitHistoryPlugin({ useRemote: true, execGit: revisionOnlyGit })
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -178,7 +182,7 @@ describe("commitHistoryPlugin", () => {
       commitHistoryPlugin({
         useRemote: true,
         execGit: (args) => (args.startsWith("log") ? GIT_LOG_RAW : ""),
-      }),
+      })
     );
 
     expect(fetchMock).not.toHaveBeenCalled();

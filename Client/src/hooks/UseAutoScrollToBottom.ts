@@ -6,9 +6,7 @@ export function useAutoScrollToBottom(changeKey: unknown) {
 
   useEffect(() => {
     const content = contentRef.current;
-    const viewport = content?.closest(
-      "[data-radix-scroll-area-viewport]",
-    ) as HTMLElement | null;
+    const viewport = content?.closest("[data-radix-scroll-area-viewport]") as HTMLElement | null;
     if (!content || !viewport) return;
 
     let frame = 0;
@@ -22,9 +20,8 @@ export function useAutoScrollToBottom(changeKey: unknown) {
     };
 
     scheduleScroll();
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(scheduleScroll);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleScroll);
     observer?.observe(content);
     observer?.observe(viewport);
 

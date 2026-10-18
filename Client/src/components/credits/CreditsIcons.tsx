@@ -66,9 +66,7 @@ type BrandIcon = typeof SiReact;
  * `mask` 的 src 是可直接放进 `mask-image: url(...)` 的静态资源地址：
  * 图标包经 `?url` 生成，自备资产指向 `public/` 下的固定路径。
  */
-type BrandSource =
-  | { kind: "simple"; Icon: BrandIcon }
-  | { kind: "mask"; src: string };
+type BrandSource = { kind: "simple"; Icon: BrandIcon } | { kind: "mask"; src: string };
 
 /** 自备 SVG 的公共存放目录（`Client/public` 下由 Vite 原样托管，不经过 webp 管线改写）。 */
 const BRAND_ASSET_DIR = "/assets/brands";
@@ -181,7 +179,13 @@ function renderBrand(source: BrandSource, className?: string): ReactNode {
 }
 
 /** 品牌标识：装饰性图标，颜色继承 currentColor，尺寸由调用处 className 决定。 */
-export function CreditBrandMark({ brand, className }: { brand: CreditBrandId; className?: string }): ReactNode {
+export function CreditBrandMark({
+  brand,
+  className,
+}: {
+  brand: CreditBrandId;
+  className?: string;
+}): ReactNode {
   return renderBrand(BRAND_SOURCES[brand], className);
 }
 
@@ -287,8 +291,17 @@ function dependencyBrand(packageName: string): CreditBrandId | null {
 }
 
 /** 依赖行图标：包名 → 品牌；没有匹配时回退 lucide 的通用包图标。 */
-export function DependencyGlyph({ packageName, className }: { packageName: string; className?: string }): ReactNode {
+export function DependencyGlyph({
+  packageName,
+  className,
+}: {
+  packageName: string;
+  className?: string;
+}): ReactNode {
   const brand = dependencyBrand(packageName);
   if (brand !== null) return renderBrand(BRAND_SOURCES[brand], className);
-  return createElement(Package, { className: cn("size-4 shrink-0", className), "aria-hidden": true });
+  return createElement(Package, {
+    className: cn("size-4 shrink-0", className),
+    "aria-hidden": true,
+  });
 }

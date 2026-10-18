@@ -1,10 +1,5 @@
 import { useCallback, useState } from "react";
-import {
-  Eye,
-  Headphones,
-  Menu,
-  MessageSquare,
-} from "lucide-react";
+import { Eye, Headphones, Menu, MessageSquare } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/RoomShell";
@@ -26,7 +21,7 @@ import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
  */
 const pickPlayback = (
   snapshot: SonGuessrRoomSnapshot | null,
-  phase: SonGuessrRoomSnapshot["phase"] | undefined,
+  phase: SonGuessrRoomSnapshot["phase"] | undefined
 ) => {
   if (phase === "playing") {
     const round = snapshot?.currentRound;
@@ -81,21 +76,14 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const isPlayingPhase = snapshot?.phase === "playing";
   const playback = pickPlayback(snapshot, snapshot?.phase);
 
-  const {
-    audioRef,
-    volume,
-    setVolume,
-    audioStatus,
-    audioPlaybackState,
-    playAudio,
-    retryAudio,
-  } = useAudioClipPlayer({
-    roomId,
-    phase: snapshot?.phase,
-    ...playback,
-    isPlayingPhase,
-    sendCommand,
-  });
+  const { audioRef, volume, setVolume, audioStatus, audioPlaybackState, playAudio, retryAudio } =
+    useAudioClipPlayer({
+      roomId,
+      phase: snapshot?.phase,
+      ...playback,
+      isPlayingPhase,
+      sendCommand,
+    });
 
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
 
@@ -107,7 +95,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         setNotice((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, setNotice],
+    [sendCommand, setNotice]
   );
 
   // 严禁给这个 audio 加 crossOrigin：解灰音源（kuwo 等）不返回 Access-Control-Allow-Origin，
@@ -128,13 +116,24 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
 
   const seoNode = (
     <Seo
-      description={solo ? "Songuessr 音乐与番剧单人挑战中，冲击更高连胜纪录！" : "Songuessr 音乐与番剧竞猜激战中，点击立即上车听前奏抢答！"}
+      description={
+        solo
+          ? "Songuessr 音乐与番剧单人挑战中，冲击更高连胜纪录！"
+          : "Songuessr 音乐与番剧竞猜激战中，点击立即上车听前奏抢答！"
+      }
       path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
       indexable={false}
     />
   );
 
-  if (joining || needsName || needsPassword || !snapshot || !privateState || snapshot.roomId !== roomId) {
+  if (
+    joining ||
+    needsName ||
+    needsPassword ||
+    !snapshot ||
+    !privateState ||
+    snapshot.roomId !== roomId
+  ) {
     return (
       <RoomJoinGate
         roomId={roomId}
@@ -162,32 +161,43 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   return (
     <>
       <RoomShell
-        before={<>{seoNode}{audioNode}</>}
+        before={
+          <>
+            {seoNode}
+            {audioNode}
+          </>
+        }
         onLeave={() => void leave()}
         title={solo ? "单人模式" : snapshot.name}
         roomId={solo ? undefined : snapshot.roomId}
-        center={<>
-          {displayRound > 0 ? <HeaderCounter>第 {displayRound} 轮</HeaderCounter> : null}
-          {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人" /> : null}
-          {isSpectator || privateState.teamObserver ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
-        </>}
+        center={
+          <>
+            {displayRound > 0 ? <HeaderCounter>第 {displayRound} 轮</HeaderCounter> : null}
+            {privateState.isSubmitter ? <HeaderChip icon={Headphones} label="出题人" /> : null}
+            {isSpectator || privateState.teamObserver ? (
+              <HeaderChip icon={Eye} label="旁观" muted />
+            ) : null}
+          </>
+        }
         actions={<VolumeControl volume={volume} onVolumeChange={setVolume} />}
         connectionIssue={connected ? null : "断线中..."}
-        player={solo ? undefined : (
-          <PlayerColumn>
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-              <PlayerList
-                players={snapshot.players}
-                myPlayerId={privateState.playerId}
-                isHost={isHost}
-                phase={snapshot.phase}
-                allowSpectators={snapshot.allowSpectators}
-                questionType={snapshot.settings.questionType}
-                maxGuesses={snapshot.settings.maxGuessesPerRound}
-              />
-            </div>
-          </PlayerColumn>
-        )}
+        player={
+          solo ? undefined : (
+            <PlayerColumn>
+              <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
+                <PlayerList
+                  players={snapshot.players}
+                  myPlayerId={privateState.playerId}
+                  isHost={isHost}
+                  phase={snapshot.phase}
+                  allowSpectators={snapshot.allowSpectators}
+                  questionType={snapshot.settings.questionType}
+                  maxGuesses={snapshot.settings.maxGuessesPerRound}
+                />
+              </div>
+            </PlayerColumn>
+          )
+        }
         game={
           <SongGameArea
             snapshot={snapshot}
@@ -207,9 +217,14 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 if (mode === "submit" && extraId) {
                   payload.songId = extraId;
                 }
-                await sendCommand(mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime", payload);
+                await sendCommand(
+                  mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime",
+                  payload
+                );
               } else {
-                await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", { songId });
+                await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", {
+                  songId,
+                });
               }
             }}
             run={runCommand}
@@ -217,55 +232,61 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             audioRef={audioRef}
           />
         }
-        chat={solo ? undefined : (
-          <ChatColumn>
-            <ChatPanel
-              messages={snapshot.chat ?? []}
-              players={snapshot.players}
-              myPlayerId={privateState.playerId}
-              onSendMessage={handleSendChatMessage}
-            />
-          </ChatColumn>
-        )}
-        openDrawer={solo ? null : mobilePanel === "none" ? null : mobilePanel}
-        onDrawerChange={(key) => setMobilePanel((key ?? "none") as "none" | "players" | "chat")}
-        drawers={solo ? [] : [
-          {
-            key: "players",
-            icon: Menu,
-            label: "玩家列表",
-            side: "left",
-            title: "玩家",
-            closeFrom: "md",
-            content: (
-              <PlayerList
-                players={snapshot.players}
-                myPlayerId={privateState.playerId}
-                isHost={isHost}
-                phase={snapshot.phase}
-                allowSpectators={snapshot.allowSpectators}
-                questionType={snapshot.settings.questionType}
-                maxGuesses={snapshot.settings.maxGuessesPerRound}
-              />
-            ),
-          },
-          {
-            key: "chat",
-            icon: MessageSquare,
-            label: "聊天",
-            side: "right",
-            title: "聊天",
-            closeFrom: "xl",
-            content: (
+        chat={
+          solo ? undefined : (
+            <ChatColumn>
               <ChatPanel
                 messages={snapshot.chat ?? []}
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
                 onSendMessage={handleSendChatMessage}
               />
-            ),
-          },
-        ]}
+            </ChatColumn>
+          )
+        }
+        openDrawer={solo ? null : mobilePanel === "none" ? null : mobilePanel}
+        onDrawerChange={(key) => setMobilePanel((key ?? "none") as "none" | "players" | "chat")}
+        drawers={
+          solo
+            ? []
+            : [
+                {
+                  key: "players",
+                  icon: Menu,
+                  label: "玩家列表",
+                  side: "left",
+                  title: "玩家",
+                  closeFrom: "md",
+                  content: (
+                    <PlayerList
+                      players={snapshot.players}
+                      myPlayerId={privateState.playerId}
+                      isHost={isHost}
+                      phase={snapshot.phase}
+                      allowSpectators={snapshot.allowSpectators}
+                      questionType={snapshot.settings.questionType}
+                      maxGuesses={snapshot.settings.maxGuessesPerRound}
+                    />
+                  ),
+                },
+                {
+                  key: "chat",
+                  icon: MessageSquare,
+                  label: "聊天",
+                  side: "right",
+                  title: "聊天",
+                  closeFrom: "xl",
+                  content: (
+                    <ChatPanel
+                      messages={snapshot.chat ?? []}
+                      players={snapshot.players}
+                      myPlayerId={privateState.playerId}
+                      onSendMessage={handleSendChatMessage}
+                    />
+                  ),
+                },
+              ]
+        }
       />
     </>
   );

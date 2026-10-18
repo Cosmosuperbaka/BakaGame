@@ -30,7 +30,11 @@ export interface RoomDrawerSpec {
  * 左侧玩家栏的桌面外壳：定宽列，与游戏区、聊天栏同一套圆角与边框。
  * `data-room-part` 标记进房编排的一栏；自己拼玩家栏的页面（谁是卧底）在栏本体上写同一标记。
  */
-export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children }: {
+export function PlayerColumn({
+  width = PLAYER_COLUMN_WIDTH,
+  className,
+  children,
+}: {
   width?: string;
   className?: string;
   children: ReactNode;
@@ -38,7 +42,10 @@ export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children 
   return (
     <aside
       data-room-part="player"
-      className={cn("hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-md border bg-panel md:flex", className)}
+      className={cn(
+        "hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-md border bg-panel md:flex",
+        className
+      )}
       style={{ width }}
     >
       {children}
@@ -49,7 +56,13 @@ export function PlayerColumn({ width = PLAYER_COLUMN_WIDTH, className, children 
 /** 右侧聊天栏的桌面外壳；`xl` 以下由覆盖面板承担，否则与玩家栏同时常驻会把游戏区挤得过窄。 */
 export function ChatColumn({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <aside data-room-part="chat" className={cn("hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel xl:flex", className)}>
+    <aside
+      data-room-part="chat"
+      className={cn(
+        "hidden min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-md border bg-panel xl:flex",
+        className
+      )}
+    >
       {children}
     </aside>
   );
@@ -105,7 +118,9 @@ export function RoomShell({
   onDrawerChange?: (key: string | null) => void;
 }) {
   const leaveRef = useRef<HTMLButtonElement>(null);
-  const [triggerRefs] = useState(() => new Map<string, ReturnType<typeof createRef<HTMLButtonElement>>>());
+  const [triggerRefs] = useState(
+    () => new Map<string, ReturnType<typeof createRef<HTMLButtonElement>>>()
+  );
   for (const drawer of drawers) {
     if (!triggerRefs.has(drawer.key)) triggerRefs.set(drawer.key, createRef<HTMLButtonElement>());
   }
@@ -127,7 +142,10 @@ export function RoomShell({
   }, []);
 
   return (
-    <div data-room-entering={entering || undefined} className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div
+      data-room-entering={entering || undefined}
+      className="flex h-full min-h-0 flex-col overflow-hidden"
+    >
       {before}
       <RoomHeader
         onLeave={onLeave}
@@ -153,7 +171,11 @@ export function RoomShell({
         <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
           {player}
           {/* `isolate` 使游戏区内的浮层只在游戏区内部层级，不会越过玩家面板去盖住骑缝的展开按钮。 */}
-          <main ref={gameRef} data-room-part="game" className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel">
+          <main
+            ref={gameRef}
+            data-room-part="game"
+            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel"
+          >
             {game}
           </main>
         </section>
@@ -169,7 +191,9 @@ export function RoomShell({
             title={opened.title}
             closeFrom={opened.closeFrom}
             className={opened.className}
-            onOpenChange={(next) => { if (!next) onDrawerChange?.(null); }}
+            onOpenChange={(next) => {
+              if (!next) onDrawerChange?.(null);
+            }}
           >
             {opened.content}
           </RoomDrawer>

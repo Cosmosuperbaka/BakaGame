@@ -34,7 +34,7 @@ interface RoomCommandDependencies {
   requestSync(connection: ConnectionRecord): CommandResult;
   updateSettings(
     connection: ConnectionRecord,
-    payload: Message<"room.updateSettings">["payload"],
+    payload: Message<"room.updateSettings">["payload"]
   ): CommandResult;
   kick(connection: ConnectionRecord, playerId: string): CommandResult;
   transferHost(connection: ConnectionRecord, playerId: string): CommandResult;
@@ -42,7 +42,7 @@ interface RoomCommandDependencies {
 }
 
 export const createRoomCommandHandler = (
-  dependencies: RoomCommandDependencies,
+  dependencies: RoomCommandDependencies
 ): CommandHandler => ({
   canHandle: (type) => ownsCommand(ROOM_COMMAND_TYPES, type),
   execute: (connection, message) => {

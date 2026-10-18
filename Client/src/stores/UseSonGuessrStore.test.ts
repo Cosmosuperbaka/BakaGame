@@ -7,7 +7,6 @@ import {
   type SonGuessrRoomSnapshot,
 } from "@/types";
 
-
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),
   connect: vi.fn(),
@@ -42,11 +41,7 @@ import {
   saveSessionToken,
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
-import {
-  clearSonGuessrQueryCache,
-  initSonGuessrWs,
-  useSonGuessrStore,
-} from "./UseSonGuessrStore";
+import { clearSonGuessrQueryCache, initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
 
 const initialState = useSonGuessrStore.getState();
 
@@ -122,7 +117,7 @@ describe("Songuessr store integration", () => {
 
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.room.create",
-      expect.objectContaining({ roomId: "1234", userName: "房主" }),
+      expect.objectContaining({ roomId: "1234", userName: "房主" })
     );
     expect(getSonGuessrSessionToken("1234")).toBe("created-token");
     expect(getSessionToken("1234")).toBeNull();
@@ -163,7 +158,9 @@ describe("Songuessr store integration", () => {
     });
 
     expect(useSonGuessrStore.getState().snapshot).toMatchObject({ roomId: "1234" });
-    expect(useSonGuessrStore.getState().privateState).toMatchObject({ sessionToken: "created-token" });
+    expect(useSonGuessrStore.getState().privateState).toMatchObject({
+      sessionToken: "created-token",
+    });
     dispose();
   });
 
@@ -217,7 +214,7 @@ describe("Songuessr store integration", () => {
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.room.leave",
       {},
-      { roomId: "2345", sessionToken: "leave-token" },
+      { roomId: "2345", sessionToken: "leave-token" }
     );
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(useSonGuessrStore.getState()).toMatchObject({
@@ -231,9 +228,18 @@ describe("Songuessr store integration", () => {
 
   it("退房回包慢于下一次进房时，只清掉发起退房的会话", async () => {
     let ack!: () => void;
-    wsMock.send.mockReturnValue(new Promise<void>((resolve) => { ack = resolve; }));
+    wsMock.send.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ack = resolve;
+      })
+    );
     saveSonGuessrSessionToken("2345", "old-token");
-    useSonGuessrStore.setState({ roomId: "2345", sessionToken: "old-token", snapshot, privateState });
+    useSonGuessrStore.setState({
+      roomId: "2345",
+      sessionToken: "old-token",
+      snapshot,
+      privateState,
+    });
 
     const leaving = useSonGuessrStore.getState().leaveRoom();
     // 退房在房间页卸载后才发出，回包到达前玩家已经进了下一个房间。
@@ -242,7 +248,11 @@ describe("Songuessr store integration", () => {
     ack();
     await leaving;
 
-    expect(useSonGuessrStore.getState()).toMatchObject({ roomId: "3456", sessionToken: "new-token", snapshot });
+    expect(useSonGuessrStore.getState()).toMatchObject({
+      roomId: "3456",
+      sessionToken: "new-token",
+      snapshot,
+    });
     expect(getSonGuessrSessionToken("3456")).toBe("new-token");
     expect(getSonGuessrSessionToken("2345")).toBeNull();
   });
@@ -257,15 +267,19 @@ describe("Songuessr store integration", () => {
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
-    expect(useSonGuessrStore.getState().notice).toEqual({ text: "会话已失效，请重新加入", type: "error" });
+    expect(useSonGuessrStore.getState().notice).toEqual({
+      text: "会话已失效，请重新加入",
+      type: "error",
+    });
   });
-
 
   it("临时重连失败保留猜歌凭据但拒绝调用方，不伪装成功", async () => {
     saveSonGuessrSessionToken("2346", "live-song-token");
     wsMock.send.mockRejectedValue({ code: "TIMEOUT" });
 
-    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).rejects.toMatchObject({ code: "TIMEOUT" });
+    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).rejects.toMatchObject({
+      code: "TIMEOUT",
+    });
     expect(getSonGuessrSessionToken("2346")).toBe("live-song-token");
     expect(useSonGuessrStore.getState()).toMatchObject({
       roomId: null,
@@ -373,7 +387,6 @@ describe("Songuessr store integration", () => {
     ["session.replaced", "当前席位已在另一个标签页接管"],
     ["server.shutdown", SERVER_SHUTDOWN_MESSAGE],
   ])("clears local authority when receiving %s", (event, notice) => {
-
     saveSonGuessrSessionToken("4567", "room-token");
     useSonGuessrStore.setState({
       roomId: "4567",
@@ -406,7 +419,7 @@ describe("Songuessr store integration", () => {
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.music.search",
       { keyword: "晴天" },
-      { roomId: "5678", sessionToken: "search-token" },
+      { roomId: "5678", sessionToken: "search-token" }
     );
   });
 
@@ -470,12 +483,14 @@ describe("Songuessr store integration", () => {
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.bangumi.search",
       { keyword: "测试番剧" },
-      { roomId: "5678", sessionToken: "search-token" },
+      { roomId: "5678", sessionToken: "search-token" }
     );
   });
 
   it("returns Bangumi search results through the authenticated command wrapper", async () => {
-    const results = [{ id: "subject-1", name: "Test Anime", nameCn: "测试番剧", tags: [], metaTags: [] }];
+    const results = [
+      { id: "subject-1", name: "Test Anime", nameCn: "测试番剧", tags: [], metaTags: [] },
+    ];
     wsMock.send.mockResolvedValue({ results });
     useSonGuessrStore.setState({ roomId: "5678", sessionToken: "search-token" });
 
@@ -483,34 +498,67 @@ describe("Songuessr store integration", () => {
     expect(wsMock.send).toHaveBeenCalledWith(
       "song.bangumi.search",
       { keyword: "测试番剧" },
-      { roomId: "5678", sessionToken: "search-token" },
+      { roomId: "5678", sessionToken: "search-token" }
     );
   });
 
   const chatRange = (start: number, count: number): SonGuessrRoomSnapshot["chat"] =>
     Array.from({ length: count }, (_, offset) => {
       const index = start + offset;
-      return { id: `message-${index}`, playerId: "player-1", playerName: "房主", text: `聊天${index}`, createdAt: index, system: false };
+      return {
+        id: `message-${index}`,
+        playerId: "player-1",
+        playerName: "房主",
+        text: `聊天${index}`,
+        createdAt: index,
+        system: false,
+      };
     });
 
   it("初始全量聊天仅保留最新200条，但不破坏原始补丁基线", () => {
     const dispose = initSonGuessrWs();
     const initialChat = chatRange(0, 280);
     try {
-      wsMock.messageHandlers[0]({ type: "event", event: "song.room.snapshot", payload: { mode: "full", revision: 1, state: { ...snapshot, chat: initialChat } } });
+      wsMock.messageHandlers[0]({
+        type: "event",
+        event: "song.room.snapshot",
+        payload: { mode: "full", revision: 1, state: { ...snapshot, chat: initialChat } },
+      });
       expect(useSonGuessrStore.getState().snapshot?.chat).toEqual(chatRange(80, 200));
       expect(initialChat).toHaveLength(280);
       // 服务端补丁索引属于未裁剪的协议基线；仅裁剪展示快照，不能移动基线索引。
-      wsMock.messageHandlers[0]({ type: "event", event: "song.room.snapshot", payload: { mode: "patch", baseRevision: 1, revision: 2, operations: [{ op: "add", path: "/chat/280", value: chatRange(280, 1)[0] }] } });
+      wsMock.messageHandlers[0]({
+        type: "event",
+        event: "song.room.snapshot",
+        payload: {
+          mode: "patch",
+          baseRevision: 1,
+          revision: 2,
+          operations: [{ op: "add", path: "/chat/280", value: chatRange(280, 1)[0] }],
+        },
+      });
       expect(useSonGuessrStore.getState().snapshot?.chat).toEqual(chatRange(81, 200));
-      expect(wsMock.send.mock.calls.some(([command]) => command === "song.room.requestSync")).toBe(false);
-    } finally { dispose(); }
+      expect(wsMock.send.mock.calls.some(([command]) => command === "song.room.requestSync")).toBe(
+        false
+      );
+    } finally {
+      dispose();
+    }
   });
 
   it("RPC初始房间快照也去重排序并裁剪至最新200条", async () => {
     const payloadChat = [...chatRange(0, 280).reverse(), ...chatRange(270, 10)];
-    wsMock.send.mockResolvedValue({ sessionToken: "chat-token", snapshot: { ...snapshot, chat: payloadChat } });
-    await useSonGuessrStore.getState().createRoom({ roomId: "1234", name: "音乐房间", visibility: "public", allowSpectators: true, userName: "房主" });
+    wsMock.send.mockResolvedValue({
+      sessionToken: "chat-token",
+      snapshot: { ...snapshot, chat: payloadChat },
+    });
+    await useSonGuessrStore.getState().createRoom({
+      roomId: "1234",
+      name: "音乐房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+    });
     expect(useSonGuessrStore.getState().snapshot?.chat).toEqual(chatRange(80, 200));
     expect(payloadChat).toHaveLength(290);
   });
@@ -521,7 +569,11 @@ describe("Songuessr store integration", () => {
     useSonGuessrStore.setState({ roomId: "1234", sessionToken: "chat-token" });
     try {
       const emit = wsMock.messageHandlers[0];
-      emit({ type: "event", event: "song.room.snapshot", payload: { mode: "full", revision: 1, state: { ...snapshot, chat: chatRange(0, 200) } } });
+      emit({
+        type: "event",
+        event: "song.room.snapshot",
+        payload: { mode: "full", revision: 1, state: { ...snapshot, chat: chatRange(0, 200) } },
+      });
       for (let cycle = 0; cycle < 8; cycle++) {
         const start = 200 + cycle * 75;
         for (const message of chatRange(start, 75)) {
@@ -533,13 +585,29 @@ describe("Songuessr store integration", () => {
         await vi.advanceTimersByTimeAsync(0);
         const latest = start + 75;
         // 重连全量与本地增量重叠；重复/乱序全量不能积累历史或丢弃本地更新。
-        emit({ type: "event", event: "song.room.snapshot", payload: { mode: "full", revision: cycle + 2, state: { ...snapshot, chat: chatRange(latest - 200, 200).reverse() } } });
-        emit({ type: "event", event: "song.chat.message", payload: { message: chatRange(latest - 1, 1)[0] } });
+        emit({
+          type: "event",
+          event: "song.room.snapshot",
+          payload: {
+            mode: "full",
+            revision: cycle + 2,
+            state: { ...snapshot, chat: chatRange(latest - 200, 200).reverse() },
+          },
+        });
+        emit({
+          type: "event",
+          event: "song.chat.message",
+          payload: { message: chatRange(latest - 1, 1)[0] },
+        });
         expect(useSonGuessrStore.getState().snapshot?.chat).toEqual(chatRange(latest - 200, 200));
       }
-      expect(wsMock.send.mock.calls.filter(([command]) => command === "song.room.reconnect")).toHaveLength(8);
+      expect(
+        wsMock.send.mock.calls.filter(([command]) => command === "song.room.reconnect")
+      ).toHaveLength(8);
       expect(useSonGuessrStore.getState().snapshot?.chat).toEqual(chatRange(600, 200));
-    } finally { dispose(); }
+    } finally {
+      dispose();
+    }
   });
 
   it("resets state sync and cleans room state when leaveRoom is invoked", async () => {
@@ -561,12 +629,15 @@ describe("Songuessr store integration", () => {
 
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
   saveSonGuessrSessionToken("1234", "recoverable");
-  useSonGuessrStore.setState({connected:true,lobbyReady:true});
-  const cleanup=initSonGuessrWs();cleanup();
+  useSonGuessrStore.setState({ connected: true, lobbyReady: true });
+  const cleanup = initSonGuessrWs();
+  cleanup();
   expect(wsMock.disconnect).toHaveBeenCalledOnce();
   expect(wsMock.messageHandlers).toHaveLength(0);
   expect(wsMock.statusHandlers).toHaveLength(0);
-  expect(useSonGuessrStore.getState()).toMatchObject({connected:false,lobbyReady:false});
+  expect(useSonGuessrStore.getState()).toMatchObject({ connected: false, lobbyReady: false });
   expect(getSonGuessrSessionToken("1234")).toBe("recoverable");
-  const next=initSonGuessrWs();expect(wsMock.messageHandlers).toHaveLength(1);next();
+  const next = initSonGuessrWs();
+  expect(wsMock.messageHandlers).toHaveLength(1);
+  next();
 });

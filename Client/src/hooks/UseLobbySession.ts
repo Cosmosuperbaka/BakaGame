@@ -10,7 +10,8 @@ export interface JoinPasswordError {
   invalid: boolean;
 }
 
-const errorMessage = (error: unknown, fallback: string) => (error as { message?: string } | null)?.message ?? fallback;
+const errorMessage = (error: unknown, fallback: string) =>
+  (error as { message?: string } | null)?.message ?? fallback;
 
 export interface LobbyRoomTarget {
   roomId: string;
@@ -32,8 +33,16 @@ export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
   rooms: TRoom[];
   /** 本次连接已收到首个房间列表。只连上 WS 不算：订阅回包之前列表必然为空，会闪「暂无房间」。 */
   ready: boolean;
-  createRoom: (params: CreateRoomParams & { roomId: string; userName: string }, signal?: AbortSignal) => Promise<unknown>;
-  joinRoom: (roomId: string, userName: string, password?: string, signal?: AbortSignal) => Promise<unknown>;
+  createRoom: (
+    params: CreateRoomParams & { roomId: string; userName: string },
+    signal?: AbortSignal
+  ) => Promise<unknown>;
+  joinRoom: (
+    roomId: string,
+    userName: string,
+    password?: string,
+    signal?: AbortSignal
+  ) => Promise<unknown>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   showError: (message: string) => void;
   /** 创建成功（ACK 落定且意图未被取消）后回调：调用方在此记录本次选项并登记待恢复。 */
@@ -96,34 +105,42 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
 
   // 同一大厅一次只拥有一个入房事务；取消保留锁直到 ACK 落定，不与新意图并发。
   // 失败默认走 Toast；有就近位置可写的（密码弹窗、建房弹窗）经 `onError` 接走，只走一种渠道。
-  const runEntry = useCallback(async (
-    operation: (current: () => boolean, signal: AbortSignal) => Promise<void>,
-    onError: (error: unknown) => void = (error) => showError(errorMessage(error, "加入房间失败，请重试")),
-  ) => {
-    if (transaction.current || !mounted.current) return;
-    const entry = new AbortController();
-    transaction.current = entry;
-    setPending(true);
-    const current = () => mounted.current && !entry.signal.aborted && transaction.current === entry;
-    try {
-      await operation(current, entry.signal);
-    } catch (error) {
-      if (current()) onError(error);
-    } finally {
-      if (transaction.current === entry) {
-        transaction.current = null;
-        if (mounted.current) {
-          setPending(false);
-          setPendingRoomId(null);
+  const runEntry = useCallback(
+    async (
+      operation: (current: () => boolean, signal: AbortSignal) => Promise<void>,
+      onError: (error: unknown) => void = (error) =>
+        showError(errorMessage(error, "加入房间失败，请重试"))
+    ) => {
+      if (transaction.current || !mounted.current) return;
+      const entry = new AbortController();
+      transaction.current = entry;
+      setPending(true);
+      const current = () =>
+        mounted.current && !entry.signal.aborted && transaction.current === entry;
+      try {
+        await operation(current, entry.signal);
+      } catch (error) {
+        if (current()) onError(error);
+      } finally {
+        if (transaction.current === entry) {
+          transaction.current = null;
+          if (mounted.current) {
+            setPending(false);
+            setPendingRoomId(null);
+          }
         }
       }
-    }
-  }, [showError]);
+    },
+    [showError]
+  );
 
   const handleJoinRoom = useCallback(
     async (room: TRoom, event: React.MouseEvent<HTMLElement>) => {
       // 大厅页在点击前已拦下空用户名并标出输入框；这里只兜住直接调用的情况。
-      if (!userName.trim()) { showError("请先设置用户名"); return; }
+      if (!userName.trim()) {
+        showError("请先设置用户名");
+        return;
+      }
       await runEntry(async (current, signal) => {
         setPendingRoomId(room.roomId);
         joinOrigin.capture(event);
@@ -143,41 +160,57 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
         if (current()) void navigate(`${gamePath}/room/${encodeURIComponent(room.roomId)}`);
       });
     },
-    [userName, reconnectRoom, joinRoom, navigate, gamePath, showError, runEntry, joinOrigin],
+    [userName, reconnectRoom, joinRoom, navigate, gamePath, showError, runEntry, joinOrigin]
   );
 
   const handlePasswordJoin = useCallback(async () => {
     if (!joinTarget || !joinPassword.trim()) return;
     setJoinError(null);
-    await runEntry(async (current, signal) => {
-      await joinRoom(joinTarget.roomId, userName.trim(), joinPassword, signal);
-      if (!current()) return;
-      updateJoinTarget(null);
-      void navigate(`${gamePath}/room/${encodeURIComponent(joinTarget.roomId)}`);
-    }, (error) => setJoinError({
-      message: errorMessage(error, "加入房间失败，请重试"),
-      // 只有密码本身不对才标红输入框；次数过多、房间已关闭等归不到这个字段，只给文案。
-      invalid: (error as { code?: string } | null)?.code === "PASSWORD_INCORRECT",
-    }));
+    await runEntry(
+      async (current, signal) => {
+        await joinRoom(joinTarget.roomId, userName.trim(), joinPassword, signal);
+        if (!current()) return;
+        updateJoinTarget(null);
+        void navigate(`${gamePath}/room/${encodeURIComponent(joinTarget.roomId)}`);
+      },
+      (error) =>
+        setJoinError({
+          message: errorMessage(error, "加入房间失败，请重试"),
+          // 只有密码本身不对才标红输入框；次数过多、房间已关闭等归不到这个字段，只给文案。
+          invalid: (error as { code?: string } | null)?.code === "PASSWORD_INCORRECT",
+        })
+    );
   }, [joinTarget, joinPassword, userName, joinRoom, navigate, gamePath, runEntry]);
 
   const handleCreateRoom = useCallback(
     async (params: CreateRoomParams) => {
-      if (!userName.trim()) { showError("请先设置用户名"); return; }
+      if (!userName.trim()) {
+        showError("请先设置用户名");
+        return;
+      }
       // 建房失败抛回给建房弹窗，由它写在表单里（只走这一种渠道，不再另弹 Toast）；弹窗已关闭、页面已离开的过期失败照旧静默。
       const outcome: { failed: boolean; error?: unknown } = { failed: false };
-      await runEntry(async (current, signal) => {
-        const generatedRoomId = randomRoomId();
-        await createRoom({ ...params, roomId: generatedRoomId, userName: userName.trim() }, signal);
-        if (!current()) return;
-        // 先记录再导航：等待页靠这份记录把上次的房间设置套进新房间。
-        onRoomCreated?.(generatedRoomId, params);
-        updateCreateOpen(false);
-        void navigate(`${gamePath}/room/${generatedRoomId}`);
-      }, (error) => { outcome.failed = true; outcome.error = error; });
+      await runEntry(
+        async (current, signal) => {
+          const generatedRoomId = randomRoomId();
+          await createRoom(
+            { ...params, roomId: generatedRoomId, userName: userName.trim() },
+            signal
+          );
+          if (!current()) return;
+          // 先记录再导航：等待页靠这份记录把上次的房间设置套进新房间。
+          onRoomCreated?.(generatedRoomId, params);
+          updateCreateOpen(false);
+          void navigate(`${gamePath}/room/${generatedRoomId}`);
+        },
+        (error) => {
+          outcome.failed = true;
+          outcome.error = error;
+        }
+      );
       if (outcome.failed) throw outcome.error;
     },
-    [userName, createRoom, navigate, gamePath, showError, runEntry, onRoomCreated],
+    [userName, createRoom, navigate, gamePath, showError, runEntry, onRoomCreated]
   );
 
   const isInitialLoading = !hasLoadedOnce && rooms.length === 0;

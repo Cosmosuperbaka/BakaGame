@@ -7,7 +7,13 @@ import { AuthRequestError } from "@/lib/Api";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { LoginDialog } from "./LoginDialog";
 
-const requestLoginCode = vi.hoisted(() => vi.fn<(input: { qqNumber: string }) => Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }>>());
+const requestLoginCode = vi.hoisted(() =>
+  vi.fn<
+    (input: {
+      qqNumber: string;
+    }) => Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }>
+  >()
+);
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/Api")>()),
@@ -56,7 +62,11 @@ describe("登录弹窗", () => {
   });
 
   it("新账号：发码后在头像下展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {
-    requestLoginCode.mockResolvedValue({ registered: false, resendAfterSeconds: 60, qqName: "阿狸" });
+    requestLoginCode.mockResolvedValue({
+      registered: false,
+      resendAfterSeconds: 60,
+      qqName: "阿狸",
+    });
     signIn.mockResolvedValue();
     const { user, onOpenChange } = renderDialog();
 
@@ -80,19 +90,30 @@ describe("登录弹窗", () => {
   });
 
   it("昵称服务不可用时发码被拒，就地提示原因并留在原步骤", async () => {
-    requestLoginCode.mockRejectedValueOnce(new ORPCError("QQ_NICKNAME_UNAVAILABLE", { status: 503, message: "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试" }));
+    requestLoginCode.mockRejectedValueOnce(
+      new ORPCError("QQ_NICKNAME_UNAVAILABLE", {
+        status: 503,
+        message: "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试",
+      })
+    );
     const { user } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");
     await user.click(screen.getByRole("button", { name: "发送验证码" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试"
+    );
     expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
     expect(signIn).not.toHaveBeenCalled();
   });
 
   it("老账号展示服务端回传的昵称；验证码错误就地提示并保留弹窗", async () => {
-    requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60, qqName: "老玩家" });
+    requestLoginCode.mockResolvedValue({
+      registered: true,
+      resendAfterSeconds: 60,
+      qqName: "老玩家",
+    });
     signIn.mockRejectedValue(new AuthRequestError("INVALID_OTP", "验证码不正确", 400));
     const { user, onOpenChange } = renderDialog();
 
@@ -110,8 +131,14 @@ describe("登录弹窗", () => {
   });
 
   it("发码失败显示服务端中文原因，可换个 QQ 号返回", async () => {
-    requestLoginCode.mockRejectedValueOnce(new ORPCError("TOO_MANY_REQUESTS", { message: "发送太频繁，请稍后再试" }));
-    requestLoginCode.mockResolvedValueOnce({ registered: true, resendAfterSeconds: 60, qqName: null });
+    requestLoginCode.mockRejectedValueOnce(
+      new ORPCError("TOO_MANY_REQUESTS", { message: "发送太频繁，请稍后再试" })
+    );
+    requestLoginCode.mockResolvedValueOnce({
+      registered: true,
+      resendAfterSeconds: 60,
+      qqName: null,
+    });
     const { user } = renderDialog();
 
     await user.type(screen.getByLabelText("QQ 号"), "12345");

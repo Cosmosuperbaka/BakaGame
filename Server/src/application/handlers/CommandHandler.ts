@@ -11,7 +11,7 @@ export interface CommandHandler {
 
 export const ownsCommand = (
   types: readonly WhoIsFakerClientMessage["type"][],
-  type: WhoIsFakerClientMessage["type"],
+  type: WhoIsFakerClientMessage["type"]
 ): boolean => types.includes(type);
 
 export const unsupportedCommand = (): never => {

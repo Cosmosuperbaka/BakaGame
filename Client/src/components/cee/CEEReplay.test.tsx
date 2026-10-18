@@ -90,10 +90,18 @@ describe("CEE 猜测回放", () => {
 
   it("整局多回合按回合顺序重演", async () => {
     window.localStorage.setItem(CEE_REPLAY_STORAGE_KEY, "1");
-    render(<CEEReplay rounds={[
-      rounds[0]!,
-      { number: 2, answer: CEE_CHARACTERS.ryo, guesses: [ceeGuess({ player: host, character: "ryo", at: 4 }, "ryo")] },
-    ]} />);
+    render(
+      <CEEReplay
+        rounds={[
+          rounds[0]!,
+          {
+            number: 2,
+            answer: CEE_CHARACTERS.ryo,
+            guesses: [ceeGuess({ player: host, character: "ryo", at: 4 }, "ryo")],
+          },
+        ]}
+      />
+    );
     expect(screen.getByText(/第 1 回合/)).toBeInTheDocument();
     expect(screen.getByText(/1\/3/)).toBeInTheDocument();
 

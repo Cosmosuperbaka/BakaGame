@@ -18,14 +18,23 @@ import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@/types";
 
-const notifyCopyFailed = () => useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
+const notifyCopyFailed = () =>
+  useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
 
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
  * 单人模式没有房间设置。房主与单人模式在最上方多一组「网易云账号」（`account`），与设置组同一列间距。
  */
-function SongSettingsGroups({ snapshot, solo = false, readOnly = false, account = false }: {
-  snapshot: SonGuessrRoomSnapshot; solo?: boolean; readOnly?: boolean; account?: boolean;
+function SongSettingsGroups({
+  snapshot,
+  solo = false,
+  readOnly = false,
+  account = false,
+}: {
+  snapshot: SonGuessrRoomSnapshot;
+  solo?: boolean;
+  readOnly?: boolean;
+  account?: boolean;
 }) {
   const [questionOpen, setQuestionOpen] = useState(false);
   const [gameOpen, setGameOpen] = useState(false);
@@ -34,17 +43,35 @@ function SongSettingsGroups({ snapshot, solo = false, readOnly = false, account 
   return (
     <SettingsStack>
       {account ? <SongAccountSettings snapshot={snapshot} /> : null}
-      <SettingsAccordion icon={Music2} title="题目设置" summary={summary.question} readOnly={readOnly}
-        open={questionOpen} onOpenChange={setQuestionOpen}>
+      <SettingsAccordion
+        icon={Music2}
+        title="题目设置"
+        summary={summary.question}
+        readOnly={readOnly}
+        open={questionOpen}
+        onOpenChange={setQuestionOpen}
+      >
         <SongQuestionSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
       </SettingsAccordion>
-      <SettingsAccordion icon={Search} title="猜测设置" summary={summary.game} readOnly={readOnly}
-        open={gameOpen} onOpenChange={setGameOpen}>
+      <SettingsAccordion
+        icon={Search}
+        title="猜测设置"
+        summary={summary.game}
+        readOnly={readOnly}
+        open={gameOpen}
+        onOpenChange={setGameOpen}
+      >
         <SongGameSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
       </SettingsAccordion>
       {!solo ? (
-        <SettingsAccordion icon={Settings} title="房间设置" summary={summary.room} readOnly={readOnly}
-          open={roomOpen} onOpenChange={setRoomOpen}>
+        <SettingsAccordion
+          icon={Settings}
+          title="房间设置"
+          summary={summary.room}
+          readOnly={readOnly}
+          open={roomOpen}
+          onOpenChange={setRoomOpen}
+        >
           <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
         </SettingsAccordion>
       ) : null}
@@ -55,8 +82,16 @@ function SongSettingsGroups({ snapshot, solo = false, readOnly = false, account 
 type SongRun = (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
 
 /** 等待页的队伍面板：只给参与者，旁观者没有队伍。同队共用次数、记录与限时，一人猜中全队结束。 */
-function SongTeamPicker({ snapshot, me, run, isPending }: {
-  snapshot: SonGuessrRoomSnapshot; me?: SonGuessrPlayerView; run: SongRun; isPending?: (type: string) => boolean;
+function SongTeamPicker({
+  snapshot,
+  me,
+  run,
+  isPending,
+}: {
+  snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
+  run: SongRun;
+  isPending?: (type: string) => boolean;
 }) {
   if (!me || me.membership !== "active") return null;
   return (
@@ -92,9 +127,7 @@ export function SongSoloWaitingPanel({
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {snapshot.musicAccountReady
-            ? "开始游戏"
-            : "请先扫码登录网易云账号"}
+        {snapshot.musicAccountReady ? "开始游戏" : "请先扫码登录网易云账号"}
       </Button>
     </div>
   );
@@ -132,7 +165,9 @@ export function SongHostWaitingPanel({
 
       <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
 
-      {showProgress ? <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" /> : null}
+      {showProgress ? (
+        <ReadyProgress ready={readyCount} total={nonHostTotal} variant="host" />
+      ) : null}
 
       <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
 
@@ -148,12 +183,12 @@ export function SongHostWaitingPanel({
         {!snapshot.musicAccountReady && allReady
           ? "请先扫码登录网易云账号"
           : allReady && noCandidate
-          ? "暂无可选出题人"
-          : allReady
-          ? "开始游戏"
-          : nonHostTotal === 0
-            ? "等待玩家加入"
-            : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
+            ? "暂无可选出题人"
+            : allReady
+              ? "开始游戏"
+              : nonHostTotal === 0
+                ? "等待玩家加入"
+                : `等待玩家准备 (${readyCount}/${nonHostTotal})`}
       </Button>
     </div>
   );
@@ -179,7 +214,9 @@ export function SongWaitingPhase({
 }: SongWaitingPhaseProps) {
   // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
   const restoring = useRoomSettingsRestore("song", snapshot.roomId, async (memory) => {
-    await useSonGuessrStore.getState().sendCommand("song.room.updateSettings", { ...memory.question, ...memory.game });
+    await useSonGuessrStore
+      .getState()
+      .sendCommand("song.room.updateSettings", { ...memory.question, ...memory.game });
   });
   if (restoring) return <RoomRestoreFallback />;
 
@@ -199,7 +236,9 @@ export function SongWaitingPhase({
       <SongHostWaitingPanel
         snapshot={snapshot}
         me={me}
-        noCandidate={snapshot.settings.questionMode !== "automatic" && submitterCandidateIds?.length === 0}
+        noCandidate={
+          snapshot.settings.questionMode !== "automatic" && submitterCandidateIds?.length === 0
+        }
         showProgress={showProgress}
         readyCount={readyCount}
         nonHostTotal={nonHostActive.length}
@@ -215,7 +254,9 @@ export function SongWaitingPhase({
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Gamepad2} title="等待开始" />
       <RoomLinkShare path={`/songuessr/room/${snapshot.roomId}`} onCopyError={notifyCopyFailed} />
-      {showProgress ? <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" /> : null}
+      {showProgress ? (
+        <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" />
+      ) : null}
       <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
       {/* 与房主同一份设置结构，只读。 */}
       <SongSettingsGroups snapshot={snapshot} readOnly />
@@ -229,9 +270,11 @@ export function SongWaitingPhase({
             onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
             className="gap-2 min-w-[120px]"
           >
-            {me.isReady
-              ? <>{isReadyPending ? null : <X className="h-4 w-4" />}取消准备</>
-              : <>{isReadyPending ? null : <Check className="h-4 w-4" />}准备</>}
+            {me.isReady ? (
+              <>{isReadyPending ? null : <X className="h-4 w-4" />}取消准备</>
+            ) : (
+              <>{isReadyPending ? null : <Check className="h-4 w-4" />}准备</>
+            )}
           </Button>
         </div>
       ) : null}

@@ -37,7 +37,8 @@ export function stickerAssetUrl(relativePath, contents) {
   return `/stickers/${digest}.webp`;
 }
 
-const toWebPath = (...parts) => "/" + parts.filter(Boolean).join("/").replace(/\\+/g, "/").replace(/^\/+/, "");
+const toWebPath = (...parts) =>
+  "/" + parts.filter(Boolean).join("/").replace(/\\+/g, "/").replace(/^\/+/, "");
 
 async function convertDirectory(source, output, relativeDir = "", assetMap = {}, encode) {
   await mkdir(output, { recursive: true });
@@ -46,9 +47,8 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {},
 
   for (const entry of entries) {
     const extension = path.extname(entry.name).toLowerCase();
-    const targetName = entry.isFile() && imageExtensions.has(extension)
-      ? outputName(entry.name)
-      : entry.name;
+    const targetName =
+      entry.isFile() && imageExtensions.has(extension) ? outputName(entry.name) : entry.name;
     const normalizedTarget = targetName.toLocaleLowerCase("en-US");
     if (outputNames.has(normalizedTarget)) {
       throw new Error(`公共资源转换后发生重名: ${path.join(source, targetName)}`);
@@ -56,43 +56,51 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {},
     outputNames.add(normalizedTarget);
   }
 
-  await Promise.all(entries.map(async (entry) => {
-    const sourcePath = path.join(source, entry.name);
-    const childRelative = path.join(relativeDir, entry.name);
-    if (entry.isDirectory()) {
-      await convertDirectory(sourcePath, path.join(output, entry.name), childRelative, assetMap, encode);
-      return;
-    }
-    if (!entry.isFile()) return;
-
-    const extension = path.extname(entry.name).toLowerCase();
-    if (!imageExtensions.has(extension)) {
-      await cp(sourcePath, path.join(output, entry.name));
-      return;
-    }
-
-    if (extension !== ".webp") {
-      const sourceWebPath = toWebPath(relativeDir, entry.name);
-      const targetWebPath = toWebPath(relativeDir, outputName(entry.name));
-      assetMap[sourceWebPath] = targetWebPath;
-    }
-
-    const targetPath = path.join(output, outputName(entry.name));
-    await encode(sourcePath, targetPath);
-
-    // 保留公共路径与哈希路径，复用同一份编码结果（包括动画帧）。
-    const parts = childRelative.split(path.sep);
-    if (parts[0] === "emojis" && stickerExtensions.has(extension)) {
-      const relativePath = parts.slice(1).join("/");
-      const assetUrl = stickerAssetUrl(relativePath, await readFile(sourcePath));
-      const stickerPath = path.join(outputDir, assetUrl.slice(1));
-      await mkdir(path.dirname(stickerPath), { recursive: true });
-      await cp(targetPath, stickerPath);
-      if (extension !== ".webp") {
-        assetMap[assetUrl.replace(/\.webp$/, extension)] = assetUrl;
+  await Promise.all(
+    entries.map(async (entry) => {
+      const sourcePath = path.join(source, entry.name);
+      const childRelative = path.join(relativeDir, entry.name);
+      if (entry.isDirectory()) {
+        await convertDirectory(
+          sourcePath,
+          path.join(output, entry.name),
+          childRelative,
+          assetMap,
+          encode
+        );
+        return;
       }
-    }
-  }));
+      if (!entry.isFile()) return;
+
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!imageExtensions.has(extension)) {
+        await cp(sourcePath, path.join(output, entry.name));
+        return;
+      }
+
+      if (extension !== ".webp") {
+        const sourceWebPath = toWebPath(relativeDir, entry.name);
+        const targetWebPath = toWebPath(relativeDir, outputName(entry.name));
+        assetMap[sourceWebPath] = targetWebPath;
+      }
+
+      const targetPath = path.join(output, outputName(entry.name));
+      await encode(sourcePath, targetPath);
+
+      // 保留公共路径与哈希路径，复用同一份编码结果（包括动画帧）。
+      const parts = childRelative.split(path.sep);
+      if (parts[0] === "emojis" && stickerExtensions.has(extension)) {
+        const relativePath = parts.slice(1).join("/");
+        const assetUrl = stickerAssetUrl(relativePath, await readFile(sourcePath));
+        const stickerPath = path.join(outputDir, assetUrl.slice(1));
+        await mkdir(path.dirname(stickerPath), { recursive: true });
+        await cp(targetPath, stickerPath);
+        if (extension !== ".webp") {
+          assetMap[assetUrl.replace(/\.webp$/, extension)] = assetUrl;
+        }
+      }
+    })
+  );
 }
 
 async function isApng(filePath) {

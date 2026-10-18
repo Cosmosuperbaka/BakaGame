@@ -1,10 +1,10 @@
-import { createHash } from 'node:crypto';
-import { AppError } from '../domain/Errors';
-import { ROOM_ID_TEST_MODE } from '../shared/Index';
+import { createHash } from "node:crypto";
+import { AppError } from "../domain/Errors";
+import { ROOM_ID_TEST_MODE } from "../shared/Index";
 
 /** 统一房号解析出的房间归属：增强房由本服务运行，原版房对应原版服务器上的真实房号。 */
-export type CEEOriginalTarget = { source: 'original'; roomId: string; upstreamRoomId: string };
-export type CEERoomTarget = { source: 'native'; roomId: string } | CEEOriginalTarget;
+export type CEEOriginalTarget = { source: "original"; roomId: string; upstreamRoomId: string };
+export type CEERoomTarget = { source: "native"; roomId: string } | CEEOriginalTarget;
 
 const FOUR_DIGITS = /^\d{4}$/;
 const ALIAS_MIN = 1000;
@@ -40,12 +40,12 @@ export class CEERoomDirectory {
   /** 本站在原版服务器新建房间前占号；上游建房失败时调用方负责 `release`。 */
   claimOriginal(roomId: string): CEEOriginalTarget {
     const id = roomId.trim();
-    if (!FOUR_DIGITS.test(id)) throw new AppError('INVALID_ROOM_ID', '请输入四位数字房间号');
+    if (!FOUR_DIGITS.test(id)) throw new AppError("INVALID_ROOM_ID", "请输入四位数字房间号");
     if (this.hasNativeRoom(id) || this.aliasToUpstream.has(id) || this.upstreamToAlias.has(id)) {
-      throw new AppError('ROOM_EXISTS', '该房间号已被使用');
+      throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     }
     this.bind(id, id);
-    return { source: 'original', roomId: id, upstreamRoomId: id };
+    return { source: "original", roomId: id, upstreamRoomId: id };
   }
 
   release(roomId: string): void {
@@ -58,8 +58,8 @@ export class CEERoomDirectory {
   resolve(roomId: string): CEERoomTarget | null {
     const id = normalizeCEERoomId(roomId);
     const upstream = this.aliasToUpstream.get(id);
-    if (upstream !== undefined) return { source: 'original', roomId: id, upstreamRoomId: upstream };
-    return this.hasNativeRoom(id) ? { source: 'native', roomId: id } : null;
+    if (upstream !== undefined) return { source: "original", roomId: id, upstreamRoomId: upstream };
+    return this.hasNativeRoom(id) ? { source: "native", roomId: id } : null;
   }
 
   aliasOf(upstreamRoomId: string): string | undefined {
@@ -99,7 +99,7 @@ export class CEERoomDirectory {
   /** 上游本身是 4 位号时优先原样使用；否则散列定起点再线性探测。号段耗尽时不分配，该房间不进入大厅。 */
   private allocate(upstream: string): string | null {
     if (FOUR_DIGITS.test(upstream) && this.isFree(upstream)) return upstream;
-    const start = createHash('sha256').update(upstream).digest().readUInt32BE(0) % ALIAS_SPAN;
+    const start = createHash("sha256").update(upstream).digest().readUInt32BE(0) % ALIAS_SPAN;
     for (let step = 0; step < ALIAS_SPAN; step++) {
       const alias = String(ALIAS_MIN + ((start + step) % ALIAS_SPAN));
       if (this.isFree(alias)) return alias;

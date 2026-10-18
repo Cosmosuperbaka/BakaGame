@@ -9,14 +9,33 @@ import { probeDeployment } from "./DeploymentProbe";
 import { deploymentRevision } from "./DeploymentGate.mjs";
 
 const repository = "Cosmosuperbaka/BakaGame";
-const run = { path: ".github/workflows/ci.yml", name: "CI", event: "push", head_branch: "main", status: "completed", conclusion: "success", head_sha: "a".repeat(40), head_repository: { full_name: repository } };
+const run = {
+  path: ".github/workflows/ci.yml",
+  name: "CI",
+  event: "push",
+  head_branch: "main",
+  status: "completed",
+  conclusion: "success",
+  head_sha: "a".repeat(40),
+  head_repository: { full_name: repository },
+};
 const jobs = [{ name: "Server CI", conclusion: "success" }];
 test("门禁仅接受同仓 main push 的获验完整 SHA，手动选择不能绕过", () => {
   expect(deploymentRevision(run, jobs, repository)).toBe(run.head_sha);
-  for (const patch of [{ path: ".github/workflows/other.yml" }, { conclusion: "failure" }, { conclusion: "cancelled" }, { event: "pull_request" }, { status: "in_progress" }, { head_branch: "other" }, { head_repository: { full_name: "fork/BakaGame" } }, { head_sha: "main" }]) {
+  for (const patch of [
+    { path: ".github/workflows/other.yml" },
+    { conclusion: "failure" },
+    { conclusion: "cancelled" },
+    { event: "pull_request" },
+    { status: "in_progress" },
+    { head_branch: "other" },
+    { head_repository: { full_name: "fork/BakaGame" } },
+    { head_sha: "main" },
+  ]) {
     expect(deploymentRevision({ ...run, ...patch }, jobs, repository)).toBeNull();
   }
-  for (const conclusion of ["skipped", "failure", "cancelled"]) expect(deploymentRevision(run, [{ name: "Server CI", conclusion }], repository)).toBeNull();
+  for (const conclusion of ["skipped", "failure", "cancelled"])
+    expect(deploymentRevision(run, [{ name: "Server CI", conclusion }], repository)).toBeNull();
   expect(deploymentRevision(run, [], repository)).toBeNull();
 });
 
@@ -24,13 +43,21 @@ test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验
   const directory = await mkdtemp(path.join(tmpdir(), "bakagame-git-fixture-"));
   const git = (...args: string[]) => {
     return execFileSync("git", args, {
-      cwd: directory, encoding: "utf-8", timeout: 5_000,
-      env: { ...isolatedEnvironment(process.env, 1, directory, "git-fixture"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null" },
+      cwd: directory,
+      encoding: "utf-8",
+      timeout: 5_000,
+      env: {
+        ...isolatedEnvironment(process.env, 1, directory, "git-fixture"),
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
   };
   try {
-    git("init", "-b", "main"); git("config", "user.name", "fixture"); git("config", "user.email", "fixture@example.invalid");
+    git("init", "-b", "main");
+    git("config", "user.name", "fixture");
+    git("config", "user.email", "fixture@example.invalid");
     git("-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "A");
     const sha = git("rev-parse", "HEAD");
     const revision = deploymentRevision({ ...run, head_sha: sha }, jobs, repository);
@@ -40,54 +67,97 @@ test("main 推进后仍 fetch/reset 获验 SHA，数据下载经 manifest 校验
     git("fetch", "--no-tags", "origin", revision);
     git("reset", "--hard", revision);
     expect(git("rev-parse", "HEAD")).toBe(sha);
-    const workflow = await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text();
+    const workflow = await Bun.file(
+      path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")
+    ).text();
     expect(workflow).toContain('REF="$DEPLOY_REV"');
     expect(workflow).toContain('git reset --hard "$DEPLOY_REV"');
-    expect(workflow).not.toContain('origin/$REF');
+    expect(workflow).not.toContain("origin/$REF");
     // 数据实体不再随代码分发：部署绝不搬走/替换服务器上的库（后端在持续更新它），
     // 只有「缺库 + 清单提供 dataset」时才按基线补发——下载地址取自 runner 从 manifest
     // 解析的变量，脚本只做格式校验、落盘按 sha256 兜底，数据引用同样不可被移动引用替换。
     expect(workflow).toContain('check_url "$BG_DATA_URL"');
     expect(workflow).toContain('"$(want_url "$b")"');
     expect(workflow).toContain("保留服务器现有数据库");
-    expect(workflow).toContain('DATA_SYNC');
-  } finally { await rm(directory, { recursive: true, force: true }); }
+    expect(workflow).toContain("DATA_SYNC");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }, 20_000);
 
 test("部署数据变量在写入侧与转发侧同名（GITHUB_ENV 大小写敏感）", async () => {
-  const workflow = await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text();
+  const workflow = await Bun.file(
+    path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")
+  ).text();
   // 写入 $GITHUB_ENV 的名称必须与 appleboy envs 转发名完全一致：Linux 环境变量大小写敏感，
   // 曾经以 BG_CHAR_url 写入、以 BG_CHAR_URL 转发，真实部署在脚本首行校验即中止。
   const writes = workflow.match(/echo "\$\{var\}_[A-Za-z]+=/g) ?? [];
   expect(writes).toEqual(['echo "${var}_URL=', 'echo "${var}_SHA=', 'echo "${var}_SIZE=']);
   // resolve_one 的 var 实参、跳过分支写入的空值占位与转发名必须逐字同名（单库后为 BG_DATA_*）。
   expect(workflow).toContain("resolve_one dataset BG_DATA");
-  expect(workflow).toContain("envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_DATA_URL,BG_DATA_SHA,BG_DATA_SIZE");
+  expect(workflow).toContain(
+    "envs: DEPLOY_REV,VERIFIED_RUN_ID,BG_DATA_URL,BG_DATA_SHA,BG_DATA_SIZE"
+  );
   for (const name of ["BG_DATA_URL", "BG_DATA_SHA", "BG_DATA_SIZE"]) {
     expect(workflow).toContain(`echo "${name}=" >> "$GITHUB_ENV"`);
   }
 });
 
 test("环境白名单拒绝合成账号、遥测与代理，数据库落临时目录", () => {
-  const env = isolatedEnvironment({ PATH: "fixture-path", SENTRY_DSN: "https://dummy.invalid", OTEL_EXPORTER_OTLP_ENDPOINT: "https://dummy.invalid", HTTPS_PROXY: "https://dummy.invalid", NETEASE_COOKIE: "dummy" }, 12345, tmpdir(), "owner");
-  expect(env.PATH).toBe("fixture-path"); expect(env.SENTRY_DSN).toBe(""); expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("");
-  expect(env.NETEASE_COOKIE).toBe(""); expect(env.HTTPS_PROXY).toBeUndefined(); expect(env.DATABASE_URL).toBe("");
+  const env = isolatedEnvironment(
+    {
+      PATH: "fixture-path",
+      SENTRY_DSN: "https://dummy.invalid",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "https://dummy.invalid",
+      HTTPS_PROXY: "https://dummy.invalid",
+      NETEASE_COOKIE: "dummy",
+    },
+    12345,
+    tmpdir(),
+    "owner"
+  );
+  expect(env.PATH).toBe("fixture-path");
+  expect(env.SENTRY_DSN).toBe("");
+  expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("");
+  expect(env.NETEASE_COOKIE).toBe("");
+  expect(env.HTTPS_PROXY).toBeUndefined();
+  expect(env.DATABASE_URL).toBe("");
 });
 
 // 与真实进程生命周期一致：15s 探活 + 最多 3s 停机，不能被 Bun 默认 5s 提前中断。
 test("合成健康进程响应带自有标记，停止后临时目录已回收", async () => {
-  const server = await startIsolatedServer(await availablePort(), path.join(import.meta.dir, "fixtures/OwnedServer.ts"));
-  try { await server.ready(); expect(await (await fetch(`${server.baseUrl}/__bakagame_test_owner`)).text()).toMatch(/^[0-9a-f-]{36}$/); }
-  finally { await server.stop(); }
+  const server = await startIsolatedServer(
+    await availablePort(),
+    path.join(import.meta.dir, "fixtures/OwnedServer.ts")
+  );
+  try {
+    await server.ready();
+    expect(await (await fetch(`${server.baseUrl}/__bakagame_test_owner`)).text()).toMatch(
+      /^[0-9a-f-]{36}$/
+    );
+  } finally {
+    await server.stop();
+  }
   await expect(access(server.directory)).rejects.toThrow("ENOENT");
 }, 20_000);
 
 test("子进程退出时旧健康实例不能造成假绿", async () => {
   const port = await availablePort();
-  const unrelated = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => Response.json({ status: "ok" }) });
-  const server = await startIsolatedServer(port, path.join(import.meta.dir, "fixtures/ExitServer.ts"));
-  try { await expect(server.ready()).rejects.toThrow(/自有服务|并非自有/); }
-  finally { await server.stop(); await unrelated.stop(true); }
+  const unrelated = Bun.serve({
+    hostname: "127.0.0.1",
+    port,
+    fetch: () => Response.json({ status: "ok" }),
+  });
+  const server = await startIsolatedServer(
+    port,
+    path.join(import.meta.dir, "fixtures/ExitServer.ts")
+  );
+  try {
+    await expect(server.ready()).rejects.toThrow(/自有服务|并非自有/);
+  } finally {
+    await server.stop();
+    await unrelated.stop(true);
+  }
 });
 
 test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () => {
@@ -98,11 +168,19 @@ test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () =
   const fetcher = (async (input: string | URL | Request) => {
     const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
     paths.push(pathname);
-    return Response.json(pathname === "/readyz" ? { status: "ok", ready: false } : { status: "ok" });
+    return Response.json(
+      pathname === "/readyz" ? { status: "ok", ready: false } : { status: "ok" }
+    );
   }) as typeof fetch;
-  await expect(probeDeployment("http://127.0.0.1:1", 30, undefined, {
-    fetch: fetcher, now: () => now, sleep: async ms => { now += ms; },
-  })).rejects.toThrow("业务探针失败: /readyz");
+  await expect(
+    probeDeployment("http://127.0.0.1:1", 30, undefined, {
+      fetch: fetcher,
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+    })
+  ).rejects.toThrow("业务探针失败: /readyz");
   expect(paths).toEqual(["/health", "/livez", "/readyz", "/health", "/livez", "/readyz"]);
   expect(now).toBe(30);
 });
@@ -110,31 +188,66 @@ test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () =
 import { notifyDeployment } from "./DeploymentNotify";
 
 test("Elysia 原生 routes/reload 保留测试所有者端点", async () => {
-  const server = await startIsolatedServer(await availablePort(), path.join(import.meta.dir, "fixtures/ElysiaServer.ts"));
-  try { await server.ready(); expect(await (await fetch(`${server.baseUrl}/native-route`)).text()).toBe("ok"); }
-  finally { await server.stop(); }
+  const server = await startIsolatedServer(
+    await availablePort(),
+    path.join(import.meta.dir, "fixtures/ElysiaServer.ts")
+  );
+  try {
+    await server.ready();
+    expect(await (await fetch(`${server.baseUrl}/native-route`)).text()).toBe("ok");
+  } finally {
+    await server.stop();
+  }
 }, 20_000);
 
 test("preload 拒绝全部登记出口，--no-env-file 不加载合成凭据", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "bakagame-env-fixture-"));
   try {
-    await Bun.write(path.join(directory, ".env"), "FIXTURE_ENV_MARKER=dummy\nSENTRY_DSN=https://dummy.invalid\n");
-    const child = Bun.spawn([process.execPath, "--no-env-file", "--preload", path.join(import.meta.dir, "fixtures/IsolatedPreload.ts"), path.join(import.meta.dir, "fixtures/DeniedEgress.ts")], {
-      cwd: directory, env: isolatedEnvironment(process.env, 1, directory, "fixture"), stdout: "pipe", stderr: "pipe",
-    });
-    const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    expect(stderr).toBe(""); expect(exit).toBe(0);
+    await Bun.write(
+      path.join(directory, ".env"),
+      "FIXTURE_ENV_MARKER=dummy\nSENTRY_DSN=https://dummy.invalid\n"
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        "--preload",
+        path.join(import.meta.dir, "fixtures/IsolatedPreload.ts"),
+        path.join(import.meta.dir, "fixtures/DeniedEgress.ts"),
+      ],
+      {
+        cwd: directory,
+        env: isolatedEnvironment(process.env, 1, directory, "fixture"),
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    );
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(stderr).toBe("");
+    expect(exit).toBe(0);
     expect(JSON.parse(stdout)).toEqual({ checks: 16, marker: null, sentry: "" });
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }, 20_000);
 
 test("维护通知只向合成回环发送 Bearer，缺 token/拒绝均失败且不回显凭据", async () => {
   const received: string[] = [];
-  const fixture = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => {
-    received.push(request.headers.get("Authorization") ?? "");
-    expect(request.headers.get("X-Real-IP")).toBeNull();
-    return request.headers.get("Authorization") === "Bearer fixture-secret" ? Response.json({ status: "ok" }) : new Response(null, { status: 401 });
-  } });
+  const fixture = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (request) => {
+      received.push(request.headers.get("Authorization") ?? "");
+      expect(request.headers.get("X-Real-IP")).toBeNull();
+      return request.headers.get("Authorization") === "Bearer fixture-secret"
+        ? Response.json({ status: "ok" })
+        : new Response(null, { status: 401 });
+    },
+  });
   try {
     const url = `http://127.0.0.1:${fixture.port}`;
     await expect(notifyDeployment(undefined, url)).rejects.toThrow("未配置 MAINTENANCE_TOKEN");
@@ -142,32 +255,49 @@ test("维护通知只向合成回环发送 Bearer，缺 token/拒绝均失败且
     await notifyDeployment("fixture-secret", url);
     await expect(notifyDeployment("wrong-fixture", url)).rejects.toThrow("维护通知被拒绝 (401)");
     expect(received).toEqual(["Bearer fixture-secret", "Bearer wrong-fixture"]);
-  } finally { await fixture.stop(true); }
+  } finally {
+    await fixture.stop(true);
+  }
 });
 
-for (const valid of [true, false]) test(`三协议部署 ACK ${valid ? "成功" : "拒绝"}夹具`, async () => {
-  const fixture = Bun.serve({ hostname: "127.0.0.1", port: 0,
-    fetch(request, server) {
-      if (request.headers.get("upgrade") === "websocket" && server.upgrade(request)) return;
-      return Response.json({ status: "ok", ready: true });
-    },
-    websocket: { message(socket, message) {
-      const request = JSON.parse(String(message));
-      socket.send(JSON.stringify({ type: valid ? "ack" : "error", id: request.id, requestType: request.type }));
-    } },
+for (const valid of [true, false])
+  test(`三协议部署 ACK ${valid ? "成功" : "拒绝"}夹具`, async () => {
+    const fixture = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request, server) {
+        if (request.headers.get("upgrade") === "websocket" && server.upgrade(request)) return;
+        return Response.json({ status: "ok", ready: true });
+      },
+      websocket: {
+        message(socket, message) {
+          const request = JSON.parse(String(message));
+          socket.send(
+            JSON.stringify({
+              type: valid ? "ack" : "error",
+              id: request.id,
+              requestType: request.type,
+            })
+          );
+        },
+      },
+    });
+    try {
+      const probe = probeDeployment(`http://127.0.0.1:${fixture.port}`, 100);
+      if (valid) await probe;
+      else await expect(probe).rejects.toThrow("订阅 ACK 无效");
+    } finally {
+      await fixture.stop(true);
+    }
   });
-  try {
-    const probe = probeDeployment(`http://127.0.0.1:${fixture.port}`, 100);
-    if (valid) await probe;
-    else await expect(probe).rejects.toThrow("订阅 ACK 无效");
-  } finally { await fixture.stop(true); }
-});
 
 test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", async () => {
   const root = path.resolve(import.meta.dir, "../..");
   // 数据集不再由 CI 生产（每周发布流程已删除，tools/ 不进版本控制），工作流仅剩 ci 与 deploy。
   for (const name of ["ci", "deploy"]) {
-    const parsed = Bun.YAML.parse(await Bun.file(path.join(root, `.github/workflows/${name}.yml`)).text()) as { jobs: Record<string, unknown>; on: Record<string, unknown> };
+    const parsed = Bun.YAML.parse(
+      await Bun.file(path.join(root, `.github/workflows/${name}.yml`)).text()
+    ) as { jobs: Record<string, unknown>; on: Record<string, unknown> };
     expect(Object.keys(parsed.jobs).length).toBeGreaterThan(0);
     expect(Object.keys(parsed.on).length).toBeGreaterThan(0);
     if (name === "ci") {
@@ -177,7 +307,9 @@ test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", 
       expect(ci).toContain("sha256sum --check --strict");
       expect(ci).toContain("manifest 缺少 $id 条目");
       // 冒烟必须经工作区固定版 bun 调用：裸 `bun` 在 pnpm 化后的 PATH 上解析不到。
-      expect(ci).toContain("pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts");
+      expect(ci).toContain(
+        "pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts"
+      );
     }
     if (name === "deploy") {
       expect(parsed.on).toHaveProperty("workflow_dispatch.inputs.ci_run_id.required", true);
@@ -191,38 +323,76 @@ test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", 
 });
 
 test("Worker 继承出口守卫，不能跨线程访问第三方", async () => {
-  const child = Bun.spawn([process.execPath, "--no-env-file", "--preload", path.join(import.meta.dir, "fixtures/IsolatedPreload.ts"), path.join(import.meta.dir, "fixtures/WorkerEgress.ts")], {
-    cwd: import.meta.dir, env: isolatedEnvironment(process.env, 1, tmpdir(), "fixture"), stdout: "pipe", stderr: "pipe",
-  });
-  const [stdout, stderr, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-  expect(stderr).toBe(""); expect(exit).toBe(0); expect(stdout.trim()).toBe("隔离测试禁止主动网络出口");
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "--preload",
+      path.join(import.meta.dir, "fixtures/IsolatedPreload.ts"),
+      path.join(import.meta.dir, "fixtures/WorkerEgress.ts"),
+    ],
+    {
+      cwd: import.meta.dir,
+      env: isolatedEnvironment(process.env, 1, tmpdir(), "fixture"),
+      stdout: "pipe",
+      stderr: "pipe",
+    }
+  );
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect(stderr).toBe("");
+  expect(exit).toBe(0);
+  expect(stdout.trim()).toBe("隔离测试禁止主动网络出口");
 }, 20_000);
 
-
 test("部署内嵌 Bash 仅语法检查，不执行发布命令", async () => {
-  const workflow = Bun.YAML.parse(await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()) as { jobs: { deploy: { steps: { with?: { script?: unknown } }[] } } };
+  const workflow = Bun.YAML.parse(
+    await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()
+  ) as { jobs: { deploy: { steps: { with?: { script?: unknown } }[] } } };
   // 带内嵌脚本的步骤已不再是 steps[0]（其前新增了 manifest 解析步），按内容定位，不依赖下标。
-  const script = workflow.jobs.deploy.steps.map((step) => step.with?.script).find((value): value is string => typeof value === "string");
+  const script = workflow.jobs.deploy.steps
+    .map((step) => step.with?.script)
+    .find((value): value is string => typeof value === "string");
   if (typeof script !== "string") throw new Error("deploy.yml 的 deploy job 中未找到内嵌部署脚本");
-  execFileSync("bash", ["-n"], { input: script, encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"] });
+  execFileSync("bash", ["-n"], {
+    input: script,
+    encoding: "utf-8",
+    timeout: 5_000,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   const inner = script.split("<<'BAKA_DEPLOY_EOF'\n")[1].split("\nBAKA_DEPLOY_EOF")[0];
-  execFileSync("bash", ["-n"], { input: inner, encoding: "utf-8", timeout: 5_000, stdio: ["pipe", "pipe", "pipe"] });
+  execFileSync("bash", ["-n"], {
+    input: inner,
+    encoding: "utf-8",
+    timeout: 5_000,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
   expect(inner).toContain('git reset --hard "$DEPLOY_REV"');
 });
 
-
 test("容器 stdin Bun 入口支持 TS 且 import.meta.main 触发", () => {
   const output = execFileSync(process.execPath, ["--no-env-file", "-"], {
-    input: 'const value: number = 7; if (import.meta.main) console.log(value);', encoding: "utf-8", timeout: 5_000,
-    env: isolatedEnvironment(process.env, 1, tmpdir(), "stdin-fixture"), stdio: ["pipe", "pipe", "pipe"],
+    input: "const value: number = 7; if (import.meta.main) console.log(value);",
+    encoding: "utf-8",
+    timeout: 5_000,
+    env: isolatedEnvironment(process.env, 1, tmpdir(), "stdin-fixture"),
+    stdio: ["pipe", "pipe", "pipe"],
   });
   expect(output.trim()).toBe("7");
 });
 
 test("探活后子进程退出会中断后续验证，不会报告成功", async () => {
-  const server = await startIsolatedServer(await availablePort(), path.join(import.meta.dir, "fixtures/ExitAfterReady.ts"));
+  const server = await startIsolatedServer(
+    await availablePort(),
+    path.join(import.meta.dir, "fixtures/ExitAfterReady.ts")
+  );
   try {
     await server.ready();
     await expect(server.run(new Promise<never>(() => {}))).rejects.toThrow("自有服务退出 (24)");
-  } finally { await Promise.all([server.stop(), server.stop()]); }
+  } finally {
+    await Promise.all([server.stop(), server.stop()]);
+  }
 }, 20_000);

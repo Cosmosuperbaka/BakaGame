@@ -2,11 +2,7 @@ import { schemaUnion } from "../shared/SchemaUnion";
 import { Type as t, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { AppError } from "../domain/Errors";
-import {
-  WHOISFAKER_PHASES,
-  WHOISFAKER_ROLES,
-  type WhoIsFakerClientMessage,
-} from "../shared/Index";
+import { WHOISFAKER_PHASES, WHOISFAKER_ROLES, type WhoIsFakerClientMessage } from "../shared/Index";
 
 export type { WhoIsFakerClientMessage };
 
@@ -18,7 +14,7 @@ export const RoleConfigSchema = t.Object(
     hasAngel: t.Boolean(),
     hasBlank: t.Boolean(),
   },
-  { additionalProperties: false },
+  { additionalProperties: false }
 );
 export const WordPairSchema = t.Tuple([
   t.String({ minLength: 1, maxLength: 50 }),
@@ -30,16 +26,13 @@ export const DraftWordPairSchema = t.Tuple([
 ]);
 export const GamePhaseSchema = schemaUnion(WHOISFAKER_PHASES.map((p) => t.Literal(p)));
 export const PlayerRoleSchema = schemaUnion(WHOISFAKER_ROLES.map((r) => t.Literal(r)));
-export const DisconnectResolutionSchema = t.Union([
-  t.Literal("wait"),
-  t.Literal("eliminate"),
-]);
+export const DisconnectResolutionSchema = t.Union([t.Literal("wait"), t.Literal("eliminate")]);
 
 const EmptyPayloadSchema = t.Object({}, { additionalProperties: false });
 
 const createMessageSchema = <TType extends string, TPayload extends TSchema>(
   type: TType,
-  payload: TPayload,
+  payload: TPayload
 ) =>
   t.Object(
     {
@@ -50,7 +43,7 @@ const createMessageSchema = <TType extends string, TPayload extends TSchema>(
       sessionToken: t.Optional(t.String({ maxLength: 128 })),
       payload,
     },
-    { additionalProperties: false },
+    { additionalProperties: false }
   );
 
 export const WhoIsFakerMessageSchemas = {
@@ -67,8 +60,8 @@ export const WhoIsFakerMessageSchemas = {
         userName: t.String({ minLength: 1, maxLength: 32 }),
         roleConfig: t.Optional(RoleConfigSchema),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.join": createMessageSchema(
     "room.join",
@@ -77,8 +70,8 @@ export const WhoIsFakerMessageSchemas = {
         userName: t.String({ minLength: 1, maxLength: 32 }),
         password: t.Optional(t.String({ maxLength: 64 })),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.reconnect": createMessageSchema(
     "room.reconnect",
@@ -87,8 +80,8 @@ export const WhoIsFakerMessageSchemas = {
         roomId: t.String({ minLength: 1, maxLength: 32 }),
         sessionToken: t.String({ minLength: 1, maxLength: 128 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.leave": createMessageSchema("room.leave", EmptyPayloadSchema),
   "room.requestSync": createMessageSchema("room.requestSync", EmptyPayloadSchema),
@@ -98,8 +91,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         name: t.String({ minLength: 1, maxLength: 32 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "player.setSpectator": createMessageSchema(
     "player.setSpectator",
@@ -107,8 +100,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         spectator: t.Boolean(),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "player.setReady": createMessageSchema(
     "player.setReady",
@@ -116,8 +109,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         ready: t.Boolean(),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.updateSettings": createMessageSchema(
     "room.updateSettings",
@@ -130,8 +123,8 @@ export const WhoIsFakerMessageSchemas = {
         roleConfig: t.Optional(RoleConfigSchema),
         revealRoleOnDeath: t.Optional(t.Boolean()),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.kick": createMessageSchema(
     "room.kick",
@@ -139,8 +132,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.assignQuestioner": createMessageSchema(
     "game.assignQuestioner",
@@ -148,8 +141,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.submitWords": createMessageSchema(
     "game.submitWords",
@@ -157,10 +150,12 @@ export const WhoIsFakerMessageSchemas = {
       {
         words: WordPairSchema,
         blankHint: t.Optional(t.String({ maxLength: 50 })),
-        manualRoles: t.Optional(t.Record(t.String({ minLength: 1, maxLength: 64 }), PlayerRoleSchema)),
+        manualRoles: t.Optional(
+          t.Record(t.String({ minLength: 1, maxLength: 64 }), PlayerRoleSchema)
+        ),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.advancePhase": createMessageSchema("game.advancePhase", EmptyPayloadSchema),
   "game.submitDescription": createMessageSchema(
@@ -169,8 +164,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         text: t.String({ minLength: 1, maxLength: 500 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.submitVote": createMessageSchema(
     "game.submitVote",
@@ -178,8 +173,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         targetId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.submitNightAction": createMessageSchema(
     "game.submitNightAction",
@@ -187,8 +182,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         targetId: t.Optional(t.Union([t.String({ minLength: 1, maxLength: 64 }), t.Null()])),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.submitBlankGuess": createMessageSchema(
     "game.submitBlankGuess",
@@ -196,8 +191,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         words: WordPairSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.enterBlankGuess": createMessageSchema("game.enterBlankGuess", EmptyPayloadSchema),
   "game.updateBlankGuessDraft": createMessageSchema(
@@ -206,8 +201,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         words: DraftWordPairSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.reviewBlankGuess": createMessageSchema(
     "game.reviewBlankGuess",
@@ -215,8 +210,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         approve: t.Boolean(),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.resolveDisconnect": createMessageSchema(
     "game.resolveDisconnect",
@@ -225,8 +220,8 @@ export const WhoIsFakerMessageSchemas = {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
         resolution: DisconnectResolutionSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "chat.send": createMessageSchema(
     "chat.send",
@@ -234,8 +229,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         text: t.String({ minLength: 1, maxLength: 500 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "room.transferHost": createMessageSchema(
     "room.transferHost",
@@ -243,8 +238,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "test.jumpToPhase": createMessageSchema(
     "test.jumpToPhase",
@@ -252,8 +247,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         phase: GamePhaseSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "test.setMyRole": createMessageSchema(
     "test.setMyRole",
@@ -261,8 +256,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         role: PlayerRoleSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "test.addBot": createMessageSchema(
     "test.addBot",
@@ -270,8 +265,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         count: t.Optional(PositiveIntSchema),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "test.removeBot": createMessageSchema(
     "test.removeBot",
@@ -280,8 +275,8 @@ export const WhoIsFakerMessageSchemas = {
         playerId: t.Optional(t.String({ minLength: 1, maxLength: 64 })),
         count: t.Optional(PositiveIntSchema),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.cancelVote": createMessageSchema("game.cancelVote", EmptyPayloadSchema),
   "game.cancelNightAction": createMessageSchema("game.cancelNightAction", EmptyPayloadSchema),
@@ -291,8 +286,8 @@ export const WhoIsFakerMessageSchemas = {
       {
         playerIds: t.Array(t.String({ minLength: 1, maxLength: 64 }), { minItems: 1 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.startPhaseTimer": createMessageSchema(
     "game.startPhaseTimer",
@@ -300,15 +295,13 @@ export const WhoIsFakerMessageSchemas = {
       {
         durationSeconds: PositiveIntSchema,
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "game.stopPhaseTimer": createMessageSchema("game.stopPhaseTimer", EmptyPayloadSchema),
 };
 
-export const WhoIsFakerClientMessageSchema = schemaUnion(
-  Object.values(WhoIsFakerMessageSchemas),
-);
+export const WhoIsFakerClientMessageSchema = schemaUnion(Object.values(WhoIsFakerMessageSchemas));
 
 /**
  * 严格类型校验与解析客户端消息。
@@ -334,13 +327,19 @@ export const parseWhoIsFakerMessage = (raw: unknown): WhoIsFakerClientMessage =>
     throw new AppError("INVALID_MESSAGE", "消息类型 type 必须为字符串");
   }
 
-  const schema = Object.hasOwn(WhoIsFakerMessageSchemas, type) ? (WhoIsFakerMessageSchemas as Record<string, TSchema>)[type] : undefined;
+  const schema = Object.hasOwn(WhoIsFakerMessageSchemas, type)
+    ? (WhoIsFakerMessageSchemas as Record<string, TSchema>)[type]
+    : undefined;
   if (!schema) {
     throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }
 
   // 校验 payload 是否为有效对象（杜绝 payload: null 宽松转为 {}）
-  if (msgObj.payload === null || typeof msgObj.payload !== "object" || Array.isArray(msgObj.payload)) {
+  if (
+    msgObj.payload === null ||
+    typeof msgObj.payload !== "object" ||
+    Array.isArray(msgObj.payload)
+  ) {
     throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
   }
 

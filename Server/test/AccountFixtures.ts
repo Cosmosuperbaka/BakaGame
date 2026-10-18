@@ -6,7 +6,11 @@ import { QQNicknameService } from "../src/application/QQNicknameService";
 import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
 import { SiteStatsService } from "../src/application/SiteStatsService";
 import type { SentryApiClient } from "../src/infrastructure/SentryApi";
-import type { PageDelta, SiteStatsRepository, VisitorDelta } from "../src/infrastructure/db/SiteStatsRepository";
+import type {
+  PageDelta,
+  SiteStatsRepository,
+  VisitorDelta,
+} from "../src/infrastructure/db/SiteStatsRepository";
 import type { AdminRoomControl } from "../src/domain/AdminRoom";
 import type { RecordedGame } from "../src/domain/GameRecord";
 import { UserDataService, type FeedbackSink } from "../src/application/UserDataService";
@@ -16,7 +20,12 @@ import { createAuth } from "../src/infrastructure/auth/Auth";
 import type { Mailer } from "../src/infrastructure/auth/Mailer";
 import { QQAvatarService } from "../src/infrastructure/auth/QQAvatar";
 import { SettingCipher } from "../src/infrastructure/auth/SettingCipher";
-import type { AuditEntry, AuditFilter, AuditLogRepository, StoredAuditEntry } from "../src/infrastructure/db/AuditLogRepository";
+import type {
+  AuditEntry,
+  AuditFilter,
+  AuditLogRepository,
+  StoredAuditEntry,
+} from "../src/infrastructure/db/AuditLogRepository";
 import type { GameRecordRepository } from "../src/infrastructure/db/GameRecordRepository";
 import type {
   FeedbackFilter,
@@ -38,12 +47,18 @@ export class MemoryUserSettingRepository implements UserSettingRepository {
   readonly rows = new Map<string, StoredSetting & { userId: string }>();
 
   async list(userId: string): Promise<StoredSetting[]> {
-    return [...this.rows.values()].filter((row) => row.userId === userId)
+    return [...this.rows.values()]
+      .filter((row) => row.userId === userId)
       .map(({ key, value, updatedAt }) => ({ key, value: structuredClone(value), updatedAt }));
   }
 
   async put(userId: string, key: string, value: unknown, now: Date): Promise<void> {
-    this.rows.set(`${userId}:${key}`, { userId, key, value: structuredClone(value), updatedAt: now });
+    this.rows.set(`${userId}:${key}`, {
+      userId,
+      key,
+      value: structuredClone(value),
+      updatedAt: now,
+    });
   }
 
   async remove(userId: string, key: string): Promise<void> {
@@ -65,12 +80,18 @@ export class MemoryAuditLogRepository implements AuditLogRepository {
 
   async list(filter: AuditFilter): Promise<{ items: StoredAuditEntry[]; total: number }> {
     const matched = this.entries
-      .filter((entry) => (!filter.actorId || entry.actorId === filter.actorId)
-        && (!filter.action || entry.action === filter.action)
-        && (!filter.targetType || entry.targetType === filter.targetType)
-        && (!filter.targetId || entry.targetId === filter.targetId))
+      .filter(
+        (entry) =>
+          (!filter.actorId || entry.actorId === filter.actorId) &&
+          (!filter.action || entry.action === filter.action) &&
+          (!filter.targetType || entry.targetType === filter.targetType) &&
+          (!filter.targetId || entry.targetId === filter.targetId)
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id);
-    return { items: matched.slice(filter.offset, filter.offset + filter.limit), total: matched.length };
+    return {
+      items: matched.slice(filter.offset, filter.offset + filter.limit),
+      total: matched.length,
+    };
   }
 }
 
@@ -94,21 +115,34 @@ export class MemoryFeedbackRepository implements FeedbackRepository {
 
   async list(filter: FeedbackFilter): Promise<{ items: FeedbackRecord[]; total: number }> {
     const matched = [...this.records.values()]
-      .filter((record) => (!filter.status || record.status === filter.status)
-        && (!filter.kind || record.kind === filter.kind)
-        && (!filter.userId || record.userId === filter.userId))
+      .filter(
+        (record) =>
+          (!filter.status || record.status === filter.status) &&
+          (!filter.kind || record.kind === filter.kind) &&
+          (!filter.userId || record.userId === filter.userId)
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    return { items: matched.slice(filter.offset, filter.offset + filter.limit).map((record) => ({ ...record })), total: matched.length };
+    return {
+      items: matched
+        .slice(filter.offset, filter.offset + filter.limit)
+        .map((record) => ({ ...record })),
+      total: matched.length,
+    };
   }
 
   async countUnread(userId: string): Promise<number> {
-    return [...this.records.values()].filter((record) => record.userId === userId && record.lastReplyAt
-      && (!record.userSeenAt || record.userSeenAt < record.lastReplyAt)).length;
+    return [...this.records.values()].filter(
+      (record) =>
+        record.userId === userId &&
+        record.lastReplyAt &&
+        (!record.userSeenAt || record.userSeenAt < record.lastReplyAt)
+    ).length;
   }
 
   async countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>> {
     const counts: Partial<Record<FeedbackStatus, number>> = {};
-    for (const record of this.records.values()) counts[record.status] = (counts[record.status] ?? 0) + 1;
+    for (const record of this.records.values())
+      counts[record.status] = (counts[record.status] ?? 0) + 1;
     return counts;
   }
 
@@ -119,8 +153,10 @@ export class MemoryFeedbackRepository implements FeedbackRepository {
   }
 
   async replies(feedbackId: string): Promise<FeedbackReplyRecord[]> {
-    return this.replyRows.filter((reply) => reply.feedbackId === feedbackId)
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).map((reply) => ({ ...reply }));
+    return this.replyRows
+      .filter((reply) => reply.feedbackId === feedbackId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .map((reply) => ({ ...reply }));
   }
 }
 
@@ -139,9 +175,12 @@ export class MemorySiteStatsRepository implements SiteStatsRepository {
     for (const row of visitors) {
       const key = `${row.day}:${row.visitorHash}`;
       const current = this.visitors.get(key);
-      this.visitors.set(key, current
-        ? { ...current, views: current.views + row.views, userId: row.userId ?? current.userId }
-        : { ...row });
+      this.visitors.set(
+        key,
+        current
+          ? { ...current, views: current.views + row.views, userId: row.userId ?? current.userId }
+          : { ...row }
+      );
     }
     for (const row of pages) {
       const key = `${row.day}:${row.path}`;
@@ -151,16 +190,26 @@ export class MemorySiteStatsRepository implements SiteStatsRepository {
   }
 
   async purgeVisitors(beforeDay: string, batch: number): Promise<number> {
-    const stale = [...this.visitors.keys()].filter((key) => this.visitors.get(key)!.day < beforeDay).slice(0, batch);
+    const stale = [...this.visitors.keys()]
+      .filter((key) => this.visitors.get(key)!.day < beforeDay)
+      .slice(0, batch);
     for (const key of stale) this.visitors.delete(key);
     return stale.length;
   }
 
   async daily(sinceDay: string) {
-    const byDay = new Map<string, { day: string; visitors: number; signedInVisitors: number; views: number }>();
+    const byDay = new Map<
+      string,
+      { day: string; visitors: number; signedInVisitors: number; views: number }
+    >();
     for (const row of this.visitors.values()) {
       if (row.day < sinceDay) continue;
-      const entry = byDay.get(row.day) ?? { day: row.day, visitors: 0, signedInVisitors: 0, views: 0 };
+      const entry = byDay.get(row.day) ?? {
+        day: row.day,
+        visitors: 0,
+        signedInVisitors: 0,
+        views: 0,
+      };
       entry.visitors += 1;
       entry.signedInVisitors += row.userId ? 1 : 0;
       entry.views += row.views;
@@ -171,8 +220,12 @@ export class MemorySiteStatsRepository implements SiteStatsRepository {
 
   async pages(sinceDay: string, limit: number) {
     const byPath = new Map<string, number>();
-    for (const row of this.pageRows.values()) if (row.day >= sinceDay) byPath.set(row.path, (byPath.get(row.path) ?? 0) + row.views);
-    return [...byPath].map(([path, views]) => ({ path, views })).sort((a, b) => b.views - a.views).slice(0, limit);
+    for (const row of this.pageRows.values())
+      if (row.day >= sinceDay) byPath.set(row.path, (byPath.get(row.path) ?? 0) + row.views);
+    return [...byPath]
+      .map(([path, views]) => ({ path, views }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, limit);
   }
 
   async newUsers(): Promise<Array<{ day: string; count: number }>> {
@@ -200,21 +253,32 @@ export const createNapCatFetcher = () => {
     if (headers.get("authorization") !== `Bearer ${state.token}`) {
       return new Response(JSON.stringify({ message: "token verify failed!" }), { status: 401 });
     }
-    const body = typeof init?.body === "string" ? JSON.parse(init.body) as { user_id?: number } : {};
+    const body =
+      typeof init?.body === "string" ? (JSON.parse(init.body) as { user_id?: number }) : {};
     if (url.pathname.endsWith("/get_login_info")) {
-      if (!state.online) return new Response(JSON.stringify({ status: "failed", retcode: 1400, message: "QQ 未登录" }));
-      return new Response(JSON.stringify({
-        status: "ok",
-        retcode: 0,
-        data: { user_id: Number(state.loginInfo.uin), nickname: state.loginInfo.nickname },
-      }));
+      if (!state.online)
+        return new Response(
+          JSON.stringify({ status: "failed", retcode: 1400, message: "QQ 未登录" })
+        );
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          retcode: 0,
+          data: { user_id: Number(state.loginInfo.uin), nickname: state.loginInfo.nickname },
+        })
+      );
     }
     if (url.pathname.endsWith("/get_stranger_info")) {
       const uin = String(body.user_id ?? "");
       state.calls.push([uin]);
       const name = state.online ? state.names.get(uin) : undefined;
-      if (!name) return new Response(JSON.stringify({ status: "failed", retcode: 1404, message: "not found" }));
-      return new Response(JSON.stringify({ status: "ok", retcode: 0, data: { user_id: Number(uin), nickname: name } }));
+      if (!name)
+        return new Response(
+          JSON.stringify({ status: "failed", retcode: 1404, message: "not found" })
+        );
+      return new Response(
+        JSON.stringify({ status: "ok", retcode: 0, data: { user_id: Number(uin), nickname: name } })
+      );
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
@@ -250,21 +314,26 @@ export const createAvatarFetcher = () => {
     const qq = url.searchParams.get("nk") ?? "";
     calls.push(url.toString());
     const version = versions.get(qq) ?? 1;
-    return new Response(new TextEncoder().encode(`avatar:${qq}:${version}:${url.searchParams.get("s")}`), {
-      headers: { "content-type": "image/jpeg" },
-    });
+    return new Response(
+      new TextEncoder().encode(`avatar:${qq}:${version}:${url.searchParams.get("s")}`),
+      {
+        headers: { "content-type": "image/jpeg" },
+      }
+    );
   }) as typeof fetch;
   return { fetcher, calls, bump: (qq: string) => versions.set(qq, (versions.get(qq) ?? 1) + 1) };
 };
 
-export const createAccountTestApp = (options: {
-  adminQqNumbers?: string[];
-  now?: () => number;
-  gameRecords?: GameRecordRepository;
-  /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
-  rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
-  sentry?: SentryApiClient;
-} = {}) => {
+export const createAccountTestApp = (
+  options: {
+    adminQqNumbers?: string[];
+    now?: () => number;
+    gameRecords?: GameRecordRepository;
+    /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
+    rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
+    sentry?: SentryApiClient;
+  } = {}
+) => {
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
     serverUrl: "http://localhost:4850",
@@ -287,7 +356,8 @@ export const createAccountTestApp = (options: {
     secureCookies: false,
     adminQqNumbers: options.adminQqNumbers ?? [],
     mailer,
-    resolveNickname: (qqNumber) => resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
+    resolveNickname: (qqNumber) =>
+      resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
   });
   const napcat = createNapCatFetcher();
   const nicknames = new QQNicknameService({
@@ -302,7 +372,14 @@ export const createAccountTestApp = (options: {
     now: options.now,
   });
   resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
-  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(avatarFetcher.fetcher), nicknames, logger, now: options.now });
+  const service = new AccountService({
+    auth,
+    mailer,
+    avatars: new QQAvatarService(avatarFetcher.fetcher),
+    nicknames,
+    logger,
+    now: options.now,
+  });
   const settings = new MemoryUserSettingRepository();
   const feedback = new MemoryFeedbackRepository();
   const sentFeedback: Array<Parameters<FeedbackSink>[0]> = [];
@@ -336,7 +413,12 @@ export const createAccountTestApp = (options: {
     qq: nicknames,
     now: options.now,
   });
-  const visits = new SiteStatsService({ repository: siteStats, secret: ACCOUNT_TEST_SECRET, logger, now: options.now });
+  const visits = new SiteStatsService({
+    repository: siteStats,
+    secret: ACCOUNT_TEST_SECRET,
+    logger,
+    now: options.now,
+  });
   const { app } = createTestApp({
     env,
     logger,
@@ -345,12 +427,18 @@ export const createAccountTestApp = (options: {
   });
 
   const rpc = async (path: string, input?: unknown, cookie?: string) => {
-    const response = await app.handle(new Request(`http://localhost/api/rpc/${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: env.clientUrl, ...(cookie ? { cookie } : {}) },
-      body: JSON.stringify(input === undefined ? {} : { json: input }),
-    }));
-    const body = await response.json() as { json?: unknown };
+    const response = await app.handle(
+      new Request(`http://localhost/api/rpc/${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: env.clientUrl,
+          ...(cookie ? { cookie } : {}),
+        },
+        body: JSON.stringify(input === undefined ? {} : { json: input }),
+      })
+    );
+    const body = (await response.json()) as { json?: unknown };
     return { status: response.status, body: body.json as Record<string, unknown> };
   };
 
@@ -372,15 +460,39 @@ export const createAccountTestApp = (options: {
     const sent = await rpc("account/requestLoginCode", { qqNumber });
     if (sent.status !== 200) throw new Error(`发码失败: ${JSON.stringify(sent.body)}`);
     const email = `${qqNumber}@qq.com`;
-    const response = await app.handle(new Request("http://localhost/api/auth/sign-in/email-otp", {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: env.clientUrl },
-      body: JSON.stringify({ email, otp: mailer.lastCodeFor(email) }),
-    }));
+    const response = await app.handle(
+      new Request("http://localhost/api/auth/sign-in/email-otp", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: env.clientUrl },
+        body: JSON.stringify({ email, otp: mailer.lastCodeFor(email) }),
+      })
+    );
     return { response, cookie: cookieOf(response) };
   };
 
-  return { app, auth, service, userData, admin, audit, whoIsFakerService, visits, siteStats, settings, feedback, sentFeedback, sentry, mailer, avatarFetcher, napcat, nicknames, db, rpc, signIn, prepareSignup };
+  return {
+    app,
+    auth,
+    service,
+    userData,
+    admin,
+    audit,
+    whoIsFakerService,
+    visits,
+    siteStats,
+    settings,
+    feedback,
+    sentFeedback,
+    sentry,
+    mailer,
+    avatarFetcher,
+    napcat,
+    nicknames,
+    db,
+    rpc,
+    signIn,
+    prepareSignup,
+  };
 };
 
 const emptyRooms: AdminRoomControl = {
@@ -398,4 +510,7 @@ const emptyGameRecords: GameRecordRepository = {
 
 /** 把 Set-Cookie 折叠成请求用的 Cookie 头。 */
 export const cookieOf = (response: Response): string =>
-  response.headers.getSetCookie().map((item) => item.split(";")[0]).join("; ");
+  response.headers
+    .getSetCookie()
+    .map((item) => item.split(";")[0])
+    .join("; ");

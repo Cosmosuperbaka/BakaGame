@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  parseSongUrn,
-  buildSongUrn,
-  isSongUrn,
-} from "../src/infrastructure/MusicUrn";
+import { parseSongUrn, buildSongUrn, isSongUrn } from "../src/infrastructure/MusicUrn";
 import { toSimplified } from "../src/infrastructure/ChineseConverter";
 import {
   normalizeComparableText,
@@ -124,9 +120,13 @@ describe("MusicDeduplicator", () => {
 
   test("isDerivationSong 识别衍生与伴奏/翻唱版本", () => {
     expect(isDerivationSong({ id: "1", title: "晴天 (伴奏)", artist: "周杰伦" })).toBe(true);
-    expect(isDerivationSong({ id: "2", title: "借口(原唱：周杰伦)", artist: "网络歌手" })).toBe(true);
+    expect(isDerivationSong({ id: "2", title: "借口(原唱：周杰伦)", artist: "网络歌手" })).toBe(
+      true
+    );
     expect(isDerivationSong({ id: "3", title: "晴天", artist: "网络歌手" })).toBe(true);
-    expect(isDerivationSong({ id: "4", title: "晴天", artist: "周杰伦", originCoverType: 2 })).toBe(true);
+    expect(isDerivationSong({ id: "4", title: "晴天", artist: "周杰伦", originCoverType: 2 })).toBe(
+      true
+    );
     expect(isDerivationSong({ id: "5", title: "晴天", artist: "周杰伦" })).toBe(false);
   });
 
@@ -183,9 +183,15 @@ describe("MusicDeduplicator", () => {
 
   test("isSameSongWork：标题不匹配 / 歌手不匹配 / 时长超差都判定为不同作品", () => {
     const base = { id: "qq:1", title: "晴天", artist: "周杰伦", durationMs: 269000 };
-    expect(isSameSongWork(base, { id: "qq:2", title: "稻香", artist: "周杰伦", durationMs: 269000 })).toBe(false);
-    expect(isSameSongWork(base, { id: "qq:3", title: "晴天", artist: "五月天", durationMs: 269000 })).toBe(false);
-    expect(isSameSongWork(base, { id: "qq:4", title: "晴天", artist: "周杰伦", durationMs: 400000 })).toBe(false);
+    expect(
+      isSameSongWork(base, { id: "qq:2", title: "稻香", artist: "周杰伦", durationMs: 269000 })
+    ).toBe(false);
+    expect(
+      isSameSongWork(base, { id: "qq:3", title: "晴天", artist: "五月天", durationMs: 269000 })
+    ).toBe(false);
+    expect(
+      isSameSongWork(base, { id: "qq:4", title: "晴天", artist: "周杰伦", durationMs: 400000 })
+    ).toBe(false);
   });
 
   test("calculateRelevanceScore：标题各档匹配与副标题括号命中", () => {
@@ -193,28 +199,56 @@ describe("MusicDeduplicator", () => {
     const subMatch = calculateRelevanceScore(
       { id: "qq:1", title: "ブルーバード (青鸟)", artist: "いきものがかり" },
       "青鸟",
-      false,
+      false
     );
     const prefixOnly = calculateRelevanceScore(
       { id: "qq:2", title: "青鸟之歌", artist: "某人" },
       "青鸟",
-      false,
+      false
     );
     expect(subMatch).toBeGreaterThan(prefixOnly);
 
     // 主标题精确 > 前缀 > 包含
     const exact = calculateRelevanceScore({ id: "a", title: "青鸟", artist: "X" }, "青鸟", false);
-    const contains = calculateRelevanceScore({ id: "b", title: "小小青鸟飞", artist: "X" }, "青鸟", false);
+    const contains = calculateRelevanceScore(
+      { id: "b", title: "小小青鸟飞", artist: "X" },
+      "青鸟",
+      false
+    );
     expect(exact).toBeGreaterThan(contains);
   });
 
   test("calculateRelevanceScore：衍生版本与噪音被负向惩罚", () => {
-    const origin = calculateRelevanceScore({ id: "a", title: "晴天", artist: "周杰伦" }, "晴天", false);
-    const karaoke = calculateRelevanceScore({ id: "b", title: "晴天 (伴奏)", artist: "周杰伦" }, "晴天", false);
-    const clipped = calculateRelevanceScore({ id: "c", title: "晴天 片段", artist: "周杰伦" }, "晴天", false);
-    const live = calculateRelevanceScore({ id: "d", title: "晴天 Live", artist: "周杰伦" }, "晴天", false);
-    const cover = calculateRelevanceScore({ id: "e", title: "晴天 (翻唱)", artist: "周杰伦" }, "晴天", false);
-    const byGroup = calculateRelevanceScore({ id: "f", title: "晴天", artist: "群星" }, "晴天", false);
+    const origin = calculateRelevanceScore(
+      { id: "a", title: "晴天", artist: "周杰伦" },
+      "晴天",
+      false
+    );
+    const karaoke = calculateRelevanceScore(
+      { id: "b", title: "晴天 (伴奏)", artist: "周杰伦" },
+      "晴天",
+      false
+    );
+    const clipped = calculateRelevanceScore(
+      { id: "c", title: "晴天 片段", artist: "周杰伦" },
+      "晴天",
+      false
+    );
+    const live = calculateRelevanceScore(
+      { id: "d", title: "晴天 Live", artist: "周杰伦" },
+      "晴天",
+      false
+    );
+    const cover = calculateRelevanceScore(
+      { id: "e", title: "晴天 (翻唱)", artist: "周杰伦" },
+      "晴天",
+      false
+    );
+    const byGroup = calculateRelevanceScore(
+      { id: "f", title: "晴天", artist: "群星" },
+      "晴天",
+      false
+    );
 
     expect(origin).toBeGreaterThan(karaoke);
     expect(origin).toBeGreaterThan(clipped);
@@ -227,12 +261,12 @@ describe("MusicDeduplicator", () => {
     const withCoverKw = calculateRelevanceScore(
       { id: "a", title: "晴天 (翻唱)", artist: "某人" },
       "晴天翻唱",
-      false,
+      false
     );
     const withoutCoverKw = calculateRelevanceScore(
       { id: "b", title: "晴天 (翻唱)", artist: "某人" },
       "晴天",
-      false,
+      false
     );
     expect(withCoverKw).toBeGreaterThan(withoutCoverKw);
   });
@@ -250,7 +284,13 @@ describe("MusicDeduplicator", () => {
 
   test("aggregateAndDeduplicateSongs：更纯正曲名与更靠前上游排名决定主实体", () => {
     const raw = [
-      { id: "qq:1", title: "晴天 (2020 Remaster)", artist: "周杰伦", durationMs: 269000, upstreamRank: 1 },
+      {
+        id: "qq:1",
+        title: "晴天 (2020 Remaster)",
+        artist: "周杰伦",
+        durationMs: 269000,
+        upstreamRank: 1,
+      },
       { id: "netease:2", title: "晴天", artist: "周杰伦", durationMs: 269000, upstreamRank: 2 },
     ];
     const out = aggregateAndDeduplicateSongs(raw, "晴天", 10);

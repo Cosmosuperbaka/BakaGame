@@ -9,15 +9,24 @@ import { AppError } from "../src/domain/Errors";
 
 describe("readEnv 环境变量与启动断言", () => {
   it("搜索与原版房使用独立密钥，旧 URL 和超时配置不再生效", () => {
-    const keys = ["AES_SECRET", "CCB_ORIGINAL_AES_SECRET", "MEILISEARCH_KEY", "CEE_MEILISEARCH_URL", "CEE_MEILISEARCH_TIMEOUT_MS"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const keys = [
+      "AES_SECRET",
+      "CCB_ORIGINAL_AES_SECRET",
+      "MEILISEARCH_KEY",
+      "CEE_MEILISEARCH_URL",
+      "CEE_MEILISEARCH_TIMEOUT_MS",
+    ] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       Bun.env.AES_SECRET = "unused";
       Bun.env.CCB_ORIGINAL_AES_SECRET = "original-secret";
       Bun.env.MEILISEARCH_KEY = "search-secret";
       Bun.env.CEE_MEILISEARCH_URL = "http://example.invalid";
       Bun.env.CEE_MEILISEARCH_TIMEOUT_MS = "invalid";
-      expect(readEnv()).toMatchObject({ ceeOriginalAesSecret: "original-secret", meilisearchKey: "search-secret" });
+      expect(readEnv()).toMatchObject({
+        ceeOriginalAesSecret: "original-secret",
+        meilisearchKey: "search-secret",
+      });
       Bun.env.MEILISEARCH_KEY = "  other-search-secret  ";
       expect(readEnv().meilisearchKey).toBe("other-search-secret");
     } finally {
@@ -29,27 +38,38 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 
   it("生产服务缺少搜索密钥时拒绝以本地搜索启动", () => {
-    const options = { env: { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: undefined } } as Parameters<typeof createServer>[0];
+    const options = {
+      env: { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: undefined },
+    } as Parameters<typeof createServer>[0];
     expect(() => createServer(options)).toThrow(AppError);
     expect(() => createServer(options)).toThrow(/MEILISEARCH_KEY/);
   });
 
   it("生产服务缺少数据库时拒绝启动", () => {
-    const options = { env: { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: "fixture-search-key" } } as Parameters<typeof createServer>[0];
+    const options = {
+      env: {
+        ...readEnv(),
+        otelDeploymentEnvironment: "production",
+        meilisearchKey: "fixture-search-key",
+      },
+    } as Parameters<typeof createServer>[0];
     expect(() => createServer(options)).toThrow(AppError);
     expect(() => createServer(options)).toThrow(/DATABASE_URL/);
   });
 
   it("SENTRY_API_TOKEN 需要 SENTRY_DSN", () => {
     const keys = ["SENTRY_DSN", "SENTRY_API_TOKEN", "SENTRY_ALLOWED_PROJECT_IDS"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       for (const key of keys) delete Bun.env[key];
       expect(readEnv().sentryApiToken).toBeUndefined();
       Bun.env.SENTRY_API_TOKEN = "fixture-token";
       expect(() => readEnv()).toThrow(/SENTRY_DSN/);
       Bun.env.SENTRY_DSN = "https://key@o1.ingest.us.sentry.io/2";
-      expect(readEnv()).toMatchObject({ sentryApiToken: "fixture-token", sentryAllowedProjectIds: ["2"] });
+      expect(readEnv()).toMatchObject({
+        sentryApiToken: "fixture-token",
+        sentryAllowedProjectIds: ["2"],
+      });
     } finally {
       for (const key of keys) {
         if (saved[key] === undefined) delete Bun.env[key];
@@ -59,23 +79,49 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 
   it("账号配置随数据库启用：密钥必填，SMTP 三项须成套，ADMIN_QQ 校验号码", () => {
-    const keys = ["DATABASE_URL", "BETTER_AUTH_SECRET", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "MAIL_FROM", "MAIL_DEV_CONSOLE", "ADMIN_QQ"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const keys = [
+      "DATABASE_URL",
+      "BETTER_AUTH_SECRET",
+      "SMTP_HOST",
+      "SMTP_PORT",
+      "SMTP_USER",
+      "SMTP_PASS",
+      "MAIL_FROM",
+      "MAIL_DEV_CONSOLE",
+      "ADMIN_QQ",
+    ] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       for (const key of keys) delete Bun.env[key];
       expect(readEnv().account).toBeUndefined();
       Bun.env.DATABASE_URL = "mysql://fixture:fixture@db.invalid:4000/bakagame";
       expect(() => readEnv()).toThrow(/BETTER_AUTH_SECRET/);
       Bun.env.BETTER_AUTH_SECRET = "x".repeat(32);
-      expect(readEnv().account).toEqual({ secret: "x".repeat(32), adminQqNumbers: [], mail: { kind: "none" } });
+      expect(readEnv().account).toEqual({
+        secret: "x".repeat(32),
+        adminQqNumbers: [],
+        mail: { kind: "none" },
+      });
       Bun.env.MAIL_DEV_CONSOLE = "true";
       Bun.env.ADMIN_QQ = "10001, 123456789";
-      expect(readEnv().account).toMatchObject({ adminQqNumbers: ["10001", "123456789"], mail: { kind: "console" } });
+      expect(readEnv().account).toMatchObject({
+        adminQqNumbers: ["10001", "123456789"],
+        mail: { kind: "console" },
+      });
       Bun.env.SMTP_HOST = "smtp.fixture.invalid";
       expect(() => readEnv()).toThrow(/SMTP_HOST、SMTP_USER、SMTP_PASS/);
       Bun.env.SMTP_USER = "noreply@fixture.invalid";
       Bun.env.SMTP_PASS = "fixture-pass";
-      expect(readEnv().account?.mail).toEqual({ kind: "smtp", smtp: { host: "smtp.fixture.invalid", port: 465, user: "noreply@fixture.invalid", pass: "fixture-pass", from: "noreply@fixture.invalid" } });
+      expect(readEnv().account?.mail).toEqual({
+        kind: "smtp",
+        smtp: {
+          host: "smtp.fixture.invalid",
+          port: 465,
+          user: "noreply@fixture.invalid",
+          pass: "fixture-pass",
+          from: "noreply@fixture.invalid",
+        },
+      });
       Bun.env.ADMIN_QQ = "0123";
       expect(() => readEnv()).toThrow(/ADMIN_QQ/);
     } finally {
@@ -87,8 +133,18 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 
   it("生产服务的账号系统必须配置 SMTP", () => {
-    const base = { ...readEnv(), otelDeploymentEnvironment: "production", meilisearchKey: "fixture-search-key" };
-    const options = { env: { ...base, account: { secret: "x".repeat(32), adminQqNumbers: [], mail: { kind: "console" } } }, database: {} } as unknown as Parameters<typeof createServer>[0];
+    const base = {
+      ...readEnv(),
+      otelDeploymentEnvironment: "production",
+      meilisearchKey: "fixture-search-key",
+    };
+    const options = {
+      env: {
+        ...base,
+        account: { secret: "x".repeat(32), adminQqNumbers: [], mail: { kind: "console" } },
+      },
+      database: {},
+    } as unknown as Parameters<typeof createServer>[0];
     expect(() => createServer(options)).toThrow(/SMTP_HOST/);
   });
 
@@ -173,7 +229,9 @@ describe("readEnv 环境变量与启动断言", () => {
 
       Bun.env.BANGUMI_ENRICHMENT_PATH = "custom/path/enrichment.sqlite";
       const customEnv = readEnv();
-      expect(customEnv.bangumiEnrichmentPath).toBe(resolve(process.cwd(), "custom/path/enrichment.sqlite"));
+      expect(customEnv.bangumiEnrichmentPath).toBe(
+        resolve(process.cwd(), "custom/path/enrichment.sqlite")
+      );
     } finally {
       if (originalPath !== undefined) {
         Bun.env.BANGUMI_ENRICHMENT_PATH = originalPath;
@@ -185,7 +243,7 @@ describe("readEnv 环境变量与启动断言", () => {
 
   it("读取 Bangumi API 地址并移除尾斜杠，图床前缀恒为 /api/bangumi", () => {
     const keys = ["BANGUMI_API_URL", "BANGUMI_IMAGES_DIR"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     const emptyDir = mkdtempSync(join(tmpdir(), "env-no-images-"));
     try {
       delete Bun.env.BANGUMI_API_URL;
@@ -208,7 +266,7 @@ describe("readEnv 环境变量与启动断言", () => {
 
   it("图床前缀写死：图床目录空不空、有没有人想改，都只能是 /api/bangumi", () => {
     const keys = ["BANGUMI_IMAGE_URL", "BANGUMI_IMAGES_DIR"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     const seededDir = mkdtempSync(join(tmpdir(), "env-images-"));
     try {
       writeFileSync(join(seededDir, "images-00.sqlite"), "");
@@ -229,7 +287,7 @@ describe("readEnv 环境变量与启动断言", () => {
 
   it("图床回源没有缺省值，只能由 BANGUMI_IMAGE_SOURCE 显式指定", () => {
     const keys = ["BANGUMI_IMAGE_SOURCE"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       // 对外前缀是相对路径，跟着它回源 = 自己回自己的死循环，所以缺省留空（只服务已缓存的图）。
       delete Bun.env.BANGUMI_IMAGE_SOURCE;
@@ -261,19 +319,32 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 
   it("运行时更新器缺省只在生产开启，速率与玩家规模可调", () => {
-    const keys = ["BANGUMI_UPDATER_ENABLED", "BANGUMI_UPDATER_MIN_RATE", "BANGUMI_UPDATER_MAX_RATE", "BANGUMI_UPDATER_PLAYER_SCALE"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const keys = [
+      "BANGUMI_UPDATER_ENABLED",
+      "BANGUMI_UPDATER_MIN_RATE",
+      "BANGUMI_UPDATER_MAX_RATE",
+      "BANGUMI_UPDATER_PLAYER_SCALE",
+    ] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       for (const key of keys) delete Bun.env[key];
       // 缺省走的是「非生产不开」：E2E 与本地开发不该打线上上游。
       expect(readEnv().bangumiUpdaterEnabled).toBe(false);
-      expect(readEnv()).toMatchObject({ bangumiUpdaterMinRate: 10, bangumiUpdaterMaxRate: 100, bangumiUpdaterPlayerScale: 20 });
+      expect(readEnv()).toMatchObject({
+        bangumiUpdaterMinRate: 10,
+        bangumiUpdaterMaxRate: 100,
+        bangumiUpdaterPlayerScale: 20,
+      });
       Bun.env.BANGUMI_UPDATER_ENABLED = "true";
       expect(readEnv().bangumiUpdaterEnabled).toBe(true);
       Bun.env.BANGUMI_UPDATER_MIN_RATE = "5";
       Bun.env.BANGUMI_UPDATER_MAX_RATE = "50";
       Bun.env.BANGUMI_UPDATER_PLAYER_SCALE = "10";
-      expect(readEnv()).toMatchObject({ bangumiUpdaterMinRate: 5, bangumiUpdaterMaxRate: 50, bangumiUpdaterPlayerScale: 10 });
+      expect(readEnv()).toMatchObject({
+        bangumiUpdaterMinRate: 5,
+        bangumiUpdaterMaxRate: 50,
+        bangumiUpdaterPlayerScale: 10,
+      });
     } finally {
       for (const key of keys) {
         if (saved[key] === undefined) delete Bun.env[key];
@@ -284,7 +355,7 @@ describe("readEnv 环境变量与启动断言", () => {
 
   it("文档页缺省开启，标记为 production 时自动关闭但仍可显式打开", () => {
     const keys = ["OPENAPI_ENABLED", "DEPLOYMENT_ENVIRONMENT"] as const;
-    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
       for (const key of keys) delete Bun.env[key];
       expect(readEnv().openapiEnabled).toBe(true);
@@ -302,10 +373,15 @@ describe("readEnv 环境变量与启动断言", () => {
   });
 });
 
-const deploymentKeys = ["DEPLOYMENT_ENVIRONMENT", "OTEL_DEPLOYMENT_ENVIRONMENT", "OTEL_RESOURCE_ATTRIBUTES", "NODE_ENV"] as const;
+const deploymentKeys = [
+  "DEPLOYMENT_ENVIRONMENT",
+  "OTEL_DEPLOYMENT_ENVIRONMENT",
+  "OTEL_RESOURCE_ATTRIBUTES",
+  "NODE_ENV",
+] as const;
 
 it("遥测环境保留完整优先级，缺省 development，明确的 production/test 不被覆盖", () => {
-  const saved = Object.fromEntries(deploymentKeys.map(key => [key, Bun.env[key]]));
+  const saved = Object.fromEntries(deploymentKeys.map((key) => [key, Bun.env[key]]));
   try {
     for (const key of deploymentKeys) delete Bun.env[key];
     expect(readEnv().otelDeploymentEnvironment).toBe("development");
@@ -315,7 +391,8 @@ it("遥测环境保留完整优先级，缺省 development，明确的 productio
     expect(readEnv().otelDeploymentEnvironment).toBe("development");
     Bun.env.NODE_ENV = "production";
     expect(readEnv().otelDeploymentEnvironment).toBe("production");
-    Bun.env.OTEL_RESOURCE_ATTRIBUTES = "service.name=fixture,deployment.environment=resource%2Dstaging";
+    Bun.env.OTEL_RESOURCE_ATTRIBUTES =
+      "service.name=fixture,deployment.environment=resource%2Dstaging";
     expect(readEnv().otelDeploymentEnvironment).toBe("resource-staging");
     Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT = "otel-staging";
     expect(readEnv().otelDeploymentEnvironment).toBe("otel-staging");
@@ -333,7 +410,8 @@ it("遥测环境保留完整优先级，缺省 development，明确的 productio
     expect(readEnv().otelDeploymentEnvironment).toBe("development");
   } finally {
     for (const key of deploymentKeys) {
-      if (saved[key] === undefined) delete Bun.env[key]; else Bun.env[key] = saved[key];
+      if (saved[key] === undefined) delete Bun.env[key];
+      else Bun.env[key] = saved[key];
     }
   }
 });

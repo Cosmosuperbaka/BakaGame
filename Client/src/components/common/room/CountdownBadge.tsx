@@ -28,31 +28,33 @@ export function CountdownBadge(props: { deadlineAt: number } | { secondsLeft: nu
   const milestone = announcedMilestone(secondsLeft);
   return (
     <>
-    <Badge variant={urgent ? "destructive" : "outline"} className="font-mono" role="timer">
-      {/* 末段的脉动表达「快到时间了」这一持续状态；换 key 让脉动从头开始，回到常态时直接静止。 */}
-      <motion.span
-        key={urgent ? "urgent" : "calm"}
-        className="flex"
-        aria-hidden="true"
-        {...(urgent ? urgentPulse : undefined)}
-      >
-        <Clock3 className="h-3.5 w-3.5" />
-      </motion.span>
-      {/* 每秒换一个节点，新值从贴近终值的位置顶上来，连续刷新不闪。 */}
-      <motion.span
-        key={secondsLeft}
-        initial={readoutTick.initial}
-        animate={readoutTick.animate}
-        transition={readoutTick.transition}
-        className="tabular-nums"
-        aria-hidden="true"
-      >
-        {secondsLeft}s
-      </motion.span>
-      <span className="sr-only">剩余 {secondsLeft} 秒</span>
-    </Badge>
-    {/* 播报节点放在徽章外：读屏停在徽章上只读到当前秒数，不重复读出节点文案。sr-only 绝对定位，不占所在行的间距。 */}
-    <span className="sr-only" aria-live="polite">{milestone === null ? "" : `剩余 ${milestone} 秒`}</span>
+      <Badge variant={urgent ? "destructive" : "outline"} className="font-mono" role="timer">
+        {/* 末段的脉动表达「快到时间了」这一持续状态；换 key 让脉动从头开始，回到常态时直接静止。 */}
+        <motion.span
+          key={urgent ? "urgent" : "calm"}
+          className="flex"
+          aria-hidden="true"
+          {...(urgent ? urgentPulse : undefined)}
+        >
+          <Clock3 className="h-3.5 w-3.5" />
+        </motion.span>
+        {/* 每秒换一个节点，新值从贴近终值的位置顶上来，连续刷新不闪。 */}
+        <motion.span
+          key={secondsLeft}
+          initial={readoutTick.initial}
+          animate={readoutTick.animate}
+          transition={readoutTick.transition}
+          className="tabular-nums"
+          aria-hidden="true"
+        >
+          {secondsLeft}s
+        </motion.span>
+        <span className="sr-only">剩余 {secondsLeft} 秒</span>
+      </Badge>
+      {/* 播报节点放在徽章外：读屏停在徽章上只读到当前秒数，不重复读出节点文案。sr-only 绝对定位，不占所在行的间距。 */}
+      <span className="sr-only" aria-live="polite">
+        {milestone === null ? "" : `剩余 ${milestone} 秒`}
+      </span>
     </>
   );
 }

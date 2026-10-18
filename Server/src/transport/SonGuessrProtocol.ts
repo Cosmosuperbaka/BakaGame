@@ -20,39 +20,41 @@ export const AnimeAutoFiltersSchema = t.Object(
     ranking: t.Optional(t.Union([t.Literal("all"), t.Literal("year")])),
     subjectLimit: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
     songMinPopularity: t.Optional(MinPopularitySchema),
-    trackKinds: t.Optional(t.Array(
-      t.Union([
-        t.Literal("opening"),
-        t.Literal("ending"),
-        t.Literal("insert"),
-        t.Literal("theme"),
-        t.Literal("ost"),
-        t.Literal("special"),
-        t.Literal("character"),
-        t.Literal("remix"),
-        t.Literal("doujin"),
-        t.Literal("image"),
-        t.Literal("vocaloid"),
-        t.Literal("drama"),
-        t.Literal("vocal"),
-        t.Literal("radio"),
-        t.Literal("arrange"),
-        t.Literal("single"),
-        t.Literal("collection"),
-        t.Literal("reading"),
-        t.Literal("artistAlbum"),
-      ]),
-      { maxItems: 19 },
-    )),
+    trackKinds: t.Optional(
+      t.Array(
+        t.Union([
+          t.Literal("opening"),
+          t.Literal("ending"),
+          t.Literal("insert"),
+          t.Literal("theme"),
+          t.Literal("ost"),
+          t.Literal("special"),
+          t.Literal("character"),
+          t.Literal("remix"),
+          t.Literal("doujin"),
+          t.Literal("image"),
+          t.Literal("vocaloid"),
+          t.Literal("drama"),
+          t.Literal("vocal"),
+          t.Literal("radio"),
+          t.Literal("arrange"),
+          t.Literal("single"),
+          t.Literal("collection"),
+          t.Literal("reading"),
+          t.Literal("artistAlbum"),
+        ]),
+        { maxItems: 19 }
+      )
+    ),
   },
-  { additionalProperties: false },
+  { additionalProperties: false }
 );
 
 const EmptyPayloadSchema = t.Object({}, { additionalProperties: false });
 
 const createMessageSchema = <TType extends string, TPayload extends TSchema>(
   type: TType,
-  payload: TPayload,
+  payload: TPayload
 ) =>
   t.Object(
     {
@@ -63,7 +65,7 @@ const createMessageSchema = <TType extends string, TPayload extends TSchema>(
       sessionToken: t.Optional(t.String({ maxLength: 128 })),
       payload,
     },
-    { additionalProperties: false },
+    { additionalProperties: false }
   );
 
 export const SonGuessrMessageSchemas = {
@@ -80,8 +82,8 @@ export const SonGuessrMessageSchemas = {
         userName: t.String({ minLength: 1, maxLength: 32 }),
         solo: t.Optional(t.Boolean()),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.join": createMessageSchema(
     "song.room.join",
@@ -90,8 +92,8 @@ export const SonGuessrMessageSchemas = {
         userName: t.String({ minLength: 1, maxLength: 32 }),
         password: t.Optional(t.String({ maxLength: 64 })),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.reconnect": createMessageSchema(
     "song.room.reconnect",
@@ -100,8 +102,8 @@ export const SonGuessrMessageSchemas = {
         roomId: t.String({ minLength: 1, maxLength: 32 }),
         sessionToken: t.String({ minLength: 1, maxLength: 128 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.leave": createMessageSchema("song.room.leave", EmptyPayloadSchema),
   "song.room.requestSync": createMessageSchema("song.room.requestSync", EmptyPayloadSchema),
@@ -111,8 +113,8 @@ export const SonGuessrMessageSchemas = {
       {
         ready: t.Boolean(),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.player.setSpectator": createMessageSchema(
     "song.player.setSpectator",
@@ -120,8 +122,8 @@ export const SonGuessrMessageSchemas = {
       {
         spectator: t.Boolean(),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.player.setTeam": createMessageSchema(
     "song.player.setTeam",
@@ -129,8 +131,8 @@ export const SonGuessrMessageSchemas = {
       {
         team: t.Union([t.Integer({ minimum: 1, maximum: SONGUESSR_MAX_TEAM }), t.Null()]),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.updateSettings": createMessageSchema(
     "song.room.updateSettings",
@@ -152,8 +154,8 @@ export const SonGuessrMessageSchemas = {
         bloodMode: t.Optional(t.Boolean()),
         showGuessTimer: t.Optional(t.Boolean()),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.kick": createMessageSchema(
     "song.room.kick",
@@ -161,8 +163,8 @@ export const SonGuessrMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.room.transferHost": createMessageSchema(
     "song.room.transferHost",
@@ -170,8 +172,8 @@ export const SonGuessrMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.chat.send": createMessageSchema(
     "song.chat.send",
@@ -179,8 +181,8 @@ export const SonGuessrMessageSchemas = {
       {
         text: t.String({ minLength: 1, maxLength: 500 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.auth.qr.create": createMessageSchema(
     "song.auth.qr.create",
@@ -189,8 +191,8 @@ export const SonGuessrMessageSchemas = {
         platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq")])),
         type: t.Optional(t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")])),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.auth.qr.check": createMessageSchema(
     "song.auth.qr.check",
@@ -200,8 +202,8 @@ export const SonGuessrMessageSchemas = {
         key: t.String({ minLength: 1, maxLength: 512 }),
         type: t.Optional(t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")])),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.auth.useCookie": createMessageSchema(
     "song.auth.useCookie",
@@ -210,8 +212,8 @@ export const SonGuessrMessageSchemas = {
         platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq")])),
         cookie: t.String({ minLength: 1, maxLength: MAX_SONGUESSR_COOKIE_LENGTH }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.auth.clear": createMessageSchema(
     "song.auth.clear",
@@ -219,8 +221,8 @@ export const SonGuessrMessageSchemas = {
       {
         platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq"), t.Literal("all")])),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.music.search": createMessageSchema(
     "song.music.search",
@@ -228,8 +230,8 @@ export const SonGuessrMessageSchemas = {
       {
         keyword: t.String({ minLength: 1, maxLength: 200 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.music.playlist.resolve": createMessageSchema(
     "song.music.playlist.resolve",
@@ -237,8 +239,8 @@ export const SonGuessrMessageSchemas = {
       {
         value: t.String({ minLength: 1, maxLength: 500 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.music.artist.search": createMessageSchema(
     "song.music.artist.search",
@@ -246,22 +248,22 @@ export const SonGuessrMessageSchemas = {
       {
         keyword: t.String({ minLength: 1, maxLength: 200 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.bangumi.search": createMessageSchema(
     "song.bangumi.search",
     t.Object(
       { keyword: t.String({ minLength: 1, maxLength: 200 }) },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.bangumi.songs": createMessageSchema(
     "song.bangumi.songs",
     t.Object(
       { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.start": createMessageSchema("song.game.start", EmptyPayloadSchema),
   "song.game.chooseSubmitter": createMessageSchema(
@@ -270,8 +272,8 @@ export const SonGuessrMessageSchemas = {
       {
         playerId: t.String({ minLength: 1, maxLength: 64 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.submitSong": createMessageSchema(
     "song.game.submitSong",
@@ -280,8 +282,8 @@ export const SonGuessrMessageSchemas = {
         // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
         songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.submitAnime": createMessageSchema(
     "song.game.submitAnime",
@@ -290,8 +292,8 @@ export const SonGuessrMessageSchemas = {
         subjectId: t.String({ minLength: 1, maxLength: 32 }),
         songId: t.Optional(t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" })),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.audioReady": createMessageSchema(
     "song.game.audioReady",
@@ -299,15 +301,12 @@ export const SonGuessrMessageSchemas = {
       {
         roundNumber: t.Integer({ minimum: 1 }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.audioFailed": createMessageSchema(
     "song.game.audioFailed",
-    t.Object(
-      { roundNumber: t.Integer({ minimum: 1 }) },
-      { additionalProperties: false },
-    ),
+    t.Object({ roundNumber: t.Integer({ minimum: 1 }) }, { additionalProperties: false })
   ),
   "song.game.guess": createMessageSchema(
     "song.game.guess",
@@ -316,15 +315,15 @@ export const SonGuessrMessageSchemas = {
         // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
         songId: t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" }),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.guessAnime": createMessageSchema(
     "song.game.guessAnime",
     t.Object(
       { subjectId: t.String({ minLength: 1, maxLength: 32 }) },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.game.giveUp": createMessageSchema("song.game.giveUp", EmptyPayloadSchema),
   "song.game.skipRound": createMessageSchema("song.game.skipRound", EmptyPayloadSchema),
@@ -336,8 +335,8 @@ export const SonGuessrMessageSchemas = {
       {
         count: t.Optional(t.Integer({ minimum: 1 })),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
   "song.test.removeBot": createMessageSchema(
     "song.test.removeBot",
@@ -345,14 +344,12 @@ export const SonGuessrMessageSchemas = {
       {
         count: t.Optional(t.Integer({ minimum: 1 })),
       },
-      { additionalProperties: false },
-    ),
+      { additionalProperties: false }
+    )
   ),
 };
 
-export const SonGuessrClientMessageSchema = schemaUnion(
-  Object.values(SonGuessrMessageSchemas),
-);
+export const SonGuessrClientMessageSchema = schemaUnion(Object.values(SonGuessrMessageSchemas));
 
 /**
  * 严格类型校验与解析 SonGuessr 客户端消息。
@@ -378,12 +375,18 @@ export const parseSonGuessrMessage = (raw: unknown): SonGuessrClientMessage => {
     throw new AppError("INVALID_MESSAGE", "消息类型 type 必须为字符串");
   }
 
-  const schema = Object.hasOwn(SonGuessrMessageSchemas, type) ? (SonGuessrMessageSchemas as Record<string, TSchema>)[type] : undefined;
+  const schema = Object.hasOwn(SonGuessrMessageSchemas, type)
+    ? (SonGuessrMessageSchemas as Record<string, TSchema>)[type]
+    : undefined;
   if (!schema) {
     throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知消息类型: ${type}`);
   }
 
-  if (msgObj.payload === null || typeof msgObj.payload !== "object" || Array.isArray(msgObj.payload)) {
+  if (
+    msgObj.payload === null ||
+    typeof msgObj.payload !== "object" ||
+    Array.isArray(msgObj.payload)
+  ) {
     throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
   }
 

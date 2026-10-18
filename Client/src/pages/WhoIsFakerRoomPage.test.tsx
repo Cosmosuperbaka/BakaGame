@@ -17,7 +17,9 @@ import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();
 
-const createMockSnapshot = (overrides: Partial<WhoIsFakerRoomSnapshot> = {}): WhoIsFakerRoomSnapshot => ({
+const createMockSnapshot = (
+  overrides: Partial<WhoIsFakerRoomSnapshot> = {}
+): WhoIsFakerRoomSnapshot => ({
   roomId: "FAKER_ROOM",
   name: "卧底测试房",
   visibility: "public",
@@ -84,7 +86,7 @@ const createMockSnapshot = (overrides: Partial<WhoIsFakerRoomSnapshot> = {}): Wh
 });
 
 const createMockPrivateState = (
-  overrides: Partial<WhoIsFakerPrivateState> = {},
+  overrides: Partial<WhoIsFakerPrivateState> = {}
 ): WhoIsFakerPrivateState => ({
   playerId: "player-1",
   sessionToken: "token-1",
@@ -108,7 +110,10 @@ function setRoundPhase(phase: WhoIsFakerRoomSnapshot["status"]["phase"], roundId
           day: roundId === undefined ? 0 : 1,
           ...(phase === "description" ? { speechOrder: ["player-2", "player-3", "player-1"] } : {}),
         },
-        players: base.players.map((player) => ({ ...player, roundStatus: roundId === undefined ? "waiting" : "alive" })),
+        players: base.players.map((player) => ({
+          ...player,
+          roundStatus: roundId === undefined ? "waiting" : "alive",
+        })),
       }),
     });
   });
@@ -121,7 +126,7 @@ function renderRoomPage(roomId = "FAKER_ROOM") {
         <Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} />
         <Route path="/whoisfaker" element={<div>WhoIsFaker 游戏大厅</div>} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
@@ -302,7 +307,10 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     const pane = () => within(container.querySelector<HTMLElement>("section > aside")!);
 
     fireEvent.click(pane().getByRole("button", { name: "展开发言历史" }));
-    expect(pane().getByRole("button", { name: "收起发言历史" })).toHaveAttribute("aria-expanded", "true");
+    expect(pane().getByRole("button", { name: "收起发言历史" })).toHaveAttribute(
+      "aria-expanded",
+      "true"
+    );
 
     // 同一局内换阶段，展开状态保留
     setRoundPhase("voting", "round-100");
@@ -313,11 +321,18 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     expect(pane().queryByRole("button", { name: /发言历史/ })).not.toBeInTheDocument();
 
     setRoundPhase("description", "round-101");
-    expect(pane().getByRole("button", { name: "展开发言历史" })).toHaveAttribute("aria-expanded", "false");
+    expect(pane().getByRole("button", { name: "展开发言历史" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    );
   });
 
   it("手机发言历史抽屉在回到等待时关闭，下一局不会自己重新打开", () => {
-    vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
     try {
       const { container } = renderRoomPage();
       setRoundPhase("description", "round-100");
@@ -331,7 +346,10 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
 
       setRoundPhase("description", "round-101");
       expect(screen.queryByRole("dialog", { name: "发言历史" })).not.toBeInTheDocument();
-      expect(header().getByRole("button", { name: "展开发言历史" })).toHaveAttribute("aria-expanded", "false");
+      expect(header().getByRole("button", { name: "展开发言历史" })).toHaveAttribute(
+        "aria-expanded",
+        "false"
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -352,9 +370,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
           summary: {
             winner: "undercover",
             reason: "卧底成功隐藏到最后，获得胜利",
-            awardedScores: [
-              { playerId: "player-2", delta: 3 },
-            ],
+            awardedScores: [{ playerId: "player-2", delta: 3 }],
             revealedRoles: [
               { playerId: "player-1", role: "civilian" },
               { playerId: "player-2", role: "undercover" },
@@ -452,7 +468,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
             <Route path="/whoisfaker" element={<div>WhoIsFaker 游戏大厅</div>} />
           </Routes>
         </MemoryRouter>
-      </StrictMode>,
+      </StrictMode>
     );
     expect(leaveRoom).not.toHaveBeenCalled();
 
@@ -479,7 +495,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
           <Route path="/whoisfaker/room/:roomId" element={<WhoIsFakerRoomPage />} />
           <Route path="/whoisfaker" element={<div>WhoIsFaker 游戏大厅</div>} />
         </Routes>
-      </MemoryRouter>,
+      </MemoryRouter>
     );
 
     expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();

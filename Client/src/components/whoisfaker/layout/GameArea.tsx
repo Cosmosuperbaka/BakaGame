@@ -19,7 +19,11 @@ import { TestController } from "./TestController";
 export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const isTestRoom = snapshot?.testMode ?? false;
-  const [wordDraft, setWordDraft] = useState({ civilianWord: "", undercoverWord: "", blankHint: "" });
+  const [wordDraft, setWordDraft] = useState({
+    civilianWord: "",
+    undercoverWord: "",
+    blankHint: "",
+  });
 
   if (!snapshot) return null;
 
@@ -46,33 +50,38 @@ export function GameArea({ wordRevealed = false }: { wordRevealed?: boolean }) {
       reserveBottom={isTestRoom}
       // 不随阶段切换的区块：掉线待决可能挂在任何进行中的阶段上，限时栏跨子阶段保留，
       // 白板猜词入口排在限时栏下方，不压在倒计时条上
-      before={<>
-        <DisconnectHandler />
-        <PhaseTimerControl className="mx-auto mb-6 max-w-2xl" />
-        <BlankGuessButton />
-      </>}
+      before={
+        <>
+          <DisconnectHandler />
+          <PhaseTimerControl className="mx-auto mb-6 max-w-2xl" />
+          <BlankGuessButton />
+        </>
+      }
       onPhaseSettled={() => {
         // 回到等待阶段时清空上一局的出题草稿，避免下一局沿用旧词。
-        if (phase === "waiting") setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
+        if (phase === "waiting")
+          setWordDraft({ civilianWord: "", undercoverWord: "", blankHint: "" });
       }}
-      overlays={<>
-        {isTestRoom ? <TestController /> : null}
+      overlays={
+        <>
+          {isTestRoom ? <TestController /> : null}
 
-        {/* 揭词背板。词语本体由 RoomPage 的 AssignedWord 承担，
+          {/* 揭词背板。词语本体由 RoomPage 的 AssignedWord 承担，
             此处只压暗底层内容，让注意力先落在词语上。 */}
-        <AnimatePresence>
-          {wordRevealed ? (
-            <motion.div
-              key="reveal-backdrop"
-              variants={backdrop}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="pointer-events-none absolute inset-0 z-overlay bg-panel/90 backdrop-blur-sm"
-            />
-          ) : null}
-        </AnimatePresence>
-      </>}
+          <AnimatePresence>
+            {wordRevealed ? (
+              <motion.div
+                key="reveal-backdrop"
+                variants={backdrop}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="pointer-events-none absolute inset-0 z-overlay bg-panel/90 backdrop-blur-sm"
+              />
+            ) : null}
+          </AnimatePresence>
+        </>
+      }
     >
       <PhaseContent wordDraft={wordDraft} onWordDraftChange={setWordDraft} />
     </PhaseStage>
@@ -92,16 +101,27 @@ function PhaseContent({
   const tieBreakStage = useWhoIsFakerStore((s) => s.snapshot?.status.tieBreakStage);
 
   switch (phase) {
-    case "waiting":          return <WaitingPhase />;
-    case "assigningQuestioner": return <AssignQuestionerPhase />;
-    case "wordSubmission":   return <WordSubmissionPhase wordDraft={wordDraft} onWordDraftChange={onWordDraftChange} />;
-    case "description":      return <DescriptionPhase />;
-    case "tieBreak":         return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
-    case "voting":           return <VotingPhase />;
-    case "night":            return <NightPhase />;
-    case "blankGuess":       return <BlankGuessStage />;
-    case "feedback":         return <FeedbackPhase />;
-    case "gameOver":         return <GameOverPhase />;
-    default:                 return <div className="py-12 text-center text-muted-foreground">未知阶段</div>;
+    case "waiting":
+      return <WaitingPhase />;
+    case "assigningQuestioner":
+      return <AssignQuestionerPhase />;
+    case "wordSubmission":
+      return <WordSubmissionPhase wordDraft={wordDraft} onWordDraftChange={onWordDraftChange} />;
+    case "description":
+      return <DescriptionPhase />;
+    case "tieBreak":
+      return tieBreakStage === "vote" ? <VotingPhase /> : <DescriptionPhase />;
+    case "voting":
+      return <VotingPhase />;
+    case "night":
+      return <NightPhase />;
+    case "blankGuess":
+      return <BlankGuessStage />;
+    case "feedback":
+      return <FeedbackPhase />;
+    case "gameOver":
+      return <GameOverPhase />;
+    default:
+      return <div className="py-12 text-center text-muted-foreground">未知阶段</div>;
   }
 }

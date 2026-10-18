@@ -26,8 +26,14 @@ import {
 
 // 普通 provider 回归禁止真实 AMLL 回源，专项通过 amllFetcher 注入。
 const originalFetch = globalThis.fetch;
-beforeEach(() => { globalThis.fetch = (async () => { throw new Error("测试禁止网络请求"); }) as unknown as typeof fetch; });
-afterEach(() => { globalThis.fetch = originalFetch; });
+beforeEach(() => {
+  globalThis.fetch = (async () => {
+    throw new Error("测试禁止网络请求");
+  }) as unknown as typeof fetch;
+});
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 describe("NeteaseMusicProvider", () => {
   test("filters instrumental placeholders without removing ordinary lyrics", () => {
@@ -37,13 +43,15 @@ describe("NeteaseMusicProvider", () => {
     expect(isInstrumentalLyricLine("instrumental2")).toBe(true);
     expect(isInstrumentalLyricLine("we still hear music tonight")).toBe(false);
 
-    const lyrics = parseLrc([
-      "[00:01.00]Music",
-      "[00:02.00][Music]",
-      "[00:03.00]Music - Instrumental",
-      "[00:04.00]verse one",
-      "[00:05.00]verse two",
-    ].join("\n"));
+    const lyrics = parseLrc(
+      [
+        "[00:01.00]Music",
+        "[00:02.00][Music]",
+        "[00:03.00]Music - Instrumental",
+        "[00:04.00]verse one",
+        "[00:05.00]verse two",
+      ].join("\n")
+    );
     expect(sanitizeLyrics(lyrics, { title: "answer", artist: "artist" })).toEqual([
       { time: 4_000, endTime: 5_000, text: "verse one" },
       { time: 5_000, endTime: 10_000, text: "verse two" },
@@ -57,8 +65,20 @@ describe("NeteaseMusicProvider", () => {
           body: {
             playlist: { id: 42, name: "自动题库", trackCount: 2 },
             songs: [
-              { id: 1, name: "高热度", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 100_000 },
-              { id: 2, name: "普通", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 999 },
+              {
+                id: 1,
+                name: "高热度",
+                ar: [{ id: 7, name: "歌手甲" }],
+                al: { name: "专辑" },
+                pop: 100_000,
+              },
+              {
+                id: 2,
+                name: "普通",
+                ar: [{ id: 7, name: "歌手甲" }],
+                al: { name: "专辑" },
+                pop: 999,
+              },
             ],
           },
         }),
@@ -66,9 +86,21 @@ describe("NeteaseMusicProvider", () => {
           body: { result: type === 100 ? { artists: [{ id: 7, name: "歌手甲" }] } : { songs: [] } },
         }),
         artist_songs: async () => ({
-          body: { songs: [{ id: 1, name: "高热度", ar: [{ id: 7, name: "歌手甲" }], al: { name: "专辑" }, pop: 100_000 }] },
+          body: {
+            songs: [
+              {
+                id: 1,
+                name: "高热度",
+                ar: [{ id: 7, name: "歌手甲" }],
+                al: { name: "专辑" },
+                pop: 100_000,
+              },
+            ],
+          },
         }),
-        song_red_count: async () => ({ body: { code: 200, data: { count: 123_456, countDesc: "100w+" } } }),
+        song_red_count: async () => ({
+          body: { code: 200, data: { count: 123_456, countDesc: "100w+" } },
+        }),
       }),
     });
 
@@ -88,9 +120,19 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         cloudsearch: async ({ type }: { type: number }) => ({
           body: {
-            result: type === 10
-              ? { albums: [{ id: 55_900, name: "風がそよぐ場所", artist: { id: 1, name: "小松未歩" }, size: 2 }] }
-              : { songs: [] },
+            result:
+              type === 10
+                ? {
+                    albums: [
+                      {
+                        id: 55_900,
+                        name: "風がそよぐ場所",
+                        artist: { id: 1, name: "小松未歩" },
+                        size: 2,
+                      },
+                    ],
+                  }
+                : { songs: [] },
           },
         }),
         // 真实响应形态：曲目在**顶层** `songs`，而 `album.songs` 是同名 / 单曲专辑上的
@@ -100,8 +142,20 @@ describe("NeteaseMusicProvider", () => {
         album: async () => ({
           body: {
             songs: [
-              { id: 591_324, name: "風がそよぐ場所", ar: [{ name: "小松未歩" }], al: { name: "風がそよぐ場所" }, dt: 261_960 },
-              { id: 591_325, name: "elephant", ar: [{ name: "小松未歩" }], al: { name: "風がそよぐ場所" }, dt: 240_000 },
+              {
+                id: 591_324,
+                name: "風がそよぐ場所",
+                ar: [{ name: "小松未歩" }],
+                al: { name: "風がそよぐ場所" },
+                dt: 261_960,
+              },
+              {
+                id: 591_325,
+                name: "elephant",
+                ar: [{ name: "小松未歩" }],
+                al: { name: "風がそよぐ場所" },
+                dt: 240_000,
+              },
             ],
             album: { id: 55_900, name: "風がそよぐ場所", songs: [] },
           },
@@ -110,7 +164,12 @@ describe("NeteaseMusicProvider", () => {
     });
 
     await expect(provider.searchAlbums("風がそよぐ場所")).resolves.toEqual([
-      expect.objectContaining({ id: "55900", name: "風がそよぐ場所", artist: "小松未歩", songCount: 2 }),
+      expect.objectContaining({
+        id: "55900",
+        name: "風がそよぐ場所",
+        artist: "小松未歩",
+        songCount: 2,
+      }),
     ]);
     await expect(provider.getAlbumSongs("55900")).resolves.toEqual([
       expect.objectContaining({ id: "591324", title: "風がそよぐ場所", artist: "小松未歩" }),
@@ -127,28 +186,32 @@ describe("NeteaseMusicProvider", () => {
   });
 
   test("过滤作词作曲编曲与标题信息并重新衔接时间轴", () => {
-    const lyrics = parseLrc([
-      "[00:01.00]答案歌",
-      "[00:02.00]作词人：某某",
-      "[00:03.00]第一句歌词",
-      "[00:04.00]我们在唱答案歌",
-      "[00:05.00]词曲：某某",
-      "[00:07.00]第二句歌词",
-      "[00:09.00]编曲人：某某",
-      "[00:10.00]Production Coordination: Stanley Leung",
-      "[00:11.00]Keyboards & Programming: 某某",
-      "[00:12.00]Drums: 某某",
-      "[00:13.00]Strings Arranged & Conducted by 某某",
-      "[00:14.00]Recorded at example studio",
-      "[00:15.00]Engineered by 某某",
-      "[00:16.00]测试歌手",
-    ].join("\n"));
+    const lyrics = parseLrc(
+      [
+        "[00:01.00]答案歌",
+        "[00:02.00]作词人：某某",
+        "[00:03.00]第一句歌词",
+        "[00:04.00]我们在唱答案歌",
+        "[00:05.00]词曲：某某",
+        "[00:07.00]第二句歌词",
+        "[00:09.00]编曲人：某某",
+        "[00:10.00]Production Coordination: Stanley Leung",
+        "[00:11.00]Keyboards & Programming: 某某",
+        "[00:12.00]Drums: 某某",
+        "[00:13.00]Strings Arranged & Conducted by 某某",
+        "[00:14.00]Recorded at example studio",
+        "[00:15.00]Engineered by 某某",
+        "[00:16.00]测试歌手",
+      ].join("\n")
+    );
 
-    expect(sanitizeLyrics(lyrics, {
-      title: "答案歌",
-      artist: "测试歌手",
-      album: "测试专辑",
-    })).toEqual([
+    expect(
+      sanitizeLyrics(lyrics, {
+        title: "答案歌",
+        artist: "测试歌手",
+        album: "测试专辑",
+      })
+    ).toEqual([
       { time: 3_000, endTime: 4_000, text: "第一句歌词" },
       { time: 4_000, endTime: 7_000, text: "我们在唱答案歌" },
       { time: 7_000, endTime: 12_000, text: "第二句歌词" },
@@ -156,19 +219,23 @@ describe("NeteaseMusicProvider", () => {
   });
 
   test("多歌手合唱歌曲中的单个人名元数据行会被正确过滤，真实歌词完整保留", () => {
-    const lyrics = parseLrc([
-      "[00:01.00]周杰伦",
-      "[00:02.00]费玉清",
-      "[00:04.00]（周杰伦）天青色等烟雨",
-      "[00:06.00]我不是洛天依",
-      "[00:08.00]炊烟袅袅升起",
-    ].join("\n"));
+    const lyrics = parseLrc(
+      [
+        "[00:01.00]周杰伦",
+        "[00:02.00]费玉清",
+        "[00:04.00]（周杰伦）天青色等烟雨",
+        "[00:06.00]我不是洛天依",
+        "[00:08.00]炊烟袅袅升起",
+      ].join("\n")
+    );
 
-    expect(sanitizeLyrics(lyrics, {
-      title: "千里之外",
-      artist: "周杰伦 / 费玉清 / 洛天依",
-      album: "依然范特西",
-    })).toEqual([
+    expect(
+      sanitizeLyrics(lyrics, {
+        title: "千里之外",
+        artist: "周杰伦 / 费玉清 / 洛天依",
+        album: "依然范特西",
+      })
+    ).toEqual([
       { time: 4_000, endTime: 6_000, text: "（周杰伦）天青色等烟雨" },
       { time: 6_000, endTime: 8_000, text: "我不是洛天依" },
       { time: 8_000, endTime: 13_000, text: "炊烟袅袅升起" },
@@ -410,17 +477,19 @@ describe("NeteaseMusicProvider", () => {
   });
 
   test("连排制作名单整块剔除，副歌与重复演唱歌词完整保留", () => {
-    const lyrics = parseLrc([
-      "[00:01.00]翻策：邹铁牛",
-      "[00:02.00]美工：问绮灯",
-      "[00:03.00]题字：白冰堂",
-      "[00:04.00]后期：是铁牛",
-      "[00:05.00]翻唱：悼子\\ワカイ调和剂\\夙夜\\浅安",
-      "[00:08.00]第一句真实歌词",
-      "[00:10.00]第二句真实歌词",
-      "[00:12.00]第一句真实歌词",
-      "[00:14.00]珠玉早沉浮在泥沙",
-    ].join("\n"));
+    const lyrics = parseLrc(
+      [
+        "[00:01.00]翻策：邹铁牛",
+        "[00:02.00]美工：问绮灯",
+        "[00:03.00]题字：白冰堂",
+        "[00:04.00]后期：是铁牛",
+        "[00:05.00]翻唱：悼子\\ワカイ调和剂\\夙夜\\浅安",
+        "[00:08.00]第一句真实歌词",
+        "[00:10.00]第二句真实歌词",
+        "[00:12.00]第一句真实歌词",
+        "[00:14.00]珠玉早沉浮在泥沙",
+      ].join("\n")
+    );
 
     expect(sanitizeLyrics(lyrics, { title: "珠玉", artist: "严艺丹" })).toEqual([
       { time: 8_000, endTime: 10_000, text: "第一句真实歌词" },
@@ -514,7 +583,7 @@ describe("NeteaseMusicProvider", () => {
       "Pennies and dimes – for a kiss",
       // 括号和声与对白
       "兰那罗们 —— 再见动物园合唱团（指挥：孙玥）",
-      "Y2K: \"Nah, da da dadadada nananana\"",
+      'Y2K: "Nah, da da dadadada nananana"',
       // 念白/天气预报采样（有内容的表演成分）
       "Saturday:Partly cloudy.",
       // 空格分隔拒绝名单：高频歌词开头的标签词裸写时按歌词保留
@@ -539,12 +608,7 @@ describe("NeteaseMusicProvider", () => {
       expect(isUnusableLyricLine(line)).toBe(true);
     }
     // 歌词里的 @：有空格、无团队名、或夹在句中；无 @ 的名字行保持原样。
-    for (const line of [
-      "Sing @ the top of my lungs",
-      "me@you",
-      "你@我 我@你",
-      "洛天依Official",
-    ]) {
+    for (const line of ["Sing @ the top of my lungs", "me@you", "你@我 我@你", "洛天依Official"]) {
       expect(isUnusableLyricLine(line)).toBe(false);
     }
   });
@@ -697,14 +761,16 @@ describe("NeteaseMusicProvider", () => {
           calls.push("song_detail");
           return {
             body: {
-              songs: [{
-                id: 77,
-                name: "纯音乐",
-                ar: [{ name: "演奏者" }],
-                al: { name: "器乐专辑", publishTime: Date.UTC(2024, 0, 1) },
-                pop: 66,
-                dt: 120_000,
-              }],
+              songs: [
+                {
+                  id: 77,
+                  name: "纯音乐",
+                  ar: [{ name: "演奏者" }],
+                  al: { name: "器乐专辑", publishTime: Date.UTC(2024, 0, 1) },
+                  pop: 66,
+                  dt: 120_000,
+                },
+              ],
             },
           };
         },
@@ -734,13 +800,15 @@ describe("NeteaseMusicProvider", () => {
       loadApi: async () => ({
         song_detail: async () => ({
           body: {
-            songs: [{
-              id: 78,
-              name: "纯音乐题",
-              ar: [{ name: "演奏者" }],
-              al: { name: "器乐专辑" },
-              dt: 120_000,
-            }],
+            songs: [
+              {
+                id: 78,
+                name: "纯音乐题",
+                ar: [{ name: "演奏者" }],
+                al: { name: "器乐专辑" },
+                dt: 120_000,
+              },
+            ],
           },
         }),
         lyric_new: async () => ({ body: { lrc: { lyric: "" } } }),
@@ -792,7 +860,10 @@ describe("NeteaseMusicProvider", () => {
           return {
             body: {
               code: 200,
-              data: { qrurl: "https://music.163.com/login?codekey=qr-key", qrimg: "data:image/png;base64,qr" },
+              data: {
+                qrurl: "https://music.163.com/login?codekey=qr-key",
+                qrimg: "data:image/png;base64,qr",
+              },
             },
           };
         },
@@ -875,7 +946,10 @@ describe("NeteaseMusicProvider", () => {
           return {
             body: {
               code: 200,
-              data: { qrurl: "https://music.163.com/login?codekey=session-key", qrimg: "data:image/png;base64,qr" },
+              data: {
+                qrurl: "https://music.163.com/login?codekey=session-key",
+                qrimg: "data:image/png;base64,qr",
+              },
             },
           };
         },
@@ -965,7 +1039,10 @@ describe("NeteaseMusicProvider", () => {
           return {
             body: {
               code: 200,
-              data: { qrurl: "https://music.163.com/login?codekey=custom-key", qrimg: "data:image/png;base64,custom" },
+              data: {
+                qrurl: "https://music.163.com/login?codekey=custom-key",
+                qrimg: "data:image/png;base64,custom",
+              },
             },
           };
         },
@@ -1057,9 +1134,12 @@ describe("NeteaseMusicProvider", () => {
       }),
     });
 
-    const error = await provider.createQrLogin().catch(
-      (value) => value as Error & { code?: string; details?: unknown },
-    ) as Error & { code?: string; details?: unknown };
+    const error = (await provider
+      .createQrLogin()
+      .catch((value) => value as Error & { code?: string; details?: unknown })) as Error & {
+      code?: string;
+      details?: unknown;
+    };
     expect(error).toMatchObject({ code: "MUSIC_LOGIN_RISK" });
     expect(error.message).not.toContain("private-risk-url");
     expect(JSON.stringify(error)).not.toContain("private-risk-url");
@@ -1221,64 +1301,78 @@ describe("NeteaseMusicProvider", () => {
   });
 
   test("登录状态会读取会员信息，并区分会员与非会员", async () => {
-    const createProvider = (vipCode: number, expireTime: number) => new NeteaseMusicProvider({
-      randomCNIP: false,
-      loadApi: async () => ({
-        login_status: async () => ({
-          body: {
-            data: {
-              code: 200,
-              profile: { userId: 42, nickname: "会员测试" },
+    const createProvider = (vipCode: number, expireTime: number) =>
+      new NeteaseMusicProvider({
+        randomCNIP: false,
+        loadApi: async () => ({
+          login_status: async () => ({
+            body: {
+              data: {
+                code: 200,
+                profile: { userId: 42, nickname: "会员测试" },
+              },
             },
+          }),
+          vip_info_v2: async (params: Record<string, unknown>) => {
+            expect(params).toMatchObject({ uid: "42", cookie: "MUSIC_U=test" });
+            return {
+              body: {
+                code: 200,
+                data: { associator: { vipCode, expireTime } },
+              },
+            };
           },
         }),
-        vip_info_v2: async (params: Record<string, unknown>) => {
-          expect(params).toMatchObject({ uid: "42", cookie: "MUSIC_U=test" });
-          return {
-            body: {
-              code: 200,
-              data: { associator: { vipCode, expireTime } },
-            },
-          };
-        },
-      }),
-    });
+      });
 
-    await expect(createProvider(100, Date.now() + 60_000).getLoginStatus("MUSIC_U=test"))
-      .resolves.toMatchObject({
-        account: { vipStatus: "vip", vipType: 100 },
-      });
-    await expect(createProvider(0, Date.now() - 60_000).getLoginStatus("MUSIC_U=test"))
-      .resolves.toMatchObject({
-        account: { vipStatus: "nonVip" },
-      });
+    await expect(
+      createProvider(100, Date.now() + 60_000).getLoginStatus("MUSIC_U=test")
+    ).resolves.toMatchObject({
+      account: { vipStatus: "vip", vipType: 100 },
+    });
+    await expect(
+      createProvider(0, Date.now() - 60_000).getLoginStatus("MUSIC_U=test")
+    ).resolves.toMatchObject({
+      account: { vipStatus: "nonVip" },
+    });
   });
 
   test("会员展示档位按超级黑胶 > 黑胶 > 音乐包取，到期时间与等级跟着这一档", async () => {
     const future = Date.now() + 86_400_000;
     const later = future + 86_400_000;
-    const createProvider = (data: Record<string, unknown>) => new NeteaseMusicProvider({
-      randomCNIP: false,
-      loadApi: async () => ({
-        login_status: async () => ({ body: { data: { code: 200, profile: { userId: 7, nickname: "档位测试" } } } }),
-        vip_info_v2: async () => ({ body: { code: 200, data } }),
-      }),
-    });
-    const account = async (data: Record<string, unknown>) => (await createProvider(data).getLoginStatus("MUSIC_U=tier")).account;
+    const createProvider = (data: Record<string, unknown>) =>
+      new NeteaseMusicProvider({
+        randomCNIP: false,
+        loadApi: async () => ({
+          login_status: async () => ({
+            body: { data: { code: 200, profile: { userId: 7, nickname: "档位测试" } } },
+          }),
+          vip_info_v2: async () => ({ body: { code: 200, data } }),
+        }),
+      });
+    const account = async (data: Record<string, unknown>) =>
+      (await createProvider(data).getLoginStatus("MUSIC_U=tier")).account;
 
-    expect(await account({
-      redVipLevel: 5,
-      associator: { vipCode: 100, expireTime: later },
-      redplus: { vipCode: 300, expireTime: future },
-      musicPackage: { vipCode: 220, expireTime: later },
-    })).toMatchObject({ vipStatus: "vip", vipTier: "svip", vipLevel: 5, vipExpireTime: future });
+    expect(
+      await account({
+        redVipLevel: 5,
+        associator: { vipCode: 100, expireTime: later },
+        redplus: { vipCode: 300, expireTime: future },
+        musicPackage: { vipCode: 220, expireTime: later },
+      })
+    ).toMatchObject({ vipStatus: "vip", vipTier: "svip", vipLevel: 5, vipExpireTime: future });
     // 超级黑胶已过期：退到黑胶，等级超出 7 时夹到 7。
-    expect(await account({
-      redVipLevel: 9,
-      associator: { vipCode: 100, expireTime: later },
-      redplus: { vipCode: 300, expireTime: Date.now() - 1 },
-    })).toMatchObject({ vipTier: "vip", vipLevel: 7, vipExpireTime: later });
-    const music = await account({ redVipLevel: 3, musicPackage: { vipCode: 220, expireTime: future } });
+    expect(
+      await account({
+        redVipLevel: 9,
+        associator: { vipCode: 100, expireTime: later },
+        redplus: { vipCode: 300, expireTime: Date.now() - 1 },
+      })
+    ).toMatchObject({ vipTier: "vip", vipLevel: 7, vipExpireTime: later });
+    const music = await account({
+      redVipLevel: 3,
+      musicPackage: { vipCode: 220, expireTime: future },
+    });
     expect(music).toMatchObject({ vipTier: "musicPackage", vipExpireTime: future });
     expect(music.vipLevel).toBeUndefined();
     const none = await account({ redVipLevel: 0 });
@@ -1298,8 +1392,9 @@ describe("NeteaseMusicProvider", () => {
       }),
     });
 
-    await expect(provider.getLoginStatus("MUSIC_U=expired"))
-      .rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+    await expect(provider.getLoginStatus("MUSIC_U=expired")).rejects.toMatchObject({
+      code: "MUSIC_SESSION_INVALID",
+    });
   });
 
   test("搜索缓存会合并并发请求并保持有界", async () => {
@@ -1364,7 +1459,10 @@ describe("NeteaseMusicProvider", () => {
 
     const ranges = readChinaIpRanges();
     const inChina = (ip: unknown) => {
-      const value = String(ip).split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
+      const value =
+        String(ip)
+          .split(".")
+          .reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
       return ranges.some((range) => value >= range.start && value <= range.end);
     };
 
@@ -1413,12 +1511,8 @@ describe("NeteaseMusicProvider", () => {
 
     // 凭证与出口 IP 绑定：同一份房主 cookie 无论从哪个玩家的作用域发出都必须用同一个 IP，
     // 否则登录态会按异地登录判定失效。
-    await musicIpScope.run("player:conn-a", () =>
-      provider.search("凭证甲", 20, "MUSIC_U=host-a"),
-    );
-    await musicIpScope.run("player:conn-b", () =>
-      provider.search("凭证乙", 20, "MUSIC_U=host-a"),
-    );
+    await musicIpScope.run("player:conn-a", () => provider.search("凭证甲", 20, "MUSIC_U=host-a"));
+    await musicIpScope.run("player:conn-b", () => provider.search("凭证乙", 20, "MUSIC_U=host-a"));
 
     expect(requests[0]?.realIP).toBe(requests[1]?.realIP);
   });
@@ -1528,12 +1622,14 @@ describe("NeteaseMusicProvider", () => {
     const value = ip.split(".").reduce((acc, octet) => (acc << 8) + Number(octet), 0) >>> 0;
     expect(ranges.some((range) => value >= range.start && value <= range.end)).toBe(true);
     expect(randomChineseIp(ranges, { nextFloat: () => 0.5 })).toBe(
-      randomChineseIp(ranges, { nextFloat: () => 0.5 }),
+      randomChineseIp(ranges, { nextFloat: () => 0.5 })
     );
   });
 
   test("CN 网段解析会忽略 BOM、注释与非法行并保底兜底", () => {
-    const parsed = parseChinaIpRanges("\uFEFF1.1.8.0/24\n# comment\n\nbad-line\n999.1.1.1/8\n10.0.0.0/8\n");
+    const parsed = parseChinaIpRanges(
+      "\uFEFF1.1.8.0/24\n# comment\n\nbad-line\n999.1.1.1/8\n10.0.0.0/8\n"
+    );
     expect(parsed).toHaveLength(2);
     expect(parsed[0]).toEqual({ start: 0x01010800, end: 0x010108ff, count: 256 });
     // 数据缺失时仍需产出合法 IPv4，避免彻底无法出网。
@@ -1816,14 +1912,22 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 7, name: "缓存曲", ar: [{ name: "歌手" }] }] } }),
-        song_url: async () => ({ body: { data: [{ id: 7, url: `http://music.example.com/${++urlCalls}.mp3` }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 7, name: "缓存曲", ar: [{ name: "歌手" }] }] },
+        }),
+        song_url: async () => ({
+          body: { data: [{ id: 7, url: `http://music.example.com/${++urlCalls}.mp3` }] },
+        }),
         lyric_new: async () => ({ body: { lrc: { lyric: "[00:01.00]缓存歌词" } } }),
       }),
     });
 
-    await expect(provider.getSong("7")).resolves.toMatchObject({ audioUrl: "https://music.example.com/1.mp3" });
-    await expect(provider.getSong("7")).resolves.toMatchObject({ audioUrl: "https://music.example.com/1.mp3" });
+    await expect(provider.getSong("7")).resolves.toMatchObject({
+      audioUrl: "https://music.example.com/1.mp3",
+    });
+    await expect(provider.getSong("7")).resolves.toMatchObject({
+      audioUrl: "https://music.example.com/1.mp3",
+    });
     expect(urlCalls).toBe(1);
     await expect(provider.refreshSongAudio!("7")).resolves.toBe("https://music.example.com/2.mp3");
     expect(urlCalls).toBe(2);
@@ -1837,7 +1941,9 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 15, name: "抖动曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 15, name: "抖动曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => {
           urlCalls += 1;
           return urlCalls === 1
@@ -1861,7 +1967,9 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 88, name: "版权受限曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 88, name: "版权受限曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 88, url: null, code: 404 }] } }),
         song_url_match: async ({ id }: { id: string | number }) => {
           unblockCalls += 1;
@@ -1881,14 +1989,18 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 89, name: "VIP试听曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 89, name: "VIP试听曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({
           body: {
-            data: [{
-              id: 89,
-              url: "http://trial.example.com/89.mp3",
-              freeTrialInfo: { start: 0, end: 30 },
-            }],
+            data: [
+              {
+                id: 89,
+                url: "http://trial.example.com/89.mp3",
+                freeTrialInfo: { start: 0, end: 30 },
+              },
+            ],
           },
         }),
         song_url_match: async ({ id }: { id: string | number }) => {
@@ -1910,14 +2022,18 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 94, name: "试听且解灰失败曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 94, name: "试听且解灰失败曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({
           body: {
-            data: [{
-              id: 94,
-              url: "http://trial.example.com/94.mp3",
-              freeTrialInfo: { start: 0, end: 30 },
-            }],
+            data: [
+              {
+                id: 94,
+                url: "http://trial.example.com/94.mp3",
+                freeTrialInfo: { start: 0, end: 30 },
+              },
+            ],
           },
         }),
         song_url_match: async () => ({ body: { code: 200, data: null } }),
@@ -1941,7 +2057,9 @@ describe("NeteaseMusicProvider", () => {
       unblockSourceTimeoutMs: 10,
       unblockTotalBudgetMs: 45,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 95, name: "解灰挂起曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 95, name: "解灰挂起曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 95, url: null, code: 404 }] } }),
         song_url_match: ({ source }: { source?: string }) => {
           attempted.push(String(source));
@@ -1962,7 +2080,9 @@ describe("NeteaseMusicProvider", () => {
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 90, name: "回退解灰曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 90, name: "回退解灰曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 90, url: null }] } }),
         song_url_v1: async (params: Record<string, unknown>) => {
           if (params.unblock === "true") {
@@ -1990,7 +2110,9 @@ describe("NeteaseMusicProvider", () => {
       minRequestIntervalMs: 0,
       enableGeneralUnblock: false,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 91, name: "禁用解灰曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 91, name: "禁用解灰曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 91, url: null }] } }),
         song_url_match: async () => {
           unblockCalls += 1;
@@ -2013,7 +2135,9 @@ describe("NeteaseMusicProvider", () => {
       minRequestIntervalMs: 0,
       enableGeneralUnblock: true,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 93, name: "灰链兜底曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 93, name: "灰链兜底曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 93, url: null }] } }),
         song_url_match: async ({ id, source }: { id: string | number; source?: string }) => {
           attempted.push(String(source));
@@ -2041,7 +2165,9 @@ describe("NeteaseMusicProvider", () => {
       minRequestIntervalMs: 0,
       enableGeneralUnblock: true,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 94, name: "无解曲", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 94, name: "无解曲", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({ body: { data: [{ id: 94, url: null }] } }),
         song_url_match: async ({ id, source }: { id: string | number; source?: string }) => {
           attempted.push(String(source));
@@ -2068,7 +2194,9 @@ describe("NeteaseMusicProvider", () => {
       minRequestIntervalMs: 0,
       enableGeneralUnblock: true,
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 92, name: "正常曲目", ar: [{ name: "歌手" }] }] } }),
+        song_detail: async () => ({
+          body: { songs: [{ id: 92, name: "正常曲目", ar: [{ name: "歌手" }] }] },
+        }),
         song_url: async () => ({
           body: {
             data: [{ id: 92, url: "http://official.example.com/92.mp3", freeTrialInfo: null }],
@@ -2339,7 +2467,10 @@ describe("NeteaseMusicProvider", () => {
         song_url: async () => ({ body: mockUrl }),
         lyric_new: async () => ({
           body: {
-            yrc: { lyric: "[1000,2000](1000,2000,0)何も言わないで\n[3000,2000](3000,2000,0)階段をみつめて" },
+            yrc: {
+              lyric:
+                "[1000,2000](1000,2000,0)何も言わないで\n[3000,2000](3000,2000,0)階段をみつめて",
+            },
             ytlrc: { lyric: "[00:01.00]缄默不言\n[00:03.00]紧紧盯着" },
           },
         }),
@@ -2378,7 +2509,10 @@ test("并发扫码登录各自绑定自己的会话 IP，不会互相串号", as
       login_qr_create: async (params: Record<string, unknown>) => {
         calls.push({ endpoint: "create", key: String(params.key), realIP: params.realIP });
         return {
-          body: { code: 200, data: { qrurl: "https://qr.example", qrimg: "data:image/png;base64,x" } },
+          body: {
+            code: 200,
+            data: { qrurl: "https://qr.example", qrimg: "data:image/png;base64,x" },
+          },
         };
       },
       login_qr_check: async (params: Record<string, unknown>) => {
@@ -2392,7 +2526,10 @@ test("并发扫码登录各自绑定自己的会话 IP，不会互相串号", as
       login_status: async (params: Record<string, unknown>) => {
         calls.push({ endpoint: "status", realIP: params.realIP });
         return {
-          body: { code: 200, data: { code: 200, profile: { userId: 10001, nickname: "测试用户" } } },
+          body: {
+            code: 200,
+            data: { code: 200, profile: { userId: 10001, nickname: "测试用户" } },
+          },
         };
       },
       deviceinfo_center_upload: async () => ({ body: { code: 200 } }),
@@ -2520,65 +2657,118 @@ test("歌单翻页中途失败时保留已取到的曲目", async () => {
   expect(result.songs).toHaveLength(1000);
 });
 
-
 test("角色正文分类优先于结构署名，重复副歌时间轴保留", () => {
-  const body = ["【男】山河辽阔", "【女】灯火阑珊", "合：星河灿烂", "solo：满天星辰", "rap：灯火阑珊", "男：让我用心把你留下来", "rap：看我的风景"];
+  const body = [
+    "【男】山河辽阔",
+    "【女】灯火阑珊",
+    "合：星河灿烂",
+    "solo：满天星辰",
+    "rap：灯火阑珊",
+    "男：让我用心把你留下来",
+    "rap：看我的风景",
+  ];
   for (const text of body) {
     expect(isCreditLyricLine(text)).toBe(false);
     expect(isUnusableLyricLine(text)).toBe(false);
   }
-  for (const text of ["男：", "【男】", "作词：张三", "Guitar Solo：John Smith", "版权所有：唱片公司", "采样率：44100Hz"]) expect(isUnusableLyricLine(text)).toBe(true);
-  const lines = [...body, body[0]].map((text, index) => ({ time: index * 1000, endTime: (index + 1) * 1000, text }));
-  expect(sanitizeLyrics(lines, { title: "答案", artist: "歌手" }).map(line => line.text)).toEqual([...body, body[0]]);
+  for (const text of [
+    "男：",
+    "【男】",
+    "作词：张三",
+    "Guitar Solo：John Smith",
+    "版权所有：唱片公司",
+    "采样率：44100Hz",
+  ])
+    expect(isUnusableLyricLine(text)).toBe(true);
+  const lines = [...body, body[0]].map((text, index) => ({
+    time: index * 1000,
+    endTime: (index + 1) * 1000,
+    text,
+  }));
+  expect(sanitizeLyrics(lines, { title: "答案", artist: "歌手" }).map((line) => line.text)).toEqual(
+    [...body, body[0]]
+  );
 });
 
-
-const amllTtmlFixture = (text = "恢复后的歌词正文") => `<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="0:01.000" end="0:04.000"><span begin="0:01.000" end="0:04.000">${text}</span></p></div></body></tt>`;
+const amllTtmlFixture = (text = "恢复后的歌词正文") =>
+  `<?xml version="1.0"?><tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="0:01.000" end="0:04.000"><span begin="0:01.000" end="0:04.000">${text}</span></p></div></body></tt>`;
 const amllResponse = () => Response.json({ status: 200, data: { lyrics: amllTtmlFixture() } });
 
 describe("AMLL 确定缺失与瞬态失败缓存边界", () => {
-  for (const failure of [503, 429, "abort", "json", "invalid", "empty"] as const) test(`${failure} 当次降级但恢复后同键回源`, async () => {
-    let calls = 0;
-    const provider = new NeteaseMusicProvider({ amllRequestTimeoutMs: 20, amllFetcher: async () => {
-      if (++calls > 1) return amllResponse();
-      if (typeof failure === "number") return new Response(null, { status: failure });
-      if (failure === "abort") return new Promise<Response>(() => {});
-      if (failure === "json") return new Response("not-json");
-      return Response.json({ status: 200, data: { lyrics: failure === "empty" ? "" : "<invalid>" } });
-    } });
-    expect(await provider.getAmllTtmlLyrics("1")).toBeUndefined();
-    expect(await provider.getAmllTtmlLyrics("1")).toBe(amllTtmlFixture());
-    expect(calls).toBe(2);
-  });
+  for (const failure of [503, 429, "abort", "json", "invalid", "empty"] as const)
+    test(`${failure} 当次降级但恢复后同键回源`, async () => {
+      let calls = 0;
+      const provider = new NeteaseMusicProvider({
+        amllRequestTimeoutMs: 20,
+        amllFetcher: async () => {
+          if (++calls > 1) return amllResponse();
+          if (typeof failure === "number") return new Response(null, { status: failure });
+          if (failure === "abort") return new Promise<Response>(() => {});
+          if (failure === "json") return new Response("not-json");
+          return Response.json({
+            status: 200,
+            data: { lyrics: failure === "empty" ? "" : "<invalid>" },
+          });
+        },
+      });
+      expect(await provider.getAmllTtmlLyrics("1")).toBeUndefined();
+      expect(await provider.getAmllTtmlLyrics("1")).toBe(amllTtmlFixture());
+      expect(calls).toBe(2);
+    });
 
   test("明确404缺失仍缓存，同键并发合并，硬过期重新回源", async () => {
-    let now = 0, calls = 0;
-    const provider = new NeteaseMusicProvider({ now: () => now, amllFetcher: async () => { calls++; return new Response(null, { status: 404 }); } });
-    expect(await Promise.all(Array.from({ length: 20 }, () => provider.getAmllTtmlLyrics("404")))).toEqual(Array(20).fill(undefined));
+    let now = 0,
+      calls = 0;
+    const provider = new NeteaseMusicProvider({
+      now: () => now,
+      amllFetcher: async () => {
+        calls++;
+        return new Response(null, { status: 404 });
+      },
+    });
+    expect(
+      await Promise.all(Array.from({ length: 20 }, () => provider.getAmllTtmlLyrics("404")))
+    ).toEqual(Array(20).fill(undefined));
     expect(calls).toBe(1);
-    expect(await provider.getAmllTtmlLyrics("404")).toBeUndefined(); expect(calls).toBe(1);
+    expect(await provider.getAmllTtmlLyrics("404")).toBeUndefined();
+    expect(calls).toBe(1);
     now = 4 * 24 * 60 * 60 * 1000;
-    expect(await provider.getAmllTtmlLyrics("404")).toBeUndefined(); expect(calls).toBe(2);
+    expect(await provider.getAmllTtmlLyrics("404")).toBeUndefined();
+    expect(calls).toBe(2);
   });
 
   test("搜索无结果可缓存，搜索到条目后的503不可缓存", async () => {
     let calls = 0;
-    const provider = new NeteaseMusicProvider({ amllFetcher: async url => {
-      calls++;
-      if (url.includes("q=missing")) return Response.json({ status: 200, data: { items: [] } });
-      if (url.includes("search?")) return Response.json({ status: 200, data: { items: [{ id: "ttml" }] } });
-      return calls === 3 ? new Response(null, { status: 503 }) : amllResponse();
-    } });
-    await provider.searchAmllTtmlLyrics("missing"); await provider.searchAmllTtmlLyrics("missing"); expect(calls).toBe(1);
+    const provider = new NeteaseMusicProvider({
+      amllFetcher: async (url) => {
+        calls++;
+        if (url.includes("q=missing")) return Response.json({ status: 200, data: { items: [] } });
+        if (url.includes("search?"))
+          return Response.json({ status: 200, data: { items: [{ id: "ttml" }] } });
+        return calls === 3 ? new Response(null, { status: 503 }) : amllResponse();
+      },
+    });
+    await provider.searchAmllTtmlLyrics("missing");
+    await provider.searchAmllTtmlLyrics("missing");
+    expect(calls).toBe(1);
     expect(await provider.searchAmllTtmlLyrics("found")).toBeUndefined();
-    expect(await provider.searchAmllTtmlLyrics("found")).toBe(amllTtmlFixture()); expect(calls).toBe(5);
+    expect(await provider.searchAmllTtmlLyrics("found")).toBe(amllTtmlFixture());
+    expect(calls).toBe(5);
   });
 
   test("ID和搜索瞬态失败后LRC降级，不冻结完整歌曲歌词，恢复可获取TTML", async () => {
     let recovered = false;
-    const provider = new NeteaseMusicProvider({ minRequestIntervalMs: 0, amllFetcher: async () => recovered ? amllResponse() : new Response(null, { status: 503 }),
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      amllFetcher: async () => (recovered ? amllResponse() : new Response(null, { status: 503 })),
       loadApi: async () => ({
-        song_detail: async () => ({ body: { songs: [{ id: 1, name: "答案", ar: [{ name: "歌手" }], al: { name: "专辑" }, dt: 200000 }] } }),
+        song_detail: async () => ({
+          body: {
+            songs: [
+              { id: 1, name: "答案", ar: [{ name: "歌手" }], al: { name: "专辑" }, dt: 200000 },
+            ],
+          },
+        }),
         song_url: async () => ({ body: { data: [{ url: "https://audio.invalid/fixture.mp3" }] } }),
         lyric: async () => ({ body: { lrc: { lyric: "[00:01.00]降级歌词仍然可用" } } }),
       }),
@@ -2590,50 +2780,96 @@ describe("AMLL 确定缺失与瞬态失败缓存边界", () => {
 
   test("结构化失败日志保留安全上下文、错误堆栈与cause", async () => {
     const warnings: Array<{ message: string; meta: unknown }> = [];
-    const logger = { warn: (message: string, meta: unknown) => warnings.push({ message, meta }) } as any;
+    const logger = {
+      warn: (message: string, meta: unknown) => warnings.push({ message, meta }),
+    } as any;
     const cause = new Error("dummy cause");
-    const provider = new NeteaseMusicProvider({ logger,
-      fetchAmllLyrics: async () => { throw new Error("dummy id failure", { cause }); },
-      fetchAmllSearchLyrics: async () => { throw new Error("dummy search failure", { cause }); },
+    const provider = new NeteaseMusicProvider({
+      logger,
+      fetchAmllLyrics: async () => {
+        throw new Error("dummy id failure", { cause });
+      },
+      fetchAmllSearchLyrics: async () => {
+        throw new Error("dummy search failure", { cause });
+      },
     });
     expect(await provider.getAmllTtmlLyrics("fixture-id")).toBeUndefined();
     expect(await provider.searchAmllTtmlLyrics("fixture-title")).toBeUndefined();
     expect(warnings).toHaveLength(2);
     for (const warning of warnings) {
       expect(warning.message).not.toContain("[object Object]");
-      expect(warning.meta).toMatchObject({ errorName: "Error", stack: expect.any(String), cause: { errorMessage: "dummy cause" } });
+      expect(warning.meta).toMatchObject({
+        errorName: "Error",
+        stack: expect.any(String),
+        cause: { errorMessage: "dummy cause" },
+      });
     }
-    expect(warnings[0].meta).toMatchObject({ songId: "fixture-id", errorMessage: "dummy id failure" });
-    expect(warnings[1].meta).toMatchObject({ title: "fixture-title", errorMessage: "dummy search failure" });
+    expect(warnings[0].meta).toMatchObject({
+      songId: "fixture-id",
+      errorMessage: "dummy id failure",
+    });
+    expect(warnings[1].meta).toMatchObject({
+      title: "fixture-title",
+      errorMessage: "dummy search failure",
+    });
   });
 });
 
 describe("AMLL 独立后端预算", () => {
   test("跨键并发有界，按键合并且不阻塞网易云API队列", async () => {
-    let calls = 0, active = 0, peak = 0, release!: () => void;
-    const gate = new Promise<void>(resolve => { release = resolve; });
-    const provider = new NeteaseMusicProvider({ amllMaxConcurrentRequests: 2, amllFetcher: async () => {
-      calls++; active++; peak = Math.max(peak, active); await gate; active--; return amllResponse();
-    }, loadApi: async () => ({ cloudsearch: async () => ({ body: { result: { songs: [] } } }) }) });
-    const requests = Array.from({ length: 20 }, (_, index) => provider.getAmllTtmlLyrics(String(index)));
+    let calls = 0,
+      active = 0,
+      peak = 0,
+      release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = new NeteaseMusicProvider({
+      amllMaxConcurrentRequests: 2,
+      amllFetcher: async () => {
+        calls++;
+        active++;
+        peak = Math.max(peak, active);
+        await gate;
+        active--;
+        return amllResponse();
+      },
+      loadApi: async () => ({ cloudsearch: async () => ({ body: { result: { songs: [] } } }) }),
+    });
+    const requests = Array.from({ length: 20 }, (_, index) =>
+      provider.getAmllTtmlLyrics(String(index))
+    );
     const duplicate = provider.getAmllTtmlLyrics("0");
-    expect(calls).toBe(2); expect(peak).toBe(2);
+    expect(calls).toBe(2);
+    expect(peak).toBe(2);
     expect(await provider.search("independent")).toEqual([]);
-    release(); await Promise.all([...requests, duplicate]);
-    expect(calls).toBe(20); expect(peak).toBe(2); expect(active).toBe(0);
+    release();
+    await Promise.all([...requests, duplicate]);
+    expect(calls).toBe(20);
+    expect(peak).toBe(2);
+    expect(active).toBe(0);
   });
 
   test("饱和、截止释放队列与同键在途，后续恢复", async () => {
-    let calls = 0, recovered = false;
+    let calls = 0,
+      recovered = false;
     const signals: AbortSignal[] = [];
-    const provider = new NeteaseMusicProvider({ amllMaxConcurrentRequests: 1, amllMaxQueuedRequests: 1, amllRequestTimeoutMs: 25,
-      amllFetcher: async (_url, init) => { calls++; signals.push(init!.signal!); return recovered ? amllResponse() : new Promise<Response>(() => {}); },
+    const provider = new NeteaseMusicProvider({
+      amllMaxConcurrentRequests: 1,
+      amllMaxQueuedRequests: 1,
+      amllRequestTimeoutMs: 25,
+      amllFetcher: async (_url, init) => {
+        calls++;
+        signals.push(init!.signal!);
+        return recovered ? amllResponse() : new Promise<Response>(() => {});
+      },
     });
-    const first = provider.getAmllTtmlLyrics("first"), queued = provider.getAmllTtmlLyrics("queued");
+    const first = provider.getAmllTtmlLyrics("first"),
+      queued = provider.getAmllTtmlLyrics("queued");
     expect(await provider.getAmllTtmlLyrics("overflow")).toBeUndefined();
     expect(calls).toBe(1);
     await Promise.all([first, queued]);
-    expect(signals.every(signal => signal.aborted)).toBe(true);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
     recovered = true;
     expect(await provider.getAmllTtmlLyrics("first")).toBe(amllTtmlFixture());
     expect(await provider.getAmllTtmlLyrics("queued")).toBe(amllTtmlFixture());
@@ -2649,12 +2885,15 @@ describe("网易云上游预热与登录态复用", () => {
   });
 
   test("预热只加载一次接口包并只注册一次匿名令牌", async () => {
-    let loads = 0, registrations = 0;
+    let loads = 0,
+      registrations = 0;
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
       loadApi: async () => {
         loads += 1;
-        return anonApi(() => { registrations += 1; });
+        return anonApi(() => {
+          registrations += 1;
+        });
       },
     });
 
@@ -2670,7 +2909,11 @@ describe("网易云上游预热与登录态复用", () => {
     const warnings: string[] = [];
     const provider = new NeteaseMusicProvider({
       minRequestIntervalMs: 0,
-      logger: { warn: (message: string) => { warnings.push(message); } } as never,
+      logger: {
+        warn: (message: string) => {
+          warnings.push(message);
+        },
+      } as never,
       loadApi: async () => {
         loads += 1;
         if (loads === 1) throw new Error("接口包加载瞬时失败");
@@ -2699,7 +2942,10 @@ describe("网易云上游预热与登录态复用", () => {
           return { body: { data: { code: 200, profile: { userId: 42, nickname: "复用测试" } } } };
         },
         vip_info_v2: async () => ({
-          body: { code: 200, data: { associator: { vipCode: 100, expireTime: Date.now() + 60_000 } } },
+          body: {
+            code: 200,
+            data: { associator: { vipCode: 100, expireTime: Date.now() + 60_000 } },
+          },
         }),
       }),
     });
@@ -2719,7 +2965,8 @@ describe("网易云上游预热与登录态复用", () => {
   });
 
   test("校验失败不进入复用缓存，凭据恢复后仍重新回源", async () => {
-    let statusCalls = 0, valid = false;
+    let statusCalls = 0,
+      valid = false;
     const provider = new NeteaseMusicProvider({
       randomCNIP: false,
       minRequestIntervalMs: 0,
@@ -2735,8 +2982,9 @@ describe("网易云上游预热与登录态复用", () => {
       }),
     });
 
-    await expect(provider.getLoginStatus("MUSIC_U=stale"))
-      .rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+    await expect(provider.getLoginStatus("MUSIC_U=stale")).rejects.toMatchObject({
+      code: "MUSIC_SESSION_INVALID",
+    });
 
     valid = true;
     await expect(provider.getLoginStatus("MUSIC_U=stale")).resolves.toMatchObject({
@@ -2767,7 +3015,10 @@ describe("网易云上游预热与登录态复用", () => {
       }),
     });
 
-    const res = await (provider as any).getPlaylistSongs("100", { netease: "MUSIC_U=obj_test", qq: "qq_test" });
+    const res = await (provider as any).getPlaylistSongs("100", {
+      netease: "MUSIC_U=obj_test",
+      qq: "qq_test",
+    });
     expect(res.info.name).toBe("聚合测试歌单");
     expect(passedCookie).toBe("MUSIC_U=obj_test");
   });

@@ -10,15 +10,19 @@ import type { SonGuessrRoomSnapshot } from "@/types";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 
-const snapshot = (musicAccountReady: boolean) => ({
-  roomId: "1234",
-  musicAccountReady,
-} as SonGuessrRoomSnapshot);
+const snapshot = (musicAccountReady: boolean) =>
+  ({
+    roomId: "1234",
+    musicAccountReady,
+  }) as SonGuessrRoomSnapshot;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
   return { promise, resolve, reject };
 }
 
@@ -35,7 +39,12 @@ const authorizedResponse = {
 };
 const initialStore = useSonGuessrStore.getState();
 /** 展开后的内容区：收起单行里也会写昵称与会员状态，断言只看正文。 */
-const panel = () => within(document.getElementById(screen.getByRole("button", { name: /音乐账号配置/ }).getAttribute("aria-controls")!)!);
+const panel = () =>
+  within(
+    document.getElementById(
+      screen.getByRole("button", { name: /音乐账号配置/ }).getAttribute("aria-controls")!
+    )!
+  );
 
 describe("SongAccountSettings", () => {
   let sendCommand: ReturnType<typeof vi.fn<SonGuessrStore["sendCommand"]>>;
@@ -45,7 +54,9 @@ describe("SongAccountSettings", () => {
     clearStoredSongMusicSession();
     // framer-motion退出动画会请求恢复滚动位置，jsdom没有实现该浏览器API。
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-    sendCommand = vi.fn<SonGuessrStore["sendCommand"]>().mockResolvedValue(qrResponse("initial-qr"));
+    sendCommand = vi
+      .fn<SonGuessrStore["sendCommand"]>()
+      .mockResolvedValue(qrResponse("initial-qr"));
     setNotice = vi.fn<SonGuessrStore["setNotice"]>();
     useSonGuessrStore.setState({
       sendCommand: sendCommand as unknown as SonGuessrStore["sendCommand"],
@@ -75,16 +86,21 @@ describe("SongAccountSettings", () => {
   });
 
   it("登录后显示会员状态，并说明非会员也能出会员专享曲", () => {
-    saveSongMusicSession({
-      cookie: "MUSIC_U=browser-only",
-      account: { nickname: "普通账号", vipStatus: "nonVip" },
-    }, true);
+    saveSongMusicSession(
+      {
+        cookie: "MUSIC_U=browser-only",
+        account: { nickname: "普通账号", vipStatus: "nonVip" },
+      },
+      true
+    );
     render(<SongAccountSettings snapshot={snapshot(true)} />);
 
     fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
 
     expect(panel().getByText("非会员")).toBeInTheDocument();
-    expect(panel().getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")).toBeInTheDocument();
+    expect(
+      panel().getByText("非会员账号也能出题，会员专享歌曲会自动匹配可用音源。")
+    ).toBeInTheDocument();
     expect(sendCommand).not.toHaveBeenCalled();
   });
 
@@ -98,13 +114,20 @@ describe("SongAccountSettings", () => {
   });
 
   it("加载到房间后才显示账号：收起态单行排头像、昵称、会员徽章图与到期日", () => {
-    saveSongMusicSession({
-      cookie: "MUSIC_U=browser-only",
-      account: {
-        nickname: "黑胶账号", avatarUrl: "https://example.invalid/avatar.jpg", vipStatus: "vip",
-        vipTier: "svip", vipLevel: 5, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+    saveSongMusicSession(
+      {
+        cookie: "MUSIC_U=browser-only",
+        account: {
+          nickname: "黑胶账号",
+          avatarUrl: "https://example.invalid/avatar.jpg",
+          vipStatus: "vip",
+          vipTier: "svip",
+          vipLevel: 5,
+          vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+        },
       },
-    }, true);
+      true
+    );
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     // 本机有凭据但还没装进房间：只说正在连接，不出现账号，也不再有「已连接」这类状态标。
@@ -114,16 +137,24 @@ describe("SongAccountSettings", () => {
 
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
     // 收起态就是单行：头像、昵称、官方会员徽章图与到期日都直接出现在按钮里，未配置的QQ音乐也清晰可见
-    expect(toggle.querySelector("img[src='https://example.invalid/avatar.jpg']")).toBeInTheDocument();
+    expect(
+      toggle.querySelector("img[src='https://example.invalid/avatar.jpg']")
+    ).toBeInTheDocument();
     expect(within(toggle).getByText("黑胶账号")).toBeInTheDocument();
-    expect(within(toggle).getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
+    expect(within(toggle).getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute(
+      "src",
+      "/assets/netease-vip/SVIP-5.png"
+    );
     expect(within(toggle).getByText("2027/4/1 到期")).toBeInTheDocument();
     expect(within(toggle).getByText("未配置")).toBeInTheDocument();
 
     fireEvent.click(toggle);
     expect(panel().getByText("黑胶账号")).toBeInTheDocument();
     // 展开卡里是同一张官方徽章图，两处不漂移。
-    expect(panel().getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute("src", "/assets/netease-vip/SVIP-5.png");
+    expect(panel().getByRole("img", { name: "SVIP · 伍" })).toHaveAttribute(
+      "src",
+      "/assets/netease-vip/SVIP-5.png"
+    );
     expect(panel().getByText("2027/4/1 到期")).toBeInTheDocument();
     expect(panel().queryByRole("button", { name: "更换账号" })).not.toBeInTheDocument();
   });
@@ -131,13 +162,20 @@ describe("SongAccountSettings", () => {
   // 标题行收起时是账号行，展开后要让位给普通的组标题：展开卡里已有同一份账号信息，
   // 标题行不再重复；读屏的描述也一并交还给正文，不再朗读已经撤走的账号行。
   it("展开后标题行换回普通标题，账号行不再重复", async () => {
-    saveSongMusicSession({
-      cookie: "MUSIC_U=browser-only",
-      account: {
-        nickname: "黑胶账号", avatarUrl: "https://example.invalid/avatar.jpg", vipStatus: "vip",
-        vipTier: "svip", vipLevel: 5, vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+    saveSongMusicSession(
+      {
+        cookie: "MUSIC_U=browser-only",
+        account: {
+          nickname: "黑胶账号",
+          avatarUrl: "https://example.invalid/avatar.jpg",
+          vipStatus: "vip",
+          vipTier: "svip",
+          vipLevel: 5,
+          vipExpireTime: Date.UTC(2027, 2, 31, 16, 0, 0),
+        },
       },
-    }, true);
+      true
+    );
     render(<SongAccountSettings snapshot={snapshot(true)} />);
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
 
@@ -153,18 +191,28 @@ describe("SongAccountSettings", () => {
   });
 
   it("退出登录：清掉房间与本机凭据，面板直接换成新二维码", async () => {
-    saveSongMusicSession({ cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } }, true);
-    sendCommand.mockImplementation(async (type: string) => (type === "song.auth.qr.create" ? qrResponse("after-logout") : {}));
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } },
+      true
+    );
+    sendCommand.mockImplementation(async (type: string) =>
+      type === "song.auth.qr.create" ? qrResponse("after-logout") : {}
+    );
     render(<SongAccountSettings snapshot={snapshot(true)} />);
 
     fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
     expect(sendCommand).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "退出登录" })); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    });
 
     expect(sendCommand.mock.calls).toEqual([["song.auth.clear"], ["song.auth.qr.create"]]);
     expect(getStoredSongMusicSession()).toBeNull();
     expect(setNotice).toHaveBeenCalledWith("已退出网易云账号", "success");
-    expect(await screen.findByAltText("网易云登录二维码")).toHaveAttribute("src", qrResponse("after-logout").qrImage);
+    expect(await screen.findByAltText("网易云登录二维码")).toHaveAttribute(
+      "src",
+      qrResponse("after-logout").qrImage
+    );
   });
 
   // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，
@@ -179,31 +227,39 @@ describe("SongAccountSettings", () => {
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
 
-  it.each(["success", "failure"])("关闭重开后忽略旧二维码创建的迟到%s，不清除新请求加载态", async (outcome) => {
-    const oldCreate = deferred<ReturnType<typeof qrResponse>>();
-    const freshCreate = deferred<ReturnType<typeof qrResponse>>();
-    sendCommand.mockReturnValueOnce(oldCreate.promise).mockReturnValueOnce(freshCreate.promise);
-    render(<SongAccountSettings snapshot={snapshot(false)} />);
-    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+  it.each(["success", "failure"])(
+    "关闭重开后忽略旧二维码创建的迟到%s，不清除新请求加载态",
+    async (outcome) => {
+      const oldCreate = deferred<ReturnType<typeof qrResponse>>();
+      const freshCreate = deferred<ReturnType<typeof qrResponse>>();
+      sendCommand.mockReturnValueOnce(oldCreate.promise).mockReturnValueOnce(freshCreate.promise);
+      render(<SongAccountSettings snapshot={snapshot(false)} />);
+      const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
 
-    fireEvent.click(toggle);
-    fireEvent.click(toggle);
-    fireEvent.click(toggle);
-    expect(sendCommand.mock.calls).toEqual([["song.auth.qr.create"], ["song.auth.qr.create"]]);
+      fireEvent.click(toggle);
+      fireEvent.click(toggle);
+      fireEvent.click(toggle);
+      expect(sendCommand.mock.calls).toEqual([["song.auth.qr.create"], ["song.auth.qr.create"]]);
 
-    await act(async () => {
-      if (outcome === "success") oldCreate.resolve(qrResponse("old-qr"));
-      else oldCreate.reject(new Error("旧二维码请求失败"));
-    });
-    expect(screen.queryByAltText("网易云登录二维码")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "刷新二维码" })).toBeDisabled();
-    expect(screen.queryByText("旧二维码请求失败")).not.toBeInTheDocument();
-    expect(setNotice).not.toHaveBeenCalled();
+      await act(async () => {
+        if (outcome === "success") oldCreate.resolve(qrResponse("old-qr"));
+        else oldCreate.reject(new Error("旧二维码请求失败"));
+      });
+      expect(screen.queryByAltText("网易云登录二维码")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "刷新二维码" })).toBeDisabled();
+      expect(screen.queryByText("旧二维码请求失败")).not.toBeInTheDocument();
+      expect(setNotice).not.toHaveBeenCalled();
 
-    await act(async () => { freshCreate.resolve(qrResponse("fresh-qr")); });
-    expect(screen.getByAltText("网易云登录二维码")).toHaveAttribute("src", qrResponse("fresh-qr").qrImage);
-    expect(screen.getByRole("button", { name: "刷新二维码" })).toBeEnabled();
-  });
+      await act(async () => {
+        freshCreate.resolve(qrResponse("fresh-qr"));
+      });
+      expect(screen.getByAltText("网易云登录二维码")).toHaveAttribute(
+        "src",
+        qrResponse("fresh-qr").qrImage
+      );
+      expect(screen.getByRole("button", { name: "刷新二维码" })).toBeEnabled();
+    }
+  );
 
   it("刷新二维码后旧轮询授权不落盘，新二维码仍能独立登录", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -215,21 +271,33 @@ describe("SongAccountSettings", () => {
       .mockReturnValueOnce(freshCreate.promise)
       .mockResolvedValueOnce(authorizedResponse);
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ })); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
     expect(sendCommand).toHaveBeenLastCalledWith("song.auth.qr.check", { key: "old-qr" });
 
     fireEvent.click(screen.getByRole("button", { name: "刷新二维码" }));
-    await act(async () => { oldCheck.resolve(authorizedResponse); });
+    await act(async () => {
+      oldCheck.resolve(authorizedResponse);
+    });
     expect(getStoredSongMusicSession()).toBeNull();
     expect(setNotice).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "刷新二维码" })).toBeDisabled();
 
-    await act(async () => { freshCreate.resolve(qrResponse("fresh-qr")); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => {
+      freshCreate.resolve(qrResponse("fresh-qr"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
     expect(sendCommand).toHaveBeenLastCalledWith("song.auth.qr.check", { key: "fresh-qr" });
     expect(getStoredSongMusicSession()).toEqual({
-      cookie: authorizedResponse.cookie, account: authorizedResponse.account, persistent: true,
+      cookie: authorizedResponse.cookie,
+      account: authorizedResponse.account,
+      persistent: true,
     });
     // 服务端装好会话后推送的快照里 musicAccountReady 为真，账号随之出现。
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
@@ -243,48 +311,75 @@ describe("SongAccountSettings", () => {
       vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
       const previousSession = getStoredSongMusicSession();
       const pendingCheck = deferred<typeof authorizedResponse>();
-      sendCommand.mockResolvedValueOnce(qrResponse("pending-qr")).mockReturnValueOnce(pendingCheck.promise);
+      sendCommand
+        .mockResolvedValueOnce(qrResponse("pending-qr"))
+        .mockReturnValueOnce(pendingCheck.promise);
       const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
       });
-      await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
       expect(sendCommand.mock.calls).toEqual([
-        ["song.auth.qr.create"], ["song.auth.qr.check", { key: "pending-qr" }],
+        ["song.auth.qr.create"],
+        ["song.auth.qr.check", { key: "pending-qr" }],
       ]);
 
-      if (boundary === "close") fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
-      else if (boundary === "room-change") view.rerender(<SongAccountSettings snapshot={{ ...snapshot(false), roomId: "5678" }} />);
+      if (boundary === "close")
+        fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+      else if (boundary === "room-change")
+        view.rerender(<SongAccountSettings snapshot={{ ...snapshot(false), roomId: "5678" }} />);
       else view.unmount();
 
-      await act(async () => { pendingCheck.resolve(authorizedResponse); });
-      await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+      await act(async () => {
+        pendingCheck.resolve(authorizedResponse);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
       expect(sendCommand).toHaveBeenCalledTimes(2);
       expect(getStoredSongMusicSession()).toEqual(previousSession);
       expect(setNotice).not.toHaveBeenCalled();
       expect(screen.queryByText("夹具账号")).not.toBeInTheDocument();
-    },
+    }
   );
 
   it("在途二维码授权使用用户最新的保存开关，成功后停止轮询", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const pendingCheck = deferred<typeof authorizedResponse>();
-    sendCommand.mockResolvedValueOnce(qrResponse("login-qr")).mockReturnValueOnce(pendingCheck.promise);
+    sendCommand
+      .mockResolvedValueOnce(qrResponse("login-qr"))
+      .mockReturnValueOnce(pendingCheck.promise);
     const view = render(<SongAccountSettings snapshot={snapshot(false)} />);
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ })); });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
     fireEvent.click(screen.getByRole("switch", { name: "保存登录状态" }));
-    expect(screen.getByRole("switch", { name: "保存登录状态" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "保存登录状态" })).toHaveAttribute(
+      "aria-checked",
+      "false"
+    );
 
-    await act(async () => { pendingCheck.resolve(authorizedResponse); });
+    await act(async () => {
+      pendingCheck.resolve(authorizedResponse);
+    });
     expect(getStoredSongMusicSession()).toEqual({
-      cookie: authorizedResponse.cookie, account: authorizedResponse.account, persistent: false,
+      cookie: authorizedResponse.cookie,
+      account: authorizedResponse.account,
+      persistent: false,
     });
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
     expect(panel().getByText("夹具账号")).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
     expect(sendCommand.mock.calls).toEqual([
-      ["song.auth.qr.create"], ["song.auth.qr.check", { key: "login-qr" }],
+      ["song.auth.qr.create"],
+      ["song.auth.qr.check", { key: "login-qr" }],
     ]);
   });
 
@@ -296,7 +391,10 @@ describe("SongAccountSettings", () => {
     // 点击切换到 QQ 音乐平台
     fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
     await waitFor(() => {
-      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "qq" });
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
+        platform: "qq",
+        type: "qq",
+      });
     });
     expect(screen.getByText("请使用手机 QQ 扫码")).toBeInTheDocument();
 
@@ -304,7 +402,10 @@ describe("SongAccountSettings", () => {
     sendCommand.mockResolvedValueOnce(qrResponse("wx-qr"));
     fireEvent.click(screen.getByRole("button", { name: "微信扫码" }));
     await waitFor(() => {
-      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "wx" });
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
+        platform: "qq",
+        type: "wx",
+      });
     });
     expect(screen.getByText("请使用微信扫码")).toBeInTheDocument();
 
@@ -312,7 +413,10 @@ describe("SongAccountSettings", () => {
     sendCommand.mockResolvedValueOnce(qrResponse("mobile-qr"));
     fireEvent.click(screen.getByRole("button", { name: "QQ音乐扫码" }));
     await waitFor(() => {
-      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", { platform: "qq", type: "mobile" });
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
+        platform: "qq",
+        type: "mobile",
+      });
     });
     expect(screen.getByText("请使用 QQ 音乐 App 扫码")).toBeInTheDocument();
   });
@@ -331,7 +435,7 @@ describe("SongAccountSettings", () => {
         },
       },
       true,
-      "qq",
+      "qq"
     );
     render(
       <SongAccountSettings
@@ -342,14 +446,14 @@ describe("SongAccountSettings", () => {
             qqMusicAccountReady: true,
           } as SonGuessrRoomSnapshot
         }
-      />,
+      />
     );
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     expect(within(toggle).getByText("腾讯大佬")).toBeInTheDocument();
     expect(within(toggle).getByRole("img", { name: "超级会员 · SVIP8" })).toHaveAttribute(
       "src",
-      "/assets/qqmusic-vip/SVIP-8.png",
+      "/assets/qqmusic-vip/SVIP-8.png"
     );
 
     fireEvent.click(toggle);
@@ -358,7 +462,7 @@ describe("SongAccountSettings", () => {
     expect(panel().getByText("腾讯大佬")).toBeInTheDocument();
     expect(panel().getByRole("img", { name: "超级会员 · SVIP8" })).toHaveAttribute(
       "src",
-      "/assets/qqmusic-vip/SVIP-8.png",
+      "/assets/qqmusic-vip/SVIP-8.png"
     );
   });
 
@@ -375,7 +479,7 @@ describe("SongAccountSettings", () => {
         },
       },
       true,
-      "netease",
+      "netease"
     );
     saveSongMusicSession(
       {
@@ -389,7 +493,7 @@ describe("SongAccountSettings", () => {
         },
       },
       true,
-      "qq",
+      "qq"
     );
 
     render(
@@ -401,7 +505,7 @@ describe("SongAccountSettings", () => {
             qqMusicAccountReady: true,
           } as SonGuessrRoomSnapshot
         }
-      />,
+      />
     );
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
@@ -430,7 +534,7 @@ describe("SongAccountSettings", () => {
         },
       },
       true,
-      "qq",
+      "qq"
     );
 
     render(
@@ -441,16 +545,13 @@ describe("SongAccountSettings", () => {
             qqMusicAccountReady: true,
           } as SonGuessrRoomSnapshot
         }
-      />,
+      />
     );
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
     expect(within(toggle).getByText("年费达人")).toBeInTheDocument();
     const yearBadge = within(toggle).getByRole("img", { name: "年费绿钻 · LV6" });
-    expect(yearBadge).toHaveAttribute(
-      "src",
-      "/assets/qqmusic-vip/VIP-6-Year.png",
-    );
+    expect(yearBadge).toHaveAttribute("src", "/assets/qqmusic-vip/VIP-6-Year.png");
     expect(yearBadge).toHaveClass("h-[26px]");
   });
 
@@ -467,7 +568,7 @@ describe("SongAccountSettings", () => {
         },
       },
       true,
-      "netease",
+      "netease"
     );
     render(
       <SongAccountSettings
@@ -478,7 +579,7 @@ describe("SongAccountSettings", () => {
             qqMusicAccountReady: false,
           } as SonGuessrRoomSnapshot
         }
-      />,
+      />
     );
 
     const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
@@ -495,4 +596,3 @@ describe("SongAccountSettings", () => {
     expect(within(toggle).getByText("未配置")).toBeInTheDocument();
   });
 });
-

@@ -39,7 +39,9 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
       <div className="flex gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{shareUrl}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+            {shareUrl}
+          </span>
         </div>
         <Button
           type="button"
@@ -48,7 +50,11 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           // 交替期间旧文案还在淡出，名字固定写在按钮上，读屏与按名查找都只得到当前这一份。
           aria-label={copied ? "已复制" : "复制"}
           // 成功态沿用 success 浅底描边，读作「复制好了」；悬停底色同步换成同色的预览档，不跳回 accent。
-          className={cn("shrink-0 gap-1.5 px-3 text-xs", copied && "border-success/40 bg-success/10 text-success hover:bg-success/10 hover:text-success")}
+          className={cn(
+            "shrink-0 gap-1.5 px-3 text-xs",
+            copied &&
+              "border-success/40 bg-success/10 text-success hover:bg-success/10 hover:text-success"
+          )}
         >
           {/* 图标与文字一起换：旧的抽出文档流淡出，新的自下方顶上来。
               外层宽度量的是新文字的宽度，按 spring.settle 补间，按钮随之平滑伸缩，不在换字那一帧跳变。 */}
@@ -60,14 +66,24 @@ export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError
           >
             <span ref={labelRef} className="flex w-max shrink-0">
               <AnimatePresence mode="popLayout" initial={false}>
-                <motion.span key={copied ? "copied" : "idle"} aria-hidden="true" variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex items-center gap-1.5 whitespace-nowrap">
+                <motion.span
+                  key={copied ? "copied" : "idle"}
+                  aria-hidden="true"
+                  variants={readoutSwap}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="flex items-center gap-1.5 whitespace-nowrap"
+                >
                   {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                   {copied ? "已复制" : "复制"}
                 </motion.span>
               </AnimatePresence>
             </span>
           </motion.span>
-          <span className="sr-only" aria-live="polite">{copied ? "链接已复制" : ""}</span>
+          <span className="sr-only" aria-live="polite">
+            {copied ? "链接已复制" : ""}
+          </span>
         </Button>
       </div>
     </div>

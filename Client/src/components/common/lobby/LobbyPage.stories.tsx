@@ -4,9 +4,34 @@ import { LobbyPage } from "./LobbyPage";
 import type { LobbyRoomView } from "./RoomListCard";
 
 const ROOMS: LobbyRoomView[] = [
-  { roomId: "4821", name: "周五晚上的卧底局", hasPassword: false, inGame: false, allowSpectators: true, playerCount: 6, spectatorCount: 1 },
-  { roomId: "3141", name: "深夜卧底局", hasPassword: true, inGame: true, allowSpectators: false, playerCount: 8, spectatorCount: 0 },
-  { roomId: "2718", name: "原版服务器上的房间", hasPassword: false, inGame: false, allowSpectators: true, playerCount: 3, spectatorCount: null, tag: "原版" },
+  {
+    roomId: "4821",
+    name: "周五晚上的卧底局",
+    hasPassword: false,
+    inGame: false,
+    allowSpectators: true,
+    playerCount: 6,
+    spectatorCount: 1,
+  },
+  {
+    roomId: "3141",
+    name: "深夜卧底局",
+    hasPassword: true,
+    inGame: true,
+    allowSpectators: false,
+    playerCount: 8,
+    spectatorCount: 0,
+  },
+  {
+    roomId: "2718",
+    name: "原版服务器上的房间",
+    hasPassword: false,
+    inGame: false,
+    allowSpectators: true,
+    playerCount: 3,
+    spectatorCount: null,
+    tag: "原版",
+  },
 ];
 
 const meta = {

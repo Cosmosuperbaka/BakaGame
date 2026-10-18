@@ -188,11 +188,11 @@ function ChildDependencyRow({
     >
       <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
       <Hint label={dependency.name}>
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">
-          {dependency.name}
-        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-sm">{dependency.name}</span>
       </Hint>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">v{dependency.version}</span>
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+        v{dependency.version}
+      </span>
       <span className="hidden shrink-0 sm:flex">
         <Badge variant="outline" size="xs" className="max-w-24 min-w-0">
           <span className="truncate">{creditLicenseLabel(dependency.license)}</span>

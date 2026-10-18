@@ -1,7 +1,11 @@
 import { AppError } from "../domain/Errors";
 import type { BangumiDataReply, BangumiDataRequest } from "./BangumiDataWorker";
 
-type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => void; timer: ReturnType<typeof setTimeout> };
+type Pending = {
+  resolve: (value: unknown) => void;
+  reject: (error: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
 /**
  * 请求体（去掉由本类分配的 id）。
  *
@@ -9,7 +13,9 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => 
  * 所以这里显式写成分发形式。
  */
 export type BangumiDataCall = BangumiDataRequest extends infer Request
-  ? Request extends { id: number } ? Omit<Request, "id"> : never
+  ? Request extends { id: number }
+    ? Omit<Request, "id">
+    : never
   : never;
 
 /**
@@ -51,7 +57,8 @@ export class BangumiDataWorkerClient {
       if (data.ok) pending.resolve(data.value);
       else pending.reject(new AppError(data.code, data.message));
     };
-    this.worker.onerror = () => this.abort(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程异常"));
+    this.worker.onerror = () =>
+      this.abort(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程异常"));
   }
 
   /** 初始化失败通过业务请求返回，不产生无人接收的 Promise 拒绝。 */
@@ -62,8 +69,12 @@ export class BangumiDataWorkerClient {
   }
 
   request(payload: BangumiDataCall): Promise<unknown> {
-    if (this.closed) return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据服务已关闭"));
-    if (this.pending.size >= 64) return Promise.reject(new AppError("BANGUMI_RATE_LIMITED", "Bangumi 查询排队过多，请稍后重试"));
+    if (this.closed)
+      return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据服务已关闭"));
+    if (this.pending.size >= 64)
+      return Promise.reject(
+        new AppError("BANGUMI_RATE_LIMITED", "Bangumi 查询排队过多，请稍后重试")
+      );
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

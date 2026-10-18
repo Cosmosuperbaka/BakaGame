@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { duration, listContainer, listItem, speechReveal } from "@/lib/Motion";
-import {
-  FastForward,
-  MessageSquarePlus,
-  MessageSquareText,
-  Scale,
-  Send,
-} from "lucide-react";
+import { FastForward, MessageSquarePlus, MessageSquareText, Scale, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Hint } from "@/components/ui/Tooltip";
@@ -45,18 +39,18 @@ const getCharUnits = (char: string): number => {
   const code = char.codePointAt(0) ?? 0;
   // CJK 统一汉字、扩展区、全角标点、Katakana/Hiragana 等宽字符
   if (
-    (code >= 0x1100 && code <= 0x115f) ||  // Hangul Jamo
-    (code >= 0x2e80 && code <= 0x9fff) ||  // CJK、部首、康熙等
-    (code >= 0xa960 && code <= 0xa97f) ||  // Hangul Jamo Extended
-    (code >= 0xac00 && code <= 0xd7ff) ||  // Hangul Syllables
-    (code >= 0xf900 && code <= 0xfaff) ||  // CJK Compatibility
-    (code >= 0xfe10 && code <= 0xfe1f) ||  // Vertical Forms
-    (code >= 0xfe30 && code <= 0xfe6f) ||  // CJK Compatibility Forms
-    (code >= 0xff01 && code <= 0xff60) ||  // Fullwidth Forms
-    (code >= 0xffe0 && code <= 0xffe6) ||  // Fullwidth Signs
+    (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+    (code >= 0x2e80 && code <= 0x9fff) || // CJK、部首、康熙等
+    (code >= 0xa960 && code <= 0xa97f) || // Hangul Jamo Extended
+    (code >= 0xac00 && code <= 0xd7ff) || // Hangul Syllables
+    (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility
+    (code >= 0xfe10 && code <= 0xfe1f) || // Vertical Forms
+    (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
+    (code >= 0xff01 && code <= 0xff60) || // Fullwidth Forms
+    (code >= 0xffe0 && code <= 0xffe6) || // Fullwidth Signs
     (code >= 0x1b000 && code <= 0x1b0ff) || // Kana Supplement
     (code >= 0x20000 && code <= 0x2fffd) || // CJK Unified Ideographs Extension B-F
-    (code >= 0x30000 && code <= 0x3fffd)    // CJK Unified Ideographs Extension G
+    (code >= 0x30000 && code <= 0x3fffd) // CJK Unified Ideographs Extension G
   ) {
     return 2;
   }
@@ -84,7 +78,7 @@ const clampToLimit = (text: string): string => {
  */
 const selectSpeechOrder = (
   status: WhoIsFakerRoomSnapshot["status"],
-  mode: SpeechMode,
+  mode: SpeechMode
 ): string[] => {
   if (status.speechOrder) return status.speechOrder;
   if (mode === "supplement") return status.pendingSupplementPlayerIds ?? [];
@@ -100,10 +94,16 @@ const resolveSpeechMode = (status: WhoIsFakerRoomSnapshot["status"]): SpeechMode
 
 /** 输入框文案随模式切换：补充发言与正常描述用词不同。 */
 const speechInputLabel = (mode: SpeechMode) => (mode === "supplement" ? "补充发言" : "描述");
-const speechInputPlaceholder = (mode: SpeechMode) => (mode === "supplement" ? "输入补充发言..." : "输入你的描述...");
+const speechInputPlaceholder = (mode: SpeechMode) =>
+  mode === "supplement" ? "输入补充发言..." : "输入你的描述...";
 
 /** 出题人一侧的推进区：补充发言期间只提示还差几人，普通与 PK 阶段给推进按钮。 */
-function QuestionerAdvancePanel({ mode, supplement, advancing, onAdvance }: {
+function QuestionerAdvancePanel({
+  mode,
+  supplement,
+  advancing,
+  onAdvance,
+}: {
   mode: SpeechMode;
   supplement: ReturnType<typeof useSupplementRequest>;
   advancing: boolean;
@@ -143,19 +143,19 @@ export function DescriptionPhase() {
       return snapshot.descriptions.filter(
         (description) =>
           description.kind === "tieBreak" &&
-          description.tieBreakIndex === snapshot.status.tieBreakIndex,
+          description.tieBreakIndex === snapshot.status.tieBreakIndex
       );
     }
     if (mode === "supplement") {
       return snapshot.descriptions.filter(
         (description) =>
           description.kind === "supplement" &&
-          description.supplementIndex === snapshot.status.supplementIndex,
+          description.supplementIndex === snapshot.status.supplementIndex
       );
     }
     return snapshot.descriptions.filter(
       (description) =>
-        description.kind === "description" && description.cycle === snapshot.status.day,
+        description.kind === "description" && description.cycle === snapshot.status.day
     );
   }, [
     mode,
@@ -169,16 +169,16 @@ export function DescriptionPhase() {
     () =>
       new Set(
         snapshot.status.submittedSpeechPlayerIds ??
-          currentDescriptions.map((description) => description.playerId),
+          currentDescriptions.map((description) => description.playerId)
       ),
-    [currentDescriptions, snapshot.status.submittedSpeechPlayerIds],
+    [currentDescriptions, snapshot.status.submittedSpeechPlayerIds]
   );
 
   const myId = privateState?.playerId ?? "";
 
   const speechOrder = useMemo<string[]>(
     () => selectSpeechOrder(snapshot.status, mode),
-    [mode, snapshot.status],
+    [mode, snapshot.status]
   );
 
   const waitingPlayerIds = useMemo(() => {
@@ -190,11 +190,9 @@ export function DescriptionPhase() {
    */
   const speechRows = useMemo<SpeechRow[]>(() => {
     const textByPlayer = new Map(
-      currentDescriptions.map((description) => [description.playerId, description.text]),
+      currentDescriptions.map((description) => [description.playerId, description.text])
     );
-    const playerNameById = new Map(
-      snapshot.players.map((player) => [player.id, player.name]),
-    );
+    const playerNameById = new Map(snapshot.players.map((player) => [player.id, player.name]));
 
     return speechOrder.map((playerId) => {
       const name =
@@ -253,7 +251,9 @@ export function DescriptionPhase() {
   }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, canSpeak, text, submitting, handleSubmit]);
 
   // 主持人在普通描述里可以发起补充发言；入口在按钮行，选人面板是按钮行上方的整宽块。
-  const supplement = useSupplementRequest({ canRequest: mode === "normal" && waitingPlayerIds.length === 0 });
+  const supplement = useSupplementRequest({
+    canRequest: mode === "normal" && waitingPlayerIds.length === 0,
+  });
   const counterId = useId();
 
   const handleAdvance = useCallback(async () => {
@@ -296,11 +296,19 @@ export function DescriptionPhase() {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleSubmit();
               }}
             />
-            <span id={counterId} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground">
+            <span
+              id={counterId}
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground"
+            >
               {countTextUnits(text)}/{DESCRIPTION_MAX_UNITS}
             </span>
           </div>
-          <Button size="lg" onClick={() => void handleSubmit()} loading={submitting} disabled={!text.trim()}>
+          <Button
+            size="lg"
+            onClick={() => void handleSubmit()}
+            loading={submitting}
+            disabled={!text.trim()}
+          >
             {submitting ? null : <Send className="h-4 w-4" />} 发送
           </Button>
         </div>
@@ -363,7 +371,7 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
                 className={cn(
                   "truncate px-3 py-2.5 text-left text-sm",
                   // 本人那一行已有主色浅底，名字用正文色加粗，主色不作正文
-                  isMe ? "font-semibold text-foreground" : "font-medium",
+                  isMe ? "font-semibold text-foreground" : "font-medium"
                 )}
               >
                 {player.name}

@@ -11,14 +11,30 @@ const EMAIL = `${QQ}@qq.com`;
 
 const clock = (start = Date.UTC(2026, 9, 20)) => {
   let current = start;
-  return { now: () => current, advance: (ms: number) => { current += ms; } };
+  return {
+    now: () => current,
+    advance: (ms: number) => {
+      current += ms;
+    },
+  };
 };
 
 describe("账号系统未启用", () => {
   test("登录、RPC 与头像路由统一回 503 ACCOUNT_DISABLED", async () => {
-    const env = { clientUrl: "http://localhost:5173", serverUrl: "http://localhost:4850", serverListenHost: "127.0.0.1", serverPort: 0, bangumiApiUrl: "https://api.bgm.tv", bangumiImageUrl: "" } satisfies AppEnv;
+    const env = {
+      clientUrl: "http://localhost:5173",
+      serverUrl: "http://localhost:4850",
+      serverListenHost: "127.0.0.1",
+      serverPort: 0,
+      bangumiApiUrl: "https://api.bgm.tv",
+      bangumiImageUrl: "",
+    } satisfies AppEnv;
     const logger = new EventLogger(() => {});
-    const { app } = createTestApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) });
+    const { app } = createTestApp({
+      env,
+      logger,
+      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    });
     for (const url of ["/api/auth/get-session", "/api/account/avatar/someone"]) {
       const response = await app.handle(new Request(`http://localhost${url}`));
       expect(response.status).toBe(503);
@@ -31,23 +47,39 @@ describe("账号系统未启用", () => {
       expect(body.error?.traceId).toBe(traceId);
     }
     // RPC 按 oRPC 错误编码，客户端解出的 ORPCError.code 即 ACCOUNT_DISABLED。
-    const rpc = await app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
+    const rpc = await app.handle(
+      new Request("http://localhost/api/rpc/account/me", { method: "POST" })
+    );
     expect(rpc.status).toBe(503);
-    expect(await rpc.json()).toEqual({ json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" } });
+    expect(await rpc.json()).toEqual({
+      json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" },
+    });
     expect(rpc.headers.get("x-trace-id")).not.toBe("");
   });
 });
 
 describe("账号路由限流", () => {
   const disabledApp = () => {
-    const env = { clientUrl: "http://localhost:5173", serverUrl: "http://localhost:4850", serverListenHost: "127.0.0.1", serverPort: 0, bangumiApiUrl: "https://api.bgm.tv", bangumiImageUrl: "" } satisfies AppEnv;
+    const env = {
+      clientUrl: "http://localhost:5173",
+      serverUrl: "http://localhost:4850",
+      serverListenHost: "127.0.0.1",
+      serverPort: 0,
+      bangumiApiUrl: "https://api.bgm.tv",
+      bangumiImageUrl: "",
+    } satisfies AppEnv;
     const logger = new EventLogger(() => {});
-    return createTestApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) }).app;
+    return createTestApp({
+      env,
+      logger,
+      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    }).app;
   };
 
   test("RPC 与 Better Auth 共用同一份客户端额度，超限回 429 并带 Retry-After", async () => {
     const app = disabledApp();
-    const callRpc = () => app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
+    const callRpc = () =>
+      app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
     // 额度内不因限流改变语义：账号停用仍是 503。
     for (let i = 0; i < 200; i += 1) expect((await callRpc()).status).toBe(503);
 
@@ -61,7 +93,14 @@ describe("账号路由限流", () => {
         expect(response.headers.get("x-ratelimit-limit")).toBe("300");
         expect(response.headers.get("x-ratelimit-remaining")).toBe("0");
         expect(response.headers.get("x-trace-id")).not.toBe("");
-        expect(await response.json()).toEqual({ json: { defined: false, code: "RATE_LIMITED", status: 429, message: "请求过于频繁，请稍后重试" } });
+        expect(await response.json()).toEqual({
+          json: {
+            defined: false,
+            code: "RATE_LIMITED",
+            status: 429,
+            message: "请求过于频繁，请稍后重试",
+          },
+        });
       }
     }
     expect(status).toBe(429);
@@ -77,18 +116,27 @@ describe("验证码登录", () => {
     const { app, rpc, mailer, avatarFetcher, prepareSignup } = createAccountTestApp();
     await prepareSignup(QQ, "  笨蛋 玩家  ");
     const sent = await rpc("account/requestLoginCode", { qqNumber: QQ });
-    expect(sent).toEqual({ status: 200, body: { registered: false, resendAfterSeconds: 60, qqName: "笨蛋 玩家" } });
+    expect(sent).toEqual({
+      status: 200,
+      body: { registered: false, resendAfterSeconds: 60, qqName: "笨蛋 玩家" },
+    });
     const code = mailer.lastCodeFor(EMAIL);
     expect(code).toMatch(/^\d{6}$/);
 
-    const signIn = (body: Record<string, unknown>) => app.handle(new Request("http://localhost/api/auth/sign-in/email-otp", {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "http://localhost:5173" },
-      body: JSON.stringify({ email: EMAIL, otp: code, ...body }),
-    }));
+    const signIn = (body: Record<string, unknown>) =>
+      app.handle(
+        new Request("http://localhost/api/auth/sign-in/email-otp", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+          body: JSON.stringify({ email: EMAIL, otp: code, ...body }),
+        })
+      );
     const ok = await signIn({ name: "客户端自报的昵称" });
     expect(ok.status).toBe(200);
-    const cookie = ok.headers.getSetCookie().map((item) => item.split(";")[0]).join("; ");
+    const cookie = ok.headers
+      .getSetCookie()
+      .map((item) => item.split(";")[0])
+      .join("; ");
     expect(cookie).toContain("bakagame.session_token=");
 
     const me = await rpc("account/me", undefined, cookie);
@@ -101,18 +149,35 @@ describe("验证码登录", () => {
 
   test("非 QQ 邮箱、客户端自带头像与非白名单端点均被拒绝", async () => {
     const { app } = createAccountTestApp();
-    const post = (path: string, body: unknown) => app.handle(new Request(`http://localhost/api/auth${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin: "http://localhost:5173" },
-      body: JSON.stringify(body),
-    }));
-    const foreign = await post("/sign-in/email-otp", { email: "someone@example.com", otp: "123456", name: "x" });
+    const post = (path: string, body: unknown) =>
+      app.handle(
+        new Request(`http://localhost/api/auth${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+          body: JSON.stringify(body),
+        })
+      );
+    const foreign = await post("/sign-in/email-otp", {
+      email: "someone@example.com",
+      otp: "123456",
+      name: "x",
+    });
     expect(foreign.status).toBe(400);
     expect(await foreign.json()).toMatchObject({ code: "INVALID_QQ_EMAIL" });
-    const withImage = await post("/sign-in/email-otp", { email: EMAIL, otp: "123456", name: "x", image: "https://evil.example/a.png" });
+    const withImage = await post("/sign-in/email-otp", {
+      email: EMAIL,
+      otp: "123456",
+      name: "x",
+      image: "https://evil.example/a.png",
+    });
     expect(withImage.status).toBe(400);
     expect(await withImage.json()).toMatchObject({ code: "FIELD_NOT_ALLOWED" });
-    for (const path of ["/sign-up/email", "/email-otp/send-verification-otp", "/update-user", "/admin/list-users"]) {
+    for (const path of [
+      "/sign-up/email",
+      "/email-otp/send-verification-otp",
+      "/update-user",
+      "/admin/list-users",
+    ]) {
       expect((await post(path, {})).status).toBe(404);
     }
   });
@@ -122,7 +187,10 @@ describe("验证码登录", () => {
     const { rpc, signIn } = createAccountTestApp({ now: time.now });
     await signIn(QQ, "玩家");
     time.advance(61_000);
-    expect(await rpc("account/requestLoginCode", { qqNumber: QQ })).toMatchObject({ status: 200, body: { registered: true } });
+    expect(await rpc("account/requestLoginCode", { qqNumber: QQ })).toMatchObject({
+      status: 200,
+      body: { registered: true },
+    });
     const limited = await rpc("account/requestLoginCode", { qqNumber: QQ });
     expect(limited.status).toBe(429);
     expect(limited.body).toMatchObject({ code: "RATE_LIMITED" });
@@ -141,13 +209,19 @@ describe("验证码登录", () => {
   test("ADMIN_QQ 在建号时与启动引导时都提升为管理员", async () => {
     const first = createAccountTestApp({ adminQqNumbers: [QQ] });
     const { cookie } = await first.signIn(QQ, "站长");
-    expect((await first.rpc("account/me", undefined, cookie)).body).toMatchObject({ role: "admin" });
+    expect((await first.rpc("account/me", undefined, cookie)).body).toMatchObject({
+      role: "admin",
+    });
 
     const second = createAccountTestApp();
     const existing = await second.signIn("987654321", "老玩家");
-    expect((await second.rpc("account/me", undefined, existing.cookie)).body).toMatchObject({ role: "user" });
+    expect((await second.rpc("account/me", undefined, existing.cookie)).body).toMatchObject({
+      role: "user",
+    });
     await second.service.promoteAdmins(["987654321"]);
-    expect((await second.rpc("account/me", undefined, existing.cookie)).body).toMatchObject({ role: "admin" });
+    expect((await second.rpc("account/me", undefined, existing.cookie)).body).toMatchObject({
+      role: "admin",
+    });
   });
 });
 
@@ -157,13 +231,19 @@ describe("资料与头像", () => {
     const { cookie } = await signIn(QQ, "玩家");
     const me = await rpc("account/me", undefined, cookie);
     const userId = String(me.body.id);
-    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ name: "玩家", qqNumber: null });
+    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({
+      name: "玩家",
+      qqNumber: null,
+    });
 
     expect((await rpc("account/updateProfile", { showQq: true })).status).toBe(401);
     // 账号昵称不可修改：请求里带 name 也会被契约丢弃，改不动。
     const updated = await rpc("account/updateProfile", { showQq: true, name: "新昵称" }, cookie);
     expect(updated.body).toMatchObject({ showQq: true, name: "玩家" });
-    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ name: "玩家", qqNumber: QQ });
+    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({
+      name: "玩家",
+      qqNumber: QQ,
+    });
     expect((await rpc("account/publicProfile", { userId: "missing" })).status).toBe(404);
   });
 
@@ -189,7 +269,9 @@ describe("资料与头像", () => {
     expect(secondImage).not.toBe(firstImage);
     const stale = await app.handle(new Request(`http://localhost${firstImage}`));
     expect(stale.headers.get("cache-control")).toBe("public, max-age=300");
-    expect((await app.handle(new Request("http://localhost/api/account/avatar/missing"))).status).toBe(404);
+    expect(
+      (await app.handle(new Request("http://localhost/api/account/avatar/missing"))).status
+    ).toBe(404);
   });
 });
 
@@ -199,17 +281,41 @@ describe("游戏内账号身份", () => {
     const socket = new WebSocket(`ws://127.0.0.1:${port}/api/whoisfaker/ws`, {
       headers: { origin: "http://localhost:5173", ...(cookie ? { cookie } : {}) },
     } as unknown as string[]);
-    const messages: Array<{ event?: string; payload?: { mode?: string; state?: { players?: Array<Record<string, unknown>> } } }> = [];
-    socket.addEventListener("message", (event: MessageEvent<string>) => messages.push(JSON.parse(event.data)));
+    const messages: Array<{
+      event?: string;
+      payload?: { mode?: string; state?: { players?: Array<Record<string, unknown>> } };
+    }> = [];
+    socket.addEventListener("message", (event: MessageEvent<string>) =>
+      messages.push(JSON.parse(event.data))
+    );
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), { once: true });
+      socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), {
+        once: true,
+      });
     });
-    socket.send(JSON.stringify({ id: "create", type: "room.create", payload: { roomId: String(4000 + Math.floor(Math.random() * 5000)), name: "账号房", visibility: "public", allowSpectators: true, userName: "游戏昵称" } }));
+    socket.send(
+      JSON.stringify({
+        id: "create",
+        type: "room.create",
+        payload: {
+          roomId: String(4000 + Math.floor(Math.random() * 5000)),
+          name: "账号房",
+          visibility: "public",
+          allowSpectators: true,
+          userName: "游戏昵称",
+        },
+      })
+    );
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline) {
-      const snapshot = messages.find((item) => item.event === "room.snapshot" && item.payload?.mode === "full");
-      if (snapshot) { socket.close(); return snapshot.payload!.state!.players![0]!; }
+      const snapshot = messages.find(
+        (item) => item.event === "room.snapshot" && item.payload?.mode === "full"
+      );
+      if (snapshot) {
+        socket.close();
+        return snapshot.payload!.state!.players![0]!;
+      }
       await Bun.sleep(20);
     }
     socket.close();
@@ -224,7 +330,10 @@ describe("游戏内账号身份", () => {
     try {
       const port = server.server!.port!;
       const player = await openRoom(port, cookie);
-      expect(player).toMatchObject({ name: "游戏昵称", account: { userId: me.id, image: me.image } });
+      expect(player).toMatchObject({
+        name: "游戏昵称",
+        account: { userId: me.id, image: me.image },
+      });
       expect(JSON.stringify(player)).not.toContain(QQ);
       expect((await openRoom(port)).account).toBeUndefined();
       expect((await openRoom(port, "bakagame.session_token=forged")).account).toBeUndefined();

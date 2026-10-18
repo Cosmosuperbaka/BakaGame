@@ -50,7 +50,8 @@ export interface SearchComboboxProps<T> {
   className?: string;
 }
 
-type SearchItem<T> = { kind: "back"; key: string; back: SearchBack } | { kind: "option"; key: string; option: T };
+type SearchItem<T> =
+  { kind: "back"; key: string; back: SearchBack } | { kind: "option"; key: string; option: T };
 
 /**
  * 浮动搜索框：结果面板浮在下方内容之上，不把页面往下挤。
@@ -132,7 +133,12 @@ export function SearchCombobox<T>({
   };
 
   return (
-    <Popover.Root open={open} onOpenChange={(next) => { if (!next) setEngaged(false); }}>
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setEngaged(false);
+      }}
+    >
       <Popover.Anchor asChild>
         <div
           ref={rootRef}
@@ -149,7 +155,7 @@ export function SearchCombobox<T>({
             className={cn(
               // 输入框与按钮组的放大比悬殊：同一行时余宽几乎全归输入框；按钮组换行后独占一行，按钮再均分。
               "field-frame flex h-10 min-w-0 grow-[999] basis-56 items-center gap-2 rounded-md bg-background px-3",
-              disabled && "opacity-50",
+              disabled && "opacity-50"
             )}
           >
             <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -209,7 +215,8 @@ export function SearchCombobox<T>({
               onCloseAutoFocus={(event) => event.preventDefault()}
               onInteractOutside={(event) => {
                 // 点回输入框、点右侧的搜索按钮都算在搜索框里面，不收起。
-                if (event.target instanceof Node && rootRef.current?.contains(event.target)) event.preventDefault();
+                if (event.target instanceof Node && rootRef.current?.contains(event.target))
+                  event.preventDefault();
               }}
               // 面板里没有可聚焦的东西，按下也不能把焦点从输入框带走，否则失焦会先把面板关掉。
               onMouseDown={(event) => event.preventDefault()}
@@ -232,7 +239,9 @@ export function SearchCombobox<T>({
                   optionId={optionId}
                   unavailable={unavailable}
                   renderOption={renderOption}
-                  onHighlight={(index) => { if (index !== activeIndex) highlight(index, false); }}
+                  onHighlight={(index) => {
+                    if (index !== activeIndex) highlight(index, false);
+                  }}
                   onChoose={choose}
                 />
               </motion.div>
@@ -281,7 +290,12 @@ function SearchPanel<T>({
   const height = useMeasuredHeight(scrollRef);
 
   return (
-    <motion.div initial={false} animate={height === null ? undefined : { height }} transition={spring.settle} className="overflow-hidden">
+    <motion.div
+      initial={false}
+      animate={height === null ? undefined : { height }}
+      transition={spring.settle}
+      className="overflow-hidden"
+    >
       <div
         ref={scrollRef}
         className="scrollbar-hidden relative max-h-[min(22rem,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain"
@@ -297,7 +311,7 @@ function SearchPanel<T>({
             className={cn(
               "flex items-center gap-2 px-3 py-3 text-sm",
               status.tone === "error" ? "text-destructive" : "text-muted-foreground",
-              items.length > 0 && "border-b",
+              items.length > 0 && "border-b"
             )}
           >
             {status.tone === "busy" ? <Spinner /> : null}
@@ -337,18 +351,27 @@ function SearchPanel<T>({
                       "flex min-h-11 cursor-pointer items-center gap-3 border-t px-3 py-2 text-sm transition-colors first:border-t-0",
                       "data-active:bg-accent data-active:text-accent-foreground",
                       blocked && "cursor-not-allowed",
-                      item.kind === "back" && "text-muted-foreground",
+                      item.kind === "back" && "text-muted-foreground"
                     )}
                   >
                     {item.kind === "back" ? (
                       <>
                         <ArrowLeft className="size-4 shrink-0" aria-hidden="true" />
                         <span className="shrink-0 font-medium">{item.back.label}</span>
-                        {item.back.detail ? <span className="ml-auto min-w-0 truncate text-xs">{item.back.detail}</span> : null}
+                        {item.back.detail ? (
+                          <span className="ml-auto min-w-0 truncate text-xs">
+                            {item.back.detail}
+                          </span>
+                        ) : null}
                       </>
                     ) : (
                       <>
-                        <div className={cn("flex min-w-0 flex-1 items-center gap-3", blocked && pendingKey !== item.key && "opacity-50")}>
+                        <div
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center gap-3",
+                            blocked && pendingKey !== item.key && "opacity-50"
+                          )}
+                        >
                           {renderOption(item.option)}
                         </div>
                         {pendingKey === item.key ? <Spinner className="text-primary" /> : null}

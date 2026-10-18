@@ -33,7 +33,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
         serverUrl: "http://localhost:4850/",
         tracesSampleRate: 0.2,
       },
-      mockDriver,
+      mockDriver
     );
 
     expect(isClientSentryEnabled()).toBe(true);
@@ -42,7 +42,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
         dsn: "https://mockkey@o000000.ingest.sentry.io/100001",
         tunnel: "http://localhost:4850/api/monitoring/sentry",
         tracesSampleRate: 0.2,
-      }),
+      })
     );
   });
 
@@ -61,20 +61,24 @@ describe("Client Sentry 客户端接入与异常转发", () => {
       .ignoreErrors;
     const isFiltered = (candidate: string) =>
       ignoreErrors.some((entry) =>
-        typeof entry === "string" ? candidate.includes(entry) : entry.test(candidate),
+        typeof entry === "string" ? candidate.includes(entry) : entry.test(candidate)
       );
 
-    expect(isFiltered("TypeError: Failed to fetch dynamically imported module: /assets/main.js")).toBe(true);
+    expect(
+      isFiltered("TypeError: Failed to fetch dynamically imported module: /assets/main.js")
+    ).toBe(true);
     expect(isFiltered("TypeError: Loading chunk 42 failed.")).toBe(true);
     expect(isFiltered("TypeError: Importing a module script failed.")).toBe(true);
     expect(isFiltered("Load failed (game.baka.website)")).toBe(true);
     expect(isFiltered("TypeError: NetworkError when attempting to fetch resource.")).toBe(true);
     expect(
       isFiltered(
-        "NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
-      ),
+        "NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node."
+      )
     ).toBe(true);
-    expect(isFiltered("Error: InvalidStateError: Transition was aborted because of invalid state")).toBe(true);
+    expect(
+      isFiltered("Error: InvalidStateError: Transition was aborted because of invalid state")
+    ).toBe(true);
     expect(isFiltered("AbortError: Transition was skipped")).toBe(true);
   });
 
@@ -89,9 +93,8 @@ describe("Client Sentry 客户端接入与异常转发", () => {
 
     initClientSentry({ dsn: "https://mockkey@o000000.ingest.sentry.io/100001" }, mockDriver);
 
-    const beforeSend = (
-      mockInit.mock.calls[0]?.[0] as { beforeSend: (event: unknown) => unknown }
-    ).beforeSend;
+    const beforeSend = (mockInit.mock.calls[0]?.[0] as { beforeSend: (event: unknown) => unknown })
+      .beforeSend;
 
     const parseFailure = {
       exception: {
@@ -99,7 +102,9 @@ describe("Client Sentry 客户端接入与异常转发", () => {
           {
             type: "SyntaxError",
             value: "Unexpected token '{'",
-            stacktrace: { frames: [{ function: "promiseReactionJob" }, { function: "parseModule" }] },
+            stacktrace: {
+              frames: [{ function: "promiseReactionJob" }, { function: "parseModule" }],
+            },
           },
         ],
       },
@@ -156,7 +161,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
       {
         dsn: "https://mockkey@o000000.ingest.sentry.io/100001",
       },
-      mockDriver,
+      mockDriver
     );
 
     captureClientException(new Error("渲染崩溃测试"), { traceId: "test-trace-1" });

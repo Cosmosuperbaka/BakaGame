@@ -1,5 +1,5 @@
-import * as React from "react"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import { cn } from "@/lib/Utils";
 
 /**
  * 单行输入框。外框、悬停与聚焦的晕光都由 `field-frame` 统一给出（见 index.css），
@@ -20,9 +20,9 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
         ref={ref}
         {...props}
       />
-    )
+    );
   }
-)
-Input.displayName = "Input"
+);
+Input.displayName = "Input";
 
-export { Input }
+export { Input };

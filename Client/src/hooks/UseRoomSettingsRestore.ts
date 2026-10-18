@@ -33,10 +33,13 @@ const runRestoreJob = (key: string, task: () => Promise<void>): Promise<void> =>
 export function useRoomSettingsRestore<G extends RoomGame>(
   game: G,
   roomId: string | undefined,
-  send: (memory: RoomSettingsMemoryByGame[G], roomId: string) => Promise<void>,
+  send: (memory: RoomSettingsMemoryByGame[G], roomId: string) => Promise<void>
 ): boolean {
   const [restoring, setRestoring] = useState(
-    () => Boolean(roomId) && peekPendingRestore(game) === roomId && readRoomSettingsMemory(game) !== null,
+    () =>
+      Boolean(roomId) &&
+      peekPendingRestore(game) === roomId &&
+      readRoomSettingsMemory(game) !== null
   );
 
   useEffect(() => {

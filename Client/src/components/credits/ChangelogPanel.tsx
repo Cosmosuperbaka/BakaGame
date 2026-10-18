@@ -27,7 +27,13 @@ function InlineContent({ nodes }: { nodes: InlineNode[] }) {
             );
           case "link":
             return (
-              <a key={index} href={node.href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
+              <a
+                key={index}
+                href={node.href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline underline-offset-2"
+              >
                 {node.text}
               </a>
             );
@@ -50,7 +56,11 @@ function ChangelogBody({ content }: { content: ChangelogContent }) {
   return (
     <div className="space-y-3">
       {sections.map((section) => (
-        <div key={section.type} className="space-y-1.5" data-testid={`changelog-category-${section.type}`}>
+        <div
+          key={section.type}
+          className="space-y-1.5"
+          data-testid={`changelog-category-${section.type}`}
+        >
           <div className="flex items-center gap-1.5">
             <Badge variant="secondary" size="xs" className="font-mono lowercase">
               {section.type}
@@ -71,7 +81,7 @@ function ChangelogBody({ content }: { content: ChangelogContent }) {
                 <p key={index}>
                   <InlineContent nodes={block.content} />
                 </p>
-              ),
+              )
             )}
           </div>
         </div>

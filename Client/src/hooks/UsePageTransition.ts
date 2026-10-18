@@ -1,5 +1,10 @@
 import { useCallback, useContext, useLayoutEffect } from "react";
-import { UNSAFE_ViewTransitionContext, useNavigate, type NavigateOptions, type To } from "react-router-dom";
+import {
+  UNSAFE_ViewTransitionContext,
+  useNavigate,
+  type NavigateOptions,
+  type To,
+} from "react-router-dom";
 
 /**
  * 页面导航默认走 View Transitions：旧页定格成快照向前退出、新页自后方推入（见 `index.css` 的页面过渡）。
@@ -9,7 +14,7 @@ export function usePageNavigate() {
   const navigate = useNavigate();
   return useCallback(
     (to: To, options?: NavigateOptions) => navigate(to, { viewTransition: true, ...options }),
-    [navigate],
+    [navigate]
   );
 }
 
@@ -56,7 +61,7 @@ export type PageTransitionKind = "credits";
  */
 export function pageTransitionKind(
   from: string | undefined,
-  to: string | undefined,
+  to: string | undefined
 ): PageTransitionKind | undefined {
   return from === "/credits" || to === "/credits" ? "credits" : undefined;
 }

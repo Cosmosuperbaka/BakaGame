@@ -76,16 +76,13 @@ describe("application routing regressions", () => {
     expect(window.location.pathname).toBe("/");
   });
 
-  it.each(["/animecharguessr"])(
-    "redirects removed route %s to the landing page",
-    async (path) => {
-      window.history.replaceState({}, "", path);
-      renderApp();
+  it.each(["/animecharguessr"])("redirects removed route %s to the landing page", async (path) => {
+    window.history.replaceState({}, "", path);
+    renderApp();
 
-      expect(await screen.findByText("landing-page")).toBeInTheDocument();
-      await waitFor(() => expect(window.location.pathname).toBe("/"));
-    },
-  );
+    expect(await screen.findByText("landing-page")).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+  });
 
   it("redirects an invalid game sub-route to the game lobby", async () => {
     window.history.replaceState({}, "", "/whoisfaker/not-a-room");
@@ -133,7 +130,9 @@ describe("application routing regressions", () => {
     vi.stubGlobal("location", { ...window.location, reload: reloadMock });
 
     sessionStorage.clear();
-    const failingLoader = vi.fn().mockRejectedValue(new TypeError("Failed to fetch dynamically imported module"));
+    const failingLoader = vi
+      .fn()
+      .mockRejectedValue(new TypeError("Failed to fetch dynamically imported module"));
 
     const pendingPromise = retryLazyImport(failingLoader, "test-chunk");
     await Promise.resolve();

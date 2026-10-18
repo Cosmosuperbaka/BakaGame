@@ -1,10 +1,5 @@
 import type { ClientEnvelope } from "./Protocol";
-import type {
-  ChatMessage,
-  PlayerAccount,
-  PlayerMembership,
-  RoomVisibility,
-} from "./Model";
+import type { ChatMessage, PlayerAccount, PlayerMembership, RoomVisibility } from "./Model";
 
 // ==================== 谁是卧底 (WhoIsFaker) 领域模型与协议 ====================
 
@@ -22,16 +17,9 @@ export const WHOISFAKER_PHASES = [
   "gameOver",
 ] as const;
 
-
 export type WhoIsFakerPhase = (typeof WHOISFAKER_PHASES)[number];
 
-export const WHOISFAKER_ROLES = [
-  "civilian",
-  "undercover",
-  "angel",
-  "blank",
-] as const;
-
+export const WHOISFAKER_ROLES = ["civilian", "undercover", "angel", "blank"] as const;
 
 export type WhoIsFakerRole = (typeof WHOISFAKER_ROLES)[number];
 export type PlayerSide = "good" | "undercover" | "blank";
@@ -94,7 +82,6 @@ export interface WhoIsFakerPlayerRecord {
   /** 最近一次接管座位的连接所登录的账号。 */
   account?: PlayerAccount;
 }
-
 
 // 每条描述都带上阶段类型与轮次，便于结算时回放。
 export interface DescriptionRecord {
@@ -232,7 +219,11 @@ export type RoundHistoryEntry =
       kind: "night";
       day: number;
       createdAt: number;
-      actions: Array<{ actorId: string; actorRole: NightActionRecord["actorRole"]; targetId?: string }>;
+      actions: Array<{
+        actorId: string;
+        actorRole: NightActionRecord["actorRole"];
+        targetId?: string;
+      }>;
       eliminatedPlayerIds: string[];
     }
   | {
@@ -384,7 +375,6 @@ export interface WhoIsFakerRoomRecord {
   roundCount?: number;
 }
 
-
 // 大厅列表使用的轻量房间摘要。
 export interface WhoIsFakerRoomSummary {
   roomId: string;
@@ -399,7 +389,6 @@ export interface WhoIsFakerRoomSummary {
   testMode: boolean;
 }
 
-
 // 房间公共玩家视图，不包含秘密词语与隐藏身份。
 export interface PublicPlayerView {
   id: string;
@@ -411,13 +400,7 @@ export interface PublicPlayerView {
   isBot: boolean;
   isHost: boolean;
   account?: PlayerAccount;
-  roundStatus:
-    | "waiting"
-    | "questioner"
-    | "alive"
-    | "dead"
-    | "spectator"
-    | "kicked";
+  roundStatus: "waiting" | "questioner" | "alive" | "dead" | "spectator" | "kicked";
   revealedRole?: WhoIsFakerRole;
   eliminatedAt?: number;
 }
@@ -479,7 +462,6 @@ export interface WhoIsFakerRoomSnapshot {
   summary?: RoundSummary;
 }
 
-
 // 每个连接单独收到的私有视图，用于承载秘密信息。
 export interface WhoIsFakerPrivateState {
   playerId: string;
@@ -516,9 +498,7 @@ export interface WhoIsFakerPrivateState {
   privilegedActionPreview?: PrivilegedActionPreview;
 }
 
-
 // ==================== 谁是卧底客户端信封与消息 ====================
-
 
 export type WhoIsFakerClientMessage =
   | ClientEnvelope<"lobby.subscribeRooms", Record<string, never>>
@@ -582,10 +562,7 @@ export type WhoIsFakerClientMessage =
   | ClientEnvelope<"game.enterBlankGuess", Record<string, never>>
   | ClientEnvelope<"game.updateBlankGuessDraft", { words: [string, string] }>
   | ClientEnvelope<"game.reviewBlankGuess", { approve: boolean }>
-  | ClientEnvelope<
-      "game.resolveDisconnect",
-      { playerId: string; resolution: DisconnectResolution }
-    >
+  | ClientEnvelope<"game.resolveDisconnect", { playerId: string; resolution: DisconnectResolution }>
   | ClientEnvelope<"chat.send", { text: string }>
   | ClientEnvelope<"room.transferHost", { playerId: string }>
   | ClientEnvelope<"test.jumpToPhase", { phase: WhoIsFakerPhase }>
@@ -597,4 +574,3 @@ export type WhoIsFakerClientMessage =
   | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>
   | ClientEnvelope<"game.startPhaseTimer", { durationSeconds: number }>
   | ClientEnvelope<"game.stopPhaseTimer", Record<string, never>>;
-

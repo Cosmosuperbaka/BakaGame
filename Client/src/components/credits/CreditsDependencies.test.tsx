@@ -5,7 +5,7 @@ import { UNKNOWN_LICENSE, type CreditDependency } from "@/lib/Credits";
 import { CreditsDependencies } from "./CreditsDependencies";
 
 const dependency = (
-  overrides: Partial<CreditDependency> & Pick<CreditDependency, "name" | "version">,
+  overrides: Partial<CreditDependency> & Pick<CreditDependency, "name" | "version">
 ): CreditDependency => ({
   license: "MIT",
   description: "",
@@ -74,7 +74,9 @@ describe("CreditsDependencies", () => {
 
     expect(screen.getByText("4 个主包")).toBeInTheDocument();
     // @radix-ui/react-slot 与 scheduler 是传递依赖，只在二级抽屉里出现。
-    expect(screen.queryByRole("button", { name: /查看 @radix-ui\/react-slot/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /查看 @radix-ui\/react-slot/ })
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /查看 scheduler/ })).not.toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(4);
   });

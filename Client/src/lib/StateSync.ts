@@ -1,8 +1,5 @@
 import { applyPatch, type Operation } from "fast-json-patch";
-import type {
-  StatePatchOperation,
-  StateSyncPayload,
-} from "@/types";
+import type { StatePatchOperation, StateSyncPayload } from "@/types";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -17,11 +14,7 @@ export function isStateSyncPayload<T>(value: unknown): value is StateSyncPayload
 
 export function applyStatePatch<T>(current: T, operations: StatePatchOperation[]): T {
   const cloned = structuredClone(current);
-  const result = applyPatch(
-    cloned as object,
-    operations as Operation[],
-    true,
-  );
+  const result = applyPatch(cloned as object, operations as Operation[], true);
   return result.newDocument as T;
 }
 
@@ -34,7 +27,7 @@ export interface StateSyncResult<T> {
 export function consumeStateSync<T>(
   current: T | null,
   currentRevision: number | undefined,
-  payload: unknown,
+  payload: unknown
 ): StateSyncResult<T> {
   if (!isStateSyncPayload<T>(payload)) {
     return { needsFullSync: true };

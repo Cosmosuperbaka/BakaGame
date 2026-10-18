@@ -29,8 +29,12 @@ export function RoomCardSkeleton({ count = 3 }: { count?: number }) {
             id={<SkeletonLine className="w-24 bg-foreground/6" />}
             badges={
               <>
-                <Badge variant="placeholder"><span className="h-[1lh] w-[3em]" /></Badge>
-                <Badge variant="placeholder"><span className="h-[1lh] w-[4.5em]" /></Badge>
+                <Badge variant="placeholder">
+                  <span className="h-[1lh] w-[3em]" />
+                </Badge>
+                <Badge variant="placeholder">
+                  <span className="h-[1lh] w-[4.5em]" />
+                </Badge>
               </>
             }
             counts={<SkeletonLine className="w-20 bg-foreground/8" />}

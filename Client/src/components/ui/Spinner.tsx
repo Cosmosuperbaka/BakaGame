@@ -1,9 +1,9 @@
-import { motion, type HTMLMotionProps } from "framer-motion"
-import { LoaderCircle } from "lucide-react"
-import { spinner } from "@/lib/Motion"
-import { cn } from "@/lib/Utils"
+import { motion, type HTMLMotionProps } from "framer-motion";
+import { LoaderCircle } from "lucide-react";
+import { spinner } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 
-type SpinnerProps = Omit<HTMLMotionProps<"span">, "children">
+type SpinnerProps = Omit<HTMLMotionProps<"span">, "children">;
 
 /**
  * 加载指示。旋转走 spinner 令牌，随 MotionConfig 尊重减弱动效；Tailwind 的 animate-spin 是不受约束的 CSS 关键帧，不用。
@@ -20,7 +20,7 @@ function Spinner({ className, ...props }: SpinnerProps) {
     >
       <LoaderCircle className="size-full" />
     </motion.span>
-  )
+  );
 }
 
-export { Spinner }
+export { Spinner };

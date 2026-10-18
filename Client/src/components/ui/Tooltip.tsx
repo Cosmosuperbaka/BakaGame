@@ -1,6 +1,6 @@
-import * as React from "react"
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { cn } from "@/lib/Utils";
 
 /** 标记上游已经挂过 Provider：`Hint` 只在缺失时补一个，避免整站多套排程。 */
 const HasProvider = React.createContext(false);
@@ -14,8 +14,8 @@ function TooltipProvider(props: React.ComponentProps<typeof TooltipPrimitive.Pro
   );
 }
 
-const Tooltip = TooltipPrimitive.Root
-const TooltipTrigger = TooltipPrimitive.Trigger
+const Tooltip = TooltipPrimitive.Root;
+const TooltipTrigger = TooltipPrimitive.Trigger;
 
 /** 浮层内容的可调参数，与 `TooltipContent` 的落位口径一致。 */
 type TooltipPlacement = Pick<
@@ -44,7 +44,9 @@ function Hint({ label, children, contentClassName, ...placement }: HintProps) {
   const floating = (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent className={contentClassName} {...placement}>{label}</TooltipContent>
+      <TooltipContent className={contentClassName} {...placement}>
+        {label}
+      </TooltipContent>
     </Tooltip>
   );
   return hasProvider ? floating : <TooltipProvider>{floating}</TooltipProvider>;
@@ -66,7 +68,7 @@ const TooltipContent = React.forwardRef<
       {...props}
     />
   </TooltipPrimitive.Portal>
-))
-TooltipContent.displayName = TooltipPrimitive.Content.displayName
+));
+TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
-export { Hint, Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { Hint, Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };

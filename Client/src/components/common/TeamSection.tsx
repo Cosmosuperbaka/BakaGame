@@ -9,7 +9,14 @@ import { cn } from "@/lib/Utils";
  * 标题行给队号、`detail`（人数与共享进度）与全队合计分；分数仍按人存储，这里只相加。
  * `extra` 挂在标题下方（CEE 的共享猜测进度串），队员行由 `children` 给出。
  */
-export function TeamSection({ ref, team, scores, detail, extra, children }: {
+export function TeamSection({
+  ref,
+  team,
+  scores,
+  detail,
+  extra,
+  children,
+}: {
   ref?: Ref<HTMLElement>;
   team: number | null;
   scores: number[];
@@ -36,9 +43,15 @@ export function TeamSection({ ref, team, scores, detail, extra, children }: {
         <div className="space-y-0.5 px-2 pt-1 pb-0.5">
           <div className="flex min-w-0 items-baseline gap-1.5">
             <span className="text-xs font-medium">{team} 队</span>
-            <span className="min-w-0 flex-1 truncate font-sans text-2xs text-muted-foreground">{detail}</span>
-            <span aria-label={`合计 ${total} 分`} className="flex shrink-0 items-baseline gap-0.5 font-sans text-2xs text-muted-foreground tabular-nums">
-              合计<AnimatedNumber value={total} className="text-xs text-foreground" />分
+            <span className="min-w-0 flex-1 truncate font-sans text-2xs text-muted-foreground">
+              {detail}
+            </span>
+            <span
+              aria-label={`合计 ${total} 分`}
+              className="flex shrink-0 items-baseline gap-0.5 font-sans text-2xs text-muted-foreground tabular-nums"
+            >
+              合计
+              <AnimatedNumber value={total} className="text-xs text-foreground" />分
             </span>
           </div>
           {extra}

@@ -114,7 +114,7 @@ const PUBLIC_MASK_ASSETS: Readonly<Partial<Record<CreditBrandId, string>>> = {
 
 /** 自备资产的 mask 地址：`public/` 下的固定路径，不经 Vite 资源管线。 */
 const PUBLIC_MASK_URLS = Object.fromEntries(
-  Object.entries(PUBLIC_MASK_ASSETS).map(([brand, file]) => [brand, `/assets/brands/${file}`]),
+  Object.entries(PUBLIC_MASK_ASSETS).map(([brand, file]) => [brand, `/assets/brands/${file}`])
 ) as Readonly<Partial<Record<CreditBrandId, string>>>;
 
 /** 全部走 CSS mask 的品牌 → 预期 `mask-image` 里的资源地址。 */
@@ -173,7 +173,9 @@ describe("CreditBrandMark", () => {
       expect(typeof url, brand).toBe("string");
       expect(url.length, brand).toBeGreaterThan(0);
       // 构建产物是哈希资源（…/assets/xxx.svg），小文件也可能内联成 data URL。
-      expect(/\.svg/.test(url) || url.startsWith("data:") || url.includes("/assets/"), brand).toBe(true);
+      expect(/\.svg/.test(url) || url.startsWith("data:") || url.includes("/assets/"), brand).toBe(
+        true
+      );
     }
   });
 
@@ -201,12 +203,16 @@ describe("CreditBrandMark", () => {
   });
 
   it("尺寸与颜色由调用处 className 决定，默认值被 twMerge 覆盖", () => {
-    const simple = render(<CreditBrandMark brand="react" className="size-3 text-muted-foreground" />);
+    const simple = render(
+      <CreditBrandMark brand="react" className="size-3 text-muted-foreground" />
+    );
     const svg = simple.container.querySelector("svg");
     expect(svg).toHaveClass("size-3", "text-muted-foreground");
     expect(svg).not.toHaveClass("size-4");
 
-    const masked = render(<CreditBrandMark brand="playwright" className="size-6 text-muted-foreground" />);
+    const masked = render(
+      <CreditBrandMark brand="playwright" className="size-6 text-muted-foreground" />
+    );
     const span = masked.container.querySelector("span");
     expect(span).toHaveClass("size-6", "text-muted-foreground");
     expect(span).not.toHaveClass("size-4");
@@ -302,9 +308,17 @@ describe("DependencyGlyph", () => {
 
   it("图标包里已有字形的包不再回退通用图标（@lobehub / sonarjs / @babel / esbuild / postcss）", () => {
     const lobehub = render(<DependencyGlyph packageName="@lobehub/icons-static-svg" />);
-    expect((lobehub.container.querySelector("span") as HTMLElement).style.maskImage).toBe(`url("${lobehubIconUrl}")`);
+    expect((lobehub.container.querySelector("span") as HTMLElement).style.maskImage).toBe(
+      `url("${lobehubIconUrl}")`
+    );
 
-    for (const packageName of ["eslint-plugin-sonarjs", "@babel/core", "@babel/runtime", "esbuild", "postcss"]) {
+    for (const packageName of [
+      "eslint-plugin-sonarjs",
+      "@babel/core",
+      "@babel/runtime",
+      "esbuild",
+      "postcss",
+    ]) {
       const { container, unmount } = render(<DependencyGlyph packageName={packageName} />);
       expect(container.querySelector("svg"), packageName).not.toBeNull();
       expect(container.querySelector("svg.lucide-package"), packageName).toBeNull();

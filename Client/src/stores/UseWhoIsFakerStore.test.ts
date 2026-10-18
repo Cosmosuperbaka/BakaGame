@@ -3,8 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WhoIsFakerRoomSnapshot, RoundSummary, ServerMessage } from "@/types";
 import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
 
-
-
 const wsMock = vi.hoisted(() => {
   let messageHandlers: Array<(message: ServerMessage) => void> = [];
   let statusHandlers: Array<(connected: boolean) => void> = [];
@@ -114,7 +112,14 @@ describe("game store integration", () => {
 
   it("合并聊天历史保持有界并保留最新消息", () => {
     const base = gameOverSnapshot("chat-round");
-    const history = Array.from({ length: 250 }, (_, index) => ({ id: `chat-${index}`, playerId: "p", playerName: "玩家", text: `消息${index}`, system: false, createdAt: index }));
+    const history = Array.from({ length: 250 }, (_, index) => ({
+      id: `chat-${index}`,
+      playerId: "p",
+      playerName: "玩家",
+      text: `消息${index}`,
+      system: false,
+      createdAt: index,
+    }));
     useWhoIsFakerStore.getState().setSnapshot({ ...base, chat: history });
     const chat = useWhoIsFakerStore.getState().snapshot?.chat ?? [];
     expect(chat).toHaveLength(200);
@@ -133,10 +138,13 @@ describe("game store integration", () => {
       userName: "房主",
     });
 
-    expect(wsMock.send).toHaveBeenCalledWith("room.create", expect.objectContaining({
-      roomId: "1234",
-      userName: "房主",
-    }));
+    expect(wsMock.send).toHaveBeenCalledWith(
+      "room.create",
+      expect.objectContaining({
+        roomId: "1234",
+        userName: "房主",
+      })
+    );
     expect(getSessionToken("1234")).toBe("created-token");
     expect(useWhoIsFakerStore.getState()).toMatchObject({
       roomId: "1234",
@@ -146,7 +154,11 @@ describe("game store integration", () => {
 
   it("退房回包慢于下一次进房时，只清掉发起退房的会话", async () => {
     let ack!: () => void;
-    wsMock.send.mockReturnValue(new Promise<void>((resolve) => { ack = resolve; }));
+    wsMock.send.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ack = resolve;
+      })
+    );
     saveSessionToken("1234", "old-token");
     useWhoIsFakerStore.setState({ roomId: "1234", sessionToken: "old-token" });
 
@@ -157,7 +169,10 @@ describe("game store integration", () => {
     ack();
     await leaving;
 
-    expect(useWhoIsFakerStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "new-token" });
+    expect(useWhoIsFakerStore.getState()).toMatchObject({
+      roomId: "5678",
+      sessionToken: "new-token",
+    });
     expect(getSessionToken("5678")).toBe("new-token");
     // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
     expect(getSessionToken("1234")).toBeNull();
@@ -172,16 +187,17 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState().roomId).toBeNull();
     expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
     expect(useWhoIsFakerStore.getState().toasts).toContainEqual(
-      expect.objectContaining({ text: "会话已失效，请重新加入", type: "error" }),
+      expect.objectContaining({ text: "会话已失效，请重新加入", type: "error" })
     );
   });
-
 
   it("临时重连失败保留重试凭据但拒绝调用方，不伪装入房成功", async () => {
     saveSessionToken("2346", "live-token");
     wsMock.send.mockRejectedValue({ code: "DISCONNECTED" });
 
-    await expect(useWhoIsFakerStore.getState().reconnectRoom("2346")).rejects.toMatchObject({ code: "DISCONNECTED" });
+    await expect(useWhoIsFakerStore.getState().reconnectRoom("2346")).rejects.toMatchObject({
+      code: "DISCONNECTED",
+    });
     expect(getSessionToken("2346")).toBe("live-token");
     expect(useWhoIsFakerStore.getState()).toMatchObject({
       roomId: null,
@@ -279,10 +295,9 @@ describe("game store integration", () => {
       expect.objectContaining({
         text: SERVER_SHUTDOWN_MESSAGE,
         type: "error",
-      }),
+      })
     );
   });
-
 
   it("keeps the current round summary when a transient game-over snapshot omits it", () => {
     useWhoIsFakerStore.getState().setSnapshot(gameOverSnapshot("round-1", roundSummary));
@@ -333,11 +348,13 @@ describe("game store integration", () => {
         mode: "patch",
         revision: 2,
         baseRevision: 1,
-        operations: [{
-          op: "replace",
-          path: "/players/0/roundStatus",
-          value: "dead",
-        }],
+        operations: [
+          {
+            op: "replace",
+            path: "/players/0/roundStatus",
+            value: "dead",
+          },
+        ],
       },
     });
     wsMock.emitMessage({
@@ -360,18 +377,22 @@ describe("game store integration", () => {
         mode: "patch",
         revision: 4,
         baseRevision: 3,
-        operations: [{
-          op: "replace",
-          path: "/chat",
-          value: [{
-            id: "message-1",
-            playerId: "system",
-            playerName: "System",
-            text: "Game over",
-            createdAt: 1,
-            system: true,
-          }],
-        }],
+        operations: [
+          {
+            op: "replace",
+            path: "/chat",
+            value: [
+              {
+                id: "message-1",
+                playerId: "system",
+                playerName: "System",
+                text: "Game over",
+                createdAt: 1,
+                system: true,
+              },
+            ],
+          },
+        ],
       },
     });
 
@@ -496,15 +517,17 @@ describe("game store integration", () => {
   });
 });
 
-
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
   saveSessionToken("1234", "recoverable");
-  useWhoIsFakerStore.setState({connected:true,lobbyReady:true});
-  const cleanup=initGameSocket();cleanup();
+  useWhoIsFakerStore.setState({ connected: true, lobbyReady: true });
+  const cleanup = initGameSocket();
+  cleanup();
   expect(wsMock.disconnect).toHaveBeenCalledOnce();
   expect(wsMock.getMessageHandlers()).toHaveLength(0);
   expect(wsMock.getStatusHandlers()).toHaveLength(0);
-  expect(useWhoIsFakerStore.getState()).toMatchObject({connected:false,lobbyReady:false});
+  expect(useWhoIsFakerStore.getState()).toMatchObject({ connected: false, lobbyReady: false });
   expect(getSessionToken("1234")).toBe("recoverable");
-  const next=initGameSocket();expect(wsMock.getMessageHandlers()).toHaveLength(1);next();
+  const next = initGameSocket();
+  expect(wsMock.getMessageHandlers()).toHaveLength(1);
+  next();
 });

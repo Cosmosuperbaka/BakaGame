@@ -42,10 +42,21 @@ function useCountdown() {
  * 身份区的圆头像：QQ 号合法即按该号取 qlogo（此时 QQ 号就是用户自己刚输入的，见 Agents/Account.md §4），
  * 未填或取不到时是同一尺寸的占位圆，号一变新头像自原位缩放接手，读作「换了一张脸」而不是闪一下。
  */
-function LoginAvatar({ qq, failed, onFailed }: { qq: string; failed: boolean; onFailed: () => void }) {
+function LoginAvatar({
+  qq,
+  failed,
+  onFailed,
+}: {
+  qq: string;
+  failed: boolean;
+  onFailed: () => void;
+}) {
   if (!QQ_NUMBER_PATTERN.test(qq) || failed) {
     return (
-      <span aria-hidden="true" className="flex h-20 w-20 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+      <span
+        aria-hidden="true"
+        className="flex h-20 w-20 items-center justify-center rounded-full border border-border bg-background text-muted-foreground"
+      >
         <UserRound className="h-7 w-7" />
       </span>
     );
@@ -72,7 +83,11 @@ function StepDots({ active }: { active: 0 | 1 }) {
       {[0, 1].map((index) => (
         <span key={index} className="flex h-1 w-4 justify-center">
           {index === active ? (
-            <motion.span layoutId="login-step" className="h-1 w-4 rounded-full bg-foreground/45" transition={indicatorSlide} />
+            <motion.span
+              layoutId="login-step"
+              className="h-1 w-4 rounded-full bg-foreground/45"
+              transition={indicatorSlide}
+            />
           ) : (
             <span className="h-1 w-1 rounded-full bg-border" />
           )}
@@ -90,7 +105,15 @@ function StepDots({ active }: { active: 0 | 1 }) {
  * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，发码后昵称自它上方顶进来；
  * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度。
  */
-export function LoginDialog({ open, onOpenChange, origin }: { open: boolean; onOpenChange: (open: boolean) => void; origin?: OriginPoint | null }) {
+export function LoginDialog({
+  open,
+  onOpenChange,
+  origin,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  origin?: OriginPoint | null;
+}) {
   // QQ 号留在外层：关掉再打开仍保留上次输入；其余状态随弹窗内容每次打开重新开始。
   const [qq, setQq] = useState("");
   return (
@@ -100,7 +123,15 @@ export function LoginDialog({ open, onOpenChange, origin }: { open: boolean; onO
   );
 }
 
-function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: string) => void; onDone: () => void }) {
+function LoginDialogBody({
+  qq,
+  setQq,
+  onDone,
+}: {
+  qq: string;
+  setQq: (value: string) => void;
+  onDone: () => void;
+}) {
   const signIn = useAccountStore((state) => state.signIn);
   const [step, setStep] = useState<Step>({ kind: "qq" });
   const [code, setCode] = useState("");
@@ -144,7 +175,11 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
       await signIn({ email: qqEmailOf(qq), otp: code });
       onDone();
     } catch (cause) {
-      setError(cause instanceof Error && /[一-鿿]/.test(cause.message) ? cause.message : "登录失败，请稍后重试");
+      setError(
+        cause instanceof Error && /[一-鿿]/.test(cause.message)
+          ? cause.message
+          : "登录失败，请稍后重试"
+      );
     } finally {
       setBusy(null);
     }
@@ -155,7 +190,13 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
       <form onSubmit={(event) => void submit(event)} className="grid">
         <div className="flex flex-col items-center gap-3 rounded-t-md border-b border-border/60 bg-muted/40 px-6 pb-5 pt-8">
           <DialogTitle className="text-center">
-            <motion.span key={title} variants={readoutSwap} initial="initial" animate="animate" className="block">
+            <motion.span
+              key={title}
+              variants={readoutSwap}
+              initial="initial"
+              animate="animate"
+              className="block"
+            >
               {title}
             </motion.span>
           </DialogTitle>
@@ -163,7 +204,13 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
           <div className="flex w-full flex-col items-center gap-0.5">
             <span className="flex h-6 max-w-full items-center justify-center">
               {identityName ? (
-                <motion.span key={identityName} variants={readoutSwap} initial="initial" animate="animate" className="max-w-full truncate text-base font-semibold">
+                <motion.span
+                  key={identityName}
+                  variants={readoutSwap}
+                  initial="initial"
+                  animate="animate"
+                  className="max-w-full truncate text-base font-semibold"
+                >
                   {identityName}
                 </motion.span>
               ) : null}
@@ -177,7 +224,14 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
         <div className="grid gap-4 p-6 pt-5">
           <StepDots active={step.kind === "code" ? 1 : 0} />
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={step.kind} variants={phaseSwap} initial="initial" animate="animate" exit="exit" className="grid gap-4">
+            <motion.div
+              key={step.kind}
+              variants={phaseSwap}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="grid gap-4"
+            >
               {step.kind === "qq" ? (
                 <SettingTextField
                   label="QQ 号"
@@ -188,7 +242,9 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
                     setError(null);
                   }}
                   placeholder="输入你的 QQ 号"
-                  description={validQq ? `验证码将发送至 ${qqEmailOf(qq)}` : "验证码将发送至对应的 QQ 邮箱"}
+                  description={
+                    validQq ? `验证码将发送至 ${qqEmailOf(qq)}` : "验证码将发送至对应的 QQ 邮箱"
+                  }
                   inputMode="numeric"
                   maxLength={11}
                   autoFocus
@@ -208,7 +264,7 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
                   maxLength={LOGIN_CODE_LENGTH}
                   autoFocus
                   inputClassName="h-10 font-mono tracking-widest"
-                  action={(
+                  action={
                     <Button
                       type="button"
                       variant="outline"
@@ -219,26 +275,42 @@ function LoginDialogBody({ qq, setQq, onDone }: { qq: string; setQq: (value: str
                     >
                       {countdown.seconds > 0 ? `${countdown.seconds} 秒后重发` : "重新发送"}
                     </Button>
-                  )}
+                  }
                 />
               )}
               <CollapsibleRegion open={Boolean(error)}>
-                <p role="alert" className="text-sm text-destructive">{error}</p>
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
               </CollapsibleRegion>
             </motion.div>
           </AnimatePresence>
 
           <DialogFooter className="min-h-20 sm:min-h-9">
             {step.kind === "code" ? (
-              <Button type="button" variant="outline" disabled={busy !== null} onClick={() => { setStep({ kind: "qq" }); setError(null); }}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() => {
+                  setStep({ kind: "qq" });
+                  setError(null);
+                }}
+              >
                 <ArrowLeft />
                 换个 QQ 号
               </Button>
             ) : null}
             {step.kind === "qq" ? (
-              <Button type="submit" disabled={!validQq || busy !== null} loading={busy === "send"}>发送验证码</Button>
+              <Button type="submit" disabled={!validQq || busy !== null} loading={busy === "send"}>
+                发送验证码
+              </Button>
             ) : (
-              <Button type="submit" disabled={!canSignIn || (busy !== null && busy !== "sign-in")} loading={busy === "sign-in"}>
+              <Button
+                type="submit"
+                disabled={!canSignIn || (busy !== null && busy !== "sign-in")}
+                loading={busy === "sign-in"}
+              >
                 {isRegister ? "注册并登录" : "登录"}
               </Button>
             )}

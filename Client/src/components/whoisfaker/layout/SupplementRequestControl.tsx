@@ -43,8 +43,7 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
   const pendingPlayerIds = snapshot.status.pendingSupplementPlayerIds ?? [];
   const supplementActive = pendingPlayerIds.length > 0;
   const candidates = snapshot.players.filter(
-    (player) =>
-      player.roundStatus === "alive" && player.id !== snapshot.status.questionerPlayerId,
+    (player) => player.roundStatus === "alive" && player.id !== snapshot.status.questionerPlayerId
   );
 
   const close = () => {
@@ -56,7 +55,7 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
     setSelectedPlayerIds((currentIds) =>
       currentIds.includes(playerId)
         ? currentIds.filter((currentId) => currentId !== playerId)
-        : [...currentIds, playerId],
+        : [...currentIds, playerId]
     );
   };
 
@@ -87,18 +86,19 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
   const panelOpen = open && canRequest && !supplementActive;
 
   return {
-    trigger: canRequest && !supplementActive ? (
-      <Button
-        size="lg"
-        variant="outline"
-        aria-expanded={panelOpen}
-        aria-controls={panelOpen ? panelId : undefined}
-        onClick={() => (panelOpen ? close() : setOpen(true))}
-      >
-        <MessageSquarePlus className="h-4 w-4" />
-        请求补充发言
-      </Button>
-    ) : null,
+    trigger:
+      canRequest && !supplementActive ? (
+        <Button
+          size="lg"
+          variant="outline"
+          aria-expanded={panelOpen}
+          aria-controls={panelOpen ? panelId : undefined}
+          onClick={() => (panelOpen ? close() : setOpen(true))}
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+          请求补充发言
+        </Button>
+      ) : null,
     panel: (
       <CollapsibleRegion open={panelOpen} id={panelId}>
         <div className="space-y-3 rounded-md bg-muted p-4 text-left">
@@ -124,13 +124,17 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
                       "flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
                       selected
                         ? "border-primary/40 bg-primary/10 text-foreground"
-                        : "border-dashed border-border bg-background text-muted-foreground hover:bg-accent/40",
+                        : "border-dashed border-border bg-background text-muted-foreground hover:bg-accent/40"
                     )}
                   >
                     {/* 图标位定宽，选中与否只换图标，胶囊不随之伸缩 */}
                     <span aria-hidden="true" className="grid h-3 w-3 shrink-0 place-items-center">
                       <AnimatePresence mode="popLayout" initial={false}>
-                        <motion.span key={selected ? "on" : "off"} className="[grid-area:1/1]" {...receiptMark}>
+                        <motion.span
+                          key={selected ? "on" : "off"}
+                          className="[grid-area:1/1]"
+                          {...receiptMark}
+                        >
                           {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                         </motion.span>
                       </AnimatePresence>
@@ -142,7 +146,9 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
             })}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={close}>取消</Button>
+            <Button variant="ghost" size="sm" onClick={close}>
+              取消
+            </Button>
             <Button
               size="sm"
               loading={busy}

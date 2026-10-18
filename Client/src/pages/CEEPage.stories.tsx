@@ -43,7 +43,11 @@ export const Empty: Story = {
 export const OriginalUnavailable: Story = {
   name: "原版服务器未接入 · 建房弹窗",
   tags: ["!page", "overlay"],
-  beforeEach: () => lobby({ originalAvailable: false, rooms: CEE_LOBBY_ROOMS.filter((room) => room.source === "native") }),
+  beforeEach: () =>
+    lobby({
+      originalAvailable: false,
+      rooms: CEE_LOBBY_ROOMS.filter((room) => room.source === "native"),
+    }),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "创建房间" }));
     const dialog = within(await screen.findByRole("dialog", { name: "创建房间" }));

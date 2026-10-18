@@ -7,9 +7,27 @@ import { CEESearch, CEESubjectSearch } from "./CEESearch";
 
 // 带图片地址时角色图不走懒加载的 IntersectionObserver（jsdom 没有）。
 const IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-const NIJIKA: CEECharacterSummary = { id: 1, name: "伊地知虹夏", nameCn: "伊地知虹夏", imageUrl: IMAGE };
-const BOCCHI: CEECharacterSummary = { id: 2, name: "後藤ひとり", nameCn: "后藤一里", imageUrl: IMAGE };
-const BOCCHI_THE_ROCK: CEESubjectSummary = { id: 328609, name: "ぼっち・ざ・ろっく！", nameCn: "孤独摇滚！", type: 2, year: 2022, rating: 8.9, heat: 1 };
+const NIJIKA: CEECharacterSummary = {
+  id: 1,
+  name: "伊地知虹夏",
+  nameCn: "伊地知虹夏",
+  imageUrl: IMAGE,
+};
+const BOCCHI: CEECharacterSummary = {
+  id: 2,
+  name: "後藤ひとり",
+  nameCn: "后藤一里",
+  imageUrl: IMAGE,
+};
+const BOCCHI_THE_ROCK: CEESubjectSummary = {
+  id: 328609,
+  name: "ぼっち・ざ・ろっく！",
+  nameCn: "孤独摇滚！",
+  type: 2,
+  year: 2022,
+  rating: 8.9,
+  heat: 1,
+};
 
 const original = useCEEStore.getState();
 afterEach(() => {
@@ -80,7 +98,9 @@ describe("CEE 角色搜索", () => {
     const input = screen.getByRole("combobox", { name: "搜索角色" });
     await user.type(input, "孤独摇滚");
 
-    await user.click(await screen.findByRole("option", { name: /ぼっち・ざ・ろっく！.*孤独摇滚！.*2022/ }));
+    await user.click(
+      await screen.findByRole("option", { name: /ぼっち・ざ・ろっく！.*孤独摇滚！.*2022/ })
+    );
     expect(searchSubjects).toHaveBeenCalledWith("孤独摇滚");
     expect(loadSubjectCharacters).toHaveBeenCalledWith(BOCCHI_THE_ROCK.id);
     expect(await screen.findByRole("option", { name: /返回作品.*孤独摇滚！/ })).toBeInTheDocument();
@@ -95,12 +115,18 @@ describe("CEE 角色搜索", () => {
     expect(await screen.findByRole("option", { name: /伊地知虹夏/ })).toBeInTheDocument();
     expect(searchCharacters).toHaveBeenCalledWith("孤独摇滚");
     // 作品结果随范围切换作废（播完退场后卸载），不留在角色面板里。
-    await waitFor(() => expect(screen.queryByRole("option", { name: /ぼっち・ざ・ろっく！/ })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("option", { name: /ぼっち・ざ・ろっく！/ })).not.toBeInTheDocument()
+    );
   });
 
   it("查询失败在面板里报错", async () => {
     const user = userEvent.setup();
-    useCEEStore.setState({ searchCharacters: vi.fn(async () => { throw new Error("Bangumi 暂时无法访问"); }) });
+    useCEEStore.setState({
+      searchCharacters: vi.fn(async () => {
+        throw new Error("Bangumi 暂时无法访问");
+      }),
+    });
     render(<CEESearch allowSubjects onSelect={() => {}} />);
     await user.type(screen.getByRole("combobox", { name: "搜索角色" }), "虹夏");
     expect(await screen.findByRole("alert")).toHaveTextContent("Bangumi 暂时无法访问");

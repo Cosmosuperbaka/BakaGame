@@ -18,7 +18,13 @@ type TeamMember = { id: string; name: string; team: number | null };
  * 基于原生 radio，方向键切换与读屏语义由浏览器提供；选中底块与分段控件同一个 `SlidingIndicator`，在格子之间滑过去。
  * 只给参与者：`players` 由调用方筛成玩家组成员，旁观者没有队伍；`switching` 时整组禁用，不让连点发出交错的请求。
  */
-export function TeamPicker({ players, selfId, switching, hint, onPick }: {
+export function TeamPicker({
+  players,
+  selfId,
+  switching,
+  hint,
+  onPick,
+}: {
   players: TeamMember[];
   selfId: string;
   switching: boolean;
@@ -65,7 +71,7 @@ export function TeamPicker({ players, selfId, switching, hint, onPick }: {
                 "group relative flex cursor-pointer flex-col gap-1 rounded-md px-2.5 py-1.5 transition-colors",
                 "has-focus-visible:outline-2 has-focus-visible:outline-ring",
                 checked ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                switching && "cursor-wait",
+                switching && "cursor-wait"
               )}
             >
               <input
@@ -80,7 +86,9 @@ export function TeamPicker({ players, selfId, switching, hint, onPick }: {
               />
               <span className="relative flex items-baseline justify-between gap-1">
                 <span className="text-sm font-medium">{teamLabel(team)}</span>
-                <span className="font-sans text-2xs tabular-nums">{list.length ? `${list.length} 人` : "空"}</span>
+                <span className="font-sans text-2xs tabular-nums">
+                  {list.length ? `${list.length} 人` : "空"}
+                </span>
               </span>
               <TeamMembers players={list} selfId={selfId} />
             </motion.label>
@@ -113,14 +121,17 @@ function TeamMembers({ players, selfId }: { players: TeamMember[]; selfId: strin
               layout="position"
               className={cn(
                 "rounded-md ring-2 ring-muted group-data-checked:ring-background dark:group-data-checked:ring-secondary",
-                index > 0 && "-ml-1.5",
+                index > 0 && "-ml-1.5"
               )}
             >
               <PlayerAvatar
                 name={player.name}
                 me={player.id === selfId}
                 // 头像默认的 muted 底与轨道同色，换成与所在格子相反的那一档才看得出方块。
-                className={cn("h-6 w-6 text-xs", player.id !== selfId && "bg-background group-data-checked:bg-muted")}
+                className={cn(
+                  "h-6 w-6 text-xs",
+                  player.id !== selfId && "bg-background group-data-checked:bg-muted"
+                )}
               />
             </motion.span>
           ))}

@@ -54,7 +54,8 @@ const rejectStep = (status: number, code: string, message: string): TunnelStep<n
   failure: tunnelFailure(status, code, message),
 });
 
-const isRejected = <T>(step: TunnelStep<T>): step is { failure: TunnelFailure } => "failure" in step;
+const isRejected = <T>(step: TunnelStep<T>): step is { failure: TunnelFailure } =>
+  "failure" in step;
 
 // DSN 的项目路径只允许单段 ID，其他形态一律视为非法路径。
 const DSN_PROJECT_PATH_PATTERN = /^\/([0-9a-zA-Z_-]+)$/;
@@ -125,15 +126,17 @@ const isUpstreamNetworkFailure = (error: unknown): boolean =>
  * 归类结果同时决定回给客户端的状态码与响应体。
  */
 const classifyTunnelError = (error: unknown): TunnelFailure => {
-  if (isUpstreamTimeout(error)) return tunnelFailure(504, "UPSTREAM_TIMEOUT", "Sentry upstream timeout");
-  if (isUpstreamNetworkFailure(error)) return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
+  if (isUpstreamTimeout(error))
+    return tunnelFailure(504, "UPSTREAM_TIMEOUT", "Sentry upstream timeout");
+  if (isUpstreamNetworkFailure(error))
+    return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
   return tunnelFailure(500, "INTERNAL_ERROR", "Internal Sentry tunnel error");
 };
 
 const reportTunnelError = (
   logger: SentryTunnelOptions["logger"],
   error: unknown,
-  failure: TunnelFailure,
+  failure: TunnelFailure
 ): void => {
   if (failure.status === 504) {
     logger?.warn("Sentry tunnel upstream timeout", {
@@ -150,7 +153,7 @@ const reportTunnelError = (
   }
 
   logger?.error("Internal Sentry tunnel error", {
-    error: error instanceof Error ? error.stack ?? error.message : String(error),
+    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
   });
 };
 
@@ -160,8 +163,10 @@ const reportTunnelError = (
  * 429（该退避）与 5xx（上游不可用），其余统一折叠成 502。
  */
 const upstreamFailure = (response: Response): TunnelFailure => {
-  if (response.status === 429) return tunnelFailure(429, "UPSTREAM_RATE_LIMITED", "Sentry upstream rate limited");
-  if (response.status >= 500) return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
+  if (response.status === 429)
+    return tunnelFailure(429, "UPSTREAM_RATE_LIMITED", "Sentry upstream rate limited");
+  if (response.status >= 500)
+    return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
   return tunnelFailure(502, "UPSTREAM_REJECTED", "Sentry upstream rejected the envelope");
 };
 
@@ -171,11 +176,19 @@ const upstreamFailure = (response: Response): TunnelFailure => {
  * §12.7 的口径是「任何 429 一律带 Retry-After」，不能因为上游省略就发空头。
  * 值封顶两分钟，避免上游给个荒谬数字把前端钉死；其它状态码带同名头没有意义（例如 413），只认 429。
  */
-const upstreamBackoffHeaders = (response: Response, fallbackRetryAfterMs: number): Record<string, string> => {
+const upstreamBackoffHeaders = (
+  response: Response,
+  fallbackRetryAfterMs: number
+): Record<string, string> => {
   if (response.status !== 429) return {};
   const declared = Number(response.headers.get("retry-after"));
-  const seconds = Number.isFinite(declared) && declared > 0 ? Math.ceil(declared) : Math.ceil(fallbackRetryAfterMs / 1000);
-  const headers: Record<string, string> = { "retry-after": String(Math.min(Math.max(seconds, 1), 120)) };
+  const seconds =
+    Number.isFinite(declared) && declared > 0
+      ? Math.ceil(declared)
+      : Math.ceil(fallbackRetryAfterMs / 1000);
+  const headers: Record<string, string> = {
+    "retry-after": String(Math.min(Math.max(seconds, 1), 120)),
+  };
   const sentryLimits = response.headers.get("x-sentry-rate-limits");
   if (sentryLimits) headers["x-sentry-rate-limits"] = sentryLimits.slice(0, 256);
   return headers;
@@ -184,7 +197,7 @@ const upstreamBackoffHeaders = (response: Response, fallbackRetryAfterMs: number
 /** 按上游字节流累积信封，超限即刻取消读取，不再继续缓存。 */
 const collectEnvelopeChunks = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  chunks: Uint8Array[],
+  chunks: Uint8Array[]
 ): Promise<number | null> => {
   let byteLength = 0;
   for (;;) {
@@ -199,7 +212,10 @@ const collectEnvelopeChunks = async (
   }
 };
 
-const concatEnvelopeChunks = (chunks: Uint8Array[], byteLength: number): Uint8Array<ArrayBuffer> => {
+const concatEnvelopeChunks = (
+  chunks: Uint8Array[],
+  byteLength: number
+): Uint8Array<ArrayBuffer> => {
   const rawEnvelope = new Uint8Array(byteLength);
   let offset = 0;
   for (const chunk of chunks) {
@@ -210,7 +226,9 @@ const concatEnvelopeChunks = (chunks: Uint8Array[], byteLength: number): Uint8Ar
 };
 
 /** 读取请求体为信封原始字节；首行的换行位置由调用方解析。 */
-const readEnvelopePayload = async (request: Request): Promise<TunnelStep<Uint8Array<ArrayBuffer>>> => {
+const readEnvelopePayload = async (
+  request: Request
+): Promise<TunnelStep<Uint8Array<ArrayBuffer>>> => {
   const chunks: Uint8Array[] = [];
   const reader = request.body?.getReader();
   let byteLength = 0;
@@ -225,7 +243,8 @@ const readEnvelopePayload = async (request: Request): Promise<TunnelStep<Uint8Ar
   }
 
   const rawEnvelope = concatEnvelopeChunks(chunks, byteLength);
-  if (rawEnvelope.byteLength === 0) return rejectStep(400, "INVALID_ENVELOPE", "Empty envelope payload");
+  if (rawEnvelope.byteLength === 0)
+    return rejectStep(400, "INVALID_ENVELOPE", "Empty envelope payload");
   return { value: rawEnvelope };
 };
 
@@ -234,7 +253,7 @@ const decodeEnvelopeHeaderLine = (rawEnvelope: Uint8Array): { text: string } | n
   const newline = rawEnvelope.indexOf(ENVELOPE_HEADER_SEPARATOR);
   try {
     const headerText = new TextDecoder("utf-8", { fatal: true }).decode(
-      rawEnvelope.subarray(0, newline >= 0 ? newline : rawEnvelope.length),
+      rawEnvelope.subarray(0, newline >= 0 ? newline : rawEnvelope.length)
     );
     return { text: headerText };
   } catch {
@@ -262,7 +281,8 @@ const readDsnFromEnvelope = (rawEnvelope: Uint8Array): TunnelStep<string> => {
   }
 
   const dsn = parsedHeader.dsn;
-  if (typeof dsn !== "string" || !dsn) return rejectStep(400, "MISSING_DSN", "Missing DSN in envelope header");
+  if (typeof dsn !== "string" || !dsn)
+    return rejectStep(400, "MISSING_DSN", "Missing DSN in envelope header");
   return { value: dsn };
 };
 
@@ -275,10 +295,16 @@ const parseDsnUrl = (dsn: string): URL | null => {
 };
 
 /** 安全防线 1—3：协议、端口、域名白名单，杜绝内网 SSRF 与开放中继。 */
-const rejectUntrustedDsnTransport = (dsnUrl: URL, allowedHosts: Set<string>): TunnelFailure | null => {
-  if (dsnUrl.protocol !== "https:") return tunnelFailure(403, "FORBIDDEN_DSN_PROTOCOL", "Forbidden DSN protocol");
-  if (dsnUrl.port && dsnUrl.port !== "443") return tunnelFailure(403, "FORBIDDEN_DSN_PORT", "Forbidden DSN port");
-  if (!isHostAllowed(dsnUrl.hostname, allowedHosts)) return tunnelFailure(403, "FORBIDDEN_DSN_HOST", "Forbidden DSN host");
+const rejectUntrustedDsnTransport = (
+  dsnUrl: URL,
+  allowedHosts: Set<string>
+): TunnelFailure | null => {
+  if (dsnUrl.protocol !== "https:")
+    return tunnelFailure(403, "FORBIDDEN_DSN_PROTOCOL", "Forbidden DSN protocol");
+  if (dsnUrl.port && dsnUrl.port !== "443")
+    return tunnelFailure(403, "FORBIDDEN_DSN_PORT", "Forbidden DSN port");
+  if (!isHostAllowed(dsnUrl.hostname, allowedHosts))
+    return tunnelFailure(403, "FORBIDDEN_DSN_HOST", "Forbidden DSN host");
   return null;
 };
 
@@ -307,7 +333,7 @@ const resolveTrustedEnvelopeUrl = (dsn: string, policy: SentryTunnelPolicy): Tun
 const sendEnvelopeToSentry = (
   fetcher: typeof fetch,
   targetUrl: string,
-  rawEnvelope: Uint8Array<ArrayBuffer>,
+  rawEnvelope: Uint8Array<ArrayBuffer>
 ): Promise<Response> =>
   fetcher(targetUrl, {
     method: "POST",
@@ -360,7 +386,8 @@ export const sentryTunnelRoutes = ({
 
         const verdict = limiter.consume(clientIp, peerIp);
         Object.assign(set.headers, rateLimitHeaders(verdict));
-        if (!verdict.allowed) return reject(tunnelFailure(429, "RATE_LIMITED", "Too Many Requests"));
+        if (!verdict.allowed)
+          return reject(tunnelFailure(429, "RATE_LIMITED", "Too Many Requests"));
 
         const contentLength = request.headers.get("content-length");
         if (contentLength && Number.parseInt(contentLength, 10) > MAX_ENVELOPE_BYTES) {
@@ -380,7 +407,10 @@ export const sentryTunnelRoutes = ({
 
         if (!response.ok) {
           // 本地桶此刻仍是放行的，resetAt 就等于整窗口——上游没说什么时候能再来时，用它兜底。
-          Object.assign(set.headers, upstreamBackoffHeaders(response, Math.max(1, verdict.resetAt - Date.now())));
+          Object.assign(
+            set.headers,
+            upstreamBackoffHeaders(response, Math.max(1, verdict.resetAt - Date.now()))
+          );
           return reject(upstreamFailure(response));
         }
 
@@ -399,6 +429,6 @@ export const sentryTunnelRoutes = ({
           "接收前端 Sentry 信封包，安全校验后中转至 Sentry Ingest，免疫浏览器广告拦截插件并保障中国大陆连通性。",
       },
       parse: "none", // 接收 raw 文本，保留换行符用于 Envelope 协议解析
-    },
+    }
   );
 };

@@ -8,7 +8,12 @@ import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
-import { SettingReveal, SettingSwitchRow, SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
+import {
+  SettingReveal,
+  SettingSwitchRow,
+  SettingTextField,
+  SettingsFields,
+} from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
@@ -42,7 +47,7 @@ type RoomDraft = {
 const roomValidationText = (
   source: CEERoomSnapshot["source"],
   draft: RoomDraft,
-  hasPassword: boolean,
+  hasPassword: boolean
 ): string =>
   source === "native" && draft.visibility === "private" && !draft.password.trim() && !hasPassword
     ? "私密房间需要密码，填写后才会保存"
@@ -50,14 +55,18 @@ const roomValidationText = (
 
 /** 折叠面板收起时显示的两行摘要，与面板里的开关口径一致。 */
 const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
-  snapshot.visibility === "private" ? (snapshot.source === "original" ? "不在大厅显示" : "私密房间") : "公开房间",
+  snapshot.visibility === "private"
+    ? snapshot.source === "original"
+      ? "不在大厅显示"
+      : "私密房间"
+    : "公开房间",
   snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
 ];
 
 /** 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */
 const visibilityIcon = (
   source: CEERoomSnapshot["source"],
-  visibility: CEERoomSnapshot["visibility"],
+  visibility: CEERoomSnapshot["visibility"]
 ) => (visibility !== "private" ? Globe : source === "original" ? EyeOff : Lock);
 
 /** 房主开始按钮的文案：既说明能不能开始，也说明卡在哪儿。 */
@@ -99,11 +108,19 @@ function RoomSettingsSection({
   onEdit,
 }: RoomSettingsSectionProps) {
   // 非房主读当前快照；房主读草稿。
-  const roomValues = isHost ? draft : { visibility: snapshot.visibility, allowSpectators: snapshot.allowSpectators };
+  const roomValues = isHost
+    ? draft
+    : { visibility: snapshot.visibility, allowSpectators: snapshot.allowSpectators };
 
   return (
-    <SettingsAccordion icon={Settings} title="房间设置" open={open} onOpenChange={onOpenChange} readOnly={!isHost}
-      summary={roomSummaryLines(snapshot)}>
+    <SettingsAccordion
+      icon={Settings}
+      title="房间设置"
+      open={open}
+      onOpenChange={onOpenChange}
+      readOnly={!isHost}
+      summary={roomSummaryLines(snapshot)}
+    >
       <SettingsFields>
         <SettingTextField
           label="房间名称"
@@ -114,7 +131,9 @@ function RoomSettingsSection({
         />
         <SettingSwitchRow
           label={snapshot.source === "original" ? "不在大厅显示" : "私密房间"}
-          description={snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined}
+          description={
+            snapshot.source === "original" ? "开启后不在大厅列出，凭链接仍可进入。" : undefined
+          }
           icon={visibilityIcon(snapshot.source, roomValues.visibility)}
           checked={roomValues.visibility === "private"}
           onCheckedChange={(checked) => onEdit("visibility", checked ? "private" : "public")}
@@ -138,8 +157,16 @@ function RoomSettingsSection({
             onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
           />
         ) : null}
-        {validation ? <p role="alert" className="text-xs text-destructive">{validation}</p> : null}
-        {notice ? <p role="alert" className="text-xs text-destructive">{notice}</p> : null}
+        {validation ? (
+          <p role="alert" className="text-xs text-destructive">
+            {validation}
+          </p>
+        ) : null}
+        {notice ? (
+          <p role="alert" className="text-xs text-destructive">
+            {notice}
+          </p>
+        ) : null}
       </SettingsFields>
     </SettingsAccordion>
   );
@@ -173,7 +200,13 @@ function WaitingActions({
 }: WaitingActionsProps) {
   if (isHost) {
     return (
-      <Button size="lg" className="w-full text-base" disabled={starting || !canStart} loading={starting} onClick={onStart}>
+      <Button
+        size="lg"
+        className="w-full text-base"
+        disabled={starting || !canStart}
+        loading={starting}
+        onClick={onStart}
+      >
         {startButtonLabel({ canStart, manual, otherCount, readyCount })}
       </Button>
     );
@@ -184,11 +217,19 @@ function WaitingActions({
 
   return (
     <div className="flex justify-center">
-      <Button variant={activeMe.ready ? "outline" : "default"} size="lg" className="min-w-[120px] gap-2"
-        disabled={readying} loading={readying} onClick={() => onToggleReady(activeMe.ready)}>
-        {activeMe.ready
-          ? <>{readying ? null : <X className="h-4 w-4" />}取消准备</>
-          : <>{readying ? null : <Check className="h-4 w-4" />}准备</>}
+      <Button
+        variant={activeMe.ready ? "outline" : "default"}
+        size="lg"
+        className="min-w-[120px] gap-2"
+        disabled={readying}
+        loading={readying}
+        onClick={() => onToggleReady(activeMe.ready)}
+      >
+        {activeMe.ready ? (
+          <>{readying ? null : <X className="h-4 w-4" />}取消准备</>
+        ) : (
+          <>{readying ? null : <Check className="h-4 w-4" />}准备</>
+        )}
       </Button>
     </div>
   );
@@ -199,11 +240,19 @@ function WaitingActions({
  * 房主没有准备态；其他玩家看到同一份设置结构（只读）与准备按钮。房间设置的改动与题目设置分开保存，互不覆盖。
  * 出题方式在设置里：随机出题要等其他人都准备；指定出题人点开始后进入选人阶段，出题人不必准备。
  */
-export function CEEWaiting({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+export function CEEWaiting({
+  snapshot,
+  privateState,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+}) {
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   // 准备进度只算房主以外的参与者，与另外两个游戏同口径。
-  const others = snapshot.players.filter((player) => player.membership === "active" && player.id !== snapshot.hostPlayerId);
+  const others = snapshot.players.filter(
+    (player) => player.membership === "active" && player.id !== snapshot.hostPlayerId
+  );
   const readyCount = others.filter((player) => player.ready).length;
   const manual = snapshot.settings.answerMode === "manual";
   const { run, pending } = useCEEAction();
@@ -222,21 +271,28 @@ export function CEEWaiting({ snapshot, privateState }: { snapshot: CEERoomSnapsh
 
   const roomValidation = roomValidationText(snapshot.source, roomDraft, snapshot.hasPassword);
 
-  useAutoSave(roomDraft, async (value) => {
-    await useCEEStore.getState().sendCommand("cee.room.update", {
-      name: value.name.trim(),
-      visibility: value.visibility,
-      allowSpectators: value.allowSpectators,
-      password: value.password.trim() || null,
-    });
-    setRoomNotice("");
-  }, {
-    enabled: isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
-    onError: (error) => setRoomNotice(ceeErrorMessage(error)),
-  });
+  useAutoSave(
+    roomDraft,
+    async (value) => {
+      await useCEEStore.getState().sendCommand("cee.room.update", {
+        name: value.name.trim(),
+        visibility: value.visibility,
+        allowSpectators: value.allowSpectators,
+        password: value.password.trim() || null,
+      });
+      setRoomNotice("");
+    },
+    {
+      enabled:
+        isHost && snapshot.phase === "waiting" && !roomValidation && Boolean(roomDraft.name.trim()),
+      onError: (error) => setRoomNotice(ceeErrorMessage(error)),
+    }
+  );
 
   // 新建房间的首次进房：先套用上局的玩法设置（标记匹配才触发），落定前不让设置面板先挂载。
-  const restoring = useRoomSettingsRestore("cee", snapshot.roomId, (memory) => restoreCEESettings(memory));
+  const restoring = useRoomSettingsRestore("cee", snapshot.roomId, (memory) =>
+    restoreCEESettings(memory)
+  );
   if (restoring) return <RoomRestoreFallback />;
 
   const editRoom = <K extends keyof RoomDraft>(key: K, value: RoomDraft[K]) =>
@@ -251,12 +307,22 @@ export function CEEWaiting({ snapshot, privateState }: { snapshot: CEERoomSnapsh
         onCopyError={() => useCEEStore.getState().setNotice("复制失败，请手动复制", "error")}
       />
 
-      {others.length ? <ReadyProgress ready={readyCount} total={others.length} variant={isHost ? "host" : "guest"} /> : null}
+      {others.length ? (
+        <ReadyProgress
+          ready={readyCount}
+          total={others.length}
+          variant={isHost ? "host" : "guest"}
+        />
+      ) : null}
 
       <CEETeamPicker snapshot={snapshot} privateState={privateState} />
 
       <SettingsStack>
-        <CEEGameSettings settings={snapshot.settings} waiting={snapshot.phase === "waiting"} readOnly={!isHost} />
+        <CEEGameSettings
+          settings={snapshot.settings}
+          waiting={snapshot.phase === "waiting"}
+          readOnly={!isHost}
+        />
 
         <RoomSettingsSection
           snapshot={snapshot}

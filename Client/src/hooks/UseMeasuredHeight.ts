@@ -5,7 +5,10 @@ import { useLayoutEffect, useState, type RefObject } from "react";
  * 取 offsetHeight / offsetWidth：祖先正在缩放（浮层入场）时布局值不变，尺寸不会被入场动画带偏。
  * 量不到（未布局、隐藏或测试环境没有布局）时返回 null，调用处不写死尺寸、交给内容自然撑开。
  */
-function useMeasuredSize(ref: RefObject<HTMLElement | null>, axis: "height" | "width"): number | null {
+function useMeasuredSize(
+  ref: RefObject<HTMLElement | null>,
+  axis: "height" | "width"
+): number | null {
   const [size, setSize] = useState<number | null>(null);
 
   useLayoutEffect(() => {

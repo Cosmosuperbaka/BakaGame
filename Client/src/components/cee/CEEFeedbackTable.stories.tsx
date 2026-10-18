@@ -16,23 +16,41 @@ const ROUND: CEEGuess[] = [
 ];
 
 /** 未知评分、被他人先发现的标签与游戏专属标签：反馈里不可比较或已隐藏的几种写法。 */
-const EDGE_CASES: CEEGuess[] = [{
-  ...ROUND[2]!,
-  id: "edge",
-  feedback: {
-    ...ROUND[2]!.feedback,
-    rating: { value: -1, comparison: "?" },
-    tags: ROUND[2]!.feedback.tags.map((tag, index) => (index === 1 ? { ...tag, text: "???", matched: false, hidden: true } : tag)),
-    extraTags: [{ section: "乐队担当", tags: [{ text: "贝斯", matched: false }, { text: "作曲", matched: true }] }],
+const EDGE_CASES: CEEGuess[] = [
+  {
+    ...ROUND[2]!,
+    id: "edge",
+    feedback: {
+      ...ROUND[2]!.feedback,
+      rating: { value: -1, comparison: "?" },
+      tags: ROUND[2]!.feedback.tags.map((tag, index) =>
+        index === 1 ? { ...tag, text: "???", matched: false, hidden: true } : tag
+      ),
+      extraTags: [
+        {
+          section: "乐队担当",
+          tags: [
+            { text: "贝斯", matched: false },
+            { text: "作曲", matched: true },
+          ],
+        },
+      ],
+    },
   },
-}];
+];
 
 const meta = {
   title: "CEE/CEEFeedbackTable",
   component: CEEFeedbackTable,
   args: { guesses: ROUND, showRound: false },
   // 与 1440 宽房间页的游戏区同宽：表格在区内横向滚动，角色列贴住左缘。
-  decorators: [(Story) => <div className="w-[36rem] max-w-full"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="w-[36rem] max-w-full">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof CEEFeedbackTable>;
 
 export default meta;
@@ -53,7 +71,13 @@ export const EdgeCases: Story = { name: "未知评分与隐藏标签", args: { g
 /** 手机宽度：容器窄于 30rem 时收起头像、收窄角色列。 */
 export const Narrow: Story = {
   name: "窄容器 · 收起头像",
-  decorators: [(Story) => <div className="w-[20rem]"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="w-[20rem]">
+        <Story />
+      </div>
+    ),
+  ],
 };
 
 export const Empty: Story = { name: "尚无猜测", args: { guesses: [] } };

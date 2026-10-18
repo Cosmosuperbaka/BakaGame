@@ -65,7 +65,7 @@ function installPackage(
   nodeModulesDir: string,
   name: string,
   manifest: Record<string, unknown>,
-  licenseFiles: Record<string, string> = {},
+  licenseFiles: Record<string, string> = {}
 ) {
   const packageDir = path.join(nodeModulesDir, ...name.split("/"));
   // 兜底模块解析走 require.resolve(name)：没有入口文件的包解析不到，夹具必须补一个。
@@ -134,7 +134,7 @@ function createCreditsFixture(): CreditsFixture {
       LICENSE: LICENSE_TEXTS.alphaLicense,
       NOTICE: LICENSE_TEXTS.alphaNotice,
       "README.md": "# 不是许可证文件\n",
-    },
+    }
   );
 
   installPackage(
@@ -153,7 +153,7 @@ function createCreditsFixture(): CreditsFixture {
       optionalDependencies: { "optional-installed": "^1.0.0" },
       peerDependencies: { "peer-fake": "^1.0.0" },
     },
-    { LICENCE: LICENSE_TEXTS.gammaLicence, COPYING: LICENSE_TEXTS.gammaCopying },
+    { LICENCE: LICENSE_TEXTS.gammaLicence, COPYING: LICENSE_TEXTS.gammaCopying }
   );
 
   installPackage(fixture.rootNodeModules, "delta-optional", {
@@ -161,13 +161,19 @@ function createCreditsFixture(): CreditsFixture {
     license: "BSD-3-Clause",
     repository: "git://github.com/example/delta.git",
   });
-  installPackage(fixture.rootNodeModules, "optional-installed", { version: "0.5.0", license: "MIT" });
-  installPackage(fixture.rootNodeModules, "shared-runtime-dev", { version: "6.6.6", license: "ISC" });
+  installPackage(fixture.rootNodeModules, "optional-installed", {
+    version: "0.5.0",
+    license: "MIT",
+  });
+  installPackage(fixture.rootNodeModules, "shared-runtime-dev", {
+    version: "6.6.6",
+    license: "ISC",
+  });
   installPackage(
     fixture.rootNodeModules,
     "unknown-license",
     { version: "0.0.1" },
-    { license: LICENSE_TEXTS.unknownLicense },
+    { license: LICENSE_TEXTS.unknownLicense }
   );
   installPackage(fixture.rootNodeModules, "long-description", {
     version: "1.0.0",
@@ -194,7 +200,7 @@ function createCreditsFixture(): CreditsFixture {
       dependencies: { "epsilon-dev-transitive": "^0.9.0", "shared-runtime-dev": "^1.0.0" },
       peerDependencies: { "peer-fake": "^1.0.0" },
     },
-    { "LICENSE.txt": LICENSE_TEXTS.betaLicense },
+    { "LICENSE.txt": LICENSE_TEXTS.betaLicense }
   );
   installPackage(
     fixture.rootNodeModules,
@@ -211,7 +217,7 @@ function createCreditsFixture(): CreditsFixture {
         "unusable-url": "^1.0.0",
       },
     },
-    { LICENSE: "x".repeat(2 * 1024 * 1024) },
+    { LICENSE: "x".repeat(2 * 1024 * 1024) }
   );
   installPackage(fixture.rootNodeModules, "shorthand-owner-repo", {
     version: "1.0.0",
@@ -241,7 +247,10 @@ function createCreditsFixture(): CreditsFixture {
     repository: "not a repo ref",
   });
   installPackage(fixture.rootNodeModules, "peer-fake", { version: "1.0.0", license: "MIT" });
-  installPackage(fixture.rootNodeModules, "unrelated-package", { version: "1.0.0", license: "MIT" });
+  installPackage(fixture.rootNodeModules, "unrelated-package", {
+    version: "1.0.0",
+    license: "MIT",
+  });
 
   return fixture;
 }
@@ -266,7 +275,10 @@ function dependencyOf(manifest: CreditsManifest, name: string): CreditDependency
   return dependency;
 }
 
-async function loadLicenseBucket(plugin: CreditsPlugin, bucket: string): Promise<CreditLicenseBucket> {
+async function loadLicenseBucket(
+  plugin: CreditsPlugin,
+  bucket: string
+): Promise<CreditLicenseBucket> {
   const specifier = BUCKET_PREFIX + bucket;
   expect(plugin.resolveId(specifier)).toBe("\0" + specifier);
   return (await loadVirtualModule(plugin, "\0" + specifier)) as CreditLicenseBucket;
@@ -274,12 +286,12 @@ async function loadLicenseBucket(plugin: CreditsPlugin, bucket: string): Promise
 
 /** 从 loaders 虚拟模块源码里取出「桶 → import 说明符」，数组顺序即生成顺序。 */
 function parseLoaderEntries(code: string): Array<{ bucket: string; specifier: string }> {
-  return [...code.matchAll(/"([a-z0-9#]+)": \(\) => import\("(virtual:credits-licenses-[a-z0-9#]+)"\)/g)].map(
-    (match) => {
-      const [, bucket = "", specifier = ""] = match;
-      return { bucket, specifier };
-    },
-  );
+  return [
+    ...code.matchAll(/"([a-z0-9#]+)": \(\) => import\("(virtual:credits-licenses-[a-z0-9#]+)"\)/g),
+  ].map((match) => {
+    const [, bucket = "", specifier = ""] = match;
+    return { bucket, specifier };
+  });
 }
 
 const compareNames = (left: string, right: string) => left.localeCompare(right, "en");
@@ -328,11 +340,26 @@ describe("creditsManifestPlugin", () => {
       const manifest = await loadCreditsManifest(plugin);
       expect(manifest.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
-      expect(dependencyOf(manifest, "alpha-runtime")).toMatchObject({ direct: true, scope: "runtime" });
-      expect(dependencyOf(manifest, "ordered-pick")).toMatchObject({ direct: true, scope: "runtime" });
-      expect(dependencyOf(manifest, "beta-dev")).toMatchObject({ direct: true, scope: "development" });
-      expect(dependencyOf(manifest, "gamma-transitive")).toMatchObject({ direct: false, scope: "runtime" });
-      expect(dependencyOf(manifest, "delta-optional")).toMatchObject({ direct: false, scope: "runtime" });
+      expect(dependencyOf(manifest, "alpha-runtime")).toMatchObject({
+        direct: true,
+        scope: "runtime",
+      });
+      expect(dependencyOf(manifest, "ordered-pick")).toMatchObject({
+        direct: true,
+        scope: "runtime",
+      });
+      expect(dependencyOf(manifest, "beta-dev")).toMatchObject({
+        direct: true,
+        scope: "development",
+      });
+      expect(dependencyOf(manifest, "gamma-transitive")).toMatchObject({
+        direct: false,
+        scope: "runtime",
+      });
+      expect(dependencyOf(manifest, "delta-optional")).toMatchObject({
+        direct: false,
+        scope: "runtime",
+      });
       expect(dependencyOf(manifest, "epsilon-dev-transitive")).toMatchObject({
         direct: false,
         scope: "development",
@@ -341,7 +368,10 @@ describe("creditsManifestPlugin", () => {
 
     it("runtime 与 development 两条链都可达时归 runtime", async () => {
       const manifest = await loadCreditsManifest(plugin);
-      expect(dependencyOf(manifest, "shared-runtime-dev")).toMatchObject({ direct: false, scope: "runtime" });
+      expect(dependencyOf(manifest, "shared-runtime-dev")).toMatchObject({
+        direct: false,
+        scope: "runtime",
+      });
     });
 
     it("递归 optionalDependencies，缺失的平台包直接跳过", async () => {
@@ -349,7 +379,9 @@ describe("creditsManifestPlugin", () => {
       // 装上了的可选依赖也是真实依赖，照常递归。
       expect(dependencyOf(manifest, "optional-installed")).toMatchObject({ scope: "runtime" });
       // 未安装的平台包不出现，且不会让收集失败。
-      expect(manifest.dependencies.map((item) => item.name)).not.toContain("missing-platform-binary");
+      expect(manifest.dependencies.map((item) => item.name)).not.toContain(
+        "missing-platform-binary"
+      );
     });
 
     it("不递归 peerDependencies", async () => {
@@ -403,7 +435,10 @@ describe("creditsManifestPlugin", () => {
     it("固定目录都找不到时兜底 Node 模块解析", async () => {
       const manifest = await loadCreditsManifest(plugin);
       // upper-only 只装在仓库上层 node_modules，三个固定目录都没有，只能靠 Node 解析。
-      expect(dependencyOf(manifest, "upper-only")).toMatchObject({ version: "8.0.0", direct: false });
+      expect(dependencyOf(manifest, "upper-only")).toMatchObject({
+        version: "8.0.0",
+        direct: false,
+      });
     });
 
     it("按包名排序且不重复，版本取安装副本", async () => {
@@ -426,7 +461,9 @@ describe("creditsManifestPlugin", () => {
 
     it("description 折叠空白并按上限截断", async () => {
       const manifest = await loadCreditsManifest(plugin);
-      expect(dependencyOf(manifest, "alpha-runtime").description).toBe("Runtime package with whitespace");
+      expect(dependencyOf(manifest, "alpha-runtime").description).toBe(
+        "Runtime package with whitespace"
+      );
       const longDescription = dependencyOf(manifest, "long-description").description;
       expect(longDescription).toHaveLength(CREDIT_DESCRIPTION_LIMIT);
       expect(longDescription).toBe("a".repeat(CREDIT_DESCRIPTION_LIMIT));
@@ -438,7 +475,9 @@ describe("creditsManifestPlugin", () => {
       // homepage 与 repository 都有时取 homepage。
       expect(dependencyOf(manifest, "alpha-runtime").url).toBe("https://example.com/alpha");
       // git+https://… 去掉 git+ 与 .git 后缀。
-      expect(dependencyOf(manifest, "gamma-transitive").url).toBe("https://github.com/example/gamma");
+      expect(dependencyOf(manifest, "gamma-transitive").url).toBe(
+        "https://github.com/example/gamma"
+      );
       // git@host:owner/repo.git 归一成 https。
       expect(dependencyOf(manifest, "beta-dev").url).toBe("https://github.com/example/beta-dev");
       // git:// 协议也归一成 https。
@@ -450,18 +489,28 @@ describe("creditsManifestPlugin", () => {
     it("repository 简写归一成绝对地址，认不出的写法给空串", async () => {
       const manifest = await loadCreditsManifest(plugin);
       // 裸 owner/repo（sindresorhus/globals 这类）：不能原样输出，否则 href 是站内相对路径。
-      expect(dependencyOf(manifest, "shorthand-owner-repo").url).toBe("https://github.com/sindresorhus/globals");
+      expect(dependencyOf(manifest, "shorthand-owner-repo").url).toBe(
+        "https://github.com/sindresorhus/globals"
+      );
       // github:owner/repo 宿主简写。
-      expect(dependencyOf(manifest, "shorthand-hosted").url).toBe("https://github.com/example/hosted-pkg");
+      expect(dependencyOf(manifest, "shorthand-hosted").url).toBe(
+        "https://github.com/example/hosted-pkg"
+      );
       // gitlab: 的多级路径（group/sub/repo）原样保留在 host 之后。
-      expect(dependencyOf(manifest, "hosted-gitlab-path").url).toBe("https://gitlab.com/example/sub/pkg");
+      expect(dependencyOf(manifest, "hosted-gitlab-path").url).toBe(
+        "https://gitlab.com/example/sub/pkg"
+      );
       // homepage 不是绝对地址时忽略，退回 repository。
-      expect(dependencyOf(manifest, "relative-homepage").url).toBe("https://github.com/example/relative-homepage");
+      expect(dependencyOf(manifest, "relative-homepage").url).toBe(
+        "https://github.com/example/relative-homepage"
+      );
       // 两种写法都认不出：空串，页面据此不渲染「项目主页」，也不生成死链。
       expect(dependencyOf(manifest, "unusable-url").url).toBe("");
       // 清单里任何 url 都必须是绝对 http(s)，页面直接当 href 用。
       for (const dependency of manifest.dependencies) {
-        expect(dependency.url === "" || /^https?:\/\//.test(dependency.url), dependency.name).toBe(true);
+        expect(dependency.url === "" || /^https?:\/\//.test(dependency.url), dependency.name).toBe(
+          true
+        );
       }
     });
   });
@@ -477,7 +526,10 @@ describe("creditsManifestPlugin", () => {
 
     it("LICENSE 主体排在 COPYING / NOTICE 补充声明之前", async () => {
       const bucket = await loadLicenseBucket(plugin, licenseBucket("gamma-transitive"));
-      expect(bucket["gamma-transitive"].files.map((file) => file.name)).toEqual(["LICENCE", "COPYING"]);
+      expect(bucket["gamma-transitive"].files.map((file) => file.name)).toEqual([
+        "LICENCE",
+        "COPYING",
+      ]);
     });
 
     it("文件名匹配不区分大小写，没有许可证文件的包给空数组", async () => {
@@ -501,9 +553,9 @@ describe("creditsManifestPlugin", () => {
       const entries = parseLoaderEntries(String(code));
 
       const manifest = await loadCreditsManifest(plugin);
-      const expectedBuckets = [...new Set(manifest.dependencies.map((item) => licenseBucket(item.name)))].sort(
-        compareNames,
-      );
+      const expectedBuckets = [
+        ...new Set(manifest.dependencies.map((item) => licenseBucket(item.name))),
+      ].sort(compareNames);
       expect(entries.map((entry) => entry.bucket)).toEqual(expectedBuckets);
       for (const entry of entries) {
         expect(entry.specifier).toBe(BUCKET_PREFIX + entry.bucket);

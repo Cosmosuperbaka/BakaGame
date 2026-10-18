@@ -20,7 +20,12 @@ function Stepper() {
       <AnimatedNumber value={value} gain="above" className="text-2xl font-semibold" />
       <div className="flex gap-2">
         {[-5, -1, 1, 3, 95].map((step) => (
-          <Button key={step} size="sm" variant="outline" onClick={() => setValue((current) => current + step)}>
+          <Button
+            key={step}
+            size="sm"
+            variant="outline"
+            onClick={() => setValue((current) => current + step)}
+          >
             {step > 0 ? `+${step}` : step}
           </Button>
         ))}

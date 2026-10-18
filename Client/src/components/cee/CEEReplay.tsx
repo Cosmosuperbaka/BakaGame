@@ -29,14 +29,20 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
 
   useEffect(() => {
     if (!active) return;
-    const timer = setTimeout(() => setIndex((current) => Math.min(current + 1, total - 1)), STEP_MS);
+    const timer = setTimeout(
+      () => setIndex((current) => Math.min(current + 1, total - 1)),
+      STEP_MS
+    );
     return () => clearTimeout(timer);
   }, [active, index, total]);
 
-  const jump = useCallback((next: number) => {
-    setPlaying(false);
-    setIndex(Math.max(0, Math.min(next, total - 1)));
-  }, [total]);
+  const jump = useCallback(
+    (next: number) => {
+      setPlaying(false);
+      setIndex(Math.max(0, Math.min(next, total - 1)));
+    },
+    [total]
+  );
 
   const toggle = useCallback(() => {
     // 停在结尾时再按播放视为重播。
@@ -51,11 +57,15 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
   if (!enabled) return null;
 
   const step = steps[index];
-  if (!step) return (
-    <section aria-label="猜测回放" className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-      本局还没有记录到猜测
-    </section>
-  );
+  if (!step)
+    return (
+      <section
+        aria-label="猜测回放"
+        className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground"
+      >
+        本局还没有记录到猜测
+      </section>
+    );
 
   const { guess } = step;
   const title = guess.character.nameCn || guess.character.name;
@@ -76,34 +86,82 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
         transition={{ duration: 0.18 }}
         className="flex items-start gap-3"
       >
-        <CEECharacterImage character={guess.character} size="grid" className="size-16 shrink-0 rounded-md bg-background" />
+        <CEECharacterImage
+          character={guess.character}
+          size="grid"
+          className="size-16 shrink-0 rounded-md bg-background"
+        />
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{title}</span>
             <span className="text-xs text-muted-foreground">{guess.playerName} 猜</span>
-            {guess.correct ? <Badge size="sm" variant="matched">猜中</Badge> : null}
-            {!guess.correct && guess.partial ? <Badge size="sm" variant="outline">接近</Badge> : null}
+            {guess.correct ? (
+              <Badge size="sm" variant="matched">
+                猜中
+              </Badge>
+            ) : null}
+            {!guess.correct && guess.partial ? (
+              <Badge size="sm" variant="outline">
+                接近
+              </Badge>
+            ) : null}
           </div>
           <CEEFeedbackChips feedback={guess.feedback} />
           {guess.feedback.sharedAppearances.length ? (
             <p className="truncate text-xs text-muted-foreground">
-              共同作品 {guess.feedback.sharedAppearances.map((subject) => subject.nameCn || subject.name).join("、")}
+              共同作品{" "}
+              {guess.feedback.sharedAppearances
+                .map((subject) => subject.nameCn || subject.name)
+                .join("、")}
             </p>
           ) : null}
         </div>
       </motion.div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="icon" variant="outline" className="size-8" aria-label="上一条" disabled={index === 0} onClick={() => jump(index - 1)}>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="size-8"
+          aria-label="上一条"
+          disabled={index === 0}
+          onClick={() => jump(index - 1)}
+        >
           <SkipBack className="size-4" />
         </Button>
-        <Button type="button" size="icon" variant="outline" className="size-8" aria-label={active ? "暂停回放" : "播放回放"} onClick={toggle}>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="size-8"
+          aria-label={active ? "暂停回放" : "播放回放"}
+          onClick={toggle}
+        >
           {active ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
-        <Button type="button" size="icon" variant="outline" className="size-8" aria-label="下一条" disabled={index >= total - 1} onClick={() => jump(index + 1)}>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="size-8"
+          aria-label="下一条"
+          disabled={index >= total - 1}
+          onClick={() => jump(index + 1)}
+        >
           <SkipForward className="size-4" />
         </Button>
-        <Button type="button" size="icon" variant="outline" className="size-8" aria-label="从头重播" onClick={() => { setIndex(0); setPlaying(true); }}>
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="size-8"
+          aria-label="从头重播"
+          onClick={() => {
+            setIndex(0);
+            setPlaying(true);
+          }}
+        >
           <RotateCcw className="size-4" />
         </Button>
         <input

@@ -10,7 +10,14 @@ import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
 import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
 import { resolveClientIp } from "../ClientIp";
-import { httpError, rateLimitHeaders, rpcError, traceIdOf, type HttpErrorBody, type RpcErrorBody } from "../HttpErrorEnvelope";
+import {
+  httpError,
+  rateLimitHeaders,
+  rpcError,
+  traceIdOf,
+  type HttpErrorBody,
+  type RpcErrorBody,
+} from "../HttpErrorEnvelope";
 import { ACCOUNT_AVATAR_PATH, AUTH_BASE_PATH } from "../../shared/Account";
 import { apiContract } from "../../shared/ApiContract";
 import { TelemetryRateLimiter } from "./System";
@@ -52,19 +59,27 @@ const STATUS_BY_CODE: Record<string, number> = {
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
 
-const createRpcRouter = ({ service, userData, admin, visits }: AccountDependencies, logger: EventLogger) => {
-  const base = implement(apiContract).$context<RpcContext>().use(async ({ next, path }) => {
-    try {
-      return await next();
-    } catch (error) {
-      if (error instanceof ORPCError) throw error;
-      if (isAppError(error)) {
-        throw new ORPCError(error.code, { status: statusOfAppError(error.code), message: error.message });
+const createRpcRouter = (
+  { service, userData, admin, visits }: AccountDependencies,
+  logger: EventLogger
+) => {
+  const base = implement(apiContract)
+    .$context<RpcContext>()
+    .use(async ({ next, path }) => {
+      try {
+        return await next();
+      } catch (error) {
+        if (error instanceof ORPCError) throw error;
+        if (isAppError(error)) {
+          throw new ORPCError(error.code, {
+            status: statusOfAppError(error.code),
+            message: error.message,
+          });
+        }
+        logger.error(`RPC 内部异常 [${path.join(".")}]`, describeError(error));
+        throw new ORPCError("INTERNAL_ERROR", { status: 500, message: "服务器内部错误" });
       }
-      logger.error(`RPC 内部异常 [${path.join(".")}]`, describeError(error));
-      throw new ORPCError("INTERNAL_ERROR", { status: 500, message: "服务器内部错误" });
-    }
-  });
+    });
   const signedIn = base.use(async ({ context, next }) => {
     const userId = await service.currentUserId(context.headers);
     if (!userId) throw new ORPCError("UNAUTHORIZED", { status: 401, message: "请先登录" });
@@ -83,46 +98,78 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
       }),
     },
     account: {
-      requestLoginCode: base.account.requestLoginCode.handler(({ input }) => service.requestLoginCode(input.qqNumber)),
+      requestLoginCode: base.account.requestLoginCode.handler(({ input }) =>
+        service.requestLoginCode(input.qqNumber)
+      ),
       me: base.account.me.handler(async ({ context }) => {
         const userId = await service.currentUserId(context.headers);
         return userId ? service.me(userId) : null;
       }),
-      updateProfile: signedIn.account.updateProfile.handler(({ context, input }) => service.updateProfile(context.userId, input)),
-      publicProfile: base.account.publicProfile.handler(({ input }) => service.publicProfile(input.userId)),
+      updateProfile: signedIn.account.updateProfile.handler(({ context, input }) =>
+        service.updateProfile(context.userId, input)
+      ),
+      publicProfile: base.account.publicProfile.handler(({ input }) =>
+        service.publicProfile(input.userId)
+      ),
     },
     settings: {
       get: signedIn.settings.get.handler(({ context }) => userData.settings(context.userId)),
       savePreferences: signedIn.settings.savePreferences.handler(({ context, input }) =>
-        userData.savePreferences(context.userId, input.value)),
+        userData.savePreferences(context.userId, input.value)
+      ),
       saveMusicSession: signedIn.settings.saveMusicSession.handler(({ context, input }) =>
-        userData.saveMusicSession(context.userId, input.platform, input.session)),
+        userData.saveMusicSession(context.userId, input.platform, input.session)
+      ),
     },
     feedback: {
       create: signedIn.feedback.create.handler(({ context, input }) =>
-        userData.createFeedback(context.userId, { ...input, userAgent: context.headers.get("user-agent") })),
-      listMine: signedIn.feedback.listMine.handler(({ context }) => userData.listMyFeedback(context.userId)),
-      get: signedIn.feedback.get.handler(({ context, input }) => userData.myFeedback(context.userId, input.id)),
+        userData.createFeedback(context.userId, {
+          ...input,
+          userAgent: context.headers.get("user-agent"),
+        })
+      ),
+      listMine: signedIn.feedback.listMine.handler(({ context }) =>
+        userData.listMyFeedback(context.userId)
+      ),
+      get: signedIn.feedback.get.handler(({ context, input }) =>
+        userData.myFeedback(context.userId, input.id)
+      ),
     },
     admin: {
       users: {
         list: adminOnly.admin.users.list.handler(({ input }) => admin.listUsers(input)),
         get: adminOnly.admin.users.get.handler(({ input }) => admin.getUser(input.userId)),
-        ban: adminOnly.admin.users.ban.handler(({ context, input }) => admin.banUser(context.userId, input)),
-        unban: adminOnly.admin.users.unban.handler(({ context, input }) => admin.unbanUser(context.userId, input.userId)),
-        setRole: adminOnly.admin.users.setRole.handler(({ context, input }) => admin.setRole(context.userId, input)),
-        revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) => admin.revokeSessions(context.userId, input.userId)),
+        ban: adminOnly.admin.users.ban.handler(({ context, input }) =>
+          admin.banUser(context.userId, input)
+        ),
+        unban: adminOnly.admin.users.unban.handler(({ context, input }) =>
+          admin.unbanUser(context.userId, input.userId)
+        ),
+        setRole: adminOnly.admin.users.setRole.handler(({ context, input }) =>
+          admin.setRole(context.userId, input)
+        ),
+        revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) =>
+          admin.revokeSessions(context.userId, input.userId)
+        ),
       },
       rooms: {
         list: adminOnly.admin.rooms.list.handler(({ input }) => admin.listRooms(input.game)),
-        close: adminOnly.admin.rooms.close.handler(({ context, input }) => admin.closeRoom(context.userId, input)),
-        kick: adminOnly.admin.rooms.kick.handler(({ context, input }) => admin.kickPlayer(context.userId, input)),
+        close: adminOnly.admin.rooms.close.handler(({ context, input }) =>
+          admin.closeRoom(context.userId, input)
+        ),
+        kick: adminOnly.admin.rooms.kick.handler(({ context, input }) =>
+          admin.kickPlayer(context.userId, input)
+        ),
       },
       feedback: {
         list: adminOnly.admin.feedback.list.handler(({ input }) => admin.listFeedback(input)),
         get: adminOnly.admin.feedback.get.handler(({ input }) => admin.getFeedback(input.id)),
-        reply: adminOnly.admin.feedback.reply.handler(({ context, input }) => admin.replyFeedback(context.userId, input)),
-        setStatus: adminOnly.admin.feedback.setStatus.handler(({ context, input }) => admin.setFeedbackStatus(context.userId, input)),
+        reply: adminOnly.admin.feedback.reply.handler(({ context, input }) =>
+          admin.replyFeedback(context.userId, input)
+        ),
+        setStatus: adminOnly.admin.feedback.setStatus.handler(({ context, input }) =>
+          admin.setFeedbackStatus(context.userId, input)
+        ),
       },
       games: {
         list: adminOnly.admin.games.list.handler(({ input }) => admin.listGames(input)),
@@ -133,7 +180,9 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
       },
       qq: {
         status: adminOnly.admin.qq.status.handler(() => admin.qqStatus()),
-        refreshNames: adminOnly.admin.qq.refreshNames.handler(({ context }) => admin.qqRefreshNames(context.userId)),
+        refreshNames: adminOnly.admin.qq.refreshNames.handler(({ context }) =>
+          admin.qqRefreshNames(context.userId)
+        ),
       },
       stats: {
         overview: adminOnly.admin.stats.overview.handler(({ input }) => admin.overview(input.days)),
@@ -148,7 +197,11 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
  * 所以本文件内自建响应统一走这里：状态码、`content-type` 与限流头一次写清，追踪号由全局
  * `mapResponse` 补到响应头上，体里的 `traceId` 由调用方从 `set.headers` 取。
  */
-const json = (status: number, body: HttpErrorBody | RpcErrorBody, headers?: Record<string, string>): Response =>
+const json = (
+  status: number,
+  body: HttpErrorBody | RpcErrorBody,
+  headers?: Record<string, string>
+): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json", ...headers },
@@ -158,7 +211,8 @@ const accountDisabled = (traceId?: string): Response =>
   json(503, httpError("ACCOUNT_DISABLED", "账号系统未启用", traceId));
 
 /** RPC 前缀按 oRPC 错误编码回停用：客户端据 `code` 识别，不与网关自身的 503 混淆。 */
-const rpcAccountDisabled = (): Response => json(503, rpcError("ACCOUNT_DISABLED", 503, "账号系统未启用"));
+const rpcAccountDisabled = (): Response =>
+  json(503, rpcError("ACCOUNT_DISABLED", 503, "账号系统未启用"));
 
 const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
 
@@ -202,7 +256,7 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     request: Request,
     peerIp: string | undefined,
     viaRpc: boolean,
-    traceId?: string,
+    traceId?: string
   ): Response | undefined => {
     const clientIp = resolveClientIp(request.headers, peerIp);
     const verdict = limiter.consume(clientIp, peerIp ?? clientIp);
@@ -212,48 +266,80 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
       viaRpc
         ? rpcError("RATE_LIMITED", 429, "请求过于频繁，请稍后重试")
         : httpError("RATE_LIMITED", "请求过于频繁，请稍后重试", traceId),
-      rateLimitHeaders(verdict),
+      rateLimitHeaders(verdict)
     );
   };
   return new Elysia({ name: "account-routes" })
-    .all(`${AUTH_BASE_PATH}/*`, async ({ request, server, set }) => {
-      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, false, traceIdOf(set.headers));
-      if (overQuota) return overQuota;
-      if (!account) return accountDisabled(traceIdOf(set.headers));
-      const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
-      if (!AUTH_HTTP_PATHS.has(path)) {
-        return json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
-      }
-      await account.ready;
-      return account.auth.handler(request);
-    }, { parse: "none", detail: { hide: true } })
-    .all(`${RPC_BASE_PATH}/*`, async ({ request, server, set }) => {
-      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, true, traceIdOf(set.headers));
-      if (overQuota) return overQuota;
-      if (!account || !rpc) return rpcAccountDisabled();
-      await account.ready;
-      const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });
-      return matched ? response : json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
-    }, { parse: "none", detail: { hide: true } })
-    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query, request, server, set }) => {
-      const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
-      const verdict = avatarLimiter.consume(clientIp, server?.requestIP(request)?.address ?? clientIp);
-      Object.assign(set.headers, rateLimitHeaders(verdict));
-      if (!verdict.allowed) {
-        set.status = 429;
-        return httpError("RATE_LIMITED", "头像请求过于频繁，请稍后重试", traceIdOf(set.headers));
-      }
-      if (!account) return accountDisabled(traceIdOf(set.headers));
-      await account.ready;
-      const size = AVATAR_SIZES[(query.size ?? "640") as keyof typeof AVATAR_SIZES] ?? 640;
-      const { image, current } = await account.service.avatar(params.userId, size, query.v);
-      return new Response(image.bytes, {
-        headers: {
-          "content-type": image.contentType,
-          // 版本号与当前摘要一致时 URL 内容永不变化；否则（旧链接、未带版本）只短缓存。
-          "cache-control": current ? "public, max-age=31536000, immutable" : "public, max-age=300",
-          "x-content-type-options": "nosniff",
-        },
-      });
-    }, { detail: { hide: true } });
+    .all(
+      `${AUTH_BASE_PATH}/*`,
+      async ({ request, server, set }) => {
+        const overQuota = rejectOverQuota(
+          request,
+          server?.requestIP(request)?.address,
+          false,
+          traceIdOf(set.headers)
+        );
+        if (overQuota) return overQuota;
+        if (!account) return accountDisabled(traceIdOf(set.headers));
+        const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
+        if (!AUTH_HTTP_PATHS.has(path)) {
+          return json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
+        }
+        await account.ready;
+        return account.auth.handler(request);
+      },
+      { parse: "none", detail: { hide: true } }
+    )
+    .all(
+      `${RPC_BASE_PATH}/*`,
+      async ({ request, server, set }) => {
+        const overQuota = rejectOverQuota(
+          request,
+          server?.requestIP(request)?.address,
+          true,
+          traceIdOf(set.headers)
+        );
+        if (overQuota) return overQuota;
+        if (!account || !rpc) return rpcAccountDisabled();
+        await account.ready;
+        const { matched, response } = await rpc.handle(request, {
+          prefix: RPC_BASE_PATH,
+          context: { headers: request.headers },
+        });
+        return matched
+          ? response
+          : json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
+      },
+      { parse: "none", detail: { hide: true } }
+    )
+    .get(
+      `${ACCOUNT_AVATAR_PATH}/:userId`,
+      async ({ params, query, request, server, set }) => {
+        const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
+        const verdict = avatarLimiter.consume(
+          clientIp,
+          server?.requestIP(request)?.address ?? clientIp
+        );
+        Object.assign(set.headers, rateLimitHeaders(verdict));
+        if (!verdict.allowed) {
+          set.status = 429;
+          return httpError("RATE_LIMITED", "头像请求过于频繁，请稍后重试", traceIdOf(set.headers));
+        }
+        if (!account) return accountDisabled(traceIdOf(set.headers));
+        await account.ready;
+        const size = AVATAR_SIZES[(query.size ?? "640") as keyof typeof AVATAR_SIZES] ?? 640;
+        const { image, current } = await account.service.avatar(params.userId, size, query.v);
+        return new Response(image.bytes, {
+          headers: {
+            "content-type": image.contentType,
+            // 版本号与当前摘要一致时 URL 内容永不变化；否则（旧链接、未带版本）只短缓存。
+            "cache-control": current
+              ? "public, max-age=31536000, immutable"
+              : "public, max-age=300",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      },
+      { detail: { hide: true } }
+    );
 };

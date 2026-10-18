@@ -27,7 +27,7 @@ import {
 function formatTrackKind(
   kind?: BangumiMusicTrackKind,
   track?: BangumiMusicTrack,
-  song?: SonGuessrRoundSummary["song"],
+  song?: SonGuessrRoundSummary["song"]
 ): string {
   const candidateText = `${track?.title ?? ""} ${song?.title ?? ""} ${song?.album ?? ""} ${song?.encyclopedia?.tags?.join(" ") ?? ""}`;
   const effectiveKind = refineTrackKindByText(track?.kind ?? kind ?? "theme", candidateText);
@@ -59,16 +59,23 @@ export function SongSettlementDetails({
       )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-          <Title className={cn("break-words font-semibold", related ? "text-lg" : "text-xl")}>{song.title}</Title>
+          <Title className={cn("break-words font-semibold", related ? "text-lg" : "text-xl")}>
+            {song.title}
+          </Title>
           {trackKindBadge}
         </div>
         <p className="mt-1 text-muted-foreground">
-          {song.artist}{song.album ? ` · ${song.album}` : ""}
+          {song.artist}
+          {song.album ? ` · ${song.album}` : ""}
         </p>
         <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
           {song.releaseYear ? <Badge variant="outline">{song.releaseYear}</Badge> : null}
           {song.language ? <Badge variant="outline">{song.language}</Badge> : null}
-          {song.encyclopedia?.tags?.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+          {song.encyclopedia?.tags?.map((tag) => (
+            <Badge key={tag} variant="outline">
+              {tag}
+            </Badge>
+          ))}
         </div>
 
         {song.encyclopedia?.aliases?.length ? (
@@ -105,13 +112,23 @@ export function SoloRoundOutcome({
   const Icon = correct ? Check : X;
   return (
     <section className="rounded-md bg-muted p-4 text-center">
-      <p className={cn("flex items-center justify-center gap-1.5 text-base font-semibold", correct ? "text-success" : "text-destructive")}>
+      <p
+        className={cn(
+          "flex items-center justify-center gap-1.5 text-base font-semibold",
+          correct ? "text-success" : "text-destructive"
+        )}
+      >
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         {correct ? "本轮答对" : "本轮未答对"}
       </p>
       <div className="mt-2 flex items-center justify-center gap-4 text-sm text-muted-foreground">
-        <span>累计得分 <AnimatedNumber value={score} from={score - delta} delay={SOLO_ROLL_DELAY} gain="above" /></span>
-        <span data-testid="solo-correct-rounds">答对 {me?.correctGuesses ?? 0}/{rounds} 轮</span>
+        <span>
+          累计得分{" "}
+          <AnimatedNumber value={score} from={score - delta} delay={SOLO_ROLL_DELAY} gain="above" />
+        </span>
+        <span data-testid="solo-correct-rounds">
+          答对 {me?.correctGuesses ?? 0}/{rounds} 轮
+        </span>
       </div>
     </section>
   );
@@ -140,14 +157,21 @@ export function SongScoreTable({
       ranked
       rows={scores.map((score, index) => ({
         key: score.playerId,
-        name: index === 0 && score.score > 0 ? (
-          <span className="inline-flex items-center gap-1">
-            <Trophy className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
-            <span className="sr-only">第一名：</span>
-            {score.playerName}
-          </span>
-        ) : score.playerName,
-        cells: { delta: score.delta, score: score.score, hits: `${score.correctGuesses}/${score.totalGuesses}` },
+        name:
+          index === 0 && score.score > 0 ? (
+            <span className="inline-flex items-center gap-1">
+              <Trophy className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+              <span className="sr-only">第一名：</span>
+              {score.playerName}
+            </span>
+          ) : (
+            score.playerName
+          ),
+        cells: {
+          delta: score.delta,
+          score: score.score,
+          hits: `${score.correctGuesses}/${score.totalGuesses}`,
+        },
         rollFrom: { score: score.score - score.delta },
         contributor: correctIds.has(score.playerId),
       }))}
@@ -186,7 +210,10 @@ export function SongRoundResultPhase({
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
-      <PhaseHeader icon={snapshot.settings.questionType === "anime" ? Film : Music2} title="答案揭晓" />
+      <PhaseHeader
+        icon={snapshot.settings.questionType === "anime" ? Film : Music2}
+        title="答案揭晓"
+      />
       {/* 答案卡：整卡回弹落定；下方得分表在卡之外，两者各落各的 */}
       <motion.section
         initial={revealCard.initial}
@@ -198,25 +225,44 @@ export function SongRoundResultPhase({
           <>
             <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
               {summary.anime.imageUrl ? (
-                <img src={summary.anime.imageUrl} alt="" className="h-28 w-20 rounded-md object-cover shadow-sm" />
+                <img
+                  src={summary.anime.imageUrl}
+                  alt=""
+                  className="h-28 w-20 rounded-md object-cover shadow-sm"
+                />
               ) : (
                 <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-md bg-background">
                   <Film className="h-9 w-9 text-muted-foreground" aria-hidden="true" />
                 </div>
               )}
               <div className="min-w-0 flex-1">
-                <h3 className="break-words text-xl font-semibold">{summary.anime.nameCn || summary.anime.name}</h3>
+                <h3 className="break-words text-xl font-semibold">
+                  {summary.anime.nameCn || summary.anime.name}
+                </h3>
                 <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
                 <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
-                  {summary.anime.year ? <Badge variant="outline">{summary.anime.year}</Badge> : null}
-                  {summary.anime.rating ? <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge> : null}
-                  {summary.anime.tags.slice(0, 5).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+                  {summary.anime.year ? (
+                    <Badge variant="outline">{summary.anime.year}</Badge>
+                  ) : null}
+                  {summary.anime.rating ? (
+                    <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge>
+                  ) : null}
+                  {summary.anime.tags.slice(0, 5).map((tag) => (
+                    <Badge key={tag} variant="outline">
+                      {tag}
+                    </Badge>
+                  ))}
                 </div>
               </div>
             </div>
 
             {/* 关联歌曲是答案的从属信息：分隔线随卡片就位，内容晚一拍推入 */}
-            <motion.div variants={RELATED_SONG_REVEAL} initial="initial" animate="animate" className="border-t border-background pt-4">
+            <motion.div
+              variants={RELATED_SONG_REVEAL}
+              initial="initial"
+              animate="animate"
+              className="border-t border-background pt-4"
+            >
               <motion.div variants={listItem} className="origin-left">
                 <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
                   <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -242,7 +288,9 @@ export function SongRoundResultPhase({
         <SoloRoundOutcome
           correct={summary.correctPlayerIds.includes(privateState.playerId)}
           me={me}
-          delta={summary.scores.find((score) => score.playerId === privateState.playerId)?.delta ?? 0}
+          delta={
+            summary.scores.find((score) => score.playerId === privateState.playerId)?.delta ?? 0
+          }
           rounds={summary.roundNumber}
         />
       ) : (

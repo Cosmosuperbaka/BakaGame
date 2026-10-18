@@ -31,13 +31,7 @@ describe("SonGuessr PlayerList", () => {
     ];
 
     render(
-      <PlayerList
-        players={players}
-        myPlayerId="host-1"
-        isHost
-        phase="waiting"
-        allowSpectators
-      />,
+      <PlayerList players={players} myPlayerId="host-1" isHost phase="waiting" allowSpectators />
     );
 
     expect(screen.getByText("房主小艾")).toBeInTheDocument();
@@ -58,7 +52,7 @@ describe("SonGuessr PlayerList", () => {
         isHost={false}
         phase="waiting"
         allowSpectators
-      />,
+      />
     );
 
     expect(screen.getByText("准备")).toBeInTheDocument();
@@ -79,7 +73,7 @@ describe("SonGuessr PlayerList", () => {
         isHost={false}
         phase="playing"
         allowSpectators
-      />,
+      />
     );
 
     expect(screen.getByText("出题")).toBeInTheDocument();
@@ -96,7 +90,7 @@ describe("SonGuessr PlayerList", () => {
         phase="playing"
         allowSpectators
         questionType="anime"
-      />,
+      />
     );
 
     expect(screen.getByText("猜番")).toBeInTheDocument();
@@ -115,7 +109,7 @@ describe("SonGuessr PlayerList", () => {
         isHost={false}
         phase="playing"
         allowSpectators
-      />,
+      />
     );
 
     expect(screen.getByText("88")).toBeInTheDocument();
@@ -137,7 +131,7 @@ describe("SonGuessr PlayerList", () => {
           isHost
           phase="waiting"
           allowSpectators={false}
-        />,
+        />
       );
 
       expect(screen.getByText(name)).toBeInTheDocument();
@@ -156,15 +150,48 @@ describe("SonGuessr PlayerList", () => {
     const players: SonGuessrPlayerView[] = [
       createMockPlayer({ id: "s", name: "出题人", team: 2, roundStatus: "submitter" }),
       createMockPlayer({ id: "o", name: "观战队友", team: 2, roundStatus: "observing", score: 4 }),
-      createMockPlayer({ id: "a", name: "甲", team: 1, roundStatus: "correct", guessesUsed: 2, score: 3 }),
-      createMockPlayer({ id: "b", name: "乙", team: 1, roundStatus: "teamCorrect", guessesUsed: 2, score: 5 }),
-      createMockPlayer({ id: "c", name: "丙", team: null, roundStatus: "guessing", guessesUsed: 1 }),
+      createMockPlayer({
+        id: "a",
+        name: "甲",
+        team: 1,
+        roundStatus: "correct",
+        guessesUsed: 2,
+        score: 3,
+      }),
+      createMockPlayer({
+        id: "b",
+        name: "乙",
+        team: 1,
+        roundStatus: "teamCorrect",
+        guessesUsed: 2,
+        score: 5,
+      }),
+      createMockPlayer({
+        id: "c",
+        name: "丙",
+        team: null,
+        roundStatus: "guessing",
+        guessesUsed: 1,
+      }),
     ];
 
-    render(<PlayerList players={players} myPlayerId="c" isHost={false} phase="playing" allowSpectators maxGuesses={3} />);
+    render(
+      <PlayerList
+        players={players}
+        myPlayerId="c"
+        isHost={false}
+        phase="playing"
+        allowSpectators
+        maxGuesses={3}
+      />
+    );
 
     const sections = screen.getAllByRole("region");
-    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["1 队", "2 队", "个人游玩"]);
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([
+      "1 队",
+      "2 队",
+      "个人游玩",
+    ]);
     expect(within(sections[0]!).getByLabelText("合计 8 分")).toBeInTheDocument();
     expect(within(sections[0]!).getByText("2 人 · 2/3 次")).toBeInTheDocument();
     expect(within(sections[0]!).getByText("队伍猜中")).toBeInTheDocument();

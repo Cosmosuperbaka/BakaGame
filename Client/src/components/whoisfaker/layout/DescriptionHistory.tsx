@@ -33,7 +33,7 @@ interface DescriptionTableProps {
 /** 补上只在发言记录里出现、已不在玩家列表中的玩家（已离场）。 */
 export function collectDescriptionRows(
   players: PublicPlayerView[] | undefined,
-  descriptions: DescriptionRecord[],
+  descriptions: DescriptionRecord[]
 ): PublicPlayerView[] {
   const rows = new Map<string, PublicPlayerView>();
   // 快照中的玩家数组就是 PlayerList 的实际渲染顺序，历史表不得另行排序。
@@ -103,7 +103,7 @@ export function DescriptionTable({
                 key={column.key}
                 className={cn(
                   "sticky top-0 z-panel whitespace-nowrap border-b border-r bg-panel px-4 py-3",
-                  DESCRIPTION_HEAD_TONES[column.tone],
+                  DESCRIPTION_HEAD_TONES[column.tone]
                 )}
                 // 与房间页侧栏的发言列共用一个下限
                 style={{ minWidth: SPEECH_COLUMN_MIN_WIDTH }}
@@ -152,27 +152,27 @@ export function DescriptionTable({
                       "whitespace-nowrap border-r text-sm leading-relaxed",
                       cellPad,
                       DESCRIPTION_TONES[column.tone],
-                      descriptionCellShadeForPlayer(player, rowIndex, column.index),
+                      descriptionCellShadeForPlayer(player, rowIndex, column.index)
                     )}
                   >
                     {/* 该轮无需发言的玩家留空，只有确实缺席发言的格子标短横线 */}
                     {desc ? (
                       <span className="flex items-center gap-1.5 whitespace-nowrap">
                         {order !== undefined ? (
-                          <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
+                          <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
+                            #{order}
+                          </span>
                         ) : null}
                         <span>{desc.text}</span>
                       </span>
-                    ) : (
-                      column.expectedPlayerIds.has(player.id) ? (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          {order !== undefined ? (
-                            <span className="font-mono text-xs font-medium">#{order}</span>
-                          ) : null}
-                          <span>—</span>
-                        </span>
-                      ) : null
-                    )}
+                    ) : column.expectedPlayerIds.has(player.id) ? (
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        {order !== undefined ? (
+                          <span className="font-mono text-xs font-medium">#{order}</span>
+                        ) : null}
+                        <span>—</span>
+                      </span>
+                    ) : null}
                   </td>
                 );
               })}

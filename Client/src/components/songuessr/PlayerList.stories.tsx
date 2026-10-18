@@ -22,9 +22,22 @@ const { host, me, peach, spectator } = SONG_PEOPLE;
 const meta = {
   title: "猜歌/PlayerList",
   component: PlayerList,
-  args: { players: withHost(waitingPlayers()), myPlayerId: me.id, isHost: false, phase: "waiting", allowSpectators: true },
+  args: {
+    players: withHost(waitingPlayers()),
+    myPlayerId: me.id,
+    isHost: false,
+    phase: "waiting",
+    allowSpectators: true,
+  },
   decorators: [
-    (Story, { parameters }) => (parameters.bare ? <Story /> : <div className={SONG_PLAYER_PANEL}><Story /></div>),
+    (Story, { parameters }) =>
+      parameters.bare ? (
+        <Story />
+      ) : (
+        <div className={SONG_PLAYER_PANEL}>
+          <Story />
+        </div>
+      ),
   ],
 } satisfies Meta<typeof PlayerList>;
 
@@ -35,7 +48,11 @@ export const WaitingPlayer: Story = { name: "等待阶段 · 玩家" };
 
 export const WaitingHost: Story = {
   name: "等待阶段 · 房主 · 含人机",
-  args: { players: withHost([...waitingPlayers(), songBot("A"), songBot("B")]), myPlayerId: host.id, isHost: true },
+  args: {
+    players: withHost([...waitingPlayers(), songBot("A"), songBot("B")]),
+    myPlayerId: host.id,
+    isHost: true,
+  },
 };
 
 export const Submitting: Story = {
@@ -61,18 +78,31 @@ export const TeamPlaying: Story = {
 export const HostManage: Story = {
   name: "房主操作菜单",
   tags: ["overlay"],
-  args: { players: withHost(playingPlayers()), myPlayerId: host.id, isHost: true, phase: "playing" },
+  args: {
+    players: withHost(playingPlayers()),
+    myPlayerId: host.id,
+    isHost: true,
+    phase: "playing",
+  },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: `${peach.name} 操作` }));
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: `${peach.name} 操作` })
+    );
     await screen.findByRole("button", { name: /转移房主/ });
     dropFocus();
   },
 };
 
 /** 同一玩家在不同阶段与排队状态下的旁观切换入口。 */
-function toggleCase(key: string, phase: SonGuessrPhase, mine: Partial<SonGuessrPlayerView>, myId: string = me.id) {
+function toggleCase(
+  key: string,
+  phase: SonGuessrPhase,
+  mine: Partial<SonGuessrPlayerView>,
+  myId: string = me.id
+) {
   const players = (phase === "waiting" ? waitingPlayers() : playingPlayers()).map((player) =>
-    player.id === myId ? { ...player, ...mine } : player);
+    player.id === myId ? { ...player, ...mine } : player
+  );
   return { key, phase, players: withHost(players), myId };
 }
 
@@ -106,8 +136,18 @@ export const SpectatorToggleLive: Story = {
   render: function Render(args) {
     const [spectating, setSpectating] = useState(false);
     const players = args.players.map((player) =>
-      player.id === me.id ? { ...player, membership: spectating ? "spectator" as const : "active" as const } : player);
-    useEffect(() => stubSongCommand(async (_type, payload) => { setSpectating(Boolean(payload?.spectator)); return {}; }), []);
+      player.id === me.id
+        ? { ...player, membership: spectating ? ("spectator" as const) : ("active" as const) }
+        : player
+    );
+    useEffect(
+      () =>
+        stubSongCommand(async (_type, payload) => {
+          setSpectating(Boolean(payload?.spectator));
+          return {};
+        }),
+      []
+    );
     return <PlayerList {...args} players={players} />;
   },
 };

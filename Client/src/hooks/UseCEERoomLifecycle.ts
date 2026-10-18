@@ -25,30 +25,48 @@ export function useCEERoomLifecycle() {
   const [error, setError] = useState("");
   // 服务端的错误码：是否进入密码步、密码框是否标红按它判断，不匹配文案。
   const [errorCode, setErrorCode] = useState("");
-  const fail = (failure: unknown) => { setError(ceeErrorMessage(failure)); setErrorCode(isProtocolError(failure) ? failure.code : ""); };
+  const fail = (failure: unknown) => {
+    setError(ceeErrorMessage(failure));
+    setErrorCode(isProtocolError(failure) ? failure.code : "");
+  };
   const attempted = useRef("");
   const manualJoin = useRef<AbortController | null>(null);
-  useEffect(() => () => { manualJoin.current?.abort(); }, [roomId]);
+  useEffect(
+    () => () => {
+      manualJoin.current?.abort();
+    },
+    [roomId]
+  );
 
   /**
    * 直链进入：房号未命中（服务重启后房间随内存清空、测试房、已关闭房间的分享链接）时，
    * 用同一房号就地开一间增强房再进入，与另外两个游戏的直链行为一致。
    * 密码错误、重名等其它业务拒绝保持原样报错，不触发建房。
    */
-  const joinOrCreate = async (targetRoomId: string, userName: string, passwordDraft: string, controller: AbortController) => {
+  const joinOrCreate = async (
+    targetRoomId: string,
+    userName: string,
+    passwordDraft: string,
+    controller: AbortController
+  ) => {
     try {
-      await useCEEStore.getState().joinRoom(targetRoomId, userName, passwordDraft, controller.signal);
+      await useCEEStore
+        .getState()
+        .joinRoom(targetRoomId, userName, passwordDraft, controller.signal);
     } catch (failure) {
       if (!isProtocolError(failure) || failure.code !== "ROOM_NOT_FOUND") throw failure;
-      await useCEEStore.getState().createRoom({
-        source: "native",
-        roomId: targetRoomId,
-        // 房间名协议上限 32：用户名最多 32 字符，「的房间」后缀要留出空间。
-        name: targetRoomId === TEST_ROOM_ID ? "CEE 测试房" : `${userName.slice(0, 29)}的房间`,
-        userName,
-        visibility: "public",
-        allowSpectators: true,
-      }, controller.signal);
+      await useCEEStore.getState().createRoom(
+        {
+          source: "native",
+          roomId: targetRoomId,
+          // 房间名协议上限 32：用户名最多 32 字符，「的房间」后缀要留出空间。
+          name: targetRoomId === TEST_ROOM_ID ? "CEE 测试房" : `${userName.slice(0, 29)}的房间`,
+          userName,
+          visibility: "public",
+          allowSpectators: true,
+        },
+        controller.signal
+      );
     }
   };
 
@@ -61,12 +79,19 @@ export function useCEERoomLifecycle() {
     try {
       await joinOrCreate(targetRoomId, userName, "", controller);
       if (controller.signal.aborted) return;
-      saveUsername(userName); setName(userName); setNeedsJoin(false);
-    } catch (failure) { if (!controller.signal.aborted) fail(failure); }
+      saveUsername(userName);
+      setName(userName);
+      setNeedsJoin(false);
+    } catch (failure) {
+      if (!controller.signal.aborted) fail(failure);
+    }
   };
 
   useEffect(() => {
-    if (!roomId || closed) { void navigate("/cee", { replace: true }); return; }
+    if (!roomId || closed) {
+      void navigate("/cee", { replace: true });
+      return;
+    }
     if (!connected || !lobbyReady) return;
     if (attempted.current === roomId) return;
     attempted.current = roomId;
@@ -74,18 +99,27 @@ export function useCEERoomLifecycle() {
     const restore = async () => {
       const store = useCEEStore.getState();
       if (store.roomId === roomId && store.snapshot) {
-        setJoining(false); return;
+        setJoining(false);
+        return;
       }
       try {
         const restored = await store.reconnectRoom(roomId, controller.signal);
         if (controller.signal.aborted) return;
         if (!restored) await autoJoin(roomId, controller);
       } catch (failure) {
-        if (!controller.signal.aborted) { fail(failure); setNeedsJoin(true); }
-      } finally { if (!controller.signal.aborted) setJoining(false); }
+        if (!controller.signal.aborted) {
+          fail(failure);
+          setNeedsJoin(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setJoining(false);
+      }
     };
     void restore();
-    return () => { controller.abort(); attempted.current = ""; };
+    return () => {
+      controller.abort();
+      attempted.current = "";
+    };
   }, [roomId, connected, lobbyReady, closed, navigate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 手动确认（密码步提交）：用表单里的名字与密码重试。 */
@@ -93,13 +127,17 @@ export function useCEERoomLifecycle() {
     if (!roomId || !name.trim() || joining || manualJoin.current) return;
     const controller = new AbortController();
     manualJoin.current = controller;
-    setJoining(true); setError(""); setErrorCode("");
+    setJoining(true);
+    setError("");
+    setErrorCode("");
     try {
       await joinOrCreate(roomId, name.trim(), password, controller);
       if (controller.signal.aborted) return;
-      saveUsername(name.trim()); setNeedsJoin(false);
-    } catch (failure) { if (!controller.signal.aborted) fail(failure); }
-    finally {
+      saveUsername(name.trim());
+      setNeedsJoin(false);
+    } catch (failure) {
+      if (!controller.signal.aborted) fail(failure);
+    } finally {
       if (manualJoin.current === controller) manualJoin.current = null;
       if (!controller.signal.aborted) setJoining(false);
     }
@@ -110,5 +148,18 @@ export function useCEERoomLifecycle() {
     void navigate("/cee");
   }, [navigate]);
 
-  return { roomId, connected, joining, needsJoin, name, setName, password, setPassword, error, errorCode, join, leave };
+  return {
+    roomId,
+    connected,
+    joining,
+    needsJoin,
+    name,
+    setName,
+    password,
+    setPassword,
+    error,
+    errorCode,
+    join,
+    leave,
+  };
 }

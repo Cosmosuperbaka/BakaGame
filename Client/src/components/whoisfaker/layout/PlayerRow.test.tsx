@@ -33,7 +33,7 @@ describe("player row presentation", () => {
         onMarkChange={vi.fn()}
         onKick={vi.fn()}
         onTransferHost={vi.fn()}
-      />,
+      />
     );
 
     // 验证核心业务属性的无障碍与语义呈现，不绑定原子类与 DOM 层级
@@ -58,7 +58,7 @@ describe("player row presentation", () => {
         onMarkChange={vi.fn()}
         onKick={vi.fn()}
         onTransferHost={vi.fn()}
-      />,
+      />
     );
 
     expect(screen.getByText("卧底")).toHaveTextContent(/^预测卧底$/);
@@ -82,7 +82,7 @@ describe("player row presentation", () => {
         onKick={onKick}
         onTransferHost={vi.fn()}
         embedded
-      />,
+      />
     );
 
     expect(screen.getByText(name)).toBeInTheDocument();

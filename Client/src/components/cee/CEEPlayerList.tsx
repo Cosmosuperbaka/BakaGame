@@ -2,7 +2,12 @@ import type { ReactNode, Ref } from "react";
 import type { CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { PlayerGroupTitle, PlayerListLayout, PlayerStatusPill, type PlayerStatusTone } from "@/components/common/PlayerStatusPill";
+import {
+  PlayerGroupTitle,
+  PlayerListLayout,
+  PlayerStatusPill,
+  type PlayerStatusTone,
+} from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { TeamSection } from "@/components/common/TeamSection";
@@ -33,14 +38,22 @@ const statuses: Record<CEEPlayer["status"], CEEStatus> = {
  */
 function resolveCEEStatus(player: CEEPlayer, snapshot: CEERoomSnapshot): CEEStatus | null {
   if (player.membership === "spectator") return null;
-  if (snapshot.phase === "waiting" || snapshot.phase === "choosingSetter") return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
+  if (snapshot.phase === "waiting" || snapshot.phase === "choosingSetter")
+    return player.ready ? { label: "准备", tone: "success" } : { label: "等待", tone: "default" };
   if (snapshot.setterPlayerId === player.id) return { label: "出题", tone: "questioner" };
   // 结算后仍是「猜测中」的人就是本局没猜中的，不再挂进行中的警示色。
-  if (snapshot.phase === "settled" && player.status === "playing") return { label: "未猜中", tone: "default" };
+  if (snapshot.phase === "settled" && player.status === "playing")
+    return { label: "未猜中", tone: "default" };
   return statuses[player.status];
 }
 
-export function CEEPlayerList({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+export function CEEPlayerList({
+  snapshot,
+  privateState,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+}) {
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const waiting = snapshot.phase === "waiting";
@@ -49,10 +62,12 @@ export function CEEPlayerList({ snapshot, privateState }: { snapshot: CEERoomSna
   const observers = snapshot.players.filter((player) => player.membership === "spectator");
   const groups = teamGroups(activePlayers);
   // 换组（含换队）后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
-  const rowKey = usePlayerRowKeys(snapshot.players.map((player) => ({
-    id: player.id,
-    group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
-  })));
+  const rowKey = usePlayerRowKeys(
+    snapshot.players.map((player) => ({
+      id: player.id,
+      group: player.membership === "active" ? `active:${player.team ?? "solo"}` : player.membership,
+    }))
+  );
   const teamed = groups.some((group) => group.team !== null);
   // 两种来源都只在等待阶段改身份；已在旁观的人即使房间后来关了观战，也要能回到玩家组。
   const canJoinSpectators = waiting && snapshot.allowSpectators && me?.membership === "active";
@@ -60,14 +75,24 @@ export function CEEPlayerList({ snapshot, privateState }: { snapshot: CEERoomSna
   const toggleSpectator = (spectator: boolean) => void run("cee.player.spectate", { spectator });
 
   const renderRows = (players: CEEPlayer[], inTeam: boolean) => (
-    <motion.div className="flex flex-col gap-px" variants={listContainer(players.length)} initial={false} animate="animate">
+    <motion.div
+      className="flex flex-col gap-px"
+      variants={listContainer(players.length)}
+      initial={false}
+      animate="animate"
+    >
       <AnimatePresence initial={false} mode="popLayout">
         {players.map((player) => (
           <CEEPlayerRow
             key={rowKey(player.id)}
             player={player}
             snapshot={snapshot}
-            sharedInHeader={inTeam && snapshot.phase === "guessing" && sharedProgress(players) !== null && player.status !== "observing"}
+            sharedInHeader={
+              inTeam &&
+              snapshot.phase === "guessing" &&
+              sharedProgress(players) !== null &&
+              player.status !== "observing"
+            }
             self={player.id === privateState.playerId}
             canManage={isHost && player.id !== privateState.playerId}
             busy={busy}
@@ -88,20 +113,31 @@ export function CEEPlayerList({ snapshot, privateState }: { snapshot: CEERoomSna
             <div className="flex flex-col gap-1.5">
               <AnimatePresence initial={false}>
                 {groups.map(({ team, members }) => (
-                  <CEETeamSection key={team ?? "solo"} team={team} members={members} snapshot={snapshot}>
+                  <CEETeamSection
+                    key={team ?? "solo"}
+                    team={team}
+                    members={members}
+                    snapshot={snapshot}
+                  >
                     {renderRows(members, team !== null)}
                   </CEETeamSection>
                 ))}
               </AnimatePresence>
             </div>
-          ) : renderRows(activePlayers, false)}
-          {canJoinPlayers ? <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} /> : null}
+          ) : (
+            renderRows(activePlayers, false)
+          )}
+          {canJoinPlayers ? (
+            <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} />
+          ) : null}
 
           {observers.length > 0 || canJoinSpectators ? (
             <>
               <PlayerGroupTitle label="旁观" count={observers.length} withRule />
               {renderRows(observers, false)}
-              {canJoinSpectators ? <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} /> : null}
+              {canJoinSpectators ? (
+                <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -118,15 +154,27 @@ function sharedProgress(members: CEEPlayer[]): CEEPlayer | null {
   const guessing = members.filter((player) => player.status !== "observing");
   const [first] = guessing;
   if (!first) return null;
-  return guessing.every((player) => player.attempts === first.attempts && player.marks === first.marks && player.syncCompleted === first.syncCompleted)
-    ? first : null;
+  return guessing.every(
+    (player) =>
+      player.attempts === first.attempts &&
+      player.marks === first.marks &&
+      player.syncCompleted === first.syncCompleted
+  )
+    ? first
+    : null;
 }
 
 /**
  * 队伍块：标题行给队号、人数与全队合计分（见 `TeamSection`）。
  * 猜测阶段共享的次数、同步提交与进度只在标题出现一次，不在每个队员行重复。
  */
-function CEETeamSection({ ref, team, members, snapshot, children }: {
+function CEETeamSection({
+  ref,
+  team,
+  members,
+  snapshot,
+  children,
+}: {
   ref?: Ref<HTMLElement>;
   team: number | null;
   members: CEEPlayer[];
@@ -138,7 +186,9 @@ function CEETeamSection({ ref, team, members, snapshot, children }: {
     `${members.length} 人`,
     shared ? `${shared.attempts}/${snapshot.settings.maxAttempts} 次` : null,
     shared && snapshot.settings.syncMode && shared.syncCompleted ? "已提交" : null,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <TeamSection
       ref={ref}
@@ -165,13 +215,25 @@ interface CEEPlayerRowProps {
   run: CEERun;
 }
 
-function CEEPlayerRow({ ref, player, snapshot, sharedInHeader, self, canManage, busy, run }: CEEPlayerRowProps) {
+function CEEPlayerRow({
+  ref,
+  player,
+  snapshot,
+  sharedInHeader,
+  self,
+  canManage,
+  busy,
+  run,
+}: CEEPlayerRowProps) {
   const status = resolveCEEStatus(player, snapshot);
-  const progress = !sharedInHeader && snapshot.phase === "guessing" && player.status !== "observing";
+  const progress =
+    !sharedInHeader && snapshot.phase === "guessing" && player.status !== "observing";
   const detail = [
     progress ? `${player.attempts}/${snapshot.settings.maxAttempts} 次` : null,
     progress && snapshot.settings.syncMode && player.syncCompleted ? "已提交" : null,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const actions = canManage
     ? hostActions({
@@ -192,8 +254,16 @@ function CEEPlayerRow({ ref, player, snapshot, sharedInHeader, self, canManage, 
       online={player.online}
       account={player.account}
       badges={status ? <PlayerStatusPill {...status} /> : null}
-      meta={detail ? <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span> : null}
-      detail={!sharedInHeader && player.marks ? <CEEMarks marks={player.marks} name={player.name} /> : null}
+      meta={
+        detail ? (
+          <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span>
+        ) : null
+      }
+      detail={
+        !sharedInHeader && player.marks ? (
+          <CEEMarks marks={player.marks} name={player.name} />
+        ) : null
+      }
       actions={actions}
       layoutId={player.id}
       ref={ref}

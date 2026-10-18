@@ -2,7 +2,11 @@ import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/Utils";
-import { sortModelsByRelease, type ContributingCompany, type ContributingModel } from "@/lib/Credits";
+import {
+  sortModelsByRelease,
+  type ContributingCompany,
+  type ContributingModel,
+} from "@/lib/Credits";
 import { tappable } from "@/lib/Motion";
 import { CreditBrandMark } from "./CreditsIcons";
 
@@ -33,9 +37,14 @@ export function CreditsModels({ models }: { models: readonly ContributingCompany
             >
               <div className="flex min-w-0 shrink-0 items-center gap-2 sm:w-56">
                 {/* 厂商标识与模型徽章里的家族标识是两枚不同的官方字形，不能互相替代。 */}
-                <CreditBrandMark brand={company.logo} className="size-4 shrink-0 text-muted-foreground" />
+                <CreditBrandMark
+                  brand={company.logo}
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
                 <h3 className="min-w-0 truncate text-sm font-semibold">{company.company}</h3>
-                <span className="shrink-0 text-2xs text-muted-foreground">{sortedModels.length} 个模型</span>
+                <span className="shrink-0 text-2xs text-muted-foreground">
+                  {sortedModels.length} 个模型
+                </span>
               </div>
               <ul className="flex min-w-0 flex-wrap gap-1.5">
                 {sortedModels.map((model) => (
@@ -75,7 +84,7 @@ function ModelBadge({ model }: { model: ContributingModel }) {
       {...tappable}
       className={cn(
         MODEL_BADGE_CLASS,
-        "cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2",
+        "cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2"
       )}
     >
       {glyph}

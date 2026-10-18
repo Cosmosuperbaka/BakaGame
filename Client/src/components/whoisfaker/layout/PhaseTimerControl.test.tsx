@@ -5,7 +5,9 @@ import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseTimerControl } from "./PhaseTimerControl";
 
-const createBaseSnapshot = (phase: WhoIsFakerRoomSnapshot["status"]["phase"] = "description"): WhoIsFakerRoomSnapshot => ({
+const createBaseSnapshot = (
+  phase: WhoIsFakerRoomSnapshot["status"]["phase"] = "description"
+): WhoIsFakerRoomSnapshot => ({
   roomId: "1234",
   name: "测试房间",
   visibility: "public",

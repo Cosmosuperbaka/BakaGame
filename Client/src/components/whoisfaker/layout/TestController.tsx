@@ -44,17 +44,17 @@ export function TestController() {
         addToast((error as { message?: string }).message ?? "操作失败", "error");
       }
     },
-    [addToast, sendCommand],
+    [addToast, sendCommand]
   );
 
   const handleJumpPhase = useCallback(
     (phase: WhoIsFakerPhase) => run("test.jumpToPhase", { phase }),
-    [run],
+    [run]
   );
 
   const handleSetRole = useCallback(
     (role: WhoIsFakerRole) => run("test.setMyRole", { role }),
-    [run],
+    [run]
   );
 
   const me = snapshot?.players.find((player) => player.id === privateState?.playerId);
@@ -80,7 +80,7 @@ export function TestController() {
       }
       await run("player.setSpectator", { spectator: perspective === "spectator" });
     },
-    [privateState, run],
+    [privateState, run]
   );
 
   const activeRole = privateState?.role;
@@ -105,103 +105,103 @@ export function TestController() {
             <DisclosureChevron open={open} className="ml-auto text-muted-foreground" />
           </motion.button>
           <CollapsibleRegion open={open}>
-                <div className="px-4 pb-4 pt-1 space-y-3">
-                  <ControlGroup label="跳转游戏阶段">
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {PHASES.map((p) => (
-                        <Button
-                          key={p}
-                          variant={currentPhase === p ? "default" : "outline"}
-                          size="sm"
-                          className="h-7 text-xs justify-start"
-                          onClick={() => void handleJumpPhase(p)}
-                        >
-                          {PHASE_LABELS[p]}
-                        </Button>
-                      ))}
-                    </div>
-                  </ControlGroup>
-
-                  <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-info" />}>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <Button
-                        variant={currentPerspective === "player" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => void handleSetPerspective("player")}
-                      >
-                        玩家视角
-                      </Button>
-                      <Button
-                        variant={currentPerspective === "questioner" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs gap-1"
-                        onClick={() => void handleSetPerspective("questioner")}
-                      >
-                        <Shield className="h-3 w-3 text-questioner" />
-                        出题人
-                      </Button>
-                      <Button
-                        variant={currentPerspective === "spectator" ? "default" : "outline"}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => void handleSetPerspective("spectator")}
-                      >
-                        旁观视角
-                      </Button>
-                    </div>
-                  </ControlGroup>
-
-                  {currentPerspective === "player" && (
-                    <ControlGroup label="切换玩家身份" icon={<UserCog className="h-3.5 w-3.5 text-success" />}>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {ROLES.map((r) => (
-                          <Button
-                            key={r}
-                            variant={activeRole === r ? "default" : "outline"}
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={() => void handleSetRole(r)}
-                          >
-                            {ROLE_LABELS[r]}
-                          </Button>
-                        ))}
-                      </div>
-                    </ControlGroup>
-                  )}
-
-                  <ControlGroup
-                    label="测试人机"
-                    icon={<Bot className="h-3.5 w-3.5 text-info" />}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 flex-1 gap-1 text-xs"
-                        aria-label="移除一个测试人机"
-                        disabled={botCount === 0}
-                        onClick={() => void run("test.removeBot", { count: 1 })}
-                      >
-                        <Minus className="h-3 w-3" />
-                        减一个
-                      </Button>
-                      <span className="w-10 text-center text-sm font-medium tabular-nums">
-                        {botCount}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 flex-1 gap-1 text-xs"
-                        aria-label="添加一个测试人机"
-                        onClick={() => void run("test.addBot", { count: 1 })}
-                      >
-                        <Plus className="h-3 w-3" />
-                        加一个
-                      </Button>
-                    </div>
-                  </ControlGroup>
+            <div className="px-4 pb-4 pt-1 space-y-3">
+              <ControlGroup label="跳转游戏阶段">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {PHASES.map((p) => (
+                    <Button
+                      key={p}
+                      variant={currentPhase === p ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 text-xs justify-start"
+                      onClick={() => void handleJumpPhase(p)}
+                    >
+                      {PHASE_LABELS[p]}
+                    </Button>
+                  ))}
                 </div>
+              </ControlGroup>
+
+              <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-info" />}>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Button
+                    variant={currentPerspective === "player" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => void handleSetPerspective("player")}
+                  >
+                    玩家视角
+                  </Button>
+                  <Button
+                    variant={currentPerspective === "questioner" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => void handleSetPerspective("questioner")}
+                  >
+                    <Shield className="h-3 w-3 text-questioner" />
+                    出题人
+                  </Button>
+                  <Button
+                    variant={currentPerspective === "spectator" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => void handleSetPerspective("spectator")}
+                  >
+                    旁观视角
+                  </Button>
+                </div>
+              </ControlGroup>
+
+              {currentPerspective === "player" && (
+                <ControlGroup
+                  label="切换玩家身份"
+                  icon={<UserCog className="h-3.5 w-3.5 text-success" />}
+                >
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {ROLES.map((r) => (
+                      <Button
+                        key={r}
+                        variant={activeRole === r ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => void handleSetRole(r)}
+                      >
+                        {ROLE_LABELS[r]}
+                      </Button>
+                    ))}
+                  </div>
+                </ControlGroup>
+              )}
+
+              <ControlGroup label="测试人机" icon={<Bot className="h-3.5 w-3.5 text-info" />}>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 flex-1 gap-1 text-xs"
+                    aria-label="移除一个测试人机"
+                    disabled={botCount === 0}
+                    onClick={() => void run("test.removeBot", { count: 1 })}
+                  >
+                    <Minus className="h-3 w-3" />
+                    减一个
+                  </Button>
+                  <span className="w-10 text-center text-sm font-medium tabular-nums">
+                    {botCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 flex-1 gap-1 text-xs"
+                    aria-label="添加一个测试人机"
+                    onClick={() => void run("test.addBot", { count: 1 })}
+                  >
+                    <Plus className="h-3 w-3" />
+                    加一个
+                  </Button>
+                </div>
+              </ControlGroup>
+            </div>
           </CollapsibleRegion>
         </motion.div>
       </div>

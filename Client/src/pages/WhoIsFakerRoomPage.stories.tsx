@@ -34,7 +34,10 @@ const MOBILE = { viewport: { value: "mobile", isRotated: false } };
 
 /** 让进房流程越过“等待连接”：只替换连接就绪检查，不建立任何 WebSocket。 */
 function connectInstantly() {
-  Object.defineProperty(whoIsFakerWsClient, "waitForConnection", { configurable: true, value: () => Promise.resolve() });
+  Object.defineProperty(whoIsFakerWsClient, "waitForConnection", {
+    configurable: true,
+    value: () => Promise.resolve(),
+  });
   return () => {
     Reflect.deleteProperty(whoIsFakerWsClient, "waitForConnection");
   };
@@ -74,7 +77,11 @@ export const NameDialog: Story = {
 
 export const WaitingHost: Story = {
   name: "等待阶段 · 房主",
-  beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("host", "waiting")),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("waiting", { players: readyPlayers() }),
+      wifPrivate("host", "waiting")
+    ),
 };
 
 export const WaitingPlayer: Story = {
@@ -89,10 +96,15 @@ export const WaitingSpectator: Story = {
 
 export const SettingsPanel: Story = {
   name: "设置面板 · 房主",
-  beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("host", "waiting")),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("waiting", { players: readyPlayers() }),
+      wifPrivate("host", "waiting")
+    ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    for (const name of ["身份设置", "房间设置"])
+      await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -100,10 +112,12 @@ export const SettingsPanel: Story = {
 /** 非房主展开两组设置：同一份结构，字段只显示取值。 */
 export const SettingsPanelGuest: Story = {
   name: "设置面板 · 玩家 · 只读",
-  beforeEach: () => presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("me", "waiting")),
+  beforeEach: () =>
+    presetWifRoom(wifSnapshot("waiting", { players: readyPlayers() }), wifPrivate("me", "waiting")),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    for (const name of ["身份设置", "房间设置"])
+      await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -117,14 +131,18 @@ export const SettingsPanelFewPlayers: Story = {
       wifSnapshot("waiting", {
         players: readyPlayers().filter((player) => present.has(player.id)),
         roleLimits: { maxUndercoverCount: 1, canEnableAngel: false, canEnableBlank: false },
-        settings: { roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false }, revealRoleOnDeath: true },
+        settings: {
+          roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+          revealRoleOnDeath: true,
+        },
       }),
-      wifPrivate("host", "waiting"),
+      wifPrivate("host", "waiting")
     );
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["身份设置", "房间设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    for (const name of ["身份设置", "房间设置"])
+      await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -199,10 +217,11 @@ export const VotingPlayer: Story = {
 
 export const VotedPlayer: Story = {
   name: "投票阶段 · 玩家 · 已投票",
-  beforeEach: () => presetWifRoom(
-    wifSnapshot("vote3"),
-    wifPrivate("me", "vote3", { myCurrentVoteTargetId: WIF_PEOPLE.yuzu.id }),
-  ),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("vote3"),
+      wifPrivate("me", "vote3", { myCurrentVoteTargetId: WIF_PEOPLE.yuzu.id })
+    ),
 };
 
 export const VotingHost: Story = {
@@ -224,10 +243,14 @@ export const NightPlayer: Story = {
 
 export const NightActed: Story = {
   name: "夜晚阶段 · 玩家 · 已行动",
-  beforeEach: () => presetWifRoom(
-    wifSnapshot("night2"),
-    wifPrivate("me", "night2", { nightActionSubmitted: true, myCurrentNightTargetId: WIF_PEOPLE.long.id }),
-  ),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("night2"),
+      wifPrivate("me", "night2", {
+        nightActionSubmitted: true,
+        myCurrentNightTargetId: WIF_PEOPLE.long.id,
+      })
+    ),
 };
 
 export const NightHost: Story = {
@@ -239,15 +262,20 @@ export const NightHost: Story = {
 
 export const BlankGuessing: Story = {
   name: "白板猜词 · 输入中",
-  beforeEach: () => presetWifRoom(wifSnapshot("blankGuess"), wifPrivate(kita, "blankGuess", { canSubmitBlankGuess: true })),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("blankGuess"),
+      wifPrivate(kita, "blankGuess", { canSubmitBlankGuess: true })
+    ),
 };
 
 export const BlankReviewing: Story = {
   name: "白板猜词 · 等待裁定",
-  beforeEach: () => presetWifRoom(
-    wifSnapshot("blankReview"),
-    wifPrivate(kita, "blankReview", { canSubmitBlankGuess: false, blankGuessUsed: true }),
-  ),
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("blankReview"),
+      wifPrivate(kita, "blankReview", { canSubmitBlankGuess: false, blankGuessUsed: true })
+    ),
 };
 
 export const BlankWatchingHost: Story = {
@@ -287,7 +315,8 @@ export const FeedbackNight: Story = {
 
 export const FeedbackBlankGuess: Story = {
   name: "阶段反馈 · 白板猜词结果",
-  beforeEach: () => presetWifRoom(wifFeedbackSnapshot("blankGuess"), wifPrivate("host", "blankReview")),
+  beforeEach: () =>
+    presetWifRoom(wifFeedbackSnapshot("blankGuess"), wifPrivate("host", "blankReview")),
   play: async () => {
     await screen.findByText("猜中");
     await screen.findByRole("button", { name: "查看结算" });
@@ -328,7 +357,11 @@ export const TestRoom: Story = {
   name: "测试房间 · 阶段控制器",
   parameters: { router: WIF_TEST_ROUTER },
   beforeEach: () => {
-    const snapshot = wifSnapshot("day2", { roomId: ROOM_ID_TEST_MODE, name: "测试房间", testMode: true });
+    const snapshot = wifSnapshot("day2", {
+      roomId: ROOM_ID_TEST_MODE,
+      name: "测试房间",
+      testMode: true,
+    });
     presetWifRoom(snapshot, wifPrivate("host", "day2"));
   },
 };
@@ -398,7 +431,9 @@ export const DisconnectPendingHost: Story = {
   beforeEach: () => {
     const snapshot = wifSnapshot("vote3");
     snapshot.status.pendingDisconnectPlayerId = kanade.id;
-    snapshot.players = snapshot.players.map((player) => (player.id === kanade.id ? { ...player, online: false } : player));
+    snapshot.players = snapshot.players.map((player) =>
+      player.id === kanade.id ? { ...player, online: false } : player
+    );
     presetWifRoom(snapshot, asHost);
   },
 };
@@ -410,7 +445,9 @@ export const DisconnectPendingPlayer: Story = {
   beforeEach: () => {
     const snapshot = wifSnapshot("night2");
     snapshot.status.pendingDisconnectPlayerId = kanade.id;
-    snapshot.players = snapshot.players.map((player) => (player.id === kanade.id ? { ...player, online: false } : player));
+    snapshot.players = snapshot.players.map((player) =>
+      player.id === kanade.id ? { ...player, online: false } : player
+    );
     presetWifRoom(snapshot, wifPrivate("me", "night2"));
   },
 };

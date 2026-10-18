@@ -15,8 +15,7 @@ import {
   redactData,
 } from "../src/infrastructure/EventLogger";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
-import { createTestApp as createApp } from './AppFixtures';
-
+import { createTestApp as createApp } from "./AppFixtures";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 
@@ -91,7 +90,7 @@ test("系统日志支持极简 GIN 风格状态码与列表格式", () => {
       context: {
         signal: "SIGTERM",
       },
-    }),
+    })
   ).toContain("[BAKA]");
 });
 
@@ -150,11 +149,9 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
         Origin: "http://localhost:5173",
         "Access-Control-Request-Method": "GET",
       },
-    }),
+    })
   );
-  expect(optionsRes.headers.get("access-control-allow-origin")).toBe(
-    "http://localhost:5173",
-  );
+  expect(optionsRes.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
 });
 
 // 收集测试期间的 WebSocket 推送，便于按事件类型断言。
@@ -277,14 +274,14 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
         id: "sub",
         type: "lobby.subscribeRooms",
         payload: {},
-      }),
+      })
     );
 
     const lobbyPayload = (await waitForSocketMessage(
       (payload) =>
         Boolean(payload) &&
         (payload as { type?: string }).type === "event" &&
-        (payload as { event?: string }).event === "lobby.rooms",
+        (payload as { event?: string }).event === "lobby.rooms"
     )) as { payload: Array<{ roomId: string }> };
 
     expect(Array.isArray(lobbyPayload.payload)).toBe(true);
@@ -300,7 +297,7 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
           allowSpectators: true,
           userName: "集成房主",
         },
-      }),
+      })
     );
 
     const snapshot = (await waitForSocketMessage(
@@ -308,8 +305,9 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
         Boolean(payload) &&
         (payload as { type?: string }).type === "event" &&
         (payload as { event?: string }).event === "room.snapshot" &&
-        (payload as { payload?: { mode?: string; state?: { roomId?: string } } }).payload?.mode === "full" &&
-        (payload as { payload?: { state?: { roomId?: string } } }).payload?.state?.roomId === "8888",
+        (payload as { payload?: { mode?: string; state?: { roomId?: string } } }).payload?.mode ===
+          "full" &&
+        (payload as { payload?: { state?: { roomId?: string } } }).payload?.state?.roomId === "8888"
     )) as { payload: { state: { roomId: string } } };
 
     expect(snapshot.payload.state.roomId).toBe("8888");
@@ -327,7 +325,7 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
       (payload) =>
         Boolean(payload) &&
         (payload as { type?: string }).type === "error" &&
-        (payload as { error?: { code?: string } }).error?.code === "INVALID_MESSAGE",
+        (payload as { error?: { code?: string } }).error?.code === "INVALID_MESSAGE"
     )) as { error: { code: string } };
 
     expect(invalidMessageError.error.code).toBe("INVALID_MESSAGE");
@@ -381,7 +379,11 @@ test("HTTP 请求体超过上限由运行时回 413，不进业务解析", async
     bangumiImageUrl: "",
   };
   const logger = new EventLogger();
-  const { app } = createApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) });
+  const { app } = createApp({
+    env,
+    logger,
+    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+  });
   const started = app.listen({
     hostname: env.serverListenHost,
     port: env.serverPort,
@@ -428,11 +430,13 @@ test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并�
         traceId: "trace-client-a",
         type: "lobby.subscribeRooms",
         payload: {},
-      }),
+      })
     );
 
     const ackA = (await collectorA(
-      (payload) => (payload as { type?: string }).type === "ack" && (payload as { id?: string }).id === "req-shared-id",
+      (payload) =>
+        (payload as { type?: string }).type === "ack" &&
+        (payload as { id?: string }).id === "req-shared-id"
     )) as { type: string; id: string; traceId?: string };
     expect(ackA.type).toBe("ack");
     expect(ackA.traceId).toBe("trace-client-a");
@@ -444,11 +448,13 @@ test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并�
         traceId: "trace-client-b",
         type: "lobby.subscribeRooms",
         payload: {},
-      }),
+      })
     );
 
     const ackB = (await collectorB(
-      (payload) => (payload as { type?: string }).type === "ack" && (payload as { id?: string }).id === "req-shared-id",
+      (payload) =>
+        (payload as { type?: string }).type === "ack" &&
+        (payload as { id?: string }).id === "req-shared-id"
     )) as { type: string; id: string; traceId?: string };
     expect(ackB.type).toBe("ack");
     expect(ackB.traceId).toBe("trace-client-b");
@@ -480,11 +486,11 @@ test("解析失败时保留信封身份并记录原始载荷形态", async () =>
         traceId: "trace-salvage",
         type: "lobby.subscribeRooms",
         payload: { 非法字段: true },
-      }),
+      })
     );
 
     const errorPacket = (await collector(
-      (payload) => (payload as { type?: string }).type === "error",
+      (payload) => (payload as { type?: string }).type === "error"
     )) as { type: string; id: string; error?: { code?: string } };
 
     expect(errorPacket.id).toBe("req-salvage-1");
@@ -546,7 +552,7 @@ test("WhoIsFakerService.notifyShutdown 会向所有在线连接广播停机通�
     const shutdownEvent = (await collector(
       (payload) =>
         (payload as { type?: string }).type === "event" &&
-        (payload as { event?: string }).event === "server.shutdown",
+        (payload as { event?: string }).event === "server.shutdown"
     )) as { type: string; event: string; payload: { message: string } };
 
     expect(shutdownEvent.type).toBe("event");
@@ -554,7 +560,6 @@ test("WhoIsFakerService.notifyShutdown 会向所有在线连接广播停机通�
     expect(shutdownEvent.payload.message).toBe(SERVER_SHUTDOWN_MESSAGE);
 
     socket.close();
-
   } finally {
     await stop();
   }
@@ -564,12 +569,17 @@ test("POST /api/system/notify-shutdown 拦截携带公网代理转发头的外�
   const { port, stop } = startTestServer();
 
   try {
-    const resWithXForwardedFor = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
-      method: "POST",
-      headers: { "x-forwarded-for": "198.51.100.1, 10.0.0.1" },
-    });
+    const resWithXForwardedFor = await fetch(
+      `http://127.0.0.1:${port}/api/system/notify-shutdown`,
+      {
+        method: "POST",
+        headers: { "x-forwarded-for": "198.51.100.1, 10.0.0.1" },
+      }
+    );
     expect(resWithXForwardedFor.status).toBe(403);
-    const json1 = (await resWithXForwardedFor.json()) as { error?: { code?: string; message?: string; traceId?: string } };
+    const json1 = (await resWithXForwardedFor.json()) as {
+      error?: { code?: string; message?: string; traceId?: string };
+    };
     expect(json1.error?.code).toBe("FORBIDDEN");
     expect(json1.error?.message).toContain("维护凭据");
     // 真实服务器由全局 onRequest 写入响应头，错误信封必须带上同一个追踪号，运维才能在日志里定位这一次拒绝。
@@ -582,7 +592,9 @@ test("POST /api/system/notify-shutdown 拦截携带公网代理转发头的外�
       headers: { "x-real-ip": "203.0.113.50" },
     });
     expect(resWithXRealIp.status).toBe(403);
-    const json2 = (await resWithXRealIp.json()) as { error?: { code?: string; message?: string; traceId?: string } };
+    const json2 = (await resWithXRealIp.json()) as {
+      error?: { code?: string; message?: string; traceId?: string };
+    };
     expect(json2.error?.code).toBe("FORBIDDEN");
     const trace2 = resWithXRealIp.headers.get("x-trace-id") ?? "";
     expect(trace2).not.toBe("");
@@ -651,7 +663,7 @@ test("POST /api/system/notify-shutdown 本地调用成功，触发广播、探�
     const shutdownEvent = (await collector(
       (payload) =>
         (payload as { type?: string }).type === "event" &&
-        (payload as { event?: string }).event === "server.shutdown",
+        (payload as { event?: string }).event === "server.shutdown"
     )) as { type: string; event: string; payload: { message: string } };
     expect(shutdownEvent.type).toBe("event");
     expect(shutdownEvent.event).toBe("server.shutdown");
@@ -700,18 +712,16 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
 
-    const acks = messages.filter(
-      (m) => m.type === "ack" && m.id === "req-dedup-concurrency",
-    );
-     // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
-     expect(acks).toHaveLength(2);
-     expect(acks[0]).toEqual(acks[1]);
+    const acks = messages.filter((m) => m.type === "ack" && m.id === "req-dedup-concurrency");
+    // 两个请求都必须收到 ACK，第二个重传帧不得被静默丢弃
+    expect(acks).toHaveLength(2);
+    expect(acks[0]).toEqual(acks[1]);
 
-     socket.close();
-   } finally {
-     await stop();
-   }
- });
+    socket.close();
+  } finally {
+    await stop();
+  }
+});
 
 /**
  * 跨站 WebSocket 劫持（CSWSH）防护的回归用例。
@@ -772,17 +782,33 @@ test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）
   }
 });
 
-
-
-for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songuessr", "song.lobby.subscribeRooms"], ["cee", "cee.lobby.subscribeRooms"]] as const) {
+for (const [game, command] of [
+  ["whoisfaker", "lobby.subscribeRooms"],
+  ["songuessr", "song.lobby.subscribeRooms"],
+  ["cee", "cee.lobby.subscribeRooms"],
+] as const) {
   test(`${game} 原生 WS schema 保持二进制/空白 JSON、关联错误与严格字段契约`, async () => {
     const { port, stop } = startTestServer();
     const socket = await openSocket(port, game);
     const collect = createSocketCollector(socket);
-    const getPacket = (id: string) => collect((packet) => (packet as { id?: string }).id === id) as Promise<{ type: string; traceId?: string; error?: { code: string } }>;
+    const getPacket = (id: string) =>
+      collect((packet) => (packet as { id?: string }).id === id) as Promise<{
+        type: string;
+        traceId?: string;
+        error?: { code: string };
+      }>;
     try {
-      for (const [id, frame] of [["native-text", "text"], ["native-binary", "binary"]] as const) {
-        const message = JSON.stringify({ id, type: command, traceId: "native-trace", payload: {}, ...(game === "cee" ? { roomId: null, sessionToken: null } : {}) });
+      for (const [id, frame] of [
+        ["native-text", "text"],
+        ["native-binary", "binary"],
+      ] as const) {
+        const message = JSON.stringify({
+          id,
+          type: command,
+          traceId: "native-trace",
+          payload: {},
+          ...(game === "cee" ? { roomId: null, sessionToken: null } : {}),
+        });
         socket.send(frame === "text" ? ` \n${message}\n ` : new TextEncoder().encode(message));
         expect(await getPacket(id)).toMatchObject({ type: "ack", traceId: "native-trace" });
       }
@@ -792,13 +818,24 @@ for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songues
         ["native-unknown", { type: "not.a.command" }, "UNKNOWN_MESSAGE_TYPE"],
         ["native-extra", { extraEnvelopeField: true }, "INVALID_MESSAGE"],
       ] as const) {
-        socket.send(JSON.stringify(Object.assign({ id, type: command, traceId: "error-trace", payload: {} }, patch)));
-        expect(await getPacket(id)).toMatchObject({ type: "error", traceId: "error-trace", error: { code } });
+        socket.send(
+          JSON.stringify(
+            Object.assign({ id, type: command, traceId: "error-trace", payload: {} }, patch)
+          )
+        );
+        expect(await getPacket(id)).toMatchObject({
+          type: "error",
+          traceId: "error-trace",
+          error: { code },
+        });
       }
-      socket.send('{broken json');
+      socket.send("{broken json");
       const raw = await getPacket("unknown");
       expect(raw).toMatchObject({ type: "error", error: { code: "INVALID_MESSAGE" } });
-    } finally { socket.close(); await stop(); }
+    } finally {
+      socket.close();
+      await stop();
+    }
   });
 }
 
@@ -813,10 +850,16 @@ test("关闭文档页时 /openapi 落到 404 信封，不再向公网公开整�
   };
   const logger = new EventLogger();
   const build = (openapiEnabled?: boolean) =>
-    createApp({ env: { ...env, openapiEnabled }, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) }).app;
+    createApp({
+      env: { ...env, openapiEnabled },
+      logger,
+      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    }).app;
   const closed = await build(false).handle(new Request("http://localhost/openapi/json"));
   expect(closed.status).toBe(404);
   expect(((await closed.json()) as { error?: { code?: string } }).error?.code).toBe("NOT_FOUND");
   // 缺省仍挂着：离线契约导出（ExportOpenapi）与本地开发都依赖它。
-  expect((await build(undefined).handle(new Request("http://localhost/openapi/json"))).status).toBe(200);
+  expect((await build(undefined).handle(new Request("http://localhost/openapi/json"))).status).toBe(
+    200
+  );
 });

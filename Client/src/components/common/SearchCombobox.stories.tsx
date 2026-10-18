@@ -29,7 +29,15 @@ function Avatar() {
   );
 }
 
-function Demo({ status = null, empty = false, banned = [] }: { status?: SearchStatus | null; empty?: boolean; banned?: string[] }) {
+function Demo({
+  status = null,
+  empty = false,
+  banned = [],
+}: {
+  status?: SearchStatus | null;
+  empty?: boolean;
+  banned?: string[];
+}) {
   const [value, setValue] = useState("撒大赛");
   const [picked, setPicked] = useState<DemoItem | null>(null);
   return (
@@ -54,12 +62,16 @@ function Demo({ status = null, empty = false, banned = [] }: { status?: SearchSt
         onSelect={setPicked}
         listKey="demo"
         status={status}
-        actions={(
+        actions={
           <>
-            <Button type="button" className="h-10">搜角色</Button>
-            <Button type="button" variant="outline" className="h-10">搜作品</Button>
+            <Button type="button" className="h-10">
+              搜角色
+            </Button>
+            <Button type="button" variant="outline" className="h-10">
+              搜作品
+            </Button>
           </>
-        )}
+        }
       />
       <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
         {picked ? `已选择：${picked.nameCn || picked.name}` : "游戏操作区：结果面板浮在这里之上"}

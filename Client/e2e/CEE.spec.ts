@@ -5,23 +5,43 @@ async function useLocalCharacterImages(page: Page) {
   // SQLite 补全缓存也可能已有图片 URL；阻止这些可选图片绕过 WS 隔离回源。
   await page.route("**/*", (route) => {
     const url = new URL(route.request().url());
-    if (route.request().resourceType() === "image" && !["localhost", "127.0.0.1"].includes(url.hostname)) {
-      return route.fulfill({ contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64") });
+    if (
+      route.request().resourceType() === "image" &&
+      !["localhost", "127.0.0.1"].includes(url.hostname)
+    ) {
+      return route.fulfill({
+        contentType: "image/gif",
+        body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64"),
+      });
     }
     return route.fallback();
   });
-  await page.routeWebSocket((url) => isLoopbackUrl(url) && url.pathname === "/api/cee/ws", (socket) => {
-    const server = socket.connectToServer();
-    socket.onMessage((message) => {
-      if (typeof message !== "string") { server.send(message); return; }
-      const command = JSON.parse(message) as { type: string; id: string };
-      if (command.type === "cee.character.image") {
-        socket.send(JSON.stringify({ type: "ack", id: command.id, requestType: command.type, payload: {
-          imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-        } }));
-      } else server.send(message);
-    });
-  });
+  await page.routeWebSocket(
+    (url) => isLoopbackUrl(url) && url.pathname === "/api/cee/ws",
+    (socket) => {
+      const server = socket.connectToServer();
+      socket.onMessage((message) => {
+        if (typeof message !== "string") {
+          server.send(message);
+          return;
+        }
+        const command = JSON.parse(message) as { type: string; id: string };
+        if (command.type === "cee.character.image") {
+          socket.send(
+            JSON.stringify({
+              type: "ack",
+              id: command.id,
+              requestType: command.type,
+              payload: {
+                imageUrl:
+                  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+              },
+            })
+          );
+        } else server.send(message);
+      });
+    }
+  );
 }
 
 function watchQuality(page: Page) {
@@ -61,17 +81,26 @@ async function chooseCharacter(page: Page, name: string) {
   await search.getByRole("combobox", { name: "搜索角色", exact: true }).fill(name);
   await search.getByRole("button", { name: "搜角色", exact: true }).click();
   // 结果面板走 Portal，不在搜索区的 DOM 子树里。
-  await page.getByRole("listbox", { name: "搜索角色结果" }).getByRole("option", { name: new RegExp(name) }).first().click();
+  await page
+    .getByRole("listbox", { name: "搜索角色结果" })
+    .getByRole("option", { name: new RegExp(name) })
+    .first()
+    .click();
 }
 
 async function expectViewportFits(page: Page) {
-  expect(await page.evaluate(() => ({
-    width: document.documentElement.scrollWidth <= innerWidth,
-    height: document.documentElement.scrollHeight === innerHeight,
-  }))).toEqual({ width: true, height: true });
+  expect(
+    await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth <= innerWidth,
+      height: document.documentElement.scrollHeight === innerHeight,
+    }))
+  ).toEqual({ width: true, height: true });
 }
 
-test("增强房双浏览器连续两局、重连、聊天与三档布局", async ({ isolatedContext, page }, testInfo) => {
+test("增强房双浏览器连续两局、重连、聊天与三档布局", async ({
+  isolatedContext,
+  page,
+}, testInfo) => {
   test.setTimeout(process.env.CI ? 180_000 : 120_000);
   const guestContext = await isolatedContext({ reducedMotion: "reduce" });
   const guest = await guestContext.newPage();
@@ -92,7 +121,10 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(page).toHaveURL(/\/cee\/room\/\d{4}$/);
     const roomUrl = page.url();
     // 直链进房自动加入（与另外两个游戏一致），不再拦截「设置用户名」：先写入访客名再进入。
-    await guest.addInitScript((name) => window.localStorage.setItem("bakagame:username", name), guestName);
+    await guest.addInitScript(
+      (name) => window.localStorage.setItem("bakagame:username", name),
+      guestName
+    );
     await guest.goto(roomUrl);
     await expect(guest.getByRole("heading", { name: "等待开始" })).toBeVisible();
     // 姓名改用自定义浮层后不再有 title：按可见文本断言访客已进入房主的玩家列表。
@@ -109,7 +141,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(guestGuessSettings).toHaveAccessibleDescription(/不限行动时间/);
     // 房主不准备；随机出题要等其他人都准备好。
     await expect(page.getByRole("button", { name: "准备", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "等待玩家准备 (0/1)", exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "等待玩家准备 (0/1)", exact: true })
+    ).toBeDisabled();
 
     const chat = "联机聊天".repeat(75);
     await page.getByPlaceholder("请输入文本").fill(chat);
@@ -117,7 +151,10 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(guest.getByTestId("chat-message-bubble").filter({ hasText: chat })).toBeVisible();
     // 出题方式在题目设置里；指定出题人时开始游戏先进入选人阶段，出题人不必准备。
     await page.getByRole("button", { name: "题目设置", exact: true }).click();
-    await page.getByRole("radiogroup", { name: "出题方式" }).getByText("指定出题人", { exact: true }).click();
+    await page
+      .getByRole("radiogroup", { name: "出题方式" })
+      .getByText("指定出题人", { exact: true })
+      .click();
     await expect(page.getByRole("radio", { name: "指定出题人", exact: true })).toBeChecked();
     await page.getByRole("button", { name: "开始并指定出题人", exact: true }).click();
     await expect(guest.getByText("等待房主指定本局出题人")).toBeVisible();
@@ -133,7 +170,14 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await guest.reload();
     await expect(guest.getByRole("region", { name: "猜测反馈" })).toContainText("伊地知虹夏");
 
-    for (const viewport of [{ width: 1440, height: 900 }, { width: 1100, height: 800 }, { width: 900, height: 800 }, { width: 832, height: 800 }, { width: 768, height: 800 }, { width: 390, height: 844 }]) {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1100, height: 800 },
+      { width: 900, height: 800 },
+      { width: 832, height: 800 },
+      { width: 768, height: 800 },
+      { width: 390, height: 844 },
+    ]) {
       await guest.setViewportSize(viewport);
       await expectViewportFits(guest);
       const feedback = guest.getByRole("region", { name: "猜测反馈" });
@@ -141,12 +185,18 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
       // 一次猜测一行（Design 数据表格一节）：去头像后最小内容宽度约 531px。1024 及更宽（1280 聊天栏刚常驻的一小段除外）
       // 不横滚；900 及以下横向滚动是这段宽度的既定形态：角色列贴住左缘，数值与标签横移。
       if (viewport.width <= 900) {
-        await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeGreaterThan(0);
+        await expect
+          .poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth))
+          .toBeGreaterThan(0);
         await feedback.evaluate((element) => element.scrollTo({ left: element.scrollWidth }));
-        await expect.poll(() => feedback.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+        await expect
+          .poll(() => feedback.evaluate((element) => element.scrollLeft))
+          .toBeGreaterThan(0);
         await expect(feedback.getByText("伊地知虹夏")).toBeInViewport({ ratio: 1 });
       } else {
-        await expect.poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+        await expect
+          .poll(() => feedback.evaluate((element) => element.scrollWidth - element.clientWidth))
+          .toBe(0);
       }
       // 聊天栏 xl 起常驻；其下与玩家栏同时常驻会挤窄游戏区，改由顶栏按钮打开覆盖面板。
       if (viewport.width < 1280) {
@@ -157,7 +207,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
       }
       if (viewport.width < 768) {
         await guest.getByRole("button", { name: "玩家列表", exact: true }).click();
-        await expect(guest.getByRole("dialog", { name: "玩家", exact: true })).toContainText(hostName);
+        await expect(guest.getByRole("dialog", { name: "玩家", exact: true })).toContainText(
+          hostName
+        );
         await guest.getByRole("button", { name: "关闭面板" }).click();
         await expect(guest.getByRole("dialog", { name: "玩家", exact: true })).toHaveCount(0);
       }
@@ -180,7 +232,9 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await expect(page.getByRole("table", { name: "本局得分" })).toContainText("首猜 12");
     await expect(page.getByText("第 2 局", { exact: true })).toBeVisible();
     await page.evaluate(() => document.documentElement.classList.add("dark"));
-    await page.evaluate(() => Promise.allSettled(document.getAnimations().map((animation) => animation.finished)));
+    await page.evaluate(() =>
+      Promise.allSettled(document.getAnimations().map((animation) => animation.finished))
+    );
     await page.screenshot({ path: testInfo.outputPath("cee-settled-dark.png") });
     await guest.getByRole("button", { name: "离开房间" }).click();
     await page.goBack();

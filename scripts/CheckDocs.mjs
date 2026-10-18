@@ -37,8 +37,9 @@ function slug(title) {
 const SUBMODULES = (() => {
   const file = path.join(ROOT, ".gitmodules");
   if (!fs.existsSync(file)) return [];
-  return [...fs.readFileSync(file, "utf8").matchAll(/^\s*path\s*=\s*(.+)$/gm)]
-    .map((match) => match[1].trim().replace(/^\.\//, ""));
+  return [...fs.readFileSync(file, "utf8").matchAll(/^\s*path\s*=\s*(.+)$/gm)].map((match) =>
+    match[1].trim().replace(/^\.\//, "")
+  );
 })();
 
 const insideSubmodule = (rel) => SUBMODULES.some((sub) => rel === sub || rel.startsWith(`${sub}/`));

@@ -7,11 +7,7 @@ import type { Auth } from "../infrastructure/auth/Auth";
 import type { Mailer } from "../infrastructure/auth/Mailer";
 import type { AvatarImage, AvatarSize, QQAvatarService } from "../infrastructure/auth/QQAvatar";
 import type { QQNicknameService } from "./QQNicknameService";
-import {
-  accountAvatarUrlOf,
-  LOGIN_CODE_RESEND_SECONDS,
-  qqEmailOf,
-} from "../shared/Account";
+import { accountAvatarUrlOf, LOGIN_CODE_RESEND_SECONDS, qqEmailOf } from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
 import type { PlayerAccount } from "../shared/Model";
 
@@ -56,11 +52,23 @@ const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 export class AccountService {
   private readonly now: () => number;
   /** 同一邮箱的发码冷却与小时配额；全局配额保护 SMTP 发信额度。 */
-  private readonly resendLimiter = new SlidingWindowRateLimiter({ windowMs: LOGIN_CODE_RESEND_SECONDS * 1000, maxRequests: 1 });
-  private readonly hourlyLimiter = new SlidingWindowRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 6 });
-  private readonly globalLimiter = new SlidingWindowRateLimiter({ windowMs: 60 * 1000, maxRequests: 30 });
+  private readonly resendLimiter = new SlidingWindowRateLimiter({
+    windowMs: LOGIN_CODE_RESEND_SECONDS * 1000,
+    maxRequests: 1,
+  });
+  private readonly hourlyLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    maxRequests: 6,
+  });
+  private readonly globalLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 30,
+  });
   /** 头像路由的「用户 ID → QQ 号 / 当前版本」短缓存，避免每张图都查库。 */
-  private readonly avatarOwners = new LRUCache<string, { qqNumber: string; hash: string | null }>({ max: 4096, ttl: 60_000 });
+  private readonly avatarOwners = new LRUCache<string, { qqNumber: string; hash: string | null }>({
+    max: 4096,
+    ttl: 60_000,
+  });
 
   constructor(private readonly options: AccountServiceOptions) {
     this.now = options.now ?? Date.now;
@@ -80,12 +88,17 @@ export class AccountService {
     const { adapter } = await this.options.auth.$context;
     await adapter.updateMany({
       model: "user",
-      where: [{ field: "qqNumber", operator: "in", value: [...qqNumbers] }, { field: "role", operator: "ne", value: "admin" }],
+      where: [
+        { field: "qqNumber", operator: "in", value: [...qqNumbers] },
+        { field: "role", operator: "ne", value: "admin" },
+      ],
       update: { role: "admin" },
     });
   }
 
-  async requestLoginCode(qqNumber: string): Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }> {
+  async requestLoginCode(
+    qqNumber: string
+  ): Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }> {
     const email = qqEmailOf(qqNumber);
     const now = this.now();
     if (!this.globalLimiter.allow("global", now)) {
@@ -98,15 +111,28 @@ export class AccountService {
       throw new AppError("RATE_LIMITED", "验证码获取过于频繁，请一小时后再试");
     }
     const existing = (await (await this.adapter()).findUserByEmail(email))?.user as
-      | { banned?: boolean | null; banExpires?: Date | null; name?: string | null; qqName?: string | null } | undefined;
+      | {
+          banned?: boolean | null;
+          banExpires?: Date | null;
+          name?: string | null;
+          qqName?: string | null;
+        }
+      | undefined;
     // 封禁中的账号登录必然被拒，不为它消耗发信额度；到期的封禁由 Better Auth 在登录时自动解除。
-    if (existing?.banned && (!existing.banExpires || new Date(existing.banExpires).getTime() > now)) {
+    if (
+      existing?.banned &&
+      (!existing.banExpires || new Date(existing.banExpires).getTime() > now)
+    ) {
       throw new AppError("ACCOUNT_BANNED", "账号已被封禁");
     }
     // 账号昵称强制使用 QQ 昵称：新号发码前必须取到昵称，取不到即拒绝（停用注册）；
     // 老号回传库里最近一次同步的昵称供登录弹窗展示身份，不为此打扰查询号。
-    const qqName = existing ? (existing.qqName ?? existing.name ?? null) : await this.requireNickname(qqNumber);
-    const code = await this.options.auth.api.createVerificationOTP({ body: { email, type: "sign-in" } });
+    const qqName = existing
+      ? (existing.qqName ?? existing.name ?? null)
+      : await this.requireNickname(qqNumber);
+    const code = await this.options.auth.api.createVerificationOTP({
+      body: { email, type: "sign-in" },
+    });
     try {
       await this.options.mailer.sendLoginCode({ to: email, code });
     } catch (error) {
@@ -120,9 +146,17 @@ export class AccountService {
   /** 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。 */
   private async requireNickname(qqNumber: string): Promise<string> {
     const nicknames = this.options.nicknames;
-    const timeout = new Promise<null>((resolve) => setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null));
-    const name = nicknames ? await Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout]) : null;
-    if (!name) throw new AppError("QQ_NICKNAME_UNAVAILABLE", "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试");
+    const timeout = new Promise<null>((resolve) =>
+      setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null)
+    );
+    const name = nicknames
+      ? await Promise.race([nicknames.nicknameOf(qqNumber).catch(() => null), timeout])
+      : null;
+    if (!name)
+      throw new AppError(
+        "QQ_NICKNAME_UNAVAILABLE",
+        "暂时无法获取你的 QQ 昵称，新账号注册暂时不可用，请稍后再试"
+      );
     return name;
   }
 
@@ -132,7 +166,10 @@ export class AccountService {
    * 资料本身由调用方按 ID 读库，不取会话里的旧值。
    */
   async currentUserId(headers: Headers): Promise<string | null> {
-    const session = await this.options.auth.api.getSession({ headers, query: { disableCookieCache: true } });
+    const session = await this.options.auth.api.getSession({
+      headers,
+      query: { disableCookieCache: true },
+    });
     return session?.user.id ?? null;
   }
 
@@ -150,8 +187,11 @@ export class AccountService {
     const row = await this.findUser(userId);
     if (!row) return null;
     // QQ 昵称刷新在后台跑，不拖慢本次请求；刷新到新昵称时会同步账号昵称。
-    void this.options.nicknames?.refreshUser(row).catch((error: unknown) =>
-      this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) }));
+    void this.options.nicknames
+      ?.refreshUser(row)
+      .catch((error: unknown) =>
+        this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) })
+      );
     return toProfile(await this.refreshAvatar(row));
   }
 
@@ -166,7 +206,7 @@ export class AccountService {
     if (input.showQq !== undefined) patch.showQq = input.showQq;
     const adapter = await this.adapter();
     const row = Object.keys(patch).length
-      ? (await adapter.updateUser(userId, patch)) as AccountRow | null
+      ? ((await adapter.updateUser(userId, patch)) as AccountRow | null)
       : await this.findUser(userId);
     if (!row) throw new AppError("UNAUTHORIZED", "请先登录");
     return toProfile(row);
@@ -175,7 +215,12 @@ export class AccountService {
   async publicProfile(userId: string): Promise<PublicProfile> {
     const row = await this.findUser(userId);
     if (!row) throw new AppError("NOT_FOUND", "该玩家未登录账号或账号已注销");
-    return { id: row.id, name: row.name, image: row.image ?? null, qqNumber: row.showQq ? row.qqNumber ?? null : null };
+    return {
+      id: row.id,
+      name: row.name,
+      image: row.image ?? null,
+      qqNumber: row.showQq ? (row.qqNumber ?? null) : null,
+    };
   }
 
   /**
@@ -191,7 +236,10 @@ export class AccountService {
     try {
       image = await this.options.avatars.get(qqNumber, 640, true);
     } catch (error) {
-      this.options.logger.warn("QQ 头像刷新失败，沿用旧头像", { userId: row.id, error: String(error) });
+      this.options.logger.warn("QQ 头像刷新失败，沿用旧头像", {
+        userId: row.id,
+        error: String(error),
+      });
       return row;
     }
     const patch: Record<string, unknown> = { avatarCheckedAt: new Date(this.now()) };
@@ -206,7 +254,11 @@ export class AccountService {
   }
 
   /** 头像路由：返回图片与「请求的版本是否为当前版本」（决定能否永久缓存）。 */
-  async avatar(userId: string, size: AvatarSize, version: string | undefined): Promise<{ image: AvatarImage; current: boolean }> {
+  async avatar(
+    userId: string,
+    size: AvatarSize,
+    version: string | undefined
+  ): Promise<{ image: AvatarImage; current: boolean }> {
     let owner = this.avatarOwners.get(userId);
     if (!owner) {
       const row = await this.findUser(userId);

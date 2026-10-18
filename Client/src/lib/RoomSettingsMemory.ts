@@ -122,20 +122,25 @@ export function saveRoomCreateDefaults(game: RoomGame, defaults: RoomCreateDefau
 }
 
 /** 读取房间内设置记忆；没有或损坏时返回 null，由调用方按「无记忆」跳过恢复。 */
-export function readRoomSettingsMemory<G extends RoomGame>(game: G): RoomSettingsMemoryByGame[G] | null {
+export function readRoomSettingsMemory<G extends RoomGame>(
+  game: G
+): RoomSettingsMemoryByGame[G] | null {
   const value = readJson<unknown>(SETTINGS_PREFIX + game);
   return value && typeof value === "object" ? (value as RoomSettingsMemoryByGame[G]) : null;
 }
 
 /** 覆盖写入房间内设置记忆。 */
-export function saveRoomSettingsMemory<G extends RoomGame>(game: G, memory: RoomSettingsMemoryByGame[G]): void {
+export function saveRoomSettingsMemory<G extends RoomGame>(
+  game: G,
+  memory: RoomSettingsMemoryByGame[G]
+): void {
   writeJson(SETTINGS_PREFIX + game, memory);
 }
 
 /** 读取-合并-写回：同一游戏有多个面板各存各的部分时用（如猜歌的题、猜两组）。 */
 export function updateRoomSettingsMemory<G extends RoomGame>(
   game: G,
-  patch: (current: RoomSettingsMemoryByGame[G] | null) => RoomSettingsMemoryByGame[G],
+  patch: (current: RoomSettingsMemoryByGame[G] | null) => RoomSettingsMemoryByGame[G]
 ): void {
   saveRoomSettingsMemory(game, patch(readRoomSettingsMemory(game)));
 }
@@ -164,7 +169,7 @@ export function peekPendingRestore(game: RoomGame): string | null {
  */
 export function takePendingRestoreMemory<G extends RoomGame>(
   game: G,
-  roomId: string,
+  roomId: string
 ): RoomSettingsMemoryByGame[G] | null {
   try {
     const storage = getLocalStorage();

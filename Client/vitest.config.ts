@@ -24,7 +24,8 @@ export default defineConfig({
           return 'export default { generatedAt: "", packs: [] }';
         }
         // 依赖清单与桶都只给空桩：单测断言页面行为，不依赖本机安装树。
-        if (id === "\0virtual:credits") return 'export default { generatedAt: "", dependencies: [] }';
+        if (id === "\0virtual:credits")
+          return 'export default { generatedAt: "", dependencies: [] }';
         if (id === "\0virtual:credits-licenses") return "export default {}";
         if (id.startsWith("\0virtual:credits-licenses-")) return "export default {}";
         return null;
@@ -32,10 +33,13 @@ export default defineConfig({
     },
   ],
   resolve: {
-      // 共享源码的运行依赖按客户端安装边界解析。
-      dedupe: ["@sinclair/typebox"],
+    // 共享源码的运行依赖按客户端安装边界解析。
+    dedupe: ["@sinclair/typebox"],
     alias: [
-      { find: "@bakagame/shared", replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts") },
+      {
+        find: "@bakagame/shared",
+        replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts"),
+      },
       { find: "@/types", replacement: path.resolve(import.meta.dirname, "./src/types/Index.ts") },
       { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
     ],

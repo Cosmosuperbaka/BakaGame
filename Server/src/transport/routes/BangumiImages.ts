@@ -24,7 +24,13 @@ const IMAGE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
  * 旧数据）一旦把 `text/html` 之类塞进来，浏览器直连这个 URL 就可能按 HTML 渲染；
  * 白名单外的类型一律降级成不可执行的字节流。
  */
-const SERVEABLE_IMAGE_TYPES = new Set(["image/avif", "image/png", "image/jpeg", "image/webp", "image/gif"]);
+const SERVEABLE_IMAGE_TYPES = new Set([
+  "image/avif",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
 
 export const bangumiImageRoutes = (images?: BangumiImageService) =>
   new Elysia({ name: "bangumi-images" }).get(
@@ -63,5 +69,5 @@ export const bangumiImageRoutes = (images?: BangumiImageService) =>
         description:
           "按源站路径提供 avif 图片：命中分片缓存直接返回，缺失时回源抓取并落库；路径即内容可长缓存。",
       },
-    },
+    }
   );

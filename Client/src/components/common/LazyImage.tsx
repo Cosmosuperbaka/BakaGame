@@ -15,24 +15,38 @@ const CACHE_LIMIT = 256;
 const resolvedImages = new Map<string, string>();
 const pendingImages = new Map<string, Promise<string | undefined>>();
 
-function resolveImage(cacheKey: string, request: () => Promise<string | undefined>): Promise<string | undefined> {
+function resolveImage(
+  cacheKey: string,
+  request: () => Promise<string | undefined>
+): Promise<string | undefined> {
   const cached = resolvedImages.get(cacheKey);
   if (cached) return Promise.resolve(cached);
   let pending = pendingImages.get(cacheKey);
   if (!pending) {
-    pending = request().then((url) => {
-      if (url) {
-        if (resolvedImages.size >= CACHE_LIMIT) resolvedImages.delete(resolvedImages.keys().next().value!);
-        resolvedImages.set(cacheKey, url);
-      }
-      return url;
-    }).finally(() => pendingImages.delete(cacheKey));
+    pending = request()
+      .then((url) => {
+        if (url) {
+          if (resolvedImages.size >= CACHE_LIMIT)
+            resolvedImages.delete(resolvedImages.keys().next().value!);
+          resolvedImages.set(cacheKey, url);
+        }
+        return url;
+      })
+      .finally(() => pendingImages.delete(cacheKey));
     pendingImages.set(cacheKey, pending);
   }
   return pending;
 }
 
-export function LazyImage({ cacheKey, initial, request, className, imageClassName, fallback, upgrade = false }: {
+export function LazyImage({
+  cacheKey,
+  initial,
+  request,
+  className,
+  imageClassName,
+  fallback,
+  upgrade = false,
+}: {
   /** 全局去重与缓存的键：同一张图跨列表、跨重渲染只请求一次（不同尺寸要各自带后缀）。 */
   cacheKey: string;
   /** 服务端已经带回来的地址；有了就不必等到滚进视口。 */
@@ -49,21 +63,54 @@ export function LazyImage({ cacheKey, initial, request, className, imageClassNam
   const [failed, setFailed] = useState(false);
   // `request` 常是内联箭头函数，放进依赖会让 effect 每次渲染重跑；用 ref 取最新值。
   const latestRequest = useRef(request);
-  useEffect(() => { latestRequest.current = request; }, [request]);
   useEffect(() => {
-    if ((!upgrade && (initial || image)) || !container.current || typeof IntersectionObserver === "undefined") return;
+    latestRequest.current = request;
+  }, [request]);
+  useEffect(() => {
+    if (
+      (!upgrade && (initial || image)) ||
+      !container.current ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
     let active = true;
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
       observer.disconnect();
-      void resolveImage(cacheKey, () => latestRequest.current()).then((url) => { if (active && url) setImage(url); }).catch(() => { /* 图片失败不阻断文字选择。 */ });
+      void resolveImage(cacheKey, () => latestRequest.current())
+        .then((url) => {
+          if (active && url) setImage(url);
+        })
+        .catch(() => {
+          /* 图片失败不阻断文字选择。 */
+        });
     });
     observer.observe(container.current);
-    return () => { active = false; observer.disconnect(); };
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
   }, [cacheKey, initial, image, upgrade]);
-  return <span ref={container} className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground", className)}>
-    {image && !failed
-      ? <img src={image} alt="" className={cn("h-full w-full object-cover", imageClassName)} loading="lazy" decoding="async" onError={() => setFailed(true)} />
-      : fallback}
-  </span>;
+  return (
+    <span
+      ref={container}
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground",
+        className
+      )}
+    >
+      {image && !failed ? (
+        <img
+          src={image}
+          alt=""
+          className={cn("h-full w-full object-cover", imageClassName)}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        fallback
+      )}
+    </span>
+  );
 }

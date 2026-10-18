@@ -37,7 +37,10 @@
       // paths 替换出的目录候选不适用 exports 解析（只认 legacy 字段），因此紧跟
       // 一条指向真实声明文件的候选。版本已精确锁定（1.15.6），dist 布局随包固定。
       // zod 带 legacy types 字段，目录候选即可命中，无需文件兜底。
-      "@orpc/contract": ["./node_modules/@orpc/contract", "./node_modules/@orpc/contract/dist/index.d.mts"],
+      "@orpc/contract": [
+        "./node_modules/@orpc/contract",
+        "./node_modules/@orpc/contract/dist/index.d.mts"
+      ],
       "@orpc/contract/*": ["./node_modules/@orpc/contract/*"],
       "zod": ["./node_modules/zod"],
       "zod/*": ["./node_modules/zod/*"],

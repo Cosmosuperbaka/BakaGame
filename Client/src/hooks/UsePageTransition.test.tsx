@@ -20,7 +20,8 @@ const nameOf = (node: HTMLElement) => node.style.viewTransitionName || null;
 
 function snapshot(): Capture {
   const names: Record<string, string | null> = {};
-  for (const node of document.querySelectorAll<HTMLElement>("[data-shared]")) names[node.dataset.shared!] = nameOf(node);
+  for (const node of document.querySelectorAll<HTMLElement>("[data-shared]"))
+    names[node.dataset.shared!] = nameOf(node);
   return {
     direction: document.documentElement.dataset.pageDirection,
     transition: document.documentElement.dataset.pageTransition,
@@ -55,7 +56,11 @@ function Frame({ children }: { children: React.ReactNode }) {
 
 function Go({ to, label }: { to: string; label: string }) {
   const navigate = usePageNavigate();
-  return <button type="button" onClick={() => void navigate(to)}>{label}</button>;
+  return (
+    <button type="button" onClick={() => void navigate(to)}>
+      {label}
+    </button>
+  );
 }
 
 function renderRouter(initial: string) {
@@ -93,7 +98,7 @@ function renderRouter(initial: string) {
         ),
       },
     ],
-    { initialEntries: [initial] },
+    { initialEntries: [initial] }
   );
   render(<RouterProvider router={router} />);
 }
@@ -195,7 +200,7 @@ describe("usePageTransitionEnds", () => {
       <MemoryRouter>
         <Probe />
         <Shared id="solo" />
-      </MemoryRouter>,
+      </MemoryRouter>
     );
     expect(screen.getByText("idle")).toBeInTheDocument();
     expect(snapshot().names).toEqual({ solo: null });

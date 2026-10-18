@@ -46,15 +46,24 @@ const plans = {
   frame: [viewports.desktop],
 };
 
-const shotMode = (tags) => (tags.includes("page") ? "page" : tags.includes("overlay") ? "overlay" : "frame");
+const shotMode = (tags) =>
+  tags.includes("page") ? "page" : tags.includes("overlay") ? "overlay" : "frame";
 const safeName = (value) => value.replace(/[\\/:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 const escapeHtml = (value) =>
-  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 
 /** Storybook 由分发器再拉起子进程，只杀直接子进程会留下占着端口的服务。 */
 function killTree(child) {
   if (child.exitCode !== null || child.pid === undefined) return;
-  if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  if (process.platform === "win32")
+    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
   else child.kill("SIGTERM");
 }
 
@@ -65,17 +74,32 @@ async function startStorybook() {
   const requireFromClient = createRequire(path.join(clientDir, "package.json"));
   const dispatcher = path.join(
     path.dirname(requireFromClient.resolve("storybook/package.json")),
-    "dist/bin/dispatcher.js",
+    "dist/bin/dispatcher.js"
   );
   const child = spawn(
     process.execPath,
-    [dispatcher, "dev", "--ci", "--quiet",
-      "--no-version-updates", "--disable-telemetry", "--exact-port", "--host", "127.0.0.1", "--port", String(port)],
-    { cwd: clientDir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    [
+      dispatcher,
+      "dev",
+      "--ci",
+      "--quiet",
+      "--no-version-updates",
+      "--disable-telemetry",
+      "--exact-port",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+    ],
+    { cwd: clientDir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
   );
   let log = "";
-  child.stdout.on("data", (chunk) => { log += chunk; });
-  child.stderr.on("data", (chunk) => { log += chunk; });
+  child.stdout.on("data", (chunk) => {
+    log += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    log += chunk;
+  });
   // 冷启动要先生成 WebP 公共资源并预构建依赖，给足 180 秒。
   for (let attempt = 0; attempt < 360; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Storybook 启动失败：\n${log.slice(-4000)}`);
@@ -93,55 +117,88 @@ async function startStorybook() {
 
 /** 等故事渲染收尾，再等字体、图片与仍在播放的动画落定，避免截到中间帧。 */
 async function waitForStory(page) {
-  await page.waitForFunction(() => {
-    const renders = window.__STORYBOOK_PREVIEW__?.storyRenders ?? [];
-    return renders.some((render) => ["completed", "finished", "errored", "aborted"].includes(render.phase));
-  }, undefined, { timeout: 90_000 });
+  await page.waitForFunction(
+    () => {
+      const renders = window.__STORYBOOK_PREVIEW__?.storyRenders ?? [];
+      return renders.some((render) =>
+        ["completed", "finished", "errored", "aborted"].includes(render.phase)
+      );
+    },
+    undefined,
+    { timeout: 90_000 }
+  );
   if (await page.evaluate(() => document.body.classList.contains("sb-show-errordisplay"))) {
-    const message = await page.locator("#error-message").innerText().catch(() => "");
+    const message = await page
+      .locator("#error-message")
+      .innerText()
+      .catch(() => "");
     throw new Error(message || "故事渲染失败");
   }
   await page.evaluate(async () => {
     // 每一步都有上限：暂停的动画或卡住的资源不能让整批截图无限挂起。
-    const within = (promise, ms) => Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
+    const within = (promise, ms) =>
+      Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
     await within(document.fonts.ready, 10_000);
     // 懒加载图片不进视口就永远不会开始下载，截图前一律改为立即加载。
     for (const image of document.images) image.loading = "eager";
-    await within(Promise.all([...document.images].map((image) => (image.complete ? null : image.decode().catch(() => null)))), 15_000);
+    await within(
+      Promise.all(
+        [...document.images].map((image) =>
+          image.complete ? null : image.decode().catch(() => null)
+        )
+      ),
+      15_000
+    );
     // 动图（GIF、APNG、动态 WebP）的帧由浏览器内部推进，animations: "disabled" 管不到；
     // 换成首帧静态图（createImageBitmap 按规范取首帧），同一故事两次截图才会逐像素一致。
     if ("ImageDecoder" in window) {
-      await within(Promise.all([...document.images].map(async (image) => {
-        const source = image.currentSrc;
-        if (!source || source.startsWith("data:")) return;
-        try {
-          const blob = await (await fetch(source)).blob();
-          const decoder = new ImageDecoder({ data: blob.stream(), type: blob.type });
-          await decoder.tracks.ready;
-          const animated = decoder.tracks.selectedTrack?.animated;
-          decoder.close();
-          if (!animated) return;
-          const frame = await createImageBitmap(blob);
-          const canvas = document.createElement("canvas");
-          canvas.width = frame.width;
-          canvas.height = frame.height;
-          canvas.getContext("2d").drawImage(frame, 0, 0);
-          image.srcset = "";
-          image.src = canvas.toDataURL();
-          await image.decode();
-        } catch {
-          // 解码器不支持的格式保持原样。
-        }
-      })), 15_000);
+      await within(
+        Promise.all(
+          [...document.images].map(async (image) => {
+            const source = image.currentSrc;
+            if (!source || source.startsWith("data:")) return;
+            try {
+              const blob = await (await fetch(source)).blob();
+              const decoder = new ImageDecoder({ data: blob.stream(), type: blob.type });
+              await decoder.tracks.ready;
+              const animated = decoder.tracks.selectedTrack?.animated;
+              decoder.close();
+              if (!animated) return;
+              const frame = await createImageBitmap(blob);
+              const canvas = document.createElement("canvas");
+              canvas.width = frame.width;
+              canvas.height = frame.height;
+              canvas.getContext("2d").drawImage(frame, 0, 0);
+              image.srcset = "";
+              image.src = canvas.toDataURL();
+              await image.decode();
+            } catch {
+              // 解码器不支持的格式保持原样。
+            }
+          })
+        ),
+        15_000
+      );
     }
-    await within(Promise.allSettled(document.getAnimations().filter((animation) => animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished)), 5_000);
+    await within(
+      Promise.allSettled(
+        document
+          .getAnimations()
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished)
+      ),
+      5_000
+    );
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
 }
 
 async function captureStory(browser, baseUrl, story) {
   const mode = shotMode(story.tags ?? []);
-  const context = await browser.newContext({ reducedMotion: "reduce", viewport: viewports.desktop });
+  const context = await browser.newContext({
+    reducedMotion: "reduce",
+    viewport: viewports.desktop,
+  });
   // 固定「当前时间」：倒计时与相对时间都按同一时刻渲染，改前改后的截图才能逐像素对照；计时器照常运行。
   await context.clock.setFixedTime(FIXED_NOW);
   const page = await context.newPage();
@@ -149,10 +206,15 @@ async function captureStory(browser, baseUrl, story) {
   // 故事只允许访问本机资源，杜绝截图结果依赖外网。
   await page.route("**/*", (route) => {
     const { hostname } = new URL(route.request().url());
-    return ["127.0.0.1", "localhost"].includes(hostname) || route.request().url().startsWith("data:") ? route.continue() : route.abort();
+    return ["127.0.0.1", "localhost"].includes(hostname) ||
+      route.request().url().startsWith("data:")
+      ? route.continue()
+      : route.abort();
   });
   page.on("pageerror", (error) => issues.push(`pageerror: ${error.message}`));
-  page.on("console", (message) => { if (message.type() === "error") issues.push(`console: ${message.text()}`); });
+  page.on("console", (message) => {
+    if (message.type() === "error") issues.push(`console: ${message.text()}`);
+  });
 
   const shots = [];
   const sizes = (story.tags ?? []).includes("mobile") ? [viewports.mobile] : plans[mode];
@@ -163,27 +225,54 @@ async function captureStory(browser, baseUrl, story) {
         const url = `${baseUrl}/iframe.html?viewMode=story&id=${encodeURIComponent(story.id)}&globals=${encodeURIComponent(`theme:${theme};motion:off`)}`;
         await page.goto(url, { waitUntil: "domcontentloaded" });
         await waitForStory(page);
-        const file = path.join(...story.title.split("/").map(safeName), `${safeName(story.name)}--${theme}--${viewport.width}.png`);
+        const file = path.join(
+          ...story.title.split("/").map(safeName),
+          `${safeName(story.name)}--${theme}--${viewport.width}.png`
+        );
         const target = path.join(outDir, file);
         await mkdir(path.dirname(target), { recursive: true });
         const screenshotOptions = { path: target, animations: "disabled", caret: "hide" };
         if (mode === "frame") {
           // 按故事根元素取景并外扩一圈，让偏移投影完整入镜。
-          const box = await page.locator("#storybook-root > *").first().evaluate((element) => {
-            const rect = element.getBoundingClientRect();
-            return { x: rect.left + scrollX, y: rect.top + scrollY, width: rect.width, height: rect.height };
-          });
+          const box = await page
+            .locator("#storybook-root > *")
+            .first()
+            .evaluate((element) => {
+              const rect = element.getBoundingClientRect();
+              return {
+                x: rect.left + scrollX,
+                y: rect.top + scrollY,
+                width: rect.width,
+                height: rect.height,
+              };
+            });
           const x = Math.max(0, box.x - FRAME_MARGIN);
           const y = Math.max(0, box.y - FRAME_MARGIN);
-          await page.screenshot({ ...screenshotOptions, fullPage: true,
-            clip: { x, y, width: box.width + (box.x - x) + FRAME_MARGIN, height: box.height + (box.y - y) + FRAME_MARGIN } });
+          await page.screenshot({
+            ...screenshotOptions,
+            fullPage: true,
+            clip: {
+              x,
+              y,
+              width: box.width + (box.x - x) + FRAME_MARGIN,
+              height: box.height + (box.y - y) + FRAME_MARGIN,
+            },
+          });
         } else await page.screenshot({ ...screenshotOptions, fullPage: mode === "overlay" });
         shots.push({ file: file.split(path.sep).join("/"), theme, width: viewport.width });
       }
     }
     return { id: story.id, title: story.title, name: story.name, mode, shots, issues };
   } catch (error) {
-    return { id: story.id, title: story.title, name: story.name, mode, shots, issues, error: error instanceof Error ? error.message : String(error) };
+    return {
+      id: story.id,
+      title: story.title,
+      name: story.name,
+      mode,
+      shots,
+      issues,
+      error: error instanceof Error ? error.message : String(error),
+    };
   } finally {
     await context.close();
   }
@@ -191,21 +280,35 @@ async function captureStory(browser, baseUrl, story) {
 
 function renderIndex(entries) {
   const groups = new Map();
-  for (const entry of [...entries].sort((left, right) => left.title.localeCompare(right.title, "zh-Hans-CN"))) {
+  for (const entry of [...entries].sort((left, right) =>
+    left.title.localeCompare(right.title, "zh-Hans-CN")
+  )) {
     groups.set(entry.title, [...(groups.get(entry.title) ?? []), entry]);
   }
-  const sections = [...groups].map(([title, stories]) => `
-    <section><h2>${escapeHtml(title)}</h2>${stories.map((story) => `
+  const sections = [...groups]
+    .map(
+      ([title, stories]) => `
+    <section><h2>${escapeHtml(title)}</h2>${stories
+      .map(
+        (story) => `
       <article>
         <h3>${escapeHtml(story.name)} <small>${story.mode}</small></h3>
         ${story.error ? `<p class="error">${escapeHtml(story.error)}</p>` : ""}
         ${story.issues.length ? `<ul class="issues">${story.issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>` : ""}
-        <div class="shots">${story.shots.map((shot) => `
+        <div class="shots">${story.shots
+          .map(
+            (shot) => `
           <figure><a href="${encodeURI(shot.file)}"><img loading="lazy" src="${encodeURI(shot.file)}" alt=""></a>
-          <figcaption>${shot.theme === "dark" ? "暗色" : "亮色"} · ${shot.width}px</figcaption></figure>`).join("")}
+          <figcaption>${shot.theme === "dark" ? "暗色" : "亮色"} · ${shot.width}px</figcaption></figure>`
+          )
+          .join("")}
         </div>
-      </article>`).join("")}
-    </section>`).join("");
+      </article>`
+      )
+      .join("")}
+    </section>`
+    )
+    .join("");
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>组件截图索引</title>
 <style>
@@ -229,33 +332,47 @@ async function main() {
   try {
     if (!filter) await rm(outDir, { recursive: true, force: true });
     await mkdir(outDir, { recursive: true });
-    storybook = options.url ? { baseUrl: options.url.replace(/\/+$/, ""), child: null } : await startStorybook();
+    storybook = options.url
+      ? { baseUrl: options.url.replace(/\/+$/, ""), child: null }
+      : await startStorybook();
 
     const index = await (await fetch(`${storybook.baseUrl}/index.json`)).json();
     const stories = Object.values(index.entries)
       .filter((entry) => entry.type === "story" && !(entry.tags ?? []).includes("no-shot"))
-      .filter((entry) => !filter || filter.test(entry.id) || filter.test(`${entry.title}/${entry.name}`));
+      .filter(
+        (entry) => !filter || filter.test(entry.id) || filter.test(`${entry.title}/${entry.name}`)
+      );
     if (!stories.length) throw new Error("没有匹配的故事");
 
     browser = await chromium.launch({
       channel: process.platform === "win32" ? "msedge" : undefined,
       // 图片同步解码、光栅在绘制前全部完成并走软件光栅：缩小显示的图片不会因截图时机不同
       // 落在低质量或高质量两种滤波上，同一故事两次截图才会逐像素一致。
-      args: ["--disable-gpu", "--disable-checker-imaging", "--run-all-compositor-stages-before-draw"],
+      args: [
+        "--disable-gpu",
+        "--disable-checker-imaging",
+        "--run-all-compositor-stages-before-draw",
+      ],
     });
     const queue = [...stories];
     const results = [];
     const workers = Math.max(1, Number(options.workers) || 1);
-    await Promise.all(Array.from({ length: workers }, async () => {
-      for (let story = queue.shift(); story; story = queue.shift()) {
-        const result = await captureStory(browser, storybook.baseUrl, story);
-        results.push(result);
-        console.log(`${result.error ? "✗" : result.issues.length ? "!" : "✓"} ${story.title} / ${story.name}（${result.shots.length} 张）`);
-      }
-    }));
+    await Promise.all(
+      Array.from({ length: workers }, async () => {
+        for (let story = queue.shift(); story; story = queue.shift()) {
+          const result = await captureStory(browser, storybook.baseUrl, story);
+          results.push(result);
+          console.log(
+            `${result.error ? "✗" : result.issues.length ? "!" : "✓"} ${story.title} / ${story.name}（${result.shots.length} 张）`
+          );
+        }
+      })
+    );
 
     // 只拍部分故事时保留其它故事的上次结果，索引始终覆盖全集。
-    const previous = filter ? JSON.parse(await readFile(manifestPath, "utf8").catch(() => "[]")) : [];
+    const previous = filter
+      ? JSON.parse(await readFile(manifestPath, "utf8").catch(() => "[]"))
+      : [];
     const refreshed = new Set(results.map((result) => result.id));
     const entries = [...previous.filter((entry) => !refreshed.has(entry.id)), ...results];
     await writeFile(manifestPath, JSON.stringify(entries, null, 2));
@@ -263,7 +380,9 @@ async function main() {
 
     const failed = results.filter((result) => result.error);
     const warned = results.filter((result) => !result.error && result.issues.length);
-    console.log(`\n截图完成：${results.length} 个故事，失败 ${failed.length}，有控制台错误 ${warned.length}。索引：${path.join(outDir, "index.html")}`);
+    console.log(
+      `\n截图完成：${results.length} 个故事，失败 ${failed.length}，有控制台错误 ${warned.length}。索引：${path.join(outDir, "index.html")}`
+    );
     if (failed.length || warned.length) process.exitCode = 1;
   } finally {
     await browser?.close();

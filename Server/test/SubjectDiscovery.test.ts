@@ -35,22 +35,63 @@ const makeFetcher = (payloads: Record<string, unknown>) => {
 
 test("发现新作品：入库详情、角色与关联，已在库里的跳过", async () => {
   const db = makeDb();
-  db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-    .run(8, 2, "已有作品", "", "[]", "", "", "2006-10-05", 0, "[]", "{}", "[]", 8.6, 18740, 84, 123, "");
+  db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
+    8,
+    2,
+    "已有作品",
+    "",
+    "[]",
+    "",
+    "",
+    "2006-10-05",
+    0,
+    "[]",
+    "{}",
+    "[]",
+    8.6,
+    18740,
+    84,
+    123,
+    ""
+  );
 
   const { fetcher } = makeFetcher({
     [`${BASE}/v0/subjects/900001`]: {
-      id: 900001, type: 2, name: "新番", name_cn: "新番中文", date: "2026-10-01", summary: "简介",
-      meta_tags: ["原创"], tags: [{ name: "机战", count: 10 }, { name: "新番", count: 5 }],
+      id: 900001,
+      type: 2,
+      name: "新番",
+      name_cn: "新番中文",
+      date: "2026-10-01",
+      summary: "简介",
+      meta_tags: ["原创"],
+      tags: [
+        { name: "机战", count: 10 },
+        { name: "新番", count: 5 },
+      ],
       images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/900001.jpg" },
       rating: { score: 7.5, total: 120, rank: 3000 },
       collection: { wish: 40, collect: 30, doing: 20, on_hold: 5, dropped: 5 },
     },
     [`${BASE}/v0/subjects/900001/characters`]: [{ id: 700001, name: "新角色", type: 1 }],
     [`${BASE}/v0/subjects/900001/subjects`]: [],
-    [`${BASE}/v0/characters/700001`]: { id: 700001, name: "新角色", name_cn: "新角色中文", gender: "female", comments: 3, collects: 7 },
+    [`${BASE}/v0/characters/700001`]: {
+      id: 700001,
+      name: "新角色",
+      name_cn: "新角色中文",
+      gender: "female",
+      comments: 3,
+      collects: 7,
+    },
     // 既没角色也没关联音乐 —— 按裁剪判据必须丢弃。
-    [`${BASE}/v0/subjects/900002`]: { id: 900002, type: 1, name: "孤立书籍", tags: [], meta_tags: [], rating: {}, collection: {} },
+    [`${BASE}/v0/subjects/900002`]: {
+      id: 900002,
+      type: 1,
+      name: "孤立书籍",
+      tags: [],
+      meta_tags: [],
+      rating: {},
+      collection: {},
+    },
     [`${BASE}/v0/subjects/900002/characters`]: [],
     [`${BASE}/v0/subjects/900002/subjects`]: [],
   });
@@ -59,13 +100,18 @@ test("发现新作品：入库详情、角色与关联，已在库里的跳过",
 
   expect(result.candidates).toBe(3);
   expect(result.added).toBe(1);
-  expect(result.skipped).toBe(2);       // 900002 被裁掉 + 8 已在库
+  expect(result.skipped).toBe(2); // 900002 被裁掉 + 8 已在库
   expect(result.failed).toBe(0);
 
   const row = db.query("SELECT * FROM subjects WHERE id=900001").get() as Record<string, unknown>;
   expect(row).toMatchObject({
-    name: "新番", name_cn: "新番中文", type: 2,
-    score: 7.5, rating_count: 120, rank: 3000, heat: 100,   // heat = 收藏五桶之和
+    name: "新番",
+    name_cn: "新番中文",
+    type: 2,
+    score: 7.5,
+    rating_count: 120,
+    rank: 3000,
+    heat: 100, // heat = 收藏五桶之和
     image: "https://lain.bgm.tv/pic/cover/l/aa/bb/900001.jpg",
   });
   expect(JSON.parse(String(row.tags))).toEqual(["机战", "新番"]);
@@ -73,8 +119,13 @@ test("发现新作品：入库详情、角色与关联，已在库里的跳过",
   expect(JSON.parse(String(row.raw_tags))).toEqual({ 机战: 10, 新番: 5 });
 
   expect(db.query("SELECT name FROM characters WHERE id=700001").get()).toEqual({ name: "新角色" });
-  expect(db.query("SELECT subject_id, relation_type FROM character_subject_relations WHERE character_id=700001").get())
-    .toEqual({ subject_id: 900001, relation_type: 1 });
+  expect(
+    db
+      .query(
+        "SELECT subject_id, relation_type FROM character_subject_relations WHERE character_id=700001"
+      )
+      .get()
+  ).toEqual({ subject_id: 900001, relation_type: 1 });
   expect(db.query("SELECT count(*) AS n FROM subjects WHERE id=900002").get()).toEqual({ n: 0 });
   db.close();
 });
@@ -82,7 +133,16 @@ test("发现新作品：入库详情、角色与关联，已在库里的跳过",
 test("nsfw 条目一律不入库（匿名拿不到，仍显式挡一道）", async () => {
   const db = makeDb();
   const { fetcher } = makeFetcher({
-    [`${BASE}/v0/subjects/900001`]: { id: 900001, type: 2, name: "x", nsfw: true, tags: [], meta_tags: [], rating: {}, collection: {} },
+    [`${BASE}/v0/subjects/900001`]: {
+      id: 900001,
+      type: 2,
+      name: "x",
+      nsfw: true,
+      tags: [],
+      meta_tags: [],
+      rating: {},
+      collection: {},
+    },
     [`${BASE}/v0/subjects/900001/characters`]: [{ id: 700001, type: 1 }],
     [`${BASE}/v0/subjects/900001/subjects`]: [],
   });

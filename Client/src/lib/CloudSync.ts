@@ -8,7 +8,12 @@ import {
   SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { PREFERENCES_APPLIED, PREFERENCES_CHANGED, SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
+import {
+  PREFERENCES_APPLIED,
+  PREFERENCES_CHANGED,
+  SONG_VOLUME_KEY,
+  USERNAME_KEY,
+} from "@/lib/Storage";
 
 /**
  * 已登录时的云同步（见 Agents/Account.md §6）。
@@ -24,7 +29,9 @@ const PLATFORMS: MusicPlatform[] = ["netease", "qq"];
 const PUSH_DELAY_MS = 2_000;
 
 const isSyncedKey = (key: string): boolean =>
-  key === USERNAME_KEY || key === SONG_VOLUME_KEY || ROOM_MEMORY_SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
+  key === USERNAME_KEY ||
+  key === SONG_VOLUME_KEY ||
+  ROOM_MEMORY_SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
 
 const storage = (): Storage | null => {
   try {
@@ -48,7 +55,11 @@ export const readLocalPreferences = (): Record<string, string> => {
 };
 
 const sortedJson = (entries: Record<string, string>) =>
-  JSON.stringify(Object.keys(entries).sort().map((key) => [key, entries[key]]));
+  JSON.stringify(
+    Object.keys(entries)
+      .sort()
+      .map((key) => [key, entries[key]])
+  );
 
 const cloudEntries = (preferences: CloudSettings["preferences"]): Record<string, string> => {
   const entries: Record<string, string> = {};
@@ -62,7 +73,9 @@ const musicFingerprint = (session: StoredSongMusicSession | null) =>
   session ? JSON.stringify([session.cookie, session.account]) : "";
 
 const reportFailure = (what: string, error: unknown) =>
-  captureClientLog(`云同步失败：${what}`, "warning", { error: error instanceof Error ? error.message : String(error) });
+  captureClientLog(`云同步失败：${what}`, "warning", {
+    error: error instanceof Error ? error.message : String(error),
+  });
 
 /** 开始同步，返回停止函数（退出登录或页面卸载时调用）。 */
 export function startCloudSync(client: ApiClient = api): () => void {
@@ -79,7 +92,9 @@ export function startCloudSync(client: ApiClient = api): () => void {
     const serialized = sortedJson(entries);
     if (serialized === lastPushed) return;
     if (new TextEncoder().encode(JSON.stringify(entries)).byteLength > PREFERENCES_MAX_BYTES) {
-      captureClientLog("云同步跳过：偏好超出上限", "warning", { keys: Object.keys(entries).length });
+      captureClientLog("云同步跳过：偏好超出上限", "warning", {
+        keys: Object.keys(entries).length,
+      });
       return;
     }
     try {
@@ -153,7 +168,8 @@ export function startCloudSync(client: ApiClient = api): () => void {
       if (remoteSession) {
         const next = { ...remoteSession, persistent: true };
         lastMusic[platform] = musicFingerprint(next);
-        if (musicFingerprint(localSession) !== lastMusic[platform]) saveSongMusicSession(remoteSession, true, platform);
+        if (musicFingerprint(localSession) !== lastMusic[platform])
+          saveSongMusicSession(remoteSession, true, platform);
       } else {
         lastMusic[platform] = musicFingerprint(localSession);
         if (localSession) uploads.push([platform, localSession]);

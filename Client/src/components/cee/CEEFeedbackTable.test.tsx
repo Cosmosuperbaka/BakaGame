@@ -4,28 +4,64 @@ import type { CEEGuess } from "@bakagame/shared";
 import { CEEFeedbackTable } from "./CEEFeedbackTable";
 
 const guess: CEEGuess = {
-  id: "guess", playerId: "player", playerName: "玩家", correct: false, partial: false,
-  syncRound: 1, createdAt: 1,
-  character: { id: 1, name: "角色", nameCn: "角色", imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" },
+  id: "guess",
+  playerId: "player",
+  playerName: "玩家",
+  correct: false,
+  partial: false,
+  syncRound: 1,
+  createdAt: 1,
+  character: {
+    id: 1,
+    name: "角色",
+    nameCn: "角色",
+    imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+  },
   feedback: {
-    gender: { value: "female", comparison: "yes" }, popularity: { value: 200, comparison: "+" },
-    rating: { value: -1, comparison: "?" }, appearancesCount: { value: 10, comparison: "++" },
-    earliestAppearance: { value: 2010, comparison: "-" }, latestAppearance: { value: 2012, comparison: "--" },
-    sharedAppearances: [], tags: [], extraTags: [],
+    gender: { value: "female", comparison: "yes" },
+    popularity: { value: 200, comparison: "+" },
+    rating: { value: -1, comparison: "?" },
+    appearancesCount: { value: 10, comparison: "++" },
+    earliestAppearance: { value: 2010, comparison: "-" },
+    latestAppearance: { value: 2012, comparison: "--" },
+    sharedAppearances: [],
+    tags: [],
+    extraTags: [],
   },
 };
 
 describe("角色反馈", () => {
   it("原版仅提供作品编号时仍显示可辨认的作品信息", () => {
-    render(<CEEFeedbackTable guesses={[{ ...guess, feedback: { ...guess.feedback, sharedAppearances: [{ id: 120, name: "", nameCn: "" }] } }]} />);
+    render(
+      <CEEFeedbackTable
+        guesses={[
+          {
+            ...guess,
+            feedback: { ...guess.feedback, sharedAppearances: [{ id: 120, name: "", nameCn: "" }] },
+          },
+        ]}
+      />
+    );
     expect(screen.getByText(/作品 120/)).toBeInTheDocument();
   });
 
   it("游戏专属标签按分区展示匹配情况并将上游内容作为安全文本", () => {
     const payload = '<img src="x" onerror="alert(1)">';
-    const enriched: CEEGuess = { ...guess, feedback: { ...guess.feedback, extraTags: [
-      { section: "角色能力", tags: [{ text: "吉他", matched: true }, { text: payload, matched: false }] },
-    ] } };
+    const enriched: CEEGuess = {
+      ...guess,
+      feedback: {
+        ...guess.feedback,
+        extraTags: [
+          {
+            section: "角色能力",
+            tags: [
+              { text: "吉他", matched: true },
+              { text: payload, matched: false },
+            ],
+          },
+        ],
+      },
+    };
     render(<CEEFeedbackTable guesses={[enriched]} />);
     const toggle = screen.getByRole("button", { name: "游戏专属标签" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -52,11 +88,25 @@ describe("角色反馈", () => {
   });
 
   it("一次猜测一行，最新的在最上面，角色名作行标题并标出结果", () => {
-    const earlier: CEEGuess = { ...guess, id: "earlier", character: { ...guess.character, id: 2, name: "ぼっち", nameCn: "后藤一里" }, createdAt: 0 };
-    const correct: CEEGuess = { ...guess, id: "correct", correct: true, character: { ...guess.character, id: 3, name: "伊地知虹夏", nameCn: "伊地知虹夏" }, createdAt: 2 };
+    const earlier: CEEGuess = {
+      ...guess,
+      id: "earlier",
+      character: { ...guess.character, id: 2, name: "ぼっち", nameCn: "后藤一里" },
+      createdAt: 0,
+    };
+    const correct: CEEGuess = {
+      ...guess,
+      id: "correct",
+      correct: true,
+      character: { ...guess.character, id: 3, name: "伊地知虹夏", nameCn: "伊地知虹夏" },
+      createdAt: 2,
+    };
     render(<CEEFeedbackTable guesses={[earlier, correct]} />);
     const headers = screen.getAllByRole("rowheader");
-    expect(headers.map((header) => header.textContent)).toEqual([expect.stringMatching(/^伊地知虹夏玩家/), expect.stringMatching(/^ぼっち后藤一里/)]);
+    expect(headers.map((header) => header.textContent)).toEqual([
+      expect.stringMatching(/^伊地知虹夏玩家/),
+      expect.stringMatching(/^ぼっち后藤一里/),
+    ]);
     expect(within(headers[0]!).getByText("猜中")).toBeInTheDocument();
     // 中日同名时不重复副名。
     expect(within(headers[0]!).getAllByText("伊地知虹夏")).toHaveLength(1);
@@ -71,15 +121,28 @@ describe("角色反馈", () => {
   });
 
   describe("共同作品", () => {
-    const shared = (count: number): CEEGuess => ({ ...guess, feedback: { ...guess.feedback, sharedAppearances:
-      Array.from({ length: count }, (_, index) => ({ id: index + 1, name: "", nameCn: `作品${index + 1}` })) } });
+    const shared = (count: number): CEEGuess => ({
+      ...guess,
+      feedback: {
+        ...guess.feedback,
+        sharedAppearances: Array.from({ length: count }, (_, index) => ({
+          id: index + 1,
+          name: "",
+          nameCn: `作品${index + 1}`,
+        })),
+      },
+    });
     // jsdom 没有布局：按「两行装得下几部」模拟截断，收起时 clientHeight 是两行、scrollHeight 随内容增长。
     const fakeLayout = (perTwoLines: number) => {
       const line = 16;
-      vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (
+        this: HTMLElement
+      ) {
         return this.classList.contains("line-clamp-2") ? line * 2 : this.scrollHeight;
       });
-      vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (this: HTMLElement) {
+      vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(function (
+        this: HTMLElement
+      ) {
         const count = (this.textContent?.match(/作品\d+/g) ?? []).length;
         return Math.ceil(count / (perTwoLines / 2)) * line;
       });
@@ -109,7 +172,10 @@ describe("角色反馈", () => {
 
       fireEvent.click(toggle);
       expect(text).toHaveClass("line-clamp-2");
-      expect(screen.getByRole("button", { name: "展开共同作品" })).toHaveAttribute("aria-expanded", "false");
+      expect(screen.getByRole("button", { name: "展开共同作品" })).toHaveAttribute(
+        "aria-expanded",
+        "false"
+      );
     });
   });
 });

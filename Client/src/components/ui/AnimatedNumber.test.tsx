@@ -40,7 +40,9 @@ describe("AnimatedNumber", () => {
   });
 
   it("起点与终值相同、或只差符号时不叠数字带", () => {
-    expect(decorations(render(<AnimatedNumber value={0} from={0} signed />).container)).toHaveLength(0);
+    expect(
+      decorations(render(<AnimatedNumber value={0} from={0} signed />).container)
+    ).toHaveLength(0);
     expect(decorations(render(<AnimatedNumber value={3} from={-3} />).container)).toHaveLength(0);
   });
 

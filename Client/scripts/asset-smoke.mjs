@@ -10,7 +10,7 @@ async function walk(directory) {
   const result = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const absolute = path.join(directory, entry.name);
-    if (entry.isDirectory()) result.push(...await walk(absolute));
+    if (entry.isDirectory()) result.push(...(await walk(absolute)));
     else result.push(absolute);
   }
   return result;
@@ -31,7 +31,8 @@ async function assertAsset(urlPath, expectedType = "image/webp") {
   const response = await fetch(`${baseUrl}${urlPath}`);
   if (!response.ok) throw new Error(`${urlPath} 返回 HTTP ${response.status}`);
   const type = response.headers.get("content-type")?.split(";", 1)[0];
-  if (type !== expectedType) throw new Error(`${urlPath} MIME 为 ${type ?? "空"}，预期 ${expectedType}`);
+  if (type !== expectedType)
+    throw new Error(`${urlPath} MIME 为 ${type ?? "空"}，预期 ${expectedType}`);
   const body = Buffer.from(await response.arrayBuffer());
   if (body.length === 0) throw new Error(`${urlPath} 返回空文件`);
   if (expectedType === "image/webp" || expectedType === "image/jpeg") {
@@ -42,8 +43,16 @@ async function assertAsset(urlPath, expectedType = "image/webp") {
 
 try {
   const files = await walk(distDir);
-  const relativeFiles = files.map((file) => `/${path.relative(distDir, file).split(path.sep).join("/")}`);
-  const required = ["/assets/favicon.webp", "/assets/Faker.webp", "/assets/SongGuessr.webp", "/assets/CEE.webp", "/assets/logo.webp"];
+  const relativeFiles = files.map(
+    (file) => `/${path.relative(distDir, file).split(path.sep).join("/")}`
+  );
+  const required = [
+    "/assets/favicon.webp",
+    "/assets/Faker.webp",
+    "/assets/SongGuessr.webp",
+    "/assets/CEE.webp",
+    "/assets/logo.webp",
+  ];
 
   for (const asset of required) {
     if (!relativeFiles.includes(asset)) throw new Error(`构建产物缺少 ${asset}`);
@@ -64,7 +73,9 @@ try {
     await assertAsset(asset, "image/svg+xml");
   }
 
-  const stickerFiles = relativeFiles.filter((file) => /^\/stickers\/[0-9a-f]{24}\.webp$/.test(file));
+  const stickerFiles = relativeFiles.filter((file) =>
+    /^\/stickers\/[0-9a-f]{24}\.webp$/.test(file)
+  );
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
 
@@ -73,7 +84,7 @@ try {
     const response = await fetch(`${baseUrl}${route}`);
     if (!response.ok) throw new Error(`${route} 返回 HTTP ${response.status}`);
     const html = await response.text();
-    if (!html.includes("<div id=\"root\">") || !html.includes("bakagame-build")) {
+    if (!html.includes('<div id="root">') || !html.includes("bakagame-build")) {
       throw new Error(`${route} 不是可启动的 SPA 入口`);
     }
   }
@@ -83,7 +94,11 @@ try {
   const shellChecks = [
     { route: "/", text: "二刺猿派对小游戏合集站", canonical: "https://game.baka.website/" },
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
-    { route: "/songuessr", text: "音乐与动漫番剧竞猜", canonical: "https://game.baka.website/songuessr" },
+    {
+      route: "/songuessr",
+      text: "音乐与动漫番剧竞猜",
+      canonical: "https://game.baka.website/songuessr",
+    },
     { route: "/cee", text: "在线猜动漫角色", canonical: "https://game.baka.website/cee" },
     { route: "/credits", text: "开源致谢", canonical: "https://game.baka.website/credits" },
   ];
@@ -96,7 +111,7 @@ try {
       `<link rel="canonical" href="${canonical}" data-static-seo="1" />`,
       `<meta name="description"`,
       'type="application/ld+json"',
-      '<title>BakaGame</title>',
+      "<title>BakaGame</title>",
       // FAQ：每页问答正文 + FAQPage 结构化数据（构建期由 static-shell 插件注入，用户不可见）
       'id="bakagame-faq-structured-data"',
       '"@type":"FAQPage"',
@@ -140,7 +155,7 @@ try {
 
   console.log(
     `资源冒烟通过：${required.length} 个固定资源、${brandAssets.length} 个品牌 SVG、${stickerFiles.length} 个贴纸、${spaRoutes.length} 个 SPA 路由、` +
-      `${shellChecks.length} 个静态外壳（含 FAQ 问答）、${sitemapLocs.length} 条站点地图、${ogImages.length} 张分享图`,
+      `${shellChecks.length} 个静态外壳（含 FAQ 问答）、${sitemapLocs.length} 条站点地图、${ogImages.length} 张分享图`
   );
 } finally {
   await preview.close();

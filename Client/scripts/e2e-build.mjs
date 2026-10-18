@@ -11,9 +11,16 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  */
 const resolveTscCli = () => {
   const candidates = [];
-  for (const root of [path.join(clientDir, "node_modules"), path.join(clientDir, "..", "node_modules")]) {
-    for (const name of ["tsc", "tsc6"]) candidates.push({ file: path.join(root, "typescript", "bin", name), viaNode: true });
-    candidates.push({ file: path.join(root, ".bin", process.platform === "win32" ? "tsc.CMD" : "tsc"), viaNode: false });
+  for (const root of [
+    path.join(clientDir, "node_modules"),
+    path.join(clientDir, "..", "node_modules"),
+  ]) {
+    for (const name of ["tsc", "tsc6"])
+      candidates.push({ file: path.join(root, "typescript", "bin", name), viaNode: true });
+    candidates.push({
+      file: path.join(root, ".bin", process.platform === "win32" ? "tsc.CMD" : "tsc"),
+      viaNode: false,
+    });
   }
   return candidates.find((candidate) => existsSync(candidate.file));
 };
@@ -24,9 +31,16 @@ process.env.VITE_SENTRY_DSN = "";
 process.env.VITE_SERVER_URL = "http://127.0.0.1:4850";
 const tscCli = resolveTscCli();
 if (!tscCli) throw new Error("未找到 typescript 的 tsc 入口：先在仓库根安装依赖");
-const result = spawnSync(tscCli.viaNode ? process.execPath : tscCli.file, tscCli.viaNode ? [tscCli.file, "-b"] : ["-b"], {
-  cwd: clientDir, env: process.env, stdio: "inherit", shell: !tscCli.viaNode && process.platform === "win32",
-});
+const result = spawnSync(
+  tscCli.viaNode ? process.execPath : tscCli.file,
+  tscCli.viaNode ? [tscCli.file, "-b"] : ["-b"],
+  {
+    cwd: clientDir,
+    env: process.env,
+    stdio: "inherit",
+    shell: !tscCli.viaNode && process.platform === "win32",
+  }
+);
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
 const { build } = await import("vite");

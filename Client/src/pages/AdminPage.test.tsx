@@ -9,7 +9,14 @@ import AdminPage from "./AdminPage";
 const admin = vi.hoisted(() => ({
   stats: { overview: vi.fn(), sentry: vi.fn() },
   rooms: { list: vi.fn(), close: vi.fn(), kick: vi.fn() },
-  users: { list: vi.fn(), get: vi.fn(), ban: vi.fn(), unban: vi.fn(), setRole: vi.fn(), revokeSessions: vi.fn() },
+  users: {
+    list: vi.fn(),
+    get: vi.fn(),
+    ban: vi.fn(),
+    unban: vi.fn(),
+    setRole: vi.fn(),
+    revokeSessions: vi.fn(),
+  },
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
@@ -22,43 +29,112 @@ vi.mock("@/lib/Api", async (importOriginal) => ({
 }));
 
 const profile = (role: AccountProfile["role"]): AccountProfile => ({
-  id: "u-admin", name: "管理员", qqNumber: "90001", image: null, showQq: false, role, createdAt: "2026-10-01T00:00:00.000Z",
+  id: "u-admin",
+  name: "管理员",
+  qqNumber: "90001",
+  image: null,
+  showQq: false,
+  role,
+  createdAt: "2026-10-01T00:00:00.000Z",
 });
 
 const overview: AdminOverview = {
   users: { total: 12, admins: 1, banned: 2, newToday: 3 },
   feedback: { open: 4, processing: 1, resolved: 0, closed: 0 },
-  live: { faker: { rooms: 1, onlinePlayers: 5 }, song: { rooms: 2, onlinePlayers: 3 }, cee: { rooms: 0, onlinePlayers: 0 } },
-  daily: [{ day: "2026-10-13", visitors: 40, signedInVisitors: 6, views: 90, newUsers: 3, games: { faker: 2, song: 5, cee: 1 }, roundPlayers: 30 }],
+  live: {
+    faker: { rooms: 1, onlinePlayers: 5 },
+    song: { rooms: 2, onlinePlayers: 3 },
+    cee: { rooms: 0, onlinePlayers: 0 },
+  },
+  daily: [
+    {
+      day: "2026-10-13",
+      visitors: 40,
+      signedInVisitors: 6,
+      views: 90,
+      newUsers: 3,
+      games: { faker: 2, song: 5, cee: 1 },
+      roundPlayers: 30,
+    },
+  ],
   pages: [{ path: "/songuessr", views: 50 }],
 };
 
 const user: AdminUser = {
-  id: "u-1", name: "Alice", qqNumber: "10001", image: null, role: "user", banned: false, banReason: null, banExpires: null,
-  showQq: false, qqName: "阿狸", createdAt: "2026-10-02T00:00:00.000Z",
+  id: "u-1",
+  name: "Alice",
+  qqNumber: "10001",
+  image: null,
+  role: "user",
+  banned: false,
+  banReason: null,
+  banExpires: null,
+  showQq: false,
+  qqName: "阿狸",
+  createdAt: "2026-10-02T00:00:00.000Z",
 };
 
 const room: AdminRoom = {
-  game: "faker", roomId: "1234", name: "周末局", phase: "waiting", visibility: "public", hasPassword: false, hidden: false,
-  roundNumber: 0, createdAt: "2026-10-13T00:00:00.000Z", lastActiveAt: "2026-10-13T00:05:00.000Z",
-  players: [{ id: "p-1", name: "Bob", online: true, membership: "active", host: true, bot: false, userId: null }],
+  game: "faker",
+  roomId: "1234",
+  name: "周末局",
+  phase: "waiting",
+  visibility: "public",
+  hasPassword: false,
+  hidden: false,
+  roundNumber: 0,
+  createdAt: "2026-10-13T00:00:00.000Z",
+  lastActiveAt: "2026-10-13T00:05:00.000Z",
+  players: [
+    {
+      id: "p-1",
+      name: "Bob",
+      online: true,
+      membership: "active",
+      host: true,
+      bot: false,
+      userId: null,
+    },
+  ],
 };
 
-const unavailable: QQLookupStatus = { state: "unavailable", uin: null, nickname: null, checkedAt: "2026-10-13T00:00:00.000Z", error: "NapCat 当前没有登录任何 QQ 号" };
-const active: QQLookupStatus = { state: "active", uin: "12345", nickname: "查询号", checkedAt: "2026-10-13T00:00:00.000Z", error: null };
+const unavailable: QQLookupStatus = {
+  state: "unavailable",
+  uin: null,
+  nickname: null,
+  checkedAt: "2026-10-13T00:00:00.000Z",
+  error: "NapCat 当前没有登录任何 QQ 号",
+};
+const active: QQLookupStatus = {
+  state: "active",
+  uin: "12345",
+  nickname: "查询号",
+  checkedAt: "2026-10-13T00:00:00.000Z",
+  error: null,
+};
 
 const renderAdmin = (path = "/admin") => {
   render(
     <MemoryRouter initialEntries={[path]}>
-      <Routes><Route path="/admin" element={<AdminPage />} /></Routes>
-    </MemoryRouter>,
+      <Routes>
+        <Route path="/admin" element={<AdminPage />} />
+      </Routes>
+    </MemoryRouter>
   );
   return userEvent.setup();
 };
 
 beforeEach(() => {
   admin.stats.overview.mockResolvedValue(overview);
-  admin.stats.sentry.mockResolvedValue({ configured: false, errors24h: null, unresolvedIssues: null, issues: [], transactions: null, warnings: [], fetchedAt: null });
+  admin.stats.sentry.mockResolvedValue({
+    configured: false,
+    errors24h: null,
+    unresolvedIssues: null,
+    issues: [],
+    transactions: null,
+    warnings: [],
+    fetchedAt: null,
+  });
   admin.rooms.list.mockResolvedValue([room]);
   admin.users.list.mockResolvedValue({ items: [user], total: 1 });
   admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
@@ -108,7 +184,11 @@ describe("管理后台", () => {
     expect(submit).toBeDisabled();
     await events.type(within(dialog).getByLabelText("封禁原因"), "刷屏");
     await events.click(submit);
-    expect(admin.users.ban).toHaveBeenCalledWith({ userId: "u-1", reason: "刷屏", expiresInHours: 24 });
+    expect(admin.users.ban).toHaveBeenCalledWith({
+      userId: "u-1",
+      reason: "刷屏",
+      expiresInHours: 24,
+    });
   });
 
   it("关闭房间需要确认，失败文案留在确认框内", async () => {
@@ -128,18 +208,42 @@ describe("管理后台", () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     const startedAt = "2026-10-13T00:00:00.000Z";
     const listed = {
-      id: "rec-1", game: "song", roomId: "ABCD", roundCount: 2,
-      startedAt, endedAt: "2026-10-13T00:20:00.000Z",
+      id: "rec-1",
+      game: "song",
+      roomId: "ABCD",
+      roundCount: 2,
+      startedAt,
+      endedAt: "2026-10-13T00:20:00.000Z",
       players: [{ playerId: "p-1", userId: null, name: "Bob", score: 3 }],
     };
     admin.games.list.mockResolvedValue({ items: [listed], total: 1 });
     admin.games.get.mockResolvedValue({
       ...listed,
       rounds: [
-        { number: 1, startedAt, endedAt: "2026-10-13T00:05:00.000Z", players: [{ playerId: "p-1", userId: null, name: "Bob", score: 1 }], summary: { song: { title: "曲目一" } } },
-        { number: 2, startedAt: "2026-10-13T00:06:00.000Z", endedAt: "2026-10-13T00:10:00.000Z", players: [{ playerId: "p-1", userId: null, name: "Bob", score: 2 }], summary: { song: { title: "曲目二" } } },
+        {
+          number: 1,
+          startedAt,
+          endedAt: "2026-10-13T00:05:00.000Z",
+          players: [{ playerId: "p-1", userId: null, name: "Bob", score: 1 }],
+          summary: { song: { title: "曲目一" } },
+        },
+        {
+          number: 2,
+          startedAt: "2026-10-13T00:06:00.000Z",
+          endedAt: "2026-10-13T00:10:00.000Z",
+          players: [{ playerId: "p-1", userId: null, name: "Bob", score: 2 }],
+          summary: { song: { title: "曲目二" } },
+        },
       ],
-      timeline: [{ at: Date.parse(startedAt) + 60_000, type: "guess", round: 1, name: "Bob", result: "wrong" }],
+      timeline: [
+        {
+          at: Date.parse(startedAt) + 60_000,
+          type: "guess",
+          round: 1,
+          name: "Bob",
+          result: "wrong",
+        },
+      ],
     });
 
     const events = renderAdmin("/admin?tab=games");

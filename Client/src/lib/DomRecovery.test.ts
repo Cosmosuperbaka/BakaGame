@@ -24,8 +24,12 @@ describe("DomRecovery 第三方扩展破坏 DOM 后的自愈", () => {
   });
 
   it("不误伤普通业务异常与非法入参", () => {
-    expect(isDomInvariantError(new Error("Cannot read properties of undefined (reading 'id')"))).toBe(false);
-    expect(isDomInvariantError(new TypeError("Failed to fetch dynamically imported module"))).toBe(false);
+    expect(
+      isDomInvariantError(new Error("Cannot read properties of undefined (reading 'id')"))
+    ).toBe(false);
+    expect(isDomInvariantError(new TypeError("Failed to fetch dynamically imported module"))).toBe(
+      false
+    );
     expect(isDomInvariantError(undefined)).toBe(false);
     expect(isDomInvariantError(null)).toBe(false);
     expect(isDomInvariantError(REMOVE_CHILD_MESSAGE)).toBe(false);

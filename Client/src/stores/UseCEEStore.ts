@@ -1,7 +1,21 @@
 import { create } from "zustand";
-import type { CEECommand, CEEPayload, CEEPrivateState, CEERoomEnterResult, CEERoomSnapshot, CEERoomSummary, CEESource, ServerMessage } from "@bakagame/shared";
+import type {
+  CEECommand,
+  CEEPayload,
+  CEEPrivateState,
+  CEERoomEnterResult,
+  CEERoomSnapshot,
+  CEERoomSummary,
+  CEESource,
+  ServerMessage,
+} from "@bakagame/shared";
 import { ceeWs, sendCEE, type CEEResponse } from "@/lib/CEEWs";
-import { normalizeCEERoomId, readCEESession, removeCEESession, writeCEESession } from "@/lib/CEESession";
+import {
+  normalizeCEERoomId,
+  readCEESession,
+  removeCEESession,
+  writeCEESession,
+} from "@/lib/CEESession";
 import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
@@ -27,25 +41,40 @@ export function clearCEEQueryCache() {
 }
 
 export interface CEEStore {
-  connected: boolean; lobbyReady: boolean; originalAvailable: boolean;
-  rooms: CEERoomSummary[]; source: CEESource | null; roomId: string | null; sessionToken: string | null;
-  snapshot: CEERoomSnapshot | null; privateState: CEEPrivateState | null; roomClosedAt: number | null;
+  connected: boolean;
+  lobbyReady: boolean;
+  originalAvailable: boolean;
+  rooms: CEERoomSummary[];
+  source: CEESource | null;
+  roomId: string | null;
+  sessionToken: string | null;
+  snapshot: CEERoomSnapshot | null;
+  privateState: CEEPrivateState | null;
+  roomClosedAt: number | null;
   notice: { text: string; type: "info" | "error" | "success" } | null;
   setNotice: (text: string, type?: "info" | "error" | "success") => void;
   subscribeLobby: () => Promise<void>;
   createRoom: (payload: CEEPayload<"cee.room.create">, signal?: AbortSignal) => Promise<void>;
-  joinRoom: (roomId: string, userName: string, password?: string, signal?: AbortSignal) => Promise<void>;
+  joinRoom: (
+    roomId: string,
+    userName: string,
+    password?: string,
+    signal?: AbortSignal
+  ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
   resetRoom: (closed?: boolean) => void;
-  sendCommand: <T extends CEECommand>(command: T, payload: CEEPayload<T>) => Promise<CEEResponse<T>>;
+  sendCommand: <T extends CEECommand>(
+    command: T,
+    payload: CEEPayload<T>
+  ) => Promise<CEEResponse<T>>;
   /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
   searchCharacters: (keyword: string) => Promise<CEEResponse<"cee.character.search">["results"]>;
   /** 搜作品；同一关键词在复用窗口内不会重复请求上游。 */
   searchSubjects: (keyword: string) => Promise<CEEResponse<"cee.subject.search">["results"]>;
   /** 取某作品的登场角色；切走再切回同一作品时复用上次结果。 */
   loadSubjectCharacters: (
-    subjectId: CEEPayload<"cee.subject.characters">["subjectId"],
+    subjectId: CEEPayload<"cee.subject.characters">["subjectId"]
   ) => Promise<CEEResponse<"cee.subject.characters">["results"]>;
 }
 
@@ -71,34 +100,68 @@ let syncDeferred = false;
 let enteringRoom = false;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionGeneration = 0;
-const permanentErrors = new Set(["ROOM_NOT_FOUND", "SESSION_NOT_FOUND", "SESSION_INVALID", "SESSION_EXPIRED", "PLAYER_KICKED", "CEE_SESSION_INVALID"]);
+const permanentErrors = new Set([
+  "ROOM_NOT_FOUND",
+  "SESSION_NOT_FOUND",
+  "SESSION_INVALID",
+  "SESSION_EXPIRED",
+  "PLAYER_KICKED",
+  "CEE_SESSION_INVALID",
+]);
 const serverTimedCommands = new Set<CEECommand>([
-  "cee.game.start", "cee.game.next", "cee.game.setAnswer", "cee.game.imageHint", "cee.character.image", "cee.subject.image", "cee.directory.import",
+  "cee.game.start",
+  "cee.game.next",
+  "cee.game.setAnswer",
+  "cee.game.imageHint",
+  "cee.character.image",
+  "cee.subject.image",
+  "cee.directory.import",
 ]);
 
 export function resetCEEStateSync() {
-  snapshotRevision = undefined; privateRevision = undefined;
-  rawSnapshot = null; rawPrivate = null;
+  snapshotRevision = undefined;
+  privateRevision = undefined;
+  rawSnapshot = null;
+  rawPrivate = null;
   syncDeferred = false;
 }
 
-export const ceeErrorMessage = (error: unknown) => error instanceof Error || isProtocolError(error) ? error.message : "操作失败，请重试";
+export const ceeErrorMessage = (error: unknown) =>
+  error instanceof Error || isProtocolError(error) ? error.message : "操作失败，请重试";
 
 export const useCEEStore = create<CEEStore>((set, get) => {
   const enter = (result: CEERoomEnterResult) => {
     // 先取走「进入期间被压下的同步欠账」——resetCEEStateSync 会清掉它。
     const deferred = syncDeferred;
     const sameRoom = rawSnapshot?.roomId === result.roomId && rawSnapshot.source === result.source;
-    if (!sameRoom) { resetCEEStateSync(); rawSnapshot = result.snapshot; rawPrivate = result.privateState; }
+    if (!sameRoom) {
+      resetCEEStateSync();
+      rawSnapshot = result.snapshot;
+      rawPrivate = result.privateState;
+    }
     writeCEESession(result.roomId, result.sessionToken);
-    set({ source: result.source, roomId: result.roomId, sessionToken: result.sessionToken,
-      snapshot: rawSnapshot, privateState: rawPrivate ?? result.privateState, roomClosedAt: null });
+    set({
+      source: result.source,
+      roomId: result.roomId,
+      sessionToken: result.sessionToken,
+      snapshot: rawSnapshot,
+      privateState: rawPrivate ?? result.privateState,
+      roomClosedAt: null,
+    });
     // 进入房间期间若收到过无法应用的状态补丁，此刻凭据已就绪，补一次全量同步。
     if (deferred) requestSync();
   };
   let entryTail: Promise<void> | null = null;
-  let restoring: { roomId: string; token: string; owners: Set<AbortSignal | undefined>; promise: Promise<boolean> } | null = null;
-  const enterRequest = (request: () => Promise<CEERoomEnterResult>, abandoned: () => boolean): Promise<void> => {
+  let restoring: {
+    roomId: string;
+    token: string;
+    owners: Set<AbortSignal | undefined>;
+    promise: Promise<boolean>;
+  } | null = null;
+  const enterRequest = (
+    request: () => Promise<CEERoomEnterResult>,
+    abandoned: () => boolean
+  ): Promise<void> => {
     // StrictMode 重挂载或路由切换时，先结清旧意图，再允许新会话使用同一连接。
     const predecessor = entryTail;
     const generation = connectionGeneration;
@@ -113,7 +176,11 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         if (abandoned()) {
           // ACK 已建立服务器会话，但页面不再拥有该意图：用 ACK 凭据释放，不写入本地身份。
           try {
-            await sendCEE("cee.room.leave", {}, { roomId: result.roomId, sessionToken: result.sessionToken });
+            await sendCEE(
+              "cee.room.leave",
+              {},
+              { roomId: result.roomId, sessionToken: result.sessionToken }
+            );
             removeCEESession(result.roomId);
           } finally {
             if (generation === connectionGeneration) get().resetRoom();
@@ -121,18 +188,30 @@ export const useCEEStore = create<CEEStore>((set, get) => {
           throw new DOMException("入房操作已取消", "AbortError");
         }
         enter(result);
-      } finally { enteringRoom = false; }
+      } finally {
+        enteringRoom = false;
+      }
     };
     const pending = predecessor ? predecessor.then(run, run) : run();
     entryTail = pending;
-    const release = () => { if (entryTail === pending) entryTail = null; };
+    const release = () => {
+      if (entryTail === pending) entryTail = null;
+    };
     void pending.then(release, release);
     return pending;
   };
   return {
-    connected: false, lobbyReady: false, originalAvailable: false,
-    rooms: [], source: null, roomId: null, sessionToken: null, snapshot: null, privateState: null,
-    roomClosedAt: null, notice: null,
+    connected: false,
+    lobbyReady: false,
+    originalAvailable: false,
+    rooms: [],
+    source: null,
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+    privateState: null,
+    roomClosedAt: null,
+    notice: null,
     setNotice: (text, type = "error") => {
       clearTimeout(noticeTimer);
       set({ notice: { text, type } });
@@ -144,9 +223,21 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       if (generation !== connectionGeneration) return;
       set({ lobbyReady: true, originalAvailable: result.originalAvailable });
     },
-    createRoom: (payload, signal) => enterRequest(() => sendCEE("cee.room.create", payload, { timeout: 0 }), () => signal?.aborted ?? false),
-    joinRoom: (roomId, userName, password, signal) => enterRequest(() =>
-      sendCEE("cee.room.join", { userName, ...(password ? { password } : {}) }, { roomId: normalizeCEERoomId(roomId), timeout: 0 }), () => signal?.aborted ?? false),
+    createRoom: (payload, signal) =>
+      enterRequest(
+        () => sendCEE("cee.room.create", payload, { timeout: 0 }),
+        () => signal?.aborted ?? false
+      ),
+    joinRoom: (roomId, userName, password, signal) =>
+      enterRequest(
+        () =>
+          sendCEE(
+            "cee.room.join",
+            { userName, ...(password ? { password } : {}) },
+            { roomId: normalizeCEERoomId(roomId), timeout: 0 }
+          ),
+        () => signal?.aborted ?? false
+      ),
     reconnectRoom: (roomId, signal) => {
       roomId = normalizeCEERoomId(roomId);
       const token = readCEESession(roomId);
@@ -155,17 +246,23 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       if (!restoring || restoring.roomId !== roomId || restoring.token !== token) {
         const owners = new Set<AbortSignal | undefined>();
         owners.add(signal);
-        const promise = enterRequest(() => sendCEE("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
-          () => [...owners].every((owner) => owner?.aborted)).then(() => true).catch((error: unknown) => {
-          if (!isProtocolError(error) || !permanentErrors.has(error.code)) throw error;
-          removeCEESession(roomId);
-          get().resetRoom();
-          get().setNotice(ceeErrorMessage(error));
-          return false;
-        });
+        const promise = enterRequest(
+          () => sendCEE("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
+          () => [...owners].every((owner) => owner?.aborted)
+        )
+          .then(() => true)
+          .catch((error: unknown) => {
+            if (!isProtocolError(error) || !permanentErrors.has(error.code)) throw error;
+            removeCEESession(roomId);
+            get().resetRoom();
+            get().setNotice(ceeErrorMessage(error));
+            return false;
+          });
         const entry = { roomId, token, owners, promise };
         restoring = entry;
-        const release = () => { if (restoring === entry) restoring = null; };
+        const release = () => {
+          if (restoring === entry) restoring = null;
+        };
         void promise.then(release, release);
       } else restoring.owners.add(signal);
       return restoring.promise.then((result) => {
@@ -175,20 +272,31 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     },
     leaveRoom: async () => {
       const { roomId } = get();
-      try { if (roomId) await get().sendCommand("cee.room.leave", {}); }
-      finally {
+      try {
+        if (roomId) await get().sendCommand("cee.room.leave", {});
+      } finally {
         if (roomId) removeCEESession(roomId);
         get().resetRoom();
       }
     },
     resetRoom: (closed = false) => {
       resetCEEStateSync();
-      set({ source: null, roomId: null, sessionToken: null, snapshot: null, privateState: null, roomClosedAt: closed ? Date.now() : null });
+      set({
+        source: null,
+        roomId: null,
+        sessionToken: null,
+        snapshot: null,
+        privateState: null,
+        roomClosedAt: closed ? Date.now() : null,
+      });
     },
     sendCommand: (command, payload) => {
       const { roomId, sessionToken } = get();
-      return sendCEE(command, payload, { roomId: roomId ?? undefined, sessionToken: sessionToken ?? undefined,
-        timeout: serverTimedCommands.has(command) ? 0 : undefined });
+      return sendCEE(command, payload, {
+        roomId: roomId ?? undefined,
+        sessionToken: sessionToken ?? undefined,
+        timeout: serverTimedCommands.has(command) ? 0 : undefined,
+      });
     },
     searchCharacters: (keyword) =>
       ceeCharacterSearchCache.run(keyword, async () => {
@@ -221,11 +329,18 @@ export const useCEEStore = create<CEEStore>((set, get) => {
  */
 function requestSync() {
   if (syncPending) return;
-  if (!useCEEStore.getState().sessionToken && enteringRoom) { syncDeferred = true; return; }
+  if (!useCEEStore.getState().sessionToken && enteringRoom) {
+    syncDeferred = true;
+    return;
+  }
   syncPending = true;
-  void useCEEStore.getState().sendCommand("cee.room.requestSync", {})
+  void useCEEStore
+    .getState()
+    .sendCommand("cee.room.requestSync", {})
     .catch((error: unknown) => useCEEStore.getState().setNotice(ceeErrorMessage(error)))
-    .finally(() => { syncPending = false; });
+    .finally(() => {
+      syncPending = false;
+    });
 }
 
 export function handleCEEMessage(message: ServerMessage) {
@@ -234,16 +349,36 @@ export function handleCEEMessage(message: ServerMessage) {
   if (message.event === "cee.lobby.rooms") {
     useCEEStore.setState({ rooms: message.payload as CEERoomSummary[] });
   } else if (message.event === "cee.room.snapshot") {
-    const result = consumeStateSync<CEERoomSnapshot>(rawSnapshot, snapshotRevision, message.payload);
-    if (result.needsFullSync || !result.state) { requestSync(); return; }
-    rawSnapshot = result.state; snapshotRevision = result.revision;
+    const result = consumeStateSync<CEERoomSnapshot>(
+      rawSnapshot,
+      snapshotRevision,
+      message.payload
+    );
+    if (result.needsFullSync || !result.state) {
+      requestSync();
+      return;
+    }
+    rawSnapshot = result.state;
+    snapshotRevision = result.revision;
     useCEEStore.setState({ snapshot: rawSnapshot });
   } else if (message.event === "cee.game.privateState") {
     const result = consumeStateSync<CEEPrivateState>(rawPrivate, privateRevision, message.payload);
-    if (result.needsFullSync || !result.state) { requestSync(); return; }
-    rawPrivate = result.state; privateRevision = result.revision;
+    if (result.needsFullSync || !result.state) {
+      requestSync();
+      return;
+    }
+    rawPrivate = result.state;
+    privateRevision = result.revision;
     useCEEStore.setState({ privateState: rawPrivate });
-  } else if (["cee.room.closed", "cee.player.kicked", "session.replaced", "cee.session.replaced", "server.shutdown"].includes(message.event)) {
+  } else if (
+    [
+      "cee.room.closed",
+      "cee.player.kicked",
+      "session.replaced",
+      "cee.session.replaced",
+      "server.shutdown",
+    ].includes(message.event)
+  ) {
     if (store.roomId) removeCEESession(store.roomId);
     store.resetRoom(true);
     const payload = message.payload as { reason?: string; message?: string };
@@ -265,14 +400,16 @@ export function initCEEWs() {
     const generation = connectionGeneration;
     // URL 房间会话仅由 useCEERoomLifecycle 恢复，避免订阅 ACK 与页面 effect 争抢重连。
     void store.subscribeLobby().catch((error: unknown) => {
-      if (initialized && generation === connectionGeneration && useCEEStore.getState().connected) store.setNotice(ceeErrorMessage(error));
+      if (initialized && generation === connectionGeneration && useCEEStore.getState().connected)
+        store.setNotice(ceeErrorMessage(error));
     });
   });
   ceeWs.connect();
   return () => {
     initialized = false;
     ceeWs.disconnect();
-    unsubscribeMessage(); unsubscribeStatus();
+    unsubscribeMessage();
+    unsubscribeStatus();
     useCEEStore.getState().resetRoom();
   };
 }

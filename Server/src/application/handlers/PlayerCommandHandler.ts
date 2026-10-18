@@ -7,11 +7,7 @@ import type {
 import { normalizeName } from "../../domain/Rules";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import type { WhoIsFakerClientMessage } from "../../shared/Index";
-import {
-  type CommandHandler,
-  ownsCommand,
-  unsupportedCommand,
-} from "./CommandHandler";
+import { type CommandHandler, ownsCommand, unsupportedCommand } from "./CommandHandler";
 
 export const PLAYER_COMMAND_TYPES = [
   "player.rename",
@@ -37,7 +33,7 @@ interface PlayerCommandDependencies {
 const renamePlayer = async (
   dependencies: PlayerCommandDependencies,
   connection: ConnectionRecord,
-  nextName: string,
+  nextName: string
 ) => {
   const { room, player } = dependencies.requireRoomPlayer(connection);
   const normalized = normalizeName(nextName);
@@ -70,7 +66,7 @@ const renamePlayer = async (
 const setSpectator = async (
   dependencies: PlayerCommandDependencies,
   connection: ConnectionRecord,
-  spectator: boolean,
+  spectator: boolean
 ) => {
   // 阵营切换只允许发生在局外，避免游戏中角色池被动态篡改。
   const { room, player } = dependencies.requireRoomPlayer(connection);
@@ -108,7 +104,7 @@ const setSpectator = async (
 const setReady = async (
   dependencies: PlayerCommandDependencies,
   connection: ConnectionRecord,
-  ready: boolean,
+  ready: boolean
 ) => {
   const { room, player } = dependencies.requireRoomPlayer(connection);
 
@@ -132,7 +128,7 @@ const setReady = async (
 };
 
 export const createPlayerCommandHandler = (
-  dependencies: PlayerCommandDependencies,
+  dependencies: PlayerCommandDependencies
 ): CommandHandler => ({
   canHandle: (type) => ownsCommand(PLAYER_COMMAND_TYPES, type),
   execute: (connection, message) => {

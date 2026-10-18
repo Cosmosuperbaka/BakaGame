@@ -123,7 +123,13 @@ export const PAGE_META: PageMeta[] = [
       "@context": "https://schema.org",
       "@type": "WebSite",
       name: "BakaGame",
-      alternateName: ["二刺猿笑传之猜猜呗", "Who is Faker", "Songuessr", "CEE", "二刺猿笑传之猜猜呗增强版"],
+      alternateName: [
+        "二刺猿笑传之猜猜呗",
+        "Who is Faker",
+        "Songuessr",
+        "CEE",
+        "二刺猿笑传之猜猜呗增强版",
+      ],
       url: `${SITE_ORIGIN}/`,
       inLanguage: "zh-CN",
       description:
@@ -196,7 +202,8 @@ export const PAGE_META: PageMeta[] = [
       operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/whoisfaker`,
       inLanguage: "zh-CN",
-      description: "支持 4~16 人实时联机的在线版谁是卧底（WhoisFaker），包含自由出题、白板、天使、平票加赛与断线重连等机制。",
+      description:
+        "支持 4~16 人实时联机的在线版谁是卧底（WhoisFaker），包含自由出题、白板、天使、平票加赛与断线重连等机制。",
       featureList: [
         "4~16 人实时联机对局",
         "出题人自由出题与系统分发身份",
@@ -264,7 +271,8 @@ export const PAGE_META: PageMeta[] = [
       operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/songuessr`,
       inLanguage: "zh-CN",
-      description: "联动网易云、QQ音乐与 Bangumi 的在线竞猜游戏：猜歌名与猜番剧双赛道，逐字歌词播放，年份、热度与标签多维线索逐步收窄。",
+      description:
+        "联动网易云、QQ音乐与 Bangumi 的在线竞猜游戏：猜歌名与猜番剧双赛道，逐字歌词播放，年份、热度与标签多维线索逐步收窄。",
       featureList: [
         "「猜歌名」与「猜番剧」双赛道竞猜",
         "联动网易云、QQ音乐与 Bangumi 曲库",
@@ -331,7 +339,8 @@ export const PAGE_META: PageMeta[] = [
       operatingSystem: "Web Browser",
       url: `${SITE_ORIGIN}/cee`,
       inLanguage: "zh-CN",
-      description: "基于数十万条 Bangumi 角色资料的多人猜动漫角色游戏，支持逐属性线索排查、组队对战与角色/标签全局 BP。",
+      description:
+        "基于数十万条 Bangumi 角色资料的多人猜动漫角色游戏，支持逐属性线索排查、组队对战与角色/标签全局 BP。",
       featureList: [
         "基于数十万条 Bangumi 角色资料的检索与竞猜",
         "性别、登场年代、评分、声优与标签的多维线索反馈",
@@ -420,7 +429,9 @@ export function findPageMeta(path: string): PageMeta | undefined {
  * 构建期外壳与运行时 `Seo` 共用本函数：同一份问答在两处的 JSON-LD 结构不会漂移。
  * 无问答时返回 null，调用方据此不注入（或移除）对应脚本。
  */
-export function buildFaqStructuredData(faq: PageFaqItem[] | undefined): Record<string, unknown> | null {
+export function buildFaqStructuredData(
+  faq: PageFaqItem[] | undefined
+): Record<string, unknown> | null {
   if (!faq || faq.length === 0) return null;
   return {
     "@context": "https://schema.org",

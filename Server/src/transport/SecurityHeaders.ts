@@ -11,7 +11,8 @@ const STATIC_HEADERS: Record<string, string> = {
   // API 永不该被嵌进别人的框架；图床是浏览器可直接导航的图片，同样按最严格口径。
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
-  "content-security-policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+  "content-security-policy":
+    "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
   // 同源请求不带 Referer，避免把带房间号/用户号的查询串泄给第三方。
   "referrer-policy": "no-referrer",
   "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
@@ -36,7 +37,10 @@ export const securityHeaders = (request: Request): Record<string, string> => {
   // 文档页要跑 Swagger UI 的内联脚本与外部资源，给不了 `default-src 'none'`：
   // 只保留与「页面自身资源加载」无关的三条限制，其余收紧项照旧。
   const headers: Record<string, string> = isDocsPath(pathname)
-    ? { ...STATIC_HEADERS, "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'none'" }
+    ? {
+        ...STATIC_HEADERS,
+        "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+      }
     : { ...STATIC_HEADERS };
   if (isHttps(request.headers)) headers["strict-transport-security"] = HSTS_MAX_AGE_DIRECTIVES;
   return headers;

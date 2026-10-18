@@ -16,7 +16,10 @@ export function CommitPanel({ commits }: { commits: readonly CommitEntry[] }) {
     <ol className="relative ml-1 border-l">
       {commits.map((commit) => (
         <li key={commit.hash} className="relative pb-4 pl-5 last:pb-0">
-          <span aria-hidden="true" className="absolute top-1.5 -left-[4.5px] h-2 w-2 rounded-full bg-border" />
+          <span
+            aria-hidden="true"
+            className="absolute top-1.5 -left-[4.5px] h-2 w-2 rounded-full bg-border"
+          />
           <div className="flex items-baseline justify-between gap-3">
             <span className="min-w-0 text-sm break-words">{commit.message}</span>
             {/* 相对时间说不出是哪一天，悬停给出确切时刻，用于判断自己是不是旧版本 */}

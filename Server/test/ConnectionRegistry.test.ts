@@ -6,7 +6,7 @@ import type { ConnectionRecord } from "../src/domain/Model";
 
 const createConnection = (
   id: string,
-  overrides: Partial<ConnectionRecord> = {},
+  overrides: Partial<ConnectionRecord> = {}
 ): ConnectionRecord => ({
   id,
   lobbySubscribed: false,
@@ -87,19 +87,15 @@ describe("ConnectionRegistry", () => {
 
     registry.broadcastToRoom("1234", { event: "room-update" });
 
-    expect(delivered).toEqual([
-      { id: "healthy", payload: { event: "room-update" } },
-    ]);
+    expect(delivered).toEqual([{ id: "healthy", payload: { event: "room-update" } }]);
   });
 
   test("全局广播会尝试发送给每条已注册连接", () => {
     const registry = new ConnectionRegistry();
     const delivered: string[] = [];
+    registry.registerConnection(createConnection("first", { send: () => delivered.push("first") }));
     registry.registerConnection(
-      createConnection("first", { send: () => delivered.push("first") }),
-    );
-    registry.registerConnection(
-      createConnection("second", { send: () => delivered.push("second") }),
+      createConnection("second", { send: () => delivered.push("second") })
     );
 
     registry.broadcastToAll({ type: "server.shutdown" });

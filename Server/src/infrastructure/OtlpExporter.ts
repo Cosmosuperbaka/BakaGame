@@ -1,7 +1,4 @@
-export type OtlpFetcher = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface OtlpExporterConfig {
   endpoint?: string;
@@ -50,7 +47,10 @@ export interface OtlpFlushResult {
 }
 
 export class OtlpShutdownError extends Error {
-  constructor(readonly result: OtlpFlushResult, readonly stats: OtlpExporterStats) {
+  constructor(
+    readonly result: OtlpFlushResult,
+    readonly stats: OtlpExporterStats
+  ) {
     super(`OTLP shutdown did not drain: ${result.remaining} remaining, ${result.dropped} dropped`);
     this.name = "OtlpShutdownError";
   }
@@ -269,9 +269,16 @@ export class OtlpExporter {
           reject(new Error("OTLP request timed out"));
         }, timeoutMs);
       });
-      return await Promise.race([this.fetcher(endpoint, {
-        method: "POST", headers: this.headers, body: JSON.stringify(body), signal: controller.signal,
-      }), timeout, aborted]);
+      return await Promise.race([
+        this.fetcher(endpoint, {
+          method: "POST",
+          headers: this.headers,
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        }),
+        timeout,
+        aborted,
+      ]);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
       if (onAbort) controller.signal.removeEventListener("abort", onAbort);
@@ -342,8 +349,11 @@ export class OtlpExporter {
       }
     })();
 
-    try { return await this.flushingLogsPromise; }
-    finally { this.flushingLogsPromise = null; }
+    try {
+      return await this.flushingLogsPromise;
+    } finally {
+      this.flushingLogsPromise = null;
+    }
   }
 
   async flushSpans(force = false): Promise<boolean> {
@@ -372,7 +382,9 @@ export class OtlpExporter {
                 spans: batch.map((item) => ({
                   traceId: formatOtlpTraceId(item.traceId),
                   spanId: formatOtlpSpanId(item.spanId),
-                  ...(item.parentSpanId ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) } : {}),
+                  ...(item.parentSpanId
+                    ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) }
+                    : {}),
                   name: item.name,
                   kind: 1, // SPAN_KIND_INTERNAL
                   startTimeUnixNano: toUnixNanoString(item.startTime),
@@ -411,14 +423,22 @@ export class OtlpExporter {
       }
     })();
 
-    try { return await this.flushingSpansPromise; }
-    finally { this.flushingSpansPromise = null; }
+    try {
+      return await this.flushingSpansPromise;
+    } finally {
+      this.flushingSpansPromise = null;
+    }
   }
 
   private result(attemptsBefore: number, sentBefore: number): OtlpFlushResult {
     const remaining = this.logBuffer.length + this.spanBuffer.length + this.inFlightRecords;
-    return { success: remaining === 0, attempted: this.stats.totalAttempts - attemptsBefore,
-      sent: this.sentRecords - sentBefore, remaining, dropped: this.stats.droppedCount };
+    return {
+      success: remaining === 0,
+      attempted: this.stats.totalAttempts - attemptsBefore,
+      sent: this.sentRecords - sentBefore,
+      remaining,
+      dropped: this.stats.droppedCount,
+    };
   }
 
   async flush(): Promise<OtlpFlushResult> {
@@ -449,12 +469,15 @@ export class OtlpExporter {
             await Promise.all([this.flushLogs(true), this.flushSpans(true)]);
           }
         };
-        await Promise.race([drain(), new Promise<void>((resolve) => {
-          timer = setTimeout(() => {
-            for (const request of this.requests) request.abort();
-            resolve();
-          }, budget);
-        })]);
+        await Promise.race([
+          drain(),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(() => {
+              for (const request of this.requests) request.abort();
+              resolve();
+            }, budget);
+          }),
+        ]);
         const result = this.result(attemptsBefore, sentBefore);
         if (!result.success) throw new OtlpShutdownError(result, this.getStats());
       } finally {

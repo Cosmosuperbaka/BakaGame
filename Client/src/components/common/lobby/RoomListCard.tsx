@@ -42,8 +42,15 @@ export function RoomCardLayout({
   className?: string;
 }) {
   return (
-    <CardContent className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5 sm:py-4", className)}>
-      <div className="col-span-full row-1 flex min-w-0 items-center gap-2 truncate text-base font-medium sm:col-1">{name}</div>
+    <CardContent
+      className={cn(
+        "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:px-5 sm:py-4",
+        className
+      )}
+    >
+      <div className="col-span-full row-1 flex min-w-0 items-center gap-2 truncate text-base font-medium sm:col-1">
+        {name}
+      </div>
       <div className="col-1 row-2 mt-0.5 text-sm text-muted-foreground sm:mt-1">{id}</div>
       <div className="col-span-full row-3 mt-3 flex items-center gap-2 border-t border-border pt-2.5 sm:col-2 sm:row-[1/span_2] sm:mt-0 sm:border-0 sm:pt-0">
         {badges}
@@ -103,7 +110,7 @@ export function RoomListCard({
         className={cn(
           "cursor-pointer transition-colors hover:border-primary/40 hover:bg-accent/40",
           disabled && "pointer-events-none",
-          dimmed && "opacity-60",
+          dimmed && "opacity-60"
         )}
         onClick={onSelect}
         onKeyDown={(event) => {
@@ -116,8 +123,12 @@ export function RoomListCard({
         <RoomCardLayout
           name={
             <>
-              <span className="truncate" style={{ viewTransitionName: titleName }}>{room.name}</span>
-              {room.hasPassword ? <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
+              <span className="truncate" style={{ viewTransitionName: titleName }}>
+                {room.name}
+              </span>
+              {room.hasPassword ? (
+                <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : null}
               {room.tag ? (
                 <Badge variant="subtle" size="xs" className="shrink-0">
                   {room.tag}

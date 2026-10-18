@@ -64,7 +64,16 @@ const meta = {
     run: fn(async () => {}),
     isPending: noPending,
   },
-  decorators: [(Story, { parameters }) => (parameters.bare ? <Story /> : <div className={SONG_STAGE_FRAME}><Story /></div>)],
+  decorators: [
+    (Story, { parameters }) =>
+      parameters.bare ? (
+        <Story />
+      ) : (
+        <div className={SONG_STAGE_FRAME}>
+          <Story />
+        </div>
+      ),
+  ],
   play: async ({ canvasElement }) => waitForLyrics(canvasElement),
 } satisfies Meta<typeof GameStage>;
 
@@ -73,7 +82,10 @@ type Story = StoryObj<typeof meta>;
 
 export const AudioReady: Story = { name: "音频就绪 · 等待播放" };
 
-export const AudioCompleted: Story = { name: "播放结束 · 歌词总览", args: { audioPlaybackState: "completed" } };
+export const AudioCompleted: Story = {
+  name: "播放结束 · 歌词总览",
+  args: { audioPlaybackState: "completed" },
+};
 
 export const AudioError: Story = { name: "音频加载失败", args: { audioStatus: "error" } };
 
@@ -86,13 +98,19 @@ export const AudioPreparing: Story = {
 
 export const TimerUrgent: Story = { name: "倒计时告急", args: { guessDeadlineAt: DEADLINE } };
 
-export const GivingUp: Story = { name: "正在投降", args: { isPending: pendingOn("song.game.giveUp") } };
+export const GivingUp: Story = {
+  name: "正在投降",
+  args: { isPending: pendingOn("song.game.giveUp") },
+};
 
 export const GaveUp: Story = {
   name: "已投降",
   args: {
     audioPlaybackState: "completed",
-    privateState: songPrivate({ remainingGuesses: 2, visibleAttempts: [SONG_ATTEMPTS.meWrong, SONG_ATTEMPTS.meGaveUp] }),
+    privateState: songPrivate({
+      remainingGuesses: 2,
+      visibleAttempts: [SONG_ATTEMPTS.meWrong, SONG_ATTEMPTS.meGaveUp],
+    }),
   },
 };
 
@@ -102,7 +120,11 @@ export const GuessedCorrect: Story = {
   args: {
     audioPlaybackState: "completed",
     me: playingPlayers().find((player) => player.id === host.id),
-    privateState: songPrivate({ playerId: host.id, remainingGuesses: 2, visibleAttempts: [SONG_ATTEMPTS.hostCorrect] }),
+    privateState: songPrivate({
+      playerId: host.id,
+      remainingGuesses: 2,
+      visibleAttempts: [SONG_ATTEMPTS.hostCorrect],
+    }),
   },
 };
 
@@ -112,8 +134,13 @@ export const GuessesUsedUp: Story = {
     audioPlaybackState: "completed",
     me: playingPlayers().find((player) => player.id === azumi.id),
     privateState: songPrivate({
-      playerId: azumi.id, remainingGuesses: 0,
-      visibleAttempts: [SONG_ATTEMPTS.azumiWrong, SONG_ATTEMPTS.azumiTimeout, SONG_ATTEMPTS.azumiLast],
+      playerId: azumi.id,
+      remainingGuesses: 0,
+      visibleAttempts: [
+        SONG_ATTEMPTS.azumiWrong,
+        SONG_ATTEMPTS.azumiTimeout,
+        SONG_ATTEMPTS.azumiLast,
+      ],
     }),
   },
 };
@@ -169,7 +196,10 @@ export const TeamCorrect: Story = {
     privateState: songPrivate({
       playerId: long.id,
       remainingGuesses: 1,
-      visibleAttempts: [SONG_ATTEMPTS.azumiWrong, songAttempt(azumi, 2, 20, "correct", { guessedSong: SONG_SEARCH_RESULTS[0] })],
+      visibleAttempts: [
+        SONG_ATTEMPTS.azumiWrong,
+        songAttempt(azumi, 2, 20, "correct", { guessedSong: SONG_SEARCH_RESULTS[0] }),
+      ],
     }),
   },
 };
@@ -178,7 +208,13 @@ export const ChoosingSubmitterTeams: Story = {
   name: "指定出题人 · 组队",
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   args: {
-    snapshot: choosingSnapshot({ players: teamPlayingPlayers().map((player) => ({ ...player, roundStatus: "waiting", guessesUsed: 0 })) }),
+    snapshot: choosingSnapshot({
+      players: teamPlayingPlayers().map((player) => ({
+        ...player,
+        roundStatus: "waiting",
+        guessesUsed: 0,
+      })),
+    }),
     privateState: songPrivate({ playerId: host.id }),
     isHost: true,
   },
@@ -189,7 +225,12 @@ export const Instrumental: Story = {
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   args: {
     snapshot: playingSnapshot({
-      currentRound: { roundNumber: 3, submitterPlayerId: peach.id, audioUrl: "", lyricClip: { startTime: 60_000, endTime: 90_000, lines: [] } },
+      currentRound: {
+        roundNumber: 3,
+        submitterPlayerId: peach.id,
+        audioUrl: "",
+        lyricClip: { startTime: 60_000, endTime: 90_000, lines: [] },
+      },
     }),
   },
 };
@@ -206,7 +247,11 @@ export const AutomaticSong: Story = {
     snapshot: playingSnapshot({
       settings: songSettings({
         questionMode: "automatic",
-        autoFilters: { playlist: { id: "3778678", name: "夏夜城市流行精选", songCount: 128 }, artists: [], minPopularity: 10_000 },
+        autoFilters: {
+          playlist: { id: "3778678", name: "夏夜城市流行精选", songCount: 128 },
+          artists: [],
+          minPopularity: 10_000,
+        },
       }),
     }),
   },
@@ -214,14 +259,21 @@ export const AutomaticSong: Story = {
 
 export const AnimeGuesser: Story = {
   name: "听歌猜番 · 猜题玩家",
-  args: { snapshot: animeSnapshot(), privateState: guesserPrivate(DEADLINE, { visibleAttempts: [ANIME_ATTEMPTS.meWrong] }) },
+  args: {
+    snapshot: animeSnapshot(),
+    privateState: guesserPrivate(DEADLINE, { visibleAttempts: [ANIME_ATTEMPTS.meWrong] }),
+  },
 };
 
 export const AnimeSubmitter: Story = {
   name: "听歌猜番 · 出题人",
   args: {
     snapshot: animeSnapshot(),
-    privateState: submitterPrivate({ submittedSong: undefined, submittedAnime: ANIME_ANSWER, visibleAttempts: [ANIME_ATTEMPTS.meWrong, ANIME_ATTEMPTS.hostCorrect] }),
+    privateState: submitterPrivate({
+      submittedSong: undefined,
+      submittedAnime: ANIME_ANSWER,
+      visibleAttempts: [ANIME_ATTEMPTS.meWrong, ANIME_ATTEMPTS.hostCorrect],
+    }),
     me: playingPlayers().find((player) => player.id === peach.id),
   },
 };
@@ -238,12 +290,22 @@ export const SubmittingAnime: Story = {
     privateState: songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }),
     me: submittingSnapshot().players.find((player) => player.id === peach.id),
     isHost: false,
-  },  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
+  },
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
 };
 
 export const RomanLyrics: Story = {
   name: "歌词注音",
-  args: { snapshot: playingSnapshot({ currentRound: { roundNumber: 3, submitterPlayerId: peach.id, audioUrl: "", lyricClip: songLyricClip("roman") } }) },
+  args: {
+    snapshot: playingSnapshot({
+      currentRound: {
+        roundNumber: 3,
+        submitterPlayerId: peach.id,
+        audioUrl: "",
+        lyricClip: songLyricClip("roman"),
+      },
+    }),
+  },
 };
 
 export const AttemptResults: Story = {
@@ -251,8 +313,16 @@ export const AttemptResults: Story = {
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   render: () => (
     <div className="space-y-5">
-      <AttemptList attempts={[...SONG_ROOM_ATTEMPTS, SONG_ATTEMPTS.meGaveUp]} title="全房猜测" showPlayerName />
-      <AttemptList attempts={[ANIME_ATTEMPTS.meWrong, ANIME_ATTEMPTS.hostCorrect]} title="全房猜测" showPlayerName />
+      <AttemptList
+        attempts={[...SONG_ROOM_ATTEMPTS, SONG_ATTEMPTS.meGaveUp]}
+        title="全房猜测"
+        showPlayerName
+      />
+      <AttemptList
+        attempts={[ANIME_ATTEMPTS.meWrong, ANIME_ATTEMPTS.hostCorrect]}
+        title="全房猜测"
+        showPlayerName
+      />
     </div>
   ),
 };
@@ -270,7 +340,10 @@ export const GameAreaTestMode: Story = {
   beforeEach: () => stubSongActions({ searchBangumi: () => Promise.resolve(ANIME_SEARCH_RESULTS) }),
   render: (args) => (
     <div className="flex h-[52rem] w-[36rem] max-w-full flex-col overflow-hidden rounded-md border bg-panel">
-      <SongGameArea {...args} snapshot={{ ...args.snapshot, roomId: ROOM_ID_TEST_MODE, testMode: true }} />
+      <SongGameArea
+        {...args}
+        snapshot={{ ...args.snapshot, roomId: ROOM_ID_TEST_MODE, testMode: true }}
+      />
     </div>
   ),
   parameters: { bare: true },
@@ -310,13 +383,16 @@ export const SubmittingAnimeSongs: Story = {
   name: "出题阶段 · 选番 · 关联曲",
   tags: ["overlay"],
   args: SubmittingAnime.args,
-  beforeEach: () => stubSongActions({
-    searchBangumi: () => Promise.resolve(ANIME_SEARCH_RESULTS),
-    resolveAnimeSongs: () => Promise.resolve(ANIME_SONG_CANDIDATES),
-  }),
+  beforeEach: () =>
+    stubSongActions({
+      searchBangumi: () => Promise.resolve(ANIME_SEARCH_RESULTS),
+      resolveAnimeSongs: () => Promise.resolve(ANIME_SONG_CANDIDATES),
+    }),
   play: async ({ canvasElement }) => {
     await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索番剧" }), "夏空");
-    await userEvent.click(await screen.findByRole("option", { name: new RegExp(ANIME_SEARCH_RESULTS[0]!.nameCn) }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: new RegExp(ANIME_SEARCH_RESULTS[0]!.nameCn) })
+    );
     await screen.findByRole("option", { name: /更换番剧/ });
   },
 };

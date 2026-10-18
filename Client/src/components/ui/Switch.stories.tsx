@@ -59,7 +59,13 @@ export const Disabled: Story = {
         hint="首位答对获得正式玩家数分，之后每位答对者依次少 1 分。"
         disabled
       />
-      <SettingRow id="story-switch-lyrics" label="显示歌词" hint="关闭后只播放音乐，不显示歌词提示。" defaultChecked disabled />
+      <SettingRow
+        id="story-switch-lyrics"
+        label="显示歌词"
+        hint="关闭后只播放音乐，不显示歌词提示。"
+        defaultChecked
+        disabled
+      />
     </div>
   ),
 };

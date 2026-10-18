@@ -11,25 +11,46 @@ class ImmediateObserver {
     this.callback = callback;
   }
   observe(target: Element): void {
-    this.callback([{ isIntersecting: true, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+    this.callback(
+      [{ isIntersecting: true, target } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver
+    );
   }
   unobserve(): void {}
   disconnect(): void {}
-  takeRecords(): IntersectionObserverEntry[] { return []; }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
 }
 
 const GRID = "https://mirror.example.test/pic/crt/g/1.jpg";
 const LARGE = "https://mirror.example.test/r/400/pic/crt/l/1.jpg";
 
 const answer: CEECharacterView = {
-  id: 1, name: "Nijika", nameCn: "虹夏", gender: "female", popularity: 0, summary: "",
+  id: 1,
+  name: "Nijika",
+  nameCn: "虹夏",
+  gender: "female",
+  popularity: 0,
+  summary: "",
   imageUrl: GRID,
-  appearances: [], highestRating: -1, earliestAppearance: 0, latestAppearance: 0,
-  subjectTags: [], characterTags: [], voiceActors: [], metaTags: [], comparisonAppearances: [], extraTags: [],
+  appearances: [],
+  highestRating: -1,
+  earliestAppearance: 0,
+  latestAppearance: 0,
+  subjectTags: [],
+  characterTags: [],
+  voiceActors: [],
+  metaTags: [],
+  comparisonAppearances: [],
+  extraTags: [],
 };
 
 describe("CEE 答案卡", () => {
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("结算答案卡用大图：方格图先撑住版式，大图回来后替换", async () => {
     vi.stubGlobal("IntersectionObserver", ImmediateObserver);
@@ -39,6 +60,10 @@ describe("CEE 答案卡", () => {
     // 快照里带的是方格图：先用它顶上，不闪占位图标。
     expect(image()?.getAttribute("src")).toBe(GRID);
     await waitFor(() => expect(image()?.getAttribute("src")).toBe(LARGE));
-    expect(send).toHaveBeenCalledWith("cee.character.image", { characterId: 1, size: "large" }, expect.anything());
+    expect(send).toHaveBeenCalledWith(
+      "cee.character.image",
+      { characterId: 1, size: "large" },
+      expect.anything()
+    );
   });
 });

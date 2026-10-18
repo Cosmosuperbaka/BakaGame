@@ -1,13 +1,26 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Dices, Flag, Image, PenLine, Search, Trophy } from "lucide-react";
-import type { CEECharacterSummary, CEEGuess, CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
+import type {
+  CEECharacterSummary,
+  CEEGuess,
+  CEEPlayer,
+  CEEPrivateState,
+  CEERoomSnapshot,
+} from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SearchOptionContent } from "@/components/common/SearchCombobox";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
@@ -31,7 +44,11 @@ import { CEEChoosingSetter } from "./CEEChoosingSetter";
  */
 function Countdown({ deadline, className }: { deadline: number | null; className?: string }) {
   if (!deadline) return null;
-  return <div className={className ?? "flex justify-center"}><CountdownBadge deadlineAt={deadline} /></div>;
+  return (
+    <div className={className ?? "flex justify-center"}>
+      <CountdownBadge deadlineAt={deadline} />
+    </div>
+  );
 }
 
 /**
@@ -39,7 +56,15 @@ function Countdown({ deadline, className }: { deadline: number | null; className
  * 阶段标识含来源与局数，换局或换来源时整体重挂载，各阶段内的草稿不会串局。
  * 回放的整局历史同理不能留在舞台内（换局会被重挂载清空），由房间页累积后传入。
  */
-export function CEEGameArea({ snapshot, privateState, replayRounds = [] }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds?: ReplayRound[] }) {
+export function CEEGameArea({
+  snapshot,
+  privateState,
+  replayRounds = [],
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+  replayRounds?: ReplayRound[];
+}) {
   return (
     <PhaseStage phaseKey={`${snapshot.source}:${snapshot.phase}:${snapshot.roundNumber}`}>
       <CEEPhase snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />
@@ -47,17 +72,42 @@ export function CEEGameArea({ snapshot, privateState, replayRounds = [] }: { sna
   );
 }
 
-function CEEPhase({ snapshot, privateState, replayRounds }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds: ReplayRound[] }) {
-  if (snapshot.phase === "waiting") return <CEEWaiting snapshot={snapshot} privateState={privateState} />;
-  if (snapshot.phase === "choosingSetter") return <CEEChoosingSetter snapshot={snapshot} privateState={privateState} />;
-  if (snapshot.phase === "settled" && snapshot.roundSummary) return <CEESettlement snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />;
-  if (snapshot.phase === "answering") return <CEESetter snapshot={snapshot} privateState={privateState} />;
-  if (snapshot.phase === "preparing") return <CEEPreparing snapshot={snapshot} privateState={privateState} />;
+function CEEPhase({
+  snapshot,
+  privateState,
+  replayRounds,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+  replayRounds: ReplayRound[];
+}) {
+  if (snapshot.phase === "waiting")
+    return <CEEWaiting snapshot={snapshot} privateState={privateState} />;
+  if (snapshot.phase === "choosingSetter")
+    return <CEEChoosingSetter snapshot={snapshot} privateState={privateState} />;
+  if (snapshot.phase === "settled" && snapshot.roundSummary)
+    return (
+      <CEESettlement snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />
+    );
+  if (snapshot.phase === "answering")
+    return <CEESetter snapshot={snapshot} privateState={privateState} />;
+  if (snapshot.phase === "preparing")
+    return <CEEPreparing snapshot={snapshot} privateState={privateState} />;
   return <CEEGuessing snapshot={snapshot} privateState={privateState} />;
 }
 
 /** 等待类阶段的开头：标题 → 说明 → 倒计时，准备题目与等待出题人同一顺序。 */
-function PhaseIntro({ icon, title, description, deadline }: { icon: typeof Search; title: string; description: ReactNode; deadline: number | null }) {
+function PhaseIntro({
+  icon,
+  title,
+  description,
+  deadline,
+}: {
+  icon: typeof Search;
+  title: string;
+  description: ReactNode;
+  deadline: number | null;
+}) {
   return (
     <div className="space-y-3 text-center">
       <PhaseHeader icon={icon} title={title} />
@@ -67,17 +117,30 @@ function PhaseIntro({ icon, title, description, deadline }: { icon: typeof Searc
   );
 }
 
-function CEEPreparing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+function CEEPreparing({
+  snapshot,
+  privateState,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+}) {
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseIntro
         icon={Dices}
         title="正在准备题目"
         // 抽题是服务端在跑的持续状态：转圈与文字一起放进 status，读屏读出这一句
-        description={<p role="status" className="inline-flex items-center gap-2"><Spinner className="text-primary" />题目就绪后会自动开始</p>}
+        description={
+          <p role="status" className="inline-flex items-center gap-2">
+            <Spinner className="text-primary" />
+            题目就绪后会自动开始
+          </p>
+        }
         deadline={snapshot.phaseDeadlineAt}
       />
-      <PhaseActions><CancelRound snapshot={snapshot} playerId={privateState.playerId} /></PhaseActions>
+      <PhaseActions>
+        <CancelRound snapshot={snapshot} playerId={privateState.playerId} />
+      </PhaseActions>
     </div>
   );
 }
@@ -92,26 +155,48 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
   const { run, pending } = useCEEAction();
   const [open, setOpen] = useState(false);
   const origin = useOriginTracker();
-  if (snapshot.source !== "native" || snapshot.hostPlayerId !== playerId || !["preparing", "answering"].includes(snapshot.phase)) return null;
+  if (
+    snapshot.source !== "native" ||
+    snapshot.hostPlayerId !== playerId ||
+    !["preparing", "answering"].includes(snapshot.phase)
+  )
+    return null;
   const cancelling = pending.has("cee.game.cancel");
   const handleCancel = async () => {
     if (await run("cee.game.cancel", {})) setOpen(false);
   };
-  return <>
-    <Button variant="outline" loading={cancelling} onClick={(event) => { origin.capture(event); setOpen(true); }}>取消本局</Button>
-    <Dialog open={open} onOpenChange={setOpen} origin={origin.origin}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>取消本局</DialogTitle>
-          <DialogDescription>本局不计分，房间回到等待阶段，可以调整设置后重新开始。</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>继续本局</Button>
-          <Button variant="destructive" loading={cancelling} onClick={() => void handleCancel()}>确认取消</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  </>;
+  return (
+    <>
+      <Button
+        variant="outline"
+        loading={cancelling}
+        onClick={(event) => {
+          origin.capture(event);
+          setOpen(true);
+        }}
+      >
+        取消本局
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen} origin={origin.origin}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>取消本局</DialogTitle>
+            <DialogDescription>
+              本局不计分，房间回到等待阶段，可以调整设置后重新开始。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              继续本局
+            </Button>
+            <Button variant="destructive" loading={cancelling} onClick={() => void handleCancel()}>
+              确认取消
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 /** 已选答案：与搜索结果同一款行（缩略图、主名、副名），行尾的关闭钮清除选择。 */
@@ -130,23 +215,42 @@ function SelectedAnswer({ answer, onClear }: { answer: CEECharacterSummary; onCl
   );
 }
 
-function CEESetter({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+function CEESetter({
+  snapshot,
+  privateState,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+}) {
   const [answer, setAnswer] = useState<CEECharacterSummary | null>(null);
   const [hints, setHints] = useState(["", "", ""]);
   const { run, pending } = useCEEAction();
   const submitting = pending.has("cee.game.setAnswer");
-  const setterName = snapshot.players.find((player) => player.id === snapshot.setterPlayerId)?.name ?? "出题人";
+  const setterName =
+    snapshot.players.find((player) => player.id === snapshot.setterPlayerId)?.name ?? "出题人";
   if (!privateState.canSetAnswer) {
     return (
       <div className="mx-auto w-full max-w-md space-y-5">
-        <PhaseIntro icon={PenLine} title="等待出题人" description={<p>{setterName} 正在选择角色</p>} deadline={snapshot.phaseDeadlineAt} />
-        <PhaseActions><CancelRound snapshot={snapshot} playerId={privateState.playerId} /></PhaseActions>
+        <PhaseIntro
+          icon={PenLine}
+          title="等待出题人"
+          description={<p>{setterName} 正在选择角色</p>}
+          deadline={snapshot.phaseDeadlineAt}
+        />
+        <PhaseActions>
+          <CancelRound snapshot={snapshot} playerId={privateState.playerId} />
+        </PhaseActions>
       </div>
     );
   }
   return (
     <div className="mx-auto w-full max-w-2xl space-y-5">
-      <PhaseIntro icon={PenLine} title="选择本局答案" description={<p>搜索并选中一位角色作为答案，结算前只有你和旁观者能看到。</p>} deadline={snapshot.phaseDeadlineAt} />
+      <PhaseIntro
+        icon={PenLine}
+        title="选择本局答案"
+        description={<p>搜索并选中一位角色作为答案，结算前只有你和旁观者能看到。</p>}
+        deadline={snapshot.phaseDeadlineAt}
+      />
       <CEESearch allowSubjects disabled={submitting} onSelect={setAnswer} />
       <div aria-live="polite">
         <CollapsibleRegion open={answer !== null}>
@@ -163,12 +267,26 @@ function CEESetter({ snapshot, privateState }: { snapshot: CEERoomSnapshot; priv
             maxLength={30}
             aria-label={`文本提示 ${index + 1}`}
             placeholder={`文本提示 ${index + 1}`}
-            onChange={(event) => setHints((current) => current.map((value, position) => index === position ? event.target.value : value))}
+            onChange={(event) =>
+              setHints((current) =>
+                current.map((value, position) => (index === position ? event.target.value : value))
+              )
+            }
           />
         ))}
       </fieldset>
-      <Button size="lg" className="w-full" disabled={!answer || submitting} loading={submitting} onClick={() => answer && void run("cee.game.setAnswer", { characterId: answer.id, hints })}>确认答案并开始</Button>
-      <PhaseActions><CancelRound snapshot={snapshot} playerId={privateState.playerId} /></PhaseActions>
+      <Button
+        size="lg"
+        className="w-full"
+        disabled={!answer || submitting}
+        loading={submitting}
+        onClick={() => answer && void run("cee.game.setAnswer", { characterId: answer.id, hints })}
+      >
+        确认答案并开始
+      </Button>
+      <PhaseActions>
+        <CancelRound snapshot={snapshot} playerId={privateState.playerId} />
+      </PhaseActions>
     </div>
   );
 }
@@ -177,7 +295,11 @@ function CEESetter({ snapshot, privateState }: { snapshot: CEERoomSnapshot; priv
 type GuessSlotKind = "search" | "done" | "ended";
 
 /** 次数行的身份说明：出题人、其观战队友与中途加入者在服务端都记为观战，次数对他们没有意义。 */
-function standingNote(player: CEEPlayer | undefined, setterPlayerId: string | null, maxAttempts: number): string {
+function standingNote(
+  player: CEEPlayer | undefined,
+  setterPlayerId: string | null,
+  maxAttempts: number
+): string {
   if (!player || player.membership === "spectator") return "旁观中";
   if (setterPlayerId === player.id) return "你是本局出题人";
   if (player.status === "observing") return "本局观战";
@@ -192,7 +314,11 @@ function guessingTitle(canGuess: boolean, waitingSync: boolean): string {
 }
 
 /** 可行动者给搜索栏，同步等待给回执，其余按能否看到答案决定；与标题同一口径。 */
-function guessSlotKind(canGuess: boolean, waitingSync: boolean, watching: boolean): GuessSlotKind | null {
+function guessSlotKind(
+  canGuess: boolean,
+  waitingSync: boolean,
+  watching: boolean
+): GuessSlotKind | null {
   if (canGuess) return "search";
   if (waitingSync) return "done";
   if (watching) return null;
@@ -200,7 +326,13 @@ function guessSlotKind(canGuess: boolean, waitingSync: boolean, watching: boolea
 }
 
 /** 次数与倒计时同一行：身份说明、答案保密提示与同步轮号，倒计时靠右。 */
-function GuessingMetaLine({ standing, watching, syncMode, syncRound, deadline }: {
+function GuessingMetaLine({
+  standing,
+  watching,
+  syncMode,
+  syncRound,
+  deadline,
+}: {
   standing: string;
   watching: boolean;
   syncMode: boolean;
@@ -221,28 +353,51 @@ function GuessingMetaLine({ standing, watching, syncMode, syncRound, deadline }:
 
 /** 同步模式本轮已提交的回执：图标跟随卡片一起落下，等其他人本轮也提交。 */
 function SyncDoneReceipt({ trailing }: { trailing: ReactNode }) {
-  return <>
-    <motion.p role="status" {...receiptCard} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium">
-      <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}><CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" /></motion.span>
-      本轮已完成，等待其他玩家
-    </motion.p>
-    {trailing}
-  </>;
+  return (
+    <>
+      <motion.p
+        role="status"
+        {...receiptCard}
+        className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium"
+      >
+        <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}>
+          <CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" />
+        </motion.span>
+        本轮已完成，等待其他玩家
+      </motion.p>
+      {trailing}
+    </>
+  );
 }
 
 /** 本局不再接受行动：只剩等待结算的说明。 */
 function RoundEndedNote({ trailing }: { trailing: ReactNode }) {
-  return <>
-    <p role="status" className="flex min-h-10 min-w-0 flex-1 items-center text-sm text-muted-foreground">本局已结束行动，等待结算</p>
-    {trailing}
-  </>;
+  return (
+    <>
+      <p
+        role="status"
+        className="flex min-h-10 min-w-0 flex-1 items-center text-sm text-muted-foreground"
+      >
+        本局已结束行动，等待结算
+      </p>
+      {trailing}
+    </>
+  );
 }
 
 /**
  * 提交区：搜索栏与本轮回执叠在同一格里交叉，槽位种类决定挂哪个 key，退场才对得上。
  * 看到答案的视角把说明行放在外面（与答案卡相邻），这里不再重复。
  */
-function GuessSubmitArea({ info, watching, slot, subjectSearch, bannedIds, trailing, onPick }: {
+function GuessSubmitArea({
+  info,
+  watching,
+  slot,
+  subjectSearch,
+  bannedIds,
+  trailing,
+  onPick,
+}: {
   info: ReactNode;
   watching: boolean;
   slot: GuessSlotKind;
@@ -259,12 +414,21 @@ function GuessSubmitArea({ info, watching, slot, subjectSearch, bannedIds, trail
         <AnimatePresence initial={false} mode="popLayout">
           {slot === "search" ? (
             <GuessSlot key="search">
-              <CEESearch allowSubjects={subjectSearch} bannedIds={bannedIds} trailing={trailing} onSelect={onPick} />
+              <CEESearch
+                allowSubjects={subjectSearch}
+                bannedIds={bannedIds}
+                trailing={trailing}
+                onSelect={onPick}
+              />
             </GuessSlot>
           ) : slot === "done" ? (
-            <GuessSlot key="done" className="flex items-start gap-2"><SyncDoneReceipt trailing={trailing} /></GuessSlot>
+            <GuessSlot key="done" className="flex items-start gap-2">
+              <SyncDoneReceipt trailing={trailing} />
+            </GuessSlot>
           ) : (
-            <GuessSlot key="ended" className="flex items-start gap-2"><RoundEndedNote trailing={trailing} /></GuessSlot>
+            <GuessSlot key="ended" className="flex items-start gap-2">
+              <RoundEndedNote trailing={trailing} />
+            </GuessSlot>
           )}
         </AnimatePresence>
       </div>
@@ -272,13 +436,21 @@ function GuessSubmitArea({ info, watching, slot, subjectSearch, bannedIds, trail
   );
 }
 
-function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+function CEEGuessing({
+  snapshot,
+  privateState,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+}) {
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   const [surrenderOpen, setSurrenderOpen] = useState(false);
   const origin = useOriginTracker();
   const { run, pending } = useCEEAction();
   const surrendering = pending.has("cee.game.surrender");
-  const waitingSync = Boolean(snapshot.settings.syncMode && me?.syncCompleted && me.status === "playing");
+  const waitingSync = Boolean(
+    snapshot.settings.syncMode && me?.syncCompleted && me.status === "playing"
+  );
   const standing = standingNote(me, snapshot.setterPlayerId, snapshot.settings.maxAttempts);
   const title = guessingTitle(privateState.canGuess, waitingSync);
   // 看得到答案的视角不提交猜测：说明行与答案卡相邻，读作「下面这张卡就是答案」。
@@ -295,44 +467,101 @@ function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; pr
   // 放弃按钮挂在搜索按钮组的末尾：搜索栏为了不让输入框被挤窄会把按钮组整组换行，放在外面会先把搜索按钮挤下去。
   // 按钮组按下时会把焦点交回输入框，这里拦下，焦点留在按钮上，弹窗关闭后才回得来。
   const surrender = privateState.canSurrender ? (
-    <Button variant="outline" className="h-10 shrink-0 px-3" loading={surrendering} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { origin.capture(event); setSurrenderOpen(true); }}><Flag />放弃本局</Button>
+    <Button
+      variant="outline"
+      className="h-10 shrink-0 px-3"
+      loading={surrendering}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        origin.capture(event);
+        setSurrenderOpen(true);
+      }}
+    >
+      <Flag />
+      放弃本局
+    </Button>
   ) : null;
   const slot = guessSlotKind(privateState.canGuess, waitingSync, watching);
   const handleSurrender = async () => {
     if (await run("cee.game.surrender", {})) setSurrenderOpen(false);
   };
-  const handlePick = async (character: CEECharacterSummary) => Boolean(await run("cee.game.guess", { characterId: character.id }));
+  const handlePick = async (character: CEECharacterSummary) =>
+    Boolean(await run("cee.game.guess", { characterId: character.id }));
 
-  return <div className="mx-auto w-full max-w-2xl space-y-5">
-    {/* 标题随本轮是否已提交换字：新标题自下顶上，旧标题立即让位 */}
-    <div className="relative">
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div key={title} variants={readoutSwap} initial="initial" animate="animate" exit="exit">
-          <PhaseHeader icon={Search} title={title} />
-        </motion.div>
-      </AnimatePresence>
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-5">
+      {/* 标题随本轮是否已提交换字：新标题自下顶上，旧标题立即让位 */}
+      <div className="relative">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.div
+            key={title}
+            variants={readoutSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            <PhaseHeader icon={Search} title={title} />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      {watching ? (
+        <>
+          {info}
+          <CEEAnswerCard answer={privateState.answer!} />
+        </>
+      ) : null}
+      <CEEHints privateState={privateState} />
+      {slot ? (
+        <GuessSubmitArea
+          info={info}
+          watching={watching}
+          slot={slot}
+          subjectSearch={snapshot.settings.subjectSearch}
+          bannedIds={privateState.bannedCharacterIds}
+          trailing={surrender}
+          onPick={handlePick}
+        />
+      ) : null}
+      <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
+      <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>放弃本局</DialogTitle>
+            <DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSurrenderOpen(false)}>
+              继续猜测
+            </Button>
+            <Button
+              variant="destructive"
+              loading={surrendering}
+              onClick={() => void handleSurrender()}
+            >
+              确认放弃
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-    {watching ? <>{info}<CEEAnswerCard answer={privateState.answer!} /></> : null}
-    <CEEHints privateState={privateState} />
-    {slot ? (
-      <GuessSubmitArea
-        info={info}
-        watching={watching}
-        slot={slot}
-        subjectSearch={snapshot.settings.subjectSearch}
-        bannedIds={privateState.bannedCharacterIds}
-        trailing={surrender}
-        onPick={handlePick}
-      />
-    ) : null}
-    <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
-    <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}><DialogContent><DialogHeader><DialogTitle>放弃本局</DialogTitle><DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setSurrenderOpen(false)}>继续猜测</Button><Button variant="destructive" loading={surrendering} onClick={() => void handleSurrender()}>确认放弃</Button></DialogFooter></DialogContent></Dialog>
-  </div>;
+  );
 }
 
 /** 猜测栏里交替的一格：只负责退场淡出，入场由各自内容（回执回弹、搜索栏照常出现）决定。 */
-function GuessSlot({ ref, className, children }: { ref?: Ref<HTMLDivElement>; className?: string; children: ReactNode }) {
-  return <motion.div ref={ref} exit={skeletonFade.exit} className={className}>{children}</motion.div>;
+function GuessSlot({
+  ref,
+  className,
+  children,
+}: {
+  ref?: Ref<HTMLDivElement>;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <motion.div ref={ref} exit={skeletonFade.exit} className={className}>
+      {children}
+    </motion.div>
+  );
 }
 
 /**
@@ -349,7 +578,15 @@ function CEEHints({ privateState }: { privateState: CEEPrivateState }) {
           <ul className={hints.length ? "space-y-2" : "hidden"}>
             <AnimatePresence initial={false}>
               {hints.map((hint, index) => (
-                <motion.li key={index} variants={listItem} initial="initial" animate="animate" className="origin-left text-sm">提示 {index + 1}：{hint}</motion.li>
+                <motion.li
+                  key={index}
+                  variants={listItem}
+                  initial="initial"
+                  animate="animate"
+                  className="origin-left text-sm"
+                >
+                  提示 {index + 1}：{hint}
+                </motion.li>
               ))}
             </AnimatePresence>
           </ul>
@@ -377,8 +614,13 @@ function CEEImageHint({ level }: { level: number }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button variant="outline" loading={loading} onClick={() => void handleImageHint()}><Image />{image ? "更新图片提示" : "查看图片提示"}</Button>
-        <span className="text-xs text-muted-foreground">{image ? `当前第 ${image.level} 级` : null}</span>
+        <Button variant="outline" loading={loading} onClick={() => void handleImageHint()}>
+          <Image />
+          {image ? "更新图片提示" : "查看图片提示"}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {image ? `当前第 ${image.level} 级` : null}
+        </span>
       </div>
       <CollapsibleRegion open={image !== null || loading}>
         <div className="grid h-48 place-items-center overflow-hidden rounded-md bg-background">
@@ -395,7 +637,14 @@ function CEEImageHint({ level }: { level: number }) {
                 className="max-h-full max-w-full object-contain [grid-area:1/1]"
               />
             ) : (
-              <motion.span key="empty" exit={skeletonFade.exit} className="inline-flex items-center gap-2 text-xs text-muted-foreground [grid-area:1/1]"><Spinner />正在生成图片提示</motion.span>
+              <motion.span
+                key="empty"
+                exit={skeletonFade.exit}
+                className="inline-flex items-center gap-2 text-xs text-muted-foreground [grid-area:1/1]"
+              >
+                <Spinner />
+                正在生成图片提示
+              </motion.span>
             )}
           </AnimatePresence>
         </div>
@@ -417,27 +666,31 @@ const byRank = (score: CEEScore) => score.rank ?? Number.MAX_SAFE_INTEGER;
 /** 结算得分表：按名次排列、自末行往上揭示；得分明细作名字下方的次行，窄屏不逐字换行。 */
 function CEEScoreTable({ scores, guesses }: { scores: CEEScore[]; guesses: CEEGuess[] }) {
   // 本局猜中的人：命中作品只拿 partial 分，不算猜中，因此以 guesses 的 correct 为准而不是得分明细。
-  const contributors = new Set(guesses.filter((guess) => guess.correct).map((guess) => guess.playerId));
+  const contributors = new Set(
+    guesses.filter((guess) => guess.correct).map((guess) => guess.playerId)
+  );
   return (
     <ScoreTable
       title="本局得分"
       columns={CEE_SCORE_COLUMNS}
       ranked
-      rows={[...scores].sort((left, right) => byRank(left) - byRank(right)).map((score) => ({
-        key: score.playerId,
-        name: score.playerName,
-        detail: [
-          ...(score.reason ? [score.reason] : []),
-          `基础 ${score.base}`,
-          `首猜 ${score.firstGuess}`,
-          `快速 ${score.quickGuess}`,
-          `作品 ${score.partial}`,
-          `出题 ${score.setter}`,
-        ],
-        cells: { rank: score.rank ?? "—", score: score.score },
-        rollFrom: { score: 0 },
-        contributor: contributors.has(score.playerId),
-      }))}
+      rows={[...scores]
+        .sort((left, right) => byRank(left) - byRank(right))
+        .map((score) => ({
+          key: score.playerId,
+          name: score.playerName,
+          detail: [
+            ...(score.reason ? [score.reason] : []),
+            `基础 ${score.base}`,
+            `首猜 ${score.firstGuess}`,
+            `快速 ${score.quickGuess}`,
+            `作品 ${score.partial}`,
+            `出题 ${score.setter}`,
+          ],
+          cells: { rank: score.rank ?? "—", score: score.score },
+          rollFrom: { score: 0 },
+          contributor: contributors.has(score.playerId),
+        }))}
     />
   );
 }
@@ -446,7 +699,15 @@ function CEEScoreTable({ scores, guesses }: { scores: CEEScore[]; guesses: CEEGu
  * 结算。增强房的「下一步」是回到等待阶段（可改设置、重新准备）或直接再来一轮；原版房按上游行为直接开下一局，
  * 手动出题时先进入指定出题人。非房主的说明按同一口径写。
  */
-function CEESettlement({ snapshot, privateState, replayRounds }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds: ReplayRound[] }) {
+function CEESettlement({
+  snapshot,
+  privateState,
+  replayRounds,
+}: {
+  snapshot: CEERoomSnapshot;
+  privateState: CEEPrivateState;
+  replayRounds: ReplayRound[];
+}) {
   const summary = snapshot.roundSummary!;
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, pending } = useCEEAction();
@@ -490,7 +751,11 @@ function CEESettlement({ snapshot, privateState, replayRounds }: { snapshot: CEE
           )
         ) : (
           <p className="text-center text-sm text-muted-foreground">
-            {native ? "等待房主开始下一轮" : manual ? "等待房主指定下一局出题人" : "等待房主开始下一局"}
+            {native
+              ? "等待房主开始下一轮"
+              : manual
+                ? "等待房主指定下一局出题人"
+                : "等待房主开始下一局"}
           </p>
         )}
       </div>

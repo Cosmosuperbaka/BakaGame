@@ -98,7 +98,9 @@ export function springToCss(token: SpringToken): { easing: string; duration: num
   const trace = springTrace(token);
   const last = trace.length - 1;
   const points = Array.from({ length: SPRING_SAMPLES + 1 }, (_, index) =>
-    index === SPRING_SAMPLES ? 1 : Number(trace[Math.round((index / SPRING_SAMPLES) * last)].toFixed(3)),
+    index === SPRING_SAMPLES
+      ? 1
+      : Number(trace[Math.round((index / SPRING_SAMPLES) * last)].toFixed(3))
   );
   return { easing: `linear(${points.join(", ")})`, duration: last / 1000 };
 }
@@ -129,12 +131,17 @@ export const creditsPage = { travel: 100 } as const;
  * 玩家栏与聊天栏自外侧边缘等比展开（`scale` 起点），顶栏与游戏区只显影（游戏区内容另有 `phaseSwap` 自后推入）。
  * 顺序在这里定义一次：CSS 的各栏延迟与 `roomEntranceMs` 都由它生成。
  */
-export const roomEntrance = { step: 0.05, scale: 0.97, parts: ["header", "player", "game", "chat"] } as const;
+export const roomEntrance = {
+  step: 0.05,
+  scale: 0.97,
+  parts: ["header", "player", "game", "chat"],
+} as const;
 
 /** 全部 CSS 动效变量。键名即 `--motion-` 之后的部分。 */
 export function motionCssVariables(): Record<string, string> {
   const variables: Record<string, string> = {};
-  for (const [name, curve] of Object.entries(ease)) variables[`ease-${kebab(name)}`] = cubicBezier(curve);
+  for (const [name, curve] of Object.entries(ease))
+    variables[`ease-${kebab(name)}`] = cubicBezier(curve);
   for (const [name, value] of Object.entries(duration)) {
     if (name !== "none" && name !== "hold") variables[`duration-${name}`] = seconds(value);
   }
@@ -161,7 +168,9 @@ export function motionCssVariables(): Record<string, string> {
  */
 export function motionTokenCss(): string {
   const variables = motionCssVariables();
-  const declarations = Object.entries(variables).map(([name, value]) => `--motion-${name}: ${value};`);
+  const declarations = Object.entries(variables).map(
+    ([name, value]) => `--motion-${name}: ${value};`
+  );
   const reduced = Object.keys(variables)
     .filter((name) => name.startsWith("spring-") && name.endsWith("-duration"))
     .map((name) => `--motion-${name}: 0s;`);
@@ -284,7 +293,12 @@ const listItemEnter = { opacity: 0, scale: 0.94 };
  * 列表项的退场。单独具名，供需要继承父级 `listContainer` 错峰的列表项直接以对象传给 `exit`：
  * 写成标签 `exit="exit"` 会让该项自成一级变体节点，不再从父级继承 initial/animate 与错峰（大厅房间卡片）。
  */
-export const listItemExit: TargetAndTransition = { opacity: 0, scale: 0.965, pointerEvents: "none", transition: { duration: duration.instant } };
+export const listItemExit: TargetAndTransition = {
+  opacity: 0,
+  scale: 0.965,
+  pointerEvents: "none",
+  transition: { duration: duration.instant },
+};
 
 /**
  * 列表项。以自身左缘为原点做等比缩放，读作“推到前面来”。
@@ -303,7 +317,8 @@ export const listItem: Variants = {
 export const scoreReveal = { step: 0.07, span: 0.42, land: duration.base } as const;
 
 /** 相邻两行的延迟差：不超过 `step`，且整表不超过 `span`。 */
-const scoreRevealStep = (count: number) => (count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0);
+const scoreRevealStep = (count: number) =>
+  count > 1 ? Math.min(scoreReveal.step, scoreReveal.span / (count - 1)) : 0;
 
 /**
  * 结算表第 `index` 行的入场延迟（秒）。按名次排列的表（第一名在最上）自末行往上揭示，第一名最后落定；
@@ -338,7 +353,11 @@ export const digitRoll = {
  * 加分浮标（「+N」）：自分数旁弹起、停一拍后淡出，读作这次加分落进了总分；只在分数增加时出现。
  * 纵向上升本身就是「增加」的语义（§2.2 允许的单元素位移），减弱动效下只淡入淡出。
  */
-export const gainFloat: { initial: TargetAndTransition; animate: TargetAndTransition; transition: Transition } = {
+export const gainFloat: {
+  initial: TargetAndTransition;
+  animate: TargetAndTransition;
+  transition: Transition;
+} = {
   initial: { opacity: 0, y: 4 },
   animate: { opacity: [0, 1, 1, 0], y: [4, -3, -5, -6] },
   transition: { duration: 1.1, times: [0, 0.18, 0.6, 1], ease: ease.out },
@@ -519,14 +538,24 @@ export const revealCard = {
 export const toastItem: Variants = {
   initial: { opacity: 0, x: 24, scale: 0.96 },
   animate: { opacity: 1, x: 0, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, x: 24, scale: 0.97, transition: { duration: duration.quick, ease: ease.inOut } },
+  exit: {
+    opacity: 0,
+    x: 24,
+    scale: 0.97,
+    transition: { duration: duration.quick, ease: ease.inOut },
+  },
 };
 
 /** 自底部升起的横幅（新版本提醒）。 */
 export const bannerRise: Variants = {
   initial: { opacity: 0, y: 20, scale: 0.96 },
   animate: { opacity: 1, y: 0, scale: 1, transition: spring.swift },
-  exit: { opacity: 0, y: 16, scale: 0.96, transition: { duration: duration.quick, ease: ease.inOut } },
+  exit: {
+    opacity: 0,
+    y: 16,
+    scale: 0.96,
+    transition: { duration: duration.quick, ease: ease.inOut },
+  },
 };
 
 /** 自上方落下的状态条（倒计时）：与顶部阶段标题同侧进入。 */
@@ -580,7 +609,9 @@ export function springSettleMs(token: SpringToken): number {
  * 进房编排的窗口（毫秒）：最后一栏晚 `parts.length - 1` 步起播，按 `spring.swift` 落定为止。
  * 窗口内挂载的栏参与编排，窗口外才出现的栏（断线重连后补上、CEE 加入成功后才有的栏）直接出现，不重播。
  */
-export const roomEntranceMs = Math.round((roomEntrance.parts.length - 1) * roomEntrance.step * 1000) + springSettleMs(spring.swift);
+export const roomEntranceMs =
+  Math.round((roomEntrance.parts.length - 1) * roomEntrance.step * 1000) +
+  springSettleMs(spring.swift);
 
 // ==================== 浮层来源锚定 ====================
 
@@ -620,7 +651,7 @@ export function useOriginTracker() {
  */
 export function useOriginStyle(
   ref: RefObject<HTMLElement | null>,
-  origin: OriginPoint | null,
+  origin: OriginPoint | null
 ): CSSProperties {
   const [transformOrigin, setTransformOrigin] = useState("50% 50%");
 
@@ -690,14 +721,21 @@ export interface AxesVector {
  * 主轴是运动方向，副轴与它垂直。
  */
 export function byAxes<T>({ dx, dy }: AxesVector, along: T, across: T): { scaleX: T; scaleY: T } {
-  return Math.abs(dx) > Math.abs(dy) ? { scaleX: along, scaleY: across } : { scaleX: across, scaleY: along };
+  return Math.abs(dx) > Math.abs(dy)
+    ? { scaleX: along, scaleY: across }
+    : { scaleX: across, scaleY: along };
 }
 
 /**
  * 带初速度的弹簧。`launch` 以「每秒走完的全程数」为单位，换算成 framer-motion 的值域初速度：
  * 正值顺着行程抛出（动量），负值先朝反方向蓄力。
  */
-export function springWithVelocity(token: SpringToken, launch: number, from: number, to: number): Transition {
+export function springWithVelocity(
+  token: SpringToken,
+  launch: number,
+  from: number,
+  to: number
+): Transition {
   return { ...token, velocity: launch * (to - from) };
 }
 
@@ -711,7 +749,8 @@ export const tabPush = { travel: 104, squash: 0.96, launch: 1.5 } as const;
  * 两幅面板之间留一道缝，根节点横向裁切，不靠淡化遮住交叠。方向未知（外部改值）时直接换掉。
  */
 export const tabPushSwap: Variants = {
-  initial: (direction: number) => (direction ? { x: `${direction * tabPush.travel}%`, scaleY: tabPush.squash } : { x: "0%" }),
+  initial: (direction: number) =>
+    direction ? { x: `${direction * tabPush.travel}%`, scaleY: tabPush.squash } : { x: "0%" },
   animate: (direction: number) => ({
     x: "0%",
     scaleY: 1,
@@ -754,7 +793,13 @@ export const chatThrow = {
  * 定格阶梯抖动：把一次欠阻尼冲击响应按 `fps` 采样成离散的几格，每格保持、格间硬切，
  * 读作逐帧拍出来的震颤，而不是平滑的摆动。振幅逐格衰减，最后一格回到 0。
  */
-export const stepJitter = { fps: 24, stiffness: 1800, damping: 15, mass: 0.5, floor: 0.05 } as const;
+export const stepJitter = {
+  fps: 24,
+  stiffness: 1800,
+  damping: 15,
+  mass: 0.5,
+  floor: 0.05,
+} as const;
 
 /** 抖动的归一化格序列：正负交替衰减，满幅为 ±1，低于 `floor` 的尾巴截掉，末格为 0。 */
 export function jitterFrames(): number[] {
@@ -791,7 +836,10 @@ export const jitterShape = {
 export function stepJitterAnimation(shape: Partial<Record<"x" | "y" | "rotate", number>>) {
   const frames = jitterFrames();
   const keyframes = Object.fromEntries(
-    Object.entries(shape).map(([key, amplitude]) => [key, [0, ...frames.map((value) => value * (amplitude ?? 0))]]),
+    Object.entries(shape).map(([key, amplitude]) => [
+      key,
+      [0, ...frames.map((value) => value * (amplitude ?? 0))],
+    ])
   ) as Partial<Record<"x" | "y" | "rotate", number[]>>;
   const segments = frames.length;
   const transition: Transition = {

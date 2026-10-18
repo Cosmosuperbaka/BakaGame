@@ -12,7 +12,8 @@ const STRIP = [String.fromCharCode(0xa0), ..."01234567890123456789"];
 /** 装饰层的字形画在伪元素里、不写文本节点：按文字查找、复制与读屏都只看到真实数值。 */
 const GLYPH = "before:content-[attr(data-glyph)]";
 
-const format = (value: number, signed: boolean) => (signed && value > 0 ? `+${value}` : String(value));
+const format = (value: number, signed: boolean) =>
+  signed && value > 0 ? `+${value}` : String(value);
 const signOf = (value: number, signed: boolean) => format(value, signed).replace(/\d/g, "");
 const stripOffset = (index: number) => `${(-index * 100) / STRIP.length}%`;
 
@@ -41,8 +42,12 @@ function rollColumns(from: number, to: number): RollColumn[] {
     const target = Number(digit);
     const start = previous === undefined ? 0 : Number(previous) + (up ? 1 : 11);
     const end = up
-      ? (target + 1 >= start ? target + 1 : target + 11)
-      : (target + 11 <= start ? target + 11 : target + 1);
+      ? target + 1 >= start
+        ? target + 1
+        : target + 11
+      : target + 11 <= start
+        ? target + 11
+        : target + 1;
     return { place, digit, start, end };
   });
 }
@@ -73,13 +78,15 @@ export function AnimatedNumber({
 }) {
   const change = useValueChange(value);
   const [mountRoll] = useState<Roll | null>(() =>
-    from !== undefined && from !== value ? { from, to: value, serial: 0, delay } : null);
+    from !== undefined && from !== value ? { from, to: value, serial: 0, delay } : null
+  );
   const roll: Roll | null = change ? { ...change, delay: 0 } : mountRoll;
   const [rolled, setRolled] = useState(-1);
   const [floated, setFloated] = useState(-1);
   const columns = roll ? rollColumns(roll.from, roll.to) : [];
   // 只差符号（-3 → 3）或只少了高位（123 → 23）时各位都不动，不必叠数字带。
-  const rolling = roll !== null && roll.serial > rolled && columns.some((column) => column.start !== column.end);
+  const rolling =
+    roll !== null && roll.serial > rolled && columns.some((column) => column.start !== column.end);
   const floating = roll !== null && roll.serial > floated && roll.to > roll.from;
 
   return (
@@ -111,7 +118,12 @@ export function AnimatedNumber({
  * 叠在真实数值上的数字带：每位一列，列宽由同一字形撑开（`tabular-nums` 下与底下的文字逐位对齐），
  * 列内一条竖排数字带沿增减方向滚到新值。高位比低位晚一拍，滚完的回调挂在最晚动的那一列上。
  */
-function RollingDigits({ roll, columns, signed, onDone }: {
+function RollingDigits({
+  roll,
+  columns,
+  signed,
+  onDone,
+}: {
   roll: Roll;
   columns: RollColumn[];
   signed: boolean;
@@ -142,7 +154,9 @@ function RollingDigits({ roll, columns, signed, onDone }: {
             transition={{ ...digitRoll.transition, delay: roll.delay + place * digitRoll.stagger }}
             onAnimationComplete={place === lastMoving ? onDone : undefined}
           >
-            {STRIP.map((glyph, index) => <span key={index} data-glyph={glyph} className={GLYPH} />)}
+            {STRIP.map((glyph, index) => (
+              <span key={index} data-glyph={glyph} className={GLYPH} />
+            ))}
           </motion.span>
         </span>
       ))}
@@ -151,7 +165,12 @@ function RollingDigits({ roll, columns, signed, onDone }: {
 }
 
 /** 「+N」浮标：自数字旁弹起、停一拍后淡出，播完即卸载。 */
-function GainFloat({ amount, placement, delay, onDone }: {
+function GainFloat({
+  amount,
+  placement,
+  delay,
+  onDone,
+}: {
   amount: number;
   placement: "above" | "before";
   delay: number;
@@ -165,7 +184,9 @@ function GainFloat({ amount, placement, delay, onDone }: {
         GLYPH,
         // 与分数本身同为衬线体：无衬线只留给 Design §4 列出的四类微型文字
         "pointer-events-none absolute whitespace-nowrap text-2xs font-semibold leading-none text-primary",
-        placement === "above" ? "bottom-full right-0" : "inset-y-0 right-full mr-1 flex items-center",
+        placement === "above"
+          ? "bottom-full right-0"
+          : "inset-y-0 right-full mr-1 flex items-center"
       )}
       initial={gainFloat.initial}
       animate={gainFloat.animate}

@@ -44,11 +44,15 @@ export const Variants: Story = {
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           示例歌曲
-          <Badge variant="restricted" size="xs">会员专享</Badge>
+          <Badge variant="restricted" size="xs">
+            会员专享
+          </Badge>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           排位赛
-          <Badge variant="upcoming" size="xs">即将上线</Badge>
+          <Badge variant="upcoming" size="xs">
+            即将上线
+          </Badge>
         </div>
       </div>
     </div>
@@ -61,11 +65,21 @@ export const Sizes: Story = {
   render: () => (
     <div className="flex w-[36rem] flex-wrap items-center gap-3">
       <Badge variant="muted">双马尾</Badge>
-      <Badge variant="muted" size="sm">双马尾</Badge>
-      <Badge variant="matched" size="sm">傲娇</Badge>
-      <Badge variant="muted" size="sm">已隐藏</Badge>
-      <Badge variant="secondary" size="xs" className="font-mono lowercase">fix</Badge>
-      <Badge variant="outline" size="xs">卧底</Badge>
+      <Badge variant="muted" size="sm">
+        双马尾
+      </Badge>
+      <Badge variant="matched" size="sm">
+        傲娇
+      </Badge>
+      <Badge variant="muted" size="sm">
+        已隐藏
+      </Badge>
+      <Badge variant="secondary" size="xs" className="font-mono lowercase">
+        fix
+      </Badge>
+      <Badge variant="outline" size="xs">
+        卧底
+      </Badge>
     </div>
   ),
 };

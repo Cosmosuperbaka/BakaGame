@@ -32,8 +32,7 @@ export const Composed: Story = {
           可旁观
         </Badge>
         <span className="ml-auto flex items-center gap-1.5 tabular-nums">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          5 人 · 1 旁观
+          <Users className="h-4 w-4 text-muted-foreground" />5 人 · 1 旁观
         </span>
       </CardContent>
       <CardFooter className="justify-end gap-2">
@@ -58,8 +57,7 @@ export const ContentOnly: Story = {
         <div className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground">
           <Badge variant="active">游戏中</Badge>
           <span className="flex items-center gap-1.5 tabular-nums">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            6 玩家
+            <Users className="h-4 w-4 text-muted-foreground" />6 玩家
           </span>
         </div>
       </CardContent>

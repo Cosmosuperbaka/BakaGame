@@ -73,25 +73,30 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   async save(record: StoredGameRecord, round?: StoredGameRecordRound): Promise<void> {
     await this.database.ready;
     await this.database.db.transaction(async (tx) => {
-      await tx.insert(gameRecord).values({
-        id: record.id,
-        game: record.game,
-        roomId: record.roomId,
-        roundCount: record.roundCount,
-        startedAt: record.startedAt,
-        endedAt: record.endedAt,
-        playerCount: record.players.length,
-      }).onDuplicateKeyUpdate({
-        // 会话身份（id / game / room_id / started_at）不随回合变化，只更新聚合态。
-        set: {
+      await tx
+        .insert(gameRecord)
+        .values({
+          id: record.id,
+          game: record.game,
+          roomId: record.roomId,
           roundCount: record.roundCount,
+          startedAt: record.startedAt,
           endedAt: record.endedAt,
           playerCount: record.players.length,
-        },
-      });
+        })
+        .onDuplicateKeyUpdate({
+          // 会话身份（id / game / room_id / started_at）不随回合变化，只更新聚合态。
+          set: {
+            roundCount: record.roundCount,
+            endedAt: record.endedAt,
+            playerCount: record.players.length,
+          },
+        });
       await tx.delete(gameRecordPlayer).where(eq(gameRecordPlayer.recordId, record.id));
       if (record.players.length) {
-        await tx.insert(gameRecordPlayer).values(record.players.map((player) => ({ recordId: record.id, ...player })));
+        await tx
+          .insert(gameRecordPlayer)
+          .values(record.players.map((player) => ({ recordId: record.id, ...player })));
       }
       if (round) {
         const values = {
@@ -104,16 +109,19 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
           summary: round.summary,
           timeline: round.timeline,
         };
-        await tx.insert(gameRecordRound).values(values).onDuplicateKeyUpdate({
-          set: {
-            startedAt: values.startedAt,
-            endedAt: values.endedAt,
-            playerCount: values.playerCount,
-            players: values.players,
-            summary: values.summary,
-            timeline: values.timeline,
-          },
-        });
+        await tx
+          .insert(gameRecordRound)
+          .values(values)
+          .onDuplicateKeyUpdate({
+            set: {
+              startedAt: values.startedAt,
+              endedAt: values.endedAt,
+              playerCount: values.playerCount,
+              players: values.players,
+              summary: values.summary,
+              timeline: values.timeline,
+            },
+          });
       }
     });
   }
@@ -125,32 +133,62 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
     if (filter.roomId) conditions.push(eq(gameRecord.roomId, filter.roomId));
     if (filter.since) conditions.push(gte(gameRecord.endedAt, filter.since));
     if (filter.userId) {
-      conditions.push(inArray(gameRecord.id, this.database.db.select({ id: gameRecordPlayer.recordId })
-        .from(gameRecordPlayer).where(eq(gameRecordPlayer.userId, filter.userId))));
+      conditions.push(
+        inArray(
+          gameRecord.id,
+          this.database.db
+            .select({ id: gameRecordPlayer.recordId })
+            .from(gameRecordPlayer)
+            .where(eq(gameRecordPlayer.userId, filter.userId))
+        )
+      );
     }
     const where = conditions.length ? and(...conditions) : undefined;
     const columns = {
-      id: gameRecord.id, game: gameRecord.game, roomId: gameRecord.roomId, roundCount: gameRecord.roundCount,
-      startedAt: gameRecord.startedAt, endedAt: gameRecord.endedAt,
+      id: gameRecord.id,
+      game: gameRecord.game,
+      roomId: gameRecord.roomId,
+      roundCount: gameRecord.roundCount,
+      startedAt: gameRecord.startedAt,
+      endedAt: gameRecord.endedAt,
     };
     const [rows, [count]] = await Promise.all([
-      this.database.db.select(columns).from(gameRecord).where(where)
-        .orderBy(desc(gameRecord.endedAt)).limit(filter.limit).offset(filter.offset),
-      this.database.db.select({ total: sql<number>`count(*)` }).from(gameRecord).where(where),
+      this.database.db
+        .select(columns)
+        .from(gameRecord)
+        .where(where)
+        .orderBy(desc(gameRecord.endedAt))
+        .limit(filter.limit)
+        .offset(filter.offset),
+      this.database.db
+        .select({ total: sql<number>`count(*)` })
+        .from(gameRecord)
+        .where(where),
     ]);
     const players = await this.playersOf(rows.map((row) => row.id));
     return {
-      items: rows.map((row) => ({ ...row, game: row.game as RecordedGame, players: players.get(row.id) ?? [] })),
+      items: rows.map((row) => ({
+        ...row,
+        game: row.game as RecordedGame,
+        players: players.get(row.id) ?? [],
+      })),
       total: Number(count?.total ?? 0),
     };
   }
 
   async get(id: string): Promise<StoredGameRecordDetail | null> {
     await this.database.ready;
-    const [row] = await this.database.db.select().from(gameRecord).where(eq(gameRecord.id, id)).limit(1);
+    const [row] = await this.database.db
+      .select()
+      .from(gameRecord)
+      .where(eq(gameRecord.id, id))
+      .limit(1);
     if (!row) return null;
-    const rounds = await this.database.db.select().from(gameRecordRound)
-      .where(eq(gameRecordRound.recordId, id)).orderBy(gameRecordRound.number);
+    const rounds = await this.database.db
+      .select()
+      .from(gameRecordRound)
+      .where(eq(gameRecordRound.recordId, id))
+      .orderBy(gameRecordRound.number);
     return {
       id: row.id,
       game: row.game as RecordedGame,
@@ -172,13 +210,15 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
 
   async dailyCounts(since: Date): Promise<GameDailyCount[]> {
     await this.database.ready;
-    const rows = await this.database.db.select({
-      day: beijingDay,
-      game: gameRecord.game,
-      games: sql<number>`count(distinct ${gameRecord.id})`,
-      players: sql<number>`count(${gameRecordPlayer.playerId})`,
-      accounts: sql<number>`count(distinct ${gameRecordPlayer.userId})`,
-    }).from(gameRecord)
+    const rows = await this.database.db
+      .select({
+        day: beijingDay,
+        game: gameRecord.game,
+        games: sql<number>`count(distinct ${gameRecord.id})`,
+        players: sql<number>`count(${gameRecordPlayer.playerId})`,
+        accounts: sql<number>`count(distinct ${gameRecordPlayer.userId})`,
+      })
+      .from(gameRecord)
       .leftJoin(gameRecordPlayer, eq(gameRecordPlayer.recordId, gameRecord.id))
       .where(gte(gameRecord.endedAt, since))
       .groupBy(beijingDay, gameRecord.game)
@@ -195,7 +235,10 @@ export class DatabaseGameRecordRepository implements GameRecordRepository {
   private async playersOf(ids: string[]): Promise<Map<string, GameRecordPlayer[]>> {
     const result = new Map<string, GameRecordPlayer[]>();
     if (!ids.length) return result;
-    const rows = await this.database.db.select().from(gameRecordPlayer).where(inArray(gameRecordPlayer.recordId, ids));
+    const rows = await this.database.db
+      .select()
+      .from(gameRecordPlayer)
+      .where(inArray(gameRecordPlayer.recordId, ids));
     for (const { recordId, ...player } of rows) {
       const list = result.get(recordId) ?? [];
       list.push(player);

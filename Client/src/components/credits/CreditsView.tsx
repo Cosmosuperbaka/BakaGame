@@ -108,7 +108,10 @@ export function CreditsView({
             <span className="shrink-0 font-mono text-xs text-muted-foreground">{versionLabel}</span>
             {commitLabel ? (
               <>
-                <span aria-hidden="true" className="hidden shrink-0 text-muted-foreground sm:inline">
+                <span
+                  aria-hidden="true"
+                  className="hidden shrink-0 text-muted-foreground sm:inline"
+                >
                   ·
                 </span>
                 {/* 窄屏省略提交哈希，标题与返回入口保留（Design §7.5）。 */}
@@ -119,7 +122,12 @@ export function CreditsView({
             ) : null}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground">
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground"
+                >
                   <motion.a
                     href={REPOSITORY_URL}
                     target="_blank"
@@ -190,7 +198,13 @@ export function CreditsView({
       <Sheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
-        title={currentDependency ? <span className="font-mono">{currentDependency.name}</span> : "依赖详情"}
+        title={
+          currentDependency ? (
+            <span className="font-mono">{currentDependency.name}</span>
+          ) : (
+            "依赖详情"
+          )
+        }
         onExitComplete={() => {
           // 关闭动画结束后才丢掉下钻栈；若是被重新打开则不丢。
           if (!sheetOpen) setPath([]);

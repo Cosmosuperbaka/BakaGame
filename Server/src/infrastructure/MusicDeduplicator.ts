@@ -54,13 +54,13 @@ export function extractArtistTokens(artistStr: string): string[] {
 }
 
 const ARTIST_ALIASES: Record<string, string[]> = {
-  "生物股长": ["いきものがかり"],
-  "いきものがかり": ["生物股长"],
-  "tk": ["tkfrom凛として时雨"],
-  "tkfrom凛として时雨": ["tk"],
-  "garnidelia": ["美依礼芽", "美依礼芽maria", "maria"],
-  "美依礼芽": ["garnidelia"],
-  "美依礼芽maria": ["garnidelia"],
+  生物股长: ["いきものがかり"],
+  いきものがかり: ["生物股长"],
+  tk: ["tkfrom凛として时雨"],
+  tkfrom凛として时雨: ["tk"],
+  garnidelia: ["美依礼芽", "美依礼芽maria", "maria"],
+  美依礼芽: ["garnidelia"],
+  美依礼芽maria: ["garnidelia"],
 };
 
 /**
@@ -76,7 +76,9 @@ export function artistsOverlap(artistsA: string[], artistsB: string[]): boolean 
         for (const aliasB of aliasesB) {
           if (
             aliasA === aliasB ||
-            (aliasA.length >= 2 && aliasB.length >= 2 && (aliasA.includes(aliasB) || aliasB.includes(aliasA)))
+            (aliasA.length >= 2 &&
+              aliasB.length >= 2 &&
+              (aliasA.includes(aliasB) || aliasB.includes(aliasA)))
           ) {
             return true;
           }
@@ -107,7 +109,9 @@ export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult)
 
   const titleMatches =
     canonA === canonB ||
-    (canonA.length >= 2 && canonB.length >= 2 && (canonA.includes(canonB) || canonB.includes(canonA)));
+    (canonA.length >= 2 &&
+      canonB.length >= 2 &&
+      (canonA.includes(canonB) || canonB.includes(canonA)));
   if (!titleMatches) {
     return false;
   }
@@ -132,8 +136,9 @@ export function isDerivationSong(song: SongSearchResult): boolean {
   const t = (song.title || "").toLowerCase();
   const a = (song.artist || "").toLowerCase();
   return (
-    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b|片段|铃声|加速|变速|慢速|dj版|remix|翻唱|翻录|\bcover\b|カヴァー|原唱[：:])/i.test(t) ||
-    /(?:群星|网络歌手)/i.test(a)
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b|片段|铃声|加速|变速|慢速|dj版|remix|翻唱|翻录|\bcover\b|カヴァー|原唱[：:])/i.test(
+      t
+    ) || /(?:群星|网络歌手)/i.test(a)
   );
 }
 
@@ -202,7 +207,11 @@ export function calculateRelevanceScore(
   const rawArtist = (song.artist || "").toLowerCase();
 
   // 伴奏 / 纯伴奏 / 卡拉OK / Instrumental
-  if (/(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(rawTitle)) {
+  if (
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
+      rawTitle
+    )
+  ) {
     score -= 160;
   }
 
@@ -213,7 +222,8 @@ export function calculateRelevanceScore(
 
   // 翻唱标记 (当搜索词本身未指定 cover / 翻唱时)
   if (
-    (song.originCoverType === 2 || /(?:翻唱|翻录|\bcover\b|カヴァー|自翻|试唱|原唱[：:])/i.test(rawTitle)) &&
+    (song.originCoverType === 2 ||
+      /(?:翻唱|翻录|\bcover\b|カヴァー|自翻|试唱|原唱[：:])/i.test(rawTitle)) &&
     !normKeyword.includes("cover") &&
     !normKeyword.includes("翻唱")
   ) {
@@ -258,7 +268,11 @@ function promoteClusterPrimary(cluster: SongCluster, newPrimary: RankedSong): vo
  * 择优链：非衍生版 > 包含搜索关键词的官方全名/译名 > 更纯正无噪音的曲名 >
  * 上游排名靠前者 > 同位次时有封面的优先。
  */
-function shouldPromoteCandidate(candidate: RankedSong, primary: RankedSong, normKeyword: string): boolean {
+function shouldPromoteCandidate(
+  candidate: RankedSong,
+  primary: RankedSong,
+  normKeyword: string
+): boolean {
   const candidateIsDeriv = isDerivationSong(candidate);
   const primaryIsDeriv = isDerivationSong(primary);
 
@@ -272,8 +286,10 @@ function shouldPromoteCandidate(candidate: RankedSong, primary: RankedSong, norm
   if (candidateHasKeyword !== primaryHasKeyword) return candidateHasKeyword;
 
   // 优先 2：更纯正无噪音的曲名 (例如 "晴天" 优于 "晴天 (2020 Remaster)")
-  const candidateIsClean = normalizeComparableText(candidate.title) === extractCanonicalTitle(candidate.title);
-  const primaryIsClean = normalizeComparableText(primary.title) === extractCanonicalTitle(primary.title);
+  const candidateIsClean =
+    normalizeComparableText(candidate.title) === extractCanonicalTitle(candidate.title);
+  const primaryIsClean =
+    normalizeComparableText(primary.title) === extractCanonicalTitle(primary.title);
   if (candidateIsClean !== primaryIsClean) return candidateIsClean;
 
   // 优先 3：上游排名靠前者 (0 > 1)；同位次时（优先 4）原主无封面而候选有封面也替换
@@ -290,7 +306,10 @@ function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[])
 }
 
 /** 综合评分优先，其后按衍生版 / 上游位次 / 双源互证 / 热度的确定性决胜链. */
-function compareAggregatedSongs(a: AggregatedSongSearchResult, b: AggregatedSongSearchResult): number {
+function compareAggregatedSongs(
+  a: AggregatedSongSearchResult,
+  b: AggregatedSongSearchResult
+): number {
   const diff = (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0);
   if (diff !== 0) return diff;
 
@@ -345,7 +364,11 @@ export function aggregateAndDeduplicateSongs(
   const aggregated: AggregatedSongSearchResult[] = clusters.map(({ primary, alternatives }) => ({
     ...primary,
     sources: [primary.id, ...alternatives.map((a) => a.id)],
-    relevanceScore: calculateRelevanceScore(primary, keyword, hasCrossPlatformSource(primary, alternatives)),
+    relevanceScore: calculateRelevanceScore(
+      primary,
+      keyword,
+      hasCrossPlatformSource(primary, alternatives)
+    ),
   }));
 
   return aggregated.sort(compareAggregatedSongs).slice(0, limit);

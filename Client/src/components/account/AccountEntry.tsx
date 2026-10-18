@@ -18,7 +18,11 @@ import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 type DialogKind = "login" | "profile" | "feedback" | null;
 
 /** 三个入口共用的弹窗状态：哪一个打开、从哪里展开、登录成功后接着打开什么。 */
-const useEntryStore = create<{ dialog: DialogKind; afterLogin: DialogKind; origin: OriginPoint | null }>(() => ({
+const useEntryStore = create<{
+  dialog: DialogKind;
+  afterLogin: DialogKind;
+  origin: OriginPoint | null;
+}>(() => ({
   dialog: null,
   afterLogin: null,
   origin: null,
@@ -29,14 +33,22 @@ const originOf = (event: MouseEvent<HTMLElement>): OriginPoint => {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 };
 
-const openDialog = (dialog: DialogKind, origin: OriginPoint | null, afterLogin: DialogKind = null) =>
-  useEntryStore.setState({ dialog, afterLogin, origin });
+const openDialog = (
+  dialog: DialogKind,
+  origin: OriginPoint | null,
+  afterLogin: DialogKind = null
+) => useEntryStore.setState({ dialog, afterLogin, origin });
 
 const isAvailable = (status: AccountStatus) => status === "guest" || status === "signedIn";
 
 /** 未读回复的小红点：只作提示，数量由按钮的可访问名与菜单项读出。 */
 function UnreadDot({ className }: { className?: string }) {
-  return <span aria-hidden="true" className={cn("h-2 w-2 rounded-full bg-destructive ring-2 ring-background", className)} />;
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("h-2 w-2 rounded-full bg-destructive ring-2 ring-background", className)}
+    />
+  );
 }
 
 /**
@@ -83,7 +95,14 @@ export function AccountButton() {
       <AnimatePresence>
         {menuOpen ? (
           <Popover.Portal forceMount>
-            <Popover.Content forceMount side="bottom" align="end" sideOffset={6} collisionPadding={12} asChild>
+            <Popover.Content
+              forceMount
+              side="bottom"
+              align="end"
+              sideOffset={6}
+              collisionPadding={12}
+              asChild
+            >
               <motion.div
                 variants={popover}
                 initial="initial"
@@ -95,17 +114,27 @@ export function AccountButton() {
                   <Hint label={profile.name}>
                     <div className="truncate font-semibold">{profile.name}</div>
                   </Hint>
-                  <div className="mt-0.5 text-xs text-muted-foreground">QQ <span className="font-mono">{profile.qqNumber}</span></div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    QQ <span className="font-mono">{profile.qqNumber}</span>
+                  </div>
                 </div>
                 <div className="flex flex-col">
-                  <PlayerActionButton icon={<UserRound className="h-3.5 w-3.5" />} label="账号资料" onClick={() => openDialog("profile", menuOrigin)} />
+                  <PlayerActionButton
+                    icon={<UserRound className="h-3.5 w-3.5" />}
+                    label="账号资料"
+                    onClick={() => openDialog("profile", menuOrigin)}
+                  />
                   <PlayerActionButton
                     icon={<MessageSquareText className="h-3.5 w-3.5" />}
                     label={unread ? `我的反馈（${unread} 条新回复）` : "我的反馈"}
                     onClick={() => openDialog("feedback", menuOrigin)}
                   />
                   {profile.role === "admin" ? (
-                    <PlayerActionButton icon={<ShieldCheck className="h-3.5 w-3.5" />} label="管理后台" onClick={() => void navigate("/admin")} />
+                    <PlayerActionButton
+                      icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                      label="管理后台"
+                      onClick={() => void navigate("/admin")}
+                    />
                   ) : null}
                   <PlayerActionButton
                     icon={<LogOut className="h-3.5 w-3.5" />}
@@ -114,7 +143,9 @@ export function AccountButton() {
                     disabled={signingOut}
                     onClick={() => {
                       setSigningOut(true);
-                      void signOut().catch(() => {}).finally(() => setSigningOut(false));
+                      void signOut()
+                        .catch(() => {})
+                        .finally(() => setSigningOut(false));
                     }}
                   />
                 </div>
@@ -136,14 +167,21 @@ export function FeedbackButton() {
     <motion.button
       type="button"
       {...pressable}
-      onClick={(event) => (status === "signedIn"
-        ? openDialog("feedback", originOf(event))
-        : openDialog("login", originOf(event), "feedback"))}
+      onClick={(event) =>
+        status === "signedIn"
+          ? openDialog("feedback", originOf(event))
+          : openDialog("login", originOf(event), "feedback")
+      }
       className="relative flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
       反馈
-      {unread ? <><UnreadDot className="absolute right-0.5 top-0.5" /><span className="sr-only">（{unread} 条新回复）</span></> : null}
+      {unread ? (
+        <>
+          <UnreadDot className="absolute right-0.5 top-0.5" />
+          <span className="sr-only">（{unread} 条新回复）</span>
+        </>
+      ) : null}
     </motion.button>
   );
 }

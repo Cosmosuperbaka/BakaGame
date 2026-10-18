@@ -6,7 +6,13 @@ import { ScoreTable, type ScoreTableColumn } from "./ScoreTable";
 // 三个游戏的结算各自在房间页与阶段故事里出现；这里在接近手机内容宽度的框里看折行与对齐。
 const meta = {
   title: "公共组件/ScoreTable",
-  decorators: [(Story) => <div className="w-[20rem] rounded-md border bg-panel p-4"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="w-[20rem] rounded-md border bg-panel p-4">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta;
 
 export default meta;
@@ -58,9 +64,27 @@ export const DetailRow: Story = {
         { key: "score", header: "得分", signed: true, tone: "strong" },
       ]}
       rows={[
-        { key: "a", name: "月见里", detail: ["猜中角色", "基础 8", "首猜 2", "快速 2", "作品 0", "出题 0"], cells: { rank: 1, score: 12 }, rollFrom: { score: 0 } },
-        { key: "b", name: "Sakuraba", detail: ["基础 0", "首猜 0", "快速 0", "作品 0", "出题 0"], cells: { rank: "—", score: 0 }, rollFrom: { score: 0 } },
-        { key: "c", name: "出题人", detail: ["纯在送分", "基础 0", "首猜 0", "快速 0", "作品 0", "出题 -6"], cells: { rank: "—", score: -6 }, rollFrom: { score: 0 } },
+        {
+          key: "a",
+          name: "月见里",
+          detail: ["猜中角色", "基础 8", "首猜 2", "快速 2", "作品 0", "出题 0"],
+          cells: { rank: 1, score: 12 },
+          rollFrom: { score: 0 },
+        },
+        {
+          key: "b",
+          name: "Sakuraba",
+          detail: ["基础 0", "首猜 0", "快速 0", "作品 0", "出题 0"],
+          cells: { rank: "—", score: 0 },
+          rollFrom: { score: 0 },
+        },
+        {
+          key: "c",
+          name: "出题人",
+          detail: ["纯在送分", "基础 0", "首猜 0", "快速 0", "作品 0", "出题 -6"],
+          cells: { rank: "—", score: -6 },
+          rollFrom: { score: 0 },
+        },
       ]}
     />
   ),

@@ -2,7 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
-import { markPendingRestore, readRoomSettingsMemory, saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
+import {
+  markPendingRestore,
+  readRoomSettingsMemory,
+  saveRoomSettingsMemory,
+} from "@/lib/RoomSettingsMemory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WaitingPhase } from "./WaitingPhase";
@@ -82,7 +86,9 @@ describe("waiting room sharing", () => {
         Reflect.deleteProperty(navigator, "clipboard");
       }
     }
-    expect(Object.getOwnPropertyDescriptor(navigator, "clipboard")).toEqual(originalClipboardDescriptor);
+    expect(Object.getOwnPropertyDescriptor(navigator, "clipboard")).toEqual(
+      originalClipboardDescriptor
+    );
     expect(useWhoIsFakerStore.getState()).toBe(initialStoreState);
     expect(useWhoIsFakerStore.getState().sendCommand).toBe(initialStoreState.sendCommand);
   });
@@ -125,7 +131,9 @@ describe("waiting room sharing", () => {
       },
     });
     render(<WaitingPhase />);
-    expect(screen.getByRole("button", { name: "身份设置" })).toHaveAccessibleDescription("1 名卧底 · 死亡隐藏身份");
+    expect(screen.getByRole("button", { name: "身份设置" })).toHaveAccessibleDescription(
+      "1 名卧底 · 死亡隐藏身份"
+    );
   });
 
   it("房主展开房间设置后可切换死亡时揭露身份开关", async () => {
@@ -134,7 +142,7 @@ describe("waiting room sharing", () => {
       snapshot: {
         ...snapshot,
         players: snapshot.players.map((p) =>
-          p.id === "host" ? { ...p, isHost: true } : { ...p, isHost: false },
+          p.id === "host" ? { ...p, isHost: true } : { ...p, isHost: false }
         ),
       },
       privateState: {
@@ -183,7 +191,9 @@ describe("waiting room sharing", () => {
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
     unmount();
 
-    useWhoIsFakerStore.setState({ snapshot: { ...snapshot, visibility: "private", hasPassword: true } });
+    useWhoIsFakerStore.setState({
+      snapshot: { ...snapshot, visibility: "private", hasPassword: true },
+    });
     render(<WaitingPhase />);
     fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "留空则保留当前密码");
@@ -200,7 +210,12 @@ describe("waiting room sharing", () => {
 
   it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
     let resolve: (value: Record<string, unknown>) => void = () => {};
-    const sendCommand = vi.fn(() => new Promise<Record<string, unknown>>((r) => { resolve = r; }));
+    const sendCommand = vi.fn(
+      () =>
+        new Promise<Record<string, unknown>>((r) => {
+          resolve = r;
+        })
+    );
     useWhoIsFakerStore.setState({ sendCommand });
     render(<WaitingPhase />);
 
@@ -231,11 +246,11 @@ describe("waiting room sharing", () => {
       expect(readRoomSettingsMemory("faker")).toEqual({
         revealRoleOnDeath: false,
         roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
-      }),
+      })
     );
     expect(sendCommand).toHaveBeenCalledWith(
       "room.updateSettings",
-      expect.objectContaining({ revealRoleOnDeath: false }),
+      expect.objectContaining({ revealRoleOnDeath: false })
     );
   });
 
@@ -246,7 +261,12 @@ describe("waiting room sharing", () => {
       roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
     });
     let resolve: (value: Record<string, unknown>) => void = () => {};
-    const sendCommand = vi.fn(() => new Promise<Record<string, unknown>>((r) => { resolve = r; }));
+    const sendCommand = vi.fn(
+      () =>
+        new Promise<Record<string, unknown>>((r) => {
+          resolve = r;
+        })
+    );
     useWhoIsFakerStore.setState({
       privateState: { ...privateState, playerId: "host" },
       sendCommand,
@@ -261,8 +281,12 @@ describe("waiting room sharing", () => {
       roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
     });
 
-    await act(async () => { resolve({}); });
-    expect(screen.queryByRole("status", { name: "正在恢复上次的房间设置" })).not.toBeInTheDocument();
+    await act(async () => {
+      resolve({});
+    });
+    expect(
+      screen.queryByRole("status", { name: "正在恢复上次的房间设置" })
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "身份设置" })).toBeInTheDocument();
     expect(sendCommand).toHaveBeenCalledTimes(1);
   });

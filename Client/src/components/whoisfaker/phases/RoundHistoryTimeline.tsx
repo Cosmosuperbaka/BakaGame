@@ -11,23 +11,53 @@ import { cn } from "@/lib/Utils";
 import { ABSTAIN_TARGET_ID, type PublicPlayerView, type RoundHistoryEntry } from "@/types";
 
 /** 一条行为：谁、做了什么、对谁。 */
-function ActionRow({ actor, verb, target, muted }: { actor: string; verb: string; target: ReactNode; muted?: boolean }) {
+function ActionRow({
+  actor,
+  verb,
+  target,
+  muted,
+}: {
+  actor: string;
+  verb: string;
+  target: ReactNode;
+  muted?: boolean;
+}) {
   return (
     <li className="flex min-w-0 items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs">
       <span className="min-w-0 truncate font-medium">{actor}</span>
       <span className="shrink-0 text-muted-foreground">{verb}</span>
-      <span className={cn("min-w-0 truncate", muted ? "text-muted-foreground" : "font-medium")}>{target}</span>
+      <span className={cn("min-w-0 truncate", muted ? "text-muted-foreground" : "font-medium")}>
+        {target}
+      </span>
     </li>
   );
 }
 
 /** 每个结算阶段的结论行：出局、平票或无事发生。 */
-function Outcome({ names, empty, tieBreak }: { names: string[]; empty: string; tieBreak?: string[] }) {
+function Outcome({
+  names,
+  empty,
+  tieBreak,
+}: {
+  names: string[];
+  empty: string;
+  tieBreak?: string[];
+}) {
   if (tieBreak?.length) {
-    return <p className="text-xs"><span className="font-medium text-warning">{tieBreak.join("、")}</span><span className="text-muted-foreground"> 平票，进入 PK</span></p>;
+    return (
+      <p className="text-xs">
+        <span className="font-medium text-warning">{tieBreak.join("、")}</span>
+        <span className="text-muted-foreground"> 平票，进入 PK</span>
+      </p>
+    );
   }
   if (!names.length) return <p className="text-xs text-muted-foreground">{empty}</p>;
-  return <p className="text-xs"><span className="font-medium text-destructive">{names.join("、")}</span><span className="text-muted-foreground"> 出局</span></p>;
+  return (
+    <p className="text-xs">
+      <span className="font-medium text-destructive">{names.join("、")}</span>
+      <span className="text-muted-foreground"> 出局</span>
+    </p>
+  );
 }
 
 function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: PublicPlayerView[] }) {
@@ -84,7 +114,9 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium">{nameOf(entry.playerId)}</span>
           <span className="text-muted-foreground">猜</span>
-          <span className="font-medium">{entry.guessedWords[0] || "（空）"} / {entry.guessedWords[1] || "（空）"}</span>
+          <span className="font-medium">
+            {entry.guessedWords[0] || "（空）"} / {entry.guessedWords[1] || "（空）"}
+          </span>
           {/* 猜中是成功状态，取 matched；猜错取 destructive，两者都有文字 */}
           <Badge variant={entry.success ? "matched" : "destructive"} size="xs">
             {entry.success ? "猜中" : "未猜中"}
@@ -106,7 +138,13 @@ function EntryBody({ entry, players }: { entry: RoundHistoryEntry; players: Publ
  * 结算页的全局历史：按时间顺序列出每个结算阶段里每个人的行为（描述阶段除外），
  * 夜晚的行动者与身份在这里才公开。
  */
-export function RoundHistoryTimeline({ history, players }: { history: RoundHistoryEntry[]; players: PublicPlayerView[] }) {
+export function RoundHistoryTimeline({
+  history,
+  players,
+}: {
+  history: RoundHistoryEntry[];
+  players: PublicPlayerView[];
+}) {
   return (
     <div className="space-y-4 p-4">
       {groupHistoryByDay(history).map((group) => (

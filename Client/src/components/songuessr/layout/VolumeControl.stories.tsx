@@ -5,7 +5,13 @@ import { dropFocus } from "@/stories/PlayHelpers";
 import { VolumeControl } from "./VolumeControl";
 
 /** 故事内自持音量，拖动滑块能看到百分比随之变化。 */
-function StatefulVolume({ volume: initial, onVolumeChange }: { volume: number; onVolumeChange: (value: number) => void }) {
+function StatefulVolume({
+  volume: initial,
+  onVolumeChange,
+}: {
+  volume: number;
+  onVolumeChange: (value: number) => void;
+}) {
   const [volume, setVolume] = useState(initial);
   return (
     <VolumeControl
@@ -24,7 +30,13 @@ const meta = {
   component: VolumeControl,
   args: { volume: 0.65, onVolumeChange: fn() },
   render: (args) => <StatefulVolume {...args} />,
-  decorators: [(Story) => <div className="flex h-14 w-full max-w-[28rem] items-center justify-end bg-background px-4"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="flex h-14 w-full max-w-[28rem] items-center justify-end bg-background px-4">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof VolumeControl>;
 
 export default meta;
@@ -50,7 +62,10 @@ export const MuteToggle: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "静音" }));
-    await expect(canvas.getByRole("button", { name: "取消静音" })).toHaveAttribute("aria-pressed", "true");
+    await expect(canvas.getByRole("button", { name: "取消静音" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
     dropFocus();
   },
 };

@@ -24,12 +24,15 @@
     "test:client": "pnpm --filter client test",
     "lint": "pnpm -r lint",
     "lint:prune": "pnpm -r lint:prune",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "coverage": "pnpm --filter server test:coverage && pnpm --filter client test:coverage",
     "e2e": "pnpm --filter client test:e2e",
     "verify": "pnpm --filter server verify && pnpm --filter client verify",
     "knip": "knip"
   },
   "devDependencies": {
-    "knip": "6.41.0"
+    "knip": "6.41.0",
+    "prettier": "3.9.10"
   }
 }

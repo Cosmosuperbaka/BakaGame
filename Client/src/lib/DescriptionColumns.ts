@@ -110,7 +110,7 @@ function collectPendingColumns(status: SpeechStatus, buckets: ColumnBuckets): vo
 /** 进行中那一列的应发言玩家按名单顺序补出预期顺位。 */
 function orderPendingSpeakers(
   status: SpeechStatus,
-  setOrder: (playerId: string, colKey: string, order: number) => void,
+  setOrder: (playerId: string, colKey: string, order: number) => void
 ): void {
   const pending = pendingColumn(status);
   if (!pending) return;
@@ -127,7 +127,7 @@ function orderPendingSpeakers(
  */
 export function buildDescriptionColumns(
   descriptions: DescriptionRecord[],
-  status?: SpeechStatus,
+  status?: SpeechStatus
 ): DescriptionColumnModel {
   const buckets = createColumnBuckets();
   collectSpokenColumns(descriptions, buckets);
@@ -216,7 +216,7 @@ export const descriptionCellShade = (rowIndex: number, columnIndex: number): str
 export const descriptionCellShadeForPlayer = (
   player: PublicPlayerView,
   rowIndex: number,
-  columnIndex: number,
+  columnIndex: number
 ): string =>
   player.membership === "spectator" || player.roundStatus === "questioner"
     ? ""

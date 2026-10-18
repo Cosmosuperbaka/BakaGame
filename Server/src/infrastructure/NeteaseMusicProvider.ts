@@ -66,14 +66,29 @@ export interface MusicProvider {
   getAmllTtmlLyrics?(songId: string): Promise<string | undefined>;
   searchAmllTtmlLyrics?(songName: string, artistName?: string): Promise<string | undefined>;
   createQrLogin?(platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLogin>;
-  checkQrLogin?(key: string, platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLoginCheck>;
+  checkQrLogin?(
+    key: string,
+    platform?: "netease" | "qq",
+    type?: "qq" | "wx" | "mobile"
+  ): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession>;
   uploadDeviceInfo?(cookie: string, deviceName?: string): Promise<boolean>;
-  getPlaylistSongs?(playlistId: string, cookie?: MusicCookieInput): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
-  searchArtists?(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongArtistSearchResult[]>;
+  getPlaylistSongs?(
+    playlistId: string,
+    cookie?: MusicCookieInput
+  ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
+  searchArtists?(
+    keyword: string,
+    limit?: number,
+    cookie?: MusicCookieInput
+  ): Promise<SongArtistSearchResult[]>;
   getArtistSongs?(artistId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
   /** 按关键词检索专辑（供「专辑型 Bangumi 条目」取曲目用，见 `SongAlbumSearchResult`）。 */
-  searchAlbums?(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongAlbumSearchResult[]>;
+  searchAlbums?(
+    keyword: string,
+    limit?: number,
+    cookie?: MusicCookieInput
+  ): Promise<SongAlbumSearchResult[]>;
   /** 取整张专辑的曲目。 */
   getAlbumSongs?(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
 }
@@ -221,7 +236,7 @@ const FALLBACK_CHINA_IP_RANGES: ChinaIpRange[] = [
 // 生成落在真实 CN 网段内的随机 IP；random 可注入以便确定性测试。
 export const randomChineseIp = (
   ranges: readonly ChinaIpRange[],
-  random?: { nextFloat?: () => number },
+  random?: { nextFloat?: () => number }
 ): string => {
   const rand = random?.nextFloat ?? Math.random;
   const usable = ranges.length > 0 ? ranges : FALLBACK_CHINA_IP_RANGES;
@@ -389,7 +404,7 @@ type CacheEntry = {
   size: number;
 };
 
-const cloneCacheValue = <T>(value: T): T => value === undefined ? value : structuredClone(value);
+const cloneCacheValue = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
 
 const normalizeHttpsUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
@@ -454,10 +469,8 @@ const musicLoginError = (body: Record<string, unknown>, fallback: string) => {
   const risk = code === 8810 || code === 10004;
   return new AppError(
     risk ? "MUSIC_LOGIN_RISK" : "MUSIC_LOGIN_FAILED",
-    risk
-      ? "网易云已拦截当前网络环境的登录请求，请稍后重试"
-      : responseMessage(body, fallback),
-    { upstreamCode: code },
+    risk ? "网易云已拦截当前网络环境的登录请求，请稍后重试" : responseMessage(body, fallback),
+    { upstreamCode: code }
   );
 };
 
@@ -477,7 +490,7 @@ const dataRecord = (body: Record<string, unknown>) => asRecord(body.data);
 const readVipAccount = (
   raw: unknown,
   account: SonGuessrMusicAccount,
-  now = Date.now(),
+  now = Date.now()
 ): SonGuessrMusicAccount => {
   const body = asRecord(raw);
   const data = asRecord(body.data ?? raw);
@@ -497,20 +510,32 @@ const readVipAccount = (
     .filter((value): value is number => value !== undefined)
     .sort((left, right) => right - left)[0];
   const vipExpireTime = active
-    .map((membership) => readNumber(membership.expireTime ?? membership.expire ?? membership.endTime))
+    .map((membership) =>
+      readNumber(membership.expireTime ?? membership.expire ?? membership.endTime)
+    )
     .filter((value): value is number => value !== undefined)
     .sort((left, right) => right - left)[0];
   // 展示档位按网易云客户端的优先级取：超级黑胶 > 黑胶 > 音乐包，到期时间跟着这一档走。
   const tiers: Array<[SonGuessrVipTier, Record<string, unknown>]> = [
-    ["svip", asRecord(data.redplus)], ["vip", asRecord(data.associator)], ["musicPackage", asRecord(data.musicPackage)],
+    ["svip", asRecord(data.redplus)],
+    ["vip", asRecord(data.associator)],
+    ["musicPackage", asRecord(data.musicPackage)],
   ];
   const shown = tiers.find(([, membership]) => active.includes(membership));
   const level = readNumber(data.redVipLevel);
-  const tierFields: Partial<SonGuessrMusicAccount> = shown ? {
-    vipTier: shown[0],
-    vipExpireTime: readNumber(shown[1].expireTime ?? shown[1].expire ?? shown[1].endTime) ?? vipExpireTime,
-    ...(shown[0] !== "musicPackage" && level !== undefined && Number.isInteger(level) && level >= 1 ? { vipLevel: Math.min(level, 7) } : {}),
-  } : {};
+  const tierFields: Partial<SonGuessrMusicAccount> = shown
+    ? {
+        vipTier: shown[0],
+        vipExpireTime:
+          readNumber(shown[1].expireTime ?? shown[1].expire ?? shown[1].endTime) ?? vipExpireTime,
+        ...(shown[0] !== "musicPackage" &&
+        level !== undefined &&
+        Number.isInteger(level) &&
+        level >= 1
+          ? { vipLevel: Math.min(level, 7) }
+          : {}),
+      }
+    : {};
   return {
     ...account,
     vipStatus: active.length > 0 ? "vip" : "nonVip",
@@ -592,7 +617,9 @@ const isCreditActionPhrase = (value: string): boolean => {
   const actionTokens = tokens.filter((token) => !/^[&＆]$/i.test(token) && !/^and$/i.test(token));
   if (actionTokens.length === 0) return false;
   // 首词可以是乐器/声部，其余必须是动作词。
-  const actions = CREDIT_ACTION_PATTERN.test(actionTokens[0]) ? actionTokens : actionTokens.slice(1);
+  const actions = CREDIT_ACTION_PATTERN.test(actionTokens[0])
+    ? actionTokens
+    : actionTokens.slice(1);
   if (actions.length === 0) return false;
   return actions.every((token) => CREDIT_ACTION_PATTERN.test(token));
 };
@@ -615,7 +642,7 @@ const isInstrumentRecordingHead = (value: string): boolean => {
   const normalized = value.trim().replace(/[\s\u3000]+/g, " ");
   const match =
     /^([A-Za-z]+(?:[\s&＆]+[A-Za-z]+)*)\s+(?:(?:recorded|mixed|mastered)\s+(?:at|by)\b|recording\b)/i.exec(
-      normalized,
+      normalized
     );
   if (!match) return false;
   const words = match[1].split(/[\s&＆]+/i).filter(Boolean);
@@ -623,8 +650,9 @@ const isInstrumentRecordingHead = (value: string): boolean => {
     words.length > 0 &&
     words.every(
       (word) =>
-        CREDIT_LABEL_PATTERN.exec(word)?.[0].replace(/[\s\u3000]+/g, "").toLowerCase() ===
-        word.toLowerCase(),
+        CREDIT_LABEL_PATTERN.exec(word)?.[0]
+          .replace(/[\s\u3000]+/g, "")
+          .toLowerCase() === word.toLowerCase()
     )
   );
 };
@@ -633,7 +661,8 @@ const isInstrumentRecordingHead = (value: string): boolean => {
 const LEADING_DECORATION_PATTERN = /^[\s\u3000\-—–~～·•*＊=＝+＋|｜/]+|^[【[（(「『《<]+/;
 
 /** 包裹式标签：`【翻唱】某某`、`（后期）某某`、`[Mixing] John`。 */
-const WRAPPED_CREDIT_LABEL_PATTERN = /^[【[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
+const WRAPPED_CREDIT_LABEL_PATTERN =
+  /^[【[（(「『《<]\s*([^】\]）)」』》>]{1,12}?)\s*[】\]）)」』》>]\s*(.+)$/u;
 
 /** 判断取值片段是否含歌词高频虚词；命中则说明它更像正常歌词而非人名。 */
 const hasLyricStopWord = (value: string): boolean =>
@@ -702,7 +731,12 @@ const ZH_STUDIO_EN_ORG_PATTERN =
  */
 const isCreditLabelOnly = (value: string): boolean => {
   if (!value) return false;
-  if (isSpacedBilingualLabel(value) || isGluedBilingualLabel(value) || isReversedBilingualLabel(value)) return true;
+  if (
+    isSpacedBilingualLabel(value) ||
+    isGluedBilingualLabel(value) ||
+    isReversedBilingualLabel(value)
+  )
+    return true;
   if (isEnglishLabelVocabularyMatch(value)) return true;
   if (isCreditOrgLabel(value)) return true;
   if (isNumberedSlotLabel(value) || isBracketQualifiedLabel(value)) return true;
@@ -724,7 +758,9 @@ const isSpacedBilingualLabel = (value: string): boolean => {
   // 会被切成 `制` + `作人 Producer`，中文段过短而整条掉出词表。
   // 首字符必须是中日文字符，否则 `Special Thanks` 会被误拆成 `S` + `pecial Thanks`。
   // 英文段允许数字开头（`第一小提琴 1st Violin : X` 的双语序数形态）。
-  const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z0-9][A-Za-z0-9\s]*)$/u.exec(value);
+  const composite = /^([\u4e00-\u9fff\u3040-\u30ff]+)[\s\u3000]+([A-Za-z0-9][A-Za-z0-9\s]*)$/u.exec(
+    value
+  );
   if (!composite) return false;
   if (isCreditLabelOnly(composite[1]) && isCreditLabelOnly(composite[2].trim())) return true;
   // 中文标签 + 英文对照翻译（TitleCase）：`制谱 Music Copyist`、`企划 Creative Planning`、
@@ -822,7 +858,9 @@ const isCreditOrgLabel = (value: string): boolean => {
   // `回忆的录音` 这类歌词化表达不含设施词、不会命中。
   if (
     /^[\u4e00-\u9fff]{2,24}$/u.test(value) &&
-    /录音系统|录音棚|录音室|混音室|混音棚|混音师|录音师|母带处理|母带工程|工作室|导演团队/u.test(value)
+    /录音系统|录音棚|录音室|混音室|混音棚|混音师|录音师|母带处理|母带工程|工作室|导演团队/u.test(
+      value
+    )
   ) {
     return true;
   }
@@ -852,13 +890,16 @@ const isNumberedSlotLabel = (value: string): boolean => {
 const isBracketQualifiedLabel = (value: string): boolean => {
   // 制作名单常用括号标注地区/棚号等限定信息，剥离后若剩余部分是纯标签即命中。
   const withoutQualifier = value.replace(/[\s\u3000]*[（(][^（()）]{1,20}[)）]\s*$/u, "").trim();
-  if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier)) return true;
+  if (withoutQualifier && withoutQualifier !== value && isCreditLabelOnly(withoutQualifier))
+    return true;
   // 中部括号限定词：`人声&吉他&鼓（打击乐）录音棚`。限定语夹在标签组合中间，
   // 剥离后各段仍是标签（`鼓录音棚` 走粘连拆分）即命中；歌词 `爱（真的）你`
   // 剥出 `爱你` 非标签，不受影响。
   const withoutMiddleQualifier = value.replace(/[（(][^（()）]{1,20}[)）]/u, "").trim();
   return (
-    !!withoutMiddleQualifier && withoutMiddleQualifier !== value && isCreditLabelOnly(withoutMiddleQualifier)
+    !!withoutMiddleQualifier &&
+    withoutMiddleQualifier !== value &&
+    isCreditLabelOnly(withoutMiddleQualifier)
   );
 };
 
@@ -891,10 +932,7 @@ const isAffixStrippedLabel = (value: string): boolean => {
   // 序数前缀：`1st Violins : X`、`2nd Violins : X`（弦乐声部分排），
   // 以及拼写数词形态 `First Violin : X`、`Second Violins : X`。
   const withoutOrdinal = value
-    .replace(
-      /^(?:(?:\d{1,2}(?:st|nd|rd|th))|(?:first|second|third|fourth|fifth))\s+/i,
-      "",
-    )
+    .replace(/^(?:(?:\d{1,2}(?:st|nd|rd|th))|(?:first|second|third|fourth|fifth))\s+/i, "")
     .trim();
   if (withoutOrdinal && withoutOrdinal !== value && isCreditLabelOnly(withoutOrdinal)) return true;
 
@@ -969,8 +1007,7 @@ const areAllCreditLabelSegments = (value: string): boolean => {
 };
 
 /** 头部恰好是纯角色词（`合`、`男`、`合唱`），用于区分「角色标注」与「角色标记 + 歌词」。 */
-const DUET_ROLE_LABEL_PATTERN =
-  /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)$/u;
+const DUET_ROLE_LABEL_PATTERN = /^(?:男|女|合|合唱|对唱|独唱|童声|念白|所有人|大家一起)$/u;
 
 /**
  * 取值侧是否含有「实质歌词内容」。
@@ -980,9 +1017,7 @@ const DUET_ROLE_LABEL_PATTERN =
  * 而 `【合】有英雄漂泊异乡 故土遥远` 的右侧是一整句，必须归为歌词。
  */
 const isSubstantiveLyricTail = (tail: string): boolean => {
-  const compact = tail
-    .normalize("NFKC")
-    .replace(/[\s\u3000\p{P}\p{S}]/gu, "");
+  const compact = tail.normalize("NFKC").replace(/[\s\u3000\p{P}\p{S}]/gu, "");
   return compact.length >= 4;
 };
 
@@ -1030,8 +1065,9 @@ const WHOLE_LINE_CREDIT_PATTERNS: readonly RegExp[] = [
  * `Universal love is all we need` 这类纯英文歌词。
  */
 const isPublisherOrgLine = (line: string): boolean =>
-  /^(?:warner(?:\s*\/\s*chappell)?|chappell|universal|sony|emi|bmg|kobalt|peermusic)\b/i.test(line) &&
-  /\b(?:music|records?|publishing|entertainment|limited|ltd|group|studios?)\b/i.test(line);
+  /^(?:warner(?:\s*\/\s*chappell)?|chappell|universal|sony|emi|bmg|kobalt|peermusic)\b/i.test(
+    line
+  ) && /\b(?:music|records?|publishing|entertainment|limited|ltd|group|studios?)\b/i.test(line);
 
 /**
  * 多段方括号署名：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】`。
@@ -1088,7 +1124,10 @@ export const isCreditKeywordLine = (text: string): boolean => {
   if (!parts) return false;
   const [head, tail] = parts.split("\u0000");
   // 只压缩空白，不能整体删除：`Special Thanks` 这类多词英文标签依赖词间空格。
-  const normalizedHead = head.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  const normalizedHead = head
+    .normalize("NFKC")
+    .replace(/[\s\u3000]+/g, " ")
+    .trim();
   if (!normalizedHead) return false;
   // 标签必须覆盖整个头部，避免「曲终人散：」这类以署名词开头的正常歌词被误判。
   if (!isCreditLabelOnly(normalizedHead)) return false;
@@ -1146,7 +1185,10 @@ const isMarkedLyricBody = (text: string): boolean => {
   if (!parts) return false;
   const [head, tail] = parts.split("\u0000");
   const label = head.normalize("NFKC").trim();
-  return (DUET_ROLE_LABEL_PATTERN.test(label) || /^(?:solo|rap)$/i.test(label)) && isSubstantiveLyricTail(tail);
+  return (
+    (DUET_ROLE_LABEL_PATTERN.test(label) || /^(?:solo|rap)$/i.test(label)) &&
+    isSubstantiveLyricTail(tail)
+  );
 };
 
 /** 过滤会直接暴露创作人员的 LRC 署名行。 */
@@ -1195,7 +1237,12 @@ export const isInstrumentalLyricLine = (text: string) => {
   if (INSTRUMENTAL_MARKERS.has(normalized)) return true;
   // 网易云会把间奏写成 Music1、[Music] 或 Music - Instrumental 等占位文本。
   if (/^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized)) return true;
-  if (/^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(normalized)) return true;
+  if (
+    /^(?:music|instrumental|interlude|intro|outro|inst)(?:music|instrumental|interlude|intro|outro|inst)$/.test(
+      normalized
+    )
+  )
+    return true;
   // `纯音乐，请欣赏`、`纯音乐 请欣赏`、`本曲为纯音乐，请欣赏` 这类带后缀的占位说明。
   // `normalizeComparableText` 会保留逗号，因此整串不等于 `纯音乐`，需要单独按前缀判定。
   return /^(?:本曲为|本首歌为|此曲为)?(?:纯音乐|純音樂|纯音乐请欣赏)/.test(normalized);
@@ -1203,7 +1250,9 @@ export const isInstrumentalLyricLine = (text: string) => {
 
 /** 纯符号行（`~~~~`、`...`、`— — —`、`· · ·`）没有任何可猜信息。 */
 export const isSymbolOnlyLyricLine = (text: string) =>
-  /^[\s\u3000~～·•*＊=＝+＋#＃\-—–─_＿.,，。!！?？…、;；:：'"“”‘’()（）[\]【】<>《》/／\\|｜]+$/u.test(text);
+  /^[\s\u3000~～·•*＊=＝+＋#＃\-—–─_＿.,，。!！?？…、;；:：'"“”‘’()（）[\]【】<>《》/／\\|｜]+$/u.test(
+    text
+  );
 
 /** 只由数字与单位/括号构成的行（如 `00:12`、`120 bpm`）不承载歌词内容。 */
 export const isNumericOnlyLyricLine = (text: string) => {
@@ -1231,17 +1280,57 @@ export const isPlaceholderMaskLyricLine = (text: string): boolean => {
 
 /** 舞台指示/编辑注记的固定词汇：`(Repeat)`、`（以下反复）`、`(silence)`、`(间奏)`。 */
 const STAGE_DIRECTION_SOURCE = [
-  "repeat", "silence", "silent", "instrumental", "interlude", "intro", "outro",
-  "fade", "fadeout", "fade in", "fade out", "spoken", "whisper", "echo",
+  "repeat",
+  "silence",
+  "silent",
+  "instrumental",
+  "interlude",
+  "intro",
+  "outro",
+  "fade",
+  "fadeout",
+  "fade in",
+  "fade out",
+  "spoken",
+  "whisper",
+  "echo",
   // `(Music)`、`(Music♂)` 这类括号内间奏占位。
   "music",
-  "以下反复", "以下重复", "间奏", "前奏", "尾奏", "反复", "重复", "此处",
-  "略", "待补", "待定", "无歌词", "看不懂", "听不清", "念白",
+  "以下反复",
+  "以下重复",
+  "间奏",
+  "前奏",
+  "尾奏",
+  "反复",
+  "重复",
+  "此处",
+  "略",
+  "待补",
+  "待定",
+  "无歌词",
+  "看不懂",
+  "听不清",
+  "念白",
   // 多语言段落标记：`(Припев:)`（俄语副歌）、`(Coro:)`（西/意）、`(Refrain)`（法语）、
   // `(サビ)`（日语副歌）、`(간주)`（韩语间奏）。这些在网易云外语曲目里很常见。
-  "припев", "куплет", "chorus", "verse", "bridge", "pre-chorus", "hook",
-  "coro", "estribillo", "refrain", "pont", "サビ", "aメロ", "bメロ", "間奏",
-  "간주", "후렴", "절",
+  "припев",
+  "куплет",
+  "chorus",
+  "verse",
+  "bridge",
+  "pre-chorus",
+  "hook",
+  "coro",
+  "estribillo",
+  "refrain",
+  "pont",
+  "サビ",
+  "aメロ",
+  "bメロ",
+  "間奏",
+  "간주",
+  "후렴",
+  "절",
 ].join("|");
 
 /** 括号内的制作方标注：`（烛光制作）`、`(某某出品)`、`（原创团队献上）`。 */
@@ -1278,9 +1367,7 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
   // 去掉尾部的冒号后再比对词表，兼容 `(Припев:)`、`(Repeat:)` 形态。
   const withoutTrailingColon = inner.replace(/[:：]\s*$/u, "").trim();
   // 剥掉**两端**装饰符号，兼容 `(Music♂)`、`(*music*)` 这类带符号的间奏占位。
-  const withoutSymbols = withoutTrailingColon
-    .replace(/^[\p{S}\p{P}]+|[\p{S}\p{P}]+$/gu, "")
-    .trim();
+  const withoutSymbols = withoutTrailingColon.replace(/^[\p{S}\p{P}]+|[\p{S}\p{P}]+$/gu, "").trim();
   if (STAGE_DIRECTION_PATTERN.test(withoutSymbols)) return true;
 
   // 括号内的制作方标注：`（烛光制作）`、`(某某出品)`。
@@ -1306,9 +1393,7 @@ export const isBracketedStageDirectionLine = (text: string): boolean => {
  * 避免把合法的单字歌词一并剔除。判定垃圾行主要依赖署名与符号/数字规则。
  */
 export const isTooShortLyricLine = (text: string) => {
-  const meaningful = text
-    .normalize("NFKC")
-    .replace(/[\s\u3000\p{P}\p{S}]/gu, "");
+  const meaningful = text.normalize("NFKC").replace(/[\s\u3000\p{P}\p{S}]/gu, "");
   if (meaningful.length >= 2) return false;
   // 单个中日文字符不视为垃圾行。
   return !/^[\u4e00-\u9fff\u3040-\u30ff]$/u.test(meaningful);
@@ -1345,25 +1430,57 @@ const CREDIT_BLOCK_GAP_MS = 3_000;
  * 因为实际形态多样：`词版权管理方：X`、`录音作品及MV版权：X`、`（未经许可,不得翻唱或使用）`。
  */
 const COPYRIGHT_NOTICE_SOURCE = [
-  "版权管理方", "版权代理", "版权方", "录音作品", "录音制品", "录音制作者",
-  "未经许可", "未经授权", "不得翻唱", "不得使用", "不得转载", "禁止翻唱",
-  "版权所有", "all rights reserved", "copyright", "℗", "©",
-  "词版权", "曲版权", "词曲版权", "op：", "sp：",
+  "版权管理方",
+  "版权代理",
+  "版权方",
+  "录音作品",
+  "录音制品",
+  "录音制作者",
+  "未经许可",
+  "未经授权",
+  "不得翻唱",
+  "不得使用",
+  "不得转载",
+  "禁止翻唱",
+  "版权所有",
+  "all rights reserved",
+  "copyright",
+  "℗",
+  "©",
+  "词版权",
+  "曲版权",
+  "词曲版权",
+  "op：",
+  "sp：",
   // 商用授权/搬运声明：`已获商用授权`、`未经著作权人许可禁止搬运`、`禁止翻录`、`禁止Remix`。
-  "商用授权", "著作权人", "禁止搬运", "禁止翻录", "禁止转载", "翻录", "remix",
-  "仅供个人学习", "不得用于商业",
+  "商用授权",
+  "著作权人",
+  "禁止搬运",
+  "禁止翻录",
+  "禁止转载",
+  "翻录",
+  "remix",
+  "仅供个人学习",
+  "不得用于商业",
   // 出版方行：`/ EMI Music Publishing (S.E. Asia) Ltd, Taiwan Branch` —— 唱片内页
   // 连排出版信息被拆成的碎片行，`publishing` 一词在真实歌词里不会出现。
-  "music publishing", "publishing\\s*\\(",
+  "music publishing",
+  "publishing\\s*\\(",
   // 授权/改编声明：`——正版授权，改编自《Counting stars》——`。
-  "正版授权", "改编自", "翻唱自", "原曲出自",
+  "正版授权",
+  "改编自",
+  "翻唱自",
+  "原曲出自",
   // 出处声明：`本歌曲来自〖云上工作室〗`。不要求平台名命中 ——
   // 「本歌曲来自 X」是发行侧固定句式，真实歌词不会这么说。
   "本(?:歌曲|作品|音乐)来自",
   // R8 实测补漏：`已买版权 禁止二改二传`、`版权公司：X`、
   // `Used by permission of ...`（内页授权套话）、`X reserved.`（省略
   // all rights 的页脚碎片；`Spot is forever reserved` 这类无句点歌词不受影响）。
-  "已买版权", "版权公司", "used\\s+by\\s+permission", "reserved\\.",
+  "已买版权",
+  "版权公司",
+  "used\\s+by\\s+permission",
+  "reserved\\.",
   // R10 实测补漏：`(Admin. by Warner/Chappell Music Korea)`（版权管理代理套话）。
   "admin\\.?\\s+by",
 ].join("|");
@@ -1372,7 +1489,10 @@ const COPYRIGHT_NOTICE_PATTERN = new RegExp(COPYRIGHT_NOTICE_SOURCE, "i");
 
 /** 版权/法律声明行：整行命中固定短语即判定无效。 */
 export const isCopyrightNoticeLine = (text: string): boolean => {
-  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  const normalized = text
+    .normalize("NFKC")
+    .replace(/[\s\u3000]+/g, " ")
+    .trim();
   if (!normalized) return false;
   return COPYRIGHT_NOTICE_PATTERN.test(normalized);
 };
@@ -1386,12 +1506,16 @@ export const isCopyrightNoticeLine = (text: string): boolean => {
  * **邮箱/网址**（含 `@` 且形如邮箱，或含协议/域名）。
  * 注意 `@` 判定要足够具体，避免误伤歌词里的 `@`（如 `Sing @ the top`）。
  */
-const TECHNICAL_ID_PATTERN = /^(?:isrc|upc|ean|iswc|isbn|barcode|条形码)\s*[:：]?\s*[A-Z0-9-]{6,}$/i;
+const TECHNICAL_ID_PATTERN =
+  /^(?:isrc|upc|ean|iswc|isbn|barcode|条形码)\s*[:：]?\s*[A-Z0-9-]{6,}$/i;
 const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const URL_PATTERN = /https?:\/\/|www\.[A-Za-z0-9-]+\.[A-Za-z]{2,}/i;
 
 export const isTechnicalInfoLine = (text: string): boolean => {
-  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  const normalized = text
+    .normalize("NFKC")
+    .replace(/[\s\u3000]+/g, " ")
+    .trim();
   if (!normalized) return false;
   if (TECHNICAL_ID_PATTERN.test(normalized)) return true;
   if (EMAIL_PATTERN.test(normalized)) return true;
@@ -1428,7 +1552,7 @@ export const isAffiliationCreditLine = (text: string): boolean => {
   // 只并回明确的机构后缀词，`Sing @ the top of my lungs` 不受影响。
   const merged = normalized.replace(
     /(@[\u4e00-\u9fffA-Za-z0-9]+)[\s\u3000]+((?:Studios?|Records?|Music|Entertainment|Company|Corporation|Corp\.?|Ltd\.?|Limited|Group|Band|Production|Productions|Studio)\b)/gu,
-    "$1$2",
+    "$1$2"
   );
   const segments = merged.split(/[\s\u3000/／,，、|｜]+/u).filter(Boolean);
   if (segments.length === 0) return false;
@@ -1454,7 +1578,10 @@ const PLATFORM_CREDIT_PATTERN =
   /(?:网易(?:音乐人|云音乐|云|音乐)?|qq音乐|酷狗音乐|咪咕音乐|bilibili)/iu;
 
 export const isPlatformCreditLine = (text: string): boolean => {
-  const normalized = text.normalize("NFKC").replace(/[\s\u3000]+/g, " ").trim();
+  const normalized = text
+    .normalize("NFKC")
+    .replace(/[\s\u3000]+/g, " ")
+    .trim();
   if (!normalized) return false;
   // 整行被括号包裹且内层含平台名：`【bilibili音乐·2022虚拟歌手贺岁纪】`。
   // 这类企划行没有出品/来自等关键词也必须判定 —— 平台名本身已是泄露源。
@@ -1487,7 +1614,8 @@ export const isPlatformCreditLine = (text: string): boolean => {
  * 不含引号、每段长度 ≤20，避免把 `Say: "..."` 这类带取值的行误判
  * （右侧非空天然不命中）。
  */
-const EMPTY_VALUE_LABEL_PATTERN = /^[^\s:：'"，。！？、；]{1,20}(?:[\s、／/][^\s:：'"，。！？、；]{1,20}){0,3}\s*[:：]\s*$/u;
+const EMPTY_VALUE_LABEL_PATTERN =
+  /^[^\s:：'"，。！？、；]{1,20}(?:[\s、／/][^\s:：'"，。！？、；]{1,20}){0,3}\s*[:：]\s*$/u;
 
 /**
  * 包裹式角色标注：`【合】`、`（男）`、`[女]`，内层只有一个角色词且**没有取值**。
@@ -1545,24 +1673,29 @@ export const parseYrc = (raw: string): SongLyricLine[] => {
   const amllLines = amllParseYrc(raw);
   return amllLines
     .map((line) => {
-      const text = (line.words && line.words.length > 0)
-        ? line.words.map((w) => w.word).join("").trim()
-        : "";
+      const text =
+        line.words && line.words.length > 0
+          ? line.words
+              .map((w) => w.word)
+              .join("")
+              .trim()
+          : "";
       const hasTranslation = Boolean(line.translatedLyric);
       return {
         time: line.startTime,
         endTime: line.endTime,
         text,
-        words: line.words && line.words.length > 0
-          ? line.words.map((w) => ({
-              startTime: w.startTime,
-              endTime: w.endTime,
-              word: w.word,
-              romanWord: hasTranslation ? undefined : (w.romanWord || undefined),
-            }))
-          : undefined,
+        words:
+          line.words && line.words.length > 0
+            ? line.words.map((w) => ({
+                startTime: w.startTime,
+                endTime: w.endTime,
+                word: w.word,
+                romanWord: hasTranslation ? undefined : w.romanWord || undefined,
+              }))
+            : undefined,
         translatedLyric: line.translatedLyric || undefined,
-        romanLyric: hasTranslation ? undefined : (line.romanLyric || undefined),
+        romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
         isBG: line.isBG || undefined,
         isDuet: line.isDuet || undefined,
       };
@@ -1575,7 +1708,7 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
   if (!normalizedRaw.includes("xmlns:itunes=")) {
     normalizedRaw = normalizedRaw.replace(
       /<tt(\s|>)/i,
-      '<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal"$1',
+      '<tt xmlns:itunes="http://music.apple.com/lyric-ttml-internal"$1'
     );
   }
   if (!normalizedRaw.includes("itunes:key=")) {
@@ -1585,24 +1718,29 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
   const parsed = amllParseTTML(normalizedRaw);
   return parsed.lines
     .map((line) => {
-      const text = (line.words && line.words.length > 0)
-        ? line.words.map((w) => w.word).join("").trim()
-        : "";
+      const text =
+        line.words && line.words.length > 0
+          ? line.words
+              .map((w) => w.word)
+              .join("")
+              .trim()
+          : "";
       const hasTranslation = Boolean(line.translatedLyric);
       return {
         time: line.startTime,
         endTime: line.endTime,
         text,
-        words: line.words && line.words.length > 0
-          ? line.words.map((w) => ({
-              startTime: w.startTime,
-              endTime: w.endTime,
-              word: w.word,
-              romanWord: hasTranslation ? undefined : (w.romanWord || undefined),
-            }))
-          : undefined,
+        words:
+          line.words && line.words.length > 0
+            ? line.words.map((w) => ({
+                startTime: w.startTime,
+                endTime: w.endTime,
+                word: w.word,
+                romanWord: hasTranslation ? undefined : w.romanWord || undefined,
+              }))
+            : undefined,
         translatedLyric: line.translatedLyric || undefined,
-        romanLyric: hasTranslation ? undefined : (line.romanLyric || undefined),
+        romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
         isBG: line.isBG || undefined,
         isDuet: line.isDuet || undefined,
       };
@@ -1631,16 +1769,14 @@ const pickNearestLyric = (candidates: SongLyricLine[], time: number): string | u
 export const mergeTranslations = (
   lines: SongLyricLine[],
   translationRaw?: string,
-  romanRaw?: string,
+  romanRaw?: string
 ): SongLyricLine[] => {
   if (!translationRaw && !romanRaw) return lines;
 
   const transLines = translationRaw
     ? parseLrc(translationRaw).filter((l) => !isCreditLyricLine(l.text))
     : [];
-  const romanLines = romanRaw
-    ? parseLrc(romanRaw).filter((l) => !isCreditLyricLine(l.text))
-    : [];
+  const romanLines = romanRaw ? parseLrc(romanRaw).filter((l) => !isCreditLyricLine(l.text)) : [];
 
   if (transLines.length === 0 && romanLines.length === 0) return lines;
 
@@ -1684,7 +1820,7 @@ export const mergeTranslations = (
  */
 export const sanitizeLyrics = (
   lyrics: SongLyricLine[],
-  song: Pick<SongSearchResult, "title" | "artist" | "album">,
+  song: Pick<SongSearchResult, "title" | "artist" | "album">
 ): SongLyricLine[] => {
   const title = normalizeComparableText(song.title);
   const album = song.album ? normalizeComparableText(song.album) : "";
@@ -1694,14 +1830,16 @@ export const sanitizeLyrics = (
     .filter((token) => token.length >= 2);
   const wholeArtist = normalizeComparableText(song.artist);
 
-  const forbidden = new Set([
-    title,
-    wholeArtist,
-    ...artistTokens,
-    album,
-    `${title}${wholeArtist}`,
-    `${wholeArtist}${title}`,
-  ].filter(Boolean));
+  const forbidden = new Set(
+    [
+      title,
+      wholeArtist,
+      ...artistTokens,
+      album,
+      `${title}${wholeArtist}`,
+      `${wholeArtist}${title}`,
+    ].filter(Boolean)
+  );
 
   // 第一步：单行无效判定，得到「署名行位置」用于后续连排合并。
   const invalid = lyrics.map((line) => isUnusableLyricLine(line.text));
@@ -1726,9 +1864,10 @@ export const sanitizeLyrics = (
 
   return filtered.map((line, index) => ({
     ...line,
-    endTime: (line.words && line.words.length > 0 && line.endTime > line.time)
-      ? line.endTime
-      : (filtered[index + 1]?.time ?? Math.max(line.endTime, line.time + 5_000)),
+    endTime:
+      line.words && line.words.length > 0 && line.endTime > line.time
+        ? line.endTime
+        : (filtered[index + 1]?.time ?? Math.max(line.endTime, line.time + 5_000)),
   }));
 };
 
@@ -1753,7 +1892,11 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
       if (title.includes("语种") || title.includes("语言") || title.includes("language")) {
         language = content;
       } else if (title.includes("别名") || title.includes("alias")) {
-        content.split(/[、,，/]/).map((item) => item.trim()).filter(Boolean).forEach((item) => aliases.add(item));
+        content
+          .split(/[、,，/]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((item) => aliases.add(item));
       } else if (
         title.includes("曲风") ||
         title.includes("流派") ||
@@ -1761,8 +1904,15 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
         title.includes("genre") ||
         title.includes("tag")
       ) {
-        content.split(/[、,，/]/).map((item) => item.trim()).filter(Boolean).forEach((item) => tags.add(item));
-      } else if (!summary && (title.includes("简介") || title.includes("介绍") || title.includes("summary"))) {
+        content
+          .split(/[、,，/]/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((item) => tags.add(item));
+      } else if (
+        !summary &&
+        (title.includes("简介") || title.includes("介绍") || title.includes("summary"))
+      ) {
         summary = content;
       }
     }
@@ -1806,7 +1956,7 @@ type LyricChainInput = {
 const readLyricSources = (
   id: string,
   song: SongSearchResult,
-  lyricBody: Record<string, unknown>,
+  lyricBody: Record<string, unknown>
 ): LyricChainInput => {
   const ytlrcRaw = readString(asRecord(lyricBody.ytlrc).lyric);
   const tlyricRaw = readString(asRecord(lyricBody.tlyric).lyric);
@@ -1828,7 +1978,7 @@ const readLyricSources = (
 /** 逐字歌词只有真的带 `words` 时间轴才算命中，否则继续降级到下一优先级。 */
 const adoptVerbatimLyrics = (
   parsed: SongLyricLine[],
-  input: LyricChainInput,
+  input: LyricChainInput
 ): SongLyricLine[] | undefined =>
   parsed.length > 0 && parsed.some((line) => line.words && line.words.length > 0)
     ? sanitizeLyrics(mergeTranslations(parsed, input.yrcTrans, input.yrcRoma), input.song)
@@ -1840,7 +1990,10 @@ export class NeteaseMusicProvider implements MusicProvider {
   private anonymousCookie?: string;
   private readonly cache: LRUCache<string, CacheEntry>;
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  private readonly refreshers = new Map<string, { ttlMs: number; loader: () => Promise<unknown> }>();
+  private readonly refreshers = new Map<
+    string,
+    { ttlMs: number; loader: () => Promise<unknown> }
+  >();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly ipByScope = new Map<string, string>();
   private readonly chinaIpRanges = readChinaIpRanges();
@@ -1875,13 +2028,15 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastUserRequestAt: number;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
-    this.amllQueue = new PQueue({ concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3) });
+    this.amllQueue = new PQueue({
+      concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3),
+    });
     this.deviceName = options.deviceName?.trim() || "BakaGame";
-    this.enableGeneralUnblock = options.enableGeneralUnblock ?? (
-      typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
+    this.enableGeneralUnblock =
+      options.enableGeneralUnblock ??
+      (typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
         ? process.env.ENABLE_GENERAL_UNBLOCK === "true"
-        : true
-    );
+        : true);
     if (typeof process !== "undefined" && process.env) {
       process.env.ENABLE_GENERAL_UNBLOCK = String(this.enableGeneralUnblock);
     }
@@ -1901,24 +2056,21 @@ export class NeteaseMusicProvider implements MusicProvider {
     });
     this.maxConcurrentRequests = Math.max(
       1,
-      options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
+      options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS
     );
     this.minRequestIntervalMs = Math.max(
       0,
-      options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS,
+      options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS
     );
     this.rateLimitCooldownMs = Math.max(
       0,
-      options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+      options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS
     );
     this.maxRateLimitCooldownMs = Math.max(
       this.rateLimitCooldownMs,
-      options.maxRateLimitCooldownMs ?? DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS,
+      options.maxRateLimitCooldownMs ?? DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS
     );
-    this.maxQueuedRequests = Math.max(
-      1,
-      options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS,
-    );
+    this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
     this.queueTimeoutMs = Math.max(1, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
     this.queue = new PQueue({
       concurrency: this.maxConcurrentRequests,
@@ -1926,11 +2078,17 @@ export class NeteaseMusicProvider implements MusicProvider {
         ? { interval: this.minRequestIntervalMs, intervalCap: 1 }
         : {}),
     });
-    this.maintenanceTimer = setInterval(() => { void this.runCacheMaintenance(); }, 60_000);
+    this.maintenanceTimer = setInterval(() => {
+      void this.runCacheMaintenance();
+    }, 60_000);
     (this.maintenanceTimer as unknown as { unref?: () => void }).unref?.();
   }
 
-  async search(keyword: string, limit = 20, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
+  async search(
+    keyword: string,
+    limit = 20,
+    cookie?: MusicCookieInput
+  ): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
@@ -1938,17 +2096,21 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("search", cookie, normalized.toLocaleLowerCase(), normalizedLimit),
       SEARCH_CACHE_TTL_MS,
       async () => {
-        const response = await this.call(["cloudsearch", "search"], {
-          keywords: normalized,
-          limit: normalizedLimit,
-          type: 1,
-        }, cookie);
+        const response = await this.call(
+          ["cloudsearch", "search"],
+          {
+            keywords: normalized,
+            limit: normalizedLimit,
+            type: 1,
+          },
+          cookie
+        );
         const body = responseBody(response);
         const result = asRecord(body.result);
         return asArray(result.songs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
-      },
+      }
     );
   }
 
@@ -1970,10 +2132,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
-    return this.cached(
-      this.cacheKey("metadata", undefined, id),
-      SONG_METADATA_CACHE_TTL_MS,
-      () => this.loadSong(id, false, cookie),
+    return this.cached(this.cacheKey("metadata", undefined, id), SONG_METADATA_CACHE_TTL_MS, () =>
+      this.loadSong(id, false, cookie)
     );
   }
 
@@ -1989,7 +2149,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         const body = responseBody(response);
         const data = asRecord(body.data);
         return readNumber(data.count ?? body.count);
-      },
+      }
     );
   }
 
@@ -2012,52 +2172,80 @@ export class NeteaseMusicProvider implements MusicProvider {
           startTime,
           ...(endTime !== undefined && endTime > startTime ? { endTime } : {}),
         };
-      },
+      }
     );
   }
 
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    return this.loadAmllLyrics(this.cacheKey("song-amll-ttml", undefined, id), { songId: id }, async signal => {
-      if (this.options.fetchAmllLyrics) return this.options.fetchAmllLyrics(id);
-      const json = await this.requestAmllJson(`get?ncmMusicId=${encodeURIComponent(id)}`, signal);
-      return this.readAmllLyrics(json);
-    });
+    return this.loadAmllLyrics(
+      this.cacheKey("song-amll-ttml", undefined, id),
+      { songId: id },
+      async (signal) => {
+        if (this.options.fetchAmllLyrics) return this.options.fetchAmllLyrics(id);
+        const json = await this.requestAmllJson(`get?ncmMusicId=${encodeURIComponent(id)}`, signal);
+        return this.readAmllLyrics(json);
+      }
+    );
   }
 
   async searchAmllTtmlLyrics(songName: string, artistName?: string): Promise<string | undefined> {
     const title = songName.trim();
     if (!title) return undefined;
-    return this.loadAmllLyrics(this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`), { title }, async signal => {
-      if (this.options.fetchAmllSearchLyrics) return this.options.fetchAmllSearchLyrics(title, artistName);
-      const query = artistName ? `${title} ${artistName}` : title;
-      const json = await this.requestAmllJson(`search?q=${encodeURIComponent(query)}&pageSize=5`, signal);
-      if (!json) return undefined;
-      const items = asRecord(json.data).items;
-      if (!Array.isArray(items)) throw new Error("AMLL 搜索响应无效");
-      if (!items.length) return undefined;
-      const id = asRecord(items[0]).id;
-      if (typeof id !== "string" && typeof id !== "number") throw new Error("AMLL 搜索条目无效");
-      return this.readAmllLyrics(await this.requestAmllJson(`get?id=${encodeURIComponent(String(id))}`, signal));
-    });
+    return this.loadAmllLyrics(
+      this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`),
+      { title },
+      async (signal) => {
+        if (this.options.fetchAmllSearchLyrics)
+          return this.options.fetchAmllSearchLyrics(title, artistName);
+        const query = artistName ? `${title} ${artistName}` : title;
+        const json = await this.requestAmllJson(
+          `search?q=${encodeURIComponent(query)}&pageSize=5`,
+          signal
+        );
+        if (!json) return undefined;
+        const items = asRecord(json.data).items;
+        if (!Array.isArray(items)) throw new Error("AMLL 搜索响应无效");
+        if (!items.length) return undefined;
+        const id = asRecord(items[0]).id;
+        if (typeof id !== "string" && typeof id !== "number") throw new Error("AMLL 搜索条目无效");
+        return this.readAmllLyrics(
+          await this.requestAmllJson(`get?id=${encodeURIComponent(String(id))}`, signal)
+        );
+      }
+    );
   }
 
-  private async loadAmllLyrics(key: string, context: Record<string, string>, loader: (signal: AbortSignal) => Promise<string | undefined>): Promise<string | undefined> {
+  private async loadAmllLyrics(
+    key: string,
+    context: Record<string, string>,
+    loader: (signal: AbortSignal) => Promise<string | undefined>
+  ): Promise<string | undefined> {
     try {
       // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
       return await this.cached(key, SONG_LYRICS_CACHE_TTL_MS, async () => {
-        if (this.amllQueue.size >= (this.options.amllMaxQueuedRequests ?? 64)) throw new Error("AMLL 请求排队过多");
+        if (this.amllQueue.size >= (this.options.amllMaxQueuedRequests ?? 64))
+          throw new Error("AMLL 请求排队过多");
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(new Error("AMLL 请求超时")), Math.max(1, this.options.amllRequestTimeoutMs ?? 3_000));
+        const timer = setTimeout(
+          () => controller.abort(new Error("AMLL 请求超时")),
+          Math.max(1, this.options.amllRequestTimeoutMs ?? 3_000)
+        );
         try {
-          return await this.amllQueue.add(async () => {
-            const lyrics = await loader(controller.signal);
-            controller.signal.throwIfAborted();
-            if (lyrics !== undefined && !parseTTML(lyrics).length) throw new Error("AMLL TTML 歌词无效");
-            return lyrics;
-          }, { signal: controller.signal });
-        } finally { clearTimeout(timer); }
+          return await this.amllQueue.add(
+            async () => {
+              const lyrics = await loader(controller.signal);
+              controller.signal.throwIfAborted();
+              if (lyrics !== undefined && !parseTTML(lyrics).length)
+                throw new Error("AMLL TTML 歌词无效");
+              return lyrics;
+            },
+            { signal: controller.signal }
+          );
+        } finally {
+          clearTimeout(timer);
+        }
       });
     } catch (error) {
       this.options.logger?.warn?.("获取 AMLL 歌词失败", { ...context, ...describeError(error) });
@@ -2065,10 +2253,17 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
   }
 
-  private async requestAmllJson(path: string, signal: AbortSignal): Promise<Record<string, unknown> | undefined> {
-    const response = await (this.options.amllFetcher ?? fetch)(`https://api.amll.dev/v1/lyrics/${path}`, {
-      signal, headers: { "User-Agent": "BakaGame-Songuessr/1.0" },
-    });
+  private async requestAmllJson(
+    path: string,
+    signal: AbortSignal
+  ): Promise<Record<string, unknown> | undefined> {
+    const response = await (this.options.amllFetcher ?? fetch)(
+      `https://api.amll.dev/v1/lyrics/${path}`,
+      {
+        signal,
+        headers: { "User-Agent": "BakaGame-Songuessr/1.0" },
+      }
+    );
     signal.throwIfAborted();
     if (response.status === 404) return undefined;
     if (!response.ok) throw new Error(`AMLL 请求失败（${response.status}）`);
@@ -2090,76 +2285,80 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getPlaylistSongs(playlistId: string, cookie?: MusicCookieInput) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
-    return this.cached(
-      this.cacheKey("playlist", cookie, id),
-      COLLECTION_CACHE_TTL_MS,
-      async () => {
-        const songs: SongSearchResult[] = [];
-        const seenIds = new Set<string>();
-        let name: string | undefined;
-        let songCount: number | undefined;
+    return this.cached(this.cacheKey("playlist", cookie, id), COLLECTION_CACHE_TTL_MS, async () => {
+      const songs: SongSearchResult[] = [];
+      const seenIds = new Set<string>();
+      let name: string | undefined;
+      let songCount: number | undefined;
 
-        const collect = (rawSongs: unknown[]): number => {
-          let added = 0;
-          for (const raw of rawSongs) {
-            const song = normalizeSong(raw);
-            if (!song || seenIds.has(song.id)) continue;
-            seenIds.add(song.id);
-            songs.push(song);
-            added += 1;
-          }
-          return added;
-        };
+      const collect = (rawSongs: unknown[]): number => {
+        let added = 0;
+        for (const raw of rawSongs) {
+          const song = normalizeSong(raw);
+          if (!song || seenIds.has(song.id)) continue;
+          seenIds.add(song.id);
+          songs.push(song);
+          added += 1;
+        }
+        return added;
+      };
 
-        const firstResponse = await this.call(["playlist_track_all", "playlist_detail"], {
+      const firstResponse = await this.call(
+        ["playlist_track_all", "playlist_detail"],
+        {
           id,
           limit: PLAYLIST_PAGE_SIZE,
           offset: 0,
-        }, cookie);
-        const firstBody = responseBody(firstResponse);
-        const firstPlaylist = asRecord(firstBody.playlist ?? asRecord(firstBody.data).playlist);
-        name = readString(firstPlaylist.name);
-        songCount = readNumber(firstPlaylist.trackCount ?? firstPlaylist.trackNumber);
-        const firstAdded = collect(
-          asArray(firstBody.songs ?? firstPlaylist.tracks ?? asRecord(firstBody.data).songs),
-        );
+        },
+        cookie
+      );
+      const firstBody = responseBody(firstResponse);
+      const firstPlaylist = asRecord(firstBody.playlist ?? asRecord(firstBody.data).playlist);
+      name = readString(firstPlaylist.name);
+      songCount = readNumber(firstPlaylist.trackCount ?? firstPlaylist.trackNumber);
+      const firstAdded = collect(
+        asArray(firstBody.songs ?? firstPlaylist.tracks ?? asRecord(firstBody.data).songs)
+      );
 
-        // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
-        if (!name || songCount === undefined) {
-          const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
-          if (detailResponse) {
-            const detail = asRecord(responseBody(detailResponse).playlist);
-            name = name ?? readString(detail.name);
-            songCount = songCount ?? readNumber(detail.trackCount ?? detail.trackNumber);
-          }
+      // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
+      if (!name || songCount === undefined) {
+        const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
+        if (detailResponse) {
+          const detail = asRecord(responseBody(detailResponse).playlist);
+          name = name ?? readString(detail.name);
+          songCount = songCount ?? readNumber(detail.trackCount ?? detail.trackNumber);
         }
+      }
 
-        // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
-        // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
-        // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
-        // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
-        for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
-          if (songCount !== undefined && songs.length >= songCount) break;
-          const response = await this.callOptional(["playlist_track_all", "playlist_detail"], {
+      // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
+      // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
+      // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
+      // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
+      for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
+        if (songCount !== undefined && songs.length >= songCount) break;
+        const response = await this.callOptional(
+          ["playlist_track_all", "playlist_detail"],
+          {
             id,
             limit: PLAYLIST_PAGE_SIZE,
             offset: page * PLAYLIST_PAGE_SIZE,
-          }, cookie);
-          if (!response) break;
-          const body = responseBody(response);
-          const rawSongs = asArray(
-            body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs,
-          );
-          const added = collect(rawSongs);
-          if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
-        }
+          },
+          cookie
+        );
+        if (!response) break;
+        const body = responseBody(response);
+        const rawSongs = asArray(
+          body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs
+        );
+        const added = collect(rawSongs);
+        if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
+      }
 
-        return {
-          info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
-          songs,
-        };
-      },
-    );
+      return {
+        info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
+        songs,
+      };
+    });
   }
 
   async searchArtists(keyword: string, limit = 20, cookie?: MusicCookieInput) {
@@ -2170,11 +2369,15 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("artist-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
       SEARCH_CACHE_TTL_MS,
       async () => {
-        const response = await this.call(["cloudsearch", "search"], {
-          keywords: normalized,
-          limit: normalizedLimit,
-          type: 100,
-        }, cookie);
+        const response = await this.call(
+          ["cloudsearch", "search"],
+          {
+            keywords: normalized,
+            limit: normalizedLimit,
+            type: 100,
+          },
+          cookie
+        );
         const body = responseBody(response);
         const result = asRecord(body.result);
         return asArray(result.artists ?? result.artist)
@@ -2187,7 +2390,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             return avatarUrl ? { id, name, avatarUrl } : { id, name };
           })
           .filter((artist): artist is SongArtistSearchResult => artist !== undefined);
-      },
+      }
     );
   }
 
@@ -2198,17 +2401,21 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("artist-songs", undefined, id),
       ARTIST_SONGS_CACHE_TTL_MS,
       async () => {
-        const response = await this.call(["artist_songs", "artist_top_song"], {
-          id,
-          limit: 1000,
-          offset: 0,
-          order: "hot",
-        }, cookie);
+        const response = await this.call(
+          ["artist_songs", "artist_top_song"],
+          {
+            id,
+            limit: 1000,
+            offset: 0,
+            order: "hot",
+          },
+          cookie
+        );
         const body = responseBody(response);
         return asArray(body.songs ?? asRecord(body.data).songs ?? body.hotSongs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
-      },
+      }
     );
   }
 
@@ -2219,7 +2426,11 @@ export class NeteaseMusicProvider implements MusicProvider {
    * （条目名就是专辑名，如《マジンブーン オリジナルサウンドトラック2》），
    * 拿专辑名当歌名走单曲检索必然一无所获 —— 必须「先搜专辑、再取专辑曲目」。
    */
-  async searchAlbums(keyword: string, limit = 10, cookie?: MusicCookieInput): Promise<SongAlbumSearchResult[]> {
+  async searchAlbums(
+    keyword: string,
+    limit = 10,
+    cookie?: MusicCookieInput
+  ): Promise<SongAlbumSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 30));
@@ -2228,11 +2439,15 @@ export class NeteaseMusicProvider implements MusicProvider {
       SEARCH_CACHE_TTL_MS,
       async () => {
         // cloudsearch 的 type 枚举：1 单曲 / 10 专辑 / 100 歌手 / 1000 歌单。
-        const response = await this.call(["cloudsearch", "search"], {
-          keywords: normalized,
-          limit: normalizedLimit,
-          type: 10,
-        }, cookie);
+        const response = await this.call(
+          ["cloudsearch", "search"],
+          {
+            keywords: normalized,
+            limit: normalizedLimit,
+            type: 10,
+          },
+          cookie
+        );
         const body = responseBody(response);
         const result = asRecord(body.result);
         return asArray(result.albums ?? result.album)
@@ -2252,7 +2467,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             };
           })
           .filter((album): album is SongAlbumSearchResult => album !== undefined);
-      },
+      }
     );
   }
 
@@ -2276,7 +2491,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         return asArray(body.songs ?? album.songs ?? asRecord(body.data).songs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
-      },
+      }
     );
   }
 
@@ -2310,7 +2525,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.randomCNIP,
       true,
       false,
-      scope,
+      scope
     );
     const keyBody = responseBody(keyResponse);
     if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
@@ -2327,7 +2542,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         this.randomCNIP,
         true,
         false,
-        scope,
+        scope
       );
       const qrBody = responseBody(qrResponse);
       if (responseCode(qrBody) !== 200) throw musicLoginError(qrBody, "无法生成登录二维码");
@@ -2362,7 +2577,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.randomCNIP,
       true,
       false,
-      scope,
+      scope
     );
     const body = responseBody(response);
     const code = responseCode(body);
@@ -2397,7 +2612,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async uploadDeviceInfo(
     cookieValue: string,
     deviceName = this.deviceName,
-    loginScope?: string,
+    loginScope?: string
   ): Promise<boolean> {
     const cookie = cookieValue.trim();
     if (!cookie) return false;
@@ -2414,7 +2629,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         `${cookie}; os=pc`,
         this.randomCNIP,
         false,
-        loginScope,
+        loginScope
       );
       return Boolean(response);
     } catch (error) {
@@ -2445,18 +2660,14 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.randomCNIP,
       true,
       false,
-      loginScope,
+      loginScope
     );
     const body = responseBody(response);
     const data = asRecord(body.data);
     const profile = asRecord(body.profile ?? data.profile);
     const nestedCode = readNumber(data.code);
     const userId = readString(profile.userId ?? profile.id);
-    if (
-      responseCode(body) !== 200 ||
-      (nestedCode !== undefined && nestedCode !== 200) ||
-      !userId
-    ) {
+    if (responseCode(body) !== 200 || (nestedCode !== undefined && nestedCode !== 200) || !userId) {
       throw new AppError("MUSIC_SESSION_INVALID", "网易云登录状态已失效");
     }
     return {
@@ -2468,7 +2679,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async loadSong(
     songId: string,
     includeResources: boolean,
-    cookie?: MusicCookieInput,
+    cookie?: MusicCookieInput
   ): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
@@ -2476,7 +2687,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const detailResponse = await this.cached(
       this.cacheKey("song-detail", undefined, id),
       SONG_METADATA_CACHE_TTL_MS,
-      () => this.call(["song_detail"], { ids: id }, cookie),
+      () => this.call(["song_detail"], { ids: id }, cookie)
     );
     const detailBody = responseBody(detailResponse);
     const rawSong = asArray(detailBody.songs)[0];
@@ -2486,13 +2697,11 @@ export class NeteaseMusicProvider implements MusicProvider {
     const wikiPromise = this.cached(
       this.cacheKey("song-wiki", undefined, id),
       SONG_WIKI_CACHE_TTL_MS,
-      () => this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie),
+      () => this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie)
     );
     const lyricPromise = includeResources
-      ? this.cached(
-          this.cacheKey("song-lyrics", undefined, id),
-          SONG_LYRICS_CACHE_TTL_MS,
-          () => this.call(["lyric_new", "lyric"], { id }, cookie),
+      ? this.cached(this.cacheKey("song-lyrics", undefined, id), SONG_LYRICS_CACHE_TTL_MS, () =>
+          this.call(["lyric_new", "lyric"], { id }, cookie)
         )
       : Promise.resolve(undefined);
     const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
@@ -2518,7 +2727,9 @@ export class NeteaseMusicProvider implements MusicProvider {
     let lyrics: SongLyricLine[] = [];
     if (includeResources) {
       audioUrl = urlResponse;
-      lyrics = await this.resolveSongLyrics(readLyricSources(id, base, responseBody(lyricResponse)));
+      lyrics = await this.resolveSongLyrics(
+        readLyricSources(id, base, responseBody(lyricResponse))
+      );
       if (!audioUrl) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     }
 
@@ -2527,7 +2738,8 @@ export class NeteaseMusicProvider implements MusicProvider {
       audioUrl,
       lyrics,
       releaseYear: publishTime ? new Date(publishTime).getUTCFullYear() : undefined,
-      popularity: popularity ?? base.popularity ?? readNumber(songRecord.pop ?? songRecord.popularity),
+      popularity:
+        popularity ?? base.popularity ?? readNumber(songRecord.pop ?? songRecord.popularity),
       language: wiki.language,
       encyclopedia: {
         summary: wiki.summary,
@@ -2557,7 +2769,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const byTitle = await this.withTtmlLyrics(
       input,
       () => this.searchAmllTtmlLyrics(input.song.title, input.song.artist),
-      { log: "解析 AMLL 歌曲名搜索 TTML 歌词失败", context: { title: input.song.title } },
+      { log: "解析 AMLL 歌曲名搜索 TTML 歌词失败", context: { title: input.song.title } }
     );
     return byTitle.length > 0 ? byTitle : this.parseNeteaseLineLyrics(input);
   }
@@ -2566,11 +2778,11 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async withTtmlLyrics(
     input: LyricChainInput,
     fetchTtml: () => Promise<string | undefined>,
-    failure: { log: string; context: Record<string, unknown> },
+    failure: { log: string; context: Record<string, unknown> }
   ): Promise<SongLyricLine[]> {
     try {
       const ttmlRaw = await fetchTtml();
-      return ttmlRaw ? adoptVerbatimLyrics(parseTTML(ttmlRaw), input) ?? [] : [];
+      return ttmlRaw ? (adoptVerbatimLyrics(parseTTML(ttmlRaw), input) ?? []) : [];
     } catch (err) {
       this.options.logger?.warn?.(failure.log, { ...failure.context, ...describeError(err) });
       return [];
@@ -2583,7 +2795,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     try {
       return adoptVerbatimLyrics(parseYrc(input.yrc), input) ?? [];
     } catch (err) {
-      this.options.logger?.warn?.("解析网易云 YRC 歌词失败", { songId: input.id, ...describeError(err) });
+      this.options.logger?.warn?.("解析网易云 YRC 歌词失败", {
+        songId: input.id,
+        ...describeError(err),
+      });
       return [];
     }
   }
@@ -2595,7 +2810,10 @@ export class NeteaseMusicProvider implements MusicProvider {
       const merged = mergeTranslations(parseLrc(input.lrc), input.lrcTrans, input.lrcRoma);
       return sanitizeLyrics(merged, input.song);
     } catch (err) {
-      this.options.logger?.warn?.("解析网易云 LRC 歌词失败", { songId: input.id, ...describeError(err) });
+      this.options.logger?.warn?.("解析网易云 LRC 歌词失败", {
+        songId: input.id,
+        ...describeError(err),
+      });
       return [];
     }
   }
@@ -2621,7 +2839,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.apiPromise = (async () => {
         const api = this.options.loadApi
           ? await this.options.loadApi()
-          : await import("@neteasecloudmusicapienhanced/api") as ApiModule;
+          : ((await import("@neteasecloudmusicapienhanced/api")) as ApiModule);
         await this.prepareAnonymousSession(api);
         return api;
       })().catch((error: unknown) => {
@@ -2634,8 +2852,10 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private async unblockSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
-    const sourceTimeoutMs = this.options.unblockSourceTimeoutMs ?? DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS;
-    const deadline = this.now() + (this.options.unblockTotalBudgetMs ?? DEFAULT_UNBLOCK_TOTAL_BUDGET_MS);
+    const sourceTimeoutMs =
+      this.options.unblockSourceTimeoutMs ?? DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS;
+    const deadline =
+      this.now() + (this.options.unblockTotalBudgetMs ?? DEFAULT_UNBLOCK_TOTAL_BUDGET_MS);
 
     // 1. 按显式优先级逐个音源调用 song_url_match，跳过伪解灰结果。
     //    必须显式传 source：不传时包内按目录字母序尝试，bugpk 排在最前且会返回网易云灰链兜底，
@@ -2646,7 +2866,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       const matchResponse = await settleWithin(
         this.callOptional(["song_url_match"], { id: songId, source }, cookie),
         sourceTimeoutMs,
-        undefined,
+        undefined
       );
       if (!matchResponse) continue;
       const body = responseBody(matchResponse);
@@ -2657,9 +2877,13 @@ export class NeteaseMusicProvider implements MusicProvider {
 
     // 2. 尝试 song_url_v1 带 unblock 参数解灰
     const v1Response = await settleWithin(
-      this.callOptional(["song_url_v1"], { id: songId, level: "standard", unblock: "true" }, cookie),
+      this.callOptional(
+        ["song_url_v1"],
+        { id: songId, level: "standard", unblock: "true" },
+        cookie
+      ),
       sourceTimeoutMs,
-      undefined,
+      undefined
     );
     if (v1Response) {
       const body = responseBody(v1Response);
@@ -2672,17 +2896,25 @@ export class NeteaseMusicProvider implements MusicProvider {
     return "";
   }
 
-  private async loadAudioUrl(songId: string, cookie?: MusicCookieInput, force = false): Promise<string> {
+  private async loadAudioUrl(
+    songId: string,
+    cookie?: MusicCookieInput,
+    force = false
+  ): Promise<string> {
     const key = this.cacheKey("audio", cookie, songId);
     const value = await this.cached(
       key,
       AUDIO_URL_CACHE_TTL_MS,
       async () => {
-        const response = await this.call(["song_url", "song_url_v1"], {
-          id: songId,
-          level: "standard",
-          br: 320000,
-        }, cookie);
+        const response = await this.call(
+          ["song_url", "song_url_v1"],
+          {
+            id: songId,
+            level: "standard",
+            br: 320000,
+          },
+          cookie
+        );
         const body = responseBody(response);
         const songData = asRecord(asArray(body.data)[0]);
         // 试听片段（`freeTrialInfo`）不是可用的播放地址，整曲只能由解灰提供。
@@ -2703,7 +2935,7 @@ export class NeteaseMusicProvider implements MusicProvider {
 
         return audioUrl;
       },
-      { force, priority: 4, cacheNegative: false },
+      { force, priority: 4, cacheNegative: false }
     );
     if (!value) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     return value;
@@ -2721,7 +2953,7 @@ export class NeteaseMusicProvider implements MusicProvider {
             randomCNIP: this.randomCNIP,
             ...(this.randomCNIP ? { realIP: this.ensureScopeIp(IP_SCOPE_ANONYMOUS) } : {}),
           }),
-        IP_SCOPE_ANONYMOUS,
+        IP_SCOPE_ANONYMOUS
       );
       this.anonymousCookie = responseCookie(response);
     } catch (error) {
@@ -2736,7 +2968,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP = this.randomCNIP,
     preserveErrorResponse = false,
     includeAnonymousCookie = true,
-    loginScope?: string,
+    loginScope?: string
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     // 在调度前定好 IP 归属：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
@@ -2756,7 +2988,7 @@ export class NeteaseMusicProvider implements MusicProvider {
           randomCNIP,
           includeAnonymousCookie,
           loginScope,
-          ipScope,
+          ipScope
         );
       } catch (error) {
         lastError = error;
@@ -2780,21 +3012,14 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP: boolean,
     includeAnonymousCookie: boolean,
     loginScope: string | undefined,
-    ipScope: string | undefined,
+    ipScope: string | undefined
   ): Promise<ApiResponse> {
     const response = await this.scheduleRequest(
       () =>
         fn(
-          this.withCookie(
-            params,
-            cookie,
-            randomCNIP,
-            includeAnonymousCookie,
-            loginScope,
-            ipScope,
-          ),
+          this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie, loginScope, ipScope)
         ),
-      ipScope,
+      ipScope
     );
     // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
     // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
@@ -2820,7 +3045,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     cookie?: string | Record<string, unknown>,
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
-    loginScope?: string,
+    loginScope?: string
   ): Promise<ApiResponse | undefined> {
     try {
       return await this.call(
@@ -2830,7 +3055,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         randomCNIP,
         false,
         includeAnonymousCookie,
-        loginScope,
+        loginScope
       );
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
@@ -2845,12 +3070,12 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   private async enrichVipAccount(
     cookie: string,
-    account: SonGuessrMusicAccount,
+    account: SonGuessrMusicAccount
   ): Promise<SonGuessrMusicAccount> {
     const response = await this.callOptional(
       ["vip_info_v2", "vip_info"],
       account.userId ? { uid: account.userId } : {},
-      cookie,
+      cookie
     );
     if (!response) return { ...account, vipStatus: "unknown" };
     const body = responseBody(response);
@@ -2859,11 +3084,14 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private cacheKey(namespace: string, cookie: unknown, ...parts: unknown[]) {
-    const cookieStr = typeof cookie === "string"
-      ? cookie.trim()
-      : isCookieRecord(cookie)
-        ? (typeof cookie.netease === "string" ? cookie.netease.trim() : stableStringify(cookie))
-        : "";
+    const cookieStr =
+      typeof cookie === "string"
+        ? cookie.trim()
+        : isCookieRecord(cookie)
+          ? typeof cookie.netease === "string"
+            ? cookie.netease.trim()
+            : stableStringify(cookie)
+          : "";
     const scope = cookieStr
       ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
       : "anonymous";
@@ -2874,7 +3102,12 @@ export class NeteaseMusicProvider implements MusicProvider {
     key: string,
     ttlMs: number,
     loader: () => Promise<T>,
-    options: { force?: boolean; priority?: number; background?: boolean; cacheNegative?: boolean } = {},
+    options: {
+      force?: boolean;
+      priority?: number;
+      background?: boolean;
+      cacheNegative?: boolean;
+    } = {}
   ): Promise<T> {
     const now = this.now();
     if (!options.background) this.lastUserRequestAt = now;
@@ -2884,7 +3117,8 @@ export class NeteaseMusicProvider implements MusicProvider {
       if (now < entry.hardExpireAt) {
         entry.lastAccessAt = now;
         entry.hits += 1;
-        if (now >= entry.softExpireAt) void this.refreshCacheEntry(key, ttlMs, loader, options.priority ?? entry.priority);
+        if (now >= entry.softExpireAt)
+          void this.refreshCacheEntry(key, ttlMs, loader, options.priority ?? entry.priority);
         return cloneCacheValue(entry.value as T);
       }
       this.cache.delete(key);
@@ -2895,28 +3129,31 @@ export class NeteaseMusicProvider implements MusicProvider {
 
     const allowNegative = options.cacheNegative !== false;
     this.refreshers.set(key, { ttlMs, loader });
-    const request = loader().then((value) => {
-      // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
-      // 玩家重试也只会拿到同一个空值。`cacheNegative` 缺省为 true 以保持既有缓存语义，
-      // 播放地址这类「重试可能成功」的取值显式传 false，只跳过空结果、正常地址照旧缓存。
-      const storeResult = allowNegative || Boolean(value);
-      if (storeResult) {
-        const fetchedAt = this.now();
-        const serializedSize = value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
-        this.cache.set(key, {
-          value,
-          softExpireAt: fetchedAt + ttlMs * 0.8,
-          hardExpireAt: fetchedAt + hardTtl,
-          lastAccessAt: fetchedAt,
-          hits: 1,
-          priority: options.priority ?? 1,
-          size: serializedSize,
-        });
-      }
-      return value;
-    }).finally(() => {
-      if (this.inFlight.get(key) === request) this.inFlight.delete(key);
-    });
+    const request = loader()
+      .then((value) => {
+        // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
+        // 玩家重试也只会拿到同一个空值。`cacheNegative` 缺省为 true 以保持既有缓存语义，
+        // 播放地址这类「重试可能成功」的取值显式传 false，只跳过空结果、正常地址照旧缓存。
+        const storeResult = allowNegative || Boolean(value);
+        if (storeResult) {
+          const fetchedAt = this.now();
+          const serializedSize =
+            value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
+          this.cache.set(key, {
+            value,
+            softExpireAt: fetchedAt + ttlMs * 0.8,
+            hardExpireAt: fetchedAt + hardTtl,
+            lastAccessAt: fetchedAt,
+            hits: 1,
+            priority: options.priority ?? 1,
+            size: serializedSize,
+          });
+        }
+        return value;
+      })
+      .finally(() => {
+        if (this.inFlight.get(key) === request) this.inFlight.delete(key);
+      });
     this.inFlight.set(key, request);
     return cloneCacheValue(await request);
   }
@@ -2925,7 +3162,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     key: string,
     ttlMs: number,
     loader: () => Promise<unknown>,
-    priority: number,
+    priority: number
   ) {
     if (this.inFlight.has(key) || this.now() < this.cooldownUntil || this.queue.size > 0) return;
     try {
@@ -2944,7 +3181,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
     const candidates = [...this.cache.entries()]
       .filter(([, entry]) => now >= entry.hardExpireAt || now >= entry.softExpireAt)
-      .sort(([, left], [, right]) => (right.priority + right.hits) - (left.priority + left.hits));
+      .sort(([, left], [, right]) => right.priority + right.hits - (left.priority + left.hits));
     for (const [key, entry] of candidates.slice(0, 4)) {
       const refresher = this.refreshers.get(key);
       if (!refresher) {
@@ -2970,7 +3207,8 @@ export class NeteaseMusicProvider implements MusicProvider {
 
   /** 刷新器只服务于已缓存或仍在请求中的条目，其余一并回收。 */
   private pruneStaleRefreshers() {
-    for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
+    for (const key of this.refreshers.keys())
+      if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
   }
 
   /**
@@ -3052,12 +3290,10 @@ export class NeteaseMusicProvider implements MusicProvider {
     this.lastRateLimitAt = now;
     const baseDuration = Math.min(
       this.maxRateLimitCooldownMs,
-      this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1),
+      this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1)
     );
     // 注入微量随机 Jitter 抖动，防止限流恢复瞬间突发惊群重连
-    const jitter = Math.floor(
-      (this.random.nextFloat?.() ?? Math.random()) * (baseDuration * 0.05),
-    );
+    const jitter = Math.floor((this.random.nextFloat?.() ?? Math.random()) * (baseDuration * 0.05));
     const duration = Math.min(this.maxRateLimitCooldownMs, baseDuration + jitter);
     this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
 
@@ -3107,20 +3343,20 @@ export class NeteaseMusicProvider implements MusicProvider {
     const code = responseCode(body) ?? readNumber(asRecord(error).status);
     const message = responseMessage(
       body,
-      error instanceof Error && error.message
-        ? error.message
-        : "网易云音乐接口请求失败，请稍后重试",
+      error instanceof Error && error.message ? error.message : "网易云音乐接口请求失败，请稍后重试"
     );
     return new AppError(
       isRateLimitCode(code) ? "MUSIC_API_RATE_LIMITED" : "MUSIC_API_FAILED",
       message,
-      { upstreamCode: code },
+      { upstreamCode: code }
     );
   }
 
   private isRateLimitError(error: unknown) {
     const body = responseBody(error);
-    return isRateLimitCode(responseCode(body)) || isRateLimitCode(readNumber(asRecord(error).status));
+    return (
+      isRateLimitCode(responseCode(body)) || isRateLimitCode(readNumber(asRecord(error).status))
+    );
   }
 
   /**
@@ -3134,10 +3370,7 @@ export class NeteaseMusicProvider implements MusicProvider {
    * 3. `player:<连接标识>` —— 匿名请求按玩家分桶，互不占用对方的限流配额。
    * 4. `anonymous` —— 预热、缓存刷新等没有玩家上下文的兜底。
    */
-  private resolveIpScope(
-    cookie?: string | Record<string, unknown>,
-    loginScope?: string,
-  ) {
+  private resolveIpScope(cookie?: string | Record<string, unknown>, loginScope?: string) {
     if (loginScope) return loginScope;
     if (this.hasCookie(cookie)) return this.cookieScope(cookie);
     return musicIpScope.getStore() ?? IP_SCOPE_ANONYMOUS;
@@ -3171,11 +3404,14 @@ export class NeteaseMusicProvider implements MusicProvider {
   // 同一份 cookie 原文必须映射到同一个 IP：Enhanced API 会把 cookie 对象补上随机的
   // _ntes_nuid / NMTID，因此这里对字符串做哈希、对对象做稳定序列化，避免逐请求漂移。
   private cookieScope(cookie?: string | Record<string, unknown>) {
-    const cookieStr = typeof cookie === "string"
-      ? cookie.trim()
-      : isCookieRecord(cookie)
-        ? (typeof cookie.netease === "string" ? cookie.netease.trim() : stableStringify(cookie))
-        : "";
+    const cookieStr =
+      typeof cookie === "string"
+        ? cookie.trim()
+        : isCookieRecord(cookie)
+          ? typeof cookie.netease === "string"
+            ? cookie.netease.trim()
+            : stableStringify(cookie)
+          : "";
     return cookieStr
       ? `host:${createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)}`
       : IP_SCOPE_ANONYMOUS;
@@ -3201,11 +3437,12 @@ export class NeteaseMusicProvider implements MusicProvider {
     randomCNIP = this.randomCNIP,
     includeAnonymousCookie = true,
     loginScope?: string,
-    ipScope?: string,
+    ipScope?: string
   ): Record<string, unknown> {
-    const rawCookie = typeof cookie === "object" && cookie !== null && "netease" in cookie
-      ? cookie.netease
-      : cookie;
+    const rawCookie =
+      typeof cookie === "object" && cookie !== null && "netease" in cookie
+        ? cookie.netease
+        : cookie;
     const requestCookie = rawCookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     // scope 由调用方在调度前算好并透传：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
     const scope = ipScope ?? this.resolveIpScope(cookie, loginScope);

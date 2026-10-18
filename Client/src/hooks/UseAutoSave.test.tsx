@@ -65,10 +65,7 @@ describe("useAutoSave", () => {
     const first = new Promise<void>((resolve) => {
       resolveFirst = resolve;
     });
-    const save = vi
-      .fn()
-      .mockReturnValueOnce(first)
-      .mockResolvedValueOnce(undefined);
+    const save = vi.fn().mockReturnValueOnce(first).mockResolvedValueOnce(undefined);
     const { rerender } = renderHook(({ value }) => useAutoSave(value, save), {
       initialProps: { value: 0 },
     });
@@ -167,12 +164,9 @@ describe("useAutoSave", () => {
   it("clears pending debounced draft and cancels timer when enabled changes from true to false", async () => {
     vi.useFakeTimers();
     const save = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = renderHook(
-      ({ value, enabled }) => useAutoSave(value, save, { enabled }),
-      {
-        initialProps: { value: 0, enabled: true },
-      },
-    );
+    const { rerender } = renderHook(({ value, enabled }) => useAutoSave(value, save, { enabled }), {
+      initialProps: { value: 0, enabled: true },
+    });
 
     // 产生新草稿（在防抖等待期内）
     rerender({ value: 1, enabled: true });
@@ -201,7 +195,7 @@ describe("useAutoSave", () => {
       ({ value, enabled }) => useAutoSave(value, save, { enabled }),
       {
         initialProps: { value: 0, enabled: false },
-      },
+      }
     );
 
     // 在 enabled === false 状态下更新值
@@ -227,16 +221,10 @@ describe("useAutoSave", () => {
     const first = new Promise<void>((resolve) => {
       resolveFirst = resolve;
     });
-    const save = vi
-      .fn()
-      .mockReturnValueOnce(first)
-      .mockResolvedValueOnce(undefined);
-    const { rerender } = renderHook(
-      ({ value, enabled }) => useAutoSave(value, save, { enabled }),
-      {
-        initialProps: { value: 0, enabled: true },
-      },
-    );
+    const save = vi.fn().mockReturnValueOnce(first).mockResolvedValueOnce(undefined);
+    const { rerender } = renderHook(({ value, enabled }) => useAutoSave(value, save, { enabled }), {
+      initialProps: { value: 0, enabled: true },
+    });
 
     // 触发第一次保存，进入飞行中（in-flight）
     rerender({ value: 1, enabled: true });

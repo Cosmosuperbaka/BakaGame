@@ -78,14 +78,30 @@ export const createAuth = (options: AuthOptions) => {
         create: {
           before: async (user) => {
             const qqNumber = qqNumberOfEmail(user.email);
-            if (!qqNumber) throw APIError.from("BAD_REQUEST", { code: "INVALID_QQ_EMAIL", message: "只支持 QQ 邮箱登录" });
+            if (!qqNumber)
+              throw APIError.from("BAD_REQUEST", {
+                code: "INVALID_QQ_EMAIL",
+                message: "只支持 QQ 邮箱登录",
+              });
             // 账号昵称强制取自 QQ 昵称，客户端自报的 name 一律忽略；查询不到时拒绝建号。
             const name = await options.resolveNickname(qqNumber);
             if (!name) {
-              throw APIError.from("SERVICE_UNAVAILABLE", { code: "QQ_NICKNAME_UNAVAILABLE", message: "暂时无法获取你的 QQ 昵称，请重新获取验证码后再试" });
+              throw APIError.from("SERVICE_UNAVAILABLE", {
+                code: "QQ_NICKNAME_UNAVAILABLE",
+                message: "暂时无法获取你的 QQ 昵称，请重新获取验证码后再试",
+              });
             }
             // 头像只由服务端从 qlogo 抓取后写入站内代理地址，不接受客户端提供的 URL。
-            return { data: { ...user, name, image: null, qqNumber, showQq: false, role: admins.has(qqNumber) ? "admin" : "user" } };
+            return {
+              data: {
+                ...user,
+                name,
+                image: null,
+                qqNumber,
+                showQq: false,
+                role: admins.has(qqNumber) ? "admin" : "user",
+              },
+            };
           },
         },
       },
@@ -95,9 +111,16 @@ export const createAuth = (options: AuthOptions) => {
         if (ctx.path !== "/sign-in/email-otp") return;
         const body = (ctx.body ?? {}) as { email?: unknown; image?: unknown };
         if (typeof body.email !== "string" || !qqNumberOfEmail(body.email)) {
-          throw APIError.from("BAD_REQUEST", { code: "INVALID_QQ_EMAIL", message: "只支持 QQ 邮箱登录" });
+          throw APIError.from("BAD_REQUEST", {
+            code: "INVALID_QQ_EMAIL",
+            message: "只支持 QQ 邮箱登录",
+          });
         }
-        if (body.image !== undefined) throw APIError.from("BAD_REQUEST", { code: "FIELD_NOT_ALLOWED", message: "头像由 QQ 自动同步" });
+        if (body.image !== undefined)
+          throw APIError.from("BAD_REQUEST", {
+            code: "FIELD_NOT_ALLOWED",
+            message: "头像由 QQ 自动同步",
+          });
       }),
     },
     plugins: [

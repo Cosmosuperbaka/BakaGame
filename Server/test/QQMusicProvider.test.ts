@@ -1,5 +1,10 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
-import { QQMusicProvider, stripHtmlTags, parseQrcLyrics, parseLrcLyrics } from "../src/infrastructure/QQMusicProvider";
+import {
+  QQMusicProvider,
+  stripHtmlTags,
+  parseQrcLyrics,
+  parseLrcLyrics,
+} from "../src/infrastructure/QQMusicProvider";
 import qqmusic from "qqmusic-api-enhanced";
 
 const originals = {
@@ -132,7 +137,10 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
     expect(res).toHaveLength(1);
     expect(res[0].artist).toBe("某歌手");
 
-    qqmusic.search = mock(async () => ({ status: 200, body: { songs: [{ mid: "004", title: "T" }] } })) as any;
+    qqmusic.search = mock(async () => ({
+      status: 200,
+      body: { songs: [{ mid: "004", title: "T" }] },
+    })) as any;
     const res2 = await provider.search("y", 10);
     expect(res2[0].artist).toBe("未知歌手");
   });
@@ -178,7 +186,9 @@ describe("QQMusicProvider · getSongMetadata", () => {
     })) as any;
     qqmusic.lyric = mock(async () => ({
       status: 200,
-      body: { lyric: `<?xml version="1.0"?><QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,500]回到(0,250)过去(250,250)\\n"/></LyricInfo></QrcInfos>` },
+      body: {
+        lyric: `<?xml version="1.0"?><QrcInfos><LyricInfo><Lyric_1 LyricContent="[0,500]回到(0,250)过去(250,250)\\n"/></LyricInfo></QrcInfos>`,
+      },
     })) as any;
 
     const meta = await provider.getSongMetadata("qq:0017K7gL4WYnw2");
@@ -191,7 +201,10 @@ describe("QQMusicProvider · getSongMetadata", () => {
 
   it("查无此曲时抛 INVALID_SONG", async () => {
     const provider = new QQMusicProvider(offlineAmll);
-    qqmusic.song_detail = mock(async () => ({ status: 200, body: { data: { track_info: {} } } })) as any;
+    qqmusic.song_detail = mock(async () => ({
+      status: 200,
+      body: { data: { track_info: {} } },
+    })) as any;
     await expect(provider.getSongMetadata("qq:nope")).rejects.toThrow();
   });
 
@@ -200,7 +213,10 @@ describe("QQMusicProvider · getSongMetadata", () => {
     let calls = 0;
     qqmusic.song_detail = mock(async () => {
       calls++;
-      return { status: 200, body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } } };
+      return {
+        status: 200,
+        body: { data: { track_info: { name: "T", singer: [{ name: "A" }] } } },
+      };
     }) as any;
     qqmusic.lyric = mock(async () => ({ status: 200, body: { lyric: LRC } })) as any;
 
@@ -270,8 +286,13 @@ describe("QQMusicProvider · getSong 与音频直链", () => {
     qqmusic.song_url = mock(async ({ type }: any) => {
       urlCalls.push(type);
       if (type === "320") return { status: 200, body: { data: [{ url: "" }] } };
-      if (type === "128") return { status: 200, body: { data: [{ url: "https://ws.stream.qqmusic.qq.com/RS02_fake.mp3" }] } }; // 模拟 RS02 幽灵链接被过滤
-      if (type === "m4a") return { status: 200, body: { data: [{ url: "https://cdn.example/valid.m4a" }] } };
+      if (type === "128")
+        return {
+          status: 200,
+          body: { data: [{ url: "https://ws.stream.qqmusic.qq.com/RS02_fake.mp3" }] },
+        }; // 模拟 RS02 幽灵链接被过滤
+      if (type === "m4a")
+        return { status: 200, body: { data: [{ url: "https://cdn.example/valid.m4a" }] } };
       return { status: 200, body: { data: [{}] } };
     }) as any;
 
@@ -316,10 +337,21 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     })) as any;
     qqmusic.playlist_track_all = mock(async () => ({
       status: 200,
-      body: { songs: [{ songmid: "101", songname: "<em>晴天</em>", singer: [{ name: "周杰伦" }], interval: 269 }] },
+      body: {
+        songs: [
+          {
+            songmid: "101",
+            songname: "<em>晴天</em>",
+            singer: [{ name: "周杰伦" }],
+            interval: 269,
+          },
+        ],
+      },
     })) as any;
 
-    const { info, songs } = await provider.getPlaylistSongs("https://y.qq.com/n/ryqq/playlist/12345678");
+    const { info, songs } = await provider.getPlaylistSongs(
+      "https://y.qq.com/n/ryqq/playlist/12345678"
+    );
     expect(info.name).toBe("我的歌单");
     expect(songs[0].id).toBe("qq:101");
     expect(songs[0].title).toBe("晴天");
@@ -335,7 +367,9 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     const provider = new QQMusicProvider();
     qqmusic.search = mock(async () => ({
       status: 200,
-      body: { data: { body: { singer: [{ singerMID: "mid1", singerID: 7788, singerName: "周杰伦" }] } } },
+      body: {
+        data: { body: { singer: [{ singerMID: "mid1", singerID: 7788, singerName: "周杰伦" }] } },
+      },
     })) as any;
 
     const artists = await provider.searchArtists("周杰伦", 10);
@@ -348,7 +382,19 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     const provider = new QQMusicProvider();
     qqmusic.artist_songs = mock(async () => ({
       status: 200,
-      body: { songs: [{ songInfo: { mid: "201", name: "轨迹", singer: [{ name: "周杰伦" }], album: { id: 9, name: "寻找周杰伦" }, interval: 300 } }] },
+      body: {
+        songs: [
+          {
+            songInfo: {
+              mid: "201",
+              name: "轨迹",
+              singer: [{ name: "周杰伦" }],
+              album: { id: 9, name: "寻找周杰伦" },
+              interval: 300,
+            },
+          },
+        ],
+      },
     })) as any;
 
     const songs = await provider.getArtistSongs("qq:artist1");
@@ -361,7 +407,13 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     const provider = new QQMusicProvider();
     qqmusic.search = mock(async () => ({
       status: 200,
-      body: { data: { body: { item_album: [{ albumMID: "alb1", albumID: 4321, albumName: "范特西", song_count: 10 }] } } },
+      body: {
+        data: {
+          body: {
+            item_album: [{ albumMID: "alb1", albumID: 4321, albumName: "范特西", song_count: 10 }],
+          },
+        },
+      },
     })) as any;
 
     const albums = await provider.searchAlbums("范特西", 5);
@@ -411,7 +463,10 @@ describe("QQMusicProvider · 扫码登录", () => {
     qqmusic.login_qr_check = mock(async () => ({ status: 200, body: { code: 800 } })) as any;
     expect((await provider.checkQrLogin("sig:::123", "qq", "qq")).status).toBe("expired");
 
-    qqmusic.login_qr_check = mock(async () => ({ status: 200, body: { code: 200, cookieStr: "qm_keyst=abc" } })) as any;
+    qqmusic.login_qr_check = mock(async () => ({
+      status: 200,
+      body: { code: 200, cookieStr: "qm_keyst=abc" },
+    })) as any;
     const ok = await provider.checkQrLogin("sig:::123", "qq", "qq");
     expect(ok.status).toBe("authorized");
     expect(ok.session?.account.nickname).toBe("淋雨之前");
@@ -430,7 +485,10 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
         body: { isLogin: true, account: { userId: "9", nickname: "刷新后", vipLevel: 8 } },
       };
     }) as any;
-    qqmusic.login_refresh = mock(async () => ({ status: 200, body: { cookieStr: "new_cookie" } })) as any;
+    qqmusic.login_refresh = mock(async () => ({
+      status: 200,
+      body: { cookieStr: "new_cookie" },
+    })) as any;
 
     const session = await provider.getLoginStatus("old_cookie");
     expect(session.cookie).toBe("new_cookie");

@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  preventImageDrag,
-  setupGlobalImageProtection,
-} from "./ImageProtection";
+import { preventImageDrag, setupGlobalImageProtection } from "./ImageProtection";
 
 describe("ImageProtection", () => {
   describe("preventImageDrag", () => {

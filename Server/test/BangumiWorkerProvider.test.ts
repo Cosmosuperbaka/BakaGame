@@ -23,20 +23,29 @@ class DeferredWorker {
   onerror: ((event: unknown) => void) | null = null;
   initReply: (() => void) | null = null;
   searches = 0;
-  constructor() { DeferredWorker.latest = this; }
+  constructor() {
+    DeferredWorker.latest = this;
+  }
   postMessage(message: unknown) {
     const request = message as { id: number; method: string };
     if (request.method === "init") {
       const id = request.id;
-      this.initReply = () => this.onmessage?.({ data: { id, ok: true, value: true } } as MessageEvent);
+      this.initReply = () =>
+        this.onmessage?.({ data: { id, ok: true, value: true } } as MessageEvent);
     } else if (request.method === "song.searchSubjects") {
       this.searches += 1;
       const id = request.id;
-      queueMicrotask(() => this.onmessage?.({ data: { id, ok: true, value: [{ id: "7", name: "Slow", nameCn: "慢查询" }] } } as MessageEvent));
+      queueMicrotask(() =>
+        this.onmessage?.({
+          data: { id, ok: true, value: [{ id: "7", name: "Slow", nameCn: "慢查询" }] },
+        } as MessageEvent)
+      );
     } else {
       // init 之外的请求（含 close）立即成功，避免 close 挂到超时。
       const id = request.id;
-      queueMicrotask(() => this.onmessage?.({ data: { id, ok: true, value: true } } as MessageEvent));
+      queueMicrotask(() =>
+        this.onmessage?.({ data: { id, ok: true, value: true } } as MessageEvent)
+      );
     }
   }
   terminate() {}
@@ -49,9 +58,10 @@ class FailingWorker {
   onerror: ((event: unknown) => void) | null = null;
   postMessage(message: unknown) {
     const { id, method } = message as { id: number; method: string };
-    const reply = method === "song.searchSubjects"
-      ? { id, ok: false, code: FailingWorker.code, message: "本地 Bangumi 数据读取失败" }
-      : { id, ok: true, value: true };
+    const reply =
+      method === "song.searchSubjects"
+        ? { id, ok: false, code: FailingWorker.code, message: "本地 Bangumi 数据读取失败" }
+        : { id, ok: true, value: true };
     queueMicrotask(() => this.onmessage?.({ data: reply } as MessageEvent));
   }
   terminate() {}
@@ -60,30 +70,54 @@ class FailingWorker {
 const withWorker = async <T>(Stub: new () => unknown, run: () => Promise<T>): Promise<T> => {
   const originalWorker = globalThis.Worker;
   globalThis.Worker = Stub as unknown as typeof Worker;
-  try { return await run(); }
-  finally { globalThis.Worker = originalWorker; }
+  try {
+    return await run();
+  } finally {
+    globalThis.Worker = originalWorker;
+  }
 };
 
 describe("BangumiWorkerProvider", () => {
   test("runs sqlite query outside the main provider", async () => {
     const songPath = join(tmpdir(), `bangumi-worker-test-${crypto.randomUUID()}.sqlite`);
-    const characterPath = join(tmpdir(), `bangumi-worker-character-test-${crypto.randomUUID()}.sqlite`);
+    const characterPath = join(
+      tmpdir(),
+      `bangumi-worker-character-test-${crypto.randomUUID()}.sqlite`
+    );
     const db = new Database(songPath);
-    db.run("CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)");
-    db.run("CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)");
-    db.run("CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram')");
-    db.run("INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',0,0,0,'')");
+    db.run(
+      "CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)"
+    );
+    db.run(
+      "CREATE TABLE subject_music_relations (subject_id INTEGER, music_id INTEGER, relation_type INTEGER, relation_order INTEGER, title TEXT, artist TEXT, kind TEXT)"
+    );
+    db.run(
+      "CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram')"
+    );
+    db.run(
+      "INSERT INTO subjects VALUES (1,2,'Test','测试中心','','','2020-01-01',0,'[]','[]',0,0,0,'')"
+    );
     db.run("INSERT INTO subject_search(rowid,name,name_cn) VALUES (1,'Test','测试中心')");
-    db.close(); new Database(characterPath).close();
+    db.close();
+    new Database(characterPath).close();
     // 猜歌与 CEE 共用同一个 Worker：这里走真实装配路径，顺便验证两边能共存。
     const client = new BangumiDataWorkerClient();
-    const ready = client.init({ method: "init", song: { dbPath: songPath }, cee: { dbPath: songPath } });
+    const ready = client.init({
+      method: "init",
+      song: { dbPath: songPath },
+      cee: { dbPath: songPath },
+    });
     const provider = new BangumiWorkerProvider(client, ready);
     const rows = await provider.searchSubjects("测试中", 3);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows[0].imageUrl).toBeUndefined();
     await client.close();
-    for (const path of [songPath, characterPath]) try { await Bun.file(path).delete(); } catch { /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */ }
+    for (const path of [songPath, characterPath])
+      try {
+        await Bun.file(path).delete();
+      } catch {
+        /* 临时库文件本就可能不存在或已被回收：清理尽力而为，不影响断言 */
+      }
     // 真实 Worker：一次 init 要同时建两条数据链路，另有 TS Worker 转译开销。
   }, 30_000);
 
@@ -91,7 +125,11 @@ describe("BangumiWorkerProvider", () => {
     const spy = spyOn(globalThis, "setTimeout");
     await withWorker(SilentWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      void client.init({ method: "init", song: { dbPath: "unused.sqlite" }, cee: { dbPath: "unused.sqlite" } });
+      void client.init({
+        method: "init",
+        song: { dbPath: "unused.sqlite" },
+        cee: { dbPath: "unused.sqlite" },
+      });
       const delays = spy.mock.calls.map((call) => Number(call[1]));
       // 索引重建分钟级：init 必须是长窗口，否则 ready 被拒后所有查询永久失败。
       // 窗口取 CEE 那侧更长的口径（1 小时），猜歌与 CEE 现在共用一次 init。
@@ -104,7 +142,11 @@ describe("BangumiWorkerProvider", () => {
   test("慢初始化期间查询等待而非失败，初始化完成后正常返回", async () => {
     await withWorker(DeferredWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      const ready = client.init({ method: "init", song: { dbPath: "unused.sqlite" }, cee: { dbPath: "unused.sqlite" } });
+      const ready = client.init({
+        method: "init",
+        song: { dbPath: "unused.sqlite" },
+        cee: { dbPath: "unused.sqlite" },
+      });
       const provider = new BangumiWorkerProvider(client, ready);
       const worker = DeferredWorker.latest!;
       const pending = provider.searchSubjects("关键词", 3);
@@ -126,9 +168,15 @@ describe("BangumiWorkerProvider", () => {
     // 若被错记成 CEE_DATA_UNAVAILABLE（曾经的兜底分支写法），猜歌就永远无法降级。
     await withWorker(FailingWorker, async () => {
       const client = new BangumiDataWorkerClient();
-      const ready = client.init({ method: "init", song: { dbPath: "unused.sqlite" }, cee: { dbPath: "unused.sqlite" } });
+      const ready = client.init({
+        method: "init",
+        song: { dbPath: "unused.sqlite" },
+        cee: { dbPath: "unused.sqlite" },
+      });
       const provider = new BangumiWorkerProvider(client, ready);
-      await expect(provider.searchSubjects("关键词", 3)).rejects.toMatchObject({ code: "BANGUMI_DATA_UNAVAILABLE" });
+      await expect(provider.searchSubjects("关键词", 3)).rejects.toMatchObject({
+        code: "BANGUMI_DATA_UNAVAILABLE",
+      });
       await client.close();
     });
   });
@@ -144,7 +192,13 @@ describe("BangumiWorkerProvider 其余门面方法", () => {
         return respond(payload);
       },
     };
-    return { calls, facade: new BangumiWorkerProvider(client as unknown as BangumiDataWorkerClient, Promise.resolve(true)) };
+    return {
+      calls,
+      facade: new BangumiWorkerProvider(
+        client as unknown as BangumiDataWorkerClient,
+        Promise.resolve(true)
+      ),
+    };
   };
 
   test("getSubject 与两个图片接口原样转发方法与参数，并透传返回值", async () => {

@@ -27,7 +27,10 @@ import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/Sentry
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
-import { DatabaseFeedbackRepository, DatabaseUserSettingRepository } from "../infrastructure/db/UserDataRepository";
+import {
+  DatabaseFeedbackRepository,
+  DatabaseUserSettingRepository,
+} from "../infrastructure/db/UserDataRepository";
 import { captureServerFeedback } from "../infrastructure/Sentry";
 import { isAllowedOrigin } from "../transport/App";
 import type { AppEnv } from "../config/Env";
@@ -36,7 +39,12 @@ import type { AdminRoomControl } from "../domain/AdminRoom";
 import type { RecordedGame } from "../domain/GameRecord";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
-export function createServer(options: Omit<AppDependencies, "sonGuessrService" | "ceeService" | "disposeResources"> & { database?: Database; gameRecords?: GameRecordService }) {
+export function createServer(
+  options: Omit<AppDependencies, "sonGuessrService" | "ceeService" | "disposeResources"> & {
+    database?: Database;
+    gameRecords?: GameRecordService;
+  }
+) {
   const { env, logger, database, gameRecords, ...appOptions } = options;
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
@@ -45,24 +53,42 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
     throw new AppError("CONFIG_ERROR", "生产环境需要 DATABASE_URL");
   }
   if (env.otelDeploymentEnvironment === "production" && env.account?.mail.kind !== "smtp") {
-    throw new AppError("CONFIG_ERROR", "生产环境账号系统需要 SMTP_HOST / SMTP_USER / SMTP_PASS（且不得启用 MAIL_DEV_CONSOLE）");
+    throw new AppError(
+      "CONFIG_ERROR",
+      "生产环境账号系统需要 SMTP_HOST / SMTP_USER / SMTP_PASS（且不得启用 MAIL_DEV_CONSOLE）"
+    );
   }
   // 猜歌与 CEE 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
   const data = createBangumiData({
-    song: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, imageBase: env.bangumiImageUrl, apiBase: env.bangumiApiUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
-    cee: { dbPath: env.bangumiDbPath!, enrichmentPath: env.bangumiEnrichmentPath, apiBase: env.bangumiApiUrl, imageBase: env.bangumiImageUrl, meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined },
+    song: {
+      dbPath: env.bangumiDbPath!,
+      enrichmentPath: env.bangumiEnrichmentPath,
+      imageBase: env.bangumiImageUrl,
+      apiBase: env.bangumiApiUrl,
+      meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined,
+    },
+    cee: {
+      dbPath: env.bangumiDbPath!,
+      enrichmentPath: env.bangumiEnrichmentPath,
+      apiBase: env.bangumiApiUrl,
+      imageBase: env.bangumiImageUrl,
+      meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined,
+    },
     imagesDir: env.bangumiImagesDir,
     tagDiff: env.bangumiTagDiffUrl
       ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
       : undefined,
     // 更新器只在显式开启（生产默认）且有上游地址时装配：E2E 与本地开发不该打线上 API。
-    updater: env.bangumiUpdaterEnabled && env.bangumiApiUrl
-      ? {
-          base: env.bangumiApiUrl, imageSource: env.bangumiImageSource,
-          minRate: env.bangumiUpdaterMinRate, maxRate: env.bangumiUpdaterMaxRate,
-          playerScale: env.bangumiUpdaterPlayerScale,
-        }
-      : undefined,
+    updater:
+      env.bangumiUpdaterEnabled && env.bangumiApiUrl
+        ? {
+            base: env.bangumiApiUrl,
+            imageSource: env.bangumiImageSource,
+            minRate: env.bangumiUpdaterMinRate,
+            maxRate: env.bangumiUpdaterMaxRate,
+            playerScale: env.bangumiUpdaterPlayerScale,
+          }
+        : undefined,
   });
   // 自建图床读取侧：对外前缀写死 `/api/bangumi`（`Env.BANGUMI_IMAGE_ROUTE`），路径与
   // 源站一致所以业务侧的 URL 改写零改动。主线程只读分片，新抓到的图转交数据 Worker 落库（单写者）。
@@ -72,13 +98,19 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
         sourceBase: env.bangumiImageSource,
         logger,
         persist: (path, image) => {
-          void data.client.request({ method: "images.put", path, bytes: image.bytes })
-            .catch((error: unknown) => { logger.warn("图床落库失败（本次仍正常返回）", { path, error: String(error) }); });
+          void data.client
+            .request({ method: "images.put", path, bytes: image.bytes })
+            .catch((error: unknown) => {
+              logger.warn("图床落库失败（本次仍正常返回）", { path, error: String(error) });
+            });
         },
       })
     : undefined;
   const local = data.song;
-  const netease = new NeteaseMusicProvider({ logger, enableGeneralUnblock: env.enableGeneralUnblock });
+  const netease = new NeteaseMusicProvider({
+    logger,
+    enableGeneralUnblock: env.enableGeneralUnblock,
+  });
   // 音乐链路预热不阻塞启动：第一位带着本机凭据进房的玩家不该替整个进程垫付接口包冷加载与首个上游建连。
   // 失败只会记一条告警，后续请求仍按惰性加载自行重试。
   void netease.warmUp();
@@ -89,17 +121,48 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
   // 而不是整局卡死（10-11 生产事故：sort 字段未声明导致搜索 400，猜番完全无法开局）。
   // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
-  const song = new SonGuessrService({ eventLogger: logger, musicProvider: music, bangumiProvider: bangumi, gameRecorder: gameRecords });
-  const cee = new CEEService({ data: data.cee, eventLogger: logger, serverUrl: env.ceeOriginalServerUrl, aesSecret: env.ceeOriginalAesSecret, gameRecorder: gameRecords });
-  const account = createAccount(env, database, logger, { faker: appOptions.whoIsFakerService, song, cee });
-  const app = createApp({ ...appOptions, env, logger, bangumiImages: images, sonGuessrService: song, ceeService: cee, account, disposeResources: async () => {
-    // 先等在途对局记录写完再关数据库连接。
-    await gameRecords?.close();
-    await account?.visits.close();
-    const results = await Promise.allSettled([cee.close(), data.client.close(), Promise.resolve().then(() => images?.close()), Promise.resolve().then(() => database?.close())]);
-    const failures = results.flatMap(result => result.status === "rejected" ? [result.reason] : []);
-    if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
-  } });
+  const song = new SonGuessrService({
+    eventLogger: logger,
+    musicProvider: music,
+    bangumiProvider: bangumi,
+    gameRecorder: gameRecords,
+  });
+  const cee = new CEEService({
+    data: data.cee,
+    eventLogger: logger,
+    serverUrl: env.ceeOriginalServerUrl,
+    aesSecret: env.ceeOriginalAesSecret,
+    gameRecorder: gameRecords,
+  });
+  const account = createAccount(env, database, logger, {
+    faker: appOptions.whoIsFakerService,
+    song,
+    cee,
+  });
+  const app = createApp({
+    ...appOptions,
+    env,
+    logger,
+    bangumiImages: images,
+    sonGuessrService: song,
+    ceeService: cee,
+    account,
+    disposeResources: async () => {
+      // 先等在途对局记录写完再关数据库连接。
+      await gameRecords?.close();
+      await account?.visits.close();
+      const results = await Promise.allSettled([
+        cee.close(),
+        data.client.close(),
+        Promise.resolve().then(() => images?.close()),
+        Promise.resolve().then(() => database?.close()),
+      ]);
+      const failures = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : []
+      );
+      if (failures.length) throw new AggregateError(failures, "服务资源释放失败");
+    },
+  });
   return {
     ...app,
     /**
@@ -113,28 +176,49 @@ export function createServer(options: Omit<AppDependencies, "sonGuessrService" |
 }
 
 /** 账号系统随数据库启用；`readEnv` 已保证有数据库时账号配置齐备。 */
-const createAccount = (env: AppEnv, database: Database | undefined, logger: EventLogger, rooms: Record<RecordedGame, AdminRoomControl>) => {
+const createAccount = (
+  env: AppEnv,
+  database: Database | undefined,
+  logger: EventLogger,
+  rooms: Record<RecordedGame, AdminRoomControl>
+) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
   // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定。
   let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
   const auth = createAuth({
-    database: drizzleAdapter(database.db, { provider: "mysql", schema: { user: schema.user, session: schema.session, account: schema.account, verification: schema.verification } }),
+    database: drizzleAdapter(database.db, {
+      provider: "mysql",
+      schema: {
+        user: schema.user,
+        session: schema.session,
+        account: schema.account,
+        verification: schema.verification,
+      },
+    }),
     secret: env.account.secret,
     baseURL: env.serverUrl,
     isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
     secureCookies: env.otelDeploymentEnvironment === "production",
     adminQqNumbers: env.account.adminQqNumbers,
     mailer,
-    resolveNickname: (qqNumber) => resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
+    resolveNickname: (qqNumber) =>
+      resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
   });
   // 昵称来源是管理员自建的 NapCat（OneBot 11）：没配实例就不装配昵称服务，
   // 新号发码与建号会因取不到昵称而拒绝（老号不受影响），后台 `admin.qq.*` 回 503。
   const nicknames = env.napcat
     ? new QQNicknameService({ auth, client: new QQNapCatClient(env.napcat), logger })
     : null;
-  resolveNickname = (qqNumber) => (nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null));
-  const service = new AccountService({ auth, mailer, avatars: new QQAvatarService(), nicknames, logger });
+  resolveNickname = (qqNumber) =>
+    nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null);
+  const service = new AccountService({
+    auth,
+    mailer,
+    avatars: new QQAvatarService(),
+    nicknames,
+    logger,
+  });
   const adminQqNumbers = env.account.adminQqNumbers;
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
   void database.ready
@@ -158,11 +242,23 @@ const createAccount = (env: AppEnv, database: Database | undefined, logger: Even
     rooms,
     siteStats,
     qq: nicknames,
-    sentry: env.sentryApiToken && env.sentryDsn
-      ? new SentryApiClient(deriveSentryApiConfig(env.sentryDsn, env.sentryAllowedProjectIds ?? [], env.sentryApiToken), logger)
-      : null,
+    sentry:
+      env.sentryApiToken && env.sentryDsn
+        ? new SentryApiClient(
+            deriveSentryApiConfig(
+              env.sentryDsn,
+              env.sentryAllowedProjectIds ?? [],
+              env.sentryApiToken
+            ),
+            logger
+          )
+        : null,
   });
-  const visits = new SiteStatsService({ repository: siteStats, secret: env.account.secret, logger });
+  const visits = new SiteStatsService({
+    repository: siteStats,
+    secret: env.account.secret,
+    logger,
+  });
   visits.start();
   return { auth, service, userData, admin, visits, ready: database.ready };
 };

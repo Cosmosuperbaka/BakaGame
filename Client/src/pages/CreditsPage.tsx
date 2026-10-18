@@ -44,7 +44,9 @@ function CreditsPage() {
       <Seo path="/credits" />
       <CreditsView
         tab={tab}
-        onTabChange={(next) => setParams(next === "credits" ? {} : { tab: next }, { replace: true })}
+        onTabChange={(next) =>
+          setParams(next === "credits" ? {} : { tab: next }, { replace: true })
+        }
         onBack={() => void navigate("/")}
         versionLabel={`V${version ?? "∞"}`}
         commitLabel={commitHistory.currentCommit}

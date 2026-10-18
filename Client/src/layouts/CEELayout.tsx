@@ -9,5 +9,12 @@ export default function CEELayout() {
   const notice = useCEEStore((state) => state.notice);
   const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
   useEffect(() => initCEEWs(), []);
-  return <><Suspense fallback={<PageLoadingFallback />}><Outlet /></Suspense><ToastViewport toasts={toasts} /></>;
+  return (
+    <>
+      <Suspense fallback={<PageLoadingFallback />}>
+        <Outlet />
+      </Suspense>
+      <ToastViewport toasts={toasts} />
+    </>
+  );
 }

@@ -30,9 +30,7 @@ export const createSwaggerPlugin = ({ serverUrl, enabled = true }: OpenApiOption
           url: serverUrl,
         },
       ],
-      tags: [
-        { name: "System", description: "服务状态与版本信息" },
-      ],
+      tags: [{ name: "System", description: "服务状态与版本信息" }],
     },
   });
 };

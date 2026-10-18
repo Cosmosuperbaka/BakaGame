@@ -27,7 +27,11 @@ type Story = StoryObj<typeof meta>;
  * activeTab 只作初始值，之后由内部状态接管，点击标签可以切换。
  * 选择器以 bottom-full 向上展开，这里留出上方空间，让整块浮层落在截图范围内。
  */
-function PickerDemo({ activeTab: initialTab, onTabChange, ...props }: ComponentProps<typeof EmojiPicker>) {
+function PickerDemo({
+  activeTab: initialTab,
+  onTabChange,
+  ...props
+}: ComponentProps<typeof EmojiPicker>) {
   const [activeTab, setActiveTab] = useState(initialTab);
   return (
     <div className="w-80 pt-[17rem]">
@@ -55,7 +59,12 @@ export const AnimatedPack: Story = {
   loaders: [
     async () => {
       const packs = await loadStickerPacks();
-      return { animatedTab: Math.max(0, packs.findIndex((pack) => pack.animated)) };
+      return {
+        animatedTab: Math.max(
+          0,
+          packs.findIndex((pack) => pack.animated)
+        ),
+      };
     },
   ],
   render: (args, { loaded }) => (

@@ -12,7 +12,10 @@ export interface ValueChange {
  * 挂载时的初始值不算变化，重新挂载（换布局、开抽屉）也不会重播。
  */
 export function useValueChange(value: number): ValueChange | null {
-  const [state, setState] = useState<{ value: number; change: ValueChange | null }>({ value, change: null });
+  const [state, setState] = useState<{ value: number; change: ValueChange | null }>({
+    value,
+    change: null,
+  });
   if (!Object.is(state.value, value)) {
     const change = { from: state.value, to: value, serial: (state.change?.serial ?? 0) + 1 };
     setState({ value, change });

@@ -28,7 +28,7 @@ describe("ChatPanel (Common)", () => {
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     const systemMsg = screen.getByText("游戏开始：第 1 轮出题阶段");
@@ -58,15 +58,16 @@ describe("ChatPanel (Common)", () => {
         myPlayerId="p-me"
         notice="聊天仅增强版玩家可见"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     const notice = screen.getByText("聊天仅增强版玩家可见");
     const bubble = screen.getByTestId("chat-message-bubble");
     expect(notice).toBeVisible();
     expect(bubble).toHaveTextContent("原版那边好像断了一下");
-    expect(notice.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(notice.compareDocumentPosition(bubble) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
     expect(within(bubble).queryByText("聊天仅增强版玩家可见")).not.toBeInTheDocument();
   });
 
@@ -96,7 +97,7 @@ describe("ChatPanel (Common)", () => {
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     const bubbles = screen.getAllByTestId("chat-message-bubble");
@@ -106,8 +107,9 @@ describe("ChatPanel (Common)", () => {
     expect(bubbles[1]).toHaveTextContent("这是对方的消息");
     expect(screen.getByText("我", { exact: true })).toBeVisible();
     expect(screen.getByText("对手", { exact: true })).toBeVisible();
-    expect(bubbles[0].compareDocumentPosition(bubbles[1]) & Node.DOCUMENT_POSITION_FOLLOWING)
-      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(bubbles[0].compareDocumentPosition(bubbles[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
   });
 
   it("幽灵私密频道保留双方发言并展示可见范围说明", () => {
@@ -139,7 +141,7 @@ describe("ChatPanel (Common)", () => {
         myPlayerId="p-me"
         notice="幽灵频道：仅出局玩家可见"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     const bubbles = screen.getAllByTestId("chat-message-bubble");
@@ -172,7 +174,7 @@ describe("ChatPanel (Common)", () => {
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     const img = screen.getByRole("img", { name: "表情" });
@@ -184,12 +186,7 @@ describe("ChatPanel (Common)", () => {
     const handleSend = vi.fn().mockResolvedValue(undefined);
 
     render(
-      <ChatPanel
-        messages={[]}
-        players={mockPlayers}
-        myPlayerId="p-me"
-        onSendMessage={handleSend}
-      />,
+      <ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />
     );
 
     const input = screen.getByPlaceholderText("请输入文本");
@@ -214,7 +211,9 @@ describe("ChatPanel (Common)", () => {
 
   it("发送时文字凝成气泡收进发送按钮，回显那条不再叠一次弹入", async () => {
     const handleSend = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = render(<ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />);
+    const { rerender } = render(
+      <ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />
+    );
     const input = screen.getByRole("combobox", { name: "聊天消息" });
     fireEvent.change(input, { target: { value: "飞出去" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
@@ -225,13 +224,24 @@ describe("ChatPanel (Common)", () => {
 
     rerender(
       <ChatPanel
-        messages={[{ id: "echo", playerId: "p-me", playerName: "我", text: "飞出去", createdAt: 1, system: false }]}
+        messages={[
+          {
+            id: "echo",
+            playerId: "p-me",
+            playerName: "我",
+            text: "飞出去",
+            createdAt: 1,
+            system: false,
+          },
+        ]}
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={handleSend}
-      />,
+      />
     );
-    expect(within(screen.getByTestId("chat-message-bubble")).getByText("飞出去")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("chat-message-bubble")).getByText("飞出去")
+    ).toBeInTheDocument();
   });
 
   it("正文保留提及成员与上下文，不把提及误作输入候选", () => {
@@ -252,7 +262,7 @@ describe("ChatPanel (Common)", () => {
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-      />,
+      />
     );
 
     expect(screen.getByText("@我")).toBeInTheDocument();
@@ -263,12 +273,16 @@ describe("ChatPanel (Common)", () => {
   });
   it("输入提及只提供其他成员，选择候选后发送完整消息", async () => {
     const handleSend = vi.fn().mockResolvedValue(undefined);
-    render(<ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />);
+    render(
+      <ChatPanel messages={[]} players={mockPlayers} myPlayerId="p-me" onSendMessage={handleSend} />
+    );
     const input = screen.getByRole("combobox", { name: "聊天消息" });
     fireEvent.change(input, { target: { value: "你好 @" } });
     const candidates = screen.getByRole("listbox", { name: "提及玩家" });
     expect(input).toHaveAttribute("aria-expanded", "true");
-    await waitFor(() => expect(within(candidates).getByRole("option", { name: "对手" })).toBeVisible());
+    await waitFor(() =>
+      expect(within(candidates).getByRole("option", { name: "对手" })).toBeVisible()
+    );
     expect(within(candidates).queryByRole("option", { name: "我" })).not.toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Enter" });
     expect(input).toHaveValue("你好 @对手 ");
@@ -280,11 +294,33 @@ describe("ChatPanel (Common)", () => {
 
   it("频道消息与系统提示混合时，只有玩家消息形成气泡", () => {
     const messages: ChatMessage[] = [
-      { id: "private-1", playerId: "p-other", playerName: "对手", text: "幽灵讨论", channel: "ghost", createdAt: 1, system: false },
-      { id: "private-system", playerId: "system", playerName: "系统", text: "第 2 天开始", createdAt: 2, system: true },
+      {
+        id: "private-1",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "幽灵讨论",
+        channel: "ghost",
+        createdAt: 1,
+        system: false,
+      },
+      {
+        id: "private-system",
+        playerId: "system",
+        playerName: "系统",
+        text: "第 2 天开始",
+        createdAt: 2,
+        system: true,
+      },
     ];
-    render(<ChatPanel messages={messages} players={mockPlayers} myPlayerId="p-me"
-      notice="幽灵频道：仅出局玩家可见" onSendMessage={vi.fn()} />);
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        notice="幽灵频道：仅出局玩家可见"
+        onSendMessage={vi.fn()}
+      />
+    );
     expect(screen.getByText("第 2 天开始")).toBeVisible();
     const bubbles = screen.getAllByTestId("chat-message-bubble");
     expect(bubbles).toHaveLength(1);

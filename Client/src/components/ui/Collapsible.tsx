@@ -24,7 +24,12 @@ export function DisclosureChevron({
   iconClassName?: string;
 }) {
   return (
-    <motion.span aria-hidden="true" className={cn("inline-flex", className)} animate={{ rotate: open ? 180 : 0 }} transition={spring.snap}>
+    <motion.span
+      aria-hidden="true"
+      className={cn("inline-flex", className)}
+      animate={{ rotate: open ? 180 : 0 }}
+      transition={spring.snap}
+    >
       <ChevronDown className={iconClassName} />
     </motion.span>
   );
@@ -53,7 +58,14 @@ export function CollapsibleRegion({
   return (
     <AnimatePresence initial={false}>
       {open ? (
-        <Region id={id} variants={collapsible} initial="initial" animate="animate" exit="exit" className={cn(as === "span" && "block", className)}>
+        <Region
+          id={id}
+          variants={collapsible}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className={cn(as === "span" && "block", className)}
+        >
           {children}
         </Region>
       ) : null}
@@ -87,7 +99,10 @@ export function Collapsible({
         aria-expanded={open}
         // 收起时内容已卸载，只在展开时指向内容区，免得引用不存在的元素。
         aria-controls={open ? contentId : undefined}
-        className={cn("inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground", sizing.trigger)}
+        className={cn(
+          "inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground",
+          sizing.trigger
+        )}
       >
         {title}
         <DisclosureChevron open={open} iconClassName={sizing.icon} />

@@ -15,15 +15,18 @@ export type ApiClient = ContractRouterClient<ApiContract>;
 const absolute = (path: string) => new URL(resolveServerUrl(path), window.location.href);
 
 export const createApiClient = (): ApiClient =>
-  createORPCClient(new RPCLink({
-    url: () => absolute("/api/rpc"),
-    fetch: (request, init) => fetch(request, { ...init, credentials: "include" }),
-  }));
+  createORPCClient(
+    new RPCLink({
+      url: () => absolute("/api/rpc"),
+      fetch: (request, init) => fetch(request, { ...init, credentials: "include" }),
+    })
+  );
 
 export const api: ApiClient = createApiClient();
 
 /** 站内头像地址（`/api/account/avatar/...`）按后端基址补全；外链（登录弹窗按 QQ 号取的 qlogo）原样使用。 */
-export const avatarSrc = (image: string): string => (image.startsWith("/") ? resolveServerUrl(image) : image);
+export const avatarSrc = (image: string): string =>
+  image.startsWith("/") ? resolveServerUrl(image) : image;
 
 /** 服务端未配置数据库时账号接口统一回 `ACCOUNT_DISABLED`：前端隐藏全部账号入口，游客照常游玩。 */
 export const isAccountDisabled = (error: unknown): boolean =>
@@ -37,7 +40,10 @@ const CJK = /[一-鿿]/;
  */
 export const apiErrorMessage = (error: unknown, fallback = "请求失败，请稍后重试"): string => {
   if (error instanceof ORPCError) {
-    if (error.code === "BAD_REQUEST" && Array.isArray((error.data as { issues?: unknown } | undefined)?.issues)) {
+    if (
+      error.code === "BAD_REQUEST" &&
+      Array.isArray((error.data as { issues?: unknown } | undefined)?.issues)
+    ) {
       const issue = (error.data as { issues: Array<{ message?: unknown }> }).issues[0];
       if (typeof issue?.message === "string" && CJK.test(issue.message)) return issue.message;
     }
@@ -79,11 +85,18 @@ const postAuth = async (path: string, body: Record<string, unknown>): Promise<vo
     throw new AuthRequestError("NETWORK_ERROR", "网络异常，请稍后重试", 0);
   }
   if (response.ok) return;
-  const payload = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown; error?: { code?: unknown; message?: unknown } } | null;
+  const payload = (await response.json().catch(() => null)) as {
+    code?: unknown;
+    message?: unknown;
+    error?: { code?: unknown; message?: unknown };
+  } | null;
   const source = payload?.error ?? payload ?? {};
   const code = typeof source.code === "string" ? source.code : `HTTP_${response.status}`;
-  const message = AUTH_MESSAGES[code]
-    ?? (typeof source.message === "string" && CJK.test(source.message) ? source.message : "登录失败，请稍后重试");
+  const message =
+    AUTH_MESSAGES[code] ??
+    (typeof source.message === "string" && CJK.test(source.message)
+      ? source.message
+      : "登录失败，请稍后重试");
   throw new AuthRequestError(code, message, response.status);
 };
 

@@ -28,7 +28,12 @@ export const Filled: Story = {
   render: () => (
     <div className="w-80 space-y-2">
       <Label htmlFor="story-input-room-name">房间名称</Label>
-      <Input id="story-input-room-name" defaultValue="海豹的房间" placeholder="输入房间名称" className="h-10" />
+      <Input
+        id="story-input-room-name"
+        defaultValue="海豹的房间"
+        placeholder="输入房间名称"
+        className="h-10"
+      />
     </div>
   ),
 };
@@ -38,7 +43,13 @@ export const Disabled: Story = {
   render: () => (
     <div className="w-80 space-y-2">
       <Label htmlFor="story-input-disabled">房间名称</Label>
-      <Input id="story-input-disabled" defaultValue="小布丁的房间" placeholder="输入房间名称" disabled className="h-10" />
+      <Input
+        id="story-input-disabled"
+        defaultValue="小布丁的房间"
+        placeholder="输入房间名称"
+        disabled
+        className="h-10"
+      />
     </div>
   ),
 };

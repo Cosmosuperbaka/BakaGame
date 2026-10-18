@@ -76,7 +76,9 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
       } catch (error) {
         if (attempt >= attempts) throw error;
         options.onRetry?.({ attempt, error });
-        await new Promise((resolveRetry) => setTimeout(resolveRetry, MIGRATION_RETRY_BASE_DELAY_MS * attempt));
+        await new Promise((resolveRetry) =>
+          setTimeout(resolveRetry, MIGRATION_RETRY_BASE_DELAY_MS * attempt)
+        );
       }
     }
   };

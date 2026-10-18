@@ -58,7 +58,8 @@ const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [
 /** 按顺序取第一个对象；用于 `data.body / body / data / 顶层` 这类历史形状兜底链。 */
 const firstRecord = (...values: unknown[]): Record<string, unknown> => {
   for (const value of values) {
-    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+    if (value && typeof value === "object" && !Array.isArray(value))
+      return value as Record<string, unknown>;
   }
   return {};
 };
@@ -123,7 +124,10 @@ export const parseQrcLyrics = (raw: string): SongLyricLine[] => {
       .map((line) => {
         const text =
           line.words && line.words.length > 0
-            ? line.words.map((w) => w.word).join("").trim()
+            ? line.words
+                .map((w) => w.word)
+                .join("")
+                .trim()
             : "";
         const hasTranslation = Boolean(line.translatedLyric);
         return {
@@ -136,11 +140,11 @@ export const parseQrcLyrics = (raw: string): SongLyricLine[] => {
                   startTime: w.startTime,
                   endTime: w.endTime,
                   word: w.word,
-                  romanWord: hasTranslation ? undefined : (w.romanWord || undefined),
+                  romanWord: hasTranslation ? undefined : w.romanWord || undefined,
                 }))
               : undefined,
           translatedLyric: line.translatedLyric || undefined,
-          romanLyric: hasTranslation ? undefined : (line.romanLyric || undefined),
+          romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
           isBG: line.isBG || undefined,
           isDuet: line.isDuet || undefined,
         };
@@ -159,7 +163,10 @@ export const parseLrcLyrics = (raw: string): SongLyricLine[] => {
       .map((line) => {
         const text =
           line.words && line.words.length > 0
-            ? line.words.map((w) => w.word).join("").trim()
+            ? line.words
+                .map((w) => w.word)
+                .join("")
+                .trim()
             : "";
         return {
           time: line.startTime,
@@ -219,14 +226,21 @@ export class QQMusicProvider implements MusicProvider {
     if (trimmed.includes(":")) {
       const parsed = parseSongUrn(trimmed);
       if (parsed.platform !== "qq") {
-        throw new AppError("INVALID_PLATFORM", `QQMusicProvider 仅处理 qq 平台歌曲，收到: ${songId}`);
+        throw new AppError(
+          "INVALID_PLATFORM",
+          `QQMusicProvider 仅处理 qq 平台歌曲，收到: ${songId}`
+        );
       }
       return parsed.rawId;
     }
     return trimmed;
   }
 
-  async search(keyword: string, limit = 20, rawCookie?: MusicCookieInput): Promise<SongSearchResult[]> {
+  async search(
+    keyword: string,
+    limit = 20,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
@@ -245,35 +259,40 @@ export class QQMusicProvider implements MusicProvider {
 
       const body = asRecord(res.body);
       const dataBody = firstRecord(asRecord(body.data).body, body.body, body.data, body);
-      const rawSongs = readRecords(body.songs || dataBody.item_song || asRecord(dataBody.song).list);
+      const rawSongs = readRecords(
+        body.songs || dataBody.item_song || asRecord(dataBody.song).list
+      );
       // 先剔除无 mid 的脏项再映射：`buildSongUrn` 对空 id 抛异常，若不预过滤，
       // 上游返回的任意一条缺 mid 记录都会让整次搜索失败（而非只丢那一条）。
-      return rawSongs.filter((item) => readText(item.mid || item.songmid)).map((item): SongSearchResult => {
-        const mid = readText(item.mid || item.songmid);
-        const rawTitle = readText(item.title || item.name || item.songname);
-        const title = stripHtmlTags(rawTitle);
-        const artist = singerNames(item.singer).filter(Boolean).join(" / ");
-        const album = asRecord(item.album);
-        const rawAlbum = album.name || album.title || item.albumname || undefined;
-        const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-        const albumId = Number(album.id || item.albumid);
-        const pictureUrl = albumId
-          ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
-          : undefined;
-        const durationMs = Number(item.interval || 0) * 1000;
-        const pay = asRecord(item.pay);
-        const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
+      return rawSongs
+        .filter((item) => readText(item.mid || item.songmid))
+        .map((item): SongSearchResult => {
+          const mid = readText(item.mid || item.songmid);
+          const rawTitle = readText(item.title || item.name || item.songname);
+          const title = stripHtmlTags(rawTitle);
+          const artist = singerNames(item.singer).filter(Boolean).join(" / ");
+          const album = asRecord(item.album);
+          const rawAlbum = album.name || album.title || item.albumname || undefined;
+          const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
+          const albumId = Number(album.id || item.albumid);
+          const pictureUrl = albumId
+            ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
+            : undefined;
+          const durationMs = Number(item.interval || 0) * 1000;
+          const pay = asRecord(item.pay);
+          const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
 
-        return {
-          id: buildSongUrn("qq", mid),
-          title,
-          artist: artist || "未知歌手",
-          album: albumName,
-          pictureUrl,
-          durationMs: durationMs > 0 ? durationMs : undefined,
-          requiresVip,
-        };
-      }).filter((s) => s.id && s.title);
+          return {
+            id: buildSongUrn("qq", mid),
+            title,
+            artist: artist || "未知歌手",
+            album: albumName,
+            pictureUrl,
+            durationMs: durationMs > 0 ? durationMs : undefined,
+            requiresVip,
+          };
+        })
+        .filter((s) => s.id && s.title);
     });
 
     const result = songs ?? [];
@@ -321,7 +340,7 @@ export class QQMusicProvider implements MusicProvider {
       const rawTrack = firstRecord(
         data.track_info,
         asRecord(asRecord(data.songinfo).data).track_info,
-        data,
+        data
       );
 
       const title = stripHtmlTags(rawTrack.name || rawTrack.title || "");
@@ -369,14 +388,20 @@ export class QQMusicProvider implements MusicProvider {
     return res;
   }
 
-  async getSongPopularity(songId: string, rawCookie?: MusicCookieInput): Promise<number | undefined> {
+  async getSongPopularity(
+    songId: string,
+    rawCookie?: MusicCookieInput
+  ): Promise<number | undefined> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const meta = await this.getSongMetadata(mid, cookie);
     return meta.popularity;
   }
 
-  async getSongChorus(songId: string, rawCookie?: MusicCookieInput): Promise<SongChorus | undefined> {
+  async getSongChorus(
+    songId: string,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongChorus | undefined> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
     const meta = await this.getSongMetadata(mid, cookie);
@@ -455,7 +480,10 @@ export class QQMusicProvider implements MusicProvider {
         }
       }
     } catch (error) {
-      this.options.logger?.warn?.("AMLL 歌曲名搜索匹配失败", { title: base.title, ...describeError(error) });
+      this.options.logger?.warn?.("AMLL 歌曲名搜索匹配失败", {
+        title: base.title,
+        ...describeError(error),
+      });
     }
 
     // 3. 尝试 QQ 音乐原生逐字歌词 (QRC via parseQrc)
@@ -569,7 +597,9 @@ export class QQMusicProvider implements MusicProvider {
     const firstId = items.length > 0 ? asRecord(items[0]).id : undefined;
     if (!firstId) return undefined;
 
-    const getResp = await fetcher(`https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(readText(firstId))}`);
+    const getResp = await fetcher(
+      `https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(readText(firstId))}`
+    );
     if (!getResp.ok) return undefined;
     const getJson = asRecord(await getResp.json());
     return readString(asRecord(getJson.data).lyrics || getJson.lyrics);
@@ -598,32 +628,35 @@ export class QQMusicProvider implements MusicProvider {
       const trackBody = asRecord(trackRes.body);
       const rawSongs = readRecords(trackBody.songs || detailBody.songlist);
 
-      const songs: SongSearchResult[] = rawSongs.filter((item) => readText(item.songmid || item.mid)).map((item): SongSearchResult => {
-        const mid = readText(item.songmid || item.mid);
-        const rawTitle = readText(item.songname || item.name || item.title);
-        const title = stripHtmlTags(rawTitle);
-        const artist = singerNames(item.singer).filter(Boolean).join(" / ");
-        const album = asRecord(item.album);
-        const rawAlbum = item.albumname || album.name || undefined;
-        const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-        const albumId = Number(item.albumid || album.id);
-        const pictureUrl = albumId
-          ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
-          : undefined;
-        const durationMs = Number(item.interval || 0) * 1000;
-        const pay = asRecord(item.pay);
-        const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
+      const songs: SongSearchResult[] = rawSongs
+        .filter((item) => readText(item.songmid || item.mid))
+        .map((item): SongSearchResult => {
+          const mid = readText(item.songmid || item.mid);
+          const rawTitle = readText(item.songname || item.name || item.title);
+          const title = stripHtmlTags(rawTitle);
+          const artist = singerNames(item.singer).filter(Boolean).join(" / ");
+          const album = asRecord(item.album);
+          const rawAlbum = item.albumname || album.name || undefined;
+          const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
+          const albumId = Number(item.albumid || album.id);
+          const pictureUrl = albumId
+            ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
+            : undefined;
+          const durationMs = Number(item.interval || 0) * 1000;
+          const pay = asRecord(item.pay);
+          const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
 
-        return {
-          id: buildSongUrn("qq", mid),
-          title,
-          artist: artist || "未知歌手",
-          album: albumName,
-          pictureUrl,
-          durationMs: durationMs > 0 ? durationMs : undefined,
-          requiresVip,
-        };
-      }).filter((s) => s.id && s.title);
+          return {
+            id: buildSongUrn("qq", mid),
+            title,
+            artist: artist || "未知歌手",
+            album: albumName,
+            pictureUrl,
+            durationMs: durationMs > 0 ? durationMs : undefined,
+            requiresVip,
+          };
+        })
+        .filter((s) => s.id && s.title);
 
       const info: SongPlaylistInfo = {
         id: buildSongUrn("qq", dissId),
@@ -638,7 +671,11 @@ export class QQMusicProvider implements MusicProvider {
     return res;
   }
 
-  async searchArtists(keyword: string, limit = 20, rawCookie?: MusicCookieInput): Promise<SongArtistSearchResult[]> {
+  async searchArtists(
+    keyword: string,
+    limit = 20,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongArtistSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
@@ -646,28 +683,38 @@ export class QQMusicProvider implements MusicProvider {
     const res = await this.queue.add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 1, limit, cookie });
       const searchResBody = asRecord(searchRes.body);
-      const dataBody = firstRecord(asRecord(searchResBody.data).body, searchResBody.body, searchResBody.data, searchResBody);
+      const dataBody = firstRecord(
+        asRecord(searchResBody.data).body,
+        searchResBody.body,
+        searchResBody.data,
+        searchResBody
+      );
       const items = readRecords(dataBody.singer || dataBody.item_singer);
 
-      return items.filter((item) => readText(item.singerMID || item.mid)).map((item): SongArtistSearchResult => {
-        const singerMid = readText(item.singerMID || item.mid);
-        const singerId = Number(item.singerID || item.id);
-        const avatarUrl = singerId
-          ? `https://imgcache.qq.com/music/photo/singer_300/${singerId % 100}/300_singerpic_${singerId}_0.jpg`
-          : undefined;
+      return items
+        .filter((item) => readText(item.singerMID || item.mid))
+        .map((item): SongArtistSearchResult => {
+          const singerMid = readText(item.singerMID || item.mid);
+          const singerId = Number(item.singerID || item.id);
+          const avatarUrl = singerId
+            ? `https://imgcache.qq.com/music/photo/singer_300/${singerId % 100}/300_singerpic_${singerId}_0.jpg`
+            : undefined;
 
-        return {
-          id: buildSongUrn("qq", singerMid),
-          name: stripHtmlTags(item.singerName || item.name || "") || "未知歌手",
-          avatarUrl,
-        };
-      });
+          return {
+            id: buildSongUrn("qq", singerMid),
+            name: stripHtmlTags(item.singerName || item.name || "") || "未知歌手",
+            avatarUrl,
+          };
+        });
     });
 
     return res ?? [];
   }
 
-  async getArtistSongs(artistId: string, rawCookie?: MusicCookieInput): Promise<SongSearchResult[]> {
+  async getArtistSongs(
+    artistId: string,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(artistId);
     const res = await this.queue.add(async () => {
@@ -675,40 +722,47 @@ export class QQMusicProvider implements MusicProvider {
       const songsBody = asRecord(songsRes.body);
       const rawSongs = readRecords(songsBody.songs || asRecord(songsBody.data).songList);
 
-      return rawSongs.filter((item) => readText(asRecord(item.songInfo).mid || item.mid)).map((item): SongSearchResult => {
-        const songInfo = asRecord(item.songInfo);
-        const songMid = readText(songInfo.mid || item.mid);
-        const rawTitle = readText(songInfo.name || songInfo.title || item.name);
-        const title = stripHtmlTags(rawTitle);
-        const singerValue = songInfo.singer || item.singer;
-        const artist = Array.isArray(singerValue)
-          ? singerNames(singerValue).filter(Boolean).join(" / ")
-          : "未知歌手";
-        const songInfoAlbum = asRecord(songInfo.album);
-        const itemAlbum = asRecord(item.album);
-        const rawAlbum = songInfoAlbum.name || itemAlbum.name || undefined;
-        const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-        const albumId = Number(songInfoAlbum.id || itemAlbum.id);
-        const pictureUrl = albumId
-          ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
-          : undefined;
-        const durationMs = Number(songInfo.interval || item.interval || 0) * 1000;
+      return rawSongs
+        .filter((item) => readText(asRecord(item.songInfo).mid || item.mid))
+        .map((item): SongSearchResult => {
+          const songInfo = asRecord(item.songInfo);
+          const songMid = readText(songInfo.mid || item.mid);
+          const rawTitle = readText(songInfo.name || songInfo.title || item.name);
+          const title = stripHtmlTags(rawTitle);
+          const singerValue = songInfo.singer || item.singer;
+          const artist = Array.isArray(singerValue)
+            ? singerNames(singerValue).filter(Boolean).join(" / ")
+            : "未知歌手";
+          const songInfoAlbum = asRecord(songInfo.album);
+          const itemAlbum = asRecord(item.album);
+          const rawAlbum = songInfoAlbum.name || itemAlbum.name || undefined;
+          const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
+          const albumId = Number(songInfoAlbum.id || itemAlbum.id);
+          const pictureUrl = albumId
+            ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
+            : undefined;
+          const durationMs = Number(songInfo.interval || item.interval || 0) * 1000;
 
-        return {
-          id: buildSongUrn("qq", songMid),
-          title,
-          artist,
-          album: albumName,
-          pictureUrl,
-          durationMs: durationMs > 0 ? durationMs : undefined,
-        };
-      }).filter((s) => s.id && s.title);
+          return {
+            id: buildSongUrn("qq", songMid),
+            title,
+            artist,
+            album: albumName,
+            pictureUrl,
+            durationMs: durationMs > 0 ? durationMs : undefined,
+          };
+        })
+        .filter((s) => s.id && s.title);
     });
 
     return res ?? [];
   }
 
-  async searchAlbums(keyword: string, limit = 10, rawCookie?: MusicCookieInput): Promise<SongAlbumSearchResult[]> {
+  async searchAlbums(
+    keyword: string,
+    limit = 10,
+    rawCookie?: MusicCookieInput
+  ): Promise<SongAlbumSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const normalized = keyword.trim();
     if (!normalized) return [];
@@ -716,24 +770,31 @@ export class QQMusicProvider implements MusicProvider {
     const res = await this.queue.add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 2, limit, cookie });
       const searchResBody = asRecord(searchRes.body);
-      const dataBody = firstRecord(asRecord(searchResBody.data).body, searchResBody.body, searchResBody.data, searchResBody);
+      const dataBody = firstRecord(
+        asRecord(searchResBody.data).body,
+        searchResBody.body,
+        searchResBody.data,
+        searchResBody
+      );
       const items = readRecords(dataBody.item_album || dataBody.album);
 
-      return items.filter((item) => readText(item.albumMID || item.mid)).map((item): SongAlbumSearchResult => {
-        const albumMid = readText(item.albumMID || item.mid);
-        const albumId = Number(item.albumID || item.id);
-        const pictureUrl = albumId
-          ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
-          : undefined;
+      return items
+        .filter((item) => readText(item.albumMID || item.mid))
+        .map((item): SongAlbumSearchResult => {
+          const albumMid = readText(item.albumMID || item.mid);
+          const albumId = Number(item.albumID || item.id);
+          const pictureUrl = albumId
+            ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
+            : undefined;
 
-        return {
-          id: buildSongUrn("qq", albumMid),
-          name: stripHtmlTags(item.albumName || item.name || "") || "未知专辑",
-          artist: Array.isArray(item.singer) ? singerNames(item.singer).join(" / ") : undefined,
-          pictureUrl,
-          songCount: readNumber(item.song_count || item.total_song_num),
-        };
-      });
+          return {
+            id: buildSongUrn("qq", albumMid),
+            name: stripHtmlTags(item.albumName || item.name || "") || "未知专辑",
+            artist: Array.isArray(item.singer) ? singerNames(item.singer).join(" / ") : undefined,
+            pictureUrl,
+            songCount: readNumber(item.song_count || item.total_song_num),
+          };
+        });
     });
 
     return res ?? [];
@@ -746,7 +807,10 @@ export class QQMusicProvider implements MusicProvider {
     return searchRes;
   }
 
-  async createQrLogin(_platform?: "netease" | "qq", type: "qq" | "wx" | "mobile" = "qq"): Promise<MusicQrLogin> {
+  async createQrLogin(
+    _platform?: "netease" | "qq",
+    type: "qq" | "wx" | "mobile" = "qq"
+  ): Promise<MusicQrLogin> {
     const qrType = type || "qq";
     const res = await qqmusic.login_qr_create({ type: qrType });
     const body = asRecord(res.body);

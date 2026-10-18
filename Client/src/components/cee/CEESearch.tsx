@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Clapperboard, Disc3, Gamepad2, Tv, type LucideIcon } from "lucide-react";
 import type { CEECharacterSummary, CEESubjectSummary } from "@bakagame/shared";
-import { SearchCombobox, SearchOptionContent, type SearchStatus } from "@/components/common/SearchCombobox";
+import {
+  SearchCombobox,
+  SearchOptionContent,
+  type SearchStatus,
+} from "@/components/common/SearchCombobox";
 import { Button } from "@/components/ui/Button";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
@@ -20,20 +24,30 @@ const SUBJECT_TYPES: Record<number, { icon: LucideIcon; label: string }> = {
 };
 
 /** 副名只在和主名不同时显示，省得同一串字出现两遍。 */
-const secondName = (item: { name: string; nameCn: string }) => (item.nameCn && item.nameCn !== item.name ? item.nameCn : undefined);
+const secondName = (item: { name: string; nameCn: string }) =>
+  item.nameCn && item.nameCn !== item.name ? item.nameCn : undefined;
 
 /** 作品封面；还没有图时用条目类型图标占位。类型另以读屏文字给出，有封面时也读得到。 */
 function SubjectMedia({ subject }: { subject: CEESubjectSummary }) {
   const { icon: Icon, label } = SUBJECT_TYPES[subject.type] ?? SUBJECT_TYPES[2]!;
   return (
     <>
-      <CEESubjectImage subject={subject} fallback={<Icon className="size-4" aria-hidden="true" />} />
+      <CEESubjectImage
+        subject={subject}
+        fallback={<Icon className="size-4" aria-hidden="true" />}
+      />
       <span className="sr-only">{label}</span>
     </>
   );
 }
 
-function CharacterOption({ character, banned }: { character: CEECharacterSummary; banned: boolean }) {
+function CharacterOption({
+  character,
+  banned,
+}: {
+  character: CEECharacterSummary;
+  banned: boolean;
+}) {
   return (
     <SearchOptionContent
       media={<CEECharacterImage character={character} className="size-9" />}
@@ -58,11 +72,18 @@ function SubjectOption({ subject, trailing }: { subject: CEESubjectSummary; trai
 export type CEESearchMode = "character" | "subject";
 
 /** 从作品结果点进某部作品后的角色列表，顶上带返回行。 */
-interface Cast { key: string; subject: CEESubjectSummary; characters: CEECharacterSummary[] }
+interface Cast {
+  key: string;
+  subject: CEESubjectSummary;
+  characters: CEECharacterSummary[];
+}
 
-type Option = { kind: "character"; character: CEECharacterSummary } | { kind: "subject"; subject: CEESubjectSummary };
+type Option =
+  | { kind: "character"; character: CEECharacterSummary }
+  | { kind: "subject"; subject: CEESubjectSummary };
 
-const optionKey = (option: Option) => (option.kind === "character" ? `c-${option.character.id}` : `s-${option.subject.id}`);
+const optionKey = (option: Option) =>
+  option.kind === "character" ? `c-${option.character.id}` : `s-${option.subject.id}`;
 
 const MODE_TEXT: Record<CEESearchMode, { button: string; busy: string }> = {
   character: { button: "搜角色", busy: "正在搜索角色" },
@@ -95,7 +116,8 @@ function buildStatus(view: {
 }): SearchStatus | null {
   const { actionError, cast, mode, search, optionCount } = view;
   if (actionError) return { tone: "error", text: actionError };
-  if (cast) return cast.characters.length ? null : { tone: "info", text: "这部作品下没有可选的角色" };
+  if (cast)
+    return cast.characters.length ? null : { tone: "info", text: "这部作品下没有可选的角色" };
   if (search.error) return { tone: "error", text: search.error };
   if (search.loading && optionCount === 0) return { tone: "busy", text: MODE_TEXT[mode].busy };
   if (search.empty) return { tone: "info", text: EMPTY_TEXT };
@@ -103,7 +125,8 @@ function buildStatus(view: {
 }
 
 /** 角色行整行置灰的条件：作品行不受 `bannedIds` 影响。 */
-const isBannedOption = (option: Option, bannedIds: number[]) => option.kind === "character" && bannedIds.includes(option.character.id);
+const isBannedOption = (option: Option, bannedIds: number[]) =>
+  option.kind === "character" && bannedIds.includes(option.character.id);
 
 /** 一行结果：角色带「已被选择」，作品带封面与年份。 */
 function ResultRow({ option, banned }: { option: Option; banned: boolean }) {
@@ -112,7 +135,12 @@ function ResultRow({ option, banned }: { option: Option; banned: boolean }) {
 }
 
 /** 查询范围切换钮：当前范围实心并带 `aria-pressed`。 */
-function ModeButton({ active, target, disabled, onSwitch }: {
+function ModeButton({
+  active,
+  target,
+  disabled,
+  onSwitch,
+}: {
   active: boolean;
   target: CEESearchMode;
   disabled: boolean;
@@ -140,7 +168,14 @@ function ModeButton({ active, target, disabled, onSwitch }: {
  * 点角色即提交；`onSelect` 返回 `false` 表示没成功，结果保留可以换一个，否则清空输入与结果，面板随之退场。
  * `trailing` 是与搜索同属一次提交的动作（「放弃本局」），排在搜索按钮之后、同一组里一起换行。
  */
-export function CEESearch({ allowSubjects, defaultMode = "character", disabled = false, bannedIds = [], trailing, onSelect }: {
+export function CEESearch({
+  allowSubjects,
+  defaultMode = "character",
+  disabled = false,
+  bannedIds = [],
+  trailing,
+  onSelect,
+}: {
   allowSubjects: boolean;
   /** 初始查询范围；不允许搜作品时总是角色 */
   defaultMode?: CEESearchMode;
@@ -159,10 +194,21 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   // 进作品、提交角色都是异步的：只认最近一次，期间改了关键词或离开列表的话晚到的结果丢弃。
   const generation = useRef(0);
-  useEffect(() => () => { generation.current++; }, []);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    []
+  );
 
-  const characterSearch = useIdleSearch(keyword, searchCharacters, ceeErrorMessage, { enabled: mode === "character" && !disabled, scope: "character" });
-  const subjectSearch = useIdleSearch(keyword, searchSubjects, ceeErrorMessage, { enabled: mode === "subject" && !disabled, scope: "subject" });
+  const characterSearch = useIdleSearch(keyword, searchCharacters, ceeErrorMessage, {
+    enabled: mode === "character" && !disabled,
+    scope: "character",
+  });
+  const subjectSearch = useIdleSearch(keyword, searchSubjects, ceeErrorMessage, {
+    enabled: mode === "subject" && !disabled,
+    scope: "subject",
+  });
   const search = mode === "character" ? characterSearch : subjectSearch;
 
   const leaveCast = () => {
@@ -173,7 +219,10 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
   };
 
   const switchMode = (target: CEESearchMode) => {
-    if (target !== mode) { leaveCast(); setMode(target); }
+    if (target !== mode) {
+      leaveCast();
+      setMode(target);
+    }
     // 同一范围再按一次也算「立即搜」，不必等停顿。
     (target === "character" ? characterSearch : subjectSearch).flush();
   };
@@ -185,7 +234,8 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
     setActionError("");
     try {
       const characters = await useCEEStore.getState().loadSubjectCharacters(subject.id);
-      if (request === generation.current) setCast({ key: `cast-${subject.id}-${request}`, subject, characters });
+      if (request === generation.current)
+        setCast({ key: `cast-${subject.id}-${request}`, subject, characters });
     } catch (failure) {
       if (request === generation.current) setActionError(ceeErrorMessage(failure));
     } finally {
@@ -212,7 +262,12 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
     setKeyword("");
   };
 
-  const options = buildOptions({ cast, mode, characters: characterSearch.items, subjects: subjectSearch.items });
+  const options = buildOptions({
+    cast,
+    mode,
+    characters: characterSearch.items,
+    subjects: subjectSearch.items,
+  });
   const status = buildStatus({ actionError, cast, mode, search, optionCount: options.length });
 
   /** 改关键词即离开作品角色列表与动作报错；只在真的挂着它们时清理。 */
@@ -223,7 +278,10 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
   /** 回车与「搜角色/搜作品」都是立即查当前范围。 */
   const submit = cast ? undefined : search.flush;
   const pickOption = (option: Option) => {
-    if (option.kind === "character") { void choose(option.character); return; }
+    if (option.kind === "character") {
+      void choose(option.character);
+      return;
+    }
     void openSubject(option.subject);
   };
 
@@ -241,19 +299,41 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
         options={options}
         getKey={optionKey}
         isOptionDisabled={(option) => isBannedOption(option, bannedIds)}
-        renderOption={(option) => <ResultRow option={option} banned={isBannedOption(option, bannedIds)} />}
+        renderOption={(option) => (
+          <ResultRow option={option} banned={isBannedOption(option, bannedIds)} />
+        )}
         onSelect={pickOption}
         pendingKey={pendingKey}
         listKey={cast ? cast.key : `${mode}:${search.listKey}`}
         status={status}
-        back={cast ? { label: "返回作品", detail: cast.subject.nameCn || cast.subject.name, onBack: leaveCast } : null}
-        actions={(
+        back={
+          cast
+            ? {
+                label: "返回作品",
+                detail: cast.subject.nameCn || cast.subject.name,
+                onBack: leaveCast,
+              }
+            : null
+        }
+        actions={
           <>
-            <ModeButton active={mode === "character"} target="character" disabled={disabled} onSwitch={switchMode} />
-            {allowSubjects ? <ModeButton active={mode === "subject"} target="subject" disabled={disabled} onSwitch={switchMode} /> : null}
+            <ModeButton
+              active={mode === "character"}
+              target="character"
+              disabled={disabled}
+              onSwitch={switchMode}
+            />
+            {allowSubjects ? (
+              <ModeButton
+                active={mode === "subject"}
+                target="subject"
+                disabled={disabled}
+                onSwitch={switchMode}
+              />
+            ) : null}
             {trailing}
           </>
-        )}
+        }
       />
     </section>
   );
@@ -263,7 +343,11 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
  * 设置里的追加作品：只搜作品，停止输入后自动查询，点一部即加入。
  * 面板不收起，已加入的作品原地变为不可选并标「已添加」，可以接着加下一部。
  */
-export function CEESubjectSearch({ addedIds, disabled = false, onAdd }: {
+export function CEESubjectSearch({
+  addedIds,
+  disabled = false,
+  onAdd,
+}: {
   addedIds: number[];
   disabled?: boolean;
   onAdd: (subject: CEESubjectSummary) => void;
@@ -272,9 +356,12 @@ export function CEESubjectSearch({ addedIds, disabled = false, onAdd }: {
   const [keyword, setKeyword] = useState("");
   const search = useIdleSearch(keyword, searchSubjects, ceeErrorMessage, { enabled: !disabled });
 
-  const status: SearchStatus | null = search.error ? { tone: "error", text: search.error }
-    : search.loading && search.items.length === 0 ? { tone: "busy", text: "正在搜索作品" }
-      : search.empty ? { tone: "info", text: EMPTY_TEXT }
+  const status: SearchStatus | null = search.error
+    ? { tone: "error", text: search.error }
+    : search.loading && search.items.length === 0
+      ? { tone: "busy", text: "正在搜索作品" }
+      : search.empty
+        ? { tone: "info", text: EMPTY_TEXT }
         : null;
 
   return (
@@ -291,7 +378,12 @@ export function CEESubjectSearch({ addedIds, disabled = false, onAdd }: {
         options={search.items}
         getKey={(subject) => String(subject.id)}
         isOptionDisabled={(subject) => addedIds.includes(subject.id)}
-        renderOption={(subject) => <SubjectOption subject={subject} trailing={addedIds.includes(subject.id) ? "已添加" : undefined} />}
+        renderOption={(subject) => (
+          <SubjectOption
+            subject={subject}
+            trailing={addedIds.includes(subject.id) ? "已添加" : undefined}
+          />
+        )}
         onSelect={onAdd}
         listKey={search.listKey}
         status={status}

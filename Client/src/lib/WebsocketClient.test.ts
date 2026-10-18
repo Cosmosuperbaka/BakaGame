@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ captureClientException: vi.fn(), captureClientLog: vi.fn(), spanAttributes: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  captureClientException: vi.fn(),
+  captureClientLog: vi.fn(),
+  spanAttributes: vi.fn(),
+}));
 
 vi.mock("@/lib/Sentry", () => ({
   captureClientLog: mocks.captureClientLog,
   captureClientException: mocks.captureClientException,
   countClientMetric: vi.fn(),
   recordClientMetric: vi.fn(),
-  withClientSpan: async (_name: string, callback: (span: unknown) => unknown, attributes: unknown) => {
+  withClientSpan: async (
+    _name: string,
+    callback: (span: unknown) => unknown,
+    attributes: unknown
+  ) => {
     mocks.spanAttributes(attributes);
     return callback({ setStatus: () => {}, setAttribute: () => {} });
   },
@@ -66,9 +74,7 @@ const openRequest = async (sendThrows?: Error) => {
   const socket = MockWebSocket.instances.at(-1)!;
 
   const pending = client.send("song.room.join", { roomId: "1234" });
-  const requestId = socket.sent.length
-    ? (JSON.parse(socket.sent[0]) as { id: string }).id
-    : "";
+  const requestId = socket.sent.length ? (JSON.parse(socket.sent[0]) as { id: string }).id : "";
 
   return { client, socket, pending, requestId };
 };
@@ -82,7 +88,7 @@ describe("WebSocketClient", () => {
       globalThis.crypto.randomUUID = undefined;
       const uuid = generateUuid();
       expect(uuid).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       );
     } finally {
       if (originalRandomUuid) {
@@ -93,9 +99,7 @@ describe("WebSocketClient", () => {
 
   it("在安全上下文中优先使用原生 crypto.randomUUID", () => {
     const uuid = generateUuid();
-    expect(uuid).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    );
+    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
   it("正确去除服务器地址末尾斜杠，避免双斜杠路径", () => {
@@ -123,7 +127,9 @@ describe("WebSocketClient", () => {
 
   it("isProtocolError 只认携带 code 与 message 的协议错误体", () => {
     expect(isProtocolError({ code: "ROOM_NOT_FOUND", message: "房间不存在" })).toBe(true);
-    expect(isProtocolError({ code: "PASSWORD_INCORRECT", message: "房间密码错误", details: {} })).toBe(true);
+    expect(
+      isProtocolError({ code: "PASSWORD_INCORRECT", message: "房间密码错误", details: {} })
+    ).toBe(true);
     expect(isProtocolError(new Error("房间不存在"))).toBe(false);
     expect(isProtocolError({ code: "ROOM_NOT_FOUND" })).toBe(false);
     expect(isProtocolError({ message: "房间不存在" })).toBe(false);
@@ -194,7 +200,10 @@ describe("WebSocketClient", () => {
       client.disconnect();
       await vi.advanceTimersByTimeAsync(60_000);
       expect(MockWebSocket.instances).toHaveLength(2);
-    } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 
   it("主动断开取消正在等待的首次连接", async () => {
@@ -208,7 +217,9 @@ describe("WebSocketClient", () => {
       const rejection = expect(pending).rejects.toMatchObject({ code: "DISCONNECTED" });
       client.disconnect();
       await rejection;
-    } finally { vi.unstubAllGlobals(); }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("timeout 为 0 时不设请求超时，越过默认超时后迟到的 ACK 依然能完成请求", async () => {
@@ -238,7 +249,6 @@ describe("WebSocketClient", () => {
   });
 });
 
-
 describe("传输边界与命令诊断", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -249,11 +259,19 @@ describe("传输边界与命令诊断", () => {
       const client = new WebSocketClient("/api/cee/ws");
       client.connect();
       const error = new Error("consumer failed");
-      const first = vi.fn(() => { throw error; });
+      const first = vi.fn(() => {
+        throw error;
+      });
       const second = vi.fn();
       client.onMessage(first);
       client.onMessage(second);
-      for (const data of ["{", "null", "[]", '{"type":"error","id":"x","error":{}}', '{"type":"event"}']) {
+      for (const data of [
+        "{",
+        "null",
+        "[]",
+        '{"type":"error","id":"x","error":{}}',
+        '{"type":"event"}',
+      ]) {
         Socket.instances[0].onmessage!({ data });
       }
       expect(first).not.toHaveBeenCalled();
@@ -262,10 +280,13 @@ describe("传输边界与命令诊断", () => {
       Socket.instances[0].onmessage!({ data: JSON.stringify(message) });
       expect(second).toHaveBeenCalledWith(message);
       expect(mocks.captureClientException).toHaveBeenCalledWith(error, {
-        path: "/api/cee/ws", messageType: "event",
+        path: "/api/cee/ws",
+        messageType: "event",
       });
       client.disconnect();
-    } finally { vi.unstubAllGlobals(); }
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("命令 span、拒绝日志与信封共用关联键，ACK 清理计时器", async () => {
@@ -279,23 +300,44 @@ describe("传输边界与命令诊断", () => {
       const pending = client.send("cee.room.join", { password: "private" });
       const rejection = expect(pending).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
       const envelope = JSON.parse(socket.sent[0]);
-      socket.onmessage!({ data: JSON.stringify({ type: "error", id: envelope.id, error: {
-        code: "PASSWORD_INCORRECT", message: "密码错误",
-      } }) });
+      socket.onmessage!({
+        data: JSON.stringify({
+          type: "error",
+          id: envelope.id,
+          error: {
+            code: "PASSWORD_INCORRECT",
+            message: "密码错误",
+          },
+        }),
+      });
       await rejection;
-      expect(mocks.spanAttributes).toHaveBeenCalledWith(expect.objectContaining({ traceId: envelope.traceId }));
-      expect(mocks.captureClientLog).toHaveBeenCalledWith("WebSocket 命令失败", "error", expect.objectContaining({
-        traceId: envelope.traceId, code: "PASSWORD_INCORRECT", message: "密码错误", error: "密码错误",
-      }));
+      expect(mocks.spanAttributes).toHaveBeenCalledWith(
+        expect.objectContaining({ traceId: envelope.traceId })
+      );
+      expect(mocks.captureClientLog).toHaveBeenCalledWith(
+        "WebSocket 命令失败",
+        "error",
+        expect.objectContaining({
+          traceId: envelope.traceId,
+          code: "PASSWORD_INCORRECT",
+          message: "密码错误",
+          error: "密码错误",
+        })
+      );
       expect(mocks.captureClientException).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
       const accepted = client.send("cee.room.get");
       const next = JSON.parse(socket.sent[1]);
       expect(next.traceId).not.toBe(envelope.traceId);
-      socket.onmessage!({ data: JSON.stringify({ type: "ack", id: next.id, payload: { ok: true } }) });
+      socket.onmessage!({
+        data: JSON.stringify({ type: "ack", id: next.id, payload: { ok: true } }),
+      });
       await expect(accepted).resolves.toEqual({ ok: true });
       expect(vi.getTimerCount()).toBe(0);
       client.disconnect();
-    } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
   });
 });

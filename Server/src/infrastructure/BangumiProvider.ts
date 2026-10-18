@@ -34,8 +34,10 @@ const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const asArray = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const readString = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim()
     ? value.trim()
@@ -62,15 +64,13 @@ const BARE_VERSION_SUFFIX_PATTERN =
 const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
 const stripTrackVersion = (value: string) => {
-  let result = value.replace(
-    BRACKETED_VERSION_PATTERN,
-    (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+  let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>
+    VERSION_MARKER_PATTERN.test(metadata) ? "" : match
   );
   while (true) {
     const next = result
-      .replace(
-        DECORATED_VERSION_SUFFIX_PATTERN,
-        (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+      .replace(DECORATED_VERSION_SUFFIX_PATTERN, (match, metadata: string) =>
+        VERSION_MARKER_PATTERN.test(metadata) ? "" : match
       )
       .replace(BARE_VERSION_SUFFIX_PATTERN, "")
       .replace(FEAT_SUFFIX_PATTERN, "");
@@ -87,13 +87,20 @@ const extractPerformers = (infobox: unknown): string[] => {
     if (!/演出/.test(key) || !/歌|曲|主题|插入/.test(key)) continue;
     const text = readString(record.value);
     const values = asArray(record.value);
-    const rawList = text ? [text] : values.map((v) => typeof v === "string" ? v : readString(asRecord(v).v ?? asRecord(v).value)).filter(Boolean) as string[];
+    const rawList = text
+      ? [text]
+      : (values
+          .map((v) => (typeof v === "string" ? v : readString(asRecord(v).v ?? asRecord(v).value)))
+          .filter(Boolean) as string[]);
     for (const raw of rawList) {
       for (const item of raw.split(/[\r\n/／；;,，]+/)) {
-        const cleaned = item
-          .replace(/[（(【[][^）)】\]]*[）)】\]]/g, "")
-          .trim();
-        if (cleaned && cleaned.length >= 2 && cleaned.length <= 50 && !/^(?:OP|ED|IN|TM)\d*$/i.test(cleaned)) {
+        const cleaned = item.replace(/[（(【[][^）)】\]]*[）)】\]]/g, "").trim();
+        if (
+          cleaned &&
+          cleaned.length >= 2 &&
+          cleaned.length <= 50 &&
+          !/^(?:OP|ED|IN|TM)\d*$/i.test(cleaned)
+        ) {
           artists.push(cleaned);
         }
       }
@@ -116,7 +123,10 @@ const refineRelatedMusicKind = (relation: string, rawName: string): BangumiMusic
 };
 
 /** 从条目名剥掉「」引号块后的余部解析歌手：斜杠尾巴优先，否则短余部视作歌手名。 */
-const parseArtistFromQuotedRelation = (rawName: string, quoteMatches: string[]): string | undefined => {
+const parseArtistFromQuotedRelation = (
+  rawName: string,
+  quoteMatches: string[]
+): string | undefined => {
   let remaining = rawName;
   for (const quoted of quoteMatches) {
     remaining = remaining.replace(`「${quoted}」`, "");
@@ -140,7 +150,7 @@ const splitRelatedTrackCandidates = (rawName: string): string[] =>
 const slashSplitRelatedTracks = (
   rawName: string,
   artist: string | undefined,
-  kind: BangumiMusicTrackKind,
+  kind: BangumiMusicTrackKind
 ): BangumiMusicTrack[] => {
   const candidates = splitRelatedTrackCandidates(rawName);
   if (candidates.length <= 1) return [];
@@ -159,9 +169,11 @@ const slashSplitRelatedTracks = (
 const relatedMusicTracksFor = (
   rawName: string,
   kind: BangumiMusicTrackKind,
-  performers: string[],
+  performers: string[]
 ): BangumiMusicTrack[] => {
-  const quoteMatches = [...rawName.matchAll(/「([^」]+)」/g)].map((m) => m[1].trim()).filter(Boolean);
+  const quoteMatches = [...rawName.matchAll(/「([^」]+)」/g)]
+    .map((m) => m[1].trim())
+    .filter(Boolean);
   const subTitle = quoteMatches.length > 0 ? quoteMatches.at(-1) : undefined;
   let artist: string | undefined;
   if (quoteMatches.length > 0) {
@@ -189,7 +201,7 @@ const relatedMusicTracksFor = (
 
 const extractRelatedMusicTracks = (
   relations: unknown,
-  performers: string[] = [],
+  performers: string[] = []
 ): BangumiMusicTrack[] => {
   const tracks: BangumiMusicTrack[] = [];
   for (const item of asArray(relations)) {
@@ -200,7 +212,9 @@ const extractRelatedMusicTracks = (
     if (!rawName) continue;
     // 版权署名 / 制作委员会伪条目不是歌曲，混进曲目池会被当成 OP 拿去联网搜歌。
     if (isBangumiCreditsEntry(rawName)) continue;
-    tracks.push(...relatedMusicTracksFor(rawName, refineRelatedMusicKind(relation, rawName), performers));
+    tracks.push(
+      ...relatedMusicTracksFor(rawName, refineRelatedMusicKind(relation, rawName), performers)
+    );
   }
   return tracks;
 };
@@ -231,7 +245,10 @@ const normalizeKind = (key: string): BangumiMusicTrackKind => {
 const LINE_PREFIX_REGEX =
   /^\s*[（(【[]?(?:(OP\d*|ED\d*|IN\d*|TM\d*|片头曲\d*|片尾曲\d*|插入曲\d*|插曲\d*|主题歌\d*|主题曲\d*|OST|Remix|重混|角色[歌曲]\d*|同人音乐|印象曲|Vocaloid|Drama|VOCAL|Radio|Arrange|单曲|精选集|朗读剧|艺人专辑|Soundtrack|Character(?:\s*Song)?|Image(?:\s*Song)?))[^：:：-]*[:：-]?\s*/i;
 
-const parseTrackText = (value: string, fallbackKind: BangumiMusicTrackKind): BangumiMusicTrack[] => {
+const parseTrackText = (
+  value: string,
+  fallbackKind: BangumiMusicTrackKind
+): BangumiMusicTrack[] => {
   const result: BangumiMusicTrack[] = [];
   for (const item of value.split(/[\r\n]+|[；;]+/)) {
     const trimmed = item.trim();
@@ -243,7 +260,10 @@ const parseTrackText = (value: string, fallbackKind: BangumiMusicTrackKind): Ban
     }
     const text = trimmed.replace(LINE_PREFIX_REGEX, "").trim();
     if (!text || text.length < 2) continue;
-    const parts = text.split(/\s+[-－—]\s+|\s+\/\s+/).map((part) => part.trim()).filter(Boolean);
+    const parts = text
+      .split(/\s+[-－—]\s+|\s+\/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
     const title = parts[0];
     if (!title) continue;
     result.push({ title, artist: parts[1], kind: trackKind });
@@ -279,7 +299,11 @@ const infoboxValueTracks = (value: unknown, kind: BangumiMusicTrackKind): Bangum
   }
   const parsed = parseTrackText(rawTitle, trackKind);
   if (parsed.length === 0) return [{ title: rawTitle, artist, kind: trackKind }];
-  return parsed.map((track) => ({ title: track.title, artist: track.artist || artist, kind: track.kind }));
+  return parsed.map((track) => ({
+    title: track.title,
+    artist: track.artist || artist,
+    kind: track.kind,
+  }));
 };
 
 /** 单条 infobox 键值行：键非音乐则整行跳过；values 为空数组时 value 可能是纯字符串。 */
@@ -315,7 +339,7 @@ const dedupeMusicTracks = (tracks: BangumiMusicTrack[]): BangumiMusicTrack[] => 
 const extractTracks = (
   infobox: unknown,
   relations?: unknown,
-  performers: string[] = [],
+  performers: string[] = []
 ): BangumiMusicTrack[] => {
   const tracks: BangumiMusicTrack[] = [];
   if (relations) {
@@ -343,14 +367,21 @@ export const rewriteBangumiImageUrl = (value: unknown, imageUrl = "") => {
   return bangumiImageUrl(raw, imageUrl) ?? raw;
 };
 
-const normalizeSubject = (raw: unknown, imageUrl: string): BangumiSubjectSearchResult | undefined => {
+const normalizeSubject = (
+  raw: unknown,
+  imageUrl: string
+): BangumiSubjectSearchResult | undefined => {
   const item = asRecord(raw);
   const id = readString(item.id);
   const name = readString(item.name);
   if (!id || !name) return undefined;
   const images = asRecord(item.images);
-  const tags = asArray(item.tags).map((tag) => readString(asRecord(tag).name ?? tag)).filter((tag): tag is string => Boolean(tag));
-  const metaTags = asArray(item.meta_tags).map(readString).filter((tag): tag is string => Boolean(tag));
+  const tags = asArray(item.tags)
+    .map((tag) => readString(asRecord(tag).name ?? tag))
+    .filter((tag): tag is string => Boolean(tag));
+  const metaTags = asArray(item.meta_tags)
+    .map(readString)
+    .filter((tag): tag is string => Boolean(tag));
   return {
     id,
     name,
@@ -397,23 +428,37 @@ export class BangumiProvider {
     });
   }
 
-  async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}): Promise<BangumiSubjectSearchResult[]> {
+  async searchSubjects(
+    keyword: string,
+    limit = 20,
+    filters: AnimeAutoFilters = {}
+  ): Promise<BangumiSubjectSearchResult[]> {
     const normalizedKeyword = keyword.trim();
     const payload = {
       keyword: normalizedKeyword,
       sort: "heat",
       filter: {
         type: [2],
-        ...(filters.startYear || filters.endYear ? { air_date: [`>=${filters.startYear ?? 1900}-01-01`, `<${(filters.endYear ?? 2200) + 1}-01-01`] } : {}),
+        ...(filters.startYear || filters.endYear
+          ? {
+              air_date: [
+                `>=${filters.startYear ?? 1900}-01-01`,
+                `<${(filters.endYear ?? 2200) + 1}-01-01`,
+              ],
+            }
+          : {}),
       },
     };
     const key = `search:${JSON.stringify(payload)}:${limit}`;
     return this.cached(key, SEARCH_TTL_MS, async () => {
-      const body = await this.requestJson(`/v0/search/subjects?limit=${Math.min(50, Math.max(1, limit))}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const body = await this.requestJson(
+        `/v0/search/subjects?limit=${Math.min(50, Math.max(1, limit))}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
       return asArray(asRecord(body).data)
         .map((item) => normalizeSubject(item, this.imageUrl))
         .filter((item): item is BangumiSubjectSearchResult => Boolean(item))
@@ -441,11 +486,15 @@ export class BangumiProvider {
     });
   }
 
-  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
+  async chooseRandomSubject(
+    filters: AnimeAutoFilters = {},
+    random = Math.random
+  ): Promise<BangumiSubjectDetails> {
     const result = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
     const candidates = result;
     if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
-    const selected = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
+    const selected =
+      candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
     return this.getSubject(selected.id);
   }
 
@@ -487,13 +536,15 @@ export class BangumiProvider {
     if (hit) this.cache.delete(key);
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) return structuredClone(await existing);
-    const request = loader().then((value) => {
-      const cachedValue = structuredClone(value);
-      this.cache.set(key, { value: cachedValue, expiresAt: this.now() + ttl });
-      return cachedValue;
-    }).finally(() => {
-      if (this.inFlight.get(key) === request) this.inFlight.delete(key);
-    });
+    const request = loader()
+      .then((value) => {
+        const cachedValue = structuredClone(value);
+        this.cache.set(key, { value: cachedValue, expiresAt: this.now() + ttl });
+        return cachedValue;
+      })
+      .finally(() => {
+        if (this.inFlight.get(key) === request) this.inFlight.delete(key);
+      });
     this.inFlight.set(key, request);
     return structuredClone(await request);
   }
@@ -506,7 +557,8 @@ export class BangumiProvider {
           this.enterRateLimitCooldown();
           throw this.rateLimitError();
         }
-        if (!response.ok) throw new AppError("BANGUMI_UPSTREAM_ERROR", `Bangumi 请求失败（${response.status}）`);
+        if (!response.ok)
+          throw new AppError("BANGUMI_UPSTREAM_ERROR", `Bangumi 请求失败（${response.status}）`);
         try {
           return await response.json();
         } catch {
@@ -519,20 +571,34 @@ export class BangumiProvider {
     }, init?.signal);
   }
 
-  private scheduleRequest<T>(task: (signal: AbortSignal) => Promise<T>, callerSignal?: AbortSignal | null): Promise<T> {
+  private scheduleRequest<T>(
+    task: (signal: AbortSignal) => Promise<T>,
+    callerSignal?: AbortSignal | null
+  ): Promise<T> {
     if (this.now() < this.cooldownUntil) return Promise.reject(this.rateLimitError());
-    if (this.queue.size >= this.maxQueuedRequests) return Promise.reject(this.rateLimitError("Bangumi 请求排队过多，请稍后重试"));
+    if (this.queue.size >= this.maxQueuedRequests)
+      return Promise.reject(this.rateLimitError("Bangumi 请求排队过多，请稍后重试"));
 
     const id = ++this.requestIdCounter;
     const controller = new AbortController();
-    const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
+    const signal = callerSignal
+      ? AbortSignal.any([controller.signal, callerSignal])
+      : controller.signal;
     this.pendingRequests.set(id, controller);
-    const timer = setTimeout(() => controller.abort(new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求超时")), this.requestTimeoutMs);
-    return (this.queue.add(async () => {
-      this.pendingRequests.delete(id);
-      if (this.now() < this.cooldownUntil) throw this.rateLimitError();
-      return task(signal);
-    }, { signal }) as Promise<T>).finally(() => {
+    const timer = setTimeout(
+      () => controller.abort(new AppError("BANGUMI_UPSTREAM_ERROR", "Bangumi 请求超时")),
+      this.requestTimeoutMs
+    );
+    return (
+      this.queue.add(
+        async () => {
+          this.pendingRequests.delete(id);
+          if (this.now() < this.cooldownUntil) throw this.rateLimitError();
+          return task(signal);
+        },
+        { signal }
+      ) as Promise<T>
+    ).finally(() => {
       clearTimeout(timer);
       this.pendingRequests.delete(id);
     });

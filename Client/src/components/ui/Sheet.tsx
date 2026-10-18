@@ -78,7 +78,7 @@ export function Sheet({
                 exit="exit"
                 className={cn(
                   "fixed inset-y-0 z-modal flex w-[min(92vw,32rem)] max-w-full flex-col overflow-hidden border bg-popover text-popover-foreground shadow-lg",
-                  side === "right" ? "right-0 border-l" : "left-0 border-r",
+                  side === "right" ? "right-0 border-l" : "left-0 border-r"
                 )}
               >
                 <div className="flex h-12 shrink-0 items-center gap-3 border-b pl-4 pr-2">

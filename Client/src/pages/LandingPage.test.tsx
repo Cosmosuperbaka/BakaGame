@@ -12,7 +12,7 @@ function renderLandingPage() {
       <TooltipProvider>
         <LandingPage />
       </TooltipProvider>
-    </BrowserRouter>,
+    </BrowserRouter>
   );
 }
 
@@ -79,10 +79,17 @@ describe("LandingPage", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<TooltipProvider><LandingPage /></TooltipProvider>} />
+          <Route
+            path="/"
+            element={
+              <TooltipProvider>
+                <LandingPage />
+              </TooltipProvider>
+            }
+          />
           <Route path="/credits" element={<CreditsProbe />} />
         </Routes>
-      </MemoryRouter>,
+      </MemoryRouter>
     );
 
     await user.click(screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ }));
@@ -107,7 +114,9 @@ describe("LandingPage", () => {
       expect(formatRelativeTime(new Date(fixedNow - 5 * 60 * 1000).toISOString())).toBe("5分钟前");
 
       // 小时级
-      expect(formatRelativeTime(new Date(fixedNow - 3 * 3600 * 1000).toISOString())).toBe("3小时前");
+      expect(formatRelativeTime(new Date(fixedNow - 3 * 3600 * 1000).toISOString())).toBe(
+        "3小时前"
+      );
 
       // 天级
       expect(formatRelativeTime(new Date(fixedNow - 2 * 86400 * 1000).toISOString())).toBe("2天前");
@@ -129,13 +138,24 @@ describe("LandingPage", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
-          <Route path="/" element={<TooltipProvider><LandingPage /></TooltipProvider>} />
+          <Route
+            path="/"
+            element={
+              <TooltipProvider>
+                <LandingPage />
+              </TooltipProvider>
+            }
+          />
           <Route path={path} element={<h1>{destination}</h1>} />
         </Routes>
-      </MemoryRouter>,
+      </MemoryRouter>
     );
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: button }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    await userEvent
+      .setup({ advanceTimers: vi.advanceTimersByTime })
+      .click(screen.getByRole("button", { name: button }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
     expect(screen.getByRole("heading", { name: destination })).toBeInTheDocument();
   });
 });

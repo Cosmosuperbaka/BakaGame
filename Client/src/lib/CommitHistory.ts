@@ -73,7 +73,7 @@ export function repositorySlug(repositoryUrl: string): string | null {
 export function commitsApiUrl(
   repositoryUrl: string,
   sha: string,
-  limit: number = COMMIT_HISTORY_LIMIT,
+  limit: number = COMMIT_HISTORY_LIMIT
 ): string | null {
   const slug = repositorySlug(repositoryUrl);
   const revision = sha.trim();
@@ -113,7 +113,7 @@ function normalizeDate(value: unknown): string | null {
  */
 export function normalizeCommitEntries(
   raw: unknown,
-  limit: number = COMMIT_HISTORY_LIMIT,
+  limit: number = COMMIT_HISTORY_LIMIT
 ): CommitEntry[] {
   if (!Array.isArray(raw)) return [];
 
@@ -147,7 +147,7 @@ export function normalizeCommitEntries(
  */
 export function mapGitHubCommits(
   payload: unknown,
-  limit: number = COMMIT_HISTORY_LIMIT,
+  limit: number = COMMIT_HISTORY_LIMIT
 ): CommitEntry[] {
   if (!Array.isArray(payload)) return [];
 

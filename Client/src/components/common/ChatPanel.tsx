@@ -107,7 +107,10 @@ interface ThrowHandoff {
   onTake: () => void;
 }
 
-const centerOf = (rect: DOMRect) => ({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+const centerOf = (rect: DOMRect) => ({
+  x: rect.left + rect.width / 2,
+  y: rect.top + rect.height / 2,
+});
 
 /** 气泡接手时相对胶囊的尺寸比；量不到尺寸（未布局）时按原大处理。 */
 const handoffScale = (from: number, own: number) =>
@@ -138,7 +141,10 @@ function SendThrow({
     const node = nodeRef.current;
     if (!node) return;
     // 落点：升到输入框上方，右缘对齐输入框右缘，靠向自己那一侧的气泡。
-    const vector = { dx: Math.max(0, anchor.maxWidth - node.offsetWidth), dy: -anchor.height * chatThrow.lift };
+    const vector = {
+      dx: Math.max(0, anchor.maxWidth - node.offsetWidth),
+      dy: -anchor.height * chatThrow.lift,
+    };
     vectorRef.current = vector;
     const { impulse, launch } = chatThrow;
     const velocity = byAxes(vector, impulse.along, impulse.across);
@@ -170,11 +176,20 @@ function SendThrow({
       ref={nodeRef}
       aria-hidden="true"
       className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
-      style={{ left: anchor.left, top: anchor.top, height: anchor.height, maxWidth: anchor.maxWidth, x, y, scaleX, scaleY }}
+      style={{
+        left: anchor.left,
+        top: anchor.top,
+        height: anchor.height,
+        maxWidth: anchor.maxWidth,
+        x,
+        y,
+        scaleX,
+        scaleY,
+      }}
     >
       {text}
     </motion.div>,
-    document.body,
+    document.body
   );
 }
 
@@ -226,7 +241,7 @@ function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHa
           y: { ...spring.thrust, velocity: capsule.y.getVelocity() },
           scaleX: springs.scaleX,
           scaleY: springs.scaleY,
-        },
+        }
       );
       stop = () => controls.stop();
       void controls.finished.then(reset);
@@ -262,7 +277,10 @@ function MessageShell({
   const ref = useRef<HTMLDivElement>(null);
   useThrowHandoff(ref, handoff);
   return (
-    <div ref={ref} className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}>
+    <div
+      ref={ref}
+      className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}
+    >
       {children}
     </div>
   );
@@ -292,15 +310,15 @@ function MessageText({
               "rounded-md px-1 font-medium",
               isMe && !isGhost
                 ? "bg-primary-foreground/20"
-                // 他人气泡上主色作文字对比度不足（Design §3.1），浅底标出提及，文字保持正文色。
-                : "bg-primary/10 text-foreground",
+                : // 他人气泡上主色作文字对比度不足（Design §3.1），浅底标出提及，文字保持正文色。
+                  "bg-primary/10 text-foreground"
             )}
           >
             {segment.text}
           </span>
         ) : (
           <span key={index}>{segment.text}</span>
-        ),
+        )
       )}
     </>
   );
@@ -331,8 +349,14 @@ export function ChatPanel({
   const capsuleRef = useRef<ThrowHandle>(null);
   const [pendingEcho, setPendingEcho] = useState<{ baselineId: string | undefined } | null>(null);
   const [handoffId, setHandoffId] = useState<string | null>(null);
-  const handoff = useMemo<ThrowHandoff>(() => ({ capsule: capsuleRef, onTake: () => setThrown(null) }), []);
-  const recallThrow = useCallback(() => setThrown((current) => current && { ...current, phase: "recall" }), []);
+  const handoff = useMemo<ThrowHandoff>(
+    () => ({ capsule: capsuleRef, onTake: () => setThrown(null) }),
+    []
+  );
+  const recallThrow = useCallback(
+    () => setThrown((current) => current && { ...current, phase: "recall" }),
+    []
+  );
   // 收回播完：胶囊撤掉，之后才到的回显按别人的消息那样弹出。
   const finishRecall = useCallback(() => {
     setThrown(null);
@@ -346,13 +370,13 @@ export function ChatPanel({
   // 提及只对照当前房间名单判断，改名或退房不会留下失效标记
   const mentionablePlayers = useMemo(
     () => players.filter((player) => player.id !== myPlayerId),
-    [players, myPlayerId],
+    [players, myPlayerId]
   );
 
   // 本人最新一条消息：发送后它换了，就是这次发送的回显
   const lastMineId = useMemo(
     () => messages.findLast((message) => !message.system && message.playerId === myPlayerId)?.id,
-    [messages, myPlayerId],
+    [messages, myPlayerId]
   );
   if (pendingEcho && lastMineId && lastMineId !== pendingEcho.baselineId) {
     setHandoffId(lastMineId);
@@ -372,7 +396,7 @@ export function ChatPanel({
       mention
         ? filterMentionCandidates(mentionablePlayers, mention.query).slice(0, MENTION_LIMIT)
         : [],
-    [mention, mentionablePlayers],
+    [mention, mentionablePlayers]
   );
 
   const closeMention = useCallback(() => {
@@ -401,7 +425,7 @@ export function ChatPanel({
         inputRef.current?.setSelectionRange(applied.caret, applied.caret);
       });
     },
-    [mention, text, closeMention],
+    [mention, text, closeMention]
   );
 
   /** 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。 */
@@ -479,7 +503,9 @@ export function ChatPanel({
               const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
               const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
               const mentionsMe =
-                !isSticker && Boolean(myPlayerId) && mentionsPlayer(message.text, myPlayerId!, players);
+                !isSticker &&
+                Boolean(myPlayerId) &&
+                mentionsPlayer(message.text, myPlayerId!, players);
               const takesThrow = handoffId === message.id;
 
               return (
@@ -495,39 +521,39 @@ export function ChatPanel({
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
                   <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
-                  <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
-                    {message.playerName}
-                  </span>
-                  <div
-                    data-testid="chat-message-bubble"
-                    className={cn(
-                      "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
-                      safeStickerPath ? "p-1.5" : "px-3 py-1.5",
-                      isMe
-                        ? isGhost
-                          ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
-                          : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
-                        : isGhost
-                          ? "rounded-bl-sm bg-muted/40 border border-dashed border-border text-foreground/85"
-                          : "rounded-bl-sm bg-muted text-foreground",
-                      mentionsMe && "ring-1 ring-primary/40",
-                    )}
-                  >
-                    {safeStickerPath ? (
-                      <img
-                        src={safeStickerPath}
-                        alt="表情"
-                        className="h-20 w-20 object-contain"
-                      />
-                    ) : (
-                      <MessageText
-                        text={message.text}
-                        players={players}
-                        isMe={isMe}
-                        isGhost={isGhost}
-                      />
-                    )}
-                  </div>
+                    <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
+                      {message.playerName}
+                    </span>
+                    <div
+                      data-testid="chat-message-bubble"
+                      className={cn(
+                        "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+                        safeStickerPath ? "p-1.5" : "px-3 py-1.5",
+                        isMe
+                          ? isGhost
+                            ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
+                            : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
+                          : isGhost
+                            ? "rounded-bl-sm bg-muted/40 border border-dashed border-border text-foreground/85"
+                            : "rounded-bl-sm bg-muted text-foreground",
+                        mentionsMe && "ring-1 ring-primary/40"
+                      )}
+                    >
+                      {safeStickerPath ? (
+                        <img
+                          src={safeStickerPath}
+                          alt="表情"
+                          className="h-20 w-20 object-contain"
+                        />
+                      ) : (
+                        <MessageText
+                          text={message.text}
+                          players={players}
+                          isMe={isMe}
+                          isGhost={isGhost}
+                        />
+                      )}
+                    </div>
                   </MessageShell>
                 </motion.div>
               );
@@ -577,7 +603,7 @@ export function ChatPanel({
                     "border-t first:border-t-0",
                     index === mentionIndex
                       ? "bg-accent text-accent-foreground"
-                      : "text-foreground hover:bg-accent hover:text-accent-foreground",
+                      : "text-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

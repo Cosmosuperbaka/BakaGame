@@ -64,7 +64,11 @@ export function CEEMarks({ marks, name }: { marks: string; name: string }) {
         <AnimatePresence initial={false}>
           {items.map(({ token, index, style }) => (
             // 标记串只会在末尾追加，按序号作键：已有的标记不随新标记重播
-            <motion.span key={`${token}-${index}`} {...receiptMark} className="inline-flex shrink-0">
+            <motion.span
+              key={`${token}-${index}`}
+              {...receiptMark}
+              className="inline-flex shrink-0"
+            >
               {style ? (
                 <style.icon aria-hidden="true" className={cn("h-3.5 w-3.5", style.tone)} />
               ) : (

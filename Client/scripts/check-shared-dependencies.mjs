@@ -55,7 +55,10 @@ const rawPaths = config.config.compilerOptions?.paths ?? {};
 const viteText = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
 const dedupeBlock = /dedupe:\s*\[([^\]]*)\]/m.exec(viteText)?.[1] ?? "";
 const deduped = new Set([...dedupeBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]));
-assert.ok(deduped.has("@sinclair/typebox"), "vite.config.ts resolve.dedupe 解析失效（找不到已知条目）");
+assert.ok(
+  deduped.has("@sinclair/typebox"),
+  "vite.config.ts resolve.dedupe 解析失效（找不到已知条目）"
+);
 
 const packageOf = (specifier) => {
   const parts = specifier.split("/");
@@ -69,7 +72,8 @@ for (const name of fs.readdirSync(sharedDir)) {
   const text = fs.readFileSync(path.join(sharedDir, name), "utf8");
   for (const match of text.matchAll(/from "([^"]+)"/g)) {
     const specifier = match[1];
-    if (specifier.startsWith(".") || specifier.startsWith("node:") || specifier.startsWith("bun:")) continue;
+    if (specifier.startsWith(".") || specifier.startsWith("node:") || specifier.startsWith("bun:"))
+      continue;
     if (!imports.has(specifier)) imports.set(specifier, new Set());
     imports.get(specifier).add(name);
   }
@@ -80,14 +84,20 @@ for (const [specifier, files] of imports) {
   const pkg = packageOf(specifier);
   const usedBy = [...files].join(", ");
 
-  assert.ok(declared.has(pkg), `${pkg} 被共享源码使用（${usedBy}），必须声明在 Client/package.json 依赖里`);
-  assert.ok(deduped.has(pkg), `${pkg} 必须在 vite.config.ts resolve.dedupe 中（否则 ESA 打包阶段解析不到）`);
+  assert.ok(
+    declared.has(pkg),
+    `${pkg} 被共享源码使用（${usedBy}），必须声明在 Client/package.json 依赖里`
+  );
+  assert.ok(
+    deduped.has(pkg),
+    `${pkg} 必须在 vite.config.ts resolve.dedupe 中（否则 ESA 打包阶段解析不到）`
+  );
 
   const mapped = rawPaths[specifier] ?? rawPaths[`${pkg}/*`];
   assert.ok(mapped, `tsconfig.app.json paths 缺少 ${specifier}（或 ${pkg}/*）映射`);
   assert.ok(
     mapped.every((value) => value.startsWith("./node_modules/")),
-    `${specifier} 的 paths 映射必须指向 ./node_modules（得到 ${mapped.join(", ")}）`,
+    `${specifier} 的 paths 映射必须指向 ./node_modules（得到 ${mapped.join(", ")}）`
   );
 
   // 解析演练：藏起 Server 安装树后仍解析成功，且结果归属 Client 自己的安装。
@@ -97,11 +107,16 @@ for (const [specifier, files] of imports) {
   const file = slash(resolved.resolvedFileName);
   assert.ok(
     isUnder(file, clientLocal) || isUnder(file, workspaceRoot),
-    `${specifier} 必须归属 Client 自己的安装（独立或提升），实际 ${file}`,
+    `${specifier} 必须归属 Client 自己的安装（独立或提升），实际 ${file}`
   );
   assert.ok(!isUnder(file, serverTree), `${specifier} 不得从 Server 的安装树解析，实际 ${file}`);
 }
 
 // 反向验证：解析结果必须真的能被找到，避免上面的断言因路径写错而空转通过。
-assert.ok(ts.sys.fileExists(path.join(root, "tsconfig.app.json")), "tsconfig.app.json must exist for the paths mapping check");
-console.log(`Shared imports (${[...imports.keys()].join(", ")}) are wired to Client's own installation.`);
+assert.ok(
+  ts.sys.fileExists(path.join(root, "tsconfig.app.json")),
+  "tsconfig.app.json must exist for the paths mapping check"
+);
+console.log(
+  `Shared imports (${[...imports.keys()].join(", ")}) are wired to Client's own installation.`
+);

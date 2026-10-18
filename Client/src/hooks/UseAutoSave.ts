@@ -14,7 +14,7 @@ interface AutoSaveOptions {
 export function useAutoSave<T>(
   value: T,
   save: (value: T) => Promise<unknown>,
-  options: AutoSaveOptions = {},
+  options: AutoSaveOptions = {}
 ) {
   const { delayMs = 400, enabled = true, onError } = options;
 
@@ -42,7 +42,11 @@ export function useAutoSave<T>(
   // 显式串行保存队列处理器
   const processQueue = useCallback(() => {
     clearTimer();
-    const { save: currentSave, onError: currentOnError, enabled: currentEnabled } = callbacksRef.current;
+    const {
+      save: currentSave,
+      onError: currentOnError,
+      enabled: currentEnabled,
+    } = callbacksRef.current;
 
     // 若当前未启用或上一个保存仍未返回，保持等待
     if (!currentEnabled || isSavingRef.current) return;
@@ -88,7 +92,7 @@ export function useAutoSave<T>(
               clearTimer();
               timerRef.current = setTimeout(
                 () => processQueueRef.current(),
-                Math.max(0, callbacksRef.current.delayMs),
+                Math.max(0, callbacksRef.current.delayMs)
               );
             } else {
               processQueueRef.current();

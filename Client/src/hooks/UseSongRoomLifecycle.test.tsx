@@ -3,13 +3,23 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { getSongSoloRoomId, getSonGuessrSessionToken, saveSongSoloRoomId, saveSonGuessrSessionToken, saveUsername } from "@/lib/Storage";
+import {
+  getSongSoloRoomId,
+  getSonGuessrSessionToken,
+  saveSongSoloRoomId,
+  saveSonGuessrSessionToken,
+  saveUsername,
+} from "@/lib/Storage";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { SONG_ACCOUNTS, songSnapshot, songPrivate } from "@/stories/fixtures/SonGuessr";
 import { useSongRoomLifecycle } from "./UseSongRoomLifecycle";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
 const { navigate, waitConnection, send, randomId } = vi.hoisted(() => ({
-  navigate: vi.fn(), waitConnection: vi.fn(), send: vi.fn(), randomId: vi.fn(),
+  navigate: vi.fn(),
+  waitConnection: vi.fn(),
+  send: vi.fn(),
+  randomId: vi.fn(),
 }));
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
 vi.mock("@/lib/SonGuessrWs", () => ({ sonGuessrWs: { waitForConnection: waitConnection, send } }));
@@ -18,13 +28,27 @@ const initial = useSonGuessrStore.getState();
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
-const receipt = (roomId = "1234") => ({ roomId, sessionToken: "fixture-token", snapshot: songSnapshot({ roomId }), privateState: songPrivate({ sessionToken: "fixture-token" }) });
+const receipt = (roomId = "1234") => ({
+  roomId,
+  sessionToken: "fixture-token",
+  snapshot: songSnapshot({ roomId }),
+  privateState: songPrivate({ sessionToken: "fixture-token" }),
+});
 function mount(solo = false, strict = false) {
   const wrapper = ({ children }: { children: ReactNode }) => {
-    const router = <MemoryRouter initialEntries={["/songuessr/room/1234"]}><Routes><Route path="/songuessr/room/:roomId" element={children} /></Routes></MemoryRouter>;
+    const router = (
+      <MemoryRouter initialEntries={["/songuessr/room/1234"]}>
+        <Routes>
+          <Route path="/songuessr/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    );
     return strict ? <StrictMode>{router}</StrictMode> : router;
   };
   return renderHook(() => useSongRoomLifecycle({ solo }), { wrapper });
@@ -34,105 +58,194 @@ beforeEach(() => {
   useSonGuessrStore.setState({ ...initial, connected: true, setNotice: vi.fn() }, true);
   waitConnection.mockResolvedValue(undefined);
   randomId.mockReturnValue("5678");
-  send.mockImplementation(async (type: string, payload: Record<string, unknown> = {}, metadata: { roomId?: string } = {}) => {
-    if (type === "song.room.leave") return undefined;
-    if (!["song.room.join", "song.room.create", "song.room.reconnect"].includes(type)) throw new Error(`测试禁止命令 ${type}`);
-    const roomId = [metadata.roomId, payload.roomId].find((value): value is string => typeof value === "string");
-    return receipt(roomId ?? "1234");
-  });
+  send.mockImplementation(
+    async (
+      type: string,
+      payload: Record<string, unknown> = {},
+      metadata: { roomId?: string } = {}
+    ) => {
+      if (type === "song.room.leave") return undefined;
+      if (!["song.room.join", "song.room.create", "song.room.reconnect"].includes(type))
+        throw new Error(`测试禁止命令 ${type}`);
+      const roomId = [metadata.roomId, payload.roomId].find(
+        (value): value is string => typeof value === "string"
+      );
+      return receipt(roomId ?? "1234");
+    }
+  );
   saveUsername("玩家");
 });
 afterEach(() => useSonGuessrStore.setState(initial, true));
 
 describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS）", () => {
   it("等连接期间卸载不发恢复或加入", async () => {
-    const connection = deferred<void>(); waitConnection.mockReturnValue(connection.promise);
-    const h = mount(); h.unmount();
+    const connection = deferred<void>();
+    waitConnection.mockReturnValue(connection.promise);
+    const h = mount();
+    h.unmount();
     await act(async () => connection.resolve());
-    expect(send).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
   it("加入 ACK 在卸载后只释放席位，不落会话或导航", async () => {
     const ack = deferred<ReturnType<typeof receipt>>();
-    send.mockImplementation((type: string) => type === "song.room.join" ? ack.promise : Promise.resolve());
-    const h = mount(); await waitFor(() => expect(send).toHaveBeenCalledWith("song.room.join", expect.anything(), expect.anything()));
-    h.unmount(); await act(async () => ack.resolve(receipt()));
-    await waitFor(() => expect(send).toHaveBeenCalledWith("song.room.leave", {}, { roomId: "1234", sessionToken: "fixture-token" }));
-    expect(useSonGuessrStore.getState().roomId).toBeNull(); expect(getSonGuessrSessionToken("1234")).toBeNull(); expect(navigate).not.toHaveBeenCalled();
+    send.mockImplementation((type: string) =>
+      type === "song.room.join" ? ack.promise : Promise.resolve()
+    );
+    const h = mount();
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith("song.room.join", expect.anything(), expect.anything())
+    );
+    h.unmount();
+    await act(async () => ack.resolve(receipt()));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "song.room.leave",
+        {},
+        { roomId: "1234", sessionToken: "fixture-token" }
+      )
+    );
+    expect(useSonGuessrStore.getState().roomId).toBeNull();
+    expect(getSonGuessrSessionToken("1234")).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
   });
   it("离开后 ROOM_NOT_FOUND 不再创建", async () => {
-    const ack = deferred<ReturnType<typeof receipt>>(); send.mockReturnValue(ack.promise);
-    const h = mount(); await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockReturnValue(ack.promise);
+    const h = mount();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     act(() => h.result.current.leave());
     await act(async () => ack.reject({ code: "ROOM_NOT_FOUND" }));
-    expect(send).toHaveBeenCalledTimes(1); expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/songuessr", { replace: true });
   });
   it("ROOM_NOT_FOUND 创建使用同一 signal，晚 ACK 由 Store 释放", async () => {
     const ack = deferred<ReturnType<typeof receipt>>();
     // 夹具复刻服务端 error 包的形状：被测代码读的是 code，不是 Error。
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约
-    send.mockImplementation((type: string) => type === "song.room.join" ? Promise.reject({ code: "ROOM_NOT_FOUND" }) : type === "song.room.create" ? ack.promise : Promise.resolve());
-    const join = vi.fn(initial.joinRoom); const create = vi.fn(initial.createRoom);
+    send.mockImplementation((type: string) =>
+      type === "song.room.join"
+        ? rejectedProtocol({ code: "ROOM_NOT_FOUND", message: "房间不存在" })
+        : type === "song.room.create"
+          ? ack.promise
+          : Promise.resolve()
+    );
+    const join = vi.fn(initial.joinRoom);
+    const create = vi.fn(initial.createRoom);
     useSonGuessrStore.setState({ joinRoom: join, createRoom: create });
-    const h = mount(); await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-    const signal = join.mock.calls[0][3]; expect(signal).toBeInstanceOf(AbortSignal); expect(create.mock.calls[0][1]).toBe(signal);
-    h.unmount(); expect(signal?.aborted).toBe(true);
+    const h = mount();
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const signal = join.mock.calls[0][3];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(create.mock.calls[0][1]).toBe(signal);
+    h.unmount();
+    expect(signal?.aborted).toBe(true);
     await act(async () => ack.resolve(receipt()));
-    expect(useSonGuessrStore.getState().roomId).toBeNull(); expect(navigate).not.toHaveBeenCalled();
+    expect(useSonGuessrStore.getState().roomId).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
   });
   it("临时恢复错误不退化成加入或单人自动创建", async () => {
-    saveSonGuessrSessionToken("1234", "saved-token"); saveSongSoloRoomId("1234");
+    saveSonGuessrSessionToken("1234", "saved-token");
+    saveSongSoloRoomId("1234");
     send.mockRejectedValue({ code: "DISCONNECTED", message: "恢复暂时断开" });
     const h = mount(true);
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/", { replace: true }));
-    expect(send).toHaveBeenCalledTimes(1); expect(send.mock.calls[0][0]).toBe("song.room.reconnect");
-    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith("恢复暂时断开", "error"); h.unmount();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe("song.room.reconnect");
+    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith("恢复暂时断开", "error");
+    h.unmount();
   });
   it("StrictMode 恢复只发一个请求，成功不自动加入", async () => {
     saveSonGuessrSessionToken("1234", "saved-token");
-    const ack = deferred<ReturnType<typeof receipt>>(); send.mockReturnValue(ack.promise);
-    const h = mount(false, true); await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockReturnValue(ack.promise);
+    const h = mount(false, true);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     await act(async () => ack.resolve(receipt()));
-    expect(h.result.current.joining).toBe(false); expect(send).toHaveBeenCalledTimes(1);
+    expect(h.result.current.joining).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
     expect(getSonGuessrSessionToken("1234")).toBe("fixture-token");
   });
   it("旧挂载取消，新 signal 接管同一在途 Store 恢复而不释放成功席位", async () => {
     saveSonGuessrSessionToken("1234", "saved-token");
-    const ack = deferred<ReturnType<typeof receipt>>(); send.mockReturnValue(ack.promise);
-    const reconnect = vi.fn(initial.reconnectRoom); useSonGuessrStore.setState({ reconnectRoom: reconnect });
-    const first = mount(); await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1)); first.unmount();
-    const second = mount(); await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(2));
-    const oldSignal = reconnect.mock.calls[0][1]; const newSignal = reconnect.mock.calls[1][1];
-    expect(oldSignal?.aborted).toBe(true); expect(newSignal?.aborted).toBe(false); expect(newSignal).not.toBe(oldSignal);
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockReturnValue(ack.promise);
+    const reconnect = vi.fn(initial.reconnectRoom);
+    useSonGuessrStore.setState({ reconnectRoom: reconnect });
+    const first = mount();
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(1));
+    first.unmount();
+    const second = mount();
+    await waitFor(() => expect(reconnect).toHaveBeenCalledTimes(2));
+    const oldSignal = reconnect.mock.calls[0][1];
+    const newSignal = reconnect.mock.calls[1][1];
+    expect(oldSignal?.aborted).toBe(true);
+    expect(newSignal?.aborted).toBe(false);
+    expect(newSignal).not.toBe(oldSignal);
     await act(async () => ack.resolve(receipt()));
-    expect(second.result.current.joining).toBe(false); expect(send).toHaveBeenCalledTimes(1); expect(useSonGuessrStore.getState().roomId).toBe("1234");
+    expect(second.result.current.joining).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(useSonGuessrStore.getState().roomId).toBe("1234");
   });
   it("单人 ROOM_EXISTS 重试在 ACK 前不换 roomId 或取消自身", async () => {
-    saveSongSoloRoomId("1234"); const ack = deferred<ReturnType<typeof receipt>>();
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：换房号重试按 code 判「房号已占用」
-    send.mockImplementation((_type: string, payload: { roomId: string }) => payload.roomId === "1234" ? Promise.reject({ code: "ROOM_EXISTS" }) : ack.promise);
-    const create = vi.fn(initial.createRoom); useSonGuessrStore.setState({ createRoom: create });
-    const h = mount(true); await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
-    expect(h.result.current.roomId).toBe("1234"); const signal = create.mock.calls[0][1]; expect(create.mock.calls[1][1]).toBe(signal); expect(signal?.aborted).toBe(false);
+    saveSongSoloRoomId("1234");
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockImplementation((_type: string, payload: { roomId: string }) =>
+      payload.roomId === "1234"
+        ? rejectedProtocol({ code: "ROOM_EXISTS", message: "房间号已被占用" })
+        : ack.promise
+    );
+    const create = vi.fn(initial.createRoom);
+    useSonGuessrStore.setState({ createRoom: create });
+    const h = mount(true);
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+    expect(h.result.current.roomId).toBe("1234");
+    const signal = create.mock.calls[0][1];
+    expect(create.mock.calls[1][1]).toBe(signal);
+    expect(signal?.aborted).toBe(false);
     await act(async () => ack.resolve(receipt("5678")));
-    expect(h.result.current.roomId).toBe("5678"); expect(h.result.current.joining).toBe(false); expect(getSongSoloRoomId()).toBe("5678");
-    expect(send).toHaveBeenCalledTimes(2); expect(useSonGuessrStore.getState().roomId).toBe("5678");
+    expect(h.result.current.roomId).toBe("5678");
+    expect(h.result.current.joining).toBe(false);
+    expect(getSongSoloRoomId()).toBe("5678");
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(useSonGuessrStore.getState().roomId).toBe("5678");
   });
   it("单人重试晚 ACK 不保存 solo 房号或导航", async () => {
-    saveSongSoloRoomId("1234"); const ack = deferred<ReturnType<typeof receipt>>();
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：换房号重试按 code 判「房号已占用」
-    send.mockImplementation((type: string, payload: { roomId?: string } = {}) => type === "song.room.leave" ? Promise.resolve() : payload.roomId === "1234" ? Promise.reject({ code: "ROOM_EXISTS" }) : ack.promise);
-    const h = mount(true); await waitFor(() => expect(send).toHaveBeenCalledTimes(2)); h.unmount(); await act(async () => ack.resolve(receipt("5678")));
-    expect(getSongSoloRoomId()).toBe("1234"); expect(useSonGuessrStore.getState().roomId).toBeNull(); expect(navigate).not.toHaveBeenCalled();
+    saveSongSoloRoomId("1234");
+    const ack = deferred<ReturnType<typeof receipt>>();
+    send.mockImplementation((type: string, payload: { roomId?: string } = {}) =>
+      type === "song.room.leave"
+        ? Promise.resolve()
+        : payload.roomId === "1234"
+          ? rejectedProtocol({ code: "ROOM_EXISTS", message: "房间号已被占用" })
+          : ack.promise
+    );
+    const h = mount(true);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    h.unmount();
+    await act(async () => ack.resolve(receipt("5678")));
+    expect(getSongSoloRoomId()).toBe("1234");
+    expect(useSonGuessrStore.getState().roomId).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
   });
   it("用户补名字与密码时仍传入当前归属 signal", async () => {
-    window.localStorage.clear(); send.mockRejectedValueOnce({ code: "PASSWORD_REQUIRED" });
-    const join = vi.fn(initial.joinRoom); useSonGuessrStore.setState({ joinRoom: join });
-    const h = mount(); await waitFor(() => expect(h.result.current.needsName).toBe(true));
-    act(() => h.result.current.setNameDraft("新玩家")); await act(async () => h.result.current.handleConfirmName());
+    window.localStorage.clear();
+    send.mockRejectedValueOnce({ code: "PASSWORD_REQUIRED" });
+    const join = vi.fn(initial.joinRoom);
+    useSonGuessrStore.setState({ joinRoom: join });
+    const h = mount();
+    await waitFor(() => expect(h.result.current.needsName).toBe(true));
+    act(() => h.result.current.setNameDraft("新玩家"));
+    await act(async () => h.result.current.handleConfirmName());
     expect(h.result.current.needsPassword).toBe(true);
-    act(() => h.result.current.setPasswordDraft("fixture-password")); await act(async () => h.result.current.handleConfirmPassword());
+    act(() => h.result.current.setPasswordDraft("fixture-password"));
+    await act(async () => h.result.current.handleConfirmPassword());
     expect(join.mock.calls[0]).toEqual(["1234", "新玩家", undefined, expect.any(AbortSignal)]);
-    expect(join.mock.calls[1]).toEqual(["1234", "新玩家", "fixture-password", join.mock.calls[0][3]]);
+    expect(join.mock.calls[1]).toEqual([
+      "1234",
+      "新玩家",
+      "fixture-password",
+      join.mock.calls[0][3],
+    ]);
     expect(h.result.current.joining).toBe(false);
   });
 });
@@ -146,7 +259,9 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     privateState: songPrivate({ playerId: HOST_ID, sessionToken: "fixture-token" }),
   });
   const flush = async (ms = 0) => {
-    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
   };
   const uploadCalls = () => send.mock.calls.filter(([type]) => type === "song.auth.useCookie");
 
@@ -162,8 +277,10 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
       if (type === "song.room.join") return hostReceipt();
       if (type === "song.auth.useCookie") {
         uploads += 1;
-        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：装载重试按 code 分支，包成 Error 会让用例走错路径
-        if (uploads === 1) throw { code: "MUSIC_API_RATE_LIMITED", message: "网易云接口触发限流退避" };
+        if (uploads === 1) {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：装载重试按 code 分支，包成 Error 会让用例走错路径
+          throw { code: "MUSIC_API_RATE_LIMITED", message: "网易云接口触发限流退避" };
+        }
         return { account: SONG_ACCOUNTS.vip };
       }
       return undefined;
@@ -199,7 +316,10 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     await flush();
     expect(uploads).toBe(1);
     expect(getStoredSongMusicSession()).toBeNull();
-    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith("网易云登录状态已失效，请重新扫码登录", "error");
+    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith(
+      "网易云登录状态已失效，请重新扫码登录",
+      "error"
+    );
 
     await flush(30_000);
     expect(uploads).toBe(1);
@@ -231,7 +351,7 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     saveSongMusicSession(
       { cookie: "QQ_COOKIE=test", account: { ...SONG_ACCOUNTS.vip, platform: "qq" } },
       true,
-      "qq",
+      "qq"
     );
     const uploadedPlatforms: string[] = [];
     send.mockImplementation(async (type: string, payload?: Record<string, unknown>) => {

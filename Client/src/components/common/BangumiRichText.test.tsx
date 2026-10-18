@@ -6,13 +6,20 @@ import { BangumiRichText } from "./BangumiRichText";
 describe("BangumiRichText", () => {
   it("渲染链接、粗斜体与小标题，未知方括号原样保留", () => {
     const { container } = render(
-      <BangumiRichText text={"[size=22]简介[/size]\r\n由[url=https://bangumi.tv/person/1]某社[/url]制作，[b]粗[/b][i]斜[/i]，[jack]保留，见[url]https://weibo.com/x[/url]"} />,
+      <BangumiRichText
+        text={
+          "[size=22]简介[/size]\r\n由[url=https://bangumi.tv/person/1]某社[/url]制作，[b]粗[/b][i]斜[/i]，[jack]保留，见[url]https://weibo.com/x[/url]"
+        }
+      />
     );
     const link = screen.getByRole("link", { name: "某社" });
     expect(link).toHaveAttribute("href", "https://bangumi.tv/person/1");
     expect(link).toHaveAttribute("target", "_blank");
     expect(link.getAttribute("rel")).toContain("noopener");
-    expect(screen.getByRole("link", { name: "https://weibo.com/x" })).toHaveAttribute("href", "https://weibo.com/x");
+    expect(screen.getByRole("link", { name: "https://weibo.com/x" })).toHaveAttribute(
+      "href",
+      "https://weibo.com/x"
+    );
     expect(container.querySelector("strong")).toHaveTextContent("粗");
     expect(container.querySelector("em")).toHaveTextContent("斜");
     expect(container).toHaveTextContent("[jack]保留");
@@ -38,6 +45,9 @@ describe("BangumiRichText", () => {
     expect(flatten("[b]未闭合")).toBe(JSON.stringify(["[b]未闭合"]));
     expect(flatten("多余[/i]闭合")).toBe(JSON.stringify(["多余[/i]闭合"]));
     const crossed = parseBangumiMarkup("[b]外[i]内[/b]后[/i]");
-    expect(crossed).toEqual([{ tag: "b", value: undefined, raw: "[b]", children: ["外[i]内"] }, "后[/i]"]);
+    expect(crossed).toEqual([
+      { tag: "b", value: undefined, raw: "[b]", children: ["外[i]内"] },
+      "后[/i]",
+    ]);
   });
 });

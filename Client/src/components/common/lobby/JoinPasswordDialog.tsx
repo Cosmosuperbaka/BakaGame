@@ -36,7 +36,13 @@ export function JoinPasswordDialog({
   onConfirm,
 }: JoinPasswordDialogProps) {
   return (
-    <Dialog open={roomName !== null} onOpenChange={(open) => { if (!open) onCancel(); }} origin={origin}>
+    <Dialog
+      open={roomName !== null}
+      onOpenChange={(open) => {
+        if (!open) onCancel();
+      }}
+      origin={origin}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>输入房间密码</DialogTitle>
@@ -51,8 +57,12 @@ export function JoinPasswordDialog({
         >
           <RoomPasswordField value={password} onChange={onPasswordChange} error={error} />
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
-            <Button type="submit" disabled={!password.trim()} loading={pending}>加入</Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              取消
+            </Button>
+            <Button type="submit" disabled={!password.trim()} loading={pending}>
+              加入
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

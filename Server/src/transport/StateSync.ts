@@ -1,10 +1,6 @@
 import { compare } from "fast-json-patch";
 import { CEE_STATE_EVENTS } from "../shared/CEE";
-import type {
-  EventPacket,
-  StatePatchOperation,
-  StateSyncPayload,
-} from "../shared/Index";
+import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shared/Index";
 
 export const STATE_FULL_SYNC_INTERVAL_MS = 60_000;
 export const STATE_MAX_PATCHES_BEFORE_FULL = 1_024;
@@ -58,10 +54,7 @@ const prepareState = (value: unknown): PreparedState => {
   };
 };
 
-export function buildStatePatch(
-  previous: unknown,
-  next: unknown,
-): StatePatchOperation[] {
+export function buildStatePatch(previous: unknown, next: unknown): StatePatchOperation[] {
   if (sameScalar(previous, next)) return [];
 
   if (
@@ -149,14 +142,16 @@ export class StateSyncEncoder {
         changesSinceFull: 0,
         lastFullAt: now,
       });
-      return [{
-        ...payload,
-        payload: {
-          mode: "full",
-          revision: previous.revision,
-          state: nextState,
-        } satisfies StateSyncPayload<unknown>,
-      }];
+      return [
+        {
+          ...payload,
+          payload: {
+            mode: "full",
+            revision: previous.revision,
+            state: nextState,
+          } satisfies StateSyncPayload<unknown>,
+        },
+      ];
     }
 
     const revision = previous.revision + 1;

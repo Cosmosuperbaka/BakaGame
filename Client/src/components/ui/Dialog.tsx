@@ -1,19 +1,19 @@
-import * as React from "react"
-import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { AnimatePresence, motion } from "framer-motion"
-import { CloseButton } from "@/components/ui/CloseButton"
-import { backdrop, emergeFromOrigin, useOriginStyle, type OriginPoint } from "@/lib/Motion"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { AnimatePresence, motion } from "framer-motion";
+import { CloseButton } from "@/components/ui/CloseButton";
+import { backdrop, emergeFromOrigin, useOriginStyle, type OriginPoint } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 
-const DialogPortal = DialogPrimitive.Portal
-const DialogClose = DialogPrimitive.Close
+const DialogPortal = DialogPrimitive.Portal;
+const DialogClose = DialogPrimitive.Close;
 
 /** 由 Root 向 Content 传递本次打开的来源坐标。 */
-const DialogOriginContext = React.createContext<OriginPoint | null>(null)
+const DialogOriginContext = React.createContext<OriginPoint | null>(null);
 
 interface DialogProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root> {
   /** 触发按钮的视口中心点；浮层由此处展开与收回。 */
-  origin?: OriginPoint | null
+  origin?: OriginPoint | null;
 }
 
 /**
@@ -27,7 +27,7 @@ function Dialog({ open, origin = null, children, ...props }: DialogProps) {
         <AnimatePresence>{open ? children : null}</AnimatePresence>
       </DialogOriginContext.Provider>
     </DialogPrimitive.Root>
-  )
+  );
 }
 
 const DialogOverlay = React.forwardRef<
@@ -40,21 +40,24 @@ const DialogOverlay = React.forwardRef<
       initial="initial"
       animate="animate"
       exit="exit"
-      className={cn("fixed inset-0 z-overlay bg-foreground/25 backdrop-blur-[2px] dark:bg-black/50", className)}
+      className={cn(
+        "fixed inset-0 z-overlay bg-foreground/25 backdrop-blur-[2px] dark:bg-black/50",
+        className
+      )}
     />
   </DialogPrimitive.Overlay>
-))
-DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
+));
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  const origin = React.useContext(DialogOriginContext)
-  const innerRef = React.useRef<HTMLDivElement>(null)
-  React.useImperativeHandle(ref, () => innerRef.current as HTMLDivElement)
+  const origin = React.useContext(DialogOriginContext);
+  const innerRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => innerRef.current as HTMLDivElement);
   // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（Animation §4.1）。
-  const originStyle = useOriginStyle(innerRef, origin)
+  const originStyle = useOriginStyle(innerRef, origin);
 
   return (
     <DialogPortal forceMount>
@@ -81,22 +84,22 @@ const DialogContent = React.forwardRef<
         </motion.div>
       </DialogPrimitive.Content>
     </DialogPortal>
-  )
-})
-DialogContent.displayName = DialogPrimitive.Content.displayName
+  );
+});
+DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("flex flex-col space-y-1.5 pr-8 text-left", className)} {...props} />
-)
-DialogHeader.displayName = "DialogHeader"
+);
+DialogHeader.displayName = "DialogHeader";
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
     {...props}
   />
-)
-DialogFooter.displayName = "DialogFooter"
+);
+DialogFooter.displayName = "DialogFooter";
 
 const DialogTitle = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Title>,
@@ -107,8 +110,8 @@ const DialogTitle = React.forwardRef<
     className={cn("text-lg font-semibold leading-none", className)}
     {...props}
   />
-))
-DialogTitle.displayName = DialogPrimitive.Title.displayName
+));
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 const DialogDescription = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Description>,
@@ -119,8 +122,8 @@ const DialogDescription = React.forwardRef<
     className={cn("text-sm text-muted-foreground", className)}
     {...props}
   />
-))
-DialogDescription.displayName = DialogPrimitive.Description.displayName
+));
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
 export {
   Dialog,
@@ -132,4 +135,4 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
-}
+};

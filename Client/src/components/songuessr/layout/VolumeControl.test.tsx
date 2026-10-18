@@ -112,5 +112,3 @@ it("点击静音开关时平滑过渡音量显示值，手动交互时立即响�
     expect(readout).toHaveTextContent(/^0$/);
   });
 });
-
-

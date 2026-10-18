@@ -20,20 +20,20 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type {
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
-} from "@/types";
+import type { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "@/types";
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
 
 const initialStoreState = useSonGuessrStore.getState();
 const mediaMethods = ["load", "play", "pause"] as const;
 const originalMediaDescriptors = new Map(
-  mediaMethods.map((method) => [method, Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, method)]),
+  mediaMethods.map((method) => [
+    method,
+    Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, method),
+  ])
 );
 
 const createMockSnapshot = (
-  overrides: Partial<SonGuessrRoomSnapshot> = {},
+  overrides: Partial<SonGuessrRoomSnapshot> = {}
 ): SonGuessrRoomSnapshot => ({
   roomId: "TEST_ROOM",
   name: "猜歌测试房",
@@ -95,7 +95,7 @@ const createMockSnapshot = (
 });
 
 const createMockPrivateState = (
-  overrides: Partial<SonGuessrPrivateState> = {},
+  overrides: Partial<SonGuessrPrivateState> = {}
 ): SonGuessrPrivateState => ({
   playerId: "player-1",
   sessionToken: "token-1",
@@ -117,7 +117,7 @@ function renderRoomPage(roomId = "TEST_ROOM") {
         <Route path="/songuessr/room/:roomId" element={<SonGuessrRoomPage />} />
         <Route path="/songuessr" element={<div>Songuessr 游戏大厅</div>} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
@@ -127,7 +127,7 @@ function renderSoloPage() {
       <Routes>
         <Route path="/songuessr/solo" element={<SonGuessrRoomPage solo />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
@@ -159,7 +159,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     for (const method of mediaMethods) {
       expect(Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, method)).toEqual(
-        originalMediaDescriptors.get(method),
+        originalMediaDescriptors.get(method)
       );
     }
     expect(useSonGuessrStore.getState()).toBe(initialStoreState);
@@ -307,7 +307,9 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByTestId("baka-song-lyric-container")).toHaveTextContent("夜空中最亮的星");
     expect(screen.getByRole("region", { name: "提交猜测" })).toHaveTextContent("剩余 4 次猜测");
     // 搜索栏独立于歌词卡，放在歌词容器之外。
-    expect(screen.getByTestId("baka-song-lyric-container")).not.toContainElement(screen.getByRole("combobox", { name: "搜索歌曲" }));
+    expect(screen.getByTestId("baka-song-lyric-container")).not.toContainElement(
+      screen.getByRole("combobox", { name: "搜索歌曲" })
+    );
 
     // 3. 流转至答案揭晓结算阶段 (roundResult)
     act(() => {
@@ -463,146 +465,187 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
   it.each([
     { nextPhase: "waiting", expectedSaves: 1 },
     { nextPhase: "playing", expectedSaves: 0 },
-  ] as const)("真实设置草稿在防抖窗内进入 $nextPhase 后保存次数为 $expectedSaves", async ({ nextPhase, expectedSaves }) => {
-    vi.useFakeTimers();
-    const sendCommandSpy = vi.fn().mockResolvedValue({});
-    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+  ] as const)(
+    "真实设置草稿在防抖窗内进入 $nextPhase 后保存次数为 $expectedSaves",
+    async ({ nextPhase, expectedSaves }) => {
+      vi.useFakeTimers();
+      const sendCommandSpy = vi.fn().mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
 
-    renderRoomPage();
-    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
-    expect(duration).toHaveValue("60");
-    fireEvent.change(duration, { target: { value: "90" } });
-    fireEvent.blur(duration);
-    expect(duration).toHaveValue("90");
+      renderRoomPage();
+      fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+      const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+      expect(duration).toHaveValue("60");
+      fireEvent.change(duration, { target: { value: "90" } });
+      fireEvent.blur(duration);
+      expect(duration).toHaveValue("90");
 
-    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
-    // 同一真实输入在 400ms 防抖完成前必须尚未保存，两分支刺激保持一致。
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(399);
-    });
-    expect(settingsCalls()).toHaveLength(0);
-
-    if (nextPhase === "playing") {
-      act(() => {
-        useSonGuessrStore.setState({
-          snapshot: createMockSnapshot({
-            phase: "playing",
-            currentRound: {
-              roundNumber: 1,
-              submitterPlayerId: "player-1",
-              audioUrl: "https://audio.example.com/star.mp3",
-              lyricClip: { startTime: 0, endTime: 0, lines: [] },
-            },
-          }),
-          privateState: createMockPrivateState({ canGuess: true }),
-        });
+      const settingsCalls = () =>
+        sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+      // 同一真实输入在 400ms 防抖完成前必须尚未保存，两分支刺激保持一致。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(399);
       });
-      expect(screen.queryByRole("textbox", { name: "每次猜测时限（秒）" })).not.toBeInTheDocument();
       expect(settingsCalls()).toHaveLength(0);
-    }
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(settingsCalls()).toHaveLength(expectedSaves);
-    if (expectedSaves === 1) {
-      expect(settingsCalls()[0]).toEqual([
-        "song.room.updateSettings",
-        {
-          lyricsLineCount: 4,
-          showLyrics: true,
-          maxGuessesPerRound: 5,
-          guessDurationSeconds: 90,
-          showGuessTimer: true,
-          bloodMode: false,
-        },
-      ]);
-    }
+      if (nextPhase === "playing") {
+        act(() => {
+          useSonGuessrStore.setState({
+            snapshot: createMockSnapshot({
+              phase: "playing",
+              currentRound: {
+                roundNumber: 1,
+                submitterPlayerId: "player-1",
+                audioUrl: "https://audio.example.com/star.mp3",
+                lyricClip: { startTime: 0, endTime: 0, lines: [] },
+              },
+            }),
+            privateState: createMockPrivateState({ canGuess: true }),
+          });
+        });
+        expect(
+          screen.queryByRole("textbox", { name: "每次猜测时限（秒）" })
+        ).not.toBeInTheDocument();
+        expect(settingsCalls()).toHaveLength(0);
+      }
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-    expect(settingsCalls()).toHaveLength(expectedSaves);
-  });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(settingsCalls()).toHaveLength(expectedSaves);
+      if (expectedSaves === 1) {
+        expect(settingsCalls()[0]).toEqual([
+          "song.room.updateSettings",
+          {
+            lyricsLineCount: 4,
+            showLyrics: true,
+            maxGuessesPerRound: 5,
+            guessDurationSeconds: 90,
+            showGuessTimer: true,
+            bloodMode: false,
+          },
+        ]);
+      }
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(settingsCalls()).toHaveLength(expectedSaves);
+    }
+  );
 
   it.each([
     { panel: "题目设置", nextPhase: "waiting", expectedSaves: 1 },
     { panel: "题目设置", nextPhase: "playing", expectedSaves: 0 },
     { panel: "房间设置", nextPhase: "waiting", expectedSaves: 1 },
     { panel: "房间设置", nextPhase: "playing", expectedSaves: 0 },
-  ] as const)("$panel 的真实草稿在399ms进入 $nextPhase 后保存次数为 $expectedSaves", async ({ panel, nextPhase, expectedSaves }) => {
-    vi.useFakeTimers();
-    const sendCommandSpy = vi.fn().mockResolvedValue({});
-    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
-    renderRoomPage();
-    fireEvent.click(screen.getByRole("button", { name: panel }));
-    if (panel === "题目设置") {
-      expect(screen.getByRole("radio", { name: "手动出题" })).toBeChecked();
-      fireEvent.click(screen.getByRole("radio", { name: "自动出题" }));
-      expect(screen.getByRole("radio", { name: "自动出题" })).toBeChecked();
-    } else {
-      const name = screen.getByRole("textbox", { name: "房间名称" });
-      fireEvent.change(name, { target: { value: "新房间名称" } });
-      expect(name).toHaveValue("新房间名称");
-    }
-    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
-    await act(async () => { await vi.advanceTimersByTimeAsync(399); });
-    expect(settingsCalls()).toHaveLength(0);
-    if (nextPhase === "playing") {
-      act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) }); });
-      // 卸载刷新不能在防抖截止前偷发一次，之后推进时间也不得补发。
+  ] as const)(
+    "$panel 的真实草稿在399ms进入 $nextPhase 后保存次数为 $expectedSaves",
+    async ({ panel, nextPhase, expectedSaves }) => {
+      vi.useFakeTimers();
+      const sendCommandSpy = vi.fn().mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+      renderRoomPage();
+      fireEvent.click(screen.getByRole("button", { name: panel }));
+      if (panel === "题目设置") {
+        expect(screen.getByRole("radio", { name: "手动出题" })).toBeChecked();
+        fireEvent.click(screen.getByRole("radio", { name: "自动出题" }));
+        expect(screen.getByRole("radio", { name: "自动出题" })).toBeChecked();
+      } else {
+        const name = screen.getByRole("textbox", { name: "房间名称" });
+        fireEvent.change(name, { target: { value: "新房间名称" } });
+        expect(name).toHaveValue("新房间名称");
+      }
+      const settingsCalls = () =>
+        sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(399);
+      });
       expect(settingsCalls()).toHaveLength(0);
+      if (nextPhase === "playing") {
+        act(() => {
+          useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) });
+        });
+        // 卸载刷新不能在防抖截止前偷发一次，之后推进时间也不得补发。
+        expect(settingsCalls()).toHaveLength(0);
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(settingsCalls()).toHaveLength(expectedSaves);
+      if (expectedSaves === 1) {
+        expect(settingsCalls()[0]).toEqual([
+          "song.room.updateSettings",
+          panel === "题目设置"
+            ? {
+                questionType: "song",
+                questionMode: "automatic",
+                autoRotateSubmitter: false,
+                autoFilters: { playlist: undefined, artists: [], minPopularity: 0 },
+                animeAutoFilters: {},
+              }
+            : { name: "新房间名称", visibility: "public", password: "", allowSpectators: true },
+        ]);
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(800);
+      });
+      expect(settingsCalls()).toHaveLength(expectedSaves);
     }
-    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(settingsCalls()).toHaveLength(expectedSaves);
-    if (expectedSaves === 1) {
-      expect(settingsCalls()[0]).toEqual([
-        "song.room.updateSettings",
-        panel === "题目设置"
-          ? { questionType: "song", questionMode: "automatic", autoRotateSubmitter: false,
-              autoFilters: { playlist: undefined, artists: [], minPopularity: 0 }, animeAutoFilters: {} }
-          : { name: "新房间名称", visibility: "public", password: "", allowSpectators: true },
-      ]);
-    }
-    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
-    expect(settingsCalls()).toHaveLength(expectedSaves);
-  });
+  );
 
   it.each([
     { currentRoomId: "TEST_ROOM", expectedSaves: 1 },
     { currentRoomId: "NEXT_ROOM", expectedSaves: 0 },
-  ])("待保存设置卸载时当前房间为 $currentRoomId，保存次数为 $expectedSaves", async ({ currentRoomId, expectedSaves }) => {
-    vi.useFakeTimers();
-    const sendCommandSpy = vi.fn().mockResolvedValue({});
-    useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
-    const { unmount } = renderRoomPage();
-    fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
-    fireEvent.change(duration, { target: { value: "90" } });
-    fireEvent.blur(duration);
-    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
-    await act(async () => { await vi.advanceTimersByTimeAsync(399); });
-    expect(settingsCalls()).toHaveLength(0);
-    if (currentRoomId !== "TEST_ROOM") {
-      act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ roomId: currentRoomId }) }); });
+  ])(
+    "待保存设置卸载时当前房间为 $currentRoomId，保存次数为 $expectedSaves",
+    async ({ currentRoomId, expectedSaves }) => {
+      vi.useFakeTimers();
+      const sendCommandSpy = vi.fn().mockResolvedValue({});
+      useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
+      const { unmount } = renderRoomPage();
+      fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
+      const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+      fireEvent.change(duration, { target: { value: "90" } });
+      fireEvent.blur(duration);
+      const settingsCalls = () =>
+        sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(399);
+      });
+      expect(settingsCalls()).toHaveLength(0);
+      if (currentRoomId !== "TEST_ROOM") {
+        act(() => {
+          useSonGuessrStore.setState({ snapshot: createMockSnapshot({ roomId: currentRoomId }) });
+        });
+      }
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(801);
+      });
+      expect(settingsCalls()).toHaveLength(expectedSaves);
+      if (expectedSaves === 1) {
+        expect(settingsCalls()[0]).toEqual([
+          "song.room.updateSettings",
+          {
+            lyricsLineCount: 4,
+            showLyrics: true,
+            maxGuessesPerRound: 5,
+            guessDurationSeconds: 90,
+            showGuessTimer: true,
+            bloodMode: false,
+          },
+        ]);
+      }
     }
-    unmount();
-    await act(async () => { await vi.advanceTimersByTimeAsync(801); });
-    expect(settingsCalls()).toHaveLength(expectedSaves);
-    if (expectedSaves === 1) {
-      expect(settingsCalls()[0]).toEqual([
-        "song.room.updateSettings",
-        { lyricsLineCount: 4, showLyrics: true, maxGuessesPerRound: 5,
-          guessDurationSeconds: 90, showGuessTimer: true, bloodMode: false },
-      ]);
-    }
-  });
+  );
 
   it("设置保存飞行中再编辑，进入playing后ACK不得补发旧草稿", async () => {
     vi.useFakeTimers();
     let resolveSave!: () => void;
-    const pendingSave = new Promise<void>((resolve) => { resolveSave = resolve; });
+    const pendingSave = new Promise<void>((resolve) => {
+      resolveSave = resolve;
+    });
     const sendCommandSpy = vi.fn().mockReturnValueOnce(pendingSave).mockResolvedValue({});
     useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
     renderRoomPage();
@@ -610,16 +653,30 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
     fireEvent.change(duration, { target: { value: "90" } });
     fireEvent.blur(duration);
-    const settingsCalls = () => sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
-    await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+    const settingsCalls = () =>
+      sendCommandSpy.mock.calls.filter(([type]) => type === "song.room.updateSettings");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
     expect(settingsCalls()).toHaveLength(1);
-    expect(settingsCalls()[0]?.[1]).toEqual({ lyricsLineCount: 4, showLyrics: true,
-      maxGuessesPerRound: 5, guessDurationSeconds: 90, showGuessTimer: true, bloodMode: false });
+    expect(settingsCalls()[0]?.[1]).toEqual({
+      lyricsLineCount: 4,
+      showLyrics: true,
+      maxGuessesPerRound: 5,
+      guessDurationSeconds: 90,
+      showGuessTimer: true,
+      bloodMode: false,
+    });
     fireEvent.change(duration, { target: { value: "120" } });
     fireEvent.blur(duration);
-    act(() => { useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) }); });
+    act(() => {
+      useSonGuessrStore.setState({ snapshot: createMockSnapshot({ phase: "playing" }) });
+    });
     expect(settingsCalls()).toHaveLength(1);
-    await act(async () => { resolveSave(); await vi.advanceTimersByTimeAsync(1_200); });
+    await act(async () => {
+      resolveSave();
+      await vi.advanceTimersByTimeAsync(1_200);
+    });
     expect(settingsCalls()).toHaveLength(1);
   });
 
@@ -676,7 +733,9 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
     // 验证副歌时间徽章与手动播放/重播副歌按钮不存在
     expect(screen.queryByText(/副歌/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /播放副歌|暂停副歌|重播副歌/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /播放副歌|暂停副歌|重播副歌/ })
+    ).not.toBeInTheDocument();
 
     // 验证 audio 节点存在且未设置原生 autoPlay 属性，防止切台自动从头大音量播放
     const audio = container.querySelector("audio");
@@ -849,7 +908,11 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     act(() => {
       useSonGuessrStore.setState({
         snapshot: createMockSnapshot({
-          settings: { ...createMockSnapshot().settings, questionType: "anime", questionMode: "automatic" },
+          settings: {
+            ...createMockSnapshot().settings,
+            questionType: "anime",
+            questionMode: "automatic",
+          },
           phase: "waiting",
         }),
       });
@@ -865,20 +928,29 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(popularity).toHaveAttribute("aria-valuetext", "不限");
     popularity.focus();
     for (let step = 0; step < 7; step += 1) fireEvent.keyDown(popularity, { key: "ArrowRight" });
-    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
-      "song.room.updateSettings",
-      expect.objectContaining({ animeAutoFilters: expect.objectContaining({ ranking: "year", songMinPopularity: 10_000 }) }),
-    ));
+    await waitFor(() =>
+      expect(sendCommandSpy).toHaveBeenCalledWith(
+        "song.room.updateSettings",
+        expect.objectContaining({
+          animeAutoFilters: expect.objectContaining({ ranking: "year", songMinPopularity: 10_000 }),
+        })
+      )
+    );
 
     fireEvent.click(screen.getByRole("radio", { name: "听歌识曲" }));
     const minPopularity = screen.getByRole("slider", { name: "热度筛选" });
     minPopularity.focus();
     fireEvent.keyDown(minPopularity, { key: "ArrowRight" });
     fireEvent.keyDown(minPopularity, { key: "ArrowRight" });
-    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
-      "song.room.updateSettings",
-      expect.objectContaining({ questionType: "song", autoFilters: expect.objectContaining({ minPopularity: 1_000 }) }),
-    ));
+    await waitFor(() =>
+      expect(sendCommandSpy).toHaveBeenCalledWith(
+        "song.room.updateSettings",
+        expect.objectContaining({
+          questionType: "song",
+          autoFilters: expect.objectContaining({ minPopularity: 1_000 }),
+        })
+      )
+    );
   });
 
   it("房主设置字段由可见标签命名，数值在失焦时才夹到范围内", async () => {
@@ -899,10 +971,12 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(duration).toHaveValue("1");
     fireEvent.blur(duration);
     expect(duration).toHaveValue("10");
-    await waitFor(() => expect(sendCommandSpy).toHaveBeenCalledWith(
-      "song.room.updateSettings",
-      expect.objectContaining({ guessDurationSeconds: 10 }),
-    ));
+    await waitFor(() =>
+      expect(sendCommandSpy).toHaveBeenCalledWith(
+        "song.room.updateSettings",
+        expect.objectContaining({ guessDurationSeconds: 10 })
+      )
+    );
   });
 
   it("竞猜阶段歌词片段与纯音乐展示正确区分", () => {
@@ -1028,9 +1102,11 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     const pendingPromise = new Promise((resolve) => {
       resolveCommand = resolve;
     });
-    const sendCommandSpy = vi.fn().mockImplementation((type: string) =>
-      type === "song.room.requestSync" ? Promise.resolve({}) : pendingPromise,
-    );
+    const sendCommandSpy = vi
+      .fn()
+      .mockImplementation((type: string) =>
+        type === "song.room.requestSync" ? Promise.resolve({}) : pendingPromise
+      );
 
     useSonGuessrStore.setState({
       sendCommand: sendCommandSpy,
@@ -1152,7 +1228,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
           <Route path="/songuessr/room/:roomId" element={<SonGuessrRoomPage />} />
           <Route path="/songuessr" element={<div>Songuessr 游戏大厅</div>} />
         </Routes>
-      </MemoryRouter>,
+      </MemoryRouter>
     );
 
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
@@ -1175,7 +1251,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
           <Route path="/songuessr/solo" element={<SonGuessrRoomPage solo />} />
           <Route path="/" element={<div>游戏首页</div>} />
         </Routes>
-      </MemoryRouter>,
+      </MemoryRouter>
     );
 
     expect(screen.queryByText("游戏首页")).not.toBeInTheDocument();

@@ -6,5 +6,7 @@ import type { SonGuessrPhase } from "@bakagame/shared";
  * 与 CEE 的 `ceeDisplayRound` 同口径。
  */
 export function songDisplayRound(phase: SonGuessrPhase, roundNumber: number): number {
-  return phase === "choosingSubmitter" || phase === "submittingSong" ? roundNumber + 1 : roundNumber;
+  return phase === "choosingSubmitter" || phase === "submittingSong"
+    ? roundNumber + 1
+    : roundNumber;
 }

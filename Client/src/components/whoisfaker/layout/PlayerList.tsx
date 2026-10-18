@@ -28,7 +28,11 @@ import {
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
-import { COMPACT_PLAYER_COLUMN_WIDTH, PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./PlayerListLayout";
+import {
+  COMPACT_PLAYER_COLUMN_WIDTH,
+  PLAYER_COLUMN_WIDTH,
+  speechGridTemplate,
+} from "./PlayerListLayout";
 import type {
   DescriptionRecord,
   WhoIsFakerPhase,
@@ -145,10 +149,10 @@ export function PlayerList(props: PlayerListProps) {
   ];
 
   const activePlayers = players.filter(
-    (player) => player.membership === "active" && player.roundStatus !== "questioner",
+    (player) => player.membership === "active" && player.roundStatus !== "questioner"
   );
   const observers = players.filter(
-    (player) => player.membership === "spectator" || player.roundStatus === "questioner",
+    (player) => player.membership === "spectator" || player.roundStatus === "questioner"
   );
   // 换组后 key 随之变化，来回切换时不会复活还在退场的旧行（见 usePlayerRowKeys）。
   const rowKey = usePlayerRowKeys([
@@ -164,7 +168,7 @@ export function PlayerList(props: PlayerListProps) {
         addToast((error as { message: string }).message, "error");
       }
     },
-    [addToast, sendCommand],
+    [addToast, sendCommand]
   );
 
   const handleTransferHost = useCallback(
@@ -175,7 +179,7 @@ export function PlayerList(props: PlayerListProps) {
         addToast((error as { message: string }).message, "error");
       }
     },
-    [addToast, sendCommand],
+    [addToast, sendCommand]
   );
 
   const handleSetSpectator = useCallback(
@@ -186,7 +190,7 @@ export function PlayerList(props: PlayerListProps) {
         addToast((error as { message: string }).message, "error");
       }
     },
-    [addToast, sendCommand],
+    [addToast, sendCommand]
   );
 
   /**
@@ -197,7 +201,7 @@ export function PlayerList(props: PlayerListProps) {
     player: PublicPlayerView,
     hideSpectatorStatus: boolean,
     rowIndex: number,
-    options?: { readOnly?: boolean },
+    options?: { readOnly?: boolean }
   ) => {
     const rowProps: PlayerRowProps = {
       player,
@@ -209,9 +213,9 @@ export function PlayerList(props: PlayerListProps) {
       mark: playerMarks[player.id] ?? "unknown",
       canMark: Boolean(
         !options?.readOnly &&
-          canMarkPlayers &&
-          player.membership === "active" &&
-          player.roundStatus !== "questioner",
+        canMarkPlayers &&
+        player.membership === "active" &&
+        player.roundStatus !== "questioner"
       ),
       availableMarks,
       onMarkChange,
@@ -268,14 +272,16 @@ export function PlayerList(props: PlayerListProps) {
     if (!history) return title;
     return (
       <div className="col-span-full grid grid-cols-subgrid items-stretch">
-        <div className={compact ? "sticky left-0 z-panel border-r bg-panel px-2" : "px-2"}>{title}</div>
+        <div className={compact ? "sticky left-0 z-panel border-r bg-panel px-2" : "px-2"}>
+          {title}
+        </div>
         {history.columns.map((column) => (
           <div
             key={column.key}
             className={cn(
               "flex items-center whitespace-nowrap px-4 text-2xs font-semibold tracking-wide",
               withRule && "mt-3",
-              DESCRIPTION_HEAD_TONES[column.tone],
+              DESCRIPTION_HEAD_TONES[column.tone]
             )}
             style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
           >
@@ -300,14 +306,14 @@ export function PlayerList(props: PlayerListProps) {
     <div
       className={cn(
         "relative py-2",
-        history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col",
+        history ? "grid min-h-full w-max min-w-full content-start" : "flex flex-col"
       )}
       style={
         history
           ? {
               gridTemplateColumns: speechGridTemplate(
                 history.columns.length,
-                compact ? COMPACT_PLAYER_COLUMN_WIDTH : PLAYER_COLUMN_WIDTH,
+                compact ? COMPACT_PLAYER_COLUMN_WIDTH : PLAYER_COLUMN_WIDTH
               ),
             }
           : undefined
@@ -338,7 +344,10 @@ export function PlayerList(props: PlayerListProps) {
       </motion.div>
 
       {showSpectatorToggle && isSpectator ? (
-        <SpectatorToggle spectator={false} onToggle={(spectator) => void handleSetSpectator(spectator)} />
+        <SpectatorToggle
+          spectator={false}
+          onToggle={(spectator) => void handleSetSpectator(spectator)}
+        />
       ) : null}
 
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
@@ -351,13 +360,14 @@ export function PlayerList(props: PlayerListProps) {
             animate="animate"
           >
             <AnimatePresence initial={false} mode="popLayout">
-              {observers.map((player, index) =>
-                renderRow(player, true, observerRowOffset + index),
-              )}
+              {observers.map((player, index) => renderRow(player, true, observerRowOffset + index))}
             </AnimatePresence>
           </motion.div>
           {showSpectatorToggle && !isSpectator ? (
-            <SpectatorToggle spectator onToggle={(spectator) => void handleSetSpectator(spectator)} />
+            <SpectatorToggle
+              spectator
+              onToggle={(spectator) => void handleSetSpectator(spectator)}
+            />
           ) : null}
         </>
       ) : null}
@@ -368,7 +378,7 @@ export function PlayerList(props: PlayerListProps) {
           {renderGroupTitle("已离场", departed.length, true)}
           <div className={groupClass}>
             {departed.map((player, index) =>
-              renderRow(player, true, departedRowOffset + index, { readOnly: true }),
+              renderRow(player, true, departedRowOffset + index, { readOnly: true })
             )}
           </div>
         </>
@@ -405,12 +415,23 @@ function CompactNameCell({ player, me }: { player: PublicPlayerView; me: boolean
   const eliminated = player.roundStatus === "dead";
   return (
     <div className="sticky left-0 z-panel border-r bg-panel px-1.5">
-      <div className={cn(PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT, "pl-2 pr-1", me && "bg-primary/10", !player.online && !player.isBot && "opacity-60")}>
+      <div
+        className={cn(
+          PLAYER_ROW_BASE,
+          PLAYER_ROW_HEIGHT,
+          "pl-2 pr-1",
+          me && "bg-primary/10",
+          !player.online && !player.isBot && "opacity-60"
+        )}
+      >
         {me ? <span className={PLAYER_ME_MARK} /> : null}
         <PlayerAvatar name={player.name} me={me} />
         <Hint label={player.name}>
           <span
-            className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
+            className={cn(
+              "min-w-0 truncate font-medium",
+              eliminated && "text-muted-foreground line-through decoration-muted-foreground/60"
+            )}
           >
             {player.name}
           </span>
@@ -448,28 +469,34 @@ function SpeechCell({
       className={cn(
         "flex items-center px-4 py-1.5 text-sm leading-relaxed",
         DESCRIPTION_TONES[tone],
-        shade,
+        shade
       )}
     >
       {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
+              #{order}
+            </span>
           ) : null}
           <span>{description.text}</span>
         </span>
       ) : submitted ? (
         <div className="flex items-center gap-1.5">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
+              #{order}
+            </span>
           ) : null}
           <SubmittedSpeech />
         </div>
       ) : expected ? (
         <div className="flex items-center gap-1.5">
           {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
+            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
+              #{order}
+            </span>
           ) : null}
           <PendingSpeech />
         </div>
@@ -530,14 +557,16 @@ export function PlayerRow(props: PlayerRowProps) {
       bot={player.isBot}
       account={player.account}
       eliminated={eliminated}
-      badges={<>
-        {actualRole ? (
-          <RoleBadge role={actualRole} />
-        ) : mark !== "unknown" ? (
-          <RoleBadge role={mark} predicted />
-        ) : null}
-        {status ? <PlayerStatusPill tone={status.tone} label={status.label} /> : null}
-      </>}
+      badges={
+        <>
+          {actualRole ? (
+            <RoleBadge role={actualRole} />
+          ) : mark !== "unknown" ? (
+            <RoleBadge role={mark} predicted />
+          ) : null}
+          {status ? <PlayerStatusPill tone={status.tone} label={status.label} /> : null}
+        </>
+      }
       embedded={embedded}
       layoutId={embedded ? undefined : player.id}
       ref={ref}
@@ -556,7 +585,12 @@ export function PlayerRow(props: PlayerRowProps) {
           }
         : {})}
       {...(canManage
-        ? { actions: hostActions({ onTransferHost: () => onTransferHost(player.id), onKick: () => onKick(player.id) }) }
+        ? {
+            actions: hostActions({
+              onTransferHost: () => onTransferHost(player.id),
+              onKick: () => onKick(player.id),
+            }),
+          }
         : {})}
     />
   );
@@ -590,7 +624,7 @@ function MarkButton({
           ? roleSelectedTones[option]
           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         first && "rounded-tl-[calc(var(--radius)-1px)]",
-        last && "rounded-tr-[calc(var(--radius)-1px)]",
+        last && "rounded-tr-[calc(var(--radius)-1px)]"
       )}
     >
       {roleLabels[option]}

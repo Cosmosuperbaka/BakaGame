@@ -1,32 +1,32 @@
-import * as React from "react"
-import { motion } from "framer-motion"
-import { SlidingIndicator } from "@/components/ui/SlidingIndicator"
-import { useIndicatorRect } from "@/hooks/UseIndicatorRect"
-import { tappable } from "@/lib/Motion"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import { motion } from "framer-motion";
+import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
+import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
+import { tappable } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 
 export interface SegmentedOption<T extends string> {
-  value: T
-  label: string
-  disabled?: boolean
+  value: T;
+  label: string;
+  disabled?: boolean;
 }
 
 interface SegmentedControlProps<T extends string> {
-  value: T
-  options: SegmentedOption<T>[]
-  onValueChange: (value: T) => void
+  value: T;
+  options: SegmentedOption<T>[];
+  onValueChange: (value: T) => void;
   /** 页面上已有可见标签时改传 `aria-labelledby` 指向它，二者给一个即可。 */
-  "aria-label"?: string
-  "aria-labelledby"?: string
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
   /** `sm` 用于工具条等密集区域，高度与 `Button size="sm"` 对齐。 */
-  size?: "default" | "sm"
-  className?: string
+  size?: "default" | "sm";
+  className?: string;
 }
 
 const SIZES = {
   default: { root: "h-9 p-1", item: "px-4 text-sm" },
   sm: { root: "h-8 p-0.5", item: "px-3 text-xs" },
-} as const
+} as const;
 
 /**
  * 分段单选：两三个互斥选项并排、始终可见。基于原生 radio，方向键切换与读屏语义由浏览器提供。
@@ -43,21 +43,25 @@ export function SegmentedControl<T extends string>({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
 }: SegmentedControlProps<T>) {
-  const groupId = React.useId()
-  const sizing = SIZES[size]
-  const rootRef = React.useRef<HTMLDivElement>(null)
-  const rect = useIndicatorRect(rootRef, "[data-checked]", value)
+  const groupId = React.useId();
+  const sizing = SIZES[size];
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const rect = useIndicatorRect(rootRef, "[data-checked]", value);
   return (
     <div
       ref={rootRef}
       role="radiogroup"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={cn("relative inline-grid w-fit max-w-full auto-cols-fr grid-flow-col items-center rounded-full bg-muted text-muted-foreground", sizing.root, className)}
+      className={cn(
+        "relative inline-grid w-fit max-w-full auto-cols-fr grid-flow-col items-center rounded-full bg-muted text-muted-foreground",
+        sizing.root,
+        className
+      )}
     >
       <SlidingIndicator rect={rect} shape="pill" />
       {options.map((option) => {
-        const checked = option.value === value
+        const checked = option.value === value;
         return (
           <motion.label
             key={option.value}
@@ -70,7 +74,7 @@ export function SegmentedControl<T extends string>({
               "relative flex h-full min-w-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full font-medium transition-colors",
               sizing.item,
               checked ? "text-foreground" : !option.disabled && "hover:text-foreground",
-              option.disabled && "cursor-not-allowed opacity-50",
+              option.disabled && "cursor-not-allowed opacity-50"
             )}
           >
             <input
@@ -84,8 +88,8 @@ export function SegmentedControl<T extends string>({
             />
             <span className="relative">{option.label}</span>
           </motion.label>
-        )
+        );
       })}
     </div>
-  )
+  );
 }

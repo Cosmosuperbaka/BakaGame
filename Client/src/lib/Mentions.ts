@@ -9,8 +9,7 @@ export const MENTION_TRIGGER = "@";
 
 /** 一条消息切分后的片段：普通文本，或命中房间成员的提及。 */
 export type MentionSegment =
-  | { kind: "text"; text: string }
-  | { kind: "mention"; text: string; playerId: string };
+  { kind: "text"; text: string } | { kind: "mention"; text: string; playerId: string };
 
 /**
  * 把消息切成文本与提及片段。
@@ -21,7 +20,7 @@ export type MentionSegment =
  */
 export function splitMentions(
   text: string,
-  players: Array<{ id: string; name: string }>,
+  players: Array<{ id: string; name: string }>
 ): MentionSegment[] {
   if (!text.includes(MENTION_TRIGGER) || players.length === 0) {
     return [{ kind: "text", text }];
@@ -76,10 +75,10 @@ export function splitMentions(
 export function mentionsPlayer(
   text: string,
   playerId: string,
-  players: Array<{ id: string; name: string }>,
+  players: Array<{ id: string; name: string }>
 ): boolean {
   return splitMentions(text, players).some(
-    (segment) => segment.kind === "mention" && segment.playerId === playerId,
+    (segment) => segment.kind === "mention" && segment.playerId === playerId
   );
 }
 
@@ -91,7 +90,7 @@ export function mentionsPlayer(
  */
 export function readMentionQuery(
   value: string,
-  caret: number,
+  caret: number
 ): { query: string; start: number } | null {
   const before = value.slice(0, caret);
   const at = before.lastIndexOf(MENTION_TRIGGER);
@@ -109,7 +108,7 @@ export function readMentionQuery(
 /** 按当前查询过滤候选玩家，空查询时给出全部。 */
 export function filterMentionCandidates<T extends { name: string }>(
   players: T[],
-  query: string,
+  query: string
 ): T[] {
   if (!query) return players;
   const needle = query.toLowerCase();
@@ -121,7 +120,7 @@ export function applyMention(
   value: string,
   start: number,
   caret: number,
-  name: string,
+  name: string
 ): { value: string; caret: number } {
   const inserted = `${MENTION_TRIGGER}${name} `;
   const next = value.slice(0, start) + inserted + value.slice(caret);

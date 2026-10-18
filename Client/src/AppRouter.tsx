@@ -26,7 +26,10 @@ export function createAppRouter() {
           lazy: page(() => import("@/layouts/WhoIsFakerLayout"), "faker-layout"),
           children: [
             { index: true, lazy: page(() => import("@/pages/WhoIsFakerPage"), "faker") },
-            { path: "room/:roomId", lazy: page(() => import("@/pages/WhoIsFakerRoomPage"), "faker-room") },
+            {
+              path: "room/:roomId",
+              lazy: page(() => import("@/pages/WhoIsFakerRoomPage"), "faker-room"),
+            },
             // 子路径打错时退回本游戏大厅，而不是留在空白页
             { path: "*", element: <Navigate to="/whoisfaker" replace /> },
           ],
@@ -39,11 +42,17 @@ export function createAppRouter() {
             {
               path: "solo",
               lazy: async () => {
-                const { default: SonGuessrRoomPage } = await retryLazyImport(() => import("@/pages/SonGuessrRoomPage"), "song-room");
+                const { default: SonGuessrRoomPage } = await retryLazyImport(
+                  () => import("@/pages/SonGuessrRoomPage"),
+                  "song-room"
+                );
                 return { element: <SonGuessrRoomPage solo /> };
               },
             },
-            { path: "room/:roomId", lazy: page(() => import("@/pages/SonGuessrRoomPage"), "song-room") },
+            {
+              path: "room/:roomId",
+              lazy: page(() => import("@/pages/SonGuessrRoomPage"), "song-room"),
+            },
             { path: "*", element: <Navigate to="/songuessr" replace /> },
           ],
         },

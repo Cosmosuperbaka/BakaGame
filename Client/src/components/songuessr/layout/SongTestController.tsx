@@ -12,11 +12,7 @@ export interface SongTestControllerProps {
   isPending?: (type: string) => boolean;
 }
 
-export function SongTestController({
-  snapshot,
-  run,
-  isPending,
-}: SongTestControllerProps) {
+export function SongTestController({ snapshot, run, isPending }: SongTestControllerProps) {
   const [open, setOpen] = useState(true);
   const botCount = snapshot.players.filter((player) => player.isBot).length;
 
@@ -40,41 +36,41 @@ export function SongTestController({
             <DisclosureChevron open={open} className="ml-auto text-muted-foreground" />
           </motion.button>
           <CollapsibleRegion open={open}>
-                <div className="space-y-2 border-t px-4 pb-4 pt-3">
-                  <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
-                    <Users className="h-3.5 w-3.5 text-info" />
-                    测试人机
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 flex-1 gap-1 text-xs"
-                      aria-label="移除一个测试人机"
-                      disabled={botCount === 0 || isPending?.("song.test.removeBot")}
-                      loading={isPending?.("song.test.removeBot")}
-                      onClick={() => void run("song.test.removeBot", { count: 1 })}
-                    >
-                      <Minus className="h-3 w-3" />
-                      减一个
-                    </Button>
-                    <span className="w-10 text-center text-sm font-medium tabular-nums">
-                      {botCount}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 flex-1 gap-1 text-xs"
-                      aria-label="添加一个测试人机"
-                      disabled={isPending?.("song.test.addBot")}
-                      loading={isPending?.("song.test.addBot")}
-                      onClick={() => void run("song.test.addBot", { count: 1 })}
-                    >
-                      <Plus className="h-3 w-3" />
-                      加一个
-                    </Button>
-                  </div>
-                </div>
+            <div className="space-y-2 border-t px-4 pb-4 pt-3">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
+                <Users className="h-3.5 w-3.5 text-info" />
+                测试人机
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 flex-1 gap-1 text-xs"
+                  aria-label="移除一个测试人机"
+                  disabled={botCount === 0 || isPending?.("song.test.removeBot")}
+                  loading={isPending?.("song.test.removeBot")}
+                  onClick={() => void run("song.test.removeBot", { count: 1 })}
+                >
+                  <Minus className="h-3 w-3" />
+                  减一个
+                </Button>
+                <span className="w-10 text-center text-sm font-medium tabular-nums">
+                  {botCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 flex-1 gap-1 text-xs"
+                  aria-label="添加一个测试人机"
+                  disabled={isPending?.("song.test.addBot")}
+                  loading={isPending?.("song.test.addBot")}
+                  onClick={() => void run("song.test.addBot", { count: 1 })}
+                >
+                  <Plus className="h-3 w-3" />
+                  加一个
+                </Button>
+              </div>
+            </div>
           </CollapsibleRegion>
         </motion.div>
       </div>

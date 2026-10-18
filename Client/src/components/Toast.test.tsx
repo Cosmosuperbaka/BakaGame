@@ -11,7 +11,9 @@ describe("ToastViewport", () => {
     ];
     const { rerender, unmount } = render(<ToastViewport toasts={toasts} />);
     for (const toast of toasts) expect(screen.getByText(toast.text)).toBeInTheDocument();
-    rerender(<ToastViewport toasts={[...toasts, { id: 4, text: "设置已保存", type: "success" }]} />);
+    rerender(
+      <ToastViewport toasts={[...toasts, { id: 4, text: "设置已保存", type: "success" }]} />
+    );
     expect(screen.getByText("设置已保存")).toBeInTheDocument();
     rerender(<ToastViewport toasts={[]} />);
     await waitFor(() => expect(screen.queryByText("连接成功")).not.toBeInTheDocument());
@@ -20,7 +22,14 @@ describe("ToastViewport", () => {
   });
 
   it("容器是具名区域；错误立即播报，其余礼貌排队", () => {
-    render(<ToastViewport toasts={[{ id: 1, text: "密码错误", type: "error" }, { id: 2, text: "设置已保存", type: "success" }]} />);
+    render(
+      <ToastViewport
+        toasts={[
+          { id: 1, text: "密码错误", type: "error" },
+          { id: 2, text: "设置已保存", type: "success" },
+        ]}
+      />
+    );
     expect(screen.getByRole("region", { name: "通知" })).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("密码错误");
     const status = screen.getByRole("status");

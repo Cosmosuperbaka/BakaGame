@@ -5,7 +5,10 @@ import { usePhaseAction } from "./UsePhaseAction";
 function deferred() {
   let resolve!: () => void;
   let reject!: (reason: unknown) => void;
-  const promise = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
+  const promise = new Promise<void>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
   return { promise, resolve, reject };
 }
 
@@ -25,14 +28,21 @@ describe("usePhaseAction", () => {
       duplicate = result.current.run(submit);
       conflict = result.current.run(conflictingAction);
     });
-    await act(async () => { await Promise.all([duplicate, conflict]); });
+    await act(async () => {
+      await Promise.all([duplicate, conflict]);
+    });
     expect(submit).toHaveBeenCalledTimes(1);
     expect(conflictingAction).not.toHaveBeenCalled();
     expect(result.current.busy).toBe(true);
 
-    await act(async () => { ack.resolve(); await first; });
+    await act(async () => {
+      ack.resolve();
+      await first;
+    });
     expect(result.current.busy).toBe(false);
-    await act(async () => { await result.current.run(conflictingAction); });
+    await act(async () => {
+      await result.current.run(conflictingAction);
+    });
     expect(conflictingAction).toHaveBeenCalledTimes(1);
     expect(result.current.busy).toBe(false);
   });
@@ -43,12 +53,19 @@ describe("usePhaseAction", () => {
     const retry = vi.fn(async () => {});
     const { result } = renderHook(usePhaseAction);
     let pending!: Promise<void>;
-    act(() => { pending = result.current.run(() => ack.promise); });
+    act(() => {
+      pending = result.current.run(() => ack.promise);
+    });
     expect(result.current.busy).toBe(true);
     const rejected = expect(pending).rejects.toBe(failure);
-    await act(async () => { ack.reject(failure); await rejected; });
+    await act(async () => {
+      ack.reject(failure);
+      await rejected;
+    });
     expect(result.current.busy).toBe(false);
-    await act(async () => { await result.current.run(retry); });
+    await act(async () => {
+      await result.current.run(retry);
+    });
     expect(retry).toHaveBeenCalledTimes(1);
     expect(result.current.busy).toBe(false);
   });
@@ -58,10 +75,16 @@ describe("usePhaseAction", () => {
     const retry = vi.fn(async () => {});
     const { result } = renderHook(usePhaseAction);
     await act(async () => {
-      await expect(result.current.run(() => { throw failure; })).rejects.toBe(failure);
+      await expect(
+        result.current.run(() => {
+          throw failure;
+        })
+      ).rejects.toBe(failure);
     });
     expect(result.current.busy).toBe(false);
-    await act(async () => { await result.current.run(retry); });
+    await act(async () => {
+      await result.current.run(retry);
+    });
     expect(retry).toHaveBeenCalledTimes(1);
     expect(result.current.busy).toBe(false);
   });

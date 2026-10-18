@@ -17,8 +17,9 @@ test("真实网易云接口可以返回 HTTPS 音频、时间轴歌词并支持�
   expect(song.artist).toContain("陈奕迅");
   expect(song.audioUrl.startsWith("https://")).toBe(true);
   expect(song.lyrics.length).toBeGreaterThan(20);
-  expect(song.lyrics.some((line) => /Production Coordination|Engineered by|Recorded at/i.test(line.text)))
-    .toBe(false);
+  expect(
+    song.lyrics.some((line) => /Production Coordination|Engineered by|Recorded at/i.test(line.text))
+  ).toBe(false);
   expect(song.lyrics.every((line) => line.endTime > line.time)).toBe(true);
 });
 

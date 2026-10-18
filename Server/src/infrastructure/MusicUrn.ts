@@ -15,14 +15,20 @@ export function parseSongUrn(urn: string): ParsedSongUrn {
   const trimmed = urn?.trim() || "";
   const colonIdx = trimmed.indexOf(":");
   if (colonIdx === -1) {
-    throw new AppError("INVALID_SONG_URN", `歌曲 ID 必须包含平台前缀 (如 netease:123 或 qq:0039MnYb0qxYhV)，收到: "${urn}"`);
+    throw new AppError(
+      "INVALID_SONG_URN",
+      `歌曲 ID 必须包含平台前缀 (如 netease:123 或 qq:0039MnYb0qxYhV)，收到: "${urn}"`
+    );
   }
 
   const platformStr = trimmed.slice(0, colonIdx).toLowerCase();
   const rawId = trimmed.slice(colonIdx + 1).trim();
 
   if (platformStr !== "netease" && platformStr !== "qq") {
-    throw new AppError("INVALID_SONG_URN", `不支持的音源平台 "${platformStr}"，仅支持 netease 与 qq`);
+    throw new AppError(
+      "INVALID_SONG_URN",
+      `不支持的音源平台 "${platformStr}"，仅支持 netease 与 qq`
+    );
   }
   if (!rawId) {
     throw new AppError("INVALID_SONG_URN", `歌曲原始 ID 不能为空: "${urn}"`);

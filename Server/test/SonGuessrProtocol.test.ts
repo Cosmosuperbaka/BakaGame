@@ -3,12 +3,14 @@ import { expect, test } from "bun:test";
 import { parseSonGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
 test("SonGuessr 协议解析房间设置与游戏命令", () => {
-  expect(parseSonGuessrMessage({
-    id: "sync",
-    type: "song.room.requestSync",
-    roomId: "1234",
-    payload: {},
-  })).toMatchObject({ type: "song.room.requestSync", payload: {} });
+  expect(
+    parseSonGuessrMessage({
+      id: "sync",
+      type: "song.room.requestSync",
+      roomId: "1234",
+      payload: {},
+    })
+  ).toMatchObject({ type: "song.room.requestSync", payload: {} });
 
   expect(
     parseSonGuessrMessage({
@@ -24,7 +26,7 @@ test("SonGuessr 协议解析房间设置与游戏命令", () => {
         showGuessTimer: false,
         allowSpectators: false,
       },
-    }),
+    })
   ).toMatchObject({
     type: "song.room.updateSettings",
     roomId: "1234",
@@ -40,19 +42,21 @@ test("SonGuessr 协议解析房间设置与游戏命令", () => {
 });
 
 test("SonGuessr 协议解析题目设置与自动筛选", () => {
-  expect(parseSonGuessrMessage({
-    id: "question-settings",
-    type: "song.room.updateSettings",
-    payload: {
-      questionType: "song",
-      questionMode: "automatic",
-      autoFilters: {
-        playlist: { id: "123", name: "测试歌单", songCount: 10 },
-        artists: [{ id: "7", name: "测试歌手" }],
-        minPopularity: 10_000,
+  expect(
+    parseSonGuessrMessage({
+      id: "question-settings",
+      type: "song.room.updateSettings",
+      payload: {
+        questionType: "song",
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "123", name: "测试歌单", songCount: 10 },
+          artists: [{ id: "7", name: "测试歌手" }],
+          minPopularity: 10_000,
+        },
       },
-    },
-  })).toMatchObject({
+    })
+  ).toMatchObject({
     payload: {
       questionType: "song",
       questionMode: "automatic",
@@ -69,88 +73,119 @@ test("SonGuessr 热度门槛接受 0 到 1000000 的整数，越界与小数拒�
   const settings = (minPopularity: number) => ({
     id: `popularity-${minPopularity}`,
     type: "song.room.updateSettings",
-    payload: { autoFilters: { artists: [], minPopularity }, animeAutoFilters: { songMinPopularity: minPopularity } },
+    payload: {
+      autoFilters: { artists: [], minPopularity },
+      animeAutoFilters: { songMinPopularity: minPopularity },
+    },
   });
   for (const value of [0, 2_000, 350_000, 1_000_000]) {
     expect(parseSonGuessrMessage(settings(value))).toMatchObject({
-      payload: { autoFilters: { minPopularity: value }, animeAutoFilters: { songMinPopularity: value } },
+      payload: {
+        autoFilters: { minPopularity: value },
+        animeAutoFilters: { songMinPopularity: value },
+      },
     });
   }
   for (const value of [-1, 1_000_001, 1.5]) {
-    expect(() => parseSonGuessrMessage(settings(value))).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+    expect(() => parseSonGuessrMessage(settings(value))).toThrow(
+      expect.objectContaining({ code: "INVALID_MESSAGE" })
+    );
   }
 });
 
 test("SonGuessr 协议解析听歌猜番新筛选并拒绝旧字段", () => {
-  expect(parseSonGuessrMessage({
-    id: "anime-filters",
-    type: "song.room.updateSettings",
+  expect(
+    parseSonGuessrMessage({
+      id: "anime-filters",
+      type: "song.room.updateSettings",
+      payload: {
+        animeAutoFilters: {
+          startYear: 2016,
+          endYear: 2026,
+          ranking: "all",
+          subjectLimit: 50,
+          songMinPopularity: 10_000,
+          trackKinds: ["opening", "ending"],
+        },
+      },
+    })
+  ).toMatchObject({
     payload: {
       animeAutoFilters: {
-        startYear: 2016,
-        endYear: 2026,
         ranking: "all",
         subjectLimit: 50,
         songMinPopularity: 10_000,
         trackKinds: ["opening", "ending"],
       },
     },
-  })).toMatchObject({ payload: { animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 10_000, trackKinds: ["opening", "ending"] } } });
-  expect(() => parseSonGuessrMessage({
-    id: "legacy-anime-filters",
-    type: "song.room.updateSettings",
-    payload: { animeAutoFilters: { topN: 50 } },
-  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+  });
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "legacy-anime-filters",
+      type: "song.room.updateSettings",
+      payload: { animeAutoFilters: { topN: 50 } },
+    })
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
 
 test("SonGuessr 协议解析听歌猜番搜索与游戏命令", () => {
-  expect(parseSonGuessrMessage({
-    id: "bangumi-search",
+  expect(
+    parseSonGuessrMessage({
+      id: "bangumi-search",
+      type: "song.bangumi.search",
+      roomId: "1234",
+      sessionToken: "token",
+      payload: { keyword: "命运石之门" },
+    })
+  ).toMatchObject({
     type: "song.bangumi.search",
-    roomId: "1234",
-    sessionToken: "token",
-    payload: { keyword: "命运石之门" },
-  })).toMatchObject({
-    type: "song.bangumi.search",
     payload: { keyword: "命运石之门" },
   });
 
-  expect(parseSonGuessrMessage({
-    id: "bangumi-songs",
-    type: "song.bangumi.songs",
-    roomId: "1234",
-    sessionToken: "token",
-    payload: { subjectId: "10380" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "bangumi-songs",
+      type: "song.bangumi.songs",
+      roomId: "1234",
+      sessionToken: "token",
+      payload: { subjectId: "10380" },
+    })
+  ).toMatchObject({
     type: "song.bangumi.songs",
     payload: { subjectId: "10380" },
   });
 
-  expect(parseSonGuessrMessage({
-    id: "submit-anime",
-    type: "song.game.submitAnime",
-    roomId: "1234",
-    payload: { subjectId: "10380", songId: "228228" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "submit-anime",
+      type: "song.game.submitAnime",
+      roomId: "1234",
+      payload: { subjectId: "10380", songId: "228228" },
+    })
+  ).toMatchObject({
     type: "song.game.submitAnime",
     payload: { subjectId: "10380", songId: "228228" },
   });
 
-  expect(parseSonGuessrMessage({
-    id: "guess-anime",
-    type: "song.game.guessAnime",
-    roomId: "1234",
-    payload: { subjectId: "1701" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "guess-anime",
+      type: "song.game.guessAnime",
+      roomId: "1234",
+      payload: { subjectId: "1701" },
+    })
+  ).toMatchObject({
     type: "song.game.guessAnime",
     payload: { subjectId: "1701" },
   });
 
-  expect(() => parseSonGuessrMessage({
-    id: "dirty-anime",
-    type: "song.game.guessAnime",
-    payload: { subjectId: "1701", extra: true },
-  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "dirty-anime",
+      type: "song.game.guessAnime",
+      payload: { subjectId: "1701", extra: true },
+    })
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
 
 test("SonGuessr 协议拒绝非法音频准备回合号", () => {
@@ -160,57 +195,69 @@ test("SonGuessr 协议拒绝非法音频准备回合号", () => {
         id: "1",
         type: "song.game.audioReady",
         payload: { roundNumber },
-      }),
+      })
     ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
   }
 });
 
 test("SonGuessr 协议解析旁观、放弃与测试人机命令", () => {
-  expect(parseSonGuessrMessage({
-    id: "spectator",
-    type: "song.player.setSpectator",
-    payload: { spectator: true },
-  })).toMatchObject({ type: "song.player.setSpectator", payload: { spectator: true } });
+  expect(
+    parseSonGuessrMessage({
+      id: "spectator",
+      type: "song.player.setSpectator",
+      payload: { spectator: true },
+    })
+  ).toMatchObject({ type: "song.player.setSpectator", payload: { spectator: true } });
 
-  expect(parseSonGuessrMessage({
-    id: "give-up",
-    type: "song.game.giveUp",
-    payload: {},
-  })).toMatchObject({ type: "song.game.giveUp", payload: {} });
+  expect(
+    parseSonGuessrMessage({
+      id: "give-up",
+      type: "song.game.giveUp",
+      payload: {},
+    })
+  ).toMatchObject({ type: "song.game.giveUp", payload: {} });
 
-  expect(parseSonGuessrMessage({
-    id: "bots",
-    type: "song.test.addBot",
-    payload: { count: 3 },
-  })).toMatchObject({ type: "song.test.addBot", payload: { count: 3 } });
+  expect(
+    parseSonGuessrMessage({
+      id: "bots",
+      type: "song.test.addBot",
+      payload: { count: 3 },
+    })
+  ).toMatchObject({ type: "song.test.addBot", payload: { count: 3 } });
 
   for (const count of [0, -1, 1.5, "2"]) {
-    expect(() => parseSonGuessrMessage({
-      id: "invalid-bots",
-      type: "song.test.removeBot",
-      payload: { count },
-    })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+    expect(() =>
+      parseSonGuessrMessage({
+        id: "invalid-bots",
+        type: "song.test.removeBot",
+        payload: { count },
+      })
+    ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
   }
 });
 
 test("SonGuessr 协议只解析扫码与 Cookie 登录命令", () => {
-  expect(parseSonGuessrMessage({
-    id: "qr",
-    type: "song.auth.qr.check",
-    payload: { key: "qr-key" },
-  })).toMatchObject({ type: "song.auth.qr.check", payload: { key: "qr-key" } });
+  expect(
+    parseSonGuessrMessage({
+      id: "qr",
+      type: "song.auth.qr.check",
+      payload: { key: "qr-key" },
+    })
+  ).toMatchObject({ type: "song.auth.qr.check", payload: { key: "qr-key" } });
 
   for (const type of ["song.auth.phone.login", "song.auth.email.login"]) {
     expect(() => parseSonGuessrMessage({ id: "removed-login", type, payload: {} })).toThrow(
-      expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" }),
+      expect.objectContaining({ code: "UNKNOWN_MESSAGE_TYPE" })
     );
   }
 
-  expect(parseSonGuessrMessage({
-    id: "cookie",
-    type: "song.auth.useCookie",
-    payload: { cookie: "MUSIC_U=test" },
-  })).toMatchObject({ type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } });
+  expect(
+    parseSonGuessrMessage({
+      id: "cookie",
+      type: "song.auth.useCookie",
+      payload: { cookie: "MUSIC_U=test" },
+    })
+  ).toMatchObject({ type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } });
 });
 
 test("SonGuessr 协议严格拦截 payload null 与未知属性", () => {
@@ -220,7 +267,7 @@ test("SonGuessr 协议严格拦截 payload null 与未知属性", () => {
       id: "null-payload",
       type: "song.room.leave",
       payload: null,
-    }),
+    })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 
   // 2. 拒绝未声明的信封脏字段
@@ -230,7 +277,7 @@ test("SonGuessr 协议严格拦截 payload null 与未知属性", () => {
       type: "song.room.leave",
       payload: {},
       extraField: "hacker",
-    }),
+    })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 
   // 3. 拒绝未声明的 payload 脏字段
@@ -239,7 +286,7 @@ test("SonGuessr 协议严格拦截 payload null 与未知属性", () => {
       id: "extra-payload",
       type: "song.room.leave",
       payload: { dirty: 123 },
-    }),
+    })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
 
@@ -268,69 +315,84 @@ test("SonGuessr 协议支持 16,384 字符合法 Cookie 并拦截超长凭据", 
       id: "too-long-cookie",
       type: "song.auth.useCookie",
       payload: { cookie: tooLongCookie },
-    }),
+    })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
 
-
 test("局部自动筛选输入和完整房间状态拥有不同契约", async () => {
   const { Value } = await import("@sinclair/typebox/value");
-  const { SongAutoFiltersSchema, SongAutoFiltersInputSchema } = await import("../src/shared/SonGuessrFilters");
+  const { SongAutoFiltersSchema, SongAutoFiltersInputSchema } =
+    await import("../src/shared/SonGuessrFilters");
   const partial = { playlist: { id: "1" } };
   expect(Value.Check(SongAutoFiltersInputSchema, partial)).toBe(true);
   expect(Value.Check(SongAutoFiltersSchema, partial)).toBe(false);
-  expect(parseSonGuessrMessage({ id: "filters", type: "song.room.updateSettings", payload: { autoFilters: partial } })).toMatchObject({ payload: { autoFilters: partial } });
+  expect(
+    parseSonGuessrMessage({
+      id: "filters",
+      type: "song.room.updateSettings",
+      payload: { autoFilters: partial },
+    })
+  ).toMatchObject({ payload: { autoFilters: partial } });
 });
 
 test("SonGuessr 协议正确放行网易云与 QQ 音乐统一 URN 歌曲 ID (含冒号)", () => {
   // 1. song.game.submitSong
-  expect(parseSonGuessrMessage({
-    id: "submit-netease",
-    type: "song.game.submitSong",
-    roomId: "1234",
-    payload: { songId: "netease:1899705498" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "submit-netease",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "netease:1899705498" },
+    })
+  ).toMatchObject({
     type: "song.game.submitSong",
     payload: { songId: "netease:1899705498" },
   });
 
-  expect(parseSonGuessrMessage({
-    id: "submit-qq",
-    type: "song.game.submitSong",
-    roomId: "1234",
-    payload: { songId: "qq:0017K7gL4WYnw2" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "submit-qq",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "qq:0017K7gL4WYnw2" },
+    })
+  ).toMatchObject({
     type: "song.game.submitSong",
     payload: { songId: "qq:0017K7gL4WYnw2" },
   });
 
   // 2. song.game.guess
-  expect(parseSonGuessrMessage({
-    id: "guess-qq",
-    type: "song.game.guess",
-    roomId: "1234",
-    payload: { songId: "qq:0017K7gL4WYnw2" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "guess-qq",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "qq:0017K7gL4WYnw2" },
+    })
+  ).toMatchObject({
     type: "song.game.guess",
     payload: { songId: "qq:0017K7gL4WYnw2" },
   });
 
   // 3. song.game.submitAnime (带 URN)
-  expect(parseSonGuessrMessage({
-    id: "anime-urn",
-    type: "song.game.submitAnime",
-    roomId: "1234",
-    payload: { subjectId: "10380", songId: "netease:1899705498" },
-  })).toMatchObject({
+  expect(
+    parseSonGuessrMessage({
+      id: "anime-urn",
+      type: "song.game.submitAnime",
+      roomId: "1234",
+      payload: { subjectId: "10380", songId: "netease:1899705498" },
+    })
+  ).toMatchObject({
     type: "song.game.submitAnime",
     payload: { subjectId: "10380", songId: "netease:1899705498" },
   });
 
   // 4. 拒绝包含特殊字符或超长的非法 ID
-  expect(() => parseSonGuessrMessage({
-    id: "dirty-song-id",
-    type: "song.game.submitSong",
-    payload: { songId: "qq:001<script>" },
-  })).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "dirty-song-id",
+      type: "song.game.submitSong",
+      payload: { songId: "qq:001<script>" },
+    })
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });
-

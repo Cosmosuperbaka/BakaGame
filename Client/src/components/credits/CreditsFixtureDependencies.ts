@@ -10,7 +10,7 @@
 import { UNKNOWN_LICENSE, type CreditDependency } from "@/lib/Credits";
 
 const dependency = (
-  overrides: Partial<CreditDependency> & Pick<CreditDependency, "name" | "version">,
+  overrides: Partial<CreditDependency> & Pick<CreditDependency, "name" | "version">
 ): CreditDependency => ({
   license: "MIT",
   description: "",

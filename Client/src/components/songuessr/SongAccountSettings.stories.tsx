@@ -2,8 +2,16 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { clearStoredSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { dropFocus } from "@/stories/PlayHelpers";
-import { pending, seedMusicSession, SONG_ACCOUNTS, SONG_QR, songSnapshot, stubSongCommand } from "@/stories/fixtures/SonGuessr";
+import {
+  pending,
+  seedMusicSession,
+  SONG_ACCOUNTS,
+  SONG_QR,
+  songSnapshot,
+  stubSongCommand,
+} from "@/stories/fixtures/SonGuessr";
 import { SongAccountSettings } from "./SongAccountSettings";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
 // 折叠态不发请求；只有在未登录时展开才会请求登录二维码，故事里用替身应答。
 const meta = {
@@ -11,7 +19,13 @@ const meta = {
   component: SongAccountSettings,
   args: { snapshot: songSnapshot({ musicAccountReady: false }) },
   beforeEach: () => clearStoredSongMusicSession(),
-  decorators: [(Story) => <div className="w-[28rem] rounded-md bg-panel p-6"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="w-[28rem] rounded-md bg-panel p-6">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof SongAccountSettings>;
 
 export default meta;
@@ -24,7 +38,8 @@ const expand = async (canvasElement: HTMLElement) => {
 };
 
 /** 二维码创建成功；轮询保持未返回，状态文案停在“请扫码”。 */
-const qrWaiting = (type: string) => (type === "song.auth.qr.create" ? Promise.resolve(SONG_QR) : pending());
+const qrWaiting = (type: string) =>
+  type === "song.auth.qr.create" ? Promise.resolve(SONG_QR) : pending();
 
 export const LoggedOut: Story = { name: "未登录" };
 
@@ -102,8 +117,10 @@ export const QrCreating: Story = {
 
 export const QrFailed: Story = {
   name: "扫码登录 · 二维码生成失败",
-  // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：命令失败按 code 取 message 呈现
-  beforeEach: () => stubSongCommand(() => Promise.reject({ code: "MUSIC_LOGIN_FAILED", message: "无法生成登录二维码" })),
+  beforeEach: () =>
+    stubSongCommand(() =>
+      rejectedProtocol({ code: "MUSIC_LOGIN_FAILED", message: "无法生成登录二维码" })
+    ),
   play: async ({ canvasElement }) => {
     const canvas = await expand(canvasElement);
     await canvas.findByText("无法生成登录二维码");

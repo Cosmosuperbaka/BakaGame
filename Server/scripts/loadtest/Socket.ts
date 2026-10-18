@@ -11,8 +11,8 @@ export interface ClientEnvelope {
 }
 
 export type CommandResult =
-  | { ok: true, payload: unknown, latencyMs: number }
-  | { ok: false, code: string, latencyMs: number };
+  | { ok: true; payload: unknown; latencyMs: number }
+  | { ok: false; code: string; latencyMs: number };
 
 /**
  * 服务端状态机的「还没到时候」：驱动等一拍重发即可，与服务端健康无关。
@@ -21,9 +21,19 @@ export type CommandResult =
  * 限流（RATE_LIMITED）不在此列 —— 那正是压力超过服务能力的信号。
  */
 export const RETRYABLE_CODES: readonly string[] = [
-  "PHASE_INCOMPLETE", "INVALID_PHASE", "NO_ACTIVE_ROUND", "NOT_ALL_READY", "PLAYERS_NOT_READY",
-  "ACTION_PENDING", "ROUND_BUSY", "PHASE_RESULT_PENDING", "PLAYER_PENDING", "QUESTIONER_PENDING",
-  "AUDIO_NOT_READY", "CANNOT_GUESS", "NOT_SETTER",
+  "PHASE_INCOMPLETE",
+  "INVALID_PHASE",
+  "NO_ACTIVE_ROUND",
+  "NOT_ALL_READY",
+  "PLAYERS_NOT_READY",
+  "ACTION_PENDING",
+  "ROUND_BUSY",
+  "PHASE_RESULT_PENDING",
+  "PLAYER_PENDING",
+  "QUESTIONER_PENDING",
+  "AUDIO_NOT_READY",
+  "CANNOT_GUESS",
+  "NOT_SETTER",
 ];
 
 /** 计量窗口内的样本上限：蓄水池抽样，既压内存又保住分位数无偏。 */
@@ -48,7 +58,7 @@ export interface SocketOptions {
    * 补发全量时要附带的信封：CEE 的 requestSync 走 sessionToken 鉴权，
    * 裸发一条会被判 SESSION_INVALID，整条连接的状态通道就废了。
    */
-  syncEnvelope?: () => { roomId?: string, sessionToken?: string } | undefined;
+  syncEnvelope?: () => { roomId?: string; sessionToken?: string } | undefined;
   /** 计入状态同步通道的事件名（只有这些会被 diff，其余按普通事件计数）。 */
   stateEvents: readonly string[];
   onEvent?: (event: string, payload: unknown) => void;
@@ -86,16 +96,28 @@ export class GameSocket {
 
   constructor(private readonly options: SocketOptions) {}
 
-  get isClosed(): boolean { return this.closed; }
+  get isClosed(): boolean {
+    return this.closed;
+  }
 
   /** 本窗口的 ACK 延迟样本（供跨连接汇总分位数）。 */
-  get latencySamples(): readonly number[] { return this.latency; }
+  get latencySamples(): readonly number[] {
+    return this.latency;
+  }
 
   /** 清零计数，把统计范围对齐到测量窗口。 */
   beginWindow(): void {
     Object.assign(this.stats, {
-      bytesSent: 0, bytesReceived: 0, framesSent: 0, framesReceived: 0,
-      commandsSent: 0, acks: 0, errors: 0, timeouts: 0, retries: 0, ignored: 0,
+      bytesSent: 0,
+      bytesReceived: 0,
+      framesSent: 0,
+      framesReceived: 0,
+      commandsSent: 0,
+      acks: 0,
+      errors: 0,
+      timeouts: 0,
+      retries: 0,
+      ignored: 0,
     });
     this.latency.length = 0;
     this.latencySeen = 0;
@@ -103,7 +125,10 @@ export class GameSocket {
 
   private record(value: number): void {
     this.latencySeen += 1;
-    if (this.latency.length < LATENCY_CAPACITY) { this.latency.push(value); return; }
+    if (this.latency.length < LATENCY_CAPACITY) {
+      this.latency.push(value);
+      return;
+    }
     const index = Math.floor(Math.random() * this.latencySeen);
     if (index < LATENCY_CAPACITY) this.latency[index] = value;
   }
@@ -112,21 +137,39 @@ export class GameSocket {
     return new Promise((resolve, reject) => {
       // 不发 Origin：无 Origin 头的握手在 `isAllowedOrigin` 中直接放行。
       const socket = new WebSocket(this.options.url);
-      const timer = setTimeout(() => { socket.close(); reject(new Error("握手超时")); }, timeoutMs);
-      socket.addEventListener("open", () => {
-        clearTimeout(timer);
-        this.socket = socket;
-        resolve();
-      }, { once: true });
-      socket.addEventListener("error", () => {
-        clearTimeout(timer);
-        reject(new Error("握手失败"));
-      }, { once: true });
-      socket.addEventListener("message", (event) => this.receive(event.data as string | ArrayBuffer));
+      const timer = setTimeout(() => {
+        socket.close();
+        reject(new Error("握手超时"));
+      }, timeoutMs);
+      socket.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer);
+          this.socket = socket;
+          resolve();
+        },
+        { once: true }
+      );
+      socket.addEventListener(
+        "error",
+        () => {
+          clearTimeout(timer);
+          reject(new Error("握手失败"));
+        },
+        { once: true }
+      );
+      socket.addEventListener("message", (event) =>
+        this.receive(event.data as string | ArrayBuffer)
+      );
       socket.addEventListener("close", (event) => {
         this.closed = true;
         const code = event.code;
-        for (const [, item] of this.pending) item.resolve({ ok: false, code: "SOCKET_CLOSED", latencyMs: performance.now() - item.sentAt });
+        for (const [, item] of this.pending)
+          item.resolve({
+            ok: false,
+            code: "SOCKET_CLOSED",
+            latencyMs: performance.now() - item.sentAt,
+          });
         this.pending.clear();
         this.options.onClose?.(code, event.reason ?? "");
       });
@@ -142,7 +185,12 @@ export class GameSocket {
     return this.channels.get(event)?.revision ?? 0;
   }
 
-  async command(type: string, payload: unknown, envelope?: { roomId?: string, sessionToken?: string }, timeoutMs = 12_000): Promise<CommandResult> {
+  async command(
+    type: string,
+    payload: unknown,
+    envelope?: { roomId?: string; sessionToken?: string },
+    timeoutMs = 12_000
+  ): Promise<CommandResult> {
     if (!this.socket || this.closed) return { ok: false, code: "NOT_CONNECTED", latencyMs: 0 };
     const traceId = `lt-${Date.now().toString(36)}-${(++this.counter).toString(36)}`;
     const message: ClientEnvelope = { id: traceId, type, traceId, payload };
@@ -218,11 +266,20 @@ export class GameSocket {
   }
 
   private consumeState(event: string, payload: unknown): void {
-    const envelope = payload as { mode?: string, revision?: number, state?: unknown, operations?: unknown, baseRevision?: number } | null;
+    const envelope = payload as {
+      mode?: string;
+      revision?: number;
+      state?: unknown;
+      operations?: unknown;
+      baseRevision?: number;
+    } | null;
     if (!envelope || typeof envelope.mode !== "string") return;
     const current = this.channels.get(event);
     if (envelope.mode === "full") {
-      this.channels.set(event, { revision: envelope.revision ?? 0, state: (envelope.state ?? {}) as Record<string, unknown> });
+      this.channels.set(event, {
+        revision: envelope.revision ?? 0,
+        state: (envelope.state ?? {}) as Record<string, unknown>,
+      });
       return;
     }
     if (envelope.mode !== "patch" || !current || !Array.isArray(envelope.operations)) return;
@@ -242,8 +299,14 @@ export class GameSocket {
   }
 
   /** 离开房间后关闭；不主动 leave 的掉线会触发房间的掉线挂起流程。 */
-  async leave(leaveCommand: string, envelope?: { roomId?: string, sessionToken?: string }): Promise<void> {
-    if (this.stopping || this.closed) { await this.close(); return; }
+  async leave(
+    leaveCommand: string,
+    envelope?: { roomId?: string; sessionToken?: string }
+  ): Promise<void> {
+    if (this.stopping || this.closed) {
+      await this.close();
+      return;
+    }
     this.stopping = true;
     await this.command(leaveCommand, {}, envelope, 3_000);
     await this.close();
@@ -254,7 +317,8 @@ export class GameSocket {
     const socket = this.socket;
     if (socket && socket.readyState <= WebSocket.OPEN) socket.close();
     this.closed = true;
-    for (const [, item] of this.pending) item.resolve({ ok: false, code: "SOCKET_CLOSED", latencyMs: 0 });
+    for (const [, item] of this.pending)
+      item.resolve({ ok: false, code: "SOCKET_CLOSED", latencyMs: 0 });
     this.pending.clear();
   }
 }

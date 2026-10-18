@@ -6,7 +6,13 @@ const meta = {
   title: "公共组件/JoinPasswordDialog",
   component: JoinPasswordDialog,
   tags: ["overlay"],
-  args: { roomName: "深夜卧底局", password: "", onPasswordChange: fn(), onCancel: fn(), onConfirm: fn() },
+  args: {
+    roomName: "深夜卧底局",
+    password: "",
+    onPasswordChange: fn(),
+    onCancel: fn(),
+    onConfirm: fn(),
+  },
 } satisfies Meta<typeof JoinPasswordDialog>;
 
 export default meta;

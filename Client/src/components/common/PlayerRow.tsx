@@ -6,7 +6,11 @@ import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucid
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { ProfileCard } from "@/components/common/ProfileCard";
-import { PLAYER_ME_MARK, PLAYER_ROW_BASE, PLAYER_ROW_HEIGHT } from "@/components/common/PlayerStatusPill";
+import {
+  PLAYER_ME_MARK,
+  PLAYER_ROW_BASE,
+  PLAYER_ROW_HEIGHT,
+} from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -62,8 +66,22 @@ export interface PlayerRowProps {
  * 行高由 `PLAYER_ROW_HEIGHT` 统一，供玩家列与发言历史逐行对齐；嵌入发言历史时不再套动画容器。
  */
 export function PlayerRow({
-  name, score, me = false, host = false, online = true, bot = false, account, eliminated = false,
-  badges, meta, detail, actionsHeader, actions, embedded = false, layoutId, ref,
+  name,
+  score,
+  me = false,
+  host = false,
+  online = true,
+  bot = false,
+  account,
+  eliminated = false,
+  badges,
+  meta,
+  detail,
+  actionsHeader,
+  actions,
+  embedded = false,
+  layoutId,
+  ref,
 }: PlayerRowProps) {
   const hasActions = Boolean(actionsHeader || actions?.length);
   const interactive = Boolean(account) || hasActions;
@@ -73,8 +91,17 @@ export function PlayerRow({
 
   const info = (
     <PlayerRowInfo
-      name={name} score={score} me={me} host={host} online={online} bot={bot}
-      account={account} eliminated={eliminated} badges={badges} meta={meta} detail={detail}
+      name={name}
+      score={score}
+      me={me}
+      host={host}
+      online={online}
+      bot={bot}
+      account={account}
+      eliminated={eliminated}
+      badges={badges}
+      meta={meta}
+      detail={detail}
     />
   );
 
@@ -82,7 +109,12 @@ export function PlayerRow({
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
-        <motion.button type="button" aria-label={hasActions ? `${name} 操作` : `${name} 资料`} {...headerTappable} className={rowClass}>
+        <motion.button
+          type="button"
+          aria-label={hasActions ? `${name} 操作` : `${name} 资料`}
+          {...headerTappable}
+          className={rowClass}
+        >
           {info}
         </motion.button>
       </Popover.Trigger>
@@ -90,7 +122,14 @@ export function PlayerRow({
         {open ? (
           <Popover.Portal forceMount>
             {/* 统一落在行下方、右缘对齐：玩家栏贴着视口左缘，窄屏抽屉里朝右展开会被截掉。 */}
-            <Popover.Content forceMount side="bottom" align="end" sideOffset={4} collisionPadding={12} asChild>
+            <Popover.Content
+              forceMount
+              side="bottom"
+              align="end"
+              sideOffset={4}
+              collisionPadding={12}
+              asChild
+            >
               <motion.div
                 variants={popover}
                 initial="initial"
@@ -98,38 +137,91 @@ export function PlayerRow({
                 exit="exit"
                 className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
               >
-                <PlayerRowPopoverContent name={name} account={account} actionsHeader={actionsHeader} actions={actions} />
+                <PlayerRowPopoverContent
+                  name={name}
+                  account={account}
+                  actionsHeader={actionsHeader}
+                  actions={actions}
+                />
               </motion.div>
             </Popover.Content>
           </Popover.Portal>
         ) : null}
       </AnimatePresence>
     </Popover.Root>
-  ) : <div className={rowClass}>{info}</div>;
+  ) : (
+    <div className={rowClass}>{info}</div>
+  );
 
-  return embedded ? content : (
-    <motion.div ref={ref} variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" layoutId={layoutId} transition={playerRelayout} className="min-w-0">
+  return embedded ? (
+    content
+  ) : (
+    <motion.div
+      ref={ref}
+      variants={listItem}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      layout="position"
+      layoutId={layoutId}
+      transition={playerRelayout}
+      className="min-w-0"
+    >
       {content}
     </motion.div>
   );
 }
 
 /** 行的底色与可点样式：本人用底色加左竖条，断线降透明度（人机本身即离线，不重复降）。 */
-const playerRowClass = ({ me, online, bot, interactive }: { me: boolean; online: boolean; bot: boolean; interactive: boolean }) => cn(
-  PLAYER_ROW_BASE,
-  PLAYER_ROW_HEIGHT,
-  "gap-2.5",
-  me && "bg-primary/10",
-  !me && "transition-colors hover:bg-accent/40",
-  !online && !bot && "opacity-60",
-  // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
-  interactive && "cursor-pointer focus-visible:-outline-offset-2",
-);
+const playerRowClass = ({
+  me,
+  online,
+  bot,
+  interactive,
+}: {
+  me: boolean;
+  online: boolean;
+  bot: boolean;
+  interactive: boolean;
+}) =>
+  cn(
+    PLAYER_ROW_BASE,
+    PLAYER_ROW_HEIGHT,
+    "gap-2.5",
+    me && "bg-primary/10",
+    !me && "transition-colors hover:bg-accent/40",
+    !online && !bot && "opacity-60",
+    // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
+    interactive && "cursor-pointer focus-visible:-outline-offset-2"
+  );
 
 /** 行内信息：头像、名字与房主标识、状态徽章与补充文字、可选第三行、右侧分数。 */
 function PlayerRowInfo({
-  name, score, me, host, online, bot, account, eliminated, badges, meta, detail,
-}: Pick<PlayerRowProps, "name" | "score" | "me" | "host" | "online" | "bot" | "account" | "eliminated" | "badges" | "meta" | "detail">) {
+  name,
+  score,
+  me,
+  host,
+  online,
+  bot,
+  account,
+  eliminated,
+  badges,
+  meta,
+  detail,
+}: Pick<
+  PlayerRowProps,
+  | "name"
+  | "score"
+  | "me"
+  | "host"
+  | "online"
+  | "bot"
+  | "account"
+  | "eliminated"
+  | "badges"
+  | "meta"
+  | "detail"
+>) {
   return (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
@@ -138,7 +230,10 @@ function PlayerRowInfo({
         <span className="flex min-w-0 items-center gap-1">
           <Hint label={name}>
             <span
-              className={cn("min-w-0 truncate font-medium", eliminated && "text-muted-foreground line-through decoration-muted-foreground/60")}
+              className={cn(
+                "min-w-0 truncate font-medium",
+                eliminated && "text-muted-foreground line-through decoration-muted-foreground/60"
+              )}
             >
               {name}
             </span>
@@ -148,7 +243,9 @@ function PlayerRowInfo({
         <span className="flex min-h-4 min-w-0 items-center gap-1">
           {badges}
           {meta}
-          {eliminated ? <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" /> : null}
+          {eliminated ? (
+            <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+          ) : null}
           {bot ? (
             <Bot className="h-3.5 w-3.5 shrink-0 text-info" aria-label="测试人机" />
           ) : !online ? (
@@ -157,7 +254,10 @@ function PlayerRowInfo({
         </span>
         {detail}
       </span>
-      <span aria-label={`${score} 分`} className="flex shrink-0 items-baseline gap-0.5 tabular-nums">
+      <span
+        aria-label={`${score} 分`}
+        className="flex shrink-0 items-baseline gap-0.5 tabular-nums"
+      >
         <AnimatedNumber value={score} gain="above" className="text-base leading-none" />
         <span className="font-sans text-2xs text-muted-foreground">分</span>
       </span>
@@ -166,15 +266,23 @@ function PlayerRowInfo({
 }
 
 /** 浮层内容按「资料卡 → 头部行 → 动作列表」拼接，空段不留分隔边框。 */
-function PlayerRowPopoverContent({ name, account, actionsHeader, actions }:
-  Pick<PlayerRowProps, "name" | "account" | "actionsHeader" | "actions">) {
+function PlayerRowPopoverContent({
+  name,
+  account,
+  actionsHeader,
+  actions,
+}: Pick<PlayerRowProps, "name" | "account" | "actionsHeader" | "actions">) {
   return (
     <>
       {account ? <ProfileCard account={account} playerName={name} /> : null}
-      {actionsHeader ? <div className={cn("flex", account && "border-t")}>{actionsHeader}</div> : null}
+      {actionsHeader ? (
+        <div className={cn("flex", account && "border-t")}>{actionsHeader}</div>
+      ) : null}
       {actions?.length ? (
         <div className={cn("flex flex-col", (account || actionsHeader) && "border-t")}>
-          {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
+          {actions.map((action) => (
+            <PlayerActionButton key={action.label} {...action} />
+          ))}
         </div>
       ) : null}
     </>
@@ -182,7 +290,13 @@ function PlayerRowPopoverContent({ name, account, actionsHeader, actions }:
 }
 
 /** 操作浮层里的动作按钮，与身份猜测行等宽、无缝拼接。 */
-export function PlayerActionButton({ icon, label, destructive = false, disabled = false, onClick }: PlayerRowAction) {
+export function PlayerActionButton({
+  icon,
+  label,
+  destructive = false,
+  disabled = false,
+  onClick,
+}: PlayerRowAction) {
   return (
     <Popover.Close asChild>
       <motion.button
@@ -196,7 +310,7 @@ export function PlayerActionButton({ icon, label, destructive = false, disabled 
           "disabled:pointer-events-none disabled:opacity-50",
           destructive
             ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
-            : "text-foreground hover:bg-accent hover:text-accent-foreground",
+            : "text-foreground hover:bg-accent hover:text-accent-foreground"
         )}
       >
         {icon}
@@ -215,9 +329,24 @@ export const hostActions = (handlers: {
   kickDisabled?: boolean;
 }): PlayerRowAction[] => [
   ...(handlers.onTransferHost
-    ? [{ icon: <ArrowUpRightFromCircle className="h-3.5 w-3.5" />, label: "转移房主", disabled: handlers.transferDisabled, onClick: handlers.onTransferHost }]
+    ? [
+        {
+          icon: <ArrowUpRightFromCircle className="h-3.5 w-3.5" />,
+          label: "转移房主",
+          disabled: handlers.transferDisabled,
+          onClick: handlers.onTransferHost,
+        },
+      ]
     : []),
   ...(handlers.onKick
-    ? [{ icon: <UserX className="h-3.5 w-3.5" />, label: "踢出玩家", destructive: true, disabled: handlers.kickDisabled, onClick: handlers.onKick }]
+    ? [
+        {
+          icon: <UserX className="h-3.5 w-3.5" />,
+          label: "踢出玩家",
+          destructive: true,
+          disabled: handlers.kickDisabled,
+          onClick: handlers.onKick,
+        },
+      ]
     : []),
 ];

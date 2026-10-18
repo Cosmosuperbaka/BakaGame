@@ -1,5 +1,10 @@
 import { isIP } from "node:net";
-import { expect, type APIRequestContext, type APIResponse, type BrowserContext } from "@playwright/test";
+import {
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+  type BrowserContext,
+} from "@playwright/test";
 
 export function isLoopbackUrl(input: string | URL): boolean {
   const url = new URL(input);
@@ -29,7 +34,9 @@ export async function installLoopbackGuard(context: BrowserContext) {
       return;
     }
     if (response.status() >= 300 && response.status() < 400 && response.headers().location) {
-      failures.push(`Forbidden HTTP redirect: ${response.status()} ${url} -> ${response.headers().location}`);
+      failures.push(
+        `Forbidden HTTP redirect: ${response.status()} ${url} -> ${response.headers().location}`
+      );
       await route.abort("blockedbyclient");
       return;
     }
@@ -37,7 +44,10 @@ export async function installLoopbackGuard(context: BrowserContext) {
     await route.fulfill({ response });
   });
   await context.routeWebSocket("**/*", async (socket) => {
-    if (isLoopbackUrl(socket.url())) { socket.connectToServer(); return; }
+    if (isLoopbackUrl(socket.url())) {
+      socket.connectToServer();
+      return;
+    }
     failures.push(`Forbidden WebSocket egress: ${socket.url()}`);
     await socket.close({ code: 1008, reason: "E2E only permits loopback" });
   });
@@ -47,7 +57,8 @@ export async function installLoopbackGuard(context: BrowserContext) {
       // Removing the context guard without this would briefly reopen external egress.
       for (const page of context.pages()) {
         await page.route("**/*", async (route) => {
-          if (!isLoopbackUrl(route.request().url())) failures.push(`Forbidden HTTP egress: ${route.request().url()}`);
+          if (!isLoopbackUrl(route.request().url()))
+            failures.push(`Forbidden HTTP egress: ${route.request().url()}`);
           await route.abort("aborted");
         });
       }
@@ -66,4 +77,3 @@ export async function getLoopback(request: APIRequestContext, path: string) {
   }
   return response;
 }
-

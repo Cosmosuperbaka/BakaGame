@@ -134,9 +134,15 @@ const readAccountEnv = (databaseUrl: string | undefined): AccountEnv | undefined
   if (!databaseUrl) return undefined;
   const secret = Bun.env.BETTER_AUTH_SECRET?.trim() ?? "";
   if (secret.length < 32) {
-    throw new AppError("CONFIG_ERROR", "配置 DATABASE_URL 时 BETTER_AUTH_SECRET 必须为至少 32 字符的随机串");
+    throw new AppError(
+      "CONFIG_ERROR",
+      "配置 DATABASE_URL 时 BETTER_AUTH_SECRET 必须为至少 32 字符的随机串"
+    );
   }
-  const adminQqNumbers = (Bun.env.ADMIN_QQ ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  const adminQqNumbers = (Bun.env.ADMIN_QQ ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
   const invalidAdmin = adminQqNumbers.find((item) => !QQ_NUMBER_PATTERN.test(item));
   if (invalidAdmin) throw new AppError("CONFIG_ERROR", `ADMIN_QQ 含非法 QQ 号: "${invalidAdmin}"`);
   const smtp = readSmtpEnv();
@@ -158,7 +164,8 @@ const readNapCatEnv = (): NapCatEnv | undefined => {
   return { apiUrl: apiUrl.replace(/\/+$/, ""), accessToken };
 };
 
-const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {  if (!raw) return {};
+const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
+  if (!raw) return {};
   const attrs: Record<string, string> = {};
   for (const part of raw.split(",")) {
     const eqIdx = part.indexOf("=");
@@ -233,24 +240,20 @@ export const readEnv = (): AppEnv => {
   if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
     throw new AppError(
       "CONFIG_ERROR",
-      `环境变量 SERVER_PORT 必须为 1~65535 之间的合法端口号，收到: "${rawPort}"`,
+      `环境变量 SERVER_PORT 必须为 1~65535 之间的合法端口号，收到: "${rawPort}"`
     );
   }
 
   const serverUrl = normalizeServerUrl(
     Bun.env.SERVER_URL ?? `http://127.0.0.1:${serverPort}`,
-    serverPort,
+    serverPort
   );
 
   const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
   const otelServiceName =
-    Bun.env.OTEL_SERVICE_NAME ??
-    resourceAttrs["service.name"] ??
-    "Bakagame-Server";
+    Bun.env.OTEL_SERVICE_NAME ?? resourceAttrs["service.name"] ?? "Bakagame-Server";
   const otelServiceNamespace =
-    Bun.env.OTEL_SERVICE_NAMESPACE ??
-    resourceAttrs["service.namespace"] ??
-    "Bakagame";
+    Bun.env.OTEL_SERVICE_NAMESPACE ?? resourceAttrs["service.namespace"] ?? "Bakagame";
   const otelDeploymentEnvironment =
     Bun.env.DEPLOYMENT_ENVIRONMENT ??
     Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT ??
@@ -260,16 +263,24 @@ export const readEnv = (): AppEnv => {
 
   const sentryDsn = Bun.env.SENTRY_DSN;
   let sentryAllowedProjectIds = (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")
-    .split(",").map((s) => s.trim()).filter(Boolean);
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   if (sentryAllowedProjectIds.length === 0 && sentryDsn) {
     try {
       const projectId = new URL(sentryDsn).pathname.match(/^\/([0-9a-zA-Z_-]+)$/)?.[1];
       if (projectId) sentryAllowedProjectIds = [projectId];
-    } catch { /* 非法 DSN 由 Sentry 初始化阶段处理 */ }
+    } catch {
+      /* 非法 DSN 由 Sentry 初始化阶段处理 */
+    }
   }
 
   const sentryApiToken = Bun.env.SENTRY_API_TOKEN?.trim() || undefined;
-  if (sentryApiToken && !sentryDsn) throw new AppError("CONFIG_ERROR", "SENTRY_API_TOKEN 需要同时配置 SENTRY_DSN（从中读取组织与区域）");
+  if (sentryApiToken && !sentryDsn)
+    throw new AppError(
+      "CONFIG_ERROR",
+      "SENTRY_API_TOKEN 需要同时配置 SENTRY_DSN（从中读取组织与区域）"
+    );
 
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
   // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
@@ -295,9 +306,10 @@ export const readEnv = (): AppEnv => {
     otelDeploymentEnvironment,
     // 文档页默认只在非生产挂载：生产公开整张路由表等于把 admin 端点面与内网基址白送，
     // 契约产物另有 `ExportOpenapi.ts` 离线生成，不依赖线上文档。
-    openapiEnabled: Bun.env.OPENAPI_ENABLED !== undefined
-      ? Bun.env.OPENAPI_ENABLED === "true"
-      : otelDeploymentEnvironment !== "production",
+    openapiEnabled:
+      Bun.env.OPENAPI_ENABLED !== undefined
+        ? Bun.env.OPENAPI_ENABLED === "true"
+        : otelDeploymentEnvironment !== "production",
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     sentryDsn,
     sentryApiToken,
@@ -309,9 +321,10 @@ export const readEnv = (): AppEnv => {
     bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
     bangumiImagesDir,
     // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。
-    bangumiUpdaterEnabled: Bun.env.BANGUMI_UPDATER_ENABLED !== undefined
-      ? Bun.env.BANGUMI_UPDATER_ENABLED === "true"
-      : otelDeploymentEnvironment === "production",
+    bangumiUpdaterEnabled:
+      Bun.env.BANGUMI_UPDATER_ENABLED !== undefined
+        ? Bun.env.BANGUMI_UPDATER_ENABLED === "true"
+        : otelDeploymentEnvironment === "production",
     bangumiUpdaterMinRate: Number(Bun.env.BANGUMI_UPDATER_MIN_RATE ?? 10),
     bangumiUpdaterMaxRate: Number(Bun.env.BANGUMI_UPDATER_MAX_RATE ?? 100),
     bangumiUpdaterPlayerScale: Number(Bun.env.BANGUMI_UPDATER_PLAYER_SCALE ?? 20),
@@ -319,11 +332,12 @@ export const readEnv = (): AppEnv => {
     // id_tags.js / id_tags.json），写死默认地址只会让每次启动都报「连不上」。
     bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
-    ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? '').trim().replace(/\/+$/, ''),
+    ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? "").trim().replace(/\/+$/, ""),
     ceeOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     meilisearchKey: Bun.env.MEILISEARCH_KEY?.trim() || undefined,
-    enableGeneralUnblock: Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
-      ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
-      : true,
+    enableGeneralUnblock:
+      Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined
+        ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true"
+        : true,
   };
 };

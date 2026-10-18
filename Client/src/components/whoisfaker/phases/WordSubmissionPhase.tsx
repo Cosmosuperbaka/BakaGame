@@ -20,7 +20,13 @@ const ROLE_FULL_LABELS: Record<WhoIsFakerRole, string> = {
 
 type WordDraft = { civilianWord: string; undercoverWord: string; blankHint: string };
 
-export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraft: WordDraft; onWordDraftChange: (draft: WordDraft) => void }) {
+export function WordSubmissionPhase({
+  wordDraft,
+  onWordDraftChange,
+}: {
+  wordDraft: WordDraft;
+  onWordDraftChange: (draft: WordDraft) => void;
+}) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
@@ -30,8 +36,10 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
   const isQuestioner = privateState?.isQuestioner ?? false;
 
   const { civilianWord, undercoverWord, blankHint } = wordDraft;
-  const setCivilianWord = (value: string) => onWordDraftChange({ ...wordDraft, civilianWord: value });
-  const setUndercoverWord = (value: string) => onWordDraftChange({ ...wordDraft, undercoverWord: value });
+  const setCivilianWord = (value: string) =>
+    onWordDraftChange({ ...wordDraft, civilianWord: value });
+  const setUndercoverWord = (value: string) =>
+    onWordDraftChange({ ...wordDraft, undercoverWord: value });
   const setBlankHint = (value: string) => onWordDraftChange({ ...wordDraft, blankHint: value });
 
   // 默认启用随机分配身份
@@ -66,10 +74,10 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
       ...counts,
       [assignedRole]: counts[assignedRole] + 1,
     }),
-    { civilian: 0, undercover: 0, angel: 0, blank: 0 },
+    { civilian: 0, undercover: 0, angel: 0, blank: 0 }
   );
   const manualRoleCountsValid = availableRoles.every(
-    (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole],
+    (availableRole) => assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole]
   );
   const roleOptions: SegmentedOption<WhoIsFakerRole>[] = availableRoles.map((availableRole) => ({
     value: availableRole,
@@ -86,10 +94,7 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
         initialRoles[participant.id] = "undercover";
       } else if (hasBlank && index === roleConfig.undercoverCount) {
         initialRoles[participant.id] = "blank";
-      } else if (
-        hasAngel &&
-        index === roleConfig.undercoverCount + (hasBlank ? 1 : 0)
-      ) {
+      } else if (hasAngel && index === roleConfig.undercoverCount + (hasBlank ? 1 : 0)) {
         initialRoles[participant.id] = "angel";
       } else {
         initialRoles[participant.id] = "civilian";
@@ -116,17 +121,28 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
       return;
     }
     await run(async () => {
-    try {
-      await sendCommand("game.submitWords", {
-        words: [civilianWord.trim(), undercoverWord.trim()],
-        blankHint: hasBlank ? blankHint.trim() : undefined,
-        manualRoles: isRandomRole ? undefined : manualRoles,
-      });
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
+      try {
+        await sendCommand("game.submitWords", {
+          words: [civilianWord.trim(), undercoverWord.trim()],
+          blankHint: hasBlank ? blankHint.trim() : undefined,
+          manualRoles: isRandomRole ? undefined : manualRoles,
+        });
+      } catch (e) {
+        addToast((e as { message: string }).message, "error");
+      }
     });
-  }, [run, civilianWord, undercoverWord, blankHint, hasBlank, isRandomRole, manualRoles, manualRoleCountsValid, sendCommand, addToast]);
+  }, [
+    run,
+    civilianWord,
+    undercoverWord,
+    blankHint,
+    hasBlank,
+    isRandomRole,
+    manualRoles,
+    manualRoleCountsValid,
+    sendCommand,
+    addToast,
+  ]);
 
   if (!isQuestioner) {
     const questioner = snapshot.players.find((p) => p.id === snapshot.status.questionerPlayerId);
@@ -190,9 +206,19 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
                   const valid =
                     assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole];
                   return (
-                    <div key={availableRole} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{ROLE_FULL_LABELS[availableRole]}</span>
-                      <span className={cn("font-semibold tabular-nums", valid ? "text-foreground" : "text-destructive")}>
+                    <div
+                      key={availableRole}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="text-muted-foreground">
+                        {ROLE_FULL_LABELS[availableRole]}
+                      </span>
+                      <span
+                        className={cn(
+                          "font-semibold tabular-nums",
+                          valid ? "text-foreground" : "text-destructive"
+                        )}
+                      >
                         {assignedRoleCounts[availableRole]}/{requiredRoleCounts[availableRole]}
                       </span>
                     </div>
@@ -206,9 +232,14 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
                 </p>
               ) : null}
               {participants.map((p) => (
-                <div key={p.id} className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0">
+                <div
+                  key={p.id}
+                  className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0"
+                >
                   <Hint label={p.name}>
-                    <span className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">{p.name}</span>
+                    <span className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">
+                      {p.name}
+                    </span>
                   </Hint>
                   <SegmentedControl
                     size="sm"
@@ -217,7 +248,10 @@ export function WordSubmissionPhase({ wordDraft, onWordDraftChange }: { wordDraf
                     value={manualRoles[p.id] ?? "civilian"}
                     options={roleOptions}
                     onValueChange={(availableRole) =>
-                      setManualRoles((previousRoles) => ({ ...previousRoles, [p.id]: availableRole }))
+                      setManualRoles((previousRoles) => ({
+                        ...previousRoles,
+                        [p.id]: availableRole,
+                      }))
                     }
                   />
                 </div>

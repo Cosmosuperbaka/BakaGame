@@ -1,44 +1,70 @@
 import { describe, expect, test } from "bun:test";
-import { BangumiProvider, extractBangumiMusicTracks, rewriteBangumiImageUrl } from "../src/infrastructure/BangumiProvider";
+import {
+  BangumiProvider,
+  extractBangumiMusicTracks,
+  rewriteBangumiImageUrl,
+} from "../src/infrastructure/BangumiProvider";
 import { requestBodyText } from "./RequestFixtures";
 
 const results = () => Response.json({ data: [] });
 const tick = () => Bun.sleep(1);
 
 describe("Bangumi 远端截止与排队", () => {
-  for (const stage of ["fetch", "body"] as const) test(`${stage} 挂起会中止、释放槽位及同键在途，不缓存失败`, async () => {
-    let calls = 0;
-    const signals: AbortSignal[] = [];
-    const provider = new BangumiProvider({ apiUrl: "https://bangumi.invalid", maxConcurrentRequests: 1, requestTimeoutMs: 25,
-      fetcher: async (_url, init) => {
-        signals.push(init!.signal!); calls++;
-        if (calls > 1) return results();
-        if (stage === "fetch") return new Promise<Response>(() => {});
-        return new Response(new ReadableStream({ start() {}, cancel() {} }));
-      },
+  for (const stage of ["fetch", "body"] as const)
+    test(`${stage} 挂起会中止、释放槽位及同键在途，不缓存失败`, async () => {
+      let calls = 0;
+      const signals: AbortSignal[] = [];
+      const provider = new BangumiProvider({
+        apiUrl: "https://bangumi.invalid",
+        maxConcurrentRequests: 1,
+        requestTimeoutMs: 25,
+        fetcher: async (_url, init) => {
+          signals.push(init!.signal!);
+          calls++;
+          if (calls > 1) return results();
+          if (stage === "fetch") return new Promise<Response>(() => {});
+          return new Response(new ReadableStream({ start() {}, cancel() {} }));
+        },
+      });
+      const failure = provider.searchSubjects("first").catch((error) => error);
+      await tick();
+      expect(signals).toHaveLength(1);
+      expect(await failure).toMatchObject({
+        code: "BANGUMI_UPSTREAM_ERROR",
+        message: "Bangumi 请求超时",
+      });
+      expect(signals[0].aborted).toBe(true);
+      expect(await provider.searchSubjects("second")).toEqual([]);
+      expect(await provider.searchSubjects("first")).toEqual([]);
+      expect(calls).toBe(3);
+      // mock 即使忽略 signal，PQueue 仍释放槽位；原生 fetch 负责取消响应体。
     });
-    const failure = provider.searchSubjects("first").catch(error => error);
-    await tick();
-    expect(signals).toHaveLength(1);
-    expect(await failure).toMatchObject({ code: "BANGUMI_UPSTREAM_ERROR", message: "Bangumi 请求超时" });
-    expect(signals[0].aborted).toBe(true);
-    expect(await provider.searchSubjects("second")).toEqual([]);
-    expect(await provider.searchSubjects("first")).toEqual([]);
-    expect(calls).toBe(3);
-    // mock 即使忽略 signal，PQueue 仍释放槽位；原生 fetch 负责取消响应体。
-  });
 
   test("队列中的截止不补发，429 后排队请求取消且冷却后恢复", async () => {
     let release!: (response: Response) => void;
     let calls = 0;
     let now = 0;
-    const provider = new BangumiProvider({ apiUrl: "https://bangumi.invalid", maxConcurrentRequests: 1, maxQueuedRequests: 1,
-      requestTimeoutMs: 100, now: () => now, rateLimitCooldownMs: 500,
-      fetcher: async () => { calls++; return calls === 1 ? new Promise<Response>(resolve => { release = resolve; }) : results(); },
+    const provider = new BangumiProvider({
+      apiUrl: "https://bangumi.invalid",
+      maxConcurrentRequests: 1,
+      maxQueuedRequests: 1,
+      requestTimeoutMs: 100,
+      now: () => now,
+      rateLimitCooldownMs: 500,
+      fetcher: async () => {
+        calls++;
+        return calls === 1
+          ? new Promise<Response>((resolve) => {
+              release = resolve;
+            })
+          : results();
+      },
     });
-    const first = provider.searchSubjects("first").catch(error => error);
-    const queued = provider.searchSubjects("queued").catch(error => error);
-    await expect(provider.searchSubjects("overflow")).rejects.toMatchObject({ code: "BANGUMI_RATE_LIMITED" });
+    const first = provider.searchSubjects("first").catch((error) => error);
+    const queued = provider.searchSubjects("queued").catch((error) => error);
+    await expect(provider.searchSubjects("overflow")).rejects.toMatchObject({
+      code: "BANGUMI_RATE_LIMITED",
+    });
     release(new Response(null, { status: 429 }));
     expect(await first).toMatchObject({ code: "BANGUMI_RATE_LIMITED" });
     expect(await queued).toMatchObject({ code: "BANGUMI_RATE_LIMITED" });
@@ -50,30 +76,49 @@ describe("Bangumi 远端截止与排队", () => {
 
   test("等待与执行共用截止且最终清空队列", async () => {
     let calls = 0;
-    const provider = new BangumiProvider({ apiUrl: "https://bangumi.invalid", maxConcurrentRequests: 1, requestTimeoutMs: 20,
-      fetcher: async () => { calls++; return new Promise<Response>(() => {}); },
+    const provider = new BangumiProvider({
+      apiUrl: "https://bangumi.invalid",
+      maxConcurrentRequests: 1,
+      requestTimeoutMs: 20,
+      fetcher: async () => {
+        calls++;
+        return new Promise<Response>(() => {});
+      },
     });
-    const first = provider.searchSubjects("first").catch(error => error);
-    const second = provider.searchSubjects("second").catch(error => error);
+    const first = provider.searchSubjects("first").catch((error) => error);
+    const second = provider.searchSubjects("second").catch((error) => error);
     expect(await first).toMatchObject({ code: "BANGUMI_UPSTREAM_ERROR" });
     expect(await second).toMatchObject({ code: "BANGUMI_UPSTREAM_ERROR" });
     expect(calls).toBeLessThanOrEqual(2);
-    expect((provider as unknown as { queue: { size: number; pending: number } }).queue.size).toBe(0);
+    expect((provider as unknown as { queue: { size: number; pending: number } }).queue.size).toBe(
+      0
+    );
   });
 });
 
-
 test("原生队列移除已取消的等待任务，不补发上游", async () => {
-  let release!: (response: Response) => void, calls = 0;
-  const provider = new BangumiProvider({ apiUrl: "https://bangumi.invalid", maxConcurrentRequests: 1,
-    fetcher: async () => { calls++; return new Promise<Response>(resolve => { release = resolve; }); },
+  let release!: (response: Response) => void,
+    calls = 0;
+  const provider = new BangumiProvider({
+    apiUrl: "https://bangumi.invalid",
+    maxConcurrentRequests: 1,
+    fetcher: async () => {
+      calls++;
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    },
   });
   const first = provider.searchSubjects("active");
   const controller = new AbortController();
-  const queued = (provider as unknown as { requestJson: (path: string, init: RequestInit) => Promise<unknown> }).requestJson("/queued", { signal: controller.signal });
-  const error = new Error("cancel queued"); controller.abort(error);
+  const queued = (
+    provider as unknown as { requestJson: (path: string, init: RequestInit) => Promise<unknown> }
+  ).requestJson("/queued", { signal: controller.signal });
+  const error = new Error("cancel queued");
+  controller.abort(error);
   await expect(queued).rejects.toBe(error);
-  release(results()); await first;
+  release(results());
+  await first;
   expect(calls).toBe(1);
 });
 
@@ -173,12 +218,15 @@ describe("曲目解析：infobox 与关联条目两路来源", () => {
   test("infobox 三种取值形态：字符串、字符串数组与结构体数组", () => {
     const infobox = [
       { key: "主题曲", value: ["Song One - Singer One", "Song Two"] },
-      { key: "片头曲", value: [
-        { v: "Head Song", artist: "Singer H" },
-        { v: "Tail Song", k: "角色歌" },
-        { v: "Skip Me", k: "分镜" },
-        { title: "Name Only", name: "Singer X" },
-      ] },
+      {
+        key: "片头曲",
+        value: [
+          { v: "Head Song", artist: "Singer H" },
+          { v: "Tail Song", k: "角色歌" },
+          { v: "Skip Me", k: "分镜" },
+          { title: "Name Only", name: "Singer X" },
+        ],
+      },
       { key: "别名", value: "Not A Track" },
     ];
     const tracks = extractBangumiMusicTracks(infobox);
@@ -221,7 +269,7 @@ describe("曲目解析：infobox 与关联条目两路来源", () => {
       [
         { type: 3, relation: "片头曲", name: "Same Song" },
         { type: 3, relation: "片头曲", name: "Same Song" },
-      ],
+      ]
     );
     expect(tracks.some((track) => track.title.includes("©"))).toBe(false);
     expect(tracks.filter((track) => track.title === "Same Song")).toHaveLength(1);
@@ -231,8 +279,12 @@ describe("曲目解析：infobox 与关联条目两路来源", () => {
 describe("rewriteBangumiImageUrl", () => {
   test("无镜像前缀原样透传，标准封面形状映射到图床档位", () => {
     expect(rewriteBangumiImageUrl(undefined)).toBeUndefined();
-    expect(rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg")).toBe("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg");
-    expect(rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg", "https://img.example")).toBe("https://img.example/r/200/pic/cover/l/aa/bb/1_x.jpg");
+    expect(rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg")).toBe(
+      "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg"
+    );
+    expect(
+      rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg", "https://img.example")
+    ).toBe("https://img.example/r/200/pic/cover/l/aa/bb/1_x.jpg");
   });
 });
 
@@ -248,20 +300,22 @@ describe("BangumiProvider 远端接口", () => {
       imageUrl: "https://img.example/",
       fetcher: async (input, init) => {
         calls.push({ url: String(input), init });
-        return jsonResponse({ data: [
-          {
-            id: 1,
-            name: "Test",
-            name_cn: "测试",
-            date: "2020-04-05",
-            images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg" },
-            rating: { score: 7.5, total: 100 },
-            tags: [{ name: "动作" }, "日常"],
-            meta_tags: ["原创"],
-          },
-          { id: 2, name: "NoExtra" },
-          { name: "NoId" },
-        ] });
+        return jsonResponse({
+          data: [
+            {
+              id: 1,
+              name: "Test",
+              name_cn: "测试",
+              date: "2020-04-05",
+              images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg" },
+              rating: { score: 7.5, total: 100 },
+              tags: [{ name: "动作" }, "日常"],
+              meta_tags: ["原创"],
+            },
+            { id: 2, name: "NoExtra" },
+            { name: "NoId" },
+          ],
+        });
       },
     });
     const rows = await provider.searchSubjects(" 测试 ", 5, { startYear: 2010, endYear: 2020 });
@@ -306,7 +360,11 @@ describe("BangumiProvider 远端接口", () => {
       }
       if (url.endsWith("/9/subjects")) throw new Error("relations down");
       if (url.endsWith("/v0/subjects/9")) {
-        return jsonResponse({ id: 9, name: "Nine", infobox: [{ key: "插入曲", value: "Nine Song - Niner" }] });
+        return jsonResponse({
+          id: 9,
+          name: "Nine",
+          infobox: [{ key: "插入曲", value: "Nine Song - Niner" }],
+        });
       }
       return jsonResponse({
         id: 8,
@@ -322,7 +380,11 @@ describe("BangumiProvider 远端接口", () => {
         ],
       });
     };
-    const provider = new BangumiProvider({ apiUrl: "https://api.invalid", imageUrl: "https://img.example", fetcher });
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.invalid",
+      imageUrl: "https://img.example",
+      fetcher,
+    });
     const detail = await provider.getSubject("8");
     expect(detail.name).toBe("ItsMyGO");
     expect(detail.nameCn).toBe("迷途之子");
@@ -332,15 +394,27 @@ describe("BangumiProvider 远端接口", () => {
     expect(detail.imageUrl).toBe("https://img.example/r/200/pic/cover/l/cc/dd/8.jpg");
     const tracks = detail.musicTracks ?? [];
     expect(tracks.some((track) => track.title === "壱雫空" && track.kind === "opening")).toBe(true);
-    expect(tracks.some((track) => track.title === "Original Soundtrack" && track.kind === "ost")).toBe(true);
-    expect(tracks.some((track) => track.title === "焚音" && track.artist === "MyGO!!!!!" && track.kind === "insert")).toBe(true);
+    expect(
+      tracks.some((track) => track.title === "Original Soundtrack" && track.kind === "ost")
+    ).toBe(true);
+    expect(
+      tracks.some(
+        (track) => track.title === "焚音" && track.artist === "MyGO!!!!!" && track.kind === "insert"
+      )
+    ).toBe(true);
 
     // 副请求（关联条目）失败：主体照常返回，只是没有关联曲目
     const nine = await provider.getSubject("9");
     expect(nine.name).toBe("Nine");
-    expect((nine.musicTracks ?? []).some((track) => track.title === "Nine Song" && track.artist === "Niner")).toBe(true);
+    expect(
+      (nine.musicTracks ?? []).some(
+        (track) => track.title === "Nine Song" && track.artist === "Niner"
+      )
+    ).toBe(true);
 
-    await expect(provider.getSubject("   ")).rejects.toMatchObject({ code: "BANGUMI_SUBJECT_NOT_FOUND" });
+    await expect(provider.getSubject("   ")).rejects.toMatchObject({
+      code: "BANGUMI_SUBJECT_NOT_FOUND",
+    });
   });
 
   test("chooseRandomSubject：按随机索引取详情，空候选报错", async () => {
@@ -349,7 +423,12 @@ describe("BangumiProvider 远端接口", () => {
       fetcher: async (input) => {
         const url = String(input);
         if (url.includes("/v0/search/subjects")) {
-          return jsonResponse({ data: [{ id: 1, name: "One" }, { id: 2, name: "Two" }] });
+          return jsonResponse({
+            data: [
+              { id: 1, name: "One" },
+              { id: 2, name: "Two" },
+            ],
+          });
         }
         if (url.endsWith("/2/subjects")) return jsonResponse([]);
         if (url.endsWith("/v0/subjects/2")) return jsonResponse({ id: 2, name: "Two" });
@@ -377,7 +456,9 @@ describe("BangumiProvider 远端接口", () => {
         calls++;
         if (mode === "fail") throw new Error("upstream down");
         if (mode === "empty") return jsonResponse({ images: {} });
-        return jsonResponse({ images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" } });
+        return jsonResponse({
+          images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" },
+        });
       },
     });
     expect(await provider.resolveCharacterImage(0)).toBeUndefined();
@@ -389,10 +470,14 @@ describe("BangumiProvider 远端接口", () => {
     mode = "empty";
     expect(await provider.resolveCharacterImage(12393)).toBeUndefined();
     mode = "ok";
-    expect(await provider.resolveCharacterImage(12393)).toBe("https://img.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await provider.resolveCharacterImage(12393)).toBe(
+      "https://img.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg"
+    );
     expect(calls).toBe(3);
     // 成功结果进内存缓存：不再回源
-    expect(await provider.resolveCharacterImage(12393)).toBe("https://img.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg");
+    expect(await provider.resolveCharacterImage(12393)).toBe(
+      "https://img.example/r/400/pic/crt/l/aa/bb/12393_crt_x.jpg"
+    );
     expect(calls).toBe(3);
   });
 
@@ -405,10 +490,14 @@ describe("BangumiProvider 远端接口", () => {
       fetcher: async () => {
         calls++;
         if (fail) throw new Error("down");
-        return jsonResponse({ images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/12_x.jpg" } });
+        return jsonResponse({
+          images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/12_x.jpg" },
+        });
       },
     });
-    expect(await provider.resolveSubjectImage("12")).toBe("https://img.example/r/200/pic/cover/l/aa/bb/12_x.jpg");
+    expect(await provider.resolveSubjectImage("12")).toBe(
+      "https://img.example/r/200/pic/cover/l/aa/bb/12_x.jpg"
+    );
     expect(await provider.resolveSubjectImage("abc")).toBeUndefined();
     expect(await provider.resolveSubjectImage("0")).toBeUndefined();
     expect(calls).toBe(1);

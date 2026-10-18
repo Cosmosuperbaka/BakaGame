@@ -41,8 +41,14 @@ function linearPoints(easing: string): number[] {
 
 describe("Motion tokens", () => {
   it("抛掷取位移较大的一轴为主轴，形变只落在 scale 上", () => {
-    expect(byAxes({ dx: 400, dy: 10 }, "along", "across")).toEqual({ scaleX: "along", scaleY: "across" });
-    expect(byAxes({ dx: 10, dy: 300 }, "along", "across")).toEqual({ scaleX: "across", scaleY: "along" });
+    expect(byAxes({ dx: 400, dy: 10 }, "along", "across")).toEqual({
+      scaleX: "along",
+      scaleY: "across",
+    });
+    expect(byAxes({ dx: 10, dy: 300 }, "along", "across")).toEqual({
+      scaleX: "across",
+      scaleY: "along",
+    });
   });
 
   it("负的初速度先朝反方向走，正的初速度更早到达", () => {
@@ -119,10 +125,16 @@ describe("Motion tokens", () => {
 
   it("进房编排的各栏延迟按 parts 顺序生成，窗口覆盖最后一栏的弹性落定", () => {
     const variables = motionCssVariables();
-    const delays = roomEntrance.parts.map((part) => parseFloat(variables[`room-entrance-delay-${part}`]));
-    expect(delays).toEqual(roomEntrance.parts.map((_, index) => Number((index * roomEntrance.step).toFixed(3))));
+    const delays = roomEntrance.parts.map((part) =>
+      parseFloat(variables[`room-entrance-delay-${part}`])
+    );
+    expect(delays).toEqual(
+      roomEntrance.parts.map((_, index) => Number((index * roomEntrance.step).toFixed(3)))
+    );
     expect(variables["room-entrance-scale"]).toBe(String(roomEntrance.scale));
-    expect(roomEntranceMs).toBeGreaterThanOrEqual(Math.round(delays.at(-1)! * 1000) + springSettleMs(spring.swift));
+    expect(roomEntranceMs).toBeGreaterThanOrEqual(
+      Math.round(delays.at(-1)! * 1000) + springSettleMs(spring.swift)
+    );
   });
 
   it("结算表按名次自末行往上揭示、按座次自上而下，总跨度封顶", () => {
@@ -141,8 +153,12 @@ describe("Motion tokens", () => {
   it("数字在行落定后才滚，与揭示方向无关", () => {
     for (const count of [1, 3, 6, 16]) {
       for (const ranked of [true, false]) {
-        const rolls = Array.from({ length: count }, (_, index) => scoreRollDelay(index, count, ranked));
-        rolls.forEach((roll, index) => expect(roll).toBeGreaterThan(scoreRevealDelay(index, count, ranked)));
+        const rolls = Array.from({ length: count }, (_, index) =>
+          scoreRollDelay(index, count, ranked)
+        );
+        rolls.forEach((roll, index) =>
+          expect(roll).toBeGreaterThan(scoreRevealDelay(index, count, ranked))
+        );
       }
     }
   });
@@ -176,14 +192,17 @@ describe("springToCss", () => {
   });
 
   it("低阻尼的 impulse 保留过冲，snap 的过冲克制", () => {
-    const peak = (name: keyof typeof spring) => Math.max(...linearPoints(springToCss(spring[name]).easing));
+    const peak = (name: keyof typeof spring) =>
+      Math.max(...linearPoints(springToCss(spring[name]).easing));
     expect(peak("impulse")).toBeGreaterThan(1.1);
     expect(peak("snap")).toBeLessThan(1.05);
   });
 
   it("与解析解一致：临界阻尼的弹性单调上升、不越过 1", () => {
     // stiffness 100、mass 1 时临界阻尼为 2√(km) = 20。
-    const points = linearPoints(springToCss({ type: "spring", stiffness: 100, damping: 20, mass: 1 }).easing);
+    const points = linearPoints(
+      springToCss({ type: "spring", stiffness: 100, damping: 20, mass: 1 }).easing
+    );
     for (let index = 1; index < points.length; index += 1) {
       expect(points[index]).toBeGreaterThanOrEqual(points[index - 1]);
     }

@@ -24,14 +24,23 @@ export class BangumiImageStore {
   private readonly now: () => number;
 
   /** 打开目录下的全部分片；目录不存在或没有分片时返回 `undefined`（调用方按「无图床」降级）。 */
-  static open(directory: string, options: { readOnly?: boolean; now?: () => number } = {}): BangumiImageStore | undefined {
+  static open(
+    directory: string,
+    options: { readOnly?: boolean; now?: () => number } = {}
+  ): BangumiImageStore | undefined {
     if (!existsSync(directory)) return undefined;
-    const names = readdirSync(directory).filter((name) => SHARD_PATTERN.test(name)).sort();
+    const names = readdirSync(directory)
+      .filter((name) => SHARD_PATTERN.test(name))
+      .sort();
     if (!names.length) return undefined;
     return new BangumiImageStore(directory, names, options);
   }
 
-  private constructor(directory: string, names: string[], options: { readOnly?: boolean; now?: () => number }) {
+  private constructor(
+    directory: string,
+    names: string[],
+    options: { readOnly?: boolean; now?: () => number }
+  ) {
     this.readOnly = options.readOnly ?? false;
     this.now = options.now ?? Date.now;
     this.connections = names.map((name) => {
@@ -53,28 +62,37 @@ export class BangumiImageStore {
   }
 
   has(path: string): boolean {
-    return this.shard(path).query<{ present: number }, [string]>("SELECT 1 AS present FROM images WHERE path=?").get(path) !== null;
+    return (
+      this.shard(path)
+        .query<{ present: number }, [string]>("SELECT 1 AS present FROM images WHERE path=?")
+        .get(path) !== null
+    );
   }
 
   get(path: string): StoredImage | undefined {
-    const row = this.shard(path).query<{ bytes: Uint8Array; content_type: string }, [string]>(
-      "SELECT bytes, content_type FROM images WHERE path=?",
-    ).get(path);
+    const row = this.shard(path)
+      .query<{ bytes: Uint8Array; content_type: string }, [string]>(
+        "SELECT bytes, content_type FROM images WHERE path=?"
+      )
+      .get(path);
     return row ? { bytes: row.bytes, contentType: row.content_type } : undefined;
   }
 
   /** 写入（或覆盖）一张图；只读实例调用会抛错——路由侧应把写入转交数据 Worker。 */
   put(path: string, bytes: Uint8Array, contentType = "image/avif"): void {
     if (this.readOnly) throw new Error("只读图床实例不能写入");
-    this.shard(path).query<never, [string, Uint8Array, string, number]>(
-      "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,?,?,?)",
-    ).run(path, bytes, contentType, this.now());
+    this.shard(path)
+      .query<never, [string, Uint8Array, string, number]>(
+        "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,?,?,?)"
+      )
+      .run(path, bytes, contentType, this.now());
   }
 
   count(): number {
     return this.connections.reduce(
-      (sum, db) => sum + (db.query<{ n: number }, []>("SELECT count(*) AS n FROM images").get()?.n ?? 0),
-      0,
+      (sum, db) =>
+        sum + (db.query<{ n: number }, []>("SELECT count(*) AS n FROM images").get()?.n ?? 0),
+      0
     );
   }
 

@@ -5,5 +5,6 @@
  */
 export function dropFocus() {
   const active = document.activeElement;
-  if (active instanceof HTMLElement && !active.matches("input, textarea, [contenteditable='true']")) active.blur();
+  if (active instanceof HTMLElement && !active.matches("input, textarea, [contenteditable='true']"))
+    active.blur();
 }

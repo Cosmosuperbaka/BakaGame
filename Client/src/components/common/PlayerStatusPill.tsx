@@ -43,13 +43,7 @@ const PLAYER_STATUS_TONES: Record<PlayerStatusTone, string> = {
 };
 
 /** 统一状态胶囊徽章 */
-export function PlayerStatusPill({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: PlayerStatusTone;
-}) {
+export function PlayerStatusPill({ label, tone }: { label: string; tone: PlayerStatusTone }) {
   return <span className={cn(PLAYER_BADGE_BASE, PLAYER_STATUS_TONES[tone])}>{label}</span>;
 }
 
@@ -70,9 +64,7 @@ export function PlayerGroupTitle({
       className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
-      <h3 className="font-sans text-2xs font-normal text-muted-foreground">
-        {label}
-      </h3>
+      <h3 className="font-sans text-2xs font-normal text-muted-foreground">{label}</h3>
       <span className="font-sans text-2xs font-normal tabular-nums text-muted-foreground">
         {count}
       </span>

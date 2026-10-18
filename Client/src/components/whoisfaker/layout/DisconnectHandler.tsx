@@ -36,7 +36,7 @@ export function DisconnectHandler() {
           setChoice(null);
         }
       }),
-    [run, pendingId, sendCommand, addToast],
+    [run, pendingId, sendCommand, addToast]
   );
 
   return (
@@ -57,11 +57,23 @@ export function DisconnectHandler() {
           </p>
           {isQuestioner ? (
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" disabled={busy} loading={choice === "wait"} onClick={() => void handleResolve("wait")}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                loading={choice === "wait"}
+                onClick={() => void handleResolve("wait")}
+              >
                 <Clock className="h-3.5 w-3.5" />
                 等待重连
               </Button>
-              <Button size="sm" variant="destructive" disabled={busy} loading={choice === "eliminate"} onClick={() => void handleResolve("eliminate")}>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={busy}
+                loading={choice === "eliminate"}
+                onClick={() => void handleResolve("eliminate")}
+              >
                 <UserX className="h-3.5 w-3.5" />
                 淘汰并踢出
               </Button>

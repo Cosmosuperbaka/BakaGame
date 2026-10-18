@@ -7,7 +7,13 @@
  */
 
 export const requestUrlText = (input: string | URL | Request | undefined): string =>
-  input === undefined ? "" : typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  input === undefined
+    ? ""
+    : typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
 
 export const requestBodyText = (init?: RequestInit | null): string =>
   typeof init?.body === "string" ? init.body : "";

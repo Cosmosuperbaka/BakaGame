@@ -32,7 +32,8 @@ describe("publicWebpPlugin", () => {
 
   describe("configureServer middleware", () => {
     it("rewrites matching asset path to webp target", () => {
-      let middlewareHandler: ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
+      let middlewareHandler:
+        ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
       const mockServer = {
         middlewares: {
           use: (fn: (req: { url?: string }, res: unknown, next: () => void) => void) => {
@@ -55,7 +56,8 @@ describe("publicWebpPlugin", () => {
     });
 
     it("preserves query strings when rewriting matching asset path", () => {
-      let middlewareHandler: ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
+      let middlewareHandler:
+        ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
       const mockServer = {
         middlewares: {
           use: (fn: (req: { url?: string }, res: unknown, next: () => void) => void) => {
@@ -72,7 +74,8 @@ describe("publicWebpPlugin", () => {
     });
 
     it("does not modify unmapped URLs", () => {
-      let middlewareHandler: ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
+      let middlewareHandler:
+        ((req: { url?: string }, res: unknown, next: () => void) => void) | undefined;
       const mockServer = {
         middlewares: {
           use: (fn: (req: { url?: string }, res: unknown, next: () => void) => void) => {
@@ -105,7 +108,9 @@ describe("publicWebpPlugin", () => {
 
   describe("transform", () => {
     it("ignores node_modules and virtual modules", () => {
-      expect(plugin.transform('const icon = "/assets/Faker.png"', "C:/project/node_modules/pkg/index.js")).toBeNull();
+      expect(
+        plugin.transform('const icon = "/assets/Faker.png"', "C:/project/node_modules/pkg/index.js")
+      ).toBeNull();
       expect(plugin.transform('const icon = "/assets/Faker.png"', "\0virtual:test")).toBeNull();
     });
 
@@ -136,27 +141,30 @@ describe("publicWebpPlugin", () => {
 const TRANSCODE_TIMEOUT_MS = 60_000;
 
 describe("preparePublicWebp", () => {
-  it("generates valid publicDir and accurate assetMap from public assets and emojis", async () => {
-    const { publicDir, assetMap } = await preparePublicWebp();
-    expect(publicDir).toContain(".generated-public");
-    expect(assetMap["/assets/Faker.png"]).toBe("/assets/Faker.webp");
-    expect(assetMap["/assets/CEE.jpg"]).toBe("/assets/CEE.webp");
-    expect(assetMap["/assets/SongGuessr.gif"]).toBe("/assets/SongGuessr.webp");
-    expect(assetMap["/assets/favicon.png"]).toBe("/assets/favicon.webp");
-    expect(assetMap["/assets/logo.gif"]).toBe("/assets/logo.webp");
+  it(
+    "generates valid publicDir and accurate assetMap from public assets and emojis",
+    async () => {
+      const { publicDir, assetMap } = await preparePublicWebp();
+      expect(publicDir).toContain(".generated-public");
+      expect(assetMap["/assets/Faker.png"]).toBe("/assets/Faker.webp");
+      expect(assetMap["/assets/CEE.jpg"]).toBe("/assets/CEE.webp");
+      expect(assetMap["/assets/SongGuessr.gif"]).toBe("/assets/SongGuessr.webp");
+      expect(assetMap["/assets/favicon.png"]).toBe("/assets/favicon.webp");
+      expect(assetMap["/assets/logo.gif"]).toBe("/assets/logo.webp");
 
-    // 验证表情包旧格式向新 .webp 格式的兼容映射已被收录进 assetMap
-    const stickerMappings = Object.entries(assetMap).filter(([k]) => k.startsWith("/stickers/"));
-    expect(stickerMappings.length).toBeGreaterThan(0);
-    for (const [legacyUrl, webpUrl] of stickerMappings) {
-      expect(legacyUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png)$/);
-      expect(webpUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.webp$/);
-    }
+      // 验证表情包旧格式向新 .webp 格式的兼容映射已被收录进 assetMap
+      const stickerMappings = Object.entries(assetMap).filter(([k]) => k.startsWith("/stickers/"));
+      expect(stickerMappings.length).toBeGreaterThan(0);
+      for (const [legacyUrl, webpUrl] of stickerMappings) {
+        expect(legacyUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.(?:apng|gif|jpe?g|png)$/);
+        expect(webpUrl).toMatch(/^\/stickers\/[0-9a-f]{24}\.webp$/);
+      }
 
-    // 验证动图 PNG（如 QQ 音乐 10 级徽章 APNG）转码后完整保留多帧动画，未被降级为单帧静态图
-    const vip10Path = path.join(publicDir, "assets/qqmusic-vip/VIP-10.webp");
-    const vip10Meta = await sharp(vip10Path, { animated: true }).metadata();
-    expect(vip10Meta.pages).toBeGreaterThan(1);
-  }, TRANSCODE_TIMEOUT_MS);
+      // 验证动图 PNG（如 QQ 音乐 10 级徽章 APNG）转码后完整保留多帧动画，未被降级为单帧静态图
+      const vip10Path = path.join(publicDir, "assets/qqmusic-vip/VIP-10.webp");
+      const vip10Meta = await sharp(vip10Path, { animated: true }).metadata();
+      expect(vip10Meta.pages).toBeGreaterThan(1);
+    },
+    TRANSCODE_TIMEOUT_MS
+  );
 });
-

@@ -64,11 +64,26 @@ export class QQNicknameService {
       const info = await this.options.client.loginInfo();
       return info
         ? { state: "active", uin: info.uin, nickname: info.nickname, checkedAt, error: null }
-        : { state: "unavailable", uin: null, nickname: null, checkedAt, error: "NapCat 当前没有登录任何 QQ 号" };
+        : {
+            state: "unavailable",
+            uin: null,
+            nickname: null,
+            checkedAt,
+            error: "NapCat 当前没有登录任何 QQ 号",
+          };
     } catch (error) {
-      const kind = error instanceof AppError ? (error.details as { kind?: string } | undefined)?.kind : undefined;
+      const kind =
+        error instanceof AppError
+          ? (error.details as { kind?: string } | undefined)?.kind
+          : undefined;
       this.options.logger.warn("QQ 昵称服务不可用", { kind, error: String(error) });
-      return { state: "unavailable", uin: null, nickname: null, checkedAt, error: statusMessage(kind) };
+      return {
+        state: "unavailable",
+        uin: null,
+        nickname: null,
+        checkedAt,
+        error: statusMessage(kind),
+      };
     }
   }
 
@@ -81,7 +96,9 @@ export class QQNicknameService {
     try {
       const names = await this.options.client.nicknames(qqNumbers);
       const normalized = new Map(
-        [...names].map(([uin, name]) => [uin, normalizeAccountName(name)] as const).filter(([, name]) => name),
+        [...names]
+          .map(([uin, name]) => [uin, normalizeAccountName(name)] as const)
+          .filter(([, name]) => name)
       );
       for (const [uin, name] of normalized) this.recent.set(uin, name);
       return normalized;
@@ -117,9 +134,13 @@ export class QQNicknameService {
     const names = cached ? new Map([[row.qqNumber, cached]]) : await this.lookup([row.qqNumber]);
     if (!names) return;
     const name = names.get(row.qqNumber);
-    await (await this.adapter()).updateUser(
+    await (
+      await this.adapter()
+    ).updateUser(
       row.id,
-      name ? { qqName: name, name, qqNameCheckedAt: new Date(this.now()) } : { qqNameCheckedAt: new Date(this.now()) },
+      name
+        ? { qqName: name, name, qqNameCheckedAt: new Date(this.now()) }
+        : { qqNameCheckedAt: new Date(this.now()) }
     );
   }
 
@@ -138,8 +159,14 @@ export class QQNicknameService {
       const { adapter } = await this.options.auth.$context;
       const stale = new Date(this.now() - QQ_NAME_REFRESH_INTERVAL_MS);
       const candidates = (await adapter.findMany<UserRow>({ model: "user", limit: 100_000 }))
-        .filter((row) => row.qqNumber && (!row.qqNameCheckedAt || new Date(row.qqNameCheckedAt) < stale))
-        .sort((a, b) => (a.qqNameCheckedAt ? new Date(a.qqNameCheckedAt).getTime() : 0) - (b.qqNameCheckedAt ? new Date(b.qqNameCheckedAt).getTime() : 0));
+        .filter(
+          (row) => row.qqNumber && (!row.qqNameCheckedAt || new Date(row.qqNameCheckedAt) < stale)
+        )
+        .sort(
+          (a, b) =>
+            (a.qqNameCheckedAt ? new Date(a.qqNameCheckedAt).getTime() : 0) -
+            (b.qqNameCheckedAt ? new Date(b.qqNameCheckedAt).getTime() : 0)
+        );
       const batch = candidates.slice(0, REFRESH_ALL_LIMIT);
       // 没查成（掉线、令牌失效、接口失败）就停下，不把这批账号标成已查。
       const names = await this.lookup(batch.map((row) => row.qqNumber!));
@@ -150,7 +177,10 @@ export class QQNicknameService {
       let updated = 0;
       for (const row of batch) {
         const name = names.get(row.qqNumber!);
-        await internal.updateUser(row.id, name ? { qqName: name, name, qqNameCheckedAt: checkedAt } : { qqNameCheckedAt: checkedAt });
+        await internal.updateUser(
+          row.id,
+          name ? { qqName: name, name, qqNameCheckedAt: checkedAt } : { qqNameCheckedAt: checkedAt }
+        );
         checked += 1;
         if (name && name !== row.name) updated += 1;
       }

@@ -1,18 +1,18 @@
-import * as React from "react"
-import * as TabsPrimitive from "@radix-ui/react-tabs"
-import { AnimatePresence, motion } from "framer-motion"
-import { SlidingIndicator } from "@/components/ui/SlidingIndicator"
-import { useIndicatorRect } from "@/hooks/UseIndicatorRect"
-import { tabPushSwap, tappable } from "@/lib/Motion"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import * as TabsPrimitive from "@radix-ui/react-tabs";
+import { AnimatePresence, motion } from "framer-motion";
+import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
+import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
+import { tabPushSwap, tappable } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 
 /** 当前选中值与本次切换的方向（1 往后、-1 往前、0 未知），供底块与内容同向移动。 */
 interface TabsMotion {
-  value: string | undefined
-  direction: number
+  value: string | undefined;
+  direction: number;
 }
 
-const TabsMotionContext = React.createContext<TabsMotion>({ value: undefined, direction: 0 })
+const TabsMotionContext = React.createContext<TabsMotion>({ value: undefined, direction: 0 });
 
 /**
  * 标签页根节点。受控与非受控都支持；切换由标签触发时按标签的先后算出方向，
@@ -23,23 +23,23 @@ const Tabs = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
 >(({ value, defaultValue, onValueChange, className, children, ...props }, ref) => {
-  const rootRef = React.useRef<HTMLDivElement>(null)
-  React.useImperativeHandle(ref, () => rootRef.current as HTMLDivElement)
-  const [uncontrolled, setUncontrolled] = React.useState(defaultValue)
-  const current = value ?? uncontrolled
-  const [swap, setSwap] = React.useState<TabsMotion>({ value: current, direction: 0 })
-  if (swap.value !== current) setSwap({ value: current, direction: 0 })
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => rootRef.current as HTMLDivElement);
+  const [uncontrolled, setUncontrolled] = React.useState(defaultValue);
+  const current = value ?? uncontrolled;
+  const [swap, setSwap] = React.useState<TabsMotion>({ value: current, direction: 0 });
+  if (swap.value !== current) setSwap({ value: current, direction: 0 });
 
   const change = (next: string) => {
-    const order = Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[role="tab"][data-value]') ?? []).map(
-      (tab) => tab.dataset.value,
-    )
-    const from = current === undefined ? -1 : order.indexOf(current)
-    const to = order.indexOf(next)
-    setSwap({ value: next, direction: from < 0 || to < 0 ? 0 : Math.sign(to - from) })
-    if (value === undefined) setUncontrolled(next)
-    onValueChange?.(next)
-  }
+    const order = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>('[role="tab"][data-value]') ?? []
+    ).map((tab) => tab.dataset.value);
+    const from = current === undefined ? -1 : order.indexOf(current);
+    const to = order.indexOf(next);
+    setSwap({ value: next, direction: from < 0 || to < 0 ? 0 : Math.sign(to - from) });
+    if (value === undefined) setUncontrolled(next);
+    onValueChange?.(next);
+  };
 
   return (
     <TabsPrimitive.Root
@@ -51,9 +51,9 @@ const Tabs = React.forwardRef<
     >
       <TabsMotionContext.Provider value={swap}>{children}</TabsMotionContext.Provider>
     </TabsPrimitive.Root>
-  )
-})
-Tabs.displayName = TabsPrimitive.Root.displayName
+  );
+});
+Tabs.displayName = TabsPrimitive.Root.displayName;
 
 /**
  * 标签栏：一排文字标签压在一条细分隔线上，选中项底部是一道主色细线（`SlidingIndicator shape="underline"`）。
@@ -65,10 +65,10 @@ const TabsList = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(({ className, children, ...props }, ref) => {
-  const { value } = React.useContext(TabsMotionContext)
-  const listRef = React.useRef<HTMLDivElement>(null)
-  React.useImperativeHandle(ref, () => listRef.current as HTMLDivElement)
-  const rect = useIndicatorRect(listRef, '[data-state="active"]', value)
+  const { value } = React.useContext(TabsMotionContext);
+  const listRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => listRef.current as HTMLDivElement);
+  const rect = useIndicatorRect(listRef, '[data-state="active"]', value);
   return (
     <TabsPrimitive.List
       ref={listRef}
@@ -81,9 +81,9 @@ const TabsList = React.forwardRef<
       <SlidingIndicator rect={rect} shape="underline" />
       {children}
     </TabsPrimitive.List>
-  )
-})
-TabsList.displayName = TabsPrimitive.List.displayName
+  );
+});
+TabsList.displayName = TabsPrimitive.List.displayName;
 
 /** 标签。按压走 tappable：CSS 的 active:scale 没有过渡、按下松开都是硬切，也不受减弱动效约束。 */
 const TabsTrigger = React.forwardRef<
@@ -103,8 +103,8 @@ const TabsTrigger = React.forwardRef<
       {children}
     </motion.button>
   </TabsPrimitive.Trigger>
-))
-TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
+));
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
 
 /**
  * 标签内容。切换时新旧两幅内容像一条胶片被整幅推过去（`tabPushSwap`）：旧的推出、新的推入，与底块同向，
@@ -118,15 +118,22 @@ const TabsContent = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
 >(({ className, children, value, ...props }, ref) => {
-  const { value: active, direction } = React.useContext(TabsMotionContext)
-  const contentRef = React.useRef<HTMLDivElement>(null)
-  React.useImperativeHandle(ref, () => contentRef.current as HTMLDivElement)
-  const selected = active === value
+  const { value: active, direction } = React.useContext(TabsMotionContext);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  React.useImperativeHandle(ref, () => contentRef.current as HTMLDivElement);
+  const selected = active === value;
 
   return (
     <AnimatePresence initial={false} mode="popLayout" custom={direction}>
       {selected ? (
-        <TabsPrimitive.Content key={value} ref={contentRef} value={value} {...props} forceMount asChild>
+        <TabsPrimitive.Content
+          key={value}
+          ref={contentRef}
+          value={value}
+          {...props}
+          forceMount
+          asChild
+        >
           <motion.div
             custom={direction}
             variants={tabPushSwap}
@@ -134,9 +141,9 @@ const TabsContent = React.forwardRef<
             animate="animate"
             exit="exit"
             onAnimationComplete={(definition) => {
-              if (definition !== "animate") return
-              const node = contentRef.current
-              if (node) node.style.transform = ""
+              if (definition !== "animate") return;
+              const node = contentRef.current;
+              if (node) node.style.transform = "";
             }}
             className={className}
           >
@@ -145,8 +152,8 @@ const TabsContent = React.forwardRef<
         </TabsPrimitive.Content>
       ) : null}
     </AnimatePresence>
-  )
-})
-TabsContent.displayName = TabsPrimitive.Content.displayName
+  );
+});
+TabsContent.displayName = TabsPrimitive.Content.displayName;
 
-export { Tabs, TabsList, TabsTrigger, TabsContent }
+export { Tabs, TabsList, TabsTrigger, TabsContent };

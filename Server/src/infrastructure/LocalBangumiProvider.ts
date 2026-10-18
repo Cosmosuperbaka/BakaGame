@@ -5,16 +5,28 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { AppError } from "../domain/Errors";
 import { detectTrackKindFromText, isBangumiCreditsEntry } from "../shared/Index";
-import type { AnimeAutoFilters, BangumiMusicTrack, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
+import type {
+  AnimeAutoFilters,
+  BangumiMusicTrack,
+  BangumiSubjectDetails,
+  BangumiSubjectSearchResult,
+} from "../shared/Index";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 export interface BangumiDataProvider {
   initialize?: () => Promise<void>;
-  searchSubjects(keyword: string, limit?: number, filters?: AnimeAutoFilters): Promise<BangumiSubjectSearchResult[]>;
+  searchSubjects(
+    keyword: string,
+    limit?: number,
+    filters?: AnimeAutoFilters
+  ): Promise<BangumiSubjectSearchResult[]>;
   getSubject(subjectId: string): Promise<BangumiSubjectDetails>;
-  chooseRandomSubject(filters?: AnimeAutoFilters, random?: () => number): Promise<BangumiSubjectDetails>;
+  chooseRandomSubject(
+    filters?: AnimeAutoFilters,
+    random?: () => number
+  ): Promise<BangumiSubjectDetails>;
   /** 角色立绘：本地数据集不含图片，只能回源取，结果写进回填缓存。 */
   resolveCharacterImage(characterId: number): Promise<string | undefined>;
   /**
@@ -29,7 +41,15 @@ export interface BangumiDataProvider {
   close?: () => void | Promise<void>;
 }
 
-const parseList = (value: string | null | undefined) => { if (typeof value !== "string" || !value) return []; try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []; } catch { return []; } };
+const parseList = (value: string | null | undefined) => {
+  if (typeof value !== "string" || !value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+};
 /**
  * Bangumi 关联类型码到曲目类型的映射。
  *
@@ -95,7 +115,17 @@ export interface MusicRelationRow {
   relation_order?: number | null;
 }
 
-const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult => ({ id: String(row.id), name: row.name, nameCn: row.name_cn || row.name, imageUrl: rewriteImage(row.image, imageBase) ?? undefined, year: row.date ? Number(String(row.date).slice(0, 4)) : undefined, rating: row.score || undefined, ratingCount: row.rating_count || undefined, tags: parseList(row.tags), metaTags: parseList(row.meta_tags) });
+const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult => ({
+  id: String(row.id),
+  name: row.name,
+  nameCn: row.name_cn || row.name,
+  imageUrl: rewriteImage(row.image, imageBase) ?? undefined,
+  year: row.date ? Number(String(row.date).slice(0, 4)) : undefined,
+  rating: row.score || undefined,
+  ratingCount: row.rating_count || undefined,
+  tags: parseList(row.tags),
+  metaTags: parseList(row.meta_tags),
+});
 
 /** 回填缓存的实体类型：番剧与角色共用同一张表。 */
 export type EnrichmentEntity = "subject" | "character";
@@ -127,7 +157,9 @@ export interface LocalBangumiProviderOptions {
 }
 
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
-export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & { meilisearch?: Omit<BangumiSearchOptions, "client"> };
+export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & {
+  meilisearch?: Omit<BangumiSearchOptions, "client">;
+};
 
 /** 回源失败后的短期负缓存：只用于挡住重复打爆上游，重启即失效，**绝不落盘**。 */
 const NEGATIVE_CACHE_TTL_MS = 5 * 60_000;
@@ -164,7 +196,9 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       this.enrichment = enrichment;
     }
     this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
-    this.searchReady = this.search ? this.search.initialize(this.db, options.dbPath) : Promise.resolve();
+    this.searchReady = this.search
+      ? this.search.initialize(this.db, options.dbPath)
+      : Promise.resolve();
     this.onSubjectView = options.onSubjectView;
   }
 
@@ -173,7 +207,11 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (!this.enrichment) return undefined;
     try {
       // bun:sqlite 的 Statement 泛型在多参数下会被推断成数组形态，这里显式声明参数元组。
-      const row = this.enrichment.query<{ payload: string }, [string, number]>("SELECT payload FROM enrichment WHERE entity = ? AND id = ?").get(entity, id);
+      const row = this.enrichment
+        .query<{ payload: string }, [string, number]>(
+          "SELECT payload FROM enrichment WHERE entity = ? AND id = ?"
+        )
+        .get(entity, id);
       if (!row) return undefined;
       return JSON.parse(row.payload) as BangumiEnrichment;
     } catch (error) {
@@ -185,9 +223,11 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private writeEnrichment(entity: EnrichmentEntity, id: number, payload: BangumiEnrichment): void {
     if (!this.enrichment) return;
     try {
-      this.enrichment.query<null, [string, number, string, number]>(
-        "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at",
-      ).run(entity, id, JSON.stringify(payload), Date.now());
+      this.enrichment
+        .query<null, [string, number, string, number]>(
+          "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at"
+        )
+        .run(entity, id, JSON.stringify(payload), Date.now());
     } catch (error) {
       console.warn("Bangumi 回填缓存写入失败，本次跳过", error);
     }
@@ -200,7 +240,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
    * 以免重复打爆上游。历史实现把失败也塞进内存正缓存，一次瞬时超时就会让该条目
    * 在进程剩余生命周期里再也没有图片。
    */
-  private async resolveEntityImage(entity: EnrichmentEntity, id: number): Promise<string | undefined> {
+  private async resolveEntityImage(
+    entity: EnrichmentEntity,
+    id: number
+  ): Promise<string | undefined> {
     const key = `${entity}:${id}`;
     if (this.imageCache.has(key)) return this.imageCache.get(key);
     const missUntil = this.imageMissUntil.get(key);
@@ -218,9 +261,12 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     if (!this.apiBase) return undefined;
     try {
       const path = entity === "subject" ? "subjects" : "characters";
-      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT }, signal: AbortSignal.timeout(5000) });
+      const response = await this.fetcher(`${this.apiBase}/v0/${path}/${id}`, {
+        headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+        signal: AbortSignal.timeout(5000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { images?: Record<string, unknown> };
+      const body = (await response.json()) as { images?: Record<string, unknown> };
       const images = body.images ?? {};
       const candidate = images.large;
       const image = rewriteImage(candidate, this.imageBase);
@@ -272,32 +318,66 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     const q = keyword.trim();
     const clauses = ["type = 2"];
     const args: Array<string | number> = [];
-    if (filters.startYear) { clauses.push("date >= ?"); args.push(`${filters.startYear}-01-01`); }
-    if (filters.endYear) { clauses.push("date < ?"); args.push(`${filters.endYear + 1}-01-01`); }
+    if (filters.startYear) {
+      clauses.push("date >= ?");
+      args.push(`${filters.startYear}-01-01`);
+    }
+    if (filters.endYear) {
+      clauses.push("date < ?");
+      args.push(`${filters.endYear + 1}-01-01`);
+    }
     let rows: SubjectRow[];
     if (this.search) {
       await this.searchReady;
       // 猜歌只关心动画（type=2）；无关键词时按热度排序，供随机出题取候选。
       const { ids } = await this.search.searchSubjects({
-        keyword: q, limit: Math.min(50, Math.max(1, limit)), types: [2],
-        startYear: filters.startYear, endYear: filters.endYear, sortByHeat: !q.trim(),
+        keyword: q,
+        limit: Math.min(50, Math.max(1, limit)),
+        types: [2],
+        startYear: filters.startYear,
+        endYear: filters.endYear,
+        sortByHeat: !q.trim(),
       });
       if (!ids.length) return [];
       const placeholders = ids.map(() => "?").join(",");
-      const found = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`).all(...ids) as SubjectRow[];
+      const found = this.db
+        .query(`SELECT * FROM subjects WHERE id IN (${placeholders}) AND type = 2`)
+        .all(...ids) as SubjectRow[];
       const byId = new Map(found.map((row) => [Number(row.id), row]));
-      return ids.flatMap((id) => { const row = byId.get(id); return row ? [toResult(this.fillPersistedImage(row), this.imageBase)] : []; });
+      return ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row ? [toResult(this.fillPersistedImage(row), this.imageBase)] : [];
+      });
     }
     if (q) {
-      rows = this.db.query(`SELECT s.* FROM subject_search f JOIN subjects s ON s.id=f.rowid WHERE subject_search MATCH ? AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`).all(`${q.replace(/["*]/g, " ")}*`, ...args, q, q, `${q}%`, `${q}%`, Math.min(50, Math.max(1, limit))) as SubjectRow[];
+      rows = this.db
+        .query(
+          `SELECT s.* FROM subject_search f JOIN subjects s ON s.id=f.rowid WHERE subject_search MATCH ? AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`
+        )
+        .all(
+          `${q.replace(/["*]/g, " ")}*`,
+          ...args,
+          q,
+          q,
+          `${q}%`,
+          `${q}%`,
+          Math.min(50, Math.max(1, limit))
+        ) as SubjectRow[];
     } else {
-      rows = this.db.query(`SELECT * FROM subjects WHERE ${clauses.join(" AND ")} ORDER BY heat DESC, rank ASC, score DESC, id ASC LIMIT ?`).all(...args, Math.min(50, Math.max(1, limit))) as SubjectRow[];
+      rows = this.db
+        .query(
+          `SELECT * FROM subjects WHERE ${clauses.join(" AND ")} ORDER BY heat DESC, rank ASC, score DESC, id ASC LIMIT ?`
+        )
+        .all(...args, Math.min(50, Math.max(1, limit))) as SubjectRow[];
     }
     return rows.map((row) => toResult(this.fillPersistedImage(row), this.imageBase));
   }
   async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
-    const id = Number(subjectId); if (!Number.isInteger(id) || id <= 0) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
-    const row = this.db.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id) as SubjectRow | undefined;
+    const id = Number(subjectId);
+    if (!Number.isInteger(id) || id <= 0)
+      throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
+    const row = this.db.query("SELECT * FROM subjects WHERE id = ? AND type = 2").get(id) as
+      SubjectRow | undefined;
     if (!row) throw new AppError("BANGUMI_SUBJECT_NOT_FOUND", "番剧条目不存在");
     // 有人在看这条 = 它值得尽快变新鲜。只登记、不等结果：出题路径上绝不加网络等待。
     this.onSubjectView?.(id);
@@ -306,12 +386,43 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     // 全被标成 opening 而排在真实曲目之前，实测会把《Music For All》这类
     // 完全无关的歌曲当成番剧 OP。文本规则 isBangumiCreditsEntry 作为第二道防线，
     // 同时覆盖联网 API 路径。
-    const relations = this.db.query("SELECT r.title, r.artist, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id").all(id) as MusicRelationRow[];
+    const relations = this.db
+      .query(
+        "SELECT r.title, r.artist, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id"
+      )
+      .all(id) as MusicRelationRow[];
     const seen = new Set<string>();
-    const musicTracks: BangumiMusicTrack[] = relations.filter((m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)).map((m) => ({ title: m.title.trim(), artist: m.artist || undefined, kind: normalizeKind(m.title.trim(), Number(m.relation_type)) })).filter((m) => { const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`; if (seen.has(key)) return false; seen.add(key); return true; });
-    const imageUrl = rewriteImage(row.image, this.imageBase) ?? await this.resolveEntityImage("subject", id);
-    return { ...toResult({ ...row, image: imageUrl }, ""), summary: row.summary || undefined, locked: false, musicTracks };
+    const musicTracks: BangumiMusicTrack[] = relations
+      .filter(
+        (m) => typeof m.title === "string" && m.title.trim() && !isBangumiCreditsEntry(m.title)
+      )
+      .map((m) => ({
+        title: m.title.trim(),
+        artist: m.artist || undefined,
+        kind: normalizeKind(m.title.trim(), Number(m.relation_type)),
+      }))
+      .filter((m) => {
+        const key = `${m.kind}:${m.title.toLowerCase()}:${m.artist?.toLowerCase() ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const imageUrl =
+      rewriteImage(row.image, this.imageBase) ?? (await this.resolveEntityImage("subject", id));
+    return {
+      ...toResult({ ...row, image: imageUrl }, ""),
+      summary: row.summary || undefined,
+      locked: false,
+      musicTracks,
+    };
   }
-  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) { const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters); if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧"); return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id); }
-  close() { this.db.close(); this.enrichment?.close(); }
+  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
+    const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
+    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
+    return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);
+  }
+  close() {
+    this.db.close();
+    this.enrichment?.close();
+  }
 }

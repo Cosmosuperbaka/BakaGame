@@ -106,7 +106,10 @@ interface DueRow {
 
 /** 从 API 响应取热度：收藏分布各桶求和，与全量构建脚本同一口径。 */
 const heatOf = (subject: ApiSubject): number =>
-  Object.values(subject.collection ?? {}).reduce<number>((sum, value) => sum + Number(value ?? 0), 0);
+  Object.values(subject.collection ?? {}).reduce<number>(
+    (sum, value) => sum + Number(value ?? 0),
+    0
+  );
 
 export class SubjectUpdater {
   private readonly db: Database;
@@ -209,18 +212,26 @@ export class SubjectUpdater {
 
   private schedule(delay: number): void {
     if (!this.running) return;
-    this.timer = setTimeout(() => { void this.tick(); }, delay);
+    this.timer = setTimeout(() => {
+      void this.tick();
+    }, delay);
   }
 
   private async tick(): Promise<void> {
     if (!this.running) return;
     // 暂停期间保持 1s 心跳：备份一结束就能立刻接着跑，不用等满一轮。
-    if (this.paused) { this.schedule(1_000); return; }
+    if (this.paused) {
+      this.schedule(1_000);
+      return;
+    }
     try {
       const refreshed = await this.runRound();
-      if (refreshed) this.logger?.info?.(`作品刷新：本轮 ${refreshed} 条（速率 ${this.rate.toFixed(1)} req/s）`);
+      if (refreshed)
+        this.logger?.info?.(`作品刷新：本轮 ${refreshed} 条（速率 ${this.rate.toFixed(1)} req/s）`);
     } catch (error) {
-      this.logger?.warn?.(`作品刷新轮次失败：${error instanceof Error ? error.message : String(error)}`);
+      this.logger?.warn?.(
+        `作品刷新轮次失败：${error instanceof Error ? error.message : String(error)}`
+      );
     }
     this.schedule(this.roundDelayMs);
   }
@@ -260,10 +271,12 @@ export class SubjectUpdater {
    * 时刻起算，真正的首次刷新落在 2 / 7 / 30 天之后。
    */
   markDatasetFresh(): number {
-    const result = this.db.query<never, [number]>(
-      "INSERT OR IGNORE INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at)"
-      + " SELECT id, -1, ?, 0, 0 FROM subjects",
-    ).run(this.now());
+    const result = this.db
+      .query<never, [number]>(
+        "INSERT OR IGNORE INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at)" +
+          " SELECT id, -1, ?, 0, 0 FROM subjects"
+      )
+      .run(this.now());
     return result.changes;
   }
 
@@ -283,11 +296,13 @@ export class SubjectUpdater {
    * - **退避**：`now >= next_at`（连续失败的条目按指数退避往后压）。
    */
   private selectDue(): Array<{ id: number | string; tier: number }> {
-    const rows = this.db.query<DueRow, []>(
-      "SELECT s.id AS id, s.heat AS heat, r.refreshed_at AS refreshed_at, r.next_at AS next_at"
-      + " FROM subjects s LEFT JOIN bangumi_refresh r ON r.subject_id = s.id"
-      + " ORDER BY s.heat DESC, s.id ASC",
-    ).all();
+    const rows = this.db
+      .query<DueRow, []>(
+        "SELECT s.id AS id, s.heat AS heat, r.refreshed_at AS refreshed_at, r.next_at AS next_at" +
+          " FROM subjects s LEFT JOIN bangumi_refresh r ON r.subject_id = s.id" +
+          " ORDER BY s.heat DESC, s.id ASC"
+      )
+      .all();
     const total = Math.max(1, rows.length);
     const now = this.now();
     const due: Array<{ id: number | string; tier: number }> = [];
@@ -313,9 +328,11 @@ export class SubjectUpdater {
 
   /** 是否过期到值得为一次玩家请求回源（口径取最热的那一层间隔）。 */
   private isStale(subjectId: number): boolean {
-    const row = this.db.query<{ refreshed_at: number }, [number]>(
-      "SELECT refreshed_at FROM bangumi_refresh WHERE subject_id = ?",
-    ).get(subjectId);
+    const row = this.db
+      .query<{ refreshed_at: number }, [number]>(
+        "SELECT refreshed_at FROM bangumi_refresh WHERE subject_id = ?"
+      )
+      .get(subjectId);
     if (!row) return true;
     const shortest = Math.min(...this.tiers.map((tier) => tier.intervalDays));
     return this.now() - row.refreshed_at >= shortest * DAY_MS;
@@ -333,7 +350,7 @@ export class SubjectUpdater {
         signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const subject = await response.json() as ApiSubject;
+      const subject = (await response.json()) as ApiSubject;
       // nsfw 守卫：数据集构建期就剔除了 nsfw 条目，上游一旦把某条翻成 nsfw，
       // 这里绝不把它写进来 —— 只记状态、长期不再尝试。
       if (subject.nsfw) {
@@ -344,7 +361,9 @@ export class SubjectUpdater {
       ok = this.applySubject(subjectId, subject, now);
       if (ok) await this.ensureImage(String(subject.images?.large ?? ""));
     } catch (error) {
-      this.logger?.warn?.(`作品 ${subjectId} 刷新失败：${error instanceof Error ? error.message : String(error)}`);
+      this.logger?.warn?.(
+        `作品 ${subjectId} 刷新失败：${error instanceof Error ? error.message : String(error)}`
+      );
     }
     const failures = ok ? 0 : this.failuresOf(subjectId) + 1;
     this.mark(subjectId, now, tier, failures, ok ? now : now + this.backoffFor(failures));
@@ -355,32 +374,68 @@ export class SubjectUpdater {
   private applySubject(subjectId: number, subject: ApiSubject, now: number): boolean {
     const tags = Array.isArray(subject.tags) ? subject.tags : [];
     const tagNames = tags.map((tag) => String(tag.name ?? "")).filter(Boolean);
-    const rawTags = Object.fromEntries(tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)]));
+    const rawTags = Object.fromEntries(
+      tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)])
+    );
     const rating = subject.rating ?? {};
     const image = String(subject.images?.large ?? "");
     const heat = heatOf(subject);
 
     // 上游没给的字段保持原值：匿名接口偶尔缺 collection / images，拿 0 或空串覆盖
     // 会把一条热门作品的封面和热度抹掉 —— 比不更新更糟。
-    const current = this.db.query<{ heat: number; image: string }, [number]>("SELECT heat, image FROM subjects WHERE id = ?").get(subjectId);
-    const result = this.db.query<never, [string, string, string, string, string, string, string, string, number, number, number, number, string, number]>(
-      "UPDATE subjects SET name=?, name_cn=?, infobox=?, summary=?, date=?, tags=?, raw_tags=?, meta_tags=?,"
-      + " score=?, rating_count=?, heat=?, rank=?, image=? WHERE id=?",
-    ).run(
-      String(subject.name ?? ""), String(subject.name_cn ?? ""), String(subject.infobox ?? ""),
-      String(subject.summary ?? ""), String(subject.date ?? ""), JSON.stringify(tagNames),
-      JSON.stringify(rawTags), JSON.stringify(subject.meta_tags ?? []),
-      Number(rating.score ?? 0), Number(rating.total ?? 0),
-      heat || Number(current?.heat ?? 0), Number(rating.rank ?? 0),
-      image || String(current?.image ?? ""), subjectId,
-    );
+    const current = this.db
+      .query<{ heat: number; image: string }, [number]>(
+        "SELECT heat, image FROM subjects WHERE id = ?"
+      )
+      .get(subjectId);
+    const result = this.db
+      .query<
+        never,
+        [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          number,
+          number,
+          number,
+          number,
+          string,
+          number,
+        ]
+      >(
+        "UPDATE subjects SET name=?, name_cn=?, infobox=?, summary=?, date=?, tags=?, raw_tags=?, meta_tags=?," +
+          " score=?, rating_count=?, heat=?, rank=?, image=? WHERE id=?"
+      )
+      .run(
+        String(subject.name ?? ""),
+        String(subject.name_cn ?? ""),
+        String(subject.infobox ?? ""),
+        String(subject.summary ?? ""),
+        String(subject.date ?? ""),
+        JSON.stringify(tagNames),
+        JSON.stringify(rawTags),
+        JSON.stringify(subject.meta_tags ?? []),
+        Number(rating.score ?? 0),
+        Number(rating.total ?? 0),
+        heat || Number(current?.heat ?? 0),
+        Number(rating.rank ?? 0),
+        image || String(current?.image ?? ""),
+        subjectId
+      );
     // 更新 0 行 = 库里没有这个条目（被裁剪或已删除）：不算失败，但也不必排队索引。
     if (!result.changes) return true;
     if (this.search) {
-      this.db.query<never, [number, number]>(
-        "INSERT INTO bangumi_index_pending (subject_id, queued_at, attempts) VALUES (?,?,0)"
-        + " ON CONFLICT(subject_id) DO UPDATE SET queued_at = excluded.queued_at",
-      ).run(subjectId, now);
+      this.db
+        .query<never, [number, number]>(
+          "INSERT INTO bangumi_index_pending (subject_id, queued_at, attempts) VALUES (?,?,0)" +
+            " ON CONFLICT(subject_id) DO UPDATE SET queued_at = excluded.queued_at"
+        )
+        .run(subjectId, now);
     }
     return true;
   }
@@ -408,9 +463,11 @@ export class SubjectUpdater {
 
   /** 把待同步队列里的条目批量写进索引；失败计数，超过上限就丢弃。 */
   async flushIndex(limit = DEFAULT_ROUND_LIMIT): Promise<number> {
-    const pending = this.db.query<{ subject_id: number; attempts: number }, [number]>(
-      "SELECT subject_id, attempts FROM bangumi_index_pending ORDER BY queued_at ASC LIMIT ?",
-    ).all(limit);
+    const pending = this.db
+      .query<{ subject_id: number; attempts: number }, [number]>(
+        "SELECT subject_id, attempts FROM bangumi_index_pending ORDER BY queued_at ASC LIMIT ?"
+      )
+      .all(limit);
     if (!pending.length) return 0;
     // 没有配置索引时队列根本不该存在（入队处已挡），这里只兜底清理。
     if (!this.search) {
@@ -419,30 +476,43 @@ export class SubjectUpdater {
     }
     const ids = pending.map((row) => Number(row.subject_id));
     const placeholders = ids.map(() => "?").join(",");
-    const rows = this.db.query(
-      `SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects WHERE id IN (${placeholders})`,
-    ).all(...ids) as Array<Record<string, unknown>>;
+    const rows = this.db
+      .query(
+        `SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects WHERE id IN (${placeholders})`
+      )
+      .all(...ids) as Array<Record<string, unknown>>;
     try {
       await this.search.updateSubjects(rows.map((row) => this.search!.toSubjectDocument(row)));
       // 队列里的条目若已被裁掉（上游删了 / 被剔除），这里一并清掉：留着只会每轮重试。
-      for (const id of ids) this.db.query("DELETE FROM bangumi_index_pending WHERE subject_id = ?").run(id);
+      for (const id of ids)
+        this.db.query("DELETE FROM bangumi_index_pending WHERE subject_id = ?").run(id);
       return rows.length;
     } catch (error) {
-      this.logger?.warn?.(`索引同步失败：${error instanceof Error ? error.message : String(error)}`);
+      this.logger?.warn?.(
+        `索引同步失败：${error instanceof Error ? error.message : String(error)}`
+      );
       for (const row of pending) {
         const attempts = Number(row.attempts) + 1;
         if (attempts >= MAX_INDEX_ATTEMPTS) {
-          this.db.query("DELETE FROM bangumi_index_pending WHERE subject_id = ?").run(Number(row.subject_id));
+          this.db
+            .query("DELETE FROM bangumi_index_pending WHERE subject_id = ?")
+            .run(Number(row.subject_id));
           continue;
         }
-        this.db.query("UPDATE bangumi_index_pending SET attempts = ? WHERE subject_id = ?").run(attempts, Number(row.subject_id));
+        this.db
+          .query("UPDATE bangumi_index_pending SET attempts = ? WHERE subject_id = ?")
+          .run(attempts, Number(row.subject_id));
       }
       return 0;
     }
   }
 
   private failuresOf(subjectId: number): number {
-    const row = this.db.query<{ failures: number }, [number]>("SELECT failures FROM bangumi_refresh WHERE subject_id = ?").get(subjectId);
+    const row = this.db
+      .query<{ failures: number }, [number]>(
+        "SELECT failures FROM bangumi_refresh WHERE subject_id = ?"
+      )
+      .get(subjectId);
     return Number(row?.failures ?? 0);
   }
 
@@ -452,12 +522,20 @@ export class SubjectUpdater {
   }
 
   /** 记录一次尝试的结果（成功清零失败计数，失败则退避）。 */
-  private mark(subjectId: number, now: number, tier: number, failures: number, nextAt: number): void {
-    this.db.query<never, [number, number, number, number, number]>(
-      "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,?,?,?)"
-      + " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier, refreshed_at = excluded.refreshed_at,"
-      + " failures = excluded.failures, next_at = excluded.next_at",
-    ).run(subjectId, tier, now, failures, nextAt);
+  private mark(
+    subjectId: number,
+    now: number,
+    tier: number,
+    failures: number,
+    nextAt: number
+  ): void {
+    this.db
+      .query<never, [number, number, number, number, number]>(
+        "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,?,?,?)" +
+          " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier, refreshed_at = excluded.refreshed_at," +
+          " failures = excluded.failures, next_at = excluded.next_at"
+      )
+      .run(subjectId, tier, now, failures, nextAt);
   }
 
   /** 等到一个属于自己的请求时隙：限速就靠这一个点，所有回源都得先过它。 */
@@ -471,9 +549,28 @@ export class SubjectUpdater {
   }
 
   /** 运维视角的快照：排障时最想知道的就是「现在跑多快、有没有停」。 */
-  stats(): { running: boolean; paused: boolean; rate: number; players: number; refreshed: number; pendingIndex: number } {
-    const refreshed = Number((this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_refresh").get())?.n ?? 0);
-    const pendingIndex = Number((this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_index_pending").get())?.n ?? 0);
-    return { running: this.running, paused: this.paused, rate: this.rate, players: this.players, refreshed, pendingIndex };
+  stats(): {
+    running: boolean;
+    paused: boolean;
+    rate: number;
+    players: number;
+    refreshed: number;
+    pendingIndex: number;
+  } {
+    const refreshed = Number(
+      this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_refresh").get()?.n ?? 0
+    );
+    const pendingIndex = Number(
+      this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_index_pending").get()
+        ?.n ?? 0
+    );
+    return {
+      running: this.running,
+      paused: this.paused,
+      rate: this.rate,
+      players: this.players,
+      refreshed,
+      pendingIndex,
+    };
   }
 }

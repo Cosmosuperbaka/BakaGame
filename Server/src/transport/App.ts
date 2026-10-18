@@ -58,9 +58,7 @@ const messageAckCache = new LRUCache<string, object>({
   max: 2048,
   ttl: 15_000,
 });
-type InFlightOutcome =
-  | { success: true; payload: unknown }
-  | { success: false; error: unknown };
+type InFlightOutcome = { success: true; payload: unknown } | { success: false; error: unknown };
 
 /**
  * 飞行中请求的去重表，按 `${connectionId}:${messageId}` 记。
@@ -81,10 +79,7 @@ const rememberInFlight = (key: string, promise: Promise<InFlightOutcome>) => {
   inFlightOperations.set(key, promise);
 };
 
-const sendPacket = (
-  ws: { send: (data: ServerMessage) => unknown },
-  payload: ServerMessage,
-) => {
+const sendPacket = (ws: { send: (data: ServerMessage) => unknown }, payload: ServerMessage) => {
   ws.send(payload);
 };
 
@@ -141,7 +136,13 @@ const executeWithDeduplication = async ({
       });
       sendPacket(
         ws,
-        createErrorPacket(parsedId, outcome.error.code, outcome.error.message, outcome.error.details, traceId),
+        createErrorPacket(
+          parsedId,
+          outcome.error.code,
+          outcome.error.message,
+          outcome.error.details,
+          traceId
+        )
       );
     } else {
       logger.logOperation({
@@ -154,7 +155,7 @@ const executeWithDeduplication = async ({
       });
       sendPacket(
         ws,
-        createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+        createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId)
       );
     }
     return;
@@ -202,7 +203,7 @@ const executeWithDeduplication = async ({
       });
       sendPacket(
         ws,
-        createErrorPacket(parsedId, error.code, error.message, error.details, traceId),
+        createErrorPacket(parsedId, error.code, error.message, error.details, traceId)
       );
       return;
     }
@@ -225,15 +226,12 @@ const executeWithDeduplication = async ({
     });
     sendPacket(
       ws,
-      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId),
+      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId)
     );
   }
 };
 
-export const isAllowedOrigin = (
-  origin: string | null | undefined,
-  clientUrl?: string,
-): boolean => {
+export const isAllowedOrigin = (origin: string | null | undefined, clientUrl?: string): boolean => {
   if (!origin) return true;
   // 没有配置白名单时不能「放行一切」——那是 CSWSH 的入口。
   // 此时退化为「只允许同属私网/本机的来源」，公网浏览器页面一律拒绝。
@@ -255,10 +253,7 @@ export const isAllowedOrigin = (
       try {
         const allowedUrl = new URL(rawAllowed);
         if (originUrl.origin === allowedUrl.origin) return true;
-        if (
-          isPrivateLanHost(originUrl.hostname) &&
-          isPrivateLanHost(allowedUrl.hostname)
-        ) {
+        if (isPrivateLanHost(originUrl.hostname) && isPrivateLanHost(allowedUrl.hostname)) {
           return true;
         }
       } catch {
@@ -298,11 +293,10 @@ const connectionIdOf = (ws: GameSocketLike): string | undefined =>
 const rejectDisallowedOrigin = (
   headers: unknown,
   request: Request | undefined,
-  clientUrl?: string,
+  clientUrl?: string
 ): void => {
   const origin =
-    request?.headers?.get("origin") ??
-    (headers as Record<string, string> | undefined)?.["origin"];
+    request?.headers?.get("origin") ?? (headers as Record<string, string> | undefined)?.["origin"];
   if (isAllowedOrigin(origin, clientUrl)) return;
   throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
 };
@@ -314,7 +308,7 @@ const rejectDisallowedOrigin = (
 const resolveSocketAccount = async (
   context: { request: Request; account?: PlayerAccount },
   account: AccountDependencies | undefined,
-  logger: EventLogger,
+  logger: EventLogger
 ): Promise<void> => {
   if (!account || !context.request.headers.get("cookie")) return;
   try {
@@ -337,7 +331,7 @@ const reserveHandshakeSlot = (
     server?: { requestIP(request: Request): { address?: string } | null } | null;
     handshakeSlot?: string;
   },
-  quota: WsHandshakeQuota,
+  quota: WsHandshakeQuota
 ): void => {
   const peerIp = context.server?.requestIP(context.request)?.address;
   const clientIp = resolveClientIp(context.request.headers, peerIp);
@@ -349,7 +343,7 @@ const reserveHandshakeSlot = (
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
 const openGameConnection = (
   ws: GameSocketLike,
-  register: (connection: ConnectionRecord) => void,
+  register: (connection: ConnectionRecord) => void
 ): void => {
   const connectionId = crypto.randomUUID();
   const account = (ws.data as { account?: PlayerAccount }).account;
@@ -404,10 +398,16 @@ const describeRawMessage = (raw: unknown): Record<string, unknown> => {
  *
  * 返回值仅供错误回包与日志使用，绝不参与业务执行。
  */
-const salvageMessageIdentity = (input: unknown): { id: string; type?: string; traceId?: string } | undefined => {
+const salvageMessageIdentity = (
+  input: unknown
+): { id: string; type?: string; traceId?: string } | undefined => {
   let candidate = input;
   if (typeof candidate === "string") {
-    try { candidate = JSON.parse(candidate); } catch { return undefined; }
+    try {
+      candidate = JSON.parse(candidate);
+    } catch {
+      return undefined;
+    }
   }
   if (!candidate || typeof candidate !== "object") return undefined;
   const record = candidate as Record<string, unknown>;
@@ -426,46 +426,80 @@ const salvageMessageIdentity = (input: unknown): { id: string; type?: string; tr
  */
 /** 成功帧已通过 Elysia body 校验，业务层不重复枚举 Value.Errors。 */
 const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
-  ws: GameSocketLike, parsed: TMessage, logger: EventLogger,
-  { serviceName, execute }: GameSocketHandlers<TMessage>,
+  ws: GameSocketLike,
+  parsed: TMessage,
+  logger: EventLogger,
+  { serviceName, execute }: GameSocketHandlers<TMessage>
 ): Promise<void> => {
   const connectionId = connectionIdOf(ws);
   if (!connectionId) return;
   await executeWithDeduplication({
-    ws, connectionId, parsed, startTime: performance.now(), logger,
-    execute: () => execute(connectionId, parsed), serviceName,
+    ws,
+    connectionId,
+    parsed,
+    startTime: performance.now(),
+    logger,
+    execute: () => execute(connectionId, parsed),
+    serviceName,
   });
 };
 
 // Elysia 已解码普通 JSON；该补充只统一带空白 JSON / 二进制帧，校验仍归框架。
 const decodeGameFrame = (_ws: unknown, incoming: unknown): ReturnType<typeof JSON.parse> => {
-  const text = typeof incoming === "string" ? incoming : incoming instanceof Uint8Array ? new TextDecoder().decode(incoming) : undefined;
+  const text =
+    typeof incoming === "string"
+      ? incoming
+      : incoming instanceof Uint8Array
+        ? new TextDecoder().decode(incoming)
+        : undefined;
   if (text === undefined) return undefined;
   // JSON.parse 的非可信返回值只存在于解码边界；其后仍由原生 body validator 校验。
-  try { return JSON.parse(text); } catch { return undefined; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 };
 
 /** route-local error 在 HTTP 全局错误钩子之前保持原有 WS 错误/关联契约。 */
-const gameSocketError = (logger: EventLogger, serviceName: string, parse: (raw: unknown) => unknown) =>
+const gameSocketError =
+  (logger: EventLogger, serviceName: string, parse: (raw: unknown) => unknown) =>
   ({ error }: { error: unknown }): ServerMessage => {
     const input = error instanceof ValidationError ? error.value : undefined;
     const identity = salvageMessageIdentity(input);
     let failure: unknown = error;
     if (error instanceof ValidationError) {
-      try { parse(input); } catch (diagnostic) { failure = diagnostic; }
+      try {
+        parse(input);
+      } catch (diagnostic) {
+        failure = diagnostic;
+      }
       // 仅记录类型与大小；键名及任意信封字段也可能承载秘密，不复制到日志。
       logger.warn(`${serviceName} WS 消息解析失败`, {
         ...describeRawMessage(input),
       });
     }
-    if (isAppError(failure)) return createErrorPacket(identity?.id ?? "unknown", failure.code, failure.message, undefined, identity?.traceId);
+    if (isAppError(failure))
+      return createErrorPacket(
+        identity?.id ?? "unknown",
+        failure.code,
+        failure.message,
+        undefined,
+        identity?.traceId
+      );
     logger.error(`${serviceName} WS 内部异常`, describeError(failure));
-    return createErrorPacket(identity?.id ?? "unknown", "INTERNAL_ERROR", "服务器内部错误", undefined, identity?.traceId);
+    return createErrorPacket(
+      identity?.id ?? "unknown",
+      "INTERNAL_ERROR",
+      "服务器内部错误",
+      undefined,
+      identity?.traceId
+    );
   };
 
 const closeGameConnection = async (
   ws: GameSocketLike,
-  unregister: (connectionId: string) => Promise<void>,
+  unregister: (connectionId: string) => Promise<void>
 ): Promise<void> => {
   const connectionId = connectionIdOf(ws);
   if (connectionId) await unregister(connectionId);
@@ -496,15 +530,18 @@ export const createApp = ({
   const songService = sonGuessrService;
   const characterService = ceeService;
   let disposal: Promise<void> | undefined;
-  const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
+  const dispose = (): Promise<void> =>
+    (disposal ??= disposeResources ? disposeResources() : characterService.close());
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   // 三个游戏入口共用一份握手配额：一个客户端地址换着连三款游戏也只有一份额度。
-  const handshakeQuota = handshakeQuotaOverride ?? new WsHandshakeQuota({
-    windowMs: WS_HANDSHAKE_WINDOW_MS,
-    ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
-    globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
-    ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
-  });
+  const handshakeQuota =
+    handshakeQuotaOverride ??
+    new WsHandshakeQuota({
+      windowMs: WS_HANDSHAKE_WINDOW_MS,
+      ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
+      globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
+      ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+    });
   const app = new Elysia({
     normalize: false,
     websocket: {
@@ -515,9 +552,18 @@ export const createApp = ({
       maxPayloadLength: 256 * 1024,
     },
   })
-    .onStop(() => { void dispose().catch((error: unknown) => logger.error("服务资源释放失败", describeError(error))); })
+    .onStop(() => {
+      void dispose().catch((error: unknown) =>
+        logger.error("服务资源释放失败", describeError(error))
+      );
+    })
     .onRequest(({ request, set, server }) => {
-      const traceId = sanitizeLogText(request.headers.get("x-trace-id") ?? request.headers.get("x-request-id") ?? crypto.randomUUID(), 128);
+      const traceId = sanitizeLogText(
+        request.headers.get("x-trace-id") ??
+          request.headers.get("x-request-id") ??
+          crypto.randomUUID(),
+        128
+      );
       // ESA 反代后 socket peer 恒为边缘节点地址：日志里的来源身份必须取真实 IP 标头，
       // 否则每条 HTTP 操作日志都记成同一个节点地址，按来源排查就失效了。
       const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
@@ -540,18 +586,17 @@ export const createApp = ({
     // ==================== 原生插件与全局中间件 ====================
     .use(
       cors({
-        origin: (req: Request) =>
-          isAllowedOrigin(req?.headers?.get("origin"), env.clientUrl),
+        origin: (req: Request) => isAllowedOrigin(req?.headers?.get("origin"), env.clientUrl),
         allowedHeaders: ["content-type", "x-trace-id"],
         methods: ["GET", "POST", "OPTIONS"],
         credentials: true,
-      }),
+      })
     )
     .use(
       createSwaggerPlugin({
         serverUrl: env.serverUrl,
         enabled: env.openapiEnabled,
-      }),
+      })
     )
     // ==================== 原生耗时与链路追踪派生 ====================
     .derive(({ request }) => requests.get(request)!)
@@ -575,16 +620,28 @@ export const createApp = ({
       let errorCode = "INTERNAL_ERROR";
       let message = "服务器内部错误";
       if (isAppError(error)) {
-        statusCode = statusOfAppError(error.code); errorCode = error.code; message = error.message;
+        statusCode = statusOfAppError(error.code);
+        errorCode = error.code;
+        message = error.message;
       } else if (code === "PARSE") {
-        statusCode = 400; errorCode = "INVALID_JSON"; message = "请求必须为合法 JSON";
-      } else if (String(code) === "VALIDATION" && (!(error instanceof ValidationError) || error.type !== "response")) {
-        statusCode = 422; errorCode = "VALIDATION_ERROR"; message = "请求载荷格式错误";
+        statusCode = 400;
+        errorCode = "INVALID_JSON";
+        message = "请求必须为合法 JSON";
+      } else if (
+        String(code) === "VALIDATION" &&
+        (!(error instanceof ValidationError) || error.type !== "response")
+      ) {
+        statusCode = 422;
+        errorCode = "VALIDATION_ERROR";
+        message = "请求载荷格式错误";
       } else if (code === "NOT_FOUND") {
-        statusCode = 404; errorCode = "NOT_FOUND"; message = "请求资源不存在";
+        statusCode = 404;
+        errorCode = "NOT_FOUND";
+        message = "请求资源不存在";
       }
       set.status = statusCode;
-      if (statusCode >= 500) logger.error(`HTTP 500 异常 [${path}]`, { ...describeError(error), traceId });
+      if (statusCode >= 500)
+        logger.error(`HTTP 500 异常 [${path}]`, { ...describeError(error), traceId });
       return { error: { code: errorCode, message, traceId } };
     })
     // 自建 `Response` 与第三方 handler 的响应（Better Auth、oRPC、头像代理）不经过 `set.headers` 这一层，
@@ -597,7 +654,8 @@ export const createApp = ({
       if (!(responseValue instanceof Response)) return responseValue as Response;
       const missing: [string, string][] = [];
       for (const [key, value] of Object.entries(set.headers)) {
-        if (value !== undefined && !responseValue.headers.has(key)) missing.push([key, String(value)]);
+        if (value !== undefined && !responseValue.headers.has(key))
+          missing.push([key, String(value)]);
       }
       if (missing.length === 0) return responseValue;
       // `fetch` 透传的响应头是只读的，原地 set 会抛，所以连同原头一起复制一份再补。
@@ -619,14 +677,14 @@ export const createApp = ({
         isShuttingDown,
         onTriggerShutdown,
         maintenanceToken: env.maintenanceToken,
-      }),
+      })
     )
     .use(
       sentryTunnelRoutes({
         allowedProjectIds: env.sentryAllowedProjectIds,
         sentryDsn: env.sentryDsn,
         logger,
-      }),
+      })
     )
     // ==================== 自建图床（avif 分片缓存） ====================
     .use(bangumiImageRoutes(bangumiImages))
@@ -634,14 +692,17 @@ export const createApp = ({
     .use(accountRoutes(account, logger))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
-      body: WhoIsFakerClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      body: WhoIsFakerClientMessageSchema,
+      response: ServerMessageSchema,
+      parse: decodeGameFrame,
       error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
         reserveHandshakeSlot(context, handshakeQuota);
       },
-      open: (ws) => openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
+      open: (ws) =>
+        openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
       message: (ws, incoming) =>
         handleGameMessage(ws, incoming, logger, {
           serviceName: "WhoIsFaker",
@@ -649,36 +710,47 @@ export const createApp = ({
         }),
       close: (ws) => {
         releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId));
+        return closeGameConnection(ws, (connectionId) =>
+          fakerService.unregisterConnection(connectionId)
+        );
       },
     })
     .ws("/api/cee/ws", {
-      body: CEEClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      body: CEEClientMessageSchema,
+      response: ServerMessageSchema,
+      parse: decodeGameFrame,
       error: gameSocketError(logger, "CEE", parseCEEMessage),
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
         reserveHandshakeSlot(context, handshakeQuota);
       },
-      open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
-      message: (ws, incoming) => handleGameMessage(ws, normalizeCEEEnvelope(incoming), logger, {
-        serviceName: 'CEE',
-        execute: (connectionId, message) => characterService.execute(connectionId, message),
-      }),
+      open: (ws) =>
+        openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
+      message: (ws, incoming) =>
+        handleGameMessage(ws, normalizeCEEEnvelope(incoming), logger, {
+          serviceName: "CEE",
+          execute: (connectionId, message) => characterService.execute(connectionId, message),
+        }),
       close: (ws) => {
         releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId));
+        return closeGameConnection(ws, (connectionId) =>
+          characterService.unregisterConnection(connectionId)
+        );
       },
     })
     .ws("/api/songuessr/ws", {
-      body: SonGuessrClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
+      body: SonGuessrClientMessageSchema,
+      response: ServerMessageSchema,
+      parse: decodeGameFrame,
       error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
         reserveHandshakeSlot(context, handshakeQuota);
       },
-      open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
+      open: (ws) =>
+        openGameConnection(ws, (connection) => songService.registerConnection(connection)),
       message: (ws, incoming) =>
         handleGameMessage(ws, incoming, logger, {
           serviceName: "SonGuessr",
@@ -686,7 +758,9 @@ export const createApp = ({
         }),
       close: (ws) => {
         releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) => songService.unregisterConnection(connectionId));
+        return closeGameConnection(ws, (connectionId) =>
+          songService.unregisterConnection(connectionId)
+        );
       },
     });
 

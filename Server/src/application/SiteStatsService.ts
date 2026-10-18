@@ -1,7 +1,11 @@
 import { createHmac, hkdfSync } from "node:crypto";
 
 import type { EventLogger } from "../infrastructure/EventLogger";
-import type { PageDelta, SiteStatsRepository, VisitorDelta } from "../infrastructure/db/SiteStatsRepository";
+import type {
+  PageDelta,
+  SiteStatsRepository,
+  VisitorDelta,
+} from "../infrastructure/db/SiteStatsRepository";
 
 const FLUSH_INTERVAL_MS = 60 * 1000;
 const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -14,7 +18,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 /** 北京时间自然日 `YYYY-MM-DD`，与库内按日统计同一口径。 */
-export const beijingDay = (time: number): string => new Date(time + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
+export const beijingDay = (time: number): string =>
+  new Date(time + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
 
 /**
  * 页面只按板块统计：房间号、单人房等路径参数一律折叠，防止统计表按房号无限膨胀，
@@ -63,7 +68,10 @@ export class SiteStatsService {
 
   record(input: { visitorId: string; path: string; userId: string | null }): void {
     const day = beijingDay(this.now());
-    const visitorHash = createHmac("sha256", this.key).update(`${day}\n${input.visitorId}`).digest("base64url").slice(0, 32);
+    const visitorHash = createHmac("sha256", this.key)
+      .update(`${day}\n${input.visitorId}`)
+      .digest("base64url")
+      .slice(0, 32);
     const visitorKey = `${day}:${visitorHash}`;
     const visitor = this.visitors.get(visitorKey);
     if (visitor) {
@@ -73,7 +81,9 @@ export class SiteStatsService {
       this.visitors.set(visitorKey, { day, visitorHash, userId: input.userId, views: 1 });
     } else if (!this.overflowWarned) {
       this.overflowWarned = true;
-      this.options.logger.warn("访问统计窗口内新访客过多，超出部分只计页面浏览", { limit: MAX_PENDING_VISITORS });
+      this.options.logger.warn("访问统计窗口内新访客过多，超出部分只计页面浏览", {
+        limit: MAX_PENDING_VISITORS,
+      });
     }
     const path = normalizeVisitPath(input.path);
     const pageKey = `${day}:${path}`;
@@ -91,11 +101,17 @@ export class SiteStatsService {
     this.visitors = new Map();
     this.pages = new Map();
     this.overflowWarned = false;
-    this.flushing = this.options.repository.addVisits(visitors, pages)
+    this.flushing = this.options.repository
+      .addVisits(visitors, pages)
       .catch((error: unknown) => {
-        this.options.logger.warn("访问统计写入失败，本窗口已丢弃", { visitors: visitors.length, error: String(error) });
+        this.options.logger.warn("访问统计写入失败，本窗口已丢弃", {
+          visitors: visitors.length,
+          error: String(error),
+        });
       })
-      .finally(() => { this.flushing = undefined; });
+      .finally(() => {
+        this.flushing = undefined;
+      });
     await this.flushing;
   }
 

@@ -29,7 +29,7 @@ describe("useAudioClipPlayer", () => {
           isPlayingPhase: true,
           sendCommand,
         }),
-      { initialProps: { audioUrl: undefined as string | undefined } },
+      { initialProps: { audioUrl: undefined as string | undefined } }
     );
 
     result.current.audioRef.current = mockAudio;
@@ -62,7 +62,7 @@ describe("useAudioClipPlayer", () => {
           isPlayingPhase: true,
           sendCommand,
         }),
-      { initialProps: { audioUrl: undefined as string | undefined } },
+      { initialProps: { audioUrl: undefined as string | undefined } }
     );
 
     result.current.audioRef.current = mockAudio;
@@ -97,7 +97,7 @@ describe("useAudioClipPlayer", () => {
     ])("$label", ({ saved, expected }) => {
       if (saved !== null) window.localStorage.setItem("songuessr_volume", saved);
       const { result } = renderHook(() =>
-        useAudioClipPlayer({ roomId: "test-room", isPlayingPhase: false, sendCommand: vi.fn() }),
+        useAudioClipPlayer({ roomId: "test-room", isPlayingPhase: false, sendCommand: vi.fn() })
       );
 
       expect(result.current.volume).toBe(expected);

@@ -18,13 +18,20 @@ const signalRoute = {
   },
 };
 const serve = Bun.serve;
-Bun.serve = <Data = undefined, R extends string = never>(options: Bun.Serve.Options<Data, R>): Bun.Server<Data> => {
-  const server = serve<Data, R>(Object.assign({}, options, {
-    routes: Object.assign({}, options.routes, signalRoute),
-  }));
+Bun.serve = <Data = undefined, R extends string = never>(
+  options: Bun.Serve.Options<Data, R>
+): Bun.Server<Data> => {
+  const server = serve<Data, R>(
+    Object.assign({}, options, {
+      routes: Object.assign({}, options.routes, signalRoute),
+    })
+  );
   const reload = server.reload.bind(server);
-  server.reload = <Route extends string = never>(options: Bun.Serve.Options<Data, Route>) => reload<Route>(Object.assign({}, options, {
-    routes: Object.assign({}, options.routes, signalRoute),
-  }));
+  server.reload = <Route extends string = never>(options: Bun.Serve.Options<Data, Route>) =>
+    reload<Route>(
+      Object.assign({}, options, {
+        routes: Object.assign({}, options.routes, signalRoute),
+      })
+    );
   return server;
 };

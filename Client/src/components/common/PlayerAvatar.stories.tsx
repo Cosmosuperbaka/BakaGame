@@ -27,7 +27,9 @@ export const Initials: Story = {
       {["小布丁", "海豹", "A", "🎵 音乐", longName.name].map((name) => (
         <span key={name} className="flex flex-col items-center gap-1">
           <PlayerAvatar name={name} />
-          <span className="max-w-16 truncate font-sans text-2xs text-muted-foreground" title={name}>{name}</span>
+          <span className="max-w-16 truncate font-sans text-2xs text-muted-foreground" title={name}>
+            {name}
+          </span>
         </span>
       ))}
     </div>
@@ -41,9 +43,23 @@ export const WithName: Story = {
   render: () => (
     <div className="w-[16rem] rounded-md border bg-panel p-2">
       <div className="flex flex-col gap-px">
-        <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="准备" tone="success" />} />
-        <PlayerRow name={me.name} score={9} me badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
-        <PlayerRow name={longName.name} score={0} badges={<PlayerStatusPill label="旁观" tone="default" />} />
+        <PlayerRow
+          name={host.name}
+          score={12}
+          host
+          badges={<PlayerStatusPill label="准备" tone="success" />}
+        />
+        <PlayerRow
+          name={me.name}
+          score={9}
+          me
+          badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+        />
+        <PlayerRow
+          name={longName.name}
+          score={0}
+          badges={<PlayerStatusPill label="旁观" tone="default" />}
+        />
       </div>
     </div>
   ),

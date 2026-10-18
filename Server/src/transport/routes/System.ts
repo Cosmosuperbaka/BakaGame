@@ -17,7 +17,10 @@ export const TelemetryRateLimiter = ThreeTierRateLimiter;
 export type TelemetryRateLimiter = ThreeTierRateLimiter;
 
 export const isPrivateLanHost = (rawHost: string): boolean => {
-  const host = rawHost.replace(/^\[|\]$/g, "").replace(/:\d+$/, "").trim();
+  const host = rawHost
+    .replace(/^\[|\]$/g, "")
+    .replace(/:\d+$/, "")
+    .trim();
   if (host === "localhost" || host === "127.0.0.1" || host === "::1") return true;
   if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
@@ -35,7 +38,13 @@ type TelemetryLevel = keyof typeof TELEMETRY_LOG_LEVELS;
 type TelemetryMetadata = Record<string, unknown> | undefined;
 
 // 白名单隔离：丢弃外部试图伪造系统连接/房间/玩家标识的字段
-const FORBIDDEN_TELEMETRY_KEYS = new Set(["connectionid", "roomid", "playerid", "ip", "identifier"]);
+const FORBIDDEN_TELEMETRY_KEYS = new Set([
+  "connectionid",
+  "roomid",
+  "playerid",
+  "ip",
+  "identifier",
+]);
 
 const resolveTelemetryLevel = (level?: string): TelemetryLevel => {
   const lowered = level?.toLowerCase();
@@ -44,7 +53,10 @@ const resolveTelemetryLevel = (level?: string): TelemetryLevel => {
   return "INFO";
 };
 
-const resolveTelemetryTraceId = (payloadTraceId?: string, traceHeader?: unknown): string | undefined => {
+const resolveTelemetryTraceId = (
+  payloadTraceId?: string,
+  traceHeader?: unknown
+): string | undefined => {
   const rawTrace = payloadTraceId ?? (typeof traceHeader === "string" ? traceHeader : undefined);
   return rawTrace ? sanitizeLogText(rawTrace, 64) : undefined;
 };
@@ -123,11 +135,13 @@ export const systemRoutes = ({
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
   const limiter = rateLimiter ?? new TelemetryRateLimiter();
-  const probeLimiter = probeRateLimiter ?? new TelemetryRateLimiter({
-    windowMs: PROBE_WINDOW_MS,
-    ipMaxRequests: PROBE_IP_MAX_REQUESTS,
-    globalMaxRequests: PROBE_GLOBAL_MAX_REQUESTS,
-  });
+  const probeLimiter =
+    probeRateLimiter ??
+    new TelemetryRateLimiter({
+      windowMs: PROBE_WINDOW_MS,
+      ipMaxRequests: PROBE_IP_MAX_REQUESTS,
+      globalMaxRequests: PROBE_GLOBAL_MAX_REQUESTS,
+    });
 
   // `traceId` 由全局 `onRequest` 写入响应头，独立挂载本组路由的测试里可以没有，因此声明为可选。
   const errorSchema = t.Object({
@@ -135,7 +149,16 @@ export const systemRoutes = ({
   });
   // 全组路由的失败响应共用同一份信封：状态码不同、形状相同，客户端不必按路由分支。
   return new Elysia({ name: "system", normalize: false })
-    .guard({ response: { 400: errorSchema, 403: errorSchema, 404: errorSchema, 422: errorSchema, 429: errorSchema, 500: errorSchema } })
+    .guard({
+      response: {
+        400: errorSchema,
+        403: errorSchema,
+        404: errorSchema,
+        422: errorSchema,
+        429: errorSchema,
+        500: errorSchema,
+      },
+    })
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers, set, request, server }) => {
@@ -176,7 +199,8 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "前端可观测性遥测打点代理",
-          description: "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
+          description:
+            "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
         },
         body: t.Object(
           {
@@ -189,29 +213,24 @@ export const systemRoutes = ({
                 t.Literal("INFO"),
                 t.Literal("WARN"),
                 t.Literal("ERROR"),
-              ]),
+              ])
             ),
             message: t.Optional(t.String({ maxLength: 500 })),
             metadata: t.Optional(
               t.Record(
                 t.String({ maxLength: 32, pattern: "^[a-zA-Z0-9_.-]+$" }),
-                t.Union([
-                  t.String({ maxLength: 256 }),
-                  t.Number(),
-                  t.Boolean(),
-                  t.Null(),
-                ]),
-                { maxProperties: 16 },
-              ),
+                t.Union([t.String({ maxLength: 256 }), t.Number(), t.Boolean(), t.Null()]),
+                { maxProperties: 16 }
+              )
             ),
           },
-          { additionalProperties: false },
+          { additionalProperties: false }
         ),
         response: {
           200: t.Object({ ok: t.Boolean() }),
           429: errorSchema,
         },
-      },
+      }
     )
     .get(
       "/livez",
@@ -227,7 +246,7 @@ export const systemRoutes = ({
         response: t.Object({
           status: t.Literal("ok"),
         }),
-      },
+      }
     )
     .get(
       "/readyz",
@@ -248,18 +267,22 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "K8s / 反代就绪探针 (Readiness)",
-          description: "检测进程停机标志，停机中返回 503 触发摘流。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。",
+          description:
+            "检测进程停机标志，停机中返回 503 触发摘流。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。",
         },
         response: {
           200: t.Object({ status: t.Literal("ok"), ready: t.Literal(true) }),
           503: t.Object({ status: t.Literal("shutting_down"), ready: t.Literal(false) }),
         },
-      },
+      }
     )
     .get(
       "/health",
       ({ headers, request, server, set }) => {
-        const verdict = probeLimiter.consume(resolveClientIp(request.headers, server?.requestIP(request)?.address), server?.requestIP(request)?.address ?? "unknown");
+        const verdict = probeLimiter.consume(
+          resolveClientIp(request.headers, server?.requestIP(request)?.address),
+          server?.requestIP(request)?.address ?? "unknown"
+        );
         Object.assign(set.headers, rateLimitHeaders(verdict));
         if (!verdict.allowed) {
           set.status = 429;
@@ -277,7 +300,11 @@ export const systemRoutes = ({
           onlinePlayerCount: 0,
         };
 
-        const ceeHealth = ceeService?.getHealthSnapshot() ?? { roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 };
+        const ceeHealth = ceeService?.getHealthSnapshot() ?? {
+          roomCount: 0,
+          connectionCount: 0,
+          onlinePlayerCount: 0,
+        };
         const roomCount = fakerHealth.roomCount + sonHealth.roomCount + ceeHealth.roomCount;
         const connectionCount =
           fakerHealth.connectionCount + sonHealth.connectionCount + ceeHealth.connectionCount;
@@ -286,9 +313,10 @@ export const systemRoutes = ({
         // 精确在线数是可被无限轮询的实时经营指标：匿名调用只给一位有效数字的量级，
         // 足够看趋势与「有没有人在玩」，但不构成随时可读的精确计数器。
         // 带维护凭据的调用（运维与探针脚本）拿精确值，口径与 notify-shutdown 一致。
-        const exact = maintenanceToken !== undefined
-          && headers.authorization?.startsWith("Bearer ") === true
-          && safeEqualToken(headers.authorization.slice(7), maintenanceToken);
+        const exact =
+          maintenanceToken !== undefined &&
+          headers.authorization?.startsWith("Bearer ") === true &&
+          safeEqualToken(headers.authorization.slice(7), maintenanceToken);
         return {
           status: "ok" as const,
           roomCount: exact ? roomCount : coarse(roomCount),
@@ -300,7 +328,8 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "获取服务健康状态",
-          description: "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。",
+          description:
+            "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。",
         },
         response: {
           200: t.Object({
@@ -311,13 +340,15 @@ export const systemRoutes = ({
           }),
           429: errorSchema,
         },
-      },
+      }
     )
     .post(
       "/api/system/notify-shutdown",
       async ({ headers, set }) => {
         // 来源头不构成授权：反代和任意客户端均能提供它们。
-        const bearer = headers.authorization?.startsWith("Bearer ") ? headers.authorization.slice(7) : undefined;
+        const bearer = headers.authorization?.startsWith("Bearer ")
+          ? headers.authorization.slice(7)
+          : undefined;
         if (!maintenanceToken || !bearer || !safeEqualToken(bearer, maintenanceToken)) {
           set.status = 403;
           return httpError("FORBIDDEN", "运维接口需要维护凭据", traceIdOf(set.headers));
@@ -342,7 +373,8 @@ export const systemRoutes = ({
         detail: {
           tags: ["System"],
           summary: "广播停机维护通知",
-          description: "向所有在线对局房间广播停机通知并摘除就绪状态，需要独立维护令牌授权，不信任客户端来源头。",
+          description:
+            "向所有在线对局房间广播停机通知并摘除就绪状态，需要独立维护令牌授权，不信任客户端来源头。",
         },
         response: {
           200: t.Object({
@@ -351,6 +383,6 @@ export const systemRoutes = ({
           }),
           403: errorSchema,
         },
-      },
+      }
     );
 };

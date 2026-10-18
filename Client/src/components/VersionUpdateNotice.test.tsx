@@ -167,9 +167,6 @@ describe("VersionUpdateNotice", () => {
 
     expect(clearIntervalSpy).toHaveBeenCalled();
     expect(removeWindowListenerSpy).toHaveBeenCalledWith("focus", expect.any(Function));
-    expect(removeDocListenerSpy).toHaveBeenCalledWith(
-      "visibilitychange",
-      expect.any(Function),
-    );
+    expect(removeDocListenerSpy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
   });
 });

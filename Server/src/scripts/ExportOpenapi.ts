@@ -18,8 +18,10 @@ export const DOC_SERVER_URL = "http://localhost:4850";
 
 /** 只装配 HTTP 契约，不构造游戏服务、SQLite Worker 或遥测出口。 */
 export function createDocumentationApp(serverUrl = DOC_SERVER_URL) {
-  return new Elysia({ normalize: false }).use(createSwaggerPlugin({ serverUrl }))
-    .use(systemRoutes({})).use(sentryTunnelRoutes({}));
+  return new Elysia({ normalize: false })
+    .use(createSwaggerPlugin({ serverUrl }))
+    .use(systemRoutes({}))
+    .use(sentryTunnelRoutes({}));
 }
 
 // ==================== 产品版本 ====================
@@ -43,7 +45,9 @@ const productVersion = async (): Promise<string> => {
   const { entries } = JSON.parse(await readFile(CHANGELOG_PATH, "utf8")) as { entries?: unknown };
   const versions = (Array.isArray(entries) ? entries : [])
     .map((entry) => (entry as { version?: unknown }).version)
-    .filter((version): version is string => typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version));
+    .filter(
+      (version): version is string => typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version)
+    );
   const latest = versions.sort(compareSemver).at(-1);
   if (!latest) throw new Error(`读不到版本号：${CHANGELOG_PATH} 里没有可用的 semver`);
   return latest;
@@ -55,12 +59,17 @@ const sessionCookieScheme = (): Json => ({
   type: "apiKey",
   in: "cookie",
   name: "bakagame.session_token",
-  description: "登录后由 `/api/auth/sign-in/email-otp` 下发的 HttpOnly 会话 Cookie。登出或封禁后失效，受保护的过程回 401。",
+  description:
+    "登录后由 `/api/auth/sign-in/email-otp` 下发的 HttpOnly 会话 Cookie。登出或封禁后失效，受保护的过程回 401。",
 });
 
 /** Elysia 只认得自己那几条 HTTP 路由，账号 API 的线格式说明在这里补上。 */
 const mergedDescription = (description: unknown): string =>
-  [typeof description === "string" ? description.trim() : "", "## 账号 API（oRPC）", RPC_PROTOCOL_NOTES]
+  [
+    typeof description === "string" ? description.trim() : "",
+    "## 账号 API（oRPC）",
+    RPC_PROTOCOL_NOTES,
+  ]
     .filter(Boolean)
     .join("\n\n");
 
@@ -79,7 +88,7 @@ export const withRpcContract = async (document: Json): Promise<Json> => {
   return {
     ...document,
     info,
-    tags: [...(document.tags as Json[] | undefined ?? []), ...fragment.tags],
+    tags: [...((document.tags as Json[] | undefined) ?? []), ...fragment.tags],
     paths: { ...(document.paths as Json | undefined), ...fragment.paths },
     components: {
       ...components,
@@ -95,7 +104,9 @@ export const OPENAPI_DOC_PATH = resolve(import.meta.dir, "../../../Agents/http-o
 
 /** 离线渲染整份文档；`serverUrl` 只决定 `servers`，不影响接口面。 */
 export const renderOpenApiDocument = async (serverUrl: string): Promise<Json> => {
-  const response = await createDocumentationApp(serverUrl).handle(new Request("http://localhost/openapi/json"));
+  const response = await createDocumentationApp(serverUrl).handle(
+    new Request("http://localhost/openapi/json")
+  );
   if (!response.ok) throw new Error("HTTP 契约生成失败");
   return withRpcContract((await response.json()) as Json);
 };

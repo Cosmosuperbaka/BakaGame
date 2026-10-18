@@ -50,7 +50,7 @@ function renderSheet({
       onNavigate={onNavigate}
       onBack={onBack}
       loadLicense={loadLicense}
-    />,
+    />
   );
   return { onNavigate, onBack };
 }
@@ -82,7 +82,7 @@ describe("DependencySheet", () => {
     expect(screen.queryByRole("link", { name: /项目主页/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /npm 页面/ })).toHaveAttribute(
       "href",
-      "https://www.npmjs.com/package/left-pad",
+      "https://www.npmjs.com/package/left-pad"
     );
   });
 
@@ -133,7 +133,7 @@ describe("DependencySheet", () => {
     const user = userEvent.setup();
     const pending = deferred<CreditLicenseDocument | null>();
     const loadLicense = vi.fn<(packageName: string) => Promise<CreditLicenseDocument | null>>(
-      () => pending.promise,
+      () => pending.promise
     );
     renderSheet({ loadLicense });
 

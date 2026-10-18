@@ -53,7 +53,14 @@ const BRAND_GROUPS: readonly { title: string; brands: readonly CreditBrandId[] }
 ];
 
 /** 依赖行图标：精确名、scope 兜底与无匹配回退各取一枚样例。 */
-const DEPENDENCY_SAMPLES = ["react", "@radix-ui/react-dialog", "@playwright/test", "zustand", "elysia", "left-pad"];
+const DEPENDENCY_SAMPLES = [
+  "react",
+  "@radix-ui/react-dialog",
+  "@playwright/test",
+  "zustand",
+  "elysia",
+  "left-pad",
+];
 
 function BrandGallery() {
   return (

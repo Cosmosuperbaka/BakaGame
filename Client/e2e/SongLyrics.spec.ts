@@ -26,14 +26,18 @@ async function render(page: Page, props: SongLyricsFixtureProps) {
 }
 
 async function expectOverviewFits(page: Page) {
-  await expect.poll(() => page.evaluate(() => {
-    const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
-    const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
-    const box = host.getBoundingClientRect();
-    const top = groups[0].getBoundingClientRect().top - box.top;
-    const bottom = box.bottom - groups.at(-1)!.getBoundingClientRect().bottom;
-    return Math.abs(top) < 1 && bottom >= -1 && bottom < 2;
-  })).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
+        const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
+        const box = host.getBoundingClientRect();
+        const top = groups[0].getBoundingClientRect().top - box.top;
+        const bottom = box.bottom - groups.at(-1)!.getBoundingClientRect().bottom;
+        return Math.abs(top) < 1 && bottom >= -1 && bottom < 2;
+      })
+    )
+    .toBe(true);
   const gap = await page.evaluate(() => {
     const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
     const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
@@ -44,7 +48,9 @@ async function expectOverviewFits(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  page.on("pageerror", (error) => { throw error; });
+  page.on("pageerror", (error) => {
+    throw error;
+  });
   page.on("console", (message) => {
     if (message.type() === "error") throw new Error(message.text());
   });
@@ -58,19 +64,48 @@ for (const width of [390, 820, 1280]) {
     for (const variant of [
       [{ time: 35000, endTime: 39000, text: "短句" }],
       lines,
-      lines.map((line) => ({ ...line, translatedLyric: "", romanLyric: "yo zo ra ni u ka bu ho shi ta chi shi ji ma wo ki ri sa i te i ku" })),
-      lines.map((line) => ({ ...line, translatedLyric: "", words: [
-        { startTime: line.time, endTime: line.time + 2000, word: "夜空に浮かぶ", romanWord: "yo zo ra ni u ka bu" },
-        { startTime: line.time + 2000, endTime: line.endTime, word: "星たち", romanWord: "ho shi ta chi" },
-      ] })),
-      lines.flatMap((line) => [line, { ...line, time: line.time + 200, endTime: line.endTime - 200, text: "和声が遠くまで響き続ける", isBG: true }]),
+      lines.map((line) => ({
+        ...line,
+        translatedLyric: "",
+        romanLyric: "yo zo ra ni u ka bu ho shi ta chi shi ji ma wo ki ri sa i te i ku",
+      })),
+      lines.map((line) => ({
+        ...line,
+        translatedLyric: "",
+        words: [
+          {
+            startTime: line.time,
+            endTime: line.time + 2000,
+            word: "夜空に浮かぶ",
+            romanWord: "yo zo ra ni u ka bu",
+          },
+          {
+            startTime: line.time + 2000,
+            endTime: line.endTime,
+            word: "星たち",
+            romanWord: "ho shi ta chi",
+          },
+        ],
+      })),
+      lines.flatMap((line) => [
+        line,
+        {
+          ...line,
+          time: line.time + 200,
+          endTime: line.endTime - 200,
+          text: "和声が遠くまで響き続ける",
+          isBG: true,
+        },
+      ]),
       lines.map((line, index) => ({ ...line, isDuet: index % 2 === 1 })),
     ]) {
       await render(page, { lines: variant, audioPlaybackState: "completed" });
       await expectOverviewFits(page);
     }
     // 首次测量结束之后再改变字号，必须仍能响应，不得锁死旧高度。
-    await page.evaluate(() => { document.documentElement.style.fontSize = "24px"; });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = "24px";
+    });
     await expectOverviewFits(page);
   });
 }
@@ -85,8 +120,11 @@ test("结束、缩小下移与快速重播均保持原节点和连续位置", as
     const player = host.firstElementChild!;
     const groups = [...host.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")];
     const last = groups.at(-1)!;
-    const read = () => ({ y: last.getBoundingClientRect().y, height: host.clientHeight,
-      scale: new DOMMatrix(getComputedStyle(player).transform).a });
+    const read = () => ({
+      y: last.getBoundingClientRect().y,
+      height: host.clientHeight,
+      scale: new DOMMatrix(getComputedStyle(player).transform).a,
+    });
     const before = read();
     window.lyricsFixture.time(62500, false);
     const paused = read();
@@ -112,7 +150,9 @@ test("结束、缩小下移与快速重播均保持原节点和连续位置", as
   expect(result.paused.y).toBeCloseTo(result.before.y, 1);
   expect(result.start.y).toBeCloseTo(result.before.y, 1);
   expect(result.frames.at(-1)!.y).toBeGreaterThan(result.start.y + 50);
-  expect(result.frames.filter((frame) => frame.scale > 0.921 && frame.scale < 0.999).length).toBeGreaterThan(3);
+  expect(
+    result.frames.filter((frame) => frame.scale > 0.921 && frame.scale < 0.999).length
+  ).toBeGreaterThan(3);
   expect(new Set(result.frames.map((frame) => frame.height)).size).toBe(1);
   expect(result.replayAfter.y).toBeCloseTo(result.replayBefore.y, 1);
   await expectOverviewFits(page);
@@ -126,7 +166,8 @@ test("首次可见布局稳定，快照复制不重建，逐字更新必须生�
     const deadline = performance.now() + 900;
     while (performance.now() < deadline) {
       await new Promise(requestAnimationFrame);
-      if (host.dataset.ready) frames.push(host.querySelector("[class*=lyricLineWrapper]")!.getBoundingClientRect().y);
+      if (host.dataset.ready)
+        frames.push(host.querySelector("[class*=lyricLineWrapper]")!.getBoundingClientRect().y);
     }
     const original = host.querySelector("[class*=lyricLineWrapper]");
     window.lyricsFixture.render({ lines: structuredClone(lines), audioStatus: "ready" });
@@ -135,8 +176,12 @@ test("首次可见布局稳定，快照复制不重建，逐字更新必须生�
   expect(result.same).toBe(true);
   expect(result.frames.length).toBeGreaterThan(5);
   expect(Math.max(...result.frames) - Math.min(...result.frames)).toBeLessThan(1);
-  await render(page, { lines: [{ ...lines[0], words: [{ startTime: 35000, endTime: 39000, word: "変更前" }] }] });
-  await render(page, { lines: [{ ...lines[0], words: [{ startTime: 35000, endTime: 39000, word: "変更後" }] }] });
+  await render(page, {
+    lines: [{ ...lines[0], words: [{ startTime: 35000, endTime: 39000, word: "変更前" }] }],
+  });
+  await render(page, {
+    lines: [{ ...lines[0], words: [{ startTime: 35000, endTime: 39000, word: "変更後" }] }],
+  });
   await expect(page.locator(".baka-lyric-player")).toContainText("変更後");
   await expect(page.locator(".baka-lyric-player")).not.toContainText("変更前");
 });
@@ -148,13 +193,22 @@ test("减弱动效直接落位且纯音乐后能载入歌词", async ({ page }) 
   await render(page, { lines, audioPlaybackState: "playing" });
   await render(page, { audioPlaybackState: "completed" });
   await expectOverviewFits(page);
-  expect(await page.locator(".baka-lyric-player").evaluate((element) => element.getAnimations().length)).toBe(0);
+  expect(
+    await page.locator(".baka-lyric-player").evaluate((element) => element.getAnimations().length)
+  ).toBe(0);
 });
 
 test("和声活动切换不改变外壳高度，也不接管页面滚动", async ({ page }) => {
-  const source = lines.flatMap((line) => [line, {
-    ...line, time: line.time + 200, endTime: line.endTime - 200, text: "伴唱", isBG: true,
-  }]);
+  const source = lines.flatMap((line) => [
+    line,
+    {
+      ...line,
+      time: line.time + 200,
+      endTime: line.endTime - 200,
+      text: "伴唱",
+      isBG: true,
+    },
+  ]);
   await render(page, { lines: source, audioPlaybackState: "playing" });
   const result = await page.evaluate(async () => {
     const host = document.querySelector<HTMLElement>(".baka-lyric-host")!;
@@ -166,27 +220,32 @@ test("和声活动切换不改变外壳高度，也不接管页面滚动", async
       heights.push(host.clientHeight);
     }
     const background = [...host.querySelectorAll<HTMLElement>("[class*=bgWrapper]")];
-    return { heights, pointerEvents: background.map((element) => getComputedStyle(element).pointerEvents) };
+    return {
+      heights,
+      pointerEvents: background.map((element) => getComputedStyle(element).pointerEvents),
+    };
   });
   expect(new Set(result.heights).size).toBe(1);
   expect(result.pointerEvents.length).toBeGreaterThan(0);
   expect(result.pointerEvents.every((value) => value === "none")).toBe(true);
 });
 
-
 test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async ({ page }) => {
   await render(page, { lines, audioPlaybackState: "playing" });
   await page.evaluate(() => window.lyricsFixture.time(38900, true));
-  const countUpdates = () => page.evaluate(async () => {
-    const before = window.lyricsFixture.updates();
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    return window.lyricsFixture.updates() - before;
-  });
+  const countUpdates = () =>
+    page.evaluate(async () => {
+      const before = window.lyricsFixture.updates();
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      return window.lyricsFixture.updates() - before;
+    });
   const playing = await countUpdates();
   // 正常跨入下一句后立即暂停：必须继续推进尚未落定的原生布局，不能一刀停 update。
   const motion = await page.evaluate(async () => {
-    const last = document.querySelector<HTMLElement>(".baka-lyric-host")!
-      .querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]").item(1);
+    const last = document
+      .querySelector<HTMLElement>(".baka-lyric-host")!
+      .querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]")
+      .item(1);
     const y = () => last.getBoundingClientRect().y;
     window.lyricsFixture.time(39050, true);
     await new Promise(requestAnimationFrame);
@@ -220,6 +279,7 @@ test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expectOverviewFits(page);
   await test.info().attach("update-counts", {
-    body: JSON.stringify({ playing, paused, replay, sampleMs: 700, motion }), contentType: "application/json",
+    body: JSON.stringify({ playing, paused, replay, sampleMs: 700, motion }),
+    contentType: "application/json",
   });
 });

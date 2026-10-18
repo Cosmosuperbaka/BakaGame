@@ -2,11 +2,7 @@ import { create } from "zustand";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
-import {
-  saveSessionToken,
-  getSessionToken,
-  clearSessionToken,
-} from "@/lib/Storage";
+import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import type {
   WhoIsFakerRoomSnapshot,
   WhoIsFakerPrivateState,
@@ -53,23 +49,32 @@ export interface WhoIsFakerGameState {
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
 
-
   // Async Business Actions
   subscribeLobby: () => Promise<void>;
-  createRoom: (params: {
-    roomId: string;
-    name: string;
-    visibility: "public" | "private";
-    password?: string;
-    allowSpectators: boolean;
-    userName: string;
-  }, signal?: AbortSignal) => Promise<void>;
-  joinRoom: (roomId: string, userName: string, password?: string, signal?: AbortSignal) => Promise<void>;
+  createRoom: (
+    params: {
+      roomId: string;
+      name: string;
+      visibility: "public" | "private";
+      password?: string;
+      allowSpectators: boolean;
+      userName: string;
+    },
+    signal?: AbortSignal
+  ) => Promise<void>;
+  joinRoom: (
+    roomId: string,
+    userName: string,
+    password?: string,
+    signal?: AbortSignal
+  ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
-  sendCommand: (type: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  sendCommand: (
+    type: string,
+    payload?: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
 }
-
 
 type RoomEntryReceipt = {
   roomId: string;
@@ -100,7 +105,7 @@ const MAX_CHAT_MESSAGES = 200;
 
 const mergeChat = (
   existing: WhoIsFakerRoomSnapshot["chat"] = [],
-  incoming: WhoIsFakerRoomSnapshot["chat"] = [],
+  incoming: WhoIsFakerRoomSnapshot["chat"] = []
 ): WhoIsFakerRoomSnapshot["chat"] => {
   const map = new Map<string, WhoIsFakerRoomSnapshot["chat"][number]>();
   for (const msg of existing) {
@@ -109,13 +114,19 @@ const mergeChat = (
   for (const msg of incoming) {
     map.set(msg.id, msg);
   }
-  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
+  return Array.from(map.values())
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .slice(-MAX_CHAT_MESSAGES);
 };
 
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
-  return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
-    code === "SESSION_INVALID" || code === "PLAYER_KICKED";
+  return (
+    code === "ROOM_NOT_FOUND" ||
+    code === "SESSION_NOT_FOUND" ||
+    code === "SESSION_INVALID" ||
+    code === "PLAYER_KICKED"
+  );
 };
 
 let lastPlayerChannel: "main" | "ghost" | undefined;
@@ -123,12 +134,14 @@ let lastRoomAndRoundKey: string | undefined;
 
 const computePlayerChannel = (
   snapshot: WhoIsFakerRoomSnapshot | null,
-  playerId: string | null | undefined,
+  playerId: string | null | undefined
 ): "main" | "ghost" => {
   if (!snapshot || !playerId) return "main";
   const isIngame = Boolean(
     snapshot.status.started &&
-    ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(snapshot.status.phase),
+    ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(
+      snapshot.status.phase
+    )
   );
   if (!isIngame) return "main";
   const isQuestioner = snapshot.status.questionerPlayerId === playerId;
@@ -141,7 +154,7 @@ const computePlayerChannel = (
 
 const applyChannelTransitions = (
   snapshot: WhoIsFakerRoomSnapshot,
-  playerId: string | null | undefined,
+  playerId: string | null | undefined
 ): WhoIsFakerRoomSnapshot => {
   if (!playerId) return snapshot;
   const currentKey = `${snapshot.roomId}:${snapshot.status.roundId ?? snapshot.status.phase ?? "lobby"}`;
@@ -190,7 +203,9 @@ const applyChannelTransitions = (
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
-  void useWhoIsFakerStore.getState().sendCommand("room.requestSync")
+  void useWhoIsFakerStore
+    .getState()
+    .sendCommand("room.requestSync")
     .catch(() => {})
     .finally(() => {
       syncRequestPending = false;
@@ -198,176 +213,211 @@ const requestFullSync = () => {
 };
 
 export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
-  const entry = roomEntry = createRoomEntry<RoomEntryReceipt>({
+  const entry = (roomEntry = createRoomEntry<RoomEntryReceipt>({
     generation: () => connectionGeneration,
     begin: resetWhoIsFakerStateSync,
     apply: (receipt) => {
       saveSessionToken(receipt.roomId, receipt.sessionToken);
-      const snapshot = receipt.snapshot ?? (syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined);
-      const privateState = receipt.privateState ?? (syncedPrivateState?.sessionToken === receipt.sessionToken ? syncedPrivateState : undefined);
+      const snapshot =
+        receipt.snapshot ??
+        (syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined);
+      const privateState =
+        receipt.privateState ??
+        (syncedPrivateState?.sessionToken === receipt.sessionToken
+          ? syncedPrivateState
+          : undefined);
       get().joinRoomState(receipt.roomId, receipt.sessionToken);
       if (snapshot) get().setSnapshot(snapshot);
       if (privateState) get().setPrivateState(privateState);
     },
     discard: async (receipt) => {
-      try { await ws.send("room.leave", {}, { roomId: receipt.roomId, sessionToken: receipt.sessionToken }); }
-      finally {
+      try {
+        await ws.send(
+          "room.leave",
+          {},
+          { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
+        );
+      } finally {
         const token = getSessionToken(receipt.roomId);
-        if (token === receipt.sessionToken || (receipt.previousToken && token === receipt.previousToken)) clearSessionToken(receipt.roomId);
+        if (
+          token === receipt.sessionToken ||
+          (receipt.previousToken && token === receipt.previousToken)
+        )
+          clearSessionToken(receipt.roomId);
         resetWhoIsFakerStateSync();
         const current = get();
-        if (current.roomId === null || (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)) current.leaveRoomState();
+        if (
+          current.roomId === null ||
+          (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
+        )
+          current.leaveRoomState();
       }
     },
-  });
+  }));
   return {
-  connected: false,
-  lobbyReady: false,
-  rooms: [],
-  roomId: null,
-  sessionToken: null,
-  snapshot: null,
-  privateState: null,
-  toasts: [],
-  roomClosedAt: null,
-  phaseTimedOutEndsAt: null,
+    connected: false,
+    lobbyReady: false,
+    rooms: [],
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+    privateState: null,
+    toasts: [],
+    roomClosedAt: null,
+    phaseTimedOutEndsAt: null,
 
-  setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
-  setRooms: (rooms) => set({ rooms, lobbyReady: true }),
-  joinRoomState: (roomId, sessionToken) => {
-    if (get().roomId !== roomId) resetWhoIsFakerStateSync();
-    set({ roomId, sessionToken, roomClosedAt: null, phaseTimedOutEndsAt: null });
-  },
-  leaveRoomState: () => {
-    resetWhoIsFakerStateSync();
-    lastPlayerChannel = undefined;
-    lastRoomAndRoundKey = undefined;
-    set({
-      roomId: null,
-      sessionToken: null,
-      snapshot: null,
-      privateState: null,
-      phaseTimedOutEndsAt: null,
-      roomClosedAt: null,
-    });
-  },
-  markRoomClosed: () => set({ roomClosedAt: Date.now() }),
-  clearRoomClosed: () => set({ roomClosedAt: null }),
-  triggerPhaseTimeout: () => {
-    const timer = get().snapshot?.status.phaseTimer;
-    set({ phaseTimedOutEndsAt: timer?.endsAt ?? Date.now() });
-  },
-  setSnapshot: (incomingSnapshot) => {
-    if (!incomingSnapshot) {
-      set({ snapshot: null });
-      return;
-    }
-    // 出局后的停顿由服务端的阶段反馈承担，这里不再暂扣结算快照。
-    const previousSnapshot = get().snapshot;
-    const previousSummary =
-      incomingSnapshot.status.phase === "gameOver" &&
-      !incomingSnapshot.summary &&
-      previousSnapshot?.status.roundId === incomingSnapshot.status.roundId
-        ? previousSnapshot?.summary
-        : undefined;
-    let snapshot = previousSummary
-      ? { ...incomingSnapshot, summary: previousSummary }
-      : incomingSnapshot;
-    snapshot = { ...snapshot, chat: snapshot.chat.slice(-MAX_CHAT_MESSAGES) };
-
-    if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
-      snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
-    }
-
-    set({ snapshot: applyChannelTransitions(snapshot, get().privateState?.playerId) });
-  },
-  applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
-  setPrivateState: (privateState) => {
-    set({ privateState });
-    const currentSnapshot = get().snapshot;
-    if (currentSnapshot && privateState?.playerId) {
-      const updated = applyChannelTransitions(currentSnapshot, privateState.playerId);
-      if (updated !== currentSnapshot) {
-        set({ snapshot: updated });
+    setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
+    setRooms: (rooms) => set({ rooms, lobbyReady: true }),
+    joinRoomState: (roomId, sessionToken) => {
+      if (get().roomId !== roomId) resetWhoIsFakerStateSync();
+      set({ roomId, sessionToken, roomClosedAt: null, phaseTimedOutEndsAt: null });
+    },
+    leaveRoomState: () => {
+      resetWhoIsFakerStateSync();
+      lastPlayerChannel = undefined;
+      lastRoomAndRoundKey = undefined;
+      set({
+        roomId: null,
+        sessionToken: null,
+        snapshot: null,
+        privateState: null,
+        phaseTimedOutEndsAt: null,
+        roomClosedAt: null,
+      });
+    },
+    markRoomClosed: () => set({ roomClosedAt: Date.now() }),
+    clearRoomClosed: () => set({ roomClosedAt: null }),
+    triggerPhaseTimeout: () => {
+      const timer = get().snapshot?.status.phaseTimer;
+      set({ phaseTimedOutEndsAt: timer?.endsAt ?? Date.now() });
+    },
+    setSnapshot: (incomingSnapshot) => {
+      if (!incomingSnapshot) {
+        set({ snapshot: null });
+        return;
       }
-    }
-  },
-  addToast: (text, type = "info", durationMs = 3000) => {
-    const id = ++toastCounter;
-    set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
-    setTimeout(() => get().removeToast(id), durationMs);
-  },
+      // 出局后的停顿由服务端的阶段反馈承担，这里不再暂扣结算快照。
+      const previousSnapshot = get().snapshot;
+      const previousSummary =
+        incomingSnapshot.status.phase === "gameOver" &&
+        !incomingSnapshot.summary &&
+        previousSnapshot?.status.roundId === incomingSnapshot.status.roundId
+          ? previousSnapshot?.summary
+          : undefined;
+      let snapshot = previousSummary
+        ? { ...incomingSnapshot, summary: previousSummary }
+        : incomingSnapshot;
+      snapshot = { ...snapshot, chat: snapshot.chat.slice(-MAX_CHAT_MESSAGES) };
 
-  removeToast: (id) =>
-    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
-
-  subscribeLobby: async () => {
-    await ws.send("lobby.subscribeRooms");
-  },
-
-  createRoom: (params, signal) => entry.enter(async () => {
-    const res = await ws.send<RoomEntryReceipt>("room.create", params);
-    return { ...res, roomId: res.roomId ?? params.roomId };
-  }, signal),
-
-  joinRoom: (roomId, userName, password, signal) => entry.enter(async () => {
-    const res = await ws.send<RoomEntryReceipt>("room.join", { userName, password }, { roomId });
-    return { ...res, roomId: res.roomId ?? roomId };
-  }, signal),
-
-  reconnectRoom: (roomId, signal) => {
-    const token = getSessionToken(roomId);
-    if (!token) return Promise.resolve(false);
-    return entry.restore(`${roomId}:${token}`, async () => {
-      const res = await ws.send<RoomEntryReceipt>("room.reconnect", { roomId, sessionToken: token });
-      return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
-    }, (error) => {
-      if (!isPermanentRoomError(error)) return false;
-      if (getSessionToken(roomId) === token) clearSessionToken(roomId);
-      const current = get();
-      if (current.roomId === roomId && current.sessionToken === token) {
-        current.leaveRoomState();
-        current.markRoomClosed();
+      if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
+        snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
       }
-      const code = (error as { code?: string } | null)?.code;
-      const message = code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-        ? "会话已失效，请重新加入" : code === "PLAYER_KICKED" ? "你已被移出房间" : "房间已解散或不存在";
-      get().addToast(message, "error");
-      return true;
-    }, signal);
-  },
 
-  leaveRoom: async () => {
-    entry.cancel();
-    const { roomId, sessionToken } = get();
-    if (!roomId) return;
-    try {
-      await ws.send("room.leave", {}, { roomId, sessionToken: sessionToken ?? undefined });
-    } catch {
-      // 忽略离开房间失败
-    } finally {
-      // 退房在房间页卸载后才发出，回包慢时玩家可能已经进了下一个房间：只清掉发起这次退房的会话，
-      // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
-      const current = get();
-      if (current.roomId === roomId && current.sessionToken === sessionToken) {
-        clearSessionToken(roomId);
-        current.leaveRoomState();
-      } else if (sessionToken && getSessionToken(roomId) === sessionToken) {
-        clearSessionToken(roomId);
+      set({ snapshot: applyChannelTransitions(snapshot, get().privateState?.playerId) });
+    },
+    applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
+    setPrivateState: (privateState) => {
+      set({ privateState });
+      const currentSnapshot = get().snapshot;
+      if (currentSnapshot && privateState?.playerId) {
+        const updated = applyChannelTransitions(currentSnapshot, privateState.playerId);
+        if (updated !== currentSnapshot) {
+          set({ snapshot: updated });
+        }
       }
-    }
-  },
+    },
+    addToast: (text, type = "info", durationMs = 3000) => {
+      const id = ++toastCounter;
+      set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
+      setTimeout(() => get().removeToast(id), durationMs);
+    },
 
-  sendCommand: async (type, payload = {}) => {
-    const { roomId, sessionToken } = get();
-    return ws.send(type, payload, {
-      roomId: roomId ?? undefined,
-      sessionToken: sessionToken ?? undefined,
-    });
-  },
+    removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
+
+    subscribeLobby: async () => {
+      await ws.send("lobby.subscribeRooms");
+    },
+
+    createRoom: (params, signal) =>
+      entry.enter(async () => {
+        const res = await ws.send<RoomEntryReceipt>("room.create", params);
+        return { ...res, roomId: res.roomId ?? params.roomId };
+      }, signal),
+
+    joinRoom: (roomId, userName, password, signal) =>
+      entry.enter(async () => {
+        const res = await ws.send<RoomEntryReceipt>(
+          "room.join",
+          { userName, password },
+          { roomId }
+        );
+        return { ...res, roomId: res.roomId ?? roomId };
+      }, signal),
+
+    reconnectRoom: (roomId, signal) => {
+      const token = getSessionToken(roomId);
+      if (!token) return Promise.resolve(false);
+      return entry.restore(
+        `${roomId}:${token}`,
+        async () => {
+          const res = await ws.send<RoomEntryReceipt>("room.reconnect", {
+            roomId,
+            sessionToken: token,
+          });
+          return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
+        },
+        (error) => {
+          if (!isPermanentRoomError(error)) return false;
+          if (getSessionToken(roomId) === token) clearSessionToken(roomId);
+          const current = get();
+          if (current.roomId === roomId && current.sessionToken === token) {
+            current.leaveRoomState();
+            current.markRoomClosed();
+          }
+          const code = (error as { code?: string } | null)?.code;
+          const message =
+            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+              ? "会话已失效，请重新加入"
+              : code === "PLAYER_KICKED"
+                ? "你已被移出房间"
+                : "房间已解散或不存在";
+          get().addToast(message, "error");
+          return true;
+        },
+        signal
+      );
+    },
+
+    leaveRoom: async () => {
+      entry.cancel();
+      const { roomId, sessionToken } = get();
+      if (!roomId) return;
+      try {
+        await ws.send("room.leave", {}, { roomId, sessionToken: sessionToken ?? undefined });
+      } catch {
+        // 忽略离开房间失败
+      } finally {
+        // 退房在房间页卸载后才发出，回包慢时玩家可能已经进了下一个房间：只清掉发起这次退房的会话，
+        // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
+        const current = get();
+        if (current.roomId === roomId && current.sessionToken === sessionToken) {
+          clearSessionToken(roomId);
+          current.leaveRoomState();
+        } else if (sessionToken && getSessionToken(roomId) === sessionToken) {
+          clearSessionToken(roomId);
+        }
+      }
+    },
+
+    sendCommand: async (type, payload = {}) => {
+      const { roomId, sessionToken } = get();
+      return ws.send(type, payload, {
+        roomId: roomId ?? undefined,
+        sessionToken: sessionToken ?? undefined,
+      });
+    },
   };
 });
-
 
 export function initWhoIsFakerWs() {
   const unsubMsg = ws.onMessage((msg: ServerMessage) => {
@@ -384,7 +434,7 @@ export function initWhoIsFakerWs() {
           const result = consumeStateSync(
             syncedSnapshot ?? currentStore.snapshot,
             snapshotRevision,
-            evt.payload,
+            evt.payload
           );
           if (result.needsFullSync || !result.state) {
             requestFullSync();
@@ -400,7 +450,7 @@ export function initWhoIsFakerWs() {
           const result = consumeStateSync(
             syncedPrivateState ?? currentStore.privateState,
             privateStateRevision,
-            evt.payload,
+            evt.payload
           );
           if (result.needsFullSync || !result.state) {
             requestFullSync();
@@ -472,7 +522,6 @@ export function initWhoIsFakerWs() {
       }
     }
   });
-
 
   ws.connect();
 

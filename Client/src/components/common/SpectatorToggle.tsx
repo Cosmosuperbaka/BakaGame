@@ -27,21 +27,40 @@ export function SpectatorToggle({
   onToggle: (spectator: boolean) => void;
 }) {
   const label = queued
-    ? spectator ? "下轮加入旁观" : "下轮加入游戏"
-    : spectator ? "加入旁观" : "取消旁观";
+    ? spectator
+      ? "下轮加入旁观"
+      : "下轮加入游戏"
+    : spectator
+      ? "加入旁观"
+      : "取消旁观";
   const Icon = spectator ? Eye : EyeOff;
   const text = selected ? `${label}（已选择）` : label;
   return (
-    <motion.div layoutId="spectator-toggle" layout="position" transition={playerRelayout} className="mt-1 min-w-0">
+    <motion.div
+      layoutId="spectator-toggle"
+      layout="position"
+      transition={playerRelayout}
+      className="mt-1 min-w-0"
+    >
       <Button
         variant={selected ? "secondary" : "ghost"}
         size="sm"
         disabled={disabled}
-        className={cn("h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs text-muted-foreground", className)}
+        className={cn(
+          "h-8 w-full min-w-0 justify-start gap-1.5 px-2 text-xs text-muted-foreground",
+          className
+        )}
         onClick={() => onToggle(spectator)}
       >
         <AnimatePresence initial={false} mode="popLayout">
-          <motion.span key={text} variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex min-w-0 items-center gap-1.5">
+          <motion.span
+            key={text}
+            variants={readoutSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="flex min-w-0 items-center gap-1.5"
+          >
             <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{text}</span>
           </motion.span>

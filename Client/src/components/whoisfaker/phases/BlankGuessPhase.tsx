@@ -54,12 +54,12 @@ export function BlankGuessButton() {
 
   const handleEnter = useCallback(async () => {
     await run(async () => {
-    try {
-      await sendCommand("game.enterBlankGuess");
-      setConfirming(false);
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
+      try {
+        await sendCommand("game.enterBlankGuess");
+        setConfirming(false);
+      } catch (e) {
+        addToast((e as { message: string }).message, "error");
+      }
     });
   }, [run, sendCommand, addToast]);
 
@@ -136,11 +136,11 @@ function BlankGuessInput() {
       return;
     }
     await run(async () => {
-    try {
-      await sendCommand("game.submitBlankGuess", { words: [a, b].filter(Boolean) });
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    }
+      try {
+        await sendCommand("game.submitBlankGuess", { words: [a, b].filter(Boolean) });
+      } catch (e) {
+        addToast((e as { message: string }).message, "error");
+      }
     });
   }, [run, wordA, wordB, sendCommand, addToast]);
 
@@ -159,7 +159,15 @@ function BlankGuessInput() {
       }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, pendingReview, wordA, wordB, submitting, handleSubmit]);
+  }, [
+    phaseTimedOutEndsAt,
+    snapshot.status.phaseTimer,
+    pendingReview,
+    wordA,
+    wordB,
+    submitting,
+    handleSubmit,
+  ]);
 
   if (pendingReview) {
     return (
@@ -295,7 +303,7 @@ export function BlankGuessWaiting() {
         }
       });
     },
-    [run, sendCommand, addToast],
+    [run, sendCommand, addToast]
   );
 
   return (

@@ -1,14 +1,10 @@
-﻿import type {
-  AckPacket,
-  ErrorPacket,
-  EventPacket,
-} from "../shared/Index";
+﻿import type { AckPacket, ErrorPacket, EventPacket } from "../shared/Index";
 
 export type { AckPacket, ErrorPacket, EventPacket };
 
 export const createAck = <TMessage extends { id: string; type: string; traceId?: string }>(
   message: TMessage,
-  payload?: unknown,
+  payload?: unknown
 ): AckPacket => ({
   type: "ack",
   id: message.id,
@@ -22,7 +18,7 @@ export const createErrorPacket = (
   code: string,
   message: string,
   details?: unknown,
-  traceId?: string,
+  traceId?: string
 ): ErrorPacket => ({
   type: "error",
   id,

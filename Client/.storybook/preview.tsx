@@ -99,7 +99,11 @@ const preview: Preview = {
       options: {
         mobile: { name: "手机 390", styles: { width: "390px", height: "844px" }, type: "mobile" },
         tablet: { name: "平板 900", styles: { width: "900px", height: "800px" }, type: "tablet" },
-        desktop: { name: "桌面 1440", styles: { width: "1440px", height: "900px" }, type: "desktop" },
+        desktop: {
+          name: "桌面 1440",
+          styles: { width: "1440px", height: "900px" },
+          type: "desktop",
+        },
       },
     },
   },

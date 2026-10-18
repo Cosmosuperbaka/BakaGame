@@ -2,7 +2,10 @@ import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import { StrictMode, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import { SongLyricPlayer, type SongLyricPlayerProps } from "@/components/songuessr/lyrics/SongLyricPlayer";
+import {
+  SongLyricPlayer,
+  type SongLyricPlayerProps,
+} from "@/components/songuessr/lyrics/SongLyricPlayer";
 import "@applemusic-like-lyrics/core/style.css";
 import "@/index.css";
 
@@ -29,11 +32,15 @@ Object.assign(window, {
     updates: () => updates,
     render(update: SongLyricsFixtureProps) {
       props = { ...props, ...update };
-      flushSync(() => root.render(
-        <StrictMode><main style={{ width: "min(100% - 32px, 760px)", margin: "32px auto" }}>
-          <SongLyricPlayer {...props} />
-        </main></StrictMode>,
-      ));
+      flushSync(() =>
+        root.render(
+          <StrictMode>
+            <main style={{ width: "min(100% - 32px, 760px)", margin: "32px auto" }}>
+              <SongLyricPlayer {...props} />
+            </main>
+          </StrictMode>
+        )
+      );
     },
     time(ms: number, playing: boolean) {
       audio.currentTime = ms / 1000;

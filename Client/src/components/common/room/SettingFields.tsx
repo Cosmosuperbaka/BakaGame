@@ -1,12 +1,26 @@
 /* eslint-disable react-refresh/only-export-components -- 只读上下文与字段组件同属一套设置表单，拆文件只会让每个字段多一处导入。 */
-import { createContext, useContext, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { Minus, Plus, type LucideIcon } from "lucide-react";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
 import { Switch } from "@/components/ui/Switch";
 import { useValueChange } from "@/hooks/UseValueChange";
@@ -20,7 +34,13 @@ import { cn } from "@/lib/Utils";
 const ReadOnlyContext = createContext(false);
 
 /** 包住一组设置，里面的字段都只显示取值、不渲染控件。 */
-export function SettingsReadOnly({ readOnly, children }: { readOnly: boolean; children: ReactNode }) {
+export function SettingsReadOnly({
+  readOnly,
+  children,
+}: {
+  readOnly: boolean;
+  children: ReactNode;
+}) {
   return <ReadOnlyContext.Provider value={readOnly}>{children}</ReadOnlyContext.Provider>;
 }
 
@@ -32,7 +52,12 @@ export function useSettingsReadOnly() {
 /** 只读时右侧的取值：常规字重、前景色，数字等宽，读起来像一张清单。 */
 function ReadOnlyValue({ children, muted = false }: { children: ReactNode; muted?: boolean }) {
   return (
-    <span className={cn("shrink-0 text-right text-sm tabular-nums", muted ? "text-muted-foreground" : "text-foreground")}>
+    <span
+      className={cn(
+        "shrink-0 text-right text-sm tabular-nums",
+        muted ? "text-muted-foreground" : "text-foreground"
+      )}
+    >
       {children}
     </span>
   );
@@ -43,7 +68,15 @@ function ReadOnlyValue({ children, muted = false }: { children: ReactNode; muted
  * 标签列不被挤成逐字断行。标签统一 `text-sm`，说明 `text-xs` 弱化色。
  */
 function SettingRow({
-  label, unit, description, icon: Icon, htmlFor, labelId, descriptionId, disabled = false, children,
+  label,
+  unit,
+  description,
+  icon: Icon,
+  htmlFor,
+  labelId,
+  descriptionId,
+  disabled = false,
+  children,
 }: {
   label: string;
   unit?: string;
@@ -67,11 +100,24 @@ function SettingRow({
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <div className="min-w-0 flex-1 basis-40">
         <div className={cn("flex items-center gap-2", disabled && "opacity-50")}>
-          {Icon ? <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
-          {htmlFor ? <Label htmlFor={htmlFor} className="leading-snug font-normal">{text}</Label>
-            : <span id={labelId} className="text-sm leading-snug">{text}</span>}
+          {Icon ? (
+            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          ) : null}
+          {htmlFor ? (
+            <Label htmlFor={htmlFor} className="leading-snug font-normal">
+              {text}
+            </Label>
+          ) : (
+            <span id={labelId} className="text-sm leading-snug">
+              {text}
+            </span>
+          )}
         </div>
-        {description ? <p id={descriptionId} className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+        {description ? (
+          <p id={descriptionId} className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
       </div>
       <div className="ml-auto flex shrink-0 items-center">{children}</div>
     </div>
@@ -80,7 +126,12 @@ function SettingRow({
 
 /** 开关行：左侧标签与可选说明，右侧开关。图标只传组件，尺寸与颜色在这里统一。 */
 export function SettingSwitchRow({
-  label, description, icon, checked, onCheckedChange, disabled = false,
+  label,
+  description,
+  icon,
+  checked,
+  onCheckedChange,
+  disabled = false,
 }: {
   label: string;
   description?: string;
@@ -93,25 +144,51 @@ export function SettingSwitchRow({
   const descriptionId = useId();
   const readOnly = useSettingsReadOnly();
   return (
-    <SettingRow label={label} description={description} icon={icon} htmlFor={readOnly ? undefined : id} descriptionId={descriptionId} disabled={disabled && !readOnly}>
-      {readOnly ? <ReadOnlyValue muted={!checked}>{checked ? "开启" : "关闭"}</ReadOnlyValue> : (
-        <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled}
-          aria-describedby={description ? descriptionId : undefined} />
+    <SettingRow
+      label={label}
+      description={description}
+      icon={icon}
+      htmlFor={readOnly ? undefined : id}
+      descriptionId={descriptionId}
+      disabled={disabled && !readOnly}
+    >
+      {readOnly ? (
+        <ReadOnlyValue muted={!checked}>{checked ? "开启" : "关闭"}</ReadOnlyValue>
+      ) : (
+        <Switch
+          id={id}
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          disabled={disabled}
+          aria-describedby={description ? descriptionId : undefined}
+        />
       )}
     </SettingRow>
   );
 }
 /** 步进器里的加减键：圆形，悬停时浮起一块底色，按下只让图标下沉，轨道不跟着缩放。 */
-function StepButton({ label, icon: Icon, disabled, onClick }: {
+function StepButton({
+  label,
+  icon: Icon,
+  disabled,
+  onClick,
+}: {
   label: string;
   icon: LucideIcon;
   disabled: boolean;
   onClick: () => void;
 }) {
   return (
-    <motion.button type="button" aria-label={label} disabled={disabled} onClick={onClick}
-      initial="rest" whileHover={disabled ? undefined : "hover"} whileTap={disabled ? undefined : "press"}
-      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-background hover:text-foreground hover:shadow-sm focus-visible:outline-offset-0 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:shadow-none group-data-disabled/stepper:opacity-100 dark:hover:bg-secondary">
+    <motion.button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      initial="rest"
+      whileHover={disabled ? undefined : "hover"}
+      whileTap={disabled ? undefined : "press"}
+      className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,box-shadow] hover:bg-background hover:text-foreground hover:shadow-sm focus-visible:outline-offset-0 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:shadow-none group-data-disabled/stepper:opacity-100 dark:hover:bg-secondary"
+    >
       <motion.span variants={STEP_ICON} transition={iconTappable.transition} className="flex">
         <Icon className="h-3.5 w-3.5" />
       </motion.span>
@@ -120,7 +197,11 @@ function StepButton({ label, icon: Icon, disabled, onClick }: {
 }
 
 /** 加减键图标的手势幅度沿用 iconTappable，只是落在图标上。 */
-const STEP_ICON = { rest: { scale: 1 }, hover: iconTappable.whileHover, press: iconTappable.whileTap };
+const STEP_ICON = {
+  rest: { scale: 1 },
+  hover: iconTappable.whileHover,
+  press: iconTappable.whileTap,
+};
 
 /**
  * 数值步进：减键、数值、加键收在一条全圆角的凹槽里，与分段控件的轨道同一底色（`bg-muted`），不另加描边。
@@ -130,7 +211,16 @@ const STEP_ICON = { rest: { scale: 1 }, hover: iconTappable.whileHover, press: i
  * 只读时显示数值与单位；`format` 把特殊值换成文字（0 → 「不限」）。
  */
 export function SettingStepper({
-  label, description, value, minimum, maximum, step = 1, unit, onChange, disabled = false, format,
+  label,
+  description,
+  value,
+  minimum,
+  maximum,
+  step = 1,
+  unit,
+  onChange,
+  disabled = false,
+  format,
 }: {
   label: string;
   description?: string;
@@ -190,14 +280,28 @@ export function SettingStepper({
     );
   }
   return (
-    <SettingRow label={label} unit={unit} description={description} htmlFor={id} descriptionId={descriptionId} disabled={disabled}>
-      <div data-disabled={disabled || undefined}
+    <SettingRow
+      label={label}
+      unit={unit}
+      description={description}
+      htmlFor={id}
+      descriptionId={descriptionId}
+      disabled={disabled}
+    >
+      <div
+        data-disabled={disabled || undefined}
         className={cn(
           "group/stepper flex h-9 w-32 items-center gap-0.5 rounded-full bg-muted p-1 transition-shadow",
           "has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60",
-          disabled && "opacity-50",
-        )}>
-        <StepButton label={`减少${label}`} icon={Minus} disabled={disabled || value <= minimum} onClick={() => commit(value - step)} />
+          disabled && "opacity-50"
+        )}
+      >
+        <StepButton
+          label={`减少${label}`}
+          icon={Minus}
+          disabled={disabled || value <= minimum}
+          onClick={() => commit(value - step)}
+        />
         <motion.input
           id={id}
           type="text"
@@ -211,14 +315,25 @@ export function SettingStepper({
           onKeyDown={handleKey}
           className="min-w-0 flex-1 bg-transparent text-center text-sm font-medium tabular-nums outline-none disabled:cursor-not-allowed"
         />
-        <StepButton label={`增加${label}`} icon={Plus} disabled={disabled || value >= maximum} onClick={() => commit(value + step)} />
+        <StepButton
+          label={`增加${label}`}
+          icon={Plus}
+          disabled={disabled || value >= maximum}
+          onClick={() => commit(value + step)}
+        />
       </div>
     </SettingRow>
   );
 }
 /** 上下堆叠的字段（文本、下拉、分段）：标签在上，控件占满整行；只读时退回标签与取值同一行。 */
 function StackedField({
-  label, description, htmlFor, labelId, descriptionId, disabled = false, children,
+  label,
+  description,
+  htmlFor,
+  labelId,
+  descriptionId,
+  disabled = false,
+  children,
 }: {
   label: string;
   description?: string;
@@ -230,10 +345,25 @@ function StackedField({
 }) {
   return (
     <div className="grid gap-2">
-      {htmlFor ? <Label id={labelId} htmlFor={htmlFor} className={cn("leading-snug font-normal", disabled && "opacity-50")}>{label}</Label>
-        : <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>{label}</span>}
+      {htmlFor ? (
+        <Label
+          id={labelId}
+          htmlFor={htmlFor}
+          className={cn("leading-snug font-normal", disabled && "opacity-50")}
+        >
+          {label}
+        </Label>
+      ) : (
+        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>
+          {label}
+        </span>
+      )}
       {children}
-      {description ? <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+      {description ? (
+        <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -243,8 +373,20 @@ function StackedField({
  * `action` 放在输入框右侧（「同步目录」「读取」）；只读时显示取值，密码只显示「已设置」。
  */
 export function SettingTextField({
-  label, value, onChange, placeholder, type = "text", maxLength, inputMode, description, action, readOnlyText,
-  error, autoFocus, disabled = false, inputClassName,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  maxLength,
+  inputMode,
+  description,
+  action,
+  readOnlyText,
+  error,
+  autoFocus,
+  disabled = false,
+  inputClassName,
 }: {
   label: string;
   value: string;
@@ -278,16 +420,37 @@ export function SettingTextField({
     );
   }
   return (
-    <StackedField label={label} description={description} htmlFor={id} descriptionId={descriptionId}>
+    <StackedField
+      label={label}
+      description={description}
+      htmlFor={id}
+      descriptionId={descriptionId}
+    >
       <div className="flex gap-2">
-        <Input id={id} type={type} value={value} maxLength={maxLength} placeholder={placeholder} inputMode={inputMode}
-          autoFocus={autoFocus} disabled={disabled} className={inputClassName}
+        <Input
+          id={id}
+          type={type}
+          value={value}
+          maxLength={maxLength}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          autoFocus={autoFocus}
+          disabled={disabled}
+          className={inputClassName}
           aria-invalid={error ? true : undefined}
-          aria-describedby={[description ? descriptionId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined}
-          onChange={(event) => onChange(event.target.value)} />
+          aria-describedby={
+            [description ? descriptionId : "", error ? errorId : ""].filter(Boolean).join(" ") ||
+            undefined
+          }
+          onChange={(event) => onChange(event.target.value)}
+        />
         {action}
       </div>
-      {error ? <p id={errorId} role="alert" className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </StackedField>
   );
 }
@@ -297,7 +460,11 @@ const EMPTY_VALUE = "__all";
 
 /** 带可见标签的下拉选择；空字符串表示「不限」。只读时显示所选项的文字。 */
 export function SettingSelect({
-  label, value, options, onChange, disabled = false,
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
 }: {
   label: string;
   value: string;
@@ -310,17 +477,27 @@ export function SettingSelect({
   if (readOnly) {
     return (
       <SettingRow label={label}>
-        <ReadOnlyValue>{options.find((option) => option.value === value)?.label ?? value}</ReadOnlyValue>
+        <ReadOnlyValue>
+          {options.find((option) => option.value === value)?.label ?? value}
+        </ReadOnlyValue>
       </SettingRow>
     );
   }
   return (
     <StackedField label={label} htmlFor={id} disabled={disabled}>
-      <Select value={value || EMPTY_VALUE} onValueChange={(next) => onChange(next === EMPTY_VALUE ? "" : next)} disabled={disabled}>
-        <SelectTrigger id={id}><SelectValue /></SelectTrigger>
+      <Select
+        value={value || EMPTY_VALUE}
+        onValueChange={(next) => onChange(next === EMPTY_VALUE ? "" : next)}
+        disabled={disabled}
+      >
+        <SelectTrigger id={id}>
+          <SelectValue />
+        </SelectTrigger>
         <SelectContent>
           {options.map((option) => (
-            <SelectItem key={option.value || EMPTY_VALUE} value={option.value || EMPTY_VALUE}>{option.label}</SelectItem>
+            <SelectItem key={option.value || EMPTY_VALUE} value={option.value || EMPTY_VALUE}>
+              {option.label}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -333,7 +510,11 @@ export function SettingSelect({
  * 只读时显示所选项的文字。分段控件经 `aria-labelledby` 由标签命名。
  */
 export function SettingSegmented<T extends string>({
-  label, value, options, onValueChange, description,
+  label,
+  value,
+  options,
+  onValueChange,
+  description,
 }: {
   label: string;
   value: T;
@@ -346,8 +527,18 @@ export function SettingSegmented<T extends string>({
   // 与步进器、开关同一种行：标签在左，贴合选项宽度的胶囊凹槽在右；窄屏放不下时整组折到下一行靠右。
   return (
     <SettingRow label={label} description={description} labelId={readOnly ? undefined : labelId}>
-      {readOnly ? <ReadOnlyValue>{options.find((option) => option.value === value)?.label ?? value}</ReadOnlyValue>
-        : <SegmentedControl aria-labelledby={labelId} value={value} options={options} onValueChange={onValueChange} />}
+      {readOnly ? (
+        <ReadOnlyValue>
+          {options.find((option) => option.value === value)?.label ?? value}
+        </ReadOnlyValue>
+      ) : (
+        <SegmentedControl
+          aria-labelledby={labelId}
+          value={value}
+          options={options}
+          onValueChange={onValueChange}
+        />
+      )}
     </SettingRow>
   );
 }
@@ -359,7 +550,15 @@ export function SettingSegmented<T extends string>({
  * 回写的值只会是 `stops` 里的某一档，任意数字混不进设置。
  */
 export function SettingScaleSlider({
-  label, description, value, stops, majors = [], format, formatTick = format, onChange, disabled = false,
+  label,
+  description,
+  value,
+  stops,
+  majors = [],
+  format,
+  formatTick = format,
+  onChange,
+  disabled = false,
 }: {
   label: string;
   description?: string;
@@ -378,7 +577,10 @@ export function SettingScaleSlider({
   const descriptionId = useId();
   const readOnly = useSettingsReadOnly();
   // 设置里存的值若不在档位上（旧数据），落到不超过它的最近一档。
-  const index = Math.max(0, stops.reduce((found, stop, position) => (stop <= value ? position : found), 0));
+  const index = Math.max(
+    0,
+    stops.reduce((found, stop, position) => (stop <= value ? position : found), 0)
+  );
   const last = stops.length - 1;
   if (readOnly) {
     return (
@@ -390,8 +592,16 @@ export function SettingScaleSlider({
   return (
     <div className="grid gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>{label}</span>
-        <span aria-hidden="true" className={cn("text-sm font-semibold tabular-nums", stops[index] === 0 ? "text-muted-foreground" : "text-foreground")}>
+        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>
+          {label}
+        </span>
+        <span
+          aria-hidden="true"
+          className={cn(
+            "text-sm font-semibold tabular-nums",
+            stops[index] === 0 ? "text-muted-foreground" : "text-foreground"
+          )}
+        >
           {format(stops[index])}
         </span>
       </div>
@@ -414,20 +624,46 @@ export function SettingScaleSlider({
             const major = majors.includes(stop) || position === 0 || position === last;
             const left = `${(position / last) * 100}%`;
             return (
-              <span key={stop} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left }}>
-                <span className={cn("w-px rounded-full", major ? "h-2 bg-muted-foreground/70" : "h-1 bg-muted-foreground/35", position <= index && "bg-primary/70")} />
-                {major ? <span className="mt-0.5 whitespace-nowrap font-sans text-2xs text-muted-foreground">{formatTick(stop)}</span> : null}
+              <span
+                key={stop}
+                className="absolute top-0 flex -translate-x-1/2 flex-col items-center"
+                style={{ left }}
+              >
+                <span
+                  className={cn(
+                    "w-px rounded-full",
+                    major ? "h-2 bg-muted-foreground/70" : "h-1 bg-muted-foreground/35",
+                    position <= index && "bg-primary/70"
+                  )}
+                />
+                {major ? (
+                  <span className="mt-0.5 whitespace-nowrap font-sans text-2xs text-muted-foreground">
+                    {formatTick(stop)}
+                  </span>
+                ) : null}
               </span>
             );
           })}
         </div>
       </div>
-      {description ? <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+      {description ? (
+        <p id={descriptionId} className="text-xs leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      ) : null}
     </div>
   );
 }
 /** 年份输入：凹槽里的一格，失焦或回车时提交；`optional` 时留空表示不限。 */
-function YearInput({ label, value, optional, minimum, maximum, onCommit, disabled }: {
+function YearInput({
+  label,
+  value,
+  optional,
+  minimum,
+  maximum,
+  onCommit,
+  disabled,
+}: {
   label: string;
   value: number | undefined;
   optional: boolean;
@@ -444,8 +680,14 @@ function YearInput({ label, value, optional, minimum, maximum, onCommit, disable
   }
   const commit = () => {
     const parsed = Number(draft);
-    if (draft.trim() === "" && optional) { if (value !== undefined) onCommit(undefined); return; }
-    if (draft.trim() === "" || !Number.isFinite(parsed)) { setDraft(value === undefined ? "" : String(value)); return; }
+    if (draft.trim() === "" && optional) {
+      if (value !== undefined) onCommit(undefined);
+      return;
+    }
+    if (draft.trim() === "" || !Number.isFinite(parsed)) {
+      setDraft(value === undefined ? "" : String(value));
+      return;
+    }
     const clamped = Math.max(minimum, Math.min(maximum, Math.round(parsed)));
     setDraft(String(clamped));
     if (clamped !== value) onCommit(clamped);
@@ -460,7 +702,9 @@ function YearInput({ label, value, optional, minimum, maximum, onCommit, disable
       placeholder={optional ? "不限" : undefined}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
-      onKeyDown={(event) => { if (event.key === "Enter") commit(); }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+      }}
       className="h-7 w-14 rounded-full bg-transparent text-center text-sm font-medium tabular-nums outline-none placeholder:font-normal placeholder:text-muted-foreground focus-visible:bg-background disabled:cursor-not-allowed dark:focus-visible:bg-secondary"
     />
   );
@@ -471,7 +715,15 @@ function YearInput({ label, value, optional, minimum, maximum, onCommit, disable
  * `optional` 时任一格可留空表示不限（猜歌的番剧年份）；否则两格必填（CEE 的抽题年份）。起止顺序由调用处校验。
  */
 export function SettingYearRange({
-  label, start, end, onChange, optional = false, minimum = 1900, maximum = 2200, description, disabled = false,
+  label,
+  start,
+  end,
+  onChange,
+  optional = false,
+  minimum = 1900,
+  maximum = 2200,
+  description,
+  disabled = false,
 }: {
   label: string;
   start: number | undefined;
@@ -485,20 +737,43 @@ export function SettingYearRange({
 }) {
   const readOnly = useSettingsReadOnly();
   if (readOnly) {
-    const text = start === undefined && end === undefined ? "不限" : `${start ?? "不限"} 至 ${end ?? "不限"}`;
-    return <SettingRow label={label} description={description}><ReadOnlyValue>{text}</ReadOnlyValue></SettingRow>;
+    const text =
+      start === undefined && end === undefined ? "不限" : `${start ?? "不限"} 至 ${end ?? "不限"}`;
+    return (
+      <SettingRow label={label} description={description}>
+        <ReadOnlyValue>{text}</ReadOnlyValue>
+      </SettingRow>
+    );
   }
   return (
     <SettingRow label={label} description={description} disabled={disabled}>
-      <div className={cn(
-        "flex h-9 items-center gap-0.5 rounded-full bg-muted p-1 transition-shadow has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60",
-        disabled && "opacity-50",
-      )}>
-        <YearInput label={`${label}起始`} value={start} optional={optional} minimum={minimum} maximum={maximum} disabled={disabled}
-          onCommit={(value) => onChange(value, end)} />
-        <span className="px-0.5 text-xs text-muted-foreground" aria-hidden="true">至</span>
-        <YearInput label={`${label}结束`} value={end} optional={optional} minimum={minimum} maximum={maximum} disabled={disabled}
-          onCommit={(value) => onChange(start, value)} />
+      <div
+        className={cn(
+          "flex h-9 items-center gap-0.5 rounded-full bg-muted p-1 transition-shadow has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60",
+          disabled && "opacity-50"
+        )}
+      >
+        <YearInput
+          label={`${label}起始`}
+          value={start}
+          optional={optional}
+          minimum={minimum}
+          maximum={maximum}
+          disabled={disabled}
+          onCommit={(value) => onChange(value, end)}
+        />
+        <span className="px-0.5 text-xs text-muted-foreground" aria-hidden="true">
+          至
+        </span>
+        <YearInput
+          label={`${label}结束`}
+          value={end}
+          optional={optional}
+          minimum={minimum}
+          maximum={maximum}
+          disabled={disabled}
+          onCommit={(value) => onChange(start, value)}
+        />
       </div>
     </SettingRow>
   );
@@ -509,7 +784,10 @@ export function SettingYearRange({
  * 标签行右侧的「全选」只在没全选时出现。只读时列出所选项，全选写作「全部」。
  */
 export function SettingToggleChips<T extends string>({
-  label, options, selected, onChange,
+  label,
+  options,
+  selected,
+  onChange,
 }: {
   label: string;
   options: Array<{ value: T; label: string }>;
@@ -523,21 +801,35 @@ export function SettingToggleChips<T extends string>({
   if (readOnly) {
     return (
       <StackedField label={label}>
-        <p className="text-sm leading-relaxed">{all ? "全部" : options.filter((option) => chosen.has(option.value)).map((option) => option.label).join("、")}</p>
+        <p className="text-sm leading-relaxed">
+          {all
+            ? "全部"
+            : options
+                .filter((option) => chosen.has(option.value))
+                .map((option) => option.label)
+                .join("、")}
+        </p>
       </StackedField>
     );
   }
   const toggle = (value: T) => {
-    const next = chosen.has(value) ? selected.filter((item) => item !== value) : [...selected, value];
+    const next = chosen.has(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value];
     onChange(next.length ? next : options.map((option) => option.value));
   };
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span id={labelId} className="text-sm leading-snug">{label}</span>
+        <span id={labelId} className="text-sm leading-snug">
+          {label}
+        </span>
         {!all ? (
-          <button type="button" onClick={() => onChange(options.map((option) => option.value))}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground">
+          <button
+            type="button"
+            onClick={() => onChange(options.map((option) => option.value))}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
             全选
           </button>
         ) : null}
@@ -546,11 +838,19 @@ export function SettingToggleChips<T extends string>({
         {options.map((option) => {
           const pressed = chosen.has(option.value);
           return (
-            <motion.button key={option.value} type="button" {...tappable} aria-pressed={pressed} onClick={() => toggle(option.value)}
+            <motion.button
+              key={option.value}
+              type="button"
+              {...tappable}
+              aria-pressed={pressed}
+              onClick={() => toggle(option.value)}
               className={cn(
                 "rounded-full border px-3 py-1 text-xs transition-colors",
-                pressed ? "border-primary/40 bg-primary/10 font-medium text-primary" : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground",
-              )}>
+                pressed
+                  ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                  : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground"
+              )}
+            >
               {option.label}
             </motion.button>
           );
@@ -578,7 +878,15 @@ export function SettingReveal({ open, children }: { open: boolean; children: Rea
 }
 
 /** 只读的一项：标签与取值。游戏自有的复合控件（歌单、追加作品）只读时用它。 */
-export function SettingValue({ label, value, description }: { label: string; value: string; description?: string }) {
+export function SettingValue({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description?: string;
+}) {
   return (
     <SettingRow label={label} description={description}>
       <ReadOnlyValue muted={!value}>{value || "未设置"}</ReadOnlyValue>
@@ -591,7 +899,12 @@ export function SettingValue({ label, value, description }: { label: string; val
  * `open` 为假时整节按 `collapsible` 收起（自动出题的筛选随出题方式出现）；分隔线与上间距算在节内，随高度一起补间。
  * 小节须是同一容器里的兄弟元素，第一节不画分隔线。
  */
-export function SettingsSection({ title, icon: Icon, open = true, children }: {
+export function SettingsSection({
+  title,
+  icon: Icon,
+  open = true,
+  children,
+}: {
   title?: string;
   icon?: LucideIcon;
   open?: boolean;
@@ -601,7 +914,13 @@ export function SettingsSection({ title, icon: Icon, open = true, children }: {
     <AnimatePresence initial={false}>
       {open ? (
         // flow-root 让节始终是 BFC：内层的上外边距留在节内、计入补间的高度；裁切只在补间期间由变体打开，字段的晕光不被切掉。
-        <motion.section variants={collapsible} initial="initial" animate="animate" exit="exit" className="flow-root">
+        <motion.section
+          variants={collapsible}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="flow-root"
+        >
           <div className="[section:not(:first-child)>&]:mt-4 [section:not(:first-child)>&]:border-t [section:not(:first-child)>&]:pt-4">
             <SettingsFields>
               {title ? (

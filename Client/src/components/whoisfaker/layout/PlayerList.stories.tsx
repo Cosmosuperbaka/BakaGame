@@ -34,7 +34,9 @@ const meta = {
     // 展开发言历史时房间页会把玩家栏扩到整段，组件故事按同一宽度取景，
     // 否则发言列会被 16rem 的面板裁掉。
     (Story, { args }) => (
-      <div className={args.history ? WIF_HISTORY_FRAME : WIF_PLAYER_PANEL}><Story /></div>
+      <div className={args.history ? WIF_HISTORY_FRAME : WIF_PLAYER_PANEL}>
+        <Story />
+      </div>
     ),
   ],
 } satisfies Meta<typeof PlayerList>;
@@ -77,7 +79,9 @@ export const GameOver: Story = {
   args: {
     players: roundPlayers("over"),
     phase: "gameOver",
-    revealedRoles: new Map(wifPrivate("host", "over").questionerView!.map((entry) => [entry.playerId, entry.role])),
+    revealedRoles: new Map(
+      wifPrivate("host", "over").questionerView!.map((entry) => [entry.playerId, entry.role])
+    ),
   },
 };
 
@@ -85,9 +89,12 @@ export const DeadAndOffline: Story = {
   name: "出局 · 断线 · 人机",
   args: {
     players: roundPlayers("day3").map((player) =>
-      player.id === kita.id ? wifPlayer(kita, { roundStatus: "alive", isBot: true })
-        : player.id === azumi.id ? wifPlayer(azumi, { online: false, roundStatus: "dead" })
-          : player),
+      player.id === kita.id
+        ? wifPlayer(kita, { roundStatus: "alive", isBot: true })
+        : player.id === azumi.id
+          ? wifPlayer(azumi, { online: false, roundStatus: "dead" })
+          : player
+    ),
     phase: "voting",
   },
 };
@@ -118,7 +125,9 @@ export const HostManagePopover: Story = {
     privateState: wifPrivate("host", "day2"),
   },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: `${peach.name} 操作` }));
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: `${peach.name} 操作` })
+    );
     await screen.findByRole("button", { name: /转移房主/ });
     dropFocus();
   },

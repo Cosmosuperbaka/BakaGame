@@ -35,9 +35,18 @@ beforeAll(async () => {
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
-    res.end(JSON.stringify({ message: "Index `missing` not found.", code: "index_not_found", type: "invalid_request", link: "https://docs.meilisearch.com/errors#index_not_found" }));
+    res.end(
+      JSON.stringify({
+        message: "Index `missing` not found.",
+        code: "index_not_found",
+        type: "invalid_request",
+        link: "https://docs.meilisearch.com/errors#index_not_found",
+      })
+    );
   });
-  await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const address = server.address();
   base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
 });
@@ -74,7 +83,10 @@ describe("meiliHttpClient", () => {
     controller.abort(new Error("pre-aborted"));
     let caught: unknown;
     try {
-      await meiliHttpClient(new URL(`${base}/health`), { method: "GET", signal: controller.signal });
+      await meiliHttpClient(new URL(`${base}/health`), {
+        method: "GET",
+        signal: controller.signal,
+      });
     } catch (error) {
       caught = error;
     }
@@ -127,7 +139,11 @@ describe("经 SDK 的真实链路", () => {
   });
 
   test("连接失败向上抛（经 SDK 包装后仍为请求错误）", async () => {
-    const client = new Meilisearch({ host: "http://127.0.0.1:1", httpClient: meiliHttpClient, timeout: 2_000 });
+    const client = new Meilisearch({
+      host: "http://127.0.0.1:1",
+      httpClient: meiliHttpClient,
+      timeout: 2_000,
+    });
     let caught: unknown;
     try {
       await client.health();

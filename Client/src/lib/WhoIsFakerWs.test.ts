@@ -59,7 +59,7 @@ describe("websocket client", () => {
     const pending = socketApi.send<{ accepted: boolean }>(
       "room.join",
       { userName: "玩家" },
-      { roomId: "1234", sessionToken: "token" },
+      { roomId: "1234", sessionToken: "token" }
     );
     const envelope = JSON.parse(socket.sent[0]) as { id: string };
     socket.receive({

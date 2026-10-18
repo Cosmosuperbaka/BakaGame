@@ -7,7 +7,11 @@ const meta = {
   component: Collapsible,
   args: {
     title: "角色简介",
-    children: <p className="whitespace-pre-wrap text-sm leading-relaxed">乐队的鼓手兼队长，性格开朗、很会照顾人，是乐队里调和气氛的存在。</p>,
+    children: (
+      <p className="whitespace-pre-wrap text-sm leading-relaxed">
+        乐队的鼓手兼队长，性格开朗、很会照顾人，是乐队里调和气氛的存在。
+      </p>
+    ),
   },
   decorators: [
     (Story) => (
@@ -46,8 +50,12 @@ export const Small: Story = {
     size: "sm",
     children: (
       <div className="flex flex-wrap gap-1 text-xs">
-        <Badge size="sm" variant="matched">吉他</Badge>
-        <Badge size="sm" variant="muted">作曲</Badge>
+        <Badge size="sm" variant="matched">
+          吉他
+        </Badge>
+        <Badge size="sm" variant="muted">
+          作曲
+        </Badge>
       </div>
     ),
   },
@@ -57,8 +65,12 @@ export const Small: Story = {
         <div key={String(open)} className="space-y-2 rounded-md border p-3">
           <p className="text-xs text-success">共同作品：示例作品</p>
           <div className="flex flex-wrap gap-1">
-            <Badge size="sm" variant="muted">鼓手</Badge>
-            <Badge size="sm" variant="matched">队长</Badge>
+            <Badge size="sm" variant="muted">
+              鼓手
+            </Badge>
+            <Badge size="sm" variant="matched">
+              队长
+            </Badge>
           </div>
           <Collapsible {...args} defaultOpen={open} />
         </div>

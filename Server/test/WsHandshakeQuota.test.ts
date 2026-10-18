@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 
 import { WsHandshakeQuota } from "../src/transport/WsHandshakeQuota";
 
-const quotaOf = (overrides: Partial<{ windowMs: number; ipMaxRequests: number; globalMaxRequests: number; ipMaxConnections: number }> = {}) =>
+const quotaOf = (
+  overrides: Partial<{
+    windowMs: number;
+    ipMaxRequests: number;
+    globalMaxRequests: number;
+    ipMaxConnections: number;
+  }> = {}
+) =>
   new WsHandshakeQuota({
     windowMs: 60_000,
     ipMaxRequests: 120,

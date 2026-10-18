@@ -36,7 +36,10 @@ import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundRes
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
-import { AnimeAutoFilterSummary, SongAutoFilterSummary } from "@/components/songuessr/settings/SongSettingsPanels";
+import {
+  AnimeAutoFilterSummary,
+  SongAutoFilterSummary,
+} from "@/components/songuessr/settings/SongSettingsPanels";
 import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { withTeamName } from "@/lib/Teams";
@@ -73,7 +76,12 @@ const POPULARITY_HINT: Record<SongGuessDirection, string> = {
  * 一枚反馈徽章：取值与指向答案的图标同处一枚，命中（相同）用 `matched`，其余 `muted`。
  * 图标对读屏隐藏，含义由紧随其后的视觉隐藏文字读出，鼠标悬停时浮层给出同一句。
  */
-function FeedbackBadge({ matched, icon: Icon, hint, children }: {
+function FeedbackBadge({
+  matched,
+  icon: Icon,
+  hint,
+  children,
+}: {
   matched: boolean;
   icon: LucideIcon;
   hint: string;
@@ -91,7 +99,10 @@ function FeedbackBadge({ matched, icon: Icon, hint, children }: {
 }
 
 /** 每条猜测的结果图标；可读名挂在图标上（`role="img"`），不另占一段文字。 */
-const RESULT_MARK: Record<SongGuessAttempt["result"], { icon: LucideIcon; tone: string; label: string }> = {
+const RESULT_MARK: Record<
+  SongGuessAttempt["result"],
+  { icon: LucideIcon; tone: string; label: string }
+> = {
   correct: { icon: Check, tone: "text-success", label: "猜对" },
   timeout: { icon: Clock3, tone: "text-warning", label: "超时" },
   gaveUp: { icon: Flag, tone: "text-muted-foreground", label: "投降" },
@@ -112,7 +123,11 @@ function AttemptFeedback({ feedback }: { feedback: NonNullable<SongGuessAttempt[
       <FeedbackBadge matched={year === "equal"} icon={DIRECTION_ICON[year]} hint={YEAR_HINT[year]}>
         年份 {feedback.releaseYear ?? "未知"}
       </FeedbackBadge>
-      <FeedbackBadge matched={popularity === "equal"} icon={DIRECTION_ICON[popularity]} hint={POPULARITY_HINT[popularity]}>
+      <FeedbackBadge
+        matched={popularity === "equal"}
+        icon={DIRECTION_ICON[popularity]}
+        hint={POPULARITY_HINT[popularity]}
+      >
         热度 {feedback.popularity ?? "未知"}
       </FeedbackBadge>
       {feedback.languageMatch !== undefined ? (
@@ -125,7 +140,11 @@ function AttemptFeedback({ feedback }: { feedback: NonNullable<SongGuessAttempt[
         </FeedbackBadge>
       ) : null}
       {/* 共同标签本身就是与答案重合的线索 */}
-      {feedback.sharedTags.map((tag) => <Badge key={tag} variant="matched" size="sm">{tag}</Badge>)}
+      {feedback.sharedTags.map((tag) => (
+        <Badge key={tag} variant="matched" size="sm">
+          {tag}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -165,14 +184,22 @@ export function AttemptList({
                   className="flex origin-left flex-col gap-1.5 border-t px-4 py-3"
                 >
                   <div className="flex min-w-24 items-center gap-2">
-                    <mark.icon role="img" aria-label={mark.label} className={cn("h-4 w-4 shrink-0", mark.tone)} />
+                    <mark.icon
+                      role="img"
+                      aria-label={mark.label}
+                      className={cn("h-4 w-4 shrink-0", mark.tone)}
+                    />
                     <span className="min-w-0 break-words text-sm">
                       {showPlayerName ? `${attempt.playerName}：` : ""}
                       {attemptText(attempt)}
                     </span>
                   </div>
                   {/* 徽章行与名字左缘对齐（让过 h-4 图标与 gap-2） */}
-                  {attempt.feedback ? <div className="pl-6"><AttemptFeedback feedback={attempt.feedback} /></div> : null}
+                  {attempt.feedback ? (
+                    <div className="pl-6">
+                      <AttemptFeedback feedback={attempt.feedback} />
+                    </div>
+                  ) : null}
                 </motion.div>
               );
             })}
@@ -227,33 +254,56 @@ const AUDIO_CUE_STATUS: Record<AudioCue, string> = {
  * 加载中、播放中只是状态，播放中用声波图标而不是转圈，免得读成还在加载。
  * 各态以 readoutSwap 交替，状态变化由视觉隐藏的 status 区读出。
  */
-function AudioCueControl({ audioStatus, audioPlaybackState, onPlayAudio, onRetryAudio }: Pick<
-  SongGameAreaProps, "audioStatus" | "audioPlaybackState" | "onPlayAudio" | "onRetryAudio"
->) {
+function AudioCueControl({
+  audioStatus,
+  audioPlaybackState,
+  onPlayAudio,
+  onRetryAudio,
+}: Pick<SongGameAreaProps, "audioStatus" | "audioPlaybackState" | "onPlayAudio" | "onRetryAudio">) {
   const cue: AudioCue = audioStatus === "ready" ? audioPlaybackState : audioStatus;
   return (
     <div className="relative flex min-h-8 shrink-0 items-center justify-end">
-      <span role="status" className="sr-only">{AUDIO_CUE_STATUS[cue]}</span>
+      <span role="status" className="sr-only">
+        {AUDIO_CUE_STATUS[cue]}
+      </span>
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.div key={cue} variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="flex">
+        <motion.div
+          key={cue}
+          variants={readoutSwap}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="flex"
+        >
           {cue === "loading" ? (
             <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center">
               <Spinner className="text-primary" />
             </span>
           ) : cue === "error" ? (
             <Button variant="outline" size="sm" onClick={onRetryAudio}>
-              <CircleAlert className="text-destructive" aria-hidden="true" />加载失败，重试
+              <CircleAlert className="text-destructive" aria-hidden="true" />
+              加载失败，重试
             </Button>
           ) : cue === "idle" ? (
             <Button size="sm" onClick={onPlayAudio}>
-              <Play aria-hidden="true" />播放片段
+              <Play aria-hidden="true" />
+              播放片段
             </Button>
           ) : cue === "playing" ? (
-            <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center text-primary">
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 items-center justify-center text-primary"
+            >
               <AudioLines className="h-4 w-4" />
             </span>
           ) : (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPlayAudio} aria-label="重播音频">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onPlayAudio}
+              aria-label="重播音频"
+            >
               <RotateCcw className="h-4 w-4" />
             </Button>
           )}
@@ -266,22 +316,51 @@ function AudioCueControl({ audioStatus, audioPlaybackState, onPlayAudio, onRetry
 /** 本人在本轮的作答进度：还能猜、音频未就绪、猜中、队友猜中、投降、次数用尽。 */
 type GuessStage = "guessing" | "preparing" | "correct" | "teamCorrect" | "gaveUp" | "exhausted";
 
-function resolveGuessStage(privateState: SonGuessrPrivateState, me?: SonGuessrPlayerView): GuessStage {
+function resolveGuessStage(
+  privateState: SonGuessrPrivateState,
+  me?: SonGuessrPlayerView
+): GuessStage {
   if (privateState.canGuess || privateState.canGiveUp) return "guessing";
-  const mine = privateState.visibleAttempts.filter((attempt) => attempt.playerId === privateState.playerId);
+  const mine = privateState.visibleAttempts.filter(
+    (attempt) => attempt.playerId === privateState.playerId
+  );
   if (me?.roundStatus === "teamCorrect") return "teamCorrect";
   // 组队时投降由任一队员发起、记在发起者名下，全队共享结果；可见记录只含本人与队友
   if (privateState.visibleAttempts.some((attempt) => attempt.result === "gaveUp")) return "gaveUp";
-  if (me?.roundStatus === "correct" || mine.some((attempt) => attempt.result === "correct")) return "correct";
+  if (me?.roundStatus === "correct" || mine.some((attempt) => attempt.result === "correct"))
+    return "correct";
   if (privateState.remainingGuesses > 0 && me?.roundStatus !== "finished") return "preparing";
   return "exhausted";
 }
 
-const RECEIPTS: Record<Exclude<GuessStage, "guessing" | "preparing">, { icon: LucideIcon; tone: string; mark: string; text: string }> = {
-  correct: { icon: Check, tone: "border-success/40 bg-success/10 text-success", mark: "text-success", text: "猜中了" },
-  teamCorrect: { icon: Users, tone: "border-success/40 bg-success/10 text-success", mark: "text-success", text: "队友已猜中" },
-  gaveUp: { icon: Flag, tone: "border-dashed bg-muted/40 text-muted-foreground", mark: "text-muted-foreground", text: "你已放弃本回合" },
-  exhausted: { icon: CircleSlash, tone: "border-dashed bg-muted/40 text-muted-foreground", mark: "text-muted-foreground", text: "猜测次数已用完" },
+const RECEIPTS: Record<
+  Exclude<GuessStage, "guessing" | "preparing">,
+  { icon: LucideIcon; tone: string; mark: string; text: string }
+> = {
+  correct: {
+    icon: Check,
+    tone: "border-success/40 bg-success/10 text-success",
+    mark: "text-success",
+    text: "猜中了",
+  },
+  teamCorrect: {
+    icon: Users,
+    tone: "border-success/40 bg-success/10 text-success",
+    mark: "text-success",
+    text: "队友已猜中",
+  },
+  gaveUp: {
+    icon: Flag,
+    tone: "border-dashed bg-muted/40 text-muted-foreground",
+    mark: "text-muted-foreground",
+    text: "你已放弃本回合",
+  },
+  exhausted: {
+    icon: CircleSlash,
+    tone: "border-dashed bg-muted/40 text-muted-foreground",
+    mark: "text-muted-foreground",
+    text: "猜测次数已用完",
+  },
 };
 
 /** 作答结束的回执：卡片回弹落位，图标晚一拍落下；猜中着成功色，投降与用尽取中性同款。 */
@@ -290,7 +369,10 @@ function GuessReceipt({ stage, solo }: { stage: keyof typeof RECEIPTS; solo: boo
   return (
     <motion.div
       {...receiptCard}
-      className={cn("flex items-center justify-center gap-2 rounded-md border px-4 py-3 text-sm", tone)}
+      className={cn(
+        "flex items-center justify-center gap-2 rounded-md border px-4 py-3 text-sm",
+        tone
+      )}
     >
       <motion.span
         aria-hidden="true"
@@ -311,11 +393,28 @@ export function GameStage(props: SongGameAreaProps) {
   const { snapshot, privateState, me, isHost, run, isPending } = props;
 
   if (snapshot.phase === "waiting") {
-    return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
+    return (
+      <SongWaitingPhase
+        snapshot={snapshot}
+        me={me}
+        isHost={isHost}
+        submitterCandidateIds={privateState.submitterCandidateIds}
+        run={run}
+        isPending={isPending}
+      />
+    );
   }
 
   if (snapshot.phase === "choosingSubmitter") {
-    return <ChoosingSubmitterPhase snapshot={snapshot} privateState={privateState} isHost={isHost} run={run} isPending={isPending} />;
+    return (
+      <ChoosingSubmitterPhase
+        snapshot={snapshot}
+        privateState={privateState}
+        isHost={isHost}
+        run={run}
+        isPending={isPending}
+      />
+    );
   }
 
   if (snapshot.phase === "submittingSong") {
@@ -339,7 +438,16 @@ export function GameStage(props: SongGameAreaProps) {
     );
   }
 
-  return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
+  return (
+    <SongWaitingPhase
+      snapshot={snapshot}
+      me={me}
+      isHost={isHost}
+      submitterCandidateIds={privateState.submitterCandidateIds}
+      run={run}
+      isPending={isPending}
+    />
+  );
 }
 
 /** 猜测记录标题：看得到全房就用全房，混进队友的用本队，否则只是我的。 */
@@ -347,12 +455,19 @@ const attemptListTitle = (canObserveAllAttempts: boolean, teamAttempts: boolean)
   canObserveAllAttempts ? "全房猜测" : teamAttempts ? "本队猜测" : "我的猜测";
 
 /** 我自己已经猜过的条目 id，供答题框把它们标成已选。 */
-const myGuessedIds = (privateState: SonGuessrPrivateState): string[] => privateState.visibleAttempts
-  .filter((attempt) => attempt.playerId === privateState.playerId)
-  .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? []);
+const myGuessedIds = (privateState: SonGuessrPrivateState): string[] =>
+  privateState.visibleAttempts
+    .filter((attempt) => attempt.playerId === privateState.playerId)
+    .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? []);
 
 /** 片段展示区：开歌词挂歌词播放器，关掉后给同一外壳的提示。 */
-function ClipArea({ snapshot, round, audioRef, audioPlaybackState, audioStatus }: PlayingPhaseProps) {
+function ClipArea({
+  snapshot,
+  round,
+  audioRef,
+  audioPlaybackState,
+  audioStatus,
+}: PlayingPhaseProps) {
   if (!snapshot.settings.showLyrics) {
     // 与歌词框（SongLyricPlayer 的无歌词态）同一外壳
     return (
@@ -372,16 +487,26 @@ function ClipArea({ snapshot, round, audioRef, audioPlaybackState, audioStatus }
 }
 
 /** 已提交答案的本轮回执：猜番显示番名，猜曲显示歌名与歌手。 */
-function RoundAnswerNotice({ anime, privateState }: { anime: boolean; privateState: SonGuessrPrivateState }) {
+function RoundAnswerNotice({
+  anime,
+  privateState,
+}: {
+  anime: boolean;
+  privateState: SonGuessrPrivateState;
+}) {
   if (anime && privateState.submittedAnime) {
     return (
-      <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
+      <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
+        本轮答案：
+        <strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong>
+      </div>
     );
   }
   if (!privateState.submittedSong) return null;
   return (
     <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
-      本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
+      本轮答案：<strong>{privateState.submittedSong.title}</strong> ·{" "}
+      {privateState.submittedSong.artist}
     </div>
   );
 }
@@ -404,7 +529,15 @@ function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessS
       {stage === "guessing" ? (
         <GuessBar key="guessing" {...props} guessedIds={myGuessedIds(privateState)} />
       ) : stage === "preparing" ? (
-        <motion.p key="preparing" variants={listItem} initial="initial" animate="animate" exit="exit" role="status" className="text-center text-sm text-muted-foreground">
+        <motion.p
+          key="preparing"
+          variants={listItem}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          role="status"
+          className="text-center text-sm text-muted-foreground"
+        >
           音频准备中，请稍候...
         </motion.p>
       ) : (
@@ -420,13 +553,22 @@ function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessS
 /** 听歌作答阶段：片段、本轮答案、作答控件与猜测记录。 */
 function SongPlayingPhase(props: PlayingPhaseProps) {
   const {
-    snapshot, privateState, me, audioStatus, audioPlaybackState, round, onPlayAudio, onRetryAudio,
+    snapshot,
+    privateState,
+    me,
+    audioStatus,
+    audioPlaybackState,
+    round,
+    onPlayAudio,
+    onRetryAudio,
   } = props;
   const anime = snapshot.settings.questionType === "anime";
-  const canObserveAllAttempts = privateState.isSubmitter || privateState.teamObserver || me?.membership === "spectator";
+  const canObserveAllAttempts =
+    privateState.isSubmitter || privateState.teamObserver || me?.membership === "spectator";
   // 组队时可见记录里混着队友的猜测，标题与每行都写明是谁猜的
-  const teamAttempts = !canObserveAllAttempts
-    && privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
+  const teamAttempts =
+    !canObserveAllAttempts &&
+    privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
   const hasLyrics = (round.lyricClip?.lines?.length ?? 0) > 0;
   const stage = resolveGuessStage(privateState, me);
 
@@ -446,7 +588,11 @@ function SongPlayingPhase(props: PlayingPhaseProps) {
           />
         </div>
         {snapshot.settings.questionMode === "automatic" ? (
-          anime ? <AnimeAutoFilterSummary snapshot={snapshot} /> : <SongAutoFilterSummary snapshot={snapshot} />
+          anime ? (
+            <AnimeAutoFilterSummary snapshot={snapshot} />
+          ) : (
+            <SongAutoFilterSummary snapshot={snapshot} />
+          )
         ) : null}
         <ClipArea {...props} />
         <RoundAnswerNotice anime={anime} privateState={privateState} />
@@ -465,12 +611,22 @@ function SongPlayingPhase(props: PlayingPhaseProps) {
  * 房主指定出题人：候选取服务端下发的 `submitterCandidateIds`（在线真人，且他出题、队友一起观战后仍留得下猜歌的人）。
  * 组队时候选名后带上队伍，并提示指定后其队友本局一起观战。
  */
-function ChoosingSubmitterPhase({ snapshot, privateState, isHost, run, isPending }: Pick<SongGameAreaProps, "snapshot" | "privateState" | "isHost" | "run" | "isPending">) {
+function ChoosingSubmitterPhase({
+  snapshot,
+  privateState,
+  isHost,
+  run,
+  isPending,
+}: Pick<SongGameAreaProps, "snapshot" | "privateState" | "isHost" | "run" | "isPending">) {
   const allowed = new Set(privateState.submitterCandidateIds);
   const candidates = snapshot.players.filter((player) => allowed.has(player.id));
-  const activeCandidates = candidates.filter((player) => player.membership === "active").map(withTeamName);
+  const activeCandidates = candidates
+    .filter((player) => player.membership === "active")
+    .map(withTeamName);
   const spectatorCandidates = candidates.filter((player) => player.membership === "spectator");
-  const teamed = snapshot.players.some((player) => player.membership === "active" && player.team !== null);
+  const teamed = snapshot.players.some(
+    (player) => player.membership === "active" && player.team !== null
+  );
   const choosing = isPending?.("song.game.chooseSubmitter") ?? false;
   const pick = (playerId: string) => void run("song.game.chooseSubmitter", { playerId });
   return (
@@ -481,13 +637,25 @@ function ChoosingSubmitterPhase({ snapshot, privateState, isHost, run, isPending
           {spectatorCandidates.length > 0 ? (
             <section>
               <SectionHeader title="旁观玩家" icon={<Eye className="h-3.5 w-3.5" />} />
-              <CandidateGrid candidates={spectatorCandidates} tone="recommended" nameWrap="wrap" disabled={choosing} onPick={pick} />
+              <CandidateGrid
+                candidates={spectatorCandidates}
+                tone="recommended"
+                nameWrap="wrap"
+                disabled={choosing}
+                onPick={pick}
+              />
             </section>
           ) : null}
           {activeCandidates.length > 0 ? (
             <section>
               <SectionHeader title="玩家" icon={<UserCheck className="h-3.5 w-3.5" />} />
-              <CandidateGrid candidates={activeCandidates} tone="default" nameWrap="wrap" disabled={choosing} onPick={pick} />
+              <CandidateGrid
+                candidates={activeCandidates}
+                tone="default"
+                nameWrap="wrap"
+                disabled={choosing}
+                onPick={pick}
+              />
             </section>
           ) : null}
           {candidates.length === 0 ? (
@@ -505,12 +673,16 @@ function ChoosingSubmitterPhase({ snapshot, privateState, isHost, run, isPending
 
 function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: SongGameAreaProps) {
   const anime = snapshot.settings.questionType === "anime";
-  const submitter = snapshot.players.find((player) => player.id === snapshot.pendingSubmitterPlayerId);
+  const submitter = snapshot.players.find(
+    (player) => player.id === snapshot.pendingSubmitterPlayerId
+  );
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-6 text-center">
       <PhaseHeader
         icon={anime ? Film : Music2}
-        title={privateState.canSubmitSong ? "轮到你出题" : anime ? "等待出题人选番" : "等待出题人选歌"}
+        title={
+          privateState.canSubmitSong ? "轮到你出题" : anime ? "等待出题人选番" : "等待出题人选歌"
+        }
       />
       {privateState.canSubmitSong ? (
         <>
@@ -527,7 +699,11 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
               onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
             />
           ) : (
-            <SongSearch mode="submit" className="w-full" onSelect={(song) => onSelectSearchSong(song.id, "submit")} />
+            <SongSearch
+              mode="submit"
+              className="w-full"
+              onSelect={(song) => onSelectSearchSong(song.id, "submit")}
+            />
           )}
         </>
       ) : (
@@ -545,7 +721,16 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
  * md 以下歌词卡就占满首屏，猜测栏贴在游戏区滚动视口的底边（区内遮罩档 `bg-panel/90 backdrop-blur-sm`），
  * 左右以负外边距铺满游戏区内边距；滚到它的原位后随内容回到流内。
  */
-function GuessBar({ ref, snapshot, privateState, guessDeadlineAt, onSelectSearchSong, run, isPending, guessedIds }: SongGameAreaProps & {
+function GuessBar({
+  ref,
+  snapshot,
+  privateState,
+  guessDeadlineAt,
+  onSelectSearchSong,
+  run,
+  isPending,
+  guessedIds,
+}: SongGameAreaProps & {
   guessedIds: string[];
   ref?: React.Ref<HTMLElement>;
 }) {
@@ -562,8 +747,14 @@ function GuessBar({ ref, snapshot, privateState, guessDeadlineAt, onSelectSearch
       className="origin-left space-y-2 max-md:sticky max-md:bottom-0 max-md:z-panel max-md:-mx-6 max-md:bg-panel/90 max-md:px-6 max-md:pt-3 max-md:pb-3 max-md:backdrop-blur-sm"
     >
       <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>{privateState.canGuess ? `剩余 ${privateState.remainingGuesses} 次猜测` : "音频准备中，请稍候..."}</span>
-        {snapshot.settings.showGuessTimer && privateState.canGuess && privateState.guessDeadlineAt ? (
+        <span>
+          {privateState.canGuess
+            ? `剩余 ${privateState.remainingGuesses} 次猜测`
+            : "音频准备中，请稍候..."}
+        </span>
+        {snapshot.settings.showGuessTimer &&
+        privateState.canGuess &&
+        privateState.guessDeadlineAt ? (
           <SongGuessCountdown deadlineAt={guessDeadlineAt} />
         ) : null}
       </div>
@@ -586,7 +777,12 @@ function GuessBar({ ref, snapshot, privateState, guessDeadlineAt, onSelectSearch
           />
         )}
         {privateState.canGiveUp ? (
-          <Button variant="outline" className="h-10 shrink-0" loading={givingUp} onClick={() => void run("song.game.giveUp")}>
+          <Button
+            variant="outline"
+            className="h-10 shrink-0"
+            loading={givingUp}
+            onClick={() => void run("song.game.giveUp")}
+          >
             {givingUp ? null : <Flag />}投降
           </Button>
         ) : null}
@@ -600,7 +796,15 @@ export function SongGameArea(props: SongGameAreaProps) {
     <PhaseStage
       phaseKey={props.snapshot.phase}
       reserveBottom={props.snapshot.testMode}
-      overlays={props.snapshot.testMode ? <SongTestController run={props.run} snapshot={props.snapshot} isPending={props.isPending} /> : null}
+      overlays={
+        props.snapshot.testMode ? (
+          <SongTestController
+            run={props.run}
+            snapshot={props.snapshot}
+            isPending={props.isPending}
+          />
+        ) : null
+      }
     >
       <GameStage {...props} />
     </PhaseStage>

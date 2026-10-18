@@ -132,13 +132,12 @@ export const formatSystemLog = ({
   const statusCode = status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
   const timestampStr = formatTimestamp(createdAt);
   const durationStr = formatDuration(durationMs);
-  const rawIdentifier = (
+  const rawIdentifier =
     (context?.connectionId as string) ??
     (context?.roomId as string) ??
     (context?.playerId as string) ??
     (context?.ip as string) ??
-    "system"
-  );
+    "system";
   const identifierStr = sanitizeLogText(String(rawIdentifier), 32).padStart(15, " ");
   const actionStr = `SYS ${sanitizeLogText(message, 1000)}`;
 
@@ -146,8 +145,8 @@ export const formatSystemLog = ({
   const extraContext = cleanedContext
     ? Object.fromEntries(
         Object.entries(cleanedContext).filter(
-          ([k]) => !["connectionId", "roomId", "playerId", "ip"].includes(k),
-        ),
+          ([k]) => !["connectionId", "roomId", "playerId", "ip"].includes(k)
+        )
       )
     : undefined;
 
@@ -162,7 +161,7 @@ export const formatSystemLog = ({
 // 领域事件日志列格式化
 export const formatLogEntry = (
   entry: LogEntry & { durationMs?: number; status?: number },
-  level = getEventLevel(entry),
+  level = getEventLevel(entry)
 ): string => {
   const headline = EVENT_LABELS[entry.type] ?? entry.type;
   const statusCode = entry.status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
@@ -185,7 +184,9 @@ export const formatLogEntry = (
 
 import type { OtlpExporter } from "./OtlpExporter";
 import {
-  redactData, redactLogText, sanitizeLogText,
+  redactData,
+  redactLogText,
+  sanitizeLogText,
   captureServerException,
   captureServerLog,
   captureServerMessage,
@@ -202,7 +203,7 @@ export class EventLogger {
   constructor(
     output: LogOutputLike = defaultOutput,
     private readonly now: () => number = () => Date.now(),
-    otlpExporter?: OtlpExporter,
+    otlpExporter?: OtlpExporter
   ) {
     this.output = normalizeOutput(output);
     this.otlpExporter = otlpExporter;
@@ -216,17 +217,17 @@ export class EventLogger {
     level: LogLevel,
     message: string,
     context?: Record<string, unknown>,
-    createdAt = this.now(),
+    createdAt = this.now()
   ) {
     message = redactLogText(message);
-    const safeContext = context ? redactData(context) as Record<string, unknown> : undefined;
+    const safeContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
     this.output[LEVEL_METHODS[level]](
       formatSystemLog({
         level,
         message,
         createdAt,
         context: safeContext,
-      }),
+      })
     );
 
     if (this.otlpExporter?.isEnabled) {
@@ -261,7 +262,11 @@ export class EventLogger {
       }
     }
 
-    captureServerLog(message, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", safeContext);
+    captureServerLog(
+      message,
+      level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
+      safeContext
+    );
   }
 
   info(message: string, context?: Record<string, unknown>) {
@@ -349,11 +354,15 @@ export class EventLogger {
     const level = getEventLevel(entry);
     this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
 
-    captureServerLog(`EVENT ${entry.type}`, level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info", {
-      roomId: entry.roomId,
-      playerId: entry.playerId,
-      ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
-    });
+    captureServerLog(
+      `EVENT ${entry.type}`,
+      level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
+      {
+        roomId: entry.roomId,
+        playerId: entry.playerId,
+        ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
+      }
+    );
     countServerMetric("bakagame.events", 1, { event: entry.type, level });
 
     if (this.otlpExporter?.isEnabled) {
@@ -364,7 +373,9 @@ export class EventLogger {
         attributes: {
           roomId: entry.roomId,
           playerId: entry.playerId,
-          payload: entry.payload ? (redactData(entry.payload) as Record<string, unknown>) : undefined,
+          payload: entry.payload
+            ? (redactData(entry.payload) as Record<string, unknown>)
+            : undefined,
         },
       });
     }

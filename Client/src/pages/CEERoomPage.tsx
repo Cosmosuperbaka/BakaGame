@@ -23,15 +23,25 @@ export default function CEERoomPage() {
   const replayRounds = useCEERoundHistory(snapshot);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
   const showError = (error: unknown) => useCEEStore.getState().setNotice(ceeErrorMessage(error));
-  const sendChat = async (text: string) => { await useCEEStore.getState().sendCommand("cee.chat.send", { text }); };
+  const sendChat = async (text: string) => {
+    await useCEEStore.getState().sendCommand("cee.chat.send", { text });
+  };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
 
   const seo = (
-    <Seo path={lifecycle.roomId ? ceeRoomPath(lifecycle.roomId) : "/cee"} description="CEE 猜动漫角色对局中，快进房比拼二次元浓度与看番量！" indexable={false} />
+    <Seo
+      path={lifecycle.roomId ? ceeRoomPath(lifecycle.roomId) : "/cee"}
+      description="CEE 猜动漫角色对局中，快进房比拼二次元浓度与看番量！"
+      indexable={false}
+    />
   );
 
   // 尚未握手成功：与原版重连中同为断线语义，文案区分来源。
-  const connectionIssue = !lifecycle.connected ? "重连中..." : ready && !snapshot.upstreamConnected ? "原版重连中..." : null;
+  const connectionIssue = !lifecycle.connected
+    ? "重连中..."
+    : ready && !snapshot.upstreamConnected
+      ? "原版重连中..."
+      : null;
 
   // 密码步的失败写在密码框下（RoomJoinGate 的 passwordError）；其余加入失败（房间已满、已关闭等）以提示条报出。
   const passwordFailure = PASSWORD_CODES.has(lifecycle.errorCode);
@@ -59,8 +69,11 @@ export default function CEERoomPage() {
         nameMaxLength={32}
         pending={lifecycle.joining}
         // 刚到密码步时的「需要密码」不算失败，不标红；密码错误与尝试过多写在框下。
-        passwordError={passwordFailure && lifecycle.errorCode !== "PASSWORD_REQUIRED"
-          ? { message: lifecycle.error, invalid: lifecycle.errorCode === "PASSWORD_INCORRECT" } : null}
+        passwordError={
+          passwordFailure && lifecycle.errorCode !== "PASSWORD_REQUIRED"
+            ? { message: lifecycle.error, invalid: lifecycle.errorCode === "PASSWORD_INCORRECT" }
+            : null
+        }
       >
         {seo}
       </RoomJoinGate>
@@ -91,14 +104,26 @@ export default function CEERoomPage() {
         roomId={lifecycle.roomId}
         // 与大厅卡片同口径：增强房是默认，只给原版房挂来源标签；放在房号旁，中栏留给局数与视角。
         roomTag={snapshot.source === "original" ? CEE_SOURCE_LABELS.original : undefined}
-        center={<>
-          {displayRound > 0 ? <HeaderCounter>第 {displayRound} 局</HeaderCounter> : null}
-          {perspective === "setter" ? <HeaderChip icon={PenLine} label="出题人" /> : null}
-          {perspective === "observer" ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
-        </>}
+        center={
+          <>
+            {displayRound > 0 ? <HeaderCounter>第 {displayRound} 局</HeaderCounter> : null}
+            {perspective === "setter" ? <HeaderChip icon={PenLine} label="出题人" /> : null}
+            {perspective === "observer" ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
+          </>
+        }
         connectionIssue={connectionIssue}
-        player={<PlayerColumn><CEEPlayerList snapshot={snapshot} privateState={privateState} /></PlayerColumn>}
-        game={<CEEGameArea snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />}
+        player={
+          <PlayerColumn>
+            <CEEPlayerList snapshot={snapshot} privateState={privateState} />
+          </PlayerColumn>
+        }
+        game={
+          <CEEGameArea
+            snapshot={snapshot}
+            privateState={privateState}
+            replayRounds={replayRounds}
+          />
+        }
         chat={<ChatColumn>{chatPanel}</ChatColumn>}
         openDrawer={panel}
         onDrawerChange={(key) => setPanel(key as "players" | "chat" | null)}

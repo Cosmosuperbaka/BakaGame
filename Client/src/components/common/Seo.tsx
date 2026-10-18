@@ -62,7 +62,14 @@ interface SeoProps {
  * 「BakaGame」，不带任何后缀，由 index.html 的兜底 <title> 提供。本组件因此不渲染 <title>，
  * og:title 也固定为站名。
  */
-export function Seo({ path, description, image, keywords, indexable = true, structuredData }: SeoProps) {
+export function Seo({
+  path,
+  description,
+  image,
+  keywords,
+  indexable = true,
+  structuredData,
+}: SeoProps) {
   const meta = findPageMeta(path);
   const resolvedDescription = description ?? meta?.description;
   if (!resolvedDescription) {

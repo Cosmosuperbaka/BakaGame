@@ -4,20 +4,24 @@ import { createEvent } from "../src/transport/Packets";
 import { buildStatePatch, StateSyncEncoder } from "../src/transport/StateSync";
 
 test("状态补丁只编码变化路径与数组追加项", () => {
-  expect(buildStatePatch(
-    { players: [{ id: "p1", ready: false }], chat: [] },
-    { players: [{ id: "p1", ready: true }], chat: [{ id: "c1", text: "你好" }] },
-  )).toEqual([
+  expect(
+    buildStatePatch(
+      { players: [{ id: "p1", ready: false }], chat: [] },
+      { players: [{ id: "p1", ready: true }], chat: [{ id: "c1", text: "你好" }] }
+    )
+  ).toEqual([
     { op: "add", path: "/chat/0", value: { id: "c1", text: "你好" } },
     { op: "replace", path: "/players/0/ready", value: true },
   ]);
 });
 
 test("数组缩短时精准生成 remove 逆向删除操作", () => {
-  expect(buildStatePatch(
-    { players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }] },
-    { players: [{ id: "p1" }] },
-  )).toEqual([
+  expect(
+    buildStatePatch(
+      { players: [{ id: "p1" }, { id: "p2" }, { id: "p3" }] },
+      { players: [{ id: "p1" }] }
+    )
+  ).toEqual([
     { op: "remove", path: "/players/2" },
     { op: "remove", path: "/players/1" },
   ]);
@@ -48,10 +52,14 @@ test("编码器每分钟用全量状态校准补丁链", () => {
   encoder.encode(createEvent("room.snapshot", { value: 1, filler: "x".repeat(1_000) }));
   now = 60_000;
 
-  expect(encoder.encode(createEvent("room.snapshot", {
-    value: 2,
-    filler: "x".repeat(1_000),
-  }))[0]).toMatchObject({ payload: { mode: "full", revision: 2 } });
+  expect(
+    encoder.encode(
+      createEvent("room.snapshot", {
+        value: 2,
+        filler: "x".repeat(1_000),
+      })
+    )[0]
+  ).toMatchObject({ payload: { mode: "full", revision: 2 } });
 });
 
 test("校准调用会在无业务变化时按周期重发全量状态", () => {

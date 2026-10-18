@@ -12,13 +12,22 @@ import { PlayerStatusPill } from "./PlayerStatusPill";
 const [host, me, peach, azumi, kanade, , longName] = STORY_PLAYERS;
 
 /** 三个游戏在次行实际放的内容，用于核对同一行骨架承载不同信息的观感。 */
-const SECOND_LINE_CASES: Array<{ name: string; badges: ReactNode; meta?: ReactNode; detail?: ReactNode }> = [
+const SECOND_LINE_CASES: Array<{
+  name: string;
+  badges: ReactNode;
+  meta?: ReactNode;
+  detail?: ReactNode;
+}> = [
   { name: "谁是卧底 · 局内", badges: <PlayerStatusPill label="平民" tone="default" /> },
   { name: "猜歌 · 猜歌中", badges: <PlayerStatusPill label="猜歌" tone="warning" /> },
   {
     name: "CEE · 猜测中",
     badges: <PlayerStatusPill label="猜测中" tone="warning" />,
-    meta: <span className="truncate font-sans text-2xs text-muted-foreground">2 队 · 3/10 次 · 已提交</span>,
+    meta: (
+      <span className="truncate font-sans text-2xs text-muted-foreground">
+        2 队 · 3/10 次 · 已提交
+      </span>
+    ),
     detail: <CEEMarks marks="❌💡❌" name={host.name} />,
   },
 ];
@@ -44,12 +53,42 @@ export const AllStates: Story = {
   name: "全部行内状态",
   render: () => (
     <div className="flex flex-col gap-px">
-      <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="准备" tone="success" />} />
-      <PlayerRow name={me.name} score={9} me host badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
-      <PlayerRow name={peach.name} score={15} eliminated badges={<PlayerStatusPill label="完成" tone="default" />} />
-      <PlayerRow name={kanade.name} score={3} online={false} badges={<PlayerStatusPill label="等待" tone="default" />} />
-      <PlayerRow name={azumi.name} score={6} bot badges={<PlayerStatusPill label="准备" tone="success" />} />
-      <PlayerRow name={longName.name} score={0} badges={<PlayerStatusPill label="旁观" tone="default" />} />
+      <PlayerRow
+        name={host.name}
+        score={12}
+        host
+        badges={<PlayerStatusPill label="准备" tone="success" />}
+      />
+      <PlayerRow
+        name={me.name}
+        score={9}
+        me
+        host
+        badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+      />
+      <PlayerRow
+        name={peach.name}
+        score={15}
+        eliminated
+        badges={<PlayerStatusPill label="完成" tone="default" />}
+      />
+      <PlayerRow
+        name={kanade.name}
+        score={3}
+        online={false}
+        badges={<PlayerStatusPill label="等待" tone="default" />}
+      />
+      <PlayerRow
+        name={azumi.name}
+        score={6}
+        bot
+        badges={<PlayerStatusPill label="准备" tone="success" />}
+      />
+      <PlayerRow
+        name={longName.name}
+        score={0}
+        badges={<PlayerStatusPill label="旁观" tone="default" />}
+      />
     </div>
   ),
 };
@@ -61,7 +100,14 @@ export const PerGameSecondLine: Story = {
       {SECOND_LINE_CASES.map((game) => (
         <div key={game.name} className="flex flex-col gap-1">
           <p className="font-sans text-2xs text-muted-foreground">{game.name}</p>
-          <PlayerRow name={host.name} score={12} host badges={game.badges} meta={game.meta} detail={game.detail} />
+          <PlayerRow
+            name={host.name}
+            score={12}
+            host
+            badges={game.badges}
+            meta={game.meta}
+            detail={game.detail}
+          />
         </div>
       ))}
     </div>
@@ -98,7 +144,9 @@ export const ActionPopover: Story = {
   tags: ["overlay"],
   render: () => <PlayerRow name={peach.name} score={15} actions={manage} />,
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: `${peach.name} 操作` }));
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: `${peach.name} 操作` })
+    );
     await screen.findByRole("button", { name: /转移房主/ });
     dropFocus();
   },
@@ -121,8 +169,20 @@ export const Embedded: Story = {
   name: "嵌入表格首列",
   render: () => (
     <div className="flex flex-col gap-px">
-      <PlayerRow name={host.name} score={12} host embedded badges={<PlayerStatusPill label="平民" tone="default" />} />
-      <PlayerRow name={me.name} score={9} me embedded badges={<PlayerStatusPill label="平民" tone="default" />} />
+      <PlayerRow
+        name={host.name}
+        score={12}
+        host
+        embedded
+        badges={<PlayerStatusPill label="平民" tone="default" />}
+      />
+      <PlayerRow
+        name={me.name}
+        score={9}
+        me
+        embedded
+        badges={<PlayerStatusPill label="平民" tone="default" />}
+      />
     </div>
   ),
 };
@@ -132,13 +192,41 @@ function ScoringRows() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-px">
-        <PlayerRow name={host.name} score={scores[0]} host badges={<PlayerStatusPill label="猜中" tone="success" />} />
-        <PlayerRow name={me.name} score={scores[1]} me badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
+        <PlayerRow
+          name={host.name}
+          score={scores[0]}
+          host
+          badges={<PlayerStatusPill label="猜中" tone="success" />}
+        />
+        <PlayerRow
+          name={me.name}
+          score={scores[1]}
+          me
+          badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+        />
       </div>
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first + 3, second])}>房主 +3</Button>
-        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first, second + 1])}>本人 +1</Button>
-        <Button size="sm" variant="outline" onClick={() => setScores(([first, second]) => [first, second - 2])}>本人 -2</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setScores(([first, second]) => [first + 3, second])}
+        >
+          房主 +3
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setScores(([first, second]) => [first, second + 1])}
+        >
+          本人 +1
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setScores(([first, second]) => [first, second - 2])}
+        >
+          本人 -2
+        </Button>
       </div>
     </div>
   );
@@ -159,10 +247,12 @@ export const WithBadgeSlot: Story = {
       name={host.name}
       score={12}
       host
-      badges={<>
-        <PlayerStatusPill label="平民" tone="default" />
-        <Badge variant="outline">原版</Badge>
-      </>}
+      badges={
+        <>
+          <PlayerStatusPill label="平民" tone="default" />
+          <Badge variant="outline">原版</Badge>
+        </>
+      }
     />
   ),
 };

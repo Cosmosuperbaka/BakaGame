@@ -32,7 +32,7 @@ const byteLength = (value: unknown) => new TextEncoder().encode(JSON.stringify(v
 /** 二分找出能放进上限的最长前缀，末尾补一条截断标记。 */
 export const capTimeline = (
   timeline: GameRecordEvent[],
-  maxBytes = GAME_ROUND_TIMELINE_MAX_BYTES,
+  maxBytes = GAME_ROUND_TIMELINE_MAX_BYTES
 ): GameRecordEvent[] => {
   if (byteLength(timeline) <= maxBytes) return timeline;
   let low = 0;
@@ -85,24 +85,34 @@ export class GameRecordService implements GameRecorder {
   record(round: GameRoundRecord): void {
     const key = sessionKey(round);
     if (this.closedKeys.has(key)) {
-      this.options.logger.warn("房间已结束，忽略迟到的回合记录", { game: round.game, roomId: round.roomId });
+      this.options.logger.warn("房间已结束，忽略迟到的回合记录", {
+        game: round.game,
+        roomId: round.roomId,
+      });
       return;
     }
     const session = this.sessions.get(key) ?? this.createSession(round);
     if (session.closed) {
-      this.options.logger.warn("房间已结束，忽略迟到的回合记录", { game: round.game, roomId: round.roomId });
+      this.options.logger.warn("房间已结束，忽略迟到的回合记录", {
+        game: round.game,
+        roomId: round.roomId,
+      });
       return;
     }
     // 回合序号永远递增；重放或重复结算不应把同一回合记两次。
     if (round.roundNumber <= session.lastRoundNumber) {
       this.options.logger.warn("忽略重复的回合记录", {
-        game: round.game, roomId: round.roomId, roundNumber: round.roundNumber,
+        game: round.game,
+        roomId: round.roomId,
+        roundNumber: round.roundNumber,
       });
       return;
     }
     if (this.queuedRounds() >= MAX_QUEUED_ROUNDS) {
       this.options.logger.warn("对局记录积压过多，已丢弃", {
-        game: round.game, roomId: round.roomId, roundNumber: round.roundNumber,
+        game: round.game,
+        roomId: round.roomId,
+        roundNumber: round.roundNumber,
       });
       return;
     }
@@ -184,7 +194,10 @@ export class GameRecordService implements GameRecorder {
           await this.options.repository.save(this.snapshot(session, round), round ?? undefined);
         } catch (error) {
           this.options.logger.warn("对局记录写入失败", {
-            game: session.game, roomId: session.roomId, roundNumber: round?.number ?? null, error: String(error),
+            game: session.game,
+            roomId: session.roomId,
+            roundNumber: round?.number ?? null,
+            error: String(error),
           });
         }
       }
@@ -227,6 +240,7 @@ export class GameRecordService implements GameRecorder {
     if (this.closedKeys.has(key)) return;
     this.closedKeys.add(key);
     this.closedOrder.push(key);
-    if (this.closedOrder.length > CLOSED_KEY_MEMORY) this.closedKeys.delete(this.closedOrder.shift()!);
+    if (this.closedOrder.length > CLOSED_KEY_MEMORY)
+      this.closedKeys.delete(this.closedOrder.shift()!);
   }
 }

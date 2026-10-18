@@ -45,7 +45,10 @@ export function hasAvifMagic(bytes: Uint8Array): boolean {
   for (let i = 0; i + AVIF_MAGIC.length <= head.length; i += 1) {
     let hit = true;
     for (let j = 0; j < AVIF_MAGIC.length; j += 1) {
-      if (head[i + j] !== AVIF_MAGIC.charCodeAt(j)) { hit = false; break; }
+      if (head[i + j] !== AVIF_MAGIC.charCodeAt(j)) {
+        hit = false;
+        break;
+      }
     }
     if (hit) return true;
   }
@@ -70,8 +73,14 @@ export class BangumiImageService {
     this.logger = options.logger;
     this.persist = options.persist;
     this.now = options.now ?? Date.now;
-    this.globalLimiter = new SlidingWindowRateLimiter({ windowMs: 60_000, maxRequests: options.upstreamPerMinute ?? 120 });
-    this.clientLimiter = new SlidingWindowRateLimiter({ windowMs: 60_000, maxRequests: options.perClientPerMinute ?? 30 });
+    this.globalLimiter = new SlidingWindowRateLimiter({
+      windowMs: 60_000,
+      maxRequests: options.upstreamPerMinute ?? 120,
+    });
+    this.clientLimiter = new SlidingWindowRateLimiter({
+      windowMs: 60_000,
+      maxRequests: options.perClientPerMinute ?? 30,
+    });
   }
 
   get available(): boolean {
@@ -103,10 +112,15 @@ export class BangumiImageService {
 
   private async fetchUpstream(path: string): Promise<StoredImage | undefined> {
     try {
-      const response = await fetchWithGuardedRedirects(this.fetcher, `${this.sourceBase}${path}`, {
-        headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
-        signal: AbortSignal.timeout(8_000),
-      }, { pinOrigin: true });
+      const response = await fetchWithGuardedRedirects(
+        this.fetcher,
+        `${this.sourceBase}${path}`,
+        {
+          headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
+          signal: AbortSignal.timeout(8_000),
+        },
+        { pinOrigin: true }
+      );
       if (!response.ok) return undefined;
       const bytes = new Uint8Array(await response.arrayBuffer());
       // 只认 avif：上游异常时不要把 jpeg / 错误页写进库（坏字节一旦入库就不会再重下）。
@@ -115,7 +129,10 @@ export class BangumiImageService {
       this.persist?.(path, image);
       return image;
     } catch (error) {
-      this.logger?.warn("图床回源失败", { path, error: error instanceof Error ? error.message : String(error) });
+      this.logger?.warn("图床回源失败", {
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return undefined;
     }
   }

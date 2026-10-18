@@ -10,11 +10,17 @@ export type Breakpoint = keyof typeof BREAKPOINTS;
  * 越过断点后由常驻布局接管，浮层的入口随之隐藏，开着的浮层必须一起收起。
  * 只在打开期间监听，关闭时不订阅媒体查询。
  */
-export function useCloseFrom(open: boolean, onOpenChange: (open: boolean) => void, breakpoint: Breakpoint) {
+export function useCloseFrom(
+  open: boolean,
+  onOpenChange: (open: boolean) => void,
+  breakpoint: Breakpoint
+) {
   useEffect(() => {
     if (!open) return;
     const query = matchMedia(`(min-width: ${BREAKPOINTS[breakpoint]})`);
-    const close = () => { if (query.matches) onOpenChange(false); };
+    const close = () => {
+      if (query.matches) onOpenChange(false);
+    };
     query.addEventListener("change", close);
     return () => query.removeEventListener("change", close);
   }, [open, onOpenChange, breakpoint]);

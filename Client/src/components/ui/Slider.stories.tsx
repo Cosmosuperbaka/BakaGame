@@ -26,7 +26,9 @@ function VolumeRow({ initial, disabled = false }: { initial: number; disabled?: 
         onValueChange={([value]) => setVolume(value)}
         aria-label="播放音量"
       />
-      <span className="min-w-10 text-right text-sm font-semibold tabular-nums">{Math.round(volume * 100)}%</span>
+      <span className="min-w-10 text-right text-sm font-semibold tabular-nums">
+        {Math.round(volume * 100)}%
+      </span>
     </div>
   );
 }

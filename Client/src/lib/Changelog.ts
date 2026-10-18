@@ -20,8 +20,7 @@ export type InlineNode =
   | { kind: "link"; text: string; href: string };
 
 export type BlockNode =
-  | { kind: "list"; items: InlineNode[][] }
-  | { kind: "paragraph"; content: InlineNode[] };
+  { kind: "list"; items: InlineNode[][] } | { kind: "paragraph"; content: InlineNode[] };
 
 /** 行内标记：加粗、等宽、链接。链接只接受 http(s) 与站内相对路径。 */
 const INLINE_PATTERN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/g;
@@ -42,9 +41,7 @@ function parseInline(source: string): InlineNode[] {
     } else if (linkText !== undefined && linkHref !== undefined) {
       const safe = /^(https?:\/\/|\/)/.test(linkHref);
       nodes.push(
-        safe
-          ? { kind: "link", text: linkText, href: linkHref }
-          : { kind: "text", text: linkText },
+        safe ? { kind: "link", text: linkText, href: linkHref } : { kind: "text", text: linkText }
       );
     }
     cursor = at + raw.length;
@@ -139,7 +136,7 @@ export function resolveLatestVersion(entries: readonly ChangelogEntry[]): string
   if (entries.length === 0) return undefined;
   return entries.reduce(
     (latest, entry) => (compareVersions(entry.version, latest) > 0 ? entry.version : latest),
-    entries[0].version,
+    entries[0].version
   );
 }
 
@@ -221,4 +218,3 @@ export function parseChangelogEntry(content: ChangelogContent): ParsedCategorySe
 
   return sections;
 }
-

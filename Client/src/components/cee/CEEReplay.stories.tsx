@@ -37,7 +37,11 @@ const meta = {
   decorators: [
     (Story) => {
       window.localStorage.setItem(CEE_REPLAY_STORAGE_KEY, "1");
-      return <div className="w-[36rem] max-w-full"><Story /></div>;
+      return (
+        <div className="w-[36rem] max-w-full">
+          <Story />
+        </div>
+      );
     },
   ],
 } satisfies Meta<typeof CEEReplay>;

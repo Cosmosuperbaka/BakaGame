@@ -58,7 +58,9 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
       }
     } catch (error) {
       // 备份失败绝不阻断主流程：库本身还在，缺一次快照不是可用性问题。
-      options.logger?.warn(`数据集备份失败：${error instanceof Error ? error.message : String(error)}`);
+      options.logger?.warn(
+        `数据集备份失败：${error instanceof Error ? error.message : String(error)}`
+      );
     } finally {
       // 备份失败也必须恢复：更新器卡在暂停态会让数据集永远不再更新。
       options.onBackup?.resume();
@@ -84,7 +86,9 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
       await options.onDailyTask();
     } catch (error) {
       // 日常维护失败不该影响服务：下一轮会重试，数据本身还在。
-      options.logger?.warn(`每日维护任务失败：${error instanceof Error ? error.message : String(error)}`);
+      options.logger?.warn(
+        `每日维护任务失败：${error instanceof Error ? error.message : String(error)}`
+      );
     }
   };
 

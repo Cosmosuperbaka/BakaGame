@@ -101,7 +101,11 @@ export const OriginalUnavailable: Story = {
   name: "兼容原版 · 不可用",
   args: {
     roomMode: {
-      label: "兼容原版", icon: Server, description: "开启后建在原版服务器上。", checked: false, onCheckedChange: fn(),
+      label: "兼容原版",
+      icon: Server,
+      description: "开启后建在原版服务器上。",
+      checked: false,
+      onCheckedChange: fn(),
       disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。",
     },
   },

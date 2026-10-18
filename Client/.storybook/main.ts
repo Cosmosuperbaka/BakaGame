@@ -10,7 +10,8 @@ async function withoutExcludedPlugins(plugins: PluginOption[] = []): Promise<Plu
   const kept: PluginOption[] = [];
   for (const plugin of resolved) {
     if (Array.isArray(plugin)) kept.push(...(await withoutExcludedPlugins(plugin)));
-    else if (!plugin || !("name" in plugin) || !EXCLUDED_PLUGINS.has(plugin.name)) kept.push(plugin);
+    else if (!plugin || !("name" in plugin) || !EXCLUDED_PLUGINS.has(plugin.name))
+      kept.push(plugin);
   }
   return kept;
 }
@@ -64,9 +65,17 @@ const config: StorybookConfig = {
         ...viteConfig.optimizeDeps,
         include: [
           ...(viteConfig.optimizeDeps?.include ?? []),
-          "@radix-ui/react-dialog", "@radix-ui/react-label", "@radix-ui/react-popover", "@radix-ui/react-scroll-area",
-          "@radix-ui/react-select", "@radix-ui/react-separator", "@radix-ui/react-slider", "@radix-ui/react-slot",
-          "@radix-ui/react-switch", "@radix-ui/react-tabs", "@radix-ui/react-tooltip",
+          "@radix-ui/react-dialog",
+          "@radix-ui/react-label",
+          "@radix-ui/react-popover",
+          "@radix-ui/react-scroll-area",
+          "@radix-ui/react-select",
+          "@radix-ui/react-separator",
+          "@radix-ui/react-slider",
+          "@radix-ui/react-slot",
+          "@radix-ui/react-switch",
+          "@radix-ui/react-tabs",
+          "@radix-ui/react-tooltip",
           // 品牌图标按 icons/SiXxx 逐图标引入（聚合入口无法按需拆分）；按子路径逐个预构建，
           // 否则截图过程首次用到某个图标会中途重新优化，让在途请求 504。
           "@icons-pack/react-simple-icons/icons/SiApplemusic",
@@ -94,7 +103,9 @@ const config: StorybookConfig = {
           "@icons-pack/react-simple-icons/icons/SiVite",
           "@icons-pack/react-simple-icons/icons/SiVitest",
           "@icons-pack/react-simple-icons/icons/SiZod",
-          "framer-motion", "react-router-dom", "zustand",
+          "framer-motion",
+          "react-router-dom",
+          "zustand",
         ],
       },
     };

@@ -22,7 +22,7 @@ const sameRect = (a: IndicatorRect | null, b: IndicatorRect) =>
 export function useIndicatorRect(
   containerRef: RefObject<HTMLElement | null>,
   activeSelector: string,
-  activeKey: unknown,
+  activeKey: unknown
 ): IndicatorRect | null {
   const [rect, setRect] = useState<IndicatorRect | null>(null);
 
@@ -35,7 +35,12 @@ export function useIndicatorRect(
         setRect(null);
         return;
       }
-      const next = { x: target.offsetLeft, y: target.offsetTop, width: target.offsetWidth, height: target.offsetHeight };
+      const next = {
+        x: target.offsetLeft,
+        y: target.offsetTop,
+        width: target.offsetWidth,
+        height: target.offsetHeight,
+      };
       setRect((previous) => (sameRect(previous, next) ? previous : next));
     };
     measure();

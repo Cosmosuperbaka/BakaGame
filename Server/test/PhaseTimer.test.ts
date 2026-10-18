@@ -1,12 +1,7 @@
 import { expect, test } from "bun:test";
 
 import type { WhoIsFakerRoomSnapshot } from "../src/domain/Model";
-import {
-  createConnection,
-  createTestContext,
-  execute,
-  getLastEventPayload,
-} from "./Helpers";
+import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）", async () => {
   const context = createTestContext();
@@ -43,7 +38,7 @@ test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）"
       id: "msg_timer_30",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 30 },
-    }),
+    })
   ).rejects.toThrow("倒计时时长只能在1、2、3分钟之间选择");
 
   // 尝试设置 300s（非法）
@@ -52,7 +47,7 @@ test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）"
       id: "msg_timer_300",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 300 },
-    }),
+    })
   ).rejects.toThrow("倒计时时长只能在1、2、3分钟之间选择");
 
   // 设置 60s（合法）
@@ -61,7 +56,9 @@ test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）"
     type: "game.startPhaseTimer",
     payload: { durationSeconds: 60 },
   });
-  expect((res60 as { phaseTimer: { durationSeconds: number } }).phaseTimer.durationSeconds).toBe(60);
+  expect((res60 as { phaseTimer: { durationSeconds: number } }).phaseTimer.durationSeconds).toBe(
+    60
+  );
 
   const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot");
   expect(snapshot?.status.phaseTimer?.durationSeconds).toBe(60);
@@ -89,7 +86,7 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
       id: "msg_timer_waiting",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 60 },
-    }),
+    })
   ).rejects.toMatchObject({
     code: "ROUND_NOT_STARTED",
   });
@@ -120,7 +117,7 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
       id: "msg_timer_assigning",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 60 },
-    }),
+    })
   ).rejects.toThrow("当前阶段不支持设置倒计时");
 
   // 指定出题人进入 wordSubmission
@@ -140,7 +137,7 @@ test("阶段约束与非对局阶段排除：assigningQuestioner、wordSubmissio
       id: "msg_timer_word_sub",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 60 },
-    }),
+    })
   ).rejects.toThrow("当前阶段不支持设置倒计时");
 });
 
@@ -231,7 +228,7 @@ test("权限校验：仅出题人（主持人）可设置与取消倒计时，�
       id: "msg_timer_player",
       type: "game.startPhaseTimer",
       payload: { durationSeconds: 60 },
-    }),
+    })
   ).rejects.toThrow("只有出题人可以执行该操作");
 
   // 出题人设置倒计时
@@ -250,7 +247,7 @@ test("权限校验：仅出题人（主持人）可设置与取消倒计时，�
       id: "msg_timer_stop_player",
       type: "game.stopPhaseTimer",
       payload: {},
-    }),
+    })
   ).rejects.toThrow("只有出题人可以执行该操作");
 
   // 出题人取消倒计时
@@ -474,7 +471,11 @@ test("投票阶段超时自动为未投票玩家提交弃票并结算", async ()
   expect(snapshot.status.feedback?.next).toBe("night");
   expect(snapshot.status.phaseTimer).toBeUndefined();
 
-  await execute(context.service, connHost, { id: "msg_continue", type: "game.advancePhase", payload: {} });
+  await execute(context.service, connHost, {
+    id: "msg_continue",
+    type: "game.advancePhase",
+    payload: {},
+  });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("night");
 });
@@ -523,10 +524,18 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   // 夜晚超时自动放弃行动，天亮反馈后进入描述阶段
   expect(snapshot.status.phase).toBe("feedback");
-  expect(snapshot.status.feedback).toMatchObject({ kind: "night", eliminatedPlayerIds: [], next: "description" });
+  expect(snapshot.status.feedback).toMatchObject({
+    kind: "night",
+    eliminatedPlayerIds: [],
+    next: "description",
+  });
   expect(snapshot.status.phaseTimer).toBeUndefined();
 
-  await execute(context.service, connHost, { id: "msg_continue", type: "game.advancePhase", payload: {} });
+  await execute(context.service, connHost, {
+    id: "msg_continue",
+    type: "game.advancePhase",
+    payload: {},
+  });
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("description");
   expect(snapshot.status.day).toBe(2);

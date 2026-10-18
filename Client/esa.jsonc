@@ -4,6 +4,6 @@
   "buildCommand": "npm run build",
   "assets": {
     "directory": "./dist",
-    "notFoundStrategy": "singlePageApplication"
-  }
+    "notFoundStrategy": "singlePageApplication",
+  },
 }

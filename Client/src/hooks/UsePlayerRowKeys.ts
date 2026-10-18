@@ -10,7 +10,11 @@ interface RowKeyState {
 
 const ABSENT = "\u0000absent";
 
-function advance(state: RowKeyState, entries: ReadonlyArray<{ id: string; group: string }>, signature: string): RowKeyState {
+function advance(
+  state: RowKeyState,
+  entries: ReadonlyArray<{ id: string; group: string }>,
+  signature: string
+): RowKeyState {
   const groups = new Map(state.groups);
   const epochs = new Map(state.epochs);
   const present = new Set<string>();
@@ -32,9 +36,13 @@ function advance(state: RowKeyState, entries: ReadonlyArray<{ id: string; group:
  * 的取值（透明、缩小）且不再补播入场，这一行就一直看不见。每换一次组 key 就变一次，
  * 换回来的总是一行新挂载的元素，旧的那行照常退场卸载；跨分组的滑动仍由 `layoutId`（玩家编号）负责。
  */
-export function usePlayerRowKeys(entries: ReadonlyArray<{ id: string; group: string }>): (id: string) => string {
+export function usePlayerRowKeys(
+  entries: ReadonlyArray<{ id: string; group: string }>
+): (id: string) => string {
   const signature = entries.map(({ id, group }) => `${id}=${group}`).join("\n");
-  const [state, setState] = useState<RowKeyState>(() => advance({ signature: "", groups: new Map(), epochs: new Map() }, entries, signature));
+  const [state, setState] = useState<RowKeyState>(() =>
+    advance({ signature: "", groups: new Map(), epochs: new Map() }, entries, signature)
+  );
   let current = state;
   // 「随渲染派生上一轮信息」的写法：分组变了就在本次渲染里算出新状态并提交，不等 effect 晚一帧。
   if (state.signature !== signature) {

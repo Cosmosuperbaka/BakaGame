@@ -18,7 +18,7 @@ export function createRoomEntry<T>(options: {
   const run = (
     request: () => Promise<T>,
     abandoned: () => boolean,
-    onFailure?: (error: unknown) => boolean,
+    onFailure?: (error: unknown) => boolean
   ) => {
     const generation = options.generation();
     const lifetime = lifecycle.signal;
@@ -70,12 +70,12 @@ export function createRoomEntry<T>(options: {
       key: string,
       request: () => Promise<T>,
       onFailure: (error: unknown) => boolean,
-      signal?: AbortSignal,
+      signal?: AbortSignal
     ): Promise<boolean> {
       const generation = options.generation();
       if (!restoring || restoring.key !== key || restoring.generation !== generation) {
         const owners = new Set<AbortSignal | undefined>([signal]);
-        const promise = run(request, () => [...owners].every(owner => owner?.aborted), onFailure);
+        const promise = run(request, () => [...owners].every((owner) => owner?.aborted), onFailure);
         const entry = { key, generation, owners, promise };
         restoring = entry;
         const release = () => {
@@ -85,7 +85,7 @@ export function createRoomEntry<T>(options: {
       } else {
         restoring.owners.add(signal);
       }
-      return restoring.promise.then(result => {
+      return restoring.promise.then((result) => {
         if (signal?.aborted) throw cancelled();
         return result;
       });

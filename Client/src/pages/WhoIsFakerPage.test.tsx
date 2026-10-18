@@ -2,7 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { peekPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
+import {
+  peekPendingRestore,
+  readRoomCreateDefaults,
+  saveRoomCreateDefaults,
+} from "@/lib/RoomSettingsMemory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerRoomSummary } from "@/types";
 import WhoIsFakerPage from "./WhoIsFakerPage";
@@ -43,7 +47,7 @@ function renderPage() {
         <Route path="/whoisfaker" element={<WhoIsFakerPage />} />
         <Route path="/whoisfaker/room/:id" element={<div data-testid="room-target" />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
@@ -89,7 +93,9 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     const card = screen.getByText("测试房间一");
     expect(skeleton).toBeInTheDocument();
     expect(skeleton.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await waitFor(() => expect(screen.queryByRole("status", { name: "正在加载房间列表" })).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole("status", { name: "正在加载房间列表" })).not.toBeInTheDocument()
+    );
     expect(screen.getByText("测试房间一")).toBeInTheDocument();
   });
 
@@ -165,7 +171,12 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     localStorage.setItem("bakagame:username", "玩家");
     saveRoomCreateDefaults("faker", { visibility: "private", allowSpectators: false });
     const createRoom = vi.fn().mockResolvedValue(undefined);
-    useWhoIsFakerStore.setState({ rooms: mockRooms, connected: true, lobbyReady: true, createRoom });
+    useWhoIsFakerStore.setState({
+      rooms: mockRooms,
+      connected: true,
+      lobbyReady: true,
+      createRoom,
+    });
     renderPage();
 
     // 弹窗打开：私密与旁观沿用上次创建的选择。
@@ -182,10 +193,13 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     await waitFor(() => expect(screen.getByTestId("room-target")).toBeInTheDocument());
     expect(createRoom).toHaveBeenCalledWith(
       expect.objectContaining({ visibility: "public", allowSpectators: true }),
-      expect.any(AbortSignal),
+      expect.any(AbortSignal)
     );
     // 新选项覆盖记忆，并为这间新房登记待恢复的标记。
-    expect(readRoomCreateDefaults("faker")).toEqual({ visibility: "public", allowSpectators: true });
+    expect(readRoomCreateDefaults("faker")).toEqual({
+      visibility: "public",
+      allowSpectators: true,
+    });
     const roomId = String(createRoom.mock.calls[0]?.[0]?.roomId);
     expect(peekPendingRestore("faker")).toBe(roomId);
   });

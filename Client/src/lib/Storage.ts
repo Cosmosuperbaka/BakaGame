@@ -23,9 +23,7 @@ const LEGACY_SESSION_PREFIX = "wif_session_";
  */
 export function normalizeRoomId(roomId: string): string {
   const normalized = roomId.trim();
-  return normalized.toLowerCase() === TEST_ROOM_ID.toLowerCase()
-    ? TEST_ROOM_ID
-    : normalized;
+  return normalized.toLowerCase() === TEST_ROOM_ID.toLowerCase() ? TEST_ROOM_ID : normalized;
 }
 
 function getSessionKey(roomId: string): string {

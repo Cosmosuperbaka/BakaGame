@@ -1,4 +1,3 @@
-
 import type { GameRecorder } from "../src/domain/GameRecord";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
@@ -62,27 +61,24 @@ export const createConnection = (service: WhoIsFakerService, id: string): TestCo
 export const execute = async (
   service: WhoIsFakerService,
   connection: TestConnection,
-  message: WhoIsFakerClientMessage,
+  message: WhoIsFakerClientMessage
 ) => service.execute(connection.record.id, message);
 
 // 从测试连接里筛出某一类事件，便于断言广播结果。
-export const getEventPayloads = <TPayload>(
-  connection: TestConnection,
-  event: string,
-): TPayload[] =>
+export const getEventPayloads = <TPayload>(connection: TestConnection, event: string): TPayload[] =>
   connection.sent
     .filter(
       (entry): entry is { type: "event"; event: string; payload: TPayload } =>
         Boolean(entry) &&
         typeof entry === "object" &&
         (entry as { type?: string }).type === "event" &&
-        (entry as { event?: string }).event === event,
+        (entry as { event?: string }).event === event
     )
     .map((entry) => entry.payload);
 
 export const getLastEventPayload = <TPayload>(
   connection: TestConnection,
-  event: string,
+  event: string
 ): TPayload | undefined => {
   const payloads = getEventPayloads<TPayload>(connection, event);
   return payloads.at(-1);

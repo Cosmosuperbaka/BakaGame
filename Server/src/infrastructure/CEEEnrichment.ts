@@ -12,17 +12,21 @@ import type { CEEDirectoryResult, CEEImageSize } from "../shared/CEE";
 import type { CEEDataOptions } from "./CEEData";
 
 const CharacterResponse = Type.Object({
-  name: Type.Optional(Type.String()), summary: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+  summary: Type.Optional(Type.String()),
   gender: Type.Optional(Type.Union([Type.String(), Type.Number(), Type.Null()])),
   images: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
-  stat: Type.Optional(Type.Object({ collects: Type.Optional(Type.Number()), comments: Type.Optional(Type.Number()) })),
+  stat: Type.Optional(
+    Type.Object({ collects: Type.Optional(Type.Number()), comments: Type.Optional(Type.Number()) })
+  ),
   infobox: Type.Optional(Type.Array(Type.Object({ key: Type.String(), value: Type.Unknown() }))),
 });
 const SubjectResponse = Type.Object({
   images: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
 });
 const DirectoryPage = Type.Object({
-  total: Type.Integer({ minimum: 0 }), data: Type.Array(Type.Object({ id: Type.Integer({ minimum: 1 }) }), { maxItems: 100 }),
+  total: Type.Integer({ minimum: 0 }),
+  data: Type.Array(Type.Object({ id: Type.Integer({ minimum: 1 }) }), { maxItems: 100 }),
 });
 
 type ImageEntity = "character" | "subject";
@@ -30,7 +34,11 @@ const MISS_TTL_MS = 300_000;
 
 const isHttpUrl = (candidate: string | null | undefined): candidate is string => {
   if (!candidate) return false;
-  try { return ["https:", "http:"].includes(new URL(candidate).protocol); } catch { return false; }
+  try {
+    return ["https:", "http:"].includes(new URL(candidate).protocol);
+  } catch {
+    return false;
+  }
 };
 
 /** 回填缓存的图片载荷。只存**上游原始 URL**，镜像地址在读取时重写。 */
@@ -51,7 +59,10 @@ export interface BangumiEnrichment {
  * 列表框是 36~40px 的方形且按 `object-top` 裁切，竖版大图只会被裁到头顶，
  * `grid` 比例正对方框、体积也小一个量级。
  */
-function pickImages(images: Record<string, string | null> | undefined, entity: ImageEntity): BangumiEnrichment {
+function pickImages(
+  images: Record<string, string | null> | undefined,
+  entity: ImageEntity
+): BangumiEnrichment {
   const source = images ?? {};
   const image = [source.large].find(isHttpUrl);
   const grid = entity === "character" ? [source.grid, source.large].find(isHttpUrl) : undefined;
@@ -82,7 +93,8 @@ export class CEEEnrichment {
   private closed = false;
 
   constructor(options: CEEDataOptions) {
-    if (options.enrichmentPath && options.enrichmentPath !== ":memory:") mkdirSync(dirname(options.enrichmentPath), { recursive: true });
+    if (options.enrichmentPath && options.enrichmentPath !== ":memory:")
+      mkdirSync(dirname(options.enrichmentPath), { recursive: true });
     this.db = new Database(options.enrichmentPath ?? ":memory:", { create: true });
     this.renameLegacyTables();
     this.db.exec(`PRAGMA busy_timeout=1000;
@@ -109,25 +121,40 @@ export class CEEEnrichment {
       ["ccb_directories", "cee_directories"],
     ];
     for (const [from, to] of legacy) {
-      const hasTable = (name: string) => Boolean(this.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name));
+      const hasTable = (name: string) =>
+        Boolean(
+          this.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)
+        );
       if (hasTable(from) && !hasTable(to)) this.db.exec(`ALTER TABLE ${from} RENAME TO ${to}`);
     }
   }
 
   readCharacter(id: number): CEECharacterSupplement {
-    const row = this.db.query<{ payload: string }, [number]>("SELECT payload FROM cee_character_enrichment WHERE id=? AND schema_version=1").get(id);
-    return row ? JSON.parse(row.payload) as CEECharacterSupplement : {};
+    const row = this.db
+      .query<{ payload: string }, [number]>(
+        "SELECT payload FROM cee_character_enrichment WHERE id=? AND schema_version=1"
+      )
+      .get(id);
+    return row ? (JSON.parse(row.payload) as CEECharacterSupplement) : {};
   }
 
   /**
    * 读已回填的图。`grid` 缺失时退回大图：存量缓存里只有一份 `image`，
    * 换尺寸不该让它们变成空白。
    */
-  readImage(id: number, entity: ImageEntity = "character", size: CEEImageSize = "large"): string | undefined {
-    const row = this.db.query<{ payload: string }, [string, number]>("SELECT payload FROM enrichment WHERE entity=? AND id=?").get(entity, id);
+  readImage(
+    id: number,
+    entity: ImageEntity = "character",
+    size: CEEImageSize = "large"
+  ): string | undefined {
+    const row = this.db
+      .query<{ payload: string }, [string, number]>(
+        "SELECT payload FROM enrichment WHERE entity=? AND id=?"
+      )
+      .get(entity, id);
     if (!row) return undefined;
     const payload = JSON.parse(row.payload) as BangumiEnrichment;
-    const raw = size === "grid" ? payload.grid ?? payload.image : payload.image ?? payload.grid;
+    const raw = size === "grid" ? (payload.grid ?? payload.image) : (payload.image ?? payload.grid);
     return rewriteBangumiImageUrl(raw, this.imageBase);
   }
 
@@ -144,12 +171,18 @@ export class CEEEnrichment {
    * 尺寸只决定「这次返回哪一份」：缺失才回源，且一次回源会把两个尺寸都写进去。
    * 所以在途请求按 `实体:编号` 合并即可，不必按尺寸拆成两个上游请求。
    */
-  private resolveImage(entity: ImageEntity, id: number, size: CEEImageSize, load: () => Promise<string | undefined>): Promise<string | undefined> {
+  private resolveImage(
+    entity: ImageEntity,
+    id: number,
+    size: CEEImageSize,
+    load: () => Promise<string | undefined>
+  ): Promise<string | undefined> {
     if (!Number.isSafeInteger(id) || id <= 0 || this.closed) return Promise.resolve(undefined);
     const persisted = this.readImage(id, entity, size);
     if (persisted) return Promise.resolve(persisted);
     const key = `${entity}:${id}`;
-    if (!this.apiBase || (this.misses.get(key) ?? 0) > this.now()) return Promise.resolve(undefined);
+    if (!this.apiBase || (this.misses.get(key) ?? 0) > this.now())
+      return Promise.resolve(undefined);
     const running = this.inFlight.get(key);
     // 搭别人的便车：那次回源写完后两个尺寸都在表里，这里按自己的尺寸重读。
     if (running) return running.then(() => this.readImage(id, entity, size));
@@ -172,42 +205,61 @@ export class CEEEnrichment {
   private async loadSubject(id: number, size: CEEImageSize): Promise<string | undefined> {
     const raw = await this.fetchEntity("subject", id);
     if (raw === undefined) return undefined;
-    if (!Value.Check(SubjectResponse, raw)) throw new AppError("CEE_DATA_INVALID", "作品资料格式无效");
+    if (!Value.Check(SubjectResponse, raw))
+      throw new AppError("CEE_DATA_INVALID", "作品资料格式无效");
     const picked = pickImages(raw.images, "subject");
-    const chosen = size === "grid" ? picked.grid ?? picked.image : picked.image ?? picked.grid;
+    const chosen = size === "grid" ? (picked.grid ?? picked.image) : (picked.image ?? picked.grid);
     if (!chosen) {
       this.misses.set(`subject:${id}`, this.now() + MISS_TTL_MS);
       return undefined;
     }
-    this.db.query("INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify(picked), this.now());
+    this.db
+      .query(
+        "INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at"
+      )
+      .run(id, JSON.stringify(picked), this.now());
     return rewriteBangumiImageUrl(chosen, this.imageBase);
   }
 
   private async loadCharacter(id: number, size: CEEImageSize): Promise<string | undefined> {
     const raw = await this.fetchEntity("character", id);
     if (raw === undefined) return undefined;
-    if (!Value.Check(CharacterResponse, raw)) throw new AppError("CEE_DATA_INVALID", "角色补充资料格式无效");
+    if (!Value.Check(CharacterResponse, raw))
+      throw new AppError("CEE_DATA_INVALID", "角色补充资料格式无效");
     const next: CEECharacterSupplement = { ...this.readCharacter(id) };
     if (raw.name?.trim()) next.name = raw.name.trim();
     if (raw.summary?.trim()) next.summary = raw.summary;
     if (raw.gender === "male" || raw.gender === "female") next.gender = raw.gender;
-    if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined) next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
+    if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined)
+      next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
     for (const entry of raw.infobox ?? []) {
-      if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim()) next.nameCn = entry.value.trim();
+      if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim())
+        next.nameCn = entry.value.trim();
       if (entry.key === "别名" && Array.isArray(entry.value)) {
         const aliases = entry.value.flatMap((value: unknown) => {
           if (typeof value === "string") return value.trim() ? [value.trim()] : [];
-          if (value && typeof value === "object" && "v" in value && typeof value.v === "string") return value.v.trim() ? [value.v.trim()] : [];
+          if (value && typeof value === "object" && "v" in value && typeof value.v === "string")
+            return value.v.trim() ? [value.v.trim()] : [];
           return [];
         });
         if (aliases.length) next.aliases = [...new Set(aliases)];
       }
     }
     const picked = pickImages(raw.images, "character");
-    const chosen = size === "grid" ? picked.grid ?? picked.image : picked.image ?? picked.grid;
+    const chosen = size === "grid" ? (picked.grid ?? picked.image) : (picked.image ?? picked.grid);
     this.db.transaction(() => {
-      if (Object.keys(next).length) this.db.query("INSERT INTO cee_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at").run(id, JSON.stringify(next), this.now());
-      if (chosen) this.db.query("INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at").run(id, JSON.stringify(picked), this.now());
+      if (Object.keys(next).length)
+        this.db
+          .query(
+            "INSERT INTO cee_character_enrichment VALUES (?,1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,schema_version=1,fetched_at=excluded.fetched_at"
+          )
+          .run(id, JSON.stringify(next), this.now());
+      if (chosen)
+        this.db
+          .query(
+            "INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at"
+          )
+          .run(id, JSON.stringify(picked), this.now());
     })();
     if (!chosen) this.misses.set(`character:${id}`, this.now() + MISS_TTL_MS);
     return chosen ? rewriteBangumiImageUrl(chosen, this.imageBase) : undefined;
@@ -218,9 +270,12 @@ export class CEEEnrichment {
     const ids = new Set<number>();
     for (let offset = 0; offset < 1000;) {
       const raw = await this.request(`/v0/indices/${indexId}/subjects?limit=100&offset=${offset}`);
-      if (!Value.Check(DirectoryPage, raw)) throw new AppError("CEE_DATA_INVALID", "目录数据格式无效");
-      if (raw.total > 1000) throw new AppError("CEE_DIRECTORY_TOO_LARGE", "目录最多支持一千部作品，请拆分目录");
-      if (offset + raw.data.length > raw.total) throw new AppError("CEE_DATA_INVALID", "目录分页数量无效");
+      if (!Value.Check(DirectoryPage, raw))
+        throw new AppError("CEE_DATA_INVALID", "目录数据格式无效");
+      if (raw.total > 1000)
+        throw new AppError("CEE_DIRECTORY_TOO_LARGE", "目录最多支持一千部作品，请拆分目录");
+      if (offset + raw.data.length > raw.total)
+        throw new AppError("CEE_DATA_INVALID", "目录分页数量无效");
       for (const item of raw.data) ids.add(item.id);
       if (offset + raw.data.length >= raw.total) return [...ids];
       if (!raw.data.length) throw new AppError("CEE_DATA_INVALID", "目录分页数据不完整");
@@ -230,22 +285,33 @@ export class CEEEnrichment {
   }
 
   getDirectory(id: number): CEEDirectoryResult | undefined {
-    const row = this.db.query<{ payload: string }, [number]>("SELECT payload FROM cee_directories WHERE id=?").get(id);
-    return row ? JSON.parse(row.payload) as CEEDirectoryResult : undefined;
+    const row = this.db
+      .query<{ payload: string }, [number]>("SELECT payload FROM cee_directories WHERE id=?")
+      .get(id);
+    return row ? (JSON.parse(row.payload) as CEEDirectoryResult) : undefined;
   }
 
   saveDirectory(result: CEEDirectoryResult): void {
-    this.db.query("INSERT INTO cee_directories VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,imported_at=excluded.imported_at").run(result.id, JSON.stringify(result), result.importedAt);
+    this.db
+      .query(
+        "INSERT INTO cee_directories VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,imported_at=excluded.imported_at"
+      )
+      .run(result.id, JSON.stringify(result), result.importedAt);
   }
 
   private async request(path: string): Promise<unknown> {
     if (this.closed) throw new AppError("CEE_DATA_UNAVAILABLE", "角色资料服务已关闭");
-    if (this.queue.size >= 6 || this.cooldownUntil > this.now()) throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
+    if (this.queue.size >= 6 || this.cooldownUntil > this.now())
+      throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
     return this.queue.add(async () => {
-      if (this.cooldownUntil > this.now()) throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
+      if (this.cooldownUntil > this.now())
+        throw new AppError("BANGUMI_RATE_LIMITED", "资料请求过多，请稍后重试");
       let response: Response;
       try {
-        response = await this.fetcher(`${this.apiBase}${path}`, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT }, signal: AbortSignal.timeout(5000) });
+        response = await this.fetcher(`${this.apiBase}${path}`, {
+          headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+          signal: AbortSignal.timeout(5000),
+        });
       } catch {
         throw new AppError("CEE_UPSTREAM_UNAVAILABLE", "暂时无法连接 Bangumi 资料服务");
       }
@@ -255,8 +321,11 @@ export class CEEEnrichment {
       }
       if (response.status === 404) throw new AppError("CEE_DATA_NOT_FOUND", "Bangumi 资料不存在");
       if (!response.ok) throw new AppError("CEE_IMPORT_FAILED", "读取 Bangumi 资料失败");
-      try { return await response.json(); }
-      catch { throw new AppError("CEE_DATA_INVALID", "Bangumi 资料格式无效"); }
+      try {
+        return await response.json();
+      } catch {
+        throw new AppError("CEE_DATA_INVALID", "Bangumi 资料格式无效");
+      }
     });
   }
 

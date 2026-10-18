@@ -3,14 +3,25 @@ import type { CloudSettings } from "@/types";
 
 import type { ApiClient } from "./Api";
 import { readLocalPreferences, startCloudSync } from "./CloudSync";
-import { getStoredSongMusicSession, saveSongMusicSession, clearStoredSongMusicSession } from "./SonGuessrMusicSession";
+import {
+  getStoredSongMusicSession,
+  saveSongMusicSession,
+  clearStoredSongMusicSession,
+} from "./SonGuessrMusicSession";
 import { notifyPreferencesChanged, PREFERENCES_APPLIED, saveUsername } from "./Storage";
 
-const netease = { cookie: "MUSIC_U=cloud", account: { platform: "netease" as const, nickname: "云端" } };
+const netease = {
+  cookie: "MUSIC_U=cloud",
+  account: { platform: "netease" as const, nickname: "云端" },
+};
 
 const fakeClient = (cloud: CloudSettings) => {
-  const savePreferences = vi.fn<(input: { value: Record<string, unknown> }) => Promise<{ updatedAt: string }>>(async () => ({ updatedAt: "2026-10-13T00:00:00.000Z" }));
-  const saveMusicSession = vi.fn<(input: unknown) => Promise<{ updatedAt: string }>>(async () => ({ updatedAt: "2026-10-13T00:00:00.000Z" }));
+  const savePreferences = vi.fn<
+    (input: { value: Record<string, unknown> }) => Promise<{ updatedAt: string }>
+  >(async () => ({ updatedAt: "2026-10-13T00:00:00.000Z" }));
+  const saveMusicSession = vi.fn<(input: unknown) => Promise<{ updatedAt: string }>>(async () => ({
+    updatedAt: "2026-10-13T00:00:00.000Z",
+  }));
   const client = {
     settings: { get: vi.fn(async () => cloud), savePreferences, saveMusicSession },
   } as unknown as ApiClient;
@@ -51,17 +62,26 @@ describe("云同步", () => {
     const applied = vi.fn();
     window.addEventListener(PREFERENCES_APPLIED, applied);
     const { client, savePreferences } = fakeClient({
-      preferences: { value: { songuessr_volume: "0.9", "bakagame:room-create:faker": "{\"visibility\":\"public\"}" }, updatedAt: "x" },
+      preferences: {
+        value: { songuessr_volume: "0.9", "bakagame:room-create:faker": '{"visibility":"public"}' },
+        updatedAt: "x",
+      },
       music: { netease: null, qq: null },
     });
 
     const stop = startCloudSync(client);
     await flush();
     expect(window.localStorage.getItem("songuessr_volume")).toBe("0.9");
-    expect(window.localStorage.getItem("bakagame:room-create:faker")).toBe("{\"visibility\":\"public\"}");
+    expect(window.localStorage.getItem("bakagame:room-create:faker")).toBe(
+      '{"visibility":"public"}'
+    );
     expect(applied).toHaveBeenCalledOnce();
     expect(savePreferences).toHaveBeenCalledWith({
-      value: { songuessr_volume: "0.9", "bakagame:username": "本机", "bakagame:room-create:faker": "{\"visibility\":\"public\"}" },
+      value: {
+        songuessr_volume: "0.9",
+        "bakagame:username": "本机",
+        "bakagame:room-create:faker": '{"visibility":"public"}',
+      },
     });
     stop();
     window.removeEventListener(PREFERENCES_APPLIED, applied);
@@ -90,7 +110,10 @@ describe("云同步", () => {
   });
 
   it("两边都没有偏好时不建空文档", async () => {
-    const { client, savePreferences } = fakeClient({ preferences: null, music: { netease: null, qq: null } });
+    const { client, savePreferences } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
     const stop = startCloudSync(client);
     await flush();
     notifyPreferencesChanged();
@@ -100,12 +123,22 @@ describe("云同步", () => {
   });
 
   it("音乐账号：云端有则写回本地且不回传，只有本地有则上传", async () => {
-    saveSongMusicSession({ cookie: "qqmusic_key=local", account: { platform: "qq", nickname: "本机" } }, false, "qq");
-    const { client, saveMusicSession } = fakeClient({ preferences: null, music: { netease, qq: null } });
+    saveSongMusicSession(
+      { cookie: "qqmusic_key=local", account: { platform: "qq", nickname: "本机" } },
+      false,
+      "qq"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease, qq: null },
+    });
     const stop = startCloudSync(client);
     await flush();
 
-    expect(getStoredSongMusicSession("netease")).toMatchObject({ cookie: "MUSIC_U=cloud", persistent: true });
+    expect(getStoredSongMusicSession("netease")).toMatchObject({
+      cookie: "MUSIC_U=cloud",
+      persistent: true,
+    });
     expect(saveMusicSession).toHaveBeenCalledOnce();
     expect(saveMusicSession).toHaveBeenCalledWith({
       platform: "qq",
@@ -121,13 +154,23 @@ describe("云同步", () => {
 
   it("读取云端失败时不改本地、不上传", async () => {
     window.localStorage.setItem("songuessr_volume", "0.3");
-    const client = { settings: { get: vi.fn(async () => { throw new Error("offline"); }), savePreferences: vi.fn(), saveMusicSession: vi.fn() } } as unknown as ApiClient;
+    const client = {
+      settings: {
+        get: vi.fn(async () => {
+          throw new Error("offline");
+        }),
+        savePreferences: vi.fn(),
+        saveMusicSession: vi.fn(),
+      },
+    } as unknown as ApiClient;
     const stop = startCloudSync(client);
     await flush();
     saveUsername("甲");
     await vi.advanceTimersByTimeAsync(2_000);
     expect(window.localStorage.getItem("songuessr_volume")).toBe("0.3");
-    expect((client.settings.savePreferences as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(
+      client.settings.savePreferences as unknown as ReturnType<typeof vi.fn>
+    ).not.toHaveBeenCalled();
     stop();
   });
 });

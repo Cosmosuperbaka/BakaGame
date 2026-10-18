@@ -2,11 +2,25 @@
  * Bangumi 维基 BBCode 的解析：只认 Bangumi 实际用到的那几种标记，不认识的方括号原样保留为文字；
  * 未闭合或错位的标记同样退回文字，不吞内容。渲染见 `components/common/BangumiRichText`。
  */
-export type MarkupTag = "b" | "i" | "u" | "s" | "mask" | "url" | "size" | "color" | "quote" | "center" | "right" | "left" | "code";
+export type MarkupTag =
+  | "b"
+  | "i"
+  | "u"
+  | "s"
+  | "mask"
+  | "url"
+  | "size"
+  | "color"
+  | "quote"
+  | "center"
+  | "right"
+  | "left"
+  | "code";
 export type MarkupElement = { tag: MarkupTag; value?: string; raw: string; children: MarkupNode[] };
 export type MarkupNode = string | MarkupElement;
 
-const TOKEN = /\[(\/?)(b|i|u|s|mask|url|size|color|quote|center|right|left|code)(?:=([^\]\n]*))?\]/gi;
+const TOKEN =
+  /\[(\/?)(b|i|u|s|mask|url|size|color|quote|center|right|left|code)(?:=([^\]\n]*))?\]/gi;
 
 export function parseBangumiMarkup(source: string): MarkupNode[] {
   const root: MarkupNode[] = [];
@@ -39,7 +53,10 @@ export function parseBangumiMarkup(source: string): MarkupNode[] {
       continue;
     }
     const depth = stack.findLastIndex((node) => node.tag === tag);
-    if (depth === -1) { text(match[0]); continue; }
+    if (depth === -1) {
+      text(match[0]);
+      continue;
+    }
     // 先闭合了外层：中间没闭合的内层退回文字
     while (stack.length - 1 > depth) {
       const inner = stack.pop()!;
@@ -59,4 +76,5 @@ export function parseBangumiMarkup(source: string): MarkupNode[] {
   return root;
 }
 
-export const plainText = (nodes: MarkupNode[]): string => nodes.map((node) => (typeof node === "string" ? node : plainText(node.children))).join("");
+export const plainText = (nodes: MarkupNode[]): string =>
+  nodes.map((node) => (typeof node === "string" ? node : plainText(node.children))).join("");

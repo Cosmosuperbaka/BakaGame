@@ -17,22 +17,22 @@ export const TEST_COMMAND_TYPES = [
 interface TestCommandDependencies {
   jumpToPhase(
     connection: ConnectionRecord,
-    phase: Extract<WhoIsFakerClientMessage, { type: "test.jumpToPhase" }>["payload"]["phase"],
+    phase: Extract<WhoIsFakerClientMessage, { type: "test.jumpToPhase" }>["payload"]["phase"]
   ): CommandResult;
   setMyRole(
     connection: ConnectionRecord,
-    role: Extract<WhoIsFakerClientMessage, { type: "test.setMyRole" }>["payload"]["role"],
+    role: Extract<WhoIsFakerClientMessage, { type: "test.setMyRole" }>["payload"]["role"]
   ): CommandResult;
   addBot(connection: ConnectionRecord, count: number): CommandResult;
   removeBot(
     connection: ConnectionRecord,
     playerId: string | undefined,
-    count: number,
+    count: number
   ): CommandResult;
 }
 
 export const createTestCommandHandler = (
-  dependencies: TestCommandDependencies,
+  dependencies: TestCommandDependencies
 ): CommandHandler => ({
   canHandle: (type) => ownsCommand(TEST_COMMAND_TYPES, type),
   execute: (connection, message) => {
@@ -47,7 +47,7 @@ export const createTestCommandHandler = (
         return dependencies.removeBot(
           connection,
           message.payload.playerId,
-          message.payload.count ?? 1,
+          message.payload.count ?? 1
         );
       default:
         return unsupportedCommand();

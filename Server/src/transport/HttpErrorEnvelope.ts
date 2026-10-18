@@ -16,7 +16,9 @@ export const httpError = (code: string, message: string, traceId?: string): Http
  * 取全局 `onRequest` 写入的追踪号：Elysia 的 `set.headers` 值允许数字，
  * 而信封里它只能是字符串或直接省略（独立挂载单条路由的测试没有这一层）。
  */
-export const traceIdOf = (headers: Record<string, string | number | undefined>): string | undefined => {
+export const traceIdOf = (
+  headers: Record<string, string | number | undefined>
+): string | undefined => {
   const raw = headers["x-trace-id"];
   return typeof raw === "string" ? raw : undefined;
 };

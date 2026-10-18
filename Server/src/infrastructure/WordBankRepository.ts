@@ -22,7 +22,9 @@ export class DatabaseWordBankRepository implements WordBankRepository {
       await this.database.db
         .insert(wordPair)
         .values({ wordA, wordB })
-        .onDuplicateKeyUpdate({ set: { useCount: sql`${wordPair.useCount} + 1`, lastUsedAt: new Date() } });
+        .onDuplicateKeyUpdate({
+          set: { useCount: sql`${wordPair.useCount} + 1`, lastUsedAt: new Date() },
+        });
     });
     const tracked = operation.finally(() => this.pending.delete(tracked));
     this.pending.add(tracked);

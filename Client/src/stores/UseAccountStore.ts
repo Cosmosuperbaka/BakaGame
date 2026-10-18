@@ -36,13 +36,17 @@ const fetchProfile = async (): Promise<Pick<AccountState, "status" | "profile">>
     return profile ? { status: "signedIn", profile } : { status: "guest", profile: null };
   } catch (error) {
     // 停用（`ACCOUNT_DISABLED`）是确定状态；网络与网关失败本次访问同样按不可用处理，只是不必上报。
-    if (!isAccountDisabled(error)) captureClientLog("账号接口不可用", "warning", { error: error instanceof Error ? error.message : String(error) });
+    if (!isAccountDisabled(error))
+      captureClientLog("账号接口不可用", "warning", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     return { status: "unavailable", profile: null };
   }
 };
 
 const refreshUnread = (set: (patch: Partial<AccountState>) => void) => {
-  api.feedback.listMine()
+  api.feedback
+    .listMine()
     .then(({ unread }) => set({ unreadFeedback: unread }))
     .catch(() => {});
 };
@@ -70,7 +74,11 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   signOut: async () => {
     await requestSignOut();
-    set({ status: get().status === "unavailable" ? "unavailable" : "guest", profile: null, unreadFeedback: 0 });
+    set({
+      status: get().status === "unavailable" ? "unavailable" : "guest",
+      profile: null,
+      unreadFeedback: 0,
+    });
     refreshSocketIdentities();
   },
 

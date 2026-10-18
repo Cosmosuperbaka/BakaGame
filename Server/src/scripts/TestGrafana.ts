@@ -11,7 +11,9 @@ if (!env.otelEndpoint) {
   console.log("⚠️ 未检测到 OTEL_EXPORTER_OTLP_ENDPOINT 环境变量！");
   console.log("\n请在 Server/.env 文件中添加如下配置（将占位符替换为你 Grafana 上的值）：");
   console.log("----------------------------------------------------------------");
-  console.log("OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-us-central-0.grafana.net/otlp");
+  console.log(
+    "OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
+  );
   console.log("OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <YOUR_BASE64_TOKEN>");
   console.log("OTEL_SERVICE_NAME=Bakagame-Server");
   console.log("OTEL_SERVICE_NAMESPACE=Bakagame");
@@ -79,10 +81,14 @@ try {
 
   if (!traceRes.ok) {
     const errorText = await traceRes.text();
-    console.error(`\n❌ Grafana Cloud Traces 接口返回异常 (HTTP ${traceRes.status} ${traceRes.statusText})`);
+    console.error(
+      `\n❌ Grafana Cloud Traces 接口返回异常 (HTTP ${traceRes.status} ${traceRes.statusText})`
+    );
     console.error(`响应内容: ${errorText}`);
     if (traceRes.status === 401 || traceRes.status === 403) {
-      console.error("\n💡 排错建议：认证失败，请检查 OTEL_EXPORTER_OTLP_HEADERS 是否包含正确的 Basic Auth Token。");
+      console.error(
+        "\n💡 排错建议：认证失败，请检查 OTEL_EXPORTER_OTLP_HEADERS 是否包含正确的 Basic Auth Token。"
+      );
       console.error("生成方式：Basic <Base64(Instance_ID:API_Token)>");
     }
     process.exit(1);

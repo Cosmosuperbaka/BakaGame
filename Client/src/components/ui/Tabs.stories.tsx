@@ -18,7 +18,9 @@ function RoomSourceTabs({ initial = "native" }: { initial?: "native" | "original
       </TabsList>
       <TabsContent value="native" className="space-y-3">
         <p className="text-sm text-muted-foreground">增强房使用本项目的多人玩法与聊天功能。</p>
-        <p className="rounded-md border border-dashed py-12 text-center text-sm text-muted-foreground">暂无房间</p>
+        <p className="rounded-md border border-dashed py-12 text-center text-sm text-muted-foreground">
+          暂无房间
+        </p>
       </TabsContent>
       <TabsContent value="original" className="space-y-3">
         <p className="text-sm text-muted-foreground">与原版玩家一起游玩，聊天仅增强版玩家可见。</p>

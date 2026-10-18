@@ -7,7 +7,15 @@ import { cn } from "@/lib/Utils";
  * 等待页的准备进度。房主看到带标题的整宽进度条；其他玩家看到居中的一句摘要与短进度条。
  * 进度条宽度随准备人数弹性变化，读作同一根条在伸缩；已准备人数逐位滚到新值。
  */
-export function ReadyProgress({ ready, total, variant }: { ready: number; total: number; variant: "host" | "guest" }) {
+export function ReadyProgress({
+  ready,
+  total,
+  variant,
+}: {
+  ready: number;
+  total: number;
+  variant: "host" | "guest";
+}) {
   const bar = (
     // 轨道取前景色的淡档：bg-muted 在暗色下比面板更暗，几乎看不出轨道（Design §3 骨架条同理）。
     <div
@@ -17,7 +25,10 @@ export function ReadyProgress({ ready, total, variant }: { ready: number; total:
       aria-valuemax={total}
       aria-valuenow={ready}
       aria-valuetext={`${ready}/${total} 名玩家已准备`}
-      className={cn("h-1.5 overflow-hidden rounded-full bg-foreground/10", variant === "guest" && "mx-auto w-48")}
+      className={cn(
+        "h-1.5 overflow-hidden rounded-full bg-foreground/10",
+        variant === "guest" && "mx-auto w-48"
+      )}
     >
       <motion.div
         className="h-full rounded-full bg-primary"
@@ -27,7 +38,11 @@ export function ReadyProgress({ ready, total, variant }: { ready: number; total:
       />
     </div>
   );
-  const count = <><AnimatedNumber value={ready} />/{total}</>;
+  const count = (
+    <>
+      <AnimatedNumber value={ready} />/{total}
+    </>
+  );
   if (variant === "guest") {
     return (
       <div className="w-full space-y-2 text-center">

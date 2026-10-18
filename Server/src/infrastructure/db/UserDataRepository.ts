@@ -24,24 +24,29 @@ export class DatabaseUserSettingRepository implements UserSettingRepository {
 
   async list(userId: string): Promise<StoredSetting[]> {
     await this.database.ready;
-    return this.database.db.select({ key: userSetting.key, value: userSetting.value, updatedAt: userSetting.updatedAt })
-      .from(userSetting).where(eq(userSetting.userId, userId));
+    return this.database.db
+      .select({ key: userSetting.key, value: userSetting.value, updatedAt: userSetting.updatedAt })
+      .from(userSetting)
+      .where(eq(userSetting.userId, userId));
   }
 
   async put(userId: string, key: string, value: unknown, now: Date): Promise<void> {
     await this.database.ready;
-    await this.database.db.insert(userSetting).values({ userId, key, value, updatedAt: now })
+    await this.database.db
+      .insert(userSetting)
+      .values({ userId, key, value, updatedAt: now })
       .onDuplicateKeyUpdate({ set: { value, updatedAt: now } });
   }
 
   async remove(userId: string, key: string): Promise<void> {
     await this.database.ready;
-    await this.database.db.delete(userSetting).where(and(eq(userSetting.userId, userId), eq(userSetting.key, key)));
+    await this.database.db
+      .delete(userSetting)
+      .where(and(eq(userSetting.userId, userId), eq(userSetting.key, key)));
   }
 }
 
 // ==================== 反馈 ====================
-
 
 export interface FeedbackRecord {
   id: string;
@@ -77,7 +82,12 @@ export interface FeedbackFilter {
 
 export interface FeedbackRepository {
   create(record: FeedbackRecord): Promise<void>;
-  update(id: string, patch: Partial<Pick<FeedbackRecord, "status" | "sentryEventId" | "lastReplyAt" | "userSeenAt" | "updatedAt">>): Promise<void>;
+  update(
+    id: string,
+    patch: Partial<
+      Pick<FeedbackRecord, "status" | "sentryEventId" | "lastReplyAt" | "userSeenAt" | "updatedAt">
+    >
+  ): Promise<void>;
   get(id: string): Promise<FeedbackRecord | null>;
   list(filter: FeedbackFilter): Promise<{ items: FeedbackRecord[]; total: number }>;
   /** 本人提交后、管理员回复晚于本人查看时间的条数。 */
@@ -109,7 +119,11 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
 
   async get(id: string): Promise<FeedbackRecord | null> {
     await this.database.ready;
-    const [row] = await this.database.db.select().from(feedback).where(eq(feedback.id, id)).limit(1);
+    const [row] = await this.database.db
+      .select()
+      .from(feedback)
+      .where(eq(feedback.id, id))
+      .limit(1);
     return row ? asFeedback(row) : null;
   }
 
@@ -121,26 +135,42 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
     if (filter.userId) conditions.push(eq(feedback.userId, filter.userId));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, [count]] = await Promise.all([
-      this.database.db.select().from(feedback).where(where).orderBy(desc(feedback.createdAt)).limit(filter.limit).offset(filter.offset),
-      this.database.db.select({ total: sql<number>`count(*)` }).from(feedback).where(where),
+      this.database.db
+        .select()
+        .from(feedback)
+        .where(where)
+        .orderBy(desc(feedback.createdAt))
+        .limit(filter.limit)
+        .offset(filter.offset),
+      this.database.db
+        .select({ total: sql<number>`count(*)` })
+        .from(feedback)
+        .where(where),
     ]);
     return { items: rows.map(asFeedback), total: Number(count?.total ?? 0) };
   }
 
   async countUnread(userId: string): Promise<number> {
     await this.database.ready;
-    const [row] = await this.database.db.select({ total: sql<number>`count(*)` }).from(feedback).where(and(
-      eq(feedback.userId, userId),
-      isNotNull(feedback.lastReplyAt),
-      sql`(${feedback.userSeenAt} is null or ${feedback.userSeenAt} < ${feedback.lastReplyAt})`,
-    ));
+    const [row] = await this.database.db
+      .select({ total: sql<number>`count(*)` })
+      .from(feedback)
+      .where(
+        and(
+          eq(feedback.userId, userId),
+          isNotNull(feedback.lastReplyAt),
+          sql`(${feedback.userSeenAt} is null or ${feedback.userSeenAt} < ${feedback.lastReplyAt})`
+        )
+      );
     return Number(row?.total ?? 0);
   }
 
   async countByStatus(): Promise<Partial<Record<FeedbackStatus, number>>> {
     await this.database.ready;
-    const rows = await this.database.db.select({ status: feedback.status, total: sql<number>`count(*)` })
-      .from(feedback).groupBy(feedback.status);
+    const rows = await this.database.db
+      .select({ status: feedback.status, total: sql<number>`count(*)` })
+      .from(feedback)
+      .groupBy(feedback.status);
     return Object.fromEntries(rows.map((row) => [row.status, Number(row.total)]));
   }
 
@@ -152,6 +182,10 @@ export class DatabaseFeedbackRepository implements FeedbackRepository {
 
   async replies(feedbackId: string): Promise<FeedbackReplyRecord[]> {
     await this.database.ready;
-    return this.database.db.select().from(feedbackReply).where(eq(feedbackReply.feedbackId, feedbackId)).orderBy(feedbackReply.createdAt);
+    return this.database.db
+      .select()
+      .from(feedbackReply)
+      .where(eq(feedbackReply.feedbackId, feedbackId))
+      .orderBy(feedbackReply.createdAt);
   }
 }

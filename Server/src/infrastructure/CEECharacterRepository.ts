@@ -2,24 +2,62 @@ import { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
 import { discoverNewSubjects, type DiscoveryResult } from "./SubjectDiscovery";
 import { AppError } from "../domain/Errors";
-import type { CEECharacterSummary, CEECharacterView, CEEDirectoryResult, CEEExtraTagSection, CEEImageSize, CEESettings, CEESubjectSummary } from "../shared/CEE";
+import type {
+  CEECharacterSummary,
+  CEECharacterView,
+  CEEDirectoryResult,
+  CEEExtraTagSection,
+  CEEImageSize,
+  CEESettings,
+  CEESubjectSummary,
+} from "../shared/CEE";
 import type { CEEDataOptions, CEEDataProvider, CEERawAppearance, CEERawCharacter } from "./CEEData";
 import { CEEEnrichment } from "./CEEEnrichment";
 import { deriveCEECharacter, resolveCEESubjectTypes } from "./CEECharacterDerivation";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 
-interface CharacterRow { id: number; name: string; name_cn: string; gender: string; aliases: string; summary: string; comments: number; collects: number }
-interface SubjectRow { id: number; type: number; name: string; name_cn: string; date: string; raw_tags: string; meta_tags: string; score: number; rating_count: number; heat: number; relation_type?: number }
-const boundedLimit = (limit: number, maximum = 50) => Math.min(maximum, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 20));
+interface CharacterRow {
+  id: number;
+  name: string;
+  name_cn: string;
+  gender: string;
+  aliases: string;
+  summary: string;
+  comments: number;
+  collects: number;
+}
+interface SubjectRow {
+  id: number;
+  type: number;
+  name: string;
+  name_cn: string;
+  date: string;
+  raw_tags: string;
+  meta_tags: string;
+  score: number;
+  rating_count: number;
+  heat: number;
+  relation_type?: number;
+}
+const boundedLimit = (limit: number, maximum = 50) =>
+  Math.min(maximum, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 20));
 const like = (keyword: string) => `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
-const validTypes = (types: number[]) => [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
+const validTypes = (types: number[]) =>
+  [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
 
 /** 搜索候选：本地行连同其补充资料后的摘要，排序阶段只读内存、不再触库。 */
-interface CharacterCandidate { row: CharacterRow; summary: CEECharacterSummary }
+interface CharacterCandidate {
+  row: CharacterRow;
+  summary: CEECharacterSummary;
+}
 
 /** 原文名或中文名完全命中的排在最前，其次按收藏数、最后按编号稳定决胜。 */
-const compareCharacterMatchRank = (a: CharacterCandidate, b: CharacterCandidate, query: string): number => {
+const compareCharacterMatchRank = (
+  a: CharacterCandidate,
+  b: CharacterCandidate,
+  query: string
+): number => {
   const aExact = Number(a.summary.name !== query && a.summary.nameCn !== query);
   const bExact = Number(b.summary.name !== query && b.summary.nameCn !== query);
   return aExact - bExact || b.row.collects - a.row.collects || a.row.id - b.row.id;
@@ -65,13 +103,20 @@ export class CEECharacterRepository implements CEEDataProvider {
 
   constructor(options: CEEDataOptions) {
     this.db = openDataset(options.dbPath);
-    try { this.enrichment = new CEEEnrichment(options); } catch (error) { this.db.close(); throw error; }
+    try {
+      this.enrichment = new CEEEnrichment(options);
+    } catch (error) {
+      this.db.close();
+      throw error;
+    }
     this.now = options.now ?? Date.now;
     this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
     this.ready = this.search?.initialize(this.db, options.dbPath) ?? Promise.resolve();
   }
 
-  async initialize(): Promise<void> { await this.ready; }
+  async initialize(): Promise<void> {
+    await this.ready;
+  }
 
   async searchCharacters(keyword: string, limit = 20): Promise<CEECharacterSummary[]> {
     this.assertOpen();
@@ -86,24 +131,39 @@ export class CEECharacterRepository implements CEEDataProvider {
     return this.rankCharacterRows(rows, query, count);
   }
 
-  private async searchCharactersViaIndex(search: BangumiSearchIndex, query: string, count: number): Promise<CEECharacterSummary[]> {
+  private async searchCharactersViaIndex(
+    search: BangumiSearchIndex,
+    query: string,
+    count: number
+  ): Promise<CEECharacterSummary[]> {
     const result = await search.searchCharacters(query, count);
     if (!result.ids.length) return [];
     const placeholders = result.ids.map(() => "?").join(",");
-    const rows = this.db.query(`SELECT * FROM characters WHERE id IN (${placeholders})`).all(...result.ids) as CharacterRow[];
+    const rows = this.db
+      .query(`SELECT * FROM characters WHERE id IN (${placeholders})`)
+      .all(...result.ids) as CharacterRow[];
     const byId = new Map(rows.map((row) => [row.id, row]));
-    return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSummary(row)] : []; });
+    return result.ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row ? [this.toSummary(row)] : [];
+    });
   }
 
   /** 未启用检索索引时的本地查询：空词取热门、短词走 LIKE、长词走 FTS5。 */
   private queryLocalCharacterRows(query: string, count: number): CharacterRow[] {
     if (!query) {
-      return this.db.query("SELECT * FROM characters ORDER BY collects DESC,id LIMIT ?").all(count) as CharacterRow[];
+      return this.db
+        .query("SELECT * FROM characters ORDER BY collects DESC,id LIMIT ?")
+        .all(count) as CharacterRow[];
     }
     const pattern = like(query);
     if ([...query].length < 3) {
-      return this.db.query(`SELECT * FROM characters WHERE name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR aliases LIKE ? ESCAPE '\\' OR id=?
-        ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,collects DESC,id LIMIT ?`).all(pattern, pattern, pattern, Number(query) || -1, query, query, count) as CharacterRow[];
+      return this.db
+        .query(
+          `SELECT * FROM characters WHERE name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR aliases LIKE ? ESCAPE '\\' OR id=?
+        ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,collects DESC,id LIMIT ?`
+        )
+        .all(pattern, pattern, pattern, Number(query) || -1, query, query, count) as CharacterRow[];
     }
     return this.queryCharacterPhraseRows(query, count);
   }
@@ -111,10 +171,16 @@ export class CEECharacterRepository implements CEEDataProvider {
   /** FTS5 短语检索；纯数字关键词还要把精确 ID 命中的角色补到最前。 */
   private queryCharacterPhraseRows(query: string, count: number): CharacterRow[] {
     const phrase = `"${query.replace(/"/g, '""')}"`;
-    const rows = this.db.query(`SELECT c.* FROM character_search f JOIN characters c ON c.id=f.rowid WHERE character_search MATCH ?
-      ORDER BY CASE WHEN c.name=? OR c.name_cn=? THEN 0 ELSE 1 END,c.collects DESC,c.id LIMIT ?`).all(phrase, query, query, count) as CharacterRow[];
+    const rows = this.db
+      .query(
+        `SELECT c.* FROM character_search f JOIN characters c ON c.id=f.rowid WHERE character_search MATCH ?
+      ORDER BY CASE WHEN c.name=? OR c.name_cn=? THEN 0 ELSE 1 END,c.collects DESC,c.id LIMIT ?`
+      )
+      .all(phrase, query, query, count) as CharacterRow[];
     if (!/^\d+$/.test(query)) return rows;
-    const exact = this.db.query("SELECT * FROM characters WHERE id=?").get(Number(query)) as CharacterRow | null;
+    const exact = this.db
+      .query("SELECT * FROM characters WHERE id=?")
+      .get(Number(query)) as CharacterRow | null;
     if (exact && !rows.some((row) => row.id === exact.id)) rows.unshift(exact);
     return rows;
   }
@@ -123,40 +189,75 @@ export class CEECharacterRepository implements CEEDataProvider {
   private appendEnrichedCharacterRows(rows: CharacterRow[], query: string, count: number): void {
     if (!query) return;
     const pattern = like(query);
-    const updated = this.enrichment.db.query<{ id: number }, [string, string, string, number]>(`SELECT id FROM cee_character_enrichment WHERE schema_version=1 AND
+    const updated = this.enrichment.db
+      .query<{ id: number }, [string, string, string, number]>(
+        `SELECT id FROM cee_character_enrichment WHERE schema_version=1 AND
       (json_extract(payload,'$.name') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.nameCn') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.aliases') LIKE ? ESCAPE '\\')
-      ORDER BY id LIMIT ?`).all(pattern, pattern, pattern, count);
+      ORDER BY id LIMIT ?`
+      )
+      .all(pattern, pattern, pattern, count);
     for (const { id } of updated) {
       if (rows.some((row) => row.id === id)) continue;
-      const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
+      const row = this.db
+        .query("SELECT * FROM characters WHERE id=?")
+        .get(id) as CharacterRow | null;
       if (row) rows.push(row);
     }
   }
 
-  private rankCharacterRows(rows: CharacterRow[], query: string, count: number): CEECharacterSummary[] {
-    const candidates = rows.map(row => ({ row, summary: this.toSummary(row) }));
+  private rankCharacterRows(
+    rows: CharacterRow[],
+    query: string,
+    count: number
+  ): CEECharacterSummary[] {
+    const candidates = rows.map((row) => ({ row, summary: this.toSummary(row) }));
     if (query) candidates.sort((a, b) => compareCharacterMatchRank(a, b, query));
     return candidates.slice(0, count).map(({ summary }) => summary);
   }
 
-  async searchSubjects(keyword: string, limit = 20, types = [1, 2, 4, 6]): Promise<CEESubjectSummary[]> {
+  async searchSubjects(
+    keyword: string,
+    limit = 20,
+    types = [1, 2, 4, 6]
+  ): Promise<CEESubjectSummary[]> {
     this.assertOpen();
     await this.ready;
     const selected = validTypes(types);
     if (!selected.length) return [];
     const query = keyword.trim().slice(0, 80);
     if (this.search) {
-      const result = await this.search.searchSubjects({ keyword: query, limit: boundedLimit(limit), types: selected });
+      const result = await this.search.searchSubjects({
+        keyword: query,
+        limit: boundedLimit(limit),
+        types: selected,
+      });
       if (!result.ids.length) return [];
       const placeholders = result.ids.map(() => "?").join(",");
-      const rows = this.db.query(`SELECT * FROM subjects WHERE id IN (${placeholders})`).all(...result.ids) as SubjectRow[];
+      const rows = this.db
+        .query(`SELECT * FROM subjects WHERE id IN (${placeholders})`)
+        .all(...result.ids) as SubjectRow[];
       const byId = new Map(rows.map((row) => [row.id, row]));
-      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSubject(row)] : []; });
+      return result.ids.flatMap((id) => {
+        const row = byId.get(id);
+        return row ? [this.toSubject(row)] : [];
+      });
     }
     const pattern = like(query);
-    const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND type IN (${selected.map(() => "?").join(",")})
+    const rows = this.db
+      .query(
+        `SELECT * FROM subjects WHERE nsfw=0 AND type IN (${selected.map(() => "?").join(",")})
       AND (name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR id=?)
-      ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,heat DESC,id LIMIT ?`).all(...selected, pattern, pattern, Number(query) || -1, query, query, boundedLimit(limit)) as SubjectRow[];
+      ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,heat DESC,id LIMIT ?`
+      )
+      .all(
+        ...selected,
+        pattern,
+        pattern,
+        Number(query) || -1,
+        query,
+        query,
+        boundedLimit(limit)
+      ) as SubjectRow[];
     return rows.map((row) => this.toSubject(row));
   }
 
@@ -165,18 +266,27 @@ export class CEECharacterRepository implements CEEDataProvider {
     await this.ready;
     const ids = [...new Set(subjectIds.filter(positiveId))].slice(0, 500);
     if (!ids.length) return [];
-    const rows = this.db.query(`SELECT * FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as SubjectRow[];
+    const rows = this.db
+      .query(`SELECT * FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`)
+      .all(...ids) as SubjectRow[];
     const byId = new Map(rows.map((row) => [row.id, row]));
-    return ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSubject(row)] : []; });
+    return ids.flatMap((id) => {
+      const row = byId.get(id);
+      return row ? [this.toSubject(row)] : [];
+    });
   }
 
   async getSubjectCharacters(subjectId: number, limit = 50): Promise<CEECharacterSummary[]> {
     this.assertOpen();
     await this.ready;
     if (!positiveId(subjectId)) throw new AppError("CEE_SUBJECT_NOT_FOUND", "作品不存在");
-    const rows = this.db.query(`SELECT c.* FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
+    const rows = this.db
+      .query(
+        `SELECT c.* FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
       JOIN subjects s ON s.id=r.subject_id WHERE r.subject_id=? AND r.relation_type IN (1,2) AND s.nsfw=0
-      ORDER BY r.relation_order,c.id LIMIT ?`).all(subjectId, boundedLimit(limit, 100)) as CharacterRow[];
+      ORDER BY r.relation_order,c.id LIMIT ?`
+      )
+      .all(subjectId, boundedLimit(limit, 100)) as CharacterRow[];
     return rows.map((row) => this.toSummary(row));
   }
 
@@ -193,7 +303,9 @@ export class CEECharacterRepository implements CEEDataProvider {
       for (const [characterId, tags] of replaced) {
         this.db.query("DELETE FROM character_tags WHERE character_id=?").run(characterId);
         tags.forEach((tag, position) => {
-          this.db.query("INSERT OR IGNORE INTO character_tags VALUES (?,?,?)").run(characterId, position, tag);
+          this.db
+            .query("INSERT OR IGNORE INTO character_tags VALUES (?,?,?)")
+            .run(characterId, position, tag);
         });
       }
       for (const characterId of removed) {
@@ -222,30 +334,62 @@ export class CEECharacterRepository implements CEEDataProvider {
     const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
     if (!row) throw new AppError("CEE_CHARACTER_NOT_FOUND", "本地角色资料不存在");
     const supplement = this.enrichment.readCharacter(id);
-    const appearances = this.db.query(`SELECT s.*,r.relation_type FROM character_subject_relations r JOIN subjects s ON s.id=r.subject_id
-      WHERE r.character_id=? AND r.relation_type IN (1,2) AND s.nsfw=0 ORDER BY r.subject_id LIMIT 2001`).all(id) as SubjectRow[];
-    if (appearances.length > 2000) throw new AppError("CEE_CHARACTER_TOO_LARGE", "角色登场作品过多，无法用于本局");
-    const tags = this.db.query<{ tag: string }, [number]>("SELECT tag FROM character_tags WHERE character_id=? ORDER BY position").all(id);
-    const voices = this.db.query<{ name: string }, [number]>("SELECT name FROM character_vas WHERE character_id=? ORDER BY position").all(id);
-    const extraRows = this.db.query<{ subject_id: number; section: string; tag: string }, [number]>(
-      "SELECT subject_id,section,tag FROM character_extra_tags WHERE character_id=? ORDER BY subject_id,section_position,tag_position").all(id);
+    const appearances = this.db
+      .query(
+        `SELECT s.*,r.relation_type FROM character_subject_relations r JOIN subjects s ON s.id=r.subject_id
+      WHERE r.character_id=? AND r.relation_type IN (1,2) AND s.nsfw=0 ORDER BY r.subject_id LIMIT 2001`
+      )
+      .all(id) as SubjectRow[];
+    if (appearances.length > 2000)
+      throw new AppError("CEE_CHARACTER_TOO_LARGE", "角色登场作品过多，无法用于本局");
+    const tags = this.db
+      .query<{ tag: string }, [number]>(
+        "SELECT tag FROM character_tags WHERE character_id=? ORDER BY position"
+      )
+      .all(id);
+    const voices = this.db
+      .query<{ name: string }, [number]>(
+        "SELECT name FROM character_vas WHERE character_id=? ORDER BY position"
+      )
+      .all(id);
+    const extraRows = this.db
+      .query<{ subject_id: number; section: string; tag: string }, [number]>(
+        "SELECT subject_id,section,tag FROM character_extra_tags WHERE character_id=? ORDER BY subject_id,section_position,tag_position"
+      )
+      .all(id);
     const extraTagsBySubject: Record<number, CEEExtraTagSection[]> = {};
     for (const row of extraRows) {
-      const sections = extraTagsBySubject[row.subject_id] ??= [];
+      const sections = (extraTagsBySubject[row.subject_id] ??= []);
       let section = sections.at(-1);
-      if (!section || section.section !== row.section) { section = { section: row.section, tags: [] }; sections.push(section); }
+      if (!section || section.section !== row.section) {
+        section = { section: row.section, tags: [] };
+        sections.push(section);
+      }
       section.tags.push(row.tag);
     }
     return {
-      ...this.toSummary(row), aliases: supplement.aliases ?? JSON.parse(row.aliases) as string[],
-      gender: supplement.gender ?? (row.gender === "male" || row.gender === "female" ? row.gender : "?"),
-      popularity: supplement.popularity ?? row.collects + row.comments, summary: supplement.summary ?? row.summary,
+      ...this.toSummary(row),
+      aliases: supplement.aliases ?? (JSON.parse(row.aliases) as string[]),
+      gender:
+        supplement.gender ?? (row.gender === "male" || row.gender === "female" ? row.gender : "?"),
+      popularity: supplement.popularity ?? row.collects + row.comments,
+      summary: supplement.summary ?? row.summary,
       appearances: appearances.map((item): CEERawAppearance => ({
-        id: item.id, type: item.type, name: item.name, nameCn: item.name_cn || item.name, date: item.date,
-        relationType: item.relation_type!, rating: item.score, ratingCount: item.rating_count, heat: item.heat,
-        rawTags: JSON.parse(item.raw_tags) as Record<string, number>, metaTags: JSON.parse(item.meta_tags) as string[],
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        nameCn: item.name_cn || item.name,
+        date: item.date,
+        relationType: item.relation_type!,
+        rating: item.score,
+        ratingCount: item.rating_count,
+        heat: item.heat,
+        rawTags: JSON.parse(item.raw_tags) as Record<string, number>,
+        metaTags: JSON.parse(item.meta_tags) as string[],
       })),
-      characterTags: tags.map((item) => item.tag), voiceActors: [...new Set(voices.map((item) => item.name))], extraTagsBySubject,
+      characterTags: tags.map((item) => item.tag),
+      voiceActors: [...new Set(voices.map((item) => item.name))],
+      extraTagsBySubject,
     };
   }
 
@@ -253,7 +397,10 @@ export class CEECharacterRepository implements CEEDataProvider {
     return deriveCEECharacter(await this.getRawCharacter(id), settings, this.now());
   }
 
-  async chooseRandomCharacter(settings: CEESettings, random = Math.random): Promise<CEECharacterView> {
+  async chooseRandomCharacter(
+    settings: CEESettings,
+    random = Math.random
+  ): Promise<CEECharacterView> {
     this.assertOpen();
     await this.ready;
     const roll = (size: number) => Math.min(size - 1, Math.max(0, Math.floor(random() * size)));
@@ -279,9 +426,12 @@ export class CEECharacterRepository implements CEEDataProvider {
   private pickSubjectByYearRange(settings: CEESettings, roll: SubjectRoll): number {
     const currentYear = new Date(this.now()).getUTCFullYear();
     const endYear = Math.min(currentYear, settings.endYear);
-    if (endYear < settings.startYear) throw new AppError("CEE_NO_SUBJECT", "年份范围内没有已上映作品");
+    if (endYear < settings.startYear)
+      throw new AppError("CEE_NO_SUBJECT", "年份范围内没有已上映作品");
     const yearCount = endYear - settings.startYear + 1;
-    const year = settings.useSubjectPerYear ? settings.startYear + roll(yearCount) : settings.startYear;
+    const year = settings.useSubjectPerYear
+      ? settings.startYear + roll(yearCount)
+      : settings.startYear;
     const baseCount = settings.topNSubjects * (settings.useSubjectPerYear ? yearCount : 1);
     const index = roll(baseCount + settings.addedSubjects.length);
     if (index >= baseCount) return settings.addedSubjects[index - baseCount];
@@ -294,23 +444,46 @@ export class CEECharacterRepository implements CEEDataProvider {
     const types = resolveCEESubjectTypes(settings.metaTags, true);
     const tags = subjectMetaTags(settings.metaTags);
     const endDate = `${settings.useSubjectPerYear ? year + 1 : endYear + 1}-01-01`;
-    const rows = this.db.query(`SELECT s.id FROM subjects s WHERE s.nsfw=0 AND s.type IN (${types.map(() => "?").join(",")})
+    const rows = this.db
+      .query(
+        `SELECT s.id FROM subjects s WHERE s.nsfw=0 AND s.type IN (${types.map(() => "?").join(",")})
       AND s.date>=? AND s.date<? AND s.date<=?
       ${tags.map(() => "AND EXISTS(SELECT 1 FROM json_each(s.meta_tags) WHERE value=?)").join(" ")}
-      ORDER BY s.heat DESC,s.id LIMIT ?`).all(...types, `${year}-01-01`, endDate, new Date(this.now()).toISOString().slice(0, 10), ...tags, settings.topNSubjects) as { id: number }[];
+      ORDER BY s.heat DESC,s.id LIMIT ?`
+      )
+      .all(
+        ...types,
+        `${year}-01-01`,
+        endDate,
+        new Date(this.now()).toISOString().slice(0, 10),
+        ...tags,
+        settings.topNSubjects
+      ) as { id: number }[];
     if (!rows.length) throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
     return rows[settings.useSubjectPerYear || index >= rows.length ? roll(rows.length) : index].id;
   }
 
   /** 从选定作品的登场角色里抽一个；主角模式只取 `relation_type=1`。 */
-  private async pickCharacterOfSubject(subjectId: number, settings: CEESettings, roll: SubjectRoll): Promise<CEECharacterView> {
+  private async pickCharacterOfSubject(
+    subjectId: number,
+    settings: CEESettings,
+    roll: SubjectRoll
+  ): Promise<CEECharacterView> {
     const subject = this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(subjectId);
     if (!subject) throw new AppError("CEE_SUBJECT_NOT_FOUND", "指定作品不在本地可用数据集中");
     const relation = settings.mainCharacterOnly ? "r.relation_type=1" : "r.relation_type IN (1,2)";
-    const candidates = this.db.query(`SELECT c.id FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
-      WHERE r.subject_id=? AND ${relation} ORDER BY r.relation_order,c.id LIMIT ?`).all(subjectId, settings.mainCharacterOnly ? 2001 : settings.characterNum) as { id: number }[];
-    if (candidates.length > 2000) throw new AppError("CEE_SUBJECT_TOO_LARGE", "作品主角数量过多，请调整出题范围");
-    if (!candidates.length) throw new AppError("CEE_NO_CHARACTER", "选到的作品没有符合条件的本地角色");
+    const candidates = this.db
+      .query(
+        `SELECT c.id FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
+      WHERE r.subject_id=? AND ${relation} ORDER BY r.relation_order,c.id LIMIT ?`
+      )
+      .all(subjectId, settings.mainCharacterOnly ? 2001 : settings.characterNum) as {
+      id: number;
+    }[];
+    if (candidates.length > 2000)
+      throw new AppError("CEE_SUBJECT_TOO_LARGE", "作品主角数量过多，请调整出题范围");
+    if (!candidates.length)
+      throw new AppError("CEE_NO_CHARACTER", "选到的作品没有符合条件的本地角色");
     return this.getCharacter(candidates[roll(candidates.length)].id, settings);
   }
 
@@ -320,7 +493,9 @@ export class CEECharacterRepository implements CEEDataProvider {
     if (!positiveId(indexId)) throw new AppError("CEE_DIRECTORY_INVALID", "目录编号无效");
     const running = this.directoryImports.get(indexId);
     if (running) return structuredClone(await running);
-    const request = this.loadDirectory(indexId).finally(() => this.directoryImports.delete(indexId));
+    const request = this.loadDirectory(indexId).finally(() =>
+      this.directoryImports.delete(indexId)
+    );
     this.directoryImports.set(indexId, request);
     return structuredClone(await request);
   }
@@ -329,18 +504,29 @@ export class CEECharacterRepository implements CEEDataProvider {
     const ids = await this.enrichment.fetchDirectory(indexId);
     const available = new Set<number>();
     if (ids.length) {
-      const rows = this.db.query(`SELECT id FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`).all(...ids) as { id: number }[];
+      const rows = this.db
+        .query(`SELECT id FROM subjects WHERE nsfw=0 AND id IN (${ids.map(() => "?").join(",")})`)
+        .all(...ids) as { id: number }[];
       for (const row of rows) available.add(row.id);
     }
-    const result: CEEDirectoryResult = { id: indexId, subjectIds: ids.filter((id) => available.has(id)), missingSubjectIds: ids.filter((id) => !available.has(id)), importedAt: this.now() };
+    const result: CEEDirectoryResult = {
+      id: indexId,
+      subjectIds: ids.filter((id) => available.has(id)),
+      missingSubjectIds: ids.filter((id) => !available.has(id)),
+      importedAt: this.now(),
+    };
     this.enrichment.saveDirectory(result);
     return result;
   }
 
-  async resolveCharacterImage(id: number, size: CEEImageSize = "large"): Promise<string | undefined> {
+  async resolveCharacterImage(
+    id: number,
+    size: CEEImageSize = "large"
+  ): Promise<string | undefined> {
     this.assertOpen();
     await this.ready;
-    if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id)) return undefined;
+    if (!positiveId(id) || !this.db.query("SELECT id FROM characters WHERE id=?").get(id))
+      return undefined;
     const imageUrl = await this.enrichment.resolveCharacterImage(id, size);
     await this.syncCharacterIndexOnce(id);
     return imageUrl;
@@ -349,7 +535,8 @@ export class CEECharacterRepository implements CEEDataProvider {
   async resolveSubjectImage(id: number, size: CEEImageSize = "large"): Promise<string | undefined> {
     this.assertOpen();
     await this.ready;
-    if (!positiveId(id) || !this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(id)) return undefined;
+    if (!positiveId(id) || !this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(id))
+      return undefined;
     return this.enrichment.resolveSubjectImage(id, size);
   }
 
@@ -365,8 +552,13 @@ export class CEECharacterRepository implements CEEDataProvider {
   private toSubject(row: SubjectRow): CEESubjectSummary {
     const imageUrl = this.enrichment.readImage(row.id, "subject");
     return {
-      id: row.id, type: row.type, name: row.name, nameCn: row.name_cn || row.name,
-      year: /^\d{4}/.test(row.date) ? Number(row.date.slice(0, 4)) : null, rating: row.score, heat: row.heat,
+      id: row.id,
+      type: row.type,
+      name: row.name,
+      nameCn: row.name_cn || row.name,
+      year: /^\d{4}/.test(row.date) ? Number(row.date.slice(0, 4)) : null,
+      rating: row.score,
+      heat: row.heat,
       ...(imageUrl ? { imageUrl } : {}),
     };
   }
@@ -374,7 +566,12 @@ export class CEECharacterRepository implements CEEDataProvider {
   /** 搜索列表是 36~40px 的方形框：取方格图，避免竖版大图被裁到只剩头顶。 */
   private toSummary(row: CharacterRow): CEECharacterSummary {
     const supplement = this.enrichment.readCharacter(row.id);
-    return { id: row.id, name: supplement.name ?? row.name, nameCn: supplement.nameCn ?? (row.name_cn || row.name), imageUrl: this.enrichment.readImage(row.id, "character", "grid") };
+    return {
+      id: row.id,
+      name: supplement.name ?? row.name,
+      nameCn: supplement.nameCn ?? (row.name_cn || row.name),
+      imageUrl: this.enrichment.readImage(row.id, "character", "grid"),
+    };
   }
 
   /** 每个角色只同步一次索引；未启用索引时直接空转。 */
@@ -389,13 +586,25 @@ export class CEECharacterRepository implements CEEDataProvider {
   }
 
   private async syncCharacterIndex(id: number): Promise<void> {
-    const row = this.db.query("SELECT id,name,name_cn,aliases,comments,collects FROM characters WHERE id=?").get(id) as CharacterRow | null;
+    const row = this.db
+      .query("SELECT id,name,name_cn,aliases,comments,collects FROM characters WHERE id=?")
+      .get(id) as CharacterRow | null;
     if (!row || !this.search) return;
     const supplement = this.enrichment.readCharacter(id);
     await this.search.updateCharacter({
-      id: row.id, name: supplement.name ?? row.name,
-      aliases: [...new Set([supplement.nameCn ?? row.name_cn, ...supplement.aliases ?? JSON.parse(row.aliases) as string[]].filter(Boolean))],
-      comment: row.comments, collect: row.collects, nsfw: false,
+      id: row.id,
+      name: supplement.name ?? row.name,
+      aliases: [
+        ...new Set(
+          [
+            supplement.nameCn ?? row.name_cn,
+            ...(supplement.aliases ?? (JSON.parse(row.aliases) as string[])),
+          ].filter(Boolean)
+        ),
+      ],
+      comment: row.comments,
+      collect: row.collects,
+      nsfw: false,
     });
   }
 

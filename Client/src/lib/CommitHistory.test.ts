@@ -48,7 +48,12 @@ describe("commitsApiUrl", () => {
 describe("normalizeCommitEntries", () => {
   it("shortens the hash and normalizes the date to iso utc", () => {
     const entries = normalizeCommitEntries([
-      { hash: "0123456789abcdef", message: "feat(CEE): 队伍面板", date: "2026-10-06T09:20:30+08:00", author: "Cosmosuperbaka" },
+      {
+        hash: "0123456789abcdef",
+        message: "feat(CEE): 队伍面板",
+        date: "2026-10-06T09:20:30+08:00",
+        author: "Cosmosuperbaka",
+      },
     ]);
 
     expect(entries).toEqual([
@@ -63,7 +68,12 @@ describe("normalizeCommitEntries", () => {
 
   it("keeps only the subject line of a multi-line message", () => {
     const entries = normalizeCommitEntries([
-      { hash: "0123456789abcdef", message: "fix(Song): 修音量条\n\n详细正文\n第二段", date: "2026-10-06T01:00:00Z", author: "a" },
+      {
+        hash: "0123456789abcdef",
+        message: "fix(Song): 修音量条\n\n详细正文\n第二段",
+        date: "2026-10-06T01:00:00Z",
+        author: "a",
+      },
     ]);
 
     expect(entries[0]?.message).toBe("fix(Song): 修音量条");
@@ -84,7 +94,12 @@ describe("normalizeCommitEntries", () => {
   it("falls back to a placeholder author instead of dropping the entry", () => {
     const entries = normalizeCommitEntries([
       { hash: "0123456789abcdef", message: "缺作者", date: "2026-10-06T01:00:00Z" },
-      { hash: "0123456789abcdef", message: "作者空白", date: "2026-10-06T01:00:00Z", author: "   " },
+      {
+        hash: "0123456789abcdef",
+        message: "作者空白",
+        date: "2026-10-06T01:00:00Z",
+        author: "   ",
+      },
     ]);
 
     expect(entries.map((entry) => entry.author)).toEqual(["未知作者", "未知作者"]);
@@ -115,7 +130,11 @@ describe("mapGitHubCommits", () => {
       sha: "0123456789abcdef0123456789abcdef01234567",
       commit: {
         message: "feat(CEE): 队伍面板与分队玩家栏\n\n正文不该进时间线",
-        author: { name: "Cosmosuperbaka", email: "someone@example.com", date: "2026-10-06T01:20:30Z" },
+        author: {
+          name: "Cosmosuperbaka",
+          email: "someone@example.com",
+          date: "2026-10-06T01:20:30Z",
+        },
       },
       author: { login: "Cosmosuperbaka" },
       html_url: "https://github.com/Cosmosuperbaka/BakaGame/commit/0123456",

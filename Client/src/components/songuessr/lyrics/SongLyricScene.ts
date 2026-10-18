@@ -88,14 +88,21 @@ export class SongLyricScene {
   private initialTime() {
     const firstTime = this.lines[0]?.time ?? 0;
     const audioTime = Math.floor((this.audio?.currentTime ?? 0) * 1000);
-    return this.audio && this.playback !== "idle"
-      && audioTime >= Math.max(0, firstTime - 3000) && this.audioStatus === "ready"
-      ? audioTime : firstTime;
+    return this.audio &&
+      this.playback !== "idle" &&
+      audioTime >= Math.max(0, firstTime - 3000) &&
+      this.audioStatus === "ready"
+      ? audioTime
+      : firstTime;
   }
 
   private syncAudio = () => {
-    const playing = this.playback === "playing" && this.audioStatus === "ready"
-      && this.audio !== null && !this.audio.paused && !this.audio.ended;
+    const playing =
+      this.playback === "playing" &&
+      this.audioStatus === "ready" &&
+      this.audio !== null &&
+      !this.audio.paused &&
+      !this.audio.ended;
     if (playing !== this.player.getIsPlaying()) {
       if (playing) this.player.resume();
       else this.player.pause();
@@ -117,20 +124,29 @@ export class SongLyricScene {
   private align(force: boolean) {
     this.player.setAlignAnchor(this.overview ? "top" : "center");
     this.player.setAlignPosition(this.overview ? 0 : lyricOverview.scale / 2);
-    this.player.setCurrentTime(this.overview ? (this.lines[0]?.time ?? 0) : this.initialTime(), true);
+    this.player.setCurrentTime(
+      this.overview ? (this.lines[0]?.time ?? 0) : this.initialTime(),
+      true
+    );
     void this.player.calcLayout(true, force);
     this.player.update(0);
   }
 
   private setOverview(overview: boolean) {
-    const elements = [this.element, ...this.player.currentLyricGroups.map((group) => group.element)];
+    const elements = [
+      this.element,
+      ...this.player.currentLyricGroups.map((group) => group.element),
+    ];
     // 从屏幕上当前真正显示的位置取起点，快速重播也能接住尚未结束的过渡。
     const from = elements.map((element) => getComputedStyle(element).transform);
     this.cancelAnimations();
     // 先挂上过渡再切总览：明暗、模糊与逐字遮罩随缩放一起补间（index.css 的 baka-overview-switching），结束后摘掉，不拖慢播放中的逐帧高亮。
     if (this.ready && !this.reducedMotion.matches) {
       this.element.classList.add("baka-overview-switching");
-      this.switchTimer = window.setTimeout(() => this.endSwitching(), lyricOverview.timing.duration);
+      this.switchTimer = window.setTimeout(
+        () => this.endSwitching(),
+        lyricOverview.timing.duration
+      );
     }
     this.overview = overview;
     this.element.classList.toggle("baka-overview-mode", overview);
@@ -138,10 +154,12 @@ export class SongLyricScene {
     this.player.setEnableBlur(!overview);
     this.align(true);
     if (!this.ready || this.reducedMotion.matches) return;
-    this.animations = elements.map((element, index) => element.animate(
-      [{ transform: from[index] }, { transform: getComputedStyle(element).transform }],
-      lyricOverview.timing,
-    ));
+    this.animations = elements.map((element, index) =>
+      element.animate(
+        [{ transform: from[index] }, { transform: getComputedStyle(element).transform }],
+        lyricOverview.timing
+      )
+    );
     // 不持有填充态：结束后归还原生布局，避免覆盖后续歌词滚动。
     for (const animation of this.animations) animation.onfinish = () => animation.cancel();
   }
@@ -175,8 +193,11 @@ export class SongLyricScene {
     this.element.style.height = `${height}px`;
     this.host.style.height = `${Math.ceil(height * lyricOverview.scale)}px`;
     // 必须等内核读到相同的盒模型，再将首帧交给用户；不按固定帧数猜测就绪。
-    const measured = this.player.size[1] === height && groups.every((group) =>
-      this.player.lyricGroupSize.get(group)?.[1] === group.element.clientHeight);
+    const measured =
+      this.player.size[1] === height &&
+      groups.every(
+        (group) => this.player.lyricGroupSize.get(group)?.[1] === group.element.clientHeight
+      );
     if (!this.ready && this.fontsReady && measured) {
       this.align(true);
       this.ready = true;

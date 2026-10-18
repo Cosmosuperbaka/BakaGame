@@ -1,7 +1,12 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { Meilisearch, type EnqueuedTaskPromise, type Index, type SearchResponse } from "meilisearch";
+import {
+  Meilisearch,
+  type EnqueuedTaskPromise,
+  type Index,
+  type SearchResponse,
+} from "meilisearch";
 import { isMeiliApiError, meiliHttpClient } from "./MeiliHttpClient";
 
 export interface BangumiSearchOptions {
@@ -62,26 +67,51 @@ const METADATA_INDEX = "bangumi_search_metadata";
 const INDEX_SCHEMA_VERSION = 3;
 const BATCH_SIZE = 1_000;
 // 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：用 MEILISEARCH_URL 覆盖为容器可达地址。
-const INTERNAL_SEARCH_URL = (Bun.env.MEILISEARCH_URL?.trim() || "http://127.0.0.1:7700").replace(/\/+$/, "");
+const INTERNAL_SEARCH_URL = (Bun.env.MEILISEARCH_URL?.trim() || "http://127.0.0.1:7700").replace(
+  /\/+$/,
+  ""
+);
 const SEARCH_TIMEOUT_MS = 5_000;
 const INDEX_TASK_TIMEOUT_MS = 600_000;
 
 /** 与官方 `subject.rankRule()` 逐字一致，只去掉 `nsfw:asc`（数据里已没有 nsfw 条目）。 */
 export const SUBJECT_RANKING_RULES = [
-  "exactness", "words", "typo", "proximity", "attribute", "sort",
-  "id:asc", "rank:asc", "score:desc",
+  "exactness",
+  "words",
+  "typo",
+  "proximity",
+  "attribute",
+  "sort",
+  "id:asc",
+  "rank:asc",
+  "score:desc",
 ];
 /** 与官方 `character.rankRule()` 逐字一致，同样去掉 `nsfw:asc`。 */
 export const CHARACTER_RANKING_RULES = [
-  "exactness", "words", "typo", "proximity", "attribute", "sort",
-  "id:asc", "comment:desc", "collect:desc",
+  "exactness",
+  "words",
+  "typo",
+  "proximity",
+  "attribute",
+  "sort",
+  "id:asc",
+  "comment:desc",
+  "collect:desc",
 ];
 /**
  * 与官方 filter 保持一致（见 `internal/search/subject/handle.go` 的 ReqFilter）：
  * type / tag / air_date→date / rating→score / rating_count / rank / meta_tags→meta_tag。
  * **`nsfw` 已去掉**：匿名请求拿不到 nsfw 条目，数据里不存在，留着只是多一个高基数 facet。
  */
-export const SUBJECT_FILTERABLE = ["tag", "meta_tag", "date", "score", "rating_count", "rank", "type"];
+export const SUBJECT_FILTERABLE = [
+  "tag",
+  "meta_tag",
+  "date",
+  "score",
+  "rating_count",
+  "rank",
+  "type",
+];
 /**
  * 可排序字段。**`id` 必须在列**：无关键词出题时的 sort 用 `id:asc` 做最终稳定
  * 兜底（同 heat/rank/score 时保证结果确定），而 Meilisearch 的 sort 字段必须
@@ -115,27 +145,52 @@ export class BangumiSearchIndex {
 
   constructor(options: BangumiSearchOptions = {}) {
     // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上每次请求约 40ms 的 TCP 罚时。
-    this.client = options.client ?? new Meilisearch({
-      host: INTERNAL_SEARCH_URL,
-      apiKey: options.apiKey,
-      timeout: SEARCH_TIMEOUT_MS,
-      httpClient: meiliHttpClient,
-    });
-    this.subjects = this.client.index<SubjectSearchDocument>(SUBJECT_INDEX) as IndexWithDocuments<SubjectSearchDocument>;
-    this.characters = this.client.index<CharacterSearchDocument>(CHARACTER_INDEX) as IndexWithDocuments<CharacterSearchDocument>;
+    this.client =
+      options.client ??
+      new Meilisearch({
+        host: INTERNAL_SEARCH_URL,
+        apiKey: options.apiKey,
+        timeout: SEARCH_TIMEOUT_MS,
+        httpClient: meiliHttpClient,
+      });
+    this.subjects = this.client.index<SubjectSearchDocument>(
+      SUBJECT_INDEX
+    ) as IndexWithDocuments<SubjectSearchDocument>;
+    this.characters = this.client.index<CharacterSearchDocument>(
+      CHARACTER_INDEX
+    ) as IndexWithDocuments<CharacterSearchDocument>;
     this.metadata = this.client.index(METADATA_INDEX);
   }
 
   async initialize(db: Database, sourcePath: string): Promise<void> {
     await this.client.health();
-    await this.configureIndex(this.subjects, SUBJECT_RANKING_RULES, SUBJECT_SEARCHABLE, SUBJECT_FILTERABLE, SUBJECT_SORTABLE);
-    await this.configureIndex(this.characters, CHARACTER_RANKING_RULES, CHARACTER_SEARCHABLE, CHARACTER_FILTERABLE, CHARACTER_SORTABLE);
+    await this.configureIndex(
+      this.subjects,
+      SUBJECT_RANKING_RULES,
+      SUBJECT_SEARCHABLE,
+      SUBJECT_FILTERABLE,
+      SUBJECT_SORTABLE
+    );
+    await this.configureIndex(
+      this.characters,
+      CHARACTER_RANKING_RULES,
+      CHARACTER_SEARCHABLE,
+      CHARACTER_FILTERABLE,
+      CHARACTER_SORTABLE
+    );
     await this.ensureIndex(this.metadata);
 
     const revision = `${INDEX_SCHEMA_VERSION}:${await fingerprint(sourcePath)}`;
-    const subjectCount = Number((db.query("SELECT count(*) AS count FROM subjects").get() as { count: number }).count);
-    const characterCount = Number((db.query("SELECT count(*) AS count FROM characters").get() as { count: number }).count);
-    const [subjectStats, characterStats] = await Promise.all([this.subjects.getStats(), this.characters.getStats()]);
+    const subjectCount = Number(
+      (db.query("SELECT count(*) AS count FROM subjects").get() as { count: number }).count
+    );
+    const characterCount = Number(
+      (db.query("SELECT count(*) AS count FROM characters").get() as { count: number }).count
+    );
+    const [subjectStats, characterStats] = await Promise.all([
+      this.subjects.getStats(),
+      this.characters.getStats(),
+    ]);
     let indexedRevision: string | undefined;
     try {
       indexedRevision = (await this.metadata.getDocument("dataset")).revision;
@@ -149,7 +204,9 @@ export class BangumiSearchIndex {
       await this.replaceCharacters(db);
     }
     if (indexedRevision !== revision) {
-      await waitForIndexTask(this.metadata.addDocuments([{ id: "dataset", revision }], { primaryKey: "id" }));
+      await waitForIndexTask(
+        this.metadata.addDocuments([{ id: "dataset", revision }], { primaryKey: "id" })
+      );
     }
   }
 
@@ -199,20 +256,36 @@ export class BangumiSearchIndex {
   /** 构造索引文档。更新器落库后按同一份映射回写索引，避免两处口径漂移。 */
   toSubjectDocument(row: Record<string, unknown>): SubjectSearchDocument {
     return {
-      id: Number(row.id), name: String(row.name),
+      id: Number(row.id),
+      name: String(row.name),
       aliases: uniqueStrings(cellText(row.name_cn), parseJsonStrings(row.aliases)),
-      tag: parseJsonStrings(row.tags), meta_tag: parseJsonStrings(row.meta_tags),
-      date: parseDate(cellText(row.date)), score: Number(row.score ?? 0),
-      rating_count: Number(row.rating_count ?? 0), heat: Number(row.heat ?? 0),
-      rank: Number(row.rank ?? 0), type: Number(row.type ?? 0),
+      tag: parseJsonStrings(row.tags),
+      meta_tag: parseJsonStrings(row.meta_tags),
+      date: parseDate(cellText(row.date)),
+      score: Number(row.score ?? 0),
+      rating_count: Number(row.rating_count ?? 0),
+      heat: Number(row.heat ?? 0),
+      rank: Number(row.rank ?? 0),
+      type: Number(row.type ?? 0),
     };
   }
 
   private async configureIndex<T extends Record<string, unknown>>(
-    index: Index<T>, rankingRules: string[], searchableAttributes: string[], filterableAttributes: string[], sortableAttributes: string[],
+    index: Index<T>,
+    rankingRules: string[],
+    searchableAttributes: string[],
+    filterableAttributes: string[],
+    sortableAttributes: string[]
   ): Promise<void> {
     await this.ensureIndex(index);
-    await waitForIndexTask(index.updateSettings({ rankingRules, searchableAttributes, filterableAttributes, sortableAttributes }));
+    await waitForIndexTask(
+      index.updateSettings({
+        rankingRules,
+        searchableAttributes,
+        filterableAttributes,
+        sortableAttributes,
+      })
+    );
   }
 
   private async ensureIndex<T extends Record<string, unknown>>(index: Index<T>): Promise<void> {
@@ -226,33 +299,63 @@ export class BangumiSearchIndex {
 
   private async replaceSubjects(db: Database): Promise<void> {
     await waitForIndexTask(this.subjects.deleteAllDocuments());
-    const rows = db.query("SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects ORDER BY id").all() as Array<Record<string, unknown>>;
-    await this.addBatches(this.subjects, rows.map((row) => ({
-      id: Number(row.id), name: String(row.name), aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
-      // 官方 `document.Tag` 取的是标签名数组（subjects.tags），不是 raw_tags 的票数对象。
-      tag: parseJsonStrings(row.tags), meta_tag: parseJsonStrings(row.meta_tags),
-      date: parseDate(String(row.date)), score: Number(row.score), rating_count: Number(row.rating_count),
-      heat: Number(row.heat), rank: Number(row.rank ?? 0), type: Number(row.type),
-    })));
+    const rows = db
+      .query(
+        "SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects ORDER BY id"
+      )
+      .all() as Array<Record<string, unknown>>;
+    await this.addBatches(
+      this.subjects,
+      rows.map((row) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
+        // 官方 `document.Tag` 取的是标签名数组（subjects.tags），不是 raw_tags 的票数对象。
+        tag: parseJsonStrings(row.tags),
+        meta_tag: parseJsonStrings(row.meta_tags),
+        date: parseDate(String(row.date)),
+        score: Number(row.score),
+        rating_count: Number(row.rating_count),
+        heat: Number(row.heat),
+        rank: Number(row.rank ?? 0),
+        type: Number(row.type),
+      }))
+    );
   }
 
   private async replaceCharacters(db: Database): Promise<void> {
     await waitForIndexTask(this.characters.deleteAllDocuments());
-    const rows = db.query("SELECT id,name,name_cn,aliases,comments,collects FROM characters ORDER BY id").all() as Array<Record<string, unknown>>;
-    await this.addBatches(this.characters, rows.map((row) => ({
-      id: Number(row.id), name: String(row.name), aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
-      comment: Number(row.comments), collect: Number(row.collects),
-    })));
+    const rows = db
+      .query("SELECT id,name,name_cn,aliases,comments,collects FROM characters ORDER BY id")
+      .all() as Array<Record<string, unknown>>;
+    await this.addBatches(
+      this.characters,
+      rows.map((row) => ({
+        id: Number(row.id),
+        name: String(row.name),
+        aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
+        comment: Number(row.comments),
+        collect: Number(row.collects),
+      }))
+    );
   }
 
-  private async addBatches<T extends Record<string, unknown>>(index: Index<T>, documents: T[]): Promise<void> {
+  private async addBatches<T extends Record<string, unknown>>(
+    index: Index<T>,
+    documents: T[]
+  ): Promise<void> {
     for (let offset = 0; offset < documents.length; offset += BATCH_SIZE) {
-      await waitForIndexTask(index.addDocuments(documents.slice(offset, offset + BATCH_SIZE), { primaryKey: "id" }));
+      await waitForIndexTask(
+        index.addDocuments(documents.slice(offset, offset + BATCH_SIZE), { primaryKey: "id" })
+      );
     }
   }
 
   private toResult<T extends { id: number }>(result: SearchResponse<T>): SearchResult {
-    return { ids: result.hits.map((hit) => Number(hit.id)), estimatedTotalHits: result.estimatedTotalHits ?? result.hits.length };
+    return {
+      ids: result.hits.map((hit) => Number(hit.id)),
+      estimatedTotalHits: result.estimatedTotalHits ?? result.hits.length,
+    };
   }
 }
 
@@ -264,24 +367,35 @@ async function fingerprint(path: string): Promise<string> {
 
 async function waitForIndexTask(task: EnqueuedTaskPromise): Promise<void> {
   const result = await task.waitTask({ timeout: INDEX_TASK_TIMEOUT_MS });
-  if (result.status !== "succeeded") throw new Error(`搜索索引任务失败: ${result.error?.code ?? result.status}`);
+  if (result.status !== "succeeded")
+    throw new Error(`搜索索引任务失败: ${result.error?.code ?? result.status}`);
 }
 
 export function uniqueStrings(...values: Array<string | string[]>): string[] {
-  return [...new Set(values.flatMap((value) => Array.isArray(value) ? value : [value]).map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      values
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .map((value) => value.trim())
+        .filter(Boolean)
+    ),
+  ];
 }
 
 /** 取文本列：字符串原样收，数字与布尔取其字面文本，其余（null、undefined、对象、数组）按空串，避免把 [object Object] 写进索引。 */
 export function cellText(value: unknown): string {
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+    return String(value);
   return "";
 }
 
 export function parseJsonStrings(value: unknown): string[] {
   try {
     const parsed = JSON.parse(cellText(value) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
   } catch {
     return [];
   }

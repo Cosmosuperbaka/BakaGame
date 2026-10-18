@@ -6,13 +6,31 @@ type Entries = Array<{ id: string; group: string }>;
 
 describe("usePlayerRowKeys", () => {
   it("换组一次 key 变一次，换回原组也不复用旧 key", () => {
-    const { result, rerender } = renderHook(({ entries }: { entries: Entries }) => usePlayerRowKeys(entries), {
-      initialProps: { entries: [{ id: "a", group: "active" }, { id: "b", group: "active" }] },
-    });
+    const { result, rerender } = renderHook(
+      ({ entries }: { entries: Entries }) => usePlayerRowKeys(entries),
+      {
+        initialProps: {
+          entries: [
+            { id: "a", group: "active" },
+            { id: "b", group: "active" },
+          ],
+        },
+      }
+    );
     const first = result.current("a");
-    rerender({ entries: [{ id: "a", group: "spectator" }, { id: "b", group: "active" }] });
+    rerender({
+      entries: [
+        { id: "a", group: "spectator" },
+        { id: "b", group: "active" },
+      ],
+    });
     const second = result.current("a");
-    rerender({ entries: [{ id: "a", group: "active" }, { id: "b", group: "active" }] });
+    rerender({
+      entries: [
+        { id: "a", group: "active" },
+        { id: "b", group: "active" },
+      ],
+    });
     const third = result.current("a");
 
     expect(new Set([first, second, third]).size).toBe(3);
@@ -21,9 +39,12 @@ describe("usePlayerRowKeys", () => {
   });
 
   it("离开后再回来算一次换组", () => {
-    const { result, rerender } = renderHook(({ entries }: { entries: Entries }) => usePlayerRowKeys(entries), {
-      initialProps: { entries: [{ id: "a", group: "active" }] },
-    });
+    const { result, rerender } = renderHook(
+      ({ entries }: { entries: Entries }) => usePlayerRowKeys(entries),
+      {
+        initialProps: { entries: [{ id: "a", group: "active" }] },
+      }
+    );
     const before = result.current("a");
     rerender({ entries: [] });
     rerender({ entries: [{ id: "a", group: "active" }] });

@@ -15,21 +15,17 @@ export function AssignQuestionerPhase() {
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
-  const activeCandidates = snapshot.players.filter(
-    (p) => p.membership === "active"
-  );
-  const spectatorCandidates = snapshot.players.filter(
-    (p) => p.membership === "spectator"
-  );
+  const activeCandidates = snapshot.players.filter((p) => p.membership === "active");
+  const spectatorCandidates = snapshot.players.filter((p) => p.membership === "spectator");
 
   const handleAssign = useCallback(
     async (playerId: string) => {
       await run(async () => {
-      try {
-        await sendCommand("game.assignQuestioner", { playerId });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
+        try {
+          await sendCommand("game.assignQuestioner", { playerId });
+        } catch (e) {
+          addToast((e as { message: string }).message, "error");
+        }
       });
     },
     [run, sendCommand, addToast]
@@ -37,10 +33,7 @@ export function AssignQuestionerPhase() {
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <PhaseHeader
-        icon={UserCheck}
-        title="指定主持人"
-      />
+      <PhaseHeader icon={UserCheck} title="指定主持人" />
 
       {!isHost ? (
         <p className="text-center text-sm text-muted-foreground">等待房主指定本局主持人</p>

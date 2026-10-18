@@ -2,7 +2,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { peekPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
+import {
+  peekPendingRestore,
+  readRoomCreateDefaults,
+  saveRoomCreateDefaults,
+} from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SonGuessrRoomSummary } from "@bakagame/shared";
 import SonGuessrPage from "./SonGuessrPage";
@@ -43,7 +47,7 @@ function renderPage() {
         <Route path="/songuessr" element={<SonGuessrPage />} />
         <Route path="/songuessr/room/:id" element={<div data-testid="room-target" />} />
       </Routes>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
 }
 
@@ -118,7 +122,6 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(first).toHaveAttribute("tabindex", "0");
     expect(second).toHaveAttribute("tabindex", "0");
     expect(first).not.toHaveAttribute("aria-disabled", "true");
-
   });
 
   it("创建时沿用上次的开关、创建成功后记住本次选项并登记恢复", async () => {
@@ -143,7 +146,7 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     await waitFor(() => expect(screen.getByTestId("room-target")).toBeInTheDocument());
     expect(createRoom).toHaveBeenCalledWith(
       expect.objectContaining({ visibility: "public", allowSpectators: true }),
-      expect.any(AbortSignal),
+      expect.any(AbortSignal)
     );
     // 新选项覆盖记忆，并为这间新房登记待恢复的标记。
     expect(readRoomCreateDefaults("song")).toEqual({ visibility: "public", allowSpectators: true });

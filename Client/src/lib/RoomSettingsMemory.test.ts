@@ -22,7 +22,11 @@ describe("room settings memory", () => {
 
   describe("create defaults", () => {
     it("round-trips the options and never stores a password", () => {
-      saveRoomCreateDefaults("cee", { visibility: "private", allowSpectators: false, source: "original" });
+      saveRoomCreateDefaults("cee", {
+        visibility: "private",
+        allowSpectators: false,
+        source: "original",
+      });
 
       expect(readRoomCreateDefaults("cee")).toEqual({
         visibility: "private",
@@ -38,7 +42,10 @@ describe("room settings memory", () => {
       saveRoomCreateDefaults("faker", { visibility: "public", allowSpectators: true });
 
       expect(readRoomCreateDefaults("song")).toBeNull();
-      expect(readRoomCreateDefaults("faker")).toEqual({ visibility: "public", allowSpectators: true });
+      expect(readRoomCreateDefaults("faker")).toEqual({
+        visibility: "public",
+        allowSpectators: true,
+      });
       expect(readRoomCreateDefaults("faker")?.source).toBeUndefined();
     });
 
@@ -48,13 +55,13 @@ describe("room settings memory", () => {
 
       window.localStorage.setItem(
         "bakagame:room-create:faker",
-        JSON.stringify({ visibility: "weird", allowSpectators: true }),
+        JSON.stringify({ visibility: "weird", allowSpectators: true })
       );
       expect(readRoomCreateDefaults("faker")).toBeNull();
 
       window.localStorage.setItem(
         "bakagame:room-create:faker",
-        JSON.stringify({ visibility: "private", allowSpectators: "yes" }),
+        JSON.stringify({ visibility: "private", allowSpectators: "yes" })
       );
       expect(readRoomCreateDefaults("faker")).toBeNull();
     });
@@ -144,7 +151,9 @@ describe("room settings memory", () => {
     const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });
-    expect(() => saveRoomCreateDefaults("faker", { visibility: "public", allowSpectators: true })).not.toThrow();
+    expect(() =>
+      saveRoomCreateDefaults("faker", { visibility: "public", allowSpectators: true })
+    ).not.toThrow();
     expect(() => markPendingRestore("faker", "ROOM4")).not.toThrow();
     spy.mockRestore();
   });

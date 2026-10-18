@@ -13,7 +13,7 @@ const description = (
   id: string,
   playerId: string,
   kind: DescriptionRecord["kind"],
-  index = 1,
+  index = 1
 ): DescriptionRecord => ({
   id,
   playerId,
@@ -85,15 +85,15 @@ describe("description column model", () => {
 
     const model = buildDescriptionColumns(
       [description("old-supplement", "p1", "supplement", 1)],
-      status,
+      status
     );
 
     expect(model.columns.map(({ key }) => key)).toEqual(["sup-1", "sup-3"]);
     expect(model.columns.find(({ key }) => key === "sup-1")?.expectedPlayerIds).toEqual(
-      new Set(["p1"]),
+      new Set(["p1"])
     );
     expect(model.columns.find(({ key }) => key === "sup-3")?.expectedPlayerIds).toEqual(
-      new Set(["p1", "p2", "p3"]),
+      new Set(["p1", "p2", "p3"])
     );
   });
 
@@ -143,4 +143,3 @@ describe("description column model", () => {
     expect(model.playerOrder.get("p2")?.get("cycle-2")).toBe(2);
   });
 });
-

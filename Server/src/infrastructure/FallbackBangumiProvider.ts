@@ -1,4 +1,8 @@
-import type { AnimeAutoFilters, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
+import type {
+  AnimeAutoFilters,
+  BangumiSubjectDetails,
+  BangumiSubjectSearchResult,
+} from "../shared/Index";
 import type { BangumiDataProvider } from "./LocalBangumiProvider";
 
 /**
@@ -42,24 +46,46 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     this.now = now;
   }
 
-  searchSubjects(keyword: string, limit?: number, filters?: AnimeAutoFilters): Promise<BangumiSubjectSearchResult[]> {
-    return this.run(() => this.local.searchSubjects(keyword, limit, filters), () => this.remote.searchSubjects(keyword, limit, filters));
+  searchSubjects(
+    keyword: string,
+    limit?: number,
+    filters?: AnimeAutoFilters
+  ): Promise<BangumiSubjectSearchResult[]> {
+    return this.run(
+      () => this.local.searchSubjects(keyword, limit, filters),
+      () => this.remote.searchSubjects(keyword, limit, filters)
+    );
   }
 
   getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
-    return this.run(() => this.local.getSubject(subjectId), () => this.remote.getSubject(subjectId));
+    return this.run(
+      () => this.local.getSubject(subjectId),
+      () => this.remote.getSubject(subjectId)
+    );
   }
 
-  chooseRandomSubject(filters?: AnimeAutoFilters, random?: () => number): Promise<BangumiSubjectDetails> {
-    return this.run(() => this.local.chooseRandomSubject(filters, random), () => this.remote.chooseRandomSubject(filters, random));
+  chooseRandomSubject(
+    filters?: AnimeAutoFilters,
+    random?: () => number
+  ): Promise<BangumiSubjectDetails> {
+    return this.run(
+      () => this.local.chooseRandomSubject(filters, random),
+      () => this.remote.chooseRandomSubject(filters, random)
+    );
   }
 
   resolveCharacterImage(characterId: number): Promise<string | undefined> {
-    return this.run(() => this.local.resolveCharacterImage(characterId), () => this.remote.resolveCharacterImage(characterId));
+    return this.run(
+      () => this.local.resolveCharacterImage(characterId),
+      () => this.remote.resolveCharacterImage(characterId)
+    );
   }
 
   resolveSubjectImage(subjectId: string): Promise<string | undefined> {
-    return this.run(() => this.local.resolveSubjectImage(subjectId), () => this.remote.resolveSubjectImage(subjectId));
+    return this.run(
+      () => this.local.resolveSubjectImage(subjectId),
+      () => this.remote.resolveSubjectImage(subjectId)
+    );
   }
 
   async close(): Promise<void> {

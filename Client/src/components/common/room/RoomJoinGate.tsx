@@ -2,7 +2,14 @@ import { useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
 import { duration, ease } from "@/lib/Motion";
 
@@ -16,7 +23,12 @@ export interface RoomPasswordError {
  * 进房输入密码的输入框：分享链接进房（`RoomJoinGate`）与大厅点开带锁房间（`JoinPasswordDialog`）共用这一种写法。
  * 失败文案写在框下并经 `aria-describedby` 关联；只有密码本身不对才标 `aria-invalid`，其余失败（次数过多等）只给文案。
  */
-export function RoomPasswordField({ value, onChange, disabled = false, error }: {
+export function RoomPasswordField({
+  value,
+  onChange,
+  disabled = false,
+  error,
+}: {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
@@ -37,7 +49,11 @@ export function RoomPasswordField({ value, onChange, disabled = false, error }: 
         aria-describedby={error ? errorId : undefined}
         className="h-10"
       />
-      {error ? <p id={errorId} role="alert" className="text-xs text-destructive">{error.message}</p> : null}
+      {error ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive">
+          {error.message}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -97,13 +113,26 @@ export function RoomJoinGate({
         </motion.div>
       ) : null}
 
-      <Dialog open={needsName} onOpenChange={(open) => { if (!open) onExit(); }}>
+      <Dialog
+        open={needsName}
+        onOpenChange={(open) => {
+          if (!open) onExit();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>设置用户名</DialogTitle>
-            <DialogDescription>进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。</DialogDescription>
+            <DialogDescription>
+              进入房间 &ldquo;{roomId}&rdquo; 前先取个名字，其他玩家会看到它。
+            </DialogDescription>
           </DialogHeader>
-          <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (nameDraft.trim() && !pending) onConfirmName(); }}>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (nameDraft.trim() && !pending) onConfirmName();
+            }}
+          >
             <Input
               autoFocus
               aria-label="用户名"
@@ -114,24 +143,47 @@ export function RoomJoinGate({
               className="h-10"
             />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onExit}>返回大厅</Button>
-              <Button type="submit" disabled={!nameDraft.trim()} loading={pending}>进入房间</Button>
+              <Button type="button" variant="outline" onClick={onExit}>
+                返回大厅
+              </Button>
+              <Button type="submit" disabled={!nameDraft.trim()} loading={pending}>
+                进入房间
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={needsPassword} onOpenChange={(open) => { if (!open) onExit(); }}>
+      <Dialog
+        open={needsPassword}
+        onOpenChange={(open) => {
+          if (!open) onExit();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>输入房间密码</DialogTitle>
             <DialogDescription>该链接指向一个私密房间。</DialogDescription>
           </DialogHeader>
-          <form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); if (passwordDraft.trim() && !pending) onConfirmPassword(); }}>
-            <RoomPasswordField value={passwordDraft} onChange={onPasswordDraftChange} error={passwordError} />
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (passwordDraft.trim() && !pending) onConfirmPassword();
+            }}
+          >
+            <RoomPasswordField
+              value={passwordDraft}
+              onChange={onPasswordDraftChange}
+              error={passwordError}
+            />
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={onExit}>返回大厅</Button>
-              <Button type="submit" disabled={!passwordDraft.trim()} loading={pending}>加入房间</Button>
+              <Button type="button" variant="outline" onClick={onExit}>
+                返回大厅
+              </Button>
+              <Button type="submit" disabled={!passwordDraft.trim()} loading={pending}>
+                加入房间
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

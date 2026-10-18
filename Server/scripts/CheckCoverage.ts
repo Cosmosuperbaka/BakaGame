@@ -78,29 +78,32 @@ const toActualCoverage = (totals: CoverageTotals): Record<CoverageMetric, number
 
 const describeGateFailure = (
   actual: Record<CoverageMetric, number>,
-  failures: CoverageMetric[],
+  failures: CoverageMetric[]
 ): string =>
   `覆盖率低于门槛: ${failures
     .map((metric) => `${metric}=${actual[metric].toFixed(2)}% < ${thresholds[metric].toFixed(2)}%`)
     .join(", ")}`;
 
 if (import.meta.main) {
-const coveragePath = resolve(import.meta.dir, "../coverage/lcov.info");
-const lcov = Bun.file(coveragePath);
-if (!(await lcov.exists())) {
-  throw new Error(`未找到覆盖率报告: ${coveragePath}`);
-}
+  const coveragePath = resolve(import.meta.dir, "../coverage/lcov.info");
+  const lcov = Bun.file(coveragePath);
+  if (!(await lcov.exists())) {
+    throw new Error(`未找到覆盖率报告: ${coveragePath}`);
+  }
 
-const totals = parseLcov(await lcov.text());
-if (!totals.functionsFound || !totals.linesFound) throw new Error('覆盖率报告缺少有效的函数或行计数');
-const actual = toActualCoverage(totals);
+  const totals = parseLcov(await lcov.text());
+  if (!totals.functionsFound || !totals.linesFound)
+    throw new Error("覆盖率报告缺少有效的函数或行计数");
+  const actual = toActualCoverage(totals);
 
-console.log(
-  `服务端覆盖率: 函数 ${actual.functions.toFixed(2)}% (门槛 ${thresholds.functions.toFixed(2)}%), 行 ${actual.lines.toFixed(2)}% (门槛 ${thresholds.lines.toFixed(2)}%)`,
-);
+  console.log(
+    `服务端覆盖率: 函数 ${actual.functions.toFixed(2)}% (门槛 ${thresholds.functions.toFixed(2)}%), 行 ${actual.lines.toFixed(2)}% (门槛 ${thresholds.lines.toFixed(2)}%)`
+  );
 
-const failures = (Object.keys(thresholds) as CoverageMetric[]).filter((metric) => actual[metric] < thresholds[metric]);
-if (failures.length > 0) {
-  throw new Error(describeGateFailure(actual, failures));
-}
+  const failures = (Object.keys(thresholds) as CoverageMetric[]).filter(
+    (metric) => actual[metric] < thresholds[metric]
+  );
+  if (failures.length > 0) {
+    throw new Error(describeGateFailure(actual, failures));
+  }
 }

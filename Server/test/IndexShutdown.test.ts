@@ -1,22 +1,31 @@
 import { expect, test } from "bun:test";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
-import { createIndexShutdownHarness, finalStages, type Stage } from "./fixtures/IndexShutdownHarness";
+import {
+  createIndexShutdownHarness,
+  finalStages,
+  type Stage,
+} from "./fixtures/IndexShutdownHarness";
 
-const completed = (calls: string[]) => calls.filter(call => call.endsWith(":end")).map(call => call.slice(0, -4));
+const completed = (calls: string[]) =>
+  calls.filter((call) => call.endsWith(":end")).map((call) => call.slice(0, -4));
 const assertTimers = (harness: Awaited<ReturnType<typeof createIndexShutdownHarness>>) => {
   expect(harness.intervals).toHaveLength(3);
-  expect(harness.intervals.map(timer => timer.cleared)).toEqual([1, 1, 1]);
+  expect(harness.intervals.map((timer) => timer.cleared)).toEqual([1, 1, 1]);
   expect(harness.timeouts).toHaveLength(1);
   expect(harness.timeouts[0]).toMatchObject({ ms: 15_000, unrefed: true, cleared: 1 });
 };
 
 test("真实 Index：启动监听带上请求体上限", async () => {
   const harness = await createIndexShutdownHarness();
-  expect(harness.listenOptions).toEqual([{ hostname: "127.0.0.1", port: 1, maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES }]);
+  expect(harness.listenOptions).toEqual([
+    { hostname: "127.0.0.1", port: 1, maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES },
+  ]);
 });
 
 test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且等待所有资源", async () => {
-  const harness = await createIndexShutdownHarness({ hold: ["buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"] });
+  const harness = await createIndexShutdownHarness({
+    hold: ["buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"],
+  });
   expect(harness.isShuttingDown()).toBe(false);
   await harness.preNotify();
   await harness.preNotify();
@@ -24,7 +33,7 @@ test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且�
   expect(harness.task).toBeUndefined();
   expect(harness.calls).toEqual([]);
   expect(harness.exits).toEqual([]);
-  expect(harness.intervals.every(timer => timer.cleared === 0)).toBe(true);
+  expect(harness.intervals.every((timer) => timer.cleared === 0)).toBe(true);
 
   harness.signal("SIGTERM");
   const task = harness.task!;
@@ -33,7 +42,15 @@ test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且�
   harness.signal("SIGTERM");
   harness.signal("SIGINT");
 
-  const awaitedStages: Stage[] = ["buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"];
+  const awaitedStages: Stage[] = [
+    "buffer",
+    "drain",
+    "stop",
+    "dispose",
+    "otlp",
+    "sentry.flush",
+    "sentry.close",
+  ];
   for (const stage of awaitedStages) {
     await harness.started(stage);
     const position = finalStages.indexOf(stage);
@@ -62,7 +79,7 @@ test("真实 Index：无预通知的 signal 同样立即摘流，未配置 OTLP 
   harness.signal();
   expect(harness.isShuttingDown()).toBe(true);
   await harness.task;
-  expect(completed(harness.calls)).toEqual(finalStages.filter(stage => stage !== "otlp"));
+  expect(completed(harness.calls)).toEqual(finalStages.filter((stage) => stage !== "otlp"));
   expect(harness.exits).toEqual([0]);
   assertTimers(harness);
 });
@@ -73,10 +90,23 @@ for (const stage of finalStages) {
     await harness.preNotify();
     harness.signal();
     await harness.task;
-    expect(harness.calls.filter(call => call.includes(":start")).map(call => call.split(":")[0])).toEqual([...finalStages]);
-    expect(completed(harness.calls)).toEqual(finalStages.filter(item => item !== stage));
+    expect(
+      harness.calls.filter((call) => call.includes(":start")).map((call) => call.split(":")[0])
+    ).toEqual([...finalStages]);
+    expect(completed(harness.calls)).toEqual(finalStages.filter((item) => item !== stage));
     expect(harness.exits).toEqual([1]);
-    expect(harness.logs).toContainEqual(expect.objectContaining({ level: "error", message: "优雅停机步骤失败", details: expect.objectContaining({ stage, message: `injected:${stage}`, stack: expect.any(String), cause: expect.any(Error) }) }));
+    expect(harness.logs).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        message: "优雅停机步骤失败",
+        details: expect.objectContaining({
+          stage,
+          message: `injected:${stage}`,
+          stack: expect.any(String),
+          cause: expect.any(Error),
+        }),
+      })
+    );
     assertTimers(harness);
   });
 }
@@ -88,13 +118,27 @@ for (const stage of ["sentry.flush", "sentry.close"] as const) {
     await harness.task;
     expect(completed(harness.calls)).toEqual([...finalStages]);
     expect(harness.exits).toEqual([1]);
-    expect(harness.logs).toContainEqual(expect.objectContaining({ message: "优雅停机清理完成但存在失败", details: { failedStages: [stage] } }));
+    expect(harness.logs).toContainEqual(
+      expect.objectContaining({
+        message: "优雅停机清理完成但存在失败",
+        details: { failedStages: [stage] },
+      })
+    );
     assertTimers(harness);
   });
 }
 
 test("真实 Index：多个资源同时失败，仍 await Sentry close 且只退出一次", async () => {
-  const harness = await createIndexShutdownHarness({ failures: { drain: "throw", stop: "throw", dispose: "throw", otlp: "throw", "sentry.flush": "false" }, hold: ["sentry.close"] });
+  const harness = await createIndexShutdownHarness({
+    failures: {
+      drain: "throw",
+      stop: "throw",
+      dispose: "throw",
+      otlp: "throw",
+      "sentry.flush": "false",
+    },
+    hold: ["sentry.close"],
+  });
   harness.signal();
   await harness.started("sentry.close");
   harness.signal("SIGINT");
@@ -102,7 +146,12 @@ test("真实 Index：多个资源同时失败，仍 await Sentry close 且只退
   harness.release("sentry.close");
   await harness.task;
   expect(harness.exits).toEqual([1]);
-  expect(harness.logs).toContainEqual(expect.objectContaining({ message: "优雅停机清理完成但存在失败", details: { failedStages: ["drain", "stop", "dispose", "otlp", "sentry.flush"] } }));
+  expect(harness.logs).toContainEqual(
+    expect.objectContaining({
+      message: "优雅停机清理完成但存在失败",
+      details: { failedStages: ["drain", "stop", "dispose", "otlp", "sentry.flush"] },
+    })
+  );
   assertTimers(harness);
 });
 

@@ -1,0 +1,32 @@
+# 文档与任务笔记：手写版式与表格，Prettier 会重排，且 tasks/ 已被 .gitignore 忽略
+*.md
+Agents/
+tasks/
+
+# 构建产物与缓存
+.qoder-credits/
+Client/dist/
+Client/coverage/
+Client/storybook-static/
+Client/storybook-shots/
+Client/playwright-report/
+Client/test-results/
+Client/.generated-public/
+Client/public/
+Server/coverage/
+Server/data/
+Server/storage/
+Server/tasks/
+Server/drizzle/
+
+# 锁文件与生成物
+pnpm-lock.yaml
+Agents/http-openapi.json
+
+# 环境文件
+.env
+*.env
+Server/.env*
+
+# E2E 夹具：由测试按原样读取，不走格式化
+Client/e2e/fixtures/*.html

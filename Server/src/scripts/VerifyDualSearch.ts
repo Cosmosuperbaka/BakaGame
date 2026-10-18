@@ -27,10 +27,30 @@ const TEST_CASES: TestCase[] = [
   { query: "简单爱", expectedTopArtist: "周杰伦", shouldDualSource: true },
 
   // 2. 合作曲目 / 多歌手
-  { query: "千里之外", expectedTopArtist: "周杰伦", allowAlternateArtist: ["费玉清"], shouldDualSource: true },
-  { query: "珊瑚海", expectedTopArtist: "周杰伦", allowAlternateArtist: ["Lara", "梁心颐"], shouldDualSource: true },
-  { query: "屋顶", expectedTopArtist: "吴宗宪", allowAlternateArtist: ["温岚", "周杰伦"], shouldDualSource: true },
-  { query: "手心的蔷薇", expectedTopArtist: "林俊杰", allowAlternateArtist: ["邓紫棋", "G.E.M."], shouldDualSource: true },
+  {
+    query: "千里之外",
+    expectedTopArtist: "周杰伦",
+    allowAlternateArtist: ["费玉清"],
+    shouldDualSource: true,
+  },
+  {
+    query: "珊瑚海",
+    expectedTopArtist: "周杰伦",
+    allowAlternateArtist: ["Lara", "梁心颐"],
+    shouldDualSource: true,
+  },
+  {
+    query: "屋顶",
+    expectedTopArtist: "吴宗宪",
+    allowAlternateArtist: ["温岚", "周杰伦"],
+    shouldDualSource: true,
+  },
+  {
+    query: "手心的蔷薇",
+    expectedTopArtist: "林俊杰",
+    allowAlternateArtist: ["邓紫棋", "G.E.M."],
+    shouldDualSource: true,
+  },
 
   // 3. 经典国语流行
   { query: "后来", expectedTopArtist: "刘若英", shouldDualSource: true },
@@ -40,27 +60,71 @@ const TEST_CASES: TestCase[] = [
   { query: "红色高跟鞋", expectedTopArtist: "蔡健雅", shouldDualSource: true },
   { query: "修炼爱情", expectedTopArtist: "林俊杰", shouldDualSource: true },
   { query: "江南", expectedTopArtist: "林俊杰", shouldDualSource: true },
-  { query: "光年之外", expectedTopArtist: "邓紫棋", allowAlternateArtist: ["G.E.M."], shouldDualSource: true },
-  { query: "泡沫", expectedTopArtist: "邓紫棋", allowAlternateArtist: ["G.E.M."], shouldDualSource: true },
+  {
+    query: "光年之外",
+    expectedTopArtist: "邓紫棋",
+    allowAlternateArtist: ["G.E.M."],
+    shouldDualSource: true,
+  },
+  {
+    query: "泡沫",
+    expectedTopArtist: "邓紫棋",
+    allowAlternateArtist: ["G.E.M."],
+    shouldDualSource: true,
+  },
   { query: "漠河舞厅", expectedTopArtist: "柳爽", shouldDualSource: true },
 
   // 4. 原唱 vs 翻唱典型
-  { query: "起风了", expectedTopArtist: "买辣椒也用券", allowAlternateArtist: ["吴青峰", "高桥优"], shouldDualSource: true },
+  {
+    query: "起风了",
+    expectedTopArtist: "买辣椒也用券",
+    allowAlternateArtist: ["吴青峰", "高桥优"],
+    shouldDualSource: true,
+  },
 
   // 5. ACG / 动漫名曲
   { query: "only my railgun", expectedTopArtist: "fripSide", shouldDualSource: true },
-  { query: "残酷な天使のテーゼ", expectedTopArtist: "高橋洋子", allowAlternateArtist: ["高桥洋子"], shouldDualSource: true },
+  {
+    query: "残酷な天使のテーゼ",
+    expectedTopArtist: "高橋洋子",
+    allowAlternateArtist: ["高桥洋子"],
+    shouldDualSource: true,
+  },
   { query: "红莲华", expectedTopArtist: "LiSA", shouldDualSource: true },
-  { query: "unravel", expectedTopArtist: "TK from 凛として時雨", allowAlternateArtist: ["TK from 凛として时雨", "TK"], shouldDualSource: true },
+  {
+    query: "unravel",
+    expectedTopArtist: "TK from 凛として時雨",
+    allowAlternateArtist: ["TK from 凛として时雨", "TK"],
+    shouldDualSource: true,
+  },
   { query: "前前前世", expectedTopArtist: "RADWIMPS", shouldDualSource: true },
   { query: "crossing field", expectedTopArtist: "LiSA", shouldDualSource: true },
   { query: "Brave Shine", expectedTopArtist: "Aimer", shouldDualSource: true },
-  { query: "青鸟", expectedTopArtist: "いきものがかり", allowAlternateArtist: ["生物股长"], shouldDualSource: true },
-  { query: "打上花火", expectedTopArtist: "DAOKO", allowAlternateArtist: ["米津玄师", "米津玄師"], shouldDualSource: true },
-  { query: "secret base", expectedTopArtist: "ZONE", allowAlternateArtist: ["茅野爱衣", "本间芽衣子", "あの花"], shouldDualSource: true },
+  {
+    query: "青鸟",
+    expectedTopArtist: "いきものがかり",
+    allowAlternateArtist: ["生物股长"],
+    shouldDualSource: true,
+  },
+  {
+    query: "打上花火",
+    expectedTopArtist: "DAOKO",
+    allowAlternateArtist: ["米津玄师", "米津玄師"],
+    shouldDualSource: true,
+  },
+  {
+    query: "secret base",
+    expectedTopArtist: "ZONE",
+    allowAlternateArtist: ["茅野爱衣", "本间芽衣子", "あの花"],
+    shouldDualSource: true,
+  },
   { query: "恋爱循环", expectedTopArtist: "花泽香菜", allowAlternateArtist: ["花澤香菜"] },
   { query: "Butter-Fly", expectedTopArtist: "和田光司" },
-  { query: "极乐净土", expectedTopArtist: "GARNiDELiA", allowAlternateArtist: ["美依礼芽", "MARiA"] },
+  {
+    query: "极乐净土",
+    expectedTopArtist: "GARNiDELiA",
+    allowAlternateArtist: ["美依礼芽", "MARiA"],
+  },
   { query: "达拉崩吧", expectedTopArtist: "洛天依", allowAlternateArtist: ["周深", "ilem"] },
 
   // 6. 华语更多经典与指定歌手搜索
@@ -117,7 +181,10 @@ const sourceTag = (top: AggregatedSongSearchResult): string =>
   isDualSourceMerged(top) ? "【双源互证合并】" : `【单源: ${mergedSources(top).join(", ")}】`;
 
 /** 深度详情测试：直链可播性与歌词解析优先级。 */
-async function probeDetailSummary(aggregated: AggregatedMusicProvider, songId: string): Promise<string> {
+async function probeDetailSummary(
+  aggregated: AggregatedMusicProvider,
+  songId: string
+): Promise<string> {
   try {
     const details = await aggregated.getSong(songId);
     const hasAudio = Boolean(details.audioUrl && details.audioUrl.startsWith("http"));
@@ -133,7 +200,7 @@ async function probeDetailSummary(aggregated: AggregatedMusicProvider, songId: s
 async function verifyCase(
   aggregated: AggregatedMusicProvider,
   tc: TestCase,
-  index: number,
+  index: number
 ): Promise<CaseOutcome> {
   try {
     const results = (await aggregated.search(tc.query, 10)) as AggregatedSongSearchResult[];
@@ -163,10 +230,17 @@ async function verifyCase(
       detailSummary = await probeDetailSummary(aggregated, top.id);
     }
 
-    return { status: "passed", line: `✅ 通过: "${top.title}" - ${top.artist} ${sourceTag(top)} ${detailSummary}` };
+    return {
+      status: "passed",
+      line: `✅ 通过: "${top.title}" - ${top.artist} ${sourceTag(top)} ${detailSummary}`,
+    };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    return { status: "failed", line: `❌ 抛出异常: ${reason}`, anomaly: `"${tc.query}": 抛出异常 ${reason}` };
+    return {
+      status: "failed",
+      line: `❌ 抛出异常: ${reason}`,
+      anomaly: `"${tc.query}": 抛出异常 ${reason}`,
+    };
   }
 }
 

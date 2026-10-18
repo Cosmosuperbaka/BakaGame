@@ -13,7 +13,7 @@ import { createConnection, createTestContext, execute, getLastEventPayload } fro
 /** 建测试房间，并按需补入机器人，返回房主连接。 */
 const createTestRoom = async (
   service: ReturnType<typeof createTestContext>["service"],
-  botCount: number,
+  botCount: number
 ) => {
   const host = createConnection(service, "test-host");
   const result = (await execute(service, host, {
@@ -163,7 +163,9 @@ test("结算后所有人的准备状态都被重置", async () => {
   const snapshot = snapshotOf(host);
   expect(snapshot.status.phase).toBe("gameOver");
   // 房主没有准备态，快照里恒为已准备，不参与重置。
-  expect(snapshot.players.filter((player) => !player.isHost).every((player) => !player.isReady)).toBe(true);
+  expect(
+    snapshot.players.filter((player) => !player.isHost).every((player) => !player.isReady)
+  ).toBe(true);
 });
 
 test("测试房间可以随时增减机器人，人数上限生效", async () => {
@@ -337,7 +339,7 @@ test("卧底数上限按参战人数计算，机器人增减后同步", async ()
 /** 让房主成为白板并停在描述阶段，用于猜词相关用例。 */
 const prepareBlank = async (
   service: ReturnType<typeof createTestContext>["service"],
-  host: ReturnType<typeof createConnection>,
+  host: ReturnType<typeof createConnection>
 ) => {
   await execute(service, host, {
     id: "jump-desc",
@@ -400,14 +402,18 @@ test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束",
   const feedback = snapshotOf(host);
   expect(feedback.status.phase).toBe("feedback");
   expect(feedback.status.feedback).toMatchObject({ kind: "blankGuess", next: "gameOver" });
-  expect(feedback.status.feedback?.blankGuess).toMatchObject({ playerId, success: true, guessedWords: ["苹果", "香蕉"] });
+  expect(feedback.status.feedback?.blankGuess).toMatchObject({
+    playerId,
+    success: true,
+    guessedWords: ["苹果", "香蕉"],
+  });
   await execute(service, host, { id: "continue", type: "game.advancePhase", payload: {} });
   const finished = snapshotOf(host);
   expect(finished.status.phase).toBe("gameOver");
   expect(finished.summary?.winner).toBe("blank");
-  expect(
-    finished.summary?.awardedScores.find((score) => score.playerId === playerId)?.delta,
-  ).toBe(2);
+  expect(finished.summary?.awardedScores.find((score) => score.playerId === playerId)?.delta).toBe(
+    2
+  );
 });
 
 test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async () => {

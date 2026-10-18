@@ -3,7 +3,13 @@ import { motion } from "framer-motion";
 import { ChevronRight, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/Select";
 import { Hint } from "@/components/ui/Tooltip";
 import {
   creditLicenseLabel,
@@ -32,12 +38,15 @@ export function CreditsDependencies({
   /** 打开某个主包的依赖详情抽屉，传包名（下钻栈由页面维护）。 */
   onSelect: (name: string) => void;
 }) {
-  const mainPackages = useMemo(() => dependencies.filter((dependency) => dependency.direct), [dependencies]);
+  const mainPackages = useMemo(
+    () => dependencies.filter((dependency) => dependency.direct),
+    [dependencies]
+  );
   const [query, setQuery] = useState("");
   const [license, setLicense] = useState<string | null>(null);
   const visible = useMemo(
     () => filterCreditDependencies(mainPackages, query, license),
-    [mainPackages, query, license],
+    [mainPackages, query, license]
   );
   const options = useMemo(() => creditLicenseOptions(mainPackages), [mainPackages]);
 
@@ -112,7 +121,9 @@ export function CreditsDependencies({
       {visible.length === 0 ? (
         <div className="mt-2 grid justify-items-center gap-2 rounded-md border border-dashed border-border bg-muted/40 px-6 py-10 text-center">
           <p className="text-sm font-medium">没有匹配的主包</p>
-          <p className="max-w-md text-xs text-muted-foreground">换个关键词或 License 条件，或清除筛选查看全部主包。</p>
+          <p className="max-w-md text-xs text-muted-foreground">
+            换个关键词或 License 条件，或清除筛选查看全部主包。
+          </p>
           <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
             清除筛选
           </Button>
@@ -148,16 +159,18 @@ function DependencyRow({
     >
       <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
       <Hint label={dependency.name}>
-        <span className="min-w-0 flex-1 truncate text-sm">
-          {dependency.name}
-        </span>
+        <span className="min-w-0 flex-1 truncate text-sm">{dependency.name}</span>
       </Hint>
       {/* 有子依赖时给一个弱化尾标，预告抽屉里还能往下看；没有子依赖就不占位。 */}
       {childCount > 0 ? (
-        <span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground sm:inline">{childCount} 个依赖</span>
+        <span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground sm:inline">
+          {childCount} 个依赖
+        </span>
       ) : null}
       {/* 版本、开发依赖、License 各占一列固定宽度：行与行之间逐列对齐，长 SPDX 在列内截断。 */}
-      <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">v{dependency.version}</span>
+      <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
+        v{dependency.version}
+      </span>
       <span className="hidden w-16 shrink-0 items-center sm:flex">
         {/* 窄屏只留包名与版本：徽章信息在抽屉里仍完整可见，行高保持稳定。 */}
         {dependency.scope === "development" ? (
@@ -168,11 +181,7 @@ function DependencyRow({
       </span>
       <span className="hidden w-28 shrink-0 items-center sm:flex">
         {/* 徽章正文就是许可证名，不再挂 hover 复述；被列宽截断的部分由行内的完整 aria-label 与抽屉详情补 */}
-        <Badge
-          variant="outline"
-          size="xs"
-          className="min-w-0 max-w-full"
-        >
+        <Badge variant="outline" size="xs" className="min-w-0 max-w-full">
           <span className="truncate">{creditLicenseLabel(dependency.license)}</span>
         </Badge>
       </span>

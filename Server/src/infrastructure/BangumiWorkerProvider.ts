@@ -1,5 +1,9 @@
 import { AppError } from "../domain/Errors";
-import type { AnimeAutoFilters, BangumiSubjectDetails, BangumiSubjectSearchResult } from "../shared/Index";
+import type {
+  AnimeAutoFilters,
+  BangumiSubjectDetails,
+  BangumiSubjectSearchResult,
+} from "../shared/Index";
 import type { BangumiDataProvider } from "./LocalBangumiProvider";
 import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
@@ -11,30 +15,49 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
   constructor(
     private readonly client: BangumiDataWorkerClient,
     /** 与 CEE 共用的初始化 Promise：两边等的是同一次 init。 */
-    private readonly ready: Promise<unknown>,
+    private readonly ready: Promise<unknown>
   ) {}
 
-  async searchSubjects(keyword: string, limit = 20, filters: AnimeAutoFilters = {}): Promise<BangumiSubjectSearchResult[]> {
+  async searchSubjects(
+    keyword: string,
+    limit = 20,
+    filters: AnimeAutoFilters = {}
+  ): Promise<BangumiSubjectSearchResult[]> {
     await this.ready;
-    return this.client.request({ method: "song.searchSubjects", keyword, limit, filters }) as Promise<BangumiSubjectSearchResult[]>;
+    return this.client.request({
+      method: "song.searchSubjects",
+      keyword,
+      limit,
+      filters,
+    }) as Promise<BangumiSubjectSearchResult[]>;
   }
 
   async getSubject(subjectId: string): Promise<BangumiSubjectDetails> {
     await this.ready;
-    return this.client.request({ method: "song.getSubject", subjectId }) as Promise<BangumiSubjectDetails>;
+    return this.client.request({
+      method: "song.getSubject",
+      subjectId,
+    }) as Promise<BangumiSubjectDetails>;
   }
 
   async resolveCharacterImage(characterId: number): Promise<string | undefined> {
     await this.ready;
-    return this.client.request({ method: "song.resolveCharacterImage", characterId }) as Promise<string | undefined>;
+    return this.client.request({ method: "song.resolveCharacterImage", characterId }) as Promise<
+      string | undefined
+    >;
   }
 
   async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
     await this.ready;
-    return this.client.request({ method: "song.resolveSubjectImage", subjectId }) as Promise<string | undefined>;
+    return this.client.request({ method: "song.resolveSubjectImage", subjectId }) as Promise<
+      string | undefined
+    >;
   }
 
-  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random): Promise<BangumiSubjectDetails> {
+  async chooseRandomSubject(
+    filters: AnimeAutoFilters = {},
+    random = Math.random
+  ): Promise<BangumiSubjectDetails> {
     const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
     if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
     return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);

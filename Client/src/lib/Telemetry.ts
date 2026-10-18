@@ -15,18 +15,21 @@ export interface TelemetryOptions {
 
 export const reportTelemetry = async (
   payload: TelemetryPayload,
-  options?: TelemetryOptions,
+  options?: TelemetryOptions
 ): Promise<void> => {
   try {
     const fetcher = options?.fetcher ?? fetch;
-    const response = await fetcher(resolveServerUrl("/api/monitoring/telemetry", options?.serverUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(payload.traceId ? { "x-trace-id": payload.traceId } : {}),
-      },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetcher(
+      resolveServerUrl("/api/monitoring/telemetry", options?.serverUrl),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(payload.traceId ? { "x-trace-id": payload.traceId } : {}),
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     if (!response.ok) {
       console.warn(`[Telemetry] 上报遥测失败: HTTP ${response.status}`);
@@ -40,7 +43,7 @@ export const reportTelemetry = async (
         {
           traceId: payload.traceId,
           ...payload.metadata,
-        },
+        }
       );
     }
   } catch (error) {

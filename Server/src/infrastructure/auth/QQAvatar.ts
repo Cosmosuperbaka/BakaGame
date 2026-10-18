@@ -48,7 +48,10 @@ export class QQAvatarService {
     const pending = this.inFlight.get(key);
     if (pending) return pending;
     const request = this.download(qqNumber, size)
-      .then((image) => { this.cache.set(key, image); return image; })
+      .then((image) => {
+        this.cache.set(key, image);
+        return image;
+      })
       .finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, request);
     return request;
@@ -57,15 +60,23 @@ export class QQAvatarService {
   private async download(qqNumber: string, size: AvatarSize): Promise<AvatarImage> {
     let response: Response;
     try {
-      response = await fetchWithGuardedRedirects(this.fetcher, qlogoUrlOf(qqNumber, size), {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      }, { pinOrigin: true });
+      response = await fetchWithGuardedRedirects(
+        this.fetcher,
+        qlogoUrlOf(qqNumber, size),
+        {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        },
+        { pinOrigin: true }
+      );
     } catch (error) {
       throw new AppError("AVATAR_UNAVAILABLE", "QQ 头像暂时无法获取", { cause: String(error) });
     }
     const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
     if (!response.ok || !contentType.startsWith("image/")) {
-      throw new AppError("AVATAR_UNAVAILABLE", "QQ 头像暂时无法获取", { status: response.status, contentType });
+      throw new AppError("AVATAR_UNAVAILABLE", "QQ 头像暂时无法获取", {
+        status: response.status,
+        contentType,
+      });
     }
     const declared = Number(response.headers.get("content-length") ?? 0);
     if (declared > MAX_AVATAR_BYTES) throw new AppError("AVATAR_UNAVAILABLE", "QQ 头像过大");

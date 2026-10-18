@@ -86,29 +86,28 @@ describe("filterCreditDependencies", () => {
     expect(filterCreditDependencies(dependencies, "19.3", null).map((item) => item.name)).toEqual([
       "react-dom",
     ]);
-    expect(filterCreditDependencies(dependencies, "apache", null).map((item) => item.name)).toEqual([
-      "sharp",
-    ]);
+    expect(filterCreditDependencies(dependencies, "apache", null).map((item) => item.name)).toEqual(
+      ["sharp"]
+    );
   });
 
   it("首尾空白不参与匹配，空串等于不过滤", () => {
     expect(filterCreditDependencies(dependencies, "   ", null)).toHaveLength(4);
-    expect(filterCreditDependencies(dependencies, "  sharp  ", null).map((item) => item.name)).toEqual([
-      "sharp",
-    ]);
+    expect(
+      filterCreditDependencies(dependencies, "  sharp  ", null).map((item) => item.name)
+    ).toEqual(["sharp"]);
   });
 
   it("许可证筛选与关键词同时生效，null 表示全部 License", () => {
-    expect(filterCreditDependencies(dependencies, "react", "MIT").map((item) => item.name)).toEqual([
-      "@radix-ui/react-dialog",
-      "react-dom",
-    ]);
-    expect(filterCreditDependencies(dependencies, "", "Apache-2.0").map((item) => item.name)).toEqual([
-      "sharp",
-    ]);
-    expect(filterCreditDependencies(dependencies, "", UNKNOWN_LICENSE).map((item) => item.name)).toEqual([
-      "zod",
-    ]);
+    expect(filterCreditDependencies(dependencies, "react", "MIT").map((item) => item.name)).toEqual(
+      ["@radix-ui/react-dialog", "react-dom"]
+    );
+    expect(
+      filterCreditDependencies(dependencies, "", "Apache-2.0").map((item) => item.name)
+    ).toEqual(["sharp"]);
+    expect(
+      filterCreditDependencies(dependencies, "", UNKNOWN_LICENSE).map((item) => item.name)
+    ).toEqual(["zod"]);
     expect(filterCreditDependencies(dependencies, "react", "Apache-2.0")).toEqual([]);
   });
 
@@ -145,7 +144,11 @@ describe("sortModelsByRelease", () => {
 
 describe("依赖图", () => {
   const graph: CreditDependency[] = [
-    dependency({ name: "storybook", license: "MIT", dependencies: ["@storybook/react", "esbuild"] }),
+    dependency({
+      name: "storybook",
+      license: "MIT",
+      dependencies: ["@storybook/react", "esbuild"],
+    }),
     dependency({ name: "@storybook/react", license: "MIT", dependencies: ["react"] }),
     dependency({ name: "react", dependencies: [] }),
     dependency({ name: "esbuild", license: "MIT", dependencies: [] }),

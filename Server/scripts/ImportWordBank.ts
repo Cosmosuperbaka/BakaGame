@@ -21,7 +21,12 @@ if (!Array.isArray(parsed)) throw new Error("词库文件根节点必须为数�
 const pairs = new Map<string, [string, string]>();
 let skipped = 0;
 for (const [index, entry] of parsed.entries()) {
-  if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string" || typeof entry[1] !== "string") {
+  if (
+    !Array.isArray(entry) ||
+    entry.length !== 2 ||
+    typeof entry[0] !== "string" ||
+    typeof entry[1] !== "string"
+  ) {
     throw new Error(`索引 ${index} 处的条目格式不正确`);
   }
   try {
@@ -37,7 +42,10 @@ try {
   await database.ready;
   const rows = [...pairs.values()].map(([wordA, wordB]) => ({ wordA, wordB }));
   for (let offset = 0; offset < rows.length; offset += 500) {
-    await database.db.insert(wordPair).ignore().values(rows.slice(offset, offset + 500));
+    await database.db
+      .insert(wordPair)
+      .ignore()
+      .values(rows.slice(offset, offset + 500));
   }
   console.log(`已导入 ${rows.length} 个词对（跳过非法条目 ${skipped} 个）`);
 } finally {

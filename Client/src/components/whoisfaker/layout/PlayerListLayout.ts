@@ -20,7 +20,10 @@ export const SPEECH_COLUMN_MIN_WIDTH = "10rem";
 export const COMPACT_PLAYER_COLUMN_WIDTH = "7rem";
 
 /** 空历史不能生成无效的 `repeat(0, ...)`，否则浏览器会丢弃整条列定义。 */
-export const speechGridTemplate = (columnCount: number, playerColumn: string = PLAYER_COLUMN_WIDTH) =>
+export const speechGridTemplate = (
+  columnCount: number,
+  playerColumn: string = PLAYER_COLUMN_WIDTH
+) =>
   columnCount > 0
     ? `${playerColumn} repeat(${columnCount}, minmax(${SPEECH_COLUMN_MIN_WIDTH}, max-content))`
     : playerColumn;

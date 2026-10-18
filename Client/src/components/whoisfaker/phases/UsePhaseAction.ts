@@ -8,8 +8,12 @@ export function usePhaseAction() {
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
-    try { await action(); }
-    finally { inFlight.current = false; setBusy(false); }
+    try {
+      await action();
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
   }, []);
   return { run, busy };
 }

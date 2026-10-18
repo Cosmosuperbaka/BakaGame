@@ -45,9 +45,7 @@ function DisclosureHeader({
       className="flex w-full cursor-pointer items-center gap-2 border-b border-background px-4 py-2.5 text-left transition-colors hover:bg-accent/40"
     >
       {icon}
-      <h3 className="flex-1 text-xs font-semibold text-muted-foreground">
-        {label}
-      </h3>
+      <h3 className="flex-1 text-xs font-semibold text-muted-foreground">{label}</h3>
       <DisclosureChevron open={open} className="text-muted-foreground" />
     </motion.button>
   );
@@ -117,12 +115,15 @@ export function GameOverPhase() {
           本局词语解密
         </div>
         {summary.words ? (
-          <div className={cn("grid grid-cols-2 gap-3 text-center", summary.words.blankHint && "md:grid-cols-3")}>
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-3 text-center",
+              summary.words.blankHint && "md:grid-cols-3"
+            )}
+          >
             <div className="rounded-md border border-info/40 bg-info/10 p-3">
               <div className="text-xs text-info font-medium mb-1">平民词</div>
-              <div className="text-base font-bold text-info">
-                {summary.words.civilianWord}
-              </div>
+              <div className="text-base font-bold text-info">{summary.words.civilianWord}</div>
             </div>
             <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
               <div className="text-xs text-destructive font-medium mb-1">卧底词</div>
@@ -133,9 +134,7 @@ export function GameOverPhase() {
             {summary.words.blankHint && (
               <div className="col-span-2 rounded-md bg-background p-3 md:col-span-1">
                 <div className="text-xs text-muted-foreground font-medium mb-1">白板提示</div>
-                <div className="text-base font-bold text-foreground">
-                  {summary.words.blankHint}
-                </div>
+                <div className="text-base font-bold text-foreground">{summary.words.blankHint}</div>
               </div>
             )}
           </div>
@@ -192,9 +191,9 @@ export function GameOverPhase() {
           />
           <CollapsibleRegion open={showVotes}>
             <div className="space-y-3 p-4">
-                {[...summary.voteHistory]
-                  .sort((a, b) => a.day - b.day || (a.tieBreak ? 1 : 0) - (b.tieBreak ? 1 : 0))
-                  .map((item, idx) => (
+              {[...summary.voteHistory]
+                .sort((a, b) => a.day - b.day || (a.tieBreak ? 1 : 0) - (b.tieBreak ? 1 : 0))
+                .map((item, idx) => (
                   <div key={idx} className="space-y-1.5 text-sm">
                     <div className="font-semibold text-xs text-muted-foreground">
                       第 {item.day} 天{item.tieBreak ? " · 平票 PK" : ""}：
@@ -231,18 +230,13 @@ export function GameOverPhase() {
       {!hasHistory && summary.blankGuesses.length > 0 && (
         <section className="overflow-hidden rounded-md bg-muted">
           <div className="border-b border-background px-4 py-2.5">
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              白板猜词记录
-            </h3>
+            <h3 className="text-xs font-semibold text-muted-foreground">白板猜词记录</h3>
           </div>
           <div className="divide-y divide-background">
             {summary.blankGuesses.map((g, i) => {
               const player = snapshot.players.find((p) => p.id === g.playerId);
               return (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 px-4 py-2.5 text-sm"
-                >
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <Hint label={player?.name}>
                     <span className="w-1/3 min-w-0 shrink-0 truncate font-medium">
                       {player?.name}
@@ -252,7 +246,11 @@ export function GameOverPhase() {
                     {g.guessedWords[0]} / {g.guessedWords[1]}
                   </span>
                   {/* 猜中是成功状态，取 success；猜错取 destructive，两者都有文字 */}
-                  <Badge variant={g.success ? "matched" : "destructive"} size="xs" className="shrink-0">
+                  <Badge
+                    variant={g.success ? "matched" : "destructive"}
+                    size="xs"
+                    className="shrink-0"
+                  >
                     {g.success ? "正确" : "错误"}
                   </Badge>
                 </div>

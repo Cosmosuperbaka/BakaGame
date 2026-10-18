@@ -42,12 +42,12 @@ const isModuleScriptParseFailure = (event: Sentry.Event): boolean =>
   (event.exception?.values ?? []).some(
     (value) =>
       value.type === "SyntaxError" &&
-      (value.stacktrace?.frames ?? []).some((frame) => frame.function === "parseModule"),
+      (value.stacktrace?.frames ?? []).some((frame) => frame.function === "parseModule")
   );
 
 export const initClientSentry = (
   options?: SentryOptions,
-  driver: SentrySdkDriver = defaultDriver,
+  driver: SentrySdkDriver = defaultDriver
 ): void => {
   if (isInitialized) return;
 
@@ -63,9 +63,10 @@ export const initClientSentry = (
     dsn,
     tunnel,
     environment: import.meta.env.MODE,
-    release: commitHistory.currentCommit !== "dev"
-      ? `V${resolveLatestVersion(changelog.entries) ?? "0.0.0"}（${commitHistory.currentCommit}）`
-      : undefined,
+    release:
+      commitHistory.currentCommit !== "dev"
+        ? `V${resolveLatestVersion(changelog.entries) ?? "0.0.0"}（${commitHistory.currentCommit}）`
+        : undefined,
     tracesSampleRate: options?.tracesSampleRate ?? 0.1,
     replaysSessionSampleRate: options?.replaysSessionSampleRate ?? 0.1,
     replaysOnErrorSampleRate: options?.replaysOnErrorSampleRate ?? 1,
@@ -105,10 +106,7 @@ export const initClientSentry = (
   isInitialized = true;
 };
 
-export const captureClientException = (
-  error: unknown,
-  context?: Record<string, unknown>,
-): void => {
+export const captureClientException = (error: unknown, context?: Record<string, unknown>): void => {
   if (!isInitialized) return;
 
   activeDriver.withScope((scope) => {
@@ -125,7 +123,7 @@ export const captureClientException = (
 export const captureClientMessage = (
   message: string,
   level: Sentry.SeverityLevel = "info",
-  context?: Record<string, unknown>,
+  context?: Record<string, unknown>
 ): void => {
   if (!isInitialized) return;
 
@@ -143,23 +141,24 @@ export const captureClientMessage = (
 type ClientLogLevel = "info" | "warning" | "error";
 
 const toClientAttributes = (
-  context?: Record<string, unknown>,
+  context?: Record<string, unknown>
 ): Record<string, string | number | boolean | null> | undefined => {
   if (!context) return undefined;
   return Object.fromEntries(
-    Object.entries(context).filter(([, value]) =>
-      value === null ||
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean",
-    ),
+    Object.entries(context).filter(
+      ([, value]) =>
+        value === null ||
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+    )
   ) as Record<string, string | number | boolean | null>;
 };
 
 export const captureClientLog = (
   message: string,
   level: ClientLogLevel = "info",
-  context?: Record<string, unknown>,
+  context?: Record<string, unknown>
 ): void => {
   if (!isInitialized) return;
   const attributes = toClientAttributes(context);
@@ -171,7 +170,7 @@ export const captureClientLog = (
 export const countClientMetric = (
   name: string,
   value = 1,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.count(name, value, { attributes });
@@ -180,7 +179,7 @@ export const countClientMetric = (
 export const recordClientMetric = (
   name: string,
   value: number,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes });
@@ -189,7 +188,7 @@ export const recordClientMetric = (
 export const withClientSpan = async <T>(
   name: string,
   callback: (span: Sentry.Span) => Promise<T> | T,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): Promise<T> => {
   return Sentry.startSpan({ name, op: "bakagame.client", attributes }, callback);
 };

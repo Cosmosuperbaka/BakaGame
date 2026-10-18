@@ -4,15 +4,7 @@ import { Slider } from "./Slider";
 
 describe("Slider", () => {
   it("正确渲染 slider 角色并体现数值属性", () => {
-    render(
-      <Slider
-        value={[0.65]}
-        min={0}
-        max={1}
-        step={0.01}
-        aria-label="测试滑块"
-      />,
-    );
+    render(<Slider value={[0.65]} min={0} max={1} step={0.01} aria-label="测试滑块" />);
 
     const slider = screen.getByRole("slider", { name: "测试滑块" });
     expect(slider).toBeInTheDocument();
@@ -31,7 +23,7 @@ describe("Slider", () => {
         step={1}
         onValueChange={handleValueChange}
         aria-label="音量滑块"
-      />,
+      />
     );
 
     const slider = screen.getByRole("slider", { name: "音量滑块" });
@@ -46,12 +38,7 @@ describe("Slider", () => {
   it("处于 disabled 状态时禁止交互", () => {
     const handleValueChange = vi.fn();
     render(
-      <Slider
-        value={[0.5]}
-        disabled
-        onValueChange={handleValueChange}
-        aria-label="禁用滑块"
-      />,
+      <Slider value={[0.5]} disabled onValueChange={handleValueChange} aria-label="禁用滑块" />
     );
 
     const slider = screen.getByRole("slider", { name: "禁用滑块" });
@@ -65,9 +52,19 @@ describe("Slider", () => {
     render(
       <>
         <span id="slider-title">热度筛选</span>
-        <Slider value={[0]} min={0} max={4} step={1} aria-labelledby="slider-title" aria-valuetext="不限" />
-      </>,
+        <Slider
+          value={[0]}
+          min={0}
+          max={4}
+          step={1}
+          aria-labelledby="slider-title"
+          aria-valuetext="不限"
+        />
+      </>
     );
-    expect(screen.getByRole("slider", { name: "热度筛选" })).toHaveAttribute("aria-valuetext", "不限");
+    expect(screen.getByRole("slider", { name: "热度筛选" })).toHaveAttribute(
+      "aria-valuetext",
+      "不限"
+    );
   });
 });

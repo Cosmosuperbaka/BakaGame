@@ -36,7 +36,13 @@ const PHASES = [
   { key: "vote", icon: Vote, title: "投票阶段" },
   { key: "night", icon: Moon, title: "夜晚降临" },
   { key: "blank", icon: CircleHelp, title: "白板猜词", iconClassName: "text-warning" },
-  { key: "win", icon: Trophy, title: "好人阵营胜利", iconClassName: "text-warning", titleClassName: "text-warning" },
+  {
+    key: "win",
+    icon: Trophy,
+    title: "好人阵营胜利",
+    iconClassName: "text-warning",
+    titleClassName: "text-warning",
+  },
   { key: "listen", icon: Headphones, title: "听歌猜番" },
   { key: "reveal", icon: Film, title: "答案揭晓" },
 ];

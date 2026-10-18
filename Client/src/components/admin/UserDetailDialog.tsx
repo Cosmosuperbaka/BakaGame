@@ -2,12 +2,29 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import type { AdminUserDetail } from "@/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/Dialog";
-import { SettingSelect, SettingTextField, SettingsFields } from "@/components/common/room/SettingFields";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/Dialog";
+import {
+  SettingSelect,
+  SettingTextField,
+  SettingsFields,
+} from "@/components/common/room/SettingFields";
 import { QueryState, UserCell } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
-import { BAN_DURATIONS, GAME_LABELS, ROLE_LABELS, formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
+import {
+  BAN_DURATIONS,
+  GAME_LABELS,
+  ROLE_LABELS,
+  formatDateTime,
+  formatShortDateTime,
+} from "@/lib/AdminFormat";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
 type Mode = "view" | "ban";
@@ -29,7 +46,15 @@ const banStatusText = (user: AdminUserDetail) => {
 };
 
 /** 封禁与解封共用一个入口位：自己的账号与管理员都不给，已封禁时反转为解封。 */
-function BanActionButton({ self, role, banned, disabled, unbanLoading, onUnban, onBan }: {
+function BanActionButton({
+  self,
+  role,
+  banned,
+  disabled,
+  unbanLoading,
+  onUnban,
+  onBan,
+}: {
   self: boolean;
   role: AdminUserDetail["role"];
   banned: boolean;
@@ -39,8 +64,23 @@ function BanActionButton({ self, role, banned, disabled, unbanLoading, onUnban, 
   onBan: () => void;
 }) {
   if (self || role === "admin") return null;
-  if (banned) return <Button type="button" variant="outline" loading={unbanLoading} disabled={disabled} onClick={onUnban}>解封</Button>;
-  return <Button type="button" variant="destructive" disabled={disabled} onClick={onBan}>封禁</Button>;
+  if (banned)
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        loading={unbanLoading}
+        disabled={disabled}
+        onClick={onUnban}
+      >
+        解封
+      </Button>
+    );
+  return (
+    <Button type="button" variant="destructive" disabled={disabled} onClick={onBan}>
+      封禁
+    </Button>
+  );
 }
 
 function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged: () => void }) {
@@ -59,14 +99,24 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (mode === "ban" && reason.trim()) {
-      after(await action.run("ban", () => api.admin.users.ban({ userId: user.id, reason: reason.trim(), ...(hours !== "0" ? { expiresInHours: Number(hours) } : {}) })));
+      after(
+        await action.run("ban", () =>
+          api.admin.users.ban({
+            userId: user.id,
+            reason: reason.trim(),
+            ...(hours !== "0" ? { expiresInHours: Number(hours) } : {}),
+          })
+        )
+      );
     }
   };
 
   return (
     <div className="grid gap-4">
       <dl className="grid gap-2">
-        <Field label="账号"><UserCell user={user} /></Field>
+        <Field label="账号">
+          <UserCell user={user} />
+        </Field>
         <Field label="QQ 昵称">{user.qqName ?? "未查到"}</Field>
         <Field label="角色">{ROLE_LABELS[user.role]}</Field>
         <Field label="状态">{banStatusText(user)}</Field>
@@ -81,41 +131,104 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
           <ul className="grid gap-1 text-sm">
             {user.recentGames.map((game) => (
               <li key={game.id} className="flex flex-wrap gap-x-2 text-muted-foreground">
-                <Badge variant="outline" size="xs">{GAME_LABELS[game.game]}</Badge>
+                <Badge variant="outline" size="xs">
+                  {GAME_LABELS[game.game]}
+                </Badge>
                 <span className="font-mono">{game.roomId}</span>
                 <span>{game.roundCount} 回合</span>
                 <span>{formatShortDateTime(game.endedAt)}</span>
               </li>
             ))}
           </ul>
-        ) : <p className="text-sm text-muted-foreground">还没有对局记录</p>}
+        ) : (
+          <p className="text-sm text-muted-foreground">还没有对局记录</p>
+        )}
       </section>
 
       {mode === "ban" ? (
-        <form onSubmit={(event) => void submit(event)} className="grid gap-3 rounded-md border bg-card p-3">
+        <form
+          onSubmit={(event) => void submit(event)}
+          className="grid gap-3 rounded-md border bg-card p-3"
+        >
           <SettingsFields>
-            <SettingTextField label="封禁原因" value={reason} onChange={setReason} placeholder="用户与审计里都能看到" maxLength={200} autoFocus inputClassName="h-10" />
+            <SettingTextField
+              label="封禁原因"
+              value={reason}
+              onChange={setReason}
+              placeholder="用户与审计里都能看到"
+              maxLength={200}
+              autoFocus
+              inputClassName="h-10"
+            />
             <SettingSelect label="时长" value={hours} options={BAN_DURATIONS} onChange={setHours} />
           </SettingsFields>
-          {action.error ? <p role="alert" className="text-sm text-destructive">{action.error}</p> : null}
+          {action.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {action.error}
+            </p>
+          ) : null}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" disabled={action.busy !== null} onClick={() => { setMode("view"); action.clearError(); }}>取消</Button>
-            <Button type="submit" variant="destructive" disabled={!reason.trim()} loading={action.busy === "ban"}>封禁并踢下线</Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={action.busy !== null}
+              onClick={() => {
+                setMode("view");
+                action.clearError();
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              disabled={!reason.trim()}
+              loading={action.busy === "ban"}
+            >
+              封禁并踢下线
+            </Button>
           </div>
         </form>
       ) : (
         <>
-          {action.error ? <p role="alert" className="text-sm text-destructive">{action.error}</p> : null}
-          {self ? <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p> : null}
+          {action.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {action.error}
+            </p>
+          ) : null}
+          {self ? (
+            <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p>
+          ) : null}
           <DialogFooter className="flex-wrap">
-            <Button type="button" variant="outline" loading={action.busy === "revoke"} disabled={action.busy !== null} onClick={() => void action.run("revoke", () => api.admin.users.revokeSessions({ userId: user.id })).then(after)}>强制下线</Button>
+            <Button
+              type="button"
+              variant="outline"
+              loading={action.busy === "revoke"}
+              disabled={action.busy !== null}
+              onClick={() =>
+                void action
+                  .run("revoke", () => api.admin.users.revokeSessions({ userId: user.id }))
+                  .then(after)
+              }
+            >
+              强制下线
+            </Button>
             {self ? null : (
               <Button
                 type="button"
                 variant="outline"
                 loading={action.busy === "role"}
                 disabled={action.busy !== null || (user.banned && user.role === "user")}
-                onClick={() => void action.run("role", () => api.admin.users.setRole({ userId: user.id, role: user.role === "admin" ? "user" : "admin" })).then(after)}
+                onClick={() =>
+                  void action
+                    .run("role", () =>
+                      api.admin.users.setRole({
+                        userId: user.id,
+                        role: user.role === "admin" ? "user" : "admin",
+                      })
+                    )
+                    .then(after)
+                }
               >
                 {user.role === "admin" ? "取消管理员" : "设为管理员"}
               </Button>
@@ -126,7 +239,11 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
               banned={user.banned}
               disabled={action.busy !== null}
               unbanLoading={action.busy === "unban"}
-              onUnban={() => void action.run("unban", () => api.admin.users.unban({ userId: user.id })).then(after)}
+              onUnban={() =>
+                void action
+                  .run("unban", () => api.admin.users.unban({ userId: user.id }))
+                  .then(after)
+              }
               onBan={() => setMode("ban")}
             />
           </DialogFooter>
@@ -137,13 +254,23 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
 }
 
 /** 用户详情与管理操作；每次操作都由服务端先写审计（见 Agents/Account.md §8）。 */
-export function UserDetailDialog({ userId, onOpenChange, onChanged }: { userId: string | null; onOpenChange: (open: boolean) => void; onChanged: () => void }) {
+export function UserDetailDialog({
+  userId,
+  onOpenChange,
+  onChanged,
+}: {
+  userId: string | null;
+  onOpenChange: (open: boolean) => void;
+  onChanged: () => void;
+}) {
   return (
     <Dialog open={userId !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>用户详情</DialogTitle>
-          <DialogDescription>封禁、改角色与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。</DialogDescription>
+          <DialogDescription>
+            封禁、改角色与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。
+          </DialogDescription>
         </DialogHeader>
         {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}
       </DialogContent>
@@ -152,11 +279,31 @@ export function UserDetailDialog({ userId, onOpenChange, onChanged }: { userId: 
 }
 
 function UserDetailLoader({ userId, onChanged }: { userId: string; onChanged: () => void }) {
-  const detail = useAdminQuery(`user:${userId}`, () => api.admin.users.get({ userId }), "用户详情加载失败");
+  const detail = useAdminQuery(
+    `user:${userId}`,
+    () => api.admin.users.get({ userId }),
+    "用户详情加载失败"
+  );
   return (
     <>
-      <QueryState loading={detail.loading} error={detail.error} empty={false} hasData={Boolean(detail.data)} onRetry={detail.reload} emptyText="" />
-      {detail.data ? <UserDetailBody key={`${detail.data.role}:${detail.data.banned}:${detail.data.name}`} user={detail.data} onChanged={() => { detail.reload(); onChanged(); }} /> : null}
+      <QueryState
+        loading={detail.loading}
+        error={detail.error}
+        empty={false}
+        hasData={Boolean(detail.data)}
+        onRetry={detail.reload}
+        emptyText=""
+      />
+      {detail.data ? (
+        <UserDetailBody
+          key={`${detail.data.role}:${detail.data.banned}:${detail.data.name}`}
+          user={detail.data}
+          onChanged={() => {
+            detail.reload();
+            onChanged();
+          }}
+        />
+      ) : null}
     </>
   );
 }

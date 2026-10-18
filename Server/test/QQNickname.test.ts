@@ -11,7 +11,8 @@ type UserRow = { id: string; email: string; qqName?: string | null; qqNameChecke
 const setup = async (options: Parameters<typeof createAccountTestApp>[0] = {}) => {
   const ctx = createAccountTestApp({ adminQqNumbers: [ADMIN_QQ], ...options });
   const admin = await ctx.signIn(ADMIN_QQ, "管理员");
-  const userOf = (qq: string) => (ctx.db.user as UserRow[]).find((user) => user.email === `${qq}@qq.com`);
+  const userOf = (qq: string) =>
+    (ctx.db.user as UserRow[]).find((user) => user.email === `${qq}@qq.com`);
   return { ...ctx, adminCookie: admin.cookie, userOf };
 };
 
@@ -36,7 +37,10 @@ describe("NapCat 昵称客户端", () => {
   test("逐个查昵称，查不到的号不出现", async () => {
     const { client, state } = clientOf();
     const names = await client.nicknames(["10001", "20002", "30003"]);
-    expect([...names]).toEqual([["10001", "阿狸"], ["20002", "请先"]]);
+    expect([...names]).toEqual([
+      ["10001", "阿狸"],
+      ["20002", "请先"],
+    ]);
     expect(state.calls).toEqual([["10001"], ["20002"], ["30003"]]);
   });
 
@@ -63,7 +67,9 @@ describe("NapCat 昵称客户端", () => {
   test("全部号都查不到时抛错，与个别号查不到区分", async () => {
     const { client, state } = clientOf();
     state.online = false;
-    await expect(client.nicknames(["10001"])).rejects.toMatchObject({ code: "QQ_NICKNAME_UNAVAILABLE" });
+    await expect(client.nicknames(["10001"])).rejects.toMatchObject({
+      code: "QQ_NICKNAME_UNAVAILABLE",
+    });
   });
 
   test("get_login_info 返回登录号自身；掉线时返回 null", async () => {
@@ -91,14 +97,21 @@ describe("后台查询号", () => {
     const { rpc, adminCookie, napcat } = await setup();
     napcat.state.online = false;
     const status = await rpc("admin/qq/status", undefined, adminCookie);
-    expect(status.body).toMatchObject({ state: "unavailable", uin: null, error: expect.any(String) });
+    expect(status.body).toMatchObject({
+      state: "unavailable",
+      uin: null,
+      error: expect.any(String),
+    });
   });
 
   test("批量刷新先写审计；实例不可用时返回 503", async () => {
     const { rpc, adminCookie, audit, napcat } = await setup();
     napcat.state.online = false;
     expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).status).toBe(503);
-    expect(audit.entries.at(-1)).toMatchObject({ action: "qq.refreshNames", targetId: "qq.lookup" });
+    expect(audit.entries.at(-1)).toMatchObject({
+      action: "qq.refreshNames",
+      targetId: "qq.lookup",
+    });
   });
 });
 
@@ -116,16 +129,25 @@ describe("昵称查询与同步", () => {
     // NapCat 侧的掉线多为临时状态，持久停用只会让恢复多等一轮。
     expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
     // 已注册账号不发查询，照常发码，并回传库里最近一次同步的昵称
-    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: "管理员" });
+    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({
+      registered: true,
+      qqName: "管理员",
+    });
   });
 
   test("新账号发码返回将使用的 QQ 昵称，老账号回传库中昵称且不查查询号", async () => {
     let clock = Date.now();
     const { rpc, napcat } = await setup({ now: () => clock });
     clock += 61_000; // 越过管理员账号的重发间隔
-    expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({ registered: false, qqName: "阿狸" });
+    expect((await rpc("account/requestLoginCode", { qqNumber: "10001" })).body).toMatchObject({
+      registered: false,
+      qqName: "阿狸",
+    });
     clock += 61_000;
-    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({ registered: true, qqName: "管理员" });
+    expect((await rpc("account/requestLoginCode", { qqNumber: ADMIN_QQ })).body).toMatchObject({
+      registered: true,
+      qqName: "管理员",
+    });
     expect(napcat.state.calls).toEqual([["90001"], ["10001"]]);
   });
 
@@ -169,6 +191,10 @@ describe("昵称查询与同步", () => {
 
     const listed = await rpc("admin/users/list", { query: "10001" }, adminCookie);
     expect(listed.body.items).toMatchObject([{ name: "Alice2", qqName: "Alice2" }]);
-    expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).body).toEqual({ checked: 0, updated: 0, remaining: 0 });
+    expect((await rpc("admin/qq/refreshNames", undefined, adminCookie)).body).toEqual({
+      checked: 0,
+      updated: 0,
+      remaining: 0,
+    });
   });
 });

@@ -5,10 +5,10 @@
 # 安装期行为（node-linker、postinstall 放行）在根 .npmrc，改动前先读那里的注释。
 
 packages:
-  - 'Client'
-  - 'Server'
-  - 'apps/*'
-  - 'packages/*'
+  - "Client"
+  - "Server"
+  - "apps/*"
+  - "packages/*"
 
 # pnpm v10 默认拦截所有依赖的构建脚本（postinstall）；这里显式放行两个真正的使用方：
 # - bun：postinstall 负责把 pin 的可执行文件落位到 node_modules/bun/bin（Server 全部脚本

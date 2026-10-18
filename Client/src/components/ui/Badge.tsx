@@ -1,6 +1,6 @@
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/Utils";
 
 /**
  * 变体按用途命名，调用处不再覆写底色、描边、字重或文字色，只加布局类与内容排版：
@@ -42,14 +42,13 @@ const badgeVariants = cva(
       size: "default",
     },
   }
-)
+);
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
 function Badge({ className, variant, size, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant, size }), className)} {...props} />
+  return <div className={cn(badgeVariants({ variant, size }), className)} {...props} />;
 }
 
-export { Badge }
+export { Badge };

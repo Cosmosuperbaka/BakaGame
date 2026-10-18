@@ -8,7 +8,11 @@ import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
-import { usePageNavigate, usePageTransitionEnds, useSharedElementName } from "@/hooks/UsePageTransition";
+import {
+  usePageNavigate,
+  usePageTransitionEnds,
+  useSharedElementName,
+} from "@/hooks/UsePageTransition";
 import { duration, ease, listContainer, skeletonFade } from "@/lib/Motion";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
@@ -96,14 +100,24 @@ export function LobbyPage({
       {/* 顶栏与正文同一种写法：外层只限宽居中，留边写在同一层，返回按钮与列表标题左缘对齐。 */}
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
-          <Button variant="ghost" size="sm" className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground" onClick={() => void navigate("/")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 h-8 shrink-0 gap-1.5 px-2 text-muted-foreground"
+            onClick={() => void navigate("/")}
+          >
             <ArrowLeft className="h-4 w-4" />
             <span>返回主页</span>
           </Button>
           <div className="h-4 w-px shrink-0 bg-border" />
           {/* 窄屏收一档字号并允许截断：长游戏名不折成两行，三个大厅的顶栏同高。 */}
-          <h1 aria-label={titleLabel} className="flex min-w-0 items-center gap-2 text-lg font-bold sm:text-2xl">
-            <span className="min-w-0 truncate" style={{ viewTransitionName: titleName }}>{title}</span>
+          <h1
+            aria-label={titleLabel}
+            className="flex min-w-0 items-center gap-2 text-lg font-bold sm:text-2xl"
+          >
+            <span className="min-w-0 truncate" style={{ viewTransitionName: titleName }}>
+              {title}
+            </span>
             {logo ? (
               <img
                 src={logo.src}
@@ -113,7 +127,9 @@ export function LobbyPage({
             ) : null}
             {/* 副标题与游戏名同一基线，退一档字号与颜色；窄屏空间不够时先藏起来，游戏名不被挤截。 */}
             {subtitle ? (
-              <span className="hidden shrink-0 self-end pb-0.5 text-xs font-medium text-muted-foreground sm:inline sm:pb-1 sm:text-sm">{subtitle}</span>
+              <span className="hidden shrink-0 self-end pb-0.5 text-xs font-medium text-muted-foreground sm:inline sm:pb-1 sm:text-sm">
+                {subtitle}
+              </span>
             ) : null}
           </h1>
         </div>
@@ -147,14 +163,21 @@ export function LobbyPage({
                 className="h-8 min-w-0 flex-1 bg-card sm:w-36 sm:flex-none"
                 maxLength={nameMaxLength}
               />
-              <Button size="sm" onClick={handleCreate} disabled={disabled} className="shrink-0 gap-1.5 text-sm shadow-2xs">
+              <Button
+                size="sm"
+                onClick={handleCreate}
+                disabled={disabled}
+                className="shrink-0 gap-1.5 text-sm shadow-2xs"
+              >
                 <Plus className="h-3.5 w-3.5" />
                 创建房间
               </Button>
             </div>
           </div>
           <CollapsibleRegion open={nameMissing}>
-            <p id={nameErrorId} className="pt-2 text-xs text-destructive sm:text-right">请先填写用户名</p>
+            <p id={nameErrorId} className="pt-2 text-xs text-destructive sm:text-right">
+              请先填写用户名
+            </p>
           </CollapsibleRegion>
         </div>
 

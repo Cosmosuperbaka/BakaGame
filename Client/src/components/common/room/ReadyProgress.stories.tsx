@@ -25,7 +25,9 @@ export const Host: Story = {
   name: "房主视角",
   render: () => (
     <div className="space-y-5">
-      {STEPS.map((ready) => <ReadyProgress key={ready} ready={ready} total={3} variant="host" />)}
+      {STEPS.map((ready) => (
+        <ReadyProgress key={ready} ready={ready} total={3} variant="host" />
+      ))}
     </div>
   ),
 };
@@ -35,7 +37,9 @@ export const Guest: Story = {
   name: "玩家视角",
   render: () => (
     <div className="space-y-5">
-      {STEPS.map((ready) => <ReadyProgress key={ready} ready={ready} total={3} variant="guest" />)}
+      {STEPS.map((ready) => (
+        <ReadyProgress key={ready} ready={ready} total={3} variant="guest" />
+      ))}
     </div>
   ),
 };

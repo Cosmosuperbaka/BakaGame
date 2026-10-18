@@ -31,6 +31,7 @@ import {
   waitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
 const { host, me, peach } = SONG_PEOPLE;
 
@@ -48,13 +49,19 @@ const MOBILE = { viewport: { value: "mobile", isRotated: false } };
 
 /** 让入房流程越过“等待连接”：只替换连接就绪检查，不建立任何 WebSocket。 */
 function connectInstantly() {
-  Object.defineProperty(sonGuessrWs, "waitForConnection", { configurable: true, value: () => Promise.resolve() });
+  Object.defineProperty(sonGuessrWs, "waitForConnection", {
+    configurable: true,
+    value: () => Promise.resolve(),
+  });
   return () => {
     Reflect.deleteProperty(sonGuessrWs, "waitForConnection");
   };
 }
 
-const allReady = () => waitingPlayers().map((player) => (player.membership === "active" ? { ...player, isReady: true } : player));
+const allReady = () =>
+  waitingPlayers().map((player) =>
+    player.membership === "active" ? { ...player, isReady: true } : player
+  );
 const asHost = songPrivate({ playerId: host.id });
 
 // ==================== 入房 ====================
@@ -84,8 +91,9 @@ export const PasswordDialog: Story = {
   beforeEach: () => {
     const restoreName = seedUsername(me.name);
     const restoreConnection = connectInstantly();
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
-    stubSongActions({ joinRoom: () => Promise.reject({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }) });
+    stubSongActions({
+      joinRoom: () => rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }),
+    });
     return () => {
       restoreConnection();
       restoreName();
@@ -100,7 +108,8 @@ export const PasswordDialog: Story = {
 
 export const WaitingHostLoggedOut: Story = {
   name: "等待阶段 · 房主 · 未登录网易云",
-  beforeEach: () => presetSongRoom(songSnapshot({ musicAccountReady: false, players: allReady() }), asHost),
+  beforeEach: () =>
+    presetSongRoom(songSnapshot({ musicAccountReady: false, players: allReady() }), asHost),
 };
 
 export const WaitingHostReady: Story = {
@@ -115,10 +124,13 @@ export const WaitingHostNotReady: Story = {
 
 export const WaitingPlayer: Story = {
   name: "等待阶段 · 玩家",
-  beforeEach: () => presetSongRoom(
-    songSnapshot({ players: waitingPlayers().map((player) => (player.id === me.id ? songPlayer(me) : player)) }),
-    songPrivate(),
-  ),
+  beforeEach: () =>
+    presetSongRoom(
+      songSnapshot({
+        players: waitingPlayers().map((player) => (player.id === me.id ? songPlayer(me) : player)),
+      }),
+      songPrivate()
+    ),
 };
 
 export const WaitingPlayerReady: Story = {
@@ -128,7 +140,11 @@ export const WaitingPlayerReady: Story = {
 
 export const WaitingSpectator: Story = {
   name: "等待阶段 · 旁观",
-  beforeEach: () => presetSongRoom(songSnapshot(), spectatorPrivate({ submittedSong: undefined, visibleAttempts: [] })),
+  beforeEach: () =>
+    presetSongRoom(
+      songSnapshot(),
+      spectatorPrivate({ submittedSong: undefined, visibleAttempts: [] })
+    ),
 };
 
 export const SettingsPanels: Story = {
@@ -149,7 +165,8 @@ export const SettingsPanelsGuest: Story = {
   beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), songPrivate()),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["题目设置", "猜测设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    for (const name of ["题目设置", "猜测设置"])
+      await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -168,13 +185,20 @@ export const ChoosingPlayer: Story = {
 
 export const SubmittingSubmitter: Story = {
   name: "出题阶段 · 出题人",
-  beforeEach: () => presetSongRoom(submittingSnapshot(), songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true })),
+  beforeEach: () =>
+    presetSongRoom(
+      submittingSnapshot(),
+      songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true })
+    ),
 };
 
 export const SubmittingSearch: Story = {
   name: "出题阶段 · 出题人 · 搜索歌曲",
   beforeEach: () => {
-    presetSongRoom(submittingSnapshot(), songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }));
+    presetSongRoom(
+      submittingSnapshot(),
+      songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true })
+    );
     stubSongActions({ searchMusic: () => Promise.resolve(SONG_SEARCH_RESULTS) });
   },
   play: async ({ canvasElement }) => {
@@ -223,10 +247,14 @@ export const RoundResultPlayer: Story = {
 
 export const RoundResultAnime: Story = {
   name: "答案揭晓 · 听歌猜番 · 玩家",
-  beforeEach: () => presetSongRoom(
-    roundResultSnapshot({ settings: songSettings({ questionType: "anime" }), roundSummary: animeRoundSummary() }),
-    songPrivate(),
-  ),
+  beforeEach: () =>
+    presetSongRoom(
+      roundResultSnapshot({
+        settings: songSettings({ questionType: "anime" }),
+        roundSummary: animeRoundSummary(),
+      }),
+      songPrivate()
+    ),
 };
 
 // ==================== 单人模式 ====================
@@ -248,7 +276,10 @@ export const SoloPlaying: Story = {
   args: { solo: true },
   parameters: { router: SONG_SOLO_ROUTER },
   beforeEach: () => {
-    presetSongRoom(soloPlayingSnapshot(), guesserPrivate(fromNow(52_000), { remainingGuesses: 3, visibleAttempts: [] }));
+    presetSongRoom(
+      soloPlayingSnapshot(),
+      guesserPrivate(fromNow(52_000), { remainingGuesses: 3, visibleAttempts: [] })
+    );
     return seedSoloRoom();
   },
   play: async ({ canvasElement }) => waitForLyrics(canvasElement),
@@ -271,10 +302,11 @@ export const MobileGuessBar: Story = {
   name: "移动端 · 猜测栏贴底",
   tags: ["mobile"],
   globals: MOBILE,
-  beforeEach: () => presetSongRoom(
-    playingSnapshot({ settings: songSettings({ questionMode: "automatic" }) }),
-    guesserPrivate(fromNow(47_000)),
-  ),
+  beforeEach: () =>
+    presetSongRoom(
+      playingSnapshot({ settings: songSettings({ questionMode: "automatic" }) }),
+      guesserPrivate(fromNow(47_000))
+    ),
   play: async ({ canvasElement }) => waitForLyrics(canvasElement),
 };
 

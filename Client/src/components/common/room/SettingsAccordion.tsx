@@ -46,10 +46,13 @@ export function SettingsAccordion({
   const summaryItems = summary?.filter(Boolean) ?? [];
   const summaryText = summaryItems.length > 0;
   // 描述：接管标题行时取行内富内容；展开后行内已换回可见的标题文字，账号行不再重复朗读。
-  const describedBy = (headline
-    ? [open ? "" : headlineId]
-    : [badge ? badgeId : "", summaryText && !open ? summaryId : ""]
-  ).filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    (headline
+      ? [open ? "" : headlineId]
+      : [badge ? badgeId : "", summaryText && !open ? summaryId : ""]
+    )
+      .filter(Boolean)
+      .join(" ") || undefined;
   return (
     <div className="overflow-hidden rounded-md border bg-panel">
       {/* 整行标题用 headerTappable：只按压不悬停缩放，免得整行文字随鼠标晃动。 */}
@@ -64,12 +67,17 @@ export function SettingsAccordion({
         aria-describedby={describedBy}
         className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
       >
-        {media ?? (Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : null)}
+        {media ??
+          (Icon ? (
+            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          ) : null)}
         <span className="min-w-0 flex-1">
           {headline ? (
             <>
               {/* 标题文字只留给读屏：按钮的可访问名与描述都不受视觉布局影响；展开时行内另有一份同文案的可见标题。 */}
-              <span id={titleId} className="sr-only">{title}</span>
+              <span id={titleId} className="sr-only">
+                {title}
+              </span>
               {/* 两态在同一格里叠放交叉替换（Animation §2.4）。这一格必须定位：popLayout 量的是
                   「相对 offsetParent 的 offsetTop/offsetLeft」，播放时却按包含块解释。按钮的 whileTap
                   缩放会让它自己成为包含块（测量瞬间更近、优先命中），松手后弹簧归位把 transform 抹成
@@ -79,12 +87,29 @@ export function SettingsAccordion({
               <span className="relative grid min-w-0 items-center">
                 <AnimatePresence initial={false} mode="popLayout">
                   {open ? (
-                    <motion.span key="title" variants={readoutSwap} initial="initial" animate="animate" exit="exit"
-                      className="col-start-1 row-start-1 text-sm font-medium" aria-hidden="true">{title}</motion.span>
+                    <motion.span
+                      key="title"
+                      variants={readoutSwap}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="col-start-1 row-start-1 text-sm font-medium"
+                      aria-hidden="true"
+                    >
+                      {title}
+                    </motion.span>
                   ) : (
-                    <motion.span key="headline" variants={readoutSwap} initial="initial" animate="animate" exit="exit"
-                      className="col-start-1 row-start-1 flex min-w-0 w-full">
-                      <span id={headlineId} className="min-w-0 w-full">{headline}</span>
+                    <motion.span
+                      key="headline"
+                      variants={readoutSwap}
+                      initial="initial"
+                      animate="animate"
+                      exit="exit"
+                      className="col-start-1 row-start-1 flex min-w-0 w-full"
+                    >
+                      <span id={headlineId} className="min-w-0 w-full">
+                        {headline}
+                      </span>
                     </motion.span>
                   )}
                 </AnimatePresence>
@@ -93,17 +118,28 @@ export function SettingsAccordion({
           ) : (
             <>
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span id={titleId} className="text-sm font-medium">{title}</span>
-                {badge ? <span id={badgeId} className="inline-flex">{badge}</span> : null}
+                <span id={titleId} className="text-sm font-medium">
+                  {title}
+                </span>
+                {badge ? (
+                  <span id={badgeId} className="inline-flex">
+                    {badge}
+                  </span>
+                ) : null}
               </span>
               <CollapsibleRegion as="span" open={summaryText && !open}>
-                <span id={summaryId} className="block pt-1 text-xs leading-relaxed text-muted-foreground">{summaryItems.map((item, index) => (
-                  // 每一项整体不断行，窄屏只在「·」处换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
-                  <Fragment key={index}>
-                    {index ? " · " : null}
-                    <span className="inline-block max-w-full truncate align-bottom">{item}</span>
-                  </Fragment>
-                ))}</span>
+                <span
+                  id={summaryId}
+                  className="block pt-1 text-xs leading-relaxed text-muted-foreground"
+                >
+                  {summaryItems.map((item, index) => (
+                    // 每一项整体不断行，窄屏只在「·」处换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
+                    <Fragment key={index}>
+                      {index ? " · " : null}
+                      <span className="inline-block max-w-full truncate align-bottom">{item}</span>
+                    </Fragment>
+                  ))}
+                </span>
               </CollapsibleRegion>
             </>
           )}

@@ -23,14 +23,24 @@ const checks = [
   () => Bun.connect({ hostname: "fixture.invalid", port: 443, socket: {} }),
 ];
 for (const check of checks) {
-  try { await Promise.resolve(check()); throw new Error("出口未封闭"); }
-  catch (error) {
+  try {
+    await Promise.resolve(check());
+    throw new Error("出口未封闭");
+  } catch (error) {
     if (!(error instanceof Error) || error.message !== "隔离测试禁止主动网络出口") throw error;
   }
 }
 const udp = dgram.createSocket("udp4");
-try { udp.send("fixture", 443, "fixture.invalid"); throw new Error("UDP 出口未封闭"); }
-catch (error) {
+try {
+  udp.send("fixture", 443, "fixture.invalid");
+  throw new Error("UDP 出口未封闭");
+} catch (error) {
   if (!(error instanceof Error) || error.message !== "隔离测试禁止主动网络出口") throw error;
 }
-console.log(JSON.stringify({ checks: checks.length + 1, marker: Bun.env.FIXTURE_ENV_MARKER ?? null, sentry: Bun.env.SENTRY_DSN ?? null }));
+console.log(
+  JSON.stringify({
+    checks: checks.length + 1,
+    marker: Bun.env.FIXTURE_ENV_MARKER ?? null,
+    sentry: Bun.env.SENTRY_DSN ?? null,
+  })
+);

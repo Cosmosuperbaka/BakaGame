@@ -12,10 +12,12 @@ export function toAMLLLines(lines: SongLyricLine[]): LyricLine[] {
       romanLyric: translatedLyric ? "" : (line.romanLyric ?? ""),
       isBG: Boolean(line.isBG),
       isDuet: Boolean(line.isDuet),
-      words: line.words?.length ? line.words.map((word) => ({
-        ...word,
-        romanWord: translatedLyric ? "" : (word.romanWord ?? ""),
-      })) : [{ startTime: line.time, endTime: line.endTime, word: line.text, romanWord: "" }],
+      words: line.words?.length
+        ? line.words.map((word) => ({
+            ...word,
+            romanWord: translatedLyric ? "" : (word.romanWord ?? ""),
+          }))
+        : [{ startTime: line.time, endTime: line.endTime, word: line.text, romanWord: "" }],
     };
   });
 }

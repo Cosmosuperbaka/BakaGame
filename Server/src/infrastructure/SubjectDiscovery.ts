@@ -79,19 +79,37 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
   const limit = options.limit ?? 1000;
 
   const candidates = await searchSince(fetcher, options.base, since, limit);
-  const result: DiscoveryResult = { window: since, candidates: candidates.length, added: 0, skipped: 0, failed: 0 };
+  const result: DiscoveryResult = {
+    window: since,
+    candidates: candidates.length,
+    added: 0,
+    skipped: 0,
+    failed: 0,
+  };
   if (!candidates.length) return result;
 
   const known = new Set<number>(
-    (options.db.query("SELECT id FROM subjects").all() as Array<{ id: number }>).map((row) => Number(row.id)),
+    (options.db.query("SELECT id FROM subjects").all() as Array<{ id: number }>).map((row) =>
+      Number(row.id)
+    )
   );
 
   for (const subjectId of candidates) {
     // 已经在库里的不动：它们的评分/热度由日常刷新负责，这里只补「新」的。
-    if (known.has(subjectId)) { result.skipped += 1; continue; }
+    if (known.has(subjectId)) {
+      result.skipped += 1;
+      continue;
+    }
     try {
-      const added = await importSubject(fetcher, options.base, options.db, options.search, subjectId);
-      if (added) result.added += 1; else result.skipped += 1;
+      const added = await importSubject(
+        fetcher,
+        options.base,
+        options.db,
+        options.search,
+        subjectId
+      );
+      if (added) result.added += 1;
+      else result.skipped += 1;
     } catch {
       result.failed += 1;
     }
@@ -100,16 +118,31 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
 }
 
 /** 按首播日期过滤 + 分页取全（total 上限 1000，够一个同步窗口用）。 */
-async function searchSince(fetcher: typeof fetch, base: string, since: string, limit: number): Promise<number[]> {
+async function searchSince(
+  fetcher: typeof fetch,
+  base: string,
+  since: string,
+  limit: number
+): Promise<number[]> {
   const ids: number[] = [];
   for (let offset = 0; offset < limit; offset += 100) {
     const response = await fetcher(`${base}/v0/search/subjects`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-      body: JSON.stringify({ keyword: "", filter: { air_date: [`>=${since}`], type: ALL_TYPES }, sort: "heat", limit: 100, offset }),
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": BANGUMI_USER_AGENT,
+      },
+      body: JSON.stringify({
+        keyword: "",
+        filter: { air_date: [`>=${since}`], type: ALL_TYPES },
+        sort: "heat",
+        limit: 100,
+        offset,
+      }),
     });
     if (!response.ok) break;
-    const body = await response.json() as { data?: Array<{ id: number }> };
+    const body = (await response.json()) as { data?: Array<{ id: number }> };
     const page = (body.data ?? []).map((item) => Number(item.id));
     ids.push(...page);
     if (page.length < 100) break;
@@ -122,12 +155,19 @@ async function searchSince(fetcher: typeof fetch, base: string, since: string, l
  * 返回是否真的入库（被裁掉的返回 false）。
  */
 async function importSubject(
-  fetcher: typeof fetch, base: string, db: Database, search: BangumiSearchIndex | undefined, subjectId: number,
+  fetcher: typeof fetch,
+  base: string,
+  db: Database,
+  search: BangumiSearchIndex | undefined,
+  subjectId: number
 ): Promise<boolean> {
   const [subject, characters, related] = await Promise.all([
     getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${subjectId}`),
     getJson<ApiCharacter[]>(fetcher, `${base}/v0/subjects/${subjectId}/characters`),
-    getJson<Array<{ id?: number; type?: number }>>(fetcher, `${base}/v0/subjects/${subjectId}/subjects`),
+    getJson<Array<{ id?: number; type?: number }>>(
+      fetcher,
+      `${base}/v0/subjects/${subjectId}/subjects`
+    ),
   ]);
   if (!subject) return false;
   // 合规：匿名拿到的条目 nsfw 恒为 false，这里再挡一道，防止上游行为变化。
@@ -135,24 +175,43 @@ async function importSubject(
 
   const characterRows = Array.isArray(characters) ? characters : [];
   const relationRows = Array.isArray(related) ? related : [];
-  const musicIds = relationRows.filter((row) => Number(row.type) === 3).map((row) => Number(row.id));
+  const musicIds = relationRows
+    .filter((row) => Number(row.type) === 3)
+    .map((row) => Number(row.id));
   // 裁剪：没角色也没音乐的直接丢，与全量构建同一条判据。
   if (!characterRows.length && !musicIds.length) return false;
 
   const tags = subject.tags ?? [];
   const tagNames = tags.map((tag) => String(tag.name)).filter(Boolean);
-  const rawTags = Object.fromEntries(tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)]));
+  const rawTags = Object.fromEntries(
+    tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)])
+  );
   const rating = subject.rating ?? {};
   const collection = subject.collection ?? {};
-  const heat = Object.values(collection).reduce<number>((sum, value) => sum + Number(value ?? 0), 0);
+  const heat = Object.values(collection).reduce<number>(
+    (sum, value) => sum + Number(value ?? 0),
+    0
+  );
   const aliases = [String(subject.name_cn ?? "")].filter(Boolean);
 
   db.query("INSERT OR REPLACE INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
-    subjectId, Number(subject.type ?? 0), String(subject.name ?? ""), String(subject.name_cn ?? ""),
-    JSON.stringify(aliases), String(subject.infobox ?? ""), String(subject.summary ?? ""), String(subject.date ?? ""),
-    0, JSON.stringify(tagNames), JSON.stringify(rawTags), JSON.stringify(subject.meta_tags ?? []),
-    Number(rating.score ?? 0), Number(rating.total ?? 0), heat, Number(rating.rank ?? 0),
-    String((subject.images ?? {}).large ?? ""),
+    subjectId,
+    Number(subject.type ?? 0),
+    String(subject.name ?? ""),
+    String(subject.name_cn ?? ""),
+    JSON.stringify(aliases),
+    String(subject.infobox ?? ""),
+    String(subject.summary ?? ""),
+    String(subject.date ?? ""),
+    0,
+    JSON.stringify(tagNames),
+    JSON.stringify(rawTags),
+    JSON.stringify(subject.meta_tags ?? []),
+    Number(rating.score ?? 0),
+    Number(rating.total ?? 0),
+    heat,
+    Number(rating.rank ?? 0),
+    String((subject.images ?? {}).large ?? "")
   );
 
   // 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。
@@ -164,18 +223,34 @@ async function importSubject(
       const detail = await getJson<ApiCharacter>(fetcher, `${base}/v0/characters/${characterId}`);
       if (!detail) continue;
       db.query("INSERT OR REPLACE INTO characters VALUES (?,?,?,?,?,?,?,?,?)").run(
-        characterId, Number(detail.role ?? 0), String(detail.name ?? ""), String(detail.name_cn ?? ""),
-        String(detail.gender ?? ""), JSON.stringify([]), String(detail.summary ?? ""),
-        Number(detail.comments ?? 0), Number(detail.collects ?? 0),
+        characterId,
+        Number(detail.role ?? 0),
+        String(detail.name ?? ""),
+        String(detail.name_cn ?? ""),
+        String(detail.gender ?? ""),
+        JSON.stringify([]),
+        String(detail.summary ?? ""),
+        Number(detail.comments ?? 0),
+        Number(detail.collects ?? 0)
       );
-      search?.updateCharacter({
-        id: characterId, name: String(detail.name ?? ""),
-        aliases: [String(detail.name_cn ?? "")].filter(Boolean),
-        comment: Number(detail.comments ?? 0), collect: Number(detail.collects ?? 0),
-      }).catch(() => { /* 索引失败不影响数据落库，下轮重建会补上 */ });
+      search
+        ?.updateCharacter({
+          id: characterId,
+          name: String(detail.name ?? ""),
+          aliases: [String(detail.name_cn ?? "")].filter(Boolean),
+          comment: Number(detail.comments ?? 0),
+          collect: Number(detail.collects ?? 0),
+        })
+        .catch(() => {
+          /* 索引失败不影响数据落库，下轮重建会补上 */
+        });
     }
-    db.query("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)")
-      .run(characterId, subjectId, Number(row.type ?? 0), 0);
+    db.query("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)").run(
+      characterId,
+      subjectId,
+      Number(row.type ?? 0),
+      0
+    );
   }
 
   // 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。
@@ -185,27 +260,44 @@ async function importSubject(
       const music = await getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${relatedId}`);
       const title = String(music?.name_cn || music?.name || "");
       if (title) {
-        db.query("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)")
-          .run(subjectId, relatedId, 0, 0, title, null, "theme");
+        db.query("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)").run(
+          subjectId,
+          relatedId,
+          0,
+          0,
+          title,
+          null,
+          "theme"
+        );
       }
     }
   }
 
-  search?.updateSubject({
-    id: subjectId, name: String(subject.name ?? ""), aliases,
-    tag: tagNames, meta_tag: (subject.meta_tags ?? []).map(String),
-    date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
-    score: Number(rating.score ?? 0), rating_count: Number(rating.total ?? 0),
-    heat, rank: Number(rating.rank ?? 0), type: Number(subject.type ?? 0),
-  }).catch(() => {});
+  search
+    ?.updateSubject({
+      id: subjectId,
+      name: String(subject.name ?? ""),
+      aliases,
+      tag: tagNames,
+      meta_tag: (subject.meta_tags ?? []).map(String),
+      date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
+      score: Number(rating.score ?? 0),
+      rating_count: Number(rating.total ?? 0),
+      heat,
+      rank: Number(rating.rank ?? 0),
+      type: Number(subject.type ?? 0),
+    })
+    .catch(() => {});
   return true;
 }
 
 async function getJson<T>(fetcher: typeof fetch, url: string): Promise<T | null> {
   try {
-    const response = await fetcher(url, { headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT } });
+    const response = await fetcher(url, {
+      headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+    });
     if (!response.ok) return null;
-    return await response.json() as T;
+    return (await response.json()) as T;
   } catch {
     return null;
   }

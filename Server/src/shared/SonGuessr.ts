@@ -120,8 +120,14 @@ export const BANGUMI_TRACK_KIND_LABELS: Record<BangumiMusicTrackKind, string> = 
  * 服务端曲目校准与客户端徽章展示共用本函数，保证两端判定一致。
  */
 export const detectExplicitTrackKind = (text: string): BangumiMusicTrackKind | undefined => {
-  if (/片尾曲|片尾歌|片尾主題歌|片尾主题歌|エンディングテーマ|エンディング|\bending\b/i.test(text)) return "ending";
-  if (/片头曲|片頭曲|片头歌|片头主題歌|片头主题歌|オープニングテーマ|オープニング|\bopening\b/i.test(text)) return "opening";
+  if (/片尾曲|片尾歌|片尾主題歌|片尾主题歌|エンディングテーマ|エンディング|\bending\b/i.test(text))
+    return "ending";
+  if (
+    /片头曲|片頭曲|片头歌|片头主題歌|片头主题歌|オープニングテーマ|オープニング|\bopening\b/i.test(
+      text
+    )
+  )
+    return "opening";
   if (/插入歌|插曲|挿入歌|剧中歌|劇中歌|\binsert\s*song\b/i.test(text)) return "insert";
   return undefined;
 };
@@ -145,21 +151,39 @@ export const detectExplicitTrackKind = (text: string): BangumiMusicTrackKind | u
 export const detectTrackKindFromText = (text: string): BangumiMusicTrackKind | undefined => {
   const explicit = detectExplicitTrackKind(text);
   if (explicit) return explicit;
-  if (/サウンドトラック|sound\s*track|オリジナルサウンド|原声|原聲|\bost\b|劇伴|剧伴|\bbgm\b|音楽集|音乐集/i.test(text)) return "ost";
+  if (
+    /サウンドトラック|sound\s*track|オリジナルサウンド|原声|原聲|\bost\b|劇伴|剧伴|\bbgm\b|音楽集|音乐集/i.test(
+      text
+    )
+  )
+    return "ost";
   if (/特典|special\s*cd|初回限定|限定盤|限定盘/i.test(text)) return "special";
-  if (/キャラクターソング|キャラソン|角色歌|角色曲|character\s*song/i.test(text)) return "character";
+  if (/キャラクターソング|キャラソン|角色歌|角色曲|character\s*song/i.test(text))
+    return "character";
   if (/イメージソング|印象[曲歌]|image\s*song/i.test(text)) return "image";
   // 广播剧看 `ドラマ`（片假名）—— 旧规则只认拉丁 `drama`，把满篇 `ドラマCD` 放进了主题曲。
   // 「ドラマチック / ドラマティック」（dramatic）是正常曲名，必须排除。
-  if (/ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|audio\s*drama|ボイスドラマ|\bdrama\s*(?:cd|album|track)\b|广播剧|廣播劇/i.test(text)) return "drama";
-  if (/ラジオ\s*cd|ラジオ\s*「|\bradio\s*(?:cd|digest|show)\b|\baudio\s*drama\s*&\s*radio\b/i.test(text)) return "radio";
+  if (
+    /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|audio\s*drama|ボイスドラマ|\bdrama\s*(?:cd|album|track)\b|广播剧|廣播劇/i.test(
+      text
+    )
+  )
+    return "drama";
+  if (
+    /ラジオ\s*cd|ラジオ\s*「|\bradio\s*(?:cd|digest|show)\b|\baudio\s*drama\s*&\s*radio\b/i.test(
+      text
+    )
+  )
+    return "radio";
   if (/リミックス|\bremix\b|重混/i.test(text)) return "remix";
   if (/同人/i.test(text)) return "doujin";
   if (/vocaloid/i.test(text)) return "vocaloid";
-  if (/オーケストラ|\borchestra\b|交響|交响|管弦|改编|改編|编曲|編曲|\barra\w*/i.test(text)) return "arrange";
+  if (/オーケストラ|\borchestra\b|交響|交响|管弦|改编|改編|编曲|編曲|\barra\w*/i.test(text))
+    return "arrange";
   if (/ボーカル|\bvocal\b|歌集|ソング集/i.test(text)) return "vocal";
   if (/单曲|單曲|\bsingle\b/i.test(text)) return "single";
-  if (/精选|精選|ベスト|\bbest\b|collection|コレクション|コンプリート|complete/i.test(text)) return "collection";
+  if (/精选|精選|ベスト|\bbest\b|collection|コレクション|コンプリート|complete/i.test(text))
+    return "collection";
   if (/朗读|朗讀/i.test(text)) return "reading";
   if (/艺人|藝人|\balbum\b/i.test(text)) return "artistAlbum";
   if (/主题[曲歌]|主題[曲歌]|テーマソング|テーマ|\btheme\b/i.test(text)) return "theme";
@@ -175,7 +199,7 @@ export const detectTrackKindFromText = (text: string): BangumiMusicTrackKind | u
  */
 export const refineTrackKindByText = (
   kind: BangumiMusicTrackKind,
-  text: string,
+  text: string
 ): BangumiMusicTrackKind => {
   const explicit = detectExplicitTrackKind(text);
   if (explicit) return explicit;
@@ -208,10 +232,17 @@ export const isBangumiCreditsEntry = (title: string): boolean => {
   if (!value) return true;
   // 版权 / 商标 / 录音权标记：© ® ℗ 与 (C)/(R)/(P) 全角变体，任意位置出现即视为署名条目。
   // 注意：❤ ♡ ※ ☆ 等美术字符是正常曲名常用元素，绝不能纳入判定。
-  if (/[©®℗Ⓒⓒ]|\(\s*[cC]\s*\)|（\s*[cCｃＣ]\s*）|\(\s*[rR]\s*\)|（\s*[rRＲ]\s*）|\(\s*[pP]\s*\)|（\s*[pPＰ]\s*）/.test(value)) return true;
+  if (
+    /[©®℗Ⓒⓒ]|\(\s*[cC]\s*\)|（\s*[cCｃＣ]\s*）|\(\s*[rR]\s*\)|（\s*[rRＲ]\s*）|\(\s*[pP]\s*\)|（\s*[pPＰ]\s*）/.test(
+      value
+    )
+  )
+    return true;
   // 制作 / 製作委員会署名（且不含任何歌曲语义关键词）。如「時をかける少女」製作委員会2006。
-  if (/(?:製作|制作)委員会|製作委員会/.test(value) &&
-      !/曲|歌|テーマ|theme|opening|ending|insert/i.test(value)) {
+  if (
+    /(?:製作|制作)委員会|製作委員会/.test(value) &&
+    !/曲|歌|テーマ|theme|opening|ending|insert/i.test(value)
+  ) {
     return true;
   }
   return false;
@@ -458,7 +489,15 @@ export interface SonGuessrPlayerView {
   correctGuesses: number;
   totalGuesses: number;
   /** `teamCorrect`：队友已猜中，本人不再作答；`observing`：队友出题，本局观战。 */
-  roundStatus: "waiting" | "submitter" | "guessing" | "correct" | "teamCorrect" | "finished" | "spectator" | "observing";
+  roundStatus:
+    | "waiting"
+    | "submitter"
+    | "guessing"
+    | "correct"
+    | "teamCorrect"
+    | "finished"
+    | "spectator"
+    | "observing";
   guessesUsed: number;
 }
 
@@ -545,10 +584,7 @@ export type SonGuessrClientMessage =
       }
     >
   | ClientEnvelope<"song.room.join", { userName: string; password?: string }>
-  | ClientEnvelope<
-      "song.room.reconnect",
-      { roomId: string; sessionToken: string }
-    >
+  | ClientEnvelope<"song.room.reconnect", { roomId: string; sessionToken: string }>
   | ClientEnvelope<"song.room.leave", Record<string, never>>
   | ClientEnvelope<"song.room.requestSync", Record<string, never>>
   | ClientEnvelope<"song.player.setReady", { ready: boolean }>
@@ -575,10 +611,7 @@ export type SonGuessrClientMessage =
       "song.auth.qr.check",
       { platform?: "netease" | "qq"; key: string; type?: "qq" | "wx" | "mobile" }
     >
-  | ClientEnvelope<
-      "song.auth.useCookie",
-      { platform?: "netease" | "qq"; cookie: string }
-    >
+  | ClientEnvelope<"song.auth.useCookie", { platform?: "netease" | "qq"; cookie: string }>
   | ClientEnvelope<
       "song.auth.clear",
       { platform?: "netease" | "qq" | "all" } | Record<string, never>

@@ -68,13 +68,21 @@ const liftRefs = <T>(value: T): T => {
   const node = value as Json;
   const ref = node.$ref;
   if (typeof ref === "string" && ref.startsWith(REF_PREFIX)) {
-    return { ...node, $ref: `${COMPONENT_REF_PREFIX}${ref.slice(REF_PREFIX.length)}` } as unknown as T;
+    return {
+      ...node,
+      $ref: `${COMPONENT_REF_PREFIX}${ref.slice(REF_PREFIX.length)}`,
+    } as unknown as T;
   }
-  return Object.fromEntries(Object.entries(node).map(([key, item]) => [key, liftRefs(item)])) as unknown as T;
+  return Object.fromEntries(
+    Object.entries(node).map(([key, item]) => [key, liftRefs(item)])
+  ) as unknown as T;
 };
 
 /** 输入整段内联（请求体一眼看完）；输出把登记过的模型抽成公共组件。 */
-const jsonSchemaOf = (schema: z.ZodType, io: "input" | "output"): { node: Json; defs: Record<string, Json> } => {
+const jsonSchemaOf = (
+  schema: z.ZodType,
+  io: "input" | "output"
+): { node: Json; defs: Record<string, Json> } => {
   const generated = z.toJSONSchema(schema, {
     io,
     target: "draft-2020-12",
@@ -91,7 +99,11 @@ const jsonSchemaOf = (schema: z.ZodType, io: "input" | "output"): { node: Json; 
 const NO_SCHEMA: { node: Json; defs: Record<string, Json> } = { node: {}, defs: {} };
 
 /** oRPC 的线格式：请求与成功响应都只有一层 `json` 包络，业务数据在里面。 */
-const envelope = (schema: Json): Json => ({ type: "object", properties: { json: schema }, required: ["json"] });
+const envelope = (schema: Json): Json => ({
+  type: "object",
+  properties: { json: schema },
+  required: ["json"],
+});
 
 interface OrpcProcedureNode {
   readonly "~orpc": {
@@ -154,17 +166,21 @@ const procedureOf = (segments: readonly string[], node: OrpcProcedureNode): RpcO
 const walk = (node: unknown, segments: readonly string[]): RpcOperation[] => {
   if (isProcedure(node)) return [procedureOf(segments, node)];
   if (!node || typeof node !== "object") return [];
-  return Object.entries(node as Record<string, unknown>).flatMap(([key, child]) => walk(child, [...segments, key]));
+  return Object.entries(node as Record<string, unknown>).flatMap(([key, child]) =>
+    walk(child, [...segments, key])
+  );
 };
 
 /** 契约里的全部过程，顺序与 `ApiContract.ts` 的书写顺序一致。 */
 export const rpcOperations: RpcOperation[] = walk(apiContract, []);
 
 const ERROR_RESPONSES: Record<string, string> = {
-  BadRequest: "请求体不合法：JSON 无法解析、缺 `json` 包络，或字段没通过契约校验（`json.data.issues` 给出具体字段）。",
+  BadRequest:
+    "请求体不合法：JSON 无法解析、缺 `json` 包络，或字段没通过契约校验（`json.data.issues` 给出具体字段）。",
   Unauthorized: "缺少或已失效的会话 Cookie。",
   Forbidden: "已登录但角色不是管理员，或账号处于封禁中。",
-  RateLimited: "超出 RPC 前缀的额度（60 秒滑动窗口内单客户端 300 次）。响应带 `X-RateLimit-*` 与 `Retry-After`，按 `Retry-After` 等待后重试即可。",
+  RateLimited:
+    "超出 RPC 前缀的额度（60 秒滑动窗口内单客户端 300 次）。响应带 `X-RateLimit-*` 与 `Retry-After`，按 `Retry-After` 等待后重试即可。",
   InternalError: "服务端内部异常，调用方无法预防。",
   AccountDisabled: "服务端未配置数据库，账号系统整体停用；前端据此隐藏登录入口。",
 };
@@ -177,7 +193,11 @@ const RPC_ERROR_SCHEMA: Json = {
       type: "object",
       required: ["defined", "code", "status", "message"],
       properties: {
-        defined: { type: "boolean", const: false, description: "固定为 false：错误由传输层产出，不在过程的错误声明里。" },
+        defined: {
+          type: "boolean",
+          const: false,
+          description: "固定为 false：错误由传输层产出，不在过程的错误声明里。",
+        },
         code: {
           type: "string",
           description:
@@ -187,17 +207,22 @@ const RPC_ERROR_SCHEMA: Json = {
         },
         status: { type: "integer", description: "与 HTTP 状态码一致。" },
         message: { type: "string", description: "可直接展示给玩家的中文文案。" },
-        data: { type: "object", description: "部分错误附带细节，例如入参校验失败时的 `issues` 数组。" },
+        data: {
+          type: "object",
+          description: "部分错误附带细节，例如入参校验失败时的 `issues` 数组。",
+        },
       },
     },
   },
 };
 
 const rpcResponses = (): Record<string, Json> =>
-  Object.fromEntries(Object.entries(ERROR_RESPONSES).map(([name, description]) => [
-    name,
-    { description, content: { "application/json": { schema: RPC_ERROR_SCHEMA } } },
-  ]));
+  Object.fromEntries(
+    Object.entries(ERROR_RESPONSES).map(([name, description]) => [
+      name,
+      { description, content: { "application/json": { schema: RPC_ERROR_SCHEMA } } },
+    ])
+  );
 
 const responsesOf = (auth: RpcAuth, schema: Json): Json => ({
   "200": {
@@ -222,15 +247,21 @@ const requestBodyOf = (operation: RpcOperation): Json => {
   }
   return {
     required: true,
-    content: { "application/json": { schema: envelope(jsonSchemaOf(operation.inputSchema, "input").node) } },
+    content: {
+      "application/json": { schema: envelope(jsonSchemaOf(operation.inputSchema, "input").node) },
+    },
   };
 };
 
-const collectSchemas = (operations: RpcOperation[]): { paths: Record<string, Json>; schemas: Record<string, Json> } => {
+const collectSchemas = (
+  operations: RpcOperation[]
+): { paths: Record<string, Json>; schemas: Record<string, Json> } => {
   const defs: Record<string, Json> = {};
   const paths: Record<string, Json> = {};
   for (const operation of operations) {
-    const response = operation.outputSchema ? jsonSchemaOf(operation.outputSchema, "output") : NO_SCHEMA;
+    const response = operation.outputSchema
+      ? jsonSchemaOf(operation.outputSchema, "output")
+      : NO_SCHEMA;
     Object.assign(defs, response.defs);
     paths[operation.operationId] = {
       tags: [operation.tag],
@@ -262,22 +293,27 @@ const collectSchemas = (operations: RpcOperation[]): { paths: Record<string, Jso
 export const buildRpcOpenApiFragment = (basePath: string) => {
   const { paths, schemas } = collectSchemas(rpcOperations);
   return {
-    paths: Object.fromEntries(Object.entries(paths).map(([operationId, operation]) => [
-      `${basePath}/${operationId.replaceAll(".", "/")}`,
-      { post: operation },
-    ])),
+    paths: Object.fromEntries(
+      Object.entries(paths).map(([operationId, operation]) => [
+        `${basePath}/${operationId.replaceAll(".", "/")}`,
+        { post: operation },
+      ])
+    ),
     components: { schemas, responses: rpcResponses() },
-    tags: [...new Set(rpcOperations.map(({ tag }) => tag))].map((name) => ({ name, description: TAG_DESCRIPTIONS[name] ?? "" })),
+    tags: [...new Set(rpcOperations.map(({ tag }) => tag))].map((name) => ({
+      name,
+      description: TAG_DESCRIPTIONS[name] ?? "",
+    })),
   };
 };
 
 /** 文档级协议说明：包络、方法、Cookie 三件事，Agent 照着它才能打通第一个请求。 */
 export const RPC_PROTOCOL_NOTES = [
   "账号 API 走 oRPC：`POST /api/rpc/<过程路径>`，过程路径就是客户端调用点的点号路径换成斜杠（`account.requestLoginCode` → `/api/rpc/account/requestLoginCode`）。",
-  "请求头必须带 `content-type: application/json`。请求体与成功响应都只有一层 `json` 包络：请求 `{\"json\": {…入参}}`，响应 `{\"json\": {…返回值}}`；无入参的过程请求体给 `{}`。",
-  "只用 POST。GET 能匹配到过程但回 405 `METHOD_NOT_SUPPORTED`；路径拼错回 404，且用的是 HTTP 信封 `{\"error\": …}` 而不是 RPC 信封。",
+  '请求头必须带 `content-type: application/json`。请求体与成功响应都只有一层 `json` 包络：请求 `{"json": {…入参}}`，响应 `{"json": {…返回值}}`；无入参的过程请求体给 `{}`。',
+  '只用 POST。GET 能匹配到过程但回 405 `METHOD_NOT_SUPPORTED`；路径拼错回 404，且用的是 HTTP 信封 `{"error": …}` 而不是 RPC 信封。',
   "标了 `security` 的过程需要登录会话 Cookie（`bakagame.session_token`，由 `/api/auth/sign-in/email-otp` 下发，HttpOnly）；`Admin` 标签下还额外要求管理员角色。",
-  "失败响应见 `components.responses`，统一为 `{\"json\": {\"defined\": false, code, status, message, data?}}`；`message` 可直接展示给玩家。",
+  '失败响应见 `components.responses`，统一为 `{"json": {"defined": false, code, status, message, data?}}`；`message` 可直接展示给玩家。',
   "整个 `/api/rpc/*` 前缀限流：60 秒滑动窗口内单客户端 300 次、全局 12000 次，超限回 429 并带 `Retry-After`。",
   "三款游戏的实时对局不在本文档内，走 WebSocket：`/api/whoisfaker/ws`、`/api/songuessr/ws`、`/api/cee/ws`。",
 ].join("\n");

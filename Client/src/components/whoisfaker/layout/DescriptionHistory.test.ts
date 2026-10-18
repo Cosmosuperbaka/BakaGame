@@ -38,7 +38,10 @@ describe("description history rows", () => {
       createdAt: 1,
     };
 
-    expect(collectDescriptionRows([player("second"), player("first", true)], [record])
-      .map(({ id }) => id)).toEqual(["second", "first", "departed"]);
+    expect(
+      collectDescriptionRows([player("second"), player("first", true)], [record]).map(
+        ({ id }) => id
+      )
+    ).toEqual(["second", "first", "departed"]);
   });
 });

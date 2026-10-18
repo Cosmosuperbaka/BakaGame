@@ -64,4 +64,3 @@ export const NoUsernameBlocked: Story = {
     await canvas.findByText("请先填写用户名");
   },
 };
-

@@ -29,7 +29,13 @@ const FEEDBACK_PAGE_SIZE = 50;
 
 export interface FeedbackSink {
   /** 同步到 Sentry User Feedback，返回事件 ID；未启用时返回 `null`。 */
-  (feedback: { message: string; name: string; userId: string; url?: string; tags: Record<string, string> }): string | null;
+  (feedback: {
+    message: string;
+    name: string;
+    userId: string;
+    url?: string;
+    tags: Record<string, string>;
+  }): string | null;
 }
 
 export interface UserDataServiceOptions {
@@ -47,7 +53,10 @@ export interface UserDataServiceOptions {
 export class UserDataService {
   private readonly now: () => number;
   /** 每人每小时最多 5 条反馈，防止刷屏与 Sentry 配额被打满。 */
-  private readonly feedbackLimiter = new SlidingWindowRateLimiter({ windowMs: 60 * 60 * 1000, maxRequests: 5 });
+  private readonly feedbackLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    maxRequests: 5,
+  });
 
   constructor(private readonly options: UserDataServiceOptions) {
     this.now = options.now ?? Date.now;
@@ -60,7 +69,10 @@ export class UserDataService {
     const preferences = rows.get(PREFERENCES_KEY);
     return {
       preferences: preferences
-        ? { value: preferences.value as Record<string, unknown>, updatedAt: preferences.updatedAt.toISOString() }
+        ? {
+            value: preferences.value as Record<string, unknown>,
+            updatedAt: preferences.updatedAt.toISOString(),
+          }
         : null,
       music: {
         netease: this.readMusic(userId, "netease", rows.get(MUSIC_KEYS.netease)?.value),
@@ -69,27 +81,44 @@ export class UserDataService {
     };
   }
 
-  async savePreferences(userId: string, value: Record<string, unknown>): Promise<{ updatedAt: string }> {
+  async savePreferences(
+    userId: string,
+    value: Record<string, unknown>
+  ): Promise<{ updatedAt: string }> {
     const now = new Date(this.now());
     await this.options.settings.put(userId, PREFERENCES_KEY, value, now);
     return { updatedAt: now.toISOString() };
   }
 
-  async saveMusicSession(userId: string, platform: MusicPlatform, session: CloudMusicSession | null): Promise<{ updatedAt: string }> {
+  async saveMusicSession(
+    userId: string,
+    platform: MusicPlatform,
+    session: CloudMusicSession | null
+  ): Promise<{ updatedAt: string }> {
     const now = new Date(this.now());
     const key = MUSIC_KEYS[platform];
     if (session) {
-      await this.options.settings.put(userId, key, this.options.cipher.encrypt(JSON.stringify(session), userId, key), now);
+      await this.options.settings.put(
+        userId,
+        key,
+        this.options.cipher.encrypt(JSON.stringify(session), userId, key),
+        now
+      );
     } else {
       await this.options.settings.remove(userId, key);
     }
     return { updatedAt: now.toISOString() };
   }
 
-  private readMusic(userId: string, platform: MusicPlatform, stored: unknown): CloudMusicSession | null {
+  private readMusic(
+    userId: string,
+    platform: MusicPlatform,
+    stored: unknown
+  ): CloudMusicSession | null {
     if (stored === undefined) return null;
     const key = MUSIC_KEYS[platform];
-    const plaintext = typeof stored === "string" ? this.options.cipher.decrypt(stored, userId, key) : null;
+    const plaintext =
+      typeof stored === "string" ? this.options.cipher.decrypt(stored, userId, key) : null;
     const parsed = plaintext ? musicSessionSchema.safeParse(safeJson(plaintext)) : null;
     if (parsed?.success) return parsed.data;
     // 密钥轮换后旧密文无法解开：按云端无数据处理，用户重新登录音乐账号即覆盖。
@@ -99,9 +128,16 @@ export class UserDataService {
 
   // ==================== 反馈 ====================
 
-  async createFeedback(userId: string, input: {
-    kind: FeedbackKind; title: string; content: string; page?: string; userAgent?: string | null;
-  }): Promise<FeedbackSummary> {
+  async createFeedback(
+    userId: string,
+    input: {
+      kind: FeedbackKind;
+      title: string;
+      content: string;
+      page?: string;
+      userAgent?: string | null;
+    }
+  ): Promise<FeedbackSummary> {
     if (!this.feedbackLimiter.allow(userId, this.now())) {
       throw new AppError("RATE_LIMITED", "反馈提交过于频繁，请稍后再试");
     }
@@ -138,7 +174,10 @@ export class UserDataService {
       }
     } catch (error) {
       // 站内反馈已落库，Sentry 同步失败只记日志。
-      this.options.logger.warn("反馈同步 Sentry 失败", { feedbackId: record.id, error: String(error) });
+      this.options.logger.warn("反馈同步 Sentry 失败", {
+        feedbackId: record.id,
+        error: String(error),
+      });
     }
     return toSummary(record);
   }
@@ -172,7 +211,8 @@ const safeJson = (text: string): unknown => {
 };
 
 const isUnread = (record: FeedbackRecord): boolean =>
-  record.lastReplyAt !== null && (record.userSeenAt === null || record.userSeenAt < record.lastReplyAt);
+  record.lastReplyAt !== null &&
+  (record.userSeenAt === null || record.userSeenAt < record.lastReplyAt);
 
 export const toSummary = (record: FeedbackRecord): FeedbackSummary => ({
   id: record.id,
@@ -184,9 +224,16 @@ export const toSummary = (record: FeedbackRecord): FeedbackSummary => ({
   unread: isUnread(record),
 });
 
-export const toDetail = (record: FeedbackRecord, replies: FeedbackReplyRecord[]): FeedbackDetail => ({
+export const toDetail = (
+  record: FeedbackRecord,
+  replies: FeedbackReplyRecord[]
+): FeedbackDetail => ({
   ...toSummary(record),
   content: record.content,
   page: record.page,
-  replies: replies.map((reply) => ({ id: reply.id, content: reply.content, createdAt: reply.createdAt.toISOString() })),
+  replies: replies.map((reply) => ({
+    id: reply.id,
+    content: reply.content,
+    createdAt: reply.createdAt.toISOString(),
+  })),
 });

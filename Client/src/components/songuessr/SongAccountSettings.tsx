@@ -56,8 +56,26 @@ export function QQMusicIcon({ className }: { className?: string }) {
 /** 官方会员徽章：图片取自 CDN 原图（`public/assets/netease-vip` 和 `public/assets/qqmusic-vip`），读屏读档位与等级。
  *  路径必须写成完整静态字符串：构建期的 WebP 转换只做精确字符串替换，模板拼接会漏进产物，被 asset-smoke 拦下。 */
 const NETEASE_VIP_BADGE_SRC: Record<"svip" | "vip", string[]> = {
-  svip: ["", "/assets/netease-vip/SVIP-1.png", "/assets/netease-vip/SVIP-2.png", "/assets/netease-vip/SVIP-3.png", "/assets/netease-vip/SVIP-4.png", "/assets/netease-vip/SVIP-5.png", "/assets/netease-vip/SVIP-6.png", "/assets/netease-vip/SVIP-7.png"],
-  vip: ["", "/assets/netease-vip/VIP-1.png", "/assets/netease-vip/VIP-2.png", "/assets/netease-vip/VIP-3.png", "/assets/netease-vip/VIP-4.png", "/assets/netease-vip/VIP-5.png", "/assets/netease-vip/VIP-6.png", "/assets/netease-vip/VIP-7.png"],
+  svip: [
+    "",
+    "/assets/netease-vip/SVIP-1.png",
+    "/assets/netease-vip/SVIP-2.png",
+    "/assets/netease-vip/SVIP-3.png",
+    "/assets/netease-vip/SVIP-4.png",
+    "/assets/netease-vip/SVIP-5.png",
+    "/assets/netease-vip/SVIP-6.png",
+    "/assets/netease-vip/SVIP-7.png",
+  ],
+  vip: [
+    "",
+    "/assets/netease-vip/VIP-1.png",
+    "/assets/netease-vip/VIP-2.png",
+    "/assets/netease-vip/VIP-3.png",
+    "/assets/netease-vip/VIP-4.png",
+    "/assets/netease-vip/VIP-5.png",
+    "/assets/netease-vip/VIP-6.png",
+    "/assets/netease-vip/VIP-7.png",
+  ],
 };
 
 const QQ_VIP_BADGE_SRC: {
@@ -144,9 +162,20 @@ function qqVipBadge(account: SonGuessrMusicAccount): VipBadge | null {
 
 function neteaseVipBadge(account: SonGuessrMusicAccount): VipBadge | null {
   const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
-  if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
-  if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
-  if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包", platform: "netease" };
+  if (account.vipTier === "svip")
+    return {
+      src: NETEASE_VIP_BADGE_SRC.svip[level],
+      label: `SVIP · ${LEVEL_NUMERALS[level]}`,
+      platform: "netease",
+    };
+  if (account.vipTier === "vip")
+    return {
+      src: NETEASE_VIP_BADGE_SRC.vip[level],
+      label: `VIP · ${LEVEL_NUMERALS[level]}`,
+      platform: "netease",
+    };
+  if (account.vipTier === "musicPackage")
+    return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包", platform: "netease" };
   return null;
 }
 
@@ -154,23 +183,60 @@ function vipBadge(account: SonGuessrMusicAccount): VipBadge | null {
   return account.platform === "qq" ? qqVipBadge(account) : neteaseVipBadge(account);
 }
 
-const expireFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Shanghai" });
+const expireFormat = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  timeZone: "Asia/Shanghai",
+});
 
 /** 会员一行的文字：徽章之后的到期日；旧版本存下的账号没有档位时退回文字。 */
-function vipText(account: SonGuessrMusicAccount): { label: string; expire: string; description?: string } {
+function vipText(account: SonGuessrMusicAccount): {
+  label: string;
+  expire: string;
+  description?: string;
+} {
   const isQq = account.platform === "qq";
   const platformName = isQq ? "QQ音乐" : "网易云";
-  const expire = account.vipStatus === "vip" && account.vipExpireTime ? `${expireFormat.format(new Date(account.vipExpireTime))} 到期` : "";
-  if (account.vipStatus === "vip") return { label: vipBadge(account)?.label ?? `${platformName}会员`, expire };
-  if (account.vipStatus === "nonVip") return { label: "非会员", expire, description: "非会员账号也能出题，会员专享歌曲会自动匹配可用音源。" };
-  return { label: "会员状态未知", expire, description: `暂时无法读取会员状态，选歌时以${platformName}实际权限为准。` };
+  const expire =
+    account.vipStatus === "vip" && account.vipExpireTime
+      ? `${expireFormat.format(new Date(account.vipExpireTime))} 到期`
+      : "";
+  if (account.vipStatus === "vip")
+    return { label: vipBadge(account)?.label ?? `${platformName}会员`, expire };
+  if (account.vipStatus === "nonVip")
+    return {
+      label: "非会员",
+      expire,
+      description: "非会员账号也能出题，会员专享歌曲会自动匹配可用音源。",
+    };
+  return {
+    label: "会员状态未知",
+    expire,
+    description: `暂时无法读取会员状态，选歌时以${platformName}实际权限为准。`,
+  };
 }
 
-function AccountAvatar({ account, className }: { account: SonGuessrMusicAccount; className: string }) {
+function AccountAvatar({
+  account,
+  className,
+}: {
+  account: SonGuessrMusicAccount;
+  className: string;
+}) {
   return account.avatarUrl ? (
-    <img src={account.avatarUrl} alt="" className={cn(className, "shrink-0 rounded-full bg-muted object-cover")} />
+    <img
+      src={account.avatarUrl}
+      alt=""
+      className={cn(className, "shrink-0 rounded-full bg-muted object-cover")}
+    />
   ) : (
-    <span className={cn(className, "flex shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground")}>
+    <span
+      className={cn(
+        className,
+        "flex shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
+      )}
+    >
       <UserRound className="size-3/5" aria-hidden="true" />
     </span>
   );
@@ -198,7 +264,12 @@ function VipStatus({
       ) : (
         <span className="font-medium text-foreground">{vip.label}</span>
       )}
-      {vip.expire ? <>{" "}<span className="tabular-nums">{vip.expire}</span></> : null}
+      {vip.expire ? (
+        <>
+          {" "}
+          <span className="tabular-nums">{vip.expire}</span>
+        </>
+      ) : null}
     </span>
   );
 }
@@ -232,7 +303,11 @@ const PLATFORM_TABS: readonly {
 ];
 
 /** 平台切换器：每个平台一枚 tab，该端凭据已加载到房间时点一枚绿点。 */
-function PlatformSwitcher({ active, ready, onSelect }: {
+function PlatformSwitcher({
+  active,
+  ready,
+  onSelect,
+}: {
   active: SongMusicPlatform;
   ready: Record<SongMusicPlatform, boolean | undefined>;
   onSelect: (platform: SongMusicPlatform) => void;
@@ -248,7 +323,7 @@ function PlatformSwitcher({ active, ready, onSelect }: {
             "flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors",
             active === platform
               ? "bg-background text-foreground shadow-xs font-semibold"
-              : "text-muted-foreground hover:text-foreground",
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           <Icon className="size-3.5" />
@@ -267,7 +342,13 @@ const QQ_SCAN_TYPES: readonly { mode: QqScanMode; label: string }[] = [
 ];
 
 /** QQ 音乐的三种扫码入口。 */
-function QqScanTypePicker({ value, onSelect }: { value: QqScanMode; onSelect: (mode: QqScanMode) => void }) {
+function QqScanTypePicker({
+  value,
+  onSelect,
+}: {
+  value: QqScanMode;
+  onSelect: (mode: QqScanMode) => void;
+}) {
   return (
     <div className="flex gap-1.5 rounded-md bg-muted/60 p-1 text-xs">
       {QQ_SCAN_TYPES.map(({ mode, label }) => (
@@ -279,7 +360,7 @@ function QqScanTypePicker({ value, onSelect }: { value: QqScanMode; onSelect: (m
             "flex-1 rounded py-1 text-center transition-colors",
             value === mode
               ? "bg-background font-medium text-foreground shadow-xs"
-              : "text-muted-foreground hover:text-foreground",
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
           {label}
@@ -291,9 +372,12 @@ function QqScanTypePicker({ value, onSelect }: { value: QqScanMode; onSelect: (m
 
 /** 扫码步骤文案：QQ 平台按扫码方式换第一个 App，网易云固定一条。 */
 function scanStepLines(platform: SongMusicPlatform, scanType: QqScanMode): string[] {
-  if (platform !== "qq") return ["1. 打开网易云音乐 App", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
-  if (scanType === "wx") return ["1. 打开微信", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
-  if (scanType === "mobile") return ["1. 打开 QQ 音乐 App", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
+  if (platform !== "qq")
+    return ["1. 打开网易云音乐 App", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
+  if (scanType === "wx")
+    return ["1. 打开微信", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
+  if (scanType === "mobile")
+    return ["1. 打开 QQ 音乐 App", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
   return ["1. 打开手机 QQ", "2. 用「扫一扫」扫描左侧二维码", "3. 在手机上确认登录"];
 }
 
@@ -357,8 +441,12 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const [activePlatform, setActivePlatform] = useState<SongMusicPlatform>("netease");
   const [qqScanType, setQqScanType] = useState<QqScanMode>("qq");
 
-  const [storedNetease, setStoredNetease] = useState<StoredSongMusicSession | null>(() => getStoredSongMusicSession("netease"));
-  const [storedQq, setStoredQq] = useState<StoredSongMusicSession | null>(() => getStoredSongMusicSession("qq"));
+  const [storedNetease, setStoredNetease] = useState<StoredSongMusicSession | null>(() =>
+    getStoredSongMusicSession("netease")
+  );
+  const [storedQq, setStoredQq] = useState<StoredSongMusicSession | null>(() =>
+    getStoredSongMusicSession("qq")
+  );
 
   const [rememberNetease, setRememberNetease] = useState(() => storedNetease?.persistent ?? true);
   const [rememberQq, setRememberQq] = useState(() => storedQq?.persistent ?? true);
@@ -377,9 +465,12 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     setQr(null);
   }, []);
 
-  useEffect(() => () => {
-    loginGenerationRef.current += 1;
-  }, []);
+  useEffect(
+    () => () => {
+      loginGenerationRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     const sync = () => {
@@ -391,50 +482,72 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   }, []);
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;
-  const isCurrentReady = activePlatform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
+  const isCurrentReady =
+    activePlatform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
   const currentAccount = isCurrentReady
     ? (snapshot.musicAccounts?.[activePlatform] ?? currentStored?.account)
     : undefined;
   const showQr = !currentStored;
 
-  const completeLogin = useCallback((platform: SongMusicPlatform, session: { cookie: string; account: SonGuessrMusicAccount }) => {
-    loginGenerationRef.current += 1;
-    const persistent = rememberRef.current[platform];
-    const accountToSave = platform === "qq" ? { ...session.account, platform: "qq" as const } : session.account;
-    saveSongMusicSession({ cookie: session.cookie, account: accountToSave }, persistent, platform);
-    if (platform === "qq") {
-      setStoredQq({ cookie: session.cookie, account: accountToSave, persistent });
-      setNotice("QQ音乐账号已加载到当前房间", "success");
-    } else {
-      setStoredNetease({ cookie: session.cookie, account: accountToSave, persistent });
-      setNotice("网易云账号已加载到当前房间", "success");
-    }
-    setQr(null);
-    setQrStatus("登录成功");
-  }, [setNotice]);
-
-  const createQr = useCallback(async (targetPlatform = activePlatform, scanType = qqScanType) => {
-    const generation = ++loginGenerationRef.current;
-    setBusy(true);
-    try {
-      const result = targetPlatform === "qq"
-        ? await sendCommand<QrCreateResponse>("song.auth.qr.create", { platform: "qq", type: scanType })
-        : await sendCommand<QrCreateResponse>("song.auth.qr.create");
-      if (generation !== loginGenerationRef.current) return;
-      setQr(result);
-      if (targetPlatform === "qq") {
-        setQrStatus(scanType === "wx" ? "请使用微信扫码" : scanType === "mobile" ? "请使用 QQ 音乐 App 扫码" : "请使用手机 QQ 扫码");
+  const completeLogin = useCallback(
+    (platform: SongMusicPlatform, session: { cookie: string; account: SonGuessrMusicAccount }) => {
+      loginGenerationRef.current += 1;
+      const persistent = rememberRef.current[platform];
+      const accountToSave =
+        platform === "qq" ? { ...session.account, platform: "qq" as const } : session.account;
+      saveSongMusicSession(
+        { cookie: session.cookie, account: accountToSave },
+        persistent,
+        platform
+      );
+      if (platform === "qq") {
+        setStoredQq({ cookie: session.cookie, account: accountToSave, persistent });
+        setNotice("QQ音乐账号已加载到当前房间", "success");
       } else {
-        setQrStatus("请使用网易云音乐 App 扫码");
+        setStoredNetease({ cookie: session.cookie, account: accountToSave, persistent });
+        setNotice("网易云账号已加载到当前房间", "success");
       }
-    } catch (error) {
-      if (generation !== loginGenerationRef.current) return;
-      setQrStatus((error as { message?: string }).message ?? "二维码生成失败，请稍后重试");
-      setNotice((error as { message?: string }).message ?? "二维码生成失败", "error");
-    } finally {
-      if (generation === loginGenerationRef.current) setBusy(false);
-    }
-  }, [activePlatform, qqScanType, sendCommand, setNotice]);
+      setQr(null);
+      setQrStatus("登录成功");
+    },
+    [setNotice]
+  );
+
+  const createQr = useCallback(
+    async (targetPlatform = activePlatform, scanType = qqScanType) => {
+      const generation = ++loginGenerationRef.current;
+      setBusy(true);
+      try {
+        const result =
+          targetPlatform === "qq"
+            ? await sendCommand<QrCreateResponse>("song.auth.qr.create", {
+                platform: "qq",
+                type: scanType,
+              })
+            : await sendCommand<QrCreateResponse>("song.auth.qr.create");
+        if (generation !== loginGenerationRef.current) return;
+        setQr(result);
+        if (targetPlatform === "qq") {
+          setQrStatus(
+            scanType === "wx"
+              ? "请使用微信扫码"
+              : scanType === "mobile"
+                ? "请使用 QQ 音乐 App 扫码"
+                : "请使用手机 QQ 扫码"
+          );
+        } else {
+          setQrStatus("请使用网易云音乐 App 扫码");
+        }
+      } catch (error) {
+        if (generation !== loginGenerationRef.current) return;
+        setQrStatus((error as { message?: string }).message ?? "二维码生成失败，请稍后重试");
+        setNotice((error as { message?: string }).message ?? "二维码生成失败", "error");
+      } finally {
+        if (generation === loginGenerationRef.current) setBusy(false);
+      }
+    },
+    [activePlatform, qqScanType, sendCommand, setNotice]
+  );
 
   const checkQr = useCallback(async () => {
     if (!qr || qrCheckingRef.current === loginGenerationRef.current) return;
@@ -444,9 +557,14 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     const scanType = qqScanType;
     qrCheckingRef.current = generation;
     try {
-      const result = platform === "qq"
-        ? await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qrKey, platform: "qq", type: scanType })
-        : await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qrKey });
+      const result =
+        platform === "qq"
+          ? await sendCommand<QrCheckResponse>("song.auth.qr.check", {
+              key: qrKey,
+              platform: "qq",
+              type: scanType,
+            })
+          : await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qrKey });
       if (generation !== loginGenerationRef.current) return;
       setQrStatus(result.message || "等待扫码");
       if (result.status === "expired") {
@@ -460,7 +578,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       const appError = error as { code?: string; message?: string };
       if (appError.code === "MUSIC_LOGIN_RISK") {
         setQr(null);
-        setQrStatus(platform === "qq" ? "QQ音乐暂时拒绝了本次登录，请稍后重新扫码" : "网易云暂时拒绝了本次登录，请稍后重新扫码");
+        setQrStatus(
+          platform === "qq"
+            ? "QQ音乐暂时拒绝了本次登录，请稍后重新扫码"
+            : "网易云暂时拒绝了本次登录，请稍后重新扫码"
+        );
       } else {
         setQrStatus(appError.message ?? "二维码状态检查失败");
       }
@@ -528,15 +650,20 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     if (open) void createQr(platform, qqScanType);
   };
 
-  const neteaseAccount = snapshot.musicAccounts?.netease ?? (snapshot.musicAccountReady ? storedNetease?.account : undefined);
-  const qqAccount = snapshot.musicAccounts?.qq ?? (snapshot.qqMusicAccountReady ? storedQq?.account : undefined);
-  const neteaseConnecting = Boolean(storedNetease) && !snapshot.musicAccountReady && !snapshot.musicAccounts?.netease;
-  const qqConnecting = Boolean(storedQq) && !snapshot.qqMusicAccountReady && !snapshot.musicAccounts?.qq;
+  const neteaseAccount =
+    snapshot.musicAccounts?.netease ??
+    (snapshot.musicAccountReady ? storedNetease?.account : undefined);
+  const qqAccount =
+    snapshot.musicAccounts?.qq ?? (snapshot.qqMusicAccountReady ? storedQq?.account : undefined);
+  const neteaseConnecting =
+    Boolean(storedNetease) && !snapshot.musicAccountReady && !snapshot.musicAccounts?.netease;
+  const qqConnecting =
+    Boolean(storedQq) && !snapshot.qqMusicAccountReady && !snapshot.musicAccounts?.qq;
 
   const renderAccountPill = (
     platform: "netease" | "qq",
     account?: SonGuessrMusicAccount,
-    connecting?: boolean,
+    connecting?: boolean
   ) => {
     const isQq = platform === "qq";
     const Icon = isQq ? QQMusicIcon : NeteaseCloudMusicIcon;
@@ -552,9 +679,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
           <Icon className={iconClass} />
           <AccountAvatar account={account} className="size-4 shrink-0" />
           <Hint label={account.nickname}>
-            <span className="truncate text-xs font-medium">
-              {account.nickname}
-            </span>
+            <span className="truncate text-xs font-medium">{account.nickname}</span>
           </Hint>
           <VipStatus vip={vip} badge={badge} />
         </span>
@@ -586,7 +711,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   );
 
   const toggle = (next: boolean) => {
-    if (!next) { cancelLogin(); setOpen(false); return; }
+    if (!next) {
+      cancelLogin();
+      setOpen(false);
+      return;
+    }
     setOpen(true);
     if (showQr && !qr && !busy) void createQr(activePlatform, qqScanType);
   };
@@ -595,12 +724,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const badge = currentAccount ? vipBadge(currentAccount) : null;
 
   return (
-    <SettingsAccordion
-      title="音乐账号配置"
-      open={open}
-      onOpenChange={toggle}
-      headline={headline}
-    >
+    <SettingsAccordion title="音乐账号配置" open={open} onOpenChange={toggle} headline={headline}>
       {/* 平台切换器 */}
       <PlatformSwitcher
         active={activePlatform}
@@ -624,11 +748,14 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
                   <VipStatus vip={vip} badge={badge} />
                 </div>
               </div>
-              {vip.description ? <p className="text-xs leading-relaxed text-muted-foreground">{vip.description}</p> : null}
+              {vip.description ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">{vip.description}</p>
+              ) : null}
             </div>
           ) : (
             <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Spinner />{connectingLabel(activePlatform)}
+              <Spinner />
+              {connectingLabel(activePlatform)}
             </p>
           )}
           <Button
@@ -638,7 +765,8 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
             disabled={busy}
             onClick={() => void logout()}
           >
-            <LogOut className="h-3.5 w-3.5" />退出登录
+            <LogOut className="h-3.5 w-3.5" />
+            退出登录
           </Button>
         </div>
       </CollapsibleRegion>
@@ -653,9 +781,18 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
             <QrFrame qr={qr} busy={busy} alt={qrAlt(activePlatform)} />
             <div className="min-w-0 basis-44 flex-1 space-y-3">
               <ScanSteps platform={activePlatform} scanType={qqScanType} />
-              <p aria-live="polite" className="text-sm">{qrStatus}</p>
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={refreshQr} disabled={busy}>
-                <RefreshCw className="h-3.5 w-3.5" />刷新二维码
+              <p aria-live="polite" className="text-sm">
+                {qrStatus}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={refreshQr}
+                disabled={busy}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                刷新二维码
               </Button>
             </div>
           </div>

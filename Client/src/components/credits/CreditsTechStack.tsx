@@ -68,10 +68,14 @@ export function CreditsTechStack({
                         <span className="flex items-baseline gap-1.5">
                           <span className="truncate text-sm font-medium">{entry.name}</span>
                           {version ? (
-                            <span className="shrink-0 font-mono text-xs text-muted-foreground">v{version}</span>
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                              v{version}
+                            </span>
                           ) : null}
                         </span>
-                        <span className="mt-0.5 block text-xs break-words text-muted-foreground">{entry.role}</span>
+                        <span className="mt-0.5 block text-xs break-words text-muted-foreground">
+                          {entry.role}
+                        </span>
                       </span>
                       {/* 外链指示：静止时压淡，悬停沿外链方向挪动并归位到不透明（Design §3 的箭头例外）。 */}
                       <ArrowUpRight

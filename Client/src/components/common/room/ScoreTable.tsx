@@ -1,7 +1,13 @@
 import { Fragment, useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { contributorWash, contributorWashDelay, scoreRevealDelay, scoreRollDelay, scoreRow } from "@/lib/Motion";
+import {
+  contributorWash,
+  contributorWashDelay,
+  scoreRevealDelay,
+  scoreRollDelay,
+  scoreRow,
+} from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -32,7 +38,8 @@ export interface ScoreTableRow {
 const valueCell = "whitespace-nowrap px-3 last:pr-4";
 const rowClass = "border-b border-background align-baseline last:border-b-0";
 
-const alignClass = (column: ScoreTableColumn) => (column.align === "left" ? "text-left" : "text-right");
+const alignClass = (column: ScoreTableColumn) =>
+  column.align === "left" ? "text-left" : "text-right";
 
 /**
  * 贡献者行的浅底。定位落在首格里、宽度取滚动容器的 `100cqw` 横跨整行：
@@ -74,7 +81,10 @@ export function ScoreTable({
     const washDelay = contributorWashDelay(rowIndex, rows.length, ranked);
     const cells = (
       <>
-        <th scope="row" className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.contributor && "relative")}>
+        <th
+          scope="row"
+          className={cn("py-2.5 pl-4 pr-3 text-left font-normal", row.contributor && "relative")}
+        >
           {row.contributor ? <ContributorWash delay={washDelay} /> : null}
           <span className="block font-medium [overflow-wrap:anywhere]">{row.name}</span>
           {row.detail?.length ? (
@@ -103,7 +113,7 @@ export function ScoreTable({
                 alignClass(column),
                 "py-2.5 tabular-nums",
                 column.tone === "strong" && "font-semibold",
-                column.tone === "muted" && "text-muted-foreground",
+                column.tone === "muted" && "text-muted-foreground"
               )}
             >
               {typeof value === "number" && from !== undefined ? (
@@ -115,7 +125,11 @@ export function ScoreTable({
                   signed={column.signed}
                   gain={column.signed ? undefined : "before"}
                 />
-              ) : column.signed && typeof value === "number" && value > 0 ? `+${value}` : value}
+              ) : column.signed && typeof value === "number" && value > 0 ? (
+                `+${value}`
+              ) : (
+                value
+              )}
             </td>
           );
         })}
@@ -137,7 +151,9 @@ export function ScoreTable({
   return (
     <section className="isolate overflow-hidden rounded-md bg-muted">
       <div className="border-b border-background px-4 py-2.5">
-        <h3 id={titleId} className="text-xs font-semibold text-muted-foreground">{title}</h3>
+        <h3 id={titleId} className="text-xs font-semibold text-muted-foreground">
+          {title}
+        </h3>
       </div>
       {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供贡献者浅底取行宽 */}
       <div className="@container overflow-x-auto">
@@ -145,9 +161,15 @@ export function ScoreTable({
           <thead>
             {/* 名字列的下限防止短名被挤成逐字折行：扣去内边距仍放得下三个字，四列的表在 360 宽的手机上也不横滚 */}
             <tr className="border-b border-background text-xs text-muted-foreground">
-              <th scope="col" className="min-w-18 py-2 pl-4 pr-3 text-left font-medium">玩家</th>
+              <th scope="col" className="min-w-18 py-2 pl-4 pr-3 text-left font-medium">
+                玩家
+              </th>
               {columns.map((column) => (
-                <th key={column.key} scope="col" className={cn(valueCell, alignClass(column), "py-2 font-medium")}>
+                <th
+                  key={column.key}
+                  scope="col"
+                  className={cn(valueCell, alignClass(column), "py-2 font-medium")}
+                >
                   {column.header}
                 </th>
               ))}

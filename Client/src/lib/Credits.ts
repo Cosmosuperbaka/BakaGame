@@ -92,7 +92,7 @@ export interface CreditLicenseOption {
  * 免得一个未声明的包把常见许可证挤走。调用处用 `null` 表示「全部 License」。
  */
 export function creditLicenseOptions(
-  dependencies: readonly CreditDependency[],
+  dependencies: readonly CreditDependency[]
 ): CreditLicenseOption[] {
   const counts = new Map<string, number>();
   for (const dependency of dependencies) {
@@ -115,7 +115,7 @@ export function creditLicenseOptions(
 export function filterCreditDependencies(
   dependencies: readonly CreditDependency[],
   query: string,
-  license: string | null,
+  license: string | null
 ): CreditDependency[] {
   const keyword = query.trim().toLowerCase();
   return dependencies.filter((dependency) => {
@@ -134,7 +134,7 @@ export function filterCreditDependencies(
  * 页面用它按名字取具体条目、展开二级抽屉。
  */
 export function creditDependencyIndex(
-  dependencies: readonly CreditDependency[],
+  dependencies: readonly CreditDependency[]
 ): Map<string, CreditDependency> {
   return new Map(dependencies.map((dependency) => [dependency.name, dependency]));
 }
@@ -145,7 +145,7 @@ export function creditDependencyIndex(
  */
 export function collectTransitiveDependencyNames(
   index: ReadonlyMap<string, CreditDependency>,
-  rootName: string,
+  rootName: string
 ): string[] {
   const reached = new Set<string>();
   const queue = [...(index.get(rootName)?.dependencies ?? [])];
@@ -250,7 +250,8 @@ export interface ContributingCompany {
  */
 export function sortModelsByRelease(models: readonly ContributingModel[]): ContributingModel[] {
   return [...models].sort(
-    (left, right) => left.releasedAt.localeCompare(right.releasedAt) || left.name.localeCompare(right.name),
+    (left, right) =>
+      left.releasedAt.localeCompare(right.releasedAt) || left.name.localeCompare(right.name)
   );
 }
 

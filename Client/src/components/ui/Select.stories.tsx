@@ -13,10 +13,19 @@ type Story = StoryObj<typeof meta>;
 
 const TEAM_OPTIONS = [
   { value: "solo", label: "个人游玩" },
-  ...Array.from({ length: 8 }, (_, index) => ({ value: String(index + 1), label: `第 ${index + 1} 队` })),
+  ...Array.from({ length: 8 }, (_, index) => ({
+    value: String(index + 1),
+    label: `第 ${index + 1} 队`,
+  })),
 ];
 
-function TeamSelect({ defaultValue = "solo", disabled = false }: { defaultValue?: string; disabled?: boolean }) {
+function TeamSelect({
+  defaultValue = "solo",
+  disabled = false,
+}: {
+  defaultValue?: string;
+  disabled?: boolean;
+}) {
   return (
     <div className="w-64 space-y-2">
       <Label htmlFor="story-team-select">我的队伍</Label>

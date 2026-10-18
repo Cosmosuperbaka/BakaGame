@@ -18,25 +18,38 @@ const SENSITIVE_KEYS = new Set([
  * 登录验证码是可重放的短期凭据，保留前缀就等于交出 300 秒内的登录能力，
  * 因此不适用 `cookie`/`sessionToken` 那条「保留前 4 位定位故障」的折中口径。
  */
-const FULL_MASK_KEYS = new Set(["password", "logincode", "otp", "verifycode", "authcode", "captcha"]);
+const FULL_MASK_KEYS = new Set([
+  "password",
+  "logincode",
+  "otp",
+  "verifycode",
+  "authcode",
+  "captcha",
+]);
 
 export const sanitizeLogText = (text: string, maxLength = 500): string => {
   // 目标就是剥离 C0 控制字符与 DEL：日志里残留 \r\n\t\x00 会撕裂行结构、伪造换行。
-  // eslint-disable-next-line no-control-regex
-  return redactLogText(text).replace(/[\r\n\x00-\x1f\x7f]/g, " ").slice(0, maxLength);
+  return (
+    redactLogText(text)
+      // eslint-disable-next-line no-control-regex -- 目标就是剥离 C0 控制字符与 DEL
+      .replace(/[\r\n\x00-\x1f\x7f]/g, " ")
+      .slice(0, maxLength)
+  );
 };
 
 // 文本只清理可识别的凭据赋值；不可解析的入站正文应在边界不记录。
-export const redactLogText = (text: string): string => text
-  .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
-  .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
-  .replace(
-    /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
-    "$1***[REDACTED]",
-  );
+export const redactLogText = (text: string): string =>
+  text
+    .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
+    .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
+    .replace(
+      /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
+      "$1***[REDACTED]"
+    );
 
 /** 敏感键表按归一后的形状索引：小写、去路径前缀、去分隔符。 */
-const normalizePropertyKey = (key: string): string => key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
+const normalizePropertyKey = (key: string): string =>
+  key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
 
 const BEARER_TOKEN_KEYS = ["accesstoken", "refreshtoken"];
 
@@ -48,15 +61,24 @@ const redactProperty = (key: string, value: unknown, recurse: () => unknown): un
   if (key === "sample" && typeof value === "string") return "[OMITTED_RAW_PAYLOAD]";
   const normalizedKey = normalizePropertyKey(key);
   if (FULL_MASK_KEYS.has(normalizedKey)) return "***[REDACTED]";
-  if (!SENSITIVE_KEYS.has(normalizedKey) && !BEARER_TOKEN_KEYS.includes(normalizedKey)) return recurse();
-  return typeof value === "string" && value.length > 8 ? `${value.slice(0, 4)}***[REDACTED]` : "***[REDACTED]";
+  if (!SENSITIVE_KEYS.has(normalizedKey) && !BEARER_TOKEN_KEYS.includes(normalizedKey))
+    return recurse();
+  return typeof value === "string" && value.length > 8
+    ? `${value.slice(0, 4)}***[REDACTED]`
+    : "***[REDACTED]";
 };
 
 /** Error 的诊断字段不可枚举；cause 与自有字段仍走统一脱敏。 */
-const toPlainSource = (value: object): object => value instanceof Error
-  ? { errorName: value.name, errorMessage: value.message, stack: value.stack,
-      ...("cause" in value ? { cause: value.cause } : {}), ...value }
-  : value;
+const toPlainSource = (value: object): object =>
+  value instanceof Error
+    ? {
+        errorName: value.name,
+        errorMessage: value.message,
+        stack: value.stack,
+        ...("cause" in value ? { cause: value.cause } : {}),
+        ...value,
+      }
+    : value;
 
 export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknown => {
   const ancestors = new WeakSet<object>();
@@ -67,16 +89,19 @@ export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknow
     if (level >= 5) return "[MAX_DEPTH_EXCEEDED]";
     ancestors.add(value);
     try {
-      if (Array.isArray(value)) return value.slice(0, maxProperties).map((item) => visit(item, level + 1));
+      if (Array.isArray(value))
+        return value.slice(0, maxProperties).map((item) => visit(item, level + 1));
       const entries = Object.entries(toPlainSource(value));
       const result: Record<string, unknown> = {};
       for (const [key, item] of entries.slice(0, maxProperties)) {
         Object.defineProperty(result, key, {
           value: redactProperty(key, item, () => visit(item, level + 1)),
-          enumerable: true, configurable: true,
+          enumerable: true,
+          configurable: true,
         });
       }
-      if (entries.length > maxProperties) result._truncated = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
+      if (entries.length > maxProperties)
+        result._truncated = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
       return result;
     } finally {
       ancestors.delete(value);
@@ -158,7 +183,10 @@ export const initServerSentry = (env: AppEnv): void => {
   }
 
   const release = resolveServerRelease();
-  if (!release) console.warn("[Sentry] 发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog");
+  if (!release)
+    console.warn(
+      "[Sentry] 发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog"
+    );
 
   activeEnvironment = env.otelDeploymentEnvironment ?? "development";
 
@@ -183,8 +211,11 @@ export const initServerSentry = (env: AppEnv): void => {
       return event;
     },
     beforeSendLog(log) {
-      return { ...log, message: redactLogText(log.message),
-        attributes: redactData(log.attributes) as typeof log.attributes };
+      return {
+        ...log,
+        message: redactLogText(log.message),
+        attributes: redactData(log.attributes) as typeof log.attributes,
+      };
     },
     // 忽略预期的客户端断开连接错误与同源反代网络波动
     ignoreErrors: [
@@ -201,16 +232,22 @@ export const initServerSentry = (env: AppEnv): void => {
 
 type SentryLogLevel = "info" | "warning" | "error";
 
-const toSentryAttributes = (context?: Record<string, unknown>): Record<string, unknown> | undefined => {
+const toSentryAttributes = (
+  context?: Record<string, unknown>
+): Record<string, unknown> | undefined => {
   if (!context) return undefined;
-  return Object.fromEntries(Object.entries(redactData(context) as Record<string, unknown>)
-    .map(([key, value]) => [key, value !== null && typeof value === "object" ? JSON.stringify(value) : value]));
+  return Object.fromEntries(
+    Object.entries(redactData(context) as Record<string, unknown>).map(([key, value]) => [
+      key,
+      value !== null && typeof value === "object" ? JSON.stringify(value) : value,
+    ])
+  );
 };
 
 export const captureServerLog = (
   message: string,
   level: SentryLogLevel = "info",
-  context?: Record<string, unknown>,
+  context?: Record<string, unknown>
 ): void => {
   if (!isInitialized) return;
   message = redactLogText(message);
@@ -224,7 +261,7 @@ export const captureServerLog = (
 export const recordServerMetric = (
   name: string,
   value: number,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.distribution(name, value, { unit: "millisecond", attributes });
@@ -233,7 +270,7 @@ export const recordServerMetric = (
 export const gaugeServerMetric = (
   name: string,
   value: number,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.gauge(name, value, { attributes });
@@ -242,7 +279,7 @@ export const gaugeServerMetric = (
 export const countServerMetric = (
   name: string,
   value = 1,
-  attributes?: Record<string, string | number | boolean>,
+  attributes?: Record<string, string | number | boolean>
 ): void => {
   if (!isInitialized || !Number.isFinite(value)) return;
   Sentry.metrics.count(name, value, { attributes });
@@ -269,7 +306,7 @@ export const captureServerCheckIn = (): void => {
       timezone: SERVER_HEARTBEAT_MONITOR_TIMEZONE,
       checkinMargin: SERVER_HEARTBEAT_MONITOR_CHECKIN_MARGIN_MIN,
       maxRuntime: SERVER_HEARTBEAT_MONITOR_MAX_RUNTIME_MIN,
-    },
+    }
   );
 };
 
@@ -301,7 +338,7 @@ export const captureServerOperation = ({
     },
     (span) => {
       span.setStatus({ code: status >= 400 ? 2 : 1 });
-    },
+    }
   );
 };
 
@@ -326,10 +363,7 @@ export const closeServerSentry = async (timeoutMs = 2000): Promise<boolean> => {
   }
 };
 
-export const captureServerException = (
-  error: unknown,
-  context?: Record<string, unknown>,
-): void => {
+export const captureServerException = (error: unknown, context?: Record<string, unknown>): void => {
   if (!isInitialized) return;
 
   Sentry.withScope((scope) => {
@@ -363,20 +397,24 @@ export const captureServerFeedback = (feedback: {
   if (!isInitialized) return null;
   return Sentry.withScope((scope) => {
     scope.setUser({ id: feedback.userId, username: feedback.name });
-    return Sentry.captureFeedback({
-      message: feedback.message,
-      name: feedback.name,
-      source: "bakagame-site",
-      ...(feedback.url ? { url: feedback.url } : {}),
-      tags: feedback.tags,
-    }, undefined, scope);
+    return Sentry.captureFeedback(
+      {
+        message: feedback.message,
+        name: feedback.name,
+        source: "bakagame-site",
+        ...(feedback.url ? { url: feedback.url } : {}),
+        tags: feedback.tags,
+      },
+      undefined,
+      scope
+    );
   });
 };
 
 export const captureServerMessage = (
   message: string,
   level: "info" | "warning" | "error" = "info",
-  context?: Record<string, unknown>,
+  context?: Record<string, unknown>
 ): void => {
   if (!isInitialized) return;
 

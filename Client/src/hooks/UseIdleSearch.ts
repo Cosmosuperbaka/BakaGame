@@ -25,11 +25,15 @@ export function useIdleSearch<T>(
   keyword: string,
   search: (keyword: string) => Promise<T[]>,
   describe: (error: unknown) => string,
-  { enabled = true, scope = "" }: { enabled?: boolean; scope?: string } = {},
+  { enabled = true, scope = "" }: { enabled?: boolean; scope?: string } = {}
 ): IdleSearch<T> {
   const query = keyword.trim();
   const [result, setResult] = useState<{ scope: string; keyword: string; items: T[] } | null>(null);
-  const [failure, setFailure] = useState<{ scope: string; keyword: string; message: string } | null>(null);
+  const [failure, setFailure] = useState<{
+    scope: string;
+    keyword: string;
+    message: string;
+  } | null>(null);
   const [inFlight, setInFlight] = useState(false);
   const [flushes, setFlushes] = useState(0);
   const immediate = useRef(false);
@@ -44,7 +48,10 @@ export function useIdleSearch<T>(
         setInFlight(true);
         try {
           const items = await search(query);
-          if (!cancelled) { setResult({ scope, keyword: query, items }); setFailure(null); }
+          if (!cancelled) {
+            setResult({ scope, keyword: query, items });
+            setFailure(null);
+          }
         } catch (error) {
           if (!cancelled) setFailure({ scope, keyword: query, message: describe(error) });
         } finally {
@@ -52,7 +59,10 @@ export function useIdleSearch<T>(
         }
       })();
     }, delay);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [query, scope, search, describe, enabled, flushes]);
 
   const flush = useCallback(() => {

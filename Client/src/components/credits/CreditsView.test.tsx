@@ -34,7 +34,9 @@ const MODELS: readonly ContributingCompany[] = [
   },
 ];
 
-const MAIN_PACKAGE_COUNT = CREDITS_FIXTURE_DEPENDENCIES.filter((dependency) => dependency.direct).length;
+const MAIN_PACKAGE_COUNT = CREDITS_FIXTURE_DEPENDENCIES.filter(
+  (dependency) => dependency.direct
+).length;
 
 function renderView({
   onTabChange = vi.fn(),
@@ -81,11 +83,15 @@ describe("CreditsView", () => {
 
     await user.click(screen.getByRole("tab", { name: "更新日志" }));
     expect(onTabChange).toHaveBeenCalledWith("changelog");
-    expect(await screen.findByText("新增开源致谢页，集中展示贡献模型、核心技术栈与依赖清单")).toBeInTheDocument();
+    expect(
+      await screen.findByText("新增开源致谢页，集中展示贡献模型、核心技术栈与依赖清单")
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "提交历史" }));
     expect(onTabChange).toHaveBeenCalledWith("commits");
-    expect(await screen.findByText("fix(Song): 统一主题曲类型判定并加固专辑错配防线")).toBeInTheDocument();
+    expect(
+      await screen.findByText("fix(Song): 统一主题曲类型判定并加固专辑错配防线")
+    ).toBeInTheDocument();
   });
 
   it("参与开发的大模型按公司分行，组内按发布时间排序，只展示名称与模型数", () => {
@@ -97,7 +103,9 @@ describe("CreditsView", () => {
       "credits-company-Alpha",
     ]);
 
-    const betaModels = within(groups[0]).getAllByRole("listitem").map((item) => item.textContent);
+    const betaModels = within(groups[0])
+      .getAllByRole("listitem")
+      .map((item) => item.textContent);
     expect(betaModels).toEqual(["Beta 先发", "Beta 后发"]);
     expect(within(groups[0]).getByText("2 个模型")).toBeInTheDocument();
     expect(within(groups[1]).getByText("1 个模型")).toBeInTheDocument();
@@ -121,12 +129,12 @@ describe("CreditsView", () => {
     renderView();
 
     const categoryHeadings = ["前端", "后端", "脚手架", "运维与开发辅助"].map((label) =>
-      screen.getByRole("heading", { level: 3, name: label }),
+      screen.getByRole("heading", { level: 3, name: label })
     );
     for (let index = 1; index < categoryHeadings.length; index += 1) {
       expect(
         categoryHeadings[index - 1].compareDocumentPosition(categoryHeadings[index]) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
+          Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy();
     }
 

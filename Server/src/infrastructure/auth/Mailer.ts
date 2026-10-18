@@ -69,4 +69,8 @@ export class UnavailableMailer implements Mailer {
 }
 
 export const createMailer = (mail: AccountEnv["mail"], logger: EventLogger): Mailer =>
-  mail.kind === "smtp" ? new SmtpMailer(mail.smtp) : mail.kind === "console" ? new ConsoleMailer(logger) : new UnavailableMailer();
+  mail.kind === "smtp"
+    ? new SmtpMailer(mail.smtp)
+    : mail.kind === "console"
+      ? new ConsoleMailer(logger)
+      : new UnavailableMailer();

@@ -8,7 +8,9 @@ import http2 from "node:http2";
 import childProcess from "node:child_process";
 
 // 仅供隔离测试 preload。全部主动网络出口硬拒绝（含回环）；入站 Bun.serve 保留。
-const denied = (): never => { throw new Error("隔离测试禁止主动网络出口"); };
+const denied = (): never => {
+  throw new Error("隔离测试禁止主动网络出口");
+};
 globalThis.fetch = Object.assign(denied, { preconnect: denied });
 globalThis.WebSocket = new Proxy(WebSocket, { construct: denied });
 net.Socket.prototype.connect = denied;
@@ -22,7 +24,22 @@ dns.resolve = Object.assign(denied, { __promisify__: denied });
 dns.promises.lookup = denied;
 dns.promises.resolve = denied;
 // 解析器的细分方法也可能自行发包，不可只拦 lookup/resolve 总入口。
-const dnsMethods = ["lookupService", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname", "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv", "resolveTxt", "reverse"];
+const dnsMethods = [
+  "lookupService",
+  "resolve4",
+  "resolve6",
+  "resolveAny",
+  "resolveCaa",
+  "resolveCname",
+  "resolveMx",
+  "resolveNaptr",
+  "resolveNs",
+  "resolvePtr",
+  "resolveSoa",
+  "resolveSrv",
+  "resolveTxt",
+  "reverse",
+];
 for (const key of dnsMethods) {
   Reflect.set(dns, key, denied);
   Reflect.set(dns.promises, key, denied);
@@ -61,7 +78,12 @@ Bun.spawnSync = denied;
 // Bangumi Provider 使用 Worker；每个 Worker 必须继承同一守卫，不让跨线程 fetch 绕开隔离。
 globalThis.Worker = class extends Worker {
   constructor(script: string | URL, options: WorkerOptions = {}) {
-    const preloads = options.preload === undefined ? [] : typeof options.preload === "string" ? [options.preload] : options.preload;
+    const preloads =
+      options.preload === undefined
+        ? []
+        : typeof options.preload === "string"
+          ? [options.preload]
+          : options.preload;
     super(script, { ...options, preload: [...preloads, import.meta.path] });
   }
 };
@@ -73,13 +95,20 @@ const ownerRoute = {
   }),
 };
 const serve = Bun.serve;
-Bun.serve = <Data = undefined, R extends string = never>(options: Bun.Serve.Options<Data, R>): Bun.Server<Data> => {
-  const server = serve<Data, R>(Object.assign({}, options, {
-    routes: Object.assign({}, options.routes, ownerRoute),
-  }));
+Bun.serve = <Data = undefined, R extends string = never>(
+  options: Bun.Serve.Options<Data, R>
+): Bun.Server<Data> => {
+  const server = serve<Data, R>(
+    Object.assign({}, options, {
+      routes: Object.assign({}, options.routes, ownerRoute),
+    })
+  );
   const reload = server.reload.bind(server);
-  server.reload = <Route extends string = never>(options: Bun.Serve.Options<Data, Route>) => reload<Route>(Object.assign({}, options, {
-    routes: Object.assign({}, options.routes, ownerRoute),
-  }));
+  server.reload = <Route extends string = never>(options: Bun.Serve.Options<Data, Route>) =>
+    reload<Route>(
+      Object.assign({}, options, {
+        routes: Object.assign({}, options.routes, ownerRoute),
+      })
+    );
   return server;
 };

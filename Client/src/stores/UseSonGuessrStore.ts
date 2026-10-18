@@ -1,9 +1,5 @@
 import { create } from "zustand";
-import {
-  createQueryReuseCache,
-  exactQueryKey,
-  keywordQueryKey,
-} from "@/lib/QueryReuse";
+import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
 import type {
   ChatMessage,
@@ -26,7 +22,6 @@ import {
 } from "@/lib/Storage";
 import { sonGuessrWs } from "@/lib/SonGuessrWs";
 import { consumeStateSync } from "@/lib/StateSync";
-
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
 const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
@@ -58,16 +53,24 @@ export interface SonGuessrStore {
   clearNotice: () => void;
 
   subscribeLobby: () => Promise<void>;
-  createRoom: (params: {
-    roomId: string;
-    name: string;
-    visibility: "public" | "private";
-    password?: string;
-    allowSpectators: boolean;
-    userName: string;
-    solo?: boolean;
-  }, signal?: AbortSignal) => Promise<void>;
-  joinRoom: (roomId: string, userName: string, password?: string, signal?: AbortSignal) => Promise<void>;
+  createRoom: (
+    params: {
+      roomId: string;
+      name: string;
+      visibility: "public" | "private";
+      password?: string;
+      allowSpectators: boolean;
+      userName: string;
+      solo?: boolean;
+    },
+    signal?: AbortSignal
+  ) => Promise<void>;
+  joinRoom: (
+    roomId: string,
+    userName: string,
+    password?: string,
+    signal?: AbortSignal
+  ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   clearRoomClosed: () => void;
   resetRoomState: () => void;
@@ -82,7 +85,7 @@ export interface SonGuessrStore {
     type: string,
     payload?: Record<string, unknown>,
     /** `timeout: 0` 表示不设请求超时，用于自动出题这类耗时由上游决定的长任务。 */
-    options?: { timeout?: number },
+    options?: { timeout?: number }
   ) => Promise<T>;
 }
 
@@ -115,7 +118,7 @@ const MAX_CHAT_MESSAGES = 200;
 
 const mergeChat = (
   existing: SonGuessrRoomSnapshot["chat"] = [],
-  incoming: SonGuessrRoomSnapshot["chat"] = [],
+  incoming: SonGuessrRoomSnapshot["chat"] = []
 ): SonGuessrRoomSnapshot["chat"] => {
   const map = new Map<string, SonGuessrRoomSnapshot["chat"][number]>();
   for (const msg of existing) {
@@ -124,20 +127,27 @@ const mergeChat = (
   for (const msg of incoming) {
     map.set(msg.id, msg);
   }
-  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt).slice(-MAX_CHAT_MESSAGES);
+  return Array.from(map.values())
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .slice(-MAX_CHAT_MESSAGES);
 };
-
 
 const isPermanentRoomError = (error: unknown) => {
   const code = (error as { code?: string } | null)?.code;
-  return code === "ROOM_NOT_FOUND" || code === "SESSION_NOT_FOUND" ||
-    code === "SESSION_INVALID" || code === "PLAYER_KICKED";
+  return (
+    code === "ROOM_NOT_FOUND" ||
+    code === "SESSION_NOT_FOUND" ||
+    code === "SESSION_INVALID" ||
+    code === "PLAYER_KICKED"
+  );
 };
 
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
-  void useSonGuessrStore.getState().sendCommand("song.room.requestSync")
+  void useSonGuessrStore
+    .getState()
+    .sendCommand("song.room.requestSync")
     .catch(() => {})
     .finally(() => {
       syncRequestPending = false;
@@ -149,106 +159,140 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     targetRoomId: string,
     sessionToken: string,
     payloadSnapshot?: SonGuessrRoomSnapshot,
-    payloadPrivateState?: SonGuessrPrivateState,
+    payloadPrivateState?: SonGuessrPrivateState
   ) => {
-      saveSonGuessrSessionToken(targetRoomId, sessionToken);
+    saveSonGuessrSessionToken(targetRoomId, sessionToken);
 
-      if (rawSnapshot && rawSnapshot.roomId !== targetRoomId && payloadSnapshot?.roomId !== targetRoomId) {
-        resetSonGuessrStateSync();
-      }
+    if (
+      rawSnapshot &&
+      rawSnapshot.roomId !== targetRoomId &&
+      payloadSnapshot?.roomId !== targetRoomId
+    ) {
+      resetSonGuessrStateSync();
+    }
 
-      if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
-        rawSnapshot = payloadSnapshot;
-        snapshotRevision = undefined;
-      }
-      if (payloadPrivateState && (!rawPrivateState || get().roomId !== targetRoomId)) {
-        rawPrivateState = payloadPrivateState;
-        privateStateRevision = undefined;
-      }
+    if (payloadSnapshot && (!rawSnapshot || rawSnapshot.roomId !== targetRoomId)) {
+      rawSnapshot = payloadSnapshot;
+      snapshotRevision = undefined;
+    }
+    if (payloadPrivateState && (!rawPrivateState || get().roomId !== targetRoomId)) {
+      rawPrivateState = payloadPrivateState;
+      privateStateRevision = undefined;
+    }
 
-      const currentSnapshot = get().snapshot;
-      const currentPrivate = get().privateState;
-      const incomingSnapshot = payloadSnapshot ?? rawSnapshot;
-      const incomingPrivate = payloadPrivateState ?? rawPrivateState;
-      const nextSnapshot = incomingSnapshot?.roomId === targetRoomId
-        ? incomingSnapshot : currentSnapshot?.roomId === targetRoomId ? currentSnapshot : null;
-      const nextPrivate = incomingPrivate?.sessionToken === sessionToken
-        ? incomingPrivate : get().roomId === targetRoomId ? currentPrivate : null;
+    const currentSnapshot = get().snapshot;
+    const currentPrivate = get().privateState;
+    const incomingSnapshot = payloadSnapshot ?? rawSnapshot;
+    const incomingPrivate = payloadPrivateState ?? rawPrivateState;
+    const nextSnapshot =
+      incomingSnapshot?.roomId === targetRoomId
+        ? incomingSnapshot
+        : currentSnapshot?.roomId === targetRoomId
+          ? currentSnapshot
+          : null;
+    const nextPrivate =
+      incomingPrivate?.sessionToken === sessionToken
+        ? incomingPrivate
+        : get().roomId === targetRoomId
+          ? currentPrivate
+          : null;
 
-      set({
-        roomId: targetRoomId,
-        sessionToken,
-        snapshot: nextSnapshot ? { ...nextSnapshot, chat: mergeChat([], nextSnapshot.chat) } : null,
-        privateState: nextPrivate,
-        roomClosedAt: null,
-      });
-    };
-
-    const entry = roomEntry = createRoomEntry<RoomEntryReceipt>({
-      generation: () => connectionGeneration,
-      begin: resetSonGuessrStateSync,
-      apply: (receipt) => applyRoomEnter(receipt.roomId, receipt.sessionToken, receipt.snapshot, receipt.privateState),
-      discard: async (receipt) => {
-        try { await sonGuessrWs.send("song.room.leave", {}, { roomId: receipt.roomId, sessionToken: receipt.sessionToken }); }
-        finally {
-          const token = getSonGuessrSessionToken(receipt.roomId);
-          if (token === receipt.sessionToken || (receipt.previousToken && token === receipt.previousToken)) clearSonGuessrSessionToken(receipt.roomId);
-          resetSonGuessrStateSync();
-          const current = get();
-          if (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken) current.resetRoomState();
-          else if (get().roomId === null) current.resetRoomState();
-        }
-      },
-    });
-
-    return {
-      connected: false,
-      lobbyReady: false,
-      rooms: [],
-      roomId: null,
-      sessionToken: null,
-      snapshot: null,
-      privateState: null,
+    set({
+      roomId: targetRoomId,
+      sessionToken,
+      snapshot: nextSnapshot ? { ...nextSnapshot, chat: mergeChat([], nextSnapshot.chat) } : null,
+      privateState: nextPrivate,
       roomClosedAt: null,
-      notice: null,
+    });
+  };
 
-      setNotice: (text, type = "info", durationMs = 3000) => {
-        if (noticeTimer) clearTimeout(noticeTimer);
-        set({ notice: { text, type } });
-        noticeTimer = setTimeout(() => {
-          set({ notice: null });
-          noticeTimer = undefined;
-        }, durationMs);
-      },
+  const entry = (roomEntry = createRoomEntry<RoomEntryReceipt>({
+    generation: () => connectionGeneration,
+    begin: resetSonGuessrStateSync,
+    apply: (receipt) =>
+      applyRoomEnter(receipt.roomId, receipt.sessionToken, receipt.snapshot, receipt.privateState),
+    discard: async (receipt) => {
+      try {
+        await sonGuessrWs.send(
+          "song.room.leave",
+          {},
+          { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
+        );
+      } finally {
+        const token = getSonGuessrSessionToken(receipt.roomId);
+        if (
+          token === receipt.sessionToken ||
+          (receipt.previousToken && token === receipt.previousToken)
+        )
+          clearSonGuessrSessionToken(receipt.roomId);
+        resetSonGuessrStateSync();
+        const current = get();
+        if (current.roomId === receipt.roomId && current.sessionToken === receipt.sessionToken)
+          current.resetRoomState();
+        else if (get().roomId === null) current.resetRoomState();
+      }
+    },
+  }));
 
+  return {
+    connected: false,
+    lobbyReady: false,
+    rooms: [],
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+    privateState: null,
+    roomClosedAt: null,
+    notice: null,
 
-      clearNotice: () => {
-        if (noticeTimer) clearTimeout(noticeTimer);
-        noticeTimer = undefined;
+    setNotice: (text, type = "info", durationMs = 3000) => {
+      if (noticeTimer) clearTimeout(noticeTimer);
+      set({ notice: { text, type } });
+      noticeTimer = setTimeout(() => {
         set({ notice: null });
-      },
+        noticeTimer = undefined;
+      }, durationMs);
+    },
 
-      subscribeLobby: async () => {
-        await sonGuessrWs.send("song.lobby.subscribeRooms");
-      },
+    clearNotice: () => {
+      if (noticeTimer) clearTimeout(noticeTimer);
+      noticeTimer = undefined;
+      set({ notice: null });
+    },
 
-      createRoom: (params, signal) => entry.enter(async () => {
+    subscribeLobby: async () => {
+      await sonGuessrWs.send("song.lobby.subscribeRooms");
+    },
+
+    createRoom: (params, signal) =>
+      entry.enter(async () => {
         const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.create", params);
         return { ...res, roomId: res.roomId ?? params.roomId };
       }, signal),
 
-      joinRoom: (roomId, userName, password, signal) => entry.enter(async () => {
-        const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.join", { userName, password }, { roomId });
+    joinRoom: (roomId, userName, password, signal) =>
+      entry.enter(async () => {
+        const res = await sonGuessrWs.send<RoomEntryReceipt>(
+          "song.room.join",
+          { userName, password },
+          { roomId }
+        );
         return { ...res, roomId: res.roomId ?? roomId };
       }, signal),
 
-      reconnectRoom: (roomId, signal) => {
-        const token = getSonGuessrSessionToken(roomId);
-        if (!token) return Promise.resolve(false);
-        return entry.restore(`${roomId}:${token}`, async () => {
-          const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.reconnect", { roomId, sessionToken: token });
+    reconnectRoom: (roomId, signal) => {
+      const token = getSonGuessrSessionToken(roomId);
+      if (!token) return Promise.resolve(false);
+      return entry.restore(
+        `${roomId}:${token}`,
+        async () => {
+          const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.reconnect", {
+            roomId,
+            sessionToken: token,
+          });
           return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
-        }, (error) => {
+        },
+        (error) => {
           if (!isPermanentRoomError(error)) return false;
           if (getSonGuessrSessionToken(roomId) === token) clearSonGuessrSessionToken(roomId);
           const current = get();
@@ -257,128 +301,139 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             set({ roomClosedAt: Date.now() });
           }
           const code = (error as { code?: string } | null)?.code;
-          const message = code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-            ? "会话已失效，请重新加入" : code === "PLAYER_KICKED" ? "你已被移出房间" : "房间已解散或不存在";
+          const message =
+            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
+              ? "会话已失效，请重新加入"
+              : code === "PLAYER_KICKED"
+                ? "你已被移出房间"
+                : "房间已解散或不存在";
           get().setNotice(message, "error");
           return true;
-        }, signal);
-      },
+        },
+        signal
+      );
+    },
 
-      clearRoomClosed: () => set({ roomClosedAt: null }),
+    clearRoomClosed: () => set({ roomClosedAt: null }),
 
-      resetRoomState: () => {
-        resetSonGuessrStateSync();
-        set({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: null,
-        });
-      },
+    resetRoomState: () => {
+      resetSonGuessrStateSync();
+      set({
+        roomId: null,
+        sessionToken: null,
+        snapshot: null,
+        privateState: null,
+        roomClosedAt: null,
+      });
+    },
 
-  leaveRoom: async () => {
-    entry.cancel();    const { roomId, sessionToken } = get();
-    if (!roomId) return;
-    try {
-      await sonGuessrWs.send("song.room.leave", {}, { roomId, sessionToken: sessionToken ?? undefined });
-    } catch {
-      // 忽略离开房间失败
-    } finally {
-      // 退房在房间页卸载后才发出，回包慢时玩家可能已经进了下一个房间：只清掉发起这次退房的会话，
-      // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
-      const current = get();
-      if (current.roomId === roomId && current.sessionToken === sessionToken) {
-        clearSonGuessrSessionToken(roomId);
-        resetSonGuessrStateSync();
-        set({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: null,
-          notice: null,
-        });
-      } else if (sessionToken && getSonGuessrSessionToken(roomId) === sessionToken) {
-        clearSonGuessrSessionToken(roomId);
+    leaveRoom: async () => {
+      entry.cancel();
+      const { roomId, sessionToken } = get();
+      if (!roomId) return;
+      try {
+        await sonGuessrWs.send(
+          "song.room.leave",
+          {},
+          { roomId, sessionToken: sessionToken ?? undefined }
+        );
+      } catch {
+        // 忽略离开房间失败
+      } finally {
+        // 退房在房间页卸载后才发出，回包慢时玩家可能已经进了下一个房间：只清掉发起这次退房的会话，
+        // 已离开房间的旧凭据照常删掉，免得下次重连拿着失效凭据先报一次错。
+        const current = get();
+        if (current.roomId === roomId && current.sessionToken === sessionToken) {
+          clearSonGuessrSessionToken(roomId);
+          resetSonGuessrStateSync();
+          set({
+            roomId: null,
+            sessionToken: null,
+            snapshot: null,
+            privateState: null,
+            roomClosedAt: null,
+            notice: null,
+          });
+        } else if (sessionToken && getSonGuessrSessionToken(roomId) === sessionToken) {
+          clearSonGuessrSessionToken(roomId);
+        }
       }
-    }
-  },
+    },
 
-  searchMusic: (keyword) =>
-    musicSearchCache.run(keyword, async () => {
-      const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
-        "song.music.search",
-        { keyword },
-        {
-          roomId: get().roomId ?? undefined,
-          sessionToken: get().sessionToken ?? undefined,
-        },
-      );
-      return result.results ?? [];
-    }),
+    searchMusic: (keyword) =>
+      musicSearchCache.run(keyword, async () => {
+        const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
+          "song.music.search",
+          { keyword },
+          {
+            roomId: get().roomId ?? undefined,
+            sessionToken: get().sessionToken ?? undefined,
+          }
+        );
+        return result.results ?? [];
+      }),
 
-  searchBangumi: (keyword) =>
-    bangumiSearchCache.run(keyword, async () => {
-      const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
-        "song.bangumi.search",
-        { keyword },
-        {
-          roomId: get().roomId ?? undefined,
-          sessionToken: get().sessionToken ?? undefined,
-        },
-      );
-      return result.results ?? [];
-    }),
+    searchBangumi: (keyword) =>
+      bangumiSearchCache.run(keyword, async () => {
+        const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
+          "song.bangumi.search",
+          { keyword },
+          {
+            roomId: get().roomId ?? undefined,
+            sessionToken: get().sessionToken ?? undefined,
+          }
+        );
+        return result.results ?? [];
+      }),
 
-  resolveAnimeSongs: (subjectId) =>
-    bangumiSongsCache.run(subjectId, async () => {
-      const result = await sonGuessrWs.send<{ results?: BangumiSongCandidate[] }>(
-        "song.bangumi.songs",
-        { subjectId },
-        {
-          roomId: get().roomId ?? undefined,
-          sessionToken: get().sessionToken ?? undefined,
-        },
-      );
-      return result.results ?? [];
-    }),
+    resolveAnimeSongs: (subjectId) =>
+      bangumiSongsCache.run(subjectId, async () => {
+        const result = await sonGuessrWs.send<{ results?: BangumiSongCandidate[] }>(
+          "song.bangumi.songs",
+          { subjectId },
+          {
+            roomId: get().roomId ?? undefined,
+            sessionToken: get().sessionToken ?? undefined,
+          }
+        );
+        return result.results ?? [];
+      }),
 
-  searchArtist: (keyword) =>
-    artistSearchCache.run(keyword, async () => {
-      const result = await sonGuessrWs.send<{ results?: SongArtistSearchResult[] }>(
-        "song.music.artist.search",
-        { keyword },
-        {
-          roomId: get().roomId ?? undefined,
-          sessionToken: get().sessionToken ?? undefined,
-        },
-      );
-      return result.results ?? [];
-    }),
+    searchArtist: (keyword) =>
+      artistSearchCache.run(keyword, async () => {
+        const result = await sonGuessrWs.send<{ results?: SongArtistSearchResult[] }>(
+          "song.music.artist.search",
+          { keyword },
+          {
+            roomId: get().roomId ?? undefined,
+            sessionToken: get().sessionToken ?? undefined,
+          }
+        );
+        return result.results ?? [];
+      }),
 
-  resolvePlaylist: (value) =>
-    playlistResolveCache.run(value, async () => {
-      const result = await sonGuessrWs.send<{ playlist: SongPlaylistInfo }>(
-        "song.music.playlist.resolve",
-        { value },
-        {
-          roomId: get().roomId ?? undefined,
-          sessionToken: get().sessionToken ?? undefined,
-        },
-      );
-      return result.playlist;
-    }),
+    resolvePlaylist: (value) =>
+      playlistResolveCache.run(value, async () => {
+        const result = await sonGuessrWs.send<{ playlist: SongPlaylistInfo }>(
+          "song.music.playlist.resolve",
+          { value },
+          {
+            roomId: get().roomId ?? undefined,
+            sessionToken: get().sessionToken ?? undefined,
+          }
+        );
+        return result.playlist;
+      }),
 
-  sendCommand: async (type, payload = {}, options) => {
-    const { roomId, sessionToken } = get();
-    return sonGuessrWs.send(type, payload, {
-      roomId: roomId ?? undefined,
-      sessionToken: sessionToken ?? undefined,
-      timeout: options?.timeout,
-    });
-  },
-};
+    sendCommand: async (type, payload = {}, options) => {
+      const { roomId, sessionToken } = get();
+      return sonGuessrWs.send(type, payload, {
+        roomId: roomId ?? undefined,
+        sessionToken: sessionToken ?? undefined,
+        timeout: options?.timeout,
+      });
+    },
+  };
 });
 
 /** 幂等门闩：重复调用 initSonGuessrWs 不应叠加第二条消息订阅。 */
@@ -386,11 +441,7 @@ let sonGuessrWsInitialized = false;
 
 /** 房间快照事件：保住完整协议基线供补丁索引使用，只展示合并并裁剪后的聊天。 */
 function applyRoomSnapshotEvent(payload: unknown) {
-  const result = consumeStateSync(
-    rawSnapshot,
-    snapshotRevision,
-    payload,
-  );
+  const result = consumeStateSync(rawSnapshot, snapshotRevision, payload);
   if (result.needsFullSync || !result.state) {
     requestFullSync();
     return;
@@ -402,11 +453,16 @@ function applyRoomSnapshotEvent(payload: unknown) {
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   const nextSnapshot = {
     ...snapshot,
-    chat: mergeChat(currentSnapshot?.roomId === snapshot.roomId ? currentSnapshot.chat : [], snapshot.chat),
+    chat: mergeChat(
+      currentSnapshot?.roomId === snapshot.roomId ? currentSnapshot.chat : [],
+      snapshot.chat
+    ),
   };
 
   const currentPrivate = useSonGuessrStore.getState().privateState;
-  const tokenToSave = roomEntry.isPending() ? null : currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
+  const tokenToSave = roomEntry.isPending()
+    ? null
+    : (currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken);
   if (tokenToSave && nextSnapshot.roomId) {
     saveSonGuessrSessionToken(nextSnapshot.roomId, tokenToSave);
   }
@@ -418,11 +474,7 @@ function applyRoomSnapshotEvent(payload: unknown) {
 
 /** 私有状态事件：席位凭据随快照归属落盘，其余情况只换私有状态。 */
 function applyPrivateStateEvent(payload: unknown) {
-  const result = consumeStateSync(
-    rawPrivateState,
-    privateStateRevision,
-    payload,
-  );
+  const result = consumeStateSync(rawPrivateState, privateStateRevision, payload);
   if (result.needsFullSync || !result.state) {
     requestFullSync();
     return;
@@ -462,7 +514,11 @@ function applyChatMessageEvent(payload: unknown) {
  *
  * 差量同步基线必须一起重置：残留旧 revision 会让后续反复触发全量同步。
  */
-function leaveRoom(closedRoomId: string | null | undefined, notice: string, noticeDurationMs?: number) {
+function leaveRoom(
+  closedRoomId: string | null | undefined,
+  notice: string,
+  noticeDurationMs?: number
+) {
   if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
   resetSonGuessrStateSync();
   useSonGuessrStore.setState({
@@ -505,26 +561,30 @@ export function initSonGuessrWs() {
         break;
       case "song.room.closed": {
         roomEntry.cancel();
-        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        const closedRoomId =
+          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
         leaveRoom(closedRoomId, "房间已关闭");
         break;
       }
       case "song.room.kicked": {
         roomEntry.cancel();
-        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        const closedRoomId =
+          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
         leaveRoom(closedRoomId, "你已被移出房间");
         break;
       }
       case "session.replaced":
       case "song.session.replaced": {
         roomEntry.cancel();
-        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        const closedRoomId =
+          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
         leaveRoom(closedRoomId, "当前席位已在另一个标签页接管");
         break;
       }
       case "server.shutdown": {
         roomEntry.cancel();
-        const message = (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
+        const message =
+          (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
         leaveRoom(useSonGuessrStore.getState().roomId, message, 10_000);
         break;
       }
@@ -546,7 +606,6 @@ export function initSonGuessrWs() {
       }
     }
   });
-
 
   sonGuessrWs.connect();
 

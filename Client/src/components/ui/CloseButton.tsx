@@ -1,9 +1,9 @@
-import * as React from "react"
-import { X } from "lucide-react"
-import { Button, type ButtonProps } from "@/components/ui/Button"
-import { cn } from "@/lib/Utils"
+import * as React from "react";
+import { X } from "lucide-react";
+import { Button, type ButtonProps } from "@/components/ui/Button";
+import { cn } from "@/lib/Utils";
 
-type CloseButtonProps = Omit<ButtonProps, "children" | "variant" | "size">
+type CloseButtonProps = Omit<ButtonProps, "children" | "variant" | "size">;
 
 /**
  * 弹窗、覆盖面板与内嵌面板共用的关闭按钮：低强调的 ghost 图标钮，默认可访问名「关闭」。
@@ -23,7 +23,7 @@ const CloseButton = React.forwardRef<HTMLButtonElement, CloseButtonProps>(
       <X />
     </Button>
   )
-)
-CloseButton.displayName = "CloseButton"
+);
+CloseButton.displayName = "CloseButton";
 
-export { CloseButton }
+export { CloseButton };

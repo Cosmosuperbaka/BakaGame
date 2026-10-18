@@ -18,7 +18,11 @@ import {
   songRoundSummary,
   songSettings,
 } from "@/stories/fixtures/SonGuessr";
-import { SongRoundResultPhase, SongScoreTable, SongSettlementDetails } from "./SongRoundResultPhase";
+import {
+  SongRoundResultPhase,
+  SongScoreTable,
+  SongSettlementDetails,
+} from "./SongRoundResultPhase";
 
 const { host, long, me } = SONG_PEOPLE;
 const hostView = roundResultPlayers().find((player) => player.id === host.id);
@@ -35,7 +39,13 @@ const meta = {
     run: fn(async () => {}),
     isPending: noPending,
   },
-  decorators: [(Story) => <div className={SONG_STAGE_FRAME}><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className={SONG_STAGE_FRAME}>
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof SongRoundResultPhase>;
 
 export default meta;
@@ -43,7 +53,12 @@ type Story = StoryObj<typeof meta>;
 
 export const Anime: Story = {
   name: "听歌猜番 · 番剧与关联歌曲",
-  args: { snapshot: roundResultSnapshot({ settings: songSettings({ questionType: "anime" }), roundSummary: animeRoundSummary() }) },
+  args: {
+    snapshot: roundResultSnapshot({
+      settings: songSettings({ questionType: "anime" }),
+      roundSummary: animeRoundSummary(),
+    }),
+  },
 };
 
 export const AnimeWithoutImages: Story = {
@@ -67,18 +82,43 @@ export const NextRoundPending: Story = {
 
 export const AutomaticLoggedOut: Story = {
   name: "自动出题 · 网易云账号未连接",
-  args: { snapshot: roundResultSnapshot({ musicAccountReady: false, settings: songSettings({ questionMode: "automatic" }) }) },
+  args: {
+    snapshot: roundResultSnapshot({
+      musicAccountReady: false,
+      settings: songSettings({ questionMode: "automatic" }),
+    }),
+  },
 };
 
 export const SoloMissed: Story = {
   name: "单人模式 · 本轮未答对",
   args: {
     snapshot: soloResultSnapshot({
-      players: [soloPlayer({ score: 1, correctGuesses: 1, totalGuesses: 6, roundStatus: "finished", guessesUsed: 3 })],
-      roundSummary: songRoundSummary({ song: SONG_EVENING_DETAILS, submitterPlayerId: "", correctPlayerIds: [], attempts: [], scores: [] }),
+      players: [
+        soloPlayer({
+          score: 1,
+          correctGuesses: 1,
+          totalGuesses: 6,
+          roundStatus: "finished",
+          guessesUsed: 3,
+        }),
+      ],
+      roundSummary: songRoundSummary({
+        song: SONG_EVENING_DETAILS,
+        submitterPlayerId: "",
+        correctPlayerIds: [],
+        attempts: [],
+        scores: [],
+      }),
     }),
     privateState: songPrivate({ playerId: me.id }),
-    me: soloPlayer({ score: 1, correctGuesses: 1, totalGuesses: 6, roundStatus: "finished", guessesUsed: 3 }),
+    me: soloPlayer({
+      score: 1,
+      correctGuesses: 1,
+      totalGuesses: 6,
+      roundStatus: "finished",
+      guessesUsed: 3,
+    }),
   },
 };
 
@@ -86,7 +126,14 @@ export const Settlement: Story = {
   name: "歌曲信息 · 无封面与简介",
   render: () => (
     <section className="rounded-md bg-muted p-4">
-      <SongSettlementDetails song={{ ...SONG_ANSWER_DETAILS, pictureUrl: undefined, album: undefined, encyclopedia: { tags: [] } }} />
+      <SongSettlementDetails
+        song={{
+          ...SONG_ANSWER_DETAILS,
+          pictureUrl: undefined,
+          album: undefined,
+          encyclopedia: { tags: [] },
+        }}
+      />
     </section>
   ),
 };

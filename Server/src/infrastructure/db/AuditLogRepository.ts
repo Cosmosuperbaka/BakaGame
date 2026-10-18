@@ -51,14 +51,31 @@ export class DatabaseAuditLogRepository implements AuditLogRepository {
     if (filter.since) conditions.push(gte(auditLog.createdAt, filter.since));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, [count]] = await Promise.all([
-      this.database.db.select({
-        id: auditLog.id, actorId: auditLog.actorId, action: auditLog.action, targetType: auditLog.targetType,
-        targetId: auditLog.targetId, detail: auditLog.detail, createdAt: auditLog.createdAt,
-      }).from(auditLog).where(where).orderBy(desc(auditLog.createdAt), desc(auditLog.id)).limit(filter.limit).offset(filter.offset),
-      this.database.db.select({ total: sql<number>`count(*)` }).from(auditLog).where(where),
+      this.database.db
+        .select({
+          id: auditLog.id,
+          actorId: auditLog.actorId,
+          action: auditLog.action,
+          targetType: auditLog.targetType,
+          targetId: auditLog.targetId,
+          detail: auditLog.detail,
+          createdAt: auditLog.createdAt,
+        })
+        .from(auditLog)
+        .where(where)
+        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+        .limit(filter.limit)
+        .offset(filter.offset),
+      this.database.db
+        .select({ total: sql<number>`count(*)` })
+        .from(auditLog)
+        .where(where),
     ]);
     return {
-      items: rows.map((row) => ({ ...row, detail: (row.detail ?? null) as Record<string, unknown> | null })),
+      items: rows.map((row) => ({
+        ...row,
+        detail: (row.detail ?? null) as Record<string, unknown> | null,
+      })),
       total: Number(count?.total ?? 0),
     };
   }

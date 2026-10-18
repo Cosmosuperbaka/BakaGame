@@ -19,9 +19,7 @@ export interface QueryReuseCache<T> {
 }
 
 /** 造一个「读透窗口」。`normalize` 决定哪些输入算同一个 key。 */
-export function createQueryReuseCache<T>(
-  normalize: (value: string) => string,
-): QueryReuseCache<T> {
+export function createQueryReuseCache<T>(normalize: (value: string) => string): QueryReuseCache<T> {
   const entries = new Map<string, { at: number; value: T }>();
   const inFlight = new Map<string, Promise<T>>();
 

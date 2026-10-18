@@ -56,13 +56,18 @@ export class QQNapCatClient {
     this.minIntervalMs = options.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
   }
 
-  private fail(message: string, kind: NapCatFailure, extra: Record<string, unknown> = {}): AppError {
+  private fail(
+    message: string,
+    kind: NapCatFailure,
+    extra: Record<string, unknown> = {}
+  ): AppError {
     return new AppError("QQ_NICKNAME_UNAVAILABLE", message, { kind, ...extra });
   }
 
   private async request(action: string, payload: Record<string, unknown>): Promise<Response> {
     const headers = new Headers({ "content-type": "application/json" });
-    if (this.options.accessToken) headers.set("authorization", `Bearer ${this.options.accessToken}`);
+    if (this.options.accessToken)
+      headers.set("authorization", `Bearer ${this.options.accessToken}`);
     try {
       return await this.fetcher(`${this.options.apiUrl}/${action}`, {
         method: "POST",
@@ -104,7 +109,10 @@ export class QQNapCatClient {
    * 后者会把并发退化成串行、且实际间隔变成 interval × 并发数。为序号排期则无论并发多少，
    * 整体速率都稳定在 1/interval，单个请求变慢时其余 worker 仍能顶上。
    */
-  private async eachLimited<T>(items: readonly T[], worker: (item: T) => Promise<void>): Promise<void> {
+  private async eachLimited<T>(
+    items: readonly T[],
+    worker: (item: T) => Promise<void>
+  ): Promise<void> {
     const startedAt = Date.now();
     let cursor = 0;
     const run = async () => {
@@ -122,7 +130,10 @@ export class QQNapCatClient {
 
   /** 登录号自身信息；未登录或查不到时返回 `null`，网络与鉴权故障抛错。 */
   async loginInfo(): Promise<{ uin: string; nickname: string } | null> {
-    const data = await this.call<{ user_id?: number | string; nickname?: string }>("get_login_info", {});
+    const data = await this.call<{ user_id?: number | string; nickname?: string }>(
+      "get_login_info",
+      {}
+    );
     if (!data) return null;
     const uin = String(data.user_id ?? "").trim();
     if (!uin) return null;
@@ -137,17 +148,23 @@ export class QQNapCatClient {
    */
   async nicknames(uins: readonly string[]): Promise<Map<string, string>> {
     const result = new Map<string, string>();
-    const targets = [...new Set(uins.map((uin) => uin.trim()).filter((uin) => QQ_NUMBER_PATTERN.test(uin)))];
+    const targets = [
+      ...new Set(uins.map((uin) => uin.trim()).filter((uin) => QQ_NUMBER_PATTERN.test(uin))),
+    ];
     if (!targets.length) return result;
     let answered = 0;
     await this.eachLimited(targets, async (uin) => {
-      const data = await this.call<{ nickname?: string }>("get_stranger_info", { user_id: Number(uin), no_cache: false });
+      const data = await this.call<{ nickname?: string }>("get_stranger_info", {
+        user_id: Number(uin),
+        no_cache: false,
+      });
       if (!data) return;
       answered += 1;
       const name = normalizeAccountName(typeof data.nickname === "string" ? data.nickname : "");
       if (name) result.set(uin, name);
     });
-    if (answered === 0) throw this.fail("QQ 昵称服务没有返回任何结果", "empty", { count: targets.length });
+    if (answered === 0)
+      throw this.fail("QQ 昵称服务没有返回任何结果", "empty", { count: targets.length });
     return result;
   }
 }

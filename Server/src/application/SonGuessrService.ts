@@ -22,7 +22,12 @@ import {
   shuffle,
   type RandomSource,
 } from "../domain/Rules";
-import { ROOM_ID_TEST_MODE, type ConnectionRecord, type PlayerAccount, type RoomVisibility } from "../domain/Model";
+import {
+  ROOM_ID_TEST_MODE,
+  type ConnectionRecord,
+  type PlayerAccount,
+  type RoomVisibility,
+} from "../domain/Model";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
@@ -78,7 +83,12 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionMode: "manual",
   autoRotateSubmitter: false,
   autoFilters: { artists: [], minPopularity: 0 },
-  animeAutoFilters: { ranking: "all", subjectLimit: 50, songMinPopularity: 0, trackKinds: [...ALL_BANGUMI_TRACK_KINDS] },
+  animeAutoFilters: {
+    ranking: "all",
+    subjectLimit: 50,
+    songMinPopularity: 0,
+    trackKinds: [...ALL_BANGUMI_TRACK_KINDS],
+  },
   lyricsLineCount: 5,
   showLyrics: true,
   bloodMode: false,
@@ -212,7 +222,10 @@ interface SonGuessrRoomRecord {
   expiringNotified?: boolean;
 }
 
-type SongUpdateSettingsPayload = Extract<SonGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"];
+type SongUpdateSettingsPayload = Extract<
+  SonGuessrClientMessage,
+  { type: "song.room.updateSettings" }
+>["payload"];
 
 type MusicAuthPlatform = keyof NonNullable<SonGuessrRoomRecord["musicAuthOperations"]>;
 
@@ -254,10 +267,12 @@ const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
     playlist: settings.autoFilters.playlist ? { ...settings.autoFilters.playlist } : undefined,
     artists: settings.autoFilters.artists.map((artist) => ({ ...artist })),
   },
-  animeAutoFilters: settings.animeAutoFilters ? {
-    ...settings.animeAutoFilters,
-    trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)],
-  } : undefined,
+  animeAutoFilters: settings.animeAutoFilters
+    ? {
+        ...settings.animeAutoFilters,
+        trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)],
+      }
+    : undefined,
 });
 
 const normalizeSongText = (value: string) =>
@@ -265,23 +280,23 @@ const normalizeSongText = (value: string) =>
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
-const VERSION_MARKER_PATTERN = /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
+const VERSION_MARKER_PATTERN =
+  /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
 const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
 const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
-const BARE_VERSION_SUFFIX_PATTERN = /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
+const BARE_VERSION_SUFFIX_PATTERN =
+  /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
 const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
 const stripSongVersionInfo = (value: string) => {
-  let result = value.replace(
-    BRACKETED_VERSION_PATTERN,
-    (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+  let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>
+    VERSION_MARKER_PATTERN.test(metadata) ? "" : match
   );
 
   while (true) {
     const next = result
-      .replace(
-        DECORATED_VERSION_SUFFIX_PATTERN,
-        (match, metadata: string) => VERSION_MARKER_PATTERN.test(metadata) ? "" : match,
+      .replace(DECORATED_VERSION_SUFFIX_PATTERN, (match, metadata: string) =>
+        VERSION_MARKER_PATTERN.test(metadata) ? "" : match
       )
       .replace(BARE_VERSION_SUFFIX_PATTERN, "")
       .replace(FEAT_SUFFIX_PATTERN, "");
@@ -290,8 +305,7 @@ const stripSongVersionInfo = (value: string) => {
   }
 };
 
-const normalizeSongTitle = (value: string) =>
-  normalizeSongText(stripSongVersionInfo(value));
+const normalizeSongTitle = (value: string) => normalizeSongText(stripSongVersionInfo(value));
 
 /**
  * 「候选名是期望名的截断」这一方向的匹配门槛。
@@ -345,9 +359,11 @@ export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string):
   if (normCandidate.includes(normExpected)) return true;
   // 候选名更短：只接受「截断得不多」的情形（见上面的门槛注释）。
   const maxLen = Math.max(normCandidate.length, normExpected.length);
-  return normExpected.includes(normCandidate)
-    && minLen >= MIN_TRUNCATED_TITLE_LENGTH
-    && minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO;
+  return (
+    normExpected.includes(normCandidate) &&
+    minLen >= MIN_TRUNCATED_TITLE_LENGTH &&
+    minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO
+  );
 };
 
 export const normalizedArtists = (value: string) =>
@@ -355,7 +371,7 @@ export const normalizedArtists = (value: string) =>
     value
       .split(/\s*(?:,|，|、|&|＆|\/|／|;|；|\bx\b|\bfeat(?:uring)?\.?\b|\bwith\b)\s*/iu)
       .map(normalizeSongText)
-      .filter(Boolean),
+      .filter(Boolean)
   );
 
 /** 明确指向翻唱、改编或非原唱的标记（标题、专辑与标签通用）。 */
@@ -367,7 +383,7 @@ const NO_VOCAL_VERSION_PATTERN =
 /** 非原唱演绎版本标记：无人声版本 + 现场 / 不插电 / demo 等演绎形态。 */
 const NON_ORIGINAL_VERSION_PATTERN = new RegExp(
   `${NO_VOCAL_VERSION_PATTERN.source}|live|现场|現場|演唱会|演唱會|acoustic|不插电|不插電|demo|试听|試聽`,
-  "iu",
+  "iu"
 );
 /**
  * 台词 / 广播剧音轨标记。这类「曲目」里没有人唱歌，放进题面等于放一段对白，
@@ -437,15 +453,17 @@ const songTitleSimilarity = (candidateTitle: string, expectedTitle: string): num
   // 《Free》(Bling047)：它靠「被包含」拿到 1 分，再靠「番剧上下文命中」凑够证据出了题。
   // `isSongTitleMatch` 早就有这道门槛，而准入判定走的是本函数 —— 两处口径必须一致。
   if (
-    normExpected.includes(normCandidate)
-    && (normCandidate.length < MIN_TRUNCATED_TITLE_LENGTH
-      || normCandidate.length / normExpected.length < MIN_TRUNCATED_TITLE_RATIO)
+    normExpected.includes(normCandidate) &&
+    (normCandidate.length < MIN_TRUNCATED_TITLE_LENGTH ||
+      normCandidate.length / normExpected.length < MIN_TRUNCATED_TITLE_RATIO)
   ) {
     // 双 A 面单曲例外：条目名拆段后整段完全一致仍是同一首（见 isSongTitleMatch）。
     const expectedSegments = splitTitleSegments(expectedTitle);
     if (expectedSegments.length > 1) {
       const candidateSegments = new Set(splitTitleSegments(candidateTitle));
-      if (expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))) {
+      if (
+        expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))
+      ) {
         return 1;
       }
     }
@@ -468,7 +486,7 @@ const songTitleSimilarity = (candidateTitle: string, expectedTitle: string): num
  */
 export const isSongAlbumMatch = (
   candidateAlbum: string | undefined,
-  expectedTitle: string,
+  expectedTitle: string
 ): boolean => {
   if (!candidateAlbum) return false;
   const normalizedAlbum = normalizeSongTitle(candidateAlbum);
@@ -481,14 +499,15 @@ export const isSongAlbumMatch = (
  * 比 isSongTitleMatch 宽松一档，专供关联曲目解析使用（结算展示与手动猜歌门禁
  * 仍走严格曲名判定）。
  */
-export const isSongCandidateMatch = (
-  candidate: SongSearchResult,
-  expectedTitle: string,
-): boolean =>
-  isSongTitleMatch(candidate.title, expectedTitle) || isSongAlbumMatch(candidate.album, expectedTitle);
+export const isSongCandidateMatch = (candidate: SongSearchResult, expectedTitle: string): boolean =>
+  isSongTitleMatch(candidate.title, expectedTitle) ||
+  isSongAlbumMatch(candidate.album, expectedTitle);
 
 /** 歌手名是否与 Bangumi 记录有交集，无记录时返回 undefined（不参与加减分）。 */
-const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): boolean | undefined => {
+const artistOverlap = (
+  candidate: SongSearchResult,
+  track: BangumiMusicTrack
+): boolean | undefined => {
   const trackArtists = track.artist ? normalizedArtists(track.artist) : new Set<string>();
   if (trackArtists.size === 0) return undefined;
   const candidateArtists = normalizedArtists(candidate.artist);
@@ -510,7 +529,7 @@ const artistOverlap = (candidate: SongSearchResult, track: BangumiMusicTrack): b
 const albumAnchorsWork = (
   albumName: string | undefined,
   track: BangumiMusicTrack,
-  animeNames: readonly string[],
+  animeNames: readonly string[]
 ): boolean => {
   if (!albumName) return false;
   const normalizedAlbum = normalizeSongTitle(albumName);
@@ -551,7 +570,8 @@ const NON_MUSIC_TRACK_KINDS: ReadonlySet<BangumiMusicTrackKind> = new Set<Bangum
   "reading",
 ]);
 
-export const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean => !NON_MUSIC_TRACK_KINDS.has(kind);
+export const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean =>
+  !NON_MUSIC_TRACK_KINDS.has(kind);
 
 /** 专辑检索取回的候选专辑数。 */
 const ALBUM_SEARCH_LIMIT = 10;
@@ -562,13 +582,63 @@ const ALBUM_SEARCH_LIMIT = 10;
  * 共享「角色歌集」而被判成同一张。
  */
 const ALBUM_GENERIC_TOKENS: ReadonlySet<string> = new Set([
-  "tv", "tvアニメ", "アニメ", "アニメーション", "剧场版", "劇場版", "映画", "ova", "oad",
-  "character", "キャラクター", "キャラクターソング", "キャラソン", "角色歌", "角色曲",
-  "soundtrack", "サウンドトラック", "オリジナルサウンドトラック", "ost", "原声", "原声带", "原声集",
-  "album", "アルバム", "mini", "ミニアルバム", "collection", "コレクション", "best", "ベスト",
-  "song", "songs", "ソング", "ソングス", "music", "ミュージック", "vocal", "ボーカル",
-  "theme", "テーマ", "主题歌", "主題歌", "opening", "ending", "オープニング", "エンディング",
-  "vol", "シリーズ", "series", "disc", "cd", "特典", "初回", "限定", "盤", "编", "篇",
+  "tv",
+  "tvアニメ",
+  "アニメ",
+  "アニメーション",
+  "剧场版",
+  "劇場版",
+  "映画",
+  "ova",
+  "oad",
+  "character",
+  "キャラクター",
+  "キャラクターソング",
+  "キャラソン",
+  "角色歌",
+  "角色曲",
+  "soundtrack",
+  "サウンドトラック",
+  "オリジナルサウンドトラック",
+  "ost",
+  "原声",
+  "原声带",
+  "原声集",
+  "album",
+  "アルバム",
+  "mini",
+  "ミニアルバム",
+  "collection",
+  "コレクション",
+  "best",
+  "ベスト",
+  "song",
+  "songs",
+  "ソング",
+  "ソングス",
+  "music",
+  "ミュージック",
+  "vocal",
+  "ボーカル",
+  "theme",
+  "テーマ",
+  "主题歌",
+  "主題歌",
+  "opening",
+  "ending",
+  "オープニング",
+  "エンディング",
+  "vol",
+  "シリーズ",
+  "series",
+  "disc",
+  "cd",
+  "特典",
+  "初回",
+  "限定",
+  "盤",
+  "编",
+  "篇",
 ]);
 
 /** 把名称拆成有区分度的词元（归一化 → 按分隔符切分 → 去通用词、纯数字与单字）。 */
@@ -578,7 +648,9 @@ const albumNameTokens = (value: string): string[] =>
     .toLowerCase()
     .split(/[\s/／・,，、＆&+＋\-–—_:：'"'"'"'"「」『』【】()（）[\]]+/u)
     .map((token) => token.trim())
-    .filter((token) => token.length >= 2 && !/^\d+$/u.test(token) && !ALBUM_GENERIC_TOKENS.has(token));
+    .filter(
+      (token) => token.length >= 2 && !/^\d+$/u.test(token) && !ALBUM_GENERIC_TOKENS.has(token)
+    );
 
 /** 名称里的数字词元（归一化去掉前导零）：专辑系列号靠它区分。 */
 const nameDigits = (value: string): Set<string> =>
@@ -616,7 +688,7 @@ export const albumNameScore = (
    * 高危形态留一条例外：官方同名盘（歌手与条目记录对得上）仍认，陌生歌手的
    * 同名自建盘不认。
    */
-  albumArtistMatches = false,
+  albumArtistMatches = false
 ): number => {
   const normalizedAlbum = normalizeSongTitle(albumName);
   const normalizedTitle = normalizeSongTitle(trackTitle);
@@ -631,20 +703,20 @@ export const albumNameScore = (
     const normalizedName = normalizeSongTitle(name);
     return Boolean(normalizedName) && normalizedName === normalizedAlbum;
   });
-  if (bareWorkName && !albumArtistMatches && !ANIME_RELEASE_CONTEXT_PATTERN.test(albumName)) return 0;
-  const shorter = normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
+  if (bareWorkName && !albumArtistMatches && !ANIME_RELEASE_CONTEXT_PATTERN.test(albumName))
+    return 0;
+  const shorter =
+    normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
   const longer = shorter === normalizedAlbum ? normalizedTitle : normalizedAlbum;
   if (shorter.length >= 4 && longer.includes(shorter)) return 60;
 
   const albumTokens = new Set(albumNameTokens(albumName));
   const shared = albumNameTokens(trackTitle).filter((token) => albumTokens.has(token));
   if (!shared.some((token) => token.length >= 4)) return 0;
-  const hasAnimeName = animeNames
-    .filter(Boolean)
-    .some((name) => {
-      const normalizedName = normalizeSongTitle(name);
-      return Boolean(normalizedName) && normalizedAlbum.includes(normalizedName);
-    });
+  const hasAnimeName = animeNames.filter(Boolean).some((name) => {
+    const normalizedName = normalizeSongTitle(name);
+    return Boolean(normalizedName) && normalizedAlbum.includes(normalizedName);
+  });
   if (!hasAnimeName) return 0;
 
   const albumDigits = nameDigits(albumName);
@@ -659,7 +731,7 @@ export const albumNameScore = (
 export const isAlbumNameMatch = (
   albumName: string,
   trackTitle: string,
-  animeNames: readonly string[] = [],
+  animeNames: readonly string[] = []
 ): boolean => albumNameScore(albumName, trackTitle, animeNames) > 0;
 
 /**
@@ -697,8 +769,15 @@ const stripAnimeWrapper = (title: string, animeNames: readonly string[]): string
   for (const name of animeNames) {
     if (!name) continue;
     for (const wrapper of [
-      `TVアニメ『${name}』`, `TVアニメ「${name}」`, `アニメ『${name}』`, `アニメ「${name}」`,
-      `TVアニメ ${name}`, `TV动画《${name}》`, `动画《${name}》`, `『${name}』`, `「${name}」`,
+      `TVアニメ『${name}』`,
+      `TVアニメ「${name}」`,
+      `アニメ『${name}』`,
+      `アニメ「${name}」`,
+      `TVアニメ ${name}`,
+      `TV动画《${name}》`,
+      `动画《${name}》`,
+      `『${name}』`,
+      `「${name}」`,
     ]) {
       result = result.split(wrapper).join(" ");
     }
@@ -720,7 +799,10 @@ const stripAnimeWrapper = (title: string, animeNames: readonly string[]): string
  *
  * 因此按「条目名 → 剥掉番剧名包裹后的余部 → 番剧名 + 类型关键词 → 番剧名」逐级放宽。
  */
-export const buildAlbumQueries = (track: BangumiMusicTrack, anime: BangumiSubjectDetails): string[] => {
+export const buildAlbumQueries = (
+  track: BangumiMusicTrack,
+  anime: BangumiSubjectDetails
+): string[] => {
   const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
   const queries: string[] = [];
   const push = (value: string) => {
@@ -761,11 +843,11 @@ const retryOnce = async <T>(task: () => Promise<T>): Promise<T> => {
  * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
  */
 export const isUnplayableAlbumTrack = (title: string): boolean =>
-  NON_ORIGINAL_VERSION_PATTERN.test(title)
-  || COVER_MARKER_PATTERN.test(title)
-  || INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title)
-  || DRAMA_TRACK_PATTERN.test(title)
-  || RADIO_TALK_TRACK_PATTERN.test(title);
+  NON_ORIGINAL_VERSION_PATTERN.test(title) ||
+  COVER_MARKER_PATTERN.test(title) ||
+  INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title) ||
+  DRAMA_TRACK_PATTERN.test(title) ||
+  RADIO_TALK_TRACK_PATTERN.test(title);
 
 /**
  * 专辑里的二次创作分轨标记：Remix / TV Size / Game Size / Short 版。
@@ -786,10 +868,10 @@ const ALTERNATE_VERSION_PATTERN =
  * 「放出来玩家无从猜起」的硬缺陷，必须在**所有路径**的验证阶段一律否决。
  */
 export const isNonVocalTrack = (title: string): boolean =>
-  DRAMA_TRACK_PATTERN.test(title)
-  || RADIO_TALK_TRACK_PATTERN.test(title)
-  || NO_VOCAL_VERSION_PATTERN.test(title)
-  || TRACK_NUMBER_TITLE_PATTERN.test(title);
+  DRAMA_TRACK_PATTERN.test(title) ||
+  RADIO_TALK_TRACK_PATTERN.test(title) ||
+  NO_VOCAL_VERSION_PATTERN.test(title) ||
+  TRACK_NUMBER_TITLE_PATTERN.test(title);
 
 /**
  * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
@@ -827,7 +909,7 @@ export const isNonVocalTrack = (title: string): boolean =>
 export const hasAnimeSongEvidence = (
   candidate: SongSearchResult,
   track: BangumiMusicTrack,
-  options: { animeScoped?: boolean; animeNames?: readonly string[] } = {},
+  options: { animeScoped?: boolean; animeNames?: readonly string[] } = {}
 ): boolean => {
   const titleScore = songTitleSimilarity(candidate.title, track.title);
   if (titleScore >= 2) return true;
@@ -836,8 +918,10 @@ export const hasAnimeSongEvidence = (
   if (titleScore < 1) return false;
   // 部分命中（候选是条目名的一截 / 条目名带后缀）必须另有独立锚点 —— 歌手交集或专辑指向
   // 本条目的专辑；「出现在带番剧名的检索结果里」不算（见 albumAnchorsWork 的事故注释）。
-  return artistOverlap(candidate, track) === true
-    || albumAnchorsWork(candidate.album, track, options.animeNames ?? []);
+  return (
+    artistOverlap(candidate, track) === true ||
+    albumAnchorsWork(candidate.album, track, options.animeNames ?? [])
+  );
 };
 
 /**
@@ -848,7 +932,7 @@ export const hasAnimeSongEvidence = (
 export const scoreAnimeSongCandidate = (
   candidate: SongSearchResult,
   track: BangumiMusicTrack,
-  options: { animeScoped?: boolean } = {},
+  options: { animeScoped?: boolean } = {}
 ): number => {
   let score = songTitleSimilarity(candidate.title, track.title);
   if (isSongAlbumMatch(candidate.album, track.title)) score += 2;
@@ -874,15 +958,16 @@ export const scoreAnimeSongCandidate = (
  */
 const buildTrackQueries = (
   track: BangumiMusicTrack,
-  anime: BangumiSubjectDetails,
+  anime: BangumiSubjectDetails
 ): { queries: string[]; scopeQueries: string[] } => {
   const queries: string[] = [];
   // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
   // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
   // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
-  const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
-    ? track.artist.trim()
-    : "";
+  const artistQuery =
+    track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
+      ? track.artist.trim()
+      : "";
   if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
   if (anime.name) queries.push(`${track.title} ${anime.name}`);
   if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
@@ -911,23 +996,24 @@ const buildTrackQueries = (
 const rankEvidencedCandidates = (
   matched: { candidates: SongSearchResult[]; animeScopedIds: Set<string> },
   track: BangumiMusicTrack,
-  animeNames: string[],
-): SongSearchResult[] => matched.candidates
-  .map((candidate, index) => {
-    const options = {
-      animeScoped: matched.animeScopedIds.has(candidate.id),
-      animeNames,
-    };
-    return {
-      candidate,
-      index,
-      score: scoreAnimeSongCandidate(candidate, track, options),
-      evidenced: hasAnimeSongEvidence(candidate, track, options),
-    };
-  })
-  .filter((entry) => entry.evidenced)
-  .sort((left, right) => right.score - left.score || left.index - right.index)
-  .map((entry) => entry.candidate);
+  animeNames: string[]
+): SongSearchResult[] =>
+  matched.candidates
+    .map((candidate, index) => {
+      const options = {
+        animeScoped: matched.animeScopedIds.has(candidate.id),
+        animeNames,
+      };
+      return {
+        candidate,
+        index,
+        score: scoreAnimeSongCandidate(candidate, track, options),
+        evidenced: hasAnimeSongEvidence(candidate, track, options),
+      };
+    })
+    .filter((entry) => entry.evidenced)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map((entry) => entry.candidate);
 
 /** 自动出题的一条「番剧 → 可出歌曲」结果。 */
 type AnimeSongPick = { song: SongDetails; track: BangumiMusicTrack };
@@ -992,7 +1078,7 @@ type AnimeSongLookup = {
 const fallbackKindOfSong = (
   song: SongDetails,
   anime: BangumiSubjectDetails,
-  recentSongIds: Set<string>,
+  recentSongIds: Set<string>
 ): SongFallbackKind | undefined => {
   if (song.originCoverType === 2) return "cover";
   if (isReleaseYearOffTarget(song.releaseYear, anime.year)) return "year";
@@ -1101,8 +1187,8 @@ export const resolveRecentSongWindow = (poolSize: number): number => {
  * 后者说明整条链路坏了，重试没有任何意义。
  */
 const isUnusableSongCandidate = (error: unknown): boolean =>
-  error instanceof AppError
-  && (error.code === "SONG_UNAVAILABLE" || error.code === "SONG_NOT_FOUND");
+  error instanceof AppError &&
+  (error.code === "SONG_UNAVAILABLE" || error.code === "SONG_NOT_FOUND");
 /**
  * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
  *
@@ -1164,7 +1250,7 @@ export const MAX_RELEASE_YEAR_DRIFT = 10;
  */
 export const isReleaseYearOffTarget = (
   releaseYear: number | undefined,
-  animeYear: number | undefined,
+  animeYear: number | undefined
 ): boolean => {
   if (releaseYear === undefined || animeYear === undefined) return false;
   return Math.abs(releaseYear - animeYear) > MAX_RELEASE_YEAR_DRIFT;
@@ -1180,7 +1266,7 @@ export const createSongLyricClip = (
   lyrics: SongDetails["lyrics"],
   lineCount: number,
   random: RandomSource,
-  durationMs?: number,
+  durationMs?: number
 ): SongLyricClip => {
   const safeCount = clampInt(lineCount, 1, 10);
   const isCompactLine = (line: SongDetails["lyrics"][number]) =>
@@ -1199,15 +1285,14 @@ export const createSongLyricClip = (
   // 选词滑动窗口仅以主歌词为候选基准，禁止和声歌词作为出题开头或充抵出题行数，
   // 避免和声小字过早切断主歌词音频。
   const mainLyrics = lyrics.filter((line) => !line.isBG);
-  const candidatePool = mainLyrics.length >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount)
-    ? mainLyrics
-    : lyrics;
+  const candidatePool =
+    mainLyrics.length >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount) ? mainLyrics : lyrics;
 
   for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
     if (candidatePool.length < count) continue;
     const windows = Array.from({ length: candidatePool.length - count + 1 }, (_, startIndex) =>
-      candidatePool.slice(startIndex, startIndex + count))
-      .filter(isContinuousWindow);
+      candidatePool.slice(startIndex, startIndex + count)
+    ).filter(isContinuousWindow);
     if (windows.length === 0) continue;
 
     const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
@@ -1219,7 +1304,7 @@ export const createSongLyricClip = (
 
     // 从完整歌词中提取出落在该出题区间内的所有歌词（包含和声歌词），仅用于播放时演出
     const clipLines = lyrics.filter(
-      (line) => line.time >= windowStartTime && line.time < windowEndTime,
+      (line) => line.time >= windowStartTime && line.time < windowEndTime
     );
     const mergedLines = clipLines.length > 0 ? clipLines : selectedMainLines;
     mergedLines.sort((a, b) => a.time - b.time);
@@ -1227,7 +1312,7 @@ export const createSongLyricClip = (
     const maxLineEnd = Math.max(windowEndTime, ...mergedLines.map((l) => l.endTime));
     // 选区前后各预留 1 秒缓冲空间供音频平滑渐入渐出演出
     const clipStartTime = Math.max(0, windowStartTime - 1_000);
-    const maxAllowedEnd = durationMs !== undefined ? durationMs : (maxLineEnd + 1_000);
+    const maxAllowedEnd = durationMs !== undefined ? durationMs : maxLineEnd + 1_000;
     const clipEndTime = Math.min(maxAllowedEnd, maxLineEnd + 1_000);
 
     return {
@@ -1306,7 +1391,7 @@ export class SonGuessrService implements AdminRoomControl {
       connectionCount: this.connections.stats.totalConnections,
       onlinePlayerCount: [...this.rooms.values()].reduce(
         (sum, room) => sum + this.onlineCount(room),
-        0,
+        0
       ),
     };
   }
@@ -1315,10 +1400,9 @@ export class SonGuessrService implements AdminRoomControl {
     this.connections.broadcastToAll(
       createEvent("server.shutdown", {
         message: SERVER_SHUTDOWN_MESSAGE,
-      }),
+      })
     );
   }
-
 
   async unregisterConnection(connectionId: string): Promise<void> {
     const connection = this.connections.unregisterConnection(connectionId);
@@ -1368,7 +1452,7 @@ export class SonGuessrService implements AdminRoomControl {
     // 玩家级伪装 IP 归属：同一连接的匿名请求复用同一个 CN IP，不同玩家各持一个，
     // 避免全服匿名请求共享同一份网易云限流配额（见 NeteaseMusicProvider 的 musicIpScope）。
     return musicIpScope.run(`player:${connectionId}`, async () =>
-      this.dispatchCommand(connection, message),
+      this.dispatchCommand(connection, message)
     );
   }
 
@@ -1380,7 +1464,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private async dispatchCommand(
     connection: ConnectionRecord,
-    message: SonGuessrClientMessage,
+    message: SonGuessrClientMessage
   ): Promise<unknown> {
     switch (message.type) {
       case "song.lobby.subscribeRooms":
@@ -1414,7 +1498,12 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.auth.qr.create":
         return this.createMusicQrLogin(connection, message.payload.platform, message.payload.type);
       case "song.auth.qr.check":
-        return this.checkMusicQrLogin(connection, message.payload.key, message.payload.platform, message.payload.type);
+        return this.checkMusicQrLogin(
+          connection,
+          message.payload.key,
+          message.payload.platform,
+          message.payload.type
+        );
       case "song.auth.useCookie":
         return this.useMusicCookie(connection, message.payload.cookie, message.payload.platform);
       case "song.auth.clear":
@@ -1474,7 +1563,10 @@ export class SonGuessrService implements AdminRoomControl {
     for (const room of [...this.rooms.values()]) {
       if (this.reclaimIdleRoom(room, currentTime) !== "keep") continue;
       this.cleanupOfflinePlayers(room, currentTime);
-      if (room.hostReconnectDeadlineAt !== undefined && currentTime >= room.hostReconnectDeadlineAt) {
+      if (
+        room.hostReconnectDeadlineAt !== undefined &&
+        currentTime >= room.hostReconnectDeadlineAt
+      ) {
         this.transferHostAfterDisconnect(room);
       }
       this.settlePlayingRound(room, currentTime);
@@ -1571,10 +1663,7 @@ export class SonGuessrService implements AdminRoomControl {
     const audioReadyDeadlineAt = round.audioReadyDeadlineAt ?? round.audioPreparationDeadlineAt;
     let changed = false;
     for (const [playerId, state] of Object.entries(round.players)) {
-      if (
-        playerId === round.submitterPlayerId &&
-        !this.canTestSubmitterGuess(room, playerId)
-      ) {
+      if (playerId === round.submitterPlayerId && !this.canTestSubmitterGuess(room, playerId)) {
         continue;
       }
       if (this.isUnitFinished(round, state)) continue;
@@ -1602,7 +1691,8 @@ export class SonGuessrService implements AdminRoomControl {
       // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
       // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
       if (state.inFlight && !sweep.isRoundHardExpired) continue;
-      const isGuessTimeout = state.deadlineAt !== undefined && state.deadlineAt <= sweep.currentTime;
+      const isGuessTimeout =
+        state.deadlineAt !== undefined && state.deadlineAt <= sweep.currentTime;
       if (isGuessTimeout || sweep.isRoundHardExpired) {
         this.recordTimeout(sweep.room, state);
         changed = true;
@@ -1620,12 +1710,13 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async createRoom(
     connection: ConnectionRecord,
-    payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"],
+    payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
     this.ensureConnectionFree(connection);
     const roomId = ensureRoomId(payload.roomId);
     if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "房间号已被使用");
-    const password = payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
+    const password =
+      payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
 
     const player = this.createPlayer(payload.userName, true);
     const now = this.now();
@@ -1679,7 +1770,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async joinRoom(
     connection: ConnectionRecord,
     roomIdValue: string | undefined,
-    payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"],
+    payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"]
   ) {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
@@ -1688,7 +1779,11 @@ export class SonGuessrService implements AdminRoomControl {
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     const name = this.requireName(payload.userName);
-    if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
+    if (
+      Object.values(room.players).some(
+        (player) => player.name === name && player.membership !== "kicked"
+      )
+    ) {
       throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
     }
 
@@ -1701,8 +1796,8 @@ export class SonGuessrService implements AdminRoomControl {
     player.membership = membership;
     room.players[player.id] = player;
     const currentHost = room.players[room.hostPlayerId];
-    const hostGraceExpired = room.hostReconnectDeadlineAt === undefined ||
-      this.now() >= room.hostReconnectDeadlineAt;
+    const hostGraceExpired =
+      room.hostReconnectDeadlineAt === undefined || this.now() >= room.hostReconnectDeadlineAt;
     if (
       !currentHost ||
       currentHost.isBot ||
@@ -1740,7 +1835,7 @@ export class SonGuessrService implements AdminRoomControl {
     const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
       (candidate) =>
-        safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked",
+        safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
     );
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
@@ -1756,7 +1851,7 @@ export class SonGuessrService implements AdminRoomControl {
       try {
         const refreshedSong = await this.options.musicProvider.getSong(
           activeRound.song.id,
-          this.getSongCookie(room, activeRound.song.id),
+          this.getSongCookie(room, activeRound.song.id)
         );
         if (room.phase === "playing" && room.currentRound === activeRound) {
           activeRound.song.audioUrl = refreshedSong.audioUrl;
@@ -1798,7 +1893,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private detachFromRoom(
     connection: ConnectionRecord,
-    { keepMusicSession }: { keepMusicSession: boolean },
+    { keepMusicSession }: { keepMusicSession: boolean }
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (!keepMusicSession) this.clearMusicSession(room, player.id);
@@ -1922,7 +2017,7 @@ export class SonGuessrService implements AdminRoomControl {
   /** 先算出公开/私密的密码归属再校验，校验失败时 room 上还没有任何写入。 */
   private async applyRoomAdmission(
     next: Pick<SonGuessrRoomRecord, "name" | "visibility" | "passwordHash" | "allowSpectators">,
-    payload: SongUpdateSettingsPayload,
+    payload: SongUpdateSettingsPayload
   ) {
     if (payload.name !== undefined) next.name = normalizeWord(payload.name) || next.name;
     if (payload.visibility !== undefined) next.visibility = payload.visibility;
@@ -1942,7 +2037,7 @@ export class SonGuessrService implements AdminRoomControl {
   private applyRoundSettings(
     next: Pick<SonGuessrRoomRecord, "settings">,
     solo: boolean,
-    payload: SongUpdateSettingsPayload,
+    payload: SongUpdateSettingsPayload
   ) {
     const { settings } = next;
     if (payload.questionType !== undefined) settings.questionType = payload.questionType;
@@ -1950,11 +2045,13 @@ export class SonGuessrService implements AdminRoomControl {
     if (!solo && payload.autoRotateSubmitter !== undefined) {
       settings.autoRotateSubmitter = payload.autoRotateSubmitter;
     }
-    if (payload.autoFilters !== undefined) settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
+    if (payload.autoFilters !== undefined)
+      settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
     if (payload.animeAutoFilters !== undefined) {
       settings.animeAutoFilters = this.normalizeAnimeAutoFilters(payload.animeAutoFilters);
     }
-    if (payload.lyricsLineCount !== undefined) settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
+    if (payload.lyricsLineCount !== undefined)
+      settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
     if (payload.showLyrics !== undefined) settings.showLyrics = payload.showLyrics;
     if (payload.maxGuessesPerRound !== undefined) {
       settings.maxGuessesPerRound = clampInt(payload.maxGuessesPerRound, 1, 10);
@@ -1973,7 +2070,7 @@ export class SonGuessrService implements AdminRoomControl {
       results: await this.options.musicProvider.search(
         keyword,
         undefined,
-        this.getAggregatedSearchCookie(room),
+        this.getAggregatedSearchCookie(room)
       ),
     };
   }
@@ -2103,7 +2200,10 @@ export class SonGuessrService implements AdminRoomControl {
       : undefined;
     const artists = (filters.artists ?? [])
       .slice(0, 20)
-      .map((artist) => ({ id: artist.id.trim().slice(0, 64), name: normalizeWord(artist.name).slice(0, 80) }))
+      .map((artist) => ({
+        id: artist.id.trim().slice(0, 64),
+        name: normalizeWord(artist.name).slice(0, 80),
+      }))
       .filter((artist) => artist.id && artist.name);
     const minPopularity = clampInt(filters.minPopularity ?? 0, 0, MAX_MIN_POPULARITY);
     return { playlist, artists, minPopularity };
@@ -2112,8 +2212,9 @@ export class SonGuessrService implements AdminRoomControl {
   private normalizeAnimeAutoFilters(filters: AnimeAutoFilters): AnimeAutoFilters {
     const startYear = filters.startYear && clampInt(filters.startYear, 1900, 2200);
     const endYear = filters.endYear && clampInt(filters.endYear, 1900, 2200);
-    const trackKinds = (filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)
-      .filter((kind, index, all) => ALL_BANGUMI_TRACK_KINDS.includes(kind) && all.indexOf(kind) === index);
+    const trackKinds = (filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS).filter(
+      (kind, index, all) => ALL_BANGUMI_TRACK_KINDS.includes(kind) && all.indexOf(kind) === index
+    );
     const songMinPopularity = clampInt(filters.songMinPopularity ?? 0, 0, MAX_MIN_POPULARITY);
     return {
       startYear,
@@ -2121,7 +2222,10 @@ export class SonGuessrService implements AdminRoomControl {
       ranking: filters.ranking === "year" ? "year" : "all",
       subjectLimit: clampInt(filters.subjectLimit ?? 50, 1, 1000),
       songMinPopularity,
-      trackKinds: trackKinds.length > 0 ? trackKinds as AnimeAutoFilters["trackKinds"] : [...ALL_BANGUMI_TRACK_KINDS],
+      trackKinds:
+        trackKinds.length > 0
+          ? (trackKinds as AnimeAutoFilters["trackKinds"])
+          : [...ALL_BANGUMI_TRACK_KINDS],
     };
   }
 
@@ -2130,7 +2234,8 @@ export class SonGuessrService implements AdminRoomControl {
     this.ensureHost(room, player.id);
     if (targetPlayerId === player.id) throw new AppError("INVALID_TARGET", "房主不能踢出自己");
     const target = room.players[targetPlayerId];
-    if (!target || target.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
+    if (!target || target.membership === "kicked")
+      throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
     this.kickPlayer(room, target);
     return { kicked: true };
   }
@@ -2143,7 +2248,7 @@ export class SonGuessrService implements AdminRoomControl {
     const targetConnection = this.connections.findConnectionByPlayer(room.id, target.id);
     if (targetConnection) {
       (targetConnection.sendPacket ?? targetConnection.send)(
-        createEvent("song.room.kicked", { roomId: room.id }),
+        createEvent("song.room.kicked", { roomId: room.id })
       );
       this.connections.detach(targetConnection);
       targetConnection.close(4003, "kicked");
@@ -2193,7 +2298,8 @@ export class SonGuessrService implements AdminRoomControl {
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
     const room = this.requireAdminRoom(roomId);
     const target = room.players[playerId];
-    if (!target || target.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
+    if (!target || target.membership === "kicked")
+      throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
     this.kickPlayer(room, target);
   }
 
@@ -2255,7 +2361,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async createMusicQrLogin(
     connection: ConnectionRecord,
     platform: "netease" | "qq" = "netease",
-    type?: "qq" | "wx" | "mobile",
+    type?: "qq" | "wx" | "mobile"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -2269,7 +2375,7 @@ export class SonGuessrService implements AdminRoomControl {
     connection: ConnectionRecord,
     keyValue: string,
     platform: "netease" | "qq" = "netease",
-    type?: "qq" | "wx" | "mobile",
+    type?: "qq" | "wx" | "mobile"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -2298,7 +2404,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async useMusicCookie(
     connection: ConnectionRecord,
     cookieValue: string,
-    platform: "netease" | "qq" = "netease",
+    platform: "netease" | "qq" = "netease"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -2317,7 +2423,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private clearMusicAccount(
     connection: ConnectionRecord,
-    platform: "netease" | "qq" | "all" = "all",
+    platform: "netease" | "qq" | "all" = "all"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -2331,7 +2437,7 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
     connection: ConnectionRecord,
-    platform: "netease" | "qq" = "netease",
+    platform: "netease" | "qq" = "netease"
   ) {
     const operation = Symbol(`musicAuthentication_${platform}`);
     if (!room.musicAuthOperations) {
@@ -2356,7 +2462,7 @@ export class SonGuessrService implements AdminRoomControl {
   private installMusicSession(
     room: SonGuessrRoomRecord,
     ownerPlayerId: string,
-    session: MusicLoginSession,
+    session: MusicLoginSession
   ): MusicLoginSession {
     this.ensureHost(room, ownerPlayerId);
     const cookie = this.requireMusicCookie(session.cookie);
@@ -2392,10 +2498,13 @@ export class SonGuessrService implements AdminRoomControl {
   private clearMusicSession(
     room: SonGuessrRoomRecord,
     ownerPlayerId?: string,
-    platform: "netease" | "qq" | "all" = "all",
+    platform: "netease" | "qq" | "all" = "all"
   ): boolean {
     if (ownerPlayerId && room.hostPlayerId !== ownerPlayerId) {
-      if (room.musicSession?.ownerPlayerId !== ownerPlayerId && room.qqMusicSession?.ownerPlayerId !== ownerPlayerId) {
+      if (
+        room.musicSession?.ownerPlayerId !== ownerPlayerId &&
+        room.qqMusicSession?.ownerPlayerId !== ownerPlayerId
+      ) {
         return false;
       }
     }
@@ -2447,7 +2556,7 @@ export class SonGuessrService implements AdminRoomControl {
     const count = clampInt(
       countValue ?? 1,
       1,
-      Math.min(TEST_BOT_BATCH_LIMIT, TEST_MODE_MAX_PLAYERS - currentCount),
+      Math.min(TEST_BOT_BATCH_LIMIT, TEST_MODE_MAX_PLAYERS - currentCount)
     );
     const added: string[] = [];
     for (let index = 0; index < count; index += 1) {
@@ -2518,12 +2627,18 @@ export class SonGuessrService implements AdminRoomControl {
           throw new AppError("MUSIC_SESSION_INVALID", "音乐会话已变更，请重新开始");
         }
         if ((platform === "netease" || platform === undefined) && musicSession) {
-          if (room.musicSession !== musicSession || room.musicAuthOperations?.netease !== neteaseOperation) {
+          if (
+            room.musicSession !== musicSession ||
+            room.musicAuthOperations?.netease !== neteaseOperation
+          ) {
             throw new AppError("MUSIC_SESSION_INVALID", "网易云音乐会话已变更，请重新开始");
           }
         }
         if ((platform === "qq" || platform === undefined) && qqMusicSession) {
-          if (room.qqMusicSession !== qqMusicSession || room.musicAuthOperations?.qq !== qqOperation) {
+          if (
+            room.qqMusicSession !== qqMusicSession ||
+            room.musicAuthOperations?.qq !== qqOperation
+          ) {
             throw new AppError("MUSIC_SESSION_INVALID", "QQ音乐会话已变更，请重新开始");
           }
         }
@@ -2634,14 +2749,18 @@ export class SonGuessrService implements AdminRoomControl {
       throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
     }
     if (!automatic && this.submitterCandidates(room).length === 0) {
-      throw new AppError("NO_SUBMITTER_CANDIDATE", "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家");
+      throw new AppError(
+        "NO_SUBMITTER_CANDIDATE",
+        "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家"
+      );
     }
   }
 
   private chooseSubmitter(connection: ConnectionRecord, targetPlayerId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    if (room.phase !== "choosingSubmitter") throw new AppError("INVALID_PHASE", "当前不能选择出题人");
+    if (room.phase !== "choosingSubmitter")
+      throw new AppError("INVALID_PHASE", "当前不能选择出题人");
     const target = room.players[targetPlayerId];
     if (!target || !target.online || target.membership === "kicked" || target.isBot) {
       throw new AppError("INVALID_TARGET", "出题人必须是在线真人玩家");
@@ -2712,7 +2831,8 @@ export class SonGuessrService implements AdminRoomControl {
       room.players[submitterId] !== player ||
       player.membership === "kicked" ||
       !player.online
-    ) return { ignored: true };
+    )
+      return { ignored: true };
     const roundNumber = this.installRound(room, resolved.song, player.id, anime, resolved.track);
     this.touch(room);
     this.publishRoom(room);
@@ -2727,7 +2847,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async resolveSpecifiedAnimeSong(
     room: SonGuessrRoomRecord,
     anime: BangumiSubjectDetails,
-    songId: string,
+    songId: string
   ): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
     const provider = this.options.musicProvider;
     const cookie = this.getSongCookie(room, songId);
@@ -2738,11 +2858,16 @@ export class SonGuessrService implements AdminRoomControl {
       if (!isUnusableSongCandidate(error)) throw error;
       throw new AppError("BANGUMI_NO_MUSIC", "所选歌曲无法播放或获取音频失败");
     }
-    const matchedTrack = anime.musicTracks.find((t) => isSongTitleMatch(song.title, t.title))
-      ?? (song.album ? anime.musicTracks.find((t) => isAlbumNameMatch(song.album!, t.title)) : undefined)
-      ?? anime.musicTracks.find((t) => t.artist && song.artist.includes(t.artist))
-      ?? anime.musicTracks[0]
-      ?? { title: song.title, artist: song.artist, kind: "theme" as BangumiMusicTrackKind };
+    const matchedTrack = anime.musicTracks.find((t) => isSongTitleMatch(song.title, t.title)) ??
+      (song.album
+        ? anime.musicTracks.find((t) => isAlbumNameMatch(song.album!, t.title))
+        : undefined) ??
+      anime.musicTracks.find((t) => t.artist && song.artist.includes(t.artist)) ??
+      anime.musicTracks[0] ?? {
+        title: song.title,
+        artist: song.artist,
+        kind: "theme" as BangumiMusicTrackKind,
+      };
     const trackKind = this.refineTrackKind(matchedTrack.kind, song);
     return {
       song,
@@ -2750,15 +2875,19 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<AnimeSongPick> {
+  private async resolveAnimeSong(
+    room: SonGuessrRoomRecord,
+    anime: BangumiSubjectDetails
+  ): Promise<AnimeSongPick> {
     if (anime.musicTracks.length === 0) {
       throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
     }
     // 番剧名（原名 + 中文名）：既用于拼检索词，也用于「候选是否确属本番」的锚点判定。
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
-    const filters = room.settings.questionMode === "automatic"
-      ? room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!
-      : {};
+    const filters =
+      room.settings.questionMode === "automatic"
+        ? (room.settings.animeAutoFilters ?? DEFAULT_SETTINGS.animeAutoFilters!)
+        : {};
     const allowedKinds = new Set(filters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS);
     // 出题必须在**所有通过筛选的曲目之间等概率**：本地数据集按 relation_order、
     // 联网 API 按 KIND_PRIORITY，都把片头曲排在最前面，直接顺序取首个可播放曲目会让
@@ -2766,7 +2895,7 @@ export class SonGuessrService implements AdminRoomControl {
     // 被预算截掉的曲目同样等概率，而不是永远只有排在前面的几首有机会。
     const candidates = shuffle(
       anime.musicTracks.filter((track) => allowedKinds.has(track.kind)),
-      this.random,
+      this.random
     ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
     const lookup: AnimeSongLookup = {
       provider: this.options.musicProvider,
@@ -2813,13 +2942,20 @@ export class SonGuessrService implements AdminRoomControl {
   /** 单条关联曲目的出题：拼检索词 → 证据排序 → 三级候选池 → 逐首验证。 */
   private async resolveTrackSong(
     lookup: AnimeSongLookup,
-    track: BangumiMusicTrack,
+    track: BangumiMusicTrack
   ): Promise<AnimeSongPick | undefined> {
     const { provider, cookie, budget, animeNames } = lookup;
     const { queries, scopeQueries } = buildTrackQueries(track, lookup.anime);
     // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
     // 带番剧名的检索词单独标出来：命中它们的候选是「确实属于本番」的强证据。
-    const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
+    const matched = await this.searchAnimeTrackCandidates(
+      provider,
+      queries,
+      track,
+      cookie,
+      budget,
+      scopeQueries
+    );
     // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
     // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
     const ranked = rankEvidencedCandidates(matched, track, animeNames);
@@ -2836,15 +2972,22 @@ export class SonGuessrService implements AdminRoomControl {
   private async resolveTrackPool(
     lookup: AnimeSongLookup,
     track: BangumiMusicTrack,
-    ranked: SongSearchResult[],
+    ranked: SongSearchResult[]
   ): Promise<TrackCandidatePool> {
     const { provider, anime, cookie, budget } = lookup;
-    if (ranked.length > 0) return { track, list: ranked, fromAnimeLevel: false, looseFallback: true };
+    if (ranked.length > 0)
+      return { track, list: ranked, fromAnimeLevel: false, looseFallback: true };
     // 常规检索一无所获（或整池都是弱候选）时换一条路：这条关联条目可能压根不是
     // 一首歌，而是**整张专辑**（见 `ALBUM_LIKE_TRACK_KINDS`）。此时按条目名去搜
     // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
     if (isAlbumLikeTrackKind(track.kind)) {
-      const albumPool = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
+      const albumPool = await this.resolveAlbumTrackCandidates(
+        provider,
+        track,
+        anime,
+        cookie,
+        budget
+      );
       if (albumPool.length > 0) {
         return { track, list: albumPool, fromAnimeLevel: false, looseFallback: false };
       }
@@ -2865,7 +3008,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private async verifyTrackPool(
     lookup: AnimeSongLookup,
-    pool: TrackCandidatePool,
+    pool: TrackCandidatePool
   ): Promise<AnimeSongPick | undefined> {
     const { budget } = lookup;
     let attempts = 0;
@@ -2901,8 +3044,8 @@ export class SonGuessrService implements AdminRoomControl {
     const { provider, minPopularity, budget } = lookup;
     if (minPopularity <= 0 || !provider.getSongPopularity) return false;
     budget.detail -= 1;
-    const popularity = await provider
-      .getSongPopularity.call(provider, songId, lookup.cookie)
+    const popularity = await provider.getSongPopularity
+      .call(provider, songId, lookup.cookie)
       .catch((error: unknown) => {
         if (!isUnusableSongCandidate(error)) throw error;
         return undefined;
@@ -2913,7 +3056,7 @@ export class SonGuessrService implements AdminRoomControl {
   /** 取歌曲详情；仅这一首不可播放时返回 undefined 交给下一候选，全局依赖失败原样透传。 */
   private async loadPlayableSong(
     lookup: AnimeSongLookup,
-    songId: string,
+    songId: string
   ): Promise<SongDetails | undefined> {
     lookup.budget.detail -= 1;
     try {
@@ -2931,7 +3074,7 @@ export class SonGuessrService implements AdminRoomControl {
   private buildTrackPick(
     track: BangumiMusicTrack,
     song: SongDetails,
-    fromAnimeLevel: boolean,
+    fromAnimeLevel: boolean
   ): AnimeSongPick {
     return {
       song,
@@ -2943,7 +3086,7 @@ export class SonGuessrService implements AdminRoomControl {
   private recordFallbackPick(
     lookup: AnimeSongLookup,
     pool: TrackCandidatePool,
-    entry: FallbackPickEntry,
+    entry: FallbackPickEntry
   ): void {
     if (entry.kind === "cover") {
       // 翻唱自带原曲 ID —— 原版常常压根没进候选池（实测：Bangumi 存中文译名
@@ -2951,10 +3094,10 @@ export class SonGuessrService implements AdminRoomControl {
       // 《君の知らない物語》永远进不了池子）。直接把它插到队首，下一次迭代即验证原版。
       const originalId = entry.pick.song.originSongId;
       if (
-        originalId
-        && originalId !== entry.candidate.id
-        && !lookup.originRetryIds.has(originalId)
-        && !pool.list.some((item) => item.id === originalId)
+        originalId &&
+        originalId !== entry.candidate.id &&
+        !lookup.originRetryIds.has(originalId) &&
+        !pool.list.some((item) => item.id === originalId)
       ) {
         lookup.originRetryIds.add(originalId);
         pool.list.splice(entry.index + 1, 0, {
@@ -2985,18 +3128,20 @@ export class SonGuessrService implements AdminRoomControl {
     cookie: MusicCookieInput | undefined,
     budget: { search: number },
     /** 带番剧名/中文名的检索词：命中它们的候选标记为「番剧上下文命中」。 */
-    scopeQueries: readonly string[] = [],
+    scopeQueries: readonly string[] = []
   ): Promise<{ candidates: SongSearchResult[]; animeScopedIds: Set<string> }> {
-    const searches = await Promise.all(queries.map(async (query) => {
-      if (budget.search <= 0) return { query, results: [] as SongSearchResult[] };
-      budget.search -= 1;
-      try {
-        return { query, results: await provider.search(query, ANIME_SONG_SEARCH_LIMIT, cookie) };
-      } catch (error) {
-        if (!isUnusableSongCandidate(error)) throw error;
-        return { query, results: [] as SongSearchResult[] };
-      }
-    }));
+    const searches = await Promise.all(
+      queries.map(async (query) => {
+        if (budget.search <= 0) return { query, results: [] as SongSearchResult[] };
+        budget.search -= 1;
+        try {
+          return { query, results: await provider.search(query, ANIME_SONG_SEARCH_LIMIT, cookie) };
+        } catch (error) {
+          if (!isUnusableSongCandidate(error)) throw error;
+          return { query, results: [] as SongSearchResult[] };
+        }
+      })
+    );
 
     const merged = new Map<string, SongSearchResult>();
     const animeScopedIds = new Set<string>();
@@ -3014,24 +3159,23 @@ export class SonGuessrService implements AdminRoomControl {
     return { candidates: [...merged.values()], animeScopedIds };
   }
 
-
-/**
- * 「专辑型条目」的兜底解析：多检索词搜专辑，取最匹配那张的曲目。
- *
- * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑 / 印象曲集 / OST / 精选集），
- * 条目名就是专辑名。这类条目按曲名检索必然无候选，按专辑名却能直接搜到；
- * 命中的专辑里的歌全部属于这部番，可以出题 —— 猜番模式下玩家猜的是番剧名，
- * 曲目名只用于结算展示，因此不必强求曲名与条目名一致。
- *
- * 仍然剔除专辑里的伴奏 / 纯音乐 / 现场 / 翻唱分轨（见 `isUnplayableAlbumTrack`），
- * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
- */
+  /**
+   * 「专辑型条目」的兜底解析：多检索词搜专辑，取最匹配那张的曲目。
+   *
+   * Bangumi 把大量资源挂成整张专辑条目（角色歌合辑 / 印象曲集 / OST / 精选集），
+   * 条目名就是专辑名。这类条目按曲名检索必然无候选，按专辑名却能直接搜到；
+   * 命中的专辑里的歌全部属于这部番，可以出题 —— 猜番模式下玩家猜的是番剧名，
+   * 曲目名只用于结算展示，因此不必强求曲名与条目名一致。
+   *
+   * 仍然剔除专辑里的伴奏 / 纯音乐 / 现场 / 翻唱分轨（见 `isUnplayableAlbumTrack`），
+   * 它们不是可出的原曲；剩下的顺序随机，避免每次都从专辑第一轨出题。
+   */
   private async resolveAlbumTrackCandidates(
     provider: MusicProvider,
     track: BangumiMusicTrack,
     anime: BangumiSubjectDetails,
     cookie: MusicCookieInput | undefined,
-    budget: { search: number },
+    budget: { search: number }
   ): Promise<SongSearchResult[]> {
     // 供应商不支持专辑能力时静默跳过（接口方法都是可选的）。
     if (!provider.searchAlbums || !provider.getAlbumSongs) return [];
@@ -3039,16 +3183,18 @@ export class SonGuessrService implements AdminRoomControl {
 
     // 同一条目的多个检索词之间没有依赖，**必须并行回源**（与 searchAnimeTrackCandidates 一致）：
     // 串行发会把专辑路径变成 3~6 次顺序等待，自动出题的等待时间直接翻倍。
-    const searches = await Promise.all(buildAlbumQueries(track, anime).map(async (query) => {
-      if (budget.search <= 0) return [] as SongAlbumSearchResult[];
-      budget.search -= 1;
-      try {
-        return await retryOnce(() => provider.searchAlbums!(query, ALBUM_SEARCH_LIMIT, cookie));
-      } catch (error) {
-        if (!isUnusableSongCandidate(error)) throw error;
-        return [] as SongAlbumSearchResult[];
-      }
-    }));
+    const searches = await Promise.all(
+      buildAlbumQueries(track, anime).map(async (query) => {
+        if (budget.search <= 0) return [] as SongAlbumSearchResult[];
+        budget.search -= 1;
+        try {
+          return await retryOnce(() => provider.searchAlbums!(query, ALBUM_SEARCH_LIMIT, cookie));
+        } catch (error) {
+          if (!isUnusableSongCandidate(error)) throw error;
+          return [] as SongAlbumSearchResult[];
+        }
+      })
+    );
     const collected: SongAlbumSearchResult[] = searches.flat();
     if (collected.length === 0) return [];
 
@@ -3082,15 +3228,19 @@ export class SonGuessrService implements AdminRoomControl {
         const normalizedEntry = normalizeSongTitle(item.entry.name);
         return animeNames.some((name) => {
           const normalizedName = normalizeSongTitle(name);
-          return normalizedName.length >= 4
-            && normalizedEntry.includes(normalizedName)
-            && ANIME_RELEASE_CONTEXT_PATTERN.test(item.entry.name);
+          return (
+            normalizedName.length >= 4 &&
+            normalizedEntry.includes(normalizedName) &&
+            ANIME_RELEASE_CONTEXT_PATTERN.test(item.entry.name)
+          );
         });
       })
       // 同名专辑常有别人的版本，艺术家与 Bangumi 记录对得上的优先（数据集补录 artist
       // 之后这条才真正可用）；其余按名称相似度，序号命中因此能压过隔壁那张。
-      .sort((left, right) =>
-        Number(right.artistMatches) - Number(left.artistMatches) || right.score - left.score)
+      .sort(
+        (left, right) =>
+          Number(right.artistMatches) - Number(left.artistMatches) || right.score - left.score
+      )
       .at(0)?.entry;
     if (!album || budget.search <= 0) return [];
 
@@ -3128,31 +3278,37 @@ export class SonGuessrService implements AdminRoomControl {
     provider: MusicProvider,
     anime: BangumiSubjectDetails,
     cookie: MusicCookieInput | undefined,
-    budget: { search: number },
+    budget: { search: number }
   ): Promise<SongSearchResult[]> {
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
     if (animeNames.length === 0) return [];
     // 同样并行回源（见 resolveAlbumTrackCandidates 的说明）：番剧名与中文名之间无依赖。
-    const searches = await Promise.all(animeNames.map(async (name) => {
-      if (budget.search <= 0) return [] as SongSearchResult[];
-      budget.search -= 1;
-      try {
-        return await retryOnce(() => provider.search(name, ANIME_SONG_SEARCH_LIMIT, cookie));
-      } catch (error) {
-        if (!isUnusableSongCandidate(error)) throw error;
-        return [] as SongSearchResult[];
-      }
-    }));
+    const searches = await Promise.all(
+      animeNames.map(async (name) => {
+        if (budget.search <= 0) return [] as SongSearchResult[];
+        budget.search -= 1;
+        try {
+          return await retryOnce(() => provider.search(name, ANIME_SONG_SEARCH_LIMIT, cookie));
+        } catch (error) {
+          if (!isUnusableSongCandidate(error)) throw error;
+          return [] as SongSearchResult[];
+        }
+      })
+    );
     const collected = new Map<string, SongSearchResult>();
     for (const found of searches) {
-      for (const candidate of found) if (!collected.has(candidate.id)) collected.set(candidate.id, candidate);
+      for (const candidate of found)
+        if (!collected.has(candidate.id)) collected.set(candidate.id, candidate);
     }
     const otherTrackTitles = anime.musicTracks.map((entry) => entry.title);
     const belongsToAnime = (candidate: SongSearchResult): boolean => {
       const album = candidate.album ?? "";
       // 专辑名含番剧名**还不够**：番剧名撞车的外文歌/同名歌，专辑名往往也叫同一个名字。
       // 必须再有一层发行上下文（动画 / 原声带 / 主题歌 / 角色歌 …）才算证据。
-      if (animeNames.some((name) => album.includes(name)) && ANIME_RELEASE_CONTEXT_PATTERN.test(album)) {
+      if (
+        animeNames.some((name) => album.includes(name)) &&
+        ANIME_RELEASE_CONTEXT_PATTERN.test(album)
+      ) {
         return true;
       }
       return otherTrackTitles.some((title) => isSongTitleMatch(candidate.title, title));
@@ -3162,7 +3318,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async resolveAnimeMatchedSongs(
     anime: BangumiSubjectDetails,
-    connection: ConnectionRecord,
+    connection: ConnectionRecord
   ): Promise<BangumiSongCandidate[]> {
     const provider = this.options.musicProvider;
     const { room } = this.requireRoomPlayer(connection);
@@ -3193,13 +3349,21 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /** 单个音乐条目：常规检索 → 专辑兜底 → 按展示规则写入结果。 */
-  private async matchAnimeTrack(ctx: AnimeTrackMatchContext, track: BangumiMusicTrack): Promise<void> {
+  private async matchAnimeTrack(
+    ctx: AnimeTrackMatchContext,
+    track: BangumiMusicTrack
+  ): Promise<void> {
     const { queries, scopeQueries } = buildTrackQueries(track, ctx.anime);
 
     let matchedCandidates: SongSearchResult[] = [];
     try {
       const matched = await this.searchAnimeTrackCandidates(
-        ctx.provider, queries, track, ctx.cookie, ctx.budget, scopeQueries,
+        ctx.provider,
+        queries,
+        track,
+        ctx.cookie,
+        ctx.budget,
+        scopeQueries
       );
       matchedCandidates = rankEvidencedCandidates(matched, track, ctx.animeNames);
     } catch (error) {
@@ -3211,7 +3375,11 @@ export class SonGuessrService implements AdminRoomControl {
     if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
       try {
         matchedCandidates = await this.resolveAlbumTrackCandidates(
-          ctx.provider, track, ctx.anime, ctx.cookie, ctx.budget,
+          ctx.provider,
+          track,
+          ctx.anime,
+          ctx.cookie,
+          ctx.budget
         );
         albumFallback = true;
       } catch (error) {
@@ -3224,14 +3392,18 @@ export class SonGuessrService implements AdminRoomControl {
     // 全部列出会把列表刷成「好几首一样的 OP」并把翻唱混进来（用户实测反馈）。
     // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
     // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
-    this.registerMatchedSongs(ctx, track, albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1));
+    this.registerMatchedSongs(
+      ctx,
+      track,
+      albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)
+    );
   }
 
   /** 把条目候选写进手动选曲列表；已在别的条目出现过的歌曲直接跳过。 */
   private registerMatchedSongs(
     ctx: AnimeTrackMatchContext,
     track: BangumiMusicTrack,
-    candidates: SongSearchResult[],
+    candidates: SongSearchResult[]
   ): void {
     for (const song of candidates) {
       if (ctx.seenSongIds.has(song.id)) continue;
@@ -3253,7 +3425,10 @@ export class SonGuessrService implements AdminRoomControl {
 
     try {
       const animeLevelSongs = await this.resolveAnimeLevelCandidates(
-        ctx.provider, ctx.anime, ctx.cookie, ctx.budget,
+        ctx.provider,
+        ctx.anime,
+        ctx.cookie,
+        ctx.budget
       );
       for (const song of animeLevelSongs) {
         if (ctx.seenSongIds.has(song.id)) continue;
@@ -3280,7 +3455,7 @@ export class SonGuessrService implements AdminRoomControl {
     // 判定统一在 shared 的 `refineTrackKindByText`，服务端与客户端徽章共用同一份规则。
     return refineTrackKindByText(
       kind,
-      `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`,
+      `${song.title} ${song.album ?? ""} ${song.encyclopedia.tags.join(" ")}`
     );
   }
 
@@ -3295,7 +3470,7 @@ export class SonGuessrService implements AdminRoomControl {
      * 手动出题与猜番没有候选池概念，沿用 `MIN_RECENT_SONG_WINDOW`。
      * 必须在 `installRound` 之前用同一数值过滤候选，否则写入与排除的口径会不一致。
      */
-    recentSongWindow = MIN_RECENT_SONG_WINDOW,
+    recentSongWindow = MIN_RECENT_SONG_WINDOW
   ): number {
     this.applyQueuedMemberships(room);
     if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
@@ -3305,7 +3480,7 @@ export class SonGuessrService implements AdminRoomControl {
       song.lyrics,
       room.settings.lyricsLineCount,
       this.random,
-      song.durationMs,
+      song.durationMs
     );
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
@@ -3316,9 +3491,10 @@ export class SonGuessrService implements AdminRoomControl {
     for (const candidate of this.activePlayers(room)) {
       if (observerIds.includes(candidate.id)) continue;
       // 出题人与人机各自单独一份：出题人（测试房以外）不作答，人机开局即放弃，都不能拖累所在队伍。
-      const key = candidate.team === null || candidate.isBot || candidate.id === submitterPlayerId
-        ? candidate.id
-        : `team:${candidate.team}`;
+      const key =
+        candidate.team === null || candidate.isBot || candidate.id === submitterPlayerId
+          ? candidate.id
+          : `team:${candidate.team}`;
       let unit = units.get(key);
       if (!unit) {
         unit = {
@@ -3343,7 +3519,9 @@ export class SonGuessrService implements AdminRoomControl {
       lyricClip,
       attempts: [],
       correctPlayerIds: [],
-      startScores: Object.fromEntries(Object.values(room.players).map((candidate) => [candidate.id, candidate.score])),
+      startScores: Object.fromEntries(
+        Object.values(room.players).map((candidate) => [candidate.id, candidate.score])
+      ),
       players: participantStates,
       audioReady,
       observerIds,
@@ -3358,11 +3536,16 @@ export class SonGuessrService implements AdminRoomControl {
     room.phase = "playing";
 
     const recentSongIds = room.recentSongIds ?? [];
-    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)]
-      .slice(0, recentSongWindow);
+    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)].slice(
+      0,
+      recentSongWindow
+    );
     if (anime) {
       const recentSubjectIds = room.recentSubjectIds ?? [];
-      room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(0, 10);
+      room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(
+        0,
+        10
+      );
     }
 
     this.appendSystemMessage(room, `第 ${roundNumber} 轮开始`);
@@ -3384,18 +3567,25 @@ export class SonGuessrService implements AdminRoomControl {
   private async startAutomaticAnimeRound(
     room: SonGuessrRoomRecord,
     provider: BangumiDataProvider,
-    verify: () => void,
+    verify: () => void
   ): Promise<void> {
     const filters = room.settings.animeAutoFilters ?? {};
     const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
-    const year = filters.ranking === "year" && filters.startYear && filters.endYear
-      ? filters.startYear + this.random.nextInt(filters.endYear - filters.startYear + 1)
-      : undefined;
-    const candidates = await provider.searchSubjects("", poolSize, year ? {
-      ...filters,
-      startYear: year,
-      endYear: year,
-    } : filters);
+    const year =
+      filters.ranking === "year" && filters.startYear && filters.endYear
+        ? filters.startYear + this.random.nextInt(filters.endYear - filters.startYear + 1)
+        : undefined;
+    const candidates = await provider.searchSubjects(
+      "",
+      poolSize,
+      year
+        ? {
+            ...filters,
+            startYear: year,
+            endYear: year,
+          }
+        : filters
+    );
     const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
     const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
     const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
@@ -3410,8 +3600,14 @@ export class SonGuessrService implements AdminRoomControl {
         this.installRound(room, resolved.song, "", anime, resolved.track);
         return;
       } catch (error) {
-        if (!isUnusableSongCandidate(error)
-          && !(error instanceof AppError && ["BANGUMI_NO_MUSIC", "BANGUMI_NOT_FOUND"].includes(error.code))) throw error;
+        if (
+          !isUnusableSongCandidate(error) &&
+          !(
+            error instanceof AppError &&
+            ["BANGUMI_NO_MUSIC", "BANGUMI_NOT_FOUND"].includes(error.code)
+          )
+        )
+          throw error;
       }
     }
     throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
@@ -3420,7 +3616,7 @@ export class SonGuessrService implements AdminRoomControl {
   /** 自动出题（歌曲）：先按整池定近期窗口，再在剩下的候选里试到能拿到音频的一首。 */
   private async startAutomaticSongRound(
     room: SonGuessrRoomRecord,
-    verify: () => void,
+    verify: () => void
   ): Promise<void> {
     const candidates = await this.resolveAutomaticCandidates(room);
     if (candidates.length === 0) {
@@ -3440,7 +3636,10 @@ export class SonGuessrService implements AdminRoomControl {
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
       let song: SongDetails;
       try {
-        song = await this.options.musicProvider.getSong(selected.id, this.getSongCookie(room, selected.id));
+        song = await this.options.musicProvider.getSong(
+          selected.id,
+          this.getSongCookie(room, selected.id)
+        );
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
         continue;
@@ -3457,21 +3656,25 @@ export class SonGuessrService implements AdminRoomControl {
     const cookie = this.getAggregatedSearchCookie(room);
     const sets: SongSearchResult[][] = [];
     if (filters.playlist && this.options.musicProvider.getPlaylistSongs) {
-      sets.push((await this.options.musicProvider.getPlaylistSongs(filters.playlist.id, cookie)).songs);
+      sets.push(
+        (await this.options.musicProvider.getPlaylistSongs(filters.playlist.id, cookie)).songs
+      );
     }
     if (filters.artists.length > 0 && this.options.musicProvider.getArtistSongs) {
-      const artistSongs = await Promise.all(filters.artists.map((artist) =>
-        this.options.musicProvider.getArtistSongs!(artist.id, cookie)));
+      const artistSongs = await Promise.all(
+        filters.artists.map((artist) =>
+          this.options.musicProvider.getArtistSongs!(artist.id, cookie)
+        )
+      );
       sets.push(artistSongs.flat());
     }
     if (sets.length === 0) {
       if (!this.options.musicProvider.getPlaylistSongs) {
         throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持自动题库");
       }
-      sets.push((await this.options.musicProvider.getPlaylistSongs(
-        DEFAULT_AUTO_PLAYLIST_ID,
-        cookie,
-      )).songs);
+      sets.push(
+        (await this.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)).songs
+      );
     }
     const first = new Map(sets[0].map((song) => [song.id, song]));
     for (const set of sets.slice(1)) {
@@ -3481,7 +3684,7 @@ export class SonGuessrService implements AdminRoomControl {
     const candidates = [...first.values()];
     if (filters.minPopularity === 0) return candidates;
     const knownMatches = candidates.filter(
-      (song) => song.popularity !== undefined && song.popularity >= filters.minPopularity,
+      (song) => song.popularity !== undefined && song.popularity >= filters.minPopularity
     );
     if (knownMatches.length > 0) return knownMatches;
 
@@ -3502,10 +3705,12 @@ export class SonGuessrService implements AdminRoomControl {
     const enriched: SongSearchResult[] = [];
     for (let index = 0; index < sampled.length; index += 4) {
       const batch = sampled.slice(index, index + 4);
-      const values = await Promise.all(batch.map(async (song) => ({
-        ...song,
-        popularity: await getPopularity(song.id, cookie) ?? song.popularity,
-      })));
+      const values = await Promise.all(
+        batch.map(async (song) => ({
+          ...song,
+          popularity: (await getPopularity(song.id, cookie)) ?? song.popularity,
+        }))
+      );
       enriched.push(...values);
     }
     return enriched.filter((song) => (song.popularity ?? 0) >= filters.minPopularity);
@@ -3520,7 +3725,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (!round || round.hardDeadlineAt !== undefined) return;
     const now = this.now();
     round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
-    round.hardDeadlineAt = now + (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) * 1_000;
+    round.hardDeadlineAt =
+      now + (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) * 1_000;
   }
 
   private audioReady(connection: ConnectionRecord, roundNumber: number) {
@@ -3562,8 +3768,12 @@ export class SonGuessrService implements AdminRoomControl {
   private async audioFailed(connection: ConnectionRecord, roundNumber: number) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = room.currentRound;
-    if (room.phase !== "playing" || !round || round.number !== roundNumber) return { ignored: true };
-    if (player.membership !== "active" || (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id))) {
+    if (room.phase !== "playing" || !round || round.number !== roundNumber)
+      return { ignored: true };
+    if (
+      player.membership !== "active" ||
+      (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id))
+    ) {
       return { ignored: true };
     }
     // 刷新播放地址同样命中那个共享的上游实例，必须一起计入配额。
@@ -3602,7 +3812,7 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     round: SonGuessrRoundRecord,
     player: SonGuessrPlayerRecord,
-    state: SonGuessrRoundPlayerState,
+    state: SonGuessrRoundPlayerState
   ) {
     if (room.phase === "playing" && room.currentRound === round) {
       state.guessesUsed = Math.max(0, state.guessesUsed - 1);
@@ -3616,7 +3826,7 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     round: SonGuessrRoundRecord,
     player: SonGuessrPlayerRecord,
-    state: SonGuessrRoundPlayerState,
+    state: SonGuessrRoundPlayerState
   ) {
     if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
       state.inFlight = false;
@@ -3631,7 +3841,7 @@ export class SonGuessrService implements AdminRoomControl {
     round: SonGuessrRoundRecord,
     player: SonGuessrPlayerRecord,
     state: SonGuessrRoundPlayerState,
-    correct: boolean,
+    correct: boolean
   ) {
     if (!correct) {
       this.restartGuessDeadline(room, state);
@@ -3656,7 +3866,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
     }
-    if (round.observerIds.includes(player.id)) throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
+    if (round.observerIds.includes(player.id))
+      throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
     if (!state) throw new AppError("SPECTATOR_FORBIDDEN", "你本局不参与猜歌");
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     this.ensureUnitOpen(round, state, player.id);
@@ -3668,7 +3879,7 @@ export class SonGuessrService implements AdminRoomControl {
     try {
       guessedSong = await this.options.musicProvider.getSongMetadata(
         songId,
-        this.getSongCookie(room, songId),
+        this.getSongCookie(room, songId)
       );
     } catch (error) {
       this.rollbackGuessAttempt(room, round, player, state);
@@ -3709,9 +3920,11 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.settings.questionType !== "anime" || !round.anime) {
       throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
     }
-    if (round.observerIds.includes(player.id)) throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
+    if (round.observerIds.includes(player.id))
+      throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
     const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
-    if (!state || player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
+    if (!state || player.membership !== "active")
+      throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
     }
@@ -3761,10 +3974,21 @@ export class SonGuessrService implements AdminRoomControl {
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {
       throw new AppError("SUBMITTER_CANNOT_GIVE_UP", "出题人无需放弃");
     }
-    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", state.memberIds.length > 1 ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候");
-    if (state.correct) throw new AppError("ALREADY_CORRECT", state.memberIds.length > 1 ? "本队已经猜中了" : "你已经猜对了");
+    if (state.inFlight)
+      throw new AppError(
+        "GUESS_IN_PROGRESS",
+        state.memberIds.length > 1 ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候"
+      );
+    if (state.correct)
+      throw new AppError(
+        "ALREADY_CORRECT",
+        state.memberIds.length > 1 ? "本队已经猜中了" : "你已经猜对了"
+      );
     if (state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound) {
-      throw new AppError("ROUND_ACTION_FINISHED", state.memberIds.length > 1 ? "本队已完成本回合" : "你已完成本回合操作");
+      throw new AppError(
+        "ROUND_ACTION_FINISHED",
+        state.memberIds.length > 1 ? "本队已完成本回合" : "你已完成本回合操作"
+      );
     }
 
     state.gaveUp = true;
@@ -3798,7 +4022,8 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "当前不在回合结算阶段");
-    if (room.solo || room.settings.questionMode === "automatic") return this.beginAutomaticNextRound(connection, room, player);
+    if (room.solo || room.settings.questionMode === "automatic")
+      return this.beginAutomaticNextRound(connection, room, player);
     return this.beginManualNextRound(room);
   }
 
@@ -3822,7 +4047,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async beginAutomaticNextRound(
     connection: ConnectionRecord,
     room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord,
+    player: SonGuessrPlayerRecord
   ) {
     if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
     const previousRound = room.currentRound;
@@ -3830,11 +4055,15 @@ export class SonGuessrService implements AdminRoomControl {
     const operation = Symbol("automaticRound");
     room.automaticRoundOperation = operation;
     room.automaticRoundLoading = true;
-    const isCurrent = () => this.rooms.get(room.id) === room
-      && room.automaticRoundOperation === operation
-      && room.phase === "roundResult" && room.currentRound === previousRound
-      && room.hostPlayerId === player.id && player.online
-      && connection.roomId === room.id && connection.playerId === player.id;
+    const isCurrent = () =>
+      this.rooms.get(room.id) === room &&
+      room.automaticRoundOperation === operation &&
+      room.phase === "roundResult" &&
+      room.currentRound === previousRound &&
+      room.hostPlayerId === player.id &&
+      player.online &&
+      connection.roomId === room.id &&
+      connection.playerId === player.id;
     const verify = () => {
       if (!isCurrent()) throw new AppError("ROUND_EXPIRED", "出题操作已失效");
     };
@@ -3903,7 +4132,8 @@ export class SonGuessrService implements AdminRoomControl {
   private finishGame(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "只能在回合结算后返回等待阶段");
+    if (room.phase !== "roundResult")
+      throw new AppError("INVALID_PHASE", "只能在回合结算后返回等待阶段");
     room.automaticRoundOperation = undefined;
     room.automaticRoundLoading = false;
     room.phase = "waiting";
@@ -3925,7 +4155,7 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private ensureRoundPlayerState(
     room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord,
+    player: SonGuessrPlayerRecord
   ): SonGuessrRoundPlayerState | undefined {
     if (room.phase !== "playing" || !room.currentRound) return undefined;
     const round = room.currentRound;
@@ -3937,8 +4167,15 @@ export class SonGuessrService implements AdminRoomControl {
     let state = round.players[player.id];
     if (!state) {
       // 有队伍时并回队友那一份，不另起一套次数。
-      const teammate = player.team === null ? undefined : Object.entries(round.players).find(([id]) =>
-        id !== round.submitterPlayerId && room.players[id]?.team === player.team && !room.players[id]?.isBot);
+      const teammate =
+        player.team === null
+          ? undefined
+          : Object.entries(round.players).find(
+              ([id]) =>
+                id !== round.submitterPlayerId &&
+                room.players[id]?.team === player.team &&
+                !room.players[id]?.isBot
+            );
       state = teammate?.[1] ?? {
         memberIds: [],
         guessesUsed: 0,
@@ -3962,8 +4199,10 @@ export class SonGuessrService implements AdminRoomControl {
     if (!round || this.isUnitFinished(round, state)) return;
     const members = state.memberIds.filter((id) => room.players[id]);
     const online = members.filter((id) => room.players[id]!.online);
-    const actors = (online.length ? online : members.slice(0, 1))
-      .slice(0, round.settings.maxGuessesPerRound - state.guessesUsed);
+    const actors = (online.length ? online : members.slice(0, 1)).slice(
+      0,
+      round.settings.maxGuessesPerRound - state.guessesUsed
+    );
     for (const playerId of actors) {
       const player = room.players[playerId]!;
       state.guessesUsed += 1;
@@ -3986,15 +4225,30 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /** 猜歌、猜番共用的单元检查；队伍里的提示写「本队」，免得队友以为是自己点过。 */
-  private ensureUnitOpen(round: SonGuessrRoundRecord, state: SonGuessrRoundPlayerState, playerId: string) {
+  private ensureUnitOpen(
+    round: SonGuessrRoundRecord,
+    state: SonGuessrRoundPlayerState,
+    playerId: string
+  ) {
     const teamed = state.memberIds.length > 1;
     if (state.correct) {
-      throw new AppError("ALREADY_CORRECT", round.correctPlayerIds.includes(playerId) ? "你已经猜对了" : "队友已经猜中了");
+      throw new AppError(
+        "ALREADY_CORRECT",
+        round.correctPlayerIds.includes(playerId) ? "你已经猜对了" : "队友已经猜中了"
+      );
     }
-    if (state.gaveUp) throw new AppError("ALREADY_GAVE_UP", teamed ? "本队已经放弃本回合" : "你已经放弃本回合");
-    if (state.inFlight) throw new AppError("GUESS_IN_PROGRESS", teamed ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候");
+    if (state.gaveUp)
+      throw new AppError("ALREADY_GAVE_UP", teamed ? "本队已经放弃本回合" : "你已经放弃本回合");
+    if (state.inFlight)
+      throw new AppError(
+        "GUESS_IN_PROGRESS",
+        teamed ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候"
+      );
     if (state.guessesUsed >= round.settings.maxGuessesPerRound) {
-      throw new AppError("NO_MORE_GUESSES", teamed ? "本队本回合猜测次数已用完" : "本回合猜测次数已用完");
+      throw new AppError(
+        "NO_MORE_GUESSES",
+        teamed ? "本队本回合猜测次数已用完" : "本回合猜测次数已用完"
+      );
     }
   }
 
@@ -4056,9 +4310,10 @@ export class SonGuessrService implements AdminRoomControl {
     if (!round || room.phase !== "playing") return;
     const submitter = room.players[round.submitterPlayerId];
     if (submitter && !skipped) {
-      submitter.score += round.correctPlayerIds.length > 0
-        ? round.correctPlayerIds.length * SCORING.submitterPerCorrect
-        : SCORING.submitterNobodyCorrect;
+      submitter.score +=
+        round.correctPlayerIds.length > 0
+          ? round.correctPlayerIds.length * SCORING.submitterPerCorrect
+          : SCORING.submitterNobodyCorrect;
     }
 
     for (const state of Object.values(round.players)) state.deadlineAt = undefined;
@@ -4090,7 +4345,12 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /** 结算快照转成对局记录：摘要放答案与出题人，时间线为逐次猜测。 */
-  private recordRound(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord, summary: SonGuessrRoundSummary, skipped: boolean) {
+  private recordRound(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord,
+    summary: SonGuessrRoundSummary,
+    skipped: boolean
+  ) {
     const nameOf = (playerId: string) => room.players[playerId]?.name ?? playerId;
     (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
       game: "song",
@@ -4108,7 +4368,9 @@ export class SonGuessrService implements AdminRoomControl {
       summary: {
         questionType: round.settings.questionType,
         song: { id: round.song.id, title: round.song.title, artist: round.song.artist },
-        ...(round.anime ? { anime: { id: round.anime.id, name: round.anime.name, nameCn: round.anime.nameCn } } : {}),
+        ...(round.anime
+          ? { anime: { id: round.anime.id, name: round.anime.name, nameCn: round.anime.nameCn } }
+          : {}),
         submitter: nameOf(round.submitterPlayerId),
         correct: round.correctPlayerIds.map(nameOf),
         skipped,
@@ -4119,8 +4381,12 @@ export class SonGuessrService implements AdminRoomControl {
         type: "guess",
         name: attempt.playerName,
         result: attempt.result,
-        ...(attempt.guessedSong ? { song: `${attempt.guessedSong.title} - ${attempt.guessedSong.artist}` } : {}),
-        ...(attempt.guessedAnime ? { anime: attempt.guessedAnime.nameCn || attempt.guessedAnime.name } : {}),
+        ...(attempt.guessedSong
+          ? { song: `${attempt.guessedSong.title} - ${attempt.guessedSong.artist}` }
+          : {}),
+        ...(attempt.guessedAnime
+          ? { anime: attempt.guessedAnime.nameCn || attempt.guessedAnime.name }
+          : {}),
       })),
     });
   }
@@ -4162,7 +4428,8 @@ export class SonGuessrService implements AdminRoomControl {
 
   private resetReadyState(room: SonGuessrRoomRecord) {
     for (const candidate of Object.values(room.players)) {
-      candidate.isReady = candidate.membership === "active" &&
+      candidate.isReady =
+        candidate.membership === "active" &&
         (candidate.id === room.hostPlayerId || candidate.isBot);
     }
   }
@@ -4182,7 +4449,7 @@ export class SonGuessrService implements AdminRoomControl {
     return Boolean(
       this.isTestRoom(room) &&
       room.currentRound?.submitterPlayerId === playerId &&
-      room.players[playerId]?.membership === "active",
+      room.players[playerId]?.membership === "active"
     );
   }
 
@@ -4192,7 +4459,7 @@ export class SonGuessrService implements AdminRoomControl {
     const guessers = this.activePlayers(room).filter(
       (player) =>
         (player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id)) &&
-        !round.observerIds.includes(player.id),
+        !round.observerIds.includes(player.id)
     );
     return guessers.every((player) => {
       const state = round.players[player.id];
@@ -4202,10 +4469,10 @@ export class SonGuessrService implements AdminRoomControl {
 
   private buildRoomSummary(room: SonGuessrRoomRecord): SonGuessrRoomSummary {
     const activeCount = Object.values(room.players).filter(
-      (player) => player.membership === "active" && player.online,
+      (player) => player.membership === "active" && player.online
     ).length;
     const spectatorCount = Object.values(room.players).filter(
-      (player) => player.membership === "spectator" && player.online,
+      (player) => player.membership === "spectator" && player.online
     ).length;
     return {
       roomId: room.id,
@@ -4265,7 +4532,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private buildPlayerView(
     room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord,
+    player: SonGuessrPlayerRecord
   ): SonGuessrPlayerView {
     this.ensureRoundPlayerState(room, player);
     const round = room.currentRound;
@@ -4274,11 +4541,15 @@ export class SonGuessrService implements AdminRoomControl {
     if (round?.submitterPlayerId === player.id) roundStatus = "submitter";
     else if (player.membership === "spectator") roundStatus = "spectator";
     else if (round?.observerIds.includes(player.id)) roundStatus = "observing";
-    else if (state?.correct) roundStatus = round?.correctPlayerIds.includes(player.id) ? "correct" : "teamCorrect";
+    else if (state?.correct)
+      roundStatus = round?.correctPlayerIds.includes(player.id) ? "correct" : "teamCorrect";
     else if (
       state &&
-      (state.gaveUp || state.guessesUsed >= (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound))
-    ) roundStatus = "finished";
+      (state.gaveUp ||
+        state.guessesUsed >=
+          (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound))
+    )
+      roundStatus = "finished";
     else if (room.phase === "playing" && state) roundStatus = "guessing";
 
     return {
@@ -4302,25 +4573,33 @@ export class SonGuessrService implements AdminRoomControl {
 
   private buildPrivateState(
     room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord,
+    player: SonGuessrPlayerRecord
   ): SonGuessrPrivateState {
     this.ensureRoundPlayerState(room, player);
     const round = room.currentRound;
     const state = round?.players[player.id];
-    const isSubmitter = round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
-    const teamObserver = room.phase === "playing" && Boolean(round?.observerIds.includes(player.id));
-    const canParticipateAsGuesser = (!isSubmitter || this.canTestSubmitterGuess(room, player.id)) && !teamObserver;
+    const isSubmitter =
+      round?.submitterPlayerId === player.id || room.pendingSubmitterPlayerId === player.id;
+    const teamObserver =
+      room.phase === "playing" && Boolean(round?.observerIds.includes(player.id));
+    const canParticipateAsGuesser =
+      (!isSubmitter || this.canTestSubmitterGuess(room, player.id)) && !teamObserver;
     const canObserveAllAttempts = isSubmitter || teamObserver || player.membership === "spectator";
     const seesAnswer = isSubmitter || teamObserver || player.membership === "spectator";
     // 候选名单逐人重算观战队友是 O(n²)，私有状态又按连接逐个生成：只给房主、只在手动出题的等待与选人阶段算。
-    const needsCandidates = player.id === room.hostPlayerId && !room.solo &&
-      (room.phase === "choosingSubmitter" || (room.phase === "waiting" && room.settings.questionMode === "manual"));
+    const needsCandidates =
+      player.id === room.hostPlayerId &&
+      !room.solo &&
+      (room.phase === "choosingSubmitter" ||
+        (room.phase === "waiting" && room.settings.questionMode === "manual"));
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
       isSubmitter,
       teamObserver,
-      submitterCandidateIds: needsCandidates ? this.submitterCandidates(room).map((candidate) => candidate.id) : [],
+      submitterCandidateIds: needsCandidates
+        ? this.submitterCandidates(room).map((candidate) => candidate.id)
+        : [],
       canSubmitSong: room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id,
       canGuess:
         room.phase === "playing" &&
@@ -4329,7 +4608,8 @@ export class SonGuessrService implements AdminRoomControl {
         Boolean(state && round?.audioReady[player.id]) &&
         !state?.correct &&
         !state?.gaveUp &&
-        (state?.guessesUsed ?? 0) < (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
+        (state?.guessesUsed ?? 0) <
+          (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
       canGiveUp:
         room.phase === "playing" &&
         player.membership === "active" &&
@@ -4338,10 +4618,12 @@ export class SonGuessrService implements AdminRoomControl {
         !state?.inFlight &&
         !state?.correct &&
         !state?.gaveUp &&
-        (state?.guessesUsed ?? 0) < (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
+        (state?.guessesUsed ?? 0) <
+          (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound),
       remainingGuesses: Math.max(
         0,
-        (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound) - (state?.guessesUsed ?? 0),
+        (round?.settings.maxGuessesPerRound ?? room.settings.maxGuessesPerRound) -
+          (state?.guessesUsed ?? 0)
       ),
       guessDeadlineAt: state?.deadlineAt,
       // 出题人、出题人的队友与旁观者在游戏中均可看到本题答案
@@ -4351,7 +4633,9 @@ export class SonGuessrService implements AdminRoomControl {
       visibleAttempts: round
         ? round.attempts.filter(
             (attempt) =>
-              canObserveAllAttempts || attempt.playerId === player.id || Boolean(state?.memberIds.includes(attempt.playerId)),
+              canObserveAllAttempts ||
+              attempt.playerId === player.id ||
+              Boolean(state?.memberIds.includes(attempt.playerId))
           )
         : [],
     };
@@ -4359,7 +4643,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private buildScores(
     room: SonGuessrRoomRecord,
-    startScores: Record<string, number>,
+    startScores: Record<string, number>
   ): SonGuessrScore[] {
     return this.activePlayers(room)
       .map((player) => ({
@@ -4370,7 +4654,9 @@ export class SonGuessrService implements AdminRoomControl {
         correctGuesses: player.correctGuesses,
         totalGuesses: player.totalGuesses,
       }))
-      .sort((left, right) => right.score - left.score || left.playerName.localeCompare(right.playerName));
+      .sort(
+        (left, right) => right.score - left.score || left.playerName.localeCompare(right.playerName)
+      );
   }
 
   private publishRoom(room: SonGuessrRoomRecord, targetConnection?: ConnectionRecord) {
@@ -4382,7 +4668,10 @@ export class SonGuessrService implements AdminRoomControl {
       connection.send(createEvent("song.room.snapshot", snapshot));
       if (connection.playerId) {
         const player = room.players[connection.playerId];
-        if (player) connection.send(createEvent("song.game.privateState", this.buildPrivateState(room, player)));
+        if (player)
+          connection.send(
+            createEvent("song.game.privateState", this.buildPrivateState(room, player))
+          );
       }
     }
   }
@@ -4400,7 +4689,7 @@ export class SonGuessrService implements AdminRoomControl {
       const player = room.players[connection.playerId];
       if (player) {
         connection.sendStateSyncCalibration?.(
-          createEvent("song.game.privateState", this.buildPrivateState(room, player)),
+          createEvent("song.game.privateState", this.buildPrivateState(room, player))
         );
       }
     }
@@ -4418,7 +4707,10 @@ export class SonGuessrService implements AdminRoomControl {
       roomCreatedAt: room.createdAt,
       endedAt: this.now(),
     });
-    this.connections.broadcastToRoom(room.id, createEvent("song.room.closed", { roomId: room.id, reason }));
+    this.connections.broadcastToRoom(
+      room.id,
+      createEvent("song.room.closed", { roomId: room.id, reason })
+    );
     for (const connection of this.connections.getRoomConnections(room.id)) {
       this.connections.detach(connection);
     }
@@ -4431,12 +4723,14 @@ export class SonGuessrService implements AdminRoomControl {
   private attachConnection(
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
-    connection: ConnectionRecord,
+    connection: ConnectionRecord
   ) {
     const previous = this.connections.findConnectionByPlayer(room.id, player.id);
     if (previous && previous.id !== connection.id) {
       // 统一带上 song. 前缀；客户端保留对裸名的兼容分支，避免旧客户端收不到。
-      (previous.sendPacket ?? previous.send)(createEvent("song.session.replaced", { roomId: room.id }));
+      (previous.sendPacket ?? previous.send)(
+        createEvent("song.session.replaced", { roomId: room.id })
+      );
       this.connections.detach(previous);
       previous.close(4001, "session_replaced");
     }
@@ -4488,7 +4782,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private onlineCount(room: SonGuessrRoomRecord) {
     return Object.values(room.players).filter(
-      (player) => player.online && player.membership !== "kicked",
+      (player) => player.online && player.membership !== "kicked"
     ).length;
   }
 
@@ -4524,7 +4818,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
     const room = this.getRoom(connection.roomId);
     const player = room.players[connection.playerId];
-    if (!player || player.membership === "kicked") throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
+    if (!player || player.membership === "kicked")
+      throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
     return { room, player };
   }
 
@@ -4559,7 +4854,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async ensurePassword(
     room: SonGuessrRoomRecord,
     password: string | undefined,
-    connection: ConnectionRecord,
+    connection: ConnectionRecord
   ) {
     if (room.visibility !== "private") return;
     const normalized = password?.trim();
@@ -4574,7 +4869,9 @@ export class SonGuessrService implements AdminRoomControl {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
     // 只按摘要比对：房间记录里没有可读的口令。
-    const matched = room.passwordHash ? await Bun.password.verify(normalized, room.passwordHash) : false;
+    const matched = room.passwordHash
+      ? await Bun.password.verify(normalized, room.passwordHash)
+      : false;
     if (!matched) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
   }
 
@@ -4591,10 +4888,11 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private reassignHost(room: SonGuessrRoomRecord) {
-    const next = Object.values(room.players)
-      .filter((player) => player.online && player.membership === "active" && !player.isBot)
-      .sort((left, right) => left.joinedAt - right.joinedAt)[0]
-      ?? Object.values(room.players)
+    const next =
+      Object.values(room.players)
+        .filter((player) => player.online && player.membership === "active" && !player.isBot)
+        .sort((left, right) => left.joinedAt - right.joinedAt)[0] ??
+      Object.values(room.players)
         .filter((player) => player.online && player.membership !== "kicked" && !player.isBot)
         .sort((left, right) => left.joinedAt - right.joinedAt)[0];
     if (next) {

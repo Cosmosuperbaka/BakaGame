@@ -17,8 +17,11 @@ const makeDataset = (directory: string) => {
 
 const read = (path: string) => {
   const db = new Database(path, { readonly: true });
-  try { return db.query("SELECT name FROM subjects WHERE id = 1").get() as { name: string } | null; }
-  finally { db.close(); }
+  try {
+    return db.query("SELECT name FROM subjects WHERE id = 1").get() as { name: string } | null;
+  } finally {
+    db.close();
+  }
 };
 
 test("启动时立即备份，且备份是可读的完整快照", () => {

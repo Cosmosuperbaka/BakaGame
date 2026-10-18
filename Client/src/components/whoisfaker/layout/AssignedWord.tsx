@@ -97,7 +97,7 @@ export function AssignedWord({
       // 停靠后与顶栏的 HeaderChip 同一语言：实底 bg-muted 配正文色，主色不作正文（Design §3.1）。
       className={cn(
         "pointer-events-none fixed left-0 top-0 whitespace-nowrap rounded-md bg-muted px-6 py-3 text-4xl font-bold leading-tight text-foreground",
-        revealed ? "z-modal" : "z-sticky",
+        revealed ? "z-modal" : "z-sticky"
       )}
       style={{ originX: 0, originY: 0 }}
       animate={

@@ -49,12 +49,39 @@ export const Groups: Story = {
         <div className="relative flex w-full min-w-0 flex-col py-3">
           <PlayerGroupTitle label="玩家" count={6} />
           <div className="flex flex-col gap-px">
-            <PlayerRow name={host.name} score={12} host badges={<PlayerStatusPill label="出题" tone="questioner" />} />
-            <PlayerRow name={peach.name} score={9} badges={<PlayerStatusPill label="猜中" tone="success" />} />
-            <PlayerRow name={me.name} score={7} me badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
-            <PlayerRow name={longName.name} score={6} badges={<PlayerStatusPill label="猜中" tone="success" />} />
-            <PlayerRow name={kanade.name} score={3} badges={<PlayerStatusPill label="猜歌" tone="warning" />} />
-            <PlayerRow name={azumi.name} score={0} online={false} badges={<PlayerStatusPill label="完成" tone="default" />} />
+            <PlayerRow
+              name={host.name}
+              score={12}
+              host
+              badges={<PlayerStatusPill label="出题" tone="questioner" />}
+            />
+            <PlayerRow
+              name={peach.name}
+              score={9}
+              badges={<PlayerStatusPill label="猜中" tone="success" />}
+            />
+            <PlayerRow
+              name={me.name}
+              score={7}
+              me
+              badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+            />
+            <PlayerRow
+              name={longName.name}
+              score={6}
+              badges={<PlayerStatusPill label="猜中" tone="success" />}
+            />
+            <PlayerRow
+              name={kanade.name}
+              score={3}
+              badges={<PlayerStatusPill label="猜歌" tone="warning" />}
+            />
+            <PlayerRow
+              name={azumi.name}
+              score={0}
+              online={false}
+              badges={<PlayerStatusPill label="完成" tone="default" />}
+            />
           </div>
           {/* 旁观分组的标题已经说明身份，行内不再重复「旁观」徽章。 */}
           <PlayerGroupTitle label="旁观" count={1} withRule />

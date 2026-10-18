@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import type { SmtpEnv } from "../src/config/Env";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
-import { ConsoleMailer, createMailer, SmtpMailer, UnavailableMailer } from "../src/infrastructure/auth/Mailer";
+import {
+  ConsoleMailer,
+  createMailer,
+  SmtpMailer,
+  UnavailableMailer,
+} from "../src/infrastructure/auth/Mailer";
 
 const smtpEnv: SmtpEnv = {
   host: "smtp.example.com",
@@ -29,7 +34,11 @@ const createLogger = () => {
 /** 用捕获型假传输替换 nodemailer 实例：只校验组装好的邮件内容，不发起真实连接。 */
 const captureTransport = (mailer: SmtpMailer) => {
   const sent: Array<Record<string, unknown>> = [];
-  (mailer as unknown as { transport: { sendMail(message: Record<string, unknown>): Promise<unknown> } }).transport = {
+  (
+    mailer as unknown as {
+      transport: { sendMail(message: Record<string, unknown>): Promise<unknown> };
+    }
+  ).transport = {
     sendMail: async (message) => {
       sent.push(message);
       return { accepted: [message.to], rejected: [] };
@@ -77,7 +86,9 @@ describe("账号邮件投递", () => {
     const { logger } = createLogger();
     const mailer = createMailer({ kind: "none" }, logger);
     expect(mailer).toBeInstanceOf(UnavailableMailer);
-    await expect(mailer.sendLoginCode({ to: "a@example.com", code: "000000" })).rejects.toMatchObject({
+    await expect(
+      mailer.sendLoginCode({ to: "a@example.com", code: "000000" })
+    ).rejects.toMatchObject({
       code: "MAIL_UNAVAILABLE",
     });
   });

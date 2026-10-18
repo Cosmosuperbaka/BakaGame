@@ -2,8 +2,17 @@ import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 
 import { RPC_BASE_PATH } from "../src/transport/routes/Account";
-import { RPC_PROTOCOL_NOTES, buildRpcOpenApiFragment, rpcOperations, type RpcOperation } from "../src/scripts/RpcOpenapi";
-import { DOC_SERVER_URL, OPENAPI_DOC_PATH, renderOpenApiDocument } from "../src/scripts/ExportOpenapi";
+import {
+  RPC_PROTOCOL_NOTES,
+  buildRpcOpenApiFragment,
+  rpcOperations,
+  type RpcOperation,
+} from "../src/scripts/RpcOpenapi";
+import {
+  DOC_SERVER_URL,
+  OPENAPI_DOC_PATH,
+  renderOpenApiDocument,
+} from "../src/scripts/ExportOpenapi";
 import { createAccountTestApp } from "./AccountFixtures";
 
 type Json = Record<string, unknown>;
@@ -49,7 +58,8 @@ const EXPECTED_OPERATIONS = [
 /** Elysia 自己声明的那几条 HTTP 路径：打点、探活、优雅停机、Sentry 隧道。 */
 const HTTP_PATH_COUNT = 6;
 
-const pathOf = (operationId: string): string => `${RPC_BASE_PATH}/${operationId.replaceAll(".", "/")}`;
+const pathOf = (operationId: string): string =>
+  `${RPC_BASE_PATH}/${operationId.replaceAll(".", "/")}`;
 
 const collectRefs = (node: unknown, found: string[] = []): string[] => {
   if (Array.isArray(node)) {
@@ -65,15 +75,21 @@ const collectRefs = (node: unknown, found: string[] = []): string[] => {
   return found;
 };
 
-const postOf = (paths: Json, operationId: string): Json => (paths[pathOf(operationId)] as Json).post as Json;
+const postOf = (paths: Json, operationId: string): Json =>
+  (paths[pathOf(operationId)] as Json).post as Json;
 
-const mediaSchema = (content: unknown): Json => ((content as Json)["application/json"] as Json).schema as Json;
+const mediaSchema = (content: unknown): Json =>
+  ((content as Json)["application/json"] as Json).schema as Json;
 
 const fragment = buildRpcOpenApiFragment(RPC_BASE_PATH);
-const byId = new Map<string, RpcOperation>(rpcOperations.map((operation) => [operation.operationId, operation]));
+const byId = new Map<string, RpcOperation>(
+  rpcOperations.map((operation) => [operation.operationId, operation])
+);
 
 test("每个过程都带机器可读的说明，路径清单不漂移", () => {
-  expect(rpcOperations.map(({ operationId }) => operationId).sort()).toEqual([...EXPECTED_OPERATIONS].sort());
+  expect(rpcOperations.map(({ operationId }) => operationId).sort()).toEqual(
+    [...EXPECTED_OPERATIONS].sort()
+  );
   expect(Object.keys(fragment.paths).sort()).toEqual(EXPECTED_OPERATIONS.map(pathOf).sort());
   for (const operation of rpcOperations) {
     expect(operation.description.length).toBeGreaterThan(0);
@@ -104,17 +120,21 @@ test("生成的路径在真实路由上打得通：POST 命中、GET 回 405、�
   expect(me.body).toBeNull();
 
   // 有入参的过程不给 `json` 包络时按 oRPC 口径回 400，不能被当成无入参放过。
-  const noEnvelope = await app.handle(new Request(`http://localhost${pathOf("site.visit")}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "http://localhost:5173" },
-    body: "{}",
-  }));
+  const noEnvelope = await app.handle(
+    new Request(`http://localhost${pathOf("site.visit")}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost:5173" },
+      body: "{}",
+    })
+  );
   expect(noEnvelope.status).toBe(400);
 
-  const get = await app.handle(new Request(`http://localhost${pathOf("account.me")}`, {
-    method: "GET",
-    headers: { origin: "http://localhost:5173" },
-  }));
+  const get = await app.handle(
+    new Request(`http://localhost${pathOf("account.me")}`, {
+      method: "GET",
+      headers: { origin: "http://localhost:5173" },
+    })
+  );
   expect(get.status).toBe(405);
   expect(((await get.json()) as { json: Json }).json.code).toBe("METHOD_NOT_SUPPORTED");
 
@@ -139,12 +159,29 @@ test("请求与响应都包在 json 包络里，失败体共用 RPC 错误信封
   }
 
   expect(Object.keys(fragment.components.responses)).toEqual([
-    "BadRequest", "Unauthorized", "Forbidden", "RateLimited", "InternalError", "AccountDisabled",
+    "BadRequest",
+    "Unauthorized",
+    "Forbidden",
+    "RateLimited",
+    "InternalError",
+    "AccountDisabled",
   ]);
-  expect(Object.keys(postOf(fragment.paths, "admin.users.ban").responses as Json))
-    .toEqual(["200", "400", "401", "403", "429", "500", "503"]);
-  expect(Object.keys(postOf(fragment.paths, "account.me").responses as Json))
-    .toEqual(["200", "400", "429", "500", "503"]);
+  expect(Object.keys(postOf(fragment.paths, "admin.users.ban").responses as Json)).toEqual([
+    "200",
+    "400",
+    "401",
+    "403",
+    "429",
+    "500",
+    "503",
+  ]);
+  expect(Object.keys(postOf(fragment.paths, "account.me").responses as Json)).toEqual([
+    "200",
+    "400",
+    "429",
+    "500",
+    "503",
+  ]);
 });
 
 test("合并后的文档版本取自更新日志，且每个 $ref 都解析得到", async () => {
@@ -153,7 +190,11 @@ test("合并后的文档版本取自更新日志，且每个 $ref 都解析得�
   expect(String((document.info as Json).version)).toMatch(/^\d+\.\d+\.\d+$/);
   expect(String((document.info as Json).description)).toContain(RPC_PROTOCOL_NOTES.slice(0, 24));
   expect((document.components as Json).securitySchemes).toEqual({
-    sessionCookie: expect.objectContaining({ type: "apiKey", in: "cookie", name: "bakagame.session_token" }),
+    sessionCookie: expect.objectContaining({
+      type: "apiKey",
+      in: "cookie",
+      name: "bakagame.session_token",
+    }),
   });
 
   const paths = Object.keys(document.paths as Json);
@@ -166,7 +207,7 @@ test("合并后的文档版本取自更新日志，且每个 $ref 都解析得�
   for (const ref of collectRefs(document)) {
     const [kind, name] = ref.replace("#/components/", "").split("/");
     expect(kind).toBeOneOf(["schemas", "responses"]);
-    expect(((components[kind === "responses" ? "responses" : "schemas"] as Json)[name])).toBeObject();
+    expect((components[kind === "responses" ? "responses" : "schemas"] as Json)[name]).toBeObject();
   }
 });
 
@@ -177,12 +218,17 @@ test("提交在库的契约文档与当前代码一致：改了契约要重跑 d
 
   // 只比契约决定的那部分：Elysia 自己那几条 HTTP 路由的 schema 会随同进程里先装配过哪个
   // 完整应用而漂移（TypeBox 的全局注册表是共享的），拿它做等值断言会假红。
-  expect(Object.keys(paths).filter((path) => path.startsWith(`${RPC_BASE_PATH}/`)).sort())
-    .toEqual(Object.keys(fragment.paths).sort());
-  for (const [path, operation] of Object.entries(fragment.paths)) expect(paths[path]).toEqual(operation);
+  expect(
+    Object.keys(paths)
+      .filter((path) => path.startsWith(`${RPC_BASE_PATH}/`))
+      .sort()
+  ).toEqual(Object.keys(fragment.paths).sort());
+  for (const [path, operation] of Object.entries(fragment.paths))
+    expect(paths[path]).toEqual(operation);
 
   const schemas = components.schemas as Json;
-  for (const [name, schema] of Object.entries(fragment.components.schemas)) expect(schemas[name]).toEqual(schema);
+  for (const [name, schema] of Object.entries(fragment.components.schemas))
+    expect(schemas[name]).toEqual(schema);
   expect(components.responses).toEqual(fragment.components.responses);
   expect(committed.tags).toEqual(expect.arrayContaining(fragment.tags));
   expect(String((committed.info as Json).version)).toMatch(/^\d+\.\d+\.\d+$/);

@@ -4,11 +4,27 @@ import CEERoomPage from "./CEERoomPage";
 import { presetCEE } from "@/stories/StorePresets";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import {
-  CEE_CHARACTERS, CEE_CUSTOM_SETTINGS, CEE_LOBBY_ROOMS, CEE_NATIVE_ROOM_ID, CEE_ORIGINAL_ROOM_ID, CEE_SESSION_TOKEN, ceeAnsweringRoom, ceeChoosingSetterRoom, ceeGuessingRoom,
-  ceeOriginalRoom, ceePreparingRoom, ceeSettledRoom, ceeSyncWaitingRoom, ceeTeamGuessingRoom, ceeWaitingGuestRoom, ceeWaitingHostRoom,
-  presetSavedUsername, type CEERoomScenario,
+  CEE_CHARACTERS,
+  CEE_CUSTOM_SETTINGS,
+  CEE_LOBBY_ROOMS,
+  CEE_NATIVE_ROOM_ID,
+  CEE_ORIGINAL_ROOM_ID,
+  CEE_SESSION_TOKEN,
+  ceeAnsweringRoom,
+  ceeChoosingSetterRoom,
+  ceeGuessingRoom,
+  ceeOriginalRoom,
+  ceePreparingRoom,
+  ceeSettledRoom,
+  ceeSyncWaitingRoom,
+  ceeTeamGuessingRoom,
+  ceeWaitingGuestRoom,
+  ceeWaitingHostRoom,
+  presetSavedUsername,
+  type CEERoomScenario,
 } from "@/stories/fixtures/CEE";
 import { removeCEESession } from "@/lib/CEESession";
+import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
 /**
  * 视作已在房间内：连接与大厅订阅就绪，且 Store 的房号和快照与路由一致，
@@ -16,8 +32,14 @@ import { removeCEESession } from "@/lib/CEESession";
  */
 function inRoom({ snapshot, privateState }: CEERoomScenario) {
   presetCEE({
-    connected: true, lobbyReady: true, originalAvailable: true,
-    source: snapshot.source, roomId: snapshot.roomId, sessionToken: CEE_SESSION_TOKEN, snapshot, privateState,
+    connected: true,
+    lobbyReady: true,
+    originalAvailable: true,
+    source: snapshot.source,
+    roomId: snapshot.roomId,
+    sessionToken: CEE_SESSION_TOKEN,
+    snapshot,
+    privateState,
   });
 }
 
@@ -26,9 +48,20 @@ const SUBJECT_NAMES: Record<number, string> = { 328609: "孤独摇滚！", 1424:
 function stubSubjectLookup() {
   const sendCommand = useCEEStore.getState().sendCommand;
   useCEEStore.setState({
-    sendCommand: ((command, payload) => command === "cee.subject.lookup"
-      ? Promise.resolve({ results: (payload as { subjectIds: number[] }).subjectIds.map((id) => ({ id, name: SUBJECT_NAMES[id] ?? `#${id}`, nameCn: SUBJECT_NAMES[id] ?? "", type: 2, year: null, rating: 0, heat: 0 })) })
-      : sendCommand(command, payload)) as typeof sendCommand,
+    sendCommand: ((command, payload) =>
+      command === "cee.subject.lookup"
+        ? Promise.resolve({
+            results: (payload as { subjectIds: number[] }).subjectIds.map((id) => ({
+              id,
+              name: SUBJECT_NAMES[id] ?? `#${id}`,
+              nameCn: SUBJECT_NAMES[id] ?? "",
+              type: 2,
+              year: null,
+              rating: 0,
+              heat: 0,
+            })),
+          })
+        : sendCommand(command, payload)) as typeof sendCommand,
   });
 }
 
@@ -48,7 +81,9 @@ async function loadLazyImages(canvasElement: HTMLElement) {
   for (const image of main.querySelectorAll("img")) {
     if (image.complete || !image.getClientRects().length) continue;
     image.scrollIntoView({ block: "center" });
-    await waitFor(() => { if (!image.complete) throw new Error("图片尚未加载"); });
+    await waitFor(() => {
+      if (!image.complete) throw new Error("图片尚未加载");
+    });
   }
   main.scrollTop = 0;
 }
@@ -79,7 +114,10 @@ export const WaitingGuest: Story = {
 /** 设置改为等待页内的折叠面板，逐个展开以便同屏审查三组设置。 */
 export const SettingsPanels: Story = {
   name: "设置面板 · 房主",
-  beforeEach: () => { inRoom(ceeWaitingHostRoom(CEE_CUSTOM_SETTINGS)); stubSubjectLookup(); },
+  beforeEach: () => {
+    inRoom(ceeWaitingHostRoom(CEE_CUSTOM_SETTINGS));
+    stubSubjectLookup();
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     for (const name of [/题目设置/, /猜测设置/, /房间设置/]) {
@@ -109,7 +147,8 @@ export const SettingsPanelsGuest: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["题目设置", "猜测设置"]) await userEvent.click(canvas.getByRole("button", { name }));
+    for (const name of ["题目设置", "猜测设置"])
+      await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
 };
@@ -145,10 +184,19 @@ export const GuessingSearch: Story = {
   name: "猜测阶段 · 搜索结果",
   beforeEach: () => {
     const scenario = ceeGuessingRoom("player");
-    inRoom({ ...scenario, privateState: { ...scenario.privateState, bannedCharacterIds: [CEE_CHARACTERS.nijika.id] } });
+    inRoom({
+      ...scenario,
+      privateState: { ...scenario.privateState, bannedCharacterIds: [CEE_CHARACTERS.nijika.id] },
+    });
     const { nijika, hitori, ryo, ikuyo, kikuri } = CEE_CHARACTERS;
     useCEEStore.setState({
-      searchCharacters: async () => [hitori, nijika, ryo, ikuyo, kikuri].map(({ id, name, nameCn, imageUrl }) => ({ id, name, nameCn, imageUrl })),
+      searchCharacters: async () =>
+        [hitori, nijika, ryo, ikuyo, kikuri].map(({ id, name, nameCn, imageUrl }) => ({
+          id,
+          name,
+          nameCn,
+          imageUrl,
+        })),
     });
   },
   play: async ({ canvasElement }) => {
@@ -171,7 +219,10 @@ export const AnsweringSelected: Story = {
   beforeEach: () => {
     inRoom(ceeAnsweringRoom("setter"));
     const { nijika, hitori } = CEE_CHARACTERS;
-    useCEEStore.setState({ searchCharacters: async () => [nijika, hitori].map(({ id, name, nameCn, imageUrl }) => ({ id, name, nameCn, imageUrl })) });
+    useCEEStore.setState({
+      searchCharacters: async () =>
+        [nijika, hitori].map(({ id, name, nameCn, imageUrl }) => ({ id, name, nameCn, imageUrl })),
+    });
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -191,9 +242,10 @@ export const GuessingImageHint: Story = {
     inRoom(ceeGuessingRoom("player"));
     const sendCommand = useCEEStore.getState().sendCommand;
     useCEEStore.setState({
-      sendCommand: ((command, payload) => command === "cee.game.imageHint"
-        ? Promise.resolve({ dataUrl: CEE_CHARACTERS.nijika.imageUrl })
-        : sendCommand(command, payload)) as typeof sendCommand,
+      sendCommand: ((command, payload) =>
+        command === "cee.game.imageHint"
+          ? Promise.resolve({ dataUrl: CEE_CHARACTERS.nijika.imageUrl })
+          : sendCommand(command, payload)) as typeof sendCommand,
     });
   },
   play: async ({ canvasElement }) => {
@@ -249,11 +301,16 @@ export const JoinPassword: Story = {
   beforeEach: () => {
     removeCEESession(CEE_NATIVE_ROOM_ID);
     presetCEE({
-      connected: true, lobbyReady: true, originalAvailable: true,
-      rooms: CEE_LOBBY_ROOMS.map((room) => room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
+      connected: true,
+      lobbyReady: true,
+      originalAvailable: true,
+      rooms: CEE_LOBBY_ROOMS.map((room) =>
+        room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room
+      ),
     });
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
-    useCEEStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }) });
+    useCEEStore.setState({
+      joinRoom: () => rejectedProtocol({ code: "PASSWORD_REQUIRED", message: "该房间需要密码" }),
+    });
     return presetSavedUsername();
   },
   play: async () => {
@@ -268,11 +325,16 @@ export const JoinPasswordWrong: Story = {
   beforeEach: () => {
     removeCEESession(CEE_NATIVE_ROOM_ID);
     presetCEE({
-      connected: true, lobbyReady: true, originalAvailable: true,
-      rooms: CEE_LOBBY_ROOMS.map((room) => room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room),
+      connected: true,
+      lobbyReady: true,
+      originalAvailable: true,
+      rooms: CEE_LOBBY_ROOMS.map((room) =>
+        room.roomId === CEE_NATIVE_ROOM_ID ? { ...room, hasPassword: true } : room
+      ),
     });
-    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 协议错误体是数据契约：页面按 code 决定弹密码框还是报「密码错误」
-    useCEEStore.setState({ joinRoom: () => Promise.reject({ code: "PASSWORD_INCORRECT", message: "房间密码错误" }) });
+    useCEEStore.setState({
+      joinRoom: () => rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "房间密码错误" }),
+    });
     return presetSavedUsername();
   },
   play: async () => {

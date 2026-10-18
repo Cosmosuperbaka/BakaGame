@@ -52,7 +52,9 @@ export const LongText: Story = {
 
 export const SonGuessr: Story = {
   name: "猜歌提示",
-  args: { toasts: [{ id: "song-notice", text: "网易云登录状态已失效，请重新扫码登录", type: "error" }] },
+  args: {
+    toasts: [{ id: "song-notice", text: "网易云登录状态已失效，请重新扫码登录", type: "error" }],
+  },
 };
 
 export const CEE: Story = {

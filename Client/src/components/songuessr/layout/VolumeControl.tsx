@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { animate, AnimatePresence, motion, useReducedMotion, useSpring, useTransform, type MotionValue } from "framer-motion";
+import {
+  animate,
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+  type MotionValue,
+} from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { Volume, Volume1, Volume2, VolumeX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -49,10 +57,21 @@ export function VolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
   return (
     <>
       {/* 胶囊里已常驻百分比读数，静音按钮与滑块各带 aria-label，不再挂复述同样的 hover 文案 */}
-      <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} className="hidden sm:flex" />
+      <VolumeCapsule
+        volume={volume}
+        onVolumeChange={onVolumeChange}
+        onToggleMute={toggleMute}
+        className="hidden sm:flex"
+      />
       <Popover.Root open={open} onOpenChange={setOpen}>
         <Popover.Trigger asChild>
-          <Button type="button" variant="ghost" size="icon" className="sm:hidden" aria-label="调节音量">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="sm:hidden"
+            aria-label="调节音量"
+          >
             <VolumeGlyph volume={volume} className="h-5 w-5" />
           </Button>
         </Popover.Trigger>
@@ -60,7 +79,15 @@ export function VolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
         <AnimatePresence>
           {open ? (
             <Popover.Portal forceMount>
-              <Popover.Content forceMount side="bottom" align="end" sideOffset={6} collisionPadding={12} aria-label="播放音量" asChild>
+              <Popover.Content
+                forceMount
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                collisionPadding={12}
+                aria-label="播放音量"
+                asChild
+              >
                 <motion.div
                   variants={popover}
                   initial="initial"
@@ -70,7 +97,13 @@ export function VolumeControl({ volume, onVolumeChange }: VolumeControlProps) {
                   className="z-popover origin-(--radix-popover-content-transform-origin) floating-surface !rounded-full p-1 shadow-md"
                 >
                   {/* 触屏没有悬停：弹出层里轨道始终是粗的那一档，整行高度都能按住拖动。 */}
-                  <VolumeCapsule volume={volume} onVolumeChange={onVolumeChange} onToggleMute={toggleMute} expanded className="flex border-0 bg-transparent shadow-none" />
+                  <VolumeCapsule
+                    volume={volume}
+                    onVolumeChange={onVolumeChange}
+                    onToggleMute={toggleMute}
+                    expanded
+                    className="flex border-0 bg-transparent shadow-none"
+                  />
                 </motion.div>
               </Popover.Content>
             </Popover.Portal>
@@ -87,7 +120,14 @@ function VolumeGlyph({ volume, className }: { volume: number; className: string 
   return (
     <span className={cn("relative inline-grid place-items-center", className)} aria-hidden="true">
       <AnimatePresence initial={false} mode="popLayout">
-        <motion.span key={key} variants={readoutSwap} initial="initial" animate="animate" exit="exit" className="col-start-1 row-start-1">
+        <motion.span
+          key={key}
+          variants={readoutSwap}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="col-start-1 row-start-1"
+        >
           <Icon className={className} />
         </motion.span>
       </AnimatePresence>
@@ -115,14 +155,25 @@ function wrapDigitOffset(offset: number): number {
   return ((((offset + half) % DIGIT_COUNT) + DIGIT_COUNT) % DIGIT_COUNT) - half;
 }
 
-function DigitItem({ index, char, position }: { index: number; char: string; position: MotionValue<number> }) {
+function DigitItem({
+  index,
+  char,
+  position,
+}: {
+  index: number;
+  char: string;
+  position: MotionValue<number>;
+}) {
   const offset = useTransform(position, (current) => wrapDigitOffset(index - current));
   const y = useTransform(offset, (o) => `${o * 100}%`);
   const opacity = useTransform(offset, (o) => Math.max(0, 1 - Math.abs(o) * 0.75));
   return (
     <motion.span
       data-glyph={char}
-      className={cn(GLYPH, "absolute inset-0 flex items-center justify-center font-semibold tabular-nums leading-none")}
+      className={cn(
+        GLYPH,
+        "absolute inset-0 flex items-center justify-center font-semibold tabular-nums leading-none"
+      )}
       style={{ y, opacity }}
     />
   );
@@ -173,7 +224,12 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
   const totalDigits = digits.length;
 
   return (
-    <span className={cn("relative inline-flex items-center justify-center tabular-nums leading-none", className)}>
+    <span
+      className={cn(
+        "relative inline-flex items-center justify-center tabular-nums leading-none",
+        className
+      )}
+    >
       <span className="sr-only">{num}</span>
       <span aria-hidden="true" className="inline-flex items-center">
         {digits.map((d, i) => {
@@ -190,7 +246,13 @@ function RollingVolumeNumber({ value, className }: { value: number; className?: 
  * 轨道细时只有 4px，滑块收起；悬停或键盘聚焦到滑块时轨道补间到 6px、滑块弹出，与 Switch 同一档 `spring.snap` 的 CSS 弹性。
  * 静音开关与离散变化时，以统一的连续动画数值驱动 Slider 与数字，滑块圆点与填充轨道严密同步平滑滑行；手动拖动时保持零延迟极速跟手。
  */
-function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false, className }: VolumeCapsuleProps) {
+function VolumeCapsule({
+  volume,
+  onVolumeChange,
+  onToggleMute,
+  expanded = false,
+  className,
+}: VolumeCapsuleProps) {
   const [displayVolume, setDisplayVolume] = useState(volume);
   const isDragging = useRef(false);
   const animControls = useRef<{ stop: () => void } | null>(null);
@@ -245,7 +307,10 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
   return (
     <div
       data-expanded={expanded || undefined}
-      className={cn("group/volume h-9 items-center gap-1 rounded-full border bg-panel px-1 shadow-sm", className)}
+      className={cn(
+        "group/volume h-9 items-center gap-1 rounded-full border bg-panel px-1 shadow-sm",
+        className
+      )}
     >
       <motion.button
         type="button"
@@ -255,7 +320,7 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
         aria-pressed={muted}
         className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-accent",
-          muted ? "text-muted-foreground" : "text-foreground",
+          muted ? "text-muted-foreground" : "text-foreground"
         )}
       >
         <VolumeGlyph volume={muted ? 0 : effectiveVolume} className="h-4 w-4" />
@@ -263,14 +328,16 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
       <Slider
         className="h-full w-28"
         trackClassName={cn(
-          "h-1 transition-[height]", spring,
-          "group-hover/volume:h-1.5 group-focus-within/volume:h-1.5 group-data-expanded/volume:h-1.5",
+          "h-1 transition-[height]",
+          spring,
+          "group-hover/volume:h-1.5 group-focus-within/volume:h-1.5 group-data-expanded/volume:h-1.5"
         )}
         thumbClassName={cn(
           // 收起时缩到一半并透明，而不是缩成 0：包围盒仍在，自动化与读屏按可见元素找得到滑块。
-          "scale-50 opacity-0 transition-[scale,opacity,background-color]", spring,
+          "scale-50 opacity-0 transition-[scale,opacity,background-color]",
+          spring,
           "group-hover/volume:scale-100 group-hover/volume:opacity-100 group-focus-within/volume:scale-100 group-focus-within/volume:opacity-100",
-          "group-data-expanded/volume:scale-100 group-data-expanded/volume:opacity-100",
+          "group-data-expanded/volume:scale-100 group-data-expanded/volume:opacity-100"
         )}
         value={[effectiveVolume]}
         min={0}
@@ -310,7 +377,15 @@ function VolumeCapsule({ volume, onVolumeChange, onToggleMute, expanded = false,
  * 常态下居中显示自然宽度的连续弹簧滚动数值（不带多余前导占位与 %）；
  * 点击原地切换为同尺寸同圆角的圆形输入框，居中直接键入 0–100 的数值：回车或失焦提交，Esc 放弃。
  */
-function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; muted: boolean; onCommit: (value: number) => void }) {
+function VolumeReadout({
+  percentage,
+  muted,
+  onCommit,
+}: {
+  percentage: number;
+  muted: boolean;
+  onCommit: (value: number) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLInputElement>(null);
@@ -324,7 +399,8 @@ function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; mu
     setEditing(false);
     const value = Number(draft.trim().replace(/%$/, ""));
     // 空串或非数字视作放弃；越界按上下限夹住。
-    if (draft.trim() && Number.isFinite(value)) onCommit(Math.min(100, Math.max(0, Math.round(value))));
+    if (draft.trim() && Number.isFinite(value))
+      onCommit(Math.min(100, Math.max(0, Math.round(value))));
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") commit();
@@ -346,18 +422,21 @@ function VolumeReadout({ percentage, muted, onCommit }: { percentage: number; mu
       aria-label="输入音量百分比"
       className={cn(
         "h-7 w-7 shrink-0 rounded-full bg-accent/80 p-0 text-center text-xs font-semibold tabular-nums leading-7 outline-none ring-1 ring-primary/50 focus:ring-1 focus:ring-primary",
-        tone,
+        tone
       )}
     />
   ) : (
     <motion.button
       type="button"
       {...iconTappable}
-      onClick={() => { setDraft(String(percentage)); setEditing(true); }}
+      onClick={() => {
+        setDraft(String(percentage));
+        setEditing(true);
+      }}
       aria-label={`音量 ${percentage}%，点击输入`}
       className={cn(
         "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums transition-colors hover:bg-accent",
-        tone,
+        tone
       )}
     >
       <RollingVolumeNumber value={percentage} />

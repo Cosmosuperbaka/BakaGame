@@ -5,7 +5,11 @@ import { readEnv } from "../../src/config/Env";
 import { EventLogger } from "../../src/infrastructure/EventLogger";
 import { createApp } from "../../src/transport/App";
 import { WsHandshakeQuota } from "../../src/transport/WsHandshakeQuota";
-import { createStubBangumiProvider, createStubCEEDataProvider, createStubMusicProvider } from "./Stubs";
+import {
+  createStubBangumiProvider,
+  createStubCEEDataProvider,
+  createStubMusicProvider,
+} from "./Stubs";
 
 /**
  * 压测目标进程：与 `src/Index.ts` 同一条装配线（同一个 createApp、同一套三个游戏服务），
@@ -41,7 +45,9 @@ const { app, dispose } = createApp({
   sonGuessrService,
   ceeService,
   handshakeQuota,
-  disposeResources: async () => { await ceeService.close(); },
+  disposeResources: async () => {
+    await ceeService.close();
+  },
 });
 
 // 与 Index.ts 一致的 10 s 房务：不清房间就会让长测的内存曲线失真。
@@ -70,7 +76,9 @@ lagId.unref();
 const snapshot = () => {
   const cpu = process.cpuUsage(cpuBase);
   const memory = process.memoryUsage();
-  const health = (service: { getHealthSnapshot(): { roomCount: number, connectionCount: number, onlinePlayerCount: number } }) => service.getHealthSnapshot();
+  const health = (service: {
+    getHealthSnapshot(): { roomCount: number; connectionCount: number; onlinePlayerCount: number };
+  }) => service.getHealthSnapshot();
   return {
     at: Date.now(),
     uptimeMs: Date.now() - startedAt,

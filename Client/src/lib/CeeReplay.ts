@@ -22,7 +22,9 @@ export interface ReplayStep {
 export const CEE_REPLAY_STORAGE_KEY = "bakagame:cee-replay";
 export const CEE_REPLAY_QUERY_PARAM = "ceeReplay";
 
-export const isCeeReplayEnabled = (search = typeof window === "undefined" ? "" : window.location.search): boolean => {
+export const isCeeReplayEnabled = (
+  search = typeof window === "undefined" ? "" : window.location.search
+): boolean => {
   try {
     if (new URLSearchParams(search).get(CEE_REPLAY_QUERY_PARAM) === "1") return true;
     return window.localStorage.getItem(CEE_REPLAY_STORAGE_KEY) === "1";
@@ -38,7 +40,9 @@ export const buildReplaySteps = (rounds: ReplayRound[]): ReplayStep[] => {
   for (const round of [...rounds].sort((left, right) => left.number - right.number)) {
     [...round.guesses]
       .sort((left, right) => left.createdAt - right.createdAt)
-      .forEach((guess, position) => steps.push({ round: round.number, index: position + 1, guess }));
+      .forEach((guess, position) =>
+        steps.push({ round: round.number, index: position + 1, guess })
+      );
   }
   return steps;
 };

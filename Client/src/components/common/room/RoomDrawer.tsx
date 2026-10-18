@@ -38,10 +38,14 @@ export function RoomDrawer({
 }) {
   const offset = side === "left" ? "-100%" : "100%";
   const restoreFallback = useRef(false);
-  useCloseFrom(open, (next) => {
-    restoreFallback.current = true;
-    onOpenChange(next);
-  }, closeFrom);
+  useCloseFrom(
+    open,
+    (next) => {
+      restoreFallback.current = true;
+      onOpenChange(next);
+    },
+    closeFrom
+  );
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -49,15 +53,32 @@ export function RoomDrawer({
         {open ? (
           <>
             <DialogPrimitive.Overlay forceMount asChild>
-              <motion.div variants={backdrop} initial="initial" animate="animate" exit="exit" className="absolute inset-0 z-drawer bg-foreground/20 dark:bg-black/50" />
+              <motion.div
+                variants={backdrop}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="absolute inset-0 z-drawer bg-foreground/20 dark:bg-black/50"
+              />
             </DialogPrimitive.Overlay>
-            <DialogPrimitive.Content forceMount asChild aria-describedby={undefined}
-              onOpenAutoFocus={() => { restoreFallback.current = false; }}
-              onCloseAutoFocus={triggerRef ? (event) => {
-                event.preventDefault();
-                const target = restoreFallback.current ? fallbackFocusRef?.current : triggerRef.current;
-                if (target?.isConnected) target.focus();
-              } : undefined}
+            <DialogPrimitive.Content
+              forceMount
+              asChild
+              aria-describedby={undefined}
+              onOpenAutoFocus={() => {
+                restoreFallback.current = false;
+              }}
+              onCloseAutoFocus={
+                triggerRef
+                  ? (event) => {
+                      event.preventDefault();
+                      const target = restoreFallback.current
+                        ? fallbackFocusRef?.current
+                        : triggerRef.current;
+                      if (target?.isConnected) target.focus();
+                    }
+                  : undefined
+              }
             >
               <motion.aside
                 initial={{ x: offset }}
@@ -66,11 +87,13 @@ export function RoomDrawer({
                 className={cn(
                   "absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg",
                   side === "left" ? "left-0 border-r" : "right-0 border-l",
-                  className ?? (side === "left" ? "w-72" : "w-80"),
+                  className ?? (side === "left" ? "w-72" : "w-80")
                 )}
               >
                 <div className="flex h-10 shrink-0 items-center justify-between border-b pl-3 pr-1">
-                  <DialogPrimitive.Title className="text-sm font-medium">{title}</DialogPrimitive.Title>
+                  <DialogPrimitive.Title className="text-sm font-medium">
+                    {title}
+                  </DialogPrimitive.Title>
                   <DialogPrimitive.Close asChild>
                     <CloseButton aria-label="关闭面板" />
                   </DialogPrimitive.Close>

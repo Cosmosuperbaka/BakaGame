@@ -20,7 +20,7 @@ vi.mock("framer-motion", async (importOriginal) => {
     ({ whileHover, whileTap, transition, ...props }, ref) => {
       motionButtonProps({ whileHover, whileTap, transition });
       return <button {...props} ref={ref} />;
-    },
+    }
   );
   return {
     ...actual,
@@ -54,7 +54,7 @@ describe("Button", () => {
     render(
       <Button loading onClick={handleClick}>
         开始游戏
-      </Button>,
+      </Button>
     );
 
     const button = screen.getByRole("button", { name: "开始游戏" });
@@ -75,7 +75,7 @@ describe("Button", () => {
     render(
       <Button disabled onClick={handleClick}>
         再来一轮
-      </Button>,
+      </Button>
     );
 
     const button = screen.getByRole("button", { name: "再来一轮" });
@@ -96,10 +96,13 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "默认操作" })).toBeEnabled();
   });
 
-  it.each(["outline", "secondary", "ghost"] as const)("%s保持普通反馈，不被默认variant修复提升为主要操作", (variant) => {
-    render(<Button variant={variant}>次要操作</Button>);
-    expect(feedback()).toEqual(pressable);
-  });
+  it.each(["outline", "secondary", "ghost"] as const)(
+    "%s保持普通反馈，不被默认variant修复提升为主要操作",
+    (variant) => {
+      render(<Button variant={variant}>次要操作</Button>);
+      expect(feedback()).toEqual(pressable);
+    }
+  );
 
   it("危险按钮用主要反馈，图标尺寸优先使用图标反馈，link不缩放", () => {
     const view = render(<Button variant="destructive">删除</Button>);
@@ -109,15 +112,27 @@ describe("Button", () => {
     view.rerender(<Button variant="destructive" size="icon" aria-label="图标操作" />);
     expect(feedback()).toEqual(iconTappable);
     view.rerender(<Button variant="link">文本入口</Button>);
-    expect(feedback()).toEqual({ whileHover: undefined, whileTap: undefined, transition: undefined });
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
   });
 
   it("loading和disabled移除交互反馈，恢复后重新启用默认主要反馈", () => {
     const view = render(<Button loading>提交</Button>);
-    expect(feedback()).toEqual({ whileHover: undefined, whileTap: undefined, transition: undefined });
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
     expect(screen.getByRole("button", { name: "提交" })).toHaveAttribute("aria-busy", "true");
     view.rerender(<Button disabled>提交</Button>);
-    expect(feedback()).toEqual({ whileHover: undefined, whileTap: undefined, transition: undefined });
+    expect(feedback()).toEqual({
+      whileHover: undefined,
+      whileTap: undefined,
+      transition: undefined,
+    });
     expect(screen.getByRole("button", { name: "提交" })).toBeDisabled();
     view.rerender(<Button>提交</Button>);
     expect(feedback()).toEqual(pressableStrong);
@@ -126,10 +141,13 @@ describe("Button", () => {
   });
 
   it("asChild保持子元素语义且不叠加motion反馈", () => {
-    render(<Button asChild><a href="/whoisfaker">进入大厅</a></Button>);
+    render(
+      <Button asChild>
+        <a href="/whoisfaker">进入大厅</a>
+      </Button>
+    );
     expect(screen.getByRole("link", { name: "进入大厅" })).toHaveAttribute("href", "/whoisfaker");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(motionButtonProps).not.toHaveBeenCalled();
   });
-
 });

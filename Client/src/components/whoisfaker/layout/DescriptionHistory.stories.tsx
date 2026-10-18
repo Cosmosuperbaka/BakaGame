@@ -12,7 +12,13 @@ const meta = {
   title: "谁是卧底/DescriptionHistory",
   component: DescriptionTable,
   args: { descriptions: wifSnapshot("day3").descriptions, players: wifSnapshot("day3").players },
-  decorators: [(Story) => <div className={WIF_STAGE_FRAME}><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className={WIF_STAGE_FRAME}>
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof DescriptionTable>;
 
 export default meta;

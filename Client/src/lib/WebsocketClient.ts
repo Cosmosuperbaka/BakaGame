@@ -5,6 +5,7 @@ import {
   MAX_RECONNECT_DELAY_MS,
 } from "@/config/Constants";
 import { resolveServerBase } from "@/lib/ServerEndpoint";
+import { rejectProtocol } from "@/lib/ProtocolFailure";
 import {
   captureClientLog,
   captureClientException,
@@ -37,7 +38,10 @@ const isServerMessage = (value: unknown): value is ServerMessage => {
   if (packet.traceId !== undefined && typeof packet.traceId !== "string") return false;
   if (packet.type === "error") return isProtocolError(packet.error);
   // 部分旧 ACK 未携带 requestType；请求归属由 pending 的 id 判定。
-  return packet.type === "ack" && (packet.requestType === undefined || typeof packet.requestType === "string");
+  return (
+    packet.type === "ack" &&
+    (packet.requestType === undefined || typeof packet.requestType === "string")
+  );
 };
 
 interface PendingRequest {
@@ -69,7 +73,8 @@ export class WebSocketClient {
   private requestCounter = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
-  private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> = [];
+  private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> =
+    [];
   private readonly path: string;
 
   constructor(path: string) {
@@ -82,7 +87,10 @@ export class WebSocketClient {
    * 走与掉线相同的重连路径，各游戏的重连逻辑随之重新接管座位并带上新身份。未连接时不做任何事。
    */
   refreshIdentity(): void {
-    if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
+    if (
+      this.socket?.readyState === WebSocket.OPEN ||
+      this.socket?.readyState === WebSocket.CONNECTING
+    ) {
       this.socket.close();
     }
   }
@@ -183,7 +191,8 @@ export class WebSocketClient {
       pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
     }
     this.pendingRequests.clear();
-    for (const waiter of this.connectWaiters) waiter.reject({ code: "DISCONNECTED", message: "连接已断开" });
+    for (const waiter of this.connectWaiters)
+      waiter.reject({ code: "DISCONNECTED", message: "连接已断开" });
     this.connectWaiters = [];
     this.statusHandlers.forEach((handler) => handler(false));
   }
@@ -192,16 +201,18 @@ export class WebSocketClient {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
       const waiter = {
-        resolve: () => { clearTimeout(timer); resolve(); },
-        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 原样转发协议错误体：{ code, message } 是数据契约，调用方按 code 分支
-        reject: (error: ProtocolError) => { clearTimeout(timer); reject(error); },
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (error: ProtocolError) => {
+          clearTimeout(timer);
+          rejectProtocol(reject, error);
+        },
       };
       const timer = setTimeout(() => {
-        this.connectWaiters = this.connectWaiters.filter(
-          (candidate) => candidate !== waiter,
-        );
-        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：客户端合成的超时也用协议错误体，避免出现第二种失败形状
-        reject({ code: "CONNECT_TIMEOUT", message: "连接服务器超时" });
+        this.connectWaiters = this.connectWaiters.filter((candidate) => candidate !== waiter);
+        rejectProtocol(reject, { code: "CONNECT_TIMEOUT", message: "连接服务器超时" });
       }, timeoutMs);
       this.connectWaiters.push(waiter);
     });
@@ -215,7 +226,7 @@ export class WebSocketClient {
   async send<T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload: Record<string, unknown> = {},
-    options?: { roomId?: string; sessionToken?: string; timeout?: number },
+    options?: { roomId?: string; sessionToken?: string; timeout?: number }
   ): Promise<T> {
     const timeoutMs = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
@@ -236,19 +247,18 @@ export class WebSocketClient {
         try {
           const result = await new Promise<T>((resolve, reject) => {
             if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：未连接拒绝保持协议错误体形状
-              reject({ code: "NOT_CONNECTED", message: "WebSocket 未连接" });
+              rejectProtocol(reject, { code: "NOT_CONNECTED", message: "WebSocket 未连接" });
               return;
             }
 
             const id = `req-${Date.now().toString(36)}-${++this.requestCounter}-${traceId.slice(0, 8)}`;
-            const timer = timeoutMs > 0
-              ? setTimeout(() => {
-                this.pendingRequests.delete(id);
-                // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 同上：请求超时保持协议错误体形状，与服务端业务拒绝同一套 code 分支
-                reject({ code: "TIMEOUT", message: "请求超时" });
-              }, timeoutMs)
-              : undefined;
+            const timer =
+              timeoutMs > 0
+                ? setTimeout(() => {
+                    this.pendingRequests.delete(id);
+                    rejectProtocol(reject, { code: "TIMEOUT", message: "请求超时" });
+                  }, timeoutMs)
+                : undefined;
 
             this.pendingRequests.set(id, {
               resolve: resolve as (payload: Record<string, unknown>) => void,
@@ -265,34 +275,53 @@ export class WebSocketClient {
           const durationMs = performance.now() - startedAt;
           span.setStatus({ code: 1 });
           span.setAttribute("ws.duration_ms", durationMs);
-          countClientMetric("bakagame.websocket.commands", 1, { path: this.path, command: type, status: "ok" });
-          recordClientMetric("bakagame.websocket.command.duration", durationMs, { path: this.path, command: type });
+          countClientMetric("bakagame.websocket.commands", 1, {
+            path: this.path,
+            command: type,
+            status: "ok",
+          });
+          recordClientMetric("bakagame.websocket.command.duration", durationMs, {
+            path: this.path,
+            command: type,
+          });
           return result;
         } catch (error) {
           const durationMs = performance.now() - startedAt;
           span.setStatus({ code: 2 });
           span.setAttribute("ws.duration_ms", durationMs);
-          countClientMetric("bakagame.websocket.commands", 1, { path: this.path, command: type, status: "error" });
-          recordClientMetric("bakagame.websocket.command.duration", durationMs, { path: this.path, command: type });
+          countClientMetric("bakagame.websocket.commands", 1, {
+            path: this.path,
+            command: type,
+            status: "error",
+          });
+          recordClientMetric("bakagame.websocket.command.duration", durationMs, {
+            path: this.path,
+            command: type,
+          });
           captureClientLog("WebSocket 命令失败", "error", {
             path: this.path,
             command: type,
             traceId,
             ...(isProtocolError(error) ? { code: error.code, message: error.message } : {}),
-            error: isProtocolError(error) ? error.message : error instanceof Error ? error.message : String(error),
+            error: isProtocolError(error)
+              ? error.message
+              : error instanceof Error
+                ? error.message
+                : String(error),
           });
           // 业务拒绝（密码错误、房间不存在、阶段不合法等）与断连、超时同属可预期的协议
           // 应答，只计指标与日志，严禁上报成异常事件：否则一次输错房间密码就会污染缺陷信号。
           if (!isProtocolError(error)) {
-            captureClientException(
-              error instanceof Error ? error : new Error(String(error)),
-              { path: this.path, command: type, traceId },
-            );
+            captureClientException(error instanceof Error ? error : new Error(String(error)), {
+              path: this.path,
+              command: type,
+              traceId,
+            });
           }
           throw error;
         }
       },
-      { "ws.path": this.path, "ws.command": type, traceId },
+      { "ws.path": this.path, "ws.command": type, traceId }
     );
   }
 

@@ -19,7 +19,7 @@ describe("reportTelemetry", () => {
         traceId: "trace-xyz",
         metadata: { key: "value" },
       },
-      { fetcher: mockFetch as unknown as typeof fetch },
+      { fetcher: mockFetch as unknown as typeof fetch }
     );
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -41,8 +41,8 @@ describe("reportTelemetry", () => {
         {
           message: "网络抖动测试",
         },
-        { fetcher: failingFetch },
-      ),
+        { fetcher: failingFetch }
+      )
     ).resolves.toBeUndefined();
 
     expect(warnSpy).toHaveBeenCalled();
@@ -53,9 +53,11 @@ describe("reportTelemetry", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     for (const status of [422, 429, 500]) {
-      const mockFetch = vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: "Upstream issue" }), { status }),
-      ) as unknown as typeof fetch;
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: "Upstream issue" }), { status })
+        ) as unknown as typeof fetch;
 
       await expect(
         reportTelemetry(
@@ -63,13 +65,11 @@ describe("reportTelemetry", () => {
             level: "warn",
             message: `状态码 ${status} 拦截测试`,
           },
-          { fetcher: mockFetch },
-        ),
+          { fetcher: mockFetch }
+        )
       ).resolves.toBeUndefined();
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(`HTTP ${status}`),
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(`HTTP ${status}`));
     }
 
     warnSpy.mockRestore();

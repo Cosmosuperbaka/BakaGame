@@ -1,4 +1,8 @@
-import type { CreditLicenseBucket, CreditLicenseDocument, CreditLicenseLoaders } from "@/lib/Credits";
+import type {
+  CreditLicenseBucket,
+  CreditLicenseDocument,
+  CreditLicenseLoaders,
+} from "@/lib/Credits";
 import { licenseBucket } from "@/lib/Credits";
 import licenseLoaders from "virtual:credits-licenses";
 
@@ -37,7 +41,7 @@ export function loadCreditsLicense(packageName: string): Promise<CreditLicenseDo
   if (cached) return cached;
 
   const request: Promise<CreditLicenseDocument | null> = loadBucket(packageName).then(
-    (bucket) => bucket[packageName] ?? null,
+    (bucket) => bucket[packageName] ?? null
   );
   pendingDocuments.set(packageName, request);
   request.catch(() => pendingDocuments.delete(packageName));

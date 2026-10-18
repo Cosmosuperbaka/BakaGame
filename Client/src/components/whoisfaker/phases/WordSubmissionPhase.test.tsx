@@ -7,7 +7,11 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WordSubmissionPhase } from "./WordSubmissionPhase";
 
-const player = (id: string, name: string, isHost = false): WhoIsFakerRoomSnapshot["players"][number] => ({
+const player = (
+  id: string,
+  name: string,
+  isHost = false
+): WhoIsFakerRoomSnapshot["players"][number] => ({
   id,
   name,
   score: 0,
@@ -68,18 +72,30 @@ describe("word submission", () => {
   it("词语输入框与随机分配开关由可见标签命名", () => {
     render(<Harness />);
 
-    expect(screen.getByRole("textbox", { name: "平民词" })).toHaveAttribute("placeholder", "输入平民获得的词语");
+    expect(screen.getByRole("textbox", { name: "平民词" })).toHaveAttribute(
+      "placeholder",
+      "输入平民获得的词语"
+    );
     expect(screen.getByRole("textbox", { name: "卧底词" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "白板提示" })).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "随机分配身份" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", { name: "随机分配身份" })).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
   });
 
   it("按标签填写后提交词语，随机分配时不附带手动身份", async () => {
     render(<Harness />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "平民词" }), { target: { value: " 饺子 " } });
-    fireEvent.change(screen.getByRole("textbox", { name: "卧底词" }), { target: { value: "馄饨" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "白板提示" }), { target: { value: "一种面食" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "平民词" }), {
+      target: { value: " 饺子 " },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "卧底词" }), {
+      target: { value: "馄饨" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "白板提示" }), {
+      target: { value: "一种面食" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "确认提交" }));
 
     await waitFor(() => {
@@ -94,13 +110,18 @@ describe("word submission", () => {
   it("漏填的字段标红并在框下说明，不发命令；填上后错误消失", () => {
     render(<Harness />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "平民词" }), { target: { value: "饺子" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "平民词" }), {
+      target: { value: "饺子" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "确认提交" }));
 
     const undercover = screen.getByRole("textbox", { name: "卧底词" });
     expect(undercover).toHaveAttribute("aria-invalid", "true");
     expect(undercover).toHaveAccessibleDescription("请输入卧底词");
-    expect(screen.getByRole("textbox", { name: "白板提示" })).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("textbox", { name: "白板提示" })).toHaveAttribute(
+      "aria-invalid",
+      "true"
+    );
     expect(screen.getByRole("textbox", { name: "平民词" })).not.toHaveAttribute("aria-invalid");
     expect(sendCommand).not.toHaveBeenCalled();
 
@@ -113,10 +134,15 @@ describe("word submission", () => {
 
     fireEvent.click(screen.getByRole("switch", { name: "随机分配身份" }));
 
-    expect(screen.getByRole("switch", { name: "随机分配身份" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "随机分配身份" })).toHaveAttribute(
+      "aria-checked",
+      "false"
+    );
     // 预填顺序：先卧底，再白板，其余平民。
     const pressedRole = (name: string) =>
-      within(screen.getByRole("radiogroup", { name: `为 ${name} 分配身份` })).getByRole("radio", { checked: true });
+      within(screen.getByRole("radiogroup", { name: `为 ${name} 分配身份` })).getByRole("radio", {
+        checked: true,
+      });
     expect(pressedRole("阿澄")).toHaveAccessibleName("卧底");
     expect(pressedRole("桃子")).toHaveAccessibleName("白板");
     expect(pressedRole("北川")).toHaveAccessibleName("平民");

@@ -9,7 +9,9 @@ import { listItem, listItemExit } from "@/lib/Motion";
  * 与骨架屏同高：底下垫一份看不见的骨架撑开高度（各断点下卡片行数不同，写死高度对不齐），
  * 加载结束落到空列表时整块高度不变，下方内容不跳。
  */
-export function RoomListEmpty({ ref }: {
+export function RoomListEmpty({
+  ref,
+}: {
   /** 列表的 `AnimatePresence mode="popLayout"` 靠它把退场的空状态抽出文档流 */
   ref?: Ref<HTMLDivElement>;
 }) {

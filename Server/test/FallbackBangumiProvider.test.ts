@@ -42,11 +42,26 @@ const makeProviders = (healthy: () => boolean) => {
     },
   };
   const remote: BangumiDataProvider = {
-    searchSubjects: async () => { calls.remote += 1; return result; },
-    getSubject: async () => { calls.remote += 1; return { ...result[0], locked: false, musicTracks: [] }; },
-    chooseRandomSubject: async () => { calls.remote += 1; return { ...result[0], locked: false, musicTracks: [] }; },
-    resolveCharacterImage: async () => { calls.remote += 1; return undefined; },
-    resolveSubjectImage: async () => { calls.remote += 1; return undefined; },
+    searchSubjects: async () => {
+      calls.remote += 1;
+      return result;
+    },
+    getSubject: async () => {
+      calls.remote += 1;
+      return { ...result[0], locked: false, musicTracks: [] };
+    },
+    chooseRandomSubject: async () => {
+      calls.remote += 1;
+      return { ...result[0], locked: false, musicTracks: [] };
+    },
+    resolveCharacterImage: async () => {
+      calls.remote += 1;
+      return undefined;
+    },
+    resolveSubjectImage: async () => {
+      calls.remote += 1;
+      return undefined;
+    },
   };
   return { calls, local, remote };
 };
@@ -113,15 +128,24 @@ describe("FallbackBangumiProvider", () => {
   test("非降级类错误原样抛出，不触发网络回源", async () => {
     const { calls, remote } = makeProviders(() => true);
     const local: BangumiDataProvider = {
-      searchSubjects: async () => { calls.local += 1; throw new AppError("BANGUMI_NO_SUBJECT", "查不到"); },
-      getSubject: async () => { throw new AppError("BANGUMI_NO_SUBJECT", "查不到"); },
-      chooseRandomSubject: async () => { throw new AppError("BANGUMI_NO_SUBJECT", "查不到"); },
+      searchSubjects: async () => {
+        calls.local += 1;
+        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
+      },
+      getSubject: async () => {
+        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
+      },
+      chooseRandomSubject: async () => {
+        throw new AppError("BANGUMI_NO_SUBJECT", "查不到");
+      },
       resolveCharacterImage: async () => undefined,
       resolveSubjectImage: async () => undefined,
     };
     const provider = new FallbackBangumiProvider({ local, remote });
 
-    await expect(provider.searchSubjects("测试")).rejects.toMatchObject({ code: "BANGUMI_NO_SUBJECT" });
+    await expect(provider.searchSubjects("测试")).rejects.toMatchObject({
+      code: "BANGUMI_NO_SUBJECT",
+    });
     expect(calls.local).toBe(1);
     expect(calls.remote).toBe(0);
   });

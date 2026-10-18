@@ -39,7 +39,7 @@ function say(
   player: { id: string; name: string },
   text: string,
   offsetSeconds: number,
-  extra: Partial<ChatMessage> = {},
+  extra: Partial<ChatMessage> = {}
 ): ChatMessage {
   sequence += 1;
   return {
@@ -60,7 +60,7 @@ const ghost = (
   player: { id: string; name: string },
   text: string,
   offsetSeconds: number,
-  ghostRole: "dead" | "spectator",
+  ghostRole: "dead" | "spectator"
 ) => say(player, text, offsetSeconds, { channel: "ghost", ghostRole });
 
 // 旁观者视角：出局玩家与旁观者的发言只在观战频道可见，以虚线气泡区分。
@@ -79,11 +79,15 @@ const LONG_CHAT: ChatMessage[] = [
   notice(`${host.name} 断线超时，房主已转移给 ${me.name}`, 0),
   say(azumi, "拉朋友一起来：https://game.baka.website/whoisfaker/room/4821", 10),
   say(peach, "6666666666666666666666666666666666666666666666666666666666666666666666", 22),
-  say(me, "Kanade 第一轮说能拿在手里，第二轮又说要放在桌上用，两句放在一起很奇怪，我这轮先投 Kanade", 34),
+  say(
+    me,
+    "Kanade 第一轮说能拿在手里，第二轮又说要放在桌上用，两句放在一起很奇怪，我这轮先投 Kanade",
+    34
+  ),
   say(
     longName,
     "我也把前两轮的描述都过了一遍：第一轮大家都在说颜色和形状，第二轮开始有人突然改口说用途，前后对不上。卧底应该就在改口的两个人里面，投票前大家先各自说一下理由吧",
-    46,
+    46
   ),
 ];
 

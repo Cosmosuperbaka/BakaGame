@@ -47,19 +47,36 @@ export interface WorkerResult {
   windowEndAt: number;
   windowMs: number;
   counters: Counters;
-  latency: { count: number, p50: number, p95: number, p99: number, max: number };
+  latency: { count: number; p50: number; p95: number; p99: number; max: number };
   samples: number[];
   failures: Record<string, number>;
   notes: string[];
-  generator: { cpuUserMs: number, cpuSystemMs: number, cores: number, rssBytes: number, heapUsedBytes: number };
+  generator: {
+    cpuUserMs: number;
+    cpuSystemMs: number;
+    cores: number;
+    rssBytes: number;
+    heapUsedBytes: number;
+  };
 }
 
 const emptyCounters = (): Counters => ({
-  bytesSent: 0, bytesReceived: 0, framesSent: 0, framesReceived: 0,
-  commandsSent: 0, acks: 0, errors: 0, timeouts: 0, retries: 0, ignored: 0,
+  bytesSent: 0,
+  bytesReceived: 0,
+  framesSent: 0,
+  framesReceived: 0,
+  commandsSent: 0,
+  acks: 0,
+  errors: 0,
+  timeouts: 0,
+  retries: 0,
+  ignored: 0,
 });
 
-const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const parseArgs = (argv: string[]): Record<string, string> => {
   const out: Record<string, string> = {};
@@ -68,13 +85,18 @@ const parseArgs = (argv: string[]): Record<string, string> => {
     if (!token.startsWith("--")) continue;
     const next = argv[index + 1];
     if (next === undefined || next.startsWith("--")) out[token.slice(2)] = "true";
-    else { out[token.slice(2)] = next; index += 1; }
+    else {
+      out[token.slice(2)] = next;
+      index += 1;
+    }
   }
   return out;
 };
 
 const percentile = (sorted: readonly number[], ratio: number): number =>
-  sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.ceil(ratio * sorted.length) - 1)]!;
+  sorted.length === 0
+    ? 0
+    : sorted[Math.min(sorted.length - 1, Math.ceil(ratio * sorted.length) - 1)]!;
 
 const summarize = (samples: number[]): WorkerResult["latency"] => {
   const sorted = [...samples].sort((a, b) => a - b);
@@ -98,7 +120,7 @@ const reservoir = (values: number[], size: number): number[] => {
   return out;
 };
 
-const collect = (handles: RoomHandle[]): { counters: Counters, samples: number[] } => {
+const collect = (handles: RoomHandle[]): { counters: Counters; samples: number[] } => {
   const counters = emptyCounters();
   const samples: number[] = [];
   for (const handle of handles) {
@@ -135,21 +157,24 @@ export async function runWorker(options: WorkerOptions): Promise<WorkerResult> {
       pace: options.pace,
       seed: (options.roomIdBase + index) * 2_654_435_761,
       diagnostics,
-    }));
+    })
+  );
 
   let roomsStarted = 0;
   // 房间逐个铺开：同一刻建立几十个房间会把握手本身算进压力里。
-  await Promise.all(handles.map(async (handle, index) => {
-    await sleep(Math.round((options.staggerMs * index) / Math.max(1, handles.length)));
-    try {
-      await handle.start();
-      roomsStarted += 1;
-    } catch (error) {
-      diagnostics.notes.push(`${handle.game}.start: ${String(error)}`);
-      diagnostics.failures.set("ROOM_START", (diagnostics.failures.get("ROOM_START") ?? 0) + 1);
-      await handle.stop().catch(() => {});
-    }
-  }));
+  await Promise.all(
+    handles.map(async (handle, index) => {
+      await sleep(Math.round((options.staggerMs * index) / Math.max(1, handles.length)));
+      try {
+        await handle.start();
+        roomsStarted += 1;
+      } catch (error) {
+        diagnostics.notes.push(`${handle.game}.start: ${String(error)}`);
+        diagnostics.failures.set("ROOM_START", (diagnostics.failures.get("ROOM_START") ?? 0) + 1);
+        await handle.stop().catch(() => {});
+      }
+    })
+  );
 
   await sleep(options.warmupMs);
   for (const handle of handles) for (const socket of handle.sockets) socket.beginWindow();

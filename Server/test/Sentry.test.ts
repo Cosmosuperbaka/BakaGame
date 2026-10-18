@@ -13,7 +13,8 @@ import {
   initServerSentry,
   isServerSentryEnabled,
   captureServerLog,
-  redactData, redactLogText,
+  redactData,
+  redactLogText,
   describeError,
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
@@ -24,11 +25,18 @@ let gitSpy: ReturnType<typeof spyOn>;
 beforeEach(() => {
   gitSpy = spyOn(Bun, "spawnSync").mockImplementation(((command: string[]) => ({
     exitCode: 0,
-    stdout: Buffer.from(command.includes("--show-toplevel") ? resolve(import.meta.dir, "../..") : "abcdef1".padEnd(40, "0")),
-    stderr: Buffer.alloc(0), success: true,
+    stdout: Buffer.from(
+      command.includes("--show-toplevel")
+        ? resolve(import.meta.dir, "../..")
+        : "abcdef1".padEnd(40, "0")
+    ),
+    stderr: Buffer.alloc(0),
+    success: true,
   })) as any);
 });
-afterEach(() => { gitSpy.mockRestore(); });
+afterEach(() => {
+  gitSpy.mockRestore();
+});
 
 const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
   clientUrl: "http://localhost:5173",
@@ -116,7 +124,7 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
         checkinMargin: 2,
         maxRuntime: 1,
         timezone: "UTC",
-      }),
+      })
     );
     checkInSpy.mockRestore();
   });
@@ -164,7 +172,9 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
         },
       };
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
+        fn: (scope: unknown) => unknown
+      ) => {
         return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
       }) as any);
       const captureSpy = spyOn(Sentry, "captureException").mockImplementation(() => "");
@@ -191,7 +201,9 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
     });
 
     it("captureServerException 在无 context 时安全上报", () => {
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
+        fn: (scope: unknown) => unknown
+      ) => {
         const dummyScope = { setTag: () => dummyScope, setExtras: () => dummyScope };
         return fn(dummyScope) as ReturnType<typeof Sentry.withScope>;
       }) as any);
@@ -221,7 +233,9 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
         },
       };
 
-      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) => {
+      const withScopeSpy = spyOn(Sentry, "withScope").mockImplementation(((
+        fn: (scope: unknown) => unknown
+      ) => {
         return fn(mockScope) as ReturnType<typeof Sentry.withScope>;
       }) as any);
       const captureSpy = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
@@ -284,16 +298,22 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
   });
 });
 
-
 describe("服务端遥测统一脱敏出口", () => {
-  afterEach(() => { _resetServerSentryForTest(); });
+  afterEach(() => {
+    _resetServerSentryForTest();
+  });
 
   it("递归保留 Error 诊断、共享引用与循环 cause，同时屏蔽原始 sample", () => {
     const error = new Error("upstream token=dummy-private-token");
     error.cause = error;
     const shared = { password: "dummy-password", roomId: "room-safe" };
-    const cleaned = redactData({ error, left: shared, right: shared,
-      sample: '{"cookie":"dummy-cookie"', url: "https://example.com/?token=dummy-query&song=1" }) as any;
+    const cleaned = redactData({
+      error,
+      left: shared,
+      right: shared,
+      sample: '{"cookie":"dummy-cookie"',
+      url: "https://example.com/?token=dummy-query&song=1",
+    }) as any;
     expect(cleaned.error.errorName).toBe("Error");
     expect(cleaned.error.stack).toContain("Error:");
     expect(cleaned.error.cause).toBe("[CIRCULAR]");
@@ -307,14 +327,19 @@ describe("服务端遥测统一脱敏出口", () => {
 
   it("登录验证码与口令同级 100% 掩码，身份凭证仍保留前 4 位", () => {
     const cleaned = redactData({
-      loginCode: "888888", otp: "123456", verifyCode: "242424", captcha: "9977",
-      sessionToken: "dummy-session-long", roomId: "room-safe",
+      loginCode: "888888",
+      otp: "123456",
+      verifyCode: "242424",
+      captcha: "9977",
+      sessionToken: "dummy-session-long",
+      roomId: "room-safe",
     }) as Record<string, unknown>;
-    for (const key of ["loginCode", "otp", "verifyCode", "captcha"]) expect(cleaned[key]).toBe("***[REDACTED]");
+    for (const key of ["loginCode", "otp", "verifyCode", "captcha"])
+      expect(cleaned[key]).toBe("***[REDACTED]");
     expect(cleaned.sessionToken).toBe("dumm***[REDACTED]");
     expect(cleaned.roomId).toBe("room-safe");
 
-    const text = redactLogText('投递登录验证码 loginCode=888888 与 otp: 123456，房间 room-safe');
+    const text = redactLogText("投递登录验证码 loginCode=888888 与 otp: 123456，房间 room-safe");
     expect(text).not.toContain("888888");
     expect(text).not.toContain("123456");
     expect(text).toContain("room-safe");
@@ -322,37 +347,83 @@ describe("服务端遥测统一脱敏出口", () => {
 
   it("原生 beforeSend / beforeSendLog 清理非 wrapper 事件且保留完整异常栈结构", async () => {
     let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
-    const init = spyOn(Sentry, "init").mockImplementation((input) => { options = input; return undefined; });
+    const init = spyOn(Sentry, "init").mockImplementation((input) => {
+      options = input;
+      return undefined;
+    });
     try {
       initServerSentry(createMockEnv());
-      const frames = Array.from({ length: 40 }, (_, i) => ({ function: `frame${i}`, lineno: i,
-        filename: "https://example.com/module?password=dummy-query", vars: { sessionToken: "dummy-session-long" } }));
-      const event: any = { event_id: "dummy-event", extra: { nested: { password: "dummy-password", cookie: "dummy-cookie-long" } },
-        exception: { values: [{ type: "Error", value: "authorization: Bearer dummy-bearer-value", stacktrace: { frames } }] },
-        breadcrumbs: [{ category: "http", data: { cookie: "dummy-cookie-long" }, message: "password=dummy-password" }] };
+      const frames = Array.from({ length: 40 }, (_, i) => ({
+        function: `frame${i}`,
+        lineno: i,
+        filename: "https://example.com/module?password=dummy-query",
+        vars: { sessionToken: "dummy-session-long" },
+      }));
+      const event: any = {
+        event_id: "dummy-event",
+        extra: { nested: { password: "dummy-password", cookie: "dummy-cookie-long" } },
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "authorization: Bearer dummy-bearer-value",
+              stacktrace: { frames },
+            },
+          ],
+        },
+        breadcrumbs: [
+          {
+            category: "http",
+            data: { cookie: "dummy-cookie-long" },
+            message: "password=dummy-password",
+          },
+        ],
+      };
       const result = await options!.beforeSend!(event, {});
       expect((result as any).exception.values[0].stacktrace.frames).toHaveLength(40);
       expect((result as any).exception.values[0].stacktrace.frames[39].function).toBe("frame39");
       expect((result as any).event_id).toBe("dummy-event");
-      for (const secret of ["dummy-password", "dummy-cookie-long", "dummy-session-long", "dummy-bearer-value", "dummy-query"])
+      for (const secret of [
+        "dummy-password",
+        "dummy-cookie-long",
+        "dummy-session-long",
+        "dummy-bearer-value",
+        "dummy-query",
+      ])
         expect(JSON.stringify(result)).not.toContain(secret);
-      const log = options!.beforeSendLog!({ level: "warn", message: "token=dummy-log-token", attributes: { nested: { password: "dummy-password" } } });
+      const log = options!.beforeSendLog!({
+        level: "warn",
+        message: "token=dummy-log-token",
+        attributes: { nested: { password: "dummy-password" } },
+      });
       expect(log!.level).toBe("warn");
       expect(JSON.stringify(log)).not.toContain("dummy-log-token");
       expect(JSON.stringify(log)).not.toContain("dummy-password");
-    } finally { init.mockRestore(); }
+    } finally {
+      init.mockRestore();
+    }
   });
 
   it("wrapper 日志和 extras 在 SDK 调用前已清理；异常本体交由 beforeSend 保留分组", () => {
     const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
     const logs = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
     let extras: Record<string, unknown> | undefined;
-    const scope = { setTag: () => scope, setExtras: (input: Record<string, unknown>) => { extras = input; return scope; } };
+    const scope = {
+      setTag: () => scope,
+      setExtras: (input: Record<string, unknown>) => {
+        extras = input;
+        return scope;
+      },
+    };
     const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: any) => fn(scope)) as any);
     const exception = spyOn(Sentry, "captureException").mockImplementation(() => "");
     try {
       initServerSentry(createMockEnv());
-      const context = { password: "dummy-password", nested: { cookie: "dummy-cookie-long" }, traceId: "trace-safe" };
+      const context = {
+        password: "dummy-password",
+        nested: { cookie: "dummy-cookie-long" },
+        traceId: "trace-safe",
+      };
       captureServerLog("password=dummy-password", "error", context);
       expect(JSON.stringify(logs.mock.calls)).not.toContain("dummy-password");
       const error = new Error("failure");
@@ -360,12 +431,18 @@ describe("服务端遥测统一脱敏出口", () => {
       expect(exception).toHaveBeenCalledWith(error);
       expect(JSON.stringify(extras)).not.toContain("dummy-cookie-long");
       expect(extras!.traceId).toBe("trace-safe");
-    } finally { init.mockRestore(); logs.mockRestore(); scoped.mockRestore(); exception.mockRestore(); }
+    } finally {
+      init.mockRestore();
+      logs.mockRestore();
+      scoped.mockRestore();
+      exception.mockRestore();
+    }
   });
 });
 
 it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () => {
-  const originalRelease = Bun.env.SENTRY_RELEASE, originalNodeEnv = Bun.env.NODE_ENV;
+  const originalRelease = Bun.env.SENTRY_RELEASE,
+    originalNodeEnv = Bun.env.NODE_ENV;
   const release = spyOn(Release, "resolveServerRelease").mockReturnValue(undefined);
   const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
   const warning = spyOn(console, "warn").mockImplementation(() => {});
@@ -379,9 +456,13 @@ it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () 
     expect(warning).toHaveBeenCalledTimes(1);
     expect(warning.mock.calls[0]![0]).toContain("发布证据缺失或无效");
   } finally {
-    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE; else Bun.env.SENTRY_RELEASE = originalRelease;
-    if (originalNodeEnv === undefined) delete Bun.env.NODE_ENV; else Bun.env.NODE_ENV = originalNodeEnv;
-    release.mockRestore(); init.mockRestore(); warning.mockRestore();
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE;
+    else Bun.env.SENTRY_RELEASE = originalRelease;
+    if (originalNodeEnv === undefined) delete Bun.env.NODE_ENV;
+    else Bun.env.NODE_ENV = originalNodeEnv;
+    release.mockRestore();
+    init.mockRestore();
+    warning.mockRestore();
   }
 });
 
@@ -396,7 +477,8 @@ it("Sentry 只消费 Env 的环境标记并保持 canonical 七位 release", () 
     expect(options.release).toMatch(/^V\d+\.\d+\.\d+（abcdef1）$/);
     expect(options.release).not.toBe(Bun.env.SENTRY_RELEASE);
   } finally {
-    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE; else Bun.env.SENTRY_RELEASE = originalRelease;
+    if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE;
+    else Bun.env.SENTRY_RELEASE = originalRelease;
     init.mockRestore();
   }
 });

@@ -48,7 +48,9 @@ export function useAudioClipPlayer({
   }, []);
 
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">("idle");
+  const [audioPlaybackState, setAudioPlaybackState] = useState<"idle" | "playing" | "completed">(
+    "idle"
+  );
   const [audioRetryToken, setAudioRetryToken] = useState(0);
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -180,7 +182,7 @@ export function useAudioClipPlayer({
       const currentPrivateState = state.privateState;
       const currentSnapshot = state.snapshot;
       const currentPlayer = currentSnapshot?.players.find(
-        (player) => player.id === currentPrivateState?.playerId,
+        (player) => player.id === currentPrivateState?.playerId
       );
       if (
         isPlayingPhase &&
@@ -190,7 +192,9 @@ export function useAudioClipPlayer({
         audioReadyKey.current !== loadKey
       ) {
         audioReadyKey.current = loadKey;
-        void Promise.resolve(sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })).catch(() => {
+        void Promise.resolve(
+          sendCommandRef.current("song.game.audioReady", { roundNumber: currentPhaseRoundNumber })
+        ).catch(() => {
           if (audioReadyKey.current === loadKey) audioReadyKey.current = null;
         });
       }
@@ -209,9 +213,15 @@ export function useAudioClipPlayer({
       stopFadeLoop();
       setAudioPlaybackState("idle");
       setAudioStatus("error");
-      if (audioFailureKey.current !== loadKey && isPlayingPhase && currentPhaseRoundNumber !== undefined) {
+      if (
+        audioFailureKey.current !== loadKey &&
+        isPlayingPhase &&
+        currentPhaseRoundNumber !== undefined
+      ) {
         audioFailureKey.current = loadKey;
-        void Promise.resolve(sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber })).catch(() => {
+        void Promise.resolve(
+          sendCommandRef.current("song.game.audioFailed", { roundNumber: currentPhaseRoundNumber })
+        ).catch(() => {
           if (audioFailureKey.current === loadKey) audioFailureKey.current = null;
         });
       }
@@ -299,7 +309,8 @@ export function useAudioClipPlayer({
       audioStatus !== "ready" ||
       audioPlaybackState === "playing" ||
       currentClipStartTime === undefined
-    ) return;
+    )
+      return;
     const startSeconds = currentClipStartTime / 1_000;
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
     if (

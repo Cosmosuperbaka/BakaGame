@@ -23,7 +23,7 @@ export interface StepRecord {
   index: number;
   players: number;
   pace: number;
-  allocation: { game: GameKind, rooms: number, seats: number, players: number }[];
+  allocation: { game: GameKind; rooms: number; seats: number; players: number }[];
   roomsStarted: number;
   livePlayers: number;
   liveConnections: number;
@@ -38,9 +38,17 @@ export interface StepRecord {
   wireMbps: number;
   bytesPerPlayerSecond: number;
   framesPerSecond: number;
-  latency: { p50: number, p95: number, p99: number, max: number, count: number };
-  target: { cores: number, rssMb: number, heapMb: number, lagP50Ms: number, lagP95Ms: number, lagMaxMs: number, samples: number };
-  generator: { cores: number, rssMb: number };
+  latency: { p50: number; p95: number; p99: number; max: number; count: number };
+  target: {
+    cores: number;
+    rssMb: number;
+    heapMb: number;
+    lagP50Ms: number;
+    lagP95Ms: number;
+    lagMaxMs: number;
+    samples: number;
+  };
+  generator: { cores: number; rssMb: number };
   failures: Record<string, number>;
   notes: string[];
   saturated: string | null;
@@ -85,7 +93,10 @@ const parseFlags = (argv: string[]): Record<string, string> => {
     if (!token.startsWith("--")) continue;
     const next = argv[index + 1];
     if (next === undefined || next.startsWith("--")) out[token.slice(2)] = "true";
-    else { out[token.slice(2)] = next; index += 1; }
+    else {
+      out[token.slice(2)] = next;
+      index += 1;
+    }
   }
   return out;
 };
@@ -97,7 +108,10 @@ const num = (raw: string | undefined, fallback: number): number => {
 };
 
 /** `faker=34,song=33,cee=33` → 归一化比例；缺省项为 0。 */
-const parseRatioMap = (raw: string | undefined, fallback: Record<GameKind, number>): Record<GameKind, number> => {
+const parseRatioMap = (
+  raw: string | undefined,
+  fallback: Record<GameKind, number>
+): Record<GameKind, number> => {
   if (!raw) return fallback;
   const out: Record<GameKind, number> = { faker: 0, song: 0, cee: 0 };
   for (const part of raw.split(",")) {
@@ -113,7 +127,9 @@ const parseRatioMap = (raw: string | undefined, fallback: Record<GameKind, numbe
 };
 
 const percentile = (sorted: readonly number[], ratio: number): number =>
-  sorted.length === 0 ? 0 : sorted[Math.min(sorted.length - 1, Math.ceil(ratio * sorted.length) - 1)]!;
+  sorted.length === 0
+    ? 0
+    : sorted[Math.min(sorted.length - 1, Math.ceil(ratio * sorted.length) - 1)]!;
 
 const quantiles = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -134,14 +150,21 @@ const httpJson = async <T>(url: string, timeoutMs = 1_500): Promise<T> =>
       response.on("data", (chunk: Buffer) => chunks.push(chunk));
       response.on("end", () => {
         const body = Buffer.concat(chunks).toString("utf8");
-        if ((response.statusCode ?? 500) >= 300) reject(new Error(`${url} -> ${response.statusCode} ${body.slice(0, 120)}`));
+        if ((response.statusCode ?? 500) >= 300)
+          reject(new Error(`${url} -> ${response.statusCode} ${body.slice(0, 120)}`));
         else {
-          try { resolve(JSON.parse(body) as T); } catch (error) { reject(new Error(`${url} 非法响应：${String(error)}`)); }
+          try {
+            resolve(JSON.parse(body) as T);
+          } catch (error) {
+            reject(new Error(`${url} 非法响应：${String(error)}`));
+          }
         }
       });
       response.on("error", reject);
     });
-    request.on("timeout", () => { request.destroy(new Error("超时")); });
+    request.on("timeout", () => {
+      request.destroy(new Error("超时"));
+    });
     request.on("error", reject);
   });
 
@@ -151,9 +174,9 @@ interface MetricSample {
   rssBytes: number;
   heapUsedBytes: number;
   lag: number[];
-  faker: { roomCount: number, connectionCount: number, onlinePlayerCount: number };
-  song: { roomCount: number, connectionCount: number, onlinePlayerCount: number };
-  cee: { roomCount: number, connectionCount: number, onlinePlayerCount: number };
+  faker: { roomCount: number; connectionCount: number; onlinePlayerCount: number };
+  song: { roomCount: number; connectionCount: number; onlinePlayerCount: number };
+  cee: { roomCount: number; connectionCount: number; onlinePlayerCount: number };
 }
 
 const toSample = (raw: Record<string, unknown>): MetricSample => ({
@@ -195,13 +218,19 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   const port = await availablePort();
   const metricsPort = await availablePort();
   const owner = crypto.randomUUID();
-  const env = Object.assign(isolatedEnvironment(process.env as Record<string, string | undefined>, port, directory, owner), {
-    LOADTEST_METRICS_PORT: String(metricsPort),
-  });
+  const env = Object.assign(
+    isolatedEnvironment(process.env as Record<string, string | undefined>, port, directory, owner),
+    {
+      LOADTEST_METRICS_PORT: String(metricsPort),
+    }
+  );
   const script = path.resolve(import.meta.dir, "Target.ts");
   const preload = path.resolve(import.meta.dir, "../fixtures/IsolatedPreload.ts");
   const runtime = [process.execPath, "--no-env-file", "--preload", preload, script];
-  const taskset = config.targetCpuset && process.platform !== "win32" ? ["taskset", "-c", config.targetCpuset] : [];
+  const taskset =
+    config.targetCpuset && process.platform !== "win32"
+      ? ["taskset", "-c", config.targetCpuset]
+      : [];
   const child = Bun.spawn([...taskset, ...runtime], {
     cwd: path.resolve(import.meta.dir, "../.."),
     env,
@@ -221,7 +250,8 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
       if (done) break;
       const text = decoder.decode(value, { stream: true });
       // 两条流都要封顶：长测里服务端日志能到几十 MB，全部留在控制器内存里会先压垮压测进程。
-      if (sink === "stdout") stdout = stdout.length < 262_144 ? stdout + text : stdout.slice(0, 131_072);
+      if (sink === "stdout")
+        stdout = stdout.length < 262_144 ? stdout + text : stdout.slice(0, 131_072);
       else stderr = (stderr + text).slice(-8_192);
     }
   };
@@ -238,9 +268,12 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   const metricsUrl = `http://127.0.0.1:${metricsPort}`;
   for (;;) {
     if (child.exitCode !== null) throw new Error(`被测进程启动失败 (${child.exitCode})\n${stderr}`);
-    try { await httpJson<Record<string, unknown>>(`${metricsUrl}/metrics?reset=1`); break; }
-    catch (error) {
-      if (Date.now() > deadline) throw new Error(`侧信道探活失败：${String(error)}\n${stderr}`, { cause: error });
+    try {
+      await httpJson<Record<string, unknown>>(`${metricsUrl}/metrics?reset=1`);
+      break;
+    } catch (error) {
+      if (Date.now() > deadline)
+        throw new Error(`侧信道探活失败：${String(error)}\n${stderr}`, { cause: error });
       await Bun.sleep(200);
     }
   }
@@ -251,12 +284,22 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
     directory,
     port,
     metricsPort,
-    get stdout() { return stdout; },
-    get stderr() { return stderr; },
+    get stdout() {
+      return stdout;
+    },
+    get stderr() {
+      return stderr;
+    },
     async stop() {
       if (child.exitCode === null) child.kill("SIGTERM");
-      const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); }, 5_000);
-      try { await child.exited; } finally { clearTimeout(timer); }
+      const timer = setTimeout(() => {
+        if (child.exitCode === null) child.kill("SIGKILL");
+      }, 5_000);
+      try {
+        await child.exited;
+      } finally {
+        clearTimeout(timer);
+      }
       await rm(directory, { recursive: true, force: true });
     },
   };
@@ -275,11 +318,13 @@ interface WorkerSpec {
 const ROOM_BASE: Record<GameKind, number> = { faker: 2000, song: 4000, cee: 6000 };
 const MAX_ROOMS_PER_GAME = 1_900;
 
-const allocate = (players: number, config: RunConfig) => GAMES
-  .filter((game) => config.mix[game] > 0)
-  .map((game) => {
+const allocate = (players: number, config: RunConfig) =>
+  GAMES.filter((game) => config.mix[game] > 0).map((game) => {
     const seats = Math.max(MIN_SEATS[game], Math.round(config.seats[game]));
-    const rooms = Math.min(MAX_ROOMS_PER_GAME, Math.max(1, Math.round((players * config.mix[game]) / seats)));
+    const rooms = Math.min(
+      MAX_ROOMS_PER_GAME,
+      Math.max(1, Math.round((players * config.mix[game]) / seats))
+    );
     return { game, seats, rooms, players: rooms * seats };
   });
 
@@ -290,49 +335,88 @@ const planWorkers = (allocation: ReturnType<typeof allocate>, config: RunConfig)
     const workers = Math.min(
       config.maxWorkers,
       Math.max(1, Math.ceil((unit.rooms * unit.seats) / config.playersPerWorker)),
-      unit.rooms,
+      unit.rooms
     );
     for (let index = 0; index < workers; index += 1) {
       const rooms = Math.floor(unit.rooms / workers) + (index < unit.rooms % workers ? 1 : 0);
       if (rooms <= 0) continue;
-      specs.push({ game: unit.game, rooms, seats: unit.seats, roomIdBase: roomBase, pace: config.pace, staggerMs: Math.min(6_000, Math.max(600, rooms * 300)) });
+      specs.push({
+        game: unit.game,
+        rooms,
+        seats: unit.seats,
+        roomIdBase: roomBase,
+        pace: config.pace,
+        staggerMs: Math.min(6_000, Math.max(600, rooms * 300)),
+      });
       roomBase += rooms;
     }
   }
   return specs;
 };
 
-const spawnWorker = async (spec: WorkerSpec, target: TargetHandle, config: RunConfig): Promise<WorkerResult | null> => {
+const spawnWorker = async (
+  spec: WorkerSpec,
+  target: TargetHandle,
+  config: RunConfig
+): Promise<WorkerResult | null> => {
   const script = path.resolve(import.meta.dir, "Worker.ts");
-  const runtime = [process.execPath, "--no-env-file", script,
-    "--ws-url", target.wsUrl,
-    "--game", spec.game,
-    "--rooms", String(spec.rooms),
-    "--seats", String(spec.seats),
-    "--pace", String(spec.pace),
-    "--room-base", String(spec.roomIdBase),
-    "--stagger", String(spec.staggerMs),
-    "--warmup", String(config.warmupMs),
-    "--measure", String(config.measureMs),
-    "--name-prefix", `${config.label}-${spec.game}`];
-  const taskset = config.workerCpuset && process.platform !== "win32" ? ["taskset", "-c", config.workerCpuset] : [];
+  const runtime = [
+    process.execPath,
+    "--no-env-file",
+    script,
+    "--ws-url",
+    target.wsUrl,
+    "--game",
+    spec.game,
+    "--rooms",
+    String(spec.rooms),
+    "--seats",
+    String(spec.seats),
+    "--pace",
+    String(spec.pace),
+    "--room-base",
+    String(spec.roomIdBase),
+    "--stagger",
+    String(spec.staggerMs),
+    "--warmup",
+    String(config.warmupMs),
+    "--measure",
+    String(config.measureMs),
+    "--name-prefix",
+    `${config.label}-${spec.game}`,
+  ];
+  const taskset =
+    config.workerCpuset && process.platform !== "win32"
+      ? ["taskset", "-c", config.workerCpuset]
+      : [];
   const child = Bun.spawn([...taskset, ...runtime], {
     cwd: path.resolve(import.meta.dir, "../.."),
     // 分片只需回环地址：把代理变量清掉，避免本机代理把 WS 握手绕一圈外网。
-    env: Object.assign({}, process.env as Record<string, string>, { NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" }),
+    env: Object.assign({}, process.env as Record<string, string>, {
+      NO_PROXY: "127.0.0.1,localhost",
+      no_proxy: "127.0.0.1,localhost",
+    }),
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
   const read = async (stream: ReadableStream<Uint8Array>) => await new Response(stream).text();
-  const [stdout, stderr, code] = await Promise.all([read(child.stdout as ReadableStream<Uint8Array>), read(child.stderr as ReadableStream<Uint8Array>), child.exited]);
+  const [stdout, stderr, code] = await Promise.all([
+    read(child.stdout as ReadableStream<Uint8Array>),
+    read(child.stderr as ReadableStream<Uint8Array>),
+    child.exited,
+  ]);
   const line = stdout.split("\n").find((entry) => entry.startsWith("LT_RESULT "));
   if (!line) {
     console.warn(`分片 ${spec.game} 无结果（退出码 ${code}）：${stderr.slice(0, 300)}`);
     return null;
   }
-  try { return JSON.parse(line.slice("LT_RESULT ".length)) as WorkerResult; }
-    catch (error) { console.warn(`分片结果解析失败：${String(error)}`); return null; }
+  try {
+    return JSON.parse(line.slice("LT_RESULT ".length)) as WorkerResult;
+  } catch (error) {
+    console.warn(`分片结果解析失败：${String(error)}`);
+    return null;
+  }
 };
 
 /** 采样器只在测量窗口内取数，逐步计算 CPU / 延迟 / 房间数。 */
@@ -341,16 +425,24 @@ class MetricPoller {
   private timer: ReturnType<typeof setInterval> | undefined;
   private busy = false;
 
-  constructor(private readonly target: TargetHandle, private readonly intervalMs = 250) {}
+  constructor(
+    private readonly target: TargetHandle,
+    private readonly intervalMs = 250
+  ) {}
 
   start(): void {
     this.timer = setInterval(() => {
       if (this.busy) return;
       this.busy = true;
       void httpJson<Record<string, unknown>>(`${this.target.metricsUrl}/metrics?reset=1`)
-        .then((raw) => { this.samples.push(toSample(raw)); if (this.samples.length > 20_000) this.samples = this.samples.slice(-10_000); })
+        .then((raw) => {
+          this.samples.push(toSample(raw));
+          if (this.samples.length > 20_000) this.samples = this.samples.slice(-10_000);
+        })
         .catch(() => {})
-        .finally(() => { this.busy = false; });
+        .finally(() => {
+          this.busy = false;
+        });
     }, this.intervalMs);
   }
 
@@ -359,9 +451,13 @@ class MetricPoller {
     return window.length >= 2 ? window : this.samples.slice(-8);
   }
 
-  prune(): void { this.samples = []; }
+  prune(): void {
+    this.samples = [];
+  }
 
-  stop(): void { if (this.timer) clearInterval(this.timer); }
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
 }
 
 /** 侧信道读数：连不上时抛出，交给调用方的超时边界处理。 */
@@ -369,14 +465,20 @@ const readMetrics = async (target: TargetHandle): Promise<MetricSample> =>
   toSample(await httpJson<Record<string, unknown>>(`${target.metricsUrl}/metrics`));
 
 /** 等被测进程把上一步的房间清空；超时仍非零时把剩余数量交给调用方记录。 */
-const drainTarget = async (target: TargetHandle, timeoutMs = 150_000): Promise<{ waitedMs: number, roomsLeft: number }> => {
+const drainTarget = async (
+  target: TargetHandle,
+  timeoutMs = 150_000
+): Promise<{ waitedMs: number; roomsLeft: number }> => {
   const startedAt = performance.now();
   let rooms: number | null = null;
   for (;;) {
     // 读数失败当作还没清干净：上一步几千条连接正在关，侧信道会短暂答不上来，
     // 此时按 0 间房放行就会让下一步整批撞号。
-    try { rooms = total(await readMetrics(target), "roomCount"); }
-      catch { /* 继续等，直到超时 */ }
+    try {
+      rooms = total(await readMetrics(target), "roomCount");
+    } catch {
+      /* 继续等，直到超时 */
+    }
     if (rooms === 0) return { waitedMs: Math.round(performance.now() - startedAt), roomsLeft: 0 };
     if (performance.now() - startedAt >= timeoutMs) {
       return { waitedMs: Math.round(performance.now() - startedAt), roomsLeft: rooms ?? -1 };
@@ -385,11 +487,22 @@ const drainTarget = async (target: TargetHandle, timeoutMs = 150_000): Promise<{
   }
 };
 
-const runStep = async (index: number, players: number, pace: number, target: TargetHandle, poller: MetricPoller, config: RunConfig): Promise<StepOutcome> => {
+const runStep = async (
+  index: number,
+  players: number,
+  pace: number,
+  target: TargetHandle,
+  poller: MetricPoller,
+  config: RunConfig
+): Promise<StepOutcome> => {
   const allocation = allocate(players, config);
   // 慢节奏下一局要跑一分多钟：25 秒窗口会整段落在低流量阶段，人均带宽被系统性低估，
   // 带宽二分就会收敛到噪声上。测量窗口至少覆盖一个完整回合周期（pace 1 → 90 秒）。
-  const effective: RunConfig = { ...config, pace, measureMs: Math.max(config.measureMs, Math.round(90_000 / Math.max(0.25, pace))) };
+  const effective: RunConfig = {
+    ...config,
+    pace,
+    measureMs: Math.max(config.measureMs, Math.round(90_000 / Math.max(0.25, pace))),
+  };
   const specs = planWorkers(allocation, effective);
   poller.prune();
 
@@ -399,7 +512,9 @@ const runStep = async (index: number, players: number, pace: number, target: Tar
   const settled = await drainTarget(target);
 
   const started = performance.now();
-  const results = (await Promise.all(specs.map((spec) => spawnWorker(spec, target, effective)))).filter((result): result is WorkerResult => !!result);
+  const results = (
+    await Promise.all(specs.map((spec) => spawnWorker(spec, target, effective)))
+  ).filter((result): result is WorkerResult => !!result);
   const elapsedMs = performance.now() - started;
   if (!results.length) throw new Error("所有发压分片都没有返回结果");
 
@@ -412,19 +527,25 @@ const runStep = async (index: number, players: number, pace: number, target: Tar
   // cpuTotalUs 是微秒、windowMs 是毫秒：核数 = µs / 1e6 / (windowMs / 1000) = µs / windowMs / 1000。
   const cores = Math.max(0, last.cpuTotalUs - first.cpuTotalUs) / windowMs / 1000;
 
-  const sum = (pick: (result: WorkerResult) => number) => results.reduce((acc, result) => acc + pick(result), 0);
+  const sum = (pick: (result: WorkerResult) => number) =>
+    results.reduce((acc, result) => acc + pick(result), 0);
   const bytesReceived = sum((r) => r.counters.bytesReceived);
   const bytesSent = sum((r) => r.counters.bytesSent);
   const commands = sum((r) => r.counters.commandsSent);
   const failures = results.reduce<Record<string, number>>((acc, result) => {
-    for (const [code, count] of Object.entries(result.failures)) acc[code] = (acc[code] ?? 0) + count;
+    for (const [code, count] of Object.entries(result.failures))
+      acc[code] = (acc[code] ?? 0) + count;
     return acc;
   }, {});
   const errors = sum((r) => r.counters.errors + r.counters.timeouts);
   const retries = sum((r) => r.counters.retries);
-  const livePlayers = Math.max(sum((r) => r.players), total(last, "onlinePlayerCount"));
+  const livePlayers = Math.max(
+    sum((r) => r.players),
+    total(last, "onlinePlayerCount")
+  );
   const seconds = windowMs / 1_000;
-  const wireMbps = (bytesSent + bytesReceived) * TRANSPORT_OVERHEAD_RATIO * 8 / seconds / 1_000_000;
+  const wireMbps =
+    ((bytesSent + bytesReceived) * TRANSPORT_OVERHEAD_RATIO * 8) / seconds / 1_000_000;
   const lag = samples.flatMap((sample) => sample.lag);
 
   const record: StepRecord = {
@@ -440,10 +561,15 @@ const runStep = async (index: number, players: number, pace: number, target: Tar
     errorsPerSecond: Math.round((errors / seconds) * 100) / 100,
     errorRate: commands > 0 ? Math.round((errors / commands) * 10_000) / 10_000 : 0,
     retries,
-    egressMbps: Math.round((bytesReceived * TRANSPORT_OVERHEAD_RATIO * 8 / seconds / 1_000_000) * 1000) / 1000,
-    ingressMbps: Math.round((bytesSent * TRANSPORT_OVERHEAD_RATIO * 8 / seconds / 1_000_000) * 1000) / 1000,
+    egressMbps:
+      Math.round(((bytesReceived * TRANSPORT_OVERHEAD_RATIO * 8) / seconds / 1_000_000) * 1000) /
+      1000,
+    ingressMbps:
+      Math.round(((bytesSent * TRANSPORT_OVERHEAD_RATIO * 8) / seconds / 1_000_000) * 1000) / 1000,
     wireMbps: Math.round(wireMbps * 1000) / 1000,
-    bytesPerPlayerSecond: Math.round((bytesSent + bytesReceived) / Math.max(1, livePlayers) / seconds),
+    bytesPerPlayerSecond: Math.round(
+      (bytesSent + bytesReceived) / Math.max(1, livePlayers) / seconds
+    ),
     framesPerSecond: Math.round(sum((r) => r.counters.framesReceived) / seconds),
     latency: quantiles(results.flatMap((result) => result.samples)),
     target: {
@@ -464,24 +590,37 @@ const runStep = async (index: number, players: number, pace: number, target: Tar
     saturated: null,
   };
 
-  if (settled.roomsLeft > 0) console.warn(`清场超时：仍有 ${settled.roomsLeft} 间房残留，本步可能撞号`);
+  if (settled.roomsLeft > 0)
+    console.warn(`清场超时：仍有 ${settled.roomsLeft} 间房残留，本步可能撞号`);
   else if (settled.roomsLeft < 0) console.warn("清场超时：侧信道读不到房间数，本步可能撞号");
-  else if (settled.waitedMs > 3_000) console.log(`清场等待 ${(settled.waitedMs / 1000).toFixed(1)} 秒`);
-  record.notes.push(settled.roomsLeft === 0
-    ? `清场等待 ${Math.round(settled.waitedMs / 1000)} 秒`
-    : `清场超时：${settled.roomsLeft < 0 ? "侧信道无读数" : `残留 ${settled.roomsLeft} 间房`}（等待 ${Math.round(settled.waitedMs / 1000)} 秒）`);
+  else if (settled.waitedMs > 3_000)
+    console.log(`清场等待 ${(settled.waitedMs / 1000).toFixed(1)} 秒`);
+  record.notes.push(
+    settled.roomsLeft === 0
+      ? `清场等待 ${Math.round(settled.waitedMs / 1000)} 秒`
+      : `清场超时：${settled.roomsLeft < 0 ? "侧信道无读数" : `残留 ${settled.roomsLeft} 间房`}（等待 ${Math.round(settled.waitedMs / 1000)} 秒）`
+  );
 
-  const topFailures = Object.entries(record.failures).sort((a, b) => b[1] - a[1]).slice(0, 3)
-    .map(([key, count]) => `${key}×${count}`).join(" ");
-  console.log(`step ${index}: players=${record.livePlayers} cmd/s=${record.commandsPerSecond} wire=${record.wireMbps}Mbps `
-    + `ackP95=${record.latency.p95}ms lagP95=${record.target.lagP95Ms}ms targetCPU=${record.target.cores}c genCPU=${record.generator.cores}c `
-    + `err=${(record.errorRate * 100).toFixed(2)}% retry=${record.retries} rooms=${record.roomsStarted}/${specs.reduce((n, s) => n + s.rooms, 0)} elapsed=${Math.round(elapsedMs / 1000)}s`
-    + (topFailures ? ` fail=${topFailures}` : ""));
+  const topFailures = Object.entries(record.failures)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key, count]) => `${key}×${count}`)
+    .join(" ");
+  console.log(
+    `step ${index}: players=${record.livePlayers} cmd/s=${record.commandsPerSecond} wire=${record.wireMbps}Mbps ` +
+      `ackP95=${record.latency.p95}ms lagP95=${record.target.lagP95Ms}ms targetCPU=${record.target.cores}c genCPU=${record.generator.cores}c ` +
+      `err=${(record.errorRate * 100).toFixed(2)}% retry=${record.retries} rooms=${record.roomsStarted}/${specs.reduce((n, s) => n + s.rooms, 0)} elapsed=${Math.round(elapsedMs / 1000)}s` +
+      (topFailures ? ` fail=${topFailures}` : "")
+  );
   return { record, results };
 };
 
 /** 第一个触发的维度就是「自然饱和」的答案。 */
-const saturationReason = (record: StepRecord, previous: StepRecord | undefined, config: RunConfig): string | null => {
+const saturationReason = (
+  record: StepRecord,
+  previous: StepRecord | undefined,
+  config: RunConfig
+): string | null => {
   const roomsPlanned = record.allocation.reduce((sum, unit) => sum + unit.rooms, 0);
   const startedRatio = roomsPlanned > 0 ? record.roomsStarted / roomsPlanned : 0;
   if (startedRatio < 0.8) return "rooms";
@@ -502,7 +641,8 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
   const cpuLimit = cpusetSize(args["target-cpuset"] ?? "");
   const mode = (args.mode ?? "ramp") as RunConfig["mode"];
   const fatSeats = num(args["fat-seats"], 150);
-  const defaultMix: Record<GameKind, number> = mode === "fat" ? { faker: 1, song: 0, cee: 0 } : { faker: 1 / 3, song: 1 / 3, cee: 1 / 3 };
+  const defaultMix: Record<GameKind, number> =
+    mode === "fat" ? { faker: 1, song: 0, cee: 0 } : { faker: 1 / 3, song: 1 / 3, cee: 1 / 3 };
   return {
     mode,
     label: args.label ?? (mode === "fat" ? "fat" : mode === "cap" ? "cap" : "ramp"),
@@ -522,7 +662,10 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
     playersPerWorker: num(args["players-per-worker"], 96),
     maxWorkers: num(args["max-workers"], Math.max(1, Math.min(16, os.availableParallelism() - 2))),
     mbps: num(args.mbps, 6),
-    paceSweep: (args["pace-sweep"] ?? "1,1.6,2.4,4").split(",").map((value) => Number(value)).filter((value) => value > 0),
+    paceSweep: (args["pace-sweep"] ?? "1,1.6,2.4,4")
+      .split(",")
+      .map((value) => Number(value))
+      .filter((value) => value > 0),
     fatSeats: num(args["fat-seats"], 150),
     cpusPerTarget: cpuLimit,
     targetCpuset: args["target-cpuset"] ?? "",
@@ -535,16 +678,26 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
   };
 };
 
-const runRamp = async (target: TargetHandle, poller: MetricPoller, config: RunConfig): Promise<{ steps: StepRecord[], stopReason: string }> => {
+const runRamp = async (
+  target: TargetHandle,
+  poller: MetricPoller,
+  config: RunConfig
+): Promise<{ steps: StepRecord[]; stopReason: string }> => {
   const steps: StepRecord[] = [];
   let players = config.players;
   let stopReason = "max-steps";
   for (let index = 1; index <= config.maxSteps; index += 1) {
-    if (players > config.maxPlayers) { stopReason = "max-players"; break; }
+    if (players > config.maxPlayers) {
+      stopReason = "max-players";
+      break;
+    }
     const outcome = await runStep(index, players, config.pace, target, poller, config);
     outcome.record.saturated = saturationReason(outcome.record, steps[steps.length - 1], config);
     steps.push(outcome.record);
-    if (outcome.record.saturated) { stopReason = outcome.record.saturated; break; }
+    if (outcome.record.saturated) {
+      stopReason = outcome.record.saturated;
+      break;
+    }
     players = Math.round(players * config.growth);
   }
   return { steps, stopReason };
@@ -552,17 +705,27 @@ const runRamp = async (target: TargetHandle, poller: MetricPoller, config: RunCo
 
 /** 还没撞墙时按实测人均带宽直接外推下一跳（留 8% 余量），比固定倍率省一半轮次。 */
 const projectPlayers = (players: number, wireMbps: number, config: RunConfig): number =>
-  Math.min(config.maxPlayers, Math.ceil(players * (config.mbps / Math.max(0.001, wireMbps)) * 0.92));
+  Math.min(
+    config.maxPlayers,
+    Math.ceil(players * (config.mbps / Math.max(0.001, wireMbps)) * 0.92)
+  );
 
 /** 闭环搜索：把带宽钉在 `--mbps` 之下，二分出此时的玩家数与其它硬件占用。 */
-const runCap = async (target: TargetHandle, poller: MetricPoller, config: RunConfig): Promise<{ steps: StepRecord[], stopReason: string }> => {
+const runCap = async (
+  target: TargetHandle,
+  poller: MetricPoller,
+  config: RunConfig
+): Promise<{ steps: StepRecord[]; stopReason: string }> => {
   const steps: StepRecord[] = [];
-  let lo = 0;          // 实测带宽合规的最大玩家数
-  let hi = Number.POSITIVE_INFINITY;  // 实测带宽超限的最小玩家数
+  let lo = 0; // 实测带宽合规的最大玩家数
+  let hi = Number.POSITIVE_INFINITY; // 实测带宽超限的最小玩家数
   let probe = config.players;
   let stopReason = "iterations";
   for (let iteration = 1; iteration <= config.maxSteps; iteration += 1) {
-    if (probe > config.maxPlayers) { stopReason = "max-players"; break; }
+    if (probe > config.maxPlayers) {
+      stopReason = "max-players";
+      break;
+    }
     const { record } = await runStep(iteration, probe, config.pace, target, poller, config);
     record.saturated = "bandwidth-cap";
     steps.push(record);
@@ -576,17 +739,27 @@ const runCap = async (target: TargetHandle, poller: MetricPoller, config: RunCon
     if (record.wireMbps > config.mbps) hi = probe;
     else lo = probe;
     if (Number.isFinite(hi)) {
-      if (hi - lo <= Math.max(4, Math.round(lo * 0.05))) { stopReason = "found"; break; }
+      if (hi - lo <= Math.max(4, Math.round(lo * 0.05))) {
+        stopReason = "found";
+        break;
+      }
       probe = Math.floor((lo + hi) / 2);
     } else probe = projectPlayers(probe, record.wireMbps, config);
   }
   return { steps, stopReason };
 };
 
-const runFat = async (target: TargetHandle, poller: MetricPoller, config: RunConfig): Promise<{ steps: StepRecord[], stopReason: string }> => {
+const runFat = async (
+  target: TargetHandle,
+  poller: MetricPoller,
+  config: RunConfig
+): Promise<{ steps: StepRecord[]; stopReason: string }> => {
   const steps: StepRecord[] = [];
   for (const pace of config.paceSweep) {
-    const outcome = await runStep(steps.length + 1, config.fatSeats, pace, target, poller, { ...config, pace });
+    const outcome = await runStep(steps.length + 1, config.fatSeats, pace, target, poller, {
+      ...config,
+      pace,
+    });
     outcome.record.saturated = saturationReason(outcome.record, steps[steps.length - 1], config);
     steps.push(outcome.record);
     if (outcome.record.saturated) return { steps, stopReason: outcome.record.saturated };
@@ -602,19 +775,44 @@ interface RunMeta {
 /** 被测代码的版本必须跟着报告一起留下：同一台机器换一次提交，数字就能差一倍。 */
 const readRunMeta = async (): Promise<RunMeta> => {
   const run = async (args: string[]): Promise<string> => {
-    const proc = Bun.spawn(["git", ...args], { cwd: path.resolve(import.meta.dir, "../.."), stdout: "pipe", stderr: "ignore" });
+    const proc = Bun.spawn(["git", ...args], {
+      cwd: path.resolve(import.meta.dir, "../.."),
+      stdout: "pipe",
+      stderr: "ignore",
+    });
     const text = await new Response(proc.stdout).text();
     await proc.exited;
     return proc.exitCode === 0 ? text.trim() : "";
   };
   const commit = await run(["rev-parse", "--short", "HEAD"]);
-  const status = await run(["status", "--porcelain", "--", "Server/src", "Server/scripts/loadtest"]);
+  const status = await run([
+    "status",
+    "--porcelain",
+    "--",
+    "Server/src",
+    "Server/scripts/loadtest",
+  ]);
   return { commit: commit || "unknown", dirty: status.length > 0 };
 };
 
-const writeReport = async (config: RunConfig, target: TargetHandle, steps: StepRecord[], stopReason: string, startedAt: number, meta: RunMeta) => {
-  const best = steps.reduce<StepRecord | undefined>((acc, step) => (!acc || step.commandsPerSecond > acc.commandsPerSecond ? step : acc), undefined);
-  const compliant = steps.filter((step) => step.saturated !== "rooms-invalid" && step.wireMbps <= config.mbps && (step.errorRate < config.errorRateBudget));
+const writeReport = async (
+  config: RunConfig,
+  target: TargetHandle,
+  steps: StepRecord[],
+  stopReason: string,
+  startedAt: number,
+  meta: RunMeta
+) => {
+  const best = steps.reduce<StepRecord | undefined>(
+    (acc, step) => (!acc || step.commandsPerSecond > acc.commandsPerSecond ? step : acc),
+    undefined
+  );
+  const compliant = steps.filter(
+    (step) =>
+      step.saturated !== "rooms-invalid" &&
+      step.wireMbps <= config.mbps &&
+      step.errorRate < config.errorRateBudget
+  );
   const underCap = compliant.length ? compliant[compliant.length - 1]! : undefined;
   const doc = {
     schema: 1,
@@ -646,22 +844,27 @@ const writeReport = async (config: RunConfig, target: TargetHandle, steps: StepR
     stopReason,
     headline: {
       saturatingDimension: stopReason,
-      peakThroughput: best ? {
-        players: best.livePlayers,
-        commandsPerSecond: best.commandsPerSecond,
-        wireMbps: best.wireMbps,
-        targetCores: best.target.cores,
-        ackP95Ms: best.latency.p95,
-      } : null,
-      underBandwidthCap: config.mode === "cap" && underCap ? {
-        mbpsCap: config.mbps,
-        players: underCap.livePlayers,
-        commandsPerSecond: underCap.commandsPerSecond,
-        wireMbps: underCap.wireMbps,
-        targetCores: underCap.target.cores,
-        targetRssMb: underCap.target.rssMb,
-        ackP95Ms: underCap.latency.p95,
-      } : null,
+      peakThroughput: best
+        ? {
+            players: best.livePlayers,
+            commandsPerSecond: best.commandsPerSecond,
+            wireMbps: best.wireMbps,
+            targetCores: best.target.cores,
+            ackP95Ms: best.latency.p95,
+          }
+        : null,
+      underBandwidthCap:
+        config.mode === "cap" && underCap
+          ? {
+              mbpsCap: config.mbps,
+              players: underCap.livePlayers,
+              commandsPerSecond: underCap.commandsPerSecond,
+              wireMbps: underCap.wireMbps,
+              targetCores: underCap.target.cores,
+              targetRssMb: underCap.target.rssMb,
+              ackP95Ms: underCap.latency.p95,
+            }
+          : null,
     },
     steps,
   };
@@ -678,20 +881,23 @@ const main = async () => {
   const config = buildConfig(args);
   const startedAt = Date.now();
   const meta = await readRunMeta();
-  console.log(`模式=${config.mode} 标签=${config.label} 混合=${GAMES.map((g) => `${g}:${(config.mix[g] * 100).toFixed(0)}%`).join(" ")} `
-    + `座位=${GAMES.map((g) => `${g}:${config.seats[g]}`).join(" ")} 节奏=${config.pace} 测量=${config.measureMs}ms `
-    + `源码=${meta.commit}${meta.dirty ? "(有未提交改动)" : ""}`);
+  console.log(
+    `模式=${config.mode} 标签=${config.label} 混合=${GAMES.map((g) => `${g}:${(config.mix[g] * 100).toFixed(0)}%`).join(" ")} ` +
+      `座位=${GAMES.map((g) => `${g}:${config.seats[g]}`).join(" ")} 节奏=${config.pace} 测量=${config.measureMs}ms ` +
+      `源码=${meta.commit}${meta.dirty ? "(有未提交改动)" : ""}`
+  );
 
   const target = await bootTarget(config);
   const poller = new MetricPoller(target);
   poller.start();
   console.log(`被测进程就绪 ${target.wsUrl}（指标 ${target.metricsUrl}/metrics）`);
   try {
-    const { steps, stopReason } = config.mode === "cap"
-      ? await runCap(target, poller, config)
-      : config.mode === "fat"
-        ? await runFat(target, poller, config)
-        : await runRamp(target, poller, config);
+    const { steps, stopReason } =
+      config.mode === "cap"
+        ? await runCap(target, poller, config)
+        : config.mode === "fat"
+          ? await runFat(target, poller, config)
+          : await runRamp(target, poller, config);
     const { doc } = await writeReport(config, target, steps, stopReason, startedAt, meta);
     console.log(`饱和判定：${doc.headline.saturatingDimension}`);
   } finally {

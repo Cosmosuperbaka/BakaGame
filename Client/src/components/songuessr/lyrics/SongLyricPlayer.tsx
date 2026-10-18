@@ -12,7 +12,11 @@ export interface SongLyricPlayerProps {
 }
 
 export function SongLyricPlayer({
-  lines, audioRef, audioPlaybackState = "idle", audioStatus = "ready", className,
+  lines,
+  audioRef,
+  audioPlaybackState = "idle",
+  audioStatus = "ready",
+  className,
 }: SongLyricPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<SongLyricScene | null>(null);
@@ -39,14 +43,21 @@ export function SongLyricPlayer({
     <div
       className={cn(
         "relative w-full overflow-hidden rounded-md bg-background p-3 sm:p-4 select-none",
-        empty && "flex h-24 sm:h-28 items-center justify-center text-center text-sm text-muted-foreground",
-        className,
+        empty &&
+          "flex h-24 sm:h-28 items-center justify-center text-center text-sm text-muted-foreground",
+        className
       )}
       data-testid={empty ? "baka-song-lyric-empty" : "baka-song-lyric-container"}
     >
-      {empty ? "当前歌曲为纯音乐或无歌词" : (
+      {empty ? (
+        "当前歌曲为纯音乐或无歌词"
+      ) : (
         <div className="sr-only">
-          {lines.map((line) => [line.text, line.translatedLyric || line.romanLyric].filter(Boolean).join(" ")).join(" ")}
+          {lines
+            .map((line) =>
+              [line.text, line.translatedLyric || line.romanLyric].filter(Boolean).join(" ")
+            )
+            .join(" ")}
         </div>
       )}
       <div
@@ -54,7 +65,9 @@ export function SongLyricPlayer({
         hidden={empty}
         className="baka-lyric-host"
         aria-hidden="true"
-        data-testid={audioPlaybackState === "completed" ? "baka-song-lyric-overview" : "baka-song-lyric-player"}
+        data-testid={
+          audioPlaybackState === "completed" ? "baka-song-lyric-overview" : "baka-song-lyric-player"
+        }
       />
     </div>
   );

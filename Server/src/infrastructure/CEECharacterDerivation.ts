@@ -1,20 +1,39 @@
-import type { CEECharacterView, CEEComparisonAppearance, CEEExtraTagSection, CEESettings } from "../shared/CEE";
+import type {
+  CEECharacterView,
+  CEEComparisonAppearance,
+  CEEExtraTagSection,
+  CEESettings,
+} from "../shared/CEE";
 import type { CEERawCharacter } from "./CEEData";
 import extraSubjectIds from "../shared/CEEExtraSubjects.json";
 
 const SOURCE_NAMES = new Map([
-  ["GAL改", "游戏改"], ["轻小说改", "小说改"], ["轻改", "小说改"], ["原创动画", "原创"],
-  ["网文改", "小说改"], ["漫改", "漫画改"], ["漫画改编", "漫画改"], ["游戏改编", "游戏改"], ["小说改编", "小说改"],
+  ["GAL改", "游戏改"],
+  ["轻小说改", "小说改"],
+  ["轻改", "小说改"],
+  ["原创动画", "原创"],
+  ["网文改", "小说改"],
+  ["漫改", "漫画改"],
+  ["漫画改编", "漫画改"],
+  ["游戏改编", "游戏改"],
+  ["小说改编", "小说改"],
 ]);
 const SOURCES = new Set(["原创", "游戏改", "小说改", "漫画改"]);
 const EXPANDED_CHARACTERS = new Set([56822, 56823, 17529, 10956]);
 const EXTRA_SUBJECTS = new Set(extraSubjectIds);
 const weighted = (values: Map<string, number>) => [...values].sort((a, b) => b[1] - a[1]);
-const add = (values: Map<string, number>, key: string, value: number) => values.set(key, (values.get(key) ?? 0) + value);
+const add = (values: Map<string, number>, key: string, value: number) =>
+  values.set(key, (values.get(key) ?? 0) + value);
 
-export function selectCEEExtraTags(appearances: CEEComparisonAppearance[], bySubject: Record<number, CEEExtraTagSection[]>): CEEExtraTagSection[] {
-  const subject = appearances.find(item => EXTRA_SUBJECTS.has(item.id));
-  return (subject ? bySubject[subject.id] ?? [] : []).map(section => ({ section: section.section, tags: [...section.tags] }));
+export function selectCEEExtraTags(
+  appearances: CEEComparisonAppearance[],
+  bySubject: Record<number, CEEExtraTagSection[]>
+): CEEExtraTagSection[] {
+  const subject = appearances.find((item) => EXTRA_SUBJECTS.has(item.id));
+  return (subject ? (bySubject[subject.id] ?? []) : []).map((section) => ({
+    section: section.section,
+    tags: [...section.tags],
+  }));
 }
 
 /** 出题筛选按第一项，登场作品筛选按原版 includes 的先后顺序。 */
@@ -27,7 +46,11 @@ export function resolveCEESubjectTypes(tags: string[], forPicking = false): numb
   return [2];
 }
 
-export function deriveCEECharacter(raw: CEERawCharacter, settings: CEESettings, now: number): CEECharacterView {
+export function deriveCEECharacter(
+  raw: CEERawCharacter,
+  settings: CEESettings,
+  now: number
+): CEECharacterView {
   const types = resolveCEESubjectTypes(settings.metaTags);
   const preferred = raw.appearances.filter((item) => types.includes(item.type));
   const selected = (preferred.length ? preferred : raw.appearances).filter((item) => {
@@ -52,27 +75,46 @@ export function deriveCEECharacter(raw: CEERawCharacter, settings: CEESettings, 
   const threshold = (entries[0]?.[1] ?? 0) * 0.1;
   const cutoff = entries.findIndex(([, weight]) => weight < threshold);
   // 保留原版的截断语义：无低于阈值项时，仅保留设置要求的数量。
-  const subjectTags = entries.slice(0, Math.max(cutoff, settings.subjectTagNum)).map(([tag]) => tag);
+  const subjectTags = entries
+    .slice(0, Math.max(cutoff, settings.subjectTagNum))
+    .map(([tag]) => tag);
   const metaTags = new Set<string>();
   const voiceActors = EXPANDED_CHARACTERS.has(raw.id) ? ["展开"] : raw.voiceActors;
   for (const voiceActor of voiceActors) metaTags.add(voiceActor);
-  const appearances = selected.map((item) => ({
-    id: item.id, name: item.name, nameCn: item.nameCn, year: Number(item.date.slice(0, 4)),
-    rating: item.rating, ratingCount: item.ratingCount,
-  })).sort((a, b) => b.ratingCount - a.ratingCount);
+  const appearances = selected
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      nameCn: item.nameCn,
+      year: Number(item.date.slice(0, 4)),
+      rating: item.rating,
+      ratingCount: item.ratingCount,
+    }))
+    .sort((a, b) => b.ratingCount - a.ratingCount);
   const comparisonAppearances = appearances.map(({ id, name, nameCn }) => ({ id, name, nameCn }));
-  const comparisonIds = new Set(comparisonAppearances.map(item => item.id));
+  const comparisonIds = new Set(comparisonAppearances.map((item) => item.id));
   for (const item of raw.appearances) {
     if (!EXTRA_SUBJECTS.has(item.id) || comparisonIds.has(item.id)) continue;
-    comparisonAppearances.push({ id: item.id, name: item.name, nameCn: item.nameCn }); comparisonIds.add(item.id);
+    comparisonAppearances.push({ id: item.id, name: item.name, nameCn: item.nameCn });
+    comparisonIds.add(item.id);
   }
   return {
-    id: raw.id, name: raw.name, nameCn: raw.nameCn, imageUrl: raw.imageUrl,
-    gender: raw.gender, popularity: raw.popularity, summary: raw.summary, appearances,
+    id: raw.id,
+    name: raw.name,
+    nameCn: raw.nameCn,
+    imageUrl: raw.imageUrl,
+    gender: raw.gender,
+    popularity: raw.popularity,
+    summary: raw.summary,
+    appearances,
     highestRating: appearances.length ? Math.max(...appearances.map((item) => item.rating)) : -1,
     earliestAppearance: appearances.length ? Math.min(...appearances.map((item) => item.year)) : -1,
     latestAppearance: appearances.length ? Math.max(...appearances.map((item) => item.year)) : -1,
-    subjectTags, characterTags: [...raw.characterTags], voiceActors: [...voiceActors], metaTags: [...metaTags],
-    comparisonAppearances, extraTags: selectCEEExtraTags(comparisonAppearances, raw.extraTagsBySubject),
+    subjectTags,
+    characterTags: [...raw.characterTags],
+    voiceActors: [...voiceActors],
+    metaTags: [...metaTags],
+    comparisonAppearances,
+    extraTags: selectCEEExtraTags(comparisonAppearances, raw.extraTagsBySubject),
   };
 }

@@ -35,7 +35,10 @@ export class SettingCipher {
       const decipher = createDecipheriv("aes-256-gcm", this.key, raw.subarray(0, IV_BYTES));
       decipher.setAAD(Buffer.from(`${userId}\n${settingKey}`));
       decipher.setAuthTag(raw.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
-      return Buffer.concat([decipher.update(raw.subarray(IV_BYTES + TAG_BYTES)), decipher.final()]).toString("utf8");
+      return Buffer.concat([
+        decipher.update(raw.subarray(IV_BYTES + TAG_BYTES)),
+        decipher.final(),
+      ]).toString("utf8");
     } catch {
       return null;
     }

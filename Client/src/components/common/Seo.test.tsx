@@ -13,7 +13,7 @@ function renderSeo(props: React.ComponentProps<typeof Seo>) {
     result: render(
       <HelmetProvider context={context}>
         <Seo {...props} />
-      </HelmetProvider>,
+      </HelmetProvider>
     ),
   };
 }
@@ -63,17 +63,21 @@ describe("Seo", () => {
     renderSeo({ description: "分享描述", path: "/songuessr" });
 
     await waitFor(() => {
-      expect(document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")).toBe("BakaGame");
+      expect(
+        document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")
+      ).toBe("BakaGame");
       expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute("content")).toBe(
-        "https://game.baka.website/songuessr",
+        "https://game.baka.website/songuessr"
       );
-      expect(document.head.querySelector('meta[property="og:site_name"]')?.getAttribute("content")).toBe("BakaGame");
-      expect(document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")).toBe(
-        "https://game.baka.website/og/SongGuessr.jpg",
-      );
-      expect(document.head.querySelector('meta[name="twitter:card"]')?.getAttribute("content")).toBe(
-        "summary_large_image",
-      );
+      expect(
+        document.head.querySelector('meta[property="og:site_name"]')?.getAttribute("content")
+      ).toBe("BakaGame");
+      expect(
+        document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")
+      ).toBe("https://game.baka.website/og/SongGuessr.jpg");
+      expect(
+        document.head.querySelector('meta[name="twitter:card"]')?.getAttribute("content")
+      ).toBe("summary_large_image");
     });
   });
 
@@ -82,7 +86,7 @@ describe("Seo", () => {
     const keywords = findPageMeta("/whoisfaker")!.keywords!;
     await waitFor(() => {
       expect(document.head.querySelector('meta[name="keywords"]')?.getAttribute("content")).toBe(
-        keywords.join(", "),
+        keywords.join(", ")
       );
     });
   });
@@ -91,8 +95,12 @@ describe("Seo", () => {
     renderSeo({ path: "/cee" });
     const description = findPageMeta("/cee")!.description;
     await waitFor(() => {
-      expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(description);
-      expect(document.head.querySelector('meta[property="og:description"]')?.getAttribute("content")).toBe(description);
+      expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
+        description
+      );
+      expect(
+        document.head.querySelector('meta[property="og:description"]')?.getAttribute("content")
+      ).toBe(description);
     });
   });
 
@@ -158,10 +166,14 @@ describe("Seo", () => {
     await waitFor(() => {
       const scripts = document.head.querySelectorAll('script[type="application/ld+json"]');
       expect(scripts.length).toBe(2);
-      expect(JSON.parse(document.getElementById("bakagame-structured-data")!.textContent ?? "").name).toBe("第二个");
-      expect(JSON.parse(document.getElementById("bakagame-faq-structured-data")!.textContent ?? "")["@type"]).toBe(
-        "FAQPage",
-      );
+      expect(
+        JSON.parse(document.getElementById("bakagame-structured-data")!.textContent ?? "").name
+      ).toBe("第二个");
+      expect(
+        JSON.parse(document.getElementById("bakagame-faq-structured-data")!.textContent ?? "")[
+          "@type"
+        ]
+      ).toBe("FAQPage");
     });
   });
 
@@ -172,7 +184,9 @@ describe("Seo", () => {
       structuredData: { "@context": "https://schema.org", "@type": "WebSite", name: "旧页面" },
     });
     await waitFor(() => expect(document.getElementById("bakagame-structured-data")).not.toBeNull());
-    await waitFor(() => expect(document.getElementById("bakagame-faq-structured-data")).not.toBeNull());
+    await waitFor(() =>
+      expect(document.getElementById("bakagame-faq-structured-data")).not.toBeNull()
+    );
     first.result.unmount();
     renderSeo({ description: "房间", path: "/whoisfaker/room/demo", indexable: false });
     await waitFor(() => {

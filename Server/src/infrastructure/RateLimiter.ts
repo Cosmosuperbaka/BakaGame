@@ -106,17 +106,23 @@ export class ThreeTierRateLimiter {
   private readonly peerLimiter: SlidingWindowRateLimiter;
   private readonly globalLimiter: SlidingWindowRateLimiter;
 
-  constructor(options: {
-    windowMs?: number;
-    ipMaxRequests?: number;
-    peerMaxRequests?: number;
-    globalMaxRequests?: number;
-    /** 单客户端与 peer 两个桶各自最多记多少个键；全局桶只有一个键，不受影响。 */
-    maxKeys?: number;
-  } = {}) {
+  constructor(
+    options: {
+      windowMs?: number;
+      ipMaxRequests?: number;
+      peerMaxRequests?: number;
+      globalMaxRequests?: number;
+      /** 单客户端与 peer 两个桶各自最多记多少个键；全局桶只有一个键，不受影响。 */
+      maxKeys?: number;
+    } = {}
+  ) {
     const windowMs = options.windowMs ?? 60_000;
     const ipMaxRequests = options.ipMaxRequests ?? 60;
-    this.ipLimiter = new SlidingWindowRateLimiter({ windowMs, maxRequests: ipMaxRequests, maxKeys: options.maxKeys });
+    this.ipLimiter = new SlidingWindowRateLimiter({
+      windowMs,
+      maxRequests: ipMaxRequests,
+      maxKeys: options.maxKeys,
+    });
     this.peerLimiter = new SlidingWindowRateLimiter({
       windowMs,
       maxRequests: options.peerMaxRequests ?? ipMaxRequests * 10,

@@ -35,35 +35,29 @@ interface GameCommandDependencies {
   assignQuestioner(connection: ConnectionRecord, playerId: string): CommandResult;
   submitWords(
     connection: ConnectionRecord,
-    payload: Message<"game.submitWords">["payload"],
+    payload: Message<"game.submitWords">["payload"]
   ): CommandResult;
   advancePhase(connection: ConnectionRecord): CommandResult;
   submitDescription(connection: ConnectionRecord, text: string): CommandResult;
   submitVote(connection: ConnectionRecord, targetId: string): CommandResult;
   submitNightAction(connection: ConnectionRecord, targetId?: string | null): CommandResult;
-  submitBlankGuess(
-    connection: ConnectionRecord,
-    words: [string, string],
-  ): CommandResult;
+  submitBlankGuess(connection: ConnectionRecord, words: [string, string]): CommandResult;
   enterBlankGuess(connection: ConnectionRecord): CommandResult;
-  updateBlankGuessDraft(
-    connection: ConnectionRecord,
-    words: [string, string],
-  ): CommandResult;
+  updateBlankGuessDraft(connection: ConnectionRecord, words: [string, string]): CommandResult;
   reviewBlankGuess(connection: ConnectionRecord, approve: boolean): CommandResult;
   cancelVote(connection: ConnectionRecord): CommandResult;
   cancelNightAction(connection: ConnectionRecord): CommandResult;
   requestSupplement(connection: ConnectionRecord, playerIds: string[]): CommandResult;
   resolveDisconnect(
     connection: ConnectionRecord,
-    payload: Message<"game.resolveDisconnect">["payload"],
+    payload: Message<"game.resolveDisconnect">["payload"]
   ): CommandResult;
   startPhaseTimer(connection: ConnectionRecord, durationSeconds: number): CommandResult;
   stopPhaseTimer(connection: ConnectionRecord): CommandResult;
 }
 
 export const createGameCommandHandler = (
-  dependencies: GameCommandDependencies,
+  dependencies: GameCommandDependencies
 ): CommandHandler => ({
   canHandle: (type) => ownsCommand(GAME_COMMAND_TYPES, type),
   execute: (connection, message) => {

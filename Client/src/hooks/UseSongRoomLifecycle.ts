@@ -61,7 +61,7 @@ function settleMusicSessionUpload(
   task: MusicSessionTask,
   platform: "netease" | "qq",
   storedSession: StoredSongMusicSession,
-  result: MusicSessionAuthResult | undefined,
+  result: MusicSessionAuthResult | undefined
 ): void {
   if (!result?.account) return;
   const nextCookie = result.cookie || storedSession.cookie;
@@ -71,7 +71,7 @@ function settleMusicSessionUpload(
   saveSongMusicSession(
     { cookie: nextCookie, account: { ...result.account, platform } },
     storedSession.persistent,
-    platform,
+    platform
   );
 }
 
@@ -93,7 +93,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const navigate = usePageNavigate();
   const { roomId: routeRoomId = "" } = useParams();
   const [soloRoomId, setSoloRoomId] = useState(() =>
-    solo ? getSongSoloRoomId() || randomRoomId() : "",
+    solo ? getSongSoloRoomId() || randomRoomId() : ""
   );
   const roomId = solo
     ? soloRoomId
@@ -155,16 +155,16 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     async (
       task: MusicSessionTask,
       platform: "netease" | "qq",
-      storedSession: StoredSongMusicSession,
+      storedSession: StoredSongMusicSession
     ) => {
       const platformName = platform === "qq" ? "QQ音乐" : "网易云";
       for (let attempt = 0; ; attempt += 1) {
         if (task.cancelled) return;
         try {
-          const result = await sendCommand<MusicSessionAuthResult>(
-            "song.auth.useCookie",
-            { cookie: storedSession.cookie, platform },
-          );
+          const result = await sendCommand<MusicSessionAuthResult>("song.auth.useCookie", {
+            cookie: storedSession.cookie,
+            platform,
+          });
           if (task.cancelled) return;
           task.settled = true;
           settleMusicSessionUpload(task, platform, storedSession, result);
@@ -189,14 +189,14 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         }
       }
     },
-    [cancelMusicSessionUpload, sendCommand, setNotice],
+    [cancelMusicSessionUpload, sendCommand, setNotice]
   );
 
   useEffect(() => () => cancelMusicSessionUpload(), [cancelMusicSessionUpload]);
 
   const isPending = useCallback(
     (type: string) => Boolean(pendingCommands[type]),
-    [pendingCommands],
+    [pendingCommands]
   );
 
   const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => Boolean(pendingCommands[type]));
@@ -212,13 +212,16 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const createMissingRoom = useCallback(
     async (name: string, signal: AbortSignal): Promise<boolean> => {
       try {
-        await createRoom({
-          roomId,
-          name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
-          visibility: "public",
-          allowSpectators: true,
-          userName: name,
-        }, signal);
+        await createRoom(
+          {
+            roomId,
+            name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
+            visibility: "public",
+            allowSpectators: true,
+            userName: name,
+          },
+          signal
+        );
         if (signal.aborted) return true;
         setJoining(false);
         return true;
@@ -228,7 +231,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         return false;
       }
     },
-    [createRoom, roomId, setNotice],
+    [createRoom, roomId, setNotice]
   );
 
   const enterWithName = useCallback(
@@ -257,24 +260,27 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         void navigate(exitPath, { replace: true });
       }
     },
-    [createMissingRoom, exitPath, joinRoom, navigate, roomId, setNotice],
+    [createMissingRoom, exitPath, joinRoom, navigate, roomId, setNotice]
   );
 
   const createSoloRoom = useCallback(
     async (targetRoomId: string, signal: AbortSignal) => {
       if (signal.aborted) return;
-      await createRoom({
-        roomId: targetRoomId,
-        name: "单人模式",
-        visibility: "public",
-        allowSpectators: false,
-        userName: getSavedUsername() || "单人玩家",
-        solo: true,
-      }, signal);
+      await createRoom(
+        {
+          roomId: targetRoomId,
+          name: "单人模式",
+          visibility: "public",
+          allowSpectators: false,
+          userName: getSavedUsername() || "单人玩家",
+          solo: true,
+        },
+        signal
+      );
       if (signal.aborted) return;
       saveSongSoloRoomId(targetRoomId);
     },
-    [createRoom],
+    [createRoom]
   );
 
   const enterSoloRoom = useCallback(
@@ -306,7 +312,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         void navigate("/", { replace: true });
       }
     },
-    [createSoloRoom, navigate, setNotice],
+    [createSoloRoom, navigate, setNotice]
   );
 
   useEffect(() => {
@@ -426,7 +432,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       // 如果当前房间内该平台账号已就绪，且用户身份一致，且本次装载任务已落定，不再重复发起上传
       const isReady = platform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
       const roomAccount = snapshot.musicAccounts?.[platform];
-      if (isReady && roomAccount?.userId && roomAccount.userId === storedSession.account?.userId && active?.settled) {
+      if (
+        isReady &&
+        roomAccount?.userId &&
+        roomAccount.userId === storedSession.account?.userId &&
+        active?.settled
+      ) {
         continue;
       }
 
@@ -468,7 +479,11 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     if (signal.aborted) return;
   };
 
-  const runCommand = async (type: string, payload: Record<string, unknown> = {}, success?: string) => {
+  const runCommand = async (
+    type: string,
+    payload: Record<string, unknown> = {},
+    success?: string
+  ) => {
     if (inFlightCommandsRef.current.has(type)) return;
     inFlightCommandsRef.current.add(type);
     setPendingCommands((prev) => ({ ...prev, [type]: true }));

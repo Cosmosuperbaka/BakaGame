@@ -19,7 +19,14 @@ export function RoleBadge({
   inset?: boolean;
 }) {
   return (
-    <span className={cn(PLAYER_BADGE_BASE, ROLE_COLORS[role], inset && "bg-background", predicted && "bg-muted/40")}>
+    <span
+      className={cn(
+        PLAYER_BADGE_BASE,
+        ROLE_COLORS[role],
+        inset && "bg-background",
+        predicted && "bg-muted/40"
+      )}
+    >
       {predicted ? <span className="sr-only">预测</span> : null}
       {ROLE_LABELS[role]}
     </span>

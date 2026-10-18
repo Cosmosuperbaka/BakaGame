@@ -99,4 +99,3 @@ describe("changelog helpers", () => {
     expect(sections.find((s) => s.type === "custom")?.label).toBe("custom");
   });
 });
-

@@ -53,7 +53,7 @@ describe("resolveServerUrl 基址与路径拼接", () => {
   it("基址非空时拼接为绝对地址", () => {
     vi.stubEnv("VITE_SERVER_URL", "http://localhost:4850");
     expect(resolveServerUrl("/api/monitoring/telemetry")).toBe(
-      "http://localhost:4850/api/monitoring/telemetry",
+      "http://localhost:4850/api/monitoring/telemetry"
     );
   });
 });

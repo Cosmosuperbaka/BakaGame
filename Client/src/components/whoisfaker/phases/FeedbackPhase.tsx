@@ -13,7 +13,8 @@ import { GuessReadout } from "./BlankGuessPhase";
 
 /** 出局名单的一句话结论：没人出局时给出各自的说法。 */
 function EliminationLine({ names, empty }: { names: string[]; empty: string }) {
-  if (!names.length) return <p className="text-center text-base font-medium text-muted-foreground">{empty}</p>;
+  if (!names.length)
+    return <p className="text-center text-base font-medium text-muted-foreground">{empty}</p>;
   return (
     <p className="text-center text-base">
       <span className="font-semibold text-destructive">{names.join("、")}</span>
@@ -23,7 +24,13 @@ function EliminationLine({ names, empty }: { names: string[]; empty: string }) {
 }
 
 /** 投票反馈：每个人投给了谁、各自得票，以及最终谁出局或进入平票 PK。 */
-function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapshot: WhoIsFakerRoomSnapshot }) {
+function VoteFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
   const votes = feedback.votes ?? [];
   const tally = tallyVotes(votes);
   const nameOf = (id: string) => playerNameOf(snapshot.players, id);
@@ -34,7 +41,11 @@ function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsho
     <div className="space-y-5">
       <PhaseHeader
         icon={Vote}
-        title={feedback.tieBreak ? `第 ${feedback.day} 天 · 平票 PK 结果` : `第 ${feedback.day} 天投票结果`}
+        title={
+          feedback.tieBreak
+            ? `第 ${feedback.day} 天 · 平票 PK 结果`
+            : `第 ${feedback.day} 天投票结果`
+        }
         iconClassName={feedback.tieBreak ? "text-warning" : undefined}
       />
 
@@ -44,7 +55,10 @@ function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsho
           <span className="text-muted-foreground"> 平票，进入 PK</span>
         </p>
       ) : (
-        <EliminationLine names={eliminated} empty={votes.length ? "无人出局" : "无人投票，无人出局"} />
+        <EliminationLine
+          names={eliminated}
+          empty={votes.length ? "无人出局" : "无人投票，无人出局"}
+        />
       )}
 
       {tally.length ? (
@@ -60,7 +74,10 @@ function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsho
               const out = feedback.eliminatedPlayerIds.includes(targetId);
               return (
                 <motion.li key={targetId} variants={listItem}>
-                  <Badge variant={out ? "destructive" : "outline"} className="gap-1.5 bg-background">
+                  <Badge
+                    variant={out ? "destructive" : "outline"}
+                    className="gap-1.5 bg-background"
+                  >
                     <span>{targetId === ABSTAIN_TARGET_ID ? "弃票" : nameOf(targetId)}</span>
                     <span className="tabular-nums">{count} 票</span>
                   </Badge>
@@ -89,8 +106,14 @@ function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsho
                   className="flex min-w-0 items-center gap-2 rounded-md bg-background px-3 py-1.5 text-sm"
                 >
                   <span className="min-w-0 truncate font-medium">{nameOf(vote.voterId)}</span>
-                  <span className="shrink-0 text-muted-foreground">{abstained ? "选择" : "投给"}</span>
-                  <span className={abstained ? "shrink-0 text-muted-foreground" : "min-w-0 truncate font-medium"}>
+                  <span className="shrink-0 text-muted-foreground">
+                    {abstained ? "选择" : "投给"}
+                  </span>
+                  <span
+                    className={
+                      abstained ? "shrink-0 text-muted-foreground" : "min-w-0 truncate font-medium"
+                    }
+                  >
                     {abstained ? "弃票" : nameOf(vote.targetId)}
                   </span>
                 </motion.li>
@@ -104,13 +127,22 @@ function VoteFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsho
 }
 
 /** 夜晚反馈即「天亮」：只公布谁在夜里出局，凶手留到结算历史里再揭晓。 */
-function NightFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapshot: WhoIsFakerRoomSnapshot }) {
+function NightFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
   const eliminated = feedback.eliminatedPlayerIds.map((id) => playerNameOf(snapshot.players, id));
   return (
     <div className="space-y-5">
       <div className="flex min-h-[5.5rem] flex-col items-center justify-start text-center">
         {/* 日出图标自下升起，与「天亮」语义一致 */}
-        <motion.span className="flex h-11 w-11 items-center justify-center rounded-md bg-muted" {...sunrise}>
+        <motion.span
+          className="flex h-11 w-11 items-center justify-center rounded-md bg-muted"
+          {...sunrise}
+        >
           <Sunrise className="h-5 w-5 text-warning" />
         </motion.span>
         <h2 className="mt-3 text-2xl font-semibold leading-8">天亮了</h2>
@@ -124,7 +156,13 @@ function NightFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapsh
 }
 
 /** 白板猜词反馈：猜词过程全房已实时看过，这里只把最终两词与对错摆出来。 */
-function BlankGuessFeedback({ feedback, snapshot }: { feedback: RoundFeedback; snapshot: WhoIsFakerRoomSnapshot }) {
+function BlankGuessFeedback({
+  feedback,
+  snapshot,
+}: {
+  feedback: RoundFeedback;
+  snapshot: WhoIsFakerRoomSnapshot;
+}) {
   const record = feedback.blankGuess;
   const guesser = record ? playerNameOf(snapshot.players, record.playerId) : "白板";
   return (
@@ -167,7 +205,7 @@ export function FeedbackPhase() {
           addToast((e as { message: string }).message, "error");
         }
       }),
-    [run, sendCommand, addToast],
+    [run, sendCommand, addToast]
   );
 
   if (!feedback) {

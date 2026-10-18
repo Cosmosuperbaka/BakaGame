@@ -15,7 +15,13 @@ const meta = {
     tone: { control: "inline-radio", options: ["default", "recommended"] },
     nameWrap: { control: "inline-radio", options: ["truncate", "wrap"] },
   },
-  decorators: [(Story) => <div className="w-full max-w-xl"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="w-full max-w-xl">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof CandidateGrid>;
 
 export default meta;
@@ -53,7 +59,11 @@ export const SectionHeaders: Story = {
   name: "区块小标题",
   render: () => (
     <div className="flex flex-col gap-5">
-      <SectionHeader icon={<Eye className="h-3.5 w-3.5" />} title="旁观玩家" hint="推荐：玩家全员参战" />
+      <SectionHeader
+        icon={<Eye className="h-3.5 w-3.5" />}
+        title="旁观玩家"
+        hint="推荐：玩家全员参战"
+      />
       <SectionHeader icon={<UserCheck className="h-3.5 w-3.5" />} title="玩家" />
       <SectionHeader title="不传图标时的缺省图标" />
     </div>

@@ -24,7 +24,10 @@ const { host, me, kanade, long, azumi } = SONG_PEOPLE;
 function stage(overrides: Partial<SongGameAreaProps>) {
   const props: SongGameAreaProps = {
     // 关闭歌词：歌词播放器依赖 jsdom 没有的 Web Animations，组队断言与它无关
-    snapshot: playingSnapshot({ players: teamPlayingPlayers(), settings: songSettings({ showLyrics: false }) }),
+    snapshot: playingSnapshot({
+      players: teamPlayingPlayers(),
+      settings: songSettings({ showLyrics: false }),
+    }),
     privateState: songPrivate(),
     isHost: false,
     volume: 0.5,
@@ -49,7 +52,12 @@ describe("猜歌组队", () => {
     const run = vi.fn(async () => {});
     const players = teamWaitingPlayers();
     const view = render(
-      <SongWaitingPhase snapshot={songSnapshot({ players })} me={players.find((player) => player.id === me.id)} isHost={false} run={run} />,
+      <SongWaitingPhase
+        snapshot={songSnapshot({ players })}
+        me={players.find((player) => player.id === me.id)}
+        isHost={false}
+        run={run}
+      />
     );
     const group = screen.getByRole("radiogroup", { name: "选择队伍" });
     expect(within(group).getByRole("radio", { name: "1 队，2 人" })).toBeChecked();
@@ -57,13 +65,33 @@ describe("猜歌组队", () => {
     expect(run).toHaveBeenCalledWith("song.player.setTeam", { team: 3 });
 
     const spectator = songPlayer(me, { membership: "spectator", roundStatus: "spectator" });
-    view.rerender(<SongWaitingPhase snapshot={songSnapshot({ players: [...players.filter((player) => player.id !== me.id), spectator] })} me={spectator} isHost={false} run={run} />);
+    view.rerender(
+      <SongWaitingPhase
+        snapshot={songSnapshot({
+          players: [...players.filter((player) => player.id !== me.id), spectator],
+        })}
+        me={spectator}
+        isHost={false}
+        run={run}
+      />
+    );
     expect(screen.queryByRole("radiogroup", { name: "选择队伍" })).not.toBeInTheDocument();
   });
 
   it("手动出题且暂无可选出题人时，房主不能开局", () => {
-    const players = [songPlayer(host, { isReady: true, team: 1, isHost: true }), songPlayer(me, { isReady: true, team: 1 })];
-    render(<SongWaitingPhase snapshot={songSnapshot({ players })} me={players[0]} isHost submitterCandidateIds={[]} run={vi.fn(async () => {})} />);
+    const players = [
+      songPlayer(host, { isReady: true, team: 1, isHost: true }),
+      songPlayer(me, { isReady: true, team: 1 }),
+    ];
+    render(
+      <SongWaitingPhase
+        snapshot={songSnapshot({ players })}
+        me={players[0]}
+        isHost
+        submitterCandidateIds={[]}
+        run={vi.fn(async () => {})}
+      />
+    );
     expect(screen.getByRole("button", { name: "暂无可选出题人" })).toBeDisabled();
   });
 
@@ -79,7 +107,14 @@ describe("猜歌组队", () => {
   });
 
   it("出题人的队友本局观战：看全房猜测，不出现猜测栏", () => {
-    stage({ me: teamView(kanade.id), privateState: submitterPrivate({ playerId: kanade.id, isSubmitter: false, teamObserver: true }) });
+    stage({
+      me: teamView(kanade.id),
+      privateState: submitterPrivate({
+        playerId: kanade.id,
+        isSubmitter: false,
+        teamObserver: true,
+      }),
+    });
     expect(screen.getByText("队友出题，你本局观战")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "全房猜测" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "提交猜测" })).not.toBeInTheDocument();
@@ -88,7 +123,11 @@ describe("猜歌组队", () => {
   it("队友猜中后给出队伍猜中回执", () => {
     stage({
       me: teamView(long.id),
-      privateState: songPrivate({ playerId: long.id, remainingGuesses: 1, visibleAttempts: [songAttempt(azumi, 2, 20, "correct")] }),
+      privateState: songPrivate({
+        playerId: long.id,
+        remainingGuesses: 1,
+        visibleAttempts: [songAttempt(azumi, 2, 20, "correct")],
+      }),
     });
     expect(screen.getByText("队友已猜中，等待其他玩家")).toBeInTheDocument();
   });
@@ -96,7 +135,10 @@ describe("猜歌组队", () => {
   it("指定出题人只列服务端候选，组队时名后带队伍", async () => {
     const user = userEvent.setup();
     const run = vi.fn(async () => {});
-    const players = teamPlayingPlayers().map((player) => ({ ...player, roundStatus: "waiting" as const }));
+    const players = teamPlayingPlayers().map((player) => ({
+      ...player,
+      roundStatus: "waiting" as const,
+    }));
     stage({
       snapshot: choosingSnapshot({ players }),
       privateState: songPrivate({ playerId: host.id, submitterCandidateIds: [host.id, me.id] }),

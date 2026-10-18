@@ -21,15 +21,12 @@ export function PrivilegedActionPreview({ mode }: Props) {
 
   const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const roleByPlayerId = new Map(
-    privateState.questionerView.map((player) => [player.playerId, player.role]),
+    privateState.questionerView.map((player) => [player.playerId, player.role])
   );
   const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
   const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
   const eligibleVoters = alivePlayers.filter(
-    (player) =>
-      !(
-        snapshot.status.phase === "tieBreak" && tieBreakCandidateIds.includes(player.id)
-      ),
+    (player) => !(snapshot.status.phase === "tieBreak" && tieBreakCandidateIds.includes(player.id))
   );
 
   const rows =
@@ -50,8 +47,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
         })
       : privateState.questionerView
           .filter(
-            (player) =>
-              player.alive && (player.role === "civilian" || player.role === "undercover"),
+            (player) => player.alive && (player.role === "civilian" || player.role === "undercover")
           )
           .map((player) => {
             const action = preview.nightActions.find((item) => item.actorId === player.playerId);
@@ -79,13 +75,19 @@ export function PrivilegedActionPreview({ mode }: Props) {
   const abstainCount = voteCounts.get(ABSTAIN_TARGET_ID) ?? 0;
 
   return (
-    <section className="mx-auto w-full max-w-lg space-y-3" aria-label={mode === "vote" ? "投票预览" : "夜间行动预览"}>
+    <section
+      className="mx-auto w-full max-w-lg space-y-3"
+      aria-label={mode === "vote" ? "投票预览" : "夜间行动预览"}
+    >
       {mode === "vote" ? (
         <div className="grid grid-cols-2 gap-2">
           {voteTargets.map((player) => {
             const role = roleByPlayerId.get(player.id);
             return (
-              <div key={player.id} className="flex min-w-0 items-center gap-2 rounded-md bg-muted px-3 py-2.5">
+              <div
+                key={player.id}
+                className="flex min-w-0 items-center gap-2 rounded-md bg-muted px-3 py-2.5"
+              >
                 {role ? <RoleBadge role={role} inset /> : null}
                 <Hint label={player.name}>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{player.name}</span>
@@ -144,7 +146,7 @@ export function PrivilegedActionPreview({ mode }: Props) {
                   exit="exit"
                   className={cn(
                     "flex min-w-0 items-center justify-end gap-1.5 text-right",
-                    row.pending ? "text-muted-foreground" : "font-medium",
+                    row.pending ? "text-muted-foreground" : "font-medium"
                   )}
                 >
                   {row.pending ? <Clock3 className="h-3.5 w-3.5 shrink-0" /> : null}

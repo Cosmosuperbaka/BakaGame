@@ -24,7 +24,9 @@ import { MeilisearchApiError, type MeilisearchErrorResponse } from "meilisearch"
  */
 export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promise<unknown> {
   const [input, init] = args;
-  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  const url = new URL(
+    typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+  );
   const payload = typeof init?.body === "string" ? init.body : undefined;
   const headers = toPlainHeaders(init?.headers);
   if (payload !== undefined) headers["content-length"] = String(Buffer.byteLength(payload));
@@ -43,19 +45,28 @@ export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promis
       (response) => {
         let data = "";
         response.setEncoding("utf8");
-        response.on("data", (chunk: string) => { data += chunk; });
+        response.on("data", (chunk: string) => {
+          data += chunk;
+        });
         response.on("end", () => {
           const parsed = data === "" ? undefined : (JSON.parse(data) as unknown);
           const status = response.statusCode ?? 0;
           if (status < 200 || status >= 300) {
-            reject(new MeilisearchApiError(toErrorResponse(url, response), parsed as MeilisearchErrorResponse));
+            reject(
+              new MeilisearchApiError(
+                toErrorResponse(url, response),
+                parsed as MeilisearchErrorResponse
+              )
+            );
             return;
           }
           resolve(parsed);
         });
-      },
+      }
     );
-    request.on("error", (error) => { if (!aborted) reject(error); });
+    request.on("error", (error) => {
+      if (!aborted) reject(error);
+    });
 
     const signal = init?.signal;
     if (signal != null) {
@@ -100,7 +111,9 @@ const keepAliveHttps = new Agent({ keepAlive: true, maxSockets: 16 });
 function toPlainHeaders(headers: HeadersInit | undefined): Record<string, string> {
   const plain: Record<string, string> = {};
   if (headers === undefined) return plain;
-  new Headers(headers).forEach((value, key) => { plain[key] = value; });
+  new Headers(headers).forEach((value, key) => {
+    plain[key] = value;
+  });
   return plain;
 }
 

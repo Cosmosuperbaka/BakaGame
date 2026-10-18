@@ -75,9 +75,10 @@ const formatTime = (seconds: number) => {
 };
 
 /** 末段图标只在严重警示时呼吸，其余状态静止。 */
-const iconPulse = (isCritical: boolean) => (isCritical
-  ? { animate: urgentPulse.animate, transition: urgentPulse.transition }
-  : { animate: { scale: 1 }, transition: spring.snap });
+const iconPulse = (isCritical: boolean) =>
+  isCritical
+    ? { animate: urgentPulse.animate, transition: urgentPulse.transition }
+    : { animate: { scale: 1 }, transition: spring.snap };
 
 interface Props {
   className?: string;
@@ -102,7 +103,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
   const isSupportedPhase = phase !== undefined && !UNSUPPORTED_PHASES.has(phase);
 
   const isQuestioner = privateState?.isQuestioner ?? false;
-  const isTestRoomHost = Boolean(snapshot?.testMode && snapshot?.hostPlayerId === privateState?.playerId);
+  const isTestRoomHost = Boolean(
+    snapshot?.testMode && snapshot?.hostPlayerId === privateState?.playerId
+  );
   const canControl = (isQuestioner || isTestRoomHost) && isSupportedPhase;
 
   // 毫秒级倒计时平滑时钟
@@ -177,13 +180,16 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
           className={cn(
             "@container relative w-full overflow-hidden rounded-md border bg-background shadow-2xs transition-colors",
             TONE_CONTAINER_BORDER[tone],
-            className,
+            className
           )}
         >
           {/* 末段的状态浅底叠在不透明的 bg-background 上，外框本身不换底色 */}
           <div
             aria-hidden="true"
-            className={cn("pointer-events-none absolute inset-0 transition-colors", TONE_BACKDROP[tone])}
+            className={cn(
+              "pointer-events-none absolute inset-0 transition-colors",
+              TONE_BACKDROP[tone]
+            )}
           />
           <MeasuredSwap>
             <AnimatePresence mode="popLayout" initial={false}>
@@ -205,10 +211,17 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                       >
                         <Timer className={cn("h-4 w-4", TONE_ICON[runningTone])} />
                       </motion.span>
-                      <span className="truncate text-xs font-medium text-muted-foreground">本阶段倒计时</span>
+                      <span className="truncate text-xs font-medium text-muted-foreground">
+                        本阶段倒计时
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={cn("font-mono text-xl font-bold tabular-nums", TONE_TIME[runningTone])}>
+                      <span
+                        className={cn(
+                          "font-mono text-xl font-bold tabular-nums",
+                          TONE_TIME[runningTone]
+                        )}
+                      >
                         {formatTime(remainingSec)}
                       </span>
                       {canControl ? (
@@ -232,7 +245,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                       className={cn(
                         // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
                         "h-full rounded-full transition-[width] ease-linear",
-                        TONE_PROGRESS_BAR[runningTone],
+                        TONE_PROGRESS_BAR[runningTone]
                       )}
                       style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
                     />
@@ -251,7 +264,9 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                 >
                   <div className="mr-auto flex items-center gap-2">
                     <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">阶段限时</span>
+                    <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                      阶段限时
+                    </span>
                   </div>
                   <SegmentedControl
                     size="sm"

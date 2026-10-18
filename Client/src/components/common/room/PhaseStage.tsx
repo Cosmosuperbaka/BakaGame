@@ -31,7 +31,12 @@ export function PhaseStage({
 }) {
   const phaseRef = useRef<HTMLDivElement>(null);
   return (
-    <div className={cn("relative flex min-h-0 flex-1 flex-col overflow-hidden", reserveBottom && "pb-16")}>
+    <div
+      className={cn(
+        "relative flex min-h-0 flex-1 flex-col overflow-hidden",
+        reserveBottom && "pb-16"
+      )}
+    >
       <ScrollArea data-testid="game-area-scroll" className="min-h-0 flex-1">
         <div className="p-6 md:p-8">
           {before}

@@ -1,4 +1,12 @@
-import type { CEECharacterSummary, CEECharacterView, CEEDirectoryResult, CEEExtraTagSection, CEEImageSize, CEESettings, CEESubjectSummary } from "../shared/CEE";
+import type {
+  CEECharacterSummary,
+  CEECharacterView,
+  CEEDirectoryResult,
+  CEEExtraTagSection,
+  CEEImageSize,
+  CEESettings,
+  CEESubjectSummary,
+} from "../shared/CEE";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
@@ -55,4 +63,6 @@ export interface CEEDataOptions {
   meilisearch?: BangumiSearchOptions;
 }
 
-export type CEEDataInit = Omit<CEEDataOptions, "fetcher" | "now" | "meilisearch"> & { meilisearch?: Omit<BangumiSearchOptions, "client"> };
+export type CEEDataInit = Omit<CEEDataOptions, "fetcher" | "now" | "meilisearch"> & {
+  meilisearch?: Omit<BangumiSearchOptions, "client">;
+};

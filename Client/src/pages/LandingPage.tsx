@@ -1,11 +1,6 @@
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import {
-  listItem,
-  listContainer,
-  iconTappable,
-  pressable,
-} from "@/lib/Motion";
+import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
 import { ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -189,7 +184,7 @@ function GameRow({ game }: { game: GameEntry }) {
   // 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给可用的卡片，读作「这一张能进」；未上线的卡片不响应悬停。
   const cardContainerClass = cn(
     "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-2xs transition-colors [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2",
-    game.available && "hover:border-primary/40",
+    game.available && "hover:border-primary/40"
   );
 
   // 单一入口游戏（如 Who is Faker）
@@ -236,10 +231,7 @@ function GameRow({ game }: { game: GameEntry }) {
 
   return (
     <motion.div data-testid={`game-entry-${game.id}`} variants={listItem} className="h-full">
-      <div
-        aria-disabled={isWholeGameDisabled ? "true" : undefined}
-        className={cardContainerClass}
-      >
+      <div aria-disabled={isWholeGameDisabled ? "true" : undefined} className={cardContainerClass}>
         {/* 卡片头部：图标、标题与主状态 */}
         <div className="flex w-full items-center justify-between gap-2">
           <GameIdentity game={game} />
@@ -332,7 +324,6 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
   );
 }
 
-
 /** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
 const VERSION_PAGE_PATH = "/credits?tab=changelog";
 
@@ -351,7 +342,9 @@ export default function LandingPage() {
     <div className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <Seo path="/" />
       {/* 账号入口浮在右上角，不占页头的纵向空间；账号系统未启用时不渲染 */}
-      <div className="absolute right-3 top-3 z-panel sm:right-5 sm:top-4"><AccountButton /></div>
+      <div className="absolute right-3 top-3 z-panel sm:right-5 sm:top-4">
+        <AccountButton />
+      </div>
       <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
           variants={listItem}

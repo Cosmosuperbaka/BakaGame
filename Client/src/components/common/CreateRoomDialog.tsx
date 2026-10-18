@@ -2,7 +2,13 @@ import { useState } from "react";
 import { EyeOff, Globe, Lock, Users, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/Dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/Dialog";
 import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import type { OriginPoint } from "@/lib/Motion";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
@@ -97,8 +103,14 @@ export function CreateRoomDialog({
 
 type CreateRoomFormProps = Pick<
   CreateRoomDialogProps,
-  | "defaultName" | "nameMaxLength" | "onOpenChange" | "roomMode"
-  | "privacy" | "spectatorsDisabledReason" | "defaults" | "onCreate"
+  | "defaultName"
+  | "nameMaxLength"
+  | "onOpenChange"
+  | "roomMode"
+  | "privacy"
+  | "spectatorsDisabledReason"
+  | "defaults"
+  | "onCreate"
 >;
 
 function CreateRoomForm({
@@ -217,7 +229,11 @@ function CreateRoomForm({
           onCheckedChange={setAllowSpectators}
           disabled={spectatorsLocked}
         />
-        {serverError ? <p role="alert" className="text-xs text-destructive">{serverError}</p> : null}
+        {serverError ? (
+          <p role="alert" className="text-xs text-destructive">
+            {serverError}
+          </p>
+        ) : null}
       </div>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

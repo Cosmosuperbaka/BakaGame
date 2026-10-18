@@ -52,9 +52,7 @@ export const normalizeName = (value: string): string => stripControlChars(value)
 
 // 词语和自由文本统一做空白折叠，避免“看起来不同、实际上相同”的输入。
 export const normalizeWord = (value: string): string =>
-  stripControlChars(value)
-    .trim()
-    .replace(/\s+/g, " ");
+  stripControlChars(value).trim().replace(/\s+/g, " ");
 
 export const normalizeWordPair = (values: [string, string]): [string, string] => {
   const normalized = values.map(normalizeWord) as [string, string];
@@ -67,10 +65,7 @@ export const normalizeWordPair = (values: [string, string]): [string, string] =>
     throw new AppError("INVALID_WORD_PAIR", "两个词语不能相同");
   }
 
-  return [...normalized].sort((left, right) => left.localeCompare(right)) as [
-    string,
-    string,
-  ];
+  return [...normalized].sort((left, right) => left.localeCompare(right)) as [string, string];
 };
 
 // 纯规则谓词：判断阵营配置是否满足当前人数约束，无异常与副作用。
@@ -167,7 +162,11 @@ const toManualRoleState = (role: WhoIsFakerRole, words: RoundWords): RoundPlayer
   const side: PlayerSide =
     role === "undercover" ? "undercover" : role === "blank" ? "blank" : "good";
   const word =
-    role === "blank" ? undefined : role === "undercover" ? words.undercoverWord : words.civilianWord;
+    role === "blank"
+      ? undefined
+      : role === "undercover"
+        ? words.undercoverWord
+        : words.civilianWord;
 
   return { role, side, word, alive: true };
 };
@@ -175,7 +174,7 @@ const toManualRoleState = (role: WhoIsFakerRole, words: RoundWords): RoundPlayer
 /** 按出题人指定的身份发牌：先校验每名参赛玩家都有身份，再校验身份数量与本局配置一致。 */
 const assignManualRoles = (
   input: RoleAssignmentInput,
-  manualRoles: Record<string, WhoIsFakerRole>,
+  manualRoles: Record<string, WhoIsFakerRole>
 ): Record<string, RoundPlayerState> => {
   const { playerIds, config, words } = input;
 
@@ -268,7 +267,7 @@ export const assignRoles = (
   pair: [string, string],
   blankHint: string | undefined,
   random: RandomSource,
-  manualRoles?: Record<string, WhoIsFakerRole>,
+  manualRoles?: Record<string, WhoIsFakerRole>
 ): {
   civilianWord: string;
   undercoverWord: string;
@@ -316,7 +315,7 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
 
   const abstainCount = voteCounter.get(ABSTAIN_TARGET_ID) ?? 0;
   const playerEntries = [...voteCounter.entries()].filter(
-    ([playerId]) => playerId !== ABSTAIN_TARGET_ID,
+    ([playerId]) => playerId !== ABSTAIN_TARGET_ID
   );
   const maxVotes = Math.max(...playerEntries.map(([, count]) => count), 0);
   const leaders =
@@ -337,7 +336,7 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
 
 export const resolveNightEliminations = (
   round: GameRound,
-  actions: NightActionRecord[],
+  actions: NightActionRecord[]
 ): string[] => {
   // 规则按 Project.md 直译：
   // 1. 选择“刀人”的平民自己出局
@@ -361,7 +360,7 @@ export const recordEliminations = (
   assignments: Record<string, RoundPlayerState>,
   playerIds: string[],
   reason: string,
-  occurredAt: number,
+  occurredAt: number
 ): void => {
   // 统一淘汰入口，避免每个阶段重复写状态变更。
   for (const playerId of playerIds) {
@@ -405,7 +404,7 @@ export const getBlankPlayerId = (assignments: Record<string, RoundPlayerState>) 
 
 // 白板猜错后，再按好人/卧底常规胜负条件结算。
 export const getWinnerAfterBlankFailure = (
-  assignments: Record<string, RoundPlayerState>,
+  assignments: Record<string, RoundPlayerState>
 ): Exclude<RoundWinner, "blank" | "aborted"> | undefined => {
   const alive = getAliveCounts(assignments);
 
@@ -421,7 +420,7 @@ export const getWinnerAfterBlankFailure = (
 };
 
 export const shouldEnterFinalBlankGuess = (
-  round: GameRound,
+  round: GameRound
 ): {
   shouldGuess: boolean;
   deferredWinner?: Exclude<RoundWinner, "blank" | "aborted">;
@@ -457,7 +456,7 @@ export const evaluateBlankGuess = (
   round: GameRound,
   guess: [string, string],
   createdAt: number,
-  reason: BlankGuessRecord["reason"],
+  reason: BlankGuessRecord["reason"]
 ): BlankGuessRecord => {
   return evaluateBlankGuessDraft(round, normalizeWordPair(guess), createdAt, reason);
 };
@@ -468,19 +467,18 @@ export const evaluateBlankGuessDraft = (
   round: GameRound,
   guess: [string, string],
   createdAt: number,
-  reason: BlankGuessRecord["reason"],
+  reason: BlankGuessRecord["reason"]
 ): BlankGuessRecord => {
   const normalizedGuess: [string, string] = [normalizeWord(guess[0]), normalizeWord(guess[1])];
   normalizedGuess.sort((left, right) => left.localeCompare(right));
   const roundWords = round.words;
-  const validPair = Boolean(normalizedGuess[0] && normalizedGuess[1]) &&
-    normalizedGuess[0] !== normalizedGuess[1];
-  const success = roundWords && validPair
-    ? normalizedGuess[0] === roundWords.pair[0] &&
-      normalizedGuess[1] === roundWords.pair[1]
-    : false;
-  const playerId =
-    round.blankGuessContext?.playerId ?? getBlankPlayerId(round.assignments) ?? "";
+  const validPair =
+    Boolean(normalizedGuess[0] && normalizedGuess[1]) && normalizedGuess[0] !== normalizedGuess[1];
+  const success =
+    roundWords && validPair
+      ? normalizedGuess[0] === roundWords.pair[0] && normalizedGuess[1] === roundWords.pair[1]
+      : false;
+  const playerId = round.blankGuessContext?.playerId ?? getBlankPlayerId(round.assignments) ?? "";
 
   if (!playerId) {
     throw new AppError("BLANK_NOT_FOUND", "当前没有白板玩家");
@@ -502,7 +500,12 @@ export const evaluateBlankGuessDraft = (
  * 是为了不留下"逐字节提前返回"这类可被计时侧信道利用的写法。
  */
 export const safeEqualToken = (left?: string, right?: string): boolean => {
-  if (typeof left !== "string" || typeof right !== "string" || left.length === 0 || right.length === 0) {
+  if (
+    typeof left !== "string" ||
+    typeof right !== "string" ||
+    left.length === 0 ||
+    right.length === 0
+  ) {
     return left === right;
   }
   const leftBytes = Buffer.from(left, "utf8");

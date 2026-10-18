@@ -17,12 +17,15 @@ const shell = (withColumns: boolean) => (
 describe("RoomShell 进房编排", () => {
   // 帧由测试手动推进，模拟跨页过渡暂停渲染期间第一帧迟迟不来。
   let frames: FrameRequestCallback[] = [];
-  const nextFrame = () => act(() => frames.splice(0).forEach((callback) => callback(performance.now())));
+  const nextFrame = () =>
+    act(() => frames.splice(0).forEach((callback) => callback(performance.now())));
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     frames = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+      frames.push(callback)
+    );
     vi.stubGlobal("cancelAnimationFrame", () => {});
   });
   afterEach(() => {
@@ -35,7 +38,9 @@ describe("RoomShell 进房编排", () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveAttribute("data-room-entering");
     // 文档顺序即阅读顺序（顶栏→玩家栏→游戏区→聊天栏），与 CSS 延迟的生成顺序一致。
-    const parts = [...root.querySelectorAll<HTMLElement>("[data-room-part]")].map((node) => node.dataset.roomPart);
+    const parts = [...root.querySelectorAll<HTMLElement>("[data-room-part]")].map(
+      (node) => node.dataset.roomPart
+    );
     expect(parts).toEqual([...roomEntrance.parts]);
 
     // 第一帧之前各栏动画都还没起播，窗口不能先走掉。

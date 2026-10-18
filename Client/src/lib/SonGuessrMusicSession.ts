@@ -50,7 +50,7 @@ const notifyChanged = () => {
 };
 
 export const getStoredSongMusicSession = (
-  platform: SongMusicPlatform = "netease",
+  platform: SongMusicPlatform = "netease"
 ): StoredSongMusicSession | null => {
   if (typeof window === "undefined") return null;
   const keys = STORAGE_KEYS[platform] ?? STORAGE_KEYS.netease;
@@ -63,7 +63,7 @@ export const getStoredSongMusicSession = (
 export const saveSongMusicSession = (
   session: Pick<StoredSongMusicSession, "cookie" | "account">,
   persistent: boolean,
-  platform?: SongMusicPlatform,
+  platform?: SongMusicPlatform
 ) => {
   if (typeof window === "undefined") return;
   const targetPlatform = platform ?? session.account.platform ?? "netease";
@@ -77,10 +77,7 @@ export const saveSongMusicSession = (
   }
   window.localStorage.removeItem(keys.local);
   window.sessionStorage.removeItem(keys.session);
-  targetStorage.setItem(
-    persistent ? keys.local : keys.session,
-    serialized,
-  );
+  targetStorage.setItem(persistent ? keys.local : keys.session, serialized);
   notifyChanged();
 };
 

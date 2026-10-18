@@ -23,9 +23,23 @@ import type { CEEImageSize, CEESettings } from "../shared/CEE";
  * 年份/评分过滤、CEE 带作品类型），合名会撞车，所以保留命名空间。
  */
 export type BangumiDataRequest =
-  | { id: number; method: "init"; song: BangumiProviderInit; cee: CEEDataInit; tagDiff?: TagDiffOptions; imagesDir?: string; updater?: SubjectUpdaterInit }
+  | {
+      id: number;
+      method: "init";
+      song: BangumiProviderInit;
+      cee: CEEDataInit;
+      tagDiff?: TagDiffOptions;
+      imagesDir?: string;
+      updater?: SubjectUpdaterInit;
+    }
   // ---- 猜歌 ----
-  | { id: number; method: "song.searchSubjects"; keyword: string; limit?: number; filters?: AnimeAutoFilters }
+  | {
+      id: number;
+      method: "song.searchSubjects";
+      keyword: string;
+      limit?: number;
+      filters?: AnimeAutoFilters;
+    }
   | { id: number; method: "song.getSubject"; subjectId: string }
   | { id: number; method: "song.resolveCharacterImage"; characterId: number }
   | { id: number; method: "song.resolveSubjectImage"; subjectId: string }
@@ -53,7 +67,9 @@ export type BangumiDataRequest =
   | { id: number; method: "updater.stats" }
   | { id: number; method: "close" };
 
-export type BangumiDataReply = { id: number } & ({ ok: true; value: unknown } | { ok: false; code: string; message: string });
+export type BangumiDataReply = { id: number } & (
+  { ok: true; value: unknown } | { ok: false; code: string; message: string }
+);
 
 /** 角色标签增量的来源与已应用版本的记录位置。 */
 export interface TagDiffOptions {
@@ -89,9 +105,10 @@ const requireCee = () => {
   return cee;
 };
 
-const asAppError = (error: unknown, code: string) => error instanceof AppError
-  ? error
-  : new AppError(code, error instanceof Error ? error.message : "本地数据初始化失败");
+const asAppError = (error: unknown, code: string) =>
+  error instanceof AppError
+    ? error
+    : new AppError(code, error instanceof Error ? error.message : "本地数据初始化失败");
 
 type InitRequest = Extract<BangumiDataRequest, { method: "init" }>;
 type SongRequest = Extract<BangumiDataRequest, { method: `song.${string}` }>;
@@ -101,7 +118,10 @@ type CeeRequest = Extract<BangumiDataRequest, { method: `cee.${string}` }>;
 const initSongLink = async (request: InitRequest): Promise<void> => {
   try {
     // 玩家点开的条目登记到更新器：闭包引用，更新器晚一步创建也没关系。
-    song = new LocalBangumiProvider({ ...request.song, onSubjectView: (id) => updater?.requestRefresh(id) });
+    song = new LocalBangumiProvider({
+      ...request.song,
+      onSubjectView: (id) => updater?.requestRefresh(id),
+    });
     await song.initialize();
   } catch (error) {
     song = undefined;
@@ -135,7 +155,11 @@ const createUpdater = (request: InitRequest): void => {
           search: request.song.meilisearch?.apiKey
             ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
             : undefined,
-          images, logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
+          images,
+          logger: {
+            warn: (message) => console.warn(message),
+            info: (message) => console.log(message),
+          },
           ...request.updater,
         })
       : undefined;
@@ -150,10 +174,12 @@ const createUpdater = (request: InitRequest): void => {
 /** 每日维护：补上两份 dump 之间新出的作品与角色。没有这一步，搜索永远搜不到新番。 */
 const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => {
   const base = (request.song.apiBase ?? "").trim();
-  if (!base) return;   // 未配置上游地址时静默跳过（本地开发常见）。
+  if (!base) return; // 未配置上游地址时静默跳过（本地开发常见）。
   const result = await requireCee().discoverNewSubjects(base);
-  console.log(`新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，`
-    + `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`);
+  console.log(
+    `新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，` +
+      `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`
+  );
 };
 
 /** 备份与标签增量的定时任务：库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。 */
@@ -169,8 +195,13 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
   // 角色标签增量（CCB-TagsCI 产出）：定时拉取，不依赖任何外部触发。
   stopTagDiff = tagDiff
     ? scheduleTagDiffSync({
-        repository: () => requireCee(), diffUrl: tagDiff!.diffUrl, statePath: tagDiff!.statePath,
-        logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
+        repository: () => requireCee(),
+        diffUrl: tagDiff!.diffUrl,
+        statePath: tagDiff!.statePath,
+        logger: {
+          warn: (message) => console.warn(message),
+          info: (message) => console.log(message),
+        },
       })
     : undefined;
 };
@@ -205,24 +236,40 @@ const closeRuntime = async (): Promise<true> => {
   return true;
 };
 
-const dispatchSongRequest = async (request: SongRequest, provider: LocalBangumiProvider): Promise<unknown> => {
+const dispatchSongRequest = async (
+  request: SongRequest,
+  provider: LocalBangumiProvider
+): Promise<unknown> => {
   switch (request.method) {
-    case "song.searchSubjects": return provider.searchSubjects(request.keyword, request.limit, request.filters);
-    case "song.getSubject": return provider.getSubject(request.subjectId);
-    case "song.resolveCharacterImage": return provider.resolveCharacterImage(request.characterId);
-    case "song.resolveSubjectImage": return provider.resolveSubjectImage(request.subjectId);
+    case "song.searchSubjects":
+      return provider.searchSubjects(request.keyword, request.limit, request.filters);
+    case "song.getSubject":
+      return provider.getSubject(request.subjectId);
+    case "song.resolveCharacterImage":
+      return provider.resolveCharacterImage(request.characterId);
+    case "song.resolveSubjectImage":
+      return provider.resolveSubjectImage(request.subjectId);
   }
   return undefined;
 };
 
-const dispatchCeeRequest = async (request: CeeRequest, repository: CEECharacterRepository): Promise<unknown> => {
+const dispatchCeeRequest = async (
+  request: CeeRequest,
+  repository: CEECharacterRepository
+): Promise<unknown> => {
   switch (request.method) {
-    case "cee.searchCharacters": return repository.searchCharacters(request.keyword, request.limit);
-    case "cee.searchSubjects": return repository.searchSubjects(request.keyword, request.limit, request.types);
-    case "cee.getSubjectCharacters": return repository.getSubjectCharacters(request.subjectId, request.limit);
-    case "cee.getSubjects": return repository.getSubjects(request.subjectIds);
-    case "cee.getRawCharacter": return repository.getRawCharacter(request.characterId);
-    case "cee.getCharacter": return repository.getCharacter(request.characterId, request.settings);
+    case "cee.searchCharacters":
+      return repository.searchCharacters(request.keyword, request.limit);
+    case "cee.searchSubjects":
+      return repository.searchSubjects(request.keyword, request.limit, request.types);
+    case "cee.getSubjectCharacters":
+      return repository.getSubjectCharacters(request.subjectId, request.limit);
+    case "cee.getSubjects":
+      return repository.getSubjects(request.subjectIds);
+    case "cee.getRawCharacter":
+      return repository.getRawCharacter(request.characterId);
+    case "cee.getCharacter":
+      return repository.getCharacter(request.characterId, request.settings);
     case "cee.chooseRandomCharacter": {
       let cursor = 0;
       return repository.chooseRandomCharacter(request.settings, () => {
@@ -231,9 +278,12 @@ const dispatchCeeRequest = async (request: CeeRequest, repository: CEECharacterR
         return roll;
       });
     }
-    case "cee.importDirectory": return repository.importDirectory(request.indexId);
-    case "cee.resolveCharacterImage": return repository.resolveCharacterImage(request.characterId, request.size);
-    case "cee.resolveSubjectImage": return repository.resolveSubjectImage(request.subjectId, request.size);
+    case "cee.importDirectory":
+      return repository.importDirectory(request.indexId);
+    case "cee.resolveCharacterImage":
+      return repository.resolveCharacterImage(request.characterId, request.size);
+    case "cee.resolveSubjectImage":
+      return repository.resolveSubjectImage(request.subjectId, request.size);
     case "cee.syncTagDiff": {
       if (!tagDiff) throw new AppError("CEE_DATA_UNAVAILABLE", "标签增量未配置");
       return syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
@@ -243,7 +293,8 @@ const dispatchCeeRequest = async (request: CeeRequest, repository: CEECharacterR
 };
 
 /** 前缀分派要靠类型谓词收窄：`startsWith` 本身不动判别联合的类型。 */
-const isSongRequest = (request: BangumiDataRequest): request is SongRequest => request.method.startsWith("song.");
+const isSongRequest = (request: BangumiDataRequest): request is SongRequest =>
+  request.method.startsWith("song.");
 
 const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> => {
   if (request.method === "init") return initRuntime(request);
@@ -258,7 +309,8 @@ const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> =>
     return true;
   }
   if (request.method === "updater.stats") return updater?.stats() ?? { running: false };
-  if (request.method === "updater.refreshSubject") return updater ? updater.refresh(request.subjectId) : false;
+  if (request.method === "updater.refreshSubject")
+    return updater ? updater.refresh(request.subjectId) : false;
   if (isSongRequest(request)) return dispatchSongRequest(request, requireSong());
   return dispatchCeeRequest(request, requireCee());
 };
@@ -272,8 +324,15 @@ const replyWithFailure = (request: BangumiDataRequest, error: unknown): void => 
   // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
   // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CEE 的 code。
   const isSongRequest = request.method.startsWith("song.");
-  const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CEE_DATA_UNAVAILABLE";
-  self.postMessage({ id: request.id, ok: false,
+  const code =
+    error instanceof AppError
+      ? error.code
+      : isSongRequest
+        ? "BANGUMI_DATA_UNAVAILABLE"
+        : "CEE_DATA_UNAVAILABLE";
+  self.postMessage({
+    id: request.id,
+    ok: false,
     code,
     message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",
   } satisfies BangumiDataReply);

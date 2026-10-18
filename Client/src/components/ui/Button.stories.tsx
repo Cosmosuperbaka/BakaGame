@@ -45,15 +45,32 @@ export const States: Story = {
   name: "图标、加载与禁用",
   render: () => (
     <div className="flex w-[58rem] flex-wrap items-center gap-3">
-      <Button><Play />开始游戏</Button>
-      <Button variant="outline"><Copy />复制</Button>
-      <Button variant="destructive"><Trash2 />移除</Button>
-      <Button size="icon" aria-label="发送消息"><Send /></Button>
-      <Button size="icon" variant="ghost" aria-label="复制链接"><Copy /></Button>
+      <Button>
+        <Play />
+        开始游戏
+      </Button>
+      <Button variant="outline">
+        <Copy />
+        复制
+      </Button>
+      <Button variant="destructive">
+        <Trash2 />
+        移除
+      </Button>
+      <Button size="icon" aria-label="发送消息">
+        <Send />
+      </Button>
+      <Button size="icon" variant="ghost" aria-label="复制链接">
+        <Copy />
+      </Button>
       <Button loading>开始游戏</Button>
-      <Button variant="outline" loading>保存中</Button>
+      <Button variant="outline" loading>
+        保存中
+      </Button>
       <Button disabled>等待玩家准备 (1/3)</Button>
-      <Button variant="outline" disabled>复制</Button>
+      <Button variant="outline" disabled>
+        复制
+      </Button>
     </div>
   ),
 };

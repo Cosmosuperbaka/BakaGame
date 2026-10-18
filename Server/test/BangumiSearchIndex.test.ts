@@ -52,7 +52,15 @@ describe("统一搜索索引契约", () => {
     expect(requests[0]).toEqual({ index: "characters", query: "牧濑", options: { limit: 20 } });
     expect(CHARACTER_FILTERABLE).toEqual([]);
     expect(CHARACTER_RANKING_RULES).toEqual([
-      "exactness", "words", "typo", "proximity", "attribute", "sort", "id:asc", "comment:desc", "collect:desc",
+      "exactness",
+      "words",
+      "typo",
+      "proximity",
+      "attribute",
+      "sort",
+      "id:asc",
+      "comment:desc",
+      "collect:desc",
     ]);
   });
 
@@ -60,10 +68,17 @@ describe("统一搜索索引契约", () => {
     const { client, requests } = createClient();
     const search = new BangumiSearchIndex({ client });
 
-    expect((await search.searchSubjects({ keyword: "作品", limit: 20, types: [1, 2, 4, 6] })).ids).toEqual([11]);
+    expect(
+      (await search.searchSubjects({ keyword: "作品", limit: 20, types: [1, 2, 4, 6] })).ids
+    ).toEqual([11]);
     expect(requests[0]).toEqual({
-      index: "subjects", query: "作品",
-      options: { limit: 20, filter: [["type = 1", "type = 2", "type = 4", "type = 6"]], sort: undefined },
+      index: "subjects",
+      query: "作品",
+      options: {
+        limit: 20,
+        filter: [["type = 1", "type = 2", "type = 4", "type = 6"]],
+        sort: undefined,
+      },
     });
   });
 
@@ -71,9 +86,17 @@ describe("统一搜索索引契约", () => {
     const { client, requests } = createClient();
     const search = new BangumiSearchIndex({ client });
 
-    await search.searchSubjects({ keyword: "", limit: 50, types: [2], startYear: 2010, endYear: 2020, sortByHeat: true });
+    await search.searchSubjects({
+      keyword: "",
+      limit: 50,
+      types: [2],
+      startYear: 2010,
+      endYear: 2020,
+      sortByHeat: true,
+    });
     expect(requests[0]).toEqual({
-      index: "subjects", query: "",
+      index: "subjects",
+      query: "",
       options: {
         limit: 50,
         filter: [["type = 2"], "date >= 20100101", "date <= 20201231"],
@@ -88,9 +111,25 @@ describe("统一搜索索引契约", () => {
 
   test("作品索引的 rankingRules 与 filterable 对齐官方，且都不含 nsfw", async () => {
     expect(SUBJECT_RANKING_RULES).toEqual([
-      "exactness", "words", "typo", "proximity", "attribute", "sort", "id:asc", "rank:asc", "score:desc",
+      "exactness",
+      "words",
+      "typo",
+      "proximity",
+      "attribute",
+      "sort",
+      "id:asc",
+      "rank:asc",
+      "score:desc",
     ]);
-    expect(SUBJECT_FILTERABLE).toEqual(["tag", "meta_tag", "date", "score", "rating_count", "rank", "type"]);
+    expect(SUBJECT_FILTERABLE).toEqual([
+      "tag",
+      "meta_tag",
+      "date",
+      "score",
+      "rating_count",
+      "rank",
+      "type",
+    ]);
   });
 
   test("查询侧 sort 用到的字段必须全部声明为 sortable，否则 Meilisearch 400 拒绝", async () => {
@@ -116,17 +155,43 @@ describe("统一搜索索引契约", () => {
       CREATE TABLE characters(id INTEGER PRIMARY KEY,role INTEGER,name TEXT,name_cn TEXT,gender TEXT,aliases TEXT,summary TEXT,comments INTEGER,collects INTEGER);
     `);
     db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
-      8, 2, "コードギアス", "反叛的鲁路修", '["鲁路修"]', "", "", "2006-10-05", 0,
-      '["机战","原创"]', '{"机战":10}', '["2006年"]', 8.6, 18740, 84, 123, "",
+      8,
+      2,
+      "コードギアス",
+      "反叛的鲁路修",
+      '["鲁路修"]',
+      "",
+      "",
+      "2006-10-05",
+      0,
+      '["机战","原创"]',
+      '{"机战":10}',
+      '["2006年"]',
+      8.6,
+      18740,
+      84,
+      123,
+      ""
     );
     const path = join(tmpdir(), `bangumi-index-src-${crypto.randomUUID()}.sqlite`);
     new Database(path).close();
     try {
       await new BangumiSearchIndex({ client }).initialize(db, path);
-      const written = documents.find((entry) => entry.index === "subjects")!.documents[0] as Record<string, unknown>;
+      const written = documents.find((entry) => entry.index === "subjects")!.documents[0] as Record<
+        string,
+        unknown
+      >;
       expect(written).toMatchObject({
-        id: 8, name: "コードギアス", tag: ["机战", "原创"], meta_tag: ["2006年"],
-        date: 20061005, score: 8.6, rating_count: 18740, heat: 84, rank: 123, type: 2,
+        id: 8,
+        name: "コードギアス",
+        tag: ["机战", "原创"],
+        meta_tag: ["2006年"],
+        date: 20061005,
+        score: 8.6,
+        rating_count: 18740,
+        heat: 84,
+        rank: 123,
+        type: 2,
       });
       // nsfw 不再进文档：filterable 已去掉该字段。
       expect(written.nsfw).toBeUndefined();

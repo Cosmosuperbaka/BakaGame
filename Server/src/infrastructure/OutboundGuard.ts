@@ -5,7 +5,8 @@ const BLOCKED_DOMAIN_SUFFIXES = [".localhost", ".local", ".internal", ".localdom
 /** 点分四段（或已被 URL 解析器归一化的等价写法）是否落在内网、链路本地与保留网段。 */
 const isBlockedIpv4 = (host: string): boolean => {
   const parts = host.split(".").map(Number);
-  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
+    return false;
   const [a, b] = parts;
   if (a === 0 || a === 10 || a === 127) return true;
   if (a === 169 && b === 254) return true; // 链路本地：云厂商元数据服务在这里
@@ -40,13 +41,16 @@ const isBlockedIpv6 = (host: string): boolean => {
  * 并在每一跳重新判定；真要封死得自己控制解析，见 Deployment 的出网前提。
  */
 export const isBlockedOutboundHost = (rawHost: string): boolean => {
-  const host = rawHost.replace(/^\[|\]$/g, "").trim().toLowerCase();
+  const host = rawHost
+    .replace(/^\[|\]$/g, "")
+    .trim()
+    .toLowerCase();
   if (!host) return true;
   if (host.includes(":")) return isBlockedIpv6(host);
   if (/^\d+$/.test(host)) return true; // 十进制整数形态的 IPv4 不该出现在归一化之后的 URL 里
   if (isBlockedIpv4(host)) return true;
   if (host === "localhost" || !host.includes(".")) return true;
-  return BLOCKED_DOMAIN_SUFFIXES.some(suffix => host.endsWith(suffix));
+  return BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(suffix));
 };
 
 /** 校验一个可以代表服务端出站的 http(s) 地址；不合规一律抛错，由调用方映射成业务错误。 */
@@ -57,7 +61,8 @@ export const assertOutboundUrl = (raw: string | URL): URL => {
   } catch {
     throw new Error("出站地址无法解析");
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("出站地址只允许 http(s)");
+  if (url.protocol !== "https:" && url.protocol !== "http:")
+    throw new Error("出站地址只允许 http(s)");
   if (url.username || url.password) throw new Error("出站地址不得携带凭据");
   if (isBlockedOutboundHost(url.hostname)) throw new Error("出站地址不允许指向内网或保留主机");
   return url;
@@ -74,13 +79,15 @@ export const fetchWithGuardedRedirects = async (
   fetcher: OutboundFetcher,
   url: string | URL,
   init: RequestInit = {},
-  options: { pinOrigin?: boolean; maxRedirects?: number } = {},
+  options: { pinOrigin?: boolean; maxRedirects?: number } = {}
 ): Promise<Response> => {
   const maxRedirects = options.maxRedirects ?? 3;
   let target = options.pinOrigin ? new URL(url) : assertOutboundUrl(url);
   for (let hop = 0; ; hop += 1) {
     const response = await fetcher(target.href, { ...init, redirect: "manual" });
-    const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get("location") : null;
+    const location = REDIRECT_STATUSES.has(response.status)
+      ? response.headers.get("location")
+      : null;
     if (!location) return response;
     let next: URL;
     try {
@@ -91,7 +98,8 @@ export const fetchWithGuardedRedirects = async (
     }
     // 跳转响应体一律先释放，否则失败路径会把连接挂在途上。
     await response.body?.cancel().catch(() => {});
-    if (options.pinOrigin && next.origin !== target.origin) throw new Error("出站跳转离开允许的主机");
+    if (options.pinOrigin && next.origin !== target.origin)
+      throw new Error("出站跳转离开允许的主机");
     if (!options.pinOrigin) assertOutboundUrl(next);
     if (hop >= maxRedirects) throw new Error("出站跳转次数超限");
     target = next;

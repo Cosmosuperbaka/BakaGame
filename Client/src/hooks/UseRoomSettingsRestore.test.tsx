@@ -69,7 +69,16 @@ describe("useRoomSettingsRestore", () => {
   });
 
   it("标记属于别的房间时不触发也不消费", () => {
-    const songMemory: SongRoomSettingsMemory = { game: { lyricsLineCount: 2, showLyrics: true, maxGuessesPerRound: 3, guessDurationSeconds: 20, showGuessTimer: false, bloodMode: true } };
+    const songMemory: SongRoomSettingsMemory = {
+      game: {
+        lyricsLineCount: 2,
+        showLyrics: true,
+        maxGuessesPerRound: 3,
+        guessDurationSeconds: 20,
+        showGuessTimer: false,
+        bloodMode: true,
+      },
+    };
     saveRoomSettingsMemory("song", songMemory);
     markPendingRestore("song", "ROOM-A");
     const send = vi.fn().mockResolvedValue(undefined);

@@ -14,7 +14,11 @@ export function closeIsolatedContext(context: BrowserContext): Promise<void> {
     const guard = guards.get(context);
     if (!guard) throw new Error("Unregistered isolated browser context");
     operation = (async () => {
-      try { await guard.drain(); } finally { await context.close(); }
+      try {
+        await guard.drain();
+      } finally {
+        await context.close();
+      }
       guard();
     })();
     closing.set(context, operation);
@@ -24,8 +28,14 @@ export function closeIsolatedContext(context: BrowserContext): Promise<void> {
 
 async function closeAllIsolatedContexts(contexts: BrowserContext[]) {
   const results = await Promise.allSettled(contexts.map(closeIsolatedContext));
-  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "Isolated context cleanup failed");
+  const failures = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      "Isolated context cleanup failed"
+    );
 }
 
 async function grantLoopbackAccess(context: BrowserContext, baseURL?: string) {
@@ -51,7 +61,11 @@ export const test = base.extend<IsolationFixtures>({
   },
   page: async ({ context }, provide) => {
     const page = await context.newPage();
-    try { await provide(page); } finally { await closeIsolatedContext(context); }
+    try {
+      await provide(page);
+    } finally {
+      await closeIsolatedContext(context);
+    }
   },
   isolatedContext: async ({ browser, baseURL }, provide) => {
     const contexts: BrowserContext[] = [];

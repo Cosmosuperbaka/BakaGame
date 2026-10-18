@@ -13,7 +13,11 @@ const sendCommand = vi.fn().mockResolvedValue({});
 
 // 与服务端 ensureCanVote 相同的输入边界：PK 候选不投票，其他存活者只能投候选或弃票。
 // 仅替代命令传输，真实 Store、投票组件和主持人预览组件都运行。
-function preset(phase: "voting" | "tieBreak", viewer: Parameters<typeof wifPrivate>[0] = me, testMode = false) {
+function preset(
+  phase: "voting" | "tieBreak",
+  viewer: Parameters<typeof wifPrivate>[0] = me,
+  testMode = false
+) {
   const base = wifSnapshot("vote1");
   const selectedIds = [...participants, stone, host].map((person) => person.id);
   const snapshot: WhoIsFakerRoomSnapshot = {
@@ -21,14 +25,17 @@ function preset(phase: "voting" | "tieBreak", viewer: Parameters<typeof wifPriva
     roomId: testMode ? ROOM_ID_TEST_MODE : base.roomId,
     testMode,
     status: {
-      ...base.status, phase,
+      ...base.status,
+      phase,
       ...(phase === "tieBreak" ? { tieBreakCandidateIds: candidateIds } : {}),
     },
-    players: base.players.filter((player) => selectedIds.some(id => id === player.id)).map((player) => ({
-      ...player,
-      roundStatus: player.id === stone.id ? "dead"
-        : player.id === host.id ? "questioner" : "alive",
-    })),
+    players: base.players
+      .filter((player) => selectedIds.some((id) => id === player.id))
+      .map((player) => ({
+        ...player,
+        roundStatus:
+          player.id === stone.id ? "dead" : player.id === host.id ? "questioner" : "alive",
+      })),
   };
   const privateState = wifPrivate(viewer, "vote1", { myCurrentVoteTargetId: undefined });
   useWhoIsFakerStore.setState({ snapshot, privateState, sendCommand });
@@ -67,7 +74,9 @@ describe.each([false, true])("投票权限 UI（testMode=%s）", (testMode) => {
       expect(screen.queryByRole("button", { name: excluded.name })).not.toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole("button", { name: peach.name }));
-    await waitFor(() => expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: peach.id }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: peach.id })
+    );
   });
 
   it("候选外存活玩家可在 PK 中弃票", async () => {
@@ -76,7 +85,11 @@ describe.each([false, true])("投票权限 UI（testMode=%s）", (testMode) => {
     const abstain = screen.getByRole("button", { name: "弃票" });
     expect(abstain).toBeEnabled();
     fireEvent.click(abstain);
-    await waitFor(() => expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: ABSTAIN_TARGET_ID }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", {
+        targetId: ABSTAIN_TARGET_ID,
+      })
+    );
   });
 
   it("普通投票中同一候选玩家可以投其他存活者，仍不能自投或投出局者", async () => {
@@ -91,14 +104,20 @@ describe.each([false, true])("投票权限 UI（testMode=%s）", (testMode) => {
       expect(screen.queryByRole("button", { name: excluded.name })).not.toBeInTheDocument();
     }
     fireEvent.click(screen.getByRole("button", { name: azumi.name }));
-    await waitFor(() => expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: azumi.id }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: azumi.id })
+    );
   });
 
   it("普通投票中同一候选玩家可以弃票", async () => {
     preset("voting", peach, testMode);
     render(<VotingPhase />);
     fireEvent.click(screen.getByRole("button", { name: "弃票" }));
-    await waitFor(() => expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", { targetId: ABSTAIN_TARGET_ID }));
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("game.submitVote", {
+        targetId: ABSTAIN_TARGET_ID,
+      })
+    );
   });
 });
 
@@ -106,7 +125,10 @@ describe("主持人投票预览的资格口径", () => {
   it("PK 仅等待候选外存活者，候选人仍作为计票目标展示", () => {
     preset("tieBreak", host);
     useWhoIsFakerStore.setState((state) => ({
-      privateState: { ...state.privateState!, privilegedActionPreview: { votes: [], nightActions: [] } },
+      privateState: {
+        ...state.privateState!,
+        privilegedActionPreview: { votes: [], nightActions: [] },
+      },
     }));
     render(<PrivilegedActionPreview mode="vote" />);
     const preview = within(screen.getByRole("region", { name: "投票预览" }));
@@ -125,7 +147,10 @@ describe("主持人投票预览的资格口径", () => {
   it("普通投票仍等待所有存活参与者，包括相同两名玩家", () => {
     preset("voting", host);
     useWhoIsFakerStore.setState((state) => ({
-      privateState: { ...state.privateState!, privilegedActionPreview: { votes: [], nightActions: [] } },
+      privateState: {
+        ...state.privateState!,
+        privilegedActionPreview: { votes: [], nightActions: [] },
+      },
     }));
     render(<PrivilegedActionPreview mode="vote" />);
     const preview = within(screen.getByRole("region", { name: "投票预览" }));
@@ -139,10 +164,16 @@ describe("主持人投票预览的资格口径", () => {
   it("候选外玩家投票和弃票后，不再虚假等待 PK 候选提交", () => {
     preset("tieBreak", host);
     useWhoIsFakerStore.setState((state) => ({
-      privateState: { ...state.privateState!, privilegedActionPreview: {
-        votes: [{ voterId: me.id, targetId: peach.id }, { voterId: azumi.id, targetId: ABSTAIN_TARGET_ID }],
-        nightActions: [],
-      } },
+      privateState: {
+        ...state.privateState!,
+        privilegedActionPreview: {
+          votes: [
+            { voterId: me.id, targetId: peach.id },
+            { voterId: azumi.id, targetId: ABSTAIN_TARGET_ID },
+          ],
+          nightActions: [],
+        },
+      },
     }));
     render(<PrivilegedActionPreview mode="vote" />);
     const preview = within(screen.getByRole("region", { name: "投票预览" }));

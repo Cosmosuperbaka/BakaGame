@@ -27,25 +27,24 @@ export function NightPhase() {
 
   const acted = privateState?.nightActionSubmitted ?? false;
   const actionTargetName = snapshot.players.find(
-    (p) => p.id === privateState?.myCurrentNightTargetId,
+    (p) => p.id === privateState?.myCurrentNightTargetId
   )?.name;
 
-  const canAct =
-    amAlive && !isQuestioner && (role === "civilian" || role === "undercover");
+  const canAct = amAlive && !isQuestioner && (role === "civilian" || role === "undercover");
 
   // 自己永远不是夜晚目标，测试房间也一样。
   const targets = snapshot.players.filter(
-    (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId,
+    (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId
   );
 
   const handleNightAction = useCallback(
     async (targetId?: string) => {
       await run(async () => {
-      try {
-        await sendCommand("game.submitNightAction", { targetId: targetId ?? null });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
+        try {
+          await sendCommand("game.submitNightAction", { targetId: targetId ?? null });
+        } catch (e) {
+          addToast((e as { message: string }).message, "error");
+        }
       });
     },
     [run, sendCommand, addToast]
@@ -63,26 +62,24 @@ export function NightPhase() {
           setPendingCommand(null);
         }
       }),
-    [run, sendCommand, addToast],
+    [run, sendCommand, addToast]
   );
   const handleCancelNightAction = () => void runPending("cancel", "game.cancelNightAction");
   const handleAdvance = () => void runPending("advance", "game.advancePhase");
 
   // 夜里不行动的人各自说明原因，不留一块空白
-  const idleNote = isQuestioner || me?.membership !== "active"
-    ? null
-    : !amAlive
-      ? "你已出局，等待天亮"
-      : role === "angel" || role === "blank"
-        ? "你今晚没有行动，等待天亮"
-        : null;
+  const idleNote =
+    isQuestioner || me?.membership !== "active"
+      ? null
+      : !amAlive
+        ? "你已出局，等待天亮"
+        : role === "angel" || role === "blank"
+          ? "你今晚没有行动，等待天亮"
+          : null;
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
-      <PhaseHeader
-        icon={Moon}
-        title="夜晚降临"
-      />
+      <PhaseHeader icon={Moon} title="夜晚降临" />
 
       <PrivilegedActionPreview mode="night" />
 
@@ -125,8 +122,12 @@ export function NightPhase() {
               title="已完成夜晚决策"
               detail={
                 actionTargetName ? (
-                  <>目标 <span className="font-medium text-foreground">{actionTargetName}</span></>
-                ) : "本夜不行动"
+                  <>
+                    目标 <span className="font-medium text-foreground">{actionTargetName}</span>
+                  </>
+                ) : (
+                  "本夜不行动"
+                )
               }
               origin={origin}
               busy={pendingCommand === "cancel"}

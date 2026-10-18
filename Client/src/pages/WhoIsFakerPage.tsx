@@ -4,7 +4,11 @@ import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
-import { markPendingRestore, readRoomCreateDefaults, saveRoomCreateDefaults } from "@/lib/RoomSettingsMemory";
+import {
+  markPendingRestore,
+  readRoomCreateDefaults,
+  saveRoomCreateDefaults,
+} from "@/lib/RoomSettingsMemory";
 import type { WhoIsFakerRoomSummary } from "@/types";
 
 /** 谁是卧底的大厅只区分「等待中」与「游戏中」两态。 */
@@ -54,7 +58,10 @@ export default function WhoIsFakerPage() {
     showError: (message) => addToast(message, "error"),
     // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的房间设置套进新房间。
     onRoomCreated: (roomId, params) => {
-      saveRoomCreateDefaults("faker", { visibility: params.visibility, allowSpectators: params.allowSpectators });
+      saveRoomCreateDefaults("faker", {
+        visibility: params.visibility,
+        allowSpectators: params.allowSpectators,
+      });
       markPendingRestore("faker", roomId);
     },
   });
@@ -72,32 +79,37 @@ export default function WhoIsFakerPage() {
       pendingRoomId={pendingRoomId}
       userName={userName}
       onUserNameChange={setUserName}
-      onCreate={(event) => { createOrigin.capture(event); setCreateOpen(true); }}
+      onCreate={(event) => {
+        createOrigin.capture(event);
+        setCreateOpen(true);
+      }}
       onSelectRoom={(room, event) => {
         const target = rooms.find((candidate) => candidate.roomId === room.roomId);
         if (target) void handleJoinRoom(target, event);
       }}
-      dialogs={<>
-        <CreateRoomDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          origin={createOrigin.origin}
-          defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
-          nameMaxLength={40}
-          defaults={readRoomCreateDefaults("faker")}
-          onCreate={handleCreateRoom}
-        />
-        <JoinPasswordDialog
-          pending={pending}
-          roomName={joinTarget?.name ?? null}
-          origin={joinOrigin.origin}
-          password={joinPassword}
-          onPasswordChange={setJoinPassword}
-          error={joinError}
-          onCancel={() => setJoinTarget(null)}
-          onConfirm={() => void handlePasswordJoin()}
-        />
-      </>}
+      dialogs={
+        <>
+          <CreateRoomDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            origin={createOrigin.origin}
+            defaultName={userName.trim() ? `${userName.trim()}的房间` : "新房间"}
+            nameMaxLength={40}
+            defaults={readRoomCreateDefaults("faker")}
+            onCreate={handleCreateRoom}
+          />
+          <JoinPasswordDialog
+            pending={pending}
+            roomName={joinTarget?.name ?? null}
+            origin={joinOrigin.origin}
+            password={joinPassword}
+            onPasswordChange={setJoinPassword}
+            error={joinError}
+            onCancel={() => setJoinTarget(null)}
+            onConfirm={() => void handlePasswordJoin()}
+          />
+        </>
+      }
     />
   );
 }

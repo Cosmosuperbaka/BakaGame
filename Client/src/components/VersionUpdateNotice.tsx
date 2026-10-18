@@ -27,10 +27,7 @@ export interface VersionUpdateNoticeProps {
   onReload?: () => void;
 }
 
-export function VersionUpdateNotice({
-  active = true,
-  onReload,
-}: VersionUpdateNoticeProps) {
+export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNoticeProps) {
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
@@ -119,11 +116,7 @@ export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps
           <span className="min-w-0 flex-1 text-sm font-medium leading-snug">
             游戏有新版本，请刷新后继续游玩
           </span>
-          <Button
-            size="sm"
-            className="shrink-0 gap-1.5"
-            onClick={onReload}
-          >
+          <Button size="sm" className="shrink-0 gap-1.5" onClick={onReload}>
             <RefreshCw className="h-3.5 w-3.5" />
             刷新
           </Button>
@@ -132,4 +125,3 @@ export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps
     </AnimatePresence>
   );
 }
-

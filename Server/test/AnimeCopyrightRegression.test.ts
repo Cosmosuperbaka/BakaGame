@@ -76,7 +76,7 @@ const connection = (service: SonGuessrService, id: string): TestConnection => {
 const execute = (
   service: SonGuessrService,
   client: TestConnection,
-  message: SonGuessrClientMessage,
+  message: SonGuessrClientMessage
 ) => service.execute(client.record.id, message);
 
 const lastEvent = <T>(client: TestConnection, event: string): T =>
@@ -170,7 +170,12 @@ describe("猜番版权伪条目防护", () => {
       roomId: "1234",
       payload: { ready: true },
     });
-    await execute(service, host, { id: "start", type: "song.game.start", roomId: "1234", payload: {} });
+    await execute(service, host, {
+      id: "start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
 
     // 修复前抽到与番剧无关的《Music For All》（unrelated）；
     // 修复后必须落到与 MyGO 真正相关的《壱雫空》。

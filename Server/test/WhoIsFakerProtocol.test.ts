@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { createTestApp as createApp } from './AppFixtures';
+import { createTestApp as createApp } from "./AppFixtures";
 import { createAck, createErrorPacket, createEvent } from "../src/transport/Packets";
 import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
 
@@ -167,7 +167,7 @@ test("协议解析可以覆盖主要客户端消息类型", () => {
       id: "invalid-array",
       type: "game.requestSupplement",
       payload: { playerIds: ["p1", 2] },
-    }),
+    })
   ).toThrow(AppError);
 });
 
@@ -187,8 +187,8 @@ test("协议解析会为非法消息抛出业务错误", () => {
         id: "invalid",
         type: "unknown.type",
         payload: {},
-      }),
-    ),
+      })
+    )
   ).toThrow(AppError);
 
   expect(() =>
@@ -197,8 +197,8 @@ test("协议解析会为非法消息抛出业务错误", () => {
         id: "invalid",
         type: "game.resolveDisconnect",
         payload: { playerId: "p1", resolution: "skip" },
-      }),
-    ),
+      })
+    )
   ).toThrow(AppError);
 });
 
@@ -216,7 +216,7 @@ test("协议拒绝未定义的多余角色配置字段", () => {
           blankCount: 2,
         },
       },
-    }),
+    })
   ).toThrow(AppError);
 });
 
@@ -256,7 +256,7 @@ test("WhoIsFaker 协议严格拦截 payload null 与未声明脏字段", () => {
       id: "null-payload",
       type: "room.leave",
       payload: null,
-    }),
+    })
   ).toThrow(AppError);
 
   // 2. 拒绝未声明的信封脏字段
@@ -266,7 +266,7 @@ test("WhoIsFaker 协议严格拦截 payload null 与未声明脏字段", () => {
       type: "room.leave",
       payload: {},
       extraProp: "attack",
-    }),
+    })
   ).toThrow(AppError);
 
   // 3. 拒绝未声明的 payload 脏字段
@@ -275,7 +275,6 @@ test("WhoIsFaker 协议严格拦截 payload null 与未声明脏字段", () => {
       id: "extra-payload",
       type: "room.leave",
       payload: { unexpected: true },
-    }),
+    })
   ).toThrow(AppError);
 });
-

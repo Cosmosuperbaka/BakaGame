@@ -27,11 +27,36 @@ export function createCEECharacterFixture() {
     [5, "Quiet hero", "安静角色", "?", [], 0, 5],
   ] as const;
   for (const [id, name, nameCn, gender, aliases, comments, collects] of characters) {
-    db.query("INSERT INTO characters VALUES (?,1,?,?,?,?,?,?,?)").run(id, name, nameCn, gender, JSON.stringify(aliases), `${nameCn}简介`, comments, collects);
-    db.query("INSERT INTO character_search(rowid,name,name_cn,aliases) VALUES (?,?,?,?)").run(id, name, nameCn, JSON.stringify(aliases));
+    db.query("INSERT INTO characters VALUES (?,1,?,?,?,?,?,?,?)").run(
+      id,
+      name,
+      nameCn,
+      gender,
+      JSON.stringify(aliases),
+      `${nameCn}简介`,
+      comments,
+      collects
+    );
+    db.query("INSERT INTO character_search(rowid,name,name_cn,aliases) VALUES (?,?,?,?)").run(
+      id,
+      name,
+      nameCn,
+      JSON.stringify(aliases)
+    );
   }
   const subjects = [
-    [10, 2, "动画作品", "2020-01-01", 0, { 校园: 10, 青春: 1, 漫画改: 3, "2020": 100 }, ["校园", "日本"], 8, 100, 1000],
+    [
+      10,
+      2,
+      "动画作品",
+      "2020-01-01",
+      0,
+      { 校园: 10, 青春: 1, 漫画改: 3, "2020": 100 },
+      ["校园", "日本"],
+      8,
+      100,
+      1000,
+    ],
     [11, 4, "游戏作品", "2021-01-01", 0, { 冒险: 8, GAL改: 2 }, ["Galgame"], 9, 200, 900],
     [12, 1, "书籍作品", "2019-01-01", 0, { 奇幻: 20 }, ["奇幻"], 7, 50, 800],
     [13, 3, "音乐作品", "2010-01-01", 0, { 音乐: 10 }, ["音乐"], 6, 5, 10],
@@ -42,12 +67,42 @@ export function createCEECharacterFixture() {
     [18, 2, "冷门作品", "2020-01-01", 0, { 安静: 1 }, [], 5, 1, 5],
   ] as const;
   for (const [id, type, name, date, nsfw, tags, metas, score, ratingCount, heat] of subjects) {
-    db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(id, type, name, name, date, nsfw, JSON.stringify(tags), JSON.stringify(metas), score, ratingCount, heat);
+    db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
+      id,
+      type,
+      name,
+      name,
+      date,
+      nsfw,
+      JSON.stringify(tags),
+      JSON.stringify(metas),
+      score,
+      ratingCount,
+      heat
+    );
   }
-  for (const [characterId, subjectId, relation, order] of [[1,10,1,0],[1,11,2,1],[1,12,1,0],[1,14,1,0],[1,15,1,0],[1,16,1,0],[2,10,2,1],[3,11,1,0],[4,13,1,0],[5,18,1,0]]) {
-    db.query("INSERT INTO character_subject_relations VALUES (?,?,?,?)").run(characterId, subjectId, relation, order);
+  for (const [characterId, subjectId, relation, order] of [
+    [1, 10, 1, 0],
+    [1, 11, 2, 1],
+    [1, 12, 1, 0],
+    [1, 14, 1, 0],
+    [1, 15, 1, 0],
+    [1, 16, 1, 0],
+    [2, 10, 2, 1],
+    [3, 11, 1, 0],
+    [4, 13, 1, 0],
+    [5, 18, 1, 0],
+  ]) {
+    db.query("INSERT INTO character_subject_relations VALUES (?,?,?,?)").run(
+      characterId,
+      subjectId,
+      relation,
+      order
+    );
   }
-  db.exec("INSERT INTO character_tags VALUES (1,0,'蓝发'),(1,1,'眼镜'); INSERT INTO character_vas VALUES (1,0,100,'声優甲','声优甲')");
+  db.exec(
+    "INSERT INTO character_tags VALUES (1,0,'蓝发'),(1,1,'眼镜'); INSERT INTO character_vas VALUES (1,0,100,'声優甲','声优甲')"
+  );
   db.close();
   return { directory, dbPath, enrichmentPath };
 }

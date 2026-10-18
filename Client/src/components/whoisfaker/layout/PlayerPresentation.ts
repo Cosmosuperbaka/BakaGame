@@ -9,10 +9,10 @@ export interface StatusInfo {
 export function buildKnownRoleMap(
   players: PublicPlayerView[],
   privateState?: WhoIsFakerPrivateState | null,
-  revealedRoles?: Map<string, WhoIsFakerRole>,
+  revealedRoles?: Map<string, WhoIsFakerRole>
 ) {
   const roles = new Map(
-    (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role]),
+    (privateState?.questionerView ?? []).map((entry) => [entry.playerId, entry.role])
   );
   for (const player of players) {
     if (player.revealedRole) roles.set(player.id, player.revealedRole);
@@ -26,7 +26,7 @@ export function buildKnownRoleMap(
 export function resolveStatus(
   player: PublicPlayerView,
   waitingPhase: boolean,
-  hideSpectatorStatus?: boolean,
+  hideSpectatorStatus?: boolean
 ): StatusInfo | null {
   if (player.roundStatus === "questioner") return { label: "主持", tone: "questioner" };
   // 出局不占行首徽章位：它与房主、掉线一样是玩家的一种标记，

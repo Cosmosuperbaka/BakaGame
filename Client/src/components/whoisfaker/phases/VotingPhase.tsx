@@ -17,10 +17,13 @@ const pickVoteTargets = <P extends { id: string }>(
   alivePlayers: P[],
   tieBreakCandidateIds: string[],
   selfId: string | undefined,
-  isTieBreak: boolean,
+  isTieBreak: boolean
 ): P[] => {
-  if (!isTieBreak || tieBreakCandidateIds.length === 0) return alivePlayers.filter((player) => player.id !== selfId);
-  return alivePlayers.filter((player) => tieBreakCandidateIds.includes(player.id) && player.id !== selfId);
+  if (!isTieBreak || tieBreakCandidateIds.length === 0)
+    return alivePlayers.filter((player) => player.id !== selfId);
+  return alivePlayers.filter(
+    (player) => tieBreakCandidateIds.includes(player.id) && player.id !== selfId
+  );
 };
 
 /** 投票视图：谁能投、投给谁、回执显示谁，全部由房间快照与私有态推出。 */
@@ -45,20 +48,46 @@ const useVotingView = () => {
     : (targets.find((target) => target.id === votedId)?.name ??
       snapshot.players.find((player) => player.id === votedId)?.name);
   const showReceipt = amAlive && !isQuestioner && Boolean(votedId);
-  return { me, isQuestioner, isTieBreak, amAlive, votedId, abstained, targetPlayerName, isCandidate, canVote, showReceipt, targets };
+  return {
+    me,
+    isQuestioner,
+    isTieBreak,
+    amAlive,
+    votedId,
+    abstained,
+    targetPlayerName,
+    isCandidate,
+    canVote,
+    showReceipt,
+    targets,
+  };
 };
 
 /** 回执文案：弃票说明本轮不投出任何一票，投人则点名收件人。 */
 const receiptTitle = (abstained: boolean) => (abstained ? "已弃票" : "已完成投票");
 const receiptDetail = (abstained: boolean, targetPlayerName?: string) =>
-  abstained
-    ? "本轮不投出任何一票"
-    : targetPlayerName
-      ? <>投给 <span className="font-medium text-foreground">{targetPlayerName}</span></>
-      : null;
+  abstained ? (
+    "本轮不投出任何一票"
+  ) : targetPlayerName ? (
+    <>
+      投给 <span className="font-medium text-foreground">{targetPlayerName}</span>
+    </>
+  ) : null;
 
 export function VotingPhase() {
-  const { me, isQuestioner, isTieBreak, amAlive, votedId, abstained, targetPlayerName, isCandidate, canVote, showReceipt, targets } = useVotingView();
+  const {
+    me,
+    isQuestioner,
+    isTieBreak,
+    amAlive,
+    votedId,
+    abstained,
+    targetPlayerName,
+    isCandidate,
+    canVote,
+    showReceipt,
+    targets,
+  } = useVotingView();
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
   const action = usePhaseAction();
@@ -71,14 +100,14 @@ export function VotingPhase() {
   const handleVote = useCallback(
     async (targetId: string) => {
       await run(async () => {
-      try {
-        await sendCommand("game.submitVote", { targetId });
-      } catch (error) {
-        addToast((error as { message: string }).message, "error");
-      }
+        try {
+          await sendCommand("game.submitVote", { targetId });
+        } catch (error) {
+          addToast((error as { message: string }).message, "error");
+        }
       });
     },
-    [run, addToast, sendCommand],
+    [run, addToast, sendCommand]
   );
 
   const runPending = useCallback(
@@ -93,7 +122,7 @@ export function VotingPhase() {
           setPendingCommand(null);
         }
       }),
-    [run, addToast, sendCommand],
+    [run, addToast, sendCommand]
   );
   const handleCancelVote = () => void runPending("cancel", "game.cancelVote");
   const handleAdvance = () => void runPending("advance", "game.advancePhase");
@@ -158,7 +187,9 @@ export function VotingPhase() {
       </div>
 
       {isTieBreak && amAlive && isCandidate && !votedId ? (
-        <p className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-center text-sm text-warning">你是平票候选人，本轮不参与投票。</p>
+        <p className="rounded-md border border-warning/40 bg-warning/10 px-4 py-3 text-center text-sm text-warning">
+          你是平票候选人，本轮不参与投票。
+        </p>
       ) : null}
 
       {/* 不能投票的人也要知道自己在等什么 */}

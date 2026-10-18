@@ -29,7 +29,8 @@ function stripHost(raw: string): string | null {
 /** 剥掉已有的 `/r/<数字>/` 前缀（与 python `resize_path` 的剥离逻辑一致）。 */
 function stripResize(pathname: string): string {
   const parts = pathname.split("/");
-  if (parts.length > 3 && parts[1] === "r" && /^\d+$/.test(parts[2])) return `/${parts.slice(3).join("/")}`;
+  if (parts.length > 3 && parts[1] === "r" && /^\d+$/.test(parts[2]))
+    return `/${parts.slice(3).join("/")}`;
   return pathname;
 }
 

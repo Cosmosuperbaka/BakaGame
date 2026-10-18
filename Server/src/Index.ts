@@ -40,12 +40,13 @@ const logger = new EventLogger(undefined, undefined, otlpExporter);
 // 数据库只承载账号、云同步、后台与对局记录：迁移失败只让这些功能报错，游客游玩照常。
 const database = env.databaseUrl
   ? createDatabase(env.databaseUrl, {
-      onRetry: ({ attempt, error }) => logger.warn("数据库迁移重试", { attempt, ...describeError(error) }),
+      onRetry: ({ attempt, error }) =>
+        logger.warn("数据库迁移重试", { attempt, ...describeError(error) }),
     })
   : undefined;
 database?.ready.then(
   () => logger.info("数据库迁移完成"),
-  (error: unknown) => logger.error("数据库迁移失败，账号与记录功能不可用", describeError(error)),
+  (error: unknown) => logger.error("数据库迁移失败，账号与记录功能不可用", describeError(error))
 );
 const gameRecords = database
   ? new GameRecordService({ repository: new DatabaseGameRecordRepository(database), logger })
@@ -81,7 +82,7 @@ const intervalId = setInterval(() => {
     logger.error("SonGuessr 房间清理任务执行失败", describeError(error));
   });
   void ceeService.runHousekeeping().catch((error: unknown) => {
-    logger.error('CEE 房间清理任务执行失败', describeError(error));
+    logger.error("CEE 房间清理任务执行失败", describeError(error));
   });
 }, 10_000);
 
@@ -98,20 +99,15 @@ function reportRuntimeMetrics(): void {
   const faker = whoIsFakerService.getHealthSnapshot();
   const songuessr = sonGuessrService.getHealthSnapshot();
   const cee = ceeService.getHealthSnapshot();
-  const onlinePlayerCount = faker.onlinePlayerCount + songuessr.onlinePlayerCount + cee.onlinePlayerCount;
-  gaugeServerMetric(
-    "bakagame.players.online",
-    onlinePlayerCount,
-  );
+  const onlinePlayerCount =
+    faker.onlinePlayerCount + songuessr.onlinePlayerCount + cee.onlinePlayerCount;
+  gaugeServerMetric("bakagame.players.online", onlinePlayerCount);
   // 数据更新器按玩家数调整上游速率：有人玩才跑得快，空闲时只慢慢更新。
   reportBangumiLoad(onlinePlayerCount);
-  gaugeServerMetric(
-    "bakagame.rooms.active",
-    faker.roomCount + songuessr.roomCount + cee.roomCount,
-  );
+  gaugeServerMetric("bakagame.rooms.active", faker.roomCount + songuessr.roomCount + cee.roomCount);
   gaugeServerMetric(
     "bakagame.connections.active",
-    faker.connectionCount + songuessr.connectionCount + cee.connectionCount,
+    faker.connectionCount + songuessr.connectionCount + cee.connectionCount
   );
 }
 
@@ -167,10 +163,10 @@ const shutdown = (signal?: string): Promise<void> => {
       await attempt("otlp", () => otlpExporter.shutdown());
     }
     await attempt("sentry.flush", async () => {
-      if (!await flushServerSentry(2000)) throw new Error("Sentry flush 未在预算内完成");
+      if (!(await flushServerSentry(2000))) throw new Error("Sentry flush 未在预算内完成");
     });
     await attempt("sentry.close", async () => {
-      if (!await closeServerSentry(2000)) throw new Error("Sentry close 未在预算内完成");
+      if (!(await closeServerSentry(2000))) throw new Error("Sentry close 未在预算内完成");
     });
 
     clearTimeout(watchdog);
