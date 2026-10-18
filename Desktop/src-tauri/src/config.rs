@@ -12,6 +12,10 @@ pub const WINDOW_TITLE: &str = "BakaGame";
 /// 主窗口标签：capabilities 里的 `windows` 字段要与之对应
 pub const WINDOW_LABEL: &str = "main";
 
+/// 应用标识：WebView2 的用户数据目录按它命名（`%LOCALAPPDATA%\<identifier>\EBWebView`），
+/// 必须与 `tauri.conf.json` 的 `identifier` 逐字一致，改了那边要改这里。
+pub const APP_IDENTIFIER: &str = "website.baka.game.desktop";
+
 pub fn client_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }

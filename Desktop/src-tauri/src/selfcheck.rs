@@ -212,8 +212,8 @@ pub fn run(key_protection: KeyProtection) -> SelfCheckReport {
             }
         }
 
-        // 6. devtools：本壳能确定执行的是「远程调试参数是否存在」；
-        //    WebView2 `AreDevToolsEnabled` 的 COM 读回是 TODO（见 README 未验证清单）。
+        // 6. devtools：查远程调试参数与环境变量，再读 `DevToolsActivePort` 文件确认通道是否真的在监听。
+        //    WebView2 `AreDevToolsEnabled` 的 COM 读回仍未实现（见 README 未验证清单）。
         if let Some(detail) = devtools_exposure() {
             diag::soft(CHECK_DEVTOOLS, &detail);
             report.soft_fail.push(CHECK_DEVTOOLS.into());
@@ -422,7 +422,7 @@ fn first_difference(a: &[usize], b: &[usize]) -> String {
     format!("长度不同 {} vs {}", a.len(), b.len())
 }
 
-/// devtools 暴露面：命令行与环境变量里的远程调试参数
+/// devtools 暴露面：远程调试参数（命令行 / 环境变量）与真的开起来的调试端口
 #[cfg(target_os = "windows")]
 fn devtools_exposure() -> Option<String> {
     const FLAGS: &[&str] = &[
@@ -452,7 +452,34 @@ fn devtools_exposure() -> Option<String> {
             }
         }
     }
+    // 调试参数存在不等于通道真的开了；`DevToolsActivePort` 是浏览器进程真的在监听时才写的
+    // 文件（首行端口号）。读它是不依赖 COM 的读回校验——`AreDevToolsEnabled` 只能证明设置位。
+    for dir in webview_data_dirs() {
+        let marker = dir.join("DevToolsActivePort");
+        if let Ok(text) = std::fs::read_to_string(&marker) {
+            let port = text.lines().next().unwrap_or("").trim();
+            hits.push(format!("{marker:?} 端口 {port}"));
+        }
+    }
     (!hits.is_empty()).then(|| hits.join(", "))
+}
+
+/// WebView2 用户数据目录候选：环境变量指定的优先，其次按标识符落在 `%LOCALAPPDATA%` 下。
+/// 两处都探是因为调试器既能用 `WEBVIEW2_USER_DATA_FOLDER` 把目录挪走，也能直接沿用默认位置。
+#[cfg(target_os = "windows")]
+fn webview_data_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(custom) = crate::winapi::env_string("WEBVIEW2_USER_DATA_FOLDER") {
+        dirs.push(std::path::PathBuf::from(custom));
+    }
+    if let Some(local) = std::env::var("LOCALAPPDATA").ok() {
+        dirs.push(
+            std::path::Path::new(&local)
+                .join(crate::config::APP_IDENTIFIER)
+                .join("EBWebView"),
+        );
+    }
+    dirs
 }
 
 /// 可选诊断日志：只在 `BAKA_DESKTOP_LOG=1` 时写 `%LOCALAPPDATA%\BakaGame\client\selfcheck.log`，

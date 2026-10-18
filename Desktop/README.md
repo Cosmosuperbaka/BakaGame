@@ -251,7 +251,7 @@ POST {apiBase}/api/client/register
 | `ldr_list_mismatch` | 硬 | PEB `InLoadOrderModuleList` 与 Toolhelp 结果基址集合不一致 |
 | `ldr_enumeration_failed` | 硬 | PEB 链遍历失败（截断/成环/读内存失败） |
 | `parent_process` | 软 | 父进程不在已知启动器名单内，或父进程名取不到 |
-| `devtools` | 软 | 命令行或 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 里有远程调试参数 |
+| `devtools` | 软 | 命令行或 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 里有远程调试参数，或用户数据目录里存在 `DevToolsActivePort`（调试端口真的在监听） |
 | `platform_unsupported` | 硬（壳侧） | 非 Windows 构建（绝不当成「已通过」）；服务端按 `mark` 处置，见下方口径说明 |
 
 判定由服务端按这些 id 执行：任一硬失败拒（`CLIENT_UNTRUSTED`）、软失败 ≥2 拒、
@@ -328,10 +328,9 @@ WebView2 Runtime 与 Edge 的 `Application` 目录、`Common Files\Microsoft Sha
 | 项 | 现状 | 缺什么 |
 |---|---|---|
 | 模块**签名**校验（Authenticode） | 只按路径白名单判定 | `WinVerifyTrust` + `WINTRUST_DATA`/`GUID` 的手写绑定不确定，不敢瞎声明；命中面比路径判定准得多，是下一优先级 |
-| WebView2 `AreDevToolsEnabled` 读回 | 未实现，只查远程调试参数与环境变量（软失败） | 需要 `with_webview` 拿 COM `CoreWebView2` 再走 `webview2-com`；依赖版本要与 wry 对齐，本机无法验证 |
+| WebView2 `AreDevToolsEnabled` 的 COM 读回 | 未实现；改读 `DevToolsActivePort` 文件（通道真的在监听才会写）+ 查远程调试参数，两者任一命中记软失败 | 要读设置位本身需要 `with_webview` 拿 COM `CoreWebView2` 再走 `webview2-com`；依赖版本要与 wry 对齐，本机无法验证 |
 | 降级态文件的显式 ACL | 依赖用户目录 ACL | `ConvertStringSecurityDescriptorToSecurityDescriptorW` + `SetFileSecurityW` 的 SDDL 绑定 |
 | 强制更新的壳侧拦截 | 只记录 `minimumVersion` 与 `attest` 回传的 `outdated` 并打日志 | 契约里没有可暴露的字段；按「只拦反作弊房」口径由服务端回 `CLIENT_OUTDATED` |
-| 前端把票带进握手 | 壳已备好 `channelTicket`，`bakaChannelQuery()` 还没读它 | 要改 `Client/src/lib/BakaChannel.ts` 与 `CEEWs.ts`，超出本轮可改范围 |
 | 移动端 / iOS | 不在本目录范围 | 计划 P3 |
 
 **本目录之外还欠的事**（本轮禁止改已有文件，所以没做）：
