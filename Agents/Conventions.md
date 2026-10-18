@@ -126,6 +126,8 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `storybook` / `@storybook/react-vite` | 10.6.0（精确锁定，两包同版本） | 只作开发依赖，不进生产包。已核对 peer：`vite ^5–^8`、`react ^16.8–^19`、`typescript >=4.9`。它合并 `vite.config.ts`，`.storybook/main.ts` 剔除了会改写 `dist/` 的 `static-shell` 插件；升级 Vite 大版本或 Storybook 时先确认 peer 覆盖，再跑 `build-storybook` 与 `storybook:shots`。 |
 | `@neteasecloudmusicapienhanced/api` | ≥ 4.41.0 | 设备名上报依赖该包的原生 `deviceinfo_center_upload` 模块，`4.40.x` 及更早没有它。低于此版本只能退回「直接导入包内 `util/request`/`util/option` 自拼 EAPI」，违反 [NeteaseMusicApi](NeteaseMusicApi.md) 的「只用公开接口」规则，因此下限不可回退。 |
 | `eslint-plugin-sonarjs` | 两端均 `4.2.2` | 提供 `sonarjs/cognitive-complexity`（阈值 20）。`4.2.2` 的 peer 为 `eslint: ^8 \|\| ^9 \|\| ^10`，是当前能覆盖 ESLint 10.11 的版本；它同时被 Ultracite 8 使用，规则实现与阈值口径一致。升级须先确认 peer 覆盖到项目 ESLint 版本，并重跑两端 `pnpm lint`（基线见 [Testing](Testing.md#lint-基线与复杂度门禁)）。 |
+| `eslint-plugin-check-file` | 两端均 `3.3.2` | 文件名 PascalCase 门禁。`ignoreMiddleExtensions` 必须开：`X.test.tsx` / `X.stories.tsx` 的中缀段本身不是 PascalCase，关掉会把全仓测试与故事判违规。 |
+| `prettier` | `3.9.10`（根 devDependency） | 唯一格式化器，配置在根 `prettier.config.mjs`。`endOfLine: "auto"` 是有意设置：工作区 CRLF、CI 检出 LF，auto 保留各文件原样；改成 `lf` / `crlf` 会让另一端起整文件级 diff。CI 用 `pnpm format:check` 校验。 |
 
 补充约束：
 
@@ -164,6 +166,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | 测试 | `pnpm test` | `pnpm --filter server test` / `pnpm --filter client test` |
 | 覆盖率 | `pnpm coverage` | 各包 `test:coverage` |
 | Lint | `pnpm lint` | `pnpm --filter client lint` / `pnpm --filter server lint` |
+| 格式化 | `pnpm format`（写入） | `pnpm format:check`（只校验，CI 用） |
 
 **也可以直接进入单包目录执行**（与根级转发等价）：
 

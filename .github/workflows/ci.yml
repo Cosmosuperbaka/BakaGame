@@ -198,6 +198,9 @@ jobs:
 
       # Knip 会按仓库配置加载 Client 的 vite.config.ts（含构建期 SEO/资源插件），
       # 因此这里与 client 作业一样需要完整依赖，且不设置 NODE_ENV=production。
+      - name: Check formatting
+        run: pnpm format:check
+
       - name: Detect unused files, dependencies and exports
         run: pnpm knip --no-progress
 

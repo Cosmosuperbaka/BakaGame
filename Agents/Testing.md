@@ -28,6 +28,7 @@
 | 歌词几何、字体或动画 | `npm run test:lyrics`；jsdom 高度模拟不替代真实浏览器 |
 | 资源、构建插件或静态外壳 | `npm run test:asset-smoke` 与相关 SEO / 资源 E2E |
 | 依赖或运行时升级 | 升级前后以同一组检查验证受影响包；Server check + test，Client lint + coverage + build；浏览器/构建依赖另跑相关 E2E，基础运行时或跨端影响覆盖两端 |
+| 格式化或文件改名 | `pnpm format:check` + 两端 lint；改名同时核对 `knip.jsonc` 入口、`Agents/*.md` 路径引用与 CI 的文档检查 |
 | CI、发布准备或明确要求完整回归 | 对应包 `verify`，发布另查 Deployment；服务启动/运维端点改动补 `test:production-smoke` |
 
 本地单测和隔离冒烟可直接运行、修复本次引入的失败并重跑。通过后不重复扩大检查；新改动、失败或未消除风险才增加验证。全量 CI 门禁继续执行，不要求每个局部编辑都先跑完整 CI。
@@ -55,6 +56,14 @@
   `pnpm knip` 仍然零问题（新增 lint 依赖必须被 `eslint.config.js` 直接 import）。
 
 普通测试使用隔离夹具与 Mock 上游；真实网易云测试单独调用，会使用本地凭据。按已有授权和 [NeteaseMusicApi](NeteaseMusicApi.md#测试要求) 执行，不把它当普通单测。环境缺失时记录未验证范围，不用改低阈值或伪造通过来交付。
+
+### 格式化与文件名
+
+- 格式化器是根级 **Prettier**（`prettier.config.mjs`）：`pnpm format` 写入，`pnpm format:check` 只校验。CI 的 `Knip` 作业在建依赖后先跑 `format:check`，再跑 `knip`。
+- **`endOfLine: "auto"` 不许改**：工作区是 CRLF、CI 检出是 LF，`auto` 保留每个文件原样；改成 `lf`/`crlf` 会让另一端起整文件级 diff。
+- 忽略范围在 `.prettierignore`：文档与 `tasks/`、构建产物、`Server/data`、`Server/drizzle` 迁移、E2E 的 HTML 夹具都不参与格式化。
+- 文件名由 `check-file/filename-naming-convention` 强制 PascalCase，必须开 `ignoreMiddleExtensions`（否则 `X.test.tsx`、`X.stories.tsx` 的中缀段会被判违规）；`Client/src/vite-env.d.ts` 是唯一豁免，`vite.config.ts`、`playwright.config.ts` 这类配置不在规则 glob 内。
+- 格式化改动单独提交（`style(Core):` 前缀），不要和业务改动混在一起；改名或换大小写时同步 `knip.jsonc` 入口与 `Agents/*.md` 里的路径引用。
 
 ## 门禁与真相源
 
