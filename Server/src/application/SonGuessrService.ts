@@ -210,6 +210,8 @@ interface SonGuessrRoomRecord {
   expiringNotified?: boolean;
 }
 
+type SongUpdateSettingsPayload = Extract<SonGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"];
+
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
   bangumiProvider?: BangumiDataProvider;
@@ -1663,60 +1665,15 @@ export class SonGuessrService implements AdminRoomControl {
     return { team };
   }
 
-  private updateSettings(
-    connection: ConnectionRecord,
-    payload: Extract<SonGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"],
-  ) {
+  private updateSettings(connection: ConnectionRecord, payload: SongUpdateSettingsPayload) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "waiting") {
       throw new AppError("INVALID_PHASE", "只能在等待阶段修改房间设置");
     }
     const next = { ...room, settings: cloneSettings(room.settings) };
-    if (payload.name !== undefined) next.name = normalizeWord(payload.name) || next.name;
-    if (payload.visibility !== undefined) next.visibility = payload.visibility;
-    if (payload.allowSpectators !== undefined) next.allowSpectators = payload.allowSpectators;
-    if (payload.visibility === "public") next.password = undefined;
-    if (next.visibility === "private" && payload.password !== undefined) {
-      next.password = payload.password.trim() ? payload.password.trim() : next.password;
-    }
-    if (next.visibility === "private" && !next.password) {
-      throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
-    }
-
-    if (payload.questionType !== undefined) next.settings.questionType = payload.questionType;
-    // 单人房间固定由系统出题，不提供手动出题与轮流出题。
-    if (!room.solo && payload.questionMode !== undefined) {
-      next.settings.questionMode = payload.questionMode;
-    }
-    if (!room.solo && payload.autoRotateSubmitter !== undefined) {
-      next.settings.autoRotateSubmitter = payload.autoRotateSubmitter;
-    }
-    if (payload.autoFilters !== undefined) {
-      next.settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
-    }
-    if (payload.animeAutoFilters !== undefined) {
-      next.settings.animeAutoFilters = this.normalizeAnimeAutoFilters(payload.animeAutoFilters);
-    }
-
-    if (payload.lyricsLineCount !== undefined) {
-      next.settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
-    }
-    if (payload.showLyrics !== undefined) {
-      next.settings.showLyrics = payload.showLyrics;
-    }
-    if (payload.maxGuessesPerRound !== undefined) {
-      next.settings.maxGuessesPerRound = clampInt(payload.maxGuessesPerRound, 1, 10);
-    }
-    if (payload.guessDurationSeconds !== undefined) {
-      next.settings.guessDurationSeconds = clampInt(payload.guessDurationSeconds, 10, 180);
-    }
-    if (payload.showGuessTimer !== undefined) {
-      next.settings.showGuessTimer = payload.showGuessTimer;
-    }
-    if (payload.bloodMode !== undefined) {
-      next.settings.bloodMode = payload.bloodMode;
-    }
+    this.applyRoomAdmission(next, payload);
+    this.applyRoundSettings(next, room.solo, payload);
 
     room.name = next.name;
     room.visibility = next.visibility;
@@ -1727,6 +1684,51 @@ export class SonGuessrService implements AdminRoomControl {
     this.publishRoom(room);
     this.publishLobby();
     return { settings: room.settings };
+  }
+
+  /** 先算出公开/私密的密码归属再校验，校验失败时 room 上还没有任何写入。 */
+  private applyRoomAdmission(
+    next: Pick<SonGuessrRoomRecord, "name" | "visibility" | "password" | "allowSpectators">,
+    payload: SongUpdateSettingsPayload,
+  ) {
+    if (payload.name !== undefined) next.name = normalizeWord(payload.name) || next.name;
+    if (payload.visibility !== undefined) next.visibility = payload.visibility;
+    if (payload.allowSpectators !== undefined) next.allowSpectators = payload.allowSpectators;
+    if (payload.visibility === "public") next.password = undefined;
+    if (next.visibility === "private" && payload.password !== undefined) {
+      next.password = payload.password.trim() ? payload.password.trim() : next.password;
+    }
+    if (next.visibility === "private" && !next.password) {
+      throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
+    }
+  }
+
+  /** 单人房固定由系统出题，不提供手动出题与轮流出题。 */
+  private applyRoundSettings(
+    next: Pick<SonGuessrRoomRecord, "settings">,
+    solo: boolean,
+    payload: SongUpdateSettingsPayload,
+  ) {
+    const { settings } = next;
+    if (payload.questionType !== undefined) settings.questionType = payload.questionType;
+    if (!solo && payload.questionMode !== undefined) settings.questionMode = payload.questionMode;
+    if (!solo && payload.autoRotateSubmitter !== undefined) {
+      settings.autoRotateSubmitter = payload.autoRotateSubmitter;
+    }
+    if (payload.autoFilters !== undefined) settings.autoFilters = this.normalizeAutoFilters(payload.autoFilters);
+    if (payload.animeAutoFilters !== undefined) {
+      settings.animeAutoFilters = this.normalizeAnimeAutoFilters(payload.animeAutoFilters);
+    }
+    if (payload.lyricsLineCount !== undefined) settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
+    if (payload.showLyrics !== undefined) settings.showLyrics = payload.showLyrics;
+    if (payload.maxGuessesPerRound !== undefined) {
+      settings.maxGuessesPerRound = clampInt(payload.maxGuessesPerRound, 1, 10);
+    }
+    if (payload.guessDurationSeconds !== undefined) {
+      settings.guessDurationSeconds = clampInt(payload.guessDurationSeconds, 10, 180);
+    }
+    if (payload.showGuessTimer !== undefined) settings.showGuessTimer = payload.showGuessTimer;
+    if (payload.bloodMode !== undefined) settings.bloodMode = payload.bloodMode;
   }
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
@@ -3303,6 +3305,73 @@ export class SonGuessrService implements AdminRoomControl {
     return { refreshed: true };
   }
 
+  /** 截止已过的猜测不产生结果：先按超时结算本回合，再拒绝这次请求。 */
+  private requireGuessBeforeDeadline(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
+    if (state.deadlineAt === undefined || state.deadlineAt > this.now()) return;
+    this.recordTimeout(room, state);
+    if (this.isRoundComplete(room)) this.finishRound(room);
+    this.publishRoom(room);
+    throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
+  }
+
+  /** 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限。 */
+  private beginGuessAttempt(state: SonGuessrRoundPlayerState, player: SonGuessrPlayerRecord) {
+    state.inFlight = true;
+    state.guessesUsed += 1;
+    player.totalGuesses += 1;
+  }
+
+  /** 上游查询失败只回滚本回合的占位：回合已切换时计数归入上一局，不再改动。 */
+  private rollbackGuessAttempt(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord,
+    player: SonGuessrPlayerRecord,
+    state: SonGuessrRoundPlayerState,
+  ) {
+    if (room.phase === "playing" && room.currentRound === round) {
+      state.guessesUsed = Math.max(0, state.guessesUsed - 1);
+      player.totalGuesses = Math.max(0, player.totalGuesses - 1);
+    }
+    state.inFlight = false;
+  }
+
+  /** 异步返回后复验房间与回合状态，失效时先释放占位再报错。 */
+  private requireGuessStillCurrent(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord,
+    player: SonGuessrPlayerRecord,
+    state: SonGuessrRoundPlayerState,
+  ) {
+    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
+      state.inFlight = false;
+      throw new AppError("ROUND_EXPIRED", "该回合已结束");
+    }
+    state.inFlight = false;
+  }
+
+  /** 猜中按血战排名计分，猜错则续期下一次猜测的倒计时。 */
+  private settleGuessResult(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord,
+    player: SonGuessrPlayerRecord,
+    state: SonGuessrRoundPlayerState,
+    correct: boolean,
+  ) {
+    if (!correct) {
+      this.restartGuessDeadline(room, state);
+      return;
+    }
+    state.correct = true;
+    state.deadlineAt = undefined;
+    player.correctGuesses += 1;
+    // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
+    const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
+    player.score += round.settings.bloodMode
+      ? formalPlayerCount - round.correctPlayerIds.length
+      : SCORING.correct;
+    round.correctPlayerIds.push(player.id);
+  }
+
   private async guess(connection: ConnectionRecord, songId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
@@ -3316,17 +3385,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     this.ensureUnitOpen(round, state, player.id);
 
-    if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
-      this.recordTimeout(room, state);
-      if (this.isRoundComplete(room)) this.finishRound(room);
-      this.publishRoom(room);
-      throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
-    }
-
-    // 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限
-    state.inFlight = true;
-    state.guessesUsed += 1;
-    player.totalGuesses += 1;
+    this.requireGuessBeforeDeadline(room, state);
+    this.beginGuessAttempt(state, player);
 
     let guessedSong: SongDetails;
     try {
@@ -3335,20 +3395,12 @@ export class SonGuessrService implements AdminRoomControl {
         this.getSongCookie(room, songId),
       );
     } catch (error) {
-      if (room.phase === "playing" && room.currentRound === round) {
-        state.guessesUsed = Math.max(0, state.guessesUsed - 1);
-        player.totalGuesses = Math.max(0, player.totalGuesses - 1);
-      }
-      state.inFlight = false;
+      this.rollbackGuessAttempt(room, round, player, state);
       throw error;
     }
 
     // 异步返回后复验房间与回合状态
-    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
-      state.inFlight = false;
-      throw new AppError("ROUND_EXPIRED", "该回合已结束");
-    }
-    state.inFlight = false;
+    this.requireGuessStillCurrent(room, round, player, state);
     const correct = this.isCorrectSong(guessedSong, round.song);
     const attempt: SongGuessAttempt = {
       id: this.createId("song_guess"),
@@ -3362,19 +3414,7 @@ export class SonGuessrService implements AdminRoomControl {
     };
     round.attempts.push(attempt);
 
-    if (correct) {
-      state.correct = true;
-      state.deadlineAt = undefined;
-      player.correctGuesses += 1;
-      // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
-      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
-      player.score += round.settings.bloodMode
-        ? formalPlayerCount - round.correctPlayerIds.length
-        : SCORING.correct;
-      round.correctPlayerIds.push(player.id);
-    } else {
-      this.restartGuessDeadline(room, state);
-    }
+    this.settleGuessResult(room, round, player, state, correct);
 
     if (this.isRoundComplete(room)) {
       this.finishRound(room);
@@ -3401,34 +3441,19 @@ export class SonGuessrService implements AdminRoomControl {
     }
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     this.ensureUnitOpen(round, state, player.id);
-    if (state.deadlineAt !== undefined && state.deadlineAt <= this.now()) {
-      this.recordTimeout(room, state);
-      if (this.isRoundComplete(room)) this.finishRound(room);
-      this.publishRoom(room);
-      throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
-    }
+    this.requireGuessBeforeDeadline(room, state);
 
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-    state.inFlight = true;
-    state.guessesUsed += 1;
-    player.totalGuesses += 1;
+    this.beginGuessAttempt(state, player);
     let guessedAnime: BangumiSubjectDetails;
     try {
       guessedAnime = await provider.getSubject(subjectId);
     } catch (error) {
-      if (room.phase === "playing" && room.currentRound === round) {
-        state.guessesUsed = Math.max(0, state.guessesUsed - 1);
-        player.totalGuesses = Math.max(0, player.totalGuesses - 1);
-      }
-      state.inFlight = false;
+      this.rollbackGuessAttempt(room, round, player, state);
       throw error;
     }
-    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
-      state.inFlight = false;
-      throw new AppError("ROUND_EXPIRED", "该回合已结束");
-    }
-    state.inFlight = false;
+    this.requireGuessStillCurrent(room, round, player, state);
     const correct = guessedAnime.id === round.anime.id;
     const attempt: SongGuessAttempt = {
       id: this.createId("song_guess"),
@@ -3440,19 +3465,7 @@ export class SonGuessrService implements AdminRoomControl {
       guessedAnime: this.publicAnime(guessedAnime),
     };
     round.attempts.push(attempt);
-    if (correct) {
-      state.correct = true;
-      state.deadlineAt = undefined;
-      player.correctGuesses += 1;
-      // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
-      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
-      player.score += round.settings.bloodMode
-        ? formalPlayerCount - round.correctPlayerIds.length
-        : SCORING.correct;
-      round.correctPlayerIds.push(player.id);
-    } else {
-      this.restartGuessDeadline(room, state);
-    }
+    this.settleGuessResult(room, round, player, state, correct);
     if (this.isRoundComplete(room)) this.finishRound(room);
     this.touch(room);
     this.publishRoom(room);
@@ -3509,81 +3522,101 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult") throw new AppError("INVALID_PHASE", "当前不在回合结算阶段");
+    if (room.solo || room.settings.questionMode === "automatic") return this.beginAutomaticNextRound(connection, room, player);
+    return this.beginManualNextRound(room);
+  }
+
+  /** 人数不足以开局：退回等待阶段，两名玩家的准备状态清零。 */
+  private fallBackToWaiting(room: SonGuessrRoomRecord) {
+    room.pendingSubmitterPlayerId = undefined;
+    room.phase = "waiting";
+    this.resetReadyState(room);
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+  }
+
+  /** 单人房永远满足开局人数，其余房间要两名在线正式玩家。 */
+  private hasNextRoundQuorum(room: SonGuessrRoomRecord) {
+    if (room.solo) return true;
+    return this.activePlayers(room).filter((candidate) => candidate.online).length >= 2;
+  }
+
+  /** 自动出题下一回合：抽题期间房主可能换人或回合被别处推进，失效即丢弃结果。 */
+  private async beginAutomaticNextRound(
+    connection: ConnectionRecord,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
+  ) {
+    if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
     const previousRound = room.currentRound;
     const previousSummary = room.roundSummary;
-    if (room.solo || room.settings.questionMode === "automatic") {
-      if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
-      const operation = Symbol("automaticRound");
-      room.automaticRoundOperation = operation;
-      room.automaticRoundLoading = true;
-      const isCurrent = () => this.rooms.get(room.id) === room
-        && room.automaticRoundOperation === operation
-        && room.phase === "roundResult" && room.currentRound === previousRound
-        && room.hostPlayerId === player.id && player.online
-        && connection.roomId === room.id && connection.playerId === player.id;
-      const verify = () => {
-        if (!isCurrent()) throw new AppError("ROUND_EXPIRED", "出题操作已失效");
-      };
-      try {
-        this.applyQueuedMemberships(room);
-        if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
-          room.currentRound = undefined;
-          room.roundSummary = undefined;
-          room.pendingSubmitterPlayerId = undefined;
-          room.phase = "waiting";
-          this.resetReadyState(room);
-          this.touch(room);
-          this.publishRoom(room);
-          this.publishLobby();
-          return { nextRound: room.roundNumber + 1, waiting: true };
-        }
-        await this.startAutomaticRound(room, verify);
-      } catch (error) {
-        // 自动题库临时失败时保留答案页，房主可以重试或回到等待阶段，
-        // 不能留下既没有 currentRound 也没有 roundSummary 的悬空状态。
-        if (isCurrent()) {
-          room.currentRound = previousRound;
-          room.roundSummary = previousSummary;
-          room.phase = "roundResult";
-        }
-        throw error;
-      } finally {
-        if (room.automaticRoundOperation === operation) {
-          room.automaticRoundOperation = undefined;
-          room.automaticRoundLoading = false;
-        }
-      }
-    } else {
-      if (room.manualRoundStarting) throw new AppError("ROUND_BUSY", "正在准备下一回合");
-      room.manualRoundStarting = true;
-      try {
-        const previousSubmitterId = previousRound?.submitterPlayerId;
+    const operation = Symbol("automaticRound");
+    room.automaticRoundOperation = operation;
+    room.automaticRoundLoading = true;
+    const isCurrent = () => this.rooms.get(room.id) === room
+      && room.automaticRoundOperation === operation
+      && room.phase === "roundResult" && room.currentRound === previousRound
+      && room.hostPlayerId === player.id && player.online
+      && connection.roomId === room.id && connection.playerId === player.id;
+    const verify = () => {
+      if (!isCurrent()) throw new AppError("ROUND_EXPIRED", "出题操作已失效");
+    };
+    try {
+      this.applyQueuedMemberships(room);
+      if (!this.hasNextRoundQuorum(room)) {
         room.currentRound = undefined;
         room.roundSummary = undefined;
-        this.applyQueuedMemberships(room);
-        if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
-          room.pendingSubmitterPlayerId = undefined;
-          room.phase = "waiting";
-          this.resetReadyState(room);
-          this.touch(room);
-          this.publishRoom(room);
-          this.publishLobby();
-          return { nextRound: room.roundNumber + 1, waiting: true };
-        }
-        if (room.settings.autoRotateSubmitter) {
-          const nextSubmitter = this.nextRotatingSubmitter(room, previousSubmitterId);
-          if (nextSubmitter) {
-            room.pendingSubmitterPlayerId = nextSubmitter.id;
-            room.phase = "submittingSong";
-          } else {
-            room.phase = "choosingSubmitter";
-          }
-        } else {
-          room.phase = "choosingSubmitter";
-        }
-      } finally {
-        room.manualRoundStarting = false;
+        this.fallBackToWaiting(room);
+        return { nextRound: room.roundNumber + 1, waiting: true };
       }
+      await this.startAutomaticRound(room, verify);
+    } catch (error) {
+      // 自动题库临时失败时保留答案页，房主可以重试或回到等待阶段，
+      // 不能留下既没有 currentRound 也没有 roundSummary 的悬空状态。
+      if (isCurrent()) {
+        room.currentRound = previousRound;
+        room.roundSummary = previousSummary;
+        room.phase = "roundResult";
+      }
+      throw error;
+    } finally {
+      if (room.automaticRoundOperation === operation) {
+        room.automaticRoundOperation = undefined;
+        room.automaticRoundLoading = false;
+      }
+    }
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    return { nextRound: room.roundNumber + 1 };
+  }
+
+  /** 手动出题下一回合：轮换开启则自动指定出题人，否则回到选出题人阶段。 */
+  private beginManualNextRound(room: SonGuessrRoomRecord) {
+    if (room.manualRoundStarting) throw new AppError("ROUND_BUSY", "正在准备下一回合");
+    const previousSubmitterId = room.currentRound?.submitterPlayerId;
+    room.manualRoundStarting = true;
+    try {
+      room.currentRound = undefined;
+      room.roundSummary = undefined;
+      this.applyQueuedMemberships(room);
+      if (!this.hasNextRoundQuorum(room)) {
+        this.fallBackToWaiting(room);
+        return { nextRound: room.roundNumber + 1, waiting: true };
+      }
+      const nextSubmitter = room.settings.autoRotateSubmitter
+        ? this.nextRotatingSubmitter(room, previousSubmitterId)
+        : undefined;
+      // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
+      if (nextSubmitter) {
+        room.pendingSubmitterPlayerId = nextSubmitter.id;
+        room.phase = "submittingSong";
+      } else {
+        room.phase = "choosingSubmitter";
+      }
+    } finally {
+      room.manualRoundStarting = false;
     }
     this.touch(room);
     this.publishRoom(room);
