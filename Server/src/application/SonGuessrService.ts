@@ -171,7 +171,8 @@ interface SonGuessrRoomRecord {
   name: string;
   solo: boolean;
   visibility: RoomVisibility;
-  password?: string;
+  /** 私密房口令的 argon2 摘要；与 CEE、谁是卧底同一口径，明文不进房间记录、快照与日志。 */
+  passwordHash?: string;
   allowSpectators: boolean;
   hostPlayerId: string;
   settings: SonGuessrSettings;
@@ -1405,13 +1406,14 @@ export class SonGuessrService implements AdminRoomControl {
       .sort((left, right) => left.roomId.localeCompare(right.roomId));
   }
 
-  private createRoom(
+  private async createRoom(
     connection: ConnectionRecord,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"],
   ) {
     this.ensureConnectionFree(connection);
     const roomId = ensureRoomId(payload.roomId);
     if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "房间号已被使用");
+    const password = payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
 
     const player = this.createPlayer(payload.userName, true);
     const now = this.now();
@@ -1421,7 +1423,6 @@ export class SonGuessrService implements AdminRoomControl {
       name: normalizeWord(payload.name),
       solo,
       visibility: payload.visibility,
-      password: payload.visibility === "private" ? this.requirePassword(payload.password) : undefined,
       allowSpectators: solo ? false : payload.allowSpectators,
       hostPlayerId: player.id,
       settings: cloneSettings({
@@ -1439,7 +1440,16 @@ export class SonGuessrService implements AdminRoomControl {
       recentSubjectIds: [],
     };
 
+    // 算摘要要跨一次 await，先占住房号再算，避免并发建房互相覆盖（与 CEE 同一口径）。
     this.rooms.set(roomId, room);
+    if (password) {
+      try {
+        room.passwordHash = await Bun.password.hash(password);
+      } catch (error) {
+        this.rooms.delete(roomId);
+        throw error;
+      }
+    }
     this.attachConnection(room, player, connection);
     this.appendSystemMessage(room, `${player.name} 创建了房间`);
     this.publishRoom(room);
@@ -1454,7 +1464,7 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  private joinRoom(
+  private async joinRoom(
     connection: ConnectionRecord,
     roomIdValue: string | undefined,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"],
@@ -1462,7 +1472,9 @@ export class SonGuessrService implements AdminRoomControl {
     this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
-    this.ensurePassword(room, payload.password, connection);
+    await this.ensurePassword(room, payload.password, connection);
+    // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
+    if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     const name = this.requireName(payload.userName);
     if (Object.values(room.players).some((player) => player.name === name && player.membership !== "kicked")) {
       throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
@@ -1674,19 +1686,19 @@ export class SonGuessrService implements AdminRoomControl {
     return { team };
   }
 
-  private updateSettings(connection: ConnectionRecord, payload: SongUpdateSettingsPayload) {
+  private async updateSettings(connection: ConnectionRecord, payload: SongUpdateSettingsPayload) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     if (room.phase !== "waiting") {
       throw new AppError("INVALID_PHASE", "只能在等待阶段修改房间设置");
     }
     const next = { ...room, settings: cloneSettings(room.settings) };
-    this.applyRoomAdmission(next, payload);
+    await this.applyRoomAdmission(next, payload);
     this.applyRoundSettings(next, room.solo, payload);
 
     room.name = next.name;
     room.visibility = next.visibility;
-    room.password = next.password;
+    room.passwordHash = next.passwordHash;
     room.allowSpectators = next.allowSpectators;
     room.settings = next.settings;
     this.touch(room);
@@ -1696,18 +1708,20 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /** 先算出公开/私密的密码归属再校验，校验失败时 room 上还没有任何写入。 */
-  private applyRoomAdmission(
-    next: Pick<SonGuessrRoomRecord, "name" | "visibility" | "password" | "allowSpectators">,
+  private async applyRoomAdmission(
+    next: Pick<SonGuessrRoomRecord, "name" | "visibility" | "passwordHash" | "allowSpectators">,
     payload: SongUpdateSettingsPayload,
   ) {
     if (payload.name !== undefined) next.name = normalizeWord(payload.name) || next.name;
     if (payload.visibility !== undefined) next.visibility = payload.visibility;
     if (payload.allowSpectators !== undefined) next.allowSpectators = payload.allowSpectators;
-    if (payload.visibility === "public") next.password = undefined;
-    if (next.visibility === "private" && payload.password !== undefined) {
-      next.password = payload.password.trim() ? payload.password.trim() : next.password;
+    if (payload.visibility === "public") next.passwordHash = undefined;
+    // 留空保留原口令，给了新值才换摘要：明文只在这段局部变量里存在一次。
+    const password = payload.password?.trim();
+    if (next.visibility === "private" && password) {
+      next.passwordHash = await Bun.password.hash(password);
     }
-    if (next.visibility === "private" && !next.password) {
+    if (next.visibility === "private" && !next.passwordHash) {
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
     }
   }
@@ -1941,7 +1955,7 @@ export class SonGuessrService implements AdminRoomControl {
       name: room.name,
       phase: room.phase,
       visibility: room.visibility,
-      hasPassword: Boolean(room.password),
+      hasPassword: Boolean(room.passwordHash),
       hidden: this.isTestRoom(room) || room.solo,
       roundNumber: room.roundNumber,
       createdAt: room.createdAt,
@@ -3945,7 +3959,7 @@ export class SonGuessrService implements AdminRoomControl {
       name: room.name,
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
-      hasPassword: Boolean(room.password),
+      hasPassword: Boolean(room.passwordHash),
       playerCount: activeCount,
       spectatorCount,
       onlineCount: activeCount + spectatorCount,
@@ -3962,7 +3976,7 @@ export class SonGuessrService implements AdminRoomControl {
       solo: room.solo,
       visibility: room.visibility,
       allowSpectators: room.allowSpectators,
-      hasPassword: Boolean(room.password),
+      hasPassword: Boolean(room.passwordHash),
       hostPlayerId: room.hostPlayerId,
       testMode: this.isTestRoom(room),
       musicAccountReady: Boolean(room.musicSession),
@@ -4289,7 +4303,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.hostPlayerId !== playerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
 
-  private ensurePassword(
+  private async ensurePassword(
     room: SonGuessrRoomRecord,
     password: string | undefined,
     connection: ConnectionRecord,
@@ -4306,7 +4320,9 @@ export class SonGuessrService implements AdminRoomControl {
     if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
-    if (room.password !== normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
+    // 只按摘要比对：房间记录里没有可读的口令。
+    const matched = room.passwordHash ? await Bun.password.verify(normalized, room.passwordHash) : false;
+    if (!matched) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
   }
 
   private requirePassword(password?: string) {

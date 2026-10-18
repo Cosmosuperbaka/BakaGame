@@ -1046,6 +1046,9 @@ describe("SonGuessrService", () => {
     ]);
     await expect(joinRoom(service, guest, "玩家")).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
     await joinRoom(service, guest, "玩家", "1234", "secret");
+    // 口令只在请求里出现一次：房间快照与大厅摘要都不该带出可读明文。
+    expect(JSON.stringify(lastEvent(guest, "song.room.snapshot"))).not.toContain("secret");
+    expect(JSON.stringify(service.getRoomSummaries())).not.toContain("secret");
   });
 
   test("大厅房间摘要包含题目类型且随设置更新实时同步", async () => {
