@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 
 import { createEvent } from "../src/transport/Packets";
-import { buildStatePatch, StateSyncEncoder } from "../src/transport/StateSync";
+import {
+  buildStatePatch,
+  createStateSyncSender,
+  STATE_BACKLOG_RESUME_BYTES,
+  STATE_BACKLOG_SHED_BYTES,
+  StateSyncEncoder,
+} from "../src/transport/StateSync";
 
 test("状态补丁只编码变化路径与数组追加项", () => {
   expect(
@@ -119,5 +125,30 @@ test("补丁规模接近全量时改发全量，小改动仍走补丁", () => {
     encoder.encode(createEvent("room.snapshot", { ...fields("-rewritten"), extra: 1 }))[0]
   ).toMatchObject({
     payload: { mode: "patch", revision: 3, baseRevision: 2 },
+  });
+});
+
+test("出站积压越过水位时只丢状态帧，回落后以全量恢复", () => {
+  let backlog = 0;
+  const sent: unknown[] = [];
+  const sender = createStateSyncSender(
+    (payload) => sent.push(payload),
+    () => backlog
+  );
+
+  sender.send(createEvent("room.snapshot", { value: 1 }));
+  expect(sent).toHaveLength(1);
+
+  backlog = STATE_BACKLOG_SHED_BYTES + 1;
+  sender.send(createEvent("room.snapshot", { value: 2 }));
+  expect(sent).toHaveLength(1);
+  // ACK 与聊天是有去无回的业务消息，积压再高也不能丢。
+  sender.send(createEvent("room.chat", { text: "照常发送" }));
+  expect(sent[1]).toMatchObject({ event: "room.chat" });
+
+  backlog = STATE_BACKLOG_RESUME_BYTES - 1;
+  sender.send(createEvent("room.snapshot", { value: 3 }));
+  expect(sent.at(-1)).toMatchObject({
+    payload: { mode: "full", revision: 1, state: { value: 3 } },
   });
 });

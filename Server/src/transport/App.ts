@@ -279,6 +279,7 @@ interface GameSocketLike {
   data: unknown;
   send: (data: ServerMessage) => unknown;
   close: (code?: number, reason?: string) => unknown;
+  raw?: unknown;
 }
 
 interface GameSocketHandlers<TMessage extends { id: string; type: string; traceId?: string }> {
@@ -367,6 +368,17 @@ const resolveSocketChannel = (
   if (proof) context.clientChannel = proof;
 };
 
+/**
+ * 这条连接攒着没发出去的字节数。Bun 原生 socket 有 `getBufferedAmount`，
+ * 但 Elysia 的 `raw` 用的是它自己裁剪过的 `ServerWebSocket` 声明（不含该方法），
+ * 所以这里按结构收窄后再调用。读不到（测试里的假 socket）就返回 0，等价于不启用丢弃。
+ */
+const socketBacklog = (ws: GameSocketLike): number => {
+  const raw = ws.raw as { getBufferedAmount?: () => number } | undefined;
+  if (!raw?.getBufferedAmount) return 0;
+  return raw.getBufferedAmount();
+};
+
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
 const openGameConnection = (
   ws: GameSocketLike,
@@ -383,9 +395,12 @@ const openGameConnection = (
     clientChannel?: ClientChannelProof;
   };
   (ws.data as { connectionId?: string }).connectionId = connectionId;
-  const stateSync = createStateSyncSender((payload) => {
-    sendPacket(ws, payload as ServerMessage);
-  });
+  const stateSync = createStateSyncSender(
+    (payload) => {
+      sendPacket(ws, payload as ServerMessage);
+    },
+    () => socketBacklog(ws)
+  );
   register({
     id: connectionId,
     ...(account ? { account } : {}),

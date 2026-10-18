@@ -5,6 +5,10 @@ import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shar
 export const STATE_FULL_SYNC_INTERVAL_MS = 60_000;
 export const STATE_MAX_PATCHES_BEFORE_FULL = 1_024;
 export const STATE_PATCH_TO_FULL_RATIO = 0.82;
+/** 单条连接攒着没发出去的状态字节超过这个水位就先丢状态帧：慢客户端不该把整台进程的内存吃穿。 */
+export const STATE_BACKLOG_SHED_BYTES = 128 * 1024;
+/** 回落到这个水位以下才恢复；补丁链已经断过，恢复后的第一份一定是全量。 */
+export const STATE_BACKLOG_RESUME_BYTES = 32 * 1024;
 
 const STATE_EVENTS = new Set([
   "room.snapshot",
@@ -245,15 +249,43 @@ export class StateSyncEncoder {
   }
 }
 
-export function createStateSyncSender(send: (payload: unknown) => void) {
+export function createStateSyncSender(
+  send: (payload: unknown) => void,
+  measureBacklog?: () => number
+) {
   const encoder = new StateSyncEncoder();
+  let shedding = false;
+  /**
+   * 只 gate 状态帧：ACK、错误与聊天都是有去无回的业务消息，丢了客户端就一直等。
+   * 状态帧可以丢——恢复后第一份是全量，客户端拿到的永远是完整视图。
+   */
+  const accepts = (payload: unknown): boolean => {
+    if (!measureBacklog) return true;
+    if (!isEventPacket(payload) || !STATE_EVENTS.has(payload.event)) return true;
+    if (shedding) {
+      if (measureBacklog() > STATE_BACKLOG_RESUME_BYTES) return false;
+      shedding = false;
+      encoder.reset();
+      return true;
+    }
+    if (measureBacklog() <= STATE_BACKLOG_SHED_BYTES) return true;
+    shedding = true;
+    return false;
+  };
+  const emit = (payload: unknown, options: StateSyncEncodeOptions): void => {
+    if (!accepts(payload)) return;
+    for (const encoded of encoder.encode(payload, options)) send(encoded);
+  };
   return {
     send: (payload: unknown): void => {
-      for (const encoded of encoder.encode(payload)) send(encoded);
+      emit(payload, {});
     },
     calibrate: (payload: unknown): void => {
-      for (const encoded of encoder.encode(payload, { calibration: true })) send(encoded);
+      emit(payload, { calibration: true });
     },
-    reset: () => encoder.reset(),
+    reset: (): void => {
+      shedding = false;
+      encoder.reset();
+    },
   };
 }
