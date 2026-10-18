@@ -7,7 +7,7 @@ import fs from 'fs'
 import { createRequire } from 'node:module'
 import sharp from 'sharp'
 import { preparePublicWebp, stickerAssetUrl } from './scripts/prepare-public-webp.mjs'
-import { PAGE_META, REPOSITORY_URL, SITE_NAME, SITE_ORIGIN, buildFaqStructuredData } from './src/data/PageMeta.ts'
+import { PAGE_META, REPOSITORY_URL, SITE_NAME, SITE_ORIGIN, buildFaqStructuredData, type PageMeta } from './src/data/PageMeta.ts'
 import {
   CREDIT_DESCRIPTION_LIMIT,
   LICENSE_FILE_PATTERN,
@@ -798,6 +798,82 @@ function escapeHtml(value: string) {
     .replaceAll('"', '&quot;')
 }
 
+// FAQ 是每页的必备内容：缺问答、空条目或重复问题，直接让构建失败——
+// 这块内容用户不可见，坏了不会有任何观感反馈，只能靠断言拦在部署前。
+function assertShellFaq(): void {
+  for (const meta of PAGE_META) {
+    if (meta.faq.length === 0) {
+      throw new Error(`静态外壳：${meta.path} 缺少 FAQ 问答文案`)
+    }
+    const questions = new Set<string>()
+    for (const item of meta.faq) {
+      if (!item.q.trim() || !item.a.trim()) {
+        throw new Error(`静态外壳：${meta.path} 的 FAQ 存在空问题或空答案`)
+      }
+      if (questions.has(item.q)) {
+        throw new Error(`静态外壳：${meta.path} 的 FAQ 问题重复（${item.q}）`)
+      }
+      questions.add(item.q)
+    }
+  }
+}
+
+/** 单页静态外壳：在 index.html 原文上补齐 head 元信息与正文，并给出双形态落盘路径。 */
+function buildShellPage(original: string, meta: PageMeta): { path: string; html: string; outputs: string[] } {
+  const canonical = `${SITE_ORIGIN}${meta.path}`
+  const description = escapeHtml(meta.description)
+  const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`)
+  const faqStructuredData = buildFaqStructuredData(meta.faq)
+  const head = [
+    `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    ...(meta.keywords && meta.keywords.length > 0
+      ? [`<meta name="keywords" content="${escapeHtml(meta.keywords.join(', '))}" ${STATIC_SEO_ATTRIBUTE}="1" />`]
+      : []),
+    `<link rel="canonical" href="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="twitter:card" content="summary_large_image" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="twitter:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
+    ...(faqStructuredData
+      ? [`<script id="${FAQ_STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(faqStructuredData)}</script>`]
+      : []),
+  ].join('\n    ')
+
+  const body = [
+    `<h1>${escapeHtml(meta.shell.h1)}</h1>`,
+    ...meta.shell.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
+    `<ul>${meta.shell.links
+      .map((link) => `<li><a href="${link.href}">${escapeHtml(link.label)}</a></li>`)
+      .join('')}</ul>`,
+    `<section><h2>常见问题</h2>${meta.faq
+      .map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`)
+      .join('')}</section>`,
+  ].join('')
+
+  const html = original
+    .replace('</head>', `  ${head}\n  </head>`)
+    .replace(
+      '<div id="root"></div>',
+      `<div id="root"><main>${body}</main></div>\n    <script>${SHELL_CLEAR_CODE}</script>`,
+    )
+
+  const segment = meta.path.replace(/^\//, '').replace(/\/$/, '')
+  return {
+    path: meta.path,
+    html,
+    // 双形态落盘：目录索引型主机与 clean URL 型主机各覆盖一种，别名 canonical 指向正式路径。
+    outputs: segment === '' ? ['index.html'] : [`${segment}/index.html`, `${segment}.html`],
+  }
+}
+
 function staticShellPlugin() {
   return {
     name: 'static-shell',
@@ -815,78 +891,9 @@ function staticShellPlugin() {
         throw new Error('静态外壳：dist/index.html 里找不到 </head>')
       }
 
-      // FAQ 是每页的必备内容：缺问答、空条目或重复问题，直接让构建失败——
-      // 这块内容用户不可见，坏了不会有任何观感反馈，只能靠断言拦在部署前。
-      for (const meta of PAGE_META) {
-        if (meta.faq.length === 0) {
-          throw new Error(`静态外壳：${meta.path} 缺少 FAQ 问答文案`)
-        }
-        const questions = new Set<string>()
-        for (const item of meta.faq) {
-          if (!item.q.trim() || !item.a.trim()) {
-            throw new Error(`静态外壳：${meta.path} 的 FAQ 存在空问题或空答案`)
-          }
-          if (questions.has(item.q)) {
-            throw new Error(`静态外壳：${meta.path} 的 FAQ 问题重复（${item.q}）`)
-          }
-          questions.add(item.q)
-        }
-      }
+      assertShellFaq()
 
-      const pages = PAGE_META.map((meta) => {
-        const canonical = `${SITE_ORIGIN}${meta.path}`
-        const description = escapeHtml(meta.description)
-        const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`)
-        const faqStructuredData = buildFaqStructuredData(meta.faq)
-        const head = [
-          `<meta name="description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          ...(meta.keywords && meta.keywords.length > 0
-            ? [`<meta name="keywords" content="${escapeHtml(meta.keywords.join(', '))}" ${STATIC_SEO_ATTRIBUTE}="1" />`]
-            : []),
-          `<link rel="canonical" href="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta name="twitter:card" content="summary_large_image" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta name="twitter:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-          `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
-          ...(faqStructuredData
-            ? [`<script id="${FAQ_STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(faqStructuredData)}</script>`]
-            : []),
-        ].join('\n    ')
-
-        const body = [
-          `<h1>${escapeHtml(meta.shell.h1)}</h1>`,
-          ...meta.shell.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
-          `<ul>${meta.shell.links
-            .map((link) => `<li><a href="${link.href}">${escapeHtml(link.label)}</a></li>`)
-            .join('')}</ul>`,
-          `<section><h2>常见问题</h2>${meta.faq
-            .map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`)
-            .join('')}</section>`,
-        ].join('')
-
-        const html = original
-          .replace('</head>', `  ${head}\n  </head>`)
-          .replace(
-            '<div id="root"></div>',
-            `<div id="root"><main>${body}</main></div>\n    <script>${SHELL_CLEAR_CODE}</script>`,
-          )
-
-        const segment = meta.path.replace(/^\//, '').replace(/\/$/, '')
-        return {
-          path: meta.path,
-          html,
-          // 双形态落盘：目录索引型主机与 clean URL 型主机各覆盖一种，别名 canonical 指向正式路径。
-          outputs: segment === '' ? ['index.html'] : [`${segment}/index.html`, `${segment}.html`],
-        }
-      })
+      const pages = PAGE_META.map((meta) => buildShellPage(original, meta))
 
       // 先全部生成再落盘：index.html 同时是模板来源，边读边写会污染后续路由。
       for (const page of pages) {

@@ -28,10 +28,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
-  },
-  "vite.config.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }
