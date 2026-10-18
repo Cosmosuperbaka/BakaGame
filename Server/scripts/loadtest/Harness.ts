@@ -62,6 +62,10 @@ interface StepOutcome {
 interface RunConfig {
   mode: "ramp" | "cap" | "fat";
   label: string;
+  /** 报告上的机器名：同一整套数字混了机器就必须能看出来自哪台。 */
+  machine: string;
+  /** 被测进程数。一个进程只有一个事件循环，跨核只能靠多进程分片。 */
+  shards: number;
   mix: Record<GameKind, number>;
   seats: Record<GameKind, number>;
   pace: number;
@@ -193,6 +197,30 @@ const toSample = (raw: Record<string, unknown>): MetricSample => ({
 const total = (sample: MetricSample, key: "roomCount" | "connectionCount" | "onlinePlayerCount") =>
   sample.faker[key] + sample.song[key] + sample.cee[key];
 
+const mergeHealth = (
+  parts: MetricSample[],
+  key: "faker" | "song" | "cee"
+): MetricSample["faker"] => ({
+  roomCount: parts.reduce((sum, part) => sum + part[key].roomCount, 0),
+  connectionCount: parts.reduce((sum, part) => sum + part[key].connectionCount, 0),
+  onlinePlayerCount: parts.reduce((sum, part) => sum + part[key].onlinePlayerCount, 0),
+});
+
+/**
+ * 多分片合成一条总读数：CPU、内存、房间数按分片相加，事件环延迟把各片样本并成一个池。
+ * 延迟判定看的是合并池的 P95，也就是最差那片分片的体感——分片不会互相救场，一饱和全饱和。
+ */
+const mergeSamples = (parts: MetricSample[]): MetricSample => ({
+  at: Math.min(...parts.map((part) => part.at)),
+  cpuTotalUs: parts.reduce((sum, part) => sum + part.cpuTotalUs, 0),
+  rssBytes: parts.reduce((sum, part) => sum + part.rssBytes, 0),
+  heapUsedBytes: parts.reduce((sum, part) => sum + part.heapUsedBytes, 0),
+  lag: parts.flatMap((part) => part.lag),
+  faker: mergeHealth(parts, "faker"),
+  song: mergeHealth(parts, "song"),
+  cee: mergeHealth(parts, "cee"),
+});
+
 interface TargetHandle {
   wsUrl: string;
   metricsUrl: string;
@@ -305,8 +333,18 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   };
 };
 
+/** 分片是各自独立的进程、端口与号段：一个事件循环打满之后，只能靠多开进程吃下一个核。 */
+const bootFleet = async (config: RunConfig): Promise<TargetHandle[]> => {
+  const targets: TargetHandle[] = [];
+  // 逐个拉起而不是并发：端口是"先探空闲再占用"，并发拉起会互相抢同一个端口。
+  for (let shard = 0; shard < config.shards; shard += 1) targets.push(await bootTarget(config));
+  return targets;
+};
+
 interface WorkerSpec {
   game: GameKind;
+  /** 这条发压分片连到第几个被测进程。 */
+  shard: number;
   rooms: number;
   seats: number;
   roomIdBase: number;
@@ -321,8 +359,9 @@ const MAX_ROOMS_PER_GAME = 1_900;
 const allocate = (players: number, config: RunConfig) =>
   GAMES.filter((game) => config.mix[game] > 0).map((game) => {
     const seats = Math.max(MIN_SEATS[game], Math.round(config.seats[game]));
+    // 号段是每个进程各有一套的：分片越多，同一款游戏能同时开的房间上限越高。
     const rooms = Math.min(
-      MAX_ROOMS_PER_GAME,
+      MAX_ROOMS_PER_GAME * config.shards,
       Math.max(1, Math.round((players * config.mix[game]) / seats))
     );
     return { game, seats, rooms, players: rooms * seats };
@@ -331,24 +370,31 @@ const allocate = (players: number, config: RunConfig) =>
 const planWorkers = (allocation: ReturnType<typeof allocate>, config: RunConfig): WorkerSpec[] => {
   const specs: WorkerSpec[] = [];
   for (const unit of allocation) {
-    let roomBase = ROOM_BASE[unit.game];
-    const workers = Math.min(
-      config.maxWorkers,
-      Math.max(1, Math.ceil((unit.rooms * unit.seats) / config.playersPerWorker)),
-      unit.rooms
-    );
-    for (let index = 0; index < workers; index += 1) {
-      const rooms = Math.floor(unit.rooms / workers) + (index < unit.rooms % workers ? 1 : 0);
-      if (rooms <= 0) continue;
-      specs.push({
-        game: unit.game,
-        rooms,
-        seats: unit.seats,
-        roomIdBase: roomBase,
-        pace: config.pace,
-        staggerMs: Math.min(6_000, Math.max(600, rooms * 300)),
-      });
-      roomBase += rooms;
+    for (let shard = 0; shard < config.shards; shard += 1) {
+      const shardRooms =
+        Math.floor(unit.rooms / config.shards) + (shard < unit.rooms % config.shards ? 1 : 0);
+      if (shardRooms <= 0) continue;
+      // 分片是各自独立的进程，各有各的号段：每片都从本游戏的起点重新排。
+      let roomBase = ROOM_BASE[unit.game];
+      const workers = Math.min(
+        config.maxWorkers,
+        Math.max(1, Math.ceil((shardRooms * unit.seats) / config.playersPerWorker)),
+        shardRooms
+      );
+      for (let index = 0; index < workers; index += 1) {
+        const rooms = Math.floor(shardRooms / workers) + (index < shardRooms % workers ? 1 : 0);
+        if (rooms <= 0) continue;
+        specs.push({
+          game: unit.game,
+          shard,
+          rooms,
+          seats: unit.seats,
+          roomIdBase: roomBase,
+          pace: config.pace,
+          staggerMs: Math.min(6_000, Math.max(600, rooms * 300)),
+        });
+        roomBase += rooms;
+      }
     }
   }
   return specs;
@@ -419,14 +465,14 @@ const spawnWorker = async (
   }
 };
 
-/** 采样器只在测量窗口内取数，逐步计算 CPU / 延迟 / 房间数。 */
+/** 采样器只在测量窗口内取数，逐步计算 CPU / 延迟 / 房间数；多分片时把各片读数合成一条总量。 */
 class MetricPoller {
   private samples: MetricSample[] = [];
   private timer: ReturnType<typeof setInterval> | undefined;
   private busy = false;
 
   constructor(
-    private readonly target: TargetHandle,
+    private readonly targets: TargetHandle[],
     private readonly intervalMs = 250
   ) {}
 
@@ -434,9 +480,14 @@ class MetricPoller {
     this.timer = setInterval(() => {
       if (this.busy) return;
       this.busy = true;
-      void httpJson<Record<string, unknown>>(`${this.target.metricsUrl}/metrics?reset=1`)
-        .then((raw) => {
-          this.samples.push(toSample(raw));
+      // 任一分片答不上来就丢掉这一拍：CPU 与在线数都是相加口径，缺一片的读数会整条偏低。
+      void Promise.all(
+        this.targets.map(async (target) =>
+          toSample(await httpJson<Record<string, unknown>>(`${target.metricsUrl}/metrics?reset=1`))
+        )
+      )
+        .then((parts) => {
+          this.samples.push(mergeSamples(parts));
           if (this.samples.length > 20_000) this.samples = this.samples.slice(-10_000);
         })
         .catch(() => {})
@@ -487,11 +538,25 @@ const drainTarget = async (
   }
 };
 
+/** 每个分片都要各自清场：任何一片还留着上一步的房间，下一步那一片就会整批撞号。 */
+const drainFleet = async (
+  targets: TargetHandle[],
+  timeoutMs = 150_000
+): Promise<{ waitedMs: number; roomsLeft: number }> => {
+  const settled = await Promise.all(targets.map((target) => drainTarget(target, timeoutMs)));
+  return {
+    waitedMs: Math.max(...settled.map((item) => item.waitedMs)),
+    roomsLeft: settled.some((item) => item.roomsLeft < 0)
+      ? -1
+      : settled.reduce((sum, item) => sum + item.roomsLeft, 0),
+  };
+};
+
 const runStep = async (
   index: number,
   players: number,
   pace: number,
-  target: TargetHandle,
+  targets: TargetHandle[],
   poller: MetricPoller,
   config: RunConfig
 ): Promise<StepOutcome> => {
@@ -509,11 +574,11 @@ const runStep = async (
   // 上一步没关掉的空房仍然占着房间号（空房宽限 90 秒 + 房务 10 秒节拍）：撞号后只有一部分
   // 房间能开局，测到的吞吐就成了假的。连接掉光但房间还在时，光等连接不够，要等房间清零。
   // 每个玩家都发出过 room.leave 时这里几乎不等待，只有大房间数下收尾被截断才会真的等。
-  const settled = await drainTarget(target);
+  const settled = await drainFleet(targets);
 
   const started = performance.now();
   const results = (
-    await Promise.all(specs.map((spec) => spawnWorker(spec, target, effective)))
+    await Promise.all(specs.map((spec) => spawnWorker(spec, targets[spec.shard]!, effective)))
   ).filter((result): result is WorkerResult => !!result);
   const elapsedMs = performance.now() - started;
   if (!results.length) throw new Error("所有发压分片都没有返回结果");
@@ -627,7 +692,11 @@ const saturationReason = (
   if (record.errorRate >= config.errorRateBudget) return "errors";
   if (record.latency.p95 >= config.latencyP95BudgetMs) return "ack-latency";
   if (record.target.lagP95Ms >= config.lagP95BudgetMs) return "event-loop";
-  if (config.cpusPerTarget > 0 && record.target.cores >= config.cpusPerTarget * 0.9) return "cpu";
+  if (
+    config.cpusPerTarget > 0 &&
+    record.target.cores / Math.max(1, config.shards) >= config.cpusPerTarget * 0.9
+  )
+    return "cpu";
   if (previous) {
     const grew = record.players >= previous.players * 1.15;
     const flat = record.commandsPerSecond <= previous.commandsPerSecond * 1.03;
@@ -638,7 +707,9 @@ const saturationReason = (
 };
 
 const buildConfig = (args: Record<string, string>): RunConfig => {
-  const cpuLimit = cpusetSize(args["target-cpuset"] ?? "");
+  const shards = Math.max(1, Math.round(num(args.shards, 1)));
+  // 绑核集合是被测那一侧全部进程共用的：8 核 4 分片 = 每片 2 核，CPU 触顶判定要按每片算。
+  const cpusPerTarget = cpusetSize(args["target-cpuset"] ?? "") / shards;
   const mode = (args.mode ?? "ramp") as RunConfig["mode"];
   const fatSeats = num(args["fat-seats"], 150);
   const defaultMix: Record<GameKind, number> =
@@ -646,6 +717,8 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
   return {
     mode,
     label: args.label ?? (mode === "fat" ? "fat" : mode === "cap" ? "cap" : "ramp"),
+    machine: args.machine ?? "",
+    shards,
     mix: parseRatioMap(args.mix, defaultMix),
     seats: {
       faker: num(args["seats-faker"], mode === "fat" ? fatSeats : 8),
@@ -667,7 +740,7 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
       .map((value) => Number(value))
       .filter((value) => value > 0),
     fatSeats: num(args["fat-seats"], 150),
-    cpusPerTarget: cpuLimit,
+    cpusPerTarget,
     targetCpuset: args["target-cpuset"] ?? "",
     workerCpuset: args["worker-cpuset"] ?? "",
     latencyP95BudgetMs: num(args["max-ack-p95"], 500),
@@ -679,7 +752,7 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
 };
 
 const runRamp = async (
-  target: TargetHandle,
+  targets: TargetHandle[],
   poller: MetricPoller,
   config: RunConfig
 ): Promise<{ steps: StepRecord[]; stopReason: string }> => {
@@ -691,7 +764,7 @@ const runRamp = async (
       stopReason = "max-players";
       break;
     }
-    const outcome = await runStep(index, players, config.pace, target, poller, config);
+    const outcome = await runStep(index, players, config.pace, targets, poller, config);
     outcome.record.saturated = saturationReason(outcome.record, steps[steps.length - 1], config);
     steps.push(outcome.record);
     if (outcome.record.saturated) {
@@ -712,7 +785,7 @@ const projectPlayers = (players: number, wireMbps: number, config: RunConfig): n
 
 /** 闭环搜索：把带宽钉在 `--mbps` 之下，二分出此时的玩家数与其它硬件占用。 */
 const runCap = async (
-  target: TargetHandle,
+  targets: TargetHandle[],
   poller: MetricPoller,
   config: RunConfig
 ): Promise<{ steps: StepRecord[]; stopReason: string }> => {
@@ -726,7 +799,7 @@ const runCap = async (
       stopReason = "max-players";
       break;
     }
-    const { record } = await runStep(iteration, probe, config.pace, target, poller, config);
+    const { record } = await runStep(iteration, probe, config.pace, targets, poller, config);
     record.saturated = "bandwidth-cap";
     steps.push(record);
     const planned = record.allocation.reduce((sum, unit) => sum + unit.rooms, 0);
@@ -750,13 +823,13 @@ const runCap = async (
 };
 
 const runFat = async (
-  target: TargetHandle,
+  targets: TargetHandle[],
   poller: MetricPoller,
   config: RunConfig
 ): Promise<{ steps: StepRecord[]; stopReason: string }> => {
   const steps: StepRecord[] = [];
   for (const pace of config.paceSweep) {
-    const outcome = await runStep(steps.length + 1, config.fatSeats, pace, target, poller, {
+    const outcome = await runStep(steps.length + 1, config.fatSeats, pace, targets, poller, {
       ...config,
       pace,
     });
@@ -797,7 +870,7 @@ const readRunMeta = async (): Promise<RunMeta> => {
 
 const writeReport = async (
   config: RunConfig,
-  target: TargetHandle,
+  targets: TargetHandle[],
   steps: StepRecord[],
   stopReason: string,
   startedAt: number,
@@ -822,6 +895,7 @@ const writeReport = async (
     startedAt,
     durationMs: Date.now() - startedAt,
     host: {
+      machine: config.machine || os.hostname(),
       platform: `${os.platform()}-${os.arch()}`,
       release: os.release(),
       cpuModel: os.cpus()[0]?.model ?? "",
@@ -833,13 +907,14 @@ const writeReport = async (
     config,
     source: meta,
     target: {
-      port: target.port,
-      metricsPort: target.metricsPort,
-      wsUrl: target.wsUrl,
-      directory: target.directory,
+      shards: targets.length,
+      ports: targets.map((item) => item.port),
+      metricsPorts: targets.map((item) => item.metricsPort),
+      wsUrls: targets.map((item) => item.wsUrl),
+      directory: targets.map((item) => item.directory),
       cpuLimitCores: config.cpusPerTarget || null,
-      stdout: config.keepTargetLogs ? target.stdout : undefined,
-      stderrTail: target.stderr,
+      stdout: config.keepTargetLogs ? targets.map((item) => item.stdout).join("\n") : undefined,
+      stderrTail: targets.map((item) => item.stderr).join("\n"),
     },
     stopReason,
     headline: {
@@ -884,25 +959,28 @@ const main = async () => {
   console.log(
     `模式=${config.mode} 标签=${config.label} 混合=${GAMES.map((g) => `${g}:${(config.mix[g] * 100).toFixed(0)}%`).join(" ")} ` +
       `座位=${GAMES.map((g) => `${g}:${config.seats[g]}`).join(" ")} 节奏=${config.pace} 测量=${config.measureMs}ms ` +
-      `源码=${meta.commit}${meta.dirty ? "(有未提交改动)" : ""}`
+      `分片=${config.shards} 源码=${meta.commit}${meta.dirty ? "(有未提交改动)" : ""}`
   );
 
-  const target = await bootTarget(config);
-  const poller = new MetricPoller(target);
+  const targets = await bootFleet(config);
+  const poller = new MetricPoller(targets);
   poller.start();
-  console.log(`被测进程就绪 ${target.wsUrl}（指标 ${target.metricsUrl}/metrics）`);
+  console.log(
+    `被测进程就绪 ${targets.length} 片：${targets.map((target) => target.wsUrl).join(" ")}` +
+      `（指标 ${targets.map((target) => `${target.metricsPort}/metrics`).join(" ")}）`
+  );
   try {
     const { steps, stopReason } =
       config.mode === "cap"
-        ? await runCap(target, poller, config)
+        ? await runCap(targets, poller, config)
         : config.mode === "fat"
-          ? await runFat(target, poller, config)
-          : await runRamp(target, poller, config);
-    const { doc } = await writeReport(config, target, steps, stopReason, startedAt, meta);
+          ? await runFat(targets, poller, config)
+          : await runRamp(targets, poller, config);
+    const { doc } = await writeReport(config, targets, steps, stopReason, startedAt, meta);
     console.log(`饱和判定：${doc.headline.saturatingDimension}`);
   } finally {
     poller.stop();
-    await target.stop();
+    await Promise.all(targets.map((target) => target.stop()));
     console.log("被测进程与临时目录已清理");
   }
 };
