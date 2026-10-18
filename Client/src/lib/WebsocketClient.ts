@@ -76,9 +76,15 @@ export class WebSocketClient {
   private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> =
     [];
   private readonly path: string;
+  /**
+   * 每次建连时现算的握手查询串。一次性凭据（如反作弊房的 ticket）绝不能固定在构造时
+   * 读一次，否则重连必然带上废票。日志与指标仍只记 `path`，避免把凭据写进遥测。
+   */
+  private readonly handshakeQuery?: () => string;
 
-  constructor(path: string) {
+  constructor(path: string, handshakeQuery?: () => string) {
     this.path = path;
+    this.handshakeQuery = handshakeQuery;
     clients.add(this);
   }
 
@@ -108,7 +114,9 @@ export class WebSocketClient {
       // WebSocket 相对地址无法直接构造，必须显式补全协议与主机。
       const base = resolveServerBase();
       const absoluteBase = base || `${location.protocol}//${location.host}`;
-      this.socket = new WebSocket(absoluteBase.replace(/^http/, "ws") + this.path);
+      this.socket = new WebSocket(
+        absoluteBase.replace(/^http/, "ws") + this.path + (this.handshakeQuery?.() ?? "")
+      );
     } catch {
       this.scheduleReconnect();
       return;
@@ -351,7 +359,8 @@ export class WebSocketClient {
   }
 }
 
-export const createWebSocketClient = (path: string) => new WebSocketClient(path);
+export const createWebSocketClient = (path: string, handshakeQuery?: () => string) =>
+  new WebSocketClient(path, handshakeQuery);
 
 export const refreshSocketIdentities = (): void => {
   for (const client of clients) client.refreshIdentity();
