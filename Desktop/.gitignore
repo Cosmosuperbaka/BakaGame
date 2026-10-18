@@ -1,0 +1,12 @@
+# Rust 构建产物：本机编译输出与 Tauri 生成的上下文，不进 Git
+/src-tauri/target/
+/src-tauri/gen/
+
+# 打包出来的安装包/便携版一律不进 Git，制品走 R2 分发（见 README）
+/artifacts/
+*.exe
+
+# 本地临时
+.DS_Store
+
+# Cargo.lock 对一个可执行应用来说应当进 Git（锁定发布构建的依赖树），这里不忽略

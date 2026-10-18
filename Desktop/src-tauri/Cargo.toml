@@ -1,0 +1,41 @@
+[package]
+name = "bakagame-desktop"
+version = "0.1.0"
+description = "BakaGame 桌面壳：远程 URL 窗口 + 设备密钥签名 + 原生自检"
+authors = ["BakaGame"]
+edition = "2021"
+
+[lib]
+name = "bakagame_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "bakagame-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# WebView2 + 窗口 + IPC；不打包前端，壳只加载远程 URL
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 设备密钥对：Ed25519 私钥签名服务端 challenge。
+# 用 default features（fast + std + zeroize）：`zeroize` 让私钥在 drop 时清零，
+# 这一条对「私钥存在用户机器上」的威胁模型是实质收益，不要用 default-features = false 关掉。
+ed25519-dalek = "2"
+# 只为拿到 `OsRng`（`getrandom` feature 提供系统 CSPRNG）；种子生成走 `SigningKey::generate`
+rand_core = { version = "0.6", features = ["getrandom"] }
+base64 = "0.22"
+# 注册与通道证明（challenge / attest）走阻塞客户端：`http.rs` 是唯一构造点，
+# 只允许在后台线程或 `spawn_blocking` 里调用——`reqwest::blocking` 在 async 上下文会 panic。
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "native-tls"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# 只剥符号表：.rodata 里的条款文本与蜜标必须保持 `strings` 可读
+strip = true
+# 不设 panic = "abort"：后台线程（注册 / 自检）里的 panic 不应带走整个客户端

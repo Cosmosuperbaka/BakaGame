@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-client-bridge",
+  "description": "远程 URL 模式：允许 https://game.baka.website 页面通过初始化脚本注入的桥接调用壳的命令（签名、自检、通道票据）。域名变更要同步改这里，否则 sign/selfCheck/baka_ticket 都会被拒绝。",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "remote": {
+    "urls": ["https://game.baka.website"]
+  },
+  "permissions": ["core:default"]
+}
