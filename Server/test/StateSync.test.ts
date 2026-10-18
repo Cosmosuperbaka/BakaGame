@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { applyPatch } from "fast-json-patch";
 
 import { createEvent } from "../src/transport/Packets";
 import {
@@ -31,6 +32,45 @@ test("数组缩短时精准生成 remove 逆向删除操作", () => {
     { op: "remove", path: "/players/2" },
     { op: "remove", path: "/players/1" },
   ]);
+});
+
+test("聊天窗口挤掉最旧一条时只发两条操作", () => {
+  const message = (index: number) => ({
+    id: `c${index}`,
+    text: `第${index}条`,
+    at: 1_700_000_000_000 + index,
+  });
+  const window = (end: number) =>
+    Array.from({ length: 20 }, (_, index) => message(end - 19 + index));
+  const previous = { chat: window(20), status: { phase: "description" } };
+  const next = { chat: window(21), status: { phase: "description" } };
+  const operations = buildStatePatch(previous, next);
+
+  expect(operations).toEqual([
+    { op: "remove", path: "/chat/0" },
+    { op: "add", path: "/chat/19", value: message(21) },
+  ]);
+  // 与客户端同一套用补丁方式（validate=true）：套完必须正好等于新状态。
+  const applied = applyPatch(
+    JSON.parse(JSON.stringify(previous)) as object,
+    operations as never,
+    true
+  ).newDocument;
+  expect(applied).toEqual(next);
+});
+
+test("窗口挤动不再退化成整份重发", () => {
+  const encoder = new StateSyncEncoder();
+  const message = (index: number) => ({ id: `c${index}`, text: "x".repeat(60), at: index });
+  const window = (end: number) => ({
+    chat: Array.from({ length: 20 }, (_, index) => message(end - 19 + index)),
+  });
+  encoder.encode(createEvent("room.snapshot", window(20)));
+  const shifted = encoder.encode(createEvent("room.snapshot", window(21)));
+
+  // 通用差分在这里会产出比整份快照还大的补丁（20 条消息逐个改写下标），于是退回全量；
+  // 走窗口快路径后只剩两条操作，仍然发补丁。
+  expect(shifted[0]).toMatchObject({ payload: { mode: "patch", operations: { length: 2 } } });
 });
 
 test("编码器发送首个全量、连续补丁并省略无变化私有状态", () => {

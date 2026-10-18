@@ -48,6 +48,26 @@ const copyJsonValue = (value: unknown): unknown => {
 
 const sameScalar = (left: unknown, right: unknown) => Object.is(left, right);
 
+const sameJsonValue = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++)
+      if (!sameJsonValue(left[index], right[index])) return false;
+    return true;
+  }
+  if (left && right && typeof left === "object" && typeof right === "object") {
+    const source = left as Record<string, unknown>;
+    const target = right as Record<string, unknown>;
+    const keys = Object.keys(source);
+    if (keys.length !== Object.keys(target).length) return false;
+    for (const key of keys)
+      if (!(key in target) || !sameJsonValue(source[key], target[key])) return false;
+    return true;
+  }
+  return false;
+};
+
 // 只用来比较「补丁有没有接近全量」，不需要精确字节，所以不真的序列化。
 const numberLength = (value: number): number => {
   if (!Number.isFinite(value)) return 9;
@@ -83,6 +103,78 @@ const estimateSerializedLength = (value: unknown): number => {
     return total;
   }
   return 4;
+};
+
+/**
+ * 滑动窗口数组的补丁。
+ *
+ * `room.chat` 这类「装到 CHAT_LIMIT 就挤掉最旧一条」的数组，通用差分按同下标对齐：一条新消息
+ * 要把窗口里每个元素的每个字段都 replace 一次。实测 20 条的聊天窗口动一条，产出 60 个操作、
+ * 3.5 KB，比整份快照（1.9 KB）还大 81% —— 于是「补丁接近全量」那条规则把它退回整份重发，
+ * 每房间每个成员各付一次。认出「头部挤掉若干个、尾部追加若干个」这个形状后，同样的改动只要
+ * drop+append 个操作。
+ */
+const WINDOW_PROBE_BUDGET = 96;
+const WINDOW_MAX_REWRITE = 8;
+/** 影子标记：换成同一个引用，通用差分就不会再碰这段子树。 */
+const SHADOWED_ARRAY: Record<string, never> = {};
+
+const windowShiftOperations = (
+  path: string,
+  previous: unknown[],
+  next: unknown[],
+  probe: { budget: number }
+): StatePatchOperation[] | undefined => {
+  // 只认「头部挤掉至少一个、尾部追加至少一个、中间仍有重叠」的滑动窗口形状：
+  // 其余形状（纯追加、原地改一条、整体缩短）通用差分本来就更准，不该被这里接管。
+  for (let drop = 1; drop <= Math.min(previous.length - 1, WINDOW_MAX_REWRITE); drop++) {
+    const keep = previous.length - drop;
+    if (keep < 1) continue;
+    const appended = next.length - keep;
+    if (appended < 1 || appended > WINDOW_MAX_REWRITE) continue;
+    let aligned = true;
+    for (let index = 0; index < keep; index++) {
+      if (--probe.budget < 0) return undefined;
+      if (!sameJsonValue(previous[drop + index]!, next[index]!)) {
+        aligned = false;
+        break;
+      }
+    }
+    if (!aligned) continue;
+    const operations: StatePatchOperation[] = [];
+    for (let removed = 0; removed < drop; removed++)
+      operations.push({ op: "remove", path: `${path}/0` });
+    for (let added = 0; added < appended; added++)
+      operations.push({ op: "add", path: `${path}/${keep + added}`, value: next[keep + added] });
+    return operations;
+  }
+  return undefined;
+};
+
+/** 只看顶层数组：三个游戏的聊天、可见猜测集这些窗口都挂在顶层。 */
+const windowedArrays = (
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>
+): { operations: StatePatchOperation[]; keys: string[] } | undefined => {
+  const operations: StatePatchOperation[] = [];
+  const keys: string[] = [];
+  const probe = { budget: WINDOW_PROBE_BUDGET };
+  for (const key of Object.keys(previous)) {
+    const before = previous[key];
+    const after = next[key];
+    if (!Array.isArray(before) || !Array.isArray(after)) continue;
+    // 长度没变、末条也一样，就不可能既是挤出又是追加：留给通用差分，别把比较预算花光。
+    if (
+      before.length === after.length &&
+      sameJsonValue(before[before.length - 1] ?? null, after[after.length - 1] ?? null)
+    )
+      continue;
+    const shifted = windowShiftOperations(`/${key}`, before, after, probe);
+    if (!shifted || shifted.length === 0) continue;
+    operations.push(...shifted);
+    keys.push(key);
+  }
+  return keys.length > 0 ? { operations, keys } : undefined;
 };
 
 /**
@@ -130,6 +222,23 @@ export function buildStatePatch(previous: unknown, next: unknown): StatePatchOpe
     next !== null &&
     typeof next === "object"
   ) {
+    if (isRecord(previous) && isRecord(next)) {
+      const windowed = windowedArrays(previous, next);
+      if (windowed) {
+        // 已经把窗口数组接下的字段换成同一个引用再交给通用差分：它遇到同一对象就不产出操作，
+        // 其余字段仍按原来的深比较处理，两批操作作用在不同子树上，顺序无关。
+        const shadowPrevious: Record<string, unknown> = { ...previous };
+        const shadowNext: Record<string, unknown> = { ...next };
+        for (const key of windowed.keys) {
+          shadowPrevious[key] = SHADOWED_ARRAY;
+          shadowNext[key] = SHADOWED_ARRAY;
+        }
+        return [
+          ...(compare(shadowPrevious, shadowNext) as StatePatchOperation[]),
+          ...windowed.operations,
+        ];
+      }
+    }
     return compare(previous as object, next as object) as StatePatchOperation[];
   }
 
