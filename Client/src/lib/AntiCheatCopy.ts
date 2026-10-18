@@ -5,6 +5,9 @@
  * 桌面下载地址同样收在这里，将来换域名只改一行。
  */
 
+import type { BadgeProps } from "@/components/ui/Badge";
+import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@/types";
+
 /** 桌面客户端下载地址；文件名固定，链接随时可换。 */
 export const BAKA_CLIENT_DOWNLOAD_URL = "https://cdn.baka.website/BakaGame-latest-x64.exe";
 
@@ -50,3 +53,35 @@ export const SPECTATE_REJECT_LABEL = "拒绝";
  * 避开「本地计时先到、服务端状态补丁后到」造成的重复提示。
  */
 export const SPECTATE_APPROVAL_WATCHDOG_MS = 120_000 + 5_000;
+
+// ==================== 后台复核队列文案 ====================
+
+/** 复核条目的处置状态：只有人能在后台改，代码路径只会写「待复核」。 */
+export const ANTI_CHEAT_REVIEW_LABELS: Record<AntiCheatReviewStatus, string> = {
+  open: "待复核",
+  cleared: "已放行",
+  actioned: "已处置",
+};
+
+export const ANTI_CHEAT_REVIEW_BADGE: Record<
+  AntiCheatReviewStatus,
+  NonNullable<BadgeProps["variant"]>
+> = {
+  open: "subtle",
+  cleared: "matched",
+  actioned: "restricted",
+};
+
+/** 处置按钮文字：与状态标签分开写，点下去落的是「这一条的结论」。 */
+export const ANTI_CHEAT_REVIEW_ACTION_LABELS: Record<AntiCheatReviewStatus, string> = {
+  open: "退回待复核",
+  cleared: "标记放行",
+  actioned: "标记已处置",
+};
+
+/** 条目来自哪一类客户端；增强房只接受桌面端与移动端，网页出现即为异常。 */
+export const CEE_CLIENT_TYPE_LABELS: Record<AdminAntiCheatReview["clientType"], string> = {
+  web: "网页",
+  desktop: "桌面端",
+  mobile: "移动端",
+};

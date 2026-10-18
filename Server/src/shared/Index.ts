@@ -19,6 +19,8 @@ export type {
   AdminUserDetail,
   GameRecordDetail,
   AdminFeedbackDetail,
+  AntiCheatReviewStatus,
+  AdminAntiCheatReview,
   AdminRoom,
   AdminOverview,
   SentryOverview,

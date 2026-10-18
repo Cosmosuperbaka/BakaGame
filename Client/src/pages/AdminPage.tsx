@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Seo } from "@/components/common/Seo";
 import { LoginDialog } from "@/components/account/LoginDialog";
+import { AntiCheatPanel } from "@/components/admin/AntiCheatPanel";
 import { AuditPanel } from "@/components/admin/AuditPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { GamesPanel } from "@/components/admin/GamesPanel";
@@ -21,6 +22,7 @@ const TABS = [
   { value: "rooms", label: "房间", panel: RoomsPanel },
   { value: "users", label: "用户", panel: UsersPanel },
   { value: "feedback", label: "反馈", panel: FeedbackPanel },
+  { value: "anticheat", label: "反作弊复核", panel: AntiCheatPanel },
   { value: "games", label: "对局", panel: GamesPanel },
   { value: "audit", label: "审计", panel: AuditPanel },
   { value: "qq", label: "QQ 查询号", panel: QQLookupPanel },
@@ -50,7 +52,7 @@ function AdminTabs() {
         setParams(next === "overview" ? {} : { tab: next }, { replace: true })
       }
     >
-      {/* 窄屏七个标签放不下时横向滚动，不折行。 */}
+      {/* 窄屏八个标签放不下时横向滚动，不折行。 */}
       <div className="scrollbar-hidden mb-6 overflow-x-auto">
         <TabsList className="min-w-full">
           {TABS.map((item) => (

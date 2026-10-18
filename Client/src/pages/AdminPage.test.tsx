@@ -2,7 +2,14 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountProfile, AdminOverview, AdminRoom, AdminUser, QQLookupStatus } from "@/types";
+import type {
+  AccountProfile,
+  AdminAntiCheatReview,
+  AdminOverview,
+  AdminRoom,
+  AdminUser,
+  QQLookupStatus,
+} from "@/types";
 import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
 import AdminPage from "./AdminPage";
 
@@ -18,6 +25,7 @@ const admin = vi.hoisted(() => ({
     revokeSessions: vi.fn(),
   },
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
+  antiCheat: { list: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
   qq: { status: vi.fn(), refreshNames: vi.fn() },
@@ -111,6 +119,26 @@ const active: QQLookupStatus = {
   nickname: "查询号",
   checkedAt: "2026-10-13T00:00:00.000Z",
   error: null,
+};
+
+const review: AdminAntiCheatReview = {
+  id: "rev-1",
+  roomId: "ABCD",
+  roundNumber: 3,
+  playerName: "Bob",
+  player: { id: "u-1", name: "Alice", qqNumber: "10001", image: null },
+  clientType: "mobile",
+  score: 4,
+  reasons: ["节奏恒定（间隔变异系数 0.012）", "未检索直接猜（4/4 次）"],
+  features: {
+    intervals: [800, 790, 810, 795],
+    cv: 0.012,
+    noSearchGuesses: 4,
+    guesses: 4,
+    firstGuessCorrect: true,
+  },
+  status: "open",
+  createdAt: "2026-10-18T10:05:00.000Z",
 };
 
 const renderAdmin = (path = "/admin") => {
@@ -277,5 +305,34 @@ describe("管理后台", () => {
     renderAdmin("/admin?tab=qq");
     expect(await screen.findByText("NapCat 当前没有登录任何 QQ 号")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
+  });
+
+  it("复核队列按状态列出，处置失败留在弹窗内、成功后重新拉取", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.setStatus.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      ok: true,
+    });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    expect(admin.antiCheat.list).toHaveBeenCalledWith({ status: "open", limit: 20, offset: 0 });
+    expect(within(table).getByText("移动端")).toBeInTheDocument();
+    expect(
+      within(table).getByText("节奏恒定（间隔变异系数 0.012）；未检索直接猜（4/4 次）")
+    ).toBeInTheDocument();
+
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("未检索直接猜（4/4 次）")).toBeInTheDocument();
+    expect(within(dialog).getByText("0.012")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(await within(dialog).findByRole("alert")).toBeInTheDocument();
+    expect(admin.antiCheat.list).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+    expect(admin.antiCheat.list).toHaveBeenCalledTimes(2);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
   });
 });

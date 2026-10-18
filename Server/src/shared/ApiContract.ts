@@ -596,6 +596,7 @@ export type GameRecordDetail = z.infer<typeof gameRecordDetailSchema>;
 export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
 export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
 export type AdminAntiCheatReview = z.infer<typeof adminAntiCheatReviewSchema>;
+export type AntiCheatReviewStatus = z.infer<typeof antiCheatReviewStatusSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;
 export type AdminOverview = z.infer<typeof adminOverviewSchema>;

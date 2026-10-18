@@ -1,3 +1,4 @@
+import type { AntiCheatReviewStatus } from "../shared/ApiContract";
 import type { ClientChannelProof } from "../shared/Model";
 
 /**
@@ -183,8 +184,8 @@ export interface CEEAntiCheatReviewQueue {
   add(review: CEEAntiCheatReview): void;
 }
 
-/** 复核条目状态：只有人能在后台改，任何代码路径都只写 `open`。 */
-export type CEEAntiCheatReviewStatus = "open" | "cleared" | "actioned";
+/** 复核条目状态：只有人能在后台改，任何代码路径都只写 `open`。词表与后台契约同一份。 */
+export type CEEAntiCheatReviewStatus = AntiCheatReviewStatus;
 
 /** 落库之后的一条条目：`id` 由存储产生，`status` 是人在后台给的处置结果。 */
 export interface CEEAntiCheatReviewItem extends CEEAntiCheatReview {
