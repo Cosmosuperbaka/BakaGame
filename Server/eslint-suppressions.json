@@ -1,7 +1,7 @@
 {
   "src/application/SonGuessrService.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/application/WhoIsFakerService.ts": {

@@ -867,6 +867,76 @@ export const scoreAnimeSongCandidate = (
   return score;
 };
 
+/**
+ * 为一个 Bangumi 音乐条目拼出常规检索词，并标出其中「带番剧上下文」的那几条。
+ *
+ * 返回的两个数组按原顺序逐条消耗检索预算，顺序即优先级，不可重排。
+ */
+const buildTrackQueries = (
+  track: BangumiMusicTrack,
+  anime: BangumiSubjectDetails,
+): { queries: string[]; scopeQueries: string[] } => {
+  const queries: string[] = [];
+  // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
+  // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
+  // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
+  const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
+    ? track.artist.trim()
+    : "";
+  if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
+  if (anime.name) queries.push(`${track.title} ${anime.name}`);
+  if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
+  queries.push(track.title);
+  const broadQueries = [
+    anime.name ? `${track.title} ${anime.name}` : "",
+    anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+    track.title,
+  ].filter((query) => query && !queries.includes(query));
+  queries.push(...broadQueries);
+
+  const scopeQueries = [
+    anime.name ? `${track.title} ${anime.name}` : "",
+    anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
+  ].filter(Boolean);
+
+  return { queries, scopeQueries };
+};
+
+/**
+ * 用「有出题资格」过滤检索候选，再按原版优先分降序、同分保持原顺序排列。
+ */
+const rankEvidencedCandidates = (
+  matched: { candidates: SongSearchResult[]; animeScopedIds: Set<string> },
+  track: BangumiMusicTrack,
+  animeNames: string[],
+): SongSearchResult[] => matched.candidates
+  .map((candidate, index) => {
+    const options = {
+      animeScoped: matched.animeScopedIds.has(candidate.id),
+      animeNames,
+    };
+    return {
+      candidate,
+      index,
+      score: scoreAnimeSongCandidate(candidate, track, options),
+      evidenced: hasAnimeSongEvidence(candidate, track, options),
+    };
+  })
+  .filter((entry) => entry.evidenced)
+  .sort((left, right) => right.score - left.score || left.index - right.index)
+  .map((entry) => entry.candidate);
+
+/** 手动选曲的条目匹配上下文：一次解析内共享的检索资源、预算与已产出的结果。 */
+interface AnimeTrackMatchContext {
+  provider: MusicProvider;
+  cookie: MusicCookieInput | undefined;
+  anime: BangumiSubjectDetails;
+  animeNames: string[];
+  budget: { search: number; detail: number };
+  results: BangumiSongCandidate[];
+  seenSongIds: Set<string>;
+}
+
 const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
 const MAX_LYRIC_LINE_DURATION_MS = 12_000;
 /**
@@ -2977,112 +3047,106 @@ export class SonGuessrService implements AdminRoomControl {
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
-    const results: BangumiSongCandidate[] = [];
-    const seenSongIds = new Set<string>();
+    const ctx: AnimeTrackMatchContext = {
+      provider,
+      cookie,
+      anime,
+      animeNames,
+      budget,
+      results: [],
+      seenSongIds: new Set<string>(),
+    };
 
     for (const track of anime.musicTracks) {
       if (budget.search <= 0) break;
-      const queries: string[] = [];
-      // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
-      // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
-      // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
-      const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
-        ? track.artist.trim()
-        : "";
-      if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
-      if (anime.name) queries.push(`${track.title} ${anime.name}`);
-      if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
-      queries.push(track.title);
-      const broadQueries = [
-        anime.name ? `${track.title} ${anime.name}` : "",
-        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-        track.title,
-      ].filter((query) => query && !queries.includes(query));
-      queries.push(...broadQueries);
-
-      const scopeQueries = [
-        anime.name ? `${track.title} ${anime.name}` : "",
-        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-      ].filter(Boolean);
-
-      let matchedCandidates: SongSearchResult[] = [];
-      try {
-        const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
-        matchedCandidates = matched.candidates
-          .map((candidate, index) => {
-            const options = {
-            animeScoped: matched.animeScopedIds.has(candidate.id),
-            animeNames,
-          };
-            return {
-              candidate,
-              index,
-              score: scoreAnimeSongCandidate(candidate, track, options),
-              evidenced: hasAnimeSongEvidence(candidate, track, options),
-            };
-          })
-          .filter((entry) => entry.evidenced)
-          .sort((left, right) => right.score - left.score || left.index - right.index)
-          .map((entry) => entry.candidate);
-      } catch (error) {
-        if (!isUnusableSongCandidate(error)) throw error;
-      }
-
-      /** 候选是否来自专辑兜底 —— 决定列表是只取最高分一首还是整张列出（见下方展示规则）。 */
-      let albumFallback = false;
-      if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
-        try {
-          matchedCandidates = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
-          albumFallback = true;
-        } catch (error) {
-          if (!isUnusableSongCandidate(error)) throw error;
-        }
-      }
-
-      // 手动选曲列表的展示规则：常规检索的候选已按原版优先分降序排列，每个条目只保留
-      // **最高分的那一个** —— 同一首歌在网易云常有原版 / 翻唱 / 现场 / 器乐等多个版本，
-      // 全部列出会把列表刷成「好几首一样的 OP」并把翻唱混进来（用户实测反馈）。
-      // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
-      // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
-      for (const song of albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)) {
-        if (!seenSongIds.has(song.id)) {
-          seenSongIds.add(song.id);
-          // 类型同样按「歌曲自身文本」细化（与自动出题的 refineTrackKind 同源）。
-          results.push({
-            track: {
-              ...track,
-              kind: refineTrackKindByText(track.kind, `${song.title} ${song.album ?? ""}`),
-            },
-            song,
-          });
-        }
-      }
+      await this.matchAnimeTrack(ctx, track);
     }
 
-    if (results.length === 0 && budget.search > 0) {
+    await this.fillAnimeLevelFallback(ctx);
+
+    return ctx.results;
+  }
+
+  /** 单个音乐条目：常规检索 → 专辑兜底 → 按展示规则写入结果。 */
+  private async matchAnimeTrack(ctx: AnimeTrackMatchContext, track: BangumiMusicTrack): Promise<void> {
+    const { queries, scopeQueries } = buildTrackQueries(track, ctx.anime);
+
+    let matchedCandidates: SongSearchResult[] = [];
+    try {
+      const matched = await this.searchAnimeTrackCandidates(
+        ctx.provider, queries, track, ctx.cookie, ctx.budget, scopeQueries,
+      );
+      matchedCandidates = rankEvidencedCandidates(matched, track, ctx.animeNames);
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+    }
+
+    /** 候选是否来自专辑兜底 —— 决定列表是只取最高分一首还是整张列出（见下方展示规则）。 */
+    let albumFallback = false;
+    if (matchedCandidates.length === 0 && isAlbumLikeTrackKind(track.kind)) {
       try {
-        const animeLevelSongs = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
-        for (const song of animeLevelSongs) {
-          if (!seenSongIds.has(song.id)) {
-            seenSongIds.add(song.id);
-            // 番剧级兜底没有「条目」可言，类型只能从歌曲自身文本推（原声带 / 特典 CD /
-            // 角色歌…）；推不出来时才落到主题曲。
-            results.push({
-              track: {
-                title: song.title,
-                artist: song.artist,
-                kind: refineTrackKindByText("theme", `${song.title} ${song.album ?? ""}`),
-              },
-              song,
-            });
-          }
-        }
+        matchedCandidates = await this.resolveAlbumTrackCandidates(
+          ctx.provider, track, ctx.anime, ctx.cookie, ctx.budget,
+        );
+        albumFallback = true;
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
       }
     }
 
-    return results;
+    // 手动选曲列表的展示规则：常规检索的候选已按原版优先分降序排列，每个条目只保留
+    // **最高分的那一个** —— 同一首歌在网易云常有原版 / 翻唱 / 现场 / 器乐等多个版本，
+    // 全部列出会把列表刷成「好几首一样的 OP」并把翻唱混进来（用户实测反馈）。
+    // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
+    // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
+    this.registerMatchedSongs(ctx, track, albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1));
+  }
+
+  /** 把条目候选写进手动选曲列表；已在别的条目出现过的歌曲直接跳过。 */
+  private registerMatchedSongs(
+    ctx: AnimeTrackMatchContext,
+    track: BangumiMusicTrack,
+    candidates: SongSearchResult[],
+  ): void {
+    for (const song of candidates) {
+      if (ctx.seenSongIds.has(song.id)) continue;
+      ctx.seenSongIds.add(song.id);
+      // 类型同样按「歌曲自身文本」细化（与自动出题的 refineTrackKind 同源）。
+      ctx.results.push({
+        track: {
+          ...track,
+          kind: refineTrackKindByText(track.kind, `${song.title} ${song.album ?? ""}`),
+        },
+        song,
+      });
+    }
+  }
+
+  /** 番剧级兜底：条目全无命中且有剩余预算时，按整张番剧再搜一次。 */
+  private async fillAnimeLevelFallback(ctx: AnimeTrackMatchContext): Promise<void> {
+    if (ctx.results.length > 0 || ctx.budget.search <= 0) return;
+
+    try {
+      const animeLevelSongs = await this.resolveAnimeLevelCandidates(
+        ctx.provider, ctx.anime, ctx.cookie, ctx.budget,
+      );
+      for (const song of animeLevelSongs) {
+        if (ctx.seenSongIds.has(song.id)) continue;
+        ctx.seenSongIds.add(song.id);
+        // 番剧级兜底没有「条目」可言，类型只能从歌曲自身文本推（原声带 / 特典 CD /
+        // 角色歌…）；推不出来时才落到主题曲。
+        ctx.results.push({
+          track: {
+            title: song.title,
+            artist: song.artist,
+            kind: refineTrackKindByText("theme", `${song.title} ${song.album ?? ""}`),
+          },
+          song,
+        });
+      }
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+    }
   }
 
   private refineTrackKind(kind: BangumiMusicTrackKind, song: SongDetails): BangumiMusicTrackKind {
