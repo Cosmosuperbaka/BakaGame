@@ -49,11 +49,6 @@
       "count": 2
     }
   },
-  "src/lib/DescriptionColumns.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/pages/SonGuessrRoomPage.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1

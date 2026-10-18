@@ -60,6 +60,63 @@ export function pendingColumn(status: SpeechStatus): { key: string; playerIds: s
   };
 }
 
+/** 三类列的编号集合，加上「该列应发言的人」的登记表。 */
+interface ColumnBuckets {
+  cycles: Set<number>;
+  ties: Set<number>;
+  supplements: Set<number>;
+  /** 按列 key 取应发言名单，首次访问时建立。 */
+  expectFor(key: string): Set<string>;
+}
+
+const createColumnBuckets = (): ColumnBuckets => {
+  const expected = new Map<string, Set<string>>();
+  return {
+    cycles: new Set<number>(),
+    ties: new Set<number>(),
+    supplements: new Set<number>(),
+    expectFor(key: string) {
+      const found = expected.get(key);
+      if (found) return found;
+      const created = new Set<string>();
+      expected.set(key, created);
+      return created;
+    },
+  };
+};
+
+/** 实际发言过的记录决定列的存在与格子归属。 */
+function collectSpokenColumns(records: DescriptionRecord[], buckets: ColumnBuckets): void {
+  for (const record of records) {
+    if (record.kind === "tieBreak") buckets.ties.add(record.tieBreakIndex ?? 1);
+    else if (record.kind === "supplement") buckets.supplements.add(record.supplementIndex ?? 1);
+    else buckets.cycles.add(record.cycle);
+    buckets.expectFor(columnKeyOf(record)).add(record.playerId);
+  }
+}
+
+/** 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。 */
+function collectPendingColumns(status: SpeechStatus, buckets: ColumnBuckets): void {
+  const pending = pendingColumn(status);
+  if (!pending) return;
+  const { key, playerIds } = pending;
+  if (key.startsWith("cycle-")) buckets.cycles.add(Number(key.slice(6)));
+  else if (key.startsWith("tie-")) buckets.ties.add(Number(key.slice(4)));
+  else buckets.supplements.add(Number(key.slice(4)));
+  const bucket = buckets.expectFor(key);
+  for (const playerId of playerIds) bucket.add(playerId);
+}
+
+/** 进行中那一列的应发言玩家按名单顺序补出预期顺位。 */
+function orderPendingSpeakers(
+  status: SpeechStatus,
+  setOrder: (playerId: string, colKey: string, order: number) => void,
+): void {
+  const pending = pendingColumn(status);
+  if (!pending) return;
+  pending.playerIds.forEach((playerId, index) => setOrder(playerId, pending.key, index + 1));
+}
+
 /**
  * 按“正常轮次 → 平票 PK → 补充发言”的顺序展开列，
  * 并建立 玩家 × 列 的发言索引与顺位索引，供表格与玩家栏共用。
@@ -72,59 +129,30 @@ export function buildDescriptionColumns(
   descriptions: DescriptionRecord[],
   status?: SpeechStatus,
 ): DescriptionColumnModel {
-  const cycles = new Set<number>();
-  const ties = new Set<number>();
-  const supplements = new Set<number>();
-  // columnKey → 该列应发言的玩家；先由实际发言记录填充。
-  const expected = new Map<string, Set<string>>();
-
-  const expectFor = (key: string) => {
-    const found = expected.get(key);
-    if (found) return found;
-    const created = new Set<string>();
-    expected.set(key, created);
-    return created;
-  };
-
-  for (const record of descriptions) {
-    if (record.kind === "tieBreak") ties.add(record.tieBreakIndex ?? 1);
-    else if (record.kind === "supplement") supplements.add(record.supplementIndex ?? 1);
-    else cycles.add(record.cycle);
-    expectFor(columnKeyOf(record)).add(record.playerId);
-  }
-
+  const buckets = createColumnBuckets();
+  collectSpokenColumns(descriptions, buckets);
   // 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。
-  if (status) {
-    const pending = pendingColumn(status);
-    if (pending) {
-      const { key, playerIds } = pending;
-      if (key.startsWith("cycle-")) cycles.add(Number(key.slice(6)));
-      else if (key.startsWith("tie-")) ties.add(Number(key.slice(4)));
-      else supplements.add(Number(key.slice(4)));
-      const bucket = expectFor(key);
-      for (const playerId of playerIds) bucket.add(playerId);
-    }
-  }
+  if (status) collectPendingColumns(status, buckets);
 
   const ascending = (a: number, b: number) => a - b;
   const columns: DescriptionColumn[] = [
-    ...[...cycles].sort(ascending).map((cycle) => ({
+    ...[...buckets.cycles].sort(ascending).map((cycle) => ({
       key: `cycle-${cycle}`,
       label: `第 ${cycle} 轮`,
       tone: "default" as const,
-      expectedPlayerIds: expectFor(`cycle-${cycle}`),
+      expectedPlayerIds: buckets.expectFor(`cycle-${cycle}`),
     })),
-    ...[...ties].sort(ascending).map((index) => ({
+    ...[...buckets.ties].sort(ascending).map((index) => ({
       key: `tie-${index}`,
       label: `平票 ${index}`,
       tone: "tieBreak" as const,
-      expectedPlayerIds: expectFor(`tie-${index}`),
+      expectedPlayerIds: buckets.expectFor(`tie-${index}`),
     })),
-    ...[...supplements].sort(ascending).map((index) => ({
+    ...[...buckets.supplements].sort(ascending).map((index) => ({
       key: `sup-${index}`,
       label: `补充 ${index}`,
       tone: "supplement" as const,
-      expectedPlayerIds: expectFor(`sup-${index}`),
+      expectedPlayerIds: buckets.expectFor(`sup-${index}`),
     })),
     // 列序在三类列全部展开后才确定，因此统一在这里补齐。
   ].map((column, index) => ({ ...column, index }));
@@ -153,14 +181,7 @@ export function buildDescriptionColumns(
   }
 
   // 补齐进行中那一列的应发言玩家的预期发言顺位
-  if (status) {
-    const pending = pendingColumn(status);
-    if (pending) {
-      pending.playerIds.forEach((playerId, index) => {
-        setOrder(playerId, pending.key, index + 1);
-      });
-    }
-  }
+  if (status) orderPendingSpeakers(status, setOrder);
 
   return { columns, byPlayer, playerOrder };
 }
