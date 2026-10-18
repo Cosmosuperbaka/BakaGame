@@ -12,9 +12,53 @@ import { useSupplementRequest } from "../layout/SupplementRequestControl";
 import { AbstainOption } from "../layout/AbstainOption";
 import { ActionReceipt, TargetOption } from "../layout/ActionChoice";
 
-export function VotingPhase() {
+/** 投票候选：平票 PK 只在候选人里选，任何情况下都不投自己，测试房间也一样。 */
+const pickVoteTargets = <P extends { id: string }>(
+  alivePlayers: P[],
+  tieBreakCandidateIds: string[],
+  selfId: string | undefined,
+  isTieBreak: boolean,
+): P[] => {
+  if (!isTieBreak || tieBreakCandidateIds.length === 0) return alivePlayers.filter((player) => player.id !== selfId);
+  return alivePlayers.filter((player) => tieBreakCandidateIds.includes(player.id) && player.id !== selfId);
+};
+
+/** 投票视图：谁能投、投给谁、回执显示谁，全部由房间快照与私有态推出。 */
+const useVotingView = () => {
   const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
   const privateState = useWhoIsFakerStore((state) => state.privateState);
+  const selfId = privateState?.playerId;
+  const isQuestioner = privateState?.isQuestioner ?? false;
+  const me = snapshot.players.find((player) => player.id === selfId);
+  const amAlive = me?.roundStatus === "alive";
+  const votedId = privateState?.myCurrentVoteTargetId ?? null;
+  const isTieBreak = snapshot.status.phase === "tieBreak";
+  const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
+  const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
+  const targets = pickVoteTargets(alivePlayers, tieBreakCandidateIds, selfId, isTieBreak);
+  const isCandidate = tieBreakCandidateIds.includes(selfId ?? "");
+  const canVote = Boolean(amAlive && !isQuestioner && !votedId && (!isTieBreak || !isCandidate));
+  const abstained = votedId === ABSTAIN_TARGET_ID;
+  // 弃票没有收件人；已出局的目标不在候选里，回退到全量玩家查名。
+  const targetPlayerName = abstained
+    ? undefined
+    : (targets.find((target) => target.id === votedId)?.name ??
+      snapshot.players.find((player) => player.id === votedId)?.name);
+  const showReceipt = amAlive && !isQuestioner && Boolean(votedId);
+  return { me, isQuestioner, isTieBreak, amAlive, votedId, abstained, targetPlayerName, isCandidate, canVote, showReceipt, targets };
+};
+
+/** 回执文案：弃票说明本轮不投出任何一票，投人则点名收件人。 */
+const receiptTitle = (abstained: boolean) => (abstained ? "已弃票" : "已完成投票");
+const receiptDetail = (abstained: boolean, targetPlayerName?: string) =>
+  abstained
+    ? "本轮不投出任何一票"
+    : targetPlayerName
+      ? <>投给 <span className="font-medium text-foreground">{targetPlayerName}</span></>
+      : null;
+
+export function VotingPhase() {
+  const { me, isQuestioner, isTieBreak, amAlive, votedId, abstained, targetPlayerName, isCandidate, canVote, showReceipt, targets } = useVotingView();
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
   const action = usePhaseAction();
@@ -23,23 +67,6 @@ export function VotingPhase() {
   const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
   // 回执从被点的那张选项上展开
   const { origin, capture } = useOriginTracker();
-  const isQuestioner = privateState?.isQuestioner ?? false;
-  const me = snapshot.players.find((player) => player.id === privateState?.playerId);
-  const amAlive = me?.roundStatus === "alive";
-  const votedId = privateState?.myCurrentVoteTargetId ?? null;
-  const isTieBreak = snapshot.status.phase === "tieBreak";
-  const tieBreakCandidateIds = snapshot.status.tieBreakCandidateIds ?? [];
-  const alivePlayers = snapshot.players.filter((player) => player.roundStatus === "alive");
-  // 自己永远不在投票目标里，测试房间也一样：测试房要复现真实规则。
-  const baseTargets = alivePlayers.filter((player) => player.id !== privateState?.playerId);
-  const canVote = Boolean(amAlive && !isQuestioner && !votedId && (!isTieBreak || !tieBreakCandidateIds.includes(privateState?.playerId ?? "")));
-  const targets =
-    isTieBreak && tieBreakCandidateIds.length > 0
-      ? alivePlayers.filter(
-          (player) =>
-            tieBreakCandidateIds.includes(player.id) && player.id !== privateState?.playerId,
-        )
-      : baseTargets;
 
   const handleVote = useCallback(
     async (targetId: string) => {
@@ -71,14 +98,6 @@ export function VotingPhase() {
   const handleCancelVote = () => void runPending("cancel", "game.cancelVote");
   const handleAdvance = () => void runPending("advance", "game.advancePhase");
   const supplement = useSupplementRequest({ canRequest: !isTieBreak, action });
-
-  const abstained = votedId === ABSTAIN_TARGET_ID;
-  const targetPlayerName = abstained
-    ? undefined
-    : (targets.find((target) => target.id === votedId)?.name ??
-      snapshot.players.find((player) => player.id === votedId)?.name);
-  const isCandidate = tieBreakCandidateIds.includes(privateState?.playerId ?? "");
-  const showReceipt = amAlive && !isQuestioner && Boolean(votedId);
 
   return (
     <div className="mx-auto max-w-lg space-y-6">
@@ -128,12 +147,8 @@ export function VotingPhase() {
           ) : showReceipt ? (
             <ActionReceipt
               key="receipt"
-              title={abstained ? "已弃票" : "已完成投票"}
-              detail={
-                abstained ? "本轮不投出任何一票" : targetPlayerName ? (
-                  <>投给 <span className="font-medium text-foreground">{targetPlayerName}</span></>
-                ) : null
-              }
+              title={receiptTitle(abstained)}
+              detail={receiptDetail(abstained, targetPlayerName)}
               origin={origin}
               busy={pendingCommand === "cancel"}
               onUndo={handleCancelVote}
