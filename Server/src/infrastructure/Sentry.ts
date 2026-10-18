@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/bun";
+import type { ErrorEvent } from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
 import { resolveServerRelease } from "./Release";
 
@@ -34,6 +35,29 @@ export const redactLogText = (text: string): string => text
     "$1***[REDACTED]",
   );
 
+/** 敏感键表按归一后的形状索引：小写、去路径前缀、去分隔符。 */
+const normalizePropertyKey = (key: string): string => key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
+
+const BEARER_TOKEN_KEYS = ["accesstoken", "refreshtoken"];
+
+/**
+ * 单个属性值的脱敏口径：`sample` 是原始上报正文整段丢弃；顶级凭据一律全掩码；
+ * 其余敏感串保留前 4 位供定位故障；普通字段递归下去。
+ */
+const redactProperty = (key: string, value: unknown, recurse: () => unknown): unknown => {
+  if (key === "sample" && typeof value === "string") return "[OMITTED_RAW_PAYLOAD]";
+  const normalizedKey = normalizePropertyKey(key);
+  if (FULL_MASK_KEYS.has(normalizedKey)) return "***[REDACTED]";
+  if (!SENSITIVE_KEYS.has(normalizedKey) && !BEARER_TOKEN_KEYS.includes(normalizedKey)) return recurse();
+  return typeof value === "string" && value.length > 8 ? `${value.slice(0, 4)}***[REDACTED]` : "***[REDACTED]";
+};
+
+/** Error 的诊断字段不可枚举；cause 与自有字段仍走统一脱敏。 */
+const toPlainSource = (value: object): object => value instanceof Error
+  ? { errorName: value.name, errorMessage: value.message, stack: value.stack,
+      ...("cause" in value ? { cause: value.cause } : {}), ...value }
+  : value;
+
 export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknown => {
   const ancestors = new WeakSet<object>();
   const visit = (value: unknown, level: number): unknown => {
@@ -44,22 +68,13 @@ export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknow
     ancestors.add(value);
     try {
       if (Array.isArray(value)) return value.slice(0, maxProperties).map((item) => visit(item, level + 1));
-      // Error 的诊断字段不可枚举；cause 与自有字段仍走统一脱敏。
-      const source = value instanceof Error
-        ? { errorName: value.name, errorMessage: value.message, stack: value.stack,
-            ...("cause" in value ? { cause: value.cause } : {}), ...value }
-        : value;
-      const entries = Object.entries(source);
+      const entries = Object.entries(toPlainSource(value));
       const result: Record<string, unknown> = {};
       for (const [key, item] of entries.slice(0, maxProperties)) {
-        const normalizedKey = key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
-        const fullMask = FULL_MASK_KEYS.has(normalizedKey);
-        const sensitive = fullMask || SENSITIVE_KEYS.has(normalizedKey) || ["accesstoken", "refreshtoken"].includes(normalizedKey);
-        const safe = key === "sample" && typeof item === "string" ? "[OMITTED_RAW_PAYLOAD]" : sensitive
-          ? !fullMask && typeof item === "string" && item.length > 8
-            ? `${item.slice(0, 4)}***[REDACTED]` : "***[REDACTED]"
-          : visit(item, level + 1);
-        Object.defineProperty(result, key, { value: safe, enumerable: true, configurable: true });
+        Object.defineProperty(result, key, {
+          value: redactProperty(key, item, () => visit(item, level + 1)),
+          enumerable: true, configurable: true,
+        });
       }
       if (entries.length > maxProperties) result._truncated = `[TRUNCATED_${entries.length - maxProperties}_PROPERTIES]`;
       return result;
@@ -106,6 +121,37 @@ const resolveSampleRate = (value: string | undefined, fallback: number): number 
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
 };
 
+/**
+ * 事件根节点的可控字段：只脱敏值本身，不截断根节点，
+ * 保留异常栈、SDK 元数据和协议结构。
+ */
+const redactEventFields = (event: ErrorEvent): void => {
+  if (event.extra) event.extra = redactData(event.extra) as typeof event.extra;
+  if (event.contexts) event.contexts = redactData(event.contexts) as typeof event.contexts;
+  if (event.user) event.user = redactData(event.user) as typeof event.user;
+  if (event.tags) event.tags = redactData(event.tags) as typeof event.tags;
+  if (event.request) event.request = redactData(event.request) as typeof event.request;
+  if (event.message) event.message = redactLogText(event.message);
+};
+
+/** 异常文本、栈帧里的变量表与文件名都走同一条脱敏链。 */
+const redactEventExceptions = (event: ErrorEvent): void => {
+  for (const exception of event.exception?.values ?? []) {
+    if (exception.value) exception.value = redactLogText(exception.value);
+    for (const frame of exception.stacktrace?.frames ?? []) {
+      if (frame.vars) frame.vars = redactData(frame.vars) as typeof frame.vars;
+      if (frame.filename) frame.filename = redactLogText(frame.filename);
+    }
+  }
+};
+
+const redactEventBreadcrumbs = (event: ErrorEvent): void => {
+  for (const breadcrumb of event.breadcrumbs ?? []) {
+    if (breadcrumb.message) breadcrumb.message = redactLogText(breadcrumb.message);
+    if (breadcrumb.data) breadcrumb.data = redactData(breadcrumb.data) as typeof breadcrumb.data;
+  }
+};
+
 export const initServerSentry = (env: AppEnv): void => {
   if (!env.sentryDsn) {
     return;
@@ -131,24 +177,9 @@ export const initServerSentry = (env: AppEnv): void => {
     enableLogs: true,
     sendDefaultPii: false,
     beforeSend(event) {
-      // 不截断事件根节点，保留异常栈、SDK 元数据和协议结构。
-      if (event.extra) event.extra = redactData(event.extra) as typeof event.extra;
-      if (event.contexts) event.contexts = redactData(event.contexts) as typeof event.contexts;
-      if (event.user) event.user = redactData(event.user) as typeof event.user;
-      if (event.tags) event.tags = redactData(event.tags) as typeof event.tags;
-      if (event.request) event.request = redactData(event.request) as typeof event.request;
-      if (event.message) event.message = redactLogText(event.message);
-      for (const exception of event.exception?.values ?? []) {
-        if (exception.value) exception.value = redactLogText(exception.value);
-        for (const frame of exception.stacktrace?.frames ?? []) {
-          if (frame.vars) frame.vars = redactData(frame.vars) as typeof frame.vars;
-          if (frame.filename) frame.filename = redactLogText(frame.filename);
-        }
-      }
-      for (const breadcrumb of event.breadcrumbs ?? []) {
-        if (breadcrumb.message) breadcrumb.message = redactLogText(breadcrumb.message);
-        if (breadcrumb.data) breadcrumb.data = redactData(breadcrumb.data) as typeof breadcrumb.data;
-      }
+      redactEventFields(event);
+      redactEventExceptions(event);
+      redactEventBreadcrumbs(event);
       return event;
     },
     beforeSendLog(log) {
