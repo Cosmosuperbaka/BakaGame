@@ -31,7 +31,6 @@ export const CEE_SEARCH_CONNECTION_MAX = 60;
  * 取十倍是因为握手配额允许同一地址开 64 条在途连接——不按地址聚合等于没限流。
  */
 export const CEE_SEARCH_IP_MULTIPLIER = 10;
-export const CEE_SEARCH_IP_MAX = CEE_SEARCH_CONNECTION_MAX * CEE_SEARCH_IP_MULTIPLIER;
 /**
  * 点进作品看角色列表给检索一半的额度：正常玩家一次只点一两下，
  * 但它和关键词检索的成本不同量级，共用一桶会互相挤占。
