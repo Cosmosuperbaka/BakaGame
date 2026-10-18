@@ -24,11 +24,6 @@
       "count": 1
     }
   },
-  "src/hooks/UseSongRoomLifecycle.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
   "src/pages/WhoIsFakerRoomPage.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1

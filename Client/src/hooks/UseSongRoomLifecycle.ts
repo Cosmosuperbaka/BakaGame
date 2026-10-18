@@ -54,6 +54,38 @@ interface MusicSessionTask {
   settled: boolean;
 }
 
+type MusicSessionAuthResult = { account: SonGuessrMusicAccount; cookie?: string };
+
+/** 上游给出账号资料后，把本次实际生效的 cookie 写回本地凭据与事务键。 */
+function settleMusicSessionUpload(
+  task: MusicSessionTask,
+  platform: "netease" | "qq",
+  storedSession: StoredSongMusicSession,
+  result: MusicSessionAuthResult | undefined,
+): void {
+  if (!result?.account) return;
+  const nextCookie = result.cookie || storedSession.cookie;
+  if (task.keyPrefix) {
+    task.key = `${task.keyPrefix}:${nextCookie}`;
+  }
+  saveSongMusicSession(
+    { cookie: nextCookie, account: { ...result.account, platform } },
+    storedSession.persistent,
+    platform,
+  );
+}
+
+/** 返回 `undefined` 表示不再重试：重试用尽或确定性拒绝，交回给下一次快照变化（房间活动或周期校准）再装一次。 */
+function musicSessionRetryDelay(attempt: number, error: { code?: string }): number | undefined {
+  const delay = MUSIC_SESSION_RETRY_DELAYS_MS[attempt];
+  if (delay === undefined || !isTransientMusicSessionError(error)) return undefined;
+  return delay;
+}
+
+/** 密码缺失与密码错误都要重新弹出密码框，而不是直接退出房间。 */
+const needsPasswordPrompt = (code?: string): boolean =>
+  code === "PASSWORD_INCORRECT" || code === "PASSWORD_REQUIRED";
+
 export const isLongRunningCommand = (type: string): boolean =>
   (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
 
@@ -129,22 +161,13 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       for (let attempt = 0; ; attempt += 1) {
         if (task.cancelled) return;
         try {
-          const result = await sendCommand<{ account: SonGuessrMusicAccount; cookie?: string }>(
+          const result = await sendCommand<MusicSessionAuthResult>(
             "song.auth.useCookie",
             { cookie: storedSession.cookie, platform },
           );
           if (task.cancelled) return;
           task.settled = true;
-          if (!result?.account) return;
-          const nextCookie = result.cookie || storedSession.cookie;
-          if (task.keyPrefix) {
-            task.key = `${task.keyPrefix}:${nextCookie}`;
-          }
-          saveSongMusicSession(
-            { cookie: nextCookie, account: { ...result.account, platform } },
-            storedSession.persistent,
-            platform,
-          );
+          settleMusicSessionUpload(task, platform, storedSession, result);
           return;
         } catch (error) {
           if (task.cancelled) return;
@@ -155,9 +178,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
             setNotice(`${platformName}登录状态已失效，请重新扫码登录`, "error");
             return;
           }
-          const delay = MUSIC_SESSION_RETRY_DELAYS_MS[attempt];
-          if (delay === undefined || !isTransientMusicSessionError(appError)) {
-            // 重试用尽或确定性拒绝：交回给下一次快照变化（房间活动或周期校准）再装一次。
+          const delay = musicSessionRetryDelay(attempt, appError);
+          if (delay === undefined) {
             cancelMusicSessionUpload(platform);
             return;
           }
@@ -186,6 +208,29 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     return () => clearInterval(timer);
   }, [longRunningPending]);
 
+  /** 房间不存在时就地建房：建房成功或流程已中断都算收尾，只有建房失败才让调用方继续走退出。 */
+  const createMissingRoom = useCallback(
+    async (name: string, signal: AbortSignal): Promise<boolean> => {
+      try {
+        await createRoom({
+          roomId,
+          name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
+          visibility: "public",
+          allowSpectators: true,
+          userName: name,
+        }, signal);
+        if (signal.aborted) return true;
+        setJoining(false);
+        return true;
+      } catch (createError) {
+        if (signal.aborted) return true;
+        setNotice((createError as { message?: string }).message ?? "创建房间失败", "error");
+        return false;
+      }
+    },
+    [createRoom, roomId, setNotice],
+  );
+
   const enterWithName = useCallback(
     async (name: string, signal: AbortSignal, password?: string) => {
       if (signal.aborted) return;
@@ -199,22 +244,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         if (signal.aborted) return;
         const appError = error as { code?: string; message?: string };
         if (appError.code === "ROOM_NOT_FOUND") {
-          try {
-            await createRoom({
-              roomId,
-              name: roomId === ROOM_ID_TEST_MODE ? "Songuessr 测试房" : `${name}的房间`,
-              visibility: "public",
-              allowSpectators: true,
-              userName: name,
-            }, signal);
-            if (signal.aborted) return;
-            setJoining(false);
-            return;
-          } catch (createError) {
-            if (signal.aborted) return;
-            setNotice((createError as { message?: string }).message ?? "创建房间失败", "error");
-          }
-        } else if (appError.code === "PASSWORD_INCORRECT" || appError.code === "PASSWORD_REQUIRED") {
+          if (await createMissingRoom(name, signal)) return;
+        } else if (needsPasswordPrompt(appError.code)) {
           setPendingJoinName(name);
           setPasswordDraft("");
           setNeedsPassword(true);
@@ -226,7 +257,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         void navigate(exitPath, { replace: true });
       }
     },
-    [createRoom, exitPath, joinRoom, navigate, roomId, setNotice],
+    [createMissingRoom, exitPath, joinRoom, navigate, roomId, setNotice],
   );
 
   const createSoloRoom = useCallback(
