@@ -209,7 +209,7 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
 
 - WS 校验失败诊断仅记录类型、长度与键数：任意属性名和无效 id/type/trace 也能承载敏感文本，不复制到 stdout、OTLP 或 Sentry。关联字段只在错误回包返还原请求方；正常已接受操作的 trace 保持日志索引。
-- **来源身份取 ESA 托管转换写入的真实 IP 标头，并按三层桶限流**：公开遥测与 Sentry 隧道的客户端身份由 `transport/ClientIp.ts` 的 `resolveClientIp` 统一解析——优先采信 ESA 托管转换在回源请求上写入的真实客户端 IP 标头（控制台 `RealClientIpHeaderName`，当前为 `X-Real-IP`，旧的 `ali-real-client-ip` 保留兜底），**且该值必须能解析成 IP 字面量**才采信，否则退回 Elysia/Bun `server.requestIP(request)` 的真实 peer。X-Forwarded-For 可被客户端任意伪造，任何场景都不得参与分桶。限流器必须是三层桶：单客户端桶（默认 60/min）、回源 peer 桶（默认取单客户端的十倍，封顶伪造标头自造新桶的滥用路径）、全局桶；无 socket 的请求共用 unknown 桶。标头名是代码与 ESA 控制台的同步契约，改名必须两侧同批；隧道与打点两条限流口径不得各自漂移。
+- **来源身份取 ESA 托管转换写入的真实 IP 标头，并按三层桶限流**：公开遥测与 Sentry 隧道的客户端身份由 `transport/ClientIp.ts` 的 `resolveClientIp` 统一解析——优先采信 ESA 托管转换在回源请求上写入的真实客户端 IP 标头（控制台 `RealClientIpHeaderName`，当前为 `X-Real-IP`，旧的 `ali-real-client-ip` 保留兜底），**且该值必须能解析成 IP 字面量**才采信，否则退回 Elysia/Bun `server.requestIP(request)` 的真实 peer。X-Forwarded-For 可被客户端任意伪造，任何场景都不得参与分桶。**采信该标头的前提是源站只被边缘回源访问**——默认监听 `0.0.0.0`，前提是部署侧（安全组或端口发布范围）保证的，应用内排除不了，所以 peer 与全局两层必须保留，护栏回归与验收命令见 [Deployment 的「回源身份成立的前提」](Deployment.md)。限流器必须是三层桶：单客户端桶（默认 60/min）、回源 peer 桶（默认取单客户端的十倍，封顶伪造标头自造新桶的滥用路径）、全局桶；无 socket 的请求共用 unknown 桶。标头名是代码与 ESA 控制台的同步契约，改名必须两侧同批；隧道与打点两条限流口径不得各自漂移。
 
 ### 10.5 Sentry 全栈异常托管与服务端隧道 (Sentry & Tunnel Gateway)
 - **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。
