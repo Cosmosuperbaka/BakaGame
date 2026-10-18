@@ -260,8 +260,13 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   if (config.cpuProf) {
     // markdown 剖面是纯文本，能直接读；每个分片各写一份文件（名里带 pid），互不覆盖。
     const profileDir = path.join(config.outDir, "profile", config.label);
-    await mkdir(profileDir, { recursive: true });
-    runtime.splice(1, 0, "--cpu-prof-md", "--cpu-prof-dir", profileDir);
+    if (process.platform === "win32") {
+      // Windows 上被测进程只能靠信号终止，Bun 来不及 flush 剖面（目录留着但是空的），绑核也没有 taskset。
+      console.log(`CPU 剖面在 Windows 不会落盘，本跳跳过：${profileDir}`);
+    } else {
+      await mkdir(profileDir, { recursive: true });
+      runtime.splice(1, 0, "--cpu-prof-md", "--cpu-prof-dir", profileDir);
+    }
   }
   const taskset =
     config.targetCpuset && process.platform !== "win32"
