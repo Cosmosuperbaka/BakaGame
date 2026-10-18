@@ -471,6 +471,13 @@ export const apiContract = {
           qqName: z.string().nullable(),
         })
       ),
+    qqName: op(
+      "登录弹窗输入 QQ 号后回显的身份昵称：已注册取库里最近一次同步的值，未注册现查（即即将注册的账号昵称）。" +
+        "查不到返回 `null`，不挡住发码。不回答该号是否已注册；按客户端地址限流，防止按号批量枚举昵称。",
+      "public"
+    )
+      .input(z.object({ qqNumber }))
+      .output(z.string().nullable()),
     me: op(
       "当前登录资料；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
       "public"

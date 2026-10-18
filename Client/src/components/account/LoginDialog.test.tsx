@@ -14,10 +14,11 @@ const requestLoginCode = vi.hoisted(() =>
     }) => Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }>
   >()
 );
+const qqName = vi.hoisted(() => vi.fn<(input: { qqNumber: string }) => Promise<string | null>>());
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/Api")>()),
-  api: { account: { requestLoginCode } },
+  api: { account: { requestLoginCode, qqName } },
 }));
 
 const signIn = vi.fn<(input: { email: string; otp: string }) => Promise<void>>();
@@ -25,11 +26,14 @@ const originalSignIn = useAccountStore.getState().signIn;
 
 beforeEach(() => {
   useAccountStore.setState({ signIn });
+  // 回显昵称默认查不到：只有断言回显的用例改成 resolved，其余用例的昵称一律来自发码返回值。
+  qqName.mockResolvedValue(null);
 });
 
 afterEach(() => {
   useAccountStore.setState({ signIn: originalSignIn });
   requestLoginCode.mockReset();
+  qqName.mockReset();
   signIn.mockReset();
 });
 
@@ -59,6 +63,35 @@ describe("登录弹窗", () => {
     // 身份区同时落出 QQ 号一行，与头像一起确认「这是谁的号」
     expect(screen.getByText("QQ 12345")).toBeInTheDocument();
     expect(send).toBeEnabled();
+  });
+
+  it("输完 QQ 号即回显昵称，不等发码", async () => {
+    qqName.mockResolvedValue("阿狸");
+    const { user } = renderDialog();
+    const input = screen.getByLabelText("QQ 号");
+
+    await user.type(input, "12345");
+    expect(await screen.findByText("阿狸")).toBeInTheDocument();
+    expect(qqName).toHaveBeenCalledWith({ qqNumber: "12345" });
+    // 回显只是把「这个号是谁」提前说出来，第一步的操作不变
+    expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
+  });
+
+  it("回显查不到时不给报错，也不挡住发码", async () => {
+    qqName.mockRejectedValue(
+      new ORPCError("TOO_MANY_REQUESTS", { message: "昵称查询过于频繁，请稍后再试" })
+    );
+    requestLoginCode.mockResolvedValue({
+      registered: true,
+      resendAfterSeconds: 60,
+      qqName: "老玩家",
+    });
+    const { user } = renderDialog();
+
+    await user.type(screen.getByLabelText("QQ 号"), "12345");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    expect(await screen.findByText("老玩家")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("新账号：发码后在头像下展示将使用的 QQ 昵称，登录参数不带昵称，成功后关闭", async () => {

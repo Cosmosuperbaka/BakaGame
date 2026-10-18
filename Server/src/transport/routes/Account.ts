@@ -37,6 +37,8 @@ export interface AccountDependencies {
 
 interface RpcContext {
   headers: Headers;
+  /** 边缘写入的真实客户端地址：昵称查询这类免发信接口按它分桶计配额。 */
+  clientIp: string;
 }
 
 /** 业务错误码 → HTTP 状态（HTTP 全局错误钩子与 oRPC 共用）；未列出的业务错误按 400。 */
@@ -100,6 +102,9 @@ const createRpcRouter = (
     account: {
       requestLoginCode: base.account.requestLoginCode.handler(({ input }) =>
         service.requestLoginCode(input.qqNumber)
+      ),
+      qqName: base.account.qqName.handler(({ input, context }) =>
+        service.qqNickname(input.qqNumber, context.clientIp)
       ),
       me: base.account.me.handler(async ({ context }) => {
         const userId = await service.currentUserId(context.headers);
@@ -253,12 +258,11 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
   // Better Auth 自带的按 IP 限流是关的（它只认 socket peer，反代后全站共享同一个 peer）。
   // 这一层改按 ESA 写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
   const rejectOverQuota = (
-    request: Request,
+    clientIp: string,
     peerIp: string | undefined,
     viaRpc: boolean,
     traceId?: string
   ): Response | undefined => {
-    const clientIp = resolveClientIp(request.headers, peerIp);
     const verdict = limiter.consume(clientIp, peerIp ?? clientIp);
     if (verdict.allowed) return undefined;
     return json(
@@ -273,9 +277,10 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     .all(
       `${AUTH_BASE_PATH}/*`,
       async ({ request, server, set }) => {
+        const peerIp = server?.requestIP(request)?.address;
         const overQuota = rejectOverQuota(
-          request,
-          server?.requestIP(request)?.address,
+          resolveClientIp(request.headers, peerIp),
+          peerIp,
           false,
           traceIdOf(set.headers)
         );
@@ -293,18 +298,15 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     .all(
       `${RPC_BASE_PATH}/*`,
       async ({ request, server, set }) => {
-        const overQuota = rejectOverQuota(
-          request,
-          server?.requestIP(request)?.address,
-          true,
-          traceIdOf(set.headers)
-        );
+        const peerIp = server?.requestIP(request)?.address;
+        const clientIp = resolveClientIp(request.headers, peerIp);
+        const overQuota = rejectOverQuota(clientIp, peerIp, true, traceIdOf(set.headers));
         if (overQuota) return overQuota;
         if (!account || !rpc) return rpcAccountDisabled();
         await account.ready;
         const { matched, response } = await rpc.handle(request, {
           prefix: RPC_BASE_PATH,
-          context: { headers: request.headers },
+          context: { headers: request.headers, clientIp },
         });
         return matched
           ? response

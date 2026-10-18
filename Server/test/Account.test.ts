@@ -225,6 +225,36 @@ describe("验证码登录", () => {
   });
 });
 
+describe("登录弹窗的昵称回显", () => {
+  test("已注册只回库里最近同步的昵称且不打查询号；未注册现查一次，查不到回 null", async () => {
+    const { rpc, signIn, napcat, prepareSignup } = createAccountTestApp();
+    const nameOf = (qq: string) => rpc<string | null>("account/qqName", { qqNumber: qq });
+    await signIn(QQ, "老玩家");
+    const calls = napcat.state.calls.length;
+    expect(await nameOf(QQ)).toEqual({ status: 200, body: "老玩家" });
+    // 库里已有昵称：一个输入框的回显不该去打查询号
+    expect(napcat.state.calls).toHaveLength(calls);
+
+    await prepareSignup("55566677", "新玩家");
+    expect(await nameOf("55566677")).toEqual({ status: 200, body: "新玩家" });
+    expect(napcat.state.calls[napcat.state.calls.length - 1]).toEqual(["55566677"]);
+    // 查不到只回 null，不报错误码：昵称空着不该挡住发码
+    expect(await nameOf("77778888")).toEqual({ status: 200, body: null });
+  });
+
+  test("按客户端地址限流：同一地址超量后 429，换地址照常", async () => {
+    const { rpc, prepareSignup } = createAccountTestApp();
+    await prepareSignup(QQ, "玩家");
+    const from = (ip: string) =>
+      rpc("account/qqName", { qqNumber: QQ }, undefined, { "x-real-ip": ip });
+    for (let i = 0; i < 12; i += 1) expect((await from("1.1.1.1")).status).toBe(200);
+    const limited = await from("1.1.1.1");
+    expect(limited.status).toBe(429);
+    expect(limited.body).toMatchObject({ code: "RATE_LIMITED" });
+    expect((await from("2.2.2.2")).status).toBe(200);
+  });
+});
+
 describe("资料与头像", () => {
   test("QQ 号默认隐藏，本人公开后资料卡才显示；昵称不可改，未登录不能改资料", async () => {
     const { rpc, signIn } = createAccountTestApp();

@@ -426,7 +426,14 @@ export const createAccountTestApp = (
     account: { auth, service, userData, admin, visits, ready: Promise.resolve() },
   });
 
-  const rpc = async (path: string, input?: unknown, cookie?: string) => {
+  /** `B` 是响应信封里 `json` 的类型：默认按对象写，输出为标量的过程（如 `account.qqName` 直接回昵称）显式传。 */
+  const rpc = async <B = Record<string, unknown>>(
+    path: string,
+    input?: unknown,
+    cookie?: string,
+    /** 按来源地址计配额的接口靠它分桶（如 `x-real-ip`）；不传时所有调用落在同一个 `unknown` 桶。 */
+    headers?: Record<string, string>
+  ) => {
     const response = await app.handle(
       new Request(`http://localhost/api/rpc/${path}`, {
         method: "POST",
@@ -434,12 +441,13 @@ export const createAccountTestApp = (
           "content-type": "application/json",
           origin: env.clientUrl,
           ...(cookie ? { cookie } : {}),
+          ...headers,
         },
         body: JSON.stringify(input === undefined ? {} : { json: input }),
       })
     );
     const body = (await response.json()) as { json?: unknown };
-    return { status: response.status, body: body.json as Record<string, unknown> };
+    return { status: response.status, body: body.json as B };
   };
 
   /** 让 NapCat 处于在线状态（默认就是在线的，测试用它复位）。 */

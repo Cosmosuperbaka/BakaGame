@@ -64,6 +64,14 @@ export class AccountService {
     windowMs: 60 * 1000,
     maxRequests: 30,
   });
+  /**
+   * 登录弹窗按 QQ 号回显昵称的配额：按客户端地址分桶。
+   * 这个接口不必发信就能拿到昵称，不限住就成了按号枚举昵称的入口（见 Agents/Account.md §4）。
+   */
+  private readonly nicknameLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 12,
+  });
   /** 头像路由的「用户 ID → QQ 号 / 当前版本」短缓存，避免每张图都查库。 */
   private readonly avatarOwners = new LRUCache<string, { qqNumber: string; hash: string | null }>({
     max: 4096,
@@ -141,6 +149,28 @@ export class AccountService {
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
     return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName };
+  }
+
+  /**
+   * 登录弹窗的身份回显：QQ 号输入后立刻告诉访客「这个号是谁」。
+   * 已注册只回库里最近一次同步的昵称，不为一个输入框去打查询号；未注册现查一次即将用作账号昵称的值。
+   * 查不到就返回 `null`（空着），不挡住发码；配额按客户端地址计，防止按号枚举昵称。
+   */
+  async qqNickname(qqNumber: string, clientKey: string): Promise<string | null> {
+    if (!this.nicknameLimiter.allow(clientKey, this.now()))
+      throw new AppError("RATE_LIMITED", "昵称查询过于频繁，请稍后再试");
+    const existing = (await (await this.adapter()).findUserByEmail(qqEmailOf(qqNumber)))?.user as
+      { name?: string | null; qqName?: string | null } | undefined;
+    if (existing) return existing.qqName ?? existing.name ?? null;
+    const nicknames = this.options.nicknames;
+    if (!nicknames) return null;
+    const timeout = new Promise<null>((resolve) =>
+      setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null)
+    );
+    // 命中发码阶段的查询缓存时不打上游；查询号慢或挂了都只等 `NICKNAME_LOOKUP_TIMEOUT_MS`。
+    return (
+      (await Promise.race([nicknames.resolveNickname(qqNumber).catch(() => null), timeout])) ?? null
+    );
   }
 
   /** 新号发码的硬前提：QQ 昵称必须可用；查询未登录、失效、超配额、失败或超时都拒绝注册。 */

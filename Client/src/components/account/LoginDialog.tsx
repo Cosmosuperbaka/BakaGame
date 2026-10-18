@@ -13,7 +13,9 @@ import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";
 import { SettingTextField } from "@/components/common/room/SettingFields";
+import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { api, apiErrorMessage } from "@/lib/Api";
+import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { indicatorSlide, listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
@@ -36,6 +38,33 @@ function useCountdown() {
       setUntil(current + seconds * 1_000);
     },
   };
+}
+
+/**
+ * QQ 号一输完就去查昵称，不等发码。停输 `IDLE_SEARCH_MS` 再查，避免逐位敲字各打一次；
+ * 查不到（号不存在、查询号掉线、超出配额、网络失败）一律当作没有昵称，空着不挡住发码。
+ * 结果按所属 QQ 号存：号一改立刻不显示上一号的名字，宁可空着也不把别人的昵称安在这个号上。
+ * 取到的值经 `qqNames` 复用：服务端这个入口按客户端地址限流（12 次/分钟），
+ * 关掉再打开弹窗、退回重输同一个号都不该再打一次。
+ */
+function useQQName(qq: string, qqNames: QueryReuseCache<string | null>): string | null {
+  const valid = QQ_NUMBER_PATTERN.test(qq);
+  const [shown, setShown] = useState<{ qq: string; name: string | null } | null>(null);
+  useEffect(() => {
+    if (!valid) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void qqNames
+        .run(qq, () => api.account.qqName({ qqNumber: qq }))
+        .then((name) => !cancelled && setShown({ qq, name }))
+        .catch(() => !cancelled && setShown({ qq, name: null }));
+    }, IDLE_SEARCH_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [valid, qq, qqNames]);
+  return valid && shown?.qq === qq ? shown.name : null;
 }
 
 /**
@@ -102,7 +131,8 @@ function StepDots({ active }: { active: 0 | 1 }) {
  *
  * 整块弹窗分两区：上方通栏身份区常驻——标题、圆头像、昵称与 QQ 号，两步共用，切步时身份不消失；
  * 下方操作区按步切换字段（QQ 号 → 验证码），新内容自后方推入、旧内容向前退出（`phaseSwap`）。
- * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，发码后昵称自它上方顶进来；
+ * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，紧接着输完号查到的昵称自它上方顶进来，
+ * 发码后再以服务端回传值为准；
  * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度。
  */
 export function LoginDialog({
@@ -116,9 +146,11 @@ export function LoginDialog({
 }) {
   // QQ 号留在外层：关掉再打开仍保留上次输入；其余状态随弹窗内容每次打开重新开始。
   const [qq, setQq] = useState("");
+  // 昵称窗口也留在外层：本组件随页面常驻，关掉再打开、退回重输同一个号都不再打一次限流接口。
+  const [qqNames] = useState(() => createQueryReuseCache<string | null>(exactQueryKey));
   return (
     <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
-      <LoginDialogBody qq={qq} setQq={setQq} onDone={() => onOpenChange(false)} />
+      <LoginDialogBody qq={qq} setQq={setQq} qqNames={qqNames} onDone={() => onOpenChange(false)} />
     </Dialog>
   );
 }
@@ -126,10 +158,12 @@ export function LoginDialog({
 function LoginDialogBody({
   qq,
   setQq,
+  qqNames,
   onDone,
 }: {
   qq: string;
   setQq: (value: string) => void;
+  qqNames: QueryReuseCache<string | null>;
   onDone: () => void;
 }) {
   const signIn = useAccountStore((state) => state.signIn);
@@ -141,6 +175,7 @@ function LoginDialogBody({
   const countdown = useCountdown();
 
   const validQq = QQ_NUMBER_PATTERN.test(qq);
+  const lookedUpName = useQQName(qq, qqNames);
 
   const sendCode = async (mode: "send" | "resend") => {
     setBusy(mode);
@@ -158,8 +193,11 @@ function LoginDialogBody({
 
   const isRegister = step.kind === "code" && !step.registered;
   const title = isRegister ? "注册账号" : "登录";
-  /** 头像下的身份行：发码后服务端回传的昵称（新号为将注册的昵称，老号为库中最近同步的）。 */
-  const identityName = step.kind === "code" ? step.qqName : null;
+  /**
+   * 头像下的身份行：号一输完就回显查到的昵称；发码后改用服务端回传值
+   * （新号为刚落库的昵称，老号为库中最近同步的），它为空时仍用回显值兜住。
+   */
+  const identityName = step.kind === "code" ? (step.qqName ?? lookedUpName) : lookedUpName;
   const canSignIn = LOGIN_CODE_PATTERN.test(code);
 
   const submit = async (event: FormEvent) => {
