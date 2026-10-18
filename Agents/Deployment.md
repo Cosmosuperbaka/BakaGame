@@ -230,6 +230,10 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 再经全局 `mapResponse` 补到 Better Auth、oRPC、头像与图床字节流这些自建 `Response` 上。
 逐条路由自己加头一定会漏，登记一次才覆盖得全。三条口径：
 
+- **文档页不随生产镜像对外**：`/openapi` 由 `OPENAPI_ENABLED` 控制，未显式配置时按部署环境推导
+  （`DEPLOYMENT_ENVIRONMENT=production` 关闭）。它把全部路由、参数与管理端点面列成一份可直接照打的清单，
+  还会把 `SERVER_URL`（可能是内网主机名）写进 `servers.url`。HTTP 契约由 `Server/src/scripts/ExportOpenapi.ts`
+  离线生成到 `Agents/http-openapi.json`，工具链不依赖线上文档；线上排障需要时显式设 `OPENAPI_ENABLED=true`。
 - **`/openapi` 只放宽 CSP**：Swagger UI 要跑内联脚本与外部资源，`default-src 'none'` 会把文档页打死，
   因此该路径只保留 `frame-ancestors`/`base-uri`/`form-action` 三条，其余收紧项（含 `nosniff`）照旧。
   放宽的是文档页自己的资源加载，不是 API 响应。
