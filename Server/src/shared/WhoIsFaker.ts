@@ -69,11 +69,11 @@ export interface RoleLimits {
   canEnableBlank: boolean;
 }
 
-// 房间基础设置，前端编辑房间时主要围绕这一组字段。
+// 房间基础设置，前端编辑房间时主要围绕这一组字段。口令不在这里：明文只在请求里过一遍，
+// 房间记录只留 argon2 摘要（见 WhoIsFakerRoomRecord.passwordHash）。
 export interface RoomSettings {
   name: string;
   visibility: RoomVisibility;
-  password?: string;
   allowSpectators: boolean;
   roleConfig: RoleConfig;
   revealRoleOnDeath: boolean;
@@ -366,6 +366,8 @@ export interface GameRound {
 export interface WhoIsFakerRoomRecord {
   id: string;
   settings: RoomSettings;
+  /** 私密房口令的 argon2 摘要；与 CEE 同一口径，明文不进房间记录、快照与日志。 */
+  passwordHash?: string;
   hostPlayerId: string;
   /** 房主断线后的重连宽限期，过期后才自动转移房主。 */
   hostReconnectDeadlineAt?: number;

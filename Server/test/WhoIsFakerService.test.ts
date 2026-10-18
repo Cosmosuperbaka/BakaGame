@@ -113,6 +113,41 @@ test("房间设置只通过公开快照同步且不会暴露私房密码", async
   expect(JSON.stringify(snapshot)).not.toContain("new-password");
 });
 
+test("私密房口令按规范化后的值比对，摘要不落明文", async () => {
+  const { service } = createTestContext();
+  const host = createConnection(service, "space-host");
+  await execute(service, host, {
+    id: "space-create",
+    type: "room.create",
+    payload: {
+      roomId: "1616",
+      name: "私房",
+      visibility: "private",
+      password: "  a  b  ",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  });
+  // 建房时收的是带多余空白的口令，进房时给规范化后的同一个值仍应通过。
+  const guest = createConnection(service, "space-guest");
+  await execute(service, guest, {
+    id: "space-join",
+    type: "room.join",
+    roomId: "1616",
+    payload: { userName: "玩家", password: "a b" },
+  });
+
+  const other = createConnection(service, "space-other");
+  await expect(
+    execute(service, other, {
+      id: "space-wrong",
+      type: "room.join",
+      roomId: "1616",
+      payload: { userName: "玩家二", password: "ab" },
+    }),
+  ).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+});
+
 test("密码尝试超过上限后连正确密码也拒绝，其它连接不受影响，窗口过后恢复", async () => {
   const { service, advanceTime } = createTestContext();
   const host = createConnection(service, "limit-host");

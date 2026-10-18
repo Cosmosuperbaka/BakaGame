@@ -366,7 +366,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       name: room.settings.name,
       phase: room.round?.phase ?? "waiting",
       visibility: room.settings.visibility,
-      hasPassword: Boolean(room.settings.password),
+      hasPassword: Boolean(room.passwordHash),
       hidden: room.id === ROOM_ID_TEST_MODE,
       roundNumber: room.roundCount ?? 0,
       createdAt: room.createdAt,
@@ -413,15 +413,17 @@ export class WhoIsFakerService implements AdminRoomControl {
       throw new AppError("ROOM_ALREADY_EXISTS", "房间已存在");
     }
 
+    // 私密房口令只存 argon2 摘要：房间记录、快照与日志里都不该出现可读的口令。
+    const password =
+      message.payload.visibility === "private"
+        ? this.requirePassword(message.payload.password)
+        : undefined;
+
     const room: WhoIsFakerRoomRecord = {
       id: roomId,
       settings: {
         name: normalizeName(message.payload.name),
         visibility: message.payload.visibility,
-        password:
-          message.payload.visibility === "private"
-            ? this.requirePassword(message.payload.password)
-            : undefined,
         allowSpectators: message.payload.allowSpectators,
         roleConfig: createDefaultRoleConfig(),
         revealRoleOnDeath: true,
@@ -448,7 +450,17 @@ export class WhoIsFakerService implements AdminRoomControl {
       this.getConfigurableParticipantCount(room),
     );
 
+    // 算摘要要跨一次 await，先占住房号再算，避免并发建房互相覆盖（与 CEE 同一口径）。
     this.rooms.set(room.id, room);
+    if (password) {
+      try {
+        room.passwordHash = await Bun.password.hash(password);
+      } catch (error) {
+        this.rooms.delete(room.id);
+        throw error;
+      }
+    }
+
     const previousRoomUpdate = this.attachConnection(room, host, connection);
     this.appendSystemMessage(room, `${host.name} 创建了房间`);
     this.touchRoom(room);
@@ -482,7 +494,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     const roomId = ensureRoomId(message.roomId ?? "");
     const room = this.getRoom(roomId);
 
-    this.ensurePasswordMatch(room, message.payload.password, connection);
+    await this.ensurePasswordMatch(room, message.payload.password, connection);
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
@@ -586,9 +598,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
 
     if (payload.password != null) {
-      room.settings.password =
+      room.passwordHash =
         room.settings.visibility === "private"
-          ? this.requirePassword(payload.password)
+          ? await Bun.password.hash(this.requirePassword(payload.password))
           : undefined;
     }
 
@@ -603,7 +615,9 @@ export class WhoIsFakerService implements AdminRoomControl {
       room.settings.allowSpectators = payload.allowSpectators;
     }
 
-    if (room.settings.visibility === "private" && !room.settings.password) {
+    if (room.settings.visibility === "public") room.passwordHash = undefined;
+
+    if (room.settings.visibility === "private" && !room.passwordHash) {
       throw new AppError("PASSWORD_REQUIRED", "私密房间必须设置密码");
     }
 
@@ -3198,7 +3212,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       name: room.settings.name,
       visibility: room.settings.visibility,
       allowSpectators: room.settings.allowSpectators,
-      hasPassword: Boolean(room.settings.password),
+      hasPassword: Boolean(room.passwordHash),
       playerCount: activeCount,
       spectatorCount,
       onlineCount: activeCount + spectatorCount,
@@ -3299,7 +3313,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       name: room.settings.name,
       visibility: room.settings.visibility,
       allowSpectators: room.settings.allowSpectators,
-      hasPassword: Boolean(room.settings.password),
+      hasPassword: Boolean(room.passwordHash),
       hostPlayerId: room.hostPlayerId,
       testMode: room.id === ROOM_ID_TEST_MODE,
       roleLimits: getRoomRoleLimits(this.getConfigurableParticipantCount(room)),
@@ -4260,7 +4274,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
   }
 
-  private ensurePasswordMatch(
+  private async ensurePasswordMatch(
     room: WhoIsFakerRoomRecord,
     password: string | null | undefined,
     connection: ConnectionRecord,
@@ -4276,7 +4290,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
-    if (room.settings.password !== normalized) {
+    // 只按摘要比对：房间记录里没有可读的口令。
+    const matched = room.passwordHash ? await Bun.password.verify(normalized, room.passwordHash) : false;
+    if (!matched) {
       throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
     }
   }
