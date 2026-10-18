@@ -69,18 +69,68 @@ export function PlayerRow({
   const interactive = Boolean(account) || hasActions;
   // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
   const [open, setOpen] = useState(false);
-  const rowClass = cn(
-    PLAYER_ROW_BASE,
-    PLAYER_ROW_HEIGHT,
-    "gap-2.5",
-    me && "bg-primary/10",
-    !me && "transition-colors hover:bg-accent/40",
-    !online && !bot && "opacity-60",
-    // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
-    interactive && "cursor-pointer focus-visible:-outline-offset-2",
+  const rowClass = playerRowClass({ me, online, bot, interactive });
+
+  const info = (
+    <PlayerRowInfo
+      name={name} score={score} me={me} host={host} online={online} bot={bot}
+      account={account} eliminated={eliminated} badges={badges} meta={meta} detail={detail}
+    />
   );
 
-  const body = (
+  const content = interactive ? (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
+        <motion.button type="button" aria-label={hasActions ? `${name} 操作` : `${name} 资料`} {...headerTappable} className={rowClass}>
+          {info}
+        </motion.button>
+      </Popover.Trigger>
+      <AnimatePresence>
+        {open ? (
+          <Popover.Portal forceMount>
+            {/* 统一落在行下方、右缘对齐：玩家栏贴着视口左缘，窄屏抽屉里朝右展开会被截掉。 */}
+            <Popover.Content forceMount side="bottom" align="end" sideOffset={4} collisionPadding={12} asChild>
+              <motion.div
+                variants={popover}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
+              >
+                <PlayerRowPopoverContent name={name} account={account} actionsHeader={actionsHeader} actions={actions} />
+              </motion.div>
+            </Popover.Content>
+          </Popover.Portal>
+        ) : null}
+      </AnimatePresence>
+    </Popover.Root>
+  ) : <div className={rowClass}>{info}</div>;
+
+  return embedded ? content : (
+    <motion.div ref={ref} variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" layoutId={layoutId} transition={playerRelayout} className="min-w-0">
+      {content}
+    </motion.div>
+  );
+}
+
+/** 行的底色与可点样式：本人用底色加左竖条，断线降透明度（人机本身即离线，不重复降）。 */
+const playerRowClass = ({ me, online, bot, interactive }: { me: boolean; online: boolean; bot: boolean; interactive: boolean }) => cn(
+  PLAYER_ROW_BASE,
+  PLAYER_ROW_HEIGHT,
+  "gap-2.5",
+  me && "bg-primary/10",
+  !me && "transition-colors hover:bg-accent/40",
+  !online && !bot && "opacity-60",
+  // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
+  interactive && "cursor-pointer focus-visible:-outline-offset-2",
+);
+
+/** 行内信息：头像、名字与房主标识、状态徽章与补充文字、可选第三行、右侧分数。 */
+function PlayerRowInfo({
+  name, score, me, host, online, bot, account, eliminated, badges, meta, detail,
+}: Pick<PlayerRowProps, "name" | "score" | "me" | "host" | "online" | "bot" | "account" | "eliminated" | "badges" | "meta" | "detail">) {
+  return (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
@@ -113,46 +163,21 @@ export function PlayerRow({
       </span>
     </>
   );
+}
 
-  const content = interactive ? (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger asChild>
-        {/* 整行可点：只按压不悬停缩放，悬停只铺流内的 accent/40，不改文字色。 */}
-        <motion.button type="button" aria-label={hasActions ? `${name} 操作` : `${name} 资料`} {...headerTappable} className={rowClass}>
-          {body}
-        </motion.button>
-      </Popover.Trigger>
-      <AnimatePresence>
-        {open ? (
-          <Popover.Portal forceMount>
-            {/* 统一落在行下方、右缘对齐：玩家栏贴着视口左缘，窄屏抽屉里朝右展开会被截掉。 */}
-            <Popover.Content forceMount side="bottom" align="end" sideOffset={4} collisionPadding={12} asChild>
-              <motion.div
-                variants={popover}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="z-popover origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
-              >
-                {account ? <ProfileCard account={account} playerName={name} /> : null}
-                {actionsHeader ? <div className={cn("flex", account && "border-t")}>{actionsHeader}</div> : null}
-                {actions?.length ? (
-                  <div className={cn("flex flex-col", (account || actionsHeader) && "border-t")}>
-                    {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
-                  </div>
-                ) : null}
-              </motion.div>
-            </Popover.Content>
-          </Popover.Portal>
-        ) : null}
-      </AnimatePresence>
-    </Popover.Root>
-  ) : <div className={rowClass}>{body}</div>;
-
-  return embedded ? content : (
-    <motion.div ref={ref} variants={listItem} initial="initial" animate="animate" exit="exit" layout="position" layoutId={layoutId} transition={playerRelayout} className="min-w-0">
-      {content}
-    </motion.div>
+/** 浮层内容按「资料卡 → 头部行 → 动作列表」拼接，空段不留分隔边框。 */
+function PlayerRowPopoverContent({ name, account, actionsHeader, actions }:
+  Pick<PlayerRowProps, "name" | "account" | "actionsHeader" | "actions">) {
+  return (
+    <>
+      {account ? <ProfileCard account={account} playerName={name} /> : null}
+      {actionsHeader ? <div className={cn("flex", account && "border-t")}>{actionsHeader}</div> : null}
+      {actions?.length ? (
+        <div className={cn("flex flex-col", (account || actionsHeader) && "border-t")}>
+          {actions.map((action) => <PlayerActionButton key={action.label} {...action} />)}
+        </div>
+      ) : null}
+    </>
   );
 }
 
