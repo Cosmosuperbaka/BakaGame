@@ -1,4 +1,10 @@
-import type { CEEGuess, CEEPrivateState, CEERoomSnapshot, CEERoomSummary } from "../shared/CEE";
+import type {
+  CEEGuess,
+  CEEPrivateState,
+  CEERoomSnapshot,
+  CEERoomSummary,
+  CEESpectateRequest,
+} from "../shared/CEE";
 import {
   type CEEPlayerRecord,
   type CEERoom,
@@ -6,7 +12,7 @@ import {
   type CEEUnit,
 } from "../domain/CEEModel";
 import { ceeParticipants, getCEEUnit } from "../domain/CEERound";
-import { ROOM_ID_TEST_MODE } from "../shared/Index";
+import { isCEEAntiCheatRoom, ROOM_ID_TEST_MODE } from "../shared/Index";
 
 /** 大厅人数与其它游戏同口径：只计在线成员，参与与旁观分开统计。 */
 export function ceeRoomSummary(room: CEERoom): CEERoomSummary {
@@ -20,7 +26,20 @@ export function ceeRoomSummary(room: CEERoom): CEERoomSummary {
     spectatorCount: online.filter((player) => player.membership === "spectator").length,
     hasPassword: Boolean(room.passwordHash),
     allowSpectators: room.allowSpectators,
+    bakaAntiCheat: isCEEAntiCheatRoom(room.settings),
   };
+}
+/** 待批准请求按发起时间升序，房主端才能稳定地从上往下处理。 */
+function ceeSpectateRequests(room: CEERoom): CEESpectateRequest[] {
+  if (!isCEEAntiCheatRoom(room.settings)) return [];
+  return [...room.spectatorRequests.entries()]
+    .map(([playerId, requestedAt]) => ({
+      playerId,
+      name: room.players.get(playerId)?.name ?? "",
+      requestedAt,
+    }))
+    .filter((request) => request.name)
+    .sort((a, b) => a.requestedAt - b.requestedAt);
 }
 export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
   return {
@@ -30,6 +49,7 @@ export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
     visibility: room.visibility,
     hasPassword: Boolean(room.passwordHash),
     allowSpectators: room.allowSpectators,
+    bakaAntiCheat: isCEEAntiCheatRoom(room.settings),
     hostPlayerId: room.hostPlayerId,
     phase: room.phase,
     settings: room.settings,
@@ -40,6 +60,7 @@ export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
     chat: room.chat,
     roundSummary: room.summary,
     upstreamConnected: true,
+    spectateRequests: ceeSpectateRequests(room),
     players: [...room.players.values()].map((player) => ({
       id: player.id,
       name: player.name,
@@ -118,8 +139,30 @@ function bannedCharacterIdsFor(round: CEERound | null, player: CEEPlayerRecord):
     ),
   ];
 }
+/** 待批准旁观者的私有状态：只说得出「在等批准」，其余全部为空。 */
+function emptyCEEPrivateState(player: CEEPlayerRecord, spectatePending: boolean): CEEPrivateState {
+  return {
+    playerId: player.id,
+    canGuess: false,
+    canSurrender: false,
+    canStart: false,
+    canSetAnswer: false,
+    setterCandidateIds: [],
+    guesses: [],
+    answer: null,
+    hints: [],
+    imageHintAvailable: false,
+    imageHintLevel: 0,
+    deadlineAt: null,
+    bannedCharacterIds: [],
+    spectatePending,
+  };
+}
 export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPrivateState {
   const round = room.round;
+  const spectatePending = player.membership === "pendingSpectator";
+  // 待批准旁观按「尚未入房」处理：私有状态整体清空，否则请求者能提前看到答案与全场猜测。
+  if (spectatePending) return emptyCEEPrivateState(player, true);
   const unit = getCEEUnit(room, player);
   const observing = room.phase === "settled" || player.status !== "playing";
   const remaining = ceeRemainingAttempts(round, unit);
@@ -166,5 +209,6 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
     imageHintLevel: remaining,
     deadlineAt: canGuess ? unit!.deadlineAt : null,
     bannedCharacterIds: bannedCharacterIdsFor(round, player),
+    spectatePending: false,
   };
 }

@@ -13,7 +13,9 @@ import {
   type CEERoomEnterResult,
   type CEERoomSnapshot,
   type CEESettings,
+  type ClientChannelProof,
   type ConnectionRecord,
+  type PlayerAccount,
 } from "../src/shared/Index";
 
 export const character = (id: number, shared = false): CEECharacterView => ({
@@ -57,6 +59,11 @@ export interface CEETestClient {
   closed: Array<{ code?: number; reason?: string }>;
   token?: string;
   id?: string;
+}
+/** 反作弊用例要区分「浏览器接入」「已登录但无客户端」「客户端且已登录」三种连接。 */
+export interface CEETestIdentity {
+  account?: PlayerAccount;
+  clientChannel?: ClientChannelProof;
 }
 /** `roomId` 默认普通房号；单人开局的用例传测试房号（普通房至少两人才能开局）。 */
 export function ceeTestHarness(
@@ -109,12 +116,14 @@ export function ceeTestHarness(
     imageHints,
     gameRecorder,
   });
-  const connect = (name: string): CEETestClient => {
+  const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],
       closed: CEETestClient["closed"] = [];
     const record: ConnectionRecord = {
       id: `${name}-${crypto.randomUUID()}`,
       lobbySubscribed: false,
+      account: identity.account,
+      clientChannel: identity.clientChannel,
       send: (payload) => sent.push(structuredClone(payload) as Packet),
       sendStateSyncCalibration: (payload) => sent.push(structuredClone(payload) as Packet),
       close: (code, reason) => {
@@ -153,8 +162,8 @@ export function ceeTestHarness(
   const snapshot = (client: CEETestClient) => latest<CEERoomSnapshot>(client, "cee.room.snapshot");
   const privateState = (client: CEETestClient) =>
     latest<CEEPrivateState>(client, "cee.game.privateState");
-  const create = async (name = "房主") => {
-    const host = connect(name);
+  const create = async (name = "房主", identity: CEETestIdentity = {}) => {
+    const host = connect(name, identity);
     await send(host, "cee.room.create", {
       source: "native",
       roomId: defaultRoomId,
@@ -165,8 +174,8 @@ export function ceeTestHarness(
     });
     return host;
   };
-  const join = async (name: string) => {
-    const client = connect(name);
+  const join = async (name: string, identity: CEETestIdentity = {}) => {
+    const client = connect(name, identity);
     await send(client, "cee.room.join", { userName: name });
     return client;
   };
@@ -198,6 +207,7 @@ export function ceeTestHarness(
     send,
     snapshot,
     privateState,
+    latest,
     create,
     join,
     configure,

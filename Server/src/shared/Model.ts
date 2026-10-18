@@ -42,6 +42,18 @@ export interface PlayerAccount {
   image: string | null;
 }
 
+/**
+ * 一次成功的通道证明落在连接上的最小结论：谁（`clientId`）、什么平台、哪个版本。
+ * 验签细节留在传输层，业务层只问「有没有」，不再二次判断签名。
+ */
+export interface ClientChannelProof {
+  clientId: string;
+  clientType: "desktop" | "mobile";
+  clientVersion: string;
+  /** 密钥保护强度：`software` 表示该平台没有硬件级保护，只作标记不影响准入。 */
+  keyProtection: "hardware" | "software";
+}
+
 // 平台注册到连接池里的最小连接抽象。
 export interface ConnectionRecord {
   id: string;
@@ -52,6 +64,11 @@ export interface ConnectionRecord {
    * 连接号由服务端每次握手新发，重连即换新桶，所以只按连接计的额度会被多开连接线性放大。
    */
   clientIp?: string;
+  /**
+   * 已验签通过的客户端通道证明：只有壳（桌面 / 移动）能给出，浏览器与自写客户端为空。
+   * 反作弊房据此拒绝 Web 接入，普通房不读这个字段，因而对现有玩家零影响。
+   */
+  clientChannel?: ClientChannelProof;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

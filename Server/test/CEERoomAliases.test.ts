@@ -162,6 +162,7 @@ describe("CEE 统一房号路由", () => {
           spectatorCount: 0,
           hasPassword: false,
           allowSpectators: true,
+          bakaAntiCheat: false,
         },
         {
           roomId: "4321",
@@ -172,6 +173,7 @@ describe("CEE 统一房号路由", () => {
           spectatorCount: null,
           hasPassword: false,
           allowSpectators: true,
+          bakaAntiCheat: false,
         },
         {
           roomId: alias,
@@ -182,6 +184,7 @@ describe("CEE 统一房号路由", () => {
           spectatorCount: null,
           hasPassword: false,
           allowSpectators: true,
+          bakaAntiCheat: false,
         },
       ],
     });

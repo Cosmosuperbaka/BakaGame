@@ -98,6 +98,7 @@ export function originalPrivateState(session: CEEOriginalSession): CEEPrivateSta
     imageHintLevel: remaining,
     deadlineAt: canGuess ? session.deadlineAt : null,
     bannedCharacterIds,
+    spectatePending: false,
   };
 }
 
@@ -113,6 +114,8 @@ export function originalSnapshot(
     visibility: session.isPublic ? "public" : "private",
     hasPassword: false,
     allowSpectators: true,
+    // 原版客户端可解密答案是上游协议局限，这类房间不宣称答案保密，因而不提供反作弊开关。
+    bakaAntiCheat: false,
     hostPlayerId: session.players.find((player) => player.isHost)?.id || "",
     phase: session.phase,
     settings: session.settings,
@@ -131,5 +134,6 @@ export function originalSnapshot(
     chat: chatRoom?.chat || [],
     roundSummary: session.roundSummary,
     upstreamConnected: session.confirmed && session.socket.connected,
+    spectateRequests: [],
   };
 }

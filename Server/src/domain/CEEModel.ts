@@ -66,6 +66,11 @@ export interface CEERoom {
   round: CEERound | null;
   summary: CEERoundSummary | null;
   chat: ChatMessage[];
+  /**
+   * 反作弊房里等待房主批准的旁观请求：玩家 ID → 发起时刻。
+   * 只在开关为真时才会累积，超时与拒绝都由 housekeeping 收口。
+   */
+  spectatorRequests: Map<string, number>;
   createdAt: number;
   lastActiveAt: number;
   emptyAt?: number;

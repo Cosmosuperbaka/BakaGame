@@ -6,11 +6,13 @@ import { type CEEPlayerRecord, type CEERoom } from "../domain/CEEModel";
 import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
 import {
   createDefaultCEESettings,
+  isCEEAntiCheatRoom,
   isValidRoomId,
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   type CEEPayload,
   type CEERoomEnterResult,
+  type CEESettings,
   type ConnectionRecord,
 } from "../shared/Index";
 import {
@@ -29,6 +31,10 @@ export const CEE_JOIN_PASSWORD_MAX_ATTEMPTS = 5;
 /** 同一房间每分钟所有连接合计最多尝试的密码次数：只按连接计数时，多开连接就多倍爆破速度。 */
 export const CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = CEE_JOIN_PASSWORD_MAX_ATTEMPTS * 6;
 const CEE_JOIN_PASSWORD_WINDOW_MS = 60_000;
+/** 反作弊房里旁观请求的等待上限：超时自动拒绝，房主挂机不会让请求永久悬空。 */
+export const CEE_SPECTATE_APPROVAL_TIMEOUT_MS = 120_000;
+/** 一间房最多挂多少个待批准请求：防止刷请求骚扰房主。 */
+export const CEE_SPECTATE_QUEUE_MAX = 8;
 
 export class CEERooms {
   readonly connections = new ConnectionRegistry();
@@ -161,6 +167,7 @@ export class CEERooms {
       round: null,
       summary: null,
       chat: [],
+      spectatorRequests: new Map(),
       createdAt: this.now(),
       lastActiveAt: this.now(),
     };
@@ -186,6 +193,7 @@ export class CEERooms {
   ): Promise<CEERoomEnterResult> {
     this.ensureFree(connection);
     const room = this.room(roomId);
+    this.requireAdmission(connection, room);
     const name = this.name(payload.userName);
     if (room.passwordHash)
       await this.verifyPassword(connection, room.id, room.passwordHash, payload.password);
@@ -211,6 +219,7 @@ export class CEERooms {
   ): CEERoomEnterResult {
     this.ensureFree(connection);
     const room = this.room(payload.roomId);
+    this.requireAdmission(connection, room);
     const player = [...room.players.values()].find(
       (member) => member.sessionToken === payload.sessionToken
     );
@@ -260,6 +269,87 @@ export class CEERooms {
   }
   requireWaiting(room: CEERoom): void {
     if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "请在等待阶段修改");
+  }
+  /**
+   * 反作弊房的准入：只放持有客户端通道证明且已登录的连接，浏览器与自写客户端直接拒。
+   * 开关为假的房间一行都不执行——普通房间的连接路径与以往完全一致。
+   */
+  requireAdmission(connection: ConnectionRecord, room: CEERoom): void {
+    if (!isCEEAntiCheatRoom(room.settings)) return;
+    if (!connection.clientChannel)
+      throw new AppError("CLIENT_REQUIRED", "该房间只接受 BakaGame 客户端接入");
+    if (!connection.account) throw new AppError("LOGIN_REQUIRED", "该房间要求全部成员已登录");
+  }
+  /**
+   * 中途开启只在等待阶段允许，且房内不能还留着 Web 接入或未登录玩家：
+   * 静默踢人不可接受，要拒绝并把「谁挡住了」说清楚。
+   */
+  requireAntiCheatAdmissible(room: CEERoom, next: CEESettings): void {
+    if (!isCEEAntiCheatRoom(next) || isCEEAntiCheatRoom(room.settings)) return;
+    for (const player of room.players.values()) {
+      if (!player.online) continue;
+      const connection = player.connectionId
+        ? this.connections.findConnection(player.connectionId)
+        : undefined;
+      if (!connection?.clientChannel)
+        throw new AppError("ANTI_CHEAT_BLOCKED", "请先让 Web 接入的玩家退出");
+      if (!player.account) throw new AppError("ANTI_CHEAT_BLOCKED", "请先让未登录的玩家退出或登录");
+    }
+  }
+  /**
+   * 旁观切换。反作弊房里改为登记请求等房主批准，返回 `true` 表示进入待批准态；
+   * 其它房间沿用旧口径直接生效。
+   */
+  requestSpectate(room: CEERoom, player: CEEPlayerRecord, spectator: boolean): boolean {
+    if (!spectator) {
+      room.spectatorRequests.delete(player.id);
+      player.membership = "active";
+      player.ready = false;
+      return false;
+    }
+    if (!room.allowSpectators) throw new AppError("SPECTATING_DISABLED", "该房间不允许观战");
+    if (!isCEEAntiCheatRoom(room.settings)) {
+      player.membership = "spectator";
+      player.ready = false;
+      return false;
+    }
+    // 旁观本身要登录：游客身份没有可追溯性，而旁观能看到出题人视角与答案。
+    if (!player.account) throw new AppError("LOGIN_REQUIRED", "该房间要求全部成员已登录");
+    if (player.membership === "spectator") return false;
+    if (
+      !room.spectatorRequests.has(player.id) &&
+      room.spectatorRequests.size >= CEE_SPECTATE_QUEUE_MAX
+    )
+      throw new AppError("SPECTATE_QUEUE_FULL", "待房主批准的旁观请求已满");
+    room.spectatorRequests.set(player.id, this.now());
+    player.membership = "pendingSpectator";
+    player.ready = false;
+    return true;
+  }
+  /** 房主处理旁观请求。拒绝立即退回参与态，不等 120 秒超时；结果单独回给请求方以便提示。 */
+  approveSpectate(room: CEERoom, actor: CEEPlayerRecord, id: string, approved: boolean): void {
+    this.requireHost(room, actor);
+    if (!isCEEAntiCheatRoom(room.settings))
+      throw new AppError("SPECTATE_NOT_PENDING", "该房间不需要批准旁观");
+    if (!room.spectatorRequests.has(id))
+      throw new AppError("SPECTATE_NOT_PENDING", "该旁观请求已经处理");
+    const player = this.member(room, id);
+    room.spectatorRequests.delete(id);
+    player.membership = approved ? "spectator" : "active";
+    const connection = player.connectionId
+      ? this.connections.findConnection(player.connectionId)
+      : undefined;
+    connection?.send({
+      type: "event",
+      event: "cee.player.spectateResult",
+      payload: { approved },
+    });
+  }
+  /** 关闭开关后清理悬空请求：待批准的人退回参与态，不能让状态残留在已经不需要审批的房子里。 */
+  clearSpectateRequests(room: CEERoom): void {
+    room.spectatorRequests.clear();
+    for (const player of room.players.values())
+      if (player.membership === "pendingSpectator") player.membership = "active";
   }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
   leave(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
@@ -435,15 +525,7 @@ export class CEERooms {
         continue;
       }
       let changed = false;
-      for (const player of room.players.values())
-        if (
-          !player.online &&
-          player.offlineAt !== undefined &&
-          now - player.offlineAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
-        ) {
-          this.remove(room, player);
-          changed = true;
-        }
+      if (this.sweepOfflinePlayers(room, now)) changed = true;
       if (room.hostDeadlineAt !== undefined && now >= room.hostDeadlineAt) {
         this.assignHost(room);
         changed = true;
@@ -453,9 +535,33 @@ export class CEERooms {
         this.resetWaiting(room);
         changed = true;
       }
+      // 旁观请求的兜底收口：超时自动拒绝，玩家已离开的条目也要从队列里摘掉。
+      if (this.expireSpectateRequests(room, now)) changed = true;
       if (changed) this.publish(room);
       else this.calibrate(room);
     }
+  }
+  private sweepOfflinePlayers(room: CEERoom, now: number): boolean {
+    const expired = [...room.players.values()].filter(
+      (player) =>
+        !player.online &&
+        player.offlineAt !== undefined &&
+        now - player.offlineAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+    );
+    for (const player of expired) this.remove(room, player);
+    return expired.length > 0;
+  }
+  private expireSpectateRequests(room: CEERoom, now: number): boolean {
+    if (room.spectatorRequests.size === 0) return false;
+    let changed = false;
+    for (const [playerId, requestedAt] of room.spectatorRequests)
+      if (now - requestedAt >= CEE_SPECTATE_APPROVAL_TIMEOUT_MS || !room.players.has(playerId)) {
+        room.spectatorRequests.delete(playerId);
+        const player = room.players.get(playerId);
+        if (player?.membership === "pendingSpectator") player.membership = "active";
+        changed = true;
+      }
+    return changed;
   }
   notifyShutdown() {
     this.connections.broadcastToAll({

@@ -1,5 +1,6 @@
 import type { GameRecorder } from "../domain/GameRecord";
 import type { CEEClientMessage, ConnectionRecord } from "../shared/Index";
+import { isCEEAntiCheatRoom } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 import type { CEEPlayerRecord, CEERoom } from "../domain/CEEModel";
 import { ceeUnitId } from "../domain/CEEModel";
@@ -120,12 +121,15 @@ export class CEENativeService {
         case "cee.room.requestSync":
           connection.resetStateSync?.();
           break;
-        case "cee.room.settings":
+        case "cee.room.settings": {
           this.state.requireHost(room, player);
           this.state.requireWaiting(room);
           validateCEESettings(message.payload.settings);
+          this.state.requireAntiCheatAdmissible(room, message.payload.settings);
           room.settings = structuredClone(message.payload.settings);
+          if (!isCEEAntiCheatRoom(room.settings)) this.state.clearSpectateRequests(room);
           break;
+        }
         case "cee.room.update":
           await this.state.update(room, player, message.payload);
           break;
@@ -138,13 +142,19 @@ export class CEENativeService {
           this.state.requireWaiting(room);
           player.team = message.payload.team;
           break;
-        case "cee.player.spectate":
+        case "cee.player.spectate": {
           this.state.requireWaiting(room);
-          if (message.payload.spectator && !room.allowSpectators)
-            throw new AppError("SPECTATING_DISABLED", "该房间不允许观战");
-          player.membership = message.payload.spectator ? "spectator" : "active";
-          player.ready = false;
-          break;
+          const pending = this.state.requestSpectate(room, player, message.payload.spectator);
+          return { pending, membership: player.membership };
+        }
+        case "cee.player.approveSpectate":
+          this.state.approveSpectate(
+            room,
+            player,
+            message.payload.playerId,
+            message.payload.approved
+          );
+          return { pending: false, membership: player.membership };
         case "cee.room.kick":
           this.state.kick(room, player, message.payload.playerId);
           break;

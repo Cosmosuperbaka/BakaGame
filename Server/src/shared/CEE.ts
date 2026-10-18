@@ -31,20 +31,31 @@ export const CEESettingsSchema = t.Object(
     nonstopMode: t.Boolean(),
     /** 出题方式：`random` 开始即随机抽题；`manual` 开始后进入选出题人阶段，由房主指定出题人。 */
     answerMode: t.Union([t.Literal("random"), t.Literal("manual")]),
+    /**
+     * 反作弊房开关。它晚于设置格式加入，而 schema 是 strict：写成必填会让旧客户端发来的
+     * 设置整包被判非法，所以只能 optional。缺省即关闭，不开关的房间与以往完全一致。
+     */
+    bakaAntiCheat: t.Optional(t.Boolean()),
   },
   strict
 );
 export type CEESettings = Static<typeof CEESettingsSchema>;
 export type CEEAnswerMode = CEESettings["answerMode"];
+/** 房间是否按反作弊口径收口：只有显式 `true` 才算开启，缺省与 `false` 同义。 */
+export const isCEEAntiCheatRoom = (settings: Pick<CEESettings, "bakaAntiCheat">): boolean =>
+  settings.bakaAntiCheat === true;
 /**
- * 导入设置文件。出题方式晚于文件格式加入，旧文件缺这一项时按随机出题补齐；
- * 「显示常见标签」已固定开启，旧文件里的 `commonTags` 直接丢弃。
+ * 导入设置文件。出题方式与反作弊开关都晚于文件格式加入，旧文件缺这些项时分别按随机出题、
+ * 关闭补齐；「显示常见标签」已固定开启，旧文件里的 `commonTags` 直接丢弃。
  */
 export function parseCEESettings(value: unknown): CEESettings {
   let filled = value;
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const { commonTags: _commonTags, ...rest } = value as Record<string, unknown>;
-    filled = "answerMode" in rest ? rest : { ...rest, answerMode: "random" };
+    const normalized: Record<string, unknown> = { ...rest };
+    if (!("answerMode" in normalized)) normalized.answerMode = "random";
+    if (!("bakaAntiCheat" in normalized)) normalized.bakaAntiCheat = false;
+    filled = normalized;
   }
   if (!Value.Check(CEESettingsSchema, filled)) throw new Error("设置文件格式不正确");
   return filled;
@@ -72,6 +83,7 @@ export const createDefaultCEESettings = (year = new Date().getFullYear()): CEESe
   syncMode: false,
   nonstopMode: false,
   answerMode: "random",
+  bakaAntiCheat: false,
 });
 export type CEESource = "native" | "original";
 /**
@@ -179,7 +191,11 @@ export interface CEEPlayer {
   online: boolean;
   ready: boolean;
   team: number | null;
-  membership: "active" | "spectator";
+  /**
+   * `pendingSpectator` 只出现在反作弊房：旁观要房主批准，待批准期间按「尚未入房」对待，
+   * 不下发私有状态，否则请求者能提前看到房间内部信息。
+   */
+  membership: "active" | "spectator" | "pendingSpectator";
   score: number;
   status: CEEPlayerStatus;
   attempts: number;
@@ -205,6 +221,11 @@ export interface CEERoundSummary {
   guesses: CEEGuess[];
   winners: Array<{ playerId: string; rank: number; score: number }>;
 }
+export interface CEESpectateRequest {
+  playerId: string;
+  name: string;
+  requestedAt: number;
+}
 export interface CEERoomSnapshot {
   roomId: string;
   source: CEESource;
@@ -212,6 +233,8 @@ export interface CEERoomSnapshot {
   visibility: RoomVisibility;
   hasPassword: boolean;
   allowSpectators: boolean;
+  /** 反作弊房标记：快照里恒有，客户端据此解释旁观待批准与登录门槛。 */
+  bakaAntiCheat: boolean;
   hostPlayerId: string;
   phase: CEEPhase;
   settings: CEESettings;
@@ -223,6 +246,8 @@ export interface CEERoomSnapshot {
   chat: ChatMessage[];
   roundSummary: CEERoundSummary | null;
   upstreamConnected: boolean;
+  /** 待房主批准的旁观请求，按发起时间升序；非反作弊房恒为空数组。 */
+  spectateRequests: CEESpectateRequest[];
 }
 export interface CEEPrivateState {
   playerId: string;
@@ -238,6 +263,8 @@ export interface CEEPrivateState {
   imageHintLevel: number;
   deadlineAt: number | null;
   bannedCharacterIds: number[];
+  /** 反作弊房里本人正在等房主批准旁观；待批准期间本字段之外的私有信息一律为空。 */
+  spectatePending: boolean;
 }
 /**
  * 大厅房间条目。`roomId` 是统一的 4 位房号（原版客户端建的 UUID 房为服务端分配的别名）。
@@ -252,6 +279,8 @@ export interface CEERoomSummary {
   spectatorCount: number | null;
   hasPassword: boolean;
   allowSpectators: boolean;
+  /** 大厅条目也要带上：玩家必须在**进房前**看到这房需要客户端，而不是点进去才被拒。 */
+  bakaAntiCheat: boolean;
 }
 export interface CEERoomEnterResult {
   roomId: string;
@@ -318,6 +347,8 @@ export const CEEPayloadSchemas = {
   "cee.player.ready": t.Object({ ready: t.Boolean() }, strict),
   "cee.player.team": t.Object({ team: t.Union([integer(1, 8), t.Null()]) }, strict),
   "cee.player.spectate": t.Object({ spectator: t.Boolean() }, strict),
+  /** 反作弊房里房主处理旁观请求；`approved` 为假即明确拒绝，不再让请求悬到超时。 */
+  "cee.player.approveSpectate": t.Object({ playerId, approved: t.Boolean() }, strict),
   "cee.room.kick": t.Object({ playerId }, strict),
   "cee.room.transferHost": t.Object({ playerId }, strict),
   "cee.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
