@@ -291,77 +291,101 @@ export class WhoIsFakerService implements AdminRoomControl {
     const currentTime = this.now();
 
     for (const room of [...this.rooms.values()]) {
-      // 测试房间不参与闲置/空房自动清理，方便开发者随时回来继续调试。
-      const isTestRoom = room.id === ROOM_ID_TEST_MODE;
-
-      if (this.shouldAutoCloseWhenEmpty(room) && this.getOnlineCount(room) === 0) {
-        if (room.emptySinceAt === undefined) room.emptySinceAt = currentTime;
-        if (currentTime - room.emptySinceAt >= ROOM_EMPTY_GRACE_PERIOD_MS) {
-          await this.closeRoom(room, "empty");
-          continue;
-        }
-      } else {
-        room.emptySinceAt = undefined;
-      }
-
-      if (!isTestRoom && currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS) {
-        this.broadcastRoomEvent(room, "room.expiring", {
-          roomId: room.id,
-          reason: "idle_timeout",
-        });
-        await this.closeRoom(room, "idle_timeout");
-        continue;
-      }
-
-      // 清理掉线超过3分钟的玩家（3分钟清理超时）
-      for (const player of Object.values(room.players)) {
-        if (
-          !player.online &&
-          !player.isBot &&
-          currentTime - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
-        ) {
-          if (room.round && room.round.phase !== "gameOver") {
-            if (room.round.questionerPlayerId === player.id) {
-              await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
-            } else {
-              await this.forceRemovePlayer(room, player.id, "timeout");
-            }
-          }
-          delete room.players[player.id];
-          if (room.hostPlayerId === player.id) {
-            this.reassignHost(room);
-          }
-          this.normalizeRoomRoleConfig(room);
-          this.touchRoom(room);
-        }
-      }
-
-      if (
-        room.hostReconnectDeadlineAt !== undefined &&
-        currentTime >= room.hostReconnectDeadlineAt
-      ) {
-        await this.transferHostAfterDisconnect(room);
-      }
-
-      if (
-        room.round?.questionerReconnectDeadlineAt &&
-        currentTime >= room.round.questionerReconnectDeadlineAt
-      ) {
-        await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
-      }
-
-      const activeTimer = room.round?.phaseTimer ?? room.phaseTimer;
-      if (activeTimer && currentTime >= activeTimer.endsAt) {
-        await this.handlePhaseTimeout(
-          room.id,
-          activeTimer.phase,
-          activeTimer.speechMode,
-          activeTimer.tieBreakStage,
-        );
-      }
-
+      if (await this.closeEmptyRoomIfNeeded(room, currentTime)) continue;
+      if (await this.closeIdleRoomIfNeeded(room, currentTime)) continue;
+      await this.removeOfflinePlayers(room, currentTime);
+      await this.handOverStalledRoles(room, currentTime);
+      await this.finishExpiredPhaseTimer(room, currentTime);
       this.publishRoomStateCalibration(room);
     }
+  }
+
+  /** 空房宽限期：整房离线满一个宽限期才真正关闭，否则只记录空房起点。 */
+  private async closeEmptyRoomIfNeeded(
+    room: WhoIsFakerRoomRecord,
+    currentTime: number,
+  ): Promise<boolean> {
+    if (!this.shouldAutoCloseWhenEmpty(room) || this.getOnlineCount(room) !== 0) {
+      room.emptySinceAt = undefined;
+      return false;
+    }
+
+    if (room.emptySinceAt === undefined) room.emptySinceAt = currentTime;
+    if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) return false;
+
+    await this.closeRoom(room, "empty");
+    return true;
+  }
+
+  /** 闲置超时：先广播即将关闭，再按 idle_timeout 关闭。测试房间不参与自动清理，方便开发者随时回来继续调试。 */
+  private async closeIdleRoomIfNeeded(
+    room: WhoIsFakerRoomRecord,
+    currentTime: number,
+  ): Promise<boolean> {
+    if (room.id === ROOM_ID_TEST_MODE) return false;
+    if (currentTime - room.lastActivityAt < ROOM_IDLE_TIMEOUT_MS) return false;
+
+    this.broadcastRoomEvent(room, "room.expiring", {
+      roomId: room.id,
+      reason: "idle_timeout",
+    });
+    await this.closeRoom(room, "idle_timeout");
+    return true;
+  }
+
+  /** 清理掉线超过3分钟的玩家（3分钟清理超时） */
+  private async removeOfflinePlayers(room: WhoIsFakerRoomRecord, currentTime: number) {
+    for (const player of Object.values(room.players)) {
+      if (
+        player.online ||
+        player.isBot ||
+        currentTime - player.lastSeenAt < PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+      ) {
+        continue;
+      }
+      if (room.round && room.round.phase !== "gameOver") {
+        if (room.round.questionerPlayerId === player.id) {
+          await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
+        } else {
+          await this.forceRemovePlayer(room, player.id, "timeout");
+        }
+      }
+      delete room.players[player.id];
+      if (room.hostPlayerId === player.id) {
+        this.reassignHost(room);
+      }
+      this.normalizeRoomRoleConfig(room);
+      this.touchRoom(room);
+    }
+  }
+
+  /** 房主与出题人各自的重连截止时刻到了就交接或结束本局。 */
+  private async handOverStalledRoles(room: WhoIsFakerRoomRecord, currentTime: number) {
+    if (
+      room.hostReconnectDeadlineAt !== undefined &&
+      currentTime >= room.hostReconnectDeadlineAt
+    ) {
+      await this.transferHostAfterDisconnect(room);
+    }
+
+    if (
+      room.round?.questionerReconnectDeadlineAt &&
+      currentTime >= room.round.questionerReconnectDeadlineAt
+    ) {
+      await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
+    }
+  }
+
+  private async finishExpiredPhaseTimer(room: WhoIsFakerRoomRecord, currentTime: number) {
+    const activeTimer = room.round?.phaseTimer ?? room.phaseTimer;
+    if (!activeTimer || currentTime < activeTimer.endsAt) return;
+
+    await this.handlePhaseTimeout(
+      room.id,
+      activeTimer.phase,
+      activeTimer.speechMode,
+      activeTimer.tieBreakStage,
+    );
   }
 
   notifyShutdown(): void {
