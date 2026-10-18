@@ -91,3 +91,17 @@ test("时钟回退不会使回收删除仍有效的请求配额", () => {
   expect(limiter.allow("a", 150)).toBe(true);
   expect(limiter.allow("a", 150)).toBe(false);
 });
+
+test("键数达到上限时挤掉最久未被用到的键，内存不随对方按需自造的新键增长", () => {
+  const limiter = new SlidingWindowRateLimiter({ windowMs: 10_000, maxRequests: 1, maxKeys: 8 });
+  // 同一次时钟里狂换键：这正是「客户端可影响的键」被拿来撑内存的形状。
+  for (let i = 0; i < 40; i += 1) expect(limiter.allow(`k${i}`, 1000)).toBe(true);
+  expect(limiter.trackedKeys).toBe(8);
+  // 被挤出的键重新记一笔，等于重新给一份配额——容量优先于精确记账，是有意的降级方向。
+  expect(limiter.allow("k0", 1000)).toBe(true);
+  expect(limiter.trackedKeys).toBe(8);
+  // 上限内不误伤：没满时同一个键的配额照旧连续生效。
+  const roomy = new SlidingWindowRateLimiter({ windowMs: 10_000, maxRequests: 1, maxKeys: 8 });
+  expect(roomy.allow("a", 1000)).toBe(true);
+  expect(roomy.allow("a", 1000)).toBe(false);
+});

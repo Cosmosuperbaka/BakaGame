@@ -122,6 +122,29 @@ describe('原版房间适配', () => {
   });
 
   /**
+   * 会话凭据每次进房都重新签发，拿它当桶键等于「离开再进来就送 8 条新额度」；
+   * 配额必须跟着服务端分配的连接号走，同一条连接上重进不重置，别的连接不受牵连。
+   */
+  test('聊天配额按连接计，离开再进房不重置额度', async () => {
+    let now = 1_000;
+    const { service, first, connection } = setup({ now: () => now });
+    await create(service);
+    for (let index = 0; index < 8; index++) {
+      await request(service, 'first', { id: `chat-${index}`, type: 'cee.chat.send', payload: { text: `消息${index}` } });
+    }
+    await request(service, 'first', { id: 'leave', type: 'cee.room.leave', payload: {} });
+    await create(service);
+    await expect(request(service, 'first', { id: 'over', type: 'cee.chat.send', payload: { text: '重进后再发' } }))
+      .rejects.toMatchObject({ code: 'CHAT_RATE_LIMIT' });
+    const other = connection('other'); service.registerConnection(other);
+    await request(service, 'other', { id: 'join', type: 'cee.room.join', roomId: '1234', payload: { userName: '乙' } });
+    await expect(request(service, 'other', { id: 'peer-chat', type: 'cee.chat.send', payload: { text: '别人照发' } })).resolves.toBeTruthy();
+    now = 11_001;
+    await expect(request(service, 'first', { id: 'after-window', type: 'cee.chat.send', payload: { text: '窗口滑出' } })).resolves.toBeTruthy();
+    expect(first.roomId).toBe('original:1234');
+  });
+
+  /**
    * 原版会自行裁剪用户名。若确认谓词做全等比对，带空格的用户名会让加入一直等到 8s 超时，
    * 表现为「加入原版房间失败」而没有任何上游错误。
    */

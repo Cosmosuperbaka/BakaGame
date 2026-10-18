@@ -18,14 +18,23 @@ export interface RateLimitVerdict {
   remaining: number;
 }
 
+/**
+ * 同时记账的桶键上限。键来自客户端可影响的输入（来源地址标头、连接号）时，
+ * 只回收过期键等于让对方按需扩张内存；满了就挤掉最久没被用到的键——
+ * 少记一笔配额是可接受的降级，无界增长不是。
+ */
+const DEFAULT_MAX_TRACKED_KEYS = 10_000;
+
 export class SlidingWindowRateLimiter {
   private readonly windows = new Map<string, number[]>();
   private readonly windowMs: number;
   private readonly maxRequests: number;
+  private readonly maxKeys: number;
 
-  constructor(options: { windowMs?: number; maxRequests?: number } = {}) {
+  constructor(options: { windowMs?: number; maxRequests?: number; maxKeys?: number } = {}) {
     this.windowMs = options.windowMs ?? 60_000;
     this.maxRequests = options.maxRequests ?? 60;
+    this.maxKeys = options.maxKeys ?? DEFAULT_MAX_TRACKED_KEYS;
   }
 
   public consume(key: string, now = Date.now()): RateLimitVerdict {
@@ -36,6 +45,11 @@ export class SlidingWindowRateLimiter {
     for (const [expiredKey, timestamps] of this.windows) {
       if (++inspected > 64 || timestamps.some((timestamp) => timestamp > windowStart)) break;
       this.windows.delete(expiredKey);
+    }
+    // 过期回收只覆盖「键都凉了」的情况：键数已达上限时按插入顺序（最久未被用到）挤掉一个。
+    if (this.windows.size >= this.maxKeys && !this.windows.has(key)) {
+      const oldest = this.windows.keys().next().value;
+      if (oldest !== undefined) this.windows.delete(oldest);
     }
     const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
     // 窗口是滑动的：最早那次请求出窗的一刻就是配额开始恢复的一刻。
@@ -67,6 +81,11 @@ export class SlidingWindowRateLimiter {
     return this.consume(key, now).allowed;
   }
 
+  /** 当前记账的桶键数量；容量不变量测试用，业务代码不得据此判定。 */
+  public get trackedKeys(): number {
+    return this.windows.size;
+  }
+
   public reset(): void {
     this.windows.clear();
   }
@@ -92,13 +111,16 @@ export class ThreeTierRateLimiter {
     ipMaxRequests?: number;
     peerMaxRequests?: number;
     globalMaxRequests?: number;
+    /** 单客户端与 peer 两个桶各自最多记多少个键；全局桶只有一个键，不受影响。 */
+    maxKeys?: number;
   } = {}) {
     const windowMs = options.windowMs ?? 60_000;
     const ipMaxRequests = options.ipMaxRequests ?? 60;
-    this.ipLimiter = new SlidingWindowRateLimiter({ windowMs, maxRequests: ipMaxRequests });
+    this.ipLimiter = new SlidingWindowRateLimiter({ windowMs, maxRequests: ipMaxRequests, maxKeys: options.maxKeys });
     this.peerLimiter = new SlidingWindowRateLimiter({
       windowMs,
       maxRequests: options.peerMaxRequests ?? ipMaxRequests * 10,
+      maxKeys: options.maxKeys,
     });
     this.globalLimiter = new SlidingWindowRateLimiter({
       windowMs,

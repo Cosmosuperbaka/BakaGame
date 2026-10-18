@@ -452,7 +452,10 @@ export class CEEOriginalService {
 
   private chat(session: CEEOriginalSession, text: string): unknown {
     const connectionId = session.connectionId;
-    if (!connectionId || !this.chatLimiter.allow(session.token, this.now())) throw new AppError('CHAT_RATE_LIMIT', '发送消息太快，请稍后重试');
+    // 桶键用服务端分配的连接号，不用会话凭据：凭据每次进房都重新签发，
+    // 离开再进来就换一个全新桶，配额变成「每次重进送 8 条」；同时签发过的凭据个数没有上限，
+    // 限流 Map 会随对方重进的次数一直长。
+    if (!connectionId || !this.chatLimiter.allow(connectionId, this.now())) throw new AppError('CHAT_RATE_LIMIT', '发送消息太快，请稍后重试');
     const me = this.me(session);
     const room = this.chats.get(session.roomId)!;
     const message = { id: `cee_chat_${randomUUID()}`, playerId: me.id, playerName: me.name, text: text.trim(), createdAt: this.now(), system: false };
