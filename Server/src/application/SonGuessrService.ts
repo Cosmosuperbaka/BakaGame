@@ -214,6 +214,26 @@ interface SonGuessrRoomRecord {
 
 type SongUpdateSettingsPayload = Extract<SonGuessrClientMessage, { type: "song.room.updateSettings" }>["payload"];
 
+type MusicAuthPlatform = keyof NonNullable<SonGuessrRoomRecord["musicAuthOperations"]>;
+
+/** 平台对应的房间会话字段：逐端复核时按平台取回当前挂着的会话。 */
+const SESSION_FIELD_BY_PLATFORM: Record<MusicAuthPlatform, "musicSession" | "qqMusicSession"> = {
+  netease: "musicSession",
+  qq: "qqMusicSession",
+};
+
+/** 开局前逐端复核音乐会话所需的一切输入。 */
+interface MusicSessionRevalidation {
+  room: SonGuessrRoomRecord;
+  platform: MusicAuthPlatform;
+  session: NonNullable<SonGuessrRoomRecord["musicSession"]>;
+  operation?: symbol;
+  /** 只用于失败文案里的平台名。 */
+  label: string;
+  verifySession: (platform?: MusicAuthPlatform) => void;
+  getLoginStatus: (cookie: string, platform?: MusicAuthPlatform) => Promise<MusicLoginSession>;
+}
+
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
   bangumiProvider?: BangumiDataProvider;
@@ -2281,10 +2301,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     // 自动与手动开局均先占锁，避免重复点击并发创建两轮。
     const operation = Symbol("automaticRound");
-    if (automatic) {
-      room.automaticRoundOperation = operation;
-      room.automaticRoundLoading = true;
-    } else room.manualRoundStarting = true;
+    this.acquireStartLock(room, automatic, operation);
     try {
       if (!room.musicSession && !room.qqMusicSession) {
         throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录音乐账号");
@@ -2320,57 +2337,29 @@ export class SonGuessrService implements AdminRoomControl {
         }
       };
       if (musicSession) {
-        try {
-          const session = await getLoginStatus(musicSession.cookie, "netease");
-          verifySession("netease");
-          musicSession.account = session.account;
-        } catch (error) {
-          if (error instanceof AppError) {
-            if (
-              error.code === "MUSIC_SESSION_INVALID" &&
-              room.musicSession === musicSession &&
-              room.musicAuthOperations?.netease === neteaseOperation
-            ) {
-              this.clearMusicSession(room, undefined, "netease");
-              this.publishRoom(room);
-            }
-            throw error;
-          }
-          throw new AppError("MUSIC_API_FAILED", "网易云登录状态校验失败，请稍后重试");
-        }
+        await this.refreshMusicSessionAccount({
+          room,
+          platform: "netease",
+          session: musicSession,
+          operation: neteaseOperation,
+          label: "网易云",
+          verifySession,
+          getLoginStatus,
+        });
       }
       if (qqMusicSession) {
-        try {
-          const session = await getLoginStatus(qqMusicSession.cookie, "qq");
-          verifySession("qq");
-          qqMusicSession.account = session.account;
-        } catch (error) {
-          if (error instanceof AppError) {
-            if (
-              error.code === "MUSIC_SESSION_INVALID" &&
-              room.qqMusicSession === qqMusicSession &&
-              room.musicAuthOperations?.qq === qqOperation
-            ) {
-              this.clearMusicSession(room, undefined, "qq");
-              this.publishRoom(room);
-            }
-            throw error;
-          }
-          throw new AppError("MUSIC_API_FAILED", "QQ音乐登录状态校验失败，请稍后重试");
-        }
+        await this.refreshMusicSessionAccount({
+          room,
+          platform: "qq",
+          session: qqMusicSession,
+          operation: qqOperation,
+          label: "QQ音乐",
+          verifySession,
+          getLoginStatus,
+        });
       }
 
-      // 单人房间由系统直接出题，没有出题人与准备环节。
-      if (!room.solo) {
-        const activePlayers = this.activePlayers(room);
-        if (activePlayers.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
-        if (activePlayers.some((candidate) => !candidate.isReady)) {
-          throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
-        }
-        if (!automatic && this.submitterCandidates(room).length === 0) {
-          throw new AppError("NO_SUBMITTER_CANDIDATE", "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家");
-        }
-      }
+      this.ensurePlayersReadyToStart(room, automatic);
 
       room.pendingSubmitterPlayerId = undefined;
       room.currentRound = undefined;
@@ -2392,12 +2381,68 @@ export class SonGuessrService implements AdminRoomControl {
       this.log("song.game.started", room.id, player.id);
       return { started: true };
     } finally {
-      if (automatic) {
-        if (room.automaticRoundOperation === operation) {
-          room.automaticRoundOperation = undefined;
-          room.automaticRoundLoading = false;
+      this.releaseStartLock(room, automatic, operation);
+    }
+  }
+
+  /** 自动与手动开局互斥：占住对应的开局标记。 */
+  private acquireStartLock(room: SonGuessrRoomRecord, automatic: boolean, operation: symbol) {
+    if (!automatic) {
+      room.manualRoundStarting = true;
+      return;
+    }
+
+    room.automaticRoundOperation = operation;
+    room.automaticRoundLoading = true;
+  }
+
+  /** 开局标记只在仍属于本次操作时清空，避免踩掉后来者的锁。 */
+  private releaseStartLock(room: SonGuessrRoomRecord, automatic: boolean, operation: symbol) {
+    if (!automatic) {
+      room.manualRoundStarting = false;
+      return;
+    }
+
+    if (room.automaticRoundOperation !== operation) return;
+    room.automaticRoundOperation = undefined;
+    room.automaticRoundLoading = false;
+  }
+
+  /** 开局前逐端复核音乐会话；登录态已变更就清掉该端会话并广播，其余失败按上游接口错误上报。 */
+  private async refreshMusicSessionAccount(check: MusicSessionRevalidation): Promise<void> {
+    const { room, platform, session, operation, label, verifySession, getLoginStatus } = check;
+    try {
+      const result = await getLoginStatus(session.cookie, platform);
+      verifySession(platform);
+      session.account = result.account;
+    } catch (error) {
+      if (error instanceof AppError) {
+        if (
+          error.code === "MUSIC_SESSION_INVALID" &&
+          room[SESSION_FIELD_BY_PLATFORM[platform]] === session &&
+          room.musicAuthOperations?.[platform] === operation
+        ) {
+          this.clearMusicSession(room, undefined, platform);
+          this.publishRoom(room);
         }
-      } else room.manualRoundStarting = false;
+        throw error;
+      }
+      throw new AppError("MUSIC_API_FAILED", `${label}登录状态校验失败，请稍后重试`);
+    }
+  }
+
+  /** 开局门槛：至少两名在线真人且全部准备；手动开局还得有可选出题人。 */
+  private ensurePlayersReadyToStart(room: SonGuessrRoomRecord, automatic: boolean) {
+    // 单人房间由系统直接出题，没有出题人与准备环节。
+    if (room.solo) return;
+
+    const activePlayers = this.activePlayers(room);
+    if (activePlayers.length < 2) throw new AppError("NOT_ENOUGH_PLAYERS", "至少需要两名正式玩家");
+    if (activePlayers.some((candidate) => !candidate.isReady)) {
+      throw new AppError("PLAYERS_NOT_READY", "仍有玩家未准备");
+    }
+    if (!automatic && this.submitterCandidates(room).length === 0) {
+      throw new AppError("NO_SUBMITTER_CANDIDATE", "暂无可选出题人：出题人的队友会一起观战，需要留下猜歌的玩家");
     }
   }
 
@@ -3139,36 +3184,55 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.settings.questionType === "anime") {
       const provider = this.options.bangumiProvider;
       if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-      const filters = room.settings.animeAutoFilters ?? {};
-      const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
-      const year = filters.ranking === "year" && filters.startYear && filters.endYear
-        ? filters.startYear + this.random.nextInt(filters.endYear - filters.startYear + 1)
-        : undefined;
-      const candidates = await provider.searchSubjects("", poolSize, year ? {
-        ...filters,
-        startYear: year,
-        endYear: year,
-      } : filters);
-      const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
-      const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
-      const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
-      let attempts = 0;
-      while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
-        attempts += 1;
-        const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
-        try {
-          const anime = await provider.getSubject(selected.id);
-          const resolved = await this.resolveAnimeSong(room, anime);
-          verify();
-          this.installRound(room, resolved.song, "", anime, resolved.track);
-          return;
-        } catch (error) {
-          if (!isUnusableSongCandidate(error)
-            && !(error instanceof AppError && ["BANGUMI_NO_MUSIC", "BANGUMI_NOT_FOUND"].includes(error.code))) throw error;
-        }
-      }
-      throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
+      await this.startAutomaticAnimeRound(room, provider, verify);
+      return;
     }
+
+    await this.startAutomaticSongRound(room, verify);
+  }
+
+  /** 自动出题（番剧）：在筛选池里逐个试到第一部有可播关联曲的番剧为止。 */
+  private async startAutomaticAnimeRound(
+    room: SonGuessrRoomRecord,
+    provider: BangumiDataProvider,
+    verify: () => void,
+  ): Promise<void> {
+    const filters = room.settings.animeAutoFilters ?? {};
+    const poolSize = Math.min(filters.subjectLimit ?? 50, 50);
+    const year = filters.ranking === "year" && filters.startYear && filters.endYear
+      ? filters.startYear + this.random.nextInt(filters.endYear - filters.startYear + 1)
+      : undefined;
+    const candidates = await provider.searchSubjects("", poolSize, year ? {
+      ...filters,
+      startYear: year,
+      endYear: year,
+    } : filters);
+    const recentSubjectIds = new Set(room.recentSubjectIds ?? []);
+    const freshCandidates = candidates.filter((c) => !recentSubjectIds.has(c.id));
+    const pool = freshCandidates.length > 0 ? [...freshCandidates] : [...candidates];
+    let attempts = 0;
+    while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
+      attempts += 1;
+      const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
+      try {
+        const anime = await provider.getSubject(selected.id);
+        const resolved = await this.resolveAnimeSong(room, anime);
+        verify();
+        this.installRound(room, resolved.song, "", anime, resolved.track);
+        return;
+      } catch (error) {
+        if (!isUnusableSongCandidate(error)
+          && !(error instanceof AppError && ["BANGUMI_NO_MUSIC", "BANGUMI_NOT_FOUND"].includes(error.code))) throw error;
+      }
+    }
+    throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
+  }
+
+  /** 自动出题（歌曲）：先按整池定近期窗口，再在剩下的候选里试到能拿到音频的一首。 */
+  private async startAutomaticSongRound(
+    room: SonGuessrRoomRecord,
+    verify: () => void,
+  ): Promise<void> {
     const candidates = await this.resolveAutomaticCandidates(room);
     if (candidates.length === 0) {
       throw new AppError("AUTO_NO_MATCH", "没有符合当前筛选条件的歌曲");
