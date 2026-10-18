@@ -50,6 +50,23 @@
   建房时就可选择不进大厅，服务端建好房后与房间设置走同一条 `toggleRoomVisibility`。增强房的开关叫「私密房间」。
 - 上游地址及 AES 配置仅在服务端环境变量；绝不写入前端构建或日志。
 
+### 反作弊房（BakaAntiCheat）
+
+- `settings.bakaAntiCheat` 默认 `false`，只在增强房出现，原版房没有这个开关。不开启的房间与过去完全一致：
+  网页玩家照常游玩，任何检测与门槛都不作用于他们。
+- 开启后准入三条硬条件：连接带服务端验过的通道证明（否则 `CLIENT_REQUIRED`）、全员已登录
+  （否则 `LOGIN_REQUIRED`）、客户端版本不低于 `CLIENT_MIN_DESKTOP_VERSION` / `CLIENT_MIN_MOBILE_VERSION`
+  （否则 `CLIENT_OUTDATED`；普通房不拦版本）。旁观改为房主批准制：待批准队列上限
+  `CEE_SPECTATE_QUEUE_MAX`，超时 `CEE_SPECTATE_APPROVAL_TIMEOUT_MS` 未处理自动拒绝。断线重连走同一道准入，
+  旧 `sessionToken` 不是例外。
+- 壳 ↔ 服务端字段、自检 id 词表与判定分档见 [ClientChannel](ClientChannel.md)，本文件不复制字段表。
+- 行为特征只用服务端可观测数据：相邻猜测间隔及其变异系数、是否「先搜索再猜」（连搜索结果里有没有这个
+  角色 ID 一起记）、首猜即中。规则打分不做机器学习，因为样本不够且无法向被复核的人解释。
+  采集覆盖全部增强房对局（普通房的数据只作语料，不判定、不对外呈现），判定结果只进人工复核队列
+  `cee_anti_cheat_review`，**代码路径里不存在任何自动封禁**。
+- 房间内的全部可见性只有结算那一句「本局已记录，仅用于人工复核」：不点名、不指控；可疑度、特征与复核
+  条目一律不进协议，只在服务端。
+
 ## 玩法与状态
 
 `waiting → preparing（随机出题）/ choosingSetter → answering（手动出题）→ guessing → settled → waiting / preparing / choosingSetter`。
