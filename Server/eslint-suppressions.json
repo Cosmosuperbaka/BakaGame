@@ -11,7 +11,7 @@
   },
   "src/infrastructure/NeteaseMusicProvider.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 2
+      "count": 1
     }
   }
 }

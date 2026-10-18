@@ -1756,6 +1756,55 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
   };
 };
 
+/** 四级歌词优先链共享的输入：本曲元数据、各级原文与其译文、音译。 */
+type LyricChainInput = {
+  id: string;
+  song: SongSearchResult;
+  yrc?: string;
+  lrc?: string;
+  yrcTrans?: string;
+  yrcRoma?: string;
+  lrcTrans?: string;
+  lrcRoma?: string;
+};
+
+/**
+ * 读出歌词响应里的原文字段。
+ *
+ * 译文与音译各有两个来源（ytlrc 与 tlyric、yromalrc 与 romalrc）：逐字歌词优先 y 开头的
+ * 那份，行级歌词优先普通那份，两边互为备选。
+ */
+const readLyricSources = (
+  id: string,
+  song: SongSearchResult,
+  lyricBody: Record<string, unknown>,
+): LyricChainInput => {
+  const ytlrcRaw = readString(asRecord(lyricBody.ytlrc).lyric);
+  const tlyricRaw = readString(asRecord(lyricBody.tlyric).lyric);
+  const yromalrcRaw = readString(asRecord(lyricBody.yromalrc).lyric);
+  const romalrcRaw = readString(asRecord(lyricBody.romalrc).lyric);
+
+  return {
+    id,
+    song,
+    yrc: readString(asRecord(lyricBody.yrc).lyric),
+    lrc: readString(asRecord(lyricBody.lrc).lyric),
+    yrcTrans: ytlrcRaw || tlyricRaw,
+    yrcRoma: yromalrcRaw || romalrcRaw,
+    lrcTrans: tlyricRaw || ytlrcRaw,
+    lrcRoma: romalrcRaw || yromalrcRaw,
+  };
+};
+
+/** 逐字歌词只有真的带 `words` 时间轴才算命中，否则继续降级到下一优先级。 */
+const adoptVerbatimLyrics = (
+  parsed: SongLyricLine[],
+  input: LyricChainInput,
+): SongLyricLine[] | undefined =>
+  parsed.length > 0 && parsed.some((line) => line.words && line.words.length > 0)
+    ? sanitizeLyrics(mergeTranslations(parsed, input.yrcTrans, input.yrcRoma), input.song)
+    : undefined;
+
 export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
@@ -2440,75 +2489,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     let lyrics: SongLyricLine[] = [];
     if (includeResources) {
       audioUrl = urlResponse;
-      const lyricBody = responseBody(lyricResponse);
-      const yrcRaw = readString(asRecord(lyricBody.yrc).lyric);
-      const lrcRaw = readString(asRecord(lyricBody.lrc).lyric);
-      const ytlrcRaw = readString(asRecord(lyricBody.ytlrc).lyric);
-      const tlyricRaw = readString(asRecord(lyricBody.tlyric).lyric);
-      const yromalrcRaw = readString(asRecord(lyricBody.yromalrc).lyric);
-      const romalrcRaw = readString(asRecord(lyricBody.romalrc).lyric);
-
-      const yrcTrans = ytlrcRaw || tlyricRaw;
-      const yrcRoma = yromalrcRaw || romalrcRaw;
-      const lrcTrans = tlyricRaw || ytlrcRaw;
-      const lrcRoma = romalrcRaw || yromalrcRaw;
-
-      // 1. 优先使用网易云官方 YRC 逐字歌词
-      if (yrcRaw) {
-        try {
-          const parsed = parseYrc(yrcRaw);
-          if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-            const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
-            lyrics = sanitizeLyrics(merged, base);
-          }
-        } catch (err) {
-          this.options.logger?.warn?.("解析网易云 YRC 歌词失败", { songId: id, ...describeError(err) });
-        }
-      }
-
-      // 2. 次优先使用 AMLL API 通过网易云音乐 ID 匹配
-      if (lyrics.length === 0) {
-        try {
-          const ttmlRaw = await this.getAmllTtmlLyrics(id);
-          if (ttmlRaw) {
-            const parsed = parseTTML(ttmlRaw);
-            if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-              const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
-              lyrics = sanitizeLyrics(merged, base);
-            }
-          }
-        } catch (err) {
-          this.options.logger?.warn?.("解析 AMLL 网易云 ID 匹配 TTML 歌词失败", { songId: id, ...describeError(err) });
-        }
-      }
-
-      // 3. 第三优先使用 AMLL API 搜索歌曲名字匹配
-      if (lyrics.length === 0 && base.title) {
-        try {
-          const ttmlRaw = await this.searchAmllTtmlLyrics(base.title, base.artist);
-          if (ttmlRaw) {
-            const parsed = parseTTML(ttmlRaw);
-            if (parsed.length > 0 && parsed.some((l) => l.words && l.words.length > 0)) {
-              const merged = mergeTranslations(parsed, yrcTrans, yrcRoma);
-              lyrics = sanitizeLyrics(merged, base);
-            }
-          }
-        } catch (err) {
-          this.options.logger?.warn?.("解析 AMLL 歌曲名搜索 TTML 歌词失败", { title: base.title, ...describeError(err) });
-        }
-      }
-
-      // 4. 兜底使用网易云普通 LRC（行级滚动高亮）
-      if (lyrics.length === 0 && lrcRaw) {
-        try {
-          const parsed = parseLrc(lrcRaw);
-          const merged = mergeTranslations(parsed, lrcTrans, lrcRoma);
-          lyrics = sanitizeLyrics(merged, base);
-        } catch (err) {
-          this.options.logger?.warn?.("解析网易云 LRC 歌词失败", { songId: id, ...describeError(err) });
-        }
-      }
-
+      lyrics = await this.resolveSongLyrics(readLyricSources(id, base, responseBody(lyricResponse)));
       if (!audioUrl) throw new AppError("SONG_UNAVAILABLE", "该歌曲暂时没有可用播放地址");
     }
 
@@ -2526,6 +2507,68 @@ export class NeteaseMusicProvider implements MusicProvider {
       },
       chorus,
     };
+  }
+
+  /**
+   * 按四级优先取歌词：官方 YRC 逐字 → AMLL 按网易云 ID → AMLL 按歌名搜索 → 普通 LRC 兜底。
+   *
+   * 逐级短路是硬约束：AMLL 是外部服务，前一级命中就绝不能多发后一级的请求。
+   */
+  private async resolveSongLyrics(input: LyricChainInput): Promise<SongLyricLine[]> {
+    const yrc = this.parseNeteaseYrcLyrics(input);
+    if (yrc.length > 0) return yrc;
+
+    const byId = await this.withTtmlLyrics(input, () => this.getAmllTtmlLyrics(input.id), {
+      log: "解析 AMLL 网易云 ID 匹配 TTML 歌词失败",
+      context: { songId: input.id },
+    });
+    if (byId.length > 0) return byId;
+
+    if (!input.song.title) return this.parseNeteaseLineLyrics(input);
+    const byTitle = await this.withTtmlLyrics(
+      input,
+      () => this.searchAmllTtmlLyrics(input.song.title, input.song.artist),
+      { log: "解析 AMLL 歌曲名搜索 TTML 歌词失败", context: { title: input.song.title } },
+    );
+    return byTitle.length > 0 ? byTitle : this.parseNeteaseLineLyrics(input);
+  }
+
+  /** 拉一次 TTML 并解析；上游失败或没有结果都当作「这一级没命中」，只记告警。 */
+  private async withTtmlLyrics(
+    input: LyricChainInput,
+    fetchTtml: () => Promise<string | undefined>,
+    failure: { log: string; context: Record<string, unknown> },
+  ): Promise<SongLyricLine[]> {
+    try {
+      const ttmlRaw = await fetchTtml();
+      return ttmlRaw ? adoptVerbatimLyrics(parseTTML(ttmlRaw), input) ?? [] : [];
+    } catch (err) {
+      this.options.logger?.warn?.(failure.log, { ...failure.context, ...describeError(err) });
+      return [];
+    }
+  }
+
+  /** 优先级 1：网易云官方 YRC 逐字歌词，命中即不碰任何第三方。 */
+  private parseNeteaseYrcLyrics(input: LyricChainInput): SongLyricLine[] {
+    if (!input.yrc) return [];
+    try {
+      return adoptVerbatimLyrics(parseYrc(input.yrc), input) ?? [];
+    } catch (err) {
+      this.options.logger?.warn?.("解析网易云 YRC 歌词失败", { songId: input.id, ...describeError(err) });
+      return [];
+    }
+  }
+
+  /** 优先级 4 兜底：网易云普通 LRC，只有行级时间轴（播放器按行滚动高亮）。 */
+  private parseNeteaseLineLyrics(input: LyricChainInput): SongLyricLine[] {
+    if (!input.lrc) return [];
+    try {
+      const merged = mergeTranslations(parseLrc(input.lrc), input.lrcTrans, input.lrcRoma);
+      return sanitizeLyrics(merged, input.song);
+    } catch (err) {
+      this.options.logger?.warn?.("解析网易云 LRC 歌词失败", { songId: input.id, ...describeError(err) });
+      return [];
+    }
   }
 
   /**
