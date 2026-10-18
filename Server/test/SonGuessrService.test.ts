@@ -21,6 +21,7 @@ import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
   HOST_RECONNECT_TIMEOUT_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
   ROOM_IDLE_TIMEOUT_MS,
   TEST_MODE_MAX_PLAYERS,
@@ -1097,6 +1098,40 @@ describe("SonGuessrService", () => {
     await attempt(attacker, "尝试者", "secret");
     expect(lastEvent<SonGuessrRoomSnapshot>(friend, "song.room.snapshot").players.map((player) => player.name).sort())
       .toEqual(["尝试者", "房主", "朋友"].sort());
+  });
+
+  test("同一房间的密码尝试有聚合额度：多开连接换不来更多爆破次数", async () => {
+    let now = 1_000_000;
+    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+    await createRoom(service, connection(service, "host"), { visibility: "private", password: "secret" });
+    let attemptId = 0;
+    const attempt = (client: TestConnection, userName: string, password: string) => execute(service, client, {
+      id: `password-burst-${++attemptId}`,
+      type: "song.room.join",
+      roomId: "1234",
+      payload: { userName, password },
+    });
+
+    const sockets = Array.from(
+      { length: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS / JOIN_PASSWORD_MAX_ATTEMPTS + 1 },
+      (_, index) => connection(service, `burst-${index}`),
+    );
+    for (const socket of sockets.slice(0, -1)) {
+      for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+        await expect(attempt(socket, "尝试者", `猜测${index}`)).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+      }
+    }
+
+    // 最后一条连接自己一次都没试过，房间聚合额度已被前面的连接用光。
+    const overflow = sockets[sockets.length - 1]!;
+    await expect(attempt(overflow, "溢出者", "错误口令")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+    // 先计数再校验：正确密码同样被拒，攻击者分不清是额度用完还是口令猜中。
+    await expect(attempt(overflow, "溢出者", "secret")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+
+    now += JOIN_PASSWORD_WINDOW_MS + 1;
+    await attempt(overflow, "溢出者", "secret");
+    expect(lastEvent<SonGuessrRoomSnapshot>(overflow, "song.room.snapshot").players.map((player) => player.name))
+      .toEqual(["房主", "溢出者"]);
   });
 
   test("房主 Cookie 只存在房间内存、供全房请求使用并在房主离开时销毁", async () => {

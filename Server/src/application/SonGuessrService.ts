@@ -4,6 +4,7 @@ import {
   CHAT_LIMIT,
   HOST_RECONNECT_TIMEOUT_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
@@ -1091,6 +1092,14 @@ export class SonGuessrService implements AdminRoomControl {
   private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
     windowMs: JOIN_PASSWORD_WINDOW_MS,
     maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
+  });
+  /**
+   * 同一房间的聚合密码尝试配额（只按房间计数）。
+   * 每连接各算一份时，开 N 条连接就有 N 份额度，词表爆破在聚合上不受限。
+   */
+  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: JOIN_PASSWORD_WINDOW_MS,
+    maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   });
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。 */
   private readonly chatLimiter = new SlidingWindowRateLimiter({
@@ -4291,6 +4300,10 @@ export class SonGuessrService implements AdminRoomControl {
     if (!normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
     // 先计数再校验：只在猜错时计数的话，猜中那一次不经过限流，超限后的成功与失败仍可区分。
     if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
+      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
+    }
+    // 房间级聚合额度：多开连接各自占一份额度时，爆破速度随连接数线性增长。
+    if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
     if (room.password !== normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
