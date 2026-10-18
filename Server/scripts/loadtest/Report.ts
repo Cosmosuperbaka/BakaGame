@@ -405,6 +405,8 @@ const conclusion = (reports: Report[]): string => {
   for (const report of ramps) {
     const top = compliantTop(report);
     const slo = atSlo(report);
+    const truncatedByLadder =
+      report.stopReason === "max-steps" || report.stopReason === "max-players";
     lines.push(
       `<b>pace ${report.config.pace}、${esc(mixText(report))}${esc(
         tag(report)
@@ -413,7 +415,9 @@ const conclusion = (reports: Report[]): string => {
           ? `${slo.livePlayers} 名（${fmt(slo.commandsPerSecond)} 指令/秒、${fmt(
               perCoreCommands(slo)
             )} 指令/秒·核、${fmt(slo.wireMbps)} Mbps、${fmt(slo.target.cores)} 核）`
-          : "本次阶梯没跨过该延迟线"
+          : truncatedByLadder
+            ? `至少 ${top.livePlayers} 名（阶梯在 ${report.stopReason} 处截断，最后一跳 ack P95 还没到 ${SLO_ACK_P95_MS} ms，只说明容量下界）`
+            : "本次阶梯没跨过该延迟线"
       }</b>；最后一个未判饱和的跳是 ${top.livePlayers} 名（${
         top.roomsStarted
       } 个房间、${fmt(top.commandsPerSecond)} 指令/秒、带宽 ${fmt(
