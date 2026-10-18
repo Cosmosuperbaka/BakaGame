@@ -720,6 +720,12 @@ function CEESettlement({
       <PhaseHeader icon={Trophy} title="答案揭晓" />
       <CEEAnswerCard answer={summary.answer} sealed />
       <CEEScoreTable scores={summary.scores} guesses={summary.guesses} />
+      {/* 反作弊房在房间里的全部可见性就是这一句：不点名、不指控，也不暴露任何判定分值。 */}
+      {snapshot.bakaAntiCheat && (
+        <p className="text-center text-xs text-muted-foreground">
+          反作弊房：本局已记录，仅用于人工复核
+        </p>
+      )}
       {/* 回放先只对开了本地开关的人可见（见 lib/CeeReplay），未开时整块不渲染 */}
       <CEEReplay key={snapshot.roundNumber} rounds={replayRounds} />
       <div className="flex flex-wrap justify-center gap-2">

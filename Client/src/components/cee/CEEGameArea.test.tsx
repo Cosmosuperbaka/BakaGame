@@ -477,6 +477,43 @@ describe("CEE 操作区", () => {
     expect(screen.queryByText("猜测中")).not.toBeInTheDocument();
   });
 
+  it("反作弊房结算只显示「本局已记录」：不点名、不显示判定分", () => {
+    const answer: CEECharacterView = {
+      id: 1,
+      name: "Nijika",
+      nameCn: "伊地知虹夏",
+      gender: "female",
+      popularity: 0,
+      summary: "",
+      imageUrl: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+      appearances: [],
+      highestRating: -1,
+      earliestAppearance: 0,
+      latestAppearance: 0,
+      subjectTags: [],
+      characterTags: [],
+      voiceActors: [],
+      metaTags: [],
+      comparisonAppearances: [],
+      extraTags: [],
+    };
+    const roundSummary = { answer, scores: [], guesses: [], winners: [] };
+    const view = render(
+      <CEEGameArea
+        snapshot={room({ phase: "settled", roundSummary, bakaAntiCheat: true })}
+        privateState={privateState()}
+      />
+    );
+    expect(screen.getByText("反作弊房：本局已记录，仅用于人工复核")).toBeInTheDocument();
+    view.rerender(
+      <CEEGameArea
+        snapshot={room({ phase: "settled", roundSummary, bakaAntiCheat: false })}
+        privateState={privateState()}
+      />
+    );
+    expect(screen.queryByText("反作弊房：本局已记录，仅用于人工复核")).not.toBeInTheDocument();
+  });
+
   it("结算的下一步按来源区分：增强房支持返回等待与再来一轮，原版房直接开下一局", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
