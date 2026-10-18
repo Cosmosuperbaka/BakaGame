@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { CEECommand, CEEPayload } from "@bakagame/shared";
-import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
+import { useCEEStore } from "@/stores/UseCEEStore";
 
 export function useCEEAction() {
   const inFlight = useRef(new Set<CEECommand>());
@@ -12,7 +12,8 @@ export function useCEEAction() {
     try {
       return await useCEEStore.getState().sendCommand(command, payload);
     } catch (error) {
-      useCEEStore.getState().setNotice(ceeErrorMessage(error));
+      // LOGIN_REQUIRED 之类的码经统一入口既提示、又顺带拉起登录弹窗。
+      useCEEStore.getState().reportError(error);
       return undefined;
     } finally {
       inFlight.current.delete(command);

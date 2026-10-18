@@ -14,7 +14,7 @@ import {
 } from "@/lib/RoomSettingsMemory";
 import type { CEERoomSummary, CEESource } from "@bakagame/shared";
 
-/** 大厅只区分「等待中」与「游戏中」；原版房带来源徽章，旁观人数由上游提供时才显示。 */
+/** 大厅只区分「等待中」与「游戏中」；原版房带来源徽章，反作弊房进房前就标出需要客户端，旁观人数由上游提供时才显示。 */
 const toRoomView = (room: CEERoomSummary): LobbyRoomView => ({
   roomId: room.roomId,
   name: room.name,
@@ -24,6 +24,7 @@ const toRoomView = (room: CEERoomSummary): LobbyRoomView => ({
   playerCount: room.playerCount,
   spectatorCount: room.spectatorCount,
   tag: room.source === "original" ? CEE_SOURCE_LABELS.original : undefined,
+  requiresClient: room.bakaAntiCheat,
 });
 
 export default function CEEPage() {
@@ -94,6 +95,8 @@ export default function CEEPage() {
       useCEEStore.getState().joinRoom(roomId, name, password, signal),
     reconnectRoom: (roomId, signal) => useCEEStore.getState().reconnectRoom(roomId, signal),
     showError: (message) => useCEEStore.getState().setNotice(message, "error"),
+    // 反作弊房在进房前就被拒（需要客户端 / 需要登录）：走统一入口，给具体文案并顺带拉起登录。
+    onEntryError: (error) => useCEEStore.getState().reportError(error),
     // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的玩法设置套进新房间。
     onRoomCreated: (roomId, params) => {
       saveRoomCreateDefaults("cee", {

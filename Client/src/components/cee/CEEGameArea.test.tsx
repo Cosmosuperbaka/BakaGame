@@ -21,6 +21,7 @@ const room = (changes: Partial<CEERoomSnapshot> = {}): CEERoomSnapshot => ({
   visibility: "public",
   hasPassword: false,
   allowSpectators: true,
+  bakaAntiCheat: false,
   hostPlayerId: "host",
   phase: "waiting",
   settings: createDefaultCEESettings(2026),
@@ -46,6 +47,7 @@ const room = (changes: Partial<CEERoomSnapshot> = {}): CEERoomSnapshot => ({
   chat: [],
   roundSummary: null,
   upstreamConnected: true,
+  spectateRequests: [],
   ...changes,
 });
 const privateState = (changes: Partial<CEEPrivateState> = {}): CEEPrivateState => ({
@@ -62,6 +64,7 @@ const privateState = (changes: Partial<CEEPrivateState> = {}): CEEPrivateState =
   deadlineAt: null,
   bannedCharacterIds: [],
   setterCandidateIds: ["host"],
+  spectatePending: false,
   ...changes,
 });
 afterEach(() => {
@@ -569,7 +572,7 @@ describe("CEE 操作区", () => {
     const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const settings = createDefaultCEESettings(2026);
-    const view = render(<CEEGameSettings settings={settings} waiting={false} />);
+    const view = render(<CEEGameSettings settings={settings} source="native" waiting={false} />);
     await user.click(screen.getByRole("button", { name: /猜测设置/ }));
     for (const name of ["角色全局 BP", "标签全局 BP", "同步模式", "血战模式"]) {
       expect(screen.getByRole("switch", { name })).toBeInTheDocument();
@@ -579,13 +582,91 @@ describe("CEE 操作区", () => {
     expect(screen.getByRole("switch", { name: "同步模式" })).toBeChecked();
     expect(send).not.toHaveBeenCalled();
 
-    view.rerender(<CEEGameSettings settings={settings} waiting />);
+    view.rerender(<CEEGameSettings settings={settings} source="native" waiting />);
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "cee.room.settings",
         { settings: expect.objectContaining({ syncMode: true }) },
         expect.any(Object)
       )
+    );
+  });
+
+  it("BakaAntiCheat 开关只在增强房出现；原版房不显示反作弊面板", async () => {
+    const user = userEvent.setup();
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const settings = createDefaultCEESettings(2026);
+    const view = render(
+      <CEEGameSettings settings={settings} source="original" waiting readOnly={false} />
+    );
+    expect(screen.queryByRole("button", { name: /反作弊/ })).not.toBeInTheDocument();
+    view.rerender(<CEEGameSettings settings={settings} source="native" waiting />);
+    await user.click(screen.getByRole("button", { name: /反作弊/ }));
+    expect(screen.getByRole("switch", { name: "BakaAntiCheat" })).toBeInTheDocument();
+  });
+
+  it("反作弊房：房主看到待批准旁观请求，同意/拒绝分别提交 approveSpectate", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const [host] = room().players;
+    const requester = {
+      ...host,
+      id: "viewer",
+      name: "路人",
+      membership: "pendingSpectator" as const,
+    };
+    const snapshot = room({
+      bakaAntiCheat: true,
+      players: [host, requester],
+      spectateRequests: [{ playerId: "viewer", name: "路人", requestedAt: 1 }],
+    });
+    render(<CEEPlayerList snapshot={snapshot} privateState={privateState()} />);
+    await user.click(screen.getByRole("button", { name: "同意旁观" }));
+    expect(send).toHaveBeenLastCalledWith(
+      "cee.player.approveSpectate",
+      { playerId: "viewer", approved: true },
+      expect.objectContaining({ roomId: "1234" })
+    );
+    await user.click(screen.getByRole("button", { name: "拒绝 路人" }));
+    expect(send).toHaveBeenLastCalledWith(
+      "cee.player.approveSpectate",
+      { playerId: "viewer", approved: false },
+      expect.objectContaining({ roomId: "1234" })
+    );
+  });
+
+  it("反作弊房：非房主看不到批准区；本人待批准时显示「等待房主批准」并可取消", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const [host] = room().players;
+    const requester = {
+      ...host,
+      id: "viewer",
+      name: "路人",
+      membership: "pendingSpectator" as const,
+    };
+    const snapshot = room({
+      bakaAntiCheat: true,
+      hostPlayerId: "host",
+      players: [host, requester],
+      spectateRequests: [{ playerId: "viewer", name: "路人", requestedAt: 1 }],
+    });
+    // 以请求者身份渲染：既无批准按钮，也能看到自己的等待行。
+    render(
+      <CEEPlayerList
+        snapshot={snapshot}
+        privateState={privateState({ playerId: "viewer", spectatePending: true })}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "同意旁观" })).not.toBeInTheDocument();
+    expect(screen.getByText(/等待房主批准/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消申请" }));
+    expect(send).toHaveBeenCalledWith(
+      "cee.player.spectate",
+      { spectator: false },
+      expect.objectContaining({ roomId: "1234" })
     );
   });
 });

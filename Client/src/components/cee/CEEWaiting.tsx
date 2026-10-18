@@ -320,6 +320,7 @@ export function CEEWaiting({
       <SettingsStack>
         <CEEGameSettings
           settings={snapshot.settings}
+          source={snapshot.source}
           waiting={snapshot.phase === "waiting"}
           readOnly={!isHost}
         />

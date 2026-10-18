@@ -21,6 +21,8 @@ export interface LobbyRoomView {
   spectatorCount: number | null;
   /** 房名后的来源标记，例如 CEE 的原版房。 */
   tag?: string;
+  /** 反作弊房：进房前就要标出「需要客户端」，避免浏览器玩家点了才被拒。 */
+  requiresClient?: boolean;
 }
 
 /**
@@ -132,6 +134,11 @@ export function RoomListCard({
               {room.tag ? (
                 <Badge variant="subtle" size="xs" className="shrink-0">
                   {room.tag}
+                </Badge>
+              ) : null}
+              {room.requiresClient ? (
+                <Badge variant="subtle" size="xs" className="shrink-0">
+                  需客户端
                 </Badge>
               ) : null}
               {/* 进房在途：转圈接在房名行末，房名本就留有截断余地，不推动整张卡片或整列。 */}

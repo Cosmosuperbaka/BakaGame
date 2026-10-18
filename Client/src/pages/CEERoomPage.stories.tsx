@@ -11,6 +11,8 @@ import {
   CEE_ORIGINAL_ROOM_ID,
   CEE_SESSION_TOKEN,
   ceeAnsweringRoom,
+  ceeAntiCheatHostRoom,
+  ceeAntiCheatPendingRoom,
   ceeChoosingSetterRoom,
   ceeGuessingRoom,
   ceeOriginalRoom,
@@ -109,6 +111,28 @@ export const WaitingHost: Story = {
 export const WaitingGuest: Story = {
   name: "等待阶段 · 玩家",
   beforeEach: () => inRoom(ceeWaitingGuestRoom()),
+};
+
+/** 反作弊房房主：玩家栏底部的「待批准旁观」给出同意 / 拒绝两个动作。 */
+export const AntiCheatHost: Story = {
+  name: "反作弊房 · 房主批准旁观",
+  beforeEach: () => inRoom(ceeAntiCheatHostRoom()),
+};
+
+/** 反作弊房请求者：本人身份既非玩家也非旁观，底部显示「等待房主批准」与取消入口。 */
+export const AntiCheatPending: Story = {
+  name: "反作弊房 · 等待房主批准",
+  beforeEach: () => inRoom(ceeAntiCheatPendingRoom()),
+};
+
+/** 反作弊开关落在等待页的「反作弊」面板里；原版房不显示这块面板。 */
+export const AntiCheatSetting: Story = {
+  name: "设置面板 · 反作弊开关",
+  beforeEach: () => inRoom(ceeWaitingHostRoom()),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: /反作弊/ }));
+    dropFocus();
+  },
 };
 
 /** 设置改为等待页内的折叠面板，逐个展开以便同屏审查三组设置。 */

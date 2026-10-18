@@ -16,6 +16,12 @@ import {
   removeCEESession,
   writeCEESession,
 } from "@/lib/CEESession";
+import {
+  SPECTATE_APPROVED_TEXT,
+  SPECTATE_REJECTED_TEXT,
+  antiCheatMessage,
+  isLoginRequiredCode,
+} from "@/lib/AntiCheatCopy";
 import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
@@ -52,7 +58,13 @@ export interface CEEStore {
   privateState: CEEPrivateState | null;
   roomClosedAt: number | null;
   notice: { text: string; type: "info" | "error" | "success" } | null;
+  /** 最近一次要求登录的时刻；CEELayout 监听它去打开登录弹窗。0 表示没有待办请求。 */
+  requestLoginAt: number;
   setNotice: (text: string, type?: "info" | "error" | "success") => void;
+  /** 统一处理命令/同步失败：按错误码取文案弹提示，LOGIN_REQUIRED 顺带请求打开登录弹窗。 */
+  reportError: (error: unknown) => void;
+  /** 请求打开登录弹窗（网页环境下客户端探测不到身份时由服务端拒绝触发）。 */
+  promptLogin: () => void;
   subscribeLobby: () => Promise<void>;
   createRoom: (payload: CEEPayload<"cee.room.create">, signal?: AbortSignal) => Promise<void>;
   joinRoom: (
@@ -126,8 +138,11 @@ export function resetCEEStateSync() {
   syncDeferred = false;
 }
 
-export const ceeErrorMessage = (error: unknown) =>
-  error instanceof Error || isProtocolError(error) ? error.message : "操作失败，请重试";
+export const ceeErrorMessage = (error: unknown): string => {
+  if (isProtocolError(error)) return antiCheatMessage(error.code) ?? error.message;
+  if (error instanceof Error) return error.message;
+  return "操作失败，请重试";
+};
 
 export const useCEEStore = create<CEEStore>((set, get) => {
   const enter = (result: CEERoomEnterResult) => {
@@ -212,10 +227,16 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     privateState: null,
     roomClosedAt: null,
     notice: null,
+    requestLoginAt: 0,
     setNotice: (text, type = "error") => {
       clearTimeout(noticeTimer);
       set({ notice: { text, type } });
       noticeTimer = setTimeout(() => set({ notice: null }), 5000);
+    },
+    promptLogin: () => set({ requestLoginAt: Date.now() }),
+    reportError: (error) => {
+      get().setNotice(ceeErrorMessage(error));
+      if (isProtocolError(error) && isLoginRequiredCode(error.code)) get().promptLogin();
     },
     subscribeLobby: async () => {
       const generation = connectionGeneration;
@@ -255,7 +276,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
             if (!isProtocolError(error) || !permanentErrors.has(error.code)) throw error;
             removeCEESession(roomId);
             get().resetRoom();
-            get().setNotice(ceeErrorMessage(error));
+            get().reportError(error);
             return false;
           });
         const entry = { roomId, token, owners, promise };
@@ -337,7 +358,7 @@ function requestSync() {
   void useCEEStore
     .getState()
     .sendCommand("cee.room.requestSync", {})
-    .catch((error: unknown) => useCEEStore.getState().setNotice(ceeErrorMessage(error)))
+    .catch((error: unknown) => useCEEStore.getState().reportError(error))
     .finally(() => {
       syncPending = false;
     });
@@ -370,6 +391,15 @@ export function handleCEEMessage(message: ServerMessage) {
     rawPrivate = result.state;
     privateRevision = result.revision;
     useCEEStore.setState({ privateState: rawPrivate });
+  } else if (message.event === "cee.player.spectateResult") {
+    // 房主对旁观请求的显式处理结果只发给请求者；身份本身随快照下发，这里只给一条反馈。
+    const approved = (message.payload as { approved?: boolean }).approved === true;
+    useCEEStore
+      .getState()
+      .setNotice(
+        approved ? SPECTATE_APPROVED_TEXT : SPECTATE_REJECTED_TEXT,
+        approved ? "success" : "error"
+      );
   } else if (
     [
       "cee.room.closed",

@@ -6,13 +6,19 @@ import {
   Filter,
   Lightbulb,
   Search,
+  ShieldCheck,
   Swords,
   Tags,
   Upload,
   Users,
   X,
 } from "lucide-react";
-import { parseCEESettings, type CEEAnswerMode, type CEESettings } from "@bakagame/shared";
+import {
+  parseCEESettings,
+  type CEEAnswerMode,
+  type CEESettings,
+  type CEESource,
+} from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
@@ -98,6 +104,7 @@ const offOr = (value: number, text: string) => (value === 0 ? "关闭" : text);
 /** 两个折叠组收起时的摘要。 */
 function summaries(settings: CEESettings) {
   return {
+    antiCheat: [settings.bakaAntiCheat ? "已开启：仅客户端、需登录" : "未开启"],
     question: [
       settings.answerMode === "manual" ? "指定出题人" : "随机出题",
       settings.useIndex
@@ -172,15 +179,18 @@ function useSubjectNames(ids: number[]) {
  */
 export function CEEGameSettings({
   settings,
+  source,
   waiting,
   readOnly = false,
 }: {
   settings: CEESettings;
+  source: CEESource;
   waiting: boolean;
   readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(() => structuredClone(settings));
   const [presetName, setPresetName] = useState("");
+  const [antiCheatOpen, setAntiCheatOpen] = useState(false);
   const [questionOpen, setQuestionOpen] = useState(false);
   const [guessOpen, setGuessOpen] = useState(false);
   const [syncedIndexId, setSyncedIndexId] = useState(settings.useIndex ? settings.indexId : null);
@@ -205,7 +215,16 @@ export function CEEGameSettings({
     },
     {
       enabled: !readOnly && waiting && !validation,
-      onError: (error) => useCEEStore.getState().setNotice(ceeErrorMessage(error)),
+      onError: (error) => {
+        useCEEStore.getState().reportError(error);
+        // 中途开启被拒（房里还留着 Web 接入或未登录玩家）时服务端不改状态：把开关退回
+        // 服务端认定的值，本地草稿才不会显示成已开启。其它字段此时没变，这一步多半是空操作。
+        setDraft((current) =>
+          current.bakaAntiCheat === settings.bakaAntiCheat
+            ? current
+            : { ...current, bakaAntiCheat: settings.bakaAntiCheat }
+        );
+      },
     }
   );
 
@@ -262,6 +281,28 @@ export function CEEGameSettings({
 
   return (
     <>
+      {source === "native" ? (
+        <SettingsAccordion
+          icon={ShieldCheck}
+          title="反作弊"
+          summary={summary.antiCheat}
+          readOnly={readOnly}
+          open={antiCheatOpen}
+          onOpenChange={setAntiCheatOpen}
+        >
+          <div>
+            <SettingsSection>
+              <SettingSwitchRow
+                label="BakaAntiCheat"
+                description="开启后只接受 BakaGame 客户端接入、全员需登录、旁观需房主批准。"
+                checked={values.bakaAntiCheat === true}
+                onCheckedChange={(value) => change("bakaAntiCheat", value)}
+              />
+            </SettingsSection>
+          </div>
+        </SettingsAccordion>
+      ) : null}
+
       <SettingsAccordion
         icon={BookOpen}
         title="题目设置"

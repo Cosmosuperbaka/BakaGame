@@ -3,6 +3,7 @@ import type {
   CEECharacterView,
   CEEFeedback,
   CEEFeedbackValue,
+  CEESpectateRequest,
   CEEGuess,
   CEEPlayer,
   CEEPrivateState,
@@ -376,6 +377,7 @@ export function ceeSnapshot(patch: Partial<CEERoomSnapshot> = {}): CEERoomSnapsh
     visibility: "public",
     hasPassword: false,
     allowSpectators: true,
+    bakaAntiCheat: false,
     hostPlayerId: HOST.id,
     phase: "waiting",
     settings: ceeSettings(),
@@ -387,6 +389,7 @@ export function ceeSnapshot(patch: Partial<CEERoomSnapshot> = {}): CEERoomSnapsh
     chat: [],
     roundSummary: null,
     upstreamConnected: true,
+    spectateRequests: [],
     ...patch,
   };
 }
@@ -406,6 +409,7 @@ export function ceePrivateState(patch: Partial<CEEPrivateState> = {}): CEEPrivat
     imageHintLevel: 0,
     deadlineAt: null,
     bannedCharacterIds: [],
+    spectatePending: false,
     ...patch,
   };
 }
@@ -476,6 +480,7 @@ const lobbyRoom = (
   spectatorCount: 0,
   hasPassword: false,
   allowSpectators: true,
+  bakaAntiCheat: false,
   ...patch,
 });
 
@@ -832,5 +837,59 @@ export function ceeOriginalRoom(): CEERoomScenario {
       ],
     }),
     privateState: ceePrivateState({ playerId: HOST.id }),
+  };
+}
+
+// ==================== 反作弊房 · 旁观批准 ====================
+
+/** 大厅条目也覆盖一枚反作弊房：进房前就在卡片上标出「需客户端」。 */
+export const CEE_LOBBY_ROOMS_WITH_ANTICHEAT: CEERoomSummary[] = [
+  lobbyRoom("1357", "客户端专用房", "waiting", 3, { bakaAntiCheat: true }),
+  ...CEE_LOBBY_ROOMS,
+];
+
+const spectateRequest = (member: Member): CEESpectateRequest => ({
+  playerId: member.id,
+  name: member.name,
+  requestedAt: STORY_EPOCH + 60_000,
+});
+
+/** 反作弊房房主视角：路人甲已发起旁观请求、正待批准（`pendingSpectator`），房主就地同意或拒绝。 */
+export function ceeAntiCheatHostRoom(): CEERoomScenario {
+  const players = seated({ [PEACH.id]: { ready: false } }, { ready: true, score: 0 }).map(
+    (player) =>
+      player.id === PASSERBY.id ? { ...player, membership: "pendingSpectator" as const } : player
+  );
+  return {
+    snapshot: ceeSnapshot({
+      bakaAntiCheat: true,
+      settings: ceeSettings({ bakaAntiCheat: true }),
+      players,
+      spectateRequests: [spectateRequest(PASSERBY)],
+      chat: [...joined(SEATED), chatLine(PASSERBY, "我想旁观学习一下", 60)],
+    }),
+    privateState: ceePrivateState({ playerId: HOST.id }),
+  };
+}
+
+/** 反作弊房请求者视角：本人已提交旁观、正在等房主批准，身份既非玩家也非旁观。 */
+export function ceeAntiCheatPendingRoom(): CEERoomScenario {
+  const players = seated({}, { ready: true }).map((player) =>
+    player.id === PASSERBY.id ? { ...player, membership: "pendingSpectator" as const } : player
+  );
+  return {
+    snapshot: ceeSnapshot({
+      bakaAntiCheat: true,
+      settings: ceeSettings({ bakaAntiCheat: true }),
+      players,
+      spectateRequests: [spectateRequest(PASSERBY)],
+      chat: [...joined(SEATED)],
+    }),
+    privateState: ceePrivateState({
+      playerId: PASSERBY.id,
+      spectatePending: true,
+      canGuess: false,
+      canStart: false,
+    }),
   };
 }

@@ -2,7 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
 import CEEPage from "./CEEPage";
 import { presetCEE } from "@/stories/StorePresets";
-import { CEE_LOBBY_ROOMS, presetSavedUsername } from "@/stories/fixtures/CEE";
+import {
+  CEE_LOBBY_ROOMS,
+  CEE_LOBBY_ROOMS_WITH_ANTICHEAT,
+  presetSavedUsername,
+} from "@/stories/fixtures/CEE";
 
 /** 已连上 CEE 服务并完成大厅订阅，原版服务器可用。 */
 const lobby = (patch: Parameters<typeof presetCEE>[0] = {}) =>
@@ -33,6 +37,12 @@ export const Loading: Story = {
 export const Rooms: Story = {
   name: "房间列表",
   beforeEach: () => lobby({ rooms: CEE_LOBBY_ROOMS }),
+};
+
+/** 反作弊房在卡片上先标出「需客户端」徽章，与「原版」徽章同款、同位置。 */
+export const RoomsAntiCheat: Story = {
+  name: "房间列表 · 需客户端徽章",
+  beforeEach: () => lobby({ rooms: CEE_LOBBY_ROOMS_WITH_ANTICHEAT }),
 };
 
 export const Empty: Story = {

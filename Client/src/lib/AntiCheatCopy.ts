@@ -1,0 +1,52 @@
+/**
+ * 反作弊相关的集中文案与常量。
+ *
+ * 错误码 → 文案只写在这一处，组件不再各自拼字符串（AGENTS.md：错误码给具体文案）。
+ * 桌面下载地址同样收在这里，将来换域名只改一行。
+ */
+
+/** 桌面客户端下载地址；文件名固定，链接随时可换。 */
+export const BAKA_CLIENT_DOWNLOAD_URL = "https://cdn.baka.website/BakaGame-latest-x64.exe";
+
+/**
+ * 服务端可归因错误码对应的玩家可读文案。命中这些码时用它替换服务端原文，
+ * 未命中的码仍走服务端自带消息。
+ */
+const ANTI_CHEAT_MESSAGES: Readonly<Record<string, string>> = {
+  CLIENT_REQUIRED: `该房间需要 BakaGame 客户端，请下载安装后加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
+  CLIENT_OUTDATED: `BakaGame 客户端版本过旧，请更新到最新版后再加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
+  LOGIN_REQUIRED: "该房间要求登录后再加入或旁观",
+  ANTI_CHEAT_BLOCKED: "请先让 Web 接入或未登录的玩家退出",
+  SPECTATE_QUEUE_FULL: "待房主批准的旁观请求已满，请稍后再试",
+};
+
+/** 命中反作弊错误码时的专用文案；否则 `undefined`，由调用方回落到服务端消息。 */
+export const antiCheatMessage = (code: string): string | undefined =>
+  Object.hasOwn(ANTI_CHEAT_MESSAGES, code) ? ANTI_CHEAT_MESSAGES[code] : undefined;
+
+/** 该错误码是否要求打开登录弹窗。 */
+export const isLoginRequiredCode = (code: string): boolean => code === "LOGIN_REQUIRED";
+
+// ==================== 旁观批准交互文案 ====================
+
+/** 旁观切换在反作弊房里进入待批准态后，请求者一侧的常驻状态文字。 */
+export const SPECTATE_PENDING_TEXT = "等待房主批准";
+/** 待批准期间撤销申请、退回参与态的入口文字。 */
+export const SPECTATE_CANCEL_TEXT = "取消申请";
+/** 房主拒绝（服务端回 `cee.player.spectateResult` 且 `approved` 为假）。 */
+export const SPECTATE_REJECTED_TEXT = "房主未同意旁观";
+/** 房主同意。 */
+export const SPECTATE_APPROVED_TEXT = "房主已同意旁观";
+/** 房主始终没处理，服务端兜底超时把身份退回参与。 */
+export const SPECTATE_TIMEOUT_TEXT = "旁观申请超时，已退回参与";
+
+/** 房主侧待批准分组的标题与两个动作按钮文字。 */
+export const SPECTATE_REQUEST_GROUP_TITLE = "待批准旁观";
+export const SPECTATE_APPROVE_LABEL = "同意旁观";
+export const SPECTATE_REJECT_LABEL = "拒绝";
+
+/**
+ * 客户端旁观待批准的看门狗时长。服务端按 120 秒兜底回收，这里多留几秒余量，
+ * 避开「本地计时先到、服务端状态补丁后到」造成的重复提示。
+ */
+export const SPECTATE_APPROVAL_WATCHDOG_MS = 120_000 + 5_000;

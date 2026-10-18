@@ -1,6 +1,9 @@
 import type { ReactNode, Ref } from "react";
+import { useEffect, useRef } from "react";
 import type { CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
+import { Check, Clock, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import {
   PlayerGroupTitle,
@@ -14,6 +17,16 @@ import { TeamSection } from "@/components/common/TeamSection";
 import { listContainer } from "@/lib/Motion";
 import { teamGroups } from "@/lib/Teams";
 import { useCEEAction } from "@/hooks/UseCEEAction";
+import { useCEEStore } from "@/stores/UseCEEStore";
+import {
+  SPECTATE_APPROVAL_WATCHDOG_MS,
+  SPECTATE_APPROVE_LABEL,
+  SPECTATE_CANCEL_TEXT,
+  SPECTATE_PENDING_TEXT,
+  SPECTATE_REJECT_LABEL,
+  SPECTATE_REQUEST_GROUP_TITLE,
+  SPECTATE_TIMEOUT_TEXT,
+} from "@/lib/AntiCheatCopy";
 import { AnimatePresence, motion } from "framer-motion";
 import { CEEMarks } from "./CEEMarks";
 
@@ -74,6 +87,26 @@ export function CEEPlayerList({
   const canJoinPlayers = waiting && me?.membership === "spectator";
   const toggleSpectator = (spectator: boolean) => void run("cee.player.spectate", { spectator });
 
+  // 反作弊房：旁观要先经房主批准。待批准期间本人既不在玩家组也不在旁观组，单独显示等待状态。
+  const pendingMe = me?.membership === "pendingSpectator";
+  const pendingRequests = isHost ? snapshot.spectateRequests : [];
+
+  // 服务端按 120 秒兜底回收请求、但不给被超时退回的一方发事件；这里挂一个看门狗，
+  // 到点仍未批准就补一条超时提示（批准/拒绝会先到并清掉计时器，多留的余量避开与快照竞争）。
+  const watchdog = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!pendingMe) return;
+    if (watchdog.current) clearTimeout(watchdog.current);
+    watchdog.current = setTimeout(
+      () => useCEEStore.getState().setNotice(SPECTATE_TIMEOUT_TEXT, "error"),
+      SPECTATE_APPROVAL_WATCHDOG_MS
+    );
+    return () => {
+      if (watchdog.current) clearTimeout(watchdog.current);
+      watchdog.current = null;
+    };
+  }, [pendingMe]);
+
   const renderRows = (players: CEEPlayer[], inTeam: boolean) => (
     <motion.div
       className="flex flex-col gap-px"
@@ -131,13 +164,86 @@ export function CEEPlayerList({
             <SpectatorToggle spectator={false} disabled={busy} onToggle={toggleSpectator} />
           ) : null}
 
-          {observers.length > 0 || canJoinSpectators ? (
+          {observers.length > 0 || canJoinSpectators || pendingMe ? (
             <>
               <PlayerGroupTitle label="旁观" count={observers.length} withRule />
               {renderRows(observers, false)}
               {canJoinSpectators ? (
                 <SpectatorToggle spectator disabled={busy} onToggle={toggleSpectator} />
               ) : null}
+              {pendingMe ? (
+                <div className="mt-1 flex min-w-0 items-center justify-between gap-2 rounded-md bg-muted/40 px-2 py-1.5">
+                  <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">
+                      {me?.name ? `${me.name}：` : ""}
+                      {SPECTATE_PENDING_TEXT}
+                    </span>
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                    disabled={busy}
+                    onClick={() => toggleSpectator(false)}
+                  >
+                    {SPECTATE_CANCEL_TEXT}
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {isHost && pendingRequests.length > 0 ? (
+            <>
+              <PlayerGroupTitle
+                label={SPECTATE_REQUEST_GROUP_TITLE}
+                count={pendingRequests.length}
+                withRule
+              />
+              <div className="flex flex-col gap-px">
+                {pendingRequests.map((request) => (
+                  <div
+                    key={request.playerId}
+                    className="flex min-w-0 items-center justify-between gap-2 py-1"
+                  >
+                    <span className="min-w-0 truncate text-sm">{request.name}</span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        disabled={busy}
+                        onClick={() =>
+                          void run("cee.player.approveSpectate", {
+                            playerId: request.playerId,
+                            approved: true,
+                          })
+                        }
+                      >
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                        {SPECTATE_APPROVE_LABEL}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        disabled={busy}
+                        aria-label={`${SPECTATE_REJECT_LABEL} ${request.name}`}
+                        onClick={() =>
+                          void run("cee.player.approveSpectate", {
+                            playerId: request.playerId,
+                            approved: false,
+                          })
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
+                        {SPECTATE_REJECT_LABEL}
+                      </Button>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </>
           ) : null}
         </div>

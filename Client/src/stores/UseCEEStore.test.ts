@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCEESettings, type CEERoomSnapshot } from "@bakagame/shared";
 import { ceeWs } from "@/lib/CEEWs";
+import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import {
+  ceeErrorMessage,
   clearCEEQueryCache,
   handleCEEMessage,
   initCEEWs,
@@ -28,6 +30,8 @@ const snapshot: CEERoomSnapshot = {
   chat: [],
   roundSummary: null,
   upstreamConnected: true,
+  bakaAntiCheat: false,
+  spectateRequests: [],
 };
 
 afterEach(() => {
@@ -366,4 +370,55 @@ it("取消后的旧离房尚未完成时，新加入必须等待旧会话释放"
     "cee.room.join",
   ]);
   expect(useCEEStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "second-token" });
+});
+
+describe("CEE 反作弊文案与旁观审批", () => {
+  it("ceeErrorMessage 按错误码给出可归因文案，CLIENT_REQUIRED 附带下载地址", () => {
+    expect(ceeErrorMessage({ code: "CLIENT_REQUIRED", message: "服务端原文" })).toContain(
+      BAKA_CLIENT_DOWNLOAD_URL
+    );
+    expect(ceeErrorMessage({ code: "CLIENT_OUTDATED", message: "服务端原文" })).toContain(
+      BAKA_CLIENT_DOWNLOAD_URL
+    );
+    expect(ceeErrorMessage({ code: "ANTI_CHEAT_BLOCKED", message: "服务端原文" })).toBe(
+      "请先让 Web 接入或未登录的玩家退出"
+    );
+    expect(ceeErrorMessage({ code: "LOGIN_REQUIRED", message: "服务端原文" })).toBe(
+      "该房间要求登录后再加入或旁观"
+    );
+    // 未映射的错误码保留服务端原文，不做兜底改写。
+    expect(ceeErrorMessage({ code: "ROOM_NOT_FOUND", message: "房间不存在" })).toBe("房间不存在");
+  });
+
+  it("reportError 触发提示，LOGIN_REQUIRED 顺带请求打开登录弹窗", () => {
+    const before = useCEEStore.getState().requestLoginAt;
+    useCEEStore.getState().reportError({ code: "LOGIN_REQUIRED", message: "服务端原文" });
+    expect(useCEEStore.getState().notice?.text).toBe("该房间要求登录后再加入或旁观");
+    expect(useCEEStore.getState().requestLoginAt).toBeGreaterThan(before);
+    // 非登录类错误不动登录弹窗时间戳。
+    useCEEStore.getState().reportError({ code: "CLIENT_REQUIRED", message: "服务端原文" });
+    expect(useCEEStore.getState().requestLoginAt).toBe(useCEEStore.getState().requestLoginAt);
+    expect(useCEEStore.getState().notice?.text).toContain(BAKA_CLIENT_DOWNLOAD_URL);
+  });
+
+  it("handleCEEMessage 消费 spectateResult：批准走成功提示，拒绝走错误提示", () => {
+    handleCEEMessage({
+      type: "event",
+      event: "cee.player.spectateResult",
+      payload: { approved: true },
+    });
+    expect(useCEEStore.getState().notice).toMatchObject({
+      text: "房主已同意旁观",
+      type: "success",
+    });
+    handleCEEMessage({
+      type: "event",
+      event: "cee.player.spectateResult",
+      payload: { approved: false },
+    });
+    expect(useCEEStore.getState().notice).toMatchObject({
+      text: "房主未同意旁观",
+      type: "error",
+    });
+  });
 });

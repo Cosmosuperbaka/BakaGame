@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- 打开登录弹窗与弹窗本体共用同一份入口状态，拆文件会让状态定义漂到别处。 */
 import { useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
@@ -38,6 +39,14 @@ const openDialog = (
   origin: OriginPoint | null,
   afterLogin: DialogKind = null
 ) => useEntryStore.setState({ dialog, afterLogin, origin });
+
+/**
+ * 从非账号入口（如反作弊房被服务端要求登录）请求打开登录弹窗。
+ * 依赖当前页挂载过 `<AccountDialogs/>`——CEE 布局与首页都挂了；账号系统未启用时它是空实现。
+ */
+export function requestLogin(): void {
+  openDialog("login", null);
+}
 
 const isAvailable = (status: AccountStatus) => status === "guest" || status === "signedIn";
 

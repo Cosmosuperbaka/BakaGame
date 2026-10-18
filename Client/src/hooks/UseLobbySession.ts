@@ -45,6 +45,11 @@ export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
   ) => Promise<unknown>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   showError: (message: string) => void;
+  /**
+   * 覆盖「加入房间」默认的错误处理（默认走 `showError` 纯文案）。CEE 用它把反作弊错误码
+   * 接进统一入口：既给出具体文案，又能在 LOGIN_REQUIRED 时顺带拉起登录弹窗。缺省行为不变。
+   */
+  onEntryError?: (error: unknown) => void;
   /** 创建成功（ACK 落定且意图未被取消）后回调：调用方在此记录本次选项并登记待恢复。 */
   onRoomCreated?: (roomId: string, params: CreateRoomParams) => void;
 }
@@ -57,6 +62,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
   joinRoom,
   reconnectRoom,
   showError,
+  onEntryError,
   onRoomCreated,
 }: UseLobbySessionOptions<TRoom>) {
   const navigate = usePageNavigate();
@@ -109,7 +115,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
     async (
       operation: (current: () => boolean, signal: AbortSignal) => Promise<void>,
       onError: (error: unknown) => void = (error) =>
-        showError(errorMessage(error, "加入房间失败，请重试"))
+        onEntryError ? onEntryError(error) : showError(errorMessage(error, "加入房间失败，请重试"))
     ) => {
       if (transaction.current || !mounted.current) return;
       const entry = new AbortController();
@@ -131,7 +137,7 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
         }
       }
     },
-    [showError]
+    [showError, onEntryError]
   );
 
   const handleJoinRoom = useCallback(
