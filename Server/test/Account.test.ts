@@ -31,6 +31,36 @@ describe("账号系统未启用", () => {
   });
 });
 
+describe("账号路由限流", () => {
+  const disabledApp = () => {
+    const env = { clientUrl: "http://localhost:5173", serverUrl: "http://localhost:4850", serverListenHost: "127.0.0.1", serverPort: 0, bangumiApiUrl: "https://api.bgm.tv", bangumiImageUrl: "" } satisfies AppEnv;
+    const logger = new EventLogger(() => {});
+    return createTestApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) }).app;
+  };
+
+  test("RPC 与 Better Auth 共用同一份客户端额度，超限回 429 并带 Retry-After", async () => {
+    const app = disabledApp();
+    const callRpc = () => app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
+    // 额度内不因限流改变语义：账号停用仍是 503。
+    for (let i = 0; i < 200; i += 1) expect((await callRpc()).status).toBe(503);
+
+    let status = 503;
+    for (let i = 200; i < 302 && status === 503; i += 1) {
+      const response = await callRpc();
+      status = response.status;
+      if (status === 429) {
+        expect(response.headers.get("retry-after")).toBe("60");
+        expect(await response.json()).toEqual({ json: { defined: false, code: "RATE_LIMITED", status: 429, message: "请求过于频繁，请稍后重试" } });
+      }
+    }
+    expect(status).toBe(429);
+    // 同一桶覆盖两族路由：登录侧不能绕过 RPC 侧已经用完的额度。
+    const auth = await app.handle(new Request("http://localhost/api/auth/get-session"));
+    expect(auth.status).toBe(429);
+    expect(await auth.json()).toMatchObject({ error: { code: "RATE_LIMITED" } });
+  });
+});
+
 describe("验证码登录", () => {
   test("注册昵称强制取自 QQ 昵称（客户端自报被忽略）；成功后派生 QQ 号与站内头像", async () => {
     const { app, rpc, mailer, avatarFetcher, prepareSignup } = createAccountTestApp();

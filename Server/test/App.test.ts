@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { connect } from "node:net";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
+import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
 import type { AppEnv } from "../src/config/Env";
 import {
   describeError,
@@ -330,6 +331,42 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     socket.close();
   } finally {
     await stop();
+  }
+});
+
+test("HTTP 请求体超过上限由运行时回 413，不进业务解析", async () => {
+  const env: AppEnv = {
+    maintenanceToken: "test-maintenance-token",
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 0,
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
+  };
+  const logger = new EventLogger();
+  const { app } = createApp({ env, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) });
+  const started = app.listen({
+    hostname: env.serverListenHost,
+    port: env.serverPort,
+    maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES,
+  });
+  const port = started.server?.port;
+  if (!port) {
+    throw new Error("未能获取测试端口");
+  }
+
+  try {
+    const oversized = await fetch(`http://127.0.0.1:${port}/health`, {
+      method: "POST",
+      body: new Uint8Array(HTTP_MAX_REQUEST_BODY_BYTES + 1024),
+    });
+    expect(oversized.status).toBe(413);
+
+    const legal = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(legal.status).toBe(200);
+  } finally {
+    await started.stop(true);
   }
 });
 

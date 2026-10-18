@@ -49,3 +49,10 @@ export const BOT_DESCRIPTION_TEMPLATES = [
   "描述起来有点难，但大家应该都熟悉。",
   "它给我的感觉偏日常，不算稀奇。",
 ];
+
+/**
+ * HTTP 请求体上限（Bun 原生 `maxRequestBodySize`，缺省 128MB 形同不设）。
+ * 合法调用里最大的是 Sentry 隧道信封（256KB）与云同步设置（32KB），1MB 已留足余量；
+ * 与 WS 侧 256KB 单帧上限同一口径，超限由运行时直接回 413，不进业务解析。
+ */
+export const HTTP_MAX_REQUEST_BODY_BYTES = 1024 * 1024;

@@ -9,8 +9,10 @@ import type { UserDataService } from "../../application/UserDataService";
 import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
 import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
+import { resolveClientIp } from "../ClientIp";
 import { ACCOUNT_AVATAR_PATH, AUTH_BASE_PATH } from "../../shared/Account";
 import { apiContract } from "../../shared/ApiContract";
+import { TelemetryRateLimiter } from "./System";
 
 export const RPC_BASE_PATH = "/api/rpc";
 
@@ -154,14 +156,42 @@ const rpcAccountDisabled = () => new Response(
 const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
 
 /**
+ * 账号路由（Better Auth + oRPC）的额度，口径与打点、Sentry 隧道一致：单客户端 / 回源 peer / 全局。
+ * 取打点的五倍：一次进房会连着打多个 RPC，后台列表页还会轮询未读，按单请求计数会误伤正常玩家。
+ */
+const ACCOUNT_IP_MAX_REQUESTS = 300;
+const ACCOUNT_GLOBAL_MAX_REQUESTS = 12_000;
+const ACCOUNT_WINDOW_MS = 60_000;
+
+/**
  * 账号 HTTP 入口：Better Auth 白名单端点、oRPC、站内头像代理。
  *
  * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端据此隐藏登录入口，游客游玩不受影响。
  */
 export const accountRoutes = (account: AccountDependencies | undefined, logger: EventLogger) => {
   const rpc = account ? new RPCHandler(createRpcRouter(account, logger)) : undefined;
+  const limiter = new TelemetryRateLimiter({
+    windowMs: ACCOUNT_WINDOW_MS,
+    ipMaxRequests: ACCOUNT_IP_MAX_REQUESTS,
+    globalMaxRequests: ACCOUNT_GLOBAL_MAX_REQUESTS,
+  });
+  // Better Auth 自带的按 IP 限流是关的（它只认 socket peer，反代后全站共享同一个 peer）。
+  // 这一层改按 ESA 写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
+  const rejectOverQuota = (request: Request, peerIp: string | undefined, viaRpc: boolean): Response | undefined => {
+    const clientIp = resolveClientIp(request.headers, peerIp);
+    if (limiter.allow(clientIp, peerIp ?? clientIp)) return undefined;
+    const body = viaRpc
+      ? { json: { defined: false, code: "RATE_LIMITED", status: 429, message: "请求过于频繁，请稍后重试" } }
+      : { error: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后重试" } };
+    return new Response(JSON.stringify(body), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": String(Math.ceil(ACCOUNT_WINDOW_MS / 1000)) },
+    });
+  };
   return new Elysia({ name: "account-routes" })
-    .all(`${AUTH_BASE_PATH}/*`, async ({ request }) => {
+    .all(`${AUTH_BASE_PATH}/*`, async ({ request, server }) => {
+      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, false);
+      if (overQuota) return overQuota;
       if (!account) return accountDisabled();
       const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
       if (!AUTH_HTTP_PATHS.has(path)) {
@@ -172,7 +202,9 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
       await account.ready;
       return account.auth.handler(request);
     }, { parse: "none", detail: { hide: true } })
-    .all(`${RPC_BASE_PATH}/*`, async ({ request }) => {
+    .all(`${RPC_BASE_PATH}/*`, async ({ request, server }) => {
+      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, true);
+      if (overQuota) return overQuota;
       if (!account || !rpc) return rpcAccountDisabled();
       await account.ready;
       const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });

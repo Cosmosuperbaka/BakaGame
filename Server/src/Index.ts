@@ -1,5 +1,6 @@
 import { WhoIsFakerService } from "./application/WhoIsFakerService";
 import { readEnv } from "./config/Env";
+import { HTTP_MAX_REQUEST_BODY_BYTES } from "./config/Constants";
 import { describeError, EventLogger } from "./infrastructure/EventLogger";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
 import {
@@ -120,6 +121,7 @@ const server = app.listen({
   // 公开地址使用 SERVER_URL，实际监听地址优先回落到本机可绑定地址。
   hostname: env.serverListenHost,
   port: env.serverPort,
+  maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES,
 });
 
 // ==================== 优雅停机 ====================
