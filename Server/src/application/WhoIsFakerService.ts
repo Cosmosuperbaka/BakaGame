@@ -172,6 +172,26 @@ type OfflineContext = {
   wasHost: boolean;
 };
 
+/** 强制移除的上下文：踢人通知、出局恢复与收尾日志共用同一份快照。 */
+type ForcedRemovalContext = {
+  room: WhoIsFakerRoomRecord;
+  playerId: string;
+  player: WhoIsFakerPlayerRecord;
+  reason: string;
+  preserved: RoundPreservation;
+};
+
+/** 移除前从回合里抄下来的待恢复数据，回合未开始时全为空。 */
+type RoundPreservation = {
+  votes?: GameRound["votes"];
+  nightActions?: GameRound["nightActions"];
+  tieBreak?: GameRound["tieBreak"];
+  supplementActive?: boolean;
+};
+
+/** 白板猜词者离场可能当场终局，此时必须跳过踢人收尾与日志。 */
+type ForcedRemovalFlow = "continue" | "done";
+
 /** 0 分真人旁观者掉线后没有保留价值，立即移出。 */
 const isExpendableSpectator = (ctx: OfflineContext): boolean => {
   const { player, reason, wasHost } = ctx;
@@ -3232,180 +3252,253 @@ export class WhoIsFakerService implements AdminRoomControl {
   private async forceRemovePlayer(room: WhoIsFakerRoomRecord, playerId: string, reason: string) {
     // 强制移除既可能来自房主踢人，也可能来自掉线淘汰决策。
     const player = room.players[playerId];
-    let preservedVotes: GameRound["votes"] | undefined;
-    let preservedNightActions: GameRound["nightActions"] | undefined;
-    let preservedTieBreak: GameRound["tieBreak"] | undefined;
-    let supplementStillActive = false;
-
     if (!player) {
       return;
     }
 
-    const connection = this.getConnectionByPlayer(player.id);
+    this.sendKickNotice(room, player);
+    this.markPlayerAsKicked(player);
 
-    if (connection) {
-      (connection.sendPacket ?? connection.send)(
-        createEvent("room.closed", {
-          roomId: room.id,
-          reason: "kicked",
-        }),
-      );
-      connection.playerId = undefined;
-      connection.roomId = undefined;
+    // 先清掉回合里的引用，再抄恢复现场要用的快照：补充发言可能正好在这次清理中被判定完成。
+    const preserved: RoundPreservation = room.round
+      ? this.scrubPlayerFromRound(room, room.round, player.id)
+      : {};
+    const ctx: ForcedRemovalContext = { room, playerId, player, reason, preserved };
+
+    this.recordRemovalHistory(ctx);
+
+    const round = room.round;
+    if (round?.phase === "feedback" && round.assignments[player.id]?.alive) {
+      this.recordFeedbackElimination(ctx, round);
+    } else if (round?.assignments[player.id]?.alive && round.phase !== "gameOver") {
+      if ((await this.exitAlivePlayer(ctx, round)) === "done") return;
     }
 
+    await this.finishForcedRemoval(ctx);
+  }
+
+  /** 被踢一方要先收到房间关闭事件，连接与玩家的绑定随即解开。 */
+  private sendKickNotice(room: WhoIsFakerRoomRecord, player: WhoIsFakerPlayerRecord) {
+    const connection = this.getConnectionByPlayer(player.id);
+    if (!connection) return;
+
+    (connection.sendPacket ?? connection.send)(
+      createEvent("room.closed", {
+        roomId: room.id,
+        reason: "kicked",
+      }),
+    );
+    connection.playerId = undefined;
+    connection.roomId = undefined;
+  }
+
+  private markPlayerAsKicked(player: WhoIsFakerPlayerRecord) {
     player.online = false;
     player.connectionId = undefined;
     player.membership = "kicked";
     player.isReady = false;
-    if (room.round) {
-      const round = room.round;
-      this.clearPendingDisconnect(round, player.id);
-      round.votes = round.votes.filter(
-        (vote) => vote.voterId !== player.id && vote.targetId !== player.id,
+  }
+
+  /**
+   * 把这名玩家从当前回合的每一处引用中抹掉，并返回抹除后现场的回滚快照。
+   * 快照必须在清理之后抄：补充发言被判定完成时，`supplement` 已经不在回合上了。
+   */
+  private scrubPlayerFromRound(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    playerId: string,
+  ): RoundPreservation {
+    this.clearPendingDisconnect(round, playerId);
+    round.votes = round.votes.filter(
+      (vote) => vote.voterId !== playerId && vote.targetId !== playerId,
+    );
+    round.nightActions = round.nightActions.filter(
+      (action) => action.actorId !== playerId && action.targetId !== playerId,
+    );
+    round.descriptionOrder = round.descriptionOrder.filter(
+      (descriptionPlayerId) => descriptionPlayerId !== playerId,
+    );
+    round.descriptionSubmittedBy = round.descriptionSubmittedBy.filter(
+      (submittedPlayerId) => submittedPlayerId !== playerId,
+    );
+
+    if (round.tieBreak) {
+      round.tieBreak.candidateIds = round.tieBreak.candidateIds.filter(
+        (candidateId) => candidateId !== playerId,
       );
-      round.nightActions = round.nightActions.filter(
-        (action) => action.actorId !== player.id && action.targetId !== player.id,
+      round.tieBreak.descriptionsDone = round.tieBreak.descriptionsDone.filter(
+        (donePlayerId) => donePlayerId !== playerId,
       );
-      round.descriptionOrder = round.descriptionOrder.filter(
-        (descriptionPlayerId) => descriptionPlayerId !== player.id,
+      round.tieBreak.votes = round.tieBreak.votes.filter(
+        (vote) => vote.voterId !== playerId && vote.targetId !== playerId,
       );
-      round.descriptionSubmittedBy = round.descriptionSubmittedBy.filter(
-        (submittedPlayerId) => submittedPlayerId !== player.id,
+    }
+
+    if (round.supplement) {
+      round.supplement.requestedPlayerIds = round.supplement.requestedPlayerIds.filter(
+        (requestedPlayerId) => requestedPlayerId !== playerId,
+      );
+      round.supplement.donePlayers = round.supplement.donePlayers.filter(
+        (donePlayerId) => donePlayerId !== playerId,
       );
 
-      if (round.tieBreak) {
-        round.tieBreak.candidateIds = round.tieBreak.candidateIds.filter(
-          (candidateId) => candidateId !== player.id,
-        );
-        round.tieBreak.descriptionsDone = round.tieBreak.descriptionsDone.filter(
-          (donePlayerId) => donePlayerId !== player.id,
-        );
-        round.tieBreak.votes = round.tieBreak.votes.filter(
-          (vote) => vote.voterId !== player.id && vote.targetId !== player.id,
-        );
-      }
+      this.completeSupplementIfReady(room);
+    }
 
-      if (round.supplement) {
-        round.supplement.requestedPlayerIds = round.supplement.requestedPlayerIds.filter(
-          (requestedPlayerId) => requestedPlayerId !== player.id,
-        );
-        round.supplement.donePlayers = round.supplement.donePlayers.filter(
-          (donePlayerId) => donePlayerId !== player.id,
-        );
-
-        this.completeSupplementIfReady(room);
-      }
-
-      preservedVotes = [...round.votes];
-      preservedNightActions = round.nightActions.map((action) => ({ ...action }));
-      preservedTieBreak = round.tieBreak
+    return {
+      votes: [...round.votes],
+      nightActions: round.nightActions.map((action) => ({ ...action })),
+      tieBreak: round.tieBreak
         ? {
             ...round.tieBreak,
             candidateIds: [...round.tieBreak.candidateIds],
             descriptionsDone: [...round.tieBreak.descriptionsDone],
             votes: round.tieBreak.votes.map((vote) => ({ ...vote })),
           }
-        : undefined;
-      supplementStillActive = Boolean(round.supplement);
+        : undefined,
+      supplementActive: Boolean(round.supplement),
+    };
+  }
+
+  /** 移除记录只留给仍在局的玩家：终局轮次与已出局的玩家都不再追加。 */
+  private recordRemovalHistory(ctx: ForcedRemovalContext) {
+    const round = ctx.room.round;
+    if (!round?.assignments[ctx.player.id]?.alive || round.phase === "gameOver") return;
+
+    round.history.push({
+      kind: "removal",
+      day: round.day,
+      createdAt: this.now(),
+      playerId: ctx.player.id,
+      reason: this.toRemovalHistoryReason(ctx.reason),
+    });
+  }
+
+  /**
+   * 反馈阶段只记出局、不改阶段：去向在继续时按当时局面重新判定，
+   * 也不让离场改写已经展示的结果（例如白板已经猜中）。
+   */
+  private recordFeedbackElimination(ctx: ForcedRemovalContext, round: GameRound) {
+    recordEliminations(round.assignments, [ctx.player.id], ctx.reason, this.now());
+    if (round.feedbackContinuation?.type === "blankFailed") {
+      round.feedbackContinuation.rosterChanged = true;
+    }
+    if (round.feedback && round.feedbackContinuation) {
+      round.feedback.next = this.predictFeedbackNext(round, round.feedbackContinuation);
+    }
+  }
+
+  /** 在场玩家出局分两条路：白板猜词者离场要作废猜词，其余玩家按恢复阶段回位。 */
+  private async exitAlivePlayer(
+    ctx: ForcedRemovalContext,
+    round: GameRound,
+  ): Promise<ForcedRemovalFlow> {
+    const isGuesser =
+      round.phase === "blankGuess" && round.blankGuessContext?.playerId === ctx.player.id;
+
+    if (isGuesser) {
+      return await this.exitAsBlankGuesser(ctx, round);
     }
 
-    if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
-      room.round.history.push({
-        kind: "removal",
-        day: room.round.day,
-        createdAt: this.now(),
-        playerId: player.id,
-        reason: this.toRemovalHistoryReason(reason),
-      });
+    await this.exitRosterMember(ctx, round);
+    return "continue";
+  }
+
+  private async exitAsBlankGuesser(
+    ctx: ForcedRemovalContext,
+    round: GameRound,
+  ): Promise<ForcedRemovalFlow> {
+    const { deferredWinner, resumePhase } = round.blankGuessContext!;
+    round.blankGuessContext = undefined;
+    this.clearPhaseTimer(ctx.room);
+
+    if (deferredWinner) {
+      await this.finishRound(ctx.room, deferredWinner, "白板已离场，系统按残局条件结算");
+      return "done";
     }
 
-    if (room.round?.phase === "feedback" && room.round.assignments[player.id]?.alive) {
-      // 反馈阶段只记出局、不改阶段：去向在继续时按当时局面重新判定，
-      // 也不让离场改写已经展示的结果（例如白板已经猜中）。
-      recordEliminations(room.round.assignments, [player.id], reason, this.now());
-      if (room.round.feedbackContinuation?.type === "blankFailed") {
-        room.round.feedbackContinuation.rosterChanged = true;
-      }
-      if (room.round.feedback && room.round.feedbackContinuation) {
-        room.round.feedback.next = this.predictFeedbackNext(room.round, room.round.feedbackContinuation);
-      }
-    } else if (room.round?.assignments[player.id]?.alive && room.round.phase !== "gameOver") {
-      const isGuesser =
-        room.round.phase === "blankGuess" &&
-        room.round.blankGuessContext?.playerId === player.id;
+    const effectivePhase = resumePhase ?? "gameOver";
+    const targetNextPhase =
+      effectivePhase === "tieBreak" && (ctx.preserved.tieBreak?.candidateIds.length ?? 0) <= 1
+        ? "night"
+        : effectivePhase;
 
-      if (isGuesser) {
-        const { deferredWinner, resumePhase } = room.round.blankGuessContext!;
-        room.round.blankGuessContext = undefined;
-        this.clearPhaseTimer(room);
+    await this.applyEliminationAndMove(ctx.room, [ctx.player.id], ctx.reason, targetNextPhase);
 
-        if (deferredWinner) {
-          await this.finishRound(room, deferredWinner, "白板已离场，系统按残局条件结算");
-          return;
-        }
-
-        const effectivePhase = resumePhase ?? "gameOver";
-        const targetNextPhase =
-          effectivePhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
-            ? "night"
-            : effectivePhase;
-
-        await this.applyEliminationAndMove(room, [player.id], reason, targetNextPhase);
-
-        if (!room.round.summary) {
-          if (targetNextPhase === "voting" || supplementStillActive) {
-            room.round.votes = preservedVotes ?? [];
-          }
-          if (targetNextPhase === "night") {
-            room.round.nightActions = preservedNightActions ?? [];
-            room.round.tieBreak = undefined;
-            room.round.speechMode = undefined;
-          }
-          if (targetNextPhase === "tieBreak" && preservedTieBreak) {
-            room.round.tieBreak = preservedTieBreak;
-            room.round.speechMode =
-              preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
-          }
-          if (supplementStillActive) {
-            room.round.phase = "description";
-            room.round.speechMode = "supplement";
-          }
-        }
-        this.appendSystemMessage(room, "白板已离场，本次猜词作废，游戏继续");
-      } else {
-        const previousPhase = room.round.phase;
-        const resumePhase =
-          previousPhase === "tieBreak" && (preservedTieBreak?.candidateIds.length ?? 0) <= 1
-            ? "night"
-            : this.getResumePhaseAfterForcedRemoval(previousPhase);
-        await this.applyEliminationAndMove(room, [player.id], reason, resumePhase);
-
-        if (!room.round.summary) {
-          if (resumePhase === "voting" || supplementStillActive) {
-            room.round.votes = preservedVotes ?? [];
-          }
-          if (resumePhase === "night") {
-            room.round.nightActions = preservedNightActions ?? [];
-          }
-          if (resumePhase === "tieBreak" && preservedTieBreak) {
-            room.round.tieBreak = preservedTieBreak;
-            room.round.speechMode =
-              preservedTieBreak.stage === "description" ? "tieBreak" : undefined;
-          }
-          if (resumePhase === "blankGuess") {
-            if (preservedTieBreak) room.round.tieBreak = preservedTieBreak;
-            if (preservedVotes) room.round.votes = preservedVotes;
-            if (preservedNightActions) room.round.nightActions = preservedNightActions;
-          }
-          if (supplementStillActive) {
-            room.round.phase = "description";
-            room.round.speechMode = "supplement";
-          }
-        }
-      }
+    // 淘汰可能已经决出胜负：只有回合仍在继续时才需要把清理掉的现场恢复回去。
+    const liveRound = ctx.room.round;
+    if (liveRound && !liveRound.summary) {
+      this.restoreGuesserRound(liveRound, ctx.preserved, targetNextPhase);
     }
+    this.appendSystemMessage(ctx.room, "白板已离场，本次猜词作废，游戏继续");
+    return "continue";
+  }
 
+  private async exitRosterMember(ctx: ForcedRemovalContext, round: GameRound) {
+    const previousPhase = round.phase;
+    const resumePhase =
+      previousPhase === "tieBreak" && (ctx.preserved.tieBreak?.candidateIds.length ?? 0) <= 1
+        ? "night"
+        : this.getResumePhaseAfterForcedRemoval(previousPhase);
+    await this.applyEliminationAndMove(ctx.room, [ctx.player.id], ctx.reason, resumePhase);
+
+    const liveRound = ctx.room.round;
+    if (liveRound && !liveRound.summary) {
+      this.restoreRosterRound(liveRound, ctx.preserved, resumePhase);
+    }
+  }
+
+  private restoreGuesserRound(
+    round: GameRound,
+    preserved: RoundPreservation,
+    targetNextPhase: Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">,
+  ) {
+    if (targetNextPhase === "voting" || preserved.supplementActive) {
+      round.votes = preserved.votes ?? [];
+    }
+    if (targetNextPhase === "night") {
+      round.nightActions = preserved.nightActions ?? [];
+      round.tieBreak = undefined;
+      round.speechMode = undefined;
+    }
+    if (targetNextPhase === "tieBreak" && preserved.tieBreak) {
+      round.tieBreak = preserved.tieBreak;
+      round.speechMode = preserved.tieBreak.stage === "description" ? "tieBreak" : undefined;
+    }
+    if (preserved.supplementActive) {
+      round.phase = "description";
+      round.speechMode = "supplement";
+    }
+  }
+
+  private restoreRosterRound(
+    round: GameRound,
+    preserved: RoundPreservation,
+    resumePhase: Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">,
+  ) {
+    if (resumePhase === "voting" || preserved.supplementActive) {
+      round.votes = preserved.votes ?? [];
+    }
+    if (resumePhase === "night") {
+      round.nightActions = preserved.nightActions ?? [];
+    }
+    if (resumePhase === "tieBreak" && preserved.tieBreak) {
+      round.tieBreak = preserved.tieBreak;
+      round.speechMode = preserved.tieBreak.stage === "description" ? "tieBreak" : undefined;
+    }
+    if (resumePhase === "blankGuess") {
+      if (preserved.tieBreak) round.tieBreak = preserved.tieBreak;
+      if (preserved.votes) round.votes = preserved.votes;
+      if (preserved.nightActions) round.nightActions = preserved.nightActions;
+    }
+    if (preserved.supplementActive) {
+      round.phase = "description";
+      round.speechMode = "supplement";
+    }
+  }
+
+  private async finishForcedRemoval(ctx: ForcedRemovalContext) {
+    const room = ctx.room;
     this.reassignHost(room);
     this.normalizeRoomRoleConfig(room);
     this.touchRoom(room);
@@ -3420,9 +3513,9 @@ export class WhoIsFakerService implements AdminRoomControl {
       type: "player.kicked",
       createdAt: this.now(),
       roomId: room.id,
-      playerId,
+      playerId: ctx.playerId,
       payload: {
-        reason,
+        reason: ctx.reason,
       },
     });
   }
