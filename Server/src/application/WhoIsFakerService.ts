@@ -130,6 +130,51 @@ const PHASE_CHANGE_DESCRIPTIONS: Partial<
   gameOver: (snapshot) => `第 ${snapshot.status.day} 天游戏结算阶段`,
 };
 
+/** 结算给分：白板阵营猜中得 2 分，好人与卧底阵营各自获胜得 1 分。 */
+const roundScoreDelta = (
+  winner: RoundWinner,
+  side: GameRound["assignments"][string]["side"],
+): number => {
+  if (winner === "blank") return side === "blank" ? 2 : 0;
+  if (winner === "good") return side === "good" ? 1 : 0;
+  return side === "undercover" ? 1 : 0;
+};
+
+/** 当局词对进摘要；未发词的局（如中途放弃）留空。 */
+const summarizeRoundWords = (words: GameRound["words"]): RoundSummary["words"] =>
+  words
+    ? {
+        pair: [...words.pair] as [string, string],
+        civilianWord: words.civilianWord,
+        undercoverWord: words.undercoverWord,
+        blankHint: words.blankHint,
+      }
+    : undefined;
+
+/** 玩家离线的两种来源：连接断开与主动离开房间。 */
+type PlayerOfflineReason = "disconnect" | "leave";
+
+/** 离线处理的上下文：房主身份在清理前读一次，供各阶段共用。 */
+type OfflineContext = {
+  room: WhoIsFakerRoomRecord;
+  playerId: string;
+  player: WhoIsFakerPlayerRecord;
+  reason: PlayerOfflineReason;
+  wasHost: boolean;
+};
+
+/** 0 分真人旁观者掉线后没有保留价值，立即移出。 */
+const isExpendableSpectator = (ctx: OfflineContext): boolean => {
+  const { player, reason, wasHost } = ctx;
+  return (
+    reason === "disconnect" &&
+    player.membership === "spectator" &&
+    player.score === 0 &&
+    !player.isBot &&
+    !wasHost
+  );
+};
+
 export class WhoIsFakerService implements AdminRoomControl {
   // ==================== 房间与状态机总控 ====================
 
@@ -2847,35 +2892,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     this.clearPhaseTimer(room);
     // 结算时既要给分，也要冻结当局摘要，供房间页在局后复盘。
     const round = this.requireRound(room);
-    const awardedScores: Array<{ playerId: string; delta: number }> = [];
-
-    if (winner !== "aborted") {
-      for (const [playerId, state] of Object.entries(round.assignments)) {
-        const player = room.players[playerId];
-
-        if (!player) {
-          continue;
-        }
-
-        const delta =
-          winner === "blank"
-            ? state.side === "blank"
-              ? 2
-              : 0
-            : winner === "good"
-              ? state.side === "good"
-                ? 1
-                : 0
-              : state.side === "undercover"
-                ? 1
-                : 0;
-
-        if (delta > 0) {
-          player.score += delta;
-          awardedScores.push({ playerId, delta });
-        }
-      }
-    }
+    const awardedScores = this.awardRoundScores(room, round, winner);
 
     round.phase = "gameOver";
     this.gameOverAdvanceAllowedAtByRoomId.set(
@@ -2898,14 +2915,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       })),
       descriptions: [...round.descriptions],
       blankGuesses: [...round.blankGuessRecords],
-      words: round.words
-        ? {
-            pair: [...round.words.pair] as [string, string],
-            civilianWord: round.words.civilianWord,
-            undercoverWord: round.words.undercoverWord,
-            blankHint: round.words.blankHint,
-          }
-        : undefined,
+      words: summarizeRoundWords(round.words),
       voteHistory: round.voteHistory.map((entry) => ({
         day: entry.day,
         tieBreak: entry.tieBreak,
@@ -2935,6 +2945,29 @@ export class WhoIsFakerService implements AdminRoomControl {
     // 结算必然改变阶段与摘要，这里统一发布快照；对局小结只走状态通道，
     // 调用方无需也不得再补发 game.roundSummary 事件。
     this.publishRoomState(room);
+  }
+
+  /** 只给获胜阵营的玩家加分；加到分的玩家进当局摘要，其余不进。 */
+  private awardRoundScores(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    winner: RoundWinner,
+  ): RoundSummary["awardedScores"] {
+    const awardedScores: RoundSummary["awardedScores"] = [];
+    if (winner === "aborted") return awardedScores;
+
+    for (const [playerId, state] of Object.entries(round.assignments)) {
+      const player = room.players[playerId];
+      if (!player) continue;
+
+      const delta = roundScoreDelta(winner, state.side);
+      if (delta > 0) {
+        player.score += delta;
+        awardedScores.push({ playerId, delta });
+      }
+    }
+
+    return awardedScores;
   }
 
   /** 结算快照转成对局记录：摘要放胜负与词对，时间线按时间合并发言与全局历史。 */
@@ -2991,97 +3024,38 @@ export class WhoIsFakerService implements AdminRoomControl {
   private async handlePlayerOffline(
     room: WhoIsFakerRoomRecord,
     playerId: string,
-    reason: "disconnect" | "leave",
+    reason: PlayerOfflineReason,
   ) {
     // 这里集中处理“玩家不在线”带来的所有副作用：局外移除、局内待决、空房清理。
     const player = room.players[playerId];
-
     if (!player) {
       return;
     }
 
-    player.online = false;
-    player.connectionId = undefined;
-    player.lastSeenAt = this.now();
-    const connection = this.connectionRegistry.findConnectionByPlayerId(player.id);
-
-    if (connection) {
-      connection.playerId = undefined;
-      connection.roomId = undefined;
-    }
-
     const round = room.round;
-    const wasHost = room.hostPlayerId === player.id;
-    if (this.getOnlineCount(room) === 0 && this.shouldAutoCloseWhenEmpty(room)) {
-      room.emptySinceAt ??= this.now();
-    }
+    const ctx: OfflineContext = {
+      room,
+      playerId,
+      player,
+      reason,
+      wasHost: room.hostPlayerId === player.id,
+    };
 
-    if (wasHost) {
-      if (reason === "leave") {
-        room.hostPlayerId = "";
-        room.hostReconnectDeadlineAt = undefined;
-      } else {
-        room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
-      }
-    }
-
+    this.markPlayerDisconnected(ctx);
+    this.releaseHostSlot(ctx);
     // 0分数的旁观者掉线立即移除
-    if (
-      reason === "disconnect" &&
-      player.membership === "spectator" &&
-      player.score === 0 &&
-      !player.isBot &&
-      !wasHost
-    ) {
+    if (isExpendableSpectator(ctx)) {
       delete room.players[player.id];
     }
 
     if (!round || round.phase === "gameOver") {
-      // 玩家显式离开时，无条件将其从房间列表中清理
-      if (reason === "leave" && !player.isBot) {
-        delete room.players[player.id];
-      }
-
-      if (wasHost && reason === "leave") {
-        // 先临时置空，让 reassignHost 按加入时间重新选出首位。
-        room.hostPlayerId = "";
-      }
-
-      if (wasHost && reason === "leave") {
-        this.reassignHost(room);
-      }
-      this.normalizeRoomRoleConfig(room);
-      this.touchRoom(room);
-      if (reason === "leave" && this.getOnlineCount(room) === 0) {
-        await this.closeRoom(room, "empty");
-      } else {
-        this.publishRoomState(room);
-        this.publishLobby();
-      }
+      await this.settleOfflineOutsideRound(ctx);
       return;
     }
 
-    if (reason === "leave") {
-      if (round.questionerPlayerId === player.id) {
-        await this.finishRound(room, "aborted", "出题人主动退出房间，本局已终止");
-      } else {
-        await this.forceRemovePlayer(room, player.id, "leave");
-      }
-      if (!player.isBot) {
-        delete room.players[player.id];
-      }
-    } else if (round.questionerPlayerId === player.id) {
-      round.questionerReconnectDeadlineAt = this.now() + QUESTIONER_RECONNECT_TIMEOUT_MS;
-      this.appendSystemMessage(room, "出题人已掉线，系统开始等待其重新连接");
-    } else if (this.shouldQueueDisconnectForDecision(round, player)) {
-      this.enqueuePendingDisconnect(round, player.id);
-      this.broadcastRoomEvent(room, "game.disconnectDecisionRequested", {
-        roomId: room.id,
-        playerId,
-      });
-    }
+    await this.settleOfflineInsideRound(ctx, round);
 
-    if (wasHost && reason === "leave") {
+    if (ctx.wasHost && reason === "leave") {
       this.reassignHost(room);
     }
 
@@ -3093,12 +3067,114 @@ export class WhoIsFakerService implements AdminRoomControl {
       playerId,
     });
 
+    await this.publishOrCloseIfEmpty(room, reason);
+  }
+
+  /** 标记离线并解绑连接；整房都没人在线时才起空房计时。 */
+  private markPlayerDisconnected(ctx: OfflineContext) {
+    const room = ctx.room;
+    const player = ctx.player;
+    player.online = false;
+    player.connectionId = undefined;
+    player.lastSeenAt = this.now();
+    const connection = this.connectionRegistry.findConnectionByPlayerId(player.id);
+    if (connection) {
+      connection.playerId = undefined;
+      connection.roomId = undefined;
+    }
+
+    if (this.getOnlineCount(room) === 0 && this.shouldAutoCloseWhenEmpty(room)) {
+      room.emptySinceAt ??= this.now();
+    }
+  }
+
+  /** 房主席位让位：显式离开直接腾空，掉线则给一个重连截止时刻。 */
+  private releaseHostSlot(ctx: OfflineContext) {
+    if (!ctx.wasHost) {
+      return;
+    }
+
+    if (ctx.reason === "leave") {
+      ctx.room.hostPlayerId = "";
+      ctx.room.hostReconnectDeadlineAt = undefined;
+      return;
+    }
+
+    ctx.room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
+  }
+
+  /** 局外掉线：显式离开的真人无条件移出房间，房主离开后重选房主。 */
+  private async settleOfflineOutsideRound(ctx: OfflineContext) {
+    const room = ctx.room;
+    if (ctx.reason === "leave" && !ctx.player.isBot) {
+      // 玩家显式离开时，无条件将其从房间列表中清理
+      delete room.players[ctx.player.id];
+    }
+
+    if (ctx.wasHost && ctx.reason === "leave") {
+      // 先临时置空，让 reassignHost 按加入时间重新选出首位。
+      room.hostPlayerId = "";
+      this.reassignHost(room);
+    }
+
+    this.normalizeRoomRoleConfig(room);
+    this.touchRoom(room);
+    await this.publishOrCloseIfEmpty(room, ctx.reason);
+  }
+
+  /** 局内掉线：出题人显式离开即终止本局，其余按掉线淘汰决策处理。 */
+  private async settleOfflineInsideRound(ctx: OfflineContext, round: GameRound) {
+    if (ctx.reason === "leave") {
+      await this.removeLeavingPlayer(ctx, round);
+      return;
+    }
+
+    await this.queueOfflineDecision(ctx, round);
+  }
+
+  /** 出题人主动退出直接终止本局，其余玩家按离开强制移出。 */
+  private async removeLeavingPlayer(ctx: OfflineContext, round: GameRound) {
+    const room = ctx.room;
+    const player = ctx.player;
+    if (round.questionerPlayerId === player.id) {
+      await this.finishRound(room, "aborted", "出题人主动退出房间，本局已终止");
+    } else {
+      await this.forceRemovePlayer(room, player.id, "leave");
+    }
+
+    if (!player.isBot) {
+      delete room.players[player.id];
+    }
+  }
+
+  /** 出题人掉线留出重连窗口；其余玩家由全房决定是否进入淘汰投票。 */
+  private async queueOfflineDecision(ctx: OfflineContext, round: GameRound) {
+    const room = ctx.room;
+    const player = ctx.player;
+    if (round.questionerPlayerId === player.id) {
+      round.questionerReconnectDeadlineAt = this.now() + QUESTIONER_RECONNECT_TIMEOUT_MS;
+      this.appendSystemMessage(room, "出题人已掉线，系统开始等待其重新连接");
+      return;
+    }
+
+    if (this.shouldQueueDisconnectForDecision(round, player)) {
+      this.enqueuePendingDisconnect(round, player.id);
+      this.broadcastRoomEvent(room, "game.disconnectDecisionRequested", {
+        roomId: room.id,
+        playerId: ctx.playerId,
+      });
+    }
+  }
+
+  /** 显式离开可能让房间只剩空壳：空了就关房，否则照常广播快照与大厅。 */
+  private async publishOrCloseIfEmpty(room: WhoIsFakerRoomRecord, reason: PlayerOfflineReason) {
     if (reason === "leave" && this.getOnlineCount(room) === 0) {
       await this.closeRoom(room, "empty");
-    } else {
-      this.publishRoomState(room);
-      this.publishLobby();
+      return;
     }
+
+    this.publishRoomState(room);
+    this.publishLobby();
   }
 
   /**
