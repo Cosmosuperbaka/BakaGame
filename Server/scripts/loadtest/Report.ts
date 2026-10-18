@@ -591,18 +591,30 @@ const shardScaling = (reports: Report[]): string => {
     groups.set(key, [...(groups.get(key) ?? []), report]);
   }
   const tables = [...groups.values()]
-    .map((items) => items.sort((a, b) => shardsOf(a) - shardsOf(b)))
-    .filter((items) => new Set(items.map(shardsOf)).size >= 2)
+    .map((items) =>
+      [
+        ...items.reduce((acc, report) => {
+          const current = acc.get(shardsOf(report));
+          if (!current || report.startedAt >= current.startedAt) acc.set(shardsOf(report), report);
+          return acc;
+        }, new Map<number, Report>()),
+      ]
+        .map(([, report]) => report)
+        .sort((a, b) => shardsOf(a) - shardsOf(b))
+    )
+    .filter((items) => items.length >= 2)
     .map((items) => {
       const head = items[0]!;
       const best = items.map(capacityOf);
-      const base = best[0]!;
       const row = (label: string, cell: (step: Step, index: number) => string) =>
         `<tr><th>${esc(label)}</th>${items
           .map((_, index) => `<td>${cell(best[index]!, index)}</td>`)
           .join("")}</tr>`;
-      const ratio = (step: Step) => step.livePlayers / Math.max(1, base.livePlayers);
       const slo = items.map(atSlo);
+      const sloIndex = slo.findIndex((step) => step !== null);
+      const hasSlo = sloIndex >= 0;
+      const sloBase = hasSlo ? slo[sloIndex]!.livePlayers : 1;
+      const sloBaseShards = hasSlo ? shardsOf(items[sloIndex]!) : 1;
       const sloRow = (label: string, cellFn: (step: Step, index: number) => string) =>
         `<tr class="slo"><th>ack P95≤${SLO_ACK_P95_MS}ms：${esc(label)}</th>${slo
           .map((step, index) => `<td>${step ? cellFn(step, index) : "未达"}</td>`)
@@ -616,13 +628,19 @@ const shardScaling = (reports: Report[]): string => {
         `<div class="scroll"><table><thead><tr><th></th>${items
           .map((report) => `<th>${shardsOf(report)} 进程</th>`)
           .join("")}</tr></thead><tbody>` +
-        sloRow("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
-        sloRow("指令/秒", (step) => fmt(step.commandsPerSecond)) +
-        sloRow("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
-        sloRow("每进程玩家", (step, index) => fmt(step.livePlayers / shardsOf(items[index]!), 0)) +
+        (hasSlo
+          ? sloRow("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
+            sloRow("相对最少进程", (step) => `${fmt(step.livePlayers / sloBase, 2)}×`) +
+            sloRow("扩展效率", (step, index) =>
+              fmt(step.livePlayers / sloBase / (shardsOf(items[index]!) / sloBaseShards), 2)
+            ) +
+            sloRow("指令/秒", (step) => fmt(step.commandsPerSecond)) +
+            sloRow("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
+            sloRow("每进程玩家", (step, index) =>
+              fmt(step.livePlayers / shardsOf(items[index]!), 0)
+            )
+          : "") +
         row("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
-        row("相对最少进程", (step) => `${fmt(ratio(step), 2)}×`) +
-        row("扩展效率", (step, index) => fmt(ratio(step) / shardsOf(items[index]!), 2)) +
         row("指令/秒", (step) => fmt(step.commandsPerSecond)) +
         row("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
         row("每进程在线", (step, index) => fmt(step.livePlayers / shardsOf(items[index]!), 0)) +
@@ -638,7 +656,7 @@ const shardScaling = (reports: Report[]): string => {
       );
     });
   if (tables.length === 0) return "";
-  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是一个进程的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。绿底三行是按 <b>ack P95 ≤ ${SLO_ACK_P95_MS} ms</b> 在相邻两跳之间插出来的容量：爬坡阶梯在各进程数下不同（起步人数按进程数放大），只有这个口径下的「每进程玩家」和「每核指令/秒」才能横着比。</p>${tables.join("")}</section>`;
+  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是一个进程的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。同一进程数跑过多次只留最近一次，一个进程数一列。绿底各行是按 <b>ack P95 ≤ ${SLO_ACK_P95_MS} ms</b> 在相邻两跳之间插出来的容量，「相对最少进程」和「扩展效率」也都算在这条线上——爬坡阶梯在各进程数下不同（起步人数按进程数放大），拿最后一跳的原始读数直接相除会把阶梯差当成扩展性。<b>1.00 = 每加一个进程就多出等量承载</b>。带宽受限（cap）那一组通常跨不过这条延迟线，所以只剩下面的原始读数。</p>${tables.join("")}</section>`;
 };
 
 /** 同一口径在本机与生产机上各跑一遍，差值就是「开发机的数字能不能外推」的答案。 */
@@ -675,6 +693,7 @@ const machineCompare = (reports: Report[]): string => {
           .map(([, report]) => `<td>${value(report, capacityOf(report))}</td>`)
           .join("")}</tr>`;
       const sloSteps = rows.map(([, report]) => atSlo(report));
+      const hasSlo = sloSteps.some((step) => step !== null);
       const sloCell = (label: string, value: (step: Step, index: number) => string) =>
         `<tr class="slo"><th>ack P95≤${SLO_ACK_P95_MS}ms：${esc(label)}</th>${sloSteps
           .map((step, index) => `<td>${step ? value(step, index) : "未达"}</td>`)
@@ -686,12 +705,14 @@ const machineCompare = (reports: Report[]): string => {
         `<div class="scroll"><table><thead><tr><th></th>${rows
           .map(([machine]) => `<th>${esc(machine)}</th>`)
           .join("")}</tr></thead><tbody>` +
-        sloCell("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
-        sloCell("每进程玩家", (step, index) =>
-          fmt(step.livePlayers / shardsOf(rows[index]![1]), 0)
-        ) +
-        sloCell("指令/秒", (step) => fmt(step.commandsPerSecond)) +
-        sloCell("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
+        (hasSlo
+          ? sloCell("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
+            sloCell("每进程玩家", (step, index) =>
+              fmt(step.livePlayers / shardsOf(rows[index]![1]), 0)
+            ) +
+            sloCell("指令/秒", (step) => fmt(step.commandsPerSecond)) +
+            sloCell("每核指令/秒", (step) => fmt(perCoreCommands(step)))
+          : "") +
         cell("在线玩家", (_, step) => `<b>${step.livePlayers}</b>`) +
         cell(
           "相对第一台",
@@ -904,7 +925,8 @@ ${failureNotes ? `<section><h2>失败与重试码</h2><ul>${failureNotes}</ul></
   <li>带宽为应用层统计（服务端发出与收到的 WS 帧字节）× 1.15 传输开销估算，未包含 TCP/TLS 握手与重传；真实公网带宽还要叠加 HTTP 静态资源与音频外链。</li>
   <li>生成器与被测进程同机运行，生成器自身 CPU 已在表内单列，因此高玩家数那几跳读到的上限里混着生成器占用。开发机线程多、绑核隔离（taskset）在 Windows 不可用，CPU 是整进程口径而非单核口径；生产那几跳用 <code>--target-cpuset</code> 把被测钉在一核、生成器钉在另一核，被测侧读数是干净的单核口径，但整机只有两核，所以它的绝对承载量里始终带着生成器的份额，实际可服务人数会比表里的下限更高。</li>
   <li>音频字节不进这条链路：猜歌只下发歌曲 ID 与音频地址，实际音频由客户端直连上游 CDN，所以本报告的带宽不含音频流量。</li>
-  <li>生产机那几跳跑在同机临时容器里：内存与核数有硬顶、被测源码是本次 HEAD 而不是线上那版、线上服务进程另算。所以它回答的是「这台硬件跑这套代码能装多少」，不是「现在这台机器还剩多少余量」。</li>
+  <li>生产机那几跳跑在同机临时容器里：内存与核数有硬顶、被测源码是打包时的 HEAD 而不是线上正在跑的那版、线上服务进程另算。所以它回答的是「这台硬件跑这套代码能装多少」，不是「现在这台机器还剩多少余量」。</li>
+  <li><b>磁盘与数据库不在热路径上</b>：玩法面全内存，命令→改状态→扇出不碰盘；对局记录进有界内存队列、后台异步落库，积压时丢记录而不是卡事件循环（<code>Server/src/application/GameRecordService.ts</code>）。压测全程磁盘读写接近 0，所以「开发机磁盘快」不会换算成承载量，两台机器的差距是单核算力与可用核数，不是 IO。</li>
   <li>数据库、账号、上游 API 均未参与（实时玩法面本来就是内存态）；生产环境还有限流、反代与 TLS，单机数字会偏乐观。</li>
 </ul>
 </section>`;
