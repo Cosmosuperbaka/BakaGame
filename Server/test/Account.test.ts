@@ -22,12 +22,19 @@ describe("账号系统未启用", () => {
     for (const url of ["/api/auth/get-session", "/api/account/avatar/someone"]) {
       const response = await app.handle(new Request(`http://localhost${url}`));
       expect(response.status).toBe(503);
-      expect(await response.json()).toMatchObject({ error: { code: "ACCOUNT_DISABLED" } });
+      const body = (await response.json()) as { error?: { code?: string; traceId?: string } };
+      expect(body.error?.code).toBe("ACCOUNT_DISABLED");
+      // 停用体是手写 `Response` 产出的，全局 mapResponse 必须把追踪号补到响应头上，
+      // 并让体里的 `traceId` 与响应头一致，否则运维拿着 503 查不到同一次请求的日志。
+      const traceId = response.headers.get("x-trace-id") ?? "";
+      expect(traceId).not.toBe("");
+      expect(body.error?.traceId).toBe(traceId);
     }
     // RPC 按 oRPC 错误编码，客户端解出的 ORPCError.code 即 ACCOUNT_DISABLED。
     const rpc = await app.handle(new Request("http://localhost/api/rpc/account/me", { method: "POST" }));
     expect(rpc.status).toBe(503);
     expect(await rpc.json()).toEqual({ json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" } });
+    expect(rpc.headers.get("x-trace-id")).not.toBe("");
   });
 });
 
@@ -50,6 +57,10 @@ describe("账号路由限流", () => {
       status = response.status;
       if (status === 429) {
         expect(response.headers.get("retry-after")).toBe("60");
+        // 被拒时还要说清是哪个桶、还剩多少、什么时候恢复：只有 Retry-After 的调用方无法判断该缩并发还是该退避。
+        expect(response.headers.get("x-ratelimit-limit")).toBe("300");
+        expect(response.headers.get("x-ratelimit-remaining")).toBe("0");
+        expect(response.headers.get("x-trace-id")).not.toBe("");
         expect(await response.json()).toEqual({ json: { defined: false, code: "RATE_LIMITED", status: 429, message: "请求过于频繁，请稍后重试" } });
       }
     }

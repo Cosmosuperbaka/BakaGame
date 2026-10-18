@@ -5,53 +5,16 @@ import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import type { CEEService } from "../../application/CEEService";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
-import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
+import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
+import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 import { resolveClientIp } from "../ClientIp";
 
 /**
- * 打点上报的三层桶，口径与 Sentry 隧道一致：单客户端 / 回源 peer / 全局。
- * peer 桶只封顶伪造标头自造新桶的滥用路径，额度是单客户端的十倍。
+ * 打点上报的三层桶（单客户端 / 回源 peer / 全局）就是通用口径本身，
+ * 保留这个名字给账号入口与握手配额引用。
  */
-export class TelemetryRateLimiter {
-  private readonly ipLimiter: SlidingWindowRateLimiter;
-  private readonly peerLimiter: SlidingWindowRateLimiter;
-  private readonly globalLimiter: SlidingWindowRateLimiter;
-
-  constructor(options: {
-    ipMaxRequests?: number;
-    peerMaxRequests?: number;
-    globalMaxRequests?: number;
-    windowMs?: number;
-  } = {}) {
-    const windowMs = options.windowMs ?? 60_000;
-    const ipMaxRequests = options.ipMaxRequests ?? 60;
-    this.ipLimiter = new SlidingWindowRateLimiter({ windowMs, maxRequests: ipMaxRequests });
-    this.peerLimiter = new SlidingWindowRateLimiter({
-      windowMs,
-      maxRequests: options.peerMaxRequests ?? ipMaxRequests * 10,
-    });
-    this.globalLimiter = new SlidingWindowRateLimiter({
-      windowMs,
-      maxRequests: options.globalMaxRequests ?? 1000,
-    });
-  }
-
-  public allow(ip: string, peerIp = ip, now = Date.now()): boolean {
-    if (!this.globalLimiter.allow("__global__", now)) {
-      return false;
-    }
-    if (!this.peerLimiter.allow(peerIp, now)) {
-      return false;
-    }
-    return this.ipLimiter.allow(ip, now);
-  }
-
-  public reset(): void {
-    this.ipLimiter.reset();
-    this.peerLimiter.reset();
-    this.globalLimiter.reset();
-  }
-}
+export const TelemetryRateLimiter = ThreeTierRateLimiter;
+export type TelemetryRateLimiter = ThreeTierRateLimiter;
 
 export const isPrivateLanHost = (rawHost: string): boolean => {
   const host = rawHost.replace(/^\[|\]$/g, "").replace(/:\d+$/, "").trim();
@@ -140,9 +103,13 @@ export const systemRoutes = ({
   const songService = sonGuessrService;
   const limiter = rateLimiter ?? new TelemetryRateLimiter();
 
-  const errorSchema = t.Object({ error: t.Object({ code: t.String(), message: t.String(), traceId: t.String() }) });
+  // `traceId` 由全局 `onRequest` 写入响应头，独立挂载本组路由的测试里可以没有，因此声明为可选。
+  const errorSchema = t.Object({
+    error: t.Object({ code: t.String(), message: t.String(), traceId: t.Optional(t.String()) }),
+  });
+  // 全组路由的失败响应共用同一份信封：状态码不同、形状相同，客户端不必按路由分支。
   return new Elysia({ name: "system", normalize: false })
-    .guard({ response: { 400: errorSchema, 404: errorSchema, 422: errorSchema, 500: errorSchema } })
+    .guard({ response: { 400: errorSchema, 403: errorSchema, 404: errorSchema, 422: errorSchema, 429: errorSchema, 500: errorSchema } })
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers, set, request, server }) => {
@@ -151,9 +118,11 @@ export const systemRoutes = ({
         const peerIp = server?.requestIP(request)?.address ?? "unknown";
         const clientIp = resolveClientIp(request.headers, peerIp);
 
-        if (!limiter.allow(clientIp, peerIp)) {
+        const verdict = limiter.consume(clientIp, peerIp);
+        Object.assign(set.headers, rateLimitHeaders(verdict));
+        if (!verdict.allowed) {
           set.status = 429;
-          return { error: "Too Many Requests" };
+          return httpError("RATE_LIMITED", "打点上报过于频繁，请稍后重试", traceIdOf(set.headers));
         }
 
         const payload = body;
@@ -214,7 +183,7 @@ export const systemRoutes = ({
         ),
         response: {
           200: t.Object({ ok: t.Boolean() }),
-          429: t.Object({ error: t.String() }),
+          429: errorSchema,
         },
       },
     )
@@ -306,7 +275,7 @@ export const systemRoutes = ({
         const bearer = headers.authorization?.startsWith("Bearer ") ? headers.authorization.slice(7) : undefined;
         if (!maintenanceToken || !bearer || !safeEqualToken(bearer, maintenanceToken)) {
           set.status = 403;
-          return { error: "Forbidden: 运维接口需要维护凭据" };
+          return httpError("FORBIDDEN", "运维接口需要维护凭据", traceIdOf(set.headers));
         }
 
         fakerService?.notifyShutdown();
@@ -335,9 +304,7 @@ export const systemRoutes = ({
             ok: t.Boolean(),
             message: t.String(),
           }),
-          403: t.Object({
-            error: t.String(),
-          }),
+          403: errorSchema,
         },
       },
     );

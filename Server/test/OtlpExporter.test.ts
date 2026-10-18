@@ -542,8 +542,12 @@ test("POST /api/monitoring/telemetry 滑动窗口限流与采样控制", async (
     }),
   );
   expect(r3.status).toBe(429);
-  const r3Json = (await r3.json()) as { error?: string };
-  expect(r3Json.error).toBe("Too Many Requests");
+  const r3Json = (await r3.json()) as { error?: { code?: string; message?: string } };
+  expect(r3Json.error?.code).toBe("RATE_LIMITED");
+  expect(r3Json.error?.message).toBe("打点上报过于频繁，请稍后重试");
+  expect(Number(r3.headers.get("retry-after"))).toBeGreaterThan(0);
+  expect(r3.headers.get("x-ratelimit-limit")).toBe("2");
+  expect(r3.headers.get("x-ratelimit-remaining")).toBe("0");
 
   // 2. 验证采样控制：sampleRate=0.0 时 ERROR 依然 100% 记录，而 INFO 被丢弃
   expect(loggedEntries.some((e) => e.level === "ERROR" && e.msg.includes("重大错误"))).toBe(true);

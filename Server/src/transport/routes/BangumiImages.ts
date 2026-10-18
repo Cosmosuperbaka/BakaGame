@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import type { BangumiImageService } from "../../infrastructure/BangumiImageService";
+import { httpError, traceIdOf } from "../HttpErrorEnvelope";
 
 /**
  * 自建图床路由：`/api/bangumi/<源站路径>`。
@@ -25,12 +26,12 @@ export const bangumiImageRoutes = (images?: BangumiImageService) =>
       const path = `/${rest}`;
       if (!IMAGE_PATH_PATTERN.test(path) || path.includes("..") || path.includes("//")) {
         set.status = 400;
-        return { error: "Invalid image path" };
+        return httpError("INVALID_IMAGE_PATH", "图片路径不合法", traceIdOf(set.headers));
       }
       const image = images ? await images.fetch(path) : undefined;
       if (!image) {
         set.status = 404;
-        return { error: "Image not found" };
+        return httpError("IMAGE_NOT_FOUND", "图片不存在", traceIdOf(set.headers));
       }
       set.headers["content-type"] = image.contentType;
       set.headers["cache-control"] = "public, max-age=31536000, immutable";

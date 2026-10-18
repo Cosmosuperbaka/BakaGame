@@ -6,6 +6,9 @@ import {
 } from "../src/transport/routes/SentryTunnel";
 import { requestUrlText } from "./RequestFixtures";
 
+/** 全仓统一的失败信封：`{ error: { code, message, traceId? } }`，独立挂载本路由时没有 traceId。 */
+type FailureBody = { error?: { code: string; message: string; traceId?: string } };
+
 describe("SentryTunnel (同源信封代理与安全校验)", () => {
   const allowedProjectIds = ["100001", "100002"];
 
@@ -18,8 +21,8 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(400);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Empty envelope payload");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.message).toBe("Empty envelope payload");
   });
 
   it("拦截畸形 JSON 头部并返回 400", async () => {
@@ -42,8 +45,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(400);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Missing DSN in envelope header");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("MISSING_DSN");
+    expect(json.error?.message).toBe("Missing DSN in envelope header");
   });
 
   it("防范 SSRF：拦截非官方 Ingest 且未授权的外部恶意域名 (如 sentry.evil.example) 并返回 403", async () => {
@@ -56,8 +60,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Forbidden DSN host");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("FORBIDDEN_DSN_HOST");
+    expect(json.error?.message).toBe("Forbidden DSN host");
   });
 
   it("安全防线：拦截不安全 HTTP 协议并返回 403", async () => {
@@ -70,8 +75,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Forbidden DSN protocol");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("FORBIDDEN_DSN_PROTOCOL");
+    expect(json.error?.message).toBe("Forbidden DSN protocol");
   });
 
   it("安全防线：拦截非 443 自定义端口并返回 403", async () => {
@@ -84,8 +90,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Forbidden DSN port");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("FORBIDDEN_DSN_PORT");
+    expect(json.error?.message).toBe("Forbidden DSN port");
   });
 
   it("安全防线：拦截非法 DSN 路径格式并返回 403", async () => {
@@ -98,8 +105,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Invalid DSN project path");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("INVALID_DSN_PATH");
+    expect(json.error?.message).toBe("Invalid DSN project path");
   });
 
   it("防范开放中继：拦截不在白名单内的未知 project ID 并返回 403", async () => {
@@ -112,8 +120,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toContain("is not allowed");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("PROJECT_NOT_ALLOWED");
+    expect(json.error?.message).toContain("is not allowed");
   });
 
   it("安全防线：拦截超出 256KB 限制的超大载荷并返回 413 Payload Too Large", async () => {
@@ -126,13 +135,14 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       }),
     );
     expect(res.status).toBe(413);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toBe("Payload Too Large");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(json.error?.message).toBe("Payload Too Large");
   });
 
   it("应用级限流：请求频率超限时返回 429 Too Many Requests", async () => {
     const mockFetcher = (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch;
-    const limiter = new SentryTunnelRateLimiter({ windowMs: 60_000, maxRequests: 2 });
+    const limiter = new SentryTunnelRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 });
     const app = sentryTunnelRoutes({ allowedProjectIds, rateLimiter: limiter, fetcher: mockFetcher });
     const payload = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
 
@@ -141,18 +151,26 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
       new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: payload, headers }),
     );
     expect(r1.status).toBe(200);
+    // 放行时也要报额度：调用方据此安排上报节奏，而不是撞墙后才发现。
+    expect(r1.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(r1.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(r1.headers.get("retry-after")).toBeNull();
 
     const r2 = await app.handle(
       new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: payload, headers }),
     );
     expect(r2.status).toBe(200);
+    expect(r2.headers.get("x-ratelimit-remaining")).toBe("0");
 
     const r3 = await app.handle(
       new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: payload, headers }),
     );
     expect(r3.status).toBe(429);
-    const json = (await r3.json()) as { error?: string };
-    expect(json.error).toBe("Too Many Requests");
+    const json = (await r3.json()) as FailureBody;
+    expect(json.error?.code).toBe("RATE_LIMITED");
+    expect(json.error?.message).toBe("Too Many Requests");
+    expect(Number(r3.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(r3.headers.get("x-ratelimit-remaining")).toBe("0");
   });
 
   it("合法信封通过 Mock fetcher 安全转发至 Sentry 端点并返回 200", async () => {
@@ -252,9 +270,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(502);
-    const json = (await res.json()) as Record<string, unknown>;
-    expect(json.error).toBe("Sentry upstream unavailable");
-    expect(json.message).toBeUndefined();
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("UPSTREAM_UNAVAILABLE");
+    expect(Object.keys(json)).toEqual(["error"]);
     expect(JSON.stringify(json)).not.toContain("internal-network-secret");
     expect(loggedErrors.length).toBe(0);
     expect(loggedWarns.length).toBe(1);
@@ -288,8 +306,8 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(502);
-    const json = (await res.json()) as Record<string, unknown>;
-    expect(json.error).toBe("Sentry upstream unavailable");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("UPSTREAM_UNAVAILABLE");
     expect(loggedErrors.length).toBe(0);
     expect(loggedWarns.length).toBe(1);
   });
@@ -323,8 +341,8 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(502);
-    const json = (await res.json()) as Record<string, unknown>;
-    expect(json.error).toBe("Sentry upstream unavailable");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("UPSTREAM_UNAVAILABLE");
     expect(loggedErrors.length).toBe(0);
     expect(loggedWarns.length).toBe(1);
   });
@@ -359,8 +377,8 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(504);
-    const json = (await res.json()) as Record<string, unknown>;
-    expect(json.error).toBe("Sentry upstream timeout");
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("UPSTREAM_TIMEOUT");
     expect(loggedErrors.length).toBe(0);
     expect(loggedWarns.length).toBe(1);
   });
@@ -393,9 +411,9 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(500);
-    const json = (await res.json()) as Record<string, unknown>;
-    expect(json.error).toBe("Internal Sentry tunnel error");
-    expect(json.message).toBeUndefined();
+    const json = (await res.json()) as FailureBody;
+    expect(json.error?.code).toBe("INTERNAL_ERROR");
+    expect(Object.keys(json)).toEqual(["error"]);
     expect(loggedErrors.length).toBe(1);
   });
 });
@@ -441,7 +459,7 @@ for (const realTransport of [false, true]) {
     let upstreamCalls = 0;
     const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
     const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
-      rateLimiter: new SentryTunnelRateLimiter({ maxRequests: 2, globalMaxRequests: 100 }) });
+      rateLimiter: new SentryTunnelRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }) });
     const started = realTransport ? app.listen({ hostname: "127.0.0.1", port: 0 }) : undefined;
     const base = started ? `http://127.0.0.1:${started.server!.port}` : "http://localhost";
     const envelope = JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
@@ -460,7 +478,7 @@ for (const realTransport of [false, true]) {
     let upstreamCalls = 0;
     const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
     const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
-      rateLimiter: new SentryTunnelRateLimiter({ maxRequests: 2, peerMaxRequests: 2, globalMaxRequests: 100 }) });
+      rateLimiter: new SentryTunnelRateLimiter({ ipMaxRequests: 2, peerMaxRequests: 2, globalMaxRequests: 100 }) });
     const started = realTransport ? app.listen({ hostname: "127.0.0.1", port: 0 }) : undefined;
     const base = started ? `http://127.0.0.1:${started.server!.port}` : "http://localhost";
     const envelope = JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
@@ -480,7 +498,7 @@ it("非法真实 IP 标头退回 peer 桶，不给随机字符串发新桶", asy
   let upstreamCalls = 0;
   const fetcher = Object.assign(async () => { upstreamCalls++; return new Response("{}", { status: 200 }); }, { preconnect: () => {} });
   const app = sentryTunnelRoutes({ allowedProjectIds: ["100001"], fetcher,
-    rateLimiter: new SentryTunnelRateLimiter({ maxRequests: 2, globalMaxRequests: 100 }) });
+    rateLimiter: new SentryTunnelRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }) });
   const envelope = JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
   for (let i = 0; i < 3; i++) {
     const response = await app.handle(new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: envelope,

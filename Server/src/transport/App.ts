@@ -46,6 +46,11 @@ export interface AppDependencies {
   bangumiImages?: BangumiImageService;
   /** 账号系统（登录、oRPC、头像代理）：未提供时相关路由回 503 `ACCOUNT_DISABLED`。 */
   account?: AccountDependencies;
+  /**
+   * 握手配额：默认按常量新建一份。压测目标进程注入放开额度的实例，
+   * 否则同一台机器上的几百条连接会被按客户端地址算出的闸门先挡掉。
+   */
+  handshakeQuota?: WsHandshakeQuota;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -481,6 +486,7 @@ export const createApp = ({
   disposeResources,
   bangumiImages,
   account,
+  handshakeQuota: handshakeQuotaOverride,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -492,7 +498,7 @@ export const createApp = ({
   const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   // 三个游戏入口共用一份握手配额：一个客户端地址换着连三款游戏也只有一份额度。
-  const handshakeQuota = new WsHandshakeQuota({
+  const handshakeQuota = handshakeQuotaOverride ?? new WsHandshakeQuota({
     windowMs: WS_HANDSHAKE_WINDOW_MS,
     ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
     globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
@@ -577,6 +583,26 @@ export const createApp = ({
       set.status = statusCode;
       if (statusCode >= 500) logger.error(`HTTP 500 异常 [${path}]`, { ...describeError(error), traceId });
       return { error: { code: errorCode, message, traceId } };
+    })
+    // 自建 `Response` 与第三方 handler 的响应（Better Auth、oRPC、头像代理）不经过 `set.headers` 这一层，
+    // 追踪号会在出口丢失：日志里有 traceId，客户端却拿不到，报障时无法对上同一次请求。
+    // 这里按缺失补齐已有响应头，不改状态码与 body；Elysia 自己产出的响应已经带齐，直接原样返回。
+    .mapResponse(({ set, responseValue }) => {
+      if (!(responseValue instanceof Response)) return;
+      const missing: [string, string][] = [];
+      for (const [key, value] of Object.entries(set.headers)) {
+        if (value !== undefined && !responseValue.headers.has(key)) missing.push([key, String(value)]);
+      }
+      // Elysia 自己产出的响应已经带齐，直接原样返回。
+      if (missing.length === 0) return;
+      // `fetch` 透传的响应头是只读的，原地 set 会抛，所以连同原头一起复制一份再补。
+      const headers = new Headers(responseValue.headers);
+      for (const [key, value] of missing) headers.set(key, value);
+      return new Response(responseValue.body, {
+        status: responseValue.status,
+        statusText: responseValue.statusText,
+        headers,
+      });
     })
     // ==================== 系统 HTTP 业务模块 ====================
     .use(

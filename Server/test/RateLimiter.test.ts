@@ -1,5 +1,40 @@
 import { expect, test } from "bun:test";
-import { SlidingWindowRateLimiter } from "../src/infrastructure/RateLimiter";
+import { SlidingWindowRateLimiter, ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
+
+test("consume 报出剩余额度与最早可重试时刻，供限流响应头直接引用", () => {
+  const limiter = new SlidingWindowRateLimiter({ windowMs: 100, maxRequests: 2 });
+  expect(limiter.consume("a", 0)).toEqual({ allowed: true, retryAfterMs: 0, resetAt: 100, limit: 2, remaining: 1 });
+  expect(limiter.consume("a", 50)).toEqual({ allowed: true, retryAfterMs: 0, resetAt: 100, limit: 2, remaining: 0 });
+
+  // 窗口是滑动的：能重试的时刻是最早那次请求出窗的一刻，不是「从现在起再等一个窗口」。
+  expect(limiter.consume("a", 90)).toEqual({ allowed: false, retryAfterMs: 10, resetAt: 100, limit: 2, remaining: 0 });
+});
+
+test("三层桶把第一个被拒的桶的额度报出来，响应头说得出是谁用完", () => {
+  const limiter = new ThreeTierRateLimiter({
+    windowMs: 100,
+    ipMaxRequests: 2,
+    peerMaxRequests: 3,
+    globalMaxRequests: 100,
+  });
+  // 三个新地址各占一份 peer 额度：单客户端桶都还没满。
+  expect(limiter.consume("ip1", "peer", 0).remaining).toBe(1);
+  expect(limiter.consume("ip2", "peer", 10).remaining).toBe(1);
+  expect(limiter.consume("ip3", "peer", 20).remaining).toBe(1);
+
+  // 第四个地址自己没历史，被 peer 桶封顶：limit 报的是 peer 的 3，不是单客户端的 2。
+  const rejected = limiter.consume("ip4", "peer", 30);
+  expect(rejected.allowed).toBe(false);
+  expect(rejected.limit).toBe(3);
+  expect(rejected.remaining).toBe(0);
+  expect(rejected.retryAfterMs).toBe(70);
+  expect(rejected.resetAt).toBe(100);
+
+  // 额度用满的单客户端桶同样报自己的额度。
+  const ip = new ThreeTierRateLimiter({ windowMs: 100, ipMaxRequests: 1, globalMaxRequests: 100 });
+  expect(ip.consume("ip9", "ip9", 0).allowed).toBe(true);
+  expect(ip.consume("ip9", "ip9", 10).limit).toBe(1);
+});
 
 test("滑动窗口拒绝不占配额，边界时刻过期后放行", () => {
   const limiter = new SlidingWindowRateLimiter({ windowMs: 100, maxRequests: 2 });

@@ -10,6 +10,7 @@ import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
 import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
 import { resolveClientIp } from "../ClientIp";
+import { httpError, rateLimitHeaders, rpcError, traceIdOf, type HttpErrorBody, type RpcErrorBody } from "../HttpErrorEnvelope";
 import { ACCOUNT_AVATAR_PATH, AUTH_BASE_PATH } from "../../shared/Account";
 import { apiContract } from "../../shared/ApiContract";
 import { TelemetryRateLimiter } from "./System";
@@ -142,16 +143,22 @@ const createRpcRouter = ({ service, userData, admin, visits }: AccountDependenci
   });
 };
 
-const accountDisabled = () => new Response(
-  JSON.stringify({ error: { code: "ACCOUNT_DISABLED", message: "账号系统未启用" } }),
-  { status: 503, headers: { "content-type": "application/json" } },
-);
+/**
+ * 这一层的路由返回的是第三方产出（Better Auth handler、oRPC handler、头像流），只能用 `Response`，
+ * 所以本文件内自建响应统一走这里：状态码、`content-type` 与限流头一次写清，追踪号由全局
+ * `mapResponse` 补到响应头上，体里的 `traceId` 由调用方从 `set.headers` 取。
+ */
+const json = (status: number, body: HttpErrorBody | RpcErrorBody, headers?: Record<string, string>): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
+
+const accountDisabled = (traceId?: string): Response =>
+  json(503, httpError("ACCOUNT_DISABLED", "账号系统未启用", traceId));
 
 /** RPC 前缀按 oRPC 错误编码回停用：客户端据 `code` 识别，不与网关自身的 503 混淆。 */
-const rpcAccountDisabled = () => new Response(
-  JSON.stringify({ json: { defined: false, code: "ACCOUNT_DISABLED", status: 503, message: "账号系统未启用" } }),
-  { status: 503, headers: { "content-type": "application/json" } },
-);
+const rpcAccountDisabled = (): Response => json(503, rpcError("ACCOUNT_DISABLED", 503, "账号系统未启用"));
 
 const AVATAR_SIZES = { "100": 100, "640": 640 } as const;
 
@@ -177,43 +184,45 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
   });
   // Better Auth 自带的按 IP 限流是关的（它只认 socket peer，反代后全站共享同一个 peer）。
   // 这一层改按 ESA 写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
-  const rejectOverQuota = (request: Request, peerIp: string | undefined, viaRpc: boolean): Response | undefined => {
+  const rejectOverQuota = (
+    request: Request,
+    peerIp: string | undefined,
+    viaRpc: boolean,
+    traceId?: string,
+  ): Response | undefined => {
     const clientIp = resolveClientIp(request.headers, peerIp);
-    if (limiter.allow(clientIp, peerIp ?? clientIp)) return undefined;
-    const body = viaRpc
-      ? { json: { defined: false, code: "RATE_LIMITED", status: 429, message: "请求过于频繁，请稍后重试" } }
-      : { error: { code: "RATE_LIMITED", message: "请求过于频繁，请稍后重试" } };
-    return new Response(JSON.stringify(body), {
-      status: 429,
-      headers: { "content-type": "application/json", "retry-after": String(Math.ceil(ACCOUNT_WINDOW_MS / 1000)) },
-    });
+    const verdict = limiter.consume(clientIp, peerIp ?? clientIp);
+    if (verdict.allowed) return undefined;
+    return json(
+      429,
+      viaRpc
+        ? rpcError("RATE_LIMITED", 429, "请求过于频繁，请稍后重试")
+        : httpError("RATE_LIMITED", "请求过于频繁，请稍后重试", traceId),
+      rateLimitHeaders(verdict),
+    );
   };
   return new Elysia({ name: "account-routes" })
-    .all(`${AUTH_BASE_PATH}/*`, async ({ request, server }) => {
-      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, false);
+    .all(`${AUTH_BASE_PATH}/*`, async ({ request, server, set }) => {
+      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, false, traceIdOf(set.headers));
       if (overQuota) return overQuota;
-      if (!account) return accountDisabled();
+      if (!account) return accountDisabled(traceIdOf(set.headers));
       const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
       if (!AUTH_HTTP_PATHS.has(path)) {
-        return new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "请求资源不存在" } }), {
-          status: 404, headers: { "content-type": "application/json" },
-        });
+        return json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
       }
       await account.ready;
       return account.auth.handler(request);
     }, { parse: "none", detail: { hide: true } })
-    .all(`${RPC_BASE_PATH}/*`, async ({ request, server }) => {
-      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, true);
+    .all(`${RPC_BASE_PATH}/*`, async ({ request, server, set }) => {
+      const overQuota = rejectOverQuota(request, server?.requestIP(request)?.address, true, traceIdOf(set.headers));
       if (overQuota) return overQuota;
       if (!account || !rpc) return rpcAccountDisabled();
       await account.ready;
       const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });
-      return matched ? response : new Response(JSON.stringify({ error: { code: "NOT_FOUND", message: "请求资源不存在" } }), {
-        status: 404, headers: { "content-type": "application/json" },
-      });
+      return matched ? response : json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
     }, { parse: "none", detail: { hide: true } })
-    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query }) => {
-      if (!account) return accountDisabled();
+    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query, set }) => {
+      if (!account) return accountDisabled(traceIdOf(set.headers));
       await account.ready;
       const size = AVATAR_SIZES[(query.size ?? "640") as keyof typeof AVATAR_SIZES] ?? 640;
       const { image, current } = await account.service.avatar(params.userId, size, query.v);

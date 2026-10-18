@@ -299,6 +299,13 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **提交时读取最新房间与阶段**：阶段切换可能直接卸载设置树，旧回调的 `enabled=true` 不能证明仍允许保存。猜歌三类设置在实际发送边界读取 Store，只有当前快照房间与草稿归属一致且仍为 waiting 才提交；保留等待阶段的防抖及合法卸载刷新。
 - **视口脱离与组件卸载保护**：当配置组件离开视口、失焦或发生组件卸载（unmount）刷新残余队列时，若当前对局已开始（如已进入出题、描述、猜歌、投票、结算等阶段），必须立即终止残余的静默写提交，严禁用卸载时遗留的历史旧表单快照覆盖对局进行中的服务端权威状态。
 
+### 12.7 HTTP 错误信封与限流呈现契约 (Error Envelope & Rate-Limit Presentation)
+- **HTTP 失败只有一种形状**：`{ error: { code, message, traceId } }`，由 `transport/HttpErrorEnvelope.ts` 的 `httpError` 产出，与全局 `onError` 完全一致。路由内**严禁**回 `{ error: "字符串" }` 这类临时形状——调用方（含自动化 Agent）据此只能写一个错误解析器，出现第二种就得按路由分支。`/api/rpc/*` 是唯一例外：oRPC 客户端把 `{ json: { defined: false, code, status, message } }` 解成 `ORPCError`，该形状由 `rpcError` 产出，`code` 与 `message` 口径仍与全局信封一致。
+- **错误码与文案分工**：`code` 是大写下划线机器码（`RATE_LIMITED`、`PROJECT_NOT_ALLOWED`、`INVALID_IMAGE_PATH`），`message` 是给人看的中文。判定分支只认 `code`，不得解析 `message`。
+- **限流与配额拒绝必须回呈现头**：任何 429 一律带 `X-RateLimit-Limit`、`X-RateLimit-Remaining`、`X-RateLimit-Reset`（绝对秒）与被拒时的 `Retry-After`（`rateLimitHeaders`）。滑动窗口的 `Retry-After` 取「最早一次请求出窗」的剩余时间，不是整个窗口长度。缺少这些头时重试方只能靠指数退避猜：猜小了继续撞墙，猜大了白等。
+- **配额判定返回结论而不是布尔**：限流器的公开入口是 `consume(key): RateLimitVerdict`（`allowed / retryAfterMs / resetAt / limit / remaining`），`allow` 只是它的布尔投影。三层桶（单客户端 / 回源 peer / 全局）返回**第一个被拒的桶**，响应头的 `limit` 才说得出是谁的额度用完；只回 `boolean` 的写法拿不到这些头。
+- **自建 `Response` 也要带上追踪号**：返回 `new Response(...)` 会绕过 Elysia 写响应头的那一层，`x-trace-id` 在出口丢失，报障时日志与客户端对不上同一次请求。全局 `mapResponse` 负责把 `set.headers` 里缺失的项补到任何响应上（含 Better Auth、oRPC 透传回来的只读头响应）；响应体里的 `traceId` 仍由路由自己从 `set.headers` 取（`traceIdOf`）。回归见 `test/Account.test.ts` 的 503/429 断言。
+
 ## 13. 可测试性与验证
 
 业务模块通过参数注入时钟、随机源和网络驱动；纯业务状态机可从公开入口真实运行。测试的行为断言、状态驱动、夹具隔离、错误码和去重规则统一在 [Testing](Testing.md#测试编写与维护) 维护，执行范围见其验证矩阵。安全防护的专项证据要求仍见 §16。

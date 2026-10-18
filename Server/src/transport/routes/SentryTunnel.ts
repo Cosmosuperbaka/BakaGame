@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
-import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
+import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import type { EventLogger } from "../../infrastructure/EventLogger";
+import { httpError, rateLimitHeaders, traceIdOf, type HttpErrorBody } from "../HttpErrorEnvelope";
 import { resolveClientIp } from "../ClientIp";
 
 export const MAX_ENVELOPE_BYTES = 256 * 1024; // 256KB
@@ -9,34 +10,14 @@ const SENTRY_INGEST_REGEX =
   /^[a-z0-9-]+\.(ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io)$/i;
 
 /**
- * 隧道限流的三层桶：单客户端、回源 peer、全局。
- *
+ * 隧道限流用的就是通用三层桶（单客户端 / 回源 peer / 全局），口径与打点、账号入口一致：
  * 单客户端桶按真实客户端 IP 分（ESA 托管转换写入的标头），否则同一 ESA 节点后面
- * 的所有玩家会共享一个桶，按用户计的上报预算就退化成按节点计。
- * peer 桶只封顶「伪造标头自造新桶」这一条滥用路径，因此给到单客户端预算的十倍：
- * 一个节点服务的用户量远大于单个用户的请求量，但也不该无限放大。
+ * 的所有玩家会共享一个桶，按用户计的上报预算就退化成按节点计；peer 桶只封顶
+ * 「伪造标头自造新桶」这一条滥用路径，因此给到单客户端预算的十倍。
+ * 仍按用途导出这个名字，调用方不必知道通用类的存在。
  */
-export class SentryTunnelRateLimiter {
-  private readonly ip: SlidingWindowRateLimiter;
-  private readonly peer: SlidingWindowRateLimiter;
-  private readonly total: SlidingWindowRateLimiter;
-  constructor(options: {
-    windowMs?: number;
-    maxRequests?: number;
-    peerMaxRequests?: number;
-    globalMaxRequests?: number;
-  } = {}) {
-    const windowMs = options.windowMs ?? 60_000;
-    const maxRequests = options.maxRequests ?? 60;
-    this.ip = new SlidingWindowRateLimiter({ windowMs, maxRequests });
-    this.peer = new SlidingWindowRateLimiter({ windowMs, maxRequests: options.peerMaxRequests ?? maxRequests * 10 });
-    this.total = new SlidingWindowRateLimiter({ windowMs, maxRequests: options.globalMaxRequests ?? 1000 });
-  }
-  allow(key: string, peerKey = key, now = Date.now()): boolean {
-    return this.total.allow("global", now) && this.peer.allow(peerKey, now) && this.ip.allow(key, now);
-  }
-  reset(): void { this.ip.reset(); this.peer.reset(); this.total.reset(); }
-}
+export const SentryTunnelRateLimiter = ThreeTierRateLimiter;
+export type SentryTunnelRateLimiter = ThreeTierRateLimiter;
 
 export interface SentryTunnelOptions {
   allowedProjectIds?: string[];
@@ -56,20 +37,21 @@ const isHostAllowed = (hostname: string, allowedHosts: Set<string>): boolean => 
 };
 
 /**
- * 隧道校验链的一处失败：状态码与响应体由具体环节决定，handler 只负责落到 set 与返回值。
+ * 隧道校验链的一处失败：状态码与错误码由具体环节决定，出口处统一包成全局错误信封。
  */
-type TunnelFailure = { status: number; body: Record<string, unknown> };
+type TunnelFailure = { status: number; code: string; message: string };
 
 /** 校验环节的产出：要么拿到下一步需要的值，要么带着失败直接出口。 */
 type TunnelStep<T> = { value: T } | { failure: TunnelFailure };
 
-const tunnelFailure = (status: number, error: string): TunnelFailure => ({
+const tunnelFailure = (status: number, code: string, message: string): TunnelFailure => ({
   status,
-  body: { error },
+  code,
+  message,
 });
 
-const rejectStep = (status: number, error: string): TunnelStep<never> => ({
-  failure: tunnelFailure(status, error),
+const rejectStep = (status: number, code: string, message: string): TunnelStep<never> => ({
+  failure: tunnelFailure(status, code, message),
 });
 
 const isRejected = <T>(step: TunnelStep<T>): step is { failure: TunnelFailure } => "failure" in step;
@@ -143,9 +125,9 @@ const isUpstreamNetworkFailure = (error: unknown): boolean =>
  * 归类结果同时决定回给客户端的状态码与响应体。
  */
 const classifyTunnelError = (error: unknown): TunnelFailure => {
-  if (isUpstreamTimeout(error)) return tunnelFailure(504, "Sentry upstream timeout");
-  if (isUpstreamNetworkFailure(error)) return tunnelFailure(502, "Sentry upstream unavailable");
-  return tunnelFailure(500, "Internal Sentry tunnel error");
+  if (isUpstreamTimeout(error)) return tunnelFailure(504, "UPSTREAM_TIMEOUT", "Sentry upstream timeout");
+  if (isUpstreamNetworkFailure(error)) return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
+  return tunnelFailure(500, "INTERNAL_ERROR", "Internal Sentry tunnel error");
 };
 
 const reportTunnelError = (
@@ -208,7 +190,7 @@ const readEnvelopePayload = async (request: Request): Promise<TunnelStep<Uint8Ar
   if (reader) {
     try {
       const collected = await collectEnvelopeChunks(reader, chunks);
-      if (collected === null) return rejectStep(413, "Payload Too Large");
+      if (collected === null) return rejectStep(413, "PAYLOAD_TOO_LARGE", "Payload Too Large");
       byteLength = collected;
     } finally {
       reader.releaseLock();
@@ -216,7 +198,7 @@ const readEnvelopePayload = async (request: Request): Promise<TunnelStep<Uint8Ar
   }
 
   const rawEnvelope = concatEnvelopeChunks(chunks, byteLength);
-  if (rawEnvelope.byteLength === 0) return rejectStep(400, "Empty envelope payload");
+  if (rawEnvelope.byteLength === 0) return rejectStep(400, "INVALID_ENVELOPE", "Empty envelope payload");
   return { value: rawEnvelope };
 };
 
@@ -239,21 +221,21 @@ const isPlainEnvelopeHeader = (parsed: unknown): parsed is { dsn?: string } =>
 /** 从信封首行取出 DSN 字符串，任一环节不合规则按原状态码回绝。 */
 const readDsnFromEnvelope = (rawEnvelope: Uint8Array): TunnelStep<string> => {
   const headerLine = decodeEnvelopeHeaderLine(rawEnvelope);
-  if (!headerLine) return rejectStep(400, "Invalid envelope header encoding");
-  if (!headerLine.text) return rejectStep(400, "Invalid envelope header");
+  if (!headerLine) return rejectStep(400, "INVALID_ENVELOPE", "Invalid envelope header encoding");
+  if (!headerLine.text) return rejectStep(400, "INVALID_ENVELOPE", "Invalid envelope header");
 
   let parsedHeader: unknown;
   try {
     parsedHeader = JSON.parse(headerLine.text);
   } catch {
-    return rejectStep(400, "Failed to parse envelope header JSON");
+    return rejectStep(400, "INVALID_ENVELOPE", "Failed to parse envelope header JSON");
   }
   if (!isPlainEnvelopeHeader(parsedHeader)) {
-    return rejectStep(400, "Failed to parse envelope header JSON");
+    return rejectStep(400, "INVALID_ENVELOPE", "Failed to parse envelope header JSON");
   }
 
   const dsn = parsedHeader.dsn;
-  if (typeof dsn !== "string" || !dsn) return rejectStep(400, "Missing DSN in envelope header");
+  if (typeof dsn !== "string" || !dsn) return rejectStep(400, "MISSING_DSN", "Missing DSN in envelope header");
   return { value: dsn };
 };
 
@@ -267,9 +249,9 @@ const parseDsnUrl = (dsn: string): URL | null => {
 
 /** 安全防线 1—3：协议、端口、域名白名单，杜绝内网 SSRF 与开放中继。 */
 const rejectUntrustedDsnTransport = (dsnUrl: URL, allowedHosts: Set<string>): TunnelFailure | null => {
-  if (dsnUrl.protocol !== "https:") return tunnelFailure(403, "Forbidden DSN protocol");
-  if (dsnUrl.port && dsnUrl.port !== "443") return tunnelFailure(403, "Forbidden DSN port");
-  if (!isHostAllowed(dsnUrl.hostname, allowedHosts)) return tunnelFailure(403, "Forbidden DSN host");
+  if (dsnUrl.protocol !== "https:") return tunnelFailure(403, "FORBIDDEN_DSN_PROTOCOL", "Forbidden DSN protocol");
+  if (dsnUrl.port && dsnUrl.port !== "443") return tunnelFailure(403, "FORBIDDEN_DSN_PORT", "Forbidden DSN port");
+  if (!isHostAllowed(dsnUrl.hostname, allowedHosts)) return tunnelFailure(403, "FORBIDDEN_DSN_HOST", "Forbidden DSN host");
   return null;
 };
 
@@ -279,17 +261,17 @@ const rejectUntrustedDsnTransport = (dsnUrl: URL, allowedHosts: Set<string>): Tu
  */
 const resolveTrustedEnvelopeUrl = (dsn: string, policy: SentryTunnelPolicy): TunnelStep<string> => {
   const dsnUrl = parseDsnUrl(dsn);
-  if (!dsnUrl) return rejectStep(400, "Malformed DSN URL in envelope header");
+  if (!dsnUrl) return rejectStep(400, "MALFORMED_DSN", "Malformed DSN URL in envelope header");
 
   const transportRejection = rejectUntrustedDsnTransport(dsnUrl, policy.allowedHosts);
   if (transportRejection) return { failure: transportRejection };
 
   const match = dsnUrl.pathname.match(DSN_PROJECT_PATH_PATTERN);
-  if (!match) return rejectStep(403, "Invalid DSN project path");
+  if (!match) return rejectStep(403, "INVALID_DSN_PATH", "Invalid DSN project path");
 
   const projectId = match[1];
   if (!policy.allowedProjects.has(projectId)) {
-    return rejectStep(403, `Project ID "${projectId}" is not allowed`);
+    return rejectStep(403, "PROJECT_NOT_ALLOWED", `Project ID "${projectId}" is not allowed`);
   }
 
   return { value: `https://${dsnUrl.hostname}/api/${projectId}/envelope/` };
@@ -337,54 +319,45 @@ export const sentryTunnelRoutes = ({
   return new Elysia({ name: "sentry-tunnel" }).post(
     "/api/monitoring/sentry",
     async ({ request, set, server }) => {
+      // 失败出口只有一处：状态码与错误码由校验环节决定，信封形状统一由 HttpErrorEnvelope 产出。
+      const traceId = traceIdOf(set.headers);
+      const reject = (failure: TunnelFailure): HttpErrorBody => {
+        set.status = failure.status;
+        return httpError(failure.code, failure.message, traceId);
+      };
       try {
         // 客户端身份取 ESA 托管转换写入的真实 IP 标头（无法被客户端伪造），
         // 缺失或不是 IP 字面量时退回 transport peer；peer 桶另行封顶，防止标头被伪造成新桶。
         const peerIp = server?.requestIP(request)?.address ?? "unknown";
         const clientIp = resolveClientIp(request.headers, peerIp);
 
-        if (!limiter.allow(clientIp, peerIp)) {
-          set.status = 429;
-          return { error: "Too Many Requests" };
-        }
+        const verdict = limiter.consume(clientIp, peerIp);
+        Object.assign(set.headers, rateLimitHeaders(verdict));
+        if (!verdict.allowed) return reject(tunnelFailure(429, "RATE_LIMITED", "Too Many Requests"));
 
         const contentLength = request.headers.get("content-length");
         if (contentLength && Number.parseInt(contentLength, 10) > MAX_ENVELOPE_BYTES) {
-          set.status = 413;
-          return { error: "Payload Too Large" };
+          return reject(tunnelFailure(413, "PAYLOAD_TOO_LARGE", "Payload Too Large"));
         }
 
         const envelope = await readEnvelopePayload(request);
-        if (isRejected(envelope)) {
-          set.status = envelope.failure.status;
-          return envelope.failure.body;
-        }
+        if (isRejected(envelope)) return reject(envelope.failure);
 
         const dsn = readDsnFromEnvelope(envelope.value);
-        if (isRejected(dsn)) {
-          set.status = dsn.failure.status;
-          return dsn.failure.body;
-        }
+        if (isRejected(dsn)) return reject(dsn.failure);
 
         const targetUrl = resolveTrustedEnvelopeUrl(dsn.value, policy);
-        if (isRejected(targetUrl)) {
-          set.status = targetUrl.failure.status;
-          return targetUrl.failure.body;
-        }
+        if (isRejected(targetUrl)) return reject(targetUrl.failure);
 
         const response = await sendEnvelopeToSentry(fetcher, targetUrl.value, envelope.value);
 
-        if (!response.ok) {
-          set.status = response.status;
-          return { error: "Upstream Sentry error", status: response.status };
-        }
+        if (!response.ok) return reject(tunnelFailure(response.status, "UPSTREAM_REJECTED", "Upstream Sentry error"));
 
         return { ok: true };
       } catch (err) {
         const failure = classifyTunnelError(err);
         reportTunnelError(logger, err, failure);
-        set.status = failure.status;
-        return failure.body;
+        return reject(failure);
       }
     },
     {

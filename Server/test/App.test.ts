@@ -569,16 +569,24 @@ test("POST /api/system/notify-shutdown 拦截携带公网代理转发头的外�
       headers: { "x-forwarded-for": "198.51.100.1, 10.0.0.1" },
     });
     expect(resWithXForwardedFor.status).toBe(403);
-    const json1 = (await resWithXForwardedFor.json()) as { error?: string };
-    expect(json1.error).toContain("Forbidden");
+    const json1 = (await resWithXForwardedFor.json()) as { error?: { code?: string; message?: string; traceId?: string } };
+    expect(json1.error?.code).toBe("FORBIDDEN");
+    expect(json1.error?.message).toContain("维护凭据");
+    // 真实服务器由全局 onRequest 写入响应头，错误信封必须带上同一个追踪号，运维才能在日志里定位这一次拒绝。
+    const trace1 = resWithXForwardedFor.headers.get("x-trace-id") ?? "";
+    expect(trace1).not.toBe("");
+    expect(json1.error?.traceId).toBe(trace1);
 
     const resWithXRealIp = await fetch(`http://127.0.0.1:${port}/api/system/notify-shutdown`, {
       method: "POST",
       headers: { "x-real-ip": "203.0.113.50" },
     });
     expect(resWithXRealIp.status).toBe(403);
-    const json2 = (await resWithXRealIp.json()) as { error?: string };
-    expect(json2.error).toContain("Forbidden");
+    const json2 = (await resWithXRealIp.json()) as { error?: { code?: string; message?: string; traceId?: string } };
+    expect(json2.error?.code).toBe("FORBIDDEN");
+    const trace2 = resWithXRealIp.headers.get("x-trace-id") ?? "";
+    expect(trace2).not.toBe("");
+    expect(json2.error?.traceId).toBe(trace2);
   } finally {
     await stop();
   }
@@ -599,8 +607,8 @@ test("POST /api/system/notify-shutdown 缺少任何来源 IP 头时同样拒绝�
       method: "POST",
     });
     expect(res.status).toBe(403);
-    const json = (await res.json()) as { error?: string };
-    expect(json.error).toContain("Forbidden");
+    const json = (await res.json()) as { error?: { code?: string } };
+    expect(json.error?.code).toBe("FORBIDDEN");
     expect(shutdownTriggered).toBe(false);
   } finally {
     await stop();
