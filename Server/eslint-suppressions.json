@@ -18,10 +18,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 2
     }
-  },
-  "src/scripts/VerifyDualSearch.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }

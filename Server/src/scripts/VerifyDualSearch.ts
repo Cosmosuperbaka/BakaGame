@@ -77,6 +77,122 @@ const TEST_CASES: TestCase[] = [
   { query: "晴天 关诗敏", expectedTopArtist: "关诗敏" },
 ];
 
+/** 单条用例的判定结果：line 紧跟进度提示打印，anomaly 只在失败时带上。 */
+type CaseOutcome =
+  | { readonly status: "passed"; readonly line: string }
+  | { readonly status: "failed"; readonly line: string; readonly anomaly: string };
+
+const expectedArtists = (tc: TestCase): string[] => [
+  tc.expectedTopArtist,
+  ...(tc.allowAlternateArtist || []),
+];
+
+/** 歌手名允许互为子串：两端都归一化后再双向包含比对。 */
+const isSameArtist = (expected: string, actual: string): boolean => {
+  const normExp = normalizeComparableText(expected);
+  const normActual = normalizeComparableText(actual);
+  return normActual.includes(normExp) || normExp.includes(normActual);
+};
+
+const artistMatches = (tc: TestCase, top: AggregatedSongSearchResult): boolean =>
+  expectedArtists(tc).some((exp) => isSameArtist(exp, top.artist));
+
+const DERIVATION_MARKERS = ["伴奏", "instrumental", "片段", "铃声"];
+
+/** 验证衍生版本惩罚：置顶标题命中任一衍生标记即为失误。 */
+const isBadDerivation = (title: string): boolean => {
+  const topTitleLower = title.toLowerCase();
+  return DERIVATION_MARKERS.some((marker) => topTitleLower.includes(marker));
+};
+
+/** 验证去重聚类质量：首曲关联的备用音源列表。 */
+const mergedSources = (top: AggregatedSongSearchResult): string[] => top.sources || [top.id];
+
+const isDualSourceMerged = (top: AggregatedSongSearchResult): boolean => {
+  const sources = mergedSources(top);
+  return sources.some((s) => s.startsWith("netease:")) && sources.some((s) => s.startsWith("qq:"));
+};
+
+const sourceTag = (top: AggregatedSongSearchResult): string =>
+  isDualSourceMerged(top) ? "【双源互证合并】" : `【单源: ${mergedSources(top).join(", ")}】`;
+
+/** 深度详情测试：直链可播性与歌词解析优先级。 */
+async function probeDetailSummary(aggregated: AggregatedMusicProvider, songId: string): Promise<string> {
+  try {
+    const details = await aggregated.getSong(songId);
+    const hasAudio = Boolean(details.audioUrl && details.audioUrl.startsWith("http"));
+    const lyricCount = details.lyrics?.length || 0;
+    const hasVerbatim = details.lyrics?.some((l) => Boolean(l.words && l.words.length > 0));
+    return `[音频: ${hasAudio ? "OK" : "无"}, 歌词: ${lyricCount}行, 逐字: ${hasVerbatim ? "YES" : "NO"}]`;
+  } catch (detailErr) {
+    return `[详情拉取告警: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}]`;
+  }
+}
+
+/** 跑一条用例：召回 → 首位歌手 → 衍生版本惩罚 → 双源聚类 → 详情直链。 */
+async function verifyCase(
+  aggregated: AggregatedMusicProvider,
+  tc: TestCase,
+  index: number,
+): Promise<CaseOutcome> {
+  try {
+    const results = (await aggregated.search(tc.query, 10)) as AggregatedSongSearchResult[];
+    if (!results || results.length === 0) {
+      return { status: "failed", line: "❌ 召回为空", anomaly: `"${tc.query}": 召回结果为空` };
+    }
+
+    const top = results[0];
+    if (!artistMatches(tc, top)) {
+      return {
+        status: "failed",
+        line: `❌ 排序置顶偏离: 期望 [${expectedArtists(tc).join(" / ")}]，实际: "${top.artist}" - "${top.title}" (Score: ${top.relevanceScore})`,
+        anomaly: `"${tc.query}": 首位歌手偏离, 得到 "${top.artist}" - "${top.title}"`,
+      };
+    }
+
+    if (isBadDerivation(top.title)) {
+      return {
+        status: "failed",
+        line: `❌ 原版优先失误: 置顶了伴奏/铃声版本 "${top.title}"`,
+        anomaly: `"${tc.query}": 置顶了伴奏/铃声版本`,
+      };
+    }
+
+    let detailSummary = "";
+    if (index % 5 === 0 || !isDualSourceMerged(top)) {
+      detailSummary = await probeDetailSummary(aggregated, top.id);
+    }
+
+    return { status: "passed", line: `✅ 通过: "${top.title}" - ${top.artist} ${sourceTag(top)} ${detailSummary}` };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { status: "failed", line: `❌ 抛出异常: ${reason}`, anomaly: `"${tc.query}": 抛出异常 ${reason}` };
+  }
+}
+
+type RunSummary = {
+  readonly total: number;
+  readonly passed: number;
+  readonly failed: number;
+  readonly anomalies: readonly string[];
+};
+
+function printReport(summary: RunSummary): void {
+  console.log("\n================ 汇总报告 ================");
+  console.log(`总数: ${summary.total}`);
+  console.log(`成功: ${summary.passed}`);
+  console.log(`失败: ${summary.failed}`);
+
+  if (summary.anomalies.length > 0) {
+    console.log("\n待拟合或异常点列表:");
+    for (const a of summary.anomalies) {
+      console.log(`  - ${a}`);
+    }
+  } else {
+    console.log("\n🎉 全量测试 100% 通过！去重、排序、合流与播放能力拟合完毕！");
+  }
+}
+
 async function main() {
   console.log("=== BakaGame 双平台真实检索、去重、排序与播放能力全量检验 ===");
   console.log(`样本集总数: ${TEST_CASES.length} 首代表性歌曲\n`);
@@ -96,89 +212,17 @@ async function main() {
     const tc = TEST_CASES[i];
     process.stdout.write(`[${i + 1}/${TEST_CASES.length}] 检索: "${tc.query}" ... `);
 
-    try {
-      const results = (await aggregated.search(tc.query, 10)) as AggregatedSongSearchResult[];
-      if (!results || results.length === 0) {
-        console.log("❌ 召回为空");
-        anomalies.push(`"${tc.query}": 召回结果为空`);
-        failedCount++;
-        continue;
-      }
-
-      const top = results[0];
-      const allArtists = [tc.expectedTopArtist, ...(tc.allowAlternateArtist || [])];
-      const artistMatched = allArtists.some((exp) => {
-        const normExp = normalizeComparableText(exp);
-        const normActual = normalizeComparableText(top.artist);
-        return normActual.includes(normExp) || normExp.includes(normActual);
-      });
-
-      if (!artistMatched) {
-        console.log(`❌ 排序置顶偏离: 期望 [${allArtists.join(" / ")}]，实际: "${top.artist}" - "${top.title}" (Score: ${top.relevanceScore})`);
-        anomalies.push(`"${tc.query}": 首位歌手偏离, 得到 "${top.artist}" - "${top.title}"`);
-        failedCount++;
-        continue;
-      }
-
-      // 验证去重聚类质量
-      const sources: string[] = top.sources || [top.id];
-      const hasNetease = sources.some((s: string) => s.startsWith("netease:"));
-      const hasQq = sources.some((s: string) => s.startsWith("qq:"));
-      const isDualMerged = hasNetease && hasQq;
-
-      // 验证衍生版本惩罚
-      const topTitleLower = top.title.toLowerCase();
-      const isBadDerivation =
-        topTitleLower.includes("伴奏") ||
-        topTitleLower.includes("instrumental") ||
-        topTitleLower.includes("片段") ||
-        topTitleLower.includes("铃声");
-
-      if (isBadDerivation) {
-        console.log(`❌ 原版优先失误: 置顶了伴奏/铃声版本 "${top.title}"`);
-        anomalies.push(`"${tc.query}": 置顶了伴奏/铃声版本`);
-        failedCount++;
-        continue;
-      }
-
-      // 随机抽取首位歌曲进行深度详情测试（直链提取与歌词解析优先级）
-      let detailSummary = "";
-      if (i % 5 === 0 || !isDualMerged) {
-        try {
-          const details = await aggregated.getSong(top.id);
-          const hasAudio = Boolean(details.audioUrl && details.audioUrl.startsWith("http"));
-          const lyricCount = details.lyrics?.length || 0;
-          const hasVerbatim = details.lyrics?.some((l) => Boolean(l.words && l.words.length > 0));
-          detailSummary = `[音频: ${hasAudio ? "OK" : "无"}, 歌词: ${lyricCount}行, 逐字: ${hasVerbatim ? "YES" : "NO"}]`;
-        } catch (detailErr) {
-          detailSummary = `[详情拉取告警: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}]`;
-        }
-      }
-
-      const dualTag = isDualMerged ? "【双源互证合并】" : `【单源: ${sources.join(", ")}】`;
-      console.log(`✅ 通过: "${top.title}" - ${top.artist} ${dualTag} ${detailSummary}`);
-      passedCount++;
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      console.log(`❌ 抛出异常: ${reason}`);
-      anomalies.push(`"${tc.query}": 抛出异常 ${reason}`);
+    const outcome = await verifyCase(aggregated, tc, i);
+    console.log(outcome.line);
+    if (outcome.status === "failed") {
+      anomalies.push(outcome.anomaly);
       failedCount++;
+    } else {
+      passedCount++;
     }
   }
 
-  console.log("\n================ 汇总报告 ================");
-  console.log(`总数: ${TEST_CASES.length}`);
-  console.log(`成功: ${passedCount}`);
-  console.log(`失败: ${failedCount}`);
-
-  if (anomalies.length > 0) {
-    console.log("\n待拟合或异常点列表:");
-    for (const a of anomalies) {
-      console.log(`  - ${a}`);
-    }
-  } else {
-    console.log("\n🎉 全量测试 100% 通过！去重、排序、合流与播放能力拟合完毕！");
-  }
+  printReport({ total: TEST_CASES.length, passed: passedCount, failed: failedCount, anomalies });
 
   process.exit(failedCount > 0 ? 1 : 0);
 }
