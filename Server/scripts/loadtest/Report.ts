@@ -51,6 +51,7 @@ interface Report {
     mix: Record<string, number>;
     seats: Record<string, number>;
     mbps: number;
+    shards?: number;
     fatSeats?: number;
     latencyP95BudgetMs: number;
     lagP95BudgetMs: number;
@@ -267,28 +268,68 @@ const unitGame = (report: Report): string =>
 
 const isProbeRun = (report: Report): boolean => /(?:^|-)N-\d/.test(report.label);
 
+/** 被测进程数：老报告没写这个字段，按单进程读。 */
+const shardsOf = (report: Report): number =>
+  Math.max(1, Math.round(Number(report.config.shards ?? 1)));
+
+/** 报告来自哪台机器：本机与生产机混在一份报告里时必须能分开。 */
+const machineOf = (report: Report): string => String(report.host.machine ?? "").trim();
+
+const machinesIn = (reports: readonly Report[]): string[] => [
+  ...new Set(reports.map(machineOf).filter(Boolean)),
+];
+
+/** 整套运行里是否混了机器 / 混了进程数；没混就不往标签里加噪声。 */
+interface TagMode {
+  machine: boolean;
+  shards: boolean;
+}
+const tagMode = (reports: readonly Report[]): TagMode => ({
+  machine: machinesIn(reports).length > 1,
+  shards: reports.some((report) => shardsOf(report) > 1),
+});
+
+const runTag = (report: Report, mode: TagMode): string => {
+  const parts: string[] = [];
+  if (mode.machine) parts.push(machineOf(report) || "未标机器");
+  if (mode.shards) parts.push(`${shardsOf(report)} 进程`);
+  return parts.length ? ` · ${parts.join(" · ")}` : "";
+};
+
+/** 该运行代表的容量点：带宽二分取最后一个没超预算的跳，其余取最后一个没触发饱和判定的跳。 */
+const capacityOf = (report: Report): Step => {
+  if (report.mode !== "cap") return compliantTop(report);
+  const under = capUnder(report);
+  return under.length
+    ? under.reduce((acc, step) => (step.livePlayers > acc.livePlayers ? step : acc))
+    : report.steps[report.steps.length - 1]!;
+};
+
+/** 进程数只是开了几个事件循环，跨运行真正可比的是每核吞吐。 */
+const perCoreCommands = (step: Step): number =>
+  step.target.cores > 0.01 ? step.commandsPerSecond / step.target.cores : 0;
+
 const conclusion = (reports: Report[]): string => {
   const lines: string[] = [];
+  const mode = tagMode(reports);
+  const tag = (report: Report): string => runTag(report, mode);
   const ramps = reports.filter(
     (report) => report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report)
   );
   for (const report of ramps) {
     const top = compliantTop(report);
     lines.push(
-      `<b>pace ${report.config.pace}、${esc(mixText(report))}</b>：合规上限 <b>${top.livePlayers}</b> 名在线玩家（${top.roomsStarted} 个房间、${fmt(top.commandsPerSecond)} 指令/秒、带宽 ${fmt(top.wireMbps)} Mbps、CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms）；本次停止于 <code>${esc(report.stopReason)}</code>。`
+      `<b>pace ${report.config.pace}、${esc(mixText(report))}${esc(tag(report))}</b>：合规上限 <b>${top.livePlayers}</b> 名在线玩家（${top.roomsStarted} 个房间、${fmt(top.commandsPerSecond)} 指令/秒、带宽 ${fmt(top.wireMbps)} Mbps、CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms）；本次停止于 <code>${esc(report.stopReason)}</code>。`
     );
   }
   for (const report of reports.filter((item) => item.mode === "cap")) {
-    const under = capUnder(report);
     const over = capOver(report);
-    const top = under.length
-      ? under.reduce((acc, step) => (step.livePlayers > acc.livePlayers ? step : acc))
-      : report.steps[report.steps.length - 1]!;
+    const top = capacityOf(report);
     const bracket = over.length
       ? `，实测最近超限点是 ${over.reduce((acc, s) => (s.livePlayers < acc.livePlayers ? s : acc)).livePlayers} 名`
       : "";
     lines.push(
-      `<b>带宽钉在 ${report.config.mbps} Mbps、pace ${report.config.pace}、${esc(mixText(report))}</b>：可承载 <b>${top.livePlayers}</b> 名玩家 = ${fmt(top.commandsPerSecond)} 指令/秒（该跳 ${fmt(top.wireMbps)} Mbps${bracket}），此时 CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms（二分 ${report.steps.length} 跳，判定 <code>${esc(report.stopReason)}</code>）。`
+      `<b>带宽钉在 ${report.config.mbps} Mbps、pace ${report.config.pace}、${esc(mixText(report))}${esc(tag(report))}</b>：可承载 <b>${top.livePlayers}</b> 名玩家 = ${fmt(top.commandsPerSecond)} 指令/秒（该跳 ${fmt(top.wireMbps)} Mbps${bracket}），此时 CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms（二分 ${report.steps.length} 跳，判定 <code>${esc(report.stopReason)}</code>）。`
     );
   }
   for (const report of reports.filter((item) => item.mode === "fat")) {
@@ -300,7 +341,7 @@ const conclusion = (reports: Report[]): string => {
       )
       .join("；");
     lines.push(
-      `<b>单个 ${seats} 人大房间</b>：每次房间状态变化都要扇出给全部 ${seats} 条连接，所以它是带宽与事件环的最坏情形。实测同一间房按节奏扫一遍：${sweep}（带宽 Mbps / CPU 核 / ack P95 ms）。文档基线（<code>Agents/Deployment.md</code> 带宽与容量基线）是单房 12 变化/秒下 150 人压进 6 Mbps 出口，可与本行对表。`
+      `<b>单个 ${seats} 人大房间${esc(tag(report))}</b>：每次房间状态变化都要扇出给全部 ${seats} 条连接，所以它是带宽与事件环的最坏情形。实测同一间房按节奏扫一遍：${sweep}（带宽 Mbps / CPU 核 / ack P95 ms）。文档基线（<code>Agents/Deployment.md</code> 带宽与容量基线）是单房 12 变化/秒下 150 人压进 6 Mbps 出口，可与本行对表。`
     );
   }
   const probes = reports.filter(
@@ -386,25 +427,28 @@ const STYLES = `
 
 /** 同一带宽预算下，不同游戏占比各自能装多少人——这条轴就是用户可调的 mix。 */
 const capMatrix = (reports: Report[]): string => {
+  const mode = tagMode(reports);
   const groups = new Map<string, Report[]>();
   for (const report of reports.filter((item) => item.mode === "cap")) {
-    const key = `${report.config.pace}|${report.config.mbps}`;
+    const key = [
+      machineOf(report) || "未标机器",
+      shardsOf(report),
+      report.config.pace,
+      report.config.mbps,
+    ].join("|");
     groups.set(key, [...(groups.get(key) ?? []), report]);
   }
   const tables = [...groups.entries()]
     .filter(([, items]) => items.length >= 2)
     .map(([key, items]) => {
-      const [pace, mbps] = key.split("|");
-      const best = items.map((report) => {
-        const under = capUnder(report);
-        return under.length
-          ? under.reduce((acc, step) => (step.livePlayers > acc.livePlayers ? step : acc))
-          : report.steps[report.steps.length - 1]!;
-      });
+      const [machine, shards, pace, mbps] = key.split("|");
+      const best = items.map(capacityOf);
       const row = (label: string, pickName: (step: Step) => string) =>
         `<tr><th>${esc(label)}</th>${items.map((_, index) => `<td>${pickName(best[index]!)}</td>`).join("")}</tr>`;
       return (
-        `<p class="meta">pace ${esc(pace!)}、出口预算 ${esc(mbps!)} Mbps</p>` +
+        `<p class="meta">${mode.machine ? `${esc(machine!)} · ` : ""}${
+          mode.shards ? `${esc(shards!)} 进程 · ` : ""
+        }pace ${esc(pace!)}、出口预算 ${esc(mbps!)} Mbps</p>` +
         `<div class="scroll"><table><thead><tr><th></th>${items.map((report) => `<th>${esc(mixText(report))}</th>`).join("")}</tr></thead><tbody>` +
         row("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
         row("房间", (step) => `${step.roomsStarted}`) +
@@ -422,6 +466,120 @@ const capMatrix = (reports: Report[]): string => {
   return `<section><h2>占比对承载量的影响</h2><p class="meta">同一台机器、同一个带宽预算下按游戏独占跑满，列与列的差就是混合比例能带来的容量差；任意配比用「按游戏拆分」的人均成本加权即可外推。</p>${tables.join("")}</section>`;
 };
 
+/** 只换 --shards 的同口径运行排成一行：这张表就是多进程扩展曲线。 */
+const shardScaling = (reports: Report[]): string => {
+  const groups = new Map<string, Report[]>();
+  for (const report of reports.filter(
+    (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
+  )) {
+    const key = [
+      machineOf(report) || "未标机器",
+      report.mode,
+      mixText(report),
+      report.config.pace,
+      report.mode === "cap" ? report.config.mbps : 0,
+    ].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), report]);
+  }
+  const tables = [...groups.values()]
+    .map((items) => items.sort((a, b) => shardsOf(a) - shardsOf(b)))
+    .filter((items) => new Set(items.map(shardsOf)).size >= 2)
+    .map((items) => {
+      const head = items[0]!;
+      const best = items.map(capacityOf);
+      const base = best[0]!;
+      const row = (label: string, cell: (step: Step, index: number) => string) =>
+        `<tr><th>${esc(label)}</th>${items
+          .map((_, index) => `<td>${cell(best[index]!, index)}</td>`)
+          .join("")}</tr>`;
+      const ratio = (step: Step) => step.livePlayers / Math.max(1, base.livePlayers);
+      return (
+        `<p class="meta">${esc(machineOf(head) || "未标机器")} · ${esc(mixText(head))} · ${esc(
+          head.mode
+        )} · pace ${head.config.pace}${
+          head.mode === "cap" ? ` · 预算 ${head.config.mbps} Mbps` : ""
+        }</p>` +
+        `<div class="scroll"><table><thead><tr><th></th>${items
+          .map((report) => `<th>${shardsOf(report)} 进程</th>`)
+          .join("")}</tr></thead><tbody>` +
+        row("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
+        row("相对最少进程", (step) => `${fmt(ratio(step), 2)}×`) +
+        row("扩展效率", (step, index) => fmt(ratio(step) / shardsOf(items[index]!), 2)) +
+        row("指令/秒", (step) => fmt(step.commandsPerSecond)) +
+        row("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
+        row("带宽 Mbps", (step) => fmt(step.wireMbps)) +
+        row("CPU 合计核", (step) => fmt(step.target.cores)) +
+        row("RSS 合计 MB", (step) => `${step.target.rssMb}`) +
+        row("房间合计", (step) => `${step.roomsStarted}`) +
+        row("ack P95 ms", (step) => fmt(step.latency.p95, 1)) +
+        row("事件环 P95 ms", (step) => fmt(step.target.lagP95Ms, 0)) +
+        row("该次判定", (_, index) => `<code>${esc(items[index]!.stopReason)}</code>`) +
+        `</tbody></table></div>`
+      );
+    });
+  if (tables.length === 0) return "";
+  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是它的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。同一口径只换进程数，「扩展效率」= 玩家倍率 ÷ 进程数，1.00 是理想线性。「每核指令/秒」是剔掉进程数之后真正可比的那一列：它往下掉，说明先顶住的不是单核本身变慢，而是内存、同机发压、连接数或房间数。</p>${tables.join("")}</section>`;
+};
+
+/** 同一口径在本机与生产机上各跑一遍，差值就是「开发机的数字能不能外推」的答案。 */
+const machineCompare = (reports: Report[]): string => {
+  if (machinesIn(reports).length < 2) return "";
+  const groups = new Map<string, Map<string, Report>>();
+  for (const report of reports.filter(
+    (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
+  )) {
+    const key = [
+      report.mode,
+      mixText(report),
+      report.config.pace,
+      shardsOf(report),
+      report.mode === "cap" ? report.config.mbps : 0,
+    ].join("|");
+    const byMachine = groups.get(key) ?? new Map<string, Report>();
+    byMachine.set(machineOf(report) || "未标机器", report);
+    groups.set(key, byMachine);
+  }
+  const tables = [...groups.values()]
+    .filter((byMachine) => byMachine.size >= 2)
+    .map((byMachine) => {
+      const rows = [...byMachine.entries()];
+      const head = rows[0]![1];
+      const base = capacityOf(head);
+      const cell = (label: string, value: (report: Report, step: Step) => string) =>
+        `<tr><th>${esc(label)}</th>${rows
+          .map(([, report]) => `<td>${value(report, capacityOf(report))}</td>`)
+          .join("")}</tr>`;
+      return (
+        `<p class="meta">${esc(head.mode)} · ${esc(mixText(head))} · pace ${head.config.pace} · ${shardsOf(
+          head
+        )} 进程${head.mode === "cap" ? ` · 预算 ${head.config.mbps} Mbps` : ""}</p>` +
+        `<div class="scroll"><table><thead><tr><th></th>${rows.map(
+          ([machine]) => `<th>${esc(machine)}</th>`
+        )}</tr></thead><tbody>` +
+        cell("在线玩家", (_, step) => `<b>${step.livePlayers}</b>`) +
+        cell(
+          "相对第一台",
+          (_, step) => `${fmt(step.livePlayers / Math.max(1, base.livePlayers), 2)}×`
+        ) +
+        cell("指令/秒", (_, step) => fmt(step.commandsPerSecond)) +
+        cell("每核指令/秒", (_, step) => fmt(perCoreCommands(step))) +
+        cell("带宽 Mbps", (_, step) => fmt(step.wireMbps)) +
+        cell("CPU 合计核", (_, step) => fmt(step.target.cores)) +
+        cell("RSS 合计 MB", (_, step) => `${step.target.rssMb}`) +
+        cell("ack P95 ms", (_, step) => fmt(step.latency.p95, 1)) +
+        cell("事件环 P95 ms", (_, step) => fmt(step.target.lagP95Ms, 0)) +
+        cell("判定", (report) => `<code>${esc(report.stopReason)}</code>`) +
+        cell(
+          "源码",
+          (report) => `<code>${esc(report.source?.commit.slice(0, 8) ?? "未知")}</code>`
+        ) +
+        `</tbody></table></div>`
+      );
+    });
+  if (tables.length === 0) return "";
+  return `<section><h2>机器对表</h2><p class="meta">同一份源码、同一口径，只差硬件：绝对承载量不能按比例外推，「每核指令/秒」是两台机器之间大致可比的那一列。</p>${tables.join("")}</section>`;
+};
+
 const main = async () => {
   const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
   const fragment = process.argv.includes("--fragment");
@@ -436,15 +594,38 @@ const main = async () => {
     process.exit(1);
   }
 
+  const tags = tagMode(reports);
   const name = (report: Report): string =>
-    `${report.label}（pace ${report.config.pace}${report.mode === "cap" ? `，上限 ${report.config.mbps}Mbps` : ""}）`;
-  const series = (pickName: (step: Step) => number) =>
-    reports.map((report) => ({
+    `${report.label}（pace ${report.config.pace}${
+      report.mode === "cap" ? `，上限 ${report.config.mbps}Mbps` : ""
+    }${runTag(report, tags)}）`;
+  const series = (list: Report[], pickName: (step: Step) => number) =>
+    list.map((report) => ({
       name: name(report),
       points: pick(report, pickName),
       marker: wall(report, pickName),
     }));
-  const host = reports[reports.length - 1]!.host;
+  /** 容量曲线按机器分块：单机独占与分片运行的量级差着一个数量级，画在一张图上只会互相压平。 */
+  const chartable = (machine: string): Report[] =>
+    reports.filter(
+      (report) =>
+        (machineOf(report) || "未标机器") === machine && !isUnitRun(report) && !isProbeRun(report)
+    );
+  const byMachine = new Map<string, Report>();
+  for (const report of reports) byMachine.set(machineOf(report) || "未标机器", report);
+  const machineLines = [...byMachine.entries()]
+    .map(([machine, report]) => {
+      const h = report.host;
+      return `<p class="meta"><b>${esc(machine)}</b>：${esc(String(h.platform ?? ""))} ${esc(
+        String(h.release ?? "")
+      )} · ${esc(String(h.cpuModel ?? ""))} · ${esc(String(h.logicalCpus ?? ""))} 线程 · ${fmt(
+        Number(h.totalMemoryMb ?? 0) / 1024,
+        0
+      )} GB 内存 · Bun ${esc(String(h.bun ?? ""))} · 该机器最后一次运行源码 ${esc(
+        report.source?.commit ?? "未知"
+      )}${report.source?.dirty ? "（含未提交改动）" : ""}</p>`;
+    })
+    .join("");
   const latest = reports[reports.length - 1]!;
 
   const summaryCards = reports
@@ -514,81 +695,35 @@ const main = async () => {
     .filter((line) => !!line)
     .join("\n");
 
-  const fullCharts =
-    lineChart(
-      "在线玩家 → 指令吞吐",
-      "指令/秒",
-      series((step) => step.commandsPerSecond),
-      { xLabel: "在线玩家", logY: true }
-    ) +
-    lineChart(
-      "在线玩家 → 线上带宽",
-      "Mbps（含 15% 传输开销）",
-      series((step) => step.wireMbps),
-      { xLabel: "在线玩家", logY: true }
-    ) +
-    lineChart(
-      "在线玩家 → 被测进程 CPU",
-      "核",
-      series((step) => step.target.cores),
-      { xLabel: "在线玩家", logY: true }
-    ) +
-    lineChart(
-      "在线玩家 → 指令往返延迟",
-      "ms",
-      series((step) => step.latency.p95),
-      { xLabel: "在线玩家", logY: true }
-    ) +
-    lineChart(
-      "在线玩家 → 事件环延迟 P95",
-      "ms",
-      series((step) => step.target.lagP95Ms),
-      { xLabel: "在线玩家", logY: true }
-    ) +
-    lineChart(
-      "在线玩家 → 常驻内存",
-      "MB",
-      series((step) => step.target.rssMb),
-      { xLabel: "在线玩家" }
-    ) +
-    lineChart(
-      "在线玩家 → 指令错误率",
-      "%",
-      series((step) => step.errorRate * 100),
-      { xLabel: "在线玩家" }
-    ) +
-    lineChart(
-      "在线玩家 → 人均下行字节",
-      "字节/人/秒",
-      series((step) => step.bytesPerPlayerSecond),
-      { xLabel: "在线玩家", logY: true }
+  const chartBlock = (list: Report[]): string => {
+    const chart = (
+      title: string,
+      unit: string,
+      pickName: (step: Step) => number,
+      logY = true
+    ): string => lineChart(title, unit, series(list, pickName), { xLabel: "在线玩家", logY });
+    const head =
+      chart("在线玩家 → 指令吞吐", "指令/秒", (step) => step.commandsPerSecond) +
+      chart("在线玩家 → 线上带宽", "Mbps（含 15% 传输开销）", (step) => step.wireMbps) +
+      chart("在线玩家 → 被测进程 CPU", "核", (step) => step.target.cores) +
+      chart("在线玩家 → 事件环延迟 P95", "ms", (step) => step.target.lagP95Ms);
+    if (brief) return head;
+    return (
+      head +
+      chart("在线玩家 → 指令往返延迟", "ms", (step) => step.latency.p95) +
+      chart("在线玩家 → 常驻内存", "MB", (step) => step.target.rssMb, false) +
+      chart("在线玩家 → 指令错误率", "%", (step) => step.errorRate * 100, false) +
+      chart("在线玩家 → 人均下行字节", "字节/人/秒", (step) => step.bytesPerPlayerSecond)
     );
-  const charts = brief
-    ? lineChart(
-        "在线玩家 → 指令吞吐",
-        "指令/秒",
-        series((step) => step.commandsPerSecond),
-        { xLabel: "在线玩家", logY: true }
-      ) +
-      lineChart(
-        "在线玩家 → 线上带宽",
-        "Mbps（含 15% 传输开销）",
-        series((step) => step.wireMbps),
-        { xLabel: "在线玩家", logY: true }
-      ) +
-      lineChart(
-        "在线玩家 → 被测进程 CPU",
-        "核",
-        series((step) => step.target.cores),
-        { xLabel: "在线玩家", logY: true }
-      ) +
-      lineChart(
-        "在线玩家 → 事件环延迟 P95",
-        "ms",
-        series((step) => step.target.lagP95Ms),
-        { xLabel: "在线玩家", logY: true }
-      )
-    : fullCharts;
+  };
+  const chartMachines = [...new Set(reports.map((report) => machineOf(report) || "未标机器"))];
+  const charts = chartMachines
+    .map((machine) => {
+      const list = chartable(machine);
+      if (list.length === 0) return "";
+      return `${chartMachines.length > 1 ? `<h3>${esc(machine)}</h3>` : ""}${chartBlock(list)}`;
+    })
+    .join("");
 
   const body = `<h1>BakaGame 后端吞吐压测报告</h1>
 <p class="lede">实时玩法面（Bun + Elysia，三个游戏 WS 房间）容量与带宽测量 · 生成于 ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC · ${reports.length} 次运行</p>
@@ -597,9 +732,11 @@ const main = async () => {
 ${conclusion(reports)}
 </section>
 ${capMatrix(reports)}
+${shardScaling(reports)}
+${machineCompare(reports)}
 <section>
 <h2>测量机</h2>
-<p class="meta">${esc(String(host.platform ?? ""))} ${esc(String(host.release ?? ""))} · ${esc(String(host.cpuModel ?? ""))} · ${esc(String(host.logicalCpus ?? ""))} 线程 · ${fmt(Number(host.totalMemoryMb ?? 0) / 1024, 0)} GB 内存 · Bun ${esc(String(host.bun ?? ""))} · 最新一次运行源码 ${esc(latest.source?.commit ?? "未知")}${latest.source?.dirty ? "（含未提交改动）" : ""}</p>
+${machineLines}
 <p class="meta">被测进程用与生产相同的 <code>createApp</code> 与三个游戏服务装配线，只把音乐/Bangumi/CEE 数据源换成桩；账号与数据库路由缺席，不影响实时玩法面。握手配额（按客户端地址 64 条在途连接 / 120 条每分钟）在压测进程里放开，否则同机生成器会先被自己的防御挡住。</p>
 </section>
 <section>
@@ -624,12 +761,13 @@ ${failureNotes ? `<section><h2>失败与重试码</h2><ul>${failureNotes}</ul></
 <h2>口径与局限</h2>
 <ul>
   <li>「其它硬件满载」在本报告里的口径：不额外注入外部负载，而是把玩家数一路加到某个维度先撑不住——房间启动率、错误率、ack 延迟、事件环延迟、CPU 或吞吐平台期，先到者即为该配置下的满载点；同表给出 CPU、RSS、堆、事件环延迟与生成器自身占用。</li>
-  <li>Bun 玩法面是单线程事件循环：CPU 一核就是这个进程的天花板，跨核扩展要靠多进程分片，本报告不涉及。因此「核数没打满」不代表进程空闲，事件环 P95 与 ack P95 一起涨才是真瓶颈信号，本报告把它们当一等指标。</li>
+  <li>Bun 玩法面是单线程事件循环：一核就是一个进程的天花板，跨核只能靠多进程分片（<code>--shards N</code>），逐进程数的扩展曲线见「多进程分片扩展」。因此「核数没打满」不代表进程空闲，事件环 P95 与 ack P95 一起涨才是真瓶颈信号，本报告把它们当一等指标。</li>
   <li>节奏倍率 <code>pace</code>：房间内所有思考时间的除数。pace 1 接近真人房间，pace 4/24 是压缩节奏的压力模型；同一台机器的承载量在两种口径下不可直接混用。</li>
   <li>饱和判定按先到者：房间启动率 &lt; 80%、错误率 ≥ ${(latest.config.errorRateBudget * 100).toFixed(0)}%、ack P95 ≥ ${latest.config.latencyP95BudgetMs}ms、事件环 P95 ≥ ${latest.config.lagP95BudgetMs}ms、CPU 触顶（需要绑核，Windows 上不可用）、或玩家数继续增长而吞吐与带宽同时平掉。</li>
   <li>带宽为应用层统计（服务端发出与收到的 WS 帧字节）× 1.15 传输开销估算，未包含 TCP/TLS 握手与重传；真实公网带宽还要叠加 HTTP 静态资源与音频外链。</li>
-  <li>压测生成器与被测进程同机运行，生成器自身 CPU 已在表内单列；本机是 ${esc(String(host.logicalCpus ?? "?"))} 线程开发机，绑核隔离（taskset）在 Windows 不可用，因此 CPU 为整进程口径，不是单核口径，且大玩家数下生成器本身就是共同上限。</li>
+  <li>生成器与被测进程同机运行，生成器自身 CPU 已在表内单列，因此高玩家数那几跳读到的上限里混着生成器占用。开发机线程多、绑核隔离（taskset）在 Windows 不可用，CPU 是整进程口径而非单核口径；生产那几跳用 <code>--target-cpuset</code> 把被测钉在一核、生成器钉在另一核，被测侧读数是干净的单核口径，但整机只有两核，所以它的绝对承载量里始终带着生成器的份额，实际可服务人数会比表里的下限更高。</li>
   <li>音频字节不进这条链路：猜歌只下发歌曲 ID 与音频地址，实际音频由客户端直连上游 CDN，所以本报告的带宽不含音频流量。</li>
+  <li>生产机那几跳跑在同机临时容器里：内存与核数有硬顶、被测源码是本次 HEAD 而不是线上那版、线上服务进程另算。所以它回答的是「这台硬件跑这套代码能装多少」，不是「现在这台机器还剩多少余量」。</li>
   <li>数据库、账号、上游 API 均未参与（实时玩法面本来就是内存态）；生产环境还有限流、反代与 TLS，单机数字会偏乐观。</li>
 </ul>
 </section>`;
