@@ -108,7 +108,7 @@
 | `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时必填，至少 32 字符随机串（`openssl rand -hex 32`） |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | 三项（除端口）须成套；端口缺省 465（隐式 TLS），其余端口强制 STARTTLS。生产必填 |
 | `MAIL_FROM` | 发件人，缺省为 `SMTP_USER` |
-| `MAIL_DEV_CONSOLE` | 仅非生产：`true` 时验证码写入服务日志，便于本地联调；生产启用即拒绝启动 |
+| `MAIL_DEV_CONSOLE` | 仅非生产：`true` 时验证码只打印到本地终端 stdout（走 `localInfo`，不进 OTLP / Sentry 导出），便于本地联调；生产启用即拒绝启动 |
 | `ADMIN_QQ` | 管理员 QQ 号名单 |
 | `SENTRY_API_TOKEN` | 选填：后台概览代查 Sentry 的只读令牌（`org:read`、`project:read`、`event:read`）；须同时配置 `SENTRY_DSN`，只支持 sentry.io 的 DSN |
 | `QQ_NAPCAT_API_URL` / `QQ_NAPCAT_ACCESS_TOKEN` | QQ 昵称来源（NapCat 的 OneBot 11 HTTP 基址 + Bearer 令牌）；**成对配置**，两者都不配时昵称查询整体停用（新号注册随之停用） |

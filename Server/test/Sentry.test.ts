@@ -13,7 +13,7 @@ import {
   initServerSentry,
   isServerSentryEnabled,
   captureServerLog,
-  redactData,
+  redactData, redactLogText,
   describeError,
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
@@ -303,6 +303,21 @@ describe("服务端遥测统一脱敏出口", () => {
       expect(JSON.stringify(cleaned)).not.toContain(secret);
     expect(cleaned.url).toContain("song=1");
     expect(describeError(error).cause).toBe("[CIRCULAR]");
+  });
+
+  it("登录验证码与口令同级 100% 掩码，身份凭证仍保留前 4 位", () => {
+    const cleaned = redactData({
+      loginCode: "888888", otp: "123456", verifyCode: "242424", captcha: "9977",
+      sessionToken: "dummy-session-long", roomId: "room-safe",
+    }) as Record<string, unknown>;
+    for (const key of ["loginCode", "otp", "verifyCode", "captcha"]) expect(cleaned[key]).toBe("***[REDACTED]");
+    expect(cleaned.sessionToken).toBe("dumm***[REDACTED]");
+    expect(cleaned.roomId).toBe("room-safe");
+
+    const text = redactLogText('投递登录验证码 loginCode=888888 与 otp: 123456，房间 room-safe');
+    expect(text).not.toContain("888888");
+    expect(text).not.toContain("123456");
+    expect(text).toContain("room-safe");
   });
 
   it("原生 beforeSend / beforeSendLog 清理非 wrapper 事件且保留完整异常栈结构", async () => {

@@ -48,12 +48,16 @@ export class SmtpMailer implements Mailer {
   }
 }
 
-/** 仅限非生产环境：验证码写进服务日志，便于本地联调。 */
+/**
+ * 仅限非生产环境：验证码只写本地 stdout。
+ * 走 `localInfo` 而不是 `info`——验证码一旦进结构化上下文就会被 OTLP / Sentry 导出，
+ * 等于把可重放的登录凭据交给第三方观测平台；本地联调只需要终端里那一行。
+ */
 export class ConsoleMailer implements Mailer {
   constructor(private readonly logger: EventLogger) {}
 
   async sendLoginCode({ to, code }: { to: string; code: string }): Promise<void> {
-    this.logger.info("开发环境登录验证码", { to, loginCode: code });
+    this.logger.localInfo(`开发环境登录验证码 | to=${to} code=${code}`);
   }
 }
 

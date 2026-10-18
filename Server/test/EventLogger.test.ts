@@ -49,6 +49,30 @@ test("console / OTLP / Sentry 出口共用脱敏且保留错误 cause 诊断", a
   } finally { init.mockRestore(); logs.mockRestore(); captures.mockRestore(); scoped.mockRestore(); }
 });
 
+test("localInfo 只落 stdout，验证码明文不进 OTLP 与 Sentry", async () => {
+  const output: string[] = [];
+  const bodies: string[] = [];
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const info = spyOn(Sentry.logger, "info").mockImplementation(() => undefined);
+  const captures = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+  try {
+    initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as any);
+    exporter = new OtlpExporter({ endpoint: "https://collector.example.com", fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
+      bodies.push(requestBodyText(options)); return new Response("{}");
+    } });
+    new EventLogger((message) => output.push(message), () => 1700000000000, exporter)
+      .localInfo("开发环境登录验证码 | to=dev@example.com code=888888");
+    await exporter.flush();
+
+    expect(output).toHaveLength(1);
+    expect(output[0]).toContain("888888");
+    expect(exporter.buffer).toHaveLength(0);
+    expect(bodies).toEqual([]);
+    expect(info).not.toHaveBeenCalled();
+    expect(captures).not.toHaveBeenCalled();
+  } finally { init.mockRestore(); info.mockRestore(); captures.mockRestore(); }
+});
+
 test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值", async () => {
   const output: string[] = [];
   const bodies: string[] = [];

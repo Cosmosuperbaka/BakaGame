@@ -12,6 +12,13 @@ const SENSITIVE_KEYS = new Set([
   "secret",
 ]);
 
+/**
+ * 顶级高危凭据：与口令同级，任何通道一律 100% 掩码。
+ * 登录验证码是可重放的短期凭据，保留前缀就等于交出 300 秒内的登录能力，
+ * 因此不适用 `cookie`/`sessionToken` 那条「保留前 4 位定位故障」的折中口径。
+ */
+const FULL_MASK_KEYS = new Set(["password", "logincode", "otp", "verifycode", "authcode", "captcha"]);
+
 export const sanitizeLogText = (text: string, maxLength = 500): string => {
   // 目标就是剥离 C0 控制字符与 DEL：日志里残留 \r\n\t\x00 会撕裂行结构、伪造换行。
   // eslint-disable-next-line no-control-regex
@@ -23,7 +30,7 @@ export const redactLogText = (text: string): string => text
   .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
   .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
   .replace(
-    /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
+    /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
     "$1***[REDACTED]",
   );
 
@@ -46,9 +53,10 @@ export const redactData = (data: unknown, depth = 0, maxProperties = 32): unknow
       const result: Record<string, unknown> = {};
       for (const [key, item] of entries.slice(0, maxProperties)) {
         const normalizedKey = key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
-        const sensitive = SENSITIVE_KEYS.has(normalizedKey) || ["accesstoken", "refreshtoken"].includes(normalizedKey);
+        const fullMask = FULL_MASK_KEYS.has(normalizedKey);
+        const sensitive = fullMask || SENSITIVE_KEYS.has(normalizedKey) || ["accesstoken", "refreshtoken"].includes(normalizedKey);
         const safe = key === "sample" && typeof item === "string" ? "[OMITTED_RAW_PAYLOAD]" : sensitive
-          ? normalizedKey !== "password" && typeof item === "string" && item.length > 8
+          ? !fullMask && typeof item === "string" && item.length > 8
             ? `${item.slice(0, 4)}***[REDACTED]` : "***[REDACTED]"
           : visit(item, level + 1);
         Object.defineProperty(result, key, { value: safe, enumerable: true, configurable: true });

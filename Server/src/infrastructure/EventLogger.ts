@@ -276,6 +276,14 @@ export class EventLogger {
     this.emit("ERROR", message, context);
   }
 
+  /**
+   * 本地专用输出：只写进程 stdout，不进 OTLP / Sentry 导出通道，也不做脱敏拦截。
+   * 仅供必须保留明文的开发期输出（登录验证码）；调用方不得夹带其它用户数据。
+   */
+  localInfo(message: string) {
+    this.output.info(`[BAKA] ${formatTimestamp(this.now())} | ${message}`);
+  }
+
   // 后端操作日志输出
   logOperation({
     status = 200,

@@ -14,12 +14,16 @@ const smtpEnv: SmtpEnv = {
 
 const createLogger = () => {
   const logs: Array<[string, Record<string, unknown> | undefined]> = [];
+  const localLines: string[] = [];
   const logger = {
     info: (message: string, context?: Record<string, unknown>) => {
       logs.push([message, context]);
     },
+    localInfo: (message: string) => {
+      localLines.push(message);
+    },
   } as unknown as EventLogger;
-  return { logs, logger };
+  return { logs, localLines, logger };
 };
 
 /** 用捕获型假传输替换 nodemailer 实例：只校验组装好的邮件内容，不发起真实连接。 */
@@ -55,12 +59,18 @@ describe("账号邮件投递", () => {
     expect(new SmtpMailer({ ...smtpEnv, port: 587 })).toBeInstanceOf(SmtpMailer);
   });
 
-  test("控制台投递把验证码写进日志且不落明文邮件", async () => {
-    const { logs, logger } = createLogger();
+  test("控制台投递只写本地明文，不进结构化导出通道", async () => {
+    const { logs, localLines, logger } = createLogger();
     const mailer = createMailer({ kind: "console" }, logger);
     expect(mailer).toBeInstanceOf(ConsoleMailer);
     await mailer.sendLoginCode({ to: "dev@example.com", code: "888888" });
-    expect(logs).toEqual([["开发环境登录验证码", { to: "dev@example.com", loginCode: "888888" }]]);
+
+    // 本地联调要在终端看到验证码。
+    expect(localLines).toHaveLength(1);
+    expect(localLines[0]).toContain("dev@example.com");
+    expect(localLines[0]).toContain("888888");
+    // 结构化 info 会一路带到 OTLP / Sentry；验证码绝不能走那条路。
+    expect(logs).toEqual([]);
   });
 
   test("未配置投递方式时发码明确失败", async () => {

@@ -184,6 +184,8 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **敏感信息严格物理脱敏**：
   1. `cookie`、`sessionToken`、`authorization` 等身份凭证在日志输出或导出前必须经过脱敏拦截器（`redactData`），保留前 4 位用于故障定位，后续字符强制掩码（`abcd***[REDACTED]`）。
   2. `password`（密码）属于顶级高危凭据，必须 100% 全量掩码（`***[REDACTED]`），绝对严禁保留任何明文字符。
+  3. 登录验证码（`loginCode`、`otp`、`verifyCode`、`authCode`、`captcha`）与口令同级：是可重放的短期凭据，保留前缀等于交出有效期内的登录能力，一律 100% 全量掩码，且同样适用于自由文本通道（`redactLogText` 按 `key=value` 形态清理）。
+  4. **必须保留明文的开发期输出**（如本地联调的验证码）不得进入结构化通道：走 `EventLogger.localInfo`，只落进程 stdout，不经 OTLP 与 Sentry。结构化 `info`/`warn`/`error` 一律视为会被长期保存与外送的数据。
 
 ### 10.3 云原生健康检查探针拆分 (Kubernetes Liveness & Readiness Probes)
 - **Liveness 探针 (`/livez`)**：轻量级存活探针。仅验证进程是否存活、事件循环是否运行，未死锁即返回 HTTP 200 `{ status: "ok" }`。探测开销必须为 `O(1)`，不得在此阶段挂载重型数据库或外部 I/O 检查，避免短暂抖动触发容器反复被杀重启。
