@@ -134,10 +134,42 @@ export class CEEOriginalService {
     return connection;
   }
 
+  private sendToRoom(session: CEEOriginalSession, event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
+    return originalRequest(session.socket, event, { roomId: session.roomId, ...payload });
+  }
+
+  /** 房主没有准备态，开局只看其他玩家，与增强房一致。 */
+  private async toggleReady(session: CEEOriginalSession, ready: boolean): Promise<unknown> {
+    if (this.me(session).isHost || this.me(session).ready === ready) return {};
+    await originalConfirmedEvent(session.socket, 'updatePlayers', () => this.me(session).ready === ready,
+      () => session.socket.emit('toggleReady', { roomId: session.roomId }));
+    return {};
+  }
+
+  /** 出题方式不经上游：先记在本服务端同房的所有会话上，上游回推设置时沿用这一项。 */
+  private async applyRoomSettings(session: CEEOriginalSession, settings: CEESettings): Promise<unknown> {
+    this.requireHost(session);
+    validateCEESettings(settings);
+    const { answerMode } = settings;
+    for (const peer of this.sessions.values()) if (peer.roomId === session.roomId) peer.settings = { ...peer.settings, answerMode };
+    return this.sendToRoom(session, 'updateGameSettings', { settings: toOriginalSettings(settings) });
+  }
+
+  private async chooseSetter(session: CEEOriginalSession, playerId: string): Promise<unknown> {
+    this.requireHost(session);
+    if (session.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
+    await this.sendToRoom(session, 'enterManualMode');
+    const result = await this.sendToRoom(session, 'setAnswerSetter', { setterId: playerId });
+    // 上游确认出题人后会推 waitForAnswer 切到出题阶段；还没到的话先退出选人阶段，免得停在这里。
+    if (session.phase === 'choosingSetter') this.leaveChoosingSetter(session);
+    this.publish(session);
+    return result;
+  }
+
   private async executeInRoom(session: CEEOriginalSession, message: CEEClientMessage): Promise<unknown> {
     if (!session.confirmed || session.revoked || !session.socket.connected) throw new AppError('CEE_ORIGINAL_DISCONNECTED', '原版连接已中断，请重新加入');
     const { data } = this.options;
-    const send = (event: string, payload: Record<string, unknown> = {}) => originalRequest(session.socket, event, { roomId: session.roomId, ...payload });
+    const send = (event: string, payload: Record<string, unknown> = {}) => this.sendToRoom(session, event, payload);
     switch (message.type) {
       case 'cee.room.requestSync':
         if (session.connectionId) this.connections.get(session.connectionId)?.resetStateSync?.();
@@ -155,20 +187,8 @@ export class CEEOriginalService {
       case 'cee.chat.send': return this.chat(session, message.payload.text);
       case 'cee.player.team': return send('updatePlayerTeam', { team: message.payload.team === null ? null : String(message.payload.team) });
       case 'cee.player.spectate': return send('updatePlayerTeam', { team: message.payload.spectator ? '0' : null });
-      case 'cee.player.ready': {
-        // 房主没有准备态，开局只看其他玩家，与增强房一致。
-        if (this.me(session).isHost || this.me(session).ready === message.payload.ready) return {};
-        await originalConfirmedEvent(session.socket, 'updatePlayers', () => this.me(session).ready === message.payload.ready,
-          () => session.socket.emit('toggleReady', { roomId: session.roomId }));
-        return {};
-      }
-      case 'cee.room.settings': {
-        this.requireHost(session); validateCEESettings(message.payload.settings);
-        // 出题方式不经上游：先记在本服务端同房的所有会话上，上游回推设置时沿用这一项。
-        const { answerMode } = message.payload.settings;
-        for (const peer of this.sessions.values()) if (peer.roomId === session.roomId) peer.settings = { ...peer.settings, answerMode };
-        return send('updateGameSettings', { settings: toOriginalSettings(message.payload.settings) });
-      }
+      case 'cee.player.ready': return this.toggleReady(session, message.payload.ready);
+      case 'cee.room.settings': return this.applyRoomSettings(session, message.payload.settings);
       case 'cee.room.update': {
         this.requireHost(session);
         if (!message.payload.allowSpectators) this.unsupported('原版房间不支持禁止观战');
@@ -177,16 +197,7 @@ export class CEEOriginalService {
       }
       case 'cee.room.kick': this.requireHost(session); return send('kickPlayer', { playerId: message.payload.playerId });
       case 'cee.room.transferHost': this.requireHost(session); return send('transferHost', { newHostId: message.payload.playerId });
-      case 'cee.game.chooseSetter': {
-        this.requireHost(session);
-        if (session.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
-        await send('enterManualMode');
-        const result = await send('setAnswerSetter', { setterId: message.payload.playerId });
-        // 上游确认出题人后会推 waitForAnswer 切到出题阶段；还没到的话先退出选人阶段，免得停在这里。
-        if (session.phase === 'choosingSetter') this.leaveChoosingSetter(session);
-        this.publish(session);
-        return result;
-      }
+      case 'cee.game.chooseSetter': return this.chooseSetter(session, message.payload.playerId);
       case 'cee.game.start':
       case 'cee.game.next':
         if (session.settings.answerMode === 'manual') return this.enterChoosingSetter(session);
