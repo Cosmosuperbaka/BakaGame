@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Download } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 // 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
+import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { resolveLatestVersion, sortEntriesByVersion } from "@/lib/Changelog";
+import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import type { ChangelogEntry } from "@/lib/Changelog";
 // 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
 // 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
@@ -324,6 +325,33 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
   );
 }
 
+/** 桌面客户端入口的悬停说明：只说清反作弊房才需要，普通房间用浏览器即可游玩。 */
+const CLIENT_DOWNLOAD_HINT =
+  "反作弊房只接受 BakaGame 客户端接入；普通房间用浏览器即可游玩，不需要下载。";
+
+/**
+ * 页脚的桌面客户端入口：地址与反作弊错误码文案共用 `AntiCheatCopy` 里那一处，
+ * 换域名或制品还没上传时只改那一行；地址为空时整枚不渲染，不留死链。
+ */
+function ClientDownloadLink() {
+  if (!BAKA_CLIENT_DOWNLOAD_URL) return null;
+  return (
+    <Hint label={CLIENT_DOWNLOAD_HINT}>
+      <motion.a
+        href={BAKA_CLIENT_DOWNLOAD_URL}
+        target="_blank"
+        rel="noreferrer"
+        {...pressable}
+        className="flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+        {/* 限定条件写在入口本身：不让玩家把「下载客户端」读成进游戏要先装东西。 */}
+        桌面客户端（反作弊房需要）
+      </motion.a>
+    </Hint>
+  );
+}
+
 /** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
 const VERSION_PAGE_PATH = "/credits?tab=changelog";
 
@@ -394,8 +422,8 @@ export default function LandingPage() {
           ))}
         </motion.div>
 
-        {/* 社区外链、反馈与版本详情 */}
-        <div className="flex items-center gap-2">
+        {/* 社区外链、桌面客户端、反馈与版本详情 */}
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-2">
           <motion.div
             className="flex items-center gap-1"
             variants={listContainer(EXTERNAL_LINKS.length)}
@@ -406,6 +434,7 @@ export default function LandingPage() {
               <FooterLink key={link.href} link={link} />
             ))}
           </motion.div>
+          <ClientDownloadLink />
           <motion.button
             type="button"
             {...pressable}

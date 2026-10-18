@@ -3,8 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import LandingPage from "./LandingPage";
 import { formatRelativeTime } from "@/lib/Time";
+
+// 下载地址的唯一真实来源是 AntiCheatCopy，这里不改写它，只为「地址为空则整枚不渲染」留出开关。
+const downloadUrl = vi.hoisted(() => ({ current: undefined as string | undefined }));
+
+vi.mock("@/lib/AntiCheatCopy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/AntiCheatCopy")>();
+  return {
+    ...actual,
+    get BAKA_CLIENT_DOWNLOAD_URL() {
+      return downloadUrl.current ?? actual.BAKA_CLIENT_DOWNLOAD_URL;
+    },
+  };
+});
 
 function renderLandingPage() {
   return render(
@@ -45,6 +59,24 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-whoisfaker")).toBeInTheDocument();
     expect(screen.getByTestId("game-entry-songuessr")).toBeInTheDocument();
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
+  });
+
+  it("桌面客户端入口指向唯一下载地址并写明只有反作弊房需要", () => {
+    renderLandingPage();
+
+    const link = screen.getByRole("link", { name: /桌面客户端/ });
+    expect(link).toHaveAttribute("href", BAKA_CLIENT_DOWNLOAD_URL);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noreferrer");
+    // 措辞不能读成「要玩就得装」：入口文字自带限定条件。
+    expect(link).toHaveTextContent("反作弊房需要");
+  });
+
+  it("制品尚未上传（地址为空）时不渲染桌面客户端入口", () => {
+    downloadUrl.current = "";
+    renderLandingPage();
+
+    expect(screen.queryByRole("link", { name: /桌面客户端/ })).not.toBeInTheDocument();
   });
 
   it("开放猜角色多人模式并保留排位与锦标赛未上线状态", () => {
@@ -128,7 +160,10 @@ describe("LandingPage", () => {
     }
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    downloadUrl.current = undefined;
+  });
 
   it.each([
     ["Who is Faker 开始游戏", "/whoisfaker", "卧底大厅"],
