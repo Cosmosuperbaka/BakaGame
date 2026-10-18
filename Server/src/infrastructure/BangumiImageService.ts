@@ -1,5 +1,6 @@
 import { BangumiImageStore, type StoredImage } from "./BangumiImageStore";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
+import { fetchWithGuardedRedirects } from "./OutboundGuard";
 import { SlidingWindowRateLimiter } from "./RateLimiter";
 
 /**
@@ -77,10 +78,10 @@ export class BangumiImageService {
 
   private async fetchUpstream(path: string): Promise<StoredImage | undefined> {
     try {
-      const response = await this.fetcher(`${this.sourceBase}${path}`, {
+      const response = await fetchWithGuardedRedirects(this.fetcher, `${this.sourceBase}${path}`, {
         headers: { Accept: "image/avif", "User-Agent": BANGUMI_USER_AGENT },
         signal: AbortSignal.timeout(8_000),
-      });
+      }, { pinOrigin: true });
       if (!response.ok) return undefined;
       const bytes = new Uint8Array(await response.arrayBuffer());
       // 只认 avif：上游异常时不要把 jpeg / 错误页写进库（坏字节一旦入库就不会再重下）。

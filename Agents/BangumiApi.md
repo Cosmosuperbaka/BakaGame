@@ -146,6 +146,8 @@ Bangumi 请求统一由 `Server/src/infrastructure/BangumiProvider.ts` 发起：
 - 搜索结果缓存 6 小时，条目详情与关联音乐缓存 24 小时；缓存为最多 512 项的 LRU，且相同键的并发请求共享一个 Promise。
 - 请求由并发数为 3 的队列调度；上游返回 429 时进入 5 秒冷却、取消等待请求，并返回 `BANGUMI_RATE_LIMITED`。
 - 上游非 2xx、返回无效 JSON 或未配置 Provider 时转换为明确的 Bangumi 业务错误。
+- 图床回源与 CEE 图片提示的出站抓取统一走 `OutboundGuard`：禁用自动跳转、逐跳复核目标地址，
+  回源只允许留在 `BANGUMI_IMAGE_SOURCE` 同源；边界与残余风险见 [Deployment](Deployment.md#服务端出站图片与头像抓取)。
 
 ## 隐私与协议
 

@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import PQueue from 'p-queue';
 import { LRUCache } from 'lru-cache';
 import { AppError } from '../domain/Errors';
+import { assertOutboundUrl, fetchWithGuardedRedirects } from './OutboundGuard';
 type ImageFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export class CEEImageHints {
@@ -35,9 +36,9 @@ export class CEEImageHints {
     this.inFlight.set(key, result); return result;
   }
   private async create(imageUrl: string, level: number, signal: AbortSignal, deadline: number): Promise<string> {
-    const parsed = new URL(imageUrl);
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new AppError('IMAGE_UNAVAILABLE', '图片地址无效');
-    const response = await this.fetcher(parsed, { signal });
+    // 图片地址来自数据集与上游协议，属于不可信输入：内网、元数据与跳转目标逐跳复核。
+    const parsed = assertOutboundUrl(imageUrl);
+    const response = await fetchWithGuardedRedirects(this.fetcher, parsed, { signal });
     signal.throwIfAborted();
     if (!response.ok || !response.body) throw new AppError('IMAGE_UNAVAILABLE', '暂时无法读取图片提示');
     const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;

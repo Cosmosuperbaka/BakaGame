@@ -51,6 +51,22 @@ NapCat 侧 nginx 只开一个 `location /onebot-internal/`（`proxy_pass` 到宿
 流量不出内网。OneBot 端口不映射到公网，也不新增边缘路由：1Panel 默认防火墙只放行
 80/443/SSH，新端口会被 `1PANEL_BASIC_AFTER` 直接 DROP。
 
+### 服务端出站：图片与头像抓取
+
+`CEEImageHints`（角色图提示）、`BangumiImageService`（图床回源）与 `QQAvatarService`（qlogo 头像）
+三条出站链路统一经 `Server/src/infrastructure/OutboundGuard.ts`：
+
+- **永不自动跟随跳转**：请求固定 `redirect: "manual"`，跳转由本模块逐跳处理，最多 3 跳，超限即失败并释放响应体。
+- **不可信地址逐跳复核**：数据集与上游协议里的图片地址属于第三方数据，每一跳都要重过
+  `assertOutboundUrl`——只允许 http(s)、禁止 URL 内嵌凭据、拒绝回环/私网/链路本地（含 `169.254.169.254`
+  元数据服务）/CGNAT/组播与保留段、拒绝 `localhost` 家族与无点单标签主机。
+- **可信基址只锁同源**：`BANGUMI_IMAGE_SOURCE` 与 qlogo 由运维配置，属可信输入，只要求跳转不离开该源，
+  避免为了护栏把内网反代基址也判死。
+
+残余风险与部署前提：以上判定基于主机名与字面量地址，**公开 DNS 名解析到内网（含 DNS rebinding）不在
+应用层能力内**。容器出网必须在网络层收敛（安全组/iptables 只放行图片与音频上游所需的公网网段，
+显式 DROP 到 VPC 内网与元数据地址），NapCat 这类内网入口不得成为被抓取的可达目标。
+
 ## 请求链路与同源化边界
 
 **浏览器必须跨域直连后端公开域名**，后端以 Origin 白名单和 CORS 响应。后端公开域名仍可经过站点加速层；不能把“跨域”理解为绕过 CDN 直连源站 IP。

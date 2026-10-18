@@ -70,6 +70,16 @@ describe('CEE 服务端图片提示', () => {
     await expect(hints.render('https://images.invalid/broken.png', 1)).rejects.toMatchObject({ code: 'IMAGE_UNAVAILABLE' });
   });
 
+  test('内网、元数据与单标签主机在下载前拒绝，公开主机正常解码', async () => {
+    const png = await bitmap(); let calls = 0;
+    const hints = new CEEImageHints({ fetcher: async () => { calls++; return new Response(png); } });
+    for (const url of ['http://169.254.169.254/latest/meta-data/', 'http://127.0.0.1:8080/x.png', 'http://intranet/x.png', 'http://[::ffff:7f00:1]/x.png', 'http://db.internal/x.png']) {
+      await expect(hints.render(url, 1)).rejects.toMatchObject({ code: 'IMAGE_UNAVAILABLE' });
+    }
+    expect(calls).toBe(0);
+    expect((await hints.render('https://images.invalid/a.png', 1)).startsWith('data:image/webp;base64,')).toBe(true);
+  });
+
   test('网络异常脱敏并释放在途项，恢复后的同键请求可以成功', async () => {
     const png = await bitmap(); let failing = true;
     const hints = new CEEImageHints({ fetcher: async () => { if (failing) throw new Error('private.internal:8080 ECONNRESET'); return new Response(png); } });

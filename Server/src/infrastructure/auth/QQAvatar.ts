@@ -1,6 +1,7 @@
 import { LRUCache } from "lru-cache";
 
 import { AppError } from "../../domain/Errors";
+import { fetchWithGuardedRedirects } from "../OutboundGuard";
 import { qlogoUrlOf } from "../../shared/Account";
 
 export type AvatarSize = 100 | 640;
@@ -56,10 +57,9 @@ export class QQAvatarService {
   private async download(qqNumber: string, size: AvatarSize): Promise<AvatarImage> {
     let response: Response;
     try {
-      response = await this.fetcher(qlogoUrlOf(qqNumber, size), {
-        redirect: "follow",
+      response = await fetchWithGuardedRedirects(this.fetcher, qlogoUrlOf(qqNumber, size), {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
+      }, { pinOrigin: true });
     } catch (error) {
       throw new AppError("AVATAR_UNAVAILABLE", "QQ 头像暂时无法获取", { cause: String(error) });
     }
