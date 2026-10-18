@@ -384,6 +384,97 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 /** 幂等门闩：重复调用 initSonGuessrWs 不应叠加第二条消息订阅。 */
 let sonGuessrWsInitialized = false;
 
+/** 房间快照事件：保住完整协议基线供补丁索引使用，只展示合并并裁剪后的聊天。 */
+function applyRoomSnapshotEvent(payload: unknown) {
+  const result = consumeStateSync(
+    rawSnapshot,
+    snapshotRevision,
+    payload,
+  );
+  if (result.needsFullSync || !result.state) {
+    requestFullSync();
+    return;
+  }
+  snapshotRevision = result.revision;
+  const snapshot = result.state as SonGuessrRoomSnapshot;
+  rawSnapshot = snapshot;
+  if (roomEntry.isPending()) return;
+  const currentSnapshot = useSonGuessrStore.getState().snapshot;
+  const nextSnapshot = {
+    ...snapshot,
+    chat: mergeChat(currentSnapshot?.roomId === snapshot.roomId ? currentSnapshot.chat : [], snapshot.chat),
+  };
+
+  const currentPrivate = useSonGuessrStore.getState().privateState;
+  const tokenToSave = roomEntry.isPending() ? null : currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
+  if (tokenToSave && nextSnapshot.roomId) {
+    saveSonGuessrSessionToken(nextSnapshot.roomId, tokenToSave);
+  }
+  useSonGuessrStore.setState({
+    snapshot: nextSnapshot,
+    ...(tokenToSave ? { roomId: nextSnapshot.roomId, sessionToken: tokenToSave } : {}),
+  });
+}
+
+/** 私有状态事件：席位凭据随快照归属落盘，其余情况只换私有状态。 */
+function applyPrivateStateEvent(payload: unknown) {
+  const result = consumeStateSync(
+    rawPrivateState,
+    privateStateRevision,
+    payload,
+  );
+  if (result.needsFullSync || !result.state) {
+    requestFullSync();
+    return;
+  }
+  privateStateRevision = result.revision;
+  rawPrivateState = result.state as SonGuessrPrivateState;
+  if (roomEntry.isPending()) return;
+  const nextPrivateState = rawPrivateState;
+  const currentSnapshot = useSonGuessrStore.getState().snapshot;
+  if (!roomEntry.isPending() && nextPrivateState.sessionToken && currentSnapshot?.roomId) {
+    saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
+    useSonGuessrStore.setState({
+      roomId: currentSnapshot.roomId,
+      sessionToken: nextPrivateState.sessionToken,
+      privateState: nextPrivateState,
+    });
+  } else {
+    useSonGuessrStore.setState({ privateState: nextPrivateState });
+  }
+}
+
+/** 聊天走增量事件：一条消息不再连带整套房间快照广播。 */
+function applyChatMessageEvent(payload: unknown) {
+  const incoming = (payload as { message?: ChatMessage } | undefined)?.message;
+  const current = useSonGuessrStore.getState().snapshot;
+  if (!incoming || !current) return;
+  useSonGuessrStore.setState({
+    snapshot: {
+      ...current,
+      chat: mergeChat(current.chat, [incoming]),
+    },
+  });
+}
+
+/**
+ * 退出房间：清掉席位凭据与整套房间态。
+ *
+ * 差量同步基线必须一起重置：残留旧 revision 会让后续反复触发全量同步。
+ */
+function leaveRoom(closedRoomId: string | null | undefined, notice: string, noticeDurationMs?: number) {
+  if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+  resetSonGuessrStateSync();
+  useSonGuessrStore.setState({
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+    privateState: null,
+    roomClosedAt: Date.now(),
+  });
+  useSonGuessrStore.getState().setNotice(notice, "error", noticeDurationMs);
+}
+
 export function initSonGuessrWs() {
   if (sonGuessrWsInitialized) return () => {};
   sonGuessrWsInitialized = true;
@@ -401,147 +492,40 @@ export function initSonGuessrWs() {
         });
         break;
       case "song.room.snapshot":
-        {
-          const result = consumeStateSync(
-            rawSnapshot,
-            snapshotRevision,
-            evt.payload,
-          );
-          if (result.needsFullSync || !result.state) {
-            requestFullSync();
-            break;
-          }
-          snapshotRevision = result.revision;
-          rawSnapshot = result.state as SonGuessrRoomSnapshot;
-          if (roomEntry.isPending()) break;
-          const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          // 保留完整协议基线供补丁索引使用，仅展示快照合并并裁剪聊天。
-          const nextSnapshot = {
-            ...rawSnapshot,
-            chat: mergeChat(currentSnapshot?.roomId === rawSnapshot.roomId ? currentSnapshot.chat : [], rawSnapshot.chat),
-          };
-
-          const currentPrivate = useSonGuessrStore.getState().privateState;
-          const tokenToSave = roomEntry.isPending() ? null : currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
-          if (tokenToSave && nextSnapshot.roomId) {
-            saveSonGuessrSessionToken(nextSnapshot.roomId, tokenToSave);
-          }
-          useSonGuessrStore.setState({
-            snapshot: nextSnapshot,
-            ...(tokenToSave ? { roomId: nextSnapshot.roomId, sessionToken: tokenToSave } : {}),
-          });
-        }
+        applyRoomSnapshotEvent(evt.payload);
         break;
       case "song.game.privateState":
-        {
-          const result = consumeStateSync(
-            rawPrivateState,
-            privateStateRevision,
-            evt.payload,
-          );
-          if (result.needsFullSync || !result.state) {
-            requestFullSync();
-            break;
-          }
-          privateStateRevision = result.revision;
-          rawPrivateState = result.state as SonGuessrPrivateState;
-          if (roomEntry.isPending()) break;
-          const nextPrivateState = rawPrivateState;
-          const currentSnapshot = useSonGuessrStore.getState().snapshot;
-          if (!roomEntry.isPending() && nextPrivateState.sessionToken && currentSnapshot?.roomId) {
-            saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
-            useSonGuessrStore.setState({
-              roomId: currentSnapshot.roomId,
-              sessionToken: nextPrivateState.sessionToken,
-              privateState: nextPrivateState,
-            });
-          } else {
-            useSonGuessrStore.setState({ privateState: nextPrivateState });
-          }
-        }
+        applyPrivateStateEvent(evt.payload);
         break;
       case "song.room.expiring":
         store.setNotice("房间即将因超时关闭", "error");
         break;
-      case "song.chat.message": {
-        // 聊天走增量事件：一条消息不再连带整套房间快照广播。
-        const incoming = (evt.payload as { message?: ChatMessage } | undefined)?.message;
-        const current = useSonGuessrStore.getState().snapshot;
-        if (!incoming || !current) break;
-        useSonGuessrStore.setState({
-          snapshot: {
-            ...current,
-            chat: mergeChat(current.chat, [incoming]),
-          },
-        });
+      case "song.chat.message":
+        applyChatMessageEvent(evt.payload);
         break;
-      }
       case "song.room.closed": {
         roomEntry.cancel();
-        const payload = evt.payload as { roomId?: string };
-        const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
-        if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
-        resetSonGuessrStateSync();
-        useSonGuessrStore.setState({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: Date.now(),
-        });
-        useSonGuessrStore.getState().setNotice("房间已关闭", "error");
+        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        leaveRoom(closedRoomId, "房间已关闭");
         break;
       }
       case "song.room.kicked": {
         roomEntry.cancel();
-        const payload = evt.payload as { roomId?: string };
-        const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
-        if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
-        resetSonGuessrStateSync();
-        useSonGuessrStore.setState({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: Date.now(),
-        });
-        useSonGuessrStore.getState().setNotice("你已被移出房间", "error");
+        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        leaveRoom(closedRoomId, "你已被移出房间");
         break;
       }
       case "session.replaced":
       case "song.session.replaced": {
         roomEntry.cancel();
-        const payload = evt.payload as { roomId?: string };
-        const closedRoomId = payload.roomId ?? useSonGuessrStore.getState().roomId;
-        if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
-        // 与房间关闭/被踢一致地重置差量同步基线：
-        // 漏掉这一行会残留旧 revision，导致后续反复触发全量同步。
-        resetSonGuessrStateSync();
-        useSonGuessrStore.setState({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: Date.now(),
-        });
-        useSonGuessrStore.getState().setNotice("当前席位已在另一个标签页接管", "error");
+        const closedRoomId = (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
+        leaveRoom(closedRoomId, "当前席位已在另一个标签页接管");
         break;
       }
       case "server.shutdown": {
         roomEntry.cancel();
-        const payload = evt.payload as { message?: string } | undefined;
-        const message = payload?.message || SERVER_SHUTDOWN_MESSAGE;
-        const closedRoomId = useSonGuessrStore.getState().roomId;
-        if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
-        resetSonGuessrStateSync();
-        useSonGuessrStore.setState({
-          roomId: null,
-          sessionToken: null,
-          snapshot: null,
-          privateState: null,
-          roomClosedAt: Date.now(),
-        });
-        useSonGuessrStore.getState().setNotice(message, "error", 10000);
+        const message = (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
+        leaveRoom(useSonGuessrStore.getState().roomId, message, 10_000);
         break;
       }
     }

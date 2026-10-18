@@ -23,10 +23,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
-  },
-  "src/stores/UseSonGuessrStore.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }
