@@ -8,6 +8,7 @@ import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { CEEPlayerList } from "@/components/cee/CEEPlayerList";
 import { CEEGameArea } from "@/components/cee/CEEGameArea";
 import { useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
+import { useCEERoundHistory } from "@/hooks/UseCEERoundHistory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { CEE_SOURCE_LABELS, ceeDisplayRound, ceePerspective, ceeRoomPath } from "@/lib/CEESession";
 
@@ -18,6 +19,8 @@ export default function CEERoomPage() {
   const lifecycle = useCEERoomLifecycle();
   const snapshot = useCEEStore((state) => state.snapshot);
   const privateState = useCEEStore((state) => state.privateState);
+  // 整局回放的历史要在房间页累积：游戏区按局数重挂载，放进去会被换局清空。
+  const replayRounds = useCEERoundHistory(snapshot);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
   const showError = (error: unknown) => useCEEStore.getState().setNotice(ceeErrorMessage(error));
   const sendChat = async (text: string) => { await useCEEStore.getState().sendCommand("cee.chat.send", { text }); };
@@ -95,7 +98,7 @@ export default function CEERoomPage() {
         </>}
         connectionIssue={connectionIssue}
         player={<PlayerColumn><CEEPlayerList snapshot={snapshot} privateState={privateState} /></PlayerColumn>}
-        game={<CEEGameArea snapshot={snapshot} privateState={privateState} />}
+        game={<CEEGameArea snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />}
         chat={<ChatColumn>{chatPanel}</ChatColumn>}
         openDrawer={panel}
         onDrawerChange={(key) => setPanel(key as "players" | "chat" | null)}

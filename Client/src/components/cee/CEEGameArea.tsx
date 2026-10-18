@@ -15,11 +15,13 @@ import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { useCEEAction } from "@/hooks/UseCEEAction";
+import type { ReplayRound } from "@/lib/CeeReplay";
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow, skeletonFade } from "@/lib/Motion";
 import { CEESearch } from "./CEESearch";
 import { CEEAnswerCard } from "./CEEAnswerCard";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEEFeedbackTable } from "./CEEFeedbackTable";
+import { CEEReplay } from "./CEEReplay";
 import { CEEWaiting } from "./CEEWaiting";
 import { CEEChoosingSetter } from "./CEEChoosingSetter";
 
@@ -35,19 +37,20 @@ function Countdown({ deadline, className }: { deadline: number | null; className
 /**
  * 阶段舞台承载全部阶段：与另外两个游戏的滚动区、内边距和阶段切换一致。
  * 阶段标识含来源与局数，换局或换来源时整体重挂载，各阶段内的草稿不会串局。
+ * 回放的整局历史同理不能留在舞台内（换局会被重挂载清空），由房间页累积后传入。
  */
-export function CEEGameArea({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+export function CEEGameArea({ snapshot, privateState, replayRounds = [] }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds?: ReplayRound[] }) {
   return (
     <PhaseStage phaseKey={`${snapshot.source}:${snapshot.phase}:${snapshot.roundNumber}`}>
-      <CEEPhase snapshot={snapshot} privateState={privateState} />
+      <CEEPhase snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />
     </PhaseStage>
   );
 }
 
-function CEEPhase({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+function CEEPhase({ snapshot, privateState, replayRounds }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds: ReplayRound[] }) {
   if (snapshot.phase === "waiting") return <CEEWaiting snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "choosingSetter") return <CEEChoosingSetter snapshot={snapshot} privateState={privateState} />;
-  if (snapshot.phase === "settled" && snapshot.roundSummary) return <CEESettlement snapshot={snapshot} privateState={privateState} />;
+  if (snapshot.phase === "settled" && snapshot.roundSummary) return <CEESettlement snapshot={snapshot} privateState={privateState} replayRounds={replayRounds} />;
   if (snapshot.phase === "answering") return <CEESetter snapshot={snapshot} privateState={privateState} />;
   if (snapshot.phase === "preparing") return <CEEPreparing snapshot={snapshot} privateState={privateState} />;
   return <CEEGuessing snapshot={snapshot} privateState={privateState} />;
@@ -443,7 +446,7 @@ function CEEScoreTable({ scores, guesses }: { scores: CEEScore[]; guesses: CEEGu
  * 结算。增强房的「下一步」是回到等待阶段（可改设置、重新准备）或直接再来一轮；原版房按上游行为直接开下一局，
  * 手动出题时先进入指定出题人。非房主的说明按同一口径写。
  */
-function CEESettlement({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
+function CEESettlement({ snapshot, privateState, replayRounds }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState; replayRounds: ReplayRound[] }) {
   const summary = snapshot.roundSummary!;
   const isHost = snapshot.hostPlayerId === privateState.playerId;
   const { run, pending } = useCEEAction();
@@ -456,6 +459,8 @@ function CEESettlement({ snapshot, privateState }: { snapshot: CEERoomSnapshot; 
       <PhaseHeader icon={Trophy} title="答案揭晓" />
       <CEEAnswerCard answer={summary.answer} sealed />
       <CEEScoreTable scores={summary.scores} guesses={summary.guesses} />
+      {/* 回放先只对开了本地开关的人可见（见 lib/CeeReplay），未开时整块不渲染 */}
+      <CEEReplay key={snapshot.roundNumber} rounds={replayRounds} />
       <div className="flex flex-wrap justify-center gap-2">
         {isHost ? (
           native ? (

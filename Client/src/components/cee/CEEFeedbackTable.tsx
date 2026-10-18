@@ -62,6 +62,21 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CEEF
   );
 }
 
+/**
+ * 一次猜测的关键判定（性别 / 人气 / 作品数 / 最高分），与反馈表同款芯片。
+ * 回放逐步重演时用它保持同一套视觉与读屏口径。
+ */
+export function CEEFeedbackChips({ feedback }: { feedback: CEEFeedback }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      <ValueChip field="gender" data={feedback.gender} />
+      <ValueChip field="popularity" data={feedback.popularity} />
+      <ValueChip field="appearancesCount" data={feedback.appearancesCount} />
+      <ValueChip field="rating" data={feedback.rating} />
+    </div>
+  );
+}
+
 function ValueCell({ feedback, fields }: { feedback: CEEFeedback; fields: Array<NumericField | "gender"> }) {
   return (
     <td className="px-1 py-2 text-center whitespace-nowrap">
