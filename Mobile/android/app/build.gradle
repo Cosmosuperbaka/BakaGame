@@ -1,0 +1,53 @@
+// 应用模块：Capacitor 壳 + BakaChannel 原生插件（插件源码直接放 app 内，
+// 经 MainActivity 的 bridge.registerPlugin 注册，不做独立 npm 插件包）。
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply from: "../../node_modules/@capacitor/android/capacitor.gradle"
+
+android {
+    namespace 'website.baka.game'
+    compileSdk 35
+    // 本机已装 build-tools 34.0.0/36.0.0，无 35.0.0；显式钉住避免 AGP 触发联网下载
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'website.baka.game'
+        // Key Attestation 自 API 24 起可用，minSdk 与计划 P3.2 口径一致
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        // versionName 由 scripts/prepare-web.mjs 从 Mobile/package.json 同步，勿手改
+        versionName '0.1.0'
+    }
+
+    signingConfigs { /* 商店签名配置见 README；本地调试可用 debug 签名 */ }
+
+    buildTypes {
+        debug {
+            // WebView 远程调试仅 debug 构建开启（Capacitor 按 BuildConfig.DEBUG 处理）
+        }
+        release {
+            minifyEnabled false
+            // 正式签名落地前，release 不配 signingConfig，构建产物为 unsigned
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    // 产物名带版本号，配合 P2.7 的 R2 固定别名分发策略
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            outputFileName = "BakaGame-${variant.versionName}-${variant.name}.apk"
+        }
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+}

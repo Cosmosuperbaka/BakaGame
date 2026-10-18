@@ -1,0 +1,20 @@
+# 依赖与生成物
+node_modules/
+dist-web/
+# gradle 产物与本地配置（sdk.dir 等机器相关路径不入库）
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+android/gradlew
+android/gradlew.bat
+android/gradle/wrapper/gradle-wrapper.jar
+# cap sync 生成的 Capacitor 配置与 web 资产（由 CLI 重建，不入库避免与脚本注入产物打架）
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+
+# 签名材料：密钥库与口令绝不入库（正式签名走 CI secret，见 README）
+keystore/
+*.keystore
+*.jks
+*.p12

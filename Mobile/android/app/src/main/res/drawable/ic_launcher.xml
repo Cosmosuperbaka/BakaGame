@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 临时占位图标（纯色圆角方块 + B 字路径省略）。正式图标由设计侧替换后删除本说明。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#1F1F2E"
+        android:pathData="M20,8 L88,8 A12,12 0 0 1 100,20 L100,88 A12,12 0 0 1 88,100 L20,100 A12,12 0 0 1 8,88 L8,20 A12,12 0 0 1 20,8 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,30 L58,30 A12,12 0 0 1 58,54 L40,54 Z M46,36 L46,48 L58,48 A6,6 0 0 0 58,36 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,54 L60,54 A12,12 0 0 1 60,78 L40,78 Z M46,60 L46,72 L60,72 A6,6 0 0 0 60,60 Z" />
+</vector>
