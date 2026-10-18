@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { InMemoryAntiCheatReviewQueue } from "../src/application/CEEAntiCheatSignals";
 import type {
   GameRecordRepository,
   StoredGameRecordDetail,
@@ -296,6 +297,100 @@ describe("实时房间管理", () => {
       phase: "waiting",
       players: ["房主"],
     });
+  });
+});
+
+describe("反作弊人工复核队列", () => {
+  const recordedAt = Date.parse("2026-10-18T10:05:00Z");
+  const seed = (reviews: InMemoryAntiCheatReviewQueue, playerName: string, userId: string | null) =>
+    reviews.add({
+      roomId: "ABCD",
+      roomCreatedAt: recordedAt - 60_000,
+      roundNumber: 3,
+      playerId: "p1",
+      playerName,
+      userId,
+      clientType: "mobile",
+      recordedAt,
+      score: 4,
+      reasons: ["interval_too_uniform", "no_search_guess"],
+      features: {
+        intervals: [800, 790, 810],
+        cv: 0.012,
+        noSearchGuesses: 3,
+        guesses: 4,
+        firstGuessCorrect: true,
+      },
+    });
+
+  test("列表补出账号信息，处置状态只有人能改并先留审计", async () => {
+    const { rpc, adminCookie, adminId, alice, aliceId, audit, antiCheatReviews } = await setup();
+    seed(antiCheatReviews, "Alice", aliceId);
+    seed(antiCheatReviews, "游客", null);
+
+    expect((await rpc("admin/antiCheat/list", {})).status).toBe(401);
+    expect((await rpc("admin/antiCheat/list", {}, alice.cookie)).status).toBe(403);
+
+    const listed = await rpc("admin/antiCheat/list", { status: "open" }, adminCookie);
+    expect(listed.body.total).toBe(2);
+    const items = listed.body.items as Array<Record<string, unknown>>;
+    expect(items[1]).toMatchObject({
+      playerName: "Alice",
+      player: { id: aliceId, name: "Alice" },
+      clientType: "mobile",
+      score: 4,
+      reasons: ["interval_too_uniform", "no_search_guess"],
+      features: { guesses: 4, firstGuessCorrect: true },
+      status: "open",
+      createdAt: "2026-10-18T10:05:00.000Z",
+    });
+    expect(items[0]!.player).toBeNull();
+
+    expect(
+      (await rpc("admin/antiCheat/list", { since: recordedAt + 1 }, adminCookie)).body.total
+    ).toBe(0);
+
+    const id = items[0]!.id as string;
+    expect(
+      (await rpc("admin/antiCheat/setStatus", { id, status: "cleared" }, alice.cookie)).status
+    ).toBe(403);
+    expect(
+      (await rpc("admin/antiCheat/setStatus", { id, status: "cleared" }, adminCookie)).body
+    ).toEqual({ ok: true });
+    expect(antiCheatReviews.reviews.find((item) => item.id === id)?.status).toBe("cleared");
+    expect((await rpc("admin/antiCheat/list", { status: "cleared" }, adminCookie)).body.total).toBe(
+      1
+    );
+    expect((await rpc("admin/antiCheat/list", { status: "open" }, adminCookie)).body.total).toBe(1);
+
+    expect(
+      (await rpc("admin/antiCheat/setStatus", { id: "missing", status: "actioned" }, adminCookie))
+        .status
+    ).toBe(404);
+    expect(
+      (await rpc("admin/antiCheat/setStatus", { id, status: "fixed" }, adminCookie)).status
+    ).toBe(400);
+
+    expect(
+      audit.entries.map((entry) => [
+        entry.actorId,
+        entry.action,
+        entry.targetType,
+        entry.targetId,
+        entry.detail,
+      ])
+    ).toEqual([[adminId, "antiCheat.setStatus", "antiCheatReview", id, { to: "cleared" }]]);
+  });
+
+  test("审计写入失败时处置不落库", async () => {
+    const { rpc, adminCookie, audit, antiCheatReviews } = await setup();
+    seed(antiCheatReviews, "Alice", null);
+    const id = antiCheatReviews.reviews[0]!.id;
+    audit.failNext = true;
+    expect(
+      (await rpc("admin/antiCheat/setStatus", { id, status: "actioned" }, adminCookie)).status
+    ).toBe(500);
+    expect(antiCheatReviews.reviews[0]!.status).toBe("open");
   });
 });
 

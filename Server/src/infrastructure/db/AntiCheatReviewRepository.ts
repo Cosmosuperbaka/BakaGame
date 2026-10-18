@@ -1,27 +1,24 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type {
   CEEAntiCheatReview,
+  CEEAntiCheatReviewBoard,
+  CEEAntiCheatReviewItem,
+  CEEAntiCheatReviewQuery,
   CEEAntiCheatReviewQueue,
+  CEEAntiCheatReviewStatus,
   CEEUnitFeatures,
 } from "../../application/CEEAntiCheatSignals";
 import type { Database } from "./Database";
 import { ceeAntiCheatReview } from "./Schema";
-
-/** 复核条目状态：只有人能在后台改，代码路径永不写除 `open` 以外的值。 */
-export type CEEAntiCheatReviewStatus = "open" | "cleared" | "actioned";
-
-export interface CEEAntiCheatReviewItem extends CEEAntiCheatReview {
-  id: string;
-  status: CEEAntiCheatReviewStatus;
-}
 
 /**
  * CEE 反作弊人工复核队列。
  *
  * 这张表存的是「值得人看一眼」的候选，不是结论：写入只由服务端可观测特征触发，
  * 是否处置全部由人在队列里判断。因此这里没有封禁、没有扣分，也没有任何自动动作。
+ * 端口定义（写 / 读 / 状态）都在 `application/CEEAntiCheatSignals`，这里只是 MySQL 适配。
  */
-export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue {
+export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAntiCheatReviewBoard {
   constructor(
     private readonly database: Database,
     private readonly onWarn: (message: string, context?: Record<string, unknown>) => void = () => {}
@@ -51,12 +48,7 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue {
     });
   }
   async list(
-    options: {
-      status?: CEEAntiCheatReviewStatus;
-      since?: number;
-      limit?: number;
-      offset?: number;
-    } = {}
+    options: CEEAntiCheatReviewQuery = {}
   ): Promise<{ items: CEEAntiCheatReviewItem[]; total: number }> {
     await this.database.ready;
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
@@ -97,6 +89,15 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue {
       })),
       total: Number(totals[0]?.total ?? 0),
     };
+  }
+  async exists(id: string): Promise<boolean> {
+    await this.database.ready;
+    const rows = await this.database.db
+      .select({ id: ceeAntiCheatReview.id })
+      .from(ceeAntiCheatReview)
+      .where(eq(ceeAntiCheatReview.id, id))
+      .limit(1);
+    return rows.length > 0;
   }
   async setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void> {
     await this.database.ready;

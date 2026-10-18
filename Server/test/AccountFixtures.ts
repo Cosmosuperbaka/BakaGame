@@ -2,6 +2,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
+import { InMemoryAntiCheatReviewQueue } from "../src/application/CEEAntiCheatSignals";
 import { QQNicknameService } from "../src/application/QQNicknameService";
 import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
 import { SiteStatsService } from "../src/application/SiteStatsService";
@@ -414,6 +415,7 @@ export const createAccountTestApp = (
   });
   const audit = new MemoryAuditLogRepository();
   const siteStats = new MemorySiteStatsRepository();
+  const antiCheatReviews = new InMemoryAntiCheatReviewQueue();
   const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
   const rooms = { faker: whoIsFakerService, song: emptyRooms, cee: emptyRooms, ...options.rooms };
   const admin = new AdminService({
@@ -421,6 +423,7 @@ export const createAccountTestApp = (
     feedback,
     gameRecords: options.gameRecords ?? emptyGameRecords,
     audit,
+    reviews: antiCheatReviews,
     rooms,
     siteStats,
     sentry: options.sentry ?? null,
@@ -499,6 +502,7 @@ export const createAccountTestApp = (
     userData,
     admin,
     audit,
+    antiCheatReviews,
     whoIsFakerService,
     visits,
     siteStats,

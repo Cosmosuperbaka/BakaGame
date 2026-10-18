@@ -3,7 +3,7 @@
   "info": {
     "title": "BakaGame Backend HTTP API",
     "description": "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。本页只列 Elysia 声明的路由；账号与后台 API（/api/rpc/*，oRPC 契约）由 scripts/ExportOpenapi.ts 一并写进仓库内的 Agents/http-openapi.json。\n\n## 账号 API（oRPC）\n\n账号 API 走 oRPC：`POST /api/rpc/<过程路径>`，过程路径就是客户端调用点的点号路径换成斜杠（`account.requestLoginCode` → `/api/rpc/account/requestLoginCode`）。\n请求头必须带 `content-type: application/json`。请求体与成功响应都只有一层 `json` 包络：请求 `{\"json\": {…入参}}`，响应 `{\"json\": {…返回值}}`；无入参的过程请求体给 `{}`。\n只用 POST。GET 能匹配到过程但回 405 `METHOD_NOT_SUPPORTED`；路径拼错回 404，且用的是 HTTP 信封 `{\"error\": …}` 而不是 RPC 信封。\n标了 `security` 的过程需要登录会话 Cookie（`bakagame.session_token`，由 `/api/auth/sign-in/email-otp` 下发，HttpOnly）；`Admin` 标签下还额外要求管理员角色。\n失败响应见 `components.responses`，统一为 `{\"json\": {\"defined\": false, code, status, message, data?}}`；`message` 可直接展示给玩家。\n整个 `/api/rpc/*` 前缀限流：60 秒滑动窗口内单客户端 300 次、全局 12000 次，超限回 429 并带 `Retry-After`。\n三款游戏的实时对局不在本文档内，走 WebSocket：`/api/whoisfaker/ws`、`/api/songuessr/ws`、`/api/cee/ws`。",
-    "version": "1.9.1"
+    "version": "1.9.2"
   },
   "servers": [
     {
@@ -5246,6 +5246,354 @@
                   "properties": {
                     "json": {
                       "$ref": "#/components/schemas/AdminFeedback"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/antiCheat/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.antiCheat.list",
+        "summary": "admin.antiCheat.list",
+        "description": "分页查反作弊人工复核队列，可按状态过滤；条目是候选不是结论，不含任何自动处罚。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "cleared",
+                          "actioned"
+                        ]
+                      },
+                      "since": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "limit": {
+                        "default": 20,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "offset": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "roomId": {
+                                "type": "string"
+                              },
+                              "roundNumber": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "playerName": {
+                                "type": "string"
+                              },
+                              "player": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "qqNumber": {
+                                        "type": "string"
+                                      },
+                                      "image": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "name",
+                                      "qqNumber",
+                                      "image"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "clientType": {
+                                "type": "string",
+                                "enum": [
+                                  "web",
+                                  "desktop",
+                                  "mobile"
+                                ]
+                              },
+                              "score": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "reasons": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "features": {
+                                "type": "object",
+                                "properties": {
+                                  "intervals": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "number"
+                                    }
+                                  },
+                                  "cv": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "noSearchGuesses": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "guesses": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "firstGuessCorrect": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "intervals",
+                                  "cv",
+                                  "noSearchGuesses",
+                                  "guesses",
+                                  "firstGuessCorrect"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "open",
+                                  "cleared",
+                                  "actioned"
+                                ]
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "roomId",
+                              "roundNumber",
+                              "playerName",
+                              "player",
+                              "clientType",
+                              "score",
+                              "reasons",
+                              "features",
+                              "status",
+                              "createdAt"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/antiCheat/setStatus": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.antiCheat.setStatus",
+        "summary": "admin.antiCheat.setStatus",
+        "description": "标记一条复核条目的处置结果（`cleared` 放行 / `actioned` 已处置）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "cleared",
+                          "actioned"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

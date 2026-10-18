@@ -184,6 +184,38 @@ export const adminFeedbackDetailSchema = adminFeedbackSchema.extend({
   replies: z.array(feedbackReplySchema.extend({ author: userRefSchema.nullable() })),
 });
 
+/** 复核条目状态：只有人能在后台改，代码路径永不写除 `open` 以外的值。 */
+export const antiCheatReviewStatusSchema = z.enum(["open", "cleared", "actioned"]);
+
+/** 触发这条复核的服务端可观测特征原值，后台直接摊开给人对照，不做二次加工。 */
+const reviewFeaturesSchema = z.object({
+  intervals: z.array(z.number()),
+  cv: z.number().nullable(),
+  noSearchGuesses: z.number().int(),
+  guesses: z.number().int(),
+  firstGuessCorrect: z.boolean(),
+});
+
+/**
+ * 反作弊人工复核队列的一条候选：「值得人看一眼」，不是结论。
+ * 只由服务端可观测特征写入，没有任何自动处罚，处置全部发生在这里由人判定。
+ */
+export const adminAntiCheatReviewSchema = z.object({
+  id: z.string(),
+  roomId: z.string(),
+  roundNumber: z.number().int(),
+  playerName: z.string(),
+  /** 条目按账号补充资料；游客参与或账号已注销时为空。 */
+  player: userRefSchema.nullable(),
+  clientType: z.enum(["web", "desktop", "mobile"]),
+  score: z.number().int(),
+  /** 中文短句，说明是哪几条特征把它抬进队列。 */
+  reasons: z.array(z.string()),
+  features: reviewFeaturesSchema,
+  status: antiCheatReviewStatusSchema,
+  createdAt: z.string(),
+});
+
 export const adminRoomSchema = z.object({
   game: recordedGameSchema,
   roomId: z.string(),
@@ -372,6 +404,24 @@ const adminContract = {
       .input(z.object({ id: z.string().min(1).max(36), status: feedbackStatusSchema }))
       .output(adminFeedbackSchema),
   },
+  antiCheat: {
+    list: op(
+      "分页查反作弊人工复核队列，可按状态过滤；条目是候选不是结论，不含任何自动处罚。",
+      "admin"
+    )
+      .input(
+        z.object({
+          status: antiCheatReviewStatusSchema.optional(),
+          /** 只查这之后产生的条目（epoch 毫秒），缺省查全部。 */
+          since: z.number().int().min(0).optional(),
+          ...page,
+        })
+      )
+      .output(paged(adminAntiCheatReviewSchema)),
+    setStatus: op("标记一条复核条目的处置结果（`cleared` 放行 / `actioned` 已处置）。", "admin")
+      .input(z.object({ id: z.string().min(1).max(36), status: antiCheatReviewStatusSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+  },
   rooms: {
     list: op("列出实时房间（进程内全量，不分页）；CEE 只含增强房。", "admin")
       .input(z.object({ game: recordedGameSchema.optional() }))
@@ -545,6 +595,7 @@ export type GameRecordItem = z.infer<typeof gameRecordItemSchema>;
 export type GameRecordDetail = z.infer<typeof gameRecordDetailSchema>;
 export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
 export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
+export type AdminAntiCheatReview = z.infer<typeof adminAntiCheatReviewSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;
 export type AdminOverview = z.infer<typeof adminOverviewSchema>;

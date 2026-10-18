@@ -27,7 +27,7 @@ import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/Sentry
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
-import { InMemoryAntiCheatReviewQueue } from "./CEEAntiCheatSignals";
+import { InMemoryAntiCheatReviewQueue, type CEEAntiCheatReviewBoard } from "./CEEAntiCheatSignals";
 import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
@@ -132,6 +132,9 @@ export function createServer(
     bangumiProvider: bangumi,
     gameRecorder: gameRecords,
   });
+  const antiCheatReviews = database
+    ? new AntiCheatReviewRepository(database, (message, context) => logger.warn(message, context))
+    : new InMemoryAntiCheatReviewQueue();
   const cee = new CEEService({
     data: data.cee,
     eventLogger: logger,
@@ -139,15 +142,16 @@ export function createServer(
     aesSecret: env.ceeOriginalAesSecret,
     gameRecorder: gameRecords,
     // 复核队列：有库落库，本地与隔离测试退回内存，行为特征本身两边一致。
-    reviewQueue: database
-      ? new AntiCheatReviewRepository(database, (message, context) => logger.warn(message, context))
-      : new InMemoryAntiCheatReviewQueue(),
+    // 后台读的也是这一个对象——写进去的条目只有这条队列，不存在两份口径。
+    reviewQueue: antiCheatReviews,
   });
-  const account = createAccount(env, database, logger, {
-    faker: appOptions.whoIsFakerService,
-    song,
-    cee,
-  });
+  const account = createAccount(
+    env,
+    database,
+    logger,
+    { faker: appOptions.whoIsFakerService, song, cee },
+    antiCheatReviews
+  );
   // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
   const clientChannel = new ClientChannel({
     store: database ? new ClientChannelRepository(database) : new InMemoryClientChannelStore(),
@@ -207,7 +211,8 @@ const createAccount = (
   env: AppEnv,
   database: Database | undefined,
   logger: EventLogger,
-  rooms: Record<RecordedGame, AdminRoomControl>
+  rooms: Record<RecordedGame, AdminRoomControl>,
+  reviews: CEEAntiCheatReviewBoard
 ) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
@@ -268,6 +273,7 @@ const createAccount = (
     feedback,
     gameRecords: new DatabaseGameRecordRepository(database),
     audit: new DatabaseAuditLogRepository(database),
+    reviews,
     rooms,
     siteStats,
     qq: nicknames,

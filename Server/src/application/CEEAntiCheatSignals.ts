@@ -183,13 +183,65 @@ export interface CEEAntiCheatReviewQueue {
   add(review: CEEAntiCheatReview): void;
 }
 
+/** 复核条目状态：只有人能在后台改，任何代码路径都只写 `open`。 */
+export type CEEAntiCheatReviewStatus = "open" | "cleared" | "actioned";
+
+/** 落库之后的一条条目：`id` 由存储产生，`status` 是人在后台给的处置结果。 */
+export interface CEEAntiCheatReviewItem extends CEEAntiCheatReview {
+  id: string;
+  status: CEEAntiCheatReviewStatus;
+}
+
+/** 队列的查询条件：按处置状态与产生时间过滤，分页给后台用。 */
+export interface CEEAntiCheatReviewQuery {
+  status?: CEEAntiCheatReviewStatus;
+  since?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * 后台读队列的最小端口：分页查 + 改状态。与写端口分开，是因为除人在后台点之外，
+ * 没有任何一条自动路径允许改状态。
+ */
+export interface CEEAntiCheatReviewBoard {
+  list(options?: CEEAntiCheatReviewQuery): Promise<{
+    items: CEEAntiCheatReviewItem[];
+    total: number;
+  }>;
+  setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void>;
+  /** 改状态前先确认条目真在：后台不接受「改了一个不存在的 id 也回成功」。 */
+  exists(id: string): Promise<boolean>;
+}
+
 export const NOOP_ANTI_CHEAT_REVIEW_QUEUE: CEEAntiCheatReviewQueue = { add() {} };
 
-/** 本地与隔离测试用：留在内存里，断言直接读。 */
-export class InMemoryAntiCheatReviewQueue implements CEEAntiCheatReviewQueue {
-  readonly reviews: CEEAntiCheatReview[] = [];
+/** 本地与隔离测试用：留在内存里，写入与后台读断言打的是同一个数组（新条目在前，与队列口径一致）。 */
+export class InMemoryAntiCheatReviewQueue
+  implements CEEAntiCheatReviewQueue, CEEAntiCheatReviewBoard
+{
+  readonly reviews: CEEAntiCheatReviewItem[] = [];
+  private counter = 0;
   add(review: CEEAntiCheatReview): void {
-    this.reviews.push(review);
+    this.counter += 1;
+    this.reviews.unshift({ ...review, id: `mem_${this.counter}`, status: "open" });
+  }
+  async list(options: CEEAntiCheatReviewQuery = {}) {
+    const filtered = this.reviews.filter(
+      (item) =>
+        (options.status === undefined || item.status === options.status) &&
+        (options.since === undefined || item.recordedAt >= options.since)
+    );
+    const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+    const offset = Math.max(options.offset ?? 0, 0);
+    return { items: filtered.slice(offset, offset + limit), total: filtered.length };
+  }
+  async setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void> {
+    const item = this.reviews.find((review) => review.id === id);
+    if (item) item.status = status;
+  }
+  async exists(id: string): Promise<boolean> {
+    return this.reviews.some((item) => item.id === id);
   }
 }
 

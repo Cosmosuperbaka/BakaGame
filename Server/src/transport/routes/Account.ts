@@ -176,6 +176,14 @@ const createRpcRouter = (
           admin.setFeedbackStatus(context.userId, input)
         ),
       },
+      antiCheat: {
+        list: adminOnly.admin.antiCheat.list.handler(({ input }) =>
+          admin.listAntiCheatReviews(input)
+        ),
+        setStatus: adminOnly.admin.antiCheat.setStatus.handler(({ context, input }) =>
+          admin.setAntiCheatReviewStatus(context.userId, input)
+        ),
+      },
       games: {
         list: adminOnly.admin.games.list.handler(({ input }) => admin.listGames(input)),
         get: adminOnly.admin.games.get.handler(({ input }) => admin.getGame(input.id)),

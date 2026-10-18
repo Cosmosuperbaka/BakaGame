@@ -16,7 +16,9 @@ import type {
   GameRecordRepository,
 } from "../infrastructure/db/GameRecordRepository";
 import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/UserDataRepository";
+import type { CEEAntiCheatReviewBoard, CEEAntiCheatReviewStatus } from "./CEEAntiCheatSignals";
 import type {
+  AdminAntiCheatReview,
   AdminFeedback,
   AdminOverview,
   AdminRoom,
@@ -53,6 +55,8 @@ export interface AdminServiceOptions {
   feedback: FeedbackRepository;
   gameRecords: GameRecordRepository;
   audit: AuditLogRepository;
+  /** 反作弊人工复核队列的读端口；写入由 CEE 侧触发，后台只读与改状态。 */
+  reviews: CEEAntiCheatReviewBoard;
   /** 三款游戏的实时房间控制口；房间不落库，后台只经由它们读写。 */
   rooms: Record<RecordedGame, AdminRoomControl>;
   siteStats: SiteStatsRepository;
@@ -365,6 +369,52 @@ export class AdminService {
     });
     const users = await this.usersById([record.userId]);
     return this.toAdminFeedback({ ...record, status: input.status }, users);
+  }
+
+  // ==================== 反作弊人工复核 ====================
+
+  /**
+   * 队列条目按人判：这里只把服务端算出来的特征原样摊开，附提交人的最小账号信息。
+   * 没有排序选项、没有筛选之外的查询口——想绕过队列直接批量拉人不在设计里。
+   */
+  async listAntiCheatReviews(input: {
+    status?: CEEAntiCheatReviewStatus;
+    since?: number;
+    limit: number;
+    offset: number;
+  }): Promise<{ items: AdminAntiCheatReview[]; total: number }> {
+    const { items, total } = await this.options.reviews.list(input);
+    const users = await this.usersById(items.map((item) => item.userId));
+    return {
+      total,
+      items: items.map((item) => ({
+        id: item.id,
+        roomId: item.roomId,
+        roundNumber: item.roundNumber,
+        playerName: item.playerName,
+        player: item.userId ? (users.get(item.userId) ?? null) : null,
+        clientType: item.clientType,
+        score: item.score,
+        reasons: item.reasons,
+        features: item.features,
+        status: item.status,
+        createdAt: new Date(item.recordedAt).toISOString(),
+      })),
+    };
+  }
+
+  /** 处置结果只是队列里的一个标记：这段代码不封号、不扣分，也不产生任何自动动作。 */
+  async setAntiCheatReviewStatus(
+    actorId: string,
+    input: { id: string; status: CEEAntiCheatReviewStatus }
+  ): Promise<{ ok: true }> {
+    if (!(await this.options.reviews.exists(input.id)))
+      throw new AppError("NOT_FOUND", "复核条目不存在");
+    await this.audit(actorId, "antiCheat.setStatus", "antiCheatReview", input.id, {
+      to: input.status,
+    });
+    await this.options.reviews.setStatus(input.id, input.status);
+    return { ok: true as const };
   }
 
   // ==================== 实时房间 ====================
