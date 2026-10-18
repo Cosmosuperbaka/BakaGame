@@ -62,6 +62,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 - Store 的 `setSnapshot` 接收服务端权威状态；动画、淘汰展示与本地聊天提示属于独立展示派生层，不修改或延迟协议基线（Spec §8.3、§9.3）。
 - 组件不推断私有权限、不覆盖服务端快照。表单弹窗通过 Props 与校验回调采集数据，不隐式绑定具体游戏 Store。
 - 跨游戏能力放 `components/common/` 或 `hooks/`，复用边界见 Spec §11。
+- 滑动窗口数组（`room.chat`）的下行编码依赖「挤出最旧、追加最新」这一形状：服务端只发 `remove /chat/0` 与 `add /chat/N`，客户端 `applyPatch(..., true)` 复现同一结果。改成定长原地覆盖、换序或环形队列必须两端同步改，否则补丁静默错位。
 
 ## 4. 工作区架构与运行环境 (Workspace Structure & Runtime)
 
