@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
   PHASE_RESULT_DISPLAY_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
@@ -153,6 +154,54 @@ test("密码尝试超过上限后连正确密码也拒绝，其它连接不受�
   await attempt(attacker, "尝试者", "secret");
   expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(friend, "room.snapshot")?.players.map((player) => player.name).sort())
     .toEqual(["尝试者", "房主", "朋友"].sort());
+});
+
+test("同一房间的密码尝试有聚合额度：多开连接换不来更多爆破次数", async () => {
+  const { service, advanceTime } = createTestContext();
+  const host = createConnection(service, "burst-host");
+  await execute(service, host, {
+    id: "burst-create",
+    type: "room.create",
+    payload: {
+      roomId: "1515",
+      name: "私房",
+      visibility: "private",
+      password: "secret",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  });
+
+  let attemptId = 0;
+  const attempt = (connection: ReturnType<typeof createConnection>, userName: string, password: string) =>
+    execute(service, connection, {
+      id: `burst-join-${++attemptId}`,
+      type: "room.join",
+      roomId: "1515",
+      payload: { userName, password },
+    });
+
+  const sockets = Array.from(
+    { length: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS / JOIN_PASSWORD_MAX_ATTEMPTS + 1 },
+    (_, index) => createConnection(service, `burst-socket-${index}`),
+  );
+  const burst = sockets.slice(0, -1);
+  for (const socket of burst) {
+    for (let index = 0; index < JOIN_PASSWORD_MAX_ATTEMPTS; index += 1) {
+      await expect(attempt(socket, "尝试者", `猜测${index}`)).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+    }
+  }
+
+  // 最后一条连接自己一次都没试过，房间聚合额度已被前面的连接用光。
+  const overflow = sockets[sockets.length - 1]!;
+  await expect(attempt(overflow, "溢出者", "错误口令")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+  // 先计数再校验：正确密码同样被拒，攻击者分不清是额度用完还是口令猜中。
+  await expect(attempt(overflow, "溢出者", "secret")).rejects.toMatchObject({ code: "TOO_MANY_ATTEMPTS" });
+
+  advanceTime(JOIN_PASSWORD_WINDOW_MS + 1);
+  await attempt(overflow, "溢出者", "secret");
+  expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.players.map((player) => player.name))
+    .toEqual(["房主", "溢出者"]);
 });
 
 test("玩家改名会规范化名称并广播最新快照", async () => {

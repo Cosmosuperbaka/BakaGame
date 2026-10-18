@@ -43,7 +43,8 @@
   `spectatorCount` 为 `null`，界面不显示该数字，不伪造为 0。
 - 私密与其它游戏同口径：增强房私密即有密码，带锁进大厅；切到私密时必须给新密码或已有密码，留空保留原密码，
   转为公开清除密码。缺密码回 `PASSWORD_REQUIRED`，错密码回 `PASSWORD_INCORRECT`。同一连接对同一房间每 60 秒
-  最多尝试 5 次，**在校验之前计数**，超限后正确密码同样回 `TOO_MANY_ATTEMPTS`。原版没有密码机制，
+  最多尝试 5 次，**在校验之前计数**，超限后正确密码同样回 `TOO_MANY_ATTEMPTS`；同一房间所有连接合计每 60 秒
+  30 次（`CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS`），否则多开连接就能按连接数线性放大爆破速度。原版没有密码机制，
   其开关只控制是否出现在大厅，非公开原版房凭别名链接仍可进入。界面上这个开关叫「不在大厅显示」（开启即
   `visibility: 'private'`）并常驻上述说明，建房弹窗（`CreateRoomDialog privacy="unlisted"`）与等待页设置同一措辞；
   建房时就可选择不进大厅，服务端建好房后与房间设置走同一条 `toggleRoomVisibility`。增强房的开关叫「私密房间」。

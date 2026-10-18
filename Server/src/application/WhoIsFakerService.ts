@@ -72,6 +72,7 @@ import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
   JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
   PHASE_RESULT_DISPLAY_MS,
   TEST_MODE_DEFAULT_WORD,
@@ -116,6 +117,14 @@ export class WhoIsFakerService implements AdminRoomControl {
   private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
     windowMs: JOIN_PASSWORD_WINDOW_MS,
     maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
+  });
+  /**
+   * 同一房间的聚合密码尝试配额（只按房间计数）。
+   * 每连接各算一份时，开 N 条连接就有 N 份额度，词表爆破在聚合上不受限。
+   */
+  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: JOIN_PASSWORD_WINDOW_MS,
+    maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   });
   private idCounter = 0;
 
@@ -4261,6 +4270,10 @@ export class WhoIsFakerService implements AdminRoomControl {
     const normalized = this.requirePassword(password);
     // 先计数再校验：超限后正确密码同样被拒，攻击者无法区分猜中与猜错。
     if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
+      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
+    }
+    // 房间级聚合额度：多开连接各自占一份额度时，爆破速度随连接数线性增长。
+    if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     }
     if (room.settings.password !== normalized) {

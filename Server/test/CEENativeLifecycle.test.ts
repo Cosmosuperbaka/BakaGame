@@ -3,7 +3,7 @@ import { ceeTestHarness, character, deferred } from './CEENativeFixtures';
 import { ROOM_ID_TEST_MODE, type CEECharacterView } from '../src/shared/Index';
 import type { CEEDataProvider } from '../src/infrastructure/CEEData';
 import { HOST_RECONNECT_TIMEOUT_MS } from '../src/config/Constants';
-import { CEE_JOIN_PASSWORD_MAX_ATTEMPTS } from '../src/application/CEERooms';
+import { CEE_JOIN_PASSWORD_MAX_ATTEMPTS, CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS } from '../src/application/CEERooms';
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
 const harness = (data: Partial<CEEDataProvider> = {}) => { const result = ceeTestHarness(data); active.push(result); return result; };
@@ -241,6 +241,28 @@ describe('CEE 会话与异步边界', () => {
     h.advance(60_001);
     await h.send(attacker, 'cee.room.join', { userName: '尝试者', password: '正确密码' });
     expect(h.snapshot(host).players.map(player => player.name)).toEqual(['房主', '朋友', '尝试者']);
+  });
+
+  test('同一房间的密码尝试有聚合额度：多开连接换不来更多爆破次数', async () => {
+    const h = harness(); const host = h.connect('房主');
+    await h.send(host, 'cee.room.create', { source: 'native', roomId: '1234', name: '加密房', userName: '房主', visibility: 'private', allowSpectators: true, password: '正确密码' });
+    const sockets = Array.from({ length: CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS / CEE_JOIN_PASSWORD_MAX_ATTEMPTS + 1 }, (_, index) => h.connect(`尝试者${index}`));
+    const burst = sockets.slice(0, -1);
+    for (const socket of burst) {
+      for (let attempt = 0; attempt < CEE_JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
+        await expect(h.send(socket, 'cee.room.join', { userName: '尝试者', password: `猜测${attempt}` })).rejects.toMatchObject({ code: 'PASSWORD_INCORRECT' });
+      }
+    }
+
+    // 最后一条连接自己一次都没试过，房间聚合额度已被前面的连接用光。
+    const overflow = sockets[sockets.length - 1]!;
+    await expect(h.send(overflow, 'cee.room.join', { userName: '溢出者', password: '错误' })).rejects.toMatchObject({ code: 'TOO_MANY_ATTEMPTS' });
+    // 先计数再校验：正确密码同样被拒，攻击者分不清是额度用完还是口令猜中。
+    await expect(h.send(overflow, 'cee.room.join', { userName: '溢出者', password: '正确密码' })).rejects.toMatchObject({ code: 'TOO_MANY_ATTEMPTS' });
+
+    h.advance(60_001);
+    await h.send(overflow, 'cee.room.join', { userName: '溢出者', password: '正确密码' });
+    expect(h.snapshot(host).players.map(player => player.name)).toEqual(['房主', '溢出者']);
   });
 
   test('密码校验期间连接断开，不创建幽灵在线成员', async () => {

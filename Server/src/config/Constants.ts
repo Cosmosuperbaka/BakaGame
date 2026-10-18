@@ -26,6 +26,13 @@ export const JOIN_PASSWORD_MAX_ATTEMPTS = 5;
 export const JOIN_PASSWORD_WINDOW_MS = 60 * 1000;
 
 /**
+ * 私密房密码的聚合配额：同一房间在统计窗口内所有连接合计最多尝试的次数。
+ * 只按「连接 + 房间」计数时，开 N 条连接就有 N 份额度，爆破在聚合上不受限。
+ * 取单连接额度的六倍：几个好友各自试几轮不会互相挤掉，词表爆破仍然刷不动。
+ */
+export const JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = JOIN_PASSWORD_MAX_ATTEMPTS * 6;
+
+/**
  * WebSocket 握手配额：单个客户端地址的在途连接数与每分钟新建连接数。
  * 在途数封顶长期持有的连接，速率封顶反复开关的握手开销，两者缺一都能绕过对方。
  * 浏览器一个标签页只有一条游戏连接，正常玩家远达不到这个量级。

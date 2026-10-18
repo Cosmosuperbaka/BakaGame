@@ -13,6 +13,8 @@ import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from './CEEViews';
 
 /** 同一连接对同一房间每分钟最多尝试的密码次数。 */
 export const CEE_JOIN_PASSWORD_MAX_ATTEMPTS = 5;
+/** 同一房间每分钟所有连接合计最多尝试的密码次数：只按连接计数时，多开连接就多倍爆破速度。 */
+export const CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = CEE_JOIN_PASSWORD_MAX_ATTEMPTS * 6;
 const CEE_JOIN_PASSWORD_WINDOW_MS = 60_000;
 
 export class CEERooms {
@@ -25,6 +27,9 @@ export class CEERooms {
    */
   private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
     windowMs: CEE_JOIN_PASSWORD_WINDOW_MS, maxRequests: CEE_JOIN_PASSWORD_MAX_ATTEMPTS,
+  });
+  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
+    windowMs: CEE_JOIN_PASSWORD_WINDOW_MS, maxRequests: CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   });
   /** 已交给对局记录的结算摘要：结算后的多次发布只记一次。 */
   private readonly recordedSummaries = new WeakSet<object>();
@@ -232,6 +237,7 @@ export class CEERooms {
     const password = value?.trim();
     if (!password) throw new AppError('PASSWORD_REQUIRED', '该房间需要密码');
     if (!this.joinPasswordLimiter.allow(`${connection.id}:${roomId}`, this.now())) throw new AppError('TOO_MANY_ATTEMPTS', '密码错误次数过多，请稍后再试');
+    if (!this.joinRoomPasswordLimiter.allow(roomId, this.now())) throw new AppError('TOO_MANY_ATTEMPTS', '密码错误次数过多，请稍后再试');
     if (!await Bun.password.verify(password, hash)) throw new AppError('PASSWORD_INCORRECT', '房间密码错误');
   }
   private ensureFree(connection: ConnectionRecord) {
