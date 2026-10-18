@@ -339,20 +339,94 @@ const capacityOf = (report: Report): Step => {
 const perCoreCommands = (step: Step): number =>
   step.target.cores > 0.01 ? step.commandsPerSecond / step.target.cores : 0;
 
+/** 可玩性口径：一次按下到一次回应的 P95 不超过这个毫秒数，才叫「服务得过来」。 */
+const SLO_ACK_P95_MS = 150;
+
+/**
+ * 爬坡把容量量化到了阶梯上：同一份代码、不同起点，「最后一个没饱和的跳」会差出一倍。
+ * 在相邻两跳之间按 ack P95 线性插值，拿到的才是与阶梯无关的容量点。
+ */
+const atSlo = (report: Report): Step | null => {
+  const steps = report.steps.filter((step) => step.saturated !== "rooms-invalid");
+  for (let index = 1; index < steps.length; index += 1) {
+    const low = steps[index - 1]!;
+    const high = steps[index]!;
+    if (low.latency.p95 <= SLO_ACK_P95_MS && high.latency.p95 >= SLO_ACK_P95_MS) {
+      const t =
+        (SLO_ACK_P95_MS - low.latency.p95) / Math.max(1e-6, high.latency.p95 - low.latency.p95);
+      const mix = (a: number, b: number): number => a + (b - a) * t;
+      return {
+        ...high,
+        livePlayers: Math.round(mix(low.livePlayers, high.livePlayers)),
+        commandsPerSecond: mix(low.commandsPerSecond, high.commandsPerSecond),
+        wireMbps: mix(low.wireMbps, high.wireMbps),
+        latency: { ...high.latency, p95: SLO_ACK_P95_MS },
+        target: {
+          ...high.target,
+          cores: mix(low.target.cores, high.target.cores),
+          rssMb: Math.round(mix(low.target.rssMb, high.target.rssMb)),
+          lagP95Ms: mix(low.target.lagP95Ms, high.target.lagP95Ms),
+        },
+      };
+    }
+  }
+  return null;
+};
+
+/** 同一口径重复跑过就只留最近一次：结论里每个配置说一遍，历史读数仍留在摘要与逐跳表。 */
+const latestPerConfig = (reports: Report[]): Report[] =>
+  [
+    ...reports.reduce((acc, report) => {
+      const key = [
+        machineKey(report),
+        report.mode,
+        mixText(report),
+        report.config.pace,
+        shardsOf(report),
+        report.config.mbps,
+        report.config.fatSeats ?? 0,
+      ].join("#|");
+      const current = acc.get(key);
+      if (!current || report.startedAt >= current.startedAt) acc.set(key, report);
+      return acc;
+    }, new Map<string, Report>()),
+  ]
+    .map(([, report]) => report)
+    .sort((a, b) => a.startedAt - b.startedAt);
+
 const conclusion = (reports: Report[]): string => {
   const lines: string[] = [];
+  const picked = latestPerConfig(reports);
   const labels = runLabels(reports);
   const tag = (report: Report): string => runTag(report, labels);
-  const ramps = reports.filter(
+  const ramps = picked.filter(
     (report) => report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report)
   );
   for (const report of ramps) {
     const top = compliantTop(report);
+    const slo = atSlo(report);
     lines.push(
-      `<b>pace ${report.config.pace}、${esc(mixText(report))}${esc(tag(report))}</b>：合规上限 <b>${top.livePlayers}</b> 名在线玩家（${top.roomsStarted} 个房间、${fmt(top.commandsPerSecond)} 指令/秒、带宽 ${fmt(top.wireMbps)} Mbps、CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms）；本次停止于 <code>${esc(report.stopReason)}</code>。`
+      `<b>pace ${report.config.pace}、${esc(mixText(report))}${esc(
+        tag(report)
+      )}</b>：ack P95 ≤ ${SLO_ACK_P95_MS} ms 这条延迟线上可服务 <b>${
+        slo
+          ? `${slo.livePlayers} 名（${fmt(slo.commandsPerSecond)} 指令/秒、${fmt(
+              perCoreCommands(slo)
+            )} 指令/秒·核、${fmt(slo.wireMbps)} Mbps、${fmt(slo.target.cores)} 核）`
+          : "本次阶梯没跨过该延迟线"
+      }</b>；最后一个未判饱和的跳是 ${top.livePlayers} 名（${
+        top.roomsStarted
+      } 个房间、${fmt(top.commandsPerSecond)} 指令/秒、带宽 ${fmt(
+        top.wireMbps
+      )} Mbps、CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(
+        top.latency.p95,
+        1
+      )} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms）；本次停止于 <code>${esc(
+        report.stopReason
+      )}</code>。`
     );
   }
-  for (const report of reports.filter((item) => item.mode === "cap")) {
+  for (const report of picked.filter((item) => item.mode === "cap")) {
     const over = capOver(report);
     const top = capacityOf(report);
     const bracket = over.length
@@ -362,7 +436,7 @@ const conclusion = (reports: Report[]): string => {
       `<b>带宽钉在 ${report.config.mbps} Mbps、pace ${report.config.pace}、${esc(mixText(report))}${esc(tag(report))}</b>：可承载 <b>${top.livePlayers}</b> 名玩家 = ${fmt(top.commandsPerSecond)} 指令/秒（该跳 ${fmt(top.wireMbps)} Mbps${bracket}），此时 CPU ${fmt(top.target.cores)} 核、RSS ${top.target.rssMb} MB、ack P95 ${fmt(top.latency.p95, 1)} ms、事件环 P95 ${fmt(top.target.lagP95Ms, 0)} ms（二分 ${report.steps.length} 跳，判定 <code>${esc(report.stopReason)}</code>）。`
     );
   }
-  for (const report of reports.filter((item) => item.mode === "fat")) {
+  for (const report of picked.filter((item) => item.mode === "fat")) {
     const seats = Math.max(...Object.values(report.config.seats));
     const sweep = report.steps
       .map(
@@ -450,6 +524,8 @@ const STYLES = `
 .ltrep th,.ltrep td{padding:4px 7px;border-bottom:1px solid #d9e2dd;text-align:right;white-space:nowrap}
 .ltrep th:first-child,.ltrep td:first-child{text-align:left}
 .ltrep tbody tr:hover{background:#f1f6f2}
+.ltrep tbody tr.slo{background:#eaf3ec}
+.ltrep tbody tr.slo th{color:#1f5b3d}
 .ltrep ul{margin:8px 0 0;padding-left:20px}
 .ltrep code{background:#eef3ef;padding:1px 5px;border-radius:4px;font-size:12px}
 .ltrep .limits{background:#fff8ec;border:1px solid #ecd9ae;border-radius:10px;padding:14px 16px}
@@ -522,6 +598,11 @@ const shardScaling = (reports: Report[]): string => {
           .map((_, index) => `<td>${cell(best[index]!, index)}</td>`)
           .join("")}</tr>`;
       const ratio = (step: Step) => step.livePlayers / Math.max(1, base.livePlayers);
+      const slo = items.map(atSlo);
+      const sloRow = (label: string, cellFn: (step: Step, index: number) => string) =>
+        `<tr class="slo"><th>ack P95≤${SLO_ACK_P95_MS}ms：${esc(label)}</th>${slo
+          .map((step, index) => `<td>${step ? cellFn(step, index) : "未达"}</td>`)
+          .join("")}</tr>`;
       return (
         `<p class="meta">${esc(labels.machines.label(head))} · ${esc(mixText(head))} · ${esc(
           head.mode
@@ -531,6 +612,10 @@ const shardScaling = (reports: Report[]): string => {
         `<div class="scroll"><table><thead><tr><th></th>${items
           .map((report) => `<th>${shardsOf(report)} 进程</th>`)
           .join("")}</tr></thead><tbody>` +
+        sloRow("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
+        sloRow("指令/秒", (step) => fmt(step.commandsPerSecond)) +
+        sloRow("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
+        sloRow("每进程玩家", (step, index) => fmt(step.livePlayers / shardsOf(items[index]!), 0)) +
         row("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
         row("相对最少进程", (step) => `${fmt(ratio(step), 2)}×`) +
         row("扩展效率", (step, index) => fmt(ratio(step) / shardsOf(items[index]!), 2)) +
@@ -549,7 +634,7 @@ const shardScaling = (reports: Report[]): string => {
       );
     });
   if (tables.length === 0) return "";
-  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是一个进程的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。各次运行的爬坡阶梯不同（起步人数按进程数放大），所以「玩家倍率」只能粗看：<b>真正说明问题的是「每进程在线」和「每核指令/秒」这两行</b>——把每进程玩家数对齐之后，每核指令/秒不掉就是线性扩展，掉了才是被内存、同机发压或带宽合计顶住。</p>${tables.join("")}</section>`;
+  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是一个进程的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。绿底三行是按 <b>ack P95 ≤ ${SLO_ACK_P95_MS} ms</b> 在相邻两跳之间插出来的容量：爬坡阶梯在各进程数下不同（起步人数按进程数放大），只有这个口径下的「每进程玩家」和「每核指令/秒」才能横着比。</p>${tables.join("")}</section>`;
 };
 
 /** 同一口径在本机与生产机上各跑一遍，差值就是「开发机的数字能不能外推」的答案。 */
@@ -585,13 +670,24 @@ const machineCompare = (reports: Report[]): string => {
         `<tr><th>${esc(label)}</th>${rows
           .map(([, report]) => `<td>${value(report, capacityOf(report))}</td>`)
           .join("")}</tr>`;
+      const sloSteps = rows.map(([, report]) => atSlo(report));
+      const sloCell = (label: string, value: (step: Step, index: number) => string) =>
+        `<tr class="slo"><th>ack P95≤${SLO_ACK_P95_MS}ms：${esc(label)}</th>${sloSteps
+          .map((step, index) => `<td>${step ? value(step, index) : "未达"}</td>`)
+          .join("")}</tr>`;
       return (
         `<p class="meta">${esc(head.mode)} · ${esc(mixText(head))} · pace ${head.config.pace} · ${shardsOf(
           head
         )} 进程${head.mode === "cap" ? ` · 预算 ${head.config.mbps} Mbps` : ""}</p>` +
-        `<div class="scroll"><table><thead><tr><th></th>${rows.map(
-          ([machine]) => `<th>${esc(machine)}</th>`
-        )}</tr></thead><tbody>` +
+        `<div class="scroll"><table><thead><tr><th></th>${rows
+          .map(([machine]) => `<th>${esc(machine)}</th>`)
+          .join("")}</tr></thead><tbody>` +
+        sloCell("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
+        sloCell("每进程玩家", (step, index) =>
+          fmt(step.livePlayers / shardsOf(rows[index]![1]), 0)
+        ) +
+        sloCell("指令/秒", (step) => fmt(step.commandsPerSecond)) +
+        sloCell("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
         cell("在线玩家", (_, step) => `<b>${step.livePlayers}</b>`) +
         cell(
           "相对第一台",
@@ -613,7 +709,7 @@ const machineCompare = (reports: Report[]): string => {
       );
     });
   if (tables.length === 0) return "";
-  return `<section><h2>机器对表</h2><p class="meta">同一份源码、同一口径，只差硬件：绝对承载量不能按比例外推，「每核指令/秒」是两台机器之间大致可比的那一列。</p>${tables.join("")}</section>`;
+  return `<section><h2>机器对表</h2><p class="meta">同一份源码、同一口径，只差硬件。绿底行是两台机器在同一个延迟线（ack P95 ≤ ${SLO_ACK_P95_MS} ms）上的容量：开发机的绝对数字不能按比例外推到生产机，「每核指令/秒」是两台之间大致可比的那一列。</p>${tables.join("")}</section>`;
 };
 
 const main = async () => {
@@ -800,6 +896,7 @@ ${failureNotes ? `<section><h2>失败与重试码</h2><ul>${failureNotes}</ul></
   <li>Bun 玩法面是单线程事件循环：一核就是一个进程的天花板，跨核只能靠多进程分片（<code>--shards N</code>），逐进程数的扩展曲线见「多进程分片扩展」。因此「核数没打满」不代表进程空闲，事件环 P95 与 ack P95 一起涨才是真瓶颈信号，本报告把它们当一等指标。</li>
   <li>节奏倍率 <code>pace</code>：房间内所有思考时间的除数。pace 1 接近真人房间，pace 4/24 是压缩节奏的压力模型；同一台机器的承载量在两种口径下不可直接混用。</li>
   <li>饱和判定按先到者：房间启动率 &lt; 80%、错误率 ≥ ${(latest.config.errorRateBudget * 100).toFixed(0)}%、ack P95 ≥ ${latest.config.latencyP95BudgetMs}ms、事件环 P95 ≥ ${latest.config.lagP95BudgetMs}ms、CPU 触顶（需要绑核，Windows 上不可用）、或玩家数继续增长而吞吐与带宽同时平掉。</li>
+  <li>报告里另有一条更严的<b>可玩线：ack P95 ≤ ${SLO_ACK_P95_MS} ms</b>（绿底行），它不是判定阈值而是横比口径。爬坡每跳人数成倍跳，所以这个容量是在相邻两跳之间按 ack P95 线性插出来的：用来看趋势、比机器、比进程数，别当成精确到人的额度。</li>
   <li>带宽为应用层统计（服务端发出与收到的 WS 帧字节）× 1.15 传输开销估算，未包含 TCP/TLS 握手与重传；真实公网带宽还要叠加 HTTP 静态资源与音频外链。</li>
   <li>生成器与被测进程同机运行，生成器自身 CPU 已在表内单列，因此高玩家数那几跳读到的上限里混着生成器占用。开发机线程多、绑核隔离（taskset）在 Windows 不可用，CPU 是整进程口径而非单核口径；生产那几跳用 <code>--target-cpuset</code> 把被测钉在一核、生成器钉在另一核，被测侧读数是干净的单核口径，但整机只有两核，所以它的绝对承载量里始终带着生成器的份额，实际可服务人数会比表里的下限更高。</li>
   <li>音频字节不进这条链路：猜歌只下发歌曲 ID 与音频地址，实际音频由客户端直连上游 CDN，所以本报告的带宽不含音频流量。</li>
