@@ -54,6 +54,7 @@
     "bun-types": "^1.4.2",
     "drizzle-kit": "0.31.11",
     "eslint": "^10.11.0",
+    "eslint-plugin-check-file": "3.3.2",
     "eslint-plugin-sonarjs": "4.2.2",
     "picomatch": "^4.0.7",
     "typescript": "npm:@typescript/typescript6@6.0.2",

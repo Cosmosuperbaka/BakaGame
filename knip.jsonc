@@ -15,12 +15,11 @@
   "workspaces": {
     ".": {
       "entry": [],
-      "project": ["scripts/**/*.mjs"]
+      "project": ["scripts/**/*.mjs"],
     },
     "Client": {
       "entry": [
         "index.html",
-        "src/main.tsx",
         "src/index.css",
         "src/**/*.test.ts",
         "src/**/*.test.tsx",
@@ -28,15 +27,15 @@
         "e2e/**/*.spec.ts",
         "e2e/**/*.config.ts",
         "e2e/fixtures/**/*.ts",
-        "scripts/**/*.mjs"
+        "scripts/**/*.mjs",
       ],
       "project": [
         "src/**/*.{ts,tsx,css}",
         "e2e/**/*.ts",
         "scripts/**/*.{mjs,ts}",
         "*.ts",
-        ".storybook/**/*.{ts,tsx}"
-      ]
+        ".storybook/**/*.{ts,tsx}",
+      ],
     },
     "Server": {
       "entry": [
@@ -50,15 +49,10 @@
         "test/**/*.test.ts",
         "test/**/*Fixtures.ts",
         "test/**/Helpers.ts",
-        "integration/*.ts"
+        "integration/*.ts",
       ],
-      "project": [
-        "src/**/*.ts",
-        "scripts/**/*.{ts,mjs}",
-        "test/**/*.ts",
-        "integration/**/*.ts"
-      ]
-    }
+      "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "test/**/*.ts", "integration/**/*.ts"],
+    },
   },
   // 「导出但只在本文件内使用」不算问题：这类 export 关键字主要是历史习惯，
   // 清理收益极低而改动面很大；真正零引用的导出仍会被报出来。
@@ -74,6 +68,6 @@
     "unresolved": "error",
     "duplicates": "off",
     "exports": "warn",
-    "types": "warn"
-  }
+    "types": "warn",
+  },
 }

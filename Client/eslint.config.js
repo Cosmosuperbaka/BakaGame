@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
+import checkFile from "eslint-plugin-check-file";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import sonarjs from "eslint-plugin-sonarjs";
@@ -25,7 +26,14 @@ const TYPE_AWARE_RULES = {
 };
 
 export default defineConfig([
-  globalIgnores(["dist", "coverage", "playwright-report", "test-results", "storybook-static", "storybook-shots"]),
+  globalIgnores([
+    "dist",
+    "coverage",
+    "playwright-report",
+    "test-results",
+    "storybook-static",
+    "storybook-shots",
+  ]),
   {
     files: ["**/*.{ts,tsx}"],
     extends: [
@@ -45,6 +53,22 @@ export default defineConfig([
       // 认知复杂度阈值 20。存量由 eslint-suppressions.json 记录，新增违规直接失败；
       // 重构使复杂度下降后跑 `npm run lint:prune` 递减基线，避免基线腐烂。
       "sonarjs/cognitive-complexity": ["error", 20],
+    },
+  },
+  {
+    // 文件名统一 PascalCase。ignoreMiddleExtensions 让 X.test.tsx / X.stories.tsx
+    // 只校验主名，否则中缀段会被判违规。vite-env.d.ts 是 Vite 生成的固定命名，单独放行。
+    files: ["src/**/*.{ts,tsx}", "e2e/**/*.ts"],
+    ignores: ["src/vite-env.d.ts"],
+    plugins: {
+      "check-file": checkFile,
+    },
+    rules: {
+      "check-file/filename-naming-convention": [
+        "error",
+        { "**/*.{ts,tsx}": "PASCAL_CASE" },
+        { ignoreMiddleExtensions: true },
+      ],
     },
   },
   {

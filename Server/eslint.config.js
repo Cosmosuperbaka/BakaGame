@@ -1,4 +1,5 @@
 import js from "@eslint/js";
+import checkFile from "eslint-plugin-check-file";
 import sonarjs from "eslint-plugin-sonarjs";
 import tseslint from "typescript-eslint";
 import { defineConfig, globalIgnores } from "eslint/config";
@@ -38,6 +39,21 @@ export default defineConfig([
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },
+      ],
+    },
+  },
+  {
+    // 文件名统一 PascalCase（服务、路由、脚本、测试同一套）。ignoreMiddleExtensions
+    // 让 X.test.ts 只校验主名；drizzle.config.ts 这类根级配置不在本 glob 内。
+    files: ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "integration/**/*.ts"],
+    plugins: {
+      "check-file": checkFile,
+    },
+    rules: {
+      "check-file/filename-naming-convention": [
+        "error",
+        { "**/*.ts": "PASCAL_CASE" },
+        { ignoreMiddleExtensions: true },
       ],
     },
   },
