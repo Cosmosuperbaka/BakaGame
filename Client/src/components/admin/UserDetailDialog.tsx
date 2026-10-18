@@ -21,6 +21,28 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** 状态行：封禁中带上原因与解除时间，没有到期时间即永久。 */
+const banStatusText = (user: AdminUserDetail) => {
+  if (!user.banned) return "正常";
+  const until = user.banExpires ? `${formatDateTime(user.banExpires)} 解除` : "永久";
+  return `封禁中（${user.banReason ?? "未写原因"}，${until}）`;
+};
+
+/** 封禁与解封共用一个入口位：自己的账号与管理员都不给，已封禁时反转为解封。 */
+function BanActionButton({ self, role, banned, disabled, unbanLoading, onUnban, onBan }: {
+  self: boolean;
+  role: AdminUserDetail["role"];
+  banned: boolean;
+  disabled: boolean;
+  unbanLoading: boolean;
+  onUnban: () => void;
+  onBan: () => void;
+}) {
+  if (self || role === "admin") return null;
+  if (banned) return <Button type="button" variant="outline" loading={unbanLoading} disabled={disabled} onClick={onUnban}>解封</Button>;
+  return <Button type="button" variant="destructive" disabled={disabled} onClick={onBan}>封禁</Button>;
+}
+
 function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged: () => void }) {
   const selfId = useAccountStore((state) => state.profile?.id);
   const self = selfId === user.id;
@@ -47,9 +69,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         <Field label="账号"><UserCell user={user} /></Field>
         <Field label="QQ 昵称">{user.qqName ?? "未查到"}</Field>
         <Field label="角色">{ROLE_LABELS[user.role]}</Field>
-        <Field label="状态">
-          {user.banned ? `封禁中（${user.banReason ?? "未写原因"}，${user.banExpires ? `${formatDateTime(user.banExpires)} 解除` : "永久"}）` : "正常"}
-        </Field>
+        <Field label="状态">{banStatusText(user)}</Field>
         <Field label="公开 QQ">{user.showQq ? "已公开" : "不公开"}</Field>
         <Field label="注册时间">{formatDateTime(user.createdAt)}</Field>
         <Field label="反馈">{user.feedbackCount} 条</Field>
@@ -100,11 +120,15 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
                 {user.role === "admin" ? "取消管理员" : "设为管理员"}
               </Button>
             )}
-            {self || user.role === "admin" ? null : user.banned ? (
-              <Button type="button" variant="outline" loading={action.busy === "unban"} disabled={action.busy !== null} onClick={() => void action.run("unban", () => api.admin.users.unban({ userId: user.id })).then(after)}>解封</Button>
-            ) : (
-              <Button type="button" variant="destructive" disabled={action.busy !== null} onClick={() => setMode("ban")}>封禁</Button>
-            )}
+            <BanActionButton
+              self={self}
+              role={user.role}
+              banned={user.banned}
+              disabled={action.busy !== null}
+              unbanLoading={action.busy === "unban"}
+              onUnban={() => void action.run("unban", () => api.admin.users.unban({ userId: user.id })).then(after)}
+              onBan={() => setMode("ban")}
+            />
           </DialogFooter>
         </>
       )}
