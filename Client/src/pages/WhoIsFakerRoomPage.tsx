@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useParams } from "react-router-dom";
 import {
   BookOpen,
@@ -32,7 +32,154 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
-import { isValidRoomId, type WhoIsFakerRole, type PublicPlayerView } from "@/types";
+import { isValidRoomId, type WhoIsFakerPrivateState, type WhoIsFakerRole, type PublicPlayerView } from "@/types";
+
+interface RoomHeaderCenterProps {
+  day: number;
+  dayVisible: boolean;
+  isQuestioner: boolean | undefined;
+  isSpectator: boolean;
+  globalWords: WhoIsFakerPrivateState["globalWords"];
+  privateInfoVisible: boolean;
+  assignedWordText: string | undefined;
+  dockSize: { width: number; height: number };
+  wordAnchorRef: RefObject<HTMLSpanElement | null>;
+}
+
+/** 顶栏中栏：天数、身份徽章、全局词语与停靠位占位。 */
+function RoomHeaderCenter({
+  day,
+  dayVisible,
+  isQuestioner,
+  isSpectator,
+  globalWords,
+  privateInfoVisible,
+  assignedWordText,
+  dockSize,
+  wordAnchorRef,
+}: RoomHeaderCenterProps) {
+  return <>
+    {dayVisible && day > 0 ? <HeaderCounter>第 {day} 天</HeaderCounter> : null}
+    {/* 中栏在手机上只有一百六十多像素：主持人徽章在 sm 以下只留图标，身份名交给读屏 */}
+    {isQuestioner ? (
+      <>
+        <HeaderChip icon={ShieldCheck} label="主持人" className="hidden sm:inline-flex" />
+        <HeaderChip icon={ShieldCheck} label="" title="主持人" className="px-1.5 sm:hidden" />
+        <span className="sr-only sm:hidden">主持人</span>
+      </>
+    ) : null}
+    {!isQuestioner && isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
+    {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到。放不下时截断，完整内容在 title 里 */}
+    {globalWords ? (
+      <HeaderChip
+        icon={BookOpen}
+        label={`${globalWords.civilianWord}/${globalWords.undercoverWord}`}
+        title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
+        truncate
+      />
+    ) : null}
+    {globalWords?.blankHint ? (
+      <HeaderChip
+        icon={CircleHelp}
+        label={globalWords.blankHint}
+        title={`白板：${globalWords.blankHint}`}
+        truncate
+        // 白板提示是三枚里最次要的一枚：中栏到 xl 才放得下三枚完整徽章，更窄时只留在平民/卧底词的 title 里
+        className="hidden xl:inline-flex"
+      />
+    ) : null}
+    {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
+        此处只占位撑开顶栏空间，避免停靠时挤动相邻元素；停靠后的词语对读屏隐藏，由这里读出。 */}
+    {privateInfoVisible && assignedWordText ? (
+      <span
+        ref={wordAnchorRef}
+        className="relative shrink-0"
+        style={{ width: dockSize.width, height: dockSize.height }}
+      >
+        <span className="sr-only">你的词语 {assignedWordText}</span>
+      </span>
+    ) : null}
+  </>;
+}
+
+interface RoomPlayerAsideProps {
+  historyAvailable: boolean;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
+  list: ReactNode;
+}
+
+/** 桌面玩家栏：宽度动画与发言历史展开按钮一起构成向右扩张的抽屉。 */
+function RoomPlayerAside({ historyAvailable, historyOpen, onToggleHistory, list }: RoomPlayerAsideProps) {
+  return <>
+    {/* 布局占位：使游戏区不因玩家栏展开而收缩 */}
+    <div className="hidden shrink-0 md:block" style={{ width: PLAYER_COLUMN_WIDTH }} aria-hidden="true" />
+
+    {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
+    <motion.aside
+      data-room-part="player"
+      className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel md:flex"
+      initial={false}
+      animate={{
+        width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
+        boxShadow: historyOpen ? "var(--shadow-lg)" : "var(--shadow-2xs)",
+      }}
+      transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
+    >
+      {/* 展开/收起按钮：仅在游戏开始后显示。
+          收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
+          否则会落到 section 的裁切区外被切掉。 */}
+      {historyAvailable ? (
+        <motion.div
+          className="absolute top-1/2 z-dropdown -translate-y-1/2"
+          initial={false}
+          animate={{ right: historyOpen ? "0.5rem" : "-1rem" }}
+          transition={spring.settle}
+        >
+          <motion.button
+            type="button"
+            aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
+            aria-expanded={historyOpen}
+            onClick={onToggleHistory}
+            {...iconTappable}
+            className="flex h-8 w-8 items-center justify-center floating-surface text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            {/* 箭头指向面板将要移动的方向：收起时向右展开，展开时向左收回 */}
+            {historyOpen ? (
+              <ChevronLeft className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </motion.button>
+        </motion.div>
+      ) : null}
+
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">{list}</div>
+    </motion.aside>
+  </>;
+}
+
+/** 玩家可见的自己那份词：天使拿到两个候选，白板只拿到提示。 */
+const angelOrBlankWordText = (
+  privateState: WhoIsFakerPrivateState | null | undefined,
+): string | undefined => {
+  if (privateState?.angelWordOptions) return `天使：${privateState.angelWordOptions[0]}/${privateState.angelWordOptions[1]}`;
+  return privateState?.blankHint ? `白板提示：${privateState.blankHint}` : undefined;
+};
+
+const resolveAssignedWordText = (
+  privateState: WhoIsFakerPrivateState | null | undefined,
+  isSpectator: boolean,
+): string | undefined => {
+  if (isSpectator || privateState?.isQuestioner) return undefined;
+  return privateState?.word ?? angelOrBlankWordText(privateState);
+};
+
+const pickOpenDrawer = (
+  historyDrawerOpen: boolean,
+  mobilePanel: "none" | "players" | "chat",
+): "history" | "players" | "chat" | null =>
+  historyDrawerOpen ? "history" : mobilePanel === "none" ? null : mobilePanel;
 
 export default function WhoIsFakerRoomPage() {
   const { roomId: routeRoomId } = useParams<{ roomId: string }>();
@@ -266,13 +413,7 @@ export default function WhoIsFakerRoomPage() {
     return roles.size > 0 ? roles : undefined;
   }, [snapshot?.status.phase, snapshot?.summary?.revealedRoles]);
 
-  const assignedWordText =
-    !isSpectator && !privateState?.isQuestioner
-      ? privateState?.word ??
-        (privateState?.angelWordOptions
-          ? `天使：${privateState.angelWordOptions[0]}/${privateState.angelWordOptions[1]}`
-          : privateState?.blankHint ? `白板提示：${privateState.blankHint}` : undefined)
-      : undefined;
+  const assignedWordText = resolveAssignedWordText(privateState, isSpectator);
 
   // 重置揭词标记——新局开始时（phase 回到 waiting）清除
   useEffect(() => {
@@ -334,7 +475,7 @@ export default function WhoIsFakerRoomPage() {
   const roundKey = roundId ?? "";
   const historyOpen = historyAvailable && historyRoundKey === roundKey;
   const historyDrawerOpen = historyAvailable && historyDrawerRoundKey === roundKey;
-  const openDrawer = historyDrawerOpen ? "history" : mobilePanel === "none" ? null : mobilePanel;
+  const openDrawer = pickOpenDrawer(historyDrawerOpen, mobilePanel);
 
   // 展开：立即渲染；收起：等宽度动画（spring.settle）静止后再移除列，避免 PlayerList 瞬间膨胀
   useEffect(() => {
@@ -409,97 +550,24 @@ export default function WhoIsFakerRoomPage() {
         onLeave={handleLeave}
         title={snapshot.name}
         roomId={snapshot.roomId}
-        center={<>
-          {dayVisible && day > 0 ? <HeaderCounter>第 {day} 天</HeaderCounter> : null}
-          {/* 中栏在手机上只有一百六十多像素：主持人徽章在 sm 以下只留图标，身份名交给读屏 */}
-          {privateState?.isQuestioner ? (
-            <>
-              <HeaderChip icon={ShieldCheck} label="主持人" className="hidden sm:inline-flex" />
-              <HeaderChip icon={ShieldCheck} label="" title="主持人" className="px-1.5 sm:hidden" />
-              <span className="sr-only sm:hidden">主持人</span>
-            </>
-          ) : null}
-          {!privateState?.isQuestioner && isSpectator ? <HeaderChip icon={Eye} label="旁观" muted /> : null}
-          {/* 全局词语：只有已能看到全部身份的主持人与旁观者才会收到。放不下时截断，完整内容在 title 里 */}
-          {globalWords ? (
-            <HeaderChip
-              icon={BookOpen}
-              label={`${globalWords.civilianWord}/${globalWords.undercoverWord}`}
-              title={`平民：${globalWords.civilianWord} | 卧底：${globalWords.undercoverWord}${globalWords.blankHint ? ` | 白板：${globalWords.blankHint}` : ""}`}
-              truncate
-            />
-          ) : null}
-          {globalWords?.blankHint ? (
-            <HeaderChip
-              icon={CircleHelp}
-              label={globalWords.blankHint}
-              title={`白板：${globalWords.blankHint}`}
-              truncate
-              // 白板提示是三枚里最次要的一枚：中栏到 xl 才放得下三枚完整徽章，更窄时只留在平民/卧底词的 title 里
-              className="hidden xl:inline-flex"
-            />
-          ) : null}
-          {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
-              此处只占位撑开顶栏空间，避免停靠时挤动相邻元素；停靠后的词语对读屏隐藏，由这里读出。 */}
-          {privateInfoVisible && assignedWordText ? (
-            <span
-              ref={wordAnchorRef}
-              className="relative shrink-0"
-              style={{ width: dockSize.width, height: dockSize.height }}
-            >
-              <span className="sr-only">你的词语 {assignedWordText}</span>
-            </span>
-          ) : null}
-        </>}
+        center={<RoomHeaderCenter
+          day={day}
+          dayVisible={dayVisible}
+          isQuestioner={privateState?.isQuestioner}
+          isSpectator={isSpectator}
+          globalWords={globalWords}
+          privateInfoVisible={privateInfoVisible}
+          assignedWordText={assignedWordText}
+          dockSize={dockSize}
+          wordAnchorRef={wordAnchorRef}
+        />}
         connectionIssue={connected ? null : "断线中..."}
-        player={<>
-          {/* 布局占位：使游戏区不因玩家栏展开而收缩 */}
-          <div className="hidden shrink-0 md:block" style={{ width: PLAYER_COLUMN_WIDTH }} aria-hidden="true" />
-
-          {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
-          <motion.aside
-            data-room-part="player"
-            className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel md:flex"
-            initial={false}
-            animate={{
-              width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
-              boxShadow: historyOpen ? "var(--shadow-lg)" : "var(--shadow-2xs)",
-            }}
-            transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
-          >
-            {/* 展开/收起按钮：仅在游戏开始后显示。
-                收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
-                否则会落到 section 的裁切区外被切掉。 */}
-            {historyAvailable ? (
-              <motion.div
-                className="absolute top-1/2 z-dropdown -translate-y-1/2"
-                initial={false}
-                animate={{ right: historyOpen ? "0.5rem" : "-1rem" }}
-                transition={spring.settle}
-              >
-                <motion.button
-                  type="button"
-                  aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
-                  aria-expanded={historyOpen}
-                  onClick={() => setHistoryRoundKey(historyOpen ? null : roundKey)}
-                  {...iconTappable}
-                  className="flex h-8 w-8 items-center justify-center floating-surface text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  {/* 箭头指向面板将要移动的方向：收起时向右展开，展开时向左收回 */}
-                  {historyOpen ? (
-                    <ChevronLeft className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </motion.button>
-              </motion.div>
-            ) : null}
-
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-              {playerList(historyRendered)}
-            </div>
-          </motion.aside>
-        </>}
+        player={<RoomPlayerAside
+          historyAvailable={historyAvailable}
+          historyOpen={historyOpen}
+          onToggleHistory={() => setHistoryRoundKey(historyOpen ? null : roundKey)}
+          list={playerList(historyRendered)}
+        />}
         gameRef={stageRef}
         game={<GameArea wordRevealed={wordRevealed} />}
         chat={<ChatColumn>
