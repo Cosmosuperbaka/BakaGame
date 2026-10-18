@@ -69,6 +69,70 @@ const MODE_TEXT: Record<CEESearchMode, { button: string; busy: string }> = {
   subject: { button: "搜作品", busy: "正在搜索作品" },
 };
 
+/** 面板当前的行：进作品后只列这部作品的角色，否则按当前范围列搜索结果。 */
+function buildOptions(view: {
+  cast: Cast | null;
+  mode: CEESearchMode;
+  characters: CEECharacterSummary[];
+  subjects: CEESubjectSummary[];
+}): Option[] {
+  const { cast, mode, characters, subjects } = view;
+  if (cast) return cast.characters.map((character): Option => ({ kind: "character", character }));
+  if (mode === "subject") return subjects.map((subject): Option => ({ kind: "subject", subject }));
+  return characters.map((character): Option => ({ kind: "character", character }));
+}
+
+/**
+ * 输入框下方的状态行：选角/进作品的动作失败优先，其次作品下没有角色，
+ * 再往下是整批结果为空的忙态与空结果。
+ */
+function buildStatus(view: {
+  actionError: string;
+  cast: Cast | null;
+  mode: CEESearchMode;
+  search: { error: string; loading: boolean; empty: boolean };
+  optionCount: number;
+}): SearchStatus | null {
+  const { actionError, cast, mode, search, optionCount } = view;
+  if (actionError) return { tone: "error", text: actionError };
+  if (cast) return cast.characters.length ? null : { tone: "info", text: "这部作品下没有可选的角色" };
+  if (search.error) return { tone: "error", text: search.error };
+  if (search.loading && optionCount === 0) return { tone: "busy", text: MODE_TEXT[mode].busy };
+  if (search.empty) return { tone: "info", text: EMPTY_TEXT };
+  return null;
+}
+
+/** 角色行整行置灰的条件：作品行不受 `bannedIds` 影响。 */
+const isBannedOption = (option: Option, bannedIds: number[]) => option.kind === "character" && bannedIds.includes(option.character.id);
+
+/** 一行结果：角色带「已被选择」，作品带封面与年份。 */
+function ResultRow({ option, banned }: { option: Option; banned: boolean }) {
+  if (option.kind === "subject") return <SubjectOption subject={option.subject} />;
+  return <CharacterOption character={option.character} banned={banned} />;
+}
+
+/** 查询范围切换钮：当前范围实心并带 `aria-pressed`。 */
+function ModeButton({ active, target, disabled, onSwitch }: {
+  active: boolean;
+  target: CEESearchMode;
+  disabled: boolean;
+  onSwitch: (target: CEESearchMode) => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={active ? "default" : "outline"}
+      aria-pressed={active}
+      // 收窄左右留白：猜测时后面还跟着「放弃本局」，1440 宽房间页的游戏区要能把三个按钮与输入框排在一行
+      className="h-10 px-3"
+      disabled={disabled}
+      onClick={() => onSwitch(target)}
+    >
+      {MODE_TEXT[target].button}
+    </Button>
+  );
+}
+
 /**
  * 角色搜索：停止输入后自动查询，结果浮在游戏区之上。输入框右侧「搜角色」「搜作品」切换查询范围，
  * 当前范围的按钮是实心的；切换后用同一串关键词立即重查，回车也立即查当前范围。
@@ -148,62 +212,45 @@ export function CEESearch({ allowSubjects, defaultMode = "character", disabled =
     setKeyword("");
   };
 
-  const options: Option[] = cast
-    ? cast.characters.map((character) => ({ kind: "character", character }))
-    : mode === "subject"
-      ? subjectSearch.items.map((subject) => ({ kind: "subject", subject }))
-      : characterSearch.items.map((character) => ({ kind: "character", character }));
+  const options = buildOptions({ cast, mode, characters: characterSearch.items, subjects: subjectSearch.items });
+  const status = buildStatus({ actionError, cast, mode, search, optionCount: options.length });
 
-  const error = actionError || (cast ? "" : search.error);
-  const status: SearchStatus | null = error ? { tone: "error", text: error }
-    : cast ? (cast.characters.length === 0 ? { tone: "info", text: "这部作品下没有可选的角色" } : null)
-      : search.loading && options.length === 0 ? { tone: "busy", text: MODE_TEXT[mode].busy }
-        : search.empty ? { tone: "info", text: EMPTY_TEXT }
-          : null;
-
-  const modeButton = (target: CEESearchMode) => (
-    <Button
-      type="button"
-      variant={mode === target ? "default" : "outline"}
-      aria-pressed={mode === target}
-      // 收窄左右留白：猜测时后面还跟着「放弃本局」，1440 宽房间页的游戏区要能把三个按钮与输入框排在一行
-      className="h-10 px-3"
-      disabled={disabled}
-      onClick={() => switchMode(target)}
-    >
-      {MODE_TEXT[target].button}
-    </Button>
-  );
+  /** 改关键词即离开作品角色列表与动作报错；只在真的挂着它们时清理。 */
+  const changeKeyword = (value: string) => {
+    setKeyword(value);
+    if (cast || actionError) leaveCast();
+  };
+  /** 回车与「搜角色/搜作品」都是立即查当前范围。 */
+  const submit = cast ? undefined : search.flush;
+  const pickOption = (option: Option) => {
+    if (option.kind === "character") { void choose(option.character); return; }
+    void openSubject(option.subject);
+  };
 
   return (
     <section aria-label="角色搜索">
       <SearchCombobox
         value={keyword}
-        onValueChange={(value) => { setKeyword(value); if (cast || actionError) leaveCast(); }}
+        onValueChange={changeKeyword}
         label="搜索角色"
         placeholder={mode === "subject" ? "作品名或编号，再从作品里选角色" : "角色名、别名或编号"}
         maxLength={KEYWORD_MAX}
         disabled={disabled}
-        onSubmit={cast ? undefined : search.flush}
+        onSubmit={submit}
         busy={!cast && search.loading && options.length > 0}
         options={options}
         getKey={optionKey}
-        isOptionDisabled={(option) => option.kind === "character" && bannedIds.includes(option.character.id)}
-        renderOption={(option) => option.kind === "character"
-          ? <CharacterOption character={option.character} banned={bannedIds.includes(option.character.id)} />
-          : <SubjectOption subject={option.subject} />}
-        onSelect={(option) => {
-          if (option.kind === "character") void choose(option.character);
-          else void openSubject(option.subject);
-        }}
+        isOptionDisabled={(option) => isBannedOption(option, bannedIds)}
+        renderOption={(option) => <ResultRow option={option} banned={isBannedOption(option, bannedIds)} />}
+        onSelect={pickOption}
         pendingKey={pendingKey}
         listKey={cast ? cast.key : `${mode}:${search.listKey}`}
         status={status}
         back={cast ? { label: "返回作品", detail: cast.subject.nameCn || cast.subject.name, onBack: leaveCast } : null}
         actions={(
           <>
-            {modeButton("character")}
-            {allowSubjects ? modeButton("subject") : null}
+            <ModeButton active={mode === "character"} target="character" disabled={disabled} onSwitch={switchMode} />
+            {allowSubjects ? <ModeButton active={mode === "subject"} target="subject" disabled={disabled} onSwitch={switchMode} /> : null}
             {trailing}
           </>
         )}

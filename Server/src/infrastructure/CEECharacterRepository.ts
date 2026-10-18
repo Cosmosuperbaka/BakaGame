@@ -15,6 +15,33 @@ const like = (keyword: string) => `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
 const validTypes = (types: number[]) => [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
 
+/** 搜索候选：本地行连同其补充资料后的摘要，排序阶段只读内存、不再触库。 */
+interface CharacterCandidate { row: CharacterRow; summary: CEECharacterSummary }
+
+/** 原文名或中文名完全命中的排在最前，其次按收藏数、最后按编号稳定决胜。 */
+const compareCharacterMatchRank = (a: CharacterCandidate, b: CharacterCandidate, query: string): number => {
+  const aExact = Number(a.summary.name !== query && a.summary.nameCn !== query);
+  const bExact = Number(b.summary.name !== query && b.summary.nameCn !== query);
+  return aExact - bExact || b.row.collects - a.row.collects || a.row.id - b.row.id;
+};
+
+/** 出题随机落点：把 `[0,1)` 的随机数折算成某个集合的下标（越界夹到端点）。 */
+type SubjectRoll = (size: number) => number;
+
+/** 年份模式里已经抽到的落点：年份、年份上界与热度榜下标。 */
+interface YearSubjectDraw {
+  settings: CEESettings;
+  year: number;
+  endYear: number;
+  index: number;
+}
+
+/** Galgame 条目名本身就是标签，直接锁定这一档；其余只剔除平台类目噪音标签。 */
+const subjectMetaTags = (metaTags: string[]): string[] =>
+  metaTags[0] === "Galgame"
+    ? ["Galgame"]
+    : metaTags.filter((tag) => tag && !["游戏", "书籍", "三次元", "全部"].includes(tag));
+
 /** 已同步过索引的角色编号上限：超出后按插入顺序淘汰最旧的，避免长期运行后无限增长。 */
 const SYNCED_CHARACTER_CAP = 8192;
 
@@ -51,50 +78,64 @@ export class CEECharacterRepository implements CEEDataProvider {
     await this.ready;
     const query = keyword.trim().slice(0, 80);
     const count = boundedLimit(limit);
-    if (this.search) {
-      const result = await this.search.searchCharacters(query, count);
-      if (!result.ids.length) return [];
-      const placeholders = result.ids.map(() => "?").join(",");
-      const rows = this.db.query(`SELECT * FROM characters WHERE id IN (${placeholders})`).all(...result.ids) as CharacterRow[];
-      const byId = new Map(rows.map((row) => [row.id, row]));
-      return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSummary(row)] : []; });
+    if (this.search) return this.searchCharactersViaIndex(this.search, query, count);
+
+    const rows = this.queryLocalCharacterRows(query, count);
+    this.appendEnrichedCharacterRows(rows, query, count);
+    // 每个候选只读一次补充资料；比较器不执行 SQLite I/O。
+    return this.rankCharacterRows(rows, query, count);
+  }
+
+  private async searchCharactersViaIndex(search: BangumiSearchIndex, query: string, count: number): Promise<CEECharacterSummary[]> {
+    const result = await search.searchCharacters(query, count);
+    if (!result.ids.length) return [];
+    const placeholders = result.ids.map(() => "?").join(",");
+    const rows = this.db.query(`SELECT * FROM characters WHERE id IN (${placeholders})`).all(...result.ids) as CharacterRow[];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return result.ids.flatMap((id) => { const row = byId.get(id); return row ? [this.toSummary(row)] : []; });
+  }
+
+  /** 未启用检索索引时的本地查询：空词取热门、短词走 LIKE、长词走 FTS5。 */
+  private queryLocalCharacterRows(query: string, count: number): CharacterRow[] {
+    if (!query) {
+      return this.db.query("SELECT * FROM characters ORDER BY collects DESC,id LIMIT ?").all(count) as CharacterRow[];
     }
     const pattern = like(query);
-    let rows: CharacterRow[];
-    if (!query) {
-      rows = this.db.query("SELECT * FROM characters ORDER BY collects DESC,id LIMIT ?").all(count) as CharacterRow[];
-    } else if ([...query].length < 3) {
-      rows = this.db.query(`SELECT * FROM characters WHERE name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR aliases LIKE ? ESCAPE '\\' OR id=?
+    if ([...query].length < 3) {
+      return this.db.query(`SELECT * FROM characters WHERE name LIKE ? ESCAPE '\\' OR name_cn LIKE ? ESCAPE '\\' OR aliases LIKE ? ESCAPE '\\' OR id=?
         ORDER BY CASE WHEN name=? OR name_cn=? THEN 0 ELSE 1 END,collects DESC,id LIMIT ?`).all(pattern, pattern, pattern, Number(query) || -1, query, query, count) as CharacterRow[];
-    } else {
-      const phrase = `"${query.replace(/"/g, '""')}"`;
-      rows = this.db.query(`SELECT c.* FROM character_search f JOIN characters c ON c.id=f.rowid WHERE character_search MATCH ?
-        ORDER BY CASE WHEN c.name=? OR c.name_cn=? THEN 0 ELSE 1 END,c.collects DESC,c.id LIMIT ?`).all(phrase, query, query, count) as CharacterRow[];
-      if (/^\d+$/.test(query)) {
-        const exact = this.db.query("SELECT * FROM characters WHERE id=?").get(Number(query)) as CharacterRow | null;
-        if (exact && !rows.some((row) => row.id === exact.id)) rows.unshift(exact);
-      }
     }
-    if (query) {
-      const updated = this.enrichment.db.query<{ id: number }, [string, string, string, number]>(`SELECT id FROM cee_character_enrichment WHERE schema_version=1 AND
-        (json_extract(payload,'$.name') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.nameCn') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.aliases') LIKE ? ESCAPE '\\')
-        ORDER BY id LIMIT ?`).all(pattern, pattern, pattern, count);
-      for (const { id } of updated) {
-        if (rows.some((row) => row.id === id)) continue;
-        const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
-        if (row) rows.push(row);
-      }
+    return this.queryCharacterPhraseRows(query, count);
+  }
+
+  /** FTS5 短语检索；纯数字关键词还要把精确 ID 命中的角色补到最前。 */
+  private queryCharacterPhraseRows(query: string, count: number): CharacterRow[] {
+    const phrase = `"${query.replace(/"/g, '""')}"`;
+    const rows = this.db.query(`SELECT c.* FROM character_search f JOIN characters c ON c.id=f.rowid WHERE character_search MATCH ?
+      ORDER BY CASE WHEN c.name=? OR c.name_cn=? THEN 0 ELSE 1 END,c.collects DESC,c.id LIMIT ?`).all(phrase, query, query, count) as CharacterRow[];
+    if (!/^\d+$/.test(query)) return rows;
+    const exact = this.db.query("SELECT * FROM characters WHERE id=?").get(Number(query)) as CharacterRow | null;
+    if (exact && !rows.some((row) => row.id === exact.id)) rows.unshift(exact);
+    return rows;
+  }
+
+  /** 补充资料（同步回来的中文名/别名）命中的角色并入候选，不覆盖本地查询顺序。 */
+  private appendEnrichedCharacterRows(rows: CharacterRow[], query: string, count: number): void {
+    if (!query) return;
+    const pattern = like(query);
+    const updated = this.enrichment.db.query<{ id: number }, [string, string, string, number]>(`SELECT id FROM cee_character_enrichment WHERE schema_version=1 AND
+      (json_extract(payload,'$.name') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.nameCn') LIKE ? ESCAPE '\\' OR json_extract(payload,'$.aliases') LIKE ? ESCAPE '\\')
+      ORDER BY id LIMIT ?`).all(pattern, pattern, pattern, count);
+    for (const { id } of updated) {
+      if (rows.some((row) => row.id === id)) continue;
+      const row = this.db.query("SELECT * FROM characters WHERE id=?").get(id) as CharacterRow | null;
+      if (row) rows.push(row);
     }
-    // 每个候选只读一次补充资料；比较器不执行 SQLite I/O。
+  }
+
+  private rankCharacterRows(rows: CharacterRow[], query: string, count: number): CEECharacterSummary[] {
     const candidates = rows.map(row => ({ row, summary: this.toSummary(row) }));
-    if (query) {
-      candidates.sort((a, b) => {
-        const aSummary = a.summary, bSummary = b.summary;
-        const aExact = Number(aSummary.name !== query && aSummary.nameCn !== query);
-        const bExact = Number(bSummary.name !== query && bSummary.nameCn !== query);
-        return aExact - bExact || b.row.collects - a.row.collects || a.row.id - b.row.id;
-      });
-    }
+    if (query) candidates.sort((a, b) => compareCharacterMatchRank(a, b, query));
     return candidates.slice(0, count).map(({ summary }) => summary);
   }
 
@@ -216,34 +257,53 @@ export class CEECharacterRepository implements CEEDataProvider {
     this.assertOpen();
     await this.ready;
     const roll = (size: number) => Math.min(size - 1, Math.max(0, Math.floor(random() * size)));
-    let subjectId: number;
-    if (settings.useIndex) {
-      const directory = settings.indexId ? this.enrichment.getDirectory(settings.indexId) : undefined;
-      if (!directory) throw new AppError("CEE_DIRECTORY_NOT_IMPORTED", "请先导入目录再开始游戏");
-      const ids = [...directory.subjectIds, ...settings.addedSubjects];
-      if (!ids.length) throw new AppError("CEE_NO_SUBJECT", "目录中没有本地可用作品");
-      subjectId = ids[roll(ids.length)];
-    } else {
-      const currentYear = new Date(this.now()).getUTCFullYear();
-      const endYear = Math.min(currentYear, settings.endYear);
-      if (endYear < settings.startYear) throw new AppError("CEE_NO_SUBJECT", "年份范围内没有已上映作品");
-      const yearCount = endYear - settings.startYear + 1;
-      const year = settings.useSubjectPerYear ? settings.startYear + roll(yearCount) : settings.startYear;
-      const baseCount = settings.topNSubjects * (settings.useSubjectPerYear ? yearCount : 1);
-      const index = roll(baseCount + settings.addedSubjects.length);
-      if (index >= baseCount) subjectId = settings.addedSubjects[index - baseCount];
-      else {
-        const types = resolveCEESubjectTypes(settings.metaTags, true);
-        const tags = settings.metaTags[0] === "Galgame" ? ["Galgame"] : settings.metaTags.filter((tag) => tag && !["游戏", "书籍", "三次元", "全部"].includes(tag));
-        const endDate = `${settings.useSubjectPerYear ? year + 1 : endYear + 1}-01-01`;
-        const rows = this.db.query(`SELECT s.id FROM subjects s WHERE s.nsfw=0 AND s.type IN (${types.map(() => "?").join(",")})
-          AND s.date>=? AND s.date<? AND s.date<=?
-          ${tags.map(() => "AND EXISTS(SELECT 1 FROM json_each(s.meta_tags) WHERE value=?)").join(" ")}
-          ORDER BY s.heat DESC,s.id LIMIT ?`).all(...types, `${year}-01-01`, endDate, new Date(this.now()).toISOString().slice(0, 10), ...tags, settings.topNSubjects) as { id: number }[];
-        if (!rows.length) throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
-        subjectId = rows[settings.useSubjectPerYear || index >= rows.length ? roll(rows.length) : index].id;
-      }
-    }
+    const subjectId = settings.useIndex
+      ? this.pickSubjectFromDirectory(settings, roll)
+      : this.pickSubjectByYearRange(settings, roll);
+    return this.pickCharacterOfSubject(subjectId, settings, roll);
+  }
+
+  /** 目录模式：从「目录内本地可用作品 + 手动追加作品」里抽一部。 */
+  private pickSubjectFromDirectory(settings: CEESettings, roll: SubjectRoll): number {
+    const directory = settings.indexId ? this.enrichment.getDirectory(settings.indexId) : undefined;
+    if (!directory) throw new AppError("CEE_DIRECTORY_NOT_IMPORTED", "请先导入目录再开始游戏");
+    const ids = [...directory.subjectIds, ...settings.addedSubjects];
+    if (!ids.length) throw new AppError("CEE_NO_SUBJECT", "目录中没有本地可用作品");
+    return ids[roll(ids.length)];
+  }
+
+  /**
+   * 年份模式：`roll` 的调用顺序与抽取路径一一对应 ——
+   * 按年抽时先定年份，再定「热度榜下标还是追加作品」，最后才落到作品本身。
+   */
+  private pickSubjectByYearRange(settings: CEESettings, roll: SubjectRoll): number {
+    const currentYear = new Date(this.now()).getUTCFullYear();
+    const endYear = Math.min(currentYear, settings.endYear);
+    if (endYear < settings.startYear) throw new AppError("CEE_NO_SUBJECT", "年份范围内没有已上映作品");
+    const yearCount = endYear - settings.startYear + 1;
+    const year = settings.useSubjectPerYear ? settings.startYear + roll(yearCount) : settings.startYear;
+    const baseCount = settings.topNSubjects * (settings.useSubjectPerYear ? yearCount : 1);
+    const index = roll(baseCount + settings.addedSubjects.length);
+    if (index >= baseCount) return settings.addedSubjects[index - baseCount];
+    return this.pickSubjectFromHeatPool({ settings, year, endYear, index }, roll);
+  }
+
+  /** 按标签与年份窗口取热度榜候选作品；下标越界或按年抽时改在候选内随机。 */
+  private pickSubjectFromHeatPool(draw: YearSubjectDraw, roll: SubjectRoll): number {
+    const { settings, year, endYear, index } = draw;
+    const types = resolveCEESubjectTypes(settings.metaTags, true);
+    const tags = subjectMetaTags(settings.metaTags);
+    const endDate = `${settings.useSubjectPerYear ? year + 1 : endYear + 1}-01-01`;
+    const rows = this.db.query(`SELECT s.id FROM subjects s WHERE s.nsfw=0 AND s.type IN (${types.map(() => "?").join(",")})
+      AND s.date>=? AND s.date<? AND s.date<=?
+      ${tags.map(() => "AND EXISTS(SELECT 1 FROM json_each(s.meta_tags) WHERE value=?)").join(" ")}
+      ORDER BY s.heat DESC,s.id LIMIT ?`).all(...types, `${year}-01-01`, endDate, new Date(this.now()).toISOString().slice(0, 10), ...tags, settings.topNSubjects) as { id: number }[];
+    if (!rows.length) throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
+    return rows[settings.useSubjectPerYear || index >= rows.length ? roll(rows.length) : index].id;
+  }
+
+  /** 从选定作品的登场角色里抽一个；主角模式只取 `relation_type=1`。 */
+  private async pickCharacterOfSubject(subjectId: number, settings: CEESettings, roll: SubjectRoll): Promise<CEECharacterView> {
     const subject = this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(subjectId);
     if (!subject) throw new AppError("CEE_SUBJECT_NOT_FOUND", "指定作品不在本地可用数据集中");
     const relation = settings.mainCharacterOnly ? "r.relation_type=1" : "r.relation_type IN (1,2)";

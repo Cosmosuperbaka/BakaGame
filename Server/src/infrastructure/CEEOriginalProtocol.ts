@@ -1,6 +1,6 @@
 import CryptoJS from 'crypto-js';
 import { AppError } from '../domain/Errors';
-import { createDefaultCEESettings, type CEECharacterView, type CEEPlayer, type CEEScoreDetail, type CEESettings } from '../shared/CEE';
+import { createDefaultCEESettings, type CEECharacterView, type CEEPlayer, type CEEPlayerStatus, type CEEScoreDetail, type CEESettings } from '../shared/CEE';
 
 export const originalObject = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -126,24 +126,37 @@ export interface CEEOriginalPlayer extends CEEPlayer {
   temporaryObserver: boolean;
 }
 
+/** 上游标记串与旁观身份推出的本局状态；判定顺序即上游口径：结果标记优先，其次身份，最后按阶段。 */
+function originalPlayerStatus(marks: string, role: {
+  team: number | null; temporaryObserver: boolean; isSetter: boolean; phase: string;
+}): CEEPlayerStatus {
+  if (marks.includes('🏆')) return 'teamWon';
+  if (/[✌👑]/u.test(marks)) return 'solved';
+  if (marks.includes('💀')) return 'exhausted';
+  if (marks.includes('🏳')) return 'surrendered';
+  if (role.team === 0 || role.temporaryObserver || role.isSetter) return 'observing';
+  return role.phase === 'guessing' ? 'playing' : 'waiting';
+}
+/** 单个上游玩家记录转为增强版玩家视图；队伍 0 在上游是「旁观」哨兵，落到本地为无队伍 spectator。 */
+function toCEEOriginalPlayer(value: unknown, phase: string, syncRound: number): CEEOriginalPlayer {
+  const raw = originalObject(value);
+  const marks = originalString(raw.guesses);
+  const temporaryObserver = raw._tempObserver === true;
+  const team = raw.team === null || raw.team === undefined || raw.team === '' ? null : originalNumber(raw.team);
+  const isSetter = raw.isAnswerSetter === true;
+  const isSpectatorTeam = team === 0;
+  return {
+    id: originalId(raw.id), name: originalString(raw.username), online: raw.disconnected !== true,
+    ready: raw.ready === true, team: isSpectatorTeam ? null : team, membership: isSpectatorTeam ? 'spectator' : 'active',
+    score: originalNumber(raw.score), status: originalPlayerStatus(marks, { team, temporaryObserver, isSetter, phase }),
+    attempts: (marks.match(/(?:⏱️?|💡|✔|❌)/gu) || []).length,
+    marks, syncCompleted: originalNumber(raw.syncCompletedRound) === syncRound,
+    isHost: raw.isHost === true, isSetter, temporaryObserver,
+  };
+}
+
 export function originalPlayers(value: unknown, phase: string, syncRound: number): CEEOriginalPlayer[] {
-  return originalArray(value).map(value => {
-    const raw = originalObject(value);
-    const marks = originalString(raw.guesses);
-    const temporaryObserver = raw._tempObserver === true;
-    const team = raw.team === null || raw.team === undefined || raw.team === '' ? null : originalNumber(raw.team);
-    const isSetter = raw.isAnswerSetter === true;
-    const status = marks.includes('🏆') ? 'teamWon' : /[✌👑]/u.test(marks) ? 'solved'
-      : marks.includes('💀') ? 'exhausted' : marks.includes('🏳') ? 'surrendered'
-        : team === 0 || temporaryObserver || isSetter ? 'observing' : phase === 'guessing' ? 'playing' : 'waiting';
-    return {
-      id: originalId(raw.id), name: originalString(raw.username), online: raw.disconnected !== true,
-      ready: raw.ready === true, team: team === 0 ? null : team, membership: team === 0 ? 'spectator' : 'active',
-      score: originalNumber(raw.score), status, attempts: (marks.match(/(?:⏱️?|💡|✔|❌)/gu) || []).length,
-      marks, syncCompleted: originalNumber(raw.syncCompletedRound) === syncRound,
-      isHost: raw.isHost === true, isSetter, temporaryObserver,
-    };
-  });
+  return originalArray(value).map(value => toCEEOriginalPlayer(value, phase, syncRound));
 }
 
 export function originalScores(value: unknown, players: CEEOriginalPlayer[]): CEEScoreDetail[] {

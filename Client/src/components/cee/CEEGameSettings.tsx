@@ -54,6 +54,14 @@ function summaries(settings: CEESettings) {
     ],
   };
 }
+/** 草稿能否保存：年份倒挂、目录未填或目录还没同步入库时，自动保存先停住并给出原因。 */
+function settingsValidationMessage(draft: CEESettings, syncedIndexId: number | null): string {
+  if (draft.startYear > draft.endYear) return "起始年份不能晚于结束年份";
+  if (draft.useIndex && !draft.indexId) return "请填写 Bangumi 目录编号";
+  if (draft.useIndex && draft.indexId !== syncedIndexId) return "目录需要先同步，同步后自动保存";
+  return "";
+}
+
 /**
  * 追加作品的名称：设置里只存编号，搜索添加时顺手记下名字；导入、预设或非房主看到的编号经 `cee.subject.lookup` 补齐。
  * 每个编号只查一次，查不到的保持「作品 #编号」。
@@ -99,11 +107,7 @@ export function CEEGameSettings({ settings, waiting, readOnly = false }: { setti
   const subjects = useSubjectNames(values.addedSubjects);
   const change = <K extends keyof CEESettings>(key: K, value: CEESettings[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
-  const validation = readOnly ? ""
-    : draft.startYear > draft.endYear ? "起始年份不能晚于结束年份"
-      : draft.useIndex && !draft.indexId ? "请填写 Bangumi 目录编号"
-        : draft.useIndex && draft.indexId !== syncedIndexId ? "目录需要先同步，同步后自动保存"
-          : "";
+  const validation = readOnly ? "" : settingsValidationMessage(draft, syncedIndexId);
 
   useAutoSave(draft, (value) => {
     // 记住整份玩法设置，下次创建的房间由等待页重放。

@@ -7,6 +7,8 @@ type CoverageTotals = {
   linesHit: number;
 };
 
+type CoverageMetric = keyof typeof thresholds;
+
 // 覆盖率棘轮阈值。**与 bun 的插桩口径强绑定，换 bun 版本必须同步重校**。
 //
 // 实测对照（同一份代码、同一批 501 条测试，仅换 bun 可执行文件）：
@@ -27,6 +29,28 @@ const thresholds = {
   lines: 94.2,
 };
 
+// LCIF 单值总计记录（FNF / FNH / LF / LH）到累加字段的映射。
+// 其余 `KEY:count` 形式的逐行记录（如 DA）不在此表内，因此不会被误当成总数累加。
+const TOTAL_KEYS: Record<string, keyof CoverageTotals> = {
+  FNF: "functionsFound",
+  FNH: "functionsHit",
+  LF: "linesFound",
+  LH: "linesHit",
+};
+
+const accumulateTotalRecord = (totals: CoverageTotals, line: string): void => {
+  const separator = line.indexOf(":");
+  if (separator < 0) return;
+
+  const field = TOTAL_KEYS[line.slice(0, separator)];
+  if (!field) return;
+
+  const found = Number(line.slice(separator + 1));
+  if (!Number.isFinite(found)) return;
+
+  totals[field] += found;
+};
+
 export const parseLcov = (text: string): CoverageTotals => {
   const totals: CoverageTotals = {
     functionsFound: 0,
@@ -37,17 +61,7 @@ export const parseLcov = (text: string): CoverageTotals => {
 
   for (const record of text.split("end_of_record")) {
     for (const line of record.split(/\r?\n/)) {
-      const separator = line.indexOf(":");
-      if (separator < 0) continue;
-
-      const key = line.slice(0, separator);
-      const found = Number(line.slice(separator + 1));
-      if (!Number.isFinite(found)) continue;
-
-      if (key === "FNF") totals.functionsFound += found;
-      if (key === "FNH") totals.functionsHit += found;
-      if (key === "LF") totals.linesFound += found;
-      if (key === "LH") totals.linesHit += found;
+      accumulateTotalRecord(totals, line);
     }
   }
 
@@ -56,6 +70,19 @@ export const parseLcov = (text: string): CoverageTotals => {
 
 const percentage = (hit: number, found: number): number =>
   found === 0 ? 100 : (hit / found) * 100;
+
+const toActualCoverage = (totals: CoverageTotals): Record<CoverageMetric, number> => ({
+  functions: percentage(totals.functionsHit, totals.functionsFound),
+  lines: percentage(totals.linesHit, totals.linesFound),
+});
+
+const describeGateFailure = (
+  actual: Record<CoverageMetric, number>,
+  failures: CoverageMetric[],
+): string =>
+  `覆盖率低于门槛: ${failures
+    .map((metric) => `${metric}=${actual[metric].toFixed(2)}% < ${thresholds[metric].toFixed(2)}%`)
+    .join(", ")}`;
 
 if (import.meta.main) {
 const coveragePath = resolve(import.meta.dir, "../coverage/lcov.info");
@@ -66,17 +93,14 @@ if (!(await lcov.exists())) {
 
 const totals = parseLcov(await lcov.text());
 if (!totals.functionsFound || !totals.linesFound) throw new Error('覆盖率报告缺少有效的函数或行计数');
-const actual = {
-  functions: percentage(totals.functionsHit, totals.functionsFound),
-  lines: percentage(totals.linesHit, totals.linesFound),
-};
+const actual = toActualCoverage(totals);
 
 console.log(
   `服务端覆盖率: 函数 ${actual.functions.toFixed(2)}% (门槛 ${thresholds.functions.toFixed(2)}%), 行 ${actual.lines.toFixed(2)}% (门槛 ${thresholds.lines.toFixed(2)}%)`,
 );
 
-const failures = Object.entries(thresholds).filter(([metric, threshold]) => actual[metric as keyof typeof actual] < threshold);
+const failures = (Object.keys(thresholds) as CoverageMetric[]).filter((metric) => actual[metric] < thresholds[metric]);
 if (failures.length > 0) {
-  throw new Error(`覆盖率低于门槛: ${failures.map(([metric, threshold]) => `${metric}=${actual[metric as keyof typeof actual].toFixed(2)}% < ${threshold.toFixed(2)}%`).join(", ")}`);
+  throw new Error(describeGateFailure(actual, failures));
 }
 }

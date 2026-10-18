@@ -1,9 +1,4 @@
 {
-  "scripts/CheckCoverage.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "scripts/SongRandomnessProbe.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 1
@@ -19,11 +14,6 @@
       "count": 1
     }
   },
-  "src/application/CEEViews.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/application/SonGuessrService.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 9
@@ -34,54 +24,9 @@
       "count": 11
     }
   },
-  "src/domain/CEERound.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/domain/Rules.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/AggregatedMusicProvider.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/BangumiDataWorker.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/BangumiProvider.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
-  "src/infrastructure/CEECharacterRepository.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 2
-    }
-  },
-  "src/infrastructure/CEEOriginalProtocol.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/infrastructure/MusicDeduplicator.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/infrastructure/NeteaseMusicProvider.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 6
-    }
-  },
-  "src/infrastructure/QQMusicProvider.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
     }
   },
   "src/infrastructure/Sentry.ts": {
@@ -90,16 +35,6 @@
     }
   },
   "src/scripts/VerifyDualSearch.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/transport/routes/SentryTunnel.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/transport/routes/System.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 1
     }

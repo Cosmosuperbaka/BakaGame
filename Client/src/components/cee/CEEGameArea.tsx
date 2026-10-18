@@ -1,7 +1,7 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Dices, Flag, Image, PenLine, Search, Trophy } from "lucide-react";
-import type { CEECharacterSummary, CEEGuess, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
+import type { CEECharacterSummary, CEEGuess, CEEPlayer, CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
@@ -170,6 +170,105 @@ function CEESetter({ snapshot, privateState }: { snapshot: CEERoomSnapshot; priv
   );
 }
 
+/** 猜测阶段的行动状态：搜索栏、同步回执、已结束等待结算，或不给可行动者入口。 */
+type GuessSlotKind = "search" | "done" | "ended";
+
+/** 次数行的身份说明：出题人、其观战队友与中途加入者在服务端都记为观战，次数对他们没有意义。 */
+function standingNote(player: CEEPlayer | undefined, setterPlayerId: string | null, maxAttempts: number): string {
+  if (!player || player.membership === "spectator") return "旁观中";
+  if (setterPlayerId === player.id) return "你是本局出题人";
+  if (player.status === "observing") return "本局观战";
+  return `已用 ${player.attempts} / ${maxAttempts} 次${player.team !== null ? ` · 第 ${player.team} 队共享` : ""}`;
+}
+
+/** 标题随本轮是否已提交换字：能猜 → 本轮已交 → 本局仍在跑（自己不能再行动）。 */
+function guessingTitle(canGuess: boolean, waitingSync: boolean): string {
+  if (canGuess) return "猜猜是哪位角色";
+  if (waitingSync) return "本轮已提交";
+  return "本局进行中";
+}
+
+/** 可行动者给搜索栏，同步等待给回执，其余按能否看到答案决定；与标题同一口径。 */
+function guessSlotKind(canGuess: boolean, waitingSync: boolean, watching: boolean): GuessSlotKind | null {
+  if (canGuess) return "search";
+  if (waitingSync) return "done";
+  if (watching) return null;
+  return "ended";
+}
+
+/** 次数与倒计时同一行：身份说明、答案保密提示与同步轮号，倒计时靠右。 */
+function GuessingMetaLine({ standing, watching, syncMode, syncRound, deadline }: {
+  standing: string;
+  watching: boolean;
+  syncMode: boolean;
+  syncRound: number;
+  deadline: number | null;
+}) {
+  return (
+    <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span>
+        {standing}
+        {watching ? " · 答案对猜题者隐藏" : null}
+        {syncMode ? ` · 同步第 ${syncRound} 轮` : null}
+      </span>
+      <Countdown deadline={deadline} className="ml-auto" />
+    </div>
+  );
+}
+
+/** 同步模式本轮已提交的回执：图标跟随卡片一起落下，等其他人本轮也提交。 */
+function SyncDoneReceipt({ trailing }: { trailing: ReactNode }) {
+  return <>
+    <motion.p role="status" {...receiptCard} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium">
+      <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}><CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" /></motion.span>
+      本轮已完成，等待其他玩家
+    </motion.p>
+    {trailing}
+  </>;
+}
+
+/** 本局不再接受行动：只剩等待结算的说明。 */
+function RoundEndedNote({ trailing }: { trailing: ReactNode }) {
+  return <>
+    <p role="status" className="flex min-h-10 min-w-0 flex-1 items-center text-sm text-muted-foreground">本局已结束行动，等待结算</p>
+    {trailing}
+  </>;
+}
+
+/**
+ * 提交区：搜索栏与本轮回执叠在同一格里交叉，槽位种类决定挂哪个 key，退场才对得上。
+ * 看到答案的视角把说明行放在外面（与答案卡相邻），这里不再重复。
+ */
+function GuessSubmitArea({ info, watching, slot, subjectSearch, bannedIds, trailing, onPick }: {
+  info: ReactNode;
+  watching: boolean;
+  slot: GuessSlotKind;
+  subjectSearch: boolean;
+  bannedIds: number[];
+  trailing: ReactNode;
+  onPick: (character: CEECharacterSummary) => Promise<boolean>;
+}) {
+  return (
+    <section aria-label="提交猜测" className="space-y-2">
+      {watching ? null : info}
+      {/* 搜索栏与本轮回执叠在同一格里交叉：同步模式提交后回执落下，下一轮开始时搜索栏回来 */}
+      <div className="relative">
+        <AnimatePresence initial={false} mode="popLayout">
+          {slot === "search" ? (
+            <GuessSlot key="search">
+              <CEESearch allowSubjects={subjectSearch} bannedIds={bannedIds} trailing={trailing} onSelect={onPick} />
+            </GuessSlot>
+          ) : slot === "done" ? (
+            <GuessSlot key="done" className="flex items-start gap-2"><SyncDoneReceipt trailing={trailing} /></GuessSlot>
+          ) : (
+            <GuessSlot key="ended" className="flex items-start gap-2"><RoundEndedNote trailing={trailing} /></GuessSlot>
+          )}
+        </AnimatePresence>
+      </div>
+    </section>
+  );
+}
+
 function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; privateState: CEEPrivateState }) {
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
   const [surrenderOpen, setSurrenderOpen] = useState(false);
@@ -177,33 +276,29 @@ function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; pr
   const { run, pending } = useCEEAction();
   const surrendering = pending.has("cee.game.surrender");
   const waitingSync = Boolean(snapshot.settings.syncMode && me?.syncCompleted && me.status === "playing");
-  // 出题人、其观战队友与中途加入者在服务端都记为观战，次数对他们没有意义。
-  const standing = !me || me.membership === "spectator" ? "旁观中"
-    : snapshot.setterPlayerId === me.id ? "你是本局出题人"
-      : me.status === "observing" ? "本局观战"
-        : `已用 ${me.attempts} / ${snapshot.settings.maxAttempts} 次${me.team !== null ? ` · 第 ${me.team} 队共享` : ""}`;
-  const title = privateState.canGuess ? "猜猜是哪位角色" : waitingSync ? "本轮已提交" : "本局进行中";
+  const standing = standingNote(me, snapshot.setterPlayerId, snapshot.settings.maxAttempts);
+  const title = guessingTitle(privateState.canGuess, waitingSync);
   // 看得到答案的视角不提交猜测：说明行与答案卡相邻，读作「下面这张卡就是答案」。
   const watching = Boolean(privateState.answer);
   const info = (
-    <div className="flex min-h-7 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      <span>
-        {standing}
-        {watching ? " · 答案对猜题者隐藏" : null}
-        {snapshot.settings.syncMode ? ` · 同步第 ${snapshot.syncRound} 轮` : null}
-      </span>
-      <Countdown deadline={privateState.deadlineAt} className="ml-auto" />
-    </div>
+    <GuessingMetaLine
+      standing={standing}
+      watching={watching}
+      syncMode={snapshot.settings.syncMode}
+      syncRound={snapshot.syncRound}
+      deadline={privateState.deadlineAt}
+    />
   );
   // 放弃按钮挂在搜索按钮组的末尾：搜索栏为了不让输入框被挤窄会把按钮组整组换行，放在外面会先把搜索按钮挤下去。
   // 按钮组按下时会把焦点交回输入框，这里拦下，焦点留在按钮上，弹窗关闭后才回得来。
   const surrender = privateState.canSurrender ? (
     <Button variant="outline" className="h-10 shrink-0 px-3" loading={surrendering} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { origin.capture(event); setSurrenderOpen(true); }}><Flag />放弃本局</Button>
   ) : null;
-  const slot = privateState.canGuess ? "search" : waitingSync ? "done" : !watching ? "ended" : null;
+  const slot = guessSlotKind(privateState.canGuess, waitingSync, watching);
   const handleSurrender = async () => {
     if (await run("cee.game.surrender", {})) setSurrenderOpen(false);
   };
+  const handlePick = async (character: CEECharacterSummary) => Boolean(await run("cee.game.guess", { characterId: character.id }));
 
   return <div className="mx-auto w-full max-w-2xl space-y-5">
     {/* 标题随本轮是否已提交换字：新标题自下顶上，旧标题立即让位 */}
@@ -217,32 +312,15 @@ function CEEGuessing({ snapshot, privateState }: { snapshot: CEERoomSnapshot; pr
     {watching ? <>{info}<CEEAnswerCard answer={privateState.answer!} /></> : null}
     <CEEHints privateState={privateState} />
     {slot ? (
-      <section aria-label="提交猜测" className="space-y-2">
-        {watching ? null : info}
-        {/* 搜索栏与本轮回执叠在同一格里交叉：同步模式提交后回执落下，下一轮开始时搜索栏回来 */}
-        <div className="relative">
-          <AnimatePresence initial={false} mode="popLayout">
-            {slot === "search" ? (
-              <GuessSlot key="search">
-                <CEESearch allowSubjects={snapshot.settings.subjectSearch} bannedIds={privateState.bannedCharacterIds} trailing={surrender} onSelect={async (character) => Boolean(await run("cee.game.guess", { characterId: character.id }))} />
-              </GuessSlot>
-            ) : slot === "done" ? (
-              <GuessSlot key="done" className="flex items-start gap-2">
-                <motion.p role="status" {...receiptCard} className="flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium">
-                  <motion.span className="inline-flex shrink-0" {...receiptMarkFollow}><CheckCircle2 className="h-4 w-4 text-primary" aria-hidden="true" /></motion.span>
-                  本轮已完成，等待其他玩家
-                </motion.p>
-                {surrender}
-              </GuessSlot>
-            ) : (
-              <GuessSlot key="ended" className="flex items-start gap-2">
-                <p role="status" className="flex min-h-10 min-w-0 flex-1 items-center text-sm text-muted-foreground">本局已结束行动，等待结算</p>
-                {surrender}
-              </GuessSlot>
-            )}
-          </AnimatePresence>
-        </div>
-      </section>
+      <GuessSubmitArea
+        info={info}
+        watching={watching}
+        slot={slot}
+        subjectSearch={snapshot.settings.subjectSearch}
+        bannedIds={privateState.bannedCharacterIds}
+        trailing={surrender}
+        onPick={handlePick}
+      />
     ) : null}
     <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
     <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}><DialogContent><DialogHeader><DialogTitle>放弃本局</DialogTitle><DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setSurrenderOpen(false)}>继续猜测</Button><Button variant="destructive" loading={surrendering} onClick={() => void handleSurrender()}>确认放弃</Button></DialogFooter></DialogContent></Dialog>

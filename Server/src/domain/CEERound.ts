@@ -1,4 +1,4 @@
-import type { CEECharacterView, CEEGuess, CEEScoreDetail } from '../shared/CEE';
+import type { CEECharacterView, CEEFeedback, CEEGuess, CEEScoreDetail, CEESettings } from '../shared/CEE';
 import { AppError } from './Errors';
 import { ceeUnitId, type CEEPlayerRecord, type CEERoom, type CEERound, type CEEUnit } from './CEEModel';
 import { buildCEEFeedback, calculateCEESetterScore, calculateCEEWinnerScore, createCEEHints } from './CEERules';
@@ -60,41 +60,79 @@ function finishUnit(room: CEERoom, unit: CEEUnit, status: 'exhausted' | 'surrend
   for (const id of unit.memberIds) { const player = room.players.get(id); if (player) player.status = status; }
   copyUnit(room, unit);
 }
-export function applyCEEGuess(room: CEERoom, player: CEEPlayerRecord, character: CEECharacterView, now: number): CEEGuess {
-  const { round, unit } = requireCEEAction(room, player);
+/** 一次有效猜测的完整输入：房间、行动玩家、提交的角色、当前局与该玩家所属单位。 */
+type CEEGuessAction = {
+  room: CEERoom; player: CEEPlayerRecord; character: CEECharacterView; round: CEERound; unit: CEEUnit; now: number;
+};
+/** 全局 BP 下该角色是否已被同局其他玩家猜过；同步模式只看往轮。 */
+function isPickedByOthers(action: CEEGuessAction): boolean {
+  const { round, player, character } = action;
+  return round.guesses.some(guess => guess.character.id === character.id &&
+    guess.playerId !== player.id && (!round.settings.syncMode || guess.syncRound < round.syncRound));
+}
+/** 全局 BP 只拦其他玩家猜过的角色：本人重复提交不算违规，答案本身在同步与血战下豁免。 */
+function rejectBannedPick(action: CEEGuessAction): void {
+  const { round, player, character } = action;
   const correct = character.id === round.answer.id;
   const previouslyUsed = round.guesses.some(guess => guess.character.id === character.id && guess.playerId === player.id);
-  if (round.settings.globalPick && !previouslyUsed && !(correct && (round.settings.syncMode || round.settings.nonstopMode))) {
-    const used = round.guesses.some(guess => guess.character.id === character.id &&
-      guess.playerId !== player.id && (!round.settings.syncMode || guess.syncRound < round.syncRound));
-    if (used) throw new AppError('CHARACTER_BANNED', '该角色已被其他玩家猜过');
-  }
+  if (!round.settings.globalPick || previouslyUsed || (correct && (round.settings.syncMode || round.settings.nonstopMode))) return;
+  if (isPickedByOthers(action)) throw new AppError('CHARACTER_BANNED', '该角色已被其他玩家猜过');
+}
+/** 服务端权威生成的猜测记录：判定与反馈都按冻结答案计算，不接受客户端提交的判中结果。 */
+function createCEEGuess(action: CEEGuessAction): CEEGuess {
+  const { player, character, round, now } = action;
+  const correct = character.id === round.answer.id;
   const feedback = buildCEEFeedback(character, round.answer, round.settings);
-  const guess: CEEGuess = { id: crypto.randomUUID(), playerId: player.id, playerName: player.name,
+  return { id: crypto.randomUUID(), playerId: player.id, playerName: player.name,
     character: { id: character.id, name: character.name, nameCn: character.nameCn, imageUrl: character.imageUrl },
     correct, partial: !correct && feedback.sharedAppearances.length > 0, syncRound: round.syncRound, createdAt: now, feedback };
-  round.guesses.push(guess); unit.attempts++; unit.marks += correct ? '✔' : guess.partial ? '💡' : '❌';
-  if (round.settings.tagBan) {
-    const owners = round.settings.syncMode ? round.pendingTagOwners : round.tagOwners;
-    for (const tag of feedback.tags.filter(tag => tag.matched)) {
-      if (round.tagOwners.has(tag.text)) continue;
-      const existing = owners.get(tag.text) ?? new Set<string>();
-      unit.memberIds.forEach(id => existing.add(id)); owners.set(tag.text, existing);
-    }
+}
+/** 猜测标记字符：猜中、命中共同作品、未命中。 */
+function guessMark(guess: CEEGuess): string {
+  return guess.correct ? '✔' : guess.partial ? '💡' : '❌';
+}
+/** 标签 BP：本次命中的标签登记给本单位；同步模式先挂起，轮末统一并入全局所有者。 */
+function registerMatchedTags(round: CEERound, unit: CEEUnit, feedback: CEEFeedback): void {
+  const owners = round.settings.syncMode ? round.pendingTagOwners : round.tagOwners;
+  for (const tag of feedback.tags.filter(tag => tag.matched)) {
+    if (round.tagOwners.has(tag.text)) continue;
+    const existing = owners.get(tag.text) ?? new Set<string>();
+    unit.memberIds.forEach(id => existing.add(id)); owners.set(tag.text, existing);
   }
+}
+/** 单位下一次行动截止：同步模式不单独计时，等全轮完成后统一推进。 */
+function nextUnitDeadlineAt(settings: CEESettings, now: number): number | null {
+  if (settings.syncMode) return null;
+  return settings.timeLimit ? now + settings.timeLimit * 1000 : null;
+}
+/** 队员本局状态：猜中者记 solved，同队其余记 teamWon。 */
+function markUnitSolved(room: CEERoom, unit: CEEUnit, player: CEEPlayerRecord): void {
+  for (const id of unit.memberIds) { const member = room.players.get(id); if (member) member.status = id === player.id ? 'solved' : 'teamWon'; }
+}
+/** 猜中者入榜：名次与基础分按模式冻结，血战即时加分、普通模式留到结算统一记分。 */
+function awardCEEWinner(action: CEEGuessAction): void {
+  const { room, player, round, unit } = action;
+  unit.ended = true; unit.deadlineAt = null;
+  const rank = round.settings.syncMode ? round.roundStartRank : round.winners.length + 1;
+  const base = round.settings.nonstopMode ? Math.max(1, round.initialCount - rank + 1) : 2;
+  const score = calculateCEEWinnerScore(unit.attempts, round.settings.maxAttempts, base);
+  const detail: CEEScoreDetail = { playerId: player.id, playerName: player.name, ...score, partial: 0, setter: 0, reason: '猜中角色', rank };
+  round.winners.push({ playerId: player.id, unitId: unit.id, attempts: unit.attempts, rank, detail });
+  if (round.settings.nonstopMode) player.score += detail.score;
+  unit.marks += score.firstGuess ? '👑' : '✌';
+  markUnitSolved(room, unit, player);
+}
+export function applyCEEGuess(room: CEERoom, player: CEEPlayerRecord, character: CEECharacterView, now: number): CEEGuess {
+  const { round, unit } = requireCEEAction(room, player);
+  const action: CEEGuessAction = { room, player, character, round, unit, now };
+  rejectBannedPick(action);
+  const guess = createCEEGuess(action);
+  round.guesses.push(guess); unit.attempts++; unit.marks += guessMark(guess);
+  if (round.settings.tagBan) registerMatchedTags(round, unit, guess.feedback);
   unit.completed = true;
-  unit.deadlineAt = round.settings.syncMode ? null : round.settings.timeLimit ? now + round.settings.timeLimit * 1000 : null;
-  if (correct) {
-    unit.ended = true; unit.deadlineAt = null;
-    const rank = round.settings.syncMode ? round.roundStartRank : round.winners.length + 1;
-    const base = round.settings.nonstopMode ? Math.max(1, round.initialCount - rank + 1) : 2;
-    const score = calculateCEEWinnerScore(unit.attempts, round.settings.maxAttempts, base);
-    const detail: CEEScoreDetail = { playerId: player.id, playerName: player.name, ...score, partial: 0, setter: 0, reason: '猜中角色', rank };
-    round.winners.push({ playerId: player.id, unitId: unit.id, attempts: unit.attempts, rank, detail });
-    if (round.settings.nonstopMode) player.score += detail.score;
-    unit.marks += score.firstGuess ? '👑' : '✌';
-    for (const id of unit.memberIds) { const member = room.players.get(id); if (member) member.status = id === player.id ? 'solved' : 'teamWon'; }
-  } else if (unit.attempts >= round.settings.maxAttempts) finishUnit(room, unit, 'exhausted', '💀');
+  unit.deadlineAt = guess.correct ? null : nextUnitDeadlineAt(round.settings, now);
+  if (guess.correct) awardCEEWinner(action);
+  else if (unit.attempts >= round.settings.maxAttempts) finishUnit(room, unit, 'exhausted', '💀');
   copyUnit(room, unit);
   advanceCEERound(room, now);
   return guess;

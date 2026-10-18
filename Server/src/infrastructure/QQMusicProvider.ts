@@ -536,30 +536,10 @@ export class QQMusicProvider implements MusicProvider {
     }
 
     try {
-      const fetcher = this.options.amllFetcher ?? fetch;
-      const resp = await this.amllQueue.add(async () =>
-        fetcher(`https://api.amll.dev/v1/lyrics/search?q=${encodeURIComponent(query)}&pageSize=5`, {
-          signal: AbortSignal.timeout(this.options.amllRequestTimeoutMs ?? 4000),
-        })
-      );
-
-      if (resp && resp.ok) {
-        const json = asRecord(await resp.json());
-        const items = asArray(json.data || json.items);
-        if (items.length > 0) {
-          const firstId = asRecord(items[0]).id;
-          if (firstId) {
-            const getResp = await fetcher(`https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(readText(firstId))}`);
-            if (getResp.ok) {
-              const getJson = asRecord(await getResp.json());
-              const lyrics = readString(asRecord(getJson.data).lyrics || getJson.lyrics);
-              if (lyrics) {
-                this.amllCache.set(cacheKey, lyrics);
-                return lyrics;
-              }
-            }
-          }
-        }
+      const lyrics = await this.fetchFirstMatchedAmllLyrics(query);
+      if (lyrics) {
+        this.amllCache.set(cacheKey, lyrics);
+        return lyrics;
       }
     } catch (error) {
       this.options.logger?.warn?.("AMLL 搜索失败", { query, ...describeError(error) });
@@ -567,6 +547,32 @@ export class QQMusicProvider implements MusicProvider {
 
     this.amllCache.set(cacheKey, "");
     return undefined;
+  }
+
+  /**
+   * AMLL 检索接口只回候选列表，正文要按第一条的 id 再走一次 get。
+   *
+   * 只有检索请求进 `amllQueue`（受并发上限约束）；按 id 取正文沿用检索的同一
+   * fetcher，不进队列，与改造前一致。
+   */
+  private async fetchFirstMatchedAmllLyrics(query: string): Promise<string | undefined> {
+    const fetcher = this.options.amllFetcher ?? fetch;
+    const resp = await this.amllQueue.add(async () =>
+      fetcher(`https://api.amll.dev/v1/lyrics/search?q=${encodeURIComponent(query)}&pageSize=5`, {
+        signal: AbortSignal.timeout(this.options.amllRequestTimeoutMs ?? 4000),
+      })
+    );
+
+    if (!resp || !resp.ok) return undefined;
+    const json = asRecord(await resp.json());
+    const items = asArray(json.data || json.items);
+    const firstId = items.length > 0 ? asRecord(items[0]).id : undefined;
+    if (!firstId) return undefined;
+
+    const getResp = await fetcher(`https://api.amll.dev/v1/lyrics/get?id=${encodeURIComponent(readText(firstId))}`);
+    if (!getResp.ok) return undefined;
+    const getJson = asRecord(await getResp.json());
+    return readString(asRecord(getJson.data).lyrics || getJson.lyrics);
   }
 
   async getPlaylistSongs(

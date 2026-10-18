@@ -55,6 +55,35 @@ const isHostAllowed = (hostname: string, allowedHosts: Set<string>): boolean => 
   return SENTRY_INGEST_REGEX.test(lower);
 };
 
+/**
+ * 隧道校验链的一处失败：状态码与响应体由具体环节决定，handler 只负责落到 set 与返回值。
+ */
+type TunnelFailure = { status: number; body: Record<string, unknown> };
+
+/** 校验环节的产出：要么拿到下一步需要的值，要么带着失败直接出口。 */
+type TunnelStep<T> = { value: T } | { failure: TunnelFailure };
+
+const tunnelFailure = (status: number, error: string): TunnelFailure => ({
+  status,
+  body: { error },
+});
+
+const rejectStep = (status: number, error: string): TunnelStep<never> => ({
+  failure: tunnelFailure(status, error),
+});
+
+const isRejected = <T>(step: TunnelStep<T>): step is { failure: TunnelFailure } => "failure" in step;
+
+// DSN 的项目路径只允许单段 ID，其他形态一律视为非法路径。
+const DSN_PROJECT_PATH_PATTERN = /^\/([0-9a-zA-Z_-]+)$/;
+
+const ENVELOPE_HEADER_SEPARATOR = 10; // "\n" 的字节值，信封首行与正文在此分隔
+
+export type SentryTunnelPolicy = {
+  allowedProjects: Set<string>;
+  allowedHosts: Set<string>;
+};
+
 // Bun、Node 与 undici 对上游连接失败使用完全不同的文案与 errno 编号。
 // 只识别 Node 的旧文案会把真实的网络抖动误判为内部故障，向下游返回 500
 // 并触发错误告警，因此这里必须收口全部运行时的失败签名。
@@ -109,6 +138,177 @@ const isUpstreamNetworkFailure = (error: unknown): boolean =>
     return UPSTREAM_NETWORK_MESSAGE_PATTERN.test(`${name} ${message}`);
   });
 
+/**
+ * 上游异常的归类：超时与网络失败只算降级（warn），其余才是内部故障（error）。
+ * 归类结果同时决定回给客户端的状态码与响应体。
+ */
+const classifyTunnelError = (error: unknown): TunnelFailure => {
+  if (isUpstreamTimeout(error)) return tunnelFailure(504, "Sentry upstream timeout");
+  if (isUpstreamNetworkFailure(error)) return tunnelFailure(502, "Sentry upstream unavailable");
+  return tunnelFailure(500, "Internal Sentry tunnel error");
+};
+
+const reportTunnelError = (
+  logger: SentryTunnelOptions["logger"],
+  error: unknown,
+  failure: TunnelFailure,
+): void => {
+  if (failure.status === 504) {
+    logger?.warn("Sentry tunnel upstream timeout", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+
+  if (failure.status === 502) {
+    logger?.warn("Sentry tunnel upstream unavailable", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+
+  logger?.error("Internal Sentry tunnel error", {
+    error: error instanceof Error ? error.stack ?? error.message : String(error),
+  });
+};
+
+/** 按上游字节流累积信封，超限即刻取消读取，不再继续缓存。 */
+const collectEnvelopeChunks = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  chunks: Uint8Array[],
+): Promise<number | null> => {
+  let byteLength = 0;
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) return byteLength;
+    byteLength += chunk.value.byteLength;
+    if (byteLength > MAX_ENVELOPE_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(chunk.value);
+  }
+};
+
+const concatEnvelopeChunks = (chunks: Uint8Array[], byteLength: number): Uint8Array<ArrayBuffer> => {
+  const rawEnvelope = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    rawEnvelope.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return rawEnvelope;
+};
+
+/** 读取请求体为信封原始字节；首行的换行位置由调用方解析。 */
+const readEnvelopePayload = async (request: Request): Promise<TunnelStep<Uint8Array<ArrayBuffer>>> => {
+  const chunks: Uint8Array[] = [];
+  const reader = request.body?.getReader();
+  let byteLength = 0;
+  if (reader) {
+    try {
+      const collected = await collectEnvelopeChunks(reader, chunks);
+      if (collected === null) return rejectStep(413, "Payload Too Large");
+      byteLength = collected;
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  const rawEnvelope = concatEnvelopeChunks(chunks, byteLength);
+  if (rawEnvelope.byteLength === 0) return rejectStep(400, "Empty envelope payload");
+  return { value: rawEnvelope };
+};
+
+/** 解码信封首行；非法 UTF-8 与「合法但为空」是两种不同的 400，必须区分。 */
+const decodeEnvelopeHeaderLine = (rawEnvelope: Uint8Array): { text: string } | null => {
+  const newline = rawEnvelope.indexOf(ENVELOPE_HEADER_SEPARATOR);
+  try {
+    const headerText = new TextDecoder("utf-8", { fatal: true }).decode(
+      rawEnvelope.subarray(0, newline >= 0 ? newline : rawEnvelope.length),
+    );
+    return { text: headerText };
+  } catch {
+    return null;
+  }
+};
+
+const isPlainEnvelopeHeader = (parsed: unknown): parsed is { dsn?: string } =>
+  typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+
+/** 从信封首行取出 DSN 字符串，任一环节不合规则按原状态码回绝。 */
+const readDsnFromEnvelope = (rawEnvelope: Uint8Array): TunnelStep<string> => {
+  const headerLine = decodeEnvelopeHeaderLine(rawEnvelope);
+  if (!headerLine) return rejectStep(400, "Invalid envelope header encoding");
+  if (!headerLine.text) return rejectStep(400, "Invalid envelope header");
+
+  let parsedHeader: unknown;
+  try {
+    parsedHeader = JSON.parse(headerLine.text);
+  } catch {
+    return rejectStep(400, "Failed to parse envelope header JSON");
+  }
+  if (!isPlainEnvelopeHeader(parsedHeader)) {
+    return rejectStep(400, "Failed to parse envelope header JSON");
+  }
+
+  const dsn = parsedHeader.dsn;
+  if (typeof dsn !== "string" || !dsn) return rejectStep(400, "Missing DSN in envelope header");
+  return { value: dsn };
+};
+
+const parseDsnUrl = (dsn: string): URL | null => {
+  try {
+    return new URL(dsn);
+  } catch {
+    return null;
+  }
+};
+
+/** 安全防线 1—3：协议、端口、域名白名单，杜绝内网 SSRF 与开放中继。 */
+const rejectUntrustedDsnTransport = (dsnUrl: URL, allowedHosts: Set<string>): TunnelFailure | null => {
+  if (dsnUrl.protocol !== "https:") return tunnelFailure(403, "Forbidden DSN protocol");
+  if (dsnUrl.port && dsnUrl.port !== "443") return tunnelFailure(403, "Forbidden DSN port");
+  if (!isHostAllowed(dsnUrl.hostname, allowedHosts)) return tunnelFailure(403, "Forbidden DSN host");
+  return null;
+};
+
+/**
+ * 安全防线 4：DSN 必须只经 HTTPS/443 指向白名单域名下的单段项目 ID，
+ * 且该项目在允许列表内；通过后返回回源 envelope 端点。
+ */
+const resolveTrustedEnvelopeUrl = (dsn: string, policy: SentryTunnelPolicy): TunnelStep<string> => {
+  const dsnUrl = parseDsnUrl(dsn);
+  if (!dsnUrl) return rejectStep(400, "Malformed DSN URL in envelope header");
+
+  const transportRejection = rejectUntrustedDsnTransport(dsnUrl, policy.allowedHosts);
+  if (transportRejection) return { failure: transportRejection };
+
+  const match = dsnUrl.pathname.match(DSN_PROJECT_PATH_PATTERN);
+  if (!match) return rejectStep(403, "Invalid DSN project path");
+
+  const projectId = match[1];
+  if (!policy.allowedProjects.has(projectId)) {
+    return rejectStep(403, `Project ID "${projectId}" is not allowed`);
+  }
+
+  return { value: `https://${dsnUrl.hostname}/api/${projectId}/envelope/` };
+};
+
+const sendEnvelopeToSentry = (
+  fetcher: typeof fetch,
+  targetUrl: string,
+  rawEnvelope: Uint8Array<ArrayBuffer>,
+): Promise<Response> =>
+  fetcher(targetUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-sentry-envelope",
+    },
+    body: rawEnvelope,
+    signal: AbortSignal.timeout(10_000),
+  });
+
 export const sentryTunnelRoutes = ({
   allowedProjectIds = [],
   allowedHosts = [],
@@ -132,6 +332,7 @@ export const sentryTunnelRoutes = ({
   }
 
   const limiter = rateLimiter ?? new SentryTunnelRateLimiter();
+  const policy: SentryTunnelPolicy = { allowedProjects: allowedSet, allowedHosts: allowedHostSet };
 
   return new Elysia({ name: "sentry-tunnel" }).post(
     "/api/monitoring/sentry",
@@ -153,109 +354,25 @@ export const sentryTunnelRoutes = ({
           return { error: "Payload Too Large" };
         }
 
-        const chunks: Uint8Array[] = [];
-        let byteLength = 0;
-        const reader = request.body?.getReader();
-        if (reader) {
-          try {
-            for (;;) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
-              byteLength += chunk.value.byteLength;
-              if (byteLength > MAX_ENVELOPE_BYTES) {
-                await reader.cancel();
-                set.status = 413;
-                return { error: "Payload Too Large" };
-              }
-              chunks.push(chunk.value);
-            }
-          } finally { reader.releaseLock(); }
-        }
-        const rawEnvelope = new Uint8Array(byteLength);
-        let offset = 0;
-        for (const chunk of chunks) { rawEnvelope.set(chunk, offset); offset += chunk.byteLength; }
-
-        if (rawEnvelope.byteLength === 0) {
-          set.status = 400;
-          return { error: "Empty envelope payload" };
+        const envelope = await readEnvelopePayload(request);
+        if (isRejected(envelope)) {
+          set.status = envelope.failure.status;
+          return envelope.failure.body;
         }
 
-        const newline = rawEnvelope.indexOf(10);
-        let firstLine: string;
-        try {
-          firstLine = new TextDecoder("utf-8", { fatal: true }).decode(rawEnvelope.subarray(0, newline >= 0 ? newline : rawEnvelope.length));
-        } catch {
-          set.status = 400;
-          return { error: "Invalid envelope header encoding" };
-        }
-        if (!firstLine) {
-          set.status = 400;
-          return { error: "Invalid envelope header" };
+        const dsn = readDsnFromEnvelope(envelope.value);
+        if (isRejected(dsn)) {
+          set.status = dsn.failure.status;
+          return dsn.failure.body;
         }
 
-        let header: { dsn?: string };
-        try {
-          const parsed: unknown = JSON.parse(firstLine);
-          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("Invalid header");
-          header = parsed as { dsn?: string };
-        } catch {
-          set.status = 400;
-          return { error: "Failed to parse envelope header JSON" };
+        const targetUrl = resolveTrustedEnvelopeUrl(dsn.value, policy);
+        if (isRejected(targetUrl)) {
+          set.status = targetUrl.failure.status;
+          return targetUrl.failure.body;
         }
 
-        if (typeof header.dsn !== "string" || !header.dsn) {
-          set.status = 400;
-          return { error: "Missing DSN in envelope header" };
-        }
-
-        let dsnUrl: URL;
-        try {
-          dsnUrl = new URL(header.dsn);
-        } catch {
-          set.status = 400;
-          return { error: "Malformed DSN URL in envelope header" };
-        }
-
-        // 安全防线 1：严格 HTTPS 协议
-        if (dsnUrl.protocol !== "https:") {
-          set.status = 403;
-          return { error: "Forbidden DSN protocol" };
-        }
-
-        // 安全防线 2：严格默认 443 端口
-        if (dsnUrl.port && dsnUrl.port !== "443") {
-          set.status = 403;
-          return { error: "Forbidden DSN port" };
-        }
-
-        // 安全防线 3：域名白名单与权威 Ingest 通配校验，杜绝内网 SSRF 与开放中继
-        if (!isHostAllowed(dsnUrl.hostname, allowedHostSet)) {
-          set.status = 403;
-          return { error: "Forbidden DSN host" };
-        }
-
-        // 安全防线 4：项目 ID 路径格式与白名单校验
-        const match = dsnUrl.pathname.match(/^\/([0-9a-zA-Z_-]+)$/);
-        if (!match) {
-          set.status = 403;
-          return { error: "Invalid DSN project path" };
-        }
-
-        const projectId = match[1];
-        if (!allowedSet.has(projectId)) {
-          set.status = 403;
-          return { error: `Project ID "${projectId}" is not allowed` };
-        }
-
-        const targetUrl = `https://${dsnUrl.hostname}/api/${projectId}/envelope/`;
-        const response = await fetcher(targetUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-sentry-envelope",
-          },
-          body: rawEnvelope,
-          signal: AbortSignal.timeout(10_000),
-        });
+        const response = await sendEnvelopeToSentry(fetcher, targetUrl.value, envelope.value);
 
         if (!response.ok) {
           set.status = response.status;
@@ -264,27 +381,10 @@ export const sentryTunnelRoutes = ({
 
         return { ok: true };
       } catch (err) {
-        if (isUpstreamTimeout(err)) {
-          logger?.warn("Sentry tunnel upstream timeout", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-          set.status = 504;
-          return { error: "Sentry upstream timeout" };
-        }
-
-        if (isUpstreamNetworkFailure(err)) {
-          logger?.warn("Sentry tunnel upstream unavailable", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-          set.status = 502;
-          return { error: "Sentry upstream unavailable" };
-        }
-
-        logger?.error("Internal Sentry tunnel error", {
-          error: err instanceof Error ? err.stack ?? err.message : String(err),
-        });
-        set.status = 500;
-        return { error: "Internal Sentry tunnel error" };
+        const failure = classifyTunnelError(err);
+        reportTunnelError(logger, err, failure);
+        set.status = failure.status;
+        return failure.body;
       }
     },
     {

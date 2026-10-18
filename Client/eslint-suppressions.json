@@ -4,21 +4,6 @@
       "count": 1
     }
   },
-  "src/components/cee/CEEGameArea.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/components/cee/CEEGameSettings.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
-  "src/components/cee/CEESearch.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/components/cee/CEEWaiting.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1

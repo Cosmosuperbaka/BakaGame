@@ -233,120 +233,120 @@ export function calculateRelevanceScore(
   return score;
 }
 
+/** 参与合流与打分的候选：搜索结果加上上游平台位次。 */
+type RankedSong = SongSearchResult & { upstreamRank?: number };
+
+/** 判定为同一作品实体后合流的一组候选：主实体 + 备用音源。 */
+interface SongCluster {
+  primary: RankedSong;
+  alternatives: RankedSong[];
+}
+
+/**
+ * 合流簇内择优：新主实体上位，原主实体降为备用音源。
+ */
+function promoteClusterPrimary(cluster: SongCluster, newPrimary: RankedSong): void {
+  const oldPrimary = cluster.primary;
+  cluster.primary = newPrimary;
+  cluster.alternatives = cluster.alternatives.filter((s) => s.id !== newPrimary.id);
+  cluster.alternatives.push(oldPrimary);
+}
+
+/**
+ * 判定候选是否应取代当前主实体.
+ *
+ * 择优链：非衍生版 > 包含搜索关键词的官方全名/译名 > 更纯正无噪音的曲名 >
+ * 上游排名靠前者 > 同位次时有封面的优先。
+ */
+function shouldPromoteCandidate(candidate: RankedSong, primary: RankedSong, normKeyword: string): boolean {
+  const candidateIsDeriv = isDerivationSong(candidate);
+  const primaryIsDeriv = isDerivationSong(primary);
+
+  // 当前不是衍生版、而原主是衍生版 -> 替换；反之两个都是衍生版时不动
+  if (primaryIsDeriv) return !candidateIsDeriv;
+  if (candidateIsDeriv) return false;
+
+  // 优先 1：包含搜索关键词的官方全名/译名 (例如 "ブルーバード (青鸟)" 优于 "ブルーバード")
+  const candidateHasKeyword = normalizeComparableText(candidate.title).includes(normKeyword);
+  const primaryHasKeyword = normalizeComparableText(primary.title).includes(normKeyword);
+  if (candidateHasKeyword !== primaryHasKeyword) return candidateHasKeyword;
+
+  // 优先 2：更纯正无噪音的曲名 (例如 "晴天" 优于 "晴天 (2020 Remaster)")
+  const candidateIsClean = normalizeComparableText(candidate.title) === extractCanonicalTitle(candidate.title);
+  const primaryIsClean = normalizeComparableText(primary.title) === extractCanonicalTitle(primary.title);
+  if (candidateIsClean !== primaryIsClean) return candidateIsClean;
+
+  // 优先 3：上游排名靠前者 (0 > 1)；同位次时（优先 4）原主无封面而候选有封面也替换
+  const candidateRank = candidate.upstreamRank ?? 99;
+  const primaryRank = primary.upstreamRank ?? 99;
+  if (candidateRank !== primaryRank) return candidateRank < primaryRank;
+  return !primary.pictureUrl && Boolean(candidate.pictureUrl);
+}
+
+/** 主实体与任一备用音源分属不同平台时视为双源互证。 */
+function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[]): boolean {
+  const primaryPlatform = primary.id.split(":")[0];
+  return alternatives.some((alt) => alt.id.split(":")[0] !== primaryPlatform);
+}
+
+/** 综合评分优先，其后按衍生版 / 上游位次 / 双源互证 / 热度的确定性决胜链. */
+function compareAggregatedSongs(a: AggregatedSongSearchResult, b: AggregatedSongSearchResult): number {
+  const diff = (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0);
+  if (diff !== 0) return diff;
+
+  // 平分决胜 1：非衍生版优先于衍生版
+  const derivA = isDerivationSong(a) ? 1 : 0;
+  const derivB = isDerivationSong(b) ? 1 : 0;
+  if (derivA !== derivB) return derivA - derivB;
+
+  // 平分决胜 2：上游排名更靠前者优先 (rank 0 优于 rank 1)
+  const rankA = a.upstreamRank ?? 99;
+  const rankB = b.upstreamRank ?? 99;
+  if (rankA !== rankB) return rankA - rankB;
+
+  // 平分决胜 3：双平台互证者优先
+  const dualA = (a.sources?.length ?? 1) > 1 ? 1 : 0;
+  const dualB = (b.sources?.length ?? 1) > 1 ? 1 : 0;
+  if (dualA !== dualB) return dualB - dualA;
+
+  // 平分决胜 4：热度更高者优先
+  return (b.popularity ?? 0) - (a.popularity ?? 0);
+}
+
 /**
  * 双平台搜索结果去重、合流与综合排序.
  */
 export function aggregateAndDeduplicateSongs(
-  songs: (SongSearchResult & { upstreamRank?: number })[],
+  songs: RankedSong[],
   keyword: string,
   limit = 20
 ): AggregatedSongSearchResult[] {
   const normKeyword = normalizeComparableText(keyword);
-  const clusters: Array<{
-    primary: SongSearchResult & { upstreamRank?: number };
-    alternatives: (SongSearchResult & { upstreamRank?: number })[];
-  }> = [];
-
-  const promote = (
-    cluster: {
-      primary: SongSearchResult & { upstreamRank?: number };
-      alternatives: (SongSearchResult & { upstreamRank?: number })[];
-    },
-    newPrimary: SongSearchResult & { upstreamRank?: number }
-  ) => {
-    const oldPrimary = cluster.primary;
-    cluster.primary = newPrimary;
-    cluster.alternatives = cluster.alternatives.filter((s) => s.id !== newPrimary.id);
-    cluster.alternatives.push(oldPrimary);
-  };
+  const clusters: SongCluster[] = [];
 
   for (const song of songs) {
     const matchedCluster = clusters.find((cluster) => isSameSongWork(cluster.primary, song));
 
-    if (matchedCluster) {
-      matchedCluster.alternatives.push(song);
-      // 择优作为主实体：
-      const curIsDeriv = isDerivationSong(song);
-      const primIsDeriv = isDerivationSong(matchedCluster.primary);
-
-      if (primIsDeriv && !curIsDeriv) {
-        // 当前不是衍生版，而原主是衍生版 -> 替换
-        promote(matchedCluster, song);
-      } else if (!primIsDeriv && !curIsDeriv) {
-        // 两者都不是衍生版：
-        // 优先 1：包含搜索关键词的官方全名/译名 (例如 "ブルーバード (青鸟)" 优于 "ブルーバード")
-        const curHasKeyword = normalizeComparableText(song.title).includes(normKeyword);
-        const primHasKeyword = normalizeComparableText(matchedCluster.primary.title).includes(normKeyword);
-
-        if (curHasKeyword && !primHasKeyword) {
-          promote(matchedCluster, song);
-        } else if (curHasKeyword === primHasKeyword) {
-          // 优先 2：更纯正无噪音的曲名 (例如 "晴天" 优于 "晴天 (2020 Remaster)")
-          const curIsClean = normalizeComparableText(song.title) === extractCanonicalTitle(song.title);
-          const primIsClean = normalizeComparableText(matchedCluster.primary.title) === extractCanonicalTitle(matchedCluster.primary.title);
-          if (curIsClean && !primIsClean) {
-            promote(matchedCluster, song);
-          } else if (curIsClean === primIsClean) {
-            // 优先 3：上游排名靠前者 (0 > 1)
-            const primRank = matchedCluster.primary.upstreamRank ?? 99;
-            const curRank = song.upstreamRank ?? 99;
-            if (curRank < primRank) {
-              promote(matchedCluster, song);
-            } else if (curRank === primRank && !matchedCluster.primary.pictureUrl && song.pictureUrl) {
-              promote(matchedCluster, song);
-            }
-          }
-        }
-      }
-    } else {
+    if (!matchedCluster) {
       clusters.push({
         primary: song,
         alternatives: [],
       });
+      continue;
+    }
+
+    matchedCluster.alternatives.push(song);
+    if (shouldPromoteCandidate(song, matchedCluster.primary, normKeyword)) {
+      promoteClusterPrimary(matchedCluster, song);
     }
   }
 
   // 计算每个合流实体的最终打分
-  const aggregated: AggregatedSongSearchResult[] = clusters.map(({ primary, alternatives }) => {
-    const isDual = alternatives.some((alt) => {
-      const p1 = primary.id.split(":")[0];
-      const p2 = alt.id.split(":")[0];
-      return p1 !== p2;
-    });
+  const aggregated: AggregatedSongSearchResult[] = clusters.map(({ primary, alternatives }) => ({
+    ...primary,
+    sources: [primary.id, ...alternatives.map((a) => a.id)],
+    relevanceScore: calculateRelevanceScore(primary, keyword, hasCrossPlatformSource(primary, alternatives)),
+  }));
 
-    const score = calculateRelevanceScore(primary, keyword, isDual);
-    const sources = [primary.id, ...alternatives.map((a) => a.id)];
-
-    return {
-      ...primary,
-      sources,
-      relevanceScore: score,
-    };
-  });
-
-  // 按综合评分从高到低排序 (含确定性平分决胜链)
-  aggregated.sort((a, b) => {
-    const diff = (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0);
-    if (diff !== 0) return diff;
-
-    // 平分决胜 1：非衍生版优先于衍生版
-    const derivA = isDerivationSong(a) ? 1 : 0;
-    const derivB = isDerivationSong(b) ? 1 : 0;
-    if (derivA !== derivB) return derivA - derivB;
-
-    // 平分决胜 2：上游排名更靠前者优先 (rank 0 优于 rank 1)
-    const rankA = a.upstreamRank ?? 99;
-    const rankB = b.upstreamRank ?? 99;
-    if (rankA !== rankB) return rankA - rankB;
-
-    // 平分决胜 3：双平台互证者优先
-    const dualA = (a.sources?.length ?? 1) > 1 ? 1 : 0;
-    const dualB = (b.sources?.length ?? 1) > 1 ? 1 : 0;
-    if (dualA !== dualB) return dualB - dualA;
-
-    // 平分决胜 4：热度更高者优先
-    return (b.popularity ?? 0) - (a.popularity ?? 0);
-  });
-
-  return aggregated.slice(0, limit);
+  return aggregated.sort(compareAggregatedSongs).slice(0, limit);
 }

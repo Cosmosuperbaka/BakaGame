@@ -148,6 +148,120 @@ export const shuffle = <T>(items: T[], random: RandomSource): T[] => {
   return result;
 };
 
+/** 本局的词对映射：随机打乱后的平民词与卧底词。 */
+interface RoundWords {
+  civilianWord: string;
+  undercoverWord: string;
+}
+
+/** 一次身份分配的输入：参赛玩家、阵营配置、本局词对与随机源。 */
+interface RoleAssignmentInput {
+  playerIds: string[];
+  config: RoleConfig;
+  words: RoundWords;
+  random: RandomSource;
+}
+
+/** 手动指定身份的阵营与词条：白板不带词，卧底拿卧底词，其余按平民词。 */
+const toManualRoleState = (role: WhoIsFakerRole, words: RoundWords): RoundPlayerState => {
+  const side: PlayerSide =
+    role === "undercover" ? "undercover" : role === "blank" ? "blank" : "good";
+  const word =
+    role === "blank" ? undefined : role === "undercover" ? words.undercoverWord : words.civilianWord;
+
+  return { role, side, word, alive: true };
+};
+
+/** 按出题人指定的身份发牌：先校验每名参赛玩家都有身份，再校验身份数量与本局配置一致。 */
+const assignManualRoles = (
+  input: RoleAssignmentInput,
+  manualRoles: Record<string, WhoIsFakerRole>,
+): Record<string, RoundPlayerState> => {
+  const { playerIds, config, words } = input;
+
+  for (const pid of playerIds) {
+    if (!manualRoles[pid]) {
+      throw new AppError("INVALID_MANUAL_ROLES", "部分参赛玩家未指定身份");
+    }
+  }
+
+  const roles = playerIds.map((pid) => manualRoles[pid]);
+  const undercoverCount = roles.filter((r) => r === "undercover").length;
+  const angelCount = roles.filter((r) => r === "angel").length;
+  const blankCount = roles.filter((r) => r === "blank").length;
+
+  const expectedAngelCount = config.hasAngel ? 1 : 0;
+  const expectedBlankCount = config.hasBlank ? 1 : 0;
+
+  if (
+    undercoverCount !== config.undercoverCount ||
+    angelCount !== expectedAngelCount ||
+    blankCount !== expectedBlankCount
+  ) {
+    throw new AppError("INVALID_MANUAL_ROLES", "指定身份数量与当前局配置不符");
+  }
+
+  const assignments: Record<string, RoundPlayerState> = {};
+
+  for (const pid of playerIds) {
+    assignments[pid] = toManualRoleState(manualRoles[pid], words);
+  }
+
+  return assignments;
+};
+
+/** 随机发牌：洗牌后依次取白板、天使、卧底名额，剩余玩家为平民。 */
+const assignShuffledRoles = (input: RoleAssignmentInput): Record<string, RoundPlayerState> => {
+  const { playerIds, config, words, random } = input;
+  const assignments: Record<string, RoundPlayerState> = {};
+  const shuffledPlayers = shuffle(playerIds, random);
+  let cursor = 0;
+
+  if (config.hasBlank) {
+    const playerId = shuffledPlayers[cursor];
+    assignments[playerId] = {
+      role: "blank",
+      side: "blank",
+      alive: true,
+    };
+    cursor += 1;
+  }
+
+  if (config.hasAngel) {
+    const playerId = shuffledPlayers[cursor];
+    assignments[playerId] = {
+      role: "angel",
+      side: "good",
+      word: words.civilianWord,
+      alive: true,
+    };
+    cursor += 1;
+  }
+
+  for (let index = 0; index < config.undercoverCount; index += 1) {
+    const playerId = shuffledPlayers[cursor];
+    assignments[playerId] = {
+      role: "undercover",
+      side: "undercover",
+      word: words.undercoverWord,
+      alive: true,
+    };
+    cursor += 1;
+  }
+
+  for (; cursor < shuffledPlayers.length; cursor += 1) {
+    const playerId = shuffledPlayers[cursor];
+    assignments[playerId] = {
+      role: "civilian",
+      side: "good",
+      word: words.civilianWord,
+      alive: true,
+    };
+  }
+
+  return assignments;
+};
+
 export const assignRoles = (
   playerIds: string[],
   config: RoleConfig,
@@ -164,90 +278,17 @@ export const assignRoles = (
   // 出题人提交的是无序词对，真正的“平民词/卧底词”映射由服务端临时决定。
   const normalizedPair = normalizeWordPair(pair);
   const shuffledWords = shuffle([...normalizedPair], random);
-  const assignments: Record<string, RoundPlayerState> = {};
   const [civilianWord, undercoverWord] = shuffledWords;
-
-  if (manualRoles) {
-    for (const pid of playerIds) {
-      if (!manualRoles[pid]) {
-        throw new AppError("INVALID_MANUAL_ROLES", "部分参赛玩家未指定身份");
-      }
-    }
-    const roles = playerIds.map((pid) => manualRoles[pid]);
-    const undercoverCount = roles.filter((r) => r === "undercover").length;
-    const angelCount = roles.filter((r) => r === "angel").length;
-    const blankCount = roles.filter((r) => r === "blank").length;
-
-    const expectedAngelCount = config.hasAngel ? 1 : 0;
-    const expectedBlankCount = config.hasBlank ? 1 : 0;
-
-    if (
-      undercoverCount !== config.undercoverCount ||
-      angelCount !== expectedAngelCount ||
-      blankCount !== expectedBlankCount
-    ) {
-      throw new AppError("INVALID_MANUAL_ROLES", "指定身份数量与当前局配置不符");
-    }
-
-    for (const pid of playerIds) {
-      const role = manualRoles[pid];
-      const side: PlayerSide =
-        role === "undercover" ? "undercover" : role === "blank" ? "blank" : "good";
-      const word =
-        role === "blank" ? undefined : role === "undercover" ? undercoverWord : civilianWord;
-      assignments[pid] = {
-        role,
-        side,
-        word,
-        alive: true,
-      };
-    }
-  } else {
-    const shuffledPlayers = shuffle(playerIds, random);
-    let cursor = 0;
-
-    if (config.hasBlank) {
-      const playerId = shuffledPlayers[cursor];
-      assignments[playerId] = {
-        role: "blank",
-        side: "blank",
-        alive: true,
-      };
-      cursor += 1;
-    }
-
-    if (config.hasAngel) {
-      const playerId = shuffledPlayers[cursor];
-      assignments[playerId] = {
-        role: "angel",
-        side: "good",
-        word: civilianWord,
-        alive: true,
-      };
-      cursor += 1;
-    }
-
-    for (let index = 0; index < config.undercoverCount; index += 1) {
-      const playerId = shuffledPlayers[cursor];
-      assignments[playerId] = {
-        role: "undercover",
-        side: "undercover",
-        word: undercoverWord,
-        alive: true,
-      };
-      cursor += 1;
-    }
-
-    for (; cursor < shuffledPlayers.length; cursor += 1) {
-      const playerId = shuffledPlayers[cursor];
-      assignments[playerId] = {
-        role: "civilian",
-        side: "good",
-        word: civilianWord,
-        alive: true,
-      };
-    }
-  }
+  const input: RoleAssignmentInput = {
+    playerIds,
+    config,
+    words: { civilianWord, undercoverWord },
+    random,
+  };
+  // 手动指定身份不消耗随机源，随机发牌在词对之后洗牌。
+  const assignments = manualRoles
+    ? assignManualRoles(input, manualRoles)
+    : assignShuffledRoles(input);
 
   if (blankHint) {
     const normalizedHint = normalizeWord(blankHint);

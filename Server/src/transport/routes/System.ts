@@ -62,6 +62,57 @@ export const isPrivateLanHost = (rawHost: string): boolean => {
   return false;
 };
 
+const TELEMETRY_LOG_LEVELS: Record<"ERROR" | "WARN" | "INFO", "error" | "warn" | "info"> = {
+  ERROR: "error",
+  WARN: "warn",
+  INFO: "info",
+};
+
+type TelemetryLevel = keyof typeof TELEMETRY_LOG_LEVELS;
+type TelemetryMetadata = Record<string, unknown> | undefined;
+
+// 白名单隔离：丢弃外部试图伪造系统连接/房间/玩家标识的字段
+const FORBIDDEN_TELEMETRY_KEYS = new Set(["connectionid", "roomid", "playerid", "ip", "identifier"]);
+
+const resolveTelemetryLevel = (level?: string): TelemetryLevel => {
+  const lowered = level?.toLowerCase();
+  if (lowered === "error") return "ERROR";
+  if (lowered === "warn") return "WARN";
+  return "INFO";
+};
+
+const resolveTelemetryTraceId = (payloadTraceId?: string, traceHeader?: unknown): string | undefined => {
+  const rawTrace = payloadTraceId ?? (typeof traceHeader === "string" ? traceHeader : undefined);
+  return rawTrace ? sanitizeLogText(rawTrace, 64) : undefined;
+};
+
+const sanitizeTelemetryMetadata = (metadata: TelemetryMetadata): Record<string, unknown> => {
+  const safeMetadata: Record<string, unknown> = {};
+  if (metadata && typeof metadata === "object") {
+    for (const [key, value] of Object.entries(metadata)) {
+      if (FORBIDDEN_TELEMETRY_KEYS.has(key.toLowerCase())) continue;
+      safeMetadata[key] = typeof value === "string" ? sanitizeLogText(value, 256) : value;
+    }
+  }
+  return redactData(safeMetadata) as Record<string, unknown>;
+};
+
+const shouldRecordTelemetry = (level: TelemetryLevel, sampleRate: number): boolean =>
+  level === "ERROR" || sampleRate >= 1.0 || Math.random() < sampleRate;
+
+const writeClientTelemetryLog = (input: {
+  logger: EventLogger;
+  level: TelemetryLevel;
+  message: string;
+  logContext: Record<string, unknown>;
+}): void => {
+  const headline = `[CLIENT] ${input.message}`;
+  input.logger[TELEMETRY_LOG_LEVELS[input.level]](headline, input.logContext);
+};
+
+const sanitizeTelemetryMessage = (message?: string): string =>
+  sanitizeLogText(message || "前端上报遥测事件", 500);
+
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
@@ -106,47 +157,22 @@ export const systemRoutes = ({
         }
 
         const payload = body;
+        const level = resolveTelemetryLevel(payload.level);
+        const traceId = resolveTelemetryTraceId(payload.traceId, headers["x-trace-id"]);
+        const message = sanitizeTelemetryMessage(payload.message);
+        const sanitizedMeta = sanitizeTelemetryMetadata(payload.metadata);
 
-        const rawTrace =
-          payload.traceId ??
-          (typeof headers["x-trace-id"] === "string" ? headers["x-trace-id"] : undefined);
-        const traceId = rawTrace ? sanitizeLogText(rawTrace, 64) : undefined;
-        const level =
-          payload.level?.toLowerCase() === "error"
-            ? "ERROR"
-            : payload.level?.toLowerCase() === "warn"
-              ? "WARN"
-              : "INFO";
-        const message = sanitizeLogText(payload.message || "前端上报遥测事件", 500);
-
-        // 白名单隔离：丢弃外部试图伪造系统连接/房间/玩家标识的字段
-        const FORBIDDEN_KEYS = new Set(["connectionid", "roomid", "playerid", "ip", "identifier"]);
-        const safeMetadata: Record<string, unknown> = {};
-        if (payload.metadata && typeof payload.metadata === "object") {
-          for (const [key, value] of Object.entries(payload.metadata)) {
-            if (!FORBIDDEN_KEYS.has(key.toLowerCase())) {
-              safeMetadata[key] = typeof value === "string" ? sanitizeLogText(value, 256) : value;
-            }
-          }
-        }
-        const sanitizedMeta = redactData(safeMetadata) as Record<string, unknown>;
-
-        const isError = level === "ERROR";
-        const shouldSample = isError || sampleRate >= 1.0 || Math.random() < sampleRate;
-
-        if (logger && shouldSample) {
-          const logContext = {
-            source: "client_telemetry",
-            traceId,
-            ...sanitizedMeta,
-          };
-          if (level === "ERROR") {
-            logger.error(`[CLIENT] ${message}`, logContext);
-          } else if (level === "WARN") {
-            logger.warn(`[CLIENT] ${message}`, logContext);
-          } else {
-            logger.info(`[CLIENT] ${message}`, logContext);
-          }
+        if (logger && shouldRecordTelemetry(level, sampleRate)) {
+          writeClientTelemetryLog({
+            logger,
+            level,
+            message,
+            logContext: {
+              source: "client_telemetry",
+              traceId,
+              ...sanitizedMeta,
+            },
+          });
         }
 
         return { ok: true };

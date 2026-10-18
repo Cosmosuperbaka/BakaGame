@@ -93,149 +93,197 @@ const asAppError = (error: unknown, code: string) => error instanceof AppError
   ? error
   : new AppError(code, error instanceof Error ? error.message : "本地数据初始化失败");
 
+type InitRequest = Extract<BangumiDataRequest, { method: "init" }>;
+type SongRequest = Extract<BangumiDataRequest, { method: `song.${string}` }>;
+type CeeRequest = Extract<BangumiDataRequest, { method: `cee.${string}` }>;
+
+/** 猜歌链路建库：失败只记在本侧（两链路可用性各自判定，见文件头）。 */
+const initSongLink = async (request: InitRequest): Promise<void> => {
+  try {
+    // 玩家点开的条目登记到更新器：闭包引用，更新器晚一步创建也没关系。
+    song = new LocalBangumiProvider({ ...request.song, onSubjectView: (id) => updater?.requestRefresh(id) });
+    await song.initialize();
+  } catch (error) {
+    song = undefined;
+    songError = asAppError(error, "BANGUMI_DATA_UNAVAILABLE");
+  }
+};
+
+/** CEE 链路建库：同样失败只记在该侧，查询时再抛出来。 */
+const initCeeLink = async (request: InitRequest): Promise<void> => {
+  try {
+    cee = new CEECharacterRepository(request.cee);
+    await cee.initialize();
+  } catch (error) {
+    cee = undefined;
+    ceeError = asAppError(error, "CEE_DATA_UNAVAILABLE");
+  }
+};
+
+/**
+ * 更新器自己开一条数据集连接：它与查询侧同处本线程，写操作天然串行，
+ * 不必（也不该）去扒 provider 内部的句柄。
+ * 起不来只记警告：数据集缺失时查询链路已经各自报错了，更新器不该再把它
+ * 放大成 init 整体失败（那会让所有查询永久拿不到数据）。
+ */
+const createUpdater = (request: InitRequest): void => {
+  try {
+    updater = request.updater
+      ? new SubjectUpdater({
+          db: openDataset(request.song.dbPath),
+          // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
+          search: request.song.meilisearch?.apiKey
+            ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
+            : undefined,
+          images, logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
+          ...request.updater,
+        })
+      : undefined;
+    updater?.markDatasetFresh();
+    updater?.start();
+  } catch (error) {
+    console.warn(`运行时更新器未启动：${error instanceof Error ? error.message : String(error)}`);
+    updater = undefined;
+  }
+};
+
+/** 每日维护：补上两份 dump 之间新出的作品与角色。没有这一步，搜索永远搜不到新番。 */
+const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => {
+  const base = (request.song.apiBase ?? "").trim();
+  if (!base) return;   // 未配置上游地址时静默跳过（本地开发常见）。
+  const result = await requireCee().discoverNewSubjects(base);
+  console.log(`新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，`
+    + `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`);
+};
+
+/** 备份与标签增量的定时任务：库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。 */
+const scheduleRuntimeMaintenance = (request: InitRequest): void => {
+  stopBackup = scheduleDatasetBackup({
+    dbPath: request.song.dbPath,
+    backupPath: `${request.song.dbPath}.backup`,
+    logger: { warn: (message) => console.warn(message) },
+    // 备份期间停更新器：VACUUM INTO 出一致快照，别让写入拖长它。
+    onBackup: { pause: () => updater?.pause(), resume: () => updater?.resume() },
+    onDailyTask: () => discoverNewSubjectsDaily(request),
+  });
+  // 角色标签增量（CCB-TagsCI 产出）：定时拉取，不依赖任何外部触发。
+  stopTagDiff = tagDiff
+    ? scheduleTagDiffSync({
+        repository: () => requireCee(), diffUrl: tagDiff!.diffUrl, statePath: tagDiff!.statePath,
+        logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
+      })
+    : undefined;
+};
+
+/** 两条链路共用一次 init，但分别容错；两边的库各自建索引，串行初始化。 */
+const initRuntime = async (request: InitRequest): Promise<true> => {
+  // 同一进程内共用一个 Meilisearch 客户端即可，但索引写入仍由各自适配器排队，
+  // 并发只会让两边互相拖慢。
+  await initSongLink(request);
+  await initCeeLink(request);
+  tagDiff = request.tagDiff;
+  images = request.imagesDir ? BangumiImageStore.open(request.imagesDir) : undefined;
+  createUpdater(request);
+  scheduleRuntimeMaintenance(request);
+  return true;
+};
+
+const closeRuntime = async (): Promise<true> => {
+  updater?.stop();
+  updater = undefined;
+  stopTagDiff?.();
+  stopTagDiff = undefined;
+  stopBackup?.();
+  stopBackup = undefined;
+  await Promise.allSettled([cee, song].map((database) => Promise.resolve(database?.close())));
+  images?.close();
+  images = undefined;
+  song = undefined;
+  cee = undefined;
+  songError = undefined;
+  ceeError = undefined;
+  return true;
+};
+
+const dispatchSongRequest = async (request: SongRequest, provider: LocalBangumiProvider): Promise<unknown> => {
+  switch (request.method) {
+    case "song.searchSubjects": return provider.searchSubjects(request.keyword, request.limit, request.filters);
+    case "song.getSubject": return provider.getSubject(request.subjectId);
+    case "song.resolveCharacterImage": return provider.resolveCharacterImage(request.characterId);
+    case "song.resolveSubjectImage": return provider.resolveSubjectImage(request.subjectId);
+  }
+  return undefined;
+};
+
+const dispatchCeeRequest = async (request: CeeRequest, repository: CEECharacterRepository): Promise<unknown> => {
+  switch (request.method) {
+    case "cee.searchCharacters": return repository.searchCharacters(request.keyword, request.limit);
+    case "cee.searchSubjects": return repository.searchSubjects(request.keyword, request.limit, request.types);
+    case "cee.getSubjectCharacters": return repository.getSubjectCharacters(request.subjectId, request.limit);
+    case "cee.getSubjects": return repository.getSubjects(request.subjectIds);
+    case "cee.getRawCharacter": return repository.getRawCharacter(request.characterId);
+    case "cee.getCharacter": return repository.getCharacter(request.characterId, request.settings);
+    case "cee.chooseRandomCharacter": {
+      let cursor = 0;
+      return repository.chooseRandomCharacter(request.settings, () => {
+        const roll = request.rolls[cursor++];
+        if (roll === undefined) throw new AppError("CEE_DATA_INVALID", "随机采样参数不完整");
+        return roll;
+      });
+    }
+    case "cee.importDirectory": return repository.importDirectory(request.indexId);
+    case "cee.resolveCharacterImage": return repository.resolveCharacterImage(request.characterId, request.size);
+    case "cee.resolveSubjectImage": return repository.resolveSubjectImage(request.subjectId, request.size);
+    case "cee.syncTagDiff": {
+      if (!tagDiff) throw new AppError("CEE_DATA_UNAVAILABLE", "标签增量未配置");
+      return syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
+    }
+  }
+  return undefined;
+};
+
+/** 前缀分派要靠类型谓词收窄：`startsWith` 本身不动判别联合的类型。 */
+const isSongRequest = (request: BangumiDataRequest): request is SongRequest => request.method.startsWith("song.");
+
+const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> => {
+  if (request.method === "init") return initRuntime(request);
+  if (request.method === "close") return closeRuntime();
+  if (request.method === "images.put") {
+    if (!images) throw new AppError("BANGUMI_DATA_UNAVAILABLE", "图床未就绪");
+    images.put(request.path, request.bytes);
+    return true;
+  }
+  if (request.method === "updater.reportLoad") {
+    updater?.reportLoad(request.players);
+    return true;
+  }
+  if (request.method === "updater.stats") return updater?.stats() ?? { running: false };
+  if (request.method === "updater.refreshSubject") return updater ? updater.refresh(request.subjectId) : false;
+  if (isSongRequest(request)) return dispatchSongRequest(request, requireSong());
+  return dispatchCeeRequest(request, requireCee());
+};
+
+/**
+ * 失败回包：只对**非业务错误**打日志——`CEE_CHARACTER_NOT_FOUND` 这类是正常返回路径，
+ * 打出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
+ */
+const replyWithFailure = (request: BangumiDataRequest, error: unknown): void => {
+  if (!(error instanceof AppError)) console.error("Bangumi data worker query failed", error);
+  // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
+  // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CEE 的 code。
+  const isSongRequest = request.method.startsWith("song.");
+  const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CEE_DATA_UNAVAILABLE";
+  self.postMessage({ id: request.id, ok: false,
+    code,
+    message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",
+  } satisfies BangumiDataReply);
+};
+
 self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => {
   try {
-    let value: unknown;
-    if (request.method === "init") {
-      // 两边各自建索引，串行初始化：同一进程内共用一个 Meilisearch 客户端即可，
-      // 但索引写入仍由各自适配器排队，并发只会让两边互相拖慢。
-      // 玩家点开的条目登记到更新器：闭包引用，更新器晚一步创建也没关系。
-      try {
-        song = new LocalBangumiProvider({ ...request.song, onSubjectView: (id) => updater?.requestRefresh(id) });
-        await song.initialize();
-      } catch (error) {
-        song = undefined;
-        songError = asAppError(error, "BANGUMI_DATA_UNAVAILABLE");
-      }
-      try {
-        cee = new CEECharacterRepository(request.cee);
-        await cee.initialize();
-      } catch (error) {
-        cee = undefined;
-        ceeError = asAppError(error, "CEE_DATA_UNAVAILABLE");
-      }
-      // 库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。
-      tagDiff = request.tagDiff;
-      images = request.imagesDir ? BangumiImageStore.open(request.imagesDir) : undefined;
-      // 更新器自己开一条数据集连接：它与查询侧同处本线程，写操作天然串行，
-      // 不必（也不该）去扒 provider 内部的句柄。
-      // 起不来只记警告：数据集缺失时查询链路已经各自报错了，更新器不该再把它
-      // 放大成 init 整体失败（那会让所有查询永久拿不到数据）。
-      try {
-        updater = request.updater
-          ? new SubjectUpdater({
-              db: openDataset(request.song.dbPath),
-              // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
-              search: request.song.meilisearch?.apiKey
-                ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
-                : undefined,
-              images, logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
-              ...request.updater,
-            })
-          : undefined;
-        updater?.markDatasetFresh();
-        updater?.start();
-      } catch (error) {
-        console.warn(`运行时更新器未启动：${error instanceof Error ? error.message : String(error)}`);
-        updater = undefined;
-      }
-      stopBackup = scheduleDatasetBackup({
-        dbPath: request.song.dbPath,
-        backupPath: `${request.song.dbPath}.backup`,
-        logger: { warn: (message) => console.warn(message) },
-        // 备份期间停更新器：VACUUM INTO 出一致快照，别让写入拖长它。
-        onBackup: { pause: () => updater?.pause(), resume: () => updater?.resume() },
-        // 每日维护：补上两份 dump 之间新出的作品与角色。没有这一步，搜索永远搜不到新番。
-        onDailyTask: async () => {
-          const base = (request.song.apiBase ?? "").trim();
-          if (!base) return;   // 未配置上游地址时静默跳过（本地开发常见）。
-          const result = await requireCee().discoverNewSubjects(base);
-          console.log(`新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，`
-            + `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`);
-        },
-      });
-      // 角色标签增量（CCB-TagsCI 产出）：定时拉取，不依赖任何外部触发。
-      stopTagDiff = tagDiff
-        ? scheduleTagDiffSync({
-            repository: () => requireCee(), diffUrl: tagDiff!.diffUrl, statePath: tagDiff!.statePath,
-            logger: { warn: (message) => console.warn(message), info: (message) => console.log(message) },
-          })
-        : undefined;
-      value = true;
-    } else if (request.method === "close") {
-      updater?.stop();
-      updater = undefined;
-      stopTagDiff?.();
-      stopTagDiff = undefined;
-      stopBackup?.();
-      stopBackup = undefined;
-      await Promise.allSettled([cee, song].map((database) => Promise.resolve(database?.close())));
-      images?.close();
-      images = undefined;
-      song = undefined;
-      cee = undefined;
-      songError = undefined;
-      ceeError = undefined;
-      value = true;
-    } else if (request.method === "images.put") {
-      if (!images) throw new AppError("BANGUMI_DATA_UNAVAILABLE", "图床未就绪");
-      images.put(request.path, request.bytes);
-      value = true;
-    } else if (request.method === "updater.reportLoad") {
-      updater?.reportLoad(request.players);
-      value = true;
-    } else if (request.method === "updater.stats") {
-      value = updater?.stats() ?? { running: false };
-    } else if (request.method === "updater.refreshSubject") {
-      value = updater ? await updater.refresh(request.subjectId) : false;
-    } else if (request.method.startsWith("song.")) {
-      const provider = requireSong();
-      switch (request.method) {
-        case "song.searchSubjects": value = await provider.searchSubjects(request.keyword, request.limit, request.filters); break;
-        case "song.getSubject": value = await provider.getSubject(request.subjectId); break;
-        case "song.resolveCharacterImage": value = await provider.resolveCharacterImage(request.characterId); break;
-        case "song.resolveSubjectImage": value = await provider.resolveSubjectImage(request.subjectId); break;
-      }
-    } else {
-      const repository = requireCee();
-      switch (request.method) {
-        case "cee.searchCharacters": value = await repository.searchCharacters(request.keyword, request.limit); break;
-        case "cee.searchSubjects": value = await repository.searchSubjects(request.keyword, request.limit, request.types); break;
-        case "cee.getSubjectCharacters": value = await repository.getSubjectCharacters(request.subjectId, request.limit); break;
-        case "cee.getSubjects": value = await repository.getSubjects(request.subjectIds); break;
-        case "cee.getRawCharacter": value = await repository.getRawCharacter(request.characterId); break;
-        case "cee.getCharacter": value = await repository.getCharacter(request.characterId, request.settings); break;
-        case "cee.chooseRandomCharacter": {
-          let cursor = 0;
-          value = await repository.chooseRandomCharacter(request.settings, () => {
-            const roll = request.rolls[cursor++];
-            if (roll === undefined) throw new AppError("CEE_DATA_INVALID", "随机采样参数不完整");
-            return roll;
-          });
-          break;
-        }
-        case "cee.importDirectory": value = await repository.importDirectory(request.indexId); break;
-        case "cee.resolveCharacterImage": value = await repository.resolveCharacterImage(request.characterId, request.size); break;
-        case "cee.resolveSubjectImage": value = await repository.resolveSubjectImage(request.subjectId, request.size); break;
-        case "cee.syncTagDiff": {
-          if (!tagDiff) throw new AppError("CEE_DATA_UNAVAILABLE", "标签增量未配置");
-          value = await syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
-          break;
-        }
-      }
-    }
+    const value = await dispatchRequest(request);
     self.postMessage({ id: request.id, ok: true, value } satisfies BangumiDataReply);
   } catch (error) {
-    // 只对**非业务错误**打日志：`CEE_CHARACTER_NOT_FOUND` 这类是正常返回路径，
-    // 打出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
-    if (!(error instanceof AppError)) console.error("Bangumi data worker query failed", error);
-    // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
-    // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CEE 的 code。
-    const isSongRequest = request.method.startsWith("song.");
-    const code = error instanceof AppError ? error.code : isSongRequest ? "BANGUMI_DATA_UNAVAILABLE" : "CEE_DATA_UNAVAILABLE";
-    self.postMessage({ id: request.id, ok: false,
-      code,
-      message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",
-    } satisfies BangumiDataReply);
+    replyWithFailure(request, error);
   }
 };
