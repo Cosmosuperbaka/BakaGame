@@ -254,6 +254,8 @@ curl -s https://backend.example.com/readyz               # ready 为 true
   （`DEPLOYMENT_ENVIRONMENT=production` 关闭）。它把全部路由、参数与管理端点面列成一份可直接照打的清单，
   还会把 `SERVER_URL`（可能是内网主机名）写进 `servers.url`。HTTP 契约由 `Server/src/scripts/ExportOpenapi.ts`
   离线生成到 `Agents/http-openapi.json`，工具链不依赖线上文档；线上排障需要时显式设 `OPENAPI_ENABLED=true`。
+  产物固定用本地占位基址（`DOC_SERVER_URL`，不读 `SERVER_URL`），所以进仓库的这份不带部署主机名；
+  Postman 集合与 AI Agent 用的就是这一份，改了接口面重跑 `bun run docs:openapi` 后在 Postman 里重新导入即可。
 - **`/openapi` 只放宽 CSP**：Swagger UI 要跑内联脚本与外部资源，`default-src 'none'` 会把文档页打死，
   因此该路径只保留 `frame-ancestors`/`base-uri`/`form-action` 三条，其余收紧项（含 `nosniff`）照旧。
   放宽的是文档页自己的资源加载，不是 API 响应。

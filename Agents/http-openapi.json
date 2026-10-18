@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "BakaGame Backend HTTP API",
-    "description": "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。",
-    "version": "unversioned"
+    "description": "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。本页只列 Elysia 声明的路由；账号与后台 API（/api/rpc/*，oRPC 契约）由 scripts/ExportOpenapi.ts 一并写进仓库内的 Agents/http-openapi.json。\n\n## 账号 API（oRPC）\n\n账号 API 走 oRPC：`POST /api/rpc/<过程路径>`，过程路径就是客户端调用点的点号路径换成斜杠（`account.requestLoginCode` → `/api/rpc/account/requestLoginCode`）。\n请求头必须带 `content-type: application/json`。请求体与成功响应都只有一层 `json` 包络：请求 `{\"json\": {…入参}}`，响应 `{\"json\": {…返回值}}`；无入参的过程请求体给 `{}`。\n只用 POST。GET 能匹配到过程但回 405 `METHOD_NOT_SUPPORTED`；路径拼错回 404，且用的是 HTTP 信封 `{\"error\": …}` 而不是 RPC 信封。\n标了 `security` 的过程需要登录会话 Cookie（`bakagame.session_token`，由 `/api/auth/sign-in/email-otp` 下发，HttpOnly）；`Admin` 标签下还额外要求管理员角色。\n失败响应见 `components.responses`，统一为 `{\"json\": {\"defined\": false, code, status, message, data?}}`；`message` 可直接展示给玩家。\n整个 `/api/rpc/*` 前缀限流：60 秒滑动窗口内单客户端 300 次、全局 12000 次，超限回 429 并带 `Retry-After`。\n三款游戏的实时对局不在本文档内，走 WebSocket：`/api/whoisfaker/ws`、`/api/songuessr/ws`、`/api/cee/ws`。",
+    "version": "1.9.1"
   },
   "servers": [
     {
@@ -14,6 +14,26 @@
     {
       "name": "System",
       "description": "服务状态与版本信息"
+    },
+    {
+      "name": "Site",
+      "description": "站点访问打点。"
+    },
+    {
+      "name": "Account",
+      "description": "QQ 邮箱验证码登录、账号资料与公开资料卡。"
+    },
+    {
+      "name": "Settings",
+      "description": "跨设备云同步的偏好与音乐账号会话。"
+    },
+    {
+      "name": "Feedback",
+      "description": "玩家提交的站内反馈。"
+    },
+    {
+      "name": "Admin",
+      "description": "管理后台：账号、反馈、房间、对局记录、审计与统计。全部要求管理员角色。"
     }
   ],
   "paths": {
@@ -74,8 +94,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -103,8 +122,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -132,8 +150,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -165,8 +270,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -194,8 +298,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -223,8 +326,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -256,8 +358,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -285,8 +386,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -314,8 +414,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -344,7 +443,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -357,7 +471,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -370,7 +499,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -390,8 +534,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -419,8 +562,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -448,8 +590,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -748,8 +889,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -777,8 +917,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -806,8 +945,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -839,8 +1065,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -868,8 +1093,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -897,8 +1121,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -930,8 +1153,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -959,8 +1181,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -988,8 +1209,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1021,8 +1329,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1050,8 +1357,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1079,8 +1385,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1185,8 +1490,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1214,8 +1518,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1243,8 +1546,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1276,8 +1666,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1305,8 +1694,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1334,8 +1722,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1367,8 +1754,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1396,8 +1782,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1425,8 +1810,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1458,8 +1930,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1487,8 +1958,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1516,8 +1986,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1623,15 +2092,15 @@
                       "type": "string"
                     },
                     "roomCount": {
-                      "description": "活跃房间总数",
+                      "description": "活跃房间总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "connectionCount": {
-                      "description": "当前连接总数",
+                      "description": "当前连接总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "onlinePlayerCount": {
-                      "description": "在线玩家总数",
+                      "description": "在线玩家总数（匿名为量级近似值）",
                       "type": "number"
                     }
                   },
@@ -1652,15 +2121,15 @@
                       "type": "string"
                     },
                     "roomCount": {
-                      "description": "活跃房间总数",
+                      "description": "活跃房间总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "connectionCount": {
-                      "description": "当前连接总数",
+                      "description": "当前连接总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "onlinePlayerCount": {
-                      "description": "在线玩家总数",
+                      "description": "在线玩家总数（匿名为量级近似值）",
                       "type": "number"
                     }
                   },
@@ -1681,15 +2150,15 @@
                       "type": "string"
                     },
                     "roomCount": {
-                      "description": "活跃房间总数",
+                      "description": "活跃房间总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "connectionCount": {
-                      "description": "当前连接总数",
+                      "description": "当前连接总数（匿名为量级近似值）",
                       "type": "number"
                     },
                     "onlinePlayerCount": {
-                      "description": "在线玩家总数",
+                      "description": "在线玩家总数（匿名为量级近似值）",
                       "type": "number"
                     }
                   },
@@ -1713,8 +2182,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1742,8 +2210,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1771,8 +2238,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1804,8 +2358,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1833,8 +2386,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1862,8 +2414,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1895,8 +2446,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1924,8 +2474,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1953,8 +2502,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -1986,8 +2622,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2015,8 +2650,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2044,8 +2678,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2073,7 +2706,7 @@
           "System"
         ],
         "summary": "获取服务健康状态",
-        "description": "返回当前运行状况、房间数量、连接数和在线玩家数（聚合所有游戏模式）。"
+        "description": "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。"
       }
     },
     "/api/system/notify-shutdown": {
@@ -2144,8 +2777,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2173,8 +2805,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2202,8 +2833,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2232,7 +2862,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -2245,7 +2890,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -2258,7 +2918,22 @@
                   "type": "object",
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   },
                   "required": [
@@ -2278,8 +2953,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2307,8 +2981,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2336,8 +3009,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2369,8 +3041,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2398,8 +3069,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2427,8 +3097,95 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "traceId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2460,8 +3217,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2489,8 +3245,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2518,8 +3273,7 @@
                       "type": "object",
                       "required": [
                         "code",
-                        "message",
-                        "traceId"
+                        "message"
                       ],
                       "properties": {
                         "code": {
@@ -2562,9 +3316,4648 @@
           "200": {}
         }
       }
+    },
+    "/api/rpc/site/visit": {
+      "post": {
+        "tags": [
+          "Site"
+        ],
+        "operationId": "site.visit",
+        "summary": "site.visit",
+        "description": "前端每次载入页面报一次；`visitorId` 是浏览器本地随机值，路径只按板块统计，未登录同样记录。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "visitorId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{16,64}$"
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 512
+                      }
+                    },
+                    "required": [
+                      "visitorId",
+                      "path"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/account/requestLoginCode": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "operationId": "account.requestLoginCode",
+        "summary": "account.requestLoginCode",
+        "description": "发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；`qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "qqNumber": {
+                        "type": "string",
+                        "pattern": "^[1-9]\\d{4,10}$"
+                      }
+                    },
+                    "required": [
+                      "qqNumber"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "registered": {
+                          "type": "boolean"
+                        },
+                        "resendAfterSeconds": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "qqName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "registered",
+                        "resendAfterSeconds",
+                        "qqName"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/account/me": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "operationId": "account.me",
+        "summary": "account.me",
+        "description": "当前登录资料；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
+        "security": [],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/AccountProfile"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/account/updateProfile": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "operationId": "account.updateProfile",
+        "summary": "account.updateProfile",
+        "description": "账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "showQq": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AccountProfile"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/account/publicProfile": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "operationId": "account.publicProfile",
+        "summary": "account.publicProfile",
+        "description": "别人看到的资料卡：QQ 号仅在本人公开时出现。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "userId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/PublicProfile"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/settings/get": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "settings.get",
+        "summary": "settings.get",
+        "description": "读取云端设置：偏好文档与两个音乐平台的账号会话。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/CloudSettings"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/settings/savePreferences": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "settings.savePreferences",
+        "summary": "settings.savePreferences",
+        "description": "整体覆盖偏好文档，返回服务端记录的更新时间；文档超限即拒绝。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "value"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/settings/saveMusicSession": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "settings.saveMusicSession",
+        "summary": "settings.saveMusicSession",
+        "description": "保存某个音乐平台的账号会话；`session` 为空表示退出该平台账号并删除云端副本。cookie 在服务端加密落库，只回给本人。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "platform": {
+                        "type": "string",
+                        "enum": [
+                          "netease",
+                          "qq"
+                        ]
+                      },
+                      "session": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "cookie": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 16384
+                              },
+                              "account": {
+                                "type": "object",
+                                "properties": {
+                                  "platform": {
+                                    "type": "string",
+                                    "enum": [
+                                      "netease",
+                                      "qq"
+                                    ]
+                                  },
+                                  "userId": {
+                                    "type": "string",
+                                    "maxLength": 64
+                                  },
+                                  "nickname": {
+                                    "type": "string",
+                                    "maxLength": 128
+                                  },
+                                  "avatarUrl": {
+                                    "type": "string",
+                                    "maxLength": 1024
+                                  },
+                                  "vipStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "vip",
+                                      "nonVip",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "vipType": {
+                                    "type": "number"
+                                  },
+                                  "vipExpireTime": {
+                                    "type": "number"
+                                  },
+                                  "vipTier": {
+                                    "type": "string",
+                                    "enum": [
+                                      "svip",
+                                      "vip",
+                                      "musicPackage"
+                                    ]
+                                  },
+                                  "vipLevel": {
+                                    "type": "number"
+                                  },
+                                  "vipYear": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "nickname"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "cookie",
+                              "account"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "platform",
+                      "session"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/feedback/create": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedback.create",
+        "summary": "feedback.create",
+        "description": "提交站内反馈；服务端一并记下请求的 user-agent。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "suggestion",
+                          "bug"
+                        ]
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "page": {
+                        "type": "string",
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "title",
+                      "content"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/FeedbackSummary"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/feedback/listMine": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedback.listMine",
+        "summary": "feedback.listMine",
+        "description": "列出本人提交的反馈与未读回复数。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/FeedbackSummary"
+                          }
+                        },
+                        "unread": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "unread"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/feedback/get": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedback.get",
+        "summary": "feedback.get",
+        "description": "读取反馈详情，并把晚于本人上次查看的管理员回复标记为已读。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/FeedbackDetail"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.list",
+        "summary": "admin.users.list",
+        "description": "分页查账号；`query` 为纯数字时按 QQ 号前缀匹配，否则按账号昵称包含匹配。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "query": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "admin"
+                        ]
+                      },
+                      "banned": {
+                        "type": "boolean"
+                      },
+                      "limit": {
+                        "default": 20,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "offset": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminUser"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/get": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.get",
+        "summary": "admin.users.get",
+        "description": "账号详情：资料、最近对局与反馈数。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "userId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminUserDetail"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/ban": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.ban",
+        "summary": "admin.users.ban",
+        "description": "封禁账号并吊销全部会话；`expiresInHours` 缺省为永久。不能封禁自己或其他管理员。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "expiresInHours": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 87600
+                      }
+                    },
+                    "required": [
+                      "userId",
+                      "reason"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminUser"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/unban": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.unban",
+        "summary": "admin.users.unban",
+        "description": "解除封禁，会话不恢复（登录时按封禁状态判定）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "userId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminUser"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/setRole": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.setRole",
+        "summary": "admin.users.setRole",
+        "description": "切换 `user` / `admin` 角色。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "admin"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "userId",
+                      "role"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminUser"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/revokeSessions": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.revokeSessions",
+        "summary": "admin.users.revokeSessions",
+        "description": "吊销该账号的全部会话（强制下线），不改资料与封禁状态。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "userId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/feedback/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.feedback.list",
+        "summary": "admin.feedback.list",
+        "description": "分页查全部反馈，可按状态、类型、提交人过滤。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "processing",
+                          "resolved",
+                          "closed"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "suggestion",
+                          "bug"
+                        ]
+                      },
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "limit": {
+                        "default": 20,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "offset": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminFeedback"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/feedback/get": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.feedback.get",
+        "summary": "admin.feedback.get",
+        "description": "读取单条反馈详情，含全部回复与提交时的 user-agent。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminFeedbackDetail"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/feedback/reply": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.feedback.reply",
+        "summary": "admin.feedback.reply",
+        "description": "回复反馈；用户侧出现未读，待处理的反馈随之转为处理中。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      },
+                      "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "content"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminFeedbackDetail"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/feedback/setStatus": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.feedback.setStatus",
+        "summary": "admin.feedback.setStatus",
+        "description": "更新反馈状态。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "processing",
+                          "resolved",
+                          "closed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminFeedback"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/rooms/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.rooms.list",
+        "summary": "admin.rooms.list",
+        "description": "列出实时房间（进程内全量，不分页）；CEE 只含增强房。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "game": {
+                        "type": "string",
+                        "enum": [
+                          "faker",
+                          "song",
+                          "cee"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AdminRoom"
+                      }
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/rooms/close": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.rooms.close",
+        "summary": "admin.rooms.close",
+        "description": "关闭指定房间，房内玩家收到关闭原因。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "game": {
+                        "type": "string",
+                        "enum": [
+                          "faker",
+                          "song",
+                          "cee"
+                        ]
+                      },
+                      "roomId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                      }
+                    },
+                    "required": [
+                      "game",
+                      "roomId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/rooms/kick": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.rooms.kick",
+        "summary": "admin.rooms.kick",
+        "description": "把玩家踢出房间；玩家不在该房间时报 `PLAYER_NOT_FOUND`。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "game": {
+                        "type": "string",
+                        "enum": [
+                          "faker",
+                          "song",
+                          "cee"
+                        ]
+                      },
+                      "roomId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                      },
+                      "playerId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    },
+                    "required": [
+                      "game",
+                      "roomId",
+                      "playerId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/games/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.games.list",
+        "summary": "admin.games.list",
+        "description": "分页查对局记录，可按游戏、房号、参与人过滤。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "game": {
+                        "type": "string",
+                        "enum": [
+                          "faker",
+                          "song",
+                          "cee"
+                        ]
+                      },
+                      "roomId": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "limit": {
+                        "default": 20,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "offset": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/GameRecordItem"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/games/get": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.games.get",
+        "summary": "admin.games.get",
+        "description": "对局详情：逐回合得分与全房合并时间线。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 36
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/GameRecordDetail"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/audit/list": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.audit.list",
+        "summary": "admin.audit.list",
+        "description": "分页查管理操作审计流水（所有写操作都会在此留痕）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "actorId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "action": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "targetType": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "targetId": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "limit": {
+                        "default": 20,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      "offset": {
+                        "default": 0,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AuditEntry"
+                          }
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/qq/status": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.qq.status",
+        "summary": "admin.qq.status",
+        "description": "探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/QQLookupStatus"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/qq/refreshNames": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.qq.refreshNames",
+        "summary": "admin.qq.refreshNames",
+        "description": "刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "checked": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updated": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "remaining": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "checked",
+                        "updated",
+                        "remaining"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/stats/overview": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.stats.overview",
+        "summary": "admin.stats.overview",
+        "description": "后台概览：账号与反馈量、三款游戏的实时房间，以及按北京时间自然日的访问与对局（`days` 默认 14，上限 90）。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "days": {
+                        "default": 14,
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AdminOverview"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/stats/sentry": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.stats.sentry",
+        "summary": "admin.stats.sentry",
+        "description": "服务端以只读令牌代查 Sentry 近 24 小时的错误与耗时分位，结果缓存 60 秒；令牌不出服务端。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/SentryOverview"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
     }
   },
   "components": {
-    "schemas": {}
+    "schemas": {
+      "AccountProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "qqNumber": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "showQq": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "qqNumber",
+          "image",
+          "showQq",
+          "role",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "PublicProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qqNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "image",
+          "qqNumber"
+        ],
+        "additionalProperties": false
+      },
+      "MusicSession": {
+        "type": "object",
+        "properties": {
+          "cookie": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "account": {
+            "type": "object",
+            "properties": {
+              "platform": {
+                "type": "string",
+                "enum": [
+                  "netease",
+                  "qq"
+                ]
+              },
+              "userId": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "nickname": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "avatarUrl": {
+                "type": "string",
+                "maxLength": 1024
+              },
+              "vipStatus": {
+                "type": "string",
+                "enum": [
+                  "vip",
+                  "nonVip",
+                  "unknown"
+                ]
+              },
+              "vipType": {
+                "type": "number"
+              },
+              "vipExpireTime": {
+                "type": "number"
+              },
+              "vipTier": {
+                "type": "string",
+                "enum": [
+                  "svip",
+                  "vip",
+                  "musicPackage"
+                ]
+              },
+              "vipLevel": {
+                "type": "number"
+              },
+              "vipYear": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "nickname"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "cookie",
+          "account"
+        ],
+        "additionalProperties": false
+      },
+      "CloudSettings": {
+        "type": "object",
+        "properties": {
+          "preferences": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "additionalProperties": {}
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "music": {
+            "type": "object",
+            "properties": {
+              "netease": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/MusicSession"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "qq": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/MusicSession"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "netease",
+              "qq"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "preferences",
+          "music"
+        ],
+        "additionalProperties": false
+      },
+      "FeedbackSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "suggestion",
+              "bug"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "processing",
+              "resolved",
+              "closed"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastReplyAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unread": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "status",
+          "createdAt",
+          "lastReplyAt",
+          "unread"
+        ],
+        "additionalProperties": false
+      },
+      "FeedbackReply": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "FeedbackDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "suggestion",
+              "bug"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "processing",
+              "resolved",
+              "closed"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastReplyAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unread": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackReply"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "status",
+          "createdAt",
+          "lastReplyAt",
+          "unread",
+          "content",
+          "page",
+          "replies"
+        ],
+        "additionalProperties": false
+      },
+      "AdminUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "qqNumber": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "banned": {
+            "type": "boolean"
+          },
+          "banReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "banExpires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "showQq": {
+            "type": "boolean"
+          },
+          "qqName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "qqNumber",
+          "image",
+          "role",
+          "banned",
+          "banReason",
+          "banExpires",
+          "showQq",
+          "qqName",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "AdminUserDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "qqNumber": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "banned": {
+            "type": "boolean"
+          },
+          "banReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "banExpires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "showQq": {
+            "type": "boolean"
+          },
+          "qqName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "recentGames": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GameRecordItem"
+            }
+          },
+          "feedbackCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "qqNumber",
+          "image",
+          "role",
+          "banned",
+          "banReason",
+          "banExpires",
+          "showQq",
+          "qqName",
+          "createdAt",
+          "recentGames",
+          "feedbackCount"
+        ],
+        "additionalProperties": false
+      },
+      "GameRecordItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string",
+            "enum": [
+              "faker",
+              "song",
+              "cee"
+            ]
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "roundCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "playerId": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "playerId",
+                "userId",
+                "name",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "game",
+          "roomId",
+          "roundCount",
+          "startedAt",
+          "endedAt",
+          "players"
+        ],
+        "additionalProperties": false
+      },
+      "GameRecordDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "game": {
+            "type": "string",
+            "enum": [
+              "faker",
+              "song",
+              "cee"
+            ]
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "roundCount": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "string"
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "playerId": {
+                  "type": "string"
+                },
+                "userId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "playerId",
+                "userId",
+                "name",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "rounds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "startedAt": {
+                  "type": "string"
+                },
+                "endedAt": {
+                  "type": "string"
+                },
+                "players": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "playerId": {
+                        "type": "string"
+                      },
+                      "userId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "playerId",
+                      "userId",
+                      "name",
+                      "score"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "summary": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                }
+              },
+              "required": [
+                "number",
+                "startedAt",
+                "endedAt",
+                "players",
+                "summary"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "timeline": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "at": {
+                  "type": "number"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "at",
+                "type"
+              ],
+              "additionalProperties": {}
+            }
+          }
+        },
+        "required": [
+          "id",
+          "game",
+          "roomId",
+          "roundCount",
+          "startedAt",
+          "endedAt",
+          "players",
+          "rounds",
+          "timeline"
+        ],
+        "additionalProperties": false
+      },
+      "AdminFeedback": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "suggestion",
+              "bug"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "processing",
+              "resolved",
+              "closed"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastReplyAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "qqNumber": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "qqNumber",
+                  "image"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sentryEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "status",
+          "createdAt",
+          "lastReplyAt",
+          "user",
+          "page",
+          "sentryEventId"
+        ],
+        "additionalProperties": false
+      },
+      "AdminFeedbackDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "suggestion",
+              "bug"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "processing",
+              "resolved",
+              "closed"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastReplyAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "qqNumber": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "qqNumber",
+                  "image"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sentryEventId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "userAgent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "content": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "author": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "qqNumber": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "qqNumber",
+                        "image"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "content",
+                "createdAt",
+                "author"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "status",
+          "createdAt",
+          "lastReplyAt",
+          "user",
+          "page",
+          "sentryEventId",
+          "content",
+          "userAgent",
+          "replies"
+        ],
+        "additionalProperties": false
+      },
+      "AdminRoom": {
+        "type": "object",
+        "properties": {
+          "game": {
+            "type": "string",
+            "enum": [
+              "faker",
+              "song",
+              "cee"
+            ]
+          },
+          "roomId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ]
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "roundNumber": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastActiveAt": {
+            "type": "string"
+          },
+          "players": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "membership": {
+                  "type": "string"
+                },
+                "host": {
+                  "type": "boolean"
+                },
+                "bot": {
+                  "type": "boolean"
+                },
+                "userId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "online",
+                "membership",
+                "host",
+                "bot",
+                "userId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "game",
+          "roomId",
+          "name",
+          "phase",
+          "visibility",
+          "hasPassword",
+          "hidden",
+          "roundNumber",
+          "createdAt",
+          "lastActiveAt",
+          "players"
+        ],
+        "additionalProperties": false
+      },
+      "AdminOverview": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "number"
+              },
+              "admins": {
+                "type": "number"
+              },
+              "banned": {
+                "type": "number"
+              },
+              "newToday": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "total",
+              "admins",
+              "banned",
+              "newToday"
+            ],
+            "additionalProperties": false
+          },
+          "feedback": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "open",
+                "processing",
+                "resolved",
+                "closed"
+              ]
+            },
+            "additionalProperties": {
+              "type": "number"
+            },
+            "required": [
+              "open",
+              "processing",
+              "resolved",
+              "closed"
+            ]
+          },
+          "live": {
+            "type": "object",
+            "properties": {
+              "faker": {
+                "type": "object",
+                "properties": {
+                  "rooms": {
+                    "type": "number"
+                  },
+                  "onlinePlayers": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "rooms",
+                  "onlinePlayers"
+                ],
+                "additionalProperties": false
+              },
+              "song": {
+                "type": "object",
+                "properties": {
+                  "rooms": {
+                    "type": "number"
+                  },
+                  "onlinePlayers": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "rooms",
+                  "onlinePlayers"
+                ],
+                "additionalProperties": false
+              },
+              "cee": {
+                "type": "object",
+                "properties": {
+                  "rooms": {
+                    "type": "number"
+                  },
+                  "onlinePlayers": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "rooms",
+                  "onlinePlayers"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "faker",
+              "song",
+              "cee"
+            ],
+            "additionalProperties": false
+          },
+          "daily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string"
+                },
+                "visitors": {
+                  "type": "number"
+                },
+                "signedInVisitors": {
+                  "type": "number"
+                },
+                "views": {
+                  "type": "number"
+                },
+                "newUsers": {
+                  "type": "number"
+                },
+                "games": {
+                  "type": "object",
+                  "properties": {
+                    "faker": {
+                      "type": "number"
+                    },
+                    "song": {
+                      "type": "number"
+                    },
+                    "cee": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "faker",
+                    "song",
+                    "cee"
+                  ],
+                  "additionalProperties": false
+                },
+                "roundPlayers": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "day",
+                "visitors",
+                "signedInVisitors",
+                "views",
+                "newUsers",
+                "games",
+                "roundPlayers"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "views": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "path",
+                "views"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "users",
+          "feedback",
+          "live",
+          "daily",
+          "pages"
+        ],
+        "additionalProperties": false
+      },
+      "SentryOverview": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "errors24h": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unresolvedIssues": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "shortId": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "culprit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "level": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "number"
+                },
+                "userCount": {
+                  "type": "number"
+                },
+                "lastSeen": {
+                  "type": "string"
+                },
+                "permalink": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "project": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "shortId",
+                "title",
+                "culprit",
+                "level",
+                "count",
+                "userCount",
+                "lastSeen",
+                "permalink",
+                "project"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "transactions": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "project": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "count": {
+                      "type": "number"
+                    },
+                    "p75": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "p95": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "project",
+                    "count",
+                    "p75",
+                    "p95"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fetchedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "configured",
+          "errors24h",
+          "unresolvedIssues",
+          "issues",
+          "transactions",
+          "warnings",
+          "fetchedAt"
+        ],
+        "additionalProperties": false
+      },
+      "QQLookupStatus": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "unavailable"
+            ]
+          },
+          "uin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nickname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checkedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "uin",
+          "nickname",
+          "checkedAt",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "qqNumber": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "qqNumber",
+                  "image"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor",
+          "action",
+          "targetType",
+          "targetId",
+          "detail",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "请求体不合法：JSON 无法解析、缺 `json` 包络，或字段没通过契约校验（`json.data.issues` 给出具体字段）。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "缺少或已失效的会话 Cookie。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "已登录但角色不是管理员，或账号处于封禁中。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "超出 RPC 前缀的额度（60 秒滑动窗口内单客户端 300 次）。响应带 `X-RateLimit-*` 与 `Retry-After`，按 `Retry-After` 等待后重试即可。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "服务端内部异常，调用方无法预防。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AccountDisabled": {
+        "description": "服务端未配置数据库，账号系统整体停用；前端据此隐藏登录入口。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "json"
+              ],
+              "properties": {
+                "json": {
+                  "type": "object",
+                  "required": [
+                    "defined",
+                    "code",
+                    "status",
+                    "message"
+                  ],
+                  "properties": {
+                    "defined": {
+                      "type": "boolean",
+                      "const": false,
+                      "description": "固定为 false：错误由传输层产出，不在过程的错误声明里。"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "业务错误码，客户端据此分支。常见值：BAD_REQUEST（请求体不合法）、UNAUTHORIZED（未登录）、FORBIDDEN 与 ACCOUNT_BANNED（无权限或已封禁）、RATE_LIMITED（超额度）、ACCOUNT_DISABLED（账号系统未启用）、INTERNAL_ERROR 与 INTERNAL_SERVER_ERROR（服务端异常）、QQ_LOOKUP_DISABLED 等 503 类依赖不可用码。"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "description": "与 HTTP 状态码一致。"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "可直接展示给玩家的中文文案。"
+                    },
+                    "data": {
+                      "type": "object",
+                      "description": "部分错误附带细节，例如入参校验失败时的 `issues` 数组。"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "bakagame.session_token",
+        "description": "登录后由 `/api/auth/sign-in/email-otp` 下发的 HttpOnly 会话 Cookie。登出或封禁后失效，受保护的过程回 401。"
+      }
+    }
   }
 }

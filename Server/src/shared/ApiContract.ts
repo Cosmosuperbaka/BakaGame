@@ -265,10 +265,19 @@ export const auditEntrySchema = z.object({
   createdAt: z.string(),
 });
 
+/**
+ * 过程的机器可读说明，`scripts/ExportOpenapi.ts` 据此生成对外契约（Postman / AI Agent 直接照打）。
+ *
+ * - `description`：调用方视角的行为与前置条件，是这个过程的**唯一**说明来源，不再另写文档注释。
+ * - `auth`：服务端路由实际套用的鉴权层级，必须与 `transport/routes/Account.ts` 的
+ *   `base` / `signedIn` / `adminOnly` 一致；`test/RpcOpenapi.test.ts` 用真实路由核对，写错即红。
+ */
+export type RpcAuth = "public" | "session" | "admin";
+const op = (description: string, auth: RpcAuth) => oc.meta({ description, auth });
+
 const adminContract = {
   users: {
-    /** `query` 为纯数字时按 QQ 号前缀匹配，否则按账号昵称包含匹配。 */
-    list: oc
+    list: op("分页查账号；`query` 为纯数字时按 QQ 号前缀匹配，否则按账号昵称包含匹配。", "admin")
       .input(z.object({
         query: z.string().trim().max(64).optional(),
         role: z.enum(["user", "admin"]).optional(),
@@ -276,46 +285,50 @@ const adminContract = {
         ...page,
       }))
       .output(paged(adminUserSchema)),
-    get: oc
+    get: op("账号详情：资料、最近对局与反馈数。", "admin")
       .input(z.object({ userId }))
       .output(adminUserDetailSchema),
-    /** 封禁同时吊销全部会话；`expiresInHours` 缺省为永久。不能封禁自己或其他管理员。 */
-    ban: oc
+    ban: op("封禁账号并吊销全部会话；`expiresInHours` 缺省为永久。不能封禁自己或其他管理员。", "admin")
       .input(z.object({ userId, reason: reason.min(1, "请填写封禁原因"), expiresInHours: z.number().int().min(1).max(24 * 3650).optional() }))
       .output(adminUserSchema),
-    unban: oc.input(z.object({ userId })).output(adminUserSchema),
-    setRole: oc.input(z.object({ userId, role: z.enum(["user", "admin"]) })).output(adminUserSchema),
-    revokeSessions: oc.input(z.object({ userId })).output(z.object({ ok: z.literal(true) })),
+    unban: op("解除封禁，会话不恢复（登录时按封禁状态判定）。", "admin")
+      .input(z.object({ userId })).output(adminUserSchema),
+    setRole: op("切换 `user` / `admin` 角色。", "admin")
+      .input(z.object({ userId, role: z.enum(["user", "admin"]) })).output(adminUserSchema),
+    revokeSessions: op("吊销该账号的全部会话（强制下线），不改资料与封禁状态。", "admin")
+      .input(z.object({ userId })).output(z.object({ ok: z.literal(true) })),
   },
   feedback: {
-    list: oc
+    list: op("分页查全部反馈，可按状态、类型、提交人过滤。", "admin")
       .input(z.object({ status: feedbackStatusSchema.optional(), kind: feedbackKindSchema.optional(), userId: userId.optional(), ...page }))
       .output(paged(adminFeedbackSchema)),
-    get: oc.input(z.object({ id: z.string().min(1).max(36) })).output(adminFeedbackDetailSchema),
-    /** 回复后用户侧出现未读；待处理的反馈随之转为处理中。 */
-    reply: oc
+    get: op("读取单条反馈详情，含全部回复与提交时的 user-agent。", "admin")
+      .input(z.object({ id: z.string().min(1).max(36) })).output(adminFeedbackDetailSchema),
+    reply: op("回复反馈；用户侧出现未读，待处理的反馈随之转为处理中。", "admin")
       .input(z.object({ id: z.string().min(1).max(36), content: z.string().trim().min(1, "请填写回复").max(FEEDBACK_REPLY_MAX_LENGTH) }))
       .output(adminFeedbackDetailSchema),
-    setStatus: oc
+    setStatus: op("更新反馈状态。", "admin")
       .input(z.object({ id: z.string().min(1).max(36), status: feedbackStatusSchema }))
       .output(adminFeedbackSchema),
   },
   rooms: {
-    /** 实时房间（不分页，进程内全量）；CEE 只含增强房。 */
-    list: oc.input(z.object({ game: recordedGameSchema.optional() })).output(z.array(adminRoomSchema)),
-    close: oc.input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32) })).output(z.object({ ok: z.literal(true) })),
-    kick: oc
+    list: op("列出实时房间（进程内全量，不分页）；CEE 只含增强房。", "admin")
+      .input(z.object({ game: recordedGameSchema.optional() })).output(z.array(adminRoomSchema)),
+    close: op("关闭指定房间，房内玩家收到关闭原因。", "admin")
+      .input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32) })).output(z.object({ ok: z.literal(true) })),
+    kick: op("把玩家踢出房间；玩家不在该房间时报 `PLAYER_NOT_FOUND`。", "admin")
       .input(z.object({ game: recordedGameSchema, roomId: z.string().min(1).max(32), playerId: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
   },
   games: {
-    list: oc
+    list: op("分页查对局记录，可按游戏、房号、参与人过滤。", "admin")
       .input(z.object({ game: recordedGameSchema.optional(), roomId: z.string().max(32).optional(), userId: userId.optional(), ...page }))
       .output(paged(gameRecordItemSchema)),
-    get: oc.input(z.object({ id: z.string().min(1).max(36) })).output(gameRecordDetailSchema),
+    get: op("对局详情：逐回合得分与全房合并时间线。", "admin")
+      .input(z.object({ id: z.string().min(1).max(36) })).output(gameRecordDetailSchema),
   },
   audit: {
-    list: oc
+    list: op("分页查管理操作审计流水（所有写操作都会在此留痕）。", "admin")
       .input(z.object({
         actorId: userId.optional(),
         action: z.string().max(64).optional(),
@@ -326,56 +339,57 @@ const adminContract = {
       .output(paged(auditEntrySchema)),
   },
   qq: {
-    /** 探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。 */
-    status: oc.output(qqLookupStatusSchema),
-    /** 刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。 */
-    refreshNames: oc.output(z.object({ checked: z.number().int(), updated: z.number().int(), remaining: z.number().int() })),
+    status: op("探测 NapCat 是否在线并已登录 QQ（结果在服务端缓存 15 秒）。", "admin")
+      .output(qqLookupStatusSchema),
+    refreshNames: op("刷新最久未查的一批账号的 QQ 昵称（单次最多 200 个）。", "admin")
+      .output(z.object({ checked: z.number().int(), updated: z.number().int(), remaining: z.number().int() })),
   },
   stats: {
-    overview: oc.input(z.object({ days: z.number().int().min(1).max(90).default(14) })).output(adminOverviewSchema),
-    /** 服务端以只读令牌代查 Sentry，结果缓存 60 秒；令牌不出服务端。 */
-    sentry: oc.output(sentryOverviewSchema),
+    overview: op("后台概览：账号与反馈量、三款游戏的实时房间，以及按北京时间自然日的访问与对局（`days` 默认 14，上限 90）。", "admin")
+      .input(z.object({ days: z.number().int().min(1).max(90).default(14) })).output(adminOverviewSchema),
+    sentry: op("服务端以只读令牌代查 Sentry 近 24 小时的错误与耗时分位，结果缓存 60 秒；令牌不出服务端。", "admin")
+      .output(sentryOverviewSchema),
   },
 };
 
 export const apiContract = {
   site: {
-    /** 前端每次载入页面报一次；`visitorId` 是浏览器本地随机值，路径只按板块统计。 */
-    visit: oc
+    visit: op("前端每次载入页面报一次；`visitorId` 是浏览器本地随机值，路径只按板块统计，未登录同样记录。", "public")
       .input(z.object({ visitorId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/), path: z.string().max(512) }))
       .output(z.object({ ok: z.literal(true) })),
   },
   account: {
-    /**
-     * 发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；
-     * `qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。
-     */
-    requestLoginCode: oc
+    requestLoginCode: op(
+      "发送登录验证码。新号发码前必须取到 QQ 昵称（用作账号昵称）：查询不可用时拒绝，即停用注册；" +
+      "`qqName` 是登录弹窗在头像下展示的身份：新号为即将注册的昵称，老号为库里最近一次同步的 QQ 昵称。",
+      "public",
+    )
       .input(z.object({ qqNumber }))
       .output(z.object({ registered: z.boolean(), resendAfterSeconds: z.number().int(), qqName: z.string().nullable() })),
-    /** 当前登录资料；未登录返回 `null`。顺带按节流刷新 QQ 头像（每次访问调用一次即可）。 */
-    me: oc.output(accountProfileSchema.nullable()),
-    /** 账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。 */
-    updateProfile: oc
+    me: op("当前登录资料；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。", "public")
+      .output(accountProfileSchema.nullable()),
+    updateProfile: op("账号昵称强制取自 QQ 昵称、不可修改；此处只允许切换 QQ 号公开开关。", "session")
       .input(z.object({ showQq: z.boolean().optional() }))
       .output(accountProfileSchema),
-    publicProfile: oc
+    publicProfile: op("别人看到的资料卡：QQ 号仅在本人公开时出现。", "public")
       .input(z.object({ userId: z.string().min(1).max(64) }))
       .output(publicProfileSchema),
   },
   settings: {
-    get: oc.output(cloudSettingsSchema),
-    /** 整体覆盖偏好文档，返回服务端记录的更新时间。 */
-    savePreferences: oc
+    get: op("读取云端设置：偏好文档与两个音乐平台的账号会话。", "session")
+      .output(cloudSettingsSchema),
+    savePreferences: op("整体覆盖偏好文档，返回服务端记录的更新时间；文档超限即拒绝。", "session")
       .input(z.object({ value: preferences }))
       .output(z.object({ updatedAt: z.string() })),
-    /** `session` 为空表示退出该平台账号并删除云端副本。 */
-    saveMusicSession: oc
+    saveMusicSession: op(
+      "保存某个音乐平台的账号会话；`session` 为空表示退出该平台账号并删除云端副本。cookie 在服务端加密落库，只回给本人。",
+      "session",
+    )
       .input(z.object({ platform: musicPlatformSchema, session: musicSessionSchema.nullable() }))
       .output(z.object({ updatedAt: z.string() })),
   },
   feedback: {
-    create: oc
+    create: op("提交站内反馈；服务端一并记下请求的 user-agent。", "session")
       .input(z.object({
         kind: feedbackKindSchema,
         title: z.string().trim().min(1, "请填写标题").max(FEEDBACK_TITLE_MAX_LENGTH),
@@ -383,14 +397,13 @@ export const apiContract = {
         page: z.string().max(255).optional(),
       }))
       .output(feedbackSummarySchema),
-    listMine: oc
+    listMine: op("列出本人提交的反馈与未读回复数。", "session")
       .output(z.object({ items: z.array(feedbackSummarySchema), unread: z.number().int() })),
-    /** 读取详情并标记已读。 */
-    get: oc
+    get: op("读取反馈详情，并把晚于本人上次查看的管理员回复标记为已读。", "session")
       .input(z.object({ id: z.string().min(1).max(36) }))
       .output(feedbackDetailSchema),
   },
-  /** 仅管理员；每次调用按 ID 读库校验角色与封禁状态。 */
+  /** 仅管理员；每次调用按 ID 读库校验角色与封禁状态，写操作全部留审计。 */
   admin: adminContract,
 };
 

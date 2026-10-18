@@ -173,7 +173,7 @@ transform 下不保证被改写，`src/lib/*.test.ts` 中继续使用 `__dirname
 | `Client/` | `npm run dev` | `npm run preview` | `npm run build`、`npm run lint` |
 | `Client/` 组件工作台 | `npm run storybook` | `npm run build-storybook` | `npm run storybook:shots`（用法见 [Testing](Testing.md#组件截图storybook)） |
 
-HTTP 契约变更需要导出时，在 Server 执行 `bun run docs:openapi`，产物为 `Agents/http-openapi.json`。测试、覆盖率、资源冒烟与完整门禁命令统一见 [Testing](Testing.md)。
+HTTP 契约变更需要导出时，在 Server 执行 `bun run docs:openapi`，产物为 `Agents/http-openapi.json`。产物同时包含 Elysia 声明的 HTTP 路由与 oRPC 账号契约（由 `shared/ApiContract.ts` 的 `meta` 生成），改了契约不重跑会被 `Server/test/RpcOpenapi.test.ts` 的在库比对断言拦下。导出固定用 `DOC_SERVER_URL` 本地占位，不读 `SERVER_URL`：部署主机名（可能是内网名）不该进仓库。测试、覆盖率、资源冒烟与完整门禁命令统一见 [Testing](Testing.md)。
 
 ## 6. 环境变量规范 (Environment Variables)
 

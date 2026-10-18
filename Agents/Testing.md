@@ -23,7 +23,7 @@
 | 页面样式或动效 | lint、build 与受影响页面浏览器验证；按 Design / Animation 检查相关状态及视口，不为样式类新增镜像单测；受影响组件的故事同步更新，用 `storybook:shots --filter` 做改前改后截图对照 |
 | Storybook 故事、假数据或截图工具 | `npx tsc -p tsconfig.app.json --noEmit`、lint、`npm run build-storybook`，相关故事 `storybook:shots` 零失败、零控制台错误 |
 | 共享协议、跨游戏基础设施、全局状态同步 | 两端类型/构建与相关协议、Store、服务回归；涉及握手或路由时验证真实命令 ACK |
-| HTTP 路由或接口契约 | 两端类型检查与相关协议回归；在 Server 执行 `bun run docs:openapi` 并提交 `Agents/http-openapi.json` |
+| HTTP 路由或接口契约 | 两端类型检查与相关协议回归；在 Server 执行 `bun run docs:openapi` 并提交 `Agents/http-openapi.json`。契约面（过程清单、`meta.auth` 对应的 401/403、请求与响应的 `json` 包络）由 `Server/test/RpcOpenapi.test.ts` 打真实路由核对，产物与代码不同步时该文件的在库比对断言报红 |
 | 快照、私有状态、封包或广播频率 | `Server/test/NetworkCapacity.test.ts`，保留全部容量与最终同步断言 |
 | 歌词几何、字体或动画 | `npm run test:lyrics`；jsdom 高度模拟不替代真实浏览器 |
 | 资源、构建插件或静态外壳 | `npm run test:asset-smoke` 与相关 SEO / 资源 E2E |

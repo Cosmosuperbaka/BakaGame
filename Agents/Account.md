@@ -35,6 +35,7 @@
 - 发码走 oRPC `account.requestLoginCode`：Better Auth 自带发码端点把投递异常吞进后台日志，用户会白等，因此不开放。投递失败返回 503 `MAIL_UNAVAILABLE`。
 - `sign-in/email-otp` 的前置钩子在**消耗验证码之前**校验 QQ 邮箱、拒绝客户端自带 `image`、要求新号带昵称，避免用户白白作废一枚验证码。
 - 业务错误码到 HTTP 状态的映射只有一份：`statusOfAppError`（HTTP 全局错误钩子与 oRPC 共用）。oRPC 错误的 `code` 即 `AppError.code`，`message` 可直接展示。
+- 契约的每个过程用 `op(说明, 鉴权层级)` 声明机器可读的 `meta.description` 与 `meta.auth`（`public` / `session` / `admin`），**不再另写文档注释**：`scripts/ExportOpenapi.ts` 据此生成对外契约（含 `Agents/http-openapi.json` 里的 `security` 与请求/响应 `json` 包络）。`meta.auth` 必须与 `transport/routes/Account.ts` 里实际套用的 `base` / `signedIn` / `adminOnly` 一致——`test/RpcOpenapi.test.ts` 用真实路由分别以游客和普通玩家身份逐一打通核对，写错即红；新增过程漏写 `meta` 时生成器直接抛错。线格式口径：`POST /api/rpc/<点号路径换斜杠>`，请求与响应都只包一层 `json`，只用 POST（GET 回 405）。
 
 ## 3. 限流
 
