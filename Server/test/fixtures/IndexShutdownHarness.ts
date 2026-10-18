@@ -4,6 +4,8 @@ import { createContext, runInContext } from "node:vm";
 import path from "node:path";
 import ts from "typescript";
 
+import { HTTP_MAX_REQUEST_BODY_BYTES } from "../../src/config/Constants";
+
 export const indexSourcePath = path.resolve(import.meta.dir, "../../src/Index.ts");
 export const finalStages = ["notify.faker", "notify.song", "notify.cee", "buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"] as const;
 export type Stage = typeof finalStages[number];
@@ -26,6 +28,8 @@ export async function createIndexShutdownHarness(options: {
   const logs: { level: string; message: string; details: unknown }[] = [];
   const gates = new Map((options.hold ?? []).map(stage => [stage, { started: deferred(), release: deferred() }]));
   const intervals: { ms: number; unrefed: boolean; cleared: number }[] = [];
+  /** 真实 Index 传给 `app.listen` 的参数，用于断言监听层的载荷上限确实接上了。 */
+  const listenOptions: Record<string, unknown>[] = [];
   const timeouts: { ms: number; unrefed: boolean; cleared: number; fire: () => void }[] = [];
   const signals = Object.assign(new EventEmitter(), { exit: (code: number) => { exits.push(code); } });
   let configuration!: { isShuttingDown: () => boolean; onTriggerShutdown: () => Promise<void> };
@@ -53,6 +57,8 @@ export async function createIndexShutdownHarness(options: {
   }
   const modules: Record<string, unknown> = {
     "./config/Env": { readEnv: () => ({ otelEndpoint: options.otlpEnabled === false ? undefined : "fixture://no-network", serverPort: 1, serverListenHost: "127.0.0.1" }) },
+    // 常量模块是叶子（无副作用、不读环境），登记它才能守住「Index 不长出新依赖」这条断言。
+    "./config/Constants": { HTTP_MAX_REQUEST_BODY_BYTES },
     "./application/WhoIsFakerService": { WhoIsFakerService: class { constructor() { return service("faker"); } } },
     "./infrastructure/WordBankRepository": { DatabaseWordBankRepository: class {} },
     "./infrastructure/db/Database": { createDatabase: () => { throw new Error("夹具未配置数据库"); } },
@@ -71,7 +77,7 @@ export async function createIndexShutdownHarness(options: {
     "./application/CreateServer": { createServer: (input: typeof configuration) => {
       configuration = input;
       return {
-        app: { listen: () => ({ server: { hostname: "127.0.0.1", port: 1 } }), stop: (force: boolean) => execute("stop", force) },
+        app: { listen: (options: Record<string, unknown>) => { listenOptions.push(options); return { server: { hostname: "127.0.0.1", port: 1 } }; }, stop: (force: boolean) => execute("stop", force) },
         dispose: () => execute("dispose"), sonGuessrService: service("song"), ceeService: service("cee"),
         // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。
         reportBangumiLoad: () => {},
@@ -102,7 +108,7 @@ export async function createIndexShutdownHarness(options: {
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   runInContext(compiled, context, { filename: indexSourcePath, timeout: 1_000 });
   return {
-    calls, exits, logs, intervals, timeouts,
+    calls, exits, logs, intervals, timeouts, listenOptions,
     isShuttingDown: () => configuration.isShuttingDown(),
     preNotify: () => configuration.onTriggerShutdown(),
     signal: (signal = "SIGTERM") => signals.emit(signal),

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
 import { createIndexShutdownHarness, finalStages, type Stage } from "./fixtures/IndexShutdownHarness";
 
 const completed = (calls: string[]) => calls.filter(call => call.endsWith(":end")).map(call => call.slice(0, -4));
@@ -8,6 +9,11 @@ const assertTimers = (harness: Awaited<ReturnType<typeof createIndexShutdownHarn
   expect(harness.timeouts).toHaveLength(1);
   expect(harness.timeouts[0]).toMatchObject({ ms: 15_000, unrefed: true, cleared: 1 });
 };
+
+test("真实 Index：启动监听带上请求体上限", async () => {
+  const harness = await createIndexShutdownHarness();
+  expect(harness.listenOptions).toEqual([{ hostname: "127.0.0.1", port: 1, maxRequestBodySize: HTTP_MAX_REQUEST_BODY_BYTES }]);
+});
 
 test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且等待所有资源", async () => {
   const harness = await createIndexShutdownHarness({ hold: ["buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"] });
