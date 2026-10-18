@@ -550,6 +550,7 @@ export const createApp = ({
     .use(
       createSwaggerPlugin({
         serverUrl: env.serverUrl,
+        enabled: env.openapiEnabled,
       }),
     )
     // ==================== 原生耗时与链路追踪派生 ====================
@@ -588,15 +589,17 @@ export const createApp = ({
     })
     // 自建 `Response` 与第三方 handler 的响应（Better Auth、oRPC、头像代理）不经过 `set.headers` 这一层，
     // 追踪号会在出口丢失：日志里有 traceId，客户端却拿不到，报障时无法对上同一次请求。
-    // 这里按缺失补齐已有响应头，不改状态码与 body；Elysia 自己产出的响应已经带齐，直接原样返回。
+    // 这里按缺失补齐已有响应头，不改状态码与 body。
+    // Elysia 1.4.30 把 mapResponse 的 `undefined` 产出当成「响应就是这个 undefined」，
+    // 而全局 `onError` 的信封恰好经过本钩子：返回 undefined 等于把 4xx/5xx 的响应体抹成空串，
+    // 状态码还在、错误形状却没了。所以每个分支都必须显式把原值返回。
     .mapResponse(({ set, responseValue }) => {
-      if (!(responseValue instanceof Response)) return;
+      if (!(responseValue instanceof Response)) return responseValue as Response;
       const missing: [string, string][] = [];
       for (const [key, value] of Object.entries(set.headers)) {
         if (value !== undefined && !responseValue.headers.has(key)) missing.push([key, String(value)]);
       }
-      // Elysia 自己产出的响应已经带齐，直接原样返回。
-      if (missing.length === 0) return;
+      if (missing.length === 0) return responseValue;
       // `fetch` 透传的响应头是只读的，原地 set 会抛，所以连同原头一起复制一份再补。
       const headers = new Headers(responseValue.headers);
       for (const [key, value] of missing) headers.set(key, value);

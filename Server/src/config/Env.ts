@@ -30,6 +30,11 @@ export interface AppEnv {
   otelServiceName?: string;
   otelServiceNamespace?: string;
   otelDeploymentEnvironment?: string;
+  /**
+   * HTTP 文档页（`/openapi`）是否挂载。缺省视为开启（测试与本地开发装配 env 时不必逐个声明），
+   * 生产由 `loadEnv` 依 `DEPLOYMENT_ENVIRONMENT` 关掉。
+   */
+  openapiEnabled?: boolean;
   maintenanceToken?: string;
   sentryDsn?: string;
   sentryAllowedProjectIds?: string[];
@@ -288,6 +293,11 @@ export const readEnv = (): AppEnv => {
     otelServiceName,
     otelServiceNamespace,
     otelDeploymentEnvironment,
+    // 文档页默认只在非生产挂载：生产公开整张路由表等于把 admin 端点面与内网基址白送，
+    // 契约产物另有 `ExportOpenapi.ts` 离线生成，不依赖线上文档。
+    openapiEnabled: Bun.env.OPENAPI_ENABLED !== undefined
+      ? Bun.env.OPENAPI_ENABLED === "true"
+      : otelDeploymentEnvironment !== "production",
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     sentryDsn,
     sentryApiToken,

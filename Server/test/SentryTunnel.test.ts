@@ -224,9 +224,12 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("上游 Sentry 报错时透传相应状态码", async () => {
+  it("上游 429 保留退避语义并转达 Retry-After，不透传上游响应体", async () => {
     const mockFetcher = (async () => {
-      return new Response("Too Many Requests", { status: 429 });
+      return new Response("Too Many Requests", {
+        status: 429,
+        headers: { "retry-after": "30", "x-sentry-rate-limits": "60:error:performance" },
+      });
     }) as unknown as typeof fetch;
 
     const app = sentryTunnelRoutes({ allowedProjectIds, fetcher: mockFetcher });
@@ -240,6 +243,29 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
     );
 
     expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("30");
+    expect(res.headers.get("x-sentry-rate-limits")).toBe("60:error:performance");
+    const json = (await res.json()) as { error?: { code?: string; message?: string } };
+    expect(json.error?.code).toBe("UPSTREAM_RATE_LIMITED");
+    expect(json.error?.message).not.toContain("Too Many Requests");
+  });
+
+  it("上游非 2xx 不透传状态码：4xx 折叠成 502，免得把 DSN 与项目状态透给匿名调用方", async () => {
+    for (const upstreamStatus of [400, 403, 404, 413]) {
+      const mockFetcher = (async () => new Response("Denied", { status: upstreamStatus })) as unknown as typeof fetch;
+      const app = sentryTunnelRoutes({ allowedProjectIds, fetcher: mockFetcher });
+      const envelope = `${JSON.stringify({ dsn: "https://mockkey@o000000.ingest.us.sentry.io/100001" })}\n{}\n{}`;
+
+      const res = await app.handle(
+        new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: envelope }),
+      );
+
+      expect(res.status).toBe(502);
+      const json = (await res.json()) as { error?: { code?: string } };
+      expect(json.error?.code).toBe("UPSTREAM_REJECTED");
+      // 折叠后不能再带退避头：413 之类的 Retry-After 对调用方毫无意义。
+      expect(res.headers.get("retry-after")).toBeNull();
+    }
   });
 
   it("上游 fetch 遇到网络或 DNS 异常时降级为 warn 并返回 502 Bad Gateway，绝不触发 error 告警", async () => {

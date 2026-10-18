@@ -801,3 +801,22 @@ for (const [game, command] of [["whoisfaker", "lobby.subscribeRooms"], ["songues
     } finally { socket.close(); await stop(); }
   });
 }
+
+test("关闭文档页时 /openapi 落到 404 信封，不再向公网公开整张路由表", async () => {
+  const env: AppEnv = {
+    clientUrl: "http://localhost:5173",
+    serverUrl: "http://127.0.0.1",
+    serverListenHost: "127.0.0.1",
+    serverPort: 0,
+    bangumiApiUrl: "https://api.bgm.tv",
+    bangumiImageUrl: "",
+  };
+  const logger = new EventLogger();
+  const build = (openapiEnabled?: boolean) =>
+    createApp({ env: { ...env, openapiEnabled }, logger, whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }) }).app;
+  const closed = await build(false).handle(new Request("http://localhost/openapi/json"));
+  expect(closed.status).toBe(404);
+  expect(((await closed.json()) as { error?: { code?: string } }).error?.code).toBe("NOT_FOUND");
+  // 缺省仍挂着：离线契约导出（ExportOpenapi）与本地开发都依赖它。
+  expect((await build(undefined).handle(new Request("http://localhost/openapi/json"))).status).toBe(200);
+});

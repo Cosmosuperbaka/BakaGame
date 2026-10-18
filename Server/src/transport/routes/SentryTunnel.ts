@@ -154,6 +154,33 @@ const reportTunnelError = (
   });
 };
 
+/**
+ * 上游状态码不透给浏览器：403 / 404 / 413 会把「这个 DSN 有没有被吊销、项目存不存在」
+ * 这类 Sentry 侧的内部结论白送给任意匿名调用方。只保留调用方确实要据此决策的两类信号——
+ * 429（该退避）与 5xx（上游不可用），其余统一折叠成 502。
+ */
+const upstreamFailure = (response: Response): TunnelFailure => {
+  if (response.status === 429) return tunnelFailure(429, "UPSTREAM_RATE_LIMITED", "Sentry upstream rate limited");
+  if (response.status >= 500) return tunnelFailure(502, "UPSTREAM_UNAVAILABLE", "Sentry upstream unavailable");
+  return tunnelFailure(502, "UPSTREAM_REJECTED", "Sentry upstream rejected the envelope");
+};
+
+/**
+ * 上游的退避指令要转达：Sentry SDK 靠 `Retry-After` 与 `X-Sentry-Rate-Limits` 决定何时重试，
+ * 收不到就按自己的节奏反复撞墙。上游没给 `Retry-After` 时退回本地窗口的剩余时间——
+ * §12.7 的口径是「任何 429 一律带 Retry-After」，不能因为上游省略就发空头。
+ * 值封顶两分钟，避免上游给个荒谬数字把前端钉死；其它状态码带同名头没有意义（例如 413），只认 429。
+ */
+const upstreamBackoffHeaders = (response: Response, fallbackRetryAfterMs: number): Record<string, string> => {
+  if (response.status !== 429) return {};
+  const declared = Number(response.headers.get("retry-after"));
+  const seconds = Number.isFinite(declared) && declared > 0 ? Math.ceil(declared) : Math.ceil(fallbackRetryAfterMs / 1000);
+  const headers: Record<string, string> = { "retry-after": String(Math.min(Math.max(seconds, 1), 120)) };
+  const sentryLimits = response.headers.get("x-sentry-rate-limits");
+  if (sentryLimits) headers["x-sentry-rate-limits"] = sentryLimits.slice(0, 256);
+  return headers;
+};
+
 /** 按上游字节流累积信封，超限即刻取消读取，不再继续缓存。 */
 const collectEnvelopeChunks = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -351,7 +378,11 @@ export const sentryTunnelRoutes = ({
 
         const response = await sendEnvelopeToSentry(fetcher, targetUrl.value, envelope.value);
 
-        if (!response.ok) return reject(tunnelFailure(response.status, "UPSTREAM_REJECTED", "Upstream Sentry error"));
+        if (!response.ok) {
+          // 本地桶此刻仍是放行的，resetAt 就等于整窗口——上游没说什么时候能再来时，用它兜底。
+          Object.assign(set.headers, upstreamBackoffHeaders(response, Math.max(1, verdict.resetAt - Date.now())));
+          return reject(upstreamFailure(response));
+        }
 
         return { ok: true };
       } catch (err) {

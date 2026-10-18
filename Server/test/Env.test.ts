@@ -281,6 +281,25 @@ describe("readEnv 环境变量与启动断言", () => {
       }
     }
   });
+
+  it("文档页缺省开启，标记为 production 时自动关闭但仍可显式打开", () => {
+    const keys = ["OPENAPI_ENABLED", "DEPLOYMENT_ENVIRONMENT"] as const;
+    const saved = Object.fromEntries(keys.map(key => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      expect(readEnv().openapiEnabled).toBe(true);
+      Bun.env.DEPLOYMENT_ENVIRONMENT = "production";
+      expect(readEnv().openapiEnabled).toBe(false);
+      // 排障时可以在生产临时显式打开，不必改代码重出镜像。
+      Bun.env.OPENAPI_ENABLED = "true";
+      expect(readEnv().openapiEnabled).toBe(true);
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
 });
 
 const deploymentKeys = ["DEPLOYMENT_ENVIRONMENT", "OTEL_DEPLOYMENT_ENVIRONMENT", "OTEL_RESOURCE_ATTRIBUTES", "NODE_ENV"] as const;
