@@ -151,6 +151,15 @@ const summarizeRoundWords = (words: GameRound["words"]): RoundSummary["words"] =
       }
     : undefined;
 
+/** 发言位次：按给定的发言顺序表取 1 起的序号，不在表里的玩家不标序。 */
+const speechOrderOf = (
+  order: readonly string[] | undefined,
+  playerId: string,
+): number | undefined => {
+  const index = (order ?? []).indexOf(playerId) + 1;
+  return index > 0 ? index : undefined;
+};
+
 /** 玩家离线的两种来源：连接断开与主动离开房间。 */
 type PlayerOfflineReason = "disconnect" | "leave";
 
@@ -4587,107 +4596,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     let changed = false;
 
     for (const bot of bots) {
-      // 补充发言优先，与 handleSubmitDescription 的判定顺序保持一致。
-      if (
-        round.supplement &&
-        round.speechMode === "supplement" &&
-        round.supplement.requestedPlayerIds.includes(bot.id) &&
-        !round.supplement.donePlayers.includes(bot.id)
-      ) {
-        round.supplement.donePlayers.push(bot.id);
-        const order = (round.supplement.requestedPlayerIds ?? []).indexOf(bot.id) + 1;
-        round.descriptions.push(
-          this.createDescription(bot, this.pickBotDescription(round, bot.id), "supplement", round.descriptionCycle, {
-            supplementIndex: round.supplement.index,
-            order: order > 0 ? order : undefined,
-          }),
-        );
-        changed = true;
-        continue;
-      }
-
-      if (
-        round.phase === "description" &&
-        round.speechMode !== "supplement" &&
-        !round.descriptionSubmittedBy.includes(bot.id)
-      ) {
-        round.descriptionSubmittedBy.push(bot.id);
-        const order = (round.descriptionOrder ?? []).indexOf(bot.id) + 1;
-        round.descriptions.push(
-          this.createDescription(bot, this.pickBotDescription(round, bot.id), "description", round.descriptionCycle, {
-            order: order > 0 ? order : undefined,
-          }),
-        );
-        changed = true;
-        continue;
-      }
-
-      if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
-        if (
-          round.tieBreak.candidateIds.includes(bot.id) &&
-          !round.tieBreak.descriptionsDone.includes(bot.id)
-        ) {
-          round.tieBreak.descriptionsDone.push(bot.id);
-          const order = (round.tieBreak.candidateIds ?? []).indexOf(bot.id) + 1;
-          round.descriptions.push(
-            this.createDescription(bot, this.pickBotDescription(round, bot.id), "tieBreak", round.descriptionCycle, {
-              tieBreakIndex: round.tieBreakCount,
-              order: order > 0 ? order : undefined,
-            }),
-          );
-          changed = true;
-        }
-
-        continue;
-      }
-
-      if (round.phase === "voting" || (round.phase === "tieBreak" && round.tieBreak?.stage === "vote")) {
-        const tieBreak = round.phase === "tieBreak";
-        const votes = tieBreak ? round.tieBreak!.votes : round.votes;
-
-        // 平票 PK 中候选人本人不参与投票，与 ensureCanVote 一致。
-        if (tieBreak && round.tieBreak!.candidateIds.includes(bot.id)) {
-          continue;
-        }
-
-        if (votes.some((vote) => vote.voterId === bot.id)) {
-          continue;
-        }
-
-        const targetId = this.pickBotVoteTarget(room, round, bot.id, tieBreak);
-
-        if (tieBreak) {
-          round.tieBreak!.votes = this.replaceVote(votes, bot.id, targetId);
-        } else {
-          round.votes = this.replaceVote(votes, bot.id, targetId);
-        }
-
-        changed = true;
-        continue;
-      }
-
-      if (round.phase === "night") {
-        const state = round.assignments[bot.id];
-
-        // 只有平民和卧底有夜晚行动，天使/白板不参与也不被等待。
-        if (state.role !== "civilian" && state.role !== "undercover") {
-          continue;
-        }
-
-        if (round.nightActions.some((action) => action.actorId === bot.id)) {
-          continue;
-        }
-
-        // 平民刀人会刀死自己，所以机器人平民一律不行动；
-        // 卧底才去刀一个非自己的存活目标。
-        const targetId =
-          state.role === "undercover" ? this.pickBotNightTarget(room, bot.id) : undefined;
-
-        round.nightActions = this.replaceNightAction(round.nightActions, bot.id, {
-          actorId: bot.id,
-          actorRole: state.role,
-          targetId,
-        });
+      if (this.actAsBot(room, round, bot)) {
         changed = true;
       }
     }
@@ -4701,6 +4610,127 @@ export class WhoIsFakerService implements AdminRoomControl {
     this.touchRoom(room);
     this.requeuePendingDisconnects(room);
     this.publishRoomState(room);
+  }
+
+  /**
+   * 让一个机器人在当前阶段补一次提交，返回它是否改动了房间状态。
+   *
+   * 短路顺序就是各阶段的判定顺序：投票目标与夜晚目标都要消耗随机数，多评或少评
+   * 一个分支都会让抽出来的目标变化，因此照搬原 `runBots` 的分支次序。
+   */
+  private actAsBot(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    bot: WhoIsFakerPlayerRecord,
+  ): boolean {
+    return (
+      this.fillBotSupplement(round, bot) ||
+      this.fillBotDescription(round, bot) ||
+      this.fillBotTieBreakDescription(round, bot) ||
+      this.castBotVote(room, round, bot) ||
+      this.actBotNight(room, round, bot)
+    );
+  }
+
+  /** 补充发言：被点名且尚未补过的机器人补一句。优先级最高，与 handleSubmitDescription 的判定顺序一致。 */
+  private fillBotSupplement(round: GameRound, bot: WhoIsFakerPlayerRecord): boolean {
+    const supplement = round.supplement;
+    if (!supplement || round.speechMode !== "supplement") return false;
+    if (!supplement.requestedPlayerIds.includes(bot.id) || supplement.donePlayers.includes(bot.id)) {
+      return false;
+    }
+
+    supplement.donePlayers.push(bot.id);
+    round.descriptions.push(
+      this.createDescription(bot, this.pickBotDescription(round, bot.id), "supplement", round.descriptionCycle, {
+        supplementIndex: supplement.index,
+        order: speechOrderOf(supplement.requestedPlayerIds, bot.id),
+      }),
+    );
+    return true;
+  }
+
+  /** 常规描述阶段：还没发过言的机器人补一句。 */
+  private fillBotDescription(round: GameRound, bot: WhoIsFakerPlayerRecord): boolean {
+    if (round.phase !== "description" || round.speechMode === "supplement") return false;
+    if (round.descriptionSubmittedBy.includes(bot.id)) return false;
+
+    round.descriptionSubmittedBy.push(bot.id);
+    round.descriptions.push(
+      this.createDescription(bot, this.pickBotDescription(round, bot.id), "description", round.descriptionCycle, {
+        order: speechOrderOf(round.descriptionOrder, bot.id),
+      }),
+    );
+    return true;
+  }
+
+  /** 平票 PK 的描述阶段：还没发言的 PK 候选人补一句。 */
+  private fillBotTieBreakDescription(round: GameRound, bot: WhoIsFakerPlayerRecord): boolean {
+    const tieBreak = round.tieBreak;
+    if (round.phase !== "tieBreak" || tieBreak?.stage !== "description") return false;
+    if (!tieBreak.candidateIds.includes(bot.id) || tieBreak.descriptionsDone.includes(bot.id)) return false;
+
+    tieBreak.descriptionsDone.push(bot.id);
+    round.descriptions.push(
+      this.createDescription(bot, this.pickBotDescription(round, bot.id), "tieBreak", round.descriptionCycle, {
+        tieBreakIndex: round.tieBreakCount,
+        order: speechOrderOf(tieBreak.candidateIds, bot.id),
+      }),
+    );
+    return true;
+  }
+
+  /** 投票阶段（含平票 PK）：机器人投一票。PK 候选人本人不参与投票。 */
+  private castBotVote(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    bot: WhoIsFakerPlayerRecord,
+  ): boolean {
+    const isVotePhase =
+      round.phase === "voting" || (round.phase === "tieBreak" && round.tieBreak?.stage === "vote");
+    if (!isVotePhase) return false;
+
+    const tieBreak = round.phase === "tieBreak";
+    const votes = tieBreak ? round.tieBreak!.votes : round.votes;
+
+    // 平票 PK 中候选人本人不参与投票，与 ensureCanVote 一致。
+    if (tieBreak && round.tieBreak!.candidateIds.includes(bot.id)) return false;
+    if (votes.some((vote) => vote.voterId === bot.id)) return false;
+
+    const targetId = this.pickBotVoteTarget(room, round, bot.id, tieBreak);
+    if (tieBreak) {
+      round.tieBreak!.votes = this.replaceVote(votes, bot.id, targetId);
+    } else {
+      round.votes = this.replaceVote(votes, bot.id, targetId);
+    }
+    return true;
+  }
+
+  /** 夜晚阶段：卧底机器人刀一个非自己的存活目标，平民一律不行动。 */
+  private actBotNight(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    bot: WhoIsFakerPlayerRecord,
+  ): boolean {
+    if (round.phase !== "night") return false;
+
+    const state = round.assignments[bot.id];
+
+    // 只有平民和卧底有夜晚行动，天使/白板不参与也不被等待。
+    if (state.role !== "civilian" && state.role !== "undercover") return false;
+    if (round.nightActions.some((action) => action.actorId === bot.id)) return false;
+
+    // 平民刀人会刀死自己，所以机器人平民一律不行动；
+    // 卧底才去刀一个非自己的存活目标。
+    const targetId =
+      state.role === "undercover" ? this.pickBotNightTarget(room, bot.id) : undefined;
+
+    round.nightActions = this.replaceNightAction(round.nightActions, bot.id, {
+      actorId: bot.id,
+      actorRole: state.role,
+      targetId,
+    });
+    return true;
   }
 
   /** 机器人发言文案：按玩家在本局的位置轮换模板，读起来不至于全场雷同。 */

@@ -6,7 +6,7 @@
   },
   "src/application/WhoIsFakerService.ts": {
     "sonarjs/cognitive-complexity": {
-      "count": 3
+      "count": 2
     }
   },
   "src/infrastructure/NeteaseMusicProvider.ts": {
