@@ -17,7 +17,42 @@ import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
+import type { SonGuessrRoomSnapshot } from "@/types";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+
+/**
+ * 播放器只关心「现在该播哪一段」：进行中取回合本身，结算取总结里的歌曲，
+ * 其余阶段一律留空，播放器因此不会在换轮瞬间续播上一段。
+ */
+const pickPlayback = (
+  snapshot: SonGuessrRoomSnapshot | null,
+  phase: SonGuessrRoomSnapshot["phase"] | undefined,
+) => {
+  if (phase === "playing") {
+    const round = snapshot?.currentRound;
+    return {
+      currentPhaseRoundNumber: round?.roundNumber,
+      currentAudioUrl: round?.audioUrl,
+      currentClipStartTime: round?.lyricClip?.startTime,
+      currentClipEndTime: round?.lyricClip?.endTime,
+    };
+  }
+  if (phase === "roundResult") {
+    const summary = snapshot?.roundSummary;
+    return {
+      currentPhaseRoundNumber: summary?.roundNumber,
+      currentAudioUrl: summary?.song?.audioUrl,
+      currentClipStartTime: summary?.song?.chorus?.startTime ?? 0,
+      currentClipEndTime: summary?.song?.chorus?.endTime,
+    };
+  }
+  return {
+    currentPhaseRoundNumber: undefined,
+    currentAudioUrl: undefined,
+    currentClipStartTime: undefined,
+    currentClipEndTime: undefined,
+  };
+};
 
 export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
   const navigate = usePageNavigate();
@@ -44,33 +79,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   } = useSongRoomLifecycle({ solo });
 
   const isPlayingPhase = snapshot?.phase === "playing";
-  const isRoundResultPhase = snapshot?.phase === "roundResult";
-  const round = snapshot?.currentRound;
-  const roundSummary = snapshot?.roundSummary;
-
-  const currentPhaseRoundNumber = isPlayingPhase
-    ? round?.roundNumber
-    : isRoundResultPhase
-      ? roundSummary?.roundNumber
-      : undefined;
-
-  const currentAudioUrl = isPlayingPhase
-    ? round?.audioUrl
-    : isRoundResultPhase
-      ? roundSummary?.song?.audioUrl
-      : undefined;
-
-  const currentClipStartTime = isPlayingPhase
-    ? round?.lyricClip?.startTime
-    : isRoundResultPhase
-      ? (roundSummary?.song?.chorus?.startTime ?? 0)
-      : undefined;
-
-  const currentClipEndTime = isPlayingPhase
-    ? round?.lyricClip?.endTime
-    : isRoundResultPhase
-      ? roundSummary?.song?.chorus?.endTime
-      : undefined;
+  const playback = pickPlayback(snapshot, snapshot?.phase);
 
   const {
     audioRef,
@@ -83,10 +92,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   } = useAudioClipPlayer({
     roomId,
     phase: snapshot?.phase,
-    currentPhaseRoundNumber,
-    currentAudioUrl,
-    currentClipStartTime,
-    currentClipEndTime,
+    ...playback,
     isPlayingPhase,
     sendCommand,
   });

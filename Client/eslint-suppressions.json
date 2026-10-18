@@ -29,11 +29,6 @@
       "count": 2
     }
   },
-  "src/pages/SonGuessrRoomPage.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/pages/WhoIsFakerRoomPage.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1
