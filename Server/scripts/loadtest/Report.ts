@@ -272,6 +272,25 @@ const isProbeRun = (report: Report): boolean => /(?:^|-)N-\d/.test(report.label)
 /** 剖面跳：只跑一跳、为的是采被测进程的 CPU 时间归属，不能当容量读数参与对比。 */
 const isProfilingRun = (report: Report): boolean => report.config.cpuProf === true;
 
+/** 撞预算而停 = 这一跳真的把某个维度压到了边界；被阶梯参数截断则只是没测完。 */
+const SATURATED_BY_BUDGET = new Set([
+  "ack-latency",
+  "event-loop",
+  "errors",
+  "rooms",
+  "cpu",
+  "plateau",
+  "bandwidth-cap",
+]);
+
+/** 能当容量读数用的爬坡：跳数够（至少 3 跳才谈得上拐点），或确实撞到预算。冒烟跳与截断跳都不算。 */
+const isCapacityRun = (report: Report): boolean =>
+  report.mode === "ramp" &&
+  !isUnitRun(report) &&
+  !isProbeRun(report) &&
+  !isProfilingRun(report) &&
+  (report.steps.length >= 3 || SATURATED_BY_BUDGET.has(report.stopReason));
+
 /** 被测进程数：老报告没写这个字段，按单进程读。 */
 const shardsOf = (report: Report): number =>
   Math.max(1, Math.round(Number(report.config.shards ?? 1)));
@@ -377,6 +396,13 @@ const atSlo = (report: Report): Step | null => {
   return null;
 };
 
+/** 同一配置位上谁代表该配置：剖面跳不能顶掉容量跳，其余新的赢。 */
+const shouldReplace = (current: Report | undefined, next: Report): boolean => {
+  if (!current) return true;
+  if (isProfilingRun(current) !== isProfilingRun(next)) return !isProfilingRun(next);
+  return next.startedAt >= current.startedAt;
+};
+
 /** 同一口径重复跑过就只留最近一次：结论里每个配置说一遍，历史读数仍留在摘要与逐跳表。 */
 const latestPerConfig = (reports: Report[]): Report[] =>
   [
@@ -390,8 +416,7 @@ const latestPerConfig = (reports: Report[]): Report[] =>
         report.config.mbps,
         report.config.fatSeats ?? 0,
       ].join("#|");
-      const current = acc.get(key);
-      if (!current || report.startedAt >= current.startedAt) acc.set(key, report);
+      if (shouldReplace(acc.get(key), report)) acc.set(key, report);
       return acc;
     }, new Map<string, Report>()),
   ]
@@ -403,10 +428,7 @@ const conclusion = (reports: Report[]): string => {
   const picked = latestPerConfig(reports);
   const labels = runLabels(reports);
   const tag = (report: Report): string => runTag(report, labels);
-  const ramps = picked.filter(
-    (report) =>
-      report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report) && !isProfilingRun(report)
-  );
+  const ramps = picked.filter(isCapacityRun);
   for (const report of ramps) {
     const top = compliantTop(report);
     const slo = atSlo(report);
@@ -600,8 +622,8 @@ const shardScaling = (reports: Report[]): string => {
     .map((items) =>
       [
         ...items.reduce((acc, report) => {
-          const current = acc.get(shardsOf(report));
-          if (!current || report.startedAt >= current.startedAt) acc.set(shardsOf(report), report);
+          const shards = shardsOf(report);
+          if (shouldReplace(acc.get(shards), report)) acc.set(shards, report);
           return acc;
         }, new Map<number, Report>()),
       ]
