@@ -16,7 +16,7 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useSupplementRequest } from "../layout/SupplementRequestControl";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { SpeechMode } from "@/types";
+import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@/types";
 
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },
@@ -78,6 +78,52 @@ const clampToLimit = (text: string): string => {
   return result;
 };
 
+/**
+ * 三种发言阶段统一使用服务端下发的顺序，确保所有客户端看到同一行序；
+ * 顺序缺失时才退回各模式自己的待发名单。
+ */
+const selectSpeechOrder = (
+  status: WhoIsFakerRoomSnapshot["status"],
+  mode: SpeechMode,
+): string[] => {
+  if (status.speechOrder) return status.speechOrder;
+  if (mode === "supplement") return status.pendingSupplementPlayerIds ?? [];
+  if (mode === "tieBreak") return status.tieBreakCandidateIds ?? [];
+  return status.descriptionOrder ?? [];
+};
+
+/**
+ * 发言模式：服务端没下发时按阶段回退，PK 阶段的语气仍是 PK。
+ */
+const resolveSpeechMode = (status: WhoIsFakerRoomSnapshot["status"]): SpeechMode =>
+  status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : "normal");
+
+/** 输入框文案随模式切换：补充发言与正常描述用词不同。 */
+const speechInputLabel = (mode: SpeechMode) => (mode === "supplement" ? "补充发言" : "描述");
+const speechInputPlaceholder = (mode: SpeechMode) => (mode === "supplement" ? "输入补充发言..." : "输入你的描述...");
+
+/** 出题人一侧的推进区：补充发言期间只提示还差几人，普通与 PK 阶段给推进按钮。 */
+function QuestionerAdvancePanel({ mode, supplement, advancing, onAdvance }: {
+  mode: SpeechMode;
+  supplement: ReturnType<typeof useSupplementRequest>;
+  advancing: boolean;
+  onAdvance: () => void;
+}) {
+  if (mode === "supplement") return supplement.hint;
+  return (
+    <div className="space-y-3 pt-2">
+      {supplement.panel}
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        {mode === "normal" ? supplement.trigger : null}
+        <Button onClick={onAdvance} size="lg" loading={advancing}>
+          {advancing ? null : <FastForward className="h-4 w-4" />}
+          {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function DescriptionPhase() {
   const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
   const privateState = useWhoIsFakerStore((state) => state.privateState);
@@ -86,9 +132,7 @@ export function DescriptionPhase() {
   const phaseTimedOutEndsAt = useWhoIsFakerStore((state) => state.phaseTimedOutEndsAt);
   const [text, setText] = useState("");
 
-  const phase = snapshot.status.phase;
-  const mode: SpeechMode =
-    snapshot.status.speechMode ?? (phase === "tieBreak" ? "tieBreak" : "normal");
+  const mode = resolveSpeechMode(snapshot.status);
   const meta = speechMeta[mode];
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((player) => player.id === privateState?.playerId);
@@ -132,15 +176,10 @@ export function DescriptionPhase() {
 
   const myId = privateState?.playerId ?? "";
 
-  /**
-   * 三种发言阶段统一使用服务端下发的顺序，确保所有客户端看到同一行序。
-   */
-  const speechOrder = useMemo<string[]>(() => {
-    if (snapshot.status.speechOrder) return snapshot.status.speechOrder;
-    if (mode === "supplement") return snapshot.status.pendingSupplementPlayerIds ?? [];
-    if (mode === "tieBreak") return snapshot.status.tieBreakCandidateIds ?? [];
-    return snapshot.status.descriptionOrder ?? [];
-  }, [mode, snapshot.status]);
+  const speechOrder = useMemo<string[]>(
+    () => selectSpeechOrder(snapshot.status, mode),
+    [mode, snapshot.status],
+  );
 
   const waitingPlayerIds = useMemo(() => {
     return speechOrder.filter((playerId) => !submittedPlayerIds.has(playerId));
@@ -247,10 +286,10 @@ export function DescriptionPhase() {
           <div className="relative flex-1">
             <Input
               value={text}
-              aria-label={mode === "supplement" ? "补充发言" : "描述"}
+              aria-label={speechInputLabel(mode)}
               aria-describedby={counterId}
               onChange={(e) => setText(clampToLimit(e.target.value))}
-              placeholder={mode === "supplement" ? "输入补充发言..." : "输入你的描述..."}
+              placeholder={speechInputPlaceholder(mode)}
               className="h-10 pr-14"
               // 输入法组字时的回车只是上屏，不当作发送
               onKeyDown={(e) => {
@@ -270,19 +309,13 @@ export function DescriptionPhase() {
       ) : null}
 
       {/* 补充发言期间主持人不推进，只看还差几人 */}
-      {isQuestioner && mode === "supplement" ? supplement.hint : null}
-
-      {isQuestioner && mode !== "supplement" ? (
-        <div className="space-y-3 pt-2">
-          {supplement.panel}
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            {mode === "normal" ? supplement.trigger : null}
-            <Button onClick={() => void handleAdvance()} size="lg" loading={advancing}>
-              {advancing ? null : <FastForward className="h-4 w-4" />}
-              {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
-            </Button>
-          </div>
-        </div>
+      {isQuestioner ? (
+        <QuestionerAdvancePanel
+          mode={mode}
+          supplement={supplement}
+          advancing={advancing}
+          onAdvance={() => void handleAdvance()}
+        />
       ) : null}
     </div>
   );

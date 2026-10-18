@@ -24,11 +24,6 @@
       "count": 1
     }
   },
-  "src/components/whoisfaker/phases/DescriptionPhase.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/hooks/UseSongRoomLifecycle.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 2
