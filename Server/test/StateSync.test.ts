@@ -100,3 +100,24 @@ test("快照内嵌活动领域对象时，补丁基线仍是准备时刻的值",
     ])
   );
 });
+
+test("补丁规模接近全量时改发全量，小改动仍走补丁", () => {
+  const encoder = new StateSyncEncoder();
+  const fields = (suffix: string) =>
+    Object.fromEntries(
+      Array.from({ length: 60 }, (_, index) => [`field${index}`, `value-${index}${suffix}`])
+    );
+
+  expect(encoder.encode(createEvent("room.snapshot", fields("")))[0]).toMatchObject({
+    payload: { mode: "full", revision: 1 },
+  });
+  // 60 个字段全被改写：补丁已经不比全量小，直接发全量。
+  expect(encoder.encode(createEvent("room.snapshot", fields("-rewritten")))[0]).toMatchObject({
+    payload: { mode: "full", revision: 2 },
+  });
+  expect(
+    encoder.encode(createEvent("room.snapshot", { ...fields("-rewritten"), extra: 1 }))[0]
+  ).toMatchObject({
+    payload: { mode: "patch", revision: 3, baseRevision: 2 },
+  });
+});

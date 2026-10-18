@@ -44,6 +44,43 @@ const copyJsonValue = (value: unknown): unknown => {
 
 const sameScalar = (left: unknown, right: unknown) => Object.is(left, right);
 
+// 只用来比较「补丁有没有接近全量」，不需要精确字节，所以不真的序列化。
+const numberLength = (value: number): number => {
+  if (!Number.isFinite(value)) return 9;
+  if (!Number.isInteger(value)) return String(value).length;
+  const magnitude = value < 0 ? -value : value;
+  if (magnitude < 10) return 1;
+  if (magnitude < 1_000) return 3;
+  if (magnitude < 1_000_000) return 6;
+  if (magnitude < 1_000_000_000) return 9;
+  if (magnitude < 1e12) return 12;
+  if (magnitude < 1e15) return 15;
+  return 18;
+};
+
+const estimateSerializedLength = (value: unknown): number => {
+  if (value === null || value === undefined) return 4;
+  if (typeof value === "string") return value.length + 2;
+  if (typeof value === "number") return numberLength(value);
+  if (typeof value === "boolean") return value ? 4 : 5;
+  if (Array.isArray(value)) {
+    let total = 2;
+    for (const item of value) total += estimateSerializedLength(item) + 1;
+    return total;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    let total = 2;
+    for (const key in record) {
+      const item = record[key];
+      if (item === undefined) continue;
+      total += key.length + 3 + estimateSerializedLength(item);
+    }
+    return total;
+  }
+  return 4;
+};
+
 /**
  * 测试缝：一份快照每轮只该准备一次，视图复用测试数的就是这里的调用次数。
  * 生产路径只读它，不要改写。
@@ -52,7 +89,7 @@ export const preparedStateClone = { clone: copyJsonValue };
 
 interface PreparedState {
   state: unknown;
-  serializedLength: number;
+  stateLength: number;
   patchesByPrevious: WeakMap<object, StatePatchOperation[]>;
 }
 
@@ -66,7 +103,7 @@ const prepareState = (value: unknown): PreparedState => {
     const state = preparedStateClone.clone(value);
     const prepared = {
       state,
-      serializedLength: JSON.stringify(state).length,
+      stateLength: estimateSerializedLength(state),
       patchesByPrevious: new WeakMap<object, StatePatchOperation[]>(),
     };
     preparedStates.set(value, prepared);
@@ -75,7 +112,7 @@ const prepareState = (value: unknown): PreparedState => {
   const state = preparedStateClone.clone(value);
   return {
     state,
-    serializedLength: JSON.stringify(state).length,
+    stateLength: estimateSerializedLength(state),
     patchesByPrevious: new WeakMap<object, StatePatchOperation[]>(),
   };
 };
@@ -195,7 +232,7 @@ export class StateSyncEncoder {
     const shouldSendFull =
       now - previous.lastFullAt >= this.fullSyncIntervalMs ||
       previous.changesSinceFull + 1 >= STATE_MAX_PATCHES_BEFORE_FULL ||
-      JSON.stringify(operations).length >= prepared.serializedLength * STATE_PATCH_TO_FULL_RATIO;
+      estimateSerializedLength(operations) >= prepared.stateLength * STATE_PATCH_TO_FULL_RATIO;
 
     this.channels.set(payload.event, {
       revision,
