@@ -77,11 +77,9 @@ export class CEENativeService {
       case 'cee.chat.send': this.state.sendChat(room, player, message.payload.text); break;
       case 'cee.character.search': return { results: await this.data.searchCharacters(message.payload.keyword) };
       case 'cee.subject.search':
-        if (room.phase === 'guessing' && !room.settings.subjectSearch && player.status === 'playing') throw new AppError('SUBJECT_SEARCH_DISABLED', '本局关闭了作品搜索');
-        return { results: await this.data.searchSubjects(message.payload.keyword) };
+        this.requireSubjectSearch(room, player); return { results: await this.data.searchSubjects(message.payload.keyword) };
       case 'cee.subject.characters':
-        if (room.phase === 'guessing' && !room.settings.subjectSearch && player.status === 'playing') throw new AppError('SUBJECT_SEARCH_DISABLED', '本局关闭了作品搜索');
-        return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
+        this.requireSubjectSearch(room, player); return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
       case 'cee.subject.lookup': return { results: await this.data.getSubjects(message.payload.subjectIds) };
       case 'cee.directory.import':
         this.state.requireHost(room, player); this.state.requireWaiting(room); return this.data.importDirectory(message.payload.indexId);
@@ -89,22 +87,9 @@ export class CEENativeService {
       case 'cee.character.image': return { imageUrl: await this.data.resolveCharacterImage(message.payload.characterId, message.payload.size ?? 'grid') };
       case 'cee.subject.image': return { imageUrl: await this.data.resolveSubjectImage(message.payload.subjectId) };
       case 'cee.game.start': await this.start(room, player); break;
-      case 'cee.game.chooseSetter': {
-        this.state.requireHost(room, player);
-        if (room.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
-        const setter = this.state.member(room, message.payload.playerId);
-        if (!setter.online) throw new AppError('PLAYER_OFFLINE', '出题人已离线');
-        if (!ceeParticipants(room, setter.id).length) throw new AppError('NO_PARTICIPANTS', '出题人及其队友不能参与猜测，请保留其他猜题者');
-        room.setterPlayerId = setter.id;
-        room.phase = 'answering'; room.preparationId = crypto.randomUUID(); room.phaseDeadlineAt = this.now() + 120000; break;
-      }
+      case 'cee.game.chooseSetter': this.chooseSetter(room, player, message.payload.playerId); break;
       case 'cee.game.setAnswer': await this.setAnswer(room, player, message.payload.characterId, message.payload.hints); break;
-      case 'cee.game.cancel':
-        this.state.requireHost(room, player);
-        // 选出题人阶段还没开局，退回等待只换阶段，大家的准备状态原样保留。
-        if (room.phase === 'choosingSetter') { room.phase = 'waiting'; break; }
-        if (room.phase !== 'answering' && room.phase !== 'preparing') throw new AppError('INVALID_PHASE', '当前没有等待中的出题任务');
-        this.state.resetWaiting(room); break;
+      case 'cee.game.cancel': this.cancelPreparation(room, player); break;
       case 'cee.game.guess': await this.guess(room, player, message.payload.characterId); break;
       case 'cee.game.surrender': surrenderCEE(room, player, this.now()); break;
       case 'cee.game.next':
@@ -115,6 +100,26 @@ export class CEENativeService {
     }
     return {};
     } finally { this.state.publish(room); this.schedule(room); }
+  }
+  /** 关闭作品搜索的那一局里，正在猜题的玩家不能靠搜索绕过题目线索。 */
+  private requireSubjectSearch(room: CEERoom, player: CEEPlayerRecord): void {
+    if (room.phase === 'guessing' && !room.settings.subjectSearch && player.status === 'playing') throw new AppError('SUBJECT_SEARCH_DISABLED', '本局关闭了作品搜索');
+  }
+  private chooseSetter(room: CEERoom, player: CEEPlayerRecord, playerId: string): void {
+    this.state.requireHost(room, player);
+    if (room.phase !== 'choosingSetter') throw new AppError('INVALID_PHASE', '请先开始游戏再指定出题人');
+    const setter = this.state.member(room, playerId);
+    if (!setter.online) throw new AppError('PLAYER_OFFLINE', '出题人已离线');
+    if (!ceeParticipants(room, setter.id).length) throw new AppError('NO_PARTICIPANTS', '出题人及其队友不能参与猜测，请保留其他猜题者');
+    room.setterPlayerId = setter.id;
+    room.phase = 'answering'; room.preparationId = crypto.randomUUID(); room.phaseDeadlineAt = this.now() + 120000;
+  }
+  private cancelPreparation(room: CEERoom, player: CEEPlayerRecord): void {
+    this.state.requireHost(room, player);
+    // 选出题人阶段还没开局，退回等待只换阶段，大家的准备状态原样保留。
+    if (room.phase === 'choosingSetter') { room.phase = 'waiting'; return; }
+    if (room.phase !== 'answering' && room.phase !== 'preparing') throw new AppError('INVALID_PHASE', '当前没有等待中的出题任务');
+    this.state.resetWaiting(room);
   }
   /** 开始游戏：随机出题直接抽题开局；手动出题进入选出题人阶段，由房主在那里指定出题人。 */
   private async start(room: CEERoom, player: CEEPlayerRecord): Promise<void> {
