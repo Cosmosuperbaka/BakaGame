@@ -26,6 +26,7 @@ import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
   musicIpScope,
+  type MusicCookieInput,
   type MusicLoginSession,
   type MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
@@ -1218,13 +1219,13 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.chat.send":
         return this.sendChat(connection, message.payload.text);
       case "song.auth.qr.create":
-        return this.createMusicQrLogin(connection, (message.payload as any)?.platform, (message.payload as any)?.type);
+        return this.createMusicQrLogin(connection, message.payload.platform, message.payload.type);
       case "song.auth.qr.check":
-        return this.checkMusicQrLogin(connection, message.payload.key, (message.payload as any)?.platform, (message.payload as any)?.type);
+        return this.checkMusicQrLogin(connection, message.payload.key, message.payload.platform, message.payload.type);
       case "song.auth.useCookie":
-        return this.useMusicCookie(connection, message.payload.cookie, (message.payload as any)?.platform);
+        return this.useMusicCookie(connection, message.payload.cookie, message.payload.platform);
       case "song.auth.clear":
-        return this.clearMusicAccount(connection, (message.payload as any)?.platform);
+        return this.clearMusicAccount(connection, message.payload.platform);
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
       case "song.music.playlist.resolve":
@@ -2186,7 +2187,7 @@ export class SonGuessrService implements AdminRoomControl {
     return room.musicSession?.cookie;
   }
 
-  private getAggregatedSearchCookie(room: SonGuessrRoomRecord): any {
+  private getAggregatedSearchCookie(room: SonGuessrRoomRecord): MusicCookieInput | undefined {
     if (room.musicSession?.cookie && room.qqMusicSession?.cookie) {
       return {
         netease: room.musicSession.cookie,
@@ -2716,7 +2717,7 @@ export class SonGuessrService implements AdminRoomControl {
     provider: MusicProvider,
     queries: string[],
     track: BangumiMusicTrack,
-    cookie: string | undefined,
+    cookie: MusicCookieInput | undefined,
     budget: { search: number },
     /** 带番剧名/中文名的检索词：命中它们的候选标记为「番剧上下文命中」。 */
     scopeQueries: readonly string[] = [],
@@ -2764,7 +2765,7 @@ export class SonGuessrService implements AdminRoomControl {
     provider: MusicProvider,
     track: BangumiMusicTrack,
     anime: BangumiSubjectDetails,
-    cookie: string | undefined,
+    cookie: MusicCookieInput | undefined,
     budget: { search: number },
   ): Promise<SongSearchResult[]> {
     // 供应商不支持专辑能力时静默跳过（接口方法都是可选的）。
@@ -2861,7 +2862,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async resolveAnimeLevelCandidates(
     provider: MusicProvider,
     anime: BangumiSubjectDetails,
-    cookie: string | undefined,
+    cookie: MusicCookieInput | undefined,
     budget: { search: number },
   ): Promise<SongSearchResult[]> {
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));

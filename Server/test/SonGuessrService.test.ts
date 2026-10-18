@@ -28,7 +28,7 @@ import {
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { GameRoundRecord } from "../src/domain/GameRecord";
 import type { BangumiMusicTrack, SongSearchResult } from "../src/shared/SonGuessr";
-import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import type { MusicCookieInput, MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
@@ -1100,7 +1100,7 @@ describe("SonGuessrService", () => {
   });
 
   test("房主 Cookie 只存在房间内存、供全房请求使用并在房主离开时销毁", async () => {
-    const usedCookies: Array<string | undefined> = [];
+    const usedCookies: Array<MusicCookieInput | undefined> = [];
     const authProvider: MusicProvider = {
       ...provider,
       search: async (_keyword, _limit, cookie) => {
@@ -5236,7 +5236,7 @@ describe("SonGuessr service 音乐认证意图", () => {
         const pending = deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>>();
         const qrPending = deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["checkQrLogin"]>>>>();
         let delay = false;
-        let usedCookie: string | undefined;
+        let usedCookie: MusicCookieInput | undefined;
         const service = new SonGuessrService({ musicProvider: {
           ...provider,
           getLoginStatus: async (cookie) => delay && cookie === "old" ? pending.promise : { cookie, account: { nickname: cookie, vipStatus: "vip" } },

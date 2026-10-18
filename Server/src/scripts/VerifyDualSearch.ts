@@ -150,17 +150,18 @@ async function main() {
           const lyricCount = details.lyrics?.length || 0;
           const hasVerbatim = details.lyrics?.some((l) => Boolean(l.words && l.words.length > 0));
           detailSummary = `[音频: ${hasAudio ? "OK" : "无"}, 歌词: ${lyricCount}行, 逐字: ${hasVerbatim ? "YES" : "NO"}]`;
-        } catch (detailErr: any) {
-          detailSummary = `[详情拉取告警: ${detailErr.message || detailErr}]`;
+        } catch (detailErr) {
+          detailSummary = `[详情拉取告警: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}]`;
         }
       }
 
       const dualTag = isDualMerged ? "【双源互证合并】" : `【单源: ${sources.join(", ")}】`;
       console.log(`✅ 通过: "${top.title}" - ${top.artist} ${dualTag} ${detailSummary}`);
       passedCount++;
-    } catch (err: any) {
-      console.log(`❌ 抛出异常: ${err.message || err}`);
-      anomalies.push(`"${tc.query}": 抛出异常 ${err.message || err}`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.log(`❌ 抛出异常: ${reason}`);
+      anomalies.push(`"${tc.query}": 抛出异常 ${reason}`);
       failedCount++;
     }
   }

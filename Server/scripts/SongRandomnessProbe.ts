@@ -132,7 +132,7 @@ async function main() {
       browserPlaybackVerified: false, realAccountVipPermissionVerified: Boolean(cookie), generalUnblockEnabled: false,
       minPopularity: 0, artistFilter: false,
     },
-    playlists: [] as unknown[],
+    playlists: [] as Array<{ live: { ids?: string[]; resources?: unknown[] } }>,
   };
   const output = resolve("../tasks/song-random/report.json");
   for (const id of ids) {
@@ -226,7 +226,7 @@ async function main() {
     }
     report.playlists.push(summary);
     const safeReport = structuredClone(report) as typeof report;
-    for (const item of safeReport.playlists as Array<Record<string, any>>) {
+    for (const item of safeReport.playlists) {
       delete item.live.ids;
       delete item.live.resources;
     }

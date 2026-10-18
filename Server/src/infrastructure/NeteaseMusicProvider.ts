@@ -46,26 +46,36 @@ type ApiResponse = { body?: unknown } | unknown;
 type ApiFunction = (params: Record<string, unknown>) => Promise<ApiResponse>;
 type ApiModule = Record<string, unknown>;
 
+/**
+ * 房间侧的取歌凭据有两种形状：只登录了一端时是裸字符串（`MUSIC_U=…`、`qm_keyst=…`），
+ * 两端同时在房时是 `{ netease, qq }` 组合包，由聚合 provider 拆给各自上游。
+ */
+export type MusicCookieInput = string | Partial<Record<"netease" | "qq", string>>;
+
+/** 把凭据窄化成组合包形态；裸字符串与非对象凭据都走 `false` 分支。 */
+const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
+  typeof cookie === "object" && cookie !== null;
+
 export interface MusicProvider {
-  search(keyword: string, limit?: number, cookie?: string): Promise<SongSearchResult[]>;
-  getSong(songId: string, cookie?: string): Promise<SongDetails>;
-  refreshSongAudio?(songId: string, cookie?: string): Promise<string>;
-  getSongMetadata(songId: string, cookie?: string): Promise<SongDetails>;
-  getSongPopularity?(songId: string, cookie?: string): Promise<number | undefined>;
-  getSongChorus?(songId: string, cookie?: string): Promise<SongChorus | undefined>;
+  search(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
+  getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
+  refreshSongAudio?(songId: string, cookie?: MusicCookieInput): Promise<string>;
+  getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
+  getSongPopularity?(songId: string, cookie?: MusicCookieInput): Promise<number | undefined>;
+  getSongChorus?(songId: string, cookie?: MusicCookieInput): Promise<SongChorus | undefined>;
   getAmllTtmlLyrics?(songId: string): Promise<string | undefined>;
   searchAmllTtmlLyrics?(songName: string, artistName?: string): Promise<string | undefined>;
   createQrLogin?(platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLogin>;
   checkQrLogin?(key: string, platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLoginCheck>;
   getLoginStatus?(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession>;
   uploadDeviceInfo?(cookie: string, deviceName?: string): Promise<boolean>;
-  getPlaylistSongs?(playlistId: string, cookie?: string): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
-  searchArtists?(keyword: string, limit?: number, cookie?: string): Promise<SongArtistSearchResult[]>;
-  getArtistSongs?(artistId: string, cookie?: string): Promise<SongSearchResult[]>;
+  getPlaylistSongs?(playlistId: string, cookie?: MusicCookieInput): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }>;
+  searchArtists?(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongArtistSearchResult[]>;
+  getArtistSongs?(artistId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
   /** 按关键词检索专辑（供「专辑型 Bangumi 条目」取曲目用，见 `SongAlbumSearchResult`）。 */
-  searchAlbums?(keyword: string, limit?: number, cookie?: string): Promise<SongAlbumSearchResult[]>;
+  searchAlbums?(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongAlbumSearchResult[]>;
   /** 取整张专辑的曲目。 */
-  getAlbumSongs?(albumId: string, cookie?: string): Promise<SongSearchResult[]>;
+  getAlbumSongs?(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
 }
 
 export interface NeteaseMusicProviderOptions {
@@ -1847,7 +1857,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     (this.maintenanceTimer as unknown as { unref?: () => void }).unref?.();
   }
 
-  async search(keyword: string, limit = 20, cookie?: string): Promise<SongSearchResult[]> {
+  async search(keyword: string, limit = 20, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
@@ -1869,13 +1879,13 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  async getSong(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
     return this.loadSong(id, true, cookie);
   }
 
-  async refreshSongAudio(songId: string, cookie?: string): Promise<string> {
+  async refreshSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
     const key = this.cacheKey("audio", cookie, id);
@@ -1884,7 +1894,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     return this.loadAudioUrl(id, cookie, true);
   }
 
-  async getSongMetadata(songId: string, cookie?: string): Promise<SongDetails> {
+  async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
     return this.cached(
@@ -1894,7 +1904,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  async getSongPopularity(songId: string, cookie?: string): Promise<number | undefined> {
+  async getSongPopularity(songId: string, cookie?: MusicCookieInput): Promise<number | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
     return this.cached(
@@ -1910,7 +1920,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  async getSongChorus(songId: string, cookie?: string): Promise<SongChorus | undefined> {
+  async getSongChorus(songId: string, cookie?: MusicCookieInput): Promise<SongChorus | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
     return this.cached(
@@ -2004,7 +2014,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     return lyrics.trim();
   }
 
-  async getPlaylistSongs(playlistId: string, cookie?: string) {
+  async getPlaylistSongs(playlistId: string, cookie?: MusicCookieInput) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
     return this.cached(
@@ -2079,7 +2089,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  async searchArtists(keyword: string, limit = 20, cookie?: string) {
+  async searchArtists(keyword: string, limit = 20, cookie?: MusicCookieInput) {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
@@ -2108,7 +2118,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  async getArtistSongs(artistId: string, cookie?: string) {
+  async getArtistSongs(artistId: string, cookie?: MusicCookieInput) {
     const id = artistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_ARTIST", "歌手 ID 无效");
     return this.cached(
@@ -2136,7 +2146,7 @@ export class NeteaseMusicProvider implements MusicProvider {
    * （条目名就是专辑名，如《マジンブーン オリジナルサウンドトラック2》），
    * 拿专辑名当歌名走单曲检索必然一无所获 —— 必须「先搜专辑、再取专辑曲目」。
    */
-  async searchAlbums(keyword: string, limit = 10, cookie?: string): Promise<SongAlbumSearchResult[]> {
+  async searchAlbums(keyword: string, limit = 10, cookie?: MusicCookieInput): Promise<SongAlbumSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 30));
@@ -2177,7 +2187,7 @@ export class NeteaseMusicProvider implements MusicProvider {
    * 取整张专辑的曲目。`/api/v1/album/{id}` 一次返回专辑元信息与全部曲目。
    * 专辑曲目里可能夹着纯音乐、伴奏与翻唱版本，一律交给上层验证阶段筛。
    */
-  async getAlbumSongs(albumId: string, cookie?: string): Promise<SongSearchResult[]> {
+  async getAlbumSongs(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
     const id = albumId.trim();
     if (!/^\d+$/.test(id)) return [];
     return this.cached(
@@ -2385,7 +2395,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async loadSong(
     songId: string,
     includeResources: boolean,
-    cookie?: string,
+    cookie?: MusicCookieInput,
   ): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
@@ -2556,7 +2566,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     return this.apiPromise;
   }
 
-  private async unblockSongAudio(songId: string, cookie?: string): Promise<string> {
+  private async unblockSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
     const sourceTimeoutMs = this.options.unblockSourceTimeoutMs ?? DEFAULT_UNBLOCK_SOURCE_TIMEOUT_MS;
     const deadline = this.now() + (this.options.unblockTotalBudgetMs ?? DEFAULT_UNBLOCK_TOTAL_BUDGET_MS);
 
@@ -2595,7 +2605,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     return "";
   }
 
-  private async loadAudioUrl(songId: string, cookie?: string, force = false): Promise<string> {
+  private async loadAudioUrl(songId: string, cookie?: MusicCookieInput, force = false): Promise<string> {
     const key = this.cacheKey("audio", cookie, songId);
     const value = await this.cached(
       key,
@@ -2759,10 +2769,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   private cacheKey(namespace: string, cookie: unknown, ...parts: unknown[]) {
     const cookieStr = typeof cookie === "string"
       ? cookie.trim()
-      : typeof cookie === "object" && cookie !== null
-        ? ("netease" in cookie && typeof (cookie as any).netease === "string"
-            ? (cookie as any).netease.trim()
-            : stableStringify(cookie))
+      : isCookieRecord(cookie)
+        ? (typeof cookie.netease === "string" ? cookie.netease.trim() : stableStringify(cookie))
         : "";
     const scope = cookieStr
       ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
@@ -3037,9 +3045,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private hasCookie(cookie?: string | Record<string, unknown>) {
     if (typeof cookie === "string") return cookie.trim().length > 0;
     if (cookie && typeof cookie === "object") {
-      if ("netease" in cookie && typeof (cookie as any).netease === "string") {
-        return (cookie as any).netease.trim().length > 0;
-      }
+      if (typeof cookie.netease === "string") return cookie.netease.trim().length > 0;
       return Object.keys(cookie).length > 0;
     }
     return false;
@@ -3065,10 +3071,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   private cookieScope(cookie?: string | Record<string, unknown>) {
     const cookieStr = typeof cookie === "string"
       ? cookie.trim()
-      : typeof cookie === "object" && cookie !== null
-        ? ("netease" in cookie && typeof (cookie as any).netease === "string"
-            ? (cookie as any).netease.trim()
-            : stableStringify(cookie))
+      : isCookieRecord(cookie)
+        ? (typeof cookie.netease === "string" ? cookie.netease.trim() : stableStringify(cookie))
         : "";
     return cookieStr
       ? `host:${createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)}`
@@ -3098,7 +3102,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     ipScope?: string,
   ): Record<string, unknown> {
     const rawCookie = typeof cookie === "object" && cookie !== null && "netease" in cookie
-      ? (cookie as any).netease
+      ? cookie.netease
       : cookie;
     const requestCookie = rawCookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     // scope 由调用方在调度前算好并透传：限流发生时要按同一个 scope 刷新 IP，两处必须一致。

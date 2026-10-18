@@ -5,9 +5,6 @@
     }
   },
   "scripts/SongRandomnessProbe.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -28,9 +25,6 @@
     }
   },
   "src/application/SonGuessrService.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
     "sonarjs/cognitive-complexity": {
       "count": 9
     }
@@ -51,9 +45,6 @@
     }
   },
   "src/infrastructure/AggregatedMusicProvider.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 12
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -84,17 +75,11 @@
     }
   },
   "src/infrastructure/NeteaseMusicProvider.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
     "sonarjs/cognitive-complexity": {
       "count": 6
     }
   },
   "src/infrastructure/QQMusicProvider.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 38
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
@@ -105,9 +90,6 @@
     }
   },
   "src/scripts/VerifyDualSearch.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
