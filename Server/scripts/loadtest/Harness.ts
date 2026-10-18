@@ -88,6 +88,8 @@ interface RunConfig {
   errorRateBudget: number;
   outDir: string;
   keepTargetLogs: boolean;
+  /** 让被测进程自带 CPU 采样：容量数字说明「撑不住在哪一维」，剖面说明「那一核的时间花在哪个函数」。 */
+  cpuProf: boolean;
 }
 
 const parseFlags = (argv: string[]): Record<string, string> => {
@@ -255,6 +257,12 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   const script = path.resolve(import.meta.dir, "Target.ts");
   const preload = path.resolve(import.meta.dir, "../fixtures/IsolatedPreload.ts");
   const runtime = [process.execPath, "--no-env-file", "--preload", preload, script];
+  if (config.cpuProf) {
+    // markdown 剖面是纯文本，能直接读；每个分片各写一份文件（名里带 pid），互不覆盖。
+    const profileDir = path.join(config.outDir, "profile", config.label);
+    await mkdir(profileDir, { recursive: true });
+    runtime.splice(1, 0, "--cpu-prof-md", "--cpu-prof-dir", profileDir);
+  }
   const taskset =
     config.targetCpuset && process.platform !== "win32"
       ? ["taskset", "-c", config.targetCpuset]
@@ -748,6 +756,7 @@ const buildConfig = (args: Record<string, string>): RunConfig => {
     errorRateBudget: num(args["max-error-rate"], 0.01),
     outDir: args.out ?? path.resolve(import.meta.dir, "../../tasks/loadtest"),
     keepTargetLogs: args["keep-target-logs"] === "true",
+    cpuProf: args["cpu-prof"] === "true",
   };
 };
 
