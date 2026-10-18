@@ -14,11 +14,6 @@
       "count": 1
     }
   },
-  "src/components/songuessr/settings/SongSettingsPanels.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/components/whoisfaker/layout/PhaseTimerControl.tsx": {
     "sonarjs/cognitive-complexity": {
       "count": 1

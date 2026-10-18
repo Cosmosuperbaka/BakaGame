@@ -412,26 +412,39 @@ export function SongRoomSettings({
   );
 }
 
-/** 三个折叠组收起时的摘要，取自已保存的快照：房主改动防抖保存后随广播更新。 */
-export function songSettingsSummary(snapshot: SonGuessrRoomSnapshot) {
+/** 出题方式与自动出题来源的摘要行。 */
+function questionSummaryLines(snapshot: SonGuessrRoomSnapshot): string[] {
   const { settings } = snapshot;
   const anime = settings.animeAutoFilters ?? {};
   const automatic = settings.questionMode === "automatic";
+  return [
+    settings.questionType === "anime" ? "听歌识番" : "听歌识曲",
+    snapshot.solo ? "" : automatic ? "自动出题" : settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
+    automatic && settings.questionType === "song"
+      ? settings.autoFilters.playlist ? `歌单 ${settings.autoFilters.playlist.name ?? settings.autoFilters.playlist.id}` : "热歌榜"
+      : "",
+    automatic && settings.questionType === "anime" ? `${anime.ranking === "year" ? "年榜" : "总榜"}前 ${anime.subjectLimit ?? 50} 部` : "",
+  ];
+}
+
+/** 歌词、次数、时限与血战的摘要行。 */
+function gameSummaryLines(
+  settings: SonGuessrRoomSnapshot["settings"],
+  solo: boolean,
+): string[] {
+  return [
+    settings.showLyrics ? `${settings.lyricsLineCount} 行歌词` : "不显示歌词",
+    `${settings.maxGuessesPerRound} 次猜测`,
+    settings.showGuessTimer ? `每次 ${settings.guessDurationSeconds} 秒` : "不限时",
+    solo ? "" : settings.bloodMode ? "血战模式" : "",
+  ];
+}
+
+/** 三个折叠组收起时的摘要，取自已保存的快照：房主改动防抖保存后随广播更新。 */
+export function songSettingsSummary(snapshot: SonGuessrRoomSnapshot) {
   return {
-    question: [
-      settings.questionType === "anime" ? "听歌识番" : "听歌识曲",
-      snapshot.solo ? "" : automatic ? "自动出题" : settings.autoRotateSubmitter ? "手动轮流出题" : "手动出题",
-      automatic && settings.questionType === "song"
-        ? settings.autoFilters.playlist ? `歌单 ${settings.autoFilters.playlist.name ?? settings.autoFilters.playlist.id}` : "热歌榜"
-        : "",
-      automatic && settings.questionType === "anime" ? `${anime.ranking === "year" ? "年榜" : "总榜"}前 ${anime.subjectLimit ?? 50} 部` : "",
-    ],
-    game: [
-      settings.showLyrics ? `${settings.lyricsLineCount} 行歌词` : "不显示歌词",
-      `${settings.maxGuessesPerRound} 次猜测`,
-      settings.showGuessTimer ? `每次 ${settings.guessDurationSeconds} 秒` : "不限时",
-      snapshot.solo ? "" : settings.bloodMode ? "血战模式" : "",
-    ],
+    question: questionSummaryLines(snapshot),
+    game: gameSummaryLines(snapshot.settings, snapshot.solo),
     room: [snapshot.visibility === "private" ? "私密房间" : "公开房间", snapshot.allowSpectators ? "允许旁观" : "不允许旁观"],
   };
 }
