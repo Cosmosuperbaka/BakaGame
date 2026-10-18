@@ -28,6 +28,7 @@ import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogReposit
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
 import { InMemoryAntiCheatReviewQueue } from "./CEEAntiCheatSignals";
+import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
@@ -155,6 +156,14 @@ export function createServer(
         ? (env.clientMinDesktopVersion ?? "")
         : (env.clientMinMobileVersion ?? ""),
     onWarn: (message, detail) => logger.warn(message, detail),
+    // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
+    attestation: env.androidAttestationPackage
+      ? createAndroidAttestationChecker({
+          packageName: env.androidAttestationPackage,
+          signatureDigests: env.androidAttestationSignatureDigests,
+          onWarn: (message, detail) => logger.warn(message, { detail }),
+        })
+      : undefined,
   });
   const app = createApp({
     ...appOptions,

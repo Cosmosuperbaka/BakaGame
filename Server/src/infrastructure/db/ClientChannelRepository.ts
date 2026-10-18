@@ -10,6 +10,7 @@ const toRow = (device: StoredClientDevice) => ({
   keyAlgorithm: device.keyAlgorithm,
   publicKey: device.publicKey,
   keyProtection: device.keyProtection,
+  attestationLevel: device.attestationLevel ?? null,
   registeredAt: new Date(device.registeredAt),
   lastSeenAt: new Date(device.lastSeenAt),
 });
@@ -21,6 +22,7 @@ const fromRow = (row: typeof clientChannelDevice.$inferSelect): StoredClientDevi
   keyAlgorithm: row.keyAlgorithm as StoredClientDevice["keyAlgorithm"],
   publicKey: row.publicKey,
   keyProtection: row.keyProtection as StoredClientDevice["keyProtection"],
+  attestationLevel: (row.attestationLevel ?? undefined) as StoredClientDevice["attestationLevel"],
   registeredAt: row.registeredAt.getTime(),
   lastSeenAt: row.lastSeenAt.getTime(),
 });
@@ -37,7 +39,12 @@ export class ClientChannelRepository implements ClientChannelStore {
       .insert(clientChannelDevice)
       .values(toRow(device))
       .onDuplicateKeyUpdate({
-        set: { keyProtection: device.keyProtection, lastSeenAt: new Date(device.lastSeenAt) },
+        set: {
+          keyProtection: device.keyProtection,
+          // 重新注册就按这一次的结果覆盖：上次验出的档位不能替「密钥已换」担保。
+          attestationLevel: device.attestationLevel ?? null,
+          lastSeenAt: new Date(device.lastSeenAt),
+        },
       });
   }
   async find(clientId: string): Promise<StoredClientDevice | undefined> {

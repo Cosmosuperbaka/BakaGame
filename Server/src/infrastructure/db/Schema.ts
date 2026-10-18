@@ -156,6 +156,8 @@ export const clientChannelDevice = mysqlTable("client_channel_device", {
   keyAlgorithm: varchar("key_algorithm", { length: 16 }).notNull(),
   publicKey: text("public_key").notNull(),
   keyProtection: varchar("key_protection", { length: 16 }).notNull(),
+  /** 注册时服务端验出来的平台证明档位；null = 没有平台证明（桌面端或未带链的移动端）。 */
+  attestationLevel: varchar("attestation_level", { length: 16 }),
   registeredAt: datetime("registered_at", { fsp: 3 }).notNull(),
   lastSeenAt: datetime("last_seen_at", { fsp: 3 }).notNull(),
 });

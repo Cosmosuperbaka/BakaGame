@@ -9,9 +9,12 @@ import {
   compareClientVersion,
   judgeSelfCheck,
   verifyClientSignature,
+  type ClientAttestationLevel,
+  type ClientRegisterInput,
   type ClientSelfCheckReport,
   type StoredClientDevice,
 } from "../src/infrastructure/ClientChannel";
+import type { AndroidAttestationChecker } from "../src/infrastructure/AndroidAttestation";
 
 const clean: ClientSelfCheckReport = { hardFail: [], softFail: [], keyProtection: "hardware" };
 
@@ -36,7 +39,13 @@ function desktopDevice() {
   };
 }
 
-function harness(options: { clock?: { value: number }; minimum?: string } = {}) {
+function harness(
+  options: {
+    clock?: { value: number };
+    minimum?: string;
+    attestation?: AndroidAttestationChecker;
+  } = {}
+) {
   const clock = options.clock ?? { value: 1_000_000 };
   const warnings: string[] = [];
   const store = new InMemoryClientChannelStore();
@@ -45,6 +54,7 @@ function harness(options: { clock?: { value: number }; minimum?: string } = {}) 
     now: () => clock.value,
     minimumVersion: () => options.minimum ?? "",
     onWarn: (message) => warnings.push(message),
+    attestation: options.attestation,
   });
   return { channel, clock, store, warnings };
 }
@@ -443,5 +453,105 @@ describe("密钥口径", () => {
       clientType: "mobile",
       keyProtection: "hardware",
     });
+  });
+});
+
+describe("Android 平台证明接入", () => {
+  // 通道这层不解析 DER，链只是透传；结构正确性由 `AndroidAttestation` 自己的用例覆盖。
+  const chain = ["-----BEGIN CERTIFICATE-----\nMA==\n-----END CERTIFICATE-----\n"];
+  const report = { chain, attestationChallenge: "AQIDBAU=" };
+  const mobileRegister = (over: Partial<ClientRegisterInput> = {}): ClientRegisterInput => ({
+    clientType: "mobile",
+    platform: "android",
+    clientVersion: "1.0.0",
+    keyAlgorithm: "ec-p256",
+    publicKey: Buffer.from("spki-of-this-device").toString("base64"),
+    selfCheck: { ...clean, keyProtection: "hardware" },
+    ...over,
+  });
+  const checker =
+    (level: ClientAttestationLevel, reasons: string[] = []): AndroidAttestationChecker =>
+    async () => ({ level, reasons });
+
+  test("链判 rejected → 注册即拒，不给「解锁刷机的设备」留档", async () => {
+    const { channel, store } = harness({
+      attestation: checker("rejected", ["boot_state_unverified"]),
+    });
+    const input = mobileRegister({ attestation: report });
+    await expect(channel.register(input)).rejects.toMatchObject({ code: "ATTESTATION_REJECTED" });
+    await expect(store.find(clientIdOfPublicKey(input.publicKey))).resolves.toBeUndefined();
+  });
+  test("链判 trusted → 档位记进设备表，握手不重跑链验证", async () => {
+    const { channel, store } = harness({ attestation: checker("trusted") });
+    const input = mobileRegister({ attestation: report });
+    const { clientId } = await channel.register(input);
+    expect((await store.find(clientId))?.attestationLevel).toBe("trusted");
+  });
+  test("未配置校验器：链收下只记 degraded，并留一条警告", async () => {
+    const { channel, store, warnings } = harness();
+    const input = mobileRegister({ attestation: report });
+    const { clientId } = await channel.register(input);
+    expect((await store.find(clientId))?.attestationLevel).toBe("degraded");
+    expect(warnings).toContain("收到 Android 证明链但服务端未配置校验");
+  });
+  test("校验器拿到的是本次注册的公钥：链必须绑得住这把密钥", async () => {
+    const seen: string[] = [];
+    const { channel } = harness({
+      attestation: async (input) => {
+        seen.push(`${input.publicKey}|${input.attestationChallenge}|${input.chain.length}`);
+        return { level: "trusted", reasons: [] };
+      },
+    });
+    const input = mobileRegister({ attestation: report });
+    await channel.register(input);
+    expect(seen).toEqual([`${input.publicKey}|${report.attestationChallenge}|1`]);
+  });
+  test("桌面端没有平台证明：混进链也不调用校验器，档位保持未验", async () => {
+    let called = 0;
+    const { channel, store } = harness({
+      attestation: async (input) => {
+        called += 1;
+        return { level: input.publicKey ? "trusted" : "rejected", reasons: [] };
+      },
+    });
+    const input = mobileRegister({ clientType: "desktop", attestation: report });
+    const { clientId } = await channel.register(input);
+    expect(called).toBe(0);
+    expect((await store.find(clientId))?.attestationLevel).toBeUndefined();
+  });
+  test("档位以服务端验过的为准：壳自报 trusted 换不回一次被拒的证明", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const raw = publicKey.export({ format: "der", type: "spki" }).toString("base64");
+    const clientId = clientIdOfPublicKey(raw);
+    const store = new InMemoryClientChannelStore();
+    await store.save({
+      clientId,
+      clientType: "mobile",
+      platform: "android",
+      keyAlgorithm: "ec-p256",
+      publicKey: raw,
+      keyProtection: "hardware",
+      attestationLevel: "rejected",
+      registeredAt: 0,
+      lastSeenAt: 0,
+    });
+    const channel = new ClientChannel({ store, minimumVersion: () => "" });
+    const { challenge } = channel.issue(clientId);
+    const signature = nodeSign("sha256", Buffer.from(challenge, "ascii"), privateKey).toString(
+      "base64"
+    );
+    await expect(
+      channel.attest(
+        {
+          clientId,
+          challenge,
+          signature,
+          clientType: "mobile",
+          clientVersion: "1.0.0",
+          selfCheck: { ...clean, attestationLevel: "trusted" },
+        },
+        "203.0.113.7"
+      )
+    ).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
   });
 });

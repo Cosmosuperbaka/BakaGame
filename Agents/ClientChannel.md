@@ -43,10 +43,12 @@
 | `publicKey` | 是 | base64。ed25519 = 32 字节裸公钥；ec-p256 = **SPKI DER** |
 | `keyProtection` | 桌面 | `"hardware"` \| `"software"`，DPAPI 是否可用 |
 | `selfCheck` | 是 | 见下 |
-| `attestation` | 移动 | `{ attestationChallenge, chain }`，`chain` 是 PEM 数组（叶子在前） |
+| `attestation` | 移动 | `{ attestationChallenge, chain }`，`chain` 是 PEM 数组（叶子在前）；服务端验链并把结论档位记进设备表 |
 
 `selfCheck` 形状：`{ hardFail: string[], softFail: string[], keyProtection?, attestationLevel? }`
 `attestationLevel` 只出现在移动端：`"trusted"` \| `"degraded"` \| `"rejected"`。
+它只是壳本地解析叶子扩展得到的参考值：服务端一旦验过链，就用自家结论覆盖它——
+自报 `"trusted"` 换不来准入，改几行壳代码就能声明的东西不算证据。
 
 返回 `200 { clientId, minimumVersion, outdated }`；判定不过返回 4xx 且
 `error` 为可归因码（见 §6）。
@@ -106,6 +108,18 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 - 移动端 `attestationLevel = "rejected"`（链验不过、被吊销、bootloader 解锁、
   boot 状态非 Verified、签名摘要不匹配）→ `CLIENT_UNTRUSTED`；`"degraded"` → 放行并标记。
 
+### 平台证明只在注册验一次
+
+链由服务端自己验（`Server/src/infrastructure/AndroidAttestation.ts`：内置 Google 新旧两把硬件根
+与两把软件根、CRL 走带缓存的拉取），结论写进 `client_channel_device.attestation_level`，
+之后每次握手都**以这一档为准**、不再回头看壳的自报值。三条边界：
+
+- `ANDROID_ATTESTATION_PACKAGE` 没配 → 不装配校验器，带链注册只记 `"degraded"` 并警告一次；
+  服务端没验过的链不能写成「验过但降级」，也不能因为配置缺失把真实设备挡在门外。
+- 链的叶子公钥必须等于本次 `publicKey`，否则 `ATTESTATION_REJECTED`：attestation challenge
+  是设备自报的（服务端没下发过 nonce），没有这层绑定，一条合法链可以在设备之间任意转借。
+- 重新注册按这一次的结果覆盖档位：上次验出的结论不替「密钥已换」担保。
+
 ## 6. 错误码
 
 | 码 | 含义 | 出现处 |
@@ -115,7 +129,7 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 | `CLIENT_OUTDATED` | 低于服务端最低支持版本 | 反作弊房准入（普通房不拦） |
 | `CLIENT_UNKNOWN` | ticket / challenge 引用未注册的 clientId | challenge / attest |
 | `CHALLENGE_EXPIRED` | 挑战过期或已被用过 | attest |
-| `ATTESTATION_REJECTED` | Android 证书链验证失败 | register / attest |
+| `ATTESTATION_REJECTED` | Android 证书链验证失败（只可能在注册时做） | register |
 | `LOGIN_REQUIRED` | 反作弊房要求全员已登录 | 业务命令 |
 
 ## 7. 强制更新

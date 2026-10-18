@@ -1,0 +1,1 @@
+ALTER TABLE `client_channel_device` ADD `attestation_level` varchar(16);

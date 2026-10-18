@@ -24,6 +24,14 @@ const selfCheckSchema = t.Object(
 const clientTypeSchema = t.Union([t.Literal("desktop"), t.Literal("mobile")]);
 const versionSchema = t.String({ minLength: 1, maxLength: 32, pattern: "^\\d+(\\.\\d+){0,3}$" });
 const clientIdSchema = t.String({ minLength: 8, maxLength: 64 });
+/** 厂商链一般 3—5 张，留到 8 张；单张 PEM 上限按 EC P-384 根的量级给。 */
+const attestationSchema = t.Object(
+  {
+    attestationChallenge: t.String({ minLength: 8, maxLength: 512 }),
+    chain: t.Array(t.String({ minLength: 64, maxLength: 8192 }), { minItems: 1, maxItems: 8 }),
+  },
+  { additionalProperties: false }
+);
 
 export const clientChannelRoutes = (channel: ClientChannel | undefined) => {
   /** 未装配通道时明确报错，而不是静默放行：壳会把「注册成功」误判成「能进反作弊房」。 */
@@ -46,6 +54,7 @@ export const clientChannelRoutes = (channel: ClientChannel | undefined) => {
             keyAlgorithm: t.Union([t.Literal("ed25519"), t.Literal("ec-p256")]),
             publicKey: t.String({ minLength: 32, maxLength: 1024 }),
             selfCheck: selfCheckSchema,
+            attestation: t.Optional(attestationSchema),
           },
           { additionalProperties: false }
         ),

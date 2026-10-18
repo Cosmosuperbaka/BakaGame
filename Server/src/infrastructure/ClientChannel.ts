@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { AppError } from "../domain/Errors";
 import type { ClientChannelProof } from "../shared/Model";
+import type { AndroidAttestationChecker } from "./AndroidAttestation";
 
 /**
  * 客户端通道证明：壳（桌面 / 移动）用设备私钥签服务端发的挑战，服务端验签后发一次性 ticket，
@@ -14,6 +15,19 @@ export const CLIENT_CHANNEL_PENDING_MAX = 10_000;
 
 export type ClientKeyAlgorithm = "ed25519" | "ec-p256";
 export type ClientAttestationLevel = "trusted" | "degraded" | "rejected";
+
+/** 移动端注册时附带的一次性平台证明（桌面端没有平台级证明，不带该字段）。 */
+export interface ClientAttestationReport {
+  /** PEM 数组，叶子在前；Keystore 原样给出的链含根，接受裁掉根的写法。 */
+  chain: string[];
+  /** 设备生成密钥时喂给 `setAttestationChallenge` 的原始字节（base64）。 */
+  attestationChallenge: string;
+}
+
+/** 校验器输入：额外带上本次注册的公钥，链必须能对得上它。 */
+export interface ClientAttestationCheckInput extends ClientAttestationReport {
+  publicKey: string;
+}
 
 export interface ClientSelfCheckReport {
   hardFail: string[];
@@ -30,6 +44,7 @@ export interface ClientRegisterInput {
   keyAlgorithm: ClientKeyAlgorithm;
   publicKey: string;
   selfCheck: ClientSelfCheckReport;
+  attestation?: ClientAttestationReport;
 }
 
 export interface ClientAttestInput {
@@ -48,6 +63,8 @@ export interface StoredClientDevice {
   keyAlgorithm: ClientKeyAlgorithm;
   publicKey: string;
   keyProtection: "hardware" | "software";
+  /** 服务端在注册时验出来的平台证明档位；缺省 = 没有平台证明（桌面端、未带链的移动端）。 */
+  attestationLevel?: ClientAttestationLevel;
   registeredAt: number;
   lastSeenAt: number;
 }
@@ -173,6 +190,11 @@ export interface ClientChannelOptions {
   /** 最低支持版本按平台给：协议破坏性变更时抬这一档就能强制旧壳升级。 */
   minimumVersion: (clientType: ClientChannelProof["clientType"]) => string;
   onWarn?: (message: string, context?: Record<string, unknown>) => void;
+  /**
+   * Android Key Attestation 校验器。未注入时带链注册只记 `degraded`：
+   * 服务端没配期望包名不该把真实设备挡在门外，但也不能当作「验过了」。
+   */
+  attestation?: AndroidAttestationChecker;
 }
 
 export class ClientChannel {
@@ -180,6 +202,7 @@ export class ClientChannel {
   private readonly now: () => number;
   private readonly minimumVersion: ClientChannelOptions["minimumVersion"];
   private readonly onWarn: (message: string, context?: Record<string, unknown>) => void;
+  private readonly attestation: AndroidAttestationChecker | undefined;
   private readonly challenges = new Map<string, { clientId: string; expiresAt: number }>();
   private readonly tickets = new Map<
     string,
@@ -190,6 +213,7 @@ export class ClientChannel {
     this.now = options.now ?? (() => Date.now());
     this.minimumVersion = options.minimumVersion;
     this.onWarn = options.onWarn ?? (() => {});
+    this.attestation = options.attestation;
   }
   isOutdated(clientType: ClientChannelProof["clientType"], clientVersion: string): boolean {
     const minimum = this.minimumVersion(clientType);
@@ -197,14 +221,40 @@ export class ClientChannel {
   }
   private requireTrusted(
     selfCheck: ClientSelfCheckReport,
-    stage: "register" | "attest"
+    stage: "register" | "attest",
+    attestationLevel?: ClientAttestationLevel
   ): "clean" | "suspect" {
-    const verdict = judgeSelfCheck(selfCheck);
+    // 服务端验出来的档位覆盖壳自报的：自报只可能对自己不利，改一句代码就能声明 trusted。
+    const verdict = judgeSelfCheck(
+      attestationLevel === undefined ? selfCheck : { ...selfCheck, attestationLevel }
+    );
     if (!verdict.trusted) {
       this.onWarn("客户端完整性校验未通过", { stage, reason: verdict.reason });
       throw new AppError("CLIENT_UNTRUSTED", "客户端完整性校验未通过");
     }
     return verdict.integrity;
+  }
+  /**
+   * 移动端注册时做一次完整证书链验证，结论随设备存下来；之后的握手只复用密钥签挑战。
+   * 拒绝即拒：解锁刷机、改包、被吊销都是设备完整性被破坏，不是「证明强度不够」。
+   * 没配校验器时只记 `degraded` 并留警告——链没被任何人看过，不该写成「验过但降级」。
+   */
+  private async resolveAttestationLevel(
+    input: ClientRegisterInput
+  ): Promise<ClientAttestationLevel | undefined> {
+    if (input.clientType !== "mobile") return undefined;
+    const report = input.attestation;
+    if (!report || report.chain.length === 0) return undefined;
+    if (!this.attestation) {
+      this.onWarn("收到 Android 证明链但服务端未配置校验", { platform: input.platform });
+      return "degraded";
+    }
+    const verdict = await this.attestation({ ...report, publicKey: input.publicKey });
+    if (verdict.reasons.length > 0)
+      this.onWarn("Android 证明链判定", { level: verdict.level, reasons: verdict.reasons });
+    if (verdict.level === "rejected")
+      throw new AppError("ATTESTATION_REJECTED", "设备平台证明未通过");
+    return verdict.level;
   }
   async register(input: ClientRegisterInput): Promise<{
     clientId: string;
@@ -218,6 +268,7 @@ export class ClientChannel {
         platform: input.platform,
         softFail: input.selfCheck.softFail,
       });
+    const attestationLevel = await this.resolveAttestationLevel(input);
     const clientId = clientIdOfPublicKey(input.publicKey);
     const at = this.now();
     await this.store.save({
@@ -228,6 +279,7 @@ export class ClientChannel {
       publicKey: input.publicKey,
       // DPAPI 不可用时私钥只有软件保护：放行并如实标记，不假装它是硬件密钥。
       keyProtection: input.selfCheck.keyProtection ?? "software",
+      attestationLevel,
       registeredAt: at,
       lastSeenAt: at,
     });
@@ -262,7 +314,7 @@ export class ClientChannel {
     if (!device) throw new AppError("CLIENT_UNKNOWN", "该客户端尚未注册");
     if (!verifyClientSignature(device, input.challenge, input.signature))
       throw new AppError("CLIENT_UNTRUSTED", "客户端签名校验失败");
-    const integrity = this.requireTrusted(input.selfCheck, "attest");
+    const integrity = this.requireTrusted(input.selfCheck, "attest", device.attestationLevel);
     if (device.clientType !== input.clientType)
       throw new AppError("CLIENT_UNTRUSTED", "客户端类型与注册记录不符");
     const ticket = randomBytes(24).toString("base64url");

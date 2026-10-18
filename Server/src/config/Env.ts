@@ -87,6 +87,13 @@ export interface AppEnv {
    */
   clientMinDesktopVersion?: string;
   clientMinMobileVersion?: string;
+  /**
+   * Android Key Attestation 的期望包名。不配 = 不校验证明链（带链注册只记 `degraded`）：
+   * 包名是信任基准，写死默认值会让任何 APK 都能声称自己是我们的。
+   */
+  androidAttestationPackage?: string;
+  /** 期望的 APK 签名证书摘要（base64，逗号分隔）。不配只能验包名，结论最高到 `degraded`。 */
+  androidAttestationSignatureDigests?: string[];
   ceeOriginalAesSecret?: string;
   meilisearchKey?: string;
 }
@@ -384,6 +391,13 @@ export const readEnv = (): AppEnv => {
     ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? "").trim().replace(/\/+$/, ""),
     clientMinDesktopVersion: Bun.env.CLIENT_MIN_DESKTOP_VERSION?.trim() || undefined,
     clientMinMobileVersion: Bun.env.CLIENT_MIN_MOBILE_VERSION?.trim() || undefined,
+    // Android Key Attestation 的期望包名：不配就不校验证明链（带链注册只记 degraded）。
+    // 写死包名等于替所有 APK 定一个信任基准，必须由部署方明确给出。
+    androidAttestationPackage: Bun.env.ANDROID_ATTESTATION_PACKAGE?.trim() || undefined,
+    androidAttestationSignatureDigests: (Bun.env.ANDROID_ATTESTATION_SIGNATURE_DIGESTS ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
     ceeOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     meilisearchKey: Bun.env.MEILISEARCH_KEY?.trim() || undefined,
     enableGeneralUnblock:
