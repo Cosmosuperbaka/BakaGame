@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AccountProfile } from "@/types";
 import { api, isAccountDisabled, signInWithCode, signOut as requestSignOut } from "@/lib/Api";
+import { signInWithPasskey as requestSignInWithPasskey } from "@/lib/Passkey";
 import { captureClientLog } from "@/lib/Sentry";
 import { refreshSocketIdentities } from "@/lib/WebsocketClient";
 
@@ -23,6 +24,8 @@ interface AccountState {
   unreadFeedback: number;
   load: () => Promise<void>;
   signIn: (input: { email: string; otp: string }) => Promise<void>;
+  /** 通行密钥登录：不带任何输入凭据，成功与否由服务端验签决定。 */
+  signInWithPasskey: () => Promise<void>;
   signOut: () => Promise<void>;
   setProfile: (profile: AccountProfile) => void;
   setUnreadFeedback: (count: number) => void;
@@ -51,6 +54,14 @@ const refreshUnread = (set: (patch: Partial<AccountState>) => void) => {
     .catch(() => {});
 };
 
+/** 登录成功之后统一收尾：取回资料、清未读并重连游戏 WebSocket，让握手重新解析会话 Cookie。 */
+const afterSignIn = async (set: (patch: Partial<AccountState>) => void) => {
+  const next = await fetchProfile();
+  set({ ...next, unreadFeedback: 0 });
+  if (next.status === "signedIn") refreshUnread(set);
+  refreshSocketIdentities();
+};
+
 export const useAccountStore = create<AccountState>((set, get) => ({
   status: "loading",
   profile: null,
@@ -66,10 +77,12 @@ export const useAccountStore = create<AccountState>((set, get) => ({
 
   signIn: async (input) => {
     await signInWithCode(input);
-    const next = await fetchProfile();
-    set({ ...next, unreadFeedback: 0 });
-    if (next.status === "signedIn") refreshUnread(set);
-    refreshSocketIdentities();
+    await afterSignIn(set);
+  },
+
+  signInWithPasskey: async () => {
+    await requestSignInWithPasskey();
+    await afterSignIn(set);
   },
 
   signOut: async () => {

@@ -21,20 +21,34 @@ vi.mock("@/lib/Api", async (importOriginal) => ({
   api: { account: { requestLoginCode, qqName } },
 }));
 
+const passkeySupported = vi.hoisted(() => vi.fn<() => boolean>());
+const passkeySignIn = vi.hoisted(() => vi.fn<() => Promise<void>>());
+
+vi.mock("@/lib/Passkey", () => ({
+  passkeySupported,
+  signInWithPasskey: passkeySignIn,
+  // 组件只关心「拿到一句中文」，映射规则本身在 lib/Passkey.test.ts 里验。
+  passkeyErrorMessage: (error: unknown, fallback: string) =>
+    error instanceof Error ? error.message : fallback,
+}));
+
 const signIn = vi.fn<(input: { email: string; otp: string }) => Promise<void>>();
 const originalSignIn = useAccountStore.getState().signIn;
+const originalPasskeySignIn = useAccountStore.getState().signInWithPasskey;
 
 beforeEach(() => {
-  useAccountStore.setState({ signIn });
+  useAccountStore.setState({ signIn, signInWithPasskey: passkeySignIn });
+  passkeySupported.mockReturnValue(true);
   // 回显昵称默认查不到：只有断言回显的用例改成 resolved，其余用例的昵称一律来自发码返回值。
   qqName.mockResolvedValue(null);
 });
 
 afterEach(() => {
-  useAccountStore.setState({ signIn: originalSignIn });
+  useAccountStore.setState({ signIn: originalSignIn, signInWithPasskey: originalPasskeySignIn });
   requestLoginCode.mockReset();
   qqName.mockReset();
   signIn.mockReset();
+  passkeySignIn.mockReset();
 });
 
 const renderDialog = () => {
@@ -190,5 +204,50 @@ describe("登录弹窗", () => {
     await user.click(screen.getByRole("button", { name: "登录说明" }));
     expect(await screen.findByText("不登录不影响绝大部分功能的正常游玩。")).toBeInTheDocument();
     expect(screen.getByText(/不索要你的 QQ 密码/)).toBeInTheDocument();
+    expect(screen.getByText(/通行密钥在登录后的「账号资料」里添加/)).toBeInTheDocument();
+  });
+
+  it("支持 WebAuthn 时页脚并列给出通行密钥入口，登录成功后关闭弹窗", async () => {
+    passkeySignIn.mockResolvedValue();
+    const { user, onOpenChange } = renderDialog();
+
+    const passkey = screen.getByRole("button", { name: "通行密钥" });
+    // 与发送验证码并列在同一枚页脚里：切步不因为多一个入口而跳高度
+    expect(passkey).toBeEnabled();
+    await user.click(passkey);
+
+    expect(passkeySignIn).toHaveBeenCalled();
+    expect(signIn).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("第二步不再出现通行密钥入口；验证失败就地提示且不关弹窗", async () => {
+    requestLoginCode.mockResolvedValue({
+      registered: true,
+      resendAfterSeconds: 60,
+      qqName: null,
+    });
+    passkeySignIn.mockRejectedValue(new Error("本机没有可用的通行密钥"));
+    const { user, onOpenChange } = renderDialog();
+
+    await user.click(screen.getByRole("button", { name: "通行密钥" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("本机没有可用的通行密钥");
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    // 通行密钥失败后改走验证码那一步：页脚只剩「换个 QQ 号 + 登录」
+    await user.type(screen.getByLabelText("QQ 号"), "12345");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    expect(await screen.findByLabelText("验证码")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "通行密钥" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeDisabled();
+  });
+
+  it("不支持 WebAuthn 的浏览器整段入口消失，验证码照常", async () => {
+    passkeySupported.mockReturnValue(false);
+    const { user } = renderDialog();
+
+    expect(screen.queryByRole("button", { name: "通行密钥" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("QQ 号"), "12345");
+    expect(screen.getByRole("button", { name: "发送验证码" })).toBeEnabled();
   });
 });

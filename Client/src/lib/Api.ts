@@ -52,7 +52,10 @@ export const apiErrorMessage = (error: unknown, fallback = "请求失败，请�
   return fallback;
 };
 
-/** Better Auth 端点的错误：只开放登录、读会话与退出三个端点（见 Agents/Account.md §2）。 */
+/**
+ * Better Auth 端点的错误。开放面是登录、读会话、退出与通行密钥那几个端点（见 Agents/Account.md §2）；
+ * 服务端给的 `message` 多为英文，按 `code` 换成中文，未列出的码交给调用方兜底。
+ */
 export class AuthRequestError extends Error {
   readonly code: string;
   readonly status: number;
@@ -70,21 +73,42 @@ const AUTH_MESSAGES: Record<string, string> = {
   OTP_EXPIRED: "验证码已过期，请重新获取",
   TOO_MANY_ATTEMPTS: "尝试次数过多，请重新获取验证码",
   BANNED_USER: "账号已被封禁",
+  UNAUTHORIZED: "请先登录",
+  // 添加密钥要求「新鲜」登录（默认 24 小时内）：这是防会话盗用的门槛，不是 bug。
+  SESSION_NOT_FRESH: "这次登录已超过一天，请重新登录后再添加通行密钥",
+  SESSION_REQUIRED: "请先登录后再添加通行密钥",
+  CHALLENGE_NOT_FOUND: "验证已超时，请重新尝试",
+  PASSKEY_NOT_FOUND: "这个通行密钥已不属于任何账号，请改用验证码登录",
+  AUTHENTICATION_FAILED: "通行密钥校验失败，请改用验证码登录",
+  FAILED_TO_VERIFY_REGISTRATION: "通行密钥添加失败，请重试",
+  YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY: "这个通行密钥不属于当前账号",
+  PREVIOUSLY_REGISTERED: "这台设备已有通行密钥，无需重复添加",
 };
 
-const postAuth = async (path: string, body: Record<string, unknown>): Promise<void> => {
+/**
+ * 调用 Better Auth 端点：返回体按 `T` 取，不做结构校验（可打的端点由服务端白名单固定）。
+ * GET 用于取 WebAuthn 挑战，POST 用于提交响应；两者都靠 Cookie 带会话与挑战值。
+ */
+const authRequest = async <T>(
+  path: string,
+  init: { method: "GET" } | { method: "POST"; body: Record<string, unknown> }
+): Promise<T> => {
   let response: Response;
   try {
     response = await fetch(absolute(`${AUTH_BASE_PATH}${path}`), {
-      method: "POST",
+      method: init.method,
       credentials: "include",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      ...(init.method === "POST"
+        ? {
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(init.body),
+          }
+        : {}),
     });
   } catch {
     throw new AuthRequestError("NETWORK_ERROR", "网络异常，请稍后重试", 0);
   }
-  if (response.ok) return;
+  if (response.ok) return (await response.json()) as T;
   const payload = (await response.json().catch(() => null)) as {
     code?: unknown;
     message?: unknown;
@@ -100,8 +124,13 @@ const postAuth = async (path: string, body: Record<string, unknown>): Promise<vo
   throw new AuthRequestError(code, message, response.status);
 };
 
+/** 供通行密钥流程直连 Better Auth 端点（挑战值写在签名 Cookie 里，必须带凭据、不经 oRPC）。 */
+export const authGet = <T>(path: string) => authRequest<T>(path, { method: "GET" });
+export const authPost = <T = void>(path: string, body: Record<string, unknown>) =>
+  authRequest<T>(path, { method: "POST", body });
+
 /** 邮箱验证码登录；首次登录即注册，账号昵称由服务端强制取自 QQ 昵称，客户端不必也不可自报。 */
 export const signInWithCode = (input: { email: string; otp: string }) =>
-  postAuth("/sign-in/email-otp", input);
+  authPost("/sign-in/email-otp", input);
 
-export const signOut = () => postAuth("/sign-out", {});
+export const signOut = () => authPost("/sign-out", {});

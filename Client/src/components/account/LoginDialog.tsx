@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, UserRound } from "lucide-react";
+import { ArrowLeft, KeyRound, UserRound } from "lucide-react";
 import {
   LOGIN_CODE_LENGTH,
   LOGIN_CODE_PATTERN,
@@ -17,6 +17,7 @@ import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
 import { indicatorSlide, listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion";
+import { passkeyErrorMessage, passkeySupported } from "@/lib/Passkey";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
 type Step = { kind: "qq" } | { kind: "code"; registered: boolean; qqName: string | null };
@@ -128,7 +129,8 @@ function StepDots({ active }: { active: 0 | 1 }) {
 
 /**
  * 登录的用途与 QQ 号边界：默认收起，第一段话只回答访客最可能的两个顾虑——
- * 不登录能不能玩、要不要交出 QQ 密码。验证码投递到哪由字段说明就地写明（发完后仍常驻）。
+ * 不登录能不能玩、要不要交出 QQ 密码。验证码投递到哪由字段说明就地写明（发完后仍常驻），
+ * 通行密钥从哪来写在最后一段（页脚那个按钮只有一枚图标加四个字，说不清来路）。
  */
 function LoginNotice() {
   return (
@@ -137,6 +139,7 @@ function LoginNotice() {
         <p>登录只用于少数需要身份验证的功能：云同步设置、提交反馈、房间内显示你的头像。</p>
         <p>不登录不影响绝大部分功能的正常游玩。</p>
         <p>用 QQ 号作登录凭据仅是为了方便身份关联：我们不索要你的 QQ 密码和其它隐私信息。</p>
+        <p>通行密钥在登录后的「账号资料」里添加，之后在这台设备上登录不必再收验证码。</p>
       </div>
     </Collapsible>
   );
@@ -149,8 +152,9 @@ function LoginNotice() {
  * 下方操作区按步切换字段（QQ 号 → 验证码），新内容自后方推入、旧内容向前退出（`phaseSwap`）。
  * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，紧接着输完号查到的昵称自它上方顶进来，
  * 发码后再以服务端回传值为准；
- * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度。
- * 操作区底部常驻一段收起的登录说明（用途、QQ 号边界、验证码投递），两步共用、不随切步跳动。
+ * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度：页脚两步各放两枚按钮
+ * （第一步「通行密钥 + 发送验证码」，第二步「换个 QQ 号 + 登录」）。
+ * 操作区底部常驻一段收起的登录说明（用途、QQ 号边界、验证码投递、通行密钥来路），两步共用、不随切步跳动。
  */
 export function LoginDialog({
   open,
@@ -184,9 +188,12 @@ function LoginDialogBody({
   onDone: () => void;
 }) {
   const signIn = useAccountStore((state) => state.signIn);
+  const signInWithPasskey = useAccountStore((state) => state.signInWithPasskey);
+  // 不支持 WebAuthn 的浏览器（老旧内核、非安全上下文）连系统弹窗都调不起来，入口整段不出现。
+  const [supportsPasskey] = useState(passkeySupported);
   const [step, setStep] = useState<Step>({ kind: "qq" });
   const [code, setCode] = useState("");
-  const [busy, setBusy] = useState<"send" | "resend" | "sign-in" | null>(null);
+  const [busy, setBusy] = useState<"send" | "resend" | "sign-in" | "passkey" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const countdown = useCountdown();
@@ -235,6 +242,20 @@ function LoginDialogBody({
           ? cause.message
           : "登录失败，请稍后重试"
       );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 通行密钥与验证码并列：它不查 QQ 号、不发邮件，凭据由本机保管。 */
+  const signInByPasskey = async () => {
+    setBusy("passkey");
+    setError(null);
+    try {
+      await signInWithPasskey();
+      onDone();
+    } catch (cause) {
+      setError(passkeyErrorMessage(cause, "通行密钥登录失败，请改用验证码"));
     } finally {
       setBusy(null);
     }
@@ -344,6 +365,18 @@ function LoginDialogBody({
           <LoginNotice />
 
           <DialogFooter className="min-h-20 sm:min-h-9">
+            {step.kind === "qq" && supportsPasskey ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy !== null}
+                loading={busy === "passkey"}
+                onClick={() => void signInByPasskey()}
+              >
+                <KeyRound />
+                通行密钥
+              </Button>
+            ) : null}
             {step.kind === "code" ? (
               <Button
                 type="button"
