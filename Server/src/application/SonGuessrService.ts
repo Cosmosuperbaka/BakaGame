@@ -904,6 +904,9 @@ const buildTrackQueries = (
 
 /**
  * 用「有出题资格」过滤检索候选，再按原版优先分降序、同分保持原顺序排列。
+ *
+ * 准入门槛用「证据分」而非排序分：非原唱标记的降权只在排序里生效，
+ * 唯一候选是翻唱 / 改编时仍要能降级出题（见 hasAnimeSongEvidence）。
  */
 const rankEvidencedCandidates = (
   matched: { candidates: SongSearchResult[]; animeScopedIds: Set<string> },
@@ -925,6 +928,94 @@ const rankEvidencedCandidates = (
   .filter((entry) => entry.evidenced)
   .sort((left, right) => right.score - left.score || left.index - right.index)
   .map((entry) => entry.candidate);
+
+/** 自动出题的一条「番剧 → 可出歌曲」结果。 */
+type AnimeSongPick = { song: SongDetails; track: BangumiMusicTrack };
+
+/**
+ * 条目的候选池：来源标记决定还能不能放宽身份与年代，翻唱回指的原曲要插回同一个数组。
+ *
+ * 只有「常规检索」这一条路（`looseFallback`）允许放宽：专辑 / 番剧级兜底已经把「哪首歌」
+ * 放宽了，不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）；
+ * 同理也不该再放宽「年代」—— 实测《あした天気になあれ》(1984) 被 2026 年的 CeVIO 合成音
+ * 同名曲顶掉，正是靠「标题命中该番另一条目 + 年份兜底」两道放宽叠出来的。
+ */
+type TrackCandidatePool = {
+  track: BangumiMusicTrack;
+  list: SongSearchResult[];
+  fromAnimeLevel: boolean;
+  looseFallback: boolean;
+};
+
+/** 让位候选的三种归处：翻唱、同名不同年、近期已出过。 */
+type SongFallbackKind = "cover" | "year" | "recent";
+
+/** 单个候选在验证阶段的判定入参：池内位置、让位归处与取到的歌曲详情。 */
+type FallbackPickEntry = {
+  index: number;
+  candidate: SongSearchResult;
+  kind: SongFallbackKind;
+  pick: AnimeSongPick;
+};
+
+/**
+ * 自动出题的逐条目回源上下文：检索/详情预算、三档让位兜底槽与原曲去重集合
+ * 都挂在同一对象上跨曲目累积，兜底优先级即字段顺序。
+ */
+type AnimeSongLookup = {
+  provider: MusicProvider;
+  anime: BangumiSubjectDetails;
+  cookie: MusicCookieInput | undefined;
+  animeNames: string[];
+  minPopularity: number;
+  recentSongIds: Set<string>;
+  originRetryIds: Set<string>;
+  budget: { search: number; detail: number };
+  fallbackRecent?: AnimeSongPick;
+  fallbackYear?: AnimeSongPick;
+  fallbackCover?: AnimeSongPick;
+};
+
+/**
+ * 让位形态都只能在详情阶段判定，且一律「让位不占名额」：
+ *
+ * - **翻唱**：网易云自标 `originCoverType === 2` 的版本是**别人的演唱录音**。
+ *   文本维度在它面前全失效（翻唱常把曲名与专辑名照抄原曲，实测《裸の勇者》原版
+ *   与翻唱曲名、专辑名一字不差），只有这个字段能把它认出来。
+ * - **同名不同曲**：曲名（与专辑名）完全一致，发行年份却与番剧差了一二十年；
+ *   发行年只有歌曲详情里有。同名新歌往往成批排在前面（实测 XG / chuLa / Anna Yvette
+ *   等同名版本都是「曲名 + 专辑名」双命中得 4 分，而原版挂在「动画名 - 曲名」的专辑下
+ *   只有 2 分），若让它们吃掉验证名额，排在后面的原版连被验证的机会都没有。
+ *   整体仍受 detail 预算约束，不会无界回源。
+ * - **近期出过**：是真正属于本番的歌，只是刚听过，所以不返还名额（换下一首候选）。
+ */
+const fallbackKindOfSong = (
+  song: SongDetails,
+  anime: BangumiSubjectDetails,
+  recentSongIds: Set<string>,
+): SongFallbackKind | undefined => {
+  if (song.originCoverType === 2) return "cover";
+  if (isReleaseYearOffTarget(song.releaseYear, anime.year)) return "year";
+  if (recentSongIds.has(song.id)) return "recent";
+  return undefined;
+};
+
+/** 详情已带热度时再过一道门槛：热度缺失按不达标处理。 */
+const isBelowMinPopularity = (song: SongDetails, minPopularity: number): boolean =>
+  minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity);
+
+/** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
+type RoomReclaim = "skip" | "grace" | "keep";
+
+/** 一轮回合巡检的共享扫描状态：同一时刻与同一硬超时判定贯穿「补就绪」与「判超时」两步。 */
+type RoundSweep = {
+  room: SonGuessrRoomRecord;
+  round: NonNullable<SonGuessrRoomRecord["currentRound"]>;
+  currentTime: number;
+  /** 硬超时只在巡检开始时判一次：`armRoundDeadlines` 会改写回合时限，事后重算会读到新值。 */
+  isRoundHardExpired: boolean;
+  units: Set<SonGuessrRoundPlayerState>;
+};
 
 /** 手动选曲的条目匹配上下文：一次解析内共享的检索资源、预算与已产出的结果。 */
 interface AnimeTrackMatchContext {
@@ -1381,112 +1472,143 @@ export class SonGuessrService implements AdminRoomControl {
   async runHousekeeping(): Promise<void> {
     const currentTime = this.now();
     for (const room of [...this.rooms.values()]) {
-      const isEmpty = this.onlineCount(room) === 0;
-      const isIdleTimeout = currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS;
-      // 测试房间豁免「无人立即回收」——它常态就是一间等人加入的空房；
-      // 但仍受空闲超时约束：否则那唯一的房间记录会永久驻留，
-      // 加出来的机器人也永远不会被回收，只能靠重启释放。
-      if (this.isTestRoom(room) && isEmpty && !isIdleTimeout) continue;
-      // 空闲关闭前提前一分钟预警一次：客户端的 `song.room.expiring` 分支
-      // 此前是死代码（服务端从来没下发过），玩家只会突然收到「房间已关闭」。
-      const idleRemaining = ROOM_IDLE_TIMEOUT_MS - (currentTime - room.lastActivityAt);
-      if (!isEmpty && idleRemaining <= ROOM_EXPIRING_WARNING_MS && !room.expiringNotified) {
-        room.expiringNotified = true;
-        this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
-      }
-
-      if (isEmpty || isIdleTimeout) {
-        if (isEmpty) {
-          room.emptySinceAt ??= currentTime;
-          if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) {
-            this.publishRoomCalibration(room);
-            continue;
-          }
-        }
-        this.closeRoom(room, isEmpty ? "empty" : "idle_timeout");
-        continue;
-      }
-      room.emptySinceAt = undefined;
-
-      // 清理掉线超过3分钟的玩家
-      for (const player of Object.values(room.players)) {
-        if (
-          !player.online &&
-          !player.isBot &&
-          currentTime - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
-        ) {
-          delete room.players[player.id];
-          if (room.hostPlayerId === player.id) {
-            this.reassignHost(room);
-          }
-          this.touch(room);
-          if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
-            this.closeRoom(room, "empty");
-          } else {
-            this.publishRoom(room);
-            this.publishLobby();
-          }
-        }
-      }
-
-      if (
-        room.hostReconnectDeadlineAt !== undefined &&
-        currentTime >= room.hostReconnectDeadlineAt
-      ) {
+      if (this.reclaimIdleRoom(room, currentTime) !== "keep") continue;
+      this.cleanupOfflinePlayers(room, currentTime);
+      if (room.hostReconnectDeadlineAt !== undefined && currentTime >= room.hostReconnectDeadlineAt) {
         this.transferHostAfterDisconnect(room);
       }
-
-      if (room.phase === "playing" && room.currentRound) {
-        let changed = false;
-        const round = room.currentRound;
-        const audioReadyDeadlineAt = round.audioReadyDeadlineAt ?? round.audioPreparationDeadlineAt;
-        const isRoundHardExpired =
-          round.hardDeadlineAt !== undefined && currentTime >= round.hardDeadlineAt;
-
-        // 先按人处理音频宽限，再按作答单元判超时：同队共用一份限时，逐人判会让一次超时扣好几遍。
-        const units = new Set<SonGuessrRoundPlayerState>();
-        for (const [playerId, state] of Object.entries(round.players)) {
-          if (
-            playerId === round.submitterPlayerId &&
-            !this.canTestSubmitterGuess(room, playerId)
-          ) {
-            continue;
-          }
-          if (this.isUnitFinished(round, state)) continue;
-
-          // 音频就绪宽限期结束仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额
-          if (!round.audioReady[playerId] && currentTime >= audioReadyDeadlineAt) {
-            this.armRoundDeadlines(room);
-            round.audioReady[playerId] = true;
-            // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
-            // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
-            // 下一轮巡检就把补偿出来的答题时间又当成超时收走。队友先就绪时全队计时已在走，不重开。
-            if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
-            changed = true;
-          }
-          units.add(state);
-        }
-        for (const state of units) {
-          // 上游正在校验这次猜测（占位已扣、结果未回）：超时由 in-flight 流程自己判定。
-          // 巡检在这里抢先记一次 timeout，会让一次真实猜测扣掉两次配额，
-          // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
-          // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
-          if (state.inFlight && !isRoundHardExpired) continue;
-          const isGuessTimeout = state.deadlineAt !== undefined && state.deadlineAt <= currentTime;
-          if (isGuessTimeout || isRoundHardExpired) {
-            this.recordTimeout(room, state);
-            changed = true;
-          }
-        }
-
-        if (changed || isRoundHardExpired) {
-          if (this.isRoundComplete(room) || isRoundHardExpired) this.finishRound(room);
-          this.publishRoom(room);
-        }
-      }
-
+      this.settlePlayingRound(room, currentTime);
       this.publishRoomCalibration(room);
     }
+  }
+
+  /**
+   * 无人房间与空闲房间的回收：测试房间豁免「无人立即回收」但仍受空闲超时约束，
+   * 无人房间先给一段宽限期，宽限期内只补一次校准便跳过其余巡检阶段。
+   */
+  private reclaimIdleRoom(room: SonGuessrRoomRecord, currentTime: number): RoomReclaim {
+    const isEmpty = this.onlineCount(room) === 0;
+    const isIdleTimeout = currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS;
+    // 测试房间豁免「无人立即回收」——它常态就是一间等人加入的空房；
+    // 但仍受空闲超时约束：否则那唯一的房间记录会永久驻留，
+    // 加出来的机器人也永远不会被回收，只能靠重启释放。
+    if (this.isTestRoom(room) && isEmpty && !isIdleTimeout) return "skip";
+    // 空闲关闭前提前一分钟预警一次：客户端的 `song.room.expiring` 分支
+    // 此前是死代码（服务端从来没下发过），玩家只会突然收到「房间已关闭」。
+    const idleRemaining = ROOM_IDLE_TIMEOUT_MS - (currentTime - room.lastActivityAt);
+    if (!isEmpty && idleRemaining <= ROOM_EXPIRING_WARNING_MS && !room.expiringNotified) {
+      room.expiringNotified = true;
+      this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
+    }
+
+    if (isEmpty || isIdleTimeout) {
+      if (isEmpty) {
+        room.emptySinceAt ??= currentTime;
+        if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) {
+          this.publishRoomCalibration(room);
+          return "grace";
+        }
+      }
+      this.closeRoom(room, isEmpty ? "empty" : "idle_timeout");
+      return "skip";
+    }
+    room.emptySinceAt = undefined;
+    return "keep";
+  }
+
+  /** 清理掉线超过 3 分钟的真人玩家；被清掉的是房主时先移交，房间空了立即回收。 */
+  private cleanupOfflinePlayers(room: SonGuessrRoomRecord, currentTime: number): void {
+    for (const player of Object.values(room.players)) {
+      if (
+        player.online ||
+        player.isBot ||
+        currentTime - player.lastSeenAt < PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+      ) {
+        continue;
+      }
+      delete room.players[player.id];
+      if (room.hostPlayerId === player.id) {
+        this.reassignHost(room);
+      }
+      this.touch(room);
+      if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
+        this.closeRoom(room, "empty");
+      } else {
+        this.publishRoom(room);
+        this.publishLobby();
+      }
+    }
+  }
+
+  /** 进行中的回合：先按人补音频就绪，再按作答单元判超时，最后按变化结算与广播。 */
+  private settlePlayingRound(room: SonGuessrRoomRecord, currentTime: number): void {
+    const round = room.currentRound;
+    if (room.phase !== "playing" || !round) return;
+    const sweep: RoundSweep = {
+      room,
+      round,
+      currentTime,
+      isRoundHardExpired: round.hardDeadlineAt !== undefined && currentTime >= round.hardDeadlineAt,
+      units: new Set<SonGuessrRoundPlayerState>(),
+    };
+    // 两步都必须跑完：`||` 的短路会让补就绪改动过的回合漏判超时。
+    const armed = this.armExpiredAudioUnits(sweep);
+    const timedOut = this.recordExpiredGuesses(sweep);
+    const changed = armed || timedOut;
+
+    if (changed || sweep.isRoundHardExpired) {
+      if (this.isRoundComplete(room) || sweep.isRoundHardExpired) this.finishRound(room);
+      this.publishRoom(room);
+    }
+  }
+
+  /**
+   * 音频就绪宽限期结束的补偿：仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额。
+   * 收下的作答单元交给 `recordExpiredGuesses` 判超时 —— 同队共用一份限时，逐人判会让一次超时扣好几遍。
+   */
+  private armExpiredAudioUnits(sweep: RoundSweep): boolean {
+    const { room, round, currentTime } = sweep;
+    const audioReadyDeadlineAt = round.audioReadyDeadlineAt ?? round.audioPreparationDeadlineAt;
+    let changed = false;
+    for (const [playerId, state] of Object.entries(round.players)) {
+      if (
+        playerId === round.submitterPlayerId &&
+        !this.canTestSubmitterGuess(room, playerId)
+      ) {
+        continue;
+      }
+      if (this.isUnitFinished(round, state)) continue;
+
+      if (!round.audioReady[playerId] && currentTime >= audioReadyDeadlineAt) {
+        this.armRoundDeadlines(room);
+        round.audioReady[playerId] = true;
+        // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
+        // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
+        // 下一轮巡检就把补偿出来的答题时间又当成超时收走。队友先就绪时全队计时已在走，不重开。
+        if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
+        changed = true;
+      }
+      sweep.units.add(state);
+    }
+    return changed;
+  }
+
+  /** 按作答单元判答题超时；in-flight 的猜测由回源流程自己结算，硬超时除外。 */
+  private recordExpiredGuesses(sweep: RoundSweep): boolean {
+    let changed = false;
+    for (const state of sweep.units) {
+      // 上游正在校验这次猜测（占位已扣、结果未回）：超时由 in-flight 流程自己判定。
+      // 巡检在这里抢先记一次 timeout，会让一次真实猜测扣掉两次配额，
+      // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
+      // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
+      if (state.inFlight && !sweep.isRoundHardExpired) continue;
+      const isGuessTimeout = state.deadlineAt !== undefined && state.deadlineAt <= sweep.currentTime;
+      if (isGuessTimeout || sweep.isRoundHardExpired) {
+        this.recordTimeout(sweep.room, state);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   getRoomSummaries(): SonGuessrRoomSummary[] {
@@ -2628,8 +2750,7 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
-    const provider = this.options.musicProvider;
+  private async resolveAnimeSong(room: SonGuessrRoomRecord, anime: BangumiSubjectDetails): Promise<AnimeSongPick> {
     if (anime.musicTracks.length === 0) {
       throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可识别的主题曲信息");
     }
@@ -2647,205 +2768,209 @@ export class SonGuessrService implements AdminRoomControl {
       anime.musicTracks.filter((track) => allowedKinds.has(track.kind)),
       this.random,
     ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
-    const minPopularity = filters.songMinPopularity ?? 0;
-    const cookie = this.getAggregatedSearchCookie(room);
-    const recentSongIds = new Set(room.recentSongIds ?? []);
-    let fallbackRecent: { song: SongDetails; track: BangumiMusicTrack } | undefined;
-    // 年份错配（同名不同曲）的兜底，优先级低于「近期重复过的正确歌曲」：
-    // 宁可重听一首真正属于这部番的歌，也不放一首完全无关的同名新歌。
-    let fallbackYear: { song: SongDetails; track: BangumiMusicTrack } | undefined;
-    // 翻唱兜底，优先级最低：翻唱是**别人的演唱录音**，连「同名不同曲」都不如
-    // （后者至少是同一首歌）。只有在整池候选全是翻唱时才认它，避免无歌可出。
-    let fallbackCover: { song: SongDetails; track: BangumiMusicTrack } | undefined;
-    // 已经由翻唱回指过的原曲 ID，防止两个翻唱互相指向、反复插队。
-    const originRetryIds = new Set<string>();
-    // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
-    // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
-    const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
+    const lookup: AnimeSongLookup = {
+      provider: this.options.musicProvider,
+      anime,
+      cookie: this.getAggregatedSearchCookie(room),
+      animeNames,
+      minPopularity: filters.songMinPopularity ?? 0,
+      recentSongIds: new Set(room.recentSongIds ?? []),
+      // 已经由翻唱回指过的原曲 ID，防止两个翻唱互相指向、反复插队。
+      originRetryIds: new Set<string>(),
+      // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
+      // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
+      budget: { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET },
+    };
 
     for (const track of candidates) {
-      if (budget.search <= 0 || budget.detail <= 0) break;
-      const queries: string[] = [];
-      // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
-      // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
-      // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
-      const artistQuery = track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
-        ? track.artist.trim()
-        : "";
-      if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
-      if (anime.name) queries.push(`${track.title} ${anime.name}`);
-      if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
-      queries.push(track.title);
-      // 仅凭歌手名检索时，Bangumi 与网易云的歌手写法差异会让原版漏召回，
-      // 只剩翻唱版可匹配。追加番剧名与曲名宽检索，保证原版进入候选池，
-      // 再由 scoreAnimeSongCandidate 的原版优先排序决定最终结果。
-      const broadQueries = [
-        anime.name ? `${track.title} ${anime.name}` : "",
-        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-        track.title,
-      ].filter((query) => query && !queries.includes(query));
-      queries.push(...broadQueries);
-
-      // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
-      // 带番剧名的检索词单独标出来：命中它们的候选是「确实属于本番」的强证据。
-      const scopeQueries = [
-        anime.name ? `${track.title} ${anime.name}` : "",
-        anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-      ].filter(Boolean);
-      const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
-
-      // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
-      // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
-      const ranked = matched.candidates
-        .map((candidate, index) => {
-          const options = {
-            animeScoped: matched.animeScopedIds.has(candidate.id),
-            animeNames,
-          };
-          return {
-            candidate,
-            index,
-            score: scoreAnimeSongCandidate(candidate, track, options),
-            // 弱候选的准入门槛用「证据分」而非排序分：非原唱标记的降权只在排序里生效，
-            // 唯一候选是翻唱 / 改编时仍要能降级出题（见 hasAnimeSongEvidence）。
-            evidenced: hasAnimeSongEvidence(candidate, track, options),
-          };
-        })
-        .filter((entry) => entry.evidenced)
-        .sort((left, right) => right.score - left.score || left.index - right.index)
-        .map((entry) => entry.candidate);
-      // 常规检索一无所获（或整池都是弱候选）时换一条路：这条关联条目可能压根不是
-      // 一首歌，而是**整张专辑**（见 `ALBUM_LIKE_TRACK_KINDS`）。此时按条目名去搜
-      // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
-      let pool: SongSearchResult[] = ranked;
-      if (pool.length === 0 && isAlbumLikeTrackKind(track.kind)) {
-        pool = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
-      }
-      // 最后一道兜底：条目级解析全部失败时，用番剧名检索该番的歌（见 resolveAnimeLevelCandidates）。
-      // 这条路拿到的歌**与本条目无关**（只是同一部番的其它曲目），因此条目分类也不能再用 ——
-      // 实测《四月は君の嘘 第8巻 特典CD》条目下的歌曲实际来自 OST 专辑，却因条目分类
-      // 显示成「Radio」。
-      let poolFromAnimeLevel = false;
-      if (pool.length === 0) {
-        pool = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
-        poolFromAnimeLevel = true;
-      }
-      // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
-      if (pool.length === 0) continue;
-      // 只有「常规检索」路径才允许放宽身份：专辑 / 番剧级兜底已经把「哪首歌」放宽了，
-      // 不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）；
-      // 同理也不该再放宽「年代」——实测《あした天気になあれ》(1984) 被 2026 年的
-      // CeVIO 合成音同名曲顶掉，正是靠「标题命中该番另一条目 + 年份兜底」两道放宽叠出来的。
-      const allowLooseFallback = pool === ranked;
-
-      let attempts = 0;
-      // 用索引循环而非 for...of：翻唱自带原曲 ID，需要把原版插到队首交给下一次迭代验证。
-      for (let index = 0; index < pool.length; index += 1) {
-        const candidate = pool[index];
-        if (budget.detail <= 0 || attempts >= ANIME_TRACK_DETAIL_ATTEMPTS) break;
-        attempts += 1;
-        // 热度不达标就无法出题，先用一次廉价的红心数查询判掉，
-        // 避免为一个必然被否决的候选拉取歌词、音频与百科（约 5~6 个上游请求）。
-        if (minPopularity > 0 && provider.getSongPopularity) {
-          budget.detail -= 1;
-          const popularity = await provider
-            .getSongPopularity.call(provider, candidate.id, cookie)
-            .catch((error: unknown) => {
-              if (!isUnusableSongCandidate(error)) throw error;
-              return undefined;
-            });
-          if (popularity !== undefined && popularity < minPopularity) continue;
-        }
-        budget.detail -= 1;
-        let song: SongDetails;
-        try {
-          song = await provider.getSong(candidate.id, cookie);
-        } catch (error) {
-          if (!isUnusableSongCandidate(error)) throw error;
-          // 仅单首歌曲不可播放时继续尝试其它版本，全局依赖失败原样透传。
-          continue;
-        }
-        if (minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity)) continue;
-        // 台词轨 / 伴奏 / 纯音乐一律否决，且**不占验证名额**：特典 CD 里它们常成批
-        // 排在前面，若让它们吃掉 ANIME_TRACK_DETAIL_ATTEMPTS，真正的歌连被验证的机会都没有。
-        // 宁可这部番出不了题，也不能放一段对白让玩家猜。
-        if (isNonVocalTrack(song.title)) {
-          attempts -= 1;
-          continue;
-        }
-        const resolved = {
-          song,
-          track: {
-            ...track,
-            // 番剧级兜底的歌不属于本条目，类型只能从歌曲自身文本推（与手动选曲列表同源）；
-            // 其余路径仍以条目分类为基准，再用歌曲文本细化。
-            kind: this.refineTrackKind(poolFromAnimeLevel ? "theme" : track.kind, song),
-          },
-        } satisfies { song: SongDetails; track: BangumiMusicTrack };
-        // 翻唱让位：网易云自标 `originCoverType === 2` 的版本是**别人的演唱录音**。
-        // 文本维度在它面前全失效（翻唱常把曲名与专辑名照抄原曲，实测《裸の勇者》原版
-        // 与翻唱曲名、专辑名一字不差），只有这个字段能把它认出来。
-        // 与年份错配同理：让位且**不占** `ANIME_TRACK_DETAIL_ATTEMPTS`，否则成批
-        // 排在前面的翻唱会把验证名额吃光，真正的原版连被验证的机会都没有。
-        if (song.originCoverType === 2) {
-          // 翻唱自带原曲 ID —— 原版常常压根没进候选池（实测：Bangumi 存中文译名
-          // 《你所不知道的故事》时，按译名检索只召回中文重填词的翻唱，日文原版
-          // 《君の知らない物語》永远进不了池子）。直接把它插到队首，下一次迭代即验证原版。
-          const originalId = song.originSongId;
-          if (
-            originalId
-            && originalId !== candidate.id
-            && !originRetryIds.has(originalId)
-            && !pool.some((entry) => entry.id === originalId)
-          ) {
-            originRetryIds.add(originalId);
-            pool.splice(index + 1, 0, {
-              id: originalId,
-              title: track.title,
-              artist: track.artist ?? "",
-            });
-          }
-          if (allowLooseFallback && !fallbackCover) fallbackCover = resolved;
-          attempts -= 1;
-          continue;
-        }
-        // 同名不同曲：曲名（与专辑名）完全一致，发行年份却与番剧差了一二十年。
-        // 发行年只有歌曲详情里有，所以这条只能在验证阶段剔除，把机会让给年份合理的候选。
-        // **错配候选不占用 `ANIME_TRACK_DETAIL_ATTEMPTS`**：同名新歌往往成批排在前面
-        // （实测 XG / chuLa / Anna Yvette 等同名版本都是「曲名 + 专辑名」双命中得 4 分，
-        // 而原版挂在「动画名 - 曲名」的专辑下只有 2 分），若让它们吃掉 3 个验证名额，
-        // 排在后面的原版连被验证的机会都没有。整体仍受 detail 预算约束，不会无界回源。
-        if (isReleaseYearOffTarget(song.releaseYear, anime.year)) {
-          if (allowLooseFallback && !fallbackYear) fallbackYear = resolved;
-          attempts -= 1;
-          continue;
-        }
-        if (recentSongIds.has(resolved.song.id)) {
-          if (!fallbackRecent) fallbackRecent = resolved;
-          continue;
-        }
-        return resolved;
-      }
+      if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
+      const pick = await this.resolveTrackSong(lookup, track);
+      if (pick) return pick;
     }
 
-    if (fallbackRecent) {
-      return fallbackRecent;
+    // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
+    // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
+    if (lookup.fallbackRecent) {
+      return lookup.fallbackRecent;
     }
 
     // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
     // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
-    if (fallbackYear) {
-      return fallbackYear;
+    if (lookup.fallbackYear) {
+      return lookup.fallbackYear;
     }
 
     // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
     // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
     // 出题总比让整部番剧出不了题好。
-    if (fallbackCover) {
-      return fallbackCover;
+    if (lookup.fallbackCover) {
+      return lookup.fallbackCover;
     }
 
     throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
+  }
+
+  /** 单条关联曲目的出题：拼检索词 → 证据排序 → 三级候选池 → 逐首验证。 */
+  private async resolveTrackSong(
+    lookup: AnimeSongLookup,
+    track: BangumiMusicTrack,
+  ): Promise<AnimeSongPick | undefined> {
+    const { provider, cookie, budget, animeNames } = lookup;
+    const { queries, scopeQueries } = buildTrackQueries(track, lookup.anime);
+    // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
+    // 带番剧名的检索词单独标出来：命中它们的候选是「确实属于本番」的强证据。
+    const matched = await this.searchAnimeTrackCandidates(provider, queries, track, cookie, budget, scopeQueries);
+    // 网易云会把翻唱、器乐改编、伴奏等版本混排在原版之前；先按「原版优先」评分
+    // 降序排列，再依次验证可播放性，确保原版存在时不会被翻唱版抢占。
+    const ranked = rankEvidencedCandidates(matched, track, animeNames);
+    const pool = await this.resolveTrackPool(lookup, track, ranked);
+    // 三条路都没拿到可出的歌时换下一首关联曲目，绝不硬塞弱候选。
+    if (pool.list.length === 0) return undefined;
+    return this.verifyTrackPool(lookup, pool);
+  }
+
+  /**
+   * 条目的候选池三级来源：常规检索 → 专辑型条目 → 番剧级兜底。
+   * 只有「常规检索」这一条路允许放宽身份与年代（见 `looseFallback`）。
+   */
+  private async resolveTrackPool(
+    lookup: AnimeSongLookup,
+    track: BangumiMusicTrack,
+    ranked: SongSearchResult[],
+  ): Promise<TrackCandidatePool> {
+    const { provider, anime, cookie, budget } = lookup;
+    if (ranked.length > 0) return { track, list: ranked, fromAnimeLevel: false, looseFallback: true };
+    // 常规检索一无所获（或整池都是弱候选）时换一条路：这条关联条目可能压根不是
+    // 一首歌，而是**整张专辑**（见 `ALBUM_LIKE_TRACK_KINDS`）。此时按条目名去搜
+    // 单曲必然空手而归，改走「搜专辑 → 取专辑曲目」才能拿到真正可出的歌。
+    if (isAlbumLikeTrackKind(track.kind)) {
+      const albumPool = await this.resolveAlbumTrackCandidates(provider, track, anime, cookie, budget);
+      if (albumPool.length > 0) {
+        return { track, list: albumPool, fromAnimeLevel: false, looseFallback: false };
+      }
+    }
+    // 最后一道兜底：条目级解析全部失败时，用番剧名检索该番的歌（见 resolveAnimeLevelCandidates）。
+    // 这条路拿到的歌**与本条目无关**（只是同一部番的其它曲目），因此条目分类也不能再用 ——
+    // 实测《四月は君の嘘 第8巻 特典CD》条目下的歌曲实际来自 OST 专辑，却因条目分类
+    // 显示成「Radio」。
+    const animePool = await this.resolveAnimeLevelCandidates(provider, anime, cookie, budget);
+    return { track, list: animePool, fromAnimeLevel: true, looseFallback: false };
+  }
+
+  /**
+   * 逐首验证候选池：热度预筛 → 取详情 → 否决非人声 → 按让位形态记兜底槽。
+   * 台词轨、翻唱与年份错配都只是「让位」，一律返还验证名额，
+   * 否则成批排在前面的劣质候选会把 `ANIME_TRACK_DETAIL_ATTEMPTS` 吃光，
+   * 排在后面的原版连被验证的机会都没有。
+   */
+  private async verifyTrackPool(
+    lookup: AnimeSongLookup,
+    pool: TrackCandidatePool,
+  ): Promise<AnimeSongPick | undefined> {
+    const { budget } = lookup;
+    let attempts = 0;
+    // 用索引循环而非 for...of：翻唱自带原曲 ID，需要把原版插到队首交给下一次迭代验证。
+    for (let index = 0; index < pool.list.length; index += 1) {
+      const candidate = pool.list[index];
+      if (budget.detail <= 0 || attempts >= ANIME_TRACK_DETAIL_ATTEMPTS) break;
+      attempts += 1;
+      // 热度不达标就无法出题，先用一次廉价的红心数查询判掉，
+      // 避免为一个必然被否决的候选拉取歌词、音频与百科（约 5~6 个上游请求）。
+      if (await this.isCandidateTooCold(lookup, candidate.id)) continue;
+      const song = await this.loadPlayableSong(lookup, candidate.id);
+      if (!song) continue;
+      if (isBelowMinPopularity(song, lookup.minPopularity)) continue;
+      // 台词轨 / 伴奏 / 纯音乐一律否决，且**不占验证名额**：特典 CD 里它们常成批
+      // 排在前面，若让它们吃掉 ANIME_TRACK_DETAIL_ATTEMPTS，真正的歌连被验证的机会都没有。
+      // 宁可这部番出不了题，也不能放一段对白让玩家猜。
+      if (isNonVocalTrack(song.title)) {
+        attempts -= 1;
+        continue;
+      }
+      const pick = this.buildTrackPick(pool.track, song, pool.fromAnimeLevel);
+      const kind = fallbackKindOfSong(song, lookup.anime, lookup.recentSongIds);
+      if (!kind) return pick;
+      this.recordFallbackPick(lookup, pool, { index, candidate, kind, pick });
+      if (kind !== "recent") attempts -= 1;
+    }
+    return undefined;
+  }
+
+  /** 红心数预筛：热度明确不达标的候选不值得拉详情；查询本身失败按「不知道」放行。 */
+  private async isCandidateTooCold(lookup: AnimeSongLookup, songId: string): Promise<boolean> {
+    const { provider, minPopularity, budget } = lookup;
+    if (minPopularity <= 0 || !provider.getSongPopularity) return false;
+    budget.detail -= 1;
+    const popularity = await provider
+      .getSongPopularity.call(provider, songId, lookup.cookie)
+      .catch((error: unknown) => {
+        if (!isUnusableSongCandidate(error)) throw error;
+        return undefined;
+      });
+    return popularity !== undefined && popularity < minPopularity;
+  }
+
+  /** 取歌曲详情；仅这一首不可播放时返回 undefined 交给下一候选，全局依赖失败原样透传。 */
+  private async loadPlayableSong(
+    lookup: AnimeSongLookup,
+    songId: string,
+  ): Promise<SongDetails | undefined> {
+    lookup.budget.detail -= 1;
+    try {
+      return await lookup.provider.getSong(songId, lookup.cookie);
+    } catch (error) {
+      if (!isUnusableSongCandidate(error)) throw error;
+      return undefined;
+    }
+  }
+
+  /**
+   * 验证通过后的出题结果。番剧级兜底的歌不属于本条目，类型只能从歌曲自身文本推
+   * （与手动选曲列表同源）；其余路径仍以条目分类为基准，再用歌曲文本细化。
+   */
+  private buildTrackPick(
+    track: BangumiMusicTrack,
+    song: SongDetails,
+    fromAnimeLevel: boolean,
+  ): AnimeSongPick {
+    return {
+      song,
+      track: { ...track, kind: this.refineTrackKind(fromAnimeLevel ? "theme" : track.kind, song) },
+    };
+  }
+
+  /** 把让位候选记进对应兜底槽；翻唱还要把它自带的原曲插回队首。 */
+  private recordFallbackPick(
+    lookup: AnimeSongLookup,
+    pool: TrackCandidatePool,
+    entry: FallbackPickEntry,
+  ): void {
+    if (entry.kind === "cover") {
+      // 翻唱自带原曲 ID —— 原版常常压根没进候选池（实测：Bangumi 存中文译名
+      // 《你所不知道的故事》时，按译名检索只召回中文重填词的翻唱，日文原版
+      // 《君の知らない物語》永远进不了池子）。直接把它插到队首，下一次迭代即验证原版。
+      const originalId = entry.pick.song.originSongId;
+      if (
+        originalId
+        && originalId !== entry.candidate.id
+        && !lookup.originRetryIds.has(originalId)
+        && !pool.list.some((item) => item.id === originalId)
+      ) {
+        lookup.originRetryIds.add(originalId);
+        pool.list.splice(entry.index + 1, 0, {
+          id: originalId,
+          title: entry.pick.track.title,
+          artist: entry.pick.track.artist ?? "",
+        });
+      }
+      if (pool.looseFallback && !lookup.fallbackCover) lookup.fallbackCover = entry.pick;
+      return;
+    }
+    if (entry.kind === "year") {
+      if (pool.looseFallback && !lookup.fallbackYear) lookup.fallbackYear = entry.pick;
+      return;
+    }
+    if (!lookup.fallbackRecent) lookup.fallbackRecent = entry.pick;
   }
 
   /**
