@@ -957,98 +957,102 @@ const isSubstantiveLyricTail = (tail: string): boolean => {
   return compact.length >= 4;
 };
 
+/**
+ * 整行特征即署名的正则集合：每条一个专属结构，互不重叠，命中任意一条即为署名行。
+ * 逐条注释保留了当初加入的实测样本，删除任何一条都会放回一类歌词噪声。
+ */
+const WHOLE_LINE_CREDIT_PATTERNS: readonly RegExp[] = [
+  // `Drums Recorded at Aroom Studio` 这类以乐器词开头的录音信息行之外，以署名动词开头的英文行。
+  STARTS_WITH_CREDIT_ENGLISH_PATTERN,
+  // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
+  // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
+  EN_CREDIT_PREFIX_PATTERN,
+  // 唱片版权行：`P - Line: 2016 ...`、`C-Line: 2016 ...`（Phonogram/Copyright 标准写法）。
+  // ` - ` 会把 head 切成孤立的 `P`，整行掉出词表路径，按单字母前缀整行判定。
+  // `line` 后必须紧跟冒号：`C line up ...` 这类潜在歌词不受影响。
+  /^[pc]\s*[-—–]?\s*line\s*[:：]/i,
+  // CV 配音标注：`温迪（CV：喵酱）`、`雷电将军（CV：菊花花）`。同人曲的角色名单
+  // 本身就是歌曲指纹，且整行不含任何歌词正文，按结构整行判定。
+  /^[^（()）]{1,20}（\s*CV\s*[：:][^（()）]{1,20}）\s*$/u,
+  // 采样/配乐说明：`（间奏旋律采用阿鲲老师《流浪地球2》配乐：《开启新征程》...）`。
+  // 泄露采样出处，整行括号包裹且内含「采用…配乐」结构。注意行首 `（` 可能已被
+  // 装饰剥离，左括号可选。
+  /^[（(]?[^（()）]*采用[^（()）]*配乐[^（()）]*[）)]$/u,
+  // LRC 站点水印：`Maximal R&B - The Freshest & Hottest R&B/ Hip-Hop Music!`。
+  /^maximal\s+r&b\b/i,
+  // 制作工具残留：`Maker Tool: LRC Editor for mac`（LRC 编辑器签名）。
+  /\b(?:lrc\s+editor|maker\s+tool)\b/i,
+  // LRC 重复标记：`REPEAT----->`、`REPEAT:`。歌词不会以裸 `repeat` + 标点/横线收尾。
+  /^repeat[\s\-—–=_>.:：·]*$/i,
+  // 游戏运营团队出品声明：`CS: GO国服运营团队出品`（游戏同人曲企划页脚）。
+  // `CS:` 会被分隔符抢先切成非标签 head，词表路径接不住，按整行特征判定。
+  /运营团队出品/u,
+  // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
+  // 按「书名号包裹 + staff/制作名单收尾」结构判定。注意 LEADING_DECORATION
+  // 已把行首 `《` 剥掉（形如 `Plot: 0》动画 staff`），左书名号必须可选，
+  // 且标题段限 40 字内防止吞进长歌词。
+  /^[《【]?[^《【》】]{1,40}[》】]\s*(?:动画|番剧|制作)?\s*(?:staff|制作名单|名单)\s*$/iu,
+];
+
+/**
+ * 主要版权厂牌裸行：`Warner/Chappell Music, Hong Kong Limite`。纯英文裸行走不进
+ * 裸行路径（要求含中日文字），按「厂牌名开头 + 行内含公司后缀词」双条件判定；
+ * `\b` 词边界防止 `emi` 吃掉 `Eminem` 一类人名，公司后缀词排除
+ * `Universal love is all we need` 这类纯英文歌词。
+ */
+const isPublisherOrgLine = (line: string): boolean =>
+  /^(?:warner(?:\s*\/\s*chappell)?|chappell|universal|sony|emi|bmg|kobalt|peermusic)\b/i.test(line) &&
+  /\b(?:music|records?|publishing|entertainment|limited|ltd|group|studios?)\b/i.test(line);
+
+/**
+ * 多段方括号署名：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】`。
+ * 必须对**原始文本**判定 —— 行首 `【` 会被装饰剥离破坏结构。
+ * 每段的 head（首个分隔符之前）必须命中词表 —— `【副歌】【间奏】` 这类
+ * 段落标记的 head 不是标签，自然保留。
+ */
+const isBracketLabeledCreditLine = (text: string): boolean => {
+  if (!/^(?:【[^【】]{1,24}】\s*){2,}$/u.test(text.trim())) return false;
+  const bracketSegs = text.trim().match(/【([^【】]{1,24})】/gu) ?? [];
+  return (
+    bracketSegs.length >= 2 &&
+    bracketSegs.every((seg) => {
+      const inner = seg.slice(1, -1);
+      // `︰`(U+FE13)/`﹕`(U+FE55) 是网易云实测出现的变体冒号。
+      const parts = inner.split(/[：:︰﹕／/]/);
+      return parts.length >= 2 && isCreditLabelOnly(parts[0].trim());
+    })
+  );
+};
+
+/**
+ * 裸标签行：credit 块的段落标题独占一行（`出品`、`联合出品`），无冒号也无取值，
+ * `splitCreditHead` 因找不到分隔符而整条失效。这里**只接受单个已登记标签**
+ * 或强机构后缀行（`BARE_ORG_SUFFIX_PATTERN`），**不走** `isCreditLabelOnly`
+ * 的粘连/逐段拆分 —— `后期制作人`（后期|制作人）这类两标签粘连是真实歌词，
+ * 必须保留（正式测试回归抓到过）。同时沿用 SPACE_SPLIT_HEAD_DENY：
+ * `感谢`、`导演` 这类高频歌词词裸写整行时按歌词保留；单字行交给过短/角色判定。
+ */
+const isBareCreditLabelLine = (line: string): boolean =>
+  /[\u4e00-\u9fff\u3040-\u30ff]/u.test(line) &&
+  [...line].length >= 2 &&
+  !SPACE_SPLIT_HEAD_DENY.has(line) &&
+  (CREDIT_LABEL_PATTERN.exec(line)?.[0].replace(/[\s\u3000]+/g, "") ===
+    line.replace(/[\s\u3000]+/g, "") ||
+    BARE_ORG_SUFFIX_PATTERN.test(line) ||
+    ZH_STUDIO_EN_ORG_PATTERN.test(line));
+
 /** 词表命中的署名行（含行首装饰剥离、包裹式标签与多标签合并）。 */
 export const isCreditKeywordLine = (text: string): boolean => {
   const undecorated = text.trim().replace(LEADING_DECORATION_PATTERN, "").trim();
 
   // `Strings Arranged & Conducted by 某某` 这类没有冒号的英文署名，先整行判定。
   if (isCreditActionPhrase(undecorated)) return true;
-  if (STARTS_WITH_CREDIT_ENGLISH_PATTERN.test(undecorated)) return true;
-  // `Drums Recorded at Aroom Studio` 这类以乐器词开头的录音信息行。
   if (isInstrumentRecordingHead(undecorated)) return true;
-  // Discogs 风格短标签（`Mixed At – X`、`Executive-Producer – X`）：分隔符是 en dash，
-  // `Executive-Producer` 还会被内部连字符抢先切开，必须用整行前缀判定绕开。
-  if (EN_CREDIT_PREFIX_PATTERN.test(undecorated)) return true;
-  // 唱片版权行：`P - Line: 2016 ...`、`C-Line: 2016 ...`（Phonogram/Copyright 标准写法）。
-  // ` - ` 会把 head 切成孤立的 `P`，整行掉出词表路径，按单字母前缀整行判定。
-  // `line` 后必须紧跟冒号：`C line up ...` 这类潜在歌词不受影响。
-  if (/^[pc]\s*[-—–]?\s*line\s*[:：]/i.test(undecorated)) return true;
-  // 主要版权厂牌裸行：`Warner/Chappell Music, Hong Kong Limite`。纯英文裸行走不进
-  // 裸行路径（要求含中日文字），按「厂牌名开头 + 行内含公司后缀词」双条件判定；
-  // `\b` 词边界防止 `emi` 吃掉 `Eminem` 一类人名，公司后缀词排除
-  // `Universal love is all we need` 这类纯英文歌词。
-  if (
-    /^(?:warner(?:\s*\/\s*chappell)?|chappell|universal|sony|emi|bmg|kobalt|peermusic)\b/i.test(undecorated) &&
-    /\b(?:music|records?|publishing|entertainment|limited|ltd|group|studios?)\b/i.test(undecorated)
-  ) {
-    return true;
-  }
-  // CV 配音标注：`温迪（CV：喵酱）`、`雷电将军（CV：菊花花）`。同人曲的角色名单
-  // 本身就是歌曲指纹，且整行不含任何歌词正文，按结构整行判定。
-  if (/^[^（()）]{1,20}（\s*CV\s*[：:][^（()）]{1,20}）\s*$/u.test(undecorated)) {
-    return true;
-  }
-  // 多段方括号署名：`【古筝：陶特】【古琴/二胡：X】【笛箫：Y】【协力：Z】`。
-  // 必须对**原始文本**判定 —— 行首 `【` 会被装饰剥离破坏结构。
-  // 每段的 head（首个分隔符之前）必须命中词表 —— `【副歌】【间奏】` 这类
-  // 段落标记的 head 不是标签，自然保留。
-  if (/^(?:【[^【】]{1,24}】\s*){2,}$/u.test(text.trim())) {
-    const bracketSegs = text.trim().match(/【([^【】]{1,24})】/gu) ?? [];
-    const allLabeled =
-      bracketSegs.length >= 2 &&
-      bracketSegs.every((seg) => {
-        const inner = seg.slice(1, -1);
-        // `︰`(U+FE13)/`﹕`(U+FE55) 是网易云实测出现的变体冒号。
-        const parts = inner.split(/[：:︰﹕／/]/);
-        return parts.length >= 2 && isCreditLabelOnly(parts[0].trim());
-      });
-    if (allLabeled) return true;
-  }
-  // 采样/配乐说明：`（间奏旋律采用阿鲲老师《流浪地球2》配乐：《开启新征程》...）`。
-  // 泄露采样出处，整行括号包裹且内含「采用…配乐」结构。注意行首 `（` 可能已被
-  // 装饰剥离，左括号可选。
-  if (/^[（(]?[^（()）]*采用[^（()）]*配乐[^（()）]*[）)]$/u.test(undecorated)) {
-    return true;
-  }
-  // LRC 站点水印与制作工具残留：`Maximal R&B - The Freshest & Hottest R&B/ Hip-Hop
-  // Music!`（歌词站点水印）、`Maker Tool: LRC Editor for mac`（LRC 编辑器签名）。
-  // 这类行既非歌词也非署名，结构特征专属来源，按整行锚定判定。
-  if (/^maximal\s+r&b\b/i.test(undecorated) || /\b(?:lrc\s+editor|maker\s+tool)\b/i.test(undecorated)) {
-    return true;
-  }
-  // LRC 重复标记：`REPEAT----->`、`REPEAT:`。歌词不会以裸 `repeat` + 标点/横线收尾。
-  if (/^repeat[\s\-—–=_>.:：·]*$/i.test(undecorated)) {
-    return true;
-  }
-  // 游戏运营团队出品声明：`CS: GO国服运营团队出品`（游戏同人曲企划页脚）。
-  // `CS:` 会被分隔符抢先切成非标签 head，词表路径接不住，按整行特征判定。
-  if (/运营团队出品/u.test(undecorated)) {
-    return true;
-  }
-  // 书名号标题 + 制作名单：`《Plot: 0》动画 staff`。标题部分永远不进词表，
-  // 按「书名号包裹 + staff/制作名单收尾」结构判定。注意 LEADING_DECORATION
-  // 已把行首 `《` 剥掉（undecorated 形如 `Plot: 0》动画 staff`），
-  // 左书名号必须可选，且标题段限 40 字内防止吞进长歌词。
-  if (/^[《【]?[^《【》】]{1,40}[》】]\s*(?:动画|番剧|制作)?\s*(?:staff|制作名单|名单)\s*$/iu.test(undecorated)) {
-    return true;
-  }
-
-  // 裸标签行：credit 块的段落标题独占一行（`出品`、`联合出品`），无冒号也无取值，
-  // `splitCreditHead` 因找不到分隔符而整条失效。这里**只接受单个已登记标签**
-  // 或强机构后缀行（`BARE_ORG_SUFFIX_PATTERN`），**不走** `isCreditLabelOnly`
-  // 的粘连/逐段拆分 —— `后期制作人`（后期|制作人）这类两标签粘连是真实歌词，
-  // 必须保留（正式测试回归抓到过）。同时沿用 SPACE_SPLIT_HEAD_DENY：
-  // `感谢`、`导演` 这类高频歌词词裸写整行时按歌词保留；单字行交给过短/角色判定。
-  if (
-    /[\u4e00-\u9fff\u3040-\u30ff]/u.test(undecorated) &&
-    [...undecorated].length >= 2 &&
-    !SPACE_SPLIT_HEAD_DENY.has(undecorated) &&
-    (CREDIT_LABEL_PATTERN.exec(undecorated)?.[0].replace(/[\s\u3000]+/g, "") ===
-      undecorated.replace(/[\s\u3000]+/g, "") ||
-      BARE_ORG_SUFFIX_PATTERN.test(undecorated) ||
-      ZH_STUDIO_EN_ORG_PATTERN.test(undecorated))
-  ) {
-    return true;
+  if (isPublisherOrgLine(undecorated)) return true;
+  if (isBracketLabeledCreditLine(text)) return true;
+  if (isBareCreditLabelLine(undecorated)) return true;
+  for (const pattern of WHOLE_LINE_CREDIT_PATTERNS) {
+    if (pattern.test(undecorated)) return true;
   }
 
   const parts = splitCreditHead(text);
@@ -1577,6 +1581,19 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
     .filter((line) => line.text.length > 0);
 };
 
+/** 就近匹配上限：超过 1500ms 的时间差视为对不上，空白取值同样不算命中。 */
+const pickNearestLyric = (candidates: SongLyricLine[], time: number): string | undefined => {
+  let best: SongLyricLine | undefined;
+  let minDiff = 1500;
+  for (const candidate of candidates) {
+    const diff = Math.abs(candidate.time - time);
+    if (diff >= minDiff) continue;
+    minDiff = diff;
+    best = candidate;
+  }
+  return best?.text.trim() || undefined;
+};
+
 /**
  * 将外文歌曲的翻译与音译歌词合并到主歌词行中。
  * 支持依据时间戳误差 <= 1500ms 智能就近匹配。
@@ -1603,33 +1620,11 @@ export const mergeTranslations = (
     let romanLyric = line.romanLyric;
 
     if (!translatedLyric && transLines.length > 0) {
-      let bestTrans: SongLyricLine | undefined;
-      let minDiff = 1500;
-      for (const t of transLines) {
-        const diff = Math.abs(t.time - line.time);
-        if (diff < minDiff) {
-          minDiff = diff;
-          bestTrans = t;
-        }
-      }
-      if (bestTrans && bestTrans.text.trim()) {
-        translatedLyric = bestTrans.text.trim();
-      }
+      translatedLyric = pickNearestLyric(transLines, line.time);
     }
 
     if (!romanLyric && romanLines.length > 0) {
-      let bestRoman: SongLyricLine | undefined;
-      let minDiff = 1500;
-      for (const r of romanLines) {
-        const diff = Math.abs(r.time - line.time);
-        if (diff < minDiff) {
-          minDiff = diff;
-          bestRoman = r;
-        }
-      }
-      if (bestRoman && bestRoman.text.trim()) {
-        romanLyric = bestRoman.text.trim();
-      }
+      romanLyric = pickNearestLyric(romanLines, line.time);
     }
 
     // 核心规范：当行存在翻译时，屏蔽注音（仅显示翻译）
@@ -2679,40 +2674,23 @@ export class NeteaseMusicProvider implements MusicProvider {
     let lastError: unknown;
     for (const name of names) {
       const fn = api[name];
-      if (typeof fn === "function") {
-        hasEndpoint = true;
-        try {
-          const response = await this.scheduleRequest(
-            () =>
-              (fn as ApiFunction)(
-                this.withCookie(
-                  params,
-                  cookie,
-                  randomCNIP,
-                  includeAnonymousCookie,
-                  loginScope,
-                  ipScope,
-                ),
-              ),
-            ipScope,
-          );
-          // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
-          // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
-          if (this.isRateLimitError(response)) {
-            throw this.upstreamError(response);
-          }
-          return response;
-        } catch (error) {
-          lastError = error;
-          if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) {
-            throw error;
-          }
-          if ("body" in asRecord(error)) lastErrorResponse = error as ApiResponse;
-          if (this.isRateLimitError(error)) {
-            throw this.upstreamError(error);
-          }
-          // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
-        }
+      if (typeof fn !== "function") continue;
+      hasEndpoint = true;
+      try {
+        return await this.invokeApiEndpoint(
+          fn as ApiFunction,
+          params,
+          cookie,
+          randomCNIP,
+          includeAnonymousCookie,
+          loginScope,
+          ipScope,
+        );
+      } catch (error) {
+        lastError = error;
+        // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
+        const preserved = this.classifyEndpointFailure(error);
+        if (preserved !== undefined) lastErrorResponse = preserved;
       }
     }
     if (!hasEndpoint) {
@@ -2720,6 +2698,48 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
     if (preserveErrorResponse && lastErrorResponse) return lastErrorResponse;
     throw this.upstreamError(lastErrorResponse ?? lastError);
+  }
+
+  /** 调用单个端点：正常 resolve 的 405 body 同样转成业务异常。 */
+  private async invokeApiEndpoint(
+    fn: ApiFunction,
+    params: Record<string, unknown>,
+    cookie: string | Record<string, unknown> | undefined,
+    randomCNIP: boolean,
+    includeAnonymousCookie: boolean,
+    loginScope: string | undefined,
+    ipScope: string | undefined,
+  ): Promise<ApiResponse> {
+    const response = await this.scheduleRequest(
+      () =>
+        fn(
+          this.withCookie(
+            params,
+            cookie,
+            randomCNIP,
+            includeAnonymousCookie,
+            loginScope,
+            ipScope,
+          ),
+        ),
+      ipScope,
+    );
+    // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
+    // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
+    if (this.isRateLimitError(response)) {
+      throw this.upstreamError(response);
+    }
+    return response;
+  }
+
+  /**
+   * 端点失败分类：不可重试与限流直接中止整次调用，其余只回传可保留的 405 响应。
+   * 返回 undefined 表示调用方只需记住 lastError 并继续下一个端点。
+   */
+  private classifyEndpointFailure(error: unknown): ApiResponse | undefined {
+    if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) throw error;
+    if (this.isRateLimitError(error)) throw this.upstreamError(error);
+    return "body" in asRecord(error) ? (error as ApiResponse) : undefined;
   }
 
   private async callOptional(
@@ -2847,13 +2867,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (this.queue.size > 0 || this.now() < this.cooldownUntil) return;
     const now = this.now();
     if (now - this.lastUserRequestAt > 30 * 60_000) {
-      for (const [key, entry] of this.cache.entries()) {
-        if (entry.hits <= 1 && now - entry.lastAccessAt > 30 * 60_000) {
-          this.cache.delete(key);
-          this.refreshers.delete(key);
-        }
-      }
-      for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
+      this.evictIdleCacheEntries(now);
       return;
     }
     const candidates = [...this.cache.entries()]
@@ -2868,6 +2882,22 @@ export class NeteaseMusicProvider implements MusicProvider {
       if (now >= entry.hardExpireAt) this.cache.delete(key);
       await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
     }
+    this.pruneStaleRefreshers();
+  }
+
+  /** 长时间没有用户请求：淘汰低命中且久未访问的条目，不做任何主动刷新。 */
+  private evictIdleCacheEntries(now: number) {
+    for (const [key, entry] of this.cache.entries()) {
+      if (entry.hits <= 1 && now - entry.lastAccessAt > 30 * 60_000) {
+        this.cache.delete(key);
+        this.refreshers.delete(key);
+      }
+    }
+    this.pruneStaleRefreshers();
+  }
+
+  /** 刷新器只服务于已缓存或仍在请求中的条目，其余一并回收。 */
+  private pruneStaleRefreshers() {
     for (const key of this.refreshers.keys()) if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
   }
 
