@@ -43,6 +43,13 @@
       "when": 1792354888892,
       "tag": "0005_client_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1792355767373,
+      "tag": "0006_anti_cheat_review",
+      "breakpoints": true
     }
   ]
 }

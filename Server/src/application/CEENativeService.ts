@@ -1,5 +1,5 @@
 import type { GameRecorder } from "../domain/GameRecord";
-import type { CEEClientMessage, ConnectionRecord } from "../shared/Index";
+import type { CEEClientMessage, CEEGuess, ConnectionRecord } from "../shared/Index";
 import { isCEEAntiCheatRoom } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 import type { CEEPlayerRecord, CEERoom } from "../domain/CEEModel";
@@ -15,6 +15,8 @@ import {
 import { validateCEESettings } from "../domain/CEERules";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
+import type { CEEAntiCheatReviewQueue, CEESearchProvenance } from "./CEEAntiCheatSignals";
+import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
 import { CEERooms } from "./CEERooms";
 import { ceePrivateState } from "./CEEViews";
 
@@ -24,6 +26,8 @@ export class CEENativeService {
   private readonly random: () => number;
   private readonly data: CEEDataProvider;
   private readonly imageHints: CEEImageHints;
+  /** 检索台账由入口层持有（原版房与增强房共用一条命令入口），这里只读。 */
+  private readonly provenance?: CEESearchProvenance;
   private readonly inFlight = new Set<string>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   constructor(options: {
@@ -33,12 +37,20 @@ export class CEENativeService {
     imageHints?: CEEImageHints;
     isRoomIdReserved?: (roomId: string) => boolean;
     gameRecorder?: GameRecorder;
+    reviewQueue?: CEEAntiCheatReviewQueue;
+    provenance?: CEESearchProvenance;
   }) {
     this.data = options.data;
     this.now = options.now ?? Date.now;
     this.random = options.random ?? Math.random;
     this.imageHints = options.imageHints ?? new CEEImageHints();
-    this.state = new CEERooms(this.now, options.isRoomIdReserved, options.gameRecorder);
+    this.provenance = options.provenance;
+    this.state = new CEERooms(
+      this.now,
+      options.isRoomIdReserved,
+      options.gameRecorder,
+      options.reviewQueue
+    );
   }
   registerConnection(connection: ConnectionRecord) {
     this.state.registerConnection(connection);
@@ -201,7 +213,7 @@ export class CEENativeService {
           this.cancelPreparation(room, player);
           break;
         case "cee.game.guess":
-          await this.guess(room, player, message.payload.characterId);
+          await this.guess(connection, room, player, message.payload.characterId);
           break;
         case "cee.game.surrender":
           surrenderCEE(room, player, this.now());
@@ -316,7 +328,12 @@ export class CEENativeService {
       this.inFlight.delete(key);
     }
   }
-  private async guess(room: CEERoom, player: CEEPlayerRecord, id: number): Promise<void> {
+  private async guess(
+    connection: ConnectionRecord,
+    room: CEERoom,
+    player: CEEPlayerRecord,
+    id: number
+  ): Promise<void> {
     const { round, unit } = requireCEEAction(room, player);
     const syncRound = round.syncRound;
     const attempts = unit.attempts;
@@ -333,11 +350,36 @@ export class CEENativeService {
       if (round.syncRound !== syncRound || unit.attempts !== attempts)
         throw new AppError("ROUND_CANCELLED", "本次行动已超时，请重新猜测");
       const character = round.characters.get(id) ?? structuredClone(loaded);
-      applyCEEGuess(room, player, character, this.now());
+      const guess = applyCEEGuess(room, player, character, this.now());
       round.characters.set(id, character);
+      this.noteGuessSignal(connection, room, guess, unit.attempts, id);
     } finally {
       this.inFlight.delete(key);
     }
+  }
+  /**
+   * 登记本条猜测的服务端可观测切片：谁在猜、第几次、从哪个平台、猜之前有没有检索过。
+   * 检索台账按连接记，同一玩家换连接后旧台账不跟着走——那是「同一个人」的判定，不是本特征要问的。
+   */
+  private noteGuessSignal(
+    connection: ConnectionRecord,
+    room: CEERoom,
+    guess: CEEGuess,
+    attempts: number,
+    characterId: number
+  ): void {
+    if (!this.provenance) return;
+    const { at, matched } = this.provenance.match(connection.id, characterId);
+    this.state.noteGuessSignal(room.id, {
+      guessId: guess.id,
+      playerId: guess.playerId,
+      attempts,
+      clientType: ceeClientTypeOf(connection.clientChannel),
+      searchedAt: at,
+      searchMatched: matched,
+      correct: guess.correct,
+      createdAt: guess.createdAt,
+    });
   }
   private async imageHint(room: CEERoom, player: CEEPlayerRecord): Promise<{ dataUrl: string }> {
     const state = ceePrivateState(room, player);

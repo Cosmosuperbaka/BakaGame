@@ -1,5 +1,10 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
 import { CEENativeService } from "../src/application/CEENativeService";
+import {
+  CEESearchProvenance,
+  ceeCharacterIdsOf,
+  type CEEAntiCheatReviewQueue,
+} from "../src/application/CEEAntiCheatSignals";
 import { AppError } from "../src/domain/Errors";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
 import type { CEEImageHints } from "../src/infrastructure/CEEImageHints";
@@ -72,7 +77,8 @@ export function ceeTestHarness(
   {
     roomId: defaultRoomId = "1234",
     gameRecorder,
-  }: { roomId?: string; gameRecorder?: GameRecorder } = {}
+    reviewQueue,
+  }: { roomId?: string; gameRecorder?: GameRecorder; reviewQueue?: CEEAntiCheatReviewQueue } = {}
 ) {
   let clock = 1_000_000;
   const getCalls: number[] = [];
@@ -109,12 +115,15 @@ export function ceeTestHarness(
     close: () => {},
     ...overrides,
   };
+  const provenance = new CEESearchProvenance(() => clock);
   const service = new CEENativeService({
     data,
     now: () => clock,
     random: () => 0,
     imageHints,
     gameRecorder,
+    reviewQueue,
+    provenance,
   });
   const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],
@@ -147,6 +156,9 @@ export function ceeTestHarness(
       sessionToken: client.token,
       payload,
     } as CEEClientMessage);
+    // 与生产入口同构：检索结果由入口层记进台账，猜测时据此判断「有没有先搜再猜」。
+    if (type === "cee.character.search")
+      provenance.note(client.record.id, ceeCharacterIdsOf(result));
     if (type === "cee.room.create" || type === "cee.room.join" || type === "cee.room.reconnect") {
       const entry = result as CEERoomEnterResult;
       client.token = entry.sessionToken;
@@ -215,6 +227,7 @@ export function ceeTestHarness(
     guess,
     chooseSetter,
     advance,
+    provenance,
     getCalls,
     now: () => clock,
   };

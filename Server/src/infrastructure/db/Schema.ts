@@ -255,6 +255,36 @@ export const gameRecordPlayer = mysqlTable(
 
 // ==================== 管理与运营 ====================
 
+/**
+ * CEE 反作弊人工复核队列：只记录「服务端可观测特征 + 可疑度」，不含任何处罚状态。
+ * 写入即排队，是否处理由人在这里改 `status`；代码路径永不据此封禁。
+ */
+export const ceeAntiCheatReview = mysqlTable(
+  "cee_anti_cheat_review",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    roomId: varchar("room_id", { length: 8 }).notNull(),
+    roomCreatedAt: datetime("room_created_at", { mode: "date", fsp: 3 }).notNull(),
+    roundNumber: int("round_number").notNull(),
+    playerId: varchar("player_id", { length: 64 }).notNull(),
+    playerName: varchar("player_name", { length: 64 }).notNull(),
+    /** 游客被复核时只能按连接追溯，账号 ID 为空。 */
+    userId: varchar("user_id", { length: 64 }),
+    clientType: varchar("client_type", { length: 16 }).notNull(),
+    score: int("score").notNull(),
+    reasons: json("reasons").notNull(),
+    features: json("features").notNull(),
+    /** `open` 待复核 / `cleared` 已排除 / `actioned` 已人工处置。 */
+    status: varchar("status", { length: 16 }).notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("cee_ac_review_created_idx").on(table.createdAt),
+    index("cee_ac_review_status_idx").on(table.status, table.createdAt),
+    index("cee_ac_review_user_idx").on(table.userId),
+  ]
+);
+
 export const auditLog = mysqlTable(
   "audit_log",
   {

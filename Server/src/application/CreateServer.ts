@@ -26,6 +26,8 @@ import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepos
 import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
+import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
+import { InMemoryAntiCheatReviewQueue } from "./CEEAntiCheatSignals";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
@@ -135,6 +137,10 @@ export function createServer(
     serverUrl: env.ceeOriginalServerUrl,
     aesSecret: env.ceeOriginalAesSecret,
     gameRecorder: gameRecords,
+    // 复核队列：有库落库，本地与隔离测试退回内存，行为特征本身两边一致。
+    reviewQueue: database
+      ? new AntiCheatReviewRepository(database, (message, context) => logger.warn(message, context))
+      : new InMemoryAntiCheatReviewQueue(),
   });
   const account = createAccount(env, database, logger, {
     faker: appOptions.whoIsFakerService,

@@ -24,6 +24,12 @@ import {
 } from "../config/Constants";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { normalizeCEERoomId } from "./CEERoomDirectory";
+import {
+  NOOP_ANTI_CHEAT_REVIEW_QUEUE,
+  ceeAntiCheatReviews,
+  type CEEGuessSignal,
+  type CEEAntiCheatReviewQueue,
+} from "./CEEAntiCheatSignals";
 import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from "./CEEViews";
 
 /** 同一连接对同一房间每分钟最多尝试的密码次数。 */
@@ -54,16 +60,32 @@ export class CEERooms {
   });
   /** 已交给对局记录的结算摘要：结算后的多次发布只记一次。 */
   private readonly recordedSummaries = new WeakSet<object>();
+  /**
+   * 本回合每条猜测的服务端可观测切片（`guessId → 信号`）。
+   * 不进协议类型：反作弊特征只落库与进复核队列，绝不下发给客户端。
+   */
+  private readonly guessSignals = new Map<string, Map<string, CEEGuessSignal>>();
   /** `isRoomIdReserved` 由统一房号目录提供：该号已分配给原版房时增强房不能占用。 */
   constructor(
     readonly now: () => number,
     private readonly isRoomIdReserved: (roomId: string) => boolean = () => false,
-    private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER
+    private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER,
+    private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE
   ) {}
+  /** 提交猜测时由服务层登记：那里才拿得到连接（平台类型与检索台账）。 */
+  noteGuessSignal(roomId: string, signal: CEEGuessSignal): void {
+    let held = this.guessSignals.get(roomId);
+    if (!held) {
+      held = new Map();
+      this.guessSignals.set(roomId, held);
+    }
+    held.set(signal.guessId, signal);
+  }
   private recordSettled(room: CEERoom): void {
     const { round, summary } = room;
     if (!round || !summary || this.recordedSummaries.has(summary)) return;
     this.recordedSummaries.add(summary);
+    const signals = this.guessSignals.get(room.id) ?? new Map<string, CEEGuessSignal>();
     const nameOf = (playerId: string) => room.players.get(playerId)?.name ?? playerId;
     this.gameRecorder.record({
       game: "cee",
@@ -92,15 +114,57 @@ export class CEERooms {
           answer: round.settings.answerMode,
         },
       },
-      timeline: summary.guesses.map((guess) => ({
-        at: guess.createdAt,
-        type: "guess",
-        name: guess.playerName,
-        character: guess.character.nameCn || guess.character.name,
-        correct: guess.correct,
-        partial: guess.partial,
-      })),
+      timeline: summary.guesses.map((guess) => {
+        const signal = signals.get(guess.id);
+        return {
+          at: guess.createdAt,
+          type: "guess",
+          name: guess.playerName,
+          character: guess.character.nameCn || guess.character.name,
+          correct: guess.correct,
+          partial: guess.partial,
+          ...(signal
+            ? {
+                attempts: signal.attempts,
+                clientType: signal.clientType,
+                searchedAt: signal.searchedAt,
+                searchMatched: signal.searchMatched,
+              }
+            : {}),
+        };
+      }),
     });
+    this.collectReviews(room, summary.guesses, signals);
+    this.guessSignals.delete(room.id);
+  }
+  /**
+   * 采集覆盖全部增强房对局，判定只发生在反作弊房：普通房的特征不参与打分、不对外呈现，
+   * 只作为难度调优与后续建模的语料。条目只进队列，不触发任何自动处置。
+   */
+  private collectReviews(
+    room: CEERoom,
+    guesses: { id: string; correct: boolean }[],
+    signals: ReadonlyMap<string, CEEGuessSignal>
+  ): void {
+    if (!isCEEAntiCheatRoom(room.settings) || signals.size === 0) return;
+    const ordered = new Map<string, CEEGuessSignal[]>();
+    for (const guess of guesses) {
+      const signal = signals.get(guess.id);
+      if (!signal) continue;
+      const list = ordered.get(signal.playerId) ?? [];
+      list.push({ ...signal, correct: guess.correct });
+      ordered.set(signal.playerId, list);
+    }
+    const recordedAt = this.now();
+    for (const review of ceeAntiCheatReviews(
+      { roomId: room.id, roomCreatedAt: room.createdAt, roundNumber: room.roundNumber, recordedAt },
+      ordered,
+      (playerId) => {
+        const player = room.players.get(playerId);
+        return { name: player?.name ?? playerId, userId: player?.account?.userId ?? null };
+      }
+    ))
+      this.reviewQueue.add(review);
   }
   getHealthSnapshot() {
     return {

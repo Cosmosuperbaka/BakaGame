@@ -11,6 +11,11 @@ import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { CEENativeService } from "./CEENativeService";
+import {
+  CEESearchProvenance,
+  ceeCharacterIdsOf,
+  type CEEAntiCheatReviewQueue,
+} from "./CEEAntiCheatSignals";
 import { CEESearchQuota, isCEESearchCommand } from "./CEESearchQuota";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
@@ -28,6 +33,7 @@ export class CEEService implements AdminRoomControl {
   private readonly limiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 80 });
   private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 8 });
   private readonly searchQuota: CEESearchQuota;
+  private readonly provenance: CEESearchProvenance;
   private readonly entering = new Set<string>();
   private readonly now: () => number;
   private remoteRooms: CEEUpstreamRoom[] = [];
@@ -45,13 +51,17 @@ export class CEEService implements AdminRoomControl {
       originalService?: CEEOriginalService;
       /** 只记录增强房：原版房的对局在上游服务器进行，本端拿不到完整答案与全员猜测。 */
       gameRecorder?: GameRecorder;
+      /** 反作弊人工复核队列：只在反作弊房产生条目，任何处罚都由人决定。 */
+      reviewQueue?: CEEAntiCheatReviewQueue;
     }
   ) {
     this.now = options.now ?? Date.now;
     this.searchQuota = new CEESearchQuota(this.now);
+    this.provenance = new CEESearchProvenance(this.now);
     this.directory = new CEERoomDirectory((roomId) => this.native.state.rooms.has(roomId));
     this.native = new CEENativeService({
       ...options,
+      provenance: this.provenance,
       isRoomIdReserved: (roomId) => this.directory.isAliasTaken(roomId),
     });
     this.original =
@@ -70,6 +80,7 @@ export class CEEService implements AdminRoomControl {
     if (isOriginal && connection) this.native.state.connections.detach(connection);
     this.original.unregisterConnection(id);
     this.native.unregisterConnection(id);
+    this.provenance.forget(id);
     this.connections.delete(id);
   }
   async execute(id: string, message: CEEClientMessage): Promise<unknown> {
@@ -114,7 +125,11 @@ export class CEEService implements AdminRoomControl {
       }
     }
     try {
-      return await this.native.execute(id, message);
+      const result = await this.native.execute(id, message);
+      // 检索台账只在增强房登记：原版房的答案与猜测在上游，本端拿不到可判定的对局。
+      if (message.type === "cee.character.search")
+        this.provenance.note(connection.id, ceeCharacterIdsOf(result));
+      return result;
     } finally {
       this.broadcastLobby();
     }
