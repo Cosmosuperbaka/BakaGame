@@ -97,6 +97,39 @@ export interface WhoIsFakerServiceOptions {
   gameRecorder?: GameRecorder;
 }
 
+/** 反馈标题按结算来源分四类，其余情况按普通投票结果。 */
+const feedbackResultLabel = (
+  feedback: WhoIsFakerRoomSnapshot["status"]["feedback"],
+): string => {
+  if (feedback?.kind === "night") return "夜晚结果";
+  if (feedback?.kind === "blankGuess") return "白板猜词结果";
+  return feedback?.tieBreak ? "平票投票结果" : "投票结果";
+};
+
+const questionerDisplayName = (
+  snapshot: WhoIsFakerRoomSnapshot,
+  room: WhoIsFakerRoomRecord,
+): string => {
+  const questionerId = snapshot.status.questionerPlayerId;
+  return (questionerId ? room.players[questionerId]?.name : undefined) ?? "出题人";
+};
+
+/** 阶段切换提示文案；未登记的阶段回落到「已进入\<phase\>」。 */
+const PHASE_CHANGE_DESCRIPTIONS: Partial<
+  Record<WhoIsFakerPhase, (snapshot: WhoIsFakerRoomSnapshot, room: WhoIsFakerRoomRecord) => string>
+> = {
+  waiting: () => "已返回房间中",
+  assigningQuestioner: (_snapshot, room) => `第 ${room.roundCount ?? 1} 轮游戏已开始`,
+  wordSubmission: (snapshot, room) => `${questionerDisplayName(snapshot, room)}正在出题`,
+  description: (snapshot) => `第 ${snapshot.status.day} 天${snapshot.status.speechMode === "supplement" ? "补充描述" : "描述"}阶段`,
+  voting: (snapshot) => `第 ${snapshot.status.day} 天投票阶段`,
+  tieBreak: (snapshot) => `第 ${snapshot.status.day} 天${snapshot.status.tieBreakStage === "vote" ? "平票投票" : "平票描述"}阶段`,
+  night: (snapshot) => `第 ${snapshot.status.day} 天夜晚阶段`,
+  blankGuess: (snapshot) => `第 ${snapshot.status.day} 天白板猜词阶段`,
+  feedback: (snapshot) => `第 ${snapshot.status.day} 天${feedbackResultLabel(snapshot.status.feedback)}`,
+  gameOver: (snapshot) => `第 ${snapshot.status.day} 天游戏结算阶段`,
+};
+
 export class WhoIsFakerService implements AdminRoomControl {
   // ==================== 房间与状态机总控 ====================
 
@@ -864,64 +897,16 @@ export class WhoIsFakerService implements AdminRoomControl {
 
     switch (phase) {
       case "description":
-        if (!this.isDescriptionComplete(round)) {
-          throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
-        }
-        this.clearPhaseTimer(room);
-        {
-          const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
-          const isTwoPlayerUndercoverEndgame =
-            aliveStates.length === 2 &&
-            aliveStates.filter((state) => state.role === "undercover").length === 1 &&
-            aliveStates.filter((state) => state.role === "civilian").length === 1;
-
-          if (isTwoPlayerUndercoverEndgame) {
-            await this.finishRound(room, "undercover", "2人残局卧底胜");
-            break;
-          }
-        }
-        round.phase = "voting";
-        round.speechMode = undefined;
-        round.votes = [];
+        await this.advanceFromDescription(room, round);
         break;
       case "voting":
-        if (!this.isVotingComplete(room, false)) {
-          throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
-        }
-        this.clearPhaseTimer(room);
-        await this.resolveVoting(room, false);
+        await this.advanceFromVoting(room);
         break;
       case "tieBreak":
-        if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
-          this.clearPhaseTimer(room);
-          await this.applyEliminationAndMove(room, [], "平票候选不足，直接进入夜晚", "night");
-          break;
-        }
-
-        if (round.tieBreak.stage === "description") {
-          if (!this.isTieBreakDescriptionComplete(room)) {
-            throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
-          }
-
-          this.clearPhaseTimer(room);
-          round.tieBreak.stage = "vote";
-          round.speechMode = undefined;
-          round.tieBreak.votes = [];
-        } else {
-          if (!this.isVotingComplete(room, true)) {
-            throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
-          }
-
-          this.clearPhaseTimer(room);
-          await this.resolveVoting(room, true);
-        }
+        await this.advanceFromTieBreak(room, round);
         break;
       case "night":
-        if (!this.isNightActionComplete(room)) {
-          throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
-        }
-        this.clearPhaseTimer(room);
-        await this.resolveNight(room);
+        await this.advanceFromNight(room);
         break;
       case "feedback":
         await this.applyFeedbackContinuation(room);
@@ -949,6 +934,74 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { phase: room.round?.phase ?? "waiting" };
   }
 
+  /** 只剩一卧一民两人时，描述结束即卧底胜，不再进投票。 */
+  private isTwoPlayerUndercoverEndgame(round: GameRound): boolean {
+    const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
+    return (
+      aliveStates.length === 2 &&
+      aliveStates.filter((state) => state.role === "undercover").length === 1 &&
+      aliveStates.filter((state) => state.role === "civilian").length === 1
+    );
+  }
+
+  private async advanceFromDescription(room: WhoIsFakerRoomRecord, round: GameRound) {
+    if (!this.isDescriptionComplete(round)) {
+      throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
+    }
+    this.clearPhaseTimer(room);
+    if (this.isTwoPlayerUndercoverEndgame(round)) {
+      await this.finishRound(room, "undercover", "2人残局卧底胜");
+      return;
+    }
+    round.phase = "voting";
+    round.speechMode = undefined;
+    round.votes = [];
+  }
+
+  private async advanceFromVoting(room: WhoIsFakerRoomRecord) {
+    if (!this.isVotingComplete(room, false)) {
+      throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
+    }
+    this.clearPhaseTimer(room);
+    await this.resolveVoting(room, false);
+  }
+
+  /** 平票：候选不足直接进夜晚，否则按补充描述、PK 投票两个子状态推进。 */
+  private async advanceFromTieBreak(room: WhoIsFakerRoomRecord, round: GameRound) {
+    if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
+      this.clearPhaseTimer(room);
+      await this.applyEliminationAndMove(room, [], "平票候选不足，直接进入夜晚", "night");
+      return;
+    }
+
+    if (round.tieBreak.stage === "description") {
+      if (!this.isTieBreakDescriptionComplete(room)) {
+        throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
+      }
+
+      this.clearPhaseTimer(room);
+      round.tieBreak.stage = "vote";
+      round.speechMode = undefined;
+      round.tieBreak.votes = [];
+      return;
+    }
+
+    if (!this.isVotingComplete(room, true)) {
+      throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
+    }
+
+    this.clearPhaseTimer(room);
+    await this.resolveVoting(room, true);
+  }
+
+  private async advanceFromNight(room: WhoIsFakerRoomRecord) {
+    if (!this.isNightActionComplete(room)) {
+      throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
+    }
+    this.clearPhaseTimer(room);
+    await this.resolveNight(room);
+  }
+
   private async handleSubmitDescription(connection: ConnectionRecord, text: string) {
     // 描述和 PK 补充描述都复用同一份存储结构，只靠 kind 区分。
     const { room, player } = this.requireRoomPlayer(connection);
@@ -959,57 +1012,17 @@ export class WhoIsFakerService implements AdminRoomControl {
       throw new AppError("INVALID_DESCRIPTION", "描述不能为空");
     }
 
-    const state = round.assignments[player.id];
     const pendingSupplement =
       round.supplement?.requestedPlayerIds.includes(player.id) &&
       !round.supplement.donePlayers.includes(player.id);
 
     // 补充发言优先：统一切换到 description/supplement 子状态后提交。
     if (round.supplement && round.speechMode === "supplement" && pendingSupplement) {
-      if (!state?.alive || round.phase !== "description") {
-        throw new AppError("ACTION_FORBIDDEN", "当前玩家不能补充发言");
-      }
-      round.supplement.donePlayers.push(player.id);
-      const order = (round.supplement.requestedPlayerIds ?? []).indexOf(player.id) + 1;
-      round.descriptions.push(
-        this.createDescription(player, normalized, "supplement", round.descriptionCycle, {
-          supplementIndex: round.supplement.index,
-          order: order > 0 ? order : undefined,
-        }),
-      );
-      this.completeSupplementIfReady(room);
+      this.submitSupplementDescription(room, round, round.supplement, player, normalized);
     } else if (round.phase === "description" && round.speechMode !== "supplement") {
-      if (!state?.alive) {
-        throw new AppError("ACTION_FORBIDDEN", "当前玩家不能描述");
-      }
-      if (round.descriptionSubmittedBy.includes(player.id)) {
-        throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
-      }
-      round.descriptionSubmittedBy.push(player.id);
-      const order = (round.descriptionOrder ?? []).indexOf(player.id) + 1;
-      round.descriptions.push(
-        this.createDescription(player, normalized, "description", round.descriptionCycle, {
-          order: order > 0 ? order : undefined,
-        }),
-      );
+      this.submitNormalDescription(round, player, normalized);
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "description") {
-      round.speechMode = "tieBreak";
-      if (!round.tieBreak.candidateIds.includes(player.id)) {
-        throw new AppError("ACTION_FORBIDDEN", "只有平票玩家可以补充描述");
-      }
-
-      if (round.tieBreak.descriptionsDone.includes(player.id)) {
-        throw new AppError("ALREADY_SUBMITTED", "你已经提交过补充描述");
-      }
-
-      round.tieBreak.descriptionsDone.push(player.id);
-      const order = (round.tieBreak.candidateIds ?? []).indexOf(player.id) + 1;
-      round.descriptions.push(
-        this.createDescription(player, normalized, "tieBreak", round.descriptionCycle, {
-          tieBreakIndex: round.tieBreakCount,
-          order: order > 0 ? order : undefined,
-        }),
-      );
+      this.submitTieBreakDescription(round, round.tieBreak, player, normalized);
     } else {
       throw new AppError("INVALID_PHASE", "当前阶段不能提交描述");
     }
@@ -1027,6 +1040,72 @@ export class WhoIsFakerService implements AdminRoomControl {
     await this.runBots(room);
 
     return { submitted: true };
+  }
+
+  private submitSupplementDescription(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    supplement: NonNullable<GameRound["supplement"]>,
+    player: WhoIsFakerPlayerRecord,
+    text: string,
+  ) {
+    if (!round.assignments[player.id]?.alive || round.phase !== "description") {
+      throw new AppError("ACTION_FORBIDDEN", "当前玩家不能补充发言");
+    }
+    supplement.donePlayers.push(player.id);
+    const order = (supplement.requestedPlayerIds ?? []).indexOf(player.id) + 1;
+    round.descriptions.push(
+      this.createDescription(player, text, "supplement", round.descriptionCycle, {
+        supplementIndex: supplement.index,
+        order: order > 0 ? order : undefined,
+      }),
+    );
+    this.completeSupplementIfReady(room);
+  }
+
+  private submitNormalDescription(
+    round: GameRound,
+    player: WhoIsFakerPlayerRecord,
+    text: string,
+  ) {
+    if (!round.assignments[player.id]?.alive) {
+      throw new AppError("ACTION_FORBIDDEN", "当前玩家不能描述");
+    }
+    if (round.descriptionSubmittedBy.includes(player.id)) {
+      throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
+    }
+    round.descriptionSubmittedBy.push(player.id);
+    const order = (round.descriptionOrder ?? []).indexOf(player.id) + 1;
+    round.descriptions.push(
+      this.createDescription(player, text, "description", round.descriptionCycle, {
+        order: order > 0 ? order : undefined,
+      }),
+    );
+  }
+
+  private submitTieBreakDescription(
+    round: GameRound,
+    tieBreak: NonNullable<GameRound["tieBreak"]>,
+    player: WhoIsFakerPlayerRecord,
+    text: string,
+  ) {
+    round.speechMode = "tieBreak";
+    if (!tieBreak.candidateIds.includes(player.id)) {
+      throw new AppError("ACTION_FORBIDDEN", "只有平票玩家可以补充描述");
+    }
+
+    if (tieBreak.descriptionsDone.includes(player.id)) {
+      throw new AppError("ALREADY_SUBMITTED", "你已经提交过补充描述");
+    }
+
+    tieBreak.descriptionsDone.push(player.id);
+    const order = (tieBreak.candidateIds ?? []).indexOf(player.id) + 1;
+    round.descriptions.push(
+      this.createDescription(player, text, "tieBreak", round.descriptionCycle, {
+        tieBreakIndex: round.tieBreakCount,
+        order: order > 0 ? order : undefined,
+      }),
+    );
   }
 
   private async handleCancelVote(connection: ConnectionRecord) {
@@ -1910,26 +1989,12 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { hostPlayerId: target.id };
   }
 
-  private async handleTestJumpToPhase(connection: ConnectionRecord, target: WhoIsFakerPhase) {
-    // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
-    const { room, player } = this.requireRoomPlayer(connection);
-
-    if (room.id !== ROOM_ID_TEST_MODE) {
-      throw new AppError("FORBIDDEN", "仅测试房间允许使用跳转控制器");
-    }
-
-    // 反馈阶段只由结算产生，没有可凭空构造的结果。
-    if (target === "feedback") {
-      throw new AppError("INVALID_PHASE", "阶段反馈由结算产生，不能直接跳转");
-    }
-
-    this.clearPhaseTimer(room);
-
-    if (target === "waiting") {
-      this.returnRoomToWaiting(room);
-      return { phase: "waiting" as WhoIsFakerPhase };
-    }
-
+  /** 测试跳转的参战名单：跳到出题阶段时由调用者担任出题人，其余情况沿用本局已确定的人。 */
+  private planTestJumpRoster(
+    room: WhoIsFakerRoomRecord,
+    player: WhoIsFakerPlayerRecord,
+    target: WhoIsFakerPhase,
+  ) {
     const activeIds = Object.values(room.players)
       .filter((p) => p.membership === "active")
       .map((p) => p.id);
@@ -1957,6 +2022,67 @@ export class WhoIsFakerService implements AdminRoomControl {
     if (!enoughActive || plannedParticipants.length < 4) {
       throw new AppError("INSUFFICIENT_PLAYERS", "对局需要 4 名参战玩家，请先添加机器人");
     }
+
+    return { plannedQuestionerId, plannedParticipants };
+  }
+
+  /** 词与身份只在缺失或参战名单变动时重分配，跳转本身不换已定好的词。 */
+  private ensureTestJumpWords(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    participantIds: string[],
+    target: WhoIsFakerPhase,
+  ) {
+    if (
+      target !== "wordSubmission" &&
+      (!round.words ||
+        Object.keys(round.assignments).length === 0 ||
+        participantIds.some((id) => !round.assignments[id]))
+    ) {
+      const config = this.clampRoleConfig(
+        room.settings.roleConfig,
+        participantIds.length,
+      );
+      // clampRoleConfig 已按真实人数上限夹过天使/白板，这里不再额外放宽。
+      const effectiveConfig: RoleConfig = config;
+      const assigned = assignRoles(
+        participantIds,
+        effectiveConfig,
+        TEST_MODE_DEFAULT_WORD,
+        effectiveConfig.hasBlank ? "测试提示" : undefined,
+        this.random,
+      );
+      round.words = {
+        pair: assigned.pair,
+        civilianWord: assigned.civilianWord,
+        undercoverWord: assigned.undercoverWord,
+        blankHint: effectiveConfig.hasBlank ? "测试提示" : undefined,
+      };
+      round.assignments = assigned.assignments;
+    }
+  }
+
+  private async handleTestJumpToPhase(connection: ConnectionRecord, target: WhoIsFakerPhase) {
+    // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
+    const { room, player } = this.requireRoomPlayer(connection);
+
+    if (room.id !== ROOM_ID_TEST_MODE) {
+      throw new AppError("FORBIDDEN", "仅测试房间允许使用跳转控制器");
+    }
+
+    // 反馈阶段只由结算产生，没有可凭空构造的结果。
+    if (target === "feedback") {
+      throw new AppError("INVALID_PHASE", "阶段反馈由结算产生，不能直接跳转");
+    }
+
+    this.clearPhaseTimer(room);
+
+    if (target === "waiting") {
+      this.returnRoomToWaiting(room);
+      return { phase: "waiting" as WhoIsFakerPhase };
+    }
+
+    const { plannedQuestionerId, plannedParticipants } = this.planTestJumpRoster(room, player, target);
 
     // 确保 round 存在。
     if (!room.round) {
@@ -1998,33 +2124,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     round.pendingDisconnectPlayerIds = [];
     round.questionerReconnectDeadlineAt = undefined;
 
-    if (
-      target !== "wordSubmission" &&
-      (!round.words ||
-        Object.keys(round.assignments).length === 0 ||
-        participantIds.some((id) => !round.assignments[id]))
-    ) {
-      const config = this.clampRoleConfig(
-        room.settings.roleConfig,
-        participantIds.length,
-      );
-      // clampRoleConfig 已按真实人数上限夹过天使/白板，这里不再额外放宽。
-      const effectiveConfig: RoleConfig = config;
-      const assigned = assignRoles(
-        participantIds,
-        effectiveConfig,
-        TEST_MODE_DEFAULT_WORD,
-        effectiveConfig.hasBlank ? "测试提示" : undefined,
-        this.random,
-      );
-      round.words = {
-        pair: assigned.pair,
-        civilianWord: assigned.civilianWord,
-        undercoverWord: assigned.undercoverWord,
-        blankHint: effectiveConfig.hasBlank ? "测试提示" : undefined,
-      };
-      round.assignments = assigned.assignments;
-    }
+    this.ensureTestJumpWords(room, round, participantIds, target);
 
     round.feedback = undefined;
     round.feedbackContinuation = undefined;
@@ -2611,6 +2711,49 @@ export class WhoIsFakerService implements AdminRoomControl {
     return alive.length > 1 || (alive.length === 1 && candidateIds.length === 1) ? alive : undefined;
   }
 
+  /** 白板猜错的续接：恢复原阶段之前，按是否有人离场复判一次胜负。 */
+  private async continueAfterBlankFailure(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    continuation: Extract<FeedbackContinuation, { type: "blankFailed" }>,
+  ) {
+    await this.resolveFailedBlankGuess(room, continuation.message);
+    // 反馈期间有人离场可能已经分出胜负，恢复原阶段后再判一次。
+    if (round.phase !== "gameOver") {
+      const winner = continuation.rosterChanged ? getWinnerAfterBlankFailure(round.assignments) : undefined;
+      if (winner) {
+        await this.finishRound(room, winner, "阶段结算后已满足胜利条件");
+      } else if (round.phase === "feedback") {
+        // 猜词上下文缺失时没有可恢复的阶段，退回当天描述，避免停在反馈里无路可走。
+        round.blankGuessContext = undefined;
+        round.phase = "description";
+        round.speechMode = round.supplement ? "supplement" : "normal";
+      }
+    }
+  }
+
+  /** 平票续接：候选仍够才新开一轮 PK，不足则直接入夜。 */
+  private applyTieBreakContinuation(
+    round: GameRound,
+    continuation: Extract<FeedbackContinuation, { type: "tieBreak" }>,
+  ) {
+    const candidateIds = this.getLiveTieBreakCandidates(round, continuation.candidateIds);
+    if (!candidateIds) {
+      round.phase = "night";
+      round.speechMode = undefined;
+      return;
+    }
+    round.tieBreakCount += 1;
+    round.phase = "tieBreak";
+    round.speechMode = "tieBreak";
+    round.tieBreak = {
+      candidateIds,
+      stage: "description",
+      descriptionsDone: [],
+      votes: [],
+    };
+  }
+
   /** 出题人在反馈阶段点继续：执行结算时存下的续接动作。 */
   private async applyFeedbackContinuation(room: WhoIsFakerRoomRecord) {
     const round = this.requireRound(room);
@@ -2629,19 +2772,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
 
     if (continuation.type === "blankFailed") {
-      await this.resolveFailedBlankGuess(room, continuation.message);
-      // 反馈期间有人离场可能已经分出胜负，恢复原阶段后再判一次。
-      if (round.phase !== "gameOver") {
-        const winner = continuation.rosterChanged ? getWinnerAfterBlankFailure(round.assignments) : undefined;
-        if (winner) {
-          await this.finishRound(room, winner, "阶段结算后已满足胜利条件");
-        } else if (round.phase === "feedback") {
-          // 猜词上下文缺失时没有可恢复的阶段，退回当天描述，避免停在反馈里无路可走。
-          round.blankGuessContext = undefined;
-          round.phase = "description";
-          round.speechMode = round.supplement ? "supplement" : "normal";
-        }
-      }
+      await this.continueAfterBlankFailure(room, round, continuation);
       return;
     }
 
@@ -2661,21 +2792,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     round.tieBreak = undefined;
 
     if (continuation.type === "tieBreak") {
-      const candidateIds = this.getLiveTieBreakCandidates(round, continuation.candidateIds);
-      if (candidateIds) {
-        round.tieBreakCount += 1;
-        round.phase = "tieBreak";
-        round.speechMode = "tieBreak";
-        round.tieBreak = {
-          candidateIds,
-          stage: "description",
-          descriptionsDone: [],
-          votes: [],
-        };
-        return;
-      }
-      round.phase = "night";
-      round.speechMode = undefined;
+      this.applyTieBreakContinuation(round, continuation);
       return;
     }
 
@@ -3895,47 +4012,8 @@ export class WhoIsFakerService implements AdminRoomControl {
 
   private describePhaseChange(snapshot: WhoIsFakerRoomSnapshot, room: WhoIsFakerRoomRecord): string {
     const phase = snapshot.status.phase;
-    if (phase === "waiting") {
-      return "已返回房间中";
-    }
-    if (phase === "assigningQuestioner") {
-      return `第 ${room.roundCount ?? 1} 轮游戏已开始`;
-    }
-    if (phase === "wordSubmission") {
-      const questioner = snapshot.status.questionerPlayerId
-        ? room.players[snapshot.status.questionerPlayerId]
-        : undefined;
-      return `${questioner?.name ?? "出题人"}正在出题`;
-    }
-    const day = snapshot.status.day;
-    if (phase === "description") {
-      return `第 ${day} 天${snapshot.status.speechMode === "supplement" ? "补充描述" : "描述"}阶段`;
-    }
-    if (phase === "voting") {
-      return `第 ${day} 天投票阶段`;
-    }
-    if (phase === "tieBreak") {
-      return `第 ${day} 天${snapshot.status.tieBreakStage === "vote" ? "平票投票" : "平票描述"}阶段`;
-    }
-    if (phase === "night") {
-      return `第 ${day} 天夜晚阶段`;
-    }
-    if (phase === "blankGuess") {
-      return `第 ${day} 天白板猜词阶段`;
-    }
-    if (phase === "feedback") {
-      const feedback = snapshot.status.feedback;
-      const label = feedback?.kind === "night"
-        ? "夜晚结果"
-        : feedback?.kind === "blankGuess"
-          ? "白板猜词结果"
-          : feedback?.tieBreak ? "平票投票结果" : "投票结果";
-      return `第 ${day} 天${label}`;
-    }
-    if (phase === "gameOver") {
-      return `第 ${day} 天游戏结算阶段`;
-    }
-    return `已进入${phase}`;
+    const describe = PHASE_CHANGE_DESCRIPTIONS[phase];
+    return describe ? describe(snapshot, room) : `已进入${phase}`;
   }
 
   private getPhaseNoticeKey(snapshot: WhoIsFakerRoomSnapshot) {
