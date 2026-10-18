@@ -55,6 +55,13 @@ const LEVEL_METHODS: Record<LogLevel, keyof LogOutput> = {
   ERROR: "error",
 };
 
+/**
+ * 同类操作日志的合并窗口。满载时每条命令都会写一行 `[BAKA]`，生产剖面里这一条
+ * `console.info` 就占掉 5.7% 的核时间；INFO 级按「动作|状态码」每秒留一条代表，
+ * WARN/ERROR 不合并，指标与 span 仍然每条上报。
+ */
+const OPERATION_LOG_SAMPLE_MS = 1_000;
+
 const defaultOutput: LogOutput = {
   info: (message) => console.info(message),
   warn: (message) => console.warn(message),
@@ -199,6 +206,7 @@ import {
 export class EventLogger {
   private readonly output: LogOutput;
   private readonly otlpExporter?: OtlpExporter;
+  private readonly operationSamples = new Map<string, { at: number; merged: number }>();
 
   constructor(
     output: LogOutputLike = defaultOutput,
@@ -312,7 +320,17 @@ export class EventLogger {
     const idStr = identifier.padStart(15, " ");
     const traceContext = traceId ? ` | ${JSON.stringify({ traceId })}` : "";
     const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}${traceContext}`;
-    this.output[LEVEL_METHODS[level]](line);
+    const sampleKey = `${action}|${status}`;
+    const sample = level === "INFO" ? this.operationSamples.get(sampleKey) : undefined;
+    if (sample && createdAt - sample.at < OPERATION_LOG_SAMPLE_MS) {
+      sample.merged += 1;
+    } else {
+      // 合并条数记在下一条代表上：窗口里被省掉的行仍然计入速率，只是不再各占一次写。
+      if (level === "INFO") this.operationSamples.set(sampleKey, { at: createdAt, merged: 0 });
+      this.output[LEVEL_METHODS[level]](
+        sample && sample.merged > 0 ? `${line} | ×${sample.merged + 1}` : line
+      );
+    }
 
     captureServerOperation({
       name: action,

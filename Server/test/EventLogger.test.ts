@@ -186,3 +186,30 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
     init.mockRestore();
   }
 });
+
+test("同类操作日志每秒只输出一条代表，告警不参与合并", () => {
+  const output: string[] = [];
+  let now = 1_000;
+  const logger = new EventLogger(
+    (message) => output.push(message),
+    () => now
+  );
+
+  logger.logOperation({ action: "room.join", durationMs: 3 });
+  logger.logOperation({ action: "room.join", durationMs: 4 });
+  expect(output).toHaveLength(1);
+
+  now = 2_000;
+  logger.logOperation({ action: "room.join", durationMs: 5 });
+  expect(output).toHaveLength(2);
+  expect(output[1]).toContain("×2");
+
+  for (const index of [0, 1])
+    logger.logOperation({
+      action: "game.advancePhase",
+      status: 500,
+      level: "WARN",
+      durationMs: index,
+    });
+  expect(output.filter((line) => line.includes(" 500 "))).toHaveLength(2);
+});
