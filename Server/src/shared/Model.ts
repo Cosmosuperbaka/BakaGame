@@ -50,8 +50,14 @@ export interface ClientChannelProof {
   clientId: string;
   clientType: "desktop" | "mobile";
   clientVersion: string;
-  /** 密钥保护强度：`software` 表示该平台没有硬件级保护，只作标记不影响准入。 */
   keyProtection: "hardware" | "software";
+  /**
+   * 自检软失败命中一次时为可疑：放行但如实标记，供后续行为特征与人工复核参考。
+   * `software` 表示该平台没有硬件级密钥保护，只作标记不影响准入。
+   */
+  integrity?: "clean" | "suspect";
+  /** 低于服务端最低支持版本：普通房不受影响，反作弊房据此回 `CLIENT_OUTDATED`。 */
+  outdated?: boolean;
 }
 
 // 平台注册到连接池里的最小连接抽象。

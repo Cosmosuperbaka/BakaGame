@@ -81,6 +81,12 @@ export interface AppEnv {
   bangumiEnrichmentPath?: string;
   enableGeneralUnblock?: boolean;
   ceeOriginalServerUrl?: string;
+  /**
+   * 反作弊房接受的最低壳版本；空串 = 不设版本门槛。
+   * 通道证明协议一旦破坏性变更必须抬这里，否则旧壳还能继续签名通关。
+   */
+  clientMinDesktopVersion?: string;
+  clientMinMobileVersion?: string;
   ceeOriginalAesSecret?: string;
   meilisearchKey?: string;
 }
@@ -376,6 +382,8 @@ export const readEnv = (): AppEnv => {
     bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
     bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
     ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? "").trim().replace(/\/+$/, ""),
+    clientMinDesktopVersion: Bun.env.CLIENT_MIN_DESKTOP_VERSION?.trim() || undefined,
+    clientMinMobileVersion: Bun.env.CLIENT_MIN_MOBILE_VERSION?.trim() || undefined,
     ceeOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
     meilisearchKey: Bun.env.MEILISEARCH_KEY?.trim() || undefined,
     enableGeneralUnblock:

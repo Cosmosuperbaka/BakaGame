@@ -142,6 +142,24 @@ export const passkey = mysqlTable(
   ]
 );
 
+// ==================== 客户端通道 ====================
+
+/**
+ * 已注册的壳设备公钥。`clientId` 由公钥摘要派生，所以同一把密钥重复注册天然幂等，
+ * 不需要「证明我拥有这把密钥」这类额外往返——拥有关系在每次换票时都在证。
+ * 私钥永不落库；这张表泄露只暴露公钥，不能用来签名。
+ */
+export const clientChannelDevice = mysqlTable("client_channel_device", {
+  clientId: varchar("client_id", { length: 64 }).primaryKey(),
+  clientType: varchar("client_type", { length: 16 }).notNull(),
+  platform: varchar("platform", { length: 32 }).notNull(),
+  keyAlgorithm: varchar("key_algorithm", { length: 16 }).notNull(),
+  publicKey: text("public_key").notNull(),
+  keyProtection: varchar("key_protection", { length: 16 }).notNull(),
+  registeredAt: datetime("registered_at", { fsp: 3 }).notNull(),
+  lastSeenAt: datetime("last_seen_at", { fsp: 3 }).notNull(),
+});
+
 // ==================== 用户数据 ====================
 
 /** 云同步设置：一行一个键，值为该键的完整 JSON 文档（整体覆盖，不做字段级合并）。 */

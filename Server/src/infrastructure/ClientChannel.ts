@@ -1,0 +1,307 @@
+import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+import { AppError } from "../domain/Errors";
+import type { ClientChannelProof } from "../shared/Model";
+
+/**
+ * 客户端通道证明：壳（桌面 / 移动）用设备私钥签服务端发的挑战，服务端验签后发一次性 ticket，
+ * ws 握手凭票写入 `ConnectionRecord.clientChannel`。
+ * 协议逐字定义在 `Agents/ClientChannel.md`，改这里必须同步改那份文档。
+ */
+export const CLIENT_CHALLENGE_TTL_MS = 60_000;
+export const CLIENT_TICKET_TTL_MS = 30_000;
+/** 挑战与票都是短时内存态，必须有基数上限：伪造 clientId 不该让服务端按需扩张内存。 */
+export const CLIENT_CHANNEL_PENDING_MAX = 10_000;
+
+export type ClientKeyAlgorithm = "ed25519" | "ec-p256";
+export type ClientAttestationLevel = "trusted" | "degraded" | "rejected";
+
+export interface ClientSelfCheckReport {
+  hardFail: string[];
+  softFail: string[];
+  keyProtection?: "hardware" | "software";
+  attestationLevel?: ClientAttestationLevel;
+}
+
+export interface ClientRegisterInput {
+  clientId?: string;
+  clientType: ClientChannelProof["clientType"];
+  platform: string;
+  clientVersion: string;
+  keyAlgorithm: ClientKeyAlgorithm;
+  publicKey: string;
+  selfCheck: ClientSelfCheckReport;
+}
+
+export interface ClientAttestInput {
+  clientId: string;
+  challenge: string;
+  signature: string;
+  clientType: ClientChannelProof["clientType"];
+  clientVersion: string;
+  selfCheck: ClientSelfCheckReport;
+}
+
+export interface StoredClientDevice {
+  clientId: string;
+  clientType: ClientChannelProof["clientType"];
+  platform: string;
+  keyAlgorithm: ClientKeyAlgorithm;
+  publicKey: string;
+  keyProtection: "hardware" | "software";
+  registeredAt: number;
+  lastSeenAt: number;
+}
+
+/** 只暴露三个动作：设备表在 MySQL，测试与本地用内存实现，判定逻辑不关心差异。 */
+export interface ClientChannelStore {
+  save(device: StoredClientDevice): Promise<void>;
+  find(clientId: string): Promise<StoredClientDevice | undefined>;
+  touch(clientId: string, at: number): Promise<void>;
+}
+
+export class InMemoryClientChannelStore implements ClientChannelStore {
+  private readonly devices = new Map<string, StoredClientDevice>();
+  async save(device: StoredClientDevice): Promise<void> {
+    this.devices.set(device.clientId, device);
+  }
+  async find(clientId: string): Promise<StoredClientDevice | undefined> {
+    return this.devices.get(clientId);
+  }
+  async touch(clientId: string, at: number): Promise<void> {
+    const found = this.devices.get(clientId);
+    if (found) this.devices.set(clientId, { ...found, lastSeenAt: at });
+  }
+}
+
+/**
+ * 硬失败：完整性已被破坏，或有证据表明检测本身被动过手脚（检测跑不动 = 有人让它在跑不动）。
+ * 软失败：可疑但不构成结论（父进程异常、devtools 打开）。
+ * `platform_unsupported` 与 DPAPI 不可用都不计分：那是能力不足，不是作弊。
+ */
+const HARD_FAIL_IDS = new Set([
+  "debugger_attached",
+  "debug_port",
+  "debug_object_handle",
+  "debug_query_unavailable",
+  "module_not_allowed",
+  "module_enumeration_failed",
+  "ldr_list_mismatch",
+  "ldr_enumeration_failed",
+]);
+const SOFT_FAIL_IDS = new Set(["parent_process", "devtools"]);
+
+export function judgeSelfCheck(report: ClientSelfCheckReport): {
+  trusted: boolean;
+  integrity: "clean" | "suspect";
+  reason?: string;
+} {
+  const hard = report.hardFail.filter((id) => HARD_FAIL_IDS.has(id));
+  if (hard.length > 0) return { trusted: false, integrity: "clean", reason: hard[0] };
+  // 未登记的 id 不能当软失败放过：词表新增一项而服务端没跟上时，失败关闭比沉默放行安全。
+  const unknown = [...report.hardFail, ...report.softFail].filter(
+    (id) => !HARD_FAIL_IDS.has(id) && !SOFT_FAIL_IDS.has(id) && id !== "platform_unsupported"
+  );
+  if (unknown.length > 0) return { trusted: false, integrity: "clean", reason: unknown[0] };
+  if (report.attestationLevel === "rejected")
+    return { trusted: false, integrity: "clean", reason: "attestation_rejected" };
+  const soft = report.softFail.length;
+  if (soft >= 2) return { trusted: false, integrity: "clean", reason: report.softFail[1] };
+  return { trusted: true, integrity: soft === 1 ? "suspect" : "clean" };
+}
+
+/** 版本号比较：`a < b` 为负、相等为 0、`a > b` 为正；缺省段按 0 补齐。 */
+export function compareClientVersion(a: string, b: string): number {
+  const left = a.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const right = b.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff !== 0) return diff < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function publicKeyOf(device: StoredClientDevice) {
+  const raw = Buffer.from(device.publicKey, "base64");
+  if (device.keyAlgorithm === "ed25519") {
+    if (raw.length !== 32) throw new AppError("CLIENT_UNTRUSTED", "设备公钥长度不正确");
+    return createPublicKey({
+      key: Buffer.concat([SPKI_ED25519_PREFIX, raw]),
+      format: "der",
+      type: "spki",
+    });
+  }
+  return createPublicKey({ key: raw, format: "der", type: "spki" });
+}
+
+/** 桌面签 Ed25519 裸签名，移动签 DER(ECDSA-P256-SHA256)；两者都对挑战原样字节签名。 */
+export function verifyClientSignature(
+  device: StoredClientDevice,
+  challenge: string,
+  signature: string
+): boolean {
+  const payload = Buffer.from(challenge, "ascii");
+  const signatureBytes = Buffer.from(signature, "base64");
+  try {
+    if (device.keyAlgorithm === "ed25519") {
+      if (signatureBytes.length !== 64) return false;
+      return verify(null, payload, publicKeyOf(device), signatureBytes);
+    }
+    return verify("sha256", payload, publicKeyOf(device), signatureBytes);
+  } catch {
+    return false;
+  }
+}
+
+/** `clientId` 由公钥派生：同一把密钥重复注册得到同一个身份，不需要额外的「证明我拥有它」往返。 */
+export function clientIdOfPublicKey(publicKey: string): string {
+  return `ccd_${createHash("sha256").update(publicKey).digest("hex").slice(0, 24)}`;
+}
+
+function bounded<T>(map: Map<string, T>, cap: number): void {
+  while (map.size >= cap) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
+export interface ClientChannelOptions {
+  store: ClientChannelStore;
+  now?: () => number;
+  /** 最低支持版本按平台给：协议破坏性变更时抬这一档就能强制旧壳升级。 */
+  minimumVersion: (clientType: ClientChannelProof["clientType"]) => string;
+  onWarn?: (message: string, context?: Record<string, unknown>) => void;
+}
+
+export class ClientChannel {
+  private readonly store: ClientChannelStore;
+  private readonly now: () => number;
+  private readonly minimumVersion: ClientChannelOptions["minimumVersion"];
+  private readonly onWarn: (message: string, context?: Record<string, unknown>) => void;
+  private readonly challenges = new Map<string, { clientId: string; expiresAt: number }>();
+  private readonly tickets = new Map<
+    string,
+    { proof: ClientChannelProof; clientIp: string; expiresAt: number }
+  >();
+  constructor(options: ClientChannelOptions) {
+    this.store = options.store;
+    this.now = options.now ?? (() => Date.now());
+    this.minimumVersion = options.minimumVersion;
+    this.onWarn = options.onWarn ?? (() => {});
+  }
+  isOutdated(clientType: ClientChannelProof["clientType"], clientVersion: string): boolean {
+    const minimum = this.minimumVersion(clientType);
+    return minimum.length > 0 && compareClientVersion(clientVersion, minimum) < 0;
+  }
+  private requireTrusted(
+    selfCheck: ClientSelfCheckReport,
+    stage: "register" | "attest"
+  ): "clean" | "suspect" {
+    const verdict = judgeSelfCheck(selfCheck);
+    if (!verdict.trusted) {
+      this.onWarn("客户端完整性校验未通过", { stage, reason: verdict.reason });
+      throw new AppError("CLIENT_UNTRUSTED", "客户端完整性校验未通过");
+    }
+    return verdict.integrity;
+  }
+  async register(input: ClientRegisterInput): Promise<{
+    clientId: string;
+    minimumVersion: string;
+    outdated: boolean;
+  }> {
+    const integrity = this.requireTrusted(input.selfCheck, "register");
+    if (integrity === "suspect")
+      this.onWarn("客户端以可疑状态注册", {
+        clientType: input.clientType,
+        platform: input.platform,
+        softFail: input.selfCheck.softFail,
+      });
+    const clientId = clientIdOfPublicKey(input.publicKey);
+    const at = this.now();
+    await this.store.save({
+      clientId,
+      clientType: input.clientType,
+      platform: input.platform,
+      keyAlgorithm: input.keyAlgorithm,
+      publicKey: input.publicKey,
+      // DPAPI 不可用时私钥只有软件保护：放行并如实标记，不假装它是硬件密钥。
+      keyProtection: input.selfCheck.keyProtection ?? "software",
+      registeredAt: at,
+      lastSeenAt: at,
+    });
+    return {
+      clientId,
+      minimumVersion: this.minimumVersion(input.clientType),
+      outdated: this.isOutdated(input.clientType, input.clientVersion),
+    };
+  }
+  issue(clientId: string): { challenge: string; expiresAt: number } {
+    const issuedAt = this.now();
+    const challenge = `${clientId}.${randomBytes(24).toString("base64url")}.${issuedAt}`;
+    bounded(this.challenges, CLIENT_CHANNEL_PENDING_MAX);
+    this.challenges.set(challenge, { clientId, expiresAt: issuedAt + CLIENT_CHALLENGE_TTL_MS });
+    return { challenge, expiresAt: issuedAt + CLIENT_CHALLENGE_TTL_MS };
+  }
+  async attest(
+    input: ClientAttestInput,
+    clientIp: string
+  ): Promise<{
+    ticket: string;
+    expiresAt: number;
+    outdated: boolean;
+  }> {
+    const pending = this.challenges.get(input.challenge);
+    // 单次消费：验完即焚，否则一个被抓到的挑战可以在窗口内被反复换成票。
+    this.challenges.delete(input.challenge);
+    const at = this.now();
+    if (!pending || pending.expiresAt < at || pending.clientId !== input.clientId)
+      throw new AppError("CHALLENGE_EXPIRED", "校验挑战已过期，请重试");
+    const device = await this.store.find(input.clientId);
+    if (!device) throw new AppError("CLIENT_UNKNOWN", "该客户端尚未注册");
+    if (!verifyClientSignature(device, input.challenge, input.signature))
+      throw new AppError("CLIENT_UNTRUSTED", "客户端签名校验失败");
+    const integrity = this.requireTrusted(input.selfCheck, "attest");
+    if (device.clientType !== input.clientType)
+      throw new AppError("CLIENT_UNTRUSTED", "客户端类型与注册记录不符");
+    const ticket = randomBytes(24).toString("base64url");
+    bounded(this.tickets, CLIENT_CHANNEL_PENDING_MAX);
+    this.tickets.set(ticket, {
+      proof: {
+        clientId: device.clientId,
+        clientType: device.clientType,
+        clientVersion: input.clientVersion,
+        keyProtection: device.keyProtection,
+        integrity,
+        outdated: this.isOutdated(device.clientType, input.clientVersion),
+      },
+      clientIp,
+      expiresAt: at + CLIENT_TICKET_TTL_MS,
+    });
+    await this.store.touch(device.clientId, at);
+    return {
+      ticket,
+      expiresAt: at + CLIENT_TICKET_TTL_MS,
+      outdated: this.isOutdated(device.clientType, input.clientVersion),
+    };
+  }
+  /** 握手换票：一次性、绑定来源地址。地址不符只是不认，不把票销毁。 */
+  consume(ticket: string | undefined, clientIp: string): ClientChannelProof | undefined {
+    if (!ticket) return undefined;
+    const held = this.tickets.get(ticket);
+    if (!held) return undefined;
+    if (held.expiresAt < this.now()) {
+      this.tickets.delete(ticket);
+      return undefined;
+    }
+    // 销毁会让合法客户端永远换不到票：代理链与 requestIP 口径不一致时，第一次握手失败是常态而非攻击。
+    if (held.clientIp !== clientIp) return undefined;
+    this.tickets.delete(ticket);
+    return held.proof;
+  }
+  reset(): void {
+    this.challenges.clear();
+    this.tickets.clear();
+  }
+}

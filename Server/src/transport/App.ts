@@ -32,6 +32,9 @@ import { isPrivateLanHost, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
+import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
+import type { ClientChannel } from "../infrastructure/ClientChannel";
+import type { ClientChannelProof } from "../shared/Index";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 
 export interface AppDependencies {
@@ -52,6 +55,11 @@ export interface AppDependencies {
    * 否则同一台机器上的几百条连接会被按客户端地址算出的闸门先挡掉。
    */
   handshakeQuota?: WsHandshakeQuota;
+  /**
+   * 客户端通道证明：提供时挂载 `/api/client/*`，并在 CEE 握手阶段把一次性 ticket
+   * 换成 `connection.clientChannel`。未提供时反作弊房谁也进不去（普通房不受影响）。
+   */
+  clientChannel?: ClientChannel;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -343,13 +351,37 @@ const reserveHandshakeSlot = (
   context.clientIp = clientIp;
 };
 
+/**
+ * 握手阶段把壳带来的 ticket 换成通道证明。
+ *
+ * 只有 CEE 入口调用：ticket 是一次性的，三个游戏都去消费会让先到的那个用掉它，
+ * 而反作弊房只存在于 CEE。网页没有 ticket，`clientChannel` 即为空。
+ */
+const resolveSocketChannel = (
+  context: { request: Request; clientIp?: string; clientChannel?: ClientChannelProof },
+  channel: ClientChannel | undefined
+): void => {
+  if (!channel) return;
+  const ticket = new URL(context.request.url).searchParams.get("ticket") ?? undefined;
+  const proof = channel.consume(ticket, context.clientIp ?? "");
+  if (proof) context.clientChannel = proof;
+};
+
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
 const openGameConnection = (
   ws: GameSocketLike,
   register: (connection: ConnectionRecord) => void
 ): void => {
   const connectionId = crypto.randomUUID();
-  const { account, clientIp } = ws.data as { account?: PlayerAccount; clientIp?: string };
+  const {
+    account,
+    clientIp,
+    clientChannel: proof,
+  } = ws.data as {
+    account?: PlayerAccount;
+    clientIp?: string;
+    clientChannel?: ClientChannelProof;
+  };
   (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender((payload) => {
     sendPacket(ws, payload as ServerMessage);
@@ -358,6 +390,7 @@ const openGameConnection = (
     id: connectionId,
     ...(account ? { account } : {}),
     ...(clientIp ? { clientIp } : {}),
+    ...(proof ? { clientChannel: proof } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,
@@ -526,6 +559,7 @@ export const createApp = ({
   bangumiImages,
   account,
   handshakeQuota: handshakeQuotaOverride,
+  clientChannel,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -694,6 +728,7 @@ export const createApp = ({
     .use(bangumiImageRoutes(bangumiImages))
     // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
     .use(accountRoutes(account, logger))
+    .use(clientChannelRoutes(clientChannel))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema,
@@ -728,6 +763,7 @@ export const createApp = ({
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
         reserveHandshakeSlot(context, handshakeQuota);
+        resolveSocketChannel(context, clientChannel);
       },
       open: (ws) =>
         openGameConnection(ws, (connection) => characterService.registerConnection(connection)),

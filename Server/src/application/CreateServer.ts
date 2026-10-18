@@ -26,6 +26,8 @@ import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepos
 import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
+import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
+import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
 import {
   DatabaseFeedbackRepository,
@@ -139,6 +141,15 @@ export function createServer(
     song,
     cee,
   });
+  // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
+  const clientChannel = new ClientChannel({
+    store: database ? new ClientChannelRepository(database) : new InMemoryClientChannelStore(),
+    minimumVersion: (clientType) =>
+      clientType === "desktop"
+        ? (env.clientMinDesktopVersion ?? "")
+        : (env.clientMinMobileVersion ?? ""),
+    onWarn: (message, detail) => logger.warn(message, detail),
+  });
   const app = createApp({
     ...appOptions,
     env,
@@ -147,6 +158,7 @@ export function createServer(
     sonGuessrService: song,
     ceeService: cee,
     account,
+    clientChannel,
     disposeResources: async () => {
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();

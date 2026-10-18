@@ -278,6 +278,9 @@ export class CEERooms {
     if (!isCEEAntiCheatRoom(room.settings)) return;
     if (!connection.clientChannel)
       throw new AppError("CLIENT_REQUIRED", "该房间只接受 BakaGame 客户端接入");
+    // 强制更新只拦这类房间：旧壳在普通房照常玩，协议变更不该波及他们。
+    if (connection.clientChannel.outdated)
+      throw new AppError("CLIENT_OUTDATED", "客户端版本过低，请更新后再进入该房间");
     if (!connection.account) throw new AppError("LOGIN_REQUIRED", "该房间要求全部成员已登录");
   }
   /**

@@ -36,6 +36,13 @@
       "when": 1792352172804,
       "tag": "0004_passkey",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1792354888892,
+      "tag": "0005_client_channel",
+      "breakpoints": true
     }
   ]
 }
