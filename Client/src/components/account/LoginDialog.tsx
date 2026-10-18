@@ -10,7 +10,7 @@ import {
   QQ_NUMBER_PATTERN,
 } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import { CollapsibleRegion } from "@/components/ui/Collapsible";
+import { Collapsible, CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";
 import { SettingTextField } from "@/components/common/room/SettingFields";
 import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
@@ -127,6 +127,22 @@ function StepDots({ active }: { active: 0 | 1 }) {
 }
 
 /**
+ * 登录的用途与 QQ 号边界：默认收起，第一段话只回答访客最可能的两个顾虑——
+ * 不登录能不能玩、要不要交出 QQ 密码。验证码投递到哪由字段说明就地写明（发完后仍常驻）。
+ */
+function LoginNotice() {
+  return (
+    <Collapsible title="登录说明" size="sm">
+      <div className="space-y-1.5 text-xs text-muted-foreground">
+        <p>登录只用于少数需要身份验证的功能：云同步设置、提交反馈、房间内显示你的头像。</p>
+        <p>不登录不影响绝大部分功能的正常游玩。</p>
+        <p>用 QQ 号作登录凭据仅是为了方便身份关联：我们不索要你的 QQ 密码和其它隐私信息。</p>
+      </div>
+    </Collapsible>
+  );
+}
+
+/**
  * 登录 / 注册弹窗（首次登录即注册，见 Agents/Account.md §1）。
  *
  * 整块弹窗分两区：上方通栏身份区常驻——标题、圆头像、昵称与 QQ 号，两步共用，切步时身份不消失；
@@ -134,6 +150,7 @@ function StepDots({ active }: { active: 0 | 1 }) {
  * 昵称与 QQ 号各自按到达时机展开：号一合法先落 QQ 号，紧接着输完号查到的昵称自它上方顶进来，
  * 发码后再以服务端回传值为准；
  * 两步的字段说明与页脚都预留同一高度，切步只换内容、不跳高度。
+ * 操作区底部常驻一段收起的登录说明（用途、QQ 号边界、验证码投递），两步共用、不随切步跳动。
  */
 export function LoginDialog({
   open,
@@ -323,6 +340,8 @@ function LoginDialogBody({
               </CollapsibleRegion>
             </motion.div>
           </AnimatePresence>
+
+          <LoginNotice />
 
           <DialogFooter className="min-h-20 sm:min-h-9">
             {step.kind === "code" ? (

@@ -182,4 +182,13 @@ describe("登录弹窗", () => {
     await user.click(await screen.findByRole("button", { name: "换个 QQ 号" }));
     expect(screen.getByLabelText("QQ 号")).toHaveValue("12345");
   });
+
+  it("登录说明默认收起，展开后写明用途与 QQ 号边界", async () => {
+    const { user } = renderDialog();
+    expect(screen.queryByText(/不登录不影响/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "登录说明" }));
+    expect(await screen.findByText("不登录不影响绝大部分功能的正常游玩。")).toBeInTheDocument();
+    expect(screen.getByText(/不索要你的 QQ 密码/)).toBeInTheDocument();
+  });
 });
