@@ -76,3 +76,27 @@ test("校准调用会在无业务变化时按周期重发全量状态", () => {
   });
   expect(encoder.encode(state, { calibration: true })).toEqual([]);
 });
+
+test("快照内嵌活动领域对象时，补丁基线仍是准备时刻的值", () => {
+  const encoder = new StateSyncEncoder();
+  // 视图构建器可能把领域对象直接挂进快照；准备时必须留下当时值的副本，
+  // 否则下一次发布拿到的基线已经被原地改写，客户端永远收不到这处变化。
+  const settings = { rounds: 5, anonymous: true };
+  const bulk = { chat: Array.from({ length: 40 }, (_, index) => ({ id: `c${index}` })) };
+
+  encoder.encode(createEvent("room.snapshot", { ...bulk, phase: "describing", settings }));
+  settings.rounds = 9;
+
+  const encoded = encoder.encode(
+    createEvent("room.snapshot", { ...bulk, phase: "voting", settings })
+  )[0];
+  expect(encoded).toMatchObject({ payload: { mode: "patch", baseRevision: 1, revision: 2 } });
+  const operations = (encoded as { payload: { operations: unknown[] } }).payload.operations;
+  expect(operations).toHaveLength(2);
+  expect(operations).toEqual(
+    expect.arrayContaining([
+      { op: "replace", path: "/phase", value: "voting" },
+      { op: "replace", path: "/settings/rounds", value: 9 },
+    ])
+  );
+});

@@ -8,7 +8,7 @@ import type {
   WhoIsFakerRole,
   StateSyncPayload,
 } from "../src/shared/Index";
-import { StateSyncEncoder } from "../src/transport/StateSync";
+import { preparedStateClone, StateSyncEncoder } from "../src/transport/StateSync";
 import { createConnection, createTestContext, execute, type TestConnection } from "./Helpers";
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
@@ -186,15 +186,15 @@ const assertViews = (f: Awaited<ReturnType<typeof setupViews>>) => {
 
 // 计数真实 StateSync 准备，不替换编码器或业务逻辑；每次测量后恢复 spy。
 const measureClones = async (operation: () => Promise<unknown>) => {
-  const clone = globalThis.structuredClone;
+  const clone = preparedStateClone.clone;
   let publicClones = 0,
     privateClones = 0;
-  const spy = spyOn(globalThis, "structuredClone").mockImplementation((value, options) => {
+  const spy = spyOn(preparedStateClone, "clone").mockImplementation((value) => {
     if (value && typeof value === "object") {
       if ("roomId" in value && "players" in value && "chat" in value) publicClones++;
       if ("playerId" in value && "sessionToken" in value) privateClones++;
     }
-    return clone(value, options);
+    return clone(value);
   });
   const startedAt = performance.now();
   const cpuBefore = process.cpuUsage();
