@@ -318,6 +318,7 @@ describe("反作弊人工复核队列", () => {
         intervals: [800, 790, 810],
         cv: 0.012,
         noSearchGuesses: 3,
+        unmatchedSearches: 0,
         guesses: 4,
         firstGuessCorrect: true,
       },

@@ -192,6 +192,7 @@ const reviewFeaturesSchema = z.object({
   intervals: z.array(z.number()),
   cv: z.number().nullable(),
   noSearchGuesses: z.number().int(),
+  unmatchedSearches: z.number().int(),
   guesses: z.number().int(),
   firstGuessCorrect: z.boolean(),
 });

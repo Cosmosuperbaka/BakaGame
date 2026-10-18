@@ -120,6 +120,30 @@ describe("CEE 行为特征打分", () => {
     expect(scoreCEEAntiCheat(human).score).toBe(0);
     expect(scoreCEEAntiCheat(human).features.cv).toBeGreaterThan(0.5);
   });
+  test("每次都检索但候选里没有本次角色：伪造检索单独也够进队列", () => {
+    const faked = robotSignals(4).map((item) => ({ ...item, searchedAt: 999 }));
+    const result = scoreCEEAntiCheat(faked);
+    expect(result.features.noSearchGuesses).toBe(0);
+    expect(result.features.unmatchedSearches).toBe(4);
+    expect(result.score).toBe(4);
+    expect(result.reasons).toContainEqual(expect.stringContaining("检索全部落空"));
+  });
+  test("偶尔一次落空不算伪造：翻回上一次结果选人是正常操作", () => {
+    const human = [
+      signal({ guessId: "f0", createdAt: 1_000, attempts: 1, searchedAt: 900 }),
+      signal({ guessId: "f1", createdAt: 8_000, attempts: 2, searchedAt: 7_000 }),
+      signal({
+        guessId: "f2",
+        createdAt: 12_000,
+        attempts: 3,
+        searchedAt: 11_000,
+        searchMatched: false,
+      }),
+      signal({ guessId: "f3", createdAt: 26_000, attempts: 4, searchedAt: 20_000 }),
+    ];
+    expect(scoreCEEAntiCheat(human).features.unmatchedSearches).toBe(1);
+    expect(scoreCEEAntiCheat(human).reasons).toEqual([]);
+  });
   test("首猜即中单独只记一分，且必须真是第一次尝试", () => {
     const lucky = [
       signal({ guessId: "l0", createdAt: 1_000, attempts: 1, correct: true }),
@@ -138,7 +162,12 @@ describe("CEE 行为特征打分", () => {
     expect(
       ceeAntiCheatReviews(
         reviewContext,
-        new Map([["p-1", robotSignals(4).map((item) => ({ ...item, searchedAt: 999 }))]]),
+        new Map([
+          [
+            "p-1",
+            robotSignals(4).map((item) => ({ ...item, searchedAt: 999, searchMatched: true })),
+          ],
+        ]),
         identity
       )
     ).toEqual([]);

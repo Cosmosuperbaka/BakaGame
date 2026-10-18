@@ -5437,6 +5437,11 @@
                                     "minimum": -9007199254740991,
                                     "maximum": 9007199254740991
                                   },
+                                  "unmatchedSearches": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
                                   "guesses": {
                                     "type": "integer",
                                     "minimum": -9007199254740991,
@@ -5450,6 +5455,7 @@
                                   "intervals",
                                   "cv",
                                   "noSearchGuesses",
+                                  "unmatchedSearches",
                                   "guesses",
                                   "firstGuessCorrect"
                                 ],

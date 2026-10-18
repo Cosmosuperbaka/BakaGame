@@ -134,6 +134,7 @@ const review: AdminAntiCheatReview = {
     intervals: [800, 790, 810, 795],
     cv: 0.012,
     noSearchGuesses: 4,
+    unmatchedSearches: 0,
     guesses: 4,
     firstGuessCorrect: true,
   },

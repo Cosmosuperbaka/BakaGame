@@ -89,6 +89,8 @@ export const CEE_CV_SUSPICIOUS = 0.1;
 export const CEE_CV_MIN_SAMPLES = 4;
 /** 无检索猜测占比达到该值即加分（正常玩家必然是先搜再猜）。 */
 export const CEE_NO_SEARCH_RATIO_SUSPICIOUS = 0.8;
+/** 至少几条猜测才谈得上「全部落空」；一两次可能只是翻了上一页的结果。 */
+export const CEE_UNMATCHED_MIN_GUESSES = 3;
 
 export interface CEEUnitFeatures {
   /** 相邻猜测间隔（毫秒）。 */
@@ -96,6 +98,8 @@ export interface CEEUnitFeatures {
   /** 间隔变异系数，样本不足为 `null`。 */
   cv: number | null;
   noSearchGuesses: number;
+  /** 检索过、但那次检索的候选里没有本次角色 ID 的次数（伪造检索）。 */
+  unmatchedSearches: number;
   guesses: number;
   /** 首猜即中：人类极低，跨局偏高的脚本会命中这一条。 */
   firstGuessCorrect: boolean;
@@ -124,6 +128,9 @@ export function ceeUnitFeatures(ordered: readonly CEEGuessSignal[]): CEEUnitFeat
     cv,
     guesses: ordered.length,
     noSearchGuesses: ordered.filter((signal) => signal.searchedAt === null).length,
+    unmatchedSearches: ordered.filter(
+      (signal) => signal.searchedAt !== null && !signal.searchMatched
+    ).length,
     firstGuessCorrect: ordered.length > 0 && ordered[0].correct,
   };
 }
@@ -150,6 +157,13 @@ export function scoreCEEAntiCheat(ordered: readonly CEEGuessSignal[]): CEESuspic
   if (features.firstGuessCorrect && ordered.length > 0 && ordered[0].attempts === 1) {
     score += 1;
     reasons.push("首次猜测即命中");
+  }
+  if (
+    features.guesses >= CEE_UNMATCHED_MIN_GUESSES &&
+    features.unmatchedSearches === features.guesses
+  ) {
+    score += 2;
+    reasons.push(`检索全部落空（候选里没有本次角色 ${features.unmatchedSearches} 次）`);
   }
   return { score, reasons, features };
 }

@@ -90,6 +90,10 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
           </dd>
         </div>
         <div>
+          <dt className="inline">检索落空：</dt>
+          <dd className="inline font-mono">{item.features.unmatchedSearches} 次</dd>
+        </div>
+        <div>
           <dt className="inline">间隔变异系数：</dt>
           <dd className="inline font-mono">
             {item.features.cv === null ? "样本不足" : item.features.cv.toFixed(3)}
