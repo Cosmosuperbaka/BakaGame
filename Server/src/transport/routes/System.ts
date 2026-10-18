@@ -63,6 +63,24 @@ const sanitizeTelemetryMetadata = (metadata: TelemetryMetadata): Record<string, 
 const shouldRecordTelemetry = (level: TelemetryLevel, sampleRate: number): boolean =>
   level === "ERROR" || sampleRate >= 1.0 || Math.random() < sampleRate;
 
+/**
+ * 一位有效数字的量级：1234 → 1000、42 → 40、7 → 7。
+ * 用于把「可无限轮询的精确在线数」降级成趋势可读、计数不可读。
+ */
+const coarse = (value: number): number => {
+  if (value < 10) return value;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  return Math.round(value / magnitude) * magnitude;
+};
+
+/**
+ * `/health` 的额度：三个探针里只有它带业务量级，`/livez` 与 `/readyz` 是负载均衡的契约，
+ * 一旦限流就可能被扫爆导致 LB 拿不到就绪状态而摘流，所以那两个不设额度。
+ */
+const PROBE_WINDOW_MS = 60_000;
+const PROBE_IP_MAX_REQUESTS = 120;
+const PROBE_GLOBAL_MAX_REQUESTS = 6_000;
+
 const writeClientTelemetryLog = (input: {
   logger: EventLogger;
   level: TelemetryLevel;
@@ -85,6 +103,8 @@ export interface SystemRoutesDependencies {
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
   rateLimiter?: TelemetryRateLimiter;
+  /** 状态查询额度：独立于打点桶，避免前端批量上报把运维探活挤掉。测试可注入。 */
+  probeRateLimiter?: TelemetryRateLimiter;
   sampleRate?: number;
 }
 
@@ -96,12 +116,18 @@ export const systemRoutes = ({
   isShuttingDown,
   onTriggerShutdown,
   rateLimiter,
+  probeRateLimiter,
   maintenanceToken,
   sampleRate = 1.0,
 }: SystemRoutesDependencies) => {
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
   const limiter = rateLimiter ?? new TelemetryRateLimiter();
+  const probeLimiter = probeRateLimiter ?? new TelemetryRateLimiter({
+    windowMs: PROBE_WINDOW_MS,
+    ipMaxRequests: PROBE_IP_MAX_REQUESTS,
+    globalMaxRequests: PROBE_GLOBAL_MAX_REQUESTS,
+  });
 
   // `traceId` 由全局 `onRequest` 写入响应头，独立挂载本组路由的测试里可以没有，因此声明为可选。
   const errorSchema = t.Object({
@@ -232,7 +258,14 @@ export const systemRoutes = ({
     )
     .get(
       "/health",
-      () => {
+      ({ headers, request, server, set }) => {
+        const verdict = probeLimiter.consume(resolveClientIp(request.headers, server?.requestIP(request)?.address), server?.requestIP(request)?.address ?? "unknown");
+        Object.assign(set.headers, rateLimitHeaders(verdict));
+        if (!verdict.allowed) {
+          set.status = 429;
+          return httpError("RATE_LIMITED", "状态查询过于频繁，请稍后重试", traceIdOf(set.headers));
+        }
+
         const fakerHealth = fakerService?.getHealthSnapshot() ?? {
           roomCount: 0,
           connectionCount: 0,
@@ -245,27 +278,39 @@ export const systemRoutes = ({
         };
 
         const ceeHealth = ceeService?.getHealthSnapshot() ?? { roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 };
+        const roomCount = fakerHealth.roomCount + sonHealth.roomCount + ceeHealth.roomCount;
+        const connectionCount =
+          fakerHealth.connectionCount + sonHealth.connectionCount + ceeHealth.connectionCount;
+        const onlinePlayerCount =
+          fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ceeHealth.onlinePlayerCount;
+        // 精确在线数是可被无限轮询的实时经营指标：匿名调用只给一位有效数字的量级，
+        // 足够看趋势与「有没有人在玩」，但不构成随时可读的精确计数器。
+        // 带维护凭据的调用（运维与探针脚本）拿精确值，口径与 notify-shutdown 一致。
+        const exact = maintenanceToken !== undefined
+          && headers.authorization?.startsWith("Bearer ") === true
+          && safeEqualToken(headers.authorization.slice(7), maintenanceToken);
         return {
           status: "ok" as const,
-          roomCount: fakerHealth.roomCount + sonHealth.roomCount + ceeHealth.roomCount,
-          connectionCount:
-            fakerHealth.connectionCount + sonHealth.connectionCount + ceeHealth.connectionCount,
-          onlinePlayerCount:
-            fakerHealth.onlinePlayerCount + sonHealth.onlinePlayerCount + ceeHealth.onlinePlayerCount,
+          roomCount: exact ? roomCount : coarse(roomCount),
+          connectionCount: exact ? connectionCount : coarse(connectionCount),
+          onlinePlayerCount: exact ? onlinePlayerCount : coarse(onlinePlayerCount),
         };
       },
       {
         detail: {
           tags: ["System"],
           summary: "获取服务健康状态",
-          description: "返回当前运行状况、房间数量、连接数和在线玩家数（聚合所有游戏模式）。",
+          description: "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。",
         },
-        response: t.Object({
-          status: t.Literal("ok"),
-          roomCount: t.Number({ description: "活跃房间总数" }),
-          connectionCount: t.Number({ description: "当前连接总数" }),
-          onlinePlayerCount: t.Number({ description: "在线玩家总数" }),
-        }),
+        response: {
+          200: t.Object({
+            status: t.Literal("ok"),
+            roomCount: t.Number({ description: "活跃房间总数（匿名为量级近似值）" }),
+            connectionCount: t.Number({ description: "当前连接总数（匿名为量级近似值）" }),
+            onlinePlayerCount: t.Number({ description: "在线玩家总数（匿名为量级近似值）" }),
+          }),
+          429: errorSchema,
+        },
       },
     )
     .post(

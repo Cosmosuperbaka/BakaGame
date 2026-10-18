@@ -113,19 +113,19 @@ test("在途请求合并：同一张图并发只回源一次", async () => {
       now: () => 0,
     });
     const results = await Promise.all([
-      service.fetch("/r/200/pic/cover/l/ab/cd/4.jpg"),
-      service.fetch("/r/200/pic/cover/l/ab/cd/4.jpg"),
+      service.fetch("/r/200/pic/cover/l/ab/cd/4.jpg", "203.0.113.1"),
+      service.fetch("/r/200/pic/cover/l/ab/cd/4.jpg", "203.0.113.1"),
     ]);
     expect(calls).toBe(1);
-    expect(results[0]?.contentType).toBe("image/avif");
-    expect(results[1]?.contentType).toBe("image/avif");
+    expect(results[0]).toEqual({ state: "ok", image: { bytes: AVIF, contentType: "image/avif" } });
+    expect(results[1]).toEqual({ state: "ok", image: { bytes: AVIF, contentType: "image/avif" } });
     service.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-test("每分钟回源上限：超速时直接放弃（不把上游打爆）", async () => {
+test("全局回源预算耗尽回 limited，不是伪装成「没有这张图」", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
   try {
     let calls = 0;
@@ -135,15 +135,88 @@ test("每分钟回源上限：超速时直接放弃（不把上游打爆）", as
       sourceBase: "https://bangumi.baka.website",
       fetcher: (async () => { calls += 1; return new Response(AVIF, { status: 200 }); }) as unknown as typeof fetch,
       upstreamPerMinute: 2,
+      perClientPerMinute: 100,
       now: () => clock,
     });
-    expect(await service.fetch("/a.jpg")).toBeDefined();
-    expect(await service.fetch("/b.jpg")).toBeDefined();
-    expect(await service.fetch("/c.jpg")).toBeUndefined();
+    expect((await service.fetch("/a.jpg", "203.0.113.1")).state).toBe("ok");
+    expect((await service.fetch("/b.jpg", "203.0.113.2")).state).toBe("ok");
+    // 第三个客户端自己一分没花，但全局预算已被前两个用光：必须是 limited，让调用方退避。
+    const third = await service.fetch("/c.jpg", "203.0.113.3");
+    expect(third.state).toBe("limited");
     expect(calls).toBe(2);
+    if (third.state === "limited") expect(third.verdict.retryAfterMs).toBeGreaterThan(0);
     // 过了窗口才恢复。
     clock = 61_000;
-    expect(await service.fetch("/c.jpg")).toBeDefined();
+    expect((await service.fetch("/c.jpg", "203.0.113.3")).state).toBe("ok");
+    service.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("单客户端配额只烧自己的额度，别人照样能回源", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
+  try {
+    let calls = 0;
+    const service = new BangumiImageService({
+      directory: shards(join(directory, "images")),
+      sourceBase: "https://bangumi.baka.website",
+      fetcher: (async () => { calls += 1; return new Response(AVIF, { status: 200 }); }) as unknown as typeof fetch,
+      upstreamPerMinute: 120,
+      perClientPerMinute: 2,
+      now: () => 0,
+    });
+    // 一个客户端连扫三个新路径：第三次被自己的额度挡住。
+    expect((await service.fetch("/a.jpg", "198.51.100.7")).state).toBe("ok");
+    expect((await service.fetch("/b.jpg", "198.51.100.7")).state).toBe("ok");
+    expect((await service.fetch("/c.jpg", "198.51.100.7")).state).toBe("limited");
+    // 全局预算还剩很多，别的客户端不受这个滥用者影响。
+    expect((await service.fetch("/d.jpg", "198.51.100.8")).state).toBe("ok");
+    expect(calls).toBe(3);
+    service.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("配额耗尽对外是 429 与退避头，不再伪装成 404", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
+  try {
+    const service = new BangumiImageService({
+      directory: shards(join(directory, "images")),
+      sourceBase: "https://bangumi.baka.website",
+      fetcher: (async () => new Response(AVIF, { status: 200 })) as unknown as typeof fetch,
+      upstreamPerMinute: 1,
+      perClientPerMinute: 1,
+      now: () => 0,
+    });
+    const app = bangumiImageRoutes(service);
+    const url = "http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/x.jpg";
+    const headers = { "x-forwarded-for": "203.0.113.9" };
+    expect((await app.handle(new Request(url, { headers }))).status).toBe(200);
+    const second = await app.handle(new Request(url.replace("x.jpg", "y.jpg"), { headers }));
+    expect(second.status).toBe(429);
+    expect(second.headers.get("retry-after")).not.toBeNull();
+    expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+    const body = (await second.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe("RATE_LIMITED");
+    service.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("库里存了非图片类型也只回不可执行的字节流", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-serve-"));
+  try {
+    const store = BangumiImageStore.open(shards(join(directory, "images")))!;
+    store.put("/r/200/pic/cover/l/ab/cd/9.jpg", AVIF, "text/html");
+    store.close();
+    const service = new BangumiImageService({ directory: join(directory, "images"), now: () => 0 });
+    const app = bangumiImageRoutes(service);
+    const response = await app.handle(new Request("http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/9.jpg"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
     service.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });

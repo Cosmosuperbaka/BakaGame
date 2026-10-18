@@ -116,7 +116,17 @@ CEE 作品封面同样回填到 `enrichment` 的 `subject` 实体（与猜歌共
   实际存在的文件推断，与构建脚本一致）。表 `images(path, bytes, content_type, fetched_at)`。
 - 路由 `GET /api/bangumi/*`：**命中直接回 avif**（`immutable` 长缓存），缺失才回源
   （`Accept: image/avif`），回源结果转交 Worker 落库 —— 主线程只读分片，单写者不变。
+- **回源配额是两层，先扣个人再扣全局**：单客户端 30/min、全局 120/min。顺序不能反，
+  否则一个扫描者用随机路径把共享预算吃光，正常玩家就再也回不到源。命中缓存不占额度，
+  同一张图的并发请求合并成一次回源、也不重复扣。分桶键只采信 `X-Real-IP`（口径同
+  [Deployment](Deployment.md#反向代理职责)）。
+- **配额用完是 429，不是 404**：`fetch` 返回 `state: "limited" | "missing" | "ok"`，
+  路由据此映射 429（带 `X-RateLimit-*` 与 `Retry-After`）/ 404。把「额度没了」伪装成
+  「这张图不存在」会让客户端缓存失败结论、让运维查不到原因，也必须让上游知道该退避。
 - 只认 avif 魔数：上游返回错误页 / jpeg 时**绝不入库**（坏字节一旦入库就再也不会重下）。
+- **响应类型走白名单**：`content_type` 是库里的自由字符串，白名单（avif/png/jpeg/webp/gif）
+  之外一律降级为 `application/octet-stream` —— 浏览器可直接导航到图片 URL，
+  人工导入或旧数据误写的 `text/html` 不能被当作页面渲染。
 - 路径与 Bangumi 源站一致，所以图床换部署形态（同源 / 反代 / 上游）都不需要改 URL 改写逻辑。
 
 ### 运行时更新器（`SubjectUpdater`）

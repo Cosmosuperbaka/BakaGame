@@ -306,6 +306,13 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **配额判定返回结论而不是布尔**：限流器的公开入口是 `consume(key): RateLimitVerdict`（`allowed / retryAfterMs / resetAt / limit / remaining`），`allow` 只是它的布尔投影。三层桶（单客户端 / 回源 peer / 全局）返回**第一个被拒的桶**，响应头的 `limit` 才说得出是谁的额度用完；只回 `boolean` 的写法拿不到这些头。
 - **自建 `Response` 也要带上追踪号**：返回 `new Response(...)` 会绕过 Elysia 写响应头的那一层，`x-trace-id` 在出口丢失，报障时日志与客户端对不上同一次请求。全局 `mapResponse` 负责把 `set.headers` 里缺失的项补到任何响应上（含 Better Auth、oRPC 透传回来的只读头响应）；响应体里的 `traceId` 仍由路由自己从 `set.headers` 取（`traceIdOf`）。回归见 `test/Account.test.ts` 的 503/429 断言。
 
+### 12.8 HTTP 出口收紧项与探针口径 (Response Hardening & Probe Surface)
+- **安全响应头只在一处登记**：`transport/SecurityHeaders.ts` 于全局 `onRequest` 写入 `set.headers`，再由 §12.7 的 `mapResponse` 补到所有自建响应上。**严禁**逐条路由自己加——新增路由默认不带收紧项就是静默回退，一处登记才覆盖得全（回归见 `test/SecurityHeaders.test.ts`）。
+- **CSP 放宽只允许给文档页**：`default-src 'none'` 会打死 Swagger UI，因此仅 `/openapi` 及其子路径退到 `frame-ancestors / base-uri / form-action` 三条；API 响应本身不返回 HTML，没有理由跟着放宽。放宽的是文档页自己的资源加载，不是接口。
+- **条件性收紧项按真实链路判定**：TLS 由边缘终结、容器内是明文，HSTS 只能在 `x-forwarded-proto` 首段为 `https` 时回；写死成「永远发」在未来出现明文内部域名时会踩坑。边缘不得剥离或改写这些头。
+- **由数据决定的 `content-type` 不得直回浏览器**：库里的 `content_type`、上游响应头都属于可被旁路写入的字符串，人工导入或旧数据误写 `text/html` 时会被按页面渲染。出口只认图片白名单，白名单外降级为 `application/octet-stream` 并保留 `nosniff`。
+- **探针分档**：`/livez`、`/readyz` 是负载均衡的契约，**不设额度**——扫爆它们会让 LB 误判摘流，后果比被扫更严重。`/health` 带业务量级，因此匿名只回一位有效数字的量级（1234→1000），精确值要求 `Authorization: Bearer <维护令牌>`（常量时间比较），并按来源地址限流。在线房间数、连接数这类量级不得无条件对外精确可读。
+
 ## 13. 可测试性与验证
 
 业务模块通过参数注入时钟、随机源和网络驱动；纯业务状态机可从公开入口真实运行。测试的行为断言、状态驱动、夹具隔离、错误码和去重规则统一在 [Testing](Testing.md#测试编写与维护) 维护，执行范围见其验证矩阵。安全防护的专项证据要求仍见 §16。

@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import type { BangumiImageService } from "../../infrastructure/BangumiImageService";
-import { httpError, traceIdOf } from "../HttpErrorEnvelope";
+import { resolveClientIp } from "../ClientIp";
+import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 
 /**
  * 自建图床路由：`/api/bangumi/<源站路径>`。
@@ -18,24 +19,42 @@ import { httpError, traceIdOf } from "../HttpErrorEnvelope";
  */
 const IMAGE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
+/**
+ * 图床只该回图片。`content_type` 是库里的字符串，构建脚本之外的写入路径（人工导入、
+ * 旧数据）一旦把 `text/html` 之类塞进来，浏览器直连这个 URL 就可能按 HTML 渲染；
+ * 白名单外的类型一律降级成不可执行的字节流。
+ */
+const SERVEABLE_IMAGE_TYPES = new Set(["image/avif", "image/png", "image/jpeg", "image/webp", "image/gif"]);
+
 export const bangumiImageRoutes = (images?: BangumiImageService) =>
   new Elysia({ name: "bangumi-images" }).get(
     "/api/bangumi/*",
-    async ({ params, set }) => {
+    async ({ params, request, server, set }) => {
       const rest = typeof params["*"] === "string" ? params["*"] : "";
       const path = `/${rest}`;
       if (!IMAGE_PATH_PATTERN.test(path) || path.includes("..") || path.includes("//")) {
         set.status = 400;
         return httpError("INVALID_IMAGE_PATH", "图片路径不合法", traceIdOf(set.headers));
       }
-      const image = images ? await images.fetch(path) : undefined;
-      if (!image) {
+      // 回源配额按来源地址分桶：ESA 反代后 peer 恒为节点地址，只能用真实 IP 标头。
+      const peerIp = server?.requestIP(request)?.address ?? "unknown";
+      const outcome = images
+        ? await images.fetch(path, resolveClientIp(request.headers, peerIp))
+        : ({ state: "missing" } as const);
+      if (outcome.state === "limited") {
+        Object.assign(set.headers, rateLimitHeaders(outcome.verdict));
+        set.status = 429;
+        return httpError("RATE_LIMITED", "图片回源配额已用完，请稍后重试", traceIdOf(set.headers));
+      }
+      if (outcome.state === "missing") {
         set.status = 404;
         return httpError("IMAGE_NOT_FOUND", "图片不存在", traceIdOf(set.headers));
       }
-      set.headers["content-type"] = image.contentType;
+      set.headers["content-type"] = SERVEABLE_IMAGE_TYPES.has(outcome.image.contentType)
+        ? outcome.image.contentType
+        : "application/octet-stream";
       set.headers["cache-control"] = "public, max-age=31536000, immutable";
-      return image.bytes;
+      return outcome.image.bytes;
     },
     {
       detail: {

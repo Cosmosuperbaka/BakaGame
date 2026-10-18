@@ -219,6 +219,23 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 `Server/src/transport/WhoIsFakerProtocol.ts` 与 `WhoIsFakerService`（及 `SonGuessrService`、`CEEService`）的业务校验；应用校验也不能替代代理层的
 来源限流和资源配额。
 
+### 安全响应头由应用侧统一注入
+
+`Server/src/transport/SecurityHeaders.ts` 在 `onRequest` 一次性写入 `nosniff`、`X-Frame-Options: DENY`、
+`Referrer-Policy: no-referrer`、`Permissions-Policy`、`Cross-Origin-Opener-Policy` 与
+`Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`，
+再经全局 `mapResponse` 补到 Better Auth、oRPC、头像与图床字节流这些自建 `Response` 上。
+逐条路由自己加头一定会漏，登记一次才覆盖得全。三条口径：
+
+- **`/openapi` 只放宽 CSP**：Swagger UI 要跑内联脚本与外部资源，`default-src 'none'` 会把文档页打死，
+  因此该路径只保留 `frame-ancestors`/`base-uri`/`form-action` 三条，其余收紧项（含 `nosniff`）照旧。
+  放宽的是文档页自己的资源加载，不是 API 响应。
+- **HSTS 只在确实走了 TLS 时回**：TLS 由边缘终结，容器内是明文 HTTP，明文连接收到该头浏览器会忽略。
+  判定用 `x-forwarded-proto` 的第一段，值取不带 `includeSubDomains` 的保守值，只覆盖后端自己的域；
+  站点主域的 HSTS 仍由边缘负责。
+- **边缘不得剥离这些头**：代理只允许追加，不允许改写或删除；若边缘另有一份 CSP，以应用侧更严格值为基线核对，
+  避免出现「应用收紧、边缘又放开」的静默回退。
+
 听歌猜番还需要在服务端配置 `BANGUMI_API_URL`（可选再配 `BANGUMI_IMAGE_SOURCE` 让图床缺图自愈）。
 该地址只允许由服务端访问；客户端不得直连 Bangumi，代理也不得把 `lain.bgm.tv` 原始图片地址暴露
 给浏览器 —— 图片对外前缀**写死**为自建图床 `/api/bangumi`（不可配，见 [Conventions](Conventions.md#6-环境变量规范-environment-variables)），

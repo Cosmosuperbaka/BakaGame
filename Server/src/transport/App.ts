@@ -12,6 +12,7 @@ import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
+import { securityHeaders } from "./SecurityHeaders";
 import { WsHandshakeQuota } from "./WsHandshakeQuota";
 import {
   WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
@@ -521,6 +522,7 @@ export const createApp = ({
       // 否则每条 HTTP 操作日志都记成同一个节点地址，按来源排查就失效了。
       const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
       requests.set(request, { traceId, startedAt: performance.now(), clientIp });
+      Object.assign(set.headers, securityHeaders(request));
       set.headers["x-trace-id"] = traceId;
     })
     // ==================== WebSocket 升级的 Origin 白名单（防跨站 WebSocket 劫持） ====================

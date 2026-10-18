@@ -171,6 +171,15 @@ const ACCOUNT_GLOBAL_MAX_REQUESTS = 12_000;
 const ACCOUNT_WINDOW_MS = 60_000;
 
 /**
+ * 头像单独一份额度，不与登录/RPC 共桶：一屏房间列表就是十几个 `<img>`，
+ * 和 RPC 共桶会让正常的头像加载把玩家的登录请求挤成 429。
+ * 这份额度同时也是用户枚举的闸门——`avatar/:userId` 是按 ID 直取的资源，
+ * 没有额度时可以任意脚本逐个 ID 探测「这个账号存在吗」。
+ */
+const AVATAR_IP_MAX_REQUESTS = 900;
+const AVATAR_GLOBAL_MAX_REQUESTS = 30_000;
+
+/**
  * 账号 HTTP 入口：Better Auth 白名单端点、oRPC、站内头像代理。
  *
  * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端据此隐藏登录入口，游客游玩不受影响。
@@ -181,6 +190,11 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     windowMs: ACCOUNT_WINDOW_MS,
     ipMaxRequests: ACCOUNT_IP_MAX_REQUESTS,
     globalMaxRequests: ACCOUNT_GLOBAL_MAX_REQUESTS,
+  });
+  const avatarLimiter = new TelemetryRateLimiter({
+    windowMs: ACCOUNT_WINDOW_MS,
+    ipMaxRequests: AVATAR_IP_MAX_REQUESTS,
+    globalMaxRequests: AVATAR_GLOBAL_MAX_REQUESTS,
   });
   // Better Auth 自带的按 IP 限流是关的（它只认 socket peer，反代后全站共享同一个 peer）。
   // 这一层改按 ESA 写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
@@ -221,7 +235,14 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
       const { matched, response } = await rpc.handle(request, { prefix: RPC_BASE_PATH, context: { headers: request.headers } });
       return matched ? response : json(404, httpError("NOT_FOUND", "请求资源不存在", traceIdOf(set.headers)));
     }, { parse: "none", detail: { hide: true } })
-    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query, set }) => {
+    .get(`${ACCOUNT_AVATAR_PATH}/:userId`, async ({ params, query, request, server, set }) => {
+      const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
+      const verdict = avatarLimiter.consume(clientIp, server?.requestIP(request)?.address ?? clientIp);
+      Object.assign(set.headers, rateLimitHeaders(verdict));
+      if (!verdict.allowed) {
+        set.status = 429;
+        return httpError("RATE_LIMITED", "头像请求过于频繁，请稍后重试", traceIdOf(set.headers));
+      }
       if (!account) return accountDisabled(traceIdOf(set.headers));
       await account.ready;
       const size = AVATAR_SIZES[(query.size ?? "640") as keyof typeof AVATAR_SIZES] ?? 640;
