@@ -1767,6 +1767,17 @@ export class WhoIsFakerService implements AdminRoomControl {
     this.phaseTimerTimeoutByRoomId.set(room.id, timer);
   }
 
+  /** 倒计时到点后按阶段强制推进：阶段 → 处理函数；未登记的阶段（如 feedback）不动作。 */
+  private readonly phaseTimeoutHandlers: Partial<
+    Record<WhoIsFakerPhase, (room: WhoIsFakerRoomRecord, round: GameRound) => Promise<void>>
+  > = {
+    description: (room, round) => this.timeoutDescriptionPhase(room, round),
+    voting: (room, round) => this.timeoutVotingPhase(room, round),
+    tieBreak: (room, round) => this.timeoutTieBreakPhase(room, round),
+    night: (room, round) => this.timeoutNightPhase(room, round),
+    blankGuess: (room, round) => this.timeoutBlankGuessPhase(room, round),
+  };
+
   private async handlePhaseTimeout(
     roomId: string,
     expectedPhase: WhoIsFakerPhase,
@@ -1787,60 +1798,104 @@ export class WhoIsFakerService implements AdminRoomControl {
     const round = room.round;
     if (!round) return;
 
-    if (currentPhase === "description") {
-      if (round.supplement && round.speechMode === "supplement") {
-        for (const playerId of round.supplement.requestedPlayerIds) {
-          if (!round.supplement.donePlayers.includes(playerId)) {
-            const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
-            round.supplement.donePlayers.push(playerId);
-            const order = round.supplement.requestedPlayerIds.indexOf(playerId) + 1;
-            round.descriptions.push(
-              this.createDescription(
-                player,
-                "（超时未发言）",
-                "supplement",
-                round.descriptionCycle,
-                {
-                  supplementIndex: round.supplement.index,
-                  order: order > 0 ? order : undefined,
-                },
-              ),
-            );
-          }
-        }
-        this.completeSupplementIfReady(room);
-      } else {
-        for (const playerId of round.descriptionOrder) {
-          if (!round.descriptionSubmittedBy.includes(playerId)) {
-            const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
-            round.descriptionSubmittedBy.push(playerId);
-            const order = round.descriptionOrder.indexOf(playerId) + 1;
-            round.descriptions.push(
-              this.createDescription(
-                player,
-                "（超时未发言）",
-                "description",
-                round.descriptionCycle,
-                { order: order > 0 ? order : undefined },
-              ),
-            );
-          }
-        }
-        const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
-        const isTwoPlayerUndercoverEndgame =
-          aliveStates.length === 2 &&
-          aliveStates.filter((state) => state.role === "undercover").length === 1 &&
-          aliveStates.filter((state) => state.role === "civilian").length === 1;
+    await this.phaseTimeoutHandlers[currentPhase]?.(room, round);
+  }
 
-        if (isTwoPlayerUndercoverEndgame) {
-          await this.finishRound(room, "undercover", "2人残局卧底胜");
-          return;
-        }
+  /**
+   * 描述阶段超时：补充发言只补补充位，否则补完整轮描述后收口。
+   * 只剩一卧一民时不再进投票，直接按卧底胜结算（见 `isTwoPlayerUndercoverEndgame`）。
+   */
+  private async timeoutDescriptionPhase(room: WhoIsFakerRoomRecord, round: GameRound): Promise<void> {
+    const supplement = round.supplement;
+    if (supplement && round.speechMode === "supplement") {
+      this.fillSupplementTimeouts(room, round, supplement);
+    } else {
+      this.fillDescriptionTimeouts(room, round);
+      if (await this.settleTwoPlayerUndercoverEndgame(room, round)) return;
+      round.phase = "voting";
+      round.speechMode = undefined;
+      round.votes = [];
+    }
+    this.touchRoom(room);
+    this.requeuePendingDisconnects(room);
+    this.publishRoomState(room);
+    await this.runBots(room);
+  }
 
-        round.phase = "voting";
-        round.speechMode = undefined;
-        round.votes = [];
+  /** 2 人残局只剩一卧一民：按卧底胜结算并返回 true，调用方不再推进阶段。 */
+  private async settleTwoPlayerUndercoverEndgame(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+  ): Promise<boolean> {
+    if (!this.isTwoPlayerUndercoverEndgame(round)) return false;
+    await this.finishRound(room, "undercover", "2人残局卧底胜");
+    return true;
+  }
+
+  /** 描述超时的玩家按发言顺序补一条「（超时未发言）」，不让他们卡住整轮。 */
+  private fillDescriptionTimeouts(room: WhoIsFakerRoomRecord, round: GameRound): void {
+    for (const playerId of round.descriptionOrder) {
+      if (!round.descriptionSubmittedBy.includes(playerId)) {
+        const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
+        round.descriptionSubmittedBy.push(playerId);
+        const order = round.descriptionOrder.indexOf(playerId) + 1;
+        round.descriptions.push(
+          this.createDescription(player, "（超时未发言）", "description", round.descriptionCycle, {
+            order: order > 0 ? order : undefined,
+          }),
+        );
       }
+    }
+  }
+
+  /** 补充发言超时同样补位；补完即判这一轮补充是否已经齐了。 */
+  private fillSupplementTimeouts(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    supplement: NonNullable<GameRound["supplement"]>,
+  ): void {
+    for (const playerId of supplement.requestedPlayerIds) {
+      if (!supplement.donePlayers.includes(playerId)) {
+        const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
+        supplement.donePlayers.push(playerId);
+        const order = supplement.requestedPlayerIds.indexOf(playerId) + 1;
+        round.descriptions.push(
+          this.createDescription(player, "（超时未发言）", "supplement", round.descriptionCycle, {
+            supplementIndex: supplement.index,
+            order: order > 0 ? order : undefined,
+          }),
+        );
+      }
+    }
+    this.completeSupplementIfReady(room);
+  }
+
+  /** 投票超时：活着的普通玩家（出题人除外）一律记一次弃权，交给正常计票收口。 */
+  private async timeoutVotingPhase(room: WhoIsFakerRoomRecord, round: GameRound): Promise<void> {
+    const aliveIds = this.getAliveAssignedPlayerIds(room).filter(
+      (id) => id !== round.questionerPlayerId,
+    );
+    for (const voterId of aliveIds) {
+      if (!round.votes.some((v) => v.voterId === voterId)) {
+        round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
+      }
+    }
+    await this.resolveVoting(room, false);
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    await this.runBots(room);
+  }
+
+  /** 平票 PK 超时：发言段补位后转投票段；投票段同样记弃权后按 PK 计票收口。 */
+  private async timeoutTieBreakPhase(room: WhoIsFakerRoomRecord, round: GameRound): Promise<void> {
+    const tieBreak = round.tieBreak;
+    if (!tieBreak) return;
+
+    if (tieBreak.stage === "description") {
+      this.fillTieBreakTimeouts(room, round, tieBreak);
+      tieBreak.stage = "vote";
+      round.speechMode = undefined;
+      tieBreak.votes = [];
       this.touchRoom(room);
       this.requeuePendingDisconnects(room);
       this.publishRoomState(room);
@@ -1848,120 +1903,100 @@ export class WhoIsFakerService implements AdminRoomControl {
       return;
     }
 
-    if (currentPhase === "voting") {
+    if (tieBreak.stage === "vote") {
       const aliveIds = this.getAliveAssignedPlayerIds(room).filter(
         (id) => id !== round.questionerPlayerId,
       );
       for (const voterId of aliveIds) {
-        if (!round.votes.some((v) => v.voterId === voterId)) {
-          round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
+        if (!tieBreak.votes.some((v) => v.voterId === voterId)) {
+          tieBreak.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
         }
       }
-      await this.resolveVoting(room, false);
+      await this.resolveVoting(room, true);
       this.touchRoom(room);
       this.publishRoomState(room);
       await this.runBots(room);
-      return;
     }
+  }
 
-    if (currentPhase === "tieBreak") {
-      if (round.tieBreak?.stage === "description") {
-        for (const candidateId of round.tieBreak.candidateIds) {
-          if (!round.tieBreak.descriptionsDone.includes(candidateId)) {
-            const player = room.players[candidateId] ?? { id: candidateId, name: "超时玩家" };
-            round.tieBreak.descriptionsDone.push(candidateId);
-            const order = round.tieBreak.candidateIds.indexOf(candidateId) + 1;
-            round.descriptions.push(
-              this.createDescription(
-                player,
-                "（超时未发言）",
-                "tieBreak",
-                round.descriptionCycle,
-                {
-                  tieBreakIndex: round.tieBreakCount,
-                  order: order > 0 ? order : undefined,
-                },
-              ),
-            );
-          }
-        }
-        round.tieBreak.stage = "vote";
-        round.speechMode = undefined;
-        round.tieBreak.votes = [];
-        this.touchRoom(room);
-        this.requeuePendingDisconnects(room);
-        this.publishRoomState(room);
-        await this.runBots(room);
-        return;
-      }
-
-      if (round.tieBreak?.stage === "vote") {
-        const aliveIds = this.getAliveAssignedPlayerIds(room).filter(
-          (id) => id !== round.questionerPlayerId,
+  /** PK 发言超时补位：只给没发言的候选人记一条「（超时未发言）」。 */
+  private fillTieBreakTimeouts(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    tieBreak: NonNullable<GameRound["tieBreak"]>,
+  ): void {
+    for (const candidateId of tieBreak.candidateIds) {
+      if (!tieBreak.descriptionsDone.includes(candidateId)) {
+        const player = room.players[candidateId] ?? { id: candidateId, name: "超时玩家" };
+        tieBreak.descriptionsDone.push(candidateId);
+        const order = tieBreak.candidateIds.indexOf(candidateId) + 1;
+        round.descriptions.push(
+          this.createDescription(player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
+            tieBreakIndex: round.tieBreakCount,
+            order: order > 0 ? order : undefined,
+          }),
         );
-        for (const voterId of aliveIds) {
-          if (!round.tieBreak.votes.some((v) => v.voterId === voterId)) {
-            round.tieBreak.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
-          }
-        }
-        await this.resolveVoting(room, true);
-        this.touchRoom(room);
-        this.publishRoomState(room);
-        await this.runBots(room);
-        return;
       }
     }
+  }
 
-    if (currentPhase === "night") {
-      for (const [playerId, state] of Object.entries(round.assignments)) {
-        if (state.alive && (state.role === "civilian" || state.role === "undercover")) {
-          if (!round.nightActions.some((a) => a.actorId === playerId)) {
-            round.nightActions.push({
-              actorId: playerId,
-              actorRole: state.role,
-              targetId: undefined,
-            });
-          }
-        }
-      }
-      await this.resolveNight(room);
-      this.touchRoom(room);
-      this.publishRoomState(room);
-      await this.runBots(room);
-      return;
-    }
-
-    if (currentPhase === "blankGuess") {
-      const ctx = round.blankGuessContext;
-      if (ctx) {
-        const pendingRecord = ctx.pendingReview ? round.blankGuessRecords.at(-1) : undefined;
-        if (ctx.pendingReview && pendingRecord) {
-          this.enterBlankGuessFeedback(room, pendingRecord, true, {
-            type: "blankFailed",
-            message: "白板猜词裁定超时未通过，游戏继续",
+  /** 入夜超时：活着的平民与卧底一律记一次「未指定目标」的行动，再按正常夜晚收口。 */
+  private async timeoutNightPhase(room: WhoIsFakerRoomRecord, round: GameRound): Promise<void> {
+    for (const [playerId, state] of Object.entries(round.assignments)) {
+      if (state.alive && (state.role === "civilian" || state.role === "undercover")) {
+        if (!round.nightActions.some((a) => a.actorId === playerId)) {
+          round.nightActions.push({
+            actorId: playerId,
+            actorRole: state.role,
+            targetId: undefined,
           });
-        } else if (ctx.pendingReview) {
-          ctx.pendingReview = undefined;
-          await this.resolveFailedBlankGuess(room, "白板猜词裁定超时未通过，游戏继续");
-        } else {
-          const guess = evaluateBlankGuessDraft(round, ctx.draft ?? ["", ""], this.now(), ctx.reason);
-          round.blankGuessUsed = true;
-          round.blankGuessRecords.push(guess);
-          this.enterBlankGuessFeedback(
-            room,
-            guess,
-            false,
-            guess.success
-              ? { type: "finish", winner: "blank", reason: "白板猜中全部词语，获得胜利" }
-              : { type: "blankFailed", message: "白板猜词超时失败，游戏继续" },
-          );
         }
-        this.touchRoom(room);
-        this.requeuePendingDisconnects(room);
-        this.broadcastPhaseAndPublish(room);
-        await this.runBots(room);
       }
-      return;
+    }
+    await this.resolveNight(room);
+    this.touchRoom(room);
+    this.publishRoomState(room);
+    await this.runBots(room);
+  }
+
+  /** 白板猜词超时：没有猜词上下文时什么都不做。 */
+  private async timeoutBlankGuessPhase(room: WhoIsFakerRoomRecord, round: GameRound): Promise<void> {
+    const ctx = round.blankGuessContext;
+    if (!ctx) return;
+    await this.settleBlankGuessTimeout(room, round, ctx);
+    this.touchRoom(room);
+    this.requeuePendingDisconnects(room);
+    this.broadcastPhaseAndPublish(room);
+    await this.runBots(room);
+  }
+
+  /** 裁定「待复核」与「提交草稿」两条路：复核超时按猜错继续，草稿超时按当前草稿直接结算。 */
+  private async settleBlankGuessTimeout(
+    room: WhoIsFakerRoomRecord,
+    round: GameRound,
+    ctx: NonNullable<GameRound["blankGuessContext"]>,
+  ): Promise<void> {
+    const pendingRecord = ctx.pendingReview ? round.blankGuessRecords.at(-1) : undefined;
+    if (ctx.pendingReview && pendingRecord) {
+      this.enterBlankGuessFeedback(room, pendingRecord, true, {
+        type: "blankFailed",
+        message: "白板猜词裁定超时未通过，游戏继续",
+      });
+    } else if (ctx.pendingReview) {
+      ctx.pendingReview = undefined;
+      await this.resolveFailedBlankGuess(room, "白板猜词裁定超时未通过，游戏继续");
+    } else {
+      const guess = evaluateBlankGuessDraft(round, ctx.draft ?? ["", ""], this.now(), ctx.reason);
+      round.blankGuessUsed = true;
+      round.blankGuessRecords.push(guess);
+      this.enterBlankGuessFeedback(
+        room,
+        guess,
+        false,
+        guess.success
+          ? { type: "finish", winner: "blank", reason: "白板猜中全部词语，获得胜利" }
+          : { type: "blankFailed", message: "白板猜词超时失败，游戏继续" },
+      );
     }
   }
 
