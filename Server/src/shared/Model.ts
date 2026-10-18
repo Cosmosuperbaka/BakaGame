@@ -47,6 +47,11 @@ export interface ConnectionRecord {
   id: string;
   /** 握手时由会话 Cookie 解析出的账号；游客为空。 */
   account?: PlayerAccount;
+  /**
+   * 握手时解析出的来源地址，按地址聚合的配额用它分桶。
+   * 连接号由服务端每次握手新发，重连即换新桶，所以只按连接计的额度会被多开连接线性放大。
+   */
+  clientIp?: string;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

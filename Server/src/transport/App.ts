@@ -330,6 +330,7 @@ const reserveHandshakeSlot = (
     request: Request;
     server?: { requestIP(request: Request): { address?: string } | null } | null;
     handshakeSlot?: string;
+    clientIp?: string;
   },
   quota: WsHandshakeQuota
 ): void => {
@@ -338,6 +339,8 @@ const reserveHandshakeSlot = (
   const slot = quota.acquire(clientIp, peerIp ?? clientIp);
   if (!slot) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
   context.handshakeSlot = slot;
+  // 业务层的按地址配额要用同一个来源身份，不能到 application 层再反查 HTTP 头。
+  context.clientIp = clientIp;
 };
 
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
@@ -346,7 +349,7 @@ const openGameConnection = (
   register: (connection: ConnectionRecord) => void
 ): void => {
   const connectionId = crypto.randomUUID();
-  const account = (ws.data as { account?: PlayerAccount }).account;
+  const { account, clientIp } = ws.data as { account?: PlayerAccount; clientIp?: string };
   (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender((payload) => {
     sendPacket(ws, payload as ServerMessage);
@@ -354,6 +357,7 @@ const openGameConnection = (
   register({
     id: connectionId,
     ...(account ? { account } : {}),
+    ...(clientIp ? { clientIp } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,

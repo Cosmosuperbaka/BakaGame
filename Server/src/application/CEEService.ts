@@ -11,6 +11,7 @@ import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { CEENativeService } from "./CEENativeService";
+import { CEESearchQuota, isCEESearchCommand } from "./CEESearchQuota";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
 import { CEERoomDirectory, normalizeCEERoomId, type CEERoomTarget } from "./CEERoomDirectory";
@@ -26,6 +27,7 @@ export class CEEService implements AdminRoomControl {
   private readonly connections = new Map<string, ConnectionRecord>();
   private readonly limiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 80 });
   private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 8 });
+  private readonly searchQuota: CEESearchQuota;
   private readonly entering = new Set<string>();
   private readonly now: () => number;
   private remoteRooms: CEEUpstreamRoom[] = [];
@@ -46,6 +48,7 @@ export class CEEService implements AdminRoomControl {
     }
   ) {
     this.now = options.now ?? Date.now;
+    this.searchQuota = new CEESearchQuota(this.now);
     this.directory = new CEERoomDirectory((roomId) => this.native.state.rooms.has(roomId));
     this.native = new CEENativeService({
       ...options,
@@ -76,6 +79,8 @@ export class CEEService implements AdminRoomControl {
       throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
     if (message.type === "cee.chat.send" && !this.chatLimiter.allow(id, this.now()))
       throw new AppError("RATE_LIMITED", "消息发送过快，请稍后再试");
+    // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
+    if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
     if (message.type === "cee.lobby.subscribeRooms") {
       if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开房间");
       connection.lobbySubscribed = true;
