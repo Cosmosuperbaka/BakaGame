@@ -863,7 +863,9 @@ interface RunMeta {
 const readRunMeta = async (): Promise<RunMeta> => {
   const run = async (args: string[]): Promise<string> => {
     const proc = Bun.spawn(["git", ...args], {
-      cwd: path.resolve(import.meta.dir, "../.."),
+      // 路径过滤是相对仓库根写的（Server/src…），cwd 必须是根，否则 status 永远为空，
+      // 「有未提交改动」这个标记就形同虚设，A/B 归因会失真。
+      cwd: path.resolve(import.meta.dir, "../../.."),
       stdout: "pipe",
       stderr: "ignore",
     });
