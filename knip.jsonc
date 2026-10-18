@@ -44,6 +44,9 @@
         "scripts/*.ts",
         "scripts/*.mjs",
         "scripts/fixtures/*.ts",
+        // 压测夹具按文档手工执行（bun run scripts/loadtest/Harness.ts | Report.ts），
+        // 见 Agents/Deployment.md「出口预算」；不是 import 图的一部分。
+        "scripts/loadtest/*.ts",
         "test/**/*.test.ts",
         "test/**/*Fixtures.ts",
         "test/**/Helpers.ts",
