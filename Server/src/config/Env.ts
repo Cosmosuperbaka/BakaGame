@@ -14,6 +14,9 @@ const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"])
  */
 const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
 
+/** 通行密钥域名（relying party ID）的取值形状：裸域名，允许 `localhost` 这类单标签。 */
+const RP_ID_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$/;
+
 export interface AppEnv {
   clientUrl: string;
   serverUrl: string;
@@ -98,6 +101,14 @@ export interface AccountEnv {
   adminQqNumbers: string[];
   /** 验证码投递：SMTP，或仅限非生产环境的控制台输出（`MAIL_DEV_CONSOLE=true`）。 */
   mail: { kind: "smtp"; smtp: SmtpEnv } | { kind: "console" } | { kind: "none" };
+  /**
+   * 通行密钥的 relying party 域名（裸域名）：显式 `PASSKEY_RP_ID` 优先，否则取 `CLIENT_URL`
+   * 首个来源的 hostname。
+   *
+   * 一旦有用户注册过密钥就不能再改：密钥按域名绑定，改了等于旧密钥全部失效。
+   * 想跨子域共用（`game.` 与 `www.` 都能登录）就在第一个用户注册前固定成公共注册域。
+   */
+  passkeyRpId: string;
 }
 
 /**
@@ -130,7 +141,38 @@ const readSmtpEnv = (): SmtpEnv | undefined => {
   return { host, port, user, pass, from: Bun.env.MAIL_FROM?.trim() || user };
 };
 
-const readAccountEnv = (databaseUrl: string | undefined): AccountEnv | undefined => {
+/**
+ * 通行密钥的 relying party 域名。
+ *
+ * `CLIENT_URL` 是逗号分隔的来源列表，而 rpID 只有一个：默认取第一个来源的 hostname，
+ * 多个前端域名要共用密钥时必须显式配 `PASSKEY_RP_ID` 成它们的公共注册域。
+ */
+const resolvePasskeyRpId = (clientUrl: string): string => {
+  const raw = Bun.env.PASSKEY_RP_ID?.trim();
+  if (raw) {
+    if (!RP_ID_PATTERN.test(raw)) {
+      throw new AppError(
+        "CONFIG_ERROR",
+        `PASSKEY_RP_ID 必须是裸域名（不含协议、端口与路径），收到: "${raw}"`
+      );
+    }
+    return raw.toLowerCase();
+  }
+  for (const item of clientUrl.split(",")) {
+    try {
+      const hostname = new URL(item.trim()).hostname;
+      if (hostname) return hostname;
+    } catch {
+      // 非法来源由 isAllowedOrigin 那边报错，这里继续找下一个。
+    }
+  }
+  return "localhost";
+};
+
+const readAccountEnv = (
+  databaseUrl: string | undefined,
+  clientUrl: string
+): AccountEnv | undefined => {
   if (!databaseUrl) return undefined;
   const secret = Bun.env.BETTER_AUTH_SECRET?.trim() ?? "";
   if (secret.length < 32) {
@@ -151,6 +193,7 @@ const readAccountEnv = (databaseUrl: string | undefined): AccountEnv | undefined
     secret,
     adminQqNumbers,
     mail: smtp ? { kind: "smtp", smtp } : devConsole ? { kind: "console" } : { kind: "none" },
+    passkeyRpId: resolvePasskeyRpId(clientUrl),
   };
 };
 
@@ -297,7 +340,7 @@ export const readEnv = (): AppEnv => {
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
     databaseUrl,
-    account: readAccountEnv(databaseUrl),
+    account: readAccountEnv(databaseUrl, clientUrl),
     napcat: readNapCatEnv(),
     otelEndpoint: Bun.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelHeaders: parseOtelHeaders(Bun.env.OTEL_EXPORTER_OTLP_HEADERS),

@@ -255,6 +255,54 @@ describe("登录弹窗的昵称回显", () => {
   });
 });
 
+describe("通行密钥端点", () => {
+  // 前端与后端不同主机才是生产的真实形状：rpID 误取后端域名时，同主机的用例照样绿。
+  const CLIENT = "https://game.example.com";
+
+  const authRequest = (
+    app: ReturnType<typeof createAccountTestApp>["app"],
+    path: string,
+    init: { method?: string; cookie?: string; body?: unknown } = {}
+  ) =>
+    app.handle(
+      new Request(`http://localhost/api/auth${path}`, {
+        method: init.method ?? "GET",
+        headers: {
+          origin: CLIENT,
+          ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+          ...(init.cookie ? { cookie: init.cookie } : {}),
+        },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      })
+    );
+
+  test("认证与注册选项的 rp.id 取前端域名，挑战写进签名 Cookie", async () => {
+    const { app, signIn } = createAccountTestApp({ clientUrl: CLIENT });
+    const anonymous = await authRequest(app, "/passkey/generate-authenticate-options");
+    expect(anonymous.status).toBe(200);
+    expect(await anonymous.json()).toMatchObject({ rpId: "game.example.com" });
+    // 挑战值只存在 Cookie 与 verification 表里：代理丢 cookie 就会卡在 CHALLENGE_NOT_FOUND。
+    expect(anonymous.headers.getSetCookie().join(";")).toContain("passkey");
+
+    const { cookie } = await signIn(QQ, "玩家");
+    const register = await authRequest(app, "/passkey/generate-register-options", { cookie });
+    expect(register.status).toBe(200);
+    const options = (await register.json()) as { rp: { id: string }; user: { id: string } };
+    expect(options.rp.id).toBe("game.example.com");
+    expect(options.user.id).toBeTruthy();
+  });
+
+  test("未登录拿不到密钥列表，改名端点不对外开放", async () => {
+    const { app } = createAccountTestApp({ clientUrl: CLIENT });
+    expect((await authRequest(app, "/passkey/list-user-passkeys")).status).toBe(401);
+    const rename = await authRequest(app, "/passkey/update-passkey", {
+      method: "POST",
+      body: { id: "x", name: "y" },
+    });
+    expect(rename.status).toBe(404);
+  });
+});
+
 describe("资料与头像", () => {
   test("QQ 号默认隐藏，本人公开后资料卡才显示；昵称不可改，未登录不能改资料", async () => {
     const { rpc, signIn } = createAccountTestApp();

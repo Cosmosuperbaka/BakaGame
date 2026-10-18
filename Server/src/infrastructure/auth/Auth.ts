@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin, emailOTP } from "better-auth/plugins";
+import { passkey } from "@better-auth/passkey";
 import type { BetterAuthOptions } from "better-auth";
 
 import {
@@ -24,6 +25,14 @@ export interface AuthOptions {
   adminQqNumbers: readonly string[];
   mailer: Mailer;
   /**
+   * 通行密钥的 relying party 域名（裸域名，不含协议与端口）。
+   *
+   * 必须是**前端页面**所在域名或其注册域：WebAuthn 的 Ceremony 发生在浏览器当前页面里，
+   * 本站生产环境跨域直连后端，插件默认的 `baseURL` hostname（后端域名）会让注册直接失败。
+   * 已有密钥后不可更改：域名写进凭据，改了等于旧密钥全部失效。
+   */
+  passkeyRpId: string;
+  /**
    * 建号时解析账号昵称（即该 QQ 号的 QQ 昵称）；返回 `null` 时拒绝建号。
    * 昵称查询接口不可用时停用注册（见 Agents/Account.md §4）。
    */
@@ -34,8 +43,10 @@ export interface AuthOptions {
  * 账号认证实例。
  *
  * - 身份锚点是 QQ 号：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由建号钩子从邮箱派生，客户端无法自报。
- * - 只开放验证码登录：发码走 oRPC（`AccountService.requestLoginCode`，可见投递失败），
- *   Better Auth 自带的发码端点把投递异常吞进后台日志，不对外暴露（见 `AUTH_HTTP_PATHS`）。
+ * - 登录方式有两种：邮箱验证码（发码走 oRPC `AccountService.requestLoginCode`，可见投递失败；
+ *   Better Auth 自带的发码端点把投递异常吞进后台日志，不对外暴露）与通行密钥（WebAuthn，
+ *   密钥只能由已登录账号添加，因此它永远只是验证码登录之后的加成，不能凭空造出账号）。
+ *   两者都经过 `AUTH_HTTP_PATHS` 白名单，其余 Better Auth 端点一律 404。
  * - 账号昵称强制使用 QQ 昵称（建号钩子经 `resolveNickname` 解析，客户端无法自报，查询不可用时拒绝建号）；
  *   头像由服务端从 qlogo 同步；其余资料与管理操作都走服务端 API，HTTP 侧不开放 `update-user` 与 admin 端点。
  */
@@ -136,6 +147,9 @@ export const createAuth = (options: AuthOptions) => {
         },
       }),
       admin({ defaultRole: "user", adminRoles: ["admin"], bannedUserMessage: "账号已被封禁" }),
+      // 通行密钥：注册要求新鲜会话（插件默认 `requireSession`），封禁检查沿用 admin 插件的
+      // `session.create.before` 钩子；`origin` 交给插件读取请求 Origin，与验证码登录同源判定。
+      passkey({ rpID: options.passkeyRpId, rpName: "BakaGame" }),
     ],
   });
 };
@@ -145,9 +159,18 @@ export type Auth = ReturnType<typeof createAuth>;
 /**
  * 对浏览器开放的 Better Auth 端点白名单（相对 `AUTH_BASE_PATH`）。
  * 其余端点（注册、改资料、管理接口、自带发码……）一律 404，只能经服务端 API 调用。
+ *
+ * 通行密钥的六个端点必须全部经浏览器直连 Better Auth：挑战值写在签名 Cookie 与
+ * `verification` 表里，oRPC 侧转发会丢掉那对 Cookie，认证就必然卡在 `CHALLENGE_NOT_FOUND`。
  */
 export const AUTH_HTTP_PATHS: ReadonlySet<string> = new Set([
   "/sign-in/email-otp",
   "/get-session",
   "/sign-out",
+  "/passkey/generate-register-options",
+  "/passkey/verify-registration",
+  "/passkey/generate-authenticate-options",
+  "/passkey/verify-authentication",
+  "/passkey/list-user-passkeys",
+  "/passkey/delete-passkey",
 ]);

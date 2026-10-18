@@ -194,6 +194,7 @@ const createAccount = (
         session: schema.session,
         account: schema.account,
         verification: schema.verification,
+        passkey: schema.passkey,
       },
     }),
     secret: env.account.secret,
@@ -201,6 +202,7 @@ const createAccount = (
     isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
     secureCookies: env.otelDeploymentEnvironment === "production",
     adminQqNumbers: env.account.adminQqNumbers,
+    passkeyRpId: env.account.passkeyRpId,
     mailer,
     resolveNickname: (qqNumber) =>
       resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),

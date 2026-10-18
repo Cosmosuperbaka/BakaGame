@@ -332,10 +332,17 @@ export const createAccountTestApp = (
     /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
     rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
     sentry?: SentryApiClient;
+    /**
+     * 前端来源；默认与后端同主机（`localhost`）。
+     *
+     * 通行密钥的用例必须改成不同主机：WebAuthn 的 rpID 取自前端域名，
+     * 与后端同主机时写错的取值也会「看起来对」。
+     */
+    clientUrl?: string;
   } = {}
 ) => {
   const env: AppEnv = {
-    clientUrl: "http://localhost:5173",
+    clientUrl: options.clientUrl ?? "http://localhost:5173",
     serverUrl: "http://localhost:4850",
     serverListenHost: "127.0.0.1",
     serverPort: 0,
@@ -345,7 +352,13 @@ export const createAccountTestApp = (
   const logger = new EventLogger(() => {});
   const mailer = new CapturedMailer();
   const avatarFetcher = createAvatarFetcher();
-  const db: Record<string, unknown[]> = { user: [], session: [], account: [], verification: [] };
+  const db: Record<string, unknown[]> = {
+    user: [],
+    session: [],
+    account: [],
+    verification: [],
+    passkey: [],
+  };
   // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
   let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
   const auth = createAuth({
@@ -355,6 +368,7 @@ export const createAccountTestApp = (
     isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
     secureCookies: false,
     adminQqNumbers: options.adminQqNumbers ?? [],
+    passkeyRpId: new URL(env.clientUrl).hostname,
     mailer,
     resolveNickname: (qqNumber) =>
       resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),

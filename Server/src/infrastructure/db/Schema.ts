@@ -111,6 +111,37 @@ export const verification = mysqlTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)]
 );
 
+/**
+ * 通行密钥（WebAuthn 凭据）：一行一把密钥，登录时按 `credentialID` 反查所属账号。
+ *
+ * - 属性名与 Better Auth `@better-auth/passkey` 声明的字段一一对应，适配器按属性名映射，改名即断链。
+ * - 公钥是原始 CBOR/COSE 字节的 base64，长度不固定，用 `text`；私钥永不落库。
+ */
+export const passkey = mysqlTable(
+  "passkey",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    /** 用户自定义的密钥名称（如「公司的 YubiKey」），只为管理列表可读。 */
+    name: varchar("name", { length: 255 }),
+    publicKey: text("public_key").notNull(),
+    userId: varchar("user_id", { length: 64 })
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** WebAuthn 凭据 ID（base64url）：全局唯一，认证时按它定位密钥。 */
+    credentialID: varchar("credential_id", { length: 255 }).notNull(),
+    counter: int("counter", { unsigned: true }).notNull(),
+    deviceType: varchar("device_type", { length: 32 }).notNull(),
+    backedUp: boolean("backed_up").notNull().default(false),
+    transports: varchar("transports", { length: 128 }),
+    aaguid: varchar("aaguid", { length: 64 }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("passkey_user_idx").on(table.userId),
+    uniqueIndex("passkey_credential_idx").on(table.credentialID),
+  ]
+);
+
 // ==================== 用户数据 ====================
 
 /** 云同步设置：一行一个键，值为该键的完整 JSON 文档（整体覆盖，不做字段级合并）。 */

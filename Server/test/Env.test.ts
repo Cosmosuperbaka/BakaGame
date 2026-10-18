@@ -89,6 +89,8 @@ describe("readEnv 环境变量与启动断言", () => {
       "MAIL_FROM",
       "MAIL_DEV_CONSOLE",
       "ADMIN_QQ",
+      "CLIENT_URL",
+      "PASSKEY_RP_ID",
     ] as const;
     const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
     try {
@@ -97,11 +99,23 @@ describe("readEnv 环境变量与启动断言", () => {
       Bun.env.DATABASE_URL = "mysql://fixture:fixture@db.invalid:4000/bakagame";
       expect(() => readEnv()).toThrow(/BETTER_AUTH_SECRET/);
       Bun.env.BETTER_AUTH_SECRET = "x".repeat(32);
+      // 通行密钥域名缺省跟前端来源： Ceremony 发生在页面侧，用后端域名会注册失败。
+      Bun.env.CLIENT_URL = "https://game.example.com";
       expect(readEnv().account).toEqual({
         secret: "x".repeat(32),
         adminQqNumbers: [],
         mail: { kind: "none" },
+        passkeyRpId: "game.example.com",
       });
+      Bun.env.CLIENT_URL = "https://game.example.com, https://www.example.com";
+      expect(readEnv().account?.passkeyRpId).toBe("game.example.com");
+      Bun.env.PASSKEY_RP_ID = "example.com";
+      expect(readEnv().account?.passkeyRpId).toBe("example.com");
+      Bun.env.PASSKEY_RP_ID = "https://example.com";
+      expect(() => readEnv()).toThrow(/PASSKEY_RP_ID/);
+      delete Bun.env.PASSKEY_RP_ID;
+      Bun.env.CLIENT_URL = "http://localhost:5173";
+      expect(readEnv().account?.passkeyRpId).toBe("localhost");
       Bun.env.MAIL_DEV_CONSOLE = "true";
       Bun.env.ADMIN_QQ = "10001, 123456789";
       expect(readEnv().account).toMatchObject({
