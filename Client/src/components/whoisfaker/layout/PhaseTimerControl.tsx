@@ -14,6 +14,71 @@ const DURATION_OPTIONS: SegmentedOption<string>[] = [
   { label: "3分钟", value: "180" },
 ];
 
+/** 选择出题人、出题阶段、等待中、阶段反馈和结算阶段不支持设置倒计时。 */
+const UNSUPPORTED_PHASES = new Set<string>([
+  "assigningQuestioner",
+  "feedback",
+  "wordSubmission",
+  "waiting",
+  "gameOver",
+]);
+
+/**
+ * 警示色阶：<=10秒为严重警示（红），<=30秒为警告（琥珀），其余用标准次要色。
+ * `idle` 只给「没有倒计时」的那层外框，读数区永远落在前三档里。
+ */
+type TimerTone = "critical" | "warning" | "neutral";
+
+const timerTone = (remainingSec: number): TimerTone => {
+  if (remainingSec > 0 && remainingSec <= 10) return "critical";
+  if (remainingSec > 10 && remainingSec <= 30) return "warning";
+  return "neutral";
+};
+
+const TONE_CONTAINER_BORDER: Record<TimerTone | "idle", string> = {
+  idle: "border-border",
+  neutral: "border-border",
+  critical: "border-destructive/40",
+  warning: "border-warning/40",
+};
+
+/** 末段的状态浅底叠在不透明的 bg-background 上，外框本身不换底色。 */
+const TONE_BACKDROP: Record<TimerTone | "idle", string> = {
+  idle: "bg-transparent",
+  neutral: "bg-transparent",
+  critical: "bg-destructive/10",
+  warning: "bg-warning/10",
+};
+
+const TONE_ICON: Record<TimerTone, string> = {
+  critical: "text-destructive",
+  warning: "text-warning",
+  neutral: "text-muted-foreground",
+};
+
+const TONE_TIME: Record<TimerTone, string> = {
+  critical: "text-destructive",
+  warning: "text-warning",
+  neutral: "text-foreground",
+};
+
+const TONE_PROGRESS_BAR: Record<TimerTone, string> = {
+  critical: "bg-destructive",
+  warning: "bg-warning",
+  neutral: "bg-primary",
+};
+
+const formatTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+};
+
+/** 末段图标只在严重警示时呼吸，其余状态静止。 */
+const iconPulse = (isCritical: boolean) => (isCritical
+  ? { animate: urgentPulse.animate, transition: urgentPulse.transition }
+  : { animate: { scale: 1 }, transition: spring.snap });
+
 interface Props {
   className?: string;
   onTimeout?: () => void;
@@ -34,14 +99,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
   const phase = snapshot?.status.phase;
   const phaseTimer = snapshot?.status.phaseTimer;
 
-  // 选择出题人、出题阶段、等待中、阶段反馈和结算阶段不支持设置倒计时
-  const isSupportedPhase =
-    phase !== undefined &&
-    phase !== "assigningQuestioner" &&
-    phase !== "feedback" &&
-    phase !== "wordSubmission" &&
-    phase !== "waiting" &&
-    phase !== "gameOver";
+  const isSupportedPhase = phase !== undefined && !UNSUPPORTED_PHASES.has(phase);
 
   const isQuestioner = privateState?.isQuestioner ?? false;
   const isTestRoomHost = Boolean(snapshot?.testMode && snapshot?.hostPlayerId === privateState?.playerId);
@@ -66,6 +124,8 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
   const percent = phaseTimer
     ? Math.max(0, Math.min(100, (remainingMs / (totalSec * 1000)) * 100))
     : 0;
+  const runningTone = timerTone(remainingSec);
+  const isCritical = runningTone === "critical";
 
   // 倒计时归零时触发 store 动作与本地回调，供输入框自动提交草稿
   useEffect(() => {
@@ -99,19 +159,10 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
     }
   }, [sendCommand, addToast]);
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  };
-
-  // 警示色阶：<=10秒为严重警示（红），<=30秒为警告（琥珀），>30秒为标准次要色
-  const isCritical = remainingSec <= 10 && remainingSec > 0;
-  const isWarning = remainingSec <= 30 && remainingSec > 10;
-
   // 有倒计时时全员可见；没有时只有能开启的人看到限时栏。两态共用同一个外框，只替换框内内容。
   const visible = Boolean(phaseTimer) || canControl;
-  const tone = !phaseTimer ? "idle" : isCritical ? "critical" : isWarning ? "warning" : "neutral";
+  const tone: TimerTone | "idle" = phaseTimer ? runningTone : "idle";
+  const { animate: iconMotion, transition: iconTransition } = iconPulse(isCritical);
 
   return (
     <AnimatePresence initial={false}>
@@ -125,17 +176,14 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
           data-testid="phase-timer-container"
           className={cn(
             "@container relative w-full overflow-hidden rounded-md border bg-background shadow-2xs transition-colors",
-            tone === "critical" ? "border-destructive/40" : tone === "warning" ? "border-warning/40" : "border-border",
+            TONE_CONTAINER_BORDER[tone],
             className,
           )}
         >
           {/* 末段的状态浅底叠在不透明的 bg-background 上，外框本身不换底色 */}
           <div
             aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute inset-0 transition-colors",
-              tone === "critical" ? "bg-destructive/10" : tone === "warning" ? "bg-warning/10" : "bg-transparent",
-            )}
+            className={cn("pointer-events-none absolute inset-0 transition-colors", TONE_BACKDROP[tone])}
           />
           <MeasuredSwap>
             <AnimatePresence mode="popLayout" initial={false}>
@@ -151,26 +199,16 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <div className="mr-auto flex min-w-0 items-center gap-2">
                       <motion.span
-                        animate={isCritical ? urgentPulse.animate : { scale: 1 }}
-                        transition={isCritical ? urgentPulse.transition : spring.snap}
+                        animate={iconMotion}
+                        transition={iconTransition}
                         className="flex shrink-0"
                       >
-                        <Timer
-                          className={cn(
-                            "h-4 w-4",
-                            isCritical ? "text-destructive" : isWarning ? "text-warning" : "text-muted-foreground",
-                          )}
-                        />
+                        <Timer className={cn("h-4 w-4", TONE_ICON[runningTone])} />
                       </motion.span>
                       <span className="truncate text-xs font-medium text-muted-foreground">本阶段倒计时</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "font-mono text-xl font-bold tabular-nums",
-                          isCritical ? "text-destructive" : isWarning ? "text-warning" : "text-foreground",
-                        )}
-                      >
+                      <span className={cn("font-mono text-xl font-bold tabular-nums", TONE_TIME[runningTone])}>
                         {formatTime(remainingSec)}
                       </span>
                       {canControl ? (
@@ -194,7 +232,7 @@ export function PhaseTimerControl({ className, onTimeout }: Props) {
                       className={cn(
                         // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
                         "h-full rounded-full transition-[width] ease-linear",
-                        isCritical ? "bg-destructive" : isWarning ? "bg-warning" : "bg-primary",
+                        TONE_PROGRESS_BAR[runningTone],
                       )}
                       style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
                     />

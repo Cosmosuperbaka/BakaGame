@@ -1,7 +1,0 @@
-{
-  "src/components/whoisfaker/layout/PhaseTimerControl.tsx": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  }
-}
