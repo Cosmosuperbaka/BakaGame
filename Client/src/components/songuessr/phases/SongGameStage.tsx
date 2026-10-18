@@ -201,6 +201,12 @@ export interface SongGameAreaProps {
   audioRef?: React.RefObject<HTMLAudioElement | null>;
 }
 
+/** 当前回合快照：`GameStage` 只在 `playing` 且回合存在时才进入作答阶段组件。 */
+type Round = NonNullable<SonGuessrRoomSnapshot["currentRound"]>;
+
+/** 作答阶段各组件共用的入参：整包区域属性加上已确认存在的当前回合。 */
+type PlayingPhaseProps = SongGameAreaProps & { round: Round };
+
 export function SongGuessCountdown({ deadlineAt }: { deadlineAt?: number | null }) {
   const secondsLeft = useSecondsLeft(deadlineAt);
   return <CountdownBadge secondsLeft={secondsLeft} />;
@@ -302,19 +308,7 @@ function GuessReceipt({ stage, solo }: { stage: keyof typeof RECEIPTS; solo: boo
 }
 
 export function GameStage(props: SongGameAreaProps) {
-  const {
-    snapshot,
-    privateState,
-    me,
-    isHost,
-    audioStatus,
-    audioPlaybackState,
-    onPlayAudio,
-    onRetryAudio,
-    run,
-    isPending,
-    audioRef,
-  } = props;
+  const { snapshot, privateState, me, isHost, run, isPending } = props;
 
   if (snapshot.phase === "waiting") {
     return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
@@ -329,86 +323,7 @@ export function GameStage(props: SongGameAreaProps) {
   }
 
   if (snapshot.phase === "playing" && snapshot.currentRound) {
-    const anime = snapshot.settings.questionType === "anime";
-    const canObserveAllAttempts = privateState.isSubmitter || privateState.teamObserver || me?.membership === "spectator";
-    // 组队时可见记录里混着队友的猜测，标题与每行都写明是谁猜的
-    const teamAttempts = !canObserveAllAttempts
-      && privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
-    const hasLyrics = (snapshot.currentRound.lyricClip?.lines?.length ?? 0) > 0;
-    const stage = resolveGuessStage(privateState, me);
-    return (
-      <div className="relative mx-auto max-w-2xl space-y-5">
-        <PhaseHeader icon={Headphones} title={anime ? "听歌猜番" : "听歌猜曲"} />
-        <section className="space-y-5 rounded-md bg-muted p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold text-muted-foreground">
-              {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
-            </h3>
-            <AudioCueControl
-              audioStatus={audioStatus}
-              audioPlaybackState={audioPlaybackState}
-              onPlayAudio={onPlayAudio}
-              onRetryAudio={onRetryAudio}
-            />
-          </div>
-          {snapshot.settings.questionMode === "automatic" ? (
-            anime ? <AnimeAutoFilterSummary snapshot={snapshot} /> : <SongAutoFilterSummary snapshot={snapshot} />
-          ) : null}
-          {snapshot.settings.showLyrics ? (
-            <SongLyricPlayer
-              lines={snapshot.currentRound.lyricClip?.lines ?? []}
-              audioRef={audioRef}
-              audioPlaybackState={audioPlaybackState}
-              audioStatus={audioStatus}
-            />
-          ) : (
-            // 与歌词框（SongLyricPlayer 的无歌词态）同一外壳
-            <p className="flex h-24 items-center justify-center rounded-md bg-background p-3 text-center text-sm text-muted-foreground sm:h-28 sm:p-4">
-              本房间已关闭歌词提示，请根据音乐进行猜测
-            </p>
-          )}
-          {anime && privateState.submittedAnime ? (
-            <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
-          ) : privateState.submittedSong ? (
-            <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
-              本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
-            </div>
-          ) : null}
-        </section>
-        {me?.membership === "spectator" ? (
-          <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>
-        ) : privateState.teamObserver ? (
-          <p className="text-center text-sm text-muted-foreground">队友出题，你本局观战</p>
-        ) : privateState.isSubmitter && stage !== "guessing" ? null : (
-          // 作答的几种状态在同一处交叉：旧的抽出文档流淡去，新的同时落位
-          <AnimatePresence initial={false} mode="popLayout">
-            {stage === "guessing" ? (
-              <GuessBar
-                key="guessing"
-                {...props}
-                guessedIds={privateState.visibleAttempts
-                  .filter((attempt) => attempt.playerId === privateState.playerId)
-                  .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? [])}
-              />
-            ) : stage === "preparing" ? (
-              <motion.p key="preparing" variants={listItem} initial="initial" animate="animate" exit="exit" role="status" className="text-center text-sm text-muted-foreground">
-                音频准备中，请稍候...
-              </motion.p>
-            ) : (
-              // 入场交给回执卡自己的回弹，外层只负责退场
-              <motion.div key={stage} variants={listItem} exit="exit" role="status">
-                <GuessReceipt stage={stage} solo={snapshot.solo} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
-        <AttemptList
-          attempts={privateState.visibleAttempts}
-          title={canObserveAllAttempts ? "全房猜测" : teamAttempts ? "本队猜测" : "我的猜测"}
-          showPlayerName={canObserveAllAttempts || teamAttempts}
-        />
-      </div>
-    );
+    return <SongPlayingPhase {...props} round={snapshot.currentRound} />;
   }
 
   if (snapshot.phase === "roundResult" && snapshot.roundSummary) {
@@ -425,6 +340,125 @@ export function GameStage(props: SongGameAreaProps) {
   }
 
   return <SongWaitingPhase snapshot={snapshot} me={me} isHost={isHost} submitterCandidateIds={privateState.submitterCandidateIds} run={run} isPending={isPending} />;
+}
+
+/** 猜测记录标题：看得到全房就用全房，混进队友的用本队，否则只是我的。 */
+const attemptListTitle = (canObserveAllAttempts: boolean, teamAttempts: boolean): string =>
+  canObserveAllAttempts ? "全房猜测" : teamAttempts ? "本队猜测" : "我的猜测";
+
+/** 我自己已经猜过的条目 id，供答题框把它们标成已选。 */
+const myGuessedIds = (privateState: SonGuessrPrivateState): string[] => privateState.visibleAttempts
+  .filter((attempt) => attempt.playerId === privateState.playerId)
+  .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? []);
+
+/** 片段展示区：开歌词挂歌词播放器，关掉后给同一外壳的提示。 */
+function ClipArea({ snapshot, round, audioRef, audioPlaybackState, audioStatus }: PlayingPhaseProps) {
+  if (!snapshot.settings.showLyrics) {
+    // 与歌词框（SongLyricPlayer 的无歌词态）同一外壳
+    return (
+      <p className="flex h-24 items-center justify-center rounded-md bg-background p-3 text-center text-sm text-muted-foreground sm:h-28 sm:p-4">
+        本房间已关闭歌词提示，请根据音乐进行猜测
+      </p>
+    );
+  }
+  return (
+    <SongLyricPlayer
+      lines={round.lyricClip?.lines ?? []}
+      audioRef={audioRef}
+      audioPlaybackState={audioPlaybackState}
+      audioStatus={audioStatus}
+    />
+  );
+}
+
+/** 已提交答案的本轮回执：猜番显示番名，猜曲显示歌名与歌手。 */
+function RoundAnswerNotice({ anime, privateState }: { anime: boolean; privateState: SonGuessrPrivateState }) {
+  if (anime && privateState.submittedAnime) {
+    return (
+      <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">本轮答案：<strong>{privateState.submittedAnime.nameCn || privateState.submittedAnime.name}</strong></div>
+    );
+  }
+  if (!privateState.submittedSong) return null;
+  return (
+    <div className="break-words rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
+      本轮答案：<strong>{privateState.submittedSong.title}</strong> · {privateState.submittedSong.artist}
+    </div>
+  );
+}
+
+/** 作答区：旁观与队友观战各一条提示，出题人答完后不再出控件，其余按 stage 交叉换入。 */
+function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessStage }) {
+  const { snapshot, privateState, me } = props;
+
+  if (me?.membership === "spectator") {
+    return <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>;
+  }
+  if (privateState.teamObserver) {
+    return <p className="text-center text-sm text-muted-foreground">队友出题，你本局观战</p>;
+  }
+  if (privateState.isSubmitter && stage !== "guessing") return null;
+
+  return (
+    // 作答的几种状态在同一处交叉：旧的抽出文档流淡去，新的同时落位
+    <AnimatePresence initial={false} mode="popLayout">
+      {stage === "guessing" ? (
+        <GuessBar key="guessing" {...props} guessedIds={myGuessedIds(privateState)} />
+      ) : stage === "preparing" ? (
+        <motion.p key="preparing" variants={listItem} initial="initial" animate="animate" exit="exit" role="status" className="text-center text-sm text-muted-foreground">
+          音频准备中，请稍候...
+        </motion.p>
+      ) : (
+        // 入场交给回执卡自己的回弹，外层只负责退场
+        <motion.div key={stage} variants={listItem} exit="exit" role="status">
+          <GuessReceipt stage={stage} solo={snapshot.solo} />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/** 听歌作答阶段：片段、本轮答案、作答控件与猜测记录。 */
+function SongPlayingPhase(props: PlayingPhaseProps) {
+  const {
+    snapshot, privateState, me, audioStatus, audioPlaybackState, round, onPlayAudio, onRetryAudio,
+  } = props;
+  const anime = snapshot.settings.questionType === "anime";
+  const canObserveAllAttempts = privateState.isSubmitter || privateState.teamObserver || me?.membership === "spectator";
+  // 组队时可见记录里混着队友的猜测，标题与每行都写明是谁猜的
+  const teamAttempts = !canObserveAllAttempts
+    && privateState.visibleAttempts.some((attempt) => attempt.playerId !== privateState.playerId);
+  const hasLyrics = (round.lyricClip?.lines?.length ?? 0) > 0;
+  const stage = resolveGuessStage(privateState, me);
+
+  return (
+    <div className="relative mx-auto max-w-2xl space-y-5">
+      <PhaseHeader icon={Headphones} title={anime ? "听歌猜番" : "听歌猜曲"} />
+      <section className="space-y-5 rounded-md bg-muted p-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xs font-semibold text-muted-foreground">
+            {snapshot.settings.showLyrics && hasLyrics ? "歌词片段" : "音乐片段"}
+          </h3>
+          <AudioCueControl
+            audioStatus={audioStatus}
+            audioPlaybackState={audioPlaybackState}
+            onPlayAudio={onPlayAudio}
+            onRetryAudio={onRetryAudio}
+          />
+        </div>
+        {snapshot.settings.questionMode === "automatic" ? (
+          anime ? <AnimeAutoFilterSummary snapshot={snapshot} /> : <SongAutoFilterSummary snapshot={snapshot} />
+        ) : null}
+        <ClipArea {...props} />
+        <RoundAnswerNotice anime={anime} privateState={privateState} />
+      </section>
+      <AttemptArea props={props} stage={stage} />
+      <AttemptList
+        attempts={privateState.visibleAttempts}
+        title={attemptListTitle(canObserveAllAttempts, teamAttempts)}
+        showPlayerName={canObserveAllAttempts || teamAttempts}
+      />
+    </div>
+  );
 }
 
 /**
