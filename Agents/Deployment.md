@@ -321,6 +321,7 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 | `BETTER_AUTH_SECRET` | 配置 `DATABASE_URL` 时服务拒绝启动 | 至少 32 字符随机串，`openssl rand -hex 32` 生成；更换会使全部登录会话失效 |
 | `SMTP_HOST` + `SMTP_USER` + `SMTP_PASS`（`SMTP_PORT`、`MAIL_FROM` 选填） | `DEPLOYMENT_ENVIRONMENT=production` 时服务拒绝启动 | 飞书企业邮箱为 `smtp.feishu.cn:465`，`SMTP_PASS` 用邮箱客户端专用密码；生产不得设 `MAIL_DEV_CONSOLE`，见 [Account](Account.md#9-配置) |
 | `SENTRY_API_TOKEN` | 后台概览的 Sentry 卡片显示「未配置」（可控降级） | 专用只读令牌（`org:read`、`project:read`、`event:read`），不复用个人全权令牌 |
+| `PASSKEY_RP_ID`（选填） | 缺省取 `CLIENT_URL` 首个地址的 hostname：前端域名与它不同时，通行密钥注册能成、登录必败 | 裸域名，且必须在**第一位玩家添加密钥之前**定下：域名烧进凭据，事后改动等于旧密钥全部失效，见 [Account §9](Account.md#9-配置) |
 
 存在性自查（只计数、不打印值）：
 
@@ -329,7 +330,7 @@ sudo docker inspect BakaGame --format '{{range .Config.Env}}{{println .}}{{end}}
   | grep -cE '^(MAINTENANCE_TOKEN|DEPLOYMENT_ENVIRONMENT|MEILISEARCH_KEY|MEILISEARCH_URL|CCB_ORIGINAL_SERVER_URL|CCB_ORIGINAL_AES_SECRET|DATABASE_URL|BETTER_AUTH_SECRET|SMTP_HOST|SMTP_USER|SMTP_PASS)='
 ```
 
-完整生产配置输出 11，未启用原版房时为 10（`SMTP_PORT`、`MAIL_FROM`、`ADMIN_QQ` 为选填，不计入）。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
+完整生产配置输出 11，未启用原版房时为 10（`SMTP_PORT`、`MAIL_FROM`、`ADMIN_QQ`、`PASSKEY_RP_ID` 为选填，不计入）。缺 `MAINTENANCE_TOKEN` 部署必中止；独立 Meili 容器下缺 `MEILISEARCH_URL` 为搜索链路故障（见上表）；其余项按上表降级。
 
 ### 发布链路与失败边界
 

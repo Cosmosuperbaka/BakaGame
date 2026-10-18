@@ -17,22 +17,24 @@
 ## 1. 身份与边界
 
 - 账号以 **QQ 号**为身份锚点：登录邮箱只接受 `QQ号@qq.com`，`qqNumber` 由 Better Auth 建号钩子从邮箱派生，客户端无法自报。
-- 只有邮箱验证码一种登录方式（6 位、5 分钟有效、每枚最多试 3 次、库内只存摘要）。首次登录即注册；账号昵称强制使用 QQ 昵称，昵称查询不可用时停用新号注册（见 §4）。
+- 登录方式有两种：**邮箱验证码**（6 位、5 分钟有效、每枚最多试 3 次、库内只存摘要）与**通行密钥**（WebAuthn，凭据由本机保管，登录后不必再收验证码）。首次登录即注册；账号昵称强制使用 QQ 昵称，昵称查询不可用时停用新号注册（见 §4）。
+- 通行密钥只能由**已登录账号**在「账号资料」里添加（插件要求会话，且服务端 `freshSessionMiddleware` 只认 24 小时内的新鲜登录），所以它永远是验证码登录之后的加成，不能凭空造出账号。`rpID` 必须写**前端页面域名**：生产是浏览器跨源直连后端的拓扑，Ceremony 发生在页面源里，取后端域名会「注册成功、登录必败」；域名烧进凭据，已有密钥后改动等于全部失效（见 §9）。
 - 账号昵称与游戏内昵称互不捆绑；账号昵称即 QQ 昵称，注册后不可修改（见 §4）。
 - 游客游玩不受影响：账号系统随 `DATABASE_URL` 启用，未启用时 `/api/auth/*`、`/api/rpc/*`、`/api/account/avatar/*` 统一回 503 `ACCOUNT_DISABLED`（RPC 前缀按 oRPC 错误编码，客户端从 `ORPCError.code` 识别），前端据此隐藏登录入口。
 - 代码入口：`infrastructure/auth/Auth.ts`（Better Auth 配置）、`application/AccountService.ts`（发码、资料、头像）、`transport/routes/Account.ts`（HTTP 入口）、`shared/Account.ts` 与 `shared/ApiContract.ts`（前后端共享常量与契约）。
-- 前端入口：`lib/Api.ts`（oRPC 客户端、Better Auth 登录与错误文案）、`stores/UseAccountStore.ts`（`loading` / `unavailable` / `guest` / `signedIn`）、`hooks/UseAccountBootstrap.ts`（根布局里载入账号、登录期间运行云同步、上报访问）、`components/account/`（登录、资料、反馈弹窗与主页入口）。账号接口失败（`ACCOUNT_DISABLED` 以外）按游客处理并记告警，绝不挡住游玩。
+- 前端入口：`lib/Api.ts`（oRPC 客户端、Better Auth 登录与错误文案）、`lib/Passkey.ts`（通行密钥的取选项 → 浏览器 Ceremony → 回传编排，与错误码到中文的映射）、`stores/UseAccountStore.ts`（`loading` / `unavailable` / `guest` / `signedIn`，两种登录方式都收敛到同一个 `signIn*` + 登录后刷新口径）、`hooks/UseAccountBootstrap.ts`（根布局里载入账号、登录期间运行云同步、上报访问）、`components/account/`（登录、资料、反馈弹窗与主页入口）。账号接口失败（`ACCOUNT_DISABLED` 以外）按游客处理并记告警，绝不挡住游玩。
 - 前端只展示中文错误文案：oRPC 错误取 `message`（校验失败取首条中文问题），Better Auth 的英文错误码在 `AUTH_MESSAGES` 映射成中文，其余退回兜底文案。
 
 ## 2. HTTP 面
 
 | 前缀 | 内容 | 规则 |
 |---|---|---|
-| `/api/auth/*` | Better Auth | 只开放 `sign-in/email-otp`、`get-session`、`sign-out`，其余端点（含自带发码、注册、改资料、admin）一律 404 |
+| `/api/auth/*` | Better Auth | 白名单 `AUTH_HTTP_PATHS`：`sign-in/email-otp`、`get-session`、`sign-out` 与通行密钥的六个端点（注册选项、校验注册、认证选项、校验认证、列表、删除），其余（含自带发码、注册、改资料、admin、`passkey/update-passkey`）一律 404 |
 | `/api/rpc/*` | oRPC（`apiContract`） | 契约在 `shared/ApiContract.ts`；客户端只取类型，运行时不打包 zod 契约 |
 | `/api/account/avatar/:userId` | 头像代理 | `?v=` 等于当前摘要时 `immutable` 一年，否则 5 分钟；`size=100` 或 `640` |
 
 - 发码走 oRPC `account.requestLoginCode`：Better Auth 自带发码端点把投递异常吞进后台日志，用户会白等，因此不开放。投递失败返回 503 `MAIL_UNAVAILABLE`。
+- 通行密钥的六个端点只能由浏览器直连 Better Auth，不经 oRPC 转发：挑战值写在签名 Cookie 与 `verification` 行里，转发丢掉这对 Cookie 就必然卡在 `CHALLENGE_NOT_FOUND`。前端因此共用 `lib/Api.ts` 里那套 `/api/auth/*` 请求封装（GET 与 POST 都支持，`credentials: "include"`）。
 - `sign-in/email-otp` 的前置钩子在**消耗验证码之前**校验 QQ 邮箱、拒绝客户端自带 `image`、要求新号带昵称，避免用户白白作废一枚验证码。
 - 业务错误码到 HTTP 状态的映射只有一份：`statusOfAppError`（HTTP 全局错误钩子与 oRPC 共用）。oRPC 错误的 `code` 即 `AppError.code`，`message` 可直接展示。
 - 契约的每个过程用 `op(说明, 鉴权层级)` 声明机器可读的 `meta.description` 与 `meta.auth`（`public` / `session` / `admin`），**不再另写文档注释**：`scripts/ExportOpenapi.ts` 据此生成对外契约（含 `Agents/http-openapi.json` 里的 `security` 与请求/响应 `json` 包络）。`meta.auth` 必须与 `transport/routes/Account.ts` 里实际套用的 `base` / `signedIn` / `adminOnly` 一致——`test/RpcOpenapi.test.ts` 用真实路由分别以游客和普通玩家身份逐一打通核对，写错即红；新增过程漏写 `meta` 时生成器直接抛错。线格式口径：`POST /api/rpc/<点号路径换斜杠>`，请求与响应都只包一层 `json`，只用 POST（GET 回 405）。
@@ -119,6 +121,7 @@
 | `ADMIN_QQ` | 管理员 QQ 号名单 |
 | `SENTRY_API_TOKEN` | 选填：后台概览代查 Sentry 的只读令牌（`org:read`、`project:read`、`event:read`）；须同时配置 `SENTRY_DSN`，只支持 sentry.io 的 DSN |
 | `QQ_NAPCAT_API_URL` / `QQ_NAPCAT_ACCESS_TOKEN` | QQ 昵称来源（NapCat 的 OneBot 11 HTTP 基址 + Bearer 令牌）；**成对配置**，两者都不配时昵称查询整体停用（新号注册随之停用） |
+| `PASSKEY_RP_ID` | 选填：通行密钥的 relying party 域名，**裸域名**（含协议、端口或路径即拒绝启动）。缺省取 `CLIENT_URL` 列表首个地址的 hostname，本地即 `localhost`。跨子域共享或前端换域名时必须在**第一位玩家添加密钥之前**写死：域名烧进凭据，事后改动等于旧密钥全部失效 |
 
 会话 Cookie 前缀 `bakagame`，有效期 30 天、每日续期；生产强制 `Secure`。来源判定与 WebSocket 共用 `isAllowedOrigin`。
 
@@ -126,10 +129,10 @@
 
 命令与验证范围见 [Testing](Testing.md#验证范围)；本节只列必须覆盖的行为。
 
-- 账号：验证码发码与登录、注册昵称强制取自 QQ 昵称、端点白名单、发码限流、账号路由 429（RPC 与 Better Auth 共用同一份额度）、投递失败、管理员引导、QQ 号隐私与头像缓存、昵称回显（已注册不打查询号、查不到回空、按地址限流）。使用内存适配器与假上游，不连真实数据库与 qlogo。
+- 账号：验证码发码与登录、注册昵称强制取自 QQ 昵称、端点白名单（含通行密钥六端点对外开放、`passkey/update-passkey` 不开放、未登录取密钥列表 401）、认证与注册选项的 `rp.id` 取前端域名（缺省取自 `CLIENT_URL`，可用 `PASSKEY_RP_ID` 写死）、发码限流、账号路由 429（RPC 与 Better Auth 共用同一份额度）、投递失败、管理员引导、QQ 号隐私与头像缓存、昵称回显（已注册不打查询号、查不到回空、按地址限流）。使用内存适配器与假上游，不连真实数据库与 qlogo。
 - 设置与反馈：整体覆盖写、加密与越权、反馈的 Sentry 同步、限流与未读口径。
 - 管理：权限分层、降级即时生效、搜索、封禁（踢线、拦发码、到期恢复）、自我与管理员保护、审计先行（可注入一次写入失败）、反馈回复、对局记录查询与实时房间的审计委托。
 - 访问统计：路径折叠、访客摘要跨天不可关联、写库失败丢弃、过期清理、上报接口、概览补零，以及 Sentry 客户端对容错、参数、缓存与令牌不外泄的处理。
 - 昵称查询：以假 NapCat（OneBot 11）覆盖 Bearer 鉴权、单号查询与查不到跳过、全部失败即判不可用、不可见字符清洗、掉线降级与停用注册、访问刷新与昵称同步、批量刷新审计；真实实例只能人工验收。
-- 前端：接口错误文案、云同步范围与合并、访问上报、登录弹窗的 QQ 昵称冻结与就地报错、输完号即回显昵称（不等发码、查不到不挡发码）、登录用途与 QQ 号边界说明、资料卡缓存与重试、后台页的权限分层与关房确认。
+- 前端：接口错误文案、云同步范围与合并、访问上报、登录弹窗的 QQ 昵称冻结与就地报错、输完号即回显昵称（不等发码、查不到不挡发码）、登录用途与 QQ 号边界说明、通行密钥入口（支持 WebAuthn 时与发码并列、失败就地提示且不关弹窗、第二步不重复出现、老旧内核整段消失）、资料弹窗的密钥增删（无名兜底、增删后以服务端列表为准、读取失败与新鲜登录超时的中文提示）、假 `@simplewebauthn/browser` 下只验编排与文案映射、资料卡缓存与重试、后台页的权限分层与关房确认。
 - 真实 TiDB 与 SMTP 的一次性人工验收结束后删除测试账号。
