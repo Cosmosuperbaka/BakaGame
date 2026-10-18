@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { connect } from "node:net";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
-import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
+import {
+  HTTP_MAX_REQUEST_BODY_BYTES,
+  WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+} from "../src/config/Constants";
 import type { AppEnv } from "../src/config/Env";
 import {
   describeError,
@@ -330,6 +333,39 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
     expect(invalidMessageError.error.code).toBe("INVALID_MESSAGE");
     socket.close();
   } finally {
+    await stop();
+  }
+});
+
+test("WebSocket 握手按来源地址配额：在途连接超限回 429，断开后立即归还名额", async () => {
+  const { port, stop } = startTestServer();
+  const sockets: WebSocket[] = [];
+
+  try {
+    for (let index = 0; index < WS_HANDSHAKE_IP_MAX_CONNECTIONS; index += 1) {
+      sockets.push(await openSocket(port));
+    }
+
+    expect(await upgradeStatusLine(port)).toContain("429");
+
+    const held = sockets.pop()!;
+    const closed = new Promise<void>((resolve) => {
+      held.addEventListener("close", () => resolve(), { once: true });
+      held.close();
+    });
+    await closed;
+
+    // 服务端观察断开是异步的：允许在有限次数内重试，最终必须重新放行。
+    let status = "";
+    for (let attempt = 0; attempt < 20 && !status.includes("101"); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      status = await upgradeStatusLine(port);
+      if (status.includes("429")) continue;
+      break;
+    }
+    expect(status).toContain("101");
+  } finally {
+    for (const socket of sockets) socket.close();
     await stop();
   }
 });

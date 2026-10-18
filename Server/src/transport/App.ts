@@ -12,6 +12,13 @@ import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
+import { WsHandshakeQuota } from "./WsHandshakeQuota";
+import {
+  WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
+  WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+  WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
+  WS_HANDSHAKE_WINDOW_MS,
+} from "../config/Constants";
 import { createAck, createErrorPacket } from "./Packets";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
@@ -311,6 +318,28 @@ const resolveSocketAccount = async (
   }
 };
 
+/**
+ * 握手配额闸门：Origin 与登录身份都过之后、真正接受连接之前占一个名额。
+ *
+ * 超限必须 **throw**（理由同 `rejectDisallowedOrigin`：upgrade 钩子的返回值会被 Elysia 忽略）。
+ * 抛 `RATE_LIMITED` 由全局错误钩子回 429；占位成功时把桶键写进上下文，
+ * Elysia 会把它带进 `ws.data`，close 钩子据此归还名额。
+ */
+const reserveHandshakeSlot = (
+  context: {
+    request: Request;
+    server?: { requestIP(request: Request): { address?: string } | null } | null;
+    handshakeSlot?: string;
+  },
+  quota: WsHandshakeQuota,
+): void => {
+  const peerIp = context.server?.requestIP(context.request)?.address;
+  const clientIp = resolveClientIp(context.request.headers, peerIp);
+  const slot = quota.acquire(clientIp, peerIp ?? clientIp);
+  if (!slot) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
+  context.handshakeSlot = slot;
+};
+
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
 const openGameConnection = (
   ws: GameSocketLike,
@@ -436,6 +465,11 @@ const closeGameConnection = async (
   if (connectionId) await unregister(connectionId);
 };
 
+/** 连接断开必须归还握手名额，否则同一个来源地址的名额会被历史连接吃光。 */
+const releaseHandshakeSlot = (ws: GameSocketLike, quota: WsHandshakeQuota): void => {
+  quota.release((ws.data as { handshakeSlot?: string }).handshakeSlot);
+};
+
 export const createApp = ({
   env,
   whoIsFakerService,
@@ -457,6 +491,13 @@ export const createApp = ({
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> => disposal ??= disposeResources ? disposeResources() : characterService.close();
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
+  // 三个游戏入口共用一份握手配额：一个客户端地址换着连三款游戏也只有一份额度。
+  const handshakeQuota = new WsHandshakeQuota({
+    windowMs: WS_HANDSHAKE_WINDOW_MS,
+    ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
+    globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
+    ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+  });
   const app = new Elysia({
     normalize: false,
     websocket: {
@@ -567,6 +608,7 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        reserveHandshakeSlot(context, handshakeQuota);
       },
       open: (ws) => openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
       message: (ws, incoming) =>
@@ -574,8 +616,10 @@ export const createApp = ({
           serviceName: "WhoIsFaker",
           execute: (connectionId, message) => fakerService.execute(connectionId, message),
         }),
-      close: (ws) =>
-        closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId)),
+      close: (ws) => {
+        releaseHandshakeSlot(ws, handshakeQuota);
+        return closeGameConnection(ws, (connectionId) => fakerService.unregisterConnection(connectionId));
+      },
     })
     .ws("/api/cee/ws", {
       body: CEEClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
@@ -583,13 +627,17 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        reserveHandshakeSlot(context, handshakeQuota);
       },
       open: (ws) => openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
       message: (ws, incoming) => handleGameMessage(ws, normalizeCEEEnvelope(incoming), logger, {
         serviceName: 'CEE',
         execute: (connectionId, message) => characterService.execute(connectionId, message),
       }),
-      close: (ws) => closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId)),
+      close: (ws) => {
+        releaseHandshakeSlot(ws, handshakeQuota);
+        return closeGameConnection(ws, (connectionId) => characterService.unregisterConnection(connectionId));
+      },
     })
     .ws("/api/songuessr/ws", {
       body: SonGuessrClientMessageSchema, response: ServerMessageSchema, parse: decodeGameFrame,
@@ -597,6 +645,7 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        reserveHandshakeSlot(context, handshakeQuota);
       },
       open: (ws) => openGameConnection(ws, (connection) => songService.registerConnection(connection)),
       message: (ws, incoming) =>
@@ -604,8 +653,10 @@ export const createApp = ({
           serviceName: "SonGuessr",
           execute: (connectionId, message) => songService.execute(connectionId, message),
         }),
-      close: (ws) =>
-        closeGameConnection(ws, (connectionId) => songService.unregisterConnection(connectionId)),
+      close: (ws) => {
+        releaseHandshakeSlot(ws, handshakeQuota);
+        return closeGameConnection(ws, (connectionId) => songService.unregisterConnection(connectionId));
+      },
     });
 
   return {

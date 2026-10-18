@@ -284,6 +284,7 @@ Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr
 - **跨域 HTTP 方法与追踪头对称开放**：反向代理与全局 CORS 配置必须对称覆盖所有业务端点的方法（`methods: ["GET", "POST", "OPTIONS"]`），并将分布式追踪头（`allowedHeaders: ["content-type", "x-trace-id"]`）纳入预检放行，严防生产前后端分域部署时遥测打点被静默拦截。
 - **WebSocket 协议层单帧硬上限**：WebSocket 网关必须显式配置单帧载荷上限（`maxPayloadLength: 256 * 1024`，256KB），杜绝恶意攻击者单帧灌入超大包耗尽边缘容器内存。
 - **HTTP 请求体全局硬上限与 WS 同口径**：Elysia 1.4.30 无 `maxBodySize`，HTTP 侧只能用 Bun 原生 `maxRequestBodySize`（见 `HTTP_MAX_REQUEST_BODY_BYTES`，1MB），缺省的 128MB 形同不设。超限由运行时直接回 413 空响应体、不进业务解析，因此取值必须留足最大合法载荷的余量（Sentry 隧道信封 256KB、云同步设置 32KB），并在 `test/App.test.ts` 保留 413 回归。
+- **WebSocket 握手配额两层都要卡**：`.ws()` 的 `upgrade` 钩子必须在 Origin 与身份解析之后占名额（`transport/WsHandshakeQuota.ts`），在途连接数与新建速率各一道——只卡速率能被「每分钟开一条长期持有」绕过，只卡在途数能被反复开合绕过。桶键取 `resolveClientIp` 的来源身份，伪造该标头自造新桶由回源 peer 的十倍额度封顶；拒绝必须 **throw**（`RATE_LIMITED` → 429），因为 upgrade 钩子的返回值同样被 Elysia 忽略。名额必须在 `close` 钩子归还，且归还不依赖业务连接注销成功。
 - **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
 - **OTLP 链路导出失败不丢数据、有限指数退避重试与有界淘汰指标契约**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，积压溢出淘汰最旧数据，准确统计 `droppedCount` 指标）；严格校验上游响应 `response.ok`，在遇到 5xx/429 或网络异常时未发送批次必须安全回退至队列头部，杜绝静默丢数据；基于连续失败次数引入有限指数退避重试（基础 1000ms，最大 30000ms），在退避窗口内拦截无效调用；导出过程挂载 `isFlushing` 飞行并发锁与 5s 网络超时中断，并在停机时提供排空契约。
 

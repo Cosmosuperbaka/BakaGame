@@ -25,6 +25,16 @@ export const CHAT_LIMIT = 20;
 export const JOIN_PASSWORD_MAX_ATTEMPTS = 5;
 export const JOIN_PASSWORD_WINDOW_MS = 60 * 1000;
 
+/**
+ * WebSocket 握手配额：单个客户端地址的在途连接数与每分钟新建连接数。
+ * 在途数封顶长期持有的连接，速率封顶反复开关的握手开销，两者缺一都能绕过对方。
+ * 浏览器一个标签页只有一条游戏连接，正常玩家远达不到这个量级。
+ */
+export const WS_HANDSHAKE_IP_MAX_CONNECTIONS = 64;
+export const WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW = 120;
+export const WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW = 3_000;
+export const WS_HANDSHAKE_WINDOW_MS = 60 * 1000;
+
 /** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
 export const PHASE_RESULT_DISPLAY_MS = 1_500;
 
