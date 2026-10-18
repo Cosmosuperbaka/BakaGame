@@ -50,10 +50,10 @@ const ceeWire: CEEClientWireMessage = {
   roomId: null,
   payload: { ready: true },
 };
-// @ts-expect-error ready 命令必须使用 ready 布尔载荷，不能变成任意命令的载荷并集。
 const wrongCEEWire: CEEClientWireMessage = {
   id: "wire",
   type: "cee.player.ready",
+  // @ts-expect-error ready 命令必须使用 ready 布尔载荷，不能变成任意命令的载荷并集。
   payload: { text: "错误关联" },
 };
 void ceeWire;
