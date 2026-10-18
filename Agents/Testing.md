@@ -63,7 +63,7 @@
 - **`endOfLine: "auto"` 不许改**：工作区是 CRLF、CI 检出是 LF，`auto` 保留每个文件原样；改成 `lf`/`crlf` 会让另一端起整文件级 diff。
 - 忽略范围在 `.prettierignore`：文档与 `tasks/`、构建产物、`Server/data`、`Server/drizzle` 迁移、E2E 的 HTML 夹具都不参与格式化。
 - 文件名由 `check-file/filename-naming-convention` 强制 PascalCase，必须开 `ignoreMiddleExtensions`（否则 `X.test.tsx`、`X.stories.tsx` 的中缀段会被判违规）；`Client/src/vite-env.d.ts` 是唯一豁免，`vite.config.ts`、`playwright.config.ts` 这类配置不在规则 glob 内。
-- 格式化改动单独提交（`style(Core):` 前缀），不要和业务改动混在一起；改名或换大小写时同步 `knip.jsonc` 入口与 `Agents/*.md` 里的路径引用。
+- 格式化改动单独提交（`style(Core):` 前缀），不要和业务改动混在一起；改名或换大小写时同步 `knip.jsonc` 入口与 `Agents/*.md` 里的路径引用。全仓重排的提交哈希记在根 `.git-blame-ignore-revs`，本机可 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 让 blame 跳过它（GitHub 会自动读取）。
 
 ## 门禁与真相源
 
