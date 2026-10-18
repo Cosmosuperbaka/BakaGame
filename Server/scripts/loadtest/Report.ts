@@ -52,6 +52,7 @@ interface Report {
     seats: Record<string, number>;
     mbps: number;
     shards?: number;
+    cpuProf?: boolean;
     fatSeats?: number;
     latencyP95BudgetMs: number;
     lagP95BudgetMs: number;
@@ -268,6 +269,9 @@ const unitGame = (report: Report): string =>
 
 const isProbeRun = (report: Report): boolean => /(?:^|-)N-\d/.test(report.label);
 
+/** 剖面跳：只跑一跳、为的是采被测进程的 CPU 时间归属，不能当容量读数参与对比。 */
+const isProfilingRun = (report: Report): boolean => report.config.cpuProf === true;
+
 /** 被测进程数：老报告没写这个字段，按单进程读。 */
 const shardsOf = (report: Report): number =>
   Math.max(1, Math.round(Number(report.config.shards ?? 1)));
@@ -400,7 +404,8 @@ const conclusion = (reports: Report[]): string => {
   const labels = runLabels(reports);
   const tag = (report: Report): string => runTag(report, labels);
   const ramps = picked.filter(
-    (report) => report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report)
+    (report) =>
+      report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report) && !isProfilingRun(report)
   );
   for (const report of ramps) {
     const top = compliantTop(report);
@@ -579,7 +584,8 @@ const shardScaling = (reports: Report[]): string => {
   const labels = runLabels(reports);
   const groups = new Map<string, Report[]>();
   for (const report of reports.filter(
-    (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
+    (item) =>
+      !isUnitRun(item) && !isProbeRun(item) && !isProfilingRun(item) && item.steps.length > 0
   )) {
     const key = [
       machineKey(report),
@@ -665,7 +671,8 @@ const machineCompare = (reports: Report[]): string => {
   if (!labels.machines.multi) return "";
   const groups = new Map<string, Map<string, Report>>();
   for (const report of reports.filter(
-    (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
+    (item) =>
+      !isUnitRun(item) && !isProbeRun(item) && !isProfilingRun(item) && item.steps.length > 0
   )) {
     const key = [
       report.mode,
@@ -765,7 +772,11 @@ const main = async () => {
   /** 容量曲线按机器分块：单机独占与多进程运行的量级差着一个数量级，画在一张图上只会互相压平。 */
   const chartable = (key: string): Report[] =>
     reports.filter(
-      (report) => machineKey(report) === key && !isUnitRun(report) && !isProbeRun(report)
+      (report) =>
+        machineKey(report) === key &&
+        !isUnitRun(report) &&
+        !isProbeRun(report) &&
+        !isProfilingRun(report)
     );
   const machineLines = labels.machines.keys
     .map((key) => {
@@ -927,6 +938,7 @@ ${failureNotes ? `<section><h2>失败与重试码</h2><ul>${failureNotes}</ul></
   <li>音频字节不进这条链路：猜歌只下发歌曲 ID 与音频地址，实际音频由客户端直连上游 CDN，所以本报告的带宽不含音频流量。</li>
   <li>生产机那几跳跑在同机临时容器里：内存与核数有硬顶、被测源码是打包时的 HEAD 而不是线上正在跑的那版、线上服务进程另算。所以它回答的是「这台硬件跑这套代码能装多少」，不是「现在这台机器还剩多少余量」。</li>
   <li><b>磁盘与数据库不在热路径上</b>：玩法面全内存，命令→改状态→扇出不碰盘；对局记录进有界内存队列、后台异步落库，积压时丢记录而不是卡事件循环（<code>Server/src/application/GameRecordService.ts</code>）。压测全程磁盘读写接近 0，所以「开发机磁盘快」不会换算成承载量，两台机器的差距是单核算力与可用核数，不是 IO。</li>
+  <li>带 <code>--cpu-prof</code> 的那几跳是剖面跳：只跑一跳、采被测进程的 CPU 时间归属，不参与容量与扩展对比，读数在摘要与逐跳表里仍可以看到。</li>
   <li>数据库、账号、上游 API 均未参与（实时玩法面本来就是内存态）；生产环境还有限流、反代与 TLS，单机数字会偏乐观。</li>
 </ul>
 </section>`;
