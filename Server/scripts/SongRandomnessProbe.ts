@@ -103,127 +103,221 @@ export async function createProbeRoom(provider: MusicProvider, cookie: string, p
   };
 }
 
-async function main() {
+type ProbeConfig = {
+  ids: string[];
+  cookie?: string;
+  liveAttempts: number;
+  requestedLiveRounds: number;
+  rooms: number;
+};
+
+/** 实测轮次统计：加载尝试、抽到的歌曲 ID、失败码与音频探测结果。 */
+type LiveRun = {
+  requestedRounds: number;
+  requestedAttempts: number;
+  attempts: number;
+  titleArtistMetrics: Record<string, unknown>;
+  audioProbe: unknown;
+  ids: string[];
+  resources: unknown[];
+  failures: unknown[];
+  metrics: Record<string, unknown>;
+};
+
+type PlaylistSummary = {
+  playlistId: string;
+  returned: number;
+  unique: number;
+  nonVipCandidates: number;
+  live: LiveRun;
+  replay: unknown[];
+};
+
+type PlaylistType = Awaited<ReturnType<NeteaseMusicProvider["getPlaylistSongs"]>>;
+
+/** 单个歌单的全部探针输入。 */
+type PlaylistProbe = {
+  real: NeteaseMusicProvider;
+  cookie?: string;
+  playlist: PlaylistType;
+  songById: Map<string, SongSearchResult>;
+  summary: PlaylistSummary;
+  liveAttempts: number;
+  requestedLiveRounds: number;
+  rooms: number;
+};
+
+const replayRounds = 100;
+
+/** 命令行与环境变量：任何一项越界都直接拒绝，避免跑出半份报告。 */
+function readProbeConfig(): ProbeConfig {
   const ids = process.argv.slice(2);
   if (!ids.length || ids.some(id => !/^\d+$/.test(id))) {
     throw new Error("用法：bun run scripts/SongRandomnessProbe.ts 歌单数字ID [歌单数字ID…]");
   }
-  const cookie = Bun.env.NETEASE_COOKIE?.trim();
   const liveAttempts = Number(Bun.env.SONG_PROBE_LIVE_ATTEMPTS ?? 60);
   const rooms = Number(Bun.env.SONG_PROBE_REPLAY_ROOMS ?? 100);
   const requestedLiveRounds = Number(Bun.env.SONG_PROBE_LIVE_ROUNDS ?? 60);
-  const replayRounds = 100;
   if (!Number.isInteger(liveAttempts) || liveAttempts < 0 || liveAttempts > 200 ||
       !Number.isInteger(requestedLiveRounds) || requestedLiveRounds < 0 || requestedLiveRounds > 200 ||
       !Number.isInteger(rooms) || rooms < 1 || rooms > 200) {
     throw new Error("加载尝试和实测轮数须为 0—200，回放房间数须为 1—200 的整数");
   }
+  return { ids, cookie: Bun.env.NETEASE_COOKIE?.trim(), liveAttempts, requestedLiveRounds, rooms };
+}
+
+/** 真实账号的隔离 Provider：首成功曲顺带探测音频直链，其余只记录 https 与歌词行数。 */
+function createLiveProvider(probe: PlaylistProbe): MusicProvider {
+  const { real, cookie, summary } = probe;
+  return {
+    search: (keyword, limit) => real.search(keyword, limit, cookie),
+    getSongMetadata: songId => real.getSongMetadata(songId, cookie),
+    getPlaylistSongs: (...args) => real.getPlaylistSongs(args[0], cookie),
+    getLoginStatus: cookie ? () => real.getLoginStatus(cookie) : async supplied => ({
+      cookie: supplied, account: {nickname: "隔离非会员夹具", vipStatus: "nonVip"},
+    }),
+    async getSong(songId) {
+      const song = await real.getSong(songId, cookie);
+      if (!summary.live.audioProbe) {
+        try {
+          const response = await fetch(song.audioUrl, {
+            headers: {Range: "bytes=0-1023"}, signal: AbortSignal.timeout(10_000),
+          });
+          summary.live.audioProbe = {
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+            contentRange: response.headers.get("content-range"),
+          };
+          await response.body?.cancel();
+        } catch { summary.live.audioProbe = {id: songId, error: "AUDIO_PROBE_FAILED"}; }
+      }
+      summary.live.resources.push({https: song.audioUrl.startsWith("https://"), lyricLines: song.lyrics.length, popularity: song.popularity});
+      return song;
+    },
+  };
+}
+
+/** 真实回合：按尝试次数上限推进，撞到限流就停。 */
+async function runLiveAttempts(probe: PlaylistProbe): Promise<void> {
+  const { playlist, summary, liveAttempts, requestedLiveRounds, cookie } = probe;
+  if (!liveAttempts) return;
+
+  const driver = await createProbeRoom(createLiveProvider(probe), cookie ?? "MUSIC_U=isolated-fixture", playlist.info);
+  try {
+    for (let attempt = 1; attempt <= liveAttempts; attempt++) {
+      if (summary.live.ids.length >= requestedLiveRounds) break;
+      summary.live.attempts = attempt;
+      try { summary.live.ids.push(await driver.next()); }
+      catch (error) {
+        const code = driver.lastError ?? (error as {code?: string}).code ?? "UNKNOWN";
+        summary.live.failures.push({attempt, code});
+        if (code === "MUSIC_API_RATE_LIMITED") break;
+      }
+      console.log(JSON.stringify({
+        id: summary.playlistId, attempt, success: summary.live.ids.length, failed: summary.live.failures.length,
+      }));
+    }
+  } finally { await driver.close(); }
+}
+
+/** 回放夹具：同一份歌单快照下，按 vip/nonVip 两种账号身份跑满 rooms 个独立房间。 */
+async function runReplayProbe(probe: PlaylistProbe, vipStatus: "vip" | "nonVip"): Promise<unknown> {
+  const { songById, playlist, summary, rooms } = probe;
+  const replayProvider: MusicProvider = {
+    search: async () => [], getSongMetadata: async songId => fixtureSong(songById.get(songId)!),
+    getPlaylistSongs: async () => playlist,
+    getSong: async songId => fixtureSong(songById.get(songId)!),
+    getLoginStatus: async supplied => ({cookie: supplied, account: {nickname: "隔离回放夹具", vipStatus}}),
+  };
+  const sequences: string[][] = [];
+  for (let room = 0; room < rooms; room++) {
+    const driver = await createProbeRoom(replayProvider, "MUSIC_U=isolated-fixture", playlist.info);
+    const sequence: string[] = [];
+    try { for (let round = 0; round < replayRounds; round++) sequence.push(await driver.next()); }
+    finally { await driver.close(); }
+    sequences.push(sequence);
+  }
+  const pool = vipStatus === "vip" ? songById.size : summary.nonVipCandidates;
+  return {
+    vipStatus, pool, rooms,
+    windows: [20, 30, 100].map(rounds => {
+      const metrics = sequences.map(sequence => measureSequence(sequence.slice(0, rounds)));
+      const nameMetrics = sequences.map(sequence => measureSongNames(playlist.songs, sequence.slice(0, rounds)));
+      return {
+        rounds,
+        meanUnique: metrics.reduce((sum, metric) => sum + metric.unique, 0) / rooms,
+        meanRepeatRate: metrics.reduce((sum, metric) => sum + metric.repeatRate, 0) / rooms,
+        roomsWithRepeat: metrics.filter(metric => metric.repeats > 0).length,
+        probabilityAnyRepeat: metrics.filter(metric => metric.repeats > 0).length / rooms,
+        recentTenRepeats: metrics.reduce((sum, metric) => sum + metric.recentTenRepeats, 0),
+        theoreticalUnique: expectedUnique(pool, rounds),
+        meanTitleArtistRepeatRate: nameMetrics.reduce((sum, metric) => sum + metric.repeatRate, 0) / rooms,
+        titleArtistRecentTenRepeats: nameMetrics.reduce((sum, metric) => sum + metric.recentTenRepeats, 0),
+        titleArtistAdjacentRepeats: nameMetrics.reduce((sum, metric) => sum + metric.adjacentRepeats, 0),
+      };
+    }),
+  };
+}
+
+/** 跑完一个歌单：真实回合与两种身份的回放各留一份统计。 */
+async function probePlaylist(
+  real: NeteaseMusicProvider,
+  id: string,
+  config: ProbeConfig,
+): Promise<PlaylistSummary> {
+  const playlist = await real.getPlaylistSongs(id, config.cookie);
+  const songById = new Map(playlist.songs.map(song => [song.id, song]));
+  const summary: PlaylistSummary = {
+    playlistId: id, returned: playlist.songs.length, unique: songById.size,
+    nonVipCandidates: playlist.songs.filter(song => !song.requiresVip).length,
+    live: {
+      requestedRounds: config.requestedLiveRounds, requestedAttempts: config.liveAttempts,
+      attempts: 0, titleArtistMetrics: {}, audioProbe: null,
+      ids: [], resources: [], failures: [], metrics: {},
+    },
+    replay: [],
+  };
+  const probe: PlaylistProbe = {
+    real,
+    cookie: config.cookie,
+    playlist,
+    songById,
+    summary,
+    liveAttempts: config.liveAttempts,
+    requestedLiveRounds: config.requestedLiveRounds,
+    rooms: config.rooms,
+  };
+
+  await runLiveAttempts(probe);
+  summary.live.metrics = measureSequence(summary.live.ids);
+  summary.live.titleArtistMetrics = measureSongNames(playlist.songs, summary.live.ids);
+  for (const vipStatus of ["vip", "nonVip"] as const) {
+    summary.replay.push(await runReplayProbe(probe, vipStatus));
+  }
+  return summary;
+}
+
+async function main() {
+  const config = readProbeConfig();
   const real = new NeteaseMusicProvider({enableGeneralUnblock: false});
   const report = {
     recordedAt: new Date().toISOString(),
     recordedTimeZone: "UTC",
-    credentialPresent: Boolean(cookie), runtime: Bun.version,
+    credentialPresent: Boolean(config.cookie), runtime: Bun.version,
     sourceSha256: Object.fromEntries(await Promise.all([
       "src/application/SonGuessrService.ts", "src/infrastructure/NeteaseMusicProvider.ts",
     ].map(async path => [path, createHash("sha256").update(await Bun.file(path).text()).digest("hex")]))),
     assumptions: {
-      live: cookie ? "真实登录权限；真实歌单与歌曲加载" : "公开歌单与真实匿名歌曲加载；单人公开题库流程，不验证账号会员过滤",
+      live: config.cookie ? "真实登录权限；真实歌单与歌曲加载" : "公开歌单与真实匿名歌曲加载；单人公开题库流程，不验证账号会员过滤",
       replay: "真实歌单快照；登录与歌曲资源为夹具；生产选歌、默认随机源、回合命令均为原实现",
-      browserPlaybackVerified: false, realAccountVipPermissionVerified: Boolean(cookie), generalUnblockEnabled: false,
+      browserPlaybackVerified: false, realAccountVipPermissionVerified: Boolean(config.cookie), generalUnblockEnabled: false,
       minPopularity: 0, artistFilter: false,
     },
     playlists: [] as Array<{ live: { ids?: string[]; resources?: unknown[] } }>,
   };
   const output = resolve("../tasks/song-random/report.json");
-  for (const id of ids) {
-    const playlist = await real.getPlaylistSongs(id, cookie);
-    const songById = new Map(playlist.songs.map(song => [song.id, song]));
-    const summary = {
-      playlistId: id, returned: playlist.songs.length, unique: songById.size,
-      nonVipCandidates: playlist.songs.filter(song => !song.requiresVip).length,
-      live: {requestedRounds: requestedLiveRounds, requestedAttempts: liveAttempts, attempts: 0, titleArtistMetrics: {}, audioProbe: null as unknown, ids: [] as string[], resources: [] as unknown[], failures: [] as unknown[], metrics: {}},
-      replay: [] as unknown[],
-    };
-    const liveProvider: MusicProvider = {
-      search: (keyword, limit) => real.search(keyword, limit, cookie),
-      getSongMetadata: songId => real.getSongMetadata(songId, cookie),
-      getPlaylistSongs: (...args) => real.getPlaylistSongs(args[0], cookie),
-      getLoginStatus: cookie ? () => real.getLoginStatus(cookie) : async supplied => ({
-        cookie: supplied, account: {nickname: "隔离非会员夹具", vipStatus: "nonVip"},
-      }),
-      async getSong(songId) {
-        const song = await real.getSong(songId, cookie);
-        if (!summary.live.audioProbe) {
-          try {
-            const response = await fetch(song.audioUrl, {
-              headers: {Range: "bytes=0-1023"}, signal: AbortSignal.timeout(10_000),
-            });
-            summary.live.audioProbe = {
-              status: response.status,
-              contentType: response.headers.get("content-type"),
-              contentRange: response.headers.get("content-range"),
-            };
-            await response.body?.cancel();
-          } catch { summary.live.audioProbe = {id: songId, error: "AUDIO_PROBE_FAILED"}; }
-        }
-        summary.live.resources.push({https: song.audioUrl.startsWith("https://"), lyricLines: song.lyrics.length, popularity: song.popularity});
-        return song;
-      },
-    };
-    if (liveAttempts) {
-      const driver = await createProbeRoom(liveProvider, cookie ?? "MUSIC_U=isolated-fixture", playlist.info);
-      try {
-        for (let attempt = 1; attempt <= liveAttempts; attempt++) {
-          if (summary.live.ids.length >= requestedLiveRounds) break;
-          summary.live.attempts = attempt;
-          try { summary.live.ids.push(await driver.next()); }
-          catch (error) {
-            const code = driver.lastError ?? (error as {code?: string}).code ?? "UNKNOWN";
-            summary.live.failures.push({attempt, code});
-            if (code === "MUSIC_API_RATE_LIMITED") break;
-          }
-          console.log(JSON.stringify({id, attempt, success: summary.live.ids.length, failed: summary.live.failures.length}));
-        }
-      } finally { await driver.close(); }
-    }
-    summary.live.metrics = measureSequence(summary.live.ids);
-    summary.live.titleArtistMetrics = measureSongNames(playlist.songs, summary.live.ids);
-    for (const vipStatus of ["vip", "nonVip"] as const) {
-      const replayProvider: MusicProvider = {
-        search: async () => [], getSongMetadata: async songId => fixtureSong(songById.get(songId)!),
-        getPlaylistSongs: async () => playlist,
-        getSong: async songId => fixtureSong(songById.get(songId)!),
-        getLoginStatus: async supplied => ({cookie: supplied, account: {nickname: "隔离回放夹具", vipStatus}}),
-      };
-      const sequences: string[][] = [];
-      for (let room = 0; room < rooms; room++) {
-        const driver = await createProbeRoom(replayProvider, "MUSIC_U=isolated-fixture", playlist.info);
-        const sequence: string[] = [];
-        try { for (let round = 0; round < replayRounds; round++) sequence.push(await driver.next()); }
-        finally { await driver.close(); }
-        sequences.push(sequence);
-      }
-      const pool = vipStatus === "vip" ? songById.size : summary.nonVipCandidates;
-      summary.replay.push({
-        vipStatus, pool, rooms,
-        windows: [20, 30, 100].map(rounds => {
-          const metrics = sequences.map(sequence => measureSequence(sequence.slice(0, rounds)));
-          const nameMetrics = sequences.map(sequence => measureSongNames(playlist.songs, sequence.slice(0, rounds)));
-          return {
-            rounds,
-            meanUnique: metrics.reduce((sum, metric) => sum + metric.unique, 0) / rooms,
-            meanRepeatRate: metrics.reduce((sum, metric) => sum + metric.repeatRate, 0) / rooms,
-            roomsWithRepeat: metrics.filter(metric => metric.repeats > 0).length,
-            probabilityAnyRepeat: metrics.filter(metric => metric.repeats > 0).length / rooms,
-            recentTenRepeats: metrics.reduce((sum, metric) => sum + metric.recentTenRepeats, 0),
-            theoreticalUnique: expectedUnique(pool, rounds),
-            meanTitleArtistRepeatRate: nameMetrics.reduce((sum, metric) => sum + metric.repeatRate, 0) / rooms,
-            titleArtistRecentTenRepeats: nameMetrics.reduce((sum, metric) => sum + metric.recentTenRepeats, 0),
-            titleArtistAdjacentRepeats: nameMetrics.reduce((sum, metric) => sum + metric.adjacentRepeats, 0),
-          };
-        }),
-      });
-    }
+  for (const id of config.ids) {
+    const summary = await probePlaylist(real, id, config);
     report.playlists.push(summary);
     const safeReport = structuredClone(report) as typeof report;
     for (const item of safeReport.playlists) {

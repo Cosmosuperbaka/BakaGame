@@ -1,9 +1,4 @@
 {
-  "scripts/SongRandomnessProbe.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
-  },
   "src/application/SonGuessrService.ts": {
     "sonarjs/cognitive-complexity": {
       "count": 3
