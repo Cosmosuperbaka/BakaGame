@@ -275,24 +275,54 @@ const shardsOf = (report: Report): number =>
 /** 报告来自哪台机器：本机与生产机混在一份报告里时必须能分开。 */
 const machineOf = (report: Report): string => String(report.host.machine ?? "").trim();
 
-const machinesIn = (reports: readonly Report[]): string[] => [
-  ...new Set(reports.map(machineOf).filter(Boolean)),
-];
+/** 硬件指纹：`--machine` 是后来才有的参数，老报告没标过，只能靠指纹认出是同一台机器。 */
+const machineKey = (report: Report): string =>
+  `${String(report.host.cpuModel ?? "").trim()}|${String(report.host.logicalCpus ?? "")}|${String(
+    report.host.platform ?? ""
+  )}`;
+
+/** 一套运行里的机器索引：按指纹归并，展示名优先用运行自己标的。 */
+interface MachineIndex {
+  keys: string[];
+  multi: boolean;
+  label: (report: Report) => string;
+  host: (key: string) => Report;
+}
+const machineIndex = (reports: readonly Report[]): MachineIndex => {
+  const names = new Map<string, string>();
+  const sample = new Map<string, Report>();
+  for (const report of reports) {
+    const key = machineKey(report);
+    // 传入顺序按时间升序，一路覆盖后每台机器留下的是最近一次运行。
+    sample.set(key, report);
+    const named = machineOf(report);
+    if (named) names.set(key, named);
+    else if (!names.has(key)) names.set(key, "");
+  }
+  const keys = [...sample.keys()];
+  return {
+    keys,
+    multi: keys.length > 1,
+    label: (report) =>
+      names.get(machineKey(report)) || String(report.host.cpuModel ?? "").trim() || "未标机器",
+    host: (key) => sample.get(key)!,
+  };
+};
 
 /** 整套运行里是否混了机器 / 混了进程数；没混就不往标签里加噪声。 */
-interface TagMode {
-  machine: boolean;
+interface RunLabels {
+  machines: MachineIndex;
   shards: boolean;
 }
-const tagMode = (reports: readonly Report[]): TagMode => ({
-  machine: machinesIn(reports).length > 1,
+const runLabels = (reports: readonly Report[]): RunLabels => ({
+  machines: machineIndex(reports),
   shards: reports.some((report) => shardsOf(report) > 1),
 });
 
-const runTag = (report: Report, mode: TagMode): string => {
+const runTag = (report: Report, labels: RunLabels): string => {
   const parts: string[] = [];
-  if (mode.machine) parts.push(machineOf(report) || "未标机器");
-  if (mode.shards) parts.push(`${shardsOf(report)} 进程`);
+  if (labels.machines.multi) parts.push(labels.machines.label(report));
+  if (labels.shards) parts.push(`${shardsOf(report)} 进程`);
   return parts.length ? ` · ${parts.join(" · ")}` : "";
 };
 
@@ -311,8 +341,8 @@ const perCoreCommands = (step: Step): number =>
 
 const conclusion = (reports: Report[]): string => {
   const lines: string[] = [];
-  const mode = tagMode(reports);
-  const tag = (report: Report): string => runTag(report, mode);
+  const labels = runLabels(reports);
+  const tag = (report: Report): string => runTag(report, labels);
   const ramps = reports.filter(
     (report) => report.mode === "ramp" && !isUnitRun(report) && !isProbeRun(report)
   );
@@ -427,27 +457,25 @@ const STYLES = `
 
 /** 同一带宽预算下，不同游戏占比各自能装多少人——这条轴就是用户可调的 mix。 */
 const capMatrix = (reports: Report[]): string => {
-  const mode = tagMode(reports);
+  const labels = runLabels(reports);
   const groups = new Map<string, Report[]>();
   for (const report of reports.filter((item) => item.mode === "cap")) {
-    const key = [
-      machineOf(report) || "未标机器",
-      shardsOf(report),
-      report.config.pace,
-      report.config.mbps,
-    ].join("|");
+    const key = [machineKey(report), shardsOf(report), report.config.pace, report.config.mbps].join(
+      "#|"
+    );
     groups.set(key, [...(groups.get(key) ?? []), report]);
   }
   const tables = [...groups.entries()]
     .filter(([, items]) => items.length >= 2)
     .map(([key, items]) => {
-      const [machine, shards, pace, mbps] = key.split("|");
+      const [, shards, pace, mbps] = key.split("#|");
+      const head = items[0]!;
       const best = items.map(capacityOf);
       const row = (label: string, pickName: (step: Step) => string) =>
         `<tr><th>${esc(label)}</th>${items.map((_, index) => `<td>${pickName(best[index]!)}</td>`).join("")}</tr>`;
       return (
-        `<p class="meta">${mode.machine ? `${esc(machine!)} · ` : ""}${
-          mode.shards ? `${esc(shards!)} 进程 · ` : ""
+        `<p class="meta">${labels.machines.multi ? `${esc(labels.machines.label(head))} · ` : ""}${
+          labels.shards ? `${esc(shards!)} 进程 · ` : ""
         }pace ${esc(pace!)}、出口预算 ${esc(mbps!)} Mbps</p>` +
         `<div class="scroll"><table><thead><tr><th></th>${items.map((report) => `<th>${esc(mixText(report))}</th>`).join("")}</tr></thead><tbody>` +
         row("在线玩家", (step) => `<b>${step.livePlayers}</b>`) +
@@ -468,17 +496,18 @@ const capMatrix = (reports: Report[]): string => {
 
 /** 只换 --shards 的同口径运行排成一行：这张表就是多进程扩展曲线。 */
 const shardScaling = (reports: Report[]): string => {
+  const labels = runLabels(reports);
   const groups = new Map<string, Report[]>();
   for (const report of reports.filter(
     (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
   )) {
     const key = [
-      machineOf(report) || "未标机器",
+      machineKey(report),
       report.mode,
       mixText(report),
       report.config.pace,
       report.mode === "cap" ? report.config.mbps : 0,
-    ].join("|");
+    ].join("#|");
     groups.set(key, [...(groups.get(key) ?? []), report]);
   }
   const tables = [...groups.values()]
@@ -494,7 +523,7 @@ const shardScaling = (reports: Report[]): string => {
           .join("")}</tr>`;
       const ratio = (step: Step) => step.livePlayers / Math.max(1, base.livePlayers);
       return (
-        `<p class="meta">${esc(machineOf(head) || "未标机器")} · ${esc(mixText(head))} · ${esc(
+        `<p class="meta">${esc(labels.machines.label(head))} · ${esc(mixText(head))} · ${esc(
           head.mode
         )} · pace ${head.config.pace}${
           head.mode === "cap" ? ` · 预算 ${head.config.mbps} Mbps` : ""
@@ -507,6 +536,8 @@ const shardScaling = (reports: Report[]): string => {
         row("扩展效率", (step, index) => fmt(ratio(step) / shardsOf(items[index]!), 2)) +
         row("指令/秒", (step) => fmt(step.commandsPerSecond)) +
         row("每核指令/秒", (step) => fmt(perCoreCommands(step))) +
+        row("每进程在线", (step, index) => fmt(step.livePlayers / shardsOf(items[index]!), 0)) +
+        row("每进程 RSS MB", (step, index) => fmt(step.target.rssMb / shardsOf(items[index]!), 0)) +
         row("带宽 Mbps", (step) => fmt(step.wireMbps)) +
         row("CPU 合计核", (step) => fmt(step.target.cores)) +
         row("RSS 合计 MB", (step) => `${step.target.rssMb}`) +
@@ -518,12 +549,13 @@ const shardScaling = (reports: Report[]): string => {
       );
     });
   if (tables.length === 0) return "";
-  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是它的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。同一口径只换进程数，「扩展效率」= 玩家倍率 ÷ 进程数，1.00 是理想线性。「每核指令/秒」是剔掉进程数之后真正可比的那一列：它往下掉，说明先顶住的不是单核本身变慢，而是内存、同机发压、连接数或房间数。</p>${tables.join("")}</section>`;
+  return `<section><h2>多进程分片扩展</h2><p class="meta">一个 Bun 进程只有一个事件循环，一核就是一个进程的天花板；<code>--shards N</code> 起 N 个各有独立端口与房间号段的进程，把玩家摊到 N 份事件循环上。各次运行的爬坡阶梯不同（起步人数按进程数放大），所以「玩家倍率」只能粗看：<b>真正说明问题的是「每进程在线」和「每核指令/秒」这两行</b>——把每进程玩家数对齐之后，每核指令/秒不掉就是线性扩展，掉了才是被内存、同机发压或带宽合计顶住。</p>${tables.join("")}</section>`;
 };
 
 /** 同一口径在本机与生产机上各跑一遍，差值就是「开发机的数字能不能外推」的答案。 */
 const machineCompare = (reports: Report[]): string => {
-  if (machinesIn(reports).length < 2) return "";
+  const labels = runLabels(reports);
+  if (!labels.machines.multi) return "";
   const groups = new Map<string, Map<string, Report>>();
   for (const report of reports.filter(
     (item) => !isUnitRun(item) && !isProbeRun(item) && item.steps.length > 0
@@ -534,9 +566,13 @@ const machineCompare = (reports: Report[]): string => {
       report.config.pace,
       shardsOf(report),
       report.mode === "cap" ? report.config.mbps : 0,
-    ].join("|");
+    ].join("#|");
     const byMachine = groups.get(key) ?? new Map<string, Report>();
-    byMachine.set(machineOf(report) || "未标机器", report);
+    const machine = labels.machines.label(report);
+    // 同一台机器上重复跑过同口径就留最后一次，两台的读数才对得齐。
+    if (!byMachine.has(machine)) byMachine.set(machine, report);
+    else if (report.startedAt > (byMachine.get(machine)?.startedAt ?? 0))
+      byMachine.set(machine, report);
     groups.set(key, byMachine);
   }
   const tables = [...groups.values()]
@@ -594,36 +630,35 @@ const main = async () => {
     process.exit(1);
   }
 
-  const tags = tagMode(reports);
+  const labels = runLabels(reports);
   const name = (report: Report): string =>
     `${report.label}（pace ${report.config.pace}${
       report.mode === "cap" ? `，上限 ${report.config.mbps}Mbps` : ""
-    }${runTag(report, tags)}）`;
+    }${runTag(report, labels)}）`;
   const series = (list: Report[], pickName: (step: Step) => number) =>
     list.map((report) => ({
       name: name(report),
       points: pick(report, pickName),
       marker: wall(report, pickName),
     }));
-  /** 容量曲线按机器分块：单机独占与分片运行的量级差着一个数量级，画在一张图上只会互相压平。 */
-  const chartable = (machine: string): Report[] =>
+  /** 容量曲线按机器分块：单机独占与多进程运行的量级差着一个数量级，画在一张图上只会互相压平。 */
+  const chartable = (key: string): Report[] =>
     reports.filter(
-      (report) =>
-        (machineOf(report) || "未标机器") === machine && !isUnitRun(report) && !isProbeRun(report)
+      (report) => machineKey(report) === key && !isUnitRun(report) && !isProbeRun(report)
     );
-  const byMachine = new Map<string, Report>();
-  for (const report of reports) byMachine.set(machineOf(report) || "未标机器", report);
-  const machineLines = [...byMachine.entries()]
-    .map(([machine, report]) => {
+  const machineLines = labels.machines.keys
+    .map((key) => {
+      const report = labels.machines.host(key);
       const h = report.host;
-      return `<p class="meta"><b>${esc(machine)}</b>：${esc(String(h.platform ?? ""))} ${esc(
-        String(h.release ?? "")
-      )} · ${esc(String(h.cpuModel ?? ""))} · ${esc(String(h.logicalCpus ?? ""))} 线程 · ${fmt(
-        Number(h.totalMemoryMb ?? 0) / 1024,
-        0
-      )} GB 内存 · Bun ${esc(String(h.bun ?? ""))} · 该机器最后一次运行源码 ${esc(
-        report.source?.commit ?? "未知"
-      )}${report.source?.dirty ? "（含未提交改动）" : ""}</p>`;
+      return `<p class="meta"><b>${esc(labels.machines.label(report))}</b>：${esc(
+        String(h.platform ?? "")
+      )} ${esc(String(h.release ?? ""))} · ${esc(String(h.cpuModel ?? ""))} · ${esc(
+        String(h.logicalCpus ?? "")
+      )} 线程 · ${fmt(Number(h.totalMemoryMb ?? 0) / 1024, 0)} GB 内存 · Bun ${esc(
+        String(h.bun ?? "")
+      )} · 该机器最后一次运行源码 ${esc(report.source?.commit ?? "未知")}${
+        report.source?.dirty ? "（含未提交改动）" : ""
+      }</p>`;
     })
     .join("");
   const latest = reports[reports.length - 1]!;
@@ -716,12 +751,13 @@ const main = async () => {
       chart("在线玩家 → 人均下行字节", "字节/人/秒", (step) => step.bytesPerPlayerSecond)
     );
   };
-  const chartMachines = [...new Set(reports.map((report) => machineOf(report) || "未标机器"))];
-  const charts = chartMachines
-    .map((machine) => {
-      const list = chartable(machine);
+  const charts = labels.machines.keys
+    .map((key) => {
+      const list = chartable(key);
       if (list.length === 0) return "";
-      return `${chartMachines.length > 1 ? `<h3>${esc(machine)}</h3>` : ""}${chartBlock(list)}`;
+      return `${
+        labels.machines.multi ? `<h3>${esc(labels.machines.label(list[0]!))}</h3>` : ""
+      }${chartBlock(list)}`;
     })
     .join("");
 
