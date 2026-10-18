@@ -38,10 +38,5 @@
     "sonarjs/cognitive-complexity": {
       "count": 1
     }
-  },
-  "test/WSLogPrivacy.test.ts": {
-    "sonarjs/cognitive-complexity": {
-      "count": 1
-    }
   }
 }
