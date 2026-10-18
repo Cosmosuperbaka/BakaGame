@@ -120,28 +120,38 @@ const QQ_VIP_BADGE_SRC: {
   ],
 };
 
-function vipBadge(account: SonGuessrMusicAccount): { src: string; label: string; platform: SongMusicPlatform } | null {
-  const isQq = account.platform === "qq";
-  if (isQq) {
-    const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 10);
-    const isYear = Boolean(account.vipYear);
-    if (account.vipTier === "svip") {
-      const src = isYear ? QQ_VIP_BADGE_SRC.svipYear[level] : QQ_VIP_BADGE_SRC.svip[level];
-      const prefix = isYear ? "年费超级会员" : "超级会员";
-      return { src, label: `${prefix} · SVIP${level}`, platform: "qq" };
-    }
-    if (account.vipTier === "vip") {
-      const src = isYear ? QQ_VIP_BADGE_SRC.vipYear[level] : QQ_VIP_BADGE_SRC.vip[level];
-      const prefix = isYear ? "年费绿钻" : "豪华绿钻";
-      return { src, label: `${prefix} · LV${level}`, platform: "qq" };
-    }
-  } else {
-    const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
-    if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
-    if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
-    if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包", platform: "netease" };
+type VipBadge = { src: string; label: string; platform: SongMusicPlatform };
+
+function qqVipBadge(account: SonGuessrMusicAccount): VipBadge | null {
+  const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 10);
+  const isYear = Boolean(account.vipYear);
+  if (account.vipTier === "svip") {
+    return {
+      src: isYear ? QQ_VIP_BADGE_SRC.svipYear[level] : QQ_VIP_BADGE_SRC.svip[level],
+      label: `${isYear ? "年费超级会员" : "超级会员"} · SVIP${level}`,
+      platform: "qq",
+    };
+  }
+  if (account.vipTier === "vip") {
+    return {
+      src: isYear ? QQ_VIP_BADGE_SRC.vipYear[level] : QQ_VIP_BADGE_SRC.vip[level],
+      label: `${isYear ? "年费绿钻" : "豪华绿钻"} · LV${level}`,
+      platform: "qq",
+    };
   }
   return null;
+}
+
+function neteaseVipBadge(account: SonGuessrMusicAccount): VipBadge | null {
+  const level = Math.min(Math.max(account.vipLevel ?? 1, 1), 7);
+  if (account.vipTier === "svip") return { src: NETEASE_VIP_BADGE_SRC.svip[level], label: `SVIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
+  if (account.vipTier === "vip") return { src: NETEASE_VIP_BADGE_SRC.vip[level], label: `VIP · ${LEVEL_NUMERALS[level]}`, platform: "netease" };
+  if (account.vipTier === "musicPackage") return { src: "/assets/netease-vip/musicPackage.png", label: "音乐包", platform: "netease" };
+  return null;
+}
+
+function vipBadge(account: SonGuessrMusicAccount): VipBadge | null {
+  return account.platform === "qq" ? qqVipBadge(account) : neteaseVipBadge(account);
 }
 
 const expireFormat = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "numeric", day: "numeric", timeZone: "Asia/Shanghai" });

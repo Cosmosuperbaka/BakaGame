@@ -6,7 +6,7 @@
   },
   "src/components/songuessr/SongAccountSettings.tsx": {
     "sonarjs/cognitive-complexity": {
-      "count": 2
+      "count": 1
     }
   },
   "src/components/songuessr/phases/SongGameStage.tsx": {
