@@ -40,10 +40,28 @@ const ANDROID = {
 };
 
 afterEach(() => {
+  delete window.__BAKA_CHANNEL__;
   vi.unstubAllGlobals();
 });
 
 describe("ClientDownloadEntry", () => {
+  it("壳里没有下载入口：已经在客户端里的人没有「再装一遍」要选", async () => {
+    for (const clientType of ["desktop", "mobile"] as const) {
+      // 只注入通道对象本身：入口判的是壳在不在，不读里面的凭据与自检。
+      window.__BAKA_CHANNEL__ = {
+        clientType,
+        platform: clientType === "mobile" ? "android" : "windows",
+        clientVersion: "1.0.0",
+      };
+      vi.resetModules();
+      const { ClientDownloadEntry } = await import("./ClientDownloadEntry");
+      const { unmount } = render(<ClientDownloadEntry />);
+
+      expect(screen.queryByRole("button", { name: "下载客户端" })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
   it("入口只写「下载客户端」，点开之前不谈系统与安装包", async () => {
     const fetchMock = await renderWithPackages([WINDOWS, ANDROID]);
     const user = userEvent.setup();
