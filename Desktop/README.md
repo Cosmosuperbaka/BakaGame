@@ -130,13 +130,18 @@ signtool verify /pa /all <同一个文件>
 
 ## 4. 分发与强制更新（P2.7）
 
-- **下载入口在首页**，与其它游戏入口同级，链接指向 `cdn.baka.website` 的**固定别名**（不带版本号，
-  永远指向最新），旧链接长期有效。站内只有 `Client/src/lib/AntiCheatCopy.ts` 的
-  `BAKA_CLIENT_DOWNLOAD_URL` 一处写死了它。
+- **下载入口在首页右上角**（账号左边一枚「下载客户端」）：点开弹窗先选 Windows 还是 Android，
+  再把这个平台的**安装包架构、构建日期、文件大小**标出来，玩家看清楚才给下载链。入口本身不写
+  反作弊之类的前提——装不装由玩家自己判断。地址与元数据都来自服务端
+  `GET /api/client/packages`（逐条说明见 [Agents/ClientChannel.md](../Agents/ClientChannel.md)），
+  前端不写死日期与大小；`Client/src/lib/AntiCheatCopy.ts` 里那条常量只剩反作弊错误码文案在用。
+- **地址由服务端配置给**：`CLIENT_PACKAGE_WINDOWS_URL` / `CLIENT_PACKAGE_ANDROID_URL`，默认就是下面
+  这两条 `cdn.baka.website` 的**固定别名**（不带版本号，永远指向最新，旧链接长期有效）；
+  配成空串即从弹窗里去掉该平台。
 - **URL 必须带桶名那一段**：`https://cdn.baka.website/files/BakaGame-latest-x64.exe`。加速域按
   「第一段路径当桶名」回源，少了 `/files/` 拿到的是 400 `InvalidBucketName`；带上同一段、对象还没上传时
   回 404 `NoSuchKey`——这说明域名与桶本身是通的，缺的只是产物。发布顺序、缓存策略与验收见
-  [Agents/Deployment.md](../Agents/Deployment.md) 的「客户端制品发布」。
+  CI 的 `client-publish` 作业（[.github/workflows/ci.yml](../.github/workflows/ci.yml)）。
 - **构建与上传归 CI**：`desktop` 作业打 NSIS 包，`client-publish` 作业把版本化对象与 `latest` 别名推到 R2
   （只改 `Desktop/` 时安卓作业是 skipped，Windows 包照发）。
 - **Authenticode 还没接**：CI 产出的安装包没有代码签名证书，用户下载时 SmartScreen 会先拦一道。
@@ -148,7 +153,8 @@ signtool verify /pa /all <同一个文件>
   最低版本放在服务端配置里，不发版也能紧急抬升。
 - **首页软提醒**：壳里打开首页时，前端读 `GET /api/client/update-check` 判断是否过时并浮一条
   可关的提示（记的是「关过哪一档」，抬档后重新出现）。提醒与准入是两件事：不更新照样进普通房，
-  反作弊房仍然由服务端硬拦。
+  反作弊房仍然由服务端硬拦。提示里的「下载最新版」按壳自报的类型给对应平台的包（桌面 exe、
+  移动 APK），不再让安卓壳也拿到一条 exe 链接。
 
 ---
 

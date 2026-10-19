@@ -3,13 +3,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
-import {
-  BAKA_CLIENT_DOWNLOAD_URL,
-  CLIENT_UPDATE_DISMISS_LABEL,
-  CLIENT_UPDATE_DOWNLOAD_LABEL,
-  clientUpdateNoticeText,
-} from "@/lib/AntiCheatCopy";
+import { CLIENT_UPDATE_DISMISS_LABEL, CLIENT_UPDATE_DOWNLOAD_LABEL, clientUpdateNoticeText } from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
+import { useClientPackages, type ClientPackagePlatform } from "@/lib/ClientPackages";
 import { dropIn } from "@/lib/Motion";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
@@ -23,6 +19,12 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 /** 存档记的是「已经关掉过哪一档门槛」，服务端抬档后提醒会重新出现。 */
 const DISMISS_KEY = "bakagame:client-update-dismissed";
+
+/** 壳类型 → 安装包平台：提醒里那颗按钮按这个挑包。 */
+const PLATFORM_BY_CLIENT_TYPE: Record<Exclude<BakaClientType, "web">, ClientPackagePlatform> = {
+  desktop: "windows",
+  mobile: "android",
+};
 
 export interface ClientUpdateFloor {
   clientType: Exclude<BakaClientType, "web">;
@@ -84,12 +86,28 @@ export function ClientUpdateNotice() {
     setHidden(true);
   };
 
-  return <ClientUpdateBanner open={!hidden} floor={floor} onDismiss={dismiss} />;
+  // 更新要给的是「自己那一档」的包：安卓壳点开的应当是 APK，不是 Windows 的 exe。
+  // 提醒只在有门槛可提醒时才去问一次发布信息。
+  const { state } = useClientPackages(Boolean(floor) && !hidden);
+  const pkg = floor
+    ? state?.packages.find((item) => item.platform === PLATFORM_BY_CLIENT_TYPE[floor.clientType])
+    : undefined;
+
+  return (
+    <ClientUpdateBanner
+      open={!hidden}
+      floor={floor}
+      downloadUrl={pkg?.available ? pkg.url : undefined}
+      onDismiss={dismiss}
+    />
+  );
 }
 
 export interface ClientUpdateBannerProps {
   open: boolean;
   floor: ClientUpdateFloor | null;
+  /** 本平台的安装包地址；没发布（或发布信息读不到）时留空，按钮整颗不出现。 */
+  downloadUrl?: string;
   onDismiss: () => void;
 }
 
@@ -99,7 +117,7 @@ export interface ClientUpdateBannerProps {
  * 落位在首页内容区顶部而不是底部浮层：底部那条浮层是网页新版本提醒（`VersionUpdateNotice`）
  * 的位置，两条「该更新了」叠在同一处会互相盖掉。
  */
-export function ClientUpdateBanner({ open, floor, onDismiss }: ClientUpdateBannerProps) {
+export function ClientUpdateBanner({ open, floor, downloadUrl, onDismiss }: ClientUpdateBannerProps) {
   return (
     <AnimatePresence>
       {open && floor && (
@@ -116,10 +134,10 @@ export function ClientUpdateBanner({ open, floor, onDismiss }: ClientUpdateBanne
           <span className="min-w-0 flex-1 text-xs leading-snug">
             {clientUpdateNoticeText(floor.clientType, floor.minimumVersion)}
           </span>
-          {/* 制品还没上传时地址留空：不留一枚点了没反应的下载按钮。 */}
-          {BAKA_CLIENT_DOWNLOAD_URL && (
+          {/* 制品还没推上去时不给链接：不留一枚点了跳到 404 的下载按钮。 */}
+          {downloadUrl && (
             <Button asChild size="sm" variant="outline" className="shrink-0">
-              <a href={BAKA_CLIENT_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+              <a href={downloadUrl} target="_blank" rel="noreferrer">
                 {CLIENT_UPDATE_DOWNLOAD_LABEL}
               </a>
             </Button>

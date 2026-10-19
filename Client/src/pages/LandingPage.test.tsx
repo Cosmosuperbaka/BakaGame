@@ -3,22 +3,22 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
-import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import LandingPage from "./LandingPage";
 import { formatRelativeTime } from "@/lib/Time";
+import { useAccountStore } from "@/stores/UseAccountStore";
 
-// 下载地址的唯一真实来源是 AntiCheatCopy，这里不改写它，只为「地址为空则整枚不渲染」留出开关。
-const downloadUrl = vi.hoisted(() => ({ current: undefined as string | undefined }));
-
-vi.mock("@/lib/AntiCheatCopy", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/AntiCheatCopy")>();
-  return {
-    ...actual,
-    get BAKA_CLIENT_DOWNLOAD_URL() {
-      return downloadUrl.current ?? actual.BAKA_CLIENT_DOWNLOAD_URL;
-    },
-  };
-});
+// 右上角的下载入口点开才问发布信息：这里给一份已发布的制品，供断言弹窗内容。
+const WINDOWS_PACKAGE_URL = "https://cdn.test/files/BakaGame-latest-x64.exe";
+const PACKAGES = [
+  {
+    platform: "windows",
+    arch: "x64",
+    url: WINDOWS_PACKAGE_URL,
+    available: true,
+    sizeBytes: 84_216_320,
+    builtAt: "2026-10-19T09:12:33.000Z",
+  },
+];
 
 function renderLandingPage() {
   return render(
@@ -61,22 +61,42 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
-  it("桌面客户端入口指向唯一下载地址并写明只有反作弊房需要", () => {
+  it("下载客户端入口浮在右上角、排在账号左边，点了只谈系统与安装包", async () => {
+    useAccountStore.setState({ status: "guest", profile: null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ packages: PACKAGES }) }))
+    );
+    const user = userEvent.setup();
     renderLandingPage();
 
-    const link = screen.getByRole("link", { name: /桌面客户端/ });
-    expect(link).toHaveAttribute("href", BAKA_CLIENT_DOWNLOAD_URL);
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", "noreferrer");
-    // 措辞不能读成「要玩就得装」：入口文字自带限定条件。
-    expect(link).toHaveTextContent("反作弊房需要");
+    const entry = screen.getByRole("button", { name: "下载客户端" });
+    const account = screen.getByRole("button", { name: "账号" });
+    // 同一排、下载在前：入口的位置本身就是「先看见再决定」，不该藏在页脚里。
+    const row = entry.parentElement as HTMLElement;
+    expect(row.contains(account)).toBe(true);
+    expect(Array.from(row.children).indexOf(entry)).toBeLessThan(
+      Array.from(row.children).indexOf(account)
+    );
+
+    await user.click(entry);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("安装包架构");
+    expect(dialog).toHaveTextContent("构建日期");
+    expect(dialog).toHaveTextContent("文件大小");
+    expect(dialog).toHaveTextContent("80.3 MB");
+    expect(screen.getByRole("link", { name: "下载 Windows 安装包" })).toHaveAttribute(
+      "href",
+      WINDOWS_PACKAGE_URL
+    );
+    vi.unstubAllGlobals();
   });
 
-  it("制品尚未上传（地址为空）时不渲染桌面客户端入口", () => {
-    downloadUrl.current = "";
+  it("入口文案不再拿反作弊说事：装不装由玩家在弹窗里自己判断", () => {
     renderLandingPage();
 
-    expect(screen.queryByRole("link", { name: /桌面客户端/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载客户端" })).toBeInTheDocument();
+    expect(screen.queryByText(/反作弊/)).not.toBeInTheDocument();
   });
 
   it("开放猜角色多人模式并保留排位与锦标赛未上线状态", () => {
@@ -162,7 +182,7 @@ describe("LandingPage", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    downloadUrl.current = undefined;
+    vi.unstubAllGlobals();
   });
 
   it.each([
