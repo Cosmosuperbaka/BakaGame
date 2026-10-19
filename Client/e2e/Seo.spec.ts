@@ -113,4 +113,15 @@ test.describe("页面 SEO 元信息", () => {
       expect(raw).toContain('id="bakagame-faq-structured-data"');
     }
   });
+
+  // 社媒卡片只渲染描述的前两行：登记页面的 og:description 必须以分享标语开头，
+  // 否则最想让人看到的一句话会被后文挤掉。构建期注入与运行时同源，这里验爬虫视角的原始 HTML。
+  test("所有登记页面的分享描述均以标语开头", async ({ page }) => {
+    for (const route of ["/", "/whoisfaker", "/songuessr", "/cee", "/credits"]) {
+      const raw = await (await getLoopback(page.request, route)).text();
+      expect(raw).toContain(
+        '<meta property="og:description" content="1000万以内最好玩的小游戏网站。'
+      );
+    }
+  });
 });

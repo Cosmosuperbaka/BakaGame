@@ -116,6 +116,8 @@ try {
       'id="bakagame-faq-structured-data"',
       '"@type":"FAQPage"',
       "常见问题",
+      // 分享标语必须出现在描述 content 的开头：社媒卡片只渲染前两行
+      'content="1000万以内最好玩的小游戏网站。',
       text,
     ];
     for (const marker of markers) {

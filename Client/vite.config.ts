@@ -12,6 +12,7 @@ import {
   REPOSITORY_URL,
   SITE_NAME,
   SITE_ORIGIN,
+  SITE_TAGLINE,
   buildFaqStructuredData,
   type PageMeta,
 } from "./src/data/PageMeta.ts";
@@ -884,6 +885,16 @@ function assertShellFaq(): void {
   }
 }
 
+// 分享标语是所有登记页 description 的第一句：社媒卡片只展示前两行，
+// 标语一旦被后文挤掉，分享出去的效果就直接退化——用断言把它钉死在构建前。
+function assertShareDescription(): void {
+  for (const meta of PAGE_META) {
+    if (!meta.description.startsWith(SITE_TAGLINE)) {
+      throw new Error(`静态外壳：${meta.path} 的描述未以分享标语「${SITE_TAGLINE}」开头`);
+    }
+  }
+}
+
 /** 单页静态外壳：在 index.html 原文上补齐 head 元信息与正文，并给出双形态落盘路径。 */
 function buildShellPage(
   original: string,
@@ -965,6 +976,7 @@ function staticShellPlugin() {
       }
 
       assertShellFaq();
+      assertShareDescription();
 
       const pages = PAGE_META.map((meta) => buildShellPage(original, meta));
 
@@ -984,6 +996,7 @@ function staticShellPlugin() {
           STRUCTURED_DATA_ID,
           FAQ_STRUCTURED_DATA_ID,
           "常见问题",
+          SITE_TAGLINE,
         ]) {
           if (!written.includes(marker)) {
             throw new Error(`静态外壳：${page.outputs[0]} 缺少 ${marker}`);

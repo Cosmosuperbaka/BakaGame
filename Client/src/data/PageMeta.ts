@@ -14,6 +14,13 @@ export const SITE_ORIGIN = "https://game.baka.website";
 export const SITE_NAME = "BakaGame";
 
 /**
+ * 分享标语：每个登记页面的 description 第一句都必须是它。
+ * 社媒卡片正文由 og:description 渲染，抓取器普遍只展示前两行——最想让人看到的一句
+ * 放在最前面，写在正文之后会被直接截掉。构建期断言与 SEO E2E 都以它为约束。
+ */
+export const SITE_TAGLINE = "1000万以内最好玩的小游戏网站。";
+
+/**
  * 公开代码仓库。页脚外链、提交历史的取数接口与提交页跳转都从这里取，
  * 免得同一串地址在三个地方各写一份、改一处漏两处。
  */
@@ -45,7 +52,7 @@ export interface PageMeta {
    * 每次构建都刷新会让搜索引擎判定该字段不可信，进而整体忽略它（不写比写错好）。
    */
   lastmod?: string;
-  /** meta description 与 og:description */
+  /** meta description 与 og:description；第一句固定为分享标语 `SITE_TAGLINE` */
   description: string;
   /**
    * 社交媒体分享图（og:image）。本站图统一用 `${SITE_ORIGIN}/og/<名>.jpg`：
@@ -70,9 +77,8 @@ export interface PageMeta {
 export const PAGE_META: PageMeta[] = [
   {
     path: "/",
-    lastmod: "2026-10-13",
-    description:
-      "BakaGame是一个二刺猿派对小游戏合集站，主要玩法包括：WhoisFaker谁是卧底、Songuessr听歌识曲/听歌识番、二刺猿笑传之猜猜呗增强版。这绝对是1000万以内你能找到体验最好的派对小游戏网站。",
+    lastmod: "2026-10-19",
+    description: `${SITE_TAGLINE}BakaGame是一个二刺猿派对小游戏合集站，主要玩法包括：WhoisFaker谁是卧底、Songuessr听歌识曲/听歌识番、二刺猿笑传之猜猜呗增强版（CEE）。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame",
@@ -82,6 +88,8 @@ export const PAGE_META: PageMeta[] = [
       "听歌识曲",
       "听歌识番",
       "猜动漫角色",
+      "CEE",
+      "猜猜呗",
       "二次元小游戏",
       "聚会开黑",
       "Wordle",
@@ -133,7 +141,7 @@ export const PAGE_META: PageMeta[] = [
       url: `${SITE_ORIGIN}/`,
       inLanguage: "zh-CN",
       description:
-        "一个二刺猿派对小游戏合集站，主要玩法包括：WhoisFaker谁是卧底、Songuessr听歌识曲/听歌识番、二刺猿笑传之猜猜呗增强版",
+        "一个二刺猿派对小游戏合集站，主要玩法包括：WhoisFaker谁是卧底、Songuessr听歌识曲/听歌识番、二刺猿笑传之猜猜呗增强版（CEE）",
       // 组织实体 + sameAs 指向源码仓库：帮 AI 搜索把「BakaGame」这个名字与站点、
       // 代码仓库收敛成同一个实体——实体锚点越明确，站外提及时越容易被正确指认。
       publisher: {
@@ -147,9 +155,8 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/whoisfaker",
-    lastmod: "2026-10-13",
-    description:
-      "在线版谁是卧底（WhoisFaker）：4~16 人实时联机的语言推理派对游戏，自由出题、全员投票、平票加赛与白板、天使机制全都有，丢个链接即刻开局。",
+    lastmod: "2026-10-19",
+    description: `${SITE_TAGLINE}在线版谁是卧底（WhoisFaker）：4~16 人实时联机的语言推理派对游戏，自由出题、全员投票、平票加赛与白板、天使机制全都有，丢个链接即刻开局。`,
     image: `${SITE_ORIGIN}/og/Faker.jpg`,
     keywords: [
       "谁是卧底",
@@ -216,9 +223,8 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/songuessr",
-    lastmod: "2026-10-13",
-    description:
-      "听歌猜歌，也能听歌识番！Songuessr 联动网易云、QQ音乐与 Bangumi：猜歌名或猜番剧，逐字歌词随曲点亮，年份、热度、标签线索逐步收窄，单人练习与多人抢答都支持。",
+    lastmod: "2026-10-19",
+    description: `${SITE_TAGLINE}听歌猜歌，也能听歌识番！Songuessr 联动网易云、QQ音乐与 Bangumi：猜歌名或猜番剧，逐字歌词随曲点亮，年份、热度、标签线索逐步收窄，单人练习与多人抢答都支持。`,
     image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
     keywords: [
       "Songuessr",
@@ -285,9 +291,8 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/cee",
-    lastmod: "2026-10-13",
-    description:
-      "多人一起猜动漫角色！CEE（二刺猿笑传之猜猜呗增强版）基于数十万条 Bangumi 角色资料，从性别、年代、评分、声优到标签逐层排除，支持组队对抗、角色 BP 与原版服务器互通。",
+    lastmod: "2026-10-19",
+    description: `${SITE_TAGLINE}多人一起猜动漫角色！CEE（二刺猿笑传之猜猜呗增强版）基于数十万条 Bangumi 角色资料，从性别、年代、评分、声优到标签逐层排除，支持组队对抗、角色 BP 与原版服务器互通。`,
     image: `${SITE_ORIGIN}/og/CEE.jpg`,
     keywords: [
       "CEE",
@@ -353,9 +358,8 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/credits",
-    lastmod: "2026-10-17",
-    description:
-      "BakaGame 的开源致谢页：查看支撑本站的核心技术栈、参与本项目开发的大模型署名，以及全部前端 npm 依赖的版本与许可证原文。依赖清单可搜索、可按 License 筛选。",
+    lastmod: "2026-10-19",
+    description: `${SITE_TAGLINE}BakaGame 的开源致谢页：查看支撑本站的核心技术栈、参与本项目开发的大模型署名，以及全部前端 npm 依赖的版本与许可证原文。依赖清单可搜索、可按 License 筛选。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame",

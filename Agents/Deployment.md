@@ -152,6 +152,9 @@ NapCat 侧 nginx 只开一个 `location /onebot-internal/`（`proxy_pass` 到宿
   FAQPage JSON-LD，运行时 `Seo` 按固定 id 重建同一份数据；问答随外壳在首帧前一起清空，用户不可见。
   缺问答、空条目或重复问题会让构建直接失败——这块内容坏了没有观感反馈，只能靠断言拦在部署前。
   首页 WebSite 结构化数据内含 Organization 实体（`sameAs` 指向 `REPOSITORY_URL`），用于 AI 搜索的实体识别。
+- **分享标语前置**：每个登记页面的 `description` 第一句固定为 `SITE_TAGLINE`
+  （「1000万以内最好玩的小游戏网站。」）。社媒卡片只渲染描述的前两行，标语若写在正文之后会被直接截掉；
+  构建期断言、资源冒烟与 SEO E2E 三处共同约束，新增页面漏写会当场失败。
 - **正文外壳必须在首次绘制之前消失**：外壳插在 `#root` 内，紧随其后是一段 parser-blocking
   内联脚本 `document.getElementById("root").replaceChildren()`，随解析同步清空。入口是 defer 的
   module 脚本（懒加载路由 chunk 还要再等一次网络），执行时机在首帧之后——只靠它替换 `#root`，
