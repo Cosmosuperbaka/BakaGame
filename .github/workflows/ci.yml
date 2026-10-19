@@ -167,7 +167,13 @@ jobs:
       - name: Run client tests with coverage
         run: pnpm --filter client test:coverage
 
+      # 生产刻意不注入 VITE_SERVER_URL：前后端已由 ESA 同源化，基址留空即走同源相对路径，
+      # 由边缘把 /api/* 反代到后端。显式写死域名反而会在域名迁移时把旧后端烧进 bundle。
+      # DSN 最终仍会编译进 bundle，但存在 secret 里是为了别让人从仓库白拿：
+      # 拿来打脏数据、刷配额都要付出「访问仓库 Secrets」这一步的成本。
       - name: Build client
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
         run: pnpm --filter client build
 
       - name: Smoke test production assets
