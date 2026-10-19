@@ -64,8 +64,10 @@ object SelfCheck {
         try {
             val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE)
                 as? android.view.accessibility.AccessibilityManager ?: return
+            // AccessibilityServiceInfo 在 android.accessibilityservice 包下，
+            // 不是 android.view.accessibility（后者只有 AccessibilityManager 与事件类）。
             for (info in manager.getEnabledAccessibilityServiceList(
-                android.view.accessibility.AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+                android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK
             )) {
                 val id = info.resolveInfo.serviceInfo.packageName + "/" + info.resolveInfo.serviceInfo.name
                 if (AUTOMATION_BLACKLIST.any { id.contains(it, ignoreCase = true) }) {
@@ -143,7 +145,8 @@ object SelfCheck {
                 android.os.Process.myUid(),
                 context.packageName,
             )
-            if (mode?.ordinal == 0) soft.add("media_projection_allowed") // MODE_ALLOWED 异常态（本 app 从不申请投影）
+            // unsafeCheckOpNoThrow 返回 Int（AppOpsManager 的模式常量），不是枚举，没有 ordinal。
+            if (mode == android.app.AppOpsManager.MODE_ALLOWED) soft.add("media_projection_allowed") // 异常态（本 app 从不申请投影）
         } catch (e: Exception) { /* API 差异，忽略 */ }
     }
 
@@ -156,7 +159,8 @@ object SelfCheck {
         if (source.startsWith("/data/user/") && !source.startsWith("/data/user/0/")) hard.add("clone_user_data")
         val userId = android.os.Process.myUid() / 100000
         if (userId != 0) soft.add("clone_user_id") // 工作资料用户会命中，属可解释的软信号
-        val data = context.dataDir
+        // Context.getDataDir() 返回 File（API 24+），要拿路径得用 absolutePath。
+        val data = context.dataDir.absolutePath
         if (data.isNotEmpty() && !data.contains(context.packageName)) soft.add("clone_data_dir")
     }
 

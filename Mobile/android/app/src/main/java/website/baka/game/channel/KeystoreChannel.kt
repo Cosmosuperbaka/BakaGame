@@ -63,12 +63,13 @@ object KeystoreChannel {
         var strongBox = false
         try {
             val withSb = specBuilder(nonce).setIsStrongBoxBacked(true)
-            keyPairGenerator().initialize(withSb.build()).generateKeyPair()
+            // initialize() 返回 Unit，不能链式接 generateKeyPair()，必须分两步。
+            keyPairGenerator().apply { initialize(withSb.build()) }.generateKeyPair()
             strongBox = true
         } catch (e: Exception) {
             runCatching { keyStore().deleteEntry(ALIAS) }
             try {
-                keyPairGenerator().initialize(specBuilder(nonce).build()).generateKeyPair()
+                keyPairGenerator().apply { initialize(specBuilder(nonce).build()) }.generateKeyPair()
             } catch (e2: Exception) {
                 throw ChannelKeyException("keystore key generation failed", e2)
             }
