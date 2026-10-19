@@ -26,7 +26,7 @@ Desktop/
     capabilities/
       default.json                本地窗口 IPC 面
       remote-client-bridge.json   远程 URL 页面的 IPC 面（域名在这里改）
-    icons/README.md               图标占位说明（本目录不放图标文件）
+    icons/README.md               图标来源与重新生成命令（五枚图标已入库）
     src/
       main.rs                     入口 + 顶部条款注释块 + 构建身份常量
       lib.rs                      窗口创建、初始化脚本注入、四个命令、启动线程与票据预签
@@ -64,6 +64,9 @@ pnpm dlx @tauri-apps/cli dev             # 开发运行
 pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包，产物在 target/release/bundle/nsis/
 ```
 
+`Cargo.lock` 与源码一起进 Git：壳是要发布出去的二进制，锁住整套依赖版本才能让每次构建复现同一份代码。
+改完 `Cargo.toml` 要重跑一次 `cargo check` 把 lock 一起更新再提交，否则带 `--locked` 的构建会直接失败。
+
 `tauri dev` 会用 `tauri.conf.json` 里的 `frontendDist`（即远程站点地址）直接加载线上页面，
 因此**开发也需要能访问 `https://game.baka.website`**。要改成本地页面调试，得用一个真正
 能提供 https 的地址（本地反向代理、或已签发的预览域），例如：
@@ -75,9 +78,11 @@ $env:BAKA_SITE_URL = "https://<本地反代给出的 https 域>"   # 非 https �
 改站点地址同时要去 `capabilities/remote-client-bridge.json` 的 `remote.urls` 加白，
 否则桥接能注入但 `sign` / `selfCheck` 会被权限层拒掉。
 
-### 图标（打包前必做一次）
+### 图标（已落地，换 logo 时才需要重做）
 
-`src-tauri/icons/` 里不放文件，见 `src-tauri/icons/README.md`。
+`src-tauri/icons/` 里那五枚（32/128/128@2x/`icon.png`/`icon.ico`）按 `tauri.conf.json` 的
+`bundle.icon` 命名，源图与 `Client/` 共用 `Client/public/assets/favicon.png`。
+重新生成的命令与口径写在 `src-tauri/icons/README.md`。
 `tauri build` 在缺图标时会直接失败，这是有意保留的硬门槛。
 
 ### 蜜标与构建批次
@@ -308,22 +313,22 @@ WebView2 Runtime 与 Edge 的 `Application` 目录、`Common Files\Microsoft Sha
 
 ## 7. 未验证与未实现（必须如实读这一节）
 
-**编译验证状态**：本机**没有 Rust 工具链**（`cargo` / `rustc` 均不存在），
-本目录全部 Rust 代码**未经 `cargo check`、未经运行**，只有 `bridge.rs` 的 JS 片段做过语法检查。
-按「不假装编译通过」的要求，以下代码在真实工具链上需要逐项确认：
+**编译验证状态**：本机已装 Rust 工具链（`cargo` / `rustc` 1.99，链接走 VS Build Tools 的 MSVC），
+`cargo check --all-targets` **通过**，只剩 3 条 dead-code 警告；`Cargo.lock` 已随源码入库。
+检查过程中改掉了三处真实编译错误：`ed25519-dalek` 得开 `rand_core` feature 才放开 `SigningKey::generate`、
+`Ordering` 不能拿去和 `< 0` 比、`spawn_blocking(...).await` 外面那层 `Ok(...)` 会套出双层 `Result`。
+**但没有做过 `tauri build`**（CI 上有打包作业，本机一次也没跑过），也没有真跑过壳，所以以下这些仍逐项待确认：
 
-1. `Cargo.toml` 的依赖组合与 `tauri = "2"` / `reqwest = "0.12"`（`json` + `blocking` + `native-tls`）能否一起解出。
-2. `tauri.conf.json` 各字段与 `capabilities/*.json` 的 schema（尤其 `remote.urls`）是否被本仓库选用的 Tauri 小版本接受。
-3. `tauri::async_runtime::spawn_blocking`、`WebviewWindowBuilder::{initialization_script, on_navigation}` 的签名与错误类型。
-4. `winapi.rs` 三个手写结构体在 x64 上的布局（已有 `PROCESS_BASIC_INFORMATION` 尺寸断言）。
-5. `ed25519-dalek = "2"` 现在用 default features（`fast` + `std` + `zeroize`，私钥 drop 时清零），签名走 `Signer::sign`、生成走 `SigningKey::generate(&mut OsRng)`（`rand_core` 的 `getrandom` feature）。若所选小版本把 `generate` 门控掉了，改用 `SigningKey::from_bytes(&seed)` 自行取 32 字节种子即可，存储格式不变。
-6. `attest.rs` / `http.rs` 的**整条闭环从未真跑过**：三趟往返（register / challenge / attest）的字段名与类型
+1. `tauri.conf.json` 各字段与 `capabilities/*.json` 的 schema（尤其 `remote.urls`）是否被本仓库选用的 Tauri 小版本接受
+   —— `cargo check` 不读这些 JSON，只有 `tauri build` / `tauri dev` 会校验。
+2. `winapi.rs` 三个手写结构体在 x64 上的运行时布局（已有 `PROCESS_BASIC_INFORMATION` 尺寸断言，但断言只在测试里跑）。
+3. `attest.rs` / `http.rs` 的**整条闭环从未真跑过**：三趟往返（register / challenge / attest）的字段名与类型
    是照着 `Server/src/transport/routes/ClientChannelRoutes.ts` 的 strict schema 逐项核对出来的，
    没有对线上服务端实际请求过一次。`attest.rs` 里的 `#[test]` 只钉住序列化出来的字段名，不需要网络。
-7. `reqwest::blocking` 只能在**非 async 上下文**里用（在 Tokio reactor 线程上构造会 panic）。
+4. `reqwest::blocking` 只能在**非 async 上下文**里用（在 Tokio reactor 线程上构造会 panic）。
    本轮所有调用点都在 `spawn_blocking` 或 `std::thread::spawn` 里；后续改代码不要把 `http::post_json`
    直接挪进 `async fn` 命令体。
-8. 票的一次性语义靠壳侧 `Ticket::served` 标记 + 5 秒余量兜住，**没有服务端配合的回归测试**：
+5. 票的一次性语义靠壳侧 `Ticket::served` 标记 + 5 秒余量兜住，**没有服务端配合的回归测试**：
    「同一张票被消费两次」「导航后旧票还在」这类问题只有真实握手才能暴露。
 
 **刻意留下的未实现项**（不伪造实现，全部标注 TODO）：

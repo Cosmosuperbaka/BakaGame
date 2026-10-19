@@ -298,7 +298,7 @@ fn version_lt(current: &str, minimum: &str) -> bool {
     let a = parse_version(current);
     let b = parse_version(minimum);
     match (a, b) {
-        (Some(a), Some(b)) => cmp_parts(&a, &b) < 0,
+        (Some(a), Some(b)) => cmp_parts(&a, &b).is_lt(),
         _ => false,
     }
 }

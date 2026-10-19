@@ -24,7 +24,8 @@ serde_json = "1"
 # 设备密钥对：Ed25519 私钥签名服务端 challenge。
 # 用 default features（fast + std + zeroize）：`zeroize` 让私钥在 drop 时清零，
 # 这一条对「私钥存在用户机器上」的威胁模型是实质收益，不要用 default-features = false 关掉。
-ed25519-dalek = "2"
+# 额外的 `rand_core` 只用来放开 `SigningKey::generate`（默认不带随机源）。
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 # 只为拿到 `OsRng`（`getrandom` feature 提供系统 CSPRNG）；种子生成走 `SigningKey::generate`
 rand_core = { version = "0.6", features = ["getrandom"] }
 base64 = "0.22"

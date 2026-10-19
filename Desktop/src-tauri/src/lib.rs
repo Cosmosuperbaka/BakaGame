@@ -237,7 +237,7 @@ async fn baka_ticket(app: tauri::AppHandle) -> Result<Option<attest::TicketPaylo
 #[tauri::command]
 async fn baka_sign(app: tauri::AppHandle, challenge: String) -> Result<String, String> {
     let handle = app.clone();
-    Ok(tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let state = handle.state::<AppState>();
         let current = state
             .wait_for_device()
@@ -256,7 +256,7 @@ async fn baka_sign(app: tauri::AppHandle, challenge: String) -> Result<String, S
         current.sign(&challenge)
     })
     .await
-    .map_err(|err| format!("签名任务异常：{err}"))?)
+    .map_err(|err| format!("签名任务异常：{err}"))?
 }
 
 /// 桥接的 `selfCheck()`：每次调用都重新跑一遍，不缓存（调试器可能中途才附着）
