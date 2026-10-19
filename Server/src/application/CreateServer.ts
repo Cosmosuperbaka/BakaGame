@@ -30,6 +30,7 @@ import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewR
 import { InMemoryAntiCheatReviewQueue, type CEEAntiCheatReviewBoard } from "./CEEAntiCheatSignals";
 import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
+import { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
 import {
@@ -169,6 +170,13 @@ export function createServer(
         })
       : undefined,
   });
+  // 下载弹窗标的构建日期与文件大小来自制品本身：对配置里那两条公开别名发 HEAD，结果短缓存。
+  const clientArtifacts = new ClientArtifacts({
+    urls: {
+      windows: env.clientPackageWindowsUrl,
+      android: env.clientPackageAndroidUrl,
+    },
+  });
   const app = createApp({
     ...appOptions,
     env,
@@ -178,6 +186,7 @@ export function createServer(
     ceeService: cee,
     account,
     clientChannel,
+    clientArtifacts,
     disposeResources: async () => {
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();

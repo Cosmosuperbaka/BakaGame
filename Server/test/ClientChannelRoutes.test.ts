@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { ClientArtifacts } from "../src/infrastructure/ClientArtifacts";
 import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
 
@@ -62,4 +63,50 @@ test("缺版本号时拒绝：没有版本就没有提醒的依据", async () =>
   const result = await check(appAt("2.0.0"), "clientType=desktop");
   expect(result.status).toBeGreaterThanOrEqual(400);
   expect(result.status).toBeLessThan(500);
+});
+
+/** 下载弹窗读的那条：制品元数据来自 `ClientArtifacts`，与通道证明启没启用无关。 */
+async function packages(artifacts?: ClientArtifacts) {
+  const response = await clientChannelRoutes(undefined, artifacts).handle(
+    new Request("http://localhost/api/client/packages")
+  );
+  return {
+    status: response.status,
+    cacheControl: response.headers.get("cache-control"),
+    body: await response.json().catch(() => null),
+  };
+}
+
+const published = new ClientArtifacts({
+  urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe", android: "" },
+  fetcher: (async () =>
+    ({
+      ok: true,
+      headers: new Headers({ "content-length": "84216320", "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT" }),
+    }) as unknown as Response) as unknown as typeof fetch,
+});
+
+test("下载弹窗读制品元数据：地址、架构、大小与构建时间一次给全", async () => {
+  const result = await packages(published);
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    packages: [
+      {
+        platform: "windows",
+        arch: "x64",
+        url: "https://cdn.test/files/BakaGame-latest-x64.exe",
+        available: true,
+        sizeBytes: 84216320,
+        builtAt: "2026-10-19T09:12:33.000Z",
+      },
+    ],
+  });
+});
+
+test("通道没启用时下载信息照回：下载不该被准入相关的开关挡住", async () => {
+  expect((await packages(undefined)).body).toEqual({ packages: [] });
+});
+
+test("下载信息可以被短时间缓存：它在发版前根本不会变", async () => {
+  expect((await packages(published)).cacheControl).toBe("public, max-age=60");
 });

@@ -14,6 +14,13 @@ const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"])
  */
 const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
 
+/**
+ * 客户端安装包的固定别名地址：CI 的 `client-publish` 作业按这两个键名推 R2，
+ * 名字不带版本号、永远指向最新，旧链接长期有效。默认值即发布约定，换桶才需要配环境变量。
+ */
+const DEFAULT_WINDOWS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
+const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-release.apk";
+
 /** 通行密钥域名（relying party ID）的取值形状：裸域名，允许 `localhost` 这类单标签。 */
 const RP_ID_PATTERN = /^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
@@ -87,6 +94,13 @@ export interface AppEnv {
    */
   clientMinDesktopVersion?: string;
   clientMinMobileVersion?: string;
+  /**
+   * 客户端安装包的公开下载地址（CI 的 `client-publish` 作业推上去的固定别名）。
+   * 首页下载弹窗与更新提醒都读这两条：服务端对地址发 HEAD 取回构建日期与文件大小，
+   * 玩家点到的链接与这里同一处。空串 = 该平台不进列表。
+   */
+  clientPackageWindowsUrl?: string;
+  clientPackageAndroidUrl?: string;
   /**
    * Android Key Attestation 的期望包名。不配 = 不校验证明链（带链注册只记 `degraded`）：
    * 包名是信任基准，写死默认值会让任何 APK 都能声称自己是我们的。
@@ -391,6 +405,11 @@ export const readEnv = (): AppEnv => {
     ceeOriginalServerUrl: (Bun.env.CCB_ORIGINAL_SERVER_URL ?? "").trim().replace(/\/+$/, ""),
     clientMinDesktopVersion: Bun.env.CLIENT_MIN_DESKTOP_VERSION?.trim() || undefined,
     clientMinMobileVersion: Bun.env.CLIENT_MIN_MOBILE_VERSION?.trim() || undefined,
+    // 显式配成空串 = 这个平台不发（安卓没配签名密钥时就是这个状态），不给默认地址。
+    clientPackageWindowsUrl:
+      Bun.env.CLIENT_PACKAGE_WINDOWS_URL?.trim() ?? DEFAULT_WINDOWS_PACKAGE_URL,
+    clientPackageAndroidUrl:
+      Bun.env.CLIENT_PACKAGE_ANDROID_URL?.trim() ?? DEFAULT_ANDROID_PACKAGE_URL,
     // Android Key Attestation 的期望包名：不配就不校验证明链（带链注册只记 degraded）。
     // 写死包名等于替所有 APK 定一个信任基准，必须由部署方明确给出。
     androidAttestationPackage: Bun.env.ANDROID_ATTESTATION_PACKAGE?.trim() || undefined,

@@ -33,6 +33,7 @@ import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
 import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
+import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { ClientChannelProof } from "../shared/Index";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
@@ -60,6 +61,11 @@ export interface AppDependencies {
    * 换成 `connection.clientChannel`。未提供时反作弊房谁也进不去（普通房不受影响）。
    */
   clientChannel?: ClientChannel;
+  /**
+   * 客户端安装包元数据（首页下载弹窗读它来标构建日期与文件大小）。
+   * 未提供时 `/api/client/packages` 回空列表，弹窗只剩「尚未发布」。
+   */
+  clientArtifacts?: ClientArtifacts;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -575,6 +581,7 @@ export const createApp = ({
   account,
   handshakeQuota: handshakeQuotaOverride,
   clientChannel,
+  clientArtifacts,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -743,7 +750,7 @@ export const createApp = ({
     .use(bangumiImageRoutes(bangumiImages))
     // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
     .use(accountRoutes(account, logger))
-    .use(clientChannelRoutes(clientChannel))
+    .use(clientChannelRoutes(clientChannel, clientArtifacts))
     // ==================== WebSocket 入口 ====================
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema,

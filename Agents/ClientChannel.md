@@ -80,6 +80,21 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 都绕不过反作弊房的 `CLIENT_OUTDATED`。响应带 `Cache-Control: no-store`：抬档要立刻生效，
 被边缘缓存的旧门槛会让提醒静默失灵。
 
+### `GET /api/client/packages`
+
+无查询串 → 返回 `{ packages: [{ platform, arch, url, available, sizeBytes?, builtAt? }] }`，
+`platform` 取 `windows` / `android`，数组顺序即首页弹窗里的顺序。
+
+首页的「下载客户端」弹窗与更新提醒读这一条。构建日期与文件大小**不在前端写死**：
+`ClientArtifacts` 对配置里的公开别名发一次 HEAD，把对象存储自己的 `Last-Modified` 与
+`Content-Length` 读回来，CI 推包即跟版，不需要谁记得去改页面。读不到（404 = 制品还没推上去、
+超时、边缘节点抖动）一律记 `available: false`，前端把下载按钮置灰写「尚未发布」——
+不给玩家一个跳 404 的链接。探测结果服务端缓存 60 秒，响应带 `Cache-Control: public, max-age=60`。
+
+地址来自服务端配置 `CLIENT_PACKAGE_WINDOWS_URL` / `CLIENT_PACKAGE_ANDROID_URL`，
+默认即 CI `client-publish` 作业推的那两条固定别名；配成空串 = 该平台不进列表。
+这条与通道证明无关：通道没启用（`CLIENT_CHANNEL_DISABLED`）时它照样回内容，下载不该被准入相关的开关挡住。
+
 ### ws 握手
 
 `/api/cee/ws?clientType=…&clientVersion=…&ticket=…`
@@ -182,5 +197,7 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 - **首页软提醒**（`Client/src/components/ClientUpdateNotice.tsx`）只在原生壳里出现，可关。
   关的是「这一档门槛」，服务端抬档后提醒重新出现；普通房间照常游玩，措辞必须写明这点。
+  「下载最新版」按壳自报的类型给对应平台的包（桌面→exe、移动→APK），读的是
+  `/api/client/packages`；`available: false` 时整颗按钮不出现，不留一枚跳 404 的链接。
 - **反作弊房硬门槛**（`CEERooms.requireClientAdmission`，建房与进房共用）不看玩家关没关过提醒，
   版本低于最低值即 `CLIENT_OUTDATED`。提醒只是让玩家早点动手，从来不是准入的一部分。

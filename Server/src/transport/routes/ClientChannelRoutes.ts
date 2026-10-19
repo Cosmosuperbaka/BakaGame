@@ -1,11 +1,12 @@
 import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
+import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../../infrastructure/ClientChannel";
 import { resolveClientIp } from "../ClientIp";
 
 /**
  * 客户端通道证明的 HTTP 面：注册设备公钥、领挑战、交签名换一次性 ticket，
- * 外加一条给首页更新提醒用的最低版本读回。
+ * 外加两条给首页用的读回——更新提醒读的最低版本，下载弹窗读的制品元数据。
  * 协议逐字定义见 `Agents/ClientChannel.md`；字段名与壳（`Desktop/`、`Mobile/`）对齐，改名即断链。
  *
  * 这里刻意不做房间准入：ticket 只证明「这台设备上的这个壳持有私钥」，
@@ -34,7 +35,10 @@ const attestationSchema = t.Object(
   { additionalProperties: false }
 );
 
-export const clientChannelRoutes = (channel: ClientChannel | undefined) => {
+export const clientChannelRoutes = (
+  channel: ClientChannel | undefined,
+  artifacts?: ClientArtifacts
+) => {
   /** 未装配通道时明确报错，而不是静默放行：壳会把「注册成功」误判成「能进反作弊房」。 */
   const require = () => {
     if (!channel) throw new AppError("CLIENT_CHANNEL_DISABLED", "服务端未启用客户端通道");
@@ -105,5 +109,11 @@ export const clientChannelRoutes = (channel: ClientChannel | undefined) => {
         // 查询串不锁 additionalProperties：多带一个排查用的参数不该让整条提醒失效。
         query: t.Object({ clientType: clientTypeSchema, clientVersion: versionSchema }),
       }
-    );
+    )
+    .get("/api/client/packages", async ({ set }) => {
+      // 下载弹窗要标的构建日期与文件大小来自制品本身（`ClientArtifacts` 发 HEAD 读回），
+      // 不在前端写死一份会过期的表。这条与通道证明无关：通道没启用也照样能下载。
+      set.headers["cache-control"] = "public, max-age=60";
+      return { packages: (await artifacts?.list()) ?? [] };
+    });
 };
