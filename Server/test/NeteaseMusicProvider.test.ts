@@ -185,7 +185,7 @@ describe("NeteaseMusicProvider", () => {
     ]);
   });
 
-  test("过滤作词作曲编曲与标题信息并重新衔接时间轴", () => {
+  test("过滤作词作曲编曲与歌手专辑署名并重新衔接时间轴", () => {
     const lyrics = parseLrc(
       [
         "[00:01.00]答案歌",
@@ -202,6 +202,9 @@ describe("NeteaseMusicProvider", () => {
         "[00:14.00]Recorded at example studio",
         "[00:15.00]Engineered by 某某",
         "[00:16.00]测试歌手",
+        "[00:17.00]测试专辑",
+        "[00:18.00]答案歌 测试歌手",
+        "[00:19.00]测试歌手 答案歌",
       ].join("\n")
     );
 
@@ -212,6 +215,7 @@ describe("NeteaseMusicProvider", () => {
         album: "测试专辑",
       })
     ).toEqual([
+      { time: 1_000, endTime: 3_000, text: "答案歌" },
       { time: 3_000, endTime: 4_000, text: "第一句歌词" },
       { time: 4_000, endTime: 7_000, text: "我们在唱答案歌" },
       { time: 7_000, endTime: 12_000, text: "第二句歌词" },
