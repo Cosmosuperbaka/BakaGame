@@ -10,6 +10,7 @@
 | 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、R2 数据分发、Secrets 小节 |
 | 桌面 / 移动客户端安装包上传与下载链 | 「客户端制品发布」与 Secrets 小节 |
 | 快照或容量 | 「带宽与容量基线」与 [Testing](Testing.md#验证范围) |
+| 后端多进程分片（容器、边缘分流、发布与观测口径） | [MultiProcessDeployment](MultiProcessDeployment.md)（**未实施**的变更清单） |
 
 本文描述配置与验收要求，不授权执行部署、重启或线上写探针；按用户已授权范围完成本地验证和发布准备。示例公网地址使用 `example.com` 占位，实际地址从部署配置取得。
 
@@ -280,8 +281,11 @@ curl -s https://backend.example.com/readyz               # ready 为 true
 实时状态采用带修订号的增量同步，首次连接、重连、修订缺口和周期校准才发送全量。
 生产发布前必须运行 `bun test test/NetworkCapacity.test.ts`；其固定验收目标是单台
 6 Mbps 出口承载 150 名 WhoIsFaker 玩家，并在每秒 12 次房间变化与每分钟一次全量校准下
-保留 15% 的 TLS/TCP/IP 传输余量。代理的带宽监控应按应用出口持续核对这一预算；超过预算时
-优先检查新增快照字段、重复事件和广播频率，不得通过取消最终同步或延长到不可接受的状态延迟来过测。
+保留 15% 的 TLS/TCP/IP 传输余量。**这个 6 Mbps 是项目早期的优化目标，不是部署硬上限**：
+生产出口现为 200 Mbps，实测人均带宽 `pace 1` 0.006 Mbps、`pace 24` 0.12 Mbps（同机器单进程先在一核饱和，
+带宽远远用不满，见 [MultiProcessDeployment](MultiProcessDeployment.md#实测收益上界)）。
+该用例因此作为**人均带宽回归地板**保留——它拦住的是「新增快照字段/重复事件把人均推高」，
+不得反过来为了过测而延长状态延迟或取消最终同步。代理的带宽监控仍按应用出口核对实际人均值。
 
 同一预算的可复现测量在 `Server/scripts/loadtest/`：`bun run scripts/loadtest/Harness.ts --mode ramp|cap|fat`
 用与生产同一条 `createApp` 装配线（数据源换桩、出口守卫 preload）拉起独立被测进程，`--mix faker=..,song=..,cee=..`

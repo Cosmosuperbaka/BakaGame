@@ -34,7 +34,7 @@
 | 数据库表结构、迁移、连接或数据导入 | [Database](Agents/Database.md) |
 | 登录、账号资料、头像、账号 HTTP API、云同步设置、站内反馈或管理员身份 | [Account](Agents/Account.md) |
 | 对局记录的写入、保留或按记录统计 | [GameRecord](Agents/GameRecord.md) |
-| 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md) |
+| 部署、代理、公开基址、静态外壳或边缘缓存 | [Deployment](Agents/Deployment.md)；后端多进程分片另查 [MultiProcessDeployment](Agents/MultiProcessDeployment.md) |
 | 选择验证范围、编写测试、覆盖率或 CI | [Testing](Agents/Testing.md) 的验证矩阵及相关专项 |
 
 跨领域任务组合相关入口；纯文字修订只读目标文档及其关联规则。
