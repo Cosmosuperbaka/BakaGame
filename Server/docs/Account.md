@@ -77,7 +77,7 @@
 
 变量名与取值以 `config/Env.ts` 和 `Server/.env.example` 为准。约束：
 
-- 配置了 `DATABASE_URL` 就必须配置足够强的 `BETTER_AUTH_SECRET`。
+- 配置了数据库连接就必须配置足够强的认证签名密钥（变量名读 `.env.example`）。
 - 生产必须配置 SMTP；开发用的“验证码打印到终端”开关生产启用即拒绝启动。
 - 通行密钥域名必须是裸域名（含协议、端口、路径即拒绝启动）。
 - 会话 Cookie 生产强制 `Secure`；来源判定与 WebSocket 共用同一个来源校验函数。
