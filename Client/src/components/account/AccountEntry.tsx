@@ -3,7 +3,7 @@ import { useState, type MouseEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { create } from "zustand";
-import { LogIn, LogOut, MessageSquareText, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, MessageSquareText, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
@@ -61,7 +61,7 @@ function UnreadDot({ className }: { className?: string }) {
 }
 
 /**
- * 主页右上角的账号入口：游客为登录按钮，登录后为头像菜单（资料、反馈、后台、退出）。
+ * 主页右上角的账号入口：游客为「账号」按钮（点了才谈登录），登录后为头像菜单（资料、反馈、后台、退出）。
  * 账号系统未启用或接口不可达时不渲染；首屏读取中只占位，页头不跳。
  */
 export function AccountButton() {
@@ -79,8 +79,8 @@ export function AccountButton() {
   if (status === "guest") {
     return (
       <Button variant="ghost" onClick={(event) => openDialog("login", originOf(event))}>
-        <LogIn />
-        登录
+        <UserRound />
+        账号
       </Button>
     );
   }
