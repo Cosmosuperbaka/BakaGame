@@ -1,6 +1,5 @@
 import type { GameRecorder } from "../domain/GameRecord";
 import type { CEEClientMessage, CEEGuess, ConnectionRecord } from "../shared/Index";
-import { isCEEAntiCheatRoom } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 import type { CEEPlayerRecord, CEERoom } from "../domain/CEEModel";
 import { ceeUnitId } from "../domain/CEEModel";
@@ -126,9 +125,8 @@ export class CEENativeService {
           this.state.requireHost(room, player);
           this.state.requireWaiting(room);
           validateCEESettings(message.payload.settings);
-          this.state.requireAntiCheatAdmissible(room, message.payload.settings);
-          room.settings = structuredClone(message.payload.settings);
-          if (!isCEEAntiCheatRoom(room.settings)) this.state.clearSpectateRequests(room);
+          // 反作弊那一位由建房决定，`applySettings` 会把它换回房里的现值：中途改不了。
+          this.state.applySettings(room, message.payload.settings);
           break;
         }
         case "cee.room.update":

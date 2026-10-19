@@ -174,7 +174,12 @@ export function ceeTestHarness(
   const snapshot = (client: CEETestClient) => latest<CEERoomSnapshot>(client, "cee.room.snapshot");
   const privateState = (client: CEETestClient) =>
     latest<CEEPrivateState>(client, "cee.game.privateState");
-  const create = async (name = "房主", identity: CEETestIdentity = {}) => {
+  /** 反作弊房只能在建房这一刻开启：用例用第三个参数把它带进 create 载荷。 */
+  const create = async (
+    name = "房主",
+    identity: CEETestIdentity = {},
+    options: { bakaAntiCheat?: boolean } = {}
+  ) => {
     const host = connect(name, identity);
     await send(host, "cee.room.create", {
       source: "native",
@@ -183,6 +188,7 @@ export function ceeTestHarness(
       userName: name,
       visibility: "public",
       allowSpectators: true,
+      ...(options.bakaAntiCheat ? { bakaAntiCheat: true } : {}),
     });
     return host;
   };

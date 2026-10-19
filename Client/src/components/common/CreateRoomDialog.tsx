@@ -14,7 +14,8 @@ import type { OriginPoint } from "@/lib/Motion";
 import type { RoomCreateDefaults } from "@/lib/RoomSettingsMemory";
 
 /**
- * 房间类型开关（CEE 的「兼容原版」）：开启后房间建在另一种服务器上，下面的私密、旁观与名称上限随之切换含义。
+ * 建房这一刻生效的开关行：`roomMode`（CEE 的「兼容原版」）决定下面各项的含义，
+ * `antiCheat`（反作弊房）决定这间房此后按什么口径准入。
  * 说明常驻，写明开启后的差别；不可用时开关禁用，说明换成原因。
  */
 export interface RoomModeSwitch {
@@ -46,6 +47,11 @@ export interface CreateRoomDialogProps {
   /** 有另一种房间可建时显示的开关，放在房间名称之前：它决定下面各项的含义。 */
   roomMode?: RoomModeSwitch;
   /**
+   * 只在建房这一刻生效的开关（CEE 的反作弊房）：状态由调用方持有，随创建载荷带出去。
+   * 建成之后这项不再可改，所以不适用时调用方直接不传，弹窗里也就不会出现这一行。
+   */
+  antiCheat?: RoomModeSwitch;
+  /**
    * 私密的含义：`password`（默认）为私密房设密码、带锁进大厅；
    * `unlisted` 用于没有密码机制的服务器，开关只控制不进大厅，凭链接仍可进入。
    */
@@ -73,6 +79,7 @@ export function CreateRoomDialog({
   nameMaxLength,
   origin,
   roomMode,
+  antiCheat,
   privacy,
   spectatorsDisabledReason,
   defaults,
@@ -91,6 +98,7 @@ export function CreateRoomDialog({
           nameMaxLength={nameMaxLength}
           onOpenChange={onOpenChange}
           roomMode={roomMode}
+          antiCheat={antiCheat}
           privacy={privacy}
           spectatorsDisabledReason={spectatorsDisabledReason}
           defaults={defaults}
@@ -107,6 +115,7 @@ type CreateRoomFormProps = Pick<
   | "nameMaxLength"
   | "onOpenChange"
   | "roomMode"
+  | "antiCheat"
   | "privacy"
   | "spectatorsDisabledReason"
   | "defaults"
@@ -118,6 +127,7 @@ function CreateRoomForm({
   nameMaxLength,
   onOpenChange,
   roomMode,
+  antiCheat,
   privacy = "password",
   spectatorsDisabledReason,
   defaults,
@@ -184,6 +194,16 @@ function CreateRoomForm({
             checked={roomMode.checked}
             onCheckedChange={roomMode.onCheckedChange}
             disabled={Boolean(roomMode.disabledReason)}
+          />
+        ) : null}
+        {antiCheat ? (
+          <SettingSwitchRow
+            label={antiCheat.label}
+            icon={antiCheat.icon}
+            description={antiCheat.disabledReason ?? antiCheat.description}
+            checked={antiCheat.checked}
+            onCheckedChange={antiCheat.onCheckedChange}
+            disabled={Boolean(antiCheat.disabledReason)}
           />
         ) : null}
         <SettingTextField

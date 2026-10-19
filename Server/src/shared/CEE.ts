@@ -325,6 +325,12 @@ export const CEEPayloadSchemas = {
       visibility: t.Union([t.Literal("public"), t.Literal("private")]),
       password: optionalPassword,
       allowSpectators: t.Boolean(),
+      /**
+       * 反作弊只在**建房这一刻**决定，进房后的设置载荷改不动它（`CEERooms` 一律沿用房里的现值）。
+       * 中途开关会让同一间房里的人按不同口径准入，旁观审批、断线重连的规则都会错位。
+       * optional 的理由与设置里那条一样：旧客户端不发这个字段，缺省即普通房。
+       */
+      bakaAntiCheat: t.Optional(t.Boolean()),
     },
     strict
   ),

@@ -163,13 +163,13 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 | 码 | 含义 | 出现处 |
 |---|---|---|
-| `CLIENT_REQUIRED` | 反作弊房拒绝无通道证明的连接 | ws 之后的业务命令 |
+| `CLIENT_REQUIRED` | 反作弊房拒绝无通道证明的连接 | 建房与进房（`cee.room.create` / 加入 / 重连） |
 | `CLIENT_UNTRUSTED` | 自检或证明判定不过 | register / attest |
-| `CLIENT_OUTDATED` | 低于服务端最低支持版本 | 反作弊房准入（普通房不拦） |
+| `CLIENT_OUTDATED` | 低于服务端最低支持版本 | 反作弊房准入：建房与进房（普通房不拦） |
 | `CLIENT_UNKNOWN` | ticket / challenge 引用未注册的 clientId | challenge / attest |
 | `CHALLENGE_EXPIRED` | 挑战过期或已被用过 | attest |
 | `ATTESTATION_REJECTED` | Android 证书链验证失败（只可能在注册时做） | register |
-| `LOGIN_REQUIRED` | 反作弊房要求全员已登录 | 业务命令 |
+| `LOGIN_REQUIRED` | 反作弊房要求全员已登录 | 建房与进房 |
 
 ## 7. 强制更新
 
@@ -182,5 +182,5 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 - **首页软提醒**（`Client/src/components/ClientUpdateNotice.tsx`）只在原生壳里出现，可关。
   关的是「这一档门槛」，服务端抬档后提醒重新出现；普通房间照常游玩，措辞必须写明这点。
-- **反作弊房硬门槛**（`CEERooms.requireAdmission`）不看玩家关没关过提醒，版本低于最低值即
-  `CLIENT_OUTDATED`。提醒只是让玩家早点动手，从来不是准入的一部分。
+- **反作弊房硬门槛**（`CEERooms.requireClientAdmission`，建房与进房共用）不看玩家关没关过提醒，
+  版本低于最低值即 `CLIENT_OUTDATED`。提醒只是让玩家早点动手，从来不是准入的一部分。

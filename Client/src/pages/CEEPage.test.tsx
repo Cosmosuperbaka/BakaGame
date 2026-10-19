@@ -6,6 +6,7 @@ import {
   readRoomCreateDefaults,
   saveRoomCreateDefaults,
 } from "@/lib/RoomSettingsMemory";
+import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import CEEPage from "./CEEPage";
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => vi.fn() }));
@@ -26,9 +27,19 @@ vi.mock("@/components/common/CreateRoomDialog", () => ({
   },
 }));
 const initial = useCEEStore.getState();
+/** 把本地伪装成「跑在 BakaGame 客户端里」：反作弊开关的可见性靠这个存在性探测。 */
+const asBakaClient = () => {
+  window.__BAKA_CHANNEL__ = {
+    clientType: "desktop",
+    platform: "windows",
+    clientVersion: "1.0.0",
+  };
+};
 afterEach(() => {
   useCEEStore.setState(initial, true);
   window.localStorage.clear();
+  delete window.__BAKA_CHANNEL__;
+  resetAccountStoreForTest();
   dialogProps.current = null;
 });
 function releaseFixture() {
@@ -132,4 +143,61 @@ it("切到兼容原版后建房：旁观强制允许，记忆带 original 来源
     allowSpectators: true,
     source: "original",
   });
+});
+it("反作弊开关只对客户端里已登录的建房者出现", () => {
+  // 已登录但走网页接入：连开关都不给，免得点了才被服务端拒。
+  useAccountStore.setState({ status: "signedIn" });
+  const web = render(<CEEPage />);
+  expect(dialogProps.current?.antiCheat).toBeUndefined();
+  web.unmount();
+
+  // 客户端接入但没登录：同样不给。
+  asBakaClient();
+  useAccountStore.setState({ status: "guest" });
+  const guest = render(<CEEPage />);
+  expect(dialogProps.current?.antiCheat).toBeUndefined();
+  guest.unmount();
+
+  // 两个条件都满足才出现。
+  useAccountStore.setState({ status: "signedIn" });
+  render(<CEEPage />);
+  expect(dialogProps.current?.antiCheat).toMatchObject({ label: "反作弊房", checked: false });
+});
+it("勾选反作弊只随建房那一次出去，切到兼容原版即收回", async () => {
+  localStorage.setItem("bakagame:username", "玩家");
+  asBakaClient();
+  useAccountStore.setState({ status: "signedIn" });
+  const createRoom = vi.fn().mockResolvedValue(undefined);
+  useCEEStore.setState({ createRoom });
+  render(<CEEPage />);
+
+  const antiCheat = dialogProps.current?.antiCheat as {
+    onCheckedChange: (checked: boolean) => void;
+  };
+  act(() => antiCheat.onCheckedChange(true));
+  expect(dialogProps.current?.antiCheat).toMatchObject({ checked: true });
+
+  const onCreate = dialogProps.current?.onCreate as (
+    params: Record<string, unknown>
+  ) => Promise<void>;
+  await act(async () => {
+    await onCreate({ name: "增强房", visibility: "public", allowSpectators: true });
+  });
+  expect(createRoom).toHaveBeenCalledWith(
+    expect.objectContaining({ source: "native", bakaAntiCheat: true }),
+    expect.any(AbortSignal)
+  );
+
+  // 反作弊不进「下次建房默认值」：它是逐房决定的一次性选择。
+  expect(readRoomCreateDefaults("cee")).toEqual({
+    visibility: "public",
+    allowSpectators: true,
+    source: "native",
+  });
+
+  const roomMode = dialogProps.current?.roomMode as {
+    onCheckedChange: (checked: boolean) => void;
+  };
+  act(() => roomMode.onCheckedChange(true));
+  expect(dialogProps.current?.antiCheat).toBeUndefined();
 });

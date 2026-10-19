@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Server } from "lucide-react";
+import { Server, ShieldCheck } from "lucide-react";
 import { useCEEStore, ceeErrorMessage } from "@/stores/UseCEEStore";
+import { useAccountStore } from "@/stores/UseAccountStore";
 import { useLobbySession } from "@/hooks/UseLobbySession";
 import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
+import { isBakaClient } from "@/lib/BakaChannel";
 import { CEE_SOURCE_LABELS } from "@/lib/CEESession";
 import {
   markPendingRestore,
@@ -32,6 +34,13 @@ export default function CEEPage() {
   const lobbyReady = useCEEStore((state) => state.connected && state.lobbyReady);
   const originalAvailable = useCEEStore((state) => state.originalAvailable);
   const [server, setServer] = useState<CEESource>("native");
+  const [antiCheat, setAntiCheat] = useState(false);
+  const accountStatus = useAccountStore((state) => state.status);
+  /**
+   * 反作弊房只接受客户端接入且全员登录，建房那条连接自己就得先达标：
+   * 网页接入或没登录时这一行根本不出现，而不是点了之后被服务端拒。
+   */
+  const canCreateAntiCheatRoom = isBakaClient() && accountStatus === "signedIn";
   // 退房操作只有一份；每次 effect 挂载仅订阅该操作，StrictMode 不重复发送。
   const [leaving, setLeaving] = useState(() => Boolean(useCEEStore.getState().roomId));
   const release = useRef<Promise<void> | null>(null);
@@ -88,6 +97,8 @@ export default function CEEPage() {
           visibility: params.visibility,
           allowSpectators: server === "original" ? true : params.allowSpectators,
           ...(server === "native" && params.password ? { password: params.password } : {}),
+          // 反作弊只随建房那一次出去；原版房没有这一说，进房后也改不动。
+          ...(server === "native" && antiCheat ? { bakaAntiCheat: true } : {}),
         },
         signal
       ),
@@ -152,11 +163,27 @@ export default function CEEPage() {
               icon: Server,
               description: "开启后建在原版服务器上，原版网页也能加入；没有密码，不能禁止旁观。",
               checked: server === "original",
-              onCheckedChange: (checked) => setServer(checked ? "original" : "native"),
+              onCheckedChange: (checked) => {
+                setServer(checked ? "original" : "native");
+                // 原版房没有反作弊这一说：切过去就把选择收回，免得切回来时还留着隐藏的待提交值。
+                if (checked) setAntiCheat(false);
+              },
               ...(originalAvailable
                 ? {}
                 : { disabledReason: "原版服务器暂未接入，暂时只能新建普通房间。" }),
             }}
+            antiCheat={
+              server === "native" && canCreateAntiCheatRoom
+                ? {
+                    label: "反作弊房",
+                    icon: ShieldCheck,
+                    description:
+                      "只接受 BakaGame 客户端接入、全员需登录、旁观要房主批准。建房后不可更改。",
+                    checked: antiCheat,
+                    onCheckedChange: setAntiCheat,
+                  }
+                : undefined
+            }
             privacy={server === "original" ? "unlisted" : "password"}
             spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止旁观" : undefined}
             defaults={createDefaults}

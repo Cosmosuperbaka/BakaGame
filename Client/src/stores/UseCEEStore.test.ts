@@ -380,11 +380,8 @@ describe("CEE 反作弊文案与旁观审批", () => {
     expect(ceeErrorMessage({ code: "CLIENT_OUTDATED", message: "服务端原文" })).toContain(
       BAKA_CLIENT_DOWNLOAD_URL
     );
-    expect(ceeErrorMessage({ code: "ANTI_CHEAT_BLOCKED", message: "服务端原文" })).toBe(
-      "请先让 Web 接入或未登录的玩家退出"
-    );
     expect(ceeErrorMessage({ code: "LOGIN_REQUIRED", message: "服务端原文" })).toBe(
-      "该房间要求登录后再加入或旁观"
+      "该房间要求登录后再创建、加入或旁观"
     );
     // 未映射的错误码保留服务端原文，不做兜底改写。
     expect(ceeErrorMessage({ code: "ROOM_NOT_FOUND", message: "房间不存在" })).toBe("房间不存在");
@@ -393,7 +390,7 @@ describe("CEE 反作弊文案与旁观审批", () => {
   it("reportError 触发提示，LOGIN_REQUIRED 顺带请求打开登录弹窗", () => {
     const before = useCEEStore.getState().requestLoginAt;
     useCEEStore.getState().reportError({ code: "LOGIN_REQUIRED", message: "服务端原文" });
-    expect(useCEEStore.getState().notice?.text).toBe("该房间要求登录后再加入或旁观");
+    expect(useCEEStore.getState().notice?.text).toBe("该房间要求登录后再创建、加入或旁观");
     expect(useCEEStore.getState().requestLoginAt).toBeGreaterThan(before);
     // 非登录类错误不动登录弹窗时间戳。
     useCEEStore.getState().reportError({ code: "CLIENT_REQUIRED", message: "服务端原文" });

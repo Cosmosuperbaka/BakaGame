@@ -100,6 +100,38 @@ describe("CreateRoomDialog", () => {
     );
   });
 
+  it("反作弊行排在房间类型之后，勾选只由页面持有状态", async () => {
+    const user = userEvent.setup();
+    const onCheckedChange = vi.fn();
+    render(
+      <CreateRoomDialog
+        open
+        onOpenChange={() => {}}
+        defaultName="测试房间"
+        roomMode={{
+          label: "兼容原版",
+          description: "开启后建在原版服务器上。",
+          checked: false,
+          onCheckedChange: vi.fn(),
+        }}
+        antiCheat={{
+          label: "反作弊房",
+          description: "建房后不可更改。",
+          checked: false,
+          onCheckedChange,
+        }}
+        onCreate={vi.fn(async () => {})}
+      />
+    );
+    // 顺序即读法：先选建在哪台服务器，再决定这间房按什么口径准入。
+    const switches = screen.getAllByRole("switch");
+    expect(switches[0]).toBe(screen.getByRole("switch", { name: "兼容原版" }));
+    expect(switches[1]).toBe(screen.getByRole("switch", { name: "反作弊房" }));
+    expect(switches[1]).toHaveAccessibleDescription("建房后不可更改。");
+    await user.click(switches[1] as HTMLElement);
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+  });
+
   it("房间名称按服务器上限截断，超长的默认名称不会被服务端拒绝", async () => {
     const user = userEvent.setup();
     const onCreate = vi.fn(async () => {});

@@ -214,6 +214,9 @@ export class CEERooms {
       payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
     const name = this.name(payload.name);
     const userName = this.name(payload.userName);
+    // 反作弊只在这一步落地：先查建房的这条连接够不够格，再把那一位写进初始设置。
+    const antiCheat = payload.bakaAntiCheat === true;
+    if (antiCheat) this.requireClientAdmission(connection);
     // 密码处理前占用房号，失败时由局部事务撤销，防止并发创建覆盖。
     const player = this.player(userName);
     const room: CEERoom = {
@@ -223,7 +226,7 @@ export class CEERooms {
       allowSpectators: payload.allowSpectators,
       hostPlayerId: player.id,
       players: new Map([[player.id, player]]),
-      settings: createDefaultCEESettings(),
+      settings: { ...createDefaultCEESettings(), bakaAntiCheat: antiCheat },
       phase: "waiting",
       roundNumber: 0,
       setterPlayerId: null,
@@ -339,29 +342,30 @@ export class CEERooms {
    * 开关为假的房间一行都不执行——普通房间的连接路径与以往完全一致。
    */
   requireAdmission(connection: ConnectionRecord, room: CEERoom): void {
-    if (!isCEEAntiCheatRoom(room.settings)) return;
-    if (!connection.clientChannel)
-      throw new AppError("CLIENT_REQUIRED", "该房间只接受 BakaGame 客户端接入");
-    // 强制更新只拦这类房间：旧壳在普通房照常玩，协议变更不该波及他们。
-    if (connection.clientChannel.outdated)
-      throw new AppError("CLIENT_OUTDATED", "客户端版本过低，请更新后再进入该房间");
-    if (!connection.account) throw new AppError("LOGIN_REQUIRED", "该房间要求全部成员已登录");
+    if (isCEEAntiCheatRoom(room.settings)) this.requireClientAdmission(connection);
   }
   /**
-   * 中途开启只在等待阶段允许，且房内不能还留着 Web 接入或未登录玩家：
-   * 静默踢人不可接受，要拒绝并把「谁挡住了」说清楚。
+   * 连接级反作弊准入：建房与进房共用同一条判据。
+   * 建房时查的是「建房的这条连接」自己——房间里还没有别人，不存在要清场才能开启的顾虑。
    */
-  requireAntiCheatAdmissible(room: CEERoom, next: CEESettings): void {
-    if (!isCEEAntiCheatRoom(next) || isCEEAntiCheatRoom(room.settings)) return;
-    for (const player of room.players.values()) {
-      if (!player.online) continue;
-      const connection = player.connectionId
-        ? this.connections.findConnection(player.connectionId)
-        : undefined;
-      if (!connection?.clientChannel)
-        throw new AppError("ANTI_CHEAT_BLOCKED", "请先让 Web 接入的玩家退出");
-      if (!player.account) throw new AppError("ANTI_CHEAT_BLOCKED", "请先让未登录的玩家退出或登录");
-    }
+  requireClientAdmission(connection: ConnectionRecord): void {
+    if (!connection.clientChannel)
+      throw new AppError("CLIENT_REQUIRED", "只有 BakaGame 客户端能创建反作弊房间");
+    // 强制更新只拦这类房间：旧壳在普通房照常玩，协议变更不该波及他们。
+    if (connection.clientChannel.outdated)
+      throw new AppError("CLIENT_OUTDATED", "客户端版本过低，请更新后再创建该房间");
+    if (!connection.account) throw new AppError("LOGIN_REQUIRED", "创建反作弊房间要求已登录");
+  }
+  /**
+   * 应用房主提交的玩法设置。反作弊那一位**不跟随入参**：它由建房那一刻决定，之后锁死。
+   * 这里是覆盖而不是报错，因为预设、导入的配置文件与「沿用上次设置」都可能捎带一个不同的值，
+   * 报错会让房主整包设置都存不下去，而那些字段本身没问题。
+   */
+  applySettings(room: CEERoom, next: CEESettings): void {
+    room.settings = {
+      ...structuredClone(next),
+      bakaAntiCheat: isCEEAntiCheatRoom(room.settings),
+    };
   }
   /**
    * 旁观切换。反作弊房里改为登记请求等房主批准，返回 `true` 表示进入待批准态；
@@ -411,12 +415,6 @@ export class CEERooms {
       event: "cee.player.spectateResult",
       payload: { approved },
     });
-  }
-  /** 关闭开关后清理悬空请求：待批准的人退回参与态，不能让状态残留在已经不需要审批的房子里。 */
-  clearSpectateRequests(room: CEERoom): void {
-    room.spectatorRequests.clear();
-    for (const player of room.players.values())
-      if (player.membership === "pendingSpectator") player.membership = "active";
   }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
   leave(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {

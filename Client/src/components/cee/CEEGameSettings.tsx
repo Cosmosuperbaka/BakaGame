@@ -104,7 +104,8 @@ const offOr = (value: number, text: string) => (value === 0 ? "关闭" : text);
 /** 两个折叠组收起时的摘要。 */
 function summaries(settings: CEESettings) {
   return {
-    antiCheat: [settings.bakaAntiCheat ? "已开启：仅客户端、需登录" : "未开启"],
+    // 这个面板只在房间确实开着反作弊时出现（建房那一刻决定，之后改不了），摘要无需再判开关。
+    antiCheat: ["已开启：仅客户端、需登录"],
     question: [
       settings.answerMode === "manual" ? "指定出题人" : "随机出题",
       settings.useIndex
@@ -215,16 +216,7 @@ export function CEEGameSettings({
     },
     {
       enabled: !readOnly && waiting && !validation,
-      onError: (error) => {
-        useCEEStore.getState().reportError(error);
-        // 中途开启被拒（房里还留着 Web 接入或未登录玩家）时服务端不改状态：把开关退回
-        // 服务端认定的值，本地草稿才不会显示成已开启。其它字段此时没变，这一步多半是空操作。
-        setDraft((current) =>
-          current.bakaAntiCheat === settings.bakaAntiCheat
-            ? current
-            : { ...current, bakaAntiCheat: settings.bakaAntiCheat }
-        );
-      },
+      onError: (error) => useCEEStore.getState().reportError(error),
     }
   );
 
@@ -278,25 +270,30 @@ export function CEEGameSettings({
     );
   const scopedByDirectory = values.useIndex;
   const summary = summaries(values);
+  /**
+   * 反作弊由**建房那一刻**决定：面板只显示结果，不给开关。中途开关会让同一间房里的人
+   * 按不同口径准入（旁观审批、断线重连的规则都会错位），服务端也把这四位锁在房里的现值上
+   * （`CEERooms.applySettings`），这里根本没有可改的入口。
+   */
+  const antiCheatOn = settings.bakaAntiCheat === true;
 
   return (
     <>
-      {source === "native" ? (
+      {source === "native" && antiCheatOn ? (
         <SettingsAccordion
           icon={ShieldCheck}
           title="反作弊"
           summary={summary.antiCheat}
-          readOnly={readOnly}
+          readOnly
           open={antiCheatOpen}
           onOpenChange={setAntiCheatOpen}
         >
           <div>
             <SettingsSection>
-              <SettingSwitchRow
+              <SettingValue
                 label="BakaAntiCheat"
-                description="开启后只接受 BakaGame 客户端接入、全员需登录、旁观需房主批准。"
-                checked={values.bakaAntiCheat === true}
-                onCheckedChange={(value) => change("bakaAntiCheat", value)}
+                value="已开启"
+                description="建房时决定，之后不可修改：只接受 BakaGame 客户端接入、全员需登录、旁观要房主批准。"
               />
             </SettingsSection>
           </div>

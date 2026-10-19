@@ -20,19 +20,43 @@ const trusted = (id: string): CEETestIdentity => ({
   clientChannel: channel(),
 });
 
-/** 房主自己先成为合法成员，否则「中途开启」会被他自己挡住。 */
+/** 反作弊房只能在建房这一刻开启：房主自己也得是合法成员，否则连房都开不出来。 */
 async function antiCheatRoom() {
   const h = ceeTestHarness();
-  const host = await h.create("房主", trusted("u-host"));
-  await h.configure(host, { bakaAntiCheat: true });
+  const host = await h.create("房主", trusted("u-host"), { bakaAntiCheat: true });
   return { h, host };
 }
 
 describe("CEE 反作弊房准入", () => {
-  test("开启开关后房间快照带出标记，供大厅卡片在进房前展示", async () => {
+  test("建房时开启：快照带出标记，供大厅卡片在进房前展示", async () => {
     const { h, host } = await antiCheatRoom();
     expect(h.snapshot(host).bakaAntiCheat).toBe(true);
     expect(h.snapshot(host).settings.bakaAntiCheat).toBe(true);
+  });
+  test("反作弊房改不回普通房：进房后的设置载荷改不动那一位", async () => {
+    const { h, host } = await antiCheatRoom();
+    await h.configure(host, { bakaAntiCheat: false, timeLimit: 60 });
+    expect(h.snapshot(host).bakaAntiCheat).toBe(true);
+    // 其余字段照常生效：锁定的是那一位，不是整份设置。
+    expect(h.snapshot(host).settings.timeLimit).toBe(60);
+  });
+  test("普通房改不出反作弊", async () => {
+    const h = ceeTestHarness();
+    const host = await h.create("房主", trusted("u-host"));
+    await h.configure(host, { bakaAntiCheat: true });
+    expect(h.snapshot(host).settings.bakaAntiCheat).toBe(false);
+  });
+  test("浏览器接入开不出反作弊房", async () => {
+    const h = ceeTestHarness();
+    await expect(h.create("房主", {}, { bakaAntiCheat: true })).rejects.toMatchObject({
+      code: "CLIENT_REQUIRED",
+    });
+  });
+  test("客户端但未登录同样开不出反作弊房", async () => {
+    const h = ceeTestHarness();
+    await expect(
+      h.create("房主", { clientChannel: channel() }, { bakaAntiCheat: true })
+    ).rejects.toMatchObject({ code: "LOGIN_REQUIRED" });
   });
   test("浏览器接入被拒：没有通道证明就进不了反作弊房", async () => {
     const { h } = await antiCheatRoom();
@@ -72,31 +96,6 @@ describe("CEE 反作弊房准入", () => {
     });
     expect((entry as { privateState: { playerId: string } }).privateState.playerId).toBe(mate.id!);
     expect(h.snapshot(host).spectateRequests).toEqual([]);
-  });
-  test("中途开启被 Web 接入挡住并说清原因，人退出后才能开", async () => {
-    const h = ceeTestHarness();
-    const host = await h.create("房主", trusted("u-host"));
-    const web = await h.join("玩家二");
-    await expect(h.configure(host, { bakaAntiCheat: true })).rejects.toMatchObject({
-      code: "ANTI_CHEAT_BLOCKED",
-      message: "请先让 Web 接入的玩家退出",
-    });
-    expect(h.snapshot(host).bakaAntiCheat).toBe(false);
-    await h.send(web, "cee.room.leave", {});
-    await h.configure(host, { bakaAntiCheat: true });
-    expect(h.snapshot(host).bakaAntiCheat).toBe(true);
-  });
-  test("中途开启被未登录玩家挡住", async () => {
-    const h = ceeTestHarness();
-    const host = await h.create("房主", trusted("u-host"));
-    const guest = await h.join("玩家二", { clientChannel: channel() });
-    await expect(h.configure(host, { bakaAntiCheat: true })).rejects.toMatchObject({
-      code: "ANTI_CHEAT_BLOCKED",
-      message: "请先让未登录的玩家退出或登录",
-    });
-    await h.send(guest, "cee.room.leave", {});
-    await h.configure(host, { bakaAntiCheat: true });
-    expect(h.snapshot(host).settings.bakaAntiCheat).toBe(true);
   });
   test("普通房间完全不读通道证明：Web 未登录照常游玩与观战", async () => {
     const h = ceeTestHarness();
@@ -213,15 +212,15 @@ describe("CEE 反作弊房旁观审批", () => {
       h.send(host, "cee.player.approveSpectate", { playerId: "x", approved: true })
     ).rejects.toMatchObject({ code: "SPECTATE_NOT_PENDING" });
   });
-  test("关掉开关后悬空的待批准请求退回参与态", async () => {
+  test("待批准者退出后不留悬空请求：心跳把队列里的孤儿摘掉", async () => {
     const { h, host } = await antiCheatRoom();
     const mate = await h.join("玩家二", trusted("u-two"));
     await h.send(mate, "cee.player.spectate", { spectator: true });
     expect(h.snapshot(host).spectateRequests).toHaveLength(1);
 
-    await h.configure(host, { bakaAntiCheat: false });
+    await h.send(mate, "cee.room.leave", {});
+    h.advance(1);
     expect(h.snapshot(host).spectateRequests).toEqual([]);
-    expect(h.snapshot(mate).players.find((p) => p.id === mate.id)?.membership).toBe("active");
   });
   test("待批准者主动取消旁观即撤回请求", async () => {
     const { h, host } = await antiCheatRoom();

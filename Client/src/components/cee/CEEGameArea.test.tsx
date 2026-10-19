@@ -629,17 +629,49 @@ describe("CEE 操作区", () => {
     );
   });
 
-  it("BakaAntiCheat 开关只在增强房出现；原版房不显示反作弊面板", async () => {
+  it("反作弊面板只在已开启的增强房出现，且对所有人只读", async () => {
     const user = userEvent.setup();
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
-    const settings = createDefaultCEESettings(2026);
-    const view = render(
-      <CEEGameSettings settings={settings} source="original" waiting readOnly={false} />
+    const off = createDefaultCEESettings(2026);
+    const on = { ...off, bakaAntiCheat: true };
+
+    // 原版房不显示：这套准入只存在于增强房。
+    const original = render(
+      <CEEGameSettings settings={on} source="original" waiting readOnly={false} />
     );
     expect(screen.queryByRole("button", { name: /反作弊/ })).not.toBeInTheDocument();
-    view.rerender(<CEEGameSettings settings={settings} source="native" waiting />);
+    original.unmount();
+
+    // 增强房没开反作弊也不显示：既没有开关，也没有一行状态。
+    const plain = render(<CEEGameSettings settings={off} source="native" waiting />);
+    expect(screen.queryByRole("button", { name: /反作弊/ })).not.toBeInTheDocument();
+    plain.unmount();
+
+    // 已开启：非房主也看得见「这间房在反作弊」，但没有任何可改的东西。
+    render(<CEEGameSettings settings={on} source="native" waiting readOnly />);
     await user.click(screen.getByRole("button", { name: /反作弊/ }));
-    expect(screen.getByRole("switch", { name: "BakaAntiCheat" })).toBeInTheDocument();
+    expect(screen.getByText("已开启")).toBeInTheDocument();
+    expect(screen.queryByRole("switch", { name: "BakaAntiCheat" })).not.toBeInTheDocument();
+  });
+
+  it("房主在等待页也拿不到反作弊开关：标记只在建房那一刻定", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    const settings = createDefaultCEESettings(2026);
+    render(<CEEGameSettings settings={settings} source="native" waiting readOnly={false} />);
+    await user.click(screen.getByRole("button", { name: /猜测设置/ }));
+    expect(screen.queryByRole("switch", { name: "BakaAntiCheat" })).not.toBeInTheDocument();
+
+    // 改动别的字段照常保存，服务端那边把反作弊那一位按房里的现值覆盖。
+    await user.click(screen.getByRole("switch", { name: "同步模式" }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "cee.room.settings",
+        { settings: expect.objectContaining({ syncMode: true }) },
+        expect.any(Object)
+      )
+    );
   });
 
   it("反作弊房：房主看到待批准旁观请求，同意/拒绝分别提交 approveSpectate", async () => {

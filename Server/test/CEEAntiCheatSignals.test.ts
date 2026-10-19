@@ -309,9 +309,9 @@ async function settledRound(
   gaps: number[]
 ) {
   const h = ceeTestHarness({}, undefined, { reviewQueue: reviews });
-  const host = await h.create("房主", trusted("u-host"));
+  const host = await h.create("房主", trusted("u-host"), { bakaAntiCheat: antiCheat });
   const guest = await h.join("猜题人", identityOfGuesser);
-  await h.configure(host, antiCheat ? { bakaAntiCheat: true } : {});
+  await h.configure(host, {});
   await h.chooseSetter(host, host.id!);
   await h.send(host, "cee.game.setAnswer", { characterId: 1, hints: [] });
   for (const id of [3, 4, 5]) {
@@ -340,9 +340,9 @@ describe("CEE 反作弊采集接线", () => {
   test("先搜索再猜、间隔参差的玩家不进队列", async () => {
     const reviews = new InMemoryAntiCheatReviewQueue();
     const h = ceeTestHarness({}, undefined, { reviewQueue: reviews });
-    const host = await h.create("房主", trusted("u-host"));
+    const host = await h.create("房主", trusted("u-host"), { bakaAntiCheat: true });
     const guest = await h.join("猜题人", trusted("u-two"));
-    await h.configure(host, { bakaAntiCheat: true });
+    await h.configure(host, {});
     await h.chooseSetter(host, host.id!);
     await h.send(host, "cee.game.setAnswer", { characterId: 1, hints: [] });
     for (const [id, gap] of [
