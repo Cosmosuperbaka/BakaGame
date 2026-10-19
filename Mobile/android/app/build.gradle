@@ -27,20 +27,23 @@ android {
     // 正式签名：四项环境变量齐全才装配，缺任意一项就退回「release 不签名」，
     // 免得没有密钥的构建一上来就报错。密钥本体与口令都不进仓库，路径也交给环境变量。
     def keystorePath = System.getenv("BAKA_KEYSTORE_PATH")
-    def keystorePassword = System.getenv("BAKA_KEYSTORE_PASSWORD")
-    def keyAlias = System.getenv("BAKA_KEY_ALIAS")
-    def keyPassword = System.getenv("BAKA_KEY_PASSWORD")
+    // 变量名统一加 baka 前缀：`keyAlias keyAlias` 这种同名的命令式写法会被 Groovy 解析成
+    // 「对 String 调用 call(...)」，报 "No signature of method: java.lang.String.call()"，
+    // 而错误发生在整个 project 求值阶段，看起来跟签名毫无关系。一律改成显式赋值。
+    def bakaKeystorePassword = System.getenv("BAKA_KEYSTORE_PASSWORD")
+    def bakaKeyAlias = System.getenv("BAKA_KEY_ALIAS")
+    def bakaKeyPassword = System.getenv("BAKA_KEY_PASSWORD")
     def releaseKeystore =
-        keystorePath && keystorePassword && keyAlias && keyPassword
+        keystorePath && bakaKeystorePassword && bakaKeyAlias && bakaKeyPassword
         ? keystorePath : null
 
     signingConfigs {
         if (releaseKeystore) {
             bakaRelease {
-                storeFile file(releaseKeystore)
-                storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                storeFile = file(releaseKeystore)
+                storePassword = bakaKeystorePassword
+                keyAlias = bakaKeyAlias
+                keyPassword = bakaKeyPassword
             }
         }
     }
