@@ -1,6 +1,6 @@
 [package]
 name = "bakagame-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "BakaGame 桌面壳：远程 URL 窗口 + 设备密钥签名 + 原生自检"
 authors = ["BakaGame"]
 edition = "2021"

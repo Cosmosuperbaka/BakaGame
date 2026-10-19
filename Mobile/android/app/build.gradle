@@ -19,9 +19,9 @@ android {
         // Key Attestation 自 API 24 起可用，minSdk 与计划 P3.2 口径一致
         minSdk 24
         targetSdk 35
-        versionCode 1
+        versionCode 2
         // versionName 由 scripts/prepare-web.mjs 从 Mobile/package.json 同步，勿手改
-        versionName '0.1.0'
+        versionName '0.1.1'
     }
 
     // 正式签名：四项环境变量齐全才装配，缺任意一项就退回「release 不签名」，
