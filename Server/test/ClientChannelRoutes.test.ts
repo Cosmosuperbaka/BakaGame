@@ -82,7 +82,10 @@ const published = new ClientArtifacts({
   fetcher: (async () =>
     ({
       ok: true,
-      headers: new Headers({ "content-length": "84216320", "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT" }),
+      headers: new Headers({
+        "content-length": "84216320",
+        "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT",
+      }),
     }) as unknown as Response) as unknown as typeof fetch,
 });
 

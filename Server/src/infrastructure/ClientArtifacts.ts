@@ -53,7 +53,10 @@ export class ClientArtifacts {
   private readonly ttlMs: number;
   private readonly now: () => number;
   /** 存的是在途 promise：同一分钟内并发进来也只发一次 HEAD。 */
-  private readonly probes = new Map<ClientPackagePlatform, { expiresAt: number; promise: Promise<Probe> }>();
+  private readonly probes = new Map<
+    ClientPackagePlatform,
+    { expiresAt: number; promise: Promise<Probe> }
+  >();
 
   constructor(options: ClientArtifactsOptions) {
     this.urls = options.urls;
@@ -67,16 +70,14 @@ export class ClientArtifacts {
       const url = this.urls[platform]?.trim();
       if (!url) return [];
       return [
-        this.probe(platform, url).then(
-          (probe): ClientPackage => ({
-            platform,
-            arch: ARCH_BY_PLATFORM[platform],
-            url,
-            available: probe.available,
-            sizeBytes: probe.sizeBytes,
-            builtAt: probe.builtAt,
-          })
-        ),
+        this.probe(platform, url).then((probe): ClientPackage => ({
+          platform,
+          arch: ARCH_BY_PLATFORM[platform],
+          url,
+          available: probe.available,
+          sizeBytes: probe.sizeBytes,
+          builtAt: probe.builtAt,
+        })),
       ];
     });
     return Promise.all(pending);

@@ -18,6 +18,14 @@ Server/data/
 Server/storage/
 Server/tasks/
 Server/drizzle/
+# 壳的构建产物：CI 是干净检出所以看不见它们，本地会因此报几百个无意义的格式问题，
+# 把 `pnpm format:check` 变成不可用。
+Desktop/src-tauri/target/
+Desktop/src-tauri/gen/
+Mobile/android/build/
+Mobile/android/app/build/
+Mobile/android/app/src/main/assets/public/
+Mobile/dist-web/
 
 # 锁文件与生成物
 pnpm-lock.yaml

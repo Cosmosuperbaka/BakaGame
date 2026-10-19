@@ -3,7 +3,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CloseButton } from "@/components/ui/CloseButton";
-import { CLIENT_UPDATE_DISMISS_LABEL, CLIENT_UPDATE_DOWNLOAD_LABEL, clientUpdateNoticeText } from "@/lib/AntiCheatCopy";
+import {
+  CLIENT_UPDATE_DISMISS_LABEL,
+  CLIENT_UPDATE_DOWNLOAD_LABEL,
+  clientUpdateNoticeText,
+} from "@/lib/AntiCheatCopy";
 import { bakaChannel, type BakaClientType } from "@/lib/BakaChannel";
 import { useClientPackages, type ClientPackagePlatform } from "@/lib/ClientPackages";
 import { dropIn } from "@/lib/Motion";
@@ -117,7 +121,12 @@ export interface ClientUpdateBannerProps {
  * 落位在首页内容区顶部而不是底部浮层：底部那条浮层是网页新版本提醒（`VersionUpdateNotice`）
  * 的位置，两条「该更新了」叠在同一处会互相盖掉。
  */
-export function ClientUpdateBanner({ open, floor, downloadUrl, onDismiss }: ClientUpdateBannerProps) {
+export function ClientUpdateBanner({
+  open,
+  floor,
+  downloadUrl,
+  onDismiss,
+}: ClientUpdateBannerProps) {
   return (
     <AnimatePresence>
       {open && floor && (

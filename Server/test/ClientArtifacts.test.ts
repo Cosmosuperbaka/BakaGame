@@ -41,7 +41,10 @@ test("读到制品时把大小与最后修改时间标上，架构按发布约�
       "content-length": "84216320",
       "last-modified": "Mon, 19 Oct 2026 09:12:33 GMT",
     }),
-    android: stub(true, { "content-length": "7168400", "last-modified": "Sun, 18 Oct 2026 23:59:59 GMT" }),
+    android: stub(true, {
+      "content-length": "7168400",
+      "last-modified": "Sun, 18 Oct 2026 23:59:59 GMT",
+    }),
   });
 
   expect(await artifacts.list()).toEqual([
@@ -105,7 +108,10 @@ test("TTL 内复用同一次探测：并发打开首页不该把边缘节点锤�
 
 test("过 TTL 后重新探测：CI 刚推的新包不必等服务端重启", async () => {
   const clock = { now: 0 };
-  const { artifacts, calls } = harness({ windows: stub(true, { "content-length": "10" }) }, { clock });
+  const { artifacts, calls } = harness(
+    { windows: stub(true, { "content-length": "10" }) },
+    { clock }
+  );
   await artifacts.list();
   clock.now = 61_000;
   await artifacts.list();

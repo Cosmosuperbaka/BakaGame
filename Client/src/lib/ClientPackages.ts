@@ -75,7 +75,9 @@ export const loadClientPackages = (): Promise<ClientPackagesState> => {
 };
 
 /** `enabled` 为假时不发请求：入口按钮不该替没点开弹窗的玩家先问一次。 */
-export const useClientPackages = (enabled = true): {
+export const useClientPackages = (
+  enabled = true
+): {
   state: ClientPackagesState | null;
   reload: () => void;
 } => {
