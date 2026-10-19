@@ -20,7 +20,26 @@ android {
         versionName '0.1.0'
     }
 
-    signingConfigs { /* 商店签名配置见 README；本地调试可用 debug 签名 */ }
+    // 正式签名：四项环境变量齐全才装配，缺任意一项就退回「release 不签名」，
+    // 免得没有密钥的构建一上来就报错。密钥本体与口令都不进仓库，路径也交给环境变量。
+    def keystorePath = System.getenv("BAKA_KEYSTORE_PATH")
+    def keystorePassword = System.getenv("BAKA_KEYSTORE_PASSWORD")
+    def keyAlias = System.getenv("BAKA_KEY_ALIAS")
+    def keyPassword = System.getenv("BAKA_KEY_PASSWORD")
+    def releaseKeystore =
+        keystorePath && keystorePassword && keyAlias && keyPassword
+        ? keystorePath : null
+
+    signingConfigs {
+        if (releaseKeystore) {
+            bakaRelease {
+                storeFile file(releaseKeystore)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
+    }
 
     buildTypes {
         debug {
@@ -28,7 +47,9 @@ android {
         }
         release {
             minifyEnabled false
-            // 正式签名落地前，release 不配 signingConfig，构建产物为 unsigned
+            // 没有密钥时产物保持 unsigned：Android Key Attestation 要求签名摘要匹配
+            // （见 README §7 与 Agents/ClientChannel.md），未签名的包只能拿 degraded 档
+            if (releaseKeystore) signingConfig signingConfigs.findByName('bakaRelease')
         }
     }
 

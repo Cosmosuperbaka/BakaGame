@@ -289,6 +289,130 @@ jobs:
           path: Mobile/android/app/build/outputs/apk/**/*.apk
           retention-days: 14
 
+      # 正式签名：仓库里配了密钥才产出 release 包。没配就只构建 debug，作业照常绿——
+      # 「还没配」不是构建失败。四个密钥值见 Agents/Deployment.md 客户端制品一节。
+      - name: Decode release keystore
+        if: ${{ secrets.BAKA_KEYSTORE_BASE64 != '' }}
+        env:
+          BAKA_KEYSTORE_BASE64: ${{ secrets.BAKA_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/keystore"
+          printf '%s' "$BAKA_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystore/bakagame-release.keystore"
+
+      - name: Assemble release APK
+        if: ${{ secrets.BAKA_KEYSTORE_BASE64 != '' }}
+        working-directory: Mobile/android
+        env:
+          BAKA_KEYSTORE_PATH: ${{ runner.temp }}/keystore/bakagame-release.keystore
+          BAKA_KEYSTORE_PASSWORD: ${{ secrets.BAKA_KEYSTORE_PASSWORD }}
+          BAKA_KEY_ALIAS: ${{ secrets.BAKA_KEY_ALIAS }}
+          BAKA_KEY_PASSWORD: ${{ secrets.BAKA_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        if: ${{ secrets.BAKA_KEYSTORE_BASE64 != '' }}
+        with:
+          name: android-release-apk
+          path: Mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 14
+
+  # 客户端制品发布：main 上打包成功后，把安装包推到 R2，公开下载域按
+  # `<base>/files/<key>` 寻址（桶名就是 URL 第一段，与数据集同一套口径）。
+  # 带版本号的对象名可以长缓存；`latest` 别名必须 no-cache，否则玩家永远拿到旧包。
+  client-publish:
+    name: Publish Client Installers
+    runs-on: ubuntu-latest
+    needs: [desktop, android]
+    # always()：只改了 Desktop/ 时 android 是 skipped，不能连带把 Windows 安装包也挡掉；
+    # 但安卓真失败（failure/cancelled）就不发布任何东西。
+    # 作业级 if 里读不到 secrets 上下文（GitHub 只给 github/needs/vars/inputs），
+    # 所以凭证有没有只在各步骤里判，缺凭证时作业照常绿。
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && always() &&
+      needs.desktop.result == 'success' &&
+      needs.android.result != 'failure' && needs.android.result != 'cancelled' }}
+    permissions:
+      contents: read
+    env:
+      R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: No R2 credentials configured
+        if: ${{ secrets.R2_ACCESS_KEY_ID == '' }}
+        run: echo "::notice::未配置 R2 凭证四件套，跳过客户端安装包发布"
+
+      - name: Configure path-style addressing
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+        run: aws configure set default.s3.addressing_style path
+
+      - name: Download desktop installer
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows-installer
+          path: inbound/desktop
+
+      # 版本号取安装包文件名里那一段（它来自 Desktop/src-tauri/tauri.conf.json 的 version）。
+      - name: Locate the installer
+        id: win
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+        run: |
+          set -euo pipefail
+          installer="$(find inbound/desktop -name '*_x64-setup.exe' -print -quit)"
+          [ -n "$installer" ] || { echo "::error::产物里没有 NSIS 安装包"; exit 1; }
+          version="$(basename "$installer" | sed -E 's/^BakaGame_(.+)_x64-setup\.exe$/\1/')"
+          echo "installer=$installer" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish Windows installer
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+        env:
+          installer: ${{ steps.win.outputs.installer }}
+          version: ${{ steps.win.outputs.version }}
+        run: |
+          set -euo pipefail
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
+            "s3://$R2_BUCKET/BakaGame-$version-x64.exe" \
+            --cache-control "public, max-age=31536000, immutable"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
+            "s3://$R2_BUCKET/BakaGame-latest-x64.exe" \
+            --cache-control "public, max-age=0, must-revalidate"
+          echo "已发布 BakaGame-$version-x64.exe 与别名 BakaGame-latest-x64.exe"
+
+      # 安卓只发布签过名的 release 包：debug 包的签名摘要对不上 attestation 的期望值，
+      # 放进公开下载链等于给玩家发一个进不了反作弊房的客户端。
+      - name: Download release APK
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' && needs.android.result == 'success' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release-apk
+          path: inbound/android
+
+      - name: Publish Android APK
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
+        run: |
+          set -euo pipefail
+          apk="$(find inbound/android -name '*-release.apk' -print -quit 2>/dev/null || true)"
+          if [ -z "$apk" ]; then
+            echo "::notice::没有 release APK（未配置签名密钥），跳过安卓发布"
+            exit 0
+          fi
+          version="$(basename "$apk" | sed -E 's/^BakaGame-(.+)-release\.apk$/\1/')"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$apk" \
+            "s3://$R2_BUCKET/BakaGame-$version-release.apk" \
+            --cache-control "public, max-age=31536000, immutable"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$apk" \
+            "s3://$R2_BUCKET/BakaGame-latest-release.apk" \
+            --cache-control "public, max-age=0, must-revalidate"
+          echo "已发布 BakaGame-$version-release.apk 与别名 BakaGame-latest-release.apk"
+
   # 静态分析：未使用文件/依赖/导出。文件与依赖类问题阻断，导出/类型只提示（分级见 knip.jsonc）。
   knip:
     name: Knip
