@@ -43,9 +43,16 @@ if (!html.includes(tag)) {
 }
 
 // 同步 versionName 到 app/build.gradle（android 的 build.gradle 是 Mobile 自己的文件，允许写）
+// 注意：Gradle 里单引号与双引号都合法，仓库里统一用单引号。只匹配一种引号会让替换静默失效，
+// 于是 build.gradle 的 versionName 变成"看起来会自动同步、实际是手抄的第二版本源"。
+// 写回也用单引号：否则每次本地跑一遍这个脚本都会在 git 里留下一处纯风格的脏改动。
 const buildGradle = path.resolve(mobile, "android/app/build.gradle");
 let gradle = fs.readFileSync(buildGradle, "utf8");
-gradle = gradle.replace(/versionName "[^"]*"/, `versionName "${pkg.version}"`);
+gradle = gradle.replace(/versionName\s+['"][^'"]*['"]/, `versionName '${pkg.version}'`);
+if (!gradle.includes(`versionName '${pkg.version}'`)) {
+  console.error("[prepare-web] 未能写入 versionName，请检查 android/app/build.gradle");
+  process.exit(1);
+}
 fs.writeFileSync(buildGradle, gradle);
 
 console.log(`[prepare-web] dist-web 就绪（版本 ${pkg.version}）。接下来执行 pnpm run sync。`);
