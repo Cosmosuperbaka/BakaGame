@@ -395,8 +395,10 @@ export const readEnv = (): AppEnv => {
     // 回源没有缺省值：对外前缀是相对路径的 `/api/bangumi`，跟它回源就是自己回自己。
     bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? "").replace(/\/+$/, ""),
     // 分片部署下每片可以指向各自的副本（多进程共写一份库会等锁）；缺省仍是单进程那一份。
-    bangumiDbPath:
-      Bun.env.BANGUMI_DB_PATH?.trim() || resolve(import.meta.dir, "../../data/bangumi.sqlite"),
+    // 相对路径按工作目录解析，与 `BANGUMI_ENRICHMENT_PATH` 同一口径。
+    bangumiDbPath: Bun.env.BANGUMI_DB_PATH?.trim()
+      ? resolve(process.cwd(), Bun.env.BANGUMI_DB_PATH.trim())
+      : resolve(import.meta.dir, "../../data/bangumi.sqlite"),
     // 默认可写（维持单进程与现有部署的行为）；只有显式 `=false` 的片才退成只读读取者。
     bangumiDatasetWriter: Bun.env.BANGUMI_DATASET_WRITER !== "false",
     bangumiImagesDir,

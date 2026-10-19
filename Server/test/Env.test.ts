@@ -429,3 +429,30 @@ it("遥测环境保留完整优先级，缺省 development，明确的 productio
     }
   }
 });
+
+describe("readEnv 的多进程分片开关", () => {
+  it("数据集路径与唯一写者标记可按进程覆盖，缺省回到单进程语义", () => {
+    const keys = ["BANGUMI_DB_PATH", "BANGUMI_DATASET_WRITER"] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
+    try {
+      Bun.env.BANGUMI_DB_PATH = "storage/shard-cee.sqlite";
+      Bun.env.BANGUMI_DATASET_WRITER = "false";
+      const shard = readEnv();
+      // 相对路径按工作目录解析，与 BANGUMI_ENRICHMENT_PATH 同一口径。
+      expect(shard.bangumiDbPath).toBe(resolve("storage/shard-cee.sqlite"));
+      expect(shard.bangumiDatasetWriter).toBe(false);
+
+      delete Bun.env.BANGUMI_DB_PATH;
+      delete Bun.env.BANGUMI_DATASET_WRITER;
+      const main = readEnv();
+      expect(main.bangumiDbPath?.replaceAll("\\", "/").endsWith("data/bangumi.sqlite")).toBe(true);
+      // 未配置即为写者：单进程部署与现有行为不能因为加了这个开关而变化。
+      expect(main.bangumiDatasetWriter).toBe(true);
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+});
