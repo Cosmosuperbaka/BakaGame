@@ -2094,7 +2094,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.requireMusicQuota(connection, player);
+    this.requireMusicQuota(room, connection, player);
     return {
       results: await this.options.musicProvider.search(
         keyword,
@@ -2106,7 +2106,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async resolvePlaylist(connection: ConnectionRecord, value: string) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.requireMusicQuota(connection, player);
+    this.requireMusicQuota(room, connection, player);
     const playlistId = this.parsePlaylistId(value);
     const provider = this.options.musicProvider;
     const resolve = provider.getPlaylistSongs?.bind(provider);
@@ -2117,7 +2117,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async searchArtists(connection: ConnectionRecord, keyword: string) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.requireMusicQuota(connection, player);
+    this.requireMusicQuota(room, connection, player);
     const provider = this.options.musicProvider;
     const search = provider.searchArtists?.bind(provider);
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
@@ -2154,13 +2154,21 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 客户端可直接触发的音乐类命令的统一前置闸门：正式成员才可调用 + 按连接配额。
+   * 客户端可直接触发的音乐类命令的统一前置闸门：正式成员或本轮出题人 + 按连接配额。
    *
    * 这两条此前都缺：命令只要求「人在房间里」，旁观者同样能发起搜索；
    * 且完全没有调用配额，见 `musicLimiter` 的注释。
+   * 配额之外放行当前待出题人：房主可以把旁观者指定为出题人（见 `submitterCandidates`），
+   * 而选歌一定要用搜索与歌单，按「正式成员」拦会把这条合法路径堵死。
    */
-  private requireMusicQuota(connection: ConnectionRecord, player: SonGuessrPlayerRecord) {
-    if (player.membership !== "active") {
+  private requireMusicQuota(
+    room: SonGuessrRoomRecord,
+    connection: ConnectionRecord,
+    player: SonGuessrPlayerRecord
+  ) {
+    const maySearchMusic =
+      player.membership === "active" || room.pendingSubmitterPlayerId === player.id;
+    if (!maySearchMusic) {
       throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能进行音乐操作");
     }
     if (!this.musicLimiter.allow(connection.id, this.now())) {

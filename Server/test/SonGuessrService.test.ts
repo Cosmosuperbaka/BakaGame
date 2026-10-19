@@ -5352,6 +5352,76 @@ describe("上线前 P0 修复回归", () => {
     ).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
   });
 
+  test("旁观者被指定为出题人后可以搜歌出题，其它旁观者仍然被拦", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "spectator-submit-host");
+    const guesser = connection(service, "spectator-submit-guesser");
+    const submitter = connection(service, "spectator-submit-one");
+    const bystander = connection(service, "spectator-submit-two");
+    await createRoom(service, host, { roomId: "1313" });
+    await joinRoom(service, guesser, "猜歌玩家", "1313");
+    const submitterState = await joinRoom(service, submitter, "旁观出题人", "1313");
+    await joinRoom(service, bystander, "旁观路人", "1313");
+
+    await execute(service, guesser, {
+      id: "guesser-ready",
+      type: "song.player.setReady",
+      roomId: "1313",
+      payload: { ready: true },
+    });
+    for (const client of [submitter, bystander]) {
+      await execute(service, client, {
+        id: `to-spectator-${client.record.id}`,
+        type: "song.player.setSpectator",
+        roomId: "1313",
+        payload: { spectator: true },
+      });
+    }
+
+    await execute(service, host, {
+      id: "start",
+      type: "song.game.start",
+      roomId: "1313",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1313",
+      payload: { playerId: submitterState.playerId },
+    });
+
+    // 出题人是全房唯一的推进者，旁观席位也要能搜索与取详情
+    await expect(
+      execute(service, submitter, {
+        id: "submitter-search",
+        type: "song.music.search",
+        roomId: "1313",
+        payload: { keyword: "答案" },
+      })
+    ).resolves.toMatchObject({
+      results: expect.arrayContaining([expect.objectContaining({ id: "answer" })]),
+    });
+    await expect(
+      execute(service, submitter, {
+        id: "submitter-submit",
+        type: "song.game.submitSong",
+        roomId: "1313",
+        payload: { songId: "answer" },
+      })
+    ).resolves.toBeTruthy();
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+
+    await expect(
+      execute(service, bystander, {
+        id: "bystander-search",
+        type: "song.music.search",
+        roomId: "1313",
+        payload: { keyword: "答案" },
+      })
+    ).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
+  });
+
   test("P0-5 大歌单候选全部取不到音频时自动出题的回源次数不超过常量上界", async () => {
     let attempts = 0;
     const pool = Array.from({ length: 30 }, (_, index) => ({
