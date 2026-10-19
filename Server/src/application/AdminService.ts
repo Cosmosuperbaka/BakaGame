@@ -16,8 +16,14 @@ import type {
   GameRecordRepository,
 } from "../infrastructure/db/GameRecordRepository";
 import type { FeedbackRecord, FeedbackRepository } from "../infrastructure/db/UserDataRepository";
-import type { CEEAntiCheatReviewBoard, CEEAntiCheatReviewStatus } from "./CEEAntiCheatSignals";
+import {
+  aggregateCEEAntiCheatReviews,
+  CEE_ANTI_CHEAT_AGGREGATE_WINDOW_MS,
+  type CEEAntiCheatReviewBoard,
+  type CEEAntiCheatReviewStatus,
+} from "./CEEAntiCheatSignals";
 import type {
+  AdminAntiCheatAggregate,
   AdminAntiCheatReview,
   AdminFeedback,
   AdminOverview,
@@ -400,6 +406,20 @@ export class AdminService {
         status: item.status,
         createdAt: new Date(item.recordedAt).toISOString(),
       })),
+    };
+  }
+
+  /**
+   * 单条条目的跨局视角：同一身份在近窗内的均值。
+   * 只返回算术结果——不因为「跨局都高」就多写一条条目、也不改变任何处置。
+   * 身份口径由存储决定：登录认 `userId`，游客只与其它同昵称的游客条目比。
+   */
+  async antiCheatReviewHistory(input: { id: string }): Promise<AdminAntiCheatAggregate> {
+    const since = Date.now() - CEE_ANTI_CHEAT_AGGREGATE_WINDOW_MS;
+    const items = await this.options.reviews.aggregateFor(input.id, since);
+    return {
+      windowDays: Math.round(CEE_ANTI_CHEAT_AGGREGATE_WINDOW_MS / 86_400_000),
+      ...aggregateCEEAntiCheatReviews(items),
     };
   }
 

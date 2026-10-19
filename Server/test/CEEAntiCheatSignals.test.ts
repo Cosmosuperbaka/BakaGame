@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS,
   CEE_SEARCH_RESULT_IDS_MAX,
   CEESearchProvenance,
   InMemoryAntiCheatReviewQueue,
+  aggregateCEEAntiCheatReviews,
   ceeAntiCheatReviews,
   ceeCharacterIdsOf,
   ceeClientTypeOf,
   ceeUnitFeatures,
   scoreCEEAntiCheat,
+  type CEEAntiCheatReview,
   type CEEGuessSignal,
+  type CEEUnitFeatures,
 } from "../src/application/CEEAntiCheatSignals";
 import { ceeTestHarness, type CEETestIdentity } from "./CEENativeFixtures";
 import type { ClientChannelProof, PlayerAccount } from "../src/shared/Index";
@@ -195,6 +199,105 @@ describe("CEE 行为特征打分", () => {
       score: 4,
     });
     expect(review.features.intervals).toHaveLength(3);
+  });
+});
+
+/** 跨局聚合只读特征里的这几个数，其余字段按队列条目补齐。 */
+const unitFeatures = (
+  cv: number | null,
+  guesses: number,
+  firstGuessCorrect = false
+): CEEUnitFeatures => ({
+  intervals: [],
+  cv,
+  noSearchGuesses: 0,
+  unmatchedSearches: 0,
+  guesses,
+  firstGuessCorrect,
+});
+const queued = (patch: Partial<CEEAntiCheatReview> & Pick<CEEAntiCheatReview, "playerId">) =>
+  ({
+    roomId: "1234",
+    roomCreatedAt: 0,
+    roundNumber: 1,
+    playerName: "张三",
+    userId: null,
+    clientType: "web",
+    recordedAt: 1_000_000,
+    score: 3,
+    reasons: [],
+    features: unitFeatures(null, 2),
+    ...patch,
+  }) as CEEAntiCheatReview;
+
+describe("CEE 复核条目跨局聚合", () => {
+  test("空集合回零值，不抛错也不编一个均值", () => {
+    expect(aggregateCEEAntiCheatReviews([])).toEqual({
+      rounds: 0,
+      avgGuesses: 0,
+      firstGuessHits: 0,
+      avgCv: null,
+      maxScore: 0,
+    });
+  });
+  test("多条取均值：一条都算不出 CV 时保持 null", async () => {
+    const queue = new InMemoryAntiCheatReviewQueue();
+    queue.add(queued({ playerId: "p1", userId: "u1", features: unitFeatures(null, 4) }));
+    queue.add(
+      queued({
+        playerId: "p1",
+        userId: "u1",
+        score: 5,
+        features: unitFeatures(0.4, 6, true),
+      })
+    );
+    const base = queue.reviews.find((item) => item.userId === "u1")!;
+    expect(aggregateCEEAntiCheatReviews(await queue.aggregateFor(base.id, 0))).toEqual({
+      rounds: 2,
+      avgGuesses: 5,
+      firstGuessHits: 1,
+      avgCv: 0.4,
+      maxScore: 5,
+    });
+  });
+  test("登录只认 userId，游客只与同昵称的其它游客条目并列", async () => {
+    const queue = new InMemoryAntiCheatReviewQueue();
+    queue.add(queued({ playerId: "u-one", userId: "u1" }));
+    queue.add(queued({ playerId: "u-two", userId: "u2" }));
+    queue.add(queued({ playerId: "guest-a" }));
+    queue.add(queued({ playerId: "guest-b" }));
+    const idOf = (playerId: string) => queue.reviews.find((item) => item.playerId === playerId)!.id;
+
+    // 同昵称但各自登录：不因为名字撞车就并成一个人。
+    expect((await queue.aggregateFor(idOf("u-one"), 0)).map((item) => item.playerId)).toEqual([
+      "u-one",
+    ]);
+    expect((await queue.aggregateFor(idOf("u-two"), 0)).map((item) => item.playerId)).toEqual([
+      "u-two",
+    ]);
+    // 游客之间并列，且不含同昵称的登录条目。
+    expect(
+      (await queue.aggregateFor(idOf("guest-a"), 0)).map((item) => item.playerId).sort()
+    ).toEqual(["guest-a", "guest-b"]);
+  });
+  test("窗口外与不存在的 id：窗口外不参与，未知 id 回空", async () => {
+    const queue = new InMemoryAntiCheatReviewQueue();
+    queue.add(queued({ playerId: "old", userId: "u1", recordedAt: 1_000 }));
+    queue.add(queued({ playerId: "new", userId: "u1", recordedAt: 2_000 }));
+    const newest = queue.reviews.find((item) => item.playerId === "new")!;
+    expect((await queue.aggregateFor(newest.id, 1_500)).map((item) => item.playerId)).toEqual([
+      "new",
+    ]);
+    expect(await queue.aggregateFor("mem_missing", 0)).toEqual([]);
+  });
+  test("极端数据封顶：最多读这些条，不把后台查询拖长", async () => {
+    const queue = new InMemoryAntiCheatReviewQueue();
+    for (let i = 0; i < CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS + 5; i++)
+      queue.add(queued({ playerId: `p-${i}`, userId: "u1" }));
+    const newest = queue.reviews[0]!;
+    expect((await queue.aggregateFor(newest.id, 0)).length).toBe(
+      CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS
+    );
   });
 });
 

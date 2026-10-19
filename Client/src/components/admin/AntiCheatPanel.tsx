@@ -22,10 +22,15 @@ import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
 import {
+  ANTI_CHEAT_HISTORY_EMPTY,
+  ANTI_CHEAT_HISTORY_FAILED,
+  ANTI_CHEAT_HISTORY_NO_CV,
+  ANTI_CHEAT_HISTORY_NOTE,
   ANTI_CHEAT_REVIEW_ACTION_LABELS,
   ANTI_CHEAT_REVIEW_BADGE,
   ANTI_CHEAT_REVIEW_LABELS,
   CEE_CLIENT_TYPE_LABELS,
+  antiCheatHistoryTitle,
 } from "@/lib/AntiCheatCopy";
 
 const LIMIT = 20;
@@ -43,6 +48,61 @@ const intervalText = (intervals: number[]) => {
     ? `${shown.join(" · ")} 等 ${intervals.length} 段`
     : shown.join(" · ");
 };
+
+/**
+ * 同身份近窗均值：读一次挂在条目 id 上，失败也只影响这一小块，处置按钮照常可用。
+ * 数字来自服务端已有的队列条目，这里不额外拉人。
+ */
+function ReviewHistory({ itemId }: { itemId: string }) {
+  const history = useAdminQuery(
+    `anticheat-history:${itemId}`,
+    () => api.admin.antiCheat.history({ id: itemId }),
+    ANTI_CHEAT_HISTORY_FAILED
+  );
+  const data = history.data;
+  return (
+    <section aria-label="同身份近窗记录" className="grid gap-1.5">
+      <h3 className="text-sm font-medium">
+        {data ? antiCheatHistoryTitle(data.windowDays) : "同身份近窗记录"}
+      </h3>
+      {history.error ? (
+        <p className="text-xs text-muted-foreground">{history.error}</p>
+      ) : !data ? (
+        <p className="text-xs text-muted-foreground">加载中…</p>
+      ) : data.rounds === 0 ? (
+        <p className="text-xs text-muted-foreground">{ANTI_CHEAT_HISTORY_EMPTY}</p>
+      ) : (
+        <dl className="grid gap-1 text-xs text-muted-foreground">
+          <div>
+            <dt className="inline">被记录回合：</dt>
+            <dd className="inline font-mono">{data.rounds} 个（含本条）</dd>
+          </div>
+          <div>
+            <dt className="inline">平均猜测次数：</dt>
+            <dd className="inline font-mono">{data.avgGuesses.toFixed(1)}</dd>
+          </div>
+          <div>
+            <dt className="inline">首猜即中：</dt>
+            <dd className="inline font-mono">
+              {data.firstGuessHits} / {data.rounds} 回合
+            </dd>
+          </div>
+          <div>
+            <dt className="inline">平均间隔变异系数：</dt>
+            <dd className="inline font-mono">
+              {data.avgCv === null ? ANTI_CHEAT_HISTORY_NO_CV : data.avgCv.toFixed(3)}
+            </dd>
+          </div>
+          <div>
+            <dt className="inline">窗口内最高分：</dt>
+            <dd className="inline font-mono">{data.maxScore}</dd>
+          </div>
+        </dl>
+      )}
+      <p className="text-xs text-muted-foreground">{ANTI_CHEAT_HISTORY_NOTE}</p>
+    </section>
+  );
+}
 
 function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChanged: () => void }) {
   const action = useAdminAction();
@@ -108,6 +168,7 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
           <dd className="inline font-mono">{item.features.firstGuessCorrect ? "是" : "否"}</dd>
         </div>
       </dl>
+      <ReviewHistory itemId={item.id} />
       <div className="flex flex-wrap items-center gap-2">
         {(["cleared", "actioned", "open"] as const)
           .filter((next) => next !== item.status)

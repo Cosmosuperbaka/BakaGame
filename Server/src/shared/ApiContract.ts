@@ -217,6 +217,20 @@ export const adminAntiCheatReviewSchema = z.object({
   createdAt: z.string(),
 });
 
+/**
+ * 同一条目所属身份在近窗内的均值口径。只是把队列里已有条目的特征做算术，
+ * 不判定、不加减分，读数字的是人。
+ */
+export const adminAntiCheatAggregateSchema = z.object({
+  /** 回看窗口的天数，与服务端常量同一处口径。 */
+  windowDays: z.number().int(),
+  rounds: z.number().int(),
+  avgGuesses: z.number(),
+  firstGuessHits: z.number().int(),
+  avgCv: z.number().nullable(),
+  maxScore: z.number().int(),
+});
+
 export const adminRoomSchema = z.object({
   game: recordedGameSchema,
   roomId: z.string(),
@@ -419,6 +433,12 @@ const adminContract = {
         })
       )
       .output(paged(adminAntiCheatReviewSchema)),
+    history: op(
+      "展开这条条目所属身份在近窗内的其它条目，只回均值数字；窗口固定，不接受按昵称批量拉人。",
+      "admin"
+    )
+      .input(z.object({ id: z.string().min(1).max(36) }))
+      .output(adminAntiCheatAggregateSchema),
     setStatus: op("标记一条复核条目的处置结果（`cleared` 放行 / `actioned` 已处置）。", "admin")
       .input(z.object({ id: z.string().min(1).max(36), status: antiCheatReviewStatusSchema }))
       .output(z.object({ ok: z.literal(true) })),
@@ -597,6 +617,7 @@ export type GameRecordDetail = z.infer<typeof gameRecordDetailSchema>;
 export type AdminFeedback = z.infer<typeof adminFeedbackSchema>;
 export type AdminFeedbackDetail = z.infer<typeof adminFeedbackDetailSchema>;
 export type AdminAntiCheatReview = z.infer<typeof adminAntiCheatReviewSchema>;
+export type AdminAntiCheatAggregate = z.infer<typeof adminAntiCheatAggregateSchema>;
 export type AntiCheatReviewStatus = z.infer<typeof antiCheatReviewStatusSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type AdminRoom = z.infer<typeof adminRoomSchema>;

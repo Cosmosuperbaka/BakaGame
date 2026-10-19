@@ -45,6 +45,7 @@ const EXPECTED_OPERATIONS = [
   "admin.feedback.reply",
   "admin.feedback.setStatus",
   "admin.antiCheat.list",
+  "admin.antiCheat.history",
   "admin.antiCheat.setStatus",
   "admin.rooms.list",
   "admin.rooms.close",

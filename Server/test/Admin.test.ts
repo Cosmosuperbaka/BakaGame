@@ -302,7 +302,12 @@ describe("实时房间管理", () => {
 
 describe("反作弊人工复核队列", () => {
   const recordedAt = Date.parse("2026-10-18T10:05:00Z");
-  const seed = (reviews: InMemoryAntiCheatReviewQueue, playerName: string, userId: string | null) =>
+  const seed = (
+    reviews: InMemoryAntiCheatReviewQueue,
+    playerName: string,
+    userId: string | null,
+    at = recordedAt
+  ) =>
     reviews.add({
       roomId: "ABCD",
       roomCreatedAt: recordedAt - 60_000,
@@ -311,7 +316,7 @@ describe("反作弊人工复核队列", () => {
       playerName,
       userId,
       clientType: "mobile",
-      recordedAt,
+      recordedAt: at,
       score: 4,
       reasons: ["interval_too_uniform", "no_search_guess"],
       features: {
@@ -392,6 +397,57 @@ describe("反作弊人工复核队列", () => {
       (await rpc("admin/antiCheat/setStatus", { id, status: "actioned" }, adminCookie)).status
     ).toBe(500);
     expect(antiCheatReviews.reviews[0]!.status).toBe("open");
+  });
+
+  test("跨局展开只回同身份近窗均值：读一次不产生任何处置", async () => {
+    const { rpc, adminCookie, aliceId, alice, audit, antiCheatReviews } = await setup();
+    const now = Date.now();
+    seed(antiCheatReviews, "Alice", aliceId, now - 60_000);
+    seed(antiCheatReviews, "Alice", aliceId, now - 3_600_000);
+    // 窗口外的旧条目：一个月的行为不该替今天说话。
+    seed(antiCheatReviews, "Alice", aliceId, now - 40 * 86_400_000);
+    // 同昵称但没登录，与上面的登录账号不是同一个人。
+    seed(antiCheatReviews, "Alice", null, now - 60_000);
+    seed(antiCheatReviews, "游客", null, now - 60_000);
+
+    const items = antiCheatReviews.reviews;
+    const aliceItem = items.find(
+      (item) => item.userId === aliceId && item.recordedAt === now - 60_000
+    )!;
+    const guestAliceItem = items.find(
+      (item) => item.userId === null && item.playerName === "Alice"
+    )!;
+    const touristItem = items.find((item) => item.playerName === "游客")!;
+
+    expect((await rpc("admin/antiCheat/history", { id: aliceItem.id })).status).toBe(401);
+    expect((await rpc("admin/antiCheat/history", { id: aliceItem.id }, alice.cookie)).status).toBe(
+      403
+    );
+    expect((await rpc("admin/antiCheat/history", {}, adminCookie)).status).toBe(400);
+
+    const history = await rpc("admin/antiCheat/history", { id: aliceItem.id }, adminCookie);
+    expect(history.status).toBe(200);
+    expect(history.body).toEqual({
+      windowDays: 30,
+      rounds: 2,
+      avgGuesses: 4,
+      firstGuessHits: 2,
+      avgCv: 0.012,
+      maxScore: 4,
+    });
+    // 游客条目只与自己并列，不并进同昵称的登录账号。
+    expect(
+      (await rpc("admin/antiCheat/history", { id: guestAliceItem.id }, adminCookie)).body
+    ).toMatchObject({ rounds: 1 });
+    expect(
+      (await rpc("admin/antiCheat/history", { id: touristItem.id }, adminCookie)).body
+    ).toMatchObject({ rounds: 1 });
+    // 未知 id 不是错误：队列里查不到身份，就是「窗口内没有可比条目」。
+    expect(
+      (await rpc("admin/antiCheat/history", { id: "missing" }, adminCookie)).body
+    ).toMatchObject({ rounds: 0 });
+
+    expect(audit.entries).toEqual([]);
   });
 });
 

@@ -216,18 +216,77 @@ export interface CEEAntiCheatReviewQuery {
 }
 
 /**
- * 后台读队列的最小端口：分页查 + 改状态。与写端口分开，是因为除人在后台点之外，
- * 没有任何一条自动路径允许改状态。
+ * 后台读队列的最小端口：分页查 + 按身份展开 + 改状态。与写端口分开，是因为除人在后台点之外，
+ * 没有任何一条自动路径允许改状态。展开只接受队列里已有的条目 id，不提供「按昵称批量拉人」的查询口。
  */
 export interface CEEAntiCheatReviewBoard {
   list(options?: CEEAntiCheatReviewQuery): Promise<{
     items: CEEAntiCheatReviewItem[];
     total: number;
   }>;
+  /** 同身份近期条目的原始条目，供 `aggregateCEEAntiCheatReviews` 算均值。 */
+  aggregateFor(itemId: string, since: number): Promise<CEEAntiCheatReviewItem[]>;
   setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void>;
   /** 改状态前先确认条目真在：后台不接受「改了一个不存在的 id 也回成功」。 */
   exists(id: string): Promise<boolean>;
 }
+
+/**
+ * 跨局聚合的身份口径：登录玩家认 `userId`（改昵称不换人），
+ * 游客只能认昵称，且只与其它同昵称的游客条目比——不把昵称撞上登录账号的条目混进来。
+ */
+export interface CEEAntiCheatReviewIdentity {
+  userId: string | null;
+  playerName: string;
+}
+
+/** 判定两条条目是否同一身份；内存与 MySQL 两套实现共用，避免口径分叉。 */
+export const ceeReviewIdentityMatches = (
+  item: CEEAntiCheatReviewIdentity,
+  identity: CEEAntiCheatReviewIdentity
+): boolean =>
+  identity.userId !== null
+    ? item.userId === identity.userId
+    : item.userId === null && item.playerName === identity.playerName;
+
+/** 跨局聚合只回看这个窗口：一个月前的行为不该替今天说话。 */
+export const CEE_ANTI_CHEAT_AGGREGATE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** 聚合最多读这么多条：一个人的条目本就少，封顶是防极端数据把后台查询拖长。 */
+export const CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS = 200;
+
+export interface CEEAntiCheatReviewAggregate {
+  /** 参与聚合的条目数（含正在看这一条）。 */
+  rounds: number;
+  /** 每个被记录回合的平均猜测次数，一位小数。 */
+  avgGuesses: number;
+  /** 首猜即中的回合数；与 `rounds` 一起读才是命中率。 */
+  firstGuessHits: number;
+  /** 平均间隔变异系数；一条都算不出时为 `null`。 */
+  avgCv: number | null;
+  /** 窗口内的最高分：看的是「有没有越来越像」，不是结论。 */
+  maxScore: number;
+}
+
+/**
+ * 同身份近期条目的均值口径。只做算术，不判定、不打分、不产任何动作，
+ * 结论留给读这些数字的人。
+ */
+export const aggregateCEEAntiCheatReviews = (
+  items: readonly CEEAntiCheatReviewItem[]
+): CEEAntiCheatReviewAggregate => {
+  const mean = (values: readonly number[]) =>
+    values.reduce((total, value) => total + value, 0) / values.length;
+  const cvs = items.map((item) => item.features.cv).filter((cv): cv is number => cv !== null);
+  if (!items.length)
+    return { rounds: 0, avgGuesses: 0, firstGuessHits: 0, avgCv: null, maxScore: 0 };
+  return {
+    rounds: items.length,
+    avgGuesses: Math.round(mean(items.map((item) => item.features.guesses)) * 10) / 10,
+    firstGuessHits: items.filter((item) => item.features.firstGuessCorrect).length,
+    avgCv: cvs.length ? Math.round(mean(cvs) * 1000) / 1000 : null,
+    maxScore: items.reduce((highest, item) => Math.max(highest, item.score), 0),
+  };
+};
 
 export const NOOP_ANTI_CHEAT_REVIEW_QUEUE: CEEAntiCheatReviewQueue = { add() {} };
 
@@ -250,6 +309,13 @@ export class InMemoryAntiCheatReviewQueue
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
     const offset = Math.max(options.offset ?? 0, 0);
     return { items: filtered.slice(offset, offset + limit), total: filtered.length };
+  }
+  async aggregateFor(itemId: string, since: number): Promise<CEEAntiCheatReviewItem[]> {
+    const base = this.reviews.find((item) => item.id === itemId);
+    if (!base) return [];
+    return this.reviews
+      .filter((item) => item.recordedAt >= since && ceeReviewIdentityMatches(item, base))
+      .slice(0, CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS);
   }
   async setStatus(id: string, status: CEEAntiCheatReviewStatus): Promise<void> {
     const item = this.reviews.find((review) => review.id === id);

@@ -102,3 +102,17 @@ export const clientUpdateNoticeText = (
 export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
 /** 关闭只压到下一次抬档，不是「永不再提醒」，按钮文字据实写「暂不」。 */
 export const CLIENT_UPDATE_DISMISS_LABEL = "暂不提醒";
+
+// ==================== 复核条目的跨局视角 ====================
+
+/** 标题里的窗口天数由服务端回读，前端不另写一份常量，免得两侧口径分叉。 */
+export const antiCheatHistoryTitle = (windowDays: number): string =>
+  `同身份近 ${windowDays} 天的记录`;
+
+/** 这段数字的定位写在标题下：它是上下文，不是第二条判定。 */
+export const ANTI_CHEAT_HISTORY_NOTE =
+  "均值只把同一个人被记录的回合放在一起看，不参与打分，也不产生任何处置。";
+export const ANTI_CHEAT_HISTORY_EMPTY = "窗口内没有其它可比条目。";
+export const ANTI_CHEAT_HISTORY_FAILED = "跨局条目读取失败";
+/** 一条 CV 都算不出时的取值文字，与本回合特征里的「样本不足」同一口径。 */
+export const ANTI_CHEAT_HISTORY_NO_CV = "样本不足";

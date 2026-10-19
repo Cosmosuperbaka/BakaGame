@@ -180,6 +180,9 @@ const createRpcRouter = (
         list: adminOnly.admin.antiCheat.list.handler(({ input }) =>
           admin.listAntiCheatReviews(input)
         ),
+        history: adminOnly.admin.antiCheat.history.handler(({ input }) =>
+          admin.antiCheatReviewHistory(input)
+        ),
         setStatus: adminOnly.admin.antiCheat.setStatus.handler(({ context, input }) =>
           admin.setAntiCheatReviewStatus(context.userId, input)
         ),

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import type {
   CEEAntiCheatReview,
   CEEAntiCheatReviewBoard,
@@ -8,6 +8,7 @@ import type {
   CEEAntiCheatReviewStatus,
   CEEUnitFeatures,
 } from "../../application/CEEAntiCheatSignals";
+import { CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS } from "../../application/CEEAntiCheatSignals";
 import type { Database } from "./Database";
 import { ceeAntiCheatReview } from "./Schema";
 
@@ -72,22 +73,50 @@ export class AntiCheatReviewRepository implements CEEAntiCheatReviewQueue, CEEAn
         .where(where),
     ]);
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        roomId: row.roomId,
-        roomCreatedAt: row.roomCreatedAt.getTime(),
-        roundNumber: row.roundNumber,
-        playerId: row.playerId,
-        playerName: row.playerName,
-        userId: row.userId,
-        clientType: row.clientType as CEEAntiCheatReviewItem["clientType"],
-        recordedAt: row.createdAt.getTime(),
-        score: row.score,
-        reasons: row.reasons as string[],
-        features: row.features as CEEUnitFeatures,
-        status: row.status as CEEAntiCheatReviewStatus,
-      })),
+      items: rows.map((row) => this.toItem(row)),
       total: Number(totals[0]?.total ?? 0),
+    };
+  }
+  /**
+   * 按队列里已有条目的身份展开近窗条目。
+   * 登录的用 `userId`，游客只与其它「同样没有 userId」的同昵称条目比——
+   * 昵称撞上某个账号的游客不该被并进那个账号。
+   */
+  async aggregateFor(itemId: string, since: number): Promise<CEEAntiCheatReviewItem[]> {
+    await this.database.ready;
+    const [base] = await this.database.db
+      .select({ userId: ceeAntiCheatReview.userId, playerName: ceeAntiCheatReview.playerName })
+      .from(ceeAntiCheatReview)
+      .where(eq(ceeAntiCheatReview.id, itemId))
+      .limit(1);
+    if (!base) return [];
+    const identity =
+      base.userId === null
+        ? and(isNull(ceeAntiCheatReview.userId), eq(ceeAntiCheatReview.playerName, base.playerName))
+        : eq(ceeAntiCheatReview.userId, base.userId);
+    const rows = await this.database.db
+      .select()
+      .from(ceeAntiCheatReview)
+      .where(and(identity, gte(ceeAntiCheatReview.createdAt, new Date(since))))
+      .orderBy(desc(ceeAntiCheatReview.createdAt))
+      .limit(CEE_ANTI_CHEAT_AGGREGATE_MAX_ITEMS);
+    return rows.map((row) => this.toItem(row));
+  }
+  private toItem(row: typeof ceeAntiCheatReview.$inferSelect): CEEAntiCheatReviewItem {
+    return {
+      id: row.id,
+      roomId: row.roomId,
+      roomCreatedAt: row.roomCreatedAt.getTime(),
+      roundNumber: row.roundNumber,
+      playerId: row.playerId,
+      playerName: row.playerName,
+      userId: row.userId,
+      clientType: row.clientType as CEEAntiCheatReviewItem["clientType"],
+      recordedAt: row.createdAt.getTime(),
+      score: row.score,
+      reasons: row.reasons as string[],
+      features: row.features as CEEUnitFeatures,
+      status: row.status as CEEAntiCheatReviewStatus,
     };
   }
   async exists(id: string): Promise<boolean> {

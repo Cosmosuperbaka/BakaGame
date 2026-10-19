@@ -25,7 +25,7 @@ const admin = vi.hoisted(() => ({
     revokeSessions: vi.fn(),
   },
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
-  antiCheat: { list: vi.fn(), setStatus: vi.fn() },
+  antiCheat: { list: vi.fn(), history: vi.fn(), setStatus: vi.fn() },
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
   qq: { status: vi.fn(), refreshNames: vi.fn() },
@@ -170,6 +170,15 @@ beforeEach(() => {
   admin.qq.status.mockResolvedValue(unavailable);
   // 概览会读一条待复核计数；默认给空队列，需要条数的用例各自覆盖。
   admin.antiCheat.list.mockResolvedValue({ items: [], total: 0 });
+  // 详情弹窗读一次跨局均值；默认给「算不出 CV」，需要数字的用例各自覆盖。
+  admin.antiCheat.history.mockResolvedValue({
+    windowDays: 30,
+    rounds: 1,
+    avgGuesses: 4.6,
+    firstGuessHits: 1,
+    avgCv: null,
+    maxScore: 5,
+  });
 });
 
 afterEach(() => {
@@ -337,6 +346,82 @@ describe("管理后台", () => {
     expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
     expect(admin.antiCheat.list).toHaveBeenCalledTimes(2);
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("跨局均值给出同身份窗口数字，读失败只影响这一小块", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockResolvedValue({
+      windowDays: 30,
+      rounds: 4,
+      avgGuesses: 4.6,
+      firstGuessHits: 2,
+      avgCv: 0.087,
+      maxScore: 5,
+    });
+    admin.antiCheat.setStatus.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(admin.antiCheat.history).toHaveBeenCalledWith({ id: "rev-1" });
+    const heading = await within(dialog).findByRole("heading", { name: "同身份近 30 天的记录" });
+    const block = heading.closest("section") as HTMLElement;
+    expect(within(block).getByText("4 个（含本条）")).toBeInTheDocument();
+    expect(within(block).getByText("4.6")).toBeInTheDocument();
+    expect(within(block).getByText("2 / 4 回合")).toBeInTheDocument();
+    expect(within(block).getByText("0.087")).toBeInTheDocument();
+    // 均值只是上下文：处置按钮照常可用。
+    expect(within(block).getByText(/不参与打分/)).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+  });
+
+  it("跨局均值读失败时留一行说明，条目本身照常处置", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockRejectedValue(new Error("boom"));
+    admin.antiCheat.setStatus.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(await within(dialog).findByText("跨局条目读取失败")).toBeInTheDocument();
+    await events.click(within(dialog).getByRole("button", { name: "标记放行" }));
+    expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
+  });
+
+  it("窗口内没有可比条目时明说，算不出 CV 也不编一个 0", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    admin.antiCheat.history.mockResolvedValue({
+      windowDays: 30,
+      rounds: 0,
+      avgGuesses: 0,
+      firstGuessHits: 0,
+      avgCv: null,
+      maxScore: 0,
+    });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("窗口内没有其它可比条目。")).toBeInTheDocument();
+  });
+
+  it("每条 CV 都算不出的身份，均值仍写明样本不足", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [review], total: 1 });
+    const events = renderAdmin("/admin?tab=anticheat");
+    const table = await screen.findByRole("table", { name: "复核队列" });
+    await events.click(within(table).getByRole("button", { name: "Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    const heading = await within(dialog).findByRole("heading", { name: "同身份近 30 天的记录" });
+    expect(
+      within(heading.closest("section") as HTMLElement).getByText("样本不足")
+    ).toBeInTheDocument();
   });
 
   it("概览显示待复核条数，点去复核切到反作弊标签", async () => {
