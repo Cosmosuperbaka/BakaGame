@@ -4,7 +4,8 @@ import type { ClientChannel } from "../../infrastructure/ClientChannel";
 import { resolveClientIp } from "../ClientIp";
 
 /**
- * 客户端通道证明的 HTTP 面：注册设备公钥、领挑战、交签名换一次性 ticket。
+ * 客户端通道证明的 HTTP 面：注册设备公钥、领挑战、交签名换一次性 ticket，
+ * 外加一条给首页更新提醒用的最低版本读回。
  * 协议逐字定义见 `Agents/ClientChannel.md`；字段名与壳（`Desktop/`、`Mobile/`）对齐，改名即断链。
  *
  * 这里刻意不做房间准入：ticket 只证明「这台设备上的这个壳持有私钥」，
@@ -86,6 +87,23 @@ export const clientChannelRoutes = (channel: ClientChannel | undefined) => {
           },
           { additionalProperties: false }
         ),
+      }
+    )
+    .get(
+      "/api/client/update-check",
+      ({ query, set }) => {
+        // 比对只用服务端这一份 compareClientVersion：前端再实现一遍，两端对「够不够新」
+        // 的判断迟早各自漂移。这里读回的最低版本也只用于提醒，拦人仍在 requireAdmission。
+        set.headers["cache-control"] = "no-store";
+        const channel = require();
+        return {
+          minimumVersion: channel.minimumVersionFor(query.clientType),
+          outdated: channel.isOutdated(query.clientType, query.clientVersion),
+        };
+      },
+      {
+        // 查询串不锁 additionalProperties：多带一个排查用的参数不该让整条提醒失效。
+        query: t.Object({ clientType: clientTypeSchema, clientVersion: versionSchema }),
       }
     );
 };

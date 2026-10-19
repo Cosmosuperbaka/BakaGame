@@ -70,6 +70,16 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 返回 `200 { ticket, expiresAt, outdated }`；不过返回 4xx + `error`。
 
+### `GET /api/client/update-check`
+
+查询串 `{ clientType, clientVersion }`（壳自报，只用来选档位）→ 返回 `{ minimumVersion, outdated }`。
+未配置最低版本时 `minimumVersion` 是空串、`outdated` 恒为 `false`。
+
+首页的更新提醒读这一条：比对只在服务端做一次（`compareClientVersion`），前端不实现第二份，
+否则两端对「够不够新」的判断会各自漂移。它不参与准入、不改变任何判定——关掉或忽略提醒
+都绕不过反作弊房的 `CLIENT_OUTDATED`。响应带 `Cache-Control: no-store`：抬档要立刻生效，
+被边缘缓存的旧门槛会让提醒静默失灵。
+
 ### ws 握手
 
 `/api/cee/ws?clientType=…&clientVersion=…&ticket=…`
@@ -161,3 +171,10 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 不发版也能紧急抬升。`attest` 与 `register` 都回 `outdated`，并把 `clientVersion` 记进
 `clientChannel`；反作弊房准入时版本低于最低值即 `CLIENT_OUTDATED`。
 **通道证明协议一旦破坏性变更必须抬高最低版本**，否则旧壳还能继续签名通关。
+
+更新提示分两级，读同一份最低版本：
+
+- **首页软提醒**（`Client/src/components/ClientUpdateNotice.tsx`）只在原生壳里出现，可关。
+  关的是「这一档门槛」，服务端抬档后提醒重新出现；普通房间照常游玩，措辞必须写明这点。
+- **反作弊房硬门槛**（`CEERooms.requireAdmission`）不看玩家关没关过提醒，版本低于最低值即
+  `CLIENT_OUTDATED`。提醒只是让玩家早点动手，从来不是准入的一部分。

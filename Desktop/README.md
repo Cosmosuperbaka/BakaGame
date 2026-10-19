@@ -134,6 +134,9 @@ signtool verify /pa /all <同一个文件>
   低于最低版本由服务端在握手回 `CLIENT_OUTDATED`，**只拦 `BakaAntiCheat` 房，普通房不受影响**。
   通道证明协议一旦变更必须抬高最低版本，否则旧壳还能继续签名通关。
   最低版本放在服务端配置里，不发版也能紧急抬升。
+- **首页软提醒**：壳里打开首页时，前端读 `GET /api/client/update-check` 判断是否过时并浮一条
+  可关的提示（记的是「关过哪一档」，抬档后重新出现）。提醒与准入是两件事：不更新照样进普通房，
+  反作弊房仍然由服务端硬拦。
 - **待确认（不要当作已可用）**：R2 自定义域名要求所在 zone 托管在 Cloudflare，
   而 `baka.website` 目前由阿里云 ESA 托管、`bakagame-esa` 边缘函数负责路由。
   `cdn.baka.website` 要么单独接入 Cloudflare，要么改走 Worker 路由转发。

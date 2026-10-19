@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
+import { ClientUpdateNotice } from "@/components/ClientUpdateNotice";
 import { Hint, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { resolveLatestVersion, sortEntriesByVersion } from "@/lib/Changelog";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
@@ -401,6 +402,9 @@ export default function LandingPage() {
           initial="initial"
           animate="animate"
         >
+          {/* 客户端过旧的提醒落在游戏列表上方：底部那条浮层是网页新版本提醒的位置，
+              两条「该更新了」叠在同一处会互相盖掉。壳没装或版本够新时整条不渲染。 */}
+          <ClientUpdateNotice />
           {GAMES.map((game) => (
             <GameRow key={game.id} game={game} />
           ))}

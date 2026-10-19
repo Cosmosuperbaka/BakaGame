@@ -258,6 +258,10 @@ export class ClientChannel {
     const minimum = this.minimumVersion(clientType);
     return minimum.length > 0 && compareClientVersion(clientVersion, minimum) < 0;
   }
+  /** 该端的最低版本，未配置为空串。首页的更新提醒读这一处，拦人仍只在反作弊房。 */
+  minimumVersionFor(clientType: ClientChannelProof["clientType"]): string {
+    return this.minimumVersion(clientType);
+  }
   private requireTrusted(
     selfCheck: ClientSelfCheckReport,
     stage: "register" | "attest",

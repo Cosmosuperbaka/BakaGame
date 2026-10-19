@@ -6,6 +6,7 @@
  */
 
 import type { BadgeProps } from "@/components/ui/Badge";
+import type { BakaClientType } from "@/lib/BakaChannel";
 import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@/types";
 
 /** 桌面客户端下载地址；文件名固定，链接随时可换。 */
@@ -85,3 +86,19 @@ export const CEE_CLIENT_TYPE_LABELS: Record<AdminAntiCheatReview["clientType"], 
   desktop: "桌面端",
   mobile: "移动端",
 };
+
+// ==================== 首页客户端更新提醒 ====================
+
+/**
+ * 首页提醒的正文。门槛是服务端读回的最低版本，措辞写明「只挡反作弊房」：
+ * 普通房间照常玩，不能让玩家读成「不更新就打不开游戏」。
+ */
+export const clientUpdateNoticeText = (
+  clientType: Exclude<BakaClientType, "web">,
+  minimumVersion: string
+): string =>
+  `${CEE_CLIENT_TYPE_LABELS[clientType]}版本较旧，更新到 ${minimumVersion} 以上才能进反作弊房；普通房间不受影响。`;
+
+export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
+/** 关闭只压到下一次抬档，不是「永不再提醒」，按钮文字据实写「暂不」。 */
+export const CLIENT_UPDATE_DISMISS_LABEL = "暂不提醒";
