@@ -242,6 +242,23 @@ const cpusetSize = (cpuset: string): number => {
   }, 0);
 };
 
+/** CPU 剖面参数：Windows 上被测进程只能靠信号终止，Bun 来不及 flush 剖面（目录留着但是空的）。 */
+const cpuProfArgs = async (config: RunConfig): Promise<string[]> => {
+  if (!config.cpuProf) return [];
+  const profileDir = path.join(config.outDir, "profile", config.label);
+  if (process.platform === "win32") {
+    console.log(`CPU 剖面在 Windows 不会落盘，本跳跳过：${profileDir}`);
+    return [];
+  }
+  await mkdir(profileDir, { recursive: true });
+  // markdown 剖面是纯文本，能直接读；每个分片各写一份文件（Bun 按 pid 命名），互不覆盖。
+  return ["--cpu-prof-md", "--cpu-prof-dir", profileDir];
+};
+
+/** 绑核只在非 Windows 可用（没有 taskset）。 */
+const tasksetArgs = (cpuset: string): string[] =>
+  cpuset && process.platform !== "win32" ? ["taskset", "-c", cpuset] : [];
+
 /** 启动被测进程：与 E2E 同一份环境隔离表 + 出口守卫 preload。 */
 const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "bakagame-loadtest-"));
@@ -256,23 +273,15 @@ const bootTarget = async (config: RunConfig): Promise<TargetHandle> => {
   );
   const script = path.resolve(import.meta.dir, "Target.ts");
   const preload = path.resolve(import.meta.dir, "../fixtures/IsolatedPreload.ts");
-  const runtime = [process.execPath, "--no-env-file", "--preload", preload, script];
-  if (config.cpuProf) {
-    // markdown 剖面是纯文本，能直接读；每个分片各写一份文件（名里带 pid），互不覆盖。
-    const profileDir = path.join(config.outDir, "profile", config.label);
-    if (process.platform === "win32") {
-      // Windows 上被测进程只能靠信号终止，Bun 来不及 flush 剖面（目录留着但是空的），绑核也没有 taskset。
-      console.log(`CPU 剖面在 Windows 不会落盘，本跳跳过：${profileDir}`);
-    } else {
-      await mkdir(profileDir, { recursive: true });
-      runtime.splice(1, 0, "--cpu-prof-md", "--cpu-prof-dir", profileDir);
-    }
-  }
-  const taskset =
-    config.targetCpuset && process.platform !== "win32"
-      ? ["taskset", "-c", config.targetCpuset]
-      : [];
-  const child = Bun.spawn([...taskset, ...runtime], {
+  const runtime = [
+    process.execPath,
+    ...(await cpuProfArgs(config)),
+    "--no-env-file",
+    "--preload",
+    preload,
+    script,
+  ];
+  const child = Bun.spawn([...tasksetArgs(config.targetCpuset), ...runtime], {
     cwd: path.resolve(import.meta.dir, "../.."),
     env,
     stdin: "ignore",
