@@ -396,7 +396,11 @@ describe("SongAccountSettings", () => {
         type: "qq",
       });
     });
-    expect(screen.getByText("请使用手机 QQ 扫码")).toBeInTheDocument();
+    // 状态文案是在 createQr 的 await 之后才写进 DOM 的：waitFor 只等到 mock 被调用，
+    // 此时 promise 的后续微任务可能还没跑完，紧接着同步 getByText 在 CI 负载下会偶发失败。
+    await waitFor(() => {
+      expect(screen.getByText("请使用手机 QQ 扫码")).toBeInTheDocument();
+    });
 
     // 切换为微信扫码
     sendCommand.mockResolvedValueOnce(qrResponse("wx-qr"));
@@ -407,7 +411,9 @@ describe("SongAccountSettings", () => {
         type: "wx",
       });
     });
-    expect(screen.getByText("请使用微信扫码")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("请使用微信扫码")).toBeInTheDocument();
+    });
 
     // 切换为 QQ 音乐 App 扫码
     sendCommand.mockResolvedValueOnce(qrResponse("mobile-qr"));
@@ -418,7 +424,9 @@ describe("SongAccountSettings", () => {
         type: "mobile",
       });
     });
-    expect(screen.getByText("请使用 QQ 音乐 App 扫码")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("请使用 QQ 音乐 App 扫码")).toBeInTheDocument();
+    });
   });
 
   it("QQ 音乐登录后正确显示超级会员 8 级徽章及到期日", () => {
