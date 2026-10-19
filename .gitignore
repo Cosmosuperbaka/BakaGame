@@ -52,6 +52,8 @@ Server/build
 
 # Agent workspace and local memory
 .workbuddy/
+# Agent 本地笔记（踩坑、生产相关信息）：不追踪，见 AGENTS.md「本地笔记」
+.agent-notes/
 
 # Editor directories and files
 .vscode/*
