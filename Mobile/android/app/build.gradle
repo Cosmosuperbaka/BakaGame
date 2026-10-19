@@ -78,4 +78,9 @@ dependencies {
     // styles.xml 的 AppTheme.NoActionBarLaunch 继承 Theme.SplashScreen，该主题由这个库提供。
     // 不声明就会在 processDebugResources 阶段报 "resource style/Theme.SplashScreen not found"。
     implementation 'androidx.core:core-splashscreen:1.0.1'
+    // 电容的 com.getcapacitor.BridgeActivity 继承 AppCompatActivity（Capacitor 5 起如此），
+    // 但它在 capacitor-android 里是 implementation 依赖、不会传递到本模块的编译类路径。
+    // 缺了它 Kotlin 侧会报一整片连锁错误（AppCompatActivity 不可访问 → Plugin 基类解析失败
+    // → asyncCall / context / reject 全部 unresolved），看着像十几个 bug，其实只有一个。
+    implementation 'androidx.appcompat:appcompat:1.7.0'
 }
