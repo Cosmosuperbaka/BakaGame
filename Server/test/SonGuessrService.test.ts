@@ -32,7 +32,7 @@ import {
 } from "../src/config/Constants";
 import type { ConnectionRecord } from "../src/domain/Model";
 import type { GameRoundRecord } from "../src/domain/GameRecord";
-import type { BangumiMusicTrack, SongSearchResult } from "../src/shared/SonGuessr";
+import type { BangumiMusicTrack, SongLyricLine, SongSearchResult } from "../src/shared/SonGuessr";
 import type { MusicCookieInput, MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
@@ -1002,11 +1002,12 @@ describe("SonGuessrService", () => {
     ];
 
     // 设定 7~10 行时收缩到 6 行，取间奏之后的紧凑段。
+    // 提前量 700ms：上一句是行级歌词（没有逐字结束时间戳），按更短的固定提前量留渐入空间。
     for (const configured of [7, 8, 9, 10]) {
       const clip = createSongLyricClip(lines, configured, { nextInt: () => 0 }, 236_007);
       expect(clip.lines).toHaveLength(6);
       expect(clip.lines[0].text).toBe("句七");
-      expect(clip.startTime).toBe(66_850);
+      expect(clip.startTime).toBe(67_150);
       expect(clip.endTime).toBe(103_420);
     }
 
@@ -1076,6 +1077,66 @@ describe("SonGuessrService", () => {
     expect(texts).toContain("第一句主歌词");
     expect(texts).toContain("和声小字A (Ah~)");
     expect(texts).toContain("第二句主歌词");
+  });
+
+  test("出题窗口的提前量不越过上一句歌词的结尾", () => {
+    const words = (time: number, endTime: number, text: string) => [
+      { startTime: time, endTime, word: text },
+    ];
+    const previous: SongLyricLine = {
+      time: 10_000,
+      endTime: 19_700,
+      text: "上一句",
+      words: words(10_000, 19_700, "上一句"),
+    };
+    const windowLines: SongLyricLine[] = [
+      { time: 20_000, endTime: 23_000, text: "题目一", words: words(20_000, 23_000, "题目一") },
+      { time: 23_200, endTime: 26_000, text: "题目二", words: words(23_200, 26_000, "题目二") },
+    ];
+    // 窗口候选为 [上一句, 题目一] 与 [题目一, 题目二]，`nextInt` 取 1 即选中后者
+    const clipOf = (prev: SongLyricLine) =>
+      createSongLyricClip([prev, ...windowLines], 2, { nextInt: () => 1 }, 60_000);
+
+    // 逐字上一句 19.7s 唱完，只剩 300ms 空隙：提前量收到 300ms，绝不听见上一句
+    expect(clipOf(previous).startTime).toBe(19_700);
+    // 上一句一直唱到窗口起点：不留提前量
+    expect(clipOf({ ...previous, endTime: 20_000 }).startTime).toBe(20_000);
+    // 空隙足够长：用满 1 秒渐入缓冲
+    expect(clipOf({ ...previous, endTime: 15_000 }).startTime).toBe(19_000);
+    // 行级歌词没有逐字结束时间戳（endTime 是清洗时补算的）：退回更短的固定提前量
+    const { words: _words, ...lineLevelPrevious } = previous;
+    expect(clipOf(lineLevelPrevious).startTime).toBe(19_300);
+    // 后延缓冲不受这条规则影响
+    expect(clipOf(previous).endTime).toBe(27_000);
+
+    // 窗口就是第一句时前面只有前奏，仍留满 1 秒
+    const firstWindow = createSongLyricClip(
+      [previous, ...windowLines],
+      2,
+      { nextInt: () => 0 },
+      60_000
+    );
+    expect(firstWindow.lines[0].text).toBe("上一句");
+    expect(firstWindow.startTime).toBe(9_000);
+
+    // 窗口前最近的一句是和声歌词：同样按它的结尾收提前量
+    const withLateHarmony = createSongLyricClip(
+      [
+        {
+          time: 19_000,
+          endTime: 19_900,
+          text: "和声",
+          isBG: true,
+          words: words(19_000, 19_900, "和声"),
+        },
+        ...windowLines,
+      ],
+      2,
+      { nextInt: () => 0 },
+      60_000
+    );
+    expect(withLateHarmony.lines[0].text).toBe("题目一");
+    expect(withLateHarmony.startTime).toBe(19_900);
   });
 
   test("后台控制口：列出隐藏房，移走房主后重选房主，关房通知全员", async () => {
