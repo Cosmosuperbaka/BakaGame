@@ -92,7 +92,7 @@ type SelfCheckReport = {
 - 壳被切回前台（`visibilitychange`）时立刻补一张——后台里定时器会被系统节流，票基本早就凉了。
 
 接口基址：内嵌产物的相对路径会打到 Capacitor 自己的 `https://localhost`，所以三趟往返**必须显式打绝对地址**。
-默认 `https://game.baka.website`，可由页面 `window.__BAKA_API_BASE__` 覆盖，**只接受 https**
+默认地址写死在桥接脚本的常量里（读 `Mobile/bridge/baka-bridge.js`），可由页面 `window.__BAKA_API_BASE__` 覆盖，**只接受 https**
 （与桌面壳 `config.rs` 同口径：不给「把签名发到假站」留口子）。
 
 ## 4. selfCheck 事实码
@@ -254,42 +254,37 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
 
 ### 7.4 其余分发口径
 
-- **应用商店**：国内各安卓商店上架需软著/营业执照等资质与逐店审核，是 P3 最高的固定成本（计划 §6 已提示）。
-  发布节奏：桥接契约变更（如换 `keyAlgorithm`）必须抬 `clientVersion` 并同步服务端最低版本策略（P2.7 强制更新链路）。
-- **包体积/更新**：内嵌产物意味着 Client 每次发版都要重打 APK；沿用 P2.7 的 R2 固定文件名别名
+- **应用商店**：国内各安卓商店上架需软著/营业执照等资质与逐店审核，是商店分发路线上最高的固定成本。
+  发布节奏：桥接契约变更（如换 `keyAlgorithm`）必须抬 `clientVersion` 并同步服务端最低版本策略（服务端强制更新链路）。
+- **包体积/更新**：内嵌产物意味着 Client 每次发版都要重打 APK；沿用发布流水线的固定文件名别名
   （`BakaGame-<version>-release.apk` 实际名 + 无版本别名）分发。
 
-## 8. 与计划文档的偏差与已知限制
+## 8. 已知限制与待真机验证
 
-- **未编译验证**：交付环境禁止联网安装依赖，Gradle/AGP/Capacitor 均未实际跑过；首次构建按 §6 排错
+- **未编译验证**：交付环境不联网安装依赖，Gradle / AGP / Capacitor 这条链路一次也没真跑过；首次构建按 §6 排错
   （重点核对本地 `BridgeActivity.init()`/`bridge.registerPlugin` 与所用 Capacitor 大版本签名一致，
   如 CLI 更新模板可 `cap add android` 重新生成后把 `channel/` 源码平移过去）。
-- 密钥算法选了 **EC P-256 + SHA256withECDSA**（AndroidKeyStore 的 Ed25519 需 API 33+，
-  attestation 机型覆盖不齐）；协议 `keyAlgorithm` 字段为将来分叉留了位。
+- 密钥算法选了 **EC P-256 + SHA256withECDSA**（AndroidKeyStore 的 Ed25519 需要更高的系统 API，
+  且 attestation 机型覆盖不齐）；协议 `keyAlgorithm` 字段为将来分叉留了位。
 - 原生插件直接内嵌 app 模块并由 `MainActivity` 注册，不做独立 npm 插件包：桥接 JS 通过
   `window.Capacitor.registerPlugin('BakaChannel')` 取运行时代理。
-- 本机未设 `ANDROID_HOME`（SDK 实际在 `D:\AndroidSdk`），`buildToolsVersion` 已钉在已装的 36.0.0，
-  避免 AGP 触发联网下载 35.0.0。
+- SDK 与 `buildToolsVersion` 钉在构建清单里：改版本前先确认构建机离线拿得到对应组件，
+  别让 AGP 在发布流程里触发联网下载。
 - `Mobile/` 不在 `pnpm-workspace.yaml` 成员内且本期不得改动根配置，故用 npm 独立安装；
   将来若要并入 workspace，改 `packages:` 列表即可，本目录无需变动。
 
-### 通道证明闭环：本轮真实状态（必须如实读）
+### 通道证明闭环：仍要在真机上确认
 
-§3 的闭环代码已经写完，但**一行都没跑过**：本机没有 Android SDK 构建（`gradle` / AGP 不可用），
-`BakaChannelPlugin.kt` 与 `KeystoreChannel.kt` 均未编译，`baka-bridge.js` 也没在真实 WebView 里跑过一次。
+§3 的闭环代码已经写完，但**一行都没跑过**：`BakaChannelPlugin.kt` 与 `KeystoreChannel.kt` 均未编译，
+`baka-bridge.js` 也没在真实 WebView 里跑过一次。前端一侧已接入：握手查询串每次建连时重新生成并带上
+`ticket`（读法见 `Client/src/lib/BakaChannel.ts` 与 `Client/src/lib/CEEWs.ts`）。
 以下每一条都要在真机上验证，不要当成已可用：
 
 | 待验证 | 具体风险 |
 |---|---|
-| **移动端 id 词表** | 服务端 `ClientChannel.ts` 的 `HARD_FAIL_IDS` / `SOFT_FAIL_IDS` 目前**只有桌面那套 id**。本壳上报 `root_su:/system/xbin/su` 这类词表外的 id 时，服务端按「未知即不信任」处理，结果是 `CLIENT_UNTRUSTED`。而 `judgeSelfCheck` 在 **`register` 与 `attest` 两处都会跑**，所以闭环第一步（注册）就会被拒——**移动端整条链路目前拿不到票**。需要服务端补一份移动端词表（追加，不得改名）。 |
-| 带冒号的动态 id | 上面这类 id 形如 `root_magisk:<path>`，长度可能超过服务端 `maxLength: 64`。桥接层的 `clampIds` 只会截断（`root_su:/sys…`），截断后与服务端词表对不上，**同样是被拒**。词表落地时要为动态 id 设计定长前缀。 |
-| `fetch` 的跨域与 Cookie | 壳内页面源是 `https://localhost`，请求打到 `https://game.baka.website`：属于跨域。`credentials: "include"` 能否带上登录会话 Cookie，取决于服务端 CORS 是否回 `Access-Control-Allow-Credentials` 且 Origin 白名单含该源、以及 Cookie 的 `SameSite`。当前未验证，失败表现为 `attest` 401/`LOGIN_REQUIRED`。 |
+| **移动端 id 词表** | 本壳上报的每个自检 id 都必须在服务端词表里有归类，未识别即不信任，注册第一步就会被拒、整条链路拿不到票。判定在 `register` 与 `attest` 两处都会跑；词表**只能追加、不得改名**（改名等于换协议，两端要同批抬最低版本）。 |
+| 带冒号的动态 id | 形如 `root_magisk:<path>` 的动态 id 受服务端长度上限约束，桥接层只会截断，截断后与服务端词表对不上，**同样是被拒**。词表落地时要为动态 id 设计定长前缀。 |
+| `fetch` 的跨域与 Cookie | 壳内页面源与站点域不同源。`credentials: "include"` 能否带上登录会话 Cookie，取决于服务端 CORS 是否回 `Access-Control-Allow-Credentials` 且 Origin 白名单含该源、以及 Cookie 的 `SameSite`。失败表现为 `attest` 401/`LOGIN_REQUIRED`。 |
 | DER 签名口径 | 服务端 ec 分支按 `DER SEQUENCE{r,s}` + SHA256 验签；`KeystoreChannel.sign` 的输出正是 `Signature("SHA256withECDSA")` 的原始 DER，`Base64.NO_WRAP`。**未经真实验签确认**，尤其要确认没有做二次哈希或 IEEE-P1363 转换。 |
 | 票的一次性 | 桥接层「读一次即作废 + 4 秒轮询」在定时器被系统节流（App 后台）时靠 `visibilitychange` 补救；「同一张票被交两次」只有真实握手能暴露。 |
 | `window.__BAKA_API_BASE__` | 覆盖入口只接受 https，但没有做域名白名单——若将来需要在测试机上打预览域，要求显式配置且发布包不给页面开放这个开关。 |
-
-**页面侧还差一步**：`Client/src/lib/BakaChannel.ts` 的 `bakaChannelQuery()` 只拼 `clientType` + `clientVersion`，
-**还没把 `channelTicket` 拼成 `ticket=`**（协议要求 `?clientType=…&clientVersion=…&ticket=…`，
-服务端 `/api/cee/ws` 读 `ticket` 参数消费）。本壳已按契约把票备好，读取是同步的，前端一行就能带上——
-不在本目录权限范围内，未改。同理 `Client/src/lib/CEEWs.ts` 在模块加载时就把查询串拼死，
-重连会复用已被消费的票，需改成每次连接前重新取。

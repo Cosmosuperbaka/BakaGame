@@ -48,7 +48,7 @@
 - 业务日期展示禁止无参 `toLocaleDateString()`，必须用 `Intl.DateTimeFormat` 显式锁定语言与基准时区；相对时间用原生 `Intl.RelativeTimeFormat`，抽到独立工具模块避免触发 Fast Refresh 规则；SSR/SSG 场景的相对时间节点标记 `suppressHydrationWarning`。
 - 信封 id 与 Trace ID 不得假设存在 `crypto.randomUUID()`（HTTP 局域网等非安全上下文没有），必须提供符合 RFC 4122 v4 的降级生成，不得抛 `TypeError` 阻断对局。Trace ID 要含时间戳、单调计数器与随机熵。
 - 根据环境变量拼接服务端地址时先剥离基准地址末尾斜杠，避免 `//api`。
-- 接口基址的取值语义以 `Client/src/lib/ServerEndpoint.ts` 为准；生产不得使用同源相对路径（同源反代无法转发 WebSocket，`/api/*` 会被 SPA 兜底成 HTML），部署要求见 [Deployment](../../Agents/Deployment.md)。
+- 接口基址的取值语义以 `Client/src/lib/ServerEndpoint.ts` 及其测试为准；同源还是跨域属部署口径，由构建注入的基址决定，不在前端代码里写死当前形态。改口径前先按 [Deployment](../../Agents/Deployment.md) 完成 WebSocket 完整链路验证。
 
 ## 8. 前端遥测
 

@@ -20,7 +20,7 @@
 - 表结构唯一真相源是 `db/Schema.ts`；属性名即 Better Auth 字段名（适配器按属性名映射），列名蛇形。
 - 时间列一律 `datetime(3)`，不用 `timestamp`（2038 溢出，远期封禁时间放不下）。
 - 改 schema 后用 Server 的 `db:generate` 生成迁移（不连库），迁移文件进 Git，服务启动时自动应用。**不手写或手改已发布的迁移 SQL。**
-- 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留，TiDB 的 `only_full_group_by` 视为不同表达式而报错。内存仓储测不出，此类查询须经真实库冒烟。
+- 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留，开启严格 `only_full_group_by` 的库会把两者视为不同表达式而报错。内存仓储测不出，此类查询须经真实库冒烟。
 - 词对按 `(word_a, word_b)` 唯一，入库前经 `normalizeWordPair` 规范化；重复提交累加使用次数。批量导入脚本重复执行安全，格式错误的条目整体失败，不静默跳过。
 
 ## 测试

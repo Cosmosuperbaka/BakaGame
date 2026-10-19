@@ -72,7 +72,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 
 ### 工具链约束
 
-- **两条 TypeScript 线**：lint 工具链消费 TS 程序化 API（6.x 线），编译与类型检查用原生编译器（7.x 线，没有稳定程序化 API）。两条线靠根 `pnpm-workspace.yaml` 的 override 隔离；override 值必须写成**不带版本的别名**。装完先确认根 `node_modules/typescript` 唯一且为 6.x；动 `typescript` 依赖或 override 后两端都要重跑 lint 与 check，不看一端绿就收工。编辑器语言服务不要指向 7.x 线。
+- **两条 TypeScript 线**：lint 工具链消费 TS 的程序化 API，编译与类型检查用原生编译器（没有稳定程序化 API）。两条线靠根 `pnpm-workspace.yaml` 的 override 隔离；override 值必须写成**不带版本的别名**。装完先确认根 `node_modules/typescript` 唯一且落在程序化 API 那条线（具体版本与别名键读该文件与包清单）；动 `typescript` 依赖或 override 后两端都要重跑 lint 与 check，不看一端绿就收工。编辑器语言服务不要指向编译器那条线。
 - 依赖版本约束以各包清单和锁文件为准；只有针对原因完成验证后才更新约束，不把上游某一时刻的状态当永久事实。升级前的已知门禁：
   - 歌词库：新版本若把测试框架误写进生产依赖则不升级，先核对其依赖字段与导出面；
   - `jsdom` 的 engines 范围很窄，CI 的 Node 版本不得低于其下限；
@@ -94,7 +94,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 - 变量名、默认值与取值规则以 `Server/.env.example`、`Client/.env.example` 和 `config/Env.ts` 为准，文档不维护变量清单。
 - **真实凭据、私有域名与生产配置一律不进被追踪文件**（`.env.example`、文档、测试只用虚构占位符或留空安全缺省）；代码默认值不得携带任何现网标识。详见根 `AGENTS.md`。
 - 番剧图片的对外前缀写死为站内图床路径，**没有环境变量开关**（原因见 [BangumiApi](../Server/docs/BangumiApi.md)）。
-- 客户端接口基址的唯一入口是 `VITE_SERVER_URL`，取值语义见 `Client/src/lib/ServerEndpoint.ts`；生产不得使用同源模式（见 [Deployment](Deployment.md)）。
+- 客户端接口基址的唯一入口是 `VITE_SERVER_URL`，取值语义见 `Client/src/lib/ServerEndpoint.ts` 及其测试；同源还是跨域属部署口径，切换前提见 [Deployment](Deployment.md)。
 - 遥测环境由统一的读取函数解析（显式环境变量优先，缺省为 development）；生产必须显式注入 production，不按操作系统猜测环境；Sentry 与 OTLP 消费同一结果。release 以仓库 Git/changelog 为准，无证据时为空，不硬编码版本、不采信任意 release 字符串。
 - 公共图片统一转换为 WebP（表情的公共路径与内容哈希路径保留，单次有界编码后复制同一产物）。构建配置会重建生成目录，同一工作区必须串行构建；资源冒烟只服务已有构建产物，使用不加载项目配置与后端代理的独立 preview，绑定回环随机端口。
 - 入站参数与规范化状态：局部输入与完整房间状态分别使用共享 Schema，类型由 Schema 的 `Static` 导出；服务端边界后补齐省略字段，客户端不得把局部输入当成完整快照。

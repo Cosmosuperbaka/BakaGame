@@ -29,10 +29,10 @@
 git clone https://github.com/Cosmosuperbaka/BakaGame.git
 cd BakaGame
 
-# 启动服务端，默认端口 4850
+# 启动服务端（端口与开关读 Server/.env.example）
 cd Server
 cp .env.example .env
-# 按需修改 BANGUMI_API_URL（图片前缀固定走自建图床 /api/bangumi）
+# 按需修改 BANGUMI_API_URL（图片前缀固定走站内 /api/bangumi）
 bun install
 bun run dev
 
@@ -40,7 +40,7 @@ bun run dev
 cd ../Client
 cp .env.example .env
 npm install
-npm run dev   # http://localhost:5173
+npm run dev   # 本地需把 VITE_SERVER_URL 指向开发后端
 ```
 
 ## 常用命令
