@@ -89,7 +89,8 @@ class Der private constructor(
     fun children(): List<Der>? = if (constructed) parseSequenceContent(content) else null
 
     companion object {
-        fun parse(bytes: ByteArray): Der? = readOne(bytes, 0)?.token
+        // readOne 返回 (解析出的节点, 消费到的下标)，这里只要节点本身。
+        fun parse(bytes: ByteArray): Der? = readOne(bytes, 0)?.first
 
         private fun readOne(bytes: ByteArray, at: Int): Pair<Der, Int>? {
             if (at >= bytes.size) return null
