@@ -55,6 +55,11 @@ export interface CEEDataProvider {
 export interface CEEDataOptions {
   /** 唯一的数据集路径：与猜歌共用同一个库（见 tools/build_bangumi_db.py）。 */
   dbPath: string;
+  /**
+   * 以**只读**打开 `dbPath`。多进程分片时只有主片可写，其余片必须传 true，
+   * 否则跨进程写同一个库文件会互相等锁（见 `OpenDataset` 注释）。
+   */
+  readonly?: boolean;
   enrichmentPath?: string;
   apiBase?: string;
   imageBase?: string;

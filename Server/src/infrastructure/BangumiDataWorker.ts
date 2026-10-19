@@ -148,21 +148,22 @@ const initCeeLink = async (request: InitRequest): Promise<void> => {
  */
 const createUpdater = (request: InitRequest): void => {
   try {
-    updater = request.updater
-      ? new SubjectUpdater({
-          db: openDataset(request.song.dbPath),
-          // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
-          search: request.song.meilisearch?.apiKey
-            ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
-            : undefined,
-          images,
-          logger: {
-            warn: (message) => console.warn(message),
-            info: (message) => console.log(message),
-          },
-          ...request.updater,
-        })
-      : undefined;
+    updater =
+      request.updater && !request.song.readonly
+        ? new SubjectUpdater({
+            db: openDataset(request.song.dbPath),
+            // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
+            search: request.song.meilisearch?.apiKey
+              ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
+              : undefined,
+            images,
+            logger: {
+              warn: (message) => console.warn(message),
+              info: (message) => console.log(message),
+            },
+            ...request.updater,
+          })
+        : undefined;
     updater?.markDatasetFresh();
     updater?.start();
   } catch (error) {
@@ -182,8 +183,15 @@ const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => 
   );
 };
 
-/** 备份与标签增量的定时任务：库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。 */
+/**
+ * 备份与标签增量的定时任务：库现在可写、且要由后端自己更新：没有快照就没有退路。启动先备一份，之后每天 04:00 覆盖。
+ *
+ * **只读片整段跳过**：备份是 `VACUUM INTO`、新条目发现要落库，两者都是对数据集的写。
+ * 多进程分片下这些活只归主片（见 `CreateServer` 的 `datasetReadonly`），
+ * 在只读连接上跑只会拿到 `SQLITE_READONLY`，还会把 `discoverNewSubjects` 变成重复打上游。
+ */
 const scheduleRuntimeMaintenance = (request: InitRequest): void => {
+  if (request.song.readonly) return;
   stopBackup = scheduleDatasetBackup({
     dbPath: request.song.dbPath,
     backupPath: `${request.song.dbPath}.backup`,

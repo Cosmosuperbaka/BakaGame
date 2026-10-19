@@ -69,6 +69,12 @@ export interface AppEnv {
   bangumiImageSource?: string;
   /** 本地数据集路径：猜歌与 CEE 共用同一个库。 */
   bangumiDbPath?: string;
+  /**
+   * 本进程是不是数据集的**唯一写者**。多进程分片时只有主片为 true：数据集是单一可写文件，
+   * 跨进程并发写会互相等锁，而每日备份的 `VACUUM INTO` 与更新器落库还会互相踩。
+   * 为 false 时数据集以只读打开，且更新器/备份/新条目发现全部不装配（见 `BangumiDataWorker`）。
+   */
+  bangumiDatasetWriter?: boolean;
   /** 自建图床分片目录（`/api/bangumi` 路由与更新器共用）；缺省跟随数据集目录。 */
   bangumiImagesDir?: string;
   /** 运行时更新器（阶段 6）：缺省只在生产开启。 */
@@ -388,7 +394,11 @@ export const readEnv = (): AppEnv => {
     bangumiImageUrl: BANGUMI_IMAGE_ROUTE,
     // 回源没有缺省值：对外前缀是相对路径的 `/api/bangumi`，跟它回源就是自己回自己。
     bangumiImageSource: (Bun.env.BANGUMI_IMAGE_SOURCE ?? "").replace(/\/+$/, ""),
-    bangumiDbPath: resolve(import.meta.dir, "../../data/bangumi.sqlite"),
+    // 分片部署下每片可以指向各自的副本（多进程共写一份库会等锁）；缺省仍是单进程那一份。
+    bangumiDbPath:
+      Bun.env.BANGUMI_DB_PATH?.trim() || resolve(import.meta.dir, "../../data/bangumi.sqlite"),
+    // 默认可写（维持单进程与现有部署的行为）；只有显式 `=false` 的片才退成只读读取者。
+    bangumiDatasetWriter: Bun.env.BANGUMI_DATASET_WRITER !== "false",
     bangumiImagesDir,
     // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。
     bangumiUpdaterEnabled:

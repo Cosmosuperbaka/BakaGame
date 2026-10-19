@@ -102,7 +102,7 @@ export class CEECharacterRepository implements CEEDataProvider {
   private closed = false;
 
   constructor(options: CEEDataOptions) {
-    this.db = openDataset(options.dbPath);
+    this.db = openDataset(options.dbPath, options.readonly);
     try {
       this.enrichment = new CEEEnrichment(options);
     } catch (error) {

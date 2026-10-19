@@ -65,9 +65,13 @@ export function createServer(
     );
   }
   // 猜歌与 CEE 共用同一个数据 Worker 与同一份数据集（写操作收口到单一线程，见 CreateBangumiData）。
+  // 多进程分片：只有主片（`BANGUMI_DATASET_WRITER` 未设或为 true）以可写打开数据集，
+  // 其余片传 readonly —— 数据集是单一可写文件，跨进程写会等锁，备份与更新器还会互踩。
+  const datasetReadonly = env.bangumiDatasetWriter === false;
   const data = createBangumiData({
     song: {
       dbPath: env.bangumiDbPath!,
+      readonly: datasetReadonly,
       enrichmentPath: env.bangumiEnrichmentPath,
       imageBase: env.bangumiImageUrl,
       apiBase: env.bangumiApiUrl,
@@ -75,6 +79,7 @@ export function createServer(
     },
     cee: {
       dbPath: env.bangumiDbPath!,
+      readonly: datasetReadonly,
       enrichmentPath: env.bangumiEnrichmentPath,
       apiBase: env.bangumiApiUrl,
       imageBase: env.bangumiImageUrl,
@@ -84,9 +89,10 @@ export function createServer(
     tagDiff: env.bangumiTagDiffUrl
       ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
       : undefined,
-    // 更新器只在显式开启（生产默认）且有上游地址时装配：E2E 与本地开发不该打线上 API。
+    // 更新器只在显式开启（生产默认）、有上游地址、且本进程是数据集写者时装配：
+    // E2E 与本地开发不该打线上 API；非写者片装了就会去写只读连接，必然报 SQLITE_READONLY。
     updater:
-      env.bangumiUpdaterEnabled && env.bangumiApiUrl
+      env.bangumiUpdaterEnabled && !datasetReadonly && env.bangumiApiUrl
         ? {
             base: env.bangumiApiUrl,
             imageSource: env.bangumiImageSource,

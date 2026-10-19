@@ -454,29 +454,49 @@ jobs:
             # ---------- Release 元数据准备结束 ----------
 
             # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
-            say "向在线玩家广播停机维护通知并摘除就绪流量"
-            # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
-            if ! sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
-              echo "❌ 维护预通知未成功，本次发布中止且不重启容器"
-              exit 1
-            fi
-            say "等待客户端接收通知与平滑退回大厅 (3s)"
-            sleep 3
+            # 后端按 WS 路径分片后（主片 BakaGame + CEE 片 BakaGame-cee，`/api/cee/ws` 走后者），
+            # 停机广播与 /readyz 摘流都是**进程内**的：每个容器都要各自走一遍完整流程，
+            # 漏跑任何一片，那一片的玩家收不到广播、也不会被摘流。
+            # 顺序必须是「该片通知 → 该片排空 → 该片重启」——先把所有片通知完再逐个重启，
+            # 会让先被通知的那片在整个窗口里保持 readiness 503（MultiProcessDeployment §4）。
+            # 只处理实际存在的容器：分片回滚时不必改脚本。
+            CONTAINERS=""
+            for c in BakaGame BakaGame-cee; do
+              if sudo docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
+                CONTAINERS="$CONTAINERS $c"
+              fi
+            done
+            [ -n "$CONTAINERS" ] || { echo "❌ 生产机上没有找到任何后端容器"; exit 1; }
+            say "待滚动的容器：$CONTAINERS"
+            # 时间预算：每片 notify ≈2s + drain 3s + restart ≈8s + probe ≤30s ≈ 43s，
+            # 两片 ≈86s；与前面的代码同步、release 元数据相加仍落在 3 分钟硬超时内。
+            for SHARD in $CONTAINERS; do
+              say "[$SHARD] 向在线玩家广播停机维护通知并摘除就绪流量"
+              # token 只在容器内部读取，不进入 SSH 参数或日志；缺失/失败禁止重启。
+              # 脚本默认打 http://127.0.0.1:4850，而 docker exec 打的是该容器自己命名空间的
+              # 回环 —— 每片容器内都监听 4850，只在宿主发布口区分，因此脚本无需改动。
+              if ! sudo docker exec -i "$SHARD" /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentNotify.ts; then
+                echo "❌ $SHARD 维护预通知未成功，本次发布中止且不重启容器"
+                exit 1
+              fi
+              say "[$SHARD] 等待客户端接收通知与平滑退回大厅 (3s)"
+              sleep 3
 
-            # ---------- 5. 重启后端容器（入口自带依赖同步与环境初始化） ----------
-            say "重启 BakaGame 容器"
-            RESTART_STARTED=true
-            sudo docker restart BakaGame
+              say "[$SHARD] 重启容器（入口自带依赖同步与环境初始化）"
+              RESTART_STARTED=true
+              sudo docker restart "$SHARD"
 
-            # ---------- 6. 业务就绪（总预算 30 秒，无房间创建） ----------
-            say "验证存储就绪及三个协议订阅 ACK"
-            # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。
-            if ! sudo docker exec -i BakaGame /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
-              echo "❌ 重启后业务就绪失败；不自动二次重启或回滚，请运维处理"
-              sudo docker logs --tail 50 BakaGame || true
-              exit 1
-            fi
-            say "业务就绪检查通过"
+              say "[$SHARD] 验证存储就绪及三个协议订阅 ACK"
+              # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。
+              # 注意：探针全绿不代表边缘分流正确 —— 每个容器都注册全部三条 WS 路由，
+              # 分流只能靠真实链路验证。
+              if ! sudo docker exec -i "$SHARD" /app/node_modules/.bin/bun --no-env-file - < Server/scripts/DeploymentProbe.ts; then
+                echo "❌ $SHARD 重启后业务就绪失败；不自动二次重启或回滚，请运维处理"
+                sudo docker logs --tail 50 "$SHARD" || true
+                exit 1
+              fi
+              say "[$SHARD] 业务就绪检查通过"
+            done
 
             rm -rf "$STASH"
             echo "========================================="

@@ -139,8 +139,14 @@ export interface LocalBangumiProviderOptions {
   /** 唯一的数据集路径：猜歌与 CEE 共用同一个库（见 tools/build_bangumi_db.py）。 */
   dbPath: string;
   /**
+   * 以**只读**打开 `dbPath`。多进程分片时只有主片可写，其余片必须传 true，
+   * 否则跨进程写同一个库文件会互相等锁（见 `OpenDataset` 注释）。
+   */
+  readonly?: boolean;
+  /**
    * Bangumi API 回填缓存（可写 SQLite）。缺省时不落盘，只走内存缓存。
    * 只读数据集是 LFS 产物、每周被 CI 重建，不能被运行时写入，所以补充数据单独存这里。
+   * 分片部署时每片应指向各自的文件（`BANGUMI_ENRICHMENT_PATH`），别再共用一份。
    */
   enrichmentPath?: string;
   imageBase?: string;
@@ -180,7 +186,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
     this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
     this.fetcher = options.fetcher ?? fetch;
-    this.db = openDataset(options.dbPath);
+    this.db = openDataset(options.dbPath, options.readonly);
     if (options.enrichmentPath) {
       // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
       // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。

@@ -109,13 +109,11 @@ function reportRuntimeMetrics(): void {
     ["song", sonGuessrService.getHealthSnapshot()],
     ["cee", ceeService.getHealthSnapshot()],
   ];
+  // 只累加 players：更新器按它调上游速率。房间/连接数不再聚合上报 —— 分系列之后
+  // 全站口径由面板跨系列求和得到，再报一份无标签的 gauge 会被后上报的进程覆盖成局部值。
   let players = 0;
-  let rooms = 0;
-  let connections = 0;
   for (const [game, snapshot] of games) {
     players += snapshot.onlinePlayerCount;
-    rooms += snapshot.roomCount;
-    connections += snapshot.connectionCount;
     gaugeServerMetric("bakagame.players.online", snapshot.onlinePlayerCount, { game });
     gaugeServerMetric("bakagame.rooms.active", snapshot.roomCount, { game });
     gaugeServerMetric("bakagame.connections.active", snapshot.connectionCount, { game });
