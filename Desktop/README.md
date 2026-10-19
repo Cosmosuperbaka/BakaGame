@@ -130,11 +130,18 @@ signtool verify /pa /all <同一个文件>
 
 ## 4. 分发与强制更新（P2.7）
 
-- **下载入口在首页**，与其它游戏入口同级，链接指向 `cdn.baka.website` 的**固定文件名**
-  （不带版本号，永远指向最新），旧链接长期有效。
-- **制品走 Cloudflare R2，经 `cdn.baka.website` 反代分发**。实际文件带版本号
-  （`BakaGame-<version>-x64.exe`），固定名是别名：上传带版本号的对象，再把固定名指向它。
-- 上传前先 `signtool verify`；上传后核对内容摘要，避免固定名指到未签名的旧包。
+- **下载入口在首页**，与其它游戏入口同级，链接指向 `cdn.baka.website` 的**固定别名**（不带版本号，
+  永远指向最新），旧链接长期有效。站内只有 `Client/src/lib/AntiCheatCopy.ts` 的
+  `BAKA_CLIENT_DOWNLOAD_URL` 一处写死了它。
+- **URL 必须带桶名那一段**：`https://cdn.baka.website/files/BakaGame-latest-x64.exe`。加速域按
+  「第一段路径当桶名」回源，少了 `/files/` 拿到的是 400 `InvalidBucketName`；带上同一段、对象还没上传时
+  回 404 `NoSuchKey`——这说明域名与桶本身是通的，缺的只是产物。发布顺序、缓存策略与验收见
+  [Agents/Deployment.md](../Agents/Deployment.md) 的「客户端制品发布」。
+- **构建与上传归 CI**：`desktop` 作业打 NSIS 包，`client-publish` 作业把版本化对象与 `latest` 别名推到 R2
+  （只改 `Desktop/` 时安卓作业是 skipped，Windows 包照发）。
+- **Authenticode 还没接**：CI 产出的安装包没有代码签名证书，用户下载时 SmartScreen 会先拦一道。
+  「上传前 `signtool verify`」这一步要等有签名证书再做；它不影响通道证明——壳的「唯一构建标记」与
+  Authenticode 是两套独立证据，前者定位构建批次，后者只证明文件没被改过。
 - **强制更新**：壳启动注册时上报 `clientVersion`，服务端返回 `minimumVersion`；
   低于最低版本由服务端在握手回 `CLIENT_OUTDATED`，**只拦 `BakaAntiCheat` 房，普通房不受影响**。
   通道证明协议一旦变更必须抬高最低版本，否则旧壳还能继续签名通关。
@@ -142,11 +149,6 @@ signtool verify /pa /all <同一个文件>
 - **首页软提醒**：壳里打开首页时，前端读 `GET /api/client/update-check` 判断是否过时并浮一条
   可关的提示（记的是「关过哪一档」，抬档后重新出现）。提醒与准入是两件事：不更新照样进普通房，
   反作弊房仍然由服务端硬拦。
-- **待确认（不要当作已可用）**：R2 自定义域名要求所在 zone 托管在 Cloudflare，
-  而 `baka.website` 目前由阿里云 ESA 托管、`bakagame-esa` 边缘函数负责路由。
-  `cdn.baka.website` 要么单独接入 Cloudflare，要么改走 Worker 路由转发。
-  **这一段动手前必须核实**；本文档的命令与路径都只是待执行方案，不是可用前提。
-  在确认之前，分发地址可以先用一个已确认可用的子域，`README` 与首页入口同步改。
 
 ---
 

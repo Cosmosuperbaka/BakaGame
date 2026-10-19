@@ -180,23 +180,30 @@ keytool -genkeypair -v -storetype PKCS12 `
   -alias bakagame -keyalg RSA -keysize 2048 -validity 10950
 ```
 
-`Mobile/android/app/build.gradle` 里 `signingConfigs` 目前是空的（只有一句注释指向本节），
-填成从环境读，避免口令进 git：
+`Mobile/android/app/build.gradle` 已经按环境变量装配正式签名（**四项缺一律不装**，缺任意一项
+release 就退回未签名产物，而不是让构建直接报错）：
 
-```groovy
-signingConfigs {
-    release {
-        storeFile file("$rootDir/../keystore/bakagame-release.keystore") // rootDir = Mobile/android
-        storePassword System.getenv("BAKA_KEYSTORE_PASSWORD")
-        keyAlias System.getenv("BAKA_KEY_ALIAS") ?: "bakagame"
-        keyPassword System.getenv("BAKA_KEY_PASSWORD")
-    }
-}
-// buildTypes.release 里补一行：signingConfig signingConfigs.release
+| 环境变量 | 含义 |
+|---|---|
+| `BAKA_KEYSTORE_PATH` | 密钥库文件路径（CI 上指向解出来的那一份，见下） |
+| `BAKA_KEYSTORE_PASSWORD` | 密钥库口令 |
+| `BAKA_KEY_ALIAS` | 别名（本机建的库用 `bakagame`） |
+| `BAKA_KEY_PASSWORD` | 私钥口令 |
+
+```powershell
+$env:BAKA_KEYSTORE_PATH = "Mobile\keystore\bakagame-release.keystore"
+$env:BAKA_KEYSTORE_PASSWORD = "..."; $env:BAKA_KEY_ALIAS = "bakagame"; $env:BAKA_KEY_PASSWORD = "..."
+npm run apk -- assembleRelease
 ```
 
-然后 `npm run apk -- assembleRelease`，产物
-`android/app/build/outputs/apk/release/BakaGame-<version>-release.apk`（本地没有 SDK 时按 §6 排错）。
+产物 `android/app/build/outputs/apk/release/BakaGame-<version>-release.apk`（本地没有 SDK 时按 §6 排错）。
+口令与密钥库本体都不进仓库，`Mobile/.gitignore` 已挡住 `keystore/`。
+
+CI 上不落这些环境变量到机器，而是把密钥库整个 base64 化存进 secret：GitHub Actions 读
+`BAKA_KEYSTORE_BASE64` 解到 `$RUNNER_TEMP/keystore/`，再把上表四项（口令三项来自
+`BAKA_KEYSTORE_PASSWORD` / `BAKA_KEY_ALIAS` / `BAKA_KEY_PASSWORD`）传给
+`gradle :app:assembleRelease`。没配 `BAKA_KEYSTORE_BASE64` 时那几步直接跳过，作业照常只出 debug 包并变绿。
+生成命令：`certutil -encode` 或 `base64 -w0 Mobile/keystore/bakagame-release.keystore`。
 
 ### 7.2 取出签名摘要，配进服务端
 

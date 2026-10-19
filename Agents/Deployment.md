@@ -8,6 +8,7 @@
 | SEO 与构建期 HTML | 「前端静态外壳」 |
 | 资源缓存及响应头 | 「边缘缓存策略」 |
 | 服务端发布或部署脚本 | 「持续部署流水线」及时间预算、R2 数据分发、Secrets 小节 |
+| 桌面 / 移动客户端安装包上传与下载链 | 「客户端制品发布」与 Secrets 小节 |
 | 快照或容量 | 「带宽与容量基线」与 [Testing](Testing.md#验证范围) |
 
 本文描述配置与验收要求，不授权执行部署、重启或线上写探针；按用户已授权范围完成本地验证和发布准备。示例公网地址使用 `example.com` 占位，实际地址从部署配置取得。
@@ -434,11 +435,93 @@ Meilisearch 的 master key 与服务端 `MEILISEARCH_KEY` 必须一致，原版�
 | `DEPLOY_KEY` | 用于 SSH 鉴权的私钥纯文本 | 必填（完整包含 BEGIN/END 标记） |
 | `DEPLOY_PASSPHRASE` | 用于解密 SSH 私钥的密码（若私钥受密码保护） | 可选（私钥无密码保护时无需配置） |
 | `BANGUMI_DATA_CDN_BASE` | R2 加速域基址（公开），CI 与部署据此解析基线 manifest | 必填（只读消费，不含凭证） |
-| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 无仓库内使用方（本地发布脚本自备凭证） |
-| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 无仓库内使用方 |
-| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 无仓库内使用方 |
-| `R2_BUCKET` | R2 桶名 | 无仓库内使用方 |
+| `R2_ACCESS_KEY_ID` | R2 S3 兼容 Access Key | 必填（`client-publish` 作业与本地数据集发布脚本共用） |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 兼容 Secret Key | 同上 |
+| `R2_S3_ENDPOINT` | R2 S3 API 端点 | 同上 |
+| `R2_BUCKET` | R2 桶名 | 同上（当前为 `files`，与公开 URL 的第一段路径同一个值） |
+| `BAKA_KEYSTORE_BASE64` | 安卓 release 密钥库（base64 单行） | 可选：未配置时 CI 只出 debug 包，作业照常绿 |
+| `BAKA_KEYSTORE_PASSWORD` / `BAKA_KEY_ALIAS` / `BAKA_KEY_PASSWORD` | 与上一条配套 | 可选（四项缺一即不签名） |
 
-R2 凭证四件套没有仓库内使用方（本地发布脚本
-`tools/publish_bangumi_data.py` 用自己环境的变量，不进仓库）；CI 与生产部署只按公开 URL
-下载版本化对象，生产机不持有任何 R2 凭证。
+R2 凭证四件套只有两个使用方：CI 的 `client-publish` 作业（见下文「客户端制品发布」）与本地数据集发布脚本
+`tools/publish_bangumi_data.py`（用自己环境的同名变量，不进仓库）。**生产机全程不持有任何 R2 凭证**，
+部署与运行时只按公开 URL 下载版本化对象。
+
+## 客户端制品发布（桌面壳与移动壳）
+
+桌面壳（Tauri，Windows NSIS 安装包）与移动壳（Capacitor，APK）都由 CI 构建；两者打包成功后，
+`.github/workflows/ci.yml` 的 `client-publish` 作业把制品推到 R2。公开下载链是不变的别名那一条，
+站内文案与首页更新提醒都只引用它。
+
+### 制品寻址：桶名就是 URL 的第一段
+
+`cdn.baka.website` 是桶 `files` 的 R2 自定义域，回源按「路径第一段当桶名」解析：
+
+| 对象 | 公开 URL |
+|---|---|
+| `files` 桶里的 `BakaGame-latest-x64.exe` | `https://cdn.baka.website/files/BakaGame-latest-x64.exe` |
+
+少写 `/files/` 拿到的不是 404 而是 **400 `InvalidBucketName`**——那一层连桶都没找到，玩家点开是死链。
+站内下载地址只有一处（`Client/src/lib/AntiCheatCopy.ts` 的 `BAKA_CLIENT_DOWNLOAD_URL`），换域名改它。
+S3 侧同理：`aws s3 cp … s3://files/<key>` 必须走 path-style（CI 里显式
+`aws configure set default.s3.addressing_style path`），默认的 virtual-host 形式会拼出
+`files.<账号>.r2.dev` 这类不放行的域名。
+
+### 每个制品发两份，先对象后别名
+
+同名覆盖对玩家无法解释（半新半旧的包没人能归因），所以每个版本落两个键：
+
+1. **版本化对象** `BakaGame-<version>-x64.exe` / `BakaGame-<version>-release.apk`，
+   `Cache-Control: public, max-age=31536000, immutable`，名字永不复用。
+2. **`latest` 别名** `BakaGame-latest-x64.exe` / `BakaGame-latest-release.apk`，
+   `Cache-Control: public, max-age=0, must-revalidate`。别名是长期不变的那条链，给它长缓存
+   等于把更新提醒永远锁在旧包上。
+
+写入顺序固定为**先版本化对象、后别名**：别名指向的内容必须已经能在版本化对象里查到。
+CI 只在 `main` 的 push 上发布，要求桌面作业成功；只改 `Desktop/` 时安卓作业是 skipped，
+不连带挡掉 Windows 包，但安卓真失败（failure/cancelled）时两边都不发。没配 `R2_ACCESS_KEY_ID`
+时各步骤逐个跳过、作业照常绿——「还没配密钥」不是构建失败。
+
+### 安卓必须签过名才进公开链
+
+Android Key Attestation 比对的是**签名证书 DER 的 SHA-256**，debug 包的摘要与 release 不是同一枚；
+把 debug 包放进公开下载链，等于给玩家发一个进不了反作弊房的客户端。因此 CI 只上传
+`android-release-apk`，而它只在 `BAKA_KEYSTORE_BASE64` 与三项口令齐了才产出
+（密钥库与 Gradle 的接法见 [Mobile/README.md](../Mobile/README.md) §7.1）。
+
+摘要要配进服务端这两个变量，缺配置时该连接只判 `signature_digest_unverified` / `degraded`，不拒玩家：
+
+```
+ANDROID_ATTESTATION_PACKAGE=website.baka.game
+ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>[,<debug 的 base64>]
+```
+
+算法与三条互相印证的取法见 [Mobile/README.md](../Mobile/README.md) §7.2。桌面端不需要摘要：
+它的强度来自 DPAPI 保护等级 + `selfCheck` 命中的检测项（见 [ClientChannel](ClientChannel.md)）。
+
+### 抬最低版本的顺序
+
+`CLIENT_MIN_DESKTOP_VERSION` / `CLIENT_MIN_MOBILE_VERSION` 只影响反作弊房：
+
+- 首页软提醒（只在原生壳里出现、可关）按同一份最低版本决定；关的是「这一档门槛」，抬档后重新出现。
+- 反作弊房硬门槛不看玩家关没关过提醒，版本低于最低值即 `CLIENT_OUTDATED`。
+- **通道证明协议一旦破坏性变更必须抬档**，否则旧壳还能继续签名通关（[ClientChannel](ClientChannel.md) §7）。
+
+先发新包、再抬服务端变量。顺序反了会出现「提醒里有下载链、链上指向的还是旧包」，而普通房玩家完全不受影响
+（软提醒措辞必须写明这点）。
+
+### 发布后验收
+
+```bash
+curl -sI https://cdn.baka.website/files/BakaGame-latest-x64.exe      # 200 + max-age=0, must-revalidate
+curl -sI https://cdn.baka.website/files/BakaGame-<version>-x64.exe    # 200 + max-age=31536000, immutable
+curl -sI https://cdn.baka.website/files/BakaGame-latest-release.apk
+```
+
+三条都要 200、`content-length` 等于本地产物体积，且别名的 `cache-control` 必须是
+`max-age=0, must-revalidate`。出现 400 `InvalidBucketName` 先查 URL 里有没有 `/files/`；
+出现 404 先确认对象名（版本号来自 `tauri.conf.json` 的 `version` 与 `Mobile/package.json`）。
+
+**当前状态（2026-10-19）**：`client-publish` 作业从未真跑过（本轮改动尚未推送）；桌面壳本机只跑过
+`cargo check`，没跑过 `tauri build`；安卓 release 密钥库已建但口令未入库，签名摘要尚未算出，
+所以 `ANDROID_ATTESTATION_SIGNATURE_DIGESTS` 现在还是空的——移动壳连接只到 `degraded` 档。
+
