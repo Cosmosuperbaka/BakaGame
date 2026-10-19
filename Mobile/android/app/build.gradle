@@ -75,4 +75,7 @@ android {
 
 dependencies {
     implementation project(':capacitor-android')
+    // styles.xml 的 AppTheme.NoActionBarLaunch 继承 Theme.SplashScreen，该主题由这个库提供。
+    // 不声明就会在 processDebugResources 阶段报 "resource style/Theme.SplashScreen not found"。
+    implementation 'androidx.core:core-splashscreen:1.0.1'
 }
