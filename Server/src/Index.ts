@@ -96,19 +96,32 @@ const sentryRuntimeMetricsIntervalId = setInterval(() => {
 sentryRuntimeMetricsIntervalId.unref();
 
 function reportRuntimeMetrics(): void {
-  const faker = whoIsFakerService.getHealthSnapshot();
-  const songuessr = sonGuessrService.getHealthSnapshot();
-  const cee = ceeService.getHealthSnapshot();
-  const onlinePlayerCount =
-    faker.onlinePlayerCount + songuessr.onlinePlayerCount + cee.onlinePlayerCount;
-  gaugeServerMetric("bakagame.players.online", onlinePlayerCount);
+  // 按游戏分系列上报，不报进程内的和：实时平面全在内存，一个进程只看得见自己承载的流量。
+  // 分成多进程部署（一款游戏一个进程）时，同名 gauge 会被后上报的进程覆盖成局部值，
+  // 面板上的「在线人数」就凭空少一半；带 game 标签后各进程互不覆盖，跨系列求和仍是全站总数。
+  const games: Array<
+    [
+      game: "cee" | "faker" | "song",
+      snapshot: { roomCount: number; connectionCount: number; onlinePlayerCount: number },
+    ]
+  > = [
+    ["faker", whoIsFakerService.getHealthSnapshot()],
+    ["song", sonGuessrService.getHealthSnapshot()],
+    ["cee", ceeService.getHealthSnapshot()],
+  ];
+  let players = 0;
+  let rooms = 0;
+  let connections = 0;
+  for (const [game, snapshot] of games) {
+    players += snapshot.onlinePlayerCount;
+    rooms += snapshot.roomCount;
+    connections += snapshot.connectionCount;
+    gaugeServerMetric("bakagame.players.online", snapshot.onlinePlayerCount, { game });
+    gaugeServerMetric("bakagame.rooms.active", snapshot.roomCount, { game });
+    gaugeServerMetric("bakagame.connections.active", snapshot.connectionCount, { game });
+  }
   // 数据更新器按玩家数调整上游速率：有人玩才跑得快，空闲时只慢慢更新。
-  reportBangumiLoad(onlinePlayerCount);
-  gaugeServerMetric("bakagame.rooms.active", faker.roomCount + songuessr.roomCount + cee.roomCount);
-  gaugeServerMetric(
-    "bakagame.connections.active",
-    faker.connectionCount + songuessr.connectionCount + cee.connectionCount
-  );
+  reportBangumiLoad(players);
 }
 
 reportRuntimeMetrics();
