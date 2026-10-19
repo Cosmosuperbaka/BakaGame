@@ -12,6 +12,11 @@ android/gradle/wrapper/gradle-wrapper.jar
 # cap sync 生成的 Capacitor 配置与 web 资产（由 CLI 重建，不入库避免与脚本注入产物打架）
 android/app/src/main/assets/public/
 android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+android/app/capacitor.build.gradle
+android/capacitor.settings.gradle
+android/capacitor-cordova-android-plugins/
+android/app/src/main/res/xml/
 
 # 签名材料：密钥库与口令绝不入库（正式签名走 CI secret，见 README）
 keystore/

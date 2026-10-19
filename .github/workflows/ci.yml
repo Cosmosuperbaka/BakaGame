@@ -308,6 +308,15 @@ jobs:
           npm install --no-audit --no-fund
           npm run prepare-web
 
+      # prepare-web 只把 Client/dist 复制成 Mobile/dist-web —— 那还只是"待注入的目录"。
+      # Capacitor 不会自动去读 webDir，必须 cap sync 才会把 dist-web 拷进
+      # android/app/src/main/assets/public 并把 capacitor.config.json 落到工程里。
+      # 少了这一步，APK 照样能编译、能签名、能上传，但真机 WebView 打开 https://localhost
+      # 时一个文件都没有，表现为启动白屏 —— 静态构建流水线看不出来。
+      - name: Sync web assets into Android project
+        working-directory: Mobile
+        run: npm run sync
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -353,6 +362,22 @@ jobs:
           name: android-release-apk
           path: Mobile/android/app/build/outputs/apk/release/*.apk
           retention-days: 14
+
+      # 空壳 APK 能编译、能签名、能上传，问题只在真机打开时暴露（白屏）。把「内嵌前端产物」
+      # 变成构建期的硬检查：任何产物缺 assets/public/index.html 就直接失败，
+      # 而不是等用户装上发现打不开再回头查。
+      - name: Verify APK embeds the web bundle
+        run: |
+          set -euo pipefail
+          mapfile -t apks < <(find Mobile/android/app/build/outputs/apk -name '*.apk' -print)
+          [ "${#apks[@]}" -gt 0 ] || { echo "::error::没有产出任何 APK"; exit 1; }
+          for apk in "${apks[@]}"; do
+            if ! unzip -l "$apk" | grep -q 'assets/public/index.html'; then
+              echo "::error::$(basename "$apk") 未内嵌前端产物（assets/public/index.html 缺失），真机会白屏"
+              exit 1
+            fi
+            echo "已确认 $(basename "$apk") 内嵌前端产物"
+          done
 
   # 客户端制品发布：main 上打包成功后，把安装包推到对象存储，公开下载址按
   # `<base>/files/<key>` 寻址（桶名就是 URL 第一段，与数据集同一套口径）。
