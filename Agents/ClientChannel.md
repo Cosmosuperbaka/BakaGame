@@ -149,6 +149,12 @@ TTL 60 秒、单次消费。**壳必须原样签名字节，不做任何二次�
 
 - `ANDROID_ATTESTATION_PACKAGE` 没配 → 不装配校验器，带链注册只记 `"degraded"` 并警告一次；
   服务端没验过的链不能写成「验过但降级」，也不能因为配置缺失把真实设备挡在门外。
+- `ANDROID_ATTESTATION_SIGNATURE_DIGESTS` 是逗号分隔的 base64（每个 = 一枚签名证书 DER 的 SHA-256）。
+  不配只标记 `signature_digest_unverified` 并封顶 `"degraded"`：光认包名防不住重打包后自签同名 APK。
+  配了则证明里的任一摘要命中列表即通过（与 Google 参考实现同口径，签名轮换期会同时列出新旧两枚），
+  全不命中判 `signature_digest_mismatch` → `CLIENT_UNTRUSTED`。怎么取出这串摘要见
+  [Mobile/README.md §7](../Mobile/README.md)——那一步必须在真机上装过包之后再确认，换签名的 APK
+  与经商店二次签名的 APK 读出来的不是同一个值。
 - 链的叶子公钥必须等于本次 `publicKey`，否则 `ATTESTATION_REJECTED`：attestation challenge
   是设备自报的（服务端没下发过 nonce），没有这层绑定，一条合法链可以在设备之间任意转借。
 - 重新注册按这一次的结果覆盖档位：上次验出的结论不替「密钥已换」担保。

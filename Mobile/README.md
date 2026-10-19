@@ -171,12 +171,84 @@ npm run apk -- assembleDebug        # 调试包；assembleRelease 为未签名�
 
 ## 7. 签名与商店分发成本
 
-- **调试**：默认 debug keystore 即可上手。
-- **正式签名**：`build.gradle` 的 `signingConfigs` 留空。密钥库放 `Mobile/keystore/`
-  （已 gitignore，绝不入库），口令走 CI secret；`assembleRelease` 后配 `signingConfig` 出可安装 AAB/APK。
-- **应用商店**：国内各安卓商店上架需软著/营业执照等资质与逐店审核，是 P3 最高的固定成本（计划 §6 已提示）；
-  Google Play 走 AAB + Play App Signing。发布节奏：桥接契约变更（如换 `keyAlgorithm`）必须抬
-  `clientVersion` 并同步服务端最低版本策略（P2.7 强制更新链路）。
+### 7.1 一次性：建密钥库并接上 Gradle
+
+```powershell
+# JDK 17 的 keytool（AGP 要求 17，用它自带的即可）；文件绝不入库（Mobile/.gitignore 已挡）
+keytool -genkeypair -v -storetype PKCS12 `
+  -keystore Mobile\keystore\bakagame-release.keystore `
+  -alias bakagame -keyalg RSA -keysize 2048 -validity 10950
+```
+
+`Mobile/android/app/build.gradle` 里 `signingConfigs` 目前是空的（只有一句注释指向本节），
+填成从环境读，避免口令进 git：
+
+```groovy
+signingConfigs {
+    release {
+        storeFile file("$rootDir/../keystore/bakagame-release.keystore") // rootDir = Mobile/android
+        storePassword System.getenv("BAKA_KEYSTORE_PASSWORD")
+        keyAlias System.getenv("BAKA_KEY_ALIAS") ?: "bakagame"
+        keyPassword System.getenv("BAKA_KEY_PASSWORD")
+    }
+}
+// buildTypes.release 里补一行：signingConfig signingConfigs.release
+```
+
+然后 `npm run apk -- assembleRelease`，产物
+`android/app/build/outputs/apk/release/BakaGame-<version>-release.apk`（本地没有 SDK 时按 §6 排错）。
+
+### 7.2 取出签名摘要，配进服务端
+
+服务端要的是 **base64(SHA-256(签名证书 DER))**，即 Key Attestation 里 `attestationApplicationId`
+的 `signatureDigests`。三种取法结果应当一致，第一种最可信——它读的是真正装进机器的那个包。
+
+```powershell
+# A. 从 APK 读（build-tools 自带；`Signer #1 certificate SHA-256 digest:` 那行就是证书 DER 的 SHA-256）
+D:\AndroidSdk\build-tools\36.0.0\apksigner.bat verify --print-certs `
+  android\app\build\outputs\apk\release\BakaGame-<version>-release.apk
+# 十六进制 → base64（本仓库一定有 node）
+node -e "console.log(Buffer.from(process.argv[1],'hex').toString('base64'))" <64位十六进制>
+
+# B. 从密钥库读（还没有 APK 时先算一遍，之后与 A 对照）
+keytool -exportcert -keystore Mobile\keystore\bakagame-release.keystore -alias bakagame -file signer.der
+openssl dgst -sha256 -binary signer.der | openssl base64
+
+# C. 调试包：debug 密钥库在 %USERPROFILE%\.android\debug.keystore，别名 AndroidDebugKey，
+#    上面两条命令换成它即可
+```
+
+取值对不对，有个自证：**结果一定是 44 个字符、以 `=` 结尾**（32 字节的标准 base64），且 B 法与
+「node 换算 A 法十六进制」必须给出同一串。2026-10-19 用一次性密钥库在本机验过后半句
+（同一枚 DER 的 openssl 输出与 node `createHash` 十六进制换算逐字相同）；A 法要等真有 APK 再跑，
+`apksigner.bat` 的路径按本机 SDK 调整（此机 `build-tools` 装了 34.0.0 与 36.0.0）。
+
+写进 `Server` 的 `.env` / CI secret（逗号分隔，可多枚）：
+
+```
+ANDROID_ATTESTATION_PACKAGE=website.baka.game
+ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
+```
+
+- 联调阶段把 debug 与 release 两枚都列上：只列 release 时，测试机上的 debug 包会被判
+  `signature_digest_mismatch` → `CLIENT_UNTRUSTED`，链的其它结论一个都看不到。
+- 摘要不配 → 只记 `signature_digest_unverified` 并封顶 `degraded`（认包名防不住重打包自签）。
+  配了之后，注册返回 `degraded` 且**没有**这一条标记，就说明摘要命中了。
+  口径与服务端判定见 [ClientChannel §5](../Agents/ClientChannel.md)。
+
+### 7.3 换签名与商店的坑
+
+- **Google Play 开了 Play App Signing 时，A 法读到的不是装机签名**：装机包由 Play 的签名密钥重签，
+  得用 Play Console 里 App signing key certificate 的 SHA-256 指纹换算 base64。国内商店一般不改签名，
+  但一律以「真机装上的那个包」用 A 法实测为准，不要按密钥库推。
+- **签名轮换（rotation）**期间证明里同时列出新旧两枚证书，两枚都留在列表里；直接换密钥重装则只认新摘要，
+  老包用户必须先卸载重装。
+- **密钥库丢失 = 同名包无法覆盖安装**：`Mobile/keystore/` 不入库，但必须与口令一起异地备份。
+
+### 7.4 其余分发口径
+
+- **应用商店**：国内各安卓商店上架需软著/营业执照等资质与逐店审核，是 P3 最高的固定成本（计划 §6 已提示）。
+  发布节奏：桥接契约变更（如换 `keyAlgorithm`）必须抬 `clientVersion` 并同步服务端最低版本策略（P2.7 强制更新链路）。
 - **包体积/更新**：内嵌产物意味着 Client 每次发版都要重打 APK；沿用 P2.7 的 R2 固定文件名别名
   （`BakaGame-<version>-release.apk` 实际名 + 无版本别名）分发。
 
