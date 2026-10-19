@@ -15,8 +15,6 @@
     "test:e2e": "node scripts/e2e-build.mjs && playwright test && npm run test:lyrics",
     "test:lyrics": "playwright test --config e2e/SongLyrics.config.ts",
     "test:asset-smoke": "npm run build && node scripts/asset-smoke.mjs",
-    "build:seo": "npm run build",
-    "//build:seo": "兼容别名：Makers 控制台的构建命令填的是 build:seo。静态外壳已在 build 内完成（vite 插件 static-shell），无需单独步骤；控制台改回 npm run build 后即可删除本别名。",
     "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:e2e",
     "preview": "vite preview",
     "storybook": "storybook dev --port 6006 --no-open --no-version-updates",
