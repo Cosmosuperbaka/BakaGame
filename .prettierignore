@@ -29,7 +29,7 @@ Mobile/dist-web/
 
 # 锁文件与生成物
 pnpm-lock.yaml
-Agents/http-openapi.json
+Server/docs/http-openapi.json
 
 # 环境文件
 .env

@@ -9,7 +9,7 @@
 
 - **CEE（二刺猿笑传之猜猜呗增强版）**：基于 Bangumi 角色资料的多人竞猜，支持本地房间与兼容原版的房间。
 
-所有游戏状态由服务端持有并经 WebSocket 推送，客户端不持有权威状态；房间与对局状态保存在内存中。服务端另使用 SQLite 存储 Bangumi 曲目、角色资料及回填缓存；这些数据不是房间状态持久化。资料构建与部署要求见 [Agents/BangumiApi.md](Agents/BangumiApi.md) 和 [Agents/CEE.md](Agents/CEE.md)。
+所有游戏状态由服务端持有并经 WebSocket 推送，客户端不持有权威状态；房间与对局状态保存在内存中。服务端另使用 SQLite 存储 Bangumi 曲目、角色资料及回填缓存；这些数据不是房间状态持久化。资料构建与部署要求见 [Server/docs/BangumiApi.md](Server/docs/BangumiApi.md) 和 [Server/docs/CEE.md](Server/docs/CEE.md)。
 
 ## 目录结构
 
@@ -18,7 +18,8 @@
 | `Server/` | 服务端，Bun + Elysia，房间管理与实时对局 |
 | `Client/` | 客户端，React 19 + Vite + Zustand + Tailwind CSS |
 | `Server/src/shared/` | 双端共用的模型与协议定义，客户端经 `@bakagame/shared` 别名引用 |
-| `Agents/` | 工程文档：约束、设计、测试、部署、版本规范 |
+| `Agents/` | 跨包工程规范：约定、测试、部署、提交与版本 |
+| `Server/docs/`、`Client/docs/` | 各包的领域规范，由包内 `AGENTS.md` 路由 |
 
 ## 快速开始
 
@@ -53,7 +54,7 @@ npm run dev   # http://localhost:5173
 | `bun run check` | TypeScript 类型检查 |
 | `bun test` | 运行全部测试 |
 | `bun run verify` | 类型检查 + 测试覆盖率 |
-| `bun run docs:openapi` | 导出 OpenAPI 到 `Agents/http-openapi.json` |
+| `bun run docs:openapi` | 导出 OpenAPI 到 `Server/docs/http-openapi.json` |
 
 ### 客户端（`cd Client`）
 
@@ -79,18 +80,13 @@ npm run dev   # http://localhost:5173
 | 文档 | 内容 |
 |---|---|
 | [AGENTS.md](AGENTS.md) | Agent 统一引导总览与阅读顺序 |
-| [Agents/Conventions.md](Agents/Conventions.md) | 工作区架构、命令表与代码整洁度规范 |
-| [Agents/Spec.md](Agents/Spec.md) | 工程开发约束、生态标准与 Git 提交规范 |
-| [Agents/Commitment.md](Agents/Commitment.md) | 版本号、提交时机与变更承诺规范 |
-| [Agents/WhoIsFaker.md](Agents/WhoIsFaker.md) | 谁是卧底业务架构与状态机规范 |
-| [Agents/Design.md](Agents/Design.md) | 前端设计规范与房间页布局 |
-| [Agents/Animation.md](Agents/Animation.md) | 动效设计与弹性物理规范 |
-| [Agents/Deployment.md](Agents/Deployment.md) | 生产部署边界与网关约束 |
+| [Agents/Conventions.md](Agents/Conventions.md) | 命名、目录职责与工作区约定 |
+| [Agents/Spec.md](Agents/Spec.md) | 跨端工程开发约束 |
+| [Agents/Commitment.md](Agents/Commitment.md) | 提交、版本号与玩家更新日志规范 |
 | [Agents/Testing.md](Agents/Testing.md) | 测试分层与验证流程 |
-| [Agents/NeteaseMusicApi.md](Agents/NeteaseMusicApi.md) | 网易云音乐接口接入规范 |
-| [Agents/BangumiApi.md](Agents/BangumiApi.md) | Bangumi 接口、图片缓存与图床镜像规范 |
-| [Agents/BangumiDataset.md](Agents/BangumiDataset.md) | SQLite 数据集构建、角色标签与声优 |
-| [Agents/BangumiSongMatch.md](Agents/BangumiSongMatch.md) | 番剧筛选、曲目匹配与出题预算 |
+| [Agents/Deployment.md](Agents/Deployment.md) | 部署通用约束（代理、缓存、发布流程） |
+| [Server/AGENTS.md](Server/AGENTS.md) | 服务端领域规范入口（`Server/docs/`） |
+| [Client/AGENTS.md](Client/AGENTS.md) | 客户端领域规范入口（`Client/docs/`） |
 
 ## 版本
 

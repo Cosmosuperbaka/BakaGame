@@ -100,7 +100,7 @@ export const withRpcContract = async (document: Json): Promise<Json> => {
 };
 
 /** 契约产物的落点：`test/RpcOpenapi.test.ts` 用它比对提交在库的文档，路径只有这一处定义。 */
-export const OPENAPI_DOC_PATH = resolve(import.meta.dir, "../../../Agents/http-openapi.json");
+export const OPENAPI_DOC_PATH = resolve(import.meta.dir, "../../docs/http-openapi.json");
 
 /** 离线渲染整份文档；`serverUrl` 只决定 `servers`，不影响接口面。 */
 export const renderOpenApiDocument = async (serverUrl: string): Promise<Json> => {

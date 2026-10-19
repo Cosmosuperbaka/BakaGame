@@ -1,410 +1,124 @@
-# 工程开发约束
+# 工程开发约束（跨端）
 
-适用于代码修改与工程审查。按下表定位本次改动涉及的章节；这些约束不要求把局部任务扩展为全仓重构或全量审查。
+适用于代码修改与工程审查。本文只放前后端共同遵守的原则；后端专属见 [Server/docs/Engineering](../Server/docs/Engineering.md)，前端专属见 [Client/docs/Engineering](../Client/docs/Engineering.md)。这些约束不要求把局部任务扩展为全仓重构或全量审查。
+
+用户最新明确要求优先。专项文档描述特定领域的规则和有据可查的例外；发现与通用规则冲突时，核对用户要求、实现和测试并同步修正文档，不自行扩大例外。**事实只从代码取**：数值、阈值、环境变量名、命令、文件清单以代码和配置为准，文档只写约束与理由。
 
 ## 任务导航
 
-| 改动涉及 | 查阅章节 |
+| 改动涉及 | 查阅 |
 |---|---|
-| 页面与组件 | §1、§3、§15；视觉和动效分别见 [Design](Design.md)、[Animation](Animation.md) |
-| 依赖替换、重命名、架构调整 | §2、§4、§11；运行基线见 [Conventions](Conventions.md) |
-| 实时协议、状态机、并发、自动保存 | §7—§9；再查对应游戏文档 |
-| 日志、遥测、凭据、健康检查、停机 | §10；实际发布见 [Deployment](Deployment.md) |
-| 时区、局域网、容器、CORS、隧道 | §12；安全防护变更另查 §16 |
-| 测试设计与验证范围 | §13 与 [Testing](Testing.md) |
-| 上游调用、缓存、出题性能 | §14；具体策略见音乐或 Bangumi 文档 |
-| 规范维护、提交 | §5、§6 |
+| 依赖替换、重命名、架构调整 | §1、§2、§5；运行基线见 [Conventions](Conventions.md) |
+| 并发、竞态、状态机、阻塞阶段 | §4 |
+| 平台与多游戏架构 | §5 |
+| 上游调用、缓存、出题性能 | §6 |
+| 安全防护 | §7 |
+| 日志、遥测、健康检查、停机、传输层、HTTP 契约 | [Server/docs/Engineering](../Server/docs/Engineering.md) |
+| 页面架构、状态派生、自动保存、前端遥测 | [Client/docs/Engineering](../Client/docs/Engineering.md)；视觉见 [DesignGuide](../Client/docs/DesignGuide.md) |
+| 测试设计与验证范围 | [Testing](Testing.md) |
+| 提交、版本 | [Commitment](Commitment.md) |
+| 规范维护 | §3 |
 
-用户最新明确要求优先。专项文档描述特定领域的规则和有据可查的例外；发现与通用规则冲突时，核对用户要求、实现和测试并同步修正文档，不自行扩大例外。
+## 1. 优先使用原生标准与成熟生态
 
-## 1. 前端交付标准
+- 优先使用当前框架、运行时与 Web/ECMAScript 原生标准能力。在不违背技术栈、不引入安全漏洞、不显著增加体积、不降低可读性的前提下，替换自行手写的非业务核心基础逻辑：深拷贝/合并/集合运算、日期与相对时间、URL 解析、语义化版本比较、对象深比较、并发与退避调度、LRU 缓存、协议校验与类型守卫。
+- 协议契约用 Schema 做单一真相源（TypeBox 的类型与运行时校验同源），不手写数百行字段提取与类型守卫；禁止用 `Any` 或手写第二份 DTO 掩盖推导失败，涉及框架类型推导的改动要同时用实际编译与运行验证。
+- 只改完成任务所需的逻辑。行为不变的重构保持输入输出、协议和错误码；需求明确替换契约时，按 §2 同步迁移调用方。
+- 拒绝临时补丁：追根因，给永久方案；不盲目引入臃肿依赖。使用框架能力时遵循仓库现有架构、类型协议和代码组织。
+- 后端基于 Elysia，涉及其实现方式或行为时参考官方中文文档 <https://elysia.zhcndoc.com/>，并以锁定版本的实测为准。
+- WebSocket 在路由声明处使用共享 TypeBox `body` 与统一封包 `response`，由原生 validator 校验，业务回调不重复解析；校验前的 JSON/二进制解码是非可信边界。拒绝未知字段，保留 ACK 关联。Origin 拒绝统一抛专用业务错误，由 HTTP 错误边界映射状态码，不用原生 `Response` 混入全局错误回调。引入 typed transport 不得丢弃重连、会话恢复、ACK 关联、去重与状态同步这些业务协议职责。
 
-页面按生产标准交付，包含真实流程、状态反馈、错误与响应式表现。业务文案、设计主题、组件使用的具体约束统一见 [Design](Design.md)；不得把演示或占位页面作为完整实现交付。
+## 2. 零遗产：不保留兼容代码与过渡期产物
 
-## 2. 优先使用原生标准与成熟生态，杜绝重复造轮子
-
-- **核心宗旨**：前端和后端开发均应优先使用当前项目所采用框架、运行时与 Web/ECMAScript 原生标准能力。在不违背项目技术栈、不引入安全漏洞、不显著增加打包体积（Bundle Size）、且不降低代码易读性的前提下，坚决排查和替代代码库中自行手写的非业务核心基础逻辑。
-- **重点审查与重构领域**：
-  1. **复杂数据处理与算法**：深拷贝、深度合并、路径取值与变更、集合操作（Diff、交并集、去重、分组聚合）。坚决杜绝低效手写实现，优先采用成熟标准库（如基于 RFC 6902 的 `fast-json-patch`）或原生集合 API。
-  2. **时间与字符串模式**：日期时间与相对时间计算必须优先使用原生标准 API（如 `Intl.RelativeTimeFormat`，并剥离至独立工具模块避免触发 Fast Refresh 规则）；URL 与参数解析必须采用原生 `URL`、`URLSearchParams` 等 WHATWG 标准，杜绝脆弱正则与手工字符串拼接；语义化版本比对必须使用工业级标准库（如 `compare-versions` 遵循 SemVer 2.0 规范）。
-  3. **状态管理与数据流**：表单自动保存与对象脏检查杜绝渲染期频繁 `JSON.stringify` 序列化，优先采用高性能深度比较库（如 `fast-deep-equal`），消除对象键无序性引发的伪变更；全量与差量状态同步严格对齐行业开放标准。
-  4. **网络通信与异步流程**：杜绝手写低阶递归计时器与轮询循环控制并发，必须采用成熟并发控制与退避调度器（如 `p-queue`），并在执行闭包内严防限流冷却期的微任务竞态；高并发数据缓存优先采用成熟 LRU 机制（如 `lru-cache`），彻底消除全量遍历扫描与内存泄漏风险。
-  5. **协议校验与类型守卫**：通信层杜绝手写数百行命令式字段提取与类型守卫函数，必须充分利用框架生态（如 Elysia 内置 `@sinclair/typebox` 的 `t` 与 `@sinclair/typebox/value` 的 `Value.Check`）实现 Schema 契约定义与运行时校验单一真相源。
-- **架构落地原则**：
-  - **改动边界**：只修改完成任务所需的逻辑。行为不变的重构保持输入输出、协议和错误码；需求明确替换契约时，按 §4 同步迁移调用方，不保留过渡兼容层。
-  - **拒绝临时补丁（No Hacks）**：深入问题根因，杜绝“修修补补”和临时性 workaround，始终按高级开发者架构标准提供永久性解决方案。
-  - **优先原生与框架内置**：优先使用 Web/Node/Bun 原生标准 API 或现有项目依赖（如 Elysia 导出能力），严禁盲目引入臃肿依赖全家桶。
-  - **验证范围**：依赖替换与重构按 [Testing](Testing.md) 选择受影响包的类型、行为及集成检查；跨端契约与基础运行时变更扩大到两端。不要为局部改动重复运行无关套件。
-- 后端基于 Elysia 开发。涉及 Elysia 的实现方式、接口或行为时，应优先参考其中文官方文档：<https://elysia.zhcndoc.com/>。
-- 网易云请求、Cookie、播放地址与真实接口测试查 [NeteaseMusicApi](NeteaseMusicApi.md) 的相关章节；歌词清洗与播放器查 [SonGuessrLyrics](SonGuessrLyrics.md)。
-- Bangumi 请求与图床查 [BangumiApi](BangumiApi.md)，数据集与角色资料查 [BangumiDataset](BangumiDataset.md)，番剧筛选与曲目解析查 [BangumiSongMatch](BangumiSongMatch.md)；遵守服务端边界和答案隐私。
-- 三款游戏 WebSocket 在 Elysia `.ws` 声明共享 TypeBox `body` 与统一封包 `response`。原生 validator 负责成功帧校验，业务 callback 不重复解析/校验；route-local 错误处理只在失败时诊断已有错误码并抢救有界 id/traceId，保留 ACK 关联和严格拒绝未知字段。JSON/二进制解码是校验前的非可信边界，不作为类型安全保证。
-- Origin 拒绝统一抛出专用 `FORBIDDEN_ORIGIN` 业务错误并由 HTTP 错误边界映射 403，不返回原生 Response 作为全局错误回调的混合类型；保持真实升级阻断和 trace/error 信封，并以实际 WS receive 推导回归防止锁定框架类型污染。
-- 动态 Schema 表的 union 通过 `schemaUnion` 保留同源 `Static` 与原生 Union 校验；不能仅以 `Static<typeof schema>` 正常就认定 Elysia App 推导正常。锁定版本的 `Module.Import` 对非 tuple union 会推导为 `never`，需同时以实际 `~Routes`/Eden 正负编译与 Value/TypeCompiler 运行验证，禁止用 `Any` 或手写第二份 DTO 掩盖。
-- 回复对象交给 Elysia `.send` 校验与序列化，不先转成字符串绕过 object response schema。统一响应 Schema 只声明 ACK/error/event 信封，业务 payload 尚为 opaque，不能把这称为完整事件的端到端类型安全。Eden 的 `.subscribe/.send` 可从保留 App 类型推导入站命令；现有重连、会话恢复、ACK 关联、去重和 StateSync 是业务协议职责，不能因引入 typed transport 丢弃。
-- 使用框架能力时仍须遵循本仓库现有架构、类型协议和代码组织方式。
-
-## 3. 前端一致性
-
-修改页面前检查目标与相邻组件，复用项目现有控件和语义变量。主题与布局规则见 [Design](Design.md)，动画参数与交互因果见 [Animation](Animation.md)。
-
-## 4. 任何更新绝不保留兼容代码与过渡期遗产 (Zero Legacy & Backward-Compatibility Elimination)
-
-所有 Coding Agents 必须坚决执行“零遗产留存”与“代码单一真相源”原则。在项目演进、协议重构、模型升级或架构瘦身时，坚决消灭任何历史向下兼容代码与过渡期脚手架，杜绝技术债累积。
-
-### 4.1 零过渡期向下兼容与双轨逻辑 (Zero Transition Backward-Compatibility & Dual-Tracks)
-- **直接物理删除旧实现**：当需求明确替换路由、协议、配置、字段、存储键或交互规范时，旧实现必须直接从代码库中物理删除，**严禁**增加重定向、别名映射、双写、回退读取或兼容分支。
-- **业务领域严禁预留伪开关字段**：严禁在业务领域模型、协议契约或后端配置项中预留无实体的“可用性伪开关与双轨回退分支”。在代码库中正式接入的业务功能即代表正式可用；主页等门户展示层若展示正在孵化中的子游戏或子模式 entry（如 CEE 增强版的“排位赛”“锦标赛”），应仅作为前端纯展示层呈现“即将上线”徽章与不可点击禁用状态，严禁反向向服务端协议与领域模型渗透临时兼容逻辑。
-- **调用方全量同步重构**：替换旧规范时必须同步修改所有调用方、测试用例、文档与示例，确保仓库只剩当前唯一规范，坚决不能以“避免破坏已有外部使用”或“过渡期平滑迁移”为由保留旧入口或兼容层。
-- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才允许增加兼容逻辑，并限定生命周期与移除触发条件。已确认的 CEE 原版互通是现有产品边界，按 [CEE](CEE.md) 执行，无需每轮重新申请。上游能力回退与缓存降级按各 Provider 文档处理，不扩大为旧协议兼容。
-
-### 4.2 物理消灭过渡期 Shim 桥接文件与镜像单测 (Zero Shim Bridges & Redundant Suites)
-- **严禁残留中转桥接文件**：在文件重命名、模块拆分或目录迁移后，**绝对严禁**在原路径保留仅包含 `export * from "..."` 或简单重新导出的 Shim / 桥接文件。
-- **消费端导入必须一步到位**：迁移模块时必须同步更新所有消费端文件的 `import` 路径至目标权威文件。
-- **镜像单测同步迁移与清理**：针对旧模块名的测试用例，必须同步将测试断言直接绑定至真实权威实现；对因重命名而产生的双胞胎、镜像重复单测，必须坚决予以物理删除，杜绝用例空转与认知噪音。
-
-### 4.3 全栈消灭同音与大小写别名层 (Zero Alias Layers & Single Identity Invariant)
-- **严格锁定单一真相源标识**：领域模型（Model）、通信协议（Protocol）、状态管理（Store/Context）、持久化（Storage）与网络客户端中，严格维持全栈唯一的权威命名。
-- **彻底拔除同义别名导出**：坚决禁止为兼容历史拼写或过渡习惯而在契约层建立同义别名（例如：严禁 `SongGuessr*` 与 `SonGuessr*` 并存；严禁 `parseWhoIsFakerMessage` 与 `parseClientMessage` 并存；严禁 `useWhoIsFakerStore` 与 `useGameStore` 并存）。架构重构必须进行全局符号收敛，绝不保留过渡期别名。
-
-- 谁是卧底全栈标识统一为 `WhoIsFaker*` / `WHOISFAKER_*`：共享模型、入站消息、Store、测试与组件直接使用权威标识，不再导出或局部重命名为通用 `Game*` / `Room*` / `useGameStore`。跨游戏共用的 `ClientEnvelope`、`ChatMessage` 等基础契约不属于领域别名。
-
-### 4.4 坚守现代运行基线与拔除废弃私有前缀 (Evergreen Baseline & Zero Legacy Prefixes/Hacks)
-- **锁定现代常青基线**：项目运行时与宿主环境严格对齐现代常青浏览器（Modern Evergreen Browsers）以及当前 LTS 运行环境（Bun / Node LTS）。
-- **杜绝手动 Polyfill 与 UA 嗅探**：坚决杜绝手动编写任何已由现代引擎原生实现的 Web 标准 Polyfill（如 Fetch、Promise、ResizeObserver 等），坚决禁止基于 `navigator.userAgent` 判断老旧浏览器版本的 Hack 分支。
-- **CSS 样式标准化**：样式必须完全遵循现代 CSS 规范，坚决剔除早就不再需要的私有厂商前缀（如 `-ms-overflow-style`、`-webkit-scrollbar*` 伪元素侵入性定制），统一采用标准滚动条行为与现代原生交互规范。
-
-### 4.5 严禁级联回退链与边界阻断脏字段 (No Fallback Chains & Strict Boundary Invariants)
-- **杜绝深层级联回退链**：严禁在业务域中堆砌多层级联兜底（如 `a ?? b ?? c ?? d` 或 `res.songs ?? res.result?.songs`）。状态必须在服务端建立单一权威真相源并在快照中显式下发，消费端直接且仅消费权威字段。
-- **输入边界拦截与去脏字段探测**：网络通信协议的 DTO 反序列化与校验边界（如 TypeBox `t.Object`）必须显式声明 `{ additionalProperties: false }`，在系统边界直接拒绝非预期冗余字段；纯业务逻辑域中严禁编写 `if ("legacyField" in data)` 等命令式探测与向前兼容逻辑。
-
-### 4.6 网关与容器依赖注入绝对唯一 (Strict Dependency Injection Naming)
-- **消除依赖注入双轨命名**：网关路由装配（如 `App.ts`）与依赖注入容器（`AppDependencies`）中，每个服务与基础设施依赖必须锁定唯一的权威命名（例如：必须使用 `whoIsFakerService`，严禁在同一容器或参数中同时支持 `roomService` 与 `whoIsFakerService` 的双轨回退注入）。
-
-Songuessr 唯一公共入口为前端 `/songuessr` 和 WebSocket `/api/songuessr/ws`；不得重新添加旧路径或旧存储键。
-
+- **直接物理删除旧实现**：需求明确替换路由、协议、配置、字段、存储键或交互规范时，旧实现必须删除，禁止重定向、别名映射、双写、回退读取或兼容分支；同步修改所有调用方、测试、文档与示例，让仓库只剩当前唯一规范。
+- **唯一例外需显式批准**：只有用户明确要求兼容特定旧版本时才增加兼容逻辑，并限定生命周期与移除触发条件。CEE 与原版互通是现有产品边界，按 [Server/docs/CEE](../Server/docs/CEE.md) 执行；上游能力回退与缓存降级按各 Provider 文档处理，不扩大为旧协议兼容。
+- **不预留伪开关**：业务模型、协议、后端配置不预留无实体的“可用性开关/双轨回退”。接入即正式可用；门户展示层的“即将上线”条目只作前端纯展示，不向协议与领域模型渗透临时兼容逻辑。
+- **不留 Shim**：重命名、拆分、迁移后，原路径不保留仅 `export * from` 的桥接文件；消费端导入一步到位；镜像/双胞胎测试同步迁移并删除重复。
+- **单一真相源标识**：领域模型、协议、Store、持久化与网络客户端全栈只用一个权威命名，不建立同义别名导出（拼写变体、新旧命名并存均禁止）；依赖注入容器里每个服务只有一个命名，不双轨回退。游戏标识的权威写法见 [Conventions](Conventions.md)。
+- **现代常青基线**：对齐现代浏览器与当前 LTS 运行时。不写已被原生实现的 Web 标准 Polyfill，不做 UA 嗅探，不写厂商私有前缀 CSS。
+- **禁止级联回退链**：不堆 `a ?? b ?? c` 式多层兜底；状态在服务端建立单一权威并在快照显式下发，消费端只读权威字段。协议 DTO 边界显式 `additionalProperties: false`；业务域内不写 `"legacyField" in data` 这类向前兼容探测。
+- 专项约定：Songuessr 唯一公共入口是前端 `/songuessr` 与 WebSocket `/api/songuessr/ws`，不得重新添加旧路径或旧存储键。
 
 <a id="规范维护"></a>
 
-## 5. 规范维护
+## 3. 规范维护
 
-- 审查中确认的工程约束、反模式与用户追加规则，随对应修改点立即写入权威文档；通用规则放本文，领域规则放专项文档，不只留在聊天、任务清单或 PR。
-- 每条规则写清适用条件、要求和可验证结果；保留项目特有的协议、数值、安全边界与有用反例，删除同义复述和不影响决策的事故叙述。更新既有条目，不逐轮追加重复禁令。
-- 根入口只做导航。专项文档开头说明何时查阅，并让每个工作范围都能定位到对应章节：章节多时给「工作范围 → 章节」表或等价的一句话索引。标题编号不强制统一，新增或重写时与所在文档保持一致。交叉引用指向唯一维护位置，不要求递归通读所有链接。
-- 专项文档只写**当前唯一规范**：用「必须 / 禁止 / 应当」表述，不记录已完成的迁移、上线状态、历史事故编号、提交哈希、构建统计与实测性能数字；确需说明因果时一句话带过，不写日期。代码符号、错误码、阈值、配置键与协议字段是契约而非状态，必须保留。版本、阈值、命令以对应配置或脚本为事实来源；冲突在同次修改中清理；无法核实时明确保留待验证项。
+- 审查中确认的工程约束、反模式与用户追加规则，随对应修改点立即写入权威文档；通用规则放本文，领域规则放该领域所在包的 `docs/`，不只留在聊天、任务清单或 PR。
+- **文档只写约束、规范与理由，不写项目事实**：不写数值、阈值、环境变量取值、命令、文件/测试清单、部署形态这类可从代码读到的内容；代码符号、错误码与协议字段只在作为“契约名”必须点名时才出现，且写前核对其仍存在。同一事实只有一个维护位置（代码优先），避免两份事实互相漂移。不记录已完成的迁移、上线状态、历史事故编号、提交哈希、构建统计与实测性能数字；确需说明因果时一句话带过，不写日期。
+- 每条规则写清适用条件、要求和可验证结果；保留有用反例，删除同义复述；更新既有条目，不逐轮追加重复禁令。无法核实的约束删除或标注待验证，不保留可能过时的“事实性约束”。
+- **文档分布**：根入口 `AGENTS.md` 只做导航与全局红线；跨包规范在根 `Agents/`；服务端领域规则在 `Server/docs/`，客户端领域规则在 `Client/docs/`，各包用 `AGENTS.md` 做路由。专项文档开头说明何时查阅，工作范围多时给“范围 → 章节”索引。交叉引用指向唯一维护位置，不要求递归通读。
+- **生产信息不得进入被追踪文档**：生产域名、地址、边缘/托管平台配置、密钥与凭据的命名及取值、监控项标识、内部拓扑、运维步骤，一律不写入任何被 Git 追踪的文件（包括文档、注释、示例与测试）。示例只用纯虚构占位符。需要保留的运维踩坑与生产相关记录写到根目录 `.agent-notes/`（已被 `.gitignore` 忽略，不追踪），规则见根 `AGENTS.md`「本地笔记」。
+- **冻结文档**：`Client/docs/DesignVision.md` 只有用户明确批准才能修改，修改后按根 `AGENTS.md`「冻结文档」更新校验哈希；`Client/docs/DesignGuide.md` 允许大模型为贴合项目风格自行优化。
 - 指南面向所有协作者，不绑定某个模型，不规定无必要的工具调用顺序。安全的本地工作继续做到完成标准；只有实际缺失的授权或信息才需向用户确认。
 - 文档改动检查入口路由、相对链接、源码引用与规则一致性，运行 `node scripts/CheckDocs.mjs`。纯文档任务不触发产品版本更新或业务全量测试。
 
-本次维护方法参考 [OpenAI：Rethinking skills and prompts for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)：按任务渐进披露、减少重复步骤、明确决策边界和完成条件。该文章是文档组织依据，不是每次开发的前置阅读。
+## 4. 并发、状态与阻塞阶段
 
-## 6. Git 提交规范
+### 4.1 代码风格：契约在边界，内部不防御
 
-提交时机、中文摘要、作用域、版本及玩家日志只在 [Commitment](Commitment.md) 维护。
+- 入口立契约：在系统入口（网关、WebSocket 路由分发、DTO 解析、Store 事件入口）建立严格的运行时校验，进入业务域后直接信任强类型，不在每一层重复判空或滥用多层可选链（Parse, don't validate）。
+- 业务规则探测提供无副作用的纯谓词，禁止用 `try { validate() } catch { return false }` 做布尔探测。
+- 持久化读写区分“资源不存在”与“数据损坏”：损坏数据必须 Fail-Fast 抛明确业务异常，**禁止捕获后静默返回空数组/空对象充当兜底**（后续写入会永久覆盖用户历史数据）。
+- 展现层不凭空伪造全属性领域实体（虚构状态字段的玩家对象）；视图需要什么字段就定义精简展示接口。
+- 禁止用 `setTimeout` 掩盖时序竞态或制造人造延迟，加载状态与真实异步生命周期对齐；禁止客户端篡改、拦截或延迟服务端权威快照；禁止用 `isFixingBugX` 之类标志位打补丁，必须追溯状态源头与事件顺序。
 
-## 7. 实时网络必须节约带宽
+### 4.2 并发写与异步 I/O 竞态
 
-- WhoIsFaker 与 Songuessr 的实时状态默认使用带修订号的增量消息，不得在每个业务动作后无条件向全房重复发送完整快照或未变化的私有状态。
-- 状态通道必须保留最终同步能力：首次加入、重连、客户端发现修订号缺口、补丁应用失败、周期校准（挂在 10 秒 housekeeping 节奏上，每通道独立按 60 秒计时触发）、自上次全量起补丁数累计达到 1024、以及单次补丁序列化体积达到全量快照体积的 82% 及以上时强制发送完整状态；客户端不得在缺少基线时猜测或跳过补丁。
-- 同一事实只能通过一个生产通道发布。若版本化状态已经包含该变化，不得再广播客户端不消费的重复事件；聊天等列表变化也不得同时由事件追加和状态补丁追加。
-- 文本输入、高频草稿和自动保存必须防抖或合并，连续修改只提交最新值；不得按每个按键触发全房广播。
-- 生产 WebSocket 必须优先保证各平台连接兼容性。Bun 无法按客户端稳定控制 `permessage-deflate` 协商，且该扩展会导致部分 iOS WebKit 客户端无法连接，因此全局关闭消息压缩；只有在运行时支持可靠的按客户端协商且完成 iOS 回归后才允许重新启用。
-- 修改公开快照、私有状态、广播频率或传输封包时，必须运行 `Server/test/NetworkCapacity.test.ts`。基线为 150 个 WhoIsFaker 在线玩家、每秒 12 次状态变化、每分钟一次全量校准，并计入 WebSocket 帧与 15% 传输余量；估算出口不得超过 6 Mbps。
+- **禁止在 `await` 之后才校验或扣减配额**（猜测次数、选票、扣款等）：并发请求会在 I/O 挂起窗口里全部穿透。标准做法：让出事件循环之前同步占位递增并校验上限；对同一会话/实体用飞行锁拦截并发；异步失败时在 `catch` 回滚占位、`finally` 释放锁。
+- 同类“先检查、后写入”的唯一资源（房号等）要在跨 `await` 之前先占住，失败当场撤销；await 回来先确认目标仍是同一份对象再写入。
 
-## 8. 杜绝过度防御性编程、掩耳盗铃式兜底与补丁式修 Bug
+### 4.3 阻塞阶段生命周期必须闭环
 
-所有 Coding Agents 必须严格遵循领域驱动设计（DDD）思想与“Parse, don't validate”哲学。在数据源头与系统边界上建立不变量（Invariants），使非法状态在结构上不可表达；严禁为了“防止眼前报错”而堆砌创口贴补丁或掩耳盗铃式兜底。
+任何进入独占或阻塞阶段的长流程（答题倒计时、裁定、PK 等），除下述领域例外外必须同时具备：
 
-### 8.1 严禁深层防御性判空蔓延 (Anti-Defensive Null Sprawl)
-- **入口立契约，内部去噪音**：必须在系统入口处（API Gateway、WebSocket 消息路由分发、DTO 解析、Store 事件响应入口）建立严格的运行时校验（如 TypeBox `Value.Check` 或统一断言）。一旦数据进入内部纯业务域，函数必须直接信任上游传入的强类型，严禁内部纯业务函数每一层都重复写 `if (!user) return` 或滥用多层深层可选链（`a?.b?.c?.d`）。
-- **杜绝用异常做常规控制流**：业务规则探测（如判断当前人数是否满足角色配置）必须提供无副作用的纯计算谓词（如 `isRoleConfigSatisfied(config, count): boolean`）。**严禁**使用 `try { validateX(...) } catch { return false }` 作为探测布尔分支的反模式，避免浪费 V8 调用栈并掩盖真实异常。
+1. 主动交互推进路径；
+2. **服务端全周期硬超时保底**：即使网络断开、音频加载失败、第三方挂起，超时也必须强制推进或回滚，不能让房间陷入不可逆死锁；
+3. 掉线巡检与有限兜底倒计时：关键操作人掉线而其他人选择等待时，必须挂载有限兜底，到期恢复流程；
+4. **倒计时锚点取“能力就绪时刻”，不取“阶段创建时刻”**：阶段创建与玩家真正可操作之间常隔着异步上游等待；起点锚在首个玩家真正就绪那一刻，硬超时锚定后保持幂等，后续玩家就绪不得顺延他人倒计时；
+5. **倒计时续期取“当前时刻”并受硬截止封顶**：重开单次操作倒计时用当前时间重新起算并取与硬截止的较小值，不复用阶段级统一截止（可能已过期）。
 
-### 8.2 严禁掩耳盗铃式兜底与虚假实体伪造 (No Cover-Up Fallbacks & Fictitious Entities)
-- **仓储层与 IO 错误必须 Fail-Fast**：持久化读写时，必须严格区分“资源不存在（如文件首创 `ENOENT`）”与“数据损坏/语法错误”。在遇到损坏数据、非预期格式时，必须坚决抛出明确业务异常（Fail-Fast），**绝对严禁**捕获异常后静默返回空数组（`[]`）或空对象（`{}`）充当兜底。此类看似安全的“兜底”会在后续写入时执行致命覆盖，导致用户历史数据被永久清空。
-- **严禁在展现层凭空制造全属性假实体**：在 UI 组件或视图模型中，严禁为了满足过宽的类型约束而在遍历中用对象字面量凭空伪造包含业务状态的领域模型（如虚构 `membership: "active"`, `score: 0`, `roundStatus: "waiting"` 的 `PublicPlayerView`）。视图层需要什么字段，就抽象精简的展示接口（如 `{ id, name }`），杜绝制造虚假领域状态。
-- **严禁多层级联失效兜底链**：杜绝出现 3 层及以上的 `a ?? b ?? c ?? d` 回退链。若核心状态需要顺序，必须在服务端建立单一权威真相源并在快照中显式下发，客户端直接消费权威字段。
+**已核实的领域例外**：谁是卧底的白板猜词、人工裁定与阶段反馈采用出题人手动计时/手动继续，不自动创建不可取消的硬截止，细则与边界见 [Server/docs/WhoIsFaker](../Server/docs/WhoIsFaker.md)。该例外不覆盖异步准备与缺少授权出口的阻塞，也不允许用泛化“手动处理”规避其他领域的有限截止；若所有合法出口丢失，仍必须修复生命周期闭环。
 
-### 8.3 严禁补丁式修 Bug 与时序延时欺骗 (No Patchwork Hacks & Artificial Delays)
-- **严禁使用 `setTimeout` 掩盖时序竞态**：在 UI 刷新、网络请求或状态重置的生命周期中，**严禁**使用 `setTimeout(..., 500)` 或 `window.setTimeout` 制造人造延迟或试图“避开并发竞态”。加载状态必须严格与真实的 Promise/异步操作生命周期对齐。
-- **严禁客户端篡改与拦截服务端权威状态**：状态管理容器（Zustand Store）必须保证服务端权威快照单向流入。**绝对严禁**在客户端编写类似 `normalizeSnapshot` 拦截服务端的合法阶段（如把 `gameOver` 篡改为 `waiting`，或延时推迟快照生效），杜绝破坏服务端状态机单调推进与幂等性。
-- **根因治理，拒绝创口贴标志位**：面对偶发的并发冲突或时序错乱，必须追溯状态源头、事件触发顺序与生命周期钩子，彻底修正状态流；坚决禁止通过局部打补丁、添加 `isFixingBugX` 标志位或外部全局变量打游击。
+阶段被打断暂停时，必须暂存原阶段的真实剩余时间；打断退出或裁定未通过返回时，按剩余时间恢复，禁止抹去或重置为初始时长。
 
-## 9. 数据流与状态不变量工程铁律 (State & Data Invariants)
+### 4.4 传输层幂等与会话隔离
 
-在分布式 WebSocket 实时协同、长流程有限状态机与并发异步交互场景下，必须建立无缝自洽的数据流与状态不变量，杜绝时序死锁、重复扣减、幽灵更新与缓存击穿。
+- 带客户端唯一 `id` 的消息信封，传输层用带 TTL 的 LRU 缓存与飞行锁去重，重复封包直接返回缓存的 ACK。
+- 幂等缓存与飞行锁的键必须含连接唯一标识的复合键，禁止用客户端传入的原始 id 作跨租户全局键（防止串台）。
+- 所有提交类按钮在请求发出至 ACK/失败前必须在视图层加 in-flight 禁用锁。
 
-### 9.1 并发写与异步 I/O 竞态治理：前置占位与加锁 (Pre-allocate, Lock, Post-verify & Rollback)
-- **严禁在 `await` 之后校验配额**：高并发异步操作（如猜歌、选票、扣款、答题）若包含异步 I/O（如外部歌词/音源加载、数据库查询、大模型调用），**绝对严禁**在 `await` 外部 I/O 之后才检查/扣减配额。这会导致并发请求在 I/O 挂起窗口内全部穿透校验，发生配额击穿。
-- **模式标准：前置占位递增 + In-flight 互斥 + 异常安全回滚**：
-  1. **同步原子扣减/占位**：在让出事件循环（`await`）之前，立即递增计数（如 `state.guessesUsed++`）并校验上限。
-  2. **并发飞行锁（In-flight Lock）**：针对同一会话/实体，使用 `Set<string>` 或 Map 标记当前正在进行的并发任务，并发调用直接阻断（Fail-Fast）。
-  3. **异常安全回滚（Rollback on Failure）**：在 `try...finally` 中若异步外部过程发生不可恢复的网络或系统异常，必须在 catch 中将预占配额补偿回滚，并由 finally 释放锁。
+## 5. 平台与多游戏平等架构
 
-### 房间接入事务归属
-- 页面直链、名称/密码补录与单人建房使用同一房间生命周期的 `AbortSignal`；仅换房或卸载取消，成功快照更新不能取消自身。
-- 路由房号先按服务端规则归一（去首尾空白，测试房号大小写不敏感）再用于入房命令、会话键与快照房号比对；直接把路由原文当房号会让小写测试房直链永远停在入房加载态。
-- 入房请求期间的推送状态保留为事务暂存，不覆盖已确认房间的公开展示态；ACK 提交时一次安装匹配房间与令牌的状态。失败或取消不能混用旧房间命令身份与新房间快照。
-- Store 在 ACK 提交身份与持久凭据前核验调用归属及连接代次；已取消的成功 ACK 用精确房间与令牌退房，释放落定后串行处理下一次入房，旧连接回包不得向新连接发送旧退房。
-- 同房间、令牌与连接代次的恢复请求共享在途事务，允许 StrictMode 新 effect 接管；主动退房、房间关闭或席位替换也取消自动恢复归属。临时恢复失败保留令牌并拒绝，不伪报恢复成功或自动创建；永久失败只清理对应会话并通知页面退出。
+三款游戏（谁是卧底、猜歌、CEE）架构地位严格平等，不得把任何单一游戏当作“平台核心/宿主”。
 
-### 9.2 阻塞阶段生命周期必须闭环 (Guaranteed Deadlock Elimination)
-- **严禁设计无推进条件的半开状态**：除下述已核实的手动主持领域例外外，任何游戏或业务长流程中，若状态机进入独占或阻塞阶段（如白板猜词、答题倒计时、出题人裁定、PK 演讲），必须同时满足：
-  1. **主动交互推进路径**：正常参与者提交操作推进阶段。
-  2. **全周期硬超时保底（Hard Deadline）**：服务端必须设定全局不可突破的超时上限（如 `hardDeadlineAt` 或 `phaseTimer`）。即使用户网络断开、音频加载失败、第三方 API 挂起，超时触发时必须强行推进至下一阶段或回滚原阶段，杜绝房间陷入不可逆死锁。
-  3. **掉线巡检与等待兜底**：当关键阻塞操作人（如猜词白板、发言人）意外掉线且其他人选择“等待”时，系统必须强制挂载有限兜底倒计时（如 60 秒），到期无缝恢复游戏流程，杜绝无限期挂起。
-  4. **倒计时锚点必须取「能力就绪时刻」而非「阶段创建时刻」**：阶段创建（如 `installRound`）与玩家真正具备操作条件之间常隔着异步上游等待（自动选曲、音频加载）。倒计时与硬超时的起点必须锚定在**首个玩家真正就绪的那一刻**，严禁在创建阶段时就按「创建时刻 + N 秒」预设。否则上游等待会凭空吃掉玩家的可操作时间，表现为「界面倒计时还剩几十秒，房间却已强制结算」。硬超时锚定后须保持幂等：后续玩家就绪不得顺延他人倒计时。
-  5. **倒计时续期锚点必须取「当前时刻」且受硬截止封顶**：每次重开单次操作倒计时（答错后续期、宽限期补偿）都必须以 `now()` 重新起算，并取 `min(now() + 时长, hardDeadlineAt)` 封顶。严禁复用阶段级的统一截止时刻（如 `audioReadyDeadlineAt`）—— 那会得到一个可能已经过期的截止时间，巡检会立刻把它判为超时；封顶则保证玩家永远看不到「比真实剩余时间更长」的倒计时。
-- **已核实的手动主持领域例外**：仅 [WhoIsFaker §6](WhoIsFaker.md) 的在线白板猜词与在线人工裁定沿用现有出题人手动计时策略：可主动提交/裁定，出题人可开、取消、重开 60 / 120 / 180 秒计时，取消后仍有授权推进出口。它们不自动创建不可取消的全周期硬截止；不得将持续聊天续活下的房间闲置清理或手动三分钟选项描述成自动 180 秒截止。掉线待决、等待自动 60 秒兜底的可取消语义、离线清理与出题人重连中止按该领域文档执行。该例外依据现有行为及正常开局回归，阶段反馈（`feedback`）同属这一例外：只展示已落地的结算结果，由出题人手动继续，没有倒计时，出题人离线时按出题人重连中止处理。不覆盖音频/资料等异步准备、缺少授权出口的阻塞，也不允许用泛化“手动处理”规避其他领域的有限截止要求；若发现所有合法出口丢失，仍必须修复生命周期闭环。
-- **状态打断与上下文恢复保真**：阶段被打断暂停（如发言中被白板猜词插队）时，必须暂存原阶段的真实剩余时间（`interruptedRemainingTimerMs`）。打断退出或裁定未通过返回时，必须恢复对应时长的倒计时，禁止将打断后剩余时间抹去或直接重置为初始时长。
+- **共享契约分层、单向无环**：平台通用核心层（通用信封、ACK/错误/事件包、状态同步载荷、房号规则、公共成员/聊天/连接类型）；游戏专属契约层（每款游戏一个对等文件，只能单向依赖平台层，禁止游戏间横向依赖）；统一入口层汇总导出。各游戏客户端指令信封必须基于平台泛型信封特化，不重新手写同构接口。
+- **传输对称**：通用封包工具收敛在传输层的封包模块，子游戏不得反向引入掺杂他游戏解析逻辑的文件；每款游戏有独立解析器与对等路由前缀，网关对称消费。
+- **服务与依赖注入对等**：各游戏服务具名独立，禁止泛化 `RoomService` 或兼容别名；依赖容器中各游戏服务地位一致；系统探针聚合时平等读取各游戏快照。
+- **客户端组件对等**：两款及以上游戏同构的交互组件必须提升到 `components/common/`，通过解耦的 Props 与回调驱动，不耦合任何游戏的 Store；提升后的表现差异用**必填**变体 Prop 显式声明，不留静默缺省分支。游戏专属目录之间禁止横向导入。目录与组件命名对等：不允许一方独占无前缀基础短名而另一方被强加游戏前缀；全局基础 UI 容器不被单一游戏独占命名，也不反向依赖业务 Store。
+- 聊天流中的系统提示与阶段通知的视觉口径见 [DesignGuide](../Client/docs/DesignGuide.md)。
 
-### 9.3 协议快照与展示派生状态严格物理隔离 (RFC 6902 Base Isolation & Clean Re-anchoring)
-- **协议原始基线不可篡改**：客户端消费 RFC 6902 JSON Patch 时，状态同步引擎（如 `StateSync.ts`）维护的快照基准必须严格等于服务端原生下发的公开数据模型。**绝对严禁**在协议快照对象上就地（in-place）追加前端私有展示字段（如向 `snapshot.chat` 中 push 本地系统提示），否则会导致 JSON Patch 的数组索引与属性路径错位，引发补丁应用崩溃或幽灵数据。
-- **换房与退房基准原子重置**：当客户端离开房间或切换房间时，必须彻底重置所有模块级版本追踪号（`lastRevision = 0`）、历史补丁缓存与基线快照引用，杜绝上一个房间的残留版本号阻断新房间的快照同步。
+## 6. 外部依赖与出题链路性能
 
-- 客户端聊天展示层按消息标识去重、按时间排序，仅保留最新 200 条；首次进入与重连全量也遵守上限。原始 StateSync 基线不得裁剪或混入本地提示，避免后续 patch 数组索引失真。CEE 直接消费服务端有界聊天，不新增跨快照的无限合并。
+- **禁止无界串行回源**：遍历候选逐个回源的循环必须同时有并发窗口和总调用预算。同一层级彼此无依赖的上游调用必须并行；候选重试次数必须是显式常量并有不变量测试，不能让最坏延迟由题库大小决定。
+- **预算按真实成本记账**：一次完整详情（多个上游请求）与一次搜索成本差数倍，必须使用独立预算常量；验证类回源按优先级逐个进行、首个命中即停，**禁止为同一目标的多个候选并行拉完整详情**。预算与候选上界定义为具名常量并由测试断言，防止悄悄放宽。
+- **能在检索结果判定的过滤必须前置**（会员可见性、热度阈值等），不要先完整回源再丢弃；无法直接判定的用最廉价的探针先判。
+- **长任务的客户端请求不得设固定超时**：耗时由上游决定的命令用无超时发送，并轮询轻量同步状态，否则会造成“服务端仍在工作、客户端已提示失败”的假失败与重复触发。
+- **候选必须先归一化再采样**：从带固定排序的数据源取首个可用候选前必须先洗牌再截断，否则单一类型长期霸占结果。
+- **缓存不得固化瞬态失败**：区分“确实不存在”（可按 TTL 缓存）与“本可重试成功”（播放地址、临时授权、限流期空响应，严禁缓存空结果，且要补“首次取空、二次必须回源成功”的回归）。
+- **降级必须可恢复、可观测、可测试**：快路失败切慢路的降级只在冷却期内有效、冷却结束重新探测；进入与恢复都要输出结构化告警日志（冷却期内不刷屏）；恢复语义用注入时钟的单测覆盖。只有指向快路自身不可用的错误码才触发降级，业务性空结果原样抛出。
+- **缓存只存上游原始数据，不存派生的随机选择结果**（歌词切片、随机窗口、随机索引），随机性必须每次出题重新采样。
+- 性能结论以生产遥测的实测聚合为准，不凭代码直觉判断快慢。
 
-### 9.4 前端多层防重与网络层 Envelope 幂等 (Multi-tier Idempotency & Envelope Deduplication)
-- **UI 视图层防重锁**：所有提交类按钮（开始游戏、提交发言、投票、猜歌、保存配置）在网络请求发出至收到 ACK 或失败前，必须在组件层挂载 `in-flight` 禁用锁与加载反馈，杜绝连续快速点击发送重复封包。
-- **传输信封幂等去重（Envelope Deduplication）**：网关或传输层（如 `App.ts`）针对带有客户端唯一 UUID（`id`）的消息信封，维护带 TTL 的 LRU 缓存与飞行锁。在短时间窗口内到达的相同 `id` 重复封包直接返回缓存的 ACK，严防网络重传或重试造成业务重复执行。
+## 7. 安全防护必须可验证
 
-### 9.5 React 卸载副作用清理必须校验前置业务阶段有效性守卫 (Unmount Safeguard & Phase Guards)
-- **严禁向失效阶段脏回写**：带有自动保存（`useAutoSave`）或防抖延迟写入的 React 组件，在离开视口或 unmount 时，**必须**同步校验当前业务阶段是否依然处于允许保存的合法阶段（如 `snapshot.status.phase === "waiting"`）。组件卸载时若已经开局或阶段已跃迁，必须立即丢弃待提交的脏草稿，严禁向服务端发送非法的配置覆盖请求。
+审查中反复出现的失败模式是：防护写了却从未生效、也没人发现。
 
-## 10. 可观测性与生产运维就绪度工程铁律 (Observability & Production Readiness)
-
-在无状态容器、微服务架构与云原生部署环境下，必须具备生产级透视能力与自愈容灾能力，杜绝“无日志、吞异常、无 Trace 上下文、粗暴停机导致数据损坏”的运维灾难。
-
-### 10.1 全链路追踪与会话隔离 (Distributed Tracing & Session-Scoped Idempotency)
-- **全局唯一 Trace ID 贯穿始终**：客户端每次与服务端的交互（HTTP 请求、WebSocket 连接与命令交互）必须生成全局唯一的 Trace ID（包含时间戳、单调计数器与随机熵），严禁使用单调自增小整数（如 `req-1`）作为跨连接的请求标识。
-- **传输层幂等缓存必须与会话隔离**：网关或传输层维护的 LRU 缓存与并发飞行锁（In-flight Lock）键，必须使用带有连接唯一 ID 的复合键（`${connectionId}:${id}`）。**绝对严禁**使用客户端传入的原始 ID 作为跨所有租户的全局缓存键，杜绝跨玩家并发响应串扰与串台。
-- **全链路透传与上下文字段保真**：HTTP 网关必须在响应头显式返回 `x-trace-id`；WebSocket 协议中 `createAck`、`createErrorPacket` 必须回传 `traceId`；日志系统必须将 `traceId` 提取为一级索引字段。
-
-### 10.2 结构化日志、堆栈保真与敏感凭据脱敏 (Structured Logging, Stack Fidelity & Sensitive Redaction)
-- **严禁吞异常与裸字符串报错**：杜绝任何形式的空 `catch {}` 或仅打印无上下文的 `console.error("error")`。所有捕获异常必须调用结构化日志接口（如 `eventLogger.error`），并使用 `describeError` 递归保留 `error.name`、`error.message`、`error.stack` 以及 `error.cause` 完整链路。
-- **结构化元数据不丢失**：日志记录函数必须将所有附加业务元数据（如 `roomId`、`playerId`、耗时、阶段快照）全部序列化并输出，严禁只输出静态标题而将上下文丢弃。
-- **敏感信息严格物理脱敏**：
-  1. `cookie`、`sessionToken`、`authorization` 等身份凭证在日志输出或导出前必须经过脱敏拦截器（`redactData`），保留前 4 位用于故障定位，后续字符强制掩码（`abcd***[REDACTED]`）。
-  2. `password`（密码）属于顶级高危凭据，必须 100% 全量掩码（`***[REDACTED]`），绝对严禁保留任何明文字符。
-  3. 登录验证码（`loginCode`、`otp`、`verifyCode`、`authCode`、`captcha`）与口令同级：是可重放的短期凭据，保留前缀等于交出有效期内的登录能力，一律 100% 全量掩码，且同样适用于自由文本通道（`redactLogText` 按 `key=value` 形态清理）。
-  4. **必须保留明文的开发期输出**（如本地联调的验证码）不得进入结构化通道：走 `EventLogger.localInfo`，只落进程 stdout，不经 OTLP 与 Sentry。结构化 `info`/`warn`/`error` 一律视为会被长期保存与外送的数据。
-
-### 10.3 云原生健康检查探针拆分 (Kubernetes Liveness & Readiness Probes)
-- **Liveness 探针 (`/livez`)**：轻量级存活探针。仅验证进程是否存活、事件循环是否运行，未死锁即返回 HTTP 200 `{ status: "ok" }`。探测开销必须为 `O(1)`，不得在此阶段挂载重型数据库或外部 I/O 检查，避免短暂抖动触发容器反复被杀重启。
-- **Readiness 探针 (`/readyz`)**：深度就绪探针。必须检测：
-  1. **停机状态守卫**：若收到停机信号进入优雅停机流程，立即返回 HTTP 503 `{ status: "shutting_down", ready: false }`，使外部负载均衡器/反向代理（Nginx/Ingress）立即停止分配新连接与流量。
-  2. **数据库不参与就绪判定**：数据库只承载账号、云同步、后台与对局记录，游客游玩不依赖它；数据库故障时相关功能报错，节点继续承接游戏流量，不因此摘流。边界见 [Database](Database.md)。
-  3. **存量监控兼容**：保留 `/health` 路由，聚合房间、在线连接与玩家数指标，兼容常规监控大屏。
-
-### 10.4 生产级优雅停机编排 (Graceful Shutdown & Watchdog Orchestration)
-- **优雅停机 6 步标准时序**：
-  1. **标记停机状态**：将 `isShuttingDown` 置为 `true`，触发 `/readyz` 熔断返回 503。
-  2. **清除后台轮询**：停止闲置房间清理、心跳超时扫描等定时器，阻止启动新的巡检。
-  3. **在线长连接广播**：向所有在线玩家（WhoIsFaker、SonGuessr 与 CEE）全量广播 `server.shutdown` 事件，通知客户端准备重连。
-  4. **流量摘除平滑缓冲窗口**：执行 3 秒（`await Bun.sleep(3000)`）等待，留出反向代理摘流切换与客户端接收停机事件的稳定网络窗口。
-  5. **排空写队列**：等待已发起的数据库写入（词对、对局记录等，`drainPendingWrites`）全部落定，杜绝进程退出丢失已结算数据。
-  6. **关闭端口与排空遥测**：依次 await 停止 HTTP/WebSocket 监听端口（`app.stop(true)`）、释放服务资源（`dispose`）、OTLP `shutdown`、Sentry `flush` 与 `close`；全部成功才以 0 退出。
-- **预通知与最终停机分离**：维护接口先广播停机事件并将 `isShuttingDown` 置为 `true`，只负责摘流，不提前退出或排空持久化队列。最终 signal 编排必须用独立的共享 `shutdownTask` 去重，不能以 readiness 标志判断是否已清理；后续 SIGTERM、重复 SIGTERM/SIGINT 或致命异常共用同一个任务，清定时器、最终广播、await 排空与资源释放各执行一次。预通知广播与 signal 的最终广播是两个阶段，不混为重复 signal 的额外通知。
-- **清理失败隔离**：广播、缓冲、写队列排空、停止监听、服务资源释放与各遥测清理阶段分别捕获并记录带阶段名和完整堆栈的错误；某一步拒绝不能跳过剩余资源的 close。Sentry flush/close 返回 `false` 同样算失败；完成其余清理后以 1 退出，不把失败伪装为正常完成。挂起而非拒绝的步骤仍由总看门狗强制退出，不承诺超时后继续释放。
-- **看门狗超时保底**：停机信号触发时，必须挂载 15 秒非阻塞看门狗定时器（`setTimeout(..., 15000).unref()`）。若外部 I/O 或套接字挂起超过 15 秒，看门狗强制调用 `process.exit(1)` 退出，防止进程永久僵死。
-- **停机回归证据边界**：`Server/test/IndexShutdown.test.ts` 通过完整真实 `Index.ts` 转译 VM 和模块边界替身验证预通知→SIGTERM、每阶段 await、重复 signal、资源失败不短路及 15 秒 unref 总看门狗；`Server/scripts/ShutdownSmoke.ts` 用临时存储、合成维护 token 与出口守卫验证真实服务的预通知、readiness、三款游戏广播和退出。Windows smoke 通过测试 preload 的 `process.emit` 调用已注册 listener，只能证明 listener 集成，不冒充操作系统实际信号投递；平台原生 SIGTERM 验收仍需在 Linux/容器环境执行。
-- **致命异常全局捕获**：必须注册 `process.on("unhandledRejection")` 与 `process.on("uncaughtException")`。未处理 Promise 拒绝记录 ERROR 日志，未捕获同步异常记录日志并触发优雅停机。
-
-- WS 校验失败诊断仅记录类型、长度与键数：任意属性名和无效 id/type/trace 也能承载敏感文本，不复制到 stdout、OTLP 或 Sentry。关联字段只在错误回包返还原请求方；正常已接受操作的 trace 保持日志索引。
-- **来源身份取 ESA 托管转换写入的真实 IP 标头，并按三层桶限流**：公开遥测与 Sentry 隧道的客户端身份由 `transport/ClientIp.ts` 的 `resolveClientIp` 统一解析——优先采信 ESA 托管转换在回源请求上写入的真实客户端 IP 标头（控制台 `RealClientIpHeaderName`，当前为 `X-Real-IP`，旧的 `ali-real-client-ip` 保留兜底），**且该值必须能解析成 IP 字面量**才采信，否则退回 Elysia/Bun `server.requestIP(request)` 的真实 peer。X-Forwarded-For 可被客户端任意伪造，任何场景都不得参与分桶。**采信该标头的前提是源站只被边缘回源访问**——默认监听 `0.0.0.0`，前提是部署侧（安全组或端口发布范围）保证的，应用内排除不了，所以 peer 与全局两层必须保留，护栏回归与验收命令见 [Deployment 的「回源身份成立的前提」](Deployment.md)。限流器必须是三层桶：单客户端桶（默认 60/min）、回源 peer 桶（默认取单客户端的十倍，封顶伪造标头自造新桶的滥用路径）、全局桶；无 socket 的请求共用 unknown 桶。标头名是代码与 ESA 控制台的同步契约，改名必须两侧同批；隧道与打点两条限流口径不得各自漂移。
-
-### 10.5 Sentry 全栈异常托管与服务端隧道 (Sentry & Tunnel Gateway)
-- **统一异常捕获与托管**：前端基于 `@sentry/react` 与 `Sentry.ErrorBoundary` 全局托管组件崩溃与异步未处理异常；服务端基于 `@sentry/bun` 全局托管未捕获 Promise、同步异常与 HTTP/WS 500 级故障。
-- **服务端隧道转发 (Sentry Tunnel)**：前端 Sentry 上报统一通过后端路由 `/api/monitoring/sentry` 中转。服务端路由对 Envelope Header 的目标主机与 Project ID 执行白名单鉴权，杜绝开放式代理（Open Relay）与内网 SSRF 探测，减少直接请求 Sentry 摄取端点被拦截的影响。浏览器到后端跨域，不能把该路由称为已启用的前端同源网关；部署链路见 [Deployment](Deployment.md)。
-- **上游状态码不透传给浏览器**：隧道只保留调用方确实要据此决策的两类信号——429（该退避）与 5xx（上游不可用），其余（400/401/403/404/413）一律折叠成 502 + `UPSTREAM_REJECTED`。原样回吐等于向任意匿名调用方确认「这个 DSN 被吊销了 / 这个项目不存在」，那是 Sentry 侧的内部结论。上游 429 时按 §12.7 必须带 `Retry-After`：优先转达上游值（封顶 120 秒，防止荒谬值把前端钉死）并原样转达 `X-Sentry-Rate-Limits`，上游没给就退回本地窗口剩余时间——SDK 收不到退避信号只会按自己的节奏反复撞墙。
-- **标准环境变量支撑**：前端通过 `VITE_SENTRY_DSN` 注入客户端上报凭据；服务端通过 `SENTRY_DSN` 与 `SENTRY_ALLOWED_PROJECT_IDS` 注入服务端凭据与隧道校验白名单。现有标准 OpenTelemetry（`OTEL_EXPORTER_OTLP_*`）与 EventLogger 继续保障对局事件落盘审计与双轨观测。
-- **心跳只由生产实例上报，且间隔必须收敛于 Monitor 判定裕度内**：服务端 Cron Monitor（`bakagame-server-heartbeat`）排程为 `*/5 * * * *`、`checkin_margin` 为 2 分钟，即只在 `[T, T+2min]` 窗口内收到 check-in 才判定为按时；窗口之间（`T+2min` 至 `T+5min`）不存在任何容错区间。服务端心跳上报间隔（`SERVER_HEARTBEAT_INTERVAL_MS`）**必须不大于判定裕度**，且排程、判定参数与 Monitor slug **必须同居同一真相源模块**、随 check-in 一并 upsert；严禁凭“留出网络与调度余量”的直觉把间隔拉长到接近排程周期，否则必然跨过窗口间隙被误报为 `missed check-in`。Sentry 的 Cron Monitor 按环境分别判定，因此 `captureServerCheckIn` 只允许 `production` 环境发出：本地 dev 实例在线时会顶替生产心跳掩盖真实停机，dev 停跑后又按其环境持续误报。
-- **客户端异常过滤必须覆盖全部浏览器引擎文案，并覆盖浏览器级良性中断**：客户端 `ignoreErrors` 严禁只覆盖单一引擎文案；Chromium 在标签页隐藏、导航打断或新旧过渡交叠时会中止 View Transition 并抛出 `Transition was aborted because of invalid state` / `Transition was skipped`，导航本身照常完成，与网络类失败同属必须过滤的良性中断。网络与模块加载失败必须同时覆盖 Firefox（`NetworkError when attempting to fetch resource.`）、Safari（`Load failed`）、Chromium（`Failed to fetch dynamically imported module`、`Loading chunk N failed`）与 WebKit（`Importing a module script failed`）四套文案，否则同一类失败会因引擎措辞不同而漏网。带锚点的短文案（如 Safari 的 `Load failed`）必须加 `^` 锚定，严禁裸用裸串造成 `Image load failed` 之类无关文案被误伤。这类失败已由自愈重载兜底，不得重复上报污染真实缺陷信号。
-- **瞬时外部干扰必须自愈，且重载严格限流**：分块加载失败与第三方扩展改写 DOM 破坏 React 父子节点不变量（`removeChild`、`insertBefore`）同属"外部干扰、重载即恢复"，**必须**自动重载让玩家无感恢复，严禁只把玩家丢在错误兜底页。但**所有**自动重载必须经由统一的会话级一次性门闩（`reserveSessionRecovery`）放行：同一浏览器会话内同一恢复点位只允许重载一次，杜绝真实缺陷引发无限重载循环；浏览器禁用存储时必须安全拒绝放行并按原样抛出真实错误，严禁把存储异常伪装成加载失败，也严禁各处自行裸写 `sessionStorage` 判定。
-- **协议层错误应答是数据，严禁上报为异常事件**：WebSocket 客户端（`WebsocketClient`）收到的服务端 `error` 包承载的是可预期的业务拒绝（`ROOM_NOT_FOUND`、`PASSWORD_INCORRECT`、`INVALID_PHASE`、`NO_ACTIVE_ROUND` 等），与断连、超时、未连接同属正常协议应答，一律只记录指标与日志；**只有**非协议错误体（真正的 Error）才允许 `captureException`。严禁把可预期的拒绝原样包装成 `new Error()` 上报 —— 否则玩家每输错一次房间密码都会伪造一条缺陷记录。判定必须基于唯一的类型守卫 `isProtocolError`，严禁各处重复实现形状探测。
-- **模块脚本解析失败按栈帧剔除，禁止按文案猜测**：浏览器拉到的模块脚本若响应体不是合法 JS（边缘节点返回的畸形或占位响应），会以 `SyntaxError: Unexpected token '{'` + 内建 `parseModule` 帧的形式抛出。该文案与 JSON 解析错误同形，`ignoreErrors`（仅匹配异常文案）无法精确表达，必须改用事件组装阶段的 `beforeSend` 判定：仅当异常类型为 `SyntaxError` **且** 栈帧中出现 `parseModule` 时才丢弃。严禁为图省事直接按 `Unexpected token` 之类裸文案过滤，那会连同真实的数据解析缺陷一起吞掉。
-- **严禁客户端引入性能剖析插件 (browserProfilingIntegration)**：W3C 与 Chromium 对 JS Self-Profiling API（`window.Profiler`）要求顶级文档必须显式携带 `Document-Policy: js-profiling` 响应头。由于前端基于 EdgeOne Makers 静态托管与 Vite 运行，在缺少该响应头的情况下，初始化 `browserProfilingIntegration` 会被浏览器引擎直接拦截并在控制台抛出不可消除的 `Document policy violation: js-profiling is not allowed in this document.` 策略违规告警，且该插件会因实例化失败而全局禁用。前端性能观测统一以 Sentry Spans（分布式追踪，基于 `browserTracingIntegration` 与 `withClientSpan`）为唯一真相源，严禁在客户端重新引入性能剖析插件与 `profilesSampleRate`。
-
-### 10.6 绝对凭据隔离与防私有服务及密钥泄漏铁律 (Zero-Secrets & Credential/Mirror Isolation Invariant)
-- **严禁向 Git 仓库提交真实凭据与私有域名**：无论属于公钥、私钥、Token、项目标识（包括 Sentry DSN、API Token、网易云 Cookie、账号密码、第三方 Secret 以及真实 Project ID），还是开发者个人或自建的私有服务端点（如自建 Bangumi 图床镜像、私有反向代理域名、内网穿透与自建 API 地址），一律绝对严禁写入被 Git 追踪的任何文件。
-- **示例文件与测试用例全量 Dummy 化与安全缺省**：所有 `.env.example`、文档示范及单元测试代码，必须且只能使用通用的纯虚构占位符（如 `https://examplePublicKey@o000000.ingest.sentry.io/0000000`、`100001`、`dummy-token`、`https://mirror.example.com`）或留空安全缺省值（如 `BANGUMI_IMAGE_SOURCE=`），严禁粘贴任何真实环境的 DSN、实际项目标识与私有镜像域名。
-- **私有凭据与自建服务单一物理隔离**：真实配置必须且只能存在于被 `.gitignore` 严格忽略的本地私有 `.env`、`.env.local` 文件或云原生容器平台环境变量中。代码默认值与 Fallback 严禁携带任何现网项目标识或自建私有域名。
-- **本地未推送提交泄漏必须立即净化提交历史**：若在本地尚未推送到远端的提交中误写入了私有凭据或私有域名，严禁通过仅仅追加一个覆盖提交草草掩盖，必须在分支推送前通过变基（Rebase）彻底净化未推送提交历史，从 Git 对象树根源消灭泄露痕迹。
-
-## 11. 平台与多游戏平等架构契约 (Multi-Game Equal Status Architecture Contract)
-
-在 BakaGame 平台中，所有小游戏（包括谁是卧底 `WhoIsFaker`、猜歌达人 `SonGuessr`、`CEE` 等）具有严格平等的架构地位。严禁将任何单一游戏作为“平台核心/宿主”而将其他游戏贬为“二等公民或附加插件”。
-
-### 11.1 共享模型与协议单向无环分层 (Acyclic Shared Contracts)
-- **分层边界与单一真相源**：
-  1. **平台通用核心层 (`Server/src/shared/Protocol.ts`, `Model.ts`)**：仅承载跨所有游戏通用的数据结构与基础设施契约（如 `ClientEnvelope` 通用信封、`AckPacket`、`ErrorPacket`、`EventPacket`、`StateSyncPayload`、`ROOM_ID_TEST_MODE`、`isValidRoomId`、`RoomVisibility`、`PlayerMembership`、`ChatMessage`、`ConnectionRecord`）。
-  2. **游戏专属领域层 (`Server/src/shared/{GameName}.ts`)**：每个小游戏拥有独立、对等的模型契约文件（如 `WhoIsFaker.ts`、`SonGuessr.ts`、`CEE.ts`）。各个游戏领域层只能单向依赖平台核心层，严禁游戏领域契约之间产生跨游戏横向依赖。
-  3. **统一入口层 (`Server/src/shared/Index.ts`)**：作为 `@bakagame/shared` 的总门面，对等汇集并导出 `Model`、`Protocol` 以及各个子游戏的领域模块。
-- **消除信封与数据包格式的重复定义**：所有游戏的客户端指令信封联合体（如 `WhoIsFakerClientMessage`、`SonGuessrClientMessage`）必须统一基于平台通用的泛型信封 `ClientEnvelope<TType, TPayload>` 进行特化，严禁在各自业务契约中重新手写同构的信封接口。
-
-### 11.2 传输层与协议解析对称性 (Symmetrical Transport & Message Parsing)
-- **核心封包工具剥离 (`Server/src/transport/Packets.ts`)**：
-  - `createAck`、`createErrorPacket`、`createEvent` 属于平台通用传输工具，必须收敛于纯粹的 `Packets.ts`。严禁任何子游戏服务反向引入掺杂其他游戏解析逻辑的协议文件。
-- **解析器与路由入口对称**：
-  - 每个子游戏拥有独立的解析器：`WhoIsFakerProtocol.ts` 导出 `parseWhoIsFakerMessage`，`SonGuessrProtocol.ts` 导出 `parseSonGuessrMessage`。
-  - 网关路由（`App.ts`）对称消费各游戏的专用解析器，并以平等的路由前缀（如 `/api/whoisfaker/ws` 与 `/api/songuessr/ws`）挂载独立的 WebSocket 会话。
-
-### 11.3 服务编排与依赖注入对等性 (Equal Service Orchestration & Dependency Injection)
-- **领域服务命名与单一真相源**：
-  - 服务端领域服务统一由具名核心实体独立提供（由 `WhoIsFakerService` 与 `SonGuessrService` 严格对齐），坚决杜绝任何一方使用泛化的 `RoomService` 或建立过渡期兼容导出别名。
-  - 应用依赖定义（`AppDependencies`）与构造器返回值中，`whoIsFakerService` 与 `sonGuessrService` 具有完全一致的一级依赖注入地位，坚决杜绝 `songGuessrService` 或 `roomService` 等双轨冗余别名字段。
-  - 系统级探针路由（`systemRoutes`）在聚合统计与健康巡检时，平等读取并汇总各个游戏服务的运行快照。
-
-### 11.4 客户端组件复用与表现层对等契约 (Equal Component Architecture & Zero Cross-Game Infiltration)
-- **跨游戏交互基建强制提升至 `common/`**：凡是涉及两个及以上游戏同构的核心交互组件（如聊天面板 `ChatPanel`、玩家状态胶囊徽章与行布局基底 `PlayerStatusPill`、玩家分组标题 `PlayerGroupTitle`、表情包选择器 `EmojiPicker`、候选玩家网格与区块小标题 `CandidateGrid`/`SectionHeader` 等），**必须且只能**提升至 `Client/src/components/common/`，通过解耦的 Props 与回调注入驱动数据，严禁直接硬编码耦合任何单个游戏的专属 Store。提升后仍存的表现差异由**必填**变体 Prop 逐调用点显式声明，不得留下静默的缺省分支——例如 `CandidateGrid` 的 `nameWrap` 区分卧底的截断与猜歌的换行，两者对网格最小内容宽度的影响不同，统一其一都会挪动另一方的布局。各游戏自身保留候选的筛选口径与提交回调，共享组件不感知 Store。
-- **严禁游戏领域跨目录横向依赖 (Zero Cross-Game Infiltration)**：任何游戏专属子目录（如 `components/whoisfaker/` 与 `components/songuessr/`）之间，**绝对严禁**产生横向交叉导入（例如严禁猜歌组件从 `whoisfaker/` 导入 UI 组件、布局或样式常量）。所有通用能力必须且只能由 `components/common/` 向上提供。
-- **目录命名与组件命名绝对平等 (Equal Namespace & Symmetrical Naming)**：
-  1. **目录拼写严格单一真相源**：游戏组件目录必须遵循 `Conventions.md` 约定的全小写单一规范（如统一使用 `components/songuessr/`，严禁拼写漂移如 `songguessr`）。
-  2. **消除命名特权与二等公民双标**：在各游戏的专属子目录内，组件必须遵循对等的命名法则（如各自命名为 `PlayerList.tsx`），严禁一方霸占无前缀基础短名，而另一方被强加冗余的游戏前缀（如 `SongPlayerList`）。
-  3. **全局基础 UI 容器去特定业务耦合**：全局通用弹层与容器组件（如 `Toast.tsx`）严禁被单一游戏独占无前缀基础名，且严禁基础 UI 组件反向依赖特定业务 Store。
-- **系统消息与阶段提醒样式标准**：聊天流中的系统提示与阶段流转通知，统一采用**无背景纯文本居中展示**（`min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground`），坚决杜绝嵌套灰色胶囊药丸背景（`rounded-full bg-muted/40`），保持全站纸质复古质感与通透排版。
-
-## 12. 边界情况与跨环境适应性工程铁律 (Environment & Edge Cases Invariants)
-
-代码必须兼具本地单机开发、多时区全球用户访问、移动端局域网联机、生产多容器编排与大负载边缘网关的跨环境适应性，杜绝“本地开发良好、生产部署爆雷”的隐形缺陷。
-
-### 12.1 时区与时间模型不可变量 (Timezone Invariants & ISO-8601 Standards)
-- **服务端日志与接口时间全量标准化**：服务端控制台日志、持久化记录及 HTTP/WebSocket 接口下发的时间戳，必须严格锁定标准 ISO-8601 UTC 格式（`toISOString()`）或 UTC 毫秒时间戳。严禁使用 `new Date().getHours()` 等裸本地时区函数拼接无时区偏移的日志时间戳，消除跨地域多容器日志采集（Loki/ELK）乱序与时钟漂移。
-- **客户端业务时间显式锁定目标时区**：涉及账号有效期限、账务日、版本生效等业务日期展示时，禁止调用无参 `toLocaleDateString()`。必须通过 `Intl.DateTimeFormat` 显式锁定语言（如 `zh-CN`）与基准时区（如 `Asia/Shanghai`），防止跨时区客户端或不同操作系统语言导致有效日期偏移整天，并消除 SSR 两端 Locale 差异导致的水合崩溃。
-- **相对时间渲染水合保护**：在服务端渲染（SSR/SSG）或混合渲染架构下，动态相对时间计算节点（如 `formatRelativeTime`）必须在渲染标签上标记 `suppressHydrationWarning`，杜绝网络传输延迟引起的水合文本不一致。
-
-### 12.2 跨端非安全上下文与局域网韧性 (Non-Secure Context & LAN Play Resilience)
-- **非安全上下文 UUID 降级**：客户端信封 ID 与 Trace ID 生成严禁硬性假设存在 `crypto.randomUUID()`。在 HTTP 局域网访问（如移动端通过 `http://192.168.x.x` 接入主机联机对局）等非安全上下文（Non-Secure Context）下，必须提供符合 RFC 4122 v4 的伪随机降级生成算法，严禁抛出 `TypeError` 阻断对局。
-- **网关局域网网段放行**：服务端网关层（`App.ts`）的来源校验必须对私有局域网网段（RFC 1918：`192.168.0.0/16`、`10.0.0.0/8`、`172.16.0.0/12`）予以放行，保障真机面对面局域网联机体验。
-- **客户端地址归一化防双斜杠**：前端根据环境变量构建 WebSocket/HTTP 地址时，必须正则剥离基准地址末尾的所有斜杠（`.replace(/\/+$/, "")`），防止拼接产生 `//api` 路径，避免严格反向代理（Nginx/Cloudflare）返回 404 或因不支持 301/308 重定向导致长连接握手失败。
-
-### 12.3 容器网络与部署寻址解耦 (Container Network Binding & Path Decoupling)
-- **监听网卡与公开地址解耦**：服务端内部套接字绑定主机（`serverListenHost`）必须与对外公开地址（`SERVER_URL`）解耦。在容器化环境中默认监听 `0.0.0.0` 全网卡，杜绝仅绑定 `127.0.0.1` 导致外部 Ingress 或 Docker 端口映射连接被拒（`Connection refused`），并支持 `SERVER_LISTEN_HOST` 覆盖。
-- **环境文件寻址必须基于模块定位**：本地持久化介质（Bangumi 数据集、enrichment 缓存、迁移目录、文档导出路径等）默认必须基于当前模块文件路径（`import.meta.dir`）进行稳定相对寻址，杜绝依赖不可控的 `process.cwd()`；需要外挂数据卷的介质提供标准环境变量（如 `BANGUMI_ENRICHMENT_PATH`）覆盖。
-- **环境变量强断言快速失败**：启动期解析环境变量（如 `SERVER_PORT`）时必须校验合法范围（1~65535），非法或空输入立即抛出 `AppError("CONFIG_ERROR", ...)` 快速中断退出，严禁静默回退为 0 导致随机占用系统临时端口。
-
-### 12.4 跨域预检完整性与大载荷防 OOM (CORS Preflight & OOM Defense)
-- **跨域 HTTP 方法与追踪头对称开放**：反向代理与全局 CORS 配置必须对称覆盖所有业务端点的方法（`methods: ["GET", "POST", "OPTIONS"]`），并将分布式追踪头（`allowedHeaders: ["content-type", "x-trace-id"]`）纳入预检放行，严防生产前后端分域部署时遥测打点被静默拦截。
-- **WebSocket 协议层单帧硬上限**：WebSocket 网关必须显式配置单帧载荷上限（`maxPayloadLength: 256 * 1024`，256KB），杜绝恶意攻击者单帧灌入超大包耗尽边缘容器内存。
-- **HTTP 请求体全局硬上限与 WS 同口径**：Elysia 1.4.30 无 `maxBodySize`，HTTP 侧只能用 Bun 原生 `maxRequestBodySize`（见 `HTTP_MAX_REQUEST_BODY_BYTES`，1MB），缺省的 128MB 形同不设。超限由运行时直接回 413 空响应体、不进业务解析，因此取值必须留足最大合法载荷的余量（Sentry 隧道信封 256KB、云同步设置 32KB），并在 `test/App.test.ts` 保留 413 回归。
-- **WebSocket 握手配额两层都要卡**：`.ws()` 的 `upgrade` 钩子必须在 Origin 与身份解析之后占名额（`transport/WsHandshakeQuota.ts`），在途连接数与新建速率各一道——只卡速率能被「每分钟开一条长期持有」绕过，只卡在途数能被反复开合绕过。桶键取 `resolveClientIp` 的来源身份，伪造该标头自造新桶由回源 peer 的十倍额度封顶；拒绝必须 **throw**（`RATE_LIMITED` → 429），因为 upgrade 钩子的返回值同样被 Elysia 忽略。名额必须在 `close` 钩子归还，且归还不依赖业务连接注销成功。
-- **监控上报请求体 Schema 强校验**：遥测打点接口必须配置严格的 Elysia 请求体 Schema，限制消息与嵌套元数据长度；脱敏函数 `redactData` 必须包含最大递归深度保护（`maxDepth = 5`），杜绝深层或循环引用引发栈溢出。
-- **OTLP 链路导出失败不丢数据、有限指数退避重试与有界淘汰指标契约**：OTLP 导出器（`OtlpExporter`）必须设定固定缓冲队列上限（如 500 条，积压溢出淘汰最旧数据，准确统计 `droppedCount` 指标）；严格校验上游响应 `response.ok`，在遇到 5xx/429 或网络异常时未发送批次必须安全回退至队列头部，杜绝静默丢数据；基于连续失败次数引入有限指数退避重试（基础 1000ms，最大 30000ms），在退避窗口内拦截无效调用；导出过程挂载 `isFlushing` 飞行并发锁与 5s 网络超时中断，并在停机时提供排空契约。
-
-### 12.5 Sentry 服务端隧道与安全边界规范 (Sentry Tunnel & SSRF Defense)
-- **严格权威主机白名单**：Sentry 服务端转发隧道（`SentryTunnel.ts`）严禁使用 `host.includes("sentry")` 等模糊匹配。必须配置精确的官方权威摄取域名白名单（`*.ingest.sentry.io`、`*.ingest.us.sentry.io`、`*.ingest.de.sentry.io` 等）或显式配置的私有部署主机，彻底封堵 `sentry.evil.example` 等恶意 SSRF 攻击。
-- **严格协议、默认端口与路径校验**：隧道仅放行 `https:` 协议与 443 默认端口，杜绝探测内网非常规端口与明文未加密连接；上游目标路径必须强校验合法的 Project ID 正则格式（`/^\/([0-9a-zA-Z_-]+)$/`），杜绝任意路径代理穿透。
-- **载荷上限与错误脱敏**：隧道单次转发载荷严格限制为 256KB（超限快速返回 413），配置 5s fetch 超时中断与应用级滑动窗口限流；任何上游错误必须脱敏为通用安全响应（如 `502 Bad Gateway`），严禁向下游暴露内部网络拓扑与未处理异常堆栈。
-- **上游网络失败识别必须全运行时收口**：隧道判定上游失败时**严禁**只匹配 Node 的旧文案（`fetch failed`、`ECONNREFUSED`、`ENOTFOUND` 等）。必须同时覆盖 Bun（`Unable to connect. Is the computer able to access the url?`）与 undici（`UND_ERR_*`）的文案与 errno 编号（含 `ConnectionRefused`、`FailedToOpenSocket` 等首字母大写形态），并逐层下钻 `error.cause` 链，因为上游失败常被逐层包装。网络抖动与超时必须降级为 `logger.warn` 并返回 502 / 504；只有真正未预期的内部异常才允许 `logger.error` 与 500，否则一次上游抖动就会伪造出内部故障告警。
-
-### 12.6 状态持久化与自动保存阶段守卫规范 (Auto-Save Lifecycle & Phase Guards)
-- **非对局配置保存遵循等待阶段守卫**：客户端配置自动保存 Hook（`useAutoSave`）在处理房间设置、题目选项等非对局状态时，必须遵循 `phase === "waiting"` 阶段守卫。
-- **提交时读取最新房间与阶段**：阶段切换可能直接卸载设置树，旧回调的 `enabled=true` 不能证明仍允许保存。猜歌三类设置在实际发送边界读取 Store，只有当前快照房间与草稿归属一致且仍为 waiting 才提交；保留等待阶段的防抖及合法卸载刷新。
-- **视口脱离与组件卸载保护**：当配置组件离开视口、失焦或发生组件卸载（unmount）刷新残余队列时，若当前对局已开始（如已进入出题、描述、猜歌、投票、结算等阶段），必须立即终止残余的静默写提交，严禁用卸载时遗留的历史旧表单快照覆盖对局进行中的服务端权威状态。
-
-### 12.7 HTTP 错误信封与限流呈现契约 (Error Envelope & Rate-Limit Presentation)
-- **HTTP 失败只有一种形状**：`{ error: { code, message, traceId } }`，由 `transport/HttpErrorEnvelope.ts` 的 `httpError` 产出，与全局 `onError` 完全一致。路由内**严禁**回 `{ error: "字符串" }` 这类临时形状——调用方（含自动化 Agent）据此只能写一个错误解析器，出现第二种就得按路由分支。`/api/rpc/*` 是唯一例外：oRPC 客户端把 `{ json: { defined: false, code, status, message } }` 解成 `ORPCError`，该形状由 `rpcError` 产出，`code` 与 `message` 口径仍与全局信封一致。
-- **错误码与文案分工**：`code` 是大写下划线机器码（`RATE_LIMITED`、`PROJECT_NOT_ALLOWED`、`INVALID_IMAGE_PATH`），`message` 是给人看的中文。判定分支只认 `code`，不得解析 `message`。
-- **限流与配额拒绝必须回呈现头**：任何 429 一律带 `X-RateLimit-Limit`、`X-RateLimit-Remaining`、`X-RateLimit-Reset`（绝对秒）与被拒时的 `Retry-After`（`rateLimitHeaders`）。滑动窗口的 `Retry-After` 取「最早一次请求出窗」的剩余时间，不是整个窗口长度。缺少这些头时重试方只能靠指数退避猜：猜小了继续撞墙，猜大了白等。
-- **配额判定返回结论而不是布尔**：限流器的公开入口是 `consume(key): RateLimitVerdict`（`allowed / retryAfterMs / resetAt / limit / remaining`），`allow` 只是它的布尔投影。三层桶（单客户端 / 回源 peer / 全局）返回**第一个被拒的桶**，响应头的 `limit` 才说得出是谁的额度用完；只回 `boolean` 的写法拿不到这些头。
-- **自建 `Response` 也要带上追踪号**：返回 `new Response(...)` 会绕过 Elysia 写响应头的那一层，`x-trace-id` 在出口丢失，报障时日志与客户端对不上同一次请求。全局 `mapResponse` 负责把 `set.headers` 里缺失的项补到任何响应上（含 Better Auth、oRPC 透传回来的只读头响应）；响应体里的 `traceId` 仍由路由自己从 `set.headers` 取（`traceIdOf`）。回归见 `test/Account.test.ts` 的 503/429 断言。
-- **`mapResponse` 每个分支都必须显式返回原值**：Elysia 1.4.30 把钩子的 `undefined` 产出当成「响应就是这个 undefined」，而全局 `onError` 的信封恰好要经过本钩子——随手 `return;` 会让所有 4xx/5xx 变成**状态码还在、响应体是空串**，客户端与 Agent 都解析不出错误形状，日志里却一切正常。没有要补的头时返回 `responseValue` 本身；`responseValue` 不是 `Response`（对象、字符串、流）时同样原样返回。回归见 `test/App.test.ts` 对未匹配路径 404 响应体的断言。
-
-### 12.8 HTTP 出口收紧项与探针口径 (Response Hardening & Probe Surface)
-- **安全响应头只在一处登记**：`transport/SecurityHeaders.ts` 于全局 `onRequest` 写入 `set.headers`，再由 §12.7 的 `mapResponse` 补到所有自建响应上。**严禁**逐条路由自己加——新增路由默认不带收紧项就是静默回退，一处登记才覆盖得全（回归见 `test/SecurityHeaders.test.ts`）。
-- **CSP 放宽只允许给文档页**：`default-src 'none'` 会打死 Swagger UI，因此仅 `/openapi` 及其子路径退到 `frame-ancestors / base-uri / form-action` 三条；API 响应本身不返回 HTML，没有理由跟着放宽。放宽的是文档页自己的资源加载，不是接口。
-- **条件性收紧项按真实链路判定**：TLS 由边缘终结、容器内是明文，HSTS 只能在 `x-forwarded-proto` 首段为 `https` 时回；写死成「永远发」在未来出现明文内部域名时会踩坑。边缘不得剥离或改写这些头。
-- **由数据决定的 `content-type` 不得直回浏览器**：库里的 `content_type`、上游响应头都属于可被旁路写入的字符串，人工导入或旧数据误写 `text/html` 时会被按页面渲染。出口只认图片白名单，白名单外降级为 `application/octet-stream` 并保留 `nosniff`。
-- **探针分档**：`/livez`、`/readyz` 是负载均衡的契约，**不设额度**——扫爆它们会让 LB 误判摘流，后果比被扫更严重。`/health` 带业务量级，因此匿名只回一位有效数字的量级（1234→1000），精确值要求 `Authorization: Bearer <维护令牌>`（常量时间比较），并按来源地址限流。在线房间数、连接数这类量级不得无条件对外精确可读。
-
-## 13. 可测试性与验证
-
-业务模块通过参数注入时钟、随机源和网络驱动；纯业务状态机可从公开入口真实运行。测试的行为断言、状态驱动、夹具隔离、错误码和去重规则统一在 [Testing](Testing.md#测试编写与维护) 维护，执行范围见其验证矩阵。安全防护的专项证据要求仍见 §16。
-
-## 14. 外部依赖与出题链路性能铁律 (Upstream I/O Fan-out & Latency Invariants)
-- **禁止无界串行回源**：任何遍历候选再逐个回源上游的循环（番剧候选、歌曲检索词、候选人歌曲）都必须同时具备**并发窗口**与**总调用预算**，严禁出现"N 个候选 × M 个检索词 × K 个结果"全串行的写法。该类写法会把单次出题拖到数十秒，直接撞穿客户端 10s 请求超时。
-- **无依赖的回源必须并行**：同一层级、彼此无数据依赖的上游调用（如同一曲目的多个检索词）必须用 `Promise.all` 并发发起，等待时间应接近单次往返而非累加。
-- **候选重试必须有上界**：自动出题挑选候选失败后的重试次数必须是显式常量并配不变量测试，缺省的 `while (pool.length > 0)` 等于把最坏延迟交给题库大小决定。
-- **可在检索结果判定的过滤必须前置**：会员可见性、热度阈值等能由检索结果字段直接判定的条件，必须在回源前过滤，严禁先 `getSong` 再丢弃；无法直接判定的（如歌单不带热度）退一步用最廉价的探针接口先判掉，然后才回源完整详情。
-- **预算必须按真实成本记账，且验证类回源必须逐首短路**：上游调用不能一律按「一次调用」计数——`getSong` 一次要拉详情、百科、热度、歌词、音频（约 5~6 个上游请求），与一次搜索成本差六倍以上，必须使用**独立预算常量**（如 `ANIME_SONG_SEARCH_BUDGET` 与 `ANIME_SONG_DETAIL_BUDGET`）。同时，候选验证必须按优先级逐个回源、首个命中即停止，**严禁为同一目标的多个候选并行拉取完整详情**（并行验证会把被丢弃候选的成本也付一遍）；仅**无依赖**的同层检索词才允许 `Promise.all` 并行。
-- **性能预算以常量形式导出并测试**：调用预算与候选上界等阈值一律定义为具名导出常量（如 `ANIME_SONG_SEARCH_BUDGET`、`ANIME_SONG_DETAIL_BUDGET`、`AUTO_ANIME_CANDIDATE_LIMIT`），并由不变量测试直接断言，防止后续改动悄悄放宽上限。
-- **长任务的客户端请求不得设超时**：耗时由上游决定的命令（如自动出题 `song.game.start` / `song.game.nextRound`）必须以 `timeout: 0` 发送并靠轮询轻量同步状态；**严禁用固定毫秒请求超时**，否则会制造「服务端仍在工作、客户端已提示失败」的假失败，并诱发用户重复触发。
-- **批处理候选必须先归一化再采样（等概率不变量）**：任何「通过筛选条件后取首个可用候选」的链路，若数据源本身带固定排序（按类型、按热度、按 relation_order），**必须先洗牌再截断**，严禁按原顺序取首个；否则单一类型会长期霸占全部结果。
-- **性能结论必须来自 Sentry 实测**：性能审查以 Sentry 的 `dataset=spans` 聚合（`p50/p75/p95(span.self_time)` + `count()`）为准，禁止凭代码直觉判断快慢；`transactions` 数据集在本项目可能为空，不要据此得出"没有性能数据"的结论。
-- **缓存严禁固瞬态失败为常态（Negative-Caching Invariant）**：缓存只负责消除**重复的确定性代价**，绝不能把"一次上游抖动"冻结成"一段稳定故障"。区分两类空结果：
-  - **确实不存在**（副歌缺失、百科无条目、检索无结果）：空结果按 TTL 正常缓存，用于稳定表达"上游暂时没有该数据"。
-  - **本可重试成功**（播放地址、临时授权态、限流期间的空响应）：**严禁缓存空结果**，取空即当次失败、下次回源重试（`cached()` 显式传 `cacheNegative: false`）。
-- **降级不得永久且必须留痕（Failover Must Be Recoverable & Observable）**：任何「本地快路失败即切到远端慢路」的降级开关，都必须同时满足三条，缺一不可：
-  - **可恢复**：降级只在**冷却期**内有效（如 `BANGUMI_LOCAL_RETRY_COOLDOWN_MS`），冷却结束必须重新探测快路；严禁用一个永不重置的布尔量把整个进程钉死在慢路上——一次瞬时抖动会让后续全部请求持续付慢路的代价。
-  - **可观测**：进入降级与恢复都必须 `warn` 出一条结构化日志（含错误码与冷却时长），且冷却期内不重复刷屏。快慢路的延迟差可达**两个数量级**，静默降级等于让这类退化在生产上完全不可观测。
-  - **可测试**：恢复语义必须由注入时钟的单测覆盖（降级 → 冷却期内不打扰快路 → 冷却结束且快路恢复即改回），不能只测"会降级"。
-- **降级判定只认快路专属故障码**：只有指向快路自身不可用的错误码（`BANGUMI_DATA_UNAVAILABLE` / `BANGUMI_QUERY_TIMEOUT`）才允许触发降级；业务性空结果（`BANGUMI_NO_SUBJECT` 等）必须原样抛出，否则会把"数据里确实没有"误判成"数据源坏了"并永久污染降级状态。
-  判据是"这一次空，下一次是否可能非空"：是则不得缓存。任何"缓存了该值导致用户重试永远拿到同一结果"的现象都属于本类缺陷，必须为可重试取值补"首次取空、二次必须回源成功"的回归用例。
-- **缓存不得稀释出题随机性（Randomness Preservation Invariant）**：缓存层只允许缓存**上游原始数据**，严禁把派生出的随机选择结果（歌词切片、随机片段窗口、随机候选索引）写进缓存。随机性必须在**每次出题**重新采样，否则同一首歌会被永远钉在同一段歌词/同一段音频上，"随机出题"退化为"固定出题"。审查缓存命名空间时，凡是缓存对象包含随机选取窗口/偏移量的，一律视为缺陷。
-
-## 15. 前端工程化、架构分层与组件质量铁律 (Frontend Architecture, Clean Modularity & Component Quality Invariants)
-
-### 15.1 反巨型“上帝组件”与容器/展示组件分层 (Anti-God Components & Container/Presentational Separation)
-- **单文件行数硬约束与拆分阈值**：单个 React 组件 `.tsx` 文件行数严禁失控膨胀。当单文件行数超过 300 行时，必须主动审视职责分离；超过 500 行的“上帝组件”严禁并入主线。
-- **业务逻辑与平台副作用专用 Hook 下沉**：复杂音频切片调度、定时看门狗轮询、WebSocket 生命周期管理与会话重连，必须封装为专用 Custom Hook（如 `useAudioClipPlayer`、`useSongRoomLifecycle`、`useLobbySession`），严禁将网络订阅、音视频回放与视图 JSX 混杂在一处。
-- **阶段子视图物理拆分**：多阶段游戏房间必须拆分为独立的阶段组件（如 `WaitingPhase`、`GameStage`、`RoundResultPhase`、`SongSettingsPanels`），根页面组件（如 `SonGuessrRoomPage.tsx`）仅作为顶层路由容器（Container/Smart Component），只负责组装 Store 订阅与分发事件。
-- **基础控件复用**：命令使用标准 `Button`，连续数值使用标准 `Slider`；具体组件及整行交互例外见 [Design §6—§7](Design.md)。不在业务组件重写底层控件。
-
-### 15.2 状态机权威性与禁止全局 DOM 事件横向绕过 (State Machine Authority & Zero DOM Bypass)
-- **严禁利用全局 DOM 事件传递业务信号**：游戏阶段切换、倒计时超时与玩家动作，必须严格由服务端权威推送或全局 Store（Zustand）统一管理驱动。绝对严禁使用 `window.dispatchEvent(new CustomEvent(...))` 绕过状态机横向传递业务事件（如 `whoisfaker:phase-timeout`）。
-- **声明式超时与动作响应**：所有因时限触发的自动提交或阶段推进，必须基于全局 Store 中的阶段截止时间戳（`phaseTimedOutEndsAt`）声明式响应，确保组件随生命周期优雅解绑，杜绝因组件卸载或事件监听器漏注导致的死锁。
-
-### 15.3 React 19 渲染期纯洁性与 Effect 调度准则 (Render Purity & Non-Cascading Effects)
-- **严禁在 Effect 内部同步调用 setState**：严格遵循 React 官方《You Might Not Need an Effect》设计规范，严禁在 `useEffect` 主体中同步调用 `setState` 触发级联重渲染（`react-hooks/set-state-in-effect`）。
-- **异步调度与衍生计算**：必须将级联状态更新调整为基于 props/state 的实时纯计算衍生状态；需要同步外部系统时使用有明确生命周期和清理逻辑的 Effect。不得仅为绕过 lint 将 `setState` 包进零延时计时器，时序约束见 §8.3。
-- **严格遵循 Ref 访问规范**：严格遵守 `react-hooks/refs` 规则，严禁在渲染流程中读写 `ref.current`，保证组件渲染过程的纯洁性与可并发性。
-
-### 15.4 加载状态
-
-握手或异步列表首次返回前显示与真实卡片尺寸一致的骨架屏，不闪现假的“暂无房间”。组件与布局见 [Design §6](Design.md)；保留 `role="status"` 与可访问的加载名称。
-
-## 16. 安全防护必须可验证，禁止依赖未被测试覆盖的防护 (Verifiable Security Guardrails)
-
-审查中反复出现的失败模式不是「没写防护」，而是**防护写了却从未生效、也没人发现**。
-以下条目属强制约束：
-
-- **防护必须有对应用例，且用例要能真的失败**：被判定为「安全」的面，必须有断言「攻击请求被拒」的
-  用例；写完要用**变异验证**确认它确实会红（把防护改回旧写法，用例必须失败）。缺少用例且防护失效时，
-  任意站点可直连游戏后端。
-- **「代码里写了防护」不等于「防护在生效」**：验收必须发真实请求看响应（先对隔离的本地实例发 HTTP 请求或真实握手；生产探针仅用于已授权的上线验收），不能靠读代码推断。框架钩子的语义尤其要实测——Elysia `.ws()` 的 `upgrade`
-  钩子**返回值会被忽略**（`return { status: 403 }` 与 `return new Response(403)`
-  都不拦，任意 Origin 照样 101；`throw` 才拦得住）。凡依赖第三方钩子返回值做拒绝的地方，
-  必须先用最小复现验证语义，再写进业务代码。
-- **「握手成功」不等于「链路可用」**：WebSocket / 长连接类改动，握手返回 `101` 且 `Sec-WebSocket-Accept`
-  正确，只说明握手被接受，**不说明数据帧会被转发**。验收必须连上之后**再发一条真实命令、看有没有 ack**。
-  `101` 之后数据帧不通、业务全废的链路已经出现过，最终只能撤销。**同理，既有文档里的「已验证」也可能只验到了握手这一层，采信前先看它验了什么。**
-- **拒绝类响应不得走异常通道**：全局 `onError` 必须原样透传 `Response` 实例，否则业务里 `throw`
-  出来的拒绝（如 403）会被记成 500，既掩盖真实状态码，又把一次正常拒绝污染成错误日志与告警。
-- **共享可变状态必须按业务键分桶**：跨请求共享的会话级字段（如扫码登录的出口 IP 作用域）一律用
-  「业务键 → 值」的映射，禁止用单值字段 + 「当前/最后一个」语义。并发下会互相覆盖，
-  且会让「非本会话的请求」被该字段劫持。
-- **尝试配额必须在校验之前计数**：私密房密码按「连接 + 房间」限流，阈值统一取 `config/Constants.ts` 的
-  `JOIN_PASSWORD_MAX_ATTEMPTS` / `JOIN_PASSWORD_WINDOW_MS`。先计数、再比对，超限后正确密码同样回
-  `TOO_MANY_ATTEMPTS`；只在猜错时计数，猜中的那一次就绕过了限流，攻击者仍能区分成败。缺少密码只提示输入，不计数。
-  回归须覆盖「同一连接错到上限后正确密码被拒、其它连接不受影响、窗口过后恢复」，并用变异验证（计数挪回校验之后）确认会红。
-- **按连接计的配额必须有同房间的聚合额度**：键里带 `connectionId` 的额度会随连接数线性放大——开 N 条 socket 就有
-  N 份「每连接 5 次」，聚合上等于没限流。私密房因此还要一份只按 `roomId` 计数的额度
-  （`JOIN_PASSWORD_ROOM_MAX_ATTEMPTS`，CEE 侧 `CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS`，同为单连接额度的六倍），
-  计数顺序同样是先额度后比对。取六倍是给几个好友各自重试留余量，同时让词表爆破刷不动。
-  聚合额度按房间计数意味着有人可以刷爆额度把正当玩家锁在房门外，这是与「爆破不受限」之间的取舍：
-  窗口只有一分钟，房主改一次口令即可恢复，而口令被爆破是账号与对局数据的直接失守。
-- **限流桶键只取服务端稳定的身份，且键空间必须有上限**：两类键会把额度变成空气。其一是**会重新签发的凭据**——
-  CEE 原版房的 `session.token` 每次进房都新生成，按它分桶等于「离开再进来就送一轮新额度」，改成服务端分配的连接号后
-  重进不重置（回归 `test/CEEOriginalService.test.ts`；变异验证：把键改回 `session.token` 必须红）。其二是**无上限的键空间**——
-  来源地址标头与连接号都能被对方按需造新值，只回收过期键等于让对方决定本进程的内存。`SlidingWindowRateLimiter` 因此带
-  `maxKeys`（默认 10 000），满员时按「最久未被用到」挤掉一个键：少记一笔配额是可接受的降级，无界增长不是。
-  三层桶的单客户端与 peer 桶共用同一上限，全局桶只有一个键不受影响。
-- **口令在内存里也只留摘要**：三款游戏的私密房口令统一用 `Bun.password.hash`（argon2id）写成 `room.passwordHash`，
-  房间记录、快照与日志里不出现可读口令，对外只有 `hasPassword` 布尔。谁是卧底进一步从共享类型 `RoomSettings`
-  删掉 `password` 字段，让「把明文存进房间」成为编译错误，而不是靠测试兜住。摘要绑规范化后的值（谁是卧底走
-  `normalizeWord`，猜歌与 CEE 走 `trim`），入房比对前先规范化再 `Bun.password.verify`；回归须覆盖
-  「带多余空白的口令与规范化后的同一值等价、`a b` 与 `ab` 不等价、快照与大厅摘要不含口令」。
-- **算摘要跨 await 前要先占住房号**：`Bun.password.hash` 要几十到上百毫秒，房号检查放在它之前、写入放在它之后，
-  并发建房会互相覆盖同一个房间对象。口径是先 `rooms.set` 占号再算摘要，摘要失败当场 `rooms.delete` 撤销（CEE 已有），
-  入房侧同理：摘要比对回来先确认 `rooms.get(id)` 仍是同一份，房间已关闭就回 `ROOM_NOT_FOUND`，不得再写入席位。
-- **文档与生产漂移必须同步校正**：审查发现生产与文档描述不一致时（旧文档把已不可用的链路仍写成可用），
-  修问题的同一批改动里必须一并改文档，并写明验收命令，否则下一个人仍会按错误假设继续改。
-
+- **防护必须有对应用例，且用例要能真的失败**：被判定为“安全”的面必须有断言“攻击请求被拒”的用例，并用变异验证（把防护改回旧写法，用例必须变红）。
+- **“代码里写了防护”不等于“防护在生效”**：验收必须对隔离的本地实例发真实请求/真实握手；生产探针仅用于已授权的上线验收。框架钩子语义要实测（例如 Elysia `.ws()` 的 `upgrade` 钩子返回值被忽略，只有 `throw` 才能拦截）。
+- **“握手成功”不等于“链路可用”**：长连接改动必须在握手之后再发一条真实命令并看到 ACK。采信既有文档的“已验证”之前先看它验到了哪一层。
+- 拒绝类响应不得走异常通道：全局错误钩子必须原样透传 `Response` 实例，否则正常拒绝会被记成 500 并污染告警。
+- 跨请求共享的会话级可变状态必须按业务键分桶，禁止“当前/最后一个”单值字段。
+- **尝试配额必须在校验之前计数**（密码尝试等），否则猜中的那一次绕过限流；按连接计数的额度会随连接数线性放大，必须再有按资源（房间）聚合的额度，并接受“聚合额度可被刷爆”的取舍；回归要覆盖“错到上限后正确口令也被拒、其它连接不受影响、窗口过后恢复”。
+- **限流桶键只取服务端稳定身份，且键空间必须有上限**：会重新签发的凭据（重进即换新）和对方可按需造新值的键，都会让额度变成空气；限流器要有最大键数并按最久未用淘汰。
+- **口令在内存里也只留摘要**：私密房口令用慢哈希存摘要，房间记录、快照与日志不出现可读口令，对外只有“是否有密码”的布尔；让“把明文存进房间”在类型层成为编译错误；摘要绑规范化后的值，入房前先规范化再比对。算摘要要几十到上百毫秒，须先占住房号再算（见 §4.2）。
+- **文档与生产漂移必须同步校正**：发现文档与实际不一致时，在修问题的同一批改动里改文档，并写明验收方式。
