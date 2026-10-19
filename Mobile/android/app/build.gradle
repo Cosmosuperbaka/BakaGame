@@ -2,7 +2,11 @@
 // 经 MainActivity 的 bridge.registerPlugin 注册，不做独立 npm 插件包）。
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
-apply from: "../../node_modules/@capacitor/android/capacitor.gradle"
+// 不 apply @capacitor/android 里的脚本：7.x 的包里**没有** capacitor.gradle
+// （实测 7.4.0 与 7.6.9 都只有 capacitor/build.gradle），原先这行会让 Gradle 直接
+// 报 "Could not read script ... capacitor.gradle as it does not exist"，整个 APK 构建失败。
+// Capacitor 运行时的接入方式就在 settings.gradle 的 include ':capacitor-android'
+// 与下面 dependencies 里的 implementation project(':capacitor-android')，两处已齐。
 
 android {
     namespace 'website.baka.game'
@@ -48,7 +52,7 @@ android {
         release {
             minifyEnabled false
             // 没有密钥时产物保持 unsigned：Android Key Attestation 要求签名摘要匹配
-            // （见 README §7 与 Agents/ClientChannel.md），未签名的包只能拿 degraded 档
+            // （见 README §7 与 Server/docs/ClientChannel.md），未签名的包只能拿 degraded 档
             if (releaseKeystore) signingConfig signingConfigs.findByName('bakaRelease')
         }
     }
