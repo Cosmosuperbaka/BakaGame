@@ -14,6 +14,7 @@ import {
   isUnplayableAlbumTrack,
   resolveRecentSongWindow,
   SonGuessrService,
+  SUBMIT_SONG_TIMEOUT_MS,
 } from "../src/application/SonGuessrService";
 import {
   detectExplicitTrackKind,
@@ -5543,6 +5544,157 @@ describe("上线前 P0 修复回归", () => {
         payload: { keyword: "答案" },
       })
     ).rejects.toMatchObject({ code: "SPECTATOR_FORBIDDEN" });
+  });
+
+  test("出题人选题超时后退回选出题人并公告原因，提交尝试会顺延时限", async () => {
+    let now = 10_000;
+    let resolveSong!: (song: SongDetails) => void;
+    const pendingSong = new Promise<SongDetails>((resolve) => {
+      resolveSong = resolve;
+    });
+    const delayedProvider: MusicProvider = { ...provider, getSong: async () => pendingSong };
+    const service = new SonGuessrService({ musicProvider: delayedProvider, now: () => now });
+    const host = connection(service, "deadline-host");
+    const guest = connection(service, "deadline-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "出题人");
+    await execute(service, guest, {
+      id: "deadline-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "deadline-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "deadline-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: guestState.playerId },
+    });
+
+    const snapshot = () => lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const announced = () =>
+      snapshot()
+        .chat.filter((message) => message.system)
+        .map((message) => message.text);
+    expect(snapshot()).toMatchObject({ phase: "submittingSong" });
+
+    // 按到提交为止的慢上游不会被巡检弃题：时限从每次提交尝试重新起算
+    now += SUBMIT_SONG_TIMEOUT_MS - 1;
+    await service.runHousekeeping();
+    expect(snapshot().phase).toBe("submittingSong");
+
+    const submitPromise = execute(service, guest, {
+      id: "deadline-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    now += SUBMIT_SONG_TIMEOUT_MS - 1;
+    await service.runHousekeeping();
+    expect(snapshot().phase).toBe("submittingSong");
+    resolveSong(songs.answer);
+    await expect(submitPromise).resolves.toMatchObject({ roundNumber: 1 });
+
+    // 回合结束回到结算后再开一轮，出题人不动手才会超时
+    await execute(service, host, {
+      id: "deadline-give-up-host",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "deadline-next",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "deadline-choose-2",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    now += SUBMIT_SONG_TIMEOUT_MS;
+    await service.runHousekeeping();
+
+    const released = snapshot();
+    expect(released.phase).toBe("choosingSubmitter");
+    expect(released.pendingSubmitterPlayerId).toBeUndefined();
+    expect(released.submitterPrompt).toContain("没有在时限内选好歌曲");
+    expect(announced()).toEqual(
+      expect.arrayContaining([expect.stringContaining("没有在时限内选好歌曲")])
+    );
+  });
+
+  test("出题人断线或被移出时公告出题已中止，退回选出题人", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "abort-host");
+    const first = connection(service, "abort-first");
+    const second = connection(service, "abort-second");
+    await createRoom(service, host);
+    const firstState = await joinRoom(service, first, "首位出题人");
+    const secondState = await joinRoom(service, second, "次位出题人");
+    for (const client of [first, second]) {
+      await execute(service, client, {
+        id: `abort-ready-${client.record.id}`,
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+    }
+    await execute(service, host, {
+      id: "abort-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    const snapshot = () => lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    const announced = () =>
+      snapshot()
+        .chat.filter((message) => message.system)
+        .map((message) => message.text);
+
+    await execute(service, host, {
+      id: "abort-choose-first",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: firstState.playerId },
+    });
+    expect(snapshot().phase).toBe("submittingSong");
+    await service.unregisterConnection(first.record.id);
+    expect(snapshot()).toMatchObject({ phase: "choosingSubmitter" });
+    expect(snapshot().submitterPrompt).toContain("首位出题人 断线，出题已中止");
+    expect(announced()).toEqual(
+      expect.arrayContaining([expect.stringContaining("首位出题人 断线，出题已中止")])
+    );
+
+    await execute(service, host, {
+      id: "abort-choose-second",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: secondState.playerId },
+    });
+    expect(snapshot().phase).toBe("submittingSong");
+    expect(snapshot().submitterPrompt).toBeUndefined();
+    await execute(service, host, {
+      id: "abort-kick",
+      type: "song.room.kick",
+      roomId: "1234",
+      payload: { playerId: secondState.playerId },
+    });
+    expect(snapshot()).toMatchObject({ phase: "choosingSubmitter" });
+    expect(snapshot().submitterPrompt).toContain("次位出题人 已被移出");
+    expect(announced()).toEqual(
+      expect.arrayContaining([expect.stringContaining("次位出题人 已被移出，请重新指定出题人")])
+    );
   });
 
   test("P0-5 大歌单候选全部取不到音频时自动出题的回源次数不超过常量上界", async () => {

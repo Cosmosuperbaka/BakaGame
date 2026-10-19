@@ -632,6 +632,11 @@ function ChoosingSubmitterPhase({
   return (
     <div className="flex flex-col items-center gap-6">
       <PhaseHeader icon={UserCheck} title="指定出题人" />
+      {snapshot.submitterPrompt ? (
+        <p className="max-w-xl text-center text-sm text-muted-foreground">
+          {snapshot.submitterPrompt}
+        </p>
+      ) : null}
       {isHost ? (
         <div className="w-full max-w-xl space-y-5">
           {spectatorCandidates.length > 0 ? (

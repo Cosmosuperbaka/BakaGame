@@ -534,6 +534,11 @@ export interface SonGuessrRoomSnapshot {
   phase: SonGuessrPhase;
   roundNumber: number;
   pendingSubmitterPlayerId?: string;
+  /**
+   * 出题人失效退回「选出题人」的原因。这个阶段页面会收起选歌面板，
+   * 不写清楚为什么退回，房主会以为是页面自己跳的、玩家会以为房间卡住了。
+   */
+  submitterPrompt?: string;
   currentRound?: {
     roundNumber: number;
     submitterPlayerId: string;

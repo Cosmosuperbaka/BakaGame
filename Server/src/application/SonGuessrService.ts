@@ -189,6 +189,10 @@ interface SonGuessrRoomRecord {
   phase: SonGuessrPhase;
   roundNumber: number;
   pendingSubmitterPlayerId?: string;
+  /** 手动出题的选题截止：每次提交尝试都会顺延，过期后回到选出题人并在房间公告里说明。 */
+  pendingSubmitterDeadlineAt?: number;
+  /** 退回选出题人的原因，随房间快照下发给界面；重新指定出题人即清除。 */
+  submitterPrompt?: string;
   currentRound?: SonGuessrRoundRecord;
   roundSummary?: SonGuessrRoundSummary;
   finalScores?: SonGuessrScore[];
@@ -1236,6 +1240,14 @@ const ROOM_EXPIRING_WARNING_MS = 60_000;
 
 /** 音频就绪宽限期：超时仅强制置为可答题并启动倒计时，绝不扣减猜测配额。 */
 const AUDIO_READY_GRACE_MS = 15_000;
+/**
+ * 手动出题的选题时限。
+ *
+ * 出题人在这个阶段是全房唯一的推进者，房主也无法改选别人，因此闸门必须宽松到容得下
+ * 一次慢的上游回源（猜番解析最坏可达数十秒），又不能无限期挂着整个房间。
+ * 时限从「指定出题人」起算，每次提交尝试顺延，超时后自动回到选出题人。
+ */
+export const SUBMIT_SONG_TIMEOUT_MS = 180_000;
 /** 回合硬截止相对单次答题时长的裕量，用于兜住卡死的上游请求。 */
 const ROUND_HARD_TIMEOUT_MARGIN_S = 20;
 /**
@@ -1463,10 +1475,11 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.hostPlayerId === player.id && !this.isTestRoom(room)) {
       room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
     }
-    if (room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id) {
-      room.pendingSubmitterPlayerId = undefined;
-      room.phase = "choosingSubmitter";
-    }
+    this.releasePendingSubmitter(
+      room,
+      player.id,
+      `${player.name} 断线，出题已中止，请重新指定出题人`
+    );
 
     // 普通断线可能只是刷新或切到后台，不能因此把仍在进行的回合提前结算。
     // 显式离开和踢出会移除正式席位，并在各自路径重新检查回合完成状态。
@@ -1598,6 +1611,7 @@ export class SonGuessrService implements AdminRoomControl {
       ) {
         this.transferHostAfterDisconnect(room);
       }
+      this.expirePendingSubmitter(room, currentTime);
       this.settlePlayingRound(room, currentTime);
       this.publishRoomCalibration(room);
     }
@@ -1659,6 +1673,23 @@ export class SonGuessrService implements AdminRoomControl {
         this.publishLobby();
       }
     }
+  }
+
+  /** 出题时限到点：退回选出题人阶段并在房间公告里说明，免得全房以为页面自己跳回去了。 */
+  private expirePendingSubmitter(room: SonGuessrRoomRecord, currentTime: number): void {
+    const playerId = room.pendingSubmitterPlayerId;
+    if (room.phase !== "submittingSong" || !playerId) return;
+    const deadlineAt = room.pendingSubmitterDeadlineAt;
+    if (deadlineAt === undefined || currentTime < deadlineAt) return;
+    const submitter = room.players[playerId];
+    const target = room.settings.questionType === "anime" ? "番剧" : "歌曲";
+    this.releasePendingSubmitter(
+      room,
+      playerId,
+      `${submitter ? `出题人 ${submitter.name}` : "出题人"} 没有在时限内选好${target}，请重新指定出题人`
+    );
+    this.touch(room);
+    this.publishRoom(room);
   }
 
   /** 进行中的回合：先按人补音频就绪，再按作答单元判超时，最后按变化结算与广播。 */
@@ -1939,10 +1970,11 @@ export class SonGuessrService implements AdminRoomControl {
       room.hostReconnectDeadlineAt = undefined;
       this.reassignHost(room);
     }
-    if (room.phase === "submittingSong" && room.pendingSubmitterPlayerId === player.id) {
-      room.pendingSubmitterPlayerId = undefined;
-      room.phase = "choosingSubmitter";
-    }
+    this.releasePendingSubmitter(
+      room,
+      player.id,
+      `${player.name} 离开房间，出题已中止，请重新指定出题人`
+    );
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
 
     this.touch(room);
@@ -2291,10 +2323,11 @@ export class SonGuessrService implements AdminRoomControl {
       targetConnection.close(4003, "kicked");
     }
 
-    if (room.pendingSubmitterPlayerId === target.id) {
-      room.pendingSubmitterPlayerId = undefined;
-      room.phase = "choosingSubmitter";
-    }
+    this.releasePendingSubmitter(
+      room,
+      target.id,
+      `出题人 ${target.name} 已被移出，请重新指定出题人`
+    );
     if (room.hostPlayerId === target.id) this.reassignHost(room);
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
     this.touch(room);
@@ -2708,6 +2741,8 @@ export class SonGuessrService implements AdminRoomControl {
       this.ensurePlayersReadyToStart(room, automatic);
 
       room.pendingSubmitterPlayerId = undefined;
+      room.pendingSubmitterDeadlineAt = undefined;
+      room.submitterPrompt = undefined;
       room.currentRound = undefined;
       room.roundSummary = undefined;
       if (automatic) {
@@ -2809,6 +2844,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
 
     room.pendingSubmitterPlayerId = target.id;
+    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+    room.submitterPrompt = undefined;
     room.phase = "submittingSong";
     room.roundSummary = undefined;
     this.touch(room);
@@ -2824,6 +2861,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
 
     const submitterId = player.id;
+    // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
+    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
     const song = await this.options.musicProvider.getSong(songId, this.getSongCookie(room, songId));
     // 音乐接口是异步的，返回时出题人可能已经退出或被踢；不能再安装一个失去归属的回合。
     if (
@@ -2860,6 +2899,7 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     const submitterId = player.id;
+    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
     const anime = await provider.getSubject(subjectId);
     const resolved = songId
       ? await this.resolveSpecifiedAnimeSong(room, anime, songId)
@@ -3572,6 +3612,8 @@ export class SonGuessrService implements AdminRoomControl {
       startedAt: this.now(),
     };
     room.pendingSubmitterPlayerId = undefined;
+    room.pendingSubmitterDeadlineAt = undefined;
+    room.submitterPrompt = undefined;
     room.roundSummary = undefined;
     room.phase = "playing";
 
@@ -4067,9 +4109,27 @@ export class SonGuessrService implements AdminRoomControl {
     return this.beginManualNextRound(room);
   }
 
+  /**
+   * 出题人失效（断线、离房、被踢或选题超时）：退回选出题人阶段，并把原因写进房间公告。
+   * 只有当前待出题人能解除这个阶段，别人的断线不该把选题中的出题人踢下来。
+   *
+   * 这个阶段只有出题人能推进房间，界面又会自动收起选歌面板，不说明原因的切换在玩家眼里
+   * 就是「页面莫名回到选人」，房主也不知道该不该重选同一个人。
+   */
+  private releasePendingSubmitter(room: SonGuessrRoomRecord, playerId: string, reason: string) {
+    if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== playerId) return;
+    room.pendingSubmitterPlayerId = undefined;
+    room.pendingSubmitterDeadlineAt = undefined;
+    room.submitterPrompt = reason;
+    room.phase = "choosingSubmitter";
+    this.appendSystemMessage(room, reason);
+  }
+
   /** 人数不足以开局：退回等待阶段，两名玩家的准备状态清零。 */
   private fallBackToWaiting(room: SonGuessrRoomRecord) {
     room.pendingSubmitterPlayerId = undefined;
+    room.pendingSubmitterDeadlineAt = undefined;
+    room.submitterPrompt = undefined;
     room.phase = "waiting";
     this.resetReadyState(room);
     this.touch(room);
@@ -4156,6 +4216,8 @@ export class SonGuessrService implements AdminRoomControl {
       // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
       if (nextSubmitter) {
         room.pendingSubmitterPlayerId = nextSubmitter.id;
+        room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+        room.submitterPrompt = undefined;
         room.phase = "submittingSong";
       } else {
         room.phase = "choosingSubmitter";
@@ -4178,6 +4240,8 @@ export class SonGuessrService implements AdminRoomControl {
     room.automaticRoundLoading = false;
     room.phase = "waiting";
     room.pendingSubmitterPlayerId = undefined;
+    room.pendingSubmitterDeadlineAt = undefined;
+    room.submitterPrompt = undefined;
     room.currentRound = undefined;
     room.roundSummary = undefined;
     room.finalScores = undefined;
@@ -4551,6 +4615,7 @@ export class SonGuessrService implements AdminRoomControl {
       phase: room.phase,
       roundNumber: room.roundNumber,
       pendingSubmitterPlayerId: room.pendingSubmitterPlayerId,
+      submitterPrompt: room.submitterPrompt,
       currentRound:
         room.phase === "playing" && round
           ? {

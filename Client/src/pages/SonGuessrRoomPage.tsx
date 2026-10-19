@@ -212,6 +212,9 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             onPlayAudio={() => void playAudio()}
             onRetryAudio={retryAudio}
             onSelectSearchSong={async (songId, mode, extraId) => {
+              // 出题不设请求超时：回源取题（含歌词、音频与猜番解析）耗时由上游决定，
+              // 10 秒默认超时会把一次正常的慢提交报成「提交失败」，题目其实还在后端装配。
+              const options = mode === "submit" ? { timeout: 0 } : undefined;
               if (snapshot.settings.questionType === "anime") {
                 const payload: { subjectId: string; songId?: string } = { subjectId: songId };
                 if (mode === "submit" && extraId) {
@@ -219,12 +222,15 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 }
                 await sendCommand(
                   mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime",
-                  payload
+                  payload,
+                  options
                 );
               } else {
-                await sendCommand(mode === "submit" ? "song.game.submitSong" : "song.game.guess", {
-                  songId,
-                });
+                await sendCommand(
+                  mode === "submit" ? "song.game.submitSong" : "song.game.guess",
+                  { songId },
+                  options
+                );
               }
             }}
             run={runCommand}
