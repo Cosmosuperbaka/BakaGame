@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # 手动全量：两个壳作业受路径过滤控制，而客户端制品此前一次都没真正构建过，
+  # 需要一个能把它们强制拉起来跑通的入口（dispatch 没有变更集，见 changes 作业）。
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,12 +40,14 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      server: ${{ steps.filter.outputs.server }}
-      client: ${{ steps.filter.outputs.client }}
-      desktop: ${{ steps.filter.outputs.desktop }}
-      android: ${{ steps.filter.outputs.android }}
-      e2e: ${{ steps.filter.outputs.e2e }}
-      knip: ${{ steps.filter.outputs.knip }}
+      # dispatch 时没有变更集可比，force 步骤把六路一次性置为 true；
+      # 其它事件下 force 被跳过、输出为空，回落 paths-filter 的判定。
+      server: ${{ steps.force.outputs.server || steps.filter.outputs.server }}
+      client: ${{ steps.force.outputs.client || steps.filter.outputs.client }}
+      desktop: ${{ steps.force.outputs.desktop || steps.filter.outputs.desktop }}
+      android: ${{ steps.force.outputs.android || steps.filter.outputs.android }}
+      e2e: ${{ steps.force.outputs.e2e || steps.filter.outputs.e2e }}
+      knip: ${{ steps.force.outputs.knip || steps.filter.outputs.knip }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,6 +90,15 @@ jobs:
               - 'Client/**'
               - 'Server/**'
               - '.github/workflows/ci.yml'
+
+      - name: Force every path when dispatched manually
+        id: force
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -euo pipefail
+          for key in server client desktop android e2e knip; do
+            echo "${key}=true" >> "$GITHUB_OUTPUT"
+          done
 
   server:
     name: Server CI
@@ -348,8 +362,11 @@ jobs:
     # 但安卓真失败（failure/cancelled）就不发布任何东西。
     # 作业级 if 里读不到 secrets 上下文（GitHub 只给 github/needs/vars/inputs），
     # 所以凭证有没有只在各步骤里判，缺凭证时作业照常绿。
+    # 手动 dispatch 也允许发布：客户端制品此前一次都没出过包，需要一个能主动发版的入口。
+    # 仍然要求桌面作业成功，安卓真失败时两边都不发。
     if: >-
-      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && always() &&
+      ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && always() &&
       needs.desktop.result == 'success' &&
       needs.android.result != 'failure' && needs.android.result != 'cancelled' }}
     permissions:
