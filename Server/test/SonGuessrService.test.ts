@@ -3618,6 +3618,129 @@ describe("SonGuessrService", () => {
     ).toBeUndefined();
   });
 
+  test("「下轮加入」的席位只在再来一轮时生效，选人出题都不算换轮", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "seat-host");
+    const guest = connection(service, "seat-guest");
+    const other = connection(service, "seat-other");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "预约旁观的玩家");
+    await joinRoom(service, other, "另一位玩家");
+    for (const client of [guest, other]) {
+      await execute(service, client, {
+        id: `ready-${client.record.id}`,
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+    }
+    const seat = (playerId: string) =>
+      lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").players.find(
+        (player) => player.id === playerId
+      );
+
+    await execute(service, host, {
+      id: "seat-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "seat-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "seat-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+
+    // 局中预约：只在下一个轮次起点生效
+    await execute(service, guest, {
+      id: "seat-queue-spectator",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: true },
+    });
+    await execute(service, guest, {
+      id: "seat-give-up-1",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, other, {
+      id: "seat-give-up-2",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(seat(guestState.playerId)).toMatchObject({
+      membership: "active",
+      nextRoundMembership: "spectator",
+    });
+
+    // 点了再来一轮、进入选出题人，这一刻已经是下一轮
+    await execute(service, host, {
+      id: "seat-next-1",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    const switched = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(switched.phase).toBe("choosingSubmitter");
+    expect(seat(guestState.playerId)).toMatchObject({
+      membership: "spectator",
+      nextRoundMembership: undefined,
+    });
+
+    // 选出题人阶段再预约回来：本局选定出题人和提交题目都不能生效
+    await execute(service, guest, {
+      id: "seat-queue-active",
+      type: "song.player.setSpectator",
+      roomId: "1234",
+      payload: { spectator: false },
+    });
+    await execute(service, host, {
+      id: "seat-choose-2",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "seat-submit-2",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    expect(seat(guestState.playerId)).toMatchObject({
+      membership: "spectator",
+      nextRoundMembership: "active",
+    });
+
+    await execute(service, other, {
+      id: "seat-give-up-3",
+      type: "song.game.giveUp",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "seat-next-2",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(seat(guestState.playerId)).toMatchObject({
+      membership: "active",
+      nextRoundMembership: undefined,
+    });
+  });
+
   test("歌单 ID 解析支持纯数字、带参数 URL、Hash 路由与移动端链接", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "host");

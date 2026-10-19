@@ -190,6 +190,7 @@ BakaGame 由服务端把房主 Cookie 传给 API Enhanced 函数；客户端只�
 - 回合按「作答单元」记账：同队队员指向同一份记录，共用已用次数、猜中/投降结果与限时；个人、人机与出题人各自成单元。人机不入队，免得替队友耗掉次数。
 - 一人猜中全队结束，分数只记给猜中者（只有他进入 `correctPlayerIds`），队友状态为 `teamCorrect`；出题人奖励按猜中的单元数计。血战因此天然按队排名，出题奖励分母为开局猜题人数减去观战队友。
 - **未开血战时任一玩家猜对就结束整局**：`isRoundComplete` 在没有 `bloodMode` 时看到 `correctPlayerIds` 非空即返回真，其余单元不再有机会作答；只有开血战才继续到全部作答单元结束，猜中队只是提前退出竞争。
+- 「下轮加入」席位预约（`nextRoundMembership`）只在**轮次起点**结算：手动/自动开局（`startRound`）、`beginManualNextRound`、`beginAutomaticNextRound`、`finishGame` 回等待。点了「再来一轮」进入选出题人就已经是下一轮；`installRound`（选定出题人并提交题目）**不是**轮次起点，那里结算会让席位在回合中途被换掉，回合记录里凭空多出或少掉一个玩家，界面也会把「下轮加入 XX」显示成已经生效。
 - 旁观者被指定为出题人后照常操作音乐：`requireMusicQuota` 在 `membership === "active"` 之外放行 `room.pendingSubmitterPlayerId`，搜索、取详情与提交都不被拦；其余旁观者仍然拒绝 `SPECTATOR_FORBIDDEN`。
 - 音频就绪仍按人记录（`round.audioReady`），共享限时在首个队员就绪时锚定，之后不因其他队员就绪重开。超时按当时在线队员人数扣次数，不超过剩余次数；全队离线时只扣一次。
 - 出题人的队友本局观战（`roundStatus: "observing"`、私有状态 `teamObserver`）：与出题人同样看得到答案与全房猜测，不能作答，不计入回合完成判定。中途回来的队员并入队友的单元。

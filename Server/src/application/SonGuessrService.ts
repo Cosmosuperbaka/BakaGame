@@ -2703,6 +2703,8 @@ export class SonGuessrService implements AdminRoomControl {
         });
       }
 
+      // 开局同样是轮次起点：把只可能在离线期间留下的席位预约先结算，再按最终席位查准备。
+      this.applyQueuedMemberships(room);
       this.ensurePlayersReadyToStart(room, automatic);
 
       room.pendingSubmitterPlayerId = undefined;
@@ -3509,7 +3511,8 @@ export class SonGuessrService implements AdminRoomControl {
      */
     recentSongWindow = MIN_RECENT_SONG_WINDOW
   ): number {
-    this.applyQueuedMemberships(room);
+    // 席位预约只在「下一轮开始」的转移点生效（点再来一轮进入选出题人时），这里不应用：
+    // 选出题人与选歌已经属于本轮，交歌这一刻再把人切成旁观等于在本轮中间换席位。
     if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
       throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
     }
