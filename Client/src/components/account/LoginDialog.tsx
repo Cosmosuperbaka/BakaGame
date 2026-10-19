@@ -16,7 +16,7 @@ import { SettingTextField } from "@/components/common/room/SettingFields";
 import { IDLE_SEARCH_MS } from "@/hooks/UseIdleSearch";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { createQueryReuseCache, exactQueryKey, type QueryReuseCache } from "@/lib/QueryReuse";
-import { indicatorSlide, listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion";
+import { listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion";
 import { passkeyErrorMessage, passkeySupported } from "@/lib/Passkey";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
@@ -103,27 +103,6 @@ function LoginAvatar({
       onError={onFailed}
       className="h-20 w-20 rounded-full border border-border object-cover shadow-sm"
     />
-  );
-}
-
-/** 两步的进度点：当前一步是一枚长条，切步时沿 indicatorSlide 滑到另一格。 */
-function StepDots({ active }: { active: 0 | 1 }) {
-  return (
-    <div aria-hidden="true" className="flex items-center justify-center gap-1.5">
-      {[0, 1].map((index) => (
-        <span key={index} className="flex h-1 w-4 justify-center">
-          {index === active ? (
-            <motion.span
-              layoutId="login-step"
-              className="h-1 w-4 rounded-full bg-foreground/45"
-              transition={indicatorSlide}
-            />
-          ) : (
-            <span className="h-1 w-1 rounded-full bg-border" />
-          )}
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -298,7 +277,6 @@ function LoginDialogBody({
         </div>
 
         <div className="grid gap-4 p-6 pt-5">
-          <StepDots active={step.kind === "code" ? 1 : 0} />
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={step.kind}
