@@ -4,7 +4,7 @@
  * 条目来源：R5–R17 共 17 轮「收藏歌单随机抽样 → 疑似行人工分诊 → 修复」循环的实测沉淀，
  * 已按语义分组合并、去除重复条目与按轮注释。改动前须知：
  * - 新增条目必须同步补 `Server/test/NeteaseMusicProvider.test.ts` 用例，并跑
- *   `Agents/NeteaseMusicApi.md` 记录的探针与真实歌曲复测，细则见该文档；
+ *   `Server/docs/NeteaseMusicApi.md` 记录的探针与真实歌曲复测，细则见该文档；
  * - 部分高频词（`音乐`/`感谢`/`背景` 等）的**空格形态**是正常歌词，
  *   依赖 `SPACE_SPLIT_HEAD_DENY` 保留，删 DENY 条目前先看该表注释。
  */

@@ -69,7 +69,7 @@ type SelfCheckReport = {
 
 ## 3. 通道证明闭环（`bridge/baka-bridge.js`）
 
-协议原文 [`Agents/ClientChannel.md`](../Agents/ClientChannel.md) §2/§3。
+流程与判定约束见 [`Server/docs/ClientChannel.md`](../Server/docs/ClientChannel.md) §2/§3，字段与词表以代码为准。
 与桌面端的区别：**桌面壳在 Rust 里跑，移动端在桥接 JS 里跑**，原生插件只出密钥能力
 （`getKeyInfo` / `sign` / `selfCheck`），不碰接口、不持有票据。
 
@@ -103,7 +103,7 @@ type SelfCheckReport = {
 
 服务端按**冒号前的前缀**匹配 `Server/src/infrastructure/ClientChannel.ts` 的 `SELF_CHECK_WEIGHTS`，
 后缀（包名、su 路径）只进日志；未登记的前缀失败关闭 = 拒。所以下表**新增一项必须同步服务端**，
-否则正常设备直接进不了房。词表与归类以 `Agents/ClientChannel.md` §4 为准。
+否则正常设备直接进不了房。词表与归类以 `SELF_CHECK_WEIGHTS` 为准，判定原则见 `Server/docs/ClientChannel.md` §3。
 
 | 码 | 档位 | 含义 |
 |---|---|---|
@@ -241,7 +241,7 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
   `signature_digest_mismatch` → `CLIENT_UNTRUSTED`，链的其它结论一个都看不到。
 - 摘要不配 → 只记 `signature_digest_unverified` 并封顶 `degraded`（认包名防不住重打包自签）。
   配了之后，注册返回 `degraded` 且**没有**这一条标记，就说明摘要命中了。
-  口径与服务端判定见 [ClientChannel §5](../Agents/ClientChannel.md)。
+  口径与服务端判定见 [ClientChannel §3](../Server/docs/ClientChannel.md)。
 
 ### 7.3 换签名与商店的坑
 

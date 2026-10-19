@@ -7,7 +7,7 @@ import { normalizeAccountName, QQ_NUMBER_PATTERN } from "../../shared/Account";
  * 上一版走 QQ 空间网页扫码（ptlogin + `cgi_get_portrait.fcg`），QQ 侧风控会按 UA/来源吊销
  * 这种「非客户端」登录态（实测两次会话分别 ~4h / 89min 失效），查昵称随之全站停摆。
  * NapCat 是真正的 QQ 客户端（NTQQ 协议），`get_stranger_info` 拿到的 `nickname` 就是
- * 手机 QQ 资料卡上的昵称，不经过网页登录，因此不受那类风控影响。见 Agents/Account.md §4。
+ * 手机 QQ 资料卡上的昵称，不经过网页登录，因此不受那类风控影响。见 Server/docs/Account.md §4。
  *
  * 协议要点：
  * - `POST {apiUrl}/{action}`，JSON 请求体；鉴权头 `Authorization: Bearer <accessToken>`。

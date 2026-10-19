@@ -1,4 +1,4 @@
-//! 通道证明闭环（`Agents/ClientChannel.md` §2）：
+//! 通道证明闭环（`Server/docs/ClientChannel.md` §2）：
 //! 领挑战 → 用设备私钥**逐字节**签名 → 交签名换一次性 ticket → 交给页面的 `channelTicket`。
 //!
 //! 三条硬约束决定了这里的写法：

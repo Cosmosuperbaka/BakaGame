@@ -69,7 +69,7 @@ function useQQName(qq: string, qqNames: QueryReuseCache<string | null>): string 
 }
 
 /**
- * 身份区的圆头像：QQ 号合法即按该号取 qlogo（此时 QQ 号就是用户自己刚输入的，见 Agents/Account.md §4），
+ * 身份区的圆头像：QQ 号合法即按该号取 qlogo（此时 QQ 号就是用户自己刚输入的，见 Server/docs/Account.md §4），
  * 未填或取不到时是同一尺寸的占位圆，号一变新头像自原位缩放接手，读作「换了一张脸」而不是闪一下。
  */
 function LoginAvatar({
@@ -125,7 +125,7 @@ function LoginNotice() {
 }
 
 /**
- * 登录 / 注册弹窗（首次登录即注册，见 Agents/Account.md §1）。
+ * 登录 / 注册弹窗（首次登录即注册，见 Server/docs/Account.md §1）。
  *
  * 整块弹窗分两区：上方通栏身份区常驻——标题、圆头像、昵称与 QQ 号，两步共用，切步时身份不消失；
  * 下方操作区按步切换字段（QQ 号 → 验证码），新内容自后方推入、旧内容向前退出（`phaseSwap`）。

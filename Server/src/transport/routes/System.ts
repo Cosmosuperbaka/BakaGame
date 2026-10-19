@@ -162,7 +162,7 @@ export const systemRoutes = ({
     .post(
       "/api/monitoring/telemetry",
       async ({ body, headers, set, request, server }) => {
-        // 客户端身份取 ESA 托管转换写入的真实 IP 标头；缺失或非 IP 字面量时退回 peer，
+        // 客户端身份取 边缘层写入的真实 IP 标头；缺失或非 IP 字面量时退回 peer，
         // peer 桶单独封顶，避免标头被伪造成无限个新桶。
         const peerIp = server?.requestIP(request)?.address ?? "unknown";
         const clientIp = resolveClientIp(request.headers, peerIp);

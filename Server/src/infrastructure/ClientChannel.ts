@@ -6,7 +6,7 @@ import type { AndroidAttestationChecker } from "./AndroidAttestation";
 /**
  * 客户端通道证明：壳（桌面 / 移动）用设备私钥签服务端发的挑战，服务端验签后发一次性 ticket，
  * ws 握手凭票写入 `ConnectionRecord.clientChannel`。
- * 协议逐字定义在 `Agents/ClientChannel.md`，改这里必须同步改那份文档。
+ * 约束写在 `Server/docs/ClientChannel.md`，字段与权重以本文件为准；改契约必须同步壳与文档。
  */
 export const CLIENT_CHALLENGE_TTL_MS = 60_000;
 export const CLIENT_TICKET_TTL_MS = 30_000;

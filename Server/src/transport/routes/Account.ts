@@ -267,7 +267,7 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     globalMaxRequests: AVATAR_GLOBAL_MAX_REQUESTS,
   });
   // Better Auth 自带的按 IP 限流是关的（它只认 socket peer，反代后全站共享同一个 peer）。
-  // 这一层改按 ESA 写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
+  // 这一层改按边缘层写入的真实 IP 标头分桶，peer 桶只封顶伪造标头自造新桶的路径。
   const rejectOverQuota = (
     clientIp: string,
     peerIp: string | undefined,

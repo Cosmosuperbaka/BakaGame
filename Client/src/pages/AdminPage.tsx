@@ -71,7 +71,7 @@ function AdminTabs() {
   );
 }
 
-/** 管理后台（`/admin`，见 Agents/Design.md §7.4）：页面本身不设权限，数据全部经服务端按管理员身份校验。 */
+/** 管理后台（`/admin`，见 Client/docs/DesignGuide.md §7.4）：页面本身不设权限，数据全部经服务端按管理员身份校验。 */
 function AdminPage() {
   const navigate = usePageNavigate();
   const status = useAccountStore((state) => state.status);

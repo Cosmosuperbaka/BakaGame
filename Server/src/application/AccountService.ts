@@ -66,7 +66,7 @@ export class AccountService {
   });
   /**
    * 登录弹窗按 QQ 号回显昵称的配额：按客户端地址分桶。
-   * 这个接口不必发信就能拿到昵称，不限住就成了按号枚举昵称的入口（见 Agents/Account.md §4）。
+   * 这个接口不必发信就能拿到昵称，不限住就成了按号枚举昵称的入口（见 Server/docs/Account.md §4）。
    */
   private readonly nicknameLimiter = new SlidingWindowRateLimiter({
     windowMs: 60 * 1000,
@@ -230,7 +230,7 @@ export class AccountService {
     return (await this.findUser(userId))?.name ?? null;
   }
 
-  /** 账号昵称强制取自 QQ 昵称（见 Agents/Account.md §4），不可修改；这里只接受 QQ 号公开开关。 */
+  /** 账号昵称强制取自 QQ 昵称（见 Server/docs/Account.md §4），不可修改；这里只接受 QQ 号公开开关。 */
   async updateProfile(userId: string, input: { showQq?: boolean }): Promise<AccountProfile> {
     const patch: Record<string, unknown> = {};
     if (input.showQq !== undefined) patch.showQq = input.showQq;

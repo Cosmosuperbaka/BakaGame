@@ -133,7 +133,7 @@ signtool verify /pa /all <同一个文件>
 - **下载入口在首页右上角**（账号左边一枚「下载客户端」）：点开弹窗先选 Windows 还是 Android，
   再把这个平台的**安装包架构、构建日期、文件大小**标出来，玩家看清楚才给下载链。入口本身不写
   反作弊之类的前提——装不装由玩家自己判断。地址与元数据都来自服务端
-  `GET /api/client/packages`（逐条说明见 [Agents/ClientChannel.md](../Agents/ClientChannel.md)），
+  `GET /api/client/packages`（逐条说明见 [Server/docs/ClientChannel.md](../Server/docs/ClientChannel.md)），
   前端不写死日期与大小；`Client/src/lib/AntiCheatCopy.ts` 里那条常量只剩反作弊错误码文案在用。
 - **地址由服务端配置给**：`CLIENT_PACKAGE_WINDOWS_URL` / `CLIENT_PACKAGE_ANDROID_URL`，默认就是下面
   这两条 `cdn.baka.website` 的**固定别名**（不带版本号，永远指向最新，旧链接长期有效）；
@@ -212,7 +212,7 @@ POST {apiBase}/api/client/register
 
 ### 通道证明闭环（`attest.rs` + `bridge.rs`）
 
-协议原文 [`Agents/ClientChannel.md`](../Agents/ClientChannel.md) §2/§3。注册只解决「这台设备是谁」，
+流程与判定约束见 [`Server/docs/ClientChannel.md`](../Server/docs/ClientChannel.md) §2/§3，字段与词表以代码为准。注册只解决「这台设备是谁」，
 真正让服务端认这条连接的是这三趟往返，全部在 Rust 侧完成，页面只读一个字符串：
 
 ```text
@@ -279,7 +279,7 @@ POST {apiBase}/api/client/register
 也没有把它当作弊证据直接拒（非 Windows 构建可能是开发者自己圈的构建）。
 要改成硬失败只需在 `Server/src/infrastructure/ClientChannel.ts` 的 `SELF_CHECK_WEIGHTS` 里把它写成
 `"hard"`，**别靠改 id 名来解决**：改名等于换协议，两边都得同时抬最低版本。
-词表与归类以 `Agents/ClientChannel.md` §4 为准。
+词表与归类以 `SELF_CHECK_WEIGHTS` 为准，判定原则见 `Server/docs/ClientChannel.md` §3。
 
 新增 id 只能追加，不要改名——服务端与前端按字面量匹配。
 
@@ -354,5 +354,5 @@ WebView2 Runtime 与 Edge 的 `Application` 目录、`Common Files\Microsoft Sha
 - P2.4 要求的五个位置里，仓库根 `AGENTS.md`（已落地）与 `Client/public/llms.txt` 不在 `Desktop/` 内，
   `llms.txt` 那份条款需要另开改动。
 - `Desktop/` 要进 pnpm workspace 或加根级脚本转发，需要改 `pnpm-workspace.yaml` 与根 `package.json`。
-- 本次实际改了仓库文件，按 [Credits §3](../Agents/Credits.md) 应把模型署名加进
+- 本次实际改了仓库文件，按 [Credits §2](../Client/docs/Credits.md) 应把模型署名加进
   `Client/src/data/CreditsContent.ts` —— 受「禁止修改已有文件」边界限制未加，需要补一次。

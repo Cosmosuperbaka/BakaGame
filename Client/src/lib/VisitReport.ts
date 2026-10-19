@@ -1,7 +1,7 @@
 import { api, type ApiClient } from "@/lib/Api";
 
 /**
- * 访问统计上报（见 Agents/Account.md「访问统计」）：每次载入页面与切换板块各报一次。
+ * 访问统计上报（见 Server/docs/Account.md「访问统计」）：每次载入页面与切换板块各报一次。
  * `visitorId` 是本机随机值，服务端按天加盐摘要后才落库；接口不可用（含账号系统未启用）时静默忽略。
  */
 const VISITOR_KEY = "bakagame:visitor";

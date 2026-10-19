@@ -1,12 +1,12 @@
 import { isIP } from "node:net";
 
 /**
- * ESA 托管转换写入的回源请求头：真实客户端 IP。
+ * 边缘层写入的回源请求头：真实客户端 IP。
  *
  * 该标头由边缘节点在回源时添加，记录与节点建立 TCP 连接的客户端地址；
  * 客户端的 `X-Forwarded-For` 可任意伪造，而这个标头来自链路本身，因此是
- * 唯一可用的来源身份。标头名在 ESA 控制台可改（`RealClientIpHeaderName`），
- * 改名时必须同步这里，否则会静默退回 socket peer（ESA 节点的地址）。
+ * 唯一可用的来源身份。标头名在边缘配置里可改，
+ * 改名时必须同步这里，否则会静默退回 socket peer（边缘节点的地址）。
  */
 export const REAL_CLIENT_IP_HEADER = "x-real-ip";
 /** 改用自定义名称前的默认标头，保留一个发布窗口的兜底。 */

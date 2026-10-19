@@ -624,7 +624,7 @@ export const createApp = ({
           crypto.randomUUID(),
         128
       );
-      // ESA 反代后 socket peer 恒为边缘节点地址：日志里的来源身份必须取真实 IP 标头，
+      // 边缘反代后 socket peer 恒为边缘节点地址：日志里的来源身份必须取真实 IP 标头，
       // 否则每条 HTTP 操作日志都记成同一个节点地址，按来源排查就失效了。
       const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
       requests.set(request, { traceId, startedAt: performance.now(), clientIp });

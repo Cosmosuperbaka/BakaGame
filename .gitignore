@@ -87,6 +87,6 @@ tools/
 /tasks
 
 # 压测运行产物（逐跳 JSON 与合成 HTML）是本地测量数据，随 HEAD 与机器而变，
-# 只作当次交付材料；复现口径写在 Agents/Deployment.md，不进 Git。
+# 只作当次交付材料；复现口径见 Agents/Deployment.md §6，不进 Git。
 Server/tasks/
 /.qoder-credits

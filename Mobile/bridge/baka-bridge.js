@@ -3,7 +3,7 @@
 // 由 scripts/prepare-web.mjs 注入到 index.html 的 <head> 最前，classic 脚本、
 // 先于 Client 应用自身的 module 脚本执行，保证 window.__BAKA_CHANNEL__ 就绪时序。
 //
-// 契约（与服务端/桌面端逐字对齐，勿改字段名；协议原文见仓库根 Agents/ClientChannel.md）：
+// 契约（与服务端/桌面端逐字对齐，勿改字段名；约束见仓库根 Server/docs/ClientChannel.md）：
 //   window.__BAKA_CHANNEL__ = {
 //     clientType: "mobile", platform: "android", clientVersion: string,
 //     channelTicket: string,                              // 壳签好的一次性票据；无票时为空串

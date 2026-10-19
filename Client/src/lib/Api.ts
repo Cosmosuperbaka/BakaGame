@@ -53,7 +53,7 @@ export const apiErrorMessage = (error: unknown, fallback = "请求失败，请�
 };
 
 /**
- * Better Auth 端点的错误。开放面是登录、读会话、退出与通行密钥那几个端点（见 Agents/Account.md §2）；
+ * Better Auth 端点的错误。开放面是登录、读会话、退出与通行密钥那几个端点（见 Server/docs/Account.md §2）；
  * 服务端给的 `message` 多为英文，按 `code` 换成中文，未列出的码交给调用方兜底。
  */
 export class AuthRequestError extends Error {

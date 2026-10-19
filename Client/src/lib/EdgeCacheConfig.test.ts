@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
  * 表现为「发版后老用户拿到旧页面」或「静态资源反复回源」。这里把
  * 岗位约定固化成断言，改错配置时当场失败。
  *
- * 规则来源见 Agents/Deployment.md「边缘缓存策略」。
+ * 规则来源见 Agents/Deployment.md §5「边缘缓存策略」。
  */
 
 const configPath = path.resolve(__dirname, "../../edgeone.json");

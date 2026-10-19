@@ -43,7 +43,7 @@ function StatusSummary({ status }: { status: QQLookupStatus }) {
 }
 
 /**
- * QQ 昵称来源：管理员自建的 NapCat 实例（OneBot 11）查询注册用户的 QQ 昵称（见 Agents/Account.md §4）。
+ * QQ 昵称来源：管理员自建的 NapCat 实例（OneBot 11）查询注册用户的 QQ 昵称（见 Server/docs/Account.md §4）。
  * 站点不再持有 QQ 登录态，这里只做状态探测与批量刷新。
  */
 export function QQLookupPanel() {

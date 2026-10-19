@@ -34,7 +34,7 @@ export interface AuthOptions {
   passkeyRpId: string;
   /**
    * 建号时解析账号昵称（即该 QQ 号的 QQ 昵称）；返回 `null` 时拒绝建号。
-   * 昵称查询接口不可用时停用注册（见 Agents/Account.md §4）。
+   * 昵称查询接口不可用时停用注册（见 Server/docs/Account.md §4）。
    */
   resolveNickname: (qqNumber: string) => Promise<string | null>;
 }

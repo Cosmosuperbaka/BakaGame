@@ -42,7 +42,7 @@ export const bangumiImageRoutes = (images?: BangumiImageService) =>
         set.status = 400;
         return httpError("INVALID_IMAGE_PATH", "图片路径不合法", traceIdOf(set.headers));
       }
-      // 回源配额按来源地址分桶：ESA 反代后 peer 恒为节点地址，只能用真实 IP 标头。
+      // 回源配额按来源地址分桶：边缘反代后 peer 恒为节点地址，只能用真实 IP 标头。
       const peerIp = server?.requestIP(request)?.address ?? "unknown";
       const outcome = images
         ? await images.fetch(path, resolveClientIp(request.headers, peerIp))

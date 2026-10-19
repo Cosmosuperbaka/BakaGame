@@ -21,7 +21,7 @@
    备份为 `bangumi.sqlite.backup`（只留一份）。
 4. **CI 不生产数据、部署不碰数据**：原每周构建发布流程（`bangumi-data.yml`）已删除；部署只在
    服务器没有可用数据库时按上面的 R2 清单补发（已有库绝不替换，见
-   [Agents/Deployment.md](../../Agents/Deployment.md)「数据分发」）。
+   [Agents/Deployment.md](../../Agents/Deployment.md) §8「发布流水线与密钥」）。
 
 > R2 对象命名保持 `bangumi/bangumi-dataset.<sha12>.sqlite` 风格：文件名带内容哈希 ⇒ CDN 缓存键
 > 随内容变化；发布顺序永远是「先传对象、后传 manifest」，不存在「清单指向未就绪数据」的窗口。

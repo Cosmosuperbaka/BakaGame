@@ -3397,7 +3397,7 @@ export class NeteaseMusicProvider implements MusicProvider {
    *
    * 注意这里**不做房主/玩家的区分**：刷新只发生在限流之后，此时该 scope 的配额已经被计满，
    * 继续用同一个 IP 只会持续 405。房主凭证的 IP 由 `bindSessionIp` 固化的语义在限流兜底时
-   * 让位给可用性（变更缘由见 `Agents/NeteaseMusicApi.md`）。
+   * 让位给可用性（变更缘由见 `Server/docs/NeteaseMusicApi.md`）。
    */
   private rotateScopeIp(scope?: string) {
     if (!scope) return;

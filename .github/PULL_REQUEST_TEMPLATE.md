@@ -41,5 +41,5 @@
 - [ ] PR 标题符合 `type(scope): 中文摘要`，摘要不超过 12 个中文字（见 Agents/Commitment.md）
 - [ ] 修复缺陷时附带一条修复前会失败的回归测试（见 Agents/Testing.md）
 - [ ] 协议、模型或共享定义的变更已同步双端与相关文档
-- [ ] 替换旧规范时已删除旧实现，未保留兼容分支（见 Agents/Spec.md 第 4 条）
+- [ ] 替换旧规范时已删除旧实现，未保留兼容分支（见 Agents/Spec.md §2）
 - [ ] 用户可见的行为变化已在 `Client/src/data/changelog.json` 记录，或说明无需记录

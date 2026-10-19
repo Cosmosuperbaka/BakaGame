@@ -226,7 +226,7 @@ function FeedbackThread({
 }
 
 /**
- * 反馈弹窗：提交建议或问题，查看自己的反馈与管理员回复（只对登录用户开放，见 Agents/Account.md §7）。
+ * 反馈弹窗：提交建议或问题，查看自己的反馈与管理员回复（只对登录用户开放，见 Server/docs/Account.md §7）。
  * 打开详情即标记已读；有未读回复时默认落在「我的反馈」。
  */
 export function FeedbackDialog({

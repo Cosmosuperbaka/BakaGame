@@ -351,7 +351,7 @@ export interface SongSearchResult {
    *
    * 这是判定「这首到底是不是原版」的**唯一可靠信号** —— 文本维度（曲名、专辑名）
    * 在翻唱面前完全失效：翻唱常把曲名与专辑名都照抄原曲（实测《裸の勇者》里 Vaundy
-   * 原版与柯奇翻版的曲名、专辑名一字不差）。实测事故见 `Agents/BangumiApi.md`
+   * 原版与柯奇翻版的曲名、专辑名一字不差）。实测事故见 `Server/docs/BangumiApi.md`
    * 「原版优先排序」。
    *
    * 注意：只有歌曲**详情**接口（`/api/v3/song/detail`）稳定返回该字段，检索结果不带，

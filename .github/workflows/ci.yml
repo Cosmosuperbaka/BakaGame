@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 22
 
-      # 链接、锚点与 AGENTS.md 导航覆盖；规则见 Agents/Testing.md「验证范围」。
+      # 链接、锚点与 AGENTS.md 导航覆盖；规则见 Agents/Testing.md「验证范围」；含冻结文档哈希校验。
       - name: Check documentation links
         run: node scripts/CheckDocs.mjs
 
@@ -170,7 +170,7 @@ jobs:
         run: node --test ../Server/scripts/ClientCiFilter.mjs
 
       # 共享契约的解析边界：Server/src/shared 的裸导入必须能按「Client 独立安装」
-      # 布局解析（ESA 构建正是这种布局），细节与背景见脚本头注释。
+      # 布局解析（托管构建正是这种布局），细节与背景见脚本头注释。
       - name: Verify shared dependency boundary
         working-directory: Client
         run: node scripts/check-shared-dependencies.mjs
@@ -181,7 +181,7 @@ jobs:
       - name: Run client tests with coverage
         run: pnpm --filter client test:coverage
 
-      # 生产刻意不注入 VITE_SERVER_URL：前后端已由 ESA 同源化，基址留空即走同源相对路径，
+      # 生产刻意不注入 VITE_SERVER_URL：前后端已同源化，基址留空即走同源相对路径，
       # 由边缘把 /api/* 反代到后端。显式写死域名反而会在域名迁移时把旧后端烧进 bundle。
       # DSN 最终仍会编译进 bundle，但存在 secret 里是为了别让人从仓库白拿：
       # 拿来打脏数据、刷配额都要付出「访问仓库 Secrets」这一步的成本。
@@ -323,7 +323,7 @@ jobs:
           retention-days: 14
 
       # 正式签名：仓库里配了密钥才产出 release 包。没配就只构建 debug，作业照常绿——
-      # 「还没配」不是构建失败。四个密钥值见 Agents/Deployment.md 客户端制品一节。
+      # 「还没配」不是构建失败。密钥的名称与取值由维护者在仓库设置中管理，不写进文档。
       - name: Decode release keystore
         if: env.HAS_KEYSTORE == 'true'
         env:
@@ -503,7 +503,7 @@ jobs:
             id=$1 out=$2
             key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' manifest.json)
             if [ -z "$key" ]; then
-              echo "❌ manifest 缺少 $id 条目：E2E 需要基线数据集，请先发布到 R2（见 Agents/Deployment.md 数据分发）"
+              echo "❌ manifest 缺少 $id 条目：E2E 需要基线数据集，请先发布到 R2（见 Server/data/README.md 与 Agents/Deployment.md §8）"
               exit 1
             fi
             sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' manifest.json)

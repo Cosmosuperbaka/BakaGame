@@ -8,7 +8,7 @@ import {
 const headersOf = (entries: Record<string, string>) => new Headers(entries);
 
 describe("来源 IP 解析", () => {
-  it("优先采用 ESA 托管转换写入的真实客户端 IP", () => {
+  it("优先采用 边缘层写入的真实客户端 IP", () => {
     const headers = headersOf({ "x-real-ip": "2409:874c:810:1f0:1001::148" });
     expect(resolveClientIp(headers, "10.0.0.9")).toBe("2409:874c:810:1f0:1001::148");
   });

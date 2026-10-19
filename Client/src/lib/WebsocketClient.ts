@@ -89,7 +89,7 @@ export class WebSocketClient {
   }
 
   /**
-   * 账号身份只在握手时解析（见 Agents/Account.md §5）：登录或退出后关掉现有连接，
+   * 账号身份只在握手时解析（见 Server/docs/Account.md §5）：登录或退出后关掉现有连接，
    * 走与掉线相同的重连路径，各游戏的重连逻辑随之重新接管座位并带上新身份。未连接时不做任何事。
    */
   refreshIdentity(): void {

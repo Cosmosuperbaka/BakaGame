@@ -3,7 +3,7 @@
 //! 只有这一个地方构造 `reqwest::blocking::Client`：基址统一取自 `config::api_base()`
 //! （强制 https），错误信封按服务端的 `{ error: { code, message, traceId } }` 解析，
 //! 并兼容 `{ error: "CODE" }` 这种把码直接放在 `error` 上的写法。
-//! 上层只需要 `code` 来决定「换一条路径重试」还是「就此放弃」，见 `Agents/ClientChannel.md` §6。
+//! 上层只需要 `code` 来决定「换一条路径重试」还是「就此放弃」，通道约束见 `Server/docs/ClientChannel.md`。
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

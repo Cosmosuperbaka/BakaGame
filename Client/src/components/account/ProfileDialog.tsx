@@ -33,7 +33,7 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 
 /**
  * 账号资料：账号昵称只读展示（强制取自 QQ 昵称，不可修改）、QQ 号公开开关与通行密钥管理。
- * 头像随 QQ 自动同步，不可在站内修改；通行密钥在这里增删，登录入口在登录弹窗（端点面见 Agents/Account.md §2）。
+ * 头像随 QQ 自动同步，不可在站内修改；通行密钥在这里增删，登录入口在登录弹窗（端点面见 Server/docs/Account.md §2）。
  */
 export function ProfileDialog({
   open,

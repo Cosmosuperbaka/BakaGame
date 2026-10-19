@@ -8,7 +8,7 @@ const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"])
 /**
  * 图床对外前缀：**写死，不提供环境变量开关**。
  *
- * 挂在 `/api` 下是刻意的：边缘（阿里云 ESA）的 SPA 兜底函数吃掉 `game.baka.website`
+ * 挂在 `/api` 下是刻意的：边缘的 SPA 兜底函数吃掉前端域名
  * 下所有非 `/api` 路径，新前缀必须落在 `/api/*` 里才能到得了源站。详见
  * `Agents/Deployment.md`。
  */
@@ -56,7 +56,7 @@ export interface AppEnv {
    *
    * 路径与 Bangumi 源站一致，所以 URL 改写逻辑零改动；不提供环境变量开关 ——
    * 前缀一旦可配，就必然有人配出边缘不放行的路径（线上踩过一次，整站图片变
-   * SPA HTML）。详见 `Agents/BangumiApi.md`。
+   * SPA HTML）。详见 `Server/docs/BangumiApi.md`。
    */
   bangumiImageUrl: string;
   /**

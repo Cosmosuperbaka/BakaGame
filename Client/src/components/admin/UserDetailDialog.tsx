@@ -253,7 +253,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   );
 }
 
-/** 用户详情与管理操作；每次操作都由服务端先写审计（见 Agents/Account.md §8）。 */
+/** 用户详情与管理操作；每次操作都由服务端先写审计（见 Server/docs/Account.md §8）。 */
 export function UserDetailDialog({
   userId,
   onOpenChange,

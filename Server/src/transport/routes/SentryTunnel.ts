@@ -11,7 +11,7 @@ const SENTRY_INGEST_REGEX =
 
 /**
  * 隧道限流用的就是通用三层桶（单客户端 / 回源 peer / 全局），口径与打点、账号入口一致：
- * 单客户端桶按真实客户端 IP 分（ESA 托管转换写入的标头），否则同一 ESA 节点后面
+ * 单客户端桶按真实客户端 IP 分（边缘层写入的标头），否则同一边缘节点后面
  * 的所有玩家会共享一个桶，按用户计的上报预算就退化成按节点计；peer 桶只封顶
  * 「伪造标头自造新桶」这一条滥用路径，因此给到单客户端预算的十倍。
  * 仍按用途导出这个名字，调用方不必知道通用类的存在。
@@ -379,7 +379,7 @@ export const sentryTunnelRoutes = ({
         return httpError(failure.code, failure.message, traceId);
       };
       try {
-        // 客户端身份取 ESA 托管转换写入的真实 IP 标头（无法被客户端伪造），
+        // 客户端身份取 边缘层写入的真实 IP 标头（无法被客户端伪造），
         // 缺失或不是 IP 字面量时退回 transport peer；peer 桶另行封顶，防止标头被伪造成新桶。
         const peerIp = server?.requestIP(request)?.address ?? "unknown";
         const clientIp = resolveClientIp(request.headers, peerIp);

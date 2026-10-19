@@ -36,7 +36,7 @@ const statusMessage = (kind: string | undefined): string => {
 };
 
 /**
- * 通过管理员自建的 NapCat（OneBot 11）查注册用户的 QQ 昵称（见 Agents/Account.md §4）。
+ * 通过管理员自建的 NapCat（OneBot 11）查注册用户的 QQ 昵称（见 Server/docs/Account.md §4）。
  *
  * 账号昵称强制使用 QQ 昵称：注册时经 `resolveNickname` 取昵称，之后刷新到新昵称即同步账号昵称。
  * NapCat 未配置、未登录或查询失败时一律返回空，调用方据此停用注册或保留旧昵称。

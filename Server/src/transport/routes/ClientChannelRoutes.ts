@@ -7,7 +7,7 @@ import { resolveClientIp } from "../ClientIp";
 /**
  * 客户端通道证明的 HTTP 面：注册设备公钥、领挑战、交签名换一次性 ticket，
  * 外加两条给首页用的读回——更新提醒读的最低版本，下载弹窗读的制品元数据。
- * 协议逐字定义见 `Agents/ClientChannel.md`；字段名与壳（`Desktop/`、`Mobile/`）对齐，改名即断链。
+ * 约束见 `Server/docs/ClientChannel.md`；字段名与壳（`Desktop/`、`Mobile/`）对齐，改名即断链。
  *
  * 这里刻意不做房间准入：ticket 只证明「这台设备上的这个壳持有私钥」，
  * 反作弊房还额外要求已登录，那条门槛在 `CEERooms.requireAdmission`。

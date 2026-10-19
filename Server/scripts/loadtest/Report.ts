@@ -476,7 +476,7 @@ const conclusion = (reports: Report[]): string => {
       )
       .join("；");
     lines.push(
-      `<b>单个 ${seats} 人大房间${esc(tag(report))}</b>：每次房间状态变化都要扇出给全部 ${seats} 条连接，所以它是带宽与事件环的最坏情形。实测同一间房按节奏扫一遍：${sweep}（带宽 Mbps / CPU 核 / ack P95 ms）。文档基线（<code>Agents/Deployment.md</code> 带宽与容量基线）是单房 12 变化/秒下 150 人压进 6 Mbps 出口，可与本行对表。`
+      `<b>单个 ${seats} 人大房间${esc(tag(report))}</b>：每次房间状态变化都要扇出给全部 ${seats} 条连接，所以它是带宽与事件环的最坏情形。实测同一间房按节奏扫一遍：${sweep}（带宽 Mbps / CPU 核 / ack P95 ms）。文档基线（<code>Agents/Deployment.md</code> §6 容量与带宽）是单房 12 变化/秒下 150 人压进 6 Mbps 出口，可与本行对表。`
     );
   }
   const probes = reports.filter(
