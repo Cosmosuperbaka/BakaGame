@@ -12,8 +12,8 @@ import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@/types";
 /**
  * 桌面客户端下载地址；文件名固定，链接随时可换。
  *
- * 路径里的 `files` 是 R2 桶名，不能省：加速域按「第一段路径当桶名」回源，
- * 少了它请求会变成 `InvalidBucketName`（400），玩家拿到的是打不开的链接。
+ * 这条地址的**路径分段不能省**：分发域名按第一段路径定位存储桶，少一段直接回 400，
+ * 玩家拿到的是打不开的链接。改地址时连同这一段一起改。
  */
 export const BAKA_CLIENT_DOWNLOAD_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
 

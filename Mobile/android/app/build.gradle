@@ -68,7 +68,7 @@ android {
         jvmTarget = '17'
     }
 
-    // 产物名带版本号，配合 P2.7 的 R2 固定别名分发策略
+    // 产物名带版本号：分发既用带版本的对象名，也用不带版本号的固定别名
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             outputFileName = "BakaGame-${variant.versionName}-${variant.name}.apk"

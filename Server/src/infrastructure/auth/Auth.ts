@@ -13,7 +13,7 @@ import {
 import type { Mailer } from "./Mailer";
 
 export interface AuthOptions {
-  /** Better Auth 适配器：生产为 drizzle（TiDB），测试为内存适配器。 */
+  /** Better Auth 适配器：生产为 drizzle 适配器，测试为内存适配器。 */
   database: BetterAuthOptions["database"];
   secret: string;
   /** 后端公开基址，用于 Cookie 与来源判定。 */

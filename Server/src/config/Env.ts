@@ -8,15 +8,14 @@ const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"])
 /**
  * 图床对外前缀：**写死，不提供环境变量开关**。
  *
- * 挂在 `/api` 下是刻意的：边缘的 SPA 兜底函数吃掉前端域名
- * 下所有非 `/api` 路径，新前缀必须落在 `/api/*` 里才能到得了源站。详见
- * `Agents/Deployment.md`。
+ * 挂在 `/api` 下是刻意的：后端新增路径必须落在前端托管不会吞掉的前缀里，
+ * 否则请求到不了源站，`<img>` 就是裂图。口径见 `Agents/Deployment.md` §2。
  */
 const BANGUMI_IMAGE_ROUTE = "/api/bangumi";
 
 /**
- * 客户端安装包的固定别名地址：CI 的 `client-publish` 作业按这两个键名推 R2，
- * 名字不带版本号、永远指向最新，旧链接长期有效。默认值即发布约定，换桶才需要配环境变量。
+ * 客户端安装包的固定别名地址：名字不带版本号、永远指向最新，旧链接长期有效。
+ * 默认值即发布约定，只在换分发地址时才需要配环境变量。
  */
 const DEFAULT_WINDOWS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
 const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-release.apk";
@@ -29,7 +28,7 @@ export interface AppEnv {
   serverUrl: string;
   serverListenHost: string;
   serverPort: number;
-  /** TiDB 连接串；未配置时账号、云同步、后台与对局记录整体关闭（生产必填）。 */
+  /** 数据库连接串；未配置时账号、云同步、后台与对局记录整体关闭（生产必填）。 */
   databaseUrl?: string;
   /** 账号系统配置：随数据库一同启用，缺数据库时为空。 */
   account?: AccountEnv;

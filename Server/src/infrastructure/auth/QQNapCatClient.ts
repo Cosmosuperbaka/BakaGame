@@ -28,7 +28,7 @@ const DEFAULT_MIN_INTERVAL_MS = 60;
 const TOKEN_HINT = /token/i;
 
 export interface QQNapCatOptions {
-  /** OneBot HTTP 基址，不含结尾斜杠（如 `https://napcat.baka.website/onebot-internal`）。 */
+  /** OneBot HTTP 基址，不含结尾斜杠（如 `https://napcat.example.com/onebot-internal`）。 */
   apiUrl: string;
   accessToken: string;
   fetcher?: typeof fetch;

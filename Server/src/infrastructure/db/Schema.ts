@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/mysql-core";
 
 /**
- * 持久化 schema 的唯一真相源（TiDB / MySQL 协议）。
+ * 持久化 schema 的唯一真相源（MySQL 协议）。
  *
  * - 时间列一律 `datetime(3)` + UTC（连接层固定 `timezone: "Z"`）：`timestamp` 在 2038 年溢出，
  *   封禁到期之类的远期时间放不下。

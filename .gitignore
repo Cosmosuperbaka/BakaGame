@@ -69,10 +69,9 @@ Server/build
 word-bank.json
 bangumi-enrichment.sqlite
 
-# 番剧数据库不进 Git：曾走 LFS 吃穿带宽额度，现由 Cloudflare R2 分发（见 Server/data/README.md）
+# 番剧数据库不进 Git：体积大，随代码分发会吃穿仓库的带宽与存储额度
 Server/data/*.sqlite
-# 图床缓存（分片 SQLite + 清单）同样是构建产物：体积以 GiB 计，且可由
-# tools/build_bangumi_images.py 重跑（支持断点续传）。
+# 图床缓存（分片 SQLite + 清单）同样是构建产物：体积大且可由数据构建工具重跑。
 Server/data/images/
 Server/data/*.sqlite.backup
 Server/data/*.sqlite.backup-journal

@@ -47,7 +47,7 @@ const AVATAR_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 /**
  * 账号自助业务：发码、资料、头像。
  *
- * 用户行经 Better Auth 的 `internalAdapter` 读写，生产落 TiDB、测试落内存适配器，两边同一套逻辑。
+ * 用户行经 Better Auth 的 `internalAdapter` 读写，生产落数据库适配器、测试落内存适配器，两边同一套逻辑。
  */
 export class AccountService {
   private readonly now: () => number;

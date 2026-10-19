@@ -10,7 +10,7 @@ const sharedDir = path.join(repoRoot, "Server", "src", "shared");
 
 // 守卫「Client 独立安装」这条构建边界。
 //
-// ESA Pages 的构建正是这种布局：只克隆仓库、只在 Client/ 里 npm install。
+// 托管平台的构建正是这种布局：只克隆仓库、只在 Client/ 里装一次依赖。
 // 而 Server/src/shared 被客户端程序整个编译与打包（tsconfig include +
 // @bakagame/shared 别名），其中的裸导入按 Node 解析规则从文件位置向上找
 // node_modules —— 独立布局下从 Server/src/shared 出发走不到任何一层，因此
@@ -19,8 +19,8 @@ const sharedDir = path.join(repoRoot, "Server", "src", "shared");
 //   2. tsconfig.app.json paths 映射到 ./node_modules（命中 Client 的副本；
 //      提升布局下映射落空会自然回退到仓库根 node_modules，两种布局都成立）；
 //   3. vite.config.ts resolve.dedupe 收录（打包时同样按项目根解析）。
-// 少任何一条：本地/CI（提升布局）可能照常通过，ESA 构建必挂 —— 2026-10-13
-// 的 @orpc/contract / zod 缺失即此形态，故把三层全部纳入守卫。
+// 少任何一条：本地与 CI（提升布局）可能照常通过，独立安装的构建必挂，
+// 故把三层全部纳入守卫。
 //
 // 断言同时覆盖「物理归属」：解析结果必须落在 Client 自己的安装（独立安装时是
 // Client/node_modules，提升布局下是仓库根的 node_modules），绝不允许来自
@@ -90,7 +90,7 @@ for (const [specifier, files] of imports) {
   );
   assert.ok(
     deduped.has(pkg),
-    `${pkg} 必须在 vite.config.ts resolve.dedupe 中（否则 ESA 打包阶段解析不到）`
+    `${pkg} 必须在 vite.config.ts resolve.dedupe 中（否则独立安装的打包阶段解析不到）`
   );
 
   const mapped = rawPaths[specifier] ?? rawPaths[`${pkg}/*`];

@@ -42,8 +42,8 @@ export interface CreateDatabaseOptions {
 /**
  * 创建连接池并立即开始应用迁移（结果见 `ready`）。
  *
- * TiDB Serverless 强制 TLS；本项目只连托管库，连接一律校验证书，不提供明文开关。
- * 连接池上限按免费额度保守取值，空闲连接主动回收，避免被服务端掐断后复用死连接。
+ * 托管数据库强制 TLS；本项目只连托管库，连接一律校验证书，不提供明文开关。
+ * 连接池上限按托管额度保守取值，空闲连接主动回收，避免被服务端掐断后复用死连接。
  */
 export const createDatabase = (url: string, options: CreateDatabaseOptions = {}): Database => {
   let parsed: URL;

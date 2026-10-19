@@ -354,7 +354,7 @@ jobs:
           path: Mobile/android/app/build/outputs/apk/release/*.apk
           retention-days: 14
 
-  # 客户端制品发布：main 上打包成功后，把安装包推到 R2，公开下载域按
+  # 客户端制品发布：main 上打包成功后，把安装包推到对象存储，公开下载址按
   # `<base>/files/<key>` 寻址（桶名就是 URL 第一段，与数据集同一套口径）。
   # 带版本号的对象名可以长缓存；`latest` 别名必须 no-cache，否则玩家永远拿到旧包。
   client-publish:
@@ -374,7 +374,7 @@ jobs:
       needs.android.result != 'failure' && needs.android.result != 'cancelled' }}
     permissions:
       contents: read
-    # 同上：R2 凭证有没有，只能在作业级折算成 env 再给 step 的 if 用。
+    # 同上：对象存储凭证有没有，只能在作业级折算成 env 再给 step 的 if 用。
     env:
       HAS_R2: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
       R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
@@ -384,9 +384,9 @@ jobs:
       AWS_DEFAULT_REGION: auto
       AWS_EC2_METADATA_DISABLED: "true"
     steps:
-      - name: No R2 credentials configured
+      - name: No object storage credentials configured
         if: env.HAS_R2 == 'false'
-        run: echo "::notice::未配置 R2 凭证四件套，跳过客户端安装包发布"
+        run: echo "::notice::未配置对象存储凭证，跳过客户端安装包发布"
 
       - name: Configure path-style addressing
         if: env.HAS_R2 == 'true'
@@ -494,7 +494,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # E2E 要起真实服务端（角色检索/出题走真实 SQLite），从 R2 加速域取基线数据集并校验。
+      # E2E 要起真实服务端（角色检索/出题走真实 SQLite），从公开分发址取基线数据集并校验。
       - name: Download bangumi data
         run: |
           set -euo pipefail
@@ -506,7 +506,7 @@ jobs:
             id=$1 out=$2
             key=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .object' manifest.json)
             if [ -z "$key" ]; then
-              echo "❌ manifest 缺少 $id 条目：E2E 需要基线数据集，请先发布到 R2（见 Server/data/README.md 与 Agents/Deployment.md §8）"
+              echo "❌ manifest 缺少 $id 条目：E2E 需要基线数据集，请先发布到对象存储（见 Server/data/README.md）"
               exit 1
             fi
             sha=$(jq -r --arg id "$id" '.files[] | select(.id==$id) | .sha256' manifest.json)

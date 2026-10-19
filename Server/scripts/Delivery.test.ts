@@ -302,7 +302,7 @@ test("工作流 YAML 可解析且 E2E 数据取用与部署入口契约明确", 
     expect(Object.keys(parsed.on).length).toBeGreaterThan(0);
     if (name === "ci") {
       const ci = JSON.stringify(parsed);
-      // E2E 起真实服务端：从 R2 基线 manifest 取 dataset 并按 sha256 校验；缺条目时给出可操作报错。
+      // E2E 起真实服务端：从基线清单取数据集并按 sha256 校验；缺条目时给出可操作报错。
       expect(ci).toContain("fetch_one dataset bangumi.sqlite");
       expect(ci).toContain("sha256sum --check --strict");
       expect(ci).toContain("manifest 缺少 $id 条目");

@@ -24,4 +24,4 @@ pnpm dlx @tauri-apps/cli icon Client/public/assets/favicon.png --output Desktop/
 ## 为什么缺文件时 CI 才发现
 
 `cargo check` / `cargo build` 不读图标，只有 `tauri build` 打包阶段才校验，所以缺文件在类型
-与编译门禁里都是绿的，一直到打包才炸。CI 的 Desktop Build 作业跑的就是完整打包，能兜住这条。
+与编译门禁里都是绿的，一直到打包才炸。CI 里跑完整打包的作业能兜住这条。

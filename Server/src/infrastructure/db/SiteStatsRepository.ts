@@ -50,8 +50,8 @@ const chunks = <T>(items: T[]): T[][] => {
 };
 
 /**
- * 单表查询时 Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，TiDB 的 only_full_group_by
- * 视为两个不同表达式而报错；因此按别名分组。
+ * 单表查询时 Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，开启严格
+ * `only_full_group_by` 的库会把两者视为不同表达式而报错；因此按别名分组。
  */
 const userBeijingDay =
   sql<string>`date_format(date_add(${user.createdAt}, interval 8 hour), '%Y-%m-%d')`.as("day");

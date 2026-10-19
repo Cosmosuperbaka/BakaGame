@@ -6,7 +6,7 @@ import {
 import type { ClientAttestationCheckInput, ClientAttestationLevel } from "./ClientChannel";
 
 /**
- * Android Key Attestation 服务端验证（`tasks/cee-anticheat-plan-2026-10-19.md` P3.2）。
+ * Android Key Attestation 服务端验证。
  *
  * 为什么手写而不是用库：Google 推荐的是 JVM 侧 Kotlin 验证库，本仓库服务端是 Bun/Node；
  * `@peculiar/x509` 在这里只以 `@simplewebauthn/server` 传递依赖的形式躺在根 `node_modules`，

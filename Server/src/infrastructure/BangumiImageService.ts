@@ -14,7 +14,7 @@ import { SlidingWindowRateLimiter, type RateLimitVerdict } from "./RateLimiter";
  */
 export interface BangumiImageServiceOptions {
   directory: string;
-  /** 回源前缀（Bangumi 反代地址，如 https://bangumi.baka.website）；为空则只读缓存、不回源。 */
+  /** 回源前缀（Bangumi 镜像地址，如 `https://bangumi.example.com`）；为空则只读缓存、不回源。 */
   sourceBase?: string;
   fetcher?: typeof fetch;
   logger?: { warn: (message: string, context?: Record<string, unknown>) => void };

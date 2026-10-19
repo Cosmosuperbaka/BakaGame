@@ -14,7 +14,7 @@ packages:
 # - bun：postinstall 负责把 pin 的可执行文件落位到 node_modules/bun/bin（Server 全部脚本
 #   都是 `bun ...`，缺它会命中上游预置的「postinstall 未运行」占位脚本直接退出）；
 # - esbuild：postinstall 只做原生二进制校验。
-# CI 干净环境（pnpm install --frozen-lockfile）实测缺此白名单必挂 Server CI（2026-10-13）。
+# 干净环境（pnpm install --frozen-lockfile）实测缺此白名单必挂服务端 CI。
 onlyBuiltDependencies:
   - bun
   - esbuild

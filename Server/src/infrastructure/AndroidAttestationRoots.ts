@@ -2,8 +2,7 @@
  * Google Android Key Attestation 信任锚（内置固定，不做运行时拉取）。
  *
  * 为什么内置而不是每次去 `https://android.googleapis.com/attestation/root` 取：
- * - 服务端要能在 Google 侧域名被墙 / 抖动时继续判定（国内可达性风险，见
- *   `tasks/cee-anticheat-plan-2026-10-19.md` P3.2 坑 1、坑 2）；
+ * - 服务端要能在 Google 侧域名被墙 / 抖动时继续判定（可达性风险不可假设）；
  * - 验证结论必须可复核：固定字节后，任何人重跑同一份常量都能得到同一个是否值，
  *   运行时拉取等于把信任锚交给一次 HTTP 响应。
  *
@@ -11,7 +10,7 @@
  * RKP 设备在 2026-04-10 完成切换；工厂预置密钥的老设备仍用旧根且永不轮换。
  * 只放旧根会拒掉几乎所有新设备，只放新根会拒掉老机型。
  *
- * 字节来源（2026-10-19 记录，逐字节取自 Google 官方参考验证库，非手工转写）：
+ * 字节来源（逐字节取自 Google 官方参考验证库，非手工转写）：
  * - 两个硬件根：`https://raw.githubusercontent.com/android/keyattestation/main/roots.json`
  *   （与 `https://android.googleapis.com/attestation/root` 当前下发的是同一份新根，
  *   旧根不在该下载端点里——端点只回一份，所以旧根只能靠仓库固定）。
