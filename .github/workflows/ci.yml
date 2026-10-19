@@ -268,12 +268,21 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # compileSdk 35 + buildToolsVersion 36.0.0 与 Mobile/android/app/build.gradle 保持一致
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
+      # compileSdk 35 + buildToolsVersion 36.0.0 与 Mobile/android/app/build.gradle 保持一致。
+      # 不用 android-actions/setup-android：runner 镜像装的是 cmdline-tools 16.0，而该 action
+      # 会无条件执行 `sdkmanager tools`——`tools` 这个包在新版里已经不存在，于是整步失败
+      # （现象很迷惑：SDK 明明装好了，报错却是 "Failed to find package 'tools'"）。
+      # ubuntu-latest 自带完整 SDK 与 ANDROID_HOME，直接用它的 sdkmanager 装我们需要的三个包。
       - name: Install Android platform and build tools
-        run: sdkmanager "platforms;android-35" "build-tools;36.0.0" "platform-tools"
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          [ -x "$SDKMANAGER" ] || { echo "::error::找不到 sdkmanager"; exit 1; }
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;36.0.0" "platform-tools"
 
       # Mobile 不是 workspace 成员：依赖独立安装，产物注入 dist-web 并同步 versionName
       - name: Prepare embedded web assets
