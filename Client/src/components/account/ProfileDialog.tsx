@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Pencil } from "lucide-react";
 import type { AccountProfile } from "@/types";
 import { Button } from "@/components/ui/Button";
 import {
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import {
@@ -20,11 +21,13 @@ import {
 import { api, apiErrorMessage } from "@/lib/Api";
 import type { OriginPoint } from "@/lib/Motion";
 import {
+  PASSKEY_NAME_MAX,
   addPasskey,
   listPasskeys,
   passkeyErrorMessage,
   passkeySupported,
   removePasskey,
+  renamePasskey,
   type PasskeyEntry,
 } from "@/lib/Passkey";
 import { invalidatePublicProfile } from "@/lib/ProfileCache";
@@ -58,16 +61,19 @@ type ListState =
   | { status: "error"; message: string };
 
 /**
- * 通行密钥管理：列、加、删。只在支持 WebAuthn 的浏览器出现——不支持时这里做不了任何事，
+ * 通行密钥管理：列、加、改名、删。只在支持 WebAuthn 的浏览器出现——不支持时这里做不了任何事，
  * 摆一个必然失败的按钮只会让人以为账号坏了。
  *
  * 添加要求「新鲜」登录（服务端默认 24 小时内）：这是防会话被盗用后被人塞一把密钥的门槛，
- * 超时的错误码在这里翻成中文，不做静默重登。
+ * 超时的错误码在这里翻成中文，不做静默重登。名字由 `lib/Passkey.ts` 按设备自动取，
+ * 这里只给改名：一行就地换成输入框，回车或失焦提交、Esc 放弃，行高不变。
  */
 function PasskeySection() {
   const [state, setState] = useState<ListState>({ status: "loading" });
-  const [busy, setBusy] = useState<"add" | "remove" | null>(null);
+  const [busy, setBusy] = useState<"add" | "remove" | "rename" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
 
   /** 增删之后重取列表：库里的密钥以服务端为准，本地拼差一条就多一条不存在的密钥。 */
   const reload = async () => {
@@ -118,6 +124,50 @@ function PasskeySection() {
     }
   };
 
+  /** 起编辑时把现名放进草稿；改名只动名字，凭据与登录行为不变，所以不必二次确认。 */
+  const startRename = (item: PasskeyEntry) => {
+    setEditingId(item.id);
+    setDraft(item.name ?? "");
+  };
+
+  /**
+   * Esc 只放弃这次改名，不顺手关掉整个弹窗。Radix 的关闭监听挂在 `document` 的捕获阶段，
+   * React 的 `onKeyDown` 在它之后才跑，拦不住；要拦就得挂在更外层并截断传播。
+   */
+  useEffect(() => {
+    if (editingId === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setEditingId(null);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [editingId]);
+
+  /** 提交口径：空名与没改动的名都不发请求，直接收起输入框回到原名。 */
+  const commitRename = async (item: PasskeyEntry) => {
+    if (editingId !== item.id || busy !== null) return;
+    const name = draft.trim();
+    if (!name || name === (item.name ?? "")) {
+      setEditingId(null);
+      return;
+    }
+    setBusy("rename");
+    setError(null);
+    try {
+      await renamePasskey(item.id, name);
+      setEditingId(null);
+      await reload();
+    } catch (cause) {
+      setEditingId(null);
+      setError(passkeyErrorMessage(cause, "通行密钥改名失败，请稍后重试"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const items = state.status === "ready" ? state.items : [];
 
   return (
@@ -134,29 +184,68 @@ function PasskeySection() {
           {items.length === 0 ? (
             <li className="text-xs text-muted-foreground">还没有添加通行密钥。</li>
           ) : null}
-          {items.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
-            >
-              <div className="min-w-0 text-sm">
-                <div className="truncate">{item.name || "未命名通行密钥"}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {formatAbsoluteTime(item.createdAt)} 添加
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="shrink-0"
-                disabled={busy !== null}
-                onClick={() => void remove(item.id)}
+          {items.map((item) => {
+            const label = item.name || "未命名通行密钥";
+            const editing = editingId === item.id;
+            return (
+              <li
+                key={item.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
               >
-                移除
-              </Button>
-            </li>
-          ))}
+                {/* 名字与输入框同占一行 24 px：就地切换不撑高这一行 */}
+                <div className="min-w-0 flex-1 text-sm">
+                  {editing ? (
+                    <Input
+                      autoFocus
+                      value={draft}
+                      aria-label="通行密钥名称"
+                      maxLength={PASSKEY_NAME_MAX}
+                      className="h-6 px-2"
+                      onChange={(event) => setDraft(event.target.value)}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onBlur={() => void commitRename(item)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          void commitRename(item);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="leading-6 truncate">{label}</div>
+                  )}
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {formatAbsoluteTime(item.createdAt)} 添加
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {editing ? null : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={`重命名「${label}」`}
+                      disabled={busy !== null}
+                      loading={busy === "rename"}
+                      onClick={() => startRename(item)}
+                    >
+                      <Pencil />
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() => void remove(item.id)}
+                  >
+                    移除
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
       <Button

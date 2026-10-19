@@ -292,14 +292,70 @@ describe("通行密钥端点", () => {
     expect(options.user.id).toBeTruthy();
   });
 
-  test("未登录拿不到密钥列表，改名端点不对外开放", async () => {
-    const { app } = createAccountTestApp({ clientUrl: CLIENT });
+  test("密钥列表与改名都只认自己的会话与密钥", async () => {
+    const { app, signIn, db } = createAccountTestApp({ clientUrl: CLIENT });
     expect((await authRequest(app, "/passkey/list-user-passkeys")).status).toBe(401);
-    const rename = await authRequest(app, "/passkey/update-passkey", {
+    expect(
+      (
+        await authRequest(app, "/passkey/update-passkey", {
+          method: "POST",
+          body: { id: "x", name: "y" },
+        })
+      ).status
+    ).toBe(401);
+
+    const { cookie } = await signIn(QQ, "玩家");
+    const otherCookie = (await signIn("90002", "别人")).cookie;
+    const rows = db.passkey as Record<string, unknown>[];
+    const userIdOf = async (value: string) => {
+      const response = await authRequest(app, "/get-session", { cookie: value });
+      const body = (await response.json()) as { user: { id: string } };
+      return body.user.id;
+    };
+    const plant = (id: string, userId: string) =>
+      rows.push({
+        id,
+        userId,
+        name: null,
+        credentialID: `cred-${id}`,
+        publicKey: "cGFzcmtleS1maXh0dXJl",
+        counter: 0,
+        deviceType: "platform",
+        backedUp: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    plant("pk-mine", await userIdOf(cookie));
+    plant("pk-other", await userIdOf(otherCookie));
+
+    const renamed = await authRequest(app, "/passkey/update-passkey", {
       method: "POST",
-      body: { id: "x", name: "y" },
+      cookie,
+      body: { id: "pk-mine", name: "办公室电脑" },
     });
-    expect(rename.status).toBe(404);
+    expect(renamed.status).toBe(200);
+    const list = await authRequest(app, "/passkey/list-user-passkeys", { cookie });
+    expect(await list.json()).toMatchObject([{ id: "pk-mine", name: "办公室电脑" }]);
+
+    // 别人库里的密钥：插件的属主校验拦下来（UNAUTHORIZED 而非 404），那一行的 name 仍是空
+    const foreign = await authRequest(app, "/passkey/update-passkey", {
+      method: "POST",
+      cookie,
+      body: { id: "pk-other", name: "我的" },
+    });
+    expect(foreign.status).toBe(401);
+    expect(rows.find((row) => row.id === "pk-other")?.name).toBeNull();
+    // 空白名不落库：列里仍是有名字的那条
+    expect(
+      (
+        await authRequest(app, "/passkey/update-passkey", {
+          method: "POST",
+          cookie,
+          body: { id: "pk-mine", name: "   " },
+        })
+      ).status
+    ).toBe(400);
+    expect(rows.find((row) => row.id === "pk-mine")?.name).toBe("办公室电脑");
   });
 });
 

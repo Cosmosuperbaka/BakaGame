@@ -160,8 +160,9 @@ export type Auth = ReturnType<typeof createAuth>;
  * 对浏览器开放的 Better Auth 端点白名单（相对 `AUTH_BASE_PATH`）。
  * 其余端点（注册、改资料、管理接口、自带发码……）一律 404，只能经服务端 API 调用。
  *
- * 通行密钥的六个端点必须全部经浏览器直连 Better Auth：挑战值写在签名 Cookie 与
+ * 通行密钥的七个端点必须全部经浏览器直连 Better Auth：挑战值写在签名 Cookie 与
  * `verification` 表里，oRPC 侧转发会丢掉那对 Cookie，认证就必然卡在 `CHALLENGE_NOT_FOUND`。
+ * 其中改名的 `update-passkey` 只改自己库里那一行的 `name`，插件的属主校验先拒绝别人的密钥。
  */
 export const AUTH_HTTP_PATHS: ReadonlySet<string> = new Set([
   "/sign-in/email-otp",
@@ -173,4 +174,5 @@ export const AUTH_HTTP_PATHS: ReadonlySet<string> = new Set([
   "/passkey/verify-authentication",
   "/passkey/list-user-passkeys",
   "/passkey/delete-passkey",
+  "/passkey/update-passkey",
 ]);

@@ -10,12 +10,15 @@ const passkeySupported = vi.hoisted(() => vi.fn<() => boolean>());
 const listPasskeys = vi.hoisted(() => vi.fn<() => Promise<unknown[]>>());
 const addPasskey = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const removePasskey = vi.hoisted(() => vi.fn<(id: string) => Promise<void>>());
+const renamePasskey = vi.hoisted(() => vi.fn<(id: string, name: string) => Promise<void>>());
 
 vi.mock("@/lib/Passkey", () => ({
+  PASSKEY_NAME_MAX: 40,
   passkeySupported,
   listPasskeys,
   addPasskey,
   removePasskey,
+  renamePasskey,
   // 组件只关心「拿到一句中文」，映射规则本身在 lib/Passkey.test.ts 里验。
   passkeyErrorMessage: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
@@ -37,18 +40,31 @@ const entry = (id: string, name: string | null) => ({
   createdAt: "2026-10-02T03:04:00.000Z",
 });
 
+/** 假库：列表与改名共用同一个数组，省得按调用次数排 mock 的返回值。 */
+const plantPasskeys = (names: Record<string, string>) => {
+  const items = Object.entries(names).map(([id, name]) => entry(id, name));
+  listPasskeys.mockImplementation(async () => items.map((item) => ({ ...item })));
+  renamePasskey.mockImplementation(async (id, name) => {
+    const target = items.find((item) => item.id === id);
+    if (target) target.name = name;
+  });
+  return items;
+};
+
 beforeEach(() => {
   useAccountStore.setState({ profile, status: "signedIn" });
   passkeySupported.mockReturnValue(true);
   listPasskeys.mockResolvedValue([]);
   addPasskey.mockResolvedValue();
   removePasskey.mockResolvedValue();
+  renamePasskey.mockResolvedValue();
 });
 
 afterEach(() => {
   listPasskeys.mockReset();
   addPasskey.mockReset();
   removePasskey.mockReset();
+  renamePasskey.mockReset();
 });
 
 const renderDialog = () => {
@@ -79,6 +95,72 @@ describe("账号资料弹窗的通行密钥", () => {
 
     expect(addPasskey).toHaveBeenCalledOnce();
     expect(await screen.findByText("手机")).toBeInTheDocument();
+  });
+
+  it("点铅笔就地换成输入框，回车提交并刷新列表", async () => {
+    plantPasskeys({ "pk-1": "这台电脑" });
+    const { user } = renderDialog();
+
+    await user.click(await screen.findByRole("button", { name: "重命名「这台电脑」" }));
+    const input = screen.getByLabelText("通行密钥名称");
+    expect(input).toHaveValue("这台电脑");
+
+    await user.clear(input);
+    await user.type(input, "办公室电脑");
+    await user.keyboard("{Enter}");
+
+    expect(renamePasskey).toHaveBeenCalledWith("pk-1", "办公室电脑");
+    expect(await screen.findByText("办公室电脑")).toBeInTheDocument();
+    expect(screen.queryByLabelText("通行密钥名称")).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(listPasskeys).toHaveBeenCalledTimes(2));
+  });
+
+  it("Esc 只放弃改名，不发请求也不关弹窗", async () => {
+    plantPasskeys({ "pk-1": "这台电脑" });
+    const { onOpenChange, user } = renderDialog();
+
+    await user.click(await screen.findByRole("button", { name: "重命名「这台电脑」" }));
+    const input = screen.getByLabelText("通行密钥名称");
+    await user.clear(input);
+    await user.type(input, "改了一半");
+    await user.keyboard("{Escape}");
+
+    expect(renamePasskey).not.toHaveBeenCalled();
+    expect(screen.getByText("这台电脑")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("空名与没改动的名字都不发请求", async () => {
+    plantPasskeys({ "pk-1": "这台电脑" });
+    const { user } = renderDialog();
+
+    // 清空后 Tab 走开触发 blur：空名不是一次改名，只把输入框收回去
+    await user.click(await screen.findByRole("button", { name: "重命名「这台电脑」" }));
+    await user.clear(screen.getByLabelText("通行密钥名称"));
+    await user.keyboard("{Tab}");
+    expect(renamePasskey).not.toHaveBeenCalled();
+    expect(screen.getByText("这台电脑")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重命名「这台电脑」" }));
+    await user.keyboard("{Enter}");
+    expect(renamePasskey).not.toHaveBeenCalled();
+    expect(screen.getByText("这台电脑")).toBeInTheDocument();
+  });
+
+  it("改名失败给出中文原因，列表仍留着原名", async () => {
+    plantPasskeys({ "pk-1": "这台电脑" });
+    renamePasskey.mockRejectedValue(
+      new AuthRequestError("PASSKEY_NOT_FOUND", "通行密钥不存在", 404)
+    );
+    const { user } = renderDialog();
+
+    await user.click(await screen.findByRole("button", { name: "重命名「这台电脑」" }));
+    await user.clear(screen.getByLabelText("通行密钥名称"));
+    await user.type(screen.getByLabelText("通行密钥名称"), "换名");
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("通行密钥不存在");
+    expect(screen.getByText("这台电脑")).toBeInTheDocument();
   });
 
   it("新鲜登录超时的中文原因就地提示，不静默重登", async () => {
