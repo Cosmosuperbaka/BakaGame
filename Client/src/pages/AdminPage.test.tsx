@@ -168,6 +168,8 @@ beforeEach(() => {
   admin.users.list.mockResolvedValue({ items: [user], total: 1 });
   admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
   admin.qq.status.mockResolvedValue(unavailable);
+  // 概览会读一条待复核计数；默认给空队列，需要条数的用例各自覆盖。
+  admin.antiCheat.list.mockResolvedValue({ items: [], total: 0 });
 });
 
 afterEach(() => {
@@ -335,5 +337,20 @@ describe("管理后台", () => {
     expect(admin.antiCheat.setStatus).toHaveBeenCalledWith({ id: "rev-1", status: "cleared" });
     expect(admin.antiCheat.list).toHaveBeenCalledTimes(2);
     expect(within(dialog).queryByRole("alert")).toBeNull();
+  });
+
+  it("概览显示待复核条数，点去复核切到反作弊标签", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.antiCheat.list.mockResolvedValue({ items: [], total: 3 });
+    const events = renderAdmin();
+
+    const label = await screen.findByText("反作弊待复核");
+    expect(within(label.parentElement as HTMLElement).getByText("3")).toBeInTheDocument();
+    // 概览只要条数：分页与筛选留给复核队列，这里只取一条。
+    expect(admin.antiCheat.list).toHaveBeenCalledWith({ status: "open", limit: 1 });
+
+    await events.click(screen.getByRole("button", { name: "去复核" }));
+    // 标题旁带队列总数，accessible name 是「反作弊复核 3」，按前缀匹配。
+    expect(await screen.findByRole("heading", { name: /^反作弊复核/ })).toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import type { AdminOverview, FeedbackStatus, RecordedGameKind, SentryOverview } from "@/types";
 import { Badge } from "@/components/ui/Badge";
@@ -277,12 +278,19 @@ function SentryCard({
 
 export function OverviewPanel() {
   const [days, setDays] = useState("14");
+  const [, setParams] = useSearchParams();
   const overview = useAdminQuery(
     `overview:${days}`,
     () => api.admin.stats.overview({ days: Number(days) }),
     "概览加载失败"
   );
   const sentry = useAdminQuery("sentry", () => api.admin.stats.sentry(), "Sentry 查询失败");
+  // 只取条数：limit 1 就够，队列分页留在反作弊标签里做。
+  const openReview = useAdminQuery(
+    "open-review-count",
+    () => api.admin.antiCheat.list({ status: "open", limit: 1 }),
+    "待复核条数加载失败"
+  );
   const data = overview.data;
   return (
     <div className="grid gap-6">
@@ -309,6 +317,28 @@ export function OverviewPanel() {
           emptyText=""
         />
         {data ? <OverviewStats data={data} /> : null}
+        {/* 待复核条数只在概览露个脸：处置动作全部留在反作弊标签，两个入口改同一条会互相盖掉。
+            计数为 0 也照样显示，读作「这条链路在跑」，而不是「没接上」。 */}
+        {openReview.data ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3">
+            <div className="flex flex-wrap items-baseline gap-2 text-sm">
+              <span className="text-muted-foreground">反作弊待复核</span>
+              <strong className="text-2xl font-semibold tabular-nums">
+                {formatNumber(openReview.data.total)}
+              </strong>
+              <span className="text-xs text-muted-foreground">条 · 候选不是结论</span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              // 跨标签跳转保留历史：看完概览还能退回，与页内切标签的 replace 不同。
+              onClick={() => setParams({ tab: "anticheat" })}
+            >
+              去复核
+            </Button>
+          </div>
+        ) : null}
       </div>
       {data ? (
         <section aria-labelledby="admin-daily" className="grid gap-3">
