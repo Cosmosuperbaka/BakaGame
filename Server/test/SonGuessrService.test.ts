@@ -900,7 +900,7 @@ describe("SonGuessrService", () => {
     const round1 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound;
     expect(round1?.audioUrl).toBe(song1.audioUrl);
 
-    // 音频就绪并猜对结束第 1 轮
+    // 音频就绪并猜对：关掉血战时一名玩家猜对即结束第 1 轮，无需再有人投降
     await execute(service, guest, {
       id: "audio-1",
       type: "song.game.audioReady",
@@ -912,12 +912,6 @@ describe("SonGuessrService", () => {
       type: "song.game.guessAnime",
       roomId: "1234",
       payload: { subjectId: "anime-1" },
-    });
-    await execute(service, host, {
-      id: "giveup-1",
-      type: "song.game.giveUp",
-      roomId: "1234",
-      payload: {},
     });
     const summary1 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
     expect(summary1?.anime?.id).toBe("anime-1");
@@ -946,12 +940,6 @@ describe("SonGuessrService", () => {
       type: "song.game.guessAnime",
       roomId: "1234",
       payload: { subjectId: "anime-2" },
-    });
-    await execute(service, host, {
-      id: "giveup-2",
-      type: "song.game.giveUp",
-      roomId: "1234",
-      payload: {},
     });
     const summary2 = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").roundSummary;
     expect(summary2?.anime?.id).toBe("anime-2");
@@ -6893,6 +6881,29 @@ describe("SonGuessr 组队", () => {
     expect(playerOf(ctx.host, ctx.bId)).toMatchObject({ roundStatus: "correct", score: 1 });
     expect(playerOf(ctx.host, ctx.aId)).toMatchObject({ roundStatus: "teamCorrect", score: 0 });
     expect(privateOf(ctx.a)).toMatchObject({ canGuess: false, canGiveUp: false });
+    // 没开血战：一名玩家猜对就把整局结束，队友与别队都不再有机会作答
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("roundResult");
+    await expect(guess(ctx.service, ctx.a, "answer")).rejects.toMatchObject({
+      code: "NO_ACTIVE_ROUND",
+    });
+    await expect(guess(ctx.service, ctx.c, "wrong")).rejects.toMatchObject({
+      code: "NO_ACTIVE_ROUND",
+    });
+    const summary = snapshot.roundSummary!;
+    expect(summary.correctPlayerIds).toEqual([ctx.bId]);
+    // 出题人按猜中单元计：一队猜中 = 3 分
+    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(3);
+  });
+
+  test("血战开启时猜中只结束所在队，队友不能再猜，别队继续作答", async () => {
+    const ctx = await setup({ maxGuessesPerRound: 3, bloodMode: true });
+    await play(ctx, ctx.hostId, ctx.host);
+    for (const client of [ctx.a, ctx.b, ctx.c]) await audio(ctx.service, client);
+
+    await guess(ctx.service, ctx.b, "answer");
+    expect(playerOf(ctx.host, ctx.bId)).toMatchObject({ roundStatus: "correct" });
+    expect(playerOf(ctx.host, ctx.aId)).toMatchObject({ roundStatus: "teamCorrect" });
     await expect(guess(ctx.service, ctx.a, "answer")).rejects.toMatchObject({
       code: "ALREADY_CORRECT",
       message: "队友已经猜中了",
@@ -6908,8 +6919,6 @@ describe("SonGuessr 组队", () => {
     });
     const summary = lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot").roundSummary!;
     expect(summary.correctPlayerIds).toEqual([ctx.bId]);
-    // 出题人按猜中单元计：一队猜中 = 3 分
-    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(3);
   });
 
   test("出题人的队友本局观战：看得到答案与全房猜测，不能作答，也不拖住回合", async () => {

@@ -4485,6 +4485,8 @@ export class SonGuessrService implements AdminRoomControl {
   private isRoundComplete(room: SonGuessrRoomRecord) {
     const round = room.currentRound;
     if (!round) return false;
+    // 关掉血战时，第一个猜中就把本局结束：其余人不再继续作答，也没有名次可争。
+    if (!round.settings.bloodMode && round.correctPlayerIds.length > 0) return true;
     const guessers = this.activePlayers(room).filter(
       (player) =>
         (player.id !== round.submitterPlayerId || this.canTestSubmitterGuess(room, player.id)) &&
