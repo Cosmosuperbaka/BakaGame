@@ -3726,3 +3726,33 @@ test("换房校验失败保留原绑定，成功建房加入重连均将原席�
   await service.runHousekeeping();
   expect(service.getRoomSummaries().map((room) => room.roomId)).toEqual(["8911"]);
 });
+
+/**
+ * 顶号只是把身份挪到新连接，对旧连接的通知与关闭都是尽力而为。
+ *
+ * 会走到这段代码的时机就是「客户端掉线后重连」——旧套接字十有八九已经废了，
+ * send / close 一抛就把新连接也挡在门外，一次掉线被放大成进不去房。
+ */
+test("旧连接 send 与 close 抛错不挡住顶号", async () => {
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "2401");
+  host.record.send = () => {
+    throw new Error("socket is not open");
+  };
+  host.record.close = () => {
+    throw new Error("socket is not open");
+  };
+
+  const restored = createConnection(service, "2401-restored");
+  const outcome = (await execute(service, restored, {
+    id: "2401-reconnect",
+    type: "room.reconnect",
+    payload: { roomId: "2401", sessionToken: result.sessionToken },
+  })) as { playerId: string };
+
+  expect(outcome.playerId).toBe(result.playerId);
+  expect(restored.record.roomId).toBe("2401");
+  // 顶号分支确实走到了：旧席位被清空只发生在通知+关闭那一段里。
+  expect(host.record.roomId).toBeUndefined();
+  expect(host.record.playerId).toBeUndefined();
+});

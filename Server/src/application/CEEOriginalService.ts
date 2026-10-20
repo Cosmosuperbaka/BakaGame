@@ -477,7 +477,12 @@ export class CEEOriginalService {
       throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间");
     if (session.connectionId && session.connectionId !== connection.id) {
       const previous = this.connections.get(session.connectionId);
-      previous?.send(createEvent("session.replaced", { reason: "已在其他页面恢复原版房间" }));
+      // 旧连接多半已经死了（换页面才会恢复），通知不许抛：顶号失败会把新连接一起挡在门外。
+      try {
+        previous?.send(createEvent("session.replaced", { reason: "已在其他页面恢复原版房间" }));
+      } catch {
+        /* 发不出去就不发，接管照常 */
+      }
       if (previous) {
         previous.roomId = undefined;
         previous.playerId = undefined;

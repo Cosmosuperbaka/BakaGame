@@ -4829,12 +4829,22 @@ export class SonGuessrService implements AdminRoomControl {
   ) {
     const previous = this.connections.findConnectionByPlayer(room.id, player.id);
     if (previous && previous.id !== connection.id) {
-      // 统一带上 song. 前缀；客户端保留对裸名的兼容分支，避免旧客户端收不到。
-      (previous.sendPacket ?? previous.send)(
-        createEvent("song.session.replaced", { roomId: room.id })
-      );
+      // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
+      // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
+      try {
+        // 统一带上 song. 前缀；客户端保留对裸名的兼容分支，避免旧客户端收不到。
+        (previous.sendPacket ?? previous.send)(
+          createEvent("song.session.replaced", { roomId: room.id })
+        );
+      } catch {
+        /* 发不出去就不发，接管照常 */
+      }
       this.connections.detach(previous);
-      previous.close(4001, "session_replaced");
+      try {
+        previous.close(4001, "session_replaced");
+      } catch {
+        /* 已经关掉的连接不需要再关一次 */
+      }
     }
     player.online = true;
     player.connectionId = connection.id;

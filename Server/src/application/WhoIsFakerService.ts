@@ -32,6 +32,7 @@ import {
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
 } from "../shared/Index";
+import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -446,6 +447,123 @@ export class WhoIsFakerService implements AdminRoomControl {
     );
   }
 
+  /**
+   * 导出全部房间以供停机保存。
+   *
+   * 走一次 JSON 往返而不是浅拷贝：房间记录将来若混进函数或句柄，浅拷贝会让序列化在
+   * 停机路径上抛错，而那段恰恰最不能失败；往返顺带剔除 undefined，落盘内容与线上视图一致。
+   */
+  exportSnapshots(): SnapshottedRoom[] {
+    const snapshots: SnapshottedRoom[] = [];
+    for (const room of this.rooms.values()) {
+      try {
+        snapshots.push(JSON.parse(JSON.stringify(room)) as SnapshottedRoom);
+      } catch (error) {
+        this.options.eventLogger?.warn("房间快照导出失败，已跳过该房间", {
+          roomId: room.id,
+          ...describeError(error),
+        });
+      }
+    }
+    return snapshots;
+  }
+
+  /**
+   * 从快照恢复房间，返回真正恢复的房间数。
+   *
+   * 关键不是「把对象塞回 Map」，而是把**停机期间流逝的时间**处理干净：
+   * 停机时没人在操作，若照原样保留绝对时间戳，倒计时会在恢复瞬间集体到点、
+   * 掉线清理会立刻命中，表现为「服务健康、日志正常，但用户回来房间全没了」。
+   * 所以下面每个时间字段都要按自己的语义单独处理，不能统一 +pausedMs 了事。
+   */
+  restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
+    const now = this.now();
+    // 时钟回拨时按 0 处理：等价于不补偿，好过把截止时间推到更远的未来。
+    const pausedMs = Math.max(0, now - savedAt);
+    let restored = 0;
+    for (const raw of rooms) {
+      const room = this.adoptSnapshot(raw, now, pausedMs);
+      if (!room || this.rooms.has(room.id)) continue;
+      this.rooms.set(room.id, room);
+      // 对局记录的开局时间没有进快照：用快照写入时刻当下界，比按恢复时刻起算更接近真实。
+      if (room.round) this.roundStartedAtById.set(room.round.id, savedAt);
+      this.absorbSnapshotIds(room);
+      restored += 1;
+    }
+    return restored;
+  }
+
+  /** 单间恢复：形状校验 + 时间字段重算 + 重建倒计时。任何一步不合预期就整间丢弃。 */
+  private adoptSnapshot(
+    raw: SnapshottedRoom,
+    now: number,
+    pausedMs: number
+  ): WhoIsFakerRoomRecord | undefined {
+    if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
+    if (!raw.players || typeof raw.players !== "object") return undefined;
+    const room = raw as unknown as WhoIsFakerRoomRecord;
+
+    for (const player of Object.values(room.players)) {
+      // 重启后没有任何连接存活：座位保留，在线态与连接句柄必须归零。
+      player.online = false;
+      player.connectionId = undefined;
+      // lastSeenAt 决定掉线清理的起点。留着停机前的值，重启超过 3 分钟就会
+      // 在第一次巡检时把全员踢掉 —— 玩家还没机会重连。
+      player.lastSeenAt = now;
+    }
+
+    room.emptySinceAt = undefined;
+    room.updatedAt = now;
+    room.lastActivityAt = now;
+    if (room.hostReconnectDeadlineAt !== undefined) {
+      room.hostReconnectDeadlineAt = now + HOST_RECONNECT_TIMEOUT_MS;
+    }
+
+    const round = room.round;
+    if (round) {
+      // 倒计时暂停：停机期间没人能发言或投票，直接按原截止时刻结算等于用故障惩罚玩家。
+      if (round.phaseTimer) round.phaseTimer.endsAt += pausedMs;
+      if (round.questionerReconnectDeadlineAt !== undefined) {
+        round.questionerReconnectDeadlineAt = now + QUESTIONER_RECONNECT_TIMEOUT_MS;
+      }
+    }
+
+    if (round?.phaseTimer) this.rearmSnapshotTimer(room, round.phaseTimer);
+    return room;
+  }
+
+  private rearmSnapshotTimer(room: WhoIsFakerRoomRecord, timer: PhaseTimerState): void {
+    const existing = this.phaseTimerTimeoutByRoomId.get(room.id);
+    if (existing) clearTimeout(existing);
+    const delay = Math.max(0, timer.endsAt - this.now());
+    const handle = setTimeout(() => {
+      void this.handlePhaseTimeout(room.id, timer.phase, timer.speechMode, timer.tieBreakStage);
+    }, delay);
+    this.phaseTimerTimeoutByRoomId.set(room.id, handle);
+  }
+
+  /**
+   * 把 id 计数器抬到快照里已用过的最大序号之上。
+   * 计数器每次启动从 0 重来，而恢复回来的房间带着 `player_7`、`round_2` 这类 id，
+   * 不抬高就会在同一个房间里生成重复 id：座位串号、对局记录错挂。
+   */
+  private absorbSnapshotIds(room: WhoIsFakerRoomRecord): void {
+    const seen = new Set<object>();
+    const visit = (value: unknown): void => {
+      if (typeof value === "string") {
+        const matched = /^(?:round|description|chat|player|session)_([0-9a-z]+)$/.exec(value);
+        if (!matched) return;
+        const index = Number.parseInt(matched[1], 36);
+        if (Number.isFinite(index) && index > this.idCounter) this.idCounter = index;
+        return;
+      }
+      if (!value || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+    };
+    visit(room);
+  }
+
   getHealthSnapshot() {
     return {
       roomCount: this.rooms.size,
@@ -608,6 +726,8 @@ export class WhoIsFakerService implements AdminRoomControl {
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room)
       throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
+    // 同名重入不按「自己让给自己」放行：掉线席位默认保留在名册里等凭票重连，
+    // 例外放行会让名册里同时留下两个同名玩家。要走接管就用 room.reconnect 的会话票据。
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
@@ -3992,14 +4112,24 @@ export class WhoIsFakerService implements AdminRoomControl {
     const previousConnection = this.getConnectionByPlayer(player.id);
 
     if (previousConnection && previousConnection.id !== connection.id) {
-      previousConnection.send(
-        createEvent("session.replaced", {
-          roomId: room.id,
-        })
-      );
+      // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
+      // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
+      try {
+        previousConnection.send(
+          createEvent("session.replaced", {
+            roomId: room.id,
+          })
+        );
+      } catch {
+        /* 发不出去就不发，接管照常 */
+      }
       previousConnection.playerId = undefined;
       previousConnection.roomId = undefined;
-      previousConnection.close(4001, "session_replaced");
+      try {
+        previousConnection.close(4001, "session_replaced");
+      } catch {
+        /* 已经关掉的连接不需要再关一次 */
+      }
     }
 
     player.online = true;

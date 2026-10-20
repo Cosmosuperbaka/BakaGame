@@ -295,9 +295,19 @@ export class CEERooms {
     if (player.connectionId && player.connectionId !== connection.id) {
       const previous = this.connections.findConnection(player.connectionId);
       if (previous) {
-        previous.send(createEvent("session.replaced", { reason: "此身份已在另一连接恢复" }));
+        // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
+        // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
+        try {
+          previous.send(createEvent("session.replaced", { reason: "此身份已在另一连接恢复" }));
+        } catch {
+          /* 发不出去就不发，接管照常 */
+        }
         this.connections.detach(previous);
-        previous.close(4001, "session replaced");
+        try {
+          previous.close(4001, "session replaced");
+        } catch {
+          /* 已经关掉的连接不需要再关一次 */
+        }
       }
     }
     this.attach(connection, room, player);
