@@ -1735,7 +1735,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     const timer = setTimeout(() => {
       void this.handlePhaseTimeout(
         room.id,
-        round.phase,
+        // 比对基准取调度时刻捕获的阶段：读 round.phase 等于拿当前值和它自己比，
+        // 阶段在中途被推进时这道守卫恒成立，迟到的定时器照样强制推进。
+        timerState.phase,
         timerState.speechMode,
         timerState.tieBreakStage
       );

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
+import type { WhoIsFakerRoomRecord, WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）", async () => {
@@ -539,4 +539,50 @@ test("夜晚阶段超时自动放弃行动并推进结算", async () => {
   snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(connHost, "room.snapshot")!;
   expect(snapshot.status.phase).toBe("description");
   expect(snapshot.status.day).toBe(2);
+});
+
+/**
+ * 恢复中断的倒计时（白板猜词失败后回到被打断的阶段）时，比对基准必须是「调度时刻捕获的阶段」。
+ *
+ * 曾经恢复臂把回调参数传成 `round.phase`——在触发时刻现读，等于拿当前值和它自己比，
+ * `handlePhaseTimeout` 的阶段守卫恒成立，迟到的定时器会把已经走远的阶段再强制推进一次。
+ * 正常臂一直传的是调度时刻捕获值，只有恢复臂漏了，所以两条臂都要测。
+ */
+const advanceAfterRestoredTimer = async (movePhaseAway: boolean): Promise<boolean> => {
+  const { service } = createTestContext();
+  const connHost = createConnection(service, "conn_host");
+  await execute(service, connHost, {
+    id: "msg_create",
+    type: "room.create",
+    payload: {
+      roomId: "Oblivionis",
+      name: "测试房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+    },
+  });
+  await execute(service, connHost, { id: "msg_bot", type: "test.addBot", payload: { count: 4 } });
+  await execute(service, connHost, {
+    id: "msg_jump",
+    type: "test.jumpToPhase",
+    payload: { phase: "voting" },
+  });
+
+  const internals = service as unknown as {
+    rooms: Map<string, WhoIsFakerRoomRecord>;
+    restoreInterruptedTimer: (room: WhoIsFakerRoomRecord, remainingMs: number) => void;
+  };
+  const room = internals.rooms.get("Oblivionis")!;
+  internals.restoreInterruptedTimer(room, 5);
+  if (movePhaseAway) room.round!.phase = "description";
+  await Bun.sleep(80);
+  return room.chat.some((message) => message.text.includes("系统已强制推进"));
+};
+
+test("恢复的倒计时按调度时刻的阶段比对：阶段已移走就不再推进，未移走照常推进", async () => {
+  // 阶段被别处移走：守卫必须拦住迟到的定时器。
+  expect(await advanceAfterRestoredTimer(true)).toBe(false);
+  // 阶段没动：同一道守卫不该把正常超时也一起拦掉。
+  expect(await advanceAfterRestoredTimer(false)).toBe(true);
 });
