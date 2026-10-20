@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import sharp from "sharp";
 import { CEEImageHints } from "../src/infrastructure/CEEImageHints";
 import { ceeTestHarness, character, deferred } from "./CEENativeFixtures";
+import { ensureRoomId } from "../src/domain/Rules";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from "../src/config/Constants";
 import { ROOM_ID_TEST_MODE } from "../src/shared/Index";
 
@@ -263,6 +264,34 @@ describe("CEE 房间与提示边界", () => {
     expect(h.service.getHealthSnapshot().roomCount).toBe(1);
     h.advance(1);
     expect(h.service.getHealthSnapshot().roomCount).toBe(0);
+  });
+
+  test("CEE 的房号入口用 domain 守卫：非法号的错误码与文案跟另外两款游戏逐字一致", async () => {
+    // 曾经 CEE 自己抄了一份校验并写了自己的文案，同一个非法号在 WIF/SG 与 CEE 报出两样话。
+    // 这条用例故意把期望取自 `ensureRoomId` 本身：谁再在 CEE 侧复制一份守卫，文案就会分叉并让用例变红。
+    const rejectReason = (value: string) => {
+      try {
+        ensureRoomId(value);
+      } catch (error) {
+        return error as { code: string; message: string };
+      }
+      throw new Error(`用例前提不成立：${value} 应被 domain 守卫拒绝`);
+    };
+
+    const h = keep(ceeTestHarness());
+    const guest = h.connect("访客");
+    for (const value of ["12", "12345", "abcd"]) {
+      const expected = rejectReason(value);
+      await expect(
+        h.send(guest, "cee.room.join", { userName: "访客" }, value)
+      ).rejects.toMatchObject({ code: expected.code, message: expected.message });
+    }
+
+    // 归一化同样只有一份：测试房号大小写不敏感，小写进来落进同一间测试房，不会分裂成两间。
+    const solo = keep(ceeTestHarness({}, undefined, { roomId: ROOM_ID_TEST_MODE }));
+    const host = await solo.create();
+    await solo.send(solo.connect("迟到者"), "cee.room.join", { userName: "迟到者" }, "oblivionis");
+    expect(solo.snapshot(host).players).toHaveLength(2);
   });
 
   test("在线房间长时间无操作也会关闭并解绑成员", async () => {

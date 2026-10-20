@@ -4,10 +4,10 @@ import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import { type CEEPlayerRecord, type CEERoom } from "../domain/CEEModel";
 import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
+import { ensureRoomId } from "../domain/Rules";
 import {
   createDefaultCEESettings,
   isCEEAntiCheatRoom,
-  isValidRoomId,
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   type CEEPayload,
@@ -24,7 +24,6 @@ import {
 } from "../config/Constants";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { createEvent } from "../transport/Packets";
-import { normalizeCEERoomId } from "./CEERoomDirectory";
 import {
   NOOP_ANTI_CHEAT_REVIEW_QUEUE,
   ceeAntiCheatReviews,
@@ -208,7 +207,7 @@ export class CEERooms {
     payload: CEEPayload<"cee.room.create">
   ): Promise<CEERoomEnterResult> {
     this.ensureFree(connection);
-    const id = this.normalizeRoomId(payload.roomId);
+    const id = ensureRoomId(payload.roomId);
     if (this.rooms.has(id) || this.isRoomIdReserved(id))
       throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     const password =
@@ -628,13 +627,9 @@ export class CEERooms {
     );
   }
   private room(id: string | undefined): CEERoom {
-    const room = id ? this.rooms.get(this.normalizeRoomId(id)) : undefined;
+    const room = id ? this.rooms.get(ensureRoomId(id)) : undefined;
     if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已经关闭");
     return room;
-  }
-  private normalizeRoomId(id: string): string {
-    if (!isValidRoomId(id)) throw new AppError("INVALID_ROOM_ID", "请输入四位数字房间号");
-    return normalizeCEERoomId(id);
   }
   private name(value: string): string {
     const result = value.trim();
