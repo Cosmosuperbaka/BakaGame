@@ -2,11 +2,19 @@ package website.baka.game
 
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
+import com.getcapacitor.Bridge
 import com.getcapacitor.BridgeActivity
+import com.getcapacitor.BridgeWebViewClient
 import website.baka.game.channel.BakaChannelPlugin
 
 /**
- * Capacitor 壳主 Activity。只做三件事：装载内嵌前端、注册通道插件、放行跨站 Cookie。
+ * Capacitor 壳主 Activity。只做四件事：装载内嵌前端、注册通道插件、放行跨站 Cookie、
+ * 开启 WebAuthn 并放行接口请求。
  * 不含任何业务 UI（UI 全部来自内嵌的 Client 构建产物）。
  *
  * 窗口级防截屏不在这里：它按房间开关，见 BakaChannelPlugin.setSecureScreen。
@@ -26,11 +34,36 @@ class MainActivity : BridgeActivity() {
         // 注意：这里**不**设 FLAG_SECURE。窗口级防截屏只在反作弊房里开 —— 由页面根据
         // 房间快照经 BakaChannel.setSecureScreen 切换（见 Client/src/lib/BakaChannel.ts）。
         // 启动即全量开启会让普通玩家连截图分享都做不到。
-        // 页面 origin 是 https://localhost，接口在公网域名上 —— 会话 Cookie 属于跨站 Cookie。
-        // Capacitor 自己没有设置这个开关，不同 WebView 版本默认值不一致；显式打开，
-        // 否则登录态在壳内时有时无（表现为昵称读不到、验证码发不出、WS 是游客）。
-        bridge?.webView?.let { webView ->
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        val bridge = bridge ?: return
+        val webView = bridge.webView
+        // 页面 origin 是 https://localhost（未配置 server.hostname 时），接口在公网域名上 ——
+        // 会话 Cookie 属于跨站 Cookie。Capacitor 自己没有设置这个开关，不同 WebView 版本默认值
+        // 不一致；显式打开，否则登录态在壳内时有时无（表现为昵称读不到、验证码发不出、WS 是游客）。
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
+        // WebView 默认不暴露 WebAuthn。系统 WebView 124+ 内置支持，但必须由宿主显式开启；
+        // FOR_APP 只放行与宿主应用关联的站点（rpID 域 + assetlinks.json），不是浏览器模式。
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_AUTHENTICATION)) {
+            WebSettingsCompat.setWebAuthenticationSupport(
+                webView.settings,
+                WebSettingsCompat.WEB_AUTHENTICATION_SUPPORT_FOR_APP
+            )
         }
+
+        // server.hostname 把内嵌资源挂到站点域名后，/api/* 也落在该域名下：Capacitor 的本地
+        // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
+        // 仍走本地服务（SPA 深链刷新才不会 404）。
+        bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge))
+    }
+}
+
+private class ApiPassthroughWebViewClient(bridge: Bridge) : BridgeWebViewClient(bridge) {
+    override fun shouldInterceptRequest(
+        view: WebView,
+        request: WebResourceRequest
+    ): WebResourceResponse? {
+        val path = request.url.path
+        if (path != null && (path == "/api" || path.startsWith("/api/"))) return null
+        return super.shouldInterceptRequest(view, request)
     }
 }

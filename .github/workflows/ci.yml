@@ -374,6 +374,10 @@ jobs:
     # 所以在作业级先把它折算成一个布尔字符串，下面各步改判 env.HAS_KEYSTORE。
     env:
       HAS_KEYSTORE: ${{ secrets.BAKA_KEYSTORE_BASE64 != '' }}
+      # 壳内产物必须显式指向真实接口（页面在 WebView 里，不会走边缘同源反代）。
+      # 同一个值也是 WebView 的 origin：通行密钥的 rpID 是站点域名，页面 origin 必须与它
+      # 同域，Digital Asset Links 才查得到。生产前后端同源，所以接口基址可以直接复用。
+      VITE_SERVER_URL: https://game.baka.website
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -392,14 +396,11 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      # 安卓壳把页面内嵌在 WebView 里，origin 恒为 https://localhost（见 Mobile/capacitor.config.ts），
-      # 接口不可能走同源相对路径：不注入基址的话 `/api/*` 会被 WebView 的本地资源服务当成静态
-      # 文件处理，找不到就回空/404，症状是「头像能看（<img> 走绝对地址）、昵称读不到、
-      # 验证码发不出、WS 连不上、进不了对局」。
+      # 安卓壳把页面内嵌在 WebView 里，接口不可能走同源相对路径：不注入基址的话
+      # `/api/*` 会被 WebView 的本地资源服务当成静态文件处理，找不到就回空/404，症状是
+      # 「头像能看（<img> 走绝对地址）、昵称读不到、验证码发不出、WS 连不上、进不了对局」。
       # 网页端仍不注入（同源由边缘反代），所以这条只作用于壳内产物。
       - name: Build client assets
-        env:
-          VITE_SERVER_URL: https://game.baka.website
         run: pnpm --filter client build
 
       # Capacitor 7 的 capacitor-android 模块自己声明 source/target 21，

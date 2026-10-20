@@ -7,14 +7,20 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 import { ProfileDialog } from "./ProfileDialog";
 
 const passkeySupported = vi.hoisted(() => vi.fn<() => boolean>());
+const platformAuthenticatorAvailable = vi.hoisted(() =>
+  vi.fn<() => Promise<boolean | undefined>>()
+);
 const listPasskeys = vi.hoisted(() => vi.fn<() => Promise<unknown[]>>());
-const addPasskey = vi.hoisted(() => vi.fn<() => Promise<void>>());
+const addPasskey = vi.hoisted(() =>
+  vi.fn<(attachment?: "platform" | "cross-platform") => Promise<void>>()
+);
 const removePasskey = vi.hoisted(() => vi.fn<(id: string) => Promise<void>>());
 const renamePasskey = vi.hoisted(() => vi.fn<(id: string, name: string) => Promise<void>>());
 
 vi.mock("@/lib/Passkey", () => ({
   PASSKEY_NAME_MAX: 40,
   passkeySupported,
+  platformAuthenticatorAvailable,
   listPasskeys,
   addPasskey,
   removePasskey,
@@ -22,6 +28,12 @@ vi.mock("@/lib/Passkey", () => ({
   // 组件只关心「拿到一句中文」，映射规则本身在 lib/Passkey.test.ts 里验。
   passkeyErrorMessage: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,
+  passkeyRegistrationErrorMessage: (
+    error: unknown,
+    _attachment: unknown,
+    _platform: unknown,
+    fallback: string
+  ) => (error instanceof Error ? error.message : fallback),
 }));
 
 const profile: AccountProfile = {
@@ -54,6 +66,7 @@ const plantPasskeys = (names: Record<string, string>) => {
 beforeEach(() => {
   useAccountStore.setState({ profile, status: "signedIn" });
   passkeySupported.mockReturnValue(true);
+  platformAuthenticatorAvailable.mockResolvedValue(true);
   listPasskeys.mockResolvedValue([]);
   addPasskey.mockResolvedValue();
   removePasskey.mockResolvedValue();
@@ -61,6 +74,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  platformAuthenticatorAvailable.mockReset();
   listPasskeys.mockReset();
   addPasskey.mockReset();
   removePasskey.mockReset();
@@ -86,15 +100,32 @@ describe("账号资料弹窗的通行密钥", () => {
     await vi.waitFor(() => expect(listPasskeys).toHaveBeenCalledTimes(2));
   });
 
-  it("一把密钥都没有时说明来路，添加成功后重取列表", async () => {
+  it("两条添加入口分别要求本机与跨平台验证器，成功后重取列表", async () => {
     listPasskeys.mockResolvedValueOnce([]).mockResolvedValueOnce([entry("pk-9", "手机")]);
     const { user } = renderDialog();
 
     expect(await screen.findByText("还没有添加通行密钥。")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "添加通行密钥" }));
+    await user.click(screen.getByRole("button", { name: "用密码管理器或安全密钥" }));
 
-    expect(addPasskey).toHaveBeenCalledOnce();
+    expect(addPasskey).toHaveBeenCalledWith("cross-platform");
     expect(await screen.findByText("手机")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "用本机解锁" }));
+    expect(addPasskey).toHaveBeenLastCalledWith("platform");
+  });
+
+  it("系统验证器不可用时禁用本机入口，跨设备入口照常", async () => {
+    platformAuthenticatorAvailable.mockResolvedValue(false);
+    const { user } = renderDialog();
+
+    const platform = await screen.findByRole("button", { name: "用本机解锁" });
+    await vi.waitFor(() => expect(platform).toBeDisabled());
+    expect(screen.getByText("本设备未检测到系统验证器。")).toBeInTheDocument();
+
+    const cross = screen.getByRole("button", { name: "用密码管理器或安全密钥" });
+    expect(cross).toBeEnabled();
+    await user.click(cross);
+    expect(addPasskey).toHaveBeenCalledWith("cross-platform");
   });
 
   it("点铅笔就地换成输入框，回车提交并刷新列表", async () => {
@@ -173,7 +204,7 @@ describe("账号资料弹窗的通行密钥", () => {
     );
     const { user } = renderDialog();
 
-    await user.click(await screen.findByRole("button", { name: "添加通行密钥" }));
+    await user.click(await screen.findByRole("button", { name: "用密码管理器或安全密钥" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("这次登录已超过一天");
   });
 
@@ -182,8 +213,9 @@ describe("账号资料弹窗的通行密钥", () => {
     const { user } = renderDialog();
 
     expect(await screen.findByText("请先登录")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "添加通行密钥" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "添加通行密钥" }));
+    const cross = screen.getByRole("button", { name: "用密码管理器或安全密钥" });
+    expect(cross).toBeEnabled();
+    await user.click(cross);
     expect(addPasskey).toHaveBeenCalledOnce();
   });
 

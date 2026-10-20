@@ -2,7 +2,8 @@
 
 CEE 反作弊计划 P3 的客户端部分：Capacitor 壳 + **内嵌** `Client/` 构建产物 + `BakaChannel` 原生插件。
 与桌面端（远程 URL）不同，移动端必须打包产物（商店审核 + 离线可用）。UI 全部复用 `Client/`，
-前端只有 `bridge/baka-bridge.js` 一处桥接，`Client/` 源码零改动。本期不做 iOS；协议 `clientType: "mobile"` 不区分平台。
+前端桥接只有 `bridge/baka-bridge.js` 一处，桥接本身不需要改 `Client/` 源码；通行密钥等能力走
+Client 自己的 WebAuthn 代码（见 §7.5）。本期不做 iOS；协议 `clientType: "mobile"` 不区分平台。
 
 ## 1. 桥接契约（逐字，前端/服务端按此对接）
 
@@ -261,11 +262,39 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
 - **包体积/更新**：内嵌产物意味着 Client 每次发版都要重打 APK；沿用发布流水线的固定文件名别名
   （`BakaGame-<version>-release.apk` 实际名 + 无版本别名）分发。
 
+### 7.5 WebView 内的通行密钥（WebAuthn）
+
+壳内的通行密钥入口能否真正调起系统验证器，取决于三层前提，缺任何一层都会表现为「入口在，但点了没反应或报无可用验证器」：
+
+1. **WebView 支持且已由宿主开启**：系统 WebView 124+ 才实现 WebAuthn；壳用 `androidx.webkit` 的
+   `setWebAuthenticationSupport(..., WEB_AUTHENTICATION_SUPPORT_FOR_APP)` 显式开启（见 `MainActivity.kt`）。
+   `WebViewFeature.isFeatureSupported` 兜住旧 WebView，页面按不支持 WebAuthn 隐藏整段入口。
+2. **页面 origin 与 rpID 同域**：`rpID` 取前端页面域名（见 [Server/docs/Account.md](../Server/docs/Account.md) §1），
+   Ceremony 发生在页面源里。壳的默认 origin 是 `https://localhost`，与站点域名不同域，会以 `SecurityError` 失败。
+   `capacitor.config.ts` 用构建期的 `VITE_SERVER_URL`（或显式 `BAKA_PASSKEY_HOST`）把 `server.hostname`
+   设成站点 host；`cap sync` 时这个变量必须还在环境里。只接受 https、默认端口、无路径的站点地址，
+   IP、IPv6、带端口或路径的值会被忽略。未注入时保持 `https://localhost`，普通功能不受影响。
+3. **Digital Asset Links**：`https://<rpID>/.well-known/assetlinks.json` 必须声明包名
+   `website.baka.game` 与**实际装机包**的 SHA-256 签名摘要。文件维护在
+   `Client/public/.well-known/assetlinks.json`，随 Web 构建一起发布；换签名或轮换后必须同步更新，
+   否则 `FOR_APP` 关联失败。摘要与指纹是敏感信息，维护时不要贴进聊天、文档或提交信息。
+
+`server.hostname` 生效后，本地资源服务会接管该域名下的所有路径，包括 `/api/*`；Capacitor 会把
+无扩展名的路径回成 `index.html`。因此 `MainActivity.kt` 安装了 `ApiPassthroughWebViewClient`：
+`/api/*` 返回 `null` 交给真实网络，其余路径仍由本地资源服务提供（SPA 深链刷新不 404）。
+
+真机验证注意：CI 的 debug 包用的是 runner 上临时生成的 debug keystore，其指纹无法预先写进
+assetlinks，不能用它验收通行密钥；请用正式签名包，或本机固定 debug keystore 构建并把指纹列进
+assetlinks 后再测。
+
 ## 8. 已知限制与待真机验证
 
-- **未编译验证**：交付环境不联网安装依赖，Gradle / AGP / Capacitor 这条链路一次也没真跑过；首次构建按 §6 排错
-  （重点核对本地 `BridgeActivity.init()`/`bridge.registerPlugin` 与所用 Capacitor 大版本签名一致，
-  如 CLI 更新模板可 `cap add android` 重新生成后把 `channel/` 源码平移过去）。
+- **通行密钥仍待真机验证**：需要 WebView 124+、origin 与 rpID 同域、assetlinks 命中的正式签名包；
+  本仓库的 CI 只负责编译 APK，不覆盖系统验证器与 DAL 关联。WebView 低于 124 时页面会按不支持降级
+  （入口隐藏），这是预期行为，不代表注册链路已通过。
+- **编译已通，运行未验**：本机工具链已能构建 debug APK；真机启动、签名发布包与 CI 产物仍按下文逐项确认。
+  首次构建按 §6 排错（重点核对本地 `BridgeActivity.init()`/`bridge.registerPlugin` 与所用 Capacitor
+  大版本签名一致，如 CLI 更新模板可 `cap add android` 重新生成后把 `channel/` 源码平移过去）。
 - 密钥算法选了 **EC P-256 + SHA256withECDSA**（AndroidKeyStore 的 Ed25519 需要更高的系统 API，
   且 attestation 机型覆盖不齐）；协议 `keyAlgorithm` 字段为将来分叉留了位。
 - 原生插件直接内嵌 app 模块并由 `MainActivity` 注册，不做独立 npm 插件包：桥接 JS 通过
@@ -277,8 +306,9 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
 
 ### 通道证明闭环：仍要在真机上确认
 
-§3 的闭环代码已经写完，但**一行都没跑过**：`BakaChannelPlugin.kt` 与 `KeystoreChannel.kt` 均未编译，
-`baka-bridge.js` 也没在真实 WebView 里跑过一次。前端一侧已接入：握手查询串每次建连时重新生成并带上
+§3 的闭环代码已经写完，并已通过 APK 编译；但**端到端链路仍要在真机上确认**：
+`BakaChannelPlugin.kt` 与 `KeystoreChannel.kt` 的签名、注册与票据闭环，以及 `baka-bridge.js`
+在真实 WebView 里的运行，都还没有用真实设备走通过。前端一侧已接入：握手查询串每次建连时重新生成并带上
 `ticket`（读法见 `Client/src/lib/BakaChannel.ts` 与 `Client/src/lib/CEEWs.ts`）。
 以下每一条都要在真机上验证，不要当成已可用：
 

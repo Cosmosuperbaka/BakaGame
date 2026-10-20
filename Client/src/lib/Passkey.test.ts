@@ -30,10 +30,13 @@ vi.mock("@simplewebauthn/browser", () => ({
 import {
   PASSKEY_NAME_MAX,
   addPasskey,
+  autoPasskeyName,
   describeDevice,
   listPasskeys,
   passkeyErrorMessage,
+  passkeyRegistrationErrorMessage,
   passkeySupported,
+  platformAuthenticatorAvailable,
   removePasskey,
   renamePasskey,
   signInWithPasskey,
@@ -134,6 +137,17 @@ describe("通行密钥客户端", () => {
     });
   });
 
+  it("自动名把保管方写进名字：本机解锁与跨设备密钥可区分", () => {
+    stubNavigator(UA.windowsChrome, {
+      platform: "Windows",
+      brands: [{ brand: "Chromium" }, { brand: "Google Chrome" }],
+    });
+
+    expect(autoPasskeyName("platform")).toBe("Windows · Chrome（本机解锁）");
+    expect(autoPasskeyName("cross-platform")).toBe("Windows · Chrome（跨设备密钥）");
+    expect(autoPasskeyName()).toBe("Windows · Chrome");
+  });
+
   it("认不出设备时也给出可读的名字，不留空名", async () => {
     stubNavigator("SomeBot/1.0");
     authGet.mockResolvedValue({ challenge: "c3" });
@@ -145,6 +159,89 @@ describe("通行密钥客户端", () => {
       response: { id: "cred-3" },
       name: "本设备",
     });
+  });
+
+  it("两路注册各自限定验证器类型，保留服务端的其余选择", async () => {
+    stubNavigator(UA.windowsChrome, {
+      platform: "Windows",
+      brands: [{ brand: "Chromium" }, { brand: "Google Chrome" }],
+    });
+    const optionsJSON = {
+      challenge: "c4",
+      authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+    };
+    authGet.mockResolvedValue(optionsJSON);
+
+    startRegistration.mockResolvedValue({ id: "cred-p", authenticatorAttachment: "platform" });
+    await addPasskey("platform");
+    expect(startRegistration).toHaveBeenLastCalledWith({
+      optionsJSON: {
+        challenge: "c4",
+        authenticatorSelection: {
+          residentKey: "required",
+          userVerification: "preferred",
+          authenticatorAttachment: "platform",
+        },
+      },
+    });
+    expect(authPost).toHaveBeenLastCalledWith("/passkey/verify-registration", {
+      response: { id: "cred-p", authenticatorAttachment: "platform" },
+      name: "Windows · Chrome（本机解锁）",
+    });
+
+    startRegistration.mockResolvedValue({
+      id: "cred-x",
+      authenticatorAttachment: "cross-platform",
+    });
+    await addPasskey("cross-platform");
+    expect(startRegistration).toHaveBeenLastCalledWith({
+      optionsJSON: {
+        challenge: "c4",
+        authenticatorSelection: {
+          residentKey: "required",
+          userVerification: "preferred",
+          authenticatorAttachment: "cross-platform",
+        },
+      },
+    });
+    expect(authPost).toHaveBeenLastCalledWith("/passkey/verify-registration", {
+      response: { id: "cred-x", authenticatorAttachment: "cross-platform" },
+      name: "Windows · Chrome（跨设备密钥）",
+    });
+    // 服务端下发的选项只被克隆，不在原对象上追加类型。
+    expect(optionsJSON.authenticatorSelection).toEqual({
+      residentKey: "required",
+      userVerification: "preferred",
+    });
+  });
+
+  it("回执不报保管方时，名字退回玩家选的那一类", async () => {
+    stubNavigator(UA.windowsChrome, { platform: "Windows" });
+    authGet.mockResolvedValue({ challenge: "c5" });
+    startRegistration.mockResolvedValue({ id: "cred-5" });
+
+    await addPasskey("cross-platform");
+
+    expect(authPost).toHaveBeenLastCalledWith("/passkey/verify-registration", {
+      response: { id: "cred-5" },
+      name: "Windows · Chrome（跨设备密钥）",
+    });
+  });
+
+  it("系统验证器探测：不支持或异常时返回 undefined，交给调用方决定", async () => {
+    browserSupportsWebAuthn.mockReturnValue(false);
+    await expect(platformAuthenticatorAvailable()).resolves.toBeUndefined();
+
+    browserSupportsWebAuthn.mockReturnValue(true);
+    vi.stubGlobal("PublicKeyCredential", {
+      isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(false),
+    });
+    await expect(platformAuthenticatorAvailable()).resolves.toBe(false);
+
+    vi.stubGlobal("PublicKeyCredential", {
+      isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockRejectedValue(new Error("x")),
+    });
+    await expect(platformAuthenticatorAvailable()).resolves.toBeUndefined();
   });
 
   it("改名只提交去掉首尾与超长部分后的名字", async () => {
@@ -169,9 +266,32 @@ describe("通行密钥客户端", () => {
   });
 
   it("浏览器取消记作用户意愿，不报成密钥坏了", () => {
-    for (const name of ["NotAllowedError", "AbortError"]) {
-      expect(passkeyErrorMessage(new DOMException("x", name), "兜底")).toBe("已取消通行密钥验证");
-    }
+    expect(passkeyErrorMessage(new DOMException("x", "AbortError"), "兜底")).toBe(
+      "已取消通行密钥验证"
+    );
+    expect(passkeyErrorMessage(new DOMException("x", "NotAllowedError"), "兜底")).toBe(
+      "已取消通行密钥验证，或本设备没有可用的通行密钥"
+    );
+    expect(passkeyErrorMessage(new DOMException("x", "SecurityError"), "兜底")).toBe(
+      "当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试"
+    );
+  });
+
+  it("注册失败按已知线索拆开：域名未关联 / 无系统验证器 / 取消或不可用", () => {
+    const security = new DOMException("x", "SecurityError");
+    const notAllowed = new DOMException("x", "NotAllowedError");
+    expect(passkeyRegistrationErrorMessage(security, "platform", true, "兜底")).toBe(
+      "当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试"
+    );
+    expect(passkeyRegistrationErrorMessage(notAllowed, "platform", false, "兜底")).toBe(
+      "本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」"
+    );
+    expect(passkeyRegistrationErrorMessage(notAllowed, "cross-platform", undefined, "兜底")).toBe(
+      "已取消通行密钥验证，或所选验证器不可用"
+    );
+    expect(
+      passkeyRegistrationErrorMessage(new DOMException("x", "AbortError"), "platform", true, "兜底")
+    ).toBe("已取消通行密钥验证");
   });
 
   it("服务端中文原因原样透出，其余错误只给兜底文案", () => {

@@ -90,24 +90,77 @@ const hintsOf = (): DeviceHints => {
 const attachmentSuffix = (attachment?: string): string =>
   attachment === "cross-platform" ? "跨设备密钥" : attachment === "platform" ? "本机解锁" : "";
 
-const autoPasskeyName = (attachment?: string): string => {
+/** 导出仅供单测：浏览器线索由参数注入，但命名文案本身是产品行为。 */
+export const autoPasskeyName = (attachment?: string): string => {
   const device = describeDevice(hintsOf());
   const suffix = attachmentSuffix(attachment);
   if (!device) return suffix || "本设备";
   return suffix ? `${device}（${suffix}）` : device;
 };
 
+/** 注册时要求浏览器只呈现哪一类验证器；登录不限制，由系统挑出已有凭据。 */
+export type PasskeyAttachment = "platform" | "cross-platform";
+
 /** 浏览器是否支持 WebAuthn：不支持时整段入口都不该出现，而不是摆一个必然失败的按钮。 */
 export const passkeySupported = (): boolean => browserSupportsWebAuthn();
 
-/** 用户在系统弹窗里取消、或本设备没有可用密钥：`DOMException.name` 是唯一可辨的信号。 */
-const isCancelled = (error: unknown): boolean =>
-  error instanceof DOMException &&
-  (error.name === "NotAllowedError" || error.name === "AbortError");
+/**
+ * 本机是否有系统验证器（Windows Hello、指纹、面容）。
+ * 返回 `undefined` 表示浏览器没给答案，调用方不应据此禁用入口。
+ */
+export const platformAuthenticatorAvailable = async (): Promise<boolean | undefined> => {
+  if (
+    !passkeySupported() ||
+    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== "function"
+  ) {
+    return undefined;
+  }
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return undefined;
+  }
+};
 
-/** 通行密钥流程的错误文案：服务端错误码已在 `Api.ts` 换成中文，取消与未知情况用调用方给的兜底。 */
+const errorName = (error: unknown): string => (error instanceof DOMException ? error.name : "");
+
+/** 页面 origin 与 rpID 不同域（Android 壳未对齐、或 DNS 换了域）时的唯一可辨信号是 `SecurityError`。 */
+const DOMAIN_MISMATCH_MESSAGE = "当前页面域名与通行密钥域名不一致，请用网页版或更新后的客户端再试";
+
+/**
+ * 通行密钥流程的错误文案：服务端错误码已在 `Api.ts` 换成中文。
+ *
+ * WebAuthn 把「用户取消」「超时」「没有可用验证器」都压成 `NotAllowedError`，
+ * 只能给出包含两种可能的文案；域名未关联是独立的 `SecurityError`，可以单独说清。
+ */
 export const passkeyErrorMessage = (error: unknown, fallback: string): string => {
-  if (isCancelled(error)) return "已取消通行密钥验证";
+  const name = errorName(error);
+  if (name === "SecurityError") return DOMAIN_MISMATCH_MESSAGE;
+  if (name === "AbortError") return "已取消通行密钥验证";
+  if (name === "NotAllowedError") return "已取消通行密钥验证，或本设备没有可用的通行密钥";
+  if (error instanceof AuthRequestError) return error.message;
+  return fallback;
+};
+
+/**
+ * 注册失败的文案比登录多一条已知线索：玩家明确选了「本机解锁」、
+ * 而能力探测说本机没有系统验证器时，可以直接告诉他换另一条路。
+ */
+export const passkeyRegistrationErrorMessage = (
+  error: unknown,
+  attachment: PasskeyAttachment | undefined,
+  platformAuthenticator: boolean | undefined,
+  fallback: string
+): string => {
+  const name = errorName(error);
+  if (name === "SecurityError") return DOMAIN_MISMATCH_MESSAGE;
+  if (name === "AbortError") return "已取消通行密钥验证";
+  if (name === "NotAllowedError") {
+    if (attachment === "platform" && platformAuthenticator === false) {
+      return "本设备没有可用的系统验证器，请改用「密码管理器或安全密钥」";
+    }
+    return "已取消通行密钥验证，或所选验证器不可用";
+  }
   if (error instanceof AuthRequestError) return error.message;
   return fallback;
 };
@@ -122,18 +175,42 @@ export const signInWithPasskey = async (): Promise<void> => {
 };
 
 /**
+ * 把玩家选的验证器类型写进服务端给的选项：`authenticatorSelection` 的其余字段
+ * （`residentKey`、`userVerification`）原样保留，安全要求不在这里放宽或收紧。
+ */
+const withAttachment = (
+  optionsJSON: PublicKeyCredentialCreationOptionsJSON,
+  attachment: PasskeyAttachment
+): PublicKeyCredentialCreationOptionsJSON => ({
+  ...optionsJSON,
+  authenticatorSelection: {
+    ...optionsJSON.authenticatorSelection,
+    authenticatorAttachment: attachment,
+  },
+});
+
+/**
  * 给当前登录的账号添加一把密钥；要求会话既在登录状态、又足够新鲜。
+ *
+ * `attachment` 必传时由浏览器只呈现对应类型：
+ * - `platform`：系统验证器（Windows Hello、指纹、面容），只在明确要求时使用；
+ * - `cross-platform`：密码管理器或安全密钥（Bitwarden、YubiKey），不再被 Windows Hello 截胡。
+ * 不传则沿用服务端的默认选择。
+ *
  * 名字自动取（设备 + 保管方）：插件不会替站点取名，不传就会存成空名，
  * 列表里全是「未命名通行密钥」。这里不弹输入框，先记下再让玩家在列表里改。
  */
-export const addPasskey = async (): Promise<void> => {
+export const addPasskey = async (attachment?: PasskeyAttachment): Promise<void> => {
   const optionsJSON = await authGet<PublicKeyCredentialCreationOptionsJSON>(
     "/passkey/generate-register-options"
   );
-  const response = await startRegistration({ optionsJSON });
+  const response = await startRegistration({
+    optionsJSON: attachment ? withAttachment(optionsJSON, attachment) : optionsJSON,
+  });
+  // 浏览器的回执最准；个别实现回 null，就退回玩家选的那一类，名字仍能说清来路。
   await authPost("/passkey/verify-registration", {
     response,
-    name: autoPasskeyName(response.authenticatorAttachment),
+    name: autoPasskeyName(response.authenticatorAttachment ?? attachment),
   });
 };
 

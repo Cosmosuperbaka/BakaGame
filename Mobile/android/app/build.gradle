@@ -86,4 +86,8 @@ dependencies {
     // 缺了它 Kotlin 侧会报一整片连锁错误（AppCompatActivity 不可访问 → Plugin 基类解析失败
     // → asyncCall / context / reject 全部 unresolved），看着像十几个 bug，其实只有一个。
     implementation 'androidx.appcompat:appcompat:1.7.0'
+    // WebView 的 WebAuthn 开关（MainActivity 的 setWebAuthenticationSupport）从 1.12.1 起提供；
+    // 钉 1.14.0 与官方 WebView 通行密钥指引同一枚。设备 WebView 太旧时会由
+    // WebViewFeature.isFeatureSupported 兜住，继续按不支持 WebAuthn 降级。
+    implementation 'androidx.webkit:webkit:1.14.0'
 }
