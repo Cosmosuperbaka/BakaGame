@@ -1,5 +1,5 @@
 import { assertLobbyRendering } from "./fixtures/LobbyRendering";
-import type { BrowserContext, Page } from "@playwright/test";
+import type { BrowserContext, ElementHandle, Page } from "@playwright/test";
 import { closeIsolatedContext, expect, isLoopbackUrl, test } from "./fixtures/Isolation";
 
 async function expectActionAreaScrollable(page: Page) {
@@ -54,6 +54,53 @@ function installPageQualityGuards(page: Page) {
     }
   });
   return async () => expect(failures, failures.join("\n")).toEqual([]);
+}
+
+/**
+ * 旧玩家行此刻的渲染不透明度落在哪一档：祖先链逐层累乘，淡出中间态严格在 (0,1)，卸载后读不到。
+ * 只认这一个节点，避免把同样半透明的新入场行误读成淡出中。
+ */
+async function exitState(row: ElementHandle<SVGElement | HTMLElement>) {
+  return row
+    .evaluate((element) => {
+      let opacity = 1;
+      for (let node: HTMLElement | null = element as HTMLElement; node; node = node.parentElement)
+        opacity *= Number(getComputedStyle(node).opacity);
+      return opacity > 0 && opacity < 1 ? "exiting" : opacity > 0 ? "solid" : "gone";
+    })
+    .catch(() => "gone" as const);
+}
+
+/**
+ * 把该玩家所在行的淡出从创建时起拉长。淡出只有一瞬，机器一慢，帧间隔比整段动画还长：
+ * 既采不到中间态，也点不到中间态，用例就悄悄退化成「切过去再切回来」的正例。
+ * 拉长的只是时长，缓动与状态序列不变，快慢两种机器点到的都是同一次竞争。
+ */
+async function stretchFadeOut(page: Page, text: string) {
+  await page.evaluate(
+    ({ text }) => {
+      const original = Element.prototype.animate;
+      Element.prototype.animate = function (
+        this: Element,
+        keyframes: Keyframe[] | PropertyIndexedKeyframes,
+        options?: number | KeyframeAnimationOptions
+      ) {
+        const opacity = (keyframes as unknown as { opacity?: number[] }).opacity;
+        const fadingOut =
+          typeof options === "object" &&
+          typeof options.duration === "number" &&
+          opacity?.[0] === 1 &&
+          opacity?.[1] === 0 &&
+          this.textContent?.includes(text);
+        return original.call(
+          this,
+          keyframes,
+          fadingOut ? { ...options, duration: options.duration * 20 } : options
+        );
+      };
+    },
+    { text }
+  );
 }
 
 async function removeAllTestBots(page: Page) {
@@ -386,17 +433,26 @@ test("独自一人在旁观动画途中切回，自己的玩家行仍然可见",
   await expect(page).toHaveURL(/\/whoisfaker\/room\/\d{4}$/);
   const row = page.getByText(name, { exact: true });
   await expect(row).toBeVisible();
+  // 抓住此刻这一行的节点：下面的中间态必须发生在「旧行」身上，新入场那一行同样半透明，按文本读分不开。
+  const oldRow = await row.elementHandle();
+  if (!oldRow) throw new Error("找不到本人的玩家行");
   // 等进房的入场动画落定，下面的切换才是「第一次」换组。
   await page.waitForTimeout(1_000);
 
+  await stretchFadeOut(page, name);
   await page.getByRole("button", { name: "加入旁观" }).click();
-  // 不等入口滑完：旧行退场播到一半时切回来，正是会把行「复活」成透明态的时机。
-  // force 跳过 Playwright 的稳定性等待，否则点击会被拖到动画播完之后。
+  // 旧行淡出播到一半时切回来，正是会把行「复活」成透明态的时机。
+  // 中间态实测出来才点，读不到就显式失败：这样快慢两种机器上跑的都是同一次竞争，不是某台机器的运气。
   await page.getByRole("button", { name: "取消旁观" }).waitFor({ state: "attached" });
-  await page.waitForTimeout(250);
+  await expect
+    .poll(() => exitState(oldRow), {
+      message: "没捕获到旧玩家行的淡出中间态：本例退化成「切旁观再切回」的正例，没测到竞争",
+    })
+    .toBe("exiting");
+  // force 跳过 Playwright 的稳定性等待，否则点击会被拖到动画播完之后。
   await page.getByRole("button", { name: "取消旁观" }).click({ force: true });
   await expect(page.getByRole("button", { name: "加入旁观" })).toBeVisible();
-  // 旧行退场卸载后只剩一行，且它连同祖先都完全不透明。
+  // 旧行淡出卸载后只剩一行，且它连同祖先都完全不透明。
   await expect
     .poll(() =>
       row.evaluateAll((elements) =>
