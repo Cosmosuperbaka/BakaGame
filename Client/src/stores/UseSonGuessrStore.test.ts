@@ -103,7 +103,11 @@ describe("Songuessr store integration", () => {
   });
 
   it("persists created room sessions in the Songuessr namespace", async () => {
-    wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
+    wsMock.send.mockResolvedValue({
+      roomId: "1234",
+      playerId: "player-1",
+      sessionToken: "created-token",
+    });
 
     await useSonGuessrStore.getState().createRoom({
       roomId: "1234",
@@ -295,7 +299,7 @@ describe("Songuessr store integration", () => {
     await Promise.resolve();
 
     expect(useSonGuessrStore.getState().connected).toBe(true);
-    expect(wsMock.send).toHaveBeenCalledWith("song.lobby.subscribeRooms");
+    expect(wsMock.send).toHaveBeenCalledWith("song.lobby.subscribeRooms", {});
     expect(wsMock.send).toHaveBeenCalledWith("song.room.reconnect", {
       roomId: "3456",
       sessionToken: "live-token",
@@ -547,6 +551,8 @@ describe("Songuessr store integration", () => {
   it("RPC初始房间快照也去重排序并裁剪至最新200条", async () => {
     const payloadChat = [...chatRange(0, 280).reverse(), ...chatRange(270, 10)];
     wsMock.send.mockResolvedValue({
+      roomId: "1234",
+      playerId: "player-1",
       sessionToken: "chat-token",
       snapshot: { ...snapshot, chat: payloadChat },
     });

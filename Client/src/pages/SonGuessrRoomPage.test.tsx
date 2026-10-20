@@ -1078,7 +1078,8 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     fireEvent.click(startButton);
 
     // 校验请求已发出（出题耗时由上游决定，不带请求超时），按钮进入 loading 禁用态并渲染 spinner 与动态文案
-    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.start", {}, { timeout: 0 });
+    // 空载荷由 store 的 `sendCommand` 统一补成 `{}`，组件侧省略即视为无载荷。
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.start", undefined, { timeout: 0 });
     expect(startButton).toBeDisabled();
     expect(startButton).toHaveAttribute("aria-busy", "true");
     expect(within(startButton).getByTestId("button-spinner")).toBeInTheDocument();
@@ -1191,7 +1192,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     // 点击再来一轮
     fireEvent.click(nextRoundButton);
 
-    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.nextRound", {}, { timeout: 0 });
+    expect(sendCommandSpy).toHaveBeenCalledWith("song.game.nextRound", undefined, { timeout: 0 });
     expect(nextRoundButton).toBeDisabled();
     expect(nextRoundButton).toHaveAttribute("aria-busy", "true");
     expect(within(nextRoundButton).getByTestId("button-spinner")).toBeInTheDocument();

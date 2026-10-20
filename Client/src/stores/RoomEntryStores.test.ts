@@ -13,7 +13,7 @@ const sockets = vi.hoisted(() => {
 vi.mock("@/lib/WhoIsFakerWs", () => ({
   send: sockets.faker.send,
   connect: sockets.faker.connect,
-  whoIsFakerWsClient: { disconnect: sockets.faker.disconnect },
+  disconnect: sockets.faker.disconnect,
   onMessage: (fn: (m: ServerMessage) => void) => {
     sockets.faker.messages.push(fn);
     return () => {
@@ -87,6 +87,8 @@ const harnesses = [
     privateState: wifPrivate(WIF_PEOPLE.host, "waiting"),
     snapshotEvent: "room.snapshot",
     privateEvent: "game.privateState",
+    // 白板猜词的进房 ack 只有身份三元组，快照与私有态只由 event 下发。
+    ackCarriesStates: false,
   },
   {
     name: "Song",
@@ -101,6 +103,8 @@ const harnesses = [
     privateState: songPrivate(),
     snapshotEvent: "song.room.snapshot",
     privateEvent: "song.game.privateState",
+    // 猜歌的进房 ack 直接带回首屏快照与私有态，见 shared 的 SonGuessrRoomEnterAck。
+    ackCarriesStates: true,
   },
 ];
 for (const h of harnesses)
@@ -109,8 +113,12 @@ for (const h of harnesses)
     const receipt = (roomId = "1234", token = "late-token") => ({
       roomId,
       sessionToken: token,
-      snapshot: { ...h.snapshot, roomId },
-      privateState: { ...h.privateState, sessionToken: token },
+      ...(h.ackCarriesStates
+        ? {
+            snapshot: { ...h.snapshot, roomId },
+            privateState: { ...h.privateState, sessionToken: token },
+          }
+        : {}),
     });
     beforeEach(() => {
       vi.useFakeTimers();
@@ -194,7 +202,8 @@ for (const h of harnesses)
       expect(h.store.getState()).toMatchObject({
         roomId: "5678",
         sessionToken: "new-token",
-        snapshot: { roomId: "5678" },
+        // 首屏快照的来源按协议分道：Song 随 ack 返回，Faker 只由 event 下发（event 路径另有专用用例）。
+        ...(h.ackCarriesStates ? { snapshot: { roomId: "5678" } } : {}),
       });
     });
     it("StrictMode新owner接管同房恢复，旧调用取消不重复离房", async () => {

@@ -2,22 +2,36 @@ import { StrictMode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore, initWhoIsFakerWs } from "@/stores/UseWhoIsFakerStore";
+import type { ServerMessage } from "@bakagame/shared";
 import { getSessionToken, saveSessionToken, saveUsername } from "@/lib/Storage";
-import { wifSnapshot, wifPrivate, WIF_PEOPLE } from "@/stories/fixtures/WhoIsFaker";
+import { wifSnapshot } from "@/stories/fixtures/WhoIsFaker";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
 
-const { navigate, waitConnection, send } = vi.hoisted(() => ({
+const { navigate, waitConnection, send, listeners } = vi.hoisted(() => ({
   navigate: vi.fn(),
   waitConnection: vi.fn(),
   send: vi.fn(),
+  listeners: [] as Array<(message: ServerMessage) => void>,
 }));
 vi.mock("@/hooks/UsePageTransition", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/UsePageTransition")>()),
   usePageNavigate: () => navigate,
 }));
-vi.mock("@/lib/WhoIsFakerWs", () => ({ waitForConnection: waitConnection, send }));
+vi.mock("@/lib/WhoIsFakerWs", () => ({
+  waitForConnection: waitConnection,
+  send,
+  connect: vi.fn(),
+  disconnect: vi.fn(),
+  onMessage: (fn: (message: ServerMessage) => void) => {
+    listeners.push(fn);
+    return () => {
+      listeners.splice(listeners.indexOf(fn), 1);
+    };
+  },
+  onStatus: () => () => {},
+}));
 vi.mock("@/components/common/Seo", () => ({ Seo: () => null }));
 vi.mock("@/components/common/ChatPanel", () => ({ ChatPanel: () => null }));
 vi.mock("@/components/whoisfaker/layout/GameArea", () => ({ GameArea: () => null }));
@@ -36,12 +50,8 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const receipt = () => ({
-  roomId: "1234",
-  sessionToken: "fixture-token",
-  snapshot: { ...wifSnapshot("waiting"), roomId: "1234" },
-  privateState: wifPrivate(WIF_PEOPLE.host, "waiting"),
-});
+/** 进房 ack 只有身份三元组；首屏快照与私有态走 event 通道，见 `WhoIsFakerRoomEnterAck`。 */
+const receipt = () => ({ roomId: "1234", playerId: "player-1", sessionToken: "fixture-token" });
 function mount(strict = false, roomId = "1234") {
   const router = (
     <MemoryRouter initialEntries={[`/whoisfaker/room/${roomId}`]}>
@@ -52,8 +62,18 @@ function mount(strict = false, roomId = "1234") {
   );
   return render(strict ? <StrictMode>{router}</StrictMode> : router);
 }
+/** 首屏快照只由 `room.snapshot` 事件下发：把它喂给 store 注册的 event 通道。 */
+function emitSnapshot(roomId: string) {
+  const message = {
+    type: "event",
+    event: "room.snapshot",
+    payload: { mode: "full", revision: 1, state: { ...wifSnapshot("waiting"), roomId } },
+  };
+  listeners.forEach((handler) => handler(message as unknown as ServerMessage));
+}
 beforeEach(() => {
   vi.resetAllMocks();
+  listeners.length = 0;
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   useWhoIsFakerStore.setState({ ...initial, connected: true, addToast: vi.fn() }, true);
   waitConnection.mockResolvedValue(undefined);
@@ -166,14 +186,13 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     view.unmount();
   });
   it("测试房小写直链按规范房号入房并离开加载态", async () => {
+    const dispose = initWhoIsFakerWs();
     send.mockImplementation(async (type: string) => {
       if (type === "room.leave") return undefined;
       if (type !== "room.join") throw new Error(`测试禁止命令 ${type}`);
-      return {
-        ...receipt(),
-        roomId: "Oblivionis",
-        snapshot: { ...wifSnapshot("waiting"), roomId: "Oblivionis" },
-      };
+      // 服务端先把首屏快照推给这条连接，再回 ack；快照不在 ack 里。
+      emitSnapshot("Oblivionis");
+      return { ...receipt(), roomId: "Oblivionis" };
     });
     const view = mount(false, "oblivionis");
     await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("Oblivionis"));
@@ -185,17 +204,16 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     );
     expect(navigate).not.toHaveBeenCalled();
     view.unmount();
+    dispose();
   });
   it("测试房小写直链刷新按规范房号恢复会话", async () => {
     saveSessionToken("Oblivionis", "saved-token");
+    const dispose = initWhoIsFakerWs();
     send.mockImplementation(async (type: string) => {
       if (type === "room.leave") return undefined;
       if (type !== "room.reconnect") throw new Error(`测试禁止命令 ${type}`);
-      return {
-        ...receipt(),
-        roomId: "Oblivionis",
-        snapshot: { ...wifSnapshot("waiting"), roomId: "Oblivionis" },
-      };
+      emitSnapshot("Oblivionis");
+      return { ...receipt(), roomId: "Oblivionis" };
     });
     const view = mount(false, "oblivionis");
     await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("Oblivionis"));
@@ -206,5 +224,6 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     });
     expect(navigate).not.toHaveBeenCalled();
     view.unmount();
+    dispose();
   });
 });

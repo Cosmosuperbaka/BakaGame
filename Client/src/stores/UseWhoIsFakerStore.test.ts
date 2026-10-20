@@ -43,8 +43,8 @@ const wsMock = vi.hoisted(() => {
 
 vi.mock("@/lib/WhoIsFakerWs", () => ({
   send: wsMock.send,
-  whoIsFakerWsClient: { disconnect: wsMock.disconnect },
   connect: wsMock.connect,
+  disconnect: wsMock.disconnect,
   onMessage: wsMock.onMessage,
   onStatus: wsMock.onStatus,
 }));
@@ -132,7 +132,11 @@ describe("game store integration", () => {
   });
 
   it("persists a newly created room session in the current tab", async () => {
-    wsMock.send.mockResolvedValue({ sessionToken: "created-token" });
+    wsMock.send.mockResolvedValue({
+      roomId: "1234",
+      playerId: "player-1",
+      sessionToken: "created-token",
+    });
 
     await useWhoIsFakerStore.getState().createRoom({
       roomId: "1234",
@@ -219,7 +223,7 @@ describe("game store integration", () => {
     await Promise.resolve();
 
     expect(useWhoIsFakerStore.getState().connected).toBe(true);
-    expect(wsMock.send).toHaveBeenCalledWith("lobby.subscribeRooms");
+    expect(wsMock.send).toHaveBeenCalledWith("lobby.subscribeRooms", {});
     expect(wsMock.send).toHaveBeenCalledWith("room.reconnect", {
       roomId: "3456",
       sessionToken: "live-token",
