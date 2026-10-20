@@ -76,6 +76,8 @@ export interface CEEStore {
   ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
+  /** 作废在途的入房/恢复事务，但不改动当前房间状态（供房间结束类事件调用）。 */
+  cancelEntry: () => void;
   resetRoom: (closed?: boolean) => void;
   sendCommand: <T extends CEECommand>(
     command: T,
@@ -113,6 +115,11 @@ let syncDeferred = false;
 let enteringRoom = false;
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionGeneration = 0;
+/**
+ * 入房/恢复事务的作废代次。退房、房间关闭、被踢与会话接管都会让它前进：
+ * 在途请求即使晚到 ACK 也不能再把已经结束的会话写回本地。
+ */
+let entryGeneration = 0;
 const permanentErrors = new Set([
   "ROOM_NOT_FOUND",
   "SESSION_NOT_FOUND",
@@ -137,6 +144,7 @@ export function resetCEEStateSync() {
   rawSnapshot = null;
   rawPrivate = null;
   syncDeferred = false;
+  syncPending = false;
 }
 
 export const ceeErrorMessage = (error: unknown): string => {
@@ -174,6 +182,11 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     owners: Set<AbortSignal | undefined>;
     promise: Promise<boolean>;
   } | null = null;
+  const cancelEntry = () => {
+    entryGeneration += 1;
+    // 同一个恢复意图的共享 promise 也一并作废，下一次恢复必须重新发起请求。
+    restoring = null;
+  };
   const enterRequest = (
     request: () => Promise<CEERoomEnterResult>,
     abandoned: () => boolean
@@ -181,15 +194,17 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     // StrictMode 重挂载或路由切换时，先结清旧意图，再允许新会话使用同一连接。
     const predecessor = entryTail;
     const generation = connectionGeneration;
+    const entryAt = entryGeneration;
+    const isAbandoned = () => entryAt !== entryGeneration || abandoned();
     const run = async () => {
       if (generation !== connectionGeneration) throw new DOMException("连接已更换", "AbortError");
-      if (abandoned()) throw new DOMException("入房操作已取消", "AbortError");
+      if (isAbandoned()) throw new DOMException("入房操作已取消", "AbortError");
       resetCEEStateSync();
       enteringRoom = true;
       try {
         const result = await request();
         if (generation !== connectionGeneration) throw new DOMException("连接已更换", "AbortError");
-        if (abandoned()) {
+        if (isAbandoned()) {
           // ACK 已建立服务器会话，但页面不再拥有该意图：用 ACK 凭据释放，不写入本地身份。
           try {
             await sendCEE(
@@ -199,7 +214,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
             );
             removeCEESession(result.roomId);
           } finally {
-            if (generation === connectionGeneration) get().resetRoom();
+            if (generation === connectionGeneration)
+              get().resetRoom(get().roomClosedAt !== null);
           }
           throw new DOMException("入房操作已取消", "AbortError");
         }
@@ -293,6 +309,8 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       });
     },
     leaveRoom: async () => {
+      // 退房同时作废在途入房：晚到的 ACK 不能再把刚离开的房间写回本地。
+      get().cancelEntry();
       const { roomId } = get();
       try {
         if (roomId) await get().sendCommand("cee.room.leave", {});
@@ -312,6 +330,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         roomClosedAt: closed ? Date.now() : null,
       });
     },
+    cancelEntry,
     sendCommand: (command, payload) => {
       const { roomId, sessionToken } = get();
       return sendCEE(command, payload, {
@@ -409,6 +428,8 @@ export function handleCEEMessage(message: ServerMessage) {
       "cee.session.replaced",
     ].includes(message.event)
   ) {
+    // 房间已经结束：在途入房/恢复的 ACK 即使晚到也不能再接回这个会话。
+    store.cancelEntry();
     if (store.roomId) removeCEESession(store.roomId);
     store.resetRoom(true);
     const payload = message.payload as { reason?: string; message?: string };
@@ -445,6 +466,7 @@ export function initCEEWs() {
     ceeWs.disconnect();
     unsubscribeMessage();
     unsubscribeStatus();
+    useCEEStore.getState().cancelEntry();
     useCEEStore.getState().resetRoom();
   };
 }

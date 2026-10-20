@@ -387,6 +387,76 @@ it("取消后的旧离房尚未完成时，新加入必须等待旧会话释放"
   ]);
   expect(useCEEStore.getState()).toMatchObject({ roomId: "5678", sessionToken: "second-token" });
 });
+it("房间关闭作废在途入房：晚到 ACK 只用结果凭据离房并保留关闭标记", async () => {
+  let resolveAck!: (value: Record<string, unknown>) => void;
+  const ack = new Promise<Record<string, unknown>>((resolve) => {
+    resolveAck = resolve;
+  });
+  const send = vi.spyOn(ceeWs, "send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const outcome = useCEEStore
+    .getState()
+    .joinRoom("1234", "玩家")
+    .catch((error) => error);
+  handleCEEMessage({
+    type: "event",
+    event: "cee.room.closed",
+    payload: { message: "房间已关闭" },
+  });
+  expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+  resolveAck({
+    source: "native",
+    roomId: "1234",
+    sessionToken: "closed-token",
+    snapshot,
+    privateState: null,
+  });
+  expect(await outcome).toMatchObject({ name: "AbortError" });
+  expect(send.mock.calls.map(([command]) => command)).toEqual(["cee.room.join", "cee.room.leave"]);
+  expect(send.mock.calls[1][2]).toEqual({ roomId: "1234", sessionToken: "closed-token" });
+  expect(readCEESession("1234")).toBeNull();
+  expect(useCEEStore.getState()).toMatchObject({
+    roomId: null,
+    sessionToken: null,
+    snapshot: null,
+  });
+  expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+});
+it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
+  const send = vi.spyOn(ceeWs, "send").mockImplementation((command: string) => {
+    if (command === "cee.room.requestSync") return new Promise<never>(() => {});
+    return Promise.resolve({});
+  });
+  const requestSyncCalls = () =>
+    send.mock.calls.filter(([command]) => command === "cee.room.requestSync");
+  useCEEStore.setState({ roomId: "1234", sessionToken: "tok" });
+  const gap = {
+    type: "event" as const,
+    event: "cee.room.snapshot",
+    payload: {
+      mode: "patch" as const,
+      revision: 3,
+      baseRevision: 2,
+      operations: [{ op: "replace" as const, path: "/name", value: "错位" }],
+    },
+  };
+  handleCEEMessage({
+    type: "event",
+    event: "cee.room.snapshot",
+    payload: { mode: "full", revision: 1, state: snapshot },
+  });
+  handleCEEMessage(gap);
+  await vi.waitFor(() => expect(requestSyncCalls()).toHaveLength(1));
+
+  // 连接重置或退房会清空同步基线；此前那次全量请求可能仍然悬着，不能因此拦住新基线后的缺口。
+  resetCEEStateSync();
+  handleCEEMessage({
+    type: "event",
+    event: "cee.room.snapshot",
+    payload: { mode: "full", revision: 1, state: snapshot },
+  });
+  handleCEEMessage(gap);
+  await vi.waitFor(() => expect(requestSyncCalls()).toHaveLength(2));
+});
 
 describe("CEE 反作弊文案与旁观审批", () => {
   it("ceeErrorMessage 按错误码给出可归因文案，CLIENT_REQUIRED 附带下载地址", () => {
