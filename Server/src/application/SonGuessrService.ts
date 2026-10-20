@@ -60,6 +60,7 @@ import {
   type AnimeAutoFilters,
   type BangumiSongCandidate,
 } from "../shared/Index";
+import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
@@ -1438,6 +1439,95 @@ export class SonGuessrService implements AdminRoomControl {
         message: SERVER_SHUTDOWN_MESSAGE,
       })
     );
+  }
+
+  /**
+   * 导出全部房间以供停机保存。
+   *
+   * 三类字段挡在落盘之外：
+   * - `musicAuthOperations` / `automaticRoundOperation` 是 `symbol` 在途锁，JSON 往返会静默丢键，
+   *   恢复后是 undefined 正是要的结果 —— 重启后不存在任何在途操作。
+   * - 音乐账号会话（`musicSession` / `qqMusicSession`）带着第三方 `cookie`，落盘等于把玩家的
+   *   登录态写进本机文件。整段丢弃，恢复后由房主重新登录，宁可少一段体验也不留凭据。
+   */
+  exportSnapshots(): SnapshottedRoom[] {
+    const snapshots: SnapshottedRoom[] = [];
+    for (const room of this.rooms.values()) {
+      try {
+        const copy = JSON.parse(JSON.stringify(room)) as SnapshottedRoom;
+        const record = copy as Record<string, unknown>;
+        delete record.musicSession;
+        delete record.qqMusicSession;
+        snapshots.push(copy);
+      } catch (error) {
+        this.options.eventLogger?.warn("猜歌房间快照导出失败，已跳过该房间", {
+          roomId: room.id,
+          error: String(error),
+        });
+      }
+    }
+    return snapshots;
+  }
+
+  /**
+   * 从快照恢复房间，返回真正恢复的房间数。
+   *
+   * 时间字段逐个处理，不能统一 +pausedMs：截止时刻是「玩家还能操作的剩余时间」，停机期间
+   * 没人能操作，所以要暂停；而掉线、空房、空闲三类计时衡量的是「人离开多久」，停机不算人走了，
+   * 必须从恢复时刻重新起算。混在一起做，恢复瞬间就会清场。
+   */
+  restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
+    const now = this.now();
+    const pausedMs = Math.max(0, now - savedAt);
+    let restored = 0;
+    for (const raw of rooms) {
+      const room = this.adoptSnapshot(raw, now, pausedMs);
+      if (!room || this.rooms.has(room.id)) continue;
+      this.rooms.set(room.id, room);
+      restored += 1;
+    }
+    return restored;
+  }
+
+  private adoptSnapshot(
+    raw: SnapshottedRoom,
+    now: number,
+    pausedMs: number
+  ): SonGuessrRoomRecord | undefined {
+    if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
+    if (!raw.players || typeof raw.players !== "object") return undefined;
+    const room = raw as unknown as SonGuessrRoomRecord;
+
+    for (const player of Object.values(room.players)) {
+      player.online = false;
+      player.connectionId = undefined;
+      // 掉线清理从 lastSeenAt 起算，保留停机前的值会让重启超过 3 分钟的房间一次巡检清空。
+      player.lastSeenAt = now;
+    }
+
+    room.emptySinceAt = undefined;
+    room.updatedAt = now;
+    room.lastActivityAt = now;
+    if (room.hostReconnectDeadlineAt !== undefined) {
+      room.hostReconnectDeadlineAt = now + HOST_RECONNECT_TIMEOUT_MS;
+    }
+    if (room.pendingSubmitterDeadlineAt !== undefined) {
+      room.pendingSubmitterDeadlineAt += pausedMs;
+    }
+
+    const round = room.currentRound;
+    if (round) {
+      round.audioPreparationDeadlineAt += pausedMs;
+      if (round.audioReadyDeadlineAt !== undefined) round.audioReadyDeadlineAt += pausedMs;
+      if (round.hardDeadlineAt !== undefined) round.hardDeadlineAt += pausedMs;
+      for (const unit of Object.values(round.players)) {
+        if (unit.deadlineAt !== undefined) unit.deadlineAt += pausedMs;
+        // 在途锁是运行时状态：重启后那次请求不会再有结果，留着等于把玩家永久锁死。
+        unit.inFlight = undefined;
+      }
+    }
+
+    return room;
   }
 
   async unregisterConnection(connectionId: string): Promise<void> {
