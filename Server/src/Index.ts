@@ -16,6 +16,14 @@ import { DatabaseWordBankRepository } from "./infrastructure/WordBankRepository"
 import { DatabaseGameRecordRepository } from "./infrastructure/db/GameRecordRepository";
 import { GameRecordService } from "./application/GameRecordService";
 import { createServer } from "./application/CreateServer";
+import { join } from "node:path";
+import { RoomSnapshotStore } from "./infrastructure/RoomSnapshotStore";
+import {
+  restoreRoomSnapshots,
+  saveRoomSnapshots,
+  type RoomSnapshotTargets,
+} from "./application/RoomSnapshots";
+import { ROOM_SNAPSHOT_GAMES } from "./shared/RoomSnapshot";
 
 // ==================== 服务启动 ====================
 
@@ -124,6 +132,27 @@ function reportRuntimeMetrics(): void {
 
 reportRuntimeMetrics();
 
+// ==================== 房间快照 ====================
+// 停机把内存里的房间写到本地 SQLite，重启后接上；片角色决定本进程负责哪几款游戏。
+const snapshotStore = new RoomSnapshotStore({
+  directory: join(import.meta.dir, "..", "storage"),
+  logger,
+});
+const snapshotTargets: RoomSnapshotTargets = {
+  store: snapshotStore,
+  games: env.shardGames ?? [...ROOM_SNAPSHOT_GAMES],
+  services: { faker: whoIsFakerService, song: sonGuessrService, cee: ceeService },
+  logger,
+};
+// 必须在 listen 之前：先恢复房间，再开始收连接，避免第一条 join 撞上空房间表。
+const restoreSummary = restoreRoomSnapshots(snapshotTargets);
+if (Object.keys(restoreSummary.restored).length || restoreSummary.discarded.length) {
+  logger.info("房间快照恢复完成", {
+    restored: restoreSummary.restored,
+    discarded: restoreSummary.discarded,
+  });
+}
+
 const server = app.listen({
   // 公开地址使用 SERVER_URL，实际监听地址优先回落到本机可绑定地址。
   hostname: env.serverListenHost,
@@ -198,9 +227,15 @@ const shutdown = (signal?: string): Promise<void> => {
     await attempt("notify.song", () => sonGuessrService.notifyShutdown());
     await attempt("notify.cee", () => ceeService.notifyShutdown());
     await attempt("buffer", () => Bun.sleep(SHUTDOWN_BUFFER_MS));
+    // 先落盘再排空：排空可能要等对局记录收尾，而快照必须赶在进程退出前写完。
+    await attempt("persist", () => {
+      const summary = saveRoomSnapshots(snapshotTargets, Date.now());
+      logger.info("房间快照已保存", { saved: summary.saved });
+    });
     for (const [stage, drain] of drainTargets) await attempt(stage, drain);
     await attempt("stop", () => app.stop(true));
     await attempt("dispose", () => dispose());
+    await attempt("snapshot.close", () => snapshotStore.close());
     if (otlpExporter) {
       await attempt("otlp", () => otlpExporter.shutdown());
     }

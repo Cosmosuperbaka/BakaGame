@@ -3,6 +3,13 @@
 /** 房间无活动清理超时时间（10分钟） */
 export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * 快照最长可恢复的停机时长：超过它就直接丢弃，不恢复。
+ * 取空闲超时同值 —— 停机这么久，按现有规则那些房间本来就该被回收，
+ * 恢复回来反而与「房间会自然过期」的语义冲突。
+ */
+export const SNAPSHOT_MAX_DOWNTIME_MS = ROOM_IDLE_TIMEOUT_MS;
+
 /** 网络短暂断开后的空房宽限期，避免移动端切后台立即丢失房间。 */
 export const ROOM_EMPTY_GRACE_PERIOD_MS = 90 * 1000;
 
