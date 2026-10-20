@@ -53,11 +53,18 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html", "lcov"],
       reportsDirectory: "./coverage",
+      // 覆盖率棘轮：阈值 = 一次实测读数 − 0.5pp，只许跟着实测往上走，不许往下调。
+      // 标定口径：vitest 5.0.3 + v8 provider，105 个测试文件 / 873 例全绿时
+      // All files 为 statements 80.41、branches 70.66、functions 74.75、lines 82.31；
+      // 紧接着复跑一次读数差 ≤0.04pp，0.5pp 余量覆盖的就是这类抖动（jsdom 里的定时器与
+      // 动画分支在不同机器上会差得更多）。阈值贴着实测会让门禁变成 flaky，而 flaky 的门禁最终被人关掉。
+      // 收紧时机：每补完一个模块的用例集就按同一口径重测一次，把四值重新抬到「实测 − 0.5pp」。
+      // 新增模块却压低实测，是要补覆盖的信号，不是要下调阈值的理由。
       thresholds: {
-        statements: 54,
-        branches: 43,
-        functions: 45,
-        lines: 56,
+        statements: 79.9,
+        branches: 70.1,
+        functions: 74.2,
+        lines: 81.8,
       },
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
