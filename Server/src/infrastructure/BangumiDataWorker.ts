@@ -67,9 +67,72 @@ export type BangumiDataRequest =
   | { id: number; method: "updater.stats" }
   | { id: number; method: "close" };
 
-export type BangumiDataReply = { id: number } & (
-  { ok: true; value: unknown } | { ok: false; code: string; message: string }
+/**
+ * 跨线程错误上下文。
+ *
+ * `postMessage` 用结构化克隆，Error 的 `stack` / `name` / `cause` 都过不去：主线程
+ * 收到失败后只能 `new Error(...)`，拿到的是「请求侧栈」，worker 里真正的抛出点整条
+ * 丢失，Sentry 上无法归因到哪个操作、哪一行。这里显式把错误摊平成纯字符串字段，
+ * cause 链按层递归但限深（防止环状引用把克隆打爆）。
+ */
+export interface BangumiErrorContext {
+  name: string;
+  message: string;
+  /** worker 线程侧的栈，帧里带 worker 自己的文件名与行号。 */
+  stack?: string;
+  cause?: BangumiErrorContext;
+}
+
+/** 只到三层：再深的 cause 链对排障没有增量，却有把克隆图撑爆的风险。 */
+const MAX_ERROR_CAUSE_DEPTH = 3;
+
+/** 非 Error 的抛出值与 cause 可能是 Symbol、循环对象：取值本身不能让日志再抛一次。 */
+const describeUnknown = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (typeof value === "symbol" || typeof value === "bigint") return value.toString();
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const toErrorContext = (error: unknown, depth = 0): BangumiErrorContext => {
+  const thrown = error instanceof Error;
+  const cause = thrown ? error.cause : undefined;
+  return {
+    name: thrown ? error.name : "NonErrorThrown",
+    message: thrown ? error.message : describeUnknown(error),
+    ...(thrown && error.stack ? { stack: error.stack } : {}),
+    ...(cause !== undefined && depth < MAX_ERROR_CAUSE_DEPTH
+      ? { cause: toErrorContext(cause, depth + 1) }
+      : {}),
+  };
+};
+
+export type BangumiDataReply = { type: "reply"; id: number } & (
+  | { ok: true; value: unknown }
+  | { ok: false; code: string; message: string; error?: BangumiErrorContext }
 );
+
+/**
+ * worker → 主线程的日志帧。
+ *
+ * worker 线程没有 Sentry、也不该有：唯一的观测出口是主线程的 `EventLogger`
+ * （结构化真相源 + OTLP + Sentry 都在那边）。裸 `console.*` 只进 stdout，既不经
+ * 脱敏也不产生指标，采集链路里等于隐形。所以 worker 内所有日志统一走这个桥。
+ */
+export interface BangumiDataLogFrame {
+  type: "log";
+  level: "info" | "warn" | "error";
+  /** 归因来源：请求的 `method`，或定时任务名（worker 里只有这一层知道是谁在说话）。 */
+  source: string;
+  message: string;
+  error?: BangumiErrorContext;
+}
+
+/** Worker 线程可能发回的所有帧：判别字段是 `type`，回包带 `id`，日志帧不带。 */
+export type BangumiDataFrame = BangumiDataReply | BangumiDataLogFrame;
 
 /** 角色标签增量的来源与已应用版本的记录位置。 */
 export interface TagDiffOptions {
@@ -141,6 +204,33 @@ const initCeeLink = async (request: InitRequest): Promise<void> => {
 };
 
 /**
+ * worker 线程唯一的日志出口：桥回主线程的 `EventLogger`。
+ *
+ * 本线程没有 Sentry，也不裸调 `console.*`：那条路只进 stdout，既不经脱敏也不产生
+ * 日志/指标，观测平台里等于隐形（定时任务的故障因此完全不可见）。
+ */
+const postLog = (
+  level: BangumiDataLogFrame["level"],
+  source: string,
+  message: string,
+  error?: unknown
+): void => {
+  self.postMessage({
+    type: "log",
+    level,
+    source,
+    message,
+    ...(error === undefined ? {} : { error: toErrorContext(error) }),
+  } satisfies BangumiDataLogFrame);
+};
+
+/** 定时任务与更新器的日志适配器：把它们也收进同一条桥，source 标明是谁在说话。 */
+const bridgedLogger = (source: string) => ({
+  info: (message: string) => postLog("info", source, message),
+  warn: (message: string) => postLog("warn", source, message),
+});
+
+/**
  * 更新器自己开一条数据集连接：它与查询侧同处本线程，写操作天然串行，
  * 不必（也不该）去扒 provider 内部的句柄。
  * 起不来只记警告：数据集缺失时查询链路已经各自报错了，更新器不该再把它
@@ -160,17 +250,14 @@ const createUpdater = (request: InitRequest): void => {
                 })
               : undefined,
             images,
-            logger: {
-              warn: (message) => console.warn(message),
-              info: (message) => console.log(message),
-            },
+            logger: bridgedLogger("updater"),
             ...request.updater,
           })
         : undefined;
     updater?.markDatasetFresh();
     updater?.start();
   } catch (error) {
-    console.warn(`运行时更新器未启动：${error instanceof Error ? error.message : String(error)}`);
+    postLog("warn", "updater", "运行时更新器未启动", error);
     updater = undefined;
   }
 };
@@ -180,7 +267,9 @@ const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => 
   const base = (request.song.apiBase ?? "").trim();
   if (!base) return; // 未配置上游地址时静默跳过（本地开发常见）。
   const result = await requireCee().discoverNewSubjects(base);
-  console.log(
+  postLog(
+    "info",
+    "maintenance.discoverNewSubjects",
     `新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，` +
       `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`
   );
@@ -198,7 +287,7 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
   stopBackup = scheduleDatasetBackup({
     dbPath: request.song.dbPath,
     backupPath: `${request.song.dbPath}.backup`,
-    logger: { warn: (message) => console.warn(message) },
+    logger: bridgedLogger("maintenance.backup"),
     // 备份期间停更新器：VACUUM INTO 出一致快照，别让写入拖长它。
     onBackup: { pause: () => updater?.pause(), resume: () => updater?.resume() },
     onDailyTask: () => discoverNewSubjectsDaily(request),
@@ -209,10 +298,7 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
         repository: () => requireCee(),
         diffUrl: tagDiff!.diffUrl,
         statePath: tagDiff!.statePath,
-        logger: {
-          warn: (message) => console.warn(message),
-          info: (message) => console.log(message),
-        },
+        logger: bridgedLogger("maintenance.tagDiff"),
       })
     : undefined;
 };
@@ -327,32 +413,37 @@ const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> =>
 };
 
 /**
- * 失败回包：只对**非业务错误**打日志——`CEE_CHARACTER_NOT_FOUND` 这类是正常返回路径，
- * 打出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
+ * 失败回包：只对**非业务错误**上报表——`CEE_CHARACTER_NOT_FOUND` 这类是正常返回路径，
+ * 报出来会污染排障日志（线上要看的是程序异常，不是用户搜了个不存在的角色）。
+ * 业务错误仍然带 stack：主线程据此归因，但不再裸打 console。
  */
 const replyWithFailure = (request: BangumiDataRequest, error: unknown): void => {
-  if (!(error instanceof AppError)) console.error("Bangumi data worker query failed", error);
+  if (!(error instanceof AppError)) {
+    postLog("error", request.method, `Bangumi 数据 Worker 查询异常：${request.method}`, error);
+  }
   // 搜索服务故障按请求所属玩法归一 code：猜歌侧要能被 FallbackBangumiProvider 识别
   // （它只接 BANGUMI_DATA_UNAVAILABLE / BANGUMI_QUERY_TIMEOUT），不能一概记成 CEE 的 code。
-  const isSongRequest = request.method.startsWith("song.");
+  const fromSongLink = request.method.startsWith("song.");
   const code =
     error instanceof AppError
       ? error.code
-      : isSongRequest
+      : fromSongLink
         ? "BANGUMI_DATA_UNAVAILABLE"
         : "CEE_DATA_UNAVAILABLE";
   self.postMessage({
+    type: "reply",
     id: request.id,
     ok: false,
     code,
     message: error instanceof AppError ? error.message : "本地 Bangumi 数据读取失败",
+    error: toErrorContext(error),
   } satisfies BangumiDataReply);
 };
 
 self.onmessage = async ({ data: request }: MessageEvent<BangumiDataRequest>) => {
   try {
     const value = await dispatchRequest(request);
-    self.postMessage({ id: request.id, ok: true, value } satisfies BangumiDataReply);
+    self.postMessage({ type: "reply", id: request.id, ok: true, value } satisfies BangumiDataReply);
   } catch (error) {
     replyWithFailure(request, error);
   }

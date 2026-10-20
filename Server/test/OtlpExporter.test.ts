@@ -926,3 +926,65 @@ test("shutdown 对忽略 AbortSignal 的 fetcher 也有总预算并清理请求 
   expect((exporter as any).requests.size).toBe(0);
   expect((exporter as any).flushTimer).toBeNull();
 });
+
+/**
+ * F72：logs 与 spans 曾共用同一份退避状态，traces 端点持续 5xx 会把日志导出一起压住，
+ * 缓冲满后淘汰最旧日志，现象是「日志无声缺失」而病因在另一条信号上。
+ * 现在两条信号各自退避：traces 一路失败到封顶，日志仍必须按期发出去且不丢数据。
+ */
+test("traces 端点持续 5xx 时日志导出照常进行，两路退避互不压制", async () => {
+  let virtualTime = 1700000000000;
+  let logCalls = 0;
+  let spanCalls = 0;
+  const logBodies: string[] = [];
+  const mockFetcher: OtlpFetcher = async (input, options) => {
+    if (requestUrlText(input).includes("/v1/traces")) {
+      spanCalls++;
+      return new Response("Bad Gateway", { status: 502 });
+    }
+    logCalls++;
+    logBodies.push(requestBodyText(options));
+    return new Response("{}", { status: 200 });
+  };
+
+  const exporter = createExporter({
+    endpoint: "http://127.0.0.1:9999",
+    fetcher: mockFetcher,
+    now: () => virtualTime,
+  });
+
+  // 把 traces 侧退避推到第 4 级（1s→2s→4s→8s），期间日志侧一次都没失败。
+  for (const round of [0, 1, 2, 3]) {
+    // 先跨过上一轮的退避窗口，这一轮才会真的发出请求；最后一轮停在窗口内。
+    if (round > 0) virtualTime += 30_000;
+    exporter.enqueueSpan({
+      name: `span-${round}`,
+      startTime: virtualTime,
+      endTime: virtualTime + 1,
+    });
+    expect(await exporter.flushSpans()).toBe(false);
+  }
+  expect(spanCalls).toBe(4);
+  let stats = exporter.getStats();
+  expect(stats.spansConsecutiveFailures).toBe(4);
+  expect(stats.logsConsecutiveFailures).toBe(0);
+  expect(stats.logsNextRetryAt).toBe(0);
+  // 兼容口径取更差的一路，读总数的调用方不会因此漏看故障。
+  expect(stats.consecutiveFailures).toBe(4);
+
+  // traces 仍深处退避窗口（还要 4 秒），只推进 1 毫秒：日志必须照样发出去。
+  virtualTime += 1;
+  exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "traces 故障期间的日志" });
+  expect(await exporter.flushLogs()).toBe(true);
+  expect(logCalls).toBe(1);
+  expect(logBodies[0]).toContain("traces 故障期间的日志");
+  expect(exporter.buffer).toHaveLength(0);
+
+  stats = exporter.getStats();
+  expect(stats.logsConsecutiveFailures).toBe(0);
+  expect(stats.logsNextRetryAt).toBe(0);
+  expect(stats.spansNextRetryAt).toBeGreaterThan(virtualTime);
+  expect(stats.droppedCount).toBe(0);
+  expect(stats.failureCount).toBe(4);
+  expect(stats.successCount).toBe(1);
+});

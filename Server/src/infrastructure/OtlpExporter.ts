@@ -35,7 +35,16 @@ export interface OtlpExporterStats {
   successCount: number;
   failureCount: number;
   droppedCount: number;
+  /**
+   * 兼容口径：两条信号里更差的那一路。看单路健康度请用下面的分信号字段
+   * （F72：logs 与 spans 共享退避时，traces 端点故障会把日志导出一起压住）。
+   */
   consecutiveFailures: number;
+  logsConsecutiveFailures: number;
+  spansConsecutiveFailures: number;
+  /** 各自信号的下次可重试时刻（`now()` 时基）；0 表示无退避。 */
+  logsNextRetryAt: number;
+  spansNextRetryAt: number;
 }
 
 export interface OtlpFlushResult {
@@ -44,6 +53,14 @@ export interface OtlpFlushResult {
   sent: number;
   remaining: number;
   dropped: number;
+}
+
+/** 导出器承载的两条信号：各有端点、缓冲与退避状态，互不压制。 */
+export type OtlpSignal = "logs" | "spans";
+
+interface SignalBackoff {
+  consecutiveFailures: number;
+  nextRetryTime: number;
 }
 
 export class OtlpShutdownError extends Error {
@@ -118,13 +135,24 @@ export class OtlpExporter {
   private inFlightRecords = 0;
   private sentRecords = 0;
   private shutdownDeadline = Infinity;
-  private nextRetryTime = 0;
+  /**
+   * 退避状态按信号各自独立：logs 与 spans 打的是不同端点，一条坏掉不该让另一条排队。
+   * 共享退避时表现为「日志无声缺失」而病因在 traces 上，排障必然归错因（F72）。
+   */
+  private readonly backoff: Record<OtlpSignal, SignalBackoff> = {
+    logs: { consecutiveFailures: 0, nextRetryTime: 0 },
+    spans: { consecutiveFailures: 0, nextRetryTime: 0 },
+  };
   private readonly stats: OtlpExporterStats = {
     totalAttempts: 0,
     successCount: 0,
     failureCount: 0,
     droppedCount: 0,
     consecutiveFailures: 0,
+    logsConsecutiveFailures: 0,
+    spansConsecutiveFailures: 0,
+    logsNextRetryAt: 0,
+    spansNextRetryAt: 0,
   };
 
   constructor(config: OtlpExporterConfig = {}) {
@@ -163,7 +191,17 @@ export class OtlpExporter {
   }
 
   getStats(): OtlpExporterStats {
-    return { ...this.stats };
+    return {
+      ...this.stats,
+      logsConsecutiveFailures: this.backoff.logs.consecutiveFailures,
+      spansConsecutiveFailures: this.backoff.spans.consecutiveFailures,
+      logsNextRetryAt: this.backoff.logs.nextRetryTime,
+      spansNextRetryAt: this.backoff.spans.nextRetryTime,
+      consecutiveFailures: Math.max(
+        this.backoff.logs.consecutiveFailures,
+        this.backoff.spans.consecutiveFailures
+      ),
+    };
   }
 
   getResourceAttributes(): Array<{ key: string; value: { stringValue: string } }> {
@@ -212,11 +250,12 @@ export class OtlpExporter {
     }
   }
 
-  private handleFailure(batch: OtlpLogRecord[] | OtlpSpanRecord[], type: "logs" | "spans"): void {
+  private handleFailure(batch: OtlpLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
     this.stats.failureCount++;
-    this.stats.consecutiveFailures++;
-    const backoffMs = Math.min(30000, 1000 * Math.pow(2, this.stats.consecutiveFailures - 1));
-    this.nextRetryTime = this.now() + backoffMs;
+    const backoff = this.backoff[type];
+    backoff.consecutiveFailures++;
+    backoff.nextRetryTime =
+      this.now() + Math.min(30000, 1000 * Math.pow(2, backoff.consecutiveFailures - 1));
 
     if (type === "logs") {
       this.logBuffer.unshift(...(batch as OtlpLogRecord[]));
@@ -292,7 +331,7 @@ export class OtlpExporter {
       await this.flushingLogsPromise;
     }
     if (this.logBuffer.length === 0) return true;
-    if (!force && this.now() < this.nextRetryTime) return false;
+    if (!force && this.now() < this.backoff.logs.nextRetryTime) return false;
 
     const batch = this.logBuffer;
     this.logBuffer = [];
@@ -334,8 +373,8 @@ export class OtlpExporter {
         if (response.ok) {
           this.sentRecords += batch.length;
           this.stats.successCount++;
-          this.stats.consecutiveFailures = 0;
-          this.nextRetryTime = 0;
+          this.backoff.logs.consecutiveFailures = 0;
+          this.backoff.logs.nextRetryTime = 0;
           return true;
         }
 
@@ -362,7 +401,7 @@ export class OtlpExporter {
       await this.flushingSpansPromise;
     }
     if (this.spanBuffer.length === 0) return true;
-    if (!force && this.now() < this.nextRetryTime) return false;
+    if (!force && this.now() < this.backoff.spans.nextRetryTime) return false;
 
     const batch = this.spanBuffer;
     this.spanBuffer = [];
@@ -408,8 +447,8 @@ export class OtlpExporter {
         if (response.ok) {
           this.sentRecords += batch.length;
           this.stats.successCount++;
-          this.stats.consecutiveFailures = 0;
-          this.nextRetryTime = 0;
+          this.backoff.spans.consecutiveFailures = 0;
+          this.backoff.spans.nextRetryTime = 0;
           return true;
         }
 
