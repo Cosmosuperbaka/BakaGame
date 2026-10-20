@@ -2062,10 +2062,12 @@ describe("SonGuessrService", () => {
     const result = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.song.title).toBe("答案歌");
+    // 新口径：玩家第 2 次才猜中（精度 2/3），速度按用时趋近满分 → round(10×1.2×2/3)=8；
+    // 出题人按难度分 round(8×0.3×D)=1。
     expect(result.roundSummary?.scores).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ playerName: "玩家", score: 1, delta: 1 }),
-        expect.objectContaining({ playerName: "房主", score: 3, delta: 3 }),
+        expect.objectContaining({ playerName: "玩家", score: 8, delta: 8 }),
+        expect.objectContaining({ playerName: "房主", score: 1, delta: 1 }),
       ])
     );
   });
@@ -2462,7 +2464,7 @@ describe("SonGuessrService", () => {
     expect(settled.phase).toBe("roundResult");
     expect(settled.roundSummary?.correctPlayerIds).toEqual([playerId]);
     expect(settled.roundSummary?.scores).toEqual([
-      { playerId, playerName: "独狼", score: 1, delta: 1, correctGuesses: 1, totalGuesses: 1 },
+      { playerId, playerName: "独狼", score: 12, delta: 12, correctGuesses: 1, totalGuesses: 1 },
     ]);
 
     await execute(service, solo, {
@@ -2490,7 +2492,7 @@ describe("SonGuessrService", () => {
     });
     const settled2 = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot");
     expect(settled2.roundSummary?.scores).toEqual([
-      { playerId, playerName: "独狼", score: 2, delta: 1, correctGuesses: 2, totalGuesses: 2 },
+      { playerId, playerName: "独狼", score: 24, delta: 12, correctGuesses: 2, totalGuesses: 2 },
     ]);
     expect(settled2.players.find((candidate) => candidate.id === playerId)?.totalGuesses).toBe(2);
   });
@@ -2708,7 +2710,7 @@ describe("SonGuessrService", () => {
     });
   });
 
-  test("血战模式首位按正式玩家数计分且不会在首位答对后提前结算", async () => {
+  test("血战模式按抢答排名递减计分且不会在首位答对后提前结算", async () => {
     const service = new SonGuessrService({
       musicProvider: provider,
       random: { nextInt: () => 0 },
@@ -2787,8 +2789,9 @@ describe("SonGuessrService", () => {
     });
     let snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(snapshot.phase).toBe("playing");
+    // 血战速度系数 = (可作答人数 - 名次 + 1) / 可作答人数：3 人里第 1 名得满分。
     expect(snapshot.players).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: firstState.playerId, score: 4 })])
+      expect.arrayContaining([expect.objectContaining({ id: firstState.playerId, score: 10 })])
     );
 
     await execute(service, second, {
@@ -2808,9 +2811,9 @@ describe("SonGuessrService", () => {
     expect(snapshot.phase).toBe("roundResult");
     expect(snapshot.players).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: firstState.playerId, score: 4 }),
-        expect.objectContaining({ id: secondState.playerId, score: 3 }),
-        expect.objectContaining({ id: thirdState.playerId, score: 2 }),
+        expect.objectContaining({ id: firstState.playerId, score: 10 }),
+        expect.objectContaining({ id: secondState.playerId, score: 7 }),
+        expect.objectContaining({ id: thirdState.playerId, score: 3 }),
         expect.objectContaining({ name: "旁观者", score: 0, membership: "spectator" }),
       ])
     );
@@ -2886,8 +2889,8 @@ describe("SonGuessrService", () => {
     expect(waiting.finalScores).toBeUndefined();
     expect(waiting.players).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "房主", score: 3, isReady: true }),
-        expect.objectContaining({ name: "玩家", score: 1, isReady: false }),
+        expect.objectContaining({ name: "房主", score: 1, isReady: true }),
+        expect.objectContaining({ name: "玩家", score: 12, isReady: false }),
       ])
     );
 
@@ -2907,8 +2910,8 @@ describe("SonGuessrService", () => {
     expect(restarted).toMatchObject({ phase: "choosingSubmitter", roundNumber: 1 });
     expect(restarted.players).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "房主", score: 3 }),
-        expect.objectContaining({ name: "玩家", score: 1 }),
+        expect.objectContaining({ name: "房主", score: 1 }),
+        expect.objectContaining({ name: "玩家", score: 12 }),
       ])
     );
   });
@@ -3558,8 +3561,9 @@ describe("SonGuessrService", () => {
       result: "timeout",
       playerName: "玩家",
     });
+    // 无人猜中：出题人按硬边界扣 2。
     expect(result.roundSummary?.scores).toEqual(
-      expect.arrayContaining([expect.objectContaining({ playerName: "房主", score: 2 })])
+      expect.arrayContaining([expect.objectContaining({ playerName: "房主", score: -2 })])
     );
   });
 
@@ -6577,7 +6581,7 @@ describe("SonGuessr service 异步归属回归", () => {
       else animePending.resolve(anime);
       await guess;
       const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
-      expect(snapshot.players.find((player) => player.id === guest.record.playerId)?.score).toBe(1);
+      expect(snapshot.players.find((player) => player.id === guest.record.playerId)?.score).toBe(12);
     });
   }
 });
@@ -7345,7 +7349,8 @@ describe("SonGuessr 组队", () => {
     expect(privateOf(ctx.c)).toMatchObject({ remainingGuesses: 3, visibleAttempts: [] });
 
     await guess(ctx.service, ctx.b, "answer");
-    expect(playerOf(ctx.host, ctx.bId)).toMatchObject({ roundStatus: "correct", score: 1 });
+    // 本队第 2 次才猜中（精度 2/3），非血战速度按用时趋近满分 → round(10×1.2×2/3)=8。
+    expect(playerOf(ctx.host, ctx.bId)).toMatchObject({ roundStatus: "correct", score: 8 });
     expect(playerOf(ctx.host, ctx.aId)).toMatchObject({ roundStatus: "teamCorrect", score: 0 });
     expect(privateOf(ctx.a)).toMatchObject({ canGuess: false, canGiveUp: false });
     // 没开血战：一名玩家猜对就把整局结束，队友与别队都不再有机会作答
@@ -7359,8 +7364,8 @@ describe("SonGuessr 组队", () => {
     });
     const summary = snapshot.roundSummary!;
     expect(summary.correctPlayerIds).toEqual([ctx.bId]);
-    // 出题人按猜中单元计：一队猜中 = 3 分
-    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(3);
+    // 出题人按难度分结算：2 个单元里 1 个猜中、总共试了 2 次 → round(8×0.3×0.55)=1
+    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(1);
   });
 
   test("血战开启时猜中只结束所在队，队友不能再猜，别队继续作答", async () => {
@@ -7463,15 +7468,16 @@ describe("SonGuessr 组队", () => {
     await joinRoom(ctx.service, extra, "丁");
     await setTeam(ctx.service, extra, 2);
     await ready(ctx.service, extra);
-    // 房主出题，同队的丁本局观战：正式玩家 5 人，分母扣掉丁为 4
+    // 房主出题，同队的丁本局观战：可作答单元是甲/乙一队与丙两处，分母为 2，丁不计入。
     await play(ctx, ctx.hostId, ctx.host);
     for (const client of [ctx.a, ctx.b, ctx.c]) await audio(ctx.service, client);
     await guess(ctx.service, ctx.c, "answer");
     await guess(ctx.service, ctx.a, "answer");
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(ctx.host, "song.room.snapshot");
     expect(snapshot.phase).toBe("roundResult");
-    expect(playerOf(ctx.host, ctx.cId).score).toBe(4);
-    expect(playerOf(ctx.host, ctx.aId).score).toBe(3);
+    // 血战：丙第 1 名满分，甲/乙一队第 2 名得 (2-2+1)/2 = 半速。
+    expect(playerOf(ctx.host, ctx.cId).score).toBe(10);
+    expect(playerOf(ctx.host, ctx.aId).score).toBe(5);
     expect(playerOf(ctx.host, ctx.bId).score).toBe(0);
   });
 });

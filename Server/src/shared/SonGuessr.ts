@@ -472,6 +472,22 @@ export interface SonGuessrScore {
   totalGuesses: number;
 }
 
+/** 新计分（三因子模型）的逐人拆解，仅作展示：`score = round(10 × speed × precision)`。 */
+export interface SonGuessrScoreFactor {
+  playerId: string;
+  speed: number;
+  precision: number;
+  score: number;
+}
+
+export interface SonGuessrScoreBreakdown {
+  /** 难度分 D，出题人得分由它决定。 */
+  difficulty: number;
+  /** 可作答单元数，也就是正确率与血战排名的分母。 */
+  answerableCount: number;
+  players: SonGuessrScoreFactor[];
+}
+
 export interface SonGuessrRoundSummary {
   roundNumber: number;
   song: SongSearchResult & {
@@ -488,6 +504,11 @@ export interface SonGuessrRoundSummary {
   correctPlayerIds: string[];
   attempts: SongGuessAttempt[];
   scores: SonGuessrScore[];
+  /**
+   * 计分拆解。旧口径（`SONG_SCORING_VERSION === 1`）与历史对局没有这个字段，
+   * 前端只在拿到时展示，不假设它一定存在。
+   */
+  breakdown?: SonGuessrScoreBreakdown;
 }
 
 /** 协议允许的队伍号，与 CEE 一致；`null` 是个人游玩。 */

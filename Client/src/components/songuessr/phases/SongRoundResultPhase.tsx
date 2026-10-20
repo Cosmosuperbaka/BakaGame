@@ -142,41 +142,54 @@ const SONG_SCORE_COLUMNS: ScoreTableColumn[] = [
   { key: "hits", header: "命中", tone: "muted" },
 ];
 
-/** 多人模式的得分统计：服务端已按总分从高到低排好，已有得分的首行加奖杯 */
+/**
+ * 多人模式的得分统计：服务端已按总分从高到低排好，已有得分的首行加奖杯。
+ *
+ * 新口径给每个猜中者附上系数拆解（`score = round(10 × 速度 × 精度)`），
+ * 出题人得分由整轮难度分决定，难度跟着标题一起给出，否则表里几个数字读不出因果。
+ * 旧口径与历史对局没有 `breakdown`，此时退回原来的纯得分表。
+ */
 export function SongScoreTable({
   scores,
   contributors,
+  breakdown,
 }: {
   scores: SonGuessrRoundSummary["scores"];
   /** 本轮答对的玩家：行落定后浮起浅底，与奖杯各说一件事 */
   contributors: string[];
+  breakdown?: SonGuessrRoundSummary["breakdown"];
 }) {
   const correctIds = new Set(contributors);
+  const factors = new Map((breakdown?.players ?? []).map((factor) => [factor.playerId, factor]));
   return (
     <ScoreTable
-      title="得分统计"
+      title={breakdown ? `得分统计 · 难度 ${breakdown.difficulty.toFixed(2)}` : "得分统计"}
       columns={SONG_SCORE_COLUMNS}
       ranked
-      rows={scores.map((score, index) => ({
-        key: score.playerId,
-        name:
-          index === 0 && score.score > 0 ? (
-            <span className="inline-flex items-center gap-1">
-              <Trophy className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
-              <span className="sr-only">第一名：</span>
-              {score.playerName}
-            </span>
-          ) : (
-            score.playerName
-          ),
-        cells: {
-          delta: score.delta,
-          score: score.score,
-          hits: `${score.correctGuesses}/${score.totalGuesses}`,
-        },
-        rollFrom: { score: score.score - score.delta },
-        contributor: correctIds.has(score.playerId),
-      }))}
+      rows={scores.map((score, index) => {
+        const factor = factors.get(score.playerId);
+        return {
+          key: score.playerId,
+          name:
+            index === 0 && score.score > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <Trophy className="h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+                <span className="sr-only">第一名：</span>
+                {score.playerName}
+              </span>
+            ) : (
+              score.playerName
+            ),
+          detail: factor ? [`速度 ${factor.speed.toFixed(2)}`, `精度 ${factor.precision.toFixed(2)}`] : undefined,
+          cells: {
+            delta: score.delta,
+            score: score.score,
+            hits: `${score.correctGuesses}/${score.totalGuesses}`,
+          },
+          rollFrom: { score: score.score - score.delta },
+          contributor: correctIds.has(score.playerId),
+        };
+      })}
     />
   );
 }
@@ -296,7 +309,11 @@ export function SongRoundResultPhase({
           rounds={summary.roundNumber}
         />
       ) : (
-        <SongScoreTable scores={summary.scores} contributors={summary.correctPlayerIds} />
+        <SongScoreTable
+          scores={summary.scores}
+          contributors={summary.correctPlayerIds}
+          breakdown={summary.breakdown}
+        />
       )}
       {isHost ? (
         <div className="flex flex-wrap justify-center gap-2">

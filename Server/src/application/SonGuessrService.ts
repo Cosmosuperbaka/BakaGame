@@ -25,6 +25,13 @@ import {
   type RandomSource,
 } from "../domain/Rules";
 import {
+  computeSongAnswererFactors,
+  computeSongDifficulty,
+  computeSongSubmitterScore,
+  SONG_SCORE,
+  SONG_SCORING_VERSION,
+} from "../domain/SongRules";
+import {
   ROOM_ID_TEST_MODE,
   SONGUESSR_LOBBY_ROOMS_EVENT,
   type ConnectionRecord,
@@ -50,6 +57,7 @@ import {
   type SonGuessrRoomSummary,
   type SonGuessrRoundSummary,
   type SonGuessrScore,
+  type SonGuessrScoreBreakdown,
   type SonGuessrSettings,
   type SongAutoFilters,
   type SongAutoFiltersInput,
@@ -100,19 +108,8 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
 /** 未配置歌单或歌手时使用网易云热歌榜作为默认题库。 */
 const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
 
-const SCORING = {
-  correct: 1,
-  submitterPerCorrect: 3,
-  /**
-   * 无人猜中时出题人的保底奖励。
-   *
-   * 必须严格小于 `submitterPerCorrect`（一人猜中），否则「出无人能猜的题」比
-   * 「出有人猜中的题」收益更高，出题人的最优策略会与游戏目标相反。
-   * 取 2 而非 3：0 人猜中 = 2、1 人猜中 = 3、2 人猜中 = 6，单调性成立。
-   * 「取 2 还是取 0」属手感调优，留到有真实对局数据后再定。
-   */
-  submitterNobodyCorrect: 2,
-} as const;
+/** 猜歌计分常量与公式统一在 `domain/SongRules`，这里不再各留一份。 */
+const SCORING_VERSION = SONG_SCORING_VERSION;
 
 interface SonGuessrPlayerRecord {
   id: string;
@@ -156,6 +153,8 @@ interface SonGuessrRoundRecord {
   lyricClip: SongLyricClip;
   attempts: SongGuessAttempt[];
   correctPlayerIds: string[];
+  /** 新计分模型下每个猜中单元的系数拆解，随结算摘要下发；旧口径下为空。 */
+  answererBreakdown: { playerId: string; speed: number; precision: number; score: number }[];
   startScores: Record<string, number>;
   /** 按玩家索引作答单元，同队队员指向同一个对象。 */
   players: Record<string, SonGuessrRoundPlayerState>;
@@ -172,6 +171,12 @@ interface SonGuessrRoundRecord {
    * 本字段若在玩家能答题之前就耗尽，房间会在倒计时还剩几十秒时直接结算。
    */
   hardDeadlineAt?: number;
+  /**
+   * 答题起算时刻：首名玩家真正具备答题条件的那一刻（与 `hardDeadlineAt` 同一锚点）。
+   * 计分要按「解得快不快」给速度系数，起点必须是玩家能开始答题的时刻，
+   * 而不是装题时刻——自动选曲会占掉数秒到数十秒。
+   */
+  answeringStartedAt?: number;
   /** 装题时刻，仅供对局记录。 */
   startedAt: number;
 }
@@ -3707,6 +3712,7 @@ export class SonGuessrService implements AdminRoomControl {
       lyricClip,
       attempts: [],
       correctPlayerIds: [],
+      answererBreakdown: [],
       startScores: Object.fromEntries(
         Object.values(room.players).map((candidate) => [candidate.id, candidate.score])
       ),
@@ -3917,6 +3923,7 @@ export class SonGuessrService implements AdminRoomControl {
     round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
     round.hardDeadlineAt =
       now + (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) * 1_000;
+    round.answeringStartedAt = now;
   }
 
   private audioReady(connection: ConnectionRecord, roundNumber: number) {
@@ -4025,7 +4032,34 @@ export class SonGuessrService implements AdminRoomControl {
     state.inFlight = false;
   }
 
-  /** 猜中按血战排名计分，猜错则续期下一次猜测的倒计时。 */
+  /**
+   * 可作答的作答单元：出题人（测试房里出题人自己也能猜）、出题人的观战队友与人机都不算。
+   * 计分的分母（正确率、血战排名、难度分）统一取自这里，不能再各自用 `activePlayers` 凑。
+   */
+  private answerableUnits(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord
+  ): SonGuessrRoundPlayerState[] {
+    const submitterState = round.players[round.submitterPlayerId];
+    const submitterAnswers = this.canTestSubmitterGuess(room, round.submitterPlayerId);
+    return [...new Set(Object.values(round.players))].filter((unit) => {
+      if (!submitterAnswers && unit === submitterState) return false;
+      return unit.memberIds.some((memberId) => {
+        const member = room.players[memberId];
+        return Boolean(member && !member.isBot);
+      });
+    });
+  }
+
+  /** 用时占比：从「首名玩家能答题」起算，除以单次作答时限，夹到 0–1。 */
+  private answerElapsedRatio(round: SonGuessrRoundRecord, at: number): number {
+    const startedAt = round.answeringStartedAt ?? round.startedAt;
+    const limitMs = round.settings.guessDurationSeconds * 1_000;
+    if (limitMs <= 0) return 1;
+    return Math.min(1, Math.max(0, (at - startedAt) / limitMs));
+  }
+
+  /** 猜中计分，猜错则续期下一次猜测的倒计时。 */
   private settleGuessResult(
     room: SonGuessrRoomRecord,
     round: SonGuessrRoundRecord,
@@ -4040,12 +4074,73 @@ export class SonGuessrService implements AdminRoomControl {
     state.correct = true;
     state.deadlineAt = undefined;
     player.correctGuesses += 1;
-    // 血战按作答单元排名：每队只有一位猜中者进 correctPlayerIds；出题人的观战队友不计入分母。
-    const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
-    player.score += round.settings.bloodMode
-      ? formalPlayerCount - round.correctPlayerIds.length
-      : SCORING.correct;
+    if (SCORING_VERSION === 1) {
+      // 旧口径：血战按玩家数减已猜中人数，普通模式固定 1 分。
+      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
+      player.score += round.settings.bloodMode
+        ? formalPlayerCount - round.correctPlayerIds.length
+        : SONG_SCORE.legacyCorrect;
+    } else {
+      const factors = computeSongAnswererFactors({
+        bloodMode: round.settings.bloodMode,
+        // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
+        rank: round.correctPlayerIds.length + 1,
+        answerableCount: this.answerableUnits(room, round).length,
+        elapsedRatio: this.answerElapsedRatio(round, this.now()),
+        guessesUsed: state.guessesUsed,
+        maxGuessesPerRound: round.settings.maxGuessesPerRound,
+      });
+      player.score += factors.score;
+      round.answererBreakdown.push({ playerId: player.id, ...factors });
+    }
     round.correctPlayerIds.push(player.id);
+  }
+
+  /**
+   * 本轮结算：出题人得分与（新口径下的）计分拆解。
+   *
+   * 新口径的难度分要先知道整轮的猜中率、平均尝试与平均用时，所以只能在这里算，
+   * 不能像答题者那样随每次猜中即时入账。`answererBreakdown` 里已是逐人系数，
+   * 这里只补平均用时与难度分，不在两处各算一遍。
+   */
+  private roundScoring(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord
+  ): { submitterScore: number; breakdown?: SonGuessrScoreBreakdown } {
+    if (SCORING_VERSION === 1) {
+      return {
+        submitterScore: round.correctPlayerIds.length
+          ? round.correctPlayerIds.length * SONG_SCORE.legacySubmitterPerCorrect
+          : SONG_SCORE.legacySubmitterNobodyCorrect,
+      };
+    }
+    const units = this.answerableUnits(room, round);
+    const answerableCount = units.length;
+    const correctCount = round.correctPlayerIds.length;
+    const difficulty = computeSongDifficulty({
+      answerableCount,
+      correctCount,
+      totalAttempts: units.reduce((sum, unit) => sum + unit.guessesUsed, 0),
+      correctElapsedRatios: round.answererBreakdown.map((factor) => {
+        const attempt = round.attempts.find(
+          (item) => item.playerId === factor.playerId && item.result === "correct"
+        );
+        return this.answerElapsedRatio(round, attempt?.createdAt ?? this.now());
+      }),
+      maxGuessesPerRound: round.settings.maxGuessesPerRound,
+    });
+    const averageAnswererScore = correctCount
+      ? round.answererBreakdown.reduce((sum, factor) => sum + factor.score, 0) / correctCount
+      : 0;
+    return {
+      submitterScore: computeSongSubmitterScore({
+        answerableCount,
+        correctCount,
+        averageAnswererScore,
+        difficulty,
+      }),
+      breakdown: { difficulty, answerableCount, players: [...round.answererBreakdown] },
+    };
   }
 
   private async guess(connection: ConnectionRecord, songId: string) {
@@ -4521,12 +4616,8 @@ export class SonGuessrService implements AdminRoomControl {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;
     const submitter = room.players[round.submitterPlayerId];
-    if (submitter && !skipped) {
-      submitter.score +=
-        round.correctPlayerIds.length > 0
-          ? round.correctPlayerIds.length * SCORING.submitterPerCorrect
-          : SCORING.submitterNobodyCorrect;
-    }
+    const scoring = this.roundScoring(room, round);
+    if (submitter && !skipped) submitter.score += scoring.submitterScore;
 
     for (const state of Object.values(round.players)) state.deadlineAt = undefined;
     room.roundSummary = {
@@ -4546,6 +4637,7 @@ export class SonGuessrService implements AdminRoomControl {
       correctPlayerIds: [...round.correctPlayerIds],
       attempts: [...round.attempts],
       scores: this.buildScores(room, round.startScores),
+      ...(scoring.breakdown ? { breakdown: scoring.breakdown } : {}),
     };
     room.phase = "roundResult";
     this.recordRound(room, round, room.roundSummary, skipped);
