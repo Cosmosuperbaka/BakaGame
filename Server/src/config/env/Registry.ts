@@ -279,6 +279,14 @@ export const ENV_ENTRIES: EnvEntry[] = [
     ],
   },
   { name: "BANGUMI_ENRICHMENT_PATH", layer: "T2" },
+  {
+    name: "ROOM_SNAPSHOT_DIR",
+    layer: "T2",
+    note: [
+      "房间快照目录，缺省为 Server/storage。隔离冒烟与多实例测试指向临时目录，",
+      "避免把测试数据写进源码树的持久化目录。",
+    ],
+  },
   { name: "BANGUMI_DB_PATH", layer: "T2" },
   { name: "BANGUMI_IMAGES_DIR", layer: "T2" },
   {

@@ -135,7 +135,7 @@ reportRuntimeMetrics();
 // ==================== 房间快照 ====================
 // 停机把内存里的房间写到本地 SQLite，重启后接上；片角色决定本进程负责哪几款游戏。
 const snapshotStore = new RoomSnapshotStore({
-  directory: join(import.meta.dir, "..", "storage"),
+  directory: env.roomSnapshotDirectory ?? join(import.meta.dir, "..", "storage"),
   logger,
 });
 const snapshotTargets: RoomSnapshotTargets = {

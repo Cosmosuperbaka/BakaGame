@@ -31,6 +31,7 @@ export function isolatedEnvironment(
     CLIENT_URL: "http://localhost:5173",
     DATABASE_URL: "",
     BANGUMI_ENRICHMENT_PATH: path.join(directory, "enrichment.sqlite"),
+    ROOM_SNAPSHOT_DIR: path.join(directory, "room-snapshots"),
     BANGUMI_API_URL: "http://127.0.0.1:9",
     BANGUMI_IMAGE_SOURCE: "",
     CCB_ORIGINAL_SERVER_URL: "",

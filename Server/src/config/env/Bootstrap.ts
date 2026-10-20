@@ -30,6 +30,8 @@ export interface EnvBootstrap {
    * 得到一个没人连得进来、却在跑定时器、还可能写对局记录的影子房间。
    */
   shardGames?: RoomSnapshotGame[];
+  /** 房间快照目录；缺省由调用方取 Server/storage。 */
+  roomSnapshotDirectory?: string;
 }
 
 const normalizeServerUrl = (value: string, port: number): URL => {
@@ -79,6 +81,7 @@ export const readBootstrapEnv = (): EnvBootstrap => {
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
     shardGames: readShardGames(),
+    roomSnapshotDirectory: (Bun.env.ROOM_SNAPSHOT_DIR ?? "").trim() || undefined,
   };
 };
 
