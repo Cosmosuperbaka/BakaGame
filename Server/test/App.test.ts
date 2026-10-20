@@ -1,7 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
+import {
+  compileRouteTemplates,
+  httpOperationAction,
+  UNROUTED_HTTP_ACTION,
+} from "../src/transport/App";
 import {
   HTTP_MAX_REQUEST_BODY_BYTES,
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
@@ -199,6 +204,7 @@ const openSocket = async (port: number, game = "whoisfaker") => {
 const startTestServer = (options?: {
   onTriggerShutdown?: () => Promise<void> | void;
   isShuttingDown?: () => boolean;
+  logger?: EventLogger;
 }) => {
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
@@ -210,13 +216,14 @@ const startTestServer = (options?: {
     bangumiImageUrl: "",
   };
   let shuttingDown = false;
+  const logger = options?.logger ?? new EventLogger();
   const whoIsFakerService = new WhoIsFakerService({
-    eventLogger: new EventLogger(),
+    eventLogger: logger,
   });
   const { app } = createApp({
     env,
     whoIsFakerService,
-    logger: new EventLogger(),
+    logger,
     isShuttingDown: options?.isShuttingDown ?? (() => shuttingDown),
     onTriggerShutdown: async () => {
       shuttingDown = true;
@@ -862,4 +869,80 @@ test("关闭文档页时 /openapi 落到 404 信封，不再向公网公开整�
   expect((await build(undefined).handle(new Request("http://localhost/openapi/json"))).status).toBe(
     200
   );
+});
+
+/**
+ * F07：HTTP 操作名（指标序列与 Sentry 事务名共用）必须取自**已注册路由模板**，
+ * 不能拼未约束的 inbound pathname——扫描器的随机路径会把基数推到无界。
+ * 模板匹配的边界（`:param`、`*`、非标方法）在纯函数上直接钉死。
+ */
+test("HTTP 操作名归一到路由模板，未命中落固定桶", () => {
+  const templates = compileRouteTemplates([
+    { method: "GET", path: "/health" },
+    { method: "GET", path: "/api/account/avatar/:userId" },
+    { method: "ALL", path: "/api/auth/*" },
+    { method: "WS", path: "/api/cee/ws" },
+  ]);
+  expect(httpOperationAction(templates, "GET", "/health")).toBe("HTTP GET /health");
+  expect(httpOperationAction(templates, "GET", "/api/account/avatar/u-123")).toBe(
+    "HTTP GET /api/account/avatar/:userId"
+  );
+  expect(httpOperationAction(templates, "POST", "/api/auth/sign-in/email")).toBe(
+    "HTTP POST /api/auth/*"
+  );
+  expect(httpOperationAction(templates, "GET", "/api/cee/ws")).toBe("HTTP GET /api/cee/ws");
+  // 参数段必须整段消费；多余段、缺失段与非标准方法一律进固定桶。
+  expect(httpOperationAction(templates, "GET", "/api/account/avatar")).toBe(UNROUTED_HTTP_ACTION);
+  expect(httpOperationAction(templates, "GET", "/health/extra")).toBe(UNROUTED_HTTP_ACTION);
+  expect(httpOperationAction(templates, "FOO", "/health")).toBe(UNROUTED_HTTP_ACTION);
+});
+
+test("未注册路径的 HTTP 操作日志只落固定桶，已注册路由仍拿到具体模板名", async () => {
+  // onAfterResponse 只在真实监听下触发（app.handle 不走该生命周期），必须经 server 验证。
+  const logger = new EventLogger(() => undefined);
+  const actions = spyOn(logger, "logOperation").mockImplementation(() => undefined);
+  const { port, stop } = startTestServer({ logger });
+
+  try {
+    const scanned = [
+      "/wp-login.php",
+      "/.env",
+      `/probe/${crypto.randomUUID()}/deep`,
+      `/api/whoisfaker/${crypto.randomUUID()}`,
+    ];
+    const paths = [
+      ...scanned,
+      "/health",
+      `/api/account/avatar/${crypto.randomUUID()}`,
+      "/api/auth/login",
+    ];
+    for (const path of paths) {
+      await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: path === "/api/auth/login" ? "POST" : "GET",
+      });
+    }
+    // afterResponse 在响应发送后才排队执行：等到 HTTP 操作数与请求数一致再断言。
+    const httpActionsOf = () =>
+      actions.mock.calls
+        .map((call) => call[0].action)
+        .filter((action) => action.startsWith("HTTP"));
+    for (let attempt = 0; attempt < 40 && httpActionsOf().length < paths.length; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const httpActions = httpActionsOf();
+    expect(httpActions).toHaveLength(paths.length);
+    // 随机路径不出现在任何操作名里：指标序列与事务名的基数只落在固定集合。
+    expect(httpActions.join("\n")).not.toContain("wp-login");
+    expect(httpActions.join("\n")).not.toContain("probe");
+    expect(new Set(httpActions)).toEqual(
+      new Set([
+        UNROUTED_HTTP_ACTION,
+        "HTTP GET /health",
+        "HTTP GET /api/account/avatar/:userId",
+        "HTTP POST /api/auth/*",
+      ])
+    );
+  } finally {
+    await stop();
+  }
 });

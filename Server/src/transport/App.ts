@@ -294,6 +294,69 @@ export const isAllowedOrigin = (origin: string | null | undefined, clientUrl?: s
   return false;
 };
 
+/**
+ * HTTP 操作名的维度来源。**不能**直接拼 inbound pathname：指标序列与 Sentry 事务名共享
+ * 这个名字，扫描器与爬虫的随机路径会把基数推到无界，长尾噪声淹没真实慢请求。
+ * 维度只取自已注册路由模板；模板匹配不到的请求统一归入固定桶，路径本身不进标签。
+ */
+export const UNROUTED_HTTP_ACTION = "HTTP * UNROUTED";
+
+/**
+ * 允许进入操作名的方法集合。ALL 模板对任意方法都能匹配，而真实路由分发只受理标准方法；
+ * 不在表内的方法（`curl -X FOO` 之类）直接落固定桶，方法维度同样有界。
+ */
+const LOGGED_HTTP_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
+
+export interface RouteTemplate {
+  method: string;
+  path: string;
+  segments: string[];
+}
+
+const splitPathSegments = (path: string): string[] => path.split("/").filter(Boolean);
+
+/** 按 Elysia 的路由语义逐段匹配：`:param` 吃一个段，`*` 吞掉其余全部。 */
+const matchesRouteSegments = (pattern: readonly string[], path: readonly string[]): boolean => {
+  for (let index = 0; index < pattern.length; index += 1) {
+    const segment = pattern[index];
+    if (segment === "*") return true;
+    if (index >= path.length) return false;
+    if (!segment.startsWith(":") && segment !== path[index]) return false;
+  }
+  return pattern.length === path.length;
+};
+
+const routeMethodMatches = (routeMethod: string, method: string): boolean =>
+  routeMethod === "ALL" ||
+  routeMethod === method ||
+  // Bun 用 GET 处理器同时兜住 HEAD；WS 升级在 HTTP 层就是 GET。
+  (routeMethod === "GET" && method === "HEAD") ||
+  (routeMethod === "WS" && method === "GET");
+
+export const compileRouteTemplates = (
+  routes: readonly { method: string; path: string }[]
+): RouteTemplate[] =>
+  routes.map((route) => ({
+    method: route.method.toUpperCase(),
+    path: route.path,
+    segments: splitPathSegments(route.path),
+  }));
+
+/** 请求路径 → 操作名：命中模板则带上模板（真实参数值不进名字），否则落 `UNROUTED_HTTP_ACTION`。 */
+export const httpOperationAction = (
+  templates: readonly RouteTemplate[],
+  method: string,
+  pathname: string
+): string => {
+  if (!LOGGED_HTTP_METHODS.has(method)) return UNROUTED_HTTP_ACTION;
+  const segments = splitPathSegments(pathname);
+  for (const template of templates) {
+    if (!routeMethodMatches(template.method, method)) continue;
+    if (matchesRouteSegments(template.segments, segments)) return `HTTP ${method} ${template.path}`;
+  }
+  return UNROUTED_HTTP_ACTION;
+};
+
 /** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
 interface GameSocketLike {
   data: unknown;
@@ -493,8 +556,8 @@ const salvageMessageIdentity = (
 /**
  * 三个游戏共用的消息处理：解析 → 幂等执行 → ACK/错误封包。
  *
- * 只在「解析器、服务、日志前缀」上不同（`Spec.md §11.2` 要求网关对称消费各游戏解析器），
- * 其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
+ * 只在「解析器、服务、日志前缀」上不同（Agents/Spec.md「平台与多游戏平等架构 · 传输对称」要求
+ * 网关对称消费各游戏解析器），其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
  */
 /** 成功帧已通过 Elysia body 校验，业务层不重复枚举 Value.Errors。 */
 const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
@@ -607,6 +670,8 @@ export const createApp = ({
   const dispose = (): Promise<void> =>
     (disposal ??= disposeResources ? disposeResources() : characterService.close());
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
+  // 路由表在 createApp 装配完成时定形，模板索引到首个请求才惰性编译一次。
+  let routeTemplates: readonly RouteTemplate[] | undefined;
   // 三个游戏入口共用一份握手配额：一个客户端地址换着连三款游戏也只有一份额度。
   const handshakeQuota =
     handshakeQuotaOverride ??
@@ -682,7 +747,11 @@ export const createApp = ({
         status: statusCode,
         durationMs: performance.now() - context.startedAt,
         identifier: context.clientIp,
-        action: `HTTP ${request.method} ${new URL(request.url).pathname}`,
+        action: httpOperationAction(
+          (routeTemplates ??= compileRouteTemplates(app.routes)),
+          request.method,
+          new URL(request.url).pathname
+        ),
         traceId: context.traceId,
         level: statusCode >= 500 ? "ERROR" : statusCode >= 400 ? "WARN" : "INFO",
       });
