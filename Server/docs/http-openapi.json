@@ -2075,7 +2075,7 @@
           "System"
         ],
         "summary": "K8s / 反代就绪探针 (Readiness)",
-        "description": "检测进程停机标志，停机中返回 503 触发摘流。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。"
+        "description": "检测进程停机标志，停机中返回 503 触发摘流；新 WebSocket 握手由同一份停机状态直接拒绝（shutdownRejection）。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。"
       }
     },
     "/health": {
@@ -3589,7 +3589,7 @@
         ],
         "operationId": "account.me",
         "summary": "account.me",
-        "description": "当前登录资料；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
+        "description": "当前登录资料与身份徽章；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
         "security": [],
         "requestBody": {
           "required": false,
@@ -3723,7 +3723,7 @@
         ],
         "operationId": "account.publicProfile",
         "summary": "account.publicProfile",
-        "description": "别人看到的资料卡：QQ 号仅在本人公开时出现。",
+        "description": "别人看到的资料卡与身份徽章：QQ 号仅在本人公开时出现；徽章按用户 ID 单独查询，不进房间快照。",
         "security": [],
         "requestBody": {
           "required": true,
@@ -4848,6 +4848,208 @@
                     },
                     "required": [
                       "userId"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/grantBadge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.grantBadge",
+        "summary": "admin.users.grantBadge",
+        "description": "给账号授予一枚身份徽章；重复授予保持一枚，不产生新的徽章状态。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "badge": {
+                        "type": "string",
+                        "enum": [
+                          "developer",
+                          "contributor",
+                          "tester",
+                          "sponsor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "userId",
+                      "badge"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
+    "/api/rpc/admin/users/revokeBadge": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.users.revokeBadge",
+        "summary": "admin.users.revokeBadge",
+        "description": "撤销账号的一枚身份徽章；未授予时同样返回成功。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "badge": {
+                        "type": "string",
+                        "enum": [
+                          "developer",
+                          "contributor",
+                          "tester",
+                          "sponsor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "userId",
+                      "badge"
                     ]
                   }
                 },
@@ -7005,6 +7207,18 @@
               "admin"
             ]
           },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "developer",
+                "contributor",
+                "tester",
+                "sponsor"
+              ]
+            }
+          },
           "createdAt": {
             "type": "string"
           }
@@ -7016,6 +7230,7 @@
           "image",
           "showQq",
           "role",
+          "badges",
           "createdAt"
         ],
         "additionalProperties": false
@@ -7040,13 +7255,26 @@
               "string",
               "null"
             ]
+          },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "developer",
+                "contributor",
+                "tester",
+                "sponsor"
+              ]
+            }
           }
         },
         "required": [
           "id",
           "name",
           "image",
-          "qqNumber"
+          "qqNumber",
+          "badges"
         ],
         "additionalProperties": false
       },

@@ -28,6 +28,7 @@ import type {
   AuditLogRepository,
   StoredAuditEntry,
 } from "../src/infrastructure/db/AuditLogRepository";
+import type { BadgeRepository } from "../src/infrastructure/db/BadgeRepository";
 import type { GameRecordRepository } from "../src/infrastructure/db/GameRecordRepository";
 import type {
   FeedbackFilter,
@@ -39,6 +40,7 @@ import type {
 } from "../src/infrastructure/db/UserDataRepository";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { FeedbackStatus } from "../src/shared/ApiContract";
+import { BADGE_KINDS, type BadgeKind } from "../src/shared/Badges";
 import { isAllowedOrigin } from "../src/transport/App";
 import { createTestApp } from "./AppFixtures";
 
@@ -94,6 +96,35 @@ export class MemoryAuditLogRepository implements AuditLogRepository {
       items: matched.slice(filter.offset, filter.offset + filter.limit),
       total: matched.length,
     };
+  }
+}
+
+/** 内存徽章关系：目录由共享常量提供，排序与数据库实现一致。 */
+export class MemoryBadgeRepository implements BadgeRepository {
+  readonly rows = new Set<string>();
+
+  async ensureCatalog(): Promise<void> {}
+
+  async badgesOf(userId: string): Promise<BadgeKind[]> {
+    return (await this.badgesOfMany([userId])).get(userId) ?? [];
+  }
+
+  async badgesOfMany(userIds: readonly string[]): Promise<Map<string, BadgeKind[]>> {
+    const unique = [...new Set(userIds)];
+    const grouped = new Map<string, BadgeKind[]>();
+    for (const userId of unique) {
+      const owned = BADGE_KINDS.filter((kind) => this.rows.has(`${userId}:${kind}`));
+      if (owned.length) grouped.set(userId, [...owned]);
+    }
+    return grouped;
+  }
+
+  async grant(userId: string, badgeId: BadgeKind): Promise<void> {
+    this.rows.add(`${userId}:${badgeId}`);
+  }
+
+  async revoke(userId: string, badgeId: BadgeKind): Promise<void> {
+    this.rows.delete(`${userId}:${badgeId}`);
   }
 }
 
@@ -390,10 +421,12 @@ export const createAccountTestApp = (
     now: options.now,
   });
   resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
+  const badges = new MemoryBadgeRepository();
   const service = new AccountService({
     auth,
     mailer,
     avatars: new QQAvatarService(avatarFetcher.fetcher),
+    badges,
     nicknames,
     logger,
     now: options.now,
@@ -429,6 +462,7 @@ export const createAccountTestApp = (
     reviews: antiCheatReviews,
     rooms,
     siteStats,
+    badges,
     // 夹具默认不带库：后台读到的旋钮一律是环境变量缺省那侧。
     settings: options.settings ?? new AppSettings({ defaults: {} }),
     sentry: options.sentry ?? null,
@@ -513,6 +547,7 @@ export const createAccountTestApp = (
     siteStats,
     settings,
     feedback,
+    badges,
     sentFeedback,
     sentry,
     mailer,

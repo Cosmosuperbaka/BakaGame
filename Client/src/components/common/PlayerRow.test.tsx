@@ -44,6 +44,7 @@ describe("PlayerRow 资料卡", () => {
       name: "阿狸",
       image: "/api/account/avatar/u1?v=1",
       qqNumber: null,
+      badges: [],
     });
     const { container } = render(
       <PlayerRow
@@ -65,7 +66,13 @@ describe("PlayerRow 资料卡", () => {
 
   it("本人公开 QQ 时显示号码；同一访问内再次打开不重复请求", async () => {
     const user = userEvent.setup();
-    publicProfile.mockResolvedValue({ id: "u2", name: "小艾", image: null, qqNumber: "10001" });
+    publicProfile.mockResolvedValue({
+      id: "u2",
+      name: "小艾",
+      image: null,
+      qqNumber: "10001",
+      badges: [],
+    });
     render(
       <PlayerRow
         name="小艾"
@@ -87,23 +94,48 @@ describe("PlayerRow 资料卡", () => {
     expect(publicProfile).toHaveBeenCalledOnce();
   });
 
+  it("身份徽章与昵称同一行渲染", async () => {
+    publicProfile.mockResolvedValue({
+      id: "u4",
+      name: "小开",
+      image: null,
+      qqNumber: null,
+      badges: ["developer", "tester"],
+    });
+    render(<PlayerRow name="小开" score={0} account={{ userId: "u4", image: null }} />);
+
+    expect(await screen.findByText("开发者")).toBeInTheDocument();
+    expect(screen.getByText("内测")).toBeInTheDocument();
+    expect(screen.getByText("小开").parentElement).toHaveTextContent("开发者");
+  });
+
   it("资料读取失败时就地提示，可直接重试", async () => {
     const user = userEvent.setup();
+    // 挂载时昵称旁的徽章会先取一次资料并与资料卡共用缓存；清掉它，让打开资料卡另起一次请求来验证失败提示。
+    publicProfile.mockResolvedValueOnce({
+      id: "u3",
+      name: "某人",
+      image: null,
+      qqNumber: null,
+      badges: [],
+    });
+    render(<PlayerRow name="某人" score={0} account={{ userId: "u3", image: null }} />);
+    clearProfileCacheForTest();
+
     publicProfile.mockRejectedValueOnce(new Error("offline"));
+    const trigger = screen.getByRole("button", { name: "某人 资料" });
+    await user.click(trigger);
+    expect(await screen.findByRole("alert")).toHaveTextContent("资料加载失败");
+
     publicProfile.mockResolvedValueOnce({
       id: "u3",
       name: "重试成功",
       image: null,
       qqNumber: null,
+      badges: [],
     });
-    render(<PlayerRow name="某人" score={0} account={{ userId: "u3", image: null }} />);
-
-    const trigger = screen.getByRole("button", { name: "某人 资料" });
-    await user.click(trigger);
-    expect(await screen.findByRole("alert")).toHaveTextContent("资料加载失败");
-
     await user.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("重试成功")).toBeInTheDocument();
-    expect(publicProfile).toHaveBeenCalledTimes(2);
+    expect(publicProfile).toHaveBeenCalledTimes(3);
   });
 });

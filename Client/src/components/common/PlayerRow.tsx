@@ -5,6 +5,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
+import { PlayerBadges } from "@/components/common/BadgeList";
 import { ProfileCard } from "@/components/common/ProfileCard";
 import {
   PLAYER_ME_MARK,
@@ -239,6 +240,7 @@ function PlayerRowInfo({
               icon={<Crown className="h-3 w-3" aria-hidden="true" />}
             />
           ) : null}
+          {account ? <PlayerBadges account={account} /> : null}
           <span
             aria-label={`${score} 分`}
             className="ml-auto flex shrink-0 items-baseline gap-0.5 pl-2 tabular-nums"

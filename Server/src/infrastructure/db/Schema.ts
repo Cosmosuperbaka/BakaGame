@@ -162,6 +162,41 @@ export const clientChannelDevice = mysqlTable("client_channel_device", {
   lastSeenAt: datetime("last_seen_at", { fsp: 3 }).notNull(),
 });
 
+// ==================== 身份徽章 ====================
+
+/**
+ * 徽章目录：启动时按 `shared/Badges.ts` 幂等补齐，`user_badge` 以它为外键目标。
+ * 徽章只由管理员人工授予，代码路径不按行为自动写入。
+ */
+export const badge = mysqlTable("badge", {
+  id: varchar("id", { length: 16 }).primaryKey(),
+  label: varchar("label", { length: 16 }).notNull(),
+  description: varchar("description", { length: 120 }).notNull(),
+  sortOrder: int("sort_order").notNull(),
+});
+
+/** 账号与徽章的授予关系：一个账号同类徽章只有一枚。 */
+export const userBadge = mysqlTable(
+  "user_badge",
+  {
+    userId: varchar("user_id", { length: 64 })
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    badgeId: varchar("badge_id", { length: 16 })
+      .notNull()
+      .references(() => badge.id, { onDelete: "cascade" }),
+    /** 授予人；账号注销后置空，审计流水仍保留操作人。 */
+    grantedBy: varchar("granted_by", { length: 64 }).references(() => user.id, {
+      onDelete: "set null",
+    }),
+    grantedAt: datetime("granted_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.badgeId] }),
+    index("user_badge_badge_idx").on(table.badgeId),
+  ]
+);
+
 // ==================== 用户数据 ====================
 
 /** 云同步设置：一行一个键，值为该键的完整 JSON 文档（整体覆盖，不做字段级合并）。 */

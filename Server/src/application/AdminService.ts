@@ -5,7 +5,9 @@ import { AppError } from "../domain/Errors";
 import { beijingDay } from "./SiteStatsService";
 import { capTimeline } from "./GameRecordService";
 import { RECORDED_GAMES } from "../domain/GameRecord";
+import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";
 import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
+import type { BadgeKind } from "../shared/Badges";
 import type { QQNicknameService } from "./QQNicknameService";
 import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
@@ -68,6 +70,8 @@ export interface AdminServiceOptions {
   /** 三款游戏的实时房间控制口；房间不落库，后台只经由它们读写。 */
   rooms: Record<RecordedGame, AdminRoomControl>;
   siteStats: SiteStatsRepository;
+  /** 身份徽章的授予关系；目录由启动时补齐，这里只读写账号与徽章的关系。 */
+  badges: BadgeRepository;
   /** 运行期旋钮（T3）：后台读它的内存快照，写它经校验后落 `app_setting`。 */
   settings: AppSettings;
   /** 未配置 `SENTRY_API_TOKEN` 时为 null，概览展示未配置。 */
@@ -290,6 +294,33 @@ export class AdminService {
     const row = await this.requireUser(userId);
     await this.audit(actorId, "user.revokeSessions", "user", row.id, { name: row.name });
     await (await this.context()).internalAdapter.deleteUserSessions(row.id);
+    return { ok: true };
+  }
+
+  /** 徽章只由人授予，不按行为自动解锁；重复授予保持一枚，审计每次留痕。 */
+  async grantBadge(
+    actorId: string,
+    input: { userId: string; badge: BadgeKind }
+  ): Promise<{ ok: true }> {
+    const row = await this.requireUser(input.userId);
+    await this.audit(actorId, "user.grantBadge", "user", row.id, {
+      badge: input.badge,
+      name: row.name,
+    });
+    await this.options.badges.grant(row.id, input.badge, actorId, new Date(this.now()));
+    return { ok: true };
+  }
+
+  async revokeBadge(
+    actorId: string,
+    input: { userId: string; badge: BadgeKind }
+  ): Promise<{ ok: true }> {
+    const row = await this.requireUser(input.userId);
+    await this.audit(actorId, "user.revokeBadge", "user", row.id, {
+      badge: input.badge,
+      name: row.name,
+    });
+    await this.options.badges.revoke(row.id, input.badge);
     return { ok: true };
   }
 

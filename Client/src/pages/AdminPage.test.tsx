@@ -46,6 +46,7 @@ const profile = (role: AccountProfile["role"]): AccountProfile => ({
   showQq: false,
   role,
   createdAt: "2026-10-01T00:00:00.000Z",
+  badges: [],
 });
 
 const overview: AdminOverview = {

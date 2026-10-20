@@ -8,6 +8,7 @@ import {
   PREFERENCES_MAX_BYTES,
   QQ_NUMBER_PATTERN,
 } from "./Account";
+import { BADGE_KINDS } from "./Badges";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
 
 /**
@@ -20,6 +21,9 @@ import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSet
 
 const qqNumber = z.string().regex(QQ_NUMBER_PATTERN, "QQ 号格式不正确");
 
+/** 身份徽章只有管理员能授予；徽章不进房间快照，客户端按用户 ID 查询。 */
+export const badgeKindSchema = z.enum(BADGE_KINDS);
+
 export const accountProfileSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -28,6 +32,7 @@ export const accountProfileSchema = z.object({
   image: z.string().nullable(),
   showQq: z.boolean(),
   role: z.enum(["user", "admin"]),
+  badges: z.array(badgeKindSchema),
   createdAt: z.string(),
 });
 
@@ -37,6 +42,7 @@ export const publicProfileSchema = z.object({
   name: z.string(),
   image: z.string().nullable(),
   qqNumber: z.string().nullable(),
+  badges: z.array(badgeKindSchema),
 });
 
 const preferences = z
@@ -393,6 +399,15 @@ const adminContract = {
     revokeSessions: op("吊销该账号的全部会话（强制下线），不改资料与封禁状态。", "admin")
       .input(z.object({ userId }))
       .output(z.object({ ok: z.literal(true) })),
+    grantBadge: op(
+      "给账号授予一枚身份徽章；重复授予保持一枚，不产生新的徽章状态。",
+      "admin"
+    )
+      .input(z.object({ userId, badge: badgeKindSchema }))
+      .output(z.object({ ok: z.literal(true) })),
+    revokeBadge: op("撤销账号的一枚身份徽章；未授予时同样返回成功。", "admin")
+      .input(z.object({ userId, badge: badgeKindSchema }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   settings: {
     list: op(
@@ -563,7 +578,7 @@ export const apiContract = {
       .input(z.object({ qqNumber }))
       .output(z.string().nullable()),
     me: op(
-      "当前登录资料；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
+      "当前登录资料与身份徽章；未登录返回 `null`（不报 401）。顺带按节流刷新 QQ 头像，每次访问调用一次即可。",
       "public"
     ).output(accountProfileSchema.nullable()),
     updateProfile: op(
@@ -572,7 +587,10 @@ export const apiContract = {
     )
       .input(z.object({ showQq: z.boolean().optional() }))
       .output(accountProfileSchema),
-    publicProfile: op("别人看到的资料卡：QQ 号仅在本人公开时出现。", "public")
+    publicProfile: op(
+      "别人看到的资料卡与身份徽章：QQ 号仅在本人公开时出现；徽章按用户 ID 单独查询，不进房间快照。",
+      "public"
+    )
       .input(z.object({ userId: z.string().min(1).max(64) }))
       .output(publicProfileSchema),
   },

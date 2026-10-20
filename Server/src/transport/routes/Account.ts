@@ -156,6 +156,12 @@ const createRpcRouter = (
         revokeSessions: adminOnly.admin.users.revokeSessions.handler(({ context, input }) =>
           admin.revokeSessions(context.userId, input.userId)
         ),
+        grantBadge: adminOnly.admin.users.grantBadge.handler(({ context, input }) =>
+          admin.grantBadge(context.userId, input)
+        ),
+        revokeBadge: adminOnly.admin.users.revokeBadge.handler(({ context, input }) =>
+          admin.revokeBadge(context.userId, input)
+        ),
       },
       settings: {
         list: adminOnly.admin.settings.list.handler(async () => ({

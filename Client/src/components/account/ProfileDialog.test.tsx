@@ -44,6 +44,7 @@ const profile: AccountProfile = {
   showQq: false,
   role: "user",
   createdAt: "2026-10-01T00:00:00.000Z",
+  badges: [],
 };
 
 const entry = (id: string, name: string | null) => ({

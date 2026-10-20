@@ -40,6 +40,8 @@ const EXPECTED_OPERATIONS = [
   "admin.users.unban",
   "admin.users.setRole",
   "admin.users.revokeSessions",
+  "admin.users.grantBadge",
+  "admin.users.revokeBadge",
   "admin.settings.list",
   "admin.settings.set",
   "admin.feedback.list",

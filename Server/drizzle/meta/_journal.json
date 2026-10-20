@@ -64,6 +64,13 @@
       "when": 1792459099467,
       "tag": "0008_app_setting",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1792534604665,
+      "tag": "0009_badges",
+      "breakpoints": true
     }
   ]
 }

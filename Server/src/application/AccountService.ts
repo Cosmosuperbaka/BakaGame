@@ -1,6 +1,7 @@
 import { LRUCache } from "lru-cache";
 
 import { AppError } from "../domain/Errors";
+import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { Auth } from "../infrastructure/auth/Auth";
@@ -9,6 +10,7 @@ import type { AvatarImage, AvatarSize, QQAvatarService } from "../infrastructure
 import type { QQNicknameService } from "./QQNicknameService";
 import { accountAvatarUrlOf, LOGIN_CODE_RESEND_SECONDS, qqEmailOf } from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
+import type { BadgeKind } from "../shared/Badges";
 import type { PlayerAccount } from "../shared/Model";
 
 /** 账号表在应用层可见的字段（Better Auth 适配器返回的原始行）。 */
@@ -32,6 +34,8 @@ export interface AccountServiceOptions {
   auth: Auth;
   mailer: Mailer;
   avatars: QQAvatarService;
+  /** 身份徽章只随资料返回，不进房间快照。 */
+  badges: BadgeRepository;
   logger: EventLogger;
   /** QQ 昵称查询号：新号发码前必须取到昵称，取不到即拒绝（停用注册）。 */
   nicknames?: QQNicknameService | null;
@@ -224,7 +228,11 @@ export class AccountService {
       .catch((error: unknown) =>
         this.options.logger.warn("QQ 昵称刷新失败", { userId: row.id, error: String(error) })
       );
-    return toProfile(await this.refreshAvatar(row));
+    const [refreshed, badges] = await Promise.all([
+      this.refreshAvatar(row),
+      this.options.badges.badgesOf(row.id),
+    ]);
+    return toProfile(refreshed, badges);
   }
 
   /** 账号当前昵称（读库，不取会话缓存）；账号已注销返回 `null`。 */
@@ -241,7 +249,7 @@ export class AccountService {
       ? ((await adapter.updateUser(userId, patch)) as AccountRow | null)
       : await this.findUser(userId);
     if (!row) throw new AppError("UNAUTHORIZED", "请先登录");
-    return toProfile(row);
+    return toProfile(row, await this.options.badges.badgesOf(row.id));
   }
 
   async publicProfile(userId: string): Promise<PublicProfile> {
@@ -252,6 +260,7 @@ export class AccountService {
       name: row.name,
       image: row.image ?? null,
       qqNumber: row.showQq ? (row.qqNumber ?? null) : null,
+      badges: await this.options.badges.badgesOf(row.id),
     };
   }
 
@@ -303,12 +312,13 @@ export class AccountService {
   }
 }
 
-const toProfile = (row: AccountRow): AccountProfile => ({
+const toProfile = (row: AccountRow, badges: readonly BadgeKind[]): AccountProfile => ({
   id: row.id,
   name: row.name,
   qqNumber: row.qqNumber ?? "",
   image: row.image ?? null,
   showQq: Boolean(row.showQq),
   role: row.role === "admin" ? "admin" : "user",
+  badges: [...badges],
   createdAt: new Date(row.createdAt).toISOString(),
 });
