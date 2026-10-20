@@ -186,3 +186,84 @@ describe("edgeone.json 边缘缓存配置", () => {
     }
   });
 });
+
+/**
+ * 托管构建入口的口径守卫（审查 F52）。
+ *
+ * `Client/edgeone.json` 是边缘响应头与缓存规则的唯一真相源，并且**不**声明安装/构建命令；
+ * `Client/esa.jsonc` 是备用平台形态，只承担构建命令口径。两份配置曾经互相矛盾——
+ * esa.jsonc 写 `npm install`，而 CI 与依赖权威（根 `pnpm-lock.yaml`）走 pnpm 冻结锁：
+ * 托管构建一旦按那份口径跑，线上 bundle 的依赖树就与 CI 获验过的不是同一棵。
+ *
+ * 这里把「只有一份声明构建入口、且与 CI 逐字一致」固化成断言。
+ * 规则来源见 Agents/Conventions.md §4 与 Agents/Deployment.md §8。
+ */
+
+/** CI 客户端作业的口径：安装用冻结锁，构建按 workspace 过滤。 */
+const CI_INSTALL_COMMAND = "pnpm install --frozen-lockfile";
+const CI_BUILD_COMMAND = "pnpm --filter client build";
+
+/** 去掉行注释、块注释与尾逗号：托管配置允许 JSONC 写法（esa.jsonc 就带说明注释）。 */
+function parseJsonc(text: string): Record<string, unknown> {
+  return JSON.parse(
+    text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|\n)[ \t]*\/\/[^\n]*/g, "$1")
+      .replace(/,(\s*[}\]])/g, "$1")
+  ) as Record<string, unknown>;
+}
+
+const clientRoot = path.resolve(__dirname, "../..");
+const ciWorkflow = readFileSync(path.resolve(clientRoot, "../.github/workflows/ci.yml"), "utf8");
+
+describe("托管构建入口口径", () => {
+  const hostingConfigs = ["edgeone.json", "esa.jsonc"].map((name) => ({
+    name,
+    config: parseJsonc(readFileSync(path.join(clientRoot, name), "utf8")),
+  }));
+
+  it("只有一份托管配置声明构建入口，不存在互相冲突的第二套口径", () => {
+    const declaring = hostingConfigs.filter(
+      (entry) =>
+        entry.config.installCommand !== undefined || entry.config.buildCommand !== undefined
+    );
+    expect(
+      declaring.map((entry) => entry.name),
+      "构建入口只能由一份托管配置声明"
+    ).toEqual(["esa.jsonc"]);
+  });
+
+  it("声明的构建入口与 CI 客户端作业逐字一致", () => {
+    const esa = hostingConfigs.find((entry) => entry.name === "esa.jsonc")?.config ?? {};
+    expect(esa.installCommand, "安装必须走根级 pnpm-lock.yaml 的冻结锁").toBe(CI_INSTALL_COMMAND);
+    expect(esa.buildCommand, "构建必须走 workspace 过滤，与 CI 同一条命令").toBe(CI_BUILD_COMMAND);
+  });
+
+  it("CI 侧口径本身没有被改掉（改动 CI 时同步这里的常量）", () => {
+    expect(
+      ciWorkflow,
+      `ci.yml 里找不到 "${CI_INSTALL_COMMAND}"，F52 常量需要跟着 CI 一起改`
+    ).toContain(CI_INSTALL_COMMAND);
+    expect(
+      ciWorkflow,
+      `ci.yml 里找不到 "${CI_BUILD_COMMAND}"，F52 常量需要跟着 CI 一起改`
+    ).toContain(CI_BUILD_COMMAND);
+  });
+
+  it("任何托管配置里都不出现 npm/yarn 口径的安装命令", () => {
+    for (const entry of hostingConfigs) {
+      for (const key of ["installCommand", "buildCommand"]) {
+        const value = entry.config[key];
+        if (typeof value !== "string") continue;
+        expect(
+          value,
+          `${entry.name} 的 ${key} 不得使用 npm/yarn 解析依赖（依赖权威是根 pnpm-lock.yaml）`
+        ).not.toMatch(/^\s*(npm|yarn)\s+(install|ci|run)\b/);
+        if (key === "installCommand")
+          expect(value, "安装命令必须带 --frozen-lockfile，否则托管构建会浮动解析").toContain(
+            "--frozen-lockfile"
+          );
+      }
+    }
+  });
+});

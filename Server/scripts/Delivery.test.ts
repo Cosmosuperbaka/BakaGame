@@ -1,12 +1,21 @@
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
+import { gunzipSync } from "node:zlib";
 import { mkdtemp, rm, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { isolatedEnvironment, availablePort, startIsolatedServer } from "./IsolatedServer";
-import { probeDeployment } from "./DeploymentProbe";
+import {
+  probeDeployment,
+  HEALTH_QUOTA_REQUESTS,
+  HEALTH_QUOTA_SHARE,
+  HEALTH_WINDOW_MS,
+  HEALTH_MIN_INTERVAL_MS,
+} from "./DeploymentProbe";
 // @ts-expect-error Node workflow helper intentionally remains native ESM JavaScript.
 import { deploymentRevision } from "./DeploymentGate.mjs";
+// @ts-expect-error Node helper intentionally remains native ESM JavaScript.
+import { stage as stageNpmLock, DEFAULT_MAX_B64_CHARS } from "./StageNpmLock.mjs";
 
 const repository = "Cosmosuperbaka/BakaGame";
 const run = {
@@ -180,9 +189,178 @@ test("只读发布探针拒绝 ready:false，不仅依赖 health ok", async () =
         now += ms;
       },
     })
-  ).rejects.toThrow("业务探针失败: /readyz");
-  expect(paths).toEqual(["/health", "/livez", "/readyz", "/health", "/livez", "/readyz"]);
+  ).rejects.toThrow("/readyz ready!=true");
+  // /health 观察到一次 ok 后不再提问（/livez 与 /readyz 无额度，继续每轮问）。
+  expect(paths).toEqual(["/health", "/livez", "/readyz", "/livez", "/readyz"]);
   expect(now).toBe(30);
+});
+
+/**
+ * 夹具 WebSocket：收到命令立刻回一个 id 对应的 ack，让「订阅往返」这条分支
+ * 在没有真实服务端的额度/退避用例里也能走通。
+ */
+const installAckWebSocket = () => {
+  const original = globalThis.WebSocket;
+  class AckSocket {
+    private readonly listeners = new Map<string, Array<(event?: unknown) => void>>();
+    constructor(readonly url: string) {
+      setTimeout(() => this.dispatch("open"), 0);
+    }
+    addEventListener(type: string, handler: (event?: unknown) => void): void {
+      const list = this.listeners.get(type) ?? [];
+      list.push(handler);
+      this.listeners.set(type, list);
+    }
+    removeEventListener(type: string, handler: (event?: unknown) => void): void {
+      const list = this.listeners.get(type) ?? [];
+      const at = list.indexOf(handler);
+      if (at >= 0) list.splice(at, 1);
+    }
+    private dispatch(type: string, event?: unknown): void {
+      for (const handler of [...(this.listeners.get(type) ?? [])]) handler(event);
+    }
+    send(raw: string): void {
+      const packet = JSON.parse(raw) as { id: string; type: string };
+      setTimeout(
+        () =>
+          this.dispatch("message", {
+            data: JSON.stringify({
+              id: packet.id,
+              type: "ack",
+              requestType: packet.type,
+            }),
+          }),
+        0
+      );
+    }
+    close(): void {}
+  }
+  globalThis.WebSocket = AckSocket as unknown as typeof WebSocket;
+  return () => {
+    globalThis.WebSocket = original;
+  };
+};
+
+/** 假时钟：sleep 直接把 now 推前，用例因此可以在毫秒预算里走完整条退避链。 */
+const fakeClock = () => {
+  const clock = { now: 0 };
+  return {
+    clock,
+    io: {
+      now: () => clock.now,
+      sleep: async (ms: number) => {
+        clock.now += ms;
+      },
+    },
+  };
+};
+
+const healthCalls = (paths: string[]): number => paths.filter((p) => p === "/health").length;
+
+test("F82：/health 被限流 429 时探针继续等待而不是判失败，且提问次数受额度自我限速约束", async () => {
+  const restore = installAckWebSocket();
+  const paths: string[] = [];
+  const fetcher = (async (input: string | URL | Request) => {
+    const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
+    paths.push(pathname);
+    if (pathname === "/health" && healthCalls(paths) <= 2) {
+      // 与生产 429 同形：rateLimitHeaders() 会带 retry-after（秒）。
+      return new Response(JSON.stringify({ status: "RATE_LIMITED" }), {
+        status: 429,
+        headers: { "retry-after": "1", "content-type": "application/json" },
+      });
+    }
+    return Response.json({ status: "ok", ready: true });
+  }) as typeof fetch;
+  const { clock, io } = fakeClock();
+  try {
+    await probeDeployment("http://127.0.0.1:9", 30_000, undefined, { fetch: fetcher, ...io });
+  } finally {
+    restore();
+  }
+  // 30s 预算内旧实现会打出约 150 次 /health（超过单 IP 120 次/分的额度）；
+  // 现在按额度自我限速，提问次数必须落在额度的一半以内。
+  expect(healthCalls(paths)).toBeLessThanOrEqual(Math.floor(30_000 / HEALTH_MIN_INTERVAL_MS));
+  expect(clock.now).toBeLessThan(30_000);
+});
+
+test("F82：/readyz 在停机窗口返回 503 时探针等待其转绿，不判失败", async () => {
+  const restore = installAckWebSocket();
+  const paths: string[] = [];
+  const fetcher = (async (input: string | URL | Request) => {
+    const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
+    paths.push(pathname);
+    if (pathname === "/readyz" && paths.filter((p) => p === "/readyz").length <= 2)
+      return Response.json({ status: "shutting_down", ready: false }, { status: 503 });
+    return Response.json({ status: "ok", ready: true });
+  }) as typeof fetch;
+  const { io } = fakeClock();
+  try {
+    await probeDeployment("http://127.0.0.1:9", 30_000, undefined, { fetch: fetcher, ...io });
+  } finally {
+    restore();
+  }
+  expect(paths.filter((p) => p === "/readyz").length).toBeGreaterThanOrEqual(3);
+});
+
+test("F82：/health 请求超时同样只是「还没就绪」，恢复后探针通过", async () => {
+  const restore = installAckWebSocket();
+  const paths: string[] = [];
+  const fetcher = (async (input: string | URL | Request) => {
+    const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
+    paths.push(pathname);
+    if (pathname === "/health" && healthCalls(paths) === 1)
+      throw new Error("TimeoutError: The operation was aborted due to timeout");
+    return Response.json({ status: "ok", ready: true });
+  }) as typeof fetch;
+  const { io } = fakeClock();
+  try {
+    await probeDeployment("http://127.0.0.1:9", 30_000, undefined, { fetch: fetcher, ...io });
+  } finally {
+    restore();
+  }
+  expect(healthCalls(paths)).toBe(2);
+});
+
+test("F82：额度始终打不开时报错带限流线索，供运维分辨「慢」与「坏」", async () => {
+  const restore = installAckWebSocket();
+  const fetcher = (async (input: string | URL | Request) => {
+    const pathname = new URL(input instanceof Request ? input.url : String(input)).pathname;
+    if (pathname === "/health")
+      return new Response(JSON.stringify({ status: "RATE_LIMITED" }), {
+        status: 429,
+        headers: { "retry-after": "2", "content-type": "application/json" },
+      });
+    return Response.json({ status: "ok", ready: true });
+  }) as typeof fetch;
+  const { io } = fakeClock();
+  try {
+    await expect(
+      probeDeployment("http://127.0.0.1:9", 5_000, undefined, { fetch: fetcher, ...io })
+    ).rejects.toThrow(/限流 429[\s\S]*服务仍在启动/);
+  } finally {
+    restore();
+  }
+});
+
+test("探针镜像的 /health 额度与 System.ts 的实现一致", async () => {
+  // DeploymentProbe.ts 经 stdin 喂给容器，不能 import 应用代码，只能镜像额度。
+  // 这条断言把镜像钉回真相源：改了 System.ts 的额度忘了这里，测试直接变红。
+  const source = await Bun.file(
+    path.resolve(import.meta.dir, "../src/transport/routes/System.ts")
+  ).text();
+  const window = /PROBE_WINDOW_MS\s*=\s*([\d_]+)/.exec(source)?.[1]?.replace(/_/g, "");
+  const quota = /PROBE_IP_MAX_REQUESTS\s*=\s*([\d_]+)/.exec(source)?.[1]?.replace(/_/g, "");
+  expect(window, "System.ts 里找不到 PROBE_WINDOW_MS，探针镜像常量需要人工核对").toBe(
+    String(HEALTH_WINDOW_MS)
+  );
+  expect(quota, "System.ts 里找不到 PROBE_IP_MAX_REQUESTS，探针镜像常量需要人工核对").toBe(
+    String(HEALTH_QUOTA_REQUESTS)
+  );
+  // 自我限速必须真的低于额度：一半的额度换算成间隔。
+  expect(
+    HEALTH_MIN_INTERVAL_MS * (HEALTH_QUOTA_REQUESTS / HEALTH_QUOTA_SHARE)
+  ).toBeGreaterThanOrEqual(HEALTH_WINDOW_MS);
 });
 
 import { notifyDeployment } from "./DeploymentNotify";
@@ -234,6 +412,112 @@ test("preload 拒绝全部登记出口，--no-env-file 不加载合成凭据", a
     await rm(directory, { recursive: true, force: true });
   }
 }, 20_000);
+
+test("部署预算块的求和与作业硬超时自洽（审查 F59）", async () => {
+  const workflow = Bun.YAML.parse(
+    await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()
+  ) as {
+    jobs: {
+      deploy: {
+        "timeout-minutes"?: number;
+        steps: { with?: { script?: unknown; command_timeout?: string } }[];
+      };
+    };
+  };
+  const script = workflow.jobs.deploy.steps
+    .map((step) => step.with?.script)
+    .find((value): value is string => typeof value === "string");
+  if (typeof script !== "string") throw new Error("未找到内嵌部署脚本");
+  const constant = (name: string): number => {
+    const raw = new RegExp(`^\\s*${name}=(\\d+)(?:\\s|$)`, "m").exec(script)?.[1];
+    if (raw === undefined) throw new Error(`预算块里找不到常量 ${name}`);
+    return Number(raw);
+  };
+  const shardS =
+    constant("BUDGET_NOTIFY_S") +
+    constant("BUDGET_DRAIN_S") +
+    constant("BUDGET_RESTART_S") +
+    constant("BUDGET_PROBE_MAX_MS") / 1000;
+  // 两片是当前的分片上限（主片 + CEE 片），最坏路径按两片算。
+  const worst =
+    constant("BUDGET_SYNC_S") +
+    constant("BUDGET_DL_MAX_S") +
+    constant("BUDGET_CHECK_S") +
+    constant("BUDGET_RELEASE_S") +
+    shardS * 2 +
+    constant("BUDGET_RESERVE_S");
+  const jobS = constant("BUDGET_JOB_S");
+  const timeoutMinutes = workflow.jobs.deploy["timeout-minutes"];
+  expect(timeoutMinutes, "deploy job 必须保留硬超时").toBeNumber();
+  expect(worst, `最坏路径 ${worst}s 必须落在远端预算 ${jobS}s 内`).toBeLessThanOrEqual(jobS);
+  expect(jobS, "远端预算必须落在作业硬超时信封内").toBeLessThanOrEqual((timeoutMinutes ?? 0) * 60);
+  // SSH 步骤的 command_timeout 必须与作业信封同一分钟数，否则两处会各自漂移。
+  const commandTimeout = workflow.jobs.deploy.steps
+    .map((step) => step.with?.command_timeout)
+    .find((value): value is string => typeof value === "string");
+  expect(commandTimeout, "SSH 步骤必须保留 command_timeout").toBe(`${timeoutMinutes}m`);
+  // 下载余量由预算块推导，不再是与总时长脱钩的独立常数。
+  expect(script).toContain("DL_DEADLINE=$(( BUDGET_JOB_S");
+  expect(script).toContain("- SHARD_S * SHARDS ))");
+  // 每片探针预算取剩余时间，保证「等就绪」不会把整段脚本拖到被取消。
+  expect(script).toContain("DEPLOY_PROBE_BUDGET_MS=$PROBE_MS");
+});
+
+test("npm 运行时锁只做搬运与校验，不重新解析（审查 F51）", async () => {
+  const good = JSON.stringify({
+    lockfileVersion: 3,
+    packages: {
+      "": { name: "bakagame-server-runtime", dependencies: { elysia: "1.4.30" } },
+      "node_modules/elysia": { version: "1.4.30", resolved: "https://example.invalid/elysia.tgz" },
+    },
+  });
+  const result = stageNpmLock(good, DEFAULT_MAX_B64_CHARS);
+  expect(result.lockSha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(result.pins).toBe("elysia@1.4.30");
+  expect(result.skipped).toBe("none");
+  // 制品必须能原样还原：部署侧只认这一枚锁，不再产生第二套真相。
+  expect(gunzipSync(Buffer.from(result.blob as string, "base64")).toString("utf8")).toBe(good);
+  // 区间而非精确版本 = CI 侧 ExportNpmLock 的产物口径被破坏，必须失败而不是悄悄放过。
+  expect(() =>
+    stageNpmLock(
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": { dependencies: { elysia: "^1.4.30" } },
+          "node_modules/elysia": { resolved: "x" },
+        },
+      })
+    )
+  ).toThrow(/精确版本/);
+  expect(() =>
+    stageNpmLock(
+      JSON.stringify({ lockfileVersion: 2, packages: { "": { dependencies: { a: "1.0.0" } } } })
+    )
+  ).toThrow(/lockfileVersion/);
+  expect(() =>
+    stageNpmLock(
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: { "": { dependencies: { a: "1.0.0" } }, "node_modules/a": { version: "1.0.0" } },
+      })
+    )
+  ).toThrow(/resolved/);
+  // 超限只跳过锁本体，pins 仍然可用（部署侧退化为版本核对 + 明确警告）。
+  const tight = stageNpmLock(good, 32);
+  expect(tight.blob).toBeNull();
+  expect(tight.skipped).toBe("oversize");
+  expect(tight.pins).toBe("elysia@1.4.30");
+
+  // 部署作业必须真的消费制品：取 → 暂存 → 落到挂载树 → 容器内核对，缺一环都算回退。
+  const workflow = Bun.YAML.parse(
+    await Bun.file(path.resolve(import.meta.dir, "../../.github/workflows/deploy.yml")).text()
+  ) as { jobs: { deploy: { steps: Array<Record<string, unknown>> } } };
+  const text = JSON.stringify(workflow.jobs.deploy.steps);
+  expect(text).toContain("server-npm-lock");
+  expect(text).toContain("StageNpmLock.mjs");
+  expect(text).toContain("NPM_LOCK_B64,NPM_LOCK_SHA,NPM_PINS");
+  expect(text).toContain("npm ci");
+});
 
 test("维护通知只向合成回环发送 Bearer，缺 token/拒绝均失败且不回显凭据", async () => {
   const received: string[] = [];

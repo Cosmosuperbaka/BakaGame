@@ -390,6 +390,11 @@ export const ENV_ENTRIES: EnvEntry[] = [
   { name: "SONG_PROBE_LIVE_ATTEMPTS", layer: "DEV" },
   { name: "SONG_PROBE_LIVE_ROUNDS", layer: "DEV" },
   { name: "SONG_PROBE_REPLAY_ROOMS", layer: "DEV" },
+  // 部署链路的两个脚本入参：探针就绪预算由 deploy.yml 注入，容器侧版本门读期望清单。
+  // 它们只服务脚本，不进 .env.example，也不属于线上应用配置面。
+  { name: "DEPLOY_PROBE_BUDGET_MS", layer: "DEV" },
+  { name: "NPM_PINS", layer: "DEV" },
+  { name: "NPM_MODULES", layer: "DEV" },
 
   // ==================== DEAD 已废弃 ====================
   { name: "AES_SECRET", layer: "DEAD" },
