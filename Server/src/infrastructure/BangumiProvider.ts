@@ -409,8 +409,8 @@ export class BangumiProvider {
   private cooldownUntil = 0;
   private readonly cache: LRUCache<string, { value: unknown; expiresAt: number }>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
-  /** 角色立绘成功缓存。见 `resolveCharacterImage`：失败结果不得进入任何缓存。 */
-  private readonly characterImageCache = new Map<number, string>();
+  /** 角色立绘成功缓存。见 `resolveCharacterImage`：失败结果不得进入任何缓存。有界（LRU），否则长进程按累计角色数无上限增长。 */
+  private readonly characterImageCache: LRUCache<number, string>;
 
   constructor(options: BangumiProviderOptions) {
     this.fetcher = options.fetcher ?? fetch;
@@ -421,6 +421,9 @@ export class BangumiProvider {
     this.cooldownMs = Math.max(500, options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS);
     this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
     this.cache = new LRUCache({
+      max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+    });
+    this.characterImageCache = new LRUCache({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
     });
     this.queue = new PQueue({

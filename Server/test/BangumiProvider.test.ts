@@ -481,6 +481,40 @@ describe("BangumiProvider 远端接口", () => {
     expect(calls).toBe(3);
   });
 
+  /**
+   * 立绘 URL 的缓存必须跟着条目上限走：CEE 与猜歌按累计角色数一条条攒进来，
+   * 无上限的 Map 在长进程里只增不减；上限也不能配成 0，那会退化成「每问必回源」。
+   */
+  test("resolveCharacterImage 的缓存有界：超上限淘汰最旧条目，下限锁到 1", async () => {
+    const requested: string[] = [];
+    const providerOf = (cacheMaxEntries: number) =>
+      new BangumiProvider({
+        apiUrl: "https://api.invalid",
+        imageUrl: "",
+        cacheMaxEntries,
+        fetcher: async (url) => {
+          requested.push(url);
+          return jsonResponse({ images: { large: `${url}.jpg` } });
+        },
+      });
+
+    const bounded = providerOf(2);
+    for (const id of [11, 22, 33]) expect(await bounded.resolveCharacterImage(id)).toBeDefined();
+    expect(requested).toHaveLength(3);
+    // 上限之内照常命中：有界不等于把缓存关掉。
+    expect(await bounded.resolveCharacterImage(33)).toBeDefined();
+    expect(requested).toHaveLength(3);
+    // 最旧的 11 已被淘汰，只能再回一次源。
+    expect(await bounded.resolveCharacterImage(11)).toBeDefined();
+    expect(requested).toHaveLength(4);
+
+    requested.length = 0;
+    const minimum = providerOf(0);
+    expect(await minimum.resolveCharacterImage(77)).toBeDefined();
+    expect(await minimum.resolveCharacterImage(77)).toBeDefined();
+    expect(requested).toHaveLength(1);
+  });
+
   test("resolveSubjectImage：合法 id 回源重写，失败与非法输入回退 undefined", async () => {
     let calls = 0;
     let fail = false;

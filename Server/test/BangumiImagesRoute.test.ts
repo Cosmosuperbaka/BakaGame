@@ -1,9 +1,13 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BangumiImageService } from "../src/infrastructure/BangumiImageService";
+import {
+  BangumiImageService,
+  IMAGE_CACHE_MAX_BYTES,
+  IMAGE_CACHE_MAX_ENTRIES,
+} from "../src/infrastructure/BangumiImageService";
 import { BangumiImageStore } from "../src/infrastructure/BangumiImageStore";
 import { bangumiImageRoutes } from "../src/transport/routes/BangumiImages";
 
@@ -250,6 +254,57 @@ test("库里存了非图片类型也只回不可执行的字节流", async () =>
     expect(response.headers.get("content-type")).toBe("application/octet-stream");
     service.close();
   } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+/**
+ * 开局满房时客户端成批请求同一批头像：字节缓存把这些重复请求收敛成一次同步 SQLite 读。
+ * 缓存本身必须同时按条目数与总字节封顶——只限条目数时，几十张 4MB 封面照样能把长进程压穿。
+ */
+test("字节缓存收敛重复读，并按条目数与总字节双封顶", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-image-cache-"));
+  const reads: string[] = [];
+  const imageFor = (path: string) =>
+    path.endsWith("/big.avif")
+      ? { bytes: new Uint8Array(IMAGE_CACHE_MAX_BYTES + 1), contentType: "image/avif" }
+      : { bytes: AVIF, contentType: "image/avif" };
+  const spy = spyOn(BangumiImageStore.prototype, "get").mockImplementation((path: string) => {
+    reads.push(path);
+    return imageFor(path);
+  });
+
+  let closeService: () => void = () => {};
+  try {
+    const service = new BangumiImageService({
+      directory: shards(join(directory, "images")),
+      now: () => 0,
+    });
+    closeService = () => service.close();
+    const get = (path: string) =>
+      service.fetch(path).then((outcome) => (outcome.state === "ok" ? outcome.image : undefined));
+
+    const first = "/r/200/pic/cover/l/a/1.jpg";
+    expect(await get(first)).toEqual(imageFor(first));
+    expect(await get(first)).toEqual(imageFor(first));
+    expect(reads).toEqual([first]);
+
+    // 装满上限后再进一张，最旧的 1.jpg 才被挤出——不是无上限 Map 那样越攒越多。
+    for (let index = 1; index <= IMAGE_CACHE_MAX_ENTRIES + 1; index += 1)
+      await get(`/r/200/pic/cover/l/a/${index}.jpg`);
+    const before = reads.length;
+    expect(await get(`/r/200/pic/cover/l/a/1.jpg`)).toBeDefined();
+    expect(reads).toHaveLength(before + 1);
+
+    // 单张就超过总字节上界的图：lru-cache 会拒写并抛错，这样的图只能不缓存。
+    reads.length = 0;
+    expect(await get("/r/200/pic/cover/l/big.avif")).toBeDefined();
+    expect(await get("/r/200/pic/cover/l/big.avif")).toBeDefined();
+    expect(reads).toHaveLength(2);
+  } finally {
+    // Windows 上被连接占用的 SQLite 文件删不掉：先关服务，断言失败时也不留脏目录。
+    closeService();
+    spy.mockRestore();
     rmSync(directory, { recursive: true, force: true });
   }
 });

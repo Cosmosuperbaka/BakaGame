@@ -1,12 +1,17 @@
+import { LRUCache } from "lru-cache";
 import { BangumiImageStore, type StoredImage } from "./BangumiImageStore";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import { fetchWithGuardedRedirects } from "./OutboundGuard";
 import { SlidingWindowRateLimiter, type RateLimitVerdict } from "./RateLimiter";
 
 /**
- * 自建图床的读取侧（主线程）。路由请求先查分片缓存；缺失时按需回源抓一份
- * avif（`Accept: image/avif`，经反代），并交给数据 Worker 落库——维持
- * **单写者**原则：主线程只读分片、绝不直接写，写操作全部转给 Worker。
+ * 自建图床的读取侧（主线程）。路由请求先查进程内字节缓存，再查分片存储；
+ * 缺失时按需回源抓一份 avif（`Accept: image/avif`，经反代），并交给数据 Worker
+ * 落库——维持**单写者**原则：主线程只读分片、绝不直接写，写操作全部转给 Worker。
+ *
+ * 开局满房客户端会成批请求同一批头像/封面：字节缓存把这些重复请求收敛成
+ * 一次同步 SQLite 读，命中项不再碰主线程的 pread。缓存必须同时限条目数与
+ * 总字节（与 CEE 图片提示同族），否则又换一个无上限 Map 的慢泄漏。
  *
  * 回源是尽力而为：抓取失败或上游给的不是 avif 都按「这张图暂时没有」处理，下一次请求或后台更新器会补。
  * 但**配额耗尽不能伪装成「没有这张图」**：那是调用方该退避的信号，混进 404 里就只能靠重试猜。
@@ -38,6 +43,9 @@ export type BangumiImageOutcome =
   | { state: "limited"; verdict: RateLimitVerdict };
 
 const AVIF_MAGIC = "ftypav";
+/** 与 CEEImageHints 同族的双上限：条目数挡慢泄漏，总字节挡大图撑爆内存。 */
+export const IMAGE_CACHE_MAX_ENTRIES = 128;
+export const IMAGE_CACHE_MAX_BYTES = 16 * 1024 * 1024;
 
 /** 与构建脚本同款校验：avif 魔数必须出现在前 16 字节内。 */
 export function hasAvifMagic(bytes: Uint8Array): boolean {
@@ -64,6 +72,11 @@ export class BangumiImageService {
   private readonly globalLimiter: SlidingWindowRateLimiter;
   private readonly clientLimiter: SlidingWindowRateLimiter;
   private readonly inflight = new Map<string, Promise<BangumiImageOutcome>>();
+  private readonly imageCache = new LRUCache<string, StoredImage>({
+    max: IMAGE_CACHE_MAX_ENTRIES,
+    maxSize: IMAGE_CACHE_MAX_BYTES,
+    sizeCalculation: (image) => image.bytes.byteLength,
+  });
   private readonly now: () => number;
 
   constructor(options: BangumiImageServiceOptions) {
@@ -94,8 +107,13 @@ export class BangumiImageService {
    * 而它的请求根本不该进入全局计数。在途合并的后续请求不重复占额度。
    */
   async fetch(path: string, clientIp = "anonymous"): Promise<BangumiImageOutcome> {
+    const cached = this.imageCache.get(path);
+    if (cached) return { state: "ok", image: cached };
     const hit = this.store?.get(path);
-    if (hit) return { state: "ok", image: hit };
+    if (hit) {
+      this.remember(path, hit);
+      return { state: "ok", image: hit };
+    }
     if (!this.sourceBase) return { state: "missing" };
     const running = this.inflight.get(path);
     if (running) return running;
@@ -104,10 +122,19 @@ export class BangumiImageService {
     const global = this.globalLimiter.consume("upstream", this.now());
     if (!global.allowed) return { state: "limited", verdict: global };
     const request = this.fetchUpstream(path)
-      .then((image): BangumiImageOutcome => (image ? { state: "ok", image } : { state: "missing" }))
+      .then((image): BangumiImageOutcome => {
+        if (!image) return { state: "missing" };
+        this.remember(path, image);
+        return { state: "ok", image };
+      })
       .finally(() => this.inflight.delete(path));
     this.inflight.set(path, request);
     return request;
+  }
+
+  /** 超过总字节上界的单张图：lru-cache 会直接拒写抛错，这样的图不缓存、每次请求各读一次分片。 */
+  private remember(path: string, image: StoredImage): void {
+    if (image.bytes.byteLength <= IMAGE_CACHE_MAX_BYTES) this.imageCache.set(path, image);
   }
 
   private async fetchUpstream(path: string): Promise<StoredImage | undefined> {
