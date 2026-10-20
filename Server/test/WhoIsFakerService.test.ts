@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 
 import { LOBBY_MERGE_WINDOW_MS } from "../src/application/LobbyFanout";
 import {
+  CHAT_RATE_LIMIT_PER_CONNECTION,
+  CHAT_RATE_LIMIT_WINDOW_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
@@ -3244,6 +3246,39 @@ test("游戏进行中死亡玩家与旁观者发言归入ghost频道且仅对有
   expect(deadChatTexts).toContain("我是活人发言");
   expect(deadChatTexts).toContain("我是旁观者发言");
   expect(deadChatTexts).toContain("我是亡者发言");
+});
+
+test("聊天按连接限流：窗内第 6 条被拒，窗口过去后恢复", async () => {
+  const { service, advanceTime } = createTestContext();
+  const { host } = await createRoom(service, "3434");
+
+  for (let index = 0; index < CHAT_RATE_LIMIT_PER_CONNECTION; index += 1) {
+    await execute(service, host, {
+      id: `chat-${index}`,
+      type: "chat.send",
+      roomId: "3434",
+      payload: { text: `第${index + 1}条` },
+    });
+  }
+
+  await expect(
+    execute(service, host, {
+      id: "chat-over-limit",
+      type: "chat.send",
+      roomId: "3434",
+      payload: { text: "超限" },
+    })
+  ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+
+  advanceTime(CHAT_RATE_LIMIT_WINDOW_MS);
+  await expect(
+    execute(service, host, {
+      id: "chat-recovered",
+      type: "chat.send",
+      roomId: "3434",
+      payload: { text: "恢复" },
+    })
+  ).resolves.toEqual({ sent: true });
 });
 
 test("白板猜词打断发言阶段后，裁定未通过恢复原阶段并还原剩余倒计时", async () => {

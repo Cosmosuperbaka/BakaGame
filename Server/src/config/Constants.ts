@@ -40,6 +40,14 @@ export const JOIN_PASSWORD_WINDOW_MS = 60 * 1000;
 export const JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = JOIN_PASSWORD_MAX_ATTEMPTS * 6;
 
 /**
+ * 聊天限流：单条连接在统计窗口内最多发送的条数。
+ * 每条聊天都会触发全房广播，不限流等于把一次按键放大成 O(房间人数) 的扇出；
+ * 客户端按钮防抖不能替代服务端配额。
+ */
+export const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
+export const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
+
+/**
  * WebSocket 握手配额：单个客户端地址的在途连接数与每分钟新建连接数。
  * 在途数封顶长期持有的连接，速率封顶反复开关的握手开销，两者缺一都能绕过对方。
  * 浏览器一个标签页只有一条游戏连接，正常玩家远达不到这个量级。

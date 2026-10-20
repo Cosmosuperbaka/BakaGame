@@ -71,6 +71,8 @@ import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
+  CHAT_RATE_LIMIT_PER_CONNECTION,
+  CHAT_RATE_LIMIT_WINDOW_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
@@ -236,6 +238,11 @@ export class WhoIsFakerService implements AdminRoomControl {
   private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
     windowMs: JOIN_PASSWORD_WINDOW_MS,
     maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
+  });
+  /** 每条聊天都会广播全房快照，限流口径与 SonGuessr 一致。 */
+  private readonly chatLimiter = new SlidingWindowRateLimiter({
+    windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+    maxRequests: CHAT_RATE_LIMIT_PER_CONNECTION,
   });
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   private readonly lobbyFanout: LobbyFanout;
@@ -2166,6 +2173,9 @@ export class WhoIsFakerService implements AdminRoomControl {
   private async handleChat(connection: ConnectionRecord, text: string) {
     // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
     const { room, player } = this.requireRoomPlayer(connection);
+    if (!this.chatLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "发言过于频繁，请稍后再试");
+    }
     const normalized = normalizeWord(text);
 
     if (!normalized) {

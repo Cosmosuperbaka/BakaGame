@@ -2,6 +2,8 @@ import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
+  CHAT_RATE_LIMIT_PER_CONNECTION,
+  CHAT_RATE_LIMIT_WINDOW_MS,
   HOST_RECONNECT_TIMEOUT_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
@@ -1230,10 +1232,6 @@ const isUnusableSongCandidate = (error: unknown): boolean =>
  */
 const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
 const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
-
-/** 聊天：每秒 2 条、突发 5 条。 */
-const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
-const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
 
 /** 房间因空闲被关闭前的预警提前量。 */
 const ROOM_EXPIRING_WARNING_MS = 60_000;
