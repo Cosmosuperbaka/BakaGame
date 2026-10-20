@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
+import { resolveDeploymentEnvironment } from "../src/config/env/Observability";
 import type { CEEService } from "../src/application/CEEService";
 import type { SonGuessrService } from "../src/application/SonGuessrService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
@@ -86,6 +87,8 @@ test("/health 匿名只给一位有效数字的量级，维护凭据才拿精确
   expect(anon.status).toBe(200);
   expect(await anon.json()).toEqual({
     status: "ok",
+    // 环境标记随健康快照回显，供部署后断言注入正确；值由同一个解析器给出，测试不锁死本机环境。
+    environment: resolveDeploymentEnvironment(),
     roomCount: 1000,
     connectionCount: 500,
     onlinePlayerCount: 90,
@@ -98,6 +101,7 @@ test("/health 匿名只给一位有效数字的量级，维护凭据才拿精确
   );
   expect(await ops.json()).toEqual({
     status: "ok",
+    environment: resolveDeploymentEnvironment(),
     roomCount: 1234,
     connectionCount: 456,
     onlinePlayerCount: 87,

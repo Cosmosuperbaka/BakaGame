@@ -4,6 +4,7 @@ import { safeEqualToken } from "../../domain/Rules";
 import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import type { CEEService } from "../../application/CEEService";
+import { resolveDeploymentEnvironment } from "../../config/env/Observability";
 import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
@@ -319,6 +320,9 @@ export const systemRoutes = ({
           safeEqualToken(headers.authorization.slice(7), maintenanceToken);
         return {
           status: "ok" as const,
+          // 部署环境标记进健康快照：部署后（以及漏配排查时）可直接断言它，
+          // 不必等到「心跳 missed 却分不清是停机还是没注入标记」才发现。
+          environment: resolveDeploymentEnvironment(),
           roomCount: exact ? roomCount : coarse(roomCount),
           connectionCount: exact ? connectionCount : coarse(connectionCount),
           onlinePlayerCount: exact ? onlinePlayerCount : coarse(onlinePlayerCount),
@@ -329,11 +333,12 @@ export const systemRoutes = ({
           tags: ["System"],
           summary: "获取服务健康状态",
           description:
-            "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。",
+            "返回运行状况、部署环境标记、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。",
         },
         response: {
           200: t.Object({
             status: t.Literal("ok"),
+            environment: t.String({ description: "部署环境标记，供部署后断言环境变量注入正确" }),
             roomCount: t.Number({ description: "活跃房间总数（匿名为量级近似值）" }),
             connectionCount: t.Number({ description: "当前连接总数（匿名为量级近似值）" }),
             onlinePlayerCount: t.Number({ description: "在线玩家总数（匿名为量级近似值）" }),

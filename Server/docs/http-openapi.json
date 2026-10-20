@@ -2091,6 +2091,10 @@
                       "const": "ok",
                       "type": "string"
                     },
+                    "environment": {
+                      "description": "部署环境标记，供部署后断言环境变量注入正确",
+                      "type": "string"
+                    },
                     "roomCount": {
                       "description": "活跃房间总数（匿名为量级近似值）",
                       "type": "number"
@@ -2106,6 +2110,7 @@
                   },
                   "required": [
                     "status",
+                    "environment",
                     "roomCount",
                     "connectionCount",
                     "onlinePlayerCount"
@@ -2120,33 +2125,8 @@
                       "const": "ok",
                       "type": "string"
                     },
-                    "roomCount": {
-                      "description": "活跃房间总数（匿名为量级近似值）",
-                      "type": "number"
-                    },
-                    "connectionCount": {
-                      "description": "当前连接总数（匿名为量级近似值）",
-                      "type": "number"
-                    },
-                    "onlinePlayerCount": {
-                      "description": "在线玩家总数（匿名为量级近似值）",
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "status",
-                    "roomCount",
-                    "connectionCount",
-                    "onlinePlayerCount"
-                  ]
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "const": "ok",
+                    "environment": {
+                      "description": "部署环境标记，供部署后断言环境变量注入正确",
                       "type": "string"
                     },
                     "roomCount": {
@@ -2164,6 +2144,41 @@
                   },
                   "required": [
                     "status",
+                    "environment",
+                    "roomCount",
+                    "connectionCount",
+                    "onlinePlayerCount"
+                  ]
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok",
+                      "type": "string"
+                    },
+                    "environment": {
+                      "description": "部署环境标记，供部署后断言环境变量注入正确",
+                      "type": "string"
+                    },
+                    "roomCount": {
+                      "description": "活跃房间总数（匿名为量级近似值）",
+                      "type": "number"
+                    },
+                    "connectionCount": {
+                      "description": "当前连接总数（匿名为量级近似值）",
+                      "type": "number"
+                    },
+                    "onlinePlayerCount": {
+                      "description": "在线玩家总数（匿名为量级近似值）",
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "environment",
                     "roomCount",
                     "connectionCount",
                     "onlinePlayerCount"
@@ -2706,7 +2721,7 @@
           "System"
         ],
         "summary": "获取服务健康状态",
-        "description": "返回运行状况、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。"
+        "description": "返回运行状况、部署环境标记、房间数量、连接数与在线玩家数（聚合所有游戏模式）。匿名调用只拿到一位有效数字的量级，携带维护凭据才回精确值；按来源地址限流。"
       }
     },
     "/api/system/notify-shutdown": {

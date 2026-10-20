@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
+  createTunnelFailureReporter,
   MAX_ENVELOPE_BYTES,
+  SENTRY_TUNNEL_FAILURE_METRIC,
+  SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
   sentryTunnelRoutes,
   SentryTunnelRateLimiter,
 } from "../src/transport/routes/SentryTunnel";
@@ -634,4 +637,116 @@ it("非法真实 IP 标头退回 peer 桶，不给随机字符串发新桶", asy
     expect(response.status).toBe(i < 2 ? 200 : 429);
   }
   expect(upstreamCalls).toBe(2);
+});
+
+describe("隧道自身故障的可见出口（采集链路不允许静默）", () => {
+  const allowedProjectIds = ["100001"];
+  const envelope =
+    JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";
+
+  const postTunnel = (app: ReturnType<typeof sentryTunnelRoutes>) =>
+    app.handle(
+      new Request("http://localhost/api/monitoring/sentry", { method: "POST", body: envelope })
+    );
+
+  it("上游不可达（抛网络异常）时降级 502 仍必须逐条打到专用故障出口", async () => {
+    const reported: { code: string; status: number }[] = [];
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: (async () => {
+        throw new Error("fetch failed");
+      }) as unknown as typeof fetch,
+      failureReporter: {
+        report: (failure) => reported.push({ code: failure.code, status: failure.status }),
+      },
+    });
+
+    const res = await postTunnel(app);
+    expect(res.status).toBe(502);
+    expect(reported).toEqual([{ code: "UPSTREAM_UNAVAILABLE", status: 502 }]);
+  });
+
+  it("上游返回 5xx 时同样进故障出口：经隧道转发的客户端事件正在整批丢失", async () => {
+    const reported: string[] = [];
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: (async () =>
+        new Response("ingest down", { status: 503 })) as unknown as typeof fetch,
+      failureReporter: { report: (failure) => reported.push(failure.code) },
+    });
+
+    const res = await postTunnel(app);
+    expect(res.status).toBe(502);
+    expect(reported).toEqual(["UPSTREAM_UNAVAILABLE"]);
+  });
+
+  it("超时降级 504 也进故障出口，不被 warn 静默吞掉", async () => {
+    const reported: string[] = [];
+    const timeout = Object.assign(new Error("signal is aborted without reason"), {
+      name: "TimeoutError",
+    });
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: (async () => {
+        throw timeout;
+      }) as unknown as typeof fetch,
+      failureReporter: { report: (failure) => reported.push(failure.code) },
+    });
+
+    const res = await postTunnel(app);
+    expect(res.status).toBe(504);
+    expect(reported).toEqual(["UPSTREAM_TIMEOUT"]);
+  });
+
+  it("上游 4xx 折叠 502 是调用方 DSN 问题，不进隧道故障出口（坏客户端不得刷歪指标）", async () => {
+    const reported: string[] = [];
+    const app = sentryTunnelRoutes({
+      allowedProjectIds,
+      fetcher: (async () => new Response("Denied", { status: 403 })) as unknown as typeof fetch,
+      failureReporter: { report: (failure) => reported.push(failure.code) },
+    });
+
+    const res = await postTunnel(app);
+    expect(res.status).toBe(502);
+    expect(reported).toEqual([]);
+  });
+
+  it("聚合 issue 限速：每小时窗口只发第一条，窗口外重新开闸；指标点每条都记", () => {
+    const counts: string[] = [];
+    const issues: string[] = [];
+    let now = 1_000_000;
+    const reporter = createTunnelFailureReporter({
+      count: (failure) => counts.push(failure.code),
+      issue: (failure) => issues.push(failure.code),
+      now: () => now,
+      issueIntervalMs: SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
+    });
+    const failure = {
+      status: 502,
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "Sentry upstream unavailable",
+    };
+
+    // 隧道全停的洪峰：一秒内几十条，全部有指标点，issue 只有一条。
+    for (let i = 0; i < 50; i++) reporter.report(failure);
+    expect(counts.length).toBe(50);
+    expect(issues.length).toBe(1);
+
+    // 同一小时内继续坏：不再产生 issue，但指标持续有点——「没有 issue」不等于「没有故障」。
+    now += SENTRY_TUNNEL_ISSUE_INTERVAL_MS - 1;
+    reporter.report(failure);
+    expect(counts.length).toBe(51);
+    expect(issues.length).toBe(1);
+
+    // 跨过间隔：仍在故障则再聚合出一条。
+    now += 2;
+    reporter.report(failure);
+    expect(counts.length).toBe(52);
+    expect(issues.length).toBe(2);
+  });
+
+  it("专用指标名与限速窗口是稳定契约：改名或放宽间隔必须同步改这里", () => {
+    expect(SENTRY_TUNNEL_FAILURE_METRIC).toBe("bakagame.sentry.tunnel.failure");
+    expect(SENTRY_TUNNEL_ISSUE_INTERVAL_MS).toBe(3_600_000);
+  });
 });

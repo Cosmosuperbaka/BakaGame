@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/bun";
 import type { ErrorEvent } from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
 import { DEFAULT_SENTRY_TRACES_SAMPLE_RATE } from "../config/env/Observability";
+import { AppError } from "../domain/Errors";
 import { resolveServerRelease } from "./Release";
 
 const SENSITIVE_KEYS = new Set([
@@ -262,6 +263,17 @@ export const initServerSentry = (env: AppEnv): void => {
     return;
   }
 
+  // 缺省即安全失败：配了遥测凭据却没有显式注入环境标记，说明这台实例的环境是猜出来的。
+  // 静默回落 development 会让生产心跳停报、事件与本地开发流量同池，且事后不可区分，
+  // 因此拒绝启动（启动栈本身就是那条最响的告警）。mock env 不带该字段（undefined）时不拦截。
+  if (env.deploymentMarkerExplicit === false) {
+    throw new AppError(
+      "CONFIG_ERROR",
+      "已配置 SENTRY_DSN 但部署环境标记缺失：请显式注入 DEPLOYMENT_ENVIRONMENT" +
+        "（production / development），拒绝以推测环境启动遥测"
+    );
+  }
+
   const release = resolveServerRelease();
   if (!release)
     console.warn(
@@ -316,14 +328,12 @@ export const initServerSentry = (env: AppEnv): void => {
         ) as typeof metric.attributes,
       };
     },
-    // 忽略预期的客户端断开连接错误与同源反代网络波动
-    ignoreErrors: [
-      "WebSocket is not open",
-      "Connection reset by peer",
-      "Sentry tunnel upstream unavailable",
-      "Sentry tunnel upstream timeout",
-      "Internal Sentry tunnel error",
-    ],
+    // 忽略名单只装「预期的客户端断开」这一类，且必须用可判别的精确文案。
+    // 曾经的 "Connection reset by peer" 与三条隧道文案已移除：子串过滤会连网易云/Bangumi/DB
+    // 的真实上游故障一并抹掉，更会把采集链路自身（隧道）的故障吞成「无事件」——
+    // 「没有事件」绝不能被读成「没有故障」。隧道故障改由专用指标逐条计数加限频聚合 issue
+    // 上报（见 transport/routes/SentryTunnel.ts 的 failureReporter），不再进本名单。
+    ignoreErrors: ["WebSocket is not open"],
   });
 
   isInitialized = true;

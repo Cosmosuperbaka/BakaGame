@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { captureServerMessage, countServerMetric } from "../../infrastructure/Sentry";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { httpError, rateLimitHeaders, traceIdOf, type HttpErrorBody } from "../HttpErrorEnvelope";
@@ -26,6 +27,11 @@ export interface SentryTunnelOptions {
   fetcher?: typeof fetch;
   rateLimiter?: SentryTunnelRateLimiter;
   logger?: Pick<EventLogger, "error" | "warn" | "info">;
+  /**
+   * 隧道故障出口（指标 + 限频 issue）；缺省自建限速聚合器。
+   * 注意不要再把隧道文案加回 Sentry 初始化的 ignoreErrors——那会把这条出口本身吞掉。
+   */
+  failureReporter?: TunnelFailureReporter;
 }
 
 const isHostAllowed = (hostname: string, allowedHosts: Set<string>): boolean => {
@@ -56,6 +62,65 @@ const rejectStep = (status: number, code: string, message: string): TunnelStep<n
 
 const isRejected = <T>(step: TunnelStep<T>): step is { failure: TunnelFailure } =>
   "failure" in step;
+
+/** 隧道自身故障的专用指标名：每次故障计一个点，聚合规则永不合并它。 */
+export const SENTRY_TUNNEL_FAILURE_METRIC = "bakagame.sentry.tunnel.failure";
+
+/**
+ * 聚合 issue 的最小间隔：两次之间由指标点维持「正在坏」的信号。
+ * 隧道全停时每秒可能有成百上千个失败信封，逐条产 issue 会把监控刷爆，
+ * 逐条不报又回到「静默全失」——限速聚合是唯一的两头兼顾。
+ */
+export const SENTRY_TUNNEL_ISSUE_INTERVAL_MS = 3_600_000;
+
+export interface TunnelFailureReporter {
+  report: (failure: TunnelFailure, error?: unknown) => void;
+}
+
+interface TunnelFailureReporterDeps {
+  count: (failure: TunnelFailure) => void;
+  issue: (failure: TunnelFailure, error?: unknown) => void;
+  now: () => number;
+  issueIntervalMs: number;
+}
+
+const defaultTunnelFailureReporterDeps = (): TunnelFailureReporterDeps => ({
+  count: (failure) => countServerMetric(SENTRY_TUNNEL_FAILURE_METRIC, 1, { code: failure.code }),
+  issue: (failure, error) =>
+    captureServerMessage("Sentry telemetry tunnel degraded", "error", {
+      tunnelFailureCode: failure.code,
+      tunnelFailureStatus: failure.status,
+      error:
+        error instanceof Error
+          ? (error.stack ?? error.message)
+          : typeof error === "string"
+            ? error
+            : undefined,
+    }),
+  now: () => Date.now(),
+  issueIntervalMs: SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
+});
+
+/**
+ * 采集链路自身故障的出口：每条故障必有指标点，聚合 issue 至多每个间隔一条。
+ * 时钟与出口均可注入，测试用假时钟演示「整小时只报一次、跨小时重新开闸」。
+ */
+export const createTunnelFailureReporter = (
+  overrides?: Partial<TunnelFailureReporterDeps>
+): TunnelFailureReporter => {
+  const deps: TunnelFailureReporterDeps = { ...defaultTunnelFailureReporterDeps(), ...overrides };
+  let lastIssueAt = Number.NEGATIVE_INFINITY;
+  return {
+    report: (failure, error) => {
+      deps.count(failure);
+      const at = deps.now();
+      if (at - lastIssueAt >= deps.issueIntervalMs) {
+        lastIssueAt = at;
+        deps.issue(failure, error);
+      }
+    },
+  };
+};
 
 // DSN 的项目路径只允许单段 ID，其他形态一律视为非法路径。
 const DSN_PROJECT_PATH_PATTERN = /^\/([0-9a-zA-Z_-]+)$/;
@@ -351,6 +416,7 @@ export const sentryTunnelRoutes = ({
   fetcher = fetch,
   rateLimiter,
   logger,
+  failureReporter = createTunnelFailureReporter(),
 }: SentryTunnelOptions = {}) => {
   const allowedSet = new Set(allowedProjectIds.map((id) => String(id).trim()).filter(Boolean));
   const allowedHostSet = new Set(allowedHosts.map((h) => h.toLowerCase().trim()).filter(Boolean));
@@ -411,13 +477,21 @@ export const sentryTunnelRoutes = ({
             set.headers,
             upstreamBackoffHeaders(response, Math.max(1, verdict.resetAt - Date.now()))
           );
-          return reject(upstreamFailure(response));
+          const failure = upstreamFailure(response);
+          // 上游 5xx = 经本隧道转发的客户端事件整批丢失，这是采集链路自身故障，
+          // 必须逐条有指标点、聚合有 issue；429 是退避指令、4xx 是调用方 DSN 问题，
+          // 都不算隧道故障，不进这条出口（否则坏客户端会把隧道指标刷歪）。
+          if (response.status >= 500) failureReporter.report(failure);
+          return reject(failure);
         }
 
         return { ok: true };
       } catch (err) {
         const failure = classifyTunnelError(err);
         reportTunnelError(logger, err, failure);
+        // 抛出的异常同样落在隧道出口上：502/504 是降级（warn 不产 issue），
+        // 若没有这条限速聚合出口，它们在被移出 ignoreErrors 后依旧不会留下任何 issue 痕迹。
+        failureReporter.report(failure, err);
         return reject(failure);
       }
     },

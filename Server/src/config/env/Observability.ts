@@ -22,6 +22,13 @@ export interface EnvObservability {
   sentryApiToken?: string;
   /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
   sentryTracesSampleRate?: number;
+  /**
+   * 部署环境标记是否被**显式注入**（见 `resolveDeploymentEnvironment` 的四个来源，任一为非空值）。
+   * 判「这台是不是生产」要看这个，不看解析结果：一次环境变量漏配会把生产实例静默回落成
+   * development——心跳停报、事件与本地开发流量同池，事后从数据里分不出来。
+   * 消费方是 `infrastructure/Sentry.ts` 的初始化门：配了遥测凭据却缺显式标记即拒绝启动（缺省即安全失败）。
+   */
+  deploymentMarkerExplicit?: boolean;
 }
 
 /** 缺省采样率：没配、配错或配成 0–1 之外的数都落回这里。 */
@@ -71,17 +78,26 @@ const parseOtelHeaders = (raw?: string): Record<string, string> | undefined => {
   return Object.keys(headers).length > 0 ? headers : undefined;
 };
 
-/** 环境解析：显式环境变量优先，缺省 development；不按操作系统猜测。 */
-export const resolveDeploymentEnvironment = (): string => {
+/**
+ * 环境标记的四个来源，按优先级排好并 trim：`""`（照 `.env.example` 抄下来的空赋值）
+ * 视同未设置，不允许空串顶掉后续兜底、把事件标成无名环境。
+ */
+const deploymentMarkerChain = (): string[] => {
   const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
-  return (
-    Bun.env.DEPLOYMENT_ENVIRONMENT ??
-    Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT ??
-    resourceAttrs["deployment.environment"] ??
-    Bun.env.NODE_ENV ??
-    "development"
-  );
+  return [
+    Bun.env.DEPLOYMENT_ENVIRONMENT,
+    Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT,
+    resourceAttrs["deployment.environment"],
+    Bun.env.NODE_ENV,
+  ].map((value) => value?.trim() ?? "");
 };
+
+/** 环境解析：显式环境变量优先，缺省 development；不按操作系统猜测。 */
+export const resolveDeploymentEnvironment = (): string =>
+  deploymentMarkerChain().find(Boolean) ?? "development";
+
+/** 是否存在显式注入的环境标记（四个来源任一非空）；全缺时消费方必须安全失败，不能静默按开发态跑。 */
+export const hasExplicitDeploymentMarker = (): boolean => deploymentMarkerChain().some(Boolean);
 
 export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservability => {
   const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
@@ -126,5 +142,6 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
     sentryApiToken,
     sentryAllowedProjectIds,
     sentryTracesSampleRate: parseSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE),
+    deploymentMarkerExplicit: hasExplicitDeploymentMarker(),
   };
 };

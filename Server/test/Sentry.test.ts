@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, spyOn } from "bun:test";
 import * as Sentry from "@sentry/bun";
 import type { AppEnv } from "../src/config/Env";
+import { readEnv } from "../src/config/Env";
 import { resolve } from "node:path";
 import * as Release from "../src/infrastructure/Release";
 import {
@@ -577,4 +578,100 @@ it("Sentry 只消费 Env 的环境标记并保持 canonical 七位 release", () 
     else Bun.env.SENTRY_RELEASE = originalRelease;
     init.mockRestore();
   }
+});
+
+describe("部署环境标记的安全态（缺省即失败，不静默切池）", () => {
+  beforeEach(() => {
+    // 同文件更早的用例会真实置位初始化标记，本组断言必须从干净状态出发。
+    _resetServerSentryForTest();
+  });
+
+  it("已配 SENTRY_DSN 但环境标记未显式注入时拒绝初始化", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(() => initServerSentry(createMockEnv({ deploymentMarkerExplicit: false }))).toThrow(
+        /DEPLOYMENT_ENVIRONMENT/
+      );
+      expect(initSpy).not.toHaveBeenCalled();
+      expect(isServerSentryEnabled()).toBe(false);
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
+
+  it("标记显式注入才初始化；未配 DSN 时不存在采集面，不触发缺标拒绝", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      initServerSentry(createMockEnv({ deploymentMarkerExplicit: true }));
+      expect(initSpy).toHaveBeenCalledTimes(1);
+      // 没有 DSN 的实例没有任何会被污染的面，缺标记照常静默停用（本地开发零负担）。
+      initServerSentry(createMockEnv({ sentryDsn: undefined, deploymentMarkerExplicit: false }));
+      expect(initSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
+
+  it("装配 env 时：四个标记来源全缺或只有空赋值都算未显式注入，任一非空即算注入", () => {
+    const keys = [
+      "DEPLOYMENT_ENVIRONMENT",
+      "OTEL_DEPLOYMENT_ENVIRONMENT",
+      "OTEL_RESOURCE_ATTRIBUTES",
+      "NODE_ENV",
+    ] as const;
+    const saved = Object.fromEntries(keys.map((key) => [key, Bun.env[key]]));
+    try {
+      for (const key of keys) delete Bun.env[key];
+      expect(readEnv().deploymentMarkerExplicit).toBe(false);
+      // 照 .env.example 抄下来的 `DEPLOYMENT_ENVIRONMENT=` 空赋值视同未设置。
+      Bun.env.DEPLOYMENT_ENVIRONMENT = "";
+      expect(readEnv().deploymentMarkerExplicit).toBe(false);
+      Bun.env.DEPLOYMENT_ENVIRONMENT = "production";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+      delete Bun.env.DEPLOYMENT_ENVIRONMENT;
+      Bun.env.NODE_ENV = "development";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+      delete Bun.env.NODE_ENV;
+      Bun.env.OTEL_RESOURCE_ATTRIBUTES = "deployment.environment=staging";
+      expect(readEnv().deploymentMarkerExplicit).toBe(true);
+    } finally {
+      for (const key of keys) {
+        if (saved[key] === undefined) delete Bun.env[key];
+        else Bun.env[key] = saved[key];
+      }
+    }
+  });
+});
+
+describe("ignoreErrors 边界：采集链路自身故障不进忽略名单", () => {
+  it("名单只保留可判别的客户端断开文案；隧道文案与宽子串一律移除", () => {
+    const initSpy = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      initServerSentry(createMockEnv());
+      const options = initSpy.mock.calls[0]![0]! as { ignoreErrors?: string[] };
+      const list = options.ignoreErrors ?? [];
+      expect(list).toContain("WebSocket is not open");
+      // 这些子串曾把隧道自身故障与其它上游（网易云/Bangumi/DB）的真实网络故障一起吞掉；
+      // 隧道故障的出口改在 SentryTunnel 的 failureReporter（专用指标 + 限频聚合 issue）。
+      for (const forbidden of [
+        "Connection reset by peer",
+        "Sentry tunnel upstream unavailable",
+        "Sentry tunnel upstream timeout",
+        "Internal Sentry tunnel error",
+      ]) {
+        expect(list).not.toContain(forbidden);
+      }
+    } finally {
+      initSpy.mockRestore();
+      warning.mockRestore();
+      _resetServerSentryForTest();
+    }
+  });
 });
