@@ -21,6 +21,7 @@ import {
   musicIpScope,
   randomChineseIp,
   readChinaIpRanges,
+  runWithAnonymousMusicIpScope,
   sanitizeLyrics,
 } from "../src/infrastructure/NeteaseMusicProvider";
 
@@ -1802,13 +1803,61 @@ describe("NeteaseMusicProvider", () => {
       }),
     });
 
-    const popularity = await provider.getSongPopularity("123");
+    // 包上玩家作用域：本用例只验「可选接口降级」这一条告警。作用域缺失会另外发一条自己的
+    // 告警（见下面那条专项用例），不在这儿混进同一条计数。
+    const popularity = await musicIpScope.run("player:conn-optional", () =>
+      provider.getSongPopularity("123")
+    );
     expect(popularity).toBeUndefined();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toBe("网易云可选接口调用降级");
     expect(warnings[0]?.meta).toMatchObject({
       endpoints: ["song_red_count"],
     });
+  });
+
+  /**
+   * 「忘记包玩家作用域」过去与后台预热共用同一条静默回落：现场只看到全服 405，
+   * 看不到「所有人的匿名请求又挤回同一个出口 IP」这层原因，而前置条件只写在注释里。
+   * 现在每次降级都计数，并按固定间隔最多补一条告警；显式声明的后台任务不占这条额度。
+   */
+  test("作用域外的匿名调用发限频告警，显式声明的后台任务不触发", async () => {
+    const warnings: Array<{ message: string; meta: unknown }> = [];
+    let virtualTime = 1_700_000_000_000;
+    const provider = new NeteaseMusicProvider({
+      minRequestIntervalMs: 0,
+      now: () => virtualTime,
+      logger: {
+        warn: (message: string, meta: unknown) => {
+          warnings.push({ message, meta });
+        },
+      } as any,
+      loadApi: async () => ({
+        cloudsearch: async () => ({ body: { result: { songs: [] } } }),
+      }),
+    });
+
+    await provider.search("甲");
+    // 回落仍在发生，但告警按间隔限频：满载时每条匿名请求都命中它，逐条 warn 会盖掉真正的故障。
+    virtualTime += 1_000;
+    await provider.search("乙");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe("音乐请求缺少玩家 IP 作用域，已回落共享匿名出口");
+    expect(warnings[0]?.meta).toMatchObject({ fallbackScope: "anonymous" });
+
+    virtualTime += 60_000;
+    await provider.search("丙");
+    expect(warnings).toHaveLength(2);
+
+    // 预热与缓存维护按共享出口工作是设计如此，不能和「新调用链漏包作用域」共用一条告警。
+    const beforeBackground = warnings.length;
+    await runWithAnonymousMusicIpScope(() => provider.search("后台"));
+    expect(warnings).toHaveLength(beforeBackground);
+
+    // 包了玩家作用域的调用链不该出现这条告警。
+    const beforeScoped = warnings.length;
+    await musicIpScope.run("player:conn-scoped", () => provider.search("丁"));
+    expect(warnings).toHaveLength(beforeScoped);
   });
 
   test("支持通过注入 now 与 random 驱动限流退避、冷却熔断与恢复", async () => {

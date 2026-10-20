@@ -17,6 +17,7 @@ if (typeof globalThis.XMLSerializer === "undefined") {
   globalThis.XMLSerializer = XMLSerializer as unknown as typeof globalThis.XMLSerializer;
 }
 import { describeError, type EventLogger } from "./EventLogger";
+import { countServerMetric } from "./Sentry";
 import {
   CREDIT_ACTION_PATTERN,
   CREDIT_LABEL_JOINER_PATTERN,
@@ -56,6 +57,18 @@ export type MusicCookieInput = string | Partial<Record<"netease" | "qq", string>
 const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
   typeof cookie === "object" && cookie !== null;
 
+/**
+ * 音乐上游适配层契约。实现有网易云、QQ 音乐与把两者合起来的聚合 provider。
+ *
+ * **每玩家配额隔离的前置条件由调用方承担，不在本接口的方法签名里。**
+ * `NeteaseMusicProvider` 用 `musicIpScope`（一个 AsyncLocalStorage）给匿名请求按玩家分出口 IP
+ * 与限流配额，作用域必须在**整条调用链的最外层**建立 —— 应用层的做法见
+ * `SonGuessrService.execute`。从作用域外调用本接口的匿名请求不会失败，但会落到共享的
+ * `anonymous` 出口、和所有同样无域的请求挤在同一份配额里（一人打满、全服 405）。
+ * 这条降级现在是可观测的：每次调用计数，并按固定间隔补一条告警。
+ * 有意使用共享出口的后台任务（预热、缓存维护）用 `runWithAnonymousMusicIpScope` 显式声明，
+ * 那是设计如此而不是配置错误，不该混进告警。带房主凭证的请求不受影响：scope 由凭证决定。
+ */
 export interface MusicProvider {
   search(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
   getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
@@ -332,12 +345,31 @@ export const musicIpScope = new AsyncLocalStorage<string>();
 const IP_SCOPE_ANONYMOUS = "anonymous";
 
 /**
+ * 显式声明「本次调用属于后台任务，按共享匿名出口工作」。
+ *
+ * 与「忘记包作用域」区分开是有意为之：后者是一条新调用链的配置错误，要靠告警暴露；
+ * 前者是设计如此（预热、缓存维护没有玩家上下文），不该占用同一条告警的额度。
+ */
+export const runWithAnonymousMusicIpScope = <T>(task: () => Promise<T>): Promise<T> =>
+  musicIpScope.run(IP_SCOPE_ANONYMOUS, task);
+
+/**
  * 伪装出口 IP 的缓存上限。
  *
  * 每个玩家一个 scope，房间多、进出频繁时条目会持续增长；超限按插入顺序淘汰最老的。
  * 256 足以覆盖同时在线规模，被淘汰的玩家下次请求重新分配一个 IP 即可（无正确性影响）。
  */
 const IP_SCOPE_MAX_ENTRIES = 256;
+
+/**
+ * 「缺少玩家作用域」这条降级的告警最小间隔。
+ *
+ * 满载时每条匿名请求都会命中它，逐条 warn 会把日志刷成噪声、反而盖掉真正的故障；
+ * 口径与服务端采集链路的故障上报一致：每一次都计数，聚合告警按间隔限频。
+ */
+const IP_SCOPE_FALLBACK_WARN_INTERVAL_MS = 60_000;
+/** 无域调用次数指标：告警限频之后仍然能看出「这条链路一直在降级」。 */
+const IP_SCOPE_FALLBACK_METRIC = "bakagame.music.ip_scope_fallback";
 /**
  * 登录态校验结果的复用窗口。
  *
@@ -2021,6 +2053,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   private rateLimitStrikes = 0;
   private lastRateLimitAt = 0;
   private lastRateLimitMessage = "操作频繁，请稍候再试";
+  // 首条「缺少玩家作用域」告警必须在第一次降级时就发出，所以初值设为「早就过期的间隔之前」。
+  private lastIpScopeFallbackWarnAt = Number.NEGATIVE_INFINITY;
 
   readonly deviceName: string;
   private readonly generalUnblockEnabled: () => boolean;
@@ -2992,7 +3026,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     // 在调度前定好 IP 归属：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
-    const ipScope = this.resolveIpScope(cookie, loginScope);
+    const ipScope = this.resolveIpScope(cookie, loginScope, names);
     let hasEndpoint = false;
     let lastErrorResponse: ApiResponse | undefined;
     let lastError: unknown;
@@ -3201,17 +3235,34 @@ export class NeteaseMusicProvider implements MusicProvider {
     }
     const candidates = [...this.cache.entries()]
       .filter(([, entry]) => now >= entry.hardExpireAt || now >= entry.softExpireAt)
-      .sort(([, left], [, right]) => right.priority + right.hits - (left.priority + left.hits));
-    for (const [key, entry] of candidates.slice(0, 4)) {
-      const refresher = this.refreshers.get(key);
-      if (!refresher) {
-        this.cache.delete(key);
-        continue;
-      }
-      if (now >= entry.hardExpireAt) this.cache.delete(key);
-      await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
-    }
+      .sort(([, left], [, right]) => right.priority + right.hits - (left.priority + left.hits))
+      .slice(0, 4);
+    await this.refreshExpiredEntries(now, candidates);
     this.pruneStaleRefreshers();
+  }
+
+  /**
+   * 后台维护路径。
+   *
+   * 定时器里没有玩家上下文，但这是设计如此、不是配置错误，所以显式声明走共享匿名出口：
+   * 否则每次维护都会被记成「作用域外调用」的降级，把真正需要被发现的新调用链淹成噪声。
+   * 该 scope 的配额与退避仍按 `anonymous` 正常计账。
+   */
+  private refreshExpiredEntries(
+    now: number,
+    candidates: Iterable<[string, CacheEntry]>
+  ): Promise<void> {
+    return runWithAnonymousMusicIpScope(async () => {
+      for (const [key, entry] of candidates) {
+        const refresher = this.refreshers.get(key);
+        if (!refresher) {
+          this.cache.delete(key);
+          continue;
+        }
+        if (now >= entry.hardExpireAt) this.cache.delete(key);
+        await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
+      }
+    });
   }
 
   /** 长时间没有用户请求：淘汰低命中且久未访问的条目，不做任何主动刷新。 */
@@ -3388,12 +3439,39 @@ export class NeteaseMusicProvider implements MusicProvider {
    *    所有凭证的请求都被强行带上那个会话的 IP，凭证与出口 IP 的绑定被整体破坏。
    * 2. `host:<cookie 摘要>` —— 带房主凭证的请求，沿用登录时固化的那个 IP。
    * 3. `player:<连接标识>` —— 匿名请求按玩家分桶，互不占用对方的限流配额。
-   * 4. `anonymous` —— 预热、缓存刷新等没有玩家上下文的兜底。
+   * 4. `anonymous` —— 没有玩家上下文的兜底。走到这一层说明整条调用链没被 `musicIpScope.run`
+   *    包住，按降级上报（见 `reportMissingIpScope`），不再静默。
    */
-  private resolveIpScope(cookie?: string | Record<string, unknown>, loginScope?: string) {
+  private resolveIpScope(
+    cookie?: string | Record<string, unknown>,
+    loginScope?: string,
+    endpoints?: readonly string[]
+  ) {
     if (loginScope) return loginScope;
     if (this.hasCookie(cookie)) return this.cookieScope(cookie);
-    return musicIpScope.getStore() ?? IP_SCOPE_ANONYMOUS;
+    const scope = musicIpScope.getStore();
+    if (scope) return scope;
+    this.reportMissingIpScope(endpoints);
+    return IP_SCOPE_ANONYMOUS;
+  }
+
+  /**
+   * 「作用域外调用」必须看得见。
+   *
+   * 它过去和后台预热共用同一条静默回落：新增一条没包作用域的调用链时，现场只看到全服 405，
+   * 看不到「所有人的匿名请求又挤回同一个出口」这层原因 —— 而注释里写着的前置条件不会报警。
+   * 口径与采集链路故障上报一致：每次降级都计数，聚合告警按固定间隔最多一条。
+   * 上下文只带接口名这类无凭据字段。
+   */
+  private reportMissingIpScope(endpoints?: readonly string[]) {
+    countServerMetric(IP_SCOPE_FALLBACK_METRIC, 1);
+    const at = this.now();
+    if (at - this.lastIpScopeFallbackWarnAt < IP_SCOPE_FALLBACK_WARN_INTERVAL_MS) return;
+    this.lastIpScopeFallbackWarnAt = at;
+    this.logger?.warn("音乐请求缺少玩家 IP 作用域，已回落共享匿名出口", {
+      fallbackScope: IP_SCOPE_ANONYMOUS,
+      ...(endpoints?.length ? { endpoints: [...endpoints] } : {}),
+    });
   }
 
   /** cookie 参数是否真的带了凭证；空串与空对象一律按匿名处理，避免落进房主那一桶。 */
