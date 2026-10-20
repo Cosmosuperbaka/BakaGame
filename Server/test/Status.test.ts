@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
+import changelog from "../../Client/src/data/changelog.json";
+import { latestStableVersion } from "../src/infrastructure/Release";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
@@ -185,7 +187,7 @@ describe("公开状态接口", () => {
   });
 });
 
-test("完整应用装配后 /api/status 可访问，版本来自发布元数据", async () => {
+test("完整应用装配后 /api/status 可访问，版本号与 changelog.json 同源", async () => {
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
     clientUrl: "http://localhost:5173",
@@ -207,6 +209,7 @@ test("完整应用装配后 /api/status 可访问，版本来自发布元数据"
   expect(body.components.map((component) => component.id)).toEqual([
     ...PUBLIC_STATUS_COMPONENT_IDS,
   ]);
-  // 本仓库有 Git 与 changelog.json，发布版本应能解析出来；容器里则由 release.json 兜底。
-  expect(body.version === "unknown" || /^V\d+\.\d+\.\d+/.test(body.version)).toBe(true);
+  // 版本号与更新日志同一真相源：状态页展示的正是 changelog.json 中的最大稳定版本。
+  expect(typeof body.version).toBe("string");
+  expect(body.version.startsWith(`V${latestStableVersion(changelog)}`)).toBe(true);
 });
