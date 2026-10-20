@@ -2,6 +2,16 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   NeteaseMusicProvider,
+  parseChinaIpRanges,
+  parseLrc,
+  parseYrc,
+  mergeTranslations,
+  musicIpScope,
+  randomChineseIp,
+  readChinaIpRanges,
+  runWithAnonymousMusicIpScope,
+} from "../src/infrastructure/NeteaseMusicProvider";
+import {
   isBopomofoOnlyLyricLine,
   isBracketedStageDirectionLine,
   isCreditKeywordLine,
@@ -13,17 +23,9 @@ import {
   isSymbolOnlyLyricLine,
   isTooShortLyricLine,
   isUnusableLyricLine,
-  parseChinaIpRanges,
-  parseLrc,
   parseTTML,
-  parseYrc,
-  mergeTranslations,
-  musicIpScope,
-  randomChineseIp,
-  readChinaIpRanges,
-  runWithAnonymousMusicIpScope,
   sanitizeLyrics,
-} from "../src/infrastructure/NeteaseMusicProvider";
+} from "../src/infrastructure/LyricLines";
 
 // 普通 provider 回归禁止真实 AMLL 回源，专项通过 amllFetcher 注入。
 const originalFetch = globalThis.fetch;

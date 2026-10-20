@@ -5,7 +5,7 @@ import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-
 import qqmusic from "qqmusic-api-enhanced";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
-import { parseTTML, sanitizeLyrics } from "./NeteaseMusicProvider";
+import { parseTTML, sanitizeLyrics } from "./LyricLines";
 import type {
   MusicCookieInput,
   MusicLoginSession,

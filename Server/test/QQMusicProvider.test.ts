@@ -271,6 +271,25 @@ describe("QQMusicProvider · 歌词三级降级", () => {
     await provider.getSongMetadata("qq:amll1");
     expect(calls).toBe(1);
   });
+
+  // QQ 侧只吃共享模块里的 parseTTML，不再横向 import 网易云 adapter；
+  // TTML 解析要求 globalThis.DOMParser，它必须由歌词模块自己补齐，否则这条链路静默退化成 LRC。
+  it("AMLL TTML 命中时优先于平台 QRC 与 LRC，逐字时间轴完整保留", async () => {
+    const ttml = `<tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+      <p begin="00:02.000" end="00:05.000"><span begin="00:02.000" end="00:03.000">海</span><span begin="00:03.000" end="00:05.000">阔天空</span></p>
+    </div></body></tt>`;
+    const provider = new QQMusicProvider({ fetchAmllLyrics: async () => ttml });
+    qqmusic.song_detail = mock(async () => ({
+      status: 200,
+      body: { data: { track_info: { name: "别的歌名", singer: [{ name: "歌手乙" }] } } },
+    })) as any;
+    qqmusic.lyric = mock(async () => ({ status: 200, body: { lyric: LRC } })) as any;
+
+    const meta = await provider.getSongMetadata("qq:ttml1");
+    expect(meta.lyrics.map((line) => line.text)).toEqual(["海阔天空"]);
+    expect(meta.lyrics[0].words?.map((word) => word.word)).toEqual(["海", "阔天空"]);
+    expect(meta.lyrics[0].time).toBe(2000);
+  });
 });
 
 describe("QQMusicProvider · getSong 与音频直链", () => {
