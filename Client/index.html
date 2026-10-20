@@ -5,6 +5,34 @@
     <link rel="icon" type="image/png" href="/assets/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="baidu-site-verification" content="codeva-XfSLOrQvOz" />
+    <!--
+      首帧主题恢复：必须在样式表与入口模块之前同步执行，否则深色偏好会先闪一帧亮色。
+      这里只读 localStorage 与系统偏好，不复制任何颜色值；解析逻辑与 src/lib/Theme.ts 同名键一致，
+      两处必须同步（Theme.test.ts 核对键名与落位方式）。
+    -->
+    <script>
+      (() => {
+        let stored = null;
+        try {
+          stored = localStorage.getItem("bakagame:theme");
+        } catch {
+          // 隐私模式下读不到：按系统偏好处理。
+        }
+        let dark;
+        if (stored === "light" || stored === "dark") {
+          dark = stored === "dark";
+        } else {
+          try {
+            dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          } catch {
+            dark = false;
+          }
+        }
+        const root = document.documentElement;
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
 
     <!--
       页面级元信息（title / description / canonical / og）一律不写在这里。

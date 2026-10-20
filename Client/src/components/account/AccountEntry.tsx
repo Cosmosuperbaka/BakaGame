@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
+import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { FeedbackDialog } from "@/components/account/FeedbackDialog";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
@@ -75,95 +76,109 @@ export function AccountButton() {
   // 菜单项被点时浮层已在关闭，弹窗从菜单按钮处展开。
   const [menuOrigin, setMenuOrigin] = useState<OriginPoint | null>(null);
 
-  if (status === "loading") return <span aria-hidden="true" className="block h-9 w-20" />;
-  if (status === "guest") {
+  // 主题切换不依赖账号状态：加载中、游客、账号系统未启用时都保留。
+  if (status === "loading") {
     return (
-      <Button variant="ghost" onClick={(event) => openDialog("login", originOf(event))}>
-        <UserRound />
-        账号
-      </Button>
+      <>
+        <ThemeToggle />
+        <span aria-hidden="true" className="block h-9 w-20" />
+      </>
     );
   }
-  if (status !== "signedIn" || !profile) return null;
+  if (status === "guest") {
+    return (
+      <>
+        <ThemeToggle />
+        <Button variant="ghost" onClick={(event) => openDialog("login", originOf(event))}>
+          <UserRound />
+          账号
+        </Button>
+      </>
+    );
+  }
+  if (status !== "signedIn" || !profile) return <ThemeToggle />;
 
   return (
-    <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
-      <Popover.Trigger asChild>
-        <motion.button
-          type="button"
-          {...headerTappable}
-          aria-label={`账号菜单：${profile.name}${unread ? `，${unread} 条未读回复` : ""}`}
-          onClick={(event) => setMenuOrigin(originOf(event))}
-          className="relative flex h-9 max-w-44 items-center gap-2 rounded-md px-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <PlayerAvatar name={profile.name} image={profile.image} className="h-7 w-7" />
-          <span className="hidden truncate sm:inline">{profile.name}</span>
-          {unread ? <UnreadDot className="absolute left-6 top-1" /> : null}
-        </motion.button>
-      </Popover.Trigger>
-      <AnimatePresence>
-        {menuOpen ? (
-          <Popover.Portal forceMount>
-            <Popover.Content
-              forceMount
-              side="bottom"
-              align="end"
-              sideOffset={6}
-              collisionPadding={12}
-              asChild
-            >
-              <motion.div
-                variants={popover}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="z-popover w-56 origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
+    <>
+      <ThemeToggle />
+      <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Popover.Trigger asChild>
+          <motion.button
+            type="button"
+            {...headerTappable}
+            aria-label={`账号菜单：${profile.name}${unread ? `，${unread} 条未读回复` : ""}`}
+            onClick={(event) => setMenuOrigin(originOf(event))}
+            className="relative flex h-9 max-w-44 items-center gap-2 rounded-md px-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            <PlayerAvatar name={profile.name} image={profile.image} className="h-7 w-7" />
+            <span className="hidden truncate sm:inline">{profile.name}</span>
+            {unread ? <UnreadDot className="absolute left-6 top-1" /> : null}
+          </motion.button>
+        </Popover.Trigger>
+        <AnimatePresence>
+          {menuOpen ? (
+            <Popover.Portal forceMount>
+              <Popover.Content
+                forceMount
+                side="bottom"
+                align="end"
+                sideOffset={6}
+                collisionPadding={12}
+                asChild
               >
-                <div className="border-b px-4 py-3">
-                  <Hint label={profile.name}>
-                    <div className="truncate font-semibold">{profile.name}</div>
-                  </Hint>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    QQ <span className="font-mono">{profile.qqNumber}</span>
+                <motion.div
+                  variants={popover}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                  className="z-popover w-56 origin-(--radix-popover-content-transform-origin) overflow-hidden floating-surface shadow-md"
+                >
+                  <div className="border-b px-4 py-3">
+                    <Hint label={profile.name}>
+                      <div className="truncate font-semibold">{profile.name}</div>
+                    </Hint>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      QQ <span className="font-mono">{profile.qqNumber}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-col">
-                  <PlayerActionButton
-                    icon={<UserRound className="h-3.5 w-3.5" />}
-                    label="账号资料"
-                    onClick={() => openDialog("profile", menuOrigin)}
-                  />
-                  <PlayerActionButton
-                    icon={<MessageSquareText className="h-3.5 w-3.5" />}
-                    label={unread ? `我的反馈（${unread} 条新回复）` : "我的反馈"}
-                    onClick={() => openDialog("feedback", menuOrigin)}
-                  />
-                  {profile.role === "admin" ? (
+                  <div className="flex flex-col">
                     <PlayerActionButton
-                      icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                      label="管理后台"
-                      onClick={() => void navigate("/admin")}
+                      icon={<UserRound className="h-3.5 w-3.5" />}
+                      label="账号资料"
+                      onClick={() => openDialog("profile", menuOrigin)}
                     />
-                  ) : null}
-                  <PlayerActionButton
-                    icon={<LogOut className="h-3.5 w-3.5" />}
-                    label="退出登录"
-                    destructive
-                    disabled={signingOut}
-                    onClick={() => {
-                      setSigningOut(true);
-                      void signOut()
-                        .catch(() => {})
-                        .finally(() => setSigningOut(false));
-                    }}
-                  />
-                </div>
-              </motion.div>
-            </Popover.Content>
-          </Popover.Portal>
-        ) : null}
-      </AnimatePresence>
-    </Popover.Root>
+                    <PlayerActionButton
+                      icon={<MessageSquareText className="h-3.5 w-3.5" />}
+                      label={unread ? `我的反馈（${unread} 条新回复）` : "我的反馈"}
+                      onClick={() => openDialog("feedback", menuOrigin)}
+                    />
+                    {profile.role === "admin" ? (
+                      <PlayerActionButton
+                        icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                        label="管理后台"
+                        onClick={() => void navigate("/admin")}
+                      />
+                    ) : null}
+                    <PlayerActionButton
+                      icon={<LogOut className="h-3.5 w-3.5" />}
+                      label="退出登录"
+                      destructive
+                      disabled={signingOut}
+                      onClick={() => {
+                        setSigningOut(true);
+                        void signOut()
+                          .catch(() => {})
+                          .finally(() => setSigningOut(false));
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              </Popover.Content>
+            </Popover.Portal>
+          ) : null}
+        </AnimatePresence>
+      </Popover.Root>
+    </>
   );
 }
 

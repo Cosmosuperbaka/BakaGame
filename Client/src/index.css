@@ -108,6 +108,9 @@
 }
 
 :root {
+  /* 原生控件、滚动条与画布跟随主题。首帧由 index.html 的行内脚本先行写入同值，
+     这里作为脚本被禁用时的兜底；不在此复制任何颜色令牌。 */
+  color-scheme: light;
   --background: oklch(0.9582 0.0152 90.2357);
   --foreground: oklch(0.376 0.0225 64.3434);
   --card: oklch(0.9914 0.0098 87.4695);
@@ -201,6 +204,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.2747 0.0139 57.6523);
   --foreground: oklch(0.9239 0.019 83.0636);
   --card: oklch(0.3237 0.0155 59.0603);
