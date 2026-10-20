@@ -52,6 +52,59 @@ export const setSecureScreen = (enabled: boolean): void => {
 };
 
 /**
+ * 等票时轮询壳的间隔：壳的票是同步 getter，读一次有票就又快又省，没有票也不该空转。
+ */
+const TICKET_WAIT_POLL_MS = 50;
+/** 等到的票只交给紧接着的一次握手；拖过这个时间就重新向壳要，绝不把旧票当新票用。 */
+const TICKET_HANDOFF_MAX_AGE_MS = 20_000;
+
+let handoffTicket = "";
+let handoffAt = 0;
+let handshakeTicketAttached = false;
+
+/** 最近一次握手是否真的带上了票——服务端只认「本连接验过票」，这是客户端唯一能自查的部分。 */
+export const lastHandshakeHadTicket = (): boolean => handshakeTicketAttached;
+
+const takeChannelTicket = (): string => {
+  const shell = bakaChannel();
+  if (!shell) {
+    handoffTicket = "";
+    handoffAt = 0;
+    return "";
+  }
+  if (handoffTicket && Date.now() - handoffAt < TICKET_HANDOFF_MAX_AGE_MS) {
+    const held = handoffTicket;
+    handoffTicket = "";
+    return held;
+  }
+  handoffTicket = "";
+  return shell.channelTicket ?? "";
+};
+
+/**
+ * 有界地等壳签出一张票（移动端首次要先用设备密钥注册，可能比页面建连慢）。
+ *
+ * 等到的票只交给下一次 `bakaChannelQuery()`，读走即清：它不是缓存，也不跨连接复用。
+ * 超过时限仍没有票就返回 `false`，由调用方决定是延后建连还是给出可重试的错误。
+ */
+export const waitForChannelTicket = async (timeoutMs: number): Promise<boolean> => {
+  if (!bakaChannel()) return false;
+  if (handoffTicket && Date.now() - handoffAt < TICKET_HANDOFF_MAX_AGE_MS) return true;
+  handoffTicket = "";
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  for (;;) {
+    const ticket = bakaChannel()?.channelTicket ?? "";
+    if (ticket) {
+      handoffTicket = ticket;
+      handoffAt = Date.now();
+      return true;
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, TICKET_WAIT_POLL_MS));
+  }
+};
+
+/**
  * 追加到 `/api/cee/ws` 上的握手查询串。
  *
  * 只在原生客户端里带上：`CEEPlayerSchemas` 是 strict 的，进房载荷塞不下这些字段，
@@ -65,7 +118,8 @@ export const setSecureScreen = (enabled: boolean): void => {
  * URL 没有任何消费方，留着只会被后来者误当身份。
  */
 export const bakaChannelQuery = (): string => {
-  const ticket = bakaChannel()?.channelTicket;
+  const ticket = takeChannelTicket();
+  handshakeTicketAttached = ticket.length > 0;
   if (!ticket) return "";
   return `?ticket=${encodeURIComponent(ticket)}`;
 };

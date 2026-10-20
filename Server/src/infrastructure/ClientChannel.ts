@@ -381,17 +381,30 @@ export class ClientChannel {
       outdated: this.isOutdated(device.clientType, input.clientVersion),
     };
   }
-  /** 握手换票：一次性、绑定来源地址。地址不符只是不认，不把票销毁。 */
+  /**
+   * 握手换票：一次性、绑定来源地址。地址不符只是不认，不把票销毁。
+   *
+   * 拒绝原因必须落日志：握手层拿到 `undefined` 后只会把连接记成「无通道」，反作弊房
+   * 报的又是同一个 CLIENT_REQUIRED，没有这一层就分不清「网页本来没票」「票过期」与
+   * 「代理链导致来源地址不一致」。不记票值，只记原因。
+   */
   consume(ticket: string | undefined, clientIp: string): ClientChannelProof | undefined {
     if (!ticket) return undefined;
     const held = this.tickets.get(ticket);
-    if (!held) return undefined;
+    if (!held) {
+      this.onWarn("客户端通道票据无效或已被使用", { reason: "unknown_ticket" });
+      return undefined;
+    }
     if (held.expiresAt < this.now()) {
       this.tickets.delete(ticket);
+      this.onWarn("客户端通道票据已过期", { reason: "expired_ticket" });
       return undefined;
     }
     // 销毁会让合法客户端永远换不到票：代理链与 requestIP 口径不一致时，第一次握手失败是常态而非攻击。
-    if (held.clientIp !== clientIp) return undefined;
+    if (held.clientIp !== clientIp) {
+      this.onWarn("客户端通道票据来源地址不符", { reason: "client_ip_mismatch" });
+      return undefined;
+    }
     this.tickets.delete(ticket);
     return held.proof;
   }

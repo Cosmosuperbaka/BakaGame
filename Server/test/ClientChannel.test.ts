@@ -220,6 +220,46 @@ describe("客户端通道换票", () => {
     expect(channel.consume(ticket, "203.0.113.7")?.clientId).toBe(clientId);
     expect(channel.consume(ticket, "203.0.113.7")).toBeUndefined();
   });
+  test("被拒的票留下可归因日志：地址不符、未知与过期分开记", async () => {
+    const clock = { value: 1_000_000 };
+    const { channel, warnings } = harness({ clock });
+    const { device, sign } = desktopDevice();
+    const { clientId } = await channel.register({
+      clientType: "desktop",
+      platform: "windows",
+      clientVersion: "1.0.0",
+      keyAlgorithm: "ed25519",
+      publicKey: device.publicKey,
+      selfCheck: clean,
+    });
+    const attest = async () => {
+      const { challenge } = channel.issue(clientId);
+      return (
+        await channel.attest(
+          {
+            clientId,
+            challenge,
+            signature: sign(challenge),
+            clientType: "desktop",
+            clientVersion: "1.0.0",
+            selfCheck: clean,
+          },
+          "203.0.113.7"
+        )
+      ).ticket;
+    };
+    const wrongIp = await attest();
+    expect(channel.consume(wrongIp, "198.51.100.9")).toBeUndefined();
+    expect(warnings).toContain("客户端通道票据来源地址不符");
+    // 地址不符不销毁票：口径一致后再来一次仍能换到证明。
+    expect(channel.consume(wrongIp, "203.0.113.7")?.clientId).toBe(clientId);
+    expect(channel.consume("not-a-ticket", "203.0.113.7")).toBeUndefined();
+    expect(warnings).toContain("客户端通道票据无效或已被使用");
+    const expired = await attest();
+    clock.value += CLIENT_TICKET_TTL_MS + 1;
+    expect(channel.consume(expired, "203.0.113.7")).toBeUndefined();
+    expect(warnings).toContain("客户端通道票据已过期");
+  });
   test("挑战只能用一次且有过期：重放与超窗都拒", async () => {
     const clock = { value: 1_000_000 };
     const { channel } = harness({ clock });

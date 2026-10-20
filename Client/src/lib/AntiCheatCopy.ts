@@ -21,12 +21,15 @@ export const BAKA_CLIENT_DOWNLOAD_URL = "https://cdn.baka.website/files/BakaGame
  * 服务端可归因错误码对应的玩家可读文案。命中这些码时用它替换服务端原文，
  * 未命中的码仍走服务端自带消息。
  *
- * 这三个码既可能来自加入／旁观，也可能来自建房那一刻的开反作弊房请求（反作弊只在建房时决定），
+ * 这些码既可能来自加入／旁观，也可能来自建房那一刻的开反作弊房请求（反作弊只在建房时决定），
  * 所以措辞按「创建或加入」写，不能只说加入。
  */
 const ANTI_CHEAT_MESSAGES: Readonly<Record<string, string>> = {
   CLIENT_REQUIRED: `该房间需要 BakaGame 客户端，请下载安装后再创建或加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
   CLIENT_OUTDATED: `BakaGame 客户端版本过旧，请更新到最新版后再创建或加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
+  // 已经是客户端、但这张连接没拿到服务端认可的通道证明：换票重连也失败后才会走到这里。
+  CLIENT_CHANNEL_NOT_READY:
+    "客户端通道校验未通过，请检查网络后重试；反复出现请重启客户端再试。",
   LOGIN_REQUIRED: "该房间要求登录后再创建、加入或旁观",
   SPECTATE_QUEUE_FULL: "待房主批准的旁观请求已满，请稍后再试",
 };

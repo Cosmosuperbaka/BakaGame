@@ -368,7 +368,9 @@ export class CEERooms {
    */
   requireClientAdmission(connection: ConnectionRecord): void {
     if (!connection.clientChannel)
-      throw new AppError("CLIENT_REQUIRED", "只有 BakaGame 客户端能创建反作弊房间");
+      // 无票与票被拒都落在这里，原因由 ClientChannel.consume 的日志区分；给玩家的文案
+      // 只说明「这条连接没有客户端通道」，不臆断是网页、过期还是地址不符。
+      throw new AppError("CLIENT_REQUIRED", "当前连接没有客户端通道证明，请使用客户端重新进入游戏");
     // 强制更新只拦这类房间：旧壳在普通房照常玩，协议变更不该波及他们。
     if (connection.clientChannel.outdated)
       throw new AppError("CLIENT_OUTDATED", "客户端版本过低，请更新后再创建该房间");
