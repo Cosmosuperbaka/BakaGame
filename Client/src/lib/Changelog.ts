@@ -145,6 +145,15 @@ export function sortEntriesByVersion<T extends ChangelogEntry>(entries: readonly
   return [...entries].sort((a, b) => compareVersions(b.version, a.version));
 }
 
+/**
+ * 从 changelog.json 原文取展示版本号。构建期注入与单测桩都走这一份推导，
+ * 免得插件、测试配置各写一遍而出现两个「最新版本号」。
+ */
+export function latestVersionOf(changelogText: string): string | undefined {
+  const { entries } = JSON.parse(changelogText) as { entries?: readonly ChangelogEntry[] };
+  return resolveLatestVersion(entries ?? []);
+}
+
 /** 把两种写法归一成行数组；数组项自身仍可包含换行。 */
 const toLines = (content: ChangelogCategoryContent): string[] =>
   (Array.isArray(content) ? content : [content]).flatMap((chunk) => chunk.split(/\r?\n/));

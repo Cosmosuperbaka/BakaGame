@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/react";
 import commitHistory from "virtual:commit-history";
-import changelog from "@/data/changelog.json";
-import { resolveLatestVersion } from "@/lib/Changelog";
+// 展示版本号构建期从 changelog.json 解析，遥测初始化不背整份日志。
+import appVersion from "virtual:app-version";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 import { bakaChannel, bakaClientType } from "@/lib/BakaChannel";
 import { isSelfHealedModuleLoadError } from "@/lib/LazyImport";
@@ -160,7 +160,7 @@ export const initClientSentry = (
     environment: import.meta.env.MODE,
     release:
       commitHistory.currentCommit !== "dev"
-        ? `V${resolveLatestVersion(changelog.entries) ?? "0.0.0"}（${commitHistory.currentCommit}）`
+        ? `V${appVersion || "0.0.0"}（${commitHistory.currentCommit}）`
         : undefined,
     // 壳版本与网页发布号是两套命名空间，混进 release 会互相污染；壳身份版本放 dist。
     dist: channel ? `${channel.clientType}@${channel.clientVersion}` : undefined,

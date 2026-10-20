@@ -26,6 +26,17 @@ declare module "virtual:commit-history" {
 }
 
 /**
+ * 构建期从 `src/data/changelog.json` 解析出的展示版本号（日志里的最大版本号），
+ * 由 vite.config.ts 的 app-version 插件提供。落地页与 Sentry 只要这一个字符串，
+ * 不再静态 import 整份日志数据；完整更新日志仍由按需加载的致谢页取。
+ * 无条目时为空串，消费方按各自口径显示占位版本号。
+ */
+declare module "virtual:app-version" {
+  const version: string;
+  export default version;
+}
+
+/**
  * 构建期扫描 public/emojis/ 得到的表情包清单，
  * 由 vite.config.ts 的 sticker-manifest 插件提供。
  * 数据随分包产物带 hash 发布，不再作为 public/ 下的固定 URL 资源。

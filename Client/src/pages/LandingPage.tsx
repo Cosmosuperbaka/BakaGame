@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
@@ -16,22 +16,11 @@ import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/acco
 import { ClientUpdateNotice } from "@/components/ClientUpdateNotice";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
-import { resolveLatestVersion, sortEntriesByVersion } from "@/lib/Changelog";
-import type { ChangelogEntry } from "@/lib/Changelog";
-// 更新日志与提交历史都在构建期定型，随 JS 产物带 hash 发布。
-// 之前放在 public/ 下按固定 URL 取，CDN 的长期缓存会让新内容迟迟不生效。
-import changelogData from "@/data/changelog.json";
-import { REPOSITORY_URL } from "@/data/PageMeta";
+// 展示版本号构建期从 changelog.json 解析（与致谢页同一真相源），整份日志不随首屏下载。
+import appVersion from "virtual:app-version";
 import commitHistory from "virtual:commit-history";
+import { REPOSITORY_URL } from "@/data/PageMeta";
 import { cn } from "@/lib/Utils";
-
-interface ChangelogData {
-  entries: ChangelogEntry[];
-}
-
-// JSON 直接 import 时结构由内容推断，这里锚定成契约类型，
-// 手写日志漏字段或写错类型在构建期就会报错。
-const changelog: ChangelogData = changelogData;
 
 interface GameSubMode {
   id: string;
@@ -332,12 +321,11 @@ const VERSION_PAGE_PATH = "/credits?tab=changelog";
 export default function LandingPage() {
   const navigate = usePageNavigate();
 
-  // 展示版本号取自更新日志里的最大版本号，与 package.json 无关，
-  // 也不依赖 entries 的书写顺序。
-  const entries = useMemo(() => sortEntriesByVersion(changelog.entries), []);
-  const version = useMemo(() => resolveLatestVersion(entries), [entries]);
-  // 整个文件都没有条目时版本号未知，用 ∞ 占位而不是留空。
+  // 展示版本号取自更新日志里的最大版本号，与 package.json 无关；
+  // 解析在构建期完成，运行时不再为了一个字符串背下整份日志。
+  const version = appVersion || undefined;
   const commit = commitHistory.currentCommit;
+  // 日志为空时版本号未知，用 ∞ 占位而不是留空。
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
 
   return (

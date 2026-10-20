@@ -14,9 +14,9 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 export const BUDGETS = {
   /** 渲染阻塞样式表：实测 102,730B gz，其中 202/219 条中日韩 @font-face 占九成字节。 */
   entryCssGzBytes: 106_000,
-  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测 316,348B gz。 */
-  entryJsGraphGzBytes: 326_000,
-  /** 单个路由分片：实测最大 SonGuessrRoomPage 135,087B gz。 */
+  /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 311.3KB gz（展示版本号改构建期注入后 −5KB）。 */
+  entryJsGraphGzBytes: 321_000,
+  /** 单个路由分片：实测最大 SonGuessrRoomPage 约 135.1KB gz。 */
   largestChunkGzBytes: 139_000,
   /** 入口样式表里的 @font-face 条数：实测 219 条（serif/sans 各 101 个子集）。 */
   entryFontFaceRules: 224,

@@ -1,7 +1,10 @@
 import path from "node:path";
+import { readFileSync } from "node:fs";
 
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+
+import { latestVersionOf } from "./src/lib/Changelog.ts";
 
 export default defineConfig({
   plugins: [
@@ -10,6 +13,7 @@ export default defineConfig({
       name: "test-virtual-modules",
       resolveId(id) {
         if (id === "virtual:commit-history") return "\0virtual:commit-history";
+        if (id === "virtual:app-version") return "\0virtual:app-version";
         if (id === "virtual:sticker-manifest") return "\0virtual:sticker-manifest";
         if (id === "virtual:credits") return "\0virtual:credits";
         if (id === "virtual:credits-licenses") return "\0virtual:credits-licenses";
@@ -19,6 +23,14 @@ export default defineConfig({
       load(id) {
         if (id === "\0virtual:commit-history") {
           return 'export default { generatedAt: "", currentCommit: "dev", commits: [] }';
+        }
+        // 版本号按构建期同一份推导取，单测里断言的版本才不会与真实日志脱节。
+        if (id === "\0virtual:app-version") {
+          const text = readFileSync(
+            path.resolve(import.meta.dirname, "src/data/changelog.json"),
+            "utf8"
+          );
+          return `export default ${JSON.stringify(latestVersionOf(text) ?? "")}`;
         }
         if (id === "\0virtual:sticker-manifest") {
           return 'export default { generatedAt: "", packs: [] }';
