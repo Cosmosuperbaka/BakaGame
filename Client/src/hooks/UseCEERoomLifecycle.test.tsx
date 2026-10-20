@@ -6,12 +6,13 @@ import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEERoomLifecycle } from "./UseCEERoomLifecycle";
 // 与真实实现一致：同一路由上下文里 usePageNavigate 是稳定引用。
 // 每次渲染返回新函数会让恢复 effect 随 navigate 变化反复重跑，房间不存在时被反复置回 needsJoin。
-vi.mock("@/hooks/UsePageTransition", () => {
-  const navigate = vi.fn();
-  return { usePageNavigate: () => navigate };
-});
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
 const initial = useCEEStore.getState();
-afterEach(() => useCEEStore.setState(initial, true));
+afterEach(() => {
+  useCEEStore.setState(initial, true);
+  navigate.mockClear();
+});
 it("小写测试房链接恢复 canonical 凭据，不要求重新加入", async () => {
   writeCEESession("Oblivionis", "canonical-token");
   const reconnect = vi.fn().mockResolvedValue(true);
@@ -123,4 +124,71 @@ it("加入被业务拒绝时不触发建房，错误码就地展示", async () =
   });
   expect(createRoom).not.toHaveBeenCalled();
   expect(h.result.current.errorCode).toBe("PASSWORD_INCORRECT");
+});
+it("直链进私密房缺密码时落到密码步，不一直转圈", async () => {
+  const joinRoom = vi
+    .fn()
+    .mockRejectedValue({ code: "PASSWORD_REQUIRED", message: "需要房间密码" });
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    reconnectRoom: vi.fn().mockResolvedValue(false),
+    joinRoom,
+    createRoom: vi.fn(),
+  });
+  const h = renderHook(() => useCEERoomLifecycle(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={["/cee/room/1234"]}>
+        <Routes>
+          <Route path="/cee/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    ),
+  });
+  await waitFor(() => expect(h.result.current.needsJoin).toBe(true));
+  expect(h.result.current.errorCode).toBe("PASSWORD_REQUIRED");
+  await waitFor(() => expect(h.result.current.joining).toBe(false));
+});
+it("直链加入被非密码类拒绝时回大厅并提示", async () => {
+  const joinRoom = vi.fn().mockRejectedValue({ code: "ROOM_FULL", message: "房间已满" });
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    reconnectRoom: vi.fn().mockResolvedValue(false),
+    joinRoom,
+    createRoom: vi.fn(),
+  });
+  const h = renderHook(() => useCEERoomLifecycle(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={["/cee/room/1234"]}>
+        <Routes>
+          <Route path="/cee/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    ),
+  });
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
+  expect(useCEEStore.getState().notice?.text).toBe("房间已满");
+  await waitFor(() => expect(h.result.current.joining).toBe(false));
+});
+it("恢复会话临时失败时回大厅提示，不卡在正在加入", async () => {
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    reconnectRoom: vi.fn().mockRejectedValue({ code: "DISCONNECTED", message: "连接已断开" }),
+    joinRoom: vi.fn(),
+    createRoom: vi.fn(),
+  });
+  const h = renderHook(() => useCEERoomLifecycle(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={["/cee/room/1234"]}>
+        <Routes>
+          <Route path="/cee/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    ),
+  });
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
+  expect(useCEEStore.getState().notice?.text).toBe("连接已断开");
+  await waitFor(() => expect(h.result.current.joining).toBe(false));
 });

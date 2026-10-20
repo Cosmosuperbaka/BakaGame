@@ -11,6 +11,15 @@ import { isProtocolError } from "@/lib/WebsocketClient";
  * 房间路由只带统一房号：来源（增强房 / 原版房）由服务端的房号目录判定，
  * 进入成功后才从快照得知，加入表单不预先假设。
  */
+/** 归密码步处理的加入失败：缺密码、密码错误、错误次数过多。 */
+export const CEE_PASSWORD_ERROR_CODES = new Set([
+  "PASSWORD_REQUIRED",
+  "PASSWORD_INCORRECT",
+  "TOO_MANY_ATTEMPTS",
+]);
+const isPasswordFailure = (failure: unknown): boolean =>
+  isProtocolError(failure) && CEE_PASSWORD_ERROR_CODES.has(failure.code);
+
 export function useCEERoomLifecycle() {
   const { roomId: routeRoomId } = useParams();
   const roomId = routeRoomId ? normalizeCEERoomId(routeRoomId) : undefined;
@@ -29,6 +38,13 @@ export function useCEERoomLifecycle() {
     setError(ceeErrorMessage(failure));
     setErrorCode(isProtocolError(failure) ? failure.code : "");
   };
+  /** 无法就地解决的失败：提示后回大厅，不把玩家留在永不结束的「正在加入」里。 */
+  const leaveWithNotice = (failure: unknown) => {
+    useCEEStore.getState().setNotice(ceeErrorMessage(failure));
+    void navigate("/cee", { replace: true });
+  };
+  const cancelled = (failure: unknown, controller: AbortController) =>
+    controller.signal.aborted || (failure as { name?: string } | null)?.name === "AbortError";
   const attempted = useRef("");
   const manualJoin = useRef<AbortController | null>(null);
   useEffect(
@@ -83,7 +99,14 @@ export function useCEERoomLifecycle() {
       setName(userName);
       setNeedsJoin(false);
     } catch (failure) {
-      if (!controller.signal.aborted) fail(failure);
+      if (cancelled(failure, controller)) return;
+      if (isPasswordFailure(failure)) {
+        fail(failure);
+        // 直链进私密房必须落到密码步；否则 needsJoin 为假，页面只剩一个永不结束的转圈。
+        setNeedsJoin(true);
+        return;
+      }
+      leaveWithNotice(failure);
     }
   };
 
@@ -107,10 +130,7 @@ export function useCEERoomLifecycle() {
         if (controller.signal.aborted) return;
         if (!restored) await autoJoin(roomId, controller);
       } catch (failure) {
-        if (!controller.signal.aborted) {
-          fail(failure);
-          setNeedsJoin(true);
-        }
+        if (!cancelled(failure, controller)) leaveWithNotice(failure);
       } finally {
         if (!controller.signal.aborted) setJoining(false);
       }
@@ -136,7 +156,12 @@ export function useCEERoomLifecycle() {
       saveUsername(name.trim());
       setNeedsJoin(false);
     } catch (failure) {
-      if (!controller.signal.aborted) fail(failure);
+      if (cancelled(failure, controller)) return;
+      if (isPasswordFailure(failure)) {
+        fail(failure);
+        return;
+      }
+      leaveWithNotice(failure);
     } finally {
       if (manualJoin.current === controller) manualJoin.current = null;
       if (!controller.signal.aborted) setJoining(false);

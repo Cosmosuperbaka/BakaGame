@@ -7,13 +7,10 @@ import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { CEEPlayerList } from "@/components/cee/CEEPlayerList";
 import { CEEGameArea } from "@/components/cee/CEEGameArea";
-import { useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
+import { CEE_PASSWORD_ERROR_CODES, useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
 import { useCEERoundHistory } from "@/hooks/UseCEERoundHistory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { CEE_SOURCE_LABELS, ceeDisplayRound, ceePerspective, ceeRoomPath } from "@/lib/CEESession";
-
-/** 归密码步处理的加入失败：缺密码、密码错误、错误次数过多。 */
-const PASSWORD_CODES = new Set(["PASSWORD_REQUIRED", "PASSWORD_INCORRECT", "TOO_MANY_ATTEMPTS"]);
 
 export default function CEERoomPage() {
   const lifecycle = useCEERoomLifecycle();
@@ -44,7 +41,7 @@ export default function CEERoomPage() {
       : null;
 
   // 密码步的失败写在密码框下（RoomJoinGate 的 passwordError）；其余加入失败（房间已满、已关闭等）以提示条报出。
-  const passwordFailure = PASSWORD_CODES.has(lifecycle.errorCode);
+  const passwordFailure = CEE_PASSWORD_ERROR_CODES.has(lifecycle.errorCode);
   useEffect(() => {
     if (lifecycle.error && !passwordFailure) useCEEStore.getState().setNotice(lifecycle.error);
   }, [lifecycle.error, passwordFailure]);
