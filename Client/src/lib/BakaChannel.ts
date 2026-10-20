@@ -20,6 +20,8 @@ export interface BakaChannelIdentity {
   channelTicket?: string;
   sign?: (challenge: string) => Promise<string>;
   selfCheck?: () => Promise<object>;
+  /** 窗口级防截屏开关；旧版壳没有该方法，调用方需容忍缺省。 */
+  setSecureScreen?: (enabled: boolean) => void;
 }
 
 declare global {
@@ -38,6 +40,17 @@ export const isBakaClient = (): boolean => bakaChannel() !== undefined;
 
 /** 展示用的客户端类型：无外壳即网页。 */
 export const bakaClientType = (): BakaClientType => bakaChannel()?.clientType ?? "web";
+
+/**
+ * 切换窗口级防截屏（安卓的 FLAG_SECURE）。
+ *
+ * 只在反作弊房里开：那里要求客户端接入，也不允许靠录屏/投屏把题目带出去。
+ * 其余场景必须关掉 —— 常开会让普通玩家连正常截图分享都做不到。
+ * 网页端没有壳对象，静默无操作；旧版壳没有该方法时同样跳过。
+ */
+export const setSecureScreen = (enabled: boolean): void => {
+  bakaChannel()?.setSecureScreen?.(enabled);
+};
 
 /**
  * 追加到 `/api/cee/ws` 上的握手查询串。

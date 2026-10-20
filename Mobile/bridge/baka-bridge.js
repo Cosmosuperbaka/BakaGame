@@ -9,6 +9,7 @@
 //     channelTicket: string,                              // 壳签好的一次性票据；无票时为空串
 //     sign(challenge: string): Promise<string>,           // base64 DER 签名
 //     selfCheck(): Promise<SelfCheckReport>,              // 见下
+//     setSecureScreen(enabled: boolean): void,            // 窗口级防截屏，仅反作弊房开启
 //   }
 //   SelfCheckReport = { hardFail: string[], softFail: string[], attestationLevel: "trusted" | "degraded" | "rejected" }
 //
@@ -304,6 +305,19 @@
       });
     },
     selfCheck: buildSelfCheck,
+    // 窗口级防截屏开关：只有反作弊房需要，其余场景关掉（否则用户连正常截图分享都做不到）。
+    // 这里只转发一个布尔值，不涉及密钥与签名能力；网页端没有本对象，调用方会跳过。
+    setSecureScreen: function (enabled) {
+      try {
+        plugin()
+          .setSecureScreen({ enabled: !!enabled })
+          .catch(function () {
+            // 旧版壳没有这个能力：忽略，不影响其余功能
+          });
+      } catch (e) {
+        // 没有 Capacitor 桥（浏览器预览）：静默
+      }
+    },
   };
 
   // 一次性票据：读一次就作废并立刻补签，第二次连接绝不会带上已被服务端消费掉的旧票。

@@ -1,6 +1,7 @@
 package website.baka.game.channel
 
 import android.util.Base64
+import android.view.WindowManager
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -73,6 +74,29 @@ class BakaChannelPlugin : Plugin() {
             call.resolve(result)
         } catch (e: Exception) {
             call.reject("BAKA_CHANNEL_SIGN_FAILED", e)
+        }
+    }
+
+    /** 窗口级防截屏开关：反作弊房开启，其余场景关闭（让用户正常截图分享）。 */
+    @PluginMethod
+    fun setSecureScreen(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        val host = activity
+        if (host == null) {
+            call.reject("BAKA_CHANNEL_NO_WINDOW")
+            return
+        }
+        host.runOnUiThread {
+            try {
+                if (enabled) {
+                    host.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                } else {
+                    host.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                }
+                call.resolve()
+            } catch (e: Exception) {
+                call.reject("BAKA_CHANNEL_SECURE_SCREEN_FAILED", e)
+            }
         }
     }
 

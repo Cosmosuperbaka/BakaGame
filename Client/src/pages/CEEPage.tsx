@@ -7,7 +7,7 @@ import { CreateRoomDialog } from "@/components/common/CreateRoomDialog";
 import { JoinPasswordDialog } from "@/components/common/lobby/JoinPasswordDialog";
 import { LobbyPage } from "@/components/common/lobby/LobbyPage";
 import type { LobbyRoomView } from "@/components/common/lobby/RoomListCard";
-import { isBakaClient } from "@/lib/BakaChannel";
+import { isBakaClient, setSecureScreen } from "@/lib/BakaChannel";
 import { CEE_SOURCE_LABELS } from "@/lib/CEESession";
 import {
   markPendingRestore,
@@ -36,6 +36,15 @@ export default function CEEPage() {
   const [server, setServer] = useState<CEESource>("native");
   const [antiCheat, setAntiCheat] = useState(false);
   const accountStatus = useAccountStore((state) => state.status);
+  /**
+   * 当前房间是不是反作弊房。它同时决定窗口级防截屏：只有这类房间需要挡录屏，
+   * 其他场景常开会让玩家连正常截图分享都做不到。
+   */
+  const antiCheatRoom = useCEEStore((state) => state.snapshot?.bakaAntiCheat === true);
+  useEffect(() => {
+    setSecureScreen(antiCheatRoom);
+    return () => setSecureScreen(false);
+  }, [antiCheatRoom]);
   /**
    * 反作弊房只接受客户端接入且全员登录，建房那条连接自己就得先达标：
    * 网页接入或没登录时这一行根本不出现，而不是点了之后被服务端拒。
