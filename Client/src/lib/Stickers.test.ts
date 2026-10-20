@@ -1,10 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("virtual:sticker-manifest", () => ({
-  default: { packs: [] },
+  default: {
+    packs: [
+      {
+        name: "夜愿华章",
+        dir: "nightwish",
+        preview: "/emojis/nightwish/audience_clap.gif",
+        animated: true,
+        items: [
+          {
+            key: "audience_clap",
+            label: "鼓掌",
+            path: "/emojis/nightwish/audience_clap.gif",
+            animated: true,
+          },
+          {
+            key: "ghost_laugh",
+            label: "冷笑",
+            path: "/emojis/nightwish/ghost_laugh.png",
+            animated: false,
+          },
+        ],
+      },
+    ],
+  },
 }));
 
-import { isValidStickerPath } from "./Stickers";
+import { isValidStickerPath, loadStickerLabels, loadStickerPacks } from "./Stickers";
 
 describe("isValidStickerPath", () => {
   it("允许合法的本地表情包路径", () => {
@@ -27,5 +50,20 @@ describe("isValidStickerPath", () => {
     expect(isValidStickerPath("javascript:alert(1)")).toBe(false);
     expect(isValidStickerPath(null)).toBe(false);
     expect(isValidStickerPath(undefined)).toBe(false);
+  });
+});
+
+describe("loadStickerLabels", () => {
+  it("从同一份清单建出「资源路径 → 表情名」索引", async () => {
+    const labels = await loadStickerLabels();
+
+    expect(labels.get("/emojis/nightwish/audience_clap.gif")).toBe("鼓掌");
+    expect(labels.get("/emojis/nightwish/ghost_laugh.png")).toBe("冷笑");
+    expect(labels.get("/emojis/nightwish/not-in-manifest.png")).toBeUndefined();
+    expect(labels.size).toBe((await loadStickerPacks())[0].items.length);
+  });
+
+  it("索引只建一次并常驻，重复调用不重新解析清单", async () => {
+    expect(await loadStickerLabels()).toBe(await loadStickerLabels());
   });
 });

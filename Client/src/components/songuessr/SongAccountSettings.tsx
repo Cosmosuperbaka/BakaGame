@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { LogOut, QrCode, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";
 import { SettingSwitchRow } from "@/components/common/room/SettingFields";
@@ -292,7 +293,11 @@ const PLATFORM_TABS: readonly {
   { platform: "qq", label: "QQ音乐", Icon: QQMusicIcon },
 ];
 
-/** 平台切换器：每个平台一枚 tab，该端凭据已加载到房间时点一枚绿点。 */
+/**
+ * 平台切换器：分段单选，选中的那一端决定下方展示哪份账号信息与哪一条登录二维码。
+ * 该端凭据已加载到房间时在标签后点一枚绿点；绿点只是提示，读屏改读 `sr-only` 的文字，
+ * 不让颜色单独承担状态（Design §3）。
+ */
 function PlatformSwitcher({
   active,
   ready,
@@ -303,25 +308,28 @@ function PlatformSwitcher({
   onSelect: (platform: SongMusicPlatform) => void;
 }) {
   return (
-    <div className="mb-4 flex rounded-lg bg-muted p-0.5 text-xs font-medium">
-      {PLATFORM_TABS.map(({ platform, label, Icon }) => (
-        <button
-          key={platform}
-          type="button"
-          onClick={() => onSelect(platform)}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 transition-colors",
-            active === platform
-              ? "bg-background text-foreground shadow-xs font-semibold"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Icon className="size-3.5" />
-          <span>{label}</span>
-          {ready[platform] ? <span className="size-1.5 rounded-full bg-success" /> : null}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      size="sm"
+      className="mb-4 w-full"
+      aria-label="音乐平台"
+      value={active}
+      onValueChange={onSelect}
+      options={PLATFORM_TABS.map(({ platform, label, Icon }) => ({
+        value: platform,
+        label: (
+          <span className="flex items-center gap-1.5">
+            <Icon className="size-3.5" />
+            <span>{label}</span>
+            {ready[platform] ? (
+              <>
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
+                <span className="sr-only">，凭据已加载到房间</span>
+              </>
+            ) : null}
+          </span>
+        ),
+      }))}
+    />
   );
 }
 
@@ -331,7 +339,7 @@ const QQ_SCAN_TYPES: readonly { mode: QqScanMode; label: string }[] = [
   { mode: "mobile", label: "QQ音乐扫码" },
 ];
 
-/** QQ 音乐的三种扫码入口。 */
+/** QQ 音乐的三种扫码入口：同样是分段单选，换档即重发一次二维码。 */
 function QqScanTypePicker({
   value,
   onSelect,
@@ -340,23 +348,14 @@ function QqScanTypePicker({
   onSelect: (mode: QqScanMode) => void;
 }) {
   return (
-    <div className="flex gap-1.5 rounded-md bg-muted/60 p-1 text-xs">
-      {QQ_SCAN_TYPES.map(({ mode, label }) => (
-        <button
-          key={mode}
-          type="button"
-          onClick={() => onSelect(mode)}
-          className={cn(
-            "flex-1 rounded py-1 text-center transition-colors",
-            value === mode
-              ? "bg-background font-medium text-foreground shadow-xs"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      size="sm"
+      className="w-full"
+      aria-label="扫码方式"
+      value={value}
+      onValueChange={onSelect}
+      options={QQ_SCAN_TYPES.map(({ mode, label }) => ({ value: mode, label }))}
+    />
   );
 }
 
@@ -387,7 +386,10 @@ const qrAlt = (platform: SongMusicPlatform): string =>
 const connectingLabel = (platform: SongMusicPlatform): string =>
   platform === "qq" ? "正在连接QQ音乐账号…" : "正在连接网易云账号…";
 
-/** 二维码画框：拿到图就换图，否则按忙闲显示转圈或占位图标。 */
+/** 二维码画框：拿到图就换图，否则按忙闲显示转圈或占位图标。
+ *  画框底恒定取白而不跟随主题：二维码要一圈亮度恒定的静区才扫得出来，
+ *  暗色下把静区换成 `bg-background` 会连模块边缘一起吃掉；上游给的是不透明白底图，
+ *  这里只是补上外圈的留白。 */
 function QrFrame({ qr, busy, alt }: { qr: QrCreateResponse | null; busy: boolean; alt: string }) {
   return (
     <div className="relative mx-auto h-36 w-36 shrink-0 overflow-hidden rounded-md border bg-white sm:mx-0">

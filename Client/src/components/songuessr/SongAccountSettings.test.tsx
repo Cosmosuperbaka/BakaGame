@@ -383,13 +383,48 @@ describe("SongAccountSettings", () => {
     ]);
   });
 
+  it("平台与扫码方式是分段单选：radiogroup 语义、选中档可读、换档读屏能听到", async () => {
+    sendCommand.mockResolvedValue(qrResponse("qq-qr"));
+    render(
+      <SongAccountSettings
+        snapshot={
+          {
+            roomId: "1234",
+            musicAccountReady: true,
+            qqMusicAccountReady: false,
+          } as SonGuessrRoomSnapshot
+        }
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+
+    const platformGroup = screen.getByRole("radiogroup", { name: "音乐平台" });
+    expect(within(platformGroup).getAllByRole("radio")).toHaveLength(2);
+    // 凭据已加载到房间的那一端不只靠绿点表达，读屏读到的是同一句文字。
+    expect(
+      within(platformGroup).getByRole("radio", { name: /网易云音乐.*凭据已加载到房间/ })
+    ).toBeChecked();
+    expect(within(platformGroup).getByRole("radio", { name: /^QQ音乐$/ })).not.toBeChecked();
+
+    fireEvent.click(within(platformGroup).getByRole("radio", { name: /^QQ音乐$/ }));
+    const scanGroup = screen.getByRole("radiogroup", { name: "扫码方式" });
+    expect(within(scanGroup).getAllByRole("radio")).toHaveLength(3);
+    expect(within(scanGroup).getByRole("radio", { name: "QQ扫码" })).toBeChecked();
+    await waitFor(() => {
+      expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
+        platform: "qq",
+        type: "qq",
+      });
+    });
+  });
+
   it("切换至 QQ 音乐标签页支持三种扫码方式切换并请求对应二维码", async () => {
     sendCommand.mockResolvedValue(qrResponse("qq-qr-default"));
     render(<SongAccountSettings snapshot={snapshot(false)} />);
     fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
 
     // 点击切换到 QQ 音乐平台
-    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /QQ音乐/ }));
     await waitFor(() => {
       expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
         platform: "qq",
@@ -404,7 +439,7 @@ describe("SongAccountSettings", () => {
 
     // 切换为微信扫码
     sendCommand.mockResolvedValueOnce(qrResponse("wx-qr"));
-    fireEvent.click(screen.getByRole("button", { name: "微信扫码" }));
+    fireEvent.click(screen.getByRole("radio", { name: "微信扫码" }));
     await waitFor(() => {
       expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
         platform: "qq",
@@ -417,7 +452,7 @@ describe("SongAccountSettings", () => {
 
     // 切换为 QQ 音乐 App 扫码
     sendCommand.mockResolvedValueOnce(qrResponse("mobile-qr"));
-    fireEvent.click(screen.getByRole("button", { name: "QQ音乐扫码" }));
+    fireEvent.click(screen.getByRole("radio", { name: "QQ音乐扫码" }));
     await waitFor(() => {
       expect(sendCommand).toHaveBeenCalledWith("song.auth.qr.create", {
         platform: "qq",
@@ -466,7 +501,7 @@ describe("SongAccountSettings", () => {
 
     fireEvent.click(toggle);
     // 切换到 QQ 音乐平台查看展开详情
-    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /QQ音乐/ }));
     expect(panel().getByText("腾讯大佬")).toBeInTheDocument();
     expect(panel().getByRole("img", { name: "超级会员 · SVIP8" })).toHaveAttribute(
       "src",
@@ -596,7 +631,7 @@ describe("SongAccountSettings", () => {
 
     // 展开并切换到 QQ 音乐 Tab
     fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole("button", { name: /QQ音乐/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /QQ音乐/ }));
 
     // 收起后网易云账号依然正常展示，QQ音乐依然显示未配置，不发生图标或昵称互串
     fireEvent.click(toggle);

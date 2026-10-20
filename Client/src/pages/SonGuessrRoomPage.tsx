@@ -93,6 +93,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         await sendCommand("song.chat.send", { text: chatText });
       } catch (error) {
         setNotice((error as { message: string }).message, "error");
+        // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
+        throw error;
       }
     },
     [sendCommand, setNotice]

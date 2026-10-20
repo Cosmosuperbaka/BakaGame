@@ -90,3 +90,21 @@ export async function loadStickerPacks(): Promise<StickerPack[]> {
     return [];
   }
 }
+
+/** 表情资源路径到表情名的索引 */
+export type StickerLabelIndex = ReadonlyMap<string, string>;
+
+let labelIndex: Promise<StickerLabelIndex> | undefined;
+
+/**
+ * 取「资源路径 → 表情名」索引，供已渲染的表情图片写替代文本。
+ * 复用 `loadStickerPacks` 的同一份构建期清单，不另建表情表；
+ * 索引只建一次并常驻（同一进程内重复调用拿到同一个 Promise），免得每条表情消息都重新解析清单。
+ */
+export function loadStickerLabels(): Promise<StickerLabelIndex> {
+  labelIndex ??= loadStickerPacks().then(
+    (packs) =>
+      new Map(packs.flatMap((pack) => pack.items.map((item) => [item.path, item.label] as const)))
+  );
+  return labelIndex;
+}

@@ -7,7 +7,12 @@ import { cn } from "@/lib/Utils";
 
 export interface SegmentedOption<T extends string> {
   value: T;
-  label: string;
+  /**
+   * 选项内容。除文字外也允许品牌图标与状态点这类复合内容：
+   * 分段控件的语义只有「选中/未选中」，标签里多出来的图形不改变可选值，
+   * 可访问名由内容本身算出，图形侧请自带 `aria-hidden`，状态文字用 `sr-only` 补。
+   */
+  label: React.ReactNode;
   disabled?: boolean;
 }
 

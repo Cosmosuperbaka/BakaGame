@@ -114,7 +114,13 @@
   --card-foreground: oklch(0.376 0.0225 64.3434);
   --popover: oklch(0.9914 0.0098 87.4695);
   --popover-foreground: oklch(0.376 0.0225 64.3434);
-  --primary: oklch(0.618 0.0778 65.5444);
+  /* 主色按 WCAG AA 双向标定，口径与状态色一致（见 Design §3）：白字压 primary 实底，
+     以及 primary 作文字压 background、card、panel、secondary、muted，和压自身叠在
+     background、card、panel、muted 上的 `/10` 浅底，都不低于 4.5:1（铺纸纹理的 `background`
+     一档另留 4% 余量）。`accent` 只作悬停与浮层高亮，与状态色一样不标定。
+     明度取 destructive、warning 同档；`--ring`、`--chart-1`、`--sidebar-primary`、`--sidebar-ring`
+     与这里同值，取值改动由 src/lib/DesignTokens.test.ts 的对比度断言兜住。 */
+  --primary: oklch(0.48 0.0778 65.5444);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.8846 0.0302 85.5655);
   --secondary-foreground: oklch(0.4313 0.03 64.9288);
@@ -129,20 +135,20 @@
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.8606 0.0321 84.5881);
   --input: oklch(0.8606 0.0321 84.5881);
-  --ring: oklch(0.618 0.0778 65.5444);
-  --chart-1: oklch(0.618 0.0778 65.5444);
+  --ring: oklch(0.48 0.0778 65.5444);
+  --chart-1: oklch(0.48 0.0778 65.5444);
   --chart-2: oklch(0.5604 0.0624 68.5805);
   --chart-3: oklch(0.4851 0.057 72.6827);
   --chart-4: oklch(0.6777 0.0624 64.7755);
   --chart-5: oklch(0.7264 0.0581 66.6967);
   --sidebar: oklch(0.9239 0.019 83.0636);
   --sidebar-foreground: oklch(0.376 0.0225 64.3434);
-  --sidebar-primary: oklch(0.618 0.0778 65.5444);
+  --sidebar-primary: oklch(0.48 0.0778 65.5444);
   --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.8348 0.0426 88.8064);
   --sidebar-accent-foreground: oklch(0.376 0.0225 64.3434);
   --sidebar-border: oklch(0.8606 0.0321 84.5881);
-  --sidebar-ring: oklch(0.618 0.0778 65.5444);
+  --sidebar-ring: oklch(0.48 0.0778 65.5444);
   /* 房间页三个工作面板的表面色：比页面底色略暗，避免大面积高亮；
      同时与 muted 保持可辨差值，使面板内的小块控件仍能浮起。 */
   --panel: oklch(0.943 0.0168 87);
@@ -201,7 +207,10 @@
   --card-foreground: oklch(0.9239 0.019 83.0636);
   --popover: oklch(0.3237 0.0155 59.0603);
   --popover-foreground: oklch(0.9239 0.019 83.0636);
-  --primary: oklch(0.7264 0.0581 66.6967);
+  /* 暗色主色与亮色同一口径双向标定：前景取页面底色，primary 作文字在 background、card、
+     panel、muted 上，以及这些面上的 `/10` 浅底上均不低于 4.5:1。
+     `secondary` 与 `accent` 只出现在悬停与浮层高亮，与状态色一样不标定。 */
+  --primary: oklch(0.745 0.0581 66.6967);
   --primary-foreground: oklch(0.2747 0.0139 57.6523);
   --secondary: oklch(0.3795 0.0181 57.128);
   --secondary-foreground: oklch(0.9239 0.019 83.0636);
@@ -216,20 +225,20 @@
   --destructive-foreground: oklch(0.2747 0.0139 57.6523);
   --border: oklch(0.3795 0.0181 57.128);
   --input: oklch(0.3795 0.0181 57.128);
-  --ring: oklch(0.7264 0.0581 66.6967);
-  --chart-1: oklch(0.7264 0.0581 66.6967);
+  --ring: oklch(0.745 0.0581 66.6967);
+  --chart-1: oklch(0.745 0.0581 66.6967);
   --chart-2: oklch(0.6777 0.0624 64.7755);
   --chart-3: oklch(0.618 0.0778 65.5444);
   --chart-4: oklch(0.5604 0.0624 68.5805);
   --chart-5: oklch(0.4851 0.057 72.6827);
   --sidebar: oklch(0.2747 0.0139 57.6523);
   --sidebar-foreground: oklch(0.9239 0.019 83.0636);
-  --sidebar-primary: oklch(0.7264 0.0581 66.6967);
+  --sidebar-primary: oklch(0.745 0.0581 66.6967);
   --sidebar-primary-foreground: oklch(0.2747 0.0139 57.6523);
   --sidebar-accent: oklch(0.4186 0.0281 56.3404);
   --sidebar-accent-foreground: oklch(0.9239 0.019 83.0636);
   --sidebar-border: oklch(0.3795 0.0181 57.128);
-  --sidebar-ring: oklch(0.7264 0.0581 66.6967);
+  --sidebar-ring: oklch(0.745 0.0581 66.6967);
   --panel: oklch(0.308 0.0148 58);
   /* 状态语义色在暗色下抬高明度：在 background、card、panel、muted 上，以及叠在 background、
      panel、muted 上的自身 `/10` 浅底上不低于 4.5:1（含纸纹理）。红、绿、蓝、紫在 secondary 上

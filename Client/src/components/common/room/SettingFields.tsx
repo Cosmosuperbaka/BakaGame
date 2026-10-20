@@ -291,8 +291,9 @@ export function SettingStepper({
       <div
         data-disabled={disabled || undefined}
         className={cn(
-          "group/stepper flex h-9 w-32 items-center gap-0.5 rounded-full bg-muted p-1 transition-shadow",
-          "has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60",
+          "group/stepper flex h-9 w-32 items-center gap-0.5 rounded-full bg-muted p-1",
+          // 焦点环收在凹槽边界（与 TeamPicker 同一写法），内联输入不设自己的环，避免一个控件两层指示
+          "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-ring",
           disabled && "opacity-50"
         )}
       >
@@ -692,6 +693,7 @@ function YearInput({
     setDraft(String(clamped));
     if (clamped !== value) onCommit(clamped);
   };
+  // 焦点环由外层「至」凹槽统一画，这里只把落点垫亮，保证数字在 muted 上仍读得清
   return (
     <input
       type="text"
@@ -749,7 +751,9 @@ export function SettingYearRange({
     <SettingRow label={label} description={description} disabled={disabled}>
       <div
         className={cn(
-          "flex h-9 items-center gap-0.5 rounded-full bg-muted p-1 transition-shadow has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring/60",
+          "flex h-9 items-center gap-0.5 rounded-full bg-muted p-1",
+          // 与步进器同一形态：焦点环收在凹槽边界，两格输入共用一条指示
+          "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-ring",
           disabled && "opacity-50"
         )}
       >

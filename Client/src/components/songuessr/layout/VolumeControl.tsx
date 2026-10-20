@@ -421,7 +421,8 @@ function VolumeReadout({
       inputMode="numeric"
       aria-label="输入音量百分比"
       className={cn(
-        "h-7 w-7 shrink-0 rounded-full bg-accent/80 p-0 text-center text-xs font-semibold tabular-nums leading-7 outline-none ring-1 ring-primary/50 focus:ring-1 focus:ring-primary",
+        // 只保留浅底表明「这是可编辑的读数」，焦点指示沿用全站那一条 2px `--ring` 实线
+        "h-7 w-7 shrink-0 rounded-full bg-accent/80 p-0 text-center text-xs font-semibold tabular-nums leading-7",
         tone
       )}
     />

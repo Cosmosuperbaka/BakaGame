@@ -232,6 +232,8 @@ export default function WhoIsFakerRoomPage() {
         await sendCommand("chat.send", { text });
       } catch (e) {
         addToast((e as { message: string }).message, "error");
+        // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
+        throw e;
       }
     },
     [sendCommand, addToast]

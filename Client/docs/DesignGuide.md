@@ -27,7 +27,7 @@
 
 - 页面是暖白，卡片与浮层比页面更亮，正文暖褐。不要改回纯白、纯灰或冷色底。
 - 用语义色（`background`、`foreground`、`card`、`muted`、`accent`、`border`、`primary` 等），不硬编码颜色。
-- `primary` 只用于主要操作、当前玩家与明确的交互焦点，不大面积铺色，不作正文色（对比度不够）。`accent` 只作悬停与浮层内高亮，不作流内常驻底色。
+- `primary` 只用于主要操作、当前玩家与明确的交互焦点，不大面积铺色，不作正文色——不作正文色是层级取舍，不再是对比度限制：主色已与状态色同一档按 AA 双向标定（实底压前景、作文字压标定表面与自身 `/10` 浅底）。`--ring`、`--chart-1`、`--sidebar-primary`、`--sidebar-ring` 与主色同值同标定，改这几枚取值由 `src/lib/DesignTokens.test.ts` 复算守住。`accent` 只作悬停与浮层内高亮，不作流内常驻底色。
 - 次要文字直接用 `text-muted-foreground`，不再叠透明度，令牌已按对比度标定。禁用与离线状态整体降不透明度。
 - 三块主面板（游戏区、玩家栏、聊天栏）用 `bg-panel`，不用 `bg-card` 或硬编码色替代。
 - 就近浮层（表情选择器、提及候选、下拉、Tooltip 等）用 `floating-surface`，靠模糊与阴影立起来，不靠加深底色。`bg-secondary` 偏深、`bg-card` 近纯白，都不作浮层底色。
@@ -179,11 +179,15 @@
 ### 8.4 状态反馈与可访问性
 
 - 成功、失败、断线、异步提交反馈用真实状态文案，不靠动画替代业务状态。
+- 异步提交失败或超时必须把玩家已输入的内容交还给输入方：动画的落点即内容回位的时刻，成败只按服务端回执判定。动画既不吞原文，也不替回执判定成败；回执已到的那一路不得被动画读成“没发出去”。
+- 连续追加的内容流（聊天、日志）读屏用 `role="log"` 配 `aria-live="polite"` 与 `aria-relevant="additions"`：只报新增，不把整段历史每来一条重读一遍。装饰性投掷层保持 `aria-hidden`。
 - 所有可点击元素除动效外，仍必须有可见的键盘聚焦、禁用与进行中状态。图标按钮必须有 `aria-label`，可展开元素有 `aria-expanded`，切换类控件有 `aria-pressed`。动效不得是传达状态的唯一手段。
 
 ## 9. 交互状态与响应式
 
 - 键盘聚焦指示全站一种：基础层对可交互元素画统一的 `:focus-visible` outline。组件不再写 `focus-visible:ring-*` 或 `outline-none`，只按需声明偏移。`field-frame` 是第二种合法形态。
+- 凹槽轨道类控件（步进器、年份区间、团队选择）把这一条指示收在**轨道边界**：外层 `has-[input:focus-visible]:outline-2 outline-ring`，内层输入写 `outline-none`，一个控件只留一条可见指示。这不是第三种形态，内层的 `outline-none` 只是把重复的那条关掉。
+- 被 `overflow-hidden` 裁掉圆角的内嵌按钮（筛选胶囊的移除叉）用负偏移把同一条环收进轮廓（`focus-visible:outline-offset-[-2px]`），不改颜色、不加底色来冒充焦点；底色变化只能作为该元素自身语义的补充，不能作为唯一指示。
 - 禁用态：原生控件用 `disabled:`；Radix 用 `data-disabled` 的原语改写 `data-[disabled]:` 放在根节点上。字段禁用时标签与图标一并降到同档，字段说明保持原色并经 `aria-describedby` 挂到控件上。
 - 异步操作防重复提交，并用按钮状态、加载指示或 Toast 反馈；确认、投票等结果由服务端状态驱动，不依赖本地临时样式。
 - 屏幕阅读器播报口径：Toast 容器具名，error 用 `role="alert"`、其余 `role="status"`；倒计时徽章本身不播报，只经旁边的 polite 节点在关键秒数报一次；交替动画期间可访问名写在外层，动画层 `aria-hidden`。

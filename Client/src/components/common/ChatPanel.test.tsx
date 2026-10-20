@@ -1,8 +1,38 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ChatPanel } from "./ChatPanel";
+import { chatThrow } from "@/lib/Motion";
+import { stubMatchMedia } from "@/test/MatchMedia";
 import { STICKER_PREFIX } from "@/lib/Stickers";
 import type { ChatMessage } from "@bakagame/shared";
+import { ChatPanel } from "./ChatPanel";
+
+// 表情名来自构建期清单：测试用一份最小清单，路径与清单里的表情名一一对应。
+vi.mock("virtual:sticker-manifest", () => ({
+  default: {
+    packs: [
+      {
+        name: "夜愿华章",
+        dir: "nightwish",
+        preview: "/emojis/nightwish/audience_clap.gif",
+        animated: true,
+        items: [
+          {
+            key: "audience_clap",
+            label: "鼓掌",
+            path: "/emojis/nightwish/audience_clap.gif",
+            animated: true,
+          },
+          {
+            key: "ghost_laugh",
+            label: "冷笑",
+            path: "/emojis/nightwish/ghost_laugh.png",
+            animated: false,
+          },
+        ],
+      },
+    ],
+  },
+}));
 
 describe("ChatPanel (Common)", () => {
   const mockPlayers = [
@@ -156,10 +186,47 @@ describe("ChatPanel (Common)", () => {
     }
   });
 
-  it("合法表情包消息展示可访问图片与稳定资源路径", () => {
+  it("表情消息用清单里的表情名作替代文本，不同表情不再共用一句文案", async () => {
     const messages: ChatMessage[] = [
       {
-        id: "m-sticker",
+        id: "m-sticker-clap",
+        playerId: "p-other",
+        playerName: "对手",
+        text: `${STICKER_PREFIX}/emojis/nightwish/audience_clap.gif`,
+        createdAt: 1005,
+        system: false,
+      },
+      {
+        id: "m-sticker-smirk",
+        playerId: "p-me",
+        playerName: "我",
+        text: `${STICKER_PREFIX}/emojis/nightwish/ghost_laugh.png`,
+        createdAt: 1006,
+        system: false,
+      },
+    ];
+
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+      />
+    );
+
+    const clap = await screen.findByRole("img", { name: "鼓掌" });
+    expect(clap).toHaveAttribute("src", "/emojis/nightwish/audience_clap.gif");
+    expect(screen.getByRole("img", { name: "冷笑" })).toHaveAttribute(
+      "src",
+      "/emojis/nightwish/ghost_laugh.png"
+    );
+  });
+
+  it("清单里没有的表情路径退回通用文案，不留空替代文本", async () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m-sticker-unknown",
         playerId: "p-other",
         playerName: "对手",
         text: `${STICKER_PREFIX}/emojis/bilibili/2233_laugh.webp`,
@@ -178,8 +245,35 @@ describe("ChatPanel (Common)", () => {
     );
 
     const img = screen.getByRole("img", { name: "表情" });
-    expect(img).toBeInTheDocument();
+    // 等清单加载完仍是这句：读屏至少知道这是一条表情，不会退化成无名的图
+    await waitFor(() => expect(img).toHaveAttribute("alt", "表情"));
     expect(img).toHaveAttribute("src", "/emojis/bilibili/2233_laugh.webp");
+  });
+
+  it("消息流是有增量的 live region，读屏只报新到的消息", () => {
+    render(
+      <ChatPanel
+        messages={[
+          {
+            id: "m-log",
+            playerId: "p-other",
+            playerName: "对手",
+            text: "第 1 天描述阶段",
+            createdAt: 1000,
+            system: false,
+          },
+        ]}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+      />
+    );
+
+    const log = screen.getByRole("log");
+    expect(log).toHaveAttribute("aria-live", "polite");
+    // 只报 additions：整段历史每来一条新消息就被重读一遍是噪音
+    expect(log).toHaveAttribute("aria-relevant", "additions");
+    expect(within(log).getByText("第 1 天描述阶段")).toBeInTheDocument();
   });
 
   it("支持文本输入与发送触发回调，空文本时禁用", async () => {
@@ -242,6 +336,114 @@ describe("ChatPanel (Common)", () => {
     expect(
       within(screen.getByTestId("chat-message-bubble")).getByText("飞出去")
     ).toBeInTheDocument();
+  });
+
+  it(
+    "发送失败：收回动画把原文送回输入框并报一次失败",
+    async () => {
+      const failure = new Error("房间已断开");
+      const handleSend = vi.fn().mockRejectedValue(failure);
+      const onError = vi.fn();
+
+      render(
+        <ChatPanel
+          messages={[]}
+          players={mockPlayers}
+          myPlayerId="p-me"
+          onSendMessage={handleSend}
+          onError={onError}
+        />
+      );
+
+      const input = screen.getByRole("combobox", { name: "聊天消息" });
+      fireEvent.change(input, { target: { value: "我这轮先投 Kanade" } });
+      fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+      await waitFor(() => expect(handleSend).toHaveBeenCalledExactlyOnceWith("我这轮先投 Kanade"));
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure);
+      // 掷出时先清空输入框（防重复提交），原文随收回动画回来；动画不额外触发第二次发送
+      await waitFor(() => expect(input).toHaveValue("我这轮先投 Kanade"), {
+        timeout: chatThrow.waitMs,
+      });
+      expect(handleSend).toHaveBeenCalledTimes(1);
+    },
+    chatThrow.waitMs + 4000
+  );
+
+  it(
+    "已 ACK 但回显晚于等待窗口：不当成失败，原文不回输入框也不重发",
+    async () => {
+      const handleSend = vi.fn().mockResolvedValue(undefined);
+      const onError = vi.fn();
+      const { rerender } = render(
+        <ChatPanel
+          messages={[]}
+          players={mockPlayers}
+          myPlayerId="p-me"
+          onSendMessage={handleSend}
+          onError={onError}
+        />
+      );
+
+      const input = screen.getByRole("combobox", { name: "聊天消息" });
+      fireEvent.change(input, { target: { value: "回显慢了一步" } });
+      fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+      await waitFor(() => expect(handleSend).toHaveBeenCalledExactlyOnceWith("回显慢了一步"));
+
+      // 越过视觉等待窗口：胶囊自己撤掉，但业务上这条已经发出去了
+      await new Promise((resolve) => setTimeout(resolve, chatThrow.waitMs + 300));
+      expect(input).toHaveValue("");
+      expect(screen.getByRole("button", { name: "发送消息" })).toBeDisabled();
+      expect(onError).not.toHaveBeenCalled();
+      expect(handleSend).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <ChatPanel
+          messages={[
+            {
+              id: "late-echo",
+              playerId: "p-me",
+              playerName: "我",
+              text: "回显慢了一步",
+              createdAt: 1,
+              system: false,
+            },
+          ]}
+          players={mockPlayers}
+          myPlayerId="p-me"
+          onSendMessage={handleSend}
+          onError={onError}
+        />
+      );
+      expect(
+        within(screen.getByTestId("chat-message-bubble")).getByText("回显慢了一步")
+      ).toBeInTheDocument();
+      expect(handleSend).toHaveBeenCalledTimes(1);
+    },
+    chatThrow.waitMs + 6000
+  );
+
+  it("减弱动效下没有收回动画，失败当场把原文留在输入框", async () => {
+    stubMatchMedia(true);
+    try {
+      const handleSend = vi.fn().mockRejectedValue(new Error("发送失败"));
+      render(
+        <ChatPanel
+          messages={[]}
+          players={mockPlayers}
+          myPlayerId="p-me"
+          onSendMessage={handleSend}
+        />
+      );
+      const input = screen.getByRole("combobox", { name: "聊天消息" });
+      fireEvent.change(input, { target: { value: "关掉动效的那条" } });
+      fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+      await waitFor(() => expect(input).toHaveValue("关掉动效的那条"));
+      expect(handleSend).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("正文保留提及成员与上下文，不把提及误作输入候选", () => {

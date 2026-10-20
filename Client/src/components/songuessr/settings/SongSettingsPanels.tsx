@@ -226,7 +226,8 @@ function FilterChip({
           type="button"
           aria-label={removeLabel}
           onClick={onRemove}
-          className="flex w-7 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-none"
+          // 胶囊外层有 overflow-hidden，焦点环按约定内收 2px 才不会被裁掉；叠加 destructive 底色双重表明按下即移除
+          className="flex w-7 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive focus-visible:outline-offset-[-2px]"
         >
           <X className="h-3 w-3" />
         </button>

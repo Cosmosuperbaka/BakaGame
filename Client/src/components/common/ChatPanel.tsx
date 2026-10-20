@@ -37,7 +37,12 @@ import {
   stepJitterAnimation,
   systemNotice,
 } from "@/lib/Motion";
-import { STICKER_PREFIX, isValidStickerPath } from "@/lib/Stickers";
+import {
+  STICKER_PREFIX,
+  isValidStickerPath,
+  loadStickerLabels,
+  type StickerLabelIndex,
+} from "@/lib/Stickers";
 import {
   applyMention,
   filterMentionCandidates,
@@ -69,11 +74,15 @@ export interface ChatPanelProps {
   players?: ChatMentionPlayer[];
   /** 当前玩家 ID（用于区分左右气泡与自身高亮） */
   myPlayerId?: string;
-  /** 发送文本消息回调 */
+  /**
+   * 发送文本消息回调。
+   * 成功与否只看这个 promise：正常 resolve 即已发出（哪怕回显晚到），reject 才算失败；
+   * 调用方自己吞掉异常会让面板以为发送成功，玩家输入的原文就回不到输入框了。
+   */
   onSendMessage: (text: string) => Promise<void> | void;
   /** 发送表情包回调（未传入时默认以 STICKER_PREFIX 拼接入 onSendMessage） */
   onSendSticker?: (path: string) => Promise<void> | void;
-  /** 发送失败异常处理回调 */
+  /** 发送失败异常处理回调（面板已把原文收回输入框，这里只负责报错） */
   onError?: (error: unknown) => void;
   /** 频道说明：以系统提示样式固定为消息流第一行，用于交代谁能看到这里的消息 */
   notice?: string;
@@ -97,7 +106,7 @@ interface SendThrowState {
   key: number;
   text: string;
   anchor: { left: number; top: number; height: number; maxWidth: number };
-  /** `fly` 掷出并悬停等回显；`recall` 等不到回显，收回输入框 */
+  /** `fly` 掷出并悬停等回显；`recall` 没发出去，退回输入框把内容还给玩家 */
   phase: "fly" | "recall";
 }
 
@@ -353,15 +362,22 @@ export function ChatPanel({
     () => ({ capsule: capsuleRef, onTake: () => setThrown(null) }),
     []
   );
-  const recallThrow = useCallback(
-    () => setThrown((current) => current && { ...current, phase: "recall" }),
-    []
-  );
-  // 收回播完：胶囊撤掉，之后才到的回显按别人的消息那样弹出。
+  // 收回动画承诺还给输入框的内容；落点写回，业务确认后撤掉。空串表示只是撤掉胶囊。
+  const recalledTextRef = useRef("");
+  const recallThrow = useCallback((sent: string) => {
+    recalledTextRef.current = sent;
+    setThrown((current) => current && { ...current, phase: "recall" });
+  }, []);
+  // 收回播完：胶囊撤掉，内容在这刻真正回到输入框；之后才到的回显按别人的消息那样弹出。
   const finishRecall = useCallback(() => {
+    const recalled = recalledTextRef.current;
     setThrown(null);
     setPendingEcho(null);
+    // 玩家已经接着打字就不覆盖他的输入
+    setText((current) => (current ? current : recalled));
   }, []);
+  /** 一次发送的业务回执：成败只看 promise 有没有正常返回，动画时序不参与判定。 */
+  const attemptRef = useRef<{ acked: boolean } | null>(null);
   // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
   const mentionListId = useId();
   const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
@@ -383,13 +399,18 @@ export function ChatPanel({
     setPendingEcho(null);
   }
 
-  // 胶囊悬停等回显，等不到（频道不回显、网络慢）就收回输入框。
+  // 胶囊悬停等回显。等不到时按业务回执分流：ACK 已到只是频道不回显，撤掉胶囊即可；
+  // 没 ACK 才把内容收回输入框，别让玩家重打。
   const waitingKey = pendingEcho && thrown?.phase === "fly" ? thrown.key : null;
+  const waitingText = thrown?.phase === "fly" ? thrown.text : "";
   useEffect(() => {
     if (waitingKey === null) return;
-    const timer = window.setTimeout(recallThrow, chatThrow.waitMs);
+    const timer = window.setTimeout(
+      () => recallThrow(attemptRef.current?.acked ? "" : waitingText),
+      chatThrow.waitMs
+    );
     return () => window.clearTimeout(timer);
-  }, [waitingKey, recallThrow]);
+  }, [waitingKey, waitingText, recallThrow]);
 
   const candidates = useMemo(
     () =>
@@ -398,6 +419,17 @@ export function ChatPanel({
         : [],
     [mention, mentionablePlayers]
   );
+
+  // 表情的替代文本要用清单里的表情名。清单仍旧按需加载：只在消息里真的出现表情时才取，
+  // 没发过表情的房间不为整份清单买单。
+  const [stickerLabels, setStickerLabels] = useState<StickerLabelIndex | null>(null);
+  const hasSticker = useMemo(
+    () => messages.some((message) => !message.system && message.text.startsWith(STICKER_PREFIX)),
+    [messages]
+  );
+  useEffect(() => {
+    if (hasSticker && !stickerLabels) void loadStickerLabels().then(setStickerLabels);
+  }, [hasSticker, stickerLabels]);
 
   const closeMention = useCallback(() => {
     setMention(null);
@@ -428,10 +460,13 @@ export function ChatPanel({
     [mention, text, closeMention]
   );
 
-  /** 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。 */
+  /**
+   * 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。
+   * 返回是否真的掷出：减弱动效或量不到输入框时没有胶囊可收回，失败要把内容直接写回输入框。
+   */
   const startThrow = (sent: string) => {
     const input = inputRef.current;
-    if (reducedMotion || !input) return;
+    if (reducedMotion || !input) return false;
     const rect = input.getBoundingClientRect();
     setThrown({
       key: performance.now(),
@@ -445,18 +480,36 @@ export function ChatPanel({
       const { keyframes, transition } = stepJitterAnimation(jitterShape.sendRecoil);
       void animate(icon, keyframes, transition);
     }
+    return true;
+  };
+
+  /**
+   * 发送成功只认 ACK：回显晚于等待窗口时内容不曾回到输入框，玩家看不到「没发出去」的假信号。
+   * 万一先前已经收回，确认后就撤掉那一条原样文本，避免玩家照着它再发一遍；改过就留给他自己判断。
+   */
+  const confirmSent = (sent: string) => {
+    if (recalledTextRef.current !== sent) return;
+    recalledTextRef.current = "";
+    setText((current) => (current === sent ? "" : current));
   };
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    startThrow(trimmed);
+    const attempt = { acked: false };
+    attemptRef.current = attempt;
+    // 先清输入框再 await：乐观清除是防重复提交，内容找回来看下面的业务回执
+    const flying = startThrow(trimmed);
     setText("");
     closeMention();
     try {
       await onSendMessage(trimmed);
+      attempt.acked = true;
+      confirmSent(trimmed);
     } catch (error) {
-      recallThrow();
+      // 掷出过就交给收回动画，落点把内容写回；没有动画可走时立刻写回，不让内容丢
+      if (flying) recallThrow(trimmed);
+      else setText(trimmed);
       onError?.(error);
     }
   };
@@ -476,7 +529,14 @@ export function ChatPanel({
   return (
     <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
       <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
-        <div ref={messagesRef} className="min-w-0 space-y-2">
+        {/* 消息流按 log 播报：只报新到的那几条，不每次把整段历史重读一遍 */}
+        <div
+          ref={messagesRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          className="min-w-0 space-y-2"
+        >
           {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
           <AnimatePresence initial={false}>
             {messages.map((message) => {
@@ -534,7 +594,8 @@ export function ChatPanel({
                             ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
                             : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
                           : isGhost
-                            ? "rounded-bl-sm bg-muted/40 border border-dashed border-border text-foreground/85"
+                            ? // 半透明底上再叠透明度会把对比度压到线下，降档用语义色而不是 alpha。
+                              "rounded-bl-sm bg-muted/40 border border-dashed border-border text-muted-foreground"
                             : "rounded-bl-sm bg-muted text-foreground",
                         mentionsMe && "ring-1 ring-primary/40"
                       )}
@@ -542,7 +603,8 @@ export function ChatPanel({
                       {safeStickerPath ? (
                         <img
                           src={safeStickerPath}
-                          alt="表情"
+                          // 清单未到或路径不在清单里时退回通用文案，不把 alt 留空
+                          alt={stickerLabels?.get(safeStickerPath) ?? "表情"}
                           className="h-20 w-20 object-contain"
                         />
                       ) : (
