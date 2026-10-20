@@ -18,7 +18,8 @@
     "test:production-smoke": "bun run scripts/ProductionSmoke.ts",
     "verify": "bun run lint && bun run check && bun run test:coverage",
     "test:grafana": "bun run src/scripts/TestGrafana.ts",
-    "docs:openapi": "bun run src/scripts/ExportOpenapi.ts"
+    "docs:openapi": "bun run src/scripts/ExportOpenapi.ts",
+    "docs:env": "bun run src/scripts/ExportEnvExample.ts"
   },
   "dependencies": {
     "@applemusic-like-lyrics/lyric": "^1.1.0",
