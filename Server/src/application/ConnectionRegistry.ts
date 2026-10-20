@@ -7,18 +7,9 @@ export class ConnectionRegistry {
   private readonly playerIndex = new Map<string, ConnectionRecord>();
   private readonly lobbySubscribers = new Set<ConnectionRecord>();
 
-  // ==================== 显式席位变更入口 ====================
-  // 索引此前只由属性 setter 隐式维护：业务代码里一句 `connection.roomId = undefined`
-  // 就会偷偷改动索引，读代码的人完全看不出来。这几个方法把"改席位"变成显式动作，
-  // 内部仍走同一套索引更新逻辑，行为不变。
-  setRoom(connection: ConnectionRecord, roomId: string | undefined): void {
-    connection.roomId = roomId;
-  }
-
-  setPlayer(connection: ConnectionRecord, playerId: string | undefined): void {
-    connection.playerId = playerId;
-  }
-
+  // ==================== 席位变更入口 ====================
+  // 索引只由 registerConnection 里拦截的属性赋值维护：下面两个方法就是全部入口，
+  // 业务代码改 roomId / playerId 时索引跟着动，不需要也不该再有第二种写法。
   /** 连接与其席位彻底脱钩（房间与玩家一起清空）。 */
   detach(connection: ConnectionRecord): void {
     connection.roomId = undefined;
