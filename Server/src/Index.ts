@@ -76,7 +76,8 @@ const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad } = create
   isShuttingDown: () => isShuttingDown,
   onTriggerShutdown: async () => {
     isShuttingDown = true;
-    // 预通知只摘除 readiness；真正的排空与释放由后续 signal 的唯一任务负责。
+    // 这里只翻停机标记：`/readyz` 随之回 503，新 WS 握手也一并被拒（两道闸门读同一份状态）。
+    // 向各房间广播停机通知是 notify-shutdown 路由自己的事，真正的排空与释放仍归后续 signal 的唯一任务。
   },
 });
 
