@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
+import { SoundToggle } from "@/components/common/SoundToggle";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { FeedbackDialog } from "@/components/account/FeedbackDialog";
 import { LoginDialog } from "@/components/account/LoginDialog";
@@ -81,6 +82,7 @@ export function AccountButton() {
     return (
       <>
         <ThemeToggle />
+        <SoundToggle />
         <span aria-hidden="true" className="block h-9 w-20" />
       </>
     );
@@ -89,6 +91,7 @@ export function AccountButton() {
     return (
       <>
         <ThemeToggle />
+        <SoundToggle />
         <Button variant="ghost" onClick={(event) => openDialog("login", originOf(event))}>
           <UserRound />
           账号
@@ -96,11 +99,19 @@ export function AccountButton() {
       </>
     );
   }
-  if (status !== "signedIn" || !profile) return <ThemeToggle />;
+  if (status !== "signedIn" || !profile) {
+    return (
+      <>
+        <ThemeToggle />
+        <SoundToggle />
+      </>
+    );
+  }
 
   return (
     <>
       <ThemeToggle />
+      <SoundToggle />
       <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
         <Popover.Trigger asChild>
           <motion.button

@@ -11,12 +11,15 @@ import { recoverFromDomInvariant } from "./lib/DomRecovery";
 import { stripStaticSeo } from "./lib/StaticSeo";
 import { installMotionTokens } from "./lib/Motion";
 import { initTheme } from "./lib/Theme";
+import { initSoundEffects } from "./lib/SoundEffects";
 
 initClientSentry();
 // CSS 动效变量由 Motion.ts 的令牌生成，须在首次渲染前写入 :root。
 installMotionTokens();
 // index.html 的首帧脚本已先落位；这里接上系统主题与跨标签页的监听。
 initTheme();
+// 只挂首次交互的解锁监听，此时不创建 AudioContext。
+initSoundEffects();
 setupGlobalImageProtection();
 // 先摘掉构建期注入的静态 SEO 标签，避免与 Helmet 写入的标签重复（详见 StaticSeo.ts）。
 stripStaticSeo();

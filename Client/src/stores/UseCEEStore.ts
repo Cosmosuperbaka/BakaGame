@@ -25,6 +25,7 @@ import {
 } from "@/lib/AntiCheatCopy";
 import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
+import { playSound } from "@/lib/SoundEffects";
 import { isProtocolError } from "@/lib/WebsocketClient";
 
 /**
@@ -214,8 +215,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
             );
             removeCEESession(result.roomId);
           } finally {
-            if (generation === connectionGeneration)
-              get().resetRoom(get().roomClosedAt !== null);
+            if (generation === connectionGeneration) get().resetRoom(get().roomClosedAt !== null);
           }
           throw new DOMException("入房操作已取消", "AbortError");
         }
@@ -399,9 +399,19 @@ export function handleCEEMessage(message: ServerMessage) {
       requestSync();
       return;
     }
+    const previous = rawSnapshot;
     rawSnapshot = result.state;
     snapshotRevision = result.revision;
     useCEEStore.setState({ snapshot: rawSnapshot });
+    // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
+    if (
+      previous &&
+      previous.roomId === rawSnapshot.roomId &&
+      rawSnapshot.roundNumber > previous.roundNumber &&
+      rawSnapshot.phase === "guessing"
+    ) {
+      playSound("roundStart");
+    }
   } else if (message.event === "cee.game.privateState") {
     const result = consumeStateSync<CEEPrivateState>(rawPrivate, privateRevision, message.payload);
     if (result.needsFullSync || !result.state) {
@@ -421,12 +431,9 @@ export function handleCEEMessage(message: ServerMessage) {
         approved ? "success" : "error"
       );
   } else if (
-    [
-      "cee.room.closed",
-      "cee.player.kicked",
-      "session.replaced",
-      "cee.session.replaced",
-    ].includes(message.event)
+    ["cee.room.closed", "cee.player.kicked", "session.replaced", "cee.session.replaced"].includes(
+      message.event
+    )
   ) {
     // 房间已经结束：在途入房/恢复的 ACK 即使晚到也不能再接回这个会话。
     store.cancelEntry();
