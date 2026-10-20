@@ -386,6 +386,8 @@ export type CEECommand = keyof typeof CEEPayloadSchemas;
 export type CEEPayload<T extends CEECommand> = Static<(typeof CEEPayloadSchemas)[T]>;
 export type CEEClientMessage = { [K in CEECommand]: ClientEnvelope<K, CEEPayload<K>> }[CEECommand];
 export const CEE_STATE_EVENTS = ["cee.room.snapshot", "cee.game.privateState"] as const;
+/** 大厅房间列表的事件名；口径同另外两个游戏，服务端与传输层丢弃判定读同一个常量。 */
+export const CEE_LOBBY_ROOMS_EVENT = "cee.lobby.rooms";
 
 /** 线路信封接纳 null；进入业务层前统一规范化为可选字符串。 */
 const optionalEnvelopeString = (maxLength: number) =>

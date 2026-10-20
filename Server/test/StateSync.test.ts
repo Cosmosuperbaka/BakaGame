@@ -212,6 +212,7 @@ test("积压时大厅列表帧与状态帧各走一条闸门：丢列表不把�
   backlog = STATE_BACKLOG_SHED_BYTES + 1;
   sender.send(createEvent("lobby.rooms", []));
   sender.send(createEvent("song.lobby.rooms", []));
+  sender.send(createEvent("cee.lobby.rooms", []));
   expect(sent).toHaveLength(2);
 
   backlog = 0;

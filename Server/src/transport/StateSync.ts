@@ -1,5 +1,5 @@
 import { compare } from "fast-json-patch";
-import { CEE_STATE_EVENTS } from "../shared/CEE";
+import { CEE_LOBBY_ROOMS_EVENT, CEE_STATE_EVENTS } from "../shared/CEE";
 import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shared/Index";
 import { SONGUESSR_LOBBY_ROOMS_EVENT } from "../shared/SonGuessr";
 import { WHOISFAKER_LOBBY_ROOMS_EVENT } from "../shared/WhoIsFaker";
@@ -25,7 +25,11 @@ const STATE_EVENTS = new Set([
  * 大厅列表是这一类里最贵的一条（一次房间变更 = 全部订阅者 × 整张表）；它不进 `STATE_EVENTS`，
  * 因为差量通道要为每条连接维护基线并按周期全量校准，而大厅订阅者可能一辈子只收一份列表。
  */
-const FULL_REFRESH_EVENTS = new Set([WHOISFAKER_LOBBY_ROOMS_EVENT, SONGUESSR_LOBBY_ROOMS_EVENT]);
+const FULL_REFRESH_EVENTS = new Set([
+  WHOISFAKER_LOBBY_ROOMS_EVENT,
+  SONGUESSR_LOBBY_ROOMS_EVENT,
+  CEE_LOBBY_ROOMS_EVENT,
+]);
 
 /**
  * 这一帧属于哪条丢弃闸门？ACK、错误与聊天有去无回，丢了客户端就一直等，所以归为 `undefined`。

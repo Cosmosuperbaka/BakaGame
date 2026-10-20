@@ -7,6 +7,7 @@ import type {
   CEERoomSummary,
   ConnectionRecord,
 } from "../shared/Index";
+import { CEE_LOBBY_ROOMS_EVENT } from "../shared/CEE";
 import { AppError } from "../domain/Errors";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
@@ -22,6 +23,7 @@ import { CEESearchQuota, isCEESearchCommand } from "./CEESearchQuota";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
 import { CEERoomDirectory, normalizeCEERoomId, type CEERoomTarget } from "./CEERoomDirectory";
+import { LobbyFanout } from "./LobbyFanout";
 
 /** 上游房间列表的缓存时长；失败后同样等待该时长再重试，避免每次房号未命中都回源。 */
 const REMOTE_ROOMS_TTL_MS = 5000;
@@ -37,6 +39,7 @@ export class CEEService implements AdminRoomControl {
   private readonly searchQuota: CEESearchQuota;
   private readonly provenance: CEESearchProvenance;
   private readonly entering = new Set<string>();
+  private readonly lobbyFanout: LobbyFanout;
   private readonly now: () => number;
   private remoteRooms: CEEUpstreamRoom[] = [];
   private remoteFetchedAt = Number.NEGATIVE_INFINITY;
@@ -69,6 +72,12 @@ export class CEEService implements AdminRoomControl {
     this.original =
       options.originalService ??
       new CEEOriginalService({ ...options, logger: options.eventLogger });
+    this.lobbyFanout = new LobbyFanout({
+      event: CEE_LOBBY_ROOMS_EVENT,
+      now: () => this.now(),
+      broadcast: (payload) => this.native.state.connections.broadcastToLobby(payload),
+      summaries: () => this.listRooms(),
+    });
     this.native.state.onChange = () => this.broadcastLobby();
   }
   registerConnection(connection: ConnectionRecord): void {
@@ -99,7 +108,7 @@ export class CEEService implements AdminRoomControl {
       connection.lobbySubscribed = true;
       await this.refreshRemote();
       const rooms = this.listRooms();
-      connection.send(createEvent("cee.lobby.rooms", rooms));
+      connection.send(createEvent(CEE_LOBBY_ROOMS_EVENT, rooms));
       return { rooms, originalAvailable: this.original.configured };
     }
     if (
@@ -259,13 +268,11 @@ export class CEEService implements AdminRoomControl {
   }
 
   private broadcastLobby(): void {
-    const rooms = this.listRooms();
-    const serialized = JSON.stringify(rooms);
+    // 内容没变就不进合并窗：CEE 的每条命令都会走到这里，不去重等于任何操作都向大厅重发整张表。
+    const serialized = JSON.stringify(this.listRooms());
     if (serialized === this.lastLobby) return;
     this.lastLobby = serialized;
-    for (const connection of this.connections.values())
-      if (connection.lobbySubscribed && !connection.roomId)
-        connection.send(createEvent("cee.lobby.rooms", rooms));
+    this.lobbyFanout.request();
   }
   /** 只有成功的列表才对齐别名：上游暂时不可达时保留现有别名，大厅暂不展示原版房。 */
   private async refreshRemote(): Promise<void> {
