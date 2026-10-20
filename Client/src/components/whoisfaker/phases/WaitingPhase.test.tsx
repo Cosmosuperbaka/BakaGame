@@ -245,6 +245,8 @@ describe("waiting room sharing", () => {
     await waitFor(() =>
       expect(readRoomSettingsMemory("faker")).toEqual({
         revealRoleOnDeath: false,
+        // 快照没带这个字段时按服务端的默认（关闭）记，不臆造房主没选过的偏好。
+        spectatorsSeeAnswers: false,
         roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
       })
     );
@@ -254,10 +256,30 @@ describe("waiting room sharing", () => {
     );
   });
 
+  it("房主可以单独打开旁观者局中看答案的开关", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useWhoIsFakerStore.setState({
+      privateState: { ...privateState, playerId: "host" },
+      sendCommand,
+    });
+
+    render(<WaitingPhase />);
+    fireEvent.click(screen.getByRole("button", { name: "房间设置" }));
+    fireEvent.click(screen.getByRole("switch", { name: "旁观者可见答案" }));
+
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledWith(
+        "room.updateSettings",
+        expect.objectContaining({ spectatorsSeeAnswers: true })
+      )
+    );
+  });
+
   it("新建房间的等待页先套用上次设置，落定后才出设置面板", async () => {
     markPendingRestore("faker", "1234");
     saveRoomSettingsMemory("faker", {
       revealRoleOnDeath: false,
+      spectatorsSeeAnswers: true,
       roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
     });
     let resolve: (value: Record<string, unknown>) => void = () => {};
@@ -278,6 +300,7 @@ describe("waiting room sharing", () => {
     expect(screen.queryByRole("button", { name: "身份设置" })).not.toBeInTheDocument();
     expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
       revealRoleOnDeath: false,
+      spectatorsSeeAnswers: true,
       roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
     });
 

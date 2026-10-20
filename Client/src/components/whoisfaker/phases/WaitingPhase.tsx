@@ -1,5 +1,16 @@
 import { useCallback, useState } from "react";
-import { Check, X, Gamepad2, Settings, Lock, Globe, Users, Eye, VenetianMask } from "lucide-react";
+import {
+  Check,
+  X,
+  Gamepad2,
+  Settings,
+  Lock,
+  Globe,
+  Users,
+  Eye,
+  EyeOff,
+  VenetianMask,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -74,6 +85,8 @@ export function WaitingPhase() {
   const restoring = useRoomSettingsRestore("faker", snapshot.roomId, async (memory) => {
     await sendCommand("room.updateSettings", {
       revealRoleOnDeath: memory.revealRoleOnDeath,
+      // 上次没有记这个字段时按默认（关闭）重放，不把旧记忆解释成「打开」。
+      spectatorsSeeAnswers: memory.spectatorsSeeAnswers ?? false,
       roleConfig: memory.roleConfig,
     });
   });
@@ -213,6 +226,7 @@ const settingsOf = (snapshot: WhoIsFakerRoomSnapshot) => ({
   password: "",
   allowSpectators: snapshot.allowSpectators,
   revealRoleOnDeath: snapshot.settings.revealRoleOnDeath ?? true,
+  spectatorsSeeAnswers: snapshot.settings.spectatorsSeeAnswers ?? false,
   ...snapshot.settings.roleConfig,
 });
 
@@ -240,12 +254,14 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
       password: draft.isPrivate ? draft.password || undefined : "",
       allowSpectators: draft.allowSpectators,
       revealRoleOnDeath: draft.revealRoleOnDeath,
+      spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
       roleConfig: effectiveRoleConfig(draft, limits),
     },
     (payload) => {
       // 记住这次的房间内设置（名称与密码不记忆），下次创建的房间由等待页重放。
       saveRoomSettingsMemory("faker", {
         revealRoleOnDeath: payload.revealRoleOnDeath,
+        spectatorsSeeAnswers: payload.spectatorsSeeAnswers,
         roleConfig: payload.roleConfig,
       });
       return sendCommand("room.updateSettings", payload);
@@ -316,6 +332,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
         summary={[
           values.isPrivate ? "私密房间" : "公开房间",
           values.allowSpectators ? "允许旁观" : "不允许旁观",
+          values.spectatorsSeeAnswers ? "旁观可见答案" : "旁观隐藏答案",
         ]}
       >
         <div className="space-y-4">
@@ -349,6 +366,13 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
             icon={Users}
             checked={values.allowSpectators}
             onCheckedChange={(value) => edit("allowSpectators", value)}
+          />
+          <SettingSwitchRow
+            label="旁观者可见答案"
+            description="局中把双侧词语、全员身份与投票预览发给旁观者；关闭时旁观者看不到答案，结算后照常公开。"
+            icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
+            checked={values.spectatorsSeeAnswers}
+            onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
           />
         </div>
       </SettingsAccordion>

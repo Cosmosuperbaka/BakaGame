@@ -1719,9 +1719,16 @@ test("旁观者不会阻塞准备且可以作为 4 名正式玩家房间的出�
   expect(snapshot?.status.questionerPlayerId).toBe(joined[3].joinResult.playerId);
 });
 
-test("旁观者在局内可以看到所有玩家身份", async () => {
+test("开启 spectatorsSeeAnswers 后旁观者在局内可以看到所有玩家身份", async () => {
+  // 默认关闭（局中不下发答案与身份），口径见 WhoIsFakerSpectatorAnswers.test.ts；
+  // 这里验证房主打开开关时保持原有的旁观上帝视角。
   const { service } = createTestContext();
   const { host, result: hostResult } = await createRoom(service, "5858");
+  await execute(service, host, {
+    id: "enable-spectator-answers",
+    type: "room.updateSettings",
+    payload: { spectatorsSeeAnswers: true },
+  });
   const joined: JoinedPlayer[] = [];
 
   for (let index = 0; index < 5; index += 1) {

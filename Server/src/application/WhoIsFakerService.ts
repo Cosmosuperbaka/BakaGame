@@ -536,6 +536,7 @@ export class WhoIsFakerService implements AdminRoomControl {
         allowSpectators: message.payload.allowSpectators,
         roleConfig: createDefaultRoleConfig(),
         revealRoleOnDeath: true,
+        spectatorsSeeAnswers: false,
       },
       hostPlayerId: "",
       createdAt: this.now(),
@@ -735,6 +736,10 @@ export class WhoIsFakerService implements AdminRoomControl {
 
     if (payload.revealRoleOnDeath != null) {
       room.settings.revealRoleOnDeath = payload.revealRoleOnDeath;
+    }
+
+    if (payload.spectatorsSeeAnswers != null) {
+      room.settings.spectatorsSeeAnswers = payload.spectatorsSeeAnswers;
     }
 
     if (payload.roleConfig) {
@@ -3707,6 +3712,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       settings: {
         roleConfig: room.settings.roleConfig,
         revealRoleOnDeath: room.settings.revealRoleOnDeath ?? true,
+        spectatorsSeeAnswers: room.settings.spectatorsSeeAnswers ?? false,
       },
       status: {
         phase: room.round?.phase ?? "waiting",
@@ -3796,9 +3802,14 @@ export class WhoIsFakerService implements AdminRoomControl {
     // 房间公共快照永远不包含秘密信息，私有视图单独按连接发放。
     const round = room.round;
     const state = round?.assignments[player.id];
-    const hasPrivilegedIdentityView = Boolean(
-      round && (round.questionerPlayerId === player.id || player.membership === "spectator")
-    );
+    const isQuestioner = Boolean(round && round.questionerPlayerId === player.id);
+    // 旁观者的上帝视角与「允许旁观」是两件事：进场资格由 allowSpectators 决定，
+    // 进场后能看到多少由 spectatorsSeeAnswers 决定。开关关闭时局中只按普通连接发放，
+    // 结算后答案随公开快照（summary 与 revealedRole）全房可见，这里不再收紧。
+    const spectatorSeesAnswers =
+      player.membership === "spectator" &&
+      ((room.settings.spectatorsSeeAnswers ?? false) || !this.isRoundActive(room));
+    const hasPrivilegedIdentityView = Boolean(round && (isQuestioner || spectatorSeesAnswers));
 
     if (!round) {
       return {

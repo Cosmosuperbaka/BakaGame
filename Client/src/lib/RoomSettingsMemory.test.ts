@@ -71,6 +71,7 @@ describe("room settings memory", () => {
     it("round-trips each game's own shape", () => {
       const faker: FakerRoomSettingsMemory = {
         revealRoleOnDeath: false,
+        spectatorsSeeAnswers: true,
         roleConfig: { undercoverCount: 3, hasAngel: true, hasBlank: false },
       };
       saveRoomSettingsMemory("faker", faker);

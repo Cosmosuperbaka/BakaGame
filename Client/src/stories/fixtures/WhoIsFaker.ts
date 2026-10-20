@@ -853,6 +853,8 @@ export function wifSettings(
     settings: {
       roleConfig: { undercoverCount: 2, hasAngel: true, hasBlank: true },
       revealRoleOnDeath: true,
+      // 观战故事线要展示旁观的上帝视角（见 observerExtras），按「房主打开了开关」摆。
+      spectatorsSeeAnswers: true,
     },
     status: stageStatus("waiting", {}),
     players: waitingPlayers(),

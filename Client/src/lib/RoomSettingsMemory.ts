@@ -22,9 +22,10 @@ export interface RoomCreateDefaults {
   source?: "native" | "original";
 }
 
-/** 谁是卧底的房间内设置：揭露规则与阵营配置。 */
+/** 谁是卧底的房间内设置：揭露规则、旁观答案可见性与阵营配置。 */
 export interface FakerRoomSettingsMemory {
   revealRoleOnDeath: boolean;
+  spectatorsSeeAnswers: boolean;
   roleConfig: RoleConfig;
 }
 

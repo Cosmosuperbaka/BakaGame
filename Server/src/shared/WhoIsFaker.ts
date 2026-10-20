@@ -80,6 +80,12 @@ export interface RoomSettings {
   allowSpectators: boolean;
   roleConfig: RoleConfig;
   revealRoleOnDeath: boolean;
+  /**
+   * 旁观者能否在局中看到双侧答案与全员身份。默认关闭：
+   * 「允许旁观」只决定能不能进场，不决定进场后看到多少，两者正交。
+   * 结算后（gameOver）答案本来就随公开快照全房可见，这个开关只管局中。
+   */
+  spectatorsSeeAnswers: boolean;
 }
 
 export interface WhoIsFakerPlayerRecord {
@@ -433,6 +439,7 @@ export interface WhoIsFakerRoomSnapshot {
   settings: {
     roleConfig: RoleConfig;
     revealRoleOnDeath?: boolean;
+    spectatorsSeeAnswers?: boolean;
   };
   status: {
     phase: WhoIsFakerPhase;
@@ -491,7 +498,7 @@ export interface WhoIsFakerPrivateState {
   blankGuessUsed: boolean;
   nightActionSubmitted: boolean;
   /**
-   * 本局的全部词语。只发给已经能看到全部身份的出题人与旁观者，
+   * 本局的全部词语。只发给出题人，以及房间开启「旁观者可见答案」或已经结算的旁观者；
    * 出局玩家仍留在场上交流，因此不在此列。
    */
   globalWords?: {
@@ -509,7 +516,7 @@ export interface WhoIsFakerPrivateState {
     side: PlayerSide;
     alive: boolean;
   }>;
-  /** 仅出题人和旁观者收到的当前投票与夜间行动预览。 */
+  /** 仅出题人、以及能看到全部身份的旁观者收到的当前投票与夜间行动预览。 */
   privilegedActionPreview?: PrivilegedActionPreview;
 }
 
@@ -562,6 +569,7 @@ export const WhoIsFakerPayloadSchemas = {
       allowSpectators: t.Optional(t.Boolean()),
       roleConfig: t.Optional(RoleConfigSchema),
       revealRoleOnDeath: t.Optional(t.Boolean()),
+      spectatorsSeeAnswers: t.Optional(t.Boolean()),
     },
     strict
   ),

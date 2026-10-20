@@ -14,6 +14,7 @@ import { useRoomSettingsRestore } from "./UseRoomSettingsRestore";
 
 const fakerMemory: FakerRoomSettingsMemory = {
   revealRoleOnDeath: true,
+  spectatorsSeeAnswers: false,
   roleConfig: { undercoverCount: 2, hasAngel: false, hasBlank: true },
 };
 

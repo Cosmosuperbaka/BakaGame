@@ -134,6 +134,8 @@ export const SettingsPanelFewPlayers: Story = {
         settings: {
           roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
           revealRoleOnDeath: true,
+          // 服务端的默认值：旁观者局中看不到答案。
+          spectatorsSeeAnswers: false,
         },
       }),
       wifPrivate("host", "waiting")
