@@ -91,12 +91,15 @@ export const statusRoutes = ({
     }
   };
 
+  let resolvedVersion: string | undefined;
   const resolveVersion = (): string => {
+    if (resolvedVersion !== undefined) return resolvedVersion;
     try {
-      return version();
+      resolvedVersion = version();
     } catch {
       return "unknown";
     }
+    return resolvedVersion;
   };
 
   const buildSnapshot = async (): Promise<PublicStatusSnapshot> => {

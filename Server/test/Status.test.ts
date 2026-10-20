@@ -159,6 +159,32 @@ describe("公开状态接口", () => {
     expect(third.observedAt).toBe(clock);
   });
 
+  test("发布版本只解析一次，重复探测不会反复读仓库", async () => {
+    let calls = 0;
+    let clock = 1_000;
+    const app = statusRoutes({
+      version: () => {
+        calls += 1;
+        return `V1.0.${calls}`;
+      },
+      now: () => clock,
+      cacheTtlMs: 0,
+    });
+
+    const first = (await (
+      await app.handle(new Request("http://localhost/api/status"))
+    ).json()) as PublicStatusSnapshot;
+    clock += 1;
+    const second = (await (
+      await app.handle(new Request("http://localhost/api/status"))
+    ).json()) as PublicStatusSnapshot;
+
+    expect(calls).toBe(1);
+    expect(first.version).toBe("V1.0.1");
+    expect(second.version).toBe("V1.0.1");
+    expect(second.observedAt).toBe(1_001);
+  });
+
   test("并发请求共用同一轮探测", async () => {
     let fetches = 0;
     let release!: () => void;
