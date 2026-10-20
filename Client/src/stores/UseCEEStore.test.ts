@@ -34,6 +34,22 @@ const snapshot: CEERoomSnapshot = {
   spectateRequests: [],
 };
 
+it("停机时原地待命：保留房间会话，只提示等待重连", () => {
+  writeCEESession("1234", "cee-token");
+  useCEEStore.setState({ roomId: "1234", sessionToken: "cee-token", snapshot });
+
+  handleCEEMessage({
+    type: "event",
+    event: "server.shutdown",
+    payload: { message: "服务器维护中" },
+  } as never);
+
+  // 服务端会落盘房间，重连后由 useCEERoomLifecycle 带原票据重进；清掉会话就真回不去了。
+  expect(useCEEStore.getState().roomId).toBe("1234");
+  expect(readCEESession("1234")).toBe("cee-token");
+  expect(useCEEStore.getState().notice?.text).toBe("服务器维护中");
+});
+
 afterEach(() => {
   resetCEEStateSync();
   useCEEStore.getState().resetRoom();

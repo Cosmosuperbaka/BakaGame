@@ -558,7 +558,9 @@ export function initSonGuessrWs() {
         roomEntry.cancel();
         const message =
           (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
-        leaveRoom(useSonGuessrStore.getState().roomId, message, 10_000);
+        // 原地待命：保留票据与快照。连接恢复后 onStatus 会带原 sessionToken 自动
+        // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
+        useSonGuessrStore.getState().setNotice(message, "error", 10_000);
         break;
       }
     }

@@ -284,7 +284,7 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState().roomClosedAt).not.toBeNull();
   });
 
-  it("leaves room, clears token, and displays shutdown message on server.shutdown", () => {
+  it("停机时原地待命：保留票据与房间态，只提示等待重连", () => {
     saveSessionToken("7890", "shutdown-token");
     useWhoIsFakerStore.getState().joinRoomState("7890", "shutdown-token");
     initGameSocket();
@@ -295,10 +295,11 @@ describe("game store integration", () => {
       payload: {},
     });
 
-    expect(getSessionToken("7890")).toBeNull();
-    expect(useWhoIsFakerStore.getState().roomId).toBeNull();
-    expect(useWhoIsFakerStore.getState().snapshot).toBeNull();
-    expect(useWhoIsFakerStore.getState().roomClosedAt).not.toBeNull();
+    // 服务端会把房间落盘，重连后凭原票据自动回原位；提前清票据才是真的回不去了。
+    expect(getSessionToken("7890")).toBe("shutdown-token");
+    expect(useWhoIsFakerStore.getState().roomId).toBe("7890");
+    expect(useWhoIsFakerStore.getState().sessionToken).toBe("shutdown-token");
+    expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
     expect(useWhoIsFakerStore.getState().toasts).toContainEqual(
       expect.objectContaining({
         text: SERVER_SHUTDOWN_MESSAGE,

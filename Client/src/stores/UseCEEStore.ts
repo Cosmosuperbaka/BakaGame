@@ -407,13 +407,17 @@ export function handleCEEMessage(message: ServerMessage) {
       "cee.player.kicked",
       "session.replaced",
       "cee.session.replaced",
-      "server.shutdown",
     ].includes(message.event)
   ) {
     if (store.roomId) removeCEESession(store.roomId);
     store.resetRoom(true);
     const payload = message.payload as { reason?: string; message?: string };
     store.setNotice(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");
+  } else if (message.event === "server.shutdown") {
+    // 原地待命：不清会话、不重置房间。重启后由 useCEERoomLifecycle 带原票据重进；
+    // 真回不去时会走上面的会话结束分支。
+    const payload = message.payload as { message?: string; reason?: string };
+    store.setNotice(payload.message ?? payload.reason ?? "服务正在重启，稍后将自动重连");
   }
 }
 

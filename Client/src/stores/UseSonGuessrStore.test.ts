@@ -387,7 +387,6 @@ describe("Songuessr store integration", () => {
     ["song.room.closed", "房间已关闭"],
     ["song.room.kicked", "你已被移出房间"],
     ["session.replaced", "当前席位已在另一个标签页接管"],
-    ["server.shutdown", SERVER_SHUTDOWN_MESSAGE],
   ])("clears local authority when receiving %s", (event, notice) => {
     saveSonGuessrSessionToken("4567", "room-token");
     useSonGuessrStore.setState({
@@ -410,6 +409,31 @@ describe("Songuessr store integration", () => {
     });
     expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
     dispose();
+  });
+
+  it("停机时原地待命：保留票据与房间态，只提示等待重连", () => {
+    saveSonGuessrSessionToken("4567", "room-token");
+    useSonGuessrStore.setState({
+      roomId: "4567",
+      sessionToken: "room-token",
+      snapshot,
+      privateState,
+    });
+    const dispose = initSonGuessrWs();
+    try {
+      wsMock.messageHandlers[0]({ type: "event", event: "server.shutdown", payload: {} });
+
+      // 服务端会把房间落盘，重连后凭原票据回原位：票据与房间态都不该被清掉。
+      expect(getSonGuessrSessionToken("4567")).toBe("room-token");
+      expect(useSonGuessrStore.getState()).toMatchObject({
+        roomId: "4567",
+        sessionToken: "room-token",
+        notice: { text: SERVER_SHUTDOWN_MESSAGE, type: "error" },
+      });
+      expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
+    } finally {
+      dispose();
+    }
   });
 
   it("returns music search results through the authenticated command wrapper", async () => {
