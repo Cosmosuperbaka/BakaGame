@@ -148,6 +148,23 @@ test("被守护的具体文件清单符合预期（防解析空转）", () => {
   ]);
 });
 
+/**
+ * F61 的触发集合：工具链一致性断言读的文件必须命中 server 过滤，否则它「在跑但永不触发」，
+ * 正是 F55 那一类静默失效。清单写死在这里，脚本新读一个文件却不登记就会红。
+ */
+test("BuildToolchain.mjs 守护的文件都在 server 过滤里", () => {
+  const source = readFileSync(join(repoRoot, "Server/scripts/BuildToolchain.mjs"), "utf8");
+  const guarded = [...source.matchAll(REPO_FILE)].map((match) => match[1]);
+  assert.deepEqual([...new Set(guarded)].sort(), [
+    "Desktop/src-tauri/Cargo.lock",
+    "Mobile/android/build.gradle",
+    "Mobile/android/gradle/wrapper/gradle-wrapper.properties",
+  ]);
+  // 该脚本还读没有目录前缀的清单与 workflow，上面的正则抓不到，逐条点名防解析空转。
+  for (const path of ["package.json", "Server/package.json", ".github/workflows/ci.yml"])
+    assert.equal(hit("server", path), true, path);
+});
+
 const cases = [
   // F55：只改壳版本号也要跑 Server CI。
   ["server", "Desktop/src-tauri/tauri.conf.json", true],

@@ -83,6 +83,18 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 - Vite 配置前向兼容：配置文件**不得使用 `__dirname/__filename`**（用 `import.meta.dirname`）、**相对 import 必须带扩展名**、**不得使用不可擦除语法**（enum/namespace/参数属性）。测试文件走 SSR transform，不适用第一条，勿“顺手统一”。
 - `knip` 只做静态分析；`knip --fix` 会直接删代码，**禁止在本地或 CI 启用**。入口在配置里显式声明，不用忽略清单掩盖真实问题。
 - **Server 的 `bun` 是可执行运行时 pin，改它会改变测量仪器**（覆盖率插桩口径）。改 pin 必须与覆盖率阈值重校同批进行，阈值读脚本而不是显示值。换 bun 后第一次冒烟可能因冷缓存假红，先重跑一次再判断。独立调试 `bun install` 若卡死先换 verbose 复现，别误判成网络问题。
+- **一条构建路径的编译器/CLI 版本若出现在两个以上文件里，必须有代码级断言核对它们的关系**，文档只列出处、不列数值（数值表会在下一次升级时过期，而漂移的方向固定：本地那条路径不可用、CI 全绿）。出处表：
+
+| 构建路径 | 版本声明的出处 |
+|---|---|
+| workspace 安装（pnpm） | 根 `package.json` 的 `packageManager`（CI 的 setup-pnpm 不传自己的版本输入） |
+| Server 运行与测试（bun） | `Server/package.json` 的 `bun` devDependency；E2E 作业的 Setup Bun 必须同枚 |
+| Client 构建与测试（Node） | 根 `package.json` 的 `engines.node` 下界；`ci.yml` 顶层 `env.NODE_VERSION` 主版本单点 |
+| 桌面安装包（Rust + 打包 CLI） | `Desktop/src-tauri/Cargo.lock` 的 crate 版本；`ci.yml` 的打包 CLI 版本变量 |
+| 安卓 APK（Gradle + AGP） | `Mobile/android/gradle/wrapper/gradle-wrapper.properties`（本地路径）、`ci.yml` 的 Setup Gradle（CI 路径）、`Mobile/android/build.gradle` 的 AGP 支持范围 |
+
+  跨这些文件的核对集中在 `Server/scripts/BuildToolchain.mjs`（挂在 Server CI 上）；升级时改声明，不改断言的口径。
+
 - 升级前后在受影响包运行同一组检查；预检优于装完再测（比较新旧 tarball 的导出面与依赖字段，注意不要漏掉 `.d.mts/.d.cts`）。
 
 ### 开发与构建命令

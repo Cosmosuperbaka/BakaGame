@@ -131,7 +131,7 @@ Mobile/
 ├── capacitor.config.ts     # webDir=dist-web（内嵌产物），不做远程 URL
 ├── bridge/baka-bridge.js   # 唯一前端桥接：四成员契约 + 注册 + 通道证明闭环（challenge/sign/attest）
 ├── scripts/prepare-web.mjs # Client/dist → dist-web + 注入桥接 + 版本同步
-├── scripts/apk.mjs         # Gradle 定位（wrapper / PATH / ~/.gradle 缓存）并跑构建
+├── scripts/apk.mjs         # Gradle 定位（wrapper 声明 → 同版本缓存 → PATH）并跑构建
 └── android/                # 手写最小工程（等效 cap add android 产物，未跑过 CLI）
     ├── settings.gradle / build.gradle / gradle.properties
     ├── app/build.gradle / src/main/AndroidManifest.xml
@@ -149,7 +149,9 @@ Mobile/
 前置：JDK 17/21（**本机默认 JDK 25 与 AGP 8.7 未验证兼容**，出问题用
 `android/gradle.properties` 里注释掉的 `org.gradle.java.home` 指定）；Android SDK
 （本机在 `D:\AndroidSdk`，需设 `ANDROID_HOME` 或让 Studio 写 `android/local.properties`）；
-Gradle 8.9+（本机 `~/.gradle` 已缓存 8.14.3，`apk.mjs` 会自动命中，可离线复用）。
+Gradle 的版本出处是 `android/gradle/wrapper/gradle-wrapper.properties`（必须与 CI 的 Setup Gradle
+同一枚、且落在 `android/build.gradle` 里 AGP 的支持范围内，由 `Server/scripts/BuildToolchain.mjs` 断言）；
+`apk.mjs` 只取缓存里与声明同枚的发行版，取不到就报错，不会退回版本号最大的那一枚。
 
 ```bash
 # 0.（一次性）生成 Gradle wrapper：用 Android Studio 打开 Mobile/android/，

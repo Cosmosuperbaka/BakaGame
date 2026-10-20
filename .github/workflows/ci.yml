@@ -167,6 +167,13 @@ jobs:
         working-directory: Server
         run: node --test scripts/ServerCiFilter.mjs
 
+      # 构建工具链版本的一致性（Gradle wrapper↔Setup Gradle↔AGP 支持范围、e2e 的 bun↔工作区 pin、
+      # Node 主版本↔engines 下界、打包 CLI↔tauri crate）。这些值各写在两个以上文件里，
+      # 漂移的后果是本地那条构建路径不可用而 CI 全绿，所以由代码核对，不靠文档表格。
+      - name: Verify build toolchain versions agree
+        working-directory: Server
+        run: node --test scripts/BuildToolchain.mjs
+
       - name: Type check server
         run: pnpm --filter server check
 
@@ -440,8 +447,15 @@ jobs:
         working-directory: Mobile
         run: npm run sync
 
-      # 版本必须与 Mobile/android/gradle/wrapper/gradle-wrapper.properties 一致；
-      # AGP 8.7.3（Mobile/android/build.gradle）只支持 Gradle 8.x。
+      # apk.mjs 是「本地按 wrapper 构建」那条路径的入口：它选哪一枚 Gradle 决定本地构建能不能跑，
+      # 而这正是 CI 全绿也看不出来的那段（缓存里往往同时留着好几枚）。夹具是临时目录，不碰 SDK 与网络。
+      - name: Test the Gradle locator
+        working-directory: Mobile
+        run: npm run test
+
+      # 版本必须与 Mobile/android/gradle/wrapper/gradle-wrapper.properties 一致，且落在
+      # Mobile/android/build.gradle 里 AGP 的支持范围内；这层关系由 Server CI 的
+      # scripts/BuildToolchain.mjs 断言，本注释不复写数值。
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:

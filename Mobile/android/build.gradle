@@ -1,4 +1,6 @@
-// 顶层构建：AGP 8.7 + Kotlin 2.0（Gradle 8.9+ 可跑；本仓库 .gradle 已缓存 8.14.3）
+// 顶层构建。AGP 与 Kotlin 插件的版本出处就是下面的 buildscript，本行不复写版本号。
+// Gradle 用哪一枚不在这里声明：wrapper 与 CI 各写一次，两处必须同枚且落在 AGP 的支持范围内，
+// 由 Server/scripts/BuildToolchain.mjs 在 Server CI 里断言（F61：三处各写一次必然漂移）。
 buildscript {
     repositories {
         google()
