@@ -114,3 +114,53 @@ it("断点关闭不恢复到已隐藏入口，而回到常驻离开按钮", asyn
     vi.unstubAllGlobals();
   }
 });
+
+it("抽屉打开时顶栏对读屏与指针都不可达，关掉面板后恢复可达", async () => {
+  const user = userEvent.setup();
+  const onLeave = vi.fn();
+  stubMatchMedia(false);
+  function ShellWithDrawerOpen() {
+    const [openDrawer, setOpenDrawer] = useState<string | null>("players");
+    return (
+      <RoomShell
+        title="测试房"
+        onLeave={onLeave}
+        game={<button>游戏操作</button>}
+        drawers={[
+          {
+            key: "players",
+            icon: Users,
+            label: "玩家列表",
+            title: "玩家",
+            side: "left",
+            closeFrom: "md",
+            content: <input aria-label="面板输入" />,
+          },
+        ]}
+        openDrawer={openDrawer}
+        onDrawerChange={setOpenDrawer}
+      />
+    );
+  }
+  try {
+    render(<ShellWithDrawerOpen />);
+    expect(screen.getByRole("dialog", { name: "玩家" })).toBeInTheDocument();
+    const leave = document.querySelector<HTMLElement>('[aria-label="离开房间"]');
+    if (!leave) throw new Error("顶栏缺少离开房间按钮");
+
+    // 抽屉是 modal 面板：不用 Portal 只保证视觉上顶栏不被遮挡，语义上顶栏整片被划出无障碍树，
+    // 指针事件也被 body 关掉。先离场路径是「关面板 → 点离开」，代码与文案都不能说「始终可点」。
+    expect(leave.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(document.body.style.pointerEvents).toBe("none");
+    expect(onLeave).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "关闭面板" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(leave.closest('[aria-hidden="true"]')).toBeNull();
+    await waitFor(() => expect(document.body.style.pointerEvents).toBe(""));
+    await user.click(leave);
+    expect(onLeave).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
