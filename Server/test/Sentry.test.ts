@@ -15,6 +15,7 @@ import {
   captureServerLog,
   redactData,
   redactLogText,
+  redactUrlQuery,
   describeError,
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
@@ -437,6 +438,101 @@ describe("服务端遥测统一脱敏出口", () => {
       scoped.mockRestore();
       exception.mockRestore();
     }
+  });
+});
+
+/**
+ * F05：一次性 WS 建连凭据 `ticket` 走 URL 查询串进入握手，SDK 的自动 URL 采集会把整串
+ * 存成事件/span 属性。这里的断言口径是「任何采集出口都拿不到票据明文」——
+ * 键表、文本链、URL 查询串清洗、span 与 metric 出口逐一覆盖。
+ */
+describe("一次性建连凭据 ticket 不进任何采集出口", () => {
+  const TICKET = "TICKETdummysupersecretvalue";
+  const WS_URL = `https://example.invalid/api/cee/ws?clientType=desktop&ticket=${TICKET}&room=1`;
+
+  const captureInitOptions = () => {
+    let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
+    const init = spyOn(Sentry, "init").mockImplementation((input) => {
+      options = input;
+      return undefined;
+    });
+    initServerSentry(createMockEnv());
+    init.mockRestore();
+    return options!;
+  };
+
+  it("ticket 与口令同级全掩码，非敏感查询参数原样保留", () => {
+    const cleaned = redactData({
+      ticket: TICKET,
+      channelTicket: TICKET,
+      roomId: "room-safe",
+    }) as Record<string, unknown>;
+    expect(cleaned.ticket).toBe("***[REDACTED]");
+    expect(cleaned.channelTicket).toBe("***[REDACTED]");
+    expect(cleaned.roomId).toBe("room-safe");
+    expect(redactLogText(`握手票据 ticket=${TICKET} 与 ticket: ${TICKET}`)).not.toContain(TICKET);
+
+    const scrubbed = redactUrlQuery(WS_URL);
+    expect(scrubbed).not.toContain(TICKET);
+    expect(scrubbed).toContain("clientType=desktop");
+    expect(scrubbed).toContain("room=1");
+    // 无查询串与未知参数不受影响：清洗只针对键表命中的参数。
+    expect(redactUrlQuery("https://example.invalid/readyz")).toBe("https://example.invalid/readyz");
+  });
+
+  it("beforeSend 重写 request 的整串 URL 与查询串，span 与 metric 出口同样清洗", async () => {
+    const options = captureInitOptions();
+
+    const event: any = {
+      request: {
+        url: WS_URL,
+        query_string: `clientType=desktop&ticket=${TICKET}`,
+        headers: [
+          ["cookie", "dummy-cookie-long"],
+          ["user-agent", "Baka/1"],
+        ],
+      },
+      breadcrumbs: [{ category: "http", data: { url: WS_URL } }],
+      exception: {
+        values: [
+          { type: "Error", value: "握手失败", stacktrace: { frames: [{ filename: WS_URL }] } },
+        ],
+      },
+    };
+    const sent = (await options.beforeSend!(event, {})) as any;
+    const text = JSON.stringify(sent);
+    for (const secret of [TICKET, "dummy-cookie-long"]) expect(text).not.toContain(secret);
+    expect(sent.request.url).toContain("clientType=desktop");
+    // headers 统一回写成按键索引的对象（SDK 的声明形状），掩码只改值不改结构语义。
+    expect(sent.request.headers["cookie"]).toContain("***[REDACTED]");
+    expect(sent.request.headers["user-agent"]).toBe("Baka/1");
+    expect(sent.exception.values[0].stacktrace.frames[0].filename).toContain("room=1");
+
+    const span = options.beforeSendSpan!({
+      span_id: "aaaaaaaaaaaaaaaa",
+      trace_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      start_timestamp: 1,
+      op: "http.server",
+      description: `GET /api/cee/ws?ticket=${TICKET}`,
+      data: {
+        "url.full": WS_URL,
+        "http.target": `/api/cee/ws?ticket=${TICKET}&room=1`,
+        "http.status_code": 500,
+      },
+    } as any);
+    const spanText = JSON.stringify(span);
+    expect(spanText).not.toContain(TICKET);
+    expect(spanText).toContain("room=1");
+    expect(span.description).toContain("GET /api/cee/ws");
+
+    const metric = options.beforeSendMetric!({
+      name: "bakagame.operation.duration",
+      type: "distribution",
+      value: 12,
+      attributes: { target: `/api/cee/ws?ticket=${TICKET}`, operation: "HTTP GET /api/cee/ws" },
+    } as any);
+    expect(JSON.stringify(metric)).not.toContain(TICKET);
+    expect(metric?.attributes?.operation).toBe("HTTP GET /api/cee/ws");
   });
 });
 

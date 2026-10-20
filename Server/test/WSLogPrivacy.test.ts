@@ -321,6 +321,14 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
       const client = await connect(`${baseUrl.replace("http:", "ws:")}${protocol.path}`);
       sockets.push(client.socket);
       await probeProtocol(client, protocol, evidence);
+      // F05：一次性建连凭据写在握手查询串上，SDK 的自动 URL 采集会整串保存；
+      // 这里同时验收进程日志这一路——票据明文不得出现在停机后的整份 stdout/stderr 里。
+      const handshakeTicket = `TICKET_SECRET_MARKER_${crypto.randomUUID()}`;
+      evidence.secrets.push(handshakeTicket, "TICKET_SECRET_MARKER_");
+      const ticketed = await connect(
+        `${baseUrl.replace("http:", "ws:")}${protocol.path}?clientType=web&ticket=${handshakeTicket}`
+      );
+      sockets.push(ticketed.socket);
     }
     // 停机信号不是此用例验收目标；只强制回收已核对 owner 的自有进程，Windows 不冒充 OS listener 验收。
     for (const socket of sockets) socket.close();

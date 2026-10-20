@@ -62,10 +62,19 @@ const LEVEL_METHODS: Record<LogLevel, keyof LogOutput> = {
  */
 const OPERATION_LOG_SAMPLE_MS = 1_000;
 
+/**
+ * 默认输出只写进程流，**不经过 `console.*`**。
+ *
+ * Sentry 的 `consoleLoggingIntegration` 会把 `console.warn/error` 采集为 Sentry log，
+ * 而本类的 `emit` 对同一条记录已经显式调用 `captureServerLog`；两条路并行时每条
+ * WARN/ERROR 在观测平台计两次，任何按日志量的阈值与趋势全部失真。所以这里定下唯一
+ * 真相源：结构化记录只经 `captureServerLog` 出口，stdout/stderr 只服务本机与容器日志。
+ * stdout 需求保留（INFO 走 stdout、WARN/ERROR 走 stderr，与 console 的分流一致）。
+ */
 const defaultOutput: LogOutput = {
-  info: (message) => console.info(message),
-  warn: (message) => console.warn(message),
-  error: (message) => console.error(message),
+  info: (message) => process.stdout.write(`${message}\n`),
+  warn: (message) => process.stderr.write(`${message}\n`),
+  error: (message) => process.stderr.write(`${message}\n`),
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

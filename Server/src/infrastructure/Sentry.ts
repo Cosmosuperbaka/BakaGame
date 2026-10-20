@@ -11,12 +11,18 @@ const SENSITIVE_KEYS = new Set([
   "password",
   "authorization",
   "secret",
+  // 一次性 WS 建连凭据：走 URL 查询串进握手，SDK 的自动 URL 采集会整串存成属性，
+  // 因此它必须与 cookie 同级进入键表（见 F05）。`channelTicket` 是壳侧的同一个字段名。
+  "ticket",
+  "channelticket",
 ]);
 
 /**
  * 顶级高危凭据：与口令同级，任何通道一律 100% 掩码。
  * 登录验证码是可重放的短期凭据，保留前缀就等于交出 300 秒内的登录能力，
  * 因此不适用 `cookie`/`sessionToken` 那条「保留前 4 位定位故障」的折中口径。
+ * `ticket` 同理：30 秒 TTL 内可重放且直接绑定身份与来源 IP，出错事件常发生在消费之前，
+ * 保留前缀没有任何排障价值（前 4 位认不出是哪次握手），只有泄露价值。
  */
 const FULL_MASK_KEYS = new Set([
   "password",
@@ -25,6 +31,8 @@ const FULL_MASK_KEYS = new Set([
   "verifycode",
   "authcode",
   "captcha",
+  "ticket",
+  "channelticket",
 ]);
 
 export const sanitizeLogText = (text: string, maxLength = 500): string => {
@@ -43,13 +51,35 @@ export const redactLogText = (text: string): string =>
     .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
     .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
     .replace(
-      /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
+      /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha|ticket|channel[_-]?ticket)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
       "$1***[REDACTED]"
     );
 
 /** 敏感键表按归一后的形状索引：小写、去路径前缀、去分隔符。 */
 const normalizePropertyKey = (key: string): string =>
   key.toLowerCase().split(".").at(-1)!.replace(/[_-]/g, "");
+
+/**
+ * 查询串形态的凭据键：`?ticket=…` 这类「键名在 URL 里、值紧跟到下一个分隔符」的写法
+ * 不会被上面的赋值正则覆盖（前缀是 `?` 与 `&` 而不是 `:` 或 `=` 两侧的空格），
+ * 因此单独按参数对清洗。URL 采集来自 SDK 自动埋点，不经过任何业务代码，只能在这里拦。
+ */
+const SENSITIVE_QUERY_KEYS = new Set([
+  ...SENSITIVE_KEYS,
+  ...FULL_MASK_KEYS,
+  "accesstoken",
+  "refreshtoken",
+]);
+
+const QUERY_PAIR_PATTERN = /([?&])([A-Za-z0-9_.%[\]-]+)=([^&;\s"'\\]*)/g;
+
+/** 逐参数清洗 URL 或请求目标里的凭据值；非敏感参数原样保留（含 `&` 分隔结构）。 */
+export const redactUrlQuery = (value: string): string =>
+  value.replace(QUERY_PAIR_PATTERN, (pair, prefix: string, rawKey: string) =>
+    SENSITIVE_QUERY_KEYS.has(normalizePropertyKey(decodeURIComponent(rawKey)))
+      ? `${prefix}${rawKey}=***[REDACTED]`
+      : pair
+  );
 
 const BEARER_TOKEN_KEYS = ["accesstoken", "refreshtoken"];
 
@@ -67,6 +97,26 @@ const redactProperty = (key: string, value: unknown, recurse: () => unknown): un
     ? `${value.slice(0, 4)}***[REDACTED]`
     : "***[REDACTED]";
 };
+
+/**
+ * SDK 自动埋点产出的属性表是扁平标量（span `data`、metric `attributes`、解析后的查询串）。
+ * 这里不用 `redactData`：它会按 32 个属性截断并压平嵌套，span 属性被静默丢掉比泄露更难查。
+ * 字符串值先过查询串清洗再过文本脱敏，键名命中敏感表的按整条链口径掩码。
+ */
+const redactScalarAttributes = (attributes: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(attributes).map(([key, value]) => {
+      // 先按值清洗（查询串与文本链），再按键名定掩码强度；两者顺序不能颠倒，
+      // 否则非敏感键会拿到未清洗的原值。
+      const scrubbed = typeof value === "string" ? redactUrlQuery(redactLogText(value)) : value;
+      return [
+        key,
+        scrubbed && typeof scrubbed === "object"
+          ? redactData(scrubbed)
+          : redactProperty(key, scrubbed, () => scrubbed),
+      ];
+    })
+  );
 
 /** Error 的诊断字段不可枚举；cause 与自有字段仍走统一脱敏。 */
 const toPlainSource = (value: object): object =>
@@ -155,8 +205,42 @@ const redactEventFields = (event: ErrorEvent): void => {
   if (event.contexts) event.contexts = redactData(event.contexts) as typeof event.contexts;
   if (event.user) event.user = redactData(event.user) as typeof event.user;
   if (event.tags) event.tags = redactData(event.tags) as typeof event.tags;
-  if (event.request) event.request = redactData(event.request) as typeof event.request;
+  if (event.request) redactEventRequest(event);
   if (event.message) event.message = redactLogText(event.message);
+};
+
+/** 头部值恒为字符串：按键名复用同一条掩码链，返回值保持字符串形状。 */
+const maskHeaderValue = (key: string, value: string): string =>
+  redactProperty(key, value, () => value) as string;
+
+/**
+ * SDK 自动采集的 `request` 上下文：整串 URL 与查询串是独立字段，不走键表，
+ * 一次性建连凭据 `ticket` 正是从这里被长期保存到第三方平台（F05）。
+ * 头部按「键名匹配敏感键表」处理，因为 SDK 可能给对象也可能给键值对数组。
+ */
+const redactEventRequest = (event: ErrorEvent): void => {
+  const request = event.request;
+  if (!request) return;
+  if (request.url) request.url = redactUrlQuery(redactLogText(request.url));
+  if (typeof request.data === "string") request.data = redactLogText(request.data);
+  else if (request.data) request.data = redactData(request.data) as typeof request.data;
+  const query = request.query_string;
+  if (typeof query === "string") request.query_string = redactUrlQuery(redactLogText(query));
+  else if (query && typeof query === "object")
+    request.query_string = redactScalarAttributes(
+      query as Record<string, unknown>
+    ) as typeof request.query_string;
+  const headers = request.headers as Record<string, string> | [string, string][] | undefined;
+  if (headers) {
+    // SDK 的类型声明里 headers 恒为 Record，但 Node 侧某些集成会给出键值对数组：
+    // 两种形状都按键名走同一条掩码链，统一回写成 Record。
+    const pairs: [string, string][] = Array.isArray(headers)
+      ? headers
+      : Object.entries(headers).map(([key, value]) => [key, String(value)]);
+    request.headers = Object.fromEntries(
+      pairs.map(([key, value]) => [key, maskHeaderValue(key, value)])
+    );
+  }
 };
 
 /** 异常文本、栈帧里的变量表与文件名都走同一条脱敏链。 */
@@ -165,7 +249,7 @@ const redactEventExceptions = (event: ErrorEvent): void => {
     if (exception.value) exception.value = redactLogText(exception.value);
     for (const frame of exception.stacktrace?.frames ?? []) {
       if (frame.vars) frame.vars = redactData(frame.vars) as typeof frame.vars;
-      if (frame.filename) frame.filename = redactLogText(frame.filename);
+      if (frame.filename) frame.filename = redactUrlQuery(redactLogText(frame.filename));
     }
   }
 };
@@ -215,6 +299,25 @@ export const initServerSentry = (env: AppEnv): void => {
         ...log,
         message: redactLogText(log.message),
         attributes: redactData(log.attributes) as typeof log.attributes,
+      };
+    },
+    // 自动埋点的 span 与 metric 同样带整串请求目标：查询串里的凭据必须在离开进程前洗掉。
+    beforeSendSpan(span) {
+      return {
+        ...span,
+        ...(span.description
+          ? { description: redactUrlQuery(redactLogText(span.description)) }
+          : {}),
+        data: redactScalarAttributes(span.data as Record<string, unknown>) as typeof span.data,
+      };
+    },
+    beforeSendMetric(metric) {
+      if (!metric.attributes) return metric;
+      return {
+        ...metric,
+        attributes: redactScalarAttributes(
+          metric.attributes as Record<string, unknown>
+        ) as typeof metric.attributes,
       };
     },
     // 忽略预期的客户端断开连接错误与同源反代网络波动

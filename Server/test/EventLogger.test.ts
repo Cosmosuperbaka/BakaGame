@@ -124,9 +124,10 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
   const spans = spyOn(Sentry, "startSpan").mockImplementation(() => undefined as never);
   const count = spyOn(Sentry.metrics, "count").mockImplementation(() => undefined);
   const distribution = spyOn(Sentry.metrics, "distribution").mockImplementation(() => undefined);
-  const stdout = spyOn(console, "info").mockImplementation((message: string) => {
-    output.push(message);
-  });
+  const stdout = spyOn(process.stdout, "write").mockImplementation(((chunk: string) => {
+    output.push(chunk);
+    return true;
+  }) as never);
   try {
     initServerSentry({
       clientUrl: "http://localhost:5173",
@@ -212,4 +213,62 @@ test("同类操作日志每秒只输出一条代表，告警不参与合并", ()
       durationMs: index,
     });
   expect(output.filter((line) => line.includes(" 500 "))).toHaveLength(2);
+});
+
+/**
+ * F06：默认 output 与 `captureServerLog` 双路并行时，每条 WARN/ERROR 在 Sentry 里计两次
+ * （console 集成采集一次、显式上报一次）。既有各例都注入自定义 output，永远照不出这条重复，
+ * 所以这一例专门用默认 output。断言的是不变量：**结构化记录不再触达 `console.*`**，
+ * 于是 Sentry 侧只剩显式出口这一条真相源。
+ */
+test("默认 output 下一条 logger 记录恰好产出一条 Sentry log，且不写 console", () => {
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const errorLog = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
+  const warnLog = spyOn(Sentry.logger, "warn").mockImplementation(() => undefined);
+  const infoLog = spyOn(Sentry.logger, "info").mockImplementation(() => undefined);
+  const captures = spyOn(Sentry, "captureException").mockImplementation(() => "");
+  const messages = spyOn(Sentry, "captureMessage").mockImplementation(() => "");
+  const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) =>
+    fn({ setTag: () => scoped, setExtras: () => scoped } as never)) as never);
+  const consoleInfo = spyOn(console, "info").mockImplementation(() => undefined);
+  const consoleWarn = spyOn(console, "warn").mockImplementation(() => undefined);
+  const consoleError = spyOn(console, "error").mockImplementation(() => undefined);
+  const stdout = spyOn(process.stdout, "write").mockImplementation((() => true) as never);
+  const stderr = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
+  try {
+    initServerSentry({
+      sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001",
+    } as never);
+    // 不传 output：走默认进程流出口，与生产装配（Index.ts）同一条路径。
+    const logger = new EventLogger(undefined, () => 1700000000000);
+    logger.info("遥测双路回归-信息");
+    logger.warn("遥测双路回归-告警");
+    logger.error("遥测双路回归-错误");
+
+    expect(infoLog).toHaveBeenCalledTimes(1);
+    expect(warnLog).toHaveBeenCalledTimes(1);
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    // ERROR 另有且仅有一个 issue 出口（无 Error 本体时走 captureMessage）。
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(captures).not.toHaveBeenCalled();
+
+    expect(consoleInfo).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(stdout).toHaveBeenCalledTimes(1);
+    expect(stderr).toHaveBeenCalledTimes(2);
+  } finally {
+    init.mockRestore();
+    errorLog.mockRestore();
+    warnLog.mockRestore();
+    infoLog.mockRestore();
+    captures.mockRestore();
+    messages.mockRestore();
+    scoped.mockRestore();
+    consoleInfo.mockRestore();
+    consoleWarn.mockRestore();
+    consoleError.mockRestore();
+    stdout.mockRestore();
+    stderr.mockRestore();
+  }
 });
