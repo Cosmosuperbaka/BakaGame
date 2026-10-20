@@ -125,7 +125,8 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
-const LEGAL_LINKS = [
+const FOOTER_PAGE_LINKS = [
+  { href: "/status", label: "服务状态" },
   { href: "/privacy", label: "隐私说明" },
   { href: "/terms", label: "用户条款" },
 ] as const;
@@ -300,7 +301,7 @@ function FooterLink({ link }: { link: ExternalLink }) {
   );
 }
 
-/** 站内法务页入口：与版本号同一种文本按钮，悬停下划线告知这是跳转。 */
+/** 页脚站内页面入口：与版本号同一种文本按钮，悬停下划线告知这是跳转。 */
 function FooterPageLink({ href, label }: { href: string; label: string }) {
   const navigate = usePageNavigate();
   return (
@@ -433,7 +434,7 @@ export default function LandingPage() {
             {versionLabel}
           </motion.button>
           <FeedbackButton />
-          {LEGAL_LINKS.map((link) => (
+          {FOOTER_PAGE_LINKS.map((link) => (
             <FooterPageLink key={link.href} href={link.href} label={link.label} />
           ))}
         </div>

@@ -30,6 +30,7 @@ import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
+import { statusRoutes } from "./routes/Status";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
@@ -37,6 +38,7 @@ import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
+import { resolveServerRelease } from "../infrastructure/Release";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -825,6 +827,16 @@ export const createApp = ({
         isShuttingDown,
         onTriggerShutdown,
         maintenanceToken: env.maintenanceToken,
+      })
+    )
+    // ==================== 公开站点状态（只读聚合，字段白名单） ====================
+    .use(
+      statusRoutes({
+        isServiceAvailable: () => !isShuttingDown?.(),
+        meilisearchUrl: env.meilisearchUrl,
+        datasetPath: env.bangumiDbPath,
+        imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
+        version: () => resolveServerRelease() ?? "unknown",
       })
     )
     .use(

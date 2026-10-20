@@ -79,7 +79,17 @@ try {
   if (stickerFiles.length === 0) throw new Error("构建产物没有哈希贴纸资源");
   for (const sticker of stickerFiles) await assertAsset(sticker);
 
-  const spaRoutes = ["/", "/whoisfaker", "/songuessr", "/cee", "/credits", "/unknown-route"];
+  const spaRoutes = [
+    "/",
+    "/whoisfaker",
+    "/songuessr",
+    "/cee",
+    "/credits",
+    "/privacy",
+    "/terms",
+    "/status",
+    "/unknown-route",
+  ];
   for (const route of spaRoutes) {
     const response = await fetch(`${baseUrl}${route}`);
     if (!response.ok) throw new Error(`${route} 返回 HTTP ${response.status}`);

@@ -71,6 +71,8 @@ export function createAppRouter() {
         // 法务页：仅从页脚进入，noindex，不进静态外壳与营销页登记位。
         { path: "/privacy", lazy: page(() => import("@/pages/PrivacyPage"), "privacy") },
         { path: "/terms", lazy: page(() => import("@/pages/TermsPage"), "terms") },
+        // 公开状态页：noindex，不进营销页登记位；后端不可达时按未知降级。
+        { path: "/status", lazy: page(() => import("@/pages/StatusPage"), "status") },
         // 其余无法识别的路径一律回落地页
         { path: "*", element: <Navigate to="/" replace /> },
       ],
