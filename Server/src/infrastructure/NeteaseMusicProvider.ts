@@ -49,8 +49,24 @@ const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
  * 有意使用共享出口的后台任务（预热、缓存维护）用 `runWithAnonymousMusicIpScope` 显式声明，
  * 那是设计如此而不是配置错误，不该混进告警。带房主凭证的请求不受影响：scope 由凭证决定。
  */
+/** 音源平台。URN 前缀即平台名（见 `MusicUrn`）。 */
+export type MusicPlatform = "netease" | "qq";
+
+export interface MusicSearchOptions {
+  /**
+   * 池内至少有一个会员账号的平台。只有 QQ 用得上：会员专享曲目拿到非会员账号时
+   * 取不到直链，结果需标「不可播放」；网易云走解灰兜底，不按会员档判可用性。
+   */
+  vipPlatforms?: readonly MusicPlatform[];
+}
+
 export interface MusicProvider {
-  search(keyword: string, limit?: number, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
+  search(
+    keyword: string,
+    limit?: number,
+    cookie?: MusicCookieInput,
+    options?: MusicSearchOptions
+  ): Promise<SongSearchResult[]>;
   getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
   refreshSongAudio?(songId: string, cookie?: MusicCookieInput): Promise<string>;
   getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;

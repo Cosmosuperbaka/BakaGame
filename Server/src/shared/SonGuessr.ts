@@ -389,6 +389,17 @@ export interface SongSearchResult {
    * 《君の知らない物語》永远进不了池子），而不必依赖检索词补全。
    */
   originSongId?: string;
+  /**
+   * 本房当下能不能播这首：网易云有解灰兜底恒可播；QQ 只有池里有账号、且曲目不是
+   * 会员专享（或账号本身就是会员）时才可播。
+   *
+   * 只是**展示与排序**用的提示，不是出题可用性判定 —— 真正的判据仍是取到一段
+   * 码率正常的真实音频（见 `Server/docs/NeteaseMusicApi.md`「猜歌接入约束」），
+   * 选曲链路也**不得**据此预剔除候选。
+   */
+  playable?: boolean;
+  /** `playable === false` 时给玩家看的原因（如「需要 QQ 音乐会员账号」）。 */
+  unplayableReason?: string;
 }
 
 export interface SongPlaylistInfo {

@@ -76,12 +76,67 @@ describe("AggregatedMusicProvider", () => {
       qqProvider: qqMock,
     });
 
-    const results = (await agg.search("晴天", 10)) as AggregatedSongSearchResult[];
+    // 两家音源都有账号：QQ 侧才会真的发检索。
+    const results = (await agg.search("晴天", 10, {
+      netease: "nc_cookie",
+      qq: "qc_cookie",
+    })) as AggregatedSongSearchResult[];
     expect(results.length).toBe(1);
-    expect(results[0]?.title).toBe("晴天");
+    // 共有曲目归到网易云那一侧，哪怕 QQ 侧曲名更干净、徽章与播放源才一致。
+    expect(results[0]?.id).toBe("netease:1001");
     expect(results[0]?.artist).toBe("周杰伦");
     expect(results[0]?.sources).toBeDefined();
     expect(results[0]?.sources?.length).toBe(2);
+  });
+
+  test("search 账号池为空时不发起 QQ 检索，只回网易云结果", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "netease:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:exclusive", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    // 只有网易云凭据（房间没挂 QQ 账号）：QQ 一个字节都不该往上游发。
+    const results = await agg.search("晴天", 10, { netease: "nc_cookie_only" });
+    expect(qqMock.search).not.toHaveBeenCalled();
+    expect(results.map((song) => song.id)).toEqual(["netease:1001"]);
+  });
+
+  test("search 非会员 QQ 账号池里，会员专享曲目标记不可播放", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "netease:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        {
+          id: "qq:viponly",
+          title: "反方向的钟",
+          artist: "周杰伦",
+          durationMs: 258000,
+          requiresVip: true,
+        },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const cookie = { netease: "nc_cookie", qq: "qc_cookie" };
+
+    const nonVip = await agg.search("周杰伦", 10, cookie, { vipPlatforms: [] });
+    const blocked = nonVip.find((song) => song.id === "qq:viponly");
+    expect(blocked?.playable).toBe(false);
+    expect(blocked?.unplayableReason).toBe("需要 QQ 音乐会员账号");
+    // 不可播的后置：能播的网易云结果排在它前面。
+    expect(nonVip[0]?.id).toBe("netease:1001");
+
+    const vip = await agg.search("周杰伦", 10, cookie, { vipPlatforms: ["qq"] });
+    expect(vip.find((song) => song.id === "qq:viponly")?.playable).toBeUndefined();
   });
 
   test("search 在单边平台抛出异常时实现优雅降级不崩盘", async () => {
@@ -107,7 +162,7 @@ describe("AggregatedMusicProvider", () => {
       qqProvider: qqMock,
     });
 
-    const results = await agg.search("反方向的钟", 5);
+    const results = await agg.search("反方向的钟", 5, { netease: "nc_cookie", qq: "qc_cookie" });
     expect(results.length).toBe(1);
     expect(results[0]?.title).toBe("反方向的钟");
     expect(results[0]?.artist).toBe("周杰伦");

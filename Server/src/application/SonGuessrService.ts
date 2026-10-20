@@ -78,7 +78,9 @@ import {
   musicIpScope,
   type MusicCookieInput,
   type MusicLoginSession,
+  type MusicPlatform,
   type MusicProvider,
+  type MusicSearchOptions,
 } from "../infrastructure/NeteaseMusicProvider";
 
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
@@ -2244,7 +2246,8 @@ export class SonGuessrService implements AdminRoomControl {
       results: await this.options.musicProvider.search(
         keyword,
         undefined,
-        this.getAggregatedSearchCookie(room)
+        this.getAggregatedSearchCookie(room),
+        this.musicSearchOptions(room)
       ),
     };
   }
@@ -2716,14 +2719,33 @@ export class SonGuessrService implements AdminRoomControl {
     return room.musicSession?.cookie;
   }
 
+  /**
+   * 聚合检索的凭据。
+   *
+   * **必须按平台给出对象形态**，缺哪家就不写哪家：裸字符串在 `AggregatedMusicProvider`
+   * 里会被当成「两家都能用」，于是没挂 QQ 账号的房间照样拿网易云凭据去搜 QQ，
+   * 搜出的独占曲目一条都播不了（见 `isPlatformMismatchedCookie` 的判据与 B3 的实测问题）。
+   */
   private getAggregatedSearchCookie(room: SonGuessrRoomRecord): MusicCookieInput | undefined {
-    if (room.musicSession?.cookie && room.qqMusicSession?.cookie) {
-      return {
-        netease: room.musicSession.cookie,
-        qq: room.qqMusicSession.cookie,
-      };
-    }
-    return room.musicSession?.cookie ?? room.qqMusicSession?.cookie;
+    const netease = room.musicSession?.cookie;
+    const qq = room.qqMusicSession?.cookie;
+    if (!netease && !qq) return undefined;
+    return {
+      ...(netease ? { netease } : {}),
+      ...(qq ? { qq } : {}),
+    };
+  }
+
+  /**
+   * 房内账号能力对检索结果的影响，只用于「可播」标注：QQ 会员专享曲目在池里只有
+   * 非会员账号时取不到直链，结果要标不可播放。池里有没有 QQ 账号本身由凭据决定
+   * （见 `getAggregatedSearchCookie`），不在这里重复声明。
+   */
+  private musicSearchOptions(room: SonGuessrRoomRecord): MusicSearchOptions {
+    const vipPlatforms: MusicPlatform[] = [];
+    if (room.musicSession?.account.vipStatus === "vip") vipPlatforms.push("netease");
+    if (room.qqMusicSession?.account.vipStatus === "vip") vipPlatforms.push("qq");
+    return { vipPlatforms };
   }
 
   private addBots(connection: ConnectionRecord, countValue?: number) {

@@ -11,7 +11,11 @@ import {
   isDerivationSong,
   calculateRelevanceScore,
   aggregateAndDeduplicateSongs,
+  type SongPlayabilityContext,
 } from "../src/infrastructure/MusicDeduplicator";
+
+/** 两家音源都有账号、都下得来：把可播因素排除掉，只观察相关度与平台偏好。 */
+const ALL_PLAYABLE: SongPlayabilityContext = { availablePlatforms: ["netease", "qq"] };
 
 describe("MusicUrn", () => {
   test("准确解析合法 URN (严格遵循网易与QQ前缀，零向下兼容)", () => {
@@ -176,7 +180,7 @@ describe("MusicDeduplicator", () => {
       },
     ];
 
-    const results = aggregateAndDeduplicateSongs(raw, "反方向的钟", 10);
+    const results = aggregateAndDeduplicateSongs(raw, "反方向的钟", 10, ALL_PLAYABLE);
     expect(results[0]?.title).toBe("反方向的钟");
     expect(results[0]?.artist).toBe("周杰伦");
   });
@@ -276,16 +280,16 @@ describe("MusicDeduplicator", () => {
       { id: "qq:1", title: "晴天 (伴奏)", artist: "周杰伦", durationMs: 269000, upstreamRank: 0 },
       { id: "qq:2", title: "晴天", artist: "周杰伦", durationMs: 269000, upstreamRank: 1 },
     ];
-    const out = aggregateAndDeduplicateSongs(raw, "晴天", 10);
+    const out = aggregateAndDeduplicateSongs(raw, "晴天", 10, ALL_PLAYABLE);
     expect(out.length).toBe(1);
     expect(out[0].title).toBe("晴天");
     expect(out[0].sources?.length).toBe(2);
   });
 
-  test("aggregateAndDeduplicateSongs：更纯正曲名与更靠前上游排名决定主实体", () => {
+  test("aggregateAndDeduplicateSongs：同平台内更纯正曲名决定主实体", () => {
     const raw = [
       {
-        id: "qq:1",
+        id: "netease:1",
         title: "晴天 (2020 Remaster)",
         artist: "周杰伦",
         durationMs: 269000,
@@ -293,8 +297,85 @@ describe("MusicDeduplicator", () => {
       },
       { id: "netease:2", title: "晴天", artist: "周杰伦", durationMs: 269000, upstreamRank: 2 },
     ];
-    const out = aggregateAndDeduplicateSongs(raw, "晴天", 10);
+    const out = aggregateAndDeduplicateSongs(raw, "晴天", 10, ALL_PLAYABLE);
     expect(out[0].title).toBe("晴天");
+  });
+
+  test("aggregateAndDeduplicateSongs：共有曲目以网易云侧为主实体（徽章与播放源一致）", () => {
+    const raw = [
+      // QQ 侧曲名更干净、上游位次更靠前；旧口径会因此把 QQ 立为主实体。
+      { id: "qq:1", title: "晴天", artist: "周杰伦", durationMs: 269000, upstreamRank: 0 },
+      {
+        id: "netease:2",
+        title: "晴天 (2020 Remaster)",
+        artist: "周杰伦",
+        durationMs: 269000,
+        upstreamRank: 1,
+      },
+    ];
+    const out = aggregateAndDeduplicateSongs(raw, "晴天", 10, ALL_PLAYABLE);
+    expect(out.length).toBe(1);
+    expect(out[0].id).toBe("netease:2");
+    expect(out[0].sources?.length).toBe(2);
+  });
+
+  test("aggregateAndDeduplicateSongs：不可播放的 QQ 会员曲目排在可播结果之后", () => {
+    const pagedRaw = [
+      { id: "netease:1", title: "晴天", artist: "周杰伦", durationMs: 269000, upstreamRank: 0 },
+      {
+        id: "qq:2",
+        title: "反方向的钟",
+        artist: "周杰伦",
+        durationMs: 258000,
+        upstreamRank: 0,
+        requiresVip: true,
+      },
+    ];
+    // 池里只有非会员 QQ 账号：会员专享的那首取不到直链，标记不可播并后置。
+    const out = aggregateAndDeduplicateSongs(pagedRaw, "周杰伦", 10, {
+      availablePlatforms: ["netease", "qq"],
+    });
+    expect(out[0]?.id).toBe("netease:1");
+    expect(out[1]?.id).toBe("qq:2");
+    expect(out[1]?.playable).toBe(false);
+    expect(out[1]?.unplayableReason).toBe("需要 QQ 音乐会员账号");
+
+    // 池里有会员 QQ 账号时同一首恢复可播，按相关度重新排到前面。
+    const vip = aggregateAndDeduplicateSongs(pagedRaw, "周杰伦", 10, {
+      availablePlatforms: ["netease", "qq"],
+      vipPlatforms: ["qq"],
+    });
+    expect(vip.every((song) => song.playable !== false)).toBe(true);
+  });
+
+  test("aggregateAndDeduplicateSongs：池里没有 QQ 账号时 QQ 独有曲目标记不可播", () => {
+    const raw = [
+      { id: "netease:1", title: "歌A", artist: "X", upstreamRank: 0 },
+      { id: "qq:2", title: "歌B", artist: "Y", upstreamRank: 0 },
+    ];
+    const out = aggregateAndDeduplicateSongs(raw, "歌", 10, { availablePlatforms: ["netease"] });
+    const qqSong = out.find((song) => song.id === "qq:2");
+    expect(qqSong?.playable).toBe(false);
+    expect(qqSong?.unplayableReason).toBe("需要 QQ 音乐会员账号");
+  });
+
+  test("aggregateAndDeduplicateSongs：排序稳定，与候选到达顺序无关", () => {
+    const neteaseA = { id: "netease:1", title: "歌A", artist: "X", upstreamRank: 0 };
+    const neteaseB = { id: "netease:2", title: "歌B", artist: "X", upstreamRank: 0 };
+    const qqC = { id: "qq:3", title: "歌C", artist: "X", upstreamRank: 0 };
+    const forward = aggregateAndDeduplicateSongs(
+      [neteaseA, neteaseB, qqC],
+      "歌",
+      10,
+      ALL_PLAYABLE
+    ).map((song) => song.id);
+    const backward = aggregateAndDeduplicateSongs(
+      [qqC, neteaseB, neteaseA],
+      "歌",
+      10,
+      ALL_PLAYABLE
+    ).map((song) => song.id);
+    expect(forward).toEqual(backward);
   });
 
   test("aggregateAndDeduplicateSongs：limit 截断与双源标记", () => {
@@ -303,13 +384,13 @@ describe("MusicDeduplicator", () => {
       { id: "netease:2", title: "歌A", artist: "X", upstreamRank: 0 },
       { id: "qq:3", title: "歌B", artist: "Y", upstreamRank: 0 },
     ];
-    const out = aggregateAndDeduplicateSongs(raw, "歌", 1);
+    const out = aggregateAndDeduplicateSongs(raw, "歌", 1, ALL_PLAYABLE);
     expect(out.length).toBe(1);
     // 歌A 双源互证，应排在单源歌B 之前
     expect(out[0].title).toBe("歌A");
   });
 
   test("aggregateAndDeduplicateSongs：空输入返回空数组", () => {
-    expect(aggregateAndDeduplicateSongs([], "任意", 10)).toEqual([]);
+    expect(aggregateAndDeduplicateSongs([], "任意", 10, ALL_PLAYABLE)).toEqual([]);
   });
 });

@@ -178,6 +178,30 @@ describe("SongSearch", () => {
     expect(screen.getByRole("option", { name: /晴天.*QQ音乐/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /七里香.*网易云/ })).toBeInTheDocument();
   });
+
+  it("当下播不了的候选标出平台与原因，但不可选", async () => {
+    const user = setup();
+    // 服务端在 QQ 会员专享曲目遇到非会员账号池时会带上这两个字段。
+    const blocked: SongSearchResult = {
+      id: "qq:003",
+      title: "会员限定曲",
+      artist: "某歌手",
+      requiresVip: true,
+      playable: false,
+      unplayableReason: "需要 QQ 音乐会员账号",
+    };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([blocked]) });
+    const onSelect = vi.fn();
+    render(<SongSearch mode="guess" onSelect={onSelect} />);
+
+    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "会员");
+    await flushDebounce();
+
+    const option = screen.getByRole("option", { name: /会员限定曲.*不可播放/ });
+    expect(option).toHaveAttribute("aria-disabled", "true");
+    await user.click(option);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });
 
 describe("AnimeSearch", () => {

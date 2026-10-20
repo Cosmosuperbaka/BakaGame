@@ -1522,7 +1522,7 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { keyword: "测试" },
     });
-    expect(usedCookies.at(-1)).toBe("MUSIC_U=host-cookie");
+    expect(usedCookies.at(-1)).toEqual({ netease: "MUSIC_U=host-cookie" });
 
     await execute(service, host, {
       id: "transfer-host",
@@ -1546,7 +1546,7 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { keyword: "测试" },
     });
-    expect(usedCookies.at(-1)).toBe("MUSIC_U=guest-cookie");
+    expect(usedCookies.at(-1)).toEqual({ netease: "MUSIC_U=guest-cookie" });
 
     await execute(service, guest, {
       id: "owner-leaves",
@@ -6679,7 +6679,7 @@ describe("SonGuessr service 音乐认证意图", () => {
             roomId: "1234",
             payload: { keyword: "fixture" },
           });
-          expect(usedCookie).toBe(action === "replace" ? "new" : undefined);
+          expect(usedCookie).toEqual(action === "replace" ? { netease: "new" } : undefined);
         } else expect(service.getRoomSummaries()).toEqual([]);
       });
     }

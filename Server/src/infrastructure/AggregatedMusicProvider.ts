@@ -1,13 +1,19 @@
 import { AppError } from "../domain/Errors";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
-import { aggregateAndDeduplicateSongs } from "./MusicDeduplicator";
+import {
+  aggregateAndDeduplicateSongs,
+  markSongPlayability,
+  type SongPlayabilityContext,
+} from "./MusicDeduplicator";
 import type {
   MusicCookieInput,
   MusicLoginSession,
+  MusicPlatform,
   MusicProvider,
   MusicQrLogin,
   MusicQrLoginCheck,
+  MusicSearchOptions,
 } from "./NeteaseMusicProvider";
 import type {
   SongAlbumSearchResult,
@@ -23,8 +29,6 @@ export interface AggregatedMusicProviderOptions {
   qqProvider: MusicProvider;
   logger?: EventLogger;
 }
-
-type MusicPlatform = "netease" | "qq";
 
 /** 组合凭据（JSON 形态）里按平台取值：非字符串一律视为未配置。 */
 const pickPlatformCookieField = (
@@ -101,7 +105,8 @@ export class AggregatedMusicProvider implements MusicProvider {
   async search(
     keyword: string,
     limit = 20,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    options: MusicSearchOptions = {}
   ): Promise<SongSearchResult[]> {
     const normalized = keyword.trim();
     if (!normalized) return [];
@@ -109,16 +114,32 @@ export class AggregatedMusicProvider implements MusicProvider {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const qqCookie = resolvePlatformCookie(cookie, "qq");
 
+    // 网易云检索不需要登录态（匿名即可），结果还能走解灰兜底播放，所以恒发。
+    // QQ 没有解灰链路：账号池为空时搜出来的独占曲目一条都播不了，白占结果位、
+    // 还会把房主引到「点了没反应」的死路上。这种情况直接不发起这次检索
+    // （B4 的账号池落空即走这条短路），并留下可观测的降级信号，而不是静默少半边结果。
+    const qqAvailable = qqCookie !== undefined;
+    if (!qqAvailable) {
+      this.logger?.info?.("QQ 音乐账号池为空，本轮检索跳过 QQ 音源", { keyword: normalized });
+    }
+    // 网易云匿名也能检索、且结果恒可播（解灰兜底）；QQ 能不能播完全看池里有没有账号。
+    const playability: SongPlayabilityContext = {
+      availablePlatforms: qqAvailable ? ["netease", "qq"] : ["netease"],
+      vipPlatforms: options.vipPlatforms,
+    };
+
     // 双端并行检索并做单边熔断与容错保护
     const [neteaseSettled, qqSettled] = await Promise.allSettled([
       this.neteaseProvider.search(normalized, limit, neteaseCookie),
-      this.qqProvider.search(normalized, limit, qqCookie),
+      qqAvailable
+        ? this.qqProvider.search(normalized, limit, qqCookie)
+        : Promise.resolve([] as SongSearchResult[]),
     ]);
 
     const neteaseSongs: (SongSearchResult & { upstreamRank?: number })[] =
       neteaseSettled.status === "fulfilled"
         ? neteaseSettled.value.map((s, index) => ({
-            ...s,
+            ...markSongPlayability(s, playability),
             id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
             upstreamRank: index,
           }))
@@ -134,7 +155,7 @@ export class AggregatedMusicProvider implements MusicProvider {
     const qqSongs: (SongSearchResult & { upstreamRank?: number })[] =
       qqSettled.status === "fulfilled"
         ? qqSettled.value.map((s, index) => ({
-            ...s,
+            ...markSongPlayability(s, playability),
             id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
             upstreamRank: index,
           }))
@@ -151,7 +172,7 @@ export class AggregatedMusicProvider implements MusicProvider {
     if (allCandidates.length === 0) return [];
 
     // 执行三级指纹去重、实体合流与多维度综合打分排序
-    return aggregateAndDeduplicateSongs(allCandidates, normalized, limit);
+    return aggregateAndDeduplicateSongs(allCandidates, normalized, limit, playability);
   }
 
   async getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {

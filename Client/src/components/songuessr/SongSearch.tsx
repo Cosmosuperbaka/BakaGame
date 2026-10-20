@@ -68,6 +68,8 @@ function SongRow({
   guessed?: boolean;
   badge?: string;
 }) {
+  // 平台图标取主实体的 URN：服务端已把共有曲目归到可播的那一侧（网易云优先，
+  // 它有解灰兜底），所以这里的图标与实际播放源一致。
   const isQqSong = song.id.startsWith("qq:");
   const isNeteaseSong = song.id.startsWith("netease:");
   // 平台只以品牌图标出现，名称走统一悬停；`aria-label` 保留给读屏
@@ -85,6 +87,10 @@ function SongRow({
     </Hint>
   ) : null;
 
+  // 不可播放的来源（目前只有「QQ 会员专享、池里没有会员账号」）：仍在列表里露头，
+  // 让房主知道这首确实存在、补个会员账号就能出，而不是点下去才发现播不了。
+  const unplayable = song.playable === false;
+
   return (
     <SearchOptionContent
       media={<Cover src={song.pictureUrl} shape="square" icon={Music2} />}
@@ -93,6 +99,15 @@ function SongRow({
       trailing={
         guessed ? (
           "已猜过"
+        ) : unplayable ? (
+          <Hint label={song.unplayableReason ?? "当前账号无法播放"}>
+            <span className="inline-flex items-center gap-1.5">
+              {platformLogo}
+              <Badge variant="outline" size="xs" className="text-muted-foreground">
+                不可播放
+              </Badge>
+            </span>
+          </Hint>
         ) : platformLogo || badge ? (
           <span className="flex items-center gap-1.5">
             {platformLogo}
@@ -212,7 +227,7 @@ export function SongSearch({
       busy={search.loading && search.items.length > 0}
       options={search.items}
       getKey={(song) => song.id}
-      isOptionDisabled={(song) => guessedIds.includes(song.id)}
+      isOptionDisabled={(song) => song.playable === false || guessedIds.includes(song.id)}
       renderOption={(song) => <SongRow song={song} guessed={guessedIds.includes(song.id)} />}
       onSelect={(song) => void choose(song)}
       pendingKey={pendingId}
