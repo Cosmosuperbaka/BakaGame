@@ -7,6 +7,7 @@
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// 接口调用失败。`code` 为可归因码（§6 词表）；传输层与解析层的失败拿不到码，记 `None`。
@@ -72,8 +73,11 @@ where
     R: DeserializeOwned,
 {
     let url = format!("{}{}", crate::config::api_base(), path);
-    let client = reqwest::blocking::Client::builder()
-        .timeout(timeout)
+    let mut builder = reqwest::blocking::Client::builder().timeout(timeout);
+    if let Some(resolver) = crate::httpdns::shared() {
+        builder = builder.dns_resolver(Arc::new(crate::httpdns::ReqwestResolver::new(resolver)));
+    }
+    let client = builder
         .build()
         .map_err(|e| ApiError::local(format!("HTTP 客户端初始化失败：{e}")))?;
     let response = client

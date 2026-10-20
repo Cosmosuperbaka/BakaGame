@@ -52,6 +52,26 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 CI 必须显式传批次标识与随机段两个变量，否则同一发布批次的每个制品标记都不一样，追溯时会误判成多个批次。
 未提供时由短提交号与本机熵派生，只保证「每次构建互不相同」。
 
+### HTTPDNS（可选，构建期注入）
+
+壳可以让 WebView 与壳内 HTTP 客户端改走腾讯云 HTTPDNS。凭据只在构建时读取，不提供运行时配置：
+
+| 变量 | 含义 |
+|---|---|
+| `BAKA_HTTPDNS_TOKEN` | HTTPS Token；设置后优先，查询走 `https://119.29.29.99/d` |
+| `BAKA_HTTPDNS_APP_ID` + `BAKA_HTTPDNS_SECRET_KEY` | AES 模式；密钥必须是 16 字节 |
+| `BAKA_HTTPDNS_DOMAIN` | 可选；缺省取站点与接口基址的 host |
+
+- 任一模式配齐即可启用；凭据不全或没有受管域名时保持系统 DNS，并在 stderr 打 `[baka-httpdns] disabled reason=...`。
+- 密钥会被编进二进制。这是 HTTPDNS 的固有代价：轮换凭据必须重新构建并分发，不能靠改配置。
+- 解析结果按 HTTPDNS 返回的 TTL 缓存；查询失败回落系统 DNS，日志标 `degraded=true`，页面与接口继续可用。
+- 受管域名的 WebView 流量经回环 CONNECT 隧道转发：只替换解析结果，不终结 TLS，SNI 与证书校验仍是原域名。
+- 启用后 WebView 走该隧道，系统级 HTTP 代理不再生效；影响范围仅限壳内流量。
+- 日志：`[baka-httpdns] source=httpdns|cache host=... ips=... ttl=...s took=...ms`；
+  降级为 `degraded=true ... fallback=system`；`[baka-dns-proxy] CONNECT host=... source=... ttl=... degraded=... took=...ms`。
+
+CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建。
+
 ---
 
 ## 2. 代码签名与分发

@@ -1,16 +1,22 @@
 package website.baka.game
 
 import android.os.Bundle
+import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 import com.getcapacitor.Bridge
 import com.getcapacitor.BridgeActivity
 import com.getcapacitor.BridgeWebViewClient
 import website.baka.game.channel.BakaChannelPlugin
+import website.baka.game.network.DnsProxyServer
+import website.baka.game.network.HttpDns
+import java.util.concurrent.Executor
 
 /**
  * Capacitor 壳主 Activity。只做四件事：装载内嵌前端、注册通道插件、放行跨站 Cookie、
@@ -28,8 +34,14 @@ import website.baka.game.channel.BakaChannelPlugin
  */
 class MainActivity : BridgeActivity() {
 
+    private var dnsProxy: DnsProxyServer? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(BakaChannelPlugin::class.java)
+        // 必须在 super.onCreate 之前应用：bridge 会在 super 里创建 WebView 并 loadUrl，
+        // 覆写晚于页面加载时，该 WebView 的首批请求仍会直连，已有连接还会被复用。
+        prepareHttpDns()
+        applyHttpDnsProxy()
         super.onCreate(savedInstanceState)
         // 注意：这里**不**设 FLAG_SECURE。窗口级防截屏只在反作弊房里开 —— 由页面根据
         // 房间快照经 BakaChannel.setSecureScreen 切换（见 Client/src/lib/BakaChannel.ts）。
@@ -54,6 +66,66 @@ class MainActivity : BridgeActivity() {
         // 资源服务会用 index.html 回答无扩展名的路径。接口与 WS 必须交给真实网络，其余路径
         // 仍走本地服务（SPA 深链刷新才不会 404）。
         bridge.setWebViewClient(ApiPassthroughWebViewClient(bridge))
+    }
+
+    override fun onDestroy() {
+        stopHttpDns()
+        super.onDestroy()
+    }
+
+    /**
+     * 构建期注入了 HTTPDNS 凭据且 WebView 支持代理覆写时，把请求交给回环 CONNECT 隧道：
+     * 隧道只替换解析结果，TLS 与 SNI 仍是原域名。任一环节不满足就保持系统 DNS。
+     */
+    private fun prepareHttpDns() {
+        val resolver = HttpDns.fromBuildConfig() ?: return
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            Log.w(TAG, "HTTPDNS 已配置，但当前 WebView 不支持代理覆写，继续使用系统 DNS")
+            return
+        }
+        dnsProxy = try {
+            DnsProxyServer.start(resolver)
+        } catch (err: Exception) {
+            Log.w(TAG, "HTTPDNS 回环隧道启动失败，继续使用系统 DNS：${err.message}")
+            null
+        }
+    }
+
+    private fun applyHttpDnsProxy() {
+        val proxy = dnsProxy ?: return
+        try {
+            ProxyController.getInstance().setProxyOverride(
+                ProxyConfig.Builder()
+                    .addProxyRule("http://127.0.0.1:${proxy.port}")
+                    .addBypassRule("127.0.0.1")
+                    .addBypassRule("localhost")
+                    .build(),
+                Executor { it.run() },
+            ) {
+                Log.i(TAG, "HTTPDNS 回环隧道已启用，端口 ${proxy.port}")
+            }
+        } catch (err: Exception) {
+            dnsProxy = null
+            proxy.close()
+            Log.w(TAG, "HTTPDNS 代理覆写失败，继续使用系统 DNS：${err.message}")
+        }
+    }
+
+    private fun stopHttpDns() {
+        val proxy = dnsProxy ?: return
+        dnsProxy = null
+        try {
+            ProxyController.getInstance().clearProxyOverride(Executor { it.run() }) {
+                Log.i(TAG, "HTTPDNS 代理覆写已清除")
+            }
+        } catch (err: Exception) {
+            Log.w(TAG, "清除 HTTPDNS 代理覆写失败：${err.message}")
+        }
+        proxy.close()
+    }
+
+    private companion object {
+        private const val TAG = "BakaMain"
     }
 }
 

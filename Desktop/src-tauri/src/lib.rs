@@ -8,7 +8,9 @@ mod attest;
 mod bridge;
 mod config;
 mod device;
+mod dnsproxy;
 mod http;
+mod httpdns;
 mod notice;
 mod peb;
 mod selfcheck;
@@ -351,7 +353,22 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
     let parsed = site
         .parse()
         .map_err(|err| format!("站点地址 {site} 不是合法 URL：{err}"))?;
-    Ok(WebviewWindowBuilder::new(app, config::WINDOW_LABEL, WebviewUrl::External(parsed))
+
+    // 页面、接口与 WS 统一经回环隧道：受管域名按 HTTPDNS 解析，所以 hosts 被污染时
+    // 页面本身也打得开。没配 HTTPDNS 时不启隧道，保持原来的系统 DNS 与系统代理行为。
+    let proxy = httpdns::shared().and_then(|resolver| match dnsproxy::start(resolver) {
+        Ok(address) => {
+            eprintln!("[baka-dns-proxy] listening on {address}");
+            Some(address)
+        }
+        Err(err) => {
+            eprintln!("[baka-dns-proxy] 启动失败，继续使用系统 DNS：{err}");
+            None
+        }
+    });
+
+    let mut builder =
+        WebviewWindowBuilder::new(app, config::WINDOW_LABEL, WebviewUrl::External(parsed))
         .title(config::WINDOW_TITLE)
         // 常规窗口项：可缩放、有系统边框、初始尺寸与下限、居中、拿焦点
         .inner_size(1280.0, 800.0)
@@ -379,8 +396,16 @@ fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn 
                 spawn_ticket_pump(pump_handle.clone());
             }
             allowed
-        })
-        .build()?)
+        });
+
+    if let Some(address) = proxy {
+        match format!("http://{address}").parse::<tauri::Url>() {
+            Ok(url) => builder = builder.proxy_url(url),
+            Err(err) => eprintln!("[baka-dns-proxy] 隧道地址非法，改用系统代理：{err}"),
+        }
+    }
+
+    Ok(builder.build()?)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

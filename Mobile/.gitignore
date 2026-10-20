@@ -16,7 +16,9 @@ android/app/src/main/assets/capacitor.plugins.json
 android/app/capacitor.build.gradle
 android/capacitor.settings.gradle
 android/capacitor-cordova-android-plugins/
-android/app/src/main/res/xml/
+# res/xml 下 cap sync 生成的 config.xml 不入库；网络配置文件是手写源码，必须随仓库走。
+android/app/src/main/res/xml/*
+!android/app/src/main/res/xml/network_security_config.xml
 
 # 签名材料：密钥库与口令绝不入库（正式签名走 CI secret，见 README）
 keystore/

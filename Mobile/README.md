@@ -172,6 +172,39 @@ npm run apk -- assembleDebug        # 调试包；assembleRelease 为未签名�
 `capacitor.config.json` 属生成物（已在 `.gitignore`）；`prepare-web` 必须在 `sync` 之前跑，
 顺序颠倒会丢桥接脚本。
 
+### 6.1 HTTPDNS（可选，构建期注入）
+
+壳可以让 WebView 的页面、接口与 WebSocket 改走腾讯云 HTTPDNS。凭据只在构建时读取，运行时没有开关：
+
+| 变量 | 含义 |
+|---|---|
+| `BAKA_HTTPDNS_TOKEN` | HTTPS Token；设置后优先，查询走 `https://119.29.29.99/d` |
+| `BAKA_HTTPDNS_APP_ID` + `BAKA_HTTPDNS_SECRET_KEY` | AES 模式；密钥必须是 16 字节 |
+| `BAKA_HTTPDNS_DOMAIN` | 可选；缺省取 `VITE_SERVER_URL` 的 host（与 `server.hostname` 同源） |
+
+```bash
+# 示例值都是占位符；真实凭据由 CI secret 注入，不写进仓库。
+BAKA_HTTPDNS_DOMAIN=example.com \
+BAKA_HTTPDNS_APP_ID='<app-id>' \
+BAKA_HTTPDNS_SECRET_KEY='<16-byte-key>' \
+npm run apk -- assembleDebug
+```
+
+- 凭据写进生成的 `BuildConfig`（随 DEX 分发），**不进入** `dist-web` 或
+  `android/app/src/main/assets/public`；构建后可用 `grep` 检查 Web 产物确认。
+- 任一模式配齐才启用；缺凭据或域名时 `HttpDns.fromBuildConfig()` 返回 null，壳保持系统 DNS。
+- WebView 经 `ProxyController` 使用本机回环 CONNECT 隧道；隧道只替换解析结果，不终结 TLS，
+  SNI 与证书校验仍是原域名。当前 WebView 不支持 `PROXY_OVERRIDE` 时同样保持系统 DNS。
+- 结果按服务端 TTL 缓存；查询超时/失败回落系统 DNS，日志标 `degraded=true`，页面与接口继续可用。
+- 启用后 WebView 走该隧道，系统级 HTTP 代理不再生效；影响范围仅限壳内流量。
+- 明文只放行 HTTPDNS 的 AES 端点与回环地址（`res/xml/network_security_config.xml`），
+  目标站点仍按原域名做 TLS。
+- 日志（`adb logcat`）：`BakaHttpDns` 输出 `source=httpdns|cache host=... ips=... ttl=...s took=...ms`，
+  降级为 `degraded=true ... fallback=system`；`BakaDnsProxy` 输出每次 CONNECT 的解析来源与耗时；
+  `BakaMain` 输出隧道是否启用及其端口。
+
+CI 从仓库 secrets 读取同名凭据，缺失时按未配置构建；凭据轮换必须重新构建分发。
+
 ## 7. 签名与商店分发成本
 
 ### 7.1 一次性：建密钥库并接上 Gradle
@@ -292,6 +325,8 @@ assetlinks 后再测。
 - **通行密钥仍待真机验证**：需要 WebView 124+、origin 与 rpID 同域、assetlinks 命中的正式签名包；
   本仓库的 CI 只负责编译 APK，不覆盖系统验证器与 DAL 关联。WebView 低于 124 时页面会按不支持降级
   （入口隐藏），这是预期行为，不代表注册链路已通过。
+- **HTTPDNS 需用真实凭据做一次真机验收**：假凭据只能覆盖「查询失败 → 系统 DNS 降级」路径；
+  真实解析结果、TTL 缓存命中与 hosts 指向错误 IP 时的可用性，仍要在带真实凭据的构建上确认。
 - **编译已通，运行未验**：本机工具链已能构建 debug APK；真机启动、签名发布包与 CI 产物仍按下文逐项确认。
   首次构建按 §6 排错（重点核对本地 `BridgeActivity.init()`/`bridge.registerPlugin` 与所用 Capacitor
   大版本签名一致，如 CLI 更新模板可 `cap add android` 重新生成后把 `channel/` 源码平移过去）。

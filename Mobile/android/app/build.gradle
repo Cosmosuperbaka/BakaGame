@@ -2,6 +2,25 @@
 // 经 MainActivity 的 bridge.registerPlugin 注册，不做独立 npm 插件包）。
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
+
+// HTTPDNS 的 AppID/密钥只在构建期从环境变量注入，仓库里只有变量名。
+// AES 模式需要 16 位密钥；HTTPS Token 模式优先，二者都没有时壳不启用回环解析隧道。
+def bakaHttpDnsAppId = System.getenv("BAKA_HTTPDNS_APP_ID") ?: ""
+def bakaHttpDnsSecret = System.getenv("BAKA_HTTPDNS_SECRET_KEY") ?: ""
+def bakaHttpDnsToken = System.getenv("BAKA_HTTPDNS_TOKEN") ?: ""
+def bakaHttpDnsDomain = System.getenv("BAKA_HTTPDNS_DOMAIN") ?: ""
+if (!bakaHttpDnsDomain && System.getenv("VITE_SERVER_URL")) {
+    // 壳的页面 origin 与接口同源；域名与 C2 的 server.hostname 用同一个来源。
+    try {
+        bakaHttpDnsDomain = new URL(System.getenv("VITE_SERVER_URL")).getHost()
+    } catch (Exception ignored) {
+        bakaHttpDnsDomain = ""
+    }
+}
+// Java 字符串字面量转义：BuildConfig 是生成的 Java 源文件。
+def bakaJavaString = { String value ->
+    '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"'
+}
 // 不 apply @capacitor/android 里的脚本：7.x 的包里**没有** capacitor.gradle
 // （实测 7.4.0 与 7.6.9 都只有 capacitor/build.gradle），原先这行会让 Gradle 直接
 // 报 "Could not read script ... capacitor.gradle as it does not exist"，整个 APK 构建失败。
@@ -22,6 +41,17 @@ android {
         versionCode 2
         // versionName 由 scripts/prepare-web.mjs 从 Mobile/package.json 同步，勿手改
         versionName '0.1.1'
+
+        // 密钥进 DEX 的 BuildConfig，不进 Web 产物；空值表示本次构建未启用 HTTPDNS。
+        buildConfigField "String", "HTTPDNS_APP_ID", bakaJavaString(bakaHttpDnsAppId)
+        buildConfigField "String", "HTTPDNS_SECRET_KEY", bakaJavaString(bakaHttpDnsSecret)
+        buildConfigField "String", "HTTPDNS_TOKEN", bakaJavaString(bakaHttpDnsToken)
+        buildConfigField "String", "HTTPDNS_DOMAIN", bakaJavaString(bakaHttpDnsDomain)
+    }
+
+    buildFeatures {
+        // AGP 8 起 BuildConfig 生成默认关闭；下面四个字段要落进 BuildConfig。
+        buildConfig true
     }
 
     // 正式签名：四项环境变量齐全才装配，缺任意一项就退回「release 不签名」，

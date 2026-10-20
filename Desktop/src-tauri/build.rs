@@ -39,6 +39,12 @@ const NOTICE_TEMPLATE: &str = r#"# BakaGame 桌面客户端 · 条款与告知
 fn main() {
     println!("cargo:rerun-if-env-changed=BAKA_BUILD_ID");
     println!("cargo:rerun-if-env-changed=BAKA_CANARY_RANDOM");
+    // 下面四项由 option_env! 在编译期读入；不登记的话，轮换 HTTPDNS 密钥后
+    // 增量构建会继续用旧常量，表现是日志里还在向上一枚 AppID 查询。
+    println!("cargo:rerun-if-env-changed=BAKA_HTTPDNS_APP_ID");
+    println!("cargo:rerun-if-env-changed=BAKA_HTTPDNS_SECRET_KEY");
+    println!("cargo:rerun-if-env-changed=BAKA_HTTPDNS_TOKEN");
+    println!("cargo:rerun-if-env-changed=BAKA_HTTPDNS_DOMAIN");
     println!("cargo:rerun-if-changed=build.rs");
 
     let build_id = resolve_build_id();

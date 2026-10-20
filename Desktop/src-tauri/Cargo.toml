@@ -32,6 +32,14 @@ base64 = "0.22"
 # 注册与通道证明（challenge / attest）走阻塞客户端：`http.rs` 是唯一构造点，
 # 只允许在后台线程或 `spawn_blocking` 里调用——`reqwest::blocking` 在 async 上下文会 panic。
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "native-tls"] }
+# HTTPDNS 的 AES 模式（腾讯云授权 ID + 16 位 AES 密钥）：AES-128-CBC/PKCS7，
+# 密文以十六进制拼在 dn 参数里。只用于 DN 解析查询，不参与通道签名。
+aes = "0.8"
+cbc = "0.1"
+hex = "0.4"
+# HTTPS Token 模式的 DNS 查询走 native-tls：证书校验保持默认开启，不能为了
+# 连一个 IP 就放行非法证书；Token 模式优先于 AES 模式。
+native-tls = "0.2"
 
 [profile.release]
 codegen-units = 1

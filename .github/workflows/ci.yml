@@ -323,6 +323,10 @@ jobs:
     # 打包 CLI 的精确版本在这里单点声明，升级时同改这里与 Cargo.lock（两者主次版本必须匹配）。
     env:
       TAURI_CLI_VERSION: "2.12.3"
+      # HTTPDNS 凭据只在构建期读取（见 README §1）；三项都为空时壳自动保持系统 DNS。
+      BAKA_HTTPDNS_APP_ID: ${{ secrets.BAKA_HTTPDNS_APP_ID }}
+      BAKA_HTTPDNS_SECRET_KEY: ${{ secrets.BAKA_HTTPDNS_SECRET_KEY }}
+      BAKA_HTTPDNS_TOKEN: ${{ secrets.BAKA_HTTPDNS_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -378,6 +382,11 @@ jobs:
       # 同一个值也是 WebView 的 origin：通行密钥的 rpID 是站点域名，页面 origin 必须与它
       # 同域，Digital Asset Links 才查得到。生产前后端同源，所以接口基址可以直接复用。
       VITE_SERVER_URL: https://game.baka.website
+      # HTTPDNS 凭据只在构建期写进 BuildConfig；域名缺省取 VITE_SERVER_URL 的 host。
+      # 三项都为空时壳自动保持系统 DNS。
+      BAKA_HTTPDNS_APP_ID: ${{ secrets.BAKA_HTTPDNS_APP_ID }}
+      BAKA_HTTPDNS_SECRET_KEY: ${{ secrets.BAKA_HTTPDNS_SECRET_KEY }}
+      BAKA_HTTPDNS_TOKEN: ${{ secrets.BAKA_HTTPDNS_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
