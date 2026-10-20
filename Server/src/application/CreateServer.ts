@@ -21,6 +21,8 @@ import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
 import { AdminService } from "./AdminService";
+import { AppSettings } from "./AppSettings";
+import { DatabaseAppSettingRepository } from "../infrastructure/db/AppSettingRepository";
 import { SiteStatsService } from "./SiteStatsService";
 import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
 import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
@@ -122,10 +124,18 @@ export function createServer(
         },
       })
     : undefined;
+  // 运行期旋钮（T3）：值存 app_setting，环境变量项退成缺省。没有数据库时这里不接仓储，
+  // 快照永远是缺省值，行为与引入本表之前逐字一致。
+  const settings = new AppSettings({
+    repository: database ? new DatabaseAppSettingRepository(database) : undefined,
+    defaults: env,
+    logger,
+  });
   const local = data.song;
   const netease = new NeteaseMusicProvider({
     logger,
-    enableGeneralUnblock: env.enableGeneralUnblock,
+    // 同步取内存快照：解灰开关走 T3 运行期设置，没有库时快照就是环境变量缺省。
+    enableGeneralUnblock: () => settings.boolean("enableGeneralUnblock"),
   });
   // 音乐链路预热不阻塞启动：第一位带着本机凭据进房的玩家不该替整个进程垫付接口包冷加载与首个上游建连。
   // 失败只会记一条告警，后续请求仍按惰性加载自行重试。
@@ -161,15 +171,16 @@ export function createServer(
     database,
     logger,
     { faker: appOptions.whoIsFakerService, song, cee },
-    antiCheatReviews
+    antiCheatReviews,
+    settings
   );
   // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
   const clientChannel = new ClientChannel({
     store: database ? new ClientChannelRepository(database) : new InMemoryClientChannelStore(),
     minimumVersion: (clientType) =>
       clientType === "desktop"
-        ? (env.clientMinDesktopVersion ?? "")
-        : (env.clientMinMobileVersion ?? ""),
+        ? settings.version("clientMinDesktopVersion")
+        : settings.version("clientMinMobileVersion"),
     onWarn: (message, detail) => logger.warn(message, detail),
     // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
     attestation: env.androidAttestationPackage
@@ -198,6 +209,8 @@ export function createServer(
     clientChannel,
     clientArtifacts,
     disposeResources: async () => {
+      // 回读定时器不参与退出竞赛，停机时先停掉。
+      settings.close();
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();
       await account?.visits.close();
@@ -231,7 +244,8 @@ const createAccount = (
   database: Database | undefined,
   logger: EventLogger,
   rooms: Record<RecordedGame, AdminRoomControl>,
-  reviews: CEEAntiCheatReviewBoard
+  reviews: CEEAntiCheatReviewBoard,
+  settings: AppSettings
 ) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
@@ -295,6 +309,7 @@ const createAccount = (
     reviews,
     rooms,
     siteStats,
+    settings,
     qq: nicknames,
     sentry:
       env.sentryApiToken && env.sentryDsn

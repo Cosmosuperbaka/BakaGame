@@ -2,6 +2,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 
 import { AccountService } from "../src/application/AccountService";
 import { AdminService } from "../src/application/AdminService";
+import { AppSettings } from "../src/application/AppSettings";
 import { InMemoryAntiCheatReviewQueue } from "../src/application/CEEAntiCheatSignals";
 import { QQNicknameService } from "../src/application/QQNicknameService";
 import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
@@ -333,6 +334,8 @@ export const createAccountTestApp = (
     /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
     rooms?: Partial<Record<RecordedGame, AdminRoomControl>>;
     sentry?: SentryApiClient;
+    /** 运行期旋钮：默认不带库（一律读到环境变量缺省），要测写入的用例自己注入带仓储的实例。 */
+    settings?: AppSettings;
     /**
      * 前端来源；默认与后端同主机（`localhost`）。
      *
@@ -426,6 +429,8 @@ export const createAccountTestApp = (
     reviews: antiCheatReviews,
     rooms,
     siteStats,
+    // 夹具默认不带库：后台读到的旋钮一律是环境变量缺省那侧。
+    settings: options.settings ?? new AppSettings({ defaults: {} }),
     sentry: options.sentry ?? null,
     qq: nicknames,
     now: options.now,

@@ -307,6 +307,21 @@ export const auditLog = mysqlTable(
   ]
 );
 
+/**
+ * 运行期旋钮（T3）：一行一个键，值为规范化后的原始字符串。
+ *
+ * 只有「改它不该等下一次重建容器」的项进这里，凭据与部署拓扑永远在环境变量。
+ * 键与校验见 `shared/RuntimeSettings.ts`；读取侧有缓存且**回落环境变量缺省**，
+ * 因此没有数据库时行为与进表之前完全一致。
+ */
+export const appSetting = mysqlTable("app_setting", {
+  key: varchar("setting_key", { length: 48 }).primaryKey(),
+  value: text("value").notNull(),
+  /** 最后改动该键的管理员 id；系统写入或未知来源为空。 */
+  updatedBy: varchar("updated_by", { length: 64 }),
+  updatedAt: updatedAt(),
+});
+
 export const feedback = mysqlTable(
   "feedback",
   {

@@ -114,8 +114,8 @@ export interface NeteaseMusicProviderOptions {
   queueTimeoutMs?: number;
   cacheMaxEntries?: number;
   cacheMaxBytes?: number;
-  /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。 */
-  enableGeneralUnblock?: boolean;
+  /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。传函数则每次请求现读（运行期设置走这条）。 */
+  enableGeneralUnblock?: boolean | (() => boolean);
   /** 单个解灰音源的最长等待，默认 4000ms；上游存在永不 settle 的请求，必须设上界。 */
   unblockSourceTimeoutMs?: number;
   /** 一次解灰尝试的总预算，默认 12000ms；用尽后不再换源。 */
@@ -2023,7 +2023,22 @@ export class NeteaseMusicProvider implements MusicProvider {
   private lastRateLimitMessage = "操作频繁，请稍候再试";
 
   readonly deviceName: string;
-  private readonly enableGeneralUnblock: boolean;
+  private readonly generalUnblockEnabled: () => boolean;
+  /**
+   * 现读解灰开关，并把结果同步回 `process.env.ENABLE_GENERAL_UNBLOCK`：
+   * 上游封装库读的是那一份，不同步的话后台改了这里、上游那边仍按旧值走。
+   */
+  private readonly readGeneralUnblock = (): boolean => {
+    const enabled = this.generalUnblockEnabled();
+    if (
+      typeof process !== "undefined" &&
+      process.env &&
+      process.env.ENABLE_GENERAL_UNBLOCK !== String(enabled)
+    ) {
+      process.env.ENABLE_GENERAL_UNBLOCK = String(enabled);
+    }
+    return enabled;
+  };
   private readonly logger?: EventLogger;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
@@ -2035,14 +2050,16 @@ export class NeteaseMusicProvider implements MusicProvider {
       concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3),
     });
     this.deviceName = options.deviceName?.trim() || "BakaGame";
-    this.enableGeneralUnblock =
-      options.enableGeneralUnblock ??
-      (typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
-        ? process.env.ENABLE_GENERAL_UNBLOCK === "true"
-        : true);
-    if (typeof process !== "undefined" && process.env) {
-      process.env.ENABLE_GENERAL_UNBLOCK = String(this.enableGeneralUnblock);
-    }
+    const unblockOption = options.enableGeneralUnblock;
+    this.generalUnblockEnabled =
+      typeof unblockOption === "function"
+        ? unblockOption
+        : () =>
+            unblockOption ??
+            (typeof process !== "undefined" && process.env?.ENABLE_GENERAL_UNBLOCK !== undefined
+              ? process.env.ENABLE_GENERAL_UNBLOCK === "true"
+              : true);
+    this.readGeneralUnblock();
     this.logger = options.logger;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? { nextFloat: () => Math.random() };
@@ -2928,7 +2945,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         let audioUrl = trialOnly ? "" : (normalizeAudioUrl(songData.url) ?? "");
         const isRestricted = !audioUrl || trialOnly || songData.code === 404;
 
-        if (isRestricted && this.enableGeneralUnblock) {
+        if (isRestricted && this.readGeneralUnblock()) {
           const unblockedUrl = await this.unblockSongAudio(songId, cookie);
           if (unblockedUrl) {
             audioUrl = unblockedUrl;

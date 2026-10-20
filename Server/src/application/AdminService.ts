@@ -10,6 +10,8 @@ import type { QQNicknameService } from "./QQNicknameService";
 import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
+import type { AppSettings } from "./AppSettings";
+import type { AdminRuntimeSetting, RuntimeSettingKey } from "../shared/RuntimeSettings";
 import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import type {
   GameRecordListItem,
@@ -66,6 +68,8 @@ export interface AdminServiceOptions {
   /** 三款游戏的实时房间控制口；房间不落库，后台只经由它们读写。 */
   rooms: Record<RecordedGame, AdminRoomControl>;
   siteStats: SiteStatsRepository;
+  /** 运行期旋钮（T3）：后台读它的内存快照，写它经校验后落 `app_setting`。 */
+  settings: AppSettings;
   /** 未配置 `SENTRY_API_TOKEN` 时为 null，概览展示未配置。 */
   sentry: SentryApiClient | null;
   /** QQ 昵称查询号；缺省时 `admin.qq.*` 回 503。 */
@@ -482,6 +486,32 @@ export class AdminService {
     });
     await this.options.rooms[input.game].adminKickPlayer(room.roomId, player.id);
     return { ok: true };
+  }
+
+  // ==================== 运行期旋钮（T3） ====================
+
+  /** 环境变量缺省、库内覆盖值与当前生效值一起给出；`updatedBy` 解析成管理员昵称。 */
+  async listRuntimeSettings(): Promise<AdminRuntimeSetting[]> {
+    const snapshot = this.options.settings.snapshot();
+    const names = await this.usersById(snapshot.map((item) => item.updatedBy));
+    return snapshot.map((item) => ({
+      ...item,
+      updatedBy: item.updatedBy ? (names.get(item.updatedBy)?.name ?? item.updatedBy) : null,
+    }));
+  }
+
+  /**
+   * 改一个旋钮：先过校验（取值与是否配了数据库），再写审计、后落库 ——
+   * 与其余后台动作同一口径，被拒的请求不会留下一条没发生的审计。
+   */
+  async updateRuntimeSetting(
+    actorId: string,
+    input: { key: RuntimeSettingKey; value: string }
+  ): Promise<AdminRuntimeSetting[]> {
+    const value = this.options.settings.check(input.key, input.value);
+    await this.audit(actorId, "runtimeSetting.update", "site", input.key, { value });
+    await this.options.settings.update(input.key, value, actorId);
+    return this.listRuntimeSettings();
   }
 
   // ==================== 站点概览 ====================
