@@ -1,4 +1,4 @@
-import type { SonGuessrMusicAccount } from "@/types";
+import type { SonGuessrMusicAccount } from "@bakagame/shared";
 
 export type SongMusicPlatform = "netease" | "qq";
 

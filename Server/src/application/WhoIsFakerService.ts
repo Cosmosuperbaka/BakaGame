@@ -1,35 +1,37 @@
 import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecordEvent, type GameRecorder } from "../domain/GameRecord";
-import type {
-  ChatChannel,
-  BlankGuessRecord,
-  ChatMessage,
-  ConnectionRecord,
-  FeedbackContinuation,
-  FeedbackNext,
-  DescriptionRecord,
-  WhoIsFakerPhase,
-  GameRound,
-  NightActionRecord,
-  PhaseTimerState,
-  WhoIsFakerPlayerRecord,
-  WhoIsFakerRole,
-  WhoIsFakerPrivateState,
-  PublicPlayerView,
-  RoleConfig,
-  RoundFeedback,
-  RoundHistoryEntry,
-  RoundSummary,
-  WhoIsFakerRoomRecord,
-  WhoIsFakerRoomSnapshot,
-  WhoIsFakerRoomSummary,
-  RoundWinner,
-  SpeechMode,
-  TieBreakStage,
-  VoteRecord,
-} from "../domain/Model";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../domain/Model";
+import {
+  type ChatChannel,
+  type BlankGuessRecord,
+  type ChatMessage,
+  type ConnectionRecord,
+  type FeedbackContinuation,
+  type FeedbackNext,
+  type DescriptionRecord,
+  type WhoIsFakerPhase,
+  type GameRound,
+  type NightActionRecord,
+  type PhaseTimerState,
+  type WhoIsFakerPlayerRecord,
+  type WhoIsFakerRole,
+  type WhoIsFakerPrivateState,
+  type PublicPlayerView,
+  type RoleConfig,
+  type RoundFeedback,
+  type RoundHistoryEntry,
+  type RoundSummary,
+  type WhoIsFakerRoomRecord,
+  type WhoIsFakerRoomSnapshot,
+  type WhoIsFakerRoomSummary,
+  type RoundWinner,
+  type SpeechMode,
+  type TieBreakStage,
+  type VoteRecord,
+  ABSTAIN_TARGET_ID,
+  ROOM_ID_TEST_MODE,
+  SERVER_SHUTDOWN_MESSAGE,
+} from "../shared/Index";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -58,7 +60,6 @@ import { describeError, EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
-import { SERVER_SHUTDOWN_MESSAGE } from "../shared/Index";
 import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 
 import {
@@ -78,11 +79,11 @@ import {
   BOT_DESCRIPTION_TEMPLATES,
 } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import type { CommandHandler } from "./handlers/CommandHandler";
-import { createGameCommandHandler } from "./handlers/GameCommandHandler";
-import { createPlayerCommandHandler } from "./handlers/PlayerCommandHandler";
-import { createRoomCommandHandler } from "./handlers/RoomCommandHandler";
-import { createTestCommandHandler } from "./handlers/TestCommandHandler";
+import type { CommandHandler } from "./whoisfaker/CommandHandler";
+import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
+import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
+import { createRoomCommandHandler } from "./whoisfaker/RoomCommandHandler";
+import { createTestCommandHandler } from "./whoisfaker/TestCommandHandler";
 
 export interface WhoIsFakerServiceOptions {
   now?: () => number;

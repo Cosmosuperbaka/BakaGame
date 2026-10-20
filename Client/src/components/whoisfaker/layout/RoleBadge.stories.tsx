@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
-import type { WhoIsFakerRole } from "@/types";
+import type { WhoIsFakerRole } from "@bakagame/shared";
 import { RoleBadge } from "./RoleBadge";
 
 const meta = {

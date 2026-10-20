@@ -45,7 +45,7 @@ import {
   type WhoIsFakerPrivateState,
   type WhoIsFakerRole,
   type PublicPlayerView,
-} from "@/types";
+} from "@bakagame/shared";
 
 interface RoomHeaderCenterProps {
   day: number;

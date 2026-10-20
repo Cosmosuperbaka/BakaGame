@@ -5,7 +5,7 @@ import { Hint } from "@/components/ui/Tooltip";
 import { listItem, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { ABSTAIN_TARGET_ID } from "@/types";
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared";
 import { RoleBadge } from "./RoleBadge";
 
 interface Props {

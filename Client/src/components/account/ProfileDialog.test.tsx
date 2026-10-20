@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AccountProfile } from "@/types";
+import type { AccountProfile } from "@bakagame/shared";
 import { AuthRequestError } from "@/lib/Api";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { ProfileDialog } from "./ProfileDialog";

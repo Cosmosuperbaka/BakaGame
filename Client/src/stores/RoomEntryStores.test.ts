@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerMessage } from "@/types";
+import type { ServerMessage } from "@bakagame/shared";
 const sockets = vi.hoisted(() => {
   const make = () => ({
     send: vi.fn(),
@@ -28,22 +28,20 @@ vi.mock("@/lib/WhoIsFakerWs", () => ({
   },
 }));
 vi.mock("@/lib/SonGuessrWs", () => ({
-  sonGuessrWs: {
-    send: sockets.song.send,
-    connect: sockets.song.connect,
-    disconnect: sockets.song.disconnect,
-    onMessage: (fn: (m: ServerMessage) => void) => {
-      sockets.song.messages.push(fn);
-      return () => {
-        sockets.song.messages = sockets.song.messages.filter((h) => h !== fn);
-      };
-    },
-    onStatus: (fn: (b: boolean) => void) => {
-      sockets.song.statuses.push(fn);
-      return () => {
-        sockets.song.statuses = sockets.song.statuses.filter((h) => h !== fn);
-      };
-    },
+  send: sockets.song.send,
+  connect: sockets.song.connect,
+  disconnect: sockets.song.disconnect,
+  onMessage: (fn: (m: ServerMessage) => void) => {
+    sockets.song.messages.push(fn);
+    return () => {
+      sockets.song.messages = sockets.song.messages.filter((h) => h !== fn);
+    };
+  },
+  onStatus: (fn: (b: boolean) => void) => {
+    sockets.song.statuses.push(fn);
+    return () => {
+      sockets.song.statuses = sockets.song.statuses.filter((h) => h !== fn);
+    };
   },
 }));
 import { useWhoIsFakerStore, initWhoIsFakerWs } from "./UseWhoIsFakerStore";

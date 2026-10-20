@@ -40,7 +40,6 @@ export default defineConfig({
         find: "@bakagame/shared",
         replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts"),
       },
-      { find: "@/types", replacement: path.resolve(import.meta.dirname, "./src/types/Index.ts") },
       { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
     ],
   },

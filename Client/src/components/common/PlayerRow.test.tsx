@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { PublicProfile } from "@/types";
+import type { PublicProfile } from "@bakagame/shared";
 import { clearProfileCacheForTest } from "@/lib/ProfileCache";
 import { PlayerRow } from "./PlayerRow";
 

@@ -16,7 +16,8 @@ import {
 } from "@/components/songuessr/settings/SongSettingsPanels";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 
 const notifyCopyFailed = () =>
   useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
@@ -79,8 +80,6 @@ function SongSettingsGroups({
   );
 }
 
-type SongRun = (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
-
 /** 等待页的队伍面板：只给参与者，旁观者没有队伍。同队共用次数、记录与限时，一人猜中全队结束。 */
 function SongTeamPicker({
   snapshot,
@@ -90,7 +89,7 @@ function SongTeamPicker({
 }: {
   snapshot: SonGuessrRoomSnapshot;
   me?: SonGuessrPlayerView;
-  run: SongRun;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }) {
   if (!me || me.membership !== "active") return null;
@@ -111,7 +110,7 @@ export function SongSoloWaitingPanel({
   isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }) {
   const isStarting = Boolean(isPending?.("song.game.start"));
@@ -154,7 +153,7 @@ export function SongHostWaitingPanel({
   nonHostTotal: number;
   allReady: boolean;
   canStart: boolean;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }) {
   const isStarting = Boolean(isPending?.("song.game.start"));
@@ -200,7 +199,7 @@ export interface SongWaitingPhaseProps {
   isHost: boolean;
   /** 房主在手动出题时收到的可选出题人（见 `SonGuessrPrivateState.submitterCandidateIds`） */
   submitterCandidateIds?: string[];
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }
 

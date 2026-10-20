@@ -2,7 +2,7 @@
 
 import { ConnectionRegistry } from "../src/application/ConnectionRegistry";
 import { AppError } from "../src/domain/Errors";
-import type { ConnectionRecord } from "../src/domain/Model";
+import type { ConnectionRecord } from "../src/shared/Index";
 
 const createConnection = (
   id: string,

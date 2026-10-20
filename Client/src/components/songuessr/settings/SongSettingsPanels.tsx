@@ -30,14 +30,15 @@ import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { listItem } from "@/lib/Motion";
 import { updateRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { ALL_BANGUMI_TRACK_KINDS, BANGUMI_TRACK_KIND_LABELS } from "@/types";
-import type {
-  AnimeAutoFilters,
-  BangumiMusicTrackKind,
-  SongArtistFilter,
-  SongArtistSearchResult,
-  SonGuessrRoomSnapshot,
-} from "@/types";
+import {
+  ALL_BANGUMI_TRACK_KINDS,
+  BANGUMI_TRACK_KIND_LABELS,
+  type AnimeAutoFilters,
+  type BangumiMusicTrackKind,
+  type SongArtistFilter,
+  type SongArtistSearchResult,
+  type SonGuessrRoomSnapshot,
+} from "@bakagame/shared";
 
 const QUESTION_TYPE_OPTIONS: SegmentedOption<SonGuessrRoomSnapshot["settings"]["questionType"]>[] =
   [

@@ -8,7 +8,7 @@ import {
   playerNameOf,
 } from "@/lib/WhoIsFakerHistory";
 import { cn } from "@/lib/Utils";
-import { ABSTAIN_TARGET_ID, type PublicPlayerView, type RoundHistoryEntry } from "@/types";
+import { ABSTAIN_TARGET_ID, type PublicPlayerView, type RoundHistoryEntry } from "@bakagame/shared";
 
 /** 一条行为：谁、做了什么、对谁。 */
 function ActionRow({

@@ -8,6 +8,7 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { followDelay, listItem, revealCard, springSettleMs } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
+import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import {
   BANGUMI_TRACK_KIND_LABELS,
   refineTrackKindByText,
@@ -17,7 +18,7 @@ import {
   type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
   type SonGuessrRoundSummary,
-} from "@/types";
+} from "@bakagame/shared";
 
 /**
  * 徽章文案：类型判定与服务端**共用同一份规则**（`refineTrackKindByText`），
@@ -190,7 +191,7 @@ export interface SongRoundResultPhaseProps {
   privateState: SonGuessrPrivateState;
   me?: SonGuessrPlayerView;
   isHost: boolean;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }
 

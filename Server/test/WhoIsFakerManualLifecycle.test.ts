@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ROOM_IDLE_TIMEOUT_MS, PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS } from "../src/config/Constants";
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
-import type { WhoIsFakerClientMessage } from "../src/shared/Index";
+import type {
+  WhoIsFakerPrivateState,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerClientMessage,
+} from "../src/shared/Index";
 import {
   createConnection,
   createTestContext,

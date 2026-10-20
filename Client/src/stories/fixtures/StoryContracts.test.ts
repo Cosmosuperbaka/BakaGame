@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WhoIsFakerRoomSnapshot } from "@/types";
-import { ABSTAIN_TARGET_ID } from "@/types";
+import { type WhoIsFakerRoomSnapshot, ABSTAIN_TARGET_ID } from "@bakagame/shared";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 // 本套件检查实际 fixture 与 CSF metadata 的逻辑契约，不冒充 Storybook 渲染认证。

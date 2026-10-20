@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { DescriptionPhase } from "./DescriptionPhase";
 

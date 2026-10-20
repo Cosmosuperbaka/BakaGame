@@ -56,7 +56,7 @@ describe("websocket client", () => {
     const socket = MockWebSocket.instances[0];
     socket.open();
 
-    const pending = socketApi.send<{ accepted: boolean }>(
+    const pending = socketApi.send(
       "room.join",
       { userName: "玩家" },
       { roomId: "1234", sessionToken: "token" }
@@ -66,10 +66,14 @@ describe("websocket client", () => {
       type: "ack",
       id: envelope.id,
       requestType: "room.join",
-      payload: { accepted: true },
+      payload: { roomId: "1234", playerId: "player-1", sessionToken: "token" },
     });
 
-    await expect(pending).resolves.toEqual({ accepted: true });
+    await expect(pending).resolves.toEqual({
+      roomId: "1234",
+      playerId: "player-1",
+      sessionToken: "token",
+    });
     expect(JSON.parse(socket.sent[0])).toMatchObject({
       type: "room.join",
       roomId: "1234",

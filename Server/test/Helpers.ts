@@ -1,8 +1,7 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import type { ConnectionRecord } from "../src/domain/Model";
-import type { WhoIsFakerClientMessage } from "../src/shared/Index";
+import type { ConnectionRecord, WhoIsFakerClientMessage } from "../src/shared/Index";
 
 export interface TestConnection {
   record: ConnectionRecord;

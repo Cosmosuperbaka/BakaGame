@@ -6,7 +6,7 @@ import { SonGuessrService } from "../application/SonGuessrService";
 import { CEEService } from "../application/CEEService";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
-import type { ConnectionRecord, PlayerAccount } from "../domain/Model";
+import type { ConnectionRecord, PlayerAccount, ClientChannelProof } from "../shared/Index";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
 import { LRUCache } from "lru-cache";
 
@@ -35,7 +35,6 @@ import { accountRoutes, statusOfAppError, type AccountDependencies } from "./rou
 import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
-import type { ClientChannelProof } from "../shared/Index";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 
 export interface AppDependencies {

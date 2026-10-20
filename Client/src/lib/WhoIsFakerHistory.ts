@@ -4,7 +4,7 @@ import {
   type RoundFeedback,
   type RoundHistoryEntry,
   type VoteRecord,
-} from "@/types";
+} from "@bakagame/shared";
 
 /** 名单里查不到（极少见的旧数据）时退回编号，不留空白。 */
 export function playerNameOf(players: PublicPlayerView[], playerId: string): string {

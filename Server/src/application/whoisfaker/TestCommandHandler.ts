@@ -1,11 +1,6 @@
-import type { ConnectionRecord } from "../../domain/Model";
-import type { WhoIsFakerClientMessage } from "../../shared/Index";
-import {
-  type CommandHandler,
-  type CommandResult,
-  ownsCommand,
-  unsupportedCommand,
-} from "./CommandHandler";
+import type { ConnectionRecord, WhoIsFakerClientMessage } from "../../shared/Index";
+import { unsupportedCommand } from "../../domain/Errors";
+import { type CommandHandler, type CommandResult, ownsCommand } from "./CommandHandler";
 
 export const TEST_COMMAND_TYPES = [
   "test.jumpToPhase",

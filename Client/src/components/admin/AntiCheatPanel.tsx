@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@/types";
+import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {

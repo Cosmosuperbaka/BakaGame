@@ -6,7 +6,7 @@ import {
   getStoredSongMusicSession,
   saveSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import type { SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore, type SonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { SongAccountSettings } from "./SongAccountSettings";
 

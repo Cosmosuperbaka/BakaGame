@@ -1,4 +1,4 @@
-import type { RecordedGameKind } from "@/types";
+import type { RecordedGameKind } from "@bakagame/shared";
 
 /** 管理后台共用的文案与格式：游戏名、审计动作、北京时间。 */
 

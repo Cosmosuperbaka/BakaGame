@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WhoIsFakerRoomSnapshot, RoundSummary, ServerMessage } from "@/types";
-import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
+import {
+  type WhoIsFakerRoomSnapshot,
+  type RoundSummary,
+  type ServerMessage,
+  SERVER_SHUTDOWN_MESSAGE,
+} from "@bakagame/shared";
 
 const wsMock = vi.hoisted(() => {
   let messageHandlers: Array<(message: ServerMessage) => void> = [];

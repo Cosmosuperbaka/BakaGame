@@ -1,7 +1,11 @@
 ﻿import { expect, test } from "bun:test";
 
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "../src/domain/Model";
+import {
+  type WhoIsFakerPrivateState,
+  type WhoIsFakerRoomSnapshot,
+  ABSTAIN_TARGET_ID,
+  ROOM_ID_TEST_MODE,
+} from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 // ==================== 测试房间与真实规则一致性 ====================

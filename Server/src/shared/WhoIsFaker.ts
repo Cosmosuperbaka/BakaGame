@@ -1,7 +1,18 @@
+import { Type as t, type Static } from "@sinclair/typebox";
+import { schemaUnion } from "./SchemaUnion";
+import {
+  createClientEnvelopeSchema,
+  RoomVisibilitySchema,
+  type ChatMessage,
+  type PlayerAccount,
+  type PlayerMembership,
+  type RoomVisibility,
+} from "./Model";
 import type { ClientEnvelope } from "./Protocol";
-import type { ChatMessage, PlayerAccount, PlayerMembership, RoomVisibility } from "./Model";
 
 // ==================== 谁是卧底 (WhoIsFaker) 领域模型与协议 ====================
+
+const strict = { additionalProperties: false } as const;
 
 // 游戏主状态机的阶段定义。
 export const WHOISFAKER_PHASES = [
@@ -26,7 +37,7 @@ export type PlayerSide = "good" | "undercover" | "blank";
 export type DescriptionKind = "description" | "tieBreak" | "supplement";
 export type SpeechMode = "normal" | "supplement" | "tieBreak";
 export type TieBreakStage = "description" | "vote";
-export type DisconnectResolution = "wait" | "eliminate";
+const disconnectResolutionSchema = t.Union([t.Literal("wait"), t.Literal("eliminate")]);
 export type RoundWinner = "good" | "undercover" | "blank" | "aborted";
 
 /** 阶段倒计时运行时状态，严格仅限当前阶段生效。 */
@@ -44,11 +55,15 @@ export interface PhaseTimerState {
 }
 
 // 房主在开局前配置的阵营参数。
-export interface RoleConfig {
-  undercoverCount: number;
-  hasAngel: boolean;
-  hasBlank: boolean;
-}
+export const RoleConfigSchema = t.Object(
+  {
+    undercoverCount: t.Integer({ minimum: 0 }),
+    hasAngel: t.Boolean(),
+    hasBlank: t.Boolean(),
+  },
+  strict
+);
+export type RoleConfig = Static<typeof RoleConfigSchema>;
 
 // 根据当前人数动态推导出的阵营上限。
 export interface RoleLimits {
@@ -498,79 +513,137 @@ export interface WhoIsFakerPrivateState {
   privilegedActionPreview?: PrivilegedActionPreview;
 }
 
-// ==================== 谁是卧底客户端信封与消息 ====================
+// ==================== 谁是卧底客户端指令契约（单一真相源） ====================
+// 命令清单只有 `WhoIsFakerPayloadSchemas` 这一份：命令 union、载荷类型与运行时信封全部由它派生。
+// 派生前这里是一张手写的信封联合，传输层另抄一份同构的 schema 表，两边一旦漏配就会出现
+// 「类型有、处理器有、校验没有」的静默拒收。
 
-export type WhoIsFakerClientMessage =
-  | ClientEnvelope<"lobby.subscribeRooms", Record<string, never>>
-  | ClientEnvelope<
-      "room.create",
-      {
-        roomId: string;
-        name: string;
-        visibility: RoomVisibility;
-        password?: string;
-        allowSpectators: boolean;
-        userName: string;
-        roleConfig?: RoleConfig;
-      }
-    >
-  | ClientEnvelope<
-      "room.join",
-      {
-        userName: string;
-        password?: string;
-      }
-    >
-  | ClientEnvelope<
-      "room.reconnect",
-      {
-        roomId: string;
-        sessionToken: string;
-      }
-    >
-  | ClientEnvelope<"room.leave", Record<string, never>>
-  | ClientEnvelope<"room.requestSync", Record<string, never>>
-  | ClientEnvelope<"player.rename", { name: string }>
-  | ClientEnvelope<"player.setSpectator", { spectator: boolean }>
-  | ClientEnvelope<"player.setReady", { ready: boolean }>
-  | ClientEnvelope<
-      "room.updateSettings",
-      {
-        name?: string;
-        visibility?: RoomVisibility;
-        password?: string;
-        allowSpectators?: boolean;
-        roleConfig?: RoleConfig;
-        revealRoleOnDeath?: boolean;
-      }
-    >
-  | ClientEnvelope<"room.kick", { playerId: string }>
-  | ClientEnvelope<"game.assignQuestioner", { playerId: string }>
-  | ClientEnvelope<
-      "game.submitWords",
-      {
-        words: [string, string];
-        blankHint?: string;
-        manualRoles?: Record<string, WhoIsFakerRole>;
-      }
-    >
-  | ClientEnvelope<"game.advancePhase", Record<string, never>>
-  | ClientEnvelope<"game.submitDescription", { text: string }>
-  | ClientEnvelope<"game.submitVote", { targetId: string }>
-  | ClientEnvelope<"game.submitNightAction", { targetId?: string | null }>
-  | ClientEnvelope<"game.submitBlankGuess", { words: [string, string] }>
-  | ClientEnvelope<"game.enterBlankGuess", Record<string, never>>
-  | ClientEnvelope<"game.updateBlankGuessDraft", { words: [string, string] }>
-  | ClientEnvelope<"game.reviewBlankGuess", { approve: boolean }>
-  | ClientEnvelope<"game.resolveDisconnect", { playerId: string; resolution: DisconnectResolution }>
-  | ClientEnvelope<"chat.send", { text: string }>
-  | ClientEnvelope<"room.transferHost", { playerId: string }>
-  | ClientEnvelope<"test.jumpToPhase", { phase: WhoIsFakerPhase }>
-  | ClientEnvelope<"test.setMyRole", { role: WhoIsFakerRole }>
-  | ClientEnvelope<"test.addBot", { count?: number }>
-  | ClientEnvelope<"test.removeBot", { playerId?: string; count?: number }>
-  | ClientEnvelope<"game.cancelVote", Record<string, never>>
-  | ClientEnvelope<"game.cancelNightAction", Record<string, never>>
-  | ClientEnvelope<"game.requestSupplement", { playerIds: string[] }>
-  | ClientEnvelope<"game.startPhaseTimer", { durationSeconds: number }>
-  | ClientEnvelope<"game.stopPhaseTimer", Record<string, never>>;
+const emptyPayload = t.Object({}, strict);
+const positiveInt = t.Integer({ minimum: 1 });
+const roomId = t.String({ minLength: 1, maxLength: 32 });
+const userName = t.String({ minLength: 1, maxLength: 32 });
+const password = t.Optional(t.String({ maxLength: 64 }));
+const playerId = t.String({ minLength: 1, maxLength: 64 });
+const sessionToken = t.String({ minLength: 1, maxLength: 128 });
+const gamePhaseSchema = schemaUnion(WHOISFAKER_PHASES.map((phase) => t.Literal(phase)));
+const playerRoleSchema = schemaUnion(WHOISFAKER_ROLES.map((role) => t.Literal(role)));
+const wordPair = t.Tuple([
+  t.String({ minLength: 1, maxLength: 50 }),
+  t.String({ minLength: 1, maxLength: 50 }),
+]);
+const draftWordPair = t.Tuple([t.String({ maxLength: 50 }), t.String({ maxLength: 50 })]);
+
+export const WhoIsFakerPayloadSchemas = {
+  "lobby.subscribeRooms": emptyPayload,
+  "room.create": t.Object(
+    {
+      roomId,
+      name: t.String({ minLength: 1, maxLength: 40 }),
+      visibility: RoomVisibilitySchema,
+      password,
+      allowSpectators: t.Boolean(),
+      userName,
+      roleConfig: t.Optional(RoleConfigSchema),
+    },
+    strict
+  ),
+  "room.join": t.Object({ userName, password }, strict),
+  "room.reconnect": t.Object({ roomId, sessionToken }, strict),
+  "room.leave": emptyPayload,
+  "room.requestSync": emptyPayload,
+  "player.rename": t.Object({ name: userName }, strict),
+  "player.setSpectator": t.Object({ spectator: t.Boolean() }, strict),
+  "player.setReady": t.Object({ ready: t.Boolean() }, strict),
+  "room.updateSettings": t.Object(
+    {
+      name: t.Optional(t.String({ minLength: 1, maxLength: 40 })),
+      visibility: t.Optional(RoomVisibilitySchema),
+      password,
+      allowSpectators: t.Optional(t.Boolean()),
+      roleConfig: t.Optional(RoleConfigSchema),
+      revealRoleOnDeath: t.Optional(t.Boolean()),
+    },
+    strict
+  ),
+  "room.kick": t.Object({ playerId }, strict),
+  "game.assignQuestioner": t.Object({ playerId }, strict),
+  "game.submitWords": t.Object(
+    {
+      words: wordPair,
+      blankHint: t.Optional(t.String({ maxLength: 50 })),
+      manualRoles: t.Optional(t.Record(playerId, playerRoleSchema)),
+    },
+    strict
+  ),
+  "game.advancePhase": emptyPayload,
+  "game.submitDescription": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "game.submitVote": t.Object({ targetId: playerId }, strict),
+  "game.submitNightAction": t.Object(
+    { targetId: t.Optional(t.Union([playerId, t.Null()])) },
+    strict
+  ),
+  "game.submitBlankGuess": t.Object({ words: wordPair }, strict),
+  "game.enterBlankGuess": emptyPayload,
+  "game.updateBlankGuessDraft": t.Object({ words: draftWordPair }, strict),
+  "game.reviewBlankGuess": t.Object({ approve: t.Boolean() }, strict),
+  "game.resolveDisconnect": t.Object({ playerId, resolution: disconnectResolutionSchema }, strict),
+  "chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "room.transferHost": t.Object({ playerId }, strict),
+  "test.jumpToPhase": t.Object({ phase: gamePhaseSchema }, strict),
+  "test.setMyRole": t.Object({ role: playerRoleSchema }, strict),
+  "test.addBot": t.Object({ count: t.Optional(positiveInt) }, strict),
+  "test.removeBot": t.Object(
+    { playerId: t.Optional(playerId), count: t.Optional(positiveInt) },
+    strict
+  ),
+  "game.cancelVote": emptyPayload,
+  "game.cancelNightAction": emptyPayload,
+  "game.requestSupplement": t.Object({ playerIds: t.Array(playerId, { minItems: 1 }) }, strict),
+  "game.startPhaseTimer": t.Object({ durationSeconds: positiveInt }, strict),
+  "game.stopPhaseTimer": emptyPayload,
+} as const;
+
+export type WhoIsFakerCommand = keyof typeof WhoIsFakerPayloadSchemas;
+export type WhoIsFakerPayload<TCommand extends WhoIsFakerCommand> = Static<
+  (typeof WhoIsFakerPayloadSchemas)[TCommand]
+>;
+export type WhoIsFakerClientMessage = {
+  [K in WhoIsFakerCommand]: ClientEnvelope<K, WhoIsFakerPayload<K>>;
+}[WhoIsFakerCommand];
+
+const createWhoIsFakerMessageSchema = <K extends WhoIsFakerCommand>(type: K) =>
+  createClientEnvelopeSchema(type, WhoIsFakerPayloadSchemas[type]);
+
+export const WhoIsFakerMessageSchemas = Object.fromEntries(
+  (Object.keys(WhoIsFakerPayloadSchemas) as WhoIsFakerCommand[]).map((type) => [
+    type,
+    createWhoIsFakerMessageSchema(type),
+  ])
+) as { [K in WhoIsFakerCommand]: ReturnType<typeof createWhoIsFakerMessageSchema<K>> };
+
+export const WhoIsFakerClientMessageSchema = schemaUnion(Object.values(WhoIsFakerMessageSchemas));
+
+/**
+ * 进房三条命令的 ack：服务端 `restorePlayerConnection` / `handleRoomCreate` / `handleRoomJoin`
+ * 的返回值就是这三行，快照与私有态另有 event 下发，不在 ack 里。
+ */
+export interface WhoIsFakerRoomEnterAck {
+  roomId: string;
+  playerId: string;
+  sessionToken: string;
+}
+
+/**
+ * 「发哪条命令 → 拿到什么形状的 ack」由命令表推导，客户端不再各自手写条件类型链。
+ * 未列出的命令 ack 仍是任意对象：它们要么没有业务返回值，要么客户端只关心事件。
+ */
+export type WhoIsFakerAck<TCommand extends WhoIsFakerCommand> = TCommand extends
+  "room.create" | "room.join" | "room.reconnect"
+  ? WhoIsFakerRoomEnterAck
+  : TCommand extends "lobby.subscribeRooms"
+    ? { subscribed: true }
+    : TCommand extends "room.leave"
+      ? { left: true }
+      : TCommand extends "room.requestSync"
+        ? { synced: true }
+        : Record<string, unknown>;

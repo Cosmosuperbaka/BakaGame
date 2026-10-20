@@ -1,26 +1,29 @@
 import { create } from "zustand";
 import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
-import type {
-  ChatMessage,
-  EventPacket,
-  ServerMessage,
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
-  SonGuessrRoomSummary,
-  SongArtistSearchResult,
-  SongPlaylistInfo,
-  SongSearchResult,
-  BangumiSubjectSearchResult,
-  BangumiSongCandidate,
-} from "@/types";
-import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
+import {
+  type ChatMessage,
+  type EventPacket,
+  type ServerMessage,
+  type SonGuessrRoomEnterAck,
+  type SonGuessrPrivateState,
+  type SonGuessrRoomSnapshot,
+  type SonGuessrRoomSummary,
+  type SongArtistSearchResult,
+  type SongPlaylistInfo,
+  type SongSearchResult,
+  type BangumiSubjectSearchResult,
+  type BangumiSongCandidate,
+  SERVER_SHUTDOWN_MESSAGE,
+  isPermanentRoomError,
+  protocolErrorCode,
+} from "@bakagame/shared";
 import {
   clearSonGuessrSessionToken,
   getSonGuessrSessionToken,
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
-import { sonGuessrWs } from "@/lib/SonGuessrWs";
+import * as ws from "@/lib/SonGuessrWs";
 import { consumeStateSync } from "@/lib/StateSync";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
@@ -81,21 +84,11 @@ export interface SonGuessrStore {
   searchArtist: (keyword: string) => Promise<SongArtistSearchResult[]>;
   /** 解析歌单链接或 ID；同一输入在复用窗口内不会重复请求上游。 */
   resolvePlaylist: (value: string) => Promise<SongPlaylistInfo>;
-  sendCommand: <T extends Record<string, unknown> = Record<string, unknown>>(
-    type: string,
-    payload?: Record<string, unknown>,
-    /** `timeout: 0` 表示不设请求超时，用于自动出题这类耗时由上游决定的长任务。 */
-    options?: { timeout?: number }
-  ) => Promise<T>;
+  sendCommand: ws.SonGuessrSendCommand;
 }
 
-type RoomEntryReceipt = {
-  roomId: string;
-  sessionToken: string;
-  snapshot?: SonGuessrRoomSnapshot;
-  privateState?: SonGuessrPrivateState;
-  previousToken?: string | null;
-};
+/** 进房凭据 = 服务端 ack（含首屏快照与私有态）+ 客户端自己记的旧 token。 */
+type RoomEntryReceipt = SonGuessrRoomEnterAck & { previousToken?: string | null };
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
@@ -130,16 +123,6 @@ const mergeChat = (
   return Array.from(map.values())
     .sort((a, b) => a.createdAt - b.createdAt)
     .slice(-MAX_CHAT_MESSAGES);
-};
-
-const isPermanentRoomError = (error: unknown) => {
-  const code = (error as { code?: string } | null)?.code;
-  return (
-    code === "ROOM_NOT_FOUND" ||
-    code === "SESSION_NOT_FOUND" ||
-    code === "SESSION_INVALID" ||
-    code === "PLAYER_KICKED"
-  );
 };
 
 const requestFullSync = () => {
@@ -213,7 +196,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       applyRoomEnter(receipt.roomId, receipt.sessionToken, receipt.snapshot, receipt.privateState),
     discard: async (receipt) => {
       try {
-        await sonGuessrWs.send(
+        await ws.send(
           "song.room.leave",
           {},
           { roomId: receipt.roomId, sessionToken: receipt.sessionToken }
@@ -261,23 +244,17 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     },
 
     subscribeLobby: async () => {
-      await sonGuessrWs.send("song.lobby.subscribeRooms");
+      await ws.send("song.lobby.subscribeRooms", {});
     },
 
     createRoom: (params, signal) =>
       entry.enter(async () => {
-        const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.create", params);
-        return { ...res, roomId: res.roomId ?? params.roomId };
+        return ws.send("song.room.create", params);
       }, signal),
 
     joinRoom: (roomId, userName, password, signal) =>
       entry.enter(async () => {
-        const res = await sonGuessrWs.send<RoomEntryReceipt>(
-          "song.room.join",
-          { userName, password },
-          { roomId }
-        );
-        return { ...res, roomId: res.roomId ?? roomId };
+        return ws.send("song.room.join", { userName, password }, { roomId });
       }, signal),
 
     reconnectRoom: (roomId, signal) => {
@@ -286,11 +263,11 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       return entry.restore(
         `${roomId}:${token}`,
         async () => {
-          const res = await sonGuessrWs.send<RoomEntryReceipt>("song.room.reconnect", {
+          const res = await ws.send("song.room.reconnect", {
             roomId,
             sessionToken: token,
           });
-          return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
+          return { ...res, previousToken: token };
         },
         (error) => {
           if (!isPermanentRoomError(error)) return false;
@@ -300,7 +277,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             current.resetRoomState();
             set({ roomClosedAt: Date.now() });
           }
-          const code = (error as { code?: string } | null)?.code;
+          const code = protocolErrorCode(error);
           const message =
             code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
               ? "会话已失效，请重新加入"
@@ -332,11 +309,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
       const { roomId, sessionToken } = get();
       if (!roomId) return;
       try {
-        await sonGuessrWs.send(
-          "song.room.leave",
-          {},
-          { roomId, sessionToken: sessionToken ?? undefined }
-        );
+        await ws.send("song.room.leave", {}, { roomId, sessionToken: sessionToken ?? undefined });
       } catch {
         // 忽略离开房间失败
       } finally {
@@ -362,7 +335,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     searchMusic: (keyword) =>
       musicSearchCache.run(keyword, async () => {
-        const result = await sonGuessrWs.send<{ results?: SongSearchResult[] }>(
+        const result = await ws.send(
           "song.music.search",
           { keyword },
           {
@@ -375,7 +348,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     searchBangumi: (keyword) =>
       bangumiSearchCache.run(keyword, async () => {
-        const result = await sonGuessrWs.send<{ results?: BangumiSubjectSearchResult[] }>(
+        const result = await ws.send(
           "song.bangumi.search",
           { keyword },
           {
@@ -388,7 +361,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     resolveAnimeSongs: (subjectId) =>
       bangumiSongsCache.run(subjectId, async () => {
-        const result = await sonGuessrWs.send<{ results?: BangumiSongCandidate[] }>(
+        const result = await ws.send(
           "song.bangumi.songs",
           { subjectId },
           {
@@ -401,7 +374,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     searchArtist: (keyword) =>
       artistSearchCache.run(keyword, async () => {
-        const result = await sonGuessrWs.send<{ results?: SongArtistSearchResult[] }>(
+        const result = await ws.send(
           "song.music.artist.search",
           { keyword },
           {
@@ -414,7 +387,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     resolvePlaylist: (value) =>
       playlistResolveCache.run(value, async () => {
-        const result = await sonGuessrWs.send<{ playlist: SongPlaylistInfo }>(
+        const result = await ws.send(
           "song.music.playlist.resolve",
           { value },
           {
@@ -427,7 +400,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
 
     sendCommand: async (type, payload = {}, options) => {
       const { roomId, sessionToken } = get();
-      return sonGuessrWs.send(type, payload, {
+      return ws.send(type, payload, {
         roomId: roomId ?? undefined,
         sessionToken: sessionToken ?? undefined,
         timeout: options?.timeout,
@@ -535,7 +508,7 @@ export function initSonGuessrWs() {
   if (sonGuessrWsInitialized) return () => {};
   sonGuessrWsInitialized = true;
 
-  const unsubMsg = sonGuessrWs.onMessage((msg: ServerMessage) => {
+  const unsubMsg = ws.onMessage((msg: ServerMessage) => {
     if (msg.type !== "event") return;
     const evt = msg as EventPacket;
     const store = useSonGuessrStore.getState();
@@ -591,7 +564,7 @@ export function initSonGuessrWs() {
     }
   });
 
-  const unsubStatus = sonGuessrWs.onStatus((connected) => {
+  const unsubStatus = ws.onStatus((connected) => {
     if (!connected) connectionGeneration += 1;
     useSonGuessrStore.setState(connected ? { connected } : { connected, lobbyReady: false });
     const store = useSonGuessrStore.getState();
@@ -599,7 +572,7 @@ export function initSonGuessrWs() {
     if (connected) {
       snapshotRevision = undefined;
       privateStateRevision = undefined;
-      sonGuessrWs.send("song.lobby.subscribeRooms").catch(() => {});
+      ws.send("song.lobby.subscribeRooms", {}).catch(() => {});
       if (store.roomId && store.sessionToken) {
         saveSonGuessrSessionToken(store.roomId, store.sessionToken);
         void store.reconnectRoom(store.roomId).catch(() => {});
@@ -607,14 +580,14 @@ export function initSonGuessrWs() {
     }
   });
 
-  sonGuessrWs.connect();
+  ws.connect();
 
   return () => {
     sonGuessrWsInitialized = false;
     unsubMsg();
     unsubStatus();
     connectionGeneration += 1;
-    sonGuessrWs.disconnect();
+    ws.disconnect();
     resetSonGuessrStateSync();
     useSonGuessrStore.setState({ connected: false, lobbyReady: false });
   };

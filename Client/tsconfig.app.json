@@ -44,7 +44,6 @@
       "@orpc/contract/*": ["./node_modules/@orpc/contract/*"],
       "zod": ["./node_modules/zod"],
       "zod/*": ["./node_modules/zod/*"],
-      "@/types": ["./src/types/Index.ts"],
       "@/*": ["./src/*"]
     }
   },

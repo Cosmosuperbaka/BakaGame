@@ -1,7 +1,7 @@
 import { PLAYER_BADGE_BASE } from "@/components/common/PlayerStatusPill";
 import { ROLE_COLORS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { cn } from "@/lib/Utils";
-import type { WhoIsFakerRole } from "@/types";
+import type { WhoIsFakerRole } from "@bakagame/shared";
 
 /**
  * 双字身份徽章，玩家栏、出题人的中盘预览与结算身份表共用。

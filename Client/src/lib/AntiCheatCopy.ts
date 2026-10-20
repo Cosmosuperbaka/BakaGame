@@ -7,7 +7,7 @@
 
 import type { BadgeProps } from "@/components/ui/Badge";
 import type { BakaClientType } from "@/lib/BakaChannel";
-import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@/types";
+import type { AdminAntiCheatReview, AntiCheatReviewStatus } from "@bakagame/shared";
 
 /**
  * 桌面客户端下载地址；文件名固定，链接随时可换。

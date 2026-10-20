@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Lock, UserMinus, X } from "lucide-react";
-import type { AdminRoom, RecordedGameKind } from "@/types";
+import type { AdminRoom, RecordedGameKind } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SettingSelect } from "@/components/common/room/SettingFields";

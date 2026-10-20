@@ -12,7 +12,7 @@ import {
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
 } from "../src/domain/Rules";
-import { isValidRoomId, type GameRound } from "../src/domain/Model";
+import { isValidRoomId, type GameRound } from "../src/shared/Index";
 
 test("房间号校验：四位数字与测试房间号合法，其余一律拒绝", () => {
   for (const valid of ["0000", "1234", "9999", "Oblivionis", "oblivionis", " 1234 "]) {

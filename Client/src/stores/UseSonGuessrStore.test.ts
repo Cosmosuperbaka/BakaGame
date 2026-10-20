@@ -5,7 +5,7 @@ import {
   type ServerMessage,
   type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
-} from "@/types";
+} from "@bakagame/shared";
 
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),
@@ -16,22 +16,20 @@ const wsMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/SonGuessrWs", () => ({
-  sonGuessrWs: {
-    send: wsMock.send,
-    connect: wsMock.connect,
-    disconnect: wsMock.disconnect,
-    onMessage: (handler: (message: ServerMessage) => void) => {
-      wsMock.messageHandlers.push(handler);
-      return () => {
-        wsMock.messageHandlers = wsMock.messageHandlers.filter((entry) => entry !== handler);
-      };
-    },
-    onStatus: (handler: (connected: boolean) => void) => {
-      wsMock.statusHandlers.push(handler);
-      return () => {
-        wsMock.statusHandlers = wsMock.statusHandlers.filter((entry) => entry !== handler);
-      };
-    },
+  send: wsMock.send,
+  connect: wsMock.connect,
+  disconnect: wsMock.disconnect,
+  onMessage: (handler: (message: ServerMessage) => void) => {
+    wsMock.messageHandlers.push(handler);
+    return () => {
+      wsMock.messageHandlers = wsMock.messageHandlers.filter((entry) => entry !== handler);
+    };
+  },
+  onStatus: (handler: (connected: boolean) => void) => {
+    wsMock.statusHandlers.push(handler);
+    return () => {
+      wsMock.statusHandlers = wsMock.statusHandlers.filter((entry) => entry !== handler);
+    };
   },
 }));
 

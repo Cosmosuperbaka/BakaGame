@@ -14,7 +14,7 @@ import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer } from "@/lib/Motion";
 import { teamGroups } from "@/lib/Teams";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@/types";
+import type { SonGuessrPhase, SonGuessrPlayerView, SongQuestionType } from "@bakagame/shared";
 
 type SongStatus = {
   label: string;

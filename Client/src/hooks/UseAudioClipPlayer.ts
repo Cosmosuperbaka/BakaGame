@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
 import { notifyPreferencesChanged, PREFERENCES_APPLIED, SONG_VOLUME_KEY } from "@/lib/Storage";
 
 const DEFAULT_SONG_VOLUME = 0.65;
@@ -25,7 +26,7 @@ export interface AudioClipPlayerOptions {
   currentClipStartTime?: number;
   currentClipEndTime?: number;
   isPlayingPhase: boolean;
-  sendCommand: (type: string, payload?: Record<string, unknown>) => Promise<unknown>;
+  sendCommand: SonGuessrSendCommand;
 }
 
 export function useAudioClipPlayer({

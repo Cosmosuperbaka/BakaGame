@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./ChatPanel";
 import { STICKER_PREFIX } from "@/lib/Stickers";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage } from "@bakagame/shared";
 
 describe("ChatPanel (Common)", () => {
   const mockPlayers = [

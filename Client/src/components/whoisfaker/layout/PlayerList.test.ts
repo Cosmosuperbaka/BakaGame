@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from "vitest";
 
-import type { PublicPlayerView } from "@/types";
+import type { PublicPlayerView } from "@bakagame/shared";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
 import {
   COMPACT_PLAYER_COLUMN_WIDTH,

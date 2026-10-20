@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import {
   markPendingRestore,
   readRoomSettingsMemory,
@@ -210,7 +210,7 @@ describe("waiting room sharing", () => {
 
   it("准备命令等待应答期间按钮进入加载态，连点不会重复发送", async () => {
     let resolve: (value: Record<string, unknown>) => void = () => {};
-    const sendCommand = vi.fn(
+    const sendCommand = vi.fn().mockImplementation(
       () =>
         new Promise<Record<string, unknown>>((r) => {
           resolve = r;
@@ -261,7 +261,7 @@ describe("waiting room sharing", () => {
       roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
     });
     let resolve: (value: Record<string, unknown>) => void = () => {};
-    const sendCommand = vi.fn(
+    const sendCommand = vi.fn().mockImplementation(
       () =>
         new Promise<Record<string, unknown>>((r) => {
           resolve = r;

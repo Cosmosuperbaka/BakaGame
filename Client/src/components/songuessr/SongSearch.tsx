@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { Film, Music2 } from "lucide-react";
-import type { BangumiSongCandidate, BangumiSubjectSearchResult, SongSearchResult } from "@/types";
-import { BANGUMI_TRACK_KIND_LABELS } from "@/types";
+import {
+  type BangumiSongCandidate,
+  type BangumiSubjectSearchResult,
+  type SongSearchResult,
+  BANGUMI_TRACK_KIND_LABELS,
+} from "@bakagame/shared";
 import {
   SearchCombobox,
   SearchOptionContent,
@@ -130,7 +134,7 @@ function SubjectRow({
           request={async () => {
             const { imageUrl } = await useSonGuessrStore
               .getState()
-              .sendCommand<{ imageUrl?: string }>("song.subject.image", { subjectId: subject.id });
+              .sendCommand("song.subject.image", { subjectId: subject.id });
             return imageUrl;
           }}
         />

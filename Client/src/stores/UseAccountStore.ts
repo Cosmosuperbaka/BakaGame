@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AccountProfile } from "@/types";
+import type { AccountProfile } from "@bakagame/shared";
 import { api, isAccountDisabled, signInWithCode, signOut as requestSignOut } from "@/lib/Api";
 import { signInWithPasskey as requestSignInWithPasskey } from "@/lib/Passkey";
 import { captureClientLog } from "@/lib/Sentry";

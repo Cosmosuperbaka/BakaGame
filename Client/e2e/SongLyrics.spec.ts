@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures/Isolation";
 import type { SongLyricsFixtureProps } from "./fixtures/SongLyrics";
-import type { SongLyricLine } from "../src/types/Index";
+import type { SongLyricLine } from "@bakagame/shared";
 
 declare global {
   interface Window {

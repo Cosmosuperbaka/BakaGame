@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@/types";
+import type { ChatMessage } from "@bakagame/shared";
 
 // ==================== 故事共用的假数据 ====================
 // 只供 Storybook 与截图使用，不被应用代码导入，不进入生产构建。

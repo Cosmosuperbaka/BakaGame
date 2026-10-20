@@ -410,6 +410,27 @@ export const CEEMessageSchemas = Object.fromEntries(
 ) as { [K in CEECommand]: ReturnType<typeof createCEEMessageSchema<K>> };
 export const CEEClientMessageSchema = schemaUnion(Object.values(CEEMessageSchemas));
 export type CEEClientWireMessage = Static<typeof CEEClientMessageSchema>;
+/**
+ * 命令 → ack 载荷。原先写在 `Client/src/lib/CEEWs.ts`，是「同一事实第三份拷贝」的一员：
+ * 客户端手写一条条件类型链，服务端改 handler 返回值时这里不会跟着变。挪到命令表旁边，
+ * 两端引用同一条推导。
+ */
+export type CEEResponse<TCommand extends CEECommand> = TCommand extends "cee.lobby.subscribeRooms"
+  ? { originalAvailable: boolean }
+  : TCommand extends "cee.room.create" | "cee.room.join" | "cee.room.reconnect"
+    ? CEERoomEnterResult
+    : TCommand extends "cee.character.search" | "cee.subject.characters"
+      ? { results: CEECharacterSummary[] }
+      : TCommand extends "cee.subject.search" | "cee.subject.lookup"
+        ? { results: CEESubjectSummary[] }
+        : TCommand extends "cee.directory.import"
+          ? CEEDirectoryResult
+          : TCommand extends "cee.character.image" | "cee.subject.image"
+            ? { imageUrl?: string }
+            : TCommand extends "cee.game.imageHint"
+              ? { dataUrl: string }
+              : Record<string, unknown>;
+
 export function normalizeCEEEnvelope(input: CEEClientWireMessage): CEEClientMessage {
   const message = { ...input };
   for (const key of ["traceId", "roomId", "sessionToken"] as const) {

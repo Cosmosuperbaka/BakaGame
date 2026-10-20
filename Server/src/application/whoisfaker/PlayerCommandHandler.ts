@@ -1,13 +1,13 @@
-import { AppError } from "../../domain/Errors";
+import { AppError, unsupportedCommand } from "../../domain/Errors";
 import type {
   ConnectionRecord,
   WhoIsFakerPlayerRecord,
   WhoIsFakerRoomRecord,
-} from "../../domain/Model";
+  WhoIsFakerClientMessage,
+} from "../../shared/Index";
 import { normalizeName } from "../../domain/Rules";
 import type { LogEntry } from "../../infrastructure/EventLogger";
-import type { WhoIsFakerClientMessage } from "../../shared/Index";
-import { type CommandHandler, ownsCommand, unsupportedCommand } from "./CommandHandler";
+import { type CommandHandler, ownsCommand } from "./CommandHandler";
 
 export const PLAYER_COMMAND_TYPES = [
   "player.rename",

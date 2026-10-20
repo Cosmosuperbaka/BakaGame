@@ -13,10 +13,16 @@ import {
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import type { WhoIsFakerSendCommand } from "@/lib/WhoIsFakerWs";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
-import type { RoleConfig, RoleLimits, WhoIsFakerRoomSnapshot } from "@/types";
+import type {
+  RoleConfig,
+  RoomVisibility,
+  RoleLimits,
+  WhoIsFakerRoomSnapshot,
+} from "@bakagame/shared";
 
 const notifyCopyFailed = () =>
   useWhoIsFakerStore.getState().addToast("复制失败，请手动复制", "error");
@@ -130,10 +136,7 @@ interface HostWaitingPanelProps {
   allReady: boolean;
   starting?: boolean;
   onStart: () => void;
-  sendCommand: (
-    type: string,
-    payload?: Record<string, unknown>
-  ) => Promise<Record<string, unknown>>;
+  sendCommand: WhoIsFakerSendCommand;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 
@@ -199,10 +202,7 @@ function effectiveRoleConfig(config: RoleConfig, limits: RoleLimits): RoleConfig
 interface FakerSettingsProps {
   snapshot: WhoIsFakerRoomSnapshot;
   readOnly: boolean;
-  sendCommand: (
-    type: string,
-    payload?: Record<string, unknown>
-  ) => Promise<Record<string, unknown>>;
+  sendCommand: WhoIsFakerSendCommand;
   addToast: (text: string, type?: "info" | "error" | "success") => void;
 }
 
@@ -231,10 +231,12 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
   // 控件显示夹过的值，与实际保存的一致；本地仍记着房主的原意，人数回升后自动恢复。
   const roleConfig = effectiveRoleConfig(values, limits);
 
+  const visibility: RoomVisibility = draft.isPrivate ? "private" : "public";
+
   useAutoSave(
     {
       name: draft.name || undefined,
-      visibility: draft.isPrivate ? "private" : "public",
+      visibility,
       password: draft.isPrivate ? draft.password || undefined : "",
       allowSpectators: draft.allowSpectators,
       revealRoleOnDeath: draft.revealRoleOnDeath,

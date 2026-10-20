@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { GameRecordService } from "../src/application/GameRecordService";
 import type { GameRecorder, GameRoomEnd, GameRoundRecord } from "../src/domain/GameRecord";
-import { ROOM_ID_TEST_MODE } from "../src/domain/Model";
+import { ROOM_ID_TEST_MODE } from "../src/shared/Index";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type {
   GameDailyCount,

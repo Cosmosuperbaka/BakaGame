@@ -6,7 +6,12 @@ import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsibl
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PHASE_LABELS, ROLE_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable, spring } from "@/lib/Motion";
-import type { WhoIsFakerPhase, WhoIsFakerRole } from "@/types";
+import type {
+  WhoIsFakerCommand,
+  WhoIsFakerPayload,
+  WhoIsFakerPhase,
+  WhoIsFakerRole,
+} from "@bakagame/shared";
 
 /** 观察视角。测试房间通过真实的旁观/出题人指令切换，不再本地伪造。 */
 type TestPerspective = "player" | "questioner" | "spectator";
@@ -37,7 +42,10 @@ export function TestController() {
   // 所有控制都走真实指令，失败就报错，不再退回本地伪造状态：
   // 测试房间的意义就是复现服务端规则。
   const run = useCallback(
-    async (type: string, payload?: Record<string, unknown>) => {
+    async <TCommand extends WhoIsFakerCommand>(
+      type: TCommand,
+      payload?: WhoIsFakerPayload<TCommand>
+    ) => {
       try {
         await sendCommand(type, payload);
       } catch (error) {

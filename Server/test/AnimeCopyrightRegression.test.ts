@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
 import { isSongTitleMatch, SonGuessrService } from "../src/application/SonGuessrService";
-import type { ConnectionRecord } from "../src/domain/Model";
-import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
-import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 import {
+  type ConnectionRecord,
   isBangumiCreditsEntry,
   type BangumiSubjectDetails,
   type SongDetails,
   type SonGuessrClientMessage,
   type SonGuessrRoomSnapshot,
 } from "../src/shared/Index";
+import type { MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
+import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({
   id,

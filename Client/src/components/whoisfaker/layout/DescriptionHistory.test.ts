@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DescriptionRecord, PublicPlayerView } from "@/types";
+import type { DescriptionRecord, PublicPlayerView } from "@bakagame/shared";
 
 import { collectDescriptionRows } from "./DescriptionHistory";
 

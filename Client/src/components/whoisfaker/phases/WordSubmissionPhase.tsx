@@ -9,7 +9,7 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { SettingSwitchRow, SettingTextField } from "@/components/common/room/SettingFields";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { WhoIsFakerRole } from "@/types";
+import type { WhoIsFakerRole } from "@bakagame/shared";
 
 const ROLE_FULL_LABELS: Record<WhoIsFakerRole, string> = {
   civilian: "平民",

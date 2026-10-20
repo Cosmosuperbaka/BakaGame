@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import { AppError } from "../domain/Errors";
 import { buildCEEFeedback, createCEEHints, validateCEESettings } from "../domain/CEERules";
-import type { ConnectionRecord } from "../domain/Model";
+import type { ConnectionRecord } from "../shared/Index";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
 import type { EventLogger } from "../infrastructure/EventLogger";

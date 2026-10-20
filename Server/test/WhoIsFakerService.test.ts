@@ -7,8 +7,11 @@ import {
   PHASE_RESULT_DISPLAY_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
 } from "../src/config/Constants";
-import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
+import {
+  SERVER_SHUTDOWN_MESSAGE,
+  type WhoIsFakerPrivateState,
+  type WhoIsFakerRoomSnapshot,
+} from "../src/shared/Index";
 import type { WhoIsFakerRole } from "../src/shared/WhoIsFaker";
 
 import {

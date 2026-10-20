@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { KeyRound, Pencil } from "lucide-react";
-import type { AccountProfile } from "@/types";
+import type { AccountProfile } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,

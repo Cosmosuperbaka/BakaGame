@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { SonGuessrPlayerView } from "@/types";
+import type { SonGuessrPlayerView } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { PlayerList } from "./PlayerList";
 

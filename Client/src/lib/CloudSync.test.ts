@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CloudSettings } from "@/types";
+import type { CloudSettings } from "@bakagame/shared";
 
 import type { ApiClient } from "./Api";
 import { readLocalPreferences, startCloudSync } from "./CloudSync";

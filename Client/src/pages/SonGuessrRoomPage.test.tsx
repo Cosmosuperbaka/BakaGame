@@ -20,7 +20,7 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import SonGuessrRoomPage from "./SonGuessrRoomPage";
 
 const initialStoreState = useSonGuessrStore.getState();

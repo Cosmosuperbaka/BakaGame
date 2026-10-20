@@ -16,7 +16,7 @@ import {
   type RoundPlayerState,
   type RoundWinner,
   type VoteRecord,
-} from "./Model";
+} from "../shared/Index";
 
 // ==================== 纯规则函数 ====================
 

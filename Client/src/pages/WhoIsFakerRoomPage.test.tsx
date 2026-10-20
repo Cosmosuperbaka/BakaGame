@@ -12,7 +12,7 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();

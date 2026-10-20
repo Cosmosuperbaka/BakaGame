@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
-import type { AdminOverview, FeedbackStatus, RecordedGameKind, SentryOverview } from "@/types";
+import type {
+  AdminOverview,
+  FeedbackStatus,
+  RecordedGameKind,
+  SentryOverview,
+} from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";

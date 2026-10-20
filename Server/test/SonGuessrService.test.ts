@@ -20,6 +20,14 @@ import {
   detectExplicitTrackKind,
   detectTrackKindFromText,
   refineTrackKindByText,
+  type ConnectionRecord,
+  ALL_BANGUMI_TRACK_KINDS,
+  SERVER_SHUTDOWN_MESSAGE,
+  type BangumiSubjectDetails,
+  type SongDetails,
+  type SonGuessrClientMessage,
+  type SonGuessrPrivateState,
+  type SonGuessrRoomSnapshot,
 } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import {
@@ -31,21 +39,11 @@ import {
   ROOM_IDLE_TIMEOUT_MS,
   TEST_MODE_MAX_PLAYERS,
 } from "../src/config/Constants";
-import type { ConnectionRecord } from "../src/domain/Model";
 import type { GameRoundRecord } from "../src/domain/GameRecord";
 import type { BangumiMusicTrack, SongLyricLine, SongSearchResult } from "../src/shared/SonGuessr";
 import type { MusicCookieInput, MusicProvider } from "../src/infrastructure/NeteaseMusicProvider";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
 import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
-import {
-  ALL_BANGUMI_TRACK_KINDS,
-  SERVER_SHUTDOWN_MESSAGE,
-  type BangumiSubjectDetails,
-  type SongDetails,
-  type SonGuessrClientMessage,
-  type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
-} from "../src/shared/Index";
 
 const makeSong = (id: string, title: string, year: number): SongDetails => ({
   id,

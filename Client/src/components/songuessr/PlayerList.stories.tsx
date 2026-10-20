@@ -14,7 +14,7 @@ import {
   waitingPlayers,
   withHost,
 } from "@/stories/fixtures/SonGuessr";
-import type { SonGuessrPhase, SonGuessrPlayerView } from "@/types";
+import type { SonGuessrPhase, SonGuessrPlayerView } from "@bakagame/shared";
 import { PlayerList } from "./PlayerList";
 
 const { host, me, peach, spectator } = SONG_PEOPLE;

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
-import type { SongLyricLine } from "@/types";
+import type { SongLyricLine } from "@bakagame/shared";
 import { cn } from "@/lib/Utils";
 import { SongLyricScene } from "./SongLyricScene";
 

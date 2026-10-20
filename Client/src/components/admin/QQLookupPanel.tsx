@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { RefreshCw, RotateCcw } from "lucide-react";
-import type { QQLookupStatus } from "@/types";
+import type { QQLookupStatus } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AdminToolbar, QueryState } from "@/components/admin/AdminParts";

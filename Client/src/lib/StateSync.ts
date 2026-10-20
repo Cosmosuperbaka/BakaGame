@@ -1,5 +1,5 @@
 import { applyPatch, type Operation } from "fast-json-patch";
-import type { StatePatchOperation, StateSyncPayload } from "@/types";
+import type { StatePatchOperation, StateSyncPayload } from "@bakagame/shared";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);

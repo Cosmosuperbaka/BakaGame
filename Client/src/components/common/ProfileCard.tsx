@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PlayerAccount, PublicProfile } from "@/types";
+import type { PlayerAccount, PublicProfile } from "@bakagame/shared";
 import { loadPublicProfile } from "@/lib/ProfileCache";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";

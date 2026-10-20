@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@/types";
+import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 
 import { WordSubmissionPhase } from "./WordSubmissionPhase";

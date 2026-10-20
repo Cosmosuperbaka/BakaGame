@@ -1,4 +1,4 @@
-import type { ConnectionRecord } from "../domain/Model";
+import type { ConnectionRecord } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 
 export class ConnectionRegistry {

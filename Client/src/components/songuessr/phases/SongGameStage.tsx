@@ -44,13 +44,14 @@ import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid"
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { withTeamName } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
+import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import type {
   SongGuessAttempt,
   SongGuessDirection,
   SonGuessrPlayerView,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
-} from "@/types";
+} from "@bakagame/shared";
 
 /** 方向箭头指向答案：higher 即答案比这次猜的更大（年份更晚、热度更高）。 */
 const DIRECTION_ICON: Record<SongGuessDirection, LucideIcon> = {
@@ -223,7 +224,7 @@ export interface SongGameAreaProps {
   onPlayAudio: () => void;
   onRetryAudio: () => void;
   onSelectSearchSong: (songId: string, mode: "submit" | "guess", extraId?: string) => Promise<void>;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
   audioRef?: React.RefObject<HTMLAudioElement | null>;
 }

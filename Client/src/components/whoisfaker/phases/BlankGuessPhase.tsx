@@ -16,7 +16,7 @@ import { duration, readoutSwap, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { PendingSpeech } from "../layout/PendingSpeech";
-import type { BlankGuessReason } from "@/types";
+import type { BlankGuessReason } from "@bakagame/shared";
 
 /** 草稿推送节流：逐字广播会把每次按键都变成一次往返。 */
 const DRAFT_PUSH_DELAY_MS = 220;
@@ -131,27 +131,27 @@ function BlankGuessInput() {
   const handleSubmit = useCallback(async () => {
     const a = wordA.trim();
     const b = wordB.trim();
-    if (!a && !b) {
-      addToast("请输入至少一个词语", "error");
+    if (!a || !b) {
+      addToast("请输入两个词语", "error");
       return;
     }
     await run(async () => {
       try {
-        await sendCommand("game.submitBlankGuess", { words: [a, b].filter(Boolean) });
+        await sendCommand("game.submitBlankGuess", { words: [a, b] });
       } catch (e) {
         addToast((e as { message: string }).message, "error");
       }
     });
   }, [run, wordA, wordB, sendCommand, addToast]);
 
-  // 阶段倒计时归零时，若已输入内容则自动提交
+  // 阶段倒计时归零时，若两个词都已填则自动提交（与手动提交的口径一致）
   useEffect(() => {
     if (
       phaseTimedOutEndsAt &&
       snapshot.status.phaseTimer &&
       phaseTimedOutEndsAt === snapshot.status.phaseTimer.endsAt &&
       !pendingReview &&
-      (wordA.trim() || wordB.trim()) &&
+      ready &&
       !submitting
     ) {
       const timer = window.setTimeout(() => {
@@ -163,8 +163,7 @@ function BlankGuessInput() {
     phaseTimedOutEndsAt,
     snapshot.status.phaseTimer,
     pendingReview,
-    wordA,
-    wordB,
+    ready,
     submitting,
     handleSubmit,
   ]);

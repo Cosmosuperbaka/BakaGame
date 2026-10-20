@@ -4,11 +4,12 @@ import { FlaskConical, Minus, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { headerTappable, spring } from "@/lib/Motion";
-import type { SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 
 export interface SongTestControllerProps {
   snapshot: SonGuessrRoomSnapshot;
-  run: (type: string, payload?: Record<string, unknown>, success?: string) => Promise<void>;
+  run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }
 

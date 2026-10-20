@@ -1,4 +1,4 @@
-import type { FeedbackKind, FeedbackStatus } from "@/types";
+import type { FeedbackKind, FeedbackStatus } from "@bakagame/shared";
 import type { BadgeProps } from "@/components/ui/Badge";
 
 /** 反馈的种类与状态文案（用户侧与管理后台共用）。 */

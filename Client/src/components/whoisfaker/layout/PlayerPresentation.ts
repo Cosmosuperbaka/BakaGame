@@ -1,5 +1,5 @@
 import type { PlayerStatusTone } from "@/components/common/PlayerStatusPill";
-import type { WhoIsFakerRole, WhoIsFakerPrivateState, PublicPlayerView } from "@/types";
+import type { WhoIsFakerRole, WhoIsFakerPrivateState, PublicPlayerView } from "@bakagame/shared";
 
 export interface StatusInfo {
   label: string;

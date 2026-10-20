@@ -1,4 +1,4 @@
-import type { WhoIsFakerPhase, WhoIsFakerRole, RoundWinner } from "@/types";
+import type { WhoIsFakerPhase, WhoIsFakerRole, RoundWinner } from "@bakagame/shared";
 
 // 阶段中文名
 export const PHASE_LABELS: Record<WhoIsFakerPhase, string> = {

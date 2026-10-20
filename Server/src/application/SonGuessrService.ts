@@ -13,7 +13,7 @@ import {
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
 import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
-import { AppError } from "../domain/Errors";
+import { AppError, unsupportedCommand } from "../domain/Errors";
 import {
   ensureRoomId,
   normalizeName,
@@ -27,7 +27,39 @@ import {
   type ConnectionRecord,
   type PlayerAccount,
   type RoomVisibility,
-} from "../domain/Model";
+  ALL_BANGUMI_TRACK_KINDS,
+  SONGUESSR_MAX_TEAM,
+  isBangumiCreditsEntry,
+  refineTrackKindByText,
+  MAX_MIN_POPULARITY,
+  MAX_SONGUESSR_COOKIE_LENGTH,
+  SERVER_SHUTDOWN_MESSAGE,
+  type ChatMessage,
+  type SongDetails,
+  type SongGuessAttempt,
+  type SongGuessDirection,
+  type SongGuessFeedback,
+  type SonGuessrClientMessage,
+  type SonGuessrPhase,
+  type SonGuessrPlayerView,
+  type SonGuessrPrivateState,
+  type SonGuessrRoomSnapshot,
+  type SonGuessrRoomSummary,
+  type SonGuessrRoundSummary,
+  type SonGuessrScore,
+  type SonGuessrSettings,
+  type SongAutoFilters,
+  type SongAutoFiltersInput,
+  type SongSearchResult,
+  type SongAlbumSearchResult,
+  type SongLyricClip,
+  type BangumiSubjectDetails,
+  type BangumiSubjectSearchResult,
+  type BangumiMusicTrack,
+  type BangumiMusicTrackKind,
+  type AnimeAutoFilters,
+  type BangumiSongCandidate,
+} from "../shared/Index";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
@@ -36,47 +68,10 @@ import {
   type MusicLoginSession,
   type MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
-import {
-  ALL_BANGUMI_TRACK_KINDS,
-  SONGUESSR_MAX_TEAM,
-  isBangumiCreditsEntry,
-  refineTrackKindByText,
-  MAX_MIN_POPULARITY,
-  MAX_SONGUESSR_COOKIE_LENGTH,
-  SERVER_SHUTDOWN_MESSAGE,
-} from "../shared/Index";
-import type {
-  ChatMessage,
-  SongDetails,
-  SongGuessAttempt,
-  SongGuessDirection,
-  SongGuessFeedback,
-  SonGuessrClientMessage,
-  SonGuessrPhase,
-  SonGuessrPlayerView,
-  SonGuessrPrivateState,
-  SonGuessrRoomSnapshot,
-  SonGuessrRoomSummary,
-  SonGuessrRoundSummary,
-  SonGuessrScore,
-  SonGuessrSettings,
-  SongAutoFilters,
-  SongAutoFiltersInput,
-  SongSearchResult,
-  SongAlbumSearchResult,
-  SongLyricClip,
-  BangumiSubjectDetails,
-  BangumiSubjectSearchResult,
-  BangumiMusicTrack,
-  BangumiMusicTrackKind,
-  AnimeAutoFilters,
-  BangumiSongCandidate,
-} from "../shared/Index";
 
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import { unsupportedCommand } from "./handlers/CommandHandler";
 
 const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionType: "song",

@@ -7,7 +7,11 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { listContainer, listItem, sunrise } from "@/lib/Motion";
 import { feedbackNextLabel, playerNameOf, tallyVotes } from "@/lib/WhoIsFakerHistory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { ABSTAIN_TARGET_ID, type RoundFeedback, type WhoIsFakerRoomSnapshot } from "@/types";
+import {
+  ABSTAIN_TARGET_ID,
+  type RoundFeedback,
+  type WhoIsFakerRoomSnapshot,
+} from "@bakagame/shared";
 import { usePhaseAction } from "./UsePhaseAction";
 import { GuessReadout } from "./BlankGuessPhase";
 

@@ -18,7 +18,7 @@ import {
 import { readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrAck, SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@bakagame/shared";
 
 /** 黑胶与绿钻成长等级在官方徽章上的写法。 */
 const LEVEL_NUMERALS = ["", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌"];
@@ -274,18 +274,8 @@ function VipStatus({
   );
 }
 
-interface QrCreateResponse extends Record<string, unknown> {
-  key: string;
-  qrUrl: string;
-  qrImage: string;
-}
-
-interface QrCheckResponse extends Record<string, unknown> {
-  status: "waiting" | "scanned" | "expired" | "authorized";
-  message: string;
-  cookie?: string;
-  account?: SonGuessrMusicAccount;
-}
+/** 二维码回包：形状由 shared 的 ack 契约给出，这里只留别名让状态与 props 好读。 */
+type QrCreateResponse = SonGuessrAck<"song.auth.qr.create">;
 
 export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   return <RoomAccountSettings key={snapshot.roomId} snapshot={snapshot} />;
@@ -520,11 +510,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       try {
         const result =
           targetPlatform === "qq"
-            ? await sendCommand<QrCreateResponse>("song.auth.qr.create", {
+            ? await sendCommand("song.auth.qr.create", {
                 platform: "qq",
                 type: scanType,
               })
-            : await sendCommand<QrCreateResponse>("song.auth.qr.create");
+            : await sendCommand("song.auth.qr.create");
         if (generation !== loginGenerationRef.current) return;
         setQr(result);
         if (targetPlatform === "qq") {
@@ -559,12 +549,12 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     try {
       const result =
         platform === "qq"
-          ? await sendCommand<QrCheckResponse>("song.auth.qr.check", {
+          ? await sendCommand("song.auth.qr.check", {
               key: qrKey,
               platform: "qq",
               type: scanType,
             })
-          : await sendCommand<QrCheckResponse>("song.auth.qr.check", { key: qrKey });
+          : await sendCommand("song.auth.qr.check", { key: qrKey });
       if (generation !== loginGenerationRef.current) return;
       setQrStatus(result.message || "等待扫码");
       if (result.status === "expired") {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import type { WhoIsFakerRoomSnapshot } from "../src/domain/Model";
+import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）", async () => {

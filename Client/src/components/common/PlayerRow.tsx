@@ -14,7 +14,7 @@ import {
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import type { PlayerAccount } from "@/types";
+import type { PlayerAccount } from "@bakagame/shared";
 
 /** 玩家行操作浮层里的一个动作。 */
 export interface PlayerRowAction {

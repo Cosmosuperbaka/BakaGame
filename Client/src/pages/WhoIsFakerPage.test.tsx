@@ -8,7 +8,7 @@ import {
   saveRoomCreateDefaults,
 } from "@/lib/RoomSettingsMemory";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import type { WhoIsFakerRoomSummary } from "@/types";
+import type { WhoIsFakerRoomSummary } from "@bakagame/shared";
 import WhoIsFakerPage from "./WhoIsFakerPage";
 
 const initialStoreState = useWhoIsFakerStore.getState();

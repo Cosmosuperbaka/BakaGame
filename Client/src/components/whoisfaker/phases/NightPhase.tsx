@@ -51,11 +51,11 @@ export function NightPhase() {
   );
 
   const runPending = useCallback(
-    (key: "cancel" | "advance", type: string) =>
+    (key: "cancel" | "advance", type: "game.cancelNightAction" | "game.advancePhase") =>
       run(async () => {
         setPendingCommand(key);
         try {
-          await sendCommand(type, {});
+          await sendCommand(type);
         } catch (e) {
           addToast((e as { message: string }).message, "error");
         } finally {

@@ -10,7 +10,7 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useSupplementRequest } from "../layout/SupplementRequestControl";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
-import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@/types";
+import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 
 const speechMeta = {
   normal: { title: "描述阶段", icon: MessageSquareText, tone: "text-foreground" },

@@ -47,7 +47,7 @@ import {
 } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
 import { useAutoScrollToBottom } from "@/hooks/UseAutoScrollToBottom";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage } from "@bakagame/shared";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
 const MENTION_LIMIT = 6;

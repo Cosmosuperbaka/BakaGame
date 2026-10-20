@@ -5,6 +5,11 @@ import { AppError } from "../src/domain/Errors";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createTestApp as createApp } from "./AppFixtures";
 import { createAck, createErrorPacket, createEvent } from "../src/transport/Packets";
+import {
+  WhoIsFakerMessageSchemas,
+  WhoIsFakerPayloadSchemas,
+  type WhoIsFakerCommand,
+} from "../src/shared/WhoIsFaker";
 import { parseWhoIsFakerMessage } from "../src/transport/WhoIsFakerProtocol";
 
 // ==================== 协议与文档测试 ====================
@@ -277,4 +282,95 @@ test("WhoIsFaker 协议严格拦截 payload null 与未声明脏字段", () => {
       payload: { unexpected: true },
     })
   ).toThrow(AppError);
+});
+
+// ==================== 命令清单不变量（与猜歌同一守卫） ====================
+
+/** 每一条卧底命令的最小可发送载荷；删掉 shared 载荷表里任一条命令，这里必然变红。 */
+const WHOISFAKER_COMMAND_CASES = [
+  { type: "lobby.subscribeRooms", payload: {} },
+  {
+    type: "room.create",
+    payload: {
+      roomId: "1234",
+      name: "房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "玩家",
+    },
+  },
+  { type: "room.join", payload: { userName: "玩家" } },
+  { type: "room.reconnect", payload: { roomId: "1234", sessionToken: "session" } },
+  { type: "room.leave", payload: {} },
+  { type: "room.requestSync", payload: {} },
+  { type: "player.rename", payload: { name: "新名字" } },
+  { type: "player.setSpectator", payload: { spectator: true } },
+  { type: "player.setReady", payload: { ready: true } },
+  { type: "room.updateSettings", payload: { name: "新房间" } },
+  { type: "room.kick", payload: { playerId: "p1" } },
+  { type: "game.assignQuestioner", payload: { playerId: "p2" } },
+  { type: "game.submitWords", payload: { words: ["苹果", "香蕉"] } },
+  { type: "game.advancePhase", payload: {} },
+  { type: "game.submitDescription", payload: { text: "描述" } },
+  { type: "game.submitVote", payload: { targetId: "p3" } },
+  { type: "game.submitNightAction", payload: { targetId: null } },
+  { type: "game.submitBlankGuess", payload: { words: ["苹果", "香蕉"] } },
+  { type: "game.enterBlankGuess", payload: {} },
+  { type: "game.updateBlankGuessDraft", payload: { words: ["苹果", ""] } },
+  { type: "game.reviewBlankGuess", payload: { approve: true } },
+  { type: "game.resolveDisconnect", payload: { playerId: "p4", resolution: "wait" } },
+  { type: "chat.send", payload: { text: "你好" } },
+  { type: "room.transferHost", payload: { playerId: "p1" } },
+  { type: "test.jumpToPhase", payload: { phase: "waiting" } },
+  { type: "test.setMyRole", payload: { role: "civilian" } },
+  { type: "test.addBot", payload: {} },
+  { type: "test.removeBot", payload: {} },
+  { type: "game.cancelVote", payload: {} },
+  { type: "game.cancelNightAction", payload: {} },
+  { type: "game.requestSupplement", payload: { playerIds: ["p1"] } },
+  { type: "game.startPhaseTimer", payload: { durationSeconds: 60 } },
+  { type: "game.stopPhaseTimer", payload: {} },
+] as const satisfies readonly { type: WhoIsFakerCommand; payload: Record<string, unknown> }[];
+
+type UnprobedWhoIsFakerCommand = Exclude<
+  WhoIsFakerCommand,
+  (typeof WHOISFAKER_COMMAND_CASES)[number]["type"]
+>;
+const everyWhoIsFakerCommandProbed: UnprobedWhoIsFakerCommand extends never ? true : never = true;
+
+/** `Object.keys` 只给 `string[]`，比对前统一放宽，键集本身仍由上面的 satisfies/Exclude 锁死。 */
+const sortedNames = (values: readonly string[]): string[] => [...values].sort();
+
+test("卧底命令表与传输层信封键集完全一致", () => {
+  expect(everyWhoIsFakerCommandProbed).toBe(true);
+  const payloadKeys = sortedNames(Object.keys(WhoIsFakerPayloadSchemas));
+  expect(sortedNames(Object.keys(WhoIsFakerMessageSchemas))).toEqual(payloadKeys);
+  expect(sortedNames(WHOISFAKER_COMMAND_CASES.map((item) => item.type))).toEqual(payloadKeys);
+});
+
+test("卧底每一条命令都能通过传输层解析", () => {
+  for (const { type, payload } of WHOISFAKER_COMMAND_CASES) {
+    const parsed = parseWhoIsFakerMessage({
+      id: `probe-${type}`,
+      type,
+      roomId: "1234",
+      payload,
+    });
+    expect(parsed.type).toBe(type);
+  }
+});
+
+test("卧底信封骨架统一为六个字段且保持严格", () => {
+  for (const schema of Object.values(WhoIsFakerMessageSchemas)) {
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      "id",
+      "payload",
+      "roomId",
+      "sessionToken",
+      "traceId",
+      "type",
+    ]);
+    expect([...schema.required].sort()).toEqual(["id", "payload", "type"]);
+    expect(schema.additionalProperties).toBe(false);
+  }
 });

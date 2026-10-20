@@ -1,4 +1,4 @@
-import type { PublicProfile } from "@/types";
+import type { PublicProfile } from "@bakagame/shared";
 import { api } from "@/lib/Api";
 
 /**

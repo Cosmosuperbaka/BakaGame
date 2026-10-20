@@ -1,7 +1,11 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BangumiSongCandidate, BangumiSubjectSearchResult, SongSearchResult } from "@/types";
+import type {
+  BangumiSongCandidate,
+  BangumiSubjectSearchResult,
+  SongSearchResult,
+} from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { AnimeSearch, SongSearch } from "./SongSearch";
 

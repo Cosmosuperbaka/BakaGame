@@ -2,7 +2,7 @@ import { usePhaseAction } from "./UsePhaseAction";
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FastForward, Vote } from "lucide-react";
-import { ABSTAIN_TARGET_ID } from "@/types";
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { listContainer, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -111,11 +111,11 @@ export function VotingPhase() {
   );
 
   const runPending = useCallback(
-    (key: "cancel" | "advance", type: string) =>
+    (key: "cancel" | "advance", type: "game.cancelVote" | "game.advancePhase") =>
       run(async () => {
         setPendingCommand(key);
         try {
-          await sendCommand(type, {});
+          await sendCommand(type);
         } catch (error) {
           addToast((error as { message: string }).message, "error");
         } finally {

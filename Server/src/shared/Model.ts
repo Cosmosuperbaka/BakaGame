@@ -2,6 +2,8 @@
 // 本文件仅定义跨小游戏（WhoIsFaker、SonGuessr 等）通用的平台级基础设施与模型契约。
 // 各游戏特有模型请至对应领域文件（如 WhoIsFaker.ts, SonGuessr.ts）。
 
+import { Type as t, type Static, type TSchema } from "@sinclair/typebox";
+
 // 特殊房间号：进入测试模式，可用阶段控制器跳转、手动增减 Bot。
 // 规则与普通房间完全一致，不会自动补人。
 export const ROOM_ID_TEST_MODE = "Oblivionis";
@@ -16,9 +18,48 @@ export const isValidRoomId = (roomId: string): boolean => {
   return /^\d{4}$/.test(normalized);
 };
 
-export type RoomVisibility = "public" | "private";
+/**
+ * 房间可见性：三款游戏同一个契约，类型与运行时校验只在这里写一次。
+ * 游戏侧的建房/改设置载荷一律引用 `RoomVisibilitySchema`，不再各自抄一遍字面量。
+ */
+export const RoomVisibilitySchema = t.Union([t.Literal("public"), t.Literal("private")]);
+export type RoomVisibility = Static<typeof RoomVisibilitySchema>;
 export type PlayerMembership = "active" | "spectator" | "kicked";
 export type ChatChannel = "main" | "ghost";
+
+/**
+ * 「房间或会话已不可恢复」的错误码：命中这些码时客户端必须退出房间并清掉本地凭据，
+ * 不能把它当成一次可重连的网络抖动。三款游戏在这一组码上口径一致，所以只在平台层写一次；
+ * 玩法专属的会话码（例如 CEE 连到原版服务器的那几个）由各自领域自行追加，不并回这张表。
+ */
+export const PERMANENT_ROOM_ERROR_CODES = [
+  "ROOM_NOT_FOUND",
+  "SESSION_NOT_FOUND",
+  "SESSION_INVALID",
+  "PLAYER_KICKED",
+] as const;
+
+/** 码表是字面量元组：消费端分支可以穷尽它，新增码时漏改会在编译期暴露。 */
+export type PermanentRoomErrorCode = (typeof PERMANENT_ROOM_ERROR_CODES)[number];
+
+export const isPermanentRoomErrorCode = (code: string): boolean =>
+  PERMANENT_ROOM_ERROR_CODES.some((known: string) => known === code);
+
+/**
+ * 协议错误体的 code。客户端 store 一律从这里取而不是各自写 `as` 断言：
+ * 断言散在调用点上时，错误对象形态一变就会静默读到 undefined，判定跟着悄悄翻转。
+ */
+export const protocolErrorCode = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+};
+
+/** 命中永久码：重试与换 token 都救不回来，房间侧状态只能整体丢弃。 */
+export const isPermanentRoomError = (error: unknown): boolean => {
+  const code = protocolErrorCode(error);
+  return code !== undefined && isPermanentRoomErrorCode(code);
+};
 
 // 房间聊天与系统提示共用一个消息结构，靠 system 字段区分。
 export interface ChatMessage {
@@ -87,3 +128,26 @@ export interface ConnectionRecord {
   sendPacket?: (payload: unknown) => void;
   close: (code?: number, reason?: string) => void;
 }
+
+/**
+ * 客户端指令信封的运行时骨架，与 `Protocol.ts` 的 `ClientEnvelope` 同一契约。
+ *
+ * 每款游戏只提供 `type` 与 `payload`，信封字段与其上限在这里唯一维护：三个玩法逐字抄
+ * 三份时，改一处不会传导到另两处（信封的严格性、字段上限正是最容易漂移的地方）。
+ * 与静态类型不同源的 nullable 信封变体（CEE 线路层）按各自领域文档保持现状。
+ */
+export const createClientEnvelopeSchema = <TType extends string, TPayload extends TSchema>(
+  type: TType,
+  payload: TPayload
+) =>
+  t.Object(
+    {
+      id: t.String({ minLength: 1, maxLength: 128 }),
+      type: t.Literal(type),
+      traceId: t.Optional(t.String({ maxLength: 128 })),
+      roomId: t.Optional(t.String({ maxLength: 32 })),
+      sessionToken: t.Optional(t.String({ maxLength: 128 })),
+      payload,
+    },
+    { additionalProperties: false }
+  );

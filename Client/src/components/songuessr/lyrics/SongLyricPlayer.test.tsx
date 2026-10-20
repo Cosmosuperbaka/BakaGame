@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { createRef } from "react";
 import type { LyricLine } from "@applemusic-like-lyrics/core";
-import type { SongLyricLine } from "@/types";
+import type { SongLyricLine } from "@bakagame/shared";
 
 const players = vi.hoisted(
   () =>

@@ -1,8 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { PHASE_RESULT_DISPLAY_MS } from "../src/config/Constants";
-import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "../src/domain/Model";
 import type {
+  WhoIsFakerPrivateState,
+  WhoIsFakerRoomSnapshot,
   WhoIsFakerClientMessage,
   EventPacket,
   WhoIsFakerRole,

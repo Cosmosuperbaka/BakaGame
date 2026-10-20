@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AdminUser } from "@/types";
+import type { AdminUser } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
 import {

@@ -1,4 +1,4 @@
-import type { ErrorPacket, ServerMessage } from "@/types";
+import type { ErrorPacket, ServerMessage } from "@bakagame/shared";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -28,6 +28,18 @@ export const isProtocolError = (value: unknown): value is ProtocolError =>
   value !== null &&
   typeof (value as { code?: unknown }).code === "string" &&
   typeof (value as { message?: unknown }).message === "string";
+
+/**
+ * 三条游戏通道共用的发送选项。
+ *
+ * `timeout: 0` 表示**不设请求超时**：自动出题这类需要连续回源多个外部接口的命令，耗时完全由
+ * 上游决定，客户端超时只会制造「后端还在选曲、前端已提示失败」的假失败。
+ */
+export interface SendOptions {
+  roomId?: string;
+  sessionToken?: string;
+  timeout?: number;
+}
 
 /** 传输层只校验信封，事件的领域 payload 仍由对应消费者负责。 */
 const isServerMessage = (value: unknown): value is ServerMessage => {
@@ -227,14 +239,14 @@ export class WebSocketClient {
   }
 
   /**
-   * `options.timeout` 传入 0 或负数表示**不设请求超时**：自动出题这类需要连续回源
-   * 多个外部接口的命令，耗时完全由上游决定。客户端超时只会制造「后端还在选曲、
-   * 前端已提示失败」的假失败，等待期间由调用方自行轮询房间状态即可。
+   * 这里的 `type`/`payload` 只按传输层需要保持宽松；命令名与载荷形状的类型收紧由各玩法的
+   * facade 负责（`WhoIsFakerWs` / `SonGuessrWs` / `CEEWs`），三个玩法共用同一层。
+   * 无超时的长任务在等待期间由调用方自行轮询房间状态，见 `SendOptions.timeout`。
    */
   async send<T extends Record<string, unknown> = Record<string, unknown>>(
     type: string,
     payload: Record<string, unknown> = {},
-    options?: { roomId?: string; sessionToken?: string; timeout?: number }
+    options?: SendOptions
   ): Promise<T> {
     const timeoutMs = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {

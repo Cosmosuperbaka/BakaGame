@@ -9,7 +9,7 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { ABSTAIN_TARGET_ID } from "@/types";
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { RoleBadge } from "../layout/RoleBadge";

@@ -9,7 +9,7 @@ import {
   readRoomCreateDefaults,
   saveRoomCreateDefaults,
 } from "@/lib/RoomSettingsMemory";
-import type { WhoIsFakerRoomSummary } from "@/types";
+import type { WhoIsFakerRoomSummary } from "@bakagame/shared";
 
 /** 谁是卧底的大厅只区分「等待中」与「游戏中」两态。 */
 const toRoomView = (room: WhoIsFakerRoomSummary): LobbyRoomView => ({

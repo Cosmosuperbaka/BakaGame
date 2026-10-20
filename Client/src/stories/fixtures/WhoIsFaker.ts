@@ -1,17 +1,18 @@
-import type {
-  ChatMessage,
-  DescriptionRecord,
-  WhoIsFakerPhase,
-  WhoIsFakerRole,
-  PlayerSide,
-  WhoIsFakerPrivateState,
-  PublicPlayerView,
-  WhoIsFakerRoomSnapshot,
-  WhoIsFakerRoomSummary,
-  RoundSummary,
-  VoteRecord,
-} from "@/types";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "@/types";
+import {
+  type ChatMessage,
+  type DescriptionRecord,
+  type WhoIsFakerPhase,
+  type WhoIsFakerRole,
+  type PlayerSide,
+  type WhoIsFakerPrivateState,
+  type PublicPlayerView,
+  type WhoIsFakerRoomSnapshot,
+  type WhoIsFakerRoomSummary,
+  type RoundSummary,
+  type VoteRecord,
+  ABSTAIN_TARGET_ID,
+  ROOM_ID_TEST_MODE,
+} from "@bakagame/shared";
 import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import type { PlayerListHistory } from "@/components/whoisfaker/layout/PlayerList";

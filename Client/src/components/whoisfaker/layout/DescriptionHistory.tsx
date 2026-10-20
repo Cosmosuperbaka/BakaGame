@@ -10,7 +10,7 @@ import {
 } from "@/lib/DescriptionColumns";
 import { PlayerRow, type PlayerMarks, type PlayerRowProps } from "./PlayerList";
 import { SPEECH_COLUMN_MIN_WIDTH } from "./PlayerListLayout";
-import type { DescriptionRecord, WhoIsFakerRole, PublicPlayerView } from "@/types";
+import type { DescriptionRecord, WhoIsFakerRole, PublicPlayerView } from "@bakagame/shared";
 
 /** 传给表格首列的 PlayerRow 上下文，由调用方统一组装 */
 export type DescriptionTableContext = Omit<

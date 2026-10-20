@@ -1,4 +1,18 @@
-import type { ChatMessage, PlayerAccount, RoomVisibility } from "./Model";
+import { Type as t, type Static } from "@sinclair/typebox";
+import { schemaUnion } from "./SchemaUnion";
+import {
+  createClientEnvelopeSchema,
+  RoomVisibilitySchema,
+  type ChatMessage,
+  type PlayerAccount,
+  type RoomVisibility,
+} from "./Model";
+import type { ClientEnvelope } from "./Protocol";
+import {
+  MinPopularitySchema,
+  SongAutoFiltersInputSchema,
+  type SongAutoFilters,
+} from "./SonGuessrFilters";
 
 export const SONGUESSR_PHASES = [
   "waiting",
@@ -12,14 +26,16 @@ export type SonGuessrPhase = (typeof SONGUESSR_PHASES)[number];
 
 export const MAX_SONGUESSR_COOKIE_LENGTH = 16_384;
 
-export type SongQuestionType = "song" | "anime";
+const strict = { additionalProperties: false } as const;
+const questionTypeSchema = t.Union([t.Literal("song"), t.Literal("anime")]);
+const questionModeSchema = t.Union([t.Literal("manual"), t.Literal("automatic")]);
+export type SongQuestionType = Static<typeof questionTypeSchema>;
 export const SONG_QUESTION_TYPE_LABELS: Record<SongQuestionType, string> = {
   song: "听歌识曲",
   anime: "听歌识番",
 };
-export type SongQuestionMode = "manual" | "automatic";
+export type SongQuestionMode = Static<typeof questionModeSchema>;
 
-import type { SongAutoFilters, SongAutoFiltersInput } from "./SonGuessrFilters";
 export * from "./SonGuessrFilters";
 
 export interface BangumiSubjectSearchResult {
@@ -265,14 +281,21 @@ export interface BangumiSongCandidate {
   song: SongSearchResult;
 }
 
-export interface AnimeAutoFilters {
-  startYear?: number;
-  endYear?: number;
-  ranking?: "all" | "year";
-  subjectLimit?: number;
-  songMinPopularity?: SongAutoFilters["minPopularity"];
-  trackKinds?: BangumiMusicTrack["kind"][];
-}
+/** 曲目类型枚举只有一份来源：`ALL_BANGUMI_TRACK_KINDS`，新增一档不必回来改 schema。 */
+const trackKindSchema = schemaUnion(ALL_BANGUMI_TRACK_KINDS.map((kind) => t.Literal(kind)));
+
+const AnimeAutoFiltersSchema = t.Object(
+  {
+    startYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
+    endYear: t.Optional(t.Integer({ minimum: 1900, maximum: 2200 })),
+    ranking: t.Optional(t.Union([t.Literal("all"), t.Literal("year")])),
+    subjectLimit: t.Optional(t.Integer({ minimum: 1, maximum: 1000 })),
+    songMinPopularity: t.Optional(MinPopularitySchema),
+    trackKinds: t.Optional(t.Array(trackKindSchema, { maxItems: ALL_BANGUMI_TRACK_KINDS.length })),
+  },
+  strict
+);
+export type AnimeAutoFilters = Static<typeof AnimeAutoFiltersSchema>;
 
 export interface SonGuessrSettings {
   questionType: SongQuestionType;
@@ -572,73 +595,201 @@ export interface SonGuessrPrivateState {
   visibleAttempts: SongGuessAttempt[];
 }
 
-import type { ClientEnvelope } from "./Protocol";
+// ==================== 猜歌客户端指令契约（单一真相源） ====================
+// 命令清单只有 `SonGuessrPayloadSchemas` 这一份：命令 union、载荷类型与运行时信封全部由它派生，
+// 结构类型与 schema 不可能各写一份再漂移（猜歌封面命令曾因传输层漏键被恒定拒绝）。
 
-export type SonGuessrClientMessage =
-  | ClientEnvelope<"song.lobby.subscribeRooms", Record<string, never>>
-  | ClientEnvelope<
-      "song.room.create",
-      {
-        roomId: string;
-        name: string;
-        visibility: RoomVisibility;
-        password?: string;
-        allowSpectators: boolean;
-        userName: string;
-        solo?: boolean;
-      }
-    >
-  | ClientEnvelope<"song.room.join", { userName: string; password?: string }>
-  | ClientEnvelope<"song.room.reconnect", { roomId: string; sessionToken: string }>
-  | ClientEnvelope<"song.room.leave", Record<string, never>>
-  | ClientEnvelope<"song.room.requestSync", Record<string, never>>
-  | ClientEnvelope<"song.player.setReady", { ready: boolean }>
-  | ClientEnvelope<"song.player.setSpectator", { spectator: boolean }>
-  | ClientEnvelope<"song.player.setTeam", { team: number | null }>
-  | ClientEnvelope<
-      "song.room.updateSettings",
-      Partial<Omit<SonGuessrSettings, "autoFilters">> & {
-        autoFilters?: SongAutoFiltersInput;
-        name?: string;
-        visibility?: RoomVisibility;
-        password?: string;
-        allowSpectators?: boolean;
-      }
-    >
-  | ClientEnvelope<"song.room.kick", { playerId: string }>
-  | ClientEnvelope<"song.room.transferHost", { playerId: string }>
-  | ClientEnvelope<"song.chat.send", { text: string }>
-  | ClientEnvelope<
-      "song.auth.qr.create",
-      { platform?: "netease" | "qq"; type?: "qq" | "wx" | "mobile" } | Record<string, never>
-    >
-  | ClientEnvelope<
-      "song.auth.qr.check",
-      { platform?: "netease" | "qq"; key: string; type?: "qq" | "wx" | "mobile" }
-    >
-  | ClientEnvelope<"song.auth.useCookie", { platform?: "netease" | "qq"; cookie: string }>
-  | ClientEnvelope<
-      "song.auth.clear",
-      { platform?: "netease" | "qq" | "all" } | Record<string, never>
-    >
-  | ClientEnvelope<"song.music.search", { keyword: string }>
-  | ClientEnvelope<"song.music.playlist.resolve", { value: string }>
-  | ClientEnvelope<"song.music.artist.search", { keyword: string }>
-  | ClientEnvelope<"song.bangumi.search", { keyword: string }>
-  | ClientEnvelope<"song.bangumi.songs", { subjectId: string }>
+const emptyPayload = t.Object({}, strict);
+const roomId = t.String({ minLength: 1, maxLength: 32 });
+const roomName = t.String({ minLength: 1, maxLength: 40 });
+const userName = t.String({ minLength: 1, maxLength: 32 });
+const password = t.Optional(t.String({ maxLength: 64 }));
+const playerId = t.String({ minLength: 1, maxLength: 64 });
+const positiveInt = t.Integer({ minimum: 1 });
+const keyword = t.String({ minLength: 1, maxLength: 200 });
+const subjectId = t.String({ minLength: 1, maxLength: 32 });
+const sessionToken = t.String({ minLength: 1, maxLength: 128 });
+// 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
+const songId = t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" });
+const musicPlatform = t.Union([t.Literal("netease"), t.Literal("qq")]);
+const qrChannelType = t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")]);
+
+export const SonGuessrPayloadSchemas = {
+  "song.lobby.subscribeRooms": emptyPayload,
+  "song.room.create": t.Object(
+    {
+      roomId,
+      name: roomName,
+      visibility: RoomVisibilitySchema,
+      password,
+      allowSpectators: t.Boolean(),
+      userName,
+      solo: t.Optional(t.Boolean()),
+    },
+    strict
+  ),
+  "song.room.join": t.Object({ userName, password }, strict),
+  "song.room.reconnect": t.Object({ roomId, sessionToken }, strict),
+  "song.room.leave": emptyPayload,
+  "song.room.requestSync": emptyPayload,
+  "song.player.setReady": t.Object({ ready: t.Boolean() }, strict),
+  "song.player.setSpectator": t.Object({ spectator: t.Boolean() }, strict),
+  "song.player.setTeam": t.Object(
+    { team: t.Union([t.Integer({ minimum: 1, maximum: SONGUESSR_MAX_TEAM }), t.Null()]) },
+    strict
+  ),
+  "song.room.updateSettings": t.Object(
+    {
+      name: t.Optional(roomName),
+      visibility: t.Optional(RoomVisibilitySchema),
+      password,
+      allowSpectators: t.Optional(t.Boolean()),
+      questionType: t.Optional(questionTypeSchema),
+      questionMode: t.Optional(questionModeSchema),
+      autoRotateSubmitter: t.Optional(t.Boolean()),
+      autoFilters: t.Optional(SongAutoFiltersInputSchema),
+      animeAutoFilters: t.Optional(AnimeAutoFiltersSchema),
+      lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+      showLyrics: t.Optional(t.Boolean()),
+      maxGuessesPerRound: t.Optional(positiveInt),
+      guessDurationSeconds: t.Optional(t.Integer({ minimum: 5 })),
+      bloodMode: t.Optional(t.Boolean()),
+      showGuessTimer: t.Optional(t.Boolean()),
+    },
+    strict
+  ),
+  "song.room.kick": t.Object({ playerId }, strict),
+  "song.room.transferHost": t.Object({ playerId }, strict),
+  "song.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "song.auth.qr.create": t.Object(
+    { platform: t.Optional(musicPlatform), type: t.Optional(qrChannelType) },
+    strict
+  ),
+  "song.auth.qr.check": t.Object(
+    {
+      platform: t.Optional(musicPlatform),
+      key: t.String({ minLength: 1, maxLength: 512 }),
+      type: t.Optional(qrChannelType),
+    },
+    strict
+  ),
+  "song.auth.useCookie": t.Object(
+    {
+      platform: t.Optional(musicPlatform),
+      cookie: t.String({ minLength: 1, maxLength: MAX_SONGUESSR_COOKIE_LENGTH }),
+    },
+    strict
+  ),
+  "song.auth.clear": t.Object(
+    {
+      platform: t.Optional(t.Union([t.Literal("netease"), t.Literal("qq"), t.Literal("all")])),
+    },
+    strict
+  ),
+  "song.music.search": t.Object({ keyword }, strict),
+  "song.music.playlist.resolve": t.Object(
+    { value: t.String({ minLength: 1, maxLength: 500 }) },
+    strict
+  ),
+  "song.music.artist.search": t.Object({ keyword }, strict),
+  "song.bangumi.search": t.Object({ keyword }, strict),
+  "song.bangumi.songs": t.Object({ subjectId }, strict),
   /** 番剧封面：只读数据集不含图片，列表缺的封面滚进视口时按需补一条。 */
-  | ClientEnvelope<"song.subject.image", { subjectId: string }>
-  | ClientEnvelope<"song.game.start", Record<string, never>>
-  | ClientEnvelope<"song.game.chooseSubmitter", { playerId: string }>
-  | ClientEnvelope<"song.game.submitSong", { songId: string }>
-  | ClientEnvelope<"song.game.submitAnime", { subjectId: string; songId?: string }>
-  | ClientEnvelope<"song.game.audioReady", { roundNumber: number }>
-  | ClientEnvelope<"song.game.audioFailed", { roundNumber: number }>
-  | ClientEnvelope<"song.game.guess", { songId: string }>
-  | ClientEnvelope<"song.game.guessAnime", { subjectId: string }>
-  | ClientEnvelope<"song.game.giveUp", Record<string, never>>
-  | ClientEnvelope<"song.game.skipRound", Record<string, never>>
-  | ClientEnvelope<"song.game.nextRound", Record<string, never>>
-  | ClientEnvelope<"song.game.finish", Record<string, never>>
-  | ClientEnvelope<"song.test.addBot", { count?: number }>
-  | ClientEnvelope<"song.test.removeBot", { count?: number }>;
+  "song.subject.image": t.Object({ subjectId }, strict),
+  "song.game.start": emptyPayload,
+  "song.game.chooseSubmitter": t.Object({ playerId }, strict),
+  "song.game.submitSong": t.Object({ songId }, strict),
+  "song.game.submitAnime": t.Object({ subjectId, songId: t.Optional(songId) }, strict),
+  "song.game.audioReady": t.Object({ roundNumber: positiveInt }, strict),
+  "song.game.audioFailed": t.Object({ roundNumber: positiveInt }, strict),
+  "song.game.guess": t.Object({ songId }, strict),
+  "song.game.guessAnime": t.Object({ subjectId }, strict),
+  "song.game.giveUp": emptyPayload,
+  "song.game.skipRound": emptyPayload,
+  "song.game.nextRound": emptyPayload,
+  "song.game.finish": emptyPayload,
+  "song.test.addBot": t.Object({ count: t.Optional(positiveInt) }, strict),
+  "song.test.removeBot": t.Object({ count: t.Optional(positiveInt) }, strict),
+} as const;
+
+export type SonGuessrCommand = keyof typeof SonGuessrPayloadSchemas;
+export type SonGuessrPayload<TCommand extends SonGuessrCommand> = Static<
+  (typeof SonGuessrPayloadSchemas)[TCommand]
+>;
+export type SonGuessrClientMessage = {
+  [K in SonGuessrCommand]: ClientEnvelope<K, SonGuessrPayload<K>>;
+}[SonGuessrCommand];
+
+const createSonGuessrMessageSchema = <K extends SonGuessrCommand>(type: K) =>
+  createClientEnvelopeSchema(type, SonGuessrPayloadSchemas[type]);
+
+export const SonGuessrMessageSchemas = Object.fromEntries(
+  (Object.keys(SonGuessrPayloadSchemas) as SonGuessrCommand[]).map((type) => [
+    type,
+    createSonGuessrMessageSchema(type),
+  ])
+) as { [K in SonGuessrCommand]: ReturnType<typeof createSonGuessrMessageSchema<K>> };
+
+export const SonGuessrClientMessageSchema = schemaUnion(Object.values(SonGuessrMessageSchemas));
+
+/**
+ * 猜歌进房 ack 会带上首屏快照与私有态，客户端据此直接进入房间，不必再等一次 event。
+ * 与卧底的 ack 形态不同，所以两份各自声明，不合并成一个「通用进房结果」。
+ */
+export interface SonGuessrRoomEnterAck {
+  roomId: string;
+  playerId: string;
+  sessionToken: string;
+  snapshot: SonGuessrRoomSnapshot;
+  privateState: SonGuessrPrivateState;
+}
+
+/**
+ * 扫码登录二维码：服务端把上游 `MusicQrLogin` 原样透传，这里是它在线路上的形状。
+ * 客户端 `SongAccountSettings` 原先自己抄了一份同名接口，现在两边引用这里。
+ */
+export interface SonGuessrQrCreateAck {
+  key: string;
+  qrUrl: string;
+  qrImage: string;
+}
+
+/** 轮询扫码结果：未完成时只有状态与提示，授权成功才带上会话凭据。 */
+export interface SonGuessrQrCheckAck {
+  status: "waiting" | "scanned" | "expired" | "authorized";
+  message: string;
+  cookie?: string;
+  account?: SonGuessrMusicAccount;
+}
+
+/** Cookie 登录的回包（`useMusicCookie` 成功后总是给出账号与凭据）。 */
+export interface SonGuessrCookieAuthAck {
+  account: SonGuessrMusicAccount;
+  cookie: string;
+}
+
+/** 命令 → ack 载荷：客户端 facade 的类型由这里推导，不再另写一份映射。 */
+export type SonGuessrAck<TCommand extends SonGuessrCommand> = TCommand extends
+  "song.room.create" | "song.room.join" | "song.room.reconnect"
+  ? SonGuessrRoomEnterAck
+  : TCommand extends "song.auth.qr.create"
+    ? SonGuessrQrCreateAck
+    : TCommand extends "song.auth.qr.check"
+      ? SonGuessrQrCheckAck
+      : TCommand extends "song.auth.useCookie"
+        ? SonGuessrCookieAuthAck
+        : TCommand extends "song.auth.clear"
+          ? { cleared: true }
+          : TCommand extends "song.music.search"
+            ? { results: SongSearchResult[] }
+            : TCommand extends "song.bangumi.search"
+              ? { results: BangumiSubjectSearchResult[] }
+              : TCommand extends "song.bangumi.songs"
+                ? { results: BangumiSongCandidate[] }
+                : TCommand extends "song.music.artist.search"
+                  ? { results: SongArtistSearchResult[] }
+                  : TCommand extends "song.music.playlist.resolve"
+                    ? { playlist: SongPlaylistInfo }
+                    : TCommand extends "song.subject.image"
+                      ? { imageUrl: string | undefined }
+                      : Record<string, unknown>;

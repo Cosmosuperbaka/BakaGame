@@ -9,7 +9,7 @@ import type {
   AdminRoom,
   AdminUser,
   QQLookupStatus,
-} from "@/types";
+} from "@bakagame/shared";
 import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
 import AdminPage from "./AdminPage";
 

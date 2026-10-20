@@ -6,7 +6,7 @@ import type {
   SongAutoFilters,
   SongQuestionMode,
   SongQuestionType,
-} from "@/types";
+} from "@bakagame/shared";
 
 /**
  * 三个游戏的「上次房间设置」记忆：创建成功的弹窗选项存下来供下次弹窗沿用，

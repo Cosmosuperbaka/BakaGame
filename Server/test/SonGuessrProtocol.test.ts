@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
 
+import {
+  SonGuessrMessageSchemas,
+  SonGuessrPayloadSchemas,
+  type SonGuessrCommand,
+} from "../src/shared/SonGuessr";
 import { parseSonGuessrMessage } from "../src/transport/SonGuessrProtocol";
 
 test("SonGuessr 协议解析房间设置与游戏命令", () => {
@@ -393,6 +398,127 @@ test("SonGuessr 协议正确放行网易云与 QQ 音乐统一 URN 歌曲 ID (�
       id: "dirty-song-id",
       type: "song.game.submitSong",
       payload: { songId: "qq:001<script>" },
+    })
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
+// ==================== 命令清单不变量（F01 的复发守卫） ====================
+
+/**
+ * 每一条猜歌命令的**最小可发送载荷**，逐条硬编码。
+ *
+ * 这份清单是命令契约的第三份见证：shared 的载荷表派生类型与信封，服务端的 switch 处理命令，
+ * 而这里断言「客户端发得出来的每一条命令都能过传输层解析」。`song.subject.image` 当年正是
+ * 类型、处理器、客户端调用三处都有、唯独传输层 schema 漏键，19 条协议测试全绿而功能静默失效。
+ * 删掉载荷表里任一条命令，本用例必然变红。
+ */
+const SONGUESSR_COMMAND_CASES = [
+  { type: "song.lobby.subscribeRooms", payload: {} },
+  {
+    type: "song.room.create",
+    payload: {
+      roomId: "1234",
+      name: "房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "玩家",
+    },
+  },
+  { type: "song.room.join", payload: { userName: "玩家" } },
+  { type: "song.room.reconnect", payload: { roomId: "1234", sessionToken: "session" } },
+  { type: "song.room.leave", payload: {} },
+  { type: "song.room.requestSync", payload: {} },
+  { type: "song.player.setReady", payload: { ready: true } },
+  { type: "song.player.setSpectator", payload: { spectator: true } },
+  { type: "song.player.setTeam", payload: { team: null } },
+  { type: "song.room.updateSettings", payload: { showLyrics: true } },
+  { type: "song.room.kick", payload: { playerId: "p1" } },
+  { type: "song.room.transferHost", payload: { playerId: "p1" } },
+  { type: "song.chat.send", payload: { text: "你好" } },
+  { type: "song.auth.qr.create", payload: {} },
+  { type: "song.auth.qr.check", payload: { key: "qr-key" } },
+  { type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } },
+  { type: "song.auth.clear", payload: {} },
+  { type: "song.music.search", payload: { keyword: "测试" } },
+  { type: "song.music.playlist.resolve", payload: { value: "123" } },
+  { type: "song.music.artist.search", payload: { keyword: "测试" } },
+  { type: "song.bangumi.search", payload: { keyword: "测试" } },
+  { type: "song.bangumi.songs", payload: { subjectId: "10380" } },
+  { type: "song.subject.image", payload: { subjectId: "10380" } },
+  { type: "song.game.start", payload: {} },
+  { type: "song.game.chooseSubmitter", payload: { playerId: "p1" } },
+  { type: "song.game.submitSong", payload: { songId: "netease:1899705498" } },
+  { type: "song.game.submitAnime", payload: { subjectId: "10380" } },
+  { type: "song.game.audioReady", payload: { roundNumber: 1 } },
+  { type: "song.game.audioFailed", payload: { roundNumber: 1 } },
+  { type: "song.game.guess", payload: { songId: "qq:0017K7gL4WYnw2" } },
+  { type: "song.game.guessAnime", payload: { subjectId: "1701" } },
+  { type: "song.game.giveUp", payload: {} },
+  { type: "song.game.skipRound", payload: {} },
+  { type: "song.game.nextRound", payload: {} },
+  { type: "song.game.finish", payload: {} },
+  { type: "song.test.addBot", payload: {} },
+  { type: "song.test.removeBot", payload: {} },
+] as const satisfies readonly { type: SonGuessrCommand; payload: Record<string, unknown> }[];
+
+type UnprobedSonGuessrCommand = Exclude<
+  SonGuessrCommand,
+  (typeof SONGUESSR_COMMAND_CASES)[number]["type"]
+>;
+const everySonGuessrCommandProbed: UnprobedSonGuessrCommand extends never ? true : never = true;
+
+/** `Object.keys` 只给 `string[]`，比对前统一放宽，键集本身仍由上面的 satisfies/Exclude 锁死。 */
+const sortedNames = (values: readonly string[]): string[] => [...values].sort();
+
+test("猜歌命令表与传输层信封键集完全一致", () => {
+  expect(everySonGuessrCommandProbed).toBe(true);
+  const payloadKeys = sortedNames(Object.keys(SonGuessrPayloadSchemas));
+  expect(sortedNames(Object.keys(SonGuessrMessageSchemas))).toEqual(payloadKeys);
+  expect(sortedNames(SONGUESSR_COMMAND_CASES.map((item) => item.type))).toEqual(payloadKeys);
+});
+
+test("猜歌每一条命令都能通过传输层解析", () => {
+  for (const { type, payload } of SONGUESSR_COMMAND_CASES) {
+    const parsed = parseSonGuessrMessage({
+      id: `probe-${type}`,
+      type,
+      roomId: "1234",
+      payload,
+    });
+    expect(parsed.type).toBe(type);
+  }
+});
+
+test("猜歌信封骨架统一为六个字段且保持严格", () => {
+  for (const schema of Object.values(SonGuessrMessageSchemas)) {
+    expect(Object.keys(schema.properties).sort()).toEqual([
+      "id",
+      "payload",
+      "roomId",
+      "sessionToken",
+      "traceId",
+      "type",
+    ]);
+    expect([...schema.required].sort()).toEqual(["id", "payload", "type"]);
+    expect(schema.additionalProperties).toBe(false);
+  }
+});
+
+test("song.subject.image 封面补图命令可解析并拒绝脏字段", () => {
+  expect(
+    parseSonGuessrMessage({
+      id: "subject-image",
+      type: "song.subject.image",
+      roomId: "1234",
+      payload: { subjectId: "1701" },
+    })
+  ).toMatchObject({ type: "song.subject.image", payload: { subjectId: "1701" } });
+
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "subject-image-dirty",
+      type: "song.subject.image",
+      payload: { subjectId: "1701", extra: true },
     })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
 });

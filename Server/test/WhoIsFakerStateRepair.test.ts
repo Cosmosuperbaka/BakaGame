@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import type { WhoIsFakerClientMessage } from "../src/shared/Index";
 import type {
+  WhoIsFakerClientMessage,
   WhoIsFakerPrivateState,
   WhoIsFakerRoomSnapshot,
   WhoIsFakerRoomRecord,
   WhoIsFakerRole,
-} from "../src/domain/Model";
+} from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;

@@ -3,14 +3,17 @@ import { createRoomEntry } from "@/lib/RoomEntry";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
-import type {
-  WhoIsFakerRoomSnapshot,
-  WhoIsFakerPrivateState,
-  WhoIsFakerRoomSummary,
-  ServerMessage,
-  EventPacket,
-} from "@/types";
-import { SERVER_SHUTDOWN_MESSAGE } from "@/types";
+import {
+  isPermanentRoomError,
+  protocolErrorCode,
+  type WhoIsFakerRoomEnterAck,
+  type WhoIsFakerRoomSnapshot,
+  type WhoIsFakerPrivateState,
+  type WhoIsFakerRoomSummary,
+  type ServerMessage,
+  type EventPacket,
+  SERVER_SHUTDOWN_MESSAGE,
+} from "@bakagame/shared";
 
 export interface ToastItem {
   id: number;
@@ -70,19 +73,14 @@ export interface WhoIsFakerGameState {
   ) => Promise<void>;
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   leaveRoom: () => Promise<void>;
-  sendCommand: (
-    type: string,
-    payload?: Record<string, unknown>
-  ) => Promise<Record<string, unknown>>;
+  sendCommand: ws.WhoIsFakerSendCommand;
 }
 
-type RoomEntryReceipt = {
-  roomId: string;
-  sessionToken: string;
-  snapshot?: WhoIsFakerRoomSnapshot;
-  privateState?: WhoIsFakerPrivateState;
-  previousToken?: string | null;
-};
+/**
+ * 进房凭据：服务端 ack 的字段（`WhoIsFakerRoomEnterAck`）加上客户端自己补的 `previousToken`。
+ * 快照与私有态不在 ack 里，只由 event 下发，见下方 `apply` 取 `syncedSnapshot` 的那条路径。
+ */
+type RoomEntryReceipt = WhoIsFakerRoomEnterAck & { previousToken?: string | null };
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
@@ -117,16 +115,6 @@ const mergeChat = (
   return Array.from(map.values())
     .sort((a, b) => a.createdAt - b.createdAt)
     .slice(-MAX_CHAT_MESSAGES);
-};
-
-const isPermanentRoomError = (error: unknown) => {
-  const code = (error as { code?: string } | null)?.code;
-  return (
-    code === "ROOM_NOT_FOUND" ||
-    code === "SESSION_NOT_FOUND" ||
-    code === "SESSION_INVALID" ||
-    code === "PLAYER_KICKED"
-  );
 };
 
 let lastPlayerChannel: "main" | "ghost" | undefined;
@@ -218,14 +206,9 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     begin: resetWhoIsFakerStateSync,
     apply: (receipt) => {
       saveSessionToken(receipt.roomId, receipt.sessionToken);
-      const snapshot =
-        receipt.snapshot ??
-        (syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined);
+      const snapshot = syncedSnapshot?.roomId === receipt.roomId ? syncedSnapshot : undefined;
       const privateState =
-        receipt.privateState ??
-        (syncedPrivateState?.sessionToken === receipt.sessionToken
-          ? syncedPrivateState
-          : undefined);
+        syncedPrivateState?.sessionToken === receipt.sessionToken ? syncedPrivateState : undefined;
       get().joinRoomState(receipt.roomId, receipt.sessionToken);
       if (snapshot) get().setSnapshot(snapshot);
       if (privateState) get().setPrivateState(privateState);
@@ -335,23 +318,17 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     removeToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
     subscribeLobby: async () => {
-      await ws.send("lobby.subscribeRooms");
+      await ws.send("lobby.subscribeRooms", {});
     },
 
     createRoom: (params, signal) =>
       entry.enter(async () => {
-        const res = await ws.send<RoomEntryReceipt>("room.create", params);
-        return { ...res, roomId: res.roomId ?? params.roomId };
+        return ws.send("room.create", params);
       }, signal),
 
     joinRoom: (roomId, userName, password, signal) =>
       entry.enter(async () => {
-        const res = await ws.send<RoomEntryReceipt>(
-          "room.join",
-          { userName, password },
-          { roomId }
-        );
-        return { ...res, roomId: res.roomId ?? roomId };
+        return ws.send("room.join", { userName, password }, { roomId });
       }, signal),
 
     reconnectRoom: (roomId, signal) => {
@@ -360,11 +337,11 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       return entry.restore(
         `${roomId}:${token}`,
         async () => {
-          const res = await ws.send<RoomEntryReceipt>("room.reconnect", {
+          const res = await ws.send("room.reconnect", {
             roomId,
             sessionToken: token,
           });
-          return { ...res, roomId: res.roomId ?? roomId, previousToken: token };
+          return { ...res, previousToken: token };
         },
         (error) => {
           if (!isPermanentRoomError(error)) return false;
@@ -374,7 +351,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
             current.leaveRoomState();
             current.markRoomClosed();
           }
-          const code = (error as { code?: string } | null)?.code;
+          const code = protocolErrorCode(error);
           const message =
             code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
               ? "会话已失效，请重新加入"
@@ -409,11 +386,12 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       }
     },
 
-    sendCommand: async (type, payload = {}) => {
+    sendCommand: async (type, payload = {}, options) => {
       const { roomId, sessionToken } = get();
       return ws.send(type, payload, {
         roomId: roomId ?? undefined,
         sessionToken: sessionToken ?? undefined,
+        timeout: options?.timeout,
       });
     },
   };
@@ -515,7 +493,7 @@ export function initWhoIsFakerWs() {
       snapshotRevision = undefined;
       privateStateRevision = undefined;
       syncedSnapshot = null;
-      ws.send("lobby.subscribeRooms").catch(() => {});
+      ws.send("lobby.subscribeRooms", {}).catch(() => {});
       if (currentStore.roomId && currentStore.sessionToken) {
         saveSessionToken(currentStore.roomId, currentStore.sessionToken);
         void currentStore.reconnectRoom(currentStore.roomId).catch(() => {});
@@ -529,7 +507,7 @@ export function initWhoIsFakerWs() {
     unsubMsg();
     unsubStatus();
     connectionGeneration += 1;
-    ws.whoIsFakerWsClient.disconnect();
+    ws.disconnect();
     resetWhoIsFakerStateSync();
     useWhoIsFakerStore.getState().setConnected(false);
   };

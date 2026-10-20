@@ -1,5 +1,5 @@
 import type { LyricLine } from "@applemusic-like-lyrics/core";
-import type { SongLyricLine } from "@/types";
+import type { SongLyricLine } from "@bakagame/shared";
 
 /** 与服务端一致：有翻译时仅显示翻译，否则保留行级及逐字注音。 */
 export function toAMLLLines(lines: SongLyricLine[]): LyricLine[] {

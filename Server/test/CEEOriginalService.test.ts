@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
-import type { ConnectionRecord } from "../src/domain/Model";
+import type { ConnectionRecord } from "../src/shared/Index";
 import { AppError } from "../src/domain/Errors";
 import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtocol";
 import {

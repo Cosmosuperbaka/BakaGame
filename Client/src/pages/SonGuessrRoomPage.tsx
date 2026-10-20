@@ -12,7 +12,7 @@ import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
-import type { SonGuessrRoomSnapshot } from "@/types";
+import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 /**

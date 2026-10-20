@@ -8,7 +8,7 @@ import {
   songSnapshot,
   waitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
-import { ROOM_ID_TEST_MODE } from "@/types";
+import { ROOM_ID_TEST_MODE } from "@bakagame/shared";
 import { SongTestController } from "./SongTestController";
 
 const testSnapshot = (bots: number) =>

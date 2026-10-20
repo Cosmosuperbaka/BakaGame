@@ -3,13 +3,14 @@ import type {
   CEECommand,
   CEEPayload,
   CEEPrivateState,
+  CEEResponse,
   CEERoomEnterResult,
   CEERoomSnapshot,
   CEERoomSummary,
   CEESource,
   ServerMessage,
 } from "@bakagame/shared";
-import { ceeWs, sendCEE, type CEEResponse } from "@/lib/CEEWs";
+import { ceeWs, sendCEE } from "@/lib/CEEWs";
 import {
   normalizeCEERoomId,
   readCEESession,

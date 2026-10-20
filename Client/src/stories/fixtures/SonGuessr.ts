@@ -16,7 +16,7 @@ import type {
   SonGuessrRoundSummary,
   SonGuessrScore,
   SonGuessrSettings,
-} from "@/types";
+} from "@bakagame/shared";
 import { clearStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import {
   clearSongSoloRoomId,

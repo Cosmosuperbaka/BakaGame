@@ -3,7 +3,7 @@ import { useState } from "react";
 import { fireEvent, fn } from "storybook/test";
 import { loadStickerPacks } from "@/lib/Stickers";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS, storyChat } from "@/stories/fixtures/Common";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage } from "@bakagame/shared";
 import { ChatPanel } from "./ChatPanel";
 
 const [host, me, peach, azumi, kanade, kitagawa, longName] = STORY_PLAYERS;

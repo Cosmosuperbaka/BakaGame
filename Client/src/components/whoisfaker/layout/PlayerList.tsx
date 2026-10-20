@@ -40,7 +40,7 @@ import type {
   WhoIsFakerPrivateState,
   PublicPlayerView,
   RoleConfig,
-} from "@/types";
+} from "@bakagame/shared";
 
 export type PlayerMark = "unknown" | WhoIsFakerRole;
 export type PlayerMarks = Record<string, PlayerMark>;

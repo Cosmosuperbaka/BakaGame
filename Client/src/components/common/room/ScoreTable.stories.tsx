@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RoleBadge } from "@/components/whoisfaker/layout/RoleBadge";
-import type { WhoIsFakerRole } from "@/types";
+import type { WhoIsFakerRole } from "@bakagame/shared";
 import { ScoreTable, type ScoreTableColumn } from "./ScoreTable";
 
 // 三个游戏的结算各自在房间页与阶段故事里出现；这里在接近手机内容宽度的框里看折行与对齐。

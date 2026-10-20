@@ -1,6 +1,6 @@
 import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
-import type { SongLyricLine } from "@/types";
+import type { SongLyricLine } from "@bakagame/shared";
 import { lyricOverview } from "@/lib/Motion";
 import { toAMLLLines } from "./SongLyricLines";
 

@@ -1,6 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE, type WhoIsFakerRoomSnapshot } from "@/types";
+import {
+  ABSTAIN_TARGET_ID,
+  ROOM_ID_TEST_MODE,
+  type WhoIsFakerRoomSnapshot,
+} from "@bakagame/shared";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { WIF_PEOPLE, wifPrivate, wifSnapshot } from "@/stories/fixtures/WhoIsFaker";
 import { PrivilegedActionPreview } from "../layout/PrivilegedActionPreview";

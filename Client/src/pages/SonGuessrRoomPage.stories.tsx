@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
-import { sonGuessrWs } from "@/lib/SonGuessrWs";
+import { sonGuessrWsClient } from "@/lib/SonGuessrWs";
 import { fromNow } from "@/stories/fixtures/Common";
 import { dropFocus } from "@/stories/PlayHelpers";
 import {
@@ -49,12 +49,12 @@ const MOBILE = { viewport: { value: "mobile", isRotated: false } };
 
 /** 让入房流程越过“等待连接”：只替换连接就绪检查，不建立任何 WebSocket。 */
 function connectInstantly() {
-  Object.defineProperty(sonGuessrWs, "waitForConnection", {
+  Object.defineProperty(sonGuessrWsClient, "waitForConnection", {
     configurable: true,
     value: () => Promise.resolve(),
   });
   return () => {
-    Reflect.deleteProperty(sonGuessrWs, "waitForConnection");
+    Reflect.deleteProperty(sonGuessrWsClient, "waitForConnection");
   };
 }
 

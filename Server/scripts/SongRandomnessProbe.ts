@@ -6,8 +6,8 @@ import {
   NeteaseMusicProvider,
   type MusicProvider,
 } from "../src/infrastructure/NeteaseMusicProvider";
-import type { ConnectionRecord } from "../src/domain/Model";
 import type {
+  ConnectionRecord,
   SongDetails,
   SongSearchResult,
   SonGuessrClientMessage,

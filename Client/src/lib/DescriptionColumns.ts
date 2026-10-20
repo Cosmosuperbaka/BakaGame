@@ -1,4 +1,4 @@
-import type { DescriptionRecord, PublicPlayerView, WhoIsFakerRoomSnapshot } from "@/types";
+import type { DescriptionRecord, PublicPlayerView, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 
 /** 发言历史的一列。轮次、平票 PK 与补充发言各自独立编号。 */
 export interface DescriptionColumn {

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { GameRecordDetail, RecordedGameKind } from "@/types";
+import type { GameRecordDetail, RecordedGameKind } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import {
   Dialog,

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { sonGuessrWs } from "@/lib/SonGuessrWs";
+import { waitForConnection } from "@/lib/SonGuessrWs";
 import {
   clearSongSoloRoomId,
   getSavedUsername,
@@ -18,8 +18,13 @@ import {
   SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import { isValidRoomId, ROOM_ID_TEST_MODE } from "@/types";
-import type { SonGuessrMusicAccount } from "@/types";
+import {
+  isValidRoomId,
+  ROOM_ID_TEST_MODE,
+  type SonGuessrAck,
+  type SonGuessrCommand,
+  type SonGuessrPayload,
+} from "@bakagame/shared";
 
 const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
 const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;
@@ -54,7 +59,8 @@ interface MusicSessionTask {
   settled: boolean;
 }
 
-type MusicSessionAuthResult = { account: SonGuessrMusicAccount; cookie?: string };
+/** `song.auth.useCookie` 的回包：装载凭据后服务端确认的账号与本次实际生效的 cookie。 */
+type MusicSessionAuthResult = SonGuessrAck<"song.auth.useCookie">;
 
 /** 上游给出账号资料后，把本次实际生效的 cookie 写回本地凭据与事务键。 */
 function settleMusicSessionUpload(
@@ -88,6 +94,16 @@ const needsPasswordPrompt = (code?: string): boolean =>
 
 export const isLongRunningCommand = (type: string): boolean =>
   (LONG_RUNNING_COMMANDS as readonly string[]).includes(type);
+
+/**
+ * 「发一条指令，失败落到横幅提示」的组件侧形状：命令名与载荷沿用 store `sendCommand` 的约束，
+ * 组件里写 `run: (type: string, ...)` 会把这条通道又放宽回任意字符串。
+ */
+export type SongRunCommand = <TCommand extends SonGuessrCommand>(
+  type: TCommand,
+  payload?: SonGuessrPayload<TCommand>,
+  success?: string
+) => Promise<void>;
 
 export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) {
   const navigate = usePageNavigate();
@@ -161,7 +177,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       for (let attempt = 0; ; attempt += 1) {
         if (task.cancelled) return;
         try {
-          const result = await sendCommand<MusicSessionAuthResult>("song.auth.useCookie", {
+          const result = await sendCommand("song.auth.useCookie", {
             cookie: storedSession.cookie,
             platform,
           });
@@ -343,7 +359,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     const tryEnter = async () => {
       setJoining(true);
       try {
-        await sonGuessrWs.waitForConnection(8_000);
+        await waitForConnection(8_000);
       } catch {
         if (signal.aborted) return;
         setNotice("连接服务器超时，请刷新重试", "error");
@@ -479,11 +495,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     if (signal.aborted) return;
   };
 
-  const runCommand = async (
-    type: string,
-    payload: Record<string, unknown> = {},
-    success?: string
-  ) => {
+  const runCommand: SongRunCommand = async (type, payload, success) => {
     if (inFlightCommandsRef.current.has(type)) return;
     inFlightCommandsRef.current.add(type);
     setPendingCommands((prev) => ({ ...prev, [type]: true }));
