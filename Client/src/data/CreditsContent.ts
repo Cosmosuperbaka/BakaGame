@@ -13,7 +13,12 @@
  * 每个模型尽量带 `url` 发布页：优先厂商官方新闻/公告，其次官方文档的版本说明；确实没有公开页面时省略。
  * 公司徽章用厂商标识，模型徽章用模型家族标识；两枚相同的（如 GPT 与 OpenAI）可以重复用同一个键。
  */
-import type { ContributingCompany, CoreTechEntry, TechStackCategory } from "@/lib/Credits";
+import type {
+  ContributingCompany,
+  CoreTechEntry,
+  SpecialThanksEntry,
+  TechStackCategory,
+} from "@/lib/Credits";
 
 /** 核心技术栈分组顺序与标题：数组顺序即页面从上到下的顺序。 */
 export const TECH_STACK_CATEGORIES: readonly { id: TechStackCategory; label: string }[] = [
@@ -250,6 +255,37 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         url: "https://qwen.ai/blog?id=qwen3.8",
       },
     ],
+  },
+];
+
+/**
+ * 特别鸣谢：玩法原型、资料与曲库来源，数组顺序即页面展示顺序。
+ * CCB 原项目的仓库地址与作者署名尚未经维护者确认：先不生成外链，确认后再补 `url`。
+ */
+export const SPECIAL_THANKS: readonly SpecialThanksEntry[] = [
+  {
+    name: "CCB 原项目",
+    description: "本作的玩法原型与规则来源；仓库地址与作者署名待维护者确认。",
+  },
+  {
+    name: "Bangumi 番组计划",
+    description: "番剧、角色与歌曲资料。",
+    url: "https://bgm.tv/",
+  },
+  {
+    name: "萌娘百科",
+    description: "角色与作品背景资料。",
+    url: "https://zh.moegirl.org.cn/",
+  },
+  {
+    name: "QQ音乐",
+    description: "歌曲检索与试听来源。",
+    url: "https://y.qq.com/",
+  },
+  {
+    name: "网易云音乐",
+    description: "歌曲检索与试听来源。",
+    url: "https://music.163.com/",
   },
 ];
 

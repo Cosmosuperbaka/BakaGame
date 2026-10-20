@@ -245,6 +245,16 @@ export interface ContributingCompany {
 }
 
 /**
+ * 特别鸣谢的一项：名称、一行说明与外部来源。
+ * `url` 省略时渲染为静态条目，不指向未确认的占位地址。
+ */
+export interface SpecialThanksEntry {
+  name: string;
+  description: string;
+  url?: string;
+}
+
+/**
  * 同一公司内按发布时间从早到晚排列。数据文件允许后加的模型直接追加在末尾，
  * 展示前统一经这里收口，排序不靠人工维护数组顺序。
  */

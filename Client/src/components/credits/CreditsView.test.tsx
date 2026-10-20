@@ -143,6 +143,23 @@ describe("CreditsView", () => {
     expect(within(reactCard).getByText("v19.3.0")).toBeInTheDocument();
   });
 
+  it("特别鸣谢按固定顺序列出五个来源，已确认来源为新标签外链", () => {
+    renderView();
+
+    const section = screen.getByRole("region", { name: "特别鸣谢" });
+    const names = within(section)
+      .getAllByRole("listitem")
+      .map((item) => item.querySelector("span")?.textContent);
+    expect(names).toEqual(["CCB 原项目", "Bangumi 番组计划", "萌娘百科", "QQ音乐", "网易云音乐"]);
+
+    const bangumi = within(section).getByRole("link", { name: /Bangumi 番组计划/ });
+    expect(bangumi).toHaveAttribute("href", "https://bgm.tv/");
+    expect(bangumi).toHaveAttribute("target", "_blank");
+    expect(bangumi).toHaveAttribute("rel", "noreferrer");
+    // CCB 的仓库与作者尚未确认：宁可不出外链，也不指向占位地址。
+    expect(within(section).queryByRole("link", { name: /CCB 原项目/ })).not.toBeInTheDocument();
+  });
+
   it("依赖清单一级只列主包，传递依赖不出现在一级行里", () => {
     renderView();
 
