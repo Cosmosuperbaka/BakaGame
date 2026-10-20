@@ -524,6 +524,12 @@ export interface WhoIsFakerPrivateState {
 // 派生前这里是一张手写的信封联合，传输层另抄一份同构的 schema 表，两边一旦漏配就会出现
 // 「类型有、处理器有、校验没有」的静默拒收。
 
+/**
+ * 大厅房间列表的事件名。服务端下发与传输层的积压丢弃口径读同一个常量：
+ * 改名只改一处时，丢弃判定会静默失效，慢客户端继续吃全量扇出。
+ */
+export const WHOISFAKER_LOBBY_ROOMS_EVENT = "lobby.rooms";
+
 const emptyPayload = t.Object({}, strict);
 const positiveInt = t.Integer({ minimum: 1 });
 const roomId = t.String({ minLength: 1, maxLength: 32 });

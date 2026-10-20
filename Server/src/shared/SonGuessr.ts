@@ -599,6 +599,9 @@ export interface SonGuessrPrivateState {
 // 命令清单只有 `SonGuessrPayloadSchemas` 这一份：命令 union、载荷类型与运行时信封全部由它派生，
 // 结构类型与 schema 不可能各写一份再漂移（猜歌封面命令曾因传输层漏键被恒定拒绝）。
 
+/** 大厅房间列表的事件名；口径同 `WHOISFAKER_LOBBY_ROOMS_EVENT`，服务端与传输层丢弃判定读同一个常量。 */
+export const SONGUESSR_LOBBY_ROOMS_EVENT = "song.lobby.rooms";
+
 const emptyPayload = t.Object({}, strict);
 const roomId = t.String({ minLength: 1, maxLength: 32 });
 const roomName = t.String({ minLength: 1, maxLength: 40 });

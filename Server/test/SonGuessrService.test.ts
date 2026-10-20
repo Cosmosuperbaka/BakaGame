@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { LOBBY_MERGE_WINDOW_MS } from "../src/application/LobbyFanout";
 import {
   ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
@@ -202,6 +203,67 @@ const startRound = async (
 };
 
 describe("SonGuessrService", () => {
+  test("猜歌大厅订阅只回给自己，窗口内的多次建房并为一次下发", async () => {
+    let now = Date.UTC(2026, 3, 10);
+    let pendingFlush: { at: number; flush: () => void } | undefined;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      now: () => now,
+      random: { nextInt: () => 0 },
+      lobbyFanoutSchedule: (flush, delayMs) => {
+        pendingFlush = { at: now + delayMs, flush };
+      },
+    });
+    const advance = (ms: number) => {
+      now += ms;
+      if (pendingFlush && pendingFlush.at <= now) {
+        const timer = pendingFlush;
+        pendingFlush = undefined;
+        timer.flush();
+      }
+    };
+    const frames = (client: TestConnection) =>
+      client.sent.filter((item) => item.event === "song.lobby.rooms");
+    const create = async (roomId: string) =>
+      execute(service, connection(service, `song-host-${roomId}`), {
+        id: `create-${roomId}`,
+        type: "song.room.create",
+        payload: {
+          roomId,
+          name: `${roomId}房`,
+          visibility: "public",
+          allowSpectators: true,
+          userName: "房主",
+        },
+      } as SonGuessrClientMessage);
+
+    const first = connection(service, "song-lobby-a");
+    const second = connection(service, "song-lobby-b");
+    for (const client of [first, second]) {
+      await execute(service, client, {
+        id: `sub-${client.record.id}`,
+        type: "song.lobby.subscribeRooms",
+        payload: {},
+      });
+    }
+    expect(frames(first)).toHaveLength(1);
+    expect(frames(second)).toHaveLength(1);
+
+    await create("7001");
+    await create("7002");
+    await create("7003");
+    expect(frames(first)).toHaveLength(2);
+    expect(frames(second)).toHaveLength(2);
+
+    // 尾沿按注入时钟收敛：两次变更之间不需要新事件，整段突发一次带出。
+    advance(LOBBY_MERGE_WINDOW_MS);
+    expect(frames(first)).toHaveLength(3);
+    const listed = (frames(first).at(-1)!.payload as Array<{ roomId: string }>)
+      .map((room) => room.roomId)
+      .sort();
+    expect(listed).toEqual(["7001", "7002", "7003"]);
+  });
+
   test("听歌猜番提交后只向出题人公开答案，并按 subject ID 完成猜测结算", async () => {
     const bangumiProvider = {
       getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),

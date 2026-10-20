@@ -31,6 +31,7 @@ import {
   ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
+  WHOISFAKER_LOBBY_ROOMS_EVENT,
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import {
@@ -80,6 +81,7 @@ import {
   BOT_DESCRIPTION_TEMPLATES,
 } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
+import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import type { CommandHandler } from "./whoisfaker/CommandHandler";
 import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
 import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
@@ -94,6 +96,8 @@ export interface WhoIsFakerServiceOptions {
   eventLogger: EventLogger;
   /** 未配置数据库时为空：对局记录不落库。 */
   gameRecorder?: GameRecorder;
+  /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
+  lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
 
 /** 反馈标题按结算来源分四类，其余情况按普通投票结果。 */
@@ -233,6 +237,8 @@ export class WhoIsFakerService implements AdminRoomControl {
     windowMs: JOIN_PASSWORD_WINDOW_MS,
     maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   });
+  /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
+  private readonly lobbyFanout: LobbyFanout;
   private idCounter = 0;
 
   constructor(private readonly options: WhoIsFakerServiceOptions) {
@@ -243,11 +249,20 @@ export class WhoIsFakerService implements AdminRoomControl {
         nextInt: (maxExclusive: number) => Math.floor(Math.random() * Math.max(maxExclusive, 1)),
       } satisfies RandomSource);
     this.connectionRegistry = new ConnectionRegistry();
+    this.lobbyFanout = new LobbyFanout({
+      event: WHOISFAKER_LOBBY_ROOMS_EVENT,
+      now: () => this.now(),
+      broadcast: (payload) => this.connectionRegistry.broadcastToLobby(payload),
+      summaries: () => this.getRoomSummaries(),
+      schedule: options.lobbyFanoutSchedule,
+    });
     this.commandHandlers = [
       createRoomCommandHandler({
         subscribeRooms: (connection) => {
           connection.lobbySubscribed = true;
-          this.publishLobby();
+          // 只回给这条连接：向全服重发一遍等价于「N 人同时打开大厅 = N×N 帧」，
+          // 而新来的玩家要的只是自己那份列表。
+          this.lobbyFanout.sendTo(connection);
           return { subscribed: true };
         },
         create: (connection, message) => this.handleRoomCreate(connection, message),
@@ -4087,7 +4102,7 @@ export class WhoIsFakerService implements AdminRoomControl {
   }
 
   private publishLobby() {
-    this.connectionRegistry.broadcastToLobby(createEvent("lobby.rooms", this.getRoomSummaries()));
+    this.lobbyFanout.request();
   }
 
   private broadcastRoomEvent(room: WhoIsFakerRoomRecord, event: string, payload: unknown) {

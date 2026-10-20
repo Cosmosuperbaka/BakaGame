@@ -12,6 +12,15 @@ export interface TestConnection {
 // 为每条测试创建独立的服务实例和可控时钟，避免用例互相污染。
 export const createTestContext = (options: { gameRecorder?: GameRecorder } = {}) => {
   let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
+  // 大厅合并窗的尾沿跟着注入时钟走：挂在真实定时器上的话，「窗口内不重复下发」这类断言
+  // 取决于用例跑了多少墙钟时间，满载机器上会时好时坏。实现保证同一时刻至多一个尾沿。
+  let pendingLobbyFlush: { at: number; flush: () => void } | undefined;
+  const drainLobbyFlush = () => {
+    if (!pendingLobbyFlush || pendingLobbyFlush.at > currentTime) return;
+    const timer = pendingLobbyFlush;
+    pendingLobbyFlush = undefined;
+    timer.flush();
+  };
   const service = new WhoIsFakerService({
     gameRecorder: options.gameRecorder,
     now: () => currentTime,
@@ -19,15 +28,20 @@ export const createTestContext = (options: { gameRecorder?: GameRecorder } = {})
       nextInt: (maxExclusive: number) => Math.max(maxExclusive - 1, 0),
     },
     eventLogger: new EventLogger(),
+    lobbyFanoutSchedule: (flush, delayMs) => {
+      pendingLobbyFlush = { at: currentTime + delayMs, flush };
+    },
   });
 
   return {
     service,
     advanceTime: (milliseconds: number) => {
       currentTime += milliseconds;
+      drainLobbyFlush();
     },
     setTime: (value: number) => {
       currentTime = value;
+      drainLobbyFlush();
     },
   };
 };

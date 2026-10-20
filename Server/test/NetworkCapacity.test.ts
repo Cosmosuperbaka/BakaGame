@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 
-import type { ConnectionRecord } from "../src/shared/Index";
+import { ConnectionRegistry } from "../src/application/ConnectionRegistry";
+import { LOBBY_MERGE_WINDOW_MS, LobbyFanout } from "../src/application/LobbyFanout";
+import {
+  WHOISFAKER_LOBBY_ROOMS_EVENT,
+  WHOISFAKER_PHASES,
+  type ConnectionRecord,
+  type WhoIsFakerRoomSummary,
+} from "../src/shared/Index";
 import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
@@ -180,4 +187,153 @@ test("6Mbps 可以承载 150 人 CEE 的高频状态与私有猜测同步", asyn
   } finally {
     h.service.close();
   }
+}, 30_000);
+
+const LOBBY_SUBSCRIBERS = 200;
+const LOBBY_ROOM_COUNT = 50;
+const LOBBY_CHURN_PER_SECOND = 10;
+
+test("大厅订阅风暴只按人数出帧：200 人进大厅不再放大成 200×200 帧", async () => {
+  const { service } = createTestContext();
+  let lobbyBytes = 0;
+  let lobbyFrames = 0;
+  const metered = (id: string): TestConnection => {
+    const record: ConnectionRecord = {
+      id,
+      lobbySubscribed: false,
+      send: (payload) => {
+        if ((payload as { event?: string }).event !== WHOISFAKER_LOBBY_ROOMS_EVENT) return;
+        lobbyFrames += 1;
+        lobbyBytes += websocketFrameBytes(utf8Bytes(payload));
+      },
+      close: () => {},
+    };
+    service.registerConnection(record);
+    return { record, sent: [], closed: [] };
+  };
+
+  // 建房时大厅里还没有订阅者：这一段是冷启动，不计入大厅稳态流量。
+  for (let index = 0; index < LOBBY_ROOM_COUNT; index += 1) {
+    await execute(service, metered(`lobby-host-${index}`), {
+      id: `create-${index}`,
+      type: "room.create",
+      payload: {
+        roomId: `${8000 + index}`,
+        name: `承载测试房间${index}`,
+        visibility: "public",
+        allowSpectators: true,
+        userName: `玩家${index}`,
+      },
+    });
+  }
+  expect(lobbyFrames).toBe(0);
+  lobbyBytes = 0;
+
+  for (let index = 0; index < LOBBY_SUBSCRIBERS; index += 1) {
+    await execute(service, metered(`lobby-${index}`), {
+      id: `sub-${index}`,
+      type: "lobby.subscribeRooms",
+      payload: {},
+    });
+  }
+
+  // 旧写法里每订阅一次就向全服重发一遍整张表：N 人打开大厅 = N×N 帧。
+  expect(lobbyFrames).toBe(LOBBY_SUBSCRIBERS);
+  console.info(
+    `大厅订阅风暴: ${LOBBY_SUBSCRIBERS} 人 × ${LOBBY_ROOM_COUNT} 房共 ${(lobbyBytes / 1024).toFixed(0)} KiB，人均 ${(lobbyBytes / LOBBY_SUBSCRIBERS / 1024).toFixed(1)} KiB`
+  );
+}, 30_000);
+
+test("合并窗把大厅扇出的帧率封顶在 1/窗，变更到可见仍不超过一个窗", () => {
+  const summaries: WhoIsFakerRoomSummary[] = Array.from(
+    { length: LOBBY_ROOM_COUNT },
+    (_, index) => ({
+      roomId: `${8000 + index}`,
+      name: `承载测试房间${index}`,
+      visibility: index % 4 === 0 ? "private" : "public",
+      allowSpectators: true,
+      hasPassword: index % 4 === 0,
+      playerCount: (index % 8) + 2,
+      spectatorCount: index % 3,
+      onlineCount: (index % 8) + 2,
+      phase: WHOISFAKER_PHASES[index % WHOISFAKER_PHASES.length],
+      testMode: false,
+    })
+  );
+
+  const run = (windowMs: number) => {
+    const registry = new ConnectionRegistry();
+    let bytes = 0;
+    let frames = 0;
+    for (let index = 0; index < LOBBY_SUBSCRIBERS; index += 1) {
+      registry.registerConnection({
+        id: `lobby-${index}`,
+        lobbySubscribed: true,
+        send: (payload) => {
+          frames += 1;
+          bytes += websocketFrameBytes(utf8Bytes(payload));
+        },
+        close: () => {},
+      });
+    }
+    let now = 0;
+    let pending: { at: number; flush: () => void } | undefined;
+    const changeTimes: number[] = [];
+    const publishTimes: number[] = [];
+    const fanout = new LobbyFanout({
+      event: WHOISFAKER_LOBBY_ROOMS_EVENT,
+      now: () => now,
+      broadcast: (payload) => {
+        publishTimes.push(now);
+        registry.broadcastToLobby(payload);
+      },
+      summaries: () => summaries,
+      windowMs,
+      schedule: (flush, delayMs) => {
+        pending = { at: now + delayMs, flush };
+      },
+    });
+
+    for (
+      let mutation = 0;
+      mutation < LOBBY_CHURN_PER_SECOND * TEST_DURATION_SECONDS;
+      mutation += 1
+    ) {
+      now += 1_000 / LOBBY_CHURN_PER_SECOND;
+      const due = pending;
+      if (due && due.at <= now) {
+        pending = undefined;
+        due.flush();
+      }
+      changeTimes.push(now);
+      fanout.request();
+    }
+    // 仿真收束：最后一段突发仍要由尾沿带出去，否则「变更必被投递」这条不变量没法核对。
+    if (pending) {
+      now = Math.max(now, pending.at);
+      pending.flush();
+    }
+
+    // 每次变更都必须被某一份列表带出去，且等待不超过一个窗口——合并只推迟可见，不丢内容。
+    let maxDelayMs = 0;
+    for (const changedAt of changeTimes) {
+      const deliveredAt = publishTimes.find((at) => at >= changedAt);
+      expect(deliveredAt).toBeNumber();
+      maxDelayMs = Math.max(maxDelayMs, deliveredAt! - changedAt);
+    }
+    return { bytes, frames, publishes: publishTimes.length, maxDelayMs };
+  };
+
+  const merged = run(LOBBY_MERGE_WINDOW_MS);
+  const perChange = run(0);
+  const mergedMbps = (merged.bytes * TRANSPORT_OVERHEAD_RATIO * 8) / TEST_DURATION_SECONDS;
+  console.info(
+    `大厅扇出对照: ${LOBBY_CHURN_PER_SECOND} 变更/秒 × ${LOBBY_SUBSCRIBERS} 订阅者 → 逐变更 ${perChange.publishes} 帧/人 ${(perChange.bytes * TRANSPORT_OVERHEAD_RATIO * 8) / TEST_DURATION_SECONDS / 1_000_000} Mbps，合并窗 ${merged.publishes} 帧/人 ${(mergedMbps / 1_000_000).toFixed(2)} Mbps（ ${(perChange.bytes / merged.bytes).toFixed(2)}× 包体）`
+  );
+
+  expect(merged.publishes).toBeLessThanOrEqual(
+    Math.ceil((TEST_DURATION_SECONDS * 1_000) / LOBBY_MERGE_WINDOW_MS) + 1
+  );
+  expect(merged.maxDelayMs).toBeLessThanOrEqual(LOBBY_MERGE_WINDOW_MS);
+  expect(perChange.bytes / merged.bytes).toBeGreaterThanOrEqual(2);
 }, 30_000);

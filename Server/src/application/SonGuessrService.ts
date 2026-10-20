@@ -24,6 +24,7 @@ import {
 } from "../domain/Rules";
 import {
   ROOM_ID_TEST_MODE,
+  SONGUESSR_LOBBY_ROOMS_EVENT,
   type ConnectionRecord,
   type PlayerAccount,
   type RoomVisibility,
@@ -73,6 +74,7 @@ import {
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
+import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 
 const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionType: "song",
@@ -255,6 +257,8 @@ export interface SonGuessrServiceOptions {
   eventLogger?: EventLogger;
   /** 未配置数据库时为空：对局记录不落库。 */
   gameRecorder?: GameRecorder;
+  /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
+  lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
 
 const clampInt = (value: number, minimum: number, maximum: number) =>
@@ -1375,6 +1379,8 @@ export const createSongLyricClip = (
 export class SonGuessrService implements AdminRoomControl {
   private readonly rooms = new Map<string, SonGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
+  /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
+  private readonly lobbyFanout: LobbyFanout;
   private readonly now: () => number;
   private readonly random: RandomSource;
   private idCounter = 0;
@@ -1416,6 +1422,13 @@ export class SonGuessrService implements AdminRoomControl {
     this.random = options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
     };
+    this.lobbyFanout = new LobbyFanout({
+      event: SONGUESSR_LOBBY_ROOMS_EVENT,
+      now: () => this.now(),
+      broadcast: (payload) => this.connections.broadcastToLobby(payload),
+      summaries: () => this.getRoomSummaries(),
+      schedule: options.lobbyFanoutSchedule,
+    });
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -1596,7 +1609,9 @@ export class SonGuessrService implements AdminRoomControl {
     switch (message.type) {
       case "song.lobby.subscribeRooms":
         connection.lobbySubscribed = true;
-        this.publishLobby();
+        // 只给这条连接发当前列表：合并窗下全量广播可能刚刚发过，
+        // 新订阅者不能因为「还在窗内」而一份列表都拿不到。
+        this.lobbyFanout.sendTo(connection);
         return { subscribed: true };
       case "song.room.create":
         return this.createRoom(connection, message.payload);
@@ -4888,7 +4903,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private publishLobby() {
-    this.connections.broadcastToLobby(createEvent("song.lobby.rooms", this.getRoomSummaries()));
+    this.lobbyFanout.request();
   }
 
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {

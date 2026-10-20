@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { LOBBY_MERGE_WINDOW_MS } from "../src/application/LobbyFanout";
 import {
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
@@ -85,6 +86,54 @@ test("大厅订阅后会收到房间列表更新", async () => {
   const rooms = getLastEventPayload<Array<{ roomId: string }>>(lobby, "lobby.rooms");
   expect(rooms?.some((room) => room.roomId === "1111")).toBe(true);
   expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.roomId).toBe("1111");
+});
+
+test("大厅列表按合并窗收敛：订阅只回给自己，窗口内的多次变更并为一次下发", async () => {
+  const { service, advanceTime } = createTestContext();
+  const first = createConnection(service, "lobby-a");
+  const second = createConnection(service, "lobby-b");
+  const frames = (connection: ReturnType<typeof createConnection>) =>
+    getEventPayloads<Array<{ roomId: string }>>(connection, "lobby.rooms");
+
+  for (const connection of [first, second]) {
+    await execute(service, connection, {
+      id: `sub-${connection.record.id}`,
+      type: "lobby.subscribeRooms",
+      payload: {},
+    });
+  }
+  // 旧写法向全服重发一遍：N 个人同时打开大厅就是 N×N 帧。现在每人只拿自己那一份。
+  expect(frames(first)).toHaveLength(1);
+  expect(frames(second)).toHaveLength(1);
+
+  // 窗口起点的第一次变更立刻下发，随后的建房攒在窗内。
+  await createRoom(service, "2222");
+  await createRoom(service, "3333");
+  await createRoom(service, "4444");
+  expect(frames(first)).toHaveLength(2);
+  expect(frames(second)).toHaveLength(2);
+
+  // 尾沿自己收敛：不需要新事件，越过窗口后攒下的变更一次带出去。
+  advanceTime(LOBBY_MERGE_WINDOW_MS);
+  expect(frames(first)).toHaveLength(3);
+  expect(
+    frames(first)
+      .at(-1)
+      ?.map((room) => room.roomId)
+      .sort()
+  ).toEqual(["2222", "3333", "4444"]);
+
+  // 合并只推迟可见，不丢内容：新窗口内的这次建房同样等下一个尾沿。
+  await createRoom(service, "5555");
+  expect(frames(first)).toHaveLength(3);
+  advanceTime(LOBBY_MERGE_WINDOW_MS);
+  expect(
+    frames(first)
+      .at(-1)
+      ?.map((room) => room.roomId)
+      .sort()
+  ).toEqual(["2222", "3333", "4444", "5555"]);
+  expect(frames(second)).toHaveLength(4);
 });
 
 test("房间设置只通过公开快照同步且不会暴露私房密码", async () => {
