@@ -13,6 +13,15 @@ permissions:
   contents: read
   pull-requests: read
 
+# 第三方 Action 一律按 commit SHA 固定，注释标出该 SHA 对应的版本：tag 能在不改工作流
+# 的前提下换实现，SHA 不能。升级时同批改 SHA 与注释，两处不符就当作未升级处理。
+# 每个作业都写 timeout-minutes：卡死的作业要么超时暴露为失败，要么一直占着 runner。
+# 构建口径的单点声明：各作业只引用这里的 Node 主版本，避免「某个作业悄悄换了 Node」。
+# 下界由根 package.json 的 engines 决定（jsdom 的 engines 不满足时 pnpm install
+# --frozen-lockfile 直接硬失败），因此无需在作业里自证。
+env:
+  NODE_VERSION: "22"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,14 +31,17 @@ jobs:
   docs:
     name: Docs Check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       # 链接、锚点与 AGENTS.md 导航覆盖；规则见 Agents/Testing.md「验证范围」；含冻结文档哈希校验。
       - name: Check documentation links
@@ -39,6 +51,7 @@ jobs:
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       # dispatch 时没有变更集可比，force 步骤把六路一次性置为 true；
       # 其它事件下 force 被跳过、输出为空，回落 paths-filter 的判定。
@@ -50,15 +63,32 @@ jobs:
       knip: ${{ steps.force.outputs.knip || steps.filter.outputs.knip }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Detect changed paths
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: filter
         with:
           filters: |
+            # 这个过滤集合必须覆盖 server 作业里所有测试**读到的仓库文件**，否则出现
+            # 「测试在跑、但它守护的文件没被改到过滤里」的静默失效：
+            # - ClientVersionConsistency.test.ts 读 Desktop/src-tauri/{tauri.conf.json,Cargo.toml,Cargo.lock}
+            #   与 Mobile/{package.json,android/app/build.gradle}（三端版本抬升时五处声明）；
+            # - Release 元数据（部署时由 deploy.yml 把 Client/src/data/changelog.json
+            #   喂给 buildServerReleaseMetadata）没有稳定 semver 就中止发布，改日志要能在这里报错。
+            # 依赖清单（pnpm-lock.yaml / pnpm-workspace.yaml / 根 package.json）会换掉
+            # 两端测试所依赖的整棵依赖树（overrides 里就有一条 typescript 解析规则），
+            # 所以它们必须同时触发 server 与 client —— 见 Agents/Conventions.md §4。
             server:
               - 'Server/**'
+              - 'Desktop/**'
+              - 'Mobile/**'
+              - 'Client/src/data/changelog.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy.yml'
             client:
@@ -66,6 +96,9 @@ jobs:
               - 'Client/!(e2e)/**'
               - 'Server/src/shared/**'
               - 'Server/scripts/ClientCiFilter.mjs'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
               - '.github/workflows/ci.yml'
             # 桌面壳加载远程 URL，不内嵌前端产物，只有 Desktop/ 自身改动才需要打包。
             desktop:
@@ -76,6 +109,8 @@ jobs:
               - 'Mobile/**'
               - 'Client/**'
               - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
               - '.github/workflows/ci.yml'
             # 静态分析：两端源码、根清单与锁文件、Knip 配置。
             knip:
@@ -89,6 +124,9 @@ jobs:
             e2e:
               - 'Client/**'
               - 'Server/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
               - '.github/workflows/ci.yml'
 
       - name: Force every path when dispatched manually
@@ -104,10 +142,13 @@ jobs:
     name: Server CI
     runs-on: ubuntu-latest
     needs: [changes]
+    timeout-minutes: 20
     if: ${{ needs.changes.outputs.server == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # Server 测试全部使用隔离夹具（见 test/ 的 *Fixtures），不读 Server/data，
       # 因此不再下载数据集 —— 它只服务 E2E（下方 e2e 作业）与生产首启的基线补发。
@@ -115,10 +156,16 @@ jobs:
       # Server 是 workspace 成员（包名 server），依赖由根级 pnpm-lock.yaml 单点锁定；
       # 安装用 pnpm，运行时仍是 Bun —— 根级 pnpm 不会替换 `bun test` 与 Bun 原生 API。
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+
+      # 本作业自身的触发集合是门禁的一部分：上面过滤里少了壳目录/锁文件时，
+      # 版本一致性与依赖变更的测试就会「在跑但永不触发」。改过滤必须同改这个夹具测试。
+      - name: Verify CI path filter fixtures
+        working-directory: Server
+        run: node --test scripts/ServerCiFilter.mjs
 
       - name: Type check server
         run: pnpm --filter server check
@@ -134,32 +181,83 @@ jobs:
       - name: Smoke test production server
         run: pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts
 
+      # 生产运行时依赖由 npm 安装（见 Server/.npmrc），而 CI 的解析权威是根 pnpm-lock.yaml，
+      # 两条路径并存时线上装到的可能与获验那套不同。这一步用 CI 已解析出的直接依赖版本喂
+      # npm 自己生成一份可 `npm ci` 的锁，作为构件供镜像构建消费（见 Agents/Deployment.md §8）。
+      # 不阻断作业：注册表抖动不该把部署门禁（Server CI 恰好一次成功）染红，漂移由警告暴露。
+      - name: Export the npm-compatible runtime lock
+        continue-on-error: true
+        run: node Server/scripts/ExportNpmLock.mjs --out Server/build/server-npm-lock.json
+
+      - name: Upload npm runtime lock
+        if: ${{ hashFiles('Server/build/server-npm-lock.json') != '' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: server-npm-lock
+          path: Server/build/server-npm-lock.json
+          retention-days: 14
+
       - name: Upload server coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
           name: server-coverage
           path: Server/coverage/
           retention-days: 14
 
+  # 停机链路的活体回归：真实子进程 + 真实 WS + 真实信号时序（预通知→摘流→排空→关闭）。
+  # 这段时序在单元层测不出来（F53 类缺陷只在真进程上暴露），脚本此前只是排查工具、
+  # 没有任何门禁入口，「存在但从不运行」会让人误以为已有覆盖。
+  # 单独成 job 而不是塞进 Server CI：失败点要写成「Shutdown Smoke」，
+  # 且部署门禁只认「Server CI 恰好一次成功」，不能因为这里的偶发端口竞争把部署染红。
+  # 隔离口径见 scripts/IsolatedServer.ts 与 scripts/fixtures/ShutdownSmokePreload.ts：
+  # 临时目录做存储、合成维护 token、硬拒绝外部网络出口，所以不需要容器也是隔离的。
+  # 本地实测（Windows，含真实 3 秒排空缓冲）整轮约 13 秒。
+  shutdown-smoke:
+    name: Shutdown Smoke
+    runs-on: ubuntu-latest
+    needs: [changes]
+    timeout-minutes: 15
+    if: ${{ needs.changes.outputs.server == 'true' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Exercise the graceful shutdown sequence
+        timeout-minutes: 5
+        run: pnpm --filter server exec bun --no-env-file run scripts/ShutdownSmoke.ts
+
   client:
     name: Client CI
     runs-on: ubuntu-latest
     needs: [changes]
+    timeout-minutes: 25
     if: ${{ needs.changes.outputs.client == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       # jsdom 30.1.1 的 engines 为 ^22.22.2 || ^24.15.0 || >=26.0.0，
       # 用 pnpm 安装时 engines 不满足会硬失败，Node 必须 ≥22.22.2。
+      # 主版本取作业顶部的 env.NODE_VERSION（单点声明），本地口径见 Agents/Conventions.md §4。
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install workspace dependencies
@@ -199,7 +297,7 @@ jobs:
         run: pnpm --filter client build-storybook
 
       - name: Upload client coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
           name: client-coverage
@@ -213,32 +311,41 @@ jobs:
     name: Desktop Build (Tauri · Windows)
     runs-on: windows-latest
     needs: [changes]
+    timeout-minutes: 45
     if: ${{ needs.changes.outputs.desktop == 'true' }}
+    # 打包 CLI 的精确版本在这里单点声明，升级时同改这里与 Cargo.lock（两者主次版本必须匹配）。
+    env:
+      TAURI_CLI_VERSION: "2.12.3"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: Desktop/src-tauri
 
       # CLI 由 npx 现取（预编译二进制，不占仓库依赖）；壳不在 pnpm workspace 成员内，
       # 因此这里不跑 pnpm install —— 它没有任何 JS 依赖。
+      # 版本必须钉死：`@^2` 每次现取最新 2.x，上游一发新版就能在不改仓库任何文件的前提下
+      # 换掉签名与打包这一步的行为（安装期脚本面同样随之浮动）。产物内容由 Cargo.lock 锁定，
+      # 打包过程由这一枚 CLI 决定，两处都得有出处。
       - name: Bundle the installer
         working-directory: Desktop
-        run: npx --yes @tauri-apps/cli@^2 build --config src-tauri/tauri.conf.json
+        run: npx --yes "@tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}" build --config src-tauri/tauri.conf.json
 
       - name: Upload installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
           name: desktop-windows-installer
@@ -246,12 +353,15 @@ jobs:
           retention-days: 14
 
   # 安卓壳：APK 内嵌 Client 构建产物，所以先把前端构建出来再喂 prepare-web。
-  # 仓库里没有 Gradle wrapper jar（.gitignore 明确排除，见 Mobile/.gitignore），
-  # 因此用系统 Gradle 构建，版本按 AGP 8.7.3 的要求钉死。
+  # 仓库里没有 Gradle wrapper jar 与 gradlew（见 Mobile/.gitignore），因此用系统 Gradle 构建；
+  # 版本由下面的 setup-gradle 钉死，并与 Mobile/android/gradle/wrapper/gradle-wrapper.properties
+  # 保持同一枚 —— 两处不一致时本地按 wrapper 构建、CI 按系统 Gradle 构建，产物就不是同一套工具
+  # 出来的（AGP 8.7.3 只支持 Gradle 8.x，wrapper 声明 9.x 会让本地构建直接不可用）。
   android:
     name: Android Build (Capacitor)
     runs-on: ubuntu-latest
     needs: [changes]
+    timeout-minutes: 30
     if: ${{ needs.changes.outputs.android == 'true' }}
     # step 级 if 读不到 secrets 上下文（GitHub 只给 env/github/needs/vars/inputs…），
     # 所以在作业级先把它折算成一个布尔字符串，下面各步改判 env.HAS_KEYSTORE。
@@ -259,15 +369,17 @@ jobs:
       HAS_KEYSTORE: ${{ secrets.BAKA_KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install workspace dependencies
@@ -287,7 +399,7 @@ jobs:
       # 用 JDK 17 跑 Gradle 会直接报 "invalid source release: 21"。
       # app 模块仍按 17 编译（见 build.gradle 的 compileOptions），JDK 21 完全兼容。
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: 21
@@ -308,11 +420,15 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;36.0.0" "platform-tools"
 
-      # Mobile 不是 workspace 成员：依赖独立安装，产物注入 dist-web 并同步 versionName
+      # Mobile 不是 workspace 成员：依赖独立安装，产物注入 dist-web 并同步 versionName。
+      # 用 npm ci 而不是 npm install —— 签名产物必须是 Mobile/package-lock.json 冻结的那一棵树：
+      # install 会按 ^7.4.0 浮动解析，上游一发新版，玩家拿到的 APK 内容与获验集合就不是同一份，
+      # 还白送一次安装期脚本执行面。锁与 package.json 不同步时 npm ci 直接失败，这正是要的信号。
       - name: Prepare embedded web assets
         working-directory: Mobile
         run: |
-          npm install --no-audit --no-fund
+          set -euo pipefail
+          npm ci --no-audit --no-fund
           npm run prepare-web
 
       # prepare-web 只把 Client/dist 复制成 Mobile/dist-web —— 那还只是"待注入的目录"。
@@ -324,8 +440,10 @@ jobs:
         working-directory: Mobile
         run: npm run sync
 
+      # 版本必须与 Mobile/android/gradle/wrapper/gradle-wrapper.properties 一致；
+      # AGP 8.7.3（Mobile/android/build.gradle）只支持 Gradle 8.x。
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
           gradle-version: "8.14.3"
 
@@ -334,7 +452,7 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
           name: android-debug-apk
@@ -363,7 +481,7 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease
 
       - name: Upload release APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: env.HAS_KEYSTORE == 'true'
         with:
           name: android-release-apk
@@ -393,17 +511,20 @@ jobs:
     name: Publish Client Installers
     runs-on: ubuntu-latest
     needs: [desktop, android]
-    # always()：只改了 Desktop/ 时 android 是 skipped，不能连带把 Windows 安装包也挡掉；
-    # 但安卓真失败（failure/cancelled）就不发布任何东西。
+    timeout-minutes: 15
+    # 发布按平台**分别**判定。桌面壳不内嵌前端产物（路径过滤只含 Desktop/**），而安卓壳内嵌
+    # Client 构建产物：一次纯前端改动里 desktop 是 skipped、android 却已构建并签名了新 APK。
+    # 用单一 needs.desktop.result == 'success' 当门禁，会让「每次都构建、永远不发布」成为常态，
+    # 玩家包长期落后于获验产物。所以作业级只要求「至少一个平台成功」，各平台的下载/上传步骤
+    # 再各判自己那个作业的结果：某平台 skipped/failure 只影响它自己那一侧的发布。
+    # 判定表由 Server/scripts/PublishGate.mjs 的夹具测试逐格锁死，改表达式必须同改那里。
     # 作业级 if 里读不到 secrets 上下文（GitHub 只给 github/needs/vars/inputs），
     # 所以凭证有没有只在各步骤里判，缺凭证时作业照常绿。
     # 手动 dispatch 也允许发布：客户端制品此前一次都没出过包，需要一个能主动发版的入口。
-    # 仍然要求桌面作业成功，安卓真失败时两边都不发。
     if: >-
       ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main' && always() &&
-      needs.desktop.result == 'success' &&
-      needs.android.result != 'failure' && needs.android.result != 'cancelled' }}
+      (needs.desktop.result == 'success' || needs.android.result == 'success') }}
     permissions:
       contents: read
     # 同上：对象存储凭证有没有，只能在作业级折算成 env 再给 step 的 if 用。
@@ -416,6 +537,14 @@ jobs:
       AWS_DEFAULT_REGION: auto
       AWS_EC2_METADATA_DISABLED: "true"
     steps:
+      # 发布面留一行审计输出：哪一侧这次真的在发、哪一侧因路径过滤被跳过，
+      # 否则「构建成功但没发布」和上一次一模一样，没人看得出差别。
+      - name: Report which platforms this run publishes
+        env:
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+        run: echo "desktop=$DESKTOP_RESULT android=$ANDROID_RESULT"
+
       - name: No object storage credentials configured
         if: env.HAS_R2 == 'false'
         run: echo "::notice::未配置对象存储凭证，跳过客户端安装包发布"
@@ -425,8 +554,8 @@ jobs:
         run: aws configure set default.s3.addressing_style path
 
       - name: Download desktop installer
-        if: env.HAS_R2 == 'true'
-        uses: actions/download-artifact@v4
+        if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: desktop-windows-installer
           path: inbound/desktop
@@ -434,7 +563,7 @@ jobs:
       # 版本号取安装包文件名里那一段（它来自 Desktop/src-tauri/tauri.conf.json 的 version）。
       - name: Locate the installer
         id: win
-        if: env.HAS_R2 == 'true'
+        if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'
         run: |
           set -euo pipefail
           installer="$(find inbound/desktop -name '*_x64-setup.exe' -print -quit)"
@@ -444,7 +573,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Publish Windows installer
-        if: env.HAS_R2 == 'true'
+        if: env.HAS_R2 == 'true' && needs.desktop.result == 'success'
         env:
           installer: ${{ steps.win.outputs.installer }}
           version: ${{ steps.win.outputs.version }}
@@ -463,18 +592,18 @@ jobs:
       - name: Download release APK
         if: env.HAS_R2 == 'true' && needs.android.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: android-release-apk
           path: inbound/android
 
       - name: Publish Android APK
-        if: env.HAS_R2 == 'true'
+        if: env.HAS_R2 == 'true' && needs.android.result == 'success'
         run: |
           set -euo pipefail
           apk="$(find inbound/android -name '*-release.apk' -print -quit 2>/dev/null || true)"
           if [ -z "$apk" ]; then
-            echo "::notice::没有 release APK（未配置签名密钥），跳过安卓发布"
+            echo "::notice::没有 release APK（安卓作业没产出签名包，通常是未配置签名密钥），跳过安卓发布"
             exit 0
           fi
           version="$(basename "$apk" | sed -E 's/^BakaGame-(.+)-release\.apk$/\1/')"
@@ -486,23 +615,55 @@ jobs:
             --cache-control "public, max-age=0, must-revalidate"
           echo "已发布 BakaGame-$version-release.apk 与别名 BakaGame-latest-release.apk"
 
+  # 格式门禁：全量触发（任何改动都跑）。它原先挂在 knip 作业里，而 knip 的过滤集合只有
+  # Client/ Server/ 与几个根清单 —— 改 Desktop/**、Mobile/**、scripts/**、Agents/** 时
+  # 格式检查一次也不跑，是个静默区。装依赖与跑 knip 都不该是它的前置条件。
+  format:
+    name: Format Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # prettier 是根 devDependency（版本由 pnpm-lock 冻结），不用 npx 现取。
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm format:check
+
   # 静态分析：未使用文件/依赖/导出。文件与依赖类问题阻断，导出/类型只提示（分级见 knip.jsonc）。
   knip:
     name: Knip
     runs-on: ubuntu-latest
     needs: [changes]
+    timeout-minutes: 15
     if: ${{ needs.changes.outputs.knip == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install workspace dependencies
@@ -510,9 +671,6 @@ jobs:
 
       # Knip 会按仓库配置加载 Client 的 vite.config.ts（含构建期 SEO/资源插件），
       # 因此这里与 client 作业一样需要完整依赖，且不设置 NODE_ENV=production。
-      - name: Check formatting
-        run: pnpm format:check
-
       - name: Detect unused files, dependencies and exports
         run: pnpm knip --no-progress
 
@@ -520,11 +678,14 @@ jobs:
     name: End-to-End Tests
     runs-on: ubuntu-latest
     needs: [changes, server, client]
+    timeout-minutes: 30
     # 任一依赖真正失败则不跑；server/client 因路径过滤被跳过不算失败，照常执行。
     if: ${{ !cancelled() && needs.changes.outputs.e2e == 'true' && needs.server.result != 'failure' && needs.client.result != 'failure' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # E2E 要起真实服务端（角色检索/出题走真实 SQLite），从公开分发址取基线数据集并校验。
       - name: Download bangumi data
@@ -551,16 +712,33 @@ jobs:
           BANGUMI_DATA_CDN_BASE: ${{ secrets.BANGUMI_DATA_CDN_BASE }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
+      # bun 在这里是**测量仪器**而不是随手一个运行时：Playwright 的 webServer 直接跑
+      # `bun --no-env-file run scripts/IsolatedServer.ts`（裸 bun 从 PATH 取），装成 latest
+      # 等于每次 E2E 跑在一套未固定的服务端运行时上。版本必须与工作区 devDependency 钉的
+      # 那一枚（Server/package.json 的 bun）同批改，下面一步做机器校验。
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Verify Bun matches the workspace pin
+        run: |
+          set -euo pipefail
+          pinned="$(node -p "require('./Server/package.json').devDependencies.bun")"
+          actual="$(bun --version)"
+          if [ "$actual" != "$pinned" ]; then
+            echo "::error::E2E 的 bun 是 $actual，工作区 Server/package.json 钉的是 $pinned：bun 是测量仪器，两处必须同批改"
+            exit 1
+          fi
+          echo "bun $actual 与工作区 pin 一致"
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -573,7 +751,7 @@ jobs:
         run: pnpm --filter client test:e2e
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() }}
         with:
           name: playwright-report

@@ -20,8 +20,17 @@ node_modules
 # 锁文件权威关系（详见 Agents/Conventions.md §4）：
 #   唯一权威 = 根级 pnpm-lock.yaml（workspace 安装锁，进 Git）
 #   package-lock.json / bun.lock 为历史残留，一律不保留、不进 Git
-package-lock.json
-bun.lock
+#
+# 这里的排除**必须带根锚定并逐条列出成员**。无锚定的全局 glob 会连带忽略 Mobile/ ——
+# 而 Mobile 不是 pnpm workspace 成员（见 pnpm-workspace.yaml），npm 锁是它唯一能冻结
+# 依赖集合的手段：CI 用 `npm ci` 签出正式 APK，锁不入库就等于每次浮动解析后签名发版。
+# 新增 workspace 成员时要一并补它的排除项，否则成员的 npm 锁会误入库与 pnpm-lock 对抗。
+/package-lock.json
+/Client/package-lock.json
+/Server/package-lock.json
+/bun.lock
+/Client/bun.lock
+/Server/bun.lock
 
 # Build outputs
 dist
