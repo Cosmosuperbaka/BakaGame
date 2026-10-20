@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:bundle": "node scripts/first-screen-budget.mjs",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",
     "test": "vitest run",
@@ -16,7 +17,7 @@
     "test:lyrics": "playwright test --config e2e/SongLyrics.config.ts",
     "test:asset-smoke": "npm run build && node scripts/asset-smoke.mjs",
     "perf:first-screen": "node scripts/first-screen-perf.mjs",
-    "verify": "npm run lint && npm run test:coverage && npm run build && npm run test:e2e",
+    "verify": "npm run lint && npm run test:coverage && npm run build && npm run check:bundle && npm run test:e2e",
     "preview": "vite preview",
     "storybook": "storybook dev --port 6006 --no-open --no-version-updates",
     "build-storybook": "storybook build --output-dir storybook-static",
