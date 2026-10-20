@@ -7,6 +7,7 @@ import {
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
+import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
 import { createTestApp as createApp } from "./AppFixtures";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
@@ -507,8 +508,10 @@ test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
   );
   expect(resNotFound.status).toBe(404);
   await new Promise((resolve) => setImmediate(resolve));
-  const notFoundOp = operations.find((o) => o.action.includes("/non-existent-path"));
+  // 未命中路由的请求按追踪号定位：操作名归一到固定桶，原始路径不再出现在名字里。
+  const notFoundOp = operations.find((o) => o.traceId === "custom-trace-404-456");
   expect(notFoundOp).toBeTruthy();
+  expect(notFoundOp?.action).toBe(UNROUTED_HTTP_ACTION);
   expect(notFoundOp?.traceId).toBe("custom-trace-404-456");
   await dispose();
   await whoIsFakerService.drainPendingWrites();
