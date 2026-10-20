@@ -1,4 +1,5 @@
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
+import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { GameRecorder } from "../domain/GameRecord";
 import type {
   CEEClientMessage,
@@ -196,6 +197,13 @@ export class CEEService implements AdminRoomControl {
   }
   notifyShutdown(): void {
     this.native.notifyShutdown();
+  }
+  /** 只有本地原生房间进快照；原版房是上游代理，恢复时按上游重新同步即可。 */
+  exportSnapshots(): SnapshottedRoom[] {
+    return this.native.exportSnapshots();
+  }
+  restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
+    return this.native.restoreSnapshots(rooms, savedAt);
   }
   async close(): Promise<void> {
     this.native.close();

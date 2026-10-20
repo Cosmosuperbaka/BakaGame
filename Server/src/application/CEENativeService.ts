@@ -1,4 +1,5 @@
 import type { GameRecorder } from "../domain/GameRecord";
+import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { CEEClientMessage, CEEGuess, ConnectionRecord } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 import type { CEEPlayerRecord, CEERoom } from "../domain/CEEModel";
@@ -79,6 +80,13 @@ export class CEENativeService {
   }
   notifyShutdown() {
     this.state.notifyShutdown();
+  }
+  /** 快照直接委托给房间集合：本地 CEE 房间的状态全在 CEERooms 里。 */
+  exportSnapshots(): SnapshottedRoom[] {
+    return this.state.exportSnapshots();
+  }
+  restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
+    return this.state.restoreSnapshots(rooms, savedAt);
   }
   close() {
     for (const timer of this.timers.values()) clearTimeout(timer);

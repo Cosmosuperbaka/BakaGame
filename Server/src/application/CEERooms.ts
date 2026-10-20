@@ -2,7 +2,13 @@ import { ConnectionRegistry } from "./ConnectionRegistry";
 import { ADMIN_CLOSE_MESSAGE, ADMIN_KICK_MESSAGE, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
-import { type CEEPlayerRecord, type CEERoom } from "../domain/CEEModel";
+import {
+  type CEEPlayerRecord,
+  type CEERoom,
+  type CEERound,
+  type CEEUnit,
+} from "../domain/CEEModel";
+import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
 import { ensureRoomId } from "../domain/Rules";
 import {
@@ -11,6 +17,7 @@ import {
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   type CEEPayload,
+  type CEECharacterView,
   type CEERoomEnterResult,
   type CEESettings,
   type ConnectionRecord,
@@ -571,6 +578,36 @@ export class CEERooms {
       );
     }
   }
+  /**
+   * 导出全部房间以供停机保存。
+   *
+   * CEE 的房间与回合里散着六处 `Map`（players / spectatorRequests / units / characters /
+   * tagOwners / pendingTagOwners），`JSON.stringify` 会把它们统统写成 `{}` —— 直接序列化
+   * 得到的是「房间还在、座位和进度全空」的空壳。所以这里逐处摊平成普通对象。
+   */
+  exportSnapshots(): SnapshottedRoom[] {
+    return [...this.rooms.values()].map((room) => serializeRoom(room));
+  }
+
+  /**
+   * 从快照恢复房间，返回真正恢复的房间数。
+   *
+   * 时间字段分两类：截止时刻按停机时长后移（停机期间没人能操作），
+   * 而空房、离线、空闲三类计时衡量的是「人离开多久」，从恢复时刻重新起算。
+   */
+  restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
+    const now = this.now();
+    const pausedMs = Math.max(0, now - savedAt);
+    let restored = 0;
+    for (const raw of rooms) {
+      const room = deserializeRoom(raw, now, pausedMs);
+      if (!room || this.rooms.has(room.id)) continue;
+      this.rooms.set(room.id, room);
+      restored += 1;
+    }
+    return restored;
+  }
+
   housekeeping(): void {
     const now = this.now();
     for (const room of this.rooms.values()) {
@@ -762,3 +799,100 @@ export class CEERooms {
     this.onChange?.();
   }
 }
+
+
+// ==================== 快照序列化 ====================
+
+/** 摊平后的回合：三处 Map / 两处 Set 换成普通对象，其余字段原样。 */
+type SerializedCEERound = Omit<
+  CEERound,
+  "units" | "characters" | "tagOwners" | "pendingTagOwners"
+> & {
+  units: Record<string, CEEUnit>;
+  characters: Record<string, CEECharacterView>;
+  tagOwners: Record<string, string[]>;
+  pendingTagOwners: Record<string, string[]>;
+};
+
+type SerializedCEERoom = Omit<CEERoom, "players" | "spectatorRequests" | "round"> & {
+  players: Record<string, CEEPlayerRecord>;
+  spectatorRequests: Record<string, number>;
+  round: SerializedCEERound | null;
+};
+
+const setsToRecord = (map: Map<string, Set<string>>): Record<string, string[]> =>
+  Object.fromEntries([...map].map(([key, set]) => [key, [...set]]));
+
+const recordToSets = (record: Record<string, string[]> | undefined): Map<string, Set<string>> =>
+  new Map(Object.entries(record ?? {}).map(([key, list]) => [key, new Set(list)]));
+
+const serializeRoom = (room: CEERoom): SnapshottedRoom => {
+  const round: SerializedCEERound | null = room.round
+    ? {
+        ...room.round,
+        units: Object.fromEntries(room.round.units),
+        characters: Object.fromEntries(room.round.characters),
+        tagOwners: setsToRecord(room.round.tagOwners),
+        pendingTagOwners: setsToRecord(room.round.pendingTagOwners),
+      }
+    : null;
+  return {
+    ...room,
+    players: Object.fromEntries(room.players),
+    spectatorRequests: Object.fromEntries(room.spectatorRequests),
+    round,
+  } as unknown as SnapshottedRoom;
+};
+
+const deserializeRoom = (
+  raw: SnapshottedRoom,
+  now: number,
+  pausedMs: number
+): CEERoom | undefined => {
+  if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
+  const saved = raw as unknown as SerializedCEERoom;
+  if (!saved.players || typeof saved.players !== "object") return undefined;
+
+  const players = new Map<string, CEEPlayerRecord>();
+  for (const [id, player] of Object.entries(saved.players)) {
+    players.set(id, {
+      ...player,
+      online: false,
+      connectionId: undefined,
+      // 离线清理按 offlineAt 起算：不设值的话恢复出来的玩家永远不会被回收。
+      offlineAt: now,
+    });
+  }
+
+  const round: CEERound | null = saved.round
+    ? {
+        ...saved.round,
+        units: new Map(
+          Object.entries(saved.round.units ?? {}).map(([id, unit]) => [
+            id,
+            { ...unit, deadlineAt: unit.deadlineAt === null ? null : unit.deadlineAt + pausedMs },
+          ])
+        ),
+        characters: new Map(
+          Object.entries(saved.round.characters ?? {}).map(([id, view]) => [Number(id), view])
+        ),
+        tagOwners: recordToSets(saved.round.tagOwners),
+        pendingTagOwners: recordToSets(saved.round.pendingTagOwners),
+      }
+    : null;
+
+  return {
+    ...saved,
+    players,
+    spectatorRequests: new Map(
+      Object.entries(saved.spectatorRequests ?? {}).map(([id, at]) => [id, Number(at)])
+    ),
+    // 阶段截止时刻暂停：停机期间没人能作答，按原时刻结算等于用故障惩罚玩家。
+    phaseDeadlineAt:
+      saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
+    lastActiveAt: now,
+    emptyAt: undefined,
+    hostDeadlineAt: saved.hostDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
+    round,
+  };
+};
