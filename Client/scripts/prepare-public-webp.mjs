@@ -40,6 +40,21 @@ export function stickerAssetUrl(relativePath, contents) {
 const toWebPath = (...parts) =>
   "/" + parts.filter(Boolean).join("/").replace(/\\+/g, "/").replace(/^\/+/, "");
 
+/**
+ * 按显示尺寸出档：键是相对 `public/` 的源路径，值是输出高度上限（像素）。
+ * 只列「源图是设计原始尺寸、页面显示尺寸远小于它」的资源，取值按最大显示高度 × DPR：
+ * - `/assets/logo.gif` 落地页 h1 里的动画标，最高档 `md:h-16`（64px）×DSF 2，
+ *   移动端 `h-12`（48px）×DSF 3 ⇒ 144。
+ * - `/assets/favicon.png` 只用作浏览器标签页图标（≤32px ×DSF 2）⇒ 64。
+ *
+ * 只缩不放（`withoutEnlargement`）。分享图 `/og/*.jpg` 由 `public/assets` 下的原始文件
+ * 另转一份，不读这里的产物，所以出档不会动到分享卡片的清晰度。
+ */
+const DISPLAY_MAX_HEIGHT_PX = {
+  "/assets/logo.gif": 144,
+  "/assets/favicon.png": 64,
+};
+
 async function convertDirectory(source, output, relativeDir = "", assetMap = {}, encode) {
   await mkdir(output, { recursive: true });
   const entries = await readdir(source, { withFileTypes: true });
@@ -85,7 +100,7 @@ async function convertDirectory(source, output, relativeDir = "", assetMap = {},
       }
 
       const targetPath = path.join(output, outputName(entry.name));
-      await encode(sourcePath, targetPath);
+      await encode(sourcePath, targetPath, DISPLAY_MAX_HEIGHT_PX[toWebPath(childRelative)]);
 
       // 保留公共路径与哈希路径，复用同一份编码结果（包括动画帧）。
       const parts = childRelative.split(path.sep);
@@ -114,17 +129,21 @@ async function isApng(filePath) {
   }
 }
 
-async function encodeApngToWebp(source, target) {
+async function encodeApngToWebp(source, target, maxHeight) {
   const buf = await readFile(source);
   const apng = UPNG.decode(buf);
   const rgbaFrames = UPNG.toRGBA8(apng);
   const delays = apng.frames.map((f) => f.delay);
+  const scale = maxHeight && apng.height > maxHeight ? maxHeight / apng.height : 1;
+  const outWidth = Math.round(apng.width * scale);
+  const outHeight = Math.round(apng.height * scale);
 
   const frames = [];
   for (let i = 0; i < rgbaFrames.length; i++) {
     const webpBuf = await sharp(Buffer.from(rgbaFrames[i]), {
       raw: { width: apng.width, height: apng.height, channels: 4 },
     })
+      .resize({ width: outWidth, height: outHeight, fit: "fill" })
       .webp({ quality: 82, alphaQuality: 90, effort: 4 })
       .toBuffer();
 
@@ -139,8 +158,8 @@ async function encodeApngToWebp(source, target) {
 
   const outputBuffer = await WebPMux.Image.save(null, {
     frames,
-    width: apng.width,
-    height: apng.height,
+    width: outWidth,
+    height: outHeight,
     loops: 0,
     bgColor: [0, 0, 0, 0],
   });
@@ -150,16 +169,16 @@ async function encodeApngToWebp(source, target) {
 function createEncoder(concurrency) {
   let active = 0;
   const waiting = [];
-  return async (source, target) => {
+  return async (source, target, maxHeight) => {
     if (active >= concurrency) await new Promise((resolve) => waiting.push(resolve));
     else active += 1;
     try {
       if (await isApng(source)) {
-        await encodeApngToWebp(source, target);
+        await encodeApngToWebp(source, target, maxHeight);
       } else {
-        await sharp(source, { animated: true })
-          .webp({ quality: 82, alphaQuality: 90, effort: 4 })
-          .toFile(target);
+        const image = sharp(source, { animated: true });
+        if (maxHeight) image.resize({ height: maxHeight, withoutEnlargement: true });
+        await image.webp({ quality: 82, alphaQuality: 90, effort: 4 }).toFile(target);
       }
     } finally {
       const next = waiting.shift();

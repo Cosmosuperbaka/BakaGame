@@ -164,6 +164,22 @@ describe("preparePublicWebp", () => {
       const vip10Path = path.join(publicDir, "assets/qqmusic-vip/VIP-10.webp");
       const vip10Meta = await sharp(vip10Path, { animated: true }).metadata();
       expect(vip10Meta.pages).toBeGreaterThan(1);
+
+      // 按显示尺寸出档：源图是设计原始尺寸，产物却要当 48px 高的动画标与 32px 的标签图标用。
+      const logo = await sharp(path.join(publicDir, "assets/logo.webp"), {
+        animated: true,
+      }).metadata();
+      // 动图按帧竖向堆叠报告总高，帧高取 pageHeight，帧宽就是 width。
+      // 144 = 最高档 md:h-16（64px）×DSF 2，同时覆盖移动端 h-12（48px）×DSF 3。
+      expect(logo.pageHeight).toBe(144);
+      expect(logo.width).toBe(256);
+      // 出档只许改尺寸：帧数与循环保持原样，否则动画标被压成静图也一片绿。
+      expect(logo.pages).toBeGreaterThan(1);
+      expect(logo.loop).toBe(0);
+      const favicon = await sharp(path.join(publicDir, "assets/favicon.webp")).metadata();
+      expect(favicon.height).toBe(64);
+      // 宽高同比缩放，不被裁切也不被拉伸（原始 1114×1080）。
+      expect(favicon.width).toBe(66);
     },
     TRANSCODE_TIMEOUT_MS
   );
