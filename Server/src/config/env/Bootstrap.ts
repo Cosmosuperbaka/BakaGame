@@ -1,4 +1,10 @@
 import { AppError } from "../../domain/Errors";
+import {
+  isRoomSnapshotGame,
+  parseRoomSnapshotGames,
+  ROOM_SNAPSHOT_GAMES,
+  type RoomSnapshotGame,
+} from "../../shared/RoomSnapshot";
 
 /** 只有这些主机名说明服务在本地回环上，监听地址才跟随 `SERVER_URL` 的 hostname。 */
 const LOCAL_LISTEN_HOSTS = new Set(["0.0.0.0", "127.0.0.1", "localhost", "::1"]);
@@ -15,6 +21,15 @@ export interface EnvBootstrap {
   serverUrl: string;
   serverListenHost: string;
   serverPort: number;
+  /**
+   * 本进程负责的游戏（`SHARD_GAMES`）：只有这些游戏的房间会被导出与恢复。
+   * 缺省 `undefined` 表示全部负责 —— 单进程部署不配它就是全量。
+   *
+   * 为什么必须显式声明：多个容器共用同一份代码目录、也都注册了全部三条 WS 路由，
+   * 若不区分角色，只接 CEE 流量的那片启动时会把主片的房间一并恢复出来，
+   * 得到一个没人连得进来、却在跑定时器、还可能写对局记录的影子房间。
+   */
+  shardGames?: RoomSnapshotGame[];
 }
 
 const normalizeServerUrl = (value: string, port: number): URL => {
@@ -63,5 +78,24 @@ export const readBootstrapEnv = (): EnvBootstrap => {
     serverUrl: serverUrl.toString().replace(/\/$/, ""),
     serverListenHost: resolveListenHost(serverUrl),
     serverPort,
+    shardGames: readShardGames(),
   };
+};
+
+/**
+ * 读取片角色。写错名字直接拒绝启动：静默回落到「全部负责」会让两片都恢复全部房间，
+ * 而这恰好是本变量要防的情况，出错时宁可起不来。
+ */
+const readShardGames = (): RoomSnapshotGame[] | undefined => {
+  const raw = (Bun.env.SHARD_GAMES ?? "").trim();
+  if (!raw) return undefined;
+  const names = parseRoomSnapshotGames(raw);
+  const unknown = names.filter((name) => !isRoomSnapshotGame(name));
+  if (unknown.length) {
+    throw new AppError(
+      "CONFIG_ERROR",
+      `环境变量 SHARD_GAMES 含未知游戏: "${unknown.join(", ")}"，可选 ${ROOM_SNAPSHOT_GAMES.join(" | ")}`
+    );
+  }
+  return names as RoomSnapshotGame[];
 };
