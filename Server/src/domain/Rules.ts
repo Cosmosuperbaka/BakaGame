@@ -54,8 +54,16 @@ export const normalizeName = (value: string): string => stripControlChars(value)
 export const normalizeWord = (value: string): string =>
   stripControlChars(value).trim().replace(/\s+/g, " ");
 
+// 词对的唯一归一口径：规范化 + 字典序排序，正式提交与白板草稿判定共用，
+// 排序结果直接决定「猜中与否」的比对。排序不影响「为空」与「两词相同」两条校验，
+// 所以先排后验与先验后排等价。
+const normalizedWordPair = (values: [string, string]): [string, string] => {
+  const normalized = [normalizeWord(values[0]), normalizeWord(values[1])];
+  return normalized.sort((left, right) => left.localeCompare(right)) as [string, string];
+};
+
 export const normalizeWordPair = (values: [string, string]): [string, string] => {
-  const normalized = values.map(normalizeWord) as [string, string];
+  const normalized = normalizedWordPair(values);
 
   if (!normalized[0] || !normalized[1]) {
     throw new AppError("INVALID_WORD_PAIR", "词语不能为空");
@@ -65,65 +73,58 @@ export const normalizeWordPair = (values: [string, string]): [string, string] =>
     throw new AppError("INVALID_WORD_PAIR", "两个词语不能相同");
   }
 
-  return [...normalized].sort((left, right) => left.localeCompare(right)) as [string, string];
+  return normalized;
+};
+
+/**
+ * 阵营配置违反的第一条人数约束；`undefined` 表示全部满足。
+ *
+ * 判定（席位是否可开）与校验（开局前报错）走同一份推导：人数上限一变，
+ * 两条路径必须同步，否则会出现「判定放行、校验拒绝」的分裂结论。
+ */
+const findRoleConfigViolation = (
+  config: RoleConfig,
+  playerCount: number
+): { message: string; details?: Record<string, number> } | undefined => {
+  const limits = getRoomRoleLimits(playerCount);
+  const specialCount =
+    config.undercoverCount + (config.hasAngel ? 1 : 0) + (config.hasBlank ? 1 : 0);
+
+  if (
+    config.undercoverCount < 1 ||
+    limits.maxUndercoverCount < 1 ||
+    config.undercoverCount > limits.maxUndercoverCount
+  ) {
+    return {
+      message: "卧底人数不在允许范围内",
+      details: { maxUndercoverCount: limits.maxUndercoverCount },
+    };
+  }
+
+  if (config.hasAngel && !limits.canEnableAngel) {
+    return { message: "当前人数不足以开启天使" };
+  }
+
+  if (config.hasBlank && !limits.canEnableBlank) {
+    return { message: "当前人数不足以开启白板" };
+  }
+
+  if (playerCount - specialCount < 1) {
+    return { message: "至少需要保留一名平民" };
+  }
+
+  return undefined;
 };
 
 // 纯规则谓词：判断阵营配置是否满足当前人数约束，无异常与副作用。
-export const isRoleConfigSatisfied = (config: RoleConfig, playerCount: number): boolean => {
-  const limits = getRoomRoleLimits(playerCount);
-  const effectiveAngelCount = config.hasAngel ? 1 : 0;
-  const effectiveBlankCount = config.hasBlank ? 1 : 0;
-  const specialCount = config.undercoverCount + effectiveAngelCount + effectiveBlankCount;
-  const civilianCount = playerCount - specialCount;
-
-  if (
-    config.undercoverCount < 1 ||
-    limits.maxUndercoverCount < 1 ||
-    config.undercoverCount > limits.maxUndercoverCount
-  ) {
-    return false;
-  }
-
-  if (config.hasAngel && !limits.canEnableAngel) {
-    return false;
-  }
-
-  if (config.hasBlank && !limits.canEnableBlank) {
-    return false;
-  }
-
-  return civilianCount >= 1;
-};
+export const isRoleConfigSatisfied = (config: RoleConfig, playerCount: number): boolean =>
+  findRoleConfigViolation(config, playerCount) === undefined;
 
 // 校验阵营配置是否符合当前人数约束。若不符合则抛出精准业务错误。测试房间与真实房间同规则。
 export const validateRoleConfig = (config: RoleConfig, playerCount: number): void => {
-  const limits = getRoomRoleLimits(playerCount);
-  const effectiveAngelCount = config.hasAngel ? 1 : 0;
-  const effectiveBlankCount = config.hasBlank ? 1 : 0;
-  const specialCount = config.undercoverCount + effectiveAngelCount + effectiveBlankCount;
-  const civilianCount = playerCount - specialCount;
-
-  if (
-    config.undercoverCount < 1 ||
-    limits.maxUndercoverCount < 1 ||
-    config.undercoverCount > limits.maxUndercoverCount
-  ) {
-    throw new AppError("INVALID_ROLE_CONFIG", "卧底人数不在允许范围内", {
-      maxUndercoverCount: limits.maxUndercoverCount,
-    });
-  }
-
-  if (config.hasAngel && !limits.canEnableAngel) {
-    throw new AppError("INVALID_ROLE_CONFIG", "当前人数不足以开启天使");
-  }
-
-  if (config.hasBlank && !limits.canEnableBlank) {
-    throw new AppError("INVALID_ROLE_CONFIG", "当前人数不足以开启白板");
-  }
-
-  if (civilianCount < 1) {
-    throw new AppError("INVALID_ROLE_CONFIG", "至少需要保留一名平民");
-  }
+  const violation = findRoleConfigViolation(config, playerCount);
+  if (!violation) return;
+  throw new AppError("INVALID_ROLE_CONFIG", violation.message, violation.details);
 };
 
 export const listPlayablePlayerIds = (room: WhoIsFakerRoomRecord): string[] =>
@@ -469,8 +470,7 @@ export const evaluateBlankGuessDraft = (
   createdAt: number,
   reason: BlankGuessRecord["reason"]
 ): BlankGuessRecord => {
-  const normalizedGuess: [string, string] = [normalizeWord(guess[0]), normalizeWord(guess[1])];
-  normalizedGuess.sort((left, right) => left.localeCompare(right));
+  const normalizedGuess = normalizedWordPair(guess);
   const roundWords = round.words;
   const validPair =
     Boolean(normalizedGuess[0] && normalizedGuess[1]) && normalizedGuess[0] !== normalizedGuess[1];

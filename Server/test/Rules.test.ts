@@ -8,6 +8,7 @@ import {
   evaluateBlankGuess,
   evaluateBlankGuessDraft,
   getRoomRoleLimits,
+  isRoleConfigSatisfied,
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
@@ -184,40 +185,43 @@ test("残局条件满足时白板会进入猜词阶段", () => {
   expect(result.blankPlayerId).toBe("blank");
 });
 
-test("白板猜词会按词对本身判断是否正确", () => {
-  const round: GameRound = {
-    id: "round",
-    phase: "blankGuess",
-    day: 1,
-    words: {
-      pair: ["苹果", "香蕉"],
-      civilianWord: "苹果",
-      undercoverWord: "香蕉",
-      blankHint: "水果",
-    },
-    assignments: {
-      blank: { role: "blank", side: "blank", alive: false },
-    },
-    descriptionCycle: 1,
-    descriptionOrder: [],
-    descriptions: [],
-    descriptionSubmittedBy: [],
-    votes: [],
-    voteHistory: [],
-    nightActions: [],
-    blankGuessUsed: false,
-    blankGuessRecords: [],
-    tieBreakCount: 0,
-    blankGuessContext: {
-      playerId: "blank",
-      reason: "eliminated",
-      resumePhase: "night",
-    },
-    pendingDisconnectPlayerIds: [],
-    history: [],
-  };
+// 白板终局猜词用的对局：既是用例输入，也是「两条词对归一路径」对照的唯一夹具。
+const blankGuessRound: GameRound = {
+  id: "round",
+  phase: "blankGuess",
+  day: 1,
+  words: {
+    pair: ["苹果", "香蕉"],
+    civilianWord: "苹果",
+    undercoverWord: "香蕉",
+    blankHint: "水果",
+  },
+  assignments: {
+    blank: { role: "blank", side: "blank", alive: false },
+  },
+  descriptionCycle: 1,
+  descriptionOrder: [],
+  descriptions: [],
+  descriptionSubmittedBy: [],
+  votes: [],
+  voteHistory: [],
+  nightActions: [],
+  blankGuessUsed: false,
+  blankGuessRecords: [],
+  tieBreakCount: 0,
+  blankGuessContext: {
+    playerId: "blank",
+    reason: "eliminated",
+    resumePhase: "night",
+  },
+  pendingDisconnectPlayerIds: [],
+  history: [],
+};
 
-  expect(evaluateBlankGuess(round, ["香蕉", "苹果"], Date.now(), "eliminated").success).toBe(true);
+test("白板猜词会按词对本身判断是否正确", () => {
+  expect(
+    evaluateBlankGuess(blankGuessRound, ["香蕉", "苹果"], Date.now(), "eliminated").success
+  ).toBe(true);
   for (const words of [
     ["", ""],
     ["苹果", ""],
@@ -225,14 +229,54 @@ test("白板猜词会按词对本身判断是否正确", () => {
     ["苹果", " 苹果\u200b"],
     ["\u0000", "\u200b"],
   ] as [string, string][]) {
-    expect(evaluateBlankGuessDraft(round, words, 123, "eliminated")).toMatchObject({
+    expect(evaluateBlankGuessDraft(blankGuessRound, words, 123, "eliminated")).toMatchObject({
       playerId: "blank",
       success: false,
       createdAt: 123,
     });
-    expect(() => evaluateBlankGuess(round, words, 123, "eliminated")).toThrow(
+    expect(() => evaluateBlankGuess(blankGuessRound, words, 123, "eliminated")).toThrow(
       expect.objectContaining({ code: "INVALID_WORD_PAIR" })
     );
   }
-  expect(evaluateBlankGuessDraft(round, [" 香蕉 ", "苹果"], 123, "eliminated").success).toBe(true);
+  expect(
+    evaluateBlankGuessDraft(blankGuessRound, [" 香蕉 ", "苹果"], 123, "eliminated").success
+  ).toBe(true);
+});
+
+// 两条路径各写一份「规范化 + 排序」时，只有对着同一输入比输出来得住：
+// 任一侧的比较器或归一规则单独改动，这里立刻红。
+test("白板草稿与正式提交对同一词对给出同一个归一结果", () => {
+  for (const pair of [
+    ["苹果", " 香蕉 "],
+    [" 香蕉 ", "苹果"],
+    ["Zebra", "apple"],
+    ["apple", "Zebra"],
+    ["  狗 ", "猫"],
+    ["猫", "狗 "],
+  ] as [string, string][]) {
+    expect(evaluateBlankGuessDraft(blankGuessRound, pair, 123, "eliminated").guessedWords).toEqual(
+      normalizeWordPair(pair)
+    );
+  }
+});
+
+// 席位判定与开局校验共用同一份人数推导，因此两者对任意组合都不能给出相反答复；
+// 「判定放行、校验拒绝」会让玩家看到可选席位却开不了局。
+test("阵营配置判定与校验对同一约束给出一致答复", () => {
+  for (let playerCount = 1; playerCount <= 16; playerCount += 1) {
+    for (const undercoverCount of [0, 1, 2, 3, 4, 5]) {
+      for (const hasAngel of [false, true]) {
+        for (const hasBlank of [false, true]) {
+          const config = { undercoverCount, hasAngel, hasBlank };
+          if (isRoleConfigSatisfied(config, playerCount)) {
+            expect(() => validateRoleConfig(config, playerCount)).not.toThrow();
+          } else {
+            expect(() => validateRoleConfig(config, playerCount)).toThrow(
+              expect.objectContaining({ code: "INVALID_ROLE_CONFIG" })
+            );
+          }
+        }
+      }
+    }
+  }
 });
