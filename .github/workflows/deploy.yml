@@ -25,18 +25,28 @@ permissions:
   actions: read
   contents: read
 
+# 第三方 Action 按 commit SHA 固定，注释标出该 SHA 对应的版本（与 ci.yml 同一口径）。
+# 两处例外仍按 tag 引入：actions/github-script@v7 与 appleboy/ssh-action@v1.2.0。
+# 原因不是「不想钉」，而是修这条的工作机没有到 api.github.com 的出口、gh 也没有有效凭据：
+# SHA 只能凭记忆写，猜错会让部署作业在拉取 Action 那一步硬失败，比留在 tag 上更糟。
+# 到有网的环境执行下面两条，把返回的 object.sha 换进那两处 uses，注释写对应 tag：
+#   gh api repos/actions/github-script/git/matching-refs/tags/v7
+#   gh api repos/appleboy/ssh-action/git/matching-refs/tags/v1.2.0
+
 jobs:
   # 部署门禁：CI 失败（含 E2E 失败）不部署；本次推送未改服务端（Server CI 被跳过）不部署。
+  # 超时也要写：这一步在等第三方 Action 与 GitHub API，卡住不等于失败，不写就会一直占 runner。
   gate:
     name: Deployment Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       deploy: ${{ steps.decide.outputs.deploy }}
       revision: ${{ steps.decide.outputs.revision }}
       run_id: ${{ steps.decide.outputs.run_id }}
     steps:
       # 使用当前工作流修订的门禁实现，绝不执行候选 CI 提交里的脚本。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -122,7 +132,7 @@ jobs:
       # 让入口的 npm 安装（以及任何后续 npm ci）只认这一份锁。部署侧不重新解析任何东西，
       # 因此不存在第二套真相。取不到制品时明确回退并留警告，不静默假装已锁定。
       - name: Check out the workflow revision (for the staging script)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -130,7 +140,7 @@ jobs:
       - name: Fetch the verified npm runtime lock
         id: npmlock
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: server-npm-lock
           path: npm-lock
