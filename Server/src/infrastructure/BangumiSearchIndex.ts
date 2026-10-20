@@ -11,6 +11,8 @@ import { isMeiliApiError, meiliHttpClient } from "./MeiliHttpClient";
 
 export interface BangumiSearchOptions {
   apiKey?: string;
+  /** 搜索服务基址；缺省取回环。独立部署时由 `AppEnv.meilisearchUrl` 显式传入。 */
+  host?: string;
   client?: Meilisearch;
 }
 
@@ -66,11 +68,8 @@ const METADATA_INDEX = "bangumi_search_metadata";
 // （filterable 去 nsfw、rankingRules 去 nsfw:asc），据此强制重建存量索引。
 const INDEX_SCHEMA_VERSION = 3;
 const BATCH_SIZE = 1_000;
-// 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：用 MEILISEARCH_URL 覆盖为容器可达地址。
-const INTERNAL_SEARCH_URL = (Bun.env.MEILISEARCH_URL?.trim() || "http://127.0.0.1:7700").replace(
-  /\/+$/,
-  ""
-);
+// 基址由调用方从 `AppEnv.meilisearchUrl` 传入；这里只保留同网络命名空间下的回环缺省。
+const DEFAULT_MEILISEARCH_URL = "http://127.0.0.1:7700";
 const SEARCH_TIMEOUT_MS = 5_000;
 const INDEX_TASK_TIMEOUT_MS = 600_000;
 
@@ -148,7 +147,7 @@ export class BangumiSearchIndex {
     this.client =
       options.client ??
       new Meilisearch({
-        host: INTERNAL_SEARCH_URL,
+        host: options.host?.replace(/\/+$/, "") || DEFAULT_MEILISEARCH_URL,
         apiKey: options.apiKey,
         timeout: SEARCH_TIMEOUT_MS,
         httpClient: meiliHttpClient,

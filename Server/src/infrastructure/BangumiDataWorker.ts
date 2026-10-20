@@ -154,7 +154,10 @@ const createUpdater = (request: InitRequest): void => {
             db: openDataset(request.song.dbPath),
             // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
             search: request.song.meilisearch?.apiKey
-              ? new BangumiSearchIndex({ apiKey: request.song.meilisearch.apiKey })
+              ? new BangumiSearchIndex({
+                  apiKey: request.song.meilisearch.apiKey,
+                  host: request.song.meilisearch.host,
+                })
               : undefined,
             images,
             logger: {

@@ -75,7 +75,9 @@ export function createServer(
       enrichmentPath: env.bangumiEnrichmentPath,
       imageBase: env.bangumiImageUrl,
       apiBase: env.bangumiApiUrl,
-      meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined,
+      meilisearch: env.meilisearchKey
+        ? { apiKey: env.meilisearchKey, host: env.meilisearchUrl }
+        : undefined,
     },
     cee: {
       dbPath: env.bangumiDbPath!,
@@ -83,7 +85,9 @@ export function createServer(
       enrichmentPath: env.bangumiEnrichmentPath,
       apiBase: env.bangumiApiUrl,
       imageBase: env.bangumiImageUrl,
-      meilisearch: env.meilisearchKey ? { apiKey: env.meilisearchKey } : undefined,
+      meilisearch: env.meilisearchKey
+        ? { apiKey: env.meilisearchKey, host: env.meilisearchUrl }
+        : undefined,
     },
     imagesDir: env.bangumiImagesDir,
     tagDiff: env.bangumiTagDiffUrl
