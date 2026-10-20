@@ -19,43 +19,6 @@ async function expectActionAreaScrollable(page: Page) {
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
-function installPageQualityGuards(page: Page) {
-  const failures: string[] = [];
-  let sentryRateLimitObserved = false;
-  // 隔离夹具后端不带数据库：账号（登录、oRPC）与站点统计路由按设计回 503
-  // ACCOUNT_DISABLED，前端据此隐藏登录入口、游客流程照常。这是夹具环境的
-  // 预期降级而非页面缺陷，503 与其自带的控制台回显一并豁免；其余 4xx/5xx 不豁免。
-  let accountLayerDisabledObserved = false;
-  page.on("pageerror", (error) => failures.push(`pageerror: ${error.message}`));
-  page.on("console", (message) => {
-    if (
-      message.type() === "error" &&
-      !(message.text().includes("429 (Too Many Requests)") && sentryRateLimitObserved) &&
-      !(message.text().includes("503 (Service Unavailable)") && accountLayerDisabledObserved)
-    ) {
-      failures.push(`console: ${message.text()}`);
-    }
-  });
-  page.on("response", (response) => {
-    const pathname = new URL(response.url()).pathname;
-    if (
-      pathname === "/api/monitoring/sentry" &&
-      (response.status() === 429 || response.status() === 502 || response.status() === 504)
-    ) {
-      if (response.status() === 429) sentryRateLimitObserved = true;
-      return;
-    }
-    if (response.status() === 503 && pathname.startsWith("/api/rpc/")) {
-      accountLayerDisabledObserved = true;
-      return;
-    }
-    if (response.status() >= 400) {
-      failures.push(`http ${response.status()}: ${response.url()}`);
-    }
-  });
-  return async () => expect(failures, failures.join("\n")).toEqual([]);
-}
-
 /**
  * 旧玩家行此刻的渲染不透明度落在哪一档：祖先链逐层累乘，淡出中间态严格在 (0,1)，卸载后读不到。
  * 只认这一个节点，避免把同样半透明的新入场行误读成淡出中。
@@ -121,7 +84,6 @@ async function removeAllTestBots(page: Page) {
 test("landing page exposes three playable games and keeps placeholders disabled", async ({
   page,
 }) => {
-  const assertPageQuality = installPageQualityGuards(page);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Baka Game" })).toBeVisible();
@@ -138,7 +100,6 @@ test("landing page exposes three playable games and keeps placeholders disabled"
   await expect(page).toHaveURL(/\/whoisfaker$/);
   // 大厅标题写「Who is」接 Faker 图标，标题的可读名仍是完整的「Who is Faker」。
   await expect(page.getByRole("heading", { name: "Who is Faker" })).toBeVisible();
-  await assertPageQuality();
 });
 
 test("landing game entries stack cleanly and stay clear of the footer", async ({ page }) => {
@@ -329,7 +290,6 @@ test("internal scrolling works without visible scrollbar chrome", async ({ page 
 test("stickers load from stable paths and long chat messages stay inside both panels", async ({
   page,
 }) => {
-  const assertPageQuality = installPageQualityGuards(page);
   const unique = Date.now().toString(36);
   const measureBubble = async (text: string) => {
     const bubble = page.getByTestId("chat-message-bubble").filter({ hasText: text }).last();
@@ -380,7 +340,6 @@ test("stickers load from stable paths and long chat messages stay inside both pa
   await page.getByRole("button", { name: "发送消息" }).click();
   const songMetrics = await measureBubble(songMessage);
   expect(songMetrics.scrollWidth).toBeLessThanOrEqual(songMetrics.clientWidth + 1);
-  await assertPageQuality();
 });
 
 test("two browser sessions can create and join the same server room", async ({
@@ -514,6 +473,7 @@ test("empty description history keeps the player pane width after a direct votin
 test("a decisive vote shows the eliminated player before game over", async ({
   isolatedContext,
   page,
+  pageQuality,
 }) => {
   // 本用例是本套件里最重的一条：5 个浏览器上下文跑完整的建房 → 分配身份 → 描述 → 投票 → 结算。
   // 游戏最少需要 4 名玩家，上下文数量已无法再减，只能靠并行加入与资源屏蔽提速。
@@ -526,16 +486,19 @@ test("a decisive vote shows the eliminated player before game over", async ({
   const playerContexts: BrowserContext[] = [];
   // 屏蔽图片/字体/音视频：本用例断言只依赖 DOM 结构与文本，CI 的 2 核 runner
   // 上 5 个页面重复加载这些静态资源是显著的纯开销。
-  const trimHeavyAssets = (context: BrowserContext) => {
-    void context.route(
-      /\.(png|jpe?g|gif|webp|avif|svg|woff2?|otf|ttf|mp3|mp4|webm)(\?.*)?$/,
-      (route) => (isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback())
-    );
+  const trimHeavyAssets = (target: Page) => {
+    // 这些 abort 是测试自己的手段，随之而来的资源加载失败不算页面缺陷；其余守卫照常生效。
+    pageQuality.muteResourceNoise(target);
+    void target
+      .context()
+      .route(/\.(png|jpe?g|gif|webp|avif|svg|woff2?|otf|ttf|mp3|mp4|webm)(\?.*)?$/, (route) =>
+        isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback()
+      );
   };
 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
-  trimHeavyAssets(page.context());
+  trimHeavyAssets(page);
   await page.goto("/whoisfaker");
   await page.getByPlaceholder("用户名").fill(hostName);
   await page.getByRole("button", { name: "创建房间" }).click();
@@ -552,8 +515,8 @@ test("a decisive vote shows the eliminated player before game over", async ({
       playerNames.map(async (playerName) => {
         const context = await isolatedContext({ reducedMotion: "reduce" });
         playerContexts.push(context);
-        trimHeavyAssets(context);
         const playerPage = await context.newPage();
+        trimHeavyAssets(playerPage);
         await playerPage.goto(roomUrl);
         await playerPage.getByPlaceholder("用户名").fill(playerName);
         await playerPage.getByRole("button", { name: "进入房间" }).click();
@@ -828,7 +791,6 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
 });
 
 test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且不溢出", async ({ page }) => {
-  const assertQuality = installPageQualityGuards(page);
   await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/songuessr\/ws/, (socket) => {
     socket.onMessage((message) => {
       const command = JSON.parse(String(message)) as { id: string; type: string };
@@ -937,5 +899,4 @@ test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且�
       )
     )
     .toBe("Lobby card overflows its viewport");
-  await assertQuality();
 });

@@ -1,5 +1,6 @@
 import { test as base, type BrowserContext, type BrowserContextOptions } from "@playwright/test";
 import { installLoopbackGuard, isLoopbackUrl } from "./LoopbackGuard";
+import { createPageQuality, type PageQuality } from "./PageQuality";
 export { expect } from "@playwright/test";
 export { getLoopback, isLoopbackUrl } from "./LoopbackGuard";
 
@@ -46,13 +47,23 @@ async function grantLoopbackAccess(context: BrowserContext, baseURL?: string) {
 
 type IsolationFixtures = {
   isolatedContext: (options?: BrowserContextOptions) => Promise<BrowserContext>;
+  /** 页面质量守卫：默认接管每个 context 里的每个页面，用例结束统一转红。 */
+  pageQuality: PageQuality;
 };
 
 export const test = base.extend<IsolationFixtures>({
-  context: async ({ context, baseURL }, provide) => {
+  // Playwright 要求夹具首参写成解构形式，本夹具不依赖任何其他夹具。
+  // eslint-disable-next-line no-empty-pattern
+  pageQuality: async ({}, provide) => {
+    const quality = createPageQuality();
+    await provide(quality);
+    quality.assert();
+  },
+  context: async ({ context, baseURL, pageQuality }, provide) => {
     await grantLoopbackAccess(context, baseURL);
     const assertNoEgress = await installLoopbackGuard(context);
     guards.set(context, assertNoEgress);
+    pageQuality.watchContext(context);
     try {
       await provide(context);
     } finally {
@@ -67,7 +78,7 @@ export const test = base.extend<IsolationFixtures>({
       await closeIsolatedContext(context);
     }
   },
-  isolatedContext: async ({ browser, baseURL }, provide) => {
+  isolatedContext: async ({ browser, baseURL, pageQuality }, provide) => {
     const contexts: BrowserContext[] = [];
     try {
       await provide(async (options = {}) => {
@@ -76,6 +87,7 @@ export const test = base.extend<IsolationFixtures>({
           await grantLoopbackAccess(context, baseURL);
           const assertNoEgress = await installLoopbackGuard(context);
           guards.set(context, assertNoEgress);
+          pageQuality.watchContext(context);
           contexts.push(context);
           return context;
         } catch (error) {

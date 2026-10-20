@@ -44,38 +44,6 @@ async function useLocalCharacterImages(page: Page) {
   );
 }
 
-function watchQuality(page: Page) {
-  const failures: string[] = [];
-  let telemetryRateLimited = false;
-  // 隔离夹具后端不带数据库：账号与站点统计 oRPC 按设计回 503 ACCOUNT_DISABLED，
-  // 属预期降级而非页面缺陷，503 与其控制台回显一并豁免（与 App.spec 同口径）。
-  let accountLayerDisabledObserved = false;
-  page.on("pageerror", (error) => failures.push(error.message));
-  page.on("console", (message) => {
-    if (
-      message.type() === "error" &&
-      !(telemetryRateLimited && message.text().includes("429 (Too Many Requests)")) &&
-      !(accountLayerDisabledObserved && message.text().includes("503 (Service Unavailable)"))
-    ) {
-      failures.push(message.text());
-    }
-  });
-  page.on("response", (response) => {
-    const pathname = new URL(response.url()).pathname;
-    // 同一服务连续跑浏览器用例会触发遥测独立限流，它不影响对局命令。
-    if (pathname === "/api/monitoring/sentry" && response.status() === 429) {
-      telemetryRateLimited = true;
-      return;
-    }
-    if (response.status() === 503 && pathname.startsWith("/api/rpc/")) {
-      accountLayerDisabledObserved = true;
-      return;
-    }
-    if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`);
-  });
-  return () => expect(failures).toEqual([]);
-}
-
 async function chooseCharacter(page: Page, name: string) {
   const search = page.getByRole("region", { name: "角色搜索" });
   await search.getByRole("combobox", { name: "搜索角色", exact: true }).fill(name);
@@ -106,8 +74,6 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
   const guest = await guestContext.newPage();
   // 只替换可选头像补全；角色检索、出题、猜测及状态同步仍走真实 SQLite 与服务端。
   await Promise.all([useLocalCharacterImages(page), useLocalCharacterImages(guest)]);
-  const checkHost = watchQuality(page);
-  const checkGuest = watchQuality(guest);
   const hostName = "名称很长的房主玩家用于验证默认头像和分数排列";
   const guestName = `猜角色访客${Date.now().toString(36)}`;
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -243,15 +209,12 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     await page.getByRole("button", { name: "创建", exact: true }).click();
     await expect(page.getByRole("heading", { name: "等待玩家加入" })).toBeVisible();
     await page.getByRole("button", { name: "离开房间" }).click();
-    checkHost();
-    checkGuest();
   } finally {
     await closeIsolatedContext(guestContext);
   }
 });
 
 test("直链测试房在房间不存在时就地创建并允许单人开局", async ({ page }) => {
-  const checkQuality = watchQuality(page);
   // 测试房不进大厅、没有创建入口；冷启动的隔离服务里它必然不存在。
   // 直链进入必须用同一房号就地建起它，否则永远停在「房间不存在或已经关闭」。
   // 直链进房自动加入（与另外两个游戏一致），不再拦截「设置用户名」。
@@ -262,5 +225,4 @@ test("直链测试房在房间不存在时就地创建并允许单人开局", as
   await expect(start).toBeEnabled();
   await start.click();
   await expect(page.getByRole("heading", { name: "猜猜是哪位角色" })).toBeVisible();
-  checkQuality();
 });

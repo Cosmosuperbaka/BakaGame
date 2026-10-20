@@ -90,11 +90,17 @@ test.describe("页面 SEO 元信息", () => {
     ["/whoisfaker", "在线版谁是卧底"],
     ["/cee", "在线猜动漫角色"],
   ]) {
-    test(`${route} 静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空`, async ({ page }) => {
+    test(`${route} 静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空`, async ({
+      page,
+      pageQuality,
+    }) => {
       const raw = await (await getLoopback(page.request, route)).text();
       expect(raw).toContain(text);
       expect(raw).toContain('<div id="root"><main>');
 
+      // 本例的全部手段就是掐掉每一个脚本，被 abort 的请求必然在控制台留下资源加载失败；
+      // 那是被测手段的副产物，不是页面缺陷，故只静音这一页的这类回显。
+      pageQuality.muteResourceNoise(page);
       await page.route("**/*.js", (route) =>
         isLoopbackUrl(route.request().url()) ? route.abort() : route.fallback()
       );
