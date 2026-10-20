@@ -159,11 +159,13 @@ export class AccountService {
   async qqNickname(qqNumber: string, clientKey: string): Promise<string | null> {
     if (!this.nicknameLimiter.allow(clientKey, this.now()))
       throw new AppError("RATE_LIMITED", "昵称查询过于频繁，请稍后再试");
+    // 查询号没配就等于「新号一律注册不了」：这时只回库里那份昵称，本接口不再需要发信也不再需要
+    // 打上游，非空与空的差别直接读成「这个号在本站注册过」，白送一个可批量用的注册状态答案。
+    const nicknames = this.options.nicknames;
+    if (!nicknames) return null;
     const existing = (await (await this.adapter()).findUserByEmail(qqEmailOf(qqNumber)))?.user as
       { name?: string | null; qqName?: string | null } | undefined;
     if (existing) return existing.qqName ?? existing.name ?? null;
-    const nicknames = this.options.nicknames;
-    if (!nicknames) return null;
     const timeout = new Promise<null>((resolve) =>
       setTimeout(resolve, NICKNAME_LOOKUP_TIMEOUT_MS, null)
     );

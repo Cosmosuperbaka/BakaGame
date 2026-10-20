@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
+import { AccountService } from "../src/application/AccountService";
 import type { AppEnv } from "../src/config/Env";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createAccountTestApp } from "./AccountFixtures";
@@ -240,6 +241,39 @@ describe("登录弹窗的昵称回显", () => {
     expect(napcat.state.calls[napcat.state.calls.length - 1]).toEqual(["55566677"]);
     // 查不到只回 null，不报错误码：昵称空着不该挡住发码
     expect(await nameOf("77778888")).toEqual({ status: 200, body: null });
+  });
+
+  /**
+   * 查询号没配时，`account/qqName` 必须整体沉默。
+   *
+   * 曾经它仍先查库再返回：新号一律注册不了，于是「非空 / null」的差别直接读成
+   * 「这个号在本站注册过」——一个不用发信、可批量调的注册状态答案。这里同时钉住
+   * 配置了查询号才保留那次库查询，防止修成把接口做哑。
+   */
+  test("查询号未配置时不查库，注册状态不可批量枚举", async () => {
+    const lookups: string[] = [];
+    const internalAdapter = {
+      findUserByEmail: async (email: string) => {
+        lookups.push(email);
+        return null;
+      },
+    };
+    const serviceOf = (nicknames: unknown) =>
+      new AccountService({
+        auth: { $context: Promise.resolve({ internalAdapter }) } as never,
+        mailer: {} as never,
+        avatars: {} as never,
+        nicknames: nicknames as never,
+        logger: new EventLogger(() => {}),
+      });
+
+    expect(await serviceOf(null).qqNickname(QQ, "1.1.1.1")).toBeNull();
+    expect(lookups).toEqual([]);
+
+    // 配了查询号：这才是「输入框身份回显」的正途，未注册的号才需要现查一次昵称。
+    const unresolved = { resolveNickname: async () => null, nicknameOf: async () => null };
+    expect(await serviceOf(unresolved).qqNickname(QQ, "1.1.1.1")).toBeNull();
+    expect(lookups).toEqual([EMAIL]);
   });
 
   test("按客户端地址限流：同一地址超量后 429，换地址照常", async () => {
