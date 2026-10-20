@@ -68,6 +68,9 @@ export function createAppRouter() {
         { path: "/admin", lazy: page(() => import("@/pages/AdminPage"), "admin") },
         // 版本信息页（更新日志 / 提交历史 / 开源致谢）：由页脚版本号进入，走专属的整页升起转场。
         { path: "/credits", lazy: page(() => import("@/pages/CreditsPage"), "credits") },
+        // 法务页：仅从页脚进入，noindex，不进静态外壳与营销页登记位。
+        { path: "/privacy", lazy: page(() => import("@/pages/PrivacyPage"), "privacy") },
+        { path: "/terms", lazy: page(() => import("@/pages/TermsPage"), "terms") },
         // 其余无法识别的路径一律回落地页
         { path: "*", element: <Navigate to="/" replace /> },
       ],
