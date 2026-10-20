@@ -385,6 +385,27 @@ describe("readEnv 环境变量与启动断言", () => {
       }
     }
   });
+
+  it("链路采样率只认 0–1 之间的数，写错与超界都按未配置处理", () => {
+    const key = "SENTRY_TRACES_SAMPLE_RATE" as const;
+    const saved = Bun.env[key];
+    try {
+      Bun.env[key] = "0.05";
+      expect(readEnv().sentryTracesSampleRate).toBe(0.05);
+      // 0 与 1 是合法端点（全关与全采）；超界与乱码一律按未配置，由消费方套缺省
+      Bun.env[key] = "0";
+      expect(readEnv().sentryTracesSampleRate).toBe(0);
+      Bun.env[key] = "1.5";
+      expect(readEnv().sentryTracesSampleRate).toBeUndefined();
+      Bun.env[key] = "abc";
+      expect(readEnv().sentryTracesSampleRate).toBeUndefined();
+      delete Bun.env[key];
+      expect(readEnv().sentryTracesSampleRate).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete Bun.env[key];
+      else Bun.env[key] = saved;
+    }
+  });
 });
 
 const deploymentKeys = [

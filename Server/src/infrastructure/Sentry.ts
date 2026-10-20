@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
 import type { ErrorEvent } from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
+import { DEFAULT_SENTRY_TRACES_SAMPLE_RATE } from "../config/env/Observability";
 import { resolveServerRelease } from "./Release";
 
 const SENSITIVE_KEYS = new Set([
@@ -191,11 +192,6 @@ export const _resetServerSentryForTest = (): void => {
   activeEnvironment = null;
 };
 
-const resolveSampleRate = (value: string | undefined, fallback: number): number => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
-};
-
 /**
  * 事件根节点的可控字段：只脱敏值本身，不截断根节点，
  * 保留异常栈、SDK 元数据和协议结构。
@@ -279,7 +275,7 @@ export const initServerSentry = (env: AppEnv): void => {
     environment: activeEnvironment,
     // SDK 对 undefined 会自动读取 SENTRY_RELEASE/CI 字符串；空值显式禁止伪造回退。
     release: release ?? "",
-    tracesSampleRate: resolveSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
+    tracesSampleRate: env.sentryTracesSampleRate ?? DEFAULT_SENTRY_TRACES_SAMPLE_RATE,
     integrations: [
       Sentry.httpIntegration(),
       Sentry.httpServerIntegration(),

@@ -318,7 +318,7 @@ export const ENV_ENTRIES: EnvEntry[] = [
   {
     name: "SENTRY_TRACES_SAMPLE_RATE",
     layer: "T2",
-    note: ["链路采样率，缺省 0.2。读取点当前在 infrastructure/Sentry.ts，待收编到本清单的解析层。"],
+    note: ["链路采样率：只认 0–1 之间的数，其余（含写错）一律按缺省执行。"],
   },
   {
     name: "CLIENT_PACKAGE_WINDOWS_URL",

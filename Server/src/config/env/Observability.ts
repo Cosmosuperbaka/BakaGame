@@ -20,7 +20,18 @@ export interface EnvObservability {
   sentryAllowedProjectIds?: string[];
   /** 管理后台概览代查 Sentry 用的只读令牌（org:read、project:read、event:read）；不配则后台显示未配置。 */
   sentryApiToken?: string;
+  /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
+  sentryTracesSampleRate?: number;
 }
+
+/** 缺省采样率：没配、配错或配成 0–1 之外的数都落回这里。 */
+export const DEFAULT_SENTRY_TRACES_SAMPLE_RATE = 0.2;
+
+const parseSampleRate = (raw: string | undefined): number | undefined => {
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
+};
 
 const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
   if (!raw) return {};
@@ -114,5 +125,6 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
     sentryDsn,
     sentryApiToken,
     sentryAllowedProjectIds,
+    sentryTracesSampleRate: parseSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE),
   };
 };
