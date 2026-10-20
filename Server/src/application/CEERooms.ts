@@ -23,6 +23,7 @@ import {
   ROOM_IDLE_TIMEOUT_MS,
 } from "../config/Constants";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
+import { createEvent } from "../transport/Packets";
 import { normalizeCEERoomId } from "./CEERoomDirectory";
 import {
   NOOP_ANTI_CHEAT_REVIEW_QUEUE,
@@ -294,11 +295,7 @@ export class CEERooms {
     if (player.connectionId && player.connectionId !== connection.id) {
       const previous = this.connections.findConnection(player.connectionId);
       if (previous) {
-        previous.send({
-          type: "event",
-          event: "session.replaced",
-          payload: { reason: "此身份已在另一连接恢复" },
-        });
+        previous.send(createEvent("session.replaced", { reason: "此身份已在另一连接恢复" }));
         this.connections.detach(previous);
         previous.close(4001, "session replaced");
       }
@@ -410,11 +407,7 @@ export class CEERooms {
     const connection = player.connectionId
       ? this.connections.findConnection(player.connectionId)
       : undefined;
-    connection?.send({
-      type: "event",
-      event: "cee.player.spectateResult",
-      payload: { approved },
-    });
+    connection?.send(createEvent("cee.player.spectateResult", { approved }));
   }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
   leave(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
@@ -467,7 +460,7 @@ export class CEERooms {
       ? this.connections.findConnection(target.connectionId)
       : undefined;
     if (connection) {
-      connection.send({ type: "event", event: "cee.player.kicked", payload: { reason } });
+      connection.send(createEvent("cee.player.kicked", { reason }));
       this.connections.detach(connection);
     }
     this.remove(room, target);
@@ -552,12 +545,9 @@ export class CEERooms {
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
-      connection.send({ type: "event", event: "cee.room.snapshot", payload: snapshot });
-      connection.send({
-        type: "event",
-        event: "cee.game.privateState",
-        payload: ceePrivateState(room, player),
-      });
+      connection.send(createEvent("cee.room.snapshot", snapshot));
+      // 私有态按连接裁剪：同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
+      connection.send(createEvent("cee.game.privateState", ceePrivateState(room, player)));
     }
     this.onChange?.();
   }
@@ -566,16 +556,10 @@ export class CEERooms {
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
-      connection.sendStateSyncCalibration?.({
-        type: "event",
-        event: "cee.room.snapshot",
-        payload: snapshot,
-      });
-      connection.sendStateSyncCalibration?.({
-        type: "event",
-        event: "cee.game.privateState",
-        payload: ceePrivateState(room, player),
-      });
+      connection.sendStateSyncCalibration?.(createEvent("cee.room.snapshot", snapshot));
+      connection.sendStateSyncCalibration?.(
+        createEvent("cee.game.privateState", ceePrivateState(room, player))
+      );
     }
   }
   housekeeping(): void {
@@ -629,11 +613,9 @@ export class CEERooms {
     return changed;
   }
   notifyShutdown() {
-    this.connections.broadcastToAll({
-      type: "event",
-      event: "server.shutdown",
-      payload: { message: SERVER_SHUTDOWN_MESSAGE },
-    });
+    this.connections.broadcastToAll(
+      createEvent("server.shutdown", { message: SERVER_SHUTDOWN_MESSAGE })
+    );
   }
   private room(id: string | undefined): CEERoom {
     const room = id ? this.rooms.get(this.normalizeRoomId(id)) : undefined;
@@ -767,7 +749,7 @@ export class CEERooms {
       endedAt: this.now(),
     });
     for (const connection of this.connections.getRoomConnections(room.id)) {
-      connection.send({ type: "event", event: "cee.room.closed", payload: { reason } });
+      connection.send(createEvent("cee.room.closed", { reason }));
       this.connections.detach(connection);
       connection.resetStateSync?.();
     }

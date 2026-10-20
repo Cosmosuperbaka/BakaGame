@@ -10,6 +10,7 @@ import { AppError } from "../domain/Errors";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
+import { createEvent } from "../transport/Packets";
 import { CEENativeService } from "./CEENativeService";
 import {
   CEESearchProvenance,
@@ -97,7 +98,7 @@ export class CEEService implements AdminRoomControl {
       connection.lobbySubscribed = true;
       await this.refreshRemote();
       const rooms = this.listRooms();
-      connection.send({ type: "event", event: "cee.lobby.rooms", payload: rooms });
+      connection.send(createEvent("cee.lobby.rooms", rooms));
       return { rooms, originalAvailable: this.original.configured };
     }
     if (
@@ -256,7 +257,7 @@ export class CEEService implements AdminRoomControl {
     this.lastLobby = serialized;
     for (const connection of this.connections.values())
       if (connection.lobbySubscribed && !connection.roomId)
-        connection.send({ type: "event", event: "cee.lobby.rooms", payload: rooms });
+        connection.send(createEvent("cee.lobby.rooms", rooms));
   }
   /** 只有成功的列表才对齐别名：上游暂时不可达时保留现有别名，大厅暂不展示原版房。 */
   private async refreshRemote(): Promise<void> {
