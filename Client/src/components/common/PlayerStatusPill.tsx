@@ -17,9 +17,9 @@ export const PLAYER_COLUMN_WIDTH = "16rem";
 /** 分组标题行高，展开历史时列标题沿用同一高度 */
 export const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
 
-/** 浅底徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用 */
+/** 徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用，底色由各自色调给 */
 export const PLAYER_BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center rounded-md bg-muted px-1.5 py-0.5 font-sans text-2xs font-normal leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-2xs font-normal leading-none tracking-normal";
 
 /** 玩家栏共用的行布局基底；游戏房间在此基础上追加自身状态 */
 export const PLAYER_ROW_BASE =
@@ -33,18 +33,32 @@ export const PLAYER_ME_MARK =
  * 状态色调。含义固定：默认=中性等待，success=成功/完成，questioner=出题人，
  * warning=提示，danger=危险/淘汰。取语义令牌而非调色板色阶，
  * 暗色变体由令牌自身携带，不再逐处补 `dark:`。
+ * 底部淡色底让「准备」「离线」这类关键状态不必逐字阅读也能扫到。
  */
 const PLAYER_STATUS_TONES: Record<PlayerStatusTone, string> = {
-  default: "text-muted-foreground",
-  success: "text-success",
-  questioner: "text-questioner",
-  warning: "text-warning",
-  danger: "text-destructive",
+  default: "bg-muted text-muted-foreground",
+  success: "bg-success/15 text-success",
+  questioner: "bg-questioner/15 text-questioner",
+  warning: "bg-warning/15 text-warning",
+  danger: "bg-destructive/15 text-destructive",
 };
 
-/** 统一状态胶囊徽章 */
-export function PlayerStatusPill({ label, tone }: { label: string; tone: PlayerStatusTone }) {
-  return <span className={cn(PLAYER_BADGE_BASE, PLAYER_STATUS_TONES[tone])}>{label}</span>;
+/** 统一状态胶囊徽章；`icon` 只作状态补充，文字始终保留，不单靠图标或颜色传达状态。 */
+export function PlayerStatusPill({
+  label,
+  tone,
+  icon,
+}: {
+  label: string;
+  tone: PlayerStatusTone;
+  icon?: ReactNode;
+}) {
+  return (
+    <span className={cn(PLAYER_BADGE_BASE, PLAYER_STATUS_TONES[tone])}>
+      {icon}
+      {label}
+    </span>
+  );
 }
 
 /** 跨游戏通用的玩家分组标题（如“玩家 (4)”、“旁观 (1)”） */

@@ -86,7 +86,7 @@ describe("player row presentation", () => {
     );
 
     expect(screen.getByText(name)).toBeInTheDocument();
-    expect(screen.getByLabelText("已断线")).toBeInTheDocument();
+    expect(screen.getByText("离线")).toBeInTheDocument();
     await user.tab();
     expect(screen.getByRole("button", { name: `${name} 操作` })).toHaveFocus();
     await user.keyboard(" ");

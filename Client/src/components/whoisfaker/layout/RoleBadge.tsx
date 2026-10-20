@@ -23,8 +23,7 @@ export function RoleBadge({
       className={cn(
         PLAYER_BADGE_BASE,
         ROLE_COLORS[role],
-        inset && "bg-background",
-        predicted && "bg-muted/40"
+        inset ? "bg-background" : predicted ? "bg-muted/40" : "bg-muted"
       )}
     >
       {predicted ? <span className="sr-only">预测</span> : null}

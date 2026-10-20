@@ -36,7 +36,7 @@ describe("SonGuessr PlayerList", () => {
 
     expect(screen.getByText("房主小艾")).toBeInTheDocument();
     expect(screen.getByText("普通玩家")).toBeInTheDocument();
-    expect(screen.getByLabelText("房主")).toBeInTheDocument();
+    expect(screen.getByText("房主")).toBeInTheDocument();
   });
 
   it("在等待阶段正确展示准备与等待就绪状态徽章", () => {

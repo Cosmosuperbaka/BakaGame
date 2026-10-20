@@ -93,6 +93,38 @@ export const AllStates: Story = {
   ),
 };
 
+/** 房主、准备、离线三种关键状态的对照：房主金标贴名字，准备用绿色底，离线用红色底且名字转灰。 */
+export const PresenceHierarchy: Story = {
+  name: "状态层级",
+  render: () => (
+    <div className="flex flex-col gap-px">
+      <PlayerRow
+        name={host.name}
+        score={12}
+        host
+        badges={<PlayerStatusPill label="准备" tone="success" />}
+      />
+      <PlayerRow
+        name={me.name}
+        score={9}
+        me
+        badges={<PlayerStatusPill label="准备" tone="success" />}
+      />
+      <PlayerRow
+        name={peach.name}
+        score={7}
+        badges={<PlayerStatusPill label="等待" tone="default" />}
+      />
+      <PlayerRow
+        name={kanade.name}
+        score={3}
+        online={false}
+        badges={<PlayerStatusPill label="等待" tone="default" />}
+      />
+    </div>
+  ),
+};
+
 export const PerGameSecondLine: Story = {
   name: "各游戏的次行内容",
   render: () => (

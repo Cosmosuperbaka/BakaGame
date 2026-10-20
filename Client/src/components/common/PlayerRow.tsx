@@ -10,6 +10,7 @@ import {
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
+  PlayerStatusPill,
 } from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
@@ -60,8 +61,8 @@ export interface PlayerRowProps {
 }
 
 /**
- * 三游戏共用的玩家行：左端头像（登录玩家为账号头像，游客为首字），中间双行信息（名字与房主标识、状态徽章与补充文字），
- * 右侧分数；登录玩家或有操作权限时整行是可聚焦的原生按钮，点击打开浮层：资料卡在上，操作在下。
+ * 三游戏共用的玩家行：左端头像（登录玩家为账号头像，游客为首字），中间信息列首行是名字、房主徽章与分数，
+ * 其下是状态徽章、补充文字与可选详情；登录玩家或有操作权限时整行是可聚焦的原生按钮，点击打开浮层：资料卡在上，操作在下。
  *
  * 行高由 `PLAYER_ROW_HEIGHT` 统一，供玩家列与发言历史逐行对齐；嵌入发言历史时不再套动画容器。
  */
@@ -87,7 +88,7 @@ export function PlayerRow({
   const interactive = Boolean(account) || hasActions;
   // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
   const [open, setOpen] = useState(false);
-  const rowClass = playerRowClass({ me, online, bot, interactive });
+  const rowClass = playerRowClass({ me, interactive });
 
   const info = (
     <PlayerRowInfo
@@ -172,25 +173,14 @@ export function PlayerRow({
   );
 }
 
-/** 行的底色与可点样式：本人用底色加左竖条，断线降透明度（人机本身即离线，不重复降）。 */
-const playerRowClass = ({
-  me,
-  online,
-  bot,
-  interactive,
-}: {
-  me: boolean;
-  online: boolean;
-  bot: boolean;
-  interactive: boolean;
-}) =>
+/** 行的底色与可点样式：本人用底色加左竖条；离线不压整行透明度，改由名字与红色徽章表达，保持可读。 */
+const playerRowClass = ({ me, interactive }: { me: boolean; interactive: boolean }) =>
   cn(
     PLAYER_ROW_BASE,
     PLAYER_ROW_HEIGHT,
     "gap-2.5",
     me && "bg-primary/10",
     !me && "transition-colors hover:bg-accent/40",
-    !online && !bot && "opacity-60",
     // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
     interactive && "cursor-pointer focus-visible:-outline-offset-2"
   );
@@ -222,44 +212,60 @@ function PlayerRowInfo({
   | "meta"
   | "detail"
 >) {
+  const offline = !online && !bot;
+  const hasSecondary = Boolean(badges || meta || eliminated || bot || offline);
   return (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
       <span className="flex min-w-0 flex-1 flex-col gap-1">
+        {/* 首行只放名字、房主与分数：三者是扫描玩家时最需要固定对齐的信息。 */}
         <span className="flex min-w-0 items-center gap-1">
           <Hint label={name}>
             <span
               className={cn(
                 "min-w-0 truncate font-medium",
-                eliminated && "text-muted-foreground line-through decoration-muted-foreground/60"
+                (eliminated || offline) && "text-muted-foreground",
+                eliminated && "line-through decoration-muted-foreground/60"
               )}
             >
               {name}
             </span>
           </Hint>
-          {host ? <Crown className="h-3.5 w-3.5 shrink-0 text-warning" aria-label="房主" /> : null}
-        </span>
-        <span className="flex min-h-4 min-w-0 items-center gap-1">
-          {badges}
-          {meta}
-          {eliminated ? (
-            <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+          {host ? (
+            <PlayerStatusPill
+              label="房主"
+              tone="warning"
+              icon={<Crown className="h-3 w-3" aria-hidden="true" />}
+            />
           ) : null}
-          {bot ? (
-            <Bot className="h-3.5 w-3.5 shrink-0 text-info" aria-label="测试人机" />
-          ) : !online ? (
-            <WifiOff className="h-3.5 w-3.5 shrink-0 text-destructive" aria-label="已断线" />
-          ) : null}
+          <span
+            aria-label={`${score} 分`}
+            className="ml-auto flex shrink-0 items-baseline gap-0.5 pl-2 tabular-nums"
+          >
+            <AnimatedNumber value={score} gain="above" className="text-base leading-none" />
+            <span className="font-sans text-2xs text-muted-foreground">分</span>
+          </span>
         </span>
+        {hasSecondary ? (
+          <span className="flex min-h-4 min-w-0 items-center gap-1">
+            {badges}
+            {meta}
+            {eliminated ? (
+              <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+            ) : null}
+            {bot ? (
+              <Bot className="h-3.5 w-3.5 shrink-0 text-info" aria-label="测试人机" />
+            ) : offline ? (
+              <PlayerStatusPill
+                label="离线"
+                tone="danger"
+                icon={<WifiOff className="h-3 w-3" aria-hidden="true" />}
+              />
+            ) : null}
+          </span>
+        ) : null}
         {detail}
-      </span>
-      <span
-        aria-label={`${score} 分`}
-        className="flex shrink-0 items-baseline gap-0.5 tabular-nums"
-      >
-        <AnimatedNumber value={score} gain="above" className="text-base leading-none" />
-        <span className="font-sans text-2xs text-muted-foreground">分</span>
       </span>
     </>
   );

@@ -21,6 +21,17 @@ afterEach(() => {
 });
 
 describe("PlayerRow 资料卡", () => {
+  it("房主与离线都用文字徽章表达，不只靠图标或颜色", () => {
+    render(
+      <>
+        <PlayerRow name="房主小明" score={12} host />
+        <PlayerRow name="掉线的小红" score={3} online={false} />
+      </>
+    );
+    expect(screen.getByText("房主")).toBeInTheDocument();
+    expect(screen.getByText("离线")).toBeInTheDocument();
+  });
+
   it("游客且无操作权限时整行不可点", () => {
     render(<PlayerRow name="游客" score={0} />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
