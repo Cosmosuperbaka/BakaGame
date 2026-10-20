@@ -1872,7 +1872,6 @@ export class SonGuessrService implements AdminRoomControl {
     connection: ConnectionRecord,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
-    this.ensureConnectionFree(connection);
     const roomId = ensureRoomId(payload.roomId);
     if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "房间号已被使用");
     const password =
@@ -1913,6 +1912,14 @@ export class SonGuessrService implements AdminRoomControl {
         throw error;
       }
     }
+    // 目标校验全部通过后才解绑旧席位：被拒绝的建房不得销毁原绑定。
+    // 这里仍可能因连接残留的半截状态抛错，新房号要随之撤销。
+    try {
+      this.ensureConnectionFree(connection);
+    } catch (error) {
+      this.rooms.delete(roomId);
+      throw error;
+    }
     this.attachConnection(room, player, connection);
     this.appendSystemMessage(room, `${player.name} 创建了房间`);
     this.publishRoom(room);
@@ -1932,7 +1939,6 @@ export class SonGuessrService implements AdminRoomControl {
     roomIdValue: string | undefined,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"]
   ) {
-    this.ensureConnectionFree(connection);
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
     await this.ensurePassword(room, payload.password, connection);
@@ -1952,6 +1958,8 @@ export class SonGuessrService implements AdminRoomControl {
       throw new AppError("SPECTATORS_DISABLED", "当前房间不允许旁观");
     }
 
+    // 目标校验全部通过后才解绑旧席位：密码错误、房号不存在等拒绝不得销毁原绑定。
+    this.ensureConnectionFree(connection);
     const player = this.createPlayer(name, false);
     player.membership = membership;
     room.players[player.id] = player;
@@ -1987,17 +1995,19 @@ export class SonGuessrService implements AdminRoomControl {
 
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
     const targetRoomId = ensureRoomId(roomIdValue);
-    // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
-    // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
-    if (!(connection.roomId === targetRoomId && connection.playerId)) {
-      this.ensureConnectionFree(connection);
-    }
     const room = this.getRoom(targetRoomId);
     const player = Object.values(room.players).find(
       (candidate) =>
         safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
     );
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
+
+    // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
+    // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
+    // 换房重连则要等目标房号与令牌都校验通过后再解绑旧席位。
+    if (!(connection.roomId === targetRoomId && connection.playerId)) {
+      this.ensureConnectionFree(connection);
+    }
 
     this.attachConnection(room, player, connection);
     room.emptySinceAt = undefined;

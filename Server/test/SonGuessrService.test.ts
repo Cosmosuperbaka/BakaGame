@@ -5439,6 +5439,68 @@ describe("上线前 P0 修复回归", () => {
     ).resolves.toMatchObject({ roomId: "4321" });
   });
 
+  test("P0-1 被拒绝的建房、加入与重连不会销毁原席位", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const hostA = connection(service, "keep-seat-a");
+    const hostB = connection(service, "keep-seat-b");
+    const hostC = connection(service, "keep-seat-c");
+    await createRoom(service, hostA, { roomId: "1234" });
+    await createRoom(service, hostB, { roomId: "5678", name: "新房间", userName: "乙房主" });
+    await createRoom(service, hostC, {
+      roomId: "2468",
+      name: "私房",
+      visibility: "private",
+      password: "secret",
+      userName: "丙房主",
+    });
+
+    await expect(
+      execute(service, hostA, {
+        id: "conflict-create",
+        type: "song.room.create",
+        payload: {
+          roomId: "5678",
+          name: "撞号房间",
+          visibility: "public",
+          allowSpectators: true,
+          userName: "甲",
+        },
+      })
+    ).rejects.toMatchObject({ code: "ROOM_EXISTS" });
+
+    await expect(
+      execute(service, hostA, {
+        id: "wrong-password",
+        type: "song.room.join",
+        roomId: "2468",
+        payload: { userName: "甲", password: "wrong" },
+      })
+    ).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+
+    await expect(
+      execute(service, hostA, {
+        id: "missing-room",
+        type: "song.room.join",
+        roomId: "9999",
+        payload: { userName: "甲" },
+      })
+    ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+
+    await expect(
+      execute(service, hostA, {
+        id: "bad-token",
+        type: "song.room.reconnect",
+        payload: { roomId: "5678", sessionToken: "invalid-token" },
+      })
+    ).rejects.toMatchObject({ code: "SESSION_INVALID" });
+
+    // 原席位仍绑定在原房间：还能正常发命令，房间也仍在列表里。
+    await expect(
+      execute(service, hostA, { id: "probe", type: "song.room.requestSync", payload: {} })
+    ).resolves.toEqual({ synced: true });
+    expect(service.getRoomSummaries().map((summary) => summary.roomId)).toContain("1234");
+  });
+
   test("P0-2a 测试房间加机器人到总人数上限后拒绝继续添加", async () => {
     const service = new SonGuessrService({ musicProvider: provider });
     const host = connection(service, "bot-host");
