@@ -214,18 +214,20 @@ test("真实 Index：挂起 I/O 由唯一且不 unref 的总预算看门狗兜�
   harness.timeouts[0].fire();
   expect(harness.exits).toEqual([1]);
   // 强制终止必须留下可读证据：预算数字与已完成/未完成阶段都进同一条日志。
+  // 已完成阶段按「挂住的那一步之前」取；写死数量会在停机链路增减一步时悄悄失真。
+  const doneBeforeHang = finalStages.slice(0, finalStages.indexOf("drain.faker"));
   expect(harness.logs).toContainEqual(
     expect.objectContaining({
       level: "error",
       message: `优雅停机超时 (${harness.budgetMs / 1000}s)，强制终止进程`,
       details: expect.objectContaining({
         budgetMs: harness.budgetMs,
-        completedStages: ["notify.faker", "notify.song", "notify.cee", "buffer"],
+        completedStages: doneBeforeHang,
         failedStages: [],
       }),
     })
   );
-  expect(completed(harness.calls)).toEqual(finalStages.slice(0, 4));
+  expect(completed(harness.calls)).toEqual(doneBeforeHang);
   // VM exit 仅记录不会终止测试进程；释放夹具，不把后续模拟完成冒充真实看门狗后的执行。
   harness.release("drain.faker");
   await harness.task;

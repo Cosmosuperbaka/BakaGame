@@ -12,10 +12,13 @@ export const finalStages = [
   "notify.song",
   "notify.cee",
   "buffer",
+  // 快照必须赶在排空之前写完：排空要等对局记录收尾，而进程不能等到那时才落盘。
+  "persist",
   "drain.faker",
   "drain.records",
   "stop",
   "dispose",
+  "snapshot.close",
   "otlp",
   "sentry.flush",
   "sentry.close",
@@ -67,6 +70,16 @@ export async function createIndexShutdownHarness(
     calls.push(`${stage}:end`);
     return options.failures?.[stage] !== "false";
   };
+  /**
+   * 同步版记账：`persist` 那一步 Index 是在 attempt 的回调体里直接调用快照函数，
+   * 返回值不进 await；换成异步 `execute` 会让阶段顺序跟着调度漂移，断言就测不到真实串行。
+   */
+  const recordSync = (stage: Stage) => {
+    calls.push(`${stage}:start`);
+    if (options.failures?.[stage] === "throw")
+      throw new Error(`injected:${stage}`, { cause: new Error("injected cause") });
+    calls.push(`${stage}:end`);
+  };
   const snapshot = () => ({ onlinePlayerCount: 0, roomCount: 0, connectionCount: 0 });
   const service = (game: "faker" | "song" | "cee") => ({
     notifyShutdown: () => execute(`notify.${game}`),
@@ -98,6 +111,23 @@ export async function createIndexShutdownHarness(
     },
     // 常量模块是叶子（无副作用、不读环境），登记它才能守住「Index 不长出新依赖」这条断言。
     "./config/Constants": { HTTP_MAX_REQUEST_BODY_BYTES },
+    // 房间快照：`join` 只用来拼快照目录，恢复与保存都在停机链路两端，桩里只记账不碰文件系统。
+    "node:path": { join: path.join },
+    "./shared/RoomSnapshot": { ROOM_SNAPSHOT_GAMES: ["faker", "song", "cee"] },
+    "./infrastructure/RoomSnapshotStore": {
+      RoomSnapshotStore: class {
+        constructor() {
+          return { close: () => execute("snapshot.close") };
+        }
+      },
+    },
+    "./application/RoomSnapshots": {
+      restoreRoomSnapshots: () => ({ restored: {}, discarded: [] }),
+      saveRoomSnapshots: () => {
+        recordSync("persist");
+        return { saved: 0 };
+      },
+    },
     "./application/WhoIsFakerService": {
       WhoIsFakerService: class {
         constructor() {
@@ -209,7 +239,13 @@ export async function createIndexShutdownHarness(
       timer.cleared++;
     },
   });
-  const source = options.source ?? (await readFile(indexSourcePath, "utf8"));
+  const raw = options.source ?? (await readFile(indexSourcePath, "utf8"));
+  // 夹具把源码转成 CommonJS 再放进 vm，而 `import.meta` 只在 ESM 里合法；这里按真实取值就地
+  // 替换成 Index.ts 所在目录，路径与生产一致。取值本身由停机冒烟脚本在真实 Bun 进程里验证。
+  const source = raw.replace(
+    /\bimport\.meta\.dir\b/g,
+    JSON.stringify(path.dirname(indexSourcePath))
+  );
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
