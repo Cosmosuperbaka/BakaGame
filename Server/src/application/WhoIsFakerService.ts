@@ -427,7 +427,7 @@ export class WhoIsFakerService implements AdminRoomControl {
   }
 
   private async finishExpiredPhaseTimer(room: WhoIsFakerRoomRecord, currentTime: number) {
-    const activeTimer = room.round?.phaseTimer ?? room.phaseTimer;
+    const activeTimer = room.round?.phaseTimer;
     if (!activeTimer || currentTime < activeTimer.endsAt) return;
 
     await this.handlePhaseTimeout(
@@ -1487,7 +1487,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     this.ensurePhaseNotBlocked(round);
 
     // 暂存被打断阶段的剩余倒计时毫秒数
-    const timerState = round.phaseTimer ?? room.phaseTimer;
+    const timerState = round.phaseTimer;
     const remainingTimerMs =
       timerState && timerState.endsAt > this.now()
         ? Math.max(1_000, timerState.endsAt - this.now())
@@ -1709,9 +1709,6 @@ export class WhoIsFakerService implements AdminRoomControl {
     if (existing) {
       clearTimeout(existing);
       this.phaseTimerTimeoutByRoomId.delete(room.id);
-    }
-    if (room.phaseTimer) {
-      room.phaseTimer = undefined;
     }
     if (room.round?.phaseTimer) {
       room.round.phaseTimer = undefined;
@@ -3743,7 +3740,7 @@ export class WhoIsFakerService implements AdminRoomControl {
               (id) => !room.round!.supplement!.donePlayers.includes(id)
             )
           : undefined,
-        phaseTimer: room.round?.phaseTimer ?? room.phaseTimer,
+        phaseTimer: room.round?.phaseTimer,
         feedback: room.round?.feedback,
       },
       players: this.buildPublicPlayers(room),

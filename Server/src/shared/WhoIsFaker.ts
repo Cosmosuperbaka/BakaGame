@@ -385,7 +385,6 @@ export interface WhoIsFakerRoomRecord {
   hostReconnectDeadlineAt?: number;
   /** 所有连接暂时断开后的回收时间；显式离开仍可立即关闭。 */
   emptySinceAt?: number;
-  phaseTimer?: PhaseTimerState;
   createdAt: number;
   updatedAt: number;
   lastActivityAt: number;
