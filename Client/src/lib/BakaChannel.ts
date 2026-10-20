@@ -5,8 +5,7 @@
  * 前端只做**存在性探测**——「有 = 原生客户端，无 = 网页」——绝不读取或调用其中的签名、
  * 自检等能力。凭据校验由服务端在握手里完成，客户端这边不反编译、不绕过完整性检查，
  * 也不代为生成签名（见 AGENTS.md 的客户端完整性边界）。握手时唯一读取的是壳已经自己
- * 签好的 `channelTicket`（连同明文 `clientType` / `clientVersion`）：票由壳生成、由服务
- * 端消费，前端只是把它拼进 URL。
+ * 签好的 `channelTicket`：票由壳生成、由服务端消费，前端只是把它拼进 URL。
  */
 
 export type BakaClientType = "web" | "desktop" | "mobile";
@@ -61,16 +60,12 @@ export const setSecureScreen = (enabled: boolean): void => {
  *
  * **必须在每次建连时调用**，不能把结果缓存成字符串：`ticket` 是一次性的（服务端 30 秒
  * TTL、用过即焚），壳那边读一次就作废并补签下一张。构造时读一次会让所有重连带上废票，
- * 反作弊房里的断线重连因此全部进不来。服务端只认 ticket 里绑定的身份，`clientType`
- * 与 `clientVersion` 只用于排查。
+ * 反作弊房里的断线重连因此全部进不来。握手 URL 只携带 `ticket`：客户端类型与版本由
+ * 服务端验票后从设备表得出（项目约定版本/客户端类型判定归服务端权威），自报明文放进
+ * URL 没有任何消费方，留着只会被后来者误当身份。
  */
 export const bakaChannelQuery = (): string => {
-  const channel = bakaChannel();
-  if (!channel) return "";
-  const params = new URLSearchParams();
-  params.set("clientType", channel.clientType);
-  params.set("clientVersion", channel.clientVersion);
-  const ticket = channel.channelTicket;
-  if (ticket) params.set("ticket", ticket);
-  return `?${params.toString()}`;
+  const ticket = bakaChannel()?.channelTicket;
+  if (!ticket) return "";
+  return `?ticket=${encodeURIComponent(ticket)}`;
 };

@@ -29,7 +29,7 @@ describe("原生客户端通道探测", () => {
     expect(bakaClientType()).toBe("web");
     expect(bakaChannelQuery()).toBe("");
   });
-  it("客户端带明文标识，无票时不塞空 ticket", () => {
+  it("客户端无票时握手查询串为空：不再自报 clientType / clientVersion", () => {
     window.__BAKA_CHANNEL__ = {
       clientType: "mobile",
       platform: "android",
@@ -38,10 +38,7 @@ describe("原生客户端通道探测", () => {
     };
     expect(isBakaClient()).toBe(true);
     expect(bakaClientType()).toBe("mobile");
-    const search = params(bakaChannelQuery());
-    expect(search.get("clientType")).toBe("mobile");
-    expect(search.get("clientVersion")).toBe("2.1.0");
-    expect(search.has("ticket")).toBe(false);
+    expect(bakaChannelQuery()).toBe("");
   });
   it("每次建连重新取票：重连绝不会带上已消费过的旧票", () => {
     const issued = shellWithRotatingTicket();
@@ -50,6 +47,9 @@ describe("原生客户端通道探测", () => {
     expect(first.get("ticket")).toBe("ticket-1");
     expect(second.get("ticket")).toBe("ticket-2");
     expect(issued()).toBe(2);
+    // 握手 URL 只携带服务端真正消费的字段；身份与版本以服务端设备表为权威。
+    expect(first.has("clientType")).toBe(false);
+    expect(first.has("clientVersion")).toBe(false);
   });
   it("base64 票据里的 + 与 = 必须转义：原样拼进查询串会被解成空格", () => {
     window.__BAKA_CHANNEL__ = {
