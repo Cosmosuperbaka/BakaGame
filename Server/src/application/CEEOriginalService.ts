@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import { AppError } from "../domain/Errors";
 import { buildCEEFeedback, createCEEHints, validateCEESettings } from "../domain/CEERules";
+import { safeEqualToken } from "../domain/Rules";
 import type { ConnectionRecord } from "../shared/Index";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
@@ -180,7 +181,7 @@ export class CEEOriginalService {
   async execute(connectionId: string, message: CEEClientMessage): Promise<unknown> {
     this.requireConnection(connectionId);
     const session = this.requireSession(connectionId);
-    if (message.sessionToken !== session.token)
+    if (!safeEqualToken(message.sessionToken, session.token))
       throw new AppError("SESSION_INVALID", "原版会话凭据无效，请重新加入");
     if (message.roomId && message.roomId !== session.alias)
       throw new AppError("ROOM_NOT_FOUND", "房间与当前会话不一致");
@@ -859,13 +860,6 @@ export class CEEOriginalService {
         this.revoke(session, "重连等待已结束", false);
       else this.publish(session, true);
     }
-  }
-  notifyShutdown(): void {
-    for (const session of this.sessions.values())
-      if (session.connectionId)
-        this.connections
-          .get(session.connectionId)
-          ?.send(createEvent("server.shutdown", { reason: "服务器正在重启" }));
   }
   close(): void {
     for (const session of this.sessions.values()) this.revoke(session, "服务已关闭", false);

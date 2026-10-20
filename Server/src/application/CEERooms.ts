@@ -10,7 +10,7 @@ import {
 } from "../domain/CEEModel";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
-import { ensureRoomId } from "../domain/Rules";
+import { ensureRoomId, safeEqualToken } from "../domain/Rules";
 import {
   createDefaultCEESettings,
   isCEEAntiCheatRoom,
@@ -294,8 +294,8 @@ export class CEERooms {
     this.ensureFree(connection);
     const room = this.room(payload.roomId);
     this.requireAdmission(connection, room);
-    const player = [...room.players.values()].find(
-      (member) => member.sessionToken === payload.sessionToken
+    const player = [...room.players.values()].find((member) =>
+      safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
     );
     if (!player) throw new AppError("SESSION_NOT_FOUND", "房间身份已失效，请重新加入");
     if (player.connectionId && player.connectionId !== connection.id) {
@@ -337,7 +337,12 @@ export class CEERooms {
   ): { room: CEERoom; player: CEEPlayerRecord } {
     const room = this.room(connection.roomId);
     const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
-    if (!player || player.connectionId !== connection.id || !token || player.sessionToken !== token)
+    if (
+      !player ||
+      player.connectionId !== connection.id ||
+      !token ||
+      !safeEqualToken(player.sessionToken, token)
+    )
       throw new AppError("SESSION_INVALID", "请重新加入房间");
     if (expectedRoomId && expectedRoomId !== room.id)
       throw new AppError("ROOM_MISMATCH", "指令房间与当前会话不一致");
