@@ -8,6 +8,7 @@ import {
   PREFERENCES_MAX_BYTES,
   QQ_NUMBER_PATTERN,
 } from "./Account";
+import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
 
 /**
  * 账号 HTTP API 契约（oRPC，挂在 `/api/rpc`）。
@@ -392,6 +393,18 @@ const adminContract = {
     revokeSessions: op("吊销该账号的全部会话（强制下线），不改资料与封禁状态。", "admin")
       .input(z.object({ userId }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  settings: {
+    list: op(
+      "读取运行期旋钮（T3）：环境变量缺省、库内覆盖值与当前生效值一起给出。",
+      "admin"
+    ).output(z.object({ items: z.array(adminRuntimeSettingSchema) })),
+    set: op(
+      "改一个运行期旋钮：按该键的校验通过后落 `app_setting`，本进程立即生效，其余分片按缓存周期收敛。未配置数据库时拒绝。",
+      "admin"
+    )
+      .input(z.object({ key: runtimeSettingKeySchema, value: z.string().max(64) }))
+      .output(z.object({ items: z.array(adminRuntimeSettingSchema) })),
   },
   feedback: {
     list: op("分页查全部反馈，可按状态、类型、提交人过滤。", "admin")

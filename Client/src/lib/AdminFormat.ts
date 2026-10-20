@@ -24,6 +24,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "feedback.setStatus": "修改反馈状态",
   "room.close": "关闭房间",
   "room.kick": "移出玩家",
+  "runtimeSetting.update": "修改运行期设置",
   "qq.refreshNames": "刷新 QQ 昵称",
 };
 

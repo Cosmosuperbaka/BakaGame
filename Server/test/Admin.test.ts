@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import type { InMemoryAntiCheatReviewQueue } from "../src/application/CEEAntiCheatSignals";
+import { AppSettings } from "../src/application/AppSettings";
+import type {
+  AppSettingRepository,
+  StoredAppSetting,
+} from "../src/infrastructure/db/AppSettingRepository";
 import type {
   GameRecordRepository,
   StoredGameRecordDetail,
@@ -497,5 +502,72 @@ describe("对局记录查询", () => {
     });
     expect((await rpc("admin/games/get", { id: "gone" }, adminCookie)).status).toBe(404);
     expect((await rpc("admin/games/list", { game: "chess" }, adminCookie)).status).toBe(400);
+  });
+});
+
+describe("运行期旋钮", () => {
+  /** 只替掉数据库这一层：校验、审计、快照与昵称解析都走生产路径。 */
+  class MemoryAppSettingRepository implements AppSettingRepository {
+    rows: Record<string, StoredAppSetting> = {};
+    async loadAll(): Promise<Record<string, StoredAppSetting>> {
+      return this.rows;
+    }
+    async set(key: string, value: string, updatedBy: string | null): Promise<void> {
+      this.rows[key] = { value, updatedBy, updatedAt: new Date("2026-10-20T00:00:00.000Z") };
+    }
+  }
+
+  test("没有数据库时列出环境变量缺省，写入被明确拒绝且不留下审计", async () => {
+    const { rpc, adminCookie, audit } = await setup();
+    const listed = await rpc("admin/settings/list", undefined, adminCookie);
+    expect(listed.status).toBe(200);
+    expect(
+      (listed.body.items as Array<Record<string, unknown>>).find(
+        (item) => item.key === "clientMinDesktopVersion"
+      )
+    ).toMatchObject({ storedValue: null, envVar: "CLIENT_MIN_DESKTOP_VERSION", kind: "version" });
+
+    const denied = await rpc(
+      "admin/settings/set",
+      { key: "enableGeneralUnblock", value: "false" },
+      adminCookie
+    );
+    expect(denied.body.code).toBe("CONFIG_ERROR");
+    expect(audit.entries).toEqual([]);
+  });
+
+  test("改一个旋钮：立刻生效、审计写在改动之前、返回里带昵称；非法取值两边都不写", async () => {
+    const repository = new MemoryAppSettingRepository();
+    const settings = new AppSettings({
+      repository,
+      defaults: { clientMinDesktopVersion: "0.1.1" },
+    });
+    const { rpc, adminCookie, adminId, audit } = await setup({ settings });
+
+    const saved = await rpc(
+      "admin/settings/set",
+      { key: "clientMinDesktopVersion", value: "0.9.0" },
+      adminCookie
+    );
+    expect(saved.status).toBe(200);
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.9.0");
+    expect(
+      (saved.body.items as Array<Record<string, unknown>>).find(
+        (item) => item.key === "clientMinDesktopVersion"
+      )
+    ).toMatchObject({ storedValue: "0.9.0", effectiveValue: "0.9.0", updatedBy: "管理员" });
+    expect(audit.entries.map((entry) => [entry.actorId, entry.action, entry.targetId])).toEqual([
+      [adminId, "runtimeSetting.update", "clientMinDesktopVersion"],
+    ]);
+
+    const rejected = await rpc(
+      "admin/settings/set",
+      { key: "clientMinDesktopVersion", value: "9" },
+      adminCookie
+    );
+    expect(rejected.body.code).toBe("VALIDATION_ERROR");
+    expect(rejected.body.message).toContain("版本要形如");
+    expect(settings.version("clientMinDesktopVersion")).toBe("0.9.0");
+    expect(audit.entries).toHaveLength(1);
   });
 });

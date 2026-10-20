@@ -7,6 +7,7 @@ import type {
   AdminAntiCheatReview,
   AdminOverview,
   AdminRoom,
+  AdminRuntimeSetting,
   AdminUser,
   QQLookupStatus,
 } from "@bakagame/shared";
@@ -29,6 +30,7 @@ const admin = vi.hoisted(() => ({
   games: { list: vi.fn(), get: vi.fn() },
   audit: { list: vi.fn() },
   qq: { status: vi.fn(), refreshNames: vi.fn() },
+  settings: { list: vi.fn(), set: vi.fn() },
 }));
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
@@ -142,6 +144,46 @@ const review: AdminAntiCheatReview = {
   createdAt: "2026-10-18T10:05:00.000Z",
 };
 
+/** 三个旋钮各给一种典型状态：跟随缺省、库内覆盖、布尔项。 */
+const runtimeSettings: AdminRuntimeSetting[] = [
+  {
+    key: "clientMinDesktopVersion",
+    title: "桌面壳最低准入版本",
+    note: "低于该版本的桌面壳不能进反作弊房。",
+    envVar: "CLIENT_MIN_DESKTOP_VERSION",
+    kind: "version",
+    defaultValue: "0.1.1",
+    storedValue: null,
+    effectiveValue: "0.1.1",
+    updatedAt: null,
+    updatedBy: null,
+  },
+  {
+    key: "clientMinMobileVersion",
+    title: "移动壳最低准入版本",
+    note: "同桌面项，作用于移动壳。",
+    envVar: "CLIENT_MIN_MOBILE_VERSION",
+    kind: "version",
+    defaultValue: "",
+    storedValue: "0.2.0",
+    effectiveValue: "0.2.0",
+    updatedAt: "2026-10-18T10:05:00.000Z",
+    updatedBy: "Alice",
+  },
+  {
+    key: "enableGeneralUnblock",
+    title: "网易云全局解灰",
+    note: "关闭后受限曲目不再换取完整音频。",
+    envVar: "ENABLE_GENERAL_UNBLOCK",
+    kind: "boolean",
+    defaultValue: "true",
+    storedValue: null,
+    effectiveValue: "true",
+    updatedAt: null,
+    updatedBy: null,
+  },
+];
+
 const renderAdmin = (path = "/admin") => {
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -168,6 +210,8 @@ beforeEach(() => {
   admin.users.list.mockResolvedValue({ items: [user], total: 1 });
   admin.users.get.mockResolvedValue({ ...user, recentGames: [], feedbackCount: 0 });
   admin.qq.status.mockResolvedValue(unavailable);
+  admin.settings.list.mockResolvedValue({ items: runtimeSettings });
+  admin.settings.set.mockResolvedValue({ items: runtimeSettings });
   // 概览会读一条待复核计数；默认给空队列，需要条数的用例各自覆盖。
   admin.antiCheat.list.mockResolvedValue({ items: [], total: 0 });
   // 详情弹窗读一次跨局均值；默认给「算不出 CV」，需要数字的用例各自覆盖。
@@ -317,6 +361,52 @@ describe("管理后台", () => {
     renderAdmin("/admin?tab=qq");
     expect(await screen.findByText("NapCat 当前没有登录任何 QQ 号")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新全部昵称" })).toBeDisabled();
+  });
+
+  it("运行期旋钮：三行给出生效值、取值来源与环境变量缺省", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    const rows = within(table).getAllByRole("row");
+    const [, desktop, mobile, unblock] = rows;
+    const cells = (row: HTMLElement) => within(row).getAllByRole("cell");
+    // 没有覆盖时，生效值就是环境变量缺省。
+    expect(cells(desktop)[1]).toHaveTextContent("0.1.1");
+    expect(cells(desktop)[2]).toHaveTextContent("环境变量缺省");
+    // 移动壳：库内 0.2.0 盖过「不设门槛」的环境变量缺省，并写明谁改的。
+    expect(cells(mobile)[1]).toHaveTextContent("0.2.0");
+    expect(cells(mobile)[2]).toHaveTextContent("库内覆盖");
+    expect(cells(mobile)[3]).toHaveTextContent("不设门槛");
+    expect(cells(mobile)[4]).toHaveTextContent("Alice");
+    // 布尔项只显示开/关，true 与 false 不露给管理员。
+    expect(cells(unblock)[1]).toHaveTextContent("开");
+    expect(unblock).not.toHaveTextContent("true");
+  });
+
+  it("运行期旋钮：改版本门槛写回服务端并重新拉取，失败留在弹窗内", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.settings.set.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      items: runtimeSettings,
+    });
+    const events = renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    await events.click(within(table).getAllByRole("button", { name: "修改" })[0]);
+
+    const dialog = await screen.findByRole("dialog");
+    const input = within(dialog).getByLabelText("桌面壳最低准入版本");
+    expect(input).toHaveValue("0.1.1");
+    await events.clear(input);
+    await events.type(input, "0.3.0");
+    await events.click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(await within(dialog).findByText("保存失败，请稍后重试")).toBeInTheDocument();
+    expect(admin.settings.list).toHaveBeenCalledTimes(1);
+
+    await events.click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(admin.settings.set).toHaveBeenCalledWith({
+      key: "clientMinDesktopVersion",
+      value: "0.3.0",
+    });
+    expect(admin.settings.list).toHaveBeenCalledTimes(2);
   });
 
   it("复核队列按状态列出，处置失败留在弹窗内、成功后重新拉取", async () => {

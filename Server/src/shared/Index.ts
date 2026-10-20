@@ -4,6 +4,7 @@ export * from "./WhoIsFaker";
 export * from "./SonGuessr";
 export * from "./CEE";
 export * from "./Account";
+export type { AdminRuntimeSetting, RuntimeSettingKey } from "./RuntimeSettings";
 export type {
   ApiContract,
   AccountProfile,

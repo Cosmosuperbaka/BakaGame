@@ -13,6 +13,7 @@ import { GamesPanel } from "@/components/admin/GamesPanel";
 import { OverviewPanel } from "@/components/admin/OverviewPanel";
 import { QQLookupPanel } from "@/components/admin/QQLookupPanel";
 import { RoomsPanel } from "@/components/admin/RoomsPanel";
+import { RuntimeSettingsPanel } from "@/components/admin/RuntimeSettingsPanel";
 import { UsersPanel } from "@/components/admin/UsersPanel";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useAccountStore } from "@/stores/UseAccountStore";
@@ -26,6 +27,7 @@ const TABS = [
   { value: "games", label: "对局", panel: GamesPanel },
   { value: "audit", label: "审计", panel: AuditPanel },
   { value: "qq", label: "QQ 查询号", panel: QQLookupPanel },
+  { value: "runtime", label: "运行期旋钮", panel: RuntimeSettingsPanel },
 ] as const;
 type TabValue = (typeof TABS)[number]["value"];
 const isTab = (value: string | null): value is TabValue => TABS.some((tab) => tab.value === value);
@@ -52,7 +54,7 @@ function AdminTabs() {
         setParams(next === "overview" ? {} : { tab: next }, { replace: true })
       }
     >
-      {/* 窄屏八个标签放不下时横向滚动，不折行。 */}
+      {/* 窄屏九个标签放不下时横向滚动，不折行。 */}
       <div className="scrollbar-hidden mb-6 overflow-x-auto">
         <TabsList className="min-w-full">
           {TABS.map((item) => (

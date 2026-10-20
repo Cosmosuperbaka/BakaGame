@@ -157,6 +157,14 @@ const createRpcRouter = (
           admin.revokeSessions(context.userId, input.userId)
         ),
       },
+      settings: {
+        list: adminOnly.admin.settings.list.handler(async () => ({
+          items: await admin.listRuntimeSettings(),
+        })),
+        set: adminOnly.admin.settings.set.handler(async ({ context, input }) => ({
+          items: await admin.updateRuntimeSetting(context.userId, input),
+        })),
+      },
       rooms: {
         list: adminOnly.admin.rooms.list.handler(({ input }) => admin.listRooms(input.game)),
         close: adminOnly.admin.rooms.close.handler(({ context, input }) =>
