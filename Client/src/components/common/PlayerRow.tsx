@@ -218,7 +218,7 @@ function PlayerRowInfo({
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         {/* 首行只放名字、房主与分数：三者是扫描玩家时最需要固定对齐的信息。 */}
         <span className="flex min-w-0 items-center gap-1">
           <Hint label={name}>
@@ -248,7 +248,7 @@ function PlayerRowInfo({
           </span>
         </span>
         {hasSecondary ? (
-          <span className="flex min-h-4 min-w-0 items-center gap-1">
+          <span className="flex min-h-3.5 min-w-0 items-center gap-1">
             {badges}
             {meta}
             {eliminated ? (

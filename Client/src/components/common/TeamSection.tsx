@@ -35,14 +35,14 @@ export function TeamSection({
       layout="position"
       transition={playerRelayout}
       aria-label={team === null ? "个人游玩" : `${team} 队`}
-      className={cn("min-w-0", team !== null && "rounded-md bg-muted/40 p-0.5")}
+      className={cn("min-w-0", team !== null && "rounded-md bg-muted/40 px-0.5 pb-0.5")}
     >
       {team === null ? (
-        <p className="px-2 pt-1 pb-0.5 font-sans text-2xs text-muted-foreground">个人</p>
+        <p className="px-2 pt-0.5 pb-0 font-sans text-2xs text-muted-foreground">个人</p>
       ) : (
-        <div className="space-y-0.5 px-2 pt-1 pb-0.5">
+        <div className="space-y-0.5 px-2 pt-0.5 pb-0 leading-none">
           <div className="flex min-w-0 items-baseline gap-1.5">
-            <span className="text-xs font-medium">{team} 队</span>
+            <span className="text-xs font-medium leading-none">{team} 队</span>
             <span className="min-w-0 flex-1 truncate font-sans text-2xs text-muted-foreground">
               {detail}
             </span>
@@ -51,7 +51,7 @@ export function TeamSection({
               className="flex shrink-0 items-baseline gap-0.5 font-sans text-2xs text-muted-foreground tabular-nums"
             >
               合计
-              <AnimatedNumber value={total} className="text-xs text-foreground" />分
+              <AnimatedNumber value={total} className="text-xs text-foreground leading-none" />分
             </span>
           </div>
           {extra}

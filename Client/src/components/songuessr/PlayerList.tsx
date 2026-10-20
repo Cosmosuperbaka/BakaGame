@@ -124,11 +124,11 @@ export function PlayerList({
     <ScrollArea className="h-full">
       <PlayerListLayout>
         <div className="min-w-0 px-2">
-          <div className="relative flex min-w-0 w-full flex-col py-3">
+          <div className="relative flex min-w-0 w-full flex-col py-1.5">
             <PlayerGroupTitle label="玩家" count={activePlayers.length} />
             {teamed ? (
               // 有人组队时按队伍分块：队伍一块带标题与共享次数，个人游玩的人接在最后、不加底。
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1">
                 <AnimatePresence initial={false}>
                   {groups.map(({ team, members }) => (
                     <SongTeamSection

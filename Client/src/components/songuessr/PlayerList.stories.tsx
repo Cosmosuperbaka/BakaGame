@@ -17,8 +17,7 @@ import {
 import type { SonGuessrPhase, SonGuessrPlayerView } from "@bakagame/shared";
 import { PlayerList } from "./PlayerList";
 
-const { host, me, peach, spectator } = SONG_PEOPLE;
-
+const { host, me, peach, kanade, spectator } = SONG_PEOPLE;
 const meta = {
   title: "猜歌/PlayerList",
   component: PlayerList,
@@ -73,6 +72,21 @@ export const TeamWaiting: Story = {
 export const TeamPlaying: Story = {
   name: "组队 · 共享次数 / 观战 / 队伍猜中",
   args: { players: withHost(teamPlayingPlayers()), phase: "playing", maxGuesses: 3 },
+};
+
+export const TeamEightPlus: Story = {
+  name: "组队 · 八人一屏",
+  args: {
+    players: withHost([
+      ...teamPlayingPlayers().map((player) =>
+        player.id === kanade.id ? { ...player, team: 4 } : player
+      ),
+      songBot("C", { team: 2, isReady: true }),
+      songBot("D", { team: 4, isReady: true }),
+    ]),
+    phase: "playing",
+    maxGuesses: 3,
+  },
 };
 
 export const HostManage: Story = {

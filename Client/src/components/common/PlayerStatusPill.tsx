@@ -5,8 +5,8 @@ import { cn } from "@/lib/Utils";
 
 export type PlayerStatusTone = "default" | "success" | "questioner" | "warning" | "danger";
 
-/** 玩家行统一行高，保证各面板对齐 */
-export const PLAYER_ROW_HEIGHT = "min-h-14";
+/** 玩家行统一行高：头像加首行名字与次行状态刚好，八人以上的房间也能一屏放下 */
+export const PLAYER_ROW_HEIGHT = "min-h-11";
 
 /**
  * 玩家列宽度（16rem）。同时用于面板、网格首列与分界线定位。
@@ -15,7 +15,7 @@ export const PLAYER_ROW_HEIGHT = "min-h-14";
 export const PLAYER_COLUMN_WIDTH = "16rem";
 
 /** 分组标题行高，展开历史时列标题沿用同一高度 */
-export const PLAYER_GROUP_TITLE_HEIGHT = "1.5rem";
+export const PLAYER_GROUP_TITLE_HEIGHT = "1.25rem";
 
 /** 徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用，底色由各自色调给 */
 export const PLAYER_BADGE_BASE =
@@ -23,7 +23,7 @@ export const PLAYER_BADGE_BASE =
 
 /** 玩家栏共用的行布局基底；游戏房间在此基础上追加自身状态 */
 export const PLAYER_ROW_BASE =
-  "relative flex w-full min-w-0 items-center gap-2 rounded-md py-1.5 pl-2.5 pr-2 text-left text-sm";
+  "relative flex w-full min-w-0 items-center gap-2 rounded-md py-1 pl-2.5 pr-2 text-left text-sm";
 
 /** 本人标识指示条 */
 export const PLAYER_ME_MARK =
@@ -75,7 +75,7 @@ export function PlayerGroupTitle({
     <motion.div
       layout="position"
       transition={playerRelayout}
-      className={cn("flex items-center gap-2 px-2", withRule && "mt-3")}
+      className={cn("flex items-center gap-2 px-2", withRule && "mt-1.5")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
       <h3 className="font-sans text-2xs font-normal text-muted-foreground">{label}</h3>
