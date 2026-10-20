@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gate]
     # 生产部署硬超时：与远端脚本「时间预算」块（script 内 BUDGET_* 常量）自洽。
-    # 远端最坏路径求和 = 同步 25 + 下载 115 + 落盘校验 20 + release 3 + 两片 43×2 + 收尾 10 = 256s，
+    # 远端最坏路径求和 = 同步 25 + 下载 115 + 落盘校验 20 + release 3 + 两片 53×2 + 收尾 10 = 279s，
     # 远端自限到 BUDGET_JOB_S=285s；外层 6 分钟 = 285s 远端 + ≈45s runner 侧（检出、取制品、
     # 暂存、SSH 建连与退出回传）+ ≈30s 余量。改预算任一项都要回来核对这里与 command_timeout。
     timeout-minutes: 6
@@ -230,10 +230,19 @@ jobs:
             BUDGET_RELEASE_S=3         # release 元数据：下方 `timeout 3s` 就是它
             BUDGET_NOTIFY_S=2          # 每片：维护预通知
             BUDGET_DRAIN_S=3           # 每片：下方 sleep 3（客户端排空）
-            BUDGET_RESTART_S=8         # 每片：docker restart 返回（估算）
+            # 每片：`docker restart` 返回 = 进程自行退出（早于宽限）或宽限到点强杀，再加容器启动回显。
+            # 上限由 SHUTDOWN_STOP_GRACE_S 决定，不再是被默认 10s 宽限截断的估算值。
+            BUDGET_RESTART_S=18
             BUDGET_PROBE_MAX_MS=30000  # 每片：探针预算上限，实际值经 -e DEPLOY_PROBE_BUDGET_MS 注入
             BUDGET_PROBE_MIN_MS=5000   # 每片：剩余预算低于此值就不再等，早失败好于被取消
             BUDGET_DL_MAX_S=115        # 数据下载预算上限（观察值：SPLIT 路并行分片在此之内可完成）
+            # ---------- 停机宽限（容器侧）----------
+            # 进程自己的停机总预算在 `Server/src/Index.ts`（SHUTDOWN_BUDGET_MS，当前 12s）：
+            # 到点会打一条「优雅停机超时」并以非 0 退出。停止宽限必须**严格大于**那个预算，
+            # 否则容器先 SIGKILL，日志里只剩一个没有原因的 137，运维看不到是哪一步挂住。
+            # 默认宽限（10s）小于预算，所以重启必须显式带 -t；改进程预算时同步改这里，
+            # IndexShutdown.test.ts 会对「预算 < 宽限」与下面的 -t 用法做断言。
+            SHUTDOWN_STOP_GRACE_S=15
             SHARD_S=$(( BUDGET_NOTIFY_S + BUDGET_DRAIN_S + BUDGET_RESTART_S + BUDGET_PROBE_MAX_MS / 1000 ))
             # 数据分发源（可选）：公开分发地址，现在只承担「基线补发」——服务器上没有
             # 可用数据库（首启/灾备）时按清单下载一份；已有的库由后端自行更新，
@@ -626,7 +635,9 @@ jobs:
 
               say "[$SHARD] 重启容器（入口自带依赖同步与环境初始化）"
               RESTART_STARTED=true
-              sudo docker restart "$SHARD"
+              # 必须显式带 -t：默认宽限（10s）小于进程停机预算，容器会在「优雅停机超时」日志写出之前
+              # 被 SIGKILL，退出原因彻底消失。宽限取自预算块，与 Index.ts 的常量保持严格大于关系。
+              sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"
 
               say "[$SHARD] 验证存储就绪及三个协议订阅 ACK（探针预算 ${PROBE_MS}ms）"
               # stdin 传入此 SHA 的纯探针，避免猜测容器挂载路径；不加载应用或 .env。

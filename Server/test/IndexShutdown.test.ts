@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { resolve } from "node:path";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "../src/config/Constants";
 import {
   createIndexShutdownHarness,
@@ -12,8 +13,33 @@ const assertTimers = (harness: Awaited<ReturnType<typeof createIndexShutdownHarn
   expect(harness.intervals).toHaveLength(3);
   expect(harness.intervals.map((timer) => timer.cleared)).toEqual([1, 1, 1]);
   expect(harness.timeouts).toHaveLength(1);
-  expect(harness.timeouts[0]).toMatchObject({ ms: 15_000, unrefed: true, cleared: 1 });
+  // 看门狗必须与预算常量同源，且不得 unref（unref 后事件循环转空时它不会触发 → 假成功）。
+  expect(harness.timeouts[0]).toMatchObject({
+    ms: harness.budgetMs,
+    unrefed: false,
+    cleared: 1,
+  });
 };
+
+/** 编排侧的停止宽限：从部署工作流的内嵌脚本里读，避免进程预算与容器宽限各写一处数字。 */
+const deploymentStopGraceSeconds = async (): Promise<number> => {
+  const workflow = await Bun.file(
+    resolve(import.meta.dir, "../../.github/workflows/deploy.yml")
+  ).text();
+  const raw = /^\s*SHUTDOWN_STOP_GRACE_S=(\d+)(?:\s|$)/m.exec(workflow)?.[1];
+  if (raw === undefined) throw new Error("部署脚本缺少 SHUTDOWN_STOP_GRACE_S");
+  return Number(raw);
+};
+
+test("真实 Index：停机总预算严格小于容器停止宽限，重启显式带上该宽限", async () => {
+  const harness = await createIndexShutdownHarness();
+  const graceSeconds = await deploymentStopGraceSeconds();
+  expect(harness.budgetMs).toBeLessThan(graceSeconds * 1000);
+  const workflow = await Bun.file(
+    resolve(import.meta.dir, "../../.github/workflows/deploy.yml")
+  ).text();
+  expect(workflow).toContain('sudo docker restart -t "$SHUTDOWN_STOP_GRACE_S" "$SHARD"');
+});
 
 test("真实 Index：启动监听带上请求体上限", async () => {
   const harness = await createIndexShutdownHarness();
@@ -24,7 +50,16 @@ test("真实 Index：启动监听带上请求体上限", async () => {
 
 test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且等待所有资源", async () => {
   const harness = await createIndexShutdownHarness({
-    hold: ["buffer", "drain", "stop", "dispose", "otlp", "sentry.flush", "sentry.close"],
+    hold: [
+      "buffer",
+      "drain.faker",
+      "drain.records",
+      "stop",
+      "dispose",
+      "otlp",
+      "sentry.flush",
+      "sentry.close",
+    ],
   });
   expect(harness.isShuttingDown()).toBe(false);
   await harness.preNotify();
@@ -44,7 +79,8 @@ test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且�
 
   const awaitedStages: Stage[] = [
     "buffer",
-    "drain",
+    "drain.faker",
+    "drain.records",
     "stop",
     "dispose",
     "otlp",
@@ -56,7 +92,7 @@ test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且�
     const position = finalStages.indexOf(stage);
     expect(completed(harness.calls)).toEqual(finalStages.slice(0, position));
     expect(harness.exits).toEqual([]);
-    expect(harness.timeouts[0]).toMatchObject({ ms: 15_000, unrefed: true, cleared: 0 });
+    expect(harness.timeouts[0]).toMatchObject({ ms: harness.budgetMs, unrefed: false, cleared: 0 });
     harness.signal("SIGTERM");
     expect(harness.task).toBe(task);
     harness.release(stage);
@@ -64,6 +100,11 @@ test("真实 Index：预通知只摘流，之后 SIGTERM 完整停机一次且�
   await task;
   expect(completed(harness.calls)).toEqual([...finalStages]);
   expect(harness.calls).toContain("buffer:start:3000");
+  // 排空集合覆盖到每一步：词对队列与共享的对局记录队列都被等到清零，不是只排一款游戏。
+  expect(harness.calls).toContain("drain.faker:start");
+  expect(harness.calls).toContain("drain.faker:end");
+  expect(harness.calls).toContain("drain.records:start");
+  expect(harness.calls).toContain("drain.records:end");
   expect(harness.calls).toContain("stop:start:true");
   expect(harness.calls).toContain("sentry.flush:start:2000");
   expect(harness.calls).toContain("sentry.close:start:2000");
@@ -131,7 +172,8 @@ for (const stage of ["sentry.flush", "sentry.close"] as const) {
 test("真实 Index：多个资源同时失败，仍 await Sentry close 且只退出一次", async () => {
   const harness = await createIndexShutdownHarness({
     failures: {
-      drain: "throw",
+      "drain.faker": "throw",
+      "drain.records": "throw",
       stop: "throw",
       dispose: "throw",
       otlp: "throw",
@@ -149,36 +191,54 @@ test("真实 Index：多个资源同时失败，仍 await Sentry close 且只退
   expect(harness.logs).toContainEqual(
     expect.objectContaining({
       message: "优雅停机清理完成但存在失败",
-      details: { failedStages: ["drain", "stop", "dispose", "otlp", "sentry.flush"] },
+      details: {
+        failedStages: ["drain.faker", "drain.records", "stop", "dispose", "otlp", "sentry.flush"],
+      },
     })
   );
   assertTimers(harness);
 });
 
-test("真实 Index：挂起 I/O 保留唯一 15s unref 总看门狗，不谎称完成", async () => {
-  const harness = await createIndexShutdownHarness({ hold: ["drain"] });
+test("真实 Index：挂起 I/O 由唯一且不 unref 的总预算看门狗兜底，到点强制终止并非零退出", async () => {
+  const harness = await createIndexShutdownHarness({ hold: ["drain.faker"] });
   harness.signal();
-  await harness.started("drain");
+  await harness.started("drain.faker");
   harness.signal("SIGINT");
   expect(harness.timeouts).toHaveLength(1);
-  expect(harness.timeouts[0]).toMatchObject({ ms: 15_000, unrefed: true, cleared: 0 });
+  expect(harness.timeouts[0]).toMatchObject({
+    ms: harness.budgetMs,
+    unrefed: false,
+    cleared: 0,
+  });
   expect(harness.exits).toEqual([]);
   harness.timeouts[0].fire();
   expect(harness.exits).toEqual([1]);
+  // 强制终止必须留下可读证据：预算数字与已完成/未完成阶段都进同一条日志。
+  expect(harness.logs).toContainEqual(
+    expect.objectContaining({
+      level: "error",
+      message: `优雅停机超时 (${harness.budgetMs / 1000}s)，强制终止进程`,
+      details: expect.objectContaining({
+        budgetMs: harness.budgetMs,
+        completedStages: ["notify.faker", "notify.song", "notify.cee", "buffer"],
+        failedStages: [],
+      }),
+    })
+  );
   expect(completed(harness.calls)).toEqual(finalStages.slice(0, 4));
   // VM exit 仅记录不会终止测试进程；释放夹具，不把后续模拟完成冒充真实看门狗后的执行。
-  harness.release("drain");
+  harness.release("drain.faker");
   await harness.task;
 });
 
 test("真实 Index：未捕获异常与 signal 共享任务和清理，不产生重复退出", async () => {
-  const harness = await createIndexShutdownHarness({ hold: ["drain"] });
+  const harness = await createIndexShutdownHarness({ hold: ["drain.faker"] });
   harness.fatal(new Error("fixture fatal"));
   const task = harness.task!;
-  await harness.started("drain");
+  await harness.started("drain.faker");
   harness.signal();
   expect(harness.task).toBe(task);
-  harness.release("drain");
+  harness.release("drain.faker");
   await task;
   expect(completed(harness.calls)).toEqual([...finalStages]);
   expect(harness.exits).toHaveLength(1);

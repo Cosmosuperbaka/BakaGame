@@ -789,6 +789,30 @@ test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）
   }
 });
 
+/**
+ * 停机窗口内的新握手必须被直接拒绝。
+ *
+ * `/readyz` 回 503 只让边缘停止分配新流量，进程内的升级照样会完成 101：排空窗口因此永远
+ * 等不到「没有新连接」的那一刻，刚进来的玩家会被 `app.stop(true)` 硬切断。
+ * 闸门判在 Origin 白名单与握手配额之前，所以拒绝既不占配额桶，也不给来源探测留可分辨的差异。
+ */
+test("停机中拒绝新的 WebSocket 升级，未停机时同一入口照常放行", async () => {
+  const closing = startTestServer({ isShuttingDown: () => true });
+  const normal = startTestServer();
+
+  try {
+    const rejected = await upgradeStatusLine(closing.port, "http://localhost:5173");
+    expect(rejected).toContain("503");
+
+    // 闸门只认停机标志：白名单内的来源在正常态必须仍然拿到 101，否则就是把正常流量锁死了
+    const allowed = await upgradeStatusLine(normal.port, "http://localhost:5173");
+    expect(allowed).toContain("101");
+  } finally {
+    await closing.stop();
+    await normal.stop();
+  }
+});
+
 for (const [game, command] of [
   ["whoisfaker", "lobby.subscribeRooms"],
   ["songuessr", "song.lobby.subscribeRooms"],

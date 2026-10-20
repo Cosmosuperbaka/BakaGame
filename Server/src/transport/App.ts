@@ -21,6 +21,7 @@ import {
   WS_HANDSHAKE_WINDOW_MS,
 } from "../config/Constants";
 import { createAck, createErrorPacket } from "./Packets";
+import { traceIdOf } from "./HttpErrorEnvelope";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
 import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
@@ -28,7 +29,7 @@ import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
-import { isPrivateLanHost, systemRoutes } from "./routes/System";
+import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
@@ -715,10 +716,14 @@ export const createApp = ({
     // （1.4.29 / 1.4.30 实测：返回 `{ status: 403 }` 或 `new Response(403)` 都拦不住，
     // 任意 Origin 照样 101 完成握手）。WebSocket 不受浏览器同源策略约束，
     // 这道闸门是唯一防线 —— 改动前请跑 App.test.ts 里「按 Origin 白名单拦截」那条用例。
-    .onRequest(({ request }) => {
+    .onRequest(({ request, set }) => {
       if (request.headers.get("upgrade") !== "websocket") return;
       const { pathname } = new URL(request.url);
       if (!pathname.endsWith("/ws")) return;
+      // 停机中直接拒新握手：摘流只挡住「新流量分配」，进程内照样会 101，排空窗口等不到「没有新连接」。
+      // 判在 Origin 与握手配额之前：拒绝不消耗配额桶，也不给来源探测留可分辨的差异。
+      const rejection = shutdownRejection(isShuttingDown, traceIdOf(set.headers));
+      if (rejection) return rejection;
       if (isAllowedOrigin(request.headers.get("origin"), env.clientUrl)) return;
       throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
     })

@@ -133,6 +133,31 @@ const server = app.listen({
 
 // ==================== 优雅停机 ====================
 
+/** 摘流缓冲：留出玩家收到停机广播后平滑退回大厅的网络往返时间。 */
+const SHUTDOWN_BUFFER_MS = 3_000;
+/** 遥测出口预算：flush 与 close 各自的上限，两步串联，合计占 4s。 */
+const SENTRY_EXIT_BUDGET_MS = 2_000;
+/** 排空、关监听、释放资源三段没有自带超时，只能靠总预算兜底，这里给它们 5s。 */
+const SHUTDOWN_CLEANUP_HEADROOM_MS = 5_000;
+/**
+ * 停机总预算（唯一真相源）：到点打一条「强制终止」日志再以非 0 退出。
+ * 编排侧的停止宽限必须严格大于它（见 `.github/workflows/deploy.yml` 的重启步骤），
+ * 否则进程先被 SIGKILL，日志里只剩一个没有原因的 137。
+ * 数值 = 缓冲 + Sentry 出口×2 + 无超时清理段余量。
+ */
+export const SHUTDOWN_BUDGET_MS =
+  SHUTDOWN_BUFFER_MS + SENTRY_EXIT_BUDGET_MS * 2 + SHUTDOWN_CLEANUP_HEADROOM_MS;
+/**
+ * 停机排空集合：每项一个阶段名，逐项单独执行（阶段名进日志与失败名单），一项失败不跳过其余。
+ * `drain.faker` 是谁是卧底自己的词对落库队列；`drain.records` 是三款游戏共用的对局记录队列 ——
+ * 猜歌与 CEE 没有服务内写队列，落库都汇进这一条，所以不再按款重复等待。
+ * 新增可排队写入的服务时往这张表里加，不在编排里散写。
+ */
+const drainTargets: ReadonlyArray<readonly [stage: string, drain: () => unknown]> = [
+  ["drain.faker", () => whoIsFakerService.drainPendingWrites()],
+  ["drain.records", () => gameRecords?.close()],
+];
+
 let shutdownTask: Promise<void> | undefined;
 const shutdown = (signal?: string): Promise<void> => {
   if (shutdownTask) return shutdownTask;
@@ -141,17 +166,23 @@ const shutdown = (signal?: string): Promise<void> => {
   shutdownTask = Promise.resolve().then(async () => {
     logger.warn("收到停机信号，开始优雅停机", { signal });
 
-    // 总预算仍为 15 秒；挂起 I/O 由看门狗兜底，不按资源重新计时。
-    const watchdog = setTimeout(() => {
-      logger.error("优雅停机超时 (15s)，强制终止进程");
-      process.exit(1);
-    }, 15_000);
-    watchdog.unref();
-
+    const completedStages: string[] = [];
     const failedStages: string[] = [];
+    // 看门狗不得 unref：unref 的定时器在事件循环转空时不会触发，挂起的停机会以退出码 0 收场（假成功）。
+    // 正常路径已 clearTimeout，持有它不会拖慢退出。
+    const watchdog = setTimeout(() => {
+      logger.error(`优雅停机超时 (${SHUTDOWN_BUDGET_MS / 1000}s)，强制终止进程`, {
+        budgetMs: SHUTDOWN_BUDGET_MS,
+        completedStages,
+        failedStages,
+      });
+      process.exit(1);
+    }, SHUTDOWN_BUDGET_MS);
+
     const attempt = async (stage: string, cleanup: () => unknown): Promise<void> => {
       try {
         await cleanup();
+        completedStages.push(stage);
       } catch (error) {
         failedStages.push(stage);
         logger.error("优雅停机步骤失败", { stage, ...describeError(error) });
@@ -166,18 +197,20 @@ const shutdown = (signal?: string): Promise<void> => {
     await attempt("notify.faker", () => whoIsFakerService.notifyShutdown());
     await attempt("notify.song", () => sonGuessrService.notifyShutdown());
     await attempt("notify.cee", () => ceeService.notifyShutdown());
-    await attempt("buffer", () => Bun.sleep(3000));
-    await attempt("drain", () => whoIsFakerService.drainPendingWrites());
+    await attempt("buffer", () => Bun.sleep(SHUTDOWN_BUFFER_MS));
+    for (const [stage, drain] of drainTargets) await attempt(stage, drain);
     await attempt("stop", () => app.stop(true));
     await attempt("dispose", () => dispose());
     if (otlpExporter) {
       await attempt("otlp", () => otlpExporter.shutdown());
     }
     await attempt("sentry.flush", async () => {
-      if (!(await flushServerSentry(2000))) throw new Error("Sentry flush 未在预算内完成");
+      if (!(await flushServerSentry(SENTRY_EXIT_BUDGET_MS)))
+        throw new Error("Sentry flush 未在预算内完成");
     });
     await attempt("sentry.close", async () => {
-      if (!(await closeServerSentry(2000))) throw new Error("Sentry close 未在预算内完成");
+      if (!(await closeServerSentry(SENTRY_EXIT_BUDGET_MS)))
+        throw new Error("Sentry close 未在预算内完成");
     });
 
     clearTimeout(watchdog);

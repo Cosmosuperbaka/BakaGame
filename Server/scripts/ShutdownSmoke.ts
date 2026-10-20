@@ -44,10 +44,16 @@ const stdout = tail(child.stdout);
 const stderr = tail(child.stderr);
 const sockets: WebSocket[] = [];
 let timedOut = false;
+/**
+ * 进程停机总预算（`src/Index.ts` 的 `SHUTDOWN_BUDGET_MS`）：本脚本按它判定「看门狗抢在
+ * 完整清理之前把进程干掉」这件事。冒烟脚本不能 import 入口（会真的起服务），所以这里是一份
+ * 手抄副本；调进程预算时同步改这一处，父进程再多给 13s 收尾余量。
+ */
+const shutdownBudgetMs = 12_000;
 const deadline = setTimeout(() => {
   timedOut = true;
   if (child.exitCode === null) child.kill("SIGKILL");
-}, 25_000);
+}, shutdownBudgetMs + 13_000);
 
 async function request(endpoint: string, options?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${endpoint}`, { ...options, signal: AbortSignal.timeout(2_000) });
@@ -189,7 +195,7 @@ try {
   assert.equal(timedOut, false, "父进程不应强杀 smoke");
   assert.equal(exitCode, 0, output);
   assert.ok(elapsedMs >= 2_900, `必须执行真实 3 秒缓冲：${elapsedMs}ms`);
-  assert.ok(elapsedMs < 15_000, `必须在总看门狗之前退出：${elapsedMs}ms`);
+  assert.ok(elapsedMs < shutdownBudgetMs, `必须在进程总看门狗之前退出：${elapsedMs}ms`);
   assert.deepEqual(
     subscriptions.map((subscription) => subscription.notifications),
     [2, 2, 2],

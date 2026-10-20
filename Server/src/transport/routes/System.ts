@@ -107,6 +107,33 @@ const writeClientTelemetryLog = (input: {
 const sanitizeTelemetryMessage = (message?: string): string =>
   sanitizeLogText(message || "前端上报遥测事件", 500);
 
+/**
+ * 停机中新连接的拒绝码与文案：与 `/readyz` 的 503 同一语义，握手闸门与任何「新会话」入口共用，
+ * 不在各处各写一份字符串。走 `throw AppError` 的调用方需要在 `statusOfAppError` 里把这个码映射成 503。
+ */
+export const SHUTDOWN_REJECT_CODE = "SERVICE_UNAVAILABLE";
+export const SHUTDOWN_REJECT_MESSAGE = "服务正在停机，暂不接受新连接";
+
+/**
+ * 停机闸门：`/readyz` 回 503 只让上游停止分配新流量，进程内的新握手照样会完成升级，
+ * 排空窗口因此永远等不到「没有新连接」的那一刻。
+ * 这里把同一份停机状态转成可直接返回的响应：命中给 503 + 统一错误信封，未命中给 `undefined`
+ * （正常运行与没有注入停机状态的独立挂载都必须放行，否则会把正常流量锁死）。
+ */
+export const shutdownRejection = (
+  isShuttingDown?: () => boolean,
+  traceId?: string
+): Response | undefined => {
+  if (!isShuttingDown?.()) return undefined;
+  return new Response(
+    JSON.stringify(httpError(SHUTDOWN_REJECT_CODE, SHUTDOWN_REJECT_MESSAGE, traceId)),
+    {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    }
+  );
+};
+
 export interface SystemRoutesDependencies {
   whoIsFakerService?: WhoIsFakerService;
   sonGuessrService?: SonGuessrService;
@@ -269,7 +296,7 @@ export const systemRoutes = ({
           tags: ["System"],
           summary: "K8s / 反代就绪探针 (Readiness)",
           description:
-            "检测进程停机标志，停机中返回 503 触发摘流。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。",
+            "检测进程停机标志，停机中返回 503 触发摘流；新 WebSocket 握手由同一份停机状态直接拒绝（shutdownRejection）。数据库只承载账号与后台数据，不参与就绪判定：游客游玩不依赖它。",
         },
         response: {
           200: t.Object({ status: t.Literal("ok"), ready: t.Literal(true) }),

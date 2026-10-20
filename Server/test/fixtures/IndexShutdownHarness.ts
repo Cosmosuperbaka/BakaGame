@@ -12,7 +12,8 @@ export const finalStages = [
   "notify.song",
   "notify.cee",
   "buffer",
-  "drain",
+  "drain.faker",
+  "drain.records",
   "stop",
   "dispose",
   "otlp",
@@ -70,7 +71,9 @@ export async function createIndexShutdownHarness(
   const service = (game: "faker" | "song" | "cee") => ({
     notifyShutdown: () => execute(`notify.${game}`),
     getHealthSnapshot: snapshot,
-    drainPendingWrites: () => execute("drain"),
+    // 只有谁是卧底自带可排队写入队列；猜歌与 CEE 的落库都汇进共享的对局记录队列，
+    // 因此它们没有 drainPendingWrites —— 出现即为凭空造 API。
+    ...(game === "faker" ? { drainPendingWrites: () => execute("drain.faker") } : {}),
   });
   class Logger {
     warn(message: string, details?: unknown) {
@@ -89,6 +92,8 @@ export async function createIndexShutdownHarness(
         otelEndpoint: options.otlpEnabled === false ? undefined : "fixture://no-network",
         serverPort: 1,
         serverListenHost: "127.0.0.1",
+        // 带上数据库地址：Index 才会构造对局记录服务，`drain.records` 这一步才有东西可排。
+        databaseUrl: "mysql://fixture.invalid/database",
       }),
     },
     // 常量模块是叶子（无副作用、不读环境），登记它才能守住「Index 不长出新依赖」这条断言。
@@ -102,12 +107,21 @@ export async function createIndexShutdownHarness(
     },
     "./infrastructure/WordBankRepository": { DatabaseWordBankRepository: class {} },
     "./infrastructure/db/Database": {
-      createDatabase: () => {
-        throw new Error("夹具未配置数据库");
-      },
+      createDatabase: () => ({
+        ready: Promise.resolve(),
+        db: {},
+        close: () => Promise.resolve(),
+      }),
     },
     "./infrastructure/db/GameRecordRepository": { DatabaseGameRecordRepository: class {} },
-    "./application/GameRecordService": { GameRecordService: class {} },
+    "./application/GameRecordService": {
+      // 三款游戏共用的对局记录队列：停机的 `drain.records` 排空的就是它（等价于 close 的等待语义）。
+      GameRecordService: class {
+        constructor() {
+          return { close: () => execute("drain.records") };
+        }
+      },
+    },
     "./infrastructure/EventLogger": {
       EventLogger: Logger,
       describeError: (error: Error) => ({
@@ -207,6 +221,8 @@ export async function createIndexShutdownHarness(
     intervals,
     timeouts,
     listenOptions,
+    /** 真实 Index 的停机总预算常量：断言看门狗与它同源，而不是各自抄一个数字。 */
+    budgetMs: runInContext("exports.SHUTDOWN_BUDGET_MS", context) as number,
     isShuttingDown: () => configuration.isShuttingDown(),
     preNotify: () => configuration.onTriggerShutdown(),
     signal: (signal = "SIGTERM") => signals.emit(signal),
