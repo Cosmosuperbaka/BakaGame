@@ -192,3 +192,33 @@ test("出站积压越过水位时只丢状态帧，回落后以全量恢复", ()
     payload: { mode: "full", revision: 1, state: { value: 3 } },
   });
 });
+
+test("积压时大厅列表帧与状态帧各走一条闸门：丢列表不把快照差量链打回全量", () => {
+  let backlog = 0;
+  const sent: unknown[] = [];
+  const sender = createStateSyncSender(
+    (payload) => sent.push(payload),
+    () => backlog
+  );
+  const filler = "x".repeat(1_000);
+  const snapshot = (value: number) => createEvent("room.snapshot", { value, filler });
+
+  sender.send(snapshot(1));
+  sender.send(snapshot(2));
+  expect(sent.at(-1)).toMatchObject({ payload: { mode: "patch", revision: 2 } });
+
+  // 列表帧自带完整视图，越过水位时和状态帧一样先丢。
+  // 这里写线上名字而不是 shared 常量：常量被改动时本用例要响，因为客户端按这个名字订阅。
+  backlog = STATE_BACKLOG_SHED_BYTES + 1;
+  sender.send(createEvent("lobby.rooms", []));
+  sender.send(createEvent("song.lobby.rooms", []));
+  expect(sent).toHaveLength(2);
+
+  backlog = 0;
+  sender.send(createEvent("lobby.rooms", [{ roomId: "6150" }]));
+  expect(sent.at(-1)).toMatchObject({ event: "lobby.rooms" });
+
+  // 断的是列表不是快照：恢复后的第一份仍是补丁，不必重发整张房间视图。
+  sender.send(snapshot(3));
+  expect(sent.at(-1)).toMatchObject({ payload: { mode: "patch", revision: 3 } });
+});

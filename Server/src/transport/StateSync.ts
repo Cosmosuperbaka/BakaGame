@@ -1,6 +1,8 @@
 import { compare } from "fast-json-patch";
 import { CEE_STATE_EVENTS } from "../shared/CEE";
 import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shared/Index";
+import { SONGUESSR_LOBBY_ROOMS_EVENT } from "../shared/SonGuessr";
+import { WHOISFAKER_LOBBY_ROOMS_EVENT } from "../shared/WhoIsFaker";
 
 export const STATE_FULL_SYNC_INTERVAL_MS = 60_000;
 export const STATE_MAX_PATCHES_BEFORE_FULL = 1_024;
@@ -17,6 +19,20 @@ const STATE_EVENTS = new Set([
   "song.game.privateState",
   ...CEE_STATE_EVENTS,
 ]);
+
+/**
+ * 全量刷新帧：每一帧都自带完整视图，丢一帧由下一帧补回，因此和状态帧共用同一条积压水位。
+ * 大厅列表是这一类里最贵的一条（一次房间变更 = 全部订阅者 × 整张表）；它不进 `STATE_EVENTS`，
+ * 因为差量通道要为每条连接维护基线并按周期全量校准，而大厅订阅者可能一辈子只收一份列表。
+ */
+const FULL_REFRESH_EVENTS = new Set([WHOISFAKER_LOBBY_ROOMS_EVENT, SONGUESSR_LOBBY_ROOMS_EVENT]);
+
+/**
+ * 这一帧属于哪条丢弃闸门？ACK、错误与聊天有去无回，丢了客户端就一直等，所以归为 `undefined`。
+ * 两条可丢通道各自回滞：丢掉一份大厅列表不该让房间快照的差量链断掉、退回全量。
+ */
+const shedKindOf = (event: string): "state" | "refresh" | undefined =>
+  STATE_EVENTS.has(event) ? "state" : FULL_REFRESH_EVENTS.has(event) ? "refresh" : undefined;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -363,22 +379,25 @@ export function createStateSyncSender(
   measureBacklog?: () => number
 ) {
   const encoder = new StateSyncEncoder();
-  let shedding = false;
+  const shedding = { state: false, refresh: false };
   /**
-   * 只 gate 状态帧：ACK、错误与聊天都是有去无回的业务消息，丢了客户端就一直等。
+   * 只 gate 可丢弃帧：ACK、错误与聊天都是有去无回的业务消息，丢了客户端就一直等。
    * 状态帧可以丢——恢复后第一份是全量，客户端拿到的永远是完整视图。
    */
   const accepts = (payload: unknown): boolean => {
     if (!measureBacklog) return true;
-    if (!isEventPacket(payload) || !STATE_EVENTS.has(payload.event)) return true;
-    if (shedding) {
+    if (!isEventPacket(payload)) return true;
+    const kind = shedKindOf(payload.event);
+    if (!kind) return true;
+    if (shedding[kind]) {
       if (measureBacklog() > STATE_BACKLOG_RESUME_BYTES) return false;
-      shedding = false;
-      encoder.reset();
+      shedding[kind] = false;
+      // 只有断过差量链才需要重置基线；全量刷新帧不带基线，恢复它不该让快照退回全量。
+      if (kind === "state") encoder.reset();
       return true;
     }
     if (measureBacklog() <= STATE_BACKLOG_SHED_BYTES) return true;
-    shedding = true;
+    shedding[kind] = true;
     return false;
   };
   const emit = (payload: unknown, options: StateSyncEncodeOptions): void => {
@@ -393,7 +412,8 @@ export function createStateSyncSender(
       emit(payload, { calibration: true });
     },
     reset: (): void => {
-      shedding = false;
+      shedding.state = false;
+      shedding.refresh = false;
       encoder.reset();
     },
   };
