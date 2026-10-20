@@ -16,6 +16,7 @@ import {
 } from "@/components/songuessr/settings/SongSettingsPanels";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { hasMusicAccount } from "@bakagame/shared";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 
@@ -114,6 +115,7 @@ export function SongSoloWaitingPanel({
   isPending?: (type: string) => boolean;
 }) {
   const isStarting = Boolean(isPending?.("song.game.start"));
+  const canStartSolo = hasMusicAccount(snapshot);
 
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
@@ -121,12 +123,12 @@ export function SongSoloWaitingPanel({
       <SongSettingsGroups snapshot={snapshot} solo account />
       <Button
         size="lg"
-        disabled={!snapshot.musicAccountReady || isStarting}
+        disabled={!canStartSolo || isStarting}
         loading={isStarting}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {snapshot.musicAccountReady ? "开始游戏" : "请先扫码登录网易云账号"}
+        {canStartSolo ? "开始游戏" : "请先登录网易云或 QQ 音乐账号"}
       </Button>
     </div>
   );
@@ -179,8 +181,8 @@ export function SongHostWaitingPanel({
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
       >
-        {!snapshot.musicAccountReady && allReady
-          ? "请先扫码登录网易云账号"
+        {!hasMusicAccount(snapshot) && allReady
+          ? "请先登录网易云或 QQ 音乐账号"
           : allReady && noCandidate
             ? "暂无可选出题人"
             : allReady
@@ -242,7 +244,7 @@ export function SongWaitingPhase({
         readyCount={readyCount}
         nonHostTotal={nonHostActive.length}
         allReady={allReady}
-        canStart={allReady && snapshot.musicAccountReady}
+        canStart={allReady && hasMusicAccount(snapshot)}
         run={run}
         isPending={isPending}
       />

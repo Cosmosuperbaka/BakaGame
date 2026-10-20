@@ -574,6 +574,16 @@ export interface SonGuessrRoomSnapshot {
   finalScores?: SonGuessrScore[];
 }
 
+/**
+ * 能不能开局看「有没有账号可用」：网易云与 QQ 是并列可选项，服务端 `startGame` 也是
+ * `!musicSession && !qqMusicSession` 才拒。`musicAccountReady` 只代表网易云（账号面板等
+ * 处仍按单平台语义用它），所以这里取「任一」而不是复用它。
+ */
+export const hasMusicAccount = (snapshot: {
+  musicAccountReady: boolean;
+  qqMusicAccountReady?: boolean;
+}): boolean => snapshot.musicAccountReady || Boolean(snapshot.qqMusicAccountReady);
+
 export interface SonGuessrPrivateState {
   playerId: string;
   sessionToken: string;

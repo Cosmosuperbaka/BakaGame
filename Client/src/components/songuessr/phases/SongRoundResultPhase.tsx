@@ -11,6 +11,7 @@ import { cn } from "@/lib/Utils";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import {
   BANGUMI_TRACK_KIND_LABELS,
+  hasMusicAccount,
   refineTrackKindByText,
   type BangumiMusicTrack,
   type BangumiMusicTrackKind,
@@ -311,7 +312,7 @@ export function SongRoundResultPhase({
           <Button
             size="lg"
             disabled={
-              (snapshot.settings.questionMode === "automatic" && !snapshot.musicAccountReady) ||
+              (snapshot.settings.questionMode === "automatic" && !hasMusicAccount(snapshot)) ||
               isNextRound ||
               isFinishing
             }

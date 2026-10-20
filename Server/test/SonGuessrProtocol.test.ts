@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  hasMusicAccount,
   SonGuessrMessageSchemas,
   SonGuessrPayloadSchemas,
   type SonGuessrCommand,
@@ -521,4 +522,12 @@ test("song.subject.image 封面补图命令可解析并拒绝脏字段", () => {
       payload: { subjectId: "1701", extra: true },
     })
   ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
+test("开局账号条件：网易云与 QQ 任一可用即可", () => {
+  expect(hasMusicAccount({ musicAccountReady: true, qqMusicAccountReady: false })).toBe(true);
+  expect(hasMusicAccount({ musicAccountReady: false, qqMusicAccountReady: true })).toBe(true);
+  expect(hasMusicAccount({ musicAccountReady: true, qqMusicAccountReady: true })).toBe(true);
+  expect(hasMusicAccount({ musicAccountReady: false, qqMusicAccountReady: false })).toBe(false);
+  expect(hasMusicAccount({ musicAccountReady: false })).toBe(false);
 });
