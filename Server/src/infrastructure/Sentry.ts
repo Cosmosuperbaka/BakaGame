@@ -37,6 +37,54 @@ const FULL_MASK_KEYS = new Set([
   "channelticket",
 ]);
 
+/**
+ * 音频取流直链的键名（按归一后的形状索引）。
+ *
+ * 这类值是上游带签名的播放地址：查询串就是有效期内可重放的取流凭据，同一条记录还会
+ * 同时写 stdout、进 OTLP 并可能入 Sentry，等于把凭据交给第三方观测平台。签名参数名
+ * 随音源而变、认不出来就等于外发，所以不按参数名清洗而是整串查询一律不出口；
+ * 但也不能整值掩码 —— host + path 正是判断「解灰命中的是哪个音源」的诊断依据。
+ */
+const AUDIO_URL_KEYS = new Set([
+  "audiourl",
+  "playurl",
+  "streamurl",
+  "songurl",
+  "musicurl",
+  "unblockurl",
+  "outerurl",
+]);
+
+/** 音频文件形态的 URL 路径：出现在任意文本里（消息、错误文案）时同样按取流直链处理。 */
+const MEDIA_PATH_PATTERN = /\.(?:mp3|m4a|aac|flac|wav|ogg|opus)$/i;
+/**
+ * 定位文本里的绝对 URL 及其查询串。字符类只排除空白与常见定界符（含中文标点），
+ * 命中不了普通日志文本 —— 只有真正长成 `scheme://…?…` 的片段才会被检查。
+ */
+const ABSOLUTE_URL_PATTERN = /https?:\/\/[^\s"'`,;\\，；、。）)】]+/gi;
+/** 占位标记刻意不含 `=`：重复清洗时不再被识别成查询串，保证幂等。 */
+const REDACTED_QUERY = "***[REDACTED_QUERY]";
+
+/**
+ * 摘掉 URL 的查询串，保留 `origin/path?标记`。标记同时说明「此处原本带参、被本层摘掉」，
+ * 排障时不会误以为上游返回的就是无参地址。
+ */
+export const stripUrlQuery = (value: string): string => {
+  const cut = value.indexOf("?");
+  if (cut < 0) return value;
+  // 只有 `key=…` 形态的尾巴才算查询串：已替换过的标记与裸问号原样通过，避免二次糊掉。
+  const query = value.slice(cut + 1);
+  return /^[^#]*=/.test(query) ? `${value.slice(0, cut)}?${REDACTED_QUERY}` : value;
+};
+
+/** 文本内出现的媒体直链整串摘掉查询；非媒体路径的 URL（业务接口、分页参数）保持原样。 */
+const redactMediaUrlText = (text: string): string =>
+  text.replace(ABSOLUTE_URL_PATTERN, (match) => {
+    const cut = match.indexOf("?");
+    if (cut < 0 || !MEDIA_PATH_PATTERN.test(match.slice(0, cut))) return match;
+    return stripUrlQuery(match);
+  });
+
 export const sanitizeLogText = (text: string, maxLength = 500): string => {
   // 目标就是剥离 C0 控制字符与 DEL：日志里残留 \r\n\t\x00 会撕裂行结构、伪造换行。
   return (
@@ -47,15 +95,17 @@ export const sanitizeLogText = (text: string, maxLength = 500): string => {
   );
 };
 
-// 文本只清理可识别的凭据赋值；不可解析的入站正文应在边界不记录。
+// 文本只清理可识别的凭据赋值与媒体直链签名；不可解析的入站正文应在边界不记录。
 export const redactLogText = (text: string): string =>
-  text
-    .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
-    .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
-    .replace(
-      /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha|ticket|channel[_-]?ticket)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
-      "$1***[REDACTED]"
-    );
+  redactMediaUrlText(
+    text
+      .replace(/\b(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+[^\s,;}]+/gi, "$1***[REDACTED]")
+      .replace(/\b(Bearer|Basic)\s+[a-zA-Z0-9+/=_-]{8,}/g, "$1 ***[REDACTED]")
+      .replace(
+        /((?:["']?(?:cookie|cookies|token|session[_-]?token|access[_-]?token|refresh[_-]?token|password|authorization|secret|login[_-]?code|verify[_-]?code|auth[_-]?code|otp|captcha|ticket|channel[_-]?ticket)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s&,;}]+)/gi,
+        "$1***[REDACTED]"
+      )
+  );
 
 /** 敏感键表按归一后的形状索引：小写、去路径前缀、去分隔符。 */
 const normalizePropertyKey = (key: string): string =>
@@ -87,12 +137,14 @@ const BEARER_TOKEN_KEYS = ["accesstoken", "refreshtoken"];
 
 /**
  * 单个属性值的脱敏口径：`sample` 是原始上报正文整段丢弃；顶级凭据一律全掩码；
- * 其余敏感串保留前 4 位供定位故障；普通字段递归下去。
+ * 音频直链只摘查询串；其余敏感串保留前 4 位供定位故障；普通字段递归下去。
  */
 const redactProperty = (key: string, value: unknown, recurse: () => unknown): unknown => {
   if (key === "sample" && typeof value === "string") return "[OMITTED_RAW_PAYLOAD]";
   const normalizedKey = normalizePropertyKey(key);
   if (FULL_MASK_KEYS.has(normalizedKey)) return "***[REDACTED]";
+  // 键名直接点名音频直链时不看路径形状：解灰音源的代理地址常常没有扩展名。
+  if (AUDIO_URL_KEYS.has(normalizedKey) && typeof value === "string") return stripUrlQuery(value);
   if (!SENSITIVE_KEYS.has(normalizedKey) && !BEARER_TOKEN_KEYS.includes(normalizedKey))
     return recurse();
   return typeof value === "string" && value.length > 8

@@ -17,6 +17,7 @@ import {
   redactData,
   redactLogText,
   redactUrlQuery,
+  stripUrlQuery,
   describeError,
   SERVER_HEARTBEAT_INTERVAL_MS,
   SERVER_HEARTBEAT_MONITOR_SLUG,
@@ -51,6 +52,18 @@ const createMockEnv = (overrides?: Partial<AppEnv>): AppEnv => ({
   sentryAllowedProjectIds: ["100001"],
   ...overrides,
 });
+
+/** 拿到传给 SDK 的真实 options，从而直接驱动 beforeSend / beforeSendSpan / beforeSendMetric 三条出口。 */
+const captureInitOptions = () => {
+  let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
+  const init = spyOn(Sentry, "init").mockImplementation((input) => {
+    options = input;
+    return undefined;
+  });
+  initServerSentry(createMockEnv());
+  init.mockRestore();
+  return options!;
+};
 
 describe("Sentry (服务端异常监控托管与优雅排空)", () => {
   beforeEach(() => {
@@ -451,17 +464,6 @@ describe("一次性建连凭据 ticket 不进任何采集出口", () => {
   const TICKET = "TICKETdummysupersecretvalue";
   const WS_URL = `https://example.invalid/api/cee/ws?clientType=desktop&ticket=${TICKET}&room=1`;
 
-  const captureInitOptions = () => {
-    let options: NonNullable<Parameters<typeof Sentry.init>[0]> | undefined;
-    const init = spyOn(Sentry, "init").mockImplementation((input) => {
-      options = input;
-      return undefined;
-    });
-    initServerSentry(createMockEnv());
-    init.mockRestore();
-    return options!;
-  };
-
   it("ticket 与口令同级全掩码，非敏感查询参数原样保留", () => {
     const cleaned = redactData({
       ticket: TICKET,
@@ -534,6 +536,91 @@ describe("一次性建连凭据 ticket 不进任何采集出口", () => {
     } as any);
     expect(JSON.stringify(metric)).not.toContain(TICKET);
     expect(metric?.attributes?.operation).toBe("HTTP GET /api/cee/ws");
+  });
+});
+
+/**
+ * 上游解灰返回的取流直链：查询串就是有效期内可重放的凭据，而同一条记录会同时进 stdout、
+ * OTLP 与 Sentry。这里只摘查询串、保留 host+path —— 整值掩码会丢掉「命中的是哪个音源」这一
+ * 唯一的排障线索，整串放行则等于把凭据交给第三方观测平台。
+ */
+describe("音频取流直链的签名查询串不进任何遥测出口", () => {
+  const SIGNATURE = "signature=dummysignaturevalue&usign=dummyusignvalue";
+  afterEach(() => {
+    _resetServerSentryForTest();
+  });
+
+  it("摘串后保留 host 与 path，且清洗幂等", () => {
+    const cleaned = stripUrlQuery(`https://mxx.163.com/track/a.mp3?${SIGNATURE}`);
+    expect(cleaned).toBe("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    expect(cleaned).not.toContain("dummysignaturevalue");
+    expect(cleaned).not.toContain("dummyusignvalue");
+    // 同一串可能被多层出口各过一遍：占位标记里没有 `=`，二次清洗不会改写成别的形状。
+    expect(stripUrlQuery(cleaned)).toBe(cleaned);
+    // 无查询、裸问号、只有锚点的地址原样通过：清洗只针对 `key=…` 形态的尾巴。
+    for (const url of [
+      "https://mxx.163.com/track/a.mp3",
+      "https://mxx.163.com/track/a.mp3?",
+      "https://mxx.163.com/track/a.mp3#t=10",
+    ])
+      expect(stripUrlQuery(url)).toBe(url);
+  });
+
+  it("键名点名直链时不看路径形状：无扩展名的代理地址同样只摘查询串", () => {
+    const proxy = `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}`;
+    for (const key of ["audioUrl", "playUrl", "unblockUrl"]) {
+      const cleaned = redactData({ [key]: proxy, songName: "晴.Day" }) as Record<string, unknown>;
+      expect(cleaned[key]).toBe(
+        "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+      );
+      expect(cleaned.songName).toBe("晴.Day");
+    }
+  });
+
+  it("自由文本与错误文案里的媒体直链摘串，业务接口的分页参数不受影响", () => {
+    const cleaned = redactLogText(
+      `取流失败 https://mxx.163.com/track/a.mp3?${SIGNATURE} 对照 https://api.bgm.tv/characters?q=1&page=2`
+    );
+    expect(cleaned).not.toContain("dummysignaturevalue");
+    expect(cleaned).toContain("https://mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    // 只有长成音频文件形态的路径才算直链：分页与查询参数是诊断信息，不能顺手糊掉。
+    expect(cleaned).toContain("https://api.bgm.tv/characters?q=1&page=2");
+  });
+
+  it("span 与 metric 出口的直链属性同样摘串", async () => {
+    const options = captureInitOptions();
+
+    const span = options.beforeSendSpan!({
+      span_id: "aaaaaaaaaaaaaaaa",
+      trace_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      start_timestamp: 1,
+      op: "http.server",
+      description: "GET /api/song/search",
+      data: {
+        "url.full": `https://mxx.163.com/track/a.mp3?${SIGNATURE}`,
+        "media.audio_url": `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}`,
+        "http.status_code": 200,
+      },
+    } as any);
+    const spanText = JSON.stringify(span);
+    expect(spanText).not.toContain("dummysignaturevalue");
+    expect(spanText).toContain("mxx.163.com/track/a.mp3?***[REDACTED_QUERY]");
+    // 带命名空间前缀的键也要命中按键分支：代理直链常常没有文件扩展名，靠路径形状认不出来。
+    expect(span.data!["media.audio_url"]).toBe(
+      "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+    );
+    expect(span.data!["http.status_code"]).toBe(200);
+
+    const metric = options.beforeSendMetric!({
+      name: "bakagame.music.unblock.duration",
+      type: "distribution",
+      value: 12,
+      attributes: { audioUrl: `https://music-proxy.example.invalid/stream/123456?${SIGNATURE}` },
+    } as any);
+    expect(JSON.stringify(metric)).not.toContain("dummysignaturevalue");
+    expect(metric?.attributes?.audioUrl).toBe(
+      "https://music-proxy.example.invalid/stream/123456?***[REDACTED_QUERY]"
+    );
   });
 });
 
