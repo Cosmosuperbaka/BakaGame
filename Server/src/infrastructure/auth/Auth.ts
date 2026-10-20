@@ -83,6 +83,20 @@ export const createAuth = (options: AuthOptions) => {
       cookiePrefix: "bakagame",
       useSecureCookies: options.secureCookies,
       ipAddress: { disableIpTracking: true },
+      /**
+       * 安卓壳的页面 origin 是 `https://localhost`（内嵌产物），接口却在公网域名上——
+       * 对浏览器来说这是**跨站**请求。默认的 `SameSite=Lax` 会让会话 Cookie 在
+       * fetch 与 WebSocket 握手里都不发出去，症状是：头像能显示（`<img>` 不依赖 Cookie）、
+       * 但昵称读不到、验证码发不出、WS 以游客身份连上。
+       *
+       * 因此生产（HTTPS）用 `None`。本地开发是 http，浏览器会直接丢弃 `SameSite=None`
+       * 的非 Secure Cookie，那里必须保持 `Lax`，否则本地登录直接坏掉。
+       * 跨站携带 Cookie 的 CSRF 风险由来源白名单（isAllowedOrigin）+ JSON/自定义头
+       * 触发的预检兜住，不单靠 SameSite。
+       */
+      defaultCookieAttributes: {
+        sameSite: options.secureCookies ? "none" : "lax",
+      },
     },
     databaseHooks: {
       user: {

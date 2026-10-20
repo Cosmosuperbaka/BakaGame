@@ -244,8 +244,23 @@ const executeWithDeduplication = async ({
   }
 };
 
+/**
+ * 内嵌壳（安卓 APK）的固定页面来源。
+ *
+ * 壳把前端产物打包进 WebView，`androidScheme: "https"` + 默认 hostname 让它**总是**以
+ * `https://localhost` 作为页面 origin 发请求（见 `Mobile/capacitor.config.ts`），而接口
+ * 指向上线的公网域名（构建时注入的 `VITE_SERVER_URL`）。所以壳必须能跨域直连后端。
+ *
+ * 为什么可以恒信：
+ * - 远端页面拿不到这个 origin。要在 https 下提供 localhost 页面必须持有本机受信的
+ *   证书，公网攻击者做不到；这跟「未配置白名单时只放行本机来源」的既有口径一致。
+ * - 只认 https。`http://localhost:PORT` 任意本机进程都能提供，不在此列。
+ */
+const EMBEDDED_APP_ORIGINS = new Set(["https://localhost"]);
+
 export const isAllowedOrigin = (origin: string | null | undefined, clientUrl?: string): boolean => {
   if (!origin) return true;
+  if (EMBEDDED_APP_ORIGINS.has(origin)) return true;
   // 没有配置白名单时不能「放行一切」——那是 CSWSH 的入口。
   // 此时退化为「只允许同属私网/本机的来源」，公网浏览器页面一律拒绝。
   if (!clientUrl) {
