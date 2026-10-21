@@ -168,8 +168,10 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
     const wireSpans = payload.resourceSpans[0].scopeSpans[0].spans;
     expect(output).toHaveLength(3);
     for (const [index, traceId] of traceIds.entries()) {
-      const stdoutContext = JSON.parse(output[index].split(" | ").at(-1)!) as { traceId: string };
-      expect(stdoutContext.traceId).toBe(traceId);
+      const stdoutLine = JSON.parse(output[index]) as {
+        context?: { traceId?: string };
+      };
+      expect(stdoutLine.context?.traceId).toBe(traceId);
       expect(wireSpans[index].traceId).toBe(traceId);
       expect(
         wireSpans[index].attributes.find((attribute) => attribute.key === "trace.id")?.value
@@ -177,7 +179,7 @@ test("OBS005 操作日志 stdout traceId 与 OTLP trace.id、Sentry属性同值"
       ).toBe(traceId);
       expect(spans.mock.calls[index][0].attributes?.["trace.id"]).toBe(traceId);
     }
-    expect(output[2]).not.toContain("traceId");
+    expect(JSON.parse(output[2]!).context?.traceId).toBeUndefined();
     expect(spans.mock.calls[2][0].attributes).not.toHaveProperty("trace.id");
   } finally {
     stdout.mockRestore();
@@ -203,7 +205,7 @@ test("同类操作日志每秒只输出一条代表，告警不参与合并", ()
   now = 2_000;
   logger.logOperation({ action: "room.join", durationMs: 5 });
   expect(output).toHaveLength(2);
-  expect(output[1]).toContain("×2");
+  expect(JSON.parse(output[1]!).context?.merged).toBe(2);
 
   for (const index of [0, 1])
     logger.logOperation({
@@ -212,7 +214,68 @@ test("同类操作日志每秒只输出一条代表，告警不参与合并", ()
       level: "WARN",
       durationMs: index,
     });
-  expect(output.filter((line) => line.includes(" 500 "))).toHaveLength(2);
+  expect(
+    output.filter((line) => JSON.parse(line).context?.status === 500)
+  ).toHaveLength(2);
+});
+
+test("LOG_LEVEL 过滤 debug/info，错误仍按等级落盘", () => {
+  const output: string[] = [];
+  const logger = new EventLogger(
+    (message) => output.push(message),
+    () => 1_000,
+    undefined,
+    "WARN"
+  );
+
+  logger.debug("调试细节");
+  logger.info("普通信息");
+  logger.warn("需要注意", { traceId: "trace-1" });
+  logger.error("失败了", { error: new TypeError("boom") });
+
+  expect(output).toHaveLength(2);
+  expect(JSON.parse(output[0]!)).toMatchObject({ level: "warn", msg: "需要注意" });
+  const failed = JSON.parse(output[1]!) as {
+    level: string;
+    context: { error: { errorName: string; errorMessage: string; stack: string } };
+  };
+  expect(failed.level).toBe("error");
+  expect(failed.context.error.errorName).toBe("TypeError");
+  expect(failed.context.error.errorMessage).toBe("boom");
+  expect(failed.context.error.stack).toContain("TypeError");
+});
+
+test("debug 等级下输出结构化单行 JSON，并脱敏敏感字段", () => {
+  const output: string[] = [];
+  const logger = new EventLogger(
+    (message) => output.push(message),
+    () => Date.UTC(2026, 3, 17, 8, 0, 0, 0),
+    undefined,
+    "DEBUG"
+  );
+
+  logger.debug("外部音源请求", {
+    cookie: "dummy-cookie",
+    password: "dummy-password",
+    traceId: "trace-debug",
+  });
+
+  expect(output).toHaveLength(1);
+  expect(output[0]).not.toContain("\n");
+  const line = JSON.parse(output[0]!) as {
+    time: string;
+    level: string;
+    msg: string;
+    context: Record<string, string>;
+  };
+  expect(line).toMatchObject({
+    time: "2026-04-17T08:00:00.000Z",
+    level: "debug",
+    msg: "外部音源请求",
+  });
+  expect(line.context.traceId).toBe("trace-debug");
+  expect(JSON.stringify(line)).not.toContain("dummy-cookie");
+  expect(JSON.stringify(line)).not.toContain("dummy-password");
 });
 
 /**

@@ -1,3 +1,10 @@
+import {
+  formatStructuredLog,
+  isLogLevelEnabled,
+  resolveLogLevel,
+  type StructuredLogLevel,
+} from "./StructuredLog";
+
 export interface LogEntry {
   type: string;
   createdAt: number;
@@ -6,7 +13,7 @@ export interface LogEntry {
   payload?: unknown;
 }
 
-export type LogLevel = "INFO" | "WARN" | "ERROR";
+export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
 type LogEmitter = (message: string) => void;
 
@@ -50,20 +57,28 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 const LEVEL_METHODS: Record<LogLevel, keyof LogOutput> = {
+  DEBUG: "info",
+  INFO: "info",
+  WARN: "warn",
+  ERROR: "error",
+};
+
+const LOWER_LEVEL: Record<LogLevel, StructuredLogLevel> = {
+  DEBUG: "debug",
   INFO: "info",
   WARN: "warn",
   ERROR: "error",
 };
 
 /**
- * 同类操作日志的合并窗口。满载时每条命令都会写一行 `[BAKA]`，生产剖面里这一条
- * `console.info` 就占掉 5.7% 的核时间；INFO 级按「动作|状态码」每秒留一条代表，
+ * 同类操作日志的合并窗口。满载时每条命令都会写一行日志，生产剖面里这一条
+ * 标准输出就占掉 5.7% 的核时间；INFO 级按「动作|状态码」每秒留一条代表，
  * WARN/ERROR 不合并，指标与 span 仍然每条上报。
  */
 const OPERATION_LOG_SAMPLE_MS = 1_000;
 
 /**
- * 默认输出只写进程流，**不经过 `console.*`**。
+ * 默认输出只写进程流，**不经过标准 console 通道**。
  *
  * Sentry 的 `consoleLoggingIntegration` 会把 `console.warn/error` 采集为 Sentry log，
  * 而本类的 `emit` 对同一条记录已经显式调用 `captureServerLog`；两条路并行时每条
@@ -129,7 +144,7 @@ const getEventLevel = (entry: LogEntry): LogLevel => {
 
 export { redactData, describeError, sanitizeLogText } from "./Sentry";
 
-// 系统日志列格式化
+// 系统日志：固定字段 time/level/msg，其余诊断信息统一进 context。
 export const formatSystemLog = ({
   level,
   message,
@@ -146,56 +161,44 @@ export const formatSystemLog = ({
   status?: number;
 }) => {
   const statusCode = status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
-  const timestampStr = formatTimestamp(createdAt);
-  const durationStr = formatDuration(durationMs);
   const rawIdentifier =
     (context?.connectionId as string) ??
     (context?.roomId as string) ??
     (context?.playerId as string) ??
     (context?.ip as string) ??
     "system";
-  const identifierStr = sanitizeLogText(String(rawIdentifier), 32).padStart(15, " ");
-  const actionStr = `SYS ${sanitizeLogText(message, 1000)}`;
-
-  const cleanedContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
-  const extraContext = cleanedContext
-    ? Object.fromEntries(
-        Object.entries(cleanedContext).filter(
-          ([k]) => !["connectionId", "roomId", "playerId", "ip"].includes(k)
-        )
-      )
-    : undefined;
-
-  const extraStr =
-    extraContext && Object.keys(extraContext).length > 0
-      ? ` | ${sanitizeLogText(JSON.stringify(extraContext), 2048)}`
-      : "";
-
-  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${extraStr}`;
+  return formatStructuredLog({
+    createdAt,
+    level: LOWER_LEVEL[level],
+    message,
+    context: {
+      status: statusCode,
+      durationMs,
+      identifier: sanitizeLogText(String(rawIdentifier), 64),
+      ...context,
+    },
+  });
 };
 
-// 领域事件日志列格式化
+// 领域事件日志：事件名与摘要写进 msg，结构化字段留在 context。
 export const formatLogEntry = (
   entry: LogEntry & { durationMs?: number; status?: number },
   level = getEventLevel(entry)
 ): string => {
   const headline = EVENT_LABELS[entry.type] ?? entry.type;
   const statusCode = entry.status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
-  const timestampStr = formatTimestamp(entry.createdAt);
-  const durationStr = formatDuration(entry.durationMs ?? 0);
-  const rawIdentifier = entry.roomId ?? entry.playerId ?? "system";
-  const identifierStr = sanitizeLogText(String(rawIdentifier), 32).padStart(15, " ");
-  const actionStr = `EVENT ${sanitizeLogText(entry.type, 64)} (${sanitizeLogText(headline, 64)})`;
-
-  const cleanedPayload = entry.payload ? redactData(entry.payload) : undefined;
-  const payloadStr =
-    cleanedPayload &&
-    typeof cleanedPayload === "object" &&
-    Object.keys(cleanedPayload as object).length > 0
-      ? ` | ${sanitizeLogText(JSON.stringify(cleanedPayload), 2048)}`
-      : "";
-
-  return `[BAKA] ${timestampStr} | ${statusCode} | ${durationStr} | ${identifierStr} | ${actionStr}${payloadStr}`;
+  return formatStructuredLog({
+    createdAt: entry.createdAt,
+    level: LOWER_LEVEL[level],
+    message: `EVENT ${entry.type} (${headline})`,
+    context: {
+      status: statusCode,
+      durationMs: entry.durationMs ?? 0,
+      ...(entry.roomId ? { roomId: entry.roomId } : {}),
+      ...(entry.playerId ? { playerId: entry.playerId } : {}),
+      ...(entry.payload ? { payload: entry.payload } : {}),
+    },
+  });
 };
 
 import type { OtlpExporter } from "./OtlpExporter";
@@ -215,19 +218,26 @@ import {
 export class EventLogger {
   private readonly output: LogOutput;
   private readonly otlpExporter?: OtlpExporter;
+  private readonly minimumLevel: LogLevel;
   private readonly operationSamples = new Map<string, { at: number; merged: number }>();
 
   constructor(
     output: LogOutputLike = defaultOutput,
     private readonly now: () => number = () => Date.now(),
-    otlpExporter?: OtlpExporter
+    otlpExporter?: OtlpExporter,
+    level: LogLevel = resolveLogLevel().toUpperCase() as LogLevel
   ) {
     this.output = normalizeOutput(output);
     this.otlpExporter = otlpExporter;
+    this.minimumLevel = level;
   }
 
   get exporter(): OtlpExporter | undefined {
     return this.otlpExporter;
+  }
+
+  private isEnabled(level: LogLevel): boolean {
+    return isLogLevelEnabled(LOWER_LEVEL[this.minimumLevel], LOWER_LEVEL[level]);
   }
 
   private emit(
@@ -236,6 +246,7 @@ export class EventLogger {
     context?: Record<string, unknown>,
     createdAt = this.now()
   ) {
+    if (!this.isEnabled(level)) return;
     message = redactLogText(message);
     const safeContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
     this.output[LEVEL_METHODS[level]](
@@ -246,6 +257,9 @@ export class EventLogger {
         context: safeContext,
       })
     );
+
+    // debug 只落进程流：OTLP 与 Sentry 都没有对应的诊断级别，避免污染告警与趋势。
+    if (level === "DEBUG") return;
 
     if (this.otlpExporter?.isEnabled) {
       const traceId = typeof context?.traceId === "string" ? context.traceId : undefined;
@@ -286,6 +300,10 @@ export class EventLogger {
     );
   }
 
+  debug(message: string, context?: Record<string, unknown>) {
+    this.emit("DEBUG", message, context);
+  }
+
   info(message: string, context?: Record<string, unknown>) {
     this.emit("INFO", message, context);
   }
@@ -303,7 +321,51 @@ export class EventLogger {
    * 仅供必须保留明文的开发期输出（登录验证码）；调用方不得夹带其它用户数据。
    */
   localInfo(message: string) {
-    this.output.info(`[BAKA] ${formatTimestamp(this.now())} | ${message}`);
+    this.output.info(
+      JSON.stringify({ time: formatTimestamp(this.now()), level: "info", msg: message })
+    );
+  }
+
+  private writeOperationLine({
+    level,
+    action,
+    createdAt,
+    status,
+    durationMs,
+    identifier,
+    traceId,
+  }: {
+    level: LogLevel;
+    action: string;
+    createdAt: number;
+    status: number;
+    durationMs: number;
+    identifier: string;
+    traceId?: string;
+  }): void {
+    if (!this.isEnabled(level)) return;
+    const sampleKey = `${action}|${status}`;
+    const sample = level === "INFO" ? this.operationSamples.get(sampleKey) : undefined;
+    if (sample && createdAt - sample.at < OPERATION_LOG_SAMPLE_MS) {
+      sample.merged += 1;
+      return;
+    }
+    // 合并条数记在下一条代表上：窗口里被省掉的行仍然计入速率，只是不再各占一次写。
+    if (level === "INFO") this.operationSamples.set(sampleKey, { at: createdAt, merged: 0 });
+    this.output[LEVEL_METHODS[level]](
+      formatStructuredLog({
+        createdAt,
+        level: LOWER_LEVEL[level],
+        message: action,
+        context: {
+          status,
+          durationMs,
+          identifier,
+          ...(traceId ? { traceId } : {}),
+          ...(sample && sample.merged > 0 ? { merged: sample.merged + 1 } : {}),
+        },
+      })
+    );
   }
 
   // 后端操作日志输出
@@ -324,22 +386,15 @@ export class EventLogger {
     createdAt?: number;
     traceId?: string;
   }) {
-    const timestampStr = formatTimestamp(createdAt);
-    const durationStr = formatDuration(durationMs);
-    const idStr = identifier.padStart(15, " ");
-    const traceContext = traceId ? ` | ${JSON.stringify({ traceId })}` : "";
-    const line = `[BAKA] ${timestampStr} | ${status} | ${durationStr} | ${idStr} | ${action}${traceContext}`;
-    const sampleKey = `${action}|${status}`;
-    const sample = level === "INFO" ? this.operationSamples.get(sampleKey) : undefined;
-    if (sample && createdAt - sample.at < OPERATION_LOG_SAMPLE_MS) {
-      sample.merged += 1;
-    } else {
-      // 合并条数记在下一条代表上：窗口里被省掉的行仍然计入速率，只是不再各占一次写。
-      if (level === "INFO") this.operationSamples.set(sampleKey, { at: createdAt, merged: 0 });
-      this.output[LEVEL_METHODS[level]](
-        sample && sample.merged > 0 ? `${line} | ×${sample.merged + 1}` : line
-      );
-    }
+    this.writeOperationLine({
+      level,
+      action,
+      createdAt,
+      status,
+      durationMs,
+      identifier,
+      traceId,
+    });
 
     captureServerOperation({
       name: action,
@@ -360,7 +415,7 @@ export class EventLogger {
       operation: action,
     });
 
-    if (this.otlpExporter?.isEnabled) {
+    if (this.otlpExporter?.isEnabled && level !== "DEBUG") {
       this.otlpExporter.enqueueSpan({
         traceId,
         name: action,
@@ -379,20 +434,22 @@ export class EventLogger {
 
   async write(entry: LogEntry): Promise<void> {
     const level = getEventLevel(entry);
-    this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
+    if (this.isEnabled(level)) {
+      this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
 
-    captureServerLog(
-      `EVENT ${entry.type}`,
-      level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
-      {
-        roomId: entry.roomId,
-        playerId: entry.playerId,
-        ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
-      }
-    );
+      captureServerLog(
+        `EVENT ${entry.type}`,
+        level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
+        {
+          roomId: entry.roomId,
+          playerId: entry.playerId,
+          ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
+        }
+      );
+    }
     countServerMetric("bakagame.events", 1, { event: entry.type, level });
 
-    if (this.otlpExporter?.isEnabled) {
+    if (this.otlpExporter?.isEnabled && level !== "DEBUG") {
       this.otlpExporter.enqueue({
         timestamp: entry.createdAt,
         level,

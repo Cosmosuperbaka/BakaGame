@@ -24,7 +24,7 @@ import { createTestApp as createApp } from "./AppFixtures";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 
-test("事件日志输出为极简 GIN 风格格式化文本", async () => {
+test("事件日志输出为单行结构化 JSON", async () => {
   const output: string[] = [];
   const logger = new EventLogger((message) => {
     output.push(message);
@@ -51,14 +51,21 @@ test("事件日志输出为极简 GIN 风格格式化文本", async () => {
 
   expect(output).toHaveLength(1);
   expect(output[0]).toBe(formatted);
-  expect(formatted).toContain("[BAKA]");
-  expect(formatted).toContain("200");
-  expect(formatted).toContain("EVENT room.created (房间已创建)");
-  expect(formatted).toContain("1234");
-  expect(formatted).not.toContain("详情:");
+  expect(output[0]).not.toContain("\n");
+  const line = JSON.parse(formatted!) as {
+    time: string;
+    level: string;
+    msg: string;
+    context: { status: number; roomId: string; payload: { visibility: string } };
+  };
+  expect(line.level).toBe("info");
+  expect(line.msg).toBe("EVENT room.created (房间已创建)");
+  expect(line.context.status).toBe(200);
+  expect(line.context.roomId).toBe("1234");
+  expect(line.context.payload.visibility).toBe("private");
 });
 
-test("系统日志支持极简 GIN 风格状态码与列表格式", () => {
+test("系统日志输出 level/msg 与状态码上下文", () => {
   const lines: string[] = [];
   const logger = new EventLogger({
     info: (message) => lines.push(message),
@@ -81,22 +88,33 @@ test("系统日志支持极简 GIN 风格状态码与列表格式", () => {
     errorMessage: "boom",
   });
 
-  expect(lines[0]).toContain("[BAKA]");
-  expect(lines[0]).toContain("200");
-  expect(lines[0]).toContain("SYS WhoIsFaker 服务已启动");
-  expect(lines[1]).toContain("400");
-  expect(lines[2]).toContain("500");
-  expect(lines[0]).not.toContain("详情:");
+  const [info, warn, error] = lines.map(
+    (line) =>
+      JSON.parse(line) as {
+        level: string;
+        msg: string;
+        context: { status: number; connectionId?: string };
+      }
+  );
+  expect(info).toMatchObject({ level: "info", msg: "WhoIsFaker 服务已启动" });
+  expect(info.context.status).toBe(200);
+  expect(warn).toMatchObject({ level: "warn", msg: "收到停机信号，开始优雅停机" });
+  expect(warn.context.status).toBe(400);
+  expect(error).toMatchObject({ level: "error", msg: "WebSocket 请求发生未捕获异常" });
+  expect(error.context.status).toBe(500);
+  expect(error.context.connectionId).toBe("conn_1");
   expect(
-    formatSystemLog({
-      level: "WARN",
-      message: "收到停机信号，开始优雅停机",
-      createdAt: Date.UTC(2026, 3, 17, 8, 0, 0, 0),
-      context: {
-        signal: "SIGTERM",
-      },
-    })
-  ).toContain("[BAKA]");
+    JSON.parse(
+      formatSystemLog({
+        level: "WARN",
+        message: "收到停机信号，开始优雅停机",
+        createdAt: Date.UTC(2026, 3, 17, 8, 0, 0, 0),
+        context: {
+          signal: "SIGTERM",
+        },
+      })
+    )
+  ).toMatchObject({ level: "warn", context: { status: 400 } });
 });
 
 test("describeError 完整保留调用栈与 Cause，且 redactData 对敏感凭据有效脱敏", () => {
