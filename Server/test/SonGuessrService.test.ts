@@ -2660,11 +2660,11 @@ describe("SonGuessrService", () => {
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.song.title).toBe("答案歌");
     // 新口径：玩家第 2 次才猜中（精度 2/3），速度按用时趋近满分 → round(10×1.2×2/3)=8；
-    // 出题人按难度分 round(8×0.3×D)=1。
+    // 出题人按难度分 round(8×1.0×D)=3。
     expect(result.roundSummary?.scores).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ playerName: "玩家", score: 8, delta: 8 }),
-        expect.objectContaining({ playerName: "房主", score: 1, delta: 1 }),
+        expect.objectContaining({ playerName: "房主", score: 3, delta: 3 }),
       ])
     );
   });
@@ -3486,7 +3486,7 @@ describe("SonGuessrService", () => {
     expect(waiting.finalScores).toBeUndefined();
     expect(waiting.players).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "房主", score: 1, isReady: true }),
+        expect.objectContaining({ name: "房主", score: 4, isReady: true }),
         expect.objectContaining({ name: "玩家", score: 12, isReady: false }),
       ])
     );
@@ -3507,7 +3507,7 @@ describe("SonGuessrService", () => {
     expect(restarted).toMatchObject({ phase: "choosingSubmitter", roundNumber: 1 });
     expect(restarted.players).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "房主", score: 1 }),
+        expect.objectContaining({ name: "房主", score: 4 }),
         expect.objectContaining({ name: "玩家", score: 12 }),
       ])
     );
@@ -7961,8 +7961,8 @@ describe("SonGuessr 组队", () => {
     });
     const summary = snapshot.roundSummary!;
     expect(summary.correctPlayerIds).toEqual([ctx.bId]);
-    // 出题人按难度分结算：2 个单元里 1 个猜中、总共试了 2 次 → round(8×0.3×0.55)=1
-    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(1);
+    // 出题人按难度分结算：2 个单元里 1 个猜中、总共试了 2 次 → round(8×1.0×0.55)=4
+    expect(summary.scores.find((score) => score.playerId === ctx.hostId)?.delta).toBe(4);
   });
 
   test("血战开启时猜中只结束所在队，队友不能再猜，别队继续作答", async () => {
@@ -8117,18 +8117,17 @@ describe("手动出题片段", () => {
     });
   });
 
-  test("越界、反向、过短或过长的手动片段退回整曲且不报错", () => {
+  test("越界、反向或过短的手动片段返回空，交给原来的随机切片", () => {
     const song = { lyrics: songs.answer.lyrics, durationMs: 60_000 };
-    const wholeSong = {
-      startTime: 0,
+    expect(createManualLyricClip(song, { startTime: 0, endTime: 1_000 })).toBeUndefined();
+    expect(createManualLyricClip(song, { startTime: 8_000, endTime: 2_000 })).toBeUndefined();
+    expect(createManualLyricClip(song, { startTime: 50_000, endTime: 80_000 })).toBeUndefined();
+    expect(createManualLyricClip(song, { startTime: -1_000, endTime: 5_000 })).toBeUndefined();
+    // 不再有 30 秒上限：整首都可以选，只要不少于 5 秒。
+    expect(createManualLyricClip(song, { startTime: 10_000, endTime: 60_000 })).toMatchObject({
+      startTime: 10_000,
       endTime: 60_000,
-      lines: songs.answer.lyrics,
-    };
-    expect(createManualLyricClip(song, { startTime: 0, endTime: 1_000 })).toEqual(wholeSong);
-    expect(createManualLyricClip(song, { startTime: 10_000, endTime: 45_000 })).toEqual(wholeSong);
-    expect(createManualLyricClip(song, { startTime: 8_000, endTime: 2_000 })).toEqual(wholeSong);
-    expect(createManualLyricClip(song, { startTime: 50_000, endTime: 80_000 })).toEqual(wholeSong);
-    expect(createManualLyricClip(song, { startTime: -1_000, endTime: 5_000 })).toEqual(wholeSong);
+    });
     // 时长未知时不做上界校验，合法区间照常生效。
     expect(
       createManualLyricClip({ lyrics: songs.answer.lyrics }, { startTime: 2_000, endTime: 8_000 })
@@ -8252,7 +8251,7 @@ describe("手动出题片段", () => {
     });
   });
 
-  test("无效手动片段退回整曲后再进回合", async () => {
+  test("无效手动片段回退到原来的随机切片", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest } = await enterSubmittingPhase(service);
     await execute(service, host, {
@@ -8261,8 +8260,148 @@ describe("手动出题片段", () => {
       roomId: "1234",
       payload: { songId: "answer", clip: { startTime: 0, endTime: 1_000 } },
     });
+    const auto = createSongLyricClip(
+      songs.answer.lyrics,
+      5,
+      { nextInt: () => 0 },
+      songs.answer.durationMs
+    );
     expect(
       lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip
-    ).toEqual({ startTime: 0, endTime: 180_000, lines: songs.answer.lyrics });
+    ).toEqual(auto);
+  });
+
+  test("预览下发建议片段，直接确认时用的就是同一段", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const { host, guest } = await enterSubmittingPhase(service);
+    const preview = await execute<{ song: { suggestedClip?: { startTime: number; endTime: number } } }>(
+      service,
+      host,
+      {
+        id: "clip-suggested-preview",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      }
+    );
+    const auto = createSongLyricClip(
+      songs.answer.lyrics,
+      5,
+      { nextInt: () => 0 },
+      songs.answer.durationMs
+    );
+    expect(preview.song.suggestedClip).toEqual({
+      startTime: auto.startTime,
+      endTime: auto.endTime,
+    });
+
+    // 不出题人没改区间直接确认：不传 clip，服务端仍用同一套随机切片。
+    await execute(service, host, {
+      id: "clip-submit-default",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    expect(
+      lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip
+    ).toEqual(auto);
+  });
+});
+
+describe("账号池单号并发", () => {
+  const gatedProvider = (usedCookies: Array<MusicCookieInput | undefined>) => {
+    const releases: Array<() => void> = [];
+    const musicProvider: MusicProvider = {
+      ...provider,
+      search: async (_keyword, _limit, cookie) => {
+        usedCookies.push(cookie);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        return [songs.answer];
+      },
+    };
+    return { musicProvider, releases };
+  };
+
+  const waitCalls = async (usedCookies: unknown[], count: number) => {
+    for (let attempt = 0; attempt < 400 && usedCookies.length < count; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(usedCookies.length).toBe(count);
+  };
+
+  test("单号限额与改造前一致：3 个并发，超出按无号降级", async () => {
+    const usedCookies: Array<MusicCookieInput | undefined> = [];
+    const { musicProvider, releases } = gatedProvider(usedCookies);
+    const service = new SonGuessrService({ musicProvider });
+    const host = connection(service, "single-account-host");
+    await createRoom(service, host);
+
+    const search = (id: string) =>
+      execute(service, host, {
+        id,
+        type: "song.music.search",
+        roomId: "1234",
+        payload: { keyword: id },
+      });
+    const pending = [search("search-1")];
+    await waitCalls(usedCookies, 1);
+    // 单号上限取改造前 provider 的全局并发 3：前三个请求都由这个号接单。
+    for (let index = 2; index <= 4; index += 1) {
+      pending.push(search(`search-${index}`));
+      await waitCalls(usedCookies, index);
+    }
+
+    expect(usedCookies.slice(0, 3)).toEqual([
+      { netease: "MUSIC_U=test-host" },
+      { netease: "MUSIC_U=test-host" },
+      { netease: "MUSIC_U=test-host" },
+    ]);
+    // 第 4 个已超过单号限额，按无号（undefined）降级。
+    expect(usedCookies[3]).toBeUndefined();
+    releases.splice(0).forEach((release) => release());
+    await Promise.all(pending);
+  });
+
+  test("多号按单号限额倍乘：两个号最多 6 个在途", async () => {
+    const usedCookies: Array<MusicCookieInput | undefined> = [];
+    const { musicProvider, releases } = gatedProvider(usedCookies);
+    const service = new SonGuessrService({ musicProvider });
+    const host = connection(service, "two-account-host");
+    const guest = connection(service, "two-account-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "贡献者");
+    await execute(service, guest, {
+      id: "guest-loads",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "MUSIC_U=guest-cookie" },
+    });
+
+    const search = (id: string) =>
+      execute(service, host, {
+        id,
+        type: "song.music.search",
+        roomId: "1234",
+        payload: { keyword: id },
+      });
+    const pending = [search("multi-1")];
+    await waitCalls(usedCookies, 1);
+    for (let index = 2; index <= 7; index += 1) {
+      pending.push(search(`multi-${index}`));
+      await waitCalls(usedCookies, index);
+    }
+
+    const neteaseCookie = (cookie: MusicCookieInput | undefined) =>
+      typeof cookie === "object" ? cookie.netease : undefined;
+    const hostUses = usedCookies.filter((cookie) => neteaseCookie(cookie) === "MUSIC_U=test-host");
+    const guestUses = usedCookies.filter(
+      (cookie) => neteaseCookie(cookie) === "MUSIC_U=guest-cookie"
+    );
+    // 每个号各 3 个在途，总容量 = 3 × 2；第 7 个请求没有空闲号，按无号降级。
+    expect(hostUses).toHaveLength(3);
+    expect(guestUses).toHaveLength(3);
+    expect(usedCookies[6]).toBeUndefined();
+    releases.splice(0).forEach((release) => release());
+    await Promise.all(pending);
   });
 });

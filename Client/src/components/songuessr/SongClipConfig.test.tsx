@@ -60,17 +60,26 @@ describe("片段编辑的纯函数", () => {
     expect(formatClipTime(65_400)).toBe("1:05.4");
   });
 
-  it("起止约束覆盖最短、最长与越界", () => {
-    expect(clampClipRange(10_000, 11_000, 120_000, "end")).toEqual([10_000, 13_000]);
-    expect(clampClipRange(10_000, 60_000, 120_000, "start")).toEqual([10_000, 40_000]);
-    expect(clampClipRange(10_000, 60_000, 120_000, "end")).toEqual([30_000, 60_000]);
-    expect(clampClipRange(-5_000, 2_000, 120_000, "end")).toEqual([0, 3_000]);
+  it("起止约束覆盖最短与越界", () => {
+    expect(clampClipRange(10_000, 11_000, 120_000)).toEqual([10_000, 15_000]);
+    expect(clampClipRange(10_000, 60_000, 120_000)).toEqual([10_000, 60_000]);
+    expect(clampClipRange(-5_000, 2_000, 120_000)).toEqual([0, 5_000]);
   });
 
-  it("默认区间优先副歌开头且不超过 30 秒", () => {
+  it("默认区间优先用服务端建议，没有建议时回退副歌或首句", () => {
+    expect(
+      defaultClipRange({
+        ...SONG,
+        suggestedClip: { startTime: 40_000, endTime: 52_000 },
+      })
+    ).toEqual([40_000, 52_000]);
+    // 建议区间短于 5 秒时按手动下限收口。
+    expect(
+      defaultClipRange({ ...SONG, suggestedClip: { startTime: 40_000, endTime: 42_000 } })
+    ).toEqual([40_000, 45_000]);
     expect(
       defaultClipRange({ ...SONG, chorus: { startTime: 50_000, endTime: 90_000 } })
-    ).toEqual([50_000, 80_000]);
+    ).toEqual([50_000, 90_000]);
     expect(defaultClipRange(SONG)).toEqual([10_000, 25_000]);
   });
 });
@@ -91,7 +100,7 @@ describe("SongClipConfig", () => {
     expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 10_000, endTime: 25_000 });
   });
 
-  it("时间轴把区间卡在 30 秒内，歌词高亮跟着新区间走", async () => {
+  it("时间轴可以选到整首，歌词高亮跟着新区间走", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     render(<SongClipConfig song={SONG} onConfirm={onConfirm} onCancel={vi.fn()} />);
@@ -100,18 +109,19 @@ describe("SongClipConfig", () => {
     endThumb.focus();
     fireEvent.keyDown(endThumb, { key: "End" });
 
-    expect(screen.getByText("片段 30.0 秒（3–30 秒）")).toBeInTheDocument();
+    expect(screen.getByText("片段 110.0 秒（至少 5 秒，最长整首）")).toBeInTheDocument();
     expect(endThumb).toHaveAttribute("aria-valuetext", "2:00.0");
     expect(screen.getByRole("button", { name: /1:35\.0 末句/ })).toHaveAttribute(
       "data-selected",
       "true"
     );
-    expect(screen.getByRole("button", { name: /0:10\.0 第一句/ })).not.toHaveAttribute(
-      "data-selected"
+    expect(screen.getByRole("button", { name: /0:10\.0 第一句/ })).toHaveAttribute(
+      "data-selected",
+      "true"
     );
-    // 确认按钮提交的是收口后的区间（120 秒处回推 30 秒）。
+    // 确认按钮提交的是夹紧后的整段区间。
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
-    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 90_000, endTime: 120_000 });
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 10_000, endTime: 120_000 });
   });
 
   it("试听从片段起点开始，到终点按循环开关决定重播或暂停", async () => {

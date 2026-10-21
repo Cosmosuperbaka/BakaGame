@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Music2, Pause, Play, Repeat } from "lucide-react";
 import type { SongClipPreview, SongClipRange, SongLyricLine } from "@bakagame/shared";
-import { SONG_CLIP_MAX_MS, SONG_CLIP_MIN_MS } from "@bakagame/shared";
+import { SONG_CLIP_MIN_MS } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
@@ -14,9 +14,6 @@ import {
   formatClipTime,
   resolveClipDuration,
 } from "./SongClipEditing";
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
 
 /** 片段长度只报秒，避免「0:12.4」在小标签里显得啰嗦。 */
 const formatLength = (ms: number) => `${(Math.max(0, ms) / 1_000).toFixed(1)} 秒`;
@@ -60,6 +57,16 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
   const scrollTargetRef = useRef<"start" | "end" | null>(null);
   const [startTime, endTime] = range;
   const selectedLength = endTime - startTime;
+  /**
+   * 提交前的最后一道前端过滤：时间轴与歌词选择都已经夹紧，这里只兜住异常输入
+   * （例如歌曲短于 5 秒），绝不让无效区间发到服务端。
+   */
+  const selectionValid =
+    Number.isInteger(startTime) &&
+    Number.isInteger(endTime) &&
+    startTime >= 0 &&
+    endTime <= domain &&
+    selectedLength >= SONG_CLIP_MIN_MS;
 
   // 区间变化后把播放头收进新区间，避免试听跑到选区外。
   useEffect(() => {
@@ -92,7 +99,7 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
   );
 
   const applyRange = (start: number, end: number, moved: "start" | "end") => {
-    setRange(clampClipRange(start, end, domain, moved));
+    setRange(clampClipRange(start, end, domain));
     setAnchorIndex(null);
     scrollTargetRef.current = moved;
   };
@@ -111,8 +118,8 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
     if (!line) return;
     scrollTargetRef.current = null;
     if (anchorIndex === null) {
-      const width = clamp(selectedLength, SONG_CLIP_MIN_MS, SONG_CLIP_MAX_MS);
-      setRange(clampClipRange(line.time, line.time + width, domain, "start"));
+      const width = Math.max(selectedLength, SONG_CLIP_MIN_MS);
+      setRange(clampClipRange(line.time, line.time + width, domain));
       setAnchorIndex(index);
       return;
     }
@@ -120,7 +127,7 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
     const first = anchor.time <= line.time ? anchor : line;
     const last = anchor.time <= line.time ? line : anchor;
     setRange(
-      clampClipRange(first.time, Math.max(last.endTime, first.time + SONG_CLIP_MIN_MS), domain, "end")
+      clampClipRange(first.time, Math.max(last.endTime, first.time + SONG_CLIP_MIN_MS), domain)
     );
     setAnchorIndex(null);
   };
@@ -171,6 +178,10 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
   };
 
   const confirm = async () => {
+    if (!selectionValid) {
+      setError(`请选择至少 ${SONG_CLIP_MIN_MS / 1_000} 秒的片段`);
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -319,7 +330,7 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold text-muted-foreground">时间轴</h3>
           <span className="text-2xs text-muted-foreground">
-            片段 {formatLength(selectedLength)}（3–30 秒）
+            片段 {formatLength(selectedLength)}（至少 5 秒，最长整首）
           </span>
         </div>
         <div className="relative">
@@ -367,7 +378,12 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
       ) : null}
 
       <div className="space-y-2">
-        <Button className="w-full" loading={submitting} onClick={() => void confirm()}>
+        <Button
+          className="w-full"
+          loading={submitting}
+          disabled={!selectionValid}
+          onClick={() => void confirm()}
+        >
           用这段出题
         </Button>
         <p className="text-center text-xs text-muted-foreground">

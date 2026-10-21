@@ -394,10 +394,8 @@ export interface SongClipRange {
   endTime: number;
 }
 
-/** 手动片段的最短长度：再短就听不出旋律。 */
-export const SONG_CLIP_MIN_MS = 3_000;
-/** 手动片段的最长长度：再长就接近整首歌，违背「片段」的玩法。 */
-export const SONG_CLIP_MAX_MS = 30_000;
+/** 手动片段的最短长度：再短就听不出旋律。最长不超过整首歌。 */
+export const SONG_CLIP_MIN_MS = 5_000;
 
 /**
  * 手动出题时的歌曲预览：只下发给当前出题人，供片段编辑器试听与选词。
@@ -414,6 +412,11 @@ export interface SongClipPreview {
   audioUrl: string;
   lyrics: SongLyricLine[];
   chorus?: SongChorus;
+  /**
+   * 服务端按房间设置随机抽出的建议区间（与自动抽题同一套切片逻辑）。客户端用它作为
+   * 片段编辑器的初始选择；出题人直接确认时播放的就是这一段。
+   */
+  suggestedClip?: SongClipRange;
 }
 
 

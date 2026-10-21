@@ -17,6 +17,7 @@ const PREVIEW: SongClipPreview = {
   album: "测试专辑",
   durationMs: 120_000,
   audioUrl: "https://audio/test.mp3",
+  suggestedClip: { startTime: 60_000, endTime: 75_000 },
   lyrics: [
     { time: 10_000, endTime: 15_000, text: "第一句" },
     { time: 20_000, endTime: 25_000, text: "第二句" },
@@ -73,8 +74,8 @@ describe("手动出题的片段配置", () => {
     expect(await screen.findByText("时间轴")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
     expect(onSelectSearchSong).toHaveBeenCalledExactlyOnceWith("song-1", "submit", undefined, {
-      startTime: 10_000,
-      endTime: 25_000,
+      startTime: 60_000,
+      endTime: 75_000,
     });
   });
 });

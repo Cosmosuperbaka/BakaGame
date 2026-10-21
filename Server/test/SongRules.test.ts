@@ -99,7 +99,7 @@ test("答题者：无人猜中时没有得分（缺省 0）", () => {
   );
 });
 
-test("出题人：1 人 1 次猜中、耗时 5% → 为正", () => {
+test("出题人：1 人 1 次猜中、耗时 5% → 拿到约四分之一的答题分", () => {
   const { difficulty, score } = submitter({
     answerableCount: 1,
     correctCount: 1,
@@ -108,27 +108,31 @@ test("出题人：1 人 1 次猜中、耗时 5% → 为正", () => {
     averageAnswererScore: 12,
   });
   expect(difficulty).toBeCloseTo(0.29, 5);
-  expect(score).toBeGreaterThan(0);
+  // 12 × 1.0 × 0.29 = 3.48 → 3；旧口径的 0.3 比例只给 1 分。
+  expect(score).toBe(3);
 });
 
-test("出题人：5 人全在 2 次内猜中不得为正（旧口径给 15）", () => {
-  // 旧口径：5 个猜中 × 3 = 15
+test("出题人：5 人全在 2 次内猜中仍远低于旧口径的 15", () => {
+  // 旧口径：5 个猜中 × 3 = 15；新口径按难度折扣只给个位数。
   const legacy = 5 * SONG_SCORE.legacySubmitterPerCorrect;
   expect(legacy).toBe(15);
-  for (const elapsedRatio of [0.5, 1]) {
-    const { score } = submitter({
-      answerableCount: 5,
-      correctCount: 5,
-      attemptsPerAnswerer: 2,
-      elapsedRatio,
-      averageAnswererScore: answerer({
-        answerableCount: 5,
-        elapsedRatio,
-        guessesUsed: 2,
-      }),
-    });
-    expect(score).toBeLessThanOrEqual(0);
-  }
+  const half = submitter({
+    answerableCount: 5,
+    correctCount: 5,
+    attemptsPerAnswerer: 2,
+    elapsedRatio: 0.5,
+    averageAnswererScore: answerer({ answerableCount: 5, elapsedRatio: 0.5, guessesUsed: 2 }),
+  });
+  const full = submitter({
+    answerableCount: 5,
+    correctCount: 5,
+    attemptsPerAnswerer: 2,
+    elapsedRatio: 0.9,
+    averageAnswererScore: answerer({ answerableCount: 5, elapsedRatio: 0.9, guessesUsed: 2 }),
+  });
+  expect(half.score).toBe(2);
+  expect(full.score).toBe(1);
+  expect(half.score + full.score).toBeLessThan(legacy);
 });
 
 test("出题人：无人猜中 → -2；难度分过低 → -1；其余不小于 0", () => {

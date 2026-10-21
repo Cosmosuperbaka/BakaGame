@@ -14,8 +14,8 @@ export const SONG_SCORING_VERSION: 1 | 2 = 2;
 export const SONG_SCORE = {
   /** 答题者基准分：满分（速度 1.2 × 精度 1）即 12 分。 */
   base: 10,
-  /** 出题人得分占「平均答题者得分」的比例。 */
-  submitterRatio: 0.3,
+  /** 出题人得分占「平均答题者得分」的比例；难度分 D 继续作折扣，避免奖励简单题。 */
+  submitterRatio: 1,
   /** 难度分低于此值视为「这题根本不成立」，出题人扣分。 */
   lowDifficultyThreshold: 0.2,
   /** 普通模式速度系数：用时占比 0 取 `fast`，占比 1 取 `slow`，区间外夹紧。 */
@@ -126,9 +126,11 @@ export interface SongSubmitterInput {
 }
 
 /**
- * 出题人得分：`round(平均答题者得分 × 0.3 × D)`。
+ * 出题人得分：`round(平均答题者得分 × 1.0 × D)`。
  *
- * 硬边界依次生效：无人猜中 → -2（题废了）；难度分过低 → -1（太简单）；其余不小于 0。
+ * 难度分 D 就是折扣：同样答得好，题越简单出题人拿得越少；也不再把「答对人数 × 3」
+ * 当作奖励（那是奖励出简单题）。硬边界依次生效：无人猜中 → -2（题废了）；难度分过低 →
+ * -1（太简单）；其余不小于 0。
  */
 export function computeSongSubmitterScore(input: SongSubmitterInput): number {
   if (input.correctCount === 0) return SONG_SCORE.nobodyCorrect;

@@ -14,6 +14,7 @@ const SONG: SongClipPreview = {
   durationMs: 261_000,
   audioUrl: SILENT_AUDIO,
   chorus: { startTime: 60_000, endTime: 90_000 },
+  suggestedClip: { startTime: 60_000, endTime: 90_000 },
   lyrics: [
     { time: 12_000, endTime: 15_000, text: "沈むように溶けてゆくように" },
     { time: 15_000, endTime: 18_500, text: "二人だけの空が広がる夜に" },

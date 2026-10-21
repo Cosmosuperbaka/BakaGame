@@ -67,7 +67,6 @@ import {
   type SongLyricClip,
   type SongClipPreview,
   type SongClipRange,
-  SONG_CLIP_MAX_MS,
   SONG_CLIP_MIN_MS,
   type BangumiSubjectDetails,
   type BangumiSubjectSearchResult,
@@ -1283,10 +1282,11 @@ const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
 /**
  * 单号并发上限：同一个贡献账号同时最多几个在途上游请求。
  *
- * 网易云凭证绑定登录 IP，同一份 cookie 并发过高会直接触发风控；QQ 同理。取号先按
- * 最小在途平衡，再卡这条上限，避免多个人同时把同一个号打满。
+ * 取 3 与改造前 `NeteaseMusicProvider` 的全局并发一致：单号房间的上限与改造前相同，
+ * 多号房间的总容量就是 3 × 账号数（每号各 3 个在途）。单号再往上加并发只会让同一份
+ * cookie 触发风控，因此不随池子大小改变单号口径。
  */
-const MUSIC_POOL_MAX_IN_FLIGHT = 2;
+const MUSIC_POOL_MAX_IN_FLIGHT = 3;
 /** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
 export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
 /** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
@@ -1436,9 +1436,9 @@ export const createSongLyricClip = (
 /**
  * 手动出题的自定义片段。`clip` 缺省时返回 undefined，调用方沿用自动切片。
  *
- * 越界或参数不成立（负值、反向、短于下限、长于上限、超出歌曲时长）时**不报错**，
- * 退回整曲：手动路径的兜底以「能出题」优先，宁可让全房听完整首歌，也不能让一次手滑
- * 把出题卡死在报错上。只有真正提交了的区间才走本函数，自动抽题不经过这里。
+ * 长度下限 5 秒、终点不越过歌曲时长（时长未知时不做上界校验），上限就是整首。
+ * 越界或参数不成立时返回 undefined，由调用方回退到**原来的随机切片**：
+ * 手动路径的兜底与「没配片段」完全一致，不把一次手滑变成整首 3 分钟。
  */
 export const createManualLyricClip = (
   song: Pick<SongDetails, "lyrics" | "durationMs">,
@@ -1454,19 +1454,14 @@ export const createManualLyricClip = (
     startTime >= 0 &&
     endTime > startTime &&
     length >= SONG_CLIP_MIN_MS &&
-    length <= SONG_CLIP_MAX_MS &&
     withinSong;
-  if (valid) {
-    return {
-      startTime,
-      endTime,
-      // 取与区间有交集的歌词行：起点落在某句中间时，那一句仍然算在本片段里。
-      lines: song.lyrics.filter((line) => line.time < endTime && line.endTime > startTime),
-    };
-  }
-  const lastLyricEnd = song.lyrics.reduce((max, line) => Math.max(max, line.endTime), 0);
-  const fullEnd = song.durationMs ?? Math.max(Number.isFinite(endTime) ? endTime : 0, lastLyricEnd, 1);
-  return { startTime: 0, endTime: fullEnd, lines: song.lyrics };
+  if (!valid) return undefined;
+  return {
+    startTime,
+    endTime,
+    // 取与区间有交集的歌词行：起点落在某句中间时，那一句仍然算在本片段里。
+    lines: song.lyrics.filter((line) => line.time < endTime && line.endTime > startTime),
+  };
 };
 
 export class SonGuessrService implements AdminRoomControl {
@@ -2881,14 +2876,21 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 该号现在能不能取：开关开着、不在冷却里、且没到单号并发上限。
+   * 该号当下能不能用：开关开着、不在冷却里。
    *
    * 不看贡献者在线与否：掉线有宽限期，宽限内人还在房里，号照用；超期由
-   * `cleanupOfflinePlayers` 连号一起清掉。
+   * `cleanupOfflinePlayers` 连号一起清掉。也不看在途数：快照展示、开局复核与
+   * VIP 标注只需要知道「这号是否可用」，取号时才卡并发。
    */
-  private isPoolEntryAvailable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
+  private isPoolEntryUsable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
     if (!entry.enabled) return false;
     if (this.isCoolingDown(entry, now)) return false;
+    return true;
+  }
+
+  /** 该号能不能取号：在可用基础上再卡单号并发上限。 */
+  private isPoolEntryAvailable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
+    if (!this.isPoolEntryUsable(entry, now)) return false;
     return entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT;
   }
 
@@ -2903,7 +2905,7 @@ export class SonGuessrService implements AdminRoomControl {
     return false;
   }
 
-  /** 池内某平台有没有当下可取的号：开局判定与 B3 的「池空短路」都读这一条。 */
+  /** 池内某平台有没有当下可用的号：VIP 标注与「池空短路」都读这一条，不看并发。 */
   private hasAvailablePoolAccount(
     room: SonGuessrRoomRecord,
     platform: MusicAuthPlatform,
@@ -2913,7 +2915,7 @@ export class SonGuessrService implements AdminRoomControl {
     return this.musicPool(room).some(
       (entry) =>
         entry.platform === platform &&
-        this.isPoolEntryAvailable(entry, now) &&
+        this.isPoolEntryUsable(entry, now) &&
         (!options.requireVip || entry.account.vipStatus === "vip")
     );
   }
@@ -2929,6 +2931,9 @@ export class SonGuessrService implements AdminRoomControl {
    * 2. 同档按最小在途；
    * 3. 再按加入时间、玩家 id 兜底定序。
    *
+   * 并发按「单号 3、整池 3 × 号数」：每个号各自最多 3 个在途，多号自然把总容量叠加；
+   * 所有可用号都打满时返回无租约，由调用方按无号降级。
+   *
    * 这里的会员档筛选只决定**哪个号来服务这首已经选中的歌**，不参与题目可用性判定：调用方
    * 只对自己已经知道 `requiresVip` 的曲目传这一项，候选是否入池与能不能播仍按实际音频判定
    * （见 `Server/docs/NeteaseMusicApi.md`「猜歌接入约束」）。网易云不按会员档筛：解灰兜底让
@@ -2940,15 +2945,18 @@ export class SonGuessrService implements AdminRoomControl {
     options: { requireVip?: boolean } = {}
   ): MusicAccountLease | undefined {
     const now = this.now();
-    const candidates = this.musicPool(room).filter(
-      (entry) => entry.platform === platform && this.isPoolEntryAvailable(entry, now)
+    const usable = this.musicPool(room).filter(
+      (entry) => entry.platform === platform && this.isPoolEntryUsable(entry, now)
     );
     const tiered =
       platform === "qq" && options.requireVip
-        ? candidates.filter((entry) => entry.account.vipStatus === "vip")
-        : candidates;
-    if (tiered.length === 0) return undefined;
-    const chosen = [...tiered].sort((left, right) => {
+        ? usable.filter((entry) => entry.account.vipStatus === "vip")
+        : usable;
+    const candidates = tiered.filter(
+      (entry) => entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT
+    );
+    if (candidates.length === 0) return undefined;
+    const chosen = [...candidates].sort((left, right) => {
       if (platform === "qq") {
         const leftVip = left.account.vipStatus === "vip" ? 0 : 1;
         const rightVip = right.account.vipStatus === "vip" ? 0 : 1;
@@ -3087,22 +3095,19 @@ export class SonGuessrService implements AdminRoomControl {
     return { vipPlatforms };
   }
 
-  /** 池内每端当下会被选中的号：快照的账号展示与开局复核都读这一条。 */
+  /** 池内每端当下会被选中的号：快照的账号展示与开局复核都读这一条（不看在途）。 */
   private primaryPoolEntry(
     room: SonGuessrRoomRecord,
     platform: MusicAuthPlatform
   ): SonGuessrMusicPoolEntry | undefined {
     const now = this.now();
     return this.musicPool(room)
-      .filter(
-        (entry) => entry.platform === platform && entry.enabled && !this.isCoolingDown(entry, now)
-      )
+      .filter((entry) => entry.platform === platform && this.isPoolEntryUsable(entry, now))
       .sort((left, right) => {
         if (left.inFlight !== right.inFlight) return left.inFlight - right.inFlight;
         if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
         return left.playerId.localeCompare(right.playerId);
-      })
-      .find((entry) => this.isPoolEntryAvailable(entry, now));
+      })[0];
   }
 
   /** 池内某端有没有「开关开着、不在冷却里」的号：开局判定与快照的就绪位都用这一条（不看在途）。 */
@@ -3378,6 +3383,13 @@ export class SonGuessrService implements AdminRoomControl {
     ) {
       throw new AppError("NOT_SUBMITTER", "出题人已变更，请重新选歌");
     }
+    // 与自动抽题共用同一套切片：编辑器的默认区间就是「不手动改会播的那一段」。
+    const suggested = createSongLyricClip(
+      song.lyrics,
+      room.settings.lyricsLineCount,
+      this.random,
+      song.durationMs
+    );
     return {
       song: {
         id: song.id,
@@ -3397,6 +3409,7 @@ export class SonGuessrService implements AdminRoomControl {
           isDuet: line.isDuet,
         })),
         chorus: song.chorus,
+        suggestedClip: { startTime: suggested.startTime, endTime: suggested.endTime },
       },
     };
   }
