@@ -119,7 +119,7 @@ export type BangumiDataReply = { type: "reply"; id: number } & (
  * worker → 主线程的日志帧。
  *
  * worker 线程没有 Sentry、也不该有：唯一的观测出口是主线程的 `EventLogger`
- * （结构化真相源 + OTLP + Sentry 都在那边）。裸 `console.*` 只进 stdout，既不经
+ * （结构化真相源 + OTLP + Sentry 都在那边）。裸标准输出只进 stdout，既不经
  * 脱敏也不产生指标，采集链路里等于隐形。所以 worker 内所有日志统一走这个桥。
  */
 export interface BangumiDataLogFrame {
@@ -206,7 +206,7 @@ const initCeeLink = async (request: InitRequest): Promise<void> => {
 /**
  * worker 线程唯一的日志出口：桥回主线程的 `EventLogger`。
  *
- * 本线程没有 Sentry，也不裸调 `console.*`：那条路只进 stdout，既不经脱敏也不产生
+ * 本线程没有 Sentry，也不裸调标准 console 通道：那条路只进 stdout，既不经脱敏也不产生
  * 日志/指标，观测平台里等于隐形（定时任务的故障因此完全不可见）。
  */
 const postLog = (

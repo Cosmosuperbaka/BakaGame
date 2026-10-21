@@ -208,6 +208,18 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     this.onSubjectView = options.onSubjectView;
   }
 
+  /** Worker 线程没有 EventLogger：仍按单行 JSON 写 stderr，避免裸 console 破坏结构。 */
+  private warn(message: string, error: unknown): void {
+    process.stderr.write(
+      `${JSON.stringify({
+        time: new Date().toISOString(),
+        level: "warn",
+        msg: message,
+        context: { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
+      })}\n`
+    );
+  }
+
   /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */
   private readEnrichment(entity: EnrichmentEntity, id: number): BangumiEnrichment | undefined {
     if (!this.enrichment) return undefined;
@@ -221,7 +233,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       if (!row) return undefined;
       return JSON.parse(row.payload) as BangumiEnrichment;
     } catch (error) {
-      console.warn("Bangumi 回填缓存读取失败，本次跳过", error);
+      this.warn("Bangumi 回填缓存读取失败，本次跳过", error);
       return undefined;
     }
   }
@@ -235,7 +247,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
         )
         .run(entity, id, JSON.stringify(payload), Date.now());
     } catch (error) {
-      console.warn("Bangumi 回填缓存写入失败，本次跳过", error);
+      this.warn("Bangumi 回填缓存写入失败，本次跳过", error);
     }
   }
 

@@ -328,8 +328,12 @@ export const initServerSentry = (env: AppEnv): void => {
 
   const release = resolveServerRelease();
   if (!release)
-    console.warn(
-      "[Sentry] 发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog"
+    process.stderr.write(
+      `${JSON.stringify({
+        time: new Date().toISOString(),
+        level: "warn",
+        msg: "发布证据缺失或无效，当前遥测不标注 release；请核对 build/release.json 或源码 Git/changelog",
+      })}\n`
     );
 
   activeEnvironment = env.otelDeploymentEnvironment ?? "development";
