@@ -274,6 +274,7 @@ interface SonGuessrMusicPoolEntry {
 
 /** 一次取号的租约：用完必须 `release`，否则该号的在途数会漏记、并发上限形同虚设。 */
 interface MusicAccountLease {
+  roomId: string;
   cookie: string;
   platform: MusicAuthPlatform;
   playerId: string;
@@ -1287,6 +1288,11 @@ const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
  * cookie 触发风控，因此不随池子大小改变单号口径。
  */
 const MUSIC_POOL_MAX_IN_FLIGHT = 3;
+/**
+ * 等号超时：与改造前 provider 的队列超时一致。所有可用号都打满时请求在这里排队，
+ * 到点仍无空位就取在途最少的可用号直接跑，交给 provider 自己的队列——**不要因为繁忙降级**。
+ */
+const MUSIC_POOL_QUEUE_TIMEOUT_MS = 8_000;
 /** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
 export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
 /** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
@@ -1504,6 +1510,11 @@ export class SonGuessrService implements AdminRoomControl {
     windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
     maxRequests: CHAT_RATE_LIMIT_PER_CONNECTION,
   });
+  /**
+   * 每个房间在等号的请求。所有可用号都达到单号并发上限时在这里排队，任一租约归还
+   * 或池子变化即唤醒重试；只在进程内，房间关闭时整段丢弃。
+   */
+  private readonly musicPoolWaiters = new Map<string, Set<() => void>>();
 
   constructor(private readonly options: SonGuessrServiceOptions) {
     this.now = options.now ?? (() => Date.now());
@@ -2793,6 +2804,8 @@ export class SonGuessrService implements AdminRoomControl {
         recentTotal: 0,
       });
     }
+    // 新号或重登可能刚好满足正在排队的请求。
+    this.wakeMusicPoolWaiters(room.id);
     return { cookie, account };
   }
 
@@ -2836,7 +2849,10 @@ export class SonGuessrService implements AdminRoomControl {
         (platform !== "all" && entry.platform !== platform) ||
         (ownerPlayerId !== undefined && entry.playerId !== ownerPlayerId)
     );
-    return room.musicPool.length !== before;
+    const cleared = room.musicPool.length !== before;
+    // 有号被摘掉时也要叫醒等号者：它们可能因此直接判定「本平台无凭据」而降级。
+    if (cleared) this.wakeMusicPoolWaiters(room.id);
+    return cleared;
   }
 
   /**
@@ -2858,6 +2874,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (!entry) throw new AppError("MUSIC_SESSION_INVALID", "请先登录该平台账号");
     if (entry.enabled !== enabled) {
       entry.enabled = enabled;
+      // 打开开关可能让排队的请求立刻有号可用；关闭则让它们重新判断是否还有别的号。
+      this.wakeMusicPoolWaiters(room.id);
       this.touch(room);
       this.publishRoom(room);
       this.log("song.auth.poolSharing", room.id, player.id, { platform, enabled });
@@ -2931,19 +2949,45 @@ export class SonGuessrService implements AdminRoomControl {
    * 2. 同档按最小在途；
    * 3. 再按加入时间、玩家 id 兜底定序。
    *
-   * 并发按「单号 3、整池 3 × 号数」：每个号各自最多 3 个在途，多号自然把总容量叠加；
-   * 所有可用号都打满时返回无租约，由调用方按无号降级。
+   * 并发按「单号 3、整池 3 × 号数」。所有可用号都在途打满时在这里**排队**，任一租约
+   * 归还或池子变化就重试；排队超过 `MUSIC_POOL_QUEUE_TIMEOUT_MS` 仍无空位，就取在途最少的
+   * 可用号直接跑，交给 provider 的全局队列。只有该平台一个可用凭据都没有（未配置、
+   * 全部冷却或没有会员号）时才返回无租约，由调用方降级。
    *
    * 这里的会员档筛选只决定**哪个号来服务这首已经选中的歌**，不参与题目可用性判定：调用方
    * 只对自己已经知道 `requiresVip` 的曲目传这一项，候选是否入池与能不能播仍按实际音频判定
    * （见 `Server/docs/NeteaseMusicApi.md`「猜歌接入约束」）。网易云不按会员档筛：解灰兜底让
    * 它在任何档位都取得到音源，按档筛只会白白缩小池子。
    */
-  private acquireMusicAccount(
+  private async acquireMusicAccount(
     room: SonGuessrRoomRecord,
     platform: MusicAuthPlatform,
     options: { requireVip?: boolean } = {}
-  ): MusicAccountLease | undefined {
+  ): Promise<MusicAccountLease | undefined> {
+    const deadline = this.now() + MUSIC_POOL_QUEUE_TIMEOUT_MS;
+    for (;;) {
+      if (this.rooms.get(room.id) !== room) return undefined;
+      const available = this.pickMusicPoolEntry(room, platform, options, true);
+      if (available) return this.leaseMusicPoolEntry(room, available, platform);
+      const usable = this.pickMusicPoolEntry(room, platform, options, false);
+      // 没有任何可用凭据（平台未配置 / 全部冷却 / 没有会员号）：这才允许降级。
+      if (!usable) return undefined;
+      const remaining = deadline - this.now();
+      if (remaining <= 0) {
+        // 繁忙超时：不降级，取在途最少的可用号直接跑，由 provider 的队列接住。
+        return this.leaseMusicPoolEntry(room, usable, platform);
+      }
+      await this.waitForMusicPoolSlot(room.id, remaining);
+    }
+  }
+
+  /** 取号候选：`enforceCap` 为 false 时只按「有凭据且可用」，用于判断是否存在替代号。 */
+  private pickMusicPoolEntry(
+    room: SonGuessrRoomRecord,
+    platform: MusicAuthPlatform,
+    options: { requireVip?: boolean },
+    enforceCap: boolean
+  ): SonGuessrMusicPoolEntry | undefined {
     const now = this.now();
     const usable = this.musicPool(room).filter(
       (entry) => entry.platform === platform && this.isPoolEntryUsable(entry, now)
@@ -2952,11 +2996,10 @@ export class SonGuessrService implements AdminRoomControl {
       platform === "qq" && options.requireVip
         ? usable.filter((entry) => entry.account.vipStatus === "vip")
         : usable;
-    const candidates = tiered.filter(
-      (entry) => entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT
-    );
-    if (candidates.length === 0) return undefined;
-    const chosen = [...candidates].sort((left, right) => {
+    const candidates = enforceCap
+      ? tiered.filter((entry) => entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT)
+      : tiered;
+    return [...candidates].sort((left, right) => {
       if (platform === "qq") {
         const leftVip = left.account.vipStatus === "vip" ? 0 : 1;
         const rightVip = right.account.vipStatus === "vip" ? 0 : 1;
@@ -2966,14 +3009,53 @@ export class SonGuessrService implements AdminRoomControl {
       if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
       return left.playerId.localeCompare(right.playerId);
     })[0];
-    if (!chosen) return undefined;
-    chosen.inFlight += 1;
+  }
+
+  private leaseMusicPoolEntry(
+    room: SonGuessrRoomRecord,
+    entry: SonGuessrMusicPoolEntry,
+    platform: MusicAuthPlatform
+  ): MusicAccountLease {
+    entry.inFlight += 1;
     return {
-      cookie: chosen.cookie,
+      roomId: room.id,
+      cookie: entry.cookie,
       platform,
-      playerId: chosen.playerId,
-      release: (result) => this.releaseMusicAccount(chosen, result),
+      playerId: entry.playerId,
+      release: (result) => this.releaseMusicAccount(room.id, entry, result),
     };
+  }
+
+  /** 等一个空位；租约归还、池子增删或开关变化都会唤醒。是否放弃等待由调用方决定。 */
+  private waitForMusicPoolSlot(roomId: string, timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      let created = this.musicPoolWaiters.get(roomId);
+      if (!created) {
+        created = new Set();
+        this.musicPoolWaiters.set(roomId, created);
+      }
+      const waiters = created;
+      let timer: ReturnType<typeof setTimeout>;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        waiters.delete(finish);
+        if (waiters.size === 0) this.musicPoolWaiters.delete(roomId);
+        resolve();
+      };
+      timer = setTimeout(finish, timeoutMs);
+      waiters.add(finish);
+    });
+  }
+
+  /** 唤醒某房的等号者；租约归还与池子变化都要叫一次，否则等号请求会白等到超时。 */
+  private wakeMusicPoolWaiters(roomId: string): void {
+    const waiters = this.musicPoolWaiters.get(roomId);
+    if (!waiters) return;
+    this.musicPoolWaiters.delete(roomId);
+    for (const wake of [...waiters]) wake();
   }
 
   /**
@@ -2989,6 +3071,7 @@ export class SonGuessrService implements AdminRoomControl {
    * 上游暂时的态度、凭据多半还有效，只冷却到点自动恢复，不擅自改号主的开关。
    */
   private releaseMusicAccount(
+    roomId: string,
     entry: SonGuessrMusicPoolEntry,
     result: { ok: boolean; reason?: string; code?: string }
   ): void {
@@ -2997,22 +3080,25 @@ export class SonGuessrService implements AdminRoomControl {
     if (result.ok) {
       entry.recentOk = Math.min(entry.recentOk + 1, MUSIC_POOL_STATS_WINDOW);
       entry.lastFailureReason = undefined;
-      return;
+    } else {
+      entry.lastFailureReason = result.reason ?? "上游请求失败";
+      if (result.code === "MUSIC_SESSION_INVALID") {
+        entry.enabled = false;
+        entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
+      } else if (result.code === "MUSIC_LOGIN_RISK" || result.code === "MUSIC_API_RATE_LIMITED") {
+        entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
+      }
     }
-    entry.lastFailureReason = result.reason ?? "上游请求失败";
-    if (result.code === "MUSIC_SESSION_INVALID") {
-      entry.enabled = false;
-      entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
-    } else if (result.code === "MUSIC_LOGIN_RISK" || result.code === "MUSIC_API_RATE_LIMITED") {
-      entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
-    }
+    // 空出一个在途位：叫醒本房排队的请求，让它们重新竞争。
+    this.wakeMusicPoolWaiters(roomId);
   }
 
   /**
    * 按曲目所属平台取号跑一次上游请求，无论成败都归还租约。
    *
-   * `songId` 是 URN（`netease:` / `qq:`），未知前缀按网易云处理；池里没有可用号时
-   * `cookie` 为 undefined，请求照发（网易云匿名检索仍可用），由调用方与上游决定结果。
+   * `songId` 是 URN（`netease:` / `qq:`），未知前缀按网易云处理；该平台有凭据但都在忙时
+   * 先排队，只有**没有任何可用凭据**时 `cookie` 才为 undefined（网易云匿名检索仍可用，
+   * QQ 由聚合器短路），由调用方与上游决定结果。
    */
   private async withSongAccount<T>(
     room: SonGuessrRoomRecord,
@@ -3021,7 +3107,7 @@ export class SonGuessrService implements AdminRoomControl {
     options: { requireVip?: boolean } = {}
   ): Promise<T> {
     const platform: MusicAuthPlatform = songId?.startsWith("qq:") ? "qq" : "netease";
-    const lease = this.acquireMusicAccount(room, platform, options);
+    const lease = await this.acquireMusicAccount(room, platform, options);
     if (!lease) return run(undefined);
     try {
       const value = await run(lease.cookie);
@@ -3037,12 +3123,14 @@ export class SonGuessrService implements AdminRoomControl {
     }
   }
 
-  private acquireAggregatedAccounts(room: SonGuessrRoomRecord): {
+  private async acquireAggregatedAccounts(room: SonGuessrRoomRecord): Promise<{
     cookie: MusicCookieInput | undefined;
     release: (result: { ok: boolean; reason?: string; code?: string }) => void;
-  } {
-    const netease = this.acquireMusicAccount(room, "netease");
-    const qq = this.acquireMusicAccount(room, "qq");
+  }> {
+    const [netease, qq] = await Promise.all([
+      this.acquireMusicAccount(room, "netease"),
+      this.acquireMusicAccount(room, "qq"),
+    ]);
     return {
       cookie:
         netease || qq
@@ -3067,7 +3155,7 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     run: (cookie: MusicCookieInput | undefined) => Promise<T>
   ): Promise<T> {
-    const lease = this.acquireAggregatedAccounts(room);
+    const lease = await this.acquireAggregatedAccounts(room);
     try {
       const value = await run(lease.cookie);
       lease.release({ ok: true });
@@ -3307,6 +3395,7 @@ export class SonGuessrService implements AdminRoomControl {
           // 凭据已被平台判死：直接摘掉这一号（其余号与其它玩家的号都不动），
           // 房间因此可能整体降级到「无号」，由开局门槛或运行期短路承接。
           room.musicPool = this.musicPool(room).filter((candidate) => candidate !== entry);
+          this.wakeMusicPoolWaiters(room.id);
           this.publishRoom(room);
         }
         throw error;
@@ -3553,7 +3642,7 @@ export class SonGuessrService implements AdminRoomControl {
     ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
     // 整段解析（多个候选、每个都可能多次回源）共用一次取号：这确实是同一批在途请求，
     // 一次一租比每个内部请求各自取号更省，也让池里的在途数反映真实的占用者。
-    const lease = this.acquireAggregatedAccounts(room);
+    const lease = await this.acquireAggregatedAccounts(room);
     const lookup: AnimeSongLookup = {
       provider: this.options.musicProvider,
       anime,
@@ -3987,7 +4076,7 @@ export class SonGuessrService implements AdminRoomControl {
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
-    const lease = this.acquireAggregatedAccounts(room);
+    const lease = await this.acquireAggregatedAccounts(room);
     const ctx: AnimeTrackMatchContext = {
       provider,
       cookie: lease.cookie,
@@ -4322,7 +4411,7 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 自动题库取候选：整轮（歌单 / 歌手 / 热度补全）共用一次取号，结束即归还。 */
   private async resolveAutomaticCandidates(room: SonGuessrRoomRecord): Promise<SongSearchResult[]> {
-    const lease = this.acquireAggregatedAccounts(room);
+    const lease = await this.acquireAggregatedAccounts(room);
     try {
       return await this.collectAutomaticCandidates(room, lease.cookie);
     } finally {
@@ -5544,6 +5633,8 @@ export class SonGuessrService implements AdminRoomControl {
       this.connections.detach(connection);
     }
     room.musicPool = [];
+    // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
+    this.wakeMusicPoolWaiters(room.id);
     this.rooms.delete(room.id);
     this.publishLobby();
   }

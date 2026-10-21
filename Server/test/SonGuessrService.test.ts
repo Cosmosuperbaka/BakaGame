@@ -8329,7 +8329,7 @@ describe("账号池单号并发", () => {
     expect(usedCookies.length).toBe(count);
   };
 
-  test("单号限额与改造前一致：3 个并发，超出按无号降级", async () => {
+  test("单号限额与改造前一致：3 个并发，第 4 个排队等空位", async () => {
     const usedCookies: Array<MusicCookieInput | undefined> = [];
     const { musicProvider, releases } = gatedProvider(usedCookies);
     const service = new SonGuessrService({ musicProvider });
@@ -8345,24 +8345,27 @@ describe("账号池单号并发", () => {
       });
     const pending = [search("search-1")];
     await waitCalls(usedCookies, 1);
-    // 单号上限取改造前 provider 的全局并发 3：前三个请求都由这个号接单。
+    // 单号上限取改造前 provider 的全局并发 3：前三个请求由这个号接单。
     for (let index = 2; index <= 4; index += 1) {
       pending.push(search(`search-${index}`));
-      await waitCalls(usedCookies, index);
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    expect(usedCookies).toHaveLength(3);
 
-    expect(usedCookies.slice(0, 3)).toEqual([
+    // 第 4 个在排队而不是降级：归还一个租约后它拿到的还是这个号。
+    releases.shift()!();
+    await waitCalls(usedCookies, 4);
+    expect(usedCookies).toEqual([
+      { netease: "MUSIC_U=test-host" },
       { netease: "MUSIC_U=test-host" },
       { netease: "MUSIC_U=test-host" },
       { netease: "MUSIC_U=test-host" },
     ]);
-    // 第 4 个已超过单号限额，按无号（undefined）降级。
-    expect(usedCookies[3]).toBeUndefined();
     releases.splice(0).forEach((release) => release());
     await Promise.all(pending);
   });
 
-  test("多号按单号限额倍乘：两个号最多 6 个在途", async () => {
+  test("多号按单号限额倍乘：两个号最多 6 个在途，第 7 个排队", async () => {
     const usedCookies: Array<MusicCookieInput | undefined> = [];
     const { musicProvider, releases } = gatedProvider(usedCookies);
     const service = new SonGuessrService({ musicProvider });
@@ -8388,19 +8391,15 @@ describe("账号池单号并发", () => {
     await waitCalls(usedCookies, 1);
     for (let index = 2; index <= 7; index += 1) {
       pending.push(search(`multi-${index}`));
-      await waitCalls(usedCookies, index);
+      await new Promise((resolve) => setTimeout(resolve, 20));
     }
+    expect(usedCookies).toHaveLength(6);
 
-    const neteaseCookie = (cookie: MusicCookieInput | undefined) =>
-      typeof cookie === "object" ? cookie.netease : undefined;
-    const hostUses = usedCookies.filter((cookie) => neteaseCookie(cookie) === "MUSIC_U=test-host");
-    const guestUses = usedCookies.filter(
-      (cookie) => neteaseCookie(cookie) === "MUSIC_U=guest-cookie"
-    );
-    // 每个号各 3 个在途，总容量 = 3 × 2；第 7 个请求没有空闲号，按无号降级。
-    expect(hostUses).toHaveLength(3);
-    expect(guestUses).toHaveLength(3);
-    expect(usedCookies[6]).toBeUndefined();
+    // 每个号各 3 个在途，总容量 = 3 × 2；第 7 个排队等空位，归还后继续用号而不是降级。
+    releases.shift()!();
+    await waitCalls(usedCookies, 7);
+    expect(usedCookies).toHaveLength(7);
+    expect(usedCookies.every(Boolean)).toBe(true);
     releases.splice(0).forEach((release) => release());
     await Promise.all(pending);
   });
