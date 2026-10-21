@@ -272,6 +272,13 @@ export const ENV_ENTRIES: EnvEntry[] = [
 
   // ==================== T2 部署期可调 ====================
   {
+    name: "LOG_LEVEL",
+    layer: "T2",
+    documented: true,
+    sample: "info",
+    note: ["运行日志等级（debug / info / warn / error），缺省 info；debug 只写进程流，不进 Sentry。"],
+  },
+  {
     name: "BANGUMI_API_URL",
     layer: "T2",
     sample: "https://api.bgm.tv",
