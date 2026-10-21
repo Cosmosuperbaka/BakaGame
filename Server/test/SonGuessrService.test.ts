@@ -8462,3 +8462,41 @@ test("猜歌聊天 +1 走增量事件，同人重复点撤销并拒绝给自己�
     })
   ).resolves.toEqual({ updated: false });
 });
+
+test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份标记", async () => {
+  const service = new SonGuessrService({ musicProvider: provider });
+  const host = connection(service, "agent-admission-host");
+  await createRoom(service, host);
+  const agent = connection(service, "agent-admission");
+  agent.record.isAgent = true;
+
+  await expect(
+    execute(service, agent, {
+      id: "agent-join-denied",
+      type: "song.room.join",
+      roomId: "1234",
+      payload: { userName: "AgentOne" },
+    })
+  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+
+  await execute(service, host, {
+    id: "allow-agents",
+    type: "song.room.updateSettings",
+    roomId: "1234",
+    payload: { allowAgents: true },
+  });
+  const joined = await execute<{ playerId: string; snapshot: SonGuessrRoomSnapshot }>(
+    service,
+    agent,
+    {
+      id: "agent-join-allowed",
+      type: "song.room.join",
+      roomId: "1234",
+      payload: { userName: "AgentOne" },
+    }
+  );
+  expect(joined.snapshot.settings.allowAgents).toBe(true);
+  expect(joined.snapshot.players.find((player) => player.id === joined.playerId)?.isAgent).toBe(
+    true
+  );
+});

@@ -36,6 +36,8 @@ export const CEESettingsSchema = t.Object(
      * 设置整包被判非法，所以只能 optional。缺省即关闭，不开关的房间与以往完全一致。
      */
     bakaAntiCheat: t.Optional(t.Boolean()),
+    /** 是否允许 Agent（MCP）加入；缺省 false，旧客户端不传即为关闭。 */
+    allowAgents: t.Optional(t.Boolean()),
   },
   strict
 );
@@ -55,6 +57,7 @@ export function parseCEESettings(value: unknown): CEESettings {
     const normalized: Record<string, unknown> = { ...rest };
     if (!("answerMode" in normalized)) normalized.answerMode = "random";
     if (!("bakaAntiCheat" in normalized)) normalized.bakaAntiCheat = false;
+    if (!("allowAgents" in normalized)) normalized.allowAgents = false;
     filled = normalized;
   }
   if (!Value.Check(CEESettingsSchema, filled)) throw new Error("设置文件格式不正确");
@@ -84,6 +87,7 @@ export const createDefaultCEESettings = (year = new Date().getFullYear()): CEESe
   nonstopMode: false,
   answerMode: "random",
   bakaAntiCheat: false,
+  allowAgents: false,
 });
 export type CEESource = "native" | "original";
 /**
@@ -201,6 +205,8 @@ export interface CEEPlayer {
   attempts: number;
   marks: string;
   syncCompleted: boolean;
+  /** 通过 MCP 接入的 Agent 玩家；界面与准入据此识别。 */
+  isAgent?: boolean;
   account?: PlayerAccount;
 }
 export interface CEEScoreDetail {

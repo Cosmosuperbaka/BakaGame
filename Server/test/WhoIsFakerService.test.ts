@@ -3954,3 +3954,36 @@ test("聊天 +1 按去重人数计数，同人再点撤销，并拒绝自己、�
     })
   ).resolves.toEqual({ updated: false });
 });
+
+test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份标记", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "6161");
+  const agent = createConnection(service, "agent-connection");
+  agent.record.isAgent = true;
+
+  await expect(
+    execute(service, agent, {
+      id: "agent-join-denied",
+      type: "room.join",
+      roomId: "6161",
+      payload: { userName: "AgentOne" },
+    })
+  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+
+  await execute(service, host, {
+    id: "allow-agents",
+    type: "room.updateSettings",
+    roomId: "6161",
+    payload: { allowAgents: true },
+  });
+  const joined = (await execute(service, agent, {
+    id: "agent-join-allowed",
+    type: "room.join",
+    roomId: "6161",
+    payload: { userName: "AgentOne" },
+  })) as { playerId: string };
+
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.settings.allowAgents).toBe(true);
+  expect(snapshot?.players.find((player) => player.id === joined.playerId)?.isAgent).toBe(true);
+});

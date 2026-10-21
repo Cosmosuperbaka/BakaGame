@@ -678,6 +678,7 @@ export class WhoIsFakerService implements AdminRoomControl {
         roleConfig: createDefaultRoleConfig(),
         revealRoleOnDeath: true,
         spectatorsSeeAnswers: false,
+        allowAgents: message.payload.allowAgents === true,
       },
       hostPlayerId: "",
       createdAt: this.now(),
@@ -687,7 +688,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       chat: [],
     };
 
-    const host = this.createPlayer(message.payload.userName, false);
+    const host = this.createPlayer(message.payload.userName, false, connection.isAgent === true);
     room.players[host.id] = host;
     room.hostPlayerId = host.id;
 
@@ -745,6 +746,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     const roomId = ensureRoomId(message.roomId ?? "");
     const room = this.getRoom(roomId);
 
+    this.ensureAgentsAllowed(room, connection);
     await this.ensurePasswordMatch(room, message.payload.password, connection);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room)
@@ -759,7 +761,11 @@ export class WhoIsFakerService implements AdminRoomControl {
       throw new AppError("SPECTATOR_DISABLED", "当前房间不允许旁观");
     }
 
-    const player = this.createPlayer(message.payload.userName, false);
+    const player = this.createPlayer(
+      message.payload.userName,
+      false,
+      connection.isAgent === true
+    );
     player.membership = joiningAsSpectator ? "spectator" : "active";
 
     room.players[player.id] = player;
@@ -795,6 +801,7 @@ export class WhoIsFakerService implements AdminRoomControl {
   ) {
     // 重连不会创建新玩家，只会把会话重新挂回原连接。
     const room = this.getRoom(ensureRoomId(message.payload.roomId));
+    this.ensureAgentsAllowed(room, connection);
     const player = Object.values(room.players).find((item) =>
       safeEqualToken(item.sessionToken, message.payload.sessionToken)
     );
@@ -883,6 +890,10 @@ export class WhoIsFakerService implements AdminRoomControl {
 
     if (payload.spectatorsSeeAnswers != null) {
       room.settings.spectatorsSeeAnswers = payload.spectatorsSeeAnswers;
+    }
+
+    if (payload.allowAgents != null) {
+      room.settings.allowAgents = payload.allowAgents;
     }
 
     if (payload.roleConfig) {
@@ -3895,6 +3906,7 @@ export class WhoIsFakerService implements AdminRoomControl {
         roleConfig: room.settings.roleConfig,
         revealRoleOnDeath: room.settings.revealRoleOnDeath ?? true,
         spectatorsSeeAnswers: room.settings.spectatorsSeeAnswers ?? false,
+        allowAgents: room.settings.allowAgents === true,
       },
       status: {
         phase: room.round?.phase ?? "waiting",
@@ -3963,6 +3975,7 @@ export class WhoIsFakerService implements AdminRoomControl {
           isReady:
             player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
           isBot: player.isBot,
+          ...(player.isAgent ? { isAgent: true } : {}),
           isHost: room.hostPlayerId === player.id,
           account: player.account,
           roundStatus,
@@ -4731,7 +4744,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
   }
 
-  private createPlayer(name: string, isBot: boolean): WhoIsFakerPlayerRecord {
+  private createPlayer(name: string, isBot: boolean, isAgent = false): WhoIsFakerPlayerRecord {
     const normalized = normalizeName(name);
 
     if (!normalized) {
@@ -4746,6 +4759,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       membership: "active",
       isReady: false,
       isBot,
+      ...(isAgent ? { isAgent: true } : {}),
       online: !isBot,
       joinedAt: this.now(),
       lastSeenAt: this.now(),
@@ -4810,6 +4824,12 @@ export class WhoIsFakerService implements AdminRoomControl {
   private ensureHost(room: WhoIsFakerRoomRecord, playerId: string) {
     if (room.hostPlayerId !== playerId) {
       throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
+    }
+  }
+
+  private ensureAgentsAllowed(room: WhoIsFakerRoomRecord, connection: ConnectionRecord) {
+    if (connection.isAgent === true && room.settings.allowAgents !== true) {
+      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
     }
   }
 

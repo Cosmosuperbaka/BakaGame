@@ -5,6 +5,7 @@ import { Check, Clock, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
+import { AgentBadge } from "@/components/common/AgentBadge";
 import {
   PlayerGroupTitle,
   PlayerListLayout,
@@ -359,7 +360,12 @@ function CEEPlayerRow({
       host={snapshot.hostPlayerId === player.id}
       online={player.online}
       account={player.account}
-      badges={status ? <PlayerStatusPill {...status} /> : null}
+      badges={
+        <>
+          {player.isAgent ? <AgentBadge /> : null}
+          {status ? <PlayerStatusPill {...status} /> : null}
+        </>
+      }
       meta={
         detail ? (
           <span className="truncate font-sans text-2xs text-muted-foreground">{detail}</span>

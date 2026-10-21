@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
+import { Bot, Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -586,6 +586,7 @@ const roomOf = (snapshot: SonGuessrRoomSnapshot) => ({
   isPrivate: snapshot.visibility === "private",
   password: "",
   allowSpectators: snapshot.allowSpectators,
+  allowAgents: snapshot.settings.allowAgents ?? false,
 });
 
 /** 房间设置：名称、私密与密码、旁观。非房主只看到名称、公开与否和旁观，看不到密码。 */
@@ -608,6 +609,7 @@ export function SongRoomSettings({
       visibility: draft.isPrivate ? "private" : "public",
       password: draft.isPrivate ? draft.password || undefined : "",
       allowSpectators: draft.allowSpectators,
+      allowAgents: draft.allowAgents,
     },
     (payload) => saveWaitingSettings(snapshot.roomId, payload),
     {
@@ -652,6 +654,13 @@ export function SongRoomSettings({
         icon={Users}
         checked={values.allowSpectators}
         onCheckedChange={(value) => edit("allowSpectators", value)}
+      />
+      <SettingSwitchRow
+        label="允许 Agent 进入"
+        description="通过 MCP 接入的 Agent 默认会被拒绝；打开后它们会带 Agent 徽标进入房间。"
+        icon={Bot}
+        checked={values.allowAgents}
+        onCheckedChange={(value) => edit("allowAgents", value)}
       />
     </SettingsFields>
   );
@@ -700,6 +709,7 @@ export function songSettingsSummary(snapshot: SonGuessrRoomSnapshot) {
     room: [
       snapshot.visibility === "private" ? "私密房间" : "公开房间",
       snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
+      snapshot.settings.allowAgents ? "允许 Agent" : "禁止 Agent",
     ],
   };
 }

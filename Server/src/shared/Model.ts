@@ -118,6 +118,8 @@ export interface ConnectionRecord {
    * 反作弊房据此拒绝 Web 接入，普通房不读这个字段，因而对现有玩家零影响。
    */
   clientChannel?: ClientChannelProof;
+  /** 握手时声明并由服务端标记的 Agent 连接；房间设置可据此拒绝或放行。 */
+  isAgent?: boolean;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

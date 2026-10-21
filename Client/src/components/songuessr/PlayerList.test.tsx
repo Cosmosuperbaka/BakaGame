@@ -39,6 +39,20 @@ describe("SonGuessr PlayerList", () => {
     expect(screen.getByText("房主")).toBeInTheDocument();
   });
 
+  it("Agent 玩家带可见徽标，不伪装成真人", () => {
+    render(
+      <PlayerList
+        players={[createMockPlayer({ id: "agent-1", name: "BakaAgent", isAgent: true })]}
+        myPlayerId="host-1"
+        isHost
+        phase="waiting"
+        allowSpectators
+      />
+    );
+
+    expect(screen.getByText("Agent")).toBeInTheDocument();
+  });
+
   it("在等待阶段正确展示准备与等待就绪状态徽章", () => {
     const players: SonGuessrPlayerView[] = [
       createMockPlayer({ id: "p1", name: "已准备玩家", isReady: true }),

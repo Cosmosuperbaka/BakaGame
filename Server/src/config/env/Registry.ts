@@ -279,6 +279,20 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["运行日志等级（debug / info / warn / error），缺省 info；debug 只写进程流，不进 Sentry。"],
   },
   {
+    name: "MCP_ENABLED",
+    layer: "T2",
+    documented: true,
+    sample: "false",
+    note: ["Agent（MCP）接入总开关，缺省关闭；关闭时握手直接拒绝声明为 Agent 的连接。"],
+  },
+  {
+    name: "MCP_AGENT_NAME",
+    layer: "T2",
+    documented: true,
+    sample: "BakaAgent",
+    note: ["MCP Agent 在房间内使用的默认昵称；缺省 BakaAgent。"],
+  },
+  {
     name: "BANGUMI_API_URL",
     layer: "T2",
     sample: "https://api.bgm.tv",

@@ -73,6 +73,7 @@ export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
       attempts: player.attempts,
       marks: player.marks,
       syncCompleted: player.syncCompleted,
+      ...(player.isAgent ? { isAgent: true } : {}),
       account: player.account,
     })),
   };

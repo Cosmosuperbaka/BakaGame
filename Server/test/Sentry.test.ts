@@ -629,7 +629,7 @@ it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () 
     originalNodeEnv = Bun.env.NODE_ENV;
   const release = spyOn(Release, "resolveServerRelease").mockReturnValue(undefined);
   const init = spyOn(Sentry, "init").mockImplementation((() => {}) as any);
-  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  const warning = spyOn(process.stderr, "write").mockImplementation((() => true) as any);
   try {
     Bun.env.SENTRY_RELEASE = "arbitrary-legacy-producer";
     Bun.env.NODE_ENV = "production";
@@ -637,8 +637,8 @@ it("缺少发布证据时禁止 SDK 从任意环境字符串伪造 release", () 
     const options = init.mock.calls[0]![0]!;
     expect(options.release).toBe(""); // 显式禁用 SDK 的 undefined 自动探测。
     expect(options.environment).toBe("development"); // 不重新解析 NODE_ENV。
-    expect(warning).toHaveBeenCalledTimes(1);
-    expect(warning.mock.calls[0]![0]).toContain("发布证据缺失或无效");
+    const warnings = warning.mock.calls.map(([chunk]) => String(chunk));
+    expect(warnings.some((line) => line.includes("发布证据缺失或无效"))).toBe(true);
   } finally {
     if (originalRelease === undefined) delete Bun.env.SENTRY_RELEASE;
     else Bun.env.SENTRY_RELEASE = originalRelease;

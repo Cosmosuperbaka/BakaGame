@@ -109,6 +109,7 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   maxGuessesPerRound: 3,
   guessDurationSeconds: 60,
   showGuessTimer: true,
+  allowAgents: false,
 };
 
 /** 未配置歌单或歌手时使用网易云热歌榜作为默认题库。 */
@@ -131,6 +132,7 @@ interface SonGuessrPlayerRecord {
   correctGuesses: number;
   totalGuesses: number;
   isBot: boolean;
+  isAgent?: boolean;
   joinedAt: number;
   lastSeenAt: number;
   connectionId?: string;
@@ -1988,6 +1990,7 @@ export class SonGuessrService implements AdminRoomControl {
       payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
 
     const player = this.createPlayer(payload.userName, true);
+    if (connection.isAgent === true) player.isAgent = true;
     const now = this.now();
     const solo = payload.solo === true;
     const room: SonGuessrRoomRecord = {
@@ -2051,6 +2054,7 @@ export class SonGuessrService implements AdminRoomControl {
   ) {
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
+    this.ensureAgentsAllowed(room, connection);
     await this.ensurePassword(room, payload.password, connection);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
@@ -2071,6 +2075,7 @@ export class SonGuessrService implements AdminRoomControl {
     // 目标校验全部通过后才解绑旧席位：密码错误、房号不存在等拒绝不得销毁原绑定。
     this.ensureConnectionFree(connection);
     const player = this.createPlayer(name, false);
+    if (connection.isAgent === true) player.isAgent = true;
     player.membership = membership;
     room.players[player.id] = player;
     const currentHost = room.players[room.hostPlayerId];
@@ -2105,6 +2110,7 @@ export class SonGuessrService implements AdminRoomControl {
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
     const targetRoomId = ensureRoomId(roomIdValue);
     const room = this.getRoom(targetRoomId);
+    this.ensureAgentsAllowed(room, connection);
     const player = Object.values(room.players).find(
       (candidate) =>
         safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
@@ -2344,6 +2350,7 @@ export class SonGuessrService implements AdminRoomControl {
     }
     if (payload.showGuessTimer !== undefined) settings.showGuessTimer = payload.showGuessTimer;
     if (payload.bloodMode !== undefined) settings.bloodMode = payload.bloodMode;
+    if (payload.allowAgents !== undefined) settings.allowAgents = payload.allowAgents;
   }
 
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
@@ -5507,6 +5514,7 @@ export class SonGuessrService implements AdminRoomControl {
       online: player.online,
       isReady: player.isReady,
       isBot: player.isBot,
+      ...(player.isAgent ? { isAgent: true } : {}),
       isHost: room.hostPlayerId === player.id,
       account: player.account,
       correctGuesses: player.correctGuesses,
@@ -5805,6 +5813,12 @@ export class SonGuessrService implements AdminRoomControl {
 
   private ensureHost(room: SonGuessrRoomRecord, playerId: string) {
     if (room.hostPlayerId !== playerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
+  }
+
+  private ensureAgentsAllowed(room: SonGuessrRoomRecord, connection: ConnectionRecord) {
+    if (connection.isAgent === true && room.settings.allowAgents !== true) {
+      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
+    }
   }
 
   private async ensurePassword(

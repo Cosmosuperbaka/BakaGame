@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "bun run --watch src/Index.ts",
     "start": "bun run src/Index.ts",
+    "mcp": "bun run src/mcp/Index.ts",
     "check": "tsc --noEmit",
     "lint": "eslint .",
     "lint:prune": "eslint . --prune-suppressions",

@@ -32,6 +32,8 @@ export interface EnvBootstrap {
   shardGames?: RoomSnapshotGame[];
   /** 房间快照目录；缺省由调用方取 Server/storage。 */
   roomSnapshotDirectory?: string;
+  /** Agent（MCP）接入总开关；缺省关闭，关闭时握手直接拒绝 Agent 连接。 */
+  mcpEnabled?: boolean;
 }
 
 const normalizeServerUrl = (value: string, port: number): URL => {
@@ -82,6 +84,7 @@ export const readBootstrapEnv = (): EnvBootstrap => {
     serverPort,
     shardGames: readShardGames(),
     roomSnapshotDirectory: (Bun.env.ROOM_SNAPSHOT_DIR ?? "").trim() || undefined,
+    mcpEnabled: Bun.env.MCP_ENABLED === "true",
   };
 };
 

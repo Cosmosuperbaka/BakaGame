@@ -5,6 +5,7 @@ import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import {
   compileRouteTemplates,
   httpOperationAction,
+  resolveAgentIdentity,
   UNROUTED_HTTP_ACTION,
 } from "../src/transport/App";
 import {
@@ -987,4 +988,20 @@ test("未注册路径的 HTTP 操作日志只落固定桶，已注册路由仍�
   } finally {
     await stop();
   }
+});
+
+test("Agent 握手标记受 MCP_ENABLED 控制，未声明时不标记", () => {
+  const agentContext: { request: Request; isAgent?: boolean } = {
+    request: new Request("http://localhost/api/whoisfaker/ws?agent=1"),
+  };
+  expect(() => resolveAgentIdentity(agentContext, false)).toThrow("Agent 接入未启用");
+
+  resolveAgentIdentity(agentContext, true);
+  expect(agentContext.isAgent).toBe(true);
+
+  const humanContext: { request: Request; isAgent?: boolean } = {
+    request: new Request("http://localhost/api/whoisfaker/ws"),
+  };
+  resolveAgentIdentity(humanContext, true);
+  expect(humanContext.isAgent).toBeUndefined();
 });

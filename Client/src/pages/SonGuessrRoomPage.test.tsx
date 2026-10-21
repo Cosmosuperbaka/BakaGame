@@ -584,7 +584,13 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
                 autoFilters: { playlist: undefined, artists: [], minPopularity: 0 },
                 animeAutoFilters: {},
               }
-            : { name: "新房间名称", visibility: "public", password: "", allowSpectators: true },
+            : {
+                name: "新房间名称",
+                visibility: "public",
+                password: "",
+                allowSpectators: true,
+                allowAgents: false,
+              },
         ]);
       }
       await act(async () => {

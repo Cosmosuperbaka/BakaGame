@@ -86,6 +86,8 @@ export interface RoomSettings {
    * 结算后（gameOver）答案本来就随公开快照全房可见，这个开关只管局中。
    */
   spectatorsSeeAnswers: boolean;
+  /** 是否允许 Agent（MCP）加入；缺省 false。 */
+  allowAgents: boolean;
 }
 
 export interface WhoIsFakerPlayerRecord {
@@ -96,6 +98,8 @@ export interface WhoIsFakerPlayerRecord {
   membership: PlayerMembership;
   isReady: boolean;
   isBot: boolean;
+  /** 通过 MCP 接入的 Agent 玩家；界面据此显示徽标，房间设置据此准入。 */
+  isAgent?: boolean;
   online: boolean;
   joinedAt: number;
   lastSeenAt: number;
@@ -418,6 +422,7 @@ export interface PublicPlayerView {
   online: boolean;
   isReady: boolean;
   isBot: boolean;
+  isAgent?: boolean;
   isHost: boolean;
   account?: PlayerAccount;
   roundStatus: "waiting" | "questioner" | "alive" | "dead" | "spectator" | "kicked";
@@ -439,6 +444,7 @@ export interface WhoIsFakerRoomSnapshot {
     roleConfig: RoleConfig;
     revealRoleOnDeath?: boolean;
     spectatorsSeeAnswers?: boolean;
+    allowAgents?: boolean;
   };
   status: {
     phase: WhoIsFakerPhase;
@@ -556,6 +562,7 @@ export const WhoIsFakerPayloadSchemas = {
       allowSpectators: t.Boolean(),
       userName,
       roleConfig: t.Optional(RoleConfigSchema),
+      allowAgents: t.Optional(t.Boolean()),
     },
     strict
   ),
@@ -575,6 +582,7 @@ export const WhoIsFakerPayloadSchemas = {
       roleConfig: t.Optional(RoleConfigSchema),
       revealRoleOnDeath: t.Optional(t.Boolean()),
       spectatorsSeeAnswers: t.Optional(t.Boolean()),
+      allowAgents: t.Optional(t.Boolean()),
     },
     strict
   ),

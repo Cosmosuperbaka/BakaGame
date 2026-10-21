@@ -352,17 +352,23 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
     for (const protocol of PROTOCOLS)
       expect(fullLog).toContain(`${protocol.service} WS 消息解析失败`);
     const lines = fullLog.split(/\r?\n/);
+    const parsed = lines.flatMap((line) => {
+      try {
+        return [JSON.parse(line) as { msg?: unknown; context?: { traceId?: unknown } }];
+      } catch {
+        return [];
+      }
+    });
     expect(
-      lines.some(
+      parsed.some(
         (line) =>
-          line.includes("HTTP GET /readyz") &&
-          line.includes(JSON.stringify({ traceId: httpTraceId }))
+          line.msg === "HTTP GET /readyz" && line.context?.traceId === httpTraceId
       )
     ).toBe(true);
     for (const { command, traceId } of evidence.traces) {
       expect(
-        lines.some(
-          (line) => line.includes(`WS ${command}`) && line.includes(JSON.stringify({ traceId }))
+        parsed.some(
+          (line) => line.msg === `WS ${command}` && line.context?.traceId === traceId
         )
       ).toBe(true);
     }

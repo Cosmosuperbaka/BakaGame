@@ -2,6 +2,7 @@ import { useCallback, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
+import { AgentBadge } from "@/components/common/AgentBadge";
 import {
   PlayerGroupTitle,
   PlayerListLayout,
@@ -273,7 +274,12 @@ function SongPlayerRow({
       online={player.online}
       bot={player.isBot}
       account={player.account}
-      badges={status ? <PlayerStatusPill {...status} /> : null}
+      badges={
+        <>
+          {player.isAgent ? <AgentBadge /> : null}
+          {status ? <PlayerStatusPill {...status} /> : null}
+        </>
+      }
       actions={actions}
       layoutId={player.id}
       ref={ref}

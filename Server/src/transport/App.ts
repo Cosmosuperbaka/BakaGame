@@ -467,6 +467,22 @@ const socketBacklog = (ws: GameSocketLike): number => {
 };
 
 /** 建立连接上下文，后续所有命令都靠它定位会话。 */
+/**
+ * Agent 身份标记：独立的 MCP server 在握手 URL 上带 `agent=1`（或用同名请求头）。
+ * 这只是一个自报标记，不能防住人类伪装；它的用途是让房间设置能拒绝 Agent，并让界面明示。
+ */
+export const resolveAgentIdentity = (
+  context: { request: Request; isAgent?: boolean },
+  mcpEnabled?: boolean
+): void => {
+  const requested =
+    context.request.headers.get("x-bakagame-agent") === "1" ||
+    new URL(context.request.url).searchParams.get("agent") === "1";
+  if (!requested) return;
+  if (!mcpEnabled) throw new AppError("AGENTS_DISABLED", "Agent 接入未启用");
+  context.isAgent = true;
+};
+
 const openGameConnection = (
   ws: GameSocketLike,
   register: (connection: ConnectionRecord) => void
@@ -476,10 +492,12 @@ const openGameConnection = (
     account,
     clientIp,
     clientChannel: proof,
+    isAgent,
   } = ws.data as {
     account?: PlayerAccount;
     clientIp?: string;
     clientChannel?: ClientChannelProof;
+    isAgent?: boolean;
   };
   (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender(
@@ -493,6 +511,7 @@ const openGameConnection = (
     ...(account ? { account } : {}),
     ...(clientIp ? { clientIp } : {}),
     ...(proof ? { clientChannel: proof } : {}),
+    ...(isAgent ? { isAgent: true } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,
@@ -864,6 +883,7 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        resolveAgentIdentity(context, env.mcpEnabled);
         reserveHandshakeSlot(context, handshakeQuota);
       },
       open: (ws) =>
@@ -888,6 +908,7 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        resolveAgentIdentity(context, env.mcpEnabled);
         reserveHandshakeSlot(context, handshakeQuota);
         resolveSocketChannel(context, clientChannel);
       },
@@ -913,6 +934,7 @@ export const createApp = ({
       upgrade: async (context) => {
         rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
         await resolveSocketAccount(context, account, logger);
+        resolveAgentIdentity(context, env.mcpEnabled);
         reserveHandshakeSlot(context, handshakeQuota);
       },
       open: (ws) =>

@@ -357,3 +357,21 @@ test("CEE 聊天 +1 随房间快照下发，同人重复点撤销并拒绝给自
     h.send(host, "cee.chat.plusOne", { messageId: "cee-chat-missing" })
   ).resolves.toEqual({ updated: false });
 });
+
+test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份标记", async () => {
+  const h = keep(ceeTestHarness());
+  const host = await h.create();
+  const agent = h.connect("AgentOne");
+  agent.record.isAgent = true;
+
+  await expect(
+    h.send(agent, "cee.room.join", { userName: "AgentOne" })
+  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+
+  await h.configure(host, { allowAgents: true });
+  await h.send(agent, "cee.room.join", { userName: "AgentOne" });
+  expect(h.snapshot(host).settings.allowAgents).toBe(true);
+  expect(h.snapshot(host).players.find((player) => player.name === "AgentOne")?.isAgent).toBe(
+    true
+  );
+});

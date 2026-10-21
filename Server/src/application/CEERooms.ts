@@ -226,6 +226,7 @@ export class CEERooms {
     if (antiCheat) this.requireClientAdmission(connection);
     // 密码处理前占用房号，失败时由局部事务撤销，防止并发创建覆盖。
     const player = this.player(userName);
+    if (connection.isAgent === true) player.isAgent = true;
     const room: CEERoom = {
       id,
       name,
@@ -280,6 +281,7 @@ export class CEERooms {
     if (room.phase !== "waiting" && !room.allowSpectators)
       throw new AppError("SPECTATING_DISABLED", "该房间不允许中途加入");
     const player = this.player(name);
+    if (connection.isAgent === true) player.isAgent = true;
     if (room.phase !== "waiting") player.status = "observing";
     room.players.set(player.id, player);
     this.attach(connection, room, player);
@@ -360,6 +362,8 @@ export class CEERooms {
    * 开关为假的房间一行都不执行——普通房间的连接路径与以往完全一致。
    */
   requireAdmission(connection: ConnectionRecord, room: CEERoom): void {
+    if (connection.isAgent === true && room.settings.allowAgents !== true)
+      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
     if (isCEEAntiCheatRoom(room.settings)) this.requireClientAdmission(connection);
   }
   /**

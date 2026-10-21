@@ -151,6 +151,8 @@ export class CEEOriginalService {
     payload: CEEPayload<"cee.room.create">
   ): Promise<CEERoomEnterResult> {
     const connection = this.requireConnection(connectionId);
+    if (connection.isAgent === true)
+      throw new AppError("AGENTS_NOT_ALLOWED", "原版房不支持 Agent 进入");
     if (payload.password || !payload.allowSpectators)
       this.unsupported("原版房间不支持密码或禁止观战");
     return this.enterOnce(connection, target, payload.userName, payload);
@@ -162,6 +164,8 @@ export class CEEOriginalService {
     payload: CEEPayload<"cee.room.join">
   ): Promise<CEERoomEnterResult> {
     const connection = this.requireConnection(connectionId);
+    if (connection.isAgent === true)
+      throw new AppError("AGENTS_NOT_ALLOWED", "原版房不支持 Agent 进入");
     if (payload.password) this.unsupported("原版房间不支持密码");
     return this.enterOnce(connection, target, payload.userName);
   }

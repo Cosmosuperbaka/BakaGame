@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   VenetianMask,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
@@ -227,6 +228,7 @@ const settingsOf = (snapshot: WhoIsFakerRoomSnapshot) => ({
   allowSpectators: snapshot.allowSpectators,
   revealRoleOnDeath: snapshot.settings.revealRoleOnDeath ?? true,
   spectatorsSeeAnswers: snapshot.settings.spectatorsSeeAnswers ?? false,
+  allowAgents: snapshot.settings.allowAgents ?? false,
   ...snapshot.settings.roleConfig,
 });
 
@@ -255,6 +257,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
       allowSpectators: draft.allowSpectators,
       revealRoleOnDeath: draft.revealRoleOnDeath,
       spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
+      allowAgents: draft.allowAgents,
       roleConfig: effectiveRoleConfig(draft, limits),
     },
     (payload) => {
@@ -333,6 +336,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
           values.isPrivate ? "私密房间" : "公开房间",
           values.allowSpectators ? "允许旁观" : "不允许旁观",
           values.spectatorsSeeAnswers ? "旁观可见答案" : "旁观隐藏答案",
+          values.allowAgents ? "允许 Agent" : "禁止 Agent",
         ]}
       >
         <div className="space-y-4">
@@ -373,6 +377,13 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
             icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
             checked={values.spectatorsSeeAnswers}
             onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
+          />
+          <SettingSwitchRow
+            label="允许 Agent 进入"
+            description="通过 MCP 接入的 Agent 默认会被拒绝；打开后它们会带 Agent 徽标进入房间。"
+            icon={Bot}
+            checked={values.allowAgents}
+            onCheckedChange={(value) => edit("allowAgents", value)}
           />
         </div>
       </SettingsAccordion>

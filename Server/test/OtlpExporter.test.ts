@@ -335,8 +335,14 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
   expect(clientLog).not.toContain("\n[BAKA]");
   expect(clientLog).not.toContain("\r");
   // 确认 identifier 依然保持 safe 默认（system），未被 fake-admin-conn 篡改
-  expect(clientLog).toContain("         system | SYS [CLIENT] 正常打点  [BAKA] 伪造的日志行");
-  expect(clientLog).not.toContain("fake-admin-conn |");
+  const parsedLog = JSON.parse(clientLog!) as {
+    msg: string;
+    context: { identifier: string; customField: string };
+  };
+  expect(parsedLog.msg).toBe("[CLIENT] 正常打点  [BAKA] 伪造的日志行");
+  expect(parsedLog.context.identifier).toBe("system");
+  expect(parsedLog.context.customField).toBe("safe_value with_newline");
+  expect(clientLog).not.toContain("fake-admin-conn");
 
   // 2. 尝试传入过多键（超过 16 个）
   const tooManyKeys: Record<string, string> = {};

@@ -309,6 +309,8 @@ export interface SonGuessrSettings {
   maxGuessesPerRound: number;
   guessDurationSeconds: number;
   showGuessTimer: boolean;
+  /** 是否允许 Agent（MCP）加入；缺省 false。 */
+  allowAgents?: boolean;
 }
 
 export interface SonGuessrMusicAccount {
@@ -600,6 +602,7 @@ export interface SonGuessrPlayerView {
   online: boolean;
   isReady: boolean;
   isBot: boolean;
+  isAgent?: boolean;
   isHost: boolean;
   account?: PlayerAccount;
   correctGuesses: number;
@@ -766,6 +769,7 @@ export const SonGuessrPayloadSchemas = {
       guessDurationSeconds: t.Optional(t.Integer({ minimum: 5 })),
       bloodMode: t.Optional(t.Boolean()),
       showGuessTimer: t.Optional(t.Boolean()),
+      allowAgents: t.Optional(t.Boolean()),
     },
     strict
   ),
