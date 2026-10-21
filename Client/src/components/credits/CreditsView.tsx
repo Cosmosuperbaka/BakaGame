@@ -30,6 +30,7 @@ export interface CreditsViewProps {
   tab: CreditsTab;
   onTabChange: (tab: CreditsTab) => void;
   onBack: () => void;
+  onOpenPage: (path: string) => void;
   versionLabel: string;
   commitLabel: string;
   dependencies: readonly CreditDependency[];
@@ -46,6 +47,11 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
   { value: "commits", label: "提交历史" },
 ];
 
+const LEGAL_LINKS = [
+  { href: "/privacy", label: "隐私说明" },
+  { href: "/terms", label: "用户条款" },
+] as const;
+
 /**
  * 版本信息页的展示层：固定视口高度的外壳（顶栏 + 标签栏 + 内容区），
  * 只有内容区内部滚动，三段内容再长也不带动整页。
@@ -58,6 +64,7 @@ export function CreditsView({
   tab,
   onTabChange,
   onBack,
+  onOpenPage,
   versionLabel,
   commitLabel,
   dependencies,
@@ -194,6 +201,26 @@ export function CreditsView({
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* 站内说明入口放在“关于项目”里，不再占用首页页脚。 */}
+      <footer className="shrink-0 border-t border-border">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-xs text-muted-foreground md:px-10">
+          <span className="select-none">站内说明</span>
+          {LEGAL_LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={(event) => {
+                event.preventDefault();
+                onOpenPage(link.href);
+              }}
+              className="rounded-sm underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            >
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </footer>
 
       <Sheet
         open={sheetOpen}

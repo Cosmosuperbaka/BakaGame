@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
-import { ArrowUpRight } from "lucide-react";
+import { Activity, ArrowUpRight } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 // 逐图标引入：品牌图标包的聚合入口无法被摇树，整包会进产物。
@@ -125,11 +125,7 @@ const EXTERNAL_LINKS: ExternalLink[] = [
   { href: "https://space.bilibili.com/354780713", label: "作者哔哩哔哩主页", icon: faBilibili },
 ];
 
-const FOOTER_PAGE_LINKS = [
-  { href: "/status", label: "服务状态" },
-  { href: "/privacy", label: "隐私说明" },
-  { href: "/terms", label: "用户条款" },
-] as const;
+const STATUS_PAGE_PATH = "/status";
 
 function ComingSoonBadge() {
   return (
@@ -301,21 +297,19 @@ function FooterLink({ link }: { link: ExternalLink }) {
   );
 }
 
-/** 页脚站内页面入口：与版本号同一种文本按钮，悬停下划线告知这是跳转。 */
-function FooterPageLink({ href, label }: { href: string; label: string }) {
+/** 服务状态入口：与版本号、外链图标同一行，图标 + 文本，悬停不出现下划线。 */
+function FooterStatusLink() {
   const navigate = usePageNavigate();
   return (
-    <motion.a
-      href={href}
+    <motion.button
+      type="button"
       {...pressable}
-      onClick={(event) => {
-        event.preventDefault();
-        void navigate(href);
-      }}
-      className="min-h-8 rounded-md px-2 py-1 text-xs text-muted-foreground underline-offset-4 transition-colors hover:bg-accent hover:text-accent-foreground hover:underline"
+      onClick={() => void navigate(STATUS_PAGE_PATH)}
+      className="flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
-      {label}
-    </motion.a>
+      <Activity aria-hidden="true" className="h-3.5 w-3.5" />
+      服务状态
+    </motion.button>
   );
 }
 
@@ -360,6 +354,7 @@ export default function LandingPage() {
       <div className="absolute right-3 top-3 z-panel flex items-center gap-1 sm:right-5 sm:top-4">
         <ClientDownloadEntry />
         <AccountButton />
+        <FeedbackButton />
       </div>
       <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
@@ -433,10 +428,7 @@ export default function LandingPage() {
           >
             {versionLabel}
           </motion.button>
-          <FeedbackButton />
-          {FOOTER_PAGE_LINKS.map((link) => (
-            <FooterPageLink key={link.href} href={link.href} label={link.label} />
-          ))}
+          <FooterStatusLink />
         </div>
       </footer>
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   ArrowLeft,
   CheckCircle2,
   CircleHelp,
@@ -109,7 +110,7 @@ export default function StatusPage() {
         description="BakaGame 服务状态：查看游戏服务、搜索索引、番剧数据、图片缓存与外部监测的当前可用性。"
         indexable={false}
       />
-      <header className="border-b border-border">
+      <header>
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-6 py-3 md:py-4">
           <Button
             variant="ghost"
@@ -120,7 +121,10 @@ export default function StatusPage() {
             <ArrowLeft aria-hidden="true" />
             <span>返回主页</span>
           </Button>
-          <h1 className="flex-1 text-lg font-bold sm:text-xl">服务状态</h1>
+          <h1 className="flex flex-1 items-center gap-2 text-lg font-bold sm:text-xl">
+            <Activity aria-hidden="true" className="text-primary" />
+            服务状态
+          </h1>
           <Button
             variant="outline"
             size="sm"

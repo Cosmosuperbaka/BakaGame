@@ -193,7 +193,7 @@ export function AccountButton() {
   );
 }
 
-/** 页脚的反馈入口：只对登录用户开放，游客点击先登录、登录成功后接着打开反馈。 */
+/** 顶栏的反馈入口：登录用户直接打开反馈，游客点击先登录、登录成功后接着打开反馈。 */
 export function FeedbackButton() {
   const status = useAccountStore((state) => state.status);
   const unread = useAccountStore((state) => state.unreadFeedback);
@@ -207,7 +207,7 @@ export function FeedbackButton() {
           ? openDialog("feedback", originOf(event))
           : openDialog("login", originOf(event), "feedback")
       }
-      className="relative flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="relative flex h-9 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
       反馈

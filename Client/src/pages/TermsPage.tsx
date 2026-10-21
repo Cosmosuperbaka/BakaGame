@@ -115,7 +115,7 @@ export default function TermsPage() {
         </LegalSection>
 
         <LegalSection title="九、联系我们">
-          <p>登录后可通过页脚的站内反馈联系我们，也可以通过页脚列出的社区入口找到运营者。</p>
+          <p>登录后可通过页面右上角的站内反馈联系我们，也可以通过页脚列出的社区入口找到运营者。</p>
         </LegalSection>
       </LegalPage>
     </>

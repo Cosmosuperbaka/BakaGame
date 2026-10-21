@@ -48,6 +48,7 @@ function CreditsPage() {
           setParams(next === "credits" ? {} : { tab: next }, { replace: true })
         }
         onBack={() => void navigate("/")}
+        onOpenPage={(path) => void navigate(path)}
         versionLabel={`V${version ?? "∞"}`}
         commitLabel={commitHistory.currentCommit}
         dependencies={creditsManifest.dependencies}

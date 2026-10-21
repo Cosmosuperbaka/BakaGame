@@ -40,9 +40,11 @@ const MAIN_PACKAGE_COUNT = CREDITS_FIXTURE_DEPENDENCIES.filter(
 
 function renderView({
   onTabChange = vi.fn(),
+  onOpenPage = vi.fn(),
   loadLicense = vi.fn(loadFixtureLicense),
 }: {
   onTabChange?: (tab: CreditsTab) => void;
+  onOpenPage?: (path: string) => void;
   loadLicense?: (packageName: string) => Promise<CreditLicenseDocument | null>;
 } = {}) {
   function Harness() {
@@ -56,6 +58,7 @@ function renderView({
             onTabChange(next);
           }}
           onBack={() => {}}
+          onOpenPage={onOpenPage}
           versionLabel="V1.2.0"
           commitLabel="3ee6998"
           dependencies={CREDITS_FIXTURE_DEPENDENCIES}
@@ -208,5 +211,17 @@ describe("CreditsView", () => {
     const dialog = await screen.findByRole("dialog", { name: "left-pad" });
     await user.click(within(dialog).getByRole("button", { name: "许可证原文" }));
     expect(await within(dialog).findByText("该包未附带许可证原文。")).toBeInTheDocument();
+  });
+
+  it("法务入口收在「关于项目」页脚，点击交给路由处理", async () => {
+    const user = userEvent.setup();
+    const onOpenPage = vi.fn();
+    renderView({ onOpenPage });
+
+    expect(screen.getByText("站内说明")).toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "隐私说明" }));
+    expect(onOpenPage).toHaveBeenCalledWith("/privacy");
+    await user.click(screen.getByRole("link", { name: "用户条款" }));
+    expect(onOpenPage).toHaveBeenCalledWith("/terms");
   });
 });

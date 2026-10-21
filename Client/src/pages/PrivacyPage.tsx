@@ -22,7 +22,7 @@ export default function PrivacyPage() {
       />
       <LegalPage
         title="隐私说明"
-        updatedAt="2026-10-21"
+        updatedAt="2026-10-22"
         related={{ href: "/terms", label: "用户条款" }}
       >
         <p className="text-sm leading-6 text-muted-foreground">
@@ -133,6 +133,10 @@ export default function PrivacyPage() {
               接收经站内隧道转发的错误与性能数据，用于监控与故障排查。
             </li>
             <li>
+              <span className="font-semibold">Better Stack：</span>
+              提供外部可用性监测。其监测节点会定期访问本站公开地址；后端只读取其监测结果，不向其发送账号或对局数据。
+            </li>
+            <li>
               <span className="font-semibold">QQ 昵称服务：</span>
               由运营方自建，仅用于读取 QQ 昵称；不向站外第三方共享这些数据。
             </li>
@@ -177,7 +181,7 @@ export default function PrivacyPage() {
 
         <LegalSection title="七、联系我们">
           <p>
-            登录后可通过页脚的站内反馈联系我们，也可以通过页脚列出的社区入口找到运营者。
+            登录后可通过页面右上角的站内反馈联系我们，也可以通过页脚列出的社区入口找到运营者。
           </p>
         </LegalSection>
       </LegalPage>
