@@ -1,24 +1,13 @@
 import { Elysia, t } from "elysia";
+import {
+  MockExternalStatusProbe,
+  type ExternalStatusProbe,
+} from "../../infrastructure/ExternalStatusProbe";
 import type {
   PublicStatusComponent,
   PublicStatusLevel,
   PublicStatusSnapshot,
 } from "../../shared/Status";
-
-/**
- * 外部探针适配器：状态页只消费归一化后的等级，不关心上游是哪家监测服务。
- * 换服务（或接入 UptimeRobot）只替换这个接口的实现，路由与页面不动。
- */
-export interface ExternalStatusProbe {
-  read(): Promise<PublicStatusLevel | null>;
-}
-
-/** 选型未确认时的缺省适配器：不请求任何外部服务，页面把外部监测显示为「未知」。 */
-export class MockExternalStatusProbe implements ExternalStatusProbe {
-  async read(): Promise<PublicStatusLevel | null> {
-    return null;
-  }
-}
 
 export interface StatusRoutesDependencies {
   /** 进程自身是否可服务；停机中返回 false。 */

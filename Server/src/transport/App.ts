@@ -38,6 +38,7 @@ import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
+import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
 import { resolveServerRelease } from "../infrastructure/Release";
 
 export interface AppDependencies {
@@ -837,6 +838,9 @@ export const createApp = ({
         datasetPath: env.bangumiDbPath,
         imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
         version: () => resolveServerRelease() ?? "unknown",
+        externalProbe: env.betterStackApiKey
+          ? new BetterStackStatusProbe({ apiKey: env.betterStackApiKey })
+          : undefined,
       })
     )
     .use(

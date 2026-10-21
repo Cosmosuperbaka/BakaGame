@@ -20,6 +20,8 @@ export interface EnvObservability {
   sentryAllowedProjectIds?: string[];
   /** 管理后台概览代查 Sentry 用的只读令牌（org:read、project:read、event:read）；不配则后台显示未配置。 */
   sentryApiToken?: string;
+  /** Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。 */
+  betterStackApiKey?: string;
   /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
   sentryTracesSampleRate?: number;
   /**
@@ -138,6 +140,7 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
         ? Bun.env.OPENAPI_ENABLED === "true"
         : deploymentEnvironment !== "production",
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
+    betterStackApiKey: Bun.env.BETTERSTACK_API_KEY?.trim() || undefined,
     sentryDsn,
     sentryApiToken,
     sentryAllowedProjectIds,

@@ -11,9 +11,9 @@ import {
   PUBLIC_STATUS_COMPONENT_IDS,
   type PublicStatusSnapshot,
 } from "../src/shared/Status";
+import type { ExternalStatusProbe } from "../src/infrastructure/ExternalStatusProbe";
 import {
   statusRoutes,
-  type ExternalStatusProbe,
   type StatusRoutesDependencies,
 } from "../src/transport/routes/Status";
 import { createTestApp } from "./AppFixtures";

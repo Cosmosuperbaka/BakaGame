@@ -229,6 +229,14 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["管理后台概览代查 Sentry 的只读令牌（org:read、project:read、event:read），可不配"],
   },
   {
+    name: "BETTERSTACK_API_KEY",
+    layer: "T1",
+    documented: true,
+    secret: true,
+    sample: "",
+    note: ["Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。"],
+  },
+  {
     name: "OTEL_EXPORTER_OTLP_ENDPOINT",
     layer: "T1",
     documented: true,
