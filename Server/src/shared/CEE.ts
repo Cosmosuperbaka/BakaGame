@@ -358,6 +358,10 @@ export const CEEPayloadSchemas = {
   "cee.room.kick": t.Object({ playerId }, strict),
   "cee.room.transferHost": t.Object({ playerId }, strict),
   "cee.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "cee.chat.plusOne": t.Object(
+    { messageId: t.String({ minLength: 1, maxLength: 128 }) },
+    strict
+  ),
   "cee.character.search": t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
   "cee.subject.search": t.Object({ keyword: t.String({ minLength: 1, maxLength: 80 }) }, strict),
   "cee.subject.characters": t.Object({ subjectId: id }, strict),

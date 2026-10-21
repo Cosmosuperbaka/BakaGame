@@ -23,6 +23,13 @@ export default function CEERoomPage() {
   const sendChat = async (text: string) => {
     await useCEEStore.getState().sendCommand("cee.chat.send", { text });
   };
+  const togglePlusOne = async (messageId: string) => {
+    try {
+      await useCEEStore.getState().sendCommand("cee.chat.plusOne", { messageId });
+    } catch (error) {
+      showError(error);
+    }
+  };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
 
   const seo = (
@@ -83,6 +90,7 @@ export default function CEERoomPage() {
       players={snapshot.players}
       myPlayerId={privateState.playerId}
       onSendMessage={sendChat}
+      onTogglePlusOne={togglePlusOne}
       onError={showError}
       maxLength={500}
       // 原版房的聊天只在增强版玩家之间互通，上游的原版玩家看不到，要在频道里交代清楚。

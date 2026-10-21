@@ -27,6 +27,9 @@ type LogOutputLike = LogEmitter | Partial<LogOutput>;
 
 const EVENT_LABELS: Record<string, string> = {
   "chat.sent": "聊天消息已发送",
+  "chat.plusOne": "聊天 +1 已更新",
+  "song.chat.plusOne": "猜歌聊天 +1 已更新",
+  "cee.chat.plusOne": "猜角色聊天 +1 已更新",
   "game.blank_guess_submitted": "白板已提交猜词",
   "game.description_submitted": "描述已提交",
   "game.disconnect_resolved": "掉线玩家已处理",

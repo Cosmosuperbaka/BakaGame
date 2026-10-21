@@ -281,6 +281,7 @@ export class WhoIsFakerService implements AdminRoomControl {
         kick: (connection, playerId) => this.handleKick(connection, playerId),
         transferHost: (connection, playerId) => this.handleTransferHost(connection, playerId),
         sendChat: (connection, text) => this.handleChat(connection, text),
+        plusOne: (connection, messageId) => this.handlePlusOne(connection, messageId),
       }),
       createPlayerCommandHandler({
         now: () => this.now(),
@@ -2170,6 +2171,26 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
   }
 
+  private chatChannelOf(
+    room: WhoIsFakerRoomRecord,
+    player: WhoIsFakerPlayerRecord
+  ): { channel: ChatChannel; ghostRole?: "dead" | "spectator" } {
+    const isIngame = Boolean(
+      room.round &&
+      ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(
+        room.round.phase
+      )
+    );
+    if (!isIngame) return { channel: "main" };
+    const isSpectator =
+      player.membership === "spectator" && room.round?.questionerPlayerId !== player.id;
+    const isDead = room.round?.assignments[player.id]?.alive === false;
+    if (isSpectator || isDead) {
+      return { channel: "ghost", ghostRole: isSpectator ? "spectator" : "dead" };
+    }
+    return { channel: "main" };
+  }
+
   private async handleChat(connection: ConnectionRecord, text: string) {
     // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
     const { room, player } = this.requireRoomPlayer(connection);
@@ -2182,25 +2203,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       throw new AppError("INVALID_CHAT", "聊天内容不能为空");
     }
 
-    let channel: ChatChannel = "main";
-    let ghostRole: "dead" | "spectator" | undefined;
-
-    const isIngame = Boolean(
-      room.round &&
-      ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(
-        room.round.phase
-      )
-    );
-
-    if (isIngame) {
-      const isSpectator =
-        player.membership === "spectator" && room.round?.questionerPlayerId !== player.id;
-      const isDead = room.round?.assignments[player.id]?.alive === false;
-      if (isSpectator || isDead) {
-        channel = "ghost";
-        ghostRole = isSpectator ? "spectator" : "dead";
-      }
-    }
+    const { channel, ghostRole } = this.chatChannelOf(room, player);
 
     const message = this.createChatMessage(
       player.id,
@@ -2228,6 +2231,41 @@ export class WhoIsFakerService implements AdminRoomControl {
 
     this.publishRoomState(room);
     return { sent: true };
+  }
+
+  /** 计数型 +1：同一个人重复点是撤销；幽灵频道只允许同频道玩家参与。 */
+  private async handlePlusOne(connection: ConnectionRecord, messageId: string) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (!this.chatLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
+    }
+    const message = room.chat.find((entry) => entry.id === messageId);
+    // 已被 CHAT_LIMIT 截断的旧消息静默忽略：客户端界面迟早会对齐，不必报错。
+    if (!message) return { updated: false };
+    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
+    if (message.playerId === player.id)
+      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
+    if (message.channel === "ghost" && this.chatChannelOf(room, player).channel !== "ghost") {
+      throw new AppError("CHAT_PLUS_ONE_CHANNEL", "只能给同频道的消息 +1");
+    }
+
+    const voters = message.plusOneBy ?? [];
+    const active = !voters.includes(player.id);
+    message.plusOneBy = active
+      ? [...voters, player.id]
+      : voters.filter((id) => id !== player.id);
+    this.touchRoom(room);
+
+    await this.log({
+      type: "chat.plusOne",
+      createdAt: this.now(),
+      roomId: room.id,
+      playerId: player.id,
+      payload: { messageId, active },
+    });
+
+    this.publishRoomState(room);
+    return { updated: true, active, count: message.plusOneBy.length };
   }
 
   private async handleTransferHost(connection: ConnectionRecord, targetPlayerId: string) {

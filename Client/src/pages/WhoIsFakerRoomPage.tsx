@@ -239,6 +239,17 @@ export default function WhoIsFakerRoomPage() {
     [sendCommand, addToast]
   );
 
+  const handleTogglePlusOne = useCallback(
+    async (messageId: string) => {
+      try {
+        await sendCommand("chat.plusOne", { messageId });
+      } catch (e) {
+        addToast((e as { message: string }).message, "error");
+      }
+    },
+    [sendCommand, addToast]
+  );
+
   const [joining, setJoining] = useState(!alreadyInRoom);
   // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
   const [needsName, setNeedsName] = useState(false);
@@ -630,6 +641,7 @@ export default function WhoIsFakerRoomPage() {
               players={snapshot?.players ?? []}
               myPlayerId={privateState?.playerId}
               onSendMessage={handleSendChatMessage}
+              onTogglePlusOne={handleTogglePlusOne}
             />
           </ChatColumn>
         }
@@ -676,6 +688,7 @@ export default function WhoIsFakerRoomPage() {
                 players={snapshot?.players ?? []}
                 myPlayerId={privateState?.playerId}
                 onSendMessage={handleSendChatMessage}
+                onTogglePlusOne={handleTogglePlusOne}
               />
             ),
           },

@@ -601,6 +601,7 @@ export const WhoIsFakerPayloadSchemas = {
   "game.reviewBlankGuess": t.Object({ approve: t.Boolean() }, strict),
   "game.resolveDisconnect": t.Object({ playerId, resolution: disconnectResolutionSchema }, strict),
   "chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "chat.plusOne": t.Object({ messageId: t.String({ minLength: 1, maxLength: 128 }) }, strict),
   "room.transferHost": t.Object({ playerId }, strict),
   "test.jumpToPhase": t.Object({ phase: gamePhaseSchema }, strict),
   "test.setMyRole": t.Object({ role: playerRoleSchema }, strict),

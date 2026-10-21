@@ -530,4 +530,92 @@ describe("ChatPanel (Common)", () => {
     expect(within(bubbles[0]).queryByText("第 2 天开始")).not.toBeInTheDocument();
     expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
   });
+
+  it("别人的消息显示 +1 按钮与计数，自己与系统消息不显示", () => {
+    const onTogglePlusOne = vi.fn();
+    const messages: ChatMessage[] = [
+      {
+        id: "m-other",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "给我加一",
+        createdAt: 1000,
+        system: false,
+        plusOneBy: ["p-a"],
+      },
+      {
+        id: "m-mine",
+        playerId: "p-me",
+        playerName: "我",
+        text: "自己的消息",
+        createdAt: 2000,
+        system: false,
+      },
+      {
+        id: "m-system",
+        playerId: "system",
+        playerName: "系统",
+        text: "系统消息",
+        createdAt: 3000,
+        system: true,
+      },
+    ];
+
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+        onTogglePlusOne={onTogglePlusOne}
+      />
+    );
+
+    const button = screen.getByRole("button", { name: "给这条消息 +1（1）" });
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(button.textContent).toBe("+11");
+    expect(screen.getAllByRole("button", { name: /\+1/ })).toHaveLength(1);
+
+    fireEvent.click(button);
+    expect(onTogglePlusOne).toHaveBeenCalledWith("m-other");
+  });
+
+  it("已点过的消息高亮并显示撤销语义，旧快照没有计数时不渲染数字", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m-active",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "已点过",
+        createdAt: 1000,
+        system: false,
+        plusOneBy: ["p-me", "p-b"],
+      },
+      {
+        id: "m-legacy",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "旧快照消息",
+        createdAt: 2000,
+        system: false,
+      },
+    ];
+
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+        onTogglePlusOne={vi.fn()}
+      />
+    );
+
+    const active = screen.getByRole("button", { name: "取消 +1（2）" });
+    expect(active).toHaveAttribute("aria-pressed", "true");
+    expect(active.textContent).toBe("+12");
+
+    const legacy = screen.getByRole("button", { name: "给这条消息 +1" });
+    expect(legacy.textContent).toBe("+1");
+  });
 });

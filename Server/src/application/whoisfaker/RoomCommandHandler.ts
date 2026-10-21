@@ -18,6 +18,7 @@ export const ROOM_COMMAND_TYPES = [
   "room.kick",
   "room.transferHost",
   "chat.send",
+  "chat.plusOne",
 ] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 interface RoomCommandDependencies {
@@ -34,6 +35,7 @@ interface RoomCommandDependencies {
   kick(connection: ConnectionRecord, playerId: string): CommandResult;
   transferHost(connection: ConnectionRecord, playerId: string): CommandResult;
   sendChat(connection: ConnectionRecord, text: string): CommandResult;
+  plusOne(connection: ConnectionRecord, messageId: string): CommandResult;
 }
 
 export const createRoomCommandHandler = (
@@ -62,6 +64,8 @@ export const createRoomCommandHandler = (
         return dependencies.transferHost(connection, message.payload.playerId);
       case "chat.send":
         return dependencies.sendChat(connection, message.payload.text);
+      case "chat.plusOne":
+        return dependencies.plusOne(connection, message.payload.messageId);
       default:
         return unsupportedCommand();
     }

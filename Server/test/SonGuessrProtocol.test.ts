@@ -436,6 +436,7 @@ const SONGUESSR_COMMAND_CASES = [
   { type: "song.room.kick", payload: { playerId: "p1" } },
   { type: "song.room.transferHost", payload: { playerId: "p1" } },
   { type: "song.chat.send", payload: { text: "你好" } },
+  { type: "song.chat.plusOne", payload: { messageId: "song-chat-1" } },
   { type: "song.auth.qr.create", payload: {} },
   { type: "song.auth.qr.check", payload: { key: "qr-key" } },
   { type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } },

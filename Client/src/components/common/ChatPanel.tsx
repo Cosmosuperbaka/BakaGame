@@ -84,6 +84,8 @@ export interface ChatPanelProps {
   onSendSticker?: (path: string) => Promise<void> | void;
   /** 发送失败异常处理回调（面板已把原文收回输入框，这里只负责报错） */
   onError?: (error: unknown) => void;
+  /** 给别人的消息 +1 或撤销；未提供时不渲染按钮（故事与只读场景）。 */
+  onTogglePlusOne?: (messageId: string) => Promise<void> | void;
   /** 频道说明：以系统提示样式固定为消息流第一行，用于交代谁能看到这里的消息 */
   notice?: string;
   /** 输入框占位符，缺省为 "请输入文本" */
@@ -333,6 +335,107 @@ function MessageText({
   );
 }
 
+/** 单条消息的 +1 按钮：计数为 0 时只显示按钮本身。 */
+function PlusOneButton({
+  count,
+  active,
+  onToggle,
+}: {
+  count: number;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      aria-label={active ? `取消 +1${count ? `（${count}）` : ""}` : `给这条消息 +1${count ? `（${count}）` : ""}`}
+      onClick={onToggle}
+      className={cn(
+        "absolute bottom-0 left-full ml-1.5 flex h-5 items-center rounded-full border px-1.5 font-mono text-2xs leading-none transition-colors",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border bg-background/85 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      )}
+    >
+      <span aria-hidden="true">+1</span>
+      {count > 0 ? (
+        <span aria-hidden="true" className="ml-1 tabular-nums">
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+/** 玩家消息气泡与右侧 +1；+1 绝对定位，不改变气泡宽度或滚动位置。 */
+function MessageBubble({
+  message,
+  isMe,
+  isGhost,
+  stickerLabels,
+  players,
+  myPlayerId,
+  showPlusOne,
+  onTogglePlusOne,
+}: {
+  message: ChatMessage;
+  isMe: boolean;
+  isGhost: boolean;
+  stickerLabels: StickerLabelIndex | null;
+  players: ChatMentionPlayer[];
+  myPlayerId?: string;
+  showPlusOne: boolean;
+  onTogglePlusOne: (messageId: string) => Promise<void> | void;
+}) {
+  const isSticker = message.text.startsWith(STICKER_PREFIX);
+  const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
+  const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
+  const mentionsMe =
+    !isSticker && Boolean(myPlayerId) && mentionsPlayer(message.text, myPlayerId!, players);
+  const plusOneBy = message.plusOneBy ?? [];
+  const plusOneActive = Boolean(myPlayerId && plusOneBy.includes(myPlayerId));
+
+  return (
+    <div className="relative w-fit max-w-full">
+      <div
+        data-testid="chat-message-bubble"
+        className={cn(
+          "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
+          safeStickerPath ? "p-1.5" : "px-3 py-1.5",
+          isMe
+            ? isGhost
+              ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
+              : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
+            : isGhost
+              ? // 半透明底上再叠透明度会把对比度压到线下，降档用语义色而不是 alpha。
+                "rounded-bl-sm bg-muted/40 border border-dashed border-border text-muted-foreground"
+              : "rounded-bl-sm bg-muted text-foreground",
+          mentionsMe && "ring-1 ring-primary/40"
+        )}
+      >
+        {safeStickerPath ? (
+          <img
+            src={safeStickerPath}
+            // 清单未到或路径不在清单里时退回通用文案，不把 alt 留空
+            alt={stickerLabels?.get(safeStickerPath) ?? "表情"}
+            className="h-20 w-20 object-contain"
+          />
+        ) : (
+          <MessageText text={message.text} players={players} isMe={isMe} isGhost={isGhost} />
+        )}
+      </div>
+      {showPlusOne && !isMe ? (
+        <PlusOneButton
+          count={plusOneBy.length}
+          active={plusOneActive}
+          onToggle={() => void onTogglePlusOne(message.id)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function ChatPanel({
   messages,
   players = [],
@@ -340,6 +443,7 @@ export function ChatPanel({
   onSendMessage,
   onSendSticker,
   onError,
+  onTogglePlusOne,
   notice,
   placeholder = "请输入文本",
   maxLength = 200,
@@ -526,6 +630,20 @@ export function ChatPanel({
     }
   };
 
+  // 同一条消息的连点只放一个请求过网；计数以服务端回显为准，不在本地先加。
+  const plusOneInFlight = useRef(new Set<string>());
+  const handleTogglePlusOne = async (messageId: string) => {
+    if (!onTogglePlusOne || plusOneInFlight.current.has(messageId)) return;
+    plusOneInFlight.current.add(messageId);
+    try {
+      await onTogglePlusOne(messageId);
+    } catch (error) {
+      onError?.(error);
+    } finally {
+      plusOneInFlight.current.delete(messageId);
+    }
+  };
+
   return (
     <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
       <ScrollArea className="min-h-0 min-w-0 flex-1 px-3 py-3">
@@ -559,13 +677,6 @@ export function ChatPanel({
                 );
               }
 
-              const isSticker = message.text.startsWith(STICKER_PREFIX);
-              const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
-              const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
-              const mentionsMe =
-                !isSticker &&
-                Boolean(myPlayerId) &&
-                mentionsPlayer(message.text, myPlayerId!, players);
               const takesThrow = handoffId === message.id;
 
               return (
@@ -584,38 +695,16 @@ export function ChatPanel({
                     <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
                       {message.playerName}
                     </span>
-                    <div
-                      data-testid="chat-message-bubble"
-                      className={cn(
-                        "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
-                        safeStickerPath ? "p-1.5" : "px-3 py-1.5",
-                        isMe
-                          ? isGhost
-                            ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
-                            : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
-                          : isGhost
-                            ? // 半透明底上再叠透明度会把对比度压到线下，降档用语义色而不是 alpha。
-                              "rounded-bl-sm bg-muted/40 border border-dashed border-border text-muted-foreground"
-                            : "rounded-bl-sm bg-muted text-foreground",
-                        mentionsMe && "ring-1 ring-primary/40"
-                      )}
-                    >
-                      {safeStickerPath ? (
-                        <img
-                          src={safeStickerPath}
-                          // 清单未到或路径不在清单里时退回通用文案，不把 alt 留空
-                          alt={stickerLabels?.get(safeStickerPath) ?? "表情"}
-                          className="h-20 w-20 object-contain"
-                        />
-                      ) : (
-                        <MessageText
-                          text={message.text}
-                          players={players}
-                          isMe={isMe}
-                          isGhost={isGhost}
-                        />
-                      )}
-                    </div>
+                    <MessageBubble
+                      message={message}
+                      isMe={isMe}
+                      isGhost={isGhost}
+                      stickerLabels={stickerLabels}
+                      players={players}
+                      myPlayerId={myPlayerId}
+                      showPlusOne={Boolean(onTogglePlusOne)}
+                      onTogglePlusOne={handleTogglePlusOne}
+                    />
                   </MessageShell>
                 </motion.div>
               );

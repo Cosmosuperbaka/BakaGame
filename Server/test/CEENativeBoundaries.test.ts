@@ -333,3 +333,27 @@ describe("CEE 房间与提示边界", () => {
     });
   }
 });
+
+test("CEE 聊天 +1 随房间快照下发，同人重复点撤销并拒绝给自己加一", async () => {
+  const h = keep(ceeTestHarness());
+  const host = await h.create();
+  const guest = await h.join("加一");
+  await h.send(guest, "cee.chat.send", { text: "给我加一" });
+  const message = h.snapshot(host).chat.at(-1)!;
+
+  await expect(
+    h.send(guest, "cee.chat.plusOne", { messageId: message.id })
+  ).rejects.toMatchObject({ code: "CHAT_PLUS_ONE_SELF" });
+
+  await h.send(host, "cee.chat.plusOne", { messageId: message.id });
+  expect(h.snapshot(guest).chat.find((entry) => entry.id === message.id)?.plusOneBy).toEqual([
+    host.id!,
+  ]);
+
+  await h.send(host, "cee.chat.plusOne", { messageId: message.id });
+  expect(h.snapshot(guest).chat.find((entry) => entry.id === message.id)?.plusOneBy).toEqual([]);
+
+  await expect(
+    h.send(host, "cee.chat.plusOne", { messageId: "cee-chat-missing" })
+  ).resolves.toEqual({ updated: false });
+});

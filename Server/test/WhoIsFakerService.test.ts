@@ -3840,3 +3840,117 @@ test("旧连接 send 与 close 抛错不挡住顶号", async () => {
   expect(host.record.roomId).toBeUndefined();
   expect(host.record.playerId).toBeUndefined();
 });
+
+test("聊天 +1 按去重人数计数，同人再点撤销，并拒绝自己、系统与跨频道", async () => {
+  const { service } = createTestContext();
+  const { host, result } = await createRoom(service, "5151");
+  const [first, second] = await joinPlayers(service, "5151", 2, "加一");
+
+  await execute(service, first.connection, {
+    id: "plus-one-chat",
+    type: "chat.send",
+    roomId: "5151",
+    payload: { text: "给我加一" },
+  });
+  const room = (service as any).rooms.get("5151")!;
+  const message = room.chat.at(-1) as { id: string; plusOneBy?: string[] };
+
+  // 自己不能点自己的消息
+  await expect(
+    execute(service, first.connection, {
+      id: "plus-one-self",
+      type: "chat.plusOne",
+      roomId: "5151",
+      payload: { messageId: message.id },
+    })
+  ).rejects.toMatchObject({ code: "CHAT_PLUS_ONE_SELF" });
+
+  // 第一个人点：计数 1；再点一次：撤销回 0
+  await expect(
+    execute(service, host, {
+      id: "plus-one-host",
+      type: "chat.plusOne",
+      roomId: "5151",
+      payload: { messageId: message.id },
+    })
+  ).resolves.toMatchObject({ updated: true, active: true, count: 1 });
+  let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(second.connection, "room.snapshot");
+  expect(snapshot?.chat.find((entry) => entry.id === message.id)?.plusOneBy).toEqual([
+    result.playerId,
+  ]);
+
+  await execute(service, host, {
+    id: "plus-one-host-undo",
+    type: "chat.plusOne",
+    roomId: "5151",
+    payload: { messageId: message.id },
+  });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(second.connection, "room.snapshot");
+  expect(snapshot?.chat.find((entry) => entry.id === message.id)?.plusOneBy).toEqual([]);
+
+  // 两个人各点一次：去重计数为 2
+  await execute(service, host, {
+    id: "plus-one-host-again",
+    type: "chat.plusOne",
+    roomId: "5151",
+    payload: { messageId: message.id },
+  });
+  await execute(service, second.connection, {
+    id: "plus-one-second",
+    type: "chat.plusOne",
+    roomId: "5151",
+    payload: { messageId: message.id },
+  });
+  snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.chat.find((entry) => entry.id === message.id)?.plusOneBy).toEqual([
+    result.playerId,
+    second.joinResult.playerId,
+  ]);
+
+  // 系统消息不可 +1
+  room.chat.push({
+    id: "chat-system-fixture",
+    playerId: "system",
+    playerName: "系统",
+    text: "系统提示",
+    createdAt: 0,
+    system: true,
+  });
+  await expect(
+    execute(service, host, {
+      id: "plus-one-system",
+      type: "chat.plusOne",
+      roomId: "5151",
+      payload: { messageId: "chat-system-fixture" },
+    })
+  ).rejects.toMatchObject({ code: "CHAT_PLUS_ONE_SYSTEM" });
+
+  // 幽灵频道消息只允许同频道玩家参与
+  room.chat.push({
+    id: "chat-ghost-fixture",
+    playerId: first.joinResult.playerId,
+    playerName: "加一1",
+    text: "幽灵消息",
+    createdAt: 0,
+    system: false,
+    channel: "ghost",
+  });
+  await expect(
+    execute(service, host, {
+      id: "plus-one-cross-channel",
+      type: "chat.plusOne",
+      roomId: "5151",
+      payload: { messageId: "chat-ghost-fixture" },
+    })
+  ).rejects.toMatchObject({ code: "CHAT_PLUS_ONE_CHANNEL" });
+
+  // 已被 CHAT_LIMIT 截断的消息静默忽略
+  await expect(
+    execute(service, second.connection, {
+      id: "plus-one-truncated",
+      type: "chat.plusOne",
+      roomId: "5151",
+      payload: { messageId: "chat-not-exists" },
+    })
+  ).resolves.toEqual({ updated: false });
+});

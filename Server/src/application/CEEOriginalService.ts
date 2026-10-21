@@ -297,6 +297,8 @@ export class CEEOriginalService {
         return this.imageHint(session);
       case "cee.chat.send":
         return this.chat(session, message.payload.text);
+      case "cee.chat.plusOne":
+        return this.plusOne(session, message.payload.messageId);
       case "cee.player.team":
         return send("updatePlayerTeam", {
           team: message.payload.team === null ? null : String(message.payload.team),
@@ -764,6 +766,28 @@ export class CEEOriginalService {
     for (const peer of this.sessions.values())
       if (peer.confirmed && peer.roomId === session.roomId) this.publish(peer);
     return { message };
+  }
+
+  private plusOne(
+    session: CEEOriginalSession,
+    messageId: string
+  ): { updated: boolean; active?: boolean; count?: number } {
+    const connectionId = session.connectionId;
+    if (!connectionId || !this.chatLimiter.allow(connectionId, this.now()))
+      throw new AppError("CHAT_RATE_LIMIT", "操作太快，请稍后再试");
+    const me = this.me(session);
+    const room = this.chats.get(session.roomId)!;
+    const message = room.chat.find((entry) => entry.id === messageId);
+    if (!message) return { updated: false };
+    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
+    if (message.playerId === me.id)
+      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
+    const voters = message.plusOneBy ?? [];
+    const active = !voters.includes(me.id);
+    message.plusOneBy = active ? [...voters, me.id] : voters.filter((id) => id !== me.id);
+    for (const peer of this.sessions.values())
+      if (peer.confirmed && peer.roomId === session.roomId) this.publish(peer);
+    return { updated: true, active, count: message.plusOneBy.length };
   }
 
   private async fetchRooms(): Promise<Record<string, unknown>[]> {

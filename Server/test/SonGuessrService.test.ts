@@ -8404,3 +8404,61 @@ describe("账号池单号并发", () => {
     await Promise.all(pending);
   });
 });
+
+test("猜歌聊天 +1 走增量事件，同人重复点撤销并拒绝给自己加一", async () => {
+  const service = new SonGuessrService({ musicProvider: provider, now: () => 1_000 });
+  const host = connection(service, "plus-one-host");
+  const guest = connection(service, "plus-one-guest");
+  await createRoom(service, host);
+  await joinRoom(service, guest, "猜题者");
+
+  await execute(service, guest, {
+    id: "plus-one-chat",
+    type: "song.chat.send",
+    roomId: "1234",
+    payload: { text: "给我加一" },
+  });
+  const message = lastEvent<{ message: { id: string } }>(guest, "song.chat.message").message;
+
+  await expect(
+    execute(service, guest, {
+      id: "plus-one-self",
+      type: "song.chat.plusOne",
+      roomId: "1234",
+      payload: { messageId: message.id },
+    })
+  ).rejects.toMatchObject({ code: "CHAT_PLUS_ONE_SELF" });
+
+  await expect(
+    execute(service, host, {
+      id: "plus-one-host",
+      type: "song.chat.plusOne",
+      roomId: "1234",
+      payload: { messageId: message.id },
+    })
+  ).resolves.toMatchObject({ updated: true, active: true, count: 1 });
+  expect(lastEvent(guest, "song.chat.plusOne")).toEqual({
+    messageId: message.id,
+    plusOneBy: [host.record.playerId!],
+  });
+
+  await execute(service, host, {
+    id: "plus-one-host-undo",
+    type: "song.chat.plusOne",
+    roomId: "1234",
+    payload: { messageId: message.id },
+  });
+  expect(lastEvent(guest, "song.chat.plusOne")).toEqual({
+    messageId: message.id,
+    plusOneBy: [],
+  });
+
+  await expect(
+    execute(service, guest, {
+      id: "plus-one-missing",
+      type: "song.chat.plusOne",
+      roomId: "1234",
+      payload: { messageId: "song-chat-not-exists" },
+    })
+  ).resolves.toEqual({ updated: false });
+});

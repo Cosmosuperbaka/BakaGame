@@ -1735,6 +1735,8 @@ export class SonGuessrService implements AdminRoomControl {
         return this.transferHost(connection, message.payload.playerId);
       case "song.chat.send":
         return this.sendChat(connection, message.payload.text);
+      case "song.chat.plusOne":
+        return this.plusOne(connection, message.payload.messageId);
       case "song.auth.qr.create":
         return this.createMusicQrLogin(connection, message.payload.platform, message.payload.type);
       case "song.auth.qr.check":
@@ -2642,6 +2644,32 @@ export class SonGuessrService implements AdminRoomControl {
     return { sent: true };
   }
 
+  /** +1 只走增量事件，避免为一次计数更新广播整套房间快照。 */
+  private plusOne(connection: ConnectionRecord, messageId: string) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (!this.chatLimiter.allow(connection.id, this.now())) {
+      throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
+    }
+    const message = room.chat.find((entry) => entry.id === messageId);
+    if (!message) return { updated: false };
+    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
+    if (message.playerId === player.id)
+      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
+
+    const voters = message.plusOneBy ?? [];
+    const active = !voters.includes(player.id);
+    message.plusOneBy = active
+      ? [...voters, player.id]
+      : voters.filter((id) => id !== player.id);
+    this.touch(room);
+    this.log("song.chat.plusOne", room.id, player.id, { messageId, active });
+    this.broadcastRoomEvent(room, "song.chat.plusOne", {
+      messageId,
+      plusOneBy: message.plusOneBy,
+    });
+    return { updated: true, active, count: message.plusOneBy.length };
+  }
+
   /** 向房间内所有连接下发一条非状态事件（差量同步通道之外的独立事件）。 */
   private broadcastRoomEvent(room: SonGuessrRoomRecord, name: string, payload: unknown) {
     for (const connection of this.connections.getRoomConnections(room.id)) {
@@ -2654,7 +2682,7 @@ export class SonGuessrService implements AdminRoomControl {
     platform: "netease" | "qq" = "netease",
     type?: "qq" | "wx" | "mobile"
   ) {
-    const { room, player } = this.requireRoomPlayer(connection);
+    this.requireRoomPlayer(connection);
     const provider = this.options.musicProvider;
     const createQrLogin = provider.createQrLogin?.bind(provider);
     if (!createQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
@@ -3035,7 +3063,6 @@ export class SonGuessrService implements AdminRoomControl {
         this.musicPoolWaiters.set(roomId, created);
       }
       const waiters = created;
-      let timer: ReturnType<typeof setTimeout>;
       let settled = false;
       const finish = () => {
         if (settled) return;
@@ -3045,7 +3072,7 @@ export class SonGuessrService implements AdminRoomControl {
         if (waiters.size === 0) this.musicPoolWaiters.delete(roomId);
         resolve();
       };
-      timer = setTimeout(finish, timeoutMs);
+      const timer = setTimeout(finish, timeoutMs);
       waiters.add(finish);
     });
   }
