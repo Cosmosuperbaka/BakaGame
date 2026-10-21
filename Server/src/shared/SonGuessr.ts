@@ -777,10 +777,6 @@ export const SonGuessrPayloadSchemas = {
   "song.room.kick": t.Object({ playerId }, strict),
   "song.room.transferHost": t.Object({ playerId }, strict),
   "song.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
-  "song.chat.plusOne": t.Object(
-    { messageId: t.String({ minLength: 1, maxLength: 128 }) },
-    strict
-  ),
   "song.auth.qr.create": t.Object(
     { platform: t.Optional(musicPlatform), type: t.Optional(qrChannelType) },
     strict

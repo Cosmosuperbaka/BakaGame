@@ -171,8 +171,6 @@ export class CEENativeService {
         case "cee.chat.send":
           this.state.sendChat(room, player, message.payload.text);
           break;
-        case "cee.chat.plusOne":
-          return this.state.plusOne(room, player, message.payload.messageId);
         case "cee.character.search":
           return { results: await this.data.searchCharacters(message.payload.keyword) };
         case "cee.subject.search":

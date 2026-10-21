@@ -99,10 +99,7 @@ export class CEEService implements AdminRoomControl {
     if (!connection) throw new AppError("CONNECTION_NOT_FOUND", "连接已经断开");
     if (!this.limiter.allow(id, this.now()))
       throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
-    if (
-      (message.type === "cee.chat.send" || message.type === "cee.chat.plusOne") &&
-      !this.chatLimiter.allow(id, this.now())
-    )
+    if (message.type === "cee.chat.send" && !this.chatLimiter.allow(id, this.now()))
       throw new AppError("RATE_LIMITED", "消息发送过快，请稍后再试");
     // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
     if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
@@ -134,7 +131,6 @@ export class CEEService implements AdminRoomControl {
         throw new AppError("SESSION_INVALID", "请重新加入房间");
       try {
         const result = await this.original.execute(id, message);
-        await this.auditPlusOne(connection, message, result);
         return result;
       } finally {
         this.broadcastLobby();
@@ -145,32 +141,10 @@ export class CEEService implements AdminRoomControl {
       // 检索台账只在增强房登记：原版房的答案与猜测在上游，本端拿不到可判定的对局。
       if (message.type === "cee.character.search")
         this.provenance.note(connection.id, ceeCharacterIdsOf(result));
-      await this.auditPlusOne(connection, message, result);
       return result;
     } finally {
       this.broadcastLobby();
     }
-  }
-
-  private async auditPlusOne(
-    connection: ConnectionRecord,
-    message: CEEClientMessage,
-    result: unknown
-  ): Promise<void> {
-    if (message.type !== "cee.chat.plusOne") return;
-    const outcome = result as { updated?: boolean; active?: boolean; count?: number } | undefined;
-    if (!outcome?.updated) return;
-    await this.options.eventLogger?.write({
-      type: "cee.chat.plusOne",
-      createdAt: this.now(),
-      roomId: connection.roomId ?? undefined,
-      playerId: connection.playerId ?? undefined,
-      payload: {
-        messageId: message.payload.messageId,
-        active: outcome.active,
-        count: outcome.count,
-      },
-    });
   }
   /** 后台只管增强房：原版房在上游服务器，本端没有关房与移人的权限。 */
   adminListRooms(): AdminRoomView[] {

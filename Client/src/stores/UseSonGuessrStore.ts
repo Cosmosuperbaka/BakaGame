@@ -482,22 +482,6 @@ function applyChatMessageEvent(payload: unknown) {
   });
 }
 
-function applyChatPlusOneEvent(payload: unknown) {
-  const value = payload as { messageId?: unknown; plusOneBy?: unknown } | undefined;
-  if (typeof value?.messageId !== "string" || !Array.isArray(value.plusOneBy)) return;
-  const plusOneBy = value.plusOneBy.filter((id): id is string => typeof id === "string");
-  const current = useSonGuessrStore.getState().snapshot;
-  if (!current) return;
-  useSonGuessrStore.setState({
-    snapshot: {
-      ...current,
-      chat: current.chat.map((message) =>
-        message.id === value.messageId ? { ...message, plusOneBy } : message
-      ),
-    },
-  });
-}
-
 /**
  * 退出房间：清掉席位凭据与整套房间态。
  *
@@ -547,9 +531,6 @@ export function initSonGuessrWs() {
         break;
       case "song.chat.message":
         applyChatMessageEvent(evt.payload);
-        break;
-      case "song.chat.plusOne":
-        applyChatPlusOneEvent(evt.payload);
         break;
       case "song.room.closed": {
         roomEntry.cancel();

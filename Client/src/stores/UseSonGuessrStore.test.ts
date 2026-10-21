@@ -638,37 +638,6 @@ describe("Songuessr store integration", () => {
     }
   });
 
-  it("聊天 +1 增量按 messageId 更新，撤销后清空计数", async () => {
-    const dispose = initSonGuessrWs();
-    const message = chatRange(0, 1)[0]!;
-    useSonGuessrStore.setState({
-      roomId: "1234",
-      sessionToken: "chat-token",
-      snapshot: { ...snapshot, chat: [{ ...message, plusOneBy: ["player-a"] }] },
-    });
-    try {
-      const emit = wsMock.messageHandlers[0];
-      emit({
-        type: "event",
-        event: "song.chat.plusOne",
-        payload: { messageId: message.id, plusOneBy: ["player-a", "player-b"] },
-      });
-      expect(useSonGuessrStore.getState().snapshot?.chat[0]?.plusOneBy).toEqual([
-        "player-a",
-        "player-b",
-      ]);
-
-      emit({
-        type: "event",
-        event: "song.chat.plusOne",
-        payload: { messageId: message.id, plusOneBy: [] },
-      });
-      expect(useSonGuessrStore.getState().snapshot?.chat[0]?.plusOneBy).toEqual([]);
-    } finally {
-      dispose();
-    }
-  });
-
   it("resets state sync and cleans room state when leaveRoom is invoked", async () => {
     wsMock.send.mockResolvedValue({});
     useSonGuessrStore.setState({

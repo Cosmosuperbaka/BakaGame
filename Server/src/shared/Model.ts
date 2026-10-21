@@ -69,8 +69,6 @@ export interface ChatMessage {
   text: string;
   createdAt: number;
   system: boolean;
-  /** 点过 +1 的玩家 ID；同一人重复点即撤销，长度就是去重后的计数。 */
-  plusOneBy?: string[];
   channel?: ChatChannel;
   ghostRole?: "dead" | "spectator";
 }

@@ -281,7 +281,6 @@ export class WhoIsFakerService implements AdminRoomControl {
         kick: (connection, playerId) => this.handleKick(connection, playerId),
         transferHost: (connection, playerId) => this.handleTransferHost(connection, playerId),
         sendChat: (connection, text) => this.handleChat(connection, text),
-        plusOne: (connection, messageId) => this.handlePlusOne(connection, messageId),
       }),
       createPlayerCommandHandler({
         now: () => this.now(),
@@ -2242,41 +2241,6 @@ export class WhoIsFakerService implements AdminRoomControl {
 
     this.publishRoomState(room);
     return { sent: true };
-  }
-
-  /** 计数型 +1：同一个人重复点是撤销；幽灵频道只允许同频道玩家参与。 */
-  private async handlePlusOne(connection: ConnectionRecord, messageId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    if (!this.chatLimiter.allow(connection.id, this.now())) {
-      throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
-    }
-    const message = room.chat.find((entry) => entry.id === messageId);
-    // 已被 CHAT_LIMIT 截断的旧消息静默忽略：客户端界面迟早会对齐，不必报错。
-    if (!message) return { updated: false };
-    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
-    if (message.playerId === player.id)
-      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
-    if (message.channel === "ghost" && this.chatChannelOf(room, player).channel !== "ghost") {
-      throw new AppError("CHAT_PLUS_ONE_CHANNEL", "只能给同频道的消息 +1");
-    }
-
-    const voters = message.plusOneBy ?? [];
-    const active = !voters.includes(player.id);
-    message.plusOneBy = active
-      ? [...voters, player.id]
-      : voters.filter((id) => id !== player.id);
-    this.touchRoom(room);
-
-    await this.log({
-      type: "chat.plusOne",
-      createdAt: this.now(),
-      roomId: room.id,
-      playerId: player.id,
-      payload: { messageId, active },
-    });
-
-    this.publishRoomState(room);
-    return { updated: true, active, count: message.plusOneBy.length };
   }
 
   private async handleTransferHost(connection: ConnectionRecord, targetPlayerId: string) {

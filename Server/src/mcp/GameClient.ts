@@ -115,16 +115,6 @@ const mergeChat = (current: unknown, incoming: unknown): unknown[] => {
   return [...list, message].slice(-CHAT_LIMIT);
 };
 
-const applyChatPlusOne = (current: unknown, payload: unknown): unknown[] => {
-  const list = Array.isArray(current) ? current : [];
-  if (!isRecord(payload) || typeof payload.messageId !== "string") return list;
-  if (!Array.isArray(payload.plusOneBy)) return list;
-  const plusOneBy = payload.plusOneBy.filter((id): id is string => typeof id === "string");
-  return list.map((entry) =>
-    isRecord(entry) && entry.id === payload.messageId ? { ...entry, plusOneBy } : entry
-  );
-};
-
 /**
  * MCP 的游戏客户端：以普通玩家身份连接现有 WebSocket 协议，不嵌入三款游戏的服务端逻辑。
  * 只保存公开快照，私有状态事件一律丢弃，避免 Agent 拿到答案类字段。
@@ -461,11 +451,6 @@ export class AgentGameClient {
       session.snapshot = {
         ...session.snapshot,
         chat: mergeChat(session.snapshot.chat, payload.message),
-      };
-    } else if (event === "song.chat.plusOne") {
-      session.snapshot = {
-        ...session.snapshot,
-        chat: applyChatPlusOne(session.snapshot.chat, payload),
       };
     } else {
       this.clearClosedSession(session, event);

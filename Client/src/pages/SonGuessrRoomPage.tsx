@@ -100,17 +100,6 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     [sendCommand, setNotice]
   );
 
-  const handleTogglePlusOne = useCallback(
-    async (messageId: string) => {
-      try {
-        await sendCommand("song.chat.plusOne", { messageId });
-      } catch (error) {
-        setNotice((error as { message: string }).message, "error");
-      }
-    },
-    [sendCommand, setNotice]
-  );
-
   // 严禁给这个 audio 加 crossOrigin：解灰音源（kuwo 等）不返回 Access-Control-Allow-Origin，
   // 一旦声明 crossOrigin="anonymous"，浏览器就会按 CORS 模式拉取媒体、直接判 net::ERR_FAILED，
   // 症状是「服务端解灰成功但客户端立刻 audioFailed」；官方歌曲的网易云 CDN 带 ACAO 所以看不出问题。
@@ -261,7 +250,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                 players={snapshot.players}
                 myPlayerId={privateState.playerId}
                 onSendMessage={handleSendChatMessage}
-                onTogglePlusOne={handleTogglePlusOne}
+                onRepeatMessage={handleSendChatMessage}
               />
             </ChatColumn>
           )
@@ -304,7 +293,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                       players={snapshot.players}
                       myPlayerId={privateState.playerId}
                       onSendMessage={handleSendChatMessage}
-                      onTogglePlusOne={handleTogglePlusOne}
+                      onRepeatMessage={handleSendChatMessage}
                     />
                   ),
                 },

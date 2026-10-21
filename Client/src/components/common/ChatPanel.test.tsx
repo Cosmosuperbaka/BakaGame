@@ -531,17 +531,16 @@ describe("ChatPanel (Common)", () => {
     expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
   });
 
-  it("别人的消息显示 +1 按钮与计数，自己与系统消息不显示", () => {
-    const onTogglePlusOne = vi.fn();
+  it("别人的消息显示 +1，点击直接复读同一文本；自己与系统消息不显示", () => {
+    const onRepeatMessage = vi.fn();
     const messages: ChatMessage[] = [
       {
         id: "m-other",
         playerId: "p-other",
         playerName: "对手",
-        text: "给我加一",
+        text: "复读这一条",
         createdAt: 1000,
         system: false,
-        plusOneBy: ["p-a"],
       },
       {
         id: "m-mine",
@@ -567,55 +566,49 @@ describe("ChatPanel (Common)", () => {
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-        onTogglePlusOne={onTogglePlusOne}
+        onRepeatMessage={onRepeatMessage}
       />
     );
 
-    const button = screen.getByRole("button", { name: "给这条消息 +1（1）" });
-    expect(button).toHaveAttribute("aria-pressed", "false");
-    expect(button.textContent).toBe("+11");
-    expect(screen.getAllByRole("button", { name: /\+1/ })).toHaveLength(1);
+    const button = screen.getByRole("button", { name: "复读这条消息" });
+    expect(button.textContent).toBe("+1");
+    expect(screen.getAllByRole("button", { name: "复读这条消息" })).toHaveLength(1);
 
     fireEvent.click(button);
-    expect(onTogglePlusOne).toHaveBeenCalledWith("m-other");
+    expect(onRepeatMessage).toHaveBeenCalledWith("复读这一条");
   });
 
-  it("已点过的消息高亮并显示撤销语义，旧快照没有计数时不渲染数字", () => {
-    const messages: ChatMessage[] = [
-      {
-        id: "m-active",
-        playerId: "p-other",
-        playerName: "对手",
-        text: "已点过",
-        createdAt: 1000,
-        system: false,
-        plusOneBy: ["p-me", "p-b"],
-      },
-      {
-        id: "m-legacy",
-        playerId: "p-other",
-        playerName: "对手",
-        text: "旧快照消息",
-        createdAt: 2000,
-        system: false,
-      },
-    ];
-
+  it("复读请求在途时连点只发送一次", () => {
+    let release!: () => void;
+    const onRepeatMessage = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
     render(
       <ChatPanel
-        messages={messages}
+        messages={[
+          {
+            id: "m-other",
+            playerId: "p-other",
+            playerName: "对手",
+            text: "只发一次",
+            createdAt: 1000,
+            system: false,
+          },
+        ]}
         players={mockPlayers}
         myPlayerId="p-me"
         onSendMessage={vi.fn()}
-        onTogglePlusOne={vi.fn()}
+        onRepeatMessage={onRepeatMessage}
       />
     );
 
-    const active = screen.getByRole("button", { name: "取消 +1（2）" });
-    expect(active).toHaveAttribute("aria-pressed", "true");
-    expect(active.textContent).toBe("+12");
-
-    const legacy = screen.getByRole("button", { name: "给这条消息 +1" });
-    expect(legacy.textContent).toBe("+1");
+    const button = screen.getByRole("button", { name: "复读这条消息" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(onRepeatMessage).toHaveBeenCalledTimes(1);
+    release();
   });
 });

@@ -31,7 +31,6 @@ const ALL_COMMAND_TYPES = [
   "game.reviewBlankGuess",
   "game.resolveDisconnect",
   "chat.send",
-  "chat.plusOne",
   "room.transferHost",
   "test.jumpToPhase",
   "test.setMyRole",

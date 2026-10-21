@@ -175,12 +175,6 @@ const CHAT_COMMAND: Record<GameId, string> = {
   cee: "cee.chat.send",
 };
 
-const PLUS_ONE_COMMAND: Record<GameId, string> = {
-  faker: "chat.plusOne",
-  song: "song.chat.plusOne",
-  cee: "cee.chat.plusOne",
-};
-
 const fakerAction = (action: string, args: Record<string, unknown>) => {
   switch (action) {
     case "ready":
@@ -506,24 +500,6 @@ export const TOOLS: McpTool[] = [
     handler: async (args, { client }) => {
       const game = activeGame(args, client);
       return client.sendInRoom(game, CHAT_COMMAND[game], { text: needString(args, "text") });
-    },
-  },
-  {
-    name: "plus_one",
-    description: "给当前房间的一条聊天消息 +1 / 撤销 +1。",
-    inputSchema: objectSchema(
-      {
-        game: gameProperty,
-        messageId: { type: "string" },
-      },
-      ["messageId"]
-    ),
-    write: true,
-    handler: async (args, { client }) => {
-      const game = activeGame(args, client);
-      return client.sendInRoom(game, PLUS_ONE_COMMAND[game], {
-        messageId: needString(args, "messageId"),
-      });
     },
   },
   {

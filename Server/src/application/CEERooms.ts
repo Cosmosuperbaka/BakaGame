@@ -553,23 +553,6 @@ export class CEERooms {
     });
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
-  plusOne(
-    room: CEERoom,
-    player: CEEPlayerRecord,
-    messageId: string
-  ): { updated: boolean; active?: boolean; count?: number } {
-    const message = room.chat.find((entry) => entry.id === messageId);
-    if (!message) return { updated: false };
-    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
-    if (message.playerId === player.id)
-      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
-    const voters = message.plusOneBy ?? [];
-    const active = !voters.includes(player.id);
-    message.plusOneBy = active
-      ? [...voters, player.id]
-      : voters.filter((id) => id !== player.id);
-    return { updated: true, active, count: message.plusOneBy.length };
-  }
   resetWaiting(room: CEERoom): void {
     room.phase = "waiting";
     room.setterPlayerId = null;

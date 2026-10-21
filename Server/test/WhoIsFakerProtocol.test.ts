@@ -320,7 +320,6 @@ const WHOISFAKER_COMMAND_CASES = [
   { type: "game.reviewBlankGuess", payload: { approve: true } },
   { type: "game.resolveDisconnect", payload: { playerId: "p4", resolution: "wait" } },
   { type: "chat.send", payload: { text: "你好" } },
-  { type: "chat.plusOne", payload: { messageId: "chat-1" } },
   { type: "room.transferHost", payload: { playerId: "p1" } },
   { type: "test.jumpToPhase", payload: { phase: "waiting" } },
   { type: "test.setMyRole", payload: { role: "civilian" } },

@@ -1737,8 +1737,6 @@ export class SonGuessrService implements AdminRoomControl {
         return this.transferHost(connection, message.payload.playerId);
       case "song.chat.send":
         return this.sendChat(connection, message.payload.text);
-      case "song.chat.plusOne":
-        return this.plusOne(connection, message.payload.messageId);
       case "song.auth.qr.create":
         return this.createMusicQrLogin(connection, message.payload.platform, message.payload.type);
       case "song.auth.qr.check":
@@ -2650,32 +2648,6 @@ export class SonGuessrService implements AdminRoomControl {
     // N 人房间刷 M 条消息会从 O(N×M) 次全量序列化降到 O(N) 次小事件。
     this.broadcastRoomEvent(room, "song.chat.message", { message });
     return { sent: true };
-  }
-
-  /** +1 只走增量事件，避免为一次计数更新广播整套房间快照。 */
-  private plusOne(connection: ConnectionRecord, messageId: string) {
-    const { room, player } = this.requireRoomPlayer(connection);
-    if (!this.chatLimiter.allow(connection.id, this.now())) {
-      throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
-    }
-    const message = room.chat.find((entry) => entry.id === messageId);
-    if (!message) return { updated: false };
-    if (message.system) throw new AppError("CHAT_PLUS_ONE_SYSTEM", "系统消息不能 +1");
-    if (message.playerId === player.id)
-      throw new AppError("CHAT_PLUS_ONE_SELF", "不能给自己的消息 +1");
-
-    const voters = message.plusOneBy ?? [];
-    const active = !voters.includes(player.id);
-    message.plusOneBy = active
-      ? [...voters, player.id]
-      : voters.filter((id) => id !== player.id);
-    this.touch(room);
-    this.log("song.chat.plusOne", room.id, player.id, { messageId, active });
-    this.broadcastRoomEvent(room, "song.chat.plusOne", {
-      messageId,
-      plusOneBy: message.plusOneBy,
-    });
-    return { updated: true, active, count: message.plusOneBy.length };
   }
 
   /** 向房间内所有连接下发一条非状态事件（差量同步通道之外的独立事件）。 */
