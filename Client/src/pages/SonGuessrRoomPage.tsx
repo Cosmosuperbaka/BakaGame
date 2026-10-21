@@ -12,7 +12,7 @@ import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
-import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type { SongClipRange, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 /**
@@ -213,7 +213,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             audioPlaybackState={audioPlaybackState}
             onPlayAudio={() => void playAudio()}
             onRetryAudio={retryAudio}
-            onSelectSearchSong={async (songId, mode, extraId) => {
+            onSelectSearchSong={async (songId, mode, extraId, clip) => {
               // 出题不设请求超时：回源取题（含歌词、音频与猜番解析）耗时由上游决定，
               // 10 秒默认超时会把一次正常的慢提交报成「提交失败」，题目其实还在后端装配。
               const options = mode === "submit" ? { timeout: 0 } : undefined;
@@ -228,9 +228,11 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   options
                 );
               } else {
+                const payload: { songId: string; clip?: SongClipRange } = { songId };
+                if (mode === "submit" && clip) payload.clip = clip;
                 await sendCommand(
                   mode === "submit" ? "song.game.submitSong" : "song.game.guess",
-                  { songId },
+                  payload,
                   options
                 );
               }

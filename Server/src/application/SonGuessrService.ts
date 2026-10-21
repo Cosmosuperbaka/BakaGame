@@ -65,6 +65,10 @@ import {
   type SongSearchResult,
   type SongAlbumSearchResult,
   type SongLyricClip,
+  type SongClipPreview,
+  type SongClipRange,
+  SONG_CLIP_MAX_MS,
+  SONG_CLIP_MIN_MS,
   type BangumiSubjectDetails,
   type BangumiSubjectSearchResult,
   type BangumiMusicTrack,
@@ -1429,6 +1433,42 @@ export const createSongLyricClip = (
   };
 };
 
+/**
+ * 手动出题的自定义片段。`clip` 缺省时返回 undefined，调用方沿用自动切片。
+ *
+ * 越界或参数不成立（负值、反向、短于下限、长于上限、超出歌曲时长）时**不报错**，
+ * 退回整曲：手动路径的兜底以「能出题」优先，宁可让全房听完整首歌，也不能让一次手滑
+ * 把出题卡死在报错上。只有真正提交了的区间才走本函数，自动抽题不经过这里。
+ */
+export const createManualLyricClip = (
+  song: Pick<SongDetails, "lyrics" | "durationMs">,
+  clip: SongClipRange | undefined
+): SongLyricClip | undefined => {
+  if (!clip) return undefined;
+  const { startTime, endTime } = clip;
+  const length = endTime - startTime;
+  const withinSong = song.durationMs === undefined || endTime <= song.durationMs;
+  const valid =
+    Number.isFinite(startTime) &&
+    Number.isFinite(endTime) &&
+    startTime >= 0 &&
+    endTime > startTime &&
+    length >= SONG_CLIP_MIN_MS &&
+    length <= SONG_CLIP_MAX_MS &&
+    withinSong;
+  if (valid) {
+    return {
+      startTime,
+      endTime,
+      // 取与区间有交集的歌词行：起点落在某句中间时，那一句仍然算在本片段里。
+      lines: song.lyrics.filter((line) => line.time < endTime && line.endTime > startTime),
+    };
+  }
+  const lastLyricEnd = song.lyrics.reduce((max, line) => Math.max(max, line.endTime), 0);
+  const fullEnd = song.durationMs ?? Math.max(Number.isFinite(endTime) ? endTime : 0, lastLyricEnd, 1);
+  return { startTime: 0, endTime: fullEnd, lines: song.lyrics };
+};
+
 export class SonGuessrService implements AdminRoomControl {
   private readonly rooms = new Map<string, SonGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
@@ -1710,6 +1750,8 @@ export class SonGuessrService implements AdminRoomControl {
         );
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
+      case "song.music.detail":
+        return this.getSongClipPreview(connection, message.payload.songId);
       case "song.music.playlist.resolve":
         return this.resolvePlaylist(connection, message.payload.value);
       case "song.music.artist.search":
@@ -1725,7 +1767,7 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.game.chooseSubmitter":
         return this.chooseSubmitter(connection, message.payload.playerId);
       case "song.game.submitSong":
-        return this.submitSong(connection, message.payload.songId);
+        return this.submitSong(connection, message.payload.songId, message.payload.clip);
       case "song.game.submitAnime":
         return this.submitAnime(connection, message.payload.subjectId, message.payload.songId);
       case "song.game.audioReady":
@@ -2088,7 +2130,8 @@ export class SonGuessrService implements AdminRoomControl {
           }
         );
         if (room.phase === "playing" && room.currentRound === activeRound) {
-          activeRound.song.audioUrl = refreshedSong.audioUrl;
+          // 换新对象而不是原地改：provider 可能返回自己缓存/复用的歌曲对象。
+          activeRound.song = { ...activeRound.song, audioUrl: refreshedSong.audioUrl };
         }
       } catch (error) {
         // 地址刷新失败不应阻止玩家恢复席位，记录 warning 告警并允许客户端尝试现有地址。
@@ -3309,7 +3352,60 @@ export class SonGuessrService implements AdminRoomControl {
     return { submitterPlayerId: target.id };
   }
 
-  private async submitSong(connection: ConnectionRecord, songId: string) {
+  /**
+   * 出题人预览自己选中的歌：完整音频地址与行级歌词，用于片段编辑器。
+   *
+   * 只允许当前待出题人调用，且猜歌阶段一律拒绝：否则猜测者可以借这个命令拿到答案的
+   * 歌词与试听。逐字歌词不参与编辑，下发前剥掉以缩小报文。
+   */
+  private async getSongClipPreview(
+    connection: ConnectionRecord,
+    songId: string
+  ): Promise<{ song: SongClipPreview }> {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
+      throw new AppError("NOT_SUBMITTER", "只有当前出题人可以预览歌曲");
+    }
+    this.requireMusicQuota(room, connection, player);
+    const submitterId = player.id;
+    const song = await this.withSongAccount(room, songId, (cookie) =>
+      this.options.musicProvider.getSong(songId, cookie)
+    );
+    if (
+      room.phase !== "submittingSong" ||
+      room.pendingSubmitterPlayerId !== submitterId ||
+      room.players[submitterId] !== player
+    ) {
+      throw new AppError("NOT_SUBMITTER", "出题人已变更，请重新选歌");
+    }
+    return {
+      song: {
+        id: song.id,
+        title: song.title,
+        artist: song.artist,
+        album: song.album,
+        pictureUrl: song.pictureUrl,
+        durationMs: song.durationMs,
+        audioUrl: song.audioUrl,
+        lyrics: song.lyrics.map((line) => ({
+          time: line.time,
+          endTime: line.endTime,
+          text: line.text,
+          translatedLyric: line.translatedLyric,
+          romanLyric: line.romanLyric,
+          isBG: line.isBG,
+          isDuet: line.isDuet,
+        })),
+        chorus: song.chorus,
+      },
+    };
+  }
+
+  private async submitSong(
+    connection: ConnectionRecord,
+    songId: string,
+    clip?: SongClipRange
+  ) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交歌曲");
@@ -3333,7 +3429,15 @@ export class SonGuessrService implements AdminRoomControl {
     }
     // 不再按会员状态拦截会员专享曲：`getSong` 已经负责把受限歌曲交给解灰链路取回完整音频，
     // 拿不到地址时会直接抛 `SONG_UNAVAILABLE`，出题资格以「实际有没有音频」为准。
-    const roundNumber = this.installRound(room, song, player.id);
+    const roundNumber = this.installRound(
+      room,
+      song,
+      player.id,
+      undefined,
+      undefined,
+      MIN_RECENT_SONG_WINDOW,
+      createManualLyricClip(song, clip)
+    );
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -4017,19 +4121,18 @@ export class SonGuessrService implements AdminRoomControl {
      * 手动出题与猜番没有候选池概念，沿用 `MIN_RECENT_SONG_WINDOW`。
      * 必须在 `installRound` 之前用同一数值过滤候选，否则写入与排除的口径会不一致。
      */
-    recentSongWindow = MIN_RECENT_SONG_WINDOW
+    recentSongWindow = MIN_RECENT_SONG_WINDOW,
+    /** 手动出题选定的片段；缺省时按房间设置自动切片。 */
+    lyricClipOverride?: SongLyricClip
   ): number {
     // 席位预约只在「下一轮开始」的转移点生效（点再来一轮进入选出题人时），这里不应用：
     // 选出题人与选歌已经属于本轮，交歌这一刻再把人切成旁观等于在本轮中间换席位。
     if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
       throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
     }
-    const lyricClip = createSongLyricClip(
-      song.lyrics,
-      room.settings.lyricsLineCount,
-      this.random,
-      song.durationMs
-    );
+    const lyricClip =
+      lyricClipOverride ??
+      createSongLyricClip(song.lyrics, room.settings.lyricsLineCount, this.random, song.durationMs);
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
     const observerIds = this.teammateIds(room, submitterPlayerId);
@@ -4356,7 +4459,7 @@ export class SonGuessrService implements AdminRoomControl {
       { requireVip: round.song.id.startsWith("qq:") && round.song.requiresVip === true }
     );
     if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
-    round.song.audioUrl = audioUrl;
+    round.song = { ...round.song, audioUrl };
     this.touch(room);
     this.publishRoom(room);
     return { refreshed: true };

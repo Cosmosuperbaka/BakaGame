@@ -8,6 +8,7 @@ import {
   albumNameScore,
   buildAlbumQueries,
   createSongLyricClip,
+  createManualLyricClip,
   hasAnimeSongEvidence,
   isNonVocalTrack,
   isReleaseYearOffTarget,
@@ -8075,5 +8076,193 @@ describe("SonGuessr 组队", () => {
     expect(playerOf(ctx.host, ctx.cId).score).toBe(10);
     expect(playerOf(ctx.host, ctx.aId).score).toBe(5);
     expect(playerOf(ctx.host, ctx.bId).score).toBe(0);
+  });
+});
+
+describe("手动出题片段", () => {
+  const enterSubmittingPhase = async (service: SonGuessrService) => {
+    const host = connection(service, `clip-host-${Math.random()}`);
+    const guest = connection(service, `clip-guest-${Math.random()}`);
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, guest, "玩家");
+    await execute(service, guest, {
+      id: "clip-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "clip-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "clip-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    return { host, guest, hostState, guestState };
+  };
+
+  test("缺省片段沿用自动切片；合法区间取交集歌词", () => {
+    const song = { lyrics: songs.answer.lyrics, durationMs: 60_000 };
+    expect(createManualLyricClip(song, undefined)).toBeUndefined();
+    expect(createManualLyricClip(song, { startTime: 2_000, endTime: 8_000 })).toEqual({
+      startTime: 2_000,
+      endTime: 8_000,
+      lines: songs.answer.lyrics.slice(1, 7),
+    });
+  });
+
+  test("越界、反向、过短或过长的手动片段退回整曲且不报错", () => {
+    const song = { lyrics: songs.answer.lyrics, durationMs: 60_000 };
+    const wholeSong = {
+      startTime: 0,
+      endTime: 60_000,
+      lines: songs.answer.lyrics,
+    };
+    expect(createManualLyricClip(song, { startTime: 0, endTime: 1_000 })).toEqual(wholeSong);
+    expect(createManualLyricClip(song, { startTime: 10_000, endTime: 45_000 })).toEqual(wholeSong);
+    expect(createManualLyricClip(song, { startTime: 8_000, endTime: 2_000 })).toEqual(wholeSong);
+    expect(createManualLyricClip(song, { startTime: 50_000, endTime: 80_000 })).toEqual(wholeSong);
+    expect(createManualLyricClip(song, { startTime: -1_000, endTime: 5_000 })).toEqual(wholeSong);
+    // 时长未知时不做上界校验，合法区间照常生效。
+    expect(
+      createManualLyricClip({ lyrics: songs.answer.lyrics }, { startTime: 2_000, endTime: 8_000 })
+        ?.endTime
+    ).toBe(8_000);
+  });
+
+  test("出题人可预览所选歌曲，非出题人与作答阶段都拿不到答案的试听与歌词", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "clip-preview-host");
+    const guest = connection(service, "clip-preview-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家");
+
+    // 等待阶段还不是出题人：不允许提前取答案详情。
+    await expect(
+      execute(service, host, {
+        id: "preview-waiting",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      })
+    ).rejects.toMatchObject({ code: "NOT_SUBMITTER" });
+
+    await execute(service, guest, {
+      id: "preview-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "preview-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "preview-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+
+    const preview = await execute<{ song: { id: string; audioUrl: string; lyrics: unknown[] } }>(
+      service,
+      host,
+      {
+        id: "preview-detail",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      }
+    );
+    expect(preview.song).toMatchObject({
+      id: "answer",
+      audioUrl: "https://audio/answer.mp3",
+      durationMs: 180_000,
+    });
+    expect(preview.song.lyrics).toHaveLength(8);
+    expect(preview.song.lyrics[0]).toMatchObject({ time: 1_000, endTime: 2_000, text: "歌词1" });
+
+    await expect(
+      execute(service, guest, {
+        id: "preview-guest",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      })
+    ).rejects.toMatchObject({ code: "NOT_SUBMITTER" });
+
+    await execute(service, host, {
+      id: "preview-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer", clip: { startTime: 2_000, endTime: 8_000 } },
+    });
+    await expect(
+      execute(service, host, {
+        id: "preview-after-submit",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      })
+    ).rejects.toMatchObject({ code: "NOT_SUBMITTER" });
+  });
+
+  test("手动片段随回合下发，快照导出恢复后仍在", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const { host, guest, guestState } = await enterSubmittingPhase(service);
+    await execute(service, host, {
+      id: "clip-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer", clip: { startTime: 2_000, endTime: 8_000 } },
+    });
+    const round = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound;
+    expect(round?.lyricClip).toEqual({
+      startTime: 2_000,
+      endTime: 8_000,
+      lines: songs.answer.lyrics.slice(1, 7),
+    });
+
+    const exported = service.exportSnapshots();
+    expect(JSON.stringify(exported)).toContain('"startTime":2000');
+    const restarted = new SonGuessrService({ musicProvider: provider });
+    expect(restarted.restoreSnapshots(exported, Date.now())).toBe(1);
+    const restoredClient = connection(restarted, "clip-restored-guest");
+    await execute(restarted, restoredClient, {
+      id: "clip-restore",
+      type: "song.room.reconnect",
+      payload: { roomId: "1234", sessionToken: guestState.sessionToken },
+    });
+    expect(
+      lastEvent<SonGuessrRoomSnapshot>(restoredClient, "song.room.snapshot").currentRound
+        ?.lyricClip
+    ).toEqual({
+      startTime: 2_000,
+      endTime: 8_000,
+      lines: songs.answer.lyrics.slice(1, 7),
+    });
+  });
+
+  test("无效手动片段退回整曲后再进回合", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const { host, guest } = await enterSubmittingPhase(service);
+    await execute(service, host, {
+      id: "clip-submit-invalid",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer", clip: { startTime: 0, endTime: 1_000 } },
+    });
+    expect(
+      lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip
+    ).toEqual({ startTime: 0, endTime: 180_000, lines: songs.answer.lyrics });
   });
 });

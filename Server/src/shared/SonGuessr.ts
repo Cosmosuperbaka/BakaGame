@@ -388,6 +388,35 @@ export interface SongLyricClip {
   lines: SongLyricLine[];
 }
 
+/** 手动出题选定的音频区间（毫秒），由客户端片段编辑器提交。 */
+export interface SongClipRange {
+  startTime: number;
+  endTime: number;
+}
+
+/** 手动片段的最短长度：再短就听不出旋律。 */
+export const SONG_CLIP_MIN_MS = 3_000;
+/** 手动片段的最长长度：再长就接近整首歌，违背「片段」的玩法。 */
+export const SONG_CLIP_MAX_MS = 30_000;
+
+/**
+ * 手动出题时的歌曲预览：只下发给当前出题人，供片段编辑器试听与选词。
+ *
+ * 不含逐字歌词：编辑器只需要行级时间与文本，逐字数据体量大且用不上。
+ */
+export interface SongClipPreview {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  pictureUrl?: string;
+  durationMs?: number;
+  audioUrl: string;
+  lyrics: SongLyricLine[];
+  chorus?: SongChorus;
+}
+
+
 export interface SongSearchResult {
   id: string;
   title: string;
@@ -771,6 +800,11 @@ export const SonGuessrPayloadSchemas = {
    */
   "song.auth.setPoolSharing": t.Object({ platform: musicPlatform, enabled: t.Boolean() }, strict),
   "song.music.search": t.Object({ keyword }, strict),
+  /**
+   * 出题人预览自己选中的歌：音频地址与行级歌词用于片段编辑。只允许当前待出题人调用，
+   * 猜歌阶段的玩家拿不到答案的歌词与试听。
+   */
+  "song.music.detail": t.Object({ songId }, strict),
   "song.music.playlist.resolve": t.Object(
     { value: t.String({ minLength: 1, maxLength: 500 }) },
     strict
@@ -782,7 +816,22 @@ export const SonGuessrPayloadSchemas = {
   "song.subject.image": t.Object({ subjectId }, strict),
   "song.game.start": emptyPayload,
   "song.game.chooseSubmitter": t.Object({ playerId }, strict),
-  "song.game.submitSong": t.Object({ songId }, strict),
+  "song.game.submitSong": t.Object(
+    {
+      songId,
+      /** 手动选定片段；缺省时沿用自动切片，越界或无效时服务端退回整曲。 */
+      clip: t.Optional(
+        t.Object(
+          {
+            startTime: t.Number({ minimum: 0 }),
+            endTime: t.Number({ minimum: 0 }),
+          },
+          strict
+        )
+      ),
+    },
+    strict
+  ),
   "song.game.submitAnime": t.Object({ subjectId, songId: t.Optional(songId) }, strict),
   "song.game.audioReady": t.Object({ roundNumber: positiveInt }, strict),
   "song.game.audioFailed": t.Object({ roundNumber: positiveInt }, strict),
@@ -868,6 +917,8 @@ export type SonGuessrAck<TCommand extends SonGuessrCommand> = TCommand extends
             ? { enabled: boolean }
             : TCommand extends "song.music.search"
             ? { results: SongSearchResult[] }
+            : TCommand extends "song.music.detail"
+            ? { song: SongClipPreview }
             : TCommand extends "song.bangumi.search"
               ? { results: BangumiSubjectSearchResult[] }
               : TCommand extends "song.bangumi.songs"

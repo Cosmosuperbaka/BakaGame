@@ -442,6 +442,7 @@ const SONGUESSR_COMMAND_CASES = [
   { type: "song.auth.clear", payload: {} },
   { type: "song.auth.setPoolSharing", payload: { platform: "qq", enabled: true } },
   { type: "song.music.search", payload: { keyword: "测试" } },
+  { type: "song.music.detail", payload: { songId: "netease:1899705498" } },
   { type: "song.music.playlist.resolve", payload: { value: "123" } },
   { type: "song.music.artist.search", payload: { keyword: "测试" } },
   { type: "song.bangumi.search", payload: { keyword: "测试" } },

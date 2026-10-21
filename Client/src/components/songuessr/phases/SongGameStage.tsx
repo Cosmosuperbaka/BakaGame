@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -35,6 +35,7 @@ import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
+import { SongClipConfig } from "@/components/songuessr/SongClipConfig";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
   AnimeAutoFilterSummary,
@@ -44,10 +45,14 @@ import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid"
 import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { withTeamName } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
+import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import type {
+  SongClipPreview,
+  SongClipRange,
   SongGuessAttempt,
   SongGuessDirection,
+  SongSearchResult,
   SonGuessrPlayerView,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
@@ -223,7 +228,12 @@ export interface SongGameAreaProps {
   audioPlaybackState: "idle" | "playing" | "completed";
   onPlayAudio: () => void;
   onRetryAudio: () => void;
-  onSelectSearchSong: (songId: string, mode: "submit" | "guess", extraId?: string) => Promise<void>;
+  onSelectSearchSong: (
+    songId: string,
+    mode: "submit" | "guess",
+    extraId?: string,
+    clip?: SongClipRange
+  ) => Promise<void>;
   run: SongRunCommand;
   isPending?: (type: string) => boolean;
   audioRef?: React.RefObject<HTMLAudioElement | null>;
@@ -677,13 +687,36 @@ function ChoosingSubmitterPhase({
   );
 }
 
+/**
+ * 手动出题：先搜歌，选中后进入片段配置，再由出题人确认区间。
+ *
+ * 猜番仍是一步提交：番剧与关联曲由服务端匹配，没有「选歌词片段」这一层。
+ */
 function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: SongGameAreaProps) {
   const anime = snapshot.settings.questionType === "anime";
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const [preview, setPreview] = useState<SongClipPreview | null>(null);
   const submitter = snapshot.players.find(
     (player) => player.id === snapshot.pendingSubmitterPlayerId
   );
+
+  const pickSong = async (song: SongSearchResult) => {
+    const { song: detail } = await sendCommand(
+      "song.music.detail",
+      { songId: song.id },
+      // 与提交出题同口径：回源取音频与歌词的耗时由上游决定，不拿默认超时误报失败。
+      { timeout: 0 }
+    );
+    setPreview(detail);
+  };
+
   return (
-    <div className="mx-auto flex max-w-md flex-col items-center gap-6 text-center">
+    <div
+      className={cn(
+        "mx-auto flex w-full flex-col items-center gap-6 text-center",
+        preview ? "max-w-2xl" : "max-w-md"
+      )}
+    >
       <PhaseHeader
         icon={anime ? Film : Music2}
         title={
@@ -691,27 +724,31 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
         }
       />
       {privateState.canSubmitSong ? (
-        <>
-          <p className="text-sm text-muted-foreground">
-            {anime
-              ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
-              : "搜索一首可播放的网易云音乐歌曲，点一下即设为答案。"}
-            歌曲信息只会在回合结束后公开。
-          </p>
-          {anime ? (
-            <AnimeSearch
-              mode="submit"
-              className="w-full"
-              onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
-            />
-          ) : (
-            <SongSearch
-              mode="submit"
-              className="w-full"
-              onSelect={(song) => onSelectSearchSong(song.id, "submit")}
-            />
-          )}
-        </>
+        preview ? (
+          <SongClipConfig
+            song={preview}
+            onConfirm={(clip) => onSelectSearchSong(preview.id, "submit", undefined, clip)}
+            onCancel={() => setPreview(null)}
+          />
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {anime
+                ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
+                : "搜索一首可播放的网易云音乐歌曲，选中后可试听并截取片段。"}
+              歌曲信息只会在回合结束后公开。
+            </p>
+            {anime ? (
+              <AnimeSearch
+                mode="submit"
+                className="w-full"
+                onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
+              />
+            ) : (
+              <SongSearch mode="submit" className="w-full" onSelect={pickSong} />
+            )}
+          </>
+        )
       ) : (
         <p className="text-sm text-muted-foreground">
           {submitter?.name ?? "出题人"} 正在选择{anime ? "番剧" : "歌曲"}
