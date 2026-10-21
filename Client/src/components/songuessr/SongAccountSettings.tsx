@@ -19,7 +19,13 @@ import {
 import { readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SonGuessrAck, SonGuessrMusicAccount, SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type {
+  SonGuessrAck,
+  SonGuessrMusicAccount,
+  SonGuessrMusicPoolView,
+  SonGuessrPlayerView,
+  SonGuessrRoomSnapshot,
+} from "@bakagame/shared";
 
 /** 黑胶与绿钻成长等级在官方徽章上的写法。 */
 const LEVEL_NUMERALS = ["", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌"];
@@ -278,8 +284,15 @@ function VipStatus({
 /** 二维码回包：形状由 shared 的 ack 契约给出，这里只留别名让状态与 props 好读。 */
 type QrCreateResponse = SonGuessrAck<"song.auth.qr.create">;
 
-export function SongAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
-  return <RoomAccountSettings key={snapshot.roomId} snapshot={snapshot} />;
+export function SongAccountSettings({
+  snapshot,
+  me,
+}: {
+  snapshot: SonGuessrRoomSnapshot;
+  /** 当前玩家：账号池里「我的号」按它定位，缺省时退回房间级账号展示（老快照/故事夹具）。 */
+  me?: SonGuessrPlayerView;
+}) {
+  return <RoomAccountSettings key={snapshot.roomId} snapshot={snapshot} me={me} />;
 }
 
 type QqScanMode = "qq" | "wx" | "mobile";
@@ -426,7 +439,130 @@ function QrFrame({ qr, busy, alt }: { qr: QrCreateResponse | null; busy: boolean
   );
 }
 
-function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
+/** 池里属于我的那条记录；没有池（旧快照 / 故事夹具）或没有身份时为空。 */
+function myPoolEntry(
+  snapshot: SonGuessrRoomSnapshot,
+  me: SonGuessrPlayerView | undefined,
+  platform: SongMusicPlatform
+): SonGuessrMusicPoolView | undefined {
+  if (snapshot.musicPool === undefined || me === undefined) return undefined;
+  return snapshot.musicPool.find(
+    (entry) => entry.playerId === me.id && entry.platform === platform
+  );
+}
+
+/**
+ * 本行要展示的账号。
+ *
+ * 快照带了账号池就**只看我自己的号**：池里排在前面的可能是别人的号，拿它当「我的账号」
+ * 会让玩家看到别人的昵称、点退出登录还清不掉（B4：谁的号谁做主）。
+ * 老快照没有池字段时退回房间级账号，故事夹具与旧用例的展示保持不变。
+ */
+function displayAccountFor(
+  snapshot: SonGuessrRoomSnapshot,
+  me: SonGuessrPlayerView | undefined,
+  platform: SongMusicPlatform,
+  stored: StoredSongMusicSession | null
+): SonGuessrMusicAccount | undefined {
+  if (snapshot.musicPool !== undefined) {
+    return myPoolEntry(snapshot, me, platform)?.account;
+  }
+  const roomReady = platform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
+  return snapshot.musicAccounts?.[platform] ?? (roomReady ? stored?.account : undefined);
+}
+
+/** 服务端暂停了号主的号：必须说出来，否则号主只看到开关自己变灰，会以为是谁动了设置。 */
+function PoolPausedNotice({ entry }: { entry?: SonGuessrMusicPoolView }) {
+  if (!entry) return null;
+  return (
+    <p
+      role="status"
+      className="mb-4 rounded-md bg-muted px-3 py-2 text-xs leading-relaxed text-muted-foreground"
+    >
+      服务端已暂停使用这个号：{entry.lastFailureReason ?? "上游暂时拒绝请求"}。
+      {entry.enabled ? "稍后会自行恢复，无需重新登录。" : "请重新登录后再共享。"}
+    </p>
+  );
+}
+
+/** 号主自己的共享开关：只在等待阶段可改（服务端也会再拦一次）。 */
+function PoolSharingRow({
+  entry,
+  locked,
+  busy,
+  onToggle,
+}: {
+  entry?: SonGuessrMusicPoolView;
+  locked: boolean;
+  busy: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
+  if (!entry) return null;
+  return (
+    <SettingSwitchRow
+      label="允许本房使用我的账号"
+      description={
+        locked
+          ? "开局后不能改；下一局回到准备页再调整"
+          : "出题取歌时会用这个号；关掉后本房不再取用，正在跑的请求会自己跑完"
+      }
+      checked={entry.enabled}
+      disabled={locked || busy}
+      onCheckedChange={onToggle}
+    />
+  );
+}
+
+/** 凭据被判死时服务端已经把开关关掉，光看开关看不出原因，这里给一条明确的重登入口。 */
+function PoolReloginButton({
+  entry,
+  busy,
+  onRelogin,
+}: {
+  entry?: SonGuessrMusicPoolView;
+  busy: boolean;
+  onRelogin: () => void;
+}) {
+  if (!entry || entry.enabled) return null;
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="w-full gap-1.5"
+      disabled={busy}
+      onClick={onRelogin}
+    >
+      <RefreshCw className="h-3.5 w-3.5" />
+      重新登录
+    </Button>
+  );
+}
+
+/** 共享开关的命令通道：忙碌态与失败提示都收在这里，账号组件本身只读结果。 */
+function usePoolSharing() {
+  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
+  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const [sharingBusy, setSharingBusy] = useState(false);
+  const setSharing = async (platform: SongMusicPlatform, enabled: boolean) => {
+    setSharingBusy(true);
+    try {
+      await sendCommand("song.auth.setPoolSharing", { platform, enabled });
+    } catch (error) {
+      setNotice((error as { message?: string }).message ?? "切换账号共享失败，请重试", "error");
+    } finally {
+      setSharingBusy(false);
+    }
+  };
+  return { sharingBusy, setSharing };
+}
+
+function RoomAccountSettings({
+  snapshot,
+  me,
+}: {
+  snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
+}) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const setNotice = useSonGuessrStore((state) => state.setNotice);
   const [open, setOpen] = useState(false);
@@ -444,6 +580,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   const [rememberQq, setRememberQq] = useState(() => storedQq?.persistent ?? true);
 
   const [busy, setBusy] = useState(false);
+  const { sharingBusy, setSharing } = usePoolSharing();
   const [qr, setQr] = useState<QrCreateResponse | null>(null);
   const [qrStatus, setQrStatus] = useState("正在准备登录二维码…");
   const qrCheckingRef = useRef<number | null>(null);
@@ -474,12 +611,18 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
   }, []);
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;
-  const isCurrentReady =
-    activePlatform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
-  const currentAccount = isCurrentReady
-    ? (snapshot.musicAccounts?.[activePlatform] ?? currentStored?.account)
-    : undefined;
-  const showQr = !currentStored;
+  const poolAware = snapshot.musicPool !== undefined;
+  const currentEntry = myPoolEntry(snapshot, me, activePlatform);
+  /**
+   * 被服务端暂停的号：冷却期内不参与取号。风控与限流到点自动恢复（凭据被判死时服务端会顺手
+   * 关掉开关），所以只有「开关也关了」才要号主重新登录。
+   */
+  const cooldownEntry = currentEntry?.cooldownUntil !== undefined ? currentEntry : undefined;
+  /** 共享开关只在等待阶段可改，与 `song.room.updateSettings` 同一道门槛（服务端也会再拦一次）。 */
+  const sharingLocked = snapshot.phase !== "waiting";
+  const currentAccount = displayAccountFor(snapshot, me, activePlatform, currentStored);
+  // 只在「我这端既没进池、本机也没凭据」时才摆二维码；本机有凭据就等自动装载，先显示正在连接。
+  const showQr = poolAware ? currentAccount === undefined && !currentStored : !currentStored;
 
   const completeLogin = useCallback(
     (platform: SongMusicPlatform, session: { cookie: string; account: SonGuessrMusicAccount }) => {
@@ -642,15 +785,10 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
     if (open) void createQr(platform, qqScanType);
   };
 
-  const neteaseAccount =
-    snapshot.musicAccounts?.netease ??
-    (snapshot.musicAccountReady ? storedNetease?.account : undefined);
-  const qqAccount =
-    snapshot.musicAccounts?.qq ?? (snapshot.qqMusicAccountReady ? storedQq?.account : undefined);
-  const neteaseConnecting =
-    Boolean(storedNetease) && !snapshot.musicAccountReady && !snapshot.musicAccounts?.netease;
-  const qqConnecting =
-    Boolean(storedQq) && !snapshot.qqMusicAccountReady && !snapshot.musicAccounts?.qq;
+  const neteaseAccount = displayAccountFor(snapshot, me, "netease", storedNetease);
+  const qqAccount = displayAccountFor(snapshot, me, "qq", storedQq);
+  const neteaseConnecting = Boolean(storedNetease) && neteaseAccount === undefined;
+  const qqConnecting = Boolean(storedQq) && qqAccount === undefined;
 
   const renderAccountPill = (
     platform: "netease" | "qq",
@@ -724,6 +862,9 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
         onSelect={switchPlatform}
       />
 
+      {/* 被服务端暂停时必须说出来：否则号主只看到开关自己变灰，会以为是房主或页面动了设置。 */}
+      <PoolPausedNotice entry={cooldownEntry} />
+
       {/* 账号与二维码两态各自按高度收放，一个收起时另一个撑开 */}
       <CollapsibleRegion open={!showQr}>
         <div className="space-y-4">
@@ -750,6 +891,12 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
               {connectingLabel(activePlatform)}
             </p>
           )}
+          <PoolSharingRow
+            entry={currentEntry}
+            locked={sharingLocked}
+            busy={sharingBusy}
+            onToggle={(value) => void setSharing(activePlatform, value)}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -760,6 +907,11 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
             <LogOut className="h-3.5 w-3.5" />
             退出登录
           </Button>
+          <PoolReloginButton
+            entry={cooldownEntry}
+            busy={busy}
+            onRelogin={() => void logout()}
+          />
         </div>
       </CollapsibleRegion>
 
@@ -808,7 +960,7 @@ function RoomAccountSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) 
       <p className="mt-4 flex gap-2 border-t pt-4 text-2xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
         <span>
-          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存供全房获取音乐信息；房间关闭或退出登录时销毁。
+          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存，按你的共享开关供本房取歌；关掉开关、离开房间或房间关闭即销毁。
         </span>
       </p>
     </SettingsAccordion>

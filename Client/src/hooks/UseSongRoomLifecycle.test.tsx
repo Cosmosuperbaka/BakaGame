@@ -2,6 +2,7 @@ import { StrictMode, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SonGuessrMusicPoolView, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import {
   getSongSoloRoomId,
@@ -252,11 +253,34 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
 
 describe("保存凭据的房间装载重试（真实 hook / 假定时器）", () => {
   const HOST_ID = "player-host";
+  const GUEST_ID = "player-guest";
   const hostReceipt = (roomId = "1234") => ({
     roomId,
     sessionToken: "fixture-token",
     snapshot: songSnapshot({ roomId, hostPlayerId: HOST_ID }),
     privateState: songPrivate({ playerId: HOST_ID, sessionToken: "fixture-token" }),
+  });
+  /** 入房回包带上指定阶段与账号池，用于验证「只在这一阶段自动装载」与「池里已有我的号」两条分支。 */
+  const receiptFor = (
+    phase: SonGuessrRoomSnapshot["phase"],
+    pool?: SonGuessrMusicPoolView[],
+    playerId = HOST_ID
+  ) => ({
+    roomId: "1234",
+    sessionToken: "fixture-token",
+    snapshot: songSnapshot({ roomId: "1234", hostPlayerId: HOST_ID, phase, musicPool: pool }),
+    privateState: songPrivate({ playerId, sessionToken: "fixture-token" }),
+  });
+  const myPoolEntry = (overrides: Partial<SonGuessrMusicPoolView> = {}): SonGuessrMusicPoolView => ({
+    playerId: HOST_ID,
+    playerName: "夹具玩家",
+    platform: "netease",
+    account: SONG_ACCOUNTS.vip,
+    enabled: true,
+    inFlight: 0,
+    recentOk: 0,
+    recentTotal: 0,
+    ...overrides,
   });
   const flush = async (ms = 0) => {
     await act(async () => {
@@ -326,14 +350,14 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     h.unmount();
   });
 
-  it("非房主这类确定性拒绝不重试，交给下一次快照变化", async () => {
+  it("认证服务不可用这类确定性拒绝不重试，交给下一次快照变化", async () => {
     let uploads = 0;
     send.mockImplementation(async (type: string) => {
       if (type === "song.room.join") return hostReceipt();
       if (type === "song.auth.useCookie") {
         uploads += 1;
-        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：「非房主」这类拒绝必须留在不重试分支
-        throw { code: "NOT_HOST", message: "只有房主可以操作" };
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- 夹具抛出协议错误体：不带 code 会被当成临时故障重试，这类拒绝必须留在不重试分支
+        throw { code: "MUSIC_AUTH_UNAVAILABLE", message: "音乐认证服务暂时不可用" };
       }
       return undefined;
     });
@@ -341,6 +365,8 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     const h = mount();
     await flush();
     expect(uploads).toBe(1);
+    // 不重试也不清本机凭据：认证服务的问题不是这份凭据的问题。
+    expect(getStoredSongMusicSession()).not.toBeNull();
 
     await flush(30_000);
     expect(uploads).toBe(1);
@@ -368,6 +394,74 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     expect(uploadedPlatforms).toContain("netease");
     expect(uploadedPlatforms).toContain("qq");
     expect(uploadCalls()).toHaveLength(2);
+    h.unmount();
+  });
+
+  it("局中入房不自动装载，回到准备页才把本机凭据传给房间", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return receiptFor("playing");
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        return { account: SONG_ACCOUNTS.vip };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    // 共享开关只在准备页可改：局中把本机凭据塞进池子，池里的开关状态就和实际生效的对不上。
+    expect(uploads).toBe(0);
+
+    act(() => {
+      useSonGuessrStore.setState({ snapshot: receiptFor("waiting").snapshot });
+    });
+    await flush();
+    expect(uploads).toBe(1);
+    expect(uploadCalls()[0][1]).toEqual({ cookie: "MUSIC_U=fixture", platform: "netease" });
+    h.unmount();
+  });
+
+  it("非房主也能贡献自己的号：池里没有我这条就自动装载", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return receiptFor("waiting", [], GUEST_ID);
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        return { account: SONG_ACCOUNTS.vip };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    expect(uploads).toBe(1);
+    expect(uploadCalls()[0][1]).toEqual({ cookie: "MUSIC_U=fixture", platform: "netease" });
+    h.unmount();
+  });
+
+  it("池里已有本人这份凭据时不再重传，换了账号才重新装载", async () => {
+    let uploads = 0;
+    send.mockImplementation(async (type: string) => {
+      if (type === "song.room.join") return receiptFor("waiting", [myPoolEntry()]);
+      if (type === "song.auth.useCookie") {
+        uploads += 1;
+        return { account: SONG_ACCOUNTS.vip };
+      }
+      return undefined;
+    });
+
+    const h = mount();
+    await flush();
+    // 同一份凭据已在服务端池里：重传只会多跑一次上游校验，还把「关掉共享」的开关又推给服务端一遍。
+    expect(uploads).toBe(0);
+
+    // 换了一个账号（池里我这条还是旧账号）才算新凭据，需要重新装载。
+    act(() => {
+      useSonGuessrStore.setState({ snapshot: receiptFor("waiting", [myPoolEntry({ account: SONG_ACCOUNTS.nonVip })]).snapshot });
+    });
+    await flush();
+    expect(uploads).toBe(1);
     h.unmount();
   });
 });

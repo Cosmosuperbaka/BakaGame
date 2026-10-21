@@ -53,6 +53,7 @@ import {
   type SonGuessrPhase,
   type SonGuessrPlayerView,
   type SonGuessrPrivateState,
+  type SonGuessrMusicPoolView,
   type SonGuessrRoomSnapshot,
   type SonGuessrRoomSummary,
   type SonGuessrRoundSummary,
@@ -203,20 +204,14 @@ interface SonGuessrRoomRecord {
   currentRound?: SonGuessrRoundRecord;
   roundSummary?: SonGuessrRoundSummary;
   finalScores?: SonGuessrScore[];
-  musicAuthOperations?: {
-    netease?: symbol;
-    qq?: symbol;
-  };
-  musicSession?: {
-    ownerPlayerId: string;
-    cookie: string;
-    account: MusicLoginSession["account"];
-  };
-  qqMusicSession?: {
-    ownerPlayerId: string;
-    cookie: string;
-    account: MusicLoginSession["account"];
-  };
+  musicAuthOperations?: Record<string, symbol>;
+  /**
+   * 音乐账号池：每个玩家自愿贡献的账号各一条，条目带第三方 `cookie`。
+   *
+   * 只在内存里；落盘前整段丢弃（见 `exportSnapshots`），下发快照时只给
+   * `SonGuessrMusicPoolView` 那一层，不含凭据。
+   */
+  musicPool?: SonGuessrMusicPoolEntry[];
   players: Record<string, SonGuessrPlayerRecord>;
   chat: ChatMessage[];
   createdAt: number;
@@ -238,19 +233,60 @@ type SongUpdateSettingsPayload = Extract<
   { type: "song.room.updateSettings" }
 >["payload"];
 
-type MusicAuthPlatform = keyof NonNullable<SonGuessrRoomRecord["musicAuthOperations"]>;
+type MusicAuthPlatform = "netease" | "qq";
 
-/** 平台对应的房间会话字段：逐端复核时按平台取回当前挂着的会话。 */
-const SESSION_FIELD_BY_PLATFORM: Record<MusicAuthPlatform, "musicSession" | "qqMusicSession"> = {
-  netease: "musicSession",
-  qq: "qqMusicSession",
-};
+/**
+ * 在途登录操作在房间记录里的键。
+ *
+ * 按「人 + 平台」区分，而不是按平台：账号池是多人各自贡献自己的号，
+ * 同房两个玩家同时登录网易云是完全正常的并发，按平台一把锁会让先来的人
+ * 被判成「操作已失效」。
+ */
+const musicAuthOperationKey = (playerId: string, platform: MusicAuthPlatform) =>
+  `${playerId}:${platform}`;
 
-/** 开局前逐端复核音乐会话所需的一切输入。 */
+/**
+ * 账号池条目：一个玩家贡献的一个平台账号。
+ *
+ * 只要人在房里、开关开着就参与取号；离房、关开关、掉线超宽限或被风控摘除即刻退出。
+ */
+interface SonGuessrMusicPoolEntry {
+  playerId: string;
+  platform: MusicAuthPlatform;
+  cookie: string;
+  account: MusicLoginSession["account"];
+  /** 贡献者的共享开关；等待阶段由本人改，开局锁死。 */
+  enabled: boolean;
+  addedAt: number;
+  /** 在途上游请求数：取号按最小在途平衡，单号另受并发上限约束。 */
+  inFlight: number;
+  /** 近期取号结果，只保留最近一组，用于房主面板的成功率。 */
+  recentOk: number;
+  recentTotal: number;
+  /** 风控摘除后的冷却截止；到点前不参与取号，号主重新登录即解除。 */
+  cooldownUntil?: number;
+  /** 最近一次失败原因。 */
+  lastFailureReason?: string;
+}
+
+/** 一次取号的租约：用完必须 `release`，否则该号的在途数会漏记、并发上限形同虚设。 */
+interface MusicAccountLease {
+  cookie: string;
+  platform: MusicAuthPlatform;
+  playerId: string;
+  release: (result: { ok: boolean; reason?: string; code?: string }) => void;
+}
+
+/**
+ * 开局前复核池内账号所需的一切输入。
+ *
+ * 只复核**每端当前会被选中的那一号**：复核的意义是「开局前发现凭据已失效」，
+ * 池里排在前面的号失效就会被选中，逐个复核只会把开局变慢 N 倍。
+ */
 interface MusicSessionRevalidation {
   room: SonGuessrRoomRecord;
   platform: MusicAuthPlatform;
-  session: NonNullable<SonGuessrRoomRecord["musicSession"]>;
+  entry: SonGuessrMusicPoolEntry;
   operation?: symbol;
   /** 只用于失败文案里的平台名。 */
   label: string;
@@ -1240,6 +1276,18 @@ const isUnusableSongCandidate = (error: unknown): boolean =>
 const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
 const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
 
+/**
+ * 单号并发上限：同一个贡献账号同时最多几个在途上游请求。
+ *
+ * 网易云凭证绑定登录 IP，同一份 cookie 并发过高会直接触发风控；QQ 同理。取号先按
+ * 最小在途平衡，再卡这条上限，避免多个人同时把同一个号打满。
+ */
+const MUSIC_POOL_MAX_IN_FLIGHT = 2;
+/** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
+export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
+/** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
+const MUSIC_POOL_STATS_WINDOW = 20;
+
 /** 房间因空闲被关闭前的预警提前量。 */
 const ROOM_EXPIRING_WARNING_MS = 60_000;
 
@@ -1465,8 +1513,8 @@ export class SonGuessrService implements AdminRoomControl {
    * 三类字段挡在落盘之外：
    * - `musicAuthOperations` / `automaticRoundOperation` 是 `symbol` 在途锁，JSON 往返会静默丢键，
    *   恢复后是 undefined 正是要的结果 —— 重启后不存在任何在途操作。
-   * - 音乐账号会话（`musicSession` / `qqMusicSession`）带着第三方 `cookie`，落盘等于把玩家的
-   *   登录态写进本机文件。整段丢弃，恢复后由房主重新登录，宁可少一段体验也不留凭据。
+   * - 音乐账号池（`musicPool`）的每条都带着第三方 `cookie`，落盘等于把玩家的登录态写进
+   *   本机文件。整段丢弃，恢复后由各贡献者重新登录，宁可少一段体验也不留凭据。
    */
   exportSnapshots(): SnapshottedRoom[] {
     const snapshots: SnapshottedRoom[] = [];
@@ -1474,8 +1522,7 @@ export class SonGuessrService implements AdminRoomControl {
       try {
         const copy = JSON.parse(JSON.stringify(room)) as SnapshottedRoom;
         const record = copy as Record<string, unknown>;
-        delete record.musicSession;
-        delete record.qqMusicSession;
+        delete record.musicPool;
         snapshots.push(copy);
       } catch (error) {
         this.options.eventLogger?.warn("猜歌房间快照导出失败，已跳过该房间", {
@@ -1655,6 +1702,12 @@ export class SonGuessrService implements AdminRoomControl {
         return this.useMusicCookie(connection, message.payload.cookie, message.payload.platform);
       case "song.auth.clear":
         return this.clearMusicAccount(connection, message.payload.platform);
+      case "song.auth.setPoolSharing":
+        return this.setPoolSharing(
+          connection,
+          message.payload.platform,
+          message.payload.enabled
+        );
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
       case "song.music.playlist.resolve":
@@ -1767,6 +1820,8 @@ export class SonGuessrService implements AdminRoomControl {
         continue;
       }
       delete room.players[player.id];
+      // 掉线超过宽限：人和他贡献的号一起清出房间（宽限内号仍在，房主面板也能看到）。
+      this.clearMusicSession(room, player.id);
       if (room.hostPlayerId === player.id) {
         this.reassignHost(room);
       }
@@ -1979,7 +2034,6 @@ export class SonGuessrService implements AdminRoomControl {
     ) {
       room.hostPlayerId = player.id;
       room.hostReconnectDeadlineAt = undefined;
-      if (room.musicSession) room.musicSession.ownerPlayerId = player.id;
       player.isReady = true;
     }
     this.attachConnection(room, player, connection);
@@ -2024,9 +2078,14 @@ export class SonGuessrService implements AdminRoomControl {
     const activeRound = room.phase === "playing" ? room.currentRound : undefined;
     if (activeRound) {
       try {
-        const refreshedSong = await this.options.musicProvider.getSong(
+        const refreshedSong = await this.withSongAccount(
+          room,
           activeRound.song.id,
-          this.getSongCookie(room, activeRound.song.id)
+          (cookie) => this.options.musicProvider.getSong(activeRound.song.id, cookie),
+          {
+            requireVip:
+              activeRound.song.id.startsWith("qq:") && activeRound.song.requiresVip === true,
+          }
         );
         if (room.phase === "playing" && room.currentRound === activeRound) {
           activeRound.song.audioUrl = refreshedSong.audioUrl;
@@ -2053,8 +2112,8 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private leaveRoom(connection: ConnectionRecord) {
-    // 显式离开代表账号主动退出，只有此时销毁其房间级音乐会话；网络断线由宽限期处理。
-    return this.detachFromRoom(connection, { keepMusicSession: false });
+    // 显式离开代表账号主动退出：号跟着人一起撤掉。
+    return this.detachFromRoom(connection);
   }
 
   /**
@@ -2062,16 +2121,13 @@ export class SonGuessrService implements AdminRoomControl {
    * 「在线但没有任何连接」的幽灵玩家（onlineCount 永不归零 → 房间永不关闭 →
    * 4 位房间号被耗尽，且只能靠重启进程恢复）。
    *
-   * @param keepMusicSession 切房间 / 被接管时传 true：人是被动离开的，
-   *   保留其网易云会话可以让旧房间继续出题（凭据只在内存，房间关闭即随之释放）；
-   *   显式退出传 false，按原语义一并清除。
+   * 离开房间一律撤掉自己贡献的号：账号池的定义就是「在房且开关打开者的账号」，
+   * 人走了号必须跟着走，否则旧房里会长期挂着一份没有人认领的凭据。网络断线不走这里，
+   * 由离线宽限期处理（宽限内号仍在，超期连人带号一起清）。
    */
-  private detachFromRoom(
-    connection: ConnectionRecord,
-    { keepMusicSession }: { keepMusicSession: boolean }
-  ) {
+  private detachFromRoom(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
-    if (!keepMusicSession) this.clearMusicSession(room, player.id);
+    this.clearMusicSession(room, player.id);
     delete room.players[player.id];
     this.connections.detach(connection);
 
@@ -2242,12 +2298,11 @@ export class SonGuessrService implements AdminRoomControl {
   private async searchMusic(connection: ConnectionRecord, keyword: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.requireMusicQuota(room, connection, player);
+    // 先算可播标注再取号：取号会把在途数抬起来，反着算会把刚好打满上限的会员号误判成不可用。
+    const options = this.musicSearchOptions(room);
     return {
-      results: await this.options.musicProvider.search(
-        keyword,
-        undefined,
-        this.getAggregatedSearchCookie(room),
-        this.musicSearchOptions(room)
+      results: await this.withAggregatedAccounts(room, (cookie) =>
+        this.options.musicProvider.search(keyword, undefined, cookie, options)
       ),
     };
   }
@@ -2259,7 +2314,9 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.musicProvider;
     const resolve = provider.getPlaylistSongs?.bind(provider);
     if (!resolve) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持读取歌单");
-    const result = await resolve(playlistId, this.getSongCookie(room, playlistId));
+    const result = await this.withSongAccount(room, playlistId, (cookie) =>
+      resolve(playlistId, cookie)
+    );
     return { playlist: result.info };
   }
 
@@ -2270,7 +2327,7 @@ export class SonGuessrService implements AdminRoomControl {
     const search = provider.searchArtists?.bind(provider);
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
     return {
-      results: await search(keyword, 20, this.getAggregatedSearchCookie(room)),
+      results: await this.withAggregatedAccounts(room, (cookie) => search(keyword, 20, cookie)),
     };
   }
 
@@ -2507,7 +2564,6 @@ export class SonGuessrService implements AdminRoomControl {
     room.automaticRoundLoading = false;
     room.hostPlayerId = target.id;
     room.hostReconnectDeadlineAt = undefined;
-    if (room.musicSession) room.musicSession.ownerPlayerId = target.id;
     target.isReady = true;
     this.touch(room);
     this.publishRoom(room);
@@ -2550,7 +2606,6 @@ export class SonGuessrService implements AdminRoomControl {
     type?: "qq" | "wx" | "mobile"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
     const provider = this.options.musicProvider;
     const createQrLogin = provider.createQrLogin?.bind(provider);
     if (!createQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
@@ -2564,7 +2619,6 @@ export class SonGuessrService implements AdminRoomControl {
     type?: "qq" | "wx" | "mobile"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
     const key = keyValue.trim();
     if (!key || key.length > 512) throw new AppError("INVALID_LOGIN", "二维码登录密钥无效");
     const provider = this.options.musicProvider;
@@ -2593,7 +2647,6 @@ export class SonGuessrService implements AdminRoomControl {
     platform: "netease" | "qq" = "netease"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
     const cookie = this.requireMusicCookie(cookieValue);
     const provider = this.options.musicProvider;
     const getLoginStatus = provider.getLoginStatus?.bind(provider);
@@ -2612,7 +2665,6 @@ export class SonGuessrService implements AdminRoomControl {
     platform: "netease" | "qq" | "all" = "all"
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
-    this.ensureHost(room, player.id);
     this.clearMusicSession(room, player.id, platform);
     this.touch(room);
     this.publishRoom(room);
@@ -2629,12 +2681,12 @@ export class SonGuessrService implements AdminRoomControl {
     if (!room.musicAuthOperations) {
       room.musicAuthOperations = {};
     }
-    room.musicAuthOperations[platform] = operation;
+    const key = musicAuthOperationKey(player.id, platform);
+    room.musicAuthOperations[key] = operation;
     return () => {
       if (
         this.rooms.get(room.id) !== room ||
-        room.musicAuthOperations?.[platform] !== operation ||
-        room.hostPlayerId !== player.id ||
+        room.musicAuthOperations?.[key] !== operation ||
         room.players[player.id] !== player ||
         !player.online ||
         connection.roomId !== room.id ||
@@ -2645,12 +2697,17 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
+  /**
+   * 收下一个玩家贡献的账号：同一个玩家同一平台只保留一号，重登即覆盖并解除冷却。
+   *
+   * 任何在房玩家都能贡献自己的号（不再限于房主）：池是「谁的号谁做主」，
+   * 开关、离房、掉线都按贡献者结算。
+   */
   private installMusicSession(
     room: SonGuessrRoomRecord,
     ownerPlayerId: string,
     session: MusicLoginSession
   ): MusicLoginSession {
-    this.ensureHost(room, ownerPlayerId);
     const cookie = this.requireMusicCookie(session.cookie);
     const isQq = session.account.platform === "qq";
     const account = {
@@ -2665,10 +2722,38 @@ export class SonGuessrService implements AdminRoomControl {
       vipLevel: session.account.vipLevel,
       vipYear: session.account.vipYear,
     };
-    if (isQq) {
-      room.qqMusicSession = { ownerPlayerId, cookie, account };
+    const platform: MusicAuthPlatform = isQq ? "qq" : "netease";
+    // 局中登录进来的号默认不入池（`enabled: false`）：开关「只在等待阶段可改、开局锁死」是 B4 的
+    // 硬约束，默认打开等于绕开它。回到准备页后由号主自己打开，池子因此在局中只会变小不会变大。
+    const active = room.phase === "waiting";
+    const pool = this.musicPool(room);
+    const existing = pool.find(
+      (entry) => entry.playerId === ownerPlayerId && entry.platform === platform
+    );
+    if (existing) {
+      // 同一份凭据重新装载不改开关：客户端回到准备页会自动重传本机凭据，若一律按阶段置位，
+      // 玩家自己关掉的共享就会被这次重传悄悄打开（开关状态应当只由号主改、由服务端记）。
+      // 换了一份凭据算重新登录，按当前阶段给默认值。
+      const sameCredential = existing.cookie === cookie;
+      existing.cookie = cookie;
+      existing.account = account;
+      existing.enabled = sameCredential ? existing.enabled : active;
+      existing.cooldownUntil = undefined;
+      existing.lastFailureReason = undefined;
+      existing.recentOk = 0;
+      existing.recentTotal = 0;
     } else {
-      room.musicSession = { ownerPlayerId, cookie, account };
+      pool.push({
+        playerId: ownerPlayerId,
+        platform,
+        cookie,
+        account,
+        enabled: active,
+        addedAt: this.now(),
+        inFlight: 0,
+        recentOk: 0,
+        recentTotal: 0,
+      });
     }
     return { cookie, account };
   }
@@ -2681,59 +2766,269 @@ export class SonGuessrService implements AdminRoomControl {
     return cookie;
   }
 
+  /** 池内所有条目；房间记录里没有池时按空池建一个，调用方不必各自判空。 */
+  private musicPool(room: SonGuessrRoomRecord): SonGuessrMusicPoolEntry[] {
+    room.musicPool ??= [];
+    return room.musicPool;
+  }
+
+  /**
+   * 摘掉某个玩家贡献的号。
+   *
+   * 只动退出的人自己的号：房间里的号分属不同玩家，房主退房不该顺手清掉别人的。
+   */
   private clearMusicSession(
     room: SonGuessrRoomRecord,
     ownerPlayerId?: string,
     platform: "netease" | "qq" | "all" = "all"
   ): boolean {
-    if (ownerPlayerId && room.hostPlayerId !== ownerPlayerId) {
-      if (
-        room.musicSession?.ownerPlayerId !== ownerPlayerId &&
-        room.qqMusicSession?.ownerPlayerId !== ownerPlayerId
-      ) {
-        return false;
+    const pool = this.musicPool(room);
+    const before = pool.length;
+    // 在途登录锁按「人 + 平台」清：清掉自己的号时顺手作废自己那一次在途登录，
+    // 不动别人正在跑的那次（否则 A 退出登录会把 B 的扫码结果一起作废）。
+    const platforms: MusicAuthPlatform[] =
+      platform === "all" ? ["netease", "qq"] : [platform];
+    if (ownerPlayerId !== undefined && room.musicAuthOperations) {
+      for (const key of platforms) {
+        delete room.musicAuthOperations[musicAuthOperationKey(ownerPlayerId, key)];
       }
     }
-    let cleared = false;
-    if (platform === "qq" || platform === "all") {
-      if (room.musicAuthOperations) room.musicAuthOperations.qq = undefined;
-      if (room.qqMusicSession) {
-        room.qqMusicSession = undefined;
-        cleared = true;
-      }
-    }
-    if (platform === "netease" || platform === "all") {
-      if (room.musicAuthOperations) room.musicAuthOperations.netease = undefined;
-      if (room.musicSession) {
-        room.musicSession = undefined;
-        cleared = true;
-      }
-    }
-    return cleared;
-  }
-
-  private getSongCookie(room: SonGuessrRoomRecord, songId?: string): string | undefined {
-    if (songId?.startsWith("qq:")) {
-      return room.qqMusicSession?.cookie;
-    }
-    return room.musicSession?.cookie;
+    room.musicPool = pool.filter(
+      (entry) =>
+        (platform !== "all" && entry.platform !== platform) ||
+        (ownerPlayerId !== undefined && entry.playerId !== ownerPlayerId)
+    );
+    return room.musicPool.length !== before;
   }
 
   /**
-   * 聚合检索的凭据。
+   * 贡献者改自己的共享开关。只在等待阶段可改，开局即锁死：出题链路已经在按池取号，
+   * 中途抽走一个正在被用的号会让回合直接断在半路。
+   */
+  private setPoolSharing(
+    connection: ConnectionRecord,
+    platform: MusicAuthPlatform,
+    enabled: boolean
+  ) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    if (room.phase !== "waiting") {
+      throw new AppError("INVALID_PHASE", "开局后不能再改账号共享开关");
+    }
+    const entry = this.musicPool(room).find(
+      (candidate) => candidate.playerId === player.id && candidate.platform === platform
+    );
+    if (!entry) throw new AppError("MUSIC_SESSION_INVALID", "请先登录该平台账号");
+    if (entry.enabled !== enabled) {
+      entry.enabled = enabled;
+      this.touch(room);
+      this.publishRoom(room);
+      this.log("song.auth.poolSharing", room.id, player.id, { platform, enabled });
+    }
+    return { enabled: entry.enabled };
+  }
+
+  private findPoolEntry(
+    room: SonGuessrRoomRecord,
+    playerId: string,
+    platform: MusicAuthPlatform
+  ): SonGuessrMusicPoolEntry | undefined {
+    return this.musicPool(room).find(
+      (entry) => entry.playerId === playerId && entry.platform === platform
+    );
+  }
+
+  /**
+   * 该号现在能不能取：开关开着、不在冷却里、且没到单号并发上限。
+   *
+   * 不看贡献者在线与否：掉线有宽限期，宽限内人还在房里，号照用；超期由
+   * `cleanupOfflinePlayers` 连号一起清掉。
+   */
+  private isPoolEntryAvailable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
+    if (!entry.enabled) return false;
+    if (this.isCoolingDown(entry, now)) return false;
+    return entry.inFlight < MUSIC_POOL_MAX_IN_FLIGHT;
+  }
+
+  /**
+   * 冷却是否还在生效。顺手把过期的冷却清掉：冷却到点就是自动恢复在途可用，
+   * 留着它既会让快照一直显示「冷却中」，也会让开局判定永远把这个号排除在外。
+   */
+  private isCoolingDown(entry: SonGuessrMusicPoolEntry, now: number): boolean {
+    if (entry.cooldownUntil === undefined) return false;
+    if (entry.cooldownUntil > now) return true;
+    entry.cooldownUntil = undefined;
+    return false;
+  }
+
+  /** 池内某平台有没有当下可取的号：开局判定与 B3 的「池空短路」都读这一条。 */
+  private hasAvailablePoolAccount(
+    room: SonGuessrRoomRecord,
+    platform: MusicAuthPlatform,
+    options: { requireVip?: boolean } = {}
+  ): boolean {
+    const now = this.now();
+    return this.musicPool(room).some(
+      (entry) =>
+        entry.platform === platform &&
+        this.isPoolEntryAvailable(entry, now) &&
+        (!options.requireVip || entry.account.vipStatus === "vip")
+    );
+  }
+
+  /**
+   * 取号：从池里挑一个当下可用的账号，记一份租约。
+   *
+   * 排序口径（先按能不能满足，再按谁更闲，最后按稳定的次要键 —— 并发返回顺序不能
+   * 影响选谁，否则同一个房间两次同曲出题会挑到不同的号）：
+   * 1. QQ 会员专享曲目（`requireVip`）只用会员号：非会员号取不到直链，放它去试既白跑一次
+   *    上游，又会把「取不到」记成这个号的近期失败（房主看到的成功率是账号健康的信号，
+   *    不该被别的号档位不够连累）；没有会员号可用时返回无租约，由调用方按无号降级处理。
+   * 2. 同档按最小在途；
+   * 3. 再按加入时间、玩家 id 兜底定序。
+   *
+   * 这里的会员档筛选只决定**哪个号来服务这首已经选中的歌**，不参与题目可用性判定：调用方
+   * 只对自己已经知道 `requiresVip` 的曲目传这一项，候选是否入池与能不能播仍按实际音频判定
+   * （见 `Server/docs/NeteaseMusicApi.md`「猜歌接入约束」）。网易云不按会员档筛：解灰兜底让
+   * 它在任何档位都取得到音源，按档筛只会白白缩小池子。
+   */
+  private acquireMusicAccount(
+    room: SonGuessrRoomRecord,
+    platform: MusicAuthPlatform,
+    options: { requireVip?: boolean } = {}
+  ): MusicAccountLease | undefined {
+    const now = this.now();
+    const candidates = this.musicPool(room).filter(
+      (entry) => entry.platform === platform && this.isPoolEntryAvailable(entry, now)
+    );
+    const tiered =
+      platform === "qq" && options.requireVip
+        ? candidates.filter((entry) => entry.account.vipStatus === "vip")
+        : candidates;
+    if (tiered.length === 0) return undefined;
+    const chosen = [...tiered].sort((left, right) => {
+      if (platform === "qq") {
+        const leftVip = left.account.vipStatus === "vip" ? 0 : 1;
+        const rightVip = right.account.vipStatus === "vip" ? 0 : 1;
+        if (leftVip !== rightVip) return leftVip - rightVip;
+      }
+      if (left.inFlight !== right.inFlight) return left.inFlight - right.inFlight;
+      if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
+      return left.playerId.localeCompare(right.playerId);
+    })[0];
+    if (!chosen) return undefined;
+    chosen.inFlight += 1;
+    return {
+      cookie: chosen.cookie,
+      platform,
+      playerId: chosen.playerId,
+      release: (result) => this.releaseMusicAccount(chosen, result),
+    };
+  }
+
+  /**
+   * 归还租约并按结果更新池内状态。
+   *
+   * 失败口径：凭据被平台判死（`MUSIC_SESSION_INVALID`）与风控/限流
+   * （`MUSIC_LOGIN_RISK`、`MUSIC_API_RATE_LIMITED`）都算「这个号当前不能用」，
+   * 立即冷却摘下；`SONG_UNAVAILABLE` 这类是曲目本身的问题，只记统计，
+   * 不然一首播不了的歌会把一个好好的号坑进冷却。
+   *
+   * 两种冷却的收尾不同：凭据判死只能靠号主重新登录（重登即清冷却并恢复开关，见
+   * `installMusicSession`），所以顺手关掉开关、让快照一眼看出这号要重登；风控与限流是
+   * 上游暂时的态度、凭据多半还有效，只冷却到点自动恢复，不擅自改号主的开关。
+   */
+  private releaseMusicAccount(
+    entry: SonGuessrMusicPoolEntry,
+    result: { ok: boolean; reason?: string; code?: string }
+  ): void {
+    entry.inFlight = Math.max(0, entry.inFlight - 1);
+    entry.recentTotal = Math.min(entry.recentTotal + 1, MUSIC_POOL_STATS_WINDOW);
+    if (result.ok) {
+      entry.recentOk = Math.min(entry.recentOk + 1, MUSIC_POOL_STATS_WINDOW);
+      entry.lastFailureReason = undefined;
+      return;
+    }
+    entry.lastFailureReason = result.reason ?? "上游请求失败";
+    if (result.code === "MUSIC_SESSION_INVALID") {
+      entry.enabled = false;
+      entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
+    } else if (result.code === "MUSIC_LOGIN_RISK" || result.code === "MUSIC_API_RATE_LIMITED") {
+      entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
+    }
+  }
+
+  /**
+   * 按曲目所属平台取号跑一次上游请求，无论成败都归还租约。
+   *
+   * `songId` 是 URN（`netease:` / `qq:`），未知前缀按网易云处理；池里没有可用号时
+   * `cookie` 为 undefined，请求照发（网易云匿名检索仍可用），由调用方与上游决定结果。
+   */
+  private async withSongAccount<T>(
+    room: SonGuessrRoomRecord,
+    songId: string | undefined,
+    run: (cookie: string | undefined) => Promise<T>,
+    options: { requireVip?: boolean } = {}
+  ): Promise<T> {
+    const platform: MusicAuthPlatform = songId?.startsWith("qq:") ? "qq" : "netease";
+    const lease = this.acquireMusicAccount(room, platform, options);
+    if (!lease) return run(undefined);
+    try {
+      const value = await run(lease.cookie);
+      lease.release({ ok: true });
+      return value;
+    } catch (error) {
+      lease.release({
+        ok: false,
+        code: error instanceof AppError ? error.code : "",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  private acquireAggregatedAccounts(room: SonGuessrRoomRecord): {
+    cookie: MusicCookieInput | undefined;
+    release: (result: { ok: boolean; reason?: string; code?: string }) => void;
+  } {
+    const netease = this.acquireMusicAccount(room, "netease");
+    const qq = this.acquireMusicAccount(room, "qq");
+    return {
+      cookie:
+        netease || qq
+          ? { ...(netease ? { netease: netease.cookie } : {}), ...(qq ? { qq: qq.cookie } : {}) }
+          : undefined,
+      release: (result) => {
+        netease?.release(result);
+        qq?.release(result);
+      },
+    };
+  }
+
+  /**
+   * 聚合检索的凭据：两端各取一号，用完一起归还。
    *
    * **必须按平台给出对象形态**，缺哪家就不写哪家：裸字符串在 `AggregatedMusicProvider`
    * 里会被当成「两家都能用」，于是没挂 QQ 账号的房间照样拿网易云凭据去搜 QQ，
    * 搜出的独占曲目一条都播不了（见 `isPlatformMismatchedCookie` 的判据与 B3 的实测问题）。
+   * 池里某端没有可用号就不带该端的键，聚合器据此短路那次检索（B3 与 B4 的联动点）。
    */
-  private getAggregatedSearchCookie(room: SonGuessrRoomRecord): MusicCookieInput | undefined {
-    const netease = room.musicSession?.cookie;
-    const qq = room.qqMusicSession?.cookie;
-    if (!netease && !qq) return undefined;
-    return {
-      ...(netease ? { netease } : {}),
-      ...(qq ? { qq } : {}),
-    };
+  private async withAggregatedAccounts<T>(
+    room: SonGuessrRoomRecord,
+    run: (cookie: MusicCookieInput | undefined) => Promise<T>
+  ): Promise<T> {
+    const lease = this.acquireAggregatedAccounts(room);
+    try {
+      const value = await run(lease.cookie);
+      lease.release({ ok: true });
+      return value;
+    } catch (error) {
+      lease.release({
+        ok: false,
+        code: error instanceof AppError ? error.code : "",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   /**
@@ -2743,9 +3038,36 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private musicSearchOptions(room: SonGuessrRoomRecord): MusicSearchOptions {
     const vipPlatforms: MusicPlatform[] = [];
-    if (room.musicSession?.account.vipStatus === "vip") vipPlatforms.push("netease");
-    if (room.qqMusicSession?.account.vipStatus === "vip") vipPlatforms.push("qq");
+    if (this.hasAvailablePoolAccount(room, "netease", { requireVip: true }))
+      vipPlatforms.push("netease");
+    if (this.hasAvailablePoolAccount(room, "qq", { requireVip: true })) vipPlatforms.push("qq");
     return { vipPlatforms };
+  }
+
+  /** 池内每端当下会被选中的号：快照的账号展示与开局复核都读这一条。 */
+  private primaryPoolEntry(
+    room: SonGuessrRoomRecord,
+    platform: MusicAuthPlatform
+  ): SonGuessrMusicPoolEntry | undefined {
+    const now = this.now();
+    return this.musicPool(room)
+      .filter(
+        (entry) => entry.platform === platform && entry.enabled && !this.isCoolingDown(entry, now)
+      )
+      .sort((left, right) => {
+        if (left.inFlight !== right.inFlight) return left.inFlight - right.inFlight;
+        if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
+        return left.playerId.localeCompare(right.playerId);
+      })
+      .find((entry) => this.isPoolEntryAvailable(entry, now));
+  }
+
+  /** 池内某端有没有「开关开着、不在冷却里」的号：开局判定与快照的就绪位都用这一条（不看在途）。 */
+  private hasEnabledPoolAccount(room: SonGuessrRoomRecord, platform: MusicAuthPlatform): boolean {
+    const now = this.now();
+    return this.musicPool(room).some(
+      (entry) => entry.platform === platform && entry.enabled && !this.isCoolingDown(entry, now)
+    );
   }
 
   private addBots(connection: ConnectionRecord, countValue?: number) {
@@ -2809,7 +3131,7 @@ export class SonGuessrService implements AdminRoomControl {
     const operation = Symbol("automaticRound");
     this.acquireStartLock(room, automatic, operation);
     try {
-      if (!room.musicSession && !room.qqMusicSession) {
+      if (!this.hasEnabledPoolAccount(room, "netease") && !this.hasEnabledPoolAccount(room, "qq")) {
         throw new AppError("MUSIC_LOGIN_REQUIRED", "开始游戏前请先扫码登录音乐账号");
       }
       const provider = this.options.musicProvider;
@@ -2817,11 +3139,22 @@ export class SonGuessrService implements AdminRoomControl {
       if (!getLoginStatus) {
         throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录状态校验不可用");
       }
-      const musicSession = room.musicSession;
-      const qqMusicSession = room.qqMusicSession;
-      const neteaseOperation = room.musicAuthOperations?.netease;
-      const qqOperation = room.musicAuthOperations?.qq;
-      const verifySession = (platform?: "netease" | "qq") => {
+      // 复核每端当前会被选中的那一号：复核的意义是「开局前发现凭据已失效」，
+      // 池里排在前面的号失效就会被选中，逐个复核只会把开局拖成 N 倍慢。
+      const revalidations = (["netease", "qq"] as const).flatMap((platform) => {
+        const entry = this.primaryPoolEntry(room, platform);
+        return entry
+          ? [
+              {
+                platform,
+                entry,
+                operation: room.musicAuthOperations?.[musicAuthOperationKey(entry.playerId, platform)],
+                label: platform === "qq" ? "QQ音乐" : "网易云",
+              },
+            ]
+          : [];
+      });
+      const verifySession = (platform?: MusicAuthPlatform) => {
         if (
           this.rooms.get(room.id) !== room ||
           room.hostPlayerId !== player.id ||
@@ -2831,41 +3164,25 @@ export class SonGuessrService implements AdminRoomControl {
         ) {
           throw new AppError("MUSIC_SESSION_INVALID", "音乐会话已变更，请重新开始");
         }
-        if ((platform === "netease" || platform === undefined) && musicSession) {
-          if (
-            room.musicSession !== musicSession ||
-            room.musicAuthOperations?.netease !== neteaseOperation
-          ) {
-            throw new AppError("MUSIC_SESSION_INVALID", "网易云音乐会话已变更，请重新开始");
-          }
-        }
-        if ((platform === "qq" || platform === undefined) && qqMusicSession) {
-          if (
-            room.qqMusicSession !== qqMusicSession ||
-            room.musicAuthOperations?.qq !== qqOperation
-          ) {
-            throw new AppError("MUSIC_SESSION_INVALID", "QQ音乐会话已变更，请重新开始");
+        for (const target of revalidations) {
+          if (platform !== undefined && target.platform !== platform) continue;
+          const current =
+            room.musicAuthOperations?.[musicAuthOperationKey(target.entry.playerId, target.platform)];
+          if (!this.musicPool(room).includes(target.entry) || current !== target.operation) {
+            throw new AppError(
+              "MUSIC_SESSION_INVALID",
+              `${target.label}会话已变更，请重新开始`
+            );
           }
         }
       };
-      if (musicSession) {
+      for (const target of revalidations) {
         await this.refreshMusicSessionAccount({
           room,
-          platform: "netease",
-          session: musicSession,
-          operation: neteaseOperation,
-          label: "网易云",
-          verifySession,
-          getLoginStatus,
-        });
-      }
-      if (qqMusicSession) {
-        await this.refreshMusicSessionAccount({
-          room,
-          platform: "qq",
-          session: qqMusicSession,
-          operation: qqOperation,
-          label: "QQ音乐",
+          platform: target.platform,
+          entry: target.entry,
+          operation: target.operation,
+          label: target.label,
           verifySession,
           getLoginStatus,
         });
@@ -2926,19 +3243,22 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 开局前逐端复核音乐会话；登录态已变更就清掉该端会话并广播，其余失败按上游接口错误上报。 */
   private async refreshMusicSessionAccount(check: MusicSessionRevalidation): Promise<void> {
-    const { room, platform, session, operation, label, verifySession, getLoginStatus } = check;
+    const { room, platform, entry, operation, label, verifySession, getLoginStatus } = check;
     try {
-      const result = await getLoginStatus(session.cookie, platform);
+      const result = await getLoginStatus(entry.cookie, platform);
       verifySession(platform);
-      session.account = result.account;
+      entry.account = result.account;
     } catch (error) {
       if (error instanceof AppError) {
+        const key = musicAuthOperationKey(entry.playerId, platform);
         if (
           error.code === "MUSIC_SESSION_INVALID" &&
-          room[SESSION_FIELD_BY_PLATFORM[platform]] === session &&
-          room.musicAuthOperations?.[platform] === operation
+          this.musicPool(room).includes(entry) &&
+          room.musicAuthOperations?.[key] === operation
         ) {
-          this.clearMusicSession(room, undefined, platform);
+          // 凭据已被平台判死：直接摘掉这一号（其余号与其它玩家的号都不动），
+          // 房间因此可能整体降级到「无号」，由开局门槛或运行期短路承接。
+          room.musicPool = this.musicPool(room).filter((candidate) => candidate !== entry);
           this.publishRoom(room);
         }
         throw error;
@@ -2998,7 +3318,9 @@ export class SonGuessrService implements AdminRoomControl {
     const submitterId = player.id;
     // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
     room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
-    const song = await this.options.musicProvider.getSong(songId, this.getSongCookie(room, songId));
+    const song = await this.withSongAccount(room, songId, (cookie) =>
+      this.options.musicProvider.getSong(songId, cookie)
+    );
     // 音乐接口是异步的，返回时出题人可能已经退出或被踢；不能再安装一个失去归属的回合。
     if (
       room.phase !== "submittingSong" ||
@@ -3064,10 +3386,11 @@ export class SonGuessrService implements AdminRoomControl {
     songId: string
   ): Promise<{ song: SongDetails; track: BangumiMusicTrack }> {
     const provider = this.options.musicProvider;
-    const cookie = this.getSongCookie(room, songId);
     let song: SongDetails;
     try {
-      song = await provider.getSong(songId, cookie);
+      song = await this.withSongAccount(room, songId, (cookie) =>
+        provider.getSong(songId, cookie)
+      );
     } catch (error) {
       if (!isUnusableSongCandidate(error)) throw error;
       throw new AppError("BANGUMI_NO_MUSIC", "所选歌曲无法播放或获取音频失败");
@@ -3111,10 +3434,13 @@ export class SonGuessrService implements AdminRoomControl {
       anime.musicTracks.filter((track) => allowedKinds.has(track.kind)),
       this.random
     ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
+    // 整段解析（多个候选、每个都可能多次回源）共用一次取号：这确实是同一批在途请求，
+    // 一次一租比每个内部请求各自取号更省，也让池里的在途数反映真实的占用者。
+    const lease = this.acquireAggregatedAccounts(room);
     const lookup: AnimeSongLookup = {
       provider: this.options.musicProvider,
       anime,
-      cookie: this.getAggregatedSearchCookie(room),
+      cookie: lease.cookie,
       animeNames,
       minPopularity: filters.songMinPopularity ?? 0,
       recentSongIds: new Set(room.recentSongIds ?? []),
@@ -3124,33 +3450,36 @@ export class SonGuessrService implements AdminRoomControl {
       // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
       budget: { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET },
     };
-
-    for (const track of candidates) {
-      if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
-      const pick = await this.resolveTrackSong(lookup, track);
-      if (pick) return pick;
-    }
+    try {
+      for (const track of candidates) {
+        if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
+        const pick = await this.resolveTrackSong(lookup, track);
+        if (pick) return pick;
+      }
 
     // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
-    // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
-    if (lookup.fallbackRecent) {
-      return lookup.fallbackRecent;
-    }
+      // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
+      if (lookup.fallbackRecent) {
+        return lookup.fallbackRecent;
+      }
 
-    // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
-    // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
-    if (lookup.fallbackYear) {
-      return lookup.fallbackYear;
-    }
+      // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
+      // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
+      if (lookup.fallbackYear) {
+        return lookup.fallbackYear;
+      }
 
-    // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
-    // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
-    // 出题总比让整部番剧出不了题好。
-    if (lookup.fallbackCover) {
-      return lookup.fallbackCover;
-    }
+      // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
+      // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
+      // 出题总比让整部番剧出不了题好。
+      if (lookup.fallbackCover) {
+        return lookup.fallbackCover;
+      }
 
-    throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
+      throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
+    } finally {
+      lease.release({ ok: true });
+    }
   }
 
   /** 单条关联曲目的出题：拼检索词 → 证据排序 → 三级候选池 → 逐首验证。 */
@@ -3536,15 +3865,15 @@ export class SonGuessrService implements AdminRoomControl {
   ): Promise<BangumiSongCandidate[]> {
     const provider = this.options.musicProvider;
     const { room } = this.requireRoomPlayer(connection);
-    const cookie = this.getAggregatedSearchCookie(room);
     if (anime.musicTracks.length === 0) return [];
     // 与自动出题同源：番剧名既用于拼检索词，也用于「候选是否确属本番」的锚点判定。
     const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
     const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
+    const lease = this.acquireAggregatedAccounts(room);
     const ctx: AnimeTrackMatchContext = {
       provider,
-      cookie,
+      cookie: lease.cookie,
       anime,
       animeNames,
       budget,
@@ -3552,14 +3881,18 @@ export class SonGuessrService implements AdminRoomControl {
       seenSongIds: new Set<string>(),
     };
 
-    for (const track of anime.musicTracks) {
-      if (budget.search <= 0) break;
-      await this.matchAnimeTrack(ctx, track);
+    try {
+      for (const track of anime.musicTracks) {
+        if (budget.search <= 0) break;
+        await this.matchAnimeTrack(ctx, track);
+      }
+
+      await this.fillAnimeLevelFallback(ctx);
+
+      return ctx.results;
+    } finally {
+      lease.release({ ok: true });
     }
-
-    await this.fillAnimeLevelFallback(ctx);
-
-    return ctx.results;
   }
 
   /** 单个音乐条目：常规检索 → 专辑兜底 → 按展示规则写入结果。 */
@@ -3854,9 +4187,11 @@ export class SonGuessrService implements AdminRoomControl {
       const selected = pool.splice(this.random.nextInt(pool.length), 1)[0];
       let song: SongDetails;
       try {
-        song = await this.options.musicProvider.getSong(
+        song = await this.withSongAccount(
+          room,
           selected.id,
-          this.getSongCookie(room, selected.id)
+          (cookie) => this.options.musicProvider.getSong(selected.id, cookie),
+          { requireVip: selected.id.startsWith("qq:") && selected.requiresVip === true }
         );
       } catch (error) {
         if (!isUnusableSongCandidate(error)) throw error;
@@ -3869,9 +4204,21 @@ export class SonGuessrService implements AdminRoomControl {
     throw new AppError("SONG_UNAVAILABLE", "筛选结果中没有可播放的歌曲，请更换题库或稍后重试");
   }
 
+  /** 自动题库取候选：整轮（歌单 / 歌手 / 热度补全）共用一次取号，结束即归还。 */
   private async resolveAutomaticCandidates(room: SonGuessrRoomRecord): Promise<SongSearchResult[]> {
+    const lease = this.acquireAggregatedAccounts(room);
+    try {
+      return await this.collectAutomaticCandidates(room, lease.cookie);
+    } finally {
+      lease.release({ ok: true });
+    }
+  }
+
+  private async collectAutomaticCandidates(
+    room: SonGuessrRoomRecord,
+    cookie: MusicCookieInput | undefined
+  ): Promise<SongSearchResult[]> {
     const filters = room.settings.autoFilters;
-    const cookie = this.getAggregatedSearchCookie(room);
     const sets: SongSearchResult[][] = [];
     if (filters.playlist && this.options.musicProvider.getPlaylistSongs) {
       sets.push(
@@ -4002,7 +4349,12 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.musicProvider;
     const refresh = provider.refreshSongAudio?.bind(provider);
     if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
-    const audioUrl = await refresh(round.song.id, this.getSongCookie(room, round.song.id));
+    const audioUrl = await this.withSongAccount(
+      room,
+      round.song.id,
+      (cookie) => refresh(round.song.id, cookie),
+      { requireVip: round.song.id.startsWith("qq:") && round.song.requiresVip === true }
+    );
     if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
     round.song.audioUrl = audioUrl;
     this.touch(room);
@@ -4184,9 +4536,8 @@ export class SonGuessrService implements AdminRoomControl {
 
     let guessedSong: SongDetails;
     try {
-      guessedSong = await this.options.musicProvider.getSongMetadata(
-        songId,
-        this.getSongCookie(room, songId)
+      guessedSong = await this.withSongAccount(room, songId, (cookie) =>
+        this.options.musicProvider.getSongMetadata(songId, cookie)
       );
     } catch (error) {
       this.rollbackGuessAttempt(room, round, player, state);
@@ -4816,6 +5167,38 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
+  /**
+   * 池内每号的运行状态视图：房主据此看谁的号在用、谁被摘了。
+   *
+   * 只带 `account` 这份可公开展示的资料，**不带 `cookie`**：池里的凭据只留在服务端内存，
+   * 快照要发给房里的每个人，凭据进快照就等于把玩家登录态广播出去（见 `Server/docs/`账号约束）。
+   */
+  private buildMusicPoolView(room: SonGuessrRoomRecord): SonGuessrMusicPoolView[] {
+    const now = this.now();
+    return this.musicPool(room)
+      .slice()
+      .sort((left, right) => {
+        if (left.platform !== right.platform) return left.platform === "qq" ? 1 : -1;
+        if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
+        return left.playerId.localeCompare(right.playerId);
+      })
+      .map((entry) => ({
+        playerId: entry.playerId,
+        playerName: room.players[entry.playerId]?.name ?? "已离开的玩家",
+        platform: entry.platform,
+        account: entry.account,
+        enabled: entry.enabled,
+        // 只下发还在生效的冷却：过期时间发给客户端只会让面板永远显示「冷却中」。
+        ...(this.isCoolingDown(entry, now) ? { cooldownUntil: entry.cooldownUntil } : {}),
+        inFlight: entry.inFlight,
+        recentOk: entry.recentOk,
+        recentTotal: entry.recentTotal,
+        ...(entry.lastFailureReason !== undefined
+          ? { lastFailureReason: entry.lastFailureReason }
+          : {}),
+      }));
+  }
+
   private buildRoomSnapshot(room: SonGuessrRoomRecord): SonGuessrRoomSnapshot {
     const round = room.currentRound;
     return {
@@ -4827,12 +5210,13 @@ export class SonGuessrService implements AdminRoomControl {
       hasPassword: Boolean(room.passwordHash),
       hostPlayerId: room.hostPlayerId,
       testMode: this.isTestRoom(room),
-      musicAccountReady: Boolean(room.musicSession),
-      qqMusicAccountReady: Boolean(room.qqMusicSession),
+      musicAccountReady: this.hasEnabledPoolAccount(room, "netease"),
+      qqMusicAccountReady: this.hasEnabledPoolAccount(room, "qq"),
       musicAccounts: {
-        netease: room.musicSession?.account,
-        qq: room.qqMusicSession?.account,
+        netease: this.primaryPoolEntry(room, "netease")?.account,
+        qq: this.primaryPoolEntry(room, "qq")?.account,
       },
+      musicPool: this.buildMusicPoolView(room),
       settings: room.settings,
       phase: room.phase,
       roundNumber: room.roundNumber,
@@ -5043,8 +5427,7 @@ export class SonGuessrService implements AdminRoomControl {
     for (const connection of this.connections.getRoomConnections(room.id)) {
       this.connections.detach(connection);
     }
-    room.musicSession = undefined;
-    room.qqMusicSession = undefined;
+    room.musicPool = [];
     this.rooms.delete(room.id);
     this.publishLobby();
   }
@@ -5178,7 +5561,7 @@ export class SonGuessrService implements AdminRoomControl {
   private ensureConnectionFree(connection: ConnectionRecord) {
     if (!connection.roomId && !connection.playerId) return;
     if (connection.roomId && connection.playerId && this.rooms.has(connection.roomId)) {
-      this.detachFromRoom(connection, { keepMusicSession: true });
+      this.detachFromRoom(connection);
       return;
     }
     // 房间已经不存在（或只有一半字段有值）时，requireRoomPlayer 会抛 ROOM_NOT_FOUND
@@ -5240,8 +5623,6 @@ export class SonGuessrService implements AdminRoomControl {
       room.automaticRoundLoading = false;
       room.hostPlayerId = next.id;
       next.isReady = true;
-      if (room.musicSession) room.musicSession.ownerPlayerId = next.id;
-      if (room.qqMusicSession) room.qqMusicSession.ownerPlayerId = next.id;
     } else {
       room.hostPlayerId = "";
     }

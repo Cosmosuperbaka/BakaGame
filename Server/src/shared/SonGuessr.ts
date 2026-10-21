@@ -335,6 +335,35 @@ export interface SonGuessrMusicAccount {
 
 export type SonGuessrVipTier = "svip" | "vip" | "musicPackage";
 
+/**
+ * 房间音乐账号池里的一号：某个玩家自愿贡献给本房使用的账号。
+ *
+ * 下发给全房（房主面板要列出每号的归属玩家、档位、在途与成功率），所以**不带 cookie**；
+ * 凭据只留在服务端内存的房间记录里，房间关闭或贡献者离房即释放。
+ */
+export interface SonGuessrMusicPoolView {
+  /** 贡献者玩家 id。 */
+  playerId: string;
+  /** 贡献者昵称：快照里已经带名字，前端不必再按 id 反查。 */
+  playerName: string;
+  platform: "netease" | "qq";
+  account: SonGuessrMusicAccount;
+  /** 共享开关：号主关掉、或凭据被判死时代服务端关闭，此时不参与取号。 */
+  enabled: boolean;
+  /**
+   * 冷却截止时刻（毫秒）；冷却中不参与取号。风控与限流到点自动恢复（开关不动），
+   * 凭据被判死则要号主重新登录才解除。只在冷却仍生效时下发，号主端据此提示「服务端已暂停」。
+   */
+  cooldownUntil?: number;
+  /** 当前在途上游请求数：取号按最小在途平衡，单号另有并发上限。 */
+  inFlight: number;
+  /** 近期取号成功数与总数；前端按 `recentOk / recentTotal` 显示成功率。 */
+  recentOk: number;
+  recentTotal: number;
+  /** 最近一次失败原因，供房主判断是账号问题还是曲目本身的问题。 */
+  lastFailureReason?: string;
+}
+
 export interface SongLyricWord {
   startTime: number;
   endTime: number;
@@ -585,6 +614,11 @@ export interface SonGuessrRoomSnapshot {
     netease?: SonGuessrMusicAccount;
     qq?: SonGuessrMusicAccount;
   };
+  /**
+   * 房间音乐账号池（每个玩家贡献的账号各一条）。等待阶段由贡献者自己开关；
+   * 池内有号就能取号、池空即降级。只下发归属与统计，不含凭据。
+   */
+  musicPool?: SonGuessrMusicPoolView[];
   settings: SonGuessrSettings;
   phase: SonGuessrPhase;
   roundNumber: number;
@@ -608,8 +642,8 @@ export interface SonGuessrRoomSnapshot {
 
 /**
  * 能不能开局看「有没有账号可用」：网易云与 QQ 是并列可选项，服务端 `startGame` 也是
- * `!musicSession && !qqMusicSession` 才拒。`musicAccountReady` 只代表网易云（账号面板等
- * 处仍按单平台语义用它），所以这里取「任一」而不是复用它。
+ * 「池内两端都没有可用号」才拒。`musicAccountReady` 只代表网易云（账号面板等处仍按
+ * 单平台语义用它），所以这里取「任一」而不是复用它。
  */
 export const hasMusicAccount = (snapshot: {
   musicAccountReady: boolean;
@@ -731,6 +765,11 @@ export const SonGuessrPayloadSchemas = {
     },
     strict
   ),
+  /**
+   * 贡献者开关自己的账号是否供本房使用。只在等待阶段可改，开局即锁死（服务端按阶段拒）。
+   * 只影响自己的号；号不在池里时按「尚未登录」拒绝，不做隐式登录。
+   */
+  "song.auth.setPoolSharing": t.Object({ platform: musicPlatform, enabled: t.Boolean() }, strict),
   "song.music.search": t.Object({ keyword }, strict),
   "song.music.playlist.resolve": t.Object(
     { value: t.String({ minLength: 1, maxLength: 500 }) },
@@ -825,7 +864,9 @@ export type SonGuessrAck<TCommand extends SonGuessrCommand> = TCommand extends
         ? SonGuessrCookieAuthAck
         : TCommand extends "song.auth.clear"
           ? { cleared: true }
-          : TCommand extends "song.music.search"
+          : TCommand extends "song.auth.setPoolSharing"
+            ? { enabled: boolean }
+            : TCommand extends "song.music.search"
             ? { results: SongSearchResult[] }
             : TCommand extends "song.bangumi.search"
               ? { results: BangumiSubjectSearchResult[] }

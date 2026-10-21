@@ -426,7 +426,10 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       !snapshot ||
       !privateState ||
       snapshot.roomId !== roomId ||
-      snapshot.hostPlayerId !== privateState.playerId
+      // 账号只在准备页自动装载：B4 之后谁都能贡献自己的号，但共享开关是「等待阶段才可改」，
+      // 局中把本机凭据塞进池子只会让池子与实际生效的开关状态对不上（服务端 installMusicSession
+      // 也按这一条决定新号是否默认入池）。
+      snapshot.phase !== "waiting"
     ) {
       cancelMusicSessionUpload();
       return;
@@ -445,14 +448,20 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       // 同一房间、席位与凭据：在途或已落定的装载都不重发；快照变化不能取消正在退避重试的装载。
       if (active?.key === mountKey && (active.settled || !active.cancelled)) continue;
 
-      // 如果当前房间内该平台账号已就绪，且用户身份一致，且本次装载任务已落定，不再重复发起上传
-      const isReady = platform === "qq" ? snapshot.qqMusicAccountReady : snapshot.musicAccountReady;
-      const roomAccount = snapshot.musicAccounts?.[platform];
+      // 只看我自己那条池记录：池里排在前面的往往是别人的号，拿它判「已在房」会永远跳过自己的装载。
+      const mine = snapshot.musicPool?.find(
+        (entry) => entry.playerId === privateState.playerId && entry.platform === platform
+      );
+      const myAccount = mine
+        ? mine.account
+        : snapshot.musicPool === undefined
+          ? snapshot.musicAccounts?.[platform]
+          : undefined;
+      // 池里已经是我这一份凭据（同一个账号）就不用再传：服务端已经有了，重传只会多跑一次上游校验。
+      // 服务端对「同一份凭据」不改共享开关，所以这里也读不出开或关，开关状态仍以服务端快照为准。
       if (
-        isReady &&
-        roomAccount?.userId &&
-        roomAccount.userId === storedSession.account?.userId &&
-        active?.settled
+        (myAccount?.userId && myAccount.userId === storedSession.account?.userId) ||
+        (active?.key === mountKey && active.settled)
       ) {
         continue;
       }

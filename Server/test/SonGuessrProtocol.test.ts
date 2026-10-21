@@ -440,6 +440,7 @@ const SONGUESSR_COMMAND_CASES = [
   { type: "song.auth.qr.check", payload: { key: "qr-key" } },
   { type: "song.auth.useCookie", payload: { cookie: "MUSIC_U=test" } },
   { type: "song.auth.clear", payload: {} },
+  { type: "song.auth.setPoolSharing", payload: { platform: "qq", enabled: true } },
   { type: "song.music.search", payload: { keyword: "测试" } },
   { type: "song.music.playlist.resolve", payload: { value: "123" } },
   { type: "song.music.artist.search", payload: { keyword: "测试" } },

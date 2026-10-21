@@ -8,6 +8,7 @@ import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallbac
 import { TeamPicker } from "@/components/common/room/TeamPicker";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { SongAccountSettings } from "@/components/songuessr/SongAccountSettings";
+import { SongMusicPoolPanel } from "@/components/songuessr/SongMusicPoolPanel";
 import {
   SongGameSettings,
   SongQuestionSettings,
@@ -25,15 +26,18 @@ const notifyCopyFailed = () =>
 
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
- * 单人模式没有房间设置。房主与单人模式在最上方多一组「网易云账号」（`account`），与设置组同一列间距。
+ * 单人模式没有房间设置。账号组（`account`）在等待阶段对所有玩家都可编辑：B4 之后账号池由房内
+ * 成员各自贡献，谁都能登录自己的号并决定要不要共享给本房，不只是房主。`readOnly` 只管设置组。
  */
 function SongSettingsGroups({
   snapshot,
+  me,
   solo = false,
   readOnly = false,
   account = false,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
   solo?: boolean;
   readOnly?: boolean;
   account?: boolean;
@@ -44,7 +48,7 @@ function SongSettingsGroups({
   const summary = songSettingsSummary(snapshot);
   return (
     <SettingsStack>
-      {account ? <SongAccountSettings snapshot={snapshot} /> : null}
+      {account ? <SongAccountSettings snapshot={snapshot} me={me} /> : null}
       <SettingsAccordion
         icon={Music2}
         title="题目设置"
@@ -107,10 +111,12 @@ function SongTeamPicker({
 
 export function SongSoloWaitingPanel({
   snapshot,
+  me,
   run,
   isPending,
 }: {
   snapshot: SonGuessrRoomSnapshot;
+  me?: SonGuessrPlayerView;
   run: SongRunCommand;
   isPending?: (type: string) => boolean;
 }) {
@@ -120,7 +126,7 @@ export function SongSoloWaitingPanel({
   return (
     <div className="mx-auto w-full max-w-md space-y-5">
       <PhaseHeader icon={Headphones} title="准备开始" />
-      <SongSettingsGroups snapshot={snapshot} solo account />
+      <SongSettingsGroups snapshot={snapshot} me={me} solo account />
       <Button
         size="lg"
         disabled={!canStartSolo || isStarting}
@@ -172,7 +178,9 @@ export function SongHostWaitingPanel({
 
       <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
 
-      <SongSettingsGroups snapshot={snapshot} account />
+      <SongSettingsGroups snapshot={snapshot} me={me} account />
+
+      <SongMusicPoolPanel snapshot={snapshot} />
 
       <Button
         size="lg"
@@ -222,7 +230,7 @@ export function SongWaitingPhase({
   if (restoring) return <RoomRestoreFallback />;
 
   if (snapshot.solo) {
-    return <SongSoloWaitingPanel snapshot={snapshot} run={run} isPending={isPending} />;
+    return <SongSoloWaitingPanel snapshot={snapshot} me={me} run={run} isPending={isPending} />;
   }
 
   const activePlayers = snapshot.players.filter((player) => player.membership === "active");
@@ -259,8 +267,8 @@ export function SongWaitingPhase({
         <ReadyProgress ready={readyCount} total={nonHostActive.length} variant="guest" />
       ) : null}
       <SongTeamPicker snapshot={snapshot} me={me} run={run} isPending={isPending} />
-      {/* 与房主同一份设置结构，只读。 */}
-      <SongSettingsGroups snapshot={snapshot} readOnly />
+      {/* 与非房主同一份设置结构，只读；账号组是可编辑的：B4 里每个玩家都能贡献自己的号。 */}
+      <SongSettingsGroups snapshot={snapshot} me={me} readOnly account />
       {me?.membership === "active" ? (
         <div className="flex justify-center">
           <Button
