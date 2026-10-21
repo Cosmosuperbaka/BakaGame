@@ -12,7 +12,7 @@ export default function TermsPage() {
       />
       <LegalPage
         title="用户条款"
-        updatedAt="2026-10-21"
+        updatedAt="2026-10-22"
         related={{ href: "/privacy", label: "隐私说明" }}
       >
         <p className="text-sm leading-6 text-muted-foreground">
