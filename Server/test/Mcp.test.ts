@@ -253,3 +253,40 @@ test("结算记录工具只返回公开字段，不泄露答案、词对与私�
   expect(text).not.toContain("秘密");
   expect(text).not.toContain("privateState");
 });
+
+test("create_room 把房主规则参数交给游戏客户端", async () => {
+  const calls: unknown[] = [];
+  const fake = {
+    create: async (...args: unknown[]) => {
+      calls.push(args);
+      return { game: "faker", roomId: "7777", playerId: "agent-1", snapshot: null };
+    },
+    currentRoom: () => undefined,
+    currentPlayerId: () => undefined,
+    currentSnapshot: () => undefined,
+  } as unknown as AgentGameClient;
+  const tool = TOOLS.find((entry) => entry.name === "create_room")!;
+  const result = await tool.handler(
+    {
+      game: "faker",
+      roomId: "7777",
+      name: "Agent 房",
+      allowAgents: true,
+      allowSpectators: false,
+    },
+    { client: fake, agentName: "TestAgent" }
+  );
+
+  expect(calls[0]).toEqual([
+    "faker",
+    "7777",
+    {
+      name: "Agent 房",
+      userName: "TestAgent",
+      visibility: "public",
+      allowSpectators: false,
+      allowAgents: true,
+    },
+  ]);
+  expect(result).toMatchObject({ game: "faker", roomId: "7777", isAgent: true });
+});

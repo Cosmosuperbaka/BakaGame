@@ -2003,6 +2003,7 @@ export class SonGuessrService implements AdminRoomControl {
       settings: cloneSettings({
         ...DEFAULT_SETTINGS,
         questionMode: solo ? "automatic" : DEFAULT_SETTINGS.questionMode,
+        allowAgents: payload.allowAgents === true,
       }),
       phase: "waiting",
       roundNumber: 0,

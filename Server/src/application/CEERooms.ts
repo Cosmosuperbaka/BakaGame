@@ -234,7 +234,11 @@ export class CEERooms {
       allowSpectators: payload.allowSpectators,
       hostPlayerId: player.id,
       players: new Map([[player.id, player]]),
-      settings: { ...createDefaultCEESettings(), bakaAntiCheat: antiCheat },
+      settings: {
+        ...createDefaultCEESettings(),
+        bakaAntiCheat: antiCheat,
+        allowAgents: payload.allowAgents === true,
+      },
       phase: "waiting",
       roundNumber: 0,
       setterPlayerId: null,

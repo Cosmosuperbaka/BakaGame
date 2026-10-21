@@ -739,6 +739,7 @@ export const SonGuessrPayloadSchemas = {
       allowSpectators: t.Boolean(),
       userName,
       solo: t.Optional(t.Boolean()),
+      allowAgents: t.Optional(t.Boolean()),
     },
     strict
   ),

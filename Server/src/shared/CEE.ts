@@ -337,6 +337,7 @@ export const CEEPayloadSchemas = {
        * optional 的理由与设置里那条一样：旧客户端不发这个字段，缺省即普通房。
        */
       bakaAntiCheat: t.Optional(t.Boolean()),
+      allowAgents: t.Optional(t.Boolean()),
     },
     strict
   ),

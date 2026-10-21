@@ -395,6 +395,43 @@ export const TOOLS: McpTool[] = [
     },
   },
   {
+    name: "create_room",
+    description:
+      "创建并加入一个房间（Agent 作为房主）。allowAgents 缺省关闭；打开后其他 Agent 可加入。",
+    inputSchema: objectSchema(
+      {
+        game: gameProperty,
+        roomId: { type: "string" },
+        name: { type: "string", maxLength: 40 },
+        userName: { type: "string", description: "房主昵称，缺省用 MCP_AGENT_NAME" },
+        visibility: { type: "string", enum: ["public", "private"] },
+        allowSpectators: { type: "boolean" },
+        allowAgents: { type: "boolean" },
+        password: { type: "string" },
+      },
+      ["game", "roomId", "name"]
+    ),
+    write: true,
+    handler: async (args, { client, agentName }) => {
+      const game = asGame(args.game);
+      const result = await client.create(game, needString(args, "roomId"), {
+        name: needString(args, "name"),
+        userName: optionalString(args, "userName") ?? agentName,
+        visibility: args.visibility === "private" ? "private" : "public",
+        allowSpectators: args.allowSpectators !== false,
+        allowAgents: args.allowAgents === true,
+        ...(optionalString(args, "password") ? { password: optionalString(args, "password") } : {}),
+      });
+      return {
+        game,
+        roomId: result.roomId,
+        playerId: result.playerId,
+        isAgent: true,
+        state: result.snapshot ? roomState(game, client, result.snapshot) : null,
+      };
+    },
+  },
+  {
     name: "join_room",
     description:
       "以 Agent 身份加入房间。房主关闭 allowAgents（默认）时会返回 AGENTS_NOT_ALLOWED。",

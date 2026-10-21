@@ -6,13 +6,14 @@ export const GAME_IDS: readonly GameId[] = ["faker", "song", "cee"];
 
 const GAME_META: Record<
   GameId,
-  { path: string; lobby: string; lobbyCommand: string; snapshot: string; join: string; leave: string }
+  { path: string; lobby: string; lobbyCommand: string; snapshot: string; create: string; join: string; leave: string }
 > = {
   faker: {
     path: "/api/whoisfaker/ws",
     lobby: "lobby.rooms",
     lobbyCommand: "lobby.subscribeRooms",
     snapshot: "room.snapshot",
+    create: "room.create",
     join: "room.join",
     leave: "room.leave",
   },
@@ -21,6 +22,7 @@ const GAME_META: Record<
     lobby: "song.lobby.rooms",
     lobbyCommand: "song.lobby.subscribeRooms",
     snapshot: "song.room.snapshot",
+    create: "song.room.create",
     join: "song.room.join",
     leave: "song.room.leave",
   },
@@ -29,6 +31,7 @@ const GAME_META: Record<
     lobby: "cee.lobby.rooms",
     lobbyCommand: "cee.lobby.subscribeRooms",
     snapshot: "cee.room.snapshot",
+    create: "cee.room.create",
     join: "cee.room.join",
     leave: "cee.room.leave",
   },
@@ -177,13 +180,62 @@ export class AgentGameClient {
     }
     if (session.roomId) await this.leave(game);
 
-    const waiting = this.waitForEvent(session, GAME_META[game].snapshot);
     const payload: Record<string, unknown> = { userName: options.name ?? this.agentName };
     if (options.password) payload.password = options.password;
-    const ack = (await this.command(session, GAME_META[game].join, payload, { roomId })) as
+    return this.enter(game, session, GAME_META[game].join, roomId, payload);
+  }
+
+  async create(
+    game: GameId,
+    roomId: string,
+    options: {
+      name: string;
+      userName: string;
+      visibility: "public" | "private";
+      allowSpectators: boolean;
+      allowAgents: boolean;
+      password?: string;
+    }
+  ): Promise<{
+    game: GameId;
+    roomId: string;
+    playerId?: string;
+    snapshot?: Record<string, unknown>;
+  }> {
+    const session = await this.connect(game);
+    if (session.roomId) await this.leave(game);
+    const payload: Record<string, unknown> = {
+      name: options.name,
+      visibility: options.visibility,
+      allowSpectators: options.allowSpectators,
+      userName: options.userName,
+      allowAgents: options.allowAgents,
+      ...(options.password ? { password: options.password } : {}),
+    };
+    if (game === "cee") {
+      payload.source = "native";
+      payload.roomId = roomId;
+    }
+    return this.enter(game, session, GAME_META[game].create, roomId, payload);
+  }
+
+  private async enter(
+    game: GameId,
+    session: GameSession,
+    type: string,
+    roomId: string,
+    payload: Record<string, unknown>
+  ): Promise<{
+    game: GameId;
+    roomId: string;
+    playerId?: string;
+    snapshot?: Record<string, unknown>;
+  }> {
+    const waiting = this.waitForEvent(session, GAME_META[game].snapshot);
+    const ack = (await this.command(session, type, payload, { roomId })) as
       | Record<string, unknown>
       | undefined;
-    if (!ack) throw new Error("加入房间没有返回会话凭据");
+    if (!ack) throw new Error("进入房间没有返回会话凭据");
 
     session.roomId = typeof ack.roomId === "string" ? ack.roomId : roomId;
     session.sessionToken = typeof ack.sessionToken === "string" ? ack.sessionToken : undefined;
