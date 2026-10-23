@@ -596,6 +596,14 @@ export interface SonGuessrRoundSummary {
 /** 协议允许的队伍号，与 CEE 一致；`null` 是个人游玩。 */
 export const SONGUESSR_MAX_TEAM = 8;
 
+/**
+ * 一个玩家在一轮里的结局。
+ *
+ * 与单次猜测的 `SongGuessAttempt["result"]` 不是一回事：猜错还能再猜，
+ * 用完次数、超时、投降与猜中才是「这一轮对他而言怎么结束的」。
+ */
+export type SonGuessrRoundMark = "correct" | "gaveUp" | "outOfGuesses" | "timeout";
+
 export interface SonGuessrPlayerView {
   id: string;
   name: string;
@@ -616,11 +624,14 @@ export interface SonGuessrPlayerView {
   correctGuesses: number;
   totalGuesses: number;
   /**
-   * 本局逐轮的作答结果标记串，按轮次追加，与猜猜呗的 `marks` 共用同一套字形口径
-   * （✅ 猜中 / 🏳️ 放弃 / 💀 次数用尽 / ⏱️ 超时）。
-   * 出题人、其队友与旁观者不作答，因此不产生标记——串的长度就是「真正作答过的轮数」。
+   * 本局逐轮的作答结果，按轮次追加；不作答的轮（出题人、其队友、旁观者）不产生条目，
+   * 所以数组长度就是「他真正作答过的轮数」。
+   *
+   * 用枚举数组而不是猜猜呗那种标记串：那串 emoji 是为兼容原版房的上游输出而原样透传的，
+   * 拿它当判定依据要解析字符、要处理变体选择符，加一档结果就得改解析器。
+   * 数组直接由服务端算好，客户端只做一次穷举映射，漏一档是编译错误而不是画出一个空格。
    */
-  marks: string;
+  roundMarks: SonGuessrRoundMark[];
   /** `teamCorrect`：队友已猜中，本人不再作答；`observing`：队友出题，本局观战。 */
   roundStatus:
     | "waiting"

@@ -76,7 +76,7 @@ export function songPlayer(
     isHost: false,
     correctGuesses: 0,
     totalGuesses: 0,
-    marks: "",
+    roundMarks: [],
     roundStatus: "waiting",
     guessesUsed: 0,
     ...overrides,

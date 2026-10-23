@@ -52,6 +52,7 @@ import {
   type SonGuessrClientMessage,
   type SonGuessrPhase,
   type SonGuessrPlayerView,
+  type SonGuessrRoundMark,
   type SonGuessrPrivateState,
   type SonGuessrMusicPoolView,
   type SonGuessrRoomSnapshot,
@@ -77,10 +78,7 @@ import {
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
-import {
-  isPlayableSong,
-  type SongPlayabilityContext,
-} from "../infrastructure/MusicDeduplicator";
+import { isPlayableSong, type SongPlayabilityContext } from "../infrastructure/MusicDeduplicator";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
   musicIpScope,
@@ -141,8 +139,8 @@ interface SonGuessrPlayerRecord {
   team: number | null;
   correctGuesses: number;
   totalGuesses: number;
-  /** 本局逐轮作答标记，`finishRound` 按轮追加，开局清零。口径与猜猜呗的 `marks` 一致。 */
-  marks: string;
+  /** 本局逐轮作答结果，`finishRound` 按轮追加，开局清零。 */
+  roundMarks: SonGuessrRoundMark[];
   isBot: boolean;
   isAgent?: boolean;
   joinedAt: number;
@@ -4560,7 +4558,7 @@ export class SonGuessrService implements AdminRoomControl {
     }
     // 第一轮即新的一局：标记串按局累计，不清零会把上一局的战绩接着画进玩家栏。
     if (roundNumber === 1) {
-      for (const candidate of Object.values(room.players)) candidate.marks = "";
+      for (const candidate of Object.values(room.players)) candidate.roundMarks = [];
     }
     room.roundNumber = roundNumber;
     room.currentRound = {
@@ -5604,7 +5602,7 @@ export class SonGuessrService implements AdminRoomControl {
    *
    * 出题人、其队友（本局观战）与旁观者不作答，因此不产生标记——玩家栏那一串读起来
    * 就是「他真正作答过的轮次」，而不是每轮都多一个无关字符。
-   * 字形沿用猜猜呗的标记集，客户端的 `CEEMarks` 因此无需新增分支。
+   * 结果取 `SonGuessrRoundMark` 枚举，不沿用猜猜呗的 emoji 标记串：那套是为兼容原版房
    */
   private appendRoundMarks(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord): void {
     const maxGuesses = round.settings.maxGuessesPerRound;
@@ -5613,14 +5611,14 @@ export class SonGuessrService implements AdminRoomControl {
       if (player.id === round.submitterPlayerId || round.observerIds.includes(player.id)) continue;
       const state = round.players[player.id];
       if (!state) continue;
-      const mark = state.correct
-        ? "✅"
+      const mark: SonGuessrRoundMark = state.correct
+        ? "correct"
         : state.gaveUp
-          ? "🏳️"
+          ? "gaveUp"
           : state.guessesUsed >= maxGuesses
-            ? "💀"
-            : "⏱️";
-      player.marks += mark;
+            ? "outOfGuesses"
+            : "timeout";
+      player.roundMarks.push(mark);
     }
   }
 
@@ -5920,7 +5918,7 @@ export class SonGuessrService implements AdminRoomControl {
       account: player.account,
       correctGuesses: player.correctGuesses,
       totalGuesses: player.totalGuesses,
-      marks: player.marks,
+      roundMarks: player.roundMarks,
       roundStatus,
       guessesUsed: state?.guessesUsed ?? 0,
     };
@@ -6136,7 +6134,7 @@ export class SonGuessrService implements AdminRoomControl {
       team: null,
       correctGuesses: 0,
       totalGuesses: 0,
-      marks: "",
+      roundMarks: [],
       isBot,
       joinedAt: now,
       lastSeenAt: now,

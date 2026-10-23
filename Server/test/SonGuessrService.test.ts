@@ -337,9 +337,12 @@ describe("SonGuessrService", () => {
     });
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.phase).toBe("roundResult");
-    // 本轮作答标记：猜中的人拿到一枚 ✅；出题人不作答，因此不带标记。
-    const marked = snapshot.players.filter((p) => p.marks.length > 0);
-    expect(marked.map((p) => p.marks)).toEqual(["✅"]);
+    // 本轮作答结果：猜中的人拿到一枚 correct；出题人不作答，因此不带结果。
+    const marked = snapshot.players.filter((p) => p.roundMarks.length > 0);
+    expect(marked.map((p) => p.roundMarks)).toEqual([["correct"]]);
+    expect(
+      snapshot.players.find((p) => p.id === snapshot.roundSummary?.submitterPlayerId)?.roundMarks
+    ).toEqual([]);
     expect(snapshot.roundSummary?.anime?.id).toBe(anime.id);
     expect(snapshot.roundSummary?.animeTrack).toEqual({
       title: "答案歌",
