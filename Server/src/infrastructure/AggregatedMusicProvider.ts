@@ -203,7 +203,11 @@ export class AggregatedMusicProvider implements MusicProvider {
     );
   }
 
-  async getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
+  async getSong(
+    songId: string,
+    cookie?: MusicCookieInput,
+    options: { allowFailover?: boolean } = {}
+  ): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
     const platformCookie = resolvePlatformCookie(cookie, platform);
 
@@ -215,6 +219,7 @@ export class AggregatedMusicProvider implements MusicProvider {
           id: buildSongUrn("netease", rawId),
         };
       } catch (error) {
+        if (options.allowFailover === false) throw error;
         this.logger?.warn?.("网易云歌曲加载失败，尝试触发音源 Failover", {
           songId,
           ...describeError(error),
@@ -242,6 +247,7 @@ export class AggregatedMusicProvider implements MusicProvider {
           id: buildSongUrn("qq", rawId),
         };
       } catch (error) {
+        if (options.allowFailover === false) throw error;
         this.logger?.warn?.("QQ音乐歌曲加载失败，尝试触发音源 Failover", {
           songId,
           ...describeError(error),

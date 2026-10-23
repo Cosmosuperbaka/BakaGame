@@ -414,6 +414,10 @@ export interface SongClipPreview {
   audioUrl: string;
   lyrics: SongLyricLine[];
   chorus?: SongChorus;
+  /** 本曲的可用音源 URN（首个是当前播放源），提交时原样回传用于主源失败后的兜底。 */
+  sources?: string[];
+  /** 当前播放源是否会员专享；QQ 会员曲手动提交时要据此租会员号。 */
+  requiresVip?: boolean;
   /**
    * 服务端按房间设置随机抽出的建议区间（与自动抽题同一套切片逻辑）。客户端用它作为
    * 片段编辑器的初始选择；出题人直接确认时播放的就是这一段。
@@ -429,6 +433,11 @@ export interface SongSearchResult {
   pictureUrl?: string;
   durationMs?: number;
   requiresVip?: boolean;
+  /**
+   * 聚合检索给出的同作品音源 URN（首个是当前主实体）。客户端选曲时原样回传；
+   * 服务端在主源取不到音频时按序尝试，避免再按歌名重新搜索。
+   */
+  sources?: string[];
   /** 网易云接口中的热度/播放热度字段；部分接口会对超大值做模糊化处理。 */
   popularity?: number;
   /**
@@ -730,6 +739,8 @@ const subjectId = t.String({ minLength: 1, maxLength: 32 });
 const sessionToken = t.String({ minLength: 1, maxLength: 128 });
 // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
 const songId = t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" });
+/** 选曲时回传的备用音源：数量有上限，避免用协议放大上游请求。 */
+const songPickSources = t.Optional(t.Array(songId, { maxItems: 6 }));
 const musicPlatform = t.Union([t.Literal("netease"), t.Literal("qq")]);
 const qrChannelType = t.Union([t.Literal("qq"), t.Literal("wx"), t.Literal("mobile")]);
 
@@ -817,7 +828,10 @@ export const SonGuessrPayloadSchemas = {
    * 出题人预览自己选中的歌：音频地址与行级歌词用于片段编辑。只允许当前待出题人调用，
    * 猜歌阶段的玩家拿不到答案的歌词与试听。
    */
-  "song.music.detail": t.Object({ songId }, strict),
+  "song.music.detail": t.Object(
+    { songId, sources: songPickSources, requiresVip: t.Optional(t.Boolean()) },
+    strict
+  ),
   "song.music.playlist.resolve": t.Object(
     { value: t.String({ minLength: 1, maxLength: 500 }) },
     strict
@@ -842,6 +856,10 @@ export const SonGuessrPayloadSchemas = {
           strict
         )
       ),
+      /** 检索时给出的同作品备用音源；主源取不到音频时按序兜底。 */
+      sources: songPickSources,
+      /** 主源是否会员专享；QQ 会员曲据此租会员号。 */
+      requiresVip: t.Optional(t.Boolean()),
     },
     strict
   ),

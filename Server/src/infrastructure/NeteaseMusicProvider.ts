@@ -72,7 +72,15 @@ export interface MusicProvider {
     cookie?: MusicCookieInput,
     options?: MusicSearchOptions
   ): Promise<SongSearchResult[]>;
-  getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
+  /**
+   * 取完整歌曲（含音频与歌词）。`allowFailover=false` 只允许解析本 ID 所属平台，
+   * 供调用方按已知备用音源逐个尝试时避免每失败一次就重新按歌名跨平台搜索。
+   */
+  getSong(
+    songId: string,
+    cookie?: MusicCookieInput,
+    options?: { allowFailover?: boolean }
+  ): Promise<SongDetails>;
   refreshSongAudio?(songId: string, cookie?: MusicCookieInput): Promise<string>;
   getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;
   getSongPopularity?(songId: string, cookie?: MusicCookieInput): Promise<number | undefined>;

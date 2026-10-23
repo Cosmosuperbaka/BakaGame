@@ -158,6 +158,8 @@ interface SonGuessrRoundRecord {
   number: number;
   submitterPlayerId: string;
   song: SongDetails;
+  /** 本回合歌曲的备用音源 URN（不含当前播放源）：刷新直链时按序兜底。 */
+  alternateSongIds?: string[];
   anime?: BangumiSubjectDetails;
   animeTrack?: BangumiMusicTrack;
   lyricClip: SongLyricClip;
@@ -1757,7 +1759,12 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
       case "song.music.detail":
-        return this.getSongClipPreview(connection, message.payload.songId);
+        return this.getSongClipPreview(
+          connection,
+          message.payload.songId,
+          message.payload.sources,
+          message.payload.requiresVip
+        );
       case "song.music.playlist.resolve":
         return this.resolvePlaylist(connection, message.payload.value);
       case "song.music.artist.search":
@@ -1773,7 +1780,13 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.game.chooseSubmitter":
         return this.chooseSubmitter(connection, message.payload.playerId);
       case "song.game.submitSong":
-        return this.submitSong(connection, message.payload.songId, message.payload.clip);
+        return this.submitSong(
+          connection,
+          message.payload.songId,
+          message.payload.clip,
+          message.payload.sources,
+          message.payload.requiresVip
+        );
       case "song.game.submitAnime":
         return this.submitAnime(connection, message.payload.subjectId, message.payload.songId);
       case "song.game.audioReady":
@@ -3127,6 +3140,95 @@ export class SonGuessrService implements AdminRoomControl {
     }
   }
 
+  /**
+   * 按「主选 + 检索时给出的备用音源」取完整歌曲。
+   *
+   * 每个候选按自己的平台租号，只有 QQ 候选才可能要求会员号。已知候选全部失败后，
+   * 才回落到聚合器原来的「按歌名+歌手跨平台搜索」兜底；客户端没带备用源时保持
+   * 改造前的单次调用，不额外多打一次主源。
+   */
+  private async loadSongWithSources(
+    room: SonGuessrRoomRecord,
+    songId: string,
+    sources?: readonly string[],
+    requiresVip?: boolean
+  ): Promise<{ song: SongDetails; alternateSongIds: string[] }> {
+    const candidates = [songId, ...(sources ?? [])]
+      .filter((id, index, list) => list.indexOf(id) === index)
+      .slice(0, 6);
+    const requireVipFor = (candidateId: string) =>
+      requiresVip === true && candidateId.startsWith("qq:");
+
+    if (candidates.length === 1) {
+      const song = await this.withSongAccount(
+        room,
+        songId,
+        (cookie) => this.options.musicProvider.getSong(songId, cookie),
+        { requireVip: requireVipFor(songId) }
+      );
+      return { song, alternateSongIds: [] };
+    }
+
+    for (const candidateId of candidates) {
+      try {
+        const song = await this.withSongAccount(
+          room,
+          candidateId,
+          (cookie) =>
+            this.options.musicProvider.getSong(candidateId, cookie, { allowFailover: false }),
+          { requireVip: requireVipFor(candidateId) }
+        );
+        return {
+          song,
+          alternateSongIds: candidates.filter((id) => id !== candidateId),
+        };
+      } catch {
+        // 换下一个已知候选；单平台失效或限流不该直接判整首不可用。
+      }
+    }
+
+    // 已知候选都放不出来时，保留原有的跨平台按歌名兜底。
+    const song = await this.withSongAccount(
+      room,
+      songId,
+      (cookie) => this.options.musicProvider.getSong(songId, cookie),
+      { requireVip: requireVipFor(songId) }
+    );
+    return { song, alternateSongIds: candidates.filter((id) => id !== songId) };
+  }
+
+  /** 刷新本回合播放地址：当前源失败时按已知备用源逐个再试，全部失败才抛最后一个错误。 */
+  private async refreshRoundAudio(
+    room: SonGuessrRoomRecord,
+    round: SonGuessrRoundRecord,
+    refresh: (songId: string, cookie?: MusicCookieInput) => Promise<string>
+  ): Promise<string> {
+    const candidateIds = [round.song.id, ...(round.alternateSongIds ?? [])].filter(
+      (id, index, list) => list.indexOf(id) === index
+    );
+    let lastError: unknown;
+    for (const candidateId of candidateIds) {
+      try {
+        return await this.withSongAccount(
+          room,
+          candidateId,
+          (cookie) => refresh(candidateId, cookie),
+          {
+            requireVip:
+              candidateId === round.song.id &&
+              candidateId.startsWith("qq:") &&
+              round.song.requiresVip === true,
+          }
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new AppError("SONG_UNAVAILABLE", "无法刷新播放地址");
+  }
+
   private async acquireAggregatedAccounts(room: SonGuessrRoomRecord): Promise<{
     cookie: MusicCookieInput | undefined;
     release: (result: { ok: boolean; reason?: string; code?: string }) => void;
@@ -3465,7 +3567,9 @@ export class SonGuessrService implements AdminRoomControl {
    */
   private async getSongClipPreview(
     connection: ConnectionRecord,
-    songId: string
+    songId: string,
+    sources?: readonly string[],
+    requiresVip?: boolean
   ): Promise<{ song: SongClipPreview }> {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
@@ -3473,8 +3577,11 @@ export class SonGuessrService implements AdminRoomControl {
     }
     this.requireMusicQuota(room, connection, player);
     const submitterId = player.id;
-    const song = await this.withSongAccount(room, songId, (cookie) =>
-      this.options.musicProvider.getSong(songId, cookie)
+    const { song, alternateSongIds } = await this.loadSongWithSources(
+      room,
+      songId,
+      sources,
+      requiresVip
     );
     if (
       room.phase !== "submittingSong" ||
@@ -3509,12 +3616,20 @@ export class SonGuessrService implements AdminRoomControl {
           isDuet: line.isDuet,
         })),
         chorus: song.chorus,
+        sources: [song.id, ...alternateSongIds],
+        requiresVip: song.requiresVip,
         suggestedClip: { startTime: suggested.startTime, endTime: suggested.endTime },
       },
     };
   }
 
-  private async submitSong(connection: ConnectionRecord, songId: string, clip?: SongClipRange) {
+  private async submitSong(
+    connection: ConnectionRecord,
+    songId: string,
+    clip?: SongClipRange,
+    sources?: readonly string[],
+    requiresVip?: boolean
+  ) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交歌曲");
@@ -3523,8 +3638,11 @@ export class SonGuessrService implements AdminRoomControl {
     const submitterId = player.id;
     // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
     room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
-    const song = await this.withSongAccount(room, songId, (cookie) =>
-      this.options.musicProvider.getSong(songId, cookie)
+    const { song, alternateSongIds } = await this.loadSongWithSources(
+      room,
+      songId,
+      sources,
+      requiresVip
     );
     // 音乐接口是异步的，返回时出题人可能已经退出或被踢；不能再安装一个失去归属的回合。
     if (
@@ -3547,6 +3665,9 @@ export class SonGuessrService implements AdminRoomControl {
       MIN_RECENT_SONG_WINDOW,
       createManualLyricClip(song, clip)
     );
+    if (room.currentRound?.number === roundNumber) {
+      room.currentRound.alternateSongIds = alternateSongIds;
+    }
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
@@ -4428,27 +4549,32 @@ export class SonGuessrService implements AdminRoomControl {
     }
   }
 
+  /**
+   * 匿名 QQ 只服务手动选曲：自动出题要在无人值守时稳定跑完整局，不能依赖会被限流的
+   * 匿名通道。没有 QQ 账号时直接给出明确原因，而不是让歌单/歌手交集悄悄变成空集。
+   */
+  private assertAutomaticFiltersSupported(
+    room: SonGuessrRoomRecord,
+    filters: SonGuessrRoomRecord["settings"]["autoFilters"]
+  ): void {
+    if (this.hasAvailablePoolAccount(room, "qq")) return;
+    const usesQqPlaylist = filters.playlist?.id.startsWith("qq:") ?? false;
+    const usesQqArtist = filters.artists.some((artist) => artist.id.startsWith("qq:"));
+    if (!usesQqPlaylist && !usesQqArtist) return;
+    throw new AppError(
+      "MUSIC_LOGIN_REQUIRED",
+      usesQqPlaylist
+        ? "自动出题使用 QQ 歌单需要房间内有 QQ 音乐账号"
+        : "自动出题使用 QQ 歌手需要房间内有 QQ 音乐账号"
+    );
+  }
+
   private async collectAutomaticCandidates(
     room: SonGuessrRoomRecord,
     cookie: MusicCookieInput | undefined
   ): Promise<SongSearchResult[]> {
     const filters = room.settings.autoFilters;
-    // 匿名 QQ 只服务手动选曲：自动出题要在无人值守时稳定跑完整局，不能依赖会被限流的
-    // 匿名通道。没有 QQ 账号时直接给出明确原因，而不是让歌单/歌手交集悄悄变成空集。
-    if (!this.hasAvailablePoolAccount(room, "qq")) {
-      if (filters.playlist?.id.startsWith("qq:")) {
-        throw new AppError(
-          "MUSIC_LOGIN_REQUIRED",
-          "自动出题使用 QQ 歌单需要房间内有 QQ 音乐账号"
-        );
-      }
-      if (filters.artists.some((artist) => artist.id.startsWith("qq:"))) {
-        throw new AppError(
-          "MUSIC_LOGIN_REQUIRED",
-          "自动出题使用 QQ 歌手需要房间内有 QQ 音乐账号"
-        );
-      }
-    }
+    this.assertAutomaticFiltersSupported(room, filters);
     const sets: SongSearchResult[][] = [];
     if (filters.playlist && this.options.musicProvider.getPlaylistSongs) {
       sets.push(
@@ -4586,12 +4712,7 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.musicProvider;
     const refresh = provider.refreshSongAudio?.bind(provider);
     if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
-    const audioUrl = await this.withSongAccount(
-      room,
-      round.song.id,
-      (cookie) => refresh(round.song.id, cookie),
-      { requireVip: round.song.id.startsWith("qq:") && round.song.requiresVip === true }
-    );
+    const audioUrl = await this.refreshRoundAudio(room, round, refresh);
     if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
     round.song = { ...round.song, audioUrl };
     this.touch(room);

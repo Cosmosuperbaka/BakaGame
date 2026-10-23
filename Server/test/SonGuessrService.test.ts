@@ -8513,6 +8513,41 @@ describe("手动出题片段", () => {
     ).rejects.toMatchObject({ code: "NOT_SUBMITTER" });
   });
 
+  test("主源取不到音频时按客户端回传的备用源兜底并进入回合", async () => {
+    const calls: string[] = [];
+    const failoverProvider: MusicProvider = {
+      ...provider,
+      getSong: async (id) => {
+        calls.push(id);
+        if (id === "answer") throw new AppError("SONG_UNAVAILABLE", "主源不可用");
+        return { ...songs.answer, id, audioUrl: `https://audio/${id}.mp3` };
+      },
+    };
+    const service = new SonGuessrService({
+      musicProvider: failoverProvider,
+      random: { nextInt: () => 0 },
+    });
+    const { host, guest } = await enterSubmittingPhase(service);
+    const preview = await execute<{ song: { id: string; sources?: string[] } }>(service, host, {
+      id: "source-preview",
+      type: "song.music.detail",
+      roomId: "1234",
+      payload: { songId: "answer", sources: ["answer", "qq:alt"], requiresVip: false },
+    });
+    expect(preview.song.id).toBe("qq:alt");
+    expect(preview.song.sources).toEqual(["qq:alt", "answer"]);
+    expect(calls).toEqual(["answer", "qq:alt"]);
+
+    await execute(service, host, {
+      id: "source-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer", sources: ["answer", "qq:alt"], requiresVip: false },
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").phase).toBe("playing");
+    expect(calls).toEqual(["answer", "qq:alt", "answer", "qq:alt"]);
+  });
+
   test("手动片段随回合下发，快照导出恢复后仍在", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest, guestState } = await enterSubmittingPhase(service);

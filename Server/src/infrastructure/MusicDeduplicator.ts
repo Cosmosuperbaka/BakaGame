@@ -3,8 +3,6 @@ import type { MusicPlatform } from "./NeteaseMusicProvider";
 import { toSimplified } from "./ChineseConverter";
 
 export interface AggregatedSongSearchResult extends SongSearchResult {
-  /** 聚合后关联的备用音源 URN 列表 (按首选到次选排序) */
-  sources?: string[];
   /** 综合排序打分 */
   relevanceScore?: number;
   /** 上游平台搜索返回的初始位置位次 (从 0 开始) */
@@ -471,10 +469,23 @@ export function aggregateAndDeduplicateSongs(
     }
   }
 
+  // 备用源按「可播 > 平台偏好 > 上游位次」排序：调用方在主源失败时按序尝试，
+  // 第一顺位应当是当前房间最可能放出来的那一侧。
+  const orderedAlternatives = (alternatives: RankedSong[]): RankedSong[] =>
+    [...alternatives].sort((a, b) => {
+      const playableDiff = Number(isPlayableSong(b, context)) - Number(isPlayableSong(a, context));
+      if (playableDiff !== 0) return playableDiff;
+      const platformDiff =
+        platformRank(songPlatform(a.id), platformPreference) -
+        platformRank(songPlatform(b.id), platformPreference);
+      if (platformDiff !== 0) return platformDiff;
+      return (a.upstreamRank ?? 99) - (b.upstreamRank ?? 99);
+    });
+
   // 计算每个合流实体的最终打分与可播标记
   const aggregated: AggregatedSongSearchResult[] = clusters.map(({ primary, alternatives }) => ({
     ...markSongPlayability(primary, context),
-    sources: [primary.id, ...alternatives.map((a) => a.id)],
+    sources: [primary.id, ...orderedAlternatives(alternatives).map((a) => a.id)],
     relevanceScore: calculateRelevanceScore(
       primary,
       keyword,
