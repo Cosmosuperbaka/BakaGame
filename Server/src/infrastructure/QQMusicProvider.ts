@@ -409,10 +409,11 @@ export class QQMusicProvider implements MusicProvider {
     }
 
     if (!cookie) this.noteAnonymousSearchResult(normalized, result.length);
+    // 匿名空结果可能只是上游限流，不能按「公共检索结果」缓存 5 分钟：
+    // 否则限流恢复后同一关键词还会继续空一段时间。空结果沿用普通短 TTL。
+    const anonymousTtl = this.options.anonymousSearchCacheTtlMs ?? ANONYMOUS_SEARCH_CACHE_TTL_MS;
     this.cache.set(cacheKey, result, {
-      ttl: cookie
-        ? SEARCH_CACHE_TTL_MS
-        : (this.options.anonymousSearchCacheTtlMs ?? ANONYMOUS_SEARCH_CACHE_TTL_MS),
+      ttl: cookie ? SEARCH_CACHE_TTL_MS : result.length > 0 ? anonymousTtl : SEARCH_CACHE_TTL_MS,
     });
     return result;
   }
