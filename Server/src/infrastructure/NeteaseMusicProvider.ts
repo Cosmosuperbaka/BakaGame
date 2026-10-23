@@ -58,6 +58,11 @@ export interface MusicSearchOptions {
    * 取不到直链，结果需标「不可播放」；网易云走解灰兜底，不按会员档判可用性。
    */
   vipPlatforms?: readonly MusicPlatform[];
+  /**
+   * 共有曲目代表哪一侧的平台顺序。默认网易云先于 QQ；只有 QQ 账号的房间传入
+   * `["qq", "netease"]`，避免把共有曲目默认归到本房没有直接凭据的一侧。
+   */
+  platformPreference?: readonly MusicPlatform[];
 }
 
 export interface MusicProvider {

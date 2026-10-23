@@ -143,7 +143,12 @@ export function createServer(
   // 失败只会记一条告警，后续请求仍按惰性加载自行重试。
   void netease.warmUp();
   const qq = new QQMusicProvider({ logger });
-  const music = new AggregatedMusicProvider({ neteaseProvider: netease, qqProvider: qq, logger });
+  const music = new AggregatedMusicProvider({
+    neteaseProvider: netease,
+    qqProvider: qq,
+    logger,
+    allowAnonymousQqSearch: () => settings.boolean("enableAnonymousQqSearch"),
+  });
   const remote = new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl });
   // 生产也保留回源兜底：Meilisearch / 本地数据集故障时，猜番至少还能靠官方 API 开局，
   // 而不是整局卡死（10-11 生产事故：sort 字段未声明导致搜索 400，猜番完全无法开局）。

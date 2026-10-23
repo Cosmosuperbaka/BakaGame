@@ -37,6 +37,8 @@ export interface EnvClientChannel {
   ceeOriginalAesSecret?: string;
   /** 网易云全局解灰：默认开启。 */
   enableGeneralUnblock?: boolean;
+  /** QQ 音乐匿名补充检索：默认开启；关闭后没有 QQ 账号的房间只搜网易云。 */
+  enableAnonymousQqSearch?: boolean;
 }
 
 export const readClientChannelEnv = (): EnvClientChannel => ({
@@ -58,4 +60,8 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
   ceeOriginalAesSecret: Bun.env.CCB_ORIGINAL_AES_SECRET,
   enableGeneralUnblock:
     Bun.env.ENABLE_GENERAL_UNBLOCK !== undefined ? Bun.env.ENABLE_GENERAL_UNBLOCK === "true" : true,
+  enableAnonymousQqSearch:
+    Bun.env.ENABLE_ANONYMOUS_QQ_SEARCH !== undefined
+      ? Bun.env.ENABLE_ANONYMOUS_QQ_SEARCH === "true"
+      : true,
 });

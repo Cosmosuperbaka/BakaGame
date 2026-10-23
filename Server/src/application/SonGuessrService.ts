@@ -3175,16 +3175,23 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 房内账号能力对检索结果的影响，只用于「可播」标注：QQ 会员专享曲目在池里只有
-   * 非会员账号时取不到直链，结果要标不可播放。池里有没有 QQ 账号本身由凭据决定
-   * （见 `getAggregatedSearchCookie`），不在这里重复声明。
+   * 房内账号能力对检索结果的影响。
+   *
+   * `vipPlatforms` 只用于「可播」标注：QQ 会员专享曲目在池里只有非会员账号时取不到直链，
+   * 结果要标不可播放。`platformPreference` 决定共有曲目由哪一侧代表：两边都有账号时
+   * 按产品口径网易云优先；只有 QQ 账号的房间反过来，避免把共有曲目默认归到本房没有
+   * 直接凭据的网易云。池里有没有 QQ 账号本身由凭据决定，不在这里重复声明。
    */
   private musicSearchOptions(room: SonGuessrRoomRecord): MusicSearchOptions {
     const vipPlatforms: MusicPlatform[] = [];
     if (this.hasAvailablePoolAccount(room, "netease", { requireVip: true }))
       vipPlatforms.push("netease");
     if (this.hasAvailablePoolAccount(room, "qq", { requireVip: true })) vipPlatforms.push("qq");
-    return { vipPlatforms };
+    const neteaseAvailable = this.hasAvailablePoolAccount(room, "netease");
+    const qqAvailable = this.hasAvailablePoolAccount(room, "qq");
+    const platformPreference: MusicPlatform[] =
+      qqAvailable && !neteaseAvailable ? ["qq", "netease"] : ["netease", "qq"];
+    return { vipPlatforms, platformPreference };
   }
 
   /** 池内每端当下会被选中的号：快照的账号展示与开局复核都读这一条（不看在途）。 */
@@ -4426,6 +4433,22 @@ export class SonGuessrService implements AdminRoomControl {
     cookie: MusicCookieInput | undefined
   ): Promise<SongSearchResult[]> {
     const filters = room.settings.autoFilters;
+    // 匿名 QQ 只服务手动选曲：自动出题要在无人值守时稳定跑完整局，不能依赖会被限流的
+    // 匿名通道。没有 QQ 账号时直接给出明确原因，而不是让歌单/歌手交集悄悄变成空集。
+    if (!this.hasAvailablePoolAccount(room, "qq")) {
+      if (filters.playlist?.id.startsWith("qq:")) {
+        throw new AppError(
+          "MUSIC_LOGIN_REQUIRED",
+          "自动出题使用 QQ 歌单需要房间内有 QQ 音乐账号"
+        );
+      }
+      if (filters.artists.some((artist) => artist.id.startsWith("qq:"))) {
+        throw new AppError(
+          "MUSIC_LOGIN_REQUIRED",
+          "自动出题使用 QQ 歌手需要房间内有 QQ 音乐账号"
+        );
+      }
+    }
     const sets: SongSearchResult[][] = [];
     if (filters.playlist && this.options.musicProvider.getPlaylistSongs) {
       sets.push(

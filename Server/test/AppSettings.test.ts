@@ -124,6 +124,14 @@ describe("AppSettings 运行期旋钮", () => {
     });
     const mobile = settings.snapshot().find((item) => item.key === "clientMinMobileVersion");
     expect(mobile).toMatchObject({ storedValue: null, effectiveValue: "" });
-    expect(settings.snapshot()).toHaveLength(3);
+    expect(settings.snapshot()).toHaveLength(4);
+  });
+
+  it("QQ 匿名补充检索默认开启，关闭后只认 false", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    expect(settings.boolean("enableAnonymousQqSearch")).toBe(true);
+    await settings.update("enableAnonymousQqSearch", "false", "actor-1");
+    expect(settings.boolean("enableAnonymousQqSearch")).toBe(false);
   });
 });

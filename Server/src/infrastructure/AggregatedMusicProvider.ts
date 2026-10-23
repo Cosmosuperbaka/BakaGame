@@ -28,7 +28,16 @@ export interface AggregatedMusicProviderOptions {
   neteaseProvider: MusicProvider;
   qqProvider: MusicProvider;
   logger?: EventLogger;
+  /**
+   * 无 QQ 账号时是否允许匿名检索 QQ。匿名只能播免费曲（`pay_play=0`），
+   * 且上游会对连续检索限流，因此这里默认开启但由运行期旋钮随时可关。
+   * 传函数是为了让 T3 设置改动在下一个请求就生效。
+   */
+  allowAnonymousQqSearch?: boolean | (() => boolean);
 }
+
+const resolveSwitch = (value: boolean | (() => boolean) | undefined, fallback: boolean): boolean =>
+  typeof value === "function" ? value() : (value ?? fallback);
 
 /** 组合凭据（JSON 形态）里按平台取值：非字符串一律视为未配置。 */
 const pickPlatformCookieField = (
@@ -95,11 +104,17 @@ export class AggregatedMusicProvider implements MusicProvider {
   private readonly neteaseProvider: MusicProvider;
   private readonly qqProvider: MusicProvider;
   private readonly logger?: EventLogger;
+  private readonly allowAnonymousQqSearch?: boolean | (() => boolean);
 
   constructor(options: AggregatedMusicProviderOptions) {
     this.neteaseProvider = options.neteaseProvider;
     this.qqProvider = options.qqProvider;
     this.logger = options.logger;
+    this.allowAnonymousQqSearch = options.allowAnonymousQqSearch;
+  }
+
+  private anonymousQqAllowed(): boolean {
+    return resolveSwitch(this.allowAnonymousQqSearch, true);
   }
 
   async search(
@@ -115,14 +130,21 @@ export class AggregatedMusicProvider implements MusicProvider {
     const qqCookie = resolvePlatformCookie(cookie, "qq");
 
     // 网易云检索不需要登录态（匿名即可），结果还能走解灰兜底播放，所以恒发。
-    // QQ 没有解灰链路：账号池为空时搜出来的独占曲目一条都播不了，白占结果位、
-    // 还会把房主引到「点了没反应」的死路上。这种情况直接不发起这次检索
-    // （B4 的账号池落空即走这条短路），并留下可观测的降级信号，而不是静默少半边结果。
-    const qqAvailable = qqCookie !== undefined;
+    // QQ 也接受匿名检索：免费曲（pay_play=0）能拿到 128k/m4a 直链，会员曲才需要
+    // 池里有会员账号。匿名通道会被上游限流，因此由运行期旋钮控制，并只作为补充源。
+    const qqAuthenticated = qqCookie !== undefined;
+    const anonymousQqAllowed = this.anonymousQqAllowed();
+    const qqAvailable = qqAuthenticated || anonymousQqAllowed;
     if (!qqAvailable) {
-      this.logger?.info?.("QQ 音乐账号池为空，本轮检索跳过 QQ 音源", { keyword: normalized });
+      this.logger?.info?.("QQ 音乐匿名补充已关闭且账号池为空，本轮跳过 QQ 音源", {
+        keyword: normalized,
+      });
+    } else if (!qqAuthenticated) {
+      this.logger?.debug?.("QQ 音乐账号池为空，本轮以匿名音源补充检索", {
+        keyword: normalized,
+      });
     }
-    // 网易云匿名也能检索、且结果恒可播（解灰兜底）；QQ 能不能播完全看池里有没有账号。
+    // 匿名 QQ 只代表「免费曲可播」；会员曲仍由 vipPlatforms 决定（池里有没有会员号）。
     const playability: SongPlayabilityContext = {
       availablePlatforms: qqAvailable ? ["netease", "qq"] : ["netease"],
       vipPlatforms: options.vipPlatforms,
@@ -172,7 +194,13 @@ export class AggregatedMusicProvider implements MusicProvider {
     if (allCandidates.length === 0) return [];
 
     // 执行三级指纹去重、实体合流与多维度综合打分排序
-    return aggregateAndDeduplicateSongs(allCandidates, normalized, limit, playability);
+    return aggregateAndDeduplicateSongs(
+      allCandidates,
+      normalized,
+      limit,
+      playability,
+      options.platformPreference
+    );
   }
 
   async getSong(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
@@ -194,7 +222,13 @@ export class AggregatedMusicProvider implements MusicProvider {
         // 尝试按歌名+歌手在 QQ 音乐中兜底检索并播放
         const qqCookie = resolvePlatformCookie(cookie, "qq");
         const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-        const fallback = await this.tryFailover(songId, this.qqProvider, neteaseCookie, qqCookie);
+        const fallback = await this.tryFailover(
+          songId,
+          this.qqProvider,
+          "qq",
+          neteaseCookie,
+          qqCookie
+        );
         if (fallback) return fallback;
         throw error;
       }
@@ -217,6 +251,7 @@ export class AggregatedMusicProvider implements MusicProvider {
         const fallback = await this.tryFailover(
           songId,
           this.neteaseProvider,
+          "netease",
           qqCookie,
           neteaseCookie
         );
@@ -231,9 +266,12 @@ export class AggregatedMusicProvider implements MusicProvider {
   private async tryFailover(
     originalSongId: string,
     targetProvider: MusicProvider,
+    targetPlatform: MusicPlatform,
     originCookie?: string,
     targetCookie?: string
   ): Promise<SongDetails | null> {
+    // 匿名 QQ 只是检索补充源；开关关闭时不再用它做隐式 failover。
+    if (targetPlatform === "qq" && !targetCookie && !this.anonymousQqAllowed()) return null;
     try {
       // 1. 尝试读取原歌曲元数据
       const originMeta = await this.getSongMetadata(originalSongId, originCookie);
@@ -336,6 +374,12 @@ export class AggregatedMusicProvider implements MusicProvider {
     if (trimmed.startsWith("qq:") || /y\.qq\.com/i.test(trimmed)) {
       const rawId = trimmed.startsWith("qq:") ? trimmed.slice(3) : trimmed;
       const qqCookie = resolvePlatformCookie(cookie, "qq");
+      if (!qqCookie && !this.anonymousQqAllowed()) {
+        throw new AppError(
+          "MUSIC_LOGIN_REQUIRED",
+          "QQ 音乐匿名音源已关闭，请登录 QQ 音乐后读取歌单"
+        );
+      }
       const res = await this.qqProvider.getPlaylistSongs!(rawId, qqCookie);
       return {
         info: {
@@ -370,9 +414,13 @@ export class AggregatedMusicProvider implements MusicProvider {
   ): Promise<SongArtistSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const qqCookie = resolvePlatformCookie(cookie, "qq");
+    const qqSearch =
+      qqCookie || this.anonymousQqAllowed()
+        ? this.qqProvider.searchArtists?.(keyword, limit, qqCookie)
+        : Promise.resolve([] as SongArtistSearchResult[]);
     const [netease, qq] = await Promise.allSettled([
       this.neteaseProvider.searchArtists?.(keyword, limit, neteaseCookie),
-      this.qqProvider.searchArtists?.(keyword, limit, qqCookie),
+      qqSearch,
     ]);
     const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
       ...a,
@@ -409,9 +457,13 @@ export class AggregatedMusicProvider implements MusicProvider {
   ): Promise<SongAlbumSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const qqCookie = resolvePlatformCookie(cookie, "qq");
+    const qqSearch =
+      qqCookie || this.anonymousQqAllowed()
+        ? this.qqProvider.searchAlbums?.(keyword, limit, qqCookie)
+        : Promise.resolve([] as SongAlbumSearchResult[]);
     const [netease, qq] = await Promise.allSettled([
       this.neteaseProvider.searchAlbums?.(keyword, limit, neteaseCookie),
-      this.qqProvider.searchAlbums?.(keyword, limit, qqCookie),
+      qqSearch,
     ]);
     const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
       ...a,

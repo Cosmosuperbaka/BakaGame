@@ -1944,8 +1944,9 @@ describe("SonGuessrService", () => {
     expect(guestState.playerId).toBeDefined();
   });
 
-  test("池内没有 QQ 账号时检索跳过 QQ 音源，加入 QQ 号后恢复", async () => {
+  test("池内没有 QQ 账号时以匿名音源补充检索，加入 QQ 号后改用账号", async () => {
     let qqSearchCalls = 0;
+    const qqCookies: (MusicCookieInput | undefined)[] = [];
     const neteaseMock: MusicProvider = {
       ...provider,
       getLoginStatus: async (cookie) => ({
@@ -1960,8 +1961,9 @@ describe("SonGuessrService", () => {
         cookie,
         account: { platform: "qq", nickname: "QQ用户", vipStatus: "nonVip" },
       }),
-      search: async () => {
+      search: async (_keyword, _limit, cookie) => {
         qqSearchCalls += 1;
+        qqCookies.push(cookie);
         return [{ ...songs.wrong, id: "qq:2001" }];
       },
     };
@@ -1981,9 +1983,9 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { keyword: "降级" },
     });
-    expect(qqSearchCalls).toBe(0);
-    expect(withoutQq.results.length).toBeGreaterThan(0);
-    expect(withoutQq.results.every((song) => song.id.startsWith("netease:"))).toBe(true);
+    expect(qqSearchCalls).toBe(1);
+    expect(qqCookies[0]).toBeUndefined();
+    expect(withoutQq.results.some((song) => song.id.startsWith("qq:"))).toBe(true);
 
     await execute(service, guest, {
       id: "guest-qq",
@@ -1997,8 +1999,58 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { keyword: "降级" },
     });
-    expect(qqSearchCalls).toBe(1);
+    expect(qqSearchCalls).toBe(2);
+    expect(qqCookies[1]).toBe("qm_keyst=qq-cookie");
     expect(withQq.results.some((song) => song.id.startsWith("qq:"))).toBe(true);
+  });
+
+  test("QQ-only 房间的共有曲目由 QQ 代表", async () => {
+    const neteaseMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { platform: "netease", nickname: "网易云用户", vipStatus: "vip" },
+      }),
+      search: async () => [songs.answer],
+    };
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { platform: "qq", nickname: "QQ用户", vipStatus: "nonVip" },
+      }),
+      search: async () => [{ ...songs.answer, id: "qq:2001" }],
+    };
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+    const service = new SonGuessrService({ musicProvider: aggregated });
+    const host = connection(service, "qq-only-host");
+    const guest = connection(service, "qq-only-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    // createRoom 默认给房主挂网易云号；这里清掉，构造真正的 QQ-only 房间。
+    await execute(service, host, {
+      id: "clear-netease",
+      type: "song.auth.clear",
+      roomId: "1234",
+      payload: { platform: "netease" },
+    });
+    await execute(service, guest, {
+      id: "qq-only-cookie",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=qq-cookie", platform: "qq" },
+    });
+
+    const result = await execute<{ results: SongSearchResult[] }>(service, host, {
+      id: "qq-only-search",
+      type: "song.music.search",
+      roomId: "1234",
+      payload: { keyword: "共有曲目" },
+    });
+    expect(result.results[0]?.id.startsWith("qq:")).toBe(true);
   });
 
   test("池视图带归属昵称、会员档、在途数与近期成功率，且不含任何凭据", async () => {
@@ -2846,6 +2898,41 @@ describe("SonGuessrService", () => {
       payload: { roundNumber: 1 },
     });
     expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").canGuess).toBe(true);
+  });
+
+  test("自动出题使用 QQ 歌单或歌手时要求房间有 QQ 账号", async () => {
+    const service = new SonGuessrService({ musicProvider: provider });
+    const host = connection(service, "qq-auto-host");
+    const guest = connection(service, "qq-auto-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "自动玩家");
+    await execute(service, host, {
+      id: "qq-auto-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "qq:42", name: "QQ 歌单", songCount: 1 },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "qq-auto-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    const error = await execute(service, host, {
+      id: "qq-auto-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(AppError);
+    expect((error as AppError).code).toBe("MUSIC_LOGIN_REQUIRED");
   });
 
   test("自动题库热度筛选对大歌单限制单轮上游查询数量", async () => {

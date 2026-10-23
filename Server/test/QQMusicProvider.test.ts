@@ -178,6 +178,57 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
     await provider.search("缓存测试", 5);
     expect(calls).toBe(1);
   });
+
+  it("匿名检索连续空结果后熔断，冷却结束后恢复", async () => {
+    let now = 1_000;
+    let calls = 0;
+    const provider = new QQMusicProvider({ now: () => now });
+    qqmusic.search = mock(async () => {
+      calls++;
+      return { status: 200, body: { songs: [] } };
+    }) as any;
+
+    for (let index = 0; index < 5; index += 1) await provider.search(`空结果${index}`, 5);
+    expect(calls).toBe(5);
+
+    // 熔断期内不再发往上游。
+    expect(await provider.search("熔断期内", 5)).toEqual([]);
+    expect(calls).toBe(5);
+
+    now += 61_000;
+    await provider.search("冷却结束", 5);
+    expect(calls).toBe(6);
+  });
+
+  it("匿名检索连续抛错后熔断，不再持续打上游", async () => {
+    let calls = 0;
+    const provider = new QQMusicProvider({ now: () => 0 });
+    qqmusic.search = mock(async () => {
+      calls++;
+      throw new Error("rate limited");
+    }) as any;
+
+    for (let index = 0; index < 3; index += 1) {
+      await expect(provider.search(`失败${index}`, 5)).rejects.toThrow("rate limited");
+    }
+    expect(await provider.search("第四次", 5)).toEqual([]);
+    expect(calls).toBe(3);
+  });
+
+  it("匿名检索超时按 MUSIC_API_TIMEOUT 失败，不拖住调用方", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const provider = new QQMusicProvider({ anonymousSearchTimeoutMs: 10 });
+    qqmusic.search = mock(async () => {
+      await pending;
+      return { status: 200, body: { songs: [] } };
+    }) as any;
+
+    await expect(provider.search("超时测试", 5)).rejects.toThrow("QQ 音乐匿名检索超时");
+    release();
+  });
 });
 
 describe("QQMusicProvider · 歌曲 ID（URN）校验", () => {

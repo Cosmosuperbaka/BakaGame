@@ -12,27 +12,30 @@ export interface AggregatedSongSearchResult extends SongSearchResult {
 }
 
 /**
- * 平台偏好：网易云先于 QQ。
+ * 默认平台偏好：网易云先于 QQ。
  *
- * 理由是可播性而非品牌偏好 —— 网易云没有版权/VIP 的曲目还能走解灰音源兜底
- * （见 `NeteaseMusicProvider` 的 `UNBLOCK_SOURCE_ORDER`），QQ 没有对应链路，
- * 会员专享曲目拿到非会员账号就直接取不到直链。共有曲目因此以网易云那一侧
- * 作为主实体展示与播放。
+ * 两边都有账号时按产品口径优先网易云；只有 QQ 账号的房间由调用方传入反向偏好，
+ * 避免把共有曲目默认归到本房没有直接凭据的一侧。偏好只决定「共有曲目由谁代表」
+ * 与同分决胜，不压过相关度（见 `compareAggregatedSongs`）。
  */
 export const MUSIC_PLATFORM_PREFERENCE: readonly MusicPlatform[] = ["netease", "qq"];
 
 export const songPlatform = (id: string): string => id.split(":")[0] ?? "";
 
-export const platformRank = (platform: string): number => {
-  const index = MUSIC_PLATFORM_PREFERENCE.indexOf(platform as MusicPlatform);
-  return index < 0 ? MUSIC_PLATFORM_PREFERENCE.length : index;
+export const platformRank = (
+  platform: string,
+  preference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE
+): number => {
+  const index = preference.indexOf(platform as MusicPlatform);
+  return index < 0 ? preference.length : index;
 };
 
 /**
  * 可播判定的完整上下文。
  *
- * `availablePlatforms` 由「账号池里有凭据的平台」加上恒可用（解灰兜底）的网易云推出，
- * 见 `AggregatedMusicProvider`；池里没有账号的平台根本不该进候选，真进来了也只标不可播。
+ * `availablePlatforms` 表示能播放非会员曲目的平台：网易云恒可用（解灰兜底），QQ 的
+ * 匿名通道也恒可用（免费曲能取到 128k/m4a 直链）。会员曲另由 `vipPlatforms` 判定；
+ * 匿名 QQ 开关关闭且池里没有 QQ 账号时，聚合器不会产出 QQ 候选。
  */
 export interface SongPlayabilityContext {
   availablePlatforms: readonly MusicPlatform[];
@@ -320,8 +323,8 @@ function promoteClusterPrimary(cluster: SongCluster, newPrimary: RankedSong): vo
 /**
  * 判定候选是否应取代当前主实体.
  *
- * 择优链：非衍生版 > 可播 > 平台偏好（网易云先于 QQ）> 包含搜索关键词的官方全名/译名 >
- * 更纯正无噪音的曲名 > 上游排名靠前者 > 同位次时有封面的优先。
+ * 择优链：非衍生版 > 可播 > 平台偏好（默认网易云先于 QQ，QQ-only 房间反向）>
+ * 包含搜索关键词的官方全名/译名 > 更纯正无噪音的曲名 > 上游排名靠前者 > 同位次时有封面的优先。
  *
  * 「可播」与平台偏好排在曲名与上游位次之前：共有曲目以能播的那一侧作为主实体，
  * 徽章与实际播放源才不会说两件事 —— 常见形态是 QQ 侧曲名更干净、上游位次更前，
@@ -331,7 +334,8 @@ function shouldPromoteCandidate(
   candidate: RankedSong,
   primary: RankedSong,
   normKeyword: string,
-  context: SongPlayabilityContext
+  context: SongPlayabilityContext,
+  platformPreference: readonly MusicPlatform[]
 ): boolean {
   const candidateIsDeriv = isDerivationSong(candidate);
   const primaryIsDeriv = isDerivationSong(primary);
@@ -345,9 +349,10 @@ function shouldPromoteCandidate(
   const primaryPlayable = isPlayableSong(primary, context);
   if (candidatePlayable !== primaryPlayable) return candidatePlayable;
 
-  // 优先 1：平台偏好（网易云先于 QQ），见 MUSIC_PLATFORM_PREFERENCE
+  // 优先 1：平台偏好（默认网易云先于 QQ，QQ-only 房间由调用方反转）
   const platformDiff =
-    platformRank(songPlatform(primary.id)) - platformRank(songPlatform(candidate.id));
+    platformRank(songPlatform(primary.id), platformPreference) -
+    platformRank(songPlatform(candidate.id), platformPreference);
   if (platformDiff !== 0) return platformDiff > 0;
 
   // 优先 2：包含搜索关键词的官方全名/译名 (例如 "ブルーバード (青鸟)" 优于 "ブルーバード")
@@ -380,7 +385,8 @@ function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[])
  *
  * 「可播」排在最前：池里当下放不出来的结果不该占住列表前几位。
  *
- * 平台偏好（网易云先于 QQ，见 MUSIC_PLATFORM_PREFERENCE）刻意只压在**同等相关度**之后：
+ * 平台偏好（默认网易云先于 QQ，见 MUSIC_PLATFORM_PREFERENCE；QQ-only 房间由调用方反转）
+ * 刻意只压在**同等相关度**之后：
  * 共有曲目谁代表一次查询由 `shouldPromoteCandidate` 决定（那里的平台偏好能盖过曲名与位次），
  * 而这里若让平台盖过相关度，搜「反方向的钟」时一条只是**歌名包含**该词的网易云结果
  * 就会排到精确命中的 QQ 结果之前 —— 那是比原始问题更糟的体感。
@@ -389,7 +395,8 @@ function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[])
  */
 function compareAggregatedSongs(
   a: AggregatedSongSearchResult,
-  b: AggregatedSongSearchResult
+  b: AggregatedSongSearchResult,
+  platformPreference: readonly MusicPlatform[]
 ): number {
   // 优先级 1：能播的先出
   const playableA = a.playable === false ? 0 : 1;
@@ -400,8 +407,10 @@ function compareAggregatedSongs(
   const diff = (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0);
   if (diff !== 0) return diff;
 
-  // 优先级 3：相关度相同时平台偏好（网易云先于 QQ）
-  const platformDiff = platformRank(songPlatform(a.id)) - platformRank(songPlatform(b.id));
+  // 优先级 3：相关度相同时平台偏好（默认网易云先于 QQ）
+  const platformDiff =
+    platformRank(songPlatform(a.id), platformPreference) -
+    platformRank(songPlatform(b.id), platformPreference);
   if (platformDiff !== 0) return platformDiff;
 
   // 平分决胜 1：非衍生版优先于衍生版
@@ -437,7 +446,8 @@ export function aggregateAndDeduplicateSongs(
   songs: RankedSong[],
   keyword: string,
   limit: number,
-  context: SongPlayabilityContext
+  context: SongPlayabilityContext,
+  platformPreference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE
 ): AggregatedSongSearchResult[] {
   const normKeyword = normalizeComparableText(keyword);
   const clusters: SongCluster[] = [];
@@ -454,7 +464,9 @@ export function aggregateAndDeduplicateSongs(
     }
 
     matchedCluster.alternatives.push(song);
-    if (shouldPromoteCandidate(song, matchedCluster.primary, normKeyword, context)) {
+    if (
+      shouldPromoteCandidate(song, matchedCluster.primary, normKeyword, context, platformPreference)
+    ) {
       promoteClusterPrimary(matchedCluster, song);
     }
   }
@@ -470,5 +482,5 @@ export function aggregateAndDeduplicateSongs(
     ),
   }));
 
-  return aggregated.sort(compareAggregatedSongs).slice(0, limit);
+  return aggregated.sort((a, b) => compareAggregatedSongs(a, b, platformPreference)).slice(0, limit);
 }

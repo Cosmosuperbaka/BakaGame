@@ -89,7 +89,34 @@ describe("AggregatedMusicProvider", () => {
     expect(results[0]?.sources?.length).toBe(2);
   });
 
-  test("search 账号池为空时不发起 QQ 检索，只回网易云结果", async () => {
+  test("search 账号池为空时以匿名 QQ 补充：免费曲可播、会员曲不可播", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "netease:1001", title: "网易云同名曲", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:free", title: "QQ 独占免费曲", artist: "某歌手", durationMs: 200000 },
+        {
+          id: "qq:vip",
+          title: "QQ 独占会员曲",
+          artist: "另一歌手",
+          durationMs: 210000,
+          requiresVip: true,
+        },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    // 只有网易云凭据（房间没挂 QQ 账号）：QQ 走匿名补充，而不是整轮跳过。
+    const results = await agg.search("独占", 10, { netease: "nc_cookie_only" });
+    expect(qqMock.search).toHaveBeenCalledWith("独占", 10, undefined);
+    expect(results.find((song) => song.id === "qq:free")?.playable).toBeUndefined();
+    expect(results.find((song) => song.id === "qq:vip")?.playable).toBe(false);
+  });
+
+  test("search 匿名补充开关关闭时跳过 QQ，只回网易云结果", async () => {
     const neteaseMock = createMockProvider("netease", {
       search: mock(async () => [
         { id: "netease:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
@@ -100,12 +127,69 @@ describe("AggregatedMusicProvider", () => {
         { id: "qq:exclusive", title: "晴天", artist: "周杰伦", durationMs: 269000 },
       ]),
     });
-    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+      allowAnonymousQqSearch: false,
+    });
 
-    // 只有网易云凭据（房间没挂 QQ 账号）：QQ 一个字节都不该往上游发。
     const results = await agg.search("晴天", 10, { netease: "nc_cookie_only" });
     expect(qqMock.search).not.toHaveBeenCalled();
     expect(results.map((song) => song.id)).toEqual(["netease:1001"]);
+  });
+
+  test("search 按房间偏好决定共有曲目主实体：默认网易云，QQ-only 反转", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "netease:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const cookie = { qq: "qc_cookie_only" };
+
+    // 只有 QQ 账号：默认偏好仍是网易云；传入反向偏好后共有曲目归 QQ。
+    const neteaseFirst = await agg.search("晴天", 10, cookie);
+    expect(neteaseFirst[0]?.id).toBe("netease:1001");
+
+    const qqFirst = (await agg.search("晴天", 10, cookie, {
+      platformPreference: ["qq", "netease"],
+    })) as AggregatedSongSearchResult[];
+    expect(qqFirst[0]?.id).toBe("qq:1001");
+    expect(qqFirst[0]?.sources?.length).toBe(2);
+  });
+
+  test("匿名补充关闭时 QQ 歌单、歌手与专辑检索都不再发往上游", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      searchArtists: mock(async () => [{ id: "netease:10", name: "周杰伦" }]),
+      searchAlbums: mock(async () => [{ id: "netease:20", name: "范特西" }]),
+    });
+    const qqMock = createMockProvider("qq", {
+      getPlaylistSongs: mock(async (id: string) => ({
+        info: { id, name: "QQ Playlist", songCount: 0 },
+        songs: [],
+      })),
+      searchArtists: mock(async () => [{ id: "qq:10", name: "周杰伦" }]),
+      searchAlbums: mock(async () => [{ id: "qq:20", name: "范特西" }]),
+    });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+      allowAnonymousQqSearch: false,
+    });
+
+    await agg.searchArtists("周杰伦", 10, { netease: "nc_cookie_only" });
+    await agg.searchAlbums("范特西", 10, { netease: "nc_cookie_only" });
+    expect(qqMock.searchArtists).not.toHaveBeenCalled();
+    expect(qqMock.searchAlbums).not.toHaveBeenCalled();
+    await expect(
+      agg.getPlaylistSongs("qq:12345", { netease: "nc_cookie_only" })
+    ).rejects.toThrow("QQ 音乐匿名音源已关闭");
+    expect(qqMock.getPlaylistSongs).not.toHaveBeenCalled();
   });
 
   test("search 非会员 QQ 账号池里，会员专享曲目标记不可播放", async () => {

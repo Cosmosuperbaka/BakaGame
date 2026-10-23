@@ -433,6 +433,16 @@ export const ENV_ENTRIES: EnvEntry[] = [
     sample: "true",
     note: ["网易云全局解灰（默认开启）：缺省值，线上开关存 app_setting，改动只影响后续请求。"],
   },
+  {
+    name: "ENABLE_ANONYMOUS_QQ_SEARCH",
+    layer: "T3",
+    documented: true,
+    sample: "true",
+    note: [
+      "QQ 音乐匿名补充检索（默认开启）：没有 QQ 账号的房间用匿名通道补充免费曲；",
+      "上游限流时可关闭止损，系统连续失败后也会自动熔断。",
+    ],
+  },
 
   // ==================== DEV 脚本与 CI 专用 ====================
   { name: "NETEASE_COOKIE", layer: "DEV", secret: true },

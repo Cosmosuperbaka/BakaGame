@@ -11,6 +11,7 @@ export const runtimeSettingKeySchema = z.enum([
   "clientMinDesktopVersion",
   "clientMinMobileVersion",
   "enableGeneralUnblock",
+  "enableAnonymousQqSearch",
 ]);
 
 export type RuntimeSettingKey = z.infer<typeof runtimeSettingKeySchema>;
@@ -49,6 +50,7 @@ export interface RuntimeSettingDefaults {
   clientMinDesktopVersion?: string;
   clientMinMobileVersion?: string;
   enableGeneralUnblock?: boolean;
+  enableAnonymousQqSearch?: boolean;
 }
 
 export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescriptor> = {
@@ -77,6 +79,15 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
     note: "关闭后受限曲目只回试听片段判定，不再尝试换取完整音频；改动只影响其后的请求。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableGeneralUnblock === false ? "false" : "true"),
+    kind: "boolean",
+  },
+  enableAnonymousQqSearch: {
+    key: "enableAnonymousQqSearch",
+    envVar: "ENABLE_ANONYMOUS_QQ_SEARCH",
+    title: "QQ 音乐匿名补充检索",
+    note: "关闭后没有 QQ 账号的房间不再用匿名通道补充检索；已选中的匿名曲目仍会尝试播放。上游限流时可手动止损，系统也会在连续失败后自动熔断。",
+    schema: booleanText,
+    defaultValue: (defaults) => (defaults.enableAnonymousQqSearch === false ? "false" : "true"),
     kind: "boolean",
   },
 };

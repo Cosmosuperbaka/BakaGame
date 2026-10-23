@@ -90,7 +90,9 @@ export class AppSettings {
     return this.raw(key);
   }
 
-  boolean(key: Extract<RuntimeSettingKey, "enableGeneralUnblock">): boolean {
+  boolean(
+    key: Extract<RuntimeSettingKey, "enableGeneralUnblock" | "enableAnonymousQqSearch">
+  ): boolean {
     return this.raw(key) === "true";
   }
 

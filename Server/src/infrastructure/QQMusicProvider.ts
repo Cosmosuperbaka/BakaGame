@@ -27,6 +27,12 @@ export interface QQMusicProviderOptions {
   logger?: EventLogger;
   now?: () => number;
   maxConcurrentRequests?: number;
+  /** 匿名请求单独限流，避免补充音源挤占已登录账号的并发位。 */
+  anonymousMaxConcurrentRequests?: number;
+  /** 匿名检索的等待上限；超时只影响这次补充，不阻塞另一侧音源。 */
+  anonymousSearchTimeoutMs?: number;
+  /** 匿名检索缓存时长；公共检索结果可以跨房间复用，压低上游请求量。 */
+  anonymousSearchCacheTtlMs?: number;
   amllMaxConcurrentRequests?: number;
   amllMaxQueuedRequests?: number;
   amllRequestTimeoutMs?: number;
@@ -36,10 +42,37 @@ export interface QQMusicProviderOptions {
 }
 
 const SEARCH_CACHE_TTL_MS = 60 * 1000;
+const ANONYMOUS_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const ANONYMOUS_SEARCH_TIMEOUT_MS = 4000;
+/** 匿名检索连续失败/空结果的上限：达到后短暂停止补充，避免持续打限流中的上游。 */
+const ANONYMOUS_FAILURE_THRESHOLD = 3;
+const ANONYMOUS_EMPTY_THRESHOLD = 5;
+const ANONYMOUS_COOLDOWN_MS = 60 * 1000;
 const SONG_METADATA_CACHE_TTL_MS = 10 * 60 * 1000;
 const SONG_AUDIO_CACHE_TTL_MS = 5 * 60 * 1000;
 const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
 const LOGIN_STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
+
+/**
+ * 给匿名补充检索加等待上限。超时后原请求仍可能完成，因此必须提前挂一个
+ * `catch`，否则迟到的拒绝会变成 unhandledRejection（Bun 会终止进程）。
+ */
+async function withAnonymousTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new AppError("MUSIC_API_TIMEOUT", "QQ 音乐匿名检索超时")),
+      timeoutMs
+    );
+    (timer as { unref?: () => void }).unref?.();
+  });
+  void task.catch(() => {});
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export const stripHtmlTags = (val: unknown): string => {
   if (typeof val !== "string") return "";
@@ -206,8 +239,12 @@ export class QQMusicProvider implements MusicProvider {
   private readonly amllCache: LRUCache<string, string>;
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
   private readonly queue: PQueue;
+  private readonly anonymousQueue: PQueue;
   private readonly amllQueue: PQueue;
   private readonly options: QQMusicProviderOptions;
+  private anonymousFailureStreak = 0;
+  private anonymousEmptyStreak = 0;
+  private anonymousBlockedUntil = 0;
 
   constructor(options: QQMusicProviderOptions = {}) {
     this.options = options;
@@ -224,8 +261,52 @@ export class QQMusicProvider implements MusicProvider {
       ttl: LOGIN_STATUS_CACHE_TTL_MS,
     });
     this.queue = new PQueue({ concurrency: Math.max(1, options.maxConcurrentRequests ?? 4) });
+    this.anonymousQueue = new PQueue({
+      concurrency: Math.max(1, options.anonymousMaxConcurrentRequests ?? 1),
+    });
     this.amllQueue = new PQueue({
       concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3),
+    });
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
+  private queueFor(cookie?: string): PQueue {
+    return cookie ? this.queue : this.anonymousQueue;
+  }
+
+  private anonymousCircuitOpen(): boolean {
+    return this.now() < this.anonymousBlockedUntil;
+  }
+
+  private noteAnonymousSearchResult(keyword: string, resultCount: number): void {
+    if (resultCount > 0) {
+      this.anonymousFailureStreak = 0;
+      this.anonymousEmptyStreak = 0;
+      return;
+    }
+    this.anonymousFailureStreak = 0;
+    this.anonymousEmptyStreak += 1;
+    if (this.anonymousEmptyStreak >= ANONYMOUS_EMPTY_THRESHOLD) this.openAnonymousCircuit(keyword);
+  }
+
+  private noteAnonymousSearchFailure(keyword: string): void {
+    this.anonymousEmptyStreak = 0;
+    this.anonymousFailureStreak += 1;
+    if (this.anonymousFailureStreak >= ANONYMOUS_FAILURE_THRESHOLD) {
+      this.openAnonymousCircuit(keyword);
+    }
+  }
+
+  private openAnonymousCircuit(keyword: string): void {
+    this.anonymousFailureStreak = 0;
+    this.anonymousEmptyStreak = 0;
+    this.anonymousBlockedUntil = this.now() + ANONYMOUS_COOLDOWN_MS;
+    this.options.logger?.warn?.("QQ 音乐匿名检索连续失败，暂时熔断", {
+      keyword,
+      cooldownMs: ANONYMOUS_COOLDOWN_MS,
     });
   }
 
@@ -259,7 +340,14 @@ export class QQMusicProvider implements MusicProvider {
     const cached = this.cache.get(cacheKey) as SongSearchResult[] | undefined;
     if (cached) return cached;
 
-    const songs = await this.queue.add(async () => {
+    if (!cookie && this.anonymousCircuitOpen()) {
+      this.options.logger?.debug?.("QQ 音乐匿名检索处于熔断期，本轮跳过", {
+        keyword: normalized,
+      });
+      return [];
+    }
+
+    const task = this.queueFor(cookie).add(async () => {
       const res = await qqmusic.search({
         keywords: normalized,
         limit: normalizedLimit,
@@ -304,8 +392,26 @@ export class QQMusicProvider implements MusicProvider {
         .filter((s) => s.id && s.title);
     });
 
-    const result = songs ?? [];
-    this.cache.set(cacheKey, result, { ttl: SEARCH_CACHE_TTL_MS });
+    let result: SongSearchResult[];
+    try {
+      const settled = cookie
+        ? await task
+        : await withAnonymousTimeout(
+            task,
+            this.options.anonymousSearchTimeoutMs ?? ANONYMOUS_SEARCH_TIMEOUT_MS
+          );
+      result = settled ?? [];
+    } catch (error) {
+      if (!cookie) this.noteAnonymousSearchFailure(normalized);
+      throw error;
+    }
+
+    if (!cookie) this.noteAnonymousSearchResult(normalized, result.length);
+    this.cache.set(cacheKey, result, {
+      ttl: cookie
+        ? SEARCH_CACHE_TTL_MS
+        : (this.options.anonymousSearchCacheTtlMs ?? ANONYMOUS_SEARCH_CACHE_TTL_MS),
+    });
     return result;
   }
 
@@ -342,7 +448,7 @@ export class QQMusicProvider implements MusicProvider {
     const cached = this.cache.get(cacheKey) as SongDetails | undefined;
     if (cached) return cached;
 
-    const res = await this.queue.add(async () => {
+    const res = await this.queueFor(cookie).add(async () => {
       const detailRes = await qqmusic.song_detail({ id: mid, cookie });
       const body = asRecord(detailRes.body);
       const data = asRecord(body.data);
@@ -422,7 +528,7 @@ export class QQMusicProvider implements MusicProvider {
     const cached = this.cache.get(cacheKey) as string | undefined;
     if (cached) return cached;
 
-    const audioUrl = await this.queue.add(async () => {
+    const audioUrl = await this.queueFor(cookie).add(async () => {
       // 多级音质优雅降级链：有 Cookie 时优先尝试 320k，不可用或无 Cookie 时降级至标准 128k，再降级至 m4a (AAC)
       // 严禁采纳幽灵前缀 RS02（该前缀在 CDN 上恒为 404）
       const qualities = cookie ? ["320", "128", "m4a"] : ["128", "m4a"];
@@ -627,7 +733,7 @@ export class QQMusicProvider implements MusicProvider {
       throw new AppError("INVALID_PLAYLIST", `无效的 QQ 音乐歌单 ID: ${playlistId}`);
     }
 
-    const res = await this.queue.add(async () => {
+    const res = await this.queueFor(cookie).add(async () => {
       const detailRes = await qqmusic.playlist_detail({ id: dissId, cookie });
       const detailBody = asRecord(detailRes.body);
       const dirinfo = firstRecord(detailBody.dirinfo, asRecord(detailBody.data).dirinfo);
@@ -689,7 +795,7 @@ export class QQMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
 
-    const res = await this.queue.add(async () => {
+    const res = await this.queueFor(cookie).add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 1, limit, cookie });
       const searchResBody = asRecord(searchRes.body);
       const dataBody = firstRecord(
@@ -726,7 +832,7 @@ export class QQMusicProvider implements MusicProvider {
   ): Promise<SongSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(artistId);
-    const res = await this.queue.add(async () => {
+    const res = await this.queueFor(cookie).add(async () => {
       const songsRes = await qqmusic.artist_songs({ id: mid, limit: 100, cookie });
       const songsBody = asRecord(songsRes.body);
       const rawSongs = readRecords(songsBody.songs || asRecord(songsBody.data).songList);
@@ -776,7 +882,7 @@ export class QQMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
 
-    const res = await this.queue.add(async () => {
+    const res = await this.queueFor(cookie).add(async () => {
       const searchRes = await qqmusic.search({ keywords: normalized, type: 2, limit, cookie });
       const searchResBody = asRecord(searchRes.body);
       const dataBody = firstRecord(

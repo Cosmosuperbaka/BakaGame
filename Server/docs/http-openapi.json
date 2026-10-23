@@ -5155,7 +5155,8 @@
                                 "enum": [
                                   "clientMinDesktopVersion",
                                   "clientMinMobileVersion",
-                                  "enableGeneralUnblock"
+                                  "enableGeneralUnblock",
+                                  "enableAnonymousQqSearch"
                                 ]
                               },
                               "title": {
@@ -5277,7 +5278,8 @@
                         "enum": [
                           "clientMinDesktopVersion",
                           "clientMinMobileVersion",
-                          "enableGeneralUnblock"
+                          "enableGeneralUnblock",
+                          "enableAnonymousQqSearch"
                         ]
                       },
                       "value": {
@@ -5319,7 +5321,8 @@
                                 "enum": [
                                   "clientMinDesktopVersion",
                                   "clientMinMobileVersion",
-                                  "enableGeneralUnblock"
+                                  "enableGeneralUnblock",
+                                  "enableAnonymousQqSearch"
                                 ]
                               },
                               "title": {
