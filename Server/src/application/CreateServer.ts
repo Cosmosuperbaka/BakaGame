@@ -2,6 +2,7 @@ import { createApp, type AppDependencies } from "../transport/App";
 import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
+import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
@@ -199,11 +200,18 @@ export function createServer(
       android: env.clientPackageAndroidUrl,
     },
   });
+  // 状态页历史账本：有库就落库并在启动时读回窗口，没库也照样记本次运行的日格，
+  // 页面因此永远有数据可读，只是重启后条带会空。
+  const statusHistory = new StatusHistoryStore({
+    database,
+    now: () => Date.now(),
+  });
   const app = createApp({
     ...appOptions,
     env,
     logger,
     bangumiImages: images,
+    statusHistory,
     sonGuessrService: song,
     ceeService: cee,
     account,
@@ -214,6 +222,8 @@ export function createServer(
       settings.close();
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();
+      // 状态历史最后落一次库：日格计数只在内存里攒着，停机不 flush 就丢掉今天这一段。
+      await statusHistory.flush();
       await account?.visits.close();
       const results = await Promise.allSettled([
         cee.close(),
@@ -229,6 +239,8 @@ export function createServer(
   });
   return {
     ...app,
+    /** 状态历史账本：启动时读回窗口、运行期定时 flush，由 Index 掌握节奏。 */
+    statusHistory,
     /**
      * 把在线玩家数报给数据 Worker：更新器据此调整上游速率（没人玩就慢慢更新）。
      * 上报失败无所谓 —— 顶多这一分钟按旧速率跑。

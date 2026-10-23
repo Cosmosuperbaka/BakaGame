@@ -7,15 +7,9 @@ import type { AppEnv } from "../src/config/Env";
 import changelog from "../../Client/src/data/changelog.json";
 import { latestStableVersion } from "../src/infrastructure/Release";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import {
-  PUBLIC_STATUS_COMPONENT_IDS,
-  type PublicStatusSnapshot,
-} from "../src/shared/Status";
+import { PUBLIC_STATUS_COMPONENT_IDS, type PublicStatusSnapshot } from "../src/shared/Status";
 import type { ExternalStatusProbe } from "../src/infrastructure/ExternalStatusProbe";
-import {
-  statusRoutes,
-  type StatusRoutesDependencies,
-} from "../src/transport/routes/Status";
+import { statusRoutes, type StatusRoutesDependencies } from "../src/transport/routes/Status";
 import { createTestApp } from "./AppFixtures";
 
 const INTERNAL_SEARCH_URL = "http://10.23.45.67:7700";
@@ -73,7 +67,7 @@ describe("公开状态接口", () => {
       imageCache: { available: false },
     });
 
-    expect(componentLevel(body, "service")).toBe("degraded");
+    expect(componentLevel(body, "backend")).toBe("degraded");
     expect(componentLevel(body, "search")).toBe("degraded");
     expect(componentLevel(body, "dataset")).toBe("degraded");
     expect(componentLevel(body, "images")).toBe("degraded");
@@ -93,11 +87,11 @@ describe("公开状态接口", () => {
         externalProbe: external,
       });
 
-      expect(componentLevel(body, "service")).toBe("operational");
+      expect(componentLevel(body, "backend")).toBe("operational");
       expect(componentLevel(body, "search")).toBe("operational");
       expect(componentLevel(body, "dataset")).toBe("operational");
       expect(componentLevel(body, "images")).toBe("operational");
-      expect(componentLevel(body, "external")).toBe("unknown");
+      expect(componentLevel(body, "upstream")).toBe("unknown");
       expect(body.level).toBe("operational");
       expect(body.version).toBe("unknown");
     } finally {
@@ -114,8 +108,8 @@ describe("公开状态接口", () => {
     const { response, body } = await readStatus({ externalProbe: external });
 
     expect(response.status).toBe(200);
-    expect(componentLevel(body, "external")).toBe("unknown");
-    expect(componentLevel(body, "service")).toBe("operational");
+    expect(componentLevel(body, "upstream")).toBe("unknown");
+    expect(componentLevel(body, "backend")).toBe("operational");
   });
 
   test("未配置搜索、数据集与图床时对应项为未知", async () => {
@@ -124,7 +118,7 @@ describe("公开状态接口", () => {
     expect(componentLevel(body, "search")).toBe("unknown");
     expect(componentLevel(body, "dataset")).toBe("unknown");
     expect(componentLevel(body, "images")).toBe("unknown");
-    expect(componentLevel(body, "external")).toBe("unknown");
+    expect(componentLevel(body, "upstream")).toBe("unknown");
   });
 
   test("短缓存合并重复请求，过期后重新探测", async () => {
@@ -206,8 +200,9 @@ describe("公开状态接口", () => {
     release();
     const responses = await Promise.all(requests);
     expect(fetches).toBe(1);
-    const bodies = (await Promise.all(responses.map((response) => response.json()))) as
-      PublicStatusSnapshot[];
+    const bodies = (await Promise.all(
+      responses.map((response) => response.json())
+    )) as PublicStatusSnapshot[];
     expect(bodies[0]).toEqual(bodies[1]!);
     expect(bodies[1]).toEqual(bodies[2]!);
   });

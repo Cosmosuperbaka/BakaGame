@@ -71,6 +71,13 @@
       "when": 1792534604665,
       "tag": "0009_badges",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1792766555535,
+      "tag": "0010_status_daily",
+      "breakpoints": true
     }
   ]
 }

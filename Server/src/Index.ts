@@ -67,19 +67,32 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad } = createServer({
-  env,
-  database,
-  gameRecords,
-  whoIsFakerService,
-  logger,
-  isShuttingDown: () => isShuttingDown,
-  onTriggerShutdown: async () => {
-    isShuttingDown = true;
-    // 这里只翻停机标记：`/readyz` 随之回 503，新 WS 握手也一并被拒（两道闸门读同一份状态）。
-    // 向各房间广播停机通知是 notify-shutdown 路由自己的事，真正的排空与释放仍归后续 signal 的唯一任务。
-  },
+const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad, statusHistory } =
+  createServer({
+    env,
+    database,
+    gameRecords,
+    whoIsFakerService,
+    logger,
+    isShuttingDown: () => isShuttingDown,
+    onTriggerShutdown: async () => {
+      isShuttingDown = true;
+      // 这里只翻停机标记：`/readyz` 随之回 503，新 WS 握手也一并被拒（两道闸门读同一份状态）。
+      // 向各房间广播停机通知是 notify-shutdown 路由自己的事，真正的排空与释放仍归后续 signal 的唯一任务。
+    },
+  });
+
+// 状态历史：启动时读回窗口内的日格，之后每 5 分钟落一次库。
+// 探测本身由状态接口按需触发，这里只管把内存里的计数搬进表，不额外加一条常驻探测。
+void statusHistory.load().catch((error: unknown) => {
+  logger.warn("状态历史读取失败，条带从本次运行开始积累", describeError(error));
 });
+const statusFlushIntervalId = setInterval(() => {
+  void statusHistory.flush().catch((error: unknown) => {
+    logger.warn("状态历史落库失败", describeError(error));
+  });
+}, 5 * 60_000);
+statusFlushIntervalId.unref();
 
 // 定时执行房间闲置清理与掉线超时检查。
 // 最短超时窗口为 10 分钟，10 s 轮询足够精度，无需1 s 高频空转。
@@ -222,6 +235,7 @@ const shutdown = (signal?: string): Promise<void> => {
     clearInterval(intervalId);
     clearInterval(sentryHeartbeatIntervalId);
     clearInterval(sentryRuntimeMetricsIntervalId);
+    clearInterval(statusFlushIntervalId);
 
     // 每款游戏独立通知，不能因一款广播失败跳过剩余资源。
     await attempt("notify.faker", () => whoIsFakerService.notifyShutdown());

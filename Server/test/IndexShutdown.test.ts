@@ -10,8 +10,9 @@ import {
 const completed = (calls: string[]) =>
   calls.filter((call) => call.endsWith(":end")).map((call) => call.slice(0, -4));
 const assertTimers = (harness: Awaited<ReturnType<typeof createIndexShutdownHarness>>) => {
-  expect(harness.intervals).toHaveLength(3);
-  expect(harness.intervals.map((timer) => timer.cleared)).toEqual([1, 1, 1]);
+  // 房间清理、Sentry 心跳、运行时指标，外加状态历史落库：四个都要在停机路径里清掉。
+  expect(harness.intervals).toHaveLength(4);
+  expect(harness.intervals.map((timer) => timer.cleared)).toEqual([1, 1, 1, 1]);
   expect(harness.timeouts).toHaveLength(1);
   // 看门狗必须与预算常量同源，且不得 unref（unref 后事件循环转空时它不会触发 → 假成功）。
   expect(harness.timeouts[0]).toMatchObject({

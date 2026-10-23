@@ -1,6 +1,10 @@
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
+  type PublicStatusCell,
   type PublicStatusComponent,
+  type PublicStatusComponentId,
+  type PublicStatusHistory,
+  type PublicStatusHistoryEntry,
   type PublicStatusLevel,
   type PublicStatusSnapshot,
 } from "@bakagame/shared";
@@ -50,7 +54,7 @@ export const parseSystemStatus = (value: unknown): PublicStatusSnapshot => {
   };
 };
 
-/** 页面手动刷新时调用；不做轮询，失败直接抛给页面按「未知」降级。 */
+/** 页面手动刷新时调用；失败直接抛给页面按「未知」降级。 */
 export const fetchSystemStatus = async (): Promise<PublicStatusSnapshot> => {
   const response = await fetch(resolveServerUrl("/api/status"), {
     cache: "no-store",
@@ -59,4 +63,60 @@ export const fetchSystemStatus = async (): Promise<PublicStatusSnapshot> => {
   });
   if (!response.ok) throw new Error(`状态接口返回 HTTP ${response.status}`);
   return parseSystemStatus(await response.json());
+};
+
+const parseRatio = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
+
+/**
+ * 校验 `/api/status/history`。逐组件、逐格宽松收下：读不到的格子按「无样本」渲染，
+ * 历史是页面里最不要紧的一块，任何一处形状不合都不该把当前状态一起拖没。
+ */
+export const parseStatusHistory = (value: unknown): PublicStatusHistory => {
+  if (!value || typeof value !== "object") throw new Error("历史接口返回了无效数据");
+  const record = value as Record<string, unknown>;
+  if (typeof record.days !== "number" || !Array.isArray(record.entries)) {
+    throw new Error("历史接口返回了无效数据");
+  }
+  const entries: PublicStatusHistoryEntry[] = record.entries.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.id !== "string" || !COMPONENT_IDS.has(entry.id)) return [];
+    if (!Array.isArray(entry.cells)) return [];
+    const cells: PublicStatusCell[] = entry.cells.flatMap((raw) => {
+      if (!raw || typeof raw !== "object") return [];
+      const cell = raw as Record<string, unknown>;
+      if (typeof cell.day !== "string" || typeof cell.total !== "number" || !isLevel(cell.level)) {
+        return [];
+      }
+      return [
+        { day: cell.day, total: cell.total, ratio: parseRatio(cell.ratio), level: cell.level },
+      ];
+    });
+    const uptime = Array.isArray(entry.uptime)
+      ? entry.uptime.flatMap((raw) => {
+          if (!raw || typeof raw !== "object") return [];
+          const span = raw as Record<string, unknown>;
+          if (typeof span.days !== "number") return [];
+          return [{ days: span.days, ratio: parseRatio(span.ratio) }];
+        })
+      : [];
+    return [{ id: entry.id as PublicStatusComponentId, uptime, cells }];
+  });
+  return {
+    days: record.days,
+    generatedAt: typeof record.generatedAt === "number" ? record.generatedAt : Date.now(),
+    entries,
+  };
+};
+
+/** 历史一次读满展示窗口；读失败由页面单独降级，不影响当前状态。 */
+export const fetchStatusHistory = async (): Promise<PublicStatusHistory> => {
+  const response = await fetch(resolveServerUrl("/api/status/history"), {
+    cache: "no-store",
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`历史接口返回 HTTP ${response.status}`);
+  return parseStatusHistory(await response.json());
 };

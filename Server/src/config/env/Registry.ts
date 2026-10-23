@@ -237,6 +237,14 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。"],
   },
   {
+    name: "STATUS_FRONTEND_URL",
+    layer: "T1",
+    documented: true,
+    secret: false,
+    sample: "https://example.com/",
+    note: ["公开状态页「前端」一格的探测地址；不配则该组件显示未知。"],
+  },
+  {
     name: "OTEL_EXPORTER_OTLP_ENDPOINT",
     layer: "T1",
     documented: true,

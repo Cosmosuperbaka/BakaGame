@@ -30,7 +30,8 @@ import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
-import { statusRoutes } from "./routes/Status";
+import { createStatusAggregator, statusRoutes } from "./routes/Status";
+import { statusWsRoutes } from "./routes/StatusWs";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
@@ -39,6 +40,7 @@ import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
+import type { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import { resolveServerRelease } from "../infrastructure/Release";
 
 export interface AppDependencies {
@@ -52,6 +54,8 @@ export interface AppDependencies {
   onTriggerShutdown?: () => Promise<void> | void;
   /** 自建图床读取服务：提供时挂载 `/api/bangumi/*`（未提供时该路由 404）。 */
   bangumiImages?: BangumiImageService;
+  /** 状态页历史账本：提供时 `/api/status` 每次真实探测记一笔，并开放 `/api/status/history`。 */
+  statusHistory?: StatusHistoryStore;
   /** 账号系统（登录、oRPC、头像代理）：未提供时相关路由回 503 `ACCOUNT_DISABLED`。 */
   account?: AccountDependencies;
   /**
@@ -678,6 +682,7 @@ export const createApp = ({
   onTriggerShutdown,
   disposeResources,
   bangumiImages,
+  statusHistory,
   account,
   handshakeQuota: handshakeQuotaOverride,
   clientChannel,
@@ -704,6 +709,30 @@ export const createApp = ({
       globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
       ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
     });
+  // 状态聚合器只建一份：HTTP 快照、历史接口与 WS 实时通道读同一份缓存、记同一本账，
+  // 各建一套会让页面在手动刷新与自动推送之间看到两种口径。
+  const statusAggregator = createStatusAggregator({
+    isServiceAvailable: () => !isShuttingDown?.(),
+    meilisearchUrl: env.meilisearchUrl,
+    datasetPath: env.bangumiDbPath,
+    imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
+    frontendUrl: env.statusFrontendUrl,
+    roomHealth: () => ({
+      roomCount:
+        fakerService.getHealthSnapshot().roomCount +
+        (songService?.getHealthSnapshot().roomCount ?? 0) +
+        (characterService.getHealthSnapshot().roomCount ?? 0),
+      connectionCount:
+        fakerService.getHealthSnapshot().connectionCount +
+        (songService?.getHealthSnapshot().connectionCount ?? 0) +
+        (characterService.getHealthSnapshot().connectionCount ?? 0),
+    }),
+    version: () => resolveServerRelease() ?? "unknown",
+    externalProbe: env.betterStackApiKey
+      ? new BetterStackStatusProbe({ apiKey: env.betterStackApiKey })
+      : undefined,
+    history: statusHistory,
+  });
   const app = new Elysia({
     normalize: false,
     websocket: {
@@ -850,18 +879,7 @@ export const createApp = ({
       })
     )
     // ==================== 公开站点状态（只读聚合，字段白名单） ====================
-    .use(
-      statusRoutes({
-        isServiceAvailable: () => !isShuttingDown?.(),
-        meilisearchUrl: env.meilisearchUrl,
-        datasetPath: env.bangumiDbPath,
-        imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
-        version: () => resolveServerRelease() ?? "unknown",
-        externalProbe: env.betterStackApiKey
-          ? new BetterStackStatusProbe({ apiKey: env.betterStackApiKey })
-          : undefined,
-      })
-    )
+    .use(statusRoutes({ aggregator: statusAggregator, history: statusHistory }))
     .use(
       sentryTunnelRoutes({
         allowedProjectIds: env.sentryAllowedProjectIds,
@@ -875,6 +893,14 @@ export const createApp = ({
     .use(accountRoutes(account, logger))
     .use(clientChannelRoutes(clientChannel, clientArtifacts))
     // ==================== WebSocket 入口 ====================
+    // 状态页的只读通道：公开、不解析账号，只沿用同一把来源闸与停机闸。
+    .use(
+      statusWsRoutes({
+        aggregator: statusAggregator,
+        rejectOrigin: (headers, request) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+        sendError: (scope, error) => logger.warn(`${scope} 状态推送失败`, describeError(error)),
+      })
+    )
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema,
       response: ServerMessageSchema,

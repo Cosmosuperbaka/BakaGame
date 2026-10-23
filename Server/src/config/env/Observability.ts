@@ -22,6 +22,11 @@ export interface EnvObservability {
   sentryApiToken?: string;
   /** Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。 */
   betterStackApiKey?: string;
+  /**
+   * 前端公开基址：状态页的「前端」一格由服务端从外侧探这个地址得到。
+   * 不配则显示未知——后端无法凭「自己还活着」推断静态站点可达。
+   */
+  statusFrontendUrl?: string;
   /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
   sentryTracesSampleRate?: number;
   /**
@@ -141,6 +146,7 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
         : deploymentEnvironment !== "production",
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     betterStackApiKey: Bun.env.BETTERSTACK_API_KEY?.trim() || undefined,
+    statusFrontendUrl: Bun.env.STATUS_FRONTEND_URL?.trim() || undefined,
     sentryDsn,
     sentryApiToken,
     sentryAllowedProjectIds,

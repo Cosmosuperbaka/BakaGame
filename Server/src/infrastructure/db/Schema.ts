@@ -421,3 +421,23 @@ export const sitePageDaily = mysqlTable(
   },
   (table) => [primaryKey({ columns: [table.day, table.path] })]
 );
+
+/**
+ * 公开状态页的历史：一个组件一个北京时间自然日一行，存的是各级别的探测计数。
+ *
+ * 存计数而不是存每次探测的结果：90 天 × 7 个组件固定 630 行，探测频率再高也不会膨胀，
+ * 而可用率与日格都只由计数派生。`total` 为 0 的行不会出现（没有探测就不写），
+ * 「那一天没数据」由缺行表达，不用一行全零去冒充。
+ */
+export const statusDaily = mysqlTable(
+  "status_daily",
+  {
+    componentId: varchar("component_id", { length: 24 }).notNull(),
+    day: varchar("day", { length: 10 }).notNull(),
+    total: int("total").notNull(),
+    operational: int("operational").notNull(),
+    degraded: int("degraded").notNull(),
+    unknown: int("unknown").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.componentId, table.day] }), index("status_daily_day_idx").on(table.day)]
+);
