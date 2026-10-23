@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronRight, GitFork } from "lucide-react";
+import { ChevronRight, GitFork, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Hint } from "@/components/ui/Tooltip";
 import { creditLicenseLabel, type CreditDependency } from "@/lib/Credits";
@@ -8,17 +8,18 @@ import { cn } from "@/lib/Utils";
 import { DependencyGlyph } from "./CreditsIcons";
 
 /**
- * 依赖行的列轨。对齐靠列轨而不是每列各自 `w-*`：可变宽度的列（子依赖数、类型徽章）夹在
- * 包名与版本之间时，版本列会随每行内容左右跳动。这里每列都是固定 rem 轨，且**每行都渲染
- * 每一列**（没有内容时给一个占位 `—`），列与列之间因此是一条直线而不是逐行重排。
+ * 依赖行的列轨。对齐靠列轨而不是每列各自 `w-*`：可变宽度的列（子依赖数、类型图标）夹在
+ * 包名与版本之间时，版本列会随每行内容左右跳动。这里每列都是固定 rem 轨，列与列之间因此
+ * 是一条直线而不是逐行重排。
  *
  * 窄屏用 `hidden` 摘掉子依赖、类型与 License 三列，只剩「图标 · 包名 · 版本 · 箭头」四格，
  * 所以两套列轨的格数分别是 4 与 7（compact 宽屏 6）。少一格都会让版本列错位。
+ * 类型只占一格图标宽：它是次要元数据，不该用一只五字符宽的徽章去换行。
  * `compact` 给二级抽屉用：抽屉只有 32rem 宽，且子依赖已按类型分组，类型列是重复信息。
  */
 const NARROW_TRACKS = "grid-cols-[auto_minmax(0,1fr)_5rem_auto]";
 const ROW_GRID = {
-  full: "sm:grid-cols-[auto_minmax(0,1fr)_4.5rem_5.5rem_5.5rem_7rem_auto]",
+  full: "sm:grid-cols-[auto_minmax(0,1fr)_4.5rem_5.5rem_1.75rem_7rem_auto]",
   compact: "sm:grid-cols-[auto_minmax(0,1fr)_4.5rem_5rem_6.5rem_auto]",
 } as const;
 
@@ -99,13 +100,16 @@ export function DependencyRow({
       </span>
       {compact ? null : (
         <span data-slot="dep-type" className="hidden items-center justify-center sm:flex">
+          {/* 一枚工具图标顶掉原来的整只徽章：类型是次要元数据，不该占掉五个字符宽的列。
+              运行时依赖留空——固定列轨保证留空不会让后面的列左右跳动。 */}
           {isDevelopment ? (
-            <Badge variant="subtle" size="xs">
-              开发依赖
-            </Badge>
-          ) : (
-            <EmptyCell />
-          )}
+            <Hint label="开发依赖">
+              <span className="text-muted-foreground">
+                <Wrench aria-hidden="true" className="size-3.5" />
+                <span className="sr-only">开发依赖</span>
+              </span>
+            </Hint>
+          ) : null}
         </span>
       )}
       <span data-slot="dep-license" className="hidden items-center justify-center sm:flex">
