@@ -994,7 +994,11 @@ export class QQMusicProvider implements MusicProvider {
     return { status: "waiting", message: readString(body.message) ?? "等待扫码" };
   }
 
-  async getLoginStatus(rawCookie: MusicCookieInput): Promise<MusicLoginSession> {
+  async getLoginStatus(
+    rawCookie: MusicCookieInput,
+    _platform?: "netease" | "qq",
+    options: { forceRefresh?: boolean } = {}
+  ): Promise<MusicLoginSession> {
     const extracted = extractQqCookie(rawCookie);
     let currentCookie = extracted ?? (typeof rawCookie === "string" ? rawCookie : "");
     const trimmed = currentCookie.trim();
@@ -1003,7 +1007,8 @@ export class QQMusicProvider implements MusicProvider {
     }
 
     const cacheKey = `login-status:${trimmed}`;
-    const reused = this.loginStatusCache.get(cacheKey);
+    // 强制续期必须绕过缓存：缓存里是上一次校验结果，不会替我们换新 key。
+    const reused = options.forceRefresh ? undefined : this.loginStatusCache.get(cacheKey);
     if (reused) {
       return { cookie: reused.cookie, account: { ...reused.account } };
     }
@@ -1011,7 +1016,7 @@ export class QQMusicProvider implements MusicProvider {
     let statusRes = await qqmusic.login_status({ cookie: trimmed });
     // 状态接口本身也可能轮换 Cookie；有回写就先接住，避免继续拿旧 key 去续期。
     if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
-    if (!statusRes.body?.isLogin) {
+    if (options.forceRefresh || !statusRes.body?.isLogin) {
       try {
         const refreshRes = await qqmusic.login_refresh({ cookie: currentCookie });
         if (refreshRes.body?.code === 200 && refreshRes.body.cookieStr) {

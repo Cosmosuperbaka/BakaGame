@@ -73,7 +73,7 @@
 - QQ 网页扫码与移动端登录的续期接口不同：网页扫码用 `QQConnectLogin.LoginServer/QQLogin`（旧 `musickey` 换新 key），移动端/微信有 `refresh_token` 时走 `music.login.LoginServer/Login`。续期必须合并 Set-Cookie 与响应里的 `refresh_token` / `refresh_key` / `openid` / `access_token`，不能只取 `musickey`。
 - 登录与续期必须写入稳定的设备 `guid` 并保留在 Cookie 里；同一账号每次请求换 guid 会被平台当成新设备，容易触发风控或提前失效。
 - 服务端每次校验/续期拿到的新 Cookie 必须写回账号池，并只同步给号主自己的连接；同一账号重传本机旧 Cookie 时，服务端近期续期过的新 Cookie 优先，不能被旧副本反向覆盖。
-- 后台要按固定节奏主动续期 QQ 凭证，不能只依赖开局复核；续期失败只在平台明确判死时摘号，网络抖动不直接关闭账号。
+- 后台要按固定节奏主动续期 QQ 凭证，不能只依赖开局复核；续期必须走 `forceRefresh` 语义并绕过登录态缓存，不能只在 `isLogin=false` 时才换新，否则 key 仍有效时会一直拖到过期。续期失败只在平台明确判死时摘号，网络抖动不直接关闭账号。
 
 ### 房间账号池取号
 

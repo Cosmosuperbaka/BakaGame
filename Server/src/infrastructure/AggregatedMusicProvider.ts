@@ -626,10 +626,14 @@ export class AggregatedMusicProvider implements MusicProvider {
     return this.neteaseProvider.checkQrLogin!(key, platform, type);
   }
 
-  getLoginStatus(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession> {
+  getLoginStatus(
+    cookie: string,
+    platform?: "netease" | "qq",
+    options?: { forceRefresh?: boolean }
+  ): Promise<MusicLoginSession> {
     if (platform === "qq") {
-      return this.qqProvider.getLoginStatus!(cookie, platform);
+      return this.qqProvider.getLoginStatus!(cookie, platform, options);
     }
-    return this.neteaseProvider.getLoginStatus!(cookie, platform);
+    return this.neteaseProvider.getLoginStatus!(cookie, platform, options);
   }
 }

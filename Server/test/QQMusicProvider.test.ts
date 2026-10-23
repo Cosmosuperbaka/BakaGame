@@ -601,6 +601,29 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
     expect(statusCalls).toBe(2);
   });
 
+  it("forceRefresh 绕过缓存并主动换取新 Cookie", async () => {
+    const provider = new QQMusicProvider();
+    let refreshCalls = 0;
+    qqmusic.login_status = mock(async ({ cookie }: any) => ({
+      status: 200,
+      body: {
+        isLogin: true,
+        cookieStr: cookie,
+        account: { userId: "9", nickname: "已登录" },
+      },
+    })) as any;
+    qqmusic.login_refresh = mock(async () => {
+      refreshCalls += 1;
+      return { status: 200, body: { code: 200, cookieStr: `new_${refreshCalls}` } };
+    }) as any;
+
+    const first = await provider.getLoginStatus("old_cookie", "qq", { forceRefresh: true });
+    const second = await provider.getLoginStatus("old_cookie", "qq", { forceRefresh: true });
+    expect(first.cookie).toBe("new_1");
+    expect(second.cookie).toBe("new_2");
+    expect(refreshCalls).toBe(2);
+  });
+
   it("登录状态接口回写 Cookie 时优先采用新 Cookie", async () => {
     const provider = new QQMusicProvider();
     qqmusic.login_status = mock(async ({ cookie }: any) => ({

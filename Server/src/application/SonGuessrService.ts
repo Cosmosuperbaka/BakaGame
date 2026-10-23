@@ -313,7 +313,11 @@ interface MusicSessionRevalidation {
   /** 只用于失败文案里的平台名。 */
   label: string;
   verifySession: (platform?: MusicAuthPlatform) => void;
-  getLoginStatus: (cookie: string, platform?: MusicAuthPlatform) => Promise<MusicLoginSession>;
+  getLoginStatus: (
+    cookie: string,
+    platform?: MusicAuthPlatform,
+    options?: { forceRefresh?: boolean }
+  ) => Promise<MusicLoginSession>;
 }
 
 export interface SonGuessrServiceOptions {
@@ -1905,10 +1909,14 @@ export class SonGuessrService implements AdminRoomControl {
   private async refreshMusicPoolEntry(
     room: SonGuessrRoomRecord,
     entry: SonGuessrMusicPoolEntry,
-    getLoginStatus: (cookie: string, platform?: MusicAuthPlatform) => Promise<MusicLoginSession>
+    getLoginStatus: (
+      cookie: string,
+      platform?: MusicAuthPlatform,
+      options?: { forceRefresh?: boolean }
+    ) => Promise<MusicLoginSession>
   ): Promise<void> {
     try {
-      const result = await getLoginStatus(entry.cookie, "qq");
+      const result = await getLoginStatus(entry.cookie, "qq", { forceRefresh: true });
       if (!this.musicPool(room).includes(entry)) return;
       const cookieChanged = result.cookie !== entry.cookie;
       entry.cookie = this.requireMusicCookie(result.cookie);
@@ -3626,7 +3634,10 @@ export class SonGuessrService implements AdminRoomControl {
   private async refreshMusicSessionAccount(check: MusicSessionRevalidation): Promise<void> {
     const { room, platform, entry, operation, label, verifySession, getLoginStatus } = check;
     try {
-      const result = await getLoginStatus(entry.cookie, platform);
+      // QQ 的 key 寿命短：开局复核顺便强制换新，避免「还能用就不续期、过期后才救」。
+      const result = await getLoginStatus(entry.cookie, platform, {
+        forceRefresh: platform === "qq",
+      });
       verifySession(platform);
       const cookieChanged = result.cookie !== entry.cookie;
       entry.account = result.account;

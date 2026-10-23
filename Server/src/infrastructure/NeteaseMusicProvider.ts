@@ -93,7 +93,11 @@ export interface MusicProvider {
     platform?: "netease" | "qq",
     type?: "qq" | "wx" | "mobile"
   ): Promise<MusicQrLoginCheck>;
-  getLoginStatus?(cookie: string, platform?: "netease" | "qq"): Promise<MusicLoginSession>;
+  getLoginStatus?(
+    cookie: string,
+    platform?: "netease" | "qq",
+    options?: { forceRefresh?: boolean }
+  ): Promise<MusicLoginSession>;
   uploadDeviceInfo?(cookie: string, deviceName?: string): Promise<boolean>;
   getPlaylistSongs?(
     playlistId: string,
