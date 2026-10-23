@@ -202,6 +202,9 @@ export type CreditBrandId =
   | "sentry"
   | "eslint"
   | "githubactions"
+  | "github"
+  // 特别鸣谢里有官方字形的来源
+  | "neteasecloudmusic"
   // 依赖清单里会出现的品牌
   | "applemusic"
   | "betterauth"
@@ -236,13 +239,26 @@ export interface ContributingModel {
   url?: string;
 }
 
-/** 模型按公司分组。公司顺序取数据文件的声明顺序，新增公司追加到末尾。 */
+/**
+ * 模型按公司分组。展示序由 `sortCompaniesByLetter` 给出，数据文件的声明顺序不作依据。
+ */
 export interface ContributingCompany {
   company: string;
+  /**
+   * 拉丁转写的排序键，只给非拉丁公司名（中文按拼音逐字转写，不带分隔符）。
+   * 英文公司名省略，排序直接用 `company`。
+   */
+  sortKey?: string;
   /** 厂商标识，展示在公司标题旁 */
   logo: CreditBrandId;
   models: ContributingModel[];
 }
+
+/**
+ * 特别鸣谢条目的标识。有官方品牌字形的用 `CreditBrandId`；
+ * 没有官方字形的用一枚说明来源性质的通用图标键，不回退到近似的品牌字形（见 `Credits.md` §2）。
+ */
+export type SpecialThanksIcon = CreditBrandId | "code" | "database" | "wiki" | "music";
 
 /**
  * 特别鸣谢的一项：名称、一行说明与外部来源。
@@ -252,6 +268,7 @@ export interface SpecialThanksEntry {
   name: string;
   description: string;
   url?: string;
+  icon: SpecialThanksIcon;
 }
 
 /**
@@ -262,6 +279,24 @@ export function sortModelsByRelease(models: readonly ContributingModel[]): Contr
   return [...models].sort(
     (left, right) =>
       left.releasedAt.localeCompare(right.releasedAt) || left.name.localeCompare(right.name)
+  );
+}
+
+/**
+ * 公司展示序：英文公司名按字母、中文公司名按拼音，合成同一份 A-Z 序。
+ *
+ * 不能直接交给 `Intl.Collator` 的 zh 拼音排序：ICU 把汉字整块排在拉丁字母之前，
+ * 得到的是「中文公司全在前、英文全在后」而不是交错结果。因此中文公司名在数据文件里
+ * 给出拉丁转写 `sortKey`，这里只比转写；英文公司名不写 `sortKey`，直接用公司名。
+ * 新增中文公司时必须补转写，否则它会按汉字码位排到英文之后。
+ */
+const companyCollator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+export function sortCompaniesByLetter(
+  companies: readonly ContributingCompany[]
+): ContributingCompany[] {
+  return [...companies].sort((left, right) =>
+    companyCollator.compare(left.sortKey ?? left.company, right.sortKey ?? right.company)
   );
 }
 

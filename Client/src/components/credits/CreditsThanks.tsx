@@ -3,8 +3,14 @@ import { ArrowUpRight } from "lucide-react";
 import type { SpecialThanksEntry } from "@/lib/Credits";
 import { pressable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
+import { ThanksGlyph } from "./CreditsIcons";
 
-const CARD_CLASS = "flex h-full min-w-0 flex-col gap-1 rounded-md border bg-card p-3 shadow-2xs";
+const CARD_CLASS =
+  "flex h-full min-w-0 items-start gap-2.5 rounded-md border bg-card p-3 shadow-2xs";
+
+/** 图标收在一枚固定尺寸的方块里：条目多起来时左缘成一条直线。 */
+const ICON_TILE_CLASS =
+  "flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground";
 
 /**
  * 特别鸣谢：玩法原型、资料站与曲库来源，内容和顺序只在 `data/CreditsContent.ts` 维护。
@@ -27,29 +33,47 @@ export function CreditsThanks({ entries }: { entries: readonly SpecialThanksEntr
                 {...pressable}
                 className={cn(CARD_CLASS, "group transition-colors hover:bg-accent/40")}
               >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate text-sm font-medium">{entry.name}</span>
-                  {/* 外链指示：静止压淡，悬停沿外链方向挪动并归位到前景色。 */}
-                  <ArrowUpRight
-                    aria-hidden="true"
-                    className="size-3.5 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground"
-                  />
-                </span>
-                <span className="text-xs break-words text-muted-foreground">
-                  {entry.description}
-                </span>
+                <ThanksContent entry={entry} withArrow />
               </motion.a>
             ) : (
               <div className={CARD_CLASS}>
-                <span className="text-sm font-medium">{entry.name}</span>
-                <span className="text-xs break-words text-muted-foreground">
-                  {entry.description}
-                </span>
+                <ThanksContent entry={entry} />
               </div>
             )}
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+function ThanksContent({
+  entry,
+  withArrow = false,
+}: {
+  entry: SpecialThanksEntry;
+  withArrow?: boolean;
+}) {
+  return (
+    <>
+      <span className={ICON_TILE_CLASS}>
+        <ThanksGlyph icon={entry.icon} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-medium">{entry.name}</span>
+          {/* 外链指示：静止压淡，悬停沿外链方向挪动并归位到前景色。 */}
+          {withArrow ? (
+            <ArrowUpRight
+              aria-hidden="true"
+              className="size-3.5 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground"
+            />
+          ) : null}
+        </span>
+        <span className="mt-0.5 block text-xs break-words text-muted-foreground">
+          {entry.description}
+        </span>
+      </span>
+    </>
   );
 }

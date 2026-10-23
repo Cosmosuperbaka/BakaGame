@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/Utils";
 import {
+  sortCompaniesByLetter,
   sortModelsByRelease,
   type ContributingCompany,
   type ContributingModel,
@@ -11,7 +12,8 @@ import { tappable } from "@/lib/Motion";
 import { CreditBrandMark } from "./CreditsIcons";
 
 /**
- * 参与开发的大模型：按数据文件里的公司顺序分组，组内用 `sortModelsByRelease` 按发布时间从早到晚收口。
+ * 参与开发的大模型：公司按 `sortCompaniesByLetter` 排（英文按字母、中文按拼音合成一份 A-Z 序），
+ * 组内用 `sortModelsByRelease` 按发布时间从早到晚收口。两处的展示序都不看数据文件的书写顺序。
  *
  * 公司是一行：左侧厂商 Logo、名称与模型数（弱化），右侧模型徽章流式排列；
  * 窄屏时厂商信息在上、徽章换行在下。整块只有一个描边容器加分隔线，
@@ -27,7 +29,7 @@ export function CreditsModels({ models }: { models: readonly ContributingCompany
         参与开发的大模型
       </h2>
       <div className="mt-3 divide-y divide-border overflow-hidden rounded-md border bg-card shadow-2xs">
-        {models.map((company) => {
+        {sortCompaniesByLetter(models).map((company) => {
           const sortedModels = sortModelsByRelease(company.models);
           return (
             <div

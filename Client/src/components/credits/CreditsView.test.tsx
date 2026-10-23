@@ -97,21 +97,22 @@ describe("CreditsView", () => {
     ).toBeInTheDocument();
   });
 
-  it("参与开发的大模型按公司分行，组内按发布时间排序，只展示名称与模型数", () => {
+  it("参与开发的大模型按公司字母序分行、组内按发布时间排序，只展示名称与模型数", () => {
     renderView();
 
+    // 夹具里 Beta 声明在 Alpha 之前：展示序读作 Alpha、Beta 才说明公司序由排序给出，不取声明顺序。
     const groups = screen.getAllByTestId(/^credits-company-/);
     expect(groups.map((group) => group.getAttribute("data-testid"))).toEqual([
-      "credits-company-Beta",
       "credits-company-Alpha",
+      "credits-company-Beta",
     ]);
 
-    const betaModels = within(groups[0])
+    const betaModels = within(groups[1])
       .getAllByRole("listitem")
       .map((item) => item.textContent);
     expect(betaModels).toEqual(["Beta 先发", "Beta 后发"]);
-    expect(within(groups[0]).getByText("2 个模型")).toBeInTheDocument();
-    expect(within(groups[1]).getByText("1 个模型")).toBeInTheDocument();
+    expect(within(groups[1]).getByText("2 个模型")).toBeInTheDocument();
+    expect(within(groups[0]).getByText("1 个模型")).toBeInTheDocument();
     // releasedAt 只参与排序，不展示。
     expect(screen.queryByText("2026-01-01")).not.toBeInTheDocument();
   });
@@ -146,21 +147,37 @@ describe("CreditsView", () => {
     expect(within(reactCard).getByText("v19.3.0")).toBeInTheDocument();
   });
 
-  it("特别鸣谢按固定顺序列出五个来源，已确认来源为新标签外链", () => {
+  it("特别鸣谢按固定顺序列出五个来源，每条带标识且全部为新标签外链", () => {
     renderView();
 
     const section = screen.getByRole("region", { name: "特别鸣谢" });
-    const names = within(section)
-      .getAllByRole("listitem")
-      .map((item) => item.querySelector("span")?.textContent);
-    expect(names).toEqual(["CCB 原项目", "Bangumi 番组计划", "萌娘百科", "QQ音乐", "网易云音乐"]);
+    const items = within(section).getAllByRole("listitem");
+    expect(items.map((item) => item.querySelector(".font-medium")?.textContent)).toEqual([
+      "anime-character-guessr",
+      "Bangumi 番组计划",
+      "萌娘百科",
+      "QQ音乐",
+      "网易云音乐",
+    ]);
+    // 每条都有一枚标识：品牌字形或通用图标，两条路径都落成 svg。
+    for (const item of items) {
+      expect(item.querySelector("svg")).toBeInTheDocument();
+    }
+
+    const links = within(section).getAllByRole("link");
+    expect(links).toHaveLength(5);
+    for (const link of links) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noreferrer");
+    }
+
+    const guessr = within(section).getByRole("link", { name: /anime-character-guessr/ });
+    expect(guessr).toHaveAttribute("href", "https://github.com/kennylimz/anime-character-guessr");
+    // 玩法原型的作者署名随条目说明给出。
+    expect(guessr.textContent).toContain("Kenny Li");
 
     const bangumi = within(section).getByRole("link", { name: /Bangumi 番组计划/ });
     expect(bangumi).toHaveAttribute("href", "https://bgm.tv/");
-    expect(bangumi).toHaveAttribute("target", "_blank");
-    expect(bangumi).toHaveAttribute("rel", "noreferrer");
-    // CCB 的仓库与作者尚未确认：宁可不出外链，也不指向占位地址。
-    expect(within(section).queryByRole("link", { name: /CCB 原项目/ })).not.toBeInTheDocument();
   });
 
   it("依赖清单一级只列主包，传递依赖不出现在一级行里", () => {

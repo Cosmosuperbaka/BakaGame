@@ -1,5 +1,5 @@
 import { createElement, type CSSProperties, type ReactNode } from "react";
-import { Package } from "lucide-react";
+import { BookOpenText, Database, Music, Package } from "lucide-react";
 // AI 厂商与模型家族的官方单色字形：MIT 的纯 SVG 资产包，`?url` 交给 Vite 生成静态资源地址。
 // 统一走这一个包，避免多来源混用时线条粗细与视觉重量不一致。
 import alibabaIconUrl from "@lobehub/icons-static-svg/icons/alibaba.svg?url";
@@ -25,10 +25,12 @@ import SiEsbuild from "@icons-pack/react-simple-icons/icons/SiEsbuild";
 import SiEslint from "@icons-pack/react-simple-icons/icons/SiEslint";
 import SiFontawesome from "@icons-pack/react-simple-icons/icons/SiFontawesome";
 import SiFramer from "@icons-pack/react-simple-icons/icons/SiFramer";
+import SiGithub from "@icons-pack/react-simple-icons/icons/SiGithub";
 import SiGithubactions from "@icons-pack/react-simple-icons/icons/SiGithubactions";
 import SiLucide from "@icons-pack/react-simple-icons/icons/SiLucide";
 import SiMeilisearch from "@icons-pack/react-simple-icons/icons/SiMeilisearch";
 import SiMysql from "@icons-pack/react-simple-icons/icons/SiMysql";
+import SiNeteasecloudmusic from "@icons-pack/react-simple-icons/icons/SiNeteasecloudmusic";
 import SiPnpm from "@icons-pack/react-simple-icons/icons/SiPnpm";
 import SiPostcss from "@icons-pack/react-simple-icons/icons/SiPostcss";
 import SiRadixui from "@icons-pack/react-simple-icons/icons/SiRadixui";
@@ -45,7 +47,7 @@ import SiTypescript from "@icons-pack/react-simple-icons/icons/SiTypescript";
 import SiVite from "@icons-pack/react-simple-icons/icons/SiVite";
 import SiVitest from "@icons-pack/react-simple-icons/icons/SiVitest";
 import SiZod from "@icons-pack/react-simple-icons/icons/SiZod";
-import type { CreditBrandId } from "@/lib/Credits";
+import type { CreditBrandId, SpecialThanksIcon } from "@/lib/Credits";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -121,6 +123,9 @@ const BRAND_SOURCES = {
   sentry: { kind: "simple", Icon: SiSentry },
   eslint: { kind: "simple", Icon: SiEslint },
   githubactions: { kind: "simple", Icon: SiGithubactions },
+  github: { kind: "simple", Icon: SiGithub },
+  // 特别鸣谢里有官方字形的来源
+  neteasecloudmusic: { kind: "simple", Icon: SiNeteasecloudmusic },
   // 依赖清单里会出现的品牌
   applemusic: { kind: "simple", Icon: SiApplemusic },
   betterauth: { kind: "simple", Icon: SiBetterauth },
@@ -304,4 +309,34 @@ export function DependencyGlyph({
     className: cn("size-4 shrink-0", className),
     "aria-hidden": true,
   });
+}
+
+/**
+ * 特别鸣谢条目的通用字形：只给 simple-icons 与厂商图标包都没有官方字形的来源用，
+ * 取一枚说明「它是什么性质的来源」的 lucide 图标。不用近似的品牌字形顶替，
+ * 也不手绘——那种做法会让人以为我们拿到了对方的官方标识。
+ */
+const GENERIC_THANKS_ICONS = {
+  database: Database,
+  wiki: BookOpenText,
+  music: Music,
+  code: Package,
+} as const;
+
+/** 鸣谢条目标识：品牌键走官方字形，其余走通用字形；两条路径的外观尺寸一致。 */
+export function ThanksGlyph({
+  icon,
+  className,
+}: {
+  icon: SpecialThanksIcon;
+  className?: string;
+}): ReactNode {
+  if (icon in GENERIC_THANKS_ICONS) {
+    const Generic = GENERIC_THANKS_ICONS[icon as keyof typeof GENERIC_THANKS_ICONS];
+    return createElement(Generic, {
+      className: cn("size-4 shrink-0", className),
+      "aria-hidden": true,
+    });
+  }
+  return <CreditBrandMark brand={icon as CreditBrandId} className={className} />;
 }

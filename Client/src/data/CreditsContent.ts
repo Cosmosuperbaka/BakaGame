@@ -7,7 +7,9 @@
  *     仅参与讨论、咨询、评审或规划的不算。
  *   - 完成改动后，在文件末尾按「公司 → 发布时间」补上自己的名字与 `releasedAt`；
  *     已有公司里新增模型直接追加，页面展示前由 `sortModelsByRelease` 统一按时间排序。
- *   - 公司顺序取本文件的声明顺序；第一次出现的公司追加到末尾，不插队重排。
+ *   - 公司展示序由 `sortCompaniesByLetter` 收口：英文名按字母、中文名按 `sortKey` 的拼音
+ *     合成同一份 A-Z 序。本文件的声明顺序不作依据，新增公司直接追加到末尾即可；
+ *     中文公司名必须补 `sortKey`，否则会按汉字码位排到英文之后。
  *
  * `releasedAt` 只用于排序，页面上不展示；日期用 ISO `YYYY-MM-DD`。
  * 每个模型尽量带 `url` 发布页：优先厂商官方新闻/公告，其次官方文档的版本说明；确实没有公开页面时省略。
@@ -32,6 +34,7 @@ export const TECH_STACK_CATEGORIES: readonly { id: TechStackCategory; label: str
 export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   {
     company: "深度求索",
+    sortKey: "shenduqiuisuo",
     logo: "deepseek",
     models: [
       // 预览版先于正式快照发布，按发布时间排在快照之前；Pro / Flash 同属 V4 预览版公告。
@@ -72,6 +75,7 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   },
   {
     company: "智谱清言",
+    sortKey: "zhipuqingyan",
     logo: "zhipu",
     models: [
       {
@@ -174,6 +178,7 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   },
   {
     company: "腾讯混元",
+    sortKey: "tengxunhunyuan",
     logo: "tencent",
     models: [
       {
@@ -240,6 +245,7 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   },
   {
     company: "阿里千问",
+    sortKey: "aliqianwen",
     logo: "alibaba",
     models: [
       {
@@ -260,32 +266,38 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
 
 /**
  * 特别鸣谢：玩法原型、资料与曲库来源，数组顺序即页面展示顺序。
- * CCB 原项目的仓库地址与作者署名尚未经维护者确认：先不生成外链，确认后再补 `url`。
+ * `icon` 有官方品牌字形就用品牌键，没有就用一枚说明来源性质的通用图标，不用近似品牌顶替。
  */
 export const SPECIAL_THANKS: readonly SpecialThanksEntry[] = [
   {
-    name: "CCB 原项目",
-    description: "本作的玩法原型与规则来源；仓库地址与作者署名待维护者确认。",
+    name: "anime-character-guessr",
+    description: "本作的玩法原型与规则来源，作者 Kenny Li。",
+    url: "https://github.com/kennylimz/anime-character-guessr",
+    icon: "github",
   },
   {
     name: "Bangumi 番组计划",
     description: "番剧、角色与歌曲资料。",
     url: "https://bgm.tv/",
+    icon: "database",
   },
   {
     name: "萌娘百科",
     description: "角色与作品背景资料。",
     url: "https://zh.moegirl.org.cn/",
+    icon: "wiki",
   },
   {
     name: "QQ音乐",
     description: "歌曲检索与试听来源。",
     url: "https://y.qq.com/",
+    icon: "music",
   },
   {
     name: "网易云音乐",
     description: "歌曲检索与试听来源。",
     url: "https://music.163.com/",
+    icon: "neteasecloudmusic",
   },
 ];
 
