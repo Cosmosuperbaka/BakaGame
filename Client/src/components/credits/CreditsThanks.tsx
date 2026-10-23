@@ -56,7 +56,7 @@ function ThanksContent({
 }) {
   return (
     <>
-      <span className={ICON_TILE_CLASS}>
+      <span data-slot="thanks-icon" className={ICON_TILE_CLASS}>
         <ThanksGlyph icon={entry.icon} />
       </span>
       <span className="min-w-0 flex-1">

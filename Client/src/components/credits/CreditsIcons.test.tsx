@@ -55,7 +55,6 @@ const ALL_BRANDS = Object.keys({
   sentry: true,
   eslint: true,
   githubactions: true,
-  github: true,
   neteasecloudmusic: true,
   applemusic: true,
   betterauth: true,

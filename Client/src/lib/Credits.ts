@@ -202,7 +202,6 @@ export type CreditBrandId =
   | "sentry"
   | "eslint"
   | "githubactions"
-  | "github"
   // 特别鸣谢里有官方字形的来源
   | "neteasecloudmusic"
   // 依赖清单里会出现的品牌
@@ -255,10 +254,25 @@ export interface ContributingCompany {
 }
 
 /**
- * 特别鸣谢条目的标识。有官方品牌字形的用 `CreditBrandId`；
- * 没有官方字形的用一枚说明来源性质的通用图标键，不回退到近似的品牌字形（见 `Credits.md` §2）。
+ * 特别鸣谢条目的标识。三类来源：
+ * - 有官方单色品牌字形的用 `CreditBrandId`（走 `CreditBrandMark`）；
+ * - 官方标识自带配色、或站内已有共用字形的用下面的专用键，按彩色渲染，不套单色 mask；
+ * - 两者都没有的用一枚说明来源性质的通用图标键，不回退到近似的品牌字形（见 `Credits.md` §2）。
  */
-export type SpecialThanksIcon = CreditBrandId | "code" | "database" | "wiki" | "music";
+export type SpecialThanksIcon =
+  | CreditBrandId
+  | "code"
+  | "database"
+  | "wiki"
+  | "music"
+  /** QQ 音乐官方双色矢量：与猜歌的音乐账号设置共用同一份定义 */
+  | "qqmusic"
+  /** 复用首页 CEE 游戏入口的图标：玩法原型就是那款游戏本身 */
+  | "cee"
+  /** Bangumi 官方圆标位图（两个图标包都没有字形） */
+  | "bangumi"
+  /** 萌娘百科站徽位图（CC BY-NC-SA 4.0，来源登记在 CreditsIcons.tsx） */
+  | "moegirl";
 
 /**
  * 特别鸣谢的一项：名称、一行说明与外部来源。

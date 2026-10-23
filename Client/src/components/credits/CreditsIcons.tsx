@@ -25,7 +25,6 @@ import SiEsbuild from "@icons-pack/react-simple-icons/icons/SiEsbuild";
 import SiEslint from "@icons-pack/react-simple-icons/icons/SiEslint";
 import SiFontawesome from "@icons-pack/react-simple-icons/icons/SiFontawesome";
 import SiFramer from "@icons-pack/react-simple-icons/icons/SiFramer";
-import SiGithub from "@icons-pack/react-simple-icons/icons/SiGithub";
 import SiGithubactions from "@icons-pack/react-simple-icons/icons/SiGithubactions";
 import SiLucide from "@icons-pack/react-simple-icons/icons/SiLucide";
 import SiMeilisearch from "@icons-pack/react-simple-icons/icons/SiMeilisearch";
@@ -48,6 +47,7 @@ import SiVite from "@icons-pack/react-simple-icons/icons/SiVite";
 import SiVitest from "@icons-pack/react-simple-icons/icons/SiVitest";
 import SiZod from "@icons-pack/react-simple-icons/icons/SiZod";
 import type { CreditBrandId, SpecialThanksIcon } from "@/lib/Credits";
+import { QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -123,7 +123,6 @@ const BRAND_SOURCES = {
   sentry: { kind: "simple", Icon: SiSentry },
   eslint: { kind: "simple", Icon: SiEslint },
   githubactions: { kind: "simple", Icon: SiGithubactions },
-  github: { kind: "simple", Icon: SiGithub },
   // 特别鸣谢里有官方字形的来源
   neteasecloudmusic: { kind: "simple", Icon: SiNeteasecloudmusic },
   // 依赖清单里会出现的品牌
@@ -323,7 +322,30 @@ const GENERIC_THANKS_ICONS = {
   code: Package,
 } as const;
 
-/** 鸣谢条目标识：品牌键走官方字形，其余走通用字形；两条路径的外观尺寸一致。 */
+/**
+ * 鸣谢条目的彩色位图标识：simple-icons 与厂商图标包都没有这三家的字形，只能自备官方图。
+ * 它们按原色渲染，不走单色 mask——压成单色就不再是那三个东西了。
+ *
+ * 来源与许可（位图带不了 SVG 那样的文件末注释，登记在这里）：
+ * - `cee.jpg`：站内自有资产，与首页游戏入口同一份；
+ * - `bangumi.png`：https://i.loli.net/2020/03/20/GXu1DQhalV5TJ4B.png ｜ 许可未核实（维护者指定的来源）；
+ * - `moegirl.jpg`：https://storage.moegirl.org.cn/moegirl/commons/d/df/Moegirl_is_watching_you.jpg
+ *   ｜ CC BY-NC-SA 4.0（萌娘百科文件页声明）｜ 非商业、相同方式共享；
+ *   两枚位图都缩到 64–96px 存放，不保留原尺寸。
+ */
+const RASTER_THANKS_ICONS: Partial<Record<SpecialThanksIcon, string>> = {
+  cee: "/assets/CEE.jpg",
+  bangumi: "/assets/brands/bangumi.png",
+  moegirl: "/assets/brands/moegirl.jpg",
+};
+
+/**
+ * 鸣谢条目标识。四条路径，外观尺寸一致：
+ * - 彩色位图：站内自有或自备的官方图，按原色显示；
+ * - `qqmusic`：官方双色矢量，与猜歌的音乐账号设置共用同一份定义；
+ * - 其余通用键：说明来源性质的 lucide 图标；
+ * - 品牌键：官方单色字形，走 `CreditBrandMark`。
+ */
 export function ThanksGlyph({
   icon,
   className,
@@ -331,6 +353,20 @@ export function ThanksGlyph({
   icon: SpecialThanksIcon;
   className?: string;
 }): ReactNode {
+  const raster = RASTER_THANKS_ICONS[icon];
+  if (raster) {
+    return (
+      <img
+        src={raster}
+        alt=""
+        aria-hidden="true"
+        className={cn("size-4 shrink-0 rounded-sm object-cover", className)}
+      />
+    );
+  }
+  if (icon === "qqmusic") {
+    return <QQMusicIcon className={cn("size-4 shrink-0", className)} />;
+  }
   if (icon in GENERIC_THANKS_ICONS) {
     const Generic = GENERIC_THANKS_ICONS[icon as keyof typeof GENERIC_THANKS_ICONS];
     return createElement(Generic, {

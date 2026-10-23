@@ -165,9 +165,11 @@ describe("CreditsView", () => {
       "QQ音乐",
       "网易云音乐",
     ]);
-    // 每条都有一枚标识：品牌字形或通用图标，两条路径都落成 svg。
+    // 每条的图标格里都真有一枚标识：品牌字形、彩色官方矢量或通用图标都算。
+    // 不能只查条目里有没有 svg——外链箭头本身就是 svg，那样这条断言会空过。
     for (const item of items) {
-      expect(item.querySelector("svg")).toBeInTheDocument();
+      const tile = item.querySelector('[data-slot="thanks-icon"]');
+      expect(tile?.querySelector("svg, img"), item.textContent).not.toBeNull();
     }
 
     const links = within(section).getAllByRole("link");

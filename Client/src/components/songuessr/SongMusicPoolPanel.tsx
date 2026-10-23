@@ -3,7 +3,7 @@ import { Database } from "lucide-react";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { Hint } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/Utils";
-import { NeteaseCloudMusicIcon, QQMusicIcon } from "./SongAccountSettings";
+import { NeteaseCloudMusicIcon, QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 import type { SonGuessrMusicPoolView, SonGuessrRoomSnapshot } from "@bakagame/shared";
 
 const PLATFORM_LABEL: Record<SonGuessrMusicPoolView["platform"], string> = {

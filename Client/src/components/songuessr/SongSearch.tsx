@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Hint } from "@/components/ui/Tooltip";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
-import { NeteaseCloudMusicIcon, QQMusicIcon } from "./SongAccountSettings";
+import { NeteaseCloudMusicIcon, QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 
 const messageOf = (error: unknown, fallback: string) =>
   (error as { message?: string } | null)?.message ?? fallback;
