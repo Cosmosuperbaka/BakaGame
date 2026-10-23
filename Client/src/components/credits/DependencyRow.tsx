@@ -35,23 +35,29 @@ function EmptyCell() {
 const rowClass = (compact: boolean) =>
   cn(NARROW_TRACKS, ROW_GRID[compact ? "compact" : "full"], "gap-x-2.5 px-3 py-2");
 
-/** 列标题：与 `DependencyRow` 共用同一套列轨，标题与数据逐列对齐。 */
+/**
+ * 列标题：与 `DependencyRow` 共用同一套列轨，标题与数据逐列对齐。
+ *
+ * 每行与标题各自是一个 grid 容器，`auto` 轨按各自内容取宽——所以首末两格必须占成
+ * 与图标、箭头同宽的 `size-4`，否则这两格在标题里是 0 宽、在行里是 19.2px，
+ * 差额全被可伸缩的包名列吸收，标题的每一个数字列都会整体右移一截。
+ */
 export function DependencyListHeader({ compact = false }: { compact?: boolean }) {
   return (
     <div
       aria-hidden="true"
       className={cn(
         rowClass(compact),
-        "grid items-center border-b bg-muted/40 font-sans text-2xs text-muted-foreground"
+        "grid items-center border-b bg-muted/40 text-2xs text-muted-foreground"
       )}
     >
-      <span />
+      <span className="size-4 shrink-0" />
       <span className="min-w-0">包名</span>
       <span className="hidden text-center sm:block">子依赖</span>
       <span className="text-right">版本</span>
       {compact ? null : <span className="hidden text-center sm:block">类型</span>}
       <span className="hidden text-center sm:block">License</span>
-      <span />
+      <span className="size-4 shrink-0 justify-self-end" />
     </div>
   );
 }
