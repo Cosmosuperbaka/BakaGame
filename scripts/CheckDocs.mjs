@@ -32,7 +32,7 @@ const NAV_RULES = [
  * 哈希算法为 SHA-256，换行统一成 LF 后计算，Windows 与 CI 检出结果一致。
  */
 const FROZEN_DOCS = {
-  "Client/docs/DesignVision.md": "959f0845eb5c983fba4d79848bc3564d72e64ffac103cd510fc8450abb85edab",
+  "Client/docs/DesignVision.md": "b8a4267fb245a52228a5394ed19257917622962b76dd7f59feab90e1856442a3",
 };
 
 /** GitHub 风格标题锚点：小写、去标点、空格转连字符。 */
