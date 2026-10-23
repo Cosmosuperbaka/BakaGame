@@ -2004,6 +2004,216 @@ describe("SonGuessrService", () => {
     expect(withQq.results.some((song) => song.id.startsWith("qq:"))).toBe(true);
   });
 
+  test("开局复核把 QQ 续期后的 Cookie 写回账号池并推给号主", async () => {
+    let qqStatusCalls = 0;
+    const qqSearchedCookies: Array<MusicCookieInput | undefined> = [];
+    const neteaseMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { platform: "netease", nickname: "网易云用户", vipStatus: "vip" },
+      }),
+      search: async () => [],
+    };
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => {
+        qqStatusCalls += 1;
+        return {
+          cookie: qqStatusCalls >= 2 ? "qm_keyst=refreshed" : cookie,
+          account: {
+            platform: "qq",
+            userId: "qq-1",
+            nickname: "QQ用户",
+            vipStatus: "nonVip",
+          },
+        };
+      },
+      search: async (_keyword, _limit, cookie) => {
+        qqSearchedCookies.push(cookie);
+        return [];
+      },
+    };
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+    const service = new SonGuessrService({ musicProvider: aggregated });
+    const host = connection(service, "renew-host");
+    const guest = connection(service, "renew-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "renew-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=old", platform: "qq" },
+    });
+    await execute(service, guest, {
+      id: "renew-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "renew-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    const sessionEvent = guest.sent
+      .filter((item) => item.type === "event" && item.event === "song.auth.session")
+      .at(-1);
+    expect(sessionEvent?.payload).toMatchObject({
+      platform: "qq",
+      cookie: "qm_keyst=refreshed",
+    });
+
+    await execute(service, host, {
+      id: "renew-search",
+      type: "song.music.search",
+      roomId: "1234",
+      payload: { keyword: "续期" },
+    });
+    expect(qqSearchedCookies).toContain("qm_keyst=refreshed");
+    expect(qqSearchedCookies).not.toContain("qm_keyst=old");
+  });
+
+  test("后台巡检会主动续期 QQ 凭证并同步号主", async () => {
+    let now = 1_000;
+    let qqStatusCalls = 0;
+    const qqSearchedCookies: Array<MusicCookieInput | undefined> = [];
+    const neteaseMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { platform: "netease", nickname: "网易云用户", vipStatus: "vip" },
+      }),
+      search: async () => [],
+    };
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => {
+        qqStatusCalls += 1;
+        return {
+          cookie: qqStatusCalls >= 2 ? "qm_keyst=swept" : cookie,
+          account: {
+            platform: "qq",
+            userId: "qq-1",
+            nickname: "QQ用户",
+            vipStatus: "nonVip",
+          },
+        };
+      },
+      search: async (_keyword, _limit, cookie) => {
+        qqSearchedCookies.push(cookie);
+        return [];
+      },
+    };
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+    const service = new SonGuessrService({
+      musicProvider: aggregated,
+      now: () => now,
+      musicSessionRefreshIntervalMs: 1_000,
+    });
+    const host = connection(service, "sweep-host");
+    const guest = connection(service, "sweep-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "sweep-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=old", platform: "qq" },
+    });
+
+    now += 2_000;
+    await service.runHousekeeping();
+    // 后台续期是 fire-and-forget；等它跑完再查下一次检索用的 Cookie。
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    const sessionEvent = guest.sent
+      .filter((item) => item.type === "event" && item.event === "song.auth.session")
+      .at(-1);
+    expect(sessionEvent?.payload).toMatchObject({
+      platform: "qq",
+      cookie: "qm_keyst=swept",
+    });
+
+    await execute(service, host, {
+      id: "sweep-search",
+      type: "song.music.search",
+      roomId: "1234",
+      payload: { keyword: "巡检" },
+    });
+    expect(qqSearchedCookies).toContain("qm_keyst=swept");
+  });
+
+  test("号主重传旧 Cookie 时不会被服务端已续期的新 Cookie 反向覆盖", async () => {
+    let now = 1_000;
+    let qqStatusCalls = 0;
+    const neteaseMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => ({
+        cookie,
+        account: { platform: "netease", nickname: "网易云用户", vipStatus: "vip" },
+      }),
+      search: async () => [],
+    };
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => {
+        qqStatusCalls += 1;
+        return {
+          cookie: qqStatusCalls === 2 ? "qm_keyst=swept" : cookie,
+          account: {
+            platform: "qq",
+            userId: "qq-1",
+            nickname: "QQ用户",
+            vipStatus: "nonVip",
+          },
+        };
+      },
+      search: async () => [],
+    };
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+    });
+    const service = new SonGuessrService({
+      musicProvider: aggregated,
+      now: () => now,
+      musicSessionRefreshIntervalMs: 1_000,
+    });
+    const host = connection(service, "stale-host");
+    const guest = connection(service, "stale-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "stale-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=old", platform: "qq" },
+    });
+
+    now += 2_000;
+    await service.runHousekeeping();
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    // 客户端仍保存着旧副本，重新上传；上游校验仍可通过，但服务端应保留已续期的新 Cookie。
+    const reupload = await execute<{ cookie: string }>(service, guest, {
+      id: "stale-reupload",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=old", platform: "qq" },
+    });
+    expect(reupload.cookie).toBe("qm_keyst=swept");
+  });
+
   test("QQ-only 房间的共有曲目由 QQ 代表", async () => {
     const neteaseMock: MusicProvider = {
       ...provider,

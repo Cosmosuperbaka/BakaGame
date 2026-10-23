@@ -39,6 +39,10 @@ import {
   saveSessionToken,
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
+import {
+  getStoredSongMusicSession,
+  saveSongMusicSession,
+} from "@/lib/SonGuessrMusicSession";
 import { clearSonGuessrQueryCache, initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
 
 const initialState = useSonGuessrStore.getState();
@@ -127,6 +131,32 @@ describe("Songuessr store integration", () => {
       roomId: "1234",
       sessionToken: "created-token",
     });
+  });
+
+  it("server-pushed refreshed music session updates the local copy", () => {
+    window.localStorage.clear();
+    const dispose = initSonGuessrWs();
+    saveSongMusicSession(
+      {
+        cookie: "qm_keyst=old",
+        account: { platform: "qq", nickname: "QQ用户", vipStatus: "nonVip" },
+      },
+      true,
+      "qq"
+    );
+
+    wsMock.messageHandlers[0]({
+      type: "event",
+      event: "song.auth.session",
+      payload: {
+        platform: "qq",
+        cookie: "qm_keyst=new",
+        account: { platform: "qq", nickname: "QQ用户", vipStatus: "nonVip" },
+      },
+    });
+
+    expect(getStoredSongMusicSession("qq")?.cookie).toBe("qm_keyst=new");
+    dispose();
   });
 
   it("preserves pushed snapshot and private state when createRoom resolves without payload states", async () => {

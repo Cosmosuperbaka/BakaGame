@@ -591,7 +591,7 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
     }) as any;
     qqmusic.login_refresh = mock(async () => ({
       status: 200,
-      body: { cookieStr: "new_cookie" },
+      body: { code: 200, cookieStr: "new_cookie" },
     })) as any;
 
     const session = await provider.getLoginStatus("old_cookie");
@@ -599,6 +599,22 @@ describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
     expect(session.account.nickname).toBe("刷新后");
     expect(session.account.vipLevel).toBe(8);
     expect(statusCalls).toBe(2);
+  });
+
+  it("登录状态接口回写 Cookie 时优先采用新 Cookie", async () => {
+    const provider = new QQMusicProvider();
+    qqmusic.login_status = mock(async ({ cookie }: any) => ({
+      status: 200,
+      body: {
+        isLogin: true,
+        cookieStr: `${cookie}+rotated`,
+        account: { userId: "9", nickname: "已登录" },
+      },
+    })) as any;
+
+    const session = await provider.getLoginStatus("old_cookie");
+    expect(session.cookie).toBe("old_cookie+rotated");
+    expect(session.account.nickname).toBe("已登录");
   });
 
   it("login_refresh 刷新后仍未登录或抛异常时，严格抛出 MUSIC_SESSION_INVALID", async () => {

@@ -1009,15 +1009,23 @@ export class QQMusicProvider implements MusicProvider {
     }
 
     let statusRes = await qqmusic.login_status({ cookie: trimmed });
+    // 状态接口本身也可能轮换 Cookie；有回写就先接住，避免继续拿旧 key 去续期。
+    if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
     if (!statusRes.body?.isLogin) {
       try {
-        const refreshRes = await qqmusic.login_refresh({ cookie: trimmed });
-        if (refreshRes.body?.cookieStr) {
+        const refreshRes = await qqmusic.login_refresh({ cookie: currentCookie });
+        if (refreshRes.body?.code === 200 && refreshRes.body.cookieStr) {
           currentCookie = refreshRes.body.cookieStr;
           statusRes = await qqmusic.login_status({ cookie: currentCookie });
+          if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
+        } else {
+          this.options.logger?.warn?.("QQ 音乐凭证续期未取得新 key", {
+            code: refreshRes.body?.code,
+            message: refreshRes.body?.message,
+          });
         }
-      } catch {
-        // 刷新失败时沿用原状态结果
+      } catch (error) {
+        this.options.logger?.warn?.("QQ 音乐凭证续期失败", describeError(error));
       }
     }
 

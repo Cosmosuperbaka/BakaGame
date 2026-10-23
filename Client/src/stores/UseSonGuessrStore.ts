@@ -9,6 +9,7 @@ import {
   type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
   type SonGuessrRoomSummary,
+  type SonGuessrMusicAccount,
   type SongArtistSearchResult,
   type SongPlaylistInfo,
   type SongSearchResult,
@@ -24,6 +25,10 @@ import {
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
 import * as ws from "@/lib/SonGuessrWs";
+import {
+  getStoredSongMusicSession,
+  saveSongMusicSession,
+} from "@/lib/SonGuessrMusicSession";
 import { consumeStateSync } from "@/lib/StateSync";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
@@ -526,6 +531,27 @@ export function initSonGuessrWs() {
       case "song.game.privateState":
         applyPrivateStateEvent(evt.payload);
         break;
+      case "song.auth.session": {
+        // 服务端后台续期后把新 Cookie 只推给号主；同步本机副本，下次进房不再拿旧凭据覆盖。
+        const payload = evt.payload as {
+          platform?: "netease" | "qq";
+          cookie?: string;
+          account?: SonGuessrMusicAccount;
+        };
+        if (
+          (payload.platform === "netease" || payload.platform === "qq") &&
+          payload.cookie &&
+          payload.account
+        ) {
+          const stored = getStoredSongMusicSession(payload.platform);
+          saveSongMusicSession(
+            { cookie: payload.cookie, account: payload.account },
+            stored?.persistent ?? true,
+            payload.platform
+          );
+        }
+        break;
+      }
       case "song.room.expiring":
         store.setNotice("房间即将因超时关闭", "error");
         break;

@@ -286,6 +286,8 @@ interface SonGuessrMusicPoolEntry {
   cooldownUntil?: number;
   /** 最近一次失败原因。 */
   lastFailureReason?: string;
+  /** 最近一次成功校验/续期后写入 Cookie 的时刻；后台续期据此排期。 */
+  cookieRefreshedAt?: number;
 }
 
 /** 一次取号的租约：用完必须 `release`，否则该号的在途数会漏记、并发上限形同虚设。 */
@@ -320,6 +322,8 @@ export interface SonGuessrServiceOptions {
   now?: () => number;
   random?: RandomSource;
   eventLogger?: EventLogger;
+  /** QQ 凭证主动续期间隔；缺省 6 小时，测试用短间隔覆盖。 */
+  musicSessionRefreshIntervalMs?: number;
   /** 未配置数据库时为空：对局记录不落库。 */
   gameRecorder?: GameRecorder;
   /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
@@ -1311,6 +1315,15 @@ const MUSIC_POOL_MAX_IN_FLIGHT = 3;
 const MUSIC_POOL_QUEUE_TIMEOUT_MS = 8_000;
 /** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
 export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
+
+/**
+ * QQ 凭证主动续期节奏。QQ 的 musickey 寿命比网易云短得多，不能只等开局复核：
+ * 每 6 小时检查一次、每 10 分钟扫一轮，保证长时间开着的房间在 key 过期前换新。
+ */
+const MUSIC_SESSION_REFRESH_INTERVAL_MS = 6 * 60 * 60_000;
+const MUSIC_SESSION_REFRESH_SWEEP_MS = 10 * 60_000;
+/** 同账号重传时，服务端 24 小时内续期过的 Cookie 优先于客户端本机旧副本。 */
+const MUSIC_COOKIE_FRESH_MS = 24 * 60 * 60_000;
 /** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
 const MUSIC_POOL_STATS_WINDOW = 20;
 
@@ -1531,6 +1544,8 @@ export class SonGuessrService implements AdminRoomControl {
    * 或池子变化即唤醒重试；只在进程内，房间关闭时整段丢弃。
    */
   private readonly musicPoolWaiters = new Map<string, Set<() => void>>();
+  private nextMusicRefreshSweepAt = 0;
+  private musicRefreshSweepInFlight = false;
 
   constructor(private readonly options: SonGuessrServiceOptions) {
     this.now = options.now ?? (() => Date.now());
@@ -1843,6 +1858,76 @@ export class SonGuessrService implements AdminRoomControl {
       this.expirePendingSubmitter(room, currentTime);
       this.settlePlayingRound(room, currentTime);
       this.publishRoomCalibration(room);
+    }
+    this.scheduleMusicSessionRefresh(currentTime);
+  }
+
+  /** 后台续期节流：巡检每 10 秒一次，真正扫凭证的间隔由这里控制。 */
+  private scheduleMusicSessionRefresh(currentTime: number): void {
+    if (this.musicRefreshSweepInFlight || currentTime < this.nextMusicRefreshSweepAt) return;
+    this.nextMusicRefreshSweepAt = currentTime + MUSIC_SESSION_REFRESH_SWEEP_MS;
+    this.musicRefreshSweepInFlight = true;
+    void this.refreshDueMusicSessions().finally(() => {
+      this.musicRefreshSweepInFlight = false;
+    });
+  }
+
+  /**
+   * 主动续期池内的 QQ 凭证。
+   *
+   * QQ 的 musickey 比网易云短命，且网页扫码的续期字段与移动端不同；只在开局复核时
+   * 换一次不够。这里按 6 小时节奏在 key 过期前换新，失败不立即摘号（网络抖动很常见），
+   * 只有平台明确判死才关闭开关并提示号主重登。
+   */
+  private async refreshDueMusicSessions(): Promise<void> {
+    const provider = this.options.musicProvider;
+    const getLoginStatus = provider.getLoginStatus?.bind(provider);
+    if (!getLoginStatus) return;
+
+    for (const room of [...this.rooms.values()]) {
+      if (this.rooms.get(room.id) !== room) continue;
+      for (const entry of [...this.musicPool(room)]) {
+        if (!this.shouldRefreshMusicEntry(entry)) continue;
+        await this.refreshMusicPoolEntry(room, entry, getLoginStatus);
+      }
+    }
+  }
+
+  private shouldRefreshMusicEntry(entry: SonGuessrMusicPoolEntry): boolean {
+    if (entry.platform !== "qq" || !this.isPoolEntryUsable(entry, this.now())) return false;
+    const lastRefreshed = entry.cookieRefreshedAt ?? entry.addedAt;
+    return (
+      this.now() - lastRefreshed >=
+      (this.options.musicSessionRefreshIntervalMs ?? MUSIC_SESSION_REFRESH_INTERVAL_MS)
+    );
+  }
+
+  private async refreshMusicPoolEntry(
+    room: SonGuessrRoomRecord,
+    entry: SonGuessrMusicPoolEntry,
+    getLoginStatus: (cookie: string, platform?: MusicAuthPlatform) => Promise<MusicLoginSession>
+  ): Promise<void> {
+    try {
+      const result = await getLoginStatus(entry.cookie, "qq");
+      if (!this.musicPool(room).includes(entry)) return;
+      const cookieChanged = result.cookie !== entry.cookie;
+      entry.cookie = this.requireMusicCookie(result.cookie);
+      entry.account = result.account;
+      entry.cookieRefreshedAt = this.now();
+      entry.lastFailureReason = undefined;
+      if (cookieChanged) this.publishMusicSession(room, entry);
+    } catch (error) {
+      if (!this.musicPool(room).includes(entry)) return;
+      if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") {
+        entry.enabled = false;
+        entry.cooldownUntil = this.now() + MUSIC_POOL_COOLDOWN_MS;
+        entry.lastFailureReason = "QQ 音乐登录状态已失效，请重新扫码登录";
+        this.publishRoom(room);
+        return;
+      }
+      const hadReason = entry.lastFailureReason !== undefined;
+      entry.lastFailureReason = error instanceof Error ? error.message : "QQ 音乐凭证续期失败";
+      if (!hadReason) this.publishRoom(room);
     }
   }
 
@@ -2736,7 +2821,10 @@ export class SonGuessrService implements AdminRoomControl {
     const verify = this.beginMusicAuthentication(room, player, connection, platform);
     const result = await getLoginStatus(cookie, platform);
     verify();
-    const session = this.installMusicSession(room, player.id, result);
+    // 本机凭据只是副本；服务端同账号若已续期出更新的 Cookie，优先保留服务端那份。
+    const session = this.installMusicSession(room, player.id, result, {
+      preferExistingCookie: true,
+    });
     this.touch(room);
     this.publishRoom(room);
     return { account: session.account, cookie: session.cookie };
@@ -2788,9 +2876,10 @@ export class SonGuessrService implements AdminRoomControl {
   private installMusicSession(
     room: SonGuessrRoomRecord,
     ownerPlayerId: string,
-    session: MusicLoginSession
+    session: MusicLoginSession,
+    options: { preferExistingCookie?: boolean } = {}
   ): MusicLoginSession {
-    const cookie = this.requireMusicCookie(session.cookie);
+    const incomingCookie = this.requireMusicCookie(session.cookie);
     const isQq = session.account.platform === "qq";
     const account = {
       platform: session.account.platform || "netease",
@@ -2812,11 +2901,28 @@ export class SonGuessrService implements AdminRoomControl {
     const existing = pool.find(
       (entry) => entry.playerId === ownerPlayerId && entry.platform === platform
     );
+    // 客户端回到准备页会自动重传本机凭据。服务端可能已经在后台续期出一份更新的
+    // Cookie；同一账号时优先保留这份，并把结果回给客户端，避免用旧副本覆盖新凭据。
+    const preferExisting =
+      options.preferExistingCookie === true &&
+      existing !== undefined &&
+      existing.account.userId &&
+      account.userId &&
+      existing.account.userId === account.userId &&
+      existing.cookieRefreshedAt !== undefined &&
+      existing.lastFailureReason === undefined &&
+      !this.isCoolingDown(existing, this.now()) &&
+      this.now() - existing.cookieRefreshedAt <= MUSIC_COOKIE_FRESH_MS;
+    const cookie = preferExisting ? existing.cookie : incomingCookie;
     if (existing) {
       // 同一份凭据重新装载不改开关：客户端回到准备页会自动重传本机凭据，若一律按阶段置位，
       // 玩家自己关掉的共享就会被这次重传悄悄打开（开关状态应当只由号主改、由服务端记）。
-      // 换了一份凭据算重新登录，按当前阶段给默认值。
-      const sameCredential = existing.cookie === cookie;
+      // 续期只换了 Cookie 字符串、账号没变，仍算同一份凭据；换账号才算重新登录。
+      const sameCredential =
+        existing.account.userId && account.userId
+          ? existing.account.userId === account.userId
+          : existing.cookie === cookie;
+      const cookieChanged = existing.cookie !== cookie;
       existing.cookie = cookie;
       existing.account = account;
       existing.enabled = sameCredential ? existing.enabled : active;
@@ -2824,6 +2930,7 @@ export class SonGuessrService implements AdminRoomControl {
       existing.lastFailureReason = undefined;
       existing.recentOk = 0;
       existing.recentTotal = 0;
+      if (cookieChanged) existing.cookieRefreshedAt = this.now();
     } else {
       pool.push({
         playerId: ownerPlayerId,
@@ -2835,6 +2942,7 @@ export class SonGuessrService implements AdminRoomControl {
         inFlight: 0,
         recentOk: 0,
         recentTotal: 0,
+        cookieRefreshedAt: this.now(),
       });
     }
     // 新号或重登可能刚好满足正在排队的请求。
@@ -3520,7 +3628,14 @@ export class SonGuessrService implements AdminRoomControl {
     try {
       const result = await getLoginStatus(entry.cookie, platform);
       verifySession(platform);
+      const cookieChanged = result.cookie !== entry.cookie;
       entry.account = result.account;
+      if (cookieChanged) {
+        entry.cookie = this.requireMusicCookie(result.cookie);
+        // 服务端替号主续期后，把新 Cookie 只发给号主自己的连接，客户端同步本机副本。
+        this.publishMusicSession(room, entry);
+      }
+      entry.cookieRefreshedAt = this.now();
     } catch (error) {
       if (error instanceof AppError) {
         const key = musicAuthOperationKey(entry.playerId, platform);
@@ -3538,6 +3653,26 @@ export class SonGuessrService implements AdminRoomControl {
         throw error;
       }
       throw new AppError("MUSIC_API_FAILED", `${label}登录状态校验失败，请稍后重试`);
+    }
+  }
+
+  /**
+   * 把续期后的凭据只发给号主自己的连接。
+   *
+   * 客户端会在本机保存一份凭据；服务端后台续期后如果不同步，下一次进房会拿旧副本
+   * 覆盖新 Cookie，时间一长就只能重新扫码。这里只发 `entry.playerId` 的连接，
+   * 不广播、不落快照、不写日志。
+   */
+  private publishMusicSession(room: SonGuessrRoomRecord, entry: SonGuessrMusicPoolEntry) {
+    for (const connection of this.connections.getRoomConnections(room.id)) {
+      if (connection.playerId !== entry.playerId) continue;
+      connection.send(
+        createEvent("song.auth.session", {
+          platform: entry.platform,
+          cookie: entry.cookie,
+          account: entry.account,
+        })
+      );
     }
   }
 
