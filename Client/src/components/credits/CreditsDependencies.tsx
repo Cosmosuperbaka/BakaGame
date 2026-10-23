@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, Search, X } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
+import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Select,
@@ -10,15 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/Select";
-import { Hint } from "@/components/ui/Tooltip";
 import {
   creditLicenseLabel,
   creditLicenseOptions,
   filterCreditDependencies,
   type CreditDependency,
 } from "@/lib/Credits";
-import { optionTappable, tappable } from "@/lib/Motion";
-import { DependencyGlyph } from "./CreditsIcons";
+import { tappable } from "@/lib/Motion";
+import { DependencyListHeader, DependencyRow } from "./DependencyRow";
 
 /** License 筛选里代表「不过滤」的值；Radix Select 的值必须是字符串。 */
 const ALL_LICENSES = "all";
@@ -129,63 +127,17 @@ export function CreditsDependencies({
           </Button>
         </div>
       ) : (
-        <ul className="mt-2 divide-y divide-border overflow-hidden rounded-md border bg-card shadow-2xs">
-          {visible.map((dependency) => (
-            <li key={dependency.name}>
-              <DependencyRow dependency={dependency} onSelect={onSelect} />
-            </li>
-          ))}
-        </ul>
+        <div className="mt-2 overflow-hidden rounded-md border bg-card shadow-2xs">
+          <DependencyListHeader />
+          <ul className="divide-y divide-border">
+            {visible.map((dependency) => (
+              <li key={dependency.name}>
+                <DependencyRow dependency={dependency} onSelect={onSelect} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
-  );
-}
-
-function DependencyRow({
-  dependency,
-  onSelect,
-}: {
-  dependency: CreditDependency;
-  onSelect: (name: string) => void;
-}) {
-  const childCount = dependency.dependencies.length;
-  return (
-    <motion.button
-      type="button"
-      onClick={() => onSelect(dependency.name)}
-      {...optionTappable}
-      aria-label={`查看 ${dependency.name} v${dependency.version}（${creditLicenseLabel(dependency.license)}）的依赖详情`}
-      className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2"
-    >
-      <DependencyGlyph packageName={dependency.name} className="text-muted-foreground" />
-      <Hint label={dependency.name}>
-        <span className="min-w-0 flex-1 truncate text-sm">{dependency.name}</span>
-      </Hint>
-      {/* 有子依赖时给一个弱化尾标，预告抽屉里还能往下看；没有子依赖就不占位。 */}
-      {childCount > 0 ? (
-        <span className="hidden shrink-0 text-2xs tabular-nums text-muted-foreground sm:inline">
-          {childCount} 个依赖
-        </span>
-      ) : null}
-      {/* 版本、开发依赖、License 各占一列固定宽度：行与行之间逐列对齐，长 SPDX 在列内截断。 */}
-      <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
-        v{dependency.version}
-      </span>
-      <span className="hidden w-16 shrink-0 items-center sm:flex">
-        {/* 窄屏只留包名与版本：徽章信息在抽屉里仍完整可见，行高保持稳定。 */}
-        {dependency.scope === "development" ? (
-          <Badge variant="subtle" size="xs">
-            开发依赖
-          </Badge>
-        ) : null}
-      </span>
-      <span className="hidden w-28 shrink-0 items-center sm:flex">
-        {/* 徽章正文就是许可证名，不再挂 hover 复述；被列宽截断的部分由行内的完整 aria-label 与抽屉详情补 */}
-        <Badge variant="outline" size="xs" className="min-w-0 max-w-full">
-          <span className="truncate">{creditLicenseLabel(dependency.license)}</span>
-        </Badge>
-      </span>
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </motion.button>
   );
 }

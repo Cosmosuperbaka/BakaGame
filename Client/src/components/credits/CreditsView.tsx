@@ -120,8 +120,11 @@ export function CreditsView({
     if (byName.has(name)) setPath((previous) => [...previous, name]);
   };
 
-  const goBack = () => {
-    setPath((previous) => (previous.length > 1 ? previous.slice(0, -1) : previous));
+  /** 回到下钻栈的第 `index` 层：路径上的中间格一次跳回，不必逐层退。 */
+  const rewindTo = (index: number) => {
+    setPath((previous) =>
+      index >= 0 && index < previous.length ? previous.slice(0, index + 1) : previous
+    );
   };
 
   return (
@@ -262,7 +265,7 @@ export function CreditsView({
             byName={byName}
             path={path}
             onNavigate={navigateTo}
-            onBack={goBack}
+            onRewind={rewindTo}
             loadLicense={loadLicense}
           />
         ) : null}

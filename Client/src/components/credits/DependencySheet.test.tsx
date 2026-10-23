@@ -34,13 +34,13 @@ function renderSheet({
   path = [name],
   loadLicense = loadFixtureLicense,
   onNavigate = vi.fn(),
-  onBack = vi.fn(),
+  onRewind = vi.fn(),
 }: {
   name?: string;
   path?: readonly string[];
   loadLicense?: (packageName: string) => Promise<CreditLicenseDocument | null>;
   onNavigate?: (name: string) => void;
-  onBack?: () => void;
+  onRewind?: (index: number) => void;
 } = {}) {
   render(
     <DependencySheet
@@ -48,11 +48,17 @@ function renderSheet({
       byName={byName}
       path={path}
       onNavigate={onNavigate}
-      onBack={onBack}
+      onRewind={onRewind}
       loadLicense={loadLicense}
     />
   );
-  return { onNavigate, onBack };
+  return { onNavigate, onRewind };
+}
+
+/** 统计格读出的值：标签与数字在同一格里，按标签定位再取那格的数字。 */
+function statValue(label: string): string | undefined {
+  const cell = screen.getByText(label).parentElement;
+  return cell?.querySelector("p")?.textContent;
 }
 
 describe("DependencySheet", () => {
@@ -91,27 +97,54 @@ describe("DependencySheet", () => {
     const { onNavigate } = renderSheet({ name: "vite", path: ["vite"] });
 
     // vite 直接依赖 esbuild / postcss / rollup，沿依赖链还能到达 4 个包。
-    expect(screen.getByText("直接子依赖 3 个 · 间接依赖 7 个")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "查看 esbuild 的依赖详情" })).toBeInTheDocument();
+    expect(statValue("直接子依赖")).toBe("3");
+    expect(statValue("间接依赖（传递闭包）")).toBe("7");
+    // 子依赖行与依赖清单一期共用同一套列轨，因此可访问名同形。
+    expect(screen.getByRole("button", { name: /^查看 esbuild v/ })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "查看 rollup 的依赖详情" }));
+    await user.click(screen.getByRole("button", { name: /^查看 rollup v/ }));
     expect(onNavigate).toHaveBeenCalledWith("rollup");
+  });
+
+  it("运行时子依赖归到运行时分组", () => {
+    // react 的直接子依赖 scheduler 是运行时传递依赖。
+    renderSheet({ name: "react", path: ["react"] });
+
+    const group = screen.getByRole("region", { name: "运行时依赖" });
+    expect(within(group).getByText("scheduler")).toBeInTheDocument();
+    // 分组标题已经说明类型，行内不再挂类型徽章。
+    expect(within(group).queryByText("运行时依赖")).not.toBeInTheDocument();
+  });
+
+  it("开发子依赖归到开发分组，组内不重复类型徽章", () => {
+    // vite 的三个直接子依赖都是开发依赖。
+    renderSheet({ name: "vite", path: ["vite"] });
+
+    const group = screen.getByRole("region", { name: "开发依赖" });
+    expect(within(group).getByText("esbuild")).toBeInTheDocument();
+    expect(within(group).queryByText("开发依赖")).not.toBeInTheDocument();
   });
 
   it("没有子依赖时给弱化说明，不渲染子依赖列表", () => {
     renderSheet({ name: "left-pad" });
 
-    expect(screen.getByText("直接子依赖 0 个 · 间接依赖 0 个")).toBeInTheDocument();
+    expect(statValue("直接子依赖")).toBe("0");
+    expect(statValue("间接依赖（传递闭包）")).toBe("0");
     expect(screen.getByText("无子依赖")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /的依赖详情$/ })).not.toBeInTheDocument();
   });
 
-  it("下钻到子依赖后显示返回上一级的按钮，顶层不显示", async () => {
+  it("下钻后给出整条路径，点中间格一次跳回该层", async () => {
     const user = userEvent.setup();
-    const { onBack } = renderSheet({ name: "rollup", path: ["vite", "rollup"] });
+    const { onRewind } = renderSheet({ name: "rollup", path: ["vite", "rollup"] });
 
-    await user.click(screen.getByRole("button", { name: "返回 vite" }));
-    expect(onBack).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "返回上一层" }));
+    expect(onRewind).toHaveBeenLastCalledWith(0);
+
+    await user.click(screen.getByRole("button", { name: "vite" }));
+    expect(onRewind).toHaveBeenLastCalledWith(0);
+    // 当前层是文本不是按钮：不能把自己点没。
+    expect(screen.queryByRole("button", { name: "rollup" })).not.toBeInTheDocument();
   });
 
   it("顶层不显示返回按钮", () => {

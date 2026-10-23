@@ -38,6 +38,12 @@ const MAIN_PACKAGE_COUNT = CREDITS_FIXTURE_DEPENDENCIES.filter(
   (dependency) => dependency.direct
 ).length;
 
+/** 统计格读出的值：标签与数字同在一格，按标签定位再取那格的数字。 */
+function statValue(scope: HTMLElement, label: string): string | undefined {
+  const cell = within(scope).getByText(label).parentElement;
+  return cell?.querySelector("p")?.textContent;
+}
+
 function renderView({
   onTabChange = vi.fn(),
   onOpenPage = vi.fn(),
@@ -196,8 +202,9 @@ describe("CreditsView", () => {
 
     const row = screen.getByRole("button", { name: /^查看 react v/ });
     await user.click(row);
-    expect(await screen.findByRole("dialog", { name: "react" })).toBeInTheDocument();
-    expect(screen.getByText("直接子依赖 1 个 · 间接依赖 1 个")).toBeInTheDocument();
+    const reactDialog = await screen.findByRole("dialog", { name: "react" });
+    expect(statValue(reactDialog, "直接子依赖")).toBe("1");
+    expect(statValue(reactDialog, "间接依赖（传递闭包）")).toBe("1");
     // 许可证区默认折叠：展开前不触发懒加载。
     expect(loadLicense).not.toHaveBeenCalled();
 
@@ -206,12 +213,14 @@ describe("CreditsView", () => {
     expect(loadLicense).toHaveBeenCalledWith("react");
     expect(await within(dialog).findByText("LICENSE")).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "查看 scheduler 的依赖详情" }));
+    await user.click(within(dialog).getByRole("button", { name: /^查看 scheduler v/ }));
     const childDialog = await screen.findByRole("dialog", { name: "scheduler" });
-    expect(within(childDialog).getByRole("button", { name: "返回 react" })).toBeInTheDocument();
-    expect(within(childDialog).getByText("直接子依赖 0 个 · 间接依赖 0 个")).toBeInTheDocument();
+    // 下钻后页眉给出整条路径：react › scheduler，中间格可点回该层。
+    expect(within(childDialog).getByRole("button", { name: "react" })).toBeInTheDocument();
+    expect(statValue(childDialog, "直接子依赖")).toBe("0");
+    expect(statValue(childDialog, "间接依赖（传递闭包）")).toBe("0");
 
-    await user.click(within(childDialog).getByRole("button", { name: "返回 react" }));
+    await user.click(within(childDialog).getByRole("button", { name: "返回上一层" }));
     expect(await screen.findByRole("dialog", { name: "react" })).toBeInTheDocument();
 
     const reopened = screen.getByRole("dialog", { name: "react" });

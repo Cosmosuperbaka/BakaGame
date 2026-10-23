@@ -143,11 +143,19 @@ describe("CreditsDependencies", () => {
     const legacyRow = screen.getByRole("button", { name: /^查看 left-pad v/ });
     expect(within(legacyRow).getByText("开发依赖")).toBeInTheDocument();
     expect(within(legacyRow).getByText("未知")).toBeInTheDocument();
-    // 没有子依赖的行不显示尾标。
-    expect(within(legacyRow).queryByText(/个依赖$/)).not.toBeInTheDocument();
+    // 没有子依赖的行仍然占住这一列（给占位符）：可变宽度的列会把版本列挤得逐行跳动。
+    expect(legacyRow.querySelector('[data-slot="dep-children"]')?.textContent).toBe("—");
 
     const reactRow = screen.getByRole("button", { name: /^查看 react v/ });
-    expect(within(reactRow).getByText("1 个依赖")).toBeInTheDocument();
+    expect(reactRow.querySelector('[data-slot="dep-children"]')?.textContent).toBe("1");
+
+    // 每行都渲染齐四列，列与列之间才是一条直线。
+    const rows = screen.getAllByRole("button", { name: /^查看 .+ v/ });
+    for (const row of rows) {
+      for (const slot of ["dep-children", "dep-version", "dep-type", "dep-license"]) {
+        expect(row.querySelector(`[data-slot="${slot}"]`)).not.toBeNull();
+      }
+    }
 
     await user.click(reactRow);
     expect(onSelect).toHaveBeenCalledWith("react");
