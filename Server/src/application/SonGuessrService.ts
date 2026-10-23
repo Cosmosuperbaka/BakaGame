@@ -131,6 +131,8 @@ interface SonGuessrPlayerRecord {
   team: number | null;
   correctGuesses: number;
   totalGuesses: number;
+  /** 本局逐轮作答标记，`finishRound` 按轮追加，开局清零。口径与猜猜呗的 `marks` 一致。 */
+  marks: string;
   isBot: boolean;
   isAgent?: boolean;
   joinedAt: number;
@@ -1751,11 +1753,7 @@ export class SonGuessrService implements AdminRoomControl {
       case "song.auth.clear":
         return this.clearMusicAccount(connection, message.payload.platform);
       case "song.auth.setPoolSharing":
-        return this.setPoolSharing(
-          connection,
-          message.payload.platform,
-          message.payload.enabled
-        );
+        return this.setPoolSharing(connection, message.payload.platform, message.payload.enabled);
       case "song.music.search":
         return this.searchMusic(connection, message.payload.keyword);
       case "song.music.detail":
@@ -2845,8 +2843,7 @@ export class SonGuessrService implements AdminRoomControl {
     const before = pool.length;
     // 在途登录锁按「人 + 平台」清：清掉自己的号时顺手作废自己那一次在途登录，
     // 不动别人正在跑的那次（否则 A 退出登录会把 B 的扫码结果一起作废）。
-    const platforms: MusicAuthPlatform[] =
-      platform === "all" ? ["netease", "qq"] : [platform];
+    const platforms: MusicAuthPlatform[] = platform === "all" ? ["netease", "qq"] : [platform];
     if (ownerPlayerId !== undefined && room.musicAuthOperations) {
       for (const key of platforms) {
         delete room.musicAuthOperations[musicAuthOperationKey(ownerPlayerId, key)];
@@ -3291,7 +3288,8 @@ export class SonGuessrService implements AdminRoomControl {
               {
                 platform,
                 entry,
-                operation: room.musicAuthOperations?.[musicAuthOperationKey(entry.playerId, platform)],
+                operation:
+                  room.musicAuthOperations?.[musicAuthOperationKey(entry.playerId, platform)],
                 label: platform === "qq" ? "QQ音乐" : "网易云",
               },
             ]
@@ -3310,12 +3308,11 @@ export class SonGuessrService implements AdminRoomControl {
         for (const target of revalidations) {
           if (platform !== undefined && target.platform !== platform) continue;
           const current =
-            room.musicAuthOperations?.[musicAuthOperationKey(target.entry.playerId, target.platform)];
+            room.musicAuthOperations?.[
+              musicAuthOperationKey(target.entry.playerId, target.platform)
+            ];
           if (!this.musicPool(room).includes(target.entry) || current !== target.operation) {
-            throw new AppError(
-              "MUSIC_SESSION_INVALID",
-              `${target.label}会话已变更，请重新开始`
-            );
+            throw new AppError("MUSIC_SESSION_INVALID", `${target.label}会话已变更，请重新开始`);
           }
         }
       };
@@ -3510,11 +3507,7 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  private async submitSong(
-    connection: ConnectionRecord,
-    songId: string,
-    clip?: SongClipRange
-  ) {
+  private async submitSong(connection: ConnectionRecord, songId: string, clip?: SongClipRange) {
     const { room, player } = this.requireRoomPlayer(connection);
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以提交歌曲");
@@ -3601,9 +3594,7 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.musicProvider;
     let song: SongDetails;
     try {
-      song = await this.withSongAccount(room, songId, (cookie) =>
-        provider.getSong(songId, cookie)
-      );
+      song = await this.withSongAccount(room, songId, (cookie) => provider.getSong(songId, cookie));
     } catch (error) {
       if (!isUnusableSongCandidate(error)) throw error;
       throw new AppError("BANGUMI_NO_MUSIC", "所选歌曲无法播放或获取音频失败");
@@ -3670,7 +3661,7 @@ export class SonGuessrService implements AdminRoomControl {
         if (pick) return pick;
       }
 
-    // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
+      // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
       // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
       if (lookup.fallbackRecent) {
         return lookup.fallbackRecent;
@@ -4268,6 +4259,10 @@ export class SonGuessrService implements AdminRoomControl {
       unit.memberIds.push(candidate.id);
       participantStates[candidate.id] = unit;
       audioReady[candidate.id] = candidate.isBot;
+    }
+    // 第一轮即新的一局：标记串按局累计，不清零会把上一局的战绩接着画进玩家栏。
+    if (roundNumber === 1) {
+      for (const candidate of Object.values(room.players)) candidate.marks = "";
     }
     room.roundNumber = roundNumber;
     room.currentRound = {
@@ -5229,6 +5224,31 @@ export class SonGuessrService implements AdminRoomControl {
    *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
    *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
    */
+  /**
+   * 给每个「本应作答」的玩家追加一枚本轮标记。
+   *
+   * 出题人、其队友（本局观战）与旁观者不作答，因此不产生标记——玩家栏那一串读起来
+   * 就是「他真正作答过的轮次」，而不是每轮都多一个无关字符。
+   * 字形沿用猜猜呗的标记集，客户端的 `CEEMarks` 因此无需新增分支。
+   */
+  private appendRoundMarks(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord): void {
+    const maxGuesses = round.settings.maxGuessesPerRound;
+    for (const player of Object.values(room.players)) {
+      if (player.membership !== "active") continue;
+      if (player.id === round.submitterPlayerId || round.observerIds.includes(player.id)) continue;
+      const state = round.players[player.id];
+      if (!state) continue;
+      const mark = state.correct
+        ? "✅"
+        : state.gaveUp
+          ? "🏳️"
+          : state.guessesUsed >= maxGuesses
+            ? "💀"
+            : "⏱️";
+      player.marks += mark;
+    }
+  }
+
   private finishRound(room: SonGuessrRoomRecord, skipped = false) {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;
@@ -5237,6 +5257,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (submitter && !skipped) submitter.score += scoring.submitterScore;
 
     for (const state of Object.values(round.players)) state.deadlineAt = undefined;
+    this.appendRoundMarks(room, round);
     room.roundSummary = {
       roundNumber: round.number,
       song: {
@@ -5524,6 +5545,7 @@ export class SonGuessrService implements AdminRoomControl {
       account: player.account,
       correctGuesses: player.correctGuesses,
       totalGuesses: player.totalGuesses,
+      marks: player.marks,
       roundStatus,
       guessesUsed: state?.guessesUsed ?? 0,
     };
@@ -5739,6 +5761,7 @@ export class SonGuessrService implements AdminRoomControl {
       team: null,
       correctGuesses: 0,
       totalGuesses: 0,
+      marks: "",
       isBot,
       joinedAt: now,
       lastSeenAt: now,

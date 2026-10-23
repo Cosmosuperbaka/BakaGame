@@ -72,6 +72,7 @@ const createMockSnapshot = (
       roundStatus: "waiting",
       correctGuesses: 0,
       totalGuesses: 0,
+      marks: "",
       guessesUsed: 0,
     },
     {
@@ -87,6 +88,7 @@ const createMockSnapshot = (
       roundStatus: "waiting",
       correctGuesses: 0,
       totalGuesses: 0,
+      marks: "",
       guessesUsed: 0,
     },
   ],
@@ -408,6 +410,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
               roundStatus: "correct",
               correctGuesses: 1,
               totalGuesses: 1,
+              marks: "",
               guessesUsed: 1,
             },
             {
@@ -423,6 +426,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
               roundStatus: "waiting",
               correctGuesses: 0,
               totalGuesses: 0,
+              marks: "",
               guessesUsed: 0,
             },
           ],

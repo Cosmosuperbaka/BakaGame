@@ -337,6 +337,9 @@ describe("SonGuessrService", () => {
     });
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
     expect(snapshot.phase).toBe("roundResult");
+    // 本轮作答标记：猜中的人拿到一枚 ✅；出题人不作答，因此不带标记。
+    const marked = snapshot.players.filter((p) => p.marks.length > 0);
+    expect(marked.map((p) => p.marks)).toEqual(["✅"]);
     expect(snapshot.roundSummary?.anime?.id).toBe(anime.id);
     expect(snapshot.roundSummary?.animeTrack).toEqual({
       title: "答案歌",
@@ -1629,9 +1632,9 @@ describe("SonGuessrService", () => {
       payload: { platform: "netease", enabled: false },
     });
     const paused = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
-    expect(
-      paused.musicPool?.find((entry) => entry.playerId === guestState.playerId)
-    ).toMatchObject({ enabled: false, inFlight: 1, recentTotal: 0 });
+    expect(paused.musicPool?.find((entry) => entry.playerId === guestState.playerId)).toMatchObject(
+      { enabled: false, inFlight: 1, recentTotal: 0 }
+    );
 
     releaseSearch!();
     const settled = await inflight;
@@ -1684,9 +1687,9 @@ describe("SonGuessrService", () => {
     expect(
       midGame.musicPool?.find((entry) => entry.playerId === guestState.playerId)
     ).toMatchObject({ enabled: false });
-    expect(
-      midGame.musicPool?.find((entry) => entry.playerId === hostSeat.playerId)
-    ).toMatchObject({ enabled: true });
+    expect(midGame.musicPool?.find((entry) => entry.playerId === hostSeat.playerId)).toMatchObject({
+      enabled: true,
+    });
     expect(midGame.musicAccountReady).toBe(true);
   });
 
@@ -1807,9 +1810,7 @@ describe("SonGuessrService", () => {
       payload: {},
     });
     const failed = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
-    expect(
-      failed.musicPool?.find((entry) => entry.playerId === hostSeat.playerId)
-    ).toMatchObject({
+    expect(failed.musicPool?.find((entry) => entry.playerId === hostSeat.playerId)).toMatchObject({
       inFlight: 0,
       recentOk: 0,
       recentTotal: 1,
@@ -7385,7 +7386,9 @@ describe("SonGuessr service 异步归属回归", () => {
       else animePending.resolve(anime);
       await guess;
       const snapshot = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot");
-      expect(snapshot.players.find((player) => player.id === guest.record.playerId)?.score).toBe(12);
+      expect(snapshot.players.find((player) => player.id === guest.record.playerId)?.score).toBe(
+        12
+      );
     });
   }
 });
@@ -8450,8 +8453,7 @@ describe("手动出题片段", () => {
       payload: { roomId: "1234", sessionToken: guestState.sessionToken },
     });
     expect(
-      lastEvent<SonGuessrRoomSnapshot>(restoredClient, "song.room.snapshot").currentRound
-        ?.lyricClip
+      lastEvent<SonGuessrRoomSnapshot>(restoredClient, "song.room.snapshot").currentRound?.lyricClip
     ).toEqual({
       startTime: 2_000,
       endTime: 8_000,
@@ -8482,16 +8484,14 @@ describe("手动出题片段", () => {
   test("预览下发建议片段，直接确认时用的就是同一段", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest } = await enterSubmittingPhase(service);
-    const preview = await execute<{ song: { suggestedClip?: { startTime: number; endTime: number } } }>(
-      service,
-      host,
-      {
-        id: "clip-suggested-preview",
-        type: "song.music.detail",
-        roomId: "1234",
-        payload: { songId: "answer" },
-      }
-    );
+    const preview = await execute<{
+      song: { suggestedClip?: { startTime: number; endTime: number } };
+    }>(service, host, {
+      id: "clip-suggested-preview",
+      type: "song.music.detail",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
     const auto = createSongLyricClip(
       songs.answer.lyrics,
       5,

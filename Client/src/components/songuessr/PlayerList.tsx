@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
 import { AgentBadge } from "@/components/common/AgentBadge";
+import { CEEMarks } from "@/components/common/CEEMarks";
 import {
   PlayerGroupTitle,
   PlayerListLayout,
@@ -281,6 +282,7 @@ function SongPlayerRow({
         </>
       }
       actions={actions}
+      detail={player.marks ? <CEEMarks marks={player.marks} name={player.name} /> : undefined}
       layoutId={player.id}
       ref={ref}
     />

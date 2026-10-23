@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen, userEvent, within } from "storybook/test";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { CEEMarks } from "@/components/cee/CEEMarks";
+import { CEEMarks } from "@/components/common/CEEMarks";
 import { dropFocus } from "@/stories/PlayHelpers";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
 import { hostActions, PlayerRow } from "./PlayerRow";

@@ -29,7 +29,7 @@ import {
   SPECTATE_TIMEOUT_TEXT,
 } from "@/lib/AntiCheatCopy";
 import { AnimatePresence, motion } from "framer-motion";
-import { CEEMarks } from "./CEEMarks";
+import { CEEMarks } from "@/components/common/CEEMarks";
 
 /** 与 `useCEEAction` 的 `run` 同签名，避免玩家行各自重写命令类型。 */
 type CEERun = ReturnType<typeof useCEEAction>["run"];

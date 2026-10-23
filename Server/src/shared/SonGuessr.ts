@@ -421,7 +421,6 @@ export interface SongClipPreview {
   suggestedClip?: SongClipRange;
 }
 
-
 export interface SongSearchResult {
   id: string;
   title: string;
@@ -607,6 +606,12 @@ export interface SonGuessrPlayerView {
   account?: PlayerAccount;
   correctGuesses: number;
   totalGuesses: number;
+  /**
+   * 本局逐轮的作答结果标记串，按轮次追加，与猜猜呗的 `marks` 共用同一套字形口径
+   * （✅ 猜中 / 🏳️ 放弃 / 💀 次数用尽 / ⏱️ 超时）。
+   * 出题人、其队友与旁观者不作答，因此不产生标记——串的长度就是「真正作答过的轮数」。
+   */
+  marks: string;
   /** `teamCorrect`：队友已猜中，本人不再作答；`observing`：队友出题，本局观战。 */
   roundStatus:
     | "waiting"
@@ -924,17 +929,17 @@ export type SonGuessrAck<TCommand extends SonGuessrCommand> = TCommand extends
           : TCommand extends "song.auth.setPoolSharing"
             ? { enabled: boolean }
             : TCommand extends "song.music.search"
-            ? { results: SongSearchResult[] }
-            : TCommand extends "song.music.detail"
-            ? { song: SongClipPreview }
-            : TCommand extends "song.bangumi.search"
-              ? { results: BangumiSubjectSearchResult[] }
-              : TCommand extends "song.bangumi.songs"
-                ? { results: BangumiSongCandidate[] }
-                : TCommand extends "song.music.artist.search"
-                  ? { results: SongArtistSearchResult[] }
-                  : TCommand extends "song.music.playlist.resolve"
-                    ? { playlist: SongPlaylistInfo }
-                    : TCommand extends "song.subject.image"
-                      ? { imageUrl: string | undefined }
-                      : Record<string, unknown>;
+              ? { results: SongSearchResult[] }
+              : TCommand extends "song.music.detail"
+                ? { song: SongClipPreview }
+                : TCommand extends "song.bangumi.search"
+                  ? { results: BangumiSubjectSearchResult[] }
+                  : TCommand extends "song.bangumi.songs"
+                    ? { results: BangumiSongCandidate[] }
+                    : TCommand extends "song.music.artist.search"
+                      ? { results: SongArtistSearchResult[] }
+                      : TCommand extends "song.music.playlist.resolve"
+                        ? { playlist: SongPlaylistInfo }
+                        : TCommand extends "song.subject.image"
+                          ? { imageUrl: string | undefined }
+                          : Record<string, unknown>;
