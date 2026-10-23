@@ -6,7 +6,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger, TABS_TRIGGER_CLASS } from "@/components/ui/Tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import type { ChangelogEntry } from "@/lib/Changelog";
@@ -18,20 +18,21 @@ import {
   type CreditDependency,
   type CreditLicenseDocument,
 } from "@/lib/Credits";
-import { iconTappable, tappable } from "@/lib/Motion";
+import { iconTappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
+import { PRIVACY_UPDATED_AT, PrivacyBody } from "@/components/legal/PrivacyBody";
+import { TERMS_UPDATED_AT, TermsBody } from "@/components/legal/TermsBody";
 import { ChangelogPanel } from "./ChangelogPanel";
 import { CommitPanel } from "./CommitPanel";
 import { CreditsPanel } from "./CreditsPanel";
 import { DependencySheet } from "./DependencySheet";
 
-export type CreditsTab = "credits" | "changelog" | "commits";
+export type CreditsTab = "credits" | "changelog" | "commits" | "privacy" | "terms";
 
 export interface CreditsViewProps {
   tab: CreditsTab;
   onTabChange: (tab: CreditsTab) => void;
   onBack: () => void;
-  onOpenPage: (path: string) => void;
   versionLabel: string;
   commitLabel: string;
   dependencies: readonly CreditDependency[];
@@ -46,13 +47,19 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
   { value: "credits", label: "开源致谢" },
   { value: "changelog", label: "更新日志" },
   { value: "commits", label: "提交历史" },
+  { value: "privacy", label: "隐私说明" },
+  { value: "terms", label: "用户条款" },
 ];
 
-/** 与三个标签同排同尺寸的站内说明入口：样式共用 `TABS_TRIGGER_CLASS`，只有语义不同。 */
-const LEGAL_LINKS = [
-  { href: "/privacy", label: "隐私说明" },
-  { href: "/terms", label: "用户条款" },
-] as const;
+/** 法务标签的正文外壳：正文与整页路由共用一份，这里只补「最后更新」与阅读宽度。 */
+function LegalTabPanel({ updatedAt, children }: { updatedAt: string; children: ReactNode }) {
+  return (
+    <article className="mx-auto w-full max-w-3xl px-6 py-5 md:px-10 md:py-6">
+      <p className="text-xs text-muted-foreground">{`最后更新：${updatedAt}`}</p>
+      <div className="mt-5 space-y-6">{children}</div>
+    </article>
+  );
+}
 
 /** 页眉的纯图标入口：悬停说明给出名称，可访问名与说明同源。 */
 function HeaderIconButton({
@@ -93,7 +100,6 @@ export function CreditsView({
   tab,
   onTabChange,
   onBack,
-  onOpenPage,
   versionLabel,
   commitLabel,
   dependencies,
@@ -181,37 +187,15 @@ export function CreditsView({
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="shrink-0">
-          {/* 窄屏标签放不下时整行横向滚动，不折行。分隔线交给外层：
-              站内说明与三个标签同排同尺寸，但它们是离开本页的链接，不能混进 tablist 的语义里。 */}
+          {/* 窄屏五个标签放不下时整行横向滚动，不折行。 */}
           <div className="scrollbar-hidden mx-auto w-full max-w-6xl overflow-x-auto px-6 md:px-10">
-            <div className="flex h-10 w-max min-w-full items-stretch border-b border-border">
-              <TabsList className="border-b-0">
-                {TAB_ITEMS.map((item) => (
-                  <TabsTrigger key={item.value} value={item.value}>
-                    {item.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              <nav aria-label="站内说明" className="flex items-stretch gap-1 pl-2">
-                {LEGAL_LINKS.map((link) => (
-                  <motion.a
-                    key={link.href}
-                    href={link.href}
-                    {...tappable}
-                    onClick={(event) => {
-                      // 交给页面切换，不整页重载；修饰键点击与新标签打开保持原生链接行为。
-                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
-                        return;
-                      event.preventDefault();
-                      onOpenPage(link.href);
-                    }}
-                    className={cn(TABS_TRIGGER_CLASS, "text-muted-foreground")}
-                  >
-                    {link.label}
-                  </motion.a>
-                ))}
-              </nav>
-            </div>
+            <TabsList className="w-full justify-start">
+              {TAB_ITEMS.map((item) => (
+                <TabsTrigger key={item.value} value={item.value}>
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
         </div>
         {/* 每个标签自己滚动：切换即从顶部开始，popLayout 的退场内容也不会因公共滚动容器的偏移跳位。 */}
@@ -244,9 +228,25 @@ export function CreditsView({
             <CommitPanel commits={commits} />
           </div>
         </TabsContent>
+        {/* 法务两页并入标签：读「关于项目」时不必跳走再跳回，退出还落到主页。 */}
+        <TabsContent
+          value="privacy"
+          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          <LegalTabPanel updatedAt={PRIVACY_UPDATED_AT}>
+            <PrivacyBody />
+          </LegalTabPanel>
+        </TabsContent>
+        <TabsContent
+          value="terms"
+          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        >
+          <LegalTabPanel updatedAt={TERMS_UPDATED_AT}>
+            <TermsBody />
+          </LegalTabPanel>
+        </TabsContent>
       </Tabs>
 
-      {/* 站内说明入口已提到页眉，与返回、仓库入口并列；这里不再挂页脚。 */}
       <Sheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}

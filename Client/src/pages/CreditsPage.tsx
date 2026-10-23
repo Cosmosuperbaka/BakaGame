@@ -10,7 +10,7 @@ import { usePageNavigate } from "@/hooks/UsePageTransition";
 import creditsManifest from "virtual:credits";
 import commitHistory from "virtual:commit-history";
 
-const TABS: readonly CreditsTab[] = ["credits", "changelog", "commits"];
+const TABS: readonly CreditsTab[] = ["credits", "changelog", "commits", "privacy", "terms"];
 
 const isCreditsTab = (value: string | null): value is CreditsTab =>
   value !== null && TABS.includes(value as CreditsTab);
@@ -48,7 +48,6 @@ function CreditsPage() {
           setParams(next === "credits" ? {} : { tab: next }, { replace: true })
         }
         onBack={() => void navigate("/")}
-        onOpenPage={(path) => void navigate(path)}
         versionLabel={`V${version ?? "∞"}`}
         commitLabel={commitHistory.currentCommit}
         dependencies={creditsManifest.dependencies}

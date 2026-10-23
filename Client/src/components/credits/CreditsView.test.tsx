@@ -46,15 +46,16 @@ function statValue(scope: HTMLElement, label: string): string | undefined {
 
 function renderView({
   onTabChange = vi.fn(),
-  onOpenPage = vi.fn(),
   loadLicense = vi.fn(loadFixtureLicense),
+  initialTab = "credits" as CreditsTab,
 }: {
   onTabChange?: (tab: CreditsTab) => void;
-  onOpenPage?: (path: string) => void;
   loadLicense?: (packageName: string) => Promise<CreditLicenseDocument | null>;
+  /** 起始标签：法务两页的正文要直接落在对应标签上验，不必先点一遍。 */
+  initialTab?: CreditsTab;
 } = {}) {
   function Harness() {
-    const [tab, setTab] = useState<CreditsTab>("credits");
+    const [tab, setTab] = useState<CreditsTab>(initialTab);
     return (
       <TooltipProvider>
         <CreditsView
@@ -64,7 +65,6 @@ function renderView({
             onTabChange(next);
           }}
           onBack={() => {}}
-          onOpenPage={onOpenPage}
           versionLabel="V1.2.0"
           commitLabel="3ee6998"
           dependencies={CREDITS_FIXTURE_DEPENDENCIES}
@@ -81,13 +81,13 @@ function renderView({
 }
 
 describe("CreditsView", () => {
-  it("按「开源致谢 / 更新日志 / 提交历史」排列标签，并在切换时回调", async () => {
+  it("按「开源致谢 / 更新日志 / 提交历史 / 隐私说明 / 用户条款」排列标签，并在切换时回调", async () => {
     const user = userEvent.setup();
     const onTabChange = vi.fn();
     renderView({ onTabChange });
 
     const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabs).toEqual(["开源致谢", "更新日志", "提交历史"]);
+    expect(tabs).toEqual(["开源致谢", "更新日志", "提交历史", "隐私说明", "用户条款"]);
     expect(screen.getByRole("heading", { name: "参与开发的大模型" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "更新日志" }));
@@ -241,23 +241,40 @@ describe("CreditsView", () => {
     expect(await within(dialog).findByText("该包未附带许可证原文。")).toBeInTheDocument();
   });
 
-  it("法务入口与三个标签同排并列，样式同标签，点击交给路由处理", async () => {
+  it("法务两页是真正的标签：切换就地出正文，不跳页", async () => {
     const user = userEvent.setup();
-    const onOpenPage = vi.fn();
-    renderView({ onOpenPage });
+    const onTabChange = vi.fn();
+    renderView({ onTabChange });
 
-    const privacy = screen.getByRole("link", { name: "隐私说明" });
-    const terms = screen.getByRole("link", { name: "用户条款" });
-    // 与标签同排：同一个横滚行容器内，且排在三个标签之后。
-    const tabRow = screen.getByRole("tab", { name: "开源致谢" }).parentElement?.parentElement;
-    expect(tabRow).toContainElement(privacy);
-    expect(tabRow).toContainElement(terms);
-    // 不是标签：离开本页的入口不该混进 tablist 的语义里。
-    expect(privacy).not.toHaveAttribute("role", "tab");
+    // 五个标签同排同款式，法务与另外三个没有任何结构差别。
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "开源致谢",
+      "更新日志",
+      "提交历史",
+      "隐私说明",
+      "用户条款",
+    ]);
 
-    await user.click(privacy);
-    expect(onOpenPage).toHaveBeenCalledWith("/privacy");
-    await user.click(terms);
-    expect(onOpenPage).toHaveBeenCalledWith("/terms");
+    await user.click(screen.getByRole("tab", { name: "隐私说明" }));
+    expect(onTabChange).toHaveBeenCalledWith("privacy");
+    await user.click(screen.getByRole("tab", { name: "用户条款" }));
+    expect(onTabChange).toHaveBeenCalledWith("terms");
+  });
+
+  it("隐私标签渲染与整页路由同一份正文", () => {
+    renderView({ initialTab: "privacy" });
+
+    expect(screen.getByText("隐私说明")).toBeInTheDocument();
+    expect(screen.getByText(/最后更新：/)).toBeInTheDocument();
+    expect(screen.getByText("一、我们收集的信息")).toBeInTheDocument();
+    // 标签里嵌的只有正文：整页路由那套「返回主页」表头不能被搬进来第二份。
+    expect(screen.getAllByRole("button", { name: "返回主页" })).toHaveLength(1);
+  });
+
+  it("用户条款标签渲染同一份正文", () => {
+    renderView({ initialTab: "terms" });
+
+    expect(screen.getByText("用户条款")).toBeInTheDocument();
+    expect(screen.getByText(/欢迎使用 BakaGame/)).toBeInTheDocument();
   });
 });

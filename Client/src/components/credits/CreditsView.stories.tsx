@@ -23,7 +23,6 @@ function CreditsDemo({ initialTab = "credits" }: { initialTab?: CreditsTab }) {
       tab={tab}
       onTabChange={setTab}
       onBack={() => {}}
-      onOpenPage={() => {}}
       versionLabel="V1.2.0"
       commitLabel="3ee6998"
       dependencies={CREDITS_FIXTURE_DEPENDENCIES}
@@ -46,7 +45,6 @@ const meta = {
     tab: "credits",
     onTabChange: () => {},
     onBack: () => {},
-    onOpenPage: () => {},
     versionLabel: "V1.2.0",
     commitLabel: "3ee6998",
     dependencies: CREDITS_FIXTURE_DEPENDENCIES,
