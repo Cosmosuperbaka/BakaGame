@@ -14,7 +14,7 @@ import { FeedbackDialog } from "@/components/account/FeedbackDialog";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
-import { headerTappable, popover, pressable, type OriginPoint } from "@/lib/Motion";
+import { headerTappable, popover, type OriginPoint } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 
@@ -199,25 +199,21 @@ export function FeedbackButton() {
   const unread = useAccountStore((state) => state.unreadFeedback);
   if (!isAvailable(status)) return null;
   return (
-    <motion.button
-      type="button"
-      {...pressable}
+    <Button
+      variant="ghost"
+      className="relative"
+      aria-label={unread ? `反馈（${unread} 条新回复）` : "反馈"}
       onClick={(event) =>
         status === "signedIn"
           ? openDialog("feedback", originOf(event))
           : openDialog("login", originOf(event), "feedback")
       }
-      className="relative flex h-9 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
-      <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
-      反馈
-      {unread ? (
-        <>
-          <UnreadDot className="absolute right-0.5 top-0.5" />
-          <span className="sr-only">（{unread} 条新回复）</span>
-        </>
-      ) : null}
-    </motion.button>
+      <MessageSquareText aria-hidden="true" />
+      {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
+      <span className="[@media(max-height:680px)]:hidden">反馈</span>
+      {unread ? <UnreadDot className="absolute right-1 top-1" /> : null}
+    </Button>
   );
 }
 
