@@ -239,15 +239,23 @@ describe("CreditsView", () => {
     expect(await within(dialog).findByText("该包未附带许可证原文。")).toBeInTheDocument();
   });
 
-  it("法务入口与返回、仓库入口并列在页眉，点击交给路由处理", async () => {
+  it("法务入口与三个标签同排并列，样式同标签，点击交给路由处理", async () => {
     const user = userEvent.setup();
     const onOpenPage = vi.fn();
     renderView({ onOpenPage });
 
-    expect(screen.queryByText("站内说明")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "隐私说明" }));
+    const privacy = screen.getByRole("link", { name: "隐私说明" });
+    const terms = screen.getByRole("link", { name: "用户条款" });
+    // 与标签同排：同一个横滚行容器内，且排在三个标签之后。
+    const tabRow = screen.getByRole("tab", { name: "开源致谢" }).parentElement?.parentElement;
+    expect(tabRow).toContainElement(privacy);
+    expect(tabRow).toContainElement(terms);
+    // 不是标签：离开本页的入口不该混进 tablist 的语义里。
+    expect(privacy).not.toHaveAttribute("role", "tab");
+
+    await user.click(privacy);
     expect(onOpenPage).toHaveBeenCalledWith("/privacy");
-    await user.click(screen.getByRole("link", { name: "用户条款" }));
+    await user.click(terms);
     expect(onOpenPage).toHaveBeenCalledWith("/terms");
   });
 });

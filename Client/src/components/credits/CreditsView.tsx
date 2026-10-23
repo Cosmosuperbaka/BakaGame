@@ -1,12 +1,18 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, ScrollText, ShieldCheck } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 // 逐图标引入：品牌图标包的聚合入口无法摇树，整包会进产物。
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  TABS_TRIGGER_CLASS,
+} from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import type { ChangelogEntry } from "@/lib/Changelog";
@@ -18,7 +24,7 @@ import {
   type CreditDependency,
   type CreditLicenseDocument,
 } from "@/lib/Credits";
-import { iconTappable } from "@/lib/Motion";
+import { iconTappable, tappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { ChangelogPanel } from "./ChangelogPanel";
 import { CommitPanel } from "./CommitPanel";
@@ -48,9 +54,10 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
   { value: "commits", label: "提交历史" },
 ];
 
+/** 与三个标签同排同尺寸的站内说明入口：样式共用 `TABS_TRIGGER_CLASS`，只有语义不同。 */
 const LEGAL_LINKS = [
-  { href: "/privacy", label: "隐私说明", icon: ShieldCheck },
-  { href: "/terms", label: "用户条款", icon: ScrollText },
+  { href: "/privacy", label: "隐私说明" },
+  { href: "/terms", label: "用户条款" },
 ] as const;
 
 /** 页眉的纯图标入口：悬停说明给出名称，可访问名与说明同源。 */
@@ -158,24 +165,6 @@ export function CreditsView({
                 </span>
               </>
             ) : null}
-            {LEGAL_LINKS.map((link) => (
-              <HeaderIconButton key={link.href} label={link.label}>
-                <motion.a
-                  href={link.href}
-                  aria-label={link.label}
-                  onClick={(event) => {
-                    // 交给页面切换，不整页重载；修饰键点击与新标签打开保持原生链接行为。
-                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
-                      return;
-                    event.preventDefault();
-                    onOpenPage(link.href);
-                  }}
-                  {...iconTappable}
-                >
-                  <link.icon aria-hidden="true" />
-                </motion.a>
-              </HeaderIconButton>
-            ))}
             <HeaderIconButton label="GitHub 仓库">
               <motion.a
                 href={REPOSITORY_URL}
@@ -198,15 +187,37 @@ export function CreditsView({
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="shrink-0">
-          {/* 窄屏三个标签放不下时横向滚动，不折行。 */}
+          {/* 窄屏标签放不下时整行横向滚动，不折行。分隔线交给外层：
+              站内说明与三个标签同排同尺寸，但它们是离开本页的链接，不能混进 tablist 的语义里。 */}
           <div className="scrollbar-hidden mx-auto w-full max-w-6xl overflow-x-auto px-6 md:px-10">
-            <TabsList className="w-full justify-start">
-              {TAB_ITEMS.map((item) => (
-                <TabsTrigger key={item.value} value={item.value}>
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <div className="flex h-10 w-max min-w-full items-stretch border-b border-border">
+              <TabsList className="border-b-0">
+                {TAB_ITEMS.map((item) => (
+                  <TabsTrigger key={item.value} value={item.value}>
+                    {item.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              <nav aria-label="站内说明" className="flex items-stretch gap-1 pl-2">
+                {LEGAL_LINKS.map((link) => (
+                  <motion.a
+                    key={link.href}
+                    href={link.href}
+                    {...tappable}
+                    onClick={(event) => {
+                      // 交给页面切换，不整页重载；修饰键点击与新标签打开保持原生链接行为。
+                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
+                        return;
+                      event.preventDefault();
+                      onOpenPage(link.href);
+                    }}
+                    className={cn(TABS_TRIGGER_CLASS, "text-muted-foreground")}
+                  >
+                    {link.label}
+                  </motion.a>
+                ))}
+              </nav>
+            </div>
           </div>
         </div>
         {/* 每个标签自己滚动：切换即从顶部开始，popLayout 的退场内容也不会因公共滚动容器的偏移跳位。 */}

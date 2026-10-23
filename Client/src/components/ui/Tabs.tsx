@@ -85,21 +85,21 @@ const TabsList = React.forwardRef<
 });
 TabsList.displayName = TabsPrimitive.List.displayName;
 
+/**
+ * 标签外观的唯一来源。与标签同排、同尺寸但不是标签的入口（如站内说明链接）
+ * 直接复用这份类名，避免在调用处再抄一遍后两处各自漂移。
+ */
+export const TABS_TRIGGER_CLASS =
+  // 标签贴在分隔线上（-mb-px 盖住那 1px），聚焦环向内收，不被弹窗边缘或分隔线切掉。
+  "relative -mb-px inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-t-md px-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:-outline-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground";
+
 /** 标签。按压走 tappable：CSS 的 active:scale 没有过渡、按下松开都是硬切，也不受减弱动效约束。 */
 const TabsTrigger = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
 >(({ className, children, ...props }, ref) => (
   <TabsPrimitive.Trigger ref={ref} asChild data-value={props.value} {...props}>
-    <motion.button
-      type="button"
-      {...tappable}
-      className={cn(
-        // 标签贴在分隔线上（-mb-px 盖住那 1px），聚焦环向内收，不被弹窗边缘或分隔线切掉。
-        "relative -mb-px inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-t-md px-3 text-sm font-medium transition-colors hover:text-foreground focus-visible:-outline-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground",
-        className
-      )}
-    >
+    <motion.button type="button" {...tappable} className={cn(TABS_TRIGGER_CLASS, className)}>
       {children}
     </motion.button>
   </TabsPrimitive.Trigger>
