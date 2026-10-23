@@ -116,7 +116,13 @@ const DEFAULT_SETTINGS: SonGuessrSettings = {
   allowAgents: false,
 };
 
-/** 未配置歌单或歌手时使用网易云热歌榜作为默认题库。 */
+/**
+ * 未配置歌单或歌手时使用网易云热歌榜作为默认题库。
+ *
+ * QQ 音乐的热歌榜是榜单接口（toplist）而不是歌单 ID，锁定的接口包没有榜单取曲方法，
+ * 因此这里无法按平台等价切换；QQ-only 房间仍用这份默认题库（网易云匿名+解灰）。
+ * 共有曲目的代表侧由 `musicSearchOptions` 的平台偏好决定，与默认题库是两件事。
+ */
 const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
 
 /** 猜歌计分常量与公式统一在 `domain/SongRules`，这里不再各留一份。 */
