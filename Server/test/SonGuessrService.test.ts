@@ -4528,8 +4528,14 @@ describe("SonGuessrService", () => {
       payload: { roundNumber: 1 },
     });
 
-    // 时间前移 85 秒（超过 80 秒的回合全局硬超时 hardDeadlineAt）
-    mockTime += 85_000;
+    // 硬截止要覆盖全部猜测窗口（默认 3 次 × 60 秒）与各自的回源裕量：
+    // 第一次猜测的倒计时远不是整回合的上限，不能在这一刻就结算。
+    mockTime += 200_000;
+    await service.runHousekeeping();
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+
+    // 越过锚点 + 3 × (60 + 20) 秒后才由硬截止保底结算，房间不会死锁。
+    mockTime += 45_000;
     await service.runHousekeeping();
 
     const finalSnapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
@@ -6775,6 +6781,207 @@ describe("上线前 P0 修复回归", () => {
     expect(settled.roundSummary?.attempts[0]).toMatchObject({ result: "timeout" });
   });
 
+  test("一次超时之后，后续每次猜测仍获得完整倒计时且不会被硬截止提前判超时", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-timeout-window");
+    const guest = connection(service, "guest-timeout-window");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "连续作答玩家");
+    // 默认 3 次猜测、每次 60 秒；硬截止必须覆盖三次窗口，而不是只算一次。
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "timeout-window-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").guessDeadlineAt).toBe(
+      mockTime + 60_000
+    );
+
+    // 第一次作答超时：扣一次并重开一整段 60 秒，而不是只剩「硬截止 - 当前时刻」的零头。
+    mockTime += 60_001;
+    await service.runHousekeeping();
+    const afterTimeout = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(afterTimeout.remainingGuesses).toBe(2);
+    expect(afterTimeout.guessDeadlineAt).toBe(mockTime + 60_000);
+
+    // 走到旧硬截止（锚点 + 80 秒）之后，第二次猜测仍应正常校验，
+    // 不能报「本次猜测已经超时」——这正是线上反馈的复现点。
+    mockTime += 20_000;
+    await expect(
+      execute(service, guest, {
+        id: "timeout-window-guess",
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "wrong" },
+      })
+    ).resolves.toMatchObject({ attempt: { result: "wrong" } });
+    const afterWrong = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(afterWrong.remainingGuesses).toBe(1);
+    expect(afterWrong.guessDeadlineAt).toBe(mockTime + 60_000);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+
+    // 第三次窗口同样完整；次数耗尽后才结算。
+    mockTime += 60_001;
+    await service.runHousekeeping();
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("roundResult");
+  });
+
+  test("窗口到期到巡检落账之间的提交按下一段窗口继续，不会直接判超时", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-late-submit");
+    const guest = connection(service, "guest-late-submit");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "慢搜玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "late-submit-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
+    // 搜歌耗时越过了第一段窗口，但巡检（10 秒一轮）还没落账。
+    mockTime += 61_000;
+    const submitted = await execute<{
+      attempt: { result: string; guessNumber: number };
+      remainingGuesses: number;
+    }>(service, guest, {
+      id: "late-submit-guess",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "wrong" },
+    });
+
+    // 旧窗口先按超时落账，本次提交进入下一段窗口，而不是被旧截止时刻拒绝。
+    expect(submitted.attempt).toMatchObject({ result: "wrong", guessNumber: 2 });
+    expect(submitted.remainingGuesses).toBe(1);
+    expect(
+      lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState").visibleAttempts.map(
+        (attempt) => attempt.result
+      )
+    ).toEqual(["timeout", "wrong"]);
+    expect(lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState")).toMatchObject({
+      remainingGuesses: 1,
+      guessDeadlineAt: mockTime + 60_000,
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+  });
+
+  test("超时后连续提交按真实猜测结算，不会被逐次判超时耗尽次数", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-repeat-submit");
+    const guest = connection(service, "guest-repeat-submit");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "连续提交玩家");
+    await execute(service, host, {
+      id: "repeat-submit-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { maxGuessesPerRound: 4, guessDurationSeconds: 60 },
+    });
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "repeat-submit-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
+    // 第一段窗口过期后再连续提交两次：第一次补记超时并进入新窗口，
+    // 第二次必须在同一段新窗口里作为真实猜测校验，而不是又记一次超时。
+    mockTime += 61_000;
+    await expect(
+      execute(service, guest, {
+        id: "repeat-submit-first",
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "wrong" },
+      })
+    ).resolves.toMatchObject({ attempt: { result: "wrong" }, remainingGuesses: 2 });
+    await expect(
+      execute(service, guest, {
+        id: "repeat-submit-second",
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "wrong" },
+      })
+    ).resolves.toMatchObject({ attempt: { result: "wrong" }, remainingGuesses: 1 });
+
+    const privateState = lastEvent<SonGuessrPrivateState>(guest, "song.game.privateState");
+    expect(privateState.visibleAttempts.map((attempt) => attempt.result)).toEqual([
+      "timeout",
+      "wrong",
+      "wrong",
+    ]);
+    expect(privateState.remainingGuesses).toBe(1);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+  });
+
+  test("回合硬截止过后再提交只强制结算一次，不会被连续点击逐次判超时", async () => {
+    let mockTime = 100_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => mockTime,
+    });
+    const host = connection(service, "host-hard-submit");
+    const guest = connection(service, "guest-hard-submit");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "硬截止玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "hard-submit-audio",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+
+    // 越过锚点 + 3 × (60 + 20) 秒的硬截止，且巡检尚未落账。
+    mockTime += 3 * (60 + 20) * 1_000 + 1_000;
+    await expect(
+      execute(service, guest, {
+        id: "hard-submit-first",
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "wrong" },
+      })
+    ).rejects.toMatchObject({ code: "ROUND_EXPIRED" });
+    // 第一次提交已经把回合结算掉；再点只会得到「当前没有进行中的回合」，不会继续扣次数。
+    await expect(
+      execute(service, guest, {
+        id: "hard-submit-second",
+        type: "song.game.guess",
+        roomId: "1234",
+        payload: { songId: "wrong" },
+      })
+    ).rejects.toMatchObject({ code: "NO_ACTIVE_ROUND" });
+
+    const settled = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(settled.phase).toBe("roundResult");
+    expect(settled.roundSummary?.attempts.map((attempt) => attempt.result)).toEqual(["timeout"]);
+  });
+
   test("活跃玩家切轮断线重连后通过 ensureRoundPlayerState 自动恢复回合状态且可正常答题", async () => {
     const service = new SonGuessrService({
       musicProvider: provider,
@@ -7632,8 +7839,9 @@ test("SonGuessr 全体音频从未就绪仍在准备宽限后获得完整答题�
   expect(ready.canGuess).toBe(true);
   expect(ready.remainingGuesses).toBe(3);
   expect(ready.guessDeadlineAt).toBe(75_000);
-  // 持续聊天刷新房间活动，终止不能来自 idle 清理。
-  now = 74_000;
+  // 持续聊天刷新房间活动，终止不能来自 idle 清理，也不能被聊天续期。
+  // 硬截止覆盖 3 次猜测窗口（锚点 15_000 + 3 × (60 + 20) 秒）。
+  now = 200_000;
   await execute(service, guest, {
     id: "chat",
     type: "song.chat.send",
@@ -7642,7 +7850,7 @@ test("SonGuessr 全体音频从未就绪仍在准备宽限后获得完整答题�
   });
   await service.runHousekeeping();
   expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").phase).toBe("playing");
-  now = 96_000;
+  now = 256_000;
   await execute(service, guest, {
     id: "chat2",
     type: "song.chat.send",

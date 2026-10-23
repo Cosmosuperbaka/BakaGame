@@ -1313,7 +1313,7 @@ const AUDIO_READY_GRACE_MS = 15_000;
  * 时限从「指定出题人」起算，每次提交尝试顺延，超时后自动回到选出题人。
  */
 export const SUBMIT_SONG_TIMEOUT_MS = 180_000;
-/** 回合硬截止相对单次答题时长的裕量，用于兜住卡死的上游请求。 */
+/** 每个猜测窗口的兜底裕量：覆盖该次猜测回源校验的往返与卡死的上游请求。 */
 const ROUND_HARD_TIMEOUT_MARGIN_S = 20;
 /**
  * 单次番剧歌曲解析允许发起的上游搜索次数（一次搜索只对应一个上游请求，成本最低）。
@@ -4502,8 +4502,15 @@ export class SonGuessrService implements AdminRoomControl {
     if (!round || round.hardDeadlineAt !== undefined) return;
     const now = this.now();
     round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
+    // 硬截止必须覆盖本回合全部猜测窗口：每次作答（猜错、超时或宽限补偿）都会重开
+    // 一整段 `guessDurationSeconds`。只按单次窗口计算时，第一次超时后剩余窗口就只会
+    // 剩下一段裕量，后续猜测的倒计时被越截越短，最后一次往往提交即判超时。
+    // 裕量同样按窗口计，吸收每次校验猜测回源的往返耗时。
     round.hardDeadlineAt =
-      now + (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) * 1_000;
+      now +
+      round.settings.maxGuessesPerRound *
+        (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) *
+        1_000;
     round.answeringStartedAt = now;
   }
 
@@ -4574,13 +4581,29 @@ export class SonGuessrService implements AdminRoomControl {
     return { refreshed: true };
   }
 
-  /** 截止已过的猜测不产生结果：先按超时结算本回合，再拒绝这次请求。 */
-  private requireGuessBeforeDeadline(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
-    if (state.deadlineAt === undefined || state.deadlineAt > this.now()) return;
+  /**
+   * 提交时补结算已经过去的猜测窗口。
+   *
+   * 巡检每 10 秒才落一次超时，旧窗口到期到巡检落账之间存在空窗：这期间提交的猜测
+   * 属于下一段窗口（玩家搜歌时还没超时、点提交时才过点），不能拿旧截止时刻直接拒绝。
+   * 这里按巡检同一口径先记一次超时并重开倒计时，让本次提交作为新窗口的第一次作答继续；
+   * 次数刚好用尽时由调用方重新校验后拒绝。
+   *
+   * 回合硬截止已过时与巡检一致：强制结算整回合，不再接受猜测。
+   */
+  private settleExpiredGuessWindow(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
+    const round = room.currentRound;
+    if (!round) return;
+    const now = this.now();
+    if (round.hardDeadlineAt !== undefined && now >= round.hardDeadlineAt) {
+      this.settlePlayingRound(room, now);
+      return;
+    }
+    if (state.deadlineAt === undefined || state.deadlineAt > now) return;
     this.recordTimeout(room, state);
     if (this.isRoundComplete(room)) this.finishRound(room);
+    this.touch(room);
     this.publishRoom(room);
-    throw new AppError("GUESS_TIMEOUT", "本次猜测已经超时");
   }
 
   /** 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限。 */
@@ -4742,8 +4765,12 @@ export class SonGuessrService implements AdminRoomControl {
     if (!state) throw new AppError("SPECTATOR_FORBIDDEN", "你本局不参与猜歌");
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     this.ensureUnitOpen(round, state, player.id);
-
-    this.requireGuessBeforeDeadline(room, state);
+    this.settleExpiredGuessWindow(room, state);
+    if (room.phase !== "playing" || room.currentRound !== round) {
+      throw new AppError("ROUND_EXPIRED", "该回合已结束");
+    }
+    // 补记的超时可能正好用掉最后一次机会，必须按结算后的状态重新校验。
+    this.ensureUnitOpen(round, state, player.id);
     this.beginGuessAttempt(state, player);
 
     let guessedSong: SongDetails;
@@ -4800,7 +4827,12 @@ export class SonGuessrService implements AdminRoomControl {
     }
     if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
     this.ensureUnitOpen(round, state, player.id);
-    this.requireGuessBeforeDeadline(room, state);
+    this.settleExpiredGuessWindow(room, state);
+    if (room.phase !== "playing" || room.currentRound !== round) {
+      throw new AppError("ROUND_EXPIRED", "该回合已结束");
+    }
+    // 补记的超时可能正好用掉最后一次机会，必须按结算后的状态重新校验。
+    this.ensureUnitOpen(round, state, player.id);
 
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
