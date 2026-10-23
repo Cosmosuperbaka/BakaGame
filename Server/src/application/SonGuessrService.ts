@@ -77,6 +77,10 @@ import {
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
+import {
+  isPlayableSong,
+  type SongPlayabilityContext,
+} from "../infrastructure/MusicDeduplicator";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
   musicIpScope,
@@ -2394,8 +2398,12 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.musicProvider;
     const search = provider.searchArtists?.bind(provider);
     if (!search) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持搜索歌手");
+    // 与歌曲检索同口径：先按池内能力算偏好，再取号，避免在途数影响会员判定。
+    const options = this.musicSearchOptions(room);
     return {
-      results: await this.withAggregatedAccounts(room, (cookie) => search(keyword, 20, cookie)),
+      results: await this.withAggregatedAccounts(room, (cookie) =>
+        search(keyword, 20, cookie, options)
+      ),
     };
   }
 
@@ -3294,6 +3302,16 @@ export class SonGuessrService implements AdminRoomControl {
     const platformPreference: MusicPlatform[] =
       qqAvailable && !neteaseAvailable ? ["qq", "netease"] : ["netease", "qq"];
     return { vipPlatforms, platformPreference };
+  }
+
+  /** 自动选曲的软排序上下文：与检索共用同一套可播判定。 */
+  private songPlayabilityContext(room: SonGuessrRoomRecord): SongPlayabilityContext {
+    const qqAvailable = this.hasAvailablePoolAccount(room, "qq");
+    const qqVip = this.hasAvailablePoolAccount(room, "qq", { requireVip: true });
+    return {
+      availablePlatforms: qqAvailable ? ["netease", "qq"] : ["netease"],
+      vipPlatforms: qqVip ? ["qq"] : [],
+    };
   }
 
   /** 池内每端当下会被选中的号：快照的账号展示与开局复核都读这一条（不看在途）。 */
@@ -4515,7 +4533,12 @@ export class SonGuessrService implements AdminRoomControl {
     const recentSongWindow = resolveRecentSongWindow(candidates.length);
     const recentSongIds = new Set((room.recentSongIds ?? []).slice(0, recentSongWindow));
     const freshCandidates = candidates.filter((song) => !recentSongIds.has(song.id));
-    const pool = [...(freshCandidates.length > 0 ? freshCandidates : candidates)];
+    // 可播的排前面只是软排序：会员专享曲仍留在池里，前面的候选都取不到音频时照常继续试。
+    // 这样非会员 QQ 号不会每轮先拿 VIP 曲去撞 `getSong`，把尝试次数耗在必失败的请求上。
+    const playability = this.songPlayabilityContext(room);
+    const pool = [...(freshCandidates.length > 0 ? freshCandidates : candidates)].sort(
+      (a, b) => Number(isPlayableSong(b, playability)) - Number(isPlayableSong(a, playability))
+    );
     let attempts = 0;
     while (pool.length > 0 && attempts < AUTO_SONG_CANDIDATE_LIMIT) {
       attempts += 1;
@@ -4569,6 +4592,66 @@ export class SonGuessrService implements AdminRoomControl {
     );
   }
 
+  /**
+   * 歌手筛选取歌：歌单与歌手分属不同平台时，按名字在歌单平台找同名歌手并并入。
+   *
+   * 两个筛选条件最终取交集，ID 又带平台前缀；若只在歌手自己的平台取歌，
+   * 「网易云歌单 + QQ 歌手」的交集必然为空。按名字补一次同名歌手是最小代价的修正。
+   */
+  private async resolveArtistFilterSongs(
+    room: SonGuessrRoomRecord,
+    cookie: MusicCookieInput | undefined,
+    filters: SongAutoFilters
+  ): Promise<SongSearchResult[]> {
+    const provider = this.options.musicProvider;
+    const getArtistSongs = provider.getArtistSongs?.bind(provider);
+    if (!getArtistSongs) return [];
+    const playlistPlatform = filters.playlist
+      ? filters.playlist.id.startsWith("qq:")
+        ? "qq"
+        : "netease"
+      : undefined;
+    const searchArtists = provider.searchArtists?.bind(provider);
+    const options = this.musicSearchOptions(room);
+    // 查同名歌手时把歌单平台排到偏好首位：聚合结果会按名字去重，若仍按房间默认偏好，
+    // 「网易云歌单 + QQ 歌手」在两边都有账号时只会留下网易云条目，QQ ID 根本拿不到。
+    const lookupOptions: MusicSearchOptions = {
+      ...options,
+      platformPreference: playlistPlatform === "qq" ? ["qq", "netease"] : ["netease", "qq"],
+    };
+    const perArtist = await Promise.all(
+      filters.artists.map(async (artist) => {
+        const primary = await getArtistSongs(artist.id, cookie);
+        const artistPlatform = artist.id.startsWith("qq:") ? "qq" : "netease";
+        if (!playlistPlatform || !searchArtists || artistPlatform === playlistPlatform) {
+          return primary;
+        }
+        const match = (await searchArtists(artist.name, 10, cookie, lookupOptions)).find(
+          (candidate) =>
+            candidate.id.startsWith(`${playlistPlatform}:`) &&
+            normalizeSongText(candidate.name) === normalizeSongText(artist.name)
+        );
+        if (!match) return primary;
+        return [...primary, ...(await getArtistSongs(match.id, cookie))];
+      })
+    );
+    return perArtist.flat();
+  }
+
+  /** 歌单与歌手分属不同平台且交集为空时，给出可操作的原因，而不是泛化的「没有符合条件的歌曲」。 */
+  private assertAutomaticFilterMatch(filters: SongAutoFilters, candidateCount: number): void {
+    if (candidateCount > 0 || !filters.playlist || filters.artists.length === 0) return;
+    const playlistPlatform = filters.playlist.id.startsWith("qq:") ? "qq" : "netease";
+    const hasOtherPlatformArtist = filters.artists.some(
+      (artist) => (artist.id.startsWith("qq:") ? "qq" : "netease") !== playlistPlatform
+    );
+    if (!hasOtherPlatformArtist) return;
+    throw new AppError(
+      "AUTO_NO_MATCH",
+      "所选歌单与歌手分属不同音源平台，且没有找到同名歌手；请更换筛选"
+    );
+  }
+
   private async collectAutomaticCandidates(
     room: SonGuessrRoomRecord,
     cookie: MusicCookieInput | undefined
@@ -4581,13 +4664,8 @@ export class SonGuessrService implements AdminRoomControl {
         (await this.options.musicProvider.getPlaylistSongs(filters.playlist.id, cookie)).songs
       );
     }
-    if (filters.artists.length > 0 && this.options.musicProvider.getArtistSongs) {
-      const artistSongs = await Promise.all(
-        filters.artists.map((artist) =>
-          this.options.musicProvider.getArtistSongs!(artist.id, cookie)
-        )
-      );
-      sets.push(artistSongs.flat());
+    if (filters.artists.length > 0) {
+      sets.push(await this.resolveArtistFilterSongs(room, cookie, filters));
     }
     if (sets.length === 0) {
       if (!this.options.musicProvider.getPlaylistSongs) {
@@ -4603,6 +4681,7 @@ export class SonGuessrService implements AdminRoomControl {
       for (const id of first.keys()) if (!ids.has(id)) first.delete(id);
     }
     const candidates = [...first.values()];
+    this.assertAutomaticFilterMatch(filters, candidates.length);
     if (filters.minPopularity === 0) return candidates;
     const knownMatches = candidates.filter(
       (song) => song.popularity !== undefined && song.popularity >= filters.minPopularity

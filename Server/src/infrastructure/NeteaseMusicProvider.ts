@@ -102,14 +102,16 @@ export interface MusicProvider {
   searchArtists?(
     keyword: string,
     limit?: number,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    options?: MusicSearchOptions
   ): Promise<SongArtistSearchResult[]>;
   getArtistSongs?(artistId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;
   /** 按关键词检索专辑（供「专辑型 Bangumi 条目」取曲目用，见 `SongAlbumSearchResult`）。 */
   searchAlbums?(
     keyword: string,
     limit?: number,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    options?: MusicSearchOptions
   ): Promise<SongAlbumSearchResult[]>;
   /** 取整张专辑的曲目。 */
   getAlbumSongs?(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]>;

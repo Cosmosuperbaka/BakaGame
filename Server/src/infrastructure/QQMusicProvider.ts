@@ -335,7 +335,9 @@ export class QQMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
-    const cacheKey = `search:${cookie || ""}:${normalized.toLowerCase()}:${normalizedLimit}`;
+    // 检索结果是公开数据，不随账号变化；跨账号共享缓存，避免账号池多号时同一关键词
+    // 反复打上游。音频直链与登录态仍然按 Cookie 分键（见 loadAudioUrl / loginStatusCache）。
+    const cacheKey = `search:${normalized.toLowerCase()}:${normalizedLimit}`;
 
     const cached = this.cache.get(cacheKey) as SongSearchResult[] | undefined;
     if (cached) return cached;

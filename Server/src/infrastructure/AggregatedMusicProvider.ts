@@ -4,6 +4,10 @@ import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import {
   aggregateAndDeduplicateSongs,
   markSongPlayability,
+  normalizeComparableText,
+  platformRank,
+  songPlatform,
+  MUSIC_PLATFORM_PREFERENCE,
   type SongPlayabilityContext,
 } from "./MusicDeduplicator";
 import type {
@@ -34,10 +38,83 @@ export interface AggregatedMusicProviderOptions {
    * 传函数是为了让 T3 设置改动在下一个请求就生效。
    */
   allowAnonymousQqSearch?: boolean | (() => boolean);
+  /** 单源搜索等待上限：慢的一侧超时后按单音源降级，不拖住另一侧结果。 */
+  searchTimeoutMs?: { netease?: number; qq?: number };
 }
+
+const DEFAULT_SEARCH_TIMEOUT_MS = { netease: 8000, qq: 6000 };
 
 const resolveSwitch = (value: boolean | (() => boolean) | undefined, fallback: boolean): boolean =>
   typeof value === "function" ? value() : (value ?? fallback);
+
+/**
+ * 给单源搜索加等待上限。超时后原请求仍可能完成，必须提前挂 `catch`，
+ * 否则迟到的拒绝会变成 unhandledRejection（Bun 会终止进程）。
+ */
+async function withSearchTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  source: string
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new AppError("MUSIC_API_TIMEOUT", `${source}搜索超时`)),
+      timeoutMs
+    );
+    (timer as { unref?: () => void }).unref?.();
+  });
+  void task.catch(() => {});
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * 歌手/专辑这类非歌曲实体的双平台合并：按规范化键去重，再按平台偏好交错输出。
+ *
+ * 简单拼接后截断会让后一个平台的结果在正常输入下永远看不见（网易云先返回满额），
+ * 交错保证两边都有席位；同名项取房间偏好更高的那一侧的 ID，后续取歌也走同一边。
+ */
+function mergeSearchLists<T extends { id: string }>(
+  netease: T[],
+  qq: T[],
+  keyOf: (item: T) => string,
+  platformPreference: readonly MusicPlatform[] = MUSIC_PLATFORM_PREFERENCE,
+  limit?: number
+): T[] {
+  const preferred = new Map<string, T>();
+  for (const item of [...netease, ...qq]) {
+    const key = keyOf(item);
+    if (!key) continue;
+    const current = preferred.get(key);
+    if (
+      !current ||
+      platformRank(songPlatform(item.id), platformPreference) <
+        platformRank(songPlatform(current.id), platformPreference)
+    ) {
+      preferred.set(key, item);
+    }
+  }
+
+  const [first, second] = platformPreference[0] === "qq" ? [qq, netease] : [netease, qq];
+  const result: T[] = [];
+  const seen = new Set<string>();
+  const max = Math.max(first.length, second.length);
+  for (let index = 0; index < max; index += 1) {
+    for (const item of [first[index], second[index]]) {
+      if (!item) continue;
+      const key = keyOf(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(preferred.get(key) ?? item);
+      if (limit !== undefined && result.length >= limit) return result;
+    }
+  }
+  return result;
+}
 
 /** 组合凭据（JSON 形态）里按平台取值：非字符串一律视为未配置。 */
 const pickPlatformCookieField = (
@@ -105,12 +182,17 @@ export class AggregatedMusicProvider implements MusicProvider {
   private readonly qqProvider: MusicProvider;
   private readonly logger?: EventLogger;
   private readonly allowAnonymousQqSearch?: boolean | (() => boolean);
+  private readonly searchTimeoutMs: { netease: number; qq: number };
 
   constructor(options: AggregatedMusicProviderOptions) {
     this.neteaseProvider = options.neteaseProvider;
     this.qqProvider = options.qqProvider;
     this.logger = options.logger;
     this.allowAnonymousQqSearch = options.allowAnonymousQqSearch;
+    this.searchTimeoutMs = {
+      netease: options.searchTimeoutMs?.netease ?? DEFAULT_SEARCH_TIMEOUT_MS.netease,
+      qq: options.searchTimeoutMs?.qq ?? DEFAULT_SEARCH_TIMEOUT_MS.qq,
+    };
   }
 
   private anonymousQqAllowed(): boolean {
@@ -150,11 +232,19 @@ export class AggregatedMusicProvider implements MusicProvider {
       vipPlatforms: options.vipPlatforms,
     };
 
-    // 双端并行检索并做单边熔断与容错保护
+    // 双端并行检索并做单边熔断与容错保护；单源超时按该源降级。
     const [neteaseSettled, qqSettled] = await Promise.allSettled([
-      this.neteaseProvider.search(normalized, limit, neteaseCookie),
+      withSearchTimeout(
+        this.neteaseProvider.search(normalized, limit, neteaseCookie),
+        this.searchTimeoutMs.netease,
+        "网易云"
+      ),
       qqAvailable
-        ? this.qqProvider.search(normalized, limit, qqCookie)
+        ? withSearchTimeout(
+            this.qqProvider.search(normalized, limit, qqCookie),
+            this.searchTimeoutMs.qq,
+            "QQ 音乐"
+          )
         : Promise.resolve([] as SongSearchResult[]),
     ]);
 
@@ -416,7 +506,8 @@ export class AggregatedMusicProvider implements MusicProvider {
   async searchArtists(
     keyword: string,
     limit = 20,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    options: MusicSearchOptions = {}
   ): Promise<SongArtistSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const qqCookie = resolvePlatformCookie(cookie, "qq");
@@ -436,7 +527,13 @@ export class AggregatedMusicProvider implements MusicProvider {
       ...a,
       id: a.id.startsWith("qq:") ? a.id : buildSongUrn("qq", a.id),
     }));
-    return [...list1, ...list2].slice(0, limit);
+    return mergeSearchLists(
+      list1,
+      list2,
+      (artist) => normalizeComparableText(artist.name) || artist.id,
+      options.platformPreference,
+      limit
+    );
   }
 
   async getArtistSongs(artistId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
@@ -459,7 +556,8 @@ export class AggregatedMusicProvider implements MusicProvider {
   async searchAlbums(
     keyword: string,
     limit = 10,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    options: MusicSearchOptions = {}
   ): Promise<SongAlbumSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const qqCookie = resolvePlatformCookie(cookie, "qq");
@@ -479,7 +577,18 @@ export class AggregatedMusicProvider implements MusicProvider {
       ...a,
       id: a.id.startsWith("qq:") ? a.id : buildSongUrn("qq", a.id),
     }));
-    return [...list1, ...list2].slice(0, limit);
+    return mergeSearchLists(
+      list1,
+      list2,
+      (album) => {
+        const nameKey = normalizeComparableText(album.name);
+        return nameKey
+          ? `${nameKey}|${normalizeComparableText(album.artist ?? "")}`
+          : album.id;
+      },
+      options.platformPreference,
+      limit
+    );
   }
 
   async getAlbumSongs(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {

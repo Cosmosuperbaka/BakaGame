@@ -2935,6 +2935,156 @@ describe("SonGuessrService", () => {
     expect((error as AppError).code).toBe("MUSIC_LOGIN_REQUIRED");
   });
 
+  test("歌单与歌手分属不同平台时按同名歌手补齐交集", async () => {
+    const neteaseTrack: SongSearchResult = {
+      ...songs.answer,
+      id: "netease:track",
+      title: "交集曲",
+      artist: "测试歌手",
+    };
+    const crossProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie, platform) => ({
+        cookie,
+        account: {
+          platform: platform === "qq" ? "qq" : "netease",
+          nickname: platform === "qq" ? "QQ用户" : "网易云用户",
+          vipStatus: "nonVip",
+        },
+      }),
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "网易云歌单", songCount: 1 },
+        songs: [neteaseTrack],
+      }),
+      searchArtists: async () => [
+        { id: "netease:artist-netease", name: "测试歌手" },
+        { id: "qq:artist-qq", name: "测试歌手" },
+      ],
+      getArtistSongs: async (artistId) =>
+        artistId === "netease:artist-netease"
+          ? [neteaseTrack]
+          : [{ ...neteaseTrack, id: "qq:track" }],
+      getSong: async (id) => ({ ...songs.answer, id, audioUrl: `https://audio/${id}.mp3` }),
+    };
+    const service = new SonGuessrService({
+      musicProvider: crossProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "cross-host");
+    const guest = connection(service, "cross-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "cross-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=qq-cookie", platform: "qq" },
+    });
+    await execute(service, host, {
+      id: "cross-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "42", name: "网易云歌单", songCount: 1 },
+          artists: [{ id: "qq:artist-qq", name: "测试歌手" }],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "cross-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "cross-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").phase).toBe("playing");
+  });
+
+  test("自动选曲把可播曲排在前面，非会员 QQ 号不会先撞会员专享曲", async () => {
+    const songCalls: string[] = [];
+    const vipTrack: SongSearchResult = {
+      ...songs.answer,
+      id: "qq:vip",
+      title: "会员曲",
+      requiresVip: true,
+    };
+    const freeTrack: SongSearchResult = {
+      ...songs.answer,
+      id: "qq:free",
+      title: "免费曲",
+      requiresVip: false,
+    };
+    const autoProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie, platform) => ({
+        cookie,
+        account: {
+          platform: platform === "qq" ? "qq" : "netease",
+          nickname: platform === "qq" ? "QQ用户" : "网易云用户",
+          vipStatus: "nonVip",
+        },
+      }),
+      getPlaylistSongs: async () => ({
+        info: { id: "qq:42", name: "QQ 歌单", songCount: 2 },
+        songs: [vipTrack, freeTrack],
+      }),
+      getSong: async (id) => {
+        songCalls.push(id);
+        return { ...songs.answer, id, audioUrl: `https://audio/${id}.mp3` };
+      },
+    };
+    const service = new SonGuessrService({
+      musicProvider: autoProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "playable-first-host");
+    const guest = connection(service, "playable-first-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "playable-first-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=qq-cookie", platform: "qq" },
+    });
+    await execute(service, host, {
+      id: "playable-first-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "qq:42", name: "QQ 歌单", songCount: 2 },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "playable-first-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "playable-first-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").phase).toBe("playing");
+    expect(songCalls).toEqual(["qq:free"]);
+  });
+
   test("自动题库热度筛选对大歌单限制单轮上游查询数量", async () => {
     let popularityCalls = 0;
     const largePlaylist = Array.from({ length: 1_000 }, (_, index) => ({

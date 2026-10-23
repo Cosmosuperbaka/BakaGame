@@ -178,8 +178,17 @@ export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult)
     return false;
   }
 
-  // 时长防线：标题歌手一致但时长相差 > 3s 的（如 Live 版、加长版、伴奏），强制不合并
-  if (!durationMatches(songA.durationMs, songB.durationMs, 3000)) {
+  // 时长防线：标题歌手一致但时长相差 > 3s 的（如 Live 版、加长版、伴奏），强制不合并。
+  // 任一侧缺时长时没有这道证据，只允许完整曲名完全一致的候选合流；否则
+  // 「晴天」会把「晴天 - Live / 伴奏」一并吞掉。
+  const bothHaveDuration =
+    typeof songA.durationMs === "number" &&
+    songA.durationMs > 0 &&
+    typeof songB.durationMs === "number" &&
+    songB.durationMs > 0;
+  if (bothHaveDuration) {
+    if (!durationMatches(songA.durationMs, songB.durationMs, 3000)) return false;
+  } else if (normalizeComparableText(songA.title) !== normalizeComparableText(songB.title)) {
     return false;
   }
 
@@ -196,6 +205,52 @@ export function isDerivationSong(song: SongSearchResult): boolean {
       t
     ) || /(?:群星|网络歌手)/i.test(a)
   );
+}
+
+/**
+ * 版本噪音的负向分：搜索词明确要这个版本时不再扣分。
+ *
+ * 独立成函数是为了让主打分链保持可读；判定口径与原来逐条一致，只把「无条件惩罚」
+ * 改成「查询感知」。
+ */
+function calculateVersionPenalty(
+  song: SongSearchResult,
+  keyword: string,
+  normKeyword: string
+): number {
+  const rawTitle = (song.title || "").toLowerCase();
+  const rawArtist = (song.artist || "").toLowerCase();
+  const rawKeyword = (keyword || "").toLowerCase();
+  const wantsInstrumental =
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
+      rawKeyword
+    );
+  const wantsClip = /(?:片段|铃声|剪辑|加速|变速|慢速|dj版|remix)/i.test(rawKeyword);
+  const wantsLive = /(?:live|现场)/i.test(rawKeyword);
+  const wantsCover = normKeyword.includes("cover") || normKeyword.includes("翻唱");
+
+  let penalty = 0;
+  if (
+    !wantsInstrumental &&
+    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
+      rawTitle
+    )
+  ) {
+    penalty -= 160;
+  }
+  if (!wantsClip && /(?:片段|铃声|剪辑|加速|变速|慢速|dj版|remix)/i.test(rawTitle)) {
+    penalty -= 160;
+  }
+  if (
+    (song.originCoverType === 2 ||
+      /(?:翻唱|翻录|\bcover\b|カヴァー|自翻|试唱|原唱[：:])/i.test(rawTitle)) &&
+    !wantsCover
+  ) {
+    penalty -= 100;
+  }
+  if (!wantsLive && /(?:live|现场)/i.test(rawTitle)) penalty -= 25;
+  if (/(?:群星|网络歌手)/i.test(rawArtist)) penalty -= 60;
+  return penalty;
 }
 
 /**
@@ -258,43 +313,8 @@ export function calculateRelevanceScore(
     score += Math.min(Math.round(song.popularity / 5), 20);
   }
 
-  // 6. 负向版本惩罚
-  const rawTitle = (song.title || "").toLowerCase();
-  const rawArtist = (song.artist || "").toLowerCase();
-
-  // 伴奏 / 纯伴奏 / 卡拉OK / Instrumental
-  if (
-    /(?:伴奏|纯伴奏|纯音乐|纯音楽|off\s*vocal|インスト|karaoke|カラオケ|instrumental|\binst\b)/i.test(
-      rawTitle
-    )
-  ) {
-    score -= 160;
-  }
-
-  // 片段 / 剪辑 / 铃声 / 变速 / 加速 / 慢速
-  if (/(?:片段|铃声|剪辑|加速|变速|慢速|dj版|remix)/i.test(rawTitle)) {
-    score -= 160;
-  }
-
-  // 翻唱标记 (当搜索词本身未指定 cover / 翻唱时)
-  if (
-    (song.originCoverType === 2 ||
-      /(?:翻唱|翻录|\bcover\b|カヴァー|自翻|试唱|原唱[：:])/i.test(rawTitle)) &&
-    !normKeyword.includes("cover") &&
-    !normKeyword.includes("翻唱")
-  ) {
-    score -= 100;
-  }
-
-  // 现场版 / Live
-  if (/(?:live|现场)/i.test(rawTitle)) {
-    score -= 25;
-  }
-
-  // 歌手是群星 / 网络歌手
-  if (/(?:群星|网络歌手)/i.test(rawArtist)) {
-    score -= 60;
-  }
+  // 6. 负向版本惩罚：搜索词明确要这个版本时不再扣分，否则搜「remix」也会把 remix 压到底。
+  score += calculateVersionPenalty(song, keyword, normKeyword);
 
   return score;
 }

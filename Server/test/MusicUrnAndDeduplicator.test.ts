@@ -198,6 +198,15 @@ describe("MusicDeduplicator", () => {
     ).toBe(false);
   });
 
+  test("isSameSongWork：时长缺失时只合流完整曲名一致的版本", () => {
+    const base = { id: "qq:1", title: "晴天", artist: "周杰伦" };
+    expect(isSameSongWork(base, { id: "qq:2", title: "晴天", artist: "周杰伦" })).toBe(true);
+    expect(isSameSongWork(base, { id: "qq:3", title: "晴天 Live", artist: "周杰伦" })).toBe(false);
+    expect(isSameSongWork(base, { id: "qq:4", title: "晴天 (伴奏)", artist: "周杰伦" })).toBe(
+      false
+    );
+  });
+
   test("calculateRelevanceScore：标题各档匹配与副标题括号命中", () => {
     // 括号内副标题精确命中搜索词（译名）
     const subMatch = calculateRelevanceScore(
@@ -273,6 +282,23 @@ describe("MusicDeduplicator", () => {
       false
     );
     expect(withCoverKw).toBeGreaterThan(withoutCoverKw);
+  });
+
+  test("calculateRelevanceScore：搜索词指定 remix / Live / 伴奏时不再扣对应版本分", () => {
+    const remix = { id: "a", title: "晴天 (Remix)", artist: "周杰伦" };
+    expect(calculateRelevanceScore(remix, "晴天 Remix", false)).toBeGreaterThan(
+      calculateRelevanceScore(remix, "晴天", false)
+    );
+
+    const live = { id: "b", title: "晴天 Live", artist: "周杰伦" };
+    expect(calculateRelevanceScore(live, "晴天 Live", false)).toBeGreaterThan(
+      calculateRelevanceScore(live, "晴天", false)
+    );
+
+    const instrumental = { id: "c", title: "晴天 (伴奏)", artist: "周杰伦" };
+    expect(calculateRelevanceScore(instrumental, "晴天 伴奏", false)).toBeGreaterThan(
+      calculateRelevanceScore(instrumental, "晴天", false)
+    );
   });
 
   test("aggregateAndDeduplicateSongs：非衍生版替换衍生版作为主实体", () => {

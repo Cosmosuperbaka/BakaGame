@@ -223,6 +223,35 @@ describe("AggregatedMusicProvider", () => {
     expect(vip.find((song) => song.id === "qq:viponly")?.playable).toBeUndefined();
   });
 
+  test("单源搜索超时按单音源降级，不拖住另一侧", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "netease:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 },
+      ]),
+    });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => {
+        await pending;
+        return [{ id: "qq:1001", title: "晴天", artist: "周杰伦", durationMs: 269000 }];
+      }),
+    });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+      searchTimeoutMs: { qq: 10 },
+    });
+
+    const started = Date.now();
+    const results = await agg.search("晴天", 10, { netease: "nc", qq: "qc" });
+    expect(results.map((song) => song.id)).toContain("netease:1001");
+    expect(Date.now() - started).toBeLessThan(500);
+    release();
+  });
+
   test("search 在单边平台抛出异常时实现优雅降级不崩盘", async () => {
     const neteaseMock = createMockProvider("netease", {
       search: mock(async () => {
@@ -293,6 +322,53 @@ describe("AggregatedMusicProvider", () => {
     const qqList = await agg.getPlaylistSongs("qq:88888");
     expect(qqList.songs[0]?.id).toBe("qq:2");
     expect(qqMock.getPlaylistSongs).toHaveBeenCalledWith("88888", undefined);
+  });
+
+  test("searchArtists 同名去重并交错保留双平台，按房间偏好选主条目", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      searchArtists: mock(async () => [
+        { id: "netease:only", name: "甲" },
+        { id: "netease:shared", name: "共同" },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      searchArtists: mock(async () => [
+        { id: "qq:only", name: "乙" },
+        { id: "qq:shared", name: "共同" },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const cookie = { netease: "nc", qq: "qc" };
+
+    const neteaseFirst = await agg.searchArtists("x", 10, cookie);
+    expect(neteaseFirst.map((artist) => artist.name)).toEqual(["甲", "乙", "共同"]);
+    expect(neteaseFirst.find((artist) => artist.name === "共同")?.id).toBe("netease:shared");
+
+    const qqFirst = await agg.searchArtists("x", 10, cookie, {
+      platformPreference: ["qq", "netease"],
+    });
+    expect(qqFirst.map((artist) => artist.name)).toEqual(["乙", "甲", "共同"]);
+    expect(qqFirst.find((artist) => artist.name === "共同")?.id).toBe("qq:shared");
+  });
+
+  test("searchAlbums 按名称与歌手去重并交错保留双平台", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      searchAlbums: mock(async () => [
+        { id: "netease:a", name: "甲专辑", artist: "甲" },
+        { id: "netease:shared", name: "共同专辑", artist: "丙" },
+      ]),
+    });
+    const qqMock = createMockProvider("qq", {
+      searchAlbums: mock(async () => [
+        { id: "qq:b", name: "乙专辑", artist: "乙" },
+        { id: "qq:shared", name: "共同专辑", artist: "丙" },
+      ]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    const results = await agg.searchAlbums("x", 10, { netease: "nc", qq: "qc" });
+    expect(results.map((album) => album.name)).toEqual(["甲专辑", "乙专辑", "共同专辑"]);
+    expect(results.find((album) => album.name === "共同专辑")?.id).toBe("netease:shared");
   });
 
   test("双平台聚合 Cookie 正确解构并透传给对应提供商", async () => {

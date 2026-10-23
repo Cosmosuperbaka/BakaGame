@@ -179,6 +179,19 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
     expect(calls).toBe(1);
   });
 
+  it("不同账号的同关键词检索共享公开缓存", async () => {
+    const provider = new QQMusicProvider();
+    let calls = 0;
+    qqmusic.search = mock(async () => {
+      calls++;
+      return { status: 200, body: { songs: [{ mid: "006", title: "共享缓存" }] } };
+    }) as any;
+
+    await provider.search("共享缓存", 5, "qm_keyst=account-a");
+    await provider.search("共享缓存", 5, "qm_keyst=account-b");
+    expect(calls).toBe(1);
+  });
+
   it("匿名检索连续空结果后熔断，冷却结束后恢复", async () => {
     let now = 1_000;
     let calls = 0;
