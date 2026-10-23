@@ -6,13 +6,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
 import { Button } from "@/components/ui/Button";
 import { Sheet } from "@/components/ui/Sheet";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  TABS_TRIGGER_CLASS,
-} from "@/components/ui/Tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger, TABS_TRIGGER_CLASS } from "@/components/ui/Tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import type { ChangelogEntry } from "@/lib/Changelog";
