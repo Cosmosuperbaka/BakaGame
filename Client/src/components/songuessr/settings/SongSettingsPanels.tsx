@@ -390,7 +390,16 @@ function SongAutoFilters({
             <SearchOptionContent
               media={<ArtistAvatar artist={artist} />}
               title={artist.name}
-              trailing={chosen.has(artist.id) ? "已选" : undefined}
+              trailing={
+                <span className="flex items-center gap-1.5">
+                  <Badge variant="outline" size="xs">
+                    {artist.id.startsWith("qq:") ? "QQ音乐" : "网易云"}
+                  </Badge>
+                  {chosen.has(artist.id) ? (
+                    <span className="text-xs text-muted-foreground">已选</span>
+                  ) : null}
+                </span>
+              }
             />
           )}
           onSelect={toggleArtist}
