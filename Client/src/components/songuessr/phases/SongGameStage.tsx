@@ -232,7 +232,9 @@ export interface SongGameAreaProps {
     songId: string,
     mode: "submit" | "guess",
     extraId?: string,
-    clip?: SongClipRange
+    clip?: SongClipRange,
+    /** 聚合检索给出的备用音源与会员标记，随出题请求回传给服务端做兜底。 */
+    pick?: { sources?: string[]; requiresVip?: boolean }
   ) => Promise<void>;
   run: SongRunCommand;
   isPending?: (type: string) => boolean;
@@ -701,9 +703,14 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
   );
 
   const pickSong = async (song: SongSearchResult) => {
+    const payload: { songId: string; sources?: string[]; requiresVip?: boolean } = {
+      songId: song.id,
+    };
+    if (song.sources?.length) payload.sources = song.sources;
+    if (song.requiresVip !== undefined) payload.requiresVip = song.requiresVip;
     const { song: detail } = await sendCommand(
       "song.music.detail",
-      { songId: song.id },
+      payload,
       // 与提交出题同口径：回源取音频与歌词的耗时由上游决定，不拿默认超时误报失败。
       { timeout: 0 }
     );
@@ -727,7 +734,12 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
         preview ? (
           <SongClipConfig
             song={preview}
-            onConfirm={(clip) => onSelectSearchSong(preview.id, "submit", undefined, clip)}
+            onConfirm={(clip) =>
+              onSelectSearchSong(preview.id, "submit", undefined, clip, {
+                sources: preview.sources,
+                requiresVip: preview.requiresVip,
+              })
+            }
             onCancel={() => setPreview(null)}
           />
         ) : (
@@ -735,7 +747,7 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
             <p className="text-sm text-muted-foreground">
               {anime
                 ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
-                : "搜索一首可播放的网易云音乐歌曲，选中后可试听并截取片段。"}
+                : "搜索一首可播放的歌曲，选中后可试听并截取片段。"}
               歌曲信息只会在回合结束后公开。
             </p>
             {anime ? (

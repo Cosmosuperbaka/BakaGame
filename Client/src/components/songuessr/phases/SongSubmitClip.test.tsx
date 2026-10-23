@@ -11,7 +11,13 @@ afterEach(() => {
   useSonGuessrStore.setState(initialState, true);
 });
 
-const SONG: SongSearchResult = { id: "song-1", title: "测试歌", artist: "测试歌手" };
+const SONG: SongSearchResult = {
+  id: "song-1",
+  title: "测试歌",
+  artist: "测试歌手",
+  sources: ["song-1", "qq:alt"],
+  requiresVip: true,
+};
 const PREVIEW: SongClipPreview = {
   ...SONG,
   album: "测试专辑",
@@ -68,14 +74,20 @@ describe("手动出题的片段配置", () => {
     // 配置页出现前必须先拿到详情：播放 / 切片段都靠它，不能拿搜索结果凑合。
     expect(sendCommand).toHaveBeenCalledWith(
       "song.music.detail",
-      { songId: "song-1" },
+      { songId: "song-1", sources: ["song-1", "qq:alt"], requiresVip: true },
       { timeout: 0 }
     );
     expect(await screen.findByText("时间轴")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
-    expect(onSelectSearchSong).toHaveBeenCalledExactlyOnceWith("song-1", "submit", undefined, {
-      startTime: 60_000,
-      endTime: 75_000,
-    });
+    expect(onSelectSearchSong).toHaveBeenCalledExactlyOnceWith(
+      "song-1",
+      "submit",
+      undefined,
+      {
+        startTime: 60_000,
+        endTime: 75_000,
+      },
+      { sources: ["song-1", "qq:alt"], requiresVip: true }
+    );
   });
 });

@@ -339,7 +339,7 @@ function SongAutoFilters({
           label="歌单"
           value={playlistDraft}
           onChange={setPlaylistDraft}
-          placeholder="粘贴网易云歌单链接或 ID"
+          placeholder="粘贴网易云或 QQ 音乐歌单链接/ID"
           action={
             <Button
               type="button"

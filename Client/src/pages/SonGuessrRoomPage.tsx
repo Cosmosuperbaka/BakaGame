@@ -213,7 +213,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             audioPlaybackState={audioPlaybackState}
             onPlayAudio={() => void playAudio()}
             onRetryAudio={retryAudio}
-            onSelectSearchSong={async (songId, mode, extraId, clip) => {
+            onSelectSearchSong={async (songId, mode, extraId, clip, pick) => {
               // 出题不设请求超时：回源取题（含歌词、音频与猜番解析）耗时由上游决定，
               // 10 秒默认超时会把一次正常的慢提交报成「提交失败」，题目其实还在后端装配。
               const options = mode === "submit" ? { timeout: 0 } : undefined;
@@ -228,8 +228,17 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   options
                 );
               } else {
-                const payload: { songId: string; clip?: SongClipRange } = { songId };
+                const payload: {
+                  songId: string;
+                  clip?: SongClipRange;
+                  sources?: string[];
+                  requiresVip?: boolean;
+                } = { songId };
                 if (mode === "submit" && clip) payload.clip = clip;
+                if (mode === "submit" && pick?.sources?.length) payload.sources = pick.sources;
+                if (mode === "submit" && pick?.requiresVip !== undefined) {
+                  payload.requiresVip = pick.requiresVip;
+                }
                 await sendCommand(
                   mode === "submit" ? "song.game.submitSong" : "song.game.guess",
                   payload,
