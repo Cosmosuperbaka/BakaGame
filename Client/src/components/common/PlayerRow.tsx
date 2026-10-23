@@ -11,7 +11,7 @@ import {
   PLAYER_ME_MARK,
   PLAYER_ROW_BASE,
   PLAYER_ROW_HEIGHT,
-  PlayerStatusPill,
+  PlayerStatusIcon,
 } from "@/components/common/PlayerStatusPill";
 import { Hint } from "@/components/ui/Tooltip";
 import { headerTappable, listItem, playerRelayout, popover, tappable } from "@/lib/Motion";
@@ -234,11 +234,7 @@ function PlayerRowInfo({
             </span>
           </Hint>
           {host ? (
-            <PlayerStatusPill
-              label="房主"
-              tone="warning"
-              icon={<Crown className="h-3 w-3" aria-hidden="true" />}
-            />
+            <PlayerStatusIcon label="房主" tone="warning" icon={<Crown aria-hidden="true" />} />
           ) : null}
           {account ? <PlayerBadges account={account} /> : null}
           <span
@@ -254,16 +250,16 @@ function PlayerRowInfo({
             {badges}
             {meta}
             {eliminated ? (
-              <Skull className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="已出局" />
+              <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
             ) : null}
             {bot ? (
-              <Bot className="h-3.5 w-3.5 shrink-0 text-info" aria-label="测试人机" />
-            ) : offline ? (
-              <PlayerStatusPill
-                label="离线"
-                tone="danger"
-                icon={<WifiOff className="h-3 w-3" aria-hidden="true" />}
+              <PlayerStatusIcon
+                label="测试人机"
+                tone="questioner"
+                icon={<Bot aria-hidden="true" />}
               />
+            ) : offline ? (
+              <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
             ) : null}
           </span>
         ) : null}

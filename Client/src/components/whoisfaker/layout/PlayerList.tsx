@@ -25,7 +25,7 @@ import {
   PLAYER_ROW_HEIGHT,
   PlayerGroupTitle,
   PlayerListLayout,
-  PlayerStatusPill,
+  PlayerStatusIcon,
 } from "@/components/common/PlayerStatusPill";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { buildKnownRoleMap, resolveStatus } from "./PlayerPresentation";
@@ -566,7 +566,7 @@ export function PlayerRow(props: PlayerRowProps) {
           ) : mark !== "unknown" ? (
             <RoleBadge role={mark} predicted />
           ) : null}
-          {status ? <PlayerStatusPill tone={status.tone} label={status.label} /> : null}
+          {status ? <PlayerStatusIcon tone={status.tone} label={status.label} /> : null}
         </>
       }
       embedded={embedded}

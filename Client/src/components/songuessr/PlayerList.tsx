@@ -6,7 +6,7 @@ import { AgentBadge } from "@/components/common/AgentBadge";
 import {
   PlayerGroupTitle,
   PlayerListLayout,
-  PlayerStatusPill,
+  PlayerStatusIcon,
   type PlayerStatusTone,
 } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
@@ -277,7 +277,7 @@ function SongPlayerRow({
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
-          {status ? <PlayerStatusPill {...status} /> : null}
+          {status ? <PlayerStatusIcon {...status} /> : null}
         </>
       }
       actions={actions}

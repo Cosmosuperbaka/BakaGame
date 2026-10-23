@@ -21,15 +21,22 @@ afterEach(() => {
 });
 
 describe("PlayerRow 资料卡", () => {
-  it("房主与离线都用文字徽章表达，不只靠图标或颜色", () => {
+  it("房主与离线收成图标，但同一份文字仍以 sr-only 留在 DOM 里", () => {
     render(
       <>
         <PlayerRow name="房主小明" score={12} host />
         <PlayerRow name="掉线的小红" score={3} online={false} />
       </>
     );
-    expect(screen.getByText("房主")).toBeInTheDocument();
-    expect(screen.getByText("离线")).toBeInTheDocument();
+    // 可见的是图标；文字给读屏与悬停，状态因此不靠颜色单独表达。
+    const host = screen.getByText("房主");
+    const offline = screen.getByText("离线");
+    expect(host).not.toBeNull();
+    expect(offline).not.toBeNull();
+    for (const label of [host, offline]) {
+      expect(label.className).toContain("sr-only");
+      expect(label.parentElement?.querySelector("svg")).not.toBeNull();
+    }
   });
 
   it("游客且无操作权限时整行不可点", () => {

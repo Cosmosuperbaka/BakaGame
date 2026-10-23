@@ -1,7 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Bot, Crown, Skull, WifiOff } from "lucide-react";
 import { STORY_PLAYERS, STORY_SPECTATORS } from "@/stories/fixtures/Common";
 import { PlayerRow } from "./PlayerRow";
-import { PlayerGroupTitle, PlayerStatusPill, type PlayerStatusTone } from "./PlayerStatusPill";
+import {
+  PlayerStatusIcon,
+  PlayerStatusPill,
+  PlayerGroupTitle,
+  type PlayerStatusTone,
+} from "./PlayerStatusPill";
 
 const meta = {
   title: "公共组件/PlayerStatusPill",
@@ -34,6 +40,26 @@ export const Tones: Story = {
       {TONES.map(({ label, tone }) => (
         <PlayerStatusPill key={label} label={label} tone={tone} />
       ))}
+    </div>
+  ),
+};
+
+/**
+ * 玩家栏实际用的图标档：同一批状态名收成图标，字形由 `PLAYER_STATUS_ICONS` 按名字给。
+ * 认不出的名字回退成问号圆，不会留下「有底块没图标」的空格。
+ */
+export const StatusIcons: Story = {
+  name: "状态图标",
+  render: () => (
+    <div className="flex w-[30rem] flex-wrap items-center gap-2 rounded-md border bg-panel p-4">
+      {TONES.map(({ label, tone }) => (
+        <PlayerStatusIcon key={label} label={label} tone={tone} />
+      ))}
+      <PlayerStatusIcon label="房主" tone="warning" icon={<Crown aria-hidden="true" />} />
+      <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
+      <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
+      <PlayerStatusIcon label="测试人机" tone="questioner" icon={<Bot aria-hidden="true" />} />
+      <PlayerStatusIcon label="没登记的新状态" tone="default" />
     </div>
   ),
 };

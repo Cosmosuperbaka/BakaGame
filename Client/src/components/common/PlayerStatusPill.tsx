@@ -1,5 +1,20 @@
 import { useId, type ReactNode } from "react";
 import { LayoutGroup, motion } from "framer-motion";
+import {
+  CircleCheck,
+  CircleHelp,
+  CircleMinus,
+  Clapperboard,
+  Clock,
+  Eye,
+  Flag,
+  Headphones,
+  Music,
+  PenLine,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react";
+import { Hint } from "@/components/ui/Tooltip";
 import { playerRelayout } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -42,6 +57,58 @@ const PLAYER_STATUS_TONES: Record<PlayerStatusTone, string> = {
   warning: "bg-warning/15 text-warning",
   danger: "bg-destructive/15 text-destructive",
 };
+
+/**
+ * 状态文字 → 图标。三个游戏的状态名都取自各自的阶段语义，这里给一份共用映射，
+ * 同一件状态在猜歌、猜猜呗与谁是卧底里才是同一个字形；认不出的新状态回退成一枚空心圆，
+ * 不硬猜语义，也绝不出现「有底块没图标」的空格。
+ */
+const PLAYER_STATUS_ICONS: Record<string, LucideIcon> = {
+  准备: CircleCheck,
+  等待: Clock,
+  出题: PenLine,
+  主持: PenLine,
+  猜歌: Music,
+  猜番: Clapperboard,
+  听音: Headphones,
+  观战: Eye,
+  旁观: Eye,
+  猜中: Trophy,
+  完成: Flag,
+  未猜中: CircleMinus,
+};
+
+/** 图标档的尺寸基底：与文字徽章同色调，只把正文换成一枚图标与一段读屏文字。 */
+const PLAYER_STATUS_ICON_BASE =
+  "inline-flex size-5 shrink-0 items-center justify-center rounded-md font-sans leading-none [&_svg]:h-3.5 [&_svg]:w-3.5";
+
+/**
+ * 状态图标：玩家栏首行要扫得快，房主、准备、离线这类状态收成一枚图标。
+ *
+ * 图标不是唯一的线索——同一份文字仍在 DOM 里：`sr-only` 给读屏，`Hint` 给悬停，
+ * 色调与底块给视觉。所以「只靠颜色传达」这条红线没有被触碰，
+ * 被拿掉的只是常驻可见的那几个字。
+ * `icon` 省略时按 `label` 取共用映射，三个游戏因此对同一状态用同一字形。
+ */
+export function PlayerStatusIcon({
+  label,
+  tone,
+  icon,
+}: {
+  label: string;
+  tone: PlayerStatusTone;
+  icon?: ReactNode;
+}) {
+  const Glyph = PLAYER_STATUS_ICONS[label] ?? CircleHelp;
+  return (
+    <Hint label={label}>
+      <span className={cn(PLAYER_STATUS_ICON_BASE, PLAYER_STATUS_TONES[tone])}>
+        {icon ?? <Glyph aria-hidden="true" />}
+        <span className="sr-only">{label}</span>
+      </span>
+    </Hint>
+  );
+}
 
 /** 统一状态胶囊徽章；`icon` 只作状态补充，文字始终保留，不单靠图标或颜色传达状态。 */
 export function PlayerStatusPill({
