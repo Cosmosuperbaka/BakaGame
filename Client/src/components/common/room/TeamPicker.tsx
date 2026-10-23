@@ -8,13 +8,15 @@ import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
 import { listItem, tappable } from "@/lib/Motion";
 import { TEAM_OPTIONS, teamKey, teamLabel } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
+import type { PlayerAccount } from "@bakagame/shared";
 
 const AVATAR_LIMIT = 4;
 
-type TeamMember = { id: string; name: string; team: number | null };
+/** 面板只需要这三项加账号头像；调用方传的就是各游戏的玩家视图。 */
+type TeamMember = { id: string; name: string; team: number | null; account?: PlayerAccount };
 
 /**
- * 等待页的队伍面板（CEE 与猜歌共用）：个人与 1–8 队排成三列九格，每格写明人数并叠放成员首字，点一格即加入。
+ * 等待页的队伍面板（CEE 与猜歌共用）：个人与 1–8 队排成三列九格，每格写明人数并叠放成员头像（登录玩家为账号头像，游客为首字），点一格即加入。
  * 基于原生 radio，方向键切换与读屏语义由浏览器提供；选中底块与分段控件同一个 `SlidingIndicator`，在格子之间滑过去。
  * 只给参与者：`players` 由调用方筛成玩家组成员，旁观者没有队伍；`switching` 时整组禁用，不让连点发出交错的请求。
  */
@@ -100,7 +102,7 @@ export function TeamPicker({
 }
 
 /**
- * 成员首字叠放，最多四个，其余折成「+N」；悬停提示列出全部名字。
+ * 成员头像叠放，最多四个，其余折成「+N」；悬停提示列出全部名字。
  * 叠放处的描边取所在格子的底色（未选中是轨道的 muted，选中是底块的 background），读作一道缝而不是边框。
  */
 function TeamMembers({ players, selfId }: { players: TeamMember[]; selfId: string }) {
@@ -127,6 +129,8 @@ function TeamMembers({ players, selfId }: { players: TeamMember[]; selfId: strin
               <PlayerAvatar
                 name={player.name}
                 me={player.id === selfId}
+                // 登录玩家显示账号头像，与玩家行同一口径；游客仍退回昵称首字。
+                image={player.account?.image}
                 // 头像默认的 muted 底与轨道同色，换成与所在格子相反的那一档才看得出方块。
                 className={cn(
                   "h-6 w-6 text-xs",
