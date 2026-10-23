@@ -120,6 +120,27 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
     expect(res[0].pictureUrl).toContain("/34/500_albumpic_1234_0.jpg");
   });
 
+  it("播放门槛只认 pay_play：pay_down 只约束下载，限时免费先放行", async () => {
+    const provider = new QQMusicProvider();
+    qqmusic.search = mock(async () => ({
+      status: 200,
+      body: {
+        songs: [
+          { mid: "vip", title: "会员播放", pay: { pay_play: 1, pay_down: 1 } },
+          { mid: "download-only", title: "仅下载付费", pay: { pay_play: 0, pay_down: 1 } },
+          { mid: "time-free", title: "限时免费", pay: { pay_play: 1, time_free: 1 } },
+          { mid: "free", title: "免费", pay: { pay_play: 0, pay_down: 0 } },
+        ],
+      },
+    })) as any;
+
+    const res = await provider.search("测试", 10);
+    expect(res.find((song) => song.id === "qq:vip")?.requiresVip).toBe(true);
+    expect(res.find((song) => song.id === "qq:download-only")?.requiresVip).toBe(false);
+    expect(res.find((song) => song.id === "qq:time-free")?.requiresVip).toBe(false);
+    expect(res.find((song) => song.id === "qq:free")?.requiresVip).toBe(false);
+  });
+
   it("singer 为字符串或缺失时回退「未知歌手」，且过滤掉缺 id/title 的项", async () => {
     const provider = new QQMusicProvider();
     qqmusic.search = mock(async () => ({

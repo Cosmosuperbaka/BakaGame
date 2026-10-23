@@ -83,6 +83,15 @@ const readText = (value: unknown): string => {
 const readNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
+/**
+ * 是否必须会员账号才能在线播放。
+ *
+ * `pay_down` 只约束下载；把它算进播放门槛会把 `pay_play=0` 的可播曲误标成会员专享。
+ * `time_free=1` 是限时免费，此时即使 `pay_play=1` 也先放行，交给真实音频判定兜底。
+ */
+const requiresVipAccount = (pay: Record<string, unknown>): boolean =>
+  Number(pay.pay_play) === 1 && Number(pay.time_free) !== 1;
+
 /** 歌手字段是对象数组（`name` / `title` 两种键），也见过裸字符串。 */
 const singerNames = (value: unknown): string[] => {
   if (typeof value === "string") return [stripHtmlTags(value)];
@@ -280,7 +289,7 @@ export class QQMusicProvider implements MusicProvider {
             : undefined;
           const durationMs = Number(item.interval || 0) * 1000;
           const pay = asRecord(item.pay);
-          const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
+          const requiresVip = requiresVipAccount(pay);
 
           return {
             id: buildSongUrn("qq", mid),
@@ -358,7 +367,7 @@ export class QQMusicProvider implements MusicProvider {
         : undefined;
       const durationMs = Number(rawTrack.interval || 0) * 1000;
       const pay = asRecord(rawTrack.pay);
-      const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
+      const requiresVip = requiresVipAccount(pay);
       const releaseYear = rawTrack.time_public
         ? Number(readText(rawTrack.time_public).slice(0, 4))
         : undefined;
@@ -644,7 +653,7 @@ export class QQMusicProvider implements MusicProvider {
             : undefined;
           const durationMs = Number(item.interval || 0) * 1000;
           const pay = asRecord(item.pay);
-          const requiresVip = Boolean(pay.pay_play === 1 || pay.pay_down === 1);
+          const requiresVip = requiresVipAccount(pay);
 
           return {
             id: buildSongUrn("qq", mid),
