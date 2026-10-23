@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ScrollText, ShieldCheck } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 // 逐图标引入：品牌图标包的聚合入口无法摇树，整包会进产物。
 import { faGithub } from "@fortawesome/free-brands-svg-icons/faGithub";
@@ -19,6 +19,7 @@ import {
   type CreditLicenseDocument,
 } from "@/lib/Credits";
 import { iconTappable } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 import { ChangelogPanel } from "./ChangelogPanel";
 import { CommitPanel } from "./CommitPanel";
 import { CreditsPanel } from "./CreditsPanel";
@@ -48,9 +49,36 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
 ];
 
 const LEGAL_LINKS = [
-  { href: "/privacy", label: "隐私说明" },
-  { href: "/terms", label: "用户条款" },
+  { href: "/privacy", label: "隐私说明", icon: ShieldCheck },
+  { href: "/terms", label: "用户条款", icon: ScrollText },
 ] as const;
+
+/** 页眉的纯图标入口：悬停说明给出名称，可访问名与说明同源。 */
+function HeaderIconButton({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className={cn("h-8 w-8 shrink-0 text-muted-foreground", className)}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 /**
  * 版本信息页的展示层：固定视口高度的外壳（顶栏 + 标签栏 + 内容区），
@@ -127,28 +155,36 @@ export function CreditsView({
                 </span>
               </>
             ) : null}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground"
+            {LEGAL_LINKS.map((link) => (
+              <HeaderIconButton key={link.href} label={link.label}>
+                <motion.a
+                  href={link.href}
+                  aria-label={link.label}
+                  onClick={(event) => {
+                    // 交给页面切换，不整页重载；修饰键点击与新标签打开保持原生链接行为。
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)
+                      return;
+                    event.preventDefault();
+                    onOpenPage(link.href);
+                  }}
+                  {...iconTappable}
                 >
-                  <motion.a
-                    href={REPOSITORY_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="GitHub 仓库"
-                    {...iconTappable}
-                  >
-                    {/* Font Awesome 的内置样式不进层叠层，尺寸只能经字号给出。 */}
-                    <FontAwesomeIcon icon={faGithub} className="text-base" />
-                  </motion.a>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>GitHub 仓库</TooltipContent>
-            </Tooltip>
+                  <link.icon aria-hidden="true" />
+                </motion.a>
+              </HeaderIconButton>
+            ))}
+            <HeaderIconButton label="GitHub 仓库">
+              <motion.a
+                href={REPOSITORY_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitHub 仓库"
+                {...iconTappable}
+              >
+                {/* Font Awesome 的内置样式不进层叠层，尺寸只能经字号给出。 */}
+                <FontAwesomeIcon icon={faGithub} className="text-base" />
+              </motion.a>
+            </HeaderIconButton>
           </div>
         </div>
       </header>
@@ -202,26 +238,7 @@ export function CreditsView({
         </TabsContent>
       </Tabs>
 
-      {/* 站内说明入口放在“关于项目”里，不再占用首页页脚。 */}
-      <footer className="shrink-0 border-t border-border">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 text-xs text-muted-foreground md:px-10">
-          <span className="select-none">站内说明</span>
-          {LEGAL_LINKS.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              onClick={(event) => {
-                event.preventDefault();
-                onOpenPage(link.href);
-              }}
-              className="rounded-sm underline-offset-4 transition-colors hover:text-foreground hover:underline"
-            >
-              {link.label}
-            </a>
-          ))}
-        </div>
-      </footer>
-
+      {/* 站内说明入口已提到页眉，与返回、仓库入口并列；这里不再挂页脚。 */}
       <Sheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}

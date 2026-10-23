@@ -213,12 +213,12 @@ describe("CreditsView", () => {
     expect(await within(dialog).findByText("该包未附带许可证原文。")).toBeInTheDocument();
   });
 
-  it("法务入口收在「关于项目」页脚，点击交给路由处理", async () => {
+  it("法务入口与返回、仓库入口并列在页眉，点击交给路由处理", async () => {
     const user = userEvent.setup();
     const onOpenPage = vi.fn();
     renderView({ onOpenPage });
 
-    expect(screen.getByText("站内说明")).toBeInTheDocument();
+    expect(screen.queryByText("站内说明")).not.toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "隐私说明" }));
     expect(onOpenPage).toHaveBeenCalledWith("/privacy");
     await user.click(screen.getByRole("link", { name: "用户条款" }));
