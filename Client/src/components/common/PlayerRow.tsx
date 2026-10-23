@@ -214,14 +214,14 @@ function PlayerRowInfo({
   | "detail"
 >) {
   const offline = !online && !bot;
-  const hasSecondary = Boolean(badges || meta || eliminated || bot || offline);
   return (
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        {/* 首行只放名字、房主与分数：三者是扫描玩家时最需要固定对齐的信息。 */}
-        <span className="flex min-w-0 items-center gap-1">
+        {/* 首行是身份：名字、房主、账号徽章与当前状态。状态图标挨着名字读，
+            不必把视线甩到下一行去找「他到底准备好了没有」。 */}
+        <span className="flex min-w-0 items-center gap-1.5">
           <Hint label={name}>
             <span
               className={cn(
@@ -237,6 +237,24 @@ function PlayerRowInfo({
             <PlayerStatusIcon label="房主" tone="warning" icon={<Crown aria-hidden="true" />} />
           ) : null}
           {account ? <PlayerBadges account={account} /> : null}
+          {badges}
+        </span>
+        {/* 次行放补充信息与分数。分数挪到这里：首行已经排满身份，
+            再挤一枚状态图标就会把分数顶得忽左忽右；固定落在次行右缘反而更好扫。 */}
+        <span className="flex min-w-0 items-center gap-1.5">
+          {meta}
+          {eliminated ? (
+            <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
+          ) : null}
+          {bot ? (
+            <PlayerStatusIcon
+              label="测试人机"
+              tone="questioner"
+              icon={<Bot aria-hidden="true" />}
+            />
+          ) : offline ? (
+            <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
+          ) : null}
           <span
             aria-label={`${score} 分`}
             className="ml-auto flex shrink-0 items-baseline gap-0.5 pl-2 tabular-nums"
@@ -245,24 +263,6 @@ function PlayerRowInfo({
             <span className="font-sans text-2xs text-muted-foreground">分</span>
           </span>
         </span>
-        {hasSecondary ? (
-          <span className="flex min-h-3.5 min-w-0 items-center gap-1">
-            {badges}
-            {meta}
-            {eliminated ? (
-              <PlayerStatusIcon label="已出局" tone="default" icon={<Skull aria-hidden="true" />} />
-            ) : null}
-            {bot ? (
-              <PlayerStatusIcon
-                label="测试人机"
-                tone="questioner"
-                icon={<Bot aria-hidden="true" />}
-              />
-            ) : offline ? (
-              <PlayerStatusIcon label="离线" tone="danger" icon={<WifiOff aria-hidden="true" />} />
-            ) : null}
-          </span>
-        ) : null}
         {detail}
       </span>
     </>

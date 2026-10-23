@@ -78,16 +78,23 @@ const PLAYER_STATUS_ICONS: Record<string, LucideIcon> = {
   未猜中: CircleMinus,
 };
 
-/** 图标档的尺寸基底：与文字徽章同色调，只把正文换成一枚图标与一段读屏文字。 */
-const PLAYER_STATUS_ICON_BASE =
-  "inline-flex size-5 shrink-0 items-center justify-center rounded-md font-sans leading-none [&_svg]:h-3.5 [&_svg]:w-3.5";
+/** 图标档只占图标本身的宽度：不铺底块、不定死方块尺寸，跟名字与徽章同一条基线排。 */
+const PLAYER_STATUS_ICON_BASE = "inline-flex shrink-0 items-center [&_svg]:size-4";
+
+/** 图标档只取色调文字色，不铺底块：玩家行本来就密，给每枚状态加一块纯色方砖只会更吵。 */
+const PLAYER_STATUS_ICON_TONES: Record<PlayerStatusTone, string> = {
+  default: "text-muted-foreground",
+  success: "text-success",
+  questioner: "text-questioner",
+  warning: "text-warning",
+  danger: "text-destructive",
+};
 
 /**
- * 状态图标：玩家栏首行要扫得快，房主、准备、离线这类状态收成一枚图标。
+ * 状态图标：玩家栏要扫得快，房主、准备、离线这类状态收成一枚图标。
  *
  * 图标不是唯一的线索——同一份文字仍在 DOM 里：`sr-only` 给读屏，`Hint` 给悬停，
- * 色调与底块给视觉。所以「只靠颜色传达」这条红线没有被触碰，
- * 被拿掉的只是常驻可见的那几个字。
+ * 形状与色调给视觉。所以「只靠颜色传达」这条红线没有被触碰，被拿掉的只是常驻可见的字。
  * `icon` 省略时按 `label` 取共用映射，三个游戏因此对同一状态用同一字形。
  */
 export function PlayerStatusIcon({
@@ -102,7 +109,7 @@ export function PlayerStatusIcon({
   const Glyph = PLAYER_STATUS_ICONS[label] ?? CircleHelp;
   return (
     <Hint label={label}>
-      <span className={cn(PLAYER_STATUS_ICON_BASE, PLAYER_STATUS_TONES[tone])}>
+      <span className={cn(PLAYER_STATUS_ICON_BASE, PLAYER_STATUS_ICON_TONES[tone])}>
         {icon ?? <Glyph aria-hidden="true" />}
         <span className="sr-only">{label}</span>
       </span>
