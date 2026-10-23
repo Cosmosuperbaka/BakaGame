@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { QQ_NAME_REFRESH_INTERVAL_MS } from "../src/application/QQNicknameService";
+import {
+  QQ_NAME_REFRESH_INTERVAL_MS,
+  QQNicknameService,
+} from "../src/application/QQNicknameService";
+import type { Auth } from "../src/infrastructure/auth/Auth";
 import { QQNapCatClient } from "../src/infrastructure/auth/QQNapCatClient";
+import { EventLogger } from "../src/infrastructure/EventLogger";
 import { createAccountTestApp, createNapCatFetcher } from "./AccountFixtures";
 
 const ADMIN_QQ = "90001";
@@ -32,6 +37,14 @@ const clientOf = () => {
   });
   return { client, state };
 };
+
+/** 反向代理挡住请求时回的是 HTML 错误页，不是 OneBot 的 JSON 信封。 */
+const htmlFetcher = (status: number) =>
+  (async () =>
+    new Response("<html><head><title>403 Forbidden</title></head><body>openresty</body></html>", {
+      status,
+      headers: { "content-type": "text/html" },
+    })) as unknown as typeof fetch;
 
 describe("NapCat 昵称客户端", () => {
   test("逐个查昵称，查不到的号不出现", async () => {
@@ -77,6 +90,51 @@ describe("NapCat 昵称客户端", () => {
     expect(await client.loginInfo()).toEqual({ uin: "90001", nickname: "查询号" });
     state.online = false;
     expect(await client.loginInfo()).toBeNull();
+  });
+
+  test("源站 403 的 HTML 错误页报「拒绝访问」，不误报格式异常", async () => {
+    const client = new QQNapCatClient({
+      apiUrl: "https://napcat.test/onebot-internal",
+      accessToken: "any-token",
+      fetcher: htmlFetcher(403),
+      minIntervalMs: 0,
+    });
+    await expect(client.loginInfo()).rejects.toMatchObject({
+      code: "QQ_NICKNAME_UNAVAILABLE",
+      details: { kind: "forbidden", status: 403 },
+    });
+  });
+
+  test("非 JSON 的 5xx 仍报格式异常，但带上 HTTP 状态便于排查", async () => {
+    const client = new QQNapCatClient({
+      apiUrl: "https://napcat.test/onebot-internal",
+      accessToken: "any-token",
+      fetcher: htmlFetcher(502),
+      minIntervalMs: 0,
+    });
+    await expect(client.loginInfo()).rejects.toMatchObject({
+      code: "QQ_NICKNAME_UNAVAILABLE",
+      message: expect.stringContaining("502"),
+      details: { kind: "protocol", status: 502 },
+    });
+  });
+});
+
+describe("查询号状态文案", () => {
+  test("来源被拒时指向白名单，而不是让人去换令牌", async () => {
+    const service = new QQNicknameService({
+      auth: {} as Auth,
+      logger: new EventLogger(() => {}),
+      client: new QQNapCatClient({
+        apiUrl: "https://napcat.test/onebot-internal",
+        accessToken: "any-token",
+        fetcher: htmlFetcher(403),
+        minIntervalMs: 0,
+      }),
+    });
+    const status = await service.status();
+    expect(status.state).toBe("unavailable");
+    expect(status.error).toContain("白名单");
   });
 });
 

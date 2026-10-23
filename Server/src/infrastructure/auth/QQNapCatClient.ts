@@ -44,8 +44,13 @@ interface OneBotEnvelope<T> {
   wording?: string;
 }
 
-/** 失败原因分类：只用于日志与后台状态文案，调用方按错误对象判断即可。 */
-type NapCatFailure = "network" | "unauthorized" | "protocol" | "empty";
+/**
+ * 失败原因分类：只用于日志与后台状态文案，调用方按错误对象判断即可。
+ *
+ * `unauthorized` 与 `forbidden` 必须分开：前者是令牌不对（改令牌），后者是来源被拒
+ * （查白名单与反代路径），运维照着文案走的方向完全不同。
+ */
+type NapCatFailure = "network" | "unauthorized" | "forbidden" | "protocol" | "empty";
 
 export class QQNapCatClient {
   private readonly fetcher: typeof fetch;
@@ -83,17 +88,30 @@ export class QQNapCatClient {
   /** 调用一个动作；`null` 表示这一条查不到（而不是整条链路不可用）。 */
   private async call<T>(action: string, payload: Record<string, unknown>): Promise<T | null> {
     const response = await this.request(action, payload);
-    let body: OneBotEnvelope<T>;
+    // 先取文本再自行解析，而不是直接 `response.json()`：反向代理挡住请求时回的是 HTML
+    // 错误页，先解析会让「403 被拒」表现成「返回格式异常」，只能翻访问日志才知道真相
+    // （2026-10-23 真实事故：容器丢了内网 hosts 映射，请求被边缘回源后由源站 403）。
+    let body: OneBotEnvelope<T> | null = null;
     try {
-      body = (await response.json()) as OneBotEnvelope<T>;
+      const parsed: unknown = JSON.parse(await response.text());
+      if (parsed && typeof parsed === "object") body = parsed as OneBotEnvelope<T>;
     } catch {
-      throw this.fail("QQ 昵称服务返回格式异常", "protocol", { status: response.status });
+      body = null;
     }
-    if (TOKEN_HINT.test(body.message ?? "") || TOKEN_HINT.test(body.wording ?? "")) {
+    // 令牌错误优先于状态码：NapCat 自己也用 403 回「token verify failed!」，
+    // 这种带明确提示的必须报令牌，不能混进「来源被拒」。
+    if (body && (TOKEN_HINT.test(body.message ?? "") || TOKEN_HINT.test(body.wording ?? ""))) {
       throw this.fail("QQ 昵称服务的访问令牌无效", "unauthorized", { status: response.status });
     }
     if (response.status === 401 || response.status === 403) {
-      throw this.fail("QQ 昵称服务拒绝了访问", "unauthorized", { status: response.status });
+      throw this.fail(`QQ 昵称服务拒绝了访问（HTTP ${response.status}）`, "forbidden", {
+        status: response.status,
+      });
+    }
+    if (!body) {
+      throw this.fail(`QQ 昵称服务返回格式异常（HTTP ${response.status}）`, "protocol", {
+        status: response.status,
+      });
     }
     if (body.status === "ok" && body.retcode === 0 && body.data) return body.data;
     if (response.status >= 500) {

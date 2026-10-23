@@ -31,6 +31,7 @@ export interface QQNicknameServiceOptions {
 /** 不可用原因 → 后台展示文案；不含地址与令牌。 */
 const statusMessage = (kind: string | undefined): string => {
   if (kind === "unauthorized") return "访问令牌无效，请核对 NapCat 的 OneBot 访问令牌";
+  if (kind === "forbidden") return "NapCat 拒绝了访问，请核对来源 IP 白名单与反向代理路径";
   if (kind === "network") return "无法连接到 NapCat 实例，请检查内网连通与服务状态";
   return "NapCat 实例暂时不可用";
 };
