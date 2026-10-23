@@ -374,7 +374,7 @@ export const SongSearchPending: Story = {
   play: async ({ canvasElement }) => {
     await waitForLyrics(canvasElement);
     await userEvent.type(within(canvasElement).getByRole("combobox", { name: "搜索歌曲" }), "夏夜");
-    await screen.findByText("正在查询网易云音乐");
+    await screen.findByText("正在搜索歌曲");
   },
 };
 

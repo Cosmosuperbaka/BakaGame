@@ -129,7 +129,7 @@ describe("SongSearch", () => {
 
     await user.type(input, "A");
     await flushDebounce();
-    expect(screen.getByRole("status")).toHaveTextContent("正在查询网易云音乐");
+    expect(screen.getByRole("status")).toHaveTextContent("正在搜索歌曲");
     await user.clear(input);
     // 面板收起有退场动画，等它退完。
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
@@ -177,6 +177,25 @@ describe("SongSearch", () => {
 
     expect(screen.getByRole("option", { name: /晴天.*QQ音乐/ })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /七里香.*网易云/ })).toBeInTheDocument();
+  });
+
+  it("同一首有两个音源时并排展示两家平台标识", async () => {
+    const user = setup();
+    const dual: SongSearchResult = {
+      id: "netease:004",
+      title: "双源曲",
+      artist: "某歌手",
+      sources: ["netease:004", "qq:005"],
+    };
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue([dual]) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "双源");
+    await flushDebounce();
+
+    expect(
+      screen.getByRole("option", { name: /双源曲.*网易云 \+ QQ 音乐双源/ })
+    ).toBeInTheDocument();
   });
 
   it("当下播不了的候选标出平台与原因，但不可选", async () => {

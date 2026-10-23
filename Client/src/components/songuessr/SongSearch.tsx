@@ -68,12 +68,22 @@ function SongRow({
   guessed?: boolean;
   badge?: string;
 }) {
-  // 平台图标取主实体的 URN：服务端已把共有曲目归到可播的那一侧（网易云优先，
-  // 它有解灰兜底），所以这里的图标与实际播放源一致。
+  // 平台图标取主实体的 URN；聚合器同时给出两家时并排显示，提示这首有两个音源可兜底。
+  const platformIds = song.sources?.length ? song.sources : [song.id];
   const isQqSong = song.id.startsWith("qq:");
   const isNeteaseSong = song.id.startsWith("netease:");
+  const dualSource =
+    platformIds.some((id) => id.startsWith("netease:")) &&
+    platformIds.some((id) => id.startsWith("qq:"));
   // 平台只以品牌图标出现，名称走统一悬停；`aria-label` 保留给读屏
-  const platformLogo = isQqSong ? (
+  const platformLogo = dualSource ? (
+    <Hint label="网易云 + QQ 音乐双源">
+      <span aria-label="网易云 + QQ 音乐双源" className="inline-flex items-center gap-0.5">
+        <NeteaseCloudMusicIcon className="size-4 shrink-0" />
+        <QQMusicIcon className="size-4 shrink-0" />
+      </span>
+    </Hint>
+  ) : isQqSong ? (
     <Hint label="QQ音乐">
       <span aria-label="QQ音乐" className="inline-flex items-center">
         <QQMusicIcon className="size-4 shrink-0" />
@@ -206,7 +216,7 @@ export function SongSearch({
   const status: SearchStatus | null = error
     ? { tone: "error", text: error }
     : search.loading && search.items.length === 0
-      ? { tone: "busy", text: "正在查询网易云音乐" }
+      ? { tone: "busy", text: "正在搜索歌曲" }
       : search.empty
         ? { tone: "info", text: "没有找到匹配歌曲" }
         : null;
