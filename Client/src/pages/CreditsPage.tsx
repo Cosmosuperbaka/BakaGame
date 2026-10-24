@@ -27,7 +27,7 @@ const changelog: ChangelogData = changelogData;
  *
  * 数据全部在构建期定型：更新日志来自 `src/data/changelog.json`，提交历史来自
  * `virtual:commit-history`，依赖清单来自 `virtual:credits`；只有许可证原文在打开抽屉时才按桶加载。
- * 标签状态写进 `?tab=`，开源致谢固定落在 `?tab=credits`；旧版独立法务页与 `/credits` 由路由重定向到这里。
+ * 标签状态写进 `?tab=`，开源致谢固定落在 `?tab=credits`。
  */
 function CreditsPage() {
   const navigate = usePageNavigate();
