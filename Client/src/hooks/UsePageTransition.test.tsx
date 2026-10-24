@@ -74,7 +74,7 @@ function renderRouter(initial: string) {
             <Shared id="card-a" partner="/a" />
             <Shared id="card-b" partner="/b" />
             <Go to="/a" label="进入 A" />
-            <Go to="/credits" label="打开版本信息" />
+            <Go to="/abouts" label="打开关于项目" />
           </Frame>
         ),
       },
@@ -89,11 +89,11 @@ function renderRouter(initial: string) {
         ),
       },
       {
-        path: "/credits",
+        path: "/abouts",
         element: (
           <Frame>
             <p>credits</p>
-            <Go to="/" label="离开版本信息" />
+            <Go to="/" label="离开关于项目" />
           </Frame>
         ),
       },
@@ -133,11 +133,11 @@ describe("usePageNavigate", () => {
     });
   });
 
-  it("版本信息页双方都带 credits 形态，方向告诉 CSS 该升起还是落回", async () => {
+  it("关于项目页双方都带 credits 形态，方向告诉 CSS 该升起还是落回", async () => {
     const { captures } = stubViewTransition();
     renderRouter("/");
 
-    await userEvent.click(screen.getByRole("button", { name: "打开版本信息" }));
+    await userEvent.click(screen.getByRole("button", { name: "打开关于项目" }));
     expect(await screen.findByText("credits")).toBeInTheDocument();
     await waitFor(() => expect(captures.new).toBeDefined());
 
@@ -145,11 +145,11 @@ describe("usePageNavigate", () => {
     expect(captures.new).toMatchObject({ direction: "forward", transition: "credits" });
   });
 
-  it("离开版本信息页：方向为 back，过渡结束后撤掉形态标记", async () => {
+  it("离开关于项目页：方向为 back，过渡结束后撤掉形态标记", async () => {
     const { captures } = stubViewTransition();
-    renderRouter("/credits");
+    renderRouter("/abouts");
 
-    await userEvent.click(screen.getByRole("button", { name: "离开版本信息" }));
+    await userEvent.click(screen.getByRole("button", { name: "离开关于项目" }));
     expect(await screen.findByText("landing")).toBeInTheDocument();
     await waitFor(() => expect(captures.new).toBeDefined());
 

@@ -100,7 +100,7 @@ export function Collapsible({
         // 收起时内容已卸载，只在展开时指向内容区，免得引用不存在的元素。
         aria-controls={open ? contentId : undefined}
         className={cn(
-          "inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground",
+          "inline-flex items-center gap-1 font-serif text-muted-foreground transition-colors hover:text-foreground",
           sizing.trigger
         )}
       >

@@ -149,13 +149,15 @@ function GameIdentity({ game }: { game: GameEntry }) {
       <div className="min-w-0 flex-1">
         {/* 宽度贴合文字：快照只含字形，移到大厅顶栏时不带着整行留白一起缩放 */}
         <div
-          className="w-fit max-w-full text-sm sm:text-base font-semibold truncate whitespace-nowrap"
+          className="w-fit max-w-full text-sm sm:text-base font-serif font-semibold truncate whitespace-nowrap"
           style={{ viewTransitionName: sharedName }}
         >
           {game.title}
         </div>
         {game.subtitle ? (
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">{game.subtitle}</div>
+          <div className="mt-0.5 truncate font-serif text-xs text-muted-foreground">
+            {game.subtitle}
+          </div>
         ) : null}
       </div>
     </div>
@@ -334,7 +336,7 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
 }
 
 /** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
-const VERSION_PAGE_PATH = "/credits?tab=changelog";
+const VERSION_PAGE_PATH = "/abouts?tab=changelog";
 
 export default function LandingPage() {
   const navigate = usePageNavigate();

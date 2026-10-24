@@ -93,7 +93,7 @@ export function SettingsAccordion({
                       initial="initial"
                       animate="animate"
                       exit="exit"
-                      className="col-start-1 row-start-1 text-sm font-medium"
+                      className="col-start-1 row-start-1 font-serif text-sm font-medium"
                       aria-hidden="true"
                     >
                       {title}
@@ -118,7 +118,7 @@ export function SettingsAccordion({
           ) : (
             <>
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span id={titleId} className="text-sm font-medium">
+                <span id={titleId} className="font-serif text-sm font-medium">
                   {title}
                 </span>
                 {badge ? (

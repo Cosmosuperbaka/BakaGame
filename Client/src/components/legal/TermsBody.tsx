@@ -1,7 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { LegalSection } from "@/components/common/LegalPage";
 
-/** 正文与「最后更新」日期只有一份：整页路由与「关于项目」的标签页都渲染这里。 */
+/** 正文与「最后更新」日期只有一份：只在「关于项目」的用户条款标签页渲染。 */
 export const TERMS_UPDATED_AT = "2026-10-22";
 
 export function TermsBody() {

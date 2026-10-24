@@ -357,9 +357,9 @@ export const PAGE_META: PageMeta[] = [
     },
   },
   {
-    path: "/credits",
-    lastmod: "2026-10-19",
-    description: `${SITE_TAGLINE}BakaGame 的开源致谢页：查看支撑本站的核心技术栈、参与本项目开发的大模型署名，以及全部前端 npm 依赖的版本与许可证原文。依赖清单可搜索、可按 License 筛选。`,
+    path: "/abouts",
+    lastmod: "2026-10-25",
+    description: `${SITE_TAGLINE}BakaGame 的关于项目页：查看开源致谢、更新日志、提交历史、隐私说明与用户条款。开源致谢包含核心技术栈、参与本项目开发的大模型署名，以及全部前端 npm 依赖的版本与许可证原文。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame",
@@ -374,8 +374,8 @@ export const PAGE_META: PageMeta[] = [
     ],
     faq: [
       {
-        q: "BakaGame 的开源致谢页包含什么？",
-        a: "包含三部分：支撑本站的核心技术栈、参与过本项目开发的大模型署名，以及前端构建所用全部 npm 依赖的版本与许可证信息。更新日志与提交历史也统一收在同一页的标签里。",
+        q: "BakaGame 的关于项目页包含什么？",
+        a: "包含五个标签：开源致谢、更新日志、提交历史、隐私说明与用户条款。开源致谢里有支撑本站的核心技术栈、参与过本项目开发的大模型署名，以及前端构建所用全部 npm 依赖的版本与许可证信息。",
       },
       {
         q: "怎么查看某个依赖的许可证原文？",
@@ -391,26 +391,28 @@ export const PAGE_META: PageMeta[] = [
       },
     ],
     shell: {
-      h1: "开源致谢——BakaGame 的技术栈、模型署名与依赖许可",
+      h1: "关于项目——BakaGame 的开源致谢、更新日志与提交历史",
       paragraphs: [
-        "BakaGame 以开源方式维护。致谢页集中展示支撑本站的核心技术栈、参与实际开发的大模型署名，以及前端 npm 依赖的版本与许可证原文；更新日志与提交历史也在同一页的标签中。",
-        "完整的依赖清单在构建期生成，可以按包名搜索、按 License 类型筛选；每个包的许可证原文按需加载，不在页面上常驻渲染。",
+        "BakaGame 以开源方式维护。关于项目页集中展示开源致谢、更新日志、提交历史、隐私说明与用户条款；开源致谢部分列出核心技术栈、参与实际开发的大模型署名，以及前端 npm 依赖的版本与许可证原文。",
+        "完整的依赖清单在构建期生成，可以按包名搜索、按 License 类型筛选；每个包的许可证原文按需加载，不在页面上常驻渲染。隐私说明与用户条款也在同一页的标签中。",
       ],
       links: [
         { href: "/", label: "返回主页" },
         { href: "/whoisfaker", label: "WhoisFaker入口" },
         { href: "/songuessr", label: "Songuessr入口" },
         { href: "/cee", label: "二刺猿笑传之猜猜呗增强版入口" },
+        { href: "/abouts?tab=privacy", label: "隐私说明" },
+        { href: "/abouts?tab=terms", label: "用户条款" },
       ],
     },
     structuredData: {
       "@context": "https://schema.org",
       "@type": "AboutPage",
-      name: "BakaGame 开源致谢",
-      url: `${SITE_ORIGIN}/credits`,
+      name: "BakaGame 关于项目",
+      url: `${SITE_ORIGIN}/abouts`,
       inLanguage: "zh-CN",
       description:
-        "BakaGame 的开源致谢页：核心技术栈、参与实际开发的模型署名、前端 npm 依赖清单与许可证原文，以及更新日志和提交历史。",
+        "BakaGame 的关于项目页：开源致谢、更新日志、提交历史、隐私说明与用户条款；开源致谢包含核心技术栈、模型署名与依赖许可证。",
       isPartOf: {
         "@type": "WebSite",
         name: SITE_NAME,

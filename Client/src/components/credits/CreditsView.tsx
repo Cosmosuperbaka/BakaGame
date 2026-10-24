@@ -51,7 +51,7 @@ const TAB_ITEMS: readonly { value: CreditsTab; label: string }[] = [
   { value: "terms", label: "用户条款" },
 ];
 
-/** 法务标签的正文外壳：正文与整页路由共用一份，这里只补「最后更新」与阅读宽度。 */
+/** 法务标签的正文外壳：正文只在「关于项目」的标签页渲染，这里补「最后更新」与阅读宽度。 */
 function LegalTabPanel({ updatedAt, children }: { updatedAt: string; children: ReactNode }) {
   return (
     <article className="mx-auto w-full max-w-3xl px-6 py-5 md:px-10 md:py-6">
@@ -228,7 +228,7 @@ export function CreditsView({
             <CommitPanel commits={commits} />
           </div>
         </TabsContent>
-        {/* 法务两页并入标签：读「关于项目」时不必跳走再跳回，退出还落到主页。 */}
+        {/* 隐私与条款只作为「关于项目」的标签页，不再单独占整页路由。 */}
         <TabsContent
           value="privacy"
           className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"

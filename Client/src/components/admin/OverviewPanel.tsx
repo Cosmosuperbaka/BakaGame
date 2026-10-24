@@ -37,8 +37,10 @@ const sumGames = (games: Record<RecordedGameKind, number>) =>
 function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
   return (
     <div className="rounded-md border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{formatNumber(value)}</div>
+      <div className="text-xs font-serif text-muted-foreground">{label}</div>
+      <div className="mt-1 font-serif text-2xl font-semibold tabular-nums">
+        {formatNumber(value)}
+      </div>
       {detail ? <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div> : null}
     </div>
   );

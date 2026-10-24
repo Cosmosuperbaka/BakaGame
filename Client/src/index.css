@@ -529,6 +529,7 @@ html {
   /* 标题与行内强调回到衬线，正文与说明保持楷体；:where() 不增加特异性，
      业务类（font-mono、font-sans、PlayerStatusPill 的微型标签等）仍可覆盖。 */
   :where(h1, h2, h3, h4, h5, h6),
+  :where(th),
   :where(strong, b) {
     font-family: var(--font-serif);
   }

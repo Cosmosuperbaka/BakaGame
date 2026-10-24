@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
 import { LegalSection } from "@/components/common/LegalPage";
 
-/** 正文与「最后更新」日期只有一份：整页路由与「关于项目」的标签页都渲染这里。 */
+/** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
 export const PRIVACY_UPDATED_AT = "2026-10-22";
 
 /** 一条信息项：来源与用途分开写，便于读者逐项核对。 */
 function DataItem({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-sm font-semibold">{title}</dt>
+      <dt className="font-serif text-sm font-semibold">{title}</dt>
       <dd className="mt-1 space-y-1 text-sm leading-6 text-muted-foreground">{children}</dd>
     </div>
   );

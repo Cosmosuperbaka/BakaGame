@@ -22,10 +22,10 @@ export interface FontChunk {
 
 export interface ChunkPlanOptions {
   baseCodepoints: readonly number[];
-  cjkCodepoints?: readonly number[];
+  extendedCodepoints?: readonly number[];
   frequencyOrder?: readonly number[];
   chunkSizes?: { base: number; common: number; rest: number };
-  commonCharCount?: number;
+  commonCodepointCount?: number;
 }
 
 export interface FontReleaseFile {

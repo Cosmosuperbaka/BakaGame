@@ -104,11 +104,11 @@ function SettingRow({
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           ) : null}
           {htmlFor ? (
-            <Label htmlFor={htmlFor} className="leading-snug font-normal">
+            <Label htmlFor={htmlFor} className="font-serif leading-snug font-normal">
               {text}
             </Label>
           ) : (
-            <span id={labelId} className="text-sm leading-snug">
+            <span id={labelId} className="font-serif text-sm leading-snug">
               {text}
             </span>
           )}
@@ -350,12 +350,15 @@ function StackedField({
         <Label
           id={labelId}
           htmlFor={htmlFor}
-          className={cn("leading-snug font-normal", disabled && "opacity-50")}
+          className={cn("font-serif leading-snug font-normal", disabled && "opacity-50")}
         >
           {label}
         </Label>
       ) : (
-        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>
+        <span
+          id={labelId}
+          className={cn("font-serif text-sm leading-snug", disabled && "opacity-50")}
+        >
           {label}
         </span>
       )}
@@ -593,7 +596,10 @@ export function SettingScaleSlider({
   return (
     <div className="grid gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span id={labelId} className={cn("text-sm leading-snug", disabled && "opacity-50")}>
+        <span
+          id={labelId}
+          className={cn("font-serif text-sm leading-snug", disabled && "opacity-50")}
+        >
           {label}
         </span>
         <span
@@ -825,7 +831,7 @@ export function SettingToggleChips<T extends string>({
   return (
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span id={labelId} className="text-sm leading-snug">
+        <span id={labelId} className="font-serif text-sm leading-snug">
           {label}
         </span>
         {!all ? (

@@ -45,10 +45,10 @@ describe("font-subset-plan", () => {
   it("常用字按词频分片，其余按码位分片", () => {
     const chunks = buildChunkPlan({
       baseCodepoints: [0x20, 0x21],
-      cjkCodepoints: [0x4e00, 0x4e01, 0x4e02, 0x4e03],
+      extendedCodepoints: [0x4e00, 0x4e01, 0x4e02, 0x4e03],
       frequencyOrder: [0x4e02, 0x4e00],
       chunkSizes: { base: 10, common: 2, rest: 10 },
-      commonCharCount: 2,
+      commonCodepointCount: 2,
     });
     expect(chunks.map((chunk) => chunk.kind)).toEqual(["base", "common", "rest"]);
     expect(chunks[1].cps).toEqual([0x4e02, 0x4e00]);
@@ -56,11 +56,21 @@ describe("font-subset-plan", () => {
     expect(new Set(chunks.flatMap((chunk) => chunk.cps)).size).toBe(6);
   });
 
-  it("基础字符与 CJK 字符重叠时直接报错", () => {
+  it("完整字符集里的非 CJK 扩展字符也会进入分包", () => {
+    const chunks = buildChunkPlan({
+      baseCodepoints: [0x20],
+      extendedCodepoints: [0x4e00, 0xac00],
+      frequencyOrder: [0x4e00],
+      chunkSizes: { base: 10, common: 10, rest: 10 },
+    });
+    expect(chunks.flatMap((chunk) => chunk.cps)).toContain(0xac00);
+  });
+
+  it("基础字符与扩展字符重叠时直接报错", () => {
     expect(() =>
       buildChunkPlan({
         baseCodepoints: [0x20, 0x4e00],
-        cjkCodepoints: [0x4e00],
+        extendedCodepoints: [0x4e00],
       })
     ).toThrow(/重复/);
   });

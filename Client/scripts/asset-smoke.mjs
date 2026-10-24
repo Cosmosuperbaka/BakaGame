@@ -84,9 +84,7 @@ try {
     "/whoisfaker",
     "/songuessr",
     "/cee",
-    "/credits",
-    "/privacy",
-    "/terms",
+    "/abouts",
     "/status",
     "/unknown-route",
   ];
@@ -110,7 +108,7 @@ try {
       canonical: "https://game.baka.website/songuessr",
     },
     { route: "/cee", text: "在线猜动漫角色", canonical: "https://game.baka.website/cee" },
-    { route: "/credits", text: "开源致谢", canonical: "https://game.baka.website/credits" },
+    { route: "/abouts", text: "开源致谢", canonical: "https://game.baka.website/abouts" },
   ];
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
@@ -143,7 +141,7 @@ try {
     "https://game.baka.website/whoisfaker",
     "https://game.baka.website/songuessr",
     "https://game.baka.website/cee",
-    "https://game.baka.website/credits",
+    "https://game.baka.website/abouts",
   ];
   const sitemapXml = await (await fetch(`${baseUrl}/sitemap.xml`)).text();
   for (const loc of sitemapLocs) {

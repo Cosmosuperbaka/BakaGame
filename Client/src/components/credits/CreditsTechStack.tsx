@@ -66,7 +66,9 @@ export function CreditsTechStack({
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-1.5">
-                          <span className="truncate text-sm font-medium">{entry.name}</span>
+                          <span className="truncate font-serif text-sm font-medium">
+                            {entry.name}
+                          </span>
                           {version ? (
                             <span className="shrink-0 font-mono text-xs text-muted-foreground">
                               v{version}

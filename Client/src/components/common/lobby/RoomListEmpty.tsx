@@ -26,7 +26,7 @@ export function RoomListEmpty({
         className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-muted/40 p-6 text-center [grid-area:1/1]"
       >
         <DoorOpen className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
-        <p className="text-sm">暂无房间</p>
+        <p className="font-serif text-sm">暂无房间</p>
         <p className="text-xs text-muted-foreground">创建一个房间，把链接发给朋友就能一起玩</p>
       </div>
     </motion.div>

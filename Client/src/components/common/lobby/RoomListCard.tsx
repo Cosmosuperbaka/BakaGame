@@ -50,7 +50,7 @@ export function RoomCardLayout({
         className
       )}
     >
-      <div className="col-span-full row-1 flex min-w-0 items-center gap-2 truncate text-base font-medium sm:col-1">
+      <div className="col-span-full row-1 flex min-w-0 items-center gap-2 truncate font-serif text-base font-medium sm:col-1">
         {name}
       </div>
       <div className="col-1 row-2 mt-0.5 text-sm text-muted-foreground sm:mt-1">{id}</div>

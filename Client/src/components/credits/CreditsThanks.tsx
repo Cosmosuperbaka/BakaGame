@@ -61,7 +61,7 @@ function ThanksContent({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{entry.name}</span>
+          <span className="truncate font-serif text-sm font-medium">{entry.name}</span>
           {/* 外链指示：静止压淡，悬停沿外链方向挪动并归位到前景色。 */}
           {withArrow ? (
             <ArrowUpRight

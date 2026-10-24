@@ -8,8 +8,10 @@ export interface GeneratedFontManifest {
     gb2312: number;
     subtlex: number;
     project: number;
-    sansCjk: number;
+    sansTotal: number;
     sansBase: number;
+    sansExtended: number;
+    sansCommon: number;
     monoBase: number;
   };
   chunks: {

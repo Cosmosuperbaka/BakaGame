@@ -102,6 +102,36 @@ function TypographySpecimen() {
           </Tabs>
         </section>
 
+        <section className="space-y-3">
+          <h2 className="text-xl font-semibold">表格</h2>
+          <div className="overflow-x-auto rounded-md border bg-card">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">玩家</th>
+                  <th className="px-3 py-2 text-right font-medium">得分</th>
+                  <th className="px-3 py-2 text-right font-medium">身份</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border/60">
+                  <td className="px-3 py-2">小布丁</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums">12</td>
+                  <td className="px-3 py-2 text-right">平民</td>
+                </tr>
+                <tr>
+                  <td className="px-3 py-2">海豹</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums">9</td>
+                  <td className="px-3 py-2 text-right">卧底</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            表头使用衬线体，单元格文字用楷体，得分用等宽体。
+          </p>
+        </section>
+
         <section className="space-y-2">
           <h2 className="text-xl font-semibold">数据</h2>
           <p className="font-mono text-sm text-muted-foreground">

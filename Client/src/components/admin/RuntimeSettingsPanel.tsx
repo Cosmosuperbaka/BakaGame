@@ -166,7 +166,7 @@ export function RuntimeSettingsPanel() {
             {items.map((item) => (
               <tr key={item.key}>
                 <td className="max-w-64">
-                  <span className="block font-medium">{item.title}</span>
+                  <span className="block font-serif font-medium">{item.title}</span>
                   <span className="block text-xs leading-relaxed text-muted-foreground">
                     {item.note}
                   </span>

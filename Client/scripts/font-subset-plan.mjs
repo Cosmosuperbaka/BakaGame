@@ -79,7 +79,7 @@ export const FAMILIES = Object.freeze([
   },
 ]);
 
-export const CHUNK_SIZES = Object.freeze({ base: 700, common: 400, rest: 600 });
+export const CHUNK_SIZES = Object.freeze({ base: 700, common: 400, rest: 2_000 });
 export const COMMON_CHAR_COUNT = 2_000;
 
 /**
@@ -234,34 +234,34 @@ export function chunkCodepoints(codepoints, size) {
 }
 
 /**
- * 常用字按词频分片，生僻字按码位分片。常用字跨码位分散，CSS 里的 unicode-range
- * 会多出一些区间，但典型页面只需要下载排序靠前的一两个分片；生僻字集中在码位连续段，
- * 浏览器按需命中一个文件即可。
+ * 常用字按词频分片，其余**完整字体字符集**按码位分片。常用字跨码位分散，
+ * CSS 里的 unicode-range 会多出一些区间，但典型页面只需要下载排序靠前的一两个分片；
+ * 生僻字、CJK 扩展区、假名以外的符号也都进入后续分片，浏览器只按 unicode-range 命中下载。
  */
 export function buildChunkPlan({
   baseCodepoints,
-  cjkCodepoints = [],
+  extendedCodepoints = [],
   frequencyOrder = [],
   chunkSizes = CHUNK_SIZES,
-  commonCharCount = COMMON_CHAR_COUNT,
+  commonCodepointCount = COMMON_CHAR_COUNT,
 }) {
   const base = new Set(baseCodepoints);
-  const cjk = new Set(cjkCodepoints);
-  for (const codepoint of cjk) {
+  const extended = new Set(extendedCodepoints);
+  for (const codepoint of extended) {
     if (base.has(codepoint)) {
-      throw new Error(`基础字符与 CJK 字符重复：U+${hex(codepoint)}`);
+      throw new Error(`基础字符与扩展字符重复：U+${hex(codepoint)}`);
     }
   }
 
   const common = [];
   const commonSet = new Set();
   for (const codepoint of frequencyOrder) {
-    if (!cjk.has(codepoint) || commonSet.has(codepoint)) continue;
+    if (!extended.has(codepoint) || commonSet.has(codepoint)) continue;
     common.push(codepoint);
     commonSet.add(codepoint);
-    if (common.length >= commonCharCount) break;
+    if (common.length >= commonCodepointCount) break;
   }
-  const rest = [...cjk].filter((codepoint) => !commonSet.has(codepoint)).sort((a, b) => a - b);
+  const rest = [...extended].filter((codepoint) => !commonSet.has(codepoint)).sort((a, b) => a - b);
 
   const sections = [
     { kind: "base", codepoints: [...base].sort((a, b) => a - b), size: chunkSizes.base },

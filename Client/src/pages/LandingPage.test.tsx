@@ -159,14 +159,14 @@ describe("LandingPage", () => {
               </TooltipProvider>
             }
           />
-          <Route path="/credits" element={<CreditsProbe />} />
+          <Route path="/abouts" element={<CreditsProbe />} />
         </Routes>
       </MemoryRouter>
     );
 
     await user.click(screen.getByRole("button", { name: /^V\d+\.\d+\.\d+/ }));
 
-    expect(await screen.findByText("credits/credits?tab=changelog")).toBeInTheDocument();
+    expect(await screen.findByText("credits/abouts?tab=changelog")).toBeInTheDocument();
     // 弹窗入口已经删除：版本详情只在完整页面上出现。
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

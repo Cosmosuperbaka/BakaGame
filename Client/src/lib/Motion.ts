@@ -120,7 +120,7 @@ export const popoverScale = { enter: 0.94, exit: 0.96 } as const;
 export const pageScale = { behind: 0.985, ahead: 1.015 } as const;
 
 /**
- * 版本信息页（`/credits`）的专属开合行程：整页自视口底缘升起，关闭时沿原路落回页脚。
+ * 关于项目页（`/abouts`）的专属开合行程：整页自视口底缘升起，关闭时沿原路落回页脚。
  * 它读作「从页脚的版本号拉出一整页」，与其它页面的前后推入不同：
  * 旧页留在原地当底衬，新页盖上来（关闭时反向揭示）。前后关系与方向写在 `index.css`。
  */

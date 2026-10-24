@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { Seo } from "@/components/common/Seo";
 import { CreditsView, type CreditsTab } from "@/components/credits/CreditsView";
 import changelogData from "@/data/changelog.json";
@@ -23,30 +23,32 @@ interface ChangelogData {
 const changelog: ChangelogData = changelogData;
 
 /**
- * 版本信息页（`/credits`）：更新日志、提交历史与开源致谢三个标签合成一整页。
+ * 关于项目页（`/abouts`）：开源致谢、更新日志、提交历史、隐私说明与用户条款统一在一个页面。
  *
  * 数据全部在构建期定型：更新日志来自 `src/data/changelog.json`，提交历史来自
  * `virtual:commit-history`，依赖清单来自 `virtual:credits`；只有许可证原文在打开抽屉时才按桶加载。
- * 标签状态写进 `?tab=`，从页脚版本号进入时默认落在更新日志，直接打开页面时落在开源致谢。
+ * 标签状态写进 `?tab=`，开源致谢固定落在 `?tab=credits`；旧版独立法务页与 `/credits` 由路由重定向到这里。
  */
 function CreditsPage() {
   const navigate = usePageNavigate();
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
-  const tab: CreditsTab = isCreditsTab(requested) ? requested : "credits";
 
   // 与页脚版本号同一口径：取更新日志里的最大版本号，不依赖数组书写顺序。
   const entries = useMemo(() => sortEntriesByVersion(changelog.entries), []);
   const version = useMemo(() => resolveLatestVersion(entries), [entries]);
 
+  if (!isCreditsTab(requested)) {
+    return <Navigate to="/abouts?tab=credits" replace />;
+  }
+  const tab: CreditsTab = requested;
+
   return (
     <>
-      <Seo path="/credits" />
+      <Seo path="/abouts" />
       <CreditsView
         tab={tab}
-        onTabChange={(next) =>
-          setParams(next === "credits" ? {} : { tab: next }, { replace: true })
-        }
+        onTabChange={(next) => setParams({ tab: next }, { replace: true })}
         onBack={() => void navigate("/")}
         versionLabel={`V${version ?? "∞"}`}
         commitLabel={commitHistory.currentCommit}

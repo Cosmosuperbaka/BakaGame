@@ -11,7 +11,7 @@ import { cn } from "@/lib/Utils";
  * - upcoming / restricted：挂在条目旁的微型提示，配 `size="xs"`；upcoming 是尚未上线的入口，restricted 是受限的条目（会员专享）
  */
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-md border font-semibold transition-colors",
+  "inline-flex items-center gap-1 rounded-md border font-sans font-semibold transition-colors",
   {
     variants: {
       variant: {

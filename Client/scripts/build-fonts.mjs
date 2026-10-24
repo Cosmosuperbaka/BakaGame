@@ -44,7 +44,7 @@ const packageJsonPath = path.join(clientDir, "package.json");
 const FONT_TOOL_NAMES = ["fontkit", "subset-font", "subtlex-ch-chr"];
 const DOWNLOAD_HEADER_TIMEOUT_MS = 30_000;
 const DOWNLOAD_STALL_TIMEOUT_MS = 120_000;
-const MANIFEST_VERSION = 2;
+const MANIFEST_VERSION = 3;
 
 function fail(message) {
   throw new Error(message);
@@ -218,29 +218,37 @@ function planFont(sources, projectCjk) {
   const frequencyOrder = subtlex.data
     .map((entry) => entry.Character.codePointAt(0))
     .filter((codepoint) => isCjkCodepoint(codepoint));
-  const cjk = [...new Set([...gb2312Codepoints(), ...frequencyOrder, ...projectCjk])]
-    .filter((codepoint) => isCjkCodepoint(codepoint) && sansCharacters.has(codepoint))
-    .sort((left, right) => left - right);
   const sansBase = codepointsFromRanges(SANS_BASE_RANGES).filter((codepoint) =>
     sansCharacters.has(codepoint)
   );
   const monoBase = codepointsFromRanges(MONO_BASE_RANGES).filter((codepoint) =>
     monoCharacters.has(codepoint)
   );
+  const baseSet = new Set(sansBase);
+  const sansExtended = [...sansCharacters]
+    .filter((codepoint) => !baseSet.has(codepoint))
+    .sort((left, right) => left - right);
+
+  const sansChunks = buildChunkPlan({
+    baseCodepoints: sansBase,
+    extendedCodepoints: sansExtended,
+    frequencyOrder,
+  });
+  const sansCommon = sansChunks
+    .filter((chunk) => chunk.kind === "common")
+    .reduce((total, chunk) => total + chunk.cps.length, 0);
 
   return {
-    sansChunks: buildChunkPlan({
-      baseCodepoints: sansBase,
-      cjkCodepoints: cjk,
-      frequencyOrder,
-    }),
+    sansChunks,
     monoChunks: buildChunkPlan({ baseCodepoints: monoBase }),
     counts: {
       gb2312: gb2312Codepoints().length,
       subtlex: frequencyOrder.length,
       project: projectCjk.length,
-      sansCjk: cjk.length,
+      sansTotal: sansCharacters.size,
       sansBase: sansBase.length,
+      sansExtended: sansExtended.length,
+      sansCommon,
       monoBase: monoBase.length,
     },
     projectCjkSha256: hashCodepoints(
@@ -278,8 +286,8 @@ function manifestFrom({ inputHash, sources, plan, css, files }) {
 function planSummary(plan, files) {
   const totalBytes = files.reduce((total, file) => total + file.data.length, 0);
   return [
-    `基础字符   sans ${plan.counts.sansBase} · mono ${plan.counts.monoBase}`,
-    `CJK 覆盖   ${plan.counts.sansCjk}（GB2312 ${plan.counts.gb2312} ∪ 词频 ${plan.counts.subtlex} ∪ 项目 ${plan.counts.project}）`,
+    `全量覆盖   sans ${plan.counts.sansTotal} 字（基础 ${plan.counts.sansBase} + 扩展 ${plan.counts.sansExtended}；常用优先 ${plan.counts.sansCommon}）`,
+    `字面统计   GB2312 ${plan.counts.gb2312} · SUBTLEX ${plan.counts.subtlex} · 项目用字 ${plan.counts.project}`,
     `分片       sans ${plan.sansChunks.length} 片 × ${FAMILIES[0].weights.length} 字重 · mono ${plan.monoChunks.length} 片 × ${FAMILIES[1].weights.length} 字重`,
     `产物       ${files.length} 个 woff2 / ${(totalBytes / 1024 / 1024).toFixed(2)} MB`,
   ];
@@ -387,7 +395,7 @@ export async function checkFonts() {
   const license = await readFile(path.join(publicLicenseDir, "OFL.txt")).catch(() => null);
   if (!license) fail("字体许可公开副本缺失，请重新生成字体子集");
   console.log(
-    `字体子集校验通过：${Object.keys(cached.manifest.files).length} 个 woff2，CJK ${cached.manifest.counts.sansCjk} 字`
+    `字体子集校验通过：${Object.keys(cached.manifest.files).length} 个 woff2，全量 ${cached.manifest.counts.sansTotal} 字（常用 ${cached.manifest.counts.sansCommon}）`
   );
 }
 

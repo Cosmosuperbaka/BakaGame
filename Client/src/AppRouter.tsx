@@ -66,11 +66,12 @@ export function createAppRouter() {
           ],
         },
         { path: "/admin", lazy: page(() => import("@/pages/AdminPage"), "admin") },
-        // 版本信息页（更新日志 / 提交历史 / 开源致谢）：由页脚版本号进入，走专属的整页升起转场。
-        { path: "/credits", lazy: page(() => import("@/pages/CreditsPage"), "credits") },
-        // 法务页：仅从页脚进入，noindex，不进静态外壳与营销页登记位。
-        { path: "/privacy", lazy: page(() => import("@/pages/PrivacyPage"), "privacy") },
-        { path: "/terms", lazy: page(() => import("@/pages/TermsPage"), "terms") },
+        // 关于项目：开源致谢 / 更新日志 / 提交历史 / 隐私说明 / 用户条款统一走 ?tab=。
+        { path: "/abouts", lazy: page(() => import("@/pages/CreditsPage"), "abouts") },
+        // 旧入口保留客户端重定向：法务已并入「关于项目」的标签页。
+        { path: "/credits", element: <Navigate to="/abouts?tab=credits" replace /> },
+        { path: "/privacy", element: <Navigate to="/abouts?tab=privacy" replace /> },
+        { path: "/terms", element: <Navigate to="/abouts?tab=terms" replace /> },
         // 公开状态页：noindex，不进营销页登记位；后端不可达时按未知降级。
         { path: "/status", lazy: page(() => import("@/pages/StatusPage"), "status") },
         // 其余无法识别的路径一律回落地页
