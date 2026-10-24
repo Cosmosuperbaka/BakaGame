@@ -172,12 +172,15 @@
   --info-foreground: oklch(1 0 0);
   --questioner: oklch(0.484 0.15 300);
   --questioner-foreground: oklch(1 0 0);
-  --font-sans-serif:
+  /* 字体角色：正文、说明与表单用楷体；标题与强调用衬线体；数据用等宽体。
+     `font-sans` 是历史工具类名，保留为楷体别名，避免业务组件大面积改类名。
+     楷体缺字先回落到 Noto Serif SC，再交给系统 CJK，不落到系统无衬线体。 */
+  --font-kai:
     "LXGW WenKai", -apple-system, BlinkMacSystemFont, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Segoe UI", "PingFang SC", HarmonyOS_Regular, "Hiragino Sans GB",
-    "Microsoft YaHei", "Helvetica Neue", Helvetica, "Source Han Sans SC", "Noto Sans CJK SC",
-    "WenQuanYi Micro Hei", Arial, sans-serif;
-  --font-sans: var(--font-sans-serif);
+    "Segoe UI Symbol", "Segoe UI", "Helvetica Neue", Helvetica, "Noto Serif SC Variable",
+    "Noto Serif SC", "PingFang SC", HarmonyOS_Regular, "Hiragino Sans GB", "Microsoft YaHei",
+    "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", Arial, sans-serif;
+  --font-sans: var(--font-kai);
   --font-serif:
     "Libre Baskerville", "Lora Variable", "Lora", Georgia, "Noto Serif SC Variable",
     "Noto Serif SC", STZhongsong, STSong, "Noto Serif CJK SC", "Noto Serif CJK",
@@ -519,9 +522,15 @@ html {
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: var(--font-serif);
+    font-family: var(--font-kai);
     letter-spacing: var(--tracking-normal);
     margin: 0;
+  }
+  /* 标题与行内强调回到衬线，正文与说明保持楷体；:where() 不增加特异性，
+     业务类（font-mono、font-sans、PlayerStatusPill 的微型标签等）仍可覆盖。 */
+  :where(h1, h2, h3, h4, h5, h6),
+  :where(strong, b) {
+    font-family: var(--font-serif);
   }
   /* 纸纹理仅应用于整页底层画布（body），见 Design §3.2。
      所有业务表面（卡片 .bg-card、面板 .bg-panel、按钮 .bg-secondary、弹窗 .bg-popover 等）

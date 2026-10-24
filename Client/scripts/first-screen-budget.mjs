@@ -12,7 +12,7 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  * 有意识地做小某项时连同数字一起改小，做大了就在提交说明里写清理由与实测幅度。
  */
 export const BUDGETS = {
-  /** 渲染阻塞样式表：实测 115,449B gz，@font-face 占九成以上；霞鹜文楷 66 个子集 + 衬线 101 个子集。 */
+  /** 渲染阻塞样式表：实测 115,701B gz，@font-face 占九成以上；霞鹜文楷 66 个子集 + 衬线 101 个子集。 */
   entryCssGzBytes: 120_000,
   /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 311.3KB gz（展示版本号改构建期注入后 −5KB）。 */
   entryJsGraphGzBytes: 321_000,

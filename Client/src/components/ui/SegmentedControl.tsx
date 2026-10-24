@@ -76,7 +76,7 @@ export function SegmentedControl<T extends string>({
             tabIndex={-1}
             data-checked={checked || undefined}
             className={cn(
-              "relative flex h-full min-w-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full font-medium transition-colors",
+              "relative flex h-full min-w-0 cursor-pointer items-center justify-center whitespace-nowrap rounded-full font-serif font-medium transition-colors",
               sizing.item,
               checked ? "text-foreground" : !option.disabled && "hover:text-foreground",
               option.disabled && "cursor-not-allowed opacity-50"
