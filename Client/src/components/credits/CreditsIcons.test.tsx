@@ -296,7 +296,7 @@ describe("DependencyGlyph", () => {
       ["@orpc/contract", "orpc"],
       ["sharp", "sharp"],
       // `@fontsource` 前缀同时覆盖 @fontsource 与 @fontsource-variable 两组字体包。
-      ["@fontsource-variable/noto-sans-sc", "fontsource"],
+      ["@fontsource-variable/noto-serif-sc", "fontsource"],
       ["@fontsource/libre-baskerville", "fontsource"],
     ];
     for (const [packageName, brand] of cases) {
@@ -360,7 +360,7 @@ describe("DependencyGlyph", () => {
       "zustand",
       "jsdom",
       "sharp",
-      "@fontsource-variable/noto-sans-sc",
+      "@fontsource-variable/noto-serif-sc",
       "@fontsource/libre-baskerville",
       "@orpc/client",
       "@orpc/contract",

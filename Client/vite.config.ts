@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -1170,6 +1171,51 @@ function seoArtifactsPlugin() {
   };
 }
 
+// ==================== Vite 插件：霞鹜文楷字体子集 ====================
+// 源 TTF 从固定版本的上游仓库或 Release 拉取并核对 SHA-256，woff2、CSS 与清单都在
+// dev / build / Storybook 启动时生成到 Git 忽略的目录。index.css 只留一个占位注释，
+// 这里在载入时替换成真实 @font-face，避免源码 import 一个尚未生成的文件。
+// 生成器按输入哈希缓存；源字体、项目用字或生成脚本变化时才重新下载与分包。
+
+const FONT_FACE_MARKER = "/* __LXGW_WENKAI_FONT_FACES__ */";
+const INDEX_CSS_PATH = path.resolve(import.meta.dirname, "./src/index.css");
+
+export function generatedFontsPlugin(): Plugin {
+  let generated: Promise<{ css: string }> | undefined;
+  const ensure = () => {
+    if (!generated) {
+      generated = import("./scripts/build-fonts.mjs")
+        .then(({ ensureFonts }) => ensureFonts())
+        .catch((error: unknown) => {
+          generated = undefined;
+          throw error;
+        });
+    }
+    return generated;
+  };
+
+  return {
+    name: "generated-fonts",
+    enforce: "pre",
+    async buildStart() {
+      await ensure();
+    },
+    async configureServer() {
+      await ensure();
+    },
+    async load(id) {
+      if (id.startsWith("\0")) return null;
+      if (path.resolve(id.split("?")[0]) !== INDEX_CSS_PATH) return null;
+      const code = await fs.promises.readFile(INDEX_CSS_PATH, "utf8");
+      if (!code.includes(FONT_FACE_MARKER)) {
+        throw new Error("src/index.css 缺少霞鹜文楷 @font-face 占位注释");
+      }
+      const { css } = await ensure();
+      return code.replace(FONT_FACE_MARKER, css.trim());
+    },
+  };
+}
+
 export default defineConfig(({ command }) => {
   const emojiDir = path.resolve(import.meta.dirname, "./public/emojis");
 
@@ -1200,6 +1246,7 @@ export default defineConfig(({ command }) => {
     },
     plugins: [
       react(),
+      generatedFontsPlugin(),
       tailwindcss(),
       // 只有生产构建才走远端接口：开发期读本地 git 历史，离线可用且反映当前工作区。
       commitHistoryPlugin({ useRemote: command === "build" }),

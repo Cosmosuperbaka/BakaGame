@@ -112,7 +112,7 @@ describe("edgeone.json 边缘缓存配置", () => {
     for (const asset of [
       "/assets/index-tr6SU87_.js",
       "/assets/index-2xJxDFL9.css",
-      "/assets/noto-sans-sc-100-wght-normal-DrqXJETY.woff2",
+      "/assets/lxgw-wenkai-sans-400-00.woff2",
     ]) {
       expect(resolveCacheControl(asset), `${asset} 应长期 immutable`).toContain("immutable");
     }
@@ -145,7 +145,7 @@ describe("edgeone.json 边缘缓存配置", () => {
     const probes: Array<[string, RegExp]> = [
       ["/assets/index-tr6SU87_.js", /immutable/],
       ["/assets/index-2xJxDFL9.css", /immutable/],
-      ["/assets/noto-sans-sc-100-wght-normal-DrqXJETY.woff2", /immutable/],
+      ["/assets/lxgw-wenkai-sans-400-00.woff2", /immutable/],
       ["/stickers/07d4bad0cd15985ae12b6d6f.webp", /immutable/],
       ["/api/game/status", /^no-store$/],
     ];

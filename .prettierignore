@@ -12,6 +12,9 @@ Client/storybook-shots/
 Client/playwright-report/
 Client/test-results/
 Client/.generated-public/
+# 字体子集与生成的 @font-face 由 scripts/build-fonts.mjs 维护，不参与格式化
+Client/src/assets/fonts/
+Client/assets/fonts/
 Client/public/
 Server/coverage/
 Server/data/

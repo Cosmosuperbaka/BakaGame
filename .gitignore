@@ -94,6 +94,14 @@ Server/data/tag-diff-state.json
 tools/
 /tasks
 
+# 字体子集与上游字体下载缓存：都由 Client/scripts/build-fonts.mjs 在构建期重建。
+# 源 TTF 不随仓库分发，缓存可随时删除；站点只分发 woff2 子集。
+Client/.cache/
+Client/src/assets/fonts/lxgw-wenkai/
+Client/src/assets/fonts/lxgw-wenkai.css
+Client/src/assets/fonts/lxgw-wenkai.manifest.json
+Client/public/assets/fonts/lxgw-wenkai/
+
 # 压测运行产物（逐跳 JSON 与合成 HTML）是本地测量数据，随 HEAD 与机器而变，
 # 只作当次交付材料；复现口径见 Agents/Deployment.md §6，不进 Git。
 Server/tasks/

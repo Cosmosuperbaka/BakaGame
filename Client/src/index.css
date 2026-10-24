@@ -2,10 +2,11 @@
 @import "@fontsource/libre-baskerville/700.css";
 @import "@fontsource-variable/lora";
 @import "@fontsource-variable/noto-serif-sc";
-@import "@fontsource-variable/noto-sans-sc";
-@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 @import "@applemusic-like-lyrics/core/style.css";
+
+/* 霞鹜文楷的 @font-face 由 Vite 插件在 dev / build 启动时注入，生成器见 scripts/build-fonts.mjs。 */
+/* __LXGW_WENKAI_FONT_FACES__ */
 
 /* 暗色主题变量只挂在 .dark 上，dark: 工具类必须跟随同一个开关；
    否则系统暗色偏好会单独触发 dark: 颜色，与亮色主题变量混在一起。 */
@@ -172,10 +173,10 @@
   --questioner: oklch(0.484 0.15 300);
   --questioner-foreground: oklch(1 0 0);
   --font-sans-serif:
-    -apple-system, BlinkMacSystemFont, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-    "Segoe UI", "PingFang SC", HarmonyOS_Regular, "Hiragino Sans GB", "Microsoft YaHei",
-    "Helvetica Neue", Helvetica, "Noto Sans SC Variable", "Noto Sans SC", "Source Han Sans SC",
-    "Noto Sans CJK SC", "WenQuanYi Micro Hei", Arial, sans-serif;
+    "LXGW WenKai", -apple-system, BlinkMacSystemFont, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Segoe UI", "PingFang SC", HarmonyOS_Regular, "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", Helvetica, "Source Han Sans SC", "Noto Sans CJK SC",
+    "WenQuanYi Micro Hei", Arial, sans-serif;
   --font-sans: var(--font-sans-serif);
   --font-serif:
     "Libre Baskerville", "Lora Variable", "Lora", Georgia, "Noto Serif SC Variable",
@@ -183,9 +184,8 @@
     "Source Han Serif SC", PMingLiu, SimSun, "WenQuanYi Bitmap Song", "Times New Roman", Times,
     serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   --font-mono:
-    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular,
-    "Cascadia Code", "Segoe UI Mono", "Source Code Pro", Menlo, Consolas, "Liberation Mono",
-    monospace;
+    "LXGW WenKai Mono", "LXGW WenKai", ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code",
+    "Segoe UI Mono", "Source Code Pro", Menlo, Consolas, "Liberation Mono", monospace;
   --radius: 0.25rem;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
   --shadow-xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);

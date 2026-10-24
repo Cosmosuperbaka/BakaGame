@@ -12,17 +12,17 @@ const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
  * 有意识地做小某项时连同数字一起改小，做大了就在提交说明里写清理由与实测幅度。
  */
 export const BUDGETS = {
-  /** 渲染阻塞样式表：实测 102,730B gz，其中 202/219 条中日韩 @font-face 占九成字节。 */
-  entryCssGzBytes: 106_000,
+  /** 渲染阻塞样式表：实测 115,449B gz，@font-face 占九成以上；霞鹜文楷 66 个子集 + 衬线 101 个子集。 */
+  entryCssGzBytes: 120_000,
   /** 入口 HTML 直取与 modulepreload 的 JS 图：实测约 311.3KB gz（展示版本号改构建期注入后 −5KB）。 */
   entryJsGraphGzBytes: 321_000,
   /** 单个路由分片：实测最大 SonGuessrRoomPage 约 135.1KB gz。 */
   largestChunkGzBytes: 139_000,
-  /** 入口样式表里的 @font-face 条数：实测 219 条（serif/sans 各 101 个子集）。 */
+  /** 入口样式表里的 @font-face 条数：实测 178 条（衬线 101、霞鹜文楷 66、其余拉丁 11）。 */
   entryFontFaceRules: 224,
-  /** 产物里的 woff2 个数与总字节：实测 218 个 / 10,966,780B。 */
+  /** 产物里的 woff2 个数与总字节：实测 181 个 / 13,884,308B；霞鹜文楷三档字重共 66 片 / 7.16MB。 */
   emittedFontFiles: 220,
-  emittedFontBytes: 11_200_000,
+  emittedFontBytes: 15_000_000,
   /** 按显示尺寸出档的资源（见 prepare-public-webp 的 DISPLAY_MAX_HEIGHT_PX）。 */
   logoBytes: 220_000,
   faviconBytes: 4_000,

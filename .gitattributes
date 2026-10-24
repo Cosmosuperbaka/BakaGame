@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# 字体二进制不做换行归一化；完整 TTF 只在构建期作为缓存，不随仓库分发。
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
