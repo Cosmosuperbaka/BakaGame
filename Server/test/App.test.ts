@@ -13,25 +13,27 @@ import {
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
 } from "../src/config/Constants";
 import type { AppEnv } from "../src/config/Env";
-import {
-  describeError,
-  EventLogger,
-  formatLogEntry,
-  formatSystemLog,
-  redactData,
-} from "../src/infrastructure/EventLogger";
+import { describeError, EventLogger, redactData } from "../src/infrastructure/EventLogger";
+import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import { createTestApp as createApp } from "./AppFixtures";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
 
-test("事件日志输出为单行结构化 JSON", async () => {
+test("事件日志完整进入结构化出口，控制台只显示关键事件", async () => {
   const output: string[] = [];
-  const logger = new EventLogger((message) => {
-    output.push(message);
-  });
+  const records: OtelLogRecord[] = [];
+  const logger = new EventLogger(
+    (message) => {
+      output.push(message);
+    },
+    undefined,
+    undefined,
+    undefined,
+    { sinks: [{ write: (record) => records.push(record) }] }
+  );
 
-  const entry = {
+  await logger.write({
     type: "room.created",
     createdAt: Date.UTC(2026, 3, 16, 9, 30, 15, 120),
     roomId: "1234",
@@ -45,28 +47,22 @@ test("事件日志输出为单行结构化 JSON", async () => {
         hasBlank: true,
       },
     },
-  } as const;
-
-  const formatted = formatLogEntry(entry);
-  await logger.write(entry);
+  });
 
   expect(output).toHaveLength(1);
-  expect(output[0]).toBe(formatted);
   expect(output[0]).not.toContain("\n");
-  const line = JSON.parse(formatted!) as {
-    time: string;
-    level: string;
-    msg: string;
-    context: { status: number; roomId: string; payload: { visibility: string } };
-  };
-  expect(line.level).toBe("info");
-  expect(line.msg).toBe("EVENT room.created (房间已创建)");
-  expect(line.context.status).toBe(200);
-  expect(line.context.roomId).toBe("1234");
-  expect(line.context.payload.visibility).toBe("private");
+  expect(output[0]).toContain("房间已创建");
+  expect(output[0]).toContain("房间=1234");
+  const [record] = records;
+  expect(record).toMatchObject({
+    severityText: "INFO",
+    body: "房间已创建",
+    attributes: { "event.name": "room.created", roomId: "1234", playerId: "player_1" },
+  });
+  expect((record.attributes.payload as { visibility: string }).visibility).toBe("private");
 });
 
-test("系统日志输出 level/msg 与状态码上下文", () => {
+test("系统日志控制台输出等级、中文正文与错误首帧", () => {
   const lines: string[] = [];
   const logger = new EventLogger({
     info: (message) => lines.push(message),
@@ -89,33 +85,15 @@ test("系统日志输出 level/msg 与状态码上下文", () => {
     errorMessage: "boom",
   });
 
-  const [info, warn, error] = lines.map(
-    (line) =>
-      JSON.parse(line) as {
-        level: string;
-        msg: string;
-        context: { status: number; connectionId?: string };
-      }
-  );
-  expect(info).toMatchObject({ level: "info", msg: "WhoIsFaker 服务已启动" });
-  expect(info.context.status).toBe(200);
-  expect(warn).toMatchObject({ level: "warn", msg: "收到停机信号，开始优雅停机" });
-  expect(warn.context.status).toBe(400);
-  expect(error).toMatchObject({ level: "error", msg: "WebSocket 请求发生未捕获异常" });
-  expect(error.context.status).toBe(500);
-  expect(error.context.connectionId).toBe("conn_1");
-  expect(
-    JSON.parse(
-      formatSystemLog({
-        level: "WARN",
-        message: "收到停机信号，开始优雅停机",
-        createdAt: Date.UTC(2026, 3, 17, 8, 0, 0, 0),
-        context: {
-          signal: "SIGTERM",
-        },
-      })
-    )
-  ).toMatchObject({ level: "warn", context: { status: 400 } });
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toContain("INFO");
+  expect(lines[0]).toContain("WhoIsFaker 服务已启动");
+  expect(lines[1]).toContain("WARN");
+  expect(lines[1]).toContain("收到停机信号，开始优雅停机");
+  expect(lines[2]).toContain("ERROR");
+  expect(lines[2]).toContain("WebSocket 请求发生未捕获异常");
+  expect(lines[2]).toContain("异常=TypeError: boom");
+  for (const line of lines) expect(line.split("\n")).toHaveLength(1);
 });
 
 test("describeError 完整保留调用栈与 Cause，且 redactData 对敏感凭据有效脱敏", () => {

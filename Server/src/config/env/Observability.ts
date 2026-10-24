@@ -1,5 +1,11 @@
 import { AppError } from "../../domain/Errors";
 
+/** 控制台 ANSI 颜色的三档策略；`auto` 只在 TTY 上着色。 */
+export type LogConsoleColor = "auto" | "always" | "never";
+
+/** 结构化日志里的操作范围：`errors` 只记失败与慢操作，`all` 记录每次请求。 */
+export type LogOperations = "errors" | "all";
+
 /**
  * 遥测与运维凭据（T1）：全部是引导项，必须在建库之前就有值。
  * 分层口径见 `Agents/Conventions.md` §5。
@@ -29,6 +35,14 @@ export interface EnvObservability {
   statusFrontendUrl?: string;
   /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
   sentryTracesSampleRate?: number;
+  /** 本地 OTel JSONL 日志目录；缺省 `Server/storage/logs`。 */
+  logDirectory?: string;
+  /** 结构化日志中的操作范围；控制台始终不会逐条打印成功操作。 */
+  logOperations?: LogOperations;
+  /** 控制台颜色策略；缺省 auto（仅 TTY 着色）。 */
+  logConsoleColor?: LogConsoleColor;
+  /** 操作慢于该毫秒数时进入结构化日志并显示在控制台；缺省 1000。 */
+  logSlowOperationMs?: number;
   /**
    * 部署环境标记是否被**显式注入**（见 `resolveDeploymentEnvironment` 的四个来源，任一为非空值）。
    * 判「这台是不是生产」要看这个，不看解析结果：一次环境变量漏配会把生产实例静默回落成
@@ -45,6 +59,16 @@ const parseSampleRate = (raw: string | undefined): number | undefined => {
   if (raw === undefined) return undefined;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
+};
+
+const parseConsoleColor = (raw: string | undefined): LogConsoleColor | undefined => {
+  const value = raw?.trim().toLowerCase();
+  return value === "auto" || value === "always" || value === "never" ? value : undefined;
+};
+
+const parseSlowOperationMs = (raw: string | undefined): number | undefined => {
+  const value = Number(raw?.trim());
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
 };
 
 const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
@@ -151,6 +175,10 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
     sentryApiToken,
     sentryAllowedProjectIds,
     sentryTracesSampleRate: parseSampleRate(Bun.env.SENTRY_TRACES_SAMPLE_RATE),
+    logDirectory: (Bun.env.LOG_DIR ?? "").trim() || undefined,
+    logOperations: Bun.env.LOG_OPERATIONS?.trim().toLowerCase() === "all" ? "all" : "errors",
+    logConsoleColor: parseConsoleColor(Bun.env.LOG_CONSOLE_COLOR),
+    logSlowOperationMs: parseSlowOperationMs(Bun.env.LOG_SLOW_OPERATION_MS),
     deploymentMarkerExplicit: hasExplicitDeploymentMarker(),
   };
 };

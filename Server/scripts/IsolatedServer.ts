@@ -32,6 +32,10 @@ export function isolatedEnvironment(
     DATABASE_URL: "",
     BANGUMI_ENRICHMENT_PATH: path.join(directory, "enrichment.sqlite"),
     ROOM_SNAPSHOT_DIR: path.join(directory, "room-snapshots"),
+    // 隔离实例的日志随临时目录销毁；操作全量落盘，供隐私与回归用例检查真实记录。
+    LOG_DIR: path.join(directory, "logs"),
+    LOG_OPERATIONS: "all",
+    LOG_CONSOLE_COLOR: "never",
     BANGUMI_API_URL: "http://127.0.0.1:9",
     BANGUMI_IMAGE_SOURCE: "",
     CCB_ORIGINAL_SERVER_URL: "",

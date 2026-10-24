@@ -1,7 +1,8 @@
 import { WhoIsFakerService } from "./application/WhoIsFakerService";
 import { readEnv } from "./config/Env";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "./config/Constants";
-import { describeError, EventLogger } from "./infrastructure/EventLogger";
+import { describeError } from "./infrastructure/EventLogger";
+import { createServerLogger } from "./infrastructure/logging/LoggerRuntime";
 import { OtlpExporter } from "./infrastructure/OtlpExporter";
 import {
   captureServerCheckIn,
@@ -44,7 +45,8 @@ if (otlpExporter) {
   void otlpExporter.sendHeartbeatTrace();
 }
 
-const logger = new EventLogger(undefined, undefined, otlpExporter);
+const logger = createServerLogger(env, otlpExporter);
+logger.section("服务启动");
 // 数据库只承载账号、云同步、后台与对局记录：迁移失败只让这些功能报错，游客游玩照常。
 const database = env.databaseUrl
   ? createDatabase(env.databaseUrl, {
@@ -207,6 +209,7 @@ const shutdown = (signal?: string): Promise<void> => {
   isShuttingDown = true;
   // 先发布唯一任务再执行副作用，重复或同步重入的 signal 都复用同一编排。
   shutdownTask = Promise.resolve().then(async () => {
+    logger.section("优雅停机");
     logger.warn("收到停机信号，开始优雅停机", { signal });
 
     const completedStages: string[] = [];
@@ -263,12 +266,15 @@ const shutdown = (signal?: string): Promise<void> => {
         throw new Error("Sentry close 未在预算内完成");
     });
 
+    await attempt("logs.flush", () => logger.flush());
     clearTimeout(watchdog);
     if (failedStages.length) {
       logger.error("优雅停机清理完成但存在失败", { failedStages });
     } else {
       logger.info("服务已完成优雅停机");
     }
+    // 最后关闭文件出口：上面两条停机结论必须落进结构化日志，不能被提前关掉。
+    await attempt("logs.close", () => logger.close());
     process.exit(failedStages.length ? 1 : 0);
   });
   return shutdownTask;
@@ -299,7 +305,7 @@ process.on("uncaughtException", (error) => {
   handleSignal("uncaughtException");
 });
 
-logger.info("BakaGame Server Powered by Elysia Started", {
+logger.info("BakaGame 服务已启动", {
   serverUrl: env.serverUrl,
   listenAddress: `${server.server?.hostname ?? env.serverListenHost}:${server.server?.port ?? env.serverPort}`,
 });

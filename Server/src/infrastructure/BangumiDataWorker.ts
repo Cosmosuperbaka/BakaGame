@@ -184,6 +184,7 @@ const initSongLink = async (request: InitRequest): Promise<void> => {
     song = new LocalBangumiProvider({
       ...request.song,
       onSubjectView: (id) => updater?.requestRefresh(id),
+      logger: bridgedLogger("song"),
     });
     await song.initialize();
   } catch (error) {

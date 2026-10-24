@@ -284,7 +284,42 @@ export const ENV_ENTRIES: EnvEntry[] = [
     layer: "T2",
     documented: true,
     sample: "info",
-    note: ["运行日志等级（debug / info / warn / error），缺省 info；debug 只写进程流，不进 Sentry。"],
+    note: [
+      "运行日志等级（debug / info / warn / error），缺省 info。",
+      "debug 只进入本地结构化文件，不送 Sentry 与 OTLP；控制台始终不打印 debug。",
+    ],
+  },
+  {
+    name: "LOG_DIR",
+    layer: "T2",
+    documented: true,
+    sample: "",
+    note: [
+      "本地 OTel JSONL 日志目录；缺省为 Server/storage/logs，相对路径按 Server 根目录解析。",
+      "文件名带部署环境，开发与生产不会写进同一个文件；磁盘轮转与清理由部署侧负责。",
+    ],
+  },
+  {
+    name: "LOG_OPERATIONS",
+    layer: "T2",
+    documented: true,
+    sample: "errors",
+    note: [
+      "结构化日志中的操作范围：errors（缺省，只记失败与慢操作）或 all（记录每次请求与命令）。",
+      "控制台不受此项影响，始终不会逐条打印成功操作。",
+    ],
+  },
+  {
+    name: "LOG_CONSOLE_COLOR",
+    layer: "T2",
+    documented: true,
+    sample: "auto",
+    note: ["控制台颜色：auto（仅 TTY 着色）/ always / never；容器日志建议 auto 或 never。"],
+  },
+  {
+    name: "LOG_SLOW_OPERATION_MS",
+    layer: "T2",
+    note: ["操作慢于该毫秒数时进入结构化日志并显示在控制台；缺省 1000。"],
   },
   {
     name: "MCP_ENABLED",

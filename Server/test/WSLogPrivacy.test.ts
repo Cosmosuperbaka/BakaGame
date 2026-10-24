@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { availablePort, isolatedEnvironment } from "../scripts/IsolatedServer";
@@ -89,6 +89,53 @@ async function collectAll(stream: ReadableStream<Uint8Array>): Promise<string> {
     if (text.length > 1_000_000) throw new Error("隐私验收日志超过完整捕获上限，不能接受截尾证据");
   }
 }
+
+interface OtelAttribute {
+  key: string;
+  value: { stringValue?: string };
+}
+
+interface OtelRecord {
+  traceId?: string;
+  body?: { stringValue?: string };
+  attributes?: OtelAttribute[];
+}
+
+/** 读取隔离实例写出的全部 OTel JSONL；文件是同步写的，SIGKILL 后仍完整。 */
+async function readOtelFileLogs(
+  directory: string
+): Promise<{ records: OtelRecord[]; text: string }> {
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch {
+    return { records: [], text: "" };
+  }
+  const records: OtelRecord[] = [];
+  let text = "";
+  for (const name of names.filter((item) => item.endsWith(".log"))) {
+    const content = await readFile(path.join(directory, name), "utf8");
+    text += content;
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const payload = JSON.parse(line) as {
+          resourceLogs?: Array<{
+            scopeLogs: Array<{ logRecords: OtelRecord[] }>;
+          }>;
+        };
+        for (const resource of payload.resourceLogs ?? [])
+          for (const scope of resource.scopeLogs) records.push(...scope.logRecords);
+      } catch {
+        throw new Error("OTel 日志行不是合法 JSON");
+      }
+    }
+  }
+  return { records, text };
+}
+
+const attributeValue = (record: OtelRecord, key: string): string | undefined =>
+  record.attributes?.find((attribute) => attribute.key === key)?.value.stringValue;
 
 /** 三协议入口与各自的订阅/加入命令名。 */
 const PROTOCOLS = [
@@ -336,8 +383,10 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
     await child.exited;
     const [out, err] = await output;
     const fullLog = `${out}\n${err}`;
+    const fileLog = await readOtelFileLogs(path.join(directory, "logs"));
     expect(timedOut).toBe(false);
     expect(fullLog.length).toBeGreaterThan(0);
+    expect(fileLog.text.length).toBeGreaterThan(0);
     // 同时禁止稳定正文/凭据前缀，避免截断样本未包含完整 UUID 时误判为无正文。
     for (const secret of [
       ...evidence.secrets,
@@ -347,28 +396,26 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
       "password_secret_",
       "authorization_secret_",
       "WS_BODY_MARKER_",
-    ])
+    ]) {
       expect(fullLog).not.toContain(secret);
+      expect(fileLog.text).not.toContain(secret);
+    }
     for (const protocol of PROTOCOLS)
       expect(fullLog).toContain(`${protocol.service} WS 消息解析失败`);
-    const lines = fullLog.split(/\r?\n/);
-    const parsed = lines.flatMap((line) => {
-      try {
-        return [JSON.parse(line) as { msg?: unknown; context?: { traceId?: unknown } }];
-      } catch {
-        return [];
-      }
-    });
     expect(
-      parsed.some(
-        (line) =>
-          line.msg === "HTTP GET /readyz" && line.context?.traceId === httpTraceId
+      fileLog.records.some(
+        (record) =>
+          record.traceId === httpTraceId &&
+          attributeValue(record, "http.request.method") === "GET" &&
+          attributeValue(record, "url.path") === "/readyz"
       )
     ).toBe(true);
     for (const { command, traceId } of evidence.traces) {
       expect(
-        parsed.some(
-          (line) => line.msg === `WS ${command}` && line.context?.traceId === traceId
+        fileLog.records.some(
+          (record) =>
+            record.traceId === traceId &&
+            attributeValue(record, "messaging.operation.name") === command
         )
       ).toBe(true);
     }

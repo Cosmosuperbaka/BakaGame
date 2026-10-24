@@ -7,6 +7,7 @@ import {
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
+import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
 import { createTestApp as createApp } from "./AppFixtures";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
@@ -114,7 +115,14 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
 
 test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录至日志体系", async () => {
   const loggedLines: string[] = [];
-  const logger = new EventLogger((line) => loggedLines.push(line));
+  const records: OtelLogRecord[] = [];
+  const logger = new EventLogger(
+    (line) => loggedLines.push(line),
+    undefined,
+    undefined,
+    undefined,
+    { sinks: [{ write: (record) => records.push(record) }] }
+  );
 
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
@@ -159,9 +167,17 @@ test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录�
 
   const clientLog = loggedLines.find((l) => l.includes("[CLIENT] 前端音频加载超时"));
   expect(clientLog).toBeTruthy();
-  expect(clientLog).toContain("client-trace-999");
-  expect(clientLog).toContain("***[REDACTED]");
   expect(clientLog).not.toContain("plain-user-password");
+  expect(clientLog).not.toContain("secret1234567890");
+  expect(clientLog).toContain("追踪=client-t");
+
+  const record = records.find((item) => item.body.includes("[CLIENT] 前端音频加载超时"));
+  expect(record).toBeTruthy();
+  expect(record!.traceId).toHaveLength(32);
+  expect(record!.attributes["trace.id.original"]).toBe("client-trace-999");
+  expect(JSON.stringify(record)).toContain("***[REDACTED]");
+  expect(JSON.stringify(record)).not.toContain("plain-user-password");
+  expect(JSON.stringify(record)).not.toContain("secret1234567890");
 });
 
 test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志", async () => {
@@ -290,7 +306,14 @@ test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元
 
 test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶意载荷并防身份伪造", async () => {
   const loggedLines: string[] = [];
-  const logger = new EventLogger((line) => loggedLines.push(line));
+  const records: OtelLogRecord[] = [];
+  const logger = new EventLogger(
+    (line) => loggedLines.push(line),
+    undefined,
+    undefined,
+    undefined,
+    { sinks: [{ write: (record) => records.push(record) }] }
+  );
 
   const env: AppEnv = {
     clientUrl: "http://localhost:5173",
@@ -334,15 +357,16 @@ test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶�
   // 确认日志单行未被拆分成多行，换行已被清洗为空格
   expect(clientLog).not.toContain("\n[BAKA]");
   expect(clientLog).not.toContain("\r");
-  // 确认 identifier 依然保持 safe 默认（system），未被 fake-admin-conn 篡改
-  const parsedLog = JSON.parse(clientLog!) as {
-    msg: string;
-    context: { identifier: string; customField: string };
-  };
-  expect(parsedLog.msg).toBe("[CLIENT] 正常打点  [BAKA] 伪造的日志行");
-  expect(parsedLog.context.identifier).toBe("system");
-  expect(parsedLog.context.customField).toBe("safe_value with_newline");
   expect(clientLog).not.toContain("fake-admin-conn");
+  const record = records.find((item) => item.body.includes("正常打点"));
+  expect(record).toBeTruthy();
+  expect(record!.body).toBe("[CLIENT] 正常打点  [BAKA] 伪造的日志行");
+  // 伪造的连接标识被白名单丢弃，不能变成日志一级索引。
+  expect(record!.attributes.identifier).toBeUndefined();
+  expect(record!.attributes.connectionId).toBeUndefined();
+  expect(record!.attributes.ip).toBeUndefined();
+  expect(record!.attributes.customField).toBe("safe_value with_newline");
+  expect(JSON.stringify(record)).not.toContain("fake-admin-conn");
 
   // 2. 尝试传入过多键（超过 16 个）
   const tooManyKeys: Record<string, string> = {};

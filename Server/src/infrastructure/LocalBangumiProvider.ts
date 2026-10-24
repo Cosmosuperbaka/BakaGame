@@ -160,10 +160,15 @@ export interface LocalBangumiProviderOptions {
    * 可序列化的 `BangumiProviderInit`。
    */
   onSubjectView?: (subjectId: number) => void;
+  /** Worker 内的日志桥：不注入时退回单行纯文本 stderr，不再写结构化 JSON。 */
+  logger?: { warn(message: string, context?: Record<string, unknown>): void };
 }
 
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
-export type BangumiProviderInit = Omit<LocalBangumiProviderOptions, "fetcher" | "meilisearch"> & {
+export type BangumiProviderInit = Omit<
+  LocalBangumiProviderOptions,
+  "fetcher" | "meilisearch" | "logger"
+> & {
   meilisearch?: Omit<BangumiSearchOptions, "client">;
 };
 
@@ -181,11 +186,13 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   private readonly search?: BangumiSearchIndex;
   private readonly searchReady: Promise<void>;
   private readonly onSubjectView?: (subjectId: number) => void;
+  private readonly logger?: LocalBangumiProviderOptions["logger"];
 
   constructor(options: LocalBangumiProviderOptions) {
     this.imageBase = (options.imageBase ?? "https://lain.bgm.tv").replace(/\/+$/, "");
     this.apiBase = (options.apiBase ?? "").replace(/\/+$/, "");
     this.fetcher = options.fetcher ?? fetch;
+    this.logger = options.logger;
     this.db = openDataset(options.dbPath, options.readonly);
     if (options.enrichmentPath) {
       // 路径配置错误必须在启动时暴露：静默降级会让回填缓存「悄悄不生效」。
@@ -208,16 +215,14 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     this.onSubjectView = options.onSubjectView;
   }
 
-  /** Worker 线程没有 EventLogger：仍按单行 JSON 写 stderr，避免裸 console 破坏结构。 */
+  /** Worker 线程经日志桥回主线程；没有桥时只写一条人类可读的单行文本。 */
   private warn(message: string, error: unknown): void {
-    process.stderr.write(
-      `${JSON.stringify({
-        time: new Date().toISOString(),
-        level: "warn",
-        msg: message,
-        context: { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
-      })}\n`
-    );
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    if (this.logger) {
+      this.logger.warn(message, { error: detail });
+      return;
+    }
+    process.stderr.write(`[Bangumi] ${message}（${detail}）\n`);
   }
 
   /** 从回填缓存读取补充字段；只读数据集不含图片，这是避免反复回源的唯一持久层。 */

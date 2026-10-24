@@ -1,9 +1,19 @@
+import { isLogLevelEnabled, resolveLogLevel, type StructuredLogLevel } from "./StructuredLog";
+import { ConsoleLogSink, type LogOutputLike } from "./logging/ConsoleLog";
+import { createOtelLogRecord, type LogSink, type OtelLogRecord } from "./logging/OtelLog";
+import type { OtlpExporter } from "./OtlpExporter";
 import {
-  formatStructuredLog,
-  isLogLevelEnabled,
-  resolveLogLevel,
-  type StructuredLogLevel,
-} from "./StructuredLog";
+  redactData,
+  redactLogText,
+  sanitizeLogText,
+  captureServerException,
+  captureServerLog,
+  captureServerMessage,
+  captureServerOperation,
+  countServerMetric,
+  isServerSentryEnabled,
+  recordServerMetric,
+} from "./Sentry";
 
 export interface LogEntry {
   type: string;
@@ -14,16 +24,22 @@ export interface LogEntry {
 }
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
+export type EventLogLevel = Exclude<LogLevel, "DEBUG">;
 
-type LogEmitter = (message: string) => void;
+export type OperationLogging = "errors" | "all";
 
-interface LogOutput {
-  info: LogEmitter;
-  warn: LogEmitter;
-  error: LogEmitter;
-}
+const LOWER_LEVEL: Record<LogLevel, StructuredLogLevel> = {
+  DEBUG: "debug",
+  INFO: "info",
+  WARN: "warn",
+  ERROR: "error",
+};
 
-type LogOutputLike = LogEmitter | Partial<LogOutput>;
+const SENTRY_LEVEL: Record<EventLogLevel, "info" | "warning" | "error"> = {
+  INFO: "info",
+  WARN: "warning",
+  ERROR: "error",
+};
 
 const EVENT_LABELS: Record<string, string> = {
   "chat.sent": "聊天消息已发送",
@@ -56,82 +72,27 @@ const EVENT_LABELS: Record<string, string> = {
   "room.updateSettings": "收到房间设置更新请求",
 };
 
-const LEVEL_METHODS: Record<LogLevel, keyof LogOutput> = {
-  DEBUG: "info",
-  INFO: "info",
-  WARN: "warn",
-  ERROR: "error",
-};
+/** 控制台只展示这几类领域事件；其余事件仍完整进入结构化日志。 */
+const CONSOLE_EVENT_TYPES = new Set([
+  "room.created",
+  "room.closed",
+  "game.started",
+  "game.finished",
+]);
 
-const LOWER_LEVEL: Record<LogLevel, StructuredLogLevel> = {
-  DEBUG: "debug",
-  INFO: "info",
-  WARN: "warn",
-  ERROR: "error",
-};
-
-/**
- * 同类操作日志的合并窗口。满载时每条命令都会写一行日志，生产剖面里这一条
- * 标准输出就占掉 5.7% 的核时间；INFO 级按「动作|状态码」每秒留一条代表，
- * WARN/ERROR 不合并，指标与 span 仍然每条上报。
- */
-const OPERATION_LOG_SAMPLE_MS = 1_000;
-
-/**
- * 默认输出只写进程流，**不经过标准 console 通道**。
- *
- * Sentry 的 `consoleLoggingIntegration` 会把 `console.warn/error` 采集为 Sentry log，
- * 而本类的 `emit` 对同一条记录已经显式调用 `captureServerLog`；两条路并行时每条
- * WARN/ERROR 在观测平台计两次，任何按日志量的阈值与趋势全部失真。所以这里定下唯一
- * 真相源：结构化记录只经 `captureServerLog` 出口，stdout/stderr 只服务本机与容器日志。
- * stdout 需求保留（INFO 走 stdout、WARN/ERROR 走 stderr，与 console 的分流一致）。
- */
-const defaultOutput: LogOutput = {
-  info: (message) => process.stdout.write(`${message}\n`),
-  warn: (message) => process.stderr.write(`${message}\n`),
-  error: (message) => process.stderr.write(`${message}\n`),
-};
+export interface EventLoggerOptions {
+  console?: ConsoleLogSink;
+  sinks?: LogSink[];
+  /** 慢操作进入结构化日志并出现在控制台；缺省 1000ms。 */
+  slowOperationMs?: number;
+  /** 结构化日志中的操作范围：缺省只记失败与慢操作，`all` 记录全部。 */
+  operationLogging?: OperationLogging;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const normalizeOutput = (output: LogOutputLike = defaultOutput): LogOutput => {
-  if (typeof output === "function") {
-    return {
-      info: output,
-      warn: output,
-      error: output,
-    };
-  }
-
-  return {
-    info: output.info ?? defaultOutput.info,
-    warn: output.warn ?? output.info ?? defaultOutput.warn,
-    error: output.error ?? output.warn ?? output.info ?? defaultOutput.error,
-  };
-};
-
-// 高精度耗时格式化（支持微秒 µs、毫秒 ms、秒 s，统一右对齐 13 位）
-export const formatDuration = (durationMs = 0): string => {
-  if (durationMs <= 0) {
-    return "      0.000µs";
-  }
-  if (durationMs < 1) {
-    const micros = (durationMs * 1000).toFixed(3);
-    return `${micros}µs`.padStart(13, " ");
-  }
-  if (durationMs < 1000) {
-    const millis = durationMs.toFixed(3);
-    return `${millis}ms`.padStart(13, " ");
-  }
-  const secs = (durationMs / 1000).toFixed(3);
-  return `${secs}s`.padStart(13, " ");
-};
-
-// 统一时间戳格式化为标准 ISO-8601 UTC 格式
-const formatTimestamp = (createdAt: number) => new Date(createdAt).toISOString();
-
-const getEventLevel = (entry: LogEntry): LogLevel => {
+const getEventLevel = (entry: LogEntry): EventLogLevel => {
   switch (entry.type) {
     case "player.disconnect":
       return "WARN";
@@ -142,94 +103,227 @@ const getEventLevel = (entry: LogEntry): LogLevel => {
   }
 };
 
+const eventScope = (type: string): string => {
+  if (type.startsWith("room.")) return "房间";
+  if (type.startsWith("game.")) return "对局";
+  if (type.startsWith("player.")) return "玩家";
+  if (type.startsWith("chat.")) return "聊天";
+  return "系统";
+};
+
+/** 系统日志没有显式 scope 时按正文关键词归类，避免每条调用点都补参数。 */
+const inferSystemScope = (message: string, context: Record<string, unknown>): string => {
+  const explicit = context.scope;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim().slice(0, 6);
+  if (/快照/.test(message)) return "快照";
+  if (/数据库|迁移|落库/.test(message)) return "数据库";
+  if (/音乐|网易|QQ/.test(message)) return "音乐";
+  if (/Sentry|遥测|指标|心跳/.test(message)) return "遥测";
+  if (/停机|启动/.test(message)) return "启停";
+  if (/安全|鉴权|来源|证明/.test(message)) return "安全";
+  if (/WebSocket|WS|连接|网络/.test(message)) return "实时";
+  return "系统";
+};
+
+interface ExceptionDetails {
+  name?: string;
+  message?: string;
+  stack?: string;
+  cause?: unknown;
+  display?: Record<string, unknown>;
+}
+
+const textField = (record: Record<string, unknown>, key: string): string | undefined =>
+  typeof record[key] === "string" ? (record[key] as string) : undefined;
+
+const exceptionDisplay = (name?: string, message?: string, stack?: string) => ({
+  ...(name ? { errorName: name } : {}),
+  ...(message ? { errorMessage: message } : {}),
+  ...(stack ? { stack } : {}),
+});
+
+const errorCandidate = (candidate: unknown): ExceptionDetails | undefined => {
+  if (!isRecord(candidate)) return undefined;
+  const name = textField(candidate, "errorName") ?? textField(candidate, "name");
+  const message = textField(candidate, "errorMessage") ?? textField(candidate, "message");
+  const stack = textField(candidate, "stack");
+  return {
+    name,
+    message,
+    stack,
+    cause: candidate.cause,
+    display: exceptionDisplay(name, message, stack),
+  };
+};
+
+const extractException = (context: Record<string, unknown>): ExceptionDetails => {
+  const candidate = context.error;
+  if (typeof candidate === "string") {
+    return {
+      name: "Error",
+      message: candidate,
+      display: exceptionDisplay("Error", candidate),
+    };
+  }
+  const nested = errorCandidate(candidate);
+  if (nested) return nested;
+
+  const name = textField(context, "errorName");
+  const message = textField(context, "errorMessage");
+  const stack = textField(context, "stack");
+  if (!name && !message && !stack) return {};
+  return {
+    name,
+    message,
+    stack,
+    cause: context.cause,
+    display: exceptionDisplay(name, message, stack),
+  };
+};
+
+const splitException = (
+  context: Record<string, unknown>
+): { attributes: Record<string, unknown>; exception?: ExceptionDetails } => {
+  const exception = extractException(context);
+  const rest = { ...context };
+  for (const key of ["error", "errorName", "errorMessage", "stack", "cause", "traceId", "scope"])
+    delete rest[key];
+  const attributes: Record<string, unknown> = { ...rest };
+  if (exception.name) attributes["exception.type"] = exception.name;
+  if (exception.message) attributes["exception.message"] = exception.message;
+  if (exception.stack) attributes["exception.stacktrace"] = exception.stack;
+  if (exception.cause !== undefined) attributes["exception.cause"] = exception.cause;
+  return { attributes, exception };
+};
+
+/** 追踪号与异常字段有专用展示位，不再作为普通键值重复出现。 */
+const HIDDEN_CONSOLE_FIELDS = new Set([
+  "traceId",
+  "scope",
+  "error",
+  "errorName",
+  "errorMessage",
+  "stack",
+  "cause",
+]);
+
+const scalarFields = (
+  context: Record<string, unknown>,
+  preferred: readonly string[]
+): Array<[string, unknown]> => {
+  const fields: Array<[string, unknown]> = [];
+  for (const key of preferred) {
+    const value = context[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+      fields.push([key, value]);
+  }
+  for (const [key, value] of Object.entries(context)) {
+    if (fields.length >= 5) break;
+    if (preferred.includes(key) || HIDDEN_CONSOLE_FIELDS.has(key) || key.includes(".")) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+      fields.push([key, value]);
+  }
+  return fields;
+};
+
+const traceIdOf = (context: Record<string, unknown> | undefined): string | undefined =>
+  typeof context?.traceId === "string" && context.traceId ? context.traceId : undefined;
+
+const operationTarget = (action: string): { isHttp: boolean; isWs: boolean; target: string } => {
+  if (action.startsWith("HTTP ")) return { isHttp: true, isWs: false, target: action.slice(5) };
+  if (action.startsWith("WS ")) return { isHttp: false, isWs: true, target: action.slice(3) };
+  return { isHttp: false, isWs: false, target: action };
+};
+
+const operationBody = (
+  action: string,
+  status: number,
+  durationMs: number,
+  slowOperationMs: number
+): { body: string; scope: string; replay: boolean } => {
+  const { isHttp, isWs, target } = operationTarget(action);
+  const replay = target.endsWith(" (replay)");
+  const command = replay ? target.slice(0, -" (replay)".length) : target;
+  const slow = durationMs >= slowOperationMs;
+  if (isHttp) {
+    const state = status >= 400 ? "接口请求失败" : slow ? "接口请求较慢" : "接口请求完成";
+    return { body: `${state} ${command}`, scope: "接口", replay };
+  }
+  if (isWs) {
+    const state = status >= 400 ? "实时命令失败" : slow ? "实时命令较慢" : "实时命令完成";
+    return {
+      body: `${state}${replay ? "（重放）" : ""} ${command}`,
+      scope: "实时",
+      replay,
+    };
+  }
+  const state = status >= 400 ? "操作失败" : slow ? "操作较慢" : "操作完成";
+  return { body: `${state} ${command}`, scope: "系统", replay };
+};
+
+const operationAttributes = ({
+  action,
+  status,
+  durationMs,
+  identifier,
+  scope,
+  replay,
+}: {
+  action: string;
+  status: number;
+  durationMs: number;
+  identifier: string;
+  scope: string;
+  replay: boolean;
+}): Record<string, unknown> => {
+  const { isHttp, isWs, target } = operationTarget(action);
+  const command = replay ? target.slice(0, -" (replay)".length) : target;
+  const attributes: Record<string, unknown> = {
+    "log.kind": "operation",
+    "log.scope": scope,
+    "operation.action": action,
+    "operation.identifier": identifier,
+    "operation.status": status,
+    duration_ms: durationMs,
+    ...(replay ? { "operation.replay": true } : {}),
+  };
+  if (isHttp) {
+    const [method, ...path] = command.split(" ");
+    attributes["http.request.method"] = method;
+    attributes["url.path"] = path.join(" ") || "/";
+    attributes["http.response.status_code"] = status;
+  } else if (isWs) {
+    attributes["messaging.operation.name"] = command;
+  }
+  return attributes;
+};
+
 export { redactData, describeError, sanitizeLogText } from "./Sentry";
 
-// 系统日志：固定字段 time/level/msg，其余诊断信息统一进 context。
-export const formatSystemLog = ({
-  level,
-  message,
-  createdAt,
-  context,
-  durationMs = 0,
-  status,
-}: {
-  level: LogLevel;
-  message: string;
-  createdAt: number;
-  context?: Record<string, unknown>;
-  durationMs?: number;
-  status?: number;
-}) => {
-  const statusCode = status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
-  const rawIdentifier =
-    (context?.connectionId as string) ??
-    (context?.roomId as string) ??
-    (context?.playerId as string) ??
-    (context?.ip as string) ??
-    "system";
-  return formatStructuredLog({
-    createdAt,
-    level: LOWER_LEVEL[level],
-    message,
-    context: {
-      status: statusCode,
-      durationMs,
-      identifier: sanitizeLogText(String(rawIdentifier), 64),
-      ...context,
-    },
-  });
-};
-
-// 领域事件日志：事件名与摘要写进 msg，结构化字段留在 context。
-export const formatLogEntry = (
-  entry: LogEntry & { durationMs?: number; status?: number },
-  level = getEventLevel(entry)
-): string => {
-  const headline = EVENT_LABELS[entry.type] ?? entry.type;
-  const statusCode = entry.status ?? (level === "ERROR" ? 500 : level === "WARN" ? 400 : 200);
-  return formatStructuredLog({
-    createdAt: entry.createdAt,
-    level: LOWER_LEVEL[level],
-    message: `EVENT ${entry.type} (${headline})`,
-    context: {
-      status: statusCode,
-      durationMs: entry.durationMs ?? 0,
-      ...(entry.roomId ? { roomId: entry.roomId } : {}),
-      ...(entry.playerId ? { playerId: entry.playerId } : {}),
-      ...(entry.payload ? { payload: entry.payload } : {}),
-    },
-  });
-};
-
-import type { OtlpExporter } from "./OtlpExporter";
-import {
-  redactData,
-  redactLogText,
-  sanitizeLogText,
-  captureServerException,
-  captureServerLog,
-  captureServerMessage,
-  captureServerOperation,
-  countServerMetric,
-  isServerSentryEnabled,
-  recordServerMetric,
-} from "./Sentry";
-
 export class EventLogger {
-  private readonly output: LogOutput;
+  private readonly console: ConsoleLogSink;
+  private readonly sinks: LogSink[];
   private readonly otlpExporter?: OtlpExporter;
   private readonly minimumLevel: LogLevel;
-  private readonly operationSamples = new Map<string, { at: number; merged: number }>();
+  private readonly slowOperationMs: number;
+  private readonly operationLogging: OperationLogging;
+  private readonly now: () => number;
 
   constructor(
-    output: LogOutputLike = defaultOutput,
-    private readonly now: () => number = () => Date.now(),
+    output?: LogOutputLike,
+    now: () => number = () => Date.now(),
     otlpExporter?: OtlpExporter,
-    level: LogLevel = resolveLogLevel().toUpperCase() as LogLevel
+    level: LogLevel = resolveLogLevel().toUpperCase() as LogLevel,
+    options: EventLoggerOptions = {}
   ) {
-    this.output = normalizeOutput(output);
+    this.now = now;
+    this.console =
+      options.console ?? new ConsoleLogSink(output === undefined ? {} : { output, color: false });
+    this.sinks = options.sinks ?? [];
     this.otlpExporter = otlpExporter;
     this.minimumLevel = level;
+    this.slowOperationMs = Math.max(1, options.slowOperationMs ?? 1_000);
+    this.operationLogging = options.operationLogging ?? "errors";
   }
 
   get exporter(): OtlpExporter | undefined {
@@ -240,161 +334,160 @@ export class EventLogger {
     return isLogLevelEnabled(LOWER_LEVEL[this.minimumLevel], LOWER_LEVEL[level]);
   }
 
-  private emit(
+  private dispatch(record: OtelLogRecord): void {
+    for (const sink of this.sinks) {
+      try {
+        sink.write(record);
+      } catch {
+        // Sink 自身失败必须降级为静默丢弃；日志出口不能反过来打断业务。
+      }
+    }
+  }
+
+  private enqueueOtlp(record: OtelLogRecord, level: LogLevel): void {
+    if (!this.otlpExporter?.isEnabled || level === "DEBUG") return;
+    this.otlpExporter.enqueue({
+      timestamp: Number(BigInt(record.timeUnixNano) / 1_000_000n),
+      level: level === "ERROR" ? "ERROR" : level === "WARN" ? "WARN" : "INFO",
+      message: record.body,
+      traceId: record.traceId,
+      attributes: record.attributes,
+    });
+  }
+
+  private emitSystem(
     level: LogLevel,
     message: string,
-    context?: Record<string, unknown>,
-    createdAt = this.now()
-  ) {
+    context: Record<string, unknown> | undefined,
+    createdAt: number,
+    rawError?: unknown
+  ): void {
     if (!this.isEnabled(level)) return;
-    message = redactLogText(message);
-    const safeContext = context ? (redactData(context) as Record<string, unknown>) : undefined;
-    this.output[LEVEL_METHODS[level]](
-      formatSystemLog({
-        level,
-        message,
+    const body = redactLogText(message);
+    const safeContext = context ? (redactData(context) as Record<string, unknown>) : {};
+    const traceId = traceIdOf(safeContext);
+    const { attributes, exception } = splitException(safeContext);
+    const scope = inferSystemScope(body, safeContext);
+    const identifier = safeContext.identifier ?? safeContext.connectionId ?? safeContext.roomId;
+    if (typeof identifier === "string" && attributes.identifier === undefined)
+      attributes.identifier = sanitizeLogText(identifier, 64);
+    const record = createOtelLogRecord({
+      createdAt,
+      level: LOWER_LEVEL[level],
+      body,
+      attributes: { ...attributes, "log.kind": "system", "log.scope": scope },
+      traceId,
+    });
+    this.dispatch(record);
+    if (level !== "DEBUG") {
+      this.console.write({
         createdAt,
-        context: safeContext,
-      })
-    );
-
-    // debug 只落进程流：OTLP 与 Sentry 都没有对应的诊断级别，避免污染告警与趋势。
-    if (level === "DEBUG") return;
-
-    if (this.otlpExporter?.isEnabled) {
-      const traceId = typeof context?.traceId === "string" ? context.traceId : undefined;
-      this.otlpExporter.enqueue({
-        timestamp: createdAt,
-        level,
-        message,
+        level: LOWER_LEVEL[level],
+        scope,
+        message: body,
+        fields: scalarFields(safeContext, [
+          "roomId",
+          "playerId",
+          "connectionId",
+          "attempt",
+          "signal",
+          "port",
+          "serverUrl",
+          "listenAddress",
+          "saved",
+          "restored",
+          "discarded",
+        ]),
         traceId,
-        attributes: safeContext,
+        error: exception?.display,
       });
-
-      if (level === "ERROR" && traceId) {
-        this.otlpExporter.enqueueSpan({
-          traceId,
-          name: message,
-          startTime: createdAt - 1,
-          endTime: createdAt,
-          attributes: safeContext,
-          status: "ERROR",
-          statusMessage: message,
-        });
+      this.enqueueOtlp(record, level);
+      if (isServerSentryEnabled()) {
+        if (level === "ERROR") {
+          if (rawError instanceof Error) captureServerException(rawError, safeContext);
+          else captureServerMessage(body, "error", safeContext);
+        }
+        captureServerLog(body, SENTRY_LEVEL[level], safeContext);
       }
     }
-
-    if (level === "ERROR" && isServerSentryEnabled()) {
-      const err = context?.error;
-      if (err instanceof Error) {
-        captureServerException(err, safeContext);
-      } else {
-        captureServerMessage(message, "error", safeContext);
-      }
-    }
-
-    captureServerLog(
-      message,
-      level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
-      safeContext
-    );
   }
 
-  debug(message: string, context?: Record<string, unknown>) {
-    this.emit("DEBUG", message, context);
-  }
-
-  info(message: string, context?: Record<string, unknown>) {
-    this.emit("INFO", message, context);
-  }
-
-  warn(message: string, context?: Record<string, unknown>) {
-    this.emit("WARN", message, context);
-  }
-
-  error(message: string, context?: Record<string, unknown>) {
-    this.emit("ERROR", message, context);
-  }
-
-  /**
-   * 本地专用输出：只写进程 stdout，不进 OTLP / Sentry 导出通道，也不做脱敏拦截。
-   * 仅供必须保留明文的开发期输出（登录验证码）；调用方不得夹带其它用户数据。
-   */
-  localInfo(message: string) {
-    this.output.info(
-      JSON.stringify({ time: formatTimestamp(this.now()), level: "info", msg: message })
-    );
-  }
-
-  private writeOperationLine({
-    level,
-    action,
-    createdAt,
+  private emitOperation({
     status,
     durationMs,
     identifier,
+    action,
+    level,
+    createdAt,
     traceId,
   }: {
-    level: LogLevel;
-    action: string;
-    createdAt: number;
     status: number;
     durationMs: number;
     identifier: string;
+    action: string;
+    level: LogLevel;
+    createdAt: number;
     traceId?: string;
   }): void {
-    if (!this.isEnabled(level)) return;
-    const sampleKey = `${action}|${status}`;
-    const sample = level === "INFO" ? this.operationSamples.get(sampleKey) : undefined;
-    if (sample && createdAt - sample.at < OPERATION_LOG_SAMPLE_MS) {
-      sample.merged += 1;
-      return;
-    }
-    // 合并条数记在下一条代表上：窗口里被省掉的行仍然计入速率，只是不再各占一次写。
-    if (level === "INFO") this.operationSamples.set(sampleKey, { at: createdAt, merged: 0 });
-    this.output[LEVEL_METHODS[level]](
-      formatStructuredLog({
+    const { body, scope, replay } = operationBody(action, status, durationMs, this.slowOperationMs);
+    const slow = durationMs >= this.slowOperationMs;
+    let structuredLevel: LogLevel = level;
+    if (level === "INFO" && this.operationLogging === "errors" && !slow) structuredLevel = "DEBUG";
+
+    if (this.isEnabled(structuredLevel)) {
+      const record = createOtelLogRecord({
         createdAt,
-        level: LOWER_LEVEL[level],
-        message: action,
-        context: {
+        level: LOWER_LEVEL[structuredLevel],
+        body,
+        attributes: operationAttributes({
+          action,
           status,
           durationMs,
           identifier,
-          ...(traceId ? { traceId } : {}),
-          ...(sample && sample.merged > 0 ? { merged: sample.merged + 1 } : {}),
-        },
-      })
-    );
-  }
+          scope,
+          replay,
+        }),
+        traceId,
+      });
+      this.dispatch(record);
+      if (structuredLevel !== "DEBUG") this.enqueueOtlp(record, structuredLevel);
+    } else if (this.otlpExporter?.isEnabled && level !== "DEBUG") {
+      this.enqueueOtlp(
+        createOtelLogRecord({
+          createdAt,
+          level: LOWER_LEVEL[level],
+          body,
+          attributes: operationAttributes({
+            action,
+            status,
+            durationMs,
+            identifier,
+            scope,
+            replay,
+          }),
+          traceId,
+        }),
+        level
+      );
+    }
 
-  // 后端操作日志输出
-  logOperation({
-    status = 200,
-    durationMs = 0,
-    identifier = "system",
-    action,
-    level = "INFO",
-    createdAt = this.now(),
-    traceId,
-  }: {
-    status?: number;
-    durationMs?: number;
-    identifier?: string;
-    action: string;
-    level?: LogLevel;
-    createdAt?: number;
-    traceId?: string;
-  }) {
-    this.writeOperationLine({
-      level,
-      action,
-      createdAt,
-      status,
-      durationMs,
-      identifier,
-      traceId,
-    });
+    if (
+      (level === "WARN" || level === "ERROR" || (level === "INFO" && slow)) &&
+      this.isEnabled(level)
+    ) {
+      this.console.write({
+        createdAt,
+        level: LOWER_LEVEL[level],
+        scope,
+        message: body,
+        fields: [
+          ["status", status],
+          ["durationMs", durationMs],
+          ["identifier", identifier],
+        ],
+        traceId,
+      });
+    }
 
     captureServerOperation({
       name: action,
@@ -406,10 +499,7 @@ export class EventLogger {
         ...(traceId ? { "trace.id": traceId } : {}),
       },
     });
-    countServerMetric("bakagame.operations", 1, {
-      status,
-      operation: action,
-    });
+    countServerMetric("bakagame.operations", 1, { status, operation: action });
     recordServerMetric("bakagame.operation.duration", durationMs, {
       status,
       operation: action,
@@ -432,36 +522,147 @@ export class EventLogger {
     }
   }
 
+  debug(message: string, context?: Record<string, unknown>) {
+    if (!this.isEnabled("DEBUG")) return;
+    const createdAt = this.now();
+    const safeContext = context ? (redactData(context) as Record<string, unknown>) : {};
+    const { attributes } = splitException(safeContext);
+    const body = redactLogText(message);
+    const scope = inferSystemScope(body, safeContext);
+    this.dispatch(
+      createOtelLogRecord({
+        createdAt,
+        level: "debug",
+        body,
+        attributes: { ...attributes, "log.kind": "system", "log.scope": scope },
+        traceId: traceIdOf(safeContext),
+      })
+    );
+  }
+
+  info(message: string, context?: Record<string, unknown>) {
+    this.emitSystem("INFO", message, context, this.now());
+  }
+
+  warn(message: string, context?: Record<string, unknown>) {
+    this.emitSystem("WARN", message, context, this.now());
+  }
+
+  error(message: string, context?: Record<string, unknown>) {
+    this.emitSystem("ERROR", message, context, this.now(), context?.error);
+  }
+
+  /**
+   * 本地专用输出：只写控制台，不进结构化出口、OTLP 或 Sentry，也不做脱敏拦截。
+   * 仅供必须保留明文的开发期输出（登录验证码）；调用方不得夹带其它用户数据。
+   */
+  localInfo(message: string) {
+    this.console.write({
+      createdAt: this.now(),
+      level: "info",
+      scope: "开发",
+      message,
+      fields: [],
+      unbounded: true,
+    });
+  }
+
+  section(title: string) {
+    this.console.section(title);
+  }
+
+  logOperation({
+    status = 200,
+    durationMs = 0,
+    identifier = "system",
+    action,
+    level = "INFO",
+    createdAt = this.now(),
+    traceId,
+  }: {
+    status?: number;
+    durationMs?: number;
+    identifier?: string;
+    action: string;
+    level?: LogLevel;
+    createdAt?: number;
+    traceId?: string;
+  }) {
+    this.emitOperation({
+      status,
+      durationMs,
+      identifier: sanitizeLogText(identifier, 64),
+      action,
+      level,
+      createdAt,
+      traceId,
+    });
+  }
+
   async write(entry: LogEntry): Promise<void> {
     const level = getEventLevel(entry);
-    if (this.isEnabled(level)) {
-      this.output[LEVEL_METHODS[level]](formatLogEntry(entry, level));
+    if (!this.isEnabled(level)) return;
+    const headline = EVENT_LABELS[entry.type] ?? `事件 ${entry.type}`;
+    const payload = entry.payload ? redactData(entry.payload) : undefined;
+    const attributes: Record<string, unknown> = {
+      "log.kind": "event",
+      "log.scope": eventScope(entry.type),
+      "event.name": entry.type,
+      ...(entry.roomId ? { roomId: entry.roomId } : {}),
+      ...(entry.playerId ? { playerId: entry.playerId } : {}),
+      ...(payload !== undefined ? { payload } : {}),
+    };
+    const record = createOtelLogRecord({
+      createdAt: entry.createdAt,
+      level: LOWER_LEVEL[level],
+      body: headline,
+      attributes,
+    });
+    this.dispatch(record);
 
-      captureServerLog(
-        `EVENT ${entry.type}`,
-        level === "ERROR" ? "error" : level === "WARN" ? "warning" : "info",
-        {
-          roomId: entry.roomId,
-          playerId: entry.playerId,
-          ...(isRecord(entry.payload) ? (redactData(entry.payload) as Record<string, unknown>) : {}),
-        }
-      );
-    }
-    countServerMetric("bakagame.events", 1, { event: entry.type, level });
-
-    if (this.otlpExporter?.isEnabled && level !== "DEBUG") {
-      this.otlpExporter.enqueue({
-        timestamp: entry.createdAt,
-        level,
-        message: `EVENT ${entry.type}`,
-        attributes: {
-          roomId: entry.roomId,
-          playerId: entry.playerId,
-          payload: entry.payload
-            ? (redactData(entry.payload) as Record<string, unknown>)
-            : undefined,
-        },
+    const consoleVisible =
+      level === "WARN" || level === "ERROR" || CONSOLE_EVENT_TYPES.has(entry.type);
+    if (consoleVisible) {
+      this.console.write({
+        createdAt: entry.createdAt,
+        level: LOWER_LEVEL[level],
+        scope: eventScope(entry.type),
+        message: headline,
+        fields: scalarFields(
+          {
+            ...(entry.roomId ? { roomId: entry.roomId } : {}),
+            ...(entry.playerId ? { playerId: entry.playerId } : {}),
+          },
+          ["roomId", "playerId"]
+        ),
       });
     }
+
+    this.enqueueOtlp(record, level);
+    if (isServerSentryEnabled()) {
+      captureServerLog(headline, SENTRY_LEVEL[level], {
+        event: entry.type,
+        roomId: entry.roomId,
+        playerId: entry.playerId,
+        ...(isRecord(payload) ? payload : {}),
+      });
+    }
+    countServerMetric("bakagame.events", 1, { event: entry.type, level });
+  }
+
+  async flush(): Promise<void> {
+    await Promise.all(
+      this.sinks.map(async (sink) => {
+        await sink.flush?.();
+      })
+    );
+  }
+
+  async close(): Promise<void> {
+    await Promise.all(
+      this.sinks.map(async (sink) => {
+        await sink.close?.();
+      })
+    );
   }
 }

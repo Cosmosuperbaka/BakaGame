@@ -22,6 +22,8 @@ export const finalStages = [
   "otlp",
   "sentry.flush",
   "sentry.close",
+  "logs.flush",
+  "logs.close",
 ] as const;
 export type Stage = (typeof finalStages)[number];
 
@@ -98,6 +100,13 @@ export async function createIndexShutdownHarness(
     error(message: string, details?: unknown) {
       logs.push({ level: "error", message, details });
     }
+    section() {}
+    flush() {
+      return execute("logs.flush");
+    }
+    close() {
+      return execute("logs.close");
+    }
   }
   const modules: Record<string, unknown> = {
     "./config/Env": {
@@ -160,6 +169,10 @@ export async function createIndexShutdownHarness(
         stack: error.stack,
         cause: error.cause,
       }),
+    },
+    // 日志装配只替换为记账替身：真实文件出口由 FileLogSink 单测与隐私用例覆盖。
+    "./infrastructure/logging/LoggerRuntime": {
+      createServerLogger: () => new Logger(),
     },
     "./infrastructure/OtlpExporter": {
       OtlpExporter: class {
