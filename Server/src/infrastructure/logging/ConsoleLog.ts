@@ -159,21 +159,53 @@ const formatDurationShort = (value: unknown): string => {
   return `${(value / 1000).toFixed(2)}s`;
 };
 
+/** 控制台里的 URL 只保留 host[:port]；完整 URL 在 OTel 文件里。 */
+const shortenUrl = (value: string): string => {
+  if (!/^https?:\/\//i.test(value)) return value;
+  try {
+    const url = new URL(value);
+    return url.port ? `${url.hostname}:${url.port}` : url.hostname;
+  } catch {
+    return value;
+  }
+};
+
 const formatFieldValue = (key: string, value: unknown): string | undefined => {
   if (value === undefined || value === null) return undefined;
   if (key === "durationMs") return formatDurationShort(value);
   if (typeof value === "boolean") return value ? "是" : "否";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return shortenUrl(value);
   if (typeof value === "number" || typeof value === "bigint") return value.toString();
   return undefined;
+};
+
+const ERROR_LABEL_MAX_WIDTH = 40;
+
+/** 去掉上游错误消息里重复的 `Error:` 前缀与换行，避免 `Error: Error: ...`。 */
+const normalizeErrorMessage = (name: string | undefined, message: string): string => {
+  let result = oneLine(message).replace(/\s+/g, " ").trim();
+  for (let index = 0; index < 3; index += 1) {
+    const prefix = name ? `${name}: ` : "";
+    if (prefix && result.toLowerCase().startsWith(prefix.toLowerCase()))
+      result = result.slice(prefix.length).trim();
+    else break;
+  }
+  return result.replace(/^(?:[A-Za-z]*Error|[A-Za-z]*Exception):\s*/i, "").trim();
 };
 
 const firstFrame = (error: unknown): { label?: string; frame?: string } => {
   if (!error || typeof error !== "object") return {};
   const record = error as Record<string, unknown>;
   const name = typeof record.errorName === "string" ? record.errorName : undefined;
-  const message = typeof record.errorMessage === "string" ? record.errorMessage : undefined;
-  const label = name ? (message ? `${name}: ${message}` : name) : undefined;
+  const rawMessage = typeof record.errorMessage === "string" ? record.errorMessage : undefined;
+  const message = rawMessage ? normalizeErrorMessage(name, rawMessage) : "";
+  // 长消息（通常是 SQL / 上游 JSON）在控制台只留类型；完整内容在结构化文件里。
+  const type = name ?? "Error";
+  const label = message
+    ? displayWidth(message) <= ERROR_LABEL_MAX_WIDTH
+      ? `${name ? `${name}: ` : ""}${message}`
+      : type
+    : name;
   const stack = typeof record.stack === "string" ? record.stack : undefined;
   if (!stack) return { label };
   const line = stack.split("\n").find((item) => /^\s*at\s/.test(item));

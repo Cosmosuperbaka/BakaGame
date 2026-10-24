@@ -59,6 +59,52 @@ describe("控制台日志渲染", () => {
     expect(line.split("\n")).toHaveLength(1);
   });
 
+  test("URL 只显示 host，长异常只留类型，重复 Error 前缀归一", () => {
+    const urlLine = formatConsoleLine(
+      {
+        createdAt,
+        level: "info",
+        scope: "系统",
+        message: "服务已启动",
+        fields: [["serverUrl", "http://localhost:4850/some/long/path"]],
+      },
+      { color: false }
+    );
+    expect(urlLine).toContain("地址=localhost:4850");
+
+    const longError = formatConsoleLine(
+      {
+        createdAt,
+        level: "error",
+        scope: "数据库",
+        message: "数据库迁移失败",
+        error: {
+          errorName: "Error",
+          errorMessage: `Error: Failed query: ${"select * from very_long_table ".repeat(8)}`,
+          stack: "Error\n    at migrate (db/migrate.ts:12:3)",
+        },
+      },
+      { color: false }
+    );
+    expect(longError).toContain("异常=Error");
+    expect(longError).not.toContain("Error: Error");
+    expect(longError).not.toContain("Failed query");
+    expect(longError).toContain("位置=migrate.ts:12:3");
+
+    const shortError = formatConsoleLine(
+      {
+        createdAt,
+        level: "error",
+        scope: "系统",
+        message: "操作失败",
+        error: { errorName: "Error", errorMessage: "Error: boom" },
+      },
+      { color: false }
+    );
+    expect(shortError).toContain("异常=Error: boom");
+    expect(shortError).not.toContain("Error: Error");
+  });
+
   test("颜色开关只影响 ANSI 转义，不影响列宽", () => {
     const entry = {
       createdAt,

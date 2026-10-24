@@ -88,6 +88,9 @@ test("系统日志控制台输出等级、中文正文与错误首帧", () => {
   expect(lines).toHaveLength(3);
   expect(lines[0]).toContain("INFO");
   expect(lines[0]).toContain("WhoIsFaker 服务已启动");
+  // 地址与监听属于结构化字段，不在控制台重复占位。
+  expect(lines[0]).not.toContain("http://127.0.0.1:4850");
+  expect(lines[0]).not.toContain("监听=");
   expect(lines[1]).toContain("WARN");
   expect(lines[1]).toContain("收到停机信号，开始优雅停机");
   expect(lines[2]).toContain("ERROR");

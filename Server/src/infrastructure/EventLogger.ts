@@ -196,17 +196,10 @@ const splitException = (
   return { attributes, exception };
 };
 
-/** 追踪号与异常字段有专用展示位，不再作为普通键值重复出现。 */
-const HIDDEN_CONSOLE_FIELDS = new Set([
-  "traceId",
-  "scope",
-  "error",
-  "errorName",
-  "errorMessage",
-  "stack",
-  "cause",
-]);
-
+/**
+ * 控制台只显示人工挑选的短字段；其余元数据完整留在 OTel 文件里。
+ * 不再把 context 里的任意标量键倒到控制台，避免地址、内部字段名这类噪声。
+ */
 const scalarFields = (
   context: Record<string, unknown>,
   preferred: readonly string[]
@@ -214,12 +207,6 @@ const scalarFields = (
   const fields: Array<[string, unknown]> = [];
   for (const key of preferred) {
     const value = context[key];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
-      fields.push([key, value]);
-  }
-  for (const [key, value] of Object.entries(context)) {
-    if (fields.length >= 5) break;
-    if (preferred.includes(key) || HIDDEN_CONSOLE_FIELDS.has(key) || key.includes(".")) continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
       fields.push([key, value]);
   }
@@ -392,8 +379,6 @@ export class EventLogger {
           "attempt",
           "signal",
           "port",
-          "serverUrl",
-          "listenAddress",
           "saved",
           "restored",
           "discarded",
