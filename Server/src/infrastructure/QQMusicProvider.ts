@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { AppError } from "../domain/Errors";
 import { LRUCache } from "lru-cache";
 import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
@@ -9,12 +9,6 @@ import { parseTTML, sanitizeLyrics } from "./LyricLines";
 import { asArray, asRecord, readNumber } from "./JsonReaders";
 import { MusicCache } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
-import {
-  IP_SCOPE_ANONYMOUS,
-  MusicIpScopeRegistry,
-  runWithAnonymousMusicIpScope,
-} from "./MusicIpScope";
-import { readChinaIpRanges } from "./ChinaIpRanges";
 import { AmllLyricClient } from "./AmllLyricClient";
 import type {
   MusicCookieInput,
@@ -36,7 +30,7 @@ import type {
 export interface QQMusicProviderOptions {
   logger?: EventLogger;
   now?: () => number;
-  /** 随机源（注入以便确定性测试）；限流退避抖动与伪装出口 IP 共用。 */
+  /** 随机源（注入以便确定性测试）：限流退避抖动。 */
   random?: { nextFloat?: () => number };
   /** 单个 provider 允许同时访问 QQ 音乐上游的请求数（匿名请求另有独立并发位）。 */
   maxConcurrentRequests?: number;
@@ -323,7 +317,6 @@ export class QQMusicProvider implements MusicProvider {
   private readonly amllClient: AmllLyricClient;
   /** 登录态复用与网易云同口径：普通 LRU + 单 TTL，不进软/硬双 TTL 的公共缓存。 */
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  private readonly ipScopes: MusicIpScopeRegistry;
   private readonly options: QQMusicProviderOptions;
   private readonly now: () => number;
   private anonymousFailureStreak = 0;
@@ -335,17 +328,6 @@ export class QQMusicProvider implements MusicProvider {
     this.options = options;
     this.now = options.now ?? (() => Date.now());
     const random = options.random ?? { nextFloat: () => Math.random() };
-    // 出口归属登记与网易云共用一套 Registry：按玩家 / 凭证 / 扫码会话分桶，限流后按
-    // scope 轮换。注意 QQ 网关不信任客户端来源 IP 头（实测 GetSession 的 userip 恒为
-    // 真实出口，X-Real-IP / X-Forwarded-For 不生效），真正换出口只能走代理/中转；
-    // 当前分桶只服务于缓存键指纹、登录会话键与作用域告警，不产生上游 IP 变化。
-    this.ipScopes = new MusicIpScopeRegistry({
-      now: this.now,
-      random,
-      chinaIpRanges: readChinaIpRanges(),
-      platformKey: "qq",
-      logger: options.logger,
-    });
     this.requestQueue = new UpstreamRequestQueue({
       now: this.now,
       random,
@@ -361,21 +343,17 @@ export class QQMusicProvider implements MusicProvider {
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
       onRateLimitCooldown: ({
-        scope,
         strikes,
         cooldownDurationMs,
         cooldownUntil,
         droppedQueuedRequests,
         reason,
       }) => {
-        // 限流后顺手刷新该 scope 的出口归属（对齐网易云 rotateScopeIp 语义）。
-        this.ipScopes.rotateScopeIp(scope);
         this.options.logger?.warn?.("QQ音乐接口触发限流退避", {
           strikes,
           cooldownDurationMs,
           cooldownUntil: new Date(cooldownUntil).toISOString(),
           droppedQueuedRequests,
-          rotatedScope: scope,
           reason,
         });
       },
@@ -399,20 +377,17 @@ export class QQMusicProvider implements MusicProvider {
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
       onRateLimitCooldown: ({
-        scope,
         strikes,
         cooldownDurationMs,
         cooldownUntil,
         droppedQueuedRequests,
         reason,
       }) => {
-        this.ipScopes.rotateScopeIp(scope);
         this.options.logger?.warn?.("QQ音乐匿名请求触发限流退避", {
           strikes,
           cooldownDurationMs,
           cooldownUntil: new Date(cooldownUntil).toISOString(),
           droppedQueuedRequests,
-          rotatedScope: scope,
           reason,
         });
       },
@@ -488,17 +463,9 @@ export class QQMusicProvider implements MusicProvider {
     return readString(body.message) ?? readString(body.msg) ?? fallback;
   }
 
-  /**
-   * 排队执行一次 QQ 音乐上游请求：先解析出口归属再调度（限流发生时按同一个 scope
-   * 处理，两处必须一致），正常 resolve 的限流形状响应转成业务异常。
-   */
-  private async callUpstream<T>(
-    cookie: string | undefined,
-    task: () => Promise<T>,
-    loginScope?: string
-  ): Promise<T> {
-    const ipScope = this.ipScopes.resolveIpScope(cookie, loginScope);
-    const response = await this.queueFor(cookie).scheduleRequest(task, ipScope);
+  /** 排队执行一次 QQ 音乐上游请求；正常 resolve 的限流形状响应转成业务异常。 */
+  private async callUpstream<T>(cookie: string | undefined, task: () => Promise<T>): Promise<T> {
+    const response = await this.queueFor(cookie).scheduleRequest(task);
     if (this.isRateLimitError(response)) {
       const record = asRecord(response);
       const bodyCode = readNumber(asRecord(record.body).code);
@@ -776,7 +743,9 @@ export class QQMusicProvider implements MusicProvider {
 
   /** 播放地址按 Cookie 指纹分键（原文不进缓存键），匿名请求共用同一桶。 */
   private audioCacheScope(cookie?: string): string {
-    return this.ipScopes.cookieFingerprint(cookie) || "anonymous";
+    const value = cookie?.trim();
+    if (!value) return "anonymous";
+    return createHash("sha256").update(value).digest("hex").slice(0, 16);
   }
 
   private async loadAudioUrl(mid: string, cookie?: string, force = false): Promise<string> {
@@ -1129,14 +1098,7 @@ export class QQMusicProvider implements MusicProvider {
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLogin> {
     const qrType = type || "qq";
-    // 每次扫码开启一个新的登录会话（对齐网易云：同一会话内的请求共用同一出口归属，
-    // 按会话 key 分桶，两个房主同时扫码互不串号）。
-    const loginScope = `qq-qr-login:${randomUUID()}`;
-    const res = await this.callUpstream(
-      undefined,
-      () => qqmusic.login_qr_create({ type: qrType }),
-      loginScope
-    );
+    const res = await this.callUpstream(undefined, () => qqmusic.login_qr_create({ type: qrType }));
     const body = asRecord(res.body);
     let key: string;
     if (qrType === "qq") {
@@ -1148,7 +1110,6 @@ export class QQMusicProvider implements MusicProvider {
     } else {
       key = readText(body.qrcodeID);
     }
-    this.ipScopes.setLoginScope(key, loginScope);
     if (qrType === "qq") {
       return {
         key,
@@ -1179,39 +1140,27 @@ export class QQMusicProvider implements MusicProvider {
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLoginCheck> {
     const qrType = type || "qq";
-    // 本次轮询只认自己那个二维码对应的会话归属（对齐网易云：并发扫码互不串号）。
-    const loginScope = this.ipScopes.getLoginScope(key);
     const [qrsig, ptqrtoken] = key.split(":::");
-    const res = await this.callUpstream(
-      undefined,
-      () =>
-        qqmusic.login_qr_check(
-          qrType === "qq"
-            ? { type: "qq", qrsig, ptqrtoken: ptqrtoken || undefined }
-            : qrType === "wx"
-              ? { type: "wx", uuid: key }
-              : { type: "mobile", qrcodeID: key }
-        ),
-      loginScope
+    const res = await this.callUpstream(undefined, () =>
+      qqmusic.login_qr_check(
+        qrType === "qq"
+          ? { type: "qq", qrsig, ptqrtoken: ptqrtoken || undefined }
+          : qrType === "wx"
+            ? { type: "wx", uuid: key }
+            : { type: "mobile", qrcodeID: key }
+      )
     );
     const body = asRecord(res.body);
 
     const code = readNumber(body.code);
     if (code === 200) {
       const cookieStr = readString(body.cookieStr) ?? "";
-      // 先固化会话归属再发后续请求（对齐网易云 bindSessionIp 语义）：
-      // 登录后的首份凭证沿用登录会话的出口，而不是另起一个桶。
-      this.ipScopes.bindSessionIp(cookieStr, loginScope);
-      try {
-        const session = await this.resolveLoginSession(cookieStr, {}, loginScope);
-        return {
-          status: "authorized",
-          message: "登录成功",
-          session,
-        };
-      } finally {
-        this.ipScopes.deleteLoginScope(key);
-      }
+      const session = await this.resolveLoginSession(cookieStr, {});
+      return {
+        status: "authorized",
+        message: "登录成功",
+        session,
+      };
     }
     if (code === 800) {
       return { status: "expired", message: "二维码已过期，请点击刷新" };
@@ -1232,8 +1181,7 @@ export class QQMusicProvider implements MusicProvider {
 
   private async resolveLoginSession(
     rawCookie: MusicCookieInput,
-    options: { forceRefresh?: boolean },
-    loginScope?: string
+    options: { forceRefresh?: boolean }
   ): Promise<MusicLoginSession> {
     const extracted = extractQqCookie(rawCookie);
     let currentCookie = extracted ?? (typeof rawCookie === "string" ? rawCookie : "");
@@ -1249,26 +1197,20 @@ export class QQMusicProvider implements MusicProvider {
       return { cookie: reused.cookie, account: { ...reused.account } };
     }
 
-    let statusRes = await this.callUpstream(
-      currentCookie,
-      () => qqmusic.login_status({ cookie: currentCookie }),
-      loginScope
+    let statusRes = await this.callUpstream(currentCookie, () =>
+      qqmusic.login_status({ cookie: currentCookie })
     );
     // 状态接口本身也可能轮换 Cookie；有回写就先接住，避免继续拿旧 key 去续期。
     if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
     if (options.forceRefresh || !statusRes.body?.isLogin) {
       try {
-        const refreshRes = await this.callUpstream(
-          currentCookie,
-          () => qqmusic.login_refresh({ cookie: currentCookie }),
-          loginScope
+        const refreshRes = await this.callUpstream(currentCookie, () =>
+          qqmusic.login_refresh({ cookie: currentCookie })
         );
         if (refreshRes.body?.code === 200 && refreshRes.body.cookieStr) {
           currentCookie = refreshRes.body.cookieStr;
-          statusRes = await this.callUpstream(
-            currentCookie,
-            () => qqmusic.login_status({ cookie: currentCookie }),
-            loginScope
+          statusRes = await this.callUpstream(currentCookie, () =>
+            qqmusic.login_status({ cookie: currentCookie })
           );
           if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
         } else {
@@ -1318,14 +1260,12 @@ export class QQMusicProvider implements MusicProvider {
    */
   async warmUp(): Promise<void> {
     if (!this.warmupPromise) {
-      this.warmupPromise = runWithAnonymousMusicIpScope(() =>
-        this.anonymousQueue.scheduleRequest(
+      this.warmupPromise = this.anonymousQueue
+        .scheduleRequest(
           // 探测结果不写入检索缓存：固定关键词的结果对真实玩家没有价值，
           // 只为建连；失败在 catch 里消化，不会计入匿名熔断的失败 streak。
-          () => qqmusic.search({ keywords: "周杰伦", limit: 1 }),
-          IP_SCOPE_ANONYMOUS
+          () => qqmusic.search({ keywords: "周杰伦", limit: 1 })
         )
-      )
         .then(() => undefined)
         .catch((error: unknown) => {
           // 拒绝的 Promise 绝不能留在字段上：预热期的一次抖动会把后续预热永久钉死。

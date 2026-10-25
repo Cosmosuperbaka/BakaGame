@@ -11,7 +11,7 @@ const restore = () => Object.assign(qqmusic, originals);
 afterEach(restore);
 
 describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", () => {
-  it("并发扫码登录按会话 key 分桶，各自的轮询拿到各自的凭证", async () => {
+  it("并发扫码登录各自轮询拿到各自的凭证", async () => {
     let seq = 0;
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
     qqmusic.login_qr_create = mock(async () => {
@@ -49,7 +49,7 @@ describe("QQ音乐扫码登录会话（对齐网易云按 key 分桶口径）", 
     expect(resultB.session?.cookie).toBe("qm_keyst=done-sig-2");
   });
 
-  it("会话结束（授权完成）后丢弃对应分桶，过期二维码的会话由 TTL 清理", async () => {
+  it("过期二维码返回 expired 且不触发登录态校验", async () => {
     const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
     qqmusic.login_qr_create = mock(async () => ({
       status: 200,

@@ -1,6 +1,5 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import { QQMusicProvider } from "../../src/infrastructure/QQMusicProvider";
-import { musicIpScope } from "../../src/infrastructure/MusicIpScope";
 import qqmusic from "qqmusic-api-enhanced";
 import { offlineAmll } from "./Fixtures";
 
@@ -116,30 +115,5 @@ describe("QQ音乐上游队列与限流退避", () => {
     release();
     await expect(active).resolves.toMatchObject({ title: "T" });
     expect(calls).toBe(1);
-  });
-
-  it("作用域外的匿名调用发限频告警，包了玩家作用域的调用不触发", async () => {
-    const warnings: Array<{ message: string; meta: unknown }> = [];
-    let virtualTime = 1_700_000_000_000;
-    const provider = new QQMusicProvider({
-      now: () => virtualTime,
-      minRequestIntervalMs: 0,
-      logger: {
-        warn: (message: string, meta: unknown) => warnings.push({ message, meta }),
-      } as any,
-    });
-    qqmusic.search = mock(async () => ({ status: 200, body: { songs: [] } })) as any;
-
-    await provider.search("甲");
-    // 回落仍在发生，但告警按间隔限频：满载时逐条 warn 会盖掉真正的故障。
-    virtualTime += 1_000;
-    await provider.search("乙");
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]?.message).toBe("音乐请求缺少玩家 IP 作用域，已回落共享匿名出口");
-    expect(warnings[0]?.meta).toMatchObject({ fallbackScope: "anonymous" });
-
-    const beforeScoped = warnings.length;
-    await musicIpScope.run("player:conn-qq", () => provider.search("丙"));
-    expect(warnings).toHaveLength(beforeScoped);
   });
 });
