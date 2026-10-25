@@ -42,6 +42,9 @@
       此处只保留全站共通的站点级标签与首屏兜底标题。
     -->
     <title>BakaGame</title>
+    <!-- Agent 发现入口：远程 MCP 端点与机器可读说明书；玩家侧只在房间的 MCP 设置里获取接入 Prompt。 -->
+    <link rel="mcp" href="/api/mcp" type="application/json" />
+    <link rel="alternate" type="application/json" href="/.well-known/mcp.json" title="MCP discovery" />
   </head>
   <body>
     <div id="root"></div>

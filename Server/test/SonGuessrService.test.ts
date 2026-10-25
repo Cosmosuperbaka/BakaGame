@@ -9135,3 +9135,46 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
     true
   );
 });
+
+test("猜歌 MCP 配对：Agent 接管人类座位，人类操作被服务端锁定，收回后恢复", async () => {
+  const service = new SonGuessrService({ musicProvider: provider });
+  const host = connection(service, "song-pair-host");
+  const created = (await createRoom(service, host, { allowAgents: true })) as {
+    playerId: string;
+    sessionToken: string;
+  };
+
+  const agent = connection(service, "song-pair-agent");
+  agent.record.isAgent = true;
+  const claimed = await execute<{ playerId: string; sessionToken: string }>(service, agent, {
+    id: "song-pair-claim",
+    type: "mcp.claim",
+    payload: { roomId: "1234", sessionToken: created.sessionToken },
+  });
+  expect(claimed.playerId).toBe(created.playerId);
+  expect(claimed.sessionToken).not.toBe(created.sessionToken);
+
+  const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+  expect(snapshot.players.find((player) => player.id === created.playerId)?.mcpControlled).toBe(
+    true
+  );
+  const viewerState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+  expect(viewerState.mcpControlled).toBe(true);
+
+  await expect(
+    execute(service, host, {
+      id: "song-pair-host-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    })
+  ).rejects.toMatchObject({ code: "MCP_CONTROL_ONLY" });
+
+  await execute(service, host, { id: "song-pair-release", type: "mcp.release", payload: {} });
+  await execute(service, host, {
+    id: "song-pair-host-ready-after",
+    type: "song.player.setReady",
+    roomId: "1234",
+    payload: { ready: true },
+  });
+});

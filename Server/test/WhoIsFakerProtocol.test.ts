@@ -330,6 +330,9 @@ const WHOISFAKER_COMMAND_CASES = [
   { type: "game.requestSupplement", payload: { playerIds: ["p1"] } },
   { type: "game.startPhaseTimer", payload: { durationSeconds: 60 } },
   { type: "game.stopPhaseTimer", payload: {} },
+  { type: "mcp.claim", payload: { roomId: "1234", sessionToken: "session-token" } },
+  { type: "mcp.release", payload: {} },
+  { type: "mcp.focus", payload: { agentName: "BakaAgent", tool: "get_room_state", kind: "state" } },
 ] as const satisfies readonly { type: WhoIsFakerCommand; payload: Record<string, unknown> }[];
 
 type UnprobedWhoIsFakerCommand = Exclude<

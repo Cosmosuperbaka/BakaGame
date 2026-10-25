@@ -170,6 +170,7 @@ export function WordSubmissionPhase({
           placeholder="输入平民获得的词语"
           maxLength={20}
           error={fieldErrors.civilian}
+          controlId="faker.word.civilian"
         />
         <SettingTextField
           label="卧底词"
@@ -178,6 +179,7 @@ export function WordSubmissionPhase({
           placeholder="输入卧底获得的词语"
           maxLength={20}
           error={fieldErrors.undercover}
+          controlId="faker.word.undercover"
         />
         {hasBlank ? (
           <SettingTextField
@@ -187,6 +189,7 @@ export function WordSubmissionPhase({
             placeholder="给白板玩家的分类提示"
             maxLength={20}
             error={fieldErrors.blank}
+            controlId="faker.word.blankHint"
           />
         ) : null}
 
@@ -267,6 +270,7 @@ export function WordSubmissionPhase({
           loading={busy}
           disabled={manualRolesInvalid}
           aria-describedby={manualRolesInvalid ? roleCountId : undefined}
+          data-agent-control="faker.words.submit"
         >
           {busy ? null : <Send className="h-4 w-4" />}
           确认提交

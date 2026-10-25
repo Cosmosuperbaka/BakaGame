@@ -22,6 +22,7 @@ const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({
   spectatorCount: room.spectatorCount,
   // 只给与默认题型不同的房间挂标签（与房间顶栏的 roomTag 同口径），默认的听歌识曲不挂。
   tag: room.questionType === "anime" ? SONG_QUESTION_TYPE_LABELS.anime : undefined,
+  mcpAvailable: room.allowAgents,
 });
 
 export default function SonGuessrPage() {

@@ -2,7 +2,7 @@ import { useCallback, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { AgentBadge } from "@/components/common/AgentBadge";
+import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { SongRoundMarks } from "@/components/songuessr/layout/SongRoundMarks";
 import {
   PlayerGroupTitle,
@@ -278,6 +278,7 @@ function SongPlayerRow({
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
+          {player.mcpControlled ? <McpControlledBadge /> : null}
           {status ? <PlayerStatusIcon {...status} /> : null}
         </>
       }

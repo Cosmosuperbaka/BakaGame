@@ -76,6 +76,12 @@ import {
   type AnimeAutoFilters,
   type BangumiSongCandidate,
 } from "../shared/Index";
+import {
+  isAgentFocusKind,
+  isAgentFocusPart,
+  type AgentFocusEvent,
+  type AgentFocusInput,
+} from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { isPlayableSong, type SongPlayabilityContext } from "../infrastructure/MusicDeduplicator";
@@ -92,6 +98,7 @@ import {
 import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
+import { McpSeatRegistry, redactPrivateState, type McpController } from "./McpSeatRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 
 const DEFAULT_SETTINGS: SonGuessrSettings = {
@@ -1504,6 +1511,7 @@ export const createManualLyricClip = (
 export class SonGuessrService implements AdminRoomControl {
   private readonly rooms = new Map<string, SonGuessrRoomRecord>();
   private readonly connections = new ConnectionRegistry();
+  private readonly mcpSeats = new McpSeatRegistry();
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   private readonly lobbyFanout: LobbyFanout;
   private readonly now: () => number;
@@ -1681,6 +1689,32 @@ export class SonGuessrService implements AdminRoomControl {
     const player = room?.players[connection.playerId];
     if (!room || !player) return;
 
+    const controller = this.mcpSeats.controllerFor(room.id, player.id);
+    if (controller) {
+      if (controller.connectionId !== connection.id) {
+        // 人类旁观连接断开：座位仍由 MCP 控制，不触发离线清理。
+        this.connections.detach(connection);
+        this.publishRoom(room);
+        return;
+      }
+      this.mcpSeats.unbind(room.id, player.id);
+      const viewer = this.connections
+        .getRoomConnections(room.id)
+        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
+      if (viewer) {
+        player.online = true;
+        player.connectionId = viewer.id;
+        player.lastSeenAt = this.now();
+        this.connections.detach(connection);
+        this.touch(room);
+        this.publishRoom(room);
+        return;
+      }
+    } else if (player.connectionId !== connection.id) {
+      this.connections.detach(connection);
+      return;
+    }
+
     player.online = false;
     player.connectionId = undefined;
     player.lastSeenAt = this.now();
@@ -1737,6 +1771,11 @@ export class SonGuessrService implements AdminRoomControl {
     connection: ConnectionRecord,
     message: SonGuessrClientMessage
   ): Promise<unknown> {
+    this.assertMcpManualControl(connection, message.type);
+    if (message.type === "mcp.focus") return this.handleAgentFocus(connection, message.payload);
+    if (message.type === "mcp.claim" || message.type === "mcp.release") {
+      return this.handleMcpCommand(connection, message);
+    }
     switch (message.type) {
       case "song.lobby.subscribeRooms":
         connection.lobbySubscribed = true;
@@ -2222,11 +2261,22 @@ export class SonGuessrService implements AdminRoomControl {
     const targetRoomId = ensureRoomId(roomIdValue);
     const room = this.getRoom(targetRoomId);
     this.ensureAgentsAllowed(room, connection);
+
+    const controller = this.mcpSeats.findByControllerToken(token);
+    if (controller && controller.roomId === targetRoomId)
+      return this.reconnectControllerSeat(connection, room, controller);
+
     const player = Object.values(room.players).find(
       (candidate) =>
         safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
     );
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
+
+    if (connection.isAgent === true && player.isAgent !== true)
+      throw new AppError("AGENT_CLAIM_REQUIRED", "Agent 接手人类座位必须先通过 MCP 认领");
+
+    if (this.mcpSeats.isControlled(room.id, player.id))
+      return this.reconnectViewerSeat(connection, targetRoomId, room, player);
 
     // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
     // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
@@ -2279,7 +2329,233 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
+  private reconnectControllerSeat(
+    connection: ConnectionRecord,
+    room: SonGuessrRoomRecord,
+    controller: McpController
+  ) {
+    if (connection.isAgent !== true)
+      throw new AppError("AGENT_REQUIRED", "控制器令牌只能用于 Agent 连接");
+    const player = room.players[controller.playerId];
+    if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
+    if (connection.roomId) this.ensureConnectionFree(connection);
+    const previous = this.connections.findConnection(controller.connectionId);
+    if (previous && previous.id !== connection.id) {
+      this.connections.detach(previous);
+      try {
+        previous.close(4001, "session_replaced");
+      } catch {
+        /* 已关闭 */
+      }
+    }
+    const rebound = this.mcpSeats.rebind(controller, connection.id);
+    player.online = true;
+    player.connectionId = connection.id;
+    player.lastSeenAt = this.now();
+    room.emptySinceAt = undefined;
+    connection.resetStateSync?.();
+    this.connections.attach(connection, room.id, player.id);
+    this.touch(room);
+    this.publishRoom(room);
+    return {
+      roomId: room.id,
+      playerId: player.id,
+      sessionToken: rebound.token,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: {
+        ...this.buildPrivateState(room, player),
+        sessionToken: rebound.token,
+      },
+    };
+  }
+
+  private reconnectViewerSeat(
+    connection: ConnectionRecord,
+    targetRoomId: string,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord
+  ) {
+    if (connection.isAgent === true)
+      throw new AppError("MCP_SEAT_TAKEN", "该座位已由另一个 MCP 连接控制");
+    if (!(connection.roomId === targetRoomId && connection.playerId)) {
+      this.ensureConnectionFree(connection);
+    }
+    connection.resetStateSync?.();
+    this.connections.attach(connection, room.id, player.id);
+    this.publishRoom(room, connection);
+    return {
+      roomId: room.id,
+      playerId: player.id,
+      sessionToken: player.sessionToken,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: this.privateStateForConnection(room, player, connection),
+    };
+  }
+
+  private handleAgentFocus(connection: ConnectionRecord, payload: AgentFocusInput) {
+    if (connection.isAgent !== true)
+      throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报活动焦点");
+    if (!isAgentFocusKind(payload.kind))
+      throw new AppError("INVALID_FOCUS", "未知的活动焦点");
+    if (payload.part !== undefined && !isAgentFocusPart(payload.part))
+      throw new AppError("INVALID_FOCUS", "未知的界面区域");
+    const event = {
+      ...payload,
+      kind: payload.kind,
+      game: "song",
+      roomId: connection.roomId,
+      playerId: connection.playerId,
+      at: this.now(),
+    } as AgentFocusEvent;
+    // 控件焦点与输入进度只给接管座位的人类查看器，避免搜索词/猜测提前泄露给同房玩家。
+    if (connection.roomId) {
+      for (const viewer of this.connections.getRoomConnections(connection.roomId)) {
+        if (viewer.playerId === connection.playerId && viewer.isAgent !== true) {
+          try {
+            viewer.send(createEvent("mcp.focus", event));
+          } catch {
+            /* 查看器已断开 */
+          }
+        }
+      }
+    }
+    return { published: true };
+  }
+
+  /** 座位被 MCP 接管后，人类连接只能同步、退房与收回控制。 */
+  private assertMcpManualControl(
+    connection: ConnectionRecord,
+    type: SonGuessrClientMessage["type"]
+  ): void {
+    if (!connection.roomId || !connection.playerId) return;
+    const controller = this.mcpSeats.controllerFor(connection.roomId, connection.playerId);
+    if (!controller || controller.connectionId === connection.id) return;
+    if (
+      type === "song.room.leave" ||
+      type === "song.room.requestSync" ||
+      type === "mcp.release"
+    )
+      return;
+    throw new AppError("MCP_CONTROL_ONLY", "本会话已由 MCP 接管，手动操作已锁定");
+  }
+
+  private async handleMcpCommand(
+    connection: ConnectionRecord,
+    message: Extract<
+      SonGuessrClientMessage,
+      { type: "mcp.claim" | "mcp.release" }
+    >
+  ): Promise<unknown> {
+    if (message.type === "mcp.claim")
+      return this.claimSeat(connection, message.payload.roomId, message.payload.sessionToken);
+    return this.releaseSeat(connection);
+  }
+
+  private claimSeat(connection: ConnectionRecord, roomIdValue: string, sessionToken: string) {
+    if (connection.isAgent !== true)
+      throw new AppError("AGENT_REQUIRED", "只有声明为 Agent 的连接可以认领 MCP 座位");
+    if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间再认领座位");
+    const room = this.getRoom(ensureRoomId(roomIdValue));
+    const player = Object.values(room.players).find((candidate) =>
+      safeEqualToken(candidate.sessionToken, sessionToken)
+    );
+    if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
+    if (room.settings.allowAgents !== true)
+      throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
+    if (player.isBot || player.membership === "kicked")
+      throw new AppError("MCP_PAIR_FORBIDDEN", "该座位不能交给 MCP");
+    if (this.mcpSeats.isControlled(room.id, player.id))
+      throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
+
+    const bound = this.mcpSeats.bind(room.id, player.id, connection.id);
+    player.online = true;
+    player.connectionId = connection.id;
+    player.lastSeenAt = this.now();
+    room.emptySinceAt = undefined;
+    connection.resetStateSync?.();
+    connection.lobbySubscribed = false;
+    this.connections.attach(connection, room.id, player.id);
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    return {
+      roomId: room.id,
+      playerId: player.id,
+      sessionToken: bound.token,
+      snapshot: this.buildRoomSnapshot(room),
+      privateState: {
+        ...this.buildPrivateState(room, player),
+        sessionToken: bound.token,
+      },
+    };
+  }
+
+  private releaseSeat(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const controller = this.mcpSeats.controllerFor(room.id, player.id);
+    if (!controller) return { released: false };
+    const controllerConnection = this.connections.findConnection(controller.connectionId);
+    const viewer = this.connections
+      .getRoomConnections(room.id)
+      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
+    this.mcpSeats.unbind(room.id, player.id);
+    if (controllerConnection) {
+      try {
+        controllerConnection.send(createEvent("mcp.released", { roomId: room.id }));
+      } catch {
+        /* 控制器已断线 */
+      }
+      this.connections.detach(controllerConnection);
+      setTimeout(() => {
+        try {
+          controllerConnection.close(4002, "mcp_released");
+        } catch {
+          /* 已关闭 */
+        }
+      }, 50);
+    }
+    if (viewer) {
+      player.online = true;
+      player.connectionId = viewer.id;
+      player.lastSeenAt = this.now();
+      this.touch(room);
+      this.publishRoom(room);
+      this.publishLobby();
+      return { released: true };
+    }
+    player.online = false;
+    player.connectionId = undefined;
+    player.lastSeenAt = this.now();
+    if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
+      room.emptySinceAt ??= this.now();
+    }
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    return { released: true };
+  }
+
   private leaveRoom(connection: ConnectionRecord) {
+    const { room, player } = this.requireRoomPlayer(connection);
+    const controller = this.mcpSeats.controllerFor(room.id, player.id);
+    if (controller?.connectionId === connection.id) {
+      // MCP 控制器离房：把座位交还仍在线的人类页面，而不是把人的记录一起删掉。
+      this.mcpSeats.unbind(room.id, player.id);
+      this.connections.detach(connection);
+      const viewer = this.connections
+        .getRoomConnections(room.id)
+        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
+      if (viewer) {
+        player.online = true;
+        player.connectionId = viewer.id;
+        player.lastSeenAt = this.now();
+        this.touch(room);
+        this.publishRoom(room);
+        this.publishLobby();
+        return { left: true, roomClosed: false };
+      }
+      return this.detachFromRoom(connection);
+    }
     // 显式离开代表账号主动退出：号跟着人一起撤掉。
     return this.detachFromRoom(connection);
   }
@@ -5802,6 +6078,7 @@ export class SonGuessrService implements AdminRoomControl {
       onlineCount: activeCount + spectatorCount,
       phase: room.phase,
       questionType: room.settings.questionType,
+      allowAgents: room.settings.allowAgents === true,
     };
   }
 
@@ -5914,6 +6191,7 @@ export class SonGuessrService implements AdminRoomControl {
       isReady: player.isReady,
       isBot: player.isBot,
       ...(player.isAgent ? { isAgent: true } : {}),
+      ...(this.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
       isHost: room.hostPlayerId === player.id,
       account: player.account,
       correctGuesses: player.correctGuesses,
@@ -5948,6 +6226,7 @@ export class SonGuessrService implements AdminRoomControl {
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
+      ...(this.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
       isSubmitter,
       teamObserver,
       submitterCandidateIds: needsCandidates
@@ -6023,10 +6302,28 @@ export class SonGuessrService implements AdminRoomControl {
         const player = room.players[connection.playerId];
         if (player)
           connection.send(
-            createEvent("song.game.privateState", this.buildPrivateState(room, player))
+            createEvent(
+              "song.game.privateState",
+              this.privateStateForConnection(room, player, connection)
+            )
           );
       }
     }
+  }
+
+  /** 被 MCP 接管时，只有控制器连接能收到完整私有状态；人类页面只拿到脱敏视图。 */
+  private privateStateForConnection(
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
+    connection: ConnectionRecord
+  ): SonGuessrPrivateState {
+    const state = this.buildPrivateState(room, player);
+    const controller = this.mcpSeats.controllerFor(room.id, player.id);
+    if (!controller || controller.connectionId === connection.id) return state;
+    return redactPrivateState(
+      "song",
+      state as unknown as Record<string, unknown>
+    ) as unknown as SonGuessrPrivateState;
   }
 
   private publishPrivateState(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
@@ -6042,7 +6339,10 @@ export class SonGuessrService implements AdminRoomControl {
       const player = room.players[connection.playerId];
       if (player) {
         connection.sendStateSyncCalibration?.(
-          createEvent("song.game.privateState", this.buildPrivateState(room, player))
+          createEvent(
+            "song.game.privateState",
+            this.privateStateForConnection(room, player, connection)
+          )
         );
       }
     }
@@ -6071,6 +6371,7 @@ export class SonGuessrService implements AdminRoomControl {
     // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
     this.wakeMusicPoolWaiters(room.id);
     this.rooms.delete(room.id);
+    this.mcpSeats.clearRoom(room.id);
     this.publishLobby();
   }
 

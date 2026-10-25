@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { TeamPicker } from "@/components/common/room/TeamPicker";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
@@ -70,16 +71,24 @@ function SongSettingsGroups({
         <SongGameSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
       </SettingsAccordion>
       {!solo ? (
-        <SettingsAccordion
-          icon={Settings}
-          title="房间设置"
-          summary={summary.room}
-          readOnly={readOnly}
-          open={roomOpen}
-          onOpenChange={setRoomOpen}
-        >
-          <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
-        </SettingsAccordion>
+        <>
+          <SettingsAccordion
+            icon={Settings}
+            title="房间设置"
+            summary={summary.room}
+            readOnly={readOnly}
+            open={roomOpen}
+            onOpenChange={setRoomOpen}
+          >
+            <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
+          </SettingsAccordion>
+          <McpSettingsSection
+            game="song"
+            roomId={snapshot.roomId}
+            allowAgents={snapshot.settings.allowAgents === true}
+            isHost={!readOnly}
+          />
+        </>
       ) : null}
     </SettingsStack>
   );
@@ -99,13 +108,15 @@ function SongTeamPicker({
 }) {
   if (!me || me.membership !== "active") return null;
   return (
-    <TeamPicker
-      players={snapshot.players.filter((player) => player.membership === "active")}
-      selfId={me.id}
-      switching={Boolean(isPending?.("song.player.setTeam"))}
-      hint="同队共享次数与猜测"
-      onPick={(team) => void run("song.player.setTeam", { team })}
-    />
+    <div data-agent-control="song.team">
+      <TeamPicker
+        players={snapshot.players.filter((player) => player.membership === "active")}
+        selfId={me.id}
+        switching={Boolean(isPending?.("song.player.setTeam"))}
+        hint="同队共享次数与猜测"
+        onPick={(team) => void run("song.player.setTeam", { team })}
+      />
+    </div>
   );
 }
 
@@ -133,6 +144,7 @@ export function SongSoloWaitingPanel({
         loading={isStarting}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
+        data-agent-control="song.start"
       >
         {canStartSolo ? "开始游戏" : "请先登录网易云或 QQ 音乐账号"}
       </Button>
@@ -188,6 +200,7 @@ export function SongHostWaitingPanel({
         loading={isStarting}
         onClick={() => void run("song.game.start")}
         className="w-full text-base"
+        data-agent-control="song.start"
       >
         {!hasMusicAccount(snapshot) && allReady
           ? "请先登录网易云或 QQ 音乐账号"
@@ -278,6 +291,7 @@ export function SongWaitingPhase({
             loading={isReadyPending}
             onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
             className="gap-2 min-w-[120px]"
+            data-agent-control="song.ready"
           >
             {me.isReady ? (
               <>{isReadyPending ? null : <X className="h-4 w-4" />}取消准备</>

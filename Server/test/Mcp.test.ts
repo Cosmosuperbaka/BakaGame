@@ -160,7 +160,7 @@ test(
       const names = (tools.result as { tools: Array<{ name: string }> }).tools.map(
         (tool) => tool.name
       );
-      expect(names).toEqual(expect.arrayContaining(["list_rooms", "join_room", "get_room_state"]));
+      expect(names).toEqual(expect.arrayContaining(["list_rooms", "join_room", "get_screen", "ui_run"]));
 
       const joined = await call(3, "tools/call", {
         name: "join_room",
@@ -174,14 +174,15 @@ test(
       expect(joinedText).toContain('"playerId":"player-1"');
 
       const state = await call(4, "tools/call", {
-        name: "get_room_state",
+        name: "get_screen",
         arguments: { game: "faker" },
       });
       const stateText = (state.result as { content: Array<{ text: string }> }).content[0]!.text;
       expect(stateText).toContain("Agent 测试房");
+      expect(stateText).toContain('"players"');
+      expect(stateText).toContain('"chat"');
+      expect(stateText).not.toContain("agent-token");
       expect(stateText).not.toContain("privateState");
-      expect(stateText).not.toContain('"answer"');
-      expect(stateText).not.toContain('"words"');
 
       const rooms = await call(5, "tools/call", {
         name: "list_rooms",
@@ -219,41 +220,6 @@ test("状态同步 full / patch 都能落到公开快照", () => {
   expect((patched?.players as Array<{ score: number }>)[0]?.score).toBe(2);
 });
 
-test("结算记录工具只返回公开字段，不泄露答案、词对与私有身份", async () => {
-  const fake = {
-    currentRoom: () => "1234",
-    currentPlayerId: () => "player-1",
-    currentSnapshot: () => ({
-      roomId: "1234",
-      phase: "settled",
-      players: [
-        {
-          id: "player-1",
-          name: "Agent",
-          score: 3,
-          isAgent: true,
-          // 快照里可能带私有字段时也不能原样透出。
-          privateState: { answer: "秘密" },
-        },
-      ],
-      roundSummary: {
-        answer: { name: "秘密角色" },
-        winners: [{ playerId: "player-1", rank: 1, score: 3 }],
-        scores: [],
-        guesses: [],
-      },
-    }),
-    sendInRoom: async () => ({}),
-  } as unknown as AgentGameClient;
-  const tool = TOOLS.find((entry) => entry.name === "get_game_record")!;
-  const result = await tool.handler({ game: "cee" }, { client: fake, agentName: "TestAgent" });
-  const text = JSON.stringify(result);
-  expect(text).toContain("player-1");
-  expect(text).toContain("winners");
-  expect(text).not.toContain("秘密");
-  expect(text).not.toContain("privateState");
-});
-
 test("create_room 把房主规则参数交给游戏客户端", async () => {
   const calls: unknown[] = [];
   const fake = {
@@ -264,6 +230,7 @@ test("create_room 把房主规则参数交给游戏客户端", async () => {
     currentRoom: () => undefined,
     currentPlayerId: () => undefined,
     currentSnapshot: () => undefined,
+    ui: { screen: async () => ({ game: "faker", roomId: "7777" }) },
   } as unknown as AgentGameClient;
   const tool = TOOLS.find((entry) => entry.name === "create_room")!;
   const result = await tool.handler(

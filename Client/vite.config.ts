@@ -1229,6 +1229,17 @@ export default defineConfig(({ command }) => {
           target: "http://localhost:4850",
           changeOrigin: true,
         },
+        // MCP 设置里的 Prompt 用页面 origin（5173），让本地 Agent 也能直接连到同一个远程 MCP；
+        // 游戏 WS 也一并转发，远程 MCP 端点回连游戏服务时才不会落到 Vite 的 HTML。
+        "/api": {
+          target: "http://localhost:4850",
+          changeOrigin: true,
+          ws: true,
+        },
+        "/.well-known": {
+          target: "http://localhost:4850",
+          changeOrigin: true,
+        },
       },
     },
     // E2E 跑在 vite preview（生产构建）上：客户端生产包走同源相对路径，

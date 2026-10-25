@@ -10,6 +10,7 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerPrivateState,
   type WhoIsFakerRoomSummary,
+  type AgentFocusEvent,
   type ServerMessage,
   type EventPacket,
   SERVER_SHUTDOWN_MESSAGE,
@@ -30,6 +31,7 @@ export interface WhoIsFakerGameState {
   sessionToken: string | null;
   snapshot: WhoIsFakerRoomSnapshot | null;
   privateState: WhoIsFakerPrivateState | null;
+  agentFocus: AgentFocusEvent | null;
   toasts: ToastItem[];
   /**
    * 房间被服务端关闭的时刻。房间页据此立刻退回大厅：
@@ -49,6 +51,7 @@ export interface WhoIsFakerGameState {
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   applyIncomingSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
+  setAgentFocus: (focus: AgentFocusEvent | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
 
@@ -245,6 +248,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     sessionToken: null,
     snapshot: null,
     privateState: null,
+    agentFocus: null,
     toasts: [],
     roomClosedAt: null,
     phaseTimedOutEndsAt: null,
@@ -264,6 +268,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         sessionToken: null,
         snapshot: null,
         privateState: null,
+        agentFocus: null,
         phaseTimedOutEndsAt: null,
         roomClosedAt: null,
       });
@@ -309,6 +314,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         }
       }
     },
+    setAgentFocus: (agentFocus) => set({ agentFocus }),
     addToast: (text, type = "info", durationMs = 3000) => {
       const id = ++toastCounter;
       set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
@@ -422,6 +428,9 @@ export function initWhoIsFakerWs() {
           syncedSnapshot = result.state as WhoIsFakerRoomSnapshot;
           if (!roomEntry.isPending()) currentStore.setSnapshot(syncedSnapshot);
         }
+        break;
+      case "mcp.focus":
+        currentStore.setAgentFocus(evt.payload as AgentFocusEvent);
         break;
       case "game.privateState":
         {

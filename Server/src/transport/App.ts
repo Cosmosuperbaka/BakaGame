@@ -36,6 +36,9 @@ import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
 import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
+import { mcpDiscoveryRoutes } from "./routes/McpDiscovery";
+import { mcpRemoteRoutes } from "./routes/McpRemote";
+import { RemoteMcpSessions } from "../mcp/Remote";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
@@ -697,6 +700,7 @@ export const createApp = ({
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> =>
     (disposal ??= disposeResources ? disposeResources() : characterService.close());
+  const remoteMcpSessions = new RemoteMcpSessions(logger);
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   // 路由表在 createApp 装配完成时定形，模板索引到首个请求才惰性编译一次。
   let routeTemplates: readonly RouteTemplate[] | undefined;
@@ -744,6 +748,7 @@ export const createApp = ({
     },
   })
     .onStop(() => {
+      remoteMcpSessions.closeAll();
       void dispose().catch((error: unknown) =>
         logger.error("服务资源释放失败", describeError(error))
       );
@@ -782,8 +787,17 @@ export const createApp = ({
     .use(
       cors({
         origin: (req: Request) => isAllowedOrigin(req?.headers?.get("origin"), env.clientUrl),
-        allowedHeaders: ["content-type", "x-trace-id"],
-        methods: ["GET", "POST", "OPTIONS"],
+        allowedHeaders: [
+          "content-type",
+          "x-trace-id",
+          "accept",
+          "mcp-session-id",
+          "mcp-protocol-version",
+          "mcp-method",
+          "mcp-name",
+        ],
+        exposeHeaders: ["mcp-session-id", "mcp-protocol-version"],
+        methods: ["GET", "POST", "DELETE", "OPTIONS"],
         credentials: true,
       })
     )
@@ -880,6 +894,22 @@ export const createApp = ({
     )
     // ==================== 公开站点状态（只读聚合，字段白名单） ====================
     .use(statusRoutes({ aggregator: statusAggregator, history: statusHistory }))
+    // ==================== MCP 发现（Agent 只凭站点链接即可找到远程端点） ====================
+    .use(
+      mcpDiscoveryRoutes({
+        mcpEnabled: env.mcpEnabled === true,
+        serverUrl: env.serverUrl,
+        version: "1.0.0",
+      })
+    )
+    // ==================== 远程 MCP（Streamable HTTP） ====================
+    .use(
+      mcpRemoteRoutes({
+        enabled: env.mcpEnabled === true,
+        logger,
+        sessions: remoteMcpSessions,
+      })
+    )
     .use(
       sentryTunnelRoutes({
         allowedProjectIds: env.sentryAllowedProjectIds,

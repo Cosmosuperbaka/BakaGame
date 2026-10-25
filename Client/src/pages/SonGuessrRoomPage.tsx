@@ -5,6 +5,8 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
+import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
+import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
 import { PlayerList } from "@/components/songuessr/PlayerList";
 import { VolumeControl } from "@/components/songuessr/layout/VolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
@@ -167,6 +169,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           <>
             {seoNode}
             {audioNode}
+            <McpSeatLockOverlay game="song" />
+            <AgentFocusOverlay game="song" />
           </>
         }
         onLeave={() => void leave()}

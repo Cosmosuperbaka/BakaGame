@@ -101,6 +101,12 @@ export class CEENativeService {
   }
   async execute(connectionId: string, message: CEEClientMessage): Promise<unknown> {
     const connection = this.state.connections.getConnection(connectionId);
+    this.state.assertMcpManualControl(connection, message.type);
+    if (message.type === "mcp.focus")
+      return this.state.publishAgentFocus(connection, message.payload);
+    if (message.type === "mcp.claim" || message.type === "mcp.release") {
+      return this.state.handleMcpCommand(connection, message);
+    }
     switch (message.type) {
       case "cee.room.create":
         return this.state.create(connection, message.payload);

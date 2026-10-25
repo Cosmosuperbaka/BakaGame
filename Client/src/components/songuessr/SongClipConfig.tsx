@@ -326,7 +326,10 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
         )}
       </section>
 
-      <section className="space-y-3 rounded-md bg-muted p-4">
+      <section
+        className="space-y-3 rounded-md bg-muted p-4"
+        data-agent-control="song.clip.range"
+      >
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold text-muted-foreground">时间轴</h3>
           <span className="text-2xs text-muted-foreground">
@@ -383,6 +386,7 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
           loading={submitting}
           disabled={!selectionValid}
           onClick={() => void confirm()}
+          data-agent-control="song.clip.confirm"
         >
           用这段出题
         </Button>
@@ -390,7 +394,13 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
           出题后全房会听到这段 {formatLength(selectedLength)} 的音频。
         </p>
         <div className="flex justify-center">
-          <Button variant="ghost" size="sm" disabled={submitting} onClick={onCancel}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={submitting}
+            onClick={onCancel}
+            data-agent-control="song.clip.cancel"
+          >
             返回重新选歌
           </Button>
         </div>

@@ -140,11 +140,13 @@ function ModeButton({
   target,
   disabled,
   onSwitch,
+  controlId,
 }: {
   active: boolean;
   target: CEESearchMode;
   disabled: boolean;
   onSwitch: (target: CEESearchMode) => void;
+  controlId?: string;
 }) {
   return (
     <Button
@@ -155,6 +157,7 @@ function ModeButton({
       className="h-10 px-3"
       disabled={disabled}
       onClick={() => onSwitch(target)}
+      data-agent-control={controlId}
     >
       {MODE_TEXT[target].button}
     </Button>
@@ -175,6 +178,7 @@ export function CEESearch({
   bannedIds = [],
   trailing,
   onSelect,
+  agentControlPrefix,
 }: {
   allowSubjects: boolean;
   /** 初始查询范围；不允许搜作品时总是角色 */
@@ -183,9 +187,12 @@ export function CEESearch({
   bannedIds?: number[];
   trailing?: ReactNode;
   onSelect: (character: CEECharacterSummary) => Promise<boolean | void> | boolean | void;
+  /** Agent 操作追踪：输入框、模式按钮与结果行的控件 id 前缀。 */
+  agentControlPrefix?: string;
 }) {
   const searchCharacters = useCEEStore((state) => state.searchCharacters);
   const searchSubjects = useCEEStore((state) => state.searchSubjects);
+  const controlled = useCEEStore((state) => state.privateState?.mcpControlled === true);
   const [keyword, setKeyword] = useState("");
   const [chosenMode, setMode] = useState<CEESearchMode>(defaultMode);
   const mode: CEESearchMode = allowSubjects ? chosenMode : "character";
@@ -201,12 +208,13 @@ export function CEESearch({
     []
   );
 
+  // MCP 接管时输入由服务端驱动；人类页面只回显文本，不再自己发查询。
   const characterSearch = useIdleSearch(keyword, searchCharacters, ceeErrorMessage, {
-    enabled: mode === "character" && !disabled,
+    enabled: mode === "character" && !disabled && !controlled,
     scope: "character",
   });
   const subjectSearch = useIdleSearch(keyword, searchSubjects, ceeErrorMessage, {
-    enabled: mode === "subject" && !disabled,
+    enabled: mode === "subject" && !disabled && !controlled,
     scope: "subject",
   });
   const search = mode === "character" ? characterSearch : subjectSearch;
@@ -306,6 +314,8 @@ export function CEESearch({
         pendingKey={pendingKey}
         listKey={cast ? cast.key : `${mode}:${search.listKey}`}
         status={status}
+        agentControlId={agentControlPrefix ? `${agentControlPrefix}.input` : undefined}
+        agentControlPrefix={agentControlPrefix}
         back={
           cast
             ? {
@@ -322,6 +332,9 @@ export function CEESearch({
               target="character"
               disabled={disabled}
               onSwitch={switchMode}
+              controlId={
+                agentControlPrefix ? `${agentControlPrefix}.mode.character` : undefined
+              }
             />
             {allowSubjects ? (
               <ModeButton
@@ -329,6 +342,9 @@ export function CEESearch({
                 target="subject"
                 disabled={disabled}
                 onSwitch={switchMode}
+                controlId={
+                  agentControlPrefix ? `${agentControlPrefix}.mode.subject` : undefined
+                }
               />
             ) : null}
             {trailing}

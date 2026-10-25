@@ -20,6 +20,7 @@ const toRoomView = (room: WhoIsFakerRoomSummary): LobbyRoomView => ({
   allowSpectators: room.allowSpectators,
   playerCount: room.playerCount,
   spectatorCount: room.spectatorCount,
+  mcpAvailable: room.allowAgents,
 });
 
 export default function WhoIsFakerPage() {

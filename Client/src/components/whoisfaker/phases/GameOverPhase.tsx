@@ -263,7 +263,12 @@ export function GameOverPhase() {
       {/* 房主可让全房回到等待阶段。 */}
       <div className="flex flex-wrap justify-center gap-2 pt-2">
         {isHost ? (
-          <Button size="lg" onClick={() => void handleReturnToWaiting()} loading={returning}>
+          <Button
+            size="lg"
+            onClick={() => void handleReturnToWaiting()}
+            loading={returning}
+            data-agent-control="faker.advance"
+          >
             {returning ? null : <RotateCcw className="h-4 w-4" />}
             返回房间等待
           </Button>

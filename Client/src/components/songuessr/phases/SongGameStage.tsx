@@ -293,12 +293,17 @@ function AudioCueControl({
               <Spinner className="text-primary" />
             </span>
           ) : cue === "error" ? (
-            <Button variant="outline" size="sm" onClick={onRetryAudio}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRetryAudio}
+              data-agent-control="song.audio.retry"
+            >
               <CircleAlert className="text-destructive" aria-hidden="true" />
               加载失败，重试
             </Button>
           ) : cue === "idle" ? (
-            <Button size="sm" onClick={onPlayAudio}>
+            <Button size="sm" onClick={onPlayAudio} data-agent-control="song.audio.play">
               <Play aria-hidden="true" />
               播放片段
             </Button>
@@ -316,6 +321,7 @@ function AudioCueControl({
               className="h-8 w-8"
               onClick={onPlayAudio}
               aria-label="重播音频"
+              data-agent-control="song.audio.play"
             >
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -661,6 +667,7 @@ function ChoosingSubmitterPhase({
                 nameWrap="wrap"
                 disabled={choosing}
                 onPick={pick}
+                agentControlPrefix="song.submitter"
               />
             </section>
           ) : null}
@@ -673,6 +680,7 @@ function ChoosingSubmitterPhase({
                 nameWrap="wrap"
                 disabled={choosing}
                 onPick={pick}
+                agentControlPrefix="song.submitter"
               />
             </section>
           ) : null}
@@ -837,6 +845,7 @@ function GuessBar({
             className="h-10 shrink-0"
             loading={givingUp}
             onClick={() => void run("song.game.giveUp")}
+            data-agent-control="song.guess.giveup"
           >
             {givingUp ? null : <Flag />}投降
           </Button>

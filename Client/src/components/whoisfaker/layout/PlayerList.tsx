@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Hint } from "@/components/ui/Tooltip";
 import { PlayerRow as PlayerRowBase, hostActions } from "@/components/common/PlayerRow";
-import { AgentBadge } from "@/components/common/AgentBadge";
+import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
@@ -561,6 +561,7 @@ export function PlayerRow(props: PlayerRowProps) {
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
+          {player.mcpControlled ? <McpControlledBadge /> : null}
           {actualRole ? (
             <RoleBadge role={actualRole} />
           ) : mark !== "unknown" ? (

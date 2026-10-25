@@ -174,6 +174,7 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
           origin.capture(event);
           setOpen(true);
         }}
+        data-agent-control="cee.cancel"
       >
         取消本局
       </Button>
@@ -186,10 +187,19 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              data-agent-control="cee.dialog.cancel"
+            >
               继续本局
             </Button>
-            <Button variant="destructive" loading={cancelling} onClick={() => void handleCancel()}>
+            <Button
+              variant="destructive"
+              loading={cancelling}
+              onClick={() => void handleCancel()}
+              data-agent-control="cee.dialog.confirm"
+            >
               确认取消
             </Button>
           </DialogFooter>
@@ -210,7 +220,11 @@ function SelectedAnswer({ answer, onClear }: { answer: CEECharacterSummary; onCl
         title={title}
         subtitle={answer.name !== title ? `${answer.name} · #${answer.id}` : `#${answer.id}`}
       />
-      <CloseButton aria-label="清除已选答案" onClick={onClear} />
+      <CloseButton
+        aria-label="清除已选答案"
+        onClick={onClear}
+        data-agent-control="cee.answer.selected.clear"
+      />
     </div>
   );
 }
@@ -251,7 +265,12 @@ function CEESetter({
         description={<p>搜索并选中一位角色作为答案，结算前只有你和旁观者能看到。</p>}
         deadline={snapshot.phaseDeadlineAt}
       />
-      <CEESearch allowSubjects disabled={submitting} onSelect={setAnswer} />
+      <CEESearch
+        allowSubjects
+        disabled={submitting}
+        onSelect={setAnswer}
+        agentControlPrefix="cee.answer.search"
+      />
       <div aria-live="polite">
         <CollapsibleRegion open={answer !== null}>
           {answer ? <SelectedAnswer answer={answer} onClear={() => setAnswer(null)} /> : null}
@@ -267,6 +286,7 @@ function CEESetter({
             maxLength={30}
             aria-label={`文本提示 ${index + 1}`}
             placeholder={`文本提示 ${index + 1}`}
+            data-agent-control={`cee.answer.hint.${index}`}
             onChange={(event) =>
               setHints((current) =>
                 current.map((value, position) => (index === position ? event.target.value : value))
@@ -281,6 +301,7 @@ function CEESetter({
         disabled={!answer || submitting}
         loading={submitting}
         onClick={() => answer && void run("cee.game.setAnswer", { characterId: answer.id, hints })}
+        data-agent-control="cee.answer.confirm"
       >
         确认答案并开始
       </Button>
@@ -419,6 +440,7 @@ function GuessSubmitArea({
                 bannedIds={bannedIds}
                 trailing={trailing}
                 onSelect={onPick}
+                agentControlPrefix="cee.guess.search"
               />
             </GuessSlot>
           ) : slot === "done" ? (
@@ -476,6 +498,7 @@ function CEEGuessing({
         origin.capture(event);
         setSurrenderOpen(true);
       }}
+      data-agent-control="cee.guess.surrender"
     >
       <Flag />
       放弃本局
@@ -530,13 +553,18 @@ function CEEGuessing({
             <DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSurrenderOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setSurrenderOpen(false)}
+              data-agent-control="cee.dialog.cancel"
+            >
               继续猜测
             </Button>
             <Button
               variant="destructive"
               loading={surrendering}
               onClick={() => void handleSurrender()}
+              data-agent-control="cee.dialog.confirm"
             >
               确认放弃
             </Button>
@@ -614,7 +642,12 @@ function CEEImageHint({ level }: { level: number }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button variant="outline" loading={loading} onClick={() => void handleImageHint()}>
+        <Button
+          variant="outline"
+          loading={loading}
+          onClick={() => void handleImageHint()}
+          data-agent-control="cee.hint.image"
+        >
           <Image />
           {image ? "更新图片提示" : "查看图片提示"}
         </Button>
@@ -738,6 +771,7 @@ function CEESettlement({
                 disabled={advancing || starting}
                 loading={advancing}
                 onClick={() => void run("cee.game.next", {})}
+                data-agent-control="cee.next"
               >
                 返回等待房间
               </Button>
@@ -746,12 +780,18 @@ function CEESettlement({
                 disabled={!privateState.canStart || advancing || starting}
                 loading={starting}
                 onClick={() => void run("cee.game.start", {})}
+                data-agent-control="cee.start"
               >
                 再来一轮
               </Button>
             </>
           ) : (
-            <Button size="lg" loading={advancing} onClick={() => void run("cee.game.next", {})}>
+            <Button
+              size="lg"
+              loading={advancing}
+              onClick={() => void run("cee.game.next", {})}
+              data-agent-control="cee.next"
+            >
               {manual ? "指定下一局出题人" : "开始下一局"}
             </Button>
           )

@@ -351,3 +351,43 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
     true
   );
 });
+
+test("CEE MCP 配对：Agent 接管同一座位，人类手动操作被拒，收回后恢复", async () => {
+  const h = keep(ceeTestHarness());
+  const host = h.connect("配对房主");
+  await h.send(host, "cee.room.create", {
+    source: "native",
+    roomId: "1234",
+    name: "配对房",
+    userName: "配对房主",
+    visibility: "public",
+    allowSpectators: true,
+    allowAgents: true,
+  });
+
+  const agent = h.connect("配对 Agent");
+  agent.record.isAgent = true;
+  const claimed = (await h.send(agent, "mcp.claim", {
+    roomId: "1234",
+    sessionToken: host.token!,
+  })) as {
+    playerId: string;
+    sessionToken: string;
+  };
+  agent.token = claimed.sessionToken;
+  expect(claimed.playerId).toBe(host.id!);
+  expect(claimed.sessionToken).not.toBe(host.token);
+
+  expect(h.snapshot(host).players.find((player) => player.id === host.id)?.mcpControlled).toBe(
+    true
+  );
+  expect(h.privateState(host).mcpControlled).toBe(true);
+
+  await expect(
+    h.send(host, "cee.chat.send", { text: "人类手动消息" })
+  ).rejects.toMatchObject({ code: "MCP_CONTROL_ONLY" });
+
+  await h.send(agent, "cee.chat.send", { text: "Agent 消息" });
+  await h.send(host, "mcp.release", {});
+  await h.send(host, "cee.chat.send", { text: "恢复手动" });
+});

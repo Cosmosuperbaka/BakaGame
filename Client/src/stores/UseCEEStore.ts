@@ -8,6 +8,7 @@ import type {
   CEERoomSnapshot,
   CEERoomSummary,
   CEESource,
+  AgentFocusEvent,
   ServerMessage,
 } from "@bakagame/shared";
 import { ceeWs, sendCEE } from "@/lib/CEEWs";
@@ -58,11 +59,13 @@ export interface CEEStore {
   sessionToken: string | null;
   snapshot: CEERoomSnapshot | null;
   privateState: CEEPrivateState | null;
+  agentFocus: AgentFocusEvent | null;
   roomClosedAt: number | null;
   notice: { text: string; type: "info" | "error" | "success" } | null;
   /** 最近一次要求登录的时刻；CEELayout 监听它去打开登录弹窗。0 表示没有待办请求。 */
   requestLoginAt: number;
   setNotice: (text: string, type?: "info" | "error" | "success") => void;
+  setAgentFocus: (focus: AgentFocusEvent | null) => void;
   /** 统一处理命令/同步失败：按错误码取文案弹提示，LOGIN_REQUIRED 顺带请求打开登录弹窗。 */
   reportError: (error: unknown) => void;
   /** 请求打开登录弹窗（网页环境下客户端探测不到身份时由服务端拒绝触发）。 */
@@ -242,6 +245,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     sessionToken: null,
     snapshot: null,
     privateState: null,
+    agentFocus: null,
     roomClosedAt: null,
     notice: null,
     requestLoginAt: 0,
@@ -250,6 +254,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
       set({ notice: { text, type } });
       noticeTimer = setTimeout(() => set({ notice: null }), 5000);
     },
+    setAgentFocus: (agentFocus) => set({ agentFocus }),
     promptLogin: () => set({ requestLoginAt: Date.now() }),
     reportError: (error) => {
       get().setNotice(ceeErrorMessage(error));
@@ -327,6 +332,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         sessionToken: null,
         snapshot: null,
         privateState: null,
+        agentFocus: null,
         roomClosedAt: closed ? Date.now() : null,
       });
     },
@@ -412,6 +418,8 @@ export function handleCEEMessage(message: ServerMessage) {
     ) {
       playSound("roundStart");
     }
+  } else if (message.event === "mcp.focus") {
+    useCEEStore.setState({ agentFocus: message.payload as AgentFocusEvent });
   } else if (message.event === "cee.game.privateState") {
     const result = consumeStateSync<CEEPrivateState>(rawPrivate, privateRevision, message.payload);
     if (result.needsFullSync || !result.state) {

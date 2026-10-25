@@ -323,6 +323,7 @@ export function SongRoundResultPhase({
             disabled={isFinishing || isNextRound}
             loading={isFinishing}
             onClick={() => void run("song.game.finish")}
+            data-agent-control="song.finish"
           >
             {snapshot.solo ? "结束本局" : "返回等待阶段"}
           </Button>
@@ -335,6 +336,7 @@ export function SongRoundResultPhase({
             }
             loading={isNextRound}
             onClick={() => void run("song.game.nextRound")}
+            data-agent-control="song.nextRound"
           >
             再来一轮
           </Button>

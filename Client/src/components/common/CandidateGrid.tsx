@@ -34,12 +34,15 @@ export function CandidateGrid({
   nameWrap,
   onPick,
   disabled,
+  agentControlPrefix,
 }: {
   candidates: Array<{ id: string; name: string }>;
   tone: "recommended" | "default";
   nameWrap: "truncate" | "wrap";
   onPick: (playerId: string) => void;
   disabled?: boolean;
+  /** Agent 操作追踪：按钮控件 id 前缀，实际 id 为 `${prefix}.${candidate.id}`。 */
+  agentControlPrefix?: string;
 }) {
   if (candidates.length === 0) {
     return <div className="px-1 py-3 text-xs text-muted-foreground">暂无玩家</div>;
@@ -61,6 +64,9 @@ export function CandidateGrid({
           {...(disabled ? undefined : selectable)}
           disabled={disabled}
           onClick={() => onPick(candidate.id)}
+          data-agent-control={
+            agentControlPrefix ? `${agentControlPrefix}.${candidate.id}` : undefined
+          }
           className={cn(
             "cursor-pointer rounded-md border px-3 py-2.5 text-left text-sm transition-[background,border-color] disabled:pointer-events-none disabled:opacity-50",
             tone === "recommended"

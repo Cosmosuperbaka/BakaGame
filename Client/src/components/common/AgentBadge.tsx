@@ -10,3 +10,13 @@ export function AgentBadge() {
     </Badge>
   );
 }
+
+/** 人类座位被 MCP 接管：与 Agent 徽标区分开，说明是「托管」而不是另一个机器人玩家。 */
+export function McpControlledBadge() {
+  return (
+    <Badge variant="secondary" size="xs" className="shrink-0">
+      <Bot aria-hidden="true" className="h-3 w-3" />
+      MCP
+    </Badge>
+  );
+}

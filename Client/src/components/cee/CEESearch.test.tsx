@@ -52,12 +52,25 @@ describe("CEE 角色搜索", () => {
     const user = userEvent.setup();
     const { searchCharacters, searchSubjects } = stubSearch();
     const onSelect = vi.fn(async () => true);
-    render(<CEESearch allowSubjects bannedIds={[1]} onSelect={onSelect} />);
+    render(
+      <CEESearch
+        allowSubjects
+        bannedIds={[1]}
+        onSelect={onSelect}
+        agentControlPrefix="cee.answer.search"
+      />
+    );
     const input = screen.getByRole("combobox", { name: "搜索角色" });
+    expect(input).toHaveAttribute("data-agent-control", "cee.answer.search.input");
     expect(screen.getByRole("button", { name: "搜角色" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "搜角色" })).toHaveAttribute(
+      "data-agent-control",
+      "cee.answer.search.mode.character"
+    );
 
     await user.type(input, "ぼっち");
     const bocchi = await screen.findByRole("option", { name: /後藤ひとり.*后藤一里/ });
+    expect(bocchi).toHaveAttribute("data-agent-control", "cee.answer.search.result.1");
     // 连续敲字只在停顿后查一次，不逐字请求。
     expect(searchCharacters).toHaveBeenCalledTimes(1);
     expect(searchCharacters).toHaveBeenCalledWith("ぼっち");

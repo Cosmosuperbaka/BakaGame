@@ -1,6 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Lock, Users } from "lucide-react";
+import { Bot, Eye, EyeOff, Lock, Users } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Spinner } from "@/components/ui/Spinner";
@@ -23,6 +23,8 @@ export interface LobbyRoomView {
   tag?: string;
   /** 反作弊房：进房前就要标出「需要客户端」，避免浏览器玩家点了才被拒。 */
   requiresClient?: boolean;
+  /** 房主开启了 MCP 接入：卡片上给出可见标记，Agent 与玩家都能在大厅辨认。 */
+  mcpAvailable?: boolean;
 }
 
 /**
@@ -139,6 +141,12 @@ export function RoomListCard({
               {room.requiresClient ? (
                 <Badge variant="subtle" size="xs" className="shrink-0">
                   需客户端
+                </Badge>
+              ) : null}
+              {room.mcpAvailable ? (
+                <Badge variant="subtle" size="xs" className="shrink-0" aria-label="支持 MCP 接入">
+                  <Bot className="h-3 w-3" />
+                  MCP
                 </Badge>
               ) : null}
               {/* 进房在途：转圈接在房名行末，房名本就留有截断余地，不推动整张卡片或整列。 */}

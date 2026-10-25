@@ -92,6 +92,7 @@ export function AssignedWord({
   return (
     <motion.div
       ref={wordRef}
+      data-agent-focus="private"
       aria-hidden={revealed ? undefined : "true"}
       // 揭示态盖在揭词背板之上取 z-modal；停靠后只是顶栏里的一枚标签，降到 z-sticky，让抽屉与弹窗盖得住它。
       // 停靠后与顶栏的 HeaderChip 同一语言：实底 bg-muted 配正文色，主色不作正文（Design §3.1）。

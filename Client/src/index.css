@@ -768,3 +768,35 @@ img {
     transition: none !important;
   }
 }
+
+/* Agent 控件焦点框：首次出现淡入，之后在控件之间平滑变形移动。 */
+.agent-focus-box {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.agent-focus-box[data-animate="true"] {
+  transition:
+    top 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
+    left 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
+    width 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
+    height 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
+    opacity 160ms ease,
+    transform 160ms ease;
+  will-change: top, left, width, height;
+}
+
+/* 状态条跟着操作区走，不固定在整页顶部。 */
+.agent-focus-hud {
+  transition:
+    left 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
+    top 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-focus-box,
+  .agent-focus-hud {
+    transition-duration: 1ms;
+  }
+}

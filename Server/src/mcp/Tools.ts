@@ -1,6 +1,7 @@
-import { BANGUMI_USER_AGENT } from "../infrastructure/BangumiUserAgent";
 import type { AgentGameClient, GameId } from "./GameClient";
 import { GAME_IDS } from "./GameClient";
+import { MCP_POLICY } from "./Policy";
+import type { UiStep } from "./ui/Types";
 
 export interface ToolContext {
   client: AgentGameClient;
@@ -15,6 +16,27 @@ export interface McpTool {
   write?: boolean;
   handler: (args: Record<string, unknown>, context: ToolContext) => Promise<unknown>;
 }
+
+/**
+ * 远程 MCP 是无状态 HTTP：Agent 会话句柄既可走 `Mcp-Session-Id`，也可作为工具参数回传。
+ * stdio 客户端不需要它，工具实现本身也从不读取。
+ */
+export const withRemoteSessionSchema = (
+  schema: Record<string, unknown>
+): Record<string, unknown> => {
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      session: {
+        type: "string",
+        description:
+          "远程 MCP 的 Agent 会话句柄；create_room / join_room 的返回值里带。支持 Mcp-Session-Id 的客户端可省略。",
+      },
+    },
+  };
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -34,6 +56,8 @@ const gameProperty = {
   enum: [...GAME_IDS],
   description: "游戏：faker（谁是卧底）、song（猜歌）、cee（猜角色）",
 };
+
+const policyNotice = `\n\n使用边界：${MCP_POLICY}`;
 
 const gameSchema = (required = false) =>
   objectSchema(
@@ -59,9 +83,6 @@ const needString = (args: Record<string, unknown>, key: string): string => {
 const optionalString = (args: Record<string, unknown>, key: string): string | undefined =>
   typeof args[key] === "string" && args[key].trim() ? args[key].trim() : undefined;
 
-const needPlayerId = (args: Record<string, unknown>, key = "playerId") =>
-  needString(args, key);
-
 const summarizeRoom = (game: GameId, value: unknown) => {
   if (!isRecord(value)) return { game };
   return {
@@ -77,6 +98,7 @@ const summarizeRoom = (game: GameId, value: unknown) => {
           : undefined,
     visibility: value.visibility,
     allowSpectators: value.allowSpectators,
+    allowAgents: value.allowAgents === true,
     hasPassword: value.hasPassword,
     solo: value.solo,
     source: value.source,
@@ -95,283 +117,27 @@ const activeGame = (args: Record<string, unknown>, client: AgentGameClient): Gam
   throw new Error(`同时加入了多个房间（${joined.join(", ")}），请指定 game`);
 };
 
-const roomState = (game: GameId, client: AgentGameClient, snapshot: Record<string, unknown>) => ({
-  game,
-  roomId: client.currentRoom(game),
-  you: { playerId: client.currentPlayerId(game), isAgent: true },
-  snapshot,
-});
-
-/** 只保留公开的结算字段：答案、私有身份与内部状态一律不返回。 */
-const publicRecord = (game: GameId, snapshot: Record<string, unknown> | undefined) => {
-  if (!snapshot) return { available: false, reason: "尚未加入房间或没有收到公开快照" };
-  const players = Array.isArray(snapshot.players)
-    ? snapshot.players.map((player) => {
-        const row = isRecord(player) ? player : {};
-        return {
-          id: row.id,
-          name: row.name,
-          score: row.score,
-          isAgent: row.isAgent === true,
-        };
-      })
-    : [];
-  if (game === "faker") {
-    const phase = isRecord(snapshot.status) ? snapshot.status.phase : undefined;
-    const summary = isRecord(snapshot.summary) ? snapshot.summary : undefined;
-    return {
-      available: phase === "gameOver",
-      game,
-      phase,
-      players,
-      result: summary
-        ? {
-            winner: summary.winner,
-            reason: summary.reason,
-            awardedScores: summary.awardedScores,
-            revealedRoles: summary.revealedRoles,
-          }
-        : null,
-    };
-  }
-  if (game === "song") {
-    const finalScores = Array.isArray(snapshot.finalScores) ? snapshot.finalScores : null;
-    const summary = isRecord(snapshot.roundSummary) ? snapshot.roundSummary : undefined;
-    return {
-      available: Boolean(finalScores),
-      game,
-      phase: snapshot.phase,
-      players,
-      finalScores,
-      lastRound: summary
-        ? {
-            roundNumber: summary.roundNumber,
-            submitterPlayerId: summary.submitterPlayerId,
-            correctPlayerIds: summary.correctPlayerIds,
-            scores: summary.scores,
-          }
-        : null,
-    };
-  }
-  const summary = isRecord(snapshot.roundSummary) ? snapshot.roundSummary : undefined;
-  return {
-    available: snapshot.phase === "settled",
-    game,
-    phase: snapshot.phase,
-    players,
-    roundNumber: snapshot.roundNumber,
-    result: summary
-      ? {
-          winners: summary.winners,
-          scores: summary.scores,
-        }
-      : null,
-  };
-};
-
-const CHAT_COMMAND: Record<GameId, string> = {
-  faker: "chat.send",
-  song: "song.chat.send",
-  cee: "cee.chat.send",
-};
-
-const fakerAction = (action: string, args: Record<string, unknown>) => {
-  switch (action) {
-    case "ready":
-      return { type: "player.setReady", payload: { ready: args.ready !== false } };
-    case "start":
-    case "advance":
-      return { type: "game.advancePhase", payload: {} };
-    case "assign_questioner":
-      return { type: "game.assignQuestioner", payload: { playerId: needPlayerId(args) } };
-    case "submit_words": {
-      const words = args.words;
-      if (!Array.isArray(words) || words.length !== 2 || words.some((word) => typeof word !== "string"))
-        throw new Error("submit_words 需要 words 为两个字符串");
-      return {
-        type: "game.submitWords",
-        payload: {
-          words: [String(words[0]), String(words[1])],
-          ...(optionalString(args, "blankHint") ? { blankHint: optionalString(args, "blankHint") } : {}),
-        },
-      };
-    }
-    case "describe":
-      return { type: "game.submitDescription", payload: { text: needString(args, "text") } };
-    case "vote":
-      return { type: "game.submitVote", payload: { targetId: needString(args, "targetId") } };
-    case "night_action":
-      return {
-        type: "game.submitNightAction",
-        payload: { targetId: typeof args.targetId === "string" ? args.targetId : null },
-      };
-    case "blank_guess": {
-      const words = args.words;
-      if (!Array.isArray(words) || words.length !== 2)
-        throw new Error("blank_guess 需要 words 为两个字符串");
-      return {
-        type: "game.submitBlankGuess",
-        payload: { words: [String(words[0]), String(words[1])] },
-      };
-    }
-    case "review_blank_guess":
-      return { type: "game.reviewBlankGuess", payload: { approve: args.approve === true } };
-    case "cancel_vote":
-      return { type: "game.cancelVote", payload: {} };
-    case "cancel_night_action":
-      return { type: "game.cancelNightAction", payload: {} };
-    case "stop_phase_timer":
-      return { type: "game.stopPhaseTimer", payload: {} };
-    default:
-      throw new Error(`未知的 faker action：${action}`);
-  }
-};
-
-const songAction = (action: string, args: Record<string, unknown>) => {
-  switch (action) {
-    case "ready":
-      return { type: "song.player.setReady", payload: { ready: args.ready !== false } };
-    case "start":
-      return { type: "song.game.start", payload: {} };
-    case "choose_submitter":
-      return { type: "song.game.chooseSubmitter", payload: { playerId: needPlayerId(args) } };
-    case "submit_song":
-      return { type: "song.game.submitSong", payload: { songId: needString(args, "songId") } };
-    case "submit_anime":
-      return {
-        type: "song.game.submitAnime",
-        payload: {
-          subjectId: needString(args, "subjectId"),
-          ...(optionalString(args, "songId") ? { songId: optionalString(args, "songId") } : {}),
-        },
-      };
-    case "guess_song":
-      return { type: "song.game.guess", payload: { songId: needString(args, "songId") } };
-    case "guess_anime":
-      return { type: "song.game.guessAnime", payload: { subjectId: needString(args, "subjectId") } };
-    case "give_up":
-      return { type: "song.game.giveUp", payload: {} };
-    case "skip_round":
-      return { type: "song.game.skipRound", payload: {} };
-    case "next_round":
-      return { type: "song.game.nextRound", payload: {} };
-    case "finish":
-      return { type: "song.game.finish", payload: {} };
-    case "audio_ready":
-      return { type: "song.game.audioReady", payload: { roundNumber: needNumber(args, "roundNumber") } };
-    case "audio_failed":
-      return { type: "song.game.audioFailed", payload: { roundNumber: needNumber(args, "roundNumber") } };
-    default:
-      throw new Error(`未知的 song action：${action}`);
-  }
-};
-
-const needNumber = (args: Record<string, unknown>, key: string): number => {
-  const value = args[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`缺少参数 ${key}`);
-  return value;
-};
-
-const ceeAction = (action: string, args: Record<string, unknown>) => {
-  switch (action) {
-    case "ready":
-      return { type: "cee.player.ready", payload: { ready: args.ready !== false } };
-    case "start":
-      return { type: "cee.game.start", payload: {} };
-    case "choose_setter":
-      return { type: "cee.game.chooseSetter", payload: { playerId: needPlayerId(args) } };
-    case "set_answer":
-      return {
-        type: "cee.game.setAnswer",
-        payload: {
-          characterId: needNumber(args, "characterId"),
-          hints: Array.isArray(args.hints) ? args.hints.map(String).slice(0, 3) : [],
-        },
-      };
-    case "guess":
-      return { type: "cee.game.guess", payload: { characterId: needNumber(args, "characterId") } };
-    case "surrender":
-      return { type: "cee.game.surrender", payload: {} };
-    case "next":
-      return { type: "cee.game.next", payload: {} };
-    case "cancel":
-      return { type: "cee.game.cancel", payload: {} };
-    case "image_hint":
-      return { type: "cee.game.imageHint", payload: {} };
-    default:
-      throw new Error(`未知的 cee action：${action}`);
-  }
-};
-
-const actionSchema = objectSchema(
-  {
-    game: gameProperty,
-    action: { type: "string" },
-    playerId: { type: "string" },
-    targetId: { type: "string" },
-    text: { type: "string" },
-    words: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2 },
-    blankHint: { type: "string" },
-    songId: { type: "string" },
-    subjectId: { type: "string" },
-    characterId: { type: "number" },
-    hints: { type: "array", items: { type: "string" }, maxItems: 3 },
-    roundNumber: { type: "number" },
-    ready: { type: "boolean" },
-    approve: { type: "boolean" },
-  },
-  ["action"]
-);
-
-const bangumiSearch = async (args: Record<string, unknown>): Promise<unknown> => {
-  const keyword = needString(args, "keyword");
-  const kind = args.kind === "character" ? "character" : "subject";
-  const limit =
-    typeof args.limit === "number" && Number.isFinite(args.limit)
-      ? Math.min(Math.max(Math.trunc(args.limit), 1), 20)
-      : 8;
-  const endpoint =
-    kind === "character"
-      ? "https://api.bgm.tv/v0/search/characters"
-      : "https://api.bgm.tv/v0/search/subjects";
-  const body =
-    kind === "character"
-      ? { keyword, filter: { nsfw: false } }
-      : { keyword, filter: { type: [2] } };
-  const response = await fetch(`${endpoint}?limit=${limit}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      "user-agent": BANGUMI_USER_AGENT,
+const uiStepSchema = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: ["focus", "type", "press", "click", "set"],
+      description:
+        "focus 选中控件；type 向已选中的输入框逐字输入；press 在已选中的控件上按键；click 点击控件；set 设置开关/下拉/滑杆的取值",
     },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) throw new Error(`Bangumi 搜索失败：HTTP ${response.status}`);
-  const payload = (await response.json()) as unknown;
-  const data = isRecord(payload) && Array.isArray(payload.data) ? payload.data : [];
-  return {
-    kind,
-    results: data.slice(0, limit).map((entry) => {
-      const row = isRecord(entry) ? entry : {};
-      const images = isRecord(row.images) ? row.images : {};
-      return {
-        id: row.id,
-        name: row.name,
-        nameCn: row.name_cn,
-        date: row.date,
-        type: row.type,
-        image:
-          typeof images.grid === "string"
-            ? images.grid
-            : typeof images.medium === "string"
-              ? images.medium
-              : undefined,
-      };
-    }),
-  };
-};
+    control: {
+      type: "string",
+      description: "控件 id；type 与 press 省略时使用当前焦点控件",
+    },
+    text: { type: "string", description: "type 要输入的内容" },
+    key: { type: "string", enum: ["Enter", "Escape"], description: "press 的按键" },
+    value: { description: "set 的新取值：开关用布尔、下拉用字符串、滑杆用对象" },
+    replace: { type: "boolean", description: "type 时先清空原内容再输入" },
+  },
+  required: ["action"],
+  additionalProperties: false,
+} as const;
 
 export const TOOLS: McpTool[] = [
   {
@@ -391,7 +157,8 @@ export const TOOLS: McpTool[] = [
   {
     name: "create_room",
     description:
-      "创建并加入一个房间（Agent 作为房主）。allowAgents 缺省关闭；打开后其他 Agent 可加入。",
+      "创建并加入一个房间（Agent 作为房主）。MCP 建房默认允许其他 Agent 加入；显式 allowAgents:false 才会关闭。song 可建 solo 房；faker 可传 roleConfig 配置卧底/天使/白板。" +
+      policyNotice,
     inputSchema: objectSchema(
       {
         game: gameProperty,
@@ -400,8 +167,19 @@ export const TOOLS: McpTool[] = [
         userName: { type: "string", description: "房主昵称，缺省用 MCP_AGENT_NAME" },
         visibility: { type: "string", enum: ["public", "private"] },
         allowSpectators: { type: "boolean" },
-        allowAgents: { type: "boolean" },
+        allowAgents: { type: "boolean", description: "缺省 true；显式 false 关闭 Agent 接入" },
         password: { type: "string" },
+        solo: { type: "boolean", description: "仅 song：单人练习房，自动出题" },
+        roleConfig: {
+          type: "object",
+          description: "仅 faker：卧底/天使/白板数量与随机角色开关；缺省用服务端默认 1 卧底",
+          properties: {
+            undercoverCount: { type: "number" },
+            angelCount: { type: "number" },
+            blankCount: { type: "number" },
+          },
+          additionalProperties: false,
+        },
       },
       ["game", "roomId", "name"]
     ),
@@ -413,7 +191,9 @@ export const TOOLS: McpTool[] = [
         userName: optionalString(args, "userName") ?? agentName,
         visibility: args.visibility === "private" ? "private" : "public",
         allowSpectators: args.allowSpectators !== false,
-        allowAgents: args.allowAgents === true,
+        allowAgents: args.allowAgents !== false,
+        ...(game === "song" && args.solo === true ? { solo: true } : {}),
+        ...(game === "faker" && isRecord(args.roleConfig) ? { roleConfig: args.roleConfig } : {}),
         ...(optionalString(args, "password") ? { password: optionalString(args, "password") } : {}),
       });
       return {
@@ -421,14 +201,16 @@ export const TOOLS: McpTool[] = [
         roomId: result.roomId,
         playerId: result.playerId,
         isAgent: true,
-        state: result.snapshot ? roomState(game, client, result.snapshot) : null,
+        allowAgents: args.allowAgents !== false,
+        screen: await client.ui.screen(game),
       };
     },
   },
   {
     name: "join_room",
     description:
-      "以 Agent 身份加入房间。房主关闭 allowAgents（默认）时会返回 AGENTS_NOT_ALLOWED。",
+      "以 Agent 身份加入房间。房间未开启 MCP（allowAgents != true）时返回 AGENTS_NOT_ALLOWED；先 list_rooms 看 allowAgents。" +
+      policyNotice,
     inputSchema: objectSchema(
       {
         game: gameProperty,
@@ -452,8 +234,48 @@ export const TOOLS: McpTool[] = [
         roomId: result.roomId,
         playerId: result.playerId,
         isAgent: true,
-        state: result.snapshot ? roomState(game, client, result.snapshot) : null,
+        screen: await client.ui.screen(game),
       };
+    },
+  },
+  {
+    name: "claim_seat",
+    description:
+      "用房间的会话凭证认领座位：接手该玩家的座位并锁定其手动操作。认领后本连接就是该座位的唯一控制器。" +
+      policyNotice,
+    inputSchema: objectSchema(
+      {
+        game: gameProperty,
+        roomId: { type: "string", description: "房间号" },
+        sessionToken: { type: "string", description: "玩家在 MCP 设置里复制的会话凭证" },
+      },
+      ["game", "roomId", "sessionToken"]
+    ),
+    write: true,
+    handler: async (args, { client }) => {
+      const game = asGame(args.game);
+      const result = await client.claimSeat(
+        game,
+        needString(args, "roomId"),
+        needString(args, "sessionToken")
+      );
+      return {
+        game,
+        roomId: result.roomId,
+        playerId: result.playerId,
+        isAgent: true,
+        screen: await client.ui.screen(game),
+      };
+    },
+  },
+  {
+    name: "release_seat",
+    description: "释放当前 MCP 接管的座位，把控制权交还人类会话。" + policyNotice,
+    inputSchema: gameSchema(false),
+    write: true,
+    handler: async (args, { client }) => {
+      const game = activeGame(args, client);
+      return client.sendInRoom(game, "mcp.release", {});
     },
   },
   {
@@ -467,88 +289,51 @@ export const TOOLS: McpTool[] = [
     },
   },
   {
-    name: "get_room_state",
-    description: "读取当前房间的公开快照（只读，不含答案与私有状态）。",
-    inputSchema: gameSchema(false),
+    name: "get_screen",
+    description:
+      "读取当前游戏界面（与人类玩家页面一致）：阶段标题、玩家栏、聊天栏、可见面板、可操作控件。控件用 id 标识，操作前先看这里。" +
+      policyNotice,
+    inputSchema: objectSchema({
+      game: gameProperty,
+      refresh: {
+        type: "boolean",
+        description: "true 时先向服务端请求一次状态同步，再返回屏幕",
+      },
+    }),
     handler: async (args, { client }) => {
       const game = activeGame(args, client);
-      const snapshot = client.currentSnapshot(game);
-      if (!snapshot) throw new Error("尚未收到房间公开快照");
-      return roomState(game, client, snapshot);
+      if (args.refresh === true) await client.requestSync(game);
+      return { game, screen: await client.ui.screen(game, { announce: true }) };
     },
   },
   {
-    name: "get_game_record",
-    description: "读取当前房间的公开结算记录（只读，不含答案、词对与私有身份）。",
-    inputSchema: gameSchema(false),
-    handler: async (args, { client }) => {
-      const game = activeGame(args, client);
-      return publicRecord(game, client.currentSnapshot(game));
-    },
-  },
-  {
-    name: "send_chat",
-    description: "在当前房间发送聊天消息。",
+    name: "ui_run",
+    description:
+      "像人类一样操作界面：按顺序串行执行多个步骤，并以人类速度回放。输入前必须先 focus 输入框（type 只能作用于当前焦点），再逐字输入；点结果或按钮用 click。每次操作后返回步骤结果与最新屏幕，屏幕里始终同步玩家栏、聊天栏和可见面板。" +
+      policyNotice,
     inputSchema: objectSchema(
       {
         game: gameProperty,
-        text: { type: "string", maxLength: 500 },
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 16,
+          items: uiStepSchema,
+        },
       },
-      ["text"]
+      ["steps"]
     ),
     write: true,
     handler: async (args, { client }) => {
       const game = activeGame(args, client);
-      return client.sendInRoom(game, CHAT_COMMAND[game], { text: needString(args, "text") });
+      if (!Array.isArray(args.steps)) throw new Error("steps 必须是数组");
+      return client.ui.run(game, args.steps as UiStep[]);
     },
   },
   {
-    name: "faker_action",
-    description:
-      "谁是卧底操作：ready / start / assign_questioner / submit_words / describe / vote / night_action / blank_guess / review_blank_guess / cancel_vote / cancel_night_action / stop_phase_timer。",
-    inputSchema: actionSchema,
-    write: true,
-    handler: async (args, { client }) =>
-      client.sendInRoom("faker", ...toCommand(fakerAction(needString(args, "action"), args))),
-  },
-  {
-    name: "song_action",
-    description:
-      "猜歌操作：ready / start / choose_submitter / submit_song / submit_anime / guess_song / guess_anime / give_up / skip_round / next_round / finish / audio_ready / audio_failed。",
-    inputSchema: actionSchema,
-    write: true,
-    handler: async (args, { client }) => {
-      const game = activeGame(args, client);
-      if (game !== "song") throw new Error("song_action 只用于 song");
-      return client.sendInRoom("song", ...toCommand(songAction(needString(args, "action"), args)));
-    },
-  },
-  {
-    name: "cee_action",
-    description:
-      "猜角色操作：ready / start / choose_setter / set_answer / guess / surrender / next / cancel / image_hint。",
-    inputSchema: actionSchema,
-    write: true,
-    handler: async (args, { client }) => {
-      const game = activeGame(args, client);
-      if (game !== "cee") throw new Error("cee_action 只用于 cee");
-      return client.sendInRoom("cee", ...toCommand(ceeAction(needString(args, "action"), args)));
-    },
-  },
-  {
-    name: "search_bangumi",
-    description: "检索 Bangumi 番剧或角色（只读）；不接触当前对局答案。",
-    inputSchema: objectSchema(
-      {
-        keyword: { type: "string" },
-        kind: { type: "string", enum: ["subject", "character"] },
-        limit: { type: "number" },
-      },
-      ["keyword"]
-    ),
-    handler: async (args) => bangumiSearch(args),
+    name: "get_mcp_policy",
+    description: "读取本 MCP 的使用边界（只读）。",
+    inputSchema: objectSchema({}),
+    handler: async () => ({ policy: MCP_POLICY }),
   },
 ];
-
-const toCommand = (value: { type: string; payload: Record<string, unknown> }) =>
-  [value.type, value.payload] as const;

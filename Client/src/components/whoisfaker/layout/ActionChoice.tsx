@@ -22,11 +22,13 @@ export function TargetOption({
   tone,
   disabled,
   onSelect,
+  controlId,
 }: {
   name: string;
   tone: "vote" | "night";
   disabled?: boolean;
   onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  controlId?: string;
 }) {
   const Icon = tone === "night" ? Sword : Vote;
   return (
@@ -37,6 +39,7 @@ export function TargetOption({
         {...selectable}
         disabled={disabled}
         onClick={onSelect}
+        data-agent-control={controlId}
         className={cn(
           "flex min-w-0 cursor-pointer items-center justify-between rounded-md bg-muted px-4 py-3.5 text-left transition-colors",
           tone === "night" ? "hover:bg-destructive/5" : "hover:bg-accent/40"
@@ -65,6 +68,7 @@ export function ActionReceipt({
   origin,
   busy,
   onUndo,
+  undoControlId,
   ref,
 }: {
   title: string;
@@ -72,6 +76,7 @@ export function ActionReceipt({
   origin: OriginPoint | null;
   busy: boolean;
   onUndo: () => void;
+  undoControlId?: string;
   /** popLayout 需要量出退场元素的位置 */
   ref?: Ref<HTMLDivElement>;
 }) {
@@ -104,7 +109,14 @@ export function ActionReceipt({
           <div className="mt-0.5 truncate text-xs text-muted-foreground">{detail}</div>
         </div>
       </div>
-      <Button variant="ghost" size="sm" className="shrink-0" loading={busy} onClick={onUndo}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="shrink-0"
+        loading={busy}
+        onClick={onUndo}
+        data-agent-control={undoControlId}
+      >
         {busy ? null : <Undo2 className="h-3.5 w-3.5" />}
         撤销
       </Button>

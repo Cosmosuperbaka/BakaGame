@@ -55,6 +55,7 @@ export function AssignQuestionerPhase() {
                 onPick={(playerId) => void handleAssign(playerId)}
                 tone="recommended"
                 nameWrap="wrap"
+                agentControlPrefix="faker.questioner"
               />
             </section>
           )}
@@ -79,6 +80,7 @@ export function AssignQuestionerPhase() {
               onPick={(playerId) => void handleAssign(playerId)}
               tone="default"
               nameWrap="wrap"
+              agentControlPrefix="faker.questioner"
             />
           </section>
         </div>

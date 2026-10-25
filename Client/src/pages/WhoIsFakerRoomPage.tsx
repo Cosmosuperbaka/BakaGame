@@ -40,6 +40,8 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
+import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
+import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
 import {
   isValidRoomId,
   type WhoIsFakerPrivateState,
@@ -595,7 +597,13 @@ export default function WhoIsFakerRoomPage() {
   return (
     <>
       <RoomShell
-        before={seoNode}
+        before={
+          <>
+            {seoNode}
+            <McpSeatLockOverlay game="faker" />
+            <AgentFocusOverlay game="faker" />
+          </>
+        }
         onLeave={handleLeave}
         title={snapshot.name}
         roomId={snapshot.roomId}

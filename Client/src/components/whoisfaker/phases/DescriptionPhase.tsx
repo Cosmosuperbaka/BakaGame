@@ -115,7 +115,12 @@ function QuestionerAdvancePanel({
       {supplement.panel}
       <div className="flex flex-wrap items-center justify-center gap-3">
         {mode === "normal" ? supplement.trigger : null}
-        <Button onClick={onAdvance} size="lg" loading={advancing}>
+        <Button
+          onClick={onAdvance}
+          size="lg"
+          loading={advancing}
+          data-agent-control="faker.advance"
+        >
           {advancing ? null : <FastForward className="h-4 w-4" />}
           {mode === "normal" ? "进入投票阶段" : "进入 PK 投票"}
         </Button>
@@ -291,6 +296,7 @@ export function DescriptionPhase() {
               onChange={(e) => setText(clampToLimit(e.target.value))}
               placeholder={speechInputPlaceholder(mode)}
               className="h-10 pr-14"
+              data-agent-control="faker.description.input"
               // 输入法组字时的回车只是上屏，不当作发送
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) void handleSubmit();
@@ -308,6 +314,7 @@ export function DescriptionPhase() {
             onClick={() => void handleSubmit()}
             loading={submitting}
             disabled={!text.trim()}
+            data-agent-control="faker.description.send"
           >
             {submitting ? null : <Send className="h-4 w-4" />} 发送
           </Button>

@@ -27,6 +27,7 @@ const toRoomView = (room: CEERoomSummary): LobbyRoomView => ({
   spectatorCount: room.spectatorCount,
   tag: room.source === "original" ? CEE_SOURCE_LABELS.original : undefined,
   requiresClient: room.bakaAntiCheat,
+  mcpAvailable: room.allowAgents,
 });
 
 export default function CEEPage() {

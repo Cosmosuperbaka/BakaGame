@@ -54,6 +54,7 @@ export function CEEChoosingSetter({
                 nameWrap="wrap"
                 disabled={busy}
                 onPick={pick}
+                agentControlPrefix="cee.setter"
               />
             </section>
           ) : null}
@@ -69,6 +70,7 @@ export function CEEChoosingSetter({
               nameWrap="wrap"
               disabled={busy}
               onPick={pick}
+              agentControlPrefix="cee.setter"
             />
           </section>
           <div className="flex justify-center">
@@ -77,6 +79,7 @@ export function CEEChoosingSetter({
               disabled={busy}
               loading={cancelling}
               onClick={() => void run("cee.game.cancel", {})}
+              data-agent-control="cee.cancel"
             >
               返回等待
             </Button>

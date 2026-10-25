@@ -3,6 +3,7 @@ export * from "./Protocol";
 export * from "./WhoIsFaker";
 export * from "./SonGuessr";
 export * from "./CEE";
+export * from "./AgentActivity";
 export * from "./Account";
 export * from "./Badges";
 export * from "./Status";

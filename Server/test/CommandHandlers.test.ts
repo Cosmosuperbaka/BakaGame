@@ -41,6 +41,9 @@ const ALL_COMMAND_TYPES = [
   "game.requestSupplement",
   "game.startPhaseTimer",
   "game.stopPhaseTimer",
+  "mcp.claim",
+  "mcp.release",
+  "mcp.focus",
 ] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 type MissingCommandType = Exclude<

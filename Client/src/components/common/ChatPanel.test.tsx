@@ -67,6 +67,14 @@ describe("ChatPanel (Common)", () => {
     expect(screen.queryByTestId("chat-message-bubble")).not.toBeInTheDocument();
     expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "聊天消息" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "聊天消息" })).toHaveAttribute(
+      "data-agent-control",
+      "chat.input"
+    );
+    expect(screen.getByRole("button", { name: "发送消息" })).toHaveAttribute(
+      "data-agent-control",
+      "chat.send"
+    );
   });
 
   it("频道可见范围说明先于玩家消息展示，不作为聊天正文", () => {

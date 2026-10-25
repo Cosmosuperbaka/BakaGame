@@ -156,6 +156,7 @@ export function VotingPhase() {
                   name={player.name}
                   tone="vote"
                   disabled={busy}
+                  controlId={`faker.vote.${player.id}`}
                   onSelect={(event) => {
                     capture(event);
                     void handleVote(player.id);
@@ -167,6 +168,7 @@ export function VotingPhase() {
               <AbstainOption
                 label="弃票"
                 disabled={busy}
+                controlId="faker.vote.abstain"
                 onSelect={(event) => {
                   capture(event);
                   void handleVote(ABSTAIN_TARGET_ID);
@@ -180,6 +182,7 @@ export function VotingPhase() {
               detail={receiptDetail(abstained, targetPlayerName)}
               origin={origin}
               busy={pendingCommand === "cancel"}
+              undoControlId="faker.cancelVote"
               onUndo={handleCancelVote}
             />
           ) : null}
@@ -207,6 +210,7 @@ export function VotingPhase() {
               disabled={busy}
               loading={pendingCommand === "advance"}
               size="lg"
+              data-agent-control="faker.advance"
             >
               {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
               结算投票

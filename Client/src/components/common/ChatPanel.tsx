@@ -762,6 +762,7 @@ export function ChatPanel({
           onChange={handleChange}
           placeholder={placeholder}
           className="flex-1"
+          data-agent-control="chat.input"
           role="combobox"
           aria-label="聊天消息"
           aria-autocomplete="list"
@@ -814,6 +815,7 @@ export function ChatPanel({
           onClick={() => void handleSend()}
           disabled={!text.trim()}
           aria-label="发送消息"
+          data-agent-control="chat.send"
         >
           <span ref={sendIconRef} className="inline-flex">
             <Send className="h-4 w-4" />

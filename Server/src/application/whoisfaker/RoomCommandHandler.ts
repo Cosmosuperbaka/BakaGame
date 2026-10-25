@@ -18,6 +18,10 @@ export const ROOM_COMMAND_TYPES = [
   "room.kick",
   "room.transferHost",
   "chat.send",
+  // 由 WhoIsFakerService.execute 在进入处理器前拦截；列在这里是为了让命令表与传输层键集保持一一对应。
+  "mcp.claim",
+  "mcp.release",
+  "mcp.focus",
 ] as const satisfies readonly WhoIsFakerClientMessage["type"][];
 
 interface RoomCommandDependencies {

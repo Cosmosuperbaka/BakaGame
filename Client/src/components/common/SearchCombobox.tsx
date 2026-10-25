@@ -48,6 +48,9 @@ export interface SearchComboboxProps<T> {
   status?: SearchStatus | null;
   back?: SearchBack | null;
   className?: string;
+  /** Agent 操作追踪：输入框与结果行的控件 id 前缀（结果按 `.result.<index>` 编号）。 */
+  agentControlId?: string;
+  agentControlPrefix?: string;
 }
 
 type SearchItem<T> =
@@ -82,6 +85,8 @@ export function SearchCombobox<T>({
   status = null,
   back = null,
   className,
+  agentControlId,
+  agentControlPrefix,
 }: SearchComboboxProps<T>) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -172,6 +177,7 @@ export function SearchCombobox<T>({
               maxLength={maxLength}
               placeholder={placeholder}
               disabled={disabled}
+              data-agent-control={agentControlId}
               autoComplete="off"
               spellCheck={false}
               enterKeyHint="search"
@@ -238,6 +244,7 @@ export function SearchCombobox<T>({
                   pendingKey={pendingKey}
                   optionId={optionId}
                   unavailable={unavailable}
+                  agentControlPrefix={agentControlPrefix}
                   renderOption={renderOption}
                   onHighlight={(index) => {
                     if (index !== activeIndex) highlight(index, false);
@@ -263,6 +270,7 @@ interface SearchPanelProps<T> {
   pendingKey: string | null;
   optionId: (index: number) => string;
   unavailable: (item: SearchItem<T>) => boolean;
+  agentControlPrefix?: string;
   renderOption: (option: T) => ReactNode;
   onHighlight: (index: number) => void;
   onChoose: (item: SearchItem<T>) => void;
@@ -282,6 +290,7 @@ function SearchPanel<T>({
   pendingKey,
   optionId,
   unavailable,
+  agentControlPrefix,
   renderOption,
   onHighlight,
   onChoose,
@@ -334,6 +343,9 @@ function SearchPanel<T>({
               {items.map((item, index) => {
                 const blocked = unavailable(item);
                 const highlighted = index === activeIndex;
+                const optionIndex = items
+                  .slice(0, index)
+                  .filter((entry) => entry.kind === "option").length;
                 return (
                   <motion.li
                     key={item.key}
@@ -342,6 +354,13 @@ function SearchPanel<T>({
                     aria-selected={highlighted}
                     aria-disabled={blocked || undefined}
                     data-active={highlighted || undefined}
+                    data-agent-control={
+                      agentControlPrefix
+                        ? item.kind === "back"
+                          ? `${agentControlPrefix}.back`
+                          : `${agentControlPrefix}.result.${optionIndex}`
+                        : undefined
+                    }
                     variants={listItem}
                     style={{ originX: 0 }}
                     {...(blocked ? undefined : optionTappable)}

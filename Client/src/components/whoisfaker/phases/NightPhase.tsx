@@ -101,6 +101,7 @@ export function NightPhase() {
                   name={p.name}
                   tone="night"
                   disabled={busy}
+                  controlId={`faker.night.${p.id}`}
                   onSelect={(event) => {
                     capture(event);
                     void handleNightAction(p.id);
@@ -110,6 +111,7 @@ export function NightPhase() {
               <AbstainOption
                 label="不行动"
                 disabled={busy}
+                controlId="faker.night.skip"
                 onSelect={(event) => {
                   capture(event);
                   void handleNightAction();
@@ -131,6 +133,7 @@ export function NightPhase() {
               }
               origin={origin}
               busy={pendingCommand === "cancel"}
+              undoControlId="faker.cancelNight"
               onUndo={handleCancelNightAction}
             />
           ) : null}
@@ -146,6 +149,7 @@ export function NightPhase() {
             disabled={busy}
             loading={pendingCommand === "advance"}
             size="lg"
+            data-agent-control="faker.advance"
           >
             {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
             天亮了

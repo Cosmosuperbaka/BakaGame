@@ -73,14 +73,18 @@ describe("SongSearch", () => {
     render(<SongSearch mode="guess" onSelect={onSelect} />);
 
     const input = screen.getByRole("combobox", { name: "搜索歌曲" });
+    expect(input).toHaveAttribute("data-agent-control", "song.guess.search.input");
     await user.type(input, "夜");
     await flushDebounce();
     expect(searchMusic).toHaveBeenCalledExactlyOnceWith("夜");
     // 行内副标题是歌手与专辑；已移除会员专享图标；没有单独的「猜这首」按钮。
     expect(
       screen.getByRole("option", { name: /夜空中最亮的星.*逃跑计划 · 世界/ })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /雨夜.*测试歌手/ })).toBeInTheDocument();
+    ).toHaveAttribute("data-agent-control", "song.guess.search.result.0");
+    expect(screen.getByRole("option", { name: /雨夜.*测试歌手/ })).toHaveAttribute(
+      "data-agent-control",
+      "song.guess.search.result.1"
+    );
     expect(screen.queryByText("会员专享")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /猜这首|设为答案/ })).not.toBeInTheDocument();
 

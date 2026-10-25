@@ -210,9 +210,12 @@ export function CEEGameSettings({
   useAutoSave(
     draft,
     (value) => {
-      // 记住整份玩法设置，下次创建的房间由等待页重放。
-      saveRoomSettingsMemory("cee", { settings: value });
-      return useCEEStore.getState().sendCommand("cee.room.settings", { settings: value });
+      // MCP 是独立设置项，不随玩法设置记忆；保存时保留服务端当前的开关，避免旧草稿把它改回去。
+      const allowAgents = useCEEStore.getState().snapshot?.settings.allowAgents === true;
+      saveRoomSettingsMemory("cee", { settings: { ...value, allowAgents: false } });
+      return useCEEStore
+        .getState()
+        .sendCommand("cee.room.settings", { settings: { ...value, allowAgents } });
     },
     {
       enabled: !readOnly && waiting && !validation,

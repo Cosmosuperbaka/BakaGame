@@ -178,6 +178,7 @@ export class CEEService implements AdminRoomControl {
                 hasPassword: false,
                 allowSpectators: true,
                 bakaAntiCheat: false,
+                allowAgents: false,
               },
             ]
           : [];

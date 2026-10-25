@@ -5,7 +5,7 @@ import { Check, Clock, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { Button } from "@/components/ui/Button";
 import { PlayerRow, hostActions } from "@/components/common/PlayerRow";
-import { AgentBadge } from "@/components/common/AgentBadge";
+import { AgentBadge, McpControlledBadge } from "@/components/common/AgentBadge";
 import {
   PlayerGroupTitle,
   PlayerListLayout,
@@ -221,6 +221,7 @@ export function CEEPlayerList({
                             approved: true,
                           })
                         }
+                        data-agent-control={`cee.spectate.approve.${request.playerId}`}
                       >
                         <Check className="h-3.5 w-3.5" aria-hidden="true" />
                         {SPECTATE_APPROVE_LABEL}
@@ -237,6 +238,7 @@ export function CEEPlayerList({
                             approved: false,
                           })
                         }
+                        data-agent-control={`cee.spectate.reject.${request.playerId}`}
                       >
                         <X className="h-3.5 w-3.5" aria-hidden="true" />
                         {SPECTATE_REJECT_LABEL}
@@ -363,6 +365,7 @@ function CEEPlayerRow({
       badges={
         <>
           {player.isAgent ? <AgentBadge /> : null}
+          {player.mcpControlled ? <McpControlledBadge /> : null}
           {status ? <PlayerStatusIcon {...status} /> : null}
         </>
       }

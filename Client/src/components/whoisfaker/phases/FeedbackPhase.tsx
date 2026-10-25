@@ -228,7 +228,12 @@ export function FeedbackPhase() {
 
       <div className="flex justify-center pt-2">
         {canContinue ? (
-          <Button size="lg" onClick={handleContinue} loading={busy}>
+          <Button
+            size="lg"
+            onClick={handleContinue}
+            loading={busy}
+            data-agent-control="faker.advance"
+          >
             {busy ? null : <FastForward className="h-4 w-4" />}
             {feedbackNextLabel(feedback)}
           </Button>

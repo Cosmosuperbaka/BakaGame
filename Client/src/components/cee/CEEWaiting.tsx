@@ -1,11 +1,12 @@
 /* eslint-disable react-refresh/only-export-components -- 恢复函数与等待页共享同一份目录同步规则，放一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Check, Bot, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
+import { Check, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
 import type { CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
+import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import {
@@ -32,7 +33,10 @@ export async function restoreCEESettings(memory: CEERoomSettingsMemory): Promise
   if (settings.useIndex && settings.indexId !== null) {
     await useCEEStore.getState().sendCommand("cee.directory.import", { indexId: settings.indexId });
   }
-  await useCEEStore.getState().sendCommand("cee.room.settings", { settings });
+  // MCP 开关属于房间级独立设置，不从上一局的玩法记忆里继承。
+  await useCEEStore
+    .getState()
+    .sendCommand("cee.room.settings", { settings: { ...settings, allowAgents: false } });
 }
 
 /** 房主的房间设置草稿：名称、是否公开、是否允许旁观与私密密码。 */
@@ -61,7 +65,6 @@ const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
       : "私密房间"
     : "公开房间",
   snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
-  snapshot.settings.allowAgents ? "允许 Agent" : "禁止 Agent",
 ];
 
 /** 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */
@@ -92,7 +95,6 @@ type RoomSettingsSectionProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: <K extends keyof RoomDraft>(key: K, value: RoomDraft[K]) => void;
-  onAllowAgentsChange: (value: boolean) => void;
 };
 
 /**
@@ -108,7 +110,6 @@ function RoomSettingsSection({
   open,
   onOpenChange,
   onEdit,
-  onAllowAgentsChange,
 }: RoomSettingsSectionProps) {
   // 非房主读当前快照；房主读草稿。
   const roomValues = isHost
@@ -153,21 +154,12 @@ function RoomSettingsSection({
           </SettingReveal>
         ) : null}
         {snapshot.source === "native" ? (
-          <>
-            <SettingSwitchRow
-              label="允许旁观"
-              icon={Users}
-              checked={roomValues.allowSpectators}
-              onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
-            />
-            <SettingSwitchRow
-              label="允许 Agent 进入"
-              description="通过 MCP 接入的 Agent 默认会被拒绝；打开后它们会带 Agent 徽标进入房间。"
-              icon={Bot}
-              checked={snapshot.settings.allowAgents === true}
-              onCheckedChange={onAllowAgentsChange}
-            />
-          </>
+          <SettingSwitchRow
+            label="允许旁观"
+            icon={Users}
+            checked={roomValues.allowSpectators}
+            onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
+          />
         ) : null}
         {validation ? (
           <p role="alert" className="text-xs text-destructive">
@@ -218,6 +210,7 @@ function WaitingActions({
         disabled={starting || !canStart}
         loading={starting}
         onClick={onStart}
+        data-agent-control="cee.start"
       >
         {startButtonLabel({ canStart, manual, otherCount, readyCount })}
       </Button>
@@ -236,6 +229,7 @@ function WaitingActions({
         disabled={readying}
         loading={readying}
         onClick={() => onToggleReady(activeMe.ready)}
+        data-agent-control="cee.ready"
       >
         {activeMe.ready ? (
           <>{readying ? null : <X className="h-4 w-4" />}取消准备</>
@@ -283,15 +277,6 @@ export function CEEWaiting({
 
   const roomValidation = roomValidationText(snapshot.source, roomDraft, snapshot.hasPassword);
 
-  const changeAllowAgents = (value: boolean) => {
-    void useCEEStore
-      .getState()
-      .sendCommand("cee.room.settings", {
-        settings: { ...snapshot.settings, allowAgents: value },
-      })
-      .catch((error: unknown) => setRoomNotice(ceeErrorMessage(error)));
-  };
-
   useAutoSave(
     roomDraft,
     async (value) => {
@@ -336,7 +321,9 @@ export function CEEWaiting({
         />
       ) : null}
 
-      <CEETeamPicker snapshot={snapshot} privateState={privateState} />
+      <div data-agent-control="cee.team">
+        <CEETeamPicker snapshot={snapshot} privateState={privateState} />
+      </div>
 
       <SettingsStack>
         <CEEGameSettings
@@ -355,8 +342,16 @@ export function CEEWaiting({
           open={roomOpen}
           onOpenChange={setRoomOpen}
           onEdit={editRoom}
-          onAllowAgentsChange={changeAllowAgents}
         />
+
+        {snapshot.source === "native" ? (
+          <McpSettingsSection
+            game="cee"
+            roomId={snapshot.roomId}
+            allowAgents={snapshot.settings.allowAgents === true}
+            isHost={isHost}
+          />
+        ) : null}
       </SettingsStack>
 
       <WaitingActions

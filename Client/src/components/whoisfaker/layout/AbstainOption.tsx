@@ -10,10 +10,12 @@ export function AbstainOption({
   label,
   onSelect,
   disabled,
+  controlId,
 }: {
   label: string;
   onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
+  controlId?: string;
 }) {
   return (
     <motion.button
@@ -23,6 +25,7 @@ export function AbstainOption({
       className="col-span-2 flex cursor-pointer items-center justify-between rounded-md border border-dashed bg-transparent px-4 py-3.5 text-left text-muted-foreground transition-colors hover:bg-accent/40"
       disabled={disabled}
       onClick={onSelect}
+      data-agent-control={controlId}
     >
       <span className="truncate text-sm font-medium">{label}</span>
       <CircleSlash className="ml-2 h-4 w-4 shrink-0" />

@@ -3873,3 +3873,172 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
   expect(snapshot?.settings.allowAgents).toBe(true);
   expect(snapshot?.players.find((player) => player.id === joined.playerId)?.isAgent).toBe(true);
 });
+
+test("MCP 配对后人类会话锁定，Agent 接管同一座位，收回后恢复手动", async () => {
+  const { service } = createTestContext();
+  const host = createConnection(service, "pair-host");
+  const created = (await execute(service, host, {
+    id: "pair-create",
+    type: "room.create",
+    payload: {
+      roomId: "9191",
+      name: "配对房",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+      allowAgents: true,
+    },
+  })) as { playerId: string; sessionToken: string };
+
+  const agent = createConnection(service, "pair-agent");
+  agent.record.isAgent = true;
+  const claimed = (await execute(service, agent, {
+    id: "pair-claim",
+    type: "mcp.claim",
+    payload: { roomId: "9191", sessionToken: created.sessionToken },
+  })) as { playerId: string; sessionToken: string };
+
+  expect(claimed.playerId).toBe(created.playerId);
+  expect(claimed.sessionToken).not.toBe(created.sessionToken);
+
+  const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+  expect(snapshot?.players.find((player) => player.id === created.playerId)?.mcpControlled).toBe(
+    true
+  );
+  const viewerState = getLastEventPayload<WhoIsFakerPrivateState>(host, "game.privateState");
+  expect(viewerState?.mcpControlled).toBe(true);
+  expect(viewerState?.sessionToken).toBe(created.sessionToken);
+
+  await expect(
+    execute(service, host, {
+      id: "pair-host-chat",
+      type: "chat.send",
+      payload: { text: "人类手动消息" },
+    })
+  ).rejects.toMatchObject({ code: "MCP_CONTROL_ONLY" });
+
+  await execute(service, agent, {
+    id: "pair-agent-chat",
+    type: "chat.send",
+    payload: { text: "Agent 消息" },
+  });
+
+  await execute(service, host, {
+    id: "pair-release",
+    type: "mcp.release",
+    payload: {},
+  });
+  await execute(service, host, {
+    id: "pair-host-chat-after",
+    type: "chat.send",
+    payload: { text: "恢复手动" },
+  });
+});
+
+test("会话凭证只能走 MCP 认领，Agent 不能直接重连顶掉人类页面", async () => {
+  const { service } = createTestContext();
+  const host = createConnection(service, "claim-guard-host");
+  const created = (await execute(service, host, {
+    id: "claim-guard-create",
+    type: "room.create",
+    payload: {
+      roomId: "9192",
+      name: "凭证房",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+      allowAgents: true,
+    },
+  })) as { sessionToken: string };
+
+  const agent = createConnection(service, "claim-guard-agent");
+  agent.record.isAgent = true;
+  await expect(
+    execute(service, agent, {
+      id: "claim-guard-reconnect",
+      type: "room.reconnect",
+      payload: { roomId: "9192", sessionToken: created.sessionToken },
+    })
+  ).rejects.toMatchObject({ code: "AGENT_CLAIM_REQUIRED" });
+
+  await expect(
+    execute(service, agent, {
+      id: "claim-guard-wrong-token",
+      type: "mcp.claim",
+      payload: { roomId: "9192", sessionToken: "wrong-token" },
+    })
+  ).rejects.toMatchObject({ code: "SESSION_NOT_FOUND" });
+});
+
+test("Agent 焦点只发给接管座位的人类查看器，普通连接不能伪造焦点", async () => {
+  const { service } = createTestContext();
+  const host = createConnection(service, "focus-host");
+  const created = (await execute(service, host, {
+    id: "focus-create",
+    type: "room.create",
+    payload: {
+      roomId: "9193",
+      name: "焦点房",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "房主",
+      allowAgents: true,
+    },
+  })) as { sessionToken: string };
+  const other = createConnection(service, "focus-other");
+  await execute(service, other, {
+    id: "focus-join-other",
+    type: "room.join",
+    roomId: "9193",
+    payload: { userName: "旁观者" },
+  });
+
+  const agent = createConnection(service, "focus-agent");
+  agent.record.isAgent = true;
+  await execute(service, agent, {
+    id: "focus-claim",
+    type: "mcp.claim",
+    payload: { roomId: "9193", sessionToken: created.sessionToken },
+  });
+
+  const human = createConnection(service, "focus-human");
+  await expect(
+    execute(service, human, {
+      id: "focus-human",
+      type: "mcp.focus",
+      payload: { agentName: "Fake", tool: "get_screen", kind: "state" },
+    })
+  ).rejects.toMatchObject({ code: "AGENT_REQUIRED" });
+
+  await execute(service, agent, {
+    id: "focus-agent",
+    type: "mcp.focus",
+    payload: {
+      agentName: "TestAgent",
+      tool: "ui_run",
+      kind: "action",
+      action: "type",
+      controlId: "chat.input",
+      part: "chat",
+      label: "聊天消息",
+      input: "只给座位主人看",
+    },
+  });
+  const focus = getLastEventPayload<{
+    agentName: string;
+    kind: string;
+    game: string;
+    controlId: string;
+    input: string;
+    at: number;
+  }>(host, "mcp.focus");
+  expect(focus).toMatchObject({
+    agentName: "TestAgent",
+    kind: "action",
+    game: "faker",
+    controlId: "chat.input",
+    input: "只给座位主人看",
+  });
+  expect(typeof focus?.at).toBe("number");
+  expect(getLastEventPayload(other, "mcp.focus")).toBeUndefined();
+});

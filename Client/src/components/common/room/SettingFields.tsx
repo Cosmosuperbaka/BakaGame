@@ -391,6 +391,7 @@ export function SettingTextField({
   autoFocus,
   disabled = false,
   inputClassName,
+  controlId,
 }: {
   label: string;
   value: string;
@@ -409,6 +410,8 @@ export function SettingTextField({
   disabled?: boolean;
   /** 只改输入框的高度与字号（弹窗里的 `h-10`） */
   inputClassName?: string;
+  /** Agent 操作追踪用的控件 id。 */
+  controlId?: string;
 }) {
   const id = useId();
   const descriptionId = useId();
@@ -441,6 +444,7 @@ export function SettingTextField({
           autoFocus={autoFocus}
           disabled={disabled}
           className={inputClassName}
+          data-agent-control={controlId}
           aria-invalid={error ? true : undefined}
           aria-describedby={
             [description ? descriptionId : "", error ? errorId : ""].filter(Boolean).join(" ") ||

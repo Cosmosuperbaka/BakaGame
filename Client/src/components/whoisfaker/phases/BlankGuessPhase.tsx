@@ -73,6 +73,7 @@ export function BlankGuessButton() {
             capture(event);
             setConfirming(true);
           }}
+          data-agent-control="faker.blank.enter"
         >
           <HelpCircle className="h-4 w-4" />
           白板猜词
@@ -89,10 +90,18 @@ export function BlankGuessButton() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirming(false)}
+              data-agent-control="faker.blank.cancel"
+            >
               再想想
             </Button>
-            <Button loading={busy} onClick={() => void handleEnter()}>
+            <Button
+              loading={busy}
+              onClick={() => void handleEnter()}
+              data-agent-control="faker.blank.confirm"
+            >
               {busy ? null : <HelpCircle className="h-4 w-4" />}
               进入猜词
             </Button>
@@ -200,6 +209,7 @@ function BlankGuessInput() {
             placeholder={field.label}
             maxLength={20}
             className="h-10"
+            data-agent-control={index === 0 ? "faker.blank.a" : "faker.blank.b"}
             // 输入法组字时的回车只是上屏；两个词都填了才提交，与按钮的禁用条件一致
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.nativeEvent.isComposing && ready) void handleSubmit();
@@ -213,6 +223,7 @@ function BlankGuessInput() {
         onClick={() => void handleSubmit()}
         loading={submitting}
         disabled={!ready}
+        data-agent-control="faker.blank.submit"
       >
         {submitting ? null : <Send className="h-4 w-4" />}
         提交猜测
@@ -345,6 +356,7 @@ export function BlankGuessWaiting() {
                   disabled={reviewing}
                   loading={verdict === false}
                   onClick={() => void handleReview(false)}
+                  data-agent-control="faker.blank.reject"
                 >
                   判定错误
                 </Button>
@@ -353,6 +365,7 @@ export function BlankGuessWaiting() {
                   disabled={reviewing}
                   loading={verdict === true}
                   onClick={() => void handleReview(true)}
+                  data-agent-control="faker.blank.approve"
                 >
                   {verdict === true ? null : <Gavel className="h-4 w-4" />}
                   算作正确

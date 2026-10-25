@@ -157,5 +157,9 @@ export function SettingsAccordion({
 
 /** 一列折叠设置组的统一间距：三个游戏的等待页都用它包住各组，不各写 `space-y`。 */
 export function SettingsStack({ children }: { children: ReactNode }) {
-  return <div className="space-y-3">{children}</div>;
+  return (
+    <div className="space-y-3" data-agent-focus="settings">
+      {children}
+    </div>
+  );
 }

@@ -27,6 +27,7 @@ export function ceeRoomSummary(room: CEERoom): CEERoomSummary {
     hasPassword: Boolean(room.passwordHash),
     allowSpectators: room.allowSpectators,
     bakaAntiCheat: isCEEAntiCheatRoom(room.settings),
+    allowAgents: room.settings.allowAgents === true,
   };
 }
 /** 待批准请求按发起时间升序，房主端才能稳定地从上往下处理。 */
@@ -41,7 +42,10 @@ function ceeSpectateRequests(room: CEERoom): CEESpectateRequest[] {
     .filter((request) => request.name)
     .sort((a, b) => a.requestedAt - b.requestedAt);
 }
-export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
+export function ceeSnapshot(
+  room: CEERoom,
+  isMcpControlled?: (playerId: string) => boolean
+): CEERoomSnapshot {
   return {
     roomId: room.id,
     source: "native",
@@ -74,6 +78,7 @@ export function ceeSnapshot(room: CEERoom): CEERoomSnapshot {
       marks: player.marks,
       syncCompleted: player.syncCompleted,
       ...(player.isAgent ? { isAgent: true } : {}),
+      ...(isMcpControlled?.(player.id) ? { mcpControlled: true } : {}),
       account: player.account,
     })),
   };
@@ -159,7 +164,11 @@ function emptyCEEPrivateState(player: CEEPlayerRecord, spectatePending: boolean)
     spectatePending,
   };
 }
-export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPrivateState {
+export function ceePrivateState(
+  room: CEERoom,
+  player: CEEPlayerRecord,
+  mcpControlled = false
+): CEEPrivateState {
   const round = room.round;
   const spectatePending = player.membership === "pendingSpectator";
   // 待批准旁观按「尚未入房」处理：私有状态整体清空，否则请求者能提前看到答案与全场猜测。
@@ -184,6 +193,7 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
     : [];
   return {
     playerId: player.id,
+    ...(mcpControlled ? { mcpControlled: true } : {}),
     canGuess,
     canSurrender: inGame && !unit!.ended,
     // 随机出题在等待阶段需其他参与者准备（结算阶段再来一轮直接沿用在线参与者）；

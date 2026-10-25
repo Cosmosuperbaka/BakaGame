@@ -1,5 +1,7 @@
 import { createInterface } from "node:readline";
 import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
+import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
+import { MCP_INSTRUCTIONS } from "./Policy";
 import { TOOLS } from "./Tools";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -83,7 +85,9 @@ const handleToolCall = async (
     if (tool.write && !consumeWrite(bucketKey)) {
       throw Object.assign(new Error("Agent 操作过于频繁，请稍后再试"), { code: "RATE_LIMITED" });
     }
+    await publishToolFocus(client, agentName, name, args);
     const result = await tool.handler(args, { client, agentName });
+    if (FOCUS_AFTER_TOOLS.has(name)) await publishToolFocus(client, agentName, name, args);
     writeStdout({
       jsonrpc: "2.0",
       id,
@@ -158,11 +162,27 @@ const handleLine = async (line: string): Promise<void> => {
         protocolVersion: requested,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
+        instructions: MCP_INSTRUCTIONS,
       },
     });
     return;
   }
   if (method === "notifications/initialized" || method === "notifications/cancelled") return;
+  if (method === "server/discover") {
+    if (!hasId) return;
+    writeStdout({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: "2026-07-28",
+        supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
+        instructions: MCP_INSTRUCTIONS,
+      },
+    });
+    return;
+  }
   if (method === "ping") {
     if (hasId) writeStdout({ jsonrpc: "2.0", id, result: {} });
     return;

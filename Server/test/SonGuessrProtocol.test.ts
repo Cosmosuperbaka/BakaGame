@@ -462,6 +462,9 @@ const SONGUESSR_COMMAND_CASES = [
   { type: "song.game.finish", payload: {} },
   { type: "song.test.addBot", payload: {} },
   { type: "song.test.removeBot", payload: {} },
+  { type: "mcp.claim", payload: { roomId: "1234", sessionToken: "session-token" } },
+  { type: "mcp.release", payload: {} },
+  { type: "mcp.focus", payload: { agentName: "BakaAgent", tool: "get_room_state", kind: "state" } },
 ] as const satisfies readonly { type: SonGuessrCommand; payload: Record<string, unknown> }[];
 
 type UnprobedSonGuessrCommand = Exclude<
