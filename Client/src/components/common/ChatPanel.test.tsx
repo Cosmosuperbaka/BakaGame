@@ -531,22 +531,22 @@ describe("ChatPanel (Common)", () => {
     expect(screen.queryByText("系统", { exact: true })).not.toBeInTheDocument();
   });
 
-  it("别人的消息显示 +1，点击直接复读同一文本；自己与系统消息不显示", () => {
+  it("只有最新一条他人消息显示 +1，点击直接复读同一文本", () => {
     const onRepeatMessage = vi.fn();
     const messages: ChatMessage[] = [
       {
-        id: "m-other",
+        id: "m-older",
         playerId: "p-other",
         playerName: "对手",
-        text: "复读这一条",
+        text: "上一条消息",
         createdAt: 1000,
         system: false,
       },
       {
-        id: "m-mine",
-        playerId: "p-me",
-        playerName: "我",
-        text: "自己的消息",
+        id: "m-latest",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "复读这一条",
         createdAt: 2000,
         system: false,
       },
@@ -573,9 +573,45 @@ describe("ChatPanel (Common)", () => {
     const button = screen.getByRole("button", { name: "复读这条消息" });
     expect(button.textContent).toBe("+1");
     expect(screen.getAllByRole("button", { name: "复读这条消息" })).toHaveLength(1);
+    // 系统提示不参与复读，按钮仍挂在最新一条玩家消息的气泡上
+    const bubbles = screen.getAllByTestId("chat-message-bubble");
+    expect(bubbles[1].parentElement).toContainElement(button);
 
     fireEvent.click(button);
     expect(onRepeatMessage).toHaveBeenCalledWith("复读这一条");
+  });
+
+  it("最新一条是自己发送的消息时不显示 +1", () => {
+    const messages: ChatMessage[] = [
+      {
+        id: "m-other",
+        playerId: "p-other",
+        playerName: "对手",
+        text: "别人的旧消息",
+        createdAt: 1000,
+        system: false,
+      },
+      {
+        id: "m-mine",
+        playerId: "p-me",
+        playerName: "我",
+        text: "自己的最新消息",
+        createdAt: 2000,
+        system: false,
+      },
+    ];
+
+    render(
+      <ChatPanel
+        messages={messages}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+        onRepeatMessage={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: "复读这条消息" })).not.toBeInTheDocument();
   });
 
   it("复读请求在途时连点只发送一次", () => {
