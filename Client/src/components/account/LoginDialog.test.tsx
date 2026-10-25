@@ -199,10 +199,13 @@ describe("登录弹窗", () => {
 
   it("登录说明默认收起，展开后写明用途与 QQ 号边界", async () => {
     const { user } = renderDialog();
-    expect(screen.queryByText(/不登录不影响/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/不登录也能游玩/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "登录说明" }));
-    expect(await screen.findByText("不登录不影响绝大部分功能的正常游玩。")).toBeInTheDocument();
+    expect(
+      await screen.findByText("不登录也能游玩并匿名提交反馈；匿名反馈无法查看结果与回复。")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/查看自己反馈的回复/)).toBeInTheDocument();
     expect(screen.getByText(/不索要你的 QQ 密码/)).toBeInTheDocument();
     expect(screen.getByText(/通行密钥在登录后的「账号资料」里添加/)).toBeInTheDocument();
   });

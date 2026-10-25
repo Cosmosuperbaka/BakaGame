@@ -78,6 +78,13 @@
       "when": 1792766555535,
       "tag": "0010_status_daily",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1792919082258,
+      "tag": "0011_anonymous_feedback",
+      "breakpoints": true
     }
   ]
 }

@@ -28,7 +28,7 @@ export const api: ApiClient = createApiClient();
 export const avatarSrc = (image: string): string =>
   image.startsWith("/") ? resolveServerUrl(image) : image;
 
-/** 服务端未配置数据库时账号接口统一回 `ACCOUNT_DISABLED`：前端隐藏全部账号入口，游客照常游玩。 */
+/** 服务端未配置数据库时账号接口统一回 `ACCOUNT_DISABLED`：前端保留入口并提示不可用，游客照常游玩。 */
 export const isAccountDisabled = (error: unknown): boolean =>
   error instanceof ORPCError && error.code === "ACCOUNT_DISABLED";
 

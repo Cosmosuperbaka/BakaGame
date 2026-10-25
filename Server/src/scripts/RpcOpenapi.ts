@@ -182,7 +182,7 @@ const ERROR_RESPONSES: Record<string, string> = {
   RateLimited:
     "超出 RPC 前缀的额度（60 秒滑动窗口内单客户端 300 次）。响应带 `X-RateLimit-*` 与 `Retry-After`，按 `Retry-After` 等待后重试即可。",
   InternalError: "服务端内部异常，调用方无法预防。",
-  AccountDisabled: "服务端未配置数据库，账号系统整体停用；前端据此隐藏登录入口。",
+  AccountDisabled: "服务端未配置数据库，账号系统整体停用；前端保留入口并就地提示不可用。",
 };
 
 const RPC_ERROR_SCHEMA: Json = {

@@ -609,7 +609,10 @@ export const apiContract = {
       .output(z.object({ updatedAt: z.string() })),
   },
   feedback: {
-    create: op("提交站内反馈；服务端一并记下请求的 user-agent。", "session")
+    create: op(
+      "提交站内反馈；登录用户关联账号，游客按匿名提交。服务端一并记下请求的 user-agent。",
+      "public"
+    )
       .input(
         z.object({
           kind: feedbackKindSchema,

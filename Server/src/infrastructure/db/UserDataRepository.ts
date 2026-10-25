@@ -50,7 +50,8 @@ export class DatabaseUserSettingRepository implements UserSettingRepository {
 
 export interface FeedbackRecord {
   id: string;
-  userId: string;
+  /** 匿名反馈为空；登录用户提交时关联账号。 */
+  userId: string | null;
   kind: FeedbackKind;
   title: string;
   content: string;

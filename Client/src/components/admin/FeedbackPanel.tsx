@@ -59,6 +59,7 @@ function FeedbackThread({
   const [reply, setReply] = useState("");
   const replyId = useId();
   const action = useAdminAction();
+  const anonymous = detail.user === null;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -87,7 +88,7 @@ function FeedbackThread({
         <Badge variant="outline" size="xs">
           {FEEDBACK_KIND_LABELS[detail.kind]}
         </Badge>
-        <UserCell user={detail.user} />
+        <UserCell user={detail.user} fallback="匿名" />
         <span className="text-muted-foreground">提交于 {formatDateTime(detail.createdAt)}</span>
       </div>
       <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-card p-3 text-sm">
@@ -135,34 +136,40 @@ function FeedbackThread({
           </div>
         ))}
       </section>
-      <form onSubmit={(event) => void submit(event)} className="grid gap-1.5">
-        <Label htmlFor={replyId}>回复</Label>
-        <Textarea
-          id={replyId}
-          value={reply}
-          maxLength={FEEDBACK_REPLY_MAX_LENGTH}
-          onChange={(event) => setReply(event.target.value)}
-          placeholder="用户会在「我的反馈」里看到这条回复"
-        />
-        <div className="flex items-center justify-between gap-3">
-          {action.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {action.error}
-            </p>
-          ) : (
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {reply.length}/{FEEDBACK_REPLY_MAX_LENGTH}
-            </span>
-          )}
-          <Button
-            type="submit"
-            disabled={!reply.trim() || action.busy === "status"}
-            loading={action.busy === "reply"}
-          >
-            发送回复
-          </Button>
-        </div>
-      </form>
+      {anonymous ? (
+        <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+          匿名反馈没有可联系的对象，无法通过站内回复送达。
+        </p>
+      ) : (
+        <form onSubmit={(event) => void submit(event)} className="grid gap-1.5">
+          <Label htmlFor={replyId}>回复</Label>
+          <Textarea
+            id={replyId}
+            value={reply}
+            maxLength={FEEDBACK_REPLY_MAX_LENGTH}
+            onChange={(event) => setReply(event.target.value)}
+            placeholder="用户会在「我的反馈」里看到这条回复"
+          />
+          <div className="flex items-center justify-between gap-3">
+            {action.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {action.error}
+              </p>
+            ) : (
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {reply.length}/{FEEDBACK_REPLY_MAX_LENGTH}
+              </span>
+            )}
+            <Button
+              type="submit"
+              disabled={!reply.trim() || action.busy === "status"}
+              loading={action.busy === "reply"}
+            >
+              发送回复
+            </Button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -283,7 +290,7 @@ export function FeedbackPanel() {
                   </Badge>
                 </td>
                 <td>
-                  <UserCell user={item.user} />
+                  <UserCell user={item.user} fallback="匿名" />
                 </td>
                 <td className="whitespace-nowrap tabular-nums text-muted-foreground">
                   {formatShortDateTime(item.createdAt)}
@@ -307,7 +314,7 @@ export function FeedbackPanel() {
           <DialogHeader>
             <DialogTitle className="break-words leading-snug">{open?.title}</DialogTitle>
             <DialogDescription>
-              回复后用户侧出现未读；待处理的反馈随之转为处理中。
+              回复会出现在登录用户的「我的反馈」里；匿名反馈无法收到回复。
             </DialogDescription>
           </DialogHeader>
           {open ? <FeedbackLoader key={open.id} id={open.id} onChanged={list.reload} /> : null}

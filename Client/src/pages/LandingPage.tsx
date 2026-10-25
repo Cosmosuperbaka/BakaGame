@@ -351,8 +351,8 @@ export default function LandingPage() {
   return (
     <div className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <Seo path="/" />
-      {/* 右上角这一排：下载客户端在账号左边，浮着不占页头的纵向空间；账号系统未启用时只剩下载，
-          在客户端里下载入口自己让位，只剩账号。 */}
+      {/* 右上角这一排：下载客户端在账号左边，浮着不占页头的纵向空间；账号服务不可用时入口仍保留。
+          在客户端里下载入口自己让位，只剩账号与反馈。 */}
       <div className="absolute right-3 top-3 z-panel flex items-center gap-1 sm:right-5 sm:top-4">
         <ClientDownloadEntry />
         <AccountButton />

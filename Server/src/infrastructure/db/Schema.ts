@@ -361,9 +361,8 @@ export const feedback = mysqlTable(
   "feedback",
   {
     id: varchar("id", { length: 36 }).primaryKey(),
-    userId: varchar("user_id", { length: 64 })
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    /** 匿名反馈不关联账号；账号删除时其反馈随外键级联清除。 */
+    userId: varchar("user_id", { length: 64 }).references(() => user.id, { onDelete: "cascade" }),
     kind: varchar("kind", { length: 16 }).notNull(),
     title: varchar("title", { length: 120 }).notNull(),
     content: text("content").notNull(),

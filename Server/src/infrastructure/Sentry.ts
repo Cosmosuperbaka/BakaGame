@@ -549,23 +549,25 @@ export const captureServerException = (error: unknown, context?: Record<string, 
 };
 
 /**
- * 站内反馈同步为 Sentry User Feedback；只带账号 ID 与昵称，不带邮箱（邮箱即 QQ 号）。
- * 未启用 Sentry 时返回 `null`，反馈本身照常落库。
+ * 站内反馈同步为 Sentry User Feedback；登录用户只带账号 ID 与昵称，匿名反馈不带身份，
+ * 两者都不带邮箱（邮箱即 QQ 号）。未启用 Sentry 时返回 `null`，反馈本身照常落库。
  */
 export const captureServerFeedback = (feedback: {
   message: string;
-  name: string;
-  userId: string;
+  name?: string;
+  userId?: string;
   url?: string;
   tags: Record<string, string>;
 }): string | null => {
   if (!isInitialized) return null;
   return Sentry.withScope((scope) => {
-    scope.setUser({ id: feedback.userId, username: feedback.name });
+    if (feedback.userId) {
+      scope.setUser({ id: feedback.userId, ...(feedback.name ? { username: feedback.name } : {}) });
+    }
     return Sentry.captureFeedback(
       {
         message: feedback.message,
-        name: feedback.name,
+        ...(feedback.name ? { name: feedback.name } : {}),
         source: "bakagame-site",
         ...(feedback.url ? { url: feedback.url } : {}),
         tags: feedback.tags,

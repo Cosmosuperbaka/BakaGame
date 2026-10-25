@@ -81,6 +81,33 @@ describe("LandingPage", () => {
     expect(status.className).not.toContain("underline");
   });
 
+  it.each([
+    ["loading", true],
+    ["unavailable", false],
+  ] as const)("账号服务状态为 %s 时账号与反馈入口仍然可见", (status, accountDisabled) => {
+    useAccountStore.setState({ status, profile: null, unreadFeedback: 0 });
+    renderLandingPage();
+
+    const account = screen.getByRole("button", { name: "账号" });
+    expect(account).toBeVisible();
+    if (accountDisabled) expect(account).toBeDisabled();
+    else expect(account).toBeEnabled();
+    expect(screen.getByRole("button", { name: /反馈/ })).toBeEnabled();
+  });
+
+  it("账号服务不可用时反馈仍能打开匿名提交，且没有我的反馈入口", async () => {
+    useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
+    const user = userEvent.setup();
+    renderLandingPage();
+
+    await user.click(screen.getByRole("button", { name: /反馈/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("匿名");
+    expect(within(dialog).queryByRole("tab", { name: /我的反馈/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("标题")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "提交反馈" })).toBeInTheDocument();
+  });
+
   it("下载客户端入口浮在右上角、排在账号左边，点了只谈系统与安装包", async () => {
     useAccountStore.setState({ status: "guest", profile: null });
     vi.stubGlobal(
@@ -203,6 +230,7 @@ describe("LandingPage", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    useAccountStore.setState({ status: "loading", profile: null, unreadFeedback: 0 });
   });
 
   it.each([

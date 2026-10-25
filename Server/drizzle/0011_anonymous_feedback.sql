@@ -1,0 +1,1 @@
+ALTER TABLE `feedback` MODIFY COLUMN `user_id` varchar(64);

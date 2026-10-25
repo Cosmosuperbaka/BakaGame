@@ -4111,12 +4111,8 @@
         ],
         "operationId": "feedback.create",
         "summary": "feedback.create",
-        "description": "提交站内反馈；服务端一并记下请求的 user-agent。",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
+        "description": "提交站内反馈；登录用户关联账号，游客按匿名提交。服务端一并记下请求的 user-agent。",
+        "security": [],
         "requestBody": {
           "required": true,
           "content": {
@@ -4184,9 +4180,6 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -9001,7 +8994,7 @@
         }
       },
       "AccountDisabled": {
-        "description": "服务端未配置数据库，账号系统整体停用；前端据此隐藏登录入口。",
+        "description": "服务端未配置数据库，账号系统整体停用；前端保留入口并就地提示不可用。",
         "content": {
           "application/json": {
             "schema": {

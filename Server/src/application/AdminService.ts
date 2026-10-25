@@ -334,7 +334,7 @@ export class AdminService {
       status: record.status,
       createdAt: record.createdAt.toISOString(),
       lastReplyAt: record.lastReplyAt?.toISOString() ?? null,
-      user: users.get(record.userId) ?? null,
+      user: record.userId ? (users.get(record.userId) ?? null) : null,
       page: record.page,
       sentryEventId: record.sentryEventId,
     };
@@ -376,6 +376,7 @@ export class AdminService {
   ): Promise<AdminFeedbackDetail> {
     const record = await this.options.feedback.get(input.id);
     if (!record) throw new AppError("NOT_FOUND", "反馈不存在");
+    if (!record.userId) throw new AppError("BAD_REQUEST", "匿名反馈无法回复");
     const now = new Date(this.now());
     await this.audit(actorId, "feedback.reply", "feedback", record.id, {
       length: input.content.length,

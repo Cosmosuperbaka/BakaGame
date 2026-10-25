@@ -9,7 +9,7 @@ import { refreshSocketIdentities } from "@/lib/WebsocketClient";
  * 站点账号状态。
  *
  * - `loading`：首屏 `account.me` 未返回；
- * - `unavailable`：账号系统未启用或接口不可达，隐藏全部账号入口，游客照常游玩；
+ * - `unavailable`：账号系统未启用或接口不可达，账号与反馈入口仍保留，登录失败并提供反馈提交；
  * - `guest` / `signedIn`：可登录 / 已登录。
  *
  * 每次访问只调一次 `account.me`（服务端顺带按节流刷新 QQ 头像，见 Server/docs/Account.md §4）；

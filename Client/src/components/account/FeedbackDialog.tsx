@@ -231,8 +231,9 @@ function FeedbackThread({
 }
 
 /**
- * 反馈弹窗：提交建议或问题，查看自己的反馈与管理员回复（只对登录用户开放，见 Server/docs/Account.md §7）。
- * 打开详情即标记已读；有未读回复时默认落在「我的反馈」。
+ * 反馈弹窗：登录用户可提交并查看自己的反馈与管理员回复；游客提交匿名反馈，
+ * 不显示列表，也无法查看结果（见 Server/docs/Account.md §7）。
+ * 登录用户打开详情即标记已读；有未读回复时默认落在「我的反馈」。
  */
 export function FeedbackDialog({
   open,
@@ -250,18 +251,40 @@ export function FeedbackDialog({
   );
 }
 
+/** 未登录时的反馈面板：只提交，不显示列表与详情。 */
+function AnonymousFeedbackPanel() {
+  const [notice, setNotice] = useState<string | null>(null);
+  return (
+    <div className={cn(PANEL, "grid gap-3")}>
+      {notice ? (
+        <p
+          role="status"
+          className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
+        >
+          {notice}
+        </p>
+      ) : null}
+      <FeedbackForm onCreated={() => setNotice("已收到你的匿名反馈，感谢！")} />
+    </div>
+  );
+}
+
 function FeedbackDialogBody() {
+  const status = useAccountStore((state) => state.status);
+  const signedIn = status === "signedIn";
   const unread = useAccountStore((state) => state.unreadFeedback);
   const setUnread = useAccountStore((state) => state.setUnreadFeedback);
-  // 每次打开重新挂载：有未读回复时直接落在「我的反馈」。
-  const [tab, setTab] = useState<"create" | "mine">(() =>
-    useAccountStore.getState().unreadFeedback > 0 ? "mine" : "create"
-  );
+  // 每次打开重新挂载：登录且有未读回复时直接落在「我的反馈」。
+  const [tab, setTab] = useState<"create" | "mine">(() => {
+    const state = useAccountStore.getState();
+    return state.status === "signedIn" && state.unreadFeedback > 0 ? "mine" : "create";
+  });
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [selected, setSelected] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
+    if (useAccountStore.getState().status !== "signedIn") return;
     api.feedback.listMine().then(
       ({ items, unread: count }) => {
         setList({ status: "ready", items });
@@ -273,8 +296,9 @@ function FeedbackDialogBody() {
   }, [setUnread]);
 
   useEffect(() => {
+    if (!signedIn) return;
     refresh();
-  }, [refresh]);
+  }, [signedIn, refresh]);
 
   const markRead = useCallback(() => {
     if (list.status !== "ready") return;
@@ -290,106 +314,112 @@ function FeedbackDialogBody() {
       <DialogHeader>
         <DialogTitle>反馈</DialogTitle>
         <DialogDescription>
-          建议与问题都会被认真看到，回复会出现在「我的反馈」里。
+          {signedIn
+            ? "建议与问题都会被认真看到，回复会出现在「我的反馈」里。"
+            : "无需登录即可匿名提交；匿名反馈不会展示结果，也无法查看回复。"}
         </DialogDescription>
       </DialogHeader>
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
-          setTab(value as "create" | "mine");
-          setSelected(null);
-          setNotice(null);
-        }}
-      >
-        <TabsList className="mb-4 w-full">
-          <TabsTrigger value="create" className="flex-1">
-            提交反馈
-          </TabsTrigger>
-          <TabsTrigger value="mine" className="flex-1">
-            我的反馈
-            {unread > 0 ? (
-              <span
-                aria-label={`${unread} 条未读回复`}
-                className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
+      {!signedIn ? (
+        <AnonymousFeedbackPanel />
+      ) : (
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            setTab(value as "create" | "mine");
+            setSelected(null);
+            setNotice(null);
+          }}
+        >
+          <TabsList className="mb-4 w-full">
+            <TabsTrigger value="create" className="flex-1">
+              提交反馈
+            </TabsTrigger>
+            <TabsTrigger value="mine" className="flex-1">
+              我的反馈
+              {unread > 0 ? (
+                <span
+                  aria-label={`${unread} 条未读回复`}
+                  className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
+                >
+                  {unread}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="create" className={PANEL}>
+            <FeedbackForm
+              onCreated={() => {
+                setNotice("已收到你的反馈，感谢！");
+                setTab("mine");
+                refresh();
+              }}
+            />
+          </TabsContent>
+          <TabsContent value="mine" className={PANEL}>
+            {notice ? (
+              <p
+                role="status"
+                className="mb-3 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
               >
-                {unread}
-              </span>
+                {notice}
+              </p>
             ) : null}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="create" className={PANEL}>
-          <FeedbackForm
-            onCreated={() => {
-              setNotice("已收到你的反馈，感谢！");
-              setTab("mine");
-              refresh();
-            }}
-          />
-        </TabsContent>
-        <TabsContent value="mine" className={PANEL}>
-          {notice ? (
-            <p
-              role="status"
-              className="mb-3 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
-            >
-              {notice}
-            </p>
-          ) : null}
-          {selected ? (
-            <FeedbackThread id={selected} onBack={() => setSelected(null)} onRead={markRead} />
-          ) : list.status === "loading" ? (
-            <div role="status" className="flex justify-center py-8">
-              <Spinner className="size-5 text-muted-foreground" />
-              <span className="sr-only">加载中</span>
-            </div>
-          ) : list.status === "error" ? (
-            <p role="alert" className="text-sm text-destructive">
-              {list.message}
-            </p>
-          ) : list.items.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
-          ) : (
-            <ul className="grid gap-2">
-              {list.items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(item.id)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40",
-                      item.unread && "border-primary/40"
-                    )}
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        {item.unread ? (
-                          <span
-                            aria-label="有新回复"
-                            className="h-2 w-2 shrink-0 rounded-full bg-destructive"
-                          />
-                        ) : null}
-                        <span className="truncate text-sm font-medium">{item.title}</span>
-                      </span>
-                      <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                        {FEEDBACK_KIND_LABELS[item.kind]}
-                        <span aria-hidden="true">·</span>
-                        <Time value={item.lastReplyAt ?? item.createdAt} />
-                      </span>
-                    </span>
-                    <Badge
-                      variant={FEEDBACK_STATUS_BADGE[item.status]}
-                      size="xs"
-                      className="shrink-0"
+            {selected ? (
+              <FeedbackThread id={selected} onBack={() => setSelected(null)} onRead={markRead} />
+            ) : list.status === "loading" ? (
+              <div role="status" className="flex justify-center py-8">
+                <Spinner className="size-5 text-muted-foreground" />
+                <span className="sr-only">加载中</span>
+              </div>
+            ) : list.status === "error" ? (
+              <p role="alert" className="text-sm text-destructive">
+                {list.message}
+              </p>
+            ) : list.items.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
+            ) : (
+              <ul className="grid gap-2">
+                {list.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(item.id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40",
+                        item.unread && "border-primary/40"
+                      )}
                     >
-                      {FEEDBACK_STATUS_LABELS[item.status]}
-                    </Badge>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </TabsContent>
-      </Tabs>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          {item.unread ? (
+                            <span
+                              aria-label="有新回复"
+                              className="h-2 w-2 shrink-0 rounded-full bg-destructive"
+                            />
+                          ) : null}
+                          <span className="truncate text-sm font-medium">{item.title}</span>
+                        </span>
+                        <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          {FEEDBACK_KIND_LABELS[item.kind]}
+                          <span aria-hidden="true">·</span>
+                          <Time value={item.lastReplyAt ?? item.createdAt} />
+                        </span>
+                      </span>
+                      <Badge
+                        variant={FEEDBACK_STATUS_BADGE[item.status]}
+                        size="xs"
+                        className="shrink-0"
+                      >
+                        {FEEDBACK_STATUS_LABELS[item.status]}
+                      </Badge>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
     </DialogContent>
   );
 }

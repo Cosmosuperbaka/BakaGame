@@ -129,12 +129,14 @@ const createRpcRouter = (
       ),
     },
     feedback: {
-      create: signedIn.feedback.create.handler(({ context, input }) =>
-        userData.createFeedback(context.userId, {
-          ...input,
-          userAgent: context.headers.get("user-agent"),
-        })
-      ),
+      create: base.feedback.create.handler(async ({ context, input }) => {
+        const userId = await service.currentUserId(context.headers);
+        return userData.createFeedback(
+          userId,
+          { ...input, userAgent: context.headers.get("user-agent") },
+          context.clientIp
+        );
+      }),
       listMine: signedIn.feedback.listMine.handler(({ context }) =>
         userData.listMyFeedback(context.userId)
       ),
@@ -268,7 +270,7 @@ const AVATAR_GLOBAL_MAX_REQUESTS = 30_000;
 /**
  * 账号 HTTP 入口：Better Auth 白名单端点、oRPC、站内头像代理。
  *
- * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端据此隐藏登录入口，游客游玩不受影响。
+ * 未配置数据库时三类路由都回 503 `ACCOUNT_DISABLED`：前端保留入口并提示不可用，游客游玩不受影响。
  */
 export const accountRoutes = (account: AccountDependencies | undefined, logger: EventLogger) => {
   const rpc = account ? new RPCHandler(createRpcRouter(account, logger)) : undefined;

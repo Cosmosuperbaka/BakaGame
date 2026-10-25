@@ -217,6 +217,28 @@ describe("反馈管理", () => {
     );
     expect((await rpc("admin/feedback/get", { id: "missing" }, adminCookie)).status).toBe(404);
   });
+
+  test("匿名反馈在后台标记为匿名且不可回复", async () => {
+    const { rpc, adminCookie } = await setup();
+    const created = await rpc(
+      "feedback/create",
+      { kind: "bug", title: "匿名反馈", content: "没有登录" },
+      undefined,
+      { "x-real-ip": "203.0.113.30" }
+    );
+    expect(created.status).toBe(200);
+    const id = created.body.id as string;
+
+    const listed = await rpc("admin/feedback/list", { status: "open" }, adminCookie);
+    const item = (listed.body.items as Array<{ id: string; user: unknown }>).find(
+      (row) => row.id === id
+    )!;
+    expect(item.user).toBeNull();
+
+    expect((await rpc("admin/feedback/reply", { id, content: "回复" }, adminCookie)).status).toBe(
+      400
+    );
+  });
 });
 
 describe("实时房间管理", () => {

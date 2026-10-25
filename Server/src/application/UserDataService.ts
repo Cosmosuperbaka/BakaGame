@@ -28,11 +28,11 @@ const FEEDBACK_KIND_LABEL: Record<FeedbackKind, string> = { suggestion: "建议"
 const FEEDBACK_PAGE_SIZE = 50;
 
 export interface FeedbackSink {
-  /** 同步到 Sentry User Feedback，返回事件 ID；未启用时返回 `null`。 */
+  /** 同步到 Sentry User Feedback，返回事件 ID；未启用时返回 `null`。匿名反馈不带身份字段。 */
   (feedback: {
     message: string;
-    name: string;
-    userId: string;
+    name?: string;
+    userId?: string;
     url?: string;
     tags: Record<string, string>;
   }): string | null;
@@ -49,10 +49,13 @@ export interface UserDataServiceOptions {
   now?: () => number;
 }
 
-/** 登录用户的云端数据：设置同步与站内反馈。 */
+/** 登录用户的云端设置与站内反馈；反馈允许游客匿名提交。 */
 export class UserDataService {
   private readonly now: () => number;
-  /** 每人每小时最多 5 条反馈，防止刷屏与 Sentry 配额被打满。 */
+  /**
+   * 每小时最多 5 条反馈，防止刷屏与 Sentry 配额被打满。
+   * 登录用户按账号计，匿名反馈按客户端地址计，两者不共用额度。
+   */
   private readonly feedbackLimiter = new SlidingWindowRateLimiter({
     windowMs: 60 * 60 * 1000,
     maxRequests: 5,
@@ -129,20 +132,22 @@ export class UserDataService {
   // ==================== 反馈 ====================
 
   async createFeedback(
-    userId: string,
+    userId: string | null,
     input: {
       kind: FeedbackKind;
       title: string;
       content: string;
       page?: string;
       userAgent?: string | null;
-    }
+    },
+    clientIp: string
   ): Promise<FeedbackSummary> {
-    if (!this.feedbackLimiter.allow(userId, this.now())) {
+    const quotaKey = userId ? `user:${userId}` : `ip:${clientIp}`;
+    if (!this.feedbackLimiter.allow(quotaKey, this.now())) {
       throw new AppError("RATE_LIMITED", "反馈提交过于频繁，请稍后再试");
     }
-    const name = await this.options.nameOf(userId);
-    if (!name) throw new AppError("UNAUTHORIZED", "请先登录");
+    const name = userId ? await this.options.nameOf(userId) : null;
+    if (userId && !name) throw new AppError("UNAUTHORIZED", "请先登录");
     const now = new Date(this.now());
     const record: FeedbackRecord = {
       id: randomUUID(),
@@ -163,10 +168,14 @@ export class UserDataService {
     try {
       const eventId = this.options.feedbackSink({
         message: `【${FEEDBACK_KIND_LABEL[record.kind]}】${record.title}\n\n${record.content}`,
-        name,
-        userId,
+        ...(name ? { name } : {}),
+        ...(userId ? { userId } : {}),
         ...(record.page ? { url: record.page } : {}),
-        tags: { "feedback.kind": record.kind, "feedback.id": record.id },
+        tags: {
+          "feedback.kind": record.kind,
+          "feedback.id": record.id,
+          ...(userId ? {} : { "feedback.anonymous": "true" }),
+        },
       });
       if (eventId) {
         record.sentryEventId = eventId;

@@ -132,10 +132,6 @@ describe("站内反馈", () => {
     const { rpc, signIn, sentFeedback, feedback } = createAccountTestApp();
     const { cookie } = await signIn("10001", "Alice");
 
-    expect((await rpc("feedback/create", { kind: "bug", title: "x", content: "y" })).status).toBe(
-      401
-    );
-
     const created = await rpc(
       "feedback/create",
       { kind: "bug", title: "  猜歌没声音 ", content: "点播放没反应", page: "/songuessr" },
@@ -162,6 +158,69 @@ describe("站内反馈", () => {
     const record = feedback.records.get(String(created.body.id))!;
     expect(record.sentryEventId).toBe("event-1");
     expect(record.userAgent).toBeNull();
+  });
+
+  test("游客可匿名提交，无法查看反馈结果", async () => {
+    const { rpc, sentFeedback, feedback } = createAccountTestApp();
+
+    const created = await rpc(
+      "feedback/create",
+      { kind: "suggestion", title: "匿名建议", content: "不需要登录", page: "/songuessr" },
+      undefined,
+      { "x-real-ip": "203.0.113.10" }
+    );
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({ kind: "suggestion", title: "匿名建议", unread: false });
+
+    const record = feedback.records.get(String(created.body.id))!;
+    expect(record.userId).toBeNull();
+    expect(record.sentryEventId).toBe("event-1");
+    expect(sentFeedback).toHaveLength(1);
+    expect(sentFeedback[0]).not.toHaveProperty("userId");
+    expect(sentFeedback[0]).not.toHaveProperty("name");
+    expect(sentFeedback[0]!.tags).toMatchObject({ "feedback.anonymous": "true" });
+    expect(sentFeedback[0]!.message).toContain("不需要登录");
+
+    // 匿名反馈没有可读回的列表与详情，游客之间也无法互相查看。
+    expect((await rpc("feedback/listMine")).status).toBe(401);
+    expect((await rpc("feedback/get", { id: created.body.id })).status).toBe(401);
+  });
+
+  test("匿名反馈按客户端地址限流，换地址不受影响", async () => {
+    const { rpc } = createAccountTestApp();
+    const headers = { "x-real-ip": "203.0.113.20" };
+    for (let index = 0; index < 5; index += 1) {
+      expect(
+        (
+          await rpc(
+            "feedback/create",
+            { kind: "bug", title: `匿名 ${index}`, content: "b" },
+            undefined,
+            headers
+          )
+        ).status
+      ).toBe(200);
+    }
+    expect(
+      (
+        await rpc(
+          "feedback/create",
+          { kind: "bug", title: "超限", content: "b" },
+          undefined,
+          headers
+        )
+      ).status
+    ).toBe(429);
+    expect(
+      (
+        await rpc(
+          "feedback/create",
+          { kind: "bug", title: "另一个地址", content: "b" },
+          undefined,
+          { "x-real-ip": "203.0.113.21" }
+        )
+      ).status
+    ).toBe(200);
   });
 
   test("Sentry 未启用或失败时反馈照常落库", async () => {
