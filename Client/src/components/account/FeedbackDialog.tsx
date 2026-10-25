@@ -447,11 +447,7 @@ function MyFeedbackPanel({
                     <Time value={item.lastReplyAt ?? item.createdAt} />
                   </span>
                 </span>
-                <Badge
-                  variant={FEEDBACK_STATUS_BADGE[item.status]}
-                  size="xs"
-                  className="shrink-0"
-                >
+                <Badge variant={FEEDBACK_STATUS_BADGE[item.status]} size="xs" className="shrink-0">
                   {FEEDBACK_STATUS_LABELS[item.status]}
                 </Badge>
               </button>
