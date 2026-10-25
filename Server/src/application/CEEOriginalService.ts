@@ -22,7 +22,6 @@ import {
   originalNumber,
   originalObject,
   originalPlayers,
-  originalScores,
   originalSettings,
   originalString,
   originalStrings,
@@ -38,6 +37,11 @@ import {
   type CEERoomEnterResult,
   type CEESettings,
 } from "../shared/CEE";
+import {
+  applyOriginalEvent,
+  ORIGINAL_EVENTS,
+  type CEEOriginalEventHost,
+} from "./CEEOriginalEvents";
 import { createEvent } from "../transport/Packets";
 import type {
   CEEOriginalChatRoom,
@@ -871,121 +875,35 @@ export class CEEOriginalService {
   }
 
   private listen(session: CEEOriginalSession): void {
-    const on = (event: string, apply: (payload: Record<string, unknown>) => void) => {
+    const host: CEEOriginalEventHost = {
+      publish: (target, calibration) => this.publish(target, calibration),
+      revoke: (target, reason, notify, kicked) => this.revoke(target, reason, notify, kicked),
+      ownsPreparation: (target, operation) => this.ownsPreparation(target, operation),
+      cancelPreparation: (target) => this.cancelPreparation(target),
+      gameStarted: (target, payload) => this.gameStarted(target, payload),
+      updateHistory: (target, value) => this.updateHistory(target, value),
+      settleChatRound: (target) => {
+        const round = this.chats.get(target.roomId)?.round;
+        if (round?.id === target.roundKey) round.phase = "settled";
+      },
+      peersInRoom: (roomId) => [...this.sessions.values()].filter((peer) => peer.roomId === roomId),
+    };
+    for (const event of ORIGINAL_EVENTS) {
       session.socket.on(event, (value) => {
         try {
-          apply(value === undefined ? {} : originalObject(value));
+          applyOriginalEvent(
+            event,
+            session,
+            value === undefined ? {} : originalObject(value),
+            host
+          );
           this.publish(session);
         } catch {
           this.options.logger?.warn("原版房间状态转换失败", { event });
           this.revoke(session, "原版返回的房间状态无法解析，请重新加入");
         }
       });
-    };
-    on("updatePlayers", (payload) => {
-      session.players = originalPlayers(payload.players, session.phase, session.syncRound);
-      if (typeof payload.isPublic === "boolean") session.isPublic = payload.isPublic;
-      if (payload.answerSetterId !== undefined)
-        session.setterId = originalString(payload.answerSetterId) || null;
-      if (session.preparation && !this.ownsPreparation(session, session.preparation))
-        this.cancelPreparation(session);
-      if (session.confirmed && !session.players.some((player) => player.id === session.socket.id))
-        this.revoke(session, "已离开原版房间", true, true);
-    });
-    on("roomNameUpdated", (payload) => {
-      session.roomName = originalString(payload.roomName);
-    });
-    on("updateGameSettings", (payload) => {
-      this.cancelPreparation(session);
-      session.settings = originalSettings(payload.settings, session.settings.answerMode);
-    });
-    on("waitForAnswer", (payload) => {
-      this.cancelPreparation(session);
-      delete session.choosingSetterFrom;
-      session.setterId = originalString(payload.answerSetterId);
-      session.phase = "answering";
-    });
-    on("waitForAnswerCanceled", () => {
-      this.cancelPreparation(session);
-      delete session.choosingSetterFrom;
-      session.setterId = null;
-      session.phase = "waiting";
-    });
-    on("gameStart", (payload) => this.gameStarted(session, payload));
-    on("guessHistoryUpdate", (payload) => this.updateHistory(session, payload.guesses));
-    on("resetTimer", (payload) => {
-      session.deadlineAt = originalNumber(payload.deadlineAt) || null;
-    });
-    on("syncRoundStart", (payload) => {
-      session.syncRound = originalNumber(payload.round, 1);
-      session.players.forEach((player) => {
-        player.syncCompleted = false;
-      });
-    });
-    on("syncWaiting", (payload) => {
-      session.syncRound = originalNumber(payload.round, session.syncRound);
-      const completed = new Set(
-        originalArray(payload.syncStatus)
-          .map(originalObject)
-          .filter((item) => item.completed === true)
-          .map((item) => originalString(item.id))
-      );
-      session.players.forEach((player) => {
-        player.syncCompleted = completed.has(player.id);
-      });
-    });
-    on("tagBanStateUpdate", (payload) => {
-      session.bannedTags = new Map(
-        originalArray(payload.tagBanState).map((value) => {
-          const entry = originalObject(value);
-          return [originalString(entry.tag), new Set(originalStrings(entry.revealer))];
-        })
-      );
-    });
-    on("nonstopProgress", (payload) => {
-      session.winners = originalArray(payload.winners).map((value) => {
-        const winner = originalObject(value);
-        return {
-          playerId: session.players.find((player) => player.name === winner.username)?.id || "",
-          rank: originalNumber(winner.rank),
-          score: originalNumber(winner.score),
-        };
-      });
-    });
-    on("gameEnded", (payload) => {
-      if (!session.answer && session.roundKey === null) return;
-      this.cancelPreparation(session);
-      delete session.choosingSetterFrom;
-      this.updateHistory(session, payload.guesses);
-      session.phase = "settled";
-      session.deadlineAt = null;
-      if (!session.answer) throw new AppError("CEE_ORIGINAL_PROTOCOL", "缺少本局答案");
-      const scores = originalScores(payload.scoreDetails, session.players);
-      session.roundSummary = {
-        answer: session.answer,
-        scores,
-        guesses: session.guesses,
-        winners: session.winners.length
-          ? session.winners
-          : scores
-              .filter((score) => score.base > 0)
-              .map((score) => ({
-                playerId: score.playerId,
-                rank: score.rank || 1,
-                score: score.score,
-              })),
-      };
-      const round = this.chats.get(session.roomId)?.round;
-      if (round?.id === session.roundKey) round.phase = "settled";
-    });
-    on("playerKicked", (payload) => {
-      if (payload.playerId === session.socket.id)
-        this.revoke(session, "已被房主移出原版房间", true, true);
-    });
-    on("roomClosed", () => {
-      for (const peer of this.sessions.values())
-        if (peer.roomId === session.roomId) this.revoke(peer, "原版房间已关闭");
-    });
+    }
     session.socket.on("disconnect", () => this.revoke(session, "原版连接已中断，请重新加入房间"));
   }
 

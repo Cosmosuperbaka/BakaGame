@@ -682,6 +682,73 @@ const releaseHandshakeSlot = (ws: GameSocketLike, quota: WsHandshakeQuota): void
   quota.release((ws.data as { handshakeSlot?: string }).handshakeSlot);
 };
 
+/** 三款游戏 ws 握手上下文的公共形状；Elysia 会把这里的字段展开进 `ws.data`。 */
+type GameUpgradeContext = {
+  request: Request;
+  headers: unknown;
+  server?: { requestIP(request: Request): { address?: string } | null } | null;
+  account?: PlayerAccount;
+  isAgent?: boolean;
+  handshakeSlot?: string;
+  clientIp?: string;
+  clientChannel?: ClientChannelProof;
+};
+
+interface GameSocketHandlersOptions<
+  TMessage extends { id: string; type: string; traceId?: string },
+> {
+  serviceName: string;
+  env: AppEnv;
+  logger: EventLogger;
+  account: AccountDependencies | undefined;
+  handshakeQuota: WsHandshakeQuota;
+  /** 仅 CEE：握手时把壳带来的 ticket 换成通道证明。 */
+  clientChannel?: ClientChannel;
+  /** 仅 CEE：上游信封归一。 */
+  normalizeMessage?: (incoming: TMessage) => TMessage;
+  service: {
+    registerConnection(connection: ConnectionRecord): void;
+    unregisterConnection(connectionId: string): Promise<void>;
+    execute(connectionId: string, message: TMessage): Promise<unknown>;
+  };
+}
+
+/**
+ * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
+ * 握手闸门顺序（Origin → 登录身份 → Agent 标记 → 配额，CEE 额外换通道证明）是安全语义，
+ * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
+ * 留在各路由字面量里交给 Elysia 推断。
+ */
+const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId?: string }>({
+  serviceName,
+  env,
+  logger,
+  account,
+  handshakeQuota,
+  clientChannel,
+  normalizeMessage,
+  service,
+}: GameSocketHandlersOptions<TMessage>) => ({
+  upgrade: async (context: GameUpgradeContext) => {
+    rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
+    await resolveSocketAccount(context, account, logger);
+    resolveAgentIdentity(context, env.mcpEnabled);
+    reserveHandshakeSlot(context, handshakeQuota);
+    if (clientChannel) resolveSocketChannel(context, clientChannel);
+  },
+  open: (ws: GameSocketLike) =>
+    openGameConnection(ws, (connection) => service.registerConnection(connection)),
+  message: (ws: GameSocketLike, incoming: TMessage) =>
+    handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, logger, {
+      serviceName,
+      execute: (connectionId, message) => service.execute(connectionId, message),
+    }),
+  close: (ws: GameSocketLike) => {
+    releaseHandshakeSlot(ws, handshakeQuota);
+    return closeGameConnection(ws, (connectionId) => service.unregisterConnection(connectionId));
+  },
+});
+
 export const createApp = ({
   env,
   whoIsFakerService,
@@ -976,76 +1043,44 @@ export const createApp = ({
       response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
-      upgrade: async (context) => {
-        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
-        await resolveSocketAccount(context, account, logger);
-        resolveAgentIdentity(context, env.mcpEnabled);
-        reserveHandshakeSlot(context, handshakeQuota);
-      },
-      open: (ws) =>
-        openGameConnection(ws, (connection) => fakerService.registerConnection(connection)),
-      message: (ws, incoming) =>
-        handleGameMessage(ws, incoming, logger, {
-          serviceName: "WhoIsFaker",
-          execute: (connectionId, message) => fakerService.execute(connectionId, message),
-        }),
-      close: (ws) => {
-        releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) =>
-          fakerService.unregisterConnection(connectionId)
-        );
-      },
+      ...gameSocketHandlers({
+        serviceName: "WhoIsFaker",
+        env,
+        logger,
+        account,
+        handshakeQuota,
+        service: fakerService,
+      }),
     })
     .ws("/api/cee/ws", {
       body: CEEClientMessageSchema,
       response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, "CEE", parseCEEMessage),
-      upgrade: async (context) => {
-        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
-        await resolveSocketAccount(context, account, logger);
-        resolveAgentIdentity(context, env.mcpEnabled);
-        reserveHandshakeSlot(context, handshakeQuota);
-        resolveSocketChannel(context, clientChannel);
-      },
-      open: (ws) =>
-        openGameConnection(ws, (connection) => characterService.registerConnection(connection)),
-      message: (ws, incoming) =>
-        handleGameMessage(ws, normalizeCEEEnvelope(incoming), logger, {
-          serviceName: "CEE",
-          execute: (connectionId, message) => characterService.execute(connectionId, message),
-        }),
-      close: (ws) => {
-        releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) =>
-          characterService.unregisterConnection(connectionId)
-        );
-      },
+      ...gameSocketHandlers({
+        serviceName: "CEE",
+        env,
+        logger,
+        account,
+        handshakeQuota,
+        clientChannel,
+        normalizeMessage: normalizeCEEEnvelope,
+        service: characterService,
+      }),
     })
     .ws("/api/songuessr/ws", {
       body: SonGuessrClientMessageSchema,
       response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
-      upgrade: async (context) => {
-        rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
-        await resolveSocketAccount(context, account, logger);
-        resolveAgentIdentity(context, env.mcpEnabled);
-        reserveHandshakeSlot(context, handshakeQuota);
-      },
-      open: (ws) =>
-        openGameConnection(ws, (connection) => songService.registerConnection(connection)),
-      message: (ws, incoming) =>
-        handleGameMessage(ws, incoming, logger, {
-          serviceName: "SonGuessr",
-          execute: (connectionId, message) => songService.execute(connectionId, message),
-        }),
-      close: (ws) => {
-        releaseHandshakeSlot(ws, handshakeQuota);
-        return closeGameConnection(ws, (connectionId) =>
-          songService.unregisterConnection(connectionId)
-        );
-      },
+      ...gameSocketHandlers({
+        serviceName: "SonGuessr",
+        env,
+        logger,
+        account,
+        handshakeQuota,
+        service: songService,
+      }),
     });
 
   return {
