@@ -53,6 +53,8 @@ import {
 } from "./SongTitleMatching";
 import type { SonGuessrServiceInternals } from "./ServiceInternals";
 
+/** 猜番出题的番剧关联曲目解析：检索、专辑/番剧级兜底与逐候选验证。 */
+
 /** 手动选曲的条目匹配上下文：一次解析内共享的检索资源、预算与已产出的结果。 */
 interface AnimeTrackMatchContext {
   provider: MusicProvider;

@@ -31,6 +31,7 @@ import {
 } from "./Records";
 import type { SonGuessrServiceInternals } from "./ServiceInternals";
 
+/** 猜歌音乐账号池、凭证装载与上游租约：状态仍由 SonGuessrService 持有，这里只放共享行为。 */
 export const createMusicQrLogin = async (
   service: SonGuessrServiceInternals,
   connection: ConnectionRecord,

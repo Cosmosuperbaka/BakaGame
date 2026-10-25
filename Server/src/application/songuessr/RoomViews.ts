@@ -14,6 +14,7 @@ import { hasEnabledPoolAccount, isCoolingDown, musicPool, primaryPoolEntry } fro
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import type { SonGuessrServiceInternals } from "./ServiceInternals";
 
+/** 猜歌房间快照、玩家视图与私有状态的构建：只读 service 状态，不发副作用。 */
 export const buildRoomSummary = (
   service: SonGuessrServiceInternals,
   room: SonGuessrRoomRecord
