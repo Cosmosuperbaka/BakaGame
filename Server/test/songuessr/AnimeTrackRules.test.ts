@@ -1,36 +1,40 @@
-import { describe, expect, test } from "bun:test";
-import {
-  makeSong,
-  songs,
-  anime,
-  provider,
-  connection,
-  execute,
-  lastEvent,
-  createRoom,
-  joinRoom,
-} from "./Fixtures";
+import { AppError } from "../../src/domain/Errors";
 import {
   ANIME_SONG_SEARCH_BUDGET,
   AUTO_ANIME_CANDIDATE_LIMIT,
-  buildAlbumQueries,
-  hasAnimeSongEvidence,
-  isNonVocalTrack,
   isReleaseYearOffTarget,
+} from "../../src/application/songuessr/Records";
+import { describe, expect, test } from "bun:test";
+import {
+  anime,
+  connection,
+  createRoom,
+  execute,
+  joinRoom,
+  lastEvent,
+  makeSong,
+  provider,
+  songs,
+} from "./Fixtures";
+import { SonGuessrService } from "../../src/application/SonGuessrService";
+import {
+  buildAlbumQueries,
   isSongTitleMatch,
   isUnplayableAlbumTrack,
-  SonGuessrService,
-} from "../../src/application/SonGuessrService";
+} from "../../src/application/songuessr/SongTitleMatching";
 import {
+  hasAnimeSongEvidence,
+  isNonVocalTrack,
+} from "../../src/application/songuessr/AnimeSongEvidence";
+import {
+  SonGuessrPrivateState,
   detectExplicitTrackKind,
   detectTrackKindFromText,
   refineTrackKindByText,
   type BangumiSubjectDetails,
-  type SongDetails,
-  type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
+  type SongDetails,
 } from "../../src/shared/Index";
-import { AppError } from "../../src/domain/Errors";
 import { type BangumiMusicTrack, type SongSearchResult } from "../../src/shared/SonGuessr";
 import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";

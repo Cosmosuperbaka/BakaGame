@@ -1,37 +1,35 @@
+import { AggregatedMusicProvider } from "../../src/infrastructure/AggregatedMusicProvider";
+import { MUSIC_POOL_COOLDOWN_MS } from "../../src/application/songuessr/Records";
+import { AppError } from "../../src/domain/Errors";
+import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
-  makeSong,
-  songs,
-  provider,
   TestConnection,
   connection,
-  execute,
-  lastEvent,
   createRoom,
+  execute,
   joinRoom,
+  lastEvent,
+  makeSong,
+  provider,
+  songs,
   startRound,
 } from "./Fixtures";
-import { MUSIC_POOL_COOLDOWN_MS, SonGuessrService } from "../../src/application/SonGuessrService";
+import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
-  type SongDetails,
+  SongDetails,
+  SongSearchResult,
   type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
-import { AppError } from "../../src/domain/Errors";
 import {
-  ROOM_EMPTY_GRACE_PERIOD_MS,
   HOST_RECONNECT_TIMEOUT_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
   JOIN_PASSWORD_WINDOW_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
 } from "../../src/config/Constants";
-import { type SongSearchResult } from "../../src/shared/SonGuessr";
-import {
-  type MusicCookieInput,
-  type MusicProvider,
-} from "../../src/infrastructure/NeteaseMusicProvider";
-import { AggregatedMusicProvider } from "../../src/infrastructure/AggregatedMusicProvider";
 
 describe("SonGuessrService", () => {
   test("等待阶段房主也可以按 Whoisfaker 规则切换旁观和玩家席位", async () => {

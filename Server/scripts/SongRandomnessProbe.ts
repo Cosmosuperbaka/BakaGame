@@ -1,7 +1,8 @@
 /** 显式运行的真实歌单探针；普通 bun test 不会访问网络。 */
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { resolveRecentSongWindow, SonGuessrService } from "../src/application/SonGuessrService";
+import { SonGuessrService } from "../src/application/SonGuessrService";
+import { resolveRecentSongWindow } from "../src/application/songuessr/Records";
 import {
   NeteaseMusicProvider,
   type MusicProvider,

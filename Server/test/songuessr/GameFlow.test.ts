@@ -1,12 +1,14 @@
+import { AppError } from "../../src/domain/Errors";
+import { GameRoundRecord } from "../../src/domain/GameRecord";
 import { describe, expect, test } from "bun:test";
 import {
-  songs,
-  provider,
   connection,
-  execute,
-  lastEvent,
   createRoom,
+  execute,
   joinRoom,
+  lastEvent,
+  provider,
+  songs,
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
@@ -15,8 +17,6 @@ import {
   type SonGuessrPrivateState,
   type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
-import { AppError } from "../../src/domain/Errors";
-import { type GameRoundRecord } from "../../src/domain/GameRecord";
 import { type SongSearchResult } from "../../src/shared/SonGuessr";
 import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 

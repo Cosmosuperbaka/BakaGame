@@ -1,7 +1,7 @@
+import { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { describe, expect, test } from "bun:test";
-import { songs, provider, connection, execute, lastEvent, createRoom, joinRoom } from "./Fixtures";
+import { connection, createRoom, execute, joinRoom, lastEvent, provider, songs } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { type SonGuessrPrivateState, type SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import {
   type MusicCookieInput,
   type MusicProvider,

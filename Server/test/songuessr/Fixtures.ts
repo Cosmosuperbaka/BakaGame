@@ -1,12 +1,12 @@
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import {
-  type ConnectionRecord,
-  type BangumiSubjectDetails,
+  BangumiSubjectDetails,
+  ConnectionRecord,
+  SonGuessrClientMessage,
+  SonGuessrPrivateState,
   type SongDetails,
-  type SonGuessrClientMessage,
-  type SonGuessrPrivateState,
 } from "../../src/shared/Index";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 
 export const makeSong = (id: string, title: string, year: number): SongDetails => ({
   id,

@@ -1,39 +1,37 @@
-import { describe, expect, test } from "bun:test";
-import {
-  songs,
-  anime,
-  wrongAnime,
-  provider,
-  TestConnection,
-  connection,
-  execute,
-  lastEvent,
-  createRoom,
-  joinRoom,
-} from "./Fixtures";
+import { SongLyricLine } from "../../src/shared/SonGuessr";
 import { LOBBY_MERGE_WINDOW_MS } from "../../src/application/LobbyFanout";
+import { createSongLyricClip } from "../../src/application/songuessr/LyricClip";
 import {
   albumNameScore,
   buildAlbumQueries,
-  createSongLyricClip,
   isSongTitleMatch,
-  SonGuessrService,
-} from "../../src/application/SonGuessrService";
+} from "../../src/application/songuessr/SongTitleMatching";
+import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
-  type BangumiSubjectDetails,
-  type SongDetails,
-  type SonGuessrClientMessage,
-  type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
+  BangumiMusicTrack,
+  BangumiSubjectDetails,
+  SonGuessrClientMessage,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+  SongDetails,
+  SongSearchResult,
 } from "../../src/shared/Index";
+import { describe, expect, test } from "bun:test";
 import {
-  type BangumiMusicTrack,
-  type SongLyricLine,
-  type SongSearchResult,
-} from "../../src/shared/SonGuessr";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
-import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
+  TestConnection,
+  anime,
+  connection,
+  createRoom,
+  execute,
+  joinRoom,
+  lastEvent,
+  provider,
+  songs,
+  wrongAnime,
+} from "./Fixtures";
+import { SonGuessrService } from "../../src/application/SonGuessrService";
 
 describe("SonGuessrService", () => {
   test("猜歌大厅订阅只回给自己，窗口内的多次建房并为一次下发", async () => {

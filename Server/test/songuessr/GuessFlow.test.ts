@@ -1,21 +1,21 @@
+import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
-  songs,
-  provider,
   connection,
-  execute,
-  lastEvent,
   createRoom,
+  execute,
   joinRoom,
+  lastEvent,
+  provider,
+  songs,
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   SERVER_SHUTDOWN_MESSAGE,
+  SonGuessrRoomSnapshot,
   type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 
 describe("SonGuessrService", () => {
   test("血战模式按抢答排名递减计分且不会在首位答对后提前结算", async () => {

@@ -1,3 +1,29 @@
+import {
+  SONG_SCORE,
+  computeSongAnswererFactors,
+  computeSongDifficulty,
+  computeSongSubmitterScore,
+} from "../domain/SongRules";
+import {
+  ALTERNATE_VERSION_PATTERN,
+  AnimeSongLookup,
+  AnimeSongPick,
+  FallbackPickEntry,
+  TrackCandidatePool,
+  buildTrackQueries,
+  fallbackKindOfSong,
+  isBelowMinPopularity,
+  isNonVocalTrack,
+  rankEvidencedCandidates,
+} from "./songuessr/AnimeSongEvidence";
+import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
+import { SongPlayabilityContext, isPlayableSong } from "../infrastructure/MusicDeduplicator";
+import {
+  AgentFocusEvent,
+  AgentFocusInput,
+  isAgentFocusKind,
+  isAgentFocusPart,
+} from "../shared/AgentActivity";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
   BOT_NAME_SUFFIXES,
@@ -14,7 +40,7 @@ import {
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
-import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
+import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
 import { AppError, unsupportedCommand } from "../domain/Errors";
 import {
   ensureRoomId,
@@ -25,305 +51,117 @@ import {
   type RandomSource,
 } from "../domain/Rules";
 import {
-  computeSongAnswererFactors,
-  computeSongDifficulty,
-  computeSongSubmitterScore,
-  SONG_SCORE,
-  SONG_SCORING_VERSION,
-} from "../domain/SongRules";
-import {
-  ROOM_ID_TEST_MODE,
-  SONGUESSR_LOBBY_ROOMS_EVENT,
-  type ConnectionRecord,
-  type PlayerAccount,
-  type RoomVisibility,
   ALL_BANGUMI_TRACK_KINDS,
-  SONGUESSR_MAX_TEAM,
-  isBangumiCreditsEntry,
-  refineTrackKindByText,
+  BangumiMusicTrack,
+  BangumiMusicTrackKind,
+  BangumiSubjectSearchResult,
+  ChatMessage,
   MAX_MIN_POPULARITY,
   MAX_SONGUESSR_COOKIE_LENGTH,
+  ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
-  type ChatMessage,
-  type SongDetails,
-  type SongGuessAttempt,
-  type SongGuessDirection,
-  type SongGuessFeedback,
-  type SonGuessrClientMessage,
-  type SonGuessrPhase,
-  type SonGuessrPlayerView,
-  type SonGuessrRoundMark,
-  type SonGuessrPrivateState,
-  type SonGuessrMusicPoolView,
-  type SonGuessrRoomSnapshot,
-  type SonGuessrRoomSummary,
-  type SonGuessrRoundSummary,
-  type SonGuessrScore,
-  type SonGuessrScoreBreakdown,
-  type SonGuessrSettings,
-  type SongAutoFilters,
-  type SongAutoFiltersInput,
-  type SongSearchResult,
-  type SongAlbumSearchResult,
-  type SongLyricClip,
-  type SongClipPreview,
-  type SongClipRange,
-  SONG_CLIP_MIN_MS,
-  type BangumiSubjectDetails,
-  type BangumiSubjectSearchResult,
-  type BangumiMusicTrack,
-  type BangumiMusicTrackKind,
+  SONGUESSR_LOBBY_ROOMS_EVENT,
+  SONGUESSR_MAX_TEAM,
+  SonGuessrClientMessage,
+  SonGuessrMusicPoolView,
+  SonGuessrPlayerView,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+  SonGuessrRoomSummary,
+  SonGuessrRoundSummary,
+  SonGuessrScore,
+  SonGuessrScoreBreakdown,
+  SongAlbumSearchResult,
+  SongClipPreview,
+  SongClipRange,
+  SongDetails,
+  SongGuessAttempt,
+  SongGuessFeedback,
+  SongLyricClip,
+  SongSearchResult,
+  refineTrackKindByText,
   type AnimeAutoFilters,
   type BangumiSongCandidate,
+  type BangumiSubjectDetails,
+  type ConnectionRecord,
+  type SonGuessrRoundMark,
+  type SongAutoFilters,
+  type SongAutoFiltersInput,
 } from "../shared/Index";
-import {
-  isAgentFocusKind,
-  isAgentFocusPart,
-  type AgentFocusEvent,
-  type AgentFocusInput,
-} from "../shared/AgentActivity";
-import type { SnapshottedRoom } from "../shared/RoomSnapshot";
+import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
-import { isPlayableSong, type SongPlayabilityContext } from "../infrastructure/MusicDeduplicator";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import {
+  MusicLoginSession,
+  MusicPlatform,
+  MusicSearchOptions,
   musicIpScope,
   type MusicCookieInput,
-  type MusicLoginSession,
-  type MusicPlatform,
   type MusicProvider,
-  type MusicSearchOptions,
 } from "../infrastructure/NeteaseMusicProvider";
-
-import type { BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
+import { type BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import { McpSeatRegistry, redactPrivateState, type McpController } from "./McpSeatRegistry";
+import { McpController, McpSeatRegistry, redactPrivateState } from "./McpSeatRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
-
-const DEFAULT_SETTINGS: SonGuessrSettings = {
-  questionType: "song",
-  questionMode: "manual",
-  autoRotateSubmitter: false,
-  autoFilters: { artists: [], minPopularity: 0 },
-  animeAutoFilters: {
-    ranking: "all",
-    subjectLimit: 50,
-    songMinPopularity: 0,
-    trackKinds: [...ALL_BANGUMI_TRACK_KINDS],
-  },
-  lyricsLineCount: 5,
-  showLyrics: true,
-  bloodMode: false,
-  maxGuessesPerRound: 3,
-  guessDurationSeconds: 60,
-  showGuessTimer: true,
-  allowAgents: false,
-};
-
-/**
- * 未配置歌单或歌手时使用网易云热歌榜作为默认题库。
- *
- * QQ 音乐的热歌榜是榜单接口（toplist）而不是歌单 ID，锁定的接口包没有榜单取曲方法，
- * 因此这里无法按平台等价切换；QQ-only 房间仍用这份默认题库（网易云匿名+解灰）。
- * 共有曲目的代表侧由 `musicSearchOptions` 的平台偏好决定，与默认题库是两件事。
- */
-const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
-
-/** 猜歌计分常量与公式统一在 `domain/SongRules`，这里不再各留一份。 */
-const SCORING_VERSION = SONG_SCORING_VERSION;
-
-interface SonGuessrPlayerRecord {
-  id: string;
-  sessionToken: string;
-  name: string;
-  membership: "active" | "spectator" | "kicked";
-  nextRoundMembership?: "active" | "spectator";
-  online: boolean;
-  isReady: boolean;
-  score: number;
-  /** 队伍号 1–8，`null` 为个人游玩；旁观者没有队伍。 */
-  team: number | null;
-  correctGuesses: number;
-  totalGuesses: number;
-  /** 本局逐轮作答结果，`finishRound` 按轮追加，开局清零。 */
-  roundMarks: SonGuessrRoundMark[];
-  isBot: boolean;
-  isAgent?: boolean;
-  joinedAt: number;
-  lastSeenAt: number;
-  connectionId?: string;
-  account?: PlayerAccount;
-}
-
-/**
- * 一个作答单元：个人一份，同队队员共用同一个对象（与 CEE 的队伍同口径）。
- * 次数、猜中、放弃、限时与在途锁都按单元记，一人猜中或放弃即全队结束；音频是否就绪仍按人记在回合上。
- */
-interface SonGuessrRoundPlayerState {
-  memberIds: string[];
-  guessesUsed: number;
-  correct: boolean;
-  gaveUp: boolean;
-  deadlineAt?: number;
-  inFlight?: boolean;
-}
-
-interface SonGuessrRoundRecord {
-  number: number;
-  submitterPlayerId: string;
-  song: SongDetails;
-  /** 本回合歌曲的备用音源 URN（不含当前播放源）：刷新直链时按序兜底。 */
-  alternateSongIds?: string[];
-  anime?: BangumiSubjectDetails;
-  animeTrack?: BangumiMusicTrack;
-  lyricClip: SongLyricClip;
-  attempts: SongGuessAttempt[];
-  correctPlayerIds: string[];
-  /** 新计分模型下每个猜中单元的系数拆解，随结算摘要下发；旧口径下为空。 */
-  answererBreakdown: { playerId: string; speed: number; precision: number; score: number }[];
-  startScores: Record<string, number>;
-  /** 按玩家索引作答单元，同队队员指向同一个对象。 */
-  players: Record<string, SonGuessrRoundPlayerState>;
-  /** 各玩家的音频是否就绪：每个客户端各自加载，不随队伍共享。 */
-  audioReady: Record<string, boolean>;
-  /** 出题人的队友：本局观战，看得到答案与全房猜测，不作答。开局冻结。 */
-  observerIds: string[];
-  settings: SonGuessrSettings;
-  audioPreparationDeadlineAt: number;
-  audioReadyDeadlineAt?: number;
-  /**
-   * 回合硬截止。全程锚定「首名玩家真正具备答题条件的时刻」，
-   * 因此绝不能在建回合时按「建回合时刻 + N 秒」预设：自动模式的选曲会跨多次上游请求，
-   * 本字段若在玩家能答题之前就耗尽，房间会在倒计时还剩几十秒时直接结算。
-   */
-  hardDeadlineAt?: number;
-  /**
-   * 答题起算时刻：首名玩家真正具备答题条件的那一刻（与 `hardDeadlineAt` 同一锚点）。
-   * 计分要按「解得快不快」给速度系数，起点必须是玩家能开始答题的时刻，
-   * 而不是装题时刻——自动选曲会占掉数秒到数十秒。
-   */
-  answeringStartedAt?: number;
-  /** 装题时刻，仅供对局记录。 */
-  startedAt: number;
-}
-
-interface SonGuessrRoomRecord {
-  id: string;
-  name: string;
-  solo: boolean;
-  visibility: RoomVisibility;
-  /** 私密房口令的 argon2 摘要；与 CEE、谁是卧底同一口径，明文不进房间记录、快照与日志。 */
-  passwordHash?: string;
-  allowSpectators: boolean;
-  hostPlayerId: string;
-  settings: SonGuessrSettings;
-  phase: SonGuessrPhase;
-  roundNumber: number;
-  pendingSubmitterPlayerId?: string;
-  /** 手动出题的选题截止：每次提交尝试都会顺延，过期后回到选出题人并在房间公告里说明。 */
-  pendingSubmitterDeadlineAt?: number;
-  /** 退回选出题人的原因，随房间快照下发给界面；重新指定出题人即清除。 */
-  submitterPrompt?: string;
-  currentRound?: SonGuessrRoundRecord;
-  roundSummary?: SonGuessrRoundSummary;
-  finalScores?: SonGuessrScore[];
-  musicAuthOperations?: Record<string, symbol>;
-  /**
-   * 音乐账号池：每个玩家自愿贡献的账号各一条，条目带第三方 `cookie`。
-   *
-   * 只在内存里；落盘前整段丢弃（见 `exportSnapshots`），下发快照时只给
-   * `SonGuessrMusicPoolView` 那一层，不含凭据。
-   */
-  musicPool?: SonGuessrMusicPoolEntry[];
-  players: Record<string, SonGuessrPlayerRecord>;
-  chat: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-  lastActivityAt: number;
-  emptySinceAt?: number;
-  automaticRoundLoading?: boolean;
-  automaticRoundOperation?: symbol;
-  manualRoundStarting?: boolean;
-  hostReconnectDeadlineAt?: number;
-  recentSongIds?: string[];
-  recentSubjectIds?: string[];
-  /** 空闲关闭预警是否已经广播过，避免每个巡检周期重复下发。 */
-  expiringNotified?: boolean;
-}
-
-type SongUpdateSettingsPayload = Extract<
-  SonGuessrClientMessage,
-  { type: "song.room.updateSettings" }
->["payload"];
-
-type MusicAuthPlatform = "netease" | "qq";
-
-/**
- * 在途登录操作在房间记录里的键。
- *
- * 按「人 + 平台」区分，而不是按平台：账号池是多人各自贡献自己的号，
- * 同房两个玩家同时登录网易云是完全正常的并发，按平台一把锁会让先来的人
- * 被判成「操作已失效」。
- */
-const musicAuthOperationKey = (playerId: string, platform: MusicAuthPlatform) =>
-  `${playerId}:${platform}`;
-
-/**
- * 账号池条目：一个玩家贡献的一个平台账号。
- *
- * 只要人在房里、开关开着就参与取号；离房、关开关、掉线超宽限或被风控摘除即刻退出。
- */
-interface SonGuessrMusicPoolEntry {
-  playerId: string;
-  platform: MusicAuthPlatform;
-  cookie: string;
-  account: MusicLoginSession["account"];
-  /** 贡献者的共享开关；等待阶段由本人改，开局锁死。 */
-  enabled: boolean;
-  addedAt: number;
-  /** 在途上游请求数：取号按最小在途平衡，单号另受并发上限约束。 */
-  inFlight: number;
-  /** 近期取号结果，只保留最近一组，用于房主面板的成功率。 */
-  recentOk: number;
-  recentTotal: number;
-  /** 风控摘除后的冷却截止；到点前不参与取号，号主重新登录即解除。 */
-  cooldownUntil?: number;
-  /** 最近一次失败原因。 */
-  lastFailureReason?: string;
-  /** 最近一次成功校验/续期后写入 Cookie 的时刻；后台续期据此排期。 */
-  cookieRefreshedAt?: number;
-}
-
-/** 一次取号的租约：用完必须 `release`，否则该号的在途数会漏记、并发上限形同虚设。 */
-interface MusicAccountLease {
-  roomId: string;
-  cookie: string;
-  platform: MusicAuthPlatform;
-  playerId: string;
-  release: (result: { ok: boolean; reason?: string; code?: string }) => void;
-}
-
-/**
- * 开局前复核池内账号所需的一切输入。
- *
- * 只复核**每端当前会被选中的那一号**：复核的意义是「开局前发现凭据已失效」，
- * 池里排在前面的号失效就会被选中，逐个复核只会把开局变慢 N 倍。
- */
-interface MusicSessionRevalidation {
-  room: SonGuessrRoomRecord;
-  platform: MusicAuthPlatform;
-  entry: SonGuessrMusicPoolEntry;
-  operation?: symbol;
-  /** 只用于失败文案里的平台名。 */
-  label: string;
-  verifySession: (platform?: MusicAuthPlatform) => void;
-  getLoginStatus: (
-    cookie: string,
-    platform?: MusicAuthPlatform,
-    options?: { forceRefresh?: boolean }
-  ) => Promise<MusicLoginSession>;
-}
+import {
+  ANIME_SONG_DETAIL_BUDGET,
+  ANIME_SONG_SEARCH_BUDGET,
+  ANIME_SONG_SEARCH_LIMIT,
+  ANIME_TRACK_DETAIL_ATTEMPTS,
+  ANIME_TRACK_LOOKUP_LIMIT,
+  AUDIO_READY_GRACE_MS,
+  AUTO_ANIME_CANDIDATE_LIMIT,
+  AUTO_POPULARITY_LOOKUP_LIMIT,
+  AUTO_SONG_CANDIDATE_LIMIT,
+  DEFAULT_AUTO_PLAYLIST_ID,
+  DEFAULT_SETTINGS,
+  MIN_RECENT_SONG_WINDOW,
+  MUSIC_COOKIE_FRESH_MS,
+  MUSIC_POOL_COOLDOWN_MS,
+  MUSIC_POOL_MAX_IN_FLIGHT,
+  MUSIC_POOL_QUEUE_TIMEOUT_MS,
+  MUSIC_POOL_STATS_WINDOW,
+  MUSIC_RATE_LIMIT_PER_CONNECTION,
+  MUSIC_RATE_LIMIT_WINDOW_MS,
+  MUSIC_SESSION_REFRESH_INTERVAL_MS,
+  MUSIC_SESSION_REFRESH_SWEEP_MS,
+  MusicAccountLease,
+  MusicAuthPlatform,
+  MusicSessionRevalidation,
+  ROOM_EXPIRING_WARNING_MS,
+  ROUND_HARD_TIMEOUT_MARGIN_S,
+  SCORING_VERSION,
+  SUBMIT_SONG_TIMEOUT_MS,
+  SonGuessrMusicPoolEntry,
+  SonGuessrPlayerRecord,
+  SonGuessrRoomRecord,
+  SonGuessrRoundPlayerState,
+  SonGuessrRoundRecord,
+  SongUpdateSettingsPayload,
+  clampInt,
+  cloneSettings,
+  direction,
+  isUnusableSongCandidate,
+  musicAuthOperationKey,
+  resolveRecentSongWindow,
+} from "./songuessr/Records";
+import {
+  ALBUM_NAME_EXACT_SCORE,
+  ALBUM_SEARCH_LIMIT,
+  ANIME_RELEASE_CONTEXT_PATTERN,
+  albumNameScore,
+  buildAlbumQueries,
+  isAlbumLikeTrackKind,
+  isAlbumNameMatch,
+  isSongCandidateMatch,
+  isSongTitleMatch,
+  isUnplayableAlbumTrack,
+  normalizeSongText,
+  normalizeSongTitle,
+  normalizedArtists,
+  retryOnce,
+} from "./songuessr/SongTitleMatching";
 
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
@@ -339,840 +177,6 @@ export interface SonGuessrServiceOptions {
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
 
-const clampInt = (value: number, minimum: number, maximum: number) =>
-  Math.max(minimum, Math.min(maximum, Math.round(value)));
-
-const cloneSettings = (settings: SonGuessrSettings): SonGuessrSettings => ({
-  ...settings,
-  autoFilters: {
-    ...settings.autoFilters,
-    playlist: settings.autoFilters.playlist ? { ...settings.autoFilters.playlist } : undefined,
-    artists: settings.autoFilters.artists.map((artist) => ({ ...artist })),
-  },
-  animeAutoFilters: settings.animeAutoFilters
-    ? {
-        ...settings.animeAutoFilters,
-        trackKinds: [...(settings.animeAutoFilters.trackKinds ?? ALL_BANGUMI_TRACK_KINDS)],
-      }
-    : undefined,
-});
-
-const normalizeSongText = (value: string) =>
-  value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
-const VERSION_MARKER_PATTERN =
-  /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
-const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
-const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
-const BARE_VERSION_SUFFIX_PATTERN =
-  /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
-const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
-
-const stripSongVersionInfo = (value: string) => {
-  let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>
-    VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-  );
-
-  while (true) {
-    const next = result
-      .replace(DECORATED_VERSION_SUFFIX_PATTERN, (match, metadata: string) =>
-        VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-      )
-      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
-      .replace(FEAT_SUFFIX_PATTERN, "");
-    if (next === result) return result;
-    result = next;
-  }
-};
-
-const normalizeSongTitle = (value: string) => normalizeSongText(stripSongVersionInfo(value));
-
-/**
- * 「候选名是期望名的截断」这一方向的匹配门槛。
- *
- * 反方向（候选名**包含**期望名，如 `曲名 - 番剧名`、`曲名 (TV Size)`）是合法常态，
- * 保持宽松即可；但反过来，候选只是期望名的一小段时，实测全是误匹配事故：
- * Bangumi《いつだってYELL》（忍者乱太郎 ED）匹配上 2026 年毫无关系的《Yell》，
- * 《ぼくらは小さな悪魔》匹配上《ぼくら》。要求截断名既够长、又占原名足够比例。
- */
-export const MIN_TRUNCATED_TITLE_LENGTH = 4;
-export const MIN_TRUNCATED_TITLE_RATIO = 0.6;
-
-/**
- * 曲名里的「多曲并列」分隔符：双 A 面单曲、合作曲会把两首歌写进同一个条目名。
- *
- * Bangumi 记 `メグメル／だんご大家族`（《CLANNAD》双 A 面单曲），网易云候选只是其中
- * 一首《だんご大家族》 —— 两者指同一张单曲、同一首可出的歌。这类并列必须先拆段再比对，
- * 否则会被「截断门槛」误判成「候选只是原名的一小段」而拒掉。
- *
- * **只认真正的曲目列表分隔符**（`/` `／` `・` 与合作署名），不认 `;` `&` `,` `、`：
- * 后者常是**作品名内部的标点**，拆出来的「段」并不是歌名 —— 实测事故：条目
- * `CHAOS;CHILD AUDIO DRAMA & RADIO DIGEST VOL.1` 被 `;` / `&` 拆段后，「chaos」成了
- * 一个合法段，于是与它同名的无关曲《Chaos》(Parry Music) 靠这段匹配过了门禁出题
- * （该番只有广播剧，本来就不该出题）。
- */
-const TITLE_SEGMENT_SEPARATOR_PATTERN = /[/／・]|\bfeat(?:uring)?\.?\b|\bwith\b/iu;
-
-const splitTitleSegments = (value: string): string[] =>
-  value.split(TITLE_SEGMENT_SEPARATOR_PATTERN).map(normalizeSongTitle).filter(Boolean);
-
-export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string): boolean => {
-  // 版权署名 / 制作委员会条目不是歌曲。若放任其参与子串匹配，
-  // `©BanG Dream! Project` 会因包含 `banGdream` 而与《Bang Dream!》误判为同一首，
-  // 从而把完全无关的歌曲当成番剧主题曲（实测事故）。
-  if (isBangumiCreditsEntry(candidateTitle) || isBangumiCreditsEntry(expectedTitle)) return false;
-  const normCandidate = normalizeSongTitle(candidateTitle);
-  const normExpected = normalizeSongTitle(expectedTitle);
-  if (!normCandidate || !normExpected) return false;
-  if (normCandidate === normExpected) return true;
-  // 多曲并列：条目名或候选名拆段后任一段完全一致，即视为同一首。
-  const expectedSegments = splitTitleSegments(expectedTitle);
-  if (expectedSegments.length > 1) {
-    const candidateSegments = new Set(splitTitleSegments(candidateTitle));
-    if (expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))) {
-      return true;
-    }
-  }
-  const minLen = Math.min(normCandidate.length, normExpected.length);
-  if (minLen < 2) return false;
-  // 候选名更长：`曲名 - 番剧名` / `曲名 (TV Size)` 这类合法形态，照旧放行。
-  if (normCandidate.includes(normExpected)) return true;
-  // 候选名更短：只接受「截断得不多」的情形（见上面的门槛注释）。
-  const maxLen = Math.max(normCandidate.length, normExpected.length);
-  return (
-    normExpected.includes(normCandidate) &&
-    minLen >= MIN_TRUNCATED_TITLE_LENGTH &&
-    minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO
-  );
-};
-
-export const normalizedArtists = (value: string) =>
-  new Set(
-    value
-      .split(/\s*(?:,|，|、|&|＆|\/|／|;|；|\bx\b|\bfeat(?:uring)?\.?\b|\bwith\b)\s*/iu)
-      .map(normalizeSongText)
-      .filter(Boolean)
-  );
-
-/** 明确指向翻唱、改编或非原唱的标记（标题、专辑与标签通用）。 */
-const COVER_MARKER_PATTERN =
-  /翻唱|翻錄|翻录|カバー|커버|\bcover(?:ed|s|ing)?\b|重唱|再唱|自翻|试唱|試唱|模仿|リミックス|カヴァー/iu;
-/** 没有人声的版本标记：伴奏、纯音乐、卡拉 OK —— 这类音轨根本无法当题面。 */
-const NO_VOCAL_VERSION_PATTERN =
-  /伴奏|純伴奏|纯伴奏|纯音乐|纯音楽|純音樂|純音楽|off\s*vocal|インスト|karaoke|カラオケ|伴唱|和声伴奏|ボーカルレス|\binstrumental\b/iu;
-/** 非原唱演绎版本标记：无人声版本 + 现场 / 不插电 / demo 等演绎形态。 */
-const NON_ORIGINAL_VERSION_PATTERN = new RegExp(
-  `${NO_VOCAL_VERSION_PATTERN.source}|live|现场|現場|演唱会|演唱會|acoustic|不插电|不插電|demo|试听|試聽`,
-  "iu"
-);
-/**
- * 台词 / 广播剧音轨标记。这类「曲目」里没有人唱歌，放进题面等于放一段对白，
- * 玩家根本无从猜起。实测事故：Bangumi 把《サイコパス2 第5巻 特典CD》与
- * 《コードギアス…Sound Episode 1》挂成关联曲目，而网易云对应专辑里排在前面的
- * 正是「ドラマ」「短編ドラマ…」这类台词轨，曲名门禁靠「专辑名 == 条目名」放行。
- * 注意「ドラマチック / ドラマティック」（dramatic）是正常曲名，必须排除。
- */
-const DRAMA_TRACK_PATTERN =
-  /ドラマ(?!チック|ティック|ツルギー)|sound\s*drama|voice\s*drama|audio\s*drama|\bdrama\s*(?:cd|part|track)\b|ミニドラマ|ボイスドラマ|短編ドラマ|台詞|セリフ/iu;
-/**
- * 电台 / 谈话节目分轨标记。
- *
- * 特典 CD 里塞整期广播节目的分轨很常见，实测事故：《四月は君の嘘 第8巻 特典CD》
- * 整张就是「ラジオ 出張版」第 1~5 回（最短 139s、最长 1072s），全部是声优闲聊。
- * 玩家听到一段日语谈话根本无从猜番，与台词轨同类。
- *
- * 只认「节目分轨」形态（ラジオ + 出張版 / 第 N 回 / #NN），不碰叫《ラジオ》的正常歌名。
- */
-const RADIO_TALK_TRACK_PATTERN =
-  /ラジオ[^\n]{0,20}(?:出張版|第\s*\d+\s*回|#\s*\d+)|フリートーク|トーク\s*コーナー|\bradio\s*digest\b|广播节目|廣播節目/iu;
-/**
- * 纯编号音轨名（`M-815` / `Track 01` / `BGM 12`）。原声带里的曲目常只有编号，
- * 玩家听到的是一段配乐而不是一首歌。实测事故：《Dragon Ball Z ヒット曲集》被专辑路径
- * 匹配到《动画〈龙珠Z〉背景音乐原声带》，取回的第一轨就是 `M-815`（钢琴 BGM）。
- */
-const TRACK_NUMBER_TITLE_PATTERN =
-  /^\s*(?:m|track|inst|bgm|音轨|音軌|トラック)[\s\-_#.]*\d{1,4}\s*$/iu;
-/**
- * 专辑名里能证明「这是动画的盘」的发行上下文。
- *
- * 用于番剧级兜底：**专辑名含番剧名**本身不足以证明归属 —— 泛用名会撞车。
- * 实测事故：动画《Rebirth》(2020) 的主题歌是《Reバース GO!》，但按番剧名检索召回了
- * 同名的《Rebirth》(AMAST&MEDEM)，其专辑名就叫《Rebirth》；1983 年的《爱丽丝梦游仙境》
- * 更被 2013 年的粤语同名歌顶掉。真正的动画盘几乎总带这类发行标记。
- */
-const ANIME_RELEASE_CONTEXT_PATTERN =
-  /アニメ|animation|オリジナルサウンドトラック|サウンドトラック|original\s*sound\s*track|sound\s*track|\bost\b|オリジナル|原声|原聲|主題歌|主题歌|テーマソング|キャラクターソング|キャラソン|特典|ソング集|ボーカル|vocal|ベスト|best|音楽|音乐|アルバム|album|コレクション|collection|コンプリート|complete|劇伴|cd|盤|盘/iu;
-/**
- * 器乐改编 / 二次演奏标记：管弦、交响、钢琴、八音盒等。它们与原唱原版
- * 完全不是同一次录音，即使曲名一模一样也必须排在原版之后。
- *
- * 实测事故：网易云检索《君の名は。》时，帝玖管弦乐团的《交响组曲「君の名は。」》
- * 因曲名包含番剧原名而通过门禁，并以「原声带」身份出现在结算卡片上。
- */
-const INSTRUMENTAL_ARRANGEMENT_PATTERN =
-  /交响|交響|管弦|オーケストラ|\borchestra\b|吹奏楽|吹奏乐|弦乐|弦樂|钢琴|鋼琴|ピアノ|\bpiano\b|八音盒|音乐盒|音樂盒|オルゴール|music\s*box|演奏|器乐版|純器樂|instrumental|アレンジ|\barra[gn]\w*|改编|改編|アコースティック/iu;
-/**
- * 非原唱标记与其降权分。命中即降权，但**只在 Bangumi 曲目自身没有该标记时生效**：
- * 题面本身就是 Cover / Arrange / Remix 版本时，不该把候选都当成「非原版」罚一遍
- * （否则该曲目所有候选一起被降权，等于随机）。
- */
-const NON_ORIGINAL_MARKERS: ReadonlyArray<readonly [RegExp, number]> = [
-  [COVER_MARKER_PATTERN, 5],
-  [NON_ORIGINAL_VERSION_PATTERN, 4],
-  [INSTRUMENTAL_ARRANGEMENT_PATTERN, 5],
-];
-
-const songTitleSimilarity = (candidateTitle: string, expectedTitle: string): number => {
-  const normCandidate = normalizeSongTitle(candidateTitle);
-  const normExpected = normalizeSongTitle(expectedTitle);
-  if (!normCandidate || !normExpected) return 0;
-  if (normCandidate === normExpected) return 2;
-  // 候选名只是「长条目名里的一小截」时不给分 —— 必须复用 `isSongTitleMatch` 的截断门槛。
-  // 实测事故：Bangumi 把《TVアニメ Free! キャラクターソング・デュエットシングル Vol.1》
-  // 挂成关联曲目，网易云在「Free! + 角色歌」的检索里召回了毫不相关的外文歌
-  // 《Free》(Bling047)：它靠「被包含」拿到 1 分，再靠「番剧上下文命中」凑够证据出了题。
-  // `isSongTitleMatch` 早就有这道门槛，而准入判定走的是本函数 —— 两处口径必须一致。
-  if (
-    normExpected.includes(normCandidate) &&
-    (normCandidate.length < MIN_TRUNCATED_TITLE_LENGTH ||
-      normCandidate.length / normExpected.length < MIN_TRUNCATED_TITLE_RATIO)
-  ) {
-    // 双 A 面单曲例外：条目名拆段后整段完全一致仍是同一首（见 isSongTitleMatch）。
-    const expectedSegments = splitTitleSegments(expectedTitle);
-    if (expectedSegments.length > 1) {
-      const candidateSegments = new Set(splitTitleSegments(candidateTitle));
-      if (
-        expectedSegments.some((segment) => segment.length >= 2 && candidateSegments.has(segment))
-      ) {
-        return 1;
-      }
-    }
-    return 0;
-  }
-  return normCandidate.includes(normExpected) || normExpected.includes(normCandidate) ? 1 : 0;
-};
-
-/**
- * 候选歌曲的专辑名与 Bangumi 曲目名完全一致（规范化后）时，视为「原版发行」特征。
- *
- * 为什么必须认这个特征：
- * 1. **单曲版原版**：原唱原版通常发行在同名单曲/专辑里（YOASOBI《勇者》的专辑名
- *    就是《勇者》），而同名翻唱挂在《勇者-葬送的芙莉莲OP》这类自建合辑下。两者曲名
- *    完全相同（相似度并列）时，专辑名是否命中是唯一能区分原版的免费信号。
- * 2. **整张原声带条目**：Bangumi 会把动画原声带整张专辑挂成一条关联曲目
- *    （曲目名 = 专辑名，如《君の名は。》），此时按曲名检索只能召回同名翻奏
- *    （《交响组曲「君の名は。」》），官方原声带里真正的曲目（前前前世 / スパークル…）
- *    只有专辑名能命中。允许专辑名命中，才能让官方原版进入候选池。
- */
-export const isSongAlbumMatch = (
-  candidateAlbum: string | undefined,
-  expectedTitle: string
-): boolean => {
-  if (!candidateAlbum) return false;
-  const normalizedAlbum = normalizeSongTitle(candidateAlbum);
-  const normalizedTitle = normalizeSongTitle(expectedTitle);
-  return Boolean(normalizedAlbum) && normalizedAlbum === normalizedTitle;
-};
-
-/**
- * 候选是否与 Bangumi 曲目相关：曲名命中，或专辑名与原曲目名完全一致。
- * 比 isSongTitleMatch 宽松一档，专供关联曲目解析使用（结算展示与手动猜歌门禁
- * 仍走严格曲名判定）。
- */
-export const isSongCandidateMatch = (candidate: SongSearchResult, expectedTitle: string): boolean =>
-  isSongTitleMatch(candidate.title, expectedTitle) ||
-  isSongAlbumMatch(candidate.album, expectedTitle);
-
-/** 歌手名是否与 Bangumi 记录有交集，无记录时返回 undefined（不参与加减分）。 */
-const artistOverlap = (
-  candidate: SongSearchResult,
-  track: BangumiMusicTrack
-): boolean | undefined => {
-  const trackArtists = track.artist ? normalizedArtists(track.artist) : new Set<string>();
-  if (trackArtists.size === 0) return undefined;
-  const candidateArtists = normalizedArtists(candidate.artist);
-  return [...trackArtists].some((artist) => candidateArtists.has(artist));
-};
-
-/**
- * 「候选名只是条目名的一截」时，专辑名能否把候选锚到这条目 / 这部番上。
- *
- * 为什么不能只靠「出现在带番剧名的检索结果里」：网易云的模糊检索会把无关的同名曲
- * 一起召回，那条信号对短名（尤其泛用词）几乎恒真。实测事故：Princess Principal 的
- * 角色歌单曲条目《5 Moving Shadows》召回了《Moving Shadows》(Lessovsky / Max Vertigo，
- * 专辑《5 (Five Years of Kiez Beats)》) 并出题。
- *
- * 认可的锚点：专辑名含**番剧名**（且带发行上下文，避免「同名自建盘」——见
- * `albumNameScore` 的同一道闸门），或专辑名含**条目名**（官方盘与自建上传常直接以
- * 条目名 / 曲名命名专辑）。
- */
-const albumAnchorsWork = (
-  albumName: string | undefined,
-  track: BangumiMusicTrack,
-  animeNames: readonly string[]
-): boolean => {
-  if (!albumName) return false;
-  const normalizedAlbum = normalizeSongTitle(albumName);
-  if (!normalizedAlbum) return false;
-  const animeLinked = animeNames.some((name) => {
-    const normalizedName = normalizeSongTitle(name);
-    return normalizedName.length >= 4 && normalizedAlbum.includes(normalizedName);
-  });
-  if (animeLinked) return ANIME_RELEASE_CONTEXT_PATTERN.test(albumName);
-  const normalizedEntry = normalizeSongTitle(track.title);
-  return normalizedEntry.length >= 4 && normalizedAlbum.includes(normalizedEntry);
-};
-
-/**
- * 候选出现在「曲名 + 番剧名 / 中文名」检索结果里的加分。
- *
- * 取 3 是针对实测的错配场景定的：别人家的同名原创常拿满「曲名 + 专辑名」4 分，
- * 而番剧原版的专辑名多为「番剧名 - 曲名」这类形态、只拿曲名 2 分；加 3 后原版 5 分
- * 反超，同时又不会盖过「歌手与 Bangumi 记录有交集 +4」这条更硬的证据。
- */
-const ANIME_SCOPED_BONUS = 3;
-
-/**
- * 「非音乐」曲目 kind：条目本身是广播剧 / 电台 / 朗读，走专辑路径会把分轨对白当歌出题。
- *
- * 其余 kind 一律允许专辑兜底（**黑名单制**，不是白名单）：实测看似「单曲型」的
- * `opening` / `ending` 条目里同样塞着整张角色歌 CD
- * （《B-PROJECT～絶頂＊エモーション～ キャラクターソングCD 2》、
- * 《TVアニメ「恋する天使アンジェリーク」キャラクターソング VOL.19》），
- * 按白名单把它们排除掉，这些条目就永远零候选 —— 第一版白名单正是这么错的。
- *
- * 「单曲名撞上别人同名专辑」的风险由两道闸门压住：① 只在常规检索**完全无候选**时
- * 才走这条路；② 专辑名必须与条目名对得上（`isAlbumNameMatch`，全等或互相包含）。
- */
-const NON_MUSIC_TRACK_KINDS: ReadonlySet<BangumiMusicTrackKind> = new Set<BangumiMusicTrackKind>([
-  "drama",
-  "radio",
-  "reading",
-]);
-
-export const isAlbumLikeTrackKind = (kind: BangumiMusicTrackKind): boolean =>
-  !NON_MUSIC_TRACK_KINDS.has(kind);
-
-/** 专辑检索取回的候选专辑数。 */
-const ALBUM_SEARCH_LIMIT = 10;
-
-/**
- * 专辑名里的通用词：不承载「这是哪部作品」的信息，不能作为匹配依据。
- * 判重时必须先剔除，否则同系列的两张专辑（《X 角色歌集》与《Y 角色歌集》）会因为
- * 共享「角色歌集」而被判成同一张。
- */
-const ALBUM_GENERIC_TOKENS: ReadonlySet<string> = new Set([
-  "tv",
-  "tvアニメ",
-  "アニメ",
-  "アニメーション",
-  "剧场版",
-  "劇場版",
-  "映画",
-  "ova",
-  "oad",
-  "character",
-  "キャラクター",
-  "キャラクターソング",
-  "キャラソン",
-  "角色歌",
-  "角色曲",
-  "soundtrack",
-  "サウンドトラック",
-  "オリジナルサウンドトラック",
-  "ost",
-  "原声",
-  "原声带",
-  "原声集",
-  "album",
-  "アルバム",
-  "mini",
-  "ミニアルバム",
-  "collection",
-  "コレクション",
-  "best",
-  "ベスト",
-  "song",
-  "songs",
-  "ソング",
-  "ソングス",
-  "music",
-  "ミュージック",
-  "vocal",
-  "ボーカル",
-  "theme",
-  "テーマ",
-  "主题歌",
-  "主題歌",
-  "opening",
-  "ending",
-  "オープニング",
-  "エンディング",
-  "vol",
-  "シリーズ",
-  "series",
-  "disc",
-  "cd",
-  "特典",
-  "初回",
-  "限定",
-  "盤",
-  "编",
-  "篇",
-]);
-
-/** 把名称拆成有区分度的词元（归一化 → 按分隔符切分 → 去通用词、纯数字与单字）。 */
-const albumNameTokens = (value: string): string[] =>
-  value
-    .normalize("NFKC")
-    .toLowerCase()
-    .split(/[\s/／・,，、＆&+＋\-–—_:：'"'"'"'"「」『』【】()（）[\]]+/u)
-    .map((token) => token.trim())
-    .filter(
-      (token) => token.length >= 2 && !/^\d+$/u.test(token) && !ALBUM_GENERIC_TOKENS.has(token)
-    );
-
-/** 名称里的数字词元（归一化去掉前导零）：专辑系列号靠它区分。 */
-const nameDigits = (value: string): Set<string> =>
-  new Set((value.normalize("NFKC").match(/\d+/gu) ?? []).map((digits) => String(Number(digits))));
-
-/**
- * 专辑名与条目名的相似度分（0 表示不是同一张专辑）。
- *
- * 为什么不能只用「全等 / 包含」：网易云的专辑名与 Bangumi 条目名经常对不齐 ——
- * 条目《TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03》
- * 在网易云叫《TVアニメ『ひみつのアイプリ リング編』VERSEIN SONG 03》（少了
- * 「キャラクターソングミニアルバム」、多了「リング編」、「VERSEIN」还没空格）。
- * 只用全等/包含会把这类**真的同一张专辑**全部判死，条目永远零候选。
- *
- * 分档：
- * - 100：归一化后全等（最稳）；
- * - 60：互相包含且短名 ≥ 4 字符（原有的宽松档）；
- * - 10+：专辑名含**番剧名**（任一形态）**且**与条目名共享一个 ≥ 4 字符的特征词元
- *   ——「作品名 + 特征词」双命中才认，单靠共享「角色歌集」这类通用词不算（已剔除）；
- *   同系列专辑只差一个序号，因此**数字词元命中额外 +20**，避免抽到隔壁那张
- *   （VERSE IN SONG **02** 与 **03** 的差别全在序号上）。
- *
- * 例外（直接 0）：专辑名恰好等于番剧名且没有发行上下文、歌手也对不上 —— 见函数内注释，
- * 这种形态下「互相包含」是结构性必然，证据强度为零。
- */
-/** 专辑名与条目名归一化后**全等**的得分档：搜到的就是同名那张盘，证据最稳。 */
-const ALBUM_NAME_EXACT_SCORE = 100;
-
-export const albumNameScore = (
-  albumName: string,
-  trackTitle: string,
-  animeNames: readonly string[] = [],
-  /**
-   * 专辑歌手与 Bangumi 条目歌手是否有交集。用来给「专辑名恰好等于番剧名」这个
-   * 高危形态留一条例外：官方同名盘（歌手与条目记录对得上）仍认，陌生歌手的
-   * 同名自建盘不认。
-   */
-  albumArtistMatches = false
-): number => {
-  const normalizedAlbum = normalizeSongTitle(albumName);
-  const normalizedTitle = normalizeSongTitle(trackTitle);
-  if (!normalizedAlbum || !normalizedTitle) return 0;
-  if (normalizedAlbum === normalizedTitle) return ALBUM_NAME_EXACT_SCORE;
-  // 泛用名撞车：专辑名恰好等于**番剧名**（且完全没有发行上下文）时，条目名只会是
-  // 「番剧名 + 前后缀」，与它的「互相包含 / 共享特征词元」几乎是必然 —— 这条证据是
-  // 循环的，不能算。实测事故：网易云用户自建的《青春ブタ野郎はバニーガール先輩の
-  // 夢を見ない》（梁神，一首同名说唱）在专辑检索里拿到 60 分，压过官方
-  // 《… 4 Special CD》（35 分），被当成特典 CD 的曲目出题。
-  const bareWorkName = animeNames.some((name) => {
-    const normalizedName = normalizeSongTitle(name);
-    return Boolean(normalizedName) && normalizedName === normalizedAlbum;
-  });
-  if (bareWorkName && !albumArtistMatches && !ANIME_RELEASE_CONTEXT_PATTERN.test(albumName))
-    return 0;
-  const shorter =
-    normalizedAlbum.length <= normalizedTitle.length ? normalizedAlbum : normalizedTitle;
-  const longer = shorter === normalizedAlbum ? normalizedTitle : normalizedAlbum;
-  if (shorter.length >= 4 && longer.includes(shorter)) return 60;
-
-  const albumTokens = new Set(albumNameTokens(albumName));
-  const shared = albumNameTokens(trackTitle).filter((token) => albumTokens.has(token));
-  if (!shared.some((token) => token.length >= 4)) return 0;
-  const hasAnimeName = animeNames.filter(Boolean).some((name) => {
-    const normalizedName = normalizeSongTitle(name);
-    return Boolean(normalizedName) && normalizedAlbum.includes(normalizedName);
-  });
-  if (!hasAnimeName) return 0;
-
-  const albumDigits = nameDigits(albumName);
-  const digitHit = [...nameDigits(trackTitle)].some((digits) => albumDigits.has(digits)) ? 20 : 0;
-  return 10 + shared.length * 5 + digitHit;
-};
-
-/**
- * 专辑名与条目名是否指向同一张专辑（`albumNameScore` 的布尔形态）。
- * 判定细节见 `albumNameScore`，保留这个包装是为了让调用点读起来仍是「是否匹配」。
- */
-export const isAlbumNameMatch = (
-  albumName: string,
-  trackTitle: string,
-  animeNames: readonly string[] = []
-): boolean => albumNameScore(albumName, trackTitle, animeNames) > 0;
-
-/**
- * 歌手名作为检索词的长度上限。
- *
- * Bangumi 的 `artist` 常是整串声优列表（角色歌专辑条目动辄列七八个人名），
- * 拼进检索词后网易云什么都搜不到 —— 超过这个长度就只用番剧名去搜。
- * （补录 artist 之后才暴露：旧库全为 NULL，等于一直在走番剧名那条路。）
- */
-const MAX_ARTIST_QUERY_LENGTH = 32;
-
-/**
- * 专辑型条目的类型关键词：用于拼「番剧名 + 角色曲」这类检索词。
- */
-const ALBUM_KIND_KEYWORDS: readonly string[] = [
-  "キャラクターソング",
-  "キャラソン",
-  "オリジナルサウンドトラック",
-  "サウンドトラック",
-  "オープニングテーマ",
-  "エンディングテーマ",
-  "主題歌",
-  "テーマソング",
-  "ボーカルアルバム",
-  "イメージアルバム",
-  "ミュージックコレクション",
-  "ソングコレクション",
-  "ドラマ",
-  "ベスト",
-];
-
-/** 去掉「TVアニメ『番剧名』」「アニメ「番剧名」」这类包裹，只留专辑自身的名字。 */
-const stripAnimeWrapper = (title: string, animeNames: readonly string[]): string => {
-  let result = title;
-  for (const name of animeNames) {
-    if (!name) continue;
-    for (const wrapper of [
-      `TVアニメ『${name}』`,
-      `TVアニメ「${name}」`,
-      `アニメ『${name}』`,
-      `アニメ「${name}」`,
-      `TVアニメ ${name}`,
-      `TV动画《${name}》`,
-      `动画《${name}》`,
-      `『${name}』`,
-      `「${name}」`,
-    ]) {
-      result = result.split(wrapper).join(" ");
-    }
-  }
-  return result
-    .replace(/^(?:TVアニメ|TV动画|アニメ|劇場版|映画)\s*/u, "")
-    .replace(/\s+/gu, " ")
-    .trim();
-};
-
-/**
- * 专辑型条目的检索词序列（按优先级）。
- *
- * 只用条目名检索是不够的 —— Bangumi 条目名与网易云的命名差得很远，实测：
- * - 《TVアニメ『ひみつのアイプリ』キャラクターソングミニアルバム VERSE IN SONG 03》
- *   按条目名搜专辑返回 **0 张**，换成番剧名「ひみつのアイプリ」立刻搜到同系列专辑；
- * - 《「クラスターエッジ」キャラクターコレクション》连番剧的日文片假名都搜不到，
- *   而番剧的**原名** `CLUSTER EDGE` 能搜出该番的《ココロのつぼみ》《FLY HIGH》。
- *
- * 因此按「条目名 → 剥掉番剧名包裹后的余部 → 番剧名 + 类型关键词 → 番剧名」逐级放宽。
- */
-export const buildAlbumQueries = (
-  track: BangumiMusicTrack,
-  anime: BangumiSubjectDetails
-): string[] => {
-  const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
-  const queries: string[] = [];
-  const push = (value: string) => {
-    const trimmed = value.trim();
-    if (trimmed && !queries.includes(trimmed)) queries.push(trimmed);
-  };
-  push(track.title);
-  push(stripAnimeWrapper(track.title, animeNames));
-  const kindKeyword = ALBUM_KIND_KEYWORDS.find((keyword) => track.title.includes(keyword));
-  if (kindKeyword) {
-    for (const name of animeNames) push(`${name} ${kindKeyword}`);
-  }
-  for (const name of animeNames) push(name);
-  return queries;
-};
-
-/**
- * 上游偶发失败时重试一次。
- *
- * **只重试瞬态失败**：限流（`MUSIC_API_RATE_LIMITED`）与队列拥塞（`MUSIC_API_BUSY`）下
- * 立即重试只会再撞一次冷却，直接放弃让上层换下一首。
- * 实测小众番剧抽样里 25 条无候选中有 8 条是专辑检索抛错造成的，重试能把大部分救回来。
- */
-const ALBUM_RETRY_DELAY_MS = 1_200;
-const retryOnce = async <T>(task: () => Promise<T>): Promise<T> => {
-  try {
-    return await task();
-  } catch (error) {
-    const code = error instanceof AppError ? error.code : "";
-    if (code === "MUSIC_API_RATE_LIMITED" || code === "MUSIC_API_BUSY") throw error;
-    await new Promise((resolve) => setTimeout(resolve, ALBUM_RETRY_DELAY_MS));
-    return task();
-  }
-};
-
-/**
- * 专辑路径取回的曲目里要直接剔除的非歌形态：伴奏 / 纯音乐 / 现场 / 翻唱 / 台词。
- * 专辑（尤其 OST 与角色歌合辑）通常把 off vocal 版一并收录，它们不是可出的原曲。
- */
-export const isUnplayableAlbumTrack = (title: string): boolean =>
-  NON_ORIGINAL_VERSION_PATTERN.test(title) ||
-  COVER_MARKER_PATTERN.test(title) ||
-  INSTRUMENTAL_ARRANGEMENT_PATTERN.test(title) ||
-  DRAMA_TRACK_PATTERN.test(title) ||
-  RADIO_TALK_TRACK_PATTERN.test(title);
-
-/**
- * 专辑里的二次创作分轨标记：Remix / TV Size / Game Size / Short 版。
- * 与 isUnplayableAlbumTrack 的区别：这些分轨仍是**可出的歌**（原版不在这张盘时
- * 降级可出），但**原版存在时不得随机抢先** —— 专辑路径取回的曲目原本是纯
- * shuffle，实测《TVアニメ 『Summer Pockets』 "leave a mark"》6 轨里 3 轨是
- * Remix，一半概率直接出 Remix 而不是原版。
- */
-const ALTERNATE_VERSION_PATTERN =
-  /\bremix(?:ed)?\b|リミックス|\btv\s*size\b|\bgame\s*size\b|\bshort\s*ver(?:sion)?\b|\bmovie\s*ver(?:sion)?\b/iu;
-
-/**
- * 该曲名是否属于**根本没有歌声**的音轨（台词轨 / 电台谈话 / 伴奏 / 纯音乐 / 卡拉 OK）。
- *
- * 与 `isUnplayableAlbumTrack` 的区别：后者只在专辑路径做「选哪首」的粗筛，
- * 且包含的现场 / 不插电 / demo / 器乐改编等标记只是**版本不同**，仍有人声、
- * 仍可出题（所以 `scoreAnimeSongCandidate` 只降权不剔除）。这里只认
- * 「放出来玩家无从猜起」的硬缺陷，必须在**所有路径**的验证阶段一律否决。
- */
-export const isNonVocalTrack = (title: string): boolean =>
-  DRAMA_TRACK_PATTERN.test(title) ||
-  RADIO_TALK_TRACK_PATTERN.test(title) ||
-  NO_VOCAL_VERSION_PATTERN.test(title) ||
-  TRACK_NUMBER_TITLE_PATTERN.test(title);
-
-/**
- * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
- * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、器乐改编、伴奏等
- * 版本混排时优先选中原版，避免「原版存在却抽到翻唱」。
- */
-/**
- * 候选是否具备「就是这首歌」的准入证据。
- *
- * 只回答一个问题：**这个候选有没有资格作为「Bangumi 记录的那首歌」进入验证队列？**
- * 判定刻意与分数解耦 —— 两者回答的不是同一件事：准入看身份（是不是这首歌），
- * 排序（`scoreAnimeSongCandidate`）看版本（是不是原版）。
- *
- * 规则：
- * 1. 曲名完全一致 → 有资格。此时**不看歌手**：翻唱常把曲名照抄（靠 `originCoverType`
- *    在验证阶段让位），Bangumi 与网易云的歌手写法差异也常导致交集为空，用歌手否掉
- *    会让真正的原版连被验证的机会都没有；
- * 2. 专辑名与原曲目名完全一致 → 有资格（即使曲名完全对不上）：Bangumi 会把**整张原声带**
- *    挂成一条关联曲目，此时条目名就是专辑名，官方曲目与条目名毫无文字交集。实测事故是
- *    帝玖管弦乐团的《交响组曲「君の名は。」》靠曲名命中顶掉了官方原声带；
- * 3. 候选名**完整包含**条目名（`曲名 - 番剧名` / `曲名 (TV Size)`）→ 有资格，保持宽松；
- * 4. 候选名只是条目名的**一截**（专辑型条目名的前后缀、双 A 面单曲的某一段）→ 必须另有
- *    独立锚点（歌手交集 / 专辑指向本番，见 `albumAnchorsWork`）；
- * 5. 其余情况（曲名完全对不上、专辑名也对不上）→ 无资格；
- * 6. 非原唱标记的降权**不参与**准入：唯一候选是翻唱 / 改编时仍要能降级出题
- *    （既有语义「仅能召回翻唱版时仍可出题」），否则会退化成「该番剧没有可播放的关联歌曲」。
- *
- * 被第 4 条挡掉的正是实测的错配事故：《いつだってYELL》（忍者乱太郎 ED）被 2026 年
- * 无关的《Yell》顶掉、《ぼくらは小さな悪魔》被《ぼくら》顶掉、《5 Moving Shadows》
- * （Princess Principal 角色歌单曲）被《Moving Shadows》(Lessovsky / Max Vertigo，
- * 专辑《5 (Five Years of Kiez Beats)》) 顶掉 —— 最后这条说明「出现在带番剧名的检索
- * 结果里」这个信号不足以锚定（网易云模糊检索会把无关同名曲一起召回）。宁可这一首
- * 出不了题（上层会换下一首），也不能让玩家听到一首无关的歌。
- */
-export const hasAnimeSongEvidence = (
-  candidate: SongSearchResult,
-  track: BangumiMusicTrack,
-  options: { animeScoped?: boolean; animeNames?: readonly string[] } = {}
-): boolean => {
-  const titleScore = songTitleSimilarity(candidate.title, track.title);
-  if (titleScore >= 2) return true;
-  // 专辑名与原曲目名完全一致（见规则 2）。
-  if (isSongAlbumMatch(candidate.album, track.title)) return true;
-  if (titleScore < 1) return false;
-  // 部分命中（候选是条目名的一截 / 条目名带后缀）必须另有独立锚点 —— 歌手交集或专辑指向
-  // 本条目的专辑；「出现在带番剧名的检索结果里」不算（见 albumAnchorsWork 的事故注释）。
-  return (
-    artistOverlap(candidate, track) === true ||
-    albumAnchorsWork(candidate.album, track, options.animeNames ?? [])
-  );
-};
-
-/**
- * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
- * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、器乐改编、伴奏等
- * 版本混排时优先选中原版，避免「原版存在却抽到翻唱」。
- */
-export const scoreAnimeSongCandidate = (
-  candidate: SongSearchResult,
-  track: BangumiMusicTrack,
-  options: { animeScoped?: boolean } = {}
-): number => {
-  let score = songTitleSimilarity(candidate.title, track.title);
-  if (isSongAlbumMatch(candidate.album, track.title)) score += 2;
-  const overlap = artistOverlap(candidate, track);
-  if (overlap !== undefined) score += overlap ? 4 : -3;
-  const descriptiveText = `${candidate.title} ${candidate.album ?? ""}`;
-  const expectedText = `${track.title} ${track.artist ?? ""}`;
-  for (const [pattern, weight] of NON_ORIGINAL_MARKERS) {
-    if (pattern.test(descriptiveText) && !pattern.test(expectedText)) score -= weight;
-  }
-  // 番剧上下文命中：候选出现在「曲名 + 番剧名/中文名」的检索结果里，是该曲目确实
-  // 属于这部番的强证据。**同名不同曲**（实测《拜托了老师》2002 的 OP 被 2023 年 XG
-  // 的同名《SHOOTING STAR》顶掉）里，别人家的同名原创只会在裸曲名检索里出现，
-  // 而原版总跟着番剧名一起被召回 —— 这一条正是把两者区分开的免费信号。
-  if (options.animeScoped) score += ANIME_SCOPED_BONUS;
-  return score;
-};
-
-/**
- * 为一个 Bangumi 音乐条目拼出常规检索词，并标出其中「带番剧上下文」的那几条。
- *
- * 返回的两个数组按原顺序逐条消耗检索预算，顺序即优先级，不可重排。
- */
-const buildTrackQueries = (
-  track: BangumiMusicTrack,
-  anime: BangumiSubjectDetails
-): { queries: string[]; scopeQueries: string[] } => {
-  const queries: string[] = [];
-  // 歌手名只在**足够短**时才拼进检索词：Bangumi 的 artist 常是整串声优列表
-  // （「A、B、C、D、E、F」这种），拼进去等于把检索词毁掉，网易云什么都搜不到。
-  // 这时退回番剧名（原名往往是英文，与中文 / 日文名都不一样）。
-  const artistQuery =
-    track.artist && track.artist.trim().length <= MAX_ARTIST_QUERY_LENGTH
-      ? track.artist.trim()
-      : "";
-  if (artistQuery) queries.push(`${track.title} ${artistQuery}`);
-  if (anime.name) queries.push(`${track.title} ${anime.name}`);
-  if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
-  queries.push(track.title);
-  const broadQueries = [
-    anime.name ? `${track.title} ${anime.name}` : "",
-    anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-    track.title,
-  ].filter((query) => query && !queries.includes(query));
-  queries.push(...broadQueries);
-
-  const scopeQueries = [
-    anime.name ? `${track.title} ${anime.name}` : "",
-    anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-  ].filter(Boolean);
-
-  return { queries, scopeQueries };
-};
-
-/**
- * 用「有出题资格」过滤检索候选，再按原版优先分降序、同分保持原顺序排列。
- *
- * 准入门槛用「证据分」而非排序分：非原唱标记的降权只在排序里生效，
- * 唯一候选是翻唱 / 改编时仍要能降级出题（见 hasAnimeSongEvidence）。
- */
-const rankEvidencedCandidates = (
-  matched: { candidates: SongSearchResult[]; animeScopedIds: Set<string> },
-  track: BangumiMusicTrack,
-  animeNames: string[]
-): SongSearchResult[] =>
-  matched.candidates
-    .map((candidate, index) => {
-      const options = {
-        animeScoped: matched.animeScopedIds.has(candidate.id),
-        animeNames,
-      };
-      return {
-        candidate,
-        index,
-        score: scoreAnimeSongCandidate(candidate, track, options),
-        evidenced: hasAnimeSongEvidence(candidate, track, options),
-      };
-    })
-    .filter((entry) => entry.evidenced)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map((entry) => entry.candidate);
-
-/** 自动出题的一条「番剧 → 可出歌曲」结果。 */
-type AnimeSongPick = { song: SongDetails; track: BangumiMusicTrack };
-
-/**
- * 条目的候选池：来源标记决定还能不能放宽身份与年代，翻唱回指的原曲要插回同一个数组。
- *
- * 只有「常规检索」这一条路（`looseFallback`）允许放宽：专辑 / 番剧级兜底已经把「哪首歌」
- * 放宽了，不该再把「是不是原版」一起放宽（实测番剧兜底会召回该番的**日语翻唱版**并出题）；
- * 同理也不该再放宽「年代」—— 实测《あした天気になあれ》(1984) 被 2026 年的 CeVIO 合成音
- * 同名曲顶掉，正是靠「标题命中该番另一条目 + 年份兜底」两道放宽叠出来的。
- */
-type TrackCandidatePool = {
-  track: BangumiMusicTrack;
-  list: SongSearchResult[];
-  fromAnimeLevel: boolean;
-  looseFallback: boolean;
-};
-
-/** 让位候选的三种归处：翻唱、同名不同年、近期已出过。 */
-type SongFallbackKind = "cover" | "year" | "recent";
-
-/** 单个候选在验证阶段的判定入参：池内位置、让位归处与取到的歌曲详情。 */
-type FallbackPickEntry = {
-  index: number;
-  candidate: SongSearchResult;
-  kind: SongFallbackKind;
-  pick: AnimeSongPick;
-};
-
-/**
- * 自动出题的逐条目回源上下文：检索/详情预算、三档让位兜底槽与原曲去重集合
- * 都挂在同一对象上跨曲目累积，兜底优先级即字段顺序。
- */
-type AnimeSongLookup = {
-  provider: MusicProvider;
-  anime: BangumiSubjectDetails;
-  cookie: MusicCookieInput | undefined;
-  animeNames: string[];
-  minPopularity: number;
-  recentSongIds: Set<string>;
-  originRetryIds: Set<string>;
-  budget: { search: number; detail: number };
-  fallbackRecent?: AnimeSongPick;
-  fallbackYear?: AnimeSongPick;
-  fallbackCover?: AnimeSongPick;
-};
-
-/**
- * 让位形态都只能在详情阶段判定，且一律「让位不占名额」：
- *
- * - **翻唱**：网易云自标 `originCoverType === 2` 的版本是**别人的演唱录音**。
- *   文本维度在它面前全失效（翻唱常把曲名与专辑名照抄原曲，实测《裸の勇者》原版
- *   与翻唱曲名、专辑名一字不差），只有这个字段能把它认出来。
- * - **同名不同曲**：曲名（与专辑名）完全一致，发行年份却与番剧差了一二十年；
- *   发行年只有歌曲详情里有。同名新歌往往成批排在前面（实测 XG / chuLa / Anna Yvette
- *   等同名版本都是「曲名 + 专辑名」双命中得 4 分，而原版挂在「动画名 - 曲名」的专辑下
- *   只有 2 分），若让它们吃掉验证名额，排在后面的原版连被验证的机会都没有。
- *   整体仍受 detail 预算约束，不会无界回源。
- * - **近期出过**：是真正属于本番的歌，只是刚听过，所以不返还名额（换下一首候选）。
- */
-const fallbackKindOfSong = (
-  song: SongDetails,
-  anime: BangumiSubjectDetails,
-  recentSongIds: Set<string>
-): SongFallbackKind | undefined => {
-  if (song.originCoverType === 2) return "cover";
-  if (isReleaseYearOffTarget(song.releaseYear, anime.year)) return "year";
-  if (recentSongIds.has(song.id)) return "recent";
-  return undefined;
-};
-
-/** 详情已带热度时再过一道门槛：热度缺失按不达标处理。 */
-const isBelowMinPopularity = (song: SongDetails, minPopularity: number): boolean =>
-  minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity);
-
-/** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
 type RoomReclaim = "skip" | "grace" | "keep";
 
 /** 一轮回合巡检的共享扫描状态：同一时刻与同一硬超时判定贯穿「补就绪」与「判超时」两步。 */
@@ -1197,316 +201,6 @@ interface AnimeTrackMatchContext {
 }
 
 /** 出题窗口前可用于音频渐入的提前量。 */
-const LYRIC_CLIP_LEAD_MS = 1_000;
-/**
- * 上一句没有真实结束时间戳时使用的提前量。
- *
- * 行级兜底歌词的 `endTime` 是清洗时按「下一句起始时间」补算出来的，拿它当边界等于把提前量
- * 压成 0，首句会在静音渐入中唱完；因此这种情况下仍给固定提前量，只是比有逐字时间时短。
- */
-const LYRIC_CLIP_LEAD_WITHOUT_END_MS = 700;
-/** 与 `sanitizeLyrics` 同一口径：只有带逐字且原始终点晚于起点的行，才算有真实结束时间戳。 */
-const hasRealLyricEnd = (line: SongDetails["lyrics"][number]) =>
-  Boolean(line.words && line.words.length > 0) && line.endTime > line.time;
-
-/**
- * 出题窗口可用的提前量：最多退到窗口前最后一句（含和声）的结束时刻。
- *
- * 退得比上一句唱完更早，玩家会在题目开始前先听半句无关唱词，歌词也跟着亮出窗口外的行。
- */
-const lyricLeadMs = (lyrics: SongDetails["lyrics"], windowStartTime: number): number => {
-  let previous: SongDetails["lyrics"][number] | undefined;
-  for (const line of lyrics) {
-    if (line.time >= windowStartTime) continue;
-    if (!previous || line.time > previous.time) previous = line;
-  }
-  if (!previous) return LYRIC_CLIP_LEAD_MS;
-  if (!hasRealLyricEnd(previous)) return LYRIC_CLIP_LEAD_WITHOUT_END_MS;
-  return Math.min(LYRIC_CLIP_LEAD_MS, Math.max(0, windowStartTime - previous.endTime));
-};
-
-const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
-const MAX_LYRIC_LINE_DURATION_MS = 12_000;
-/**
- * 歌词片段相邻两句之间的最大间奏间隔。
- *
- * 如果相邻两句歌词之间的时间跨度超过此阈值，说明歌曲进入了较长的吉他/管弦等乐器间奏（如《一样的月光》中间 54 秒间奏），
- * 绝不能把分属两段演唱的歌词跨越长间奏拼接为一个出题窗口，否则会导致玩家在数十秒死寂中等待。
- */
-export const MAX_LYRIC_INTERLUDE_GAP_MS = 6_000;
-/**
- * 歌词窗口收缩下限。
- *
- * 单行歌词不足以出题（相邻两句的上下文才算一个可猜片段），因此设定行数
- * 高于 2 时，窗口不允许收缩到 2 行以下；设定 1 行时按用户意愿保留 1 行窗口。
- */
-const MIN_LYRIC_WINDOW_LINES = 2;
-const AUTO_POPULARITY_LOOKUP_LIMIT = 24;
-/**
- * 自动出题时最多尝试的番剧候选数。
- * 每个候选都要完整跑一遍关联歌曲解析，不设上界时单次出题可能退化成几十次串行回源。
- */
-export const AUTO_ANIME_CANDIDATE_LIMIT = 5;
-/**
- * 自动出题时最多尝试的歌曲候选数，语义与 `AUTO_ANIME_CANDIDATE_LIMIT` 对齐。
- *
- * 歌曲分支此前是裸 `while (pool.length > 0)`：大歌单且多为会员曲时，
- * `continue` 会让循环一路串行回源到池子见底（每次回源约 5~6 个上游请求），
- * 期间 `automaticRoundLoading` 长占，客户端对该命令发的是 `timeout: 0`，
- * 房主 UI 会长时间卡在「出题中」且没有任何超时提示。
- */
-export const AUTO_SONG_CANDIDATE_LIMIT = 5;
-/**
- * 「最近不出」窗口相对候选池的目标占比。
- *
- * 固定的 10 首窗口在池子远大于 10 时几乎不消耗池子容量：1000 首的歌单
- * 仍然从第 12 轮起就允许重现已出过的歌。窗口按池子线性放长后，
- * 「不重复」才真正用满池子容量 —— 池 990 时前 495 轮都不会出现旧歌。
- */
-const RECENT_SONG_WINDOW_RATIO = 0.5;
-/**
- * 「最近不出」窗口下限。
- *
- * 小池子本来就装不满窗口（池 15 时 10 首已占三分之二），继续缩短只会让
- * 旧歌更早回来；而池子耗尽后总重复次数只由轮数决定、与窗口长度无关，
- * 因此小池子保留原有的 10 首行为不变。
- */
-const MIN_RECENT_SONG_WINDOW = 10;
-/**
- * 「最近不出」窗口上限。房间是纯内存态，需要给窗口一个与池子无关的上界，
- * 避免超大歌单把每个房间的最近列表撑成任意长度。
- */
-const MAX_RECENT_SONG_WINDOW = 500;
-
-/**
- * 按候选池规模计算「最近不出」窗口长度。
- *
- * 池子不超过 20 首时恒为 `MIN_RECENT_SONG_WINDOW`（等价于改动前的固定 10 首）；
- * 更大池子按 `RECENT_SONG_WINDOW_RATIO` 放长，并在 `MAX_RECENT_SONG_WINDOW` 处截断。
- */
-export const resolveRecentSongWindow = (poolSize: number): number => {
-  if (!Number.isFinite(poolSize) || poolSize <= 0) return MIN_RECENT_SONG_WINDOW;
-  const adaptive = Math.floor(poolSize * RECENT_SONG_WINDOW_RATIO);
-  return Math.max(MIN_RECENT_SONG_WINDOW, Math.min(MAX_RECENT_SONG_WINDOW, adaptive));
-};
-/**
- * 候选级取歌失败：这一首当前拿不到可用播放地址（下架、无版权、解灰全部失败），
- * 换一个候选即可，不代表整轮无法出题。
- *
- * 只吞「单曲不可用」这两种码。限流（`MUSIC_API_RATE_LIMITED`）与接口整体不可用
- * （`MUSIC_API_UNAVAILABLE`）必须原样抛出：前者在冷却期里继续抽候选只会空转，
- * 后者说明整条链路坏了，重试没有任何意义。
- */
-const isUnusableSongCandidate = (error: unknown): boolean =>
-  error instanceof AppError &&
-  (error.code === "SONG_UNAVAILABLE" || error.code === "SONG_NOT_FOUND");
-/**
- * 单条连接在一分钟内允许的「客户端可触发」音乐类命令次数。
- *
- * 只卡命令入口，不卡出题解析器内部的上游调用：后者只由房主的
- * `song.game.start` / `nextRound` 间接触发，不是滥用面。
- */
-const MUSIC_RATE_LIMIT_PER_CONNECTION = 20;
-const MUSIC_RATE_LIMIT_WINDOW_MS = 60_000;
-
-/**
- * 单号并发上限：同一个贡献账号同时最多几个在途上游请求。
- *
- * 取 3 与改造前 `NeteaseMusicProvider` 的全局并发一致：单号房间的上限与改造前相同，
- * 多号房间的总容量就是 3 × 账号数（每号各 3 个在途）。单号再往上加并发只会让同一份
- * cookie 触发风控，因此不随池子大小改变单号口径。
- */
-const MUSIC_POOL_MAX_IN_FLIGHT = 3;
-/**
- * 等号超时：与改造前 provider 的队列超时一致。所有可用号都打满时请求在这里排队，
- * 到点仍无空位就取在途最少的可用号直接跑，交给 provider 自己的队列——**不要因为繁忙降级**。
- */
-const MUSIC_POOL_QUEUE_TIMEOUT_MS = 8_000;
-/** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
-export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
-
-/**
- * QQ 凭证主动续期节奏。QQ 的 musickey 寿命比网易云短得多，不能只等开局复核：
- * 每 6 小时检查一次、每 10 分钟扫一轮，保证长时间开着的房间在 key 过期前换新。
- */
-const MUSIC_SESSION_REFRESH_INTERVAL_MS = 6 * 60 * 60_000;
-const MUSIC_SESSION_REFRESH_SWEEP_MS = 10 * 60_000;
-/** 同账号重传时，服务端 24 小时内续期过的 Cookie 优先于客户端本机旧副本。 */
-const MUSIC_COOKIE_FRESH_MS = 24 * 60 * 60_000;
-/** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
-const MUSIC_POOL_STATS_WINDOW = 20;
-
-/** 房间因空闲被关闭前的预警提前量。 */
-const ROOM_EXPIRING_WARNING_MS = 60_000;
-
-/** 音频就绪宽限期：超时仅强制置为可答题并启动倒计时，绝不扣减猜测配额。 */
-const AUDIO_READY_GRACE_MS = 15_000;
-/**
- * 手动出题的选题时限。
- *
- * 出题人在这个阶段是全房唯一的推进者，房主也无法改选别人，因此闸门必须宽松到容得下
- * 一次慢的上游回源（猜番解析最坏可达数十秒），又不能无限期挂着整个房间。
- * 时限从「指定出题人」起算，每次提交尝试顺延，超时后自动回到选出题人。
- */
-export const SUBMIT_SONG_TIMEOUT_MS = 180_000;
-/** 每个猜测窗口的兜底裕量：覆盖该次猜测回源校验的往返与卡死的上游请求。 */
-const ROUND_HARD_TIMEOUT_MARGIN_S = 20;
-/**
- * 单次番剧歌曲解析允许发起的上游搜索次数（一次搜索只对应一个上游请求，成本最低）。
- */
-export const ANIME_SONG_SEARCH_BUDGET = 24;
-/**
- * 单次番剧歌曲解析允许回源验证的候选歌曲数量。
- *
- * 每次验证都要拉取完整歌曲详情（详情 + 百科 + 热度 + 歌词 + 音频，约 5~6 个上游请求），
- * 成本是一次搜索的六倍以上，必须与搜索预算分开设上限。只用单一预算计数时
- * `getSong` 被按「一次调用」记账，单次出题会退化到数百个上游请求（实测最坏 60s+，
- * 前端按钮动画都等超时了，后端其实还在选曲）。
- */
-export const ANIME_SONG_DETAIL_BUDGET = 6;
-/** 同一曲目内最多验证的候选版本数（按原版优先排序后从前到后）。 */
-export const ANIME_TRACK_DETAIL_ATTEMPTS = 3;
-/** 单次番剧歌曲解析最多处理的关联曲目数（超出部分在随机洗牌后等概率落选）。 */
-const ANIME_TRACK_LOOKUP_LIMIT = 24;
-/** 关联曲目检索每次取回的结果数：过小会漏掉原版，过大只是白解析。 */
-const ANIME_SONG_SEARCH_LIMIT = 24;
-/**
- * 候选歌曲发行年与番剧首播年的最大允许偏差（年）。
- *
- * 番剧的 OP/ED 通常与番剧同年、或前后一两年发行；而**同名不同曲**的错配往往差
- * 十几二十年。实测 TV 动画《拜托了老师》(2002) 的 OP `Shooting Star` 被 2023 年
- * XG 的同名《SHOOTING STAR》顶掉 —— 两者曲名与专辑名完全相同、打分并列（各 4 分），
- * 热门新歌靠检索顺序胜出，玩家听到的是一首完全无关的歌。
- *
- * 取 10 是刻意宽松的上界：既挡住跨代错配，又保留「若干年后的纪念盘/精选集」这类
- * 同一首歌的合法再版（实测 KOTOKO 的 2012 特典盘与 2002 原版是同一录音，偏差正好
- * 10 年，用 `>` 判定因此不会被误杀）。
- */
-export const MAX_RELEASE_YEAR_DRIFT = 10;
-
-/**
- * 候选歌曲是否与番剧年份错配 —— 同名不同曲的判据。
- *
- * 发行年只在歌曲详情里返回，所以这条判定只能发生在候选验证阶段，进不了检索阶段的
- * 排序（详见 `resolveAnimeSong` 的验证循环）。任一端年份缺失时一律放行，不拿未知当否定。
- */
-export const isReleaseYearOffTarget = (
-  releaseYear: number | undefined,
-  animeYear: number | undefined
-): boolean => {
-  if (releaseYear === undefined || animeYear === undefined) return false;
-  return Math.abs(releaseYear - animeYear) > MAX_RELEASE_YEAR_DRIFT;
-};
-
-const direction = (guess?: number, answer?: number): SongGuessDirection => {
-  if (guess === undefined || answer === undefined) return "unknown";
-  if (guess === answer) return "equal";
-  return guess < answer ? "higher" : "lower";
-};
-
-export const createSongLyricClip = (
-  lyrics: SongDetails["lyrics"],
-  lineCount: number,
-  random: RandomSource,
-  durationMs?: number
-): SongLyricClip => {
-  const safeCount = clampInt(lineCount, 1, 10);
-  const isCompactLine = (line: SongDetails["lyrics"][number]) =>
-    line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS;
-
-  const isContinuousWindow = (lines: SongDetails["lyrics"]) => {
-    if (!lines.every(isCompactLine)) return false;
-    for (let i = 1; i < lines.length; i++) {
-      const gap = lines[i].time - lines[i - 1].endTime;
-      if (gap > MAX_LYRIC_INTERLUDE_GAP_MS) return false;
-    }
-    return true;
-  };
-
-  // 1. 区分主歌词与和声/背景歌词（isBG）。
-  // 选词滑动窗口仅以主歌词为候选基准，禁止和声歌词作为出题开头或充抵出题行数，
-  // 避免和声小字过早切断主歌词音频。
-  const mainLyrics = lyrics.filter((line) => !line.isBG);
-  const candidatePool =
-    mainLyrics.length >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount) ? mainLyrics : lyrics;
-
-  for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
-    if (candidatePool.length < count) continue;
-    const windows = Array.from({ length: candidatePool.length - count + 1 }, (_, startIndex) =>
-      candidatePool.slice(startIndex, startIndex + count)
-    ).filter(isContinuousWindow);
-    if (windows.length === 0) continue;
-
-    const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
-    const candidates = padded.length > 0 ? padded : windows;
-    const selectedMainLines = candidates[random.nextInt(candidates.length)];
-
-    const windowStartTime = selectedMainLines[0].time;
-    const windowEndTime = selectedMainLines.at(-1)!.endTime;
-
-    // 从完整歌词中提取出落在该出题区间内的所有歌词（包含和声歌词），仅用于播放时演出
-    const clipLines = lyrics.filter(
-      (line) => line.time >= windowStartTime && line.time < windowEndTime
-    );
-    const mergedLines = clipLines.length > 0 ? clipLines : selectedMainLines;
-    mergedLines.sort((a, b) => a.time - b.time);
-
-    const maxLineEnd = Math.max(windowEndTime, ...mergedLines.map((l) => l.endTime));
-    // 前置提前量供音频平滑渐入，但不越过上一句歌词的结尾；终点后延 1 秒供渐出。
-    const clipStartTime = Math.max(0, windowStartTime - lyricLeadMs(lyrics, windowStartTime));
-    const maxAllowedEnd = durationMs !== undefined ? durationMs : maxLineEnd + 1_000;
-    const clipEndTime = Math.min(maxAllowedEnd, maxLineEnd + 1_000);
-
-    return {
-      startTime: clipStartTime,
-      endTime: clipEndTime,
-      lines: mergedLines,
-    };
-  }
-
-  const clipDuration = safeCount * FALLBACK_CLIP_SECONDS_PER_LINE * 1_000;
-  const songDuration = Math.max(1, durationMs ?? clipDuration);
-  const actualClipDuration = Math.min(clipDuration, songDuration);
-  const latestStart = Math.max(0, songDuration - actualClipDuration);
-  const startTime = random.nextInt(latestStart + 1);
-
-  return {
-    startTime,
-    endTime: startTime + actualClipDuration,
-    lines: [],
-  };
-};
-
-/**
- * 手动出题的自定义片段。`clip` 缺省时返回 undefined，调用方沿用自动切片。
- *
- * 长度下限 5 秒、终点不越过歌曲时长（时长未知时不做上界校验），上限就是整首。
- * 越界或参数不成立时返回 undefined，由调用方回退到**原来的随机切片**：
- * 手动路径的兜底与「没配片段」完全一致，不把一次手滑变成整首 3 分钟。
- */
-export const createManualLyricClip = (
-  song: Pick<SongDetails, "lyrics" | "durationMs">,
-  clip: SongClipRange | undefined
-): SongLyricClip | undefined => {
-  if (!clip) return undefined;
-  const { startTime, endTime } = clip;
-  const length = endTime - startTime;
-  const withinSong = song.durationMs === undefined || endTime <= song.durationMs;
-  const valid =
-    Number.isFinite(startTime) &&
-    Number.isFinite(endTime) &&
-    startTime >= 0 &&
-    endTime > startTime &&
-    length >= SONG_CLIP_MIN_MS &&
-    withinSong;
-  if (!valid) return undefined;
-  return {
-    startTime,
-    endTime,
-    // 取与区间有交集的歌词行：起点落在某句中间时，那一句仍然算在本片段里。
-    lines: song.lyrics.filter((line) => line.time < endTime && line.endTime > startTime),
-  };
-};
 
 export class SonGuessrService implements AdminRoomControl {
   private readonly rooms = new Map<string, SonGuessrRoomRecord>();
@@ -2395,8 +1089,7 @@ export class SonGuessrService implements AdminRoomControl {
   private handleAgentFocus(connection: ConnectionRecord, payload: AgentFocusInput) {
     if (connection.isAgent !== true)
       throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报活动焦点");
-    if (!isAgentFocusKind(payload.kind))
-      throw new AppError("INVALID_FOCUS", "未知的活动焦点");
+    if (!isAgentFocusKind(payload.kind)) throw new AppError("INVALID_FOCUS", "未知的活动焦点");
     if (payload.part !== undefined && !isAgentFocusPart(payload.part))
       throw new AppError("INVALID_FOCUS", "未知的界面区域");
     const event = {
@@ -2430,21 +1123,14 @@ export class SonGuessrService implements AdminRoomControl {
     if (!connection.roomId || !connection.playerId) return;
     const controller = this.mcpSeats.controllerFor(connection.roomId, connection.playerId);
     if (!controller || controller.connectionId === connection.id) return;
-    if (
-      type === "song.room.leave" ||
-      type === "song.room.requestSync" ||
-      type === "mcp.release"
-    )
+    if (type === "song.room.leave" || type === "song.room.requestSync" || type === "mcp.release")
       return;
     throw new AppError("MCP_CONTROL_ONLY", "本会话已由 MCP 接管，手动操作已锁定");
   }
 
   private async handleMcpCommand(
     connection: ConnectionRecord,
-    message: Extract<
-      SonGuessrClientMessage,
-      { type: "mcp.claim" | "mcp.release" }
-    >
+    message: Extract<SonGuessrClientMessage, { type: "mcp.claim" | "mcp.release" }>
   ): Promise<unknown> {
     if (message.type === "mcp.claim")
       return this.claimSeat(connection, message.payload.roomId, message.payload.sessionToken);

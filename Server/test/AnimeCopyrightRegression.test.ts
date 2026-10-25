@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { isSongTitleMatch, SonGuessrService } from "../src/application/SonGuessrService";
+import { SonGuessrService } from "../src/application/SonGuessrService";
+import { isSongTitleMatch } from "../src/application/songuessr/SongTitleMatching";
 import {
   type ConnectionRecord,
   isBangumiCreditsEntry,

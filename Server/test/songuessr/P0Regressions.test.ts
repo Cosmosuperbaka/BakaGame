@@ -1,31 +1,31 @@
-import { describe, expect, test } from "bun:test";
-import {
-  makeSong,
-  songs,
-  provider,
-  connection,
-  execute,
-  lastEvent,
-  createRoom,
-  joinRoom,
-  startRound,
-} from "./Fixtures";
+import { AppError } from "../../src/domain/Errors";
 import {
   AUTO_ANIME_CANDIDATE_LIMIT,
   AUTO_SONG_CANDIDATE_LIMIT,
-  resolveRecentSongWindow,
-  SonGuessrService,
   SUBMIT_SONG_TIMEOUT_MS,
-} from "../../src/application/SonGuessrService";
+  resolveRecentSongWindow,
+} from "../../src/application/songuessr/Records";
+import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+import { describe, expect, test } from "bun:test";
 import {
-  type SongDetails,
-  type SonGuessrClientMessage,
+  connection,
+  createRoom,
+  execute,
+  joinRoom,
+  lastEvent,
+  makeSong,
+  provider,
+  songs,
+  startRound,
+} from "./Fixtures";
+import { SonGuessrService } from "../../src/application/SonGuessrService";
+import {
+  SonGuessrClientMessage,
+  SonGuessrRoomSnapshot,
+  SongDetails,
   type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
-import { AppError } from "../../src/domain/Errors";
 import { ROOM_IDLE_TIMEOUT_MS, TEST_MODE_MAX_PLAYERS } from "../../src/config/Constants";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 
 describe("上线前 P0 修复回归", () => {
   test("P0-1 一条连接加入另一个房间时，旧房间的幽灵席位被清理并直接关房", async () => {

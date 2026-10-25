@@ -1,22 +1,22 @@
+import { AppError } from "../../src/domain/Errors";
+import { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
-  songs,
-  provider,
   TestConnection,
   connection,
-  execute,
-  lastEvent,
   createRoom,
+  execute,
   joinRoom,
+  lastEvent,
+  provider,
+  songs,
 } from "./Fixtures";
+import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
-  createSongLyricClip,
   createManualLyricClip,
-  SonGuessrService,
-} from "../../src/application/SonGuessrService";
-import { type SonGuessrPrivateState, type SonGuessrRoomSnapshot } from "../../src/shared/Index";
-import { AppError } from "../../src/domain/Errors";
-import { type MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
+  createSongLyricClip,
+} from "../../src/application/songuessr/LyricClip";
+import { SonGuessrPrivateState, type SonGuessrRoomSnapshot } from "../../src/shared/Index";
 
 describe("SonGuessr 组队", () => {
   const setTeam = (service: SonGuessrService, client: TestConnection, team: number | null) =>
