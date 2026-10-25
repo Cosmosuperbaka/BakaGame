@@ -37,7 +37,11 @@ export class MusicCache {
   private readonly cache: LRUCache<string, CacheEntry>;
   private readonly refreshers = new Map<
     string,
-    { ttlMs: number; loader: () => Promise<unknown> }
+    {
+      ttlMs: number;
+      loader: () => Promise<unknown>;
+      ttlForResult?: (value: unknown) => number;
+    }
   >();
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly now: () => number;
@@ -71,18 +75,25 @@ export class MusicCache {
       priority?: number;
       background?: boolean;
       cacheNegative?: boolean;
+      /** 按结果决定实际生效的 TTL：加载前无法区分的场景（如匿名检索的空结果沿用短 TTL）用它覆写。 */
+      ttlForResult?: (value: T) => number;
     } = {}
   ): Promise<T> {
     const now = this.now();
     if (!options.background) this.lastUserRequestAt = now;
     const entry = this.cache.get(key);
-    const hardTtl = Math.max(ttlMs, ttlMs * 3);
     if (!options.force && entry) {
       if (now < entry.hardExpireAt) {
         entry.lastAccessAt = now;
         entry.hits += 1;
         if (now >= entry.softExpireAt)
-          void this.refreshCacheEntry(key, ttlMs, loader, options.priority ?? entry.priority);
+          void this.refreshCacheEntry(
+            key,
+            ttlMs,
+            loader,
+            options.priority ?? entry.priority,
+            options.ttlForResult as ((value: unknown) => number) | undefined
+          );
         return cloneCacheValue(entry.value as T);
       }
       this.cache.delete(key);
@@ -92,7 +103,11 @@ export class MusicCache {
     if (existing) return cloneCacheValue(await existing);
 
     const allowNegative = options.cacheNegative !== false;
-    this.refreshers.set(key, { ttlMs, loader });
+    this.refreshers.set(key, {
+      ttlMs,
+      loader,
+      ttlForResult: options.ttlForResult as ((value: unknown) => number) | undefined,
+    });
     const request = loader()
       .then((value) => {
         // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
@@ -101,12 +116,13 @@ export class MusicCache {
         const storeResult = allowNegative || Boolean(value);
         if (storeResult) {
           const fetchedAt = this.now();
+          const effectiveTtl = Math.max(0, options.ttlForResult?.(value) ?? ttlMs);
           const serializedSize =
             value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
           this.cache.set(key, {
             value,
-            softExpireAt: fetchedAt + ttlMs * 0.8,
-            hardExpireAt: fetchedAt + hardTtl,
+            softExpireAt: fetchedAt + effectiveTtl * 0.8,
+            hardExpireAt: fetchedAt + Math.max(effectiveTtl, effectiveTtl * 3),
             lastAccessAt: fetchedAt,
             hits: 1,
             priority: options.priority ?? 1,
@@ -128,15 +144,32 @@ export class MusicCache {
     this.refreshers.delete(key);
   }
 
+  /**
+   * 读一个尚未硬过期的缓存值（克隆后返回）；不统计命中、不触发后台刷新。
+   * 供「先探测缓存、未命中才走熔断拦截」这类调用顺序敏感的调用方使用
+   * （QQ 匿名检索：熔断期内缓存命中仍要照常服务，不能因熔断把可用结果也吞掉）。
+   */
+  peek<T>(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry || this.now() >= entry.hardExpireAt) return undefined;
+    return cloneCacheValue(entry.value as T);
+  }
+
   private async refreshCacheEntry(
     key: string,
     ttlMs: number,
     loader: () => Promise<unknown>,
-    priority: number
+    priority: number,
+    ttlForResult?: (value: unknown) => number
   ) {
     if (this.inFlight.has(key) || this.isUpstreamBusy()) return;
     try {
-      await this.cached(key, ttlMs, loader, { priority, force: true, background: true });
+      await this.cached(key, ttlMs, loader, {
+        priority,
+        force: true,
+        background: true,
+        ttlForResult,
+      });
     } catch (error) {
       this.onRefreshFailure?.(key, error);
     }
@@ -176,7 +209,13 @@ export class MusicCache {
           continue;
         }
         if (now >= entry.hardExpireAt) this.cache.delete(key);
-        await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
+        await this.refreshCacheEntry(
+          key,
+          refresher.ttlMs,
+          refresher.loader,
+          entry.priority,
+          refresher.ttlForResult
+        );
       }
     });
   }

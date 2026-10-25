@@ -1,11 +1,11 @@
 import { AppError } from "../domain/Errors";
 import { randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import PQueue from "p-queue";
 import { describeError, type EventLogger } from "./EventLogger";
 import { isCreditLyricLine, parseTTML, sanitizeLyrics } from "./LyricLines";
 import { readChinaIpRanges } from "./ChinaIpRanges";
 import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "./MusicIpScope";
+import { AmllLyricClient } from "./AmllLyricClient";
 import {
   adoptVerbatimLyrics,
   mergeTranslations,
@@ -528,7 +528,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly ipScopes: MusicIpScopeRegistry;
   private readonly musicCache: MusicCache;
   private readonly requestQueue: UpstreamRequestQueue;
-  private readonly amllQueue: PQueue;
+  private readonly amllClient: AmllLyricClient;
 
   readonly deviceName: string;
   private readonly generalUnblockEnabled: () => boolean;
@@ -552,9 +552,6 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly random: { nextFloat?: () => number };
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
-    this.amllQueue = new PQueue({
-      concurrency: Math.max(1, options.amllMaxConcurrentRequests ?? 3),
-    });
     this.deviceName = options.deviceName?.trim() || "BakaGame";
     const unblockOption = options.enableGeneralUnblock;
     this.generalUnblockEnabled =
@@ -627,6 +624,20 @@ export class NeteaseMusicProvider implements MusicProvider {
       onRefreshFailure: (key, error) => {
         this.logger?.warn("网易云缓存预刷新失败", { key, error: describeError(error) });
       },
+    });
+    // AMLL 官方歌词库是独立后端：并发、超时与缓存边界统一收口在共享客户端里，
+    // 这里只注入网易云的 ID 查询参数名与 provider 共享缓存。
+    this.amllClient = new AmllLyricClient({
+      idQueryParam: "ncmMusicId",
+      cacheTtlMs: SONG_LYRICS_CACHE_TTL_MS,
+      cache: this.musicCache,
+      logger: this.logger,
+      maxConcurrentRequests: options.amllMaxConcurrentRequests,
+      maxQueuedRequests: options.amllMaxQueuedRequests,
+      requestTimeoutMs: options.amllRequestTimeoutMs,
+      fetcher: options.amllFetcher,
+      fetchById: options.fetchAmllLyrics,
+      fetchBySearch: options.fetchAmllSearchLyrics,
     });
   }
 
@@ -726,107 +737,13 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    return this.loadAmllLyrics(
-      this.cacheKey("song-amll-ttml", undefined, id),
-      { songId: id },
-      async (signal) => {
-        if (this.options.fetchAmllLyrics) return this.options.fetchAmllLyrics(id);
-        const json = await this.requestAmllJson(`get?ncmMusicId=${encodeURIComponent(id)}`, signal);
-        return this.readAmllLyrics(json);
-      }
-    );
+    return this.amllClient.getTtmlLyrics(id, { songId: id });
   }
 
   async searchAmllTtmlLyrics(songName: string, artistName?: string): Promise<string | undefined> {
     const title = songName.trim();
     if (!title) return undefined;
-    return this.loadAmllLyrics(
-      this.cacheKey("song-amll-search-ttml", undefined, `${title}:${artistName ?? ""}`),
-      { title },
-      async (signal) => {
-        if (this.options.fetchAmllSearchLyrics)
-          return this.options.fetchAmllSearchLyrics(title, artistName);
-        const query = artistName ? `${title} ${artistName}` : title;
-        const json = await this.requestAmllJson(
-          `search?q=${encodeURIComponent(query)}&pageSize=5`,
-          signal
-        );
-        if (!json) return undefined;
-        const items = asRecord(json.data).items;
-        if (!Array.isArray(items)) throw new Error("AMLL 搜索响应无效");
-        if (!items.length) return undefined;
-        const id = asRecord(items[0]).id;
-        if (typeof id !== "string" && typeof id !== "number") throw new Error("AMLL 搜索条目无效");
-        return this.readAmllLyrics(
-          await this.requestAmllJson(`get?id=${encodeURIComponent(String(id))}`, signal)
-        );
-      }
-    );
-  }
-
-  private async loadAmllLyrics(
-    key: string,
-    context: Record<string, string>,
-    loader: (signal: AbortSignal) => Promise<string | undefined>
-  ): Promise<string | undefined> {
-    try {
-      // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
-      return await this.musicCache.cached(key, SONG_LYRICS_CACHE_TTL_MS, async () => {
-        if (this.amllQueue.size >= (this.options.amllMaxQueuedRequests ?? 64))
-          throw new Error("AMLL 请求排队过多");
-        const controller = new AbortController();
-        const timer = setTimeout(
-          () => controller.abort(new Error("AMLL 请求超时")),
-          Math.max(1, this.options.amllRequestTimeoutMs ?? 3_000)
-        );
-        try {
-          return await this.amllQueue.add(
-            async () => {
-              const lyrics = await loader(controller.signal);
-              controller.signal.throwIfAborted();
-              if (lyrics !== undefined && !parseTTML(lyrics).length)
-                throw new Error("AMLL TTML 歌词无效");
-              return lyrics;
-            },
-            { signal: controller.signal }
-          );
-        } finally {
-          clearTimeout(timer);
-        }
-      });
-    } catch (error) {
-      this.options.logger?.warn?.("获取 AMLL 歌词失败", { ...context, ...describeError(error) });
-      return undefined;
-    }
-  }
-
-  private async requestAmllJson(
-    path: string,
-    signal: AbortSignal
-  ): Promise<Record<string, unknown> | undefined> {
-    const response = await (this.options.amllFetcher ?? fetch)(
-      `https://api.amll.dev/v1/lyrics/${path}`,
-      {
-        signal,
-        headers: { "User-Agent": "BakaGame-Songuessr/1.0" },
-      }
-    );
-    signal.throwIfAborted();
-    if (response.status === 404) return undefined;
-    if (!response.ok) throw new Error(`AMLL 请求失败（${response.status}）`);
-    const json = asRecord(await response.json());
-    signal.throwIfAborted();
-    if (json.status === 404) return undefined;
-    if (json.status !== 200) throw new Error("AMLL 返回无效状态");
-    return json;
-  }
-
-  private readAmllLyrics(json: Record<string, unknown> | undefined): string | undefined {
-    if (!json) return undefined;
-    const lyrics = asRecord(json.data).lyrics;
-    if (typeof lyrics !== "string") throw new Error("AMLL 返回无效歌词");
-    if (!lyrics.trim()) throw new Error("AMLL 返回空歌词");
-    return lyrics.trim();
+    return this.amllClient.searchTtmlLyrics(title, artistName, { title });
   }
 
   async getPlaylistSongs(playlistId: string, cookie?: MusicCookieInput) {
