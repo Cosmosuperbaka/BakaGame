@@ -1,8 +1,13 @@
 import type { RandomSource } from "../../domain/Rules";
 import type { ConnectionRecord } from "../../shared/Index";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
+import type { McpSeatRegistry } from "../McpSeatRegistry";
 import type { SonGuessrServiceOptions } from "../SonGuessrService";
-import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
+import type {
+  SonGuessrPlayerRecord,
+  SonGuessrRoomRecord,
+  SonGuessrRoundPlayerState,
+} from "./Records";
 
 /**
  * SonGuessrService 拆出的子系统自由函数所需的成员面。
@@ -17,6 +22,8 @@ export interface SonGuessrServiceInternals {
   readonly options: SonGuessrServiceOptions;
   readonly now: () => number;
   readonly random: RandomSource;
+  /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
+  readonly mcpSeats: McpSeatRegistry;
   /** 每个房间在等号的请求；租约归还或池子变化时唤醒。 */
   readonly musicPoolWaiters: Map<string, Set<() => void>>;
   nextMusicRefreshSweepAt: number;
@@ -26,6 +33,13 @@ export interface SonGuessrServiceInternals {
     room: SonGuessrRoomRecord;
     player: SonGuessrPlayerRecord;
   };
+  ensureRoundPlayerState(
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord
+  ): SonGuessrRoundPlayerState | undefined;
+  submitterCandidates(room: SonGuessrRoomRecord): SonGuessrPlayerRecord[];
+  canTestSubmitterGuess(room: SonGuessrRoomRecord, playerId: string): boolean;
+  activePlayers(room: SonGuessrRoomRecord): SonGuessrPlayerRecord[];
   touch(room: SonGuessrRoomRecord): void;
   publishRoom(room: SonGuessrRoomRecord, targetConnection?: ConnectionRecord): void;
   publishLobby(): void;
