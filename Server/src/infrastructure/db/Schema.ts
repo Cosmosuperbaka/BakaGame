@@ -31,6 +31,19 @@ const updatedAt = () =>
     .$defaultFn(() => new Date())
     .$onUpdateFn(() => new Date());
 
+// ==================== 身份徽章 ====================
+
+/**
+ * 徽章目录：启动时按 `shared/Badges.ts` 幂等补齐并删除已下线的类型，`user_badge` 以它为外键目标。
+ * 主理人与先行者由系统自动授予，贡献者只由管理员人工授予。
+ */
+export const badge = mysqlTable("badge", {
+  id: varchar("id", { length: 16 }).primaryKey(),
+  label: varchar("label", { length: 16 }).notNull(),
+  description: varchar("description", { length: 120 }).notNull(),
+  sortOrder: int("sort_order").notNull(),
+});
+
 // ==================== Better Auth ====================
 
 export const user = mysqlTable("user", {
@@ -56,6 +69,19 @@ export const user = mysqlTable("user", {
   /** QQ 昵称（经后台扫码登录的查询号获取，只给管理员看与注册预填）；与账号昵称互不覆盖。 */
   qqName: varchar("qq_name", { length: 64 }),
   qqNameCheckedAt: datetime("qq_name_checked_at", { mode: "date", fsp: 3 }),
+  /** 玩家佩戴的徽章；为空表示不佩戴。只能佩戴自己已获得的徽章。 */
+  equippedBadge: varchar("equipped_badge", { length: 16 }).references(() => badge.id, {
+    onDelete: "set null",
+  }),
+});
+
+/** 注册序号：按建号顺序递增，先行者按它授予；序号不因注销回收。 */
+export const userRegistration = mysqlTable("user_registration", {
+  seq: int("seq", { unsigned: true }).autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 64 })
+    .notNull()
+    .unique()
+    .references(() => user.id, { onDelete: "cascade" }),
 });
 
 export const session = mysqlTable(
@@ -160,19 +186,6 @@ export const clientChannelDevice = mysqlTable("client_channel_device", {
   attestationLevel: varchar("attestation_level", { length: 16 }),
   registeredAt: datetime("registered_at", { fsp: 3 }).notNull(),
   lastSeenAt: datetime("last_seen_at", { fsp: 3 }).notNull(),
-});
-
-// ==================== 身份徽章 ====================
-
-/**
- * 徽章目录：启动时按 `shared/Badges.ts` 幂等补齐，`user_badge` 以它为外键目标。
- * 徽章只由管理员人工授予，代码路径不按行为自动写入。
- */
-export const badge = mysqlTable("badge", {
-  id: varchar("id", { length: 16 }).primaryKey(),
-  label: varchar("label", { length: 16 }).notNull(),
-  description: varchar("description", { length: 120 }).notNull(),
-  sortOrder: int("sort_order").notNull(),
 });
 
 /** 账号与徽章的授予关系：一个账号同类徽章只有一枚。 */

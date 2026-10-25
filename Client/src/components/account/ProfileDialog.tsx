@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { KeyRound, Pencil } from "lucide-react";
-import type { AccountProfile } from "@bakagame/shared";
+import { Award, KeyRound, Pencil } from "lucide-react";
+import {
+  badgeDescriptionOf,
+  type AccountBadge,
+  type AccountProfile,
+  type BadgeKind,
+} from "@bakagame/shared";
+import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -286,7 +292,9 @@ function PasskeySection() {
             type="button"
             variant="outline"
             size="sm"
-            disabled={busy !== null || state.status === "loading" || platformAuthenticator === false}
+            disabled={
+              busy !== null || state.status === "loading" || platformAuthenticator === false
+            }
             loading={busy === "add-platform"}
             onClick={() => void add("platform")}
           >
@@ -307,6 +315,76 @@ function PasskeySection() {
           <p className="text-xs text-muted-foreground">本设备未检测到系统验证器。</p>
         ) : null}
       </div>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </SettingsSection>
+  );
+}
+
+/**
+ * 佩戴徽章：点一枚立即生效，不走表单的保存按钮。
+ * 已佩戴的那枚可取消；只有自己已获得的徽章才会出现在这里。
+ */
+function BadgeSection({ profile }: { profile: AccountProfile }) {
+  const setProfile = useAccountStore((state) => state.setProfile);
+  const [busy, setBusy] = useState<BadgeKind | "none" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const equip = async (badge: BadgeKind | null) => {
+    setBusy(badge ?? "none");
+    setError(null);
+    try {
+      const next = await api.account.equipBadge({ badge });
+      setProfile(next);
+      invalidatePublicProfile(next.id);
+    } catch (cause) {
+      setError(apiErrorMessage(cause, "佩戴徽章失败，请稍后重试"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const row = (badge: AccountBadge) => {
+    const equipped = profile.equippedBadge === badge.kind;
+    return (
+      <li
+        key={badge.kind}
+        className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <BadgeChip badge={badge} />
+            {equipped ? <span className="text-xs text-muted-foreground">佩戴中</span> : null}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {badgeDescriptionOf(badge)}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-pressed={equipped}
+          disabled={busy !== null}
+          loading={busy === badge.kind || (equipped && busy === "none")}
+          onClick={() => void equip(equipped ? null : badge.kind)}
+        >
+          {equipped ? "取消佩戴" : "佩戴"}
+        </Button>
+      </li>
+    );
+  };
+
+  return (
+    <SettingsSection title="身份徽章" icon={Award}>
+      {profile.badges.length ? (
+        <ul className="grid gap-2">{profile.badges.map(row)}</ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">还没有获得徽章。</p>
+      )}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -368,6 +446,7 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
             onCheckedChange={setShowQq}
           />
         </SettingsFields>
+        <BadgeSection profile={profile} />
         {supportsPasskey ? <PasskeySection /> : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">

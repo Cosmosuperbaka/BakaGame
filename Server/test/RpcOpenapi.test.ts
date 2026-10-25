@@ -27,6 +27,7 @@ const EXPECTED_OPERATIONS = [
   "account.qqName",
   "account.me",
   "account.updateProfile",
+  "account.equipBadge",
   "account.publicProfile",
   "settings.get",
   "settings.savePreferences",

@@ -30,6 +30,7 @@ import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepos
 import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseBadgeRepository } from "../infrastructure/db/BadgeRepository";
+import { DatabaseRegistrationRepository } from "../infrastructure/db/RegistrationRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { DatabaseStatusEventRepository } from "../infrastructure/db/StatusEventRepository";
 import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
@@ -288,8 +289,10 @@ const createAccount = (
 ) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
-  // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定。
+  // 建号钩子要解析 QQ 昵称、补系统徽章，而两个服务都在 auth 之后创建：用闭包延迟绑定。
   let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
+  let accountCreated: ((user: { id: string; qqNumber?: string | null }) => Promise<void>) | null =
+    null;
   const auth = createAuth({
     database: drizzleAdapter(database.db, {
       provider: "mysql",
@@ -310,6 +313,13 @@ const createAccount = (
     mailer,
     resolveNickname: (qqNumber) =>
       resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
+    onUserCreated: async (user) => {
+      try {
+        await accountCreated?.(user);
+      } catch (error) {
+        logger.warn("建号后自动授予徽章失败", { userId: user.id, error: String(error) });
+      }
+    },
   });
   // 昵称来源是管理员自建的 NapCat（OneBot 11）：没配实例就不装配昵称服务，
   // 新号发码与建号会因取不到昵称而拒绝（老号不受影响），后台 `admin.qq.*` 回 503。
@@ -319,19 +329,24 @@ const createAccount = (
   resolveNickname = (qqNumber) =>
     nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null);
   const badges = new DatabaseBadgeRepository(database);
+  const registrations = new DatabaseRegistrationRepository(database);
   const service = new AccountService({
     auth,
     mailer,
     avatars: new QQAvatarService(),
     badges,
+    registrations,
+    ownerQqNumber: env.account.ownerQqNumber,
     nicknames,
     logger,
   });
+  accountCreated = (user) => service.afterRegistration(user);
   const adminQqNumbers = env.account.adminQqNumbers;
-  // 徽章目录是授予关系的外键目标：先补齐目录，后台才可能写入关系；失败只记错误，不挡启动。
+  // 徽章目录是授予关系的外键目标：先补齐目录，再补齐注册序号与系统徽章；失败只记错误，不挡启动。
   void database.ready
     .then(() => badges.ensureCatalog())
-    .catch((error: unknown) => logger.error("徽章目录补齐失败", { error: String(error) }));
+    .then(() => service.ensureAutomaticBadges())
+    .catch((error: unknown) => logger.error("徽章自动授予失败", { error: String(error) }));
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
   void database.ready
     .then(() => service.promoteAdmins(adminQqNumbers))

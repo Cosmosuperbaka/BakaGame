@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PlayerAccount, PublicProfile } from "@bakagame/shared";
+import { EquippedBadge } from "@/components/common/BadgeList";
 import { loadPublicProfile } from "@/lib/ProfileCache";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";
@@ -88,9 +89,12 @@ export function ProfileCard({
           </span>
         ) : (
           <>
-            <Hint label={state.profile.name}>
-              <div className="truncate font-semibold">{state.profile.name}</div>
-            </Hint>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Hint label={state.profile.name}>
+                <div className="truncate font-semibold">{state.profile.name}</div>
+              </Hint>
+              <EquippedBadge badges={state.profile.badges} equipped={state.profile.equippedBadge} />
+            </div>
             {state.profile.name !== playerName ? (
               <Hint label={playerName}>
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">

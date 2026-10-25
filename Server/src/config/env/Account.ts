@@ -18,6 +18,8 @@ export interface AccountEnv {
   secret: string;
   /** 启动时提升为管理员的 QQ 号。 */
   adminQqNumbers: string[];
+  /** 最高管理员 QQ 号：主理人徽章只授予这个账号；缺省取管理员名单第一位。 */
+  ownerQqNumber?: string;
   /** 验证码投递：SMTP，或仅限非生产环境的控制台输出（`MAIL_DEV_CONSOLE=true`）。 */
   mail: { kind: "smtp"; smtp: SmtpEnv } | { kind: "console" } | { kind: "none" };
   /**
@@ -117,11 +119,17 @@ const readAccountEnv = (
     .filter(Boolean);
   const invalidAdmin = adminQqNumbers.find((item) => !QQ_NUMBER_PATTERN.test(item));
   if (invalidAdmin) throw new AppError("CONFIG_ERROR", `ADMIN_QQ 含非法 QQ 号: "${invalidAdmin}"`);
+  const ownerQqNumber = Bun.env.OWNER_QQ?.trim() || adminQqNumbers[0];
+  if (ownerQqNumber && !QQ_NUMBER_PATTERN.test(ownerQqNumber))
+    throw new AppError("CONFIG_ERROR", `OWNER_QQ 含非法 QQ 号: "${ownerQqNumber}"`);
+  if (ownerQqNumber && !adminQqNumbers.includes(ownerQqNumber))
+    throw new AppError("CONFIG_ERROR", "OWNER_QQ 必须是 ADMIN_QQ 中的一位管理员");
   const smtp = readSmtpEnv();
   const devConsole = Bun.env.MAIL_DEV_CONSOLE === "true";
   return {
     secret,
     adminQqNumbers,
+    ownerQqNumber,
     mail: smtp ? { kind: "smtp", smtp } : devConsole ? { kind: "console" } : { kind: "none" },
     passkeyRpId: resolvePasskeyRpId(clientUrl),
   };

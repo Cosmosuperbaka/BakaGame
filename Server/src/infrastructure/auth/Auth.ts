@@ -37,6 +37,8 @@ export interface AuthOptions {
    * 昵称查询接口不可用时停用注册（见 Server/docs/Account.md §4）。
    */
   resolveNickname: (qqNumber: string) => Promise<string | null>;
+  /** 建号完成后的自动授予（先行者、主理人）；失败不影响建号结果。 */
+  onUserCreated?: (user: { id: string; qqNumber?: string | null }) => Promise<void>;
 }
 
 /**
@@ -70,6 +72,7 @@ export const createAuth = (options: AuthOptions) => {
         avatarCheckedAt: { type: "date", required: false, input: false, returned: false },
         qqName: { type: "string", required: false, input: false, returned: false },
         qqNameCheckedAt: { type: "date", required: false, input: false, returned: false },
+        equippedBadge: { type: "string", required: false, input: false, returned: false },
       },
     },
     session: {
@@ -127,6 +130,9 @@ export const createAuth = (options: AuthOptions) => {
                 role: admins.has(qqNumber) ? "admin" : "user",
               },
             };
+          },
+          after: async (user) => {
+            await options.onUserCreated?.(user as { id: string; qqNumber?: string | null });
           },
         },
       },

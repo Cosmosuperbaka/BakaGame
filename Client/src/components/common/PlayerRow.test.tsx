@@ -52,6 +52,7 @@ describe("PlayerRow 资料卡", () => {
       image: "/api/account/avatar/u1?v=1",
       qqNumber: null,
       badges: [],
+      equippedBadge: null,
     });
     const { container } = render(
       <PlayerRow
@@ -79,6 +80,7 @@ describe("PlayerRow 资料卡", () => {
       image: null,
       qqNumber: "10001",
       badges: [],
+      equippedBadge: null,
     });
     render(
       <PlayerRow
@@ -101,19 +103,23 @@ describe("PlayerRow 资料卡", () => {
     expect(publicProfile).toHaveBeenCalledOnce();
   });
 
-  it("身份徽章与昵称同一行渲染", async () => {
+  it("只展示佩戴中的身份徽章，并与昵称同一行渲染", async () => {
     publicProfile.mockResolvedValue({
       id: "u4",
       name: "小开",
       image: null,
       qqNumber: null,
-      badges: ["developer", "tester"],
+      badges: [
+        { kind: "contributor", serial: null },
+        { kind: "pioneer", serial: 42 },
+      ],
+      equippedBadge: "contributor",
     });
     render(<PlayerRow name="小开" score={0} account={{ userId: "u4", image: null }} />);
 
-    expect(await screen.findByText("开发者")).toBeInTheDocument();
-    expect(screen.getByText("内测")).toBeInTheDocument();
-    expect(screen.getByText("小开").parentElement).toHaveTextContent("开发者");
+    expect(await screen.findByText("贡献者")).toBeInTheDocument();
+    expect(screen.queryByText("先行者·№42")).not.toBeInTheDocument();
+    expect(screen.getByText("小开").parentElement).toHaveTextContent("贡献者");
   });
 
   it("资料读取失败时就地提示，可直接重试", async () => {
@@ -125,6 +131,7 @@ describe("PlayerRow 资料卡", () => {
       image: null,
       qqNumber: null,
       badges: [],
+      equippedBadge: null,
     });
     render(<PlayerRow name="某人" score={0} account={{ userId: "u3", image: null }} />);
     clearProfileCacheForTest();
@@ -140,6 +147,7 @@ describe("PlayerRow 资料卡", () => {
       image: null,
       qqNumber: null,
       badges: [],
+      equippedBadge: null,
     });
     await user.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("重试成功")).toBeInTheDocument();

@@ -27,8 +27,14 @@ import {
 
 const qqNumber = z.string().regex(QQ_NUMBER_PATTERN, "QQ 号格式不正确");
 
-/** 身份徽章只有管理员能授予；徽章不进房间快照，客户端按用户 ID 查询。 */
+/** 身份徽章随资料返回；徽章不进房间快照，客户端按用户 ID 查询。 */
 export const badgeKindSchema = z.enum(BADGE_KINDS);
+
+/** 一枚已授予的徽章；先行者带注册序号，其余徽章没有序号。 */
+export const accountBadgeSchema = z.object({
+  kind: badgeKindSchema,
+  serial: z.number().int().positive().nullable(),
+});
 
 export const accountProfileSchema = z.object({
   id: z.string(),
@@ -38,7 +44,9 @@ export const accountProfileSchema = z.object({
   image: z.string().nullable(),
   showQq: z.boolean(),
   role: z.enum(["user", "admin"]),
-  badges: z.array(badgeKindSchema),
+  badges: z.array(accountBadgeSchema),
+  /** 当前佩戴的徽章；只能是自己已获得的一枚，空表示不佩戴。 */
+  equippedBadge: badgeKindSchema.nullable(),
   createdAt: z.string(),
 });
 
@@ -48,7 +56,8 @@ export const publicProfileSchema = z.object({
   name: z.string(),
   image: z.string().nullable(),
   qqNumber: z.string().nullable(),
-  badges: z.array(badgeKindSchema),
+  badges: z.array(accountBadgeSchema),
+  equippedBadge: badgeKindSchema.nullable(),
 });
 
 const preferences = z
@@ -174,6 +183,8 @@ export const adminUserSchema = z.object({
   showQq: z.boolean(),
   /** 经查询号获取的 QQ 昵称；未查到为空。 */
   qqName: z.string().nullable(),
+  badges: z.array(accountBadgeSchema),
+  equippedBadge: badgeKindSchema.nullable(),
   createdAt: z.string(),
 });
 
@@ -432,12 +443,15 @@ const adminContract = {
       .input(z.object({ userId }))
       .output(z.object({ ok: z.literal(true) })),
     grantBadge: op(
-      "给账号授予一枚身份徽章；重复授予保持一枚，不产生新的徽章状态。",
+      "给账号授予贡献者徽章；重复授予保持一枚。主理人与先行者由系统自动授予，不能手动授予。",
       "admin"
     )
       .input(z.object({ userId, badge: badgeKindSchema }))
       .output(z.object({ ok: z.literal(true) })),
-    revokeBadge: op("撤销账号的一枚身份徽章；未授予时同样返回成功。", "admin")
+    revokeBadge: op(
+      "撤销账号的贡献者徽章；未授予时同样返回成功。主理人与先行者不能手动撤销。",
+      "admin"
+    )
       .input(z.object({ userId, badge: badgeKindSchema }))
       .output(z.object({ ok: z.literal(true) })),
   },
@@ -664,6 +678,12 @@ export const apiContract = {
       "session"
     )
       .input(z.object({ showQq: z.boolean().optional() }))
+      .output(accountProfileSchema),
+    equipBadge: op(
+      "佩戴自己已获得的一枚徽章；传 `null` 取消佩戴。只能选自己已获得的徽章。",
+      "session"
+    )
+      .input(z.object({ badge: badgeKindSchema.nullable() }))
       .output(accountProfileSchema),
     publicProfile: op(
       "别人看到的资料卡与身份徽章：QQ 号仅在本人公开时出现；徽章按用户 ID 单独查询，不进房间快照。",

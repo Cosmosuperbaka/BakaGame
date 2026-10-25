@@ -24,6 +24,8 @@ const admin = vi.hoisted(() => ({
     unban: vi.fn(),
     setRole: vi.fn(),
     revokeSessions: vi.fn(),
+    grantBadge: vi.fn(),
+    revokeBadge: vi.fn(),
   },
   feedback: { list: vi.fn(), get: vi.fn(), reply: vi.fn(), setStatus: vi.fn() },
   antiCheat: { list: vi.fn(), history: vi.fn(), setStatus: vi.fn() },
@@ -47,6 +49,7 @@ const profile = (role: AccountProfile["role"]): AccountProfile => ({
   role,
   createdAt: "2026-10-01T00:00:00.000Z",
   badges: [],
+  equippedBadge: null,
 });
 
 const overview: AdminOverview = {
@@ -82,6 +85,8 @@ const user: AdminUser = {
   banExpires: null,
   showQq: false,
   qqName: "阿狸",
+  badges: [{ kind: "pioneer", serial: 42 }],
+  equippedBadge: "pioneer",
   createdAt: "2026-10-02T00:00:00.000Z",
 };
 
@@ -273,6 +278,25 @@ describe("管理后台", () => {
       userId: "u-1",
       reason: "刷屏",
       expiresInHours: 24,
+    });
+  });
+
+  it("用户页展示徽章，详情可授予贡献者", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.grantBadge.mockResolvedValue({ ok: true });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    expect(within(table).getByText("先行者·№42")).toBeInTheDocument();
+
+    await events.click(within(table).getByRole("button", { name: /Alice/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("先行者·№42")).toBeInTheDocument();
+    expect(within(dialog).getByText("佩戴中")).toBeInTheDocument();
+
+    await events.click(within(dialog).getByRole("button", { name: "授予贡献者" }));
+    expect(admin.users.grantBadge).toHaveBeenCalledWith({
+      userId: "u-1",
+      badge: "contributor",
     });
   });
 

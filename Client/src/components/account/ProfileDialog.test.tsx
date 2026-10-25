@@ -6,6 +6,9 @@ import { AuthRequestError } from "@/lib/Api";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { ProfileDialog } from "./ProfileDialog";
 
+const equipBadge = vi.hoisted(() =>
+  vi.fn<(input: { badge: "owner" | "contributor" | "pioneer" | null }) => Promise<AccountProfile>>()
+);
 const passkeySupported = vi.hoisted(() => vi.fn<() => boolean>());
 const platformAuthenticatorAvailable = vi.hoisted(() =>
   vi.fn<() => Promise<boolean | undefined>>()
@@ -16,6 +19,11 @@ const addPasskey = vi.hoisted(() =>
 );
 const removePasskey = vi.hoisted(() => vi.fn<(id: string) => Promise<void>>());
 const renamePasskey = vi.hoisted(() => vi.fn<(id: string, name: string) => Promise<void>>());
+
+vi.mock("@/lib/Api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/Api")>()),
+  api: { account: { equipBadge } },
+}));
 
 vi.mock("@/lib/Passkey", () => ({
   PASSKEY_NAME_MAX: 40,
@@ -45,6 +53,7 @@ const profile: AccountProfile = {
   role: "user",
   createdAt: "2026-10-01T00:00:00.000Z",
   badges: [],
+  equippedBadge: null,
 };
 
 const entry = (id: string, name: string | null) => ({
@@ -80,6 +89,7 @@ afterEach(() => {
   addPasskey.mockReset();
   removePasskey.mockReset();
   renamePasskey.mockReset();
+  equipBadge.mockReset();
 });
 
 const renderDialog = () => {
@@ -87,6 +97,36 @@ const renderDialog = () => {
   render(<ProfileDialog open onOpenChange={onOpenChange} />);
   return { onOpenChange, user: userEvent.setup() };
 };
+
+describe("账号资料弹窗的身份徽章", () => {
+  it("列出已获得的徽章，点佩戴立即切换并更新账号资料", async () => {
+    const badges = [
+      { kind: "contributor" as const, serial: null },
+      { kind: "pioneer" as const, serial: 42 },
+    ];
+    const withBadges = { ...profile, badges, equippedBadge: "pioneer" as const };
+    useAccountStore.setState({ profile: withBadges });
+    equipBadge.mockResolvedValue({ ...withBadges, equippedBadge: "contributor" });
+    const { user } = renderDialog();
+
+    expect(await screen.findByText("先行者·№42")).toBeInTheDocument();
+    expect(screen.getByText("BakaGame的第42位注册用户")).toBeInTheDocument();
+    expect(screen.getByText("佩戴中")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "佩戴" }));
+
+    expect(equipBadge).toHaveBeenCalledWith({ badge: "contributor" });
+    await vi.waitFor(() =>
+      expect(useAccountStore.getState().profile?.equippedBadge).toBe("contributor")
+    );
+  });
+
+  it("没有徽章时说明原因，不渲染佩戴按钮", () => {
+    renderDialog();
+    expect(screen.getByText("还没有获得徽章。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "佩戴" })).not.toBeInTheDocument();
+  });
+});
 
 describe("账号资料弹窗的通行密钥", () => {
   it("列出已有密钥：无名兜底，按条移除后重取列表", async () => {

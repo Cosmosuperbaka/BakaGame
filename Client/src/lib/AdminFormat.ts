@@ -20,6 +20,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "user.unban": "解封用户",
   "user.setRole": "修改角色",
   "user.revokeSessions": "强制下线",
+  "user.grantBadge": "授予徽章",
+  "user.revokeBadge": "撤销徽章",
   "feedback.reply": "回复反馈",
   "feedback.setStatus": "修改反馈状态",
   "room.close": "关闭房间",

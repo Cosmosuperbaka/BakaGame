@@ -89,6 +89,7 @@ describe("readEnv 环境变量与启动断言", () => {
       "MAIL_FROM",
       "MAIL_DEV_CONSOLE",
       "ADMIN_QQ",
+      "OWNER_QQ",
       "CLIENT_URL",
       "PASSKEY_RP_ID",
     ] as const;
@@ -120,8 +121,16 @@ describe("readEnv 环境变量与启动断言", () => {
       Bun.env.ADMIN_QQ = "10001, 123456789";
       expect(readEnv().account).toMatchObject({
         adminQqNumbers: ["10001", "123456789"],
+        ownerQqNumber: "10001",
         mail: { kind: "console" },
       });
+      Bun.env.OWNER_QQ = "123456789";
+      expect(readEnv().account?.ownerQqNumber).toBe("123456789");
+      Bun.env.OWNER_QQ = "99999";
+      expect(() => readEnv()).toThrow(/OWNER_QQ/);
+      Bun.env.OWNER_QQ = "not-a-qq";
+      expect(() => readEnv()).toThrow(/OWNER_QQ/);
+      delete Bun.env.OWNER_QQ;
       Bun.env.SMTP_HOST = "smtp.fixture.invalid";
       expect(() => readEnv()).toThrow(/SMTP_HOST、SMTP_USER、SMTP_PASS/);
       Bun.env.SMTP_USER = "noreply@fixture.invalid";

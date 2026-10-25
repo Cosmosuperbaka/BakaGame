@@ -4,7 +4,11 @@ import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { AccountService } from "../src/application/AccountService";
 import type { AppEnv } from "../src/config/Env";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { createAccountTestApp, MemoryBadgeRepository } from "./AccountFixtures";
+import {
+  createAccountTestApp,
+  MemoryBadgeRepository,
+  MemoryRegistrationRepository,
+} from "./AccountFixtures";
 import { createTestApp } from "./AppFixtures";
 
 const QQ = "123456789";
@@ -263,7 +267,8 @@ describe("登录弹窗的昵称回显", () => {
         auth: { $context: Promise.resolve({ internalAdapter }) } as never,
         mailer: {} as never,
         avatars: {} as never,
-        badges: new MemoryBadgeRepository(),
+        badges: new MemoryBadgeRepository({}, new MemoryRegistrationRepository()),
+        registrations: new MemoryRegistrationRepository(),
         nicknames: nicknames as never,
         logger: new EventLogger(() => {}),
       });

@@ -116,6 +116,9 @@ const createRpcRouter = (
       updateProfile: signedIn.account.updateProfile.handler(({ context, input }) =>
         service.updateProfile(context.userId, input)
       ),
+      equipBadge: signedIn.account.equipBadge.handler(({ context, input }) =>
+        service.updateEquippedBadge(context.userId, input.badge)
+      ),
       publicProfile: base.account.publicProfile.handler(({ input }) =>
         service.publicProfile(input.userId)
       ),

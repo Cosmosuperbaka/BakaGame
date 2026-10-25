@@ -7,7 +7,7 @@ import { capTimeline } from "./GameRecordService";
 import { RECORDED_GAMES } from "../domain/GameRecord";
 import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";
 import type { SiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
-import type { BadgeKind } from "../shared/Badges";
+import type { AccountBadge, BadgeKind } from "../shared/Badges";
 import type { QQNicknameService } from "./QQNicknameService";
 import { SENTRY_NOT_CONFIGURED, type SentryApiClient } from "../infrastructure/SentryApi";
 import type { RecordedGame } from "../domain/GameRecord";
@@ -70,6 +70,7 @@ interface UserRow {
   qqNumber: string;
   showQq?: boolean | null;
   qqName?: string | null;
+  equippedBadge?: string | null;
 }
 
 type UserRef = { id: string; name: string; qqNumber: string; image: string | null };
@@ -99,7 +100,7 @@ export interface AdminServiceOptions {
   now?: () => number;
 }
 
-const toAdminUser = (row: UserRow): AdminUser => ({
+const toAdminUser = (row: UserRow, badges: readonly AccountBadge[]): AdminUser => ({
   id: row.id,
   name: row.name,
   qqNumber: row.qqNumber,
@@ -110,6 +111,10 @@ const toAdminUser = (row: UserRow): AdminUser => ({
   banExpires: row.banned && row.banExpires ? new Date(row.banExpires).toISOString() : null,
   showQq: Boolean(row.showQq),
   qqName: row.qqName ?? null,
+  badges: [...badges],
+  equippedBadge: badges.some((badge) => badge.kind === row.equippedBadge)
+    ? (row.equippedBadge as BadgeKind)
+    : null,
   createdAt: new Date(row.createdAt).toISOString(),
 });
 
@@ -164,6 +169,10 @@ export class AdminService {
     const row = await this.findUser(userId);
     if (!row) throw new AppError("NOT_FOUND", "用户不存在");
     return row;
+  }
+
+  private async adminUserOf(row: UserRow): Promise<AdminUser> {
+    return toAdminUser(row, await this.options.badges.badgesOf(row.id));
   }
 
   private async usersById(ids: Array<string | null>): Promise<Map<string, UserRef>> {
@@ -231,17 +240,23 @@ export class AdminService {
       ),
       internalAdapter.countTotalUsers(where),
     ]);
-    return { items: (rows as unknown as UserRow[]).map(toAdminUser), total };
+    const items = rows as unknown as UserRow[];
+    const badges = await this.options.badges.badgesOfMany(items.map((row) => row.id));
+    return {
+      items: items.map((row) => toAdminUser(row, badges.get(row.id) ?? [])),
+      total,
+    };
   }
 
   async getUser(userId: string): Promise<AdminUserDetail> {
     const row = await this.requireUser(userId);
-    const [games, feedback] = await Promise.all([
+    const [games, feedback, badges] = await Promise.all([
       this.options.gameRecords.list({ userId, limit: 20, offset: 0 }),
       this.options.feedback.list({ userId, limit: 1, offset: 0 }),
+      this.options.badges.badgesOf(row.id),
     ]);
     return {
-      ...toAdminUser(row),
+      ...toAdminUser(row, badges),
       recentGames: games.items.map(toGameItem),
       feedbackCount: feedback.total,
     };
@@ -279,7 +294,7 @@ export class AdminService {
       banExpires,
     });
     await internalAdapter.deleteUserSessions(row.id);
-    return toAdminUser(updated as unknown as UserRow);
+    return this.adminUserOf(updated as unknown as UserRow);
   }
 
   async unbanUser(actorId: string, userId: string): Promise<AdminUser> {
@@ -288,7 +303,7 @@ export class AdminService {
     const updated = await (
       await this.context()
     ).internalAdapter.updateUser(row.id, { banned: false, banReason: null, banExpires: null });
-    return toAdminUser(updated as unknown as UserRow);
+    return this.adminUserOf(updated as unknown as UserRow);
   }
 
   async setRole(
@@ -305,7 +320,7 @@ export class AdminService {
     const updated = await (
       await this.context()
     ).internalAdapter.updateUser(row.id, { role: input.role });
-    return toAdminUser(updated as unknown as UserRow);
+    return this.adminUserOf(updated as unknown as UserRow);
   }
 
   async revokeSessions(actorId: string, userId: string): Promise<{ ok: true }> {
@@ -315,11 +330,18 @@ export class AdminService {
     return { ok: true };
   }
 
-  /** 徽章只由人授予，不按行为自动解锁；重复授予保持一枚，审计每次留痕。 */
+  /** 主理人由系统授予最高管理员，先行者由系统按注册顺序授予；后台只能手动管理贡献者。 */
+  private requireManualBadge(badge: BadgeKind): void {
+    if (badge === "owner") throw new AppError("FORBIDDEN", "主理人由系统自动授予最高管理员");
+    if (badge === "pioneer") throw new AppError("FORBIDDEN", "先行者由系统按注册顺序自动授予");
+  }
+
+  /** 贡献者只由人授予；重复授予保持一枚，审计每次留痕。 */
   async grantBadge(
     actorId: string,
     input: { userId: string; badge: BadgeKind }
   ): Promise<{ ok: true }> {
+    this.requireManualBadge(input.badge);
     const row = await this.requireUser(input.userId);
     await this.audit(actorId, "user.grantBadge", "user", row.id, {
       badge: input.badge,
@@ -333,6 +355,7 @@ export class AdminService {
     actorId: string,
     input: { userId: string; badge: BadgeKind }
   ): Promise<{ ok: true }> {
+    this.requireManualBadge(input.badge);
     const row = await this.requireUser(input.userId);
     await this.audit(actorId, "user.revokeBadge", "user", row.id, {
       badge: input.badge,

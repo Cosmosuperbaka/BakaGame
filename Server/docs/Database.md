@@ -22,7 +22,8 @@
 - 表结构唯一真相源是 `db/Schema.ts`；属性名即 Better Auth 字段名（适配器按属性名映射），列名蛇形。
 - 时间列一律 `datetime(3)`，不用 `timestamp`（2038 溢出，远期封禁时间放不下）。
 - 改 schema 后用 Server 的 `db:generate` 生成迁移（不连库），迁移文件进 Git，服务启动时自动应用。**不手写或手改已发布的迁移 SQL。**
-- 徽章目录不写进迁移 SQL：`0009_badges` 只新增 `badge` 与 `user_badge`，不修改既有表，回滚按 `user_badge` → `badge` 顺序删表即可；目录行在启动时按 `shared/Badges.ts` 幂等补齐。
+- 徽章目录不写进迁移 SQL：目录行在启动时按 `shared/Badges.ts` 幂等补齐，并删除已下线的类型（授予关系随之级联删除，佩戴中的徽章由外键置空）。
+- 注册序号 `user_registration` 的存量回填也在启动时按注册时间补齐，不写在迁移 SQL 里；序号由自增主键分配，注销后不回收。佩戴状态是 `user.equipped_badge`，外键指向徽章目录，徽章删除时置空。
 - 按表达式分组（如按北京时间切日）的**单表**查询要按别名分组：Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留，开启严格 `only_full_group_by` 的库会把两者视为不同表达式而报错。内存仓储测不出，此类查询须经真实库冒烟。
 - 词对按 `(word_a, word_b)` 唯一，入库前经 `normalizeWordPair` 规范化；重复提交累加使用次数。批量导入脚本重复执行安全，格式错误的条目整体失败，不静默跳过。
 

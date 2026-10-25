@@ -170,6 +170,16 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["管理员 QQ 号（逗号分隔）：建号即为管理员，启动时提升已注册账号；只提升不降级。"],
   },
   {
+    name: "OWNER_QQ",
+    layer: "T1",
+    documented: true,
+    sample: "",
+    note: [
+      "最高管理员 QQ 号：主理人徽章只授予这个账号，必须包含在 ADMIN_QQ 中。",
+      "留空时取 ADMIN_QQ 第一位。",
+    ],
+  },
+  {
     name: "SMTP_HOST",
     layer: "T1",
     documented: true,

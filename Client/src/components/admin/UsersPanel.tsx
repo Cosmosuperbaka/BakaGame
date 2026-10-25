@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AdminUser } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
+import { BadgeList } from "@/components/common/BadgeList";
 import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
 import {
   AdminTable,
@@ -127,6 +128,7 @@ export function UsersPanel() {
               <th scope="col">账号</th>
               <th scope="col">QQ 昵称</th>
               <th scope="col">角色</th>
+              <th scope="col">徽章</th>
               <th scope="col">状态</th>
               <th scope="col">注册时间</th>
             </tr>
@@ -147,6 +149,13 @@ export function UsersPanel() {
                     </Badge>
                   ) : (
                     ROLE_LABELS.user
+                  )}
+                </td>
+                <td>
+                  {user.badges.length ? (
+                    <BadgeList badges={user.badges} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
                 <td>

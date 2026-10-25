@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import type { AdminUserDetail } from "@bakagame/shared";
+import { badgeDescriptionOf, PIONEER_BADGE_LIMIT, type AdminUserDetail } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
+import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -18,6 +19,7 @@ import {
 import { QueryState, UserCell } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
+import { invalidatePublicProfile } from "@/lib/ProfileCache";
 import {
   BAN_DURATIONS,
   GAME_LABELS,
@@ -90,6 +92,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   const [reason, setReason] = useState("");
   const [hours, setHours] = useState("24");
   const action = useAdminAction();
+  const hasContributor = user.badges.some((badge) => badge.kind === "contributor");
   const after = (ok: boolean) => {
     if (!ok) return;
     setMode("view");
@@ -143,6 +146,52 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         ) : (
           <p className="text-sm text-muted-foreground">还没有对局记录</p>
         )}
+      </section>
+
+      <section aria-label="身份徽章" className="grid gap-2">
+        <h3 className="text-sm font-semibold">身份徽章</h3>
+        {user.badges.length ? (
+          <ul className="grid gap-1 text-sm">
+            {user.badges.map((badge) => (
+              <li key={badge.kind} className="flex flex-wrap items-center gap-2">
+                <BadgeChip badge={badge} />
+                <span className="text-xs text-muted-foreground">{badgeDescriptionOf(badge)}</span>
+                {user.equippedBadge === badge.kind ? (
+                  <span className="text-xs text-muted-foreground">佩戴中</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">还没有徽章</p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={hasContributor ? "outline" : "default"}
+            size="sm"
+            loading={action.busy === "badge"}
+            disabled={action.busy !== null}
+            onClick={() =>
+              void action
+                .run("badge", () =>
+                  hasContributor
+                    ? api.admin.users.revokeBadge({ userId: user.id, badge: "contributor" })
+                    : api.admin.users.grantBadge({ userId: user.id, badge: "contributor" })
+                )
+                .then((ok) => {
+                  if (ok) invalidatePublicProfile(user.id);
+                  after(ok);
+                })
+            }
+          >
+            {hasContributor ? "撤销贡献者" : "授予贡献者"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            主理人由系统自动授予最高管理员，先行者按注册顺序自动授予前 {PIONEER_BADGE_LIMIT}
+            位，均不可手动修改。
+          </p>
+        </div>
       </section>
 
       {mode === "ban" ? (
@@ -269,7 +318,7 @@ export function UserDetailDialog({
         <DialogHeader>
           <DialogTitle>用户详情</DialogTitle>
           <DialogDescription>
-            封禁、改角色与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。
+            封禁、改角色、徽章与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。
           </DialogDescription>
         </DialogHeader>
         {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}

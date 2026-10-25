@@ -3716,6 +3716,94 @@
         }
       }
     },
+    "/api/rpc/account/equipBadge": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "operationId": "account.equipBadge",
+        "summary": "account.equipBadge",
+        "description": "佩戴自己已获得的一枚徽章；传 `null` 取消佩戴。只能选自己已获得的徽章。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "object",
+                    "properties": {
+                      "badge": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "owner",
+                              "contributor",
+                              "pioneer"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "badge"
+                    ]
+                  }
+                },
+                "required": [
+                  "json"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "$ref": "#/components/schemas/AccountProfile"
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
     "/api/rpc/account/publicProfile": {
       "post": {
         "tags": [
@@ -4908,7 +4996,7 @@
         ],
         "operationId": "admin.users.grantBadge",
         "summary": "admin.users.grantBadge",
-        "description": "给账号授予一枚身份徽章；重复授予保持一枚，不产生新的徽章状态。",
+        "description": "给账号授予贡献者徽章；重复授予保持一枚。主理人与先行者由系统自动授予，不能手动授予。",
         "security": [
           {
             "sessionCookie": []
@@ -4932,10 +5020,9 @@
                       "badge": {
                         "type": "string",
                         "enum": [
-                          "developer",
+                          "owner",
                           "contributor",
-                          "tester",
-                          "sponsor"
+                          "pioneer"
                         ]
                       }
                     },
@@ -5009,7 +5096,7 @@
         ],
         "operationId": "admin.users.revokeBadge",
         "summary": "admin.users.revokeBadge",
-        "description": "撤销账号的一枚身份徽章；未授予时同样返回成功。",
+        "description": "撤销账号的贡献者徽章；未授予时同样返回成功。主理人与先行者不能手动撤销。",
         "security": [
           {
             "sessionCookie": []
@@ -5033,10 +5120,9 @@
                       "badge": {
                         "type": "string",
                         "enum": [
-                          "developer",
+                          "owner",
                           "contributor",
-                          "tester",
-                          "sponsor"
+                          "pioneer"
                         ]
                       }
                     },
@@ -7974,14 +8060,50 @@
           "badges": {
             "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "developer",
-                "contributor",
-                "tester",
-                "sponsor"
-              ]
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "contributor",
+                    "pioneer"
+                  ]
+                },
+                "serial": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "serial"
+              ],
+              "additionalProperties": false
             }
+          },
+          "equippedBadge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "contributor",
+                  "pioneer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "createdAt": {
             "type": "string"
@@ -7995,6 +8117,7 @@
           "showQq",
           "role",
           "badges",
+          "equippedBadge",
           "createdAt"
         ],
         "additionalProperties": false
@@ -8023,14 +8146,50 @@
           "badges": {
             "type": "array",
             "items": {
-              "type": "string",
-              "enum": [
-                "developer",
-                "contributor",
-                "tester",
-                "sponsor"
-              ]
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "contributor",
+                    "pioneer"
+                  ]
+                },
+                "serial": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "serial"
+              ],
+              "additionalProperties": false
             }
+          },
+          "equippedBadge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "contributor",
+                  "pioneer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -8038,7 +8197,8 @@
           "name",
           "image",
           "qqNumber",
-          "badges"
+          "badges",
+          "equippedBadge"
         ],
         "additionalProperties": false
       },
@@ -8368,6 +8528,54 @@
               "null"
             ]
           },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "contributor",
+                    "pioneer"
+                  ]
+                },
+                "serial": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "serial"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "equippedBadge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "contributor",
+                  "pioneer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string"
           }
@@ -8383,6 +8591,8 @@
           "banExpires",
           "showQq",
           "qqName",
+          "badges",
+          "equippedBadge",
           "createdAt"
         ],
         "additionalProperties": false
@@ -8436,6 +8646,54 @@
               "null"
             ]
           },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "owner",
+                    "contributor",
+                    "pioneer"
+                  ]
+                },
+                "serial": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "serial"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "equippedBadge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "owner",
+                  "contributor",
+                  "pioneer"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string"
           },
@@ -8462,6 +8720,8 @@
           "banExpires",
           "showQq",
           "qqName",
+          "badges",
+          "equippedBadge",
           "createdAt",
           "recentGames",
           "feedbackCount"

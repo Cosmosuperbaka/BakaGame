@@ -29,6 +29,7 @@ import type {
   StoredAuditEntry,
 } from "../src/infrastructure/db/AuditLogRepository";
 import type { BadgeRepository } from "../src/infrastructure/db/BadgeRepository";
+import type { RegistrationRepository } from "../src/infrastructure/db/RegistrationRepository";
 import type { GameRecordRepository } from "../src/infrastructure/db/GameRecordRepository";
 import type { StatusEventRepository } from "../src/infrastructure/db/StatusEventRepository";
 import type {
@@ -41,7 +42,7 @@ import type {
 } from "../src/infrastructure/db/UserDataRepository";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { FeedbackStatus } from "../src/shared/ApiContract";
-import { BADGE_KINDS, type BadgeKind } from "../src/shared/Badges";
+import { BADGE_KINDS, type AccountBadge, type BadgeKind } from "../src/shared/Badges";
 import { isAllowedOrigin } from "../src/transport/App";
 import { createTestApp } from "./AppFixtures";
 
@@ -100,32 +101,89 @@ export class MemoryAuditLogRepository implements AuditLogRepository {
   }
 }
 
+/** 内存注册序号：按调用顺序递增，与数据库自增口径一致。 */
+export class MemoryRegistrationRepository implements RegistrationRepository {
+  readonly rows = new Map<string, number>();
+  nextSerial = 1;
+
+  async ensureAll(): Promise<void> {}
+
+  async register(userId: string): Promise<number> {
+    const existing = this.rows.get(userId);
+    if (existing) return existing;
+    const serial = this.nextSerial++;
+    this.rows.set(userId, serial);
+    return serial;
+  }
+
+  async earlyAdopters(limit: number): Promise<Array<{ userId: string; serial: number }>> {
+    return [...this.rows]
+      .filter(([, serial]) => serial <= limit)
+      .sort((left, right) => left[1] - right[1])
+      .map(([userId, serial]) => ({ userId, serial }));
+  }
+}
+
 /** 内存徽章关系：目录由共享常量提供，排序与数据库实现一致。 */
 export class MemoryBadgeRepository implements BadgeRepository {
   readonly rows = new Set<string>();
 
+  constructor(
+    private readonly db: Record<string, unknown[]>,
+    private readonly registrations: MemoryRegistrationRepository
+  ) {}
+
   async ensureCatalog(): Promise<void> {}
 
-  async badgesOf(userId: string): Promise<BadgeKind[]> {
+  async badgesOf(userId: string): Promise<AccountBadge[]> {
     return (await this.badgesOfMany([userId])).get(userId) ?? [];
   }
 
-  async badgesOfMany(userIds: readonly string[]): Promise<Map<string, BadgeKind[]>> {
+  async badgesOfMany(userIds: readonly string[]): Promise<Map<string, AccountBadge[]>> {
     const unique = [...new Set(userIds)];
-    const grouped = new Map<string, BadgeKind[]>();
+    const grouped = new Map<string, AccountBadge[]>();
     for (const userId of unique) {
-      const owned = BADGE_KINDS.filter((kind) => this.rows.has(`${userId}:${kind}`));
-      if (owned.length) grouped.set(userId, [...owned]);
+      const owned: AccountBadge[] = BADGE_KINDS.filter((kind) =>
+        this.rows.has(`${userId}:${kind}`)
+      ).map((kind) => ({
+        kind,
+        serial: kind === "pioneer" ? (this.registrations.rows.get(userId) ?? null) : null,
+      }));
+      if (owned.length) grouped.set(userId, owned);
     }
     return grouped;
   }
 
-  async grant(userId: string, badgeId: BadgeKind): Promise<void> {
+  private userRow(userId: string): { equippedBadge?: string | null } | undefined {
+    return this.db.user.find((row) => (row as { id?: string }).id === userId) as
+      { equippedBadge?: string | null } | undefined;
+  }
+
+  async grant(
+    userId: string,
+    badgeId: BadgeKind,
+    _grantedBy: string | null,
+    _now: Date
+  ): Promise<void> {
     this.rows.add(`${userId}:${badgeId}`);
+    const row = this.userRow(userId);
+    if (row && !row.equippedBadge) row.equippedBadge = badgeId;
   }
 
   async revoke(userId: string, badgeId: BadgeKind): Promise<void> {
     this.rows.delete(`${userId}:${badgeId}`);
+    const row = this.userRow(userId);
+    if (row?.equippedBadge === badgeId) row.equippedBadge = null;
+  }
+
+  async resetExclusive(badgeId: BadgeKind, keepUserId: string | null): Promise<void> {
+    for (const key of [...this.rows]) {
+      const [userId, kind] = key.split(":");
+      if (kind !== badgeId || userId === keepUserId) continue;
+      this.rows.delete(key);
+      const row = this.userRow(userId);
+      if (row?.equippedBadge === badgeId) row.equippedBadge = null;
+    }
   }
 }
 
@@ -361,6 +419,7 @@ export const createAvatarFetcher = () => {
 export const createAccountTestApp = (
   options: {
     adminQqNumbers?: string[];
+    ownerQqNumber?: string;
     now?: () => number;
     gameRecords?: GameRecordRepository;
     /** 默认只接真实的谁是卧底服务，另两款为空房间桩；各游戏的后台控制口在各自测试里覆盖。 */
@@ -397,8 +456,10 @@ export const createAccountTestApp = (
     verification: [],
     passkey: [],
   };
-  // 建号钩子要解析 QQ 昵称，而昵称服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
+  // 建号钩子要解析 QQ 昵称、补系统徽章，而相关服务在 auth 之后创建：用闭包延迟绑定（与 CreateServer 同法）。
   let resolveNickname: ((qqNumber: string) => Promise<string | null>) | null = null;
+  let accountCreated: ((user: { id: string; qqNumber?: string | null }) => Promise<void>) | null =
+    null;
   const auth = createAuth({
     database: memoryAdapter(db as Record<string, never[]>),
     secret: ACCOUNT_TEST_SECRET,
@@ -410,6 +471,13 @@ export const createAccountTestApp = (
     mailer,
     resolveNickname: (qqNumber) =>
       resolveNickname ? resolveNickname(qqNumber) : Promise.resolve(null),
+    onUserCreated: async (user) => {
+      try {
+        await accountCreated?.(user);
+      } catch (error) {
+        logger.warn("建号后自动授予徽章失败", { userId: user.id, error: String(error) });
+      }
+    },
   });
   const napcat = createNapCatFetcher();
   const nicknames = new QQNicknameService({
@@ -424,16 +492,20 @@ export const createAccountTestApp = (
     now: options.now,
   });
   resolveNickname = (qqNumber) => nicknames.resolveNickname(qqNumber);
-  const badges = new MemoryBadgeRepository();
+  const registrations = new MemoryRegistrationRepository();
+  const badges = new MemoryBadgeRepository(db, registrations);
   const service = new AccountService({
     auth,
     mailer,
     avatars: new QQAvatarService(avatarFetcher.fetcher),
     badges,
+    registrations,
+    ownerQqNumber: options.ownerQqNumber ?? options.adminQqNumbers?.[0],
     nicknames,
     logger,
     now: options.now,
   });
+  accountCreated = (user) => service.afterRegistration(user);
   const settings = new MemoryUserSettingRepository();
   const feedback = new MemoryFeedbackRepository();
   const sentFeedback: Array<Parameters<FeedbackSink>[0]> = [];
@@ -553,6 +625,7 @@ export const createAccountTestApp = (
     settings,
     feedback,
     badges,
+    registrations,
     sentFeedback,
     sentry,
     mailer,

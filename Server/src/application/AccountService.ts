@@ -2,6 +2,7 @@ import { LRUCache } from "lru-cache";
 
 import { AppError } from "../domain/Errors";
 import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";
+import type { RegistrationRepository } from "../infrastructure/db/RegistrationRepository";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { Auth } from "../infrastructure/auth/Auth";
@@ -10,7 +11,7 @@ import type { AvatarImage, AvatarSize, QQAvatarService } from "../infrastructure
 import type { QQNicknameService } from "./QQNicknameService";
 import { accountAvatarUrlOf, LOGIN_CODE_RESEND_SECONDS, qqEmailOf } from "../shared/Account";
 import type { AccountProfile, PublicProfile } from "../shared/ApiContract";
-import type { BadgeKind } from "../shared/Badges";
+import { PIONEER_BADGE_LIMIT, type AccountBadge, type BadgeKind } from "../shared/Badges";
 import type { PlayerAccount } from "../shared/Model";
 
 /** 账号表在应用层可见的字段（Better Auth 适配器返回的原始行）。 */
@@ -28,6 +29,7 @@ interface AccountRow {
   avatarCheckedAt?: Date | null;
   qqName?: string | null;
   qqNameCheckedAt?: Date | null;
+  equippedBadge?: string | null;
 }
 
 export interface AccountServiceOptions {
@@ -36,6 +38,10 @@ export interface AccountServiceOptions {
   avatars: QQAvatarService;
   /** 身份徽章只随资料返回，不进房间快照。 */
   badges: BadgeRepository;
+  /** 建号序号：先行者按它自动授予。 */
+  registrations: RegistrationRepository;
+  /** 最高管理员 QQ 号：主理人只授予这个账号。 */
+  ownerQqNumber?: string | null;
   logger: EventLogger;
   /** QQ 昵称查询号：新号发码前必须取到昵称，取不到即拒绝（停用注册）。 */
   nicknames?: QQNicknameService | null;
@@ -106,6 +112,44 @@ export class AccountService {
       ],
       update: { role: "admin" },
     });
+  }
+
+  /**
+   * 启动时补齐自动徽章：给存量账号分配注册序号，前 1000 位补发先行者，
+   * 最高管理员独占主理人。管理员账号可能尚未注册，此时先清空其他人的主理人。
+   */
+  async ensureAutomaticBadges(): Promise<void> {
+    await this.options.registrations.ensureAll();
+    const ownerQqNumber = this.options.ownerQqNumber;
+    const owner = ownerQqNumber ? await this.findUserByQq(ownerQqNumber) : null;
+    await this.options.badges.resetExclusive("owner", owner?.id ?? null);
+    if (owner) {
+      const owned = await this.options.badges.badgesOf(owner.id);
+      if (!owned.some((badge) => badge.kind === "owner"))
+        await this.options.badges.grant(owner.id, "owner", null, new Date(this.now()));
+    }
+
+    const early = await this.options.registrations.earlyAdopters(PIONEER_BADGE_LIMIT);
+    const existing = await this.options.badges.badgesOfMany(early.map((entry) => entry.userId));
+    for (const { userId } of early) {
+      if (existing.get(userId)?.some((badge) => badge.kind === "pioneer")) continue;
+      await this.options.badges.grant(userId, "pioneer", null, new Date(this.now()));
+    }
+  }
+
+  /** 建号钩子：分配注册序号并补上系统徽章；失败由调用方记录，不回滚建号。 */
+  async afterRegistration(user: { id: string; qqNumber?: string | null }): Promise<void> {
+    const serial = await this.options.registrations.register(user.id);
+    const now = new Date(this.now());
+    if (this.options.ownerQqNumber && user.qqNumber === this.options.ownerQqNumber)
+      await this.options.badges.grant(user.id, "owner", null, now);
+    if (serial <= PIONEER_BADGE_LIMIT)
+      await this.options.badges.grant(user.id, "pioneer", null, now);
+  }
+
+  private async findUserByQq(qqNumber: string): Promise<AccountRow | null> {
+    const result = await (await this.adapter()).findUserByEmail(qqEmailOf(qqNumber));
+    return (result?.user as AccountRow | undefined) ?? null;
   }
 
   async requestLoginCode(
@@ -252,15 +296,32 @@ export class AccountService {
     return toProfile(row, await this.options.badges.badgesOf(row.id));
   }
 
+  /** 玩家自行切换佩戴的徽章；`null` 表示不佩戴。只能佩戴自己已获得的那一枚。 */
+  async updateEquippedBadge(userId: string, badge: BadgeKind | null): Promise<AccountProfile> {
+    const row = await this.findUser(userId);
+    if (!row) throw new AppError("UNAUTHORIZED", "请先登录");
+    const badges = await this.options.badges.badgesOf(row.id);
+    if (badge && !badges.some((item) => item.kind === badge))
+      throw new AppError("FORBIDDEN", "还没有获得这枚徽章");
+    const updated = (await (
+      await this.adapter()
+    ).updateUser(userId, {
+      equippedBadge: badge,
+    })) as AccountRow | null;
+    return toProfile(updated ?? { ...row, equippedBadge: badge }, badges);
+  }
+
   async publicProfile(userId: string): Promise<PublicProfile> {
     const row = await this.findUser(userId);
     if (!row) throw new AppError("NOT_FOUND", "该玩家未登录账号或账号已注销");
+    const badges = await this.options.badges.badgesOf(row.id);
     return {
       id: row.id,
       name: row.name,
       image: row.image ?? null,
       qqNumber: row.showQq ? (row.qqNumber ?? null) : null,
-      badges: await this.options.badges.badgesOf(row.id),
+      badges,
+      equippedBadge: equippedBadgeOf(row, badges),
     };
   }
 
@@ -312,7 +373,12 @@ export class AccountService {
   }
 }
 
-const toProfile = (row: AccountRow, badges: readonly BadgeKind[]): AccountProfile => ({
+const equippedBadgeOf = (row: AccountRow, badges: readonly AccountBadge[]): BadgeKind | null =>
+  badges.some((badge) => badge.kind === row.equippedBadge)
+    ? (row.equippedBadge as BadgeKind)
+    : null;
+
+const toProfile = (row: AccountRow, badges: readonly AccountBadge[]): AccountProfile => ({
   id: row.id,
   name: row.name,
   qqNumber: row.qqNumber ?? "",
@@ -320,5 +386,6 @@ const toProfile = (row: AccountRow, badges: readonly BadgeKind[]): AccountProfil
   showQq: Boolean(row.showQq),
   role: row.role === "admin" ? "admin" : "user",
   badges: [...badges],
+  equippedBadge: equippedBadgeOf(row, badges),
   createdAt: new Date(row.createdAt).toISOString(),
 });
