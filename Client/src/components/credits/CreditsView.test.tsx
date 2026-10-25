@@ -181,8 +181,7 @@ describe("CreditsView", () => {
 
     const guessr = within(section).getByRole("link", { name: /anime-character-guessr/ });
     expect(guessr).toHaveAttribute("href", "https://github.com/kennylimz/anime-character-guessr");
-    // 玩法原型的作者署名随条目说明给出。
-    expect(guessr.textContent).toContain("Kenny Li");
+    expect(guessr.textContent).toContain("二刺猿笑传之猜猜呗原版");
 
     const bangumi = within(section).getByRole("link", { name: /Bangumi 番组计划/ });
     expect(bangumi).toHaveAttribute("href", "https://bgm.tv/");

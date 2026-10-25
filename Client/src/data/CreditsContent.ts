@@ -271,31 +271,31 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
 export const SPECIAL_THANKS: readonly SpecialThanksEntry[] = [
   {
     name: "anime-character-guessr",
-    description: "本作的玩法原型与规则来源，作者 Kenny Li。",
+    description: "二刺猿笑传之猜猜呗原版",
     url: "https://github.com/kennylimz/anime-character-guessr",
     icon: "cee",
   },
   {
     name: "Bangumi 番组计划",
-    description: "番剧、角色与歌曲资料。",
+    description: "提供了番剧、角色、歌曲多元关系的开放API",
     url: "https://bgm.tv/",
     icon: "bangumi",
   },
   {
     name: "萌娘百科",
-    description: "角色与作品背景资料。",
+    description: "提供了角色标签数据",
     url: "https://zh.moegirl.org.cn/",
     icon: "moegirl",
   },
   {
     name: "QQ音乐",
-    description: "歌曲检索与试听来源。",
+    description: "提供了音乐服务",
     url: "https://y.qq.com/",
     icon: "qqmusic",
   },
   {
     name: "网易云音乐",
-    description: "歌曲检索与试听来源。",
+    description: "提供了音乐服务",
     url: "https://music.163.com/",
     icon: "neteasecloudmusic",
   },
