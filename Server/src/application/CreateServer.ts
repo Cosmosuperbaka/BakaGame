@@ -3,6 +3,7 @@ import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
 import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
+import { StatusSampleStore } from "../infrastructure/StatusSampleStore";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
@@ -30,6 +31,7 @@ import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/Sentry
 import { DatabaseAuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import { DatabaseBadgeRepository } from "../infrastructure/db/BadgeRepository";
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
+import { DatabaseStatusEventRepository } from "../infrastructure/db/StatusEventRepository";
 import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
 import { InMemoryAntiCheatReviewQueue, type CEEAntiCheatReviewBoard } from "./CEEAntiCheatSignals";
 import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
@@ -173,13 +175,19 @@ export function createServer(
     // 后台读的也是这一个对象——写进去的条目只有这条队列，不存在两份口径。
     reviewQueue: antiCheatReviews,
   });
+  // 状态事件的部署环境标记与仓储：与状态账本同一口径，先于账号装配创建，两边共用一个实例。
+  // 标记缺省读作 development，与 `resolveDeploymentEnvironment` 的缺省一致。
+  const statusEnvironment = env.otelDeploymentEnvironment ?? "development";
+  const statusEvents = database ? new DatabaseStatusEventRepository(database) : undefined;
   const account = createAccount(
     env,
     database,
     logger,
     { faker: appOptions.whoIsFakerService, song, cee },
     antiCheatReviews,
-    settings
+    settings,
+    statusEvents,
+    statusEnvironment
   );
   // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
   const clientChannel = new ClientChannel({
@@ -205,9 +213,16 @@ export function createServer(
       android: env.clientPackageAndroidUrl,
     },
   });
-  // 状态页历史账本：有库就落库并在启动时读回窗口，没库也照样记本次运行的日格，
-  // 页面因此永远有数据可读，只是重启后条带会空。
+  // 状态页的两本账：历史与实时样本都按部署环境标记分行，
+  // 开发与生产共用一个库也互不污染——开发实例的探测读不到生产的条带，反之亦然。
+  // 没库也照样在内存里记本次运行的账，页面有数据可读，只是重启后条带会空。
   const statusHistory = new StatusHistoryStore({
+    environment: statusEnvironment,
+    database,
+    now: () => Date.now(),
+  });
+  const statusSamples = new StatusSampleStore({
+    environment: statusEnvironment,
     database,
     now: () => Date.now(),
   });
@@ -217,6 +232,8 @@ export function createServer(
     logger,
     bangumiImages: images,
     statusHistory,
+    statusSamples,
+    statusEvents,
     sonGuessrService: song,
     ceeService: cee,
     account,
@@ -227,8 +244,9 @@ export function createServer(
       settings.close();
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();
-      // 状态历史最后落一次库：日格计数只在内存里攒着，停机不 flush 就丢掉今天这一段。
+      // 状态账本最后各落一次库：计数只在内存里攒着，停机不 flush 就丢掉这一段。
       await statusHistory.flush();
+      await statusSamples.flush();
       await account?.visits.close();
       const results = await Promise.allSettled([
         cee.close(),
@@ -244,8 +262,9 @@ export function createServer(
   });
   return {
     ...app,
-    /** 状态历史账本：启动时读回窗口、运行期定时 flush，由 Index 掌握节奏。 */
+    /** 状态账本：启动时读回窗口、运行期定时 flush，由 Index 掌握节奏。 */
     statusHistory,
+    statusSamples,
     /**
      * 把在线玩家数报给数据 Worker：更新器据此调整上游速率（没人玩就慢慢更新）。
      * 上报失败无所谓 —— 顶多这一分钟按旧速率跑。
@@ -263,7 +282,9 @@ const createAccount = (
   logger: EventLogger,
   rooms: Record<RecordedGame, AdminRoomControl>,
   reviews: CEEAntiCheatReviewBoard,
-  settings: AppSettings
+  settings: AppSettings,
+  statusEvents: DatabaseStatusEventRepository | undefined,
+  statusEnvironment: string
 ) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
@@ -336,6 +357,8 @@ const createAccount = (
     badges,
     settings,
     qq: nicknames,
+    statusEvents,
+    environment: statusEnvironment,
     sentry:
       env.sentryApiToken && env.sentryDsn
         ? new SentryApiClient(

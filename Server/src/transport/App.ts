@@ -30,7 +30,7 @@ import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { ServerMessage } from "../shared/Protocol";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
-import { createStatusAggregator, statusRoutes } from "./routes/Status";
+import { createStatusAggregator, startStatusSampler, statusRoutes } from "./routes/Status";
 import { statusWsRoutes } from "./routes/StatusWs";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
@@ -44,6 +44,9 @@ import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
 import type { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
+import type { StatusSampleStore } from "../infrastructure/StatusSampleStore";
+import type { StatusEventRepository } from "../infrastructure/db/StatusEventRepository";
+import { PUBLIC_STATUS_SAMPLE_INTERVAL_MS } from "../shared/Status";
 import { resolveServerRelease } from "../infrastructure/Release";
 
 export interface AppDependencies {
@@ -59,6 +62,10 @@ export interface AppDependencies {
   bangumiImages?: BangumiImageService;
   /** 状态页历史账本：提供时 `/api/status` 每次真实探测记一笔，并开放 `/api/status/history`。 */
   statusHistory?: StatusHistoryStore;
+  /** 实时样本账本：提供时后台采样器按采样间隔记一笔，并开放 `/api/status/realtime`。 */
+  statusSamples?: StatusSampleStore;
+  /** 状态事件仓储：提供时开放 `/api/status/events`（未配置数据库的实例没有事件）。 */
+  statusEvents?: StatusEventRepository;
   /** 账号系统（登录、oRPC、头像代理）：未提供时相关路由回 503 `ACCOUNT_DISABLED`。 */
   account?: AccountDependencies;
   /**
@@ -686,6 +693,8 @@ export const createApp = ({
   disposeResources,
   bangumiImages,
   statusHistory,
+  statusSamples,
+  statusEvents,
   account,
   handshakeQuota: handshakeQuotaOverride,
   clientChannel,
@@ -714,7 +723,7 @@ export const createApp = ({
       ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
     });
   // 状态聚合器只建一份：HTTP 快照、历史接口与 WS 实时通道读同一份缓存、记同一本账，
-  // 各建一套会让页面在手动刷新与自动推送之间看到两种口径。
+  // 各建一套会让页面在轮询与推送之间看到两种口径。
   const statusAggregator = createStatusAggregator({
     isServiceAvailable: () => !isShuttingDown?.(),
     meilisearchUrl: env.meilisearchUrl,
@@ -733,10 +742,23 @@ export const createApp = ({
     }),
     version: () => resolveServerRelease() ?? "unknown",
     externalProbe: env.betterStackApiKey
-      ? new BetterStackStatusProbe({ apiKey: env.betterStackApiKey })
+      ? new BetterStackStatusProbe({
+          apiKey: env.betterStackApiKey,
+          monitors: env.betterStackMonitorMap ?? {},
+        })
       : undefined,
     history: statusHistory,
   });
+  // 实时条带的后台采样器：没人开页面时也按采样间隔跑一轮探测记一笔，
+  // 间隔远大于快照缓存，采样轮总是真探测；停机时随监听一起停。
+  const stopStatusSampler = statusSamples
+    ? startStatusSampler({
+        aggregator: statusAggregator,
+        samples: statusSamples,
+        intervalMs: PUBLIC_STATUS_SAMPLE_INTERVAL_MS,
+        onError: (error) => logger.warn("状态采样失败", describeError(error)),
+      })
+    : undefined;
   const app = new Elysia({
     normalize: false,
     websocket: {
@@ -748,6 +770,7 @@ export const createApp = ({
     },
   })
     .onStop(() => {
+      stopStatusSampler?.();
       remoteMcpSessions.closeAll();
       void dispose().catch((error: unknown) =>
         logger.error("服务资源释放失败", describeError(error))
@@ -893,7 +916,15 @@ export const createApp = ({
       })
     )
     // ==================== 公开站点状态（只读聚合，字段白名单） ====================
-    .use(statusRoutes({ aggregator: statusAggregator, history: statusHistory }))
+    .use(
+      statusRoutes({
+        aggregator: statusAggregator,
+        environment: env.otelDeploymentEnvironment,
+        history: statusHistory,
+        samples: statusSamples,
+        events: statusEvents,
+      })
+    )
     // ==================== MCP 发现（Agent 只凭站点链接即可找到远程端点） ====================
     .use(
       mcpDiscoveryRoutes({

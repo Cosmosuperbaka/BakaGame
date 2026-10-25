@@ -10,6 +10,12 @@ import {
 } from "./Account";
 import { BADGE_KINDS } from "./Badges";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
+import {
+  PUBLIC_STATUS_COMPONENT_IDS,
+  PUBLIC_STATUS_INCIDENT_KINDS,
+  PUBLIC_STATUS_INCIDENT_STATUSES,
+  PUBLIC_STATUS_MAINTENANCE_STATUSES,
+} from "./Status";
 
 /**
  * 账号 HTTP API 契约（oRPC，挂在 `/api/rpc`）。
@@ -118,6 +124,32 @@ const page = {
 };
 const paged = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), total: z.number().int() });
+
+// ==================== 状态事件（状态页的事件与维护窗口） ====================
+
+export const statusEventKindSchema = z.enum(PUBLIC_STATUS_INCIDENT_KINDS);
+export const statusEventStatusSchema = z.enum([
+  ...PUBLIC_STATUS_INCIDENT_STATUSES,
+  ...PUBLIC_STATUS_MAINTENANCE_STATUSES,
+]);
+const statusComponentSchema = z.enum(PUBLIC_STATUS_COMPONENT_IDS);
+/** 状态事件标题与正文的长度上限：状态页是告示牌，不是文章页。 */
+export const STATUS_EVENT_TITLE_MAX_LENGTH = 120;
+export const STATUS_EVENT_BODY_MAX_LENGTH = 4000;
+
+export const adminStatusEventSchema = z.object({
+  id: z.number().int(),
+  kind: statusEventKindSchema,
+  title: z.string(),
+  body: z.string(),
+  status: statusEventStatusSchema,
+  components: z.array(statusComponentSchema),
+  /** epoch 毫秒；维护窗口的计划结束与事件的恢复时刻可为空。 */
+  startedAt: z.number().int(),
+  plannedEndAt: z.number().int().nullable(),
+  resolvedAt: z.number().int().nullable(),
+  updatedAt: z.number().int(),
+});
 const userId = z.string().min(1).max(64);
 export const recordedGameSchema = z.enum(["faker", "song", "cee"]);
 const reason = z.string().trim().max(200);
@@ -420,6 +452,52 @@ const adminContract = {
     )
       .input(z.object({ key: runtimeSettingKeySchema, value: z.string().max(64) }))
       .output(z.object({ items: z.array(adminRuntimeSettingSchema) })),
+  },
+  statusEvents: {
+    list: op("分页查状态页的事件与维护窗口，可按类型与是否进行中过滤；只含本环境的数据。", "admin")
+      .input(
+        z.object({
+          kind: statusEventKindSchema.optional(),
+          active: z.boolean().optional(),
+          ...page,
+        })
+      )
+      .output(paged(adminStatusEventSchema)),
+    create: op(
+      "发布一条状态事件或维护窗口，随即出现在所属环境的状态页上。故障事件的初始进度为「调查中」，维护窗口为「计划中」。",
+      "admin"
+    )
+      .input(
+        z.object({
+          kind: statusEventKindSchema,
+          title: z.string().trim().min(1, "请填写标题").max(STATUS_EVENT_TITLE_MAX_LENGTH),
+          body: z.string().trim().min(1, "请填写内容").max(STATUS_EVENT_BODY_MAX_LENGTH),
+          components: z.array(statusComponentSchema).max(PUBLIC_STATUS_COMPONENT_IDS.length).default([]),
+          startedAt: z.number().int().min(0),
+          /** 维护窗口必填且须晚于开始时刻；故障事件忽略此字段。 */
+          plannedEndAt: z.number().int().min(0).nullable().default(null),
+        })
+      )
+      .output(adminStatusEventSchema),
+    update: op(
+      "更新状态事件：改标题、正文、影响组件或时间，改状态推进处理进度（事件改为已恢复、维护改为已完成时自动补上结束时刻，改回进行中则清空）。",
+      "admin"
+    )
+      .input(
+        z.object({
+          id: z.number().int().min(1),
+          title: z.string().trim().min(1, "请填写标题").max(STATUS_EVENT_TITLE_MAX_LENGTH).optional(),
+          body: z.string().trim().min(1, "请填写内容").max(STATUS_EVENT_BODY_MAX_LENGTH).optional(),
+          status: statusEventStatusSchema.optional(),
+          components: z.array(statusComponentSchema).max(PUBLIC_STATUS_COMPONENT_IDS.length).optional(),
+          startedAt: z.number().int().min(0).optional(),
+          plannedEndAt: z.number().int().min(0).nullable().optional(),
+        })
+      )
+      .output(adminStatusEventSchema),
+    remove: op("删除一条状态事件（误发或不再展示）；删除前会留审计。", "admin")
+      .input(z.object({ id: z.number().int().min(1) }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   feedback: {
     list: op("分页查全部反馈，可按状态、类型、提交人过滤。", "admin")

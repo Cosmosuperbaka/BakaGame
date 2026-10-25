@@ -14,6 +14,7 @@ import { OverviewPanel } from "@/components/admin/OverviewPanel";
 import { QQLookupPanel } from "@/components/admin/QQLookupPanel";
 import { RoomsPanel } from "@/components/admin/RoomsPanel";
 import { RuntimeSettingsPanel } from "@/components/admin/RuntimeSettingsPanel";
+import { StatusEventsPanel } from "@/components/admin/StatusEventsPanel";
 import { UsersPanel } from "@/components/admin/UsersPanel";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useAccountStore } from "@/stores/UseAccountStore";
@@ -21,6 +22,7 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 const TABS = [
   { value: "overview", label: "概览", panel: OverviewPanel },
   { value: "rooms", label: "房间", panel: RoomsPanel },
+  { value: "statusEvents", label: "状态事件", panel: StatusEventsPanel },
   { value: "users", label: "用户", panel: UsersPanel },
   { value: "feedback", label: "反馈", panel: FeedbackPanel },
   { value: "anticheat", label: "反作弊复核", panel: AntiCheatPanel },

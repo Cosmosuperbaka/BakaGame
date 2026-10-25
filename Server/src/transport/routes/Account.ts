@@ -59,6 +59,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   QQ_LOOKUP_DISABLED: 503,
   QQ_NICKNAME_UNAVAILABLE: 503,
   ACCOUNT_DISABLED: 503,
+  STATUS_EVENTS_DISABLED: 503,
 };
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
@@ -174,6 +175,20 @@ const createRpcRouter = (
         set: adminOnly.admin.settings.set.handler(async ({ context, input }) => ({
           items: await admin.updateRuntimeSetting(context.userId, input),
         })),
+      },
+      statusEvents: {
+        list: adminOnly.admin.statusEvents.list.handler(({ input }) =>
+          admin.listStatusEvents(input)
+        ),
+        create: adminOnly.admin.statusEvents.create.handler(({ context, input }) =>
+          admin.createStatusEvent(context.userId, input)
+        ),
+        update: adminOnly.admin.statusEvents.update.handler(({ context, input }) =>
+          admin.updateStatusEvent(context.userId, input)
+        ),
+        remove: adminOnly.admin.statusEvents.remove.handler(({ context, input }) =>
+          admin.deleteStatusEvent(context.userId, input.id)
+        ),
       },
       rooms: {
         list: adminOnly.admin.rooms.list.handler(({ input }) => admin.listRooms(input.game)),

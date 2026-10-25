@@ -204,8 +204,9 @@ export async function createIndexShutdownHarness(
             stop: (force: boolean) => execute("stop", force),
           },
           dispose: () => execute("dispose"),
-          // 真实装配下 Index 会读回状态历史并定时落库；这里空转，只验证它不拖停机。
+          // 真实装配下 Index 会读回状态历史与实时样本并定时落库；这里空转，只验证它们不拖停机。
           statusHistory: { load: async () => {}, flush: async () => {} },
+          statusSamples: { load: async () => {}, flush: async () => {} },
           sonGuessrService: service("song"),
           ceeService: service("cee"),
           // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。

@@ -15,7 +15,11 @@ const snapshotAt = (observedAt: number, level: PublicStatusLevel): PublicStatusS
   observedAt,
   level: level === "degraded" ? "degraded" : "operational",
   version: "V1.2.3",
-  components: PUBLIC_STATUS_COMPONENT_IDS.map((id) => ({ id, level })),
+  components: PUBLIC_STATUS_COMPONENT_IDS.map((id) => ({
+    id,
+    level,
+    latencyMs: id === "bangumi" ? 120 : null,
+  })),
 });
 
 const entryOf = (history: { entries: PublicStatusHistoryEntry[] }, id: string) => {
@@ -26,7 +30,7 @@ const entryOf = (history: { entries: PublicStatusHistoryEntry[] }, id: string) =
 
 describe("状态历史账本", () => {
   test("没有数据库也照常记账，读得出日格", () => {
-    const store = new StatusHistoryStore({ now: () => NOW });
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
     store.record(snapshotAt(NOW, "operational"));
     store.record(snapshotAt(NOW, "operational"));
 
@@ -44,14 +48,14 @@ describe("状态历史账本", () => {
   });
 
   test("未探到的日子读作无数据，不冒充 0%", () => {
-    const store = new StatusHistoryStore({ now: () => NOW });
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
     const empty = entryOf(store.read(7), "backend");
     expect(empty.cells.every((cell) => cell.total === 0 && cell.ratio === null)).toBe(true);
-    expect(empty.uptime.map((span) => span.ratio)).toEqual([null, null, null]);
+    expect(empty.uptime.map((span) => span.ratio)).toEqual([null]);
   });
 
   test("降级日按占比读，未知样本也计入分母", () => {
-    const store = new StatusHistoryStore({ now: () => NOW });
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
     store.record(snapshotAt(NOW, "operational"));
     store.record(snapshotAt(NOW, "operational"));
     store.record(snapshotAt(NOW, "degraded"));
@@ -64,22 +68,27 @@ describe("状态历史账本", () => {
     expect(today?.level).toBe("degraded");
   });
 
-  test("窗口只取最近 N 天，跨天分别累计", () => {
-    const store = new StatusHistoryStore({ now: () => NOW });
-    // 8 天前的一天全部异常，最近一天全部正常。
-    store.record(snapshotAt(NOW - 8 * DAY_MS, "degraded"));
+  test("窗口只取最近 30 天，跨天分别累计", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    // 20 天前的一天全部异常，最近一天全部正常：两格都读得到，窗口可用率把两天合起来算。
+    store.record(snapshotAt(NOW - 20 * DAY_MS, "degraded"));
     store.record(snapshotAt(NOW, "operational"));
 
-    const backend = entryOf(store.read(90), "backend");
-    const week = backend.uptime.find((span) => span.days === 7);
-    const quarter = backend.uptime.find((span) => span.days === 90);
-    // 7 天窗口只看得到今天；90 天窗口把 8 天前那天也算进来。
-    expect(week?.ratio).toBe(1);
-    expect(quarter?.ratio).toBeCloseTo(0.5);
+    const backend = entryOf(store.read(30), "backend");
+    const month = backend.uptime.find((span) => span.days === 30);
+    expect(month?.ratio).toBeCloseTo(0.5);
+    const sampled = backend.cells.filter((cell) => cell.total > 0);
+    expect(sampled).toHaveLength(2);
+    expect(sampled.find((cell) => cell.level === "degraded")).toBeDefined();
+    expect(sampled.find((cell) => cell.level === "operational")).toBeDefined();
   });
 
   test("超出保留窗口的旧账被裁掉", () => {
-    const store = new StatusHistoryStore({ now: () => NOW, retentionDays: 3 });
+    const store = new StatusHistoryStore({
+      environment: "production",
+      now: () => NOW,
+      retentionDays: 3,
+    });
     store.record(snapshotAt(NOW - 40 * DAY_MS, "operational"));
     store.record(snapshotAt(NOW, "operational"));
 

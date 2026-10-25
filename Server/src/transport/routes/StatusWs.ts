@@ -19,6 +19,7 @@ const snapshotSchema = t.Object({
     t.Object({
       id: t.String(),
       level: t.Union([t.Literal("operational"), t.Literal("degraded"), t.Literal("unknown")]),
+      latencyMs: t.Nullable(t.Number()),
     })
   ),
 });
@@ -34,9 +35,9 @@ export interface StatusWsDependencies {
 }
 
 /**
- * 状态页的实时通道：连上先推一次当前快照，之后每 15 秒推一次，客户端随时可发一帧要求立刻重推。
+ * 状态页的实时通道：连上先推一次当前快照，之后每 15 秒推一次。
  *
- * 与 `GET /api/status` 共用同一个聚合器，推送与手动刷新读到的因此是同一份缓存。
+ * 与 `GET /api/status` 共用同一个聚合器，推送与轮询读到的因此是同一份缓存。
  * 定时器只在还有连接时存在：最后一个客户端断开就停表，没人看时不占用探测与广播开销。
  * 这是只读通道，不进任何游戏的连接注册表，也不参与对局协议。
  */
@@ -79,7 +80,6 @@ export const statusWsRoutes = ({
   };
 
   return new Elysia({ name: "public-status-ws", normalize: false }).ws("/api/status/ws", {
-    body: t.Literal("refresh"),
     response: snapshotSchema,
     upgrade: (context) => {
       rejectOrigin(context.headers, context.request);
@@ -91,16 +91,6 @@ export const statusWsRoutes = ({
       }
       sockets.add(ws);
       startTimer();
-      void push();
-    },
-    message: (ws, incoming) => {
-      // 只认客户端一帧「refresh」：立即重推一次，让手动刷新与自动推送走同一条路。
-      if (incoming !== "refresh") return;
-      if (!sockets.has(ws)) {
-        if (sockets.size >= MAX_CLIENTS) return;
-        sockets.add(ws);
-        startTimer();
-      }
       void push();
     },
     close: (ws) => {

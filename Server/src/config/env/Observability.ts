@@ -1,4 +1,5 @@
 import { AppError } from "../../domain/Errors";
+import { UPSTREAM_STATUS_COMPONENT_IDS, type UpstreamStatusComponentId } from "../../shared/Status";
 
 /** 控制台 ANSI 颜色的三档策略；`auto` 只在 TTY 上着色。 */
 export type LogConsoleColor = "auto" | "always" | "never";
@@ -28,6 +29,11 @@ export interface EnvObservability {
   sentryApiToken?: string;
   /** Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。 */
   betterStackApiKey?: string;
+  /**
+   * 上游组件 → Better Stack monitor ID 的映射（`bangumi=<id>,qqmusic=<id>,…`）。
+   * 未列出的组件显示未知：monitor 与组件的对应是部署事实，不靠名称猜测。
+   */
+  betterStackMonitorMap?: Partial<Record<UpstreamStatusComponentId, string>>;
   /**
    * 前端公开基址：状态页的「前端」一格由服务端从外侧探这个地址得到。
    * 不配则显示未知——后端无法凭「自己还活着」推断静态站点可达。
@@ -127,6 +133,37 @@ const deploymentMarkerChain = (): string[] => {
 export const resolveDeploymentEnvironment = (): string =>
   deploymentMarkerChain().find(Boolean) ?? "development";
 
+/**
+ * `BETTERSTACK_MONITOR_MAP` 形如 `bangumi=12345,qqmusic=67890`：
+ * 只认上游组件白名单里的键与纯数字 monitor ID，写错的键直接拒绝启动，
+ * 拼错键只会让状态页悄悄显示未知——那比启动失败更难排查。
+ */
+const parseBetterStackMonitorMap = (
+  raw: string | undefined
+): Partial<Record<UpstreamStatusComponentId, string>> | undefined => {
+  const text = raw?.trim();
+  if (!text) return undefined;
+  const map: Partial<Record<UpstreamStatusComponentId, string>> = {};
+  for (const part of text.split(",")) {
+    const entry = part.trim();
+    if (!entry) continue;
+    const eqIdx = entry.indexOf("=");
+    const key = eqIdx > 0 ? entry.slice(0, eqIdx).trim() : "";
+    const value = eqIdx > 0 ? entry.slice(eqIdx + 1).trim() : "";
+    if (!(UPSTREAM_STATUS_COMPONENT_IDS as readonly string[]).includes(key)) {
+      throw new AppError(
+        "CONFIG_ERROR",
+        `BETTERSTACK_MONITOR_MAP 含未知组件 ${key || entry}（可用：${UPSTREAM_STATUS_COMPONENT_IDS.join(", ")}）`
+      );
+    }
+    if (!/^\d+$/.test(value)) {
+      throw new AppError("CONFIG_ERROR", `BETTERSTACK_MONITOR_MAP 里 ${key} 的 monitor ID 必须是数字`);
+    }
+    map[key as UpstreamStatusComponentId] = value;
+  }
+  return map;
+};
+
 /** 是否存在显式注入的环境标记（四个来源任一非空）；全缺时消费方必须安全失败，不能静默按开发态跑。 */
 export const hasExplicitDeploymentMarker = (): boolean => deploymentMarkerChain().some(Boolean);
 
@@ -170,6 +207,7 @@ export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservab
         : deploymentEnvironment !== "production",
     maintenanceToken: Bun.env.MAINTENANCE_TOKEN?.trim() || undefined,
     betterStackApiKey: Bun.env.BETTERSTACK_API_KEY?.trim() || undefined,
+    betterStackMonitorMap: parseBetterStackMonitorMap(Bun.env.BETTERSTACK_MONITOR_MAP),
     statusFrontendUrl: Bun.env.STATUS_FRONTEND_URL?.trim() || undefined,
     sentryDsn,
     sentryApiToken,

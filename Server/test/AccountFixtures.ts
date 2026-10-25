@@ -30,6 +30,7 @@ import type {
 } from "../src/infrastructure/db/AuditLogRepository";
 import type { BadgeRepository } from "../src/infrastructure/db/BadgeRepository";
 import type { GameRecordRepository } from "../src/infrastructure/db/GameRecordRepository";
+import type { StatusEventRepository } from "../src/infrastructure/db/StatusEventRepository";
 import type {
   FeedbackFilter,
   FeedbackRecord,
@@ -367,6 +368,8 @@ export const createAccountTestApp = (
     sentry?: SentryApiClient;
     /** 运行期旋钮：默认不带库（一律读到环境变量缺省），要测写入的用例自己注入带仓储的实例。 */
     settings?: AppSettings;
+    /** 状态事件仓储：默认不注入（`admin.statusEvents.*` 回 503），要测事件发布的用例自己带内存实现。 */
+    statusEvents?: StatusEventRepository;
     /**
      * 前端来源；默认与后端同主机（`localhost`）。
      *
@@ -467,6 +470,8 @@ export const createAccountTestApp = (
     settings: options.settings ?? new AppSettings({ defaults: {} }),
     sentry: options.sentry ?? null,
     qq: nicknames,
+    statusEvents: options.statusEvents,
+    environment: "development",
     now: options.now,
   });
   const visits = new SiteStatsService({

@@ -26,6 +26,9 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "room.kick": "移出玩家",
   "runtimeSetting.update": "修改运行期设置",
   "qq.refreshNames": "刷新 QQ 昵称",
+  "statusEvent.create": "发布状态事件",
+  "statusEvent.update": "修改状态事件",
+  "statusEvent.delete": "删除状态事件",
 };
 
 export const auditActionLabel = (action: string) => AUDIT_ACTION_LABELS[action] ?? action;

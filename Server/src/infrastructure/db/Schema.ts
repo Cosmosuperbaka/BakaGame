@@ -422,15 +422,18 @@ export const sitePageDaily = mysqlTable(
 );
 
 /**
- * 公开状态页的历史：一个组件一个北京时间自然日一行，存的是各级别的探测计数。
+ * 公开状态页的历史：一个环境一个组件一个北京时间自然日一行，存的是各级别的探测计数。
  *
- * 存计数而不是存每次探测的结果：90 天 × 7 个组件固定 630 行，探测频率再高也不会膨胀，
- * 而可用率与日格都只由计数派生。`total` 为 0 的行不会出现（没有探测就不写），
- * 「那一天没数据」由缺行表达，不用一行全零去冒充。
+ * - 开发与生产共用一个库时各自记各自的行：`environment` 取进程的部署环境标记，
+ *   状态页只读自己环境的数据，开发实例的探测不会把生产的条带搅浑。
+ * - 存计数而不是存每次探测的结果：30 天 × 10 个组件固定 300 行，探测频率再高也不会膨胀，
+ *   而可用率与日格都只由计数派生。`total` 为 0 的行不会出现（没有探测就不写），
+ *   「那一天没数据」由缺行表达，不用一行全零去冒充。
  */
 export const statusDaily = mysqlTable(
   "status_daily",
   {
+    environment: varchar("environment", { length: 24 }).notNull().default("production"),
     componentId: varchar("component_id", { length: 24 }).notNull(),
     day: varchar("day", { length: 10 }).notNull(),
     total: int("total").notNull(),
@@ -438,5 +441,62 @@ export const statusDaily = mysqlTable(
     degraded: int("degraded").notNull(),
     unknown: int("unknown").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.componentId, table.day] }), index("status_daily_day_idx").on(table.day)]
+  (table) => [
+    primaryKey({ columns: [table.environment, table.componentId, table.day] }),
+    index("status_daily_day_idx").on(table.day),
+  ]
+);
+
+/**
+ * 状态页实时条带的样本账：一个环境一个组件一个采样间隔一格，
+ * 除各等级计数外还累计带延迟读数的样本（和值 + 个数，读时求均值）。
+ * 只保留实时窗口外加一栏余量，行数有界；结构同 `status_daily`，绝对值覆盖写。
+ */
+export const statusSample = mysqlTable(
+  "status_sample",
+  {
+    environment: varchar("environment", { length: 24 }).notNull(),
+    componentId: varchar("component_id", { length: 24 }).notNull(),
+    /** 格子起点，UTC，对齐采样间隔；用 bigint 毫秒而非 datetime：读出后直接当索引算格子。 */
+    bucket: bigint("bucket", { mode: "number", unsigned: true }).notNull(),
+    total: int("total").notNull(),
+    operational: int("operational").notNull(),
+    degraded: int("degraded").notNull(),
+    unknown: int("unknown").notNull(),
+    latencySum: bigint("latency_sum", { mode: "number", unsigned: true }).notNull(),
+    latencyCount: int("latency_count").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.environment, table.componentId, table.bucket] }),
+    index("status_sample_bucket_idx").on(table.bucket),
+  ]
+);
+
+/**
+ * 状态页的事件与维护窗口：一条一行，正文整体覆盖更新（改写历史由管理审计留痕）。
+ * `components` 存公开组件白名单的 JSON 数组；时间列 UTC。
+ */
+export const statusEvent = mysqlTable(
+  "status_event",
+  {
+    id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+    /** 与状态历史同口径的部署环境标记：事件只出现在所属环境的状态页上。 */
+    environment: varchar("environment", { length: 24 }).notNull(),
+    kind: varchar("kind", { length: 16 }).notNull(),
+    title: varchar("title", { length: 120 }).notNull(),
+    body: text("body").notNull(),
+    status: varchar("status", { length: 16 }).notNull(),
+    components: text("components").notNull(),
+    /** 事件开始 / 维护窗口开始（计划中的维护可以是未来时刻）。 */
+    startedAt: datetime("started_at", { mode: "date", fsp: 3 }).notNull(),
+    /** 维护窗口的计划结束时刻；故障事件为 null。 */
+    plannedEndAt: datetime("planned_end_at", { mode: "date", fsp: 3 }),
+    /** 实际恢复 / 完成时刻；进行中为 null。 */
+    resolvedAt: datetime("resolved_at", { mode: "date", fsp: 3 }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("status_event_env_idx").on(table.environment, table.startedAt),
+  ]
 );

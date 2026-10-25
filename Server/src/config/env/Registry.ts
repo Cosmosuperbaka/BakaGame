@@ -237,6 +237,17 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["Better Stack Uptime 只读 API 令牌；不配则公开状态页的外部监测显示未知。"],
   },
   {
+    name: "BETTERSTACK_MONITOR_MAP",
+    layer: "T1",
+    documented: true,
+    secret: false,
+    sample: "bangumi=12345678,qqmusic=23456789,netease=34567890,qq=45678901",
+    note: [
+      "上游组件 → Better Stack monitor ID 的映射（bangumi=<id>,qqmusic=<id>,netease=<id>,qq=<id>）。",
+      "只影响状态页的上游接口拆分：未列出的组件显示未知，键或 ID 写错会在启动时拒绝。",
+    ],
+  },
+  {
     name: "STATUS_FRONTEND_URL",
     layer: "T1",
     documented: true,

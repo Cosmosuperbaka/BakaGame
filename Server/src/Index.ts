@@ -69,7 +69,7 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad, statusHistory } =
+const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad, statusHistory, statusSamples } =
   createServer({
     env,
     database,
@@ -84,14 +84,21 @@ const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad, statusHis
     },
   });
 
-// 状态历史：启动时读回窗口内的日格，之后每 5 分钟落一次库。
-// 探测本身由状态接口按需触发，这里只管把内存里的计数搬进表，不额外加一条常驻探测。
+// 状态账本：启动时读回窗口内的日格与实时样本，之后每 5 分钟落一次库。
+// 探测由状态接口按需触发，外加 App 内按采样间隔常驻跑的实时采样器——
+// 这里只管把内存里的计数搬进表，不另加探测。
 void statusHistory.load().catch((error: unknown) => {
   logger.warn("状态历史读取失败，条带从本次运行开始积累", describeError(error));
+});
+void statusSamples.load().catch((error: unknown) => {
+  logger.warn("状态样本读取失败，实时条带从本次运行开始积累", describeError(error));
 });
 const statusFlushIntervalId = setInterval(() => {
   void statusHistory.flush().catch((error: unknown) => {
     logger.warn("状态历史落库失败", describeError(error));
+  });
+  void statusSamples.flush().catch((error: unknown) => {
+    logger.warn("状态样本落库失败", describeError(error));
   });
 }, 5 * 60_000);
 statusFlushIntervalId.unref();

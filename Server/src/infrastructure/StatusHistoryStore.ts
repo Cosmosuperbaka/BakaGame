@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { beijingDay } from "../application/SiteStatsService";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
@@ -56,6 +56,8 @@ const windowRatio = (cells: PublicStatusCell[], days: number): PublicStatusUptim
 };
 
 export interface StatusHistoryStoreOptions {
+  /** 本进程的部署环境标记：开发与生产共用一个库时，账本按它分行。 */
+  environment: string;
   /** 未配置数据库时省略：计数只留在内存里，重启即丢，页面仍能出当前状态与本次运行的条带。 */
   database?: Database;
   now?: () => number;
@@ -66,13 +68,14 @@ export interface StatusHistoryStoreOptions {
 /**
  * 公开状态页的历史账本。
  *
- * 90 天 × 7 个组件最多 630 条计数，整份放在内存里读，页面与 WS 每次取历史都不碰数据库；
+ * 30 天 × 10 个组件最多 300 条计数，整份放在内存里读，页面与 WS 每次取历史都不碰数据库；
  * 落库只发生在定时 flush 与停机前，写的是「当日累计」的绝对值而不是增量——
- * 本进程是这张表的唯一写入方，绝对值让重启后的 `load()` 直接覆盖回同一份账，不会重复计数。
+ * 本进程是这张表在所属环境下的唯一写入方，绝对值让重启后的 `load()` 直接覆盖回同一份账，不会重复计数。
  *
  * 没有探测就不写行：「那一天没有数据」由缺行表达，页面读作无数据，而不是拿 0% 冒充全挂。
  */
 export class StatusHistoryStore {
+  private readonly environment: string;
   private readonly database?: Database;
   private readonly now: () => number;
   private readonly retentionDays: number;
@@ -80,7 +83,8 @@ export class StatusHistoryStore {
   private readonly days = new Map<PublicStatusComponentId, Map<string, DayCount>>();
   private readonly dirty = new Set<string>();
 
-  constructor(options: StatusHistoryStoreOptions = {}) {
+  constructor(options: StatusHistoryStoreOptions) {
+    this.environment = options.environment;
     this.database = options.database;
     this.now = options.now ?? Date.now;
     this.retentionDays = options.retentionDays ?? PUBLIC_STATUS_HISTORY_DAYS;
@@ -96,7 +100,7 @@ export class StatusHistoryStore {
       const rows = await this.database.db
         .select()
         .from(statusDaily)
-        .where(sql`${statusDaily.day} >= ${cutoff}`);
+        .where(and(eq(statusDaily.environment, this.environment), gte(statusDaily.day, cutoff)));
       for (const row of rows) {
         const bucket = this.days.get(row.componentId as PublicStatusComponentId);
         if (!bucket) continue;
@@ -130,6 +134,7 @@ export class StatusHistoryStore {
   async flush(): Promise<void> {
     if (!this.database || this.dirty.size === 0) return;
     const values: {
+      environment: string;
       componentId: string;
       day: string;
       total: number;
@@ -144,7 +149,7 @@ export class StatusHistoryStore {
           ? this.days.get(componentId as PublicStatusComponentId)?.get(day)
           : undefined;
       if (!count) continue;
-      values.push({ componentId: componentId!, day: day!, ...count });
+      values.push({ environment: this.environment, componentId: componentId!, day: day!, ...count });
     }
     this.dirty.clear();
     if (values.length === 0) return;

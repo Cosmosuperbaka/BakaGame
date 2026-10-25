@@ -16,6 +16,20 @@ import type { AppSettings } from "./AppSettings";
 import type { AdminRuntimeSetting, RuntimeSettingKey } from "../shared/RuntimeSettings";
 import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import type {
+  StatusEventFilter,
+  StatusEventInput,
+  StatusEventPatch,
+  StatusEventRepository,
+} from "../infrastructure/db/StatusEventRepository";
+import {
+  PUBLIC_STATUS_INCIDENT_STATUSES,
+  PUBLIC_STATUS_MAINTENANCE_STATUSES,
+  type PublicStatusComponentId,
+  type PublicStatusEvent,
+  type PublicStatusEventStatus,
+  type PublicStatusIncidentKind,
+} from "../shared/Status";
+import type {
   GameRecordListItem,
   GameRecordRepository,
 } from "../infrastructure/db/GameRecordRepository";
@@ -78,6 +92,10 @@ export interface AdminServiceOptions {
   sentry: SentryApiClient | null;
   /** QQ 昵称查询号；缺省时 `admin.qq.*` 回 503。 */
   qq?: QQNicknameService | null;
+  /** 状态页事件仓储；缺省时 `admin.statusEvents.*` 回 503（未配置数据库的实例）。 */
+  statusEvents?: StatusEventRepository;
+  /** 本进程的部署环境标记：状态事件按它隔离，与状态历史同一口径。 */
+  environment: string;
   now?: () => number;
 }
 
@@ -544,6 +562,117 @@ export class AdminService {
     await this.audit(actorId, "runtimeSetting.update", "site", input.key, { value });
     await this.options.settings.update(input.key, value, actorId);
     return this.listRuntimeSettings();
+  }
+
+  // ==================== 状态页事件 ====================
+
+  private requireStatusEvents(): StatusEventRepository {
+    if (!this.options.statusEvents) throw new AppError("STATUS_EVENTS_DISABLED", "状态事件未启用");
+    return this.options.statusEvents;
+  }
+
+  /** 事件的合法进度按类型收口：故障事件用事件档，维护窗口用维护档。 */
+  private statusOfKind(kind: PublicStatusIncidentKind, status: PublicStatusEventStatus | undefined) {
+    const allowed = kind === "incident" ? PUBLIC_STATUS_INCIDENT_STATUSES : PUBLIC_STATUS_MAINTENANCE_STATUSES;
+    if (status !== undefined && !(allowed as readonly string[]).includes(status)) {
+      throw new AppError(
+        "BAD_REQUEST",
+        kind === "incident" ? "故障事件不能使用维护窗口的进度" : "维护窗口不能使用故障事件的进度"
+      );
+    }
+    return status ?? (kind === "incident" ? "investigating" : "scheduled");
+  }
+
+  /** 维护窗口必须有晚于开始时刻的计划结束；故障事件没有计划结束这个概念。 */
+  private validateWindow(
+    kind: PublicStatusIncidentKind,
+    startedAt: number,
+    plannedEndAt: number | null
+  ): number | null {
+    if (kind === "incident") return null;
+    if (plannedEndAt === null || plannedEndAt <= startedAt)
+      throw new AppError("BAD_REQUEST", "维护窗口需要晚于开始时刻的结束时间");
+    return plannedEndAt;
+  }
+
+  async listStatusEvents(input: StatusEventFilter) {
+    return this.requireStatusEvents().list(this.options.environment, input);
+  }
+
+  async createStatusEvent(
+    actorId: string,
+    input: Omit<StatusEventInput, "status" | "resolvedAt">
+  ): Promise<PublicStatusEvent> {
+    const repository = this.requireStatusEvents();
+    const status = this.statusOfKind(input.kind, undefined);
+    const plannedEndAt = this.validateWindow(input.kind, input.startedAt, input.plannedEndAt);
+    await this.audit(actorId, "statusEvent.create", "statusEvent", input.kind, {
+      title: input.title,
+      components: input.components,
+      startedAt: new Date(input.startedAt).toISOString(),
+      plannedEndAt: plannedEndAt === null ? null : new Date(plannedEndAt).toISOString(),
+    });
+    return repository.create(this.options.environment, {
+      ...input,
+      plannedEndAt,
+      status,
+      resolvedAt: null,
+    });
+  }
+
+  async updateStatusEvent(
+    actorId: string,
+    input: {
+      id: number;
+      title?: string;
+      body?: string;
+      status?: PublicStatusEventStatus;
+      components?: PublicStatusComponentId[];
+      startedAt?: number;
+      plannedEndAt?: number | null;
+    }
+  ): Promise<PublicStatusEvent> {
+    const repository = this.requireStatusEvents();
+    const existing = await repository.get(this.options.environment, input.id);
+    if (!existing) throw new AppError("NOT_FOUND", "状态事件不存在");
+
+    // 状态推进与结束时刻同步：改成已恢复/已完成补上时刻，改回进行中清空，单独改正文不动它。
+    let resolvedAt: number | null | undefined;
+    if (input.status !== undefined) {
+      const status = this.statusOfKind(existing.kind, input.status);
+      if (status === "resolved" || status === "done") {
+        resolvedAt = existing.resolvedAt ?? this.now();
+      } else {
+        resolvedAt = null;
+      }
+    }
+    const startedAt = input.startedAt ?? existing.startedAt;
+    const plannedEndAt = this.validateWindow(
+      existing.kind,
+      startedAt,
+      input.plannedEndAt === undefined ? existing.plannedEndAt : input.plannedEndAt
+    );
+    const patch: StatusEventPatch = { ...input, plannedEndAt };
+    if (resolvedAt !== undefined) patch.resolvedAt = resolvedAt;
+
+    await this.audit(actorId, "statusEvent.update", "statusEvent", String(input.id), {
+      from: existing.status,
+      to: input.status ?? existing.status,
+      title: input.title ?? existing.title,
+    });
+    return repository.update(this.options.environment, input.id, patch);
+  }
+
+  async deleteStatusEvent(actorId: string, id: number): Promise<{ ok: true }> {
+    const repository = this.requireStatusEvents();
+    const existing = await repository.get(this.options.environment, id);
+    if (!existing) throw new AppError("NOT_FOUND", "状态事件不存在");
+    await this.audit(actorId, "statusEvent.delete", "statusEvent", String(id), {
+      title: existing.title,
+      kind: existing.kind,
+    });
+    await repository.remove(this.options.environment, id);
+    return { ok: true as const };
   }
 
   // ==================== 站点概览 ====================
