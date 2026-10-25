@@ -5,11 +5,24 @@ import type { CoreTechEntry, CreditDependency } from "@/lib/Credits";
 import { pressable } from "@/lib/Motion";
 import { CreditBrandMark } from "./CreditsIcons";
 
-/** 依赖清单里同一个包名只出现一条，取它的版本即可；取不到（非 npm 运行时）不写占位。 */
+/**
+ * 按包名取展示版本；取不到（非 npm 运行时）不写占位。
+ *
+ * 同一个包名可能对应多条安装：npm 别名（`typescript7` 装的是 TypeScript 7）与
+ * 传递副本会撞名。核心技术栈要展示项目实际声明的那条，因此同名时直接依赖优先，
+ * 纯传递副本不得顶替；同类直接依赖撞名时保留清单里靠前的一条。
+ */
 function versionIndex(dependencies: readonly CreditDependency[]): Map<string, string> {
   const versions = new Map<string, string>();
+  const directNames = new Set<string>();
   for (const dependency of dependencies) {
-    if (!versions.has(dependency.name)) versions.set(dependency.name, dependency.version);
+    if (!dependency.direct) {
+      if (!versions.has(dependency.name)) versions.set(dependency.name, dependency.version);
+      continue;
+    }
+    if (directNames.has(dependency.name)) continue;
+    directNames.add(dependency.name);
+    versions.set(dependency.name, dependency.version);
   }
   return versions;
 }

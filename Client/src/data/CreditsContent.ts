@@ -317,7 +317,10 @@ export const CORE_TECH_STACK: readonly CoreTechEntry[] = [
   },
   {
     name: "TypeScript",
-    role: "全仓类型契约",
+    // 展示编译器线 7.x。6.x 只是 typescript-eslint 等工具消费的 API 线，跑构建的
+    // `tsc` 来自 `typescript7` 别名；依赖清单里还会出现 6.x 的传递副本，版本查找必须
+    // 直接依赖优先（见 CreditsTechStack），否则卡片会显示成 6.0.3。
+    role: "全仓编译与类型契约",
     icon: "typescript",
     category: "frontend",
     url: "https://www.typescriptlang.org",
@@ -354,6 +357,14 @@ export const CORE_TECH_STACK: readonly CoreTechEntry[] = [
     url: "https://zustand.docs.pmnd.rs",
     packageName: "zustand",
   },
+  {
+    name: "React Router",
+    role: "页面路由与导航",
+    icon: "reactrouter",
+    category: "frontend",
+    url: "https://reactrouter.com",
+    packageName: "react-router-dom",
+  },
   // 后端
   {
     name: "Bun",
@@ -370,6 +381,14 @@ export const CORE_TECH_STACK: readonly CoreTechEntry[] = [
     url: "https://elysiajs.com",
   },
   {
+    name: "oRPC",
+    role: "前后端类型安全契约",
+    icon: "orpc",
+    category: "backend",
+    url: "https://orpc.dev",
+    packageName: "@orpc/client",
+  },
+  {
     name: "Drizzle ORM",
     role: "数据库访问与迁移",
     icon: "drizzle",
@@ -382,6 +401,20 @@ export const CORE_TECH_STACK: readonly CoreTechEntry[] = [
     icon: "mysql",
     category: "backend",
     url: "https://www.mysql.com",
+  },
+  {
+    name: "Better Auth",
+    role: "账号、会话与通行密钥",
+    icon: "betterauth",
+    category: "backend",
+    url: "https://www.better-auth.com",
+  },
+  {
+    name: "Meilisearch",
+    role: "番剧与角色检索索引",
+    icon: "meilisearch",
+    category: "backend",
+    url: "https://www.meilisearch.com",
   },
   // 脚手架
   {

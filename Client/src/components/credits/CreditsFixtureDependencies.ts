@@ -37,6 +37,12 @@ export const CREDITS_FIXTURE_DEPENDENCIES: readonly CreditDependency[] = [
     scope: "development",
   }),
   dependency({
+    name: "@orpc/client",
+    version: "1.15.6",
+    description: "类型安全的 RPC 客户端。",
+    url: "https://orpc.dev",
+  }),
+  dependency({
     name: "@radix-ui/react-dialog",
     version: "1.1.23",
     description: "无障碍对话框原语。",
@@ -185,6 +191,12 @@ export const CREDITS_FIXTURE_DEPENDENCIES: readonly CreditDependency[] = [
     dependencies: ["react", "scheduler"],
   }),
   dependency({
+    name: "react-router-dom",
+    version: "7.18.4",
+    description: "页面路由与导航。",
+    url: "https://reactrouter.com",
+  }),
+  dependency({
     name: "rollup",
     version: "4.48.0",
     description: "生产构建的模块打包器。",
@@ -215,9 +227,9 @@ export const CREDITS_FIXTURE_DEPENDENCIES: readonly CreditDependency[] = [
   }),
   dependency({
     name: "typescript",
-    version: "5.9.3",
+    version: "7.0.2",
     license: "Apache-2.0",
-    description: "全仓类型契约。",
+    description: "全仓编译与类型契约。",
     url: "https://www.typescriptlang.org",
     scope: "development",
   }),

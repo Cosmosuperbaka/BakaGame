@@ -149,7 +149,7 @@ describe("CreditsView", () => {
     }
 
     // CORE_TECH_STACK 的 React 一条从依赖清单的 react 行取到实际版本。
-    const reactCard = screen.getByRole("link", { name: /React/ });
+    const reactCard = screen.getByRole("link", { name: /^React(?! Router)/ });
     expect(within(reactCard).getByText("v19.3.0")).toBeInTheDocument();
   });
 
