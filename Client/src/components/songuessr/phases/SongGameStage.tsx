@@ -42,7 +42,7 @@ import {
   SongAutoFilterSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
 import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
-import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
+import { listItem, phaseSwap, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { withTeamName } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -726,12 +726,7 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
   };
 
   return (
-    <div
-      className={cn(
-        "mx-auto flex w-full flex-col items-center gap-6 text-center",
-        preview ? "max-w-2xl" : "max-w-md"
-      )}
-    >
+    <div className="mx-auto flex w-full flex-col items-center gap-6 text-center">
       <PhaseHeader
         icon={anime ? Film : Music2}
         title={
@@ -739,36 +734,49 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
         }
       />
       {privateState.canSubmitSong ? (
-        preview ? (
-          <SongClipConfig
-            song={preview}
-            onConfirm={(clip) =>
-              onSelectSearchSong(preview.id, "submit", undefined, clip, {
-                sources: preview.sources,
-                requiresVip: preview.requiresVip,
-              })
-            }
-            onCancel={() => setPreview(null)}
-          />
-        ) : (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {anime
-                ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
-                : "搜索一首可播放的歌曲，选中后可试听并截取片段。"}
-              歌曲信息只会在回合结束后公开。
-            </p>
-            {anime ? (
-              <AnimeSearch
-                mode="submit"
-                className="w-full"
-                onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
+        // 搜歌表单与片段配置共用这一格：换内容时按阶段切换的前后推入语汇互为进退，
+        // 宽度档也随内容走，退出的那幅不会被挤压变形。
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={preview ? "clip" : "search"}
+            variants={phaseSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className={cn("flex w-full flex-col items-center", preview ? "max-w-2xl" : "max-w-md")}
+          >
+            {preview ? (
+              <SongClipConfig
+                song={preview}
+                onConfirm={(clip) =>
+                  onSelectSearchSong(preview.id, "submit", undefined, clip, {
+                    sources: preview.sources,
+                    requiresVip: preview.requiresVip,
+                  })
+                }
+                onCancel={() => setPreview(null)}
               />
             ) : (
-              <SongSearch mode="submit" className="w-full" onSelect={pickSong} />
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {anime
+                    ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
+                    : "搜索一首可播放的歌曲，选中后可试听并截取片段。"}
+                  歌曲信息只会在回合结束后公开。
+                </p>
+                {anime ? (
+                  <AnimeSearch
+                    mode="submit"
+                    className="w-full"
+                    onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
+                  />
+                ) : (
+                  <SongSearch mode="submit" className="w-full" onSelect={pickSong} />
+                )}
+              </>
             )}
-          </>
-        )
+          </motion.div>
+        </AnimatePresence>
       ) : (
         <p className="text-sm text-muted-foreground">
           {submitter?.name ?? "出题人"} 正在选择{anime ? "番剧" : "歌曲"}

@@ -6,7 +6,7 @@ import { SONG_CLIP_MIN_MS } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
-import { optionTappable } from "@/lib/Motion";
+import { listContainer, listItem, optionTappable, readoutSwap, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import {
   clampClipRange,
@@ -17,6 +17,12 @@ import {
 
 /** 片段长度只报秒，避免「0:12.4」在小标签里显得啰嗦。 */
 const formatLength = (ms: number) => `${(Math.max(0, ms) / 1_000).toFixed(1)} 秒`;
+
+/**
+ * 播放头在两次 timeupdate 之间匀速补间，读作连续走动的时间；
+ * 与倒计时进度条同一条匀速豁免（见 `Motion.ts` 的 `countdownTickMs`）。
+ */
+const PLAYHEAD_SMOOTH_MS = 250;
 
 /** 时间点落在哪一句歌词上：取最后一句已开始的歌词，前奏阶段归到第一句。 */
 function lineIndexAt(lines: SongLyricLine[], timeMs: number): number {
@@ -36,7 +42,8 @@ export interface SongClipConfigProps {
 }
 
 /**
- * 手动出题的片段配置：上方试听、下方歌词与时间轴共用同一个选定区间。
+ * 手动出题的片段配置：上方是歌曲与试听，下方一张面板里放同一份区间的两个视图——
+ * 时间轴是尺子，歌词是被裁的内容。
  *
  * 交互只有两条入口：点两句歌词定起止，或拖时间轴的两个手柄；两边都改同一份 range，
  * 所以歌词高亮、起止读数与试听区间不会出现两套状态。
@@ -67,6 +74,40 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
     startTime >= 0 &&
     endTime <= domain &&
     selectedLength >= SONG_CLIP_MIN_MS;
+  /** 副歌带铺在时间轴上，给「好听的段落大概在这里」一个参照；数据异常时不画。 */
+  const { chorus } = song;
+  const chorusBand = useMemo(() => {
+    if (
+      !chorus ||
+      chorus.endTime === undefined ||
+      !Number.isFinite(chorus.startTime) ||
+      !Number.isFinite(chorus.endTime) ||
+      chorus.endTime <= chorus.startTime
+    ) {
+      return null;
+    }
+    const left = Math.max(0, Math.min(100, (chorus.startTime / domain) * 100));
+    const right = Math.max(left, Math.min(100, (chorus.endTime / domain) * 100));
+    return right - left <= 0 ? null : { left, width: right - left };
+  }, [chorus, domain]);
+  /** 选中段落在歌词列表里的首末行：竖标的圆角帽画在这两行上。 */
+  const [firstSelected, lastSelected] = useMemo(() => {
+    let first = -1;
+    let last = -1;
+    song.lyrics.forEach((line, index) => {
+      if (line.time < endTime && line.endTime > startTime) {
+        if (first < 0) first = index;
+        last = index;
+      }
+    });
+    return [first, last] as const;
+  }, [endTime, song.lyrics, startTime]);
+  const hint =
+    anchorIndex !== null
+      ? "已选起点，再点一句设为终点"
+      : song.lyrics.length === 0
+        ? "拖动上方时间轴选择片段"
+        : "点两句歌词定起止，或拖动上方时间轴";
 
   // 区间变化后把播放头收进新区间，避免试听跑到选区外。
   useEffect(() => {
@@ -108,8 +149,7 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
     const nextStart = value[0] ?? startTime;
     const nextEnd = value[1] ?? endTime;
     // 双柄滑杆一次只动一个手柄；比较两端位移就知道这次该按谁收口。
-    const moved =
-      Math.abs(nextStart - startTime) >= Math.abs(nextEnd - endTime) ? "start" : "end";
+    const moved = Math.abs(nextStart - startTime) >= Math.abs(nextEnd - endTime) ? "start" : "end";
     applyRange(nextStart, nextEnd, moved);
   };
 
@@ -229,16 +269,13 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{song.title}</p>
+            <strong className="block truncate text-sm font-medium">{song.title}</strong>
             <p className="truncate text-xs text-muted-foreground">
               {[song.artist, song.album].filter(Boolean).join(" · ")}
             </p>
           </div>
-          <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-            {formatClipTime(currentTimeMs)} / {formatClipTime(domain)}
-          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <Button
             size="icon"
             onClick={() => void togglePlay()}
@@ -255,8 +292,19 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
             <Repeat />
             循环
           </Button>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {formatClipTime(startTime)} – {formatClipTime(endTime)}（{formatLength(selectedLength)}）
+          {/* 播放进度连续刷新：新值自贴近终值的位置顶上来，快速刷新不闪。 */}
+          <span className="ml-auto font-mono text-2xs tabular-nums text-muted-foreground">
+            <motion.span
+              key={formatClipTime(currentTimeMs)}
+              initial={readoutTick.initial}
+              animate={readoutTick.animate}
+              transition={readoutTick.transition}
+              className="inline-block"
+            >
+              {formatClipTime(currentTimeMs)}
+            </motion.span>
+            {" / "}
+            {formatClipTime(domain)}
           </span>
         </div>
         {audioFailed ? (
@@ -266,111 +314,169 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
         ) : null}
       </section>
 
-      <section className="space-y-2 rounded-md bg-muted p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-semibold text-muted-foreground">歌词</h3>
-          <span className="text-2xs text-muted-foreground">
-            {anchorIndex !== null
-              ? "已选起点，再点一句设为终点"
-              : song.lyrics.length === 0
-                ? "拖动下方时间轴选择片段"
-                : "点两句歌词定起止，或拖动下方时间轴"}
-          </span>
-        </div>
-        {song.lyrics.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            纯音乐或无歌词，拖动下方时间轴选择片段。
-          </p>
-        ) : (
-          <div ref={listRef} className="max-h-64 overflow-y-auto">
-            {song.lyrics.map((line, index) => {
-              const selected = line.time < endTime && line.endTime > startTime;
-              const active = currentTimeMs >= line.time && currentTimeMs < line.endTime;
-              return (
-                <motion.button
-                  key={`${line.time}-${index}`}
-                  type="button"
-                  {...optionTappable}
-                  data-line-index={index}
-                  data-selected={selected ? "true" : undefined}
-                  data-active={active ? "true" : undefined}
-                  aria-label={`${formatClipTime(line.time)} ${line.text}`}
-                  onClick={() => pickLine(index)}
-                  className={cn(
-                    "flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40",
-                    selected && "bg-primary/10",
-                    active && "text-primary",
-                    line.isBG && "opacity-70"
-                  )}
-                >
-                  <span className="w-12 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-                    {formatClipTime(line.time)}
-                  </span>
-                  <span className="min-w-0 flex-1 break-words text-sm">
-                    {line.text}
-                    {line.translatedLyric ? (
-                      <span className="mt-0.5 block text-xs text-muted-foreground">
-                        {line.translatedLyric}
-                      </span>
-                    ) : null}
-                  </span>
-                  {index === anchorIndex ? (
-                    <Badge variant="active" size="xs" className="shrink-0">
-                      起点
-                    </Badge>
-                  ) : null}
-                </motion.button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
+      {/* 时间轴与歌词是同一份区间的两个视图，放在同一张面板里：尺子在上，内容在下。 */}
       <section
-        className="space-y-3 rounded-md bg-muted p-4"
+        className="space-y-4 rounded-md border bg-panel p-4 shadow-2xs"
         data-agent-control="song.clip.range"
+        aria-label="截取歌词与片段"
       >
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-xs font-semibold text-muted-foreground">时间轴</h3>
-          <span className="text-2xs text-muted-foreground">
-            片段 {formatLength(selectedLength)}（至少 5 秒，最长整首）
-          </span>
-        </div>
-        <div className="relative">
-          <Slider
-            min={0}
-            max={domain}
-            step={100}
-            value={range}
-            onValueChange={handleSliderChange}
-            aria-label="片段起止时间"
-            thumbLabels={["片段起点", "片段终点"]}
-            thumbValueTexts={[formatClipTime(startTime), formatClipTime(endTime)]}
-          />
-          {/* 歌词刻度与播放头：与滑杆共用同一条时间轴，拖柄时能直接看到落在哪句。 */}
-          <div className="relative mt-2 h-3" aria-hidden="true">
-            {song.lyrics.map((line, index) => {
-              const selected = line.time < endTime && line.time >= startTime;
-              return (
-                <span
-                  key={`${line.time}-${index}`}
-                  className={cn(
-                    "absolute top-0 h-2 w-px",
-                    selected ? "bg-primary/60" : "bg-border"
-                  )}
-                  style={{ left: `${(line.time / domain) * 100}%` }}
-                />
-              );
-            })}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">时间轴</h3>
+            <span className="text-2xs text-muted-foreground">
+              片段 {formatLength(selectedLength)}（至少 5 秒，最长整首）
+            </span>
+          </div>
+          <p className="text-center font-mono text-xs tabular-nums">
+            {formatClipTime(startTime)} – {formatClipTime(endTime)}
+          </p>
+          {/*
+            一条时间轴四层内容：底轨与副歌带是尺子，歌词刻度落在轨上，选中段与手柄叠在刻度上，
+            播放头最后划过。滑杆轨道透明，选中段取半透明主色，刻度在区间内的部分透出来。
+          */}
+          <div className="relative flex h-5 items-center">
+            <div
+              aria-hidden="true"
+              className="absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 rounded-full bg-muted"
+            />
+            {chorusBand ? (
+              <div
+                aria-hidden="true"
+                className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-secondary"
+                style={{ left: `${chorusBand.left}%`, width: `${chorusBand.width}%` }}
+              />
+            ) : null}
+            {song.lyrics.map((line, index) => (
+              <span
+                key={`${line.time}-${index}`}
+                aria-hidden="true"
+                className={cn(
+                  "absolute top-1/2 h-3.5 w-px -translate-y-1/2",
+                  line.time < endTime && line.time >= startTime ? "bg-primary/60" : "bg-border"
+                )}
+                style={{ left: `${(line.time / domain) * 100}%` }}
+              />
+            ))}
+            {/* py 撑高触控热区：轨道与手柄的视觉位置不变，整行都能按住拖动。 */}
+            <Slider
+              className="w-full py-2"
+              min={0}
+              max={domain}
+              step={100}
+              value={range}
+              onValueChange={handleSliderChange}
+              aria-label="片段起止时间"
+              thumbLabels={["片段起点", "片段终点"]}
+              thumbValueTexts={[formatClipTime(startTime), formatClipTime(endTime)]}
+              trackClassName="h-2 bg-transparent"
+              rangeClassName="rounded-full bg-primary/25"
+              thumbClassName="h-5 w-5"
+            />
             <span
-              className="absolute -top-1 h-3 w-0.5 bg-foreground/50"
-              style={{ left: `${(currentTimeMs / domain) * 100}%` }}
+              aria-hidden="true"
+              className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-foreground/60 transition-[left] ease-linear"
+              style={{
+                left: `${(currentTimeMs / domain) * 100}%`,
+                transitionDuration: `${PLAYHEAD_SMOOTH_MS}ms`,
+              }}
             />
           </div>
-          <div className="flex justify-between text-2xs tabular-nums text-muted-foreground">
+          <div className="flex justify-between font-mono text-2xs tabular-nums text-muted-foreground">
             <span>0:00.0</span>
             <span>{formatClipTime(domain)}</span>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">歌词</h3>
+            {/* 提示随选择进度切换：换 key 重挂载，新文案自下方顶上来；polite 只播报这一句，不打断操作。 */}
+            <div className="flex min-h-4 items-center justify-end" aria-live="polite">
+              <motion.span
+                key={hint}
+                variants={readoutSwap}
+                initial="initial"
+                animate="animate"
+                className="block text-2xs text-muted-foreground"
+              >
+                {hint}
+              </motion.span>
+            </div>
+          </div>
+          {song.lyrics.length === 0 ? (
+            <p className="flex h-24 items-center justify-center rounded-md bg-background px-3 text-center text-sm text-muted-foreground sm:h-28">
+              纯音乐或无歌词，拖动上方时间轴选择片段。
+            </p>
+          ) : (
+            <motion.div
+              ref={listRef}
+              variants={listContainer(song.lyrics.length)}
+              initial="initial"
+              animate="animate"
+              className="max-h-64 overflow-y-auto rounded-md bg-background p-1.5"
+            >
+              {song.lyrics.map((line, index) => {
+                const selected = line.time < endTime && line.endTime > startTime;
+                const active = currentTimeMs >= line.time && currentTimeMs < line.endTime;
+                return (
+                  <motion.button
+                    key={`${line.time}-${index}`}
+                    type="button"
+                    {...optionTappable}
+                    variants={listItem}
+                    data-line-index={index}
+                    data-selected={selected ? "true" : undefined}
+                    data-active={active ? "true" : undefined}
+                    aria-label={`${formatClipTime(line.time)} ${line.text}`}
+                    onClick={() => pickLine(index)}
+                    className={cn(
+                      "relative flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40",
+                      selected && "bg-primary/10",
+                      line.isBG && "opacity-70"
+                    )}
+                  >
+                    {selected ? (
+                      /* 选中行左缘连成一条主色竖标，首末行收圆角，读出区间的边界落在哪两行。 */
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "absolute inset-y-0 left-0 w-0.5 bg-primary",
+                          index === firstSelected && "rounded-t-full",
+                          index === lastSelected && "rounded-b-full"
+                        )}
+                      />
+                    ) : null}
+                    <span
+                      className={cn(
+                        "w-12 shrink-0 font-mono text-2xs leading-5 tabular-nums text-muted-foreground",
+                        selected && "text-primary"
+                      )}
+                    >
+                      {formatClipTime(line.time)}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 break-words text-sm leading-5",
+                        active && "text-primary"
+                      )}
+                    >
+                      {line.text}
+                      {line.translatedLyric ? (
+                        <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                          {line.translatedLyric}
+                        </span>
+                      ) : null}
+                    </span>
+                    {index === anchorIndex ? (
+                      <Badge variant="active" size="xs" className="shrink-0">
+                        起点
+                      </Badge>
+                    ) : null}
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+          )}
         </div>
       </section>
 
@@ -381,22 +487,18 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
       ) : null}
 
       <div className="space-y-2">
-        <Button
-          className="w-full"
-          loading={submitting}
-          disabled={!selectionValid}
-          onClick={() => void confirm()}
-          data-agent-control="song.clip.confirm"
-        >
-          用这段出题
-        </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          出题后全房会听到这段 {formatLength(selectedLength)} 的音频。
-        </p>
-        <div className="flex justify-center">
+        <div className="flex gap-2">
           <Button
-            variant="ghost"
-            size="sm"
+            className="flex-1"
+            loading={submitting}
+            disabled={!selectionValid}
+            onClick={() => void confirm()}
+            data-agent-control="song.clip.confirm"
+          >
+            用这段出题
+          </Button>
+          <Button
+            variant="outline"
             disabled={submitting}
             onClick={onCancel}
             data-agent-control="song.clip.cancel"
@@ -404,6 +506,9 @@ export function SongClipConfig({ song, onConfirm, onCancel }: SongClipConfigProp
             返回重新选歌
           </Button>
         </div>
+        <p className="text-center text-xs text-muted-foreground">
+          出题后全房会听到这段 {formatLength(selectedLength)} 的音频。
+        </p>
       </div>
     </div>
   );

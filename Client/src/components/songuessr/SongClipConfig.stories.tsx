@@ -14,13 +14,19 @@ const SONG: SongClipPreview = {
   durationMs: 261_000,
   audioUrl: SILENT_AUDIO,
   chorus: { startTime: 60_000, endTime: 90_000 },
-  suggestedClip: { startTime: 60_000, endTime: 90_000 },
+  // 建议区间与副歌错开，且正好盖住几句歌词：截图里副歌带、选中段与高亮歌词各自可辨。
+  suggestedClip: { startTime: 69_000, endTime: 84_000 },
   lyrics: [
-    { time: 12_000, endTime: 15_000, text: "沈むように溶けてゆくように" },
+    {
+      time: 12_000,
+      endTime: 15_000,
+      text: "沈むように溶けてゆくように",
+      translatedLyric: "仿佛渐渐溶化，沉入夜色",
+    },
     { time: 15_000, endTime: 18_500, text: "二人だけの空が広がる夜に" },
     { time: 19_000, endTime: 22_000, text: "「さよなら」だけだった" },
     { time: 22_000, endTime: 26_000, text: "その一言で全てが分かった" },
-    { time: 27_000, endTime: 31_000, text: "日が沈み出した空と君の姿" },
+    { time: 27_000, endTime: 31_000, text: "日が沈み出した空と君の姿", isBG: true },
     { time: 60_000, endTime: 64_000, text: "フェンス越しに重なっていた" },
     { time: 64_000, endTime: 69_000, text: "初めて会った日から" },
     { time: 69_000, endTime: 73_000, text: "僕の心の全てを奪った" },
@@ -51,11 +57,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = { name: "带歌词 · 默认副歌区间" };
+export const Default: Story = { name: "带歌词 · 建议区间与副歌错开" };
+
+export const NoSuggestion: Story = {
+  name: "无建议区间 · 回退副歌",
+  args: {
+    song: { ...SONG, suggestedClip: undefined },
+  },
+};
 
 export const Instrumental: Story = {
   name: "纯音乐",
   args: {
-    song: { ...SONG, lyrics: [], chorus: undefined, durationMs: 180_000 },
+    song: { ...SONG, lyrics: [], chorus: undefined, suggestedClip: undefined, durationMs: 180_000 },
   },
 };
