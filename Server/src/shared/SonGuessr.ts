@@ -14,6 +14,7 @@ import {
   SongAutoFiltersInputSchema,
   type SongAutoFilters,
 } from "./SonGuessrFilters";
+import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 
 export const SONGUESSR_PHASES = [
   "waiting",
@@ -742,15 +743,9 @@ export interface SonGuessrPrivateState {
 export const SONGUESSR_LOBBY_ROOMS_EVENT = "song.lobby.rooms";
 
 const emptyPayload = t.Object({}, strict);
-const roomId = t.String({ minLength: 1, maxLength: 32 });
 const roomName = t.String({ minLength: 1, maxLength: 40 });
-const userName = t.String({ minLength: 1, maxLength: 32 });
-const password = t.Optional(t.String({ maxLength: 64 }));
-const playerId = t.String({ minLength: 1, maxLength: 64 });
-const positiveInt = t.Integer({ minimum: 1 });
 const keyword = t.String({ minLength: 1, maxLength: 200 });
 const subjectId = t.String({ minLength: 1, maxLength: 32 });
-const sessionToken = t.String({ minLength: 1, maxLength: 128 });
 // 限定字符集：支持统一音源 URN (如 netease:123, qq:001...) 以及常见单平台 ID 形态。
 const songId = t.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_:-]+$" });
 /** 选曲时回传的备用音源：数量有上限，避免用协议放大上游请求。 */

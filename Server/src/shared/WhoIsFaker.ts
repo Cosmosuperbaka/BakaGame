@@ -10,6 +10,7 @@ import {
   type RoomVisibility,
 } from "./Model";
 import type { ClientEnvelope } from "./Protocol";
+import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 
 // ==================== 谁是卧底 (WhoIsFaker) 领域模型与协议 ====================
 
@@ -544,12 +545,6 @@ export interface WhoIsFakerPrivateState {
 export const WHOISFAKER_LOBBY_ROOMS_EVENT = "lobby.rooms";
 
 const emptyPayload = t.Object({}, strict);
-const positiveInt = t.Integer({ minimum: 1 });
-const roomId = t.String({ minLength: 1, maxLength: 32 });
-const userName = t.String({ minLength: 1, maxLength: 32 });
-const password = t.Optional(t.String({ maxLength: 64 }));
-const playerId = t.String({ minLength: 1, maxLength: 64 });
-const sessionToken = t.String({ minLength: 1, maxLength: 128 });
 const gamePhaseSchema = schemaUnion(WHOISFAKER_PHASES.map((phase) => t.Literal(phase)));
 const playerRoleSchema = schemaUnion(WHOISFAKER_ROLES.map((role) => t.Literal(role)));
 const wordPair = t.Tuple([
