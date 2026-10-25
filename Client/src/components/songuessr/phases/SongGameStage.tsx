@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -35,7 +35,6 @@ import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
-import { SongClipConfig } from "@/components/songuessr/SongClipConfig";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
   AnimeAutoFilterSummary,
@@ -57,6 +56,10 @@ import type {
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
+
+const SongClipConfig = lazy(async () => ({
+  default: (await import("@/components/songuessr/SongClipConfig")).SongClipConfig,
+}));
 
 /** 方向箭头指向答案：higher 即答案比这次猜的更大（年份更晚、热度更高）。 */
 const DIRECTION_ICON: Record<SongGuessDirection, LucideIcon> = {
@@ -746,16 +749,28 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
             className={cn("flex w-full flex-col items-center", preview ? "max-w-2xl" : "max-w-md")}
           >
             {preview ? (
-              <SongClipConfig
-                song={preview}
-                onConfirm={(clip) =>
-                  onSelectSearchSong(preview.id, "submit", undefined, clip, {
-                    sources: preview.sources,
-                    requiresVip: preview.requiresVip,
-                  })
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    aria-label="正在加载片段编辑器"
+                    className="flex min-h-40 items-center justify-center"
+                  >
+                    <Spinner className="size-6 text-primary" />
+                  </div>
                 }
-                onCancel={() => setPreview(null)}
-              />
+              >
+                <SongClipConfig
+                  song={preview}
+                  onConfirm={(clip) =>
+                    onSelectSearchSong(preview.id, "submit", undefined, clip, {
+                      sources: preview.sources,
+                      requiresVip: preview.requiresVip,
+                    })
+                  }
+                  onCancel={() => setPreview(null)}
+                />
+              </Suspense>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">

@@ -1,6 +1,6 @@
 # 猜歌歌词播放器（AMLL）
 
-改动 `SongLyricPlayer`、`SongLyricScene` 或任何 AMLL 渲染、测量、歌词动效时使用本文。歌词获取、清洗与切片见 [Server 歌词文档](../../Server/docs/SonGuessrLyrics.md)。具体 DOM 结构、字号、行高与组件参数以官方文档、已安装版本和代码为准，本文只记不能破坏的约束。
+改动 `SongLyricPlayer`、`SongLyricScene`、`SongClipLyricSelector` 或任何 AMLL 渲染、测量、歌词动效时使用本文。歌词获取、清洗与切片见 [Server 歌词文档](../../Server/docs/SonGuessrLyrics.md)。具体 DOM 结构、字号、行高与组件参数以官方文档、已安装版本和代码为准，本文只记不能破坏的约束。
 
 > **改动前必须先查官方文档 <https://amll.dev/>** 与已安装版本的类型声明、源码。组件内核是 `@applemusic-like-lyrics/core` 的原生 `LyricPlayer`，不使用 React wrapper；严禁凭印象推测其盒模型、布局计算或动画行为。
 
@@ -9,6 +9,8 @@
 - `SongLyricPlayer` 只负责 React 容器；`SongLyricScene` 用原生 Core 的**单实例**统一管理数据、媒体、测量和动画，不得同时用 React 绑定与命令式方法重复驱动同一状态。
 - 歌词引用按完整内容深比较，覆盖逐字文本与时间、行级与逐字注音、翻译、和声及对唱标记；不得用只比文本与词数的摘要键。快照复制不得重建歌词节点。
 - 翻译非空时屏蔽注音，无翻译时保留注音；测量必须计入所有可显示的副行。
+- 手动出题的截取选择器复用同一歌词转换与原生 Core，但采用独立的静止布局：歌词行盒不随播放滚动、位移或缩放，只推进当前行的逐字遮罩。不能靠关闭 spring 实现静止，当前内核会在关闭 spring 时跳过逐字更新。
+- 选择器的普通歌词回退按原始 `SongLyricLine.words` 判定，不把转换层的整行兜底词当作逐字能力；普通行不显示逐字遮罩，播放也不得主动改变选取列表的滚动位置。
 
 ## 测量与布局
 

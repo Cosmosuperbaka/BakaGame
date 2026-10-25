@@ -400,11 +400,7 @@ export interface SongClipRange {
 /** 手动片段的最短长度：再短就听不出旋律。最长不超过整首歌。 */
 export const SONG_CLIP_MIN_MS = 5_000;
 
-/**
- * 手动出题时的歌曲预览：只下发给当前出题人，供片段编辑器试听与选词。
- *
- * 不含逐字歌词：编辑器只需要行级时间与文本，逐字数据体量大且用不上。
- */
+/** 手动出题时的歌曲预览：只下发给当前出题人，供片段编辑器试听、选词与逐字演出。 */
 export interface SongClipPreview {
   id: string;
   title: string;

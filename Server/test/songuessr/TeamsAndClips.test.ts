@@ -348,8 +348,31 @@ describe("手动出题片段", () => {
     ).toBe(8_000);
   });
 
-  test("出题人可预览所选歌曲，非出题人与作答阶段都拿不到答案的试听与歌词", async () => {
-    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+  test("出题人可预览逐字歌词，非出题人与作答阶段都拿不到答案的试听与歌词", async () => {
+    const previewProvider: MusicProvider = {
+      ...provider,
+      getSong: async (id) =>
+        id === "answer"
+          ? {
+              ...songs.answer,
+              lyrics: songs.answer.lyrics.map((line, index) =>
+                index === 0
+                  ? {
+                      ...line,
+                      words: [
+                        { startTime: 1_000, endTime: 1_500, word: "歌词" },
+                        { startTime: 1_500, endTime: 2_000, word: "1" },
+                      ],
+                    }
+                  : line
+              ),
+            }
+          : provider.getSong(id),
+    };
+    const service = new SonGuessrService({
+      musicProvider: previewProvider,
+      random: { nextInt: () => 0 },
+    });
     const host = connection(service, "clip-preview-host");
     const guest = connection(service, "clip-preview-guest");
     await createRoom(service, host);
@@ -385,16 +408,14 @@ describe("手动出题片段", () => {
       payload: { playerId: hostState.playerId },
     });
 
-    const preview = await execute<{ song: { id: string; audioUrl: string; lyrics: unknown[] } }>(
-      service,
-      host,
-      {
-        id: "preview-detail",
-        type: "song.music.detail",
-        roomId: "1234",
-        payload: { songId: "answer" },
-      }
-    );
+    const preview = await execute<{
+      song: { id: string; audioUrl: string; lyrics: Array<{ words?: unknown[] }> };
+    }>(service, host, {
+      id: "preview-detail",
+      type: "song.music.detail",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
     expect(preview.song).toMatchObject({
       id: "answer",
       audioUrl: "https://audio/answer.mp3",
@@ -402,6 +423,10 @@ describe("手动出题片段", () => {
     });
     expect(preview.song.lyrics).toHaveLength(8);
     expect(preview.song.lyrics[0]).toMatchObject({ time: 1_000, endTime: 2_000, text: "歌词1" });
+    expect(preview.song.lyrics[0]?.words).toEqual([
+      { startTime: 1_000, endTime: 1_500, word: "歌词" },
+      { startTime: 1_500, endTime: 2_000, word: "1" },
+    ]);
 
     await expect(
       execute(service, guest, {

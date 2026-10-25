@@ -720,6 +720,148 @@ img {
   background-color: var(--color-foreground);
 }
 
+/* 选词器保留 AMLL 的逐字更新，但把行盒固定回正常文档流，播放不改变任何行的位置或尺寸。 */
+.baka-clip-lyric-selector.amll-lyric-player {
+  position: relative;
+  min-height: 0;
+  overflow: visible;
+  contain: layout style;
+  --amll-lp-font-size: 1rem;
+  --amll-lp-line-width-aspect: 1;
+  --lyric-line-padding-x: 0px;
+}
+
+.baka-clip-lyric-selector [class*="lyricLineWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  align-items: stretch !important;
+  gap: 0;
+  padding: 0.125rem 0;
+  transform: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  will-change: auto;
+  text-align: left;
+}
+
+.baka-clip-lyric-selector [class*="lyricLine"],
+.baka-clip-lyric-selector [class*="lyricMainLine"],
+.baka-clip-lyric-selector [class*="lyricMainLine"] span,
+.baka-clip-lyric-selector [class*="bgWrapper"] {
+  transform: none !important;
+  filter: none !important;
+  will-change: auto;
+}
+
+.baka-clip-lyric-selector [class*="lyricMainLine"] {
+  justify-content: flex-start;
+  opacity: 1 !important;
+  text-align: left;
+}
+
+.baka-clip-lyric-selector [class*="lyricSubLine"] {
+  margin-top: 0.15rem;
+  text-align: left;
+}
+
+.baka-clip-lyric-selector [class*="bgWrapper"] {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  margin-top: 0 !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.baka-clip-lyric-selector [class*="bottomLine"],
+.baka-clip-lyric-selector [class*="interludeDots"] {
+  display: none !important;
+}
+
+.baka-lyric-player .baka-clip-lyric-line {
+  position: relative;
+  min-height: 2.25rem;
+  margin: 0;
+  padding: 0.5rem 0.625rem 0.5rem 3.875rem;
+  border-radius: var(--radius-sm);
+  pointer-events: auto !important;
+  cursor: pointer;
+  color: var(--color-foreground);
+  line-height: 1.5;
+  text-align: left !important;
+  transition:
+    background-color var(--motion-duration-quick) var(--motion-ease-out),
+    color var(--motion-duration-quick) var(--motion-ease-out);
+}
+
+.baka-lyric-player .baka-clip-lyric-line:hover {
+  background-color: var(--color-accent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"] {
+  background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-primary);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:hover {
+  background-color: color-mix(in oklab, var(--color-primary) 14%, transparent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-active="true"] {
+  color: var(--color-primary);
+}
+
+.baka-clip-lyric-line::before {
+  content: attr(data-time);
+  position: absolute;
+  top: 0.625rem;
+  left: 0.625rem;
+  width: 2.75rem;
+  color: var(--color-muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.25rem;
+  tab-size: 4;
+}
+
+.baka-clip-lyric-line[data-selected="true"]::before {
+  color: var(--color-primary);
+}
+
+.baka-clip-lyric-line[data-anchor="true"]::after {
+  content: "起点";
+  position: absolute;
+  top: 2rem;
+  left: 0.625rem;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-family: var(--font-kai);
+  font-size: var(--text-2xs);
+  line-height: 1.25rem;
+}
+
+.baka-clip-lyric-line[class*="lyricBgLine"] {
+  opacity: 0.68 !important;
+}
+
+.baka-clip-lyric-line[data-word-timed="true"]:not([data-active="true"]) {
+  --bright-mask-alpha: 1 !important;
+  --dark-mask-alpha: 1 !important;
+}
+
+.baka-clip-lyric-line[data-word-timed="false"],
+.baka-clip-lyric-line[data-word-timed="false"] * {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
 /*
  * 逐字遮罩的两档透明度由内核逐帧写在行上；注册为数值后才能补间，总览把它们推到 1（遮罩等于不存在），
  * 不把 mask-image 换成 none：遮罩的有无不能插值，未唱到的字会在切换那一帧直接全亮，读作一次闪烁。

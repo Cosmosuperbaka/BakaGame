@@ -1,14 +1,16 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures/Isolation";
-import type { SongLyricsFixtureProps } from "./fixtures/SongLyrics";
+import type { SongClipSelectorFixtureProps, SongLyricsFixtureProps } from "./fixtures/SongLyrics";
 import type { SongLyricLine } from "@bakagame/shared";
 
 declare global {
   interface Window {
     lyricsFixture: {
       render(props: SongLyricsFixtureProps): void;
+      renderSelector(props: SongClipSelectorFixtureProps): void;
       time(ms: number, playing: boolean): void;
       updates(): number;
+      picks(): number[];
     };
   }
 }
@@ -20,9 +22,43 @@ const lines: SongLyricLine[] = Array.from({ length: 8 }, (_, index) => ({
   translatedLyric: "浮现在夜空中的群星点点 将这无尽的寂静一点点撕裂开来",
 }));
 
+const selectorLines: SongLyricLine[] = lines.map((line, index) => {
+  const translated = index % 3 !== 1;
+  return {
+    ...line,
+    text: `${line.text}，即使为了选取显示更长的正文也不移动`,
+    translatedLyric: translated ? line.translatedLyric : "",
+    romanLyric: translated
+      ? ""
+      : "yo zo ra ni u ka bu ho shi ta chi shi ji ma wo ki ri sa i te i ku",
+    words:
+      index % 2 === 0
+        ? [
+            {
+              startTime: line.time,
+              endTime: line.time + 1800,
+              word: "夜空に浮かぶ",
+              romanWord: translated ? "" : "yo zo ra ni u ka bu",
+            },
+            {
+              startTime: line.time + 1800,
+              endTime: line.endTime,
+              word: "星たち",
+              romanWord: translated ? "" : "ho shi ta chi",
+            },
+          ]
+        : undefined,
+  };
+});
+
 async function render(page: Page, props: SongLyricsFixtureProps) {
   await page.evaluate((props) => window.lyricsFixture.render(props), props);
   await expect(page.locator(".baka-lyric-host")).toHaveAttribute("data-ready", "true");
+}
+
+async function renderSelector(page: Page, props: SongClipSelectorFixtureProps) {
+  await page.evaluate((props) => window.lyricsFixture.renderSelector(props), props);
+  await expect(page.locator(".baka-clip-lyric-host")).toHaveAttribute("data-ready", "true");
 }
 
 async function expectOverviewFits(page: Page) {
@@ -282,4 +318,234 @@ test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async
     body: JSON.stringify({ playing, paused, replay, sampleMs: 700, motion }),
     contentType: "application/json",
   });
+});
+
+test("截取选择器只推进逐字遮罩，不移动行盒、重建节点或改变滚动位置", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 900 });
+  await renderSelector(page, {
+    lines: selectorLines,
+    range: [35000, 59000],
+    anchorIndex: 0,
+  });
+  const result = await page.evaluate(async (source) => {
+    const settle = async () => {
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+    };
+    const host = document.querySelector<HTMLElement>(".baka-clip-lyric-host")!;
+    const scroller = host.parentElement!;
+    const rows = [...host.querySelectorAll<HTMLElement>("[data-line-index]")];
+    scroller.scrollTop = Math.min(96, scroller.scrollHeight - scroller.clientHeight);
+    window.lyricsFixture.renderSelector({ lines: structuredClone(source) });
+    const read = () => ({
+      rects: rows.map((row) => {
+        const { x, y, width, height } = row.getBoundingClientRect();
+        return { x, y, width, height };
+      }),
+      sameNodes: rows.every(
+        (row, index) => row === host.querySelectorAll("[data-line-index]")[index]
+      ),
+      scrollTop: scroller.scrollTop,
+      scrollable: scroller.scrollHeight > scroller.clientHeight,
+      overflow: [host, scroller].some((element) => element.scrollWidth > element.clientWidth + 1),
+    });
+    const readMask = () => {
+      const elements = [rows[0]!, ...rows[0]!.querySelectorAll<HTMLElement>("*")];
+      const animations = elements.flatMap((element) =>
+        element
+          .getAnimations()
+          .filter((animation) => animation.id.startsWith("fade-word"))
+          .map((animation) => ({ element, animation }))
+      );
+      return {
+        count: animations.length,
+        times: animations.map(({ animation }) => Number(animation.currentTime)),
+        states: animations.map(({ animation }) => animation.playState),
+        positions: animations.map(({ element }) => getComputedStyle(element).maskPosition),
+      };
+    };
+
+    window.lyricsFixture.time(35500, false);
+    await settle();
+    const before = read();
+    const maskBefore = readMask();
+    window.lyricsFixture.time(37500, false);
+    await settle();
+    const maskAfter = readMask();
+    const afterSeek = read();
+    window.lyricsFixture.time(41000, true);
+    await settle();
+    window.lyricsFixture.time(59000, true);
+    await settle();
+    const afterPlaying = read();
+    window.lyricsFixture.time(35500, false);
+    await settle();
+    const afterPause = read();
+    const plainMasks = rows
+      .filter((row) => row.dataset.wordTimed === "false")
+      .flatMap((row) => [row, ...row.querySelectorAll<HTMLElement>("*")])
+      .flatMap((element) => {
+        const style = getComputedStyle(element);
+        return [style.maskImage, style.webkitMaskImage];
+      });
+    return { before, afterSeek, afterPlaying, afterPause, maskBefore, maskAfter, plainMasks };
+  }, selectorLines);
+
+  expect(result.before.scrollable).toBe(true);
+  expect(result.before.scrollTop).toBeGreaterThan(0);
+  expect(result.maskBefore.count).toBeGreaterThan(0);
+  expect(result.maskBefore.states).toEqual(result.maskBefore.states.map(() => "paused"));
+  expect(result.maskAfter.states).toEqual(result.maskAfter.states.map(() => "paused"));
+  expect(new Set(result.maskBefore.times).size).toBe(1);
+  expect(new Set(result.maskAfter.times).size).toBe(1);
+  expect(result.maskAfter.times[0]! - result.maskBefore.times[0]!).toBe(2000);
+  expect(result.maskAfter.positions).not.toEqual(result.maskBefore.positions);
+  expect(result.plainMasks.length).toBeGreaterThan(0);
+  expect(result.plainMasks.every((value) => value === "none")).toBe(true);
+  for (const snapshot of [result.afterSeek, result.afterPlaying, result.afterPause]) {
+    expect(snapshot.sameNodes).toBe(true);
+    expect(snapshot.scrollTop).toBe(result.before.scrollTop);
+    expect(snapshot.overflow).toBe(false);
+    snapshot.rects.forEach((rect, index) => {
+      const before = result.before.rects[index]!;
+      expect(rect.x).toBeCloseTo(before.x, 5);
+      expect(rect.y).toBeCloseTo(before.y, 5);
+      expect(rect.width).toBeCloseTo(before.width, 5);
+      expect(rect.height).toBeCloseTo(before.height, 5);
+    });
+  }
+  await render(page, { lines, audioPlaybackState: "idle" });
+  await expect(page.locator(".baka-clip-lyric-host")).toHaveCount(0);
+});
+
+for (const width of [390, 820, 1280]) {
+  test(`${width}px 截取选择器的长句、副行与和声不重叠且始终静止`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: width === 820 ? "reduce" : "no-preference" });
+    const harmony = selectorLines.flatMap((line) => [
+      { ...line, isBG: false },
+      {
+        ...line,
+        time: line.time + 200,
+        endTime: line.endTime - 200,
+        text: "和声が遠くまで響き続ける",
+        translatedLyric: "",
+        romanLyric: "",
+        isBG: true,
+      },
+    ]);
+    const consecutiveHarmony = harmony.flatMap((line) => [
+      line,
+      ...(line.isBG
+        ? [
+            {
+              ...line,
+              time: line.time + 200,
+              endTime: line.endTime - 200,
+              text: "第二和声も同じ行順で選べる",
+            },
+          ]
+        : []),
+    ]);
+    for (const variant of [
+      selectorLines,
+      selectorLines.map((line) => ({ ...line, words: undefined })),
+      harmony,
+      consecutiveHarmony,
+    ]) {
+      await renderSelector(page, { lines: variant, range: [35000, 67000], anchorIndex: null });
+      const result = await page.evaluate(async () => {
+        const host = document.querySelector<HTMLElement>(".baka-clip-lyric-host")!;
+        const rows = [...host.querySelectorAll<HTMLElement>("[data-line-index]")];
+        const read = () =>
+          rows.map((row) => {
+            const { x, y, width, height } = row.getBoundingClientRect();
+            return { x, y, width, height };
+          });
+        window.lyricsFixture.time(45000, false);
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const before = read();
+        window.lyricsFixture.time(61000, true);
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const after = read();
+        const separated = rows.every((row, index) => {
+          if (index === 0) return true;
+          return (
+            row.getBoundingClientRect().top >= rows[index - 1]!.getBoundingClientRect().bottom - 1
+          );
+        });
+        const sublinesFit = rows.every((row) => {
+          const visible = [
+            row.querySelector<HTMLElement>("[class*=lyricMainLine]"),
+            ...row.querySelectorAll<HTMLElement>("[class*=lyricSubLine]"),
+          ].filter((element): element is HTMLElement => Boolean(element?.textContent));
+          const textBoxes = visible.map((element) => {
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+            const rects: DOMRect[] = [];
+            while (walker.nextNode()) {
+              if (!walker.currentNode.textContent?.trim()) continue;
+              const range = document.createRange();
+              range.selectNodeContents(walker.currentNode);
+              rects.push(...range.getClientRects());
+            }
+            return {
+              top: Math.min(...rects.map((rect) => rect.top)),
+              bottom: Math.max(...rects.map((rect) => rect.bottom)),
+            };
+          });
+          return textBoxes.every(
+            (box, index) => index === 0 || box.top >= textBoxes[index - 1]!.bottom - 1
+          );
+        });
+        return {
+          before,
+          after,
+          separated,
+          sublinesFit,
+          labels: rows.map(
+            (row) => [Number(row.dataset.lineIndex), row.getAttribute("aria-label")] as const
+          ),
+          overflow: [host, host.parentElement!].some(
+            (element) => element.scrollWidth > element.clientWidth + 1
+          ),
+        };
+      });
+      expect(result.separated).toBe(true);
+      expect(result.sublinesFit).toBe(true);
+      expect(result.labels.map(([index]) => index)).toEqual(variant.map((_, index) => index));
+      for (const [index, label] of result.labels) {
+        expect(label?.endsWith(variant[index]!.text)).toBe(true);
+      }
+      expect(result.overflow).toBe(false);
+      expect(result.after).toEqual(result.before);
+    }
+  });
+}
+
+test("截取选择器的点击、回车与空格提交原始索引并同步选中状态", async ({ page }) => {
+  await renderSelector(page, {
+    lines: selectorLines,
+    range: [35000, 43000],
+    anchorIndex: 0,
+  });
+  await page.getByRole("button", { name: `0:39.0 ${selectorLines[1]!.text}` }).click();
+  const enter = page.getByRole("button", { name: `0:43.0 ${selectorLines[2]!.text}` });
+  await enter.focus();
+  await page.keyboard.press("Enter");
+  const space = page.getByRole("button", { name: `0:47.0 ${selectorLines[3]!.text}` });
+  await space.focus();
+  await page.keyboard.press("Space");
+  expect(await page.evaluate(() => window.lyricsFixture.picks())).toEqual([1, 2, 3]);
+
+  await renderSelector(page, { range: [51000, 59000], anchorIndex: 2 });
+  await expect(page.locator('[data-line-index="2"]')).toHaveAttribute("data-anchor", "true");
+  for (const index of [4, 5])
+    await expect(page.locator(`[data-line-index="${index}"]`)).toHaveAttribute(
+      "data-selected",
+      "true"
+    );
+  for (const index of [3, 6])
+    await expect(page.locator(`[data-line-index="${index}"]`)).not.toHaveAttribute("data-selected");
 });

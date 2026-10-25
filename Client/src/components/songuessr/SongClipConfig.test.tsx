@@ -4,6 +4,36 @@ import { describe, expect, it, vi } from "vitest";
 import type { SongClipPreview } from "@bakagame/shared";
 import { SongClipConfig } from "./SongClipConfig";
 import { clampClipRange, defaultClipRange, formatClipTime } from "./SongClipEditing";
+import type { SongClipLyricSelectorProps } from "./SongClipLyricSelector";
+
+vi.mock("./SongClipLyricSelector", async () => {
+  const { formatClipTime } = await import("./SongClipEditing");
+  return {
+    SongClipLyricSelector: ({
+      lines,
+      range,
+      anchorIndex,
+      onPick,
+      listRef,
+    }: SongClipLyricSelectorProps) => (
+      <div ref={listRef}>
+        {lines.map((line, index) => (
+          <button
+            key={`${line.time}-${index}`}
+            type="button"
+            data-line-index={index}
+            data-selected={line.time < range[1] && line.endTime > range[0] ? "true" : undefined}
+            data-anchor={index === anchorIndex ? "true" : undefined}
+            aria-label={`${formatClipTime(line.time)} ${line.text}`}
+            onClick={() => onPick(index)}
+          >
+            {line.text}
+          </button>
+        ))}
+      </div>
+    ),
+  };
+});
 
 const SONG: SongClipPreview = {
   id: "song-1",
@@ -77,9 +107,9 @@ describe("片段编辑的纯函数", () => {
     expect(
       defaultClipRange({ ...SONG, suggestedClip: { startTime: 40_000, endTime: 42_000 } })
     ).toEqual([40_000, 45_000]);
-    expect(
-      defaultClipRange({ ...SONG, chorus: { startTime: 50_000, endTime: 90_000 } })
-    ).toEqual([50_000, 90_000]);
+    expect(defaultClipRange({ ...SONG, chorus: { startTime: 50_000, endTime: 90_000 } })).toEqual([
+      50_000, 90_000,
+    ]);
     expect(defaultClipRange(SONG)).toEqual([10_000, 25_000]);
   });
 });
@@ -126,14 +156,19 @@ describe("SongClipConfig", () => {
 
   it("试听从片段起点开始，到终点按循环开关决定重播或暂停", async () => {
     const user = userEvent.setup();
-    const view = render(
-      <SongClipConfig song={SONG} onConfirm={vi.fn()} onCancel={vi.fn()} />
-    );
+    const view = render(<SongClipConfig song={SONG} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     const audio = stubAudio(view.container);
 
     await user.click(screen.getByRole("button", { name: "试听片段" }));
     expect(audio.play).toHaveBeenCalledTimes(1);
     expect(audio.now()).toBe(10_000);
+
+    audio.seek(15_000);
+    fireEvent.timeUpdate(audio.audio);
+    expect(screen.getByTestId("song-clip-play-progress")).toHaveStyle({
+      left: `${(10_000 / 120_000) * 100}%`,
+      width: `${(5_000 / 120_000) * 100}%`,
+    });
 
     audio.seek(25_000);
     fireEvent.timeUpdate(audio.audio);

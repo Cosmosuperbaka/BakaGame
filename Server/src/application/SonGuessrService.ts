@@ -2688,10 +2688,10 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 出题人预览自己选中的歌：完整音频地址与行级歌词，用于片段编辑器。
+   * 出题人预览自己选中的歌：完整音频地址与逐字歌词，用于片段编辑器。
    *
    * 只允许当前待出题人调用，且猜歌阶段一律拒绝：否则猜测者可以借这个命令拿到答案的
-   * 歌词与试听。逐字歌词不参与编辑，下发前剥掉以缩小报文。
+   * 歌词与试听。
    */
   private async getSongClipPreview(
     connection: ConnectionRecord,
@@ -2734,15 +2734,7 @@ export class SonGuessrService implements AdminRoomControl {
         pictureUrl: song.pictureUrl,
         durationMs: song.durationMs,
         audioUrl: song.audioUrl,
-        lyrics: song.lyrics.map((line) => ({
-          time: line.time,
-          endTime: line.endTime,
-          text: line.text,
-          translatedLyric: line.translatedLyric,
-          romanLyric: line.romanLyric,
-          isBG: line.isBG,
-          isDuet: line.isDuet,
-        })),
+        lyrics: song.lyrics,
         chorus: song.chorus,
         sources: [song.id, ...alternateSongIds],
         requiresVip: song.requiresVip,
