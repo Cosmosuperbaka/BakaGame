@@ -154,7 +154,7 @@ export function createServer(
   });
   const remote = new BangumiProvider({ apiUrl: env.bangumiApiUrl, imageUrl: env.bangumiImageUrl });
   // 生产也保留回源兜底：Meilisearch / 本地数据集故障时，猜番至少还能靠官方 API 开局，
-  // 而不是整局卡死（10-11 生产事故：sort 字段未声明导致搜索 400，猜番完全无法开局）。
+  // 而不是整局卡死。
   // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
   const song = new SonGuessrService({

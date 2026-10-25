@@ -7,10 +7,10 @@ import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
  *
  * 没有它，搜索永远搜不到新番 —— 数据集是构建产物，下次构建之前不会自己更新。
  *
- * 为什么不用 `sort: "date"`：官方搜索的 sort 白名单只有 `""` / `match` / `score` / `heat` / `rank`
- * （见 `internal/search/subject/handle.go`），传 date 直接 400。改用 `air_date` 过滤：
+ * 为什么不用 `sort: "date"`：官方搜索的 sort 只接受白名单内的字段（见
+ * `internal/search/subject/handle.go`），传 date 会被直接拒绝。改用 `air_date` 过滤：
  * 只要「首播日期晚于上次同步日」的条目，结果集就是这段时间的新增，分页取全即可。
- * 搜索的 total 上限是 1000，一次窗口内足够。
+ * 搜索结果的 total 有上限，一次窗口内足够。
  *
  * **裁剪规则同样适用**：既没有角色关联、也没有关联音乐的条目直接跳过 —— 与全量构建
  * 的判据保持一致，否则库里会慢慢长出一批永远用不到的条目。
@@ -117,7 +117,7 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
   return result;
 }
 
-/** 按首播日期过滤 + 分页取全（total 上限 1000，够一个同步窗口用）。 */
+/** 按首播日期过滤 + 分页取全（total 有上限，够一个同步窗口用）。 */
 async function searchSince(
   fetcher: typeof fetch,
   base: string,

@@ -7,9 +7,9 @@ import type { BangumiDataProvider } from "./LocalBangumiProvider";
 
 /**
  * 本地数据集降级后重新探测的冷却期。
- * 本地 sqlite 查询比网络回源快两个数量级（实测 p50 2ms vs 500~960ms），
- * 因此一次抖动绝不能把整个进程永久钉死在网络回源上；但也不能每次请求都重试本地
- * （超时型失败每次要等满查询超时窗口），所以用冷却期在两者之间取平衡。
+ * 本地 sqlite 查询比网络回源快几个数量级，因此一次抖动绝不能把整个进程永久钉死在
+ * 网络回源上；但也不能每次请求都重试本地（超时型失败每次要等满查询超时窗口），
+ * 所以用冷却期在两者之间取平衡。
  */
 export const BANGUMI_LOCAL_RETRY_COOLDOWN_MS = 5 * 60_000;
 
@@ -29,7 +29,7 @@ export interface FallbackBangumiProviderOptions {
  * 本地数据库不可用时自动切换到网络 API，并在冷却期后重新探测本地。
  *
  * 降级与恢复都必须留痕：这条链路只影响延迟不影响正确性，静默降级会让
- * 「查询慢了 250 倍」在生产上完全不可观测。
+ * 本地故障在生产上完全不可观测。
  */
 export class FallbackBangumiProvider implements BangumiDataProvider {
   private readonly local: BangumiDataProvider;

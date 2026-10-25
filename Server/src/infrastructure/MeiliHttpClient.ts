@@ -6,10 +6,8 @@ import { MeilisearchApiError, type MeilisearchErrorResponse } from "meilisearch"
  * Meilisearch SDK 的自定义 HTTP 客户端。
  *
  * 背景：SDK 默认走全局 fetch，而 fetch 会把请求头与请求体分两次写入 socket，
- * 在容器网络路径上触发 TCP Nagle + delayed-ACK 组合罚时（实测每次请求约 40ms，
- * Bun 与 Node 的 fetch 均复现；node:http 单次写入则无罚时）。
- * 这里改用 node:http + keep-alive 连接池：headers 与 body 通过一次
- * `request.end(body)` 写完，实测把容器内每次搜索从 ~45ms 降到 ~2-4ms。
+ * 在容器网络路径上触发 TCP Nagle + delayed-ACK 组合罚时。这里改用 node:http +
+ * keep-alive 连接池：headers 与 body 通过一次 `request.end(body)` 写完，消除该罚时。
  *
  * 契约（对齐 SDK fetch 路径的行为）：
  * - 成功时 resolve 解析后的 JSON（空响应体为 undefined）；
@@ -19,8 +17,7 @@ import { MeilisearchApiError, type MeilisearchErrorResponse } from "meilisearch"
  * - 请求级失败向上抛，交由 SDK 统一包装；abort 时原样 reject signal.reason，
  *   以保留 SDK 对超时的判别（内部超时标记为 Symbol，Object.is 匹配）。
  *
- * 注意：SDK 将 httpClient 配置标记为 deprecated（meilisearch-js#1824），
- * 升级 SDK 大版本前需按该 issue 复查替代机制。
+ * 注意：SDK 已将 httpClient 配置标记为 deprecated，升级 SDK 大版本前需复查替代机制。
  */
 export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promise<unknown> {
   const [input, init] = args;

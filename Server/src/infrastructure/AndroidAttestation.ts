@@ -10,9 +10,8 @@ import { isRecord } from "../shared/Json";
  * Android Key Attestation 服务端验证。
  *
  * 为什么手写而不是用库：Google 推荐的是 JVM 侧 Kotlin 验证库，本仓库服务端是 Bun/Node；
- * `@peculiar/x509` 在这里只以 `@simplewebauthn/server` 传递依赖的形式躺在根 `node_modules`，
- * 两份 `package.json` 都没声明它（见 Conventions §4「消费端显式声明依赖」），不能拿来当根基；
- * 而且 `KeyDescription`（OID `1.3.6.1.4.1.11129.2.1.17`）里 ~50 个可选上下文字段仍需自定义 schema。
+ * 现成的 X.509 库不是本仓库的直接依赖，不能作为根基（消费端显式声明依赖见 Conventions §4），
+ * 且 `KeyDescription`（OID `1.3.6.1.4.1.11129.2.1.17`）的大量可选上下文字段仍需自定义解析。
  * 于是验签与散列全部走 `node:crypto`，只有 ASN.1 结构是手写 DER 读取。
  *
  * 分档口径来自计划的失败矩阵，分界线是「设备完整性是否被破坏」而不是「证明强度够不够」：
@@ -22,9 +21,9 @@ import { isRecord } from "../shared/Json";
  *   包名或签名摘要对不上。
  *
  * 三处刻意的选择，改动前先读：
- * 1. **不按 X.509 有效期拒绝**。2021 年前出厂的工厂证书永久过期但仍可信（密钥无法轮换），
- *    RKP（Android 12 引入，Android 16 起只支持 RKP）证书本就短生命周期、到期换新。
- *    过期只降级留痕，一刀切拒绝会误伤整批老机型，也会把正常轮换的新设备判成异常。
+ * 1. **不按 X.509 有效期拒绝**。工厂预置证书可能永久过期但仍可信（密钥无法轮换），
+ *    RKP 证书本就短生命周期、到期换新。过期只降级留痕，一刀切拒绝会误伤整批老机型，
+ *    也会把正常轮换的新设备判成异常。
  * 2. **CRL 拉不到时不整片放行也不整片拒绝**。沿用上一次成功的快照继续比吊销，只补一条降级标记。
  * 3. **不检查 `basicConstraints`/`keyUsage`**：与 Google 参考验证器一致，部分厂商链不严格遵守
  *    RFC 5280，加严只会把真实设备挡在门外；信任锚是内置固定的，多一层 CA 约束不改变结论。
@@ -834,7 +833,7 @@ export interface RevocationCacheOptions {
   /** 缓存有效期：过期后下一次判定触发回源，回源失败继续沿用旧快照。 */
   ttlMs?: number;
   timeoutMs?: number;
-  /** Google 的状态列表是整表 JSON（实测 1 MB 量级），上限留足但不能无界。 */
+  /** Google 的状态列表是整表 JSON，上限要留足但不能无界。 */
   maxBytes?: number;
   now?: () => number;
   onWarn?: (message: string, detail?: string) => void;
@@ -845,7 +844,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 
 /**
- * 解析状态列表。容器键两种写法都接：Google 参考实现读 `entries`，线上端点历史上带过 `status` 外层。
+ * 解析状态列表。容器键两种写法都接：Google 参考实现读 `entries`，线上端点也可能带 `status` 外层。
  * 结构不对就抛错，由缓存层沿用旧快照——绝不能把「解析不出来」当成「没有吊销」。
  */
 export const parseRevocationStatus = (text: string): Map<string, string> => {
@@ -936,7 +935,7 @@ export const createAndroidAttestationChecker = (
 };
 
 /**
- * 带缓存的 Google 吊销列表来源（P3.2 坑 2 的三条硬要求）：
+ * 带缓存的 Google 吊销列表来源，三条硬要求：
  * - 拉取失败继续服务上一次成功缓存并记警告；
  * - 从不因拉不到而整片放行（`crl_unavailable` 降级留痕）或整片拒绝；
  * - 同一时刻只有一次在途请求：判定高峰既不打爆 Google 端点，也不会并发写缓存。

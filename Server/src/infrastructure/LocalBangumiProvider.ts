@@ -53,15 +53,10 @@ const parseList = (value: string | null | undefined) => {
 /**
  * Bangumi 关联类型码到曲目类型的映射。
  *
- * 用真实数据集全量核对过，码值语义与旧映射（3002=opening / 3003=ending /
- * 3004=insert / 3005=character）恰好错位一格，旧映射会把**片头曲标成 ED、
- * 角色歌标成 OP**，并按曲目类型筛选出完全错误的曲目：
- * - 鬼滅の刃：紅蓮華（OP）3003、from the edge（ED）3004
- * - けいおん!：Cagayake!GIRLS（OP）3003、Don't say "lazy"（ED）3004、
- *   ふわふわ時間（插入歌）3005、イメージソング系列（角色歌）3002
- * - SPY×FAMILY：ミックスナッツ（OP）3003、喜劇（ED）3004
- * - 呪術廻戦：廻廻奇譚（OP）3003、LOST IN PARADISE（ED）3004
- * 3001 是主题歌 / 原声带（OST 专辑），3006 是印象曲，3007 / 3099 是其他。
+ * 码值语义用真实数据集全量核对过：3003=opening / 3004=ending / 3005=insert /
+ * 3002=character。旧映射与真实码值错位一格，会把**片头曲标成 ED、角色歌标成 OP**，
+ * 并按曲目类型筛选出完全错误的曲目。3001 是主题歌 / 原声带（OST 专辑），
+ * 3006 是印象曲，3007 / 3099 是其他。
  */
 const RELATION_KINDS: Record<number, BangumiMusicTrack["kind"]> = {
   3001: "theme",
@@ -75,11 +70,9 @@ const normalizeKind = (value: string, relationType?: number): BangumiMusicTrack[
   const mapped = relationType ? RELATION_KINDS[relationType] : undefined;
   // 3002~3006 是**具体类型**（角色歌 / 片头 / 片尾 / 插入歌 / 印象曲），直接采信。
   if (mapped && mapped !== "theme") return mapped;
-  // 3001 是「主题歌」桶：Bangumi 把原声带、特典 CD、广播剧 CD 一并挂在它下面
-  // （实测本地数据集 38554 条关联曲目里 18117 条落在这个桶，其中 `ORIGINAL SOUND
-  // TRACK` 类 5215 条、特典 CD 636 条）。直接采信会让「主题曲」变成大杂烩 ——
-  // 必须再用**条目名**细化；只有推不出形态时才保留 theme。未映射的关系码（0 /
-  // 3007 / 3099）同样走这条文本兜底。
+  // 3001 是「主题歌」桶：Bangumi 把原声带、特典 CD、广播剧 CD 一并挂在它下面。
+  // 直接采信会让「主题曲」变成大杂烩 —— 必须再用**条目名**细化；只有推不出形态时
+  // 才保留 theme。未映射的关系码（0 / 3007 / 3099）同样走这条文本兜底。
   return detectTrackKindFromText(value) ?? "theme";
 };
 /** 上游原始 URL → 对外 URL：镜像前缀 + 图床缓存路径（档位选定见 BangumiImagePaths）。 */
@@ -405,10 +398,9 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     // 有人在看这条 = 它值得尽快变新鲜。只登记、不等结果：出题路径上绝不加网络等待。
     this.onSubjectView?.(id);
     // 只取真实音乐实体（music_id > 0）。负数 music_id 是 Bangumi 关联条目里的
-    // 合成占位行——版权署名、制作委员会、动画师/作家署名等，共 7762 条，
-    // 全被标成 opening 而排在真实曲目之前，实测会把《Music For All》这类
-    // 完全无关的歌曲当成番剧 OP。文本规则 isBangumiCreditsEntry 作为第二道防线，
-    // 同时覆盖联网 API 路径。
+    // 合成占位行——版权署名、制作委员会、动画师/作家署名等，会被标成 opening
+    // 并排在真实曲目之前，不剔除会拿与番剧无关的歌当 OP。文本规则
+    // isBangumiCreditsEntry 作为第二道防线，同时覆盖联网 API 路径。
     const relations = this.db
       .query(
         "SELECT r.title, r.artist, r.relation_type, r.relation_order FROM subject_music_relations r WHERE r.subject_id=? AND r.music_id > 0 ORDER BY r.relation_order, r.music_id"

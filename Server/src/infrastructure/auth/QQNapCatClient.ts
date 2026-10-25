@@ -4,24 +4,23 @@ import { normalizeAccountName, QQ_NUMBER_PATTERN } from "../../shared/Account";
 /**
  * 通过 NapCatQQ 的 OneBot 11 HTTP 接口查 QQ 昵称。
  *
- * 上一版走 QQ 空间网页扫码（ptlogin + `cgi_get_portrait.fcg`），QQ 侧风控会按 UA/来源吊销
- * 这种「非客户端」登录态（实测两次会话分别 ~4h / 89min 失效），查昵称随之全站停摆。
- * NapCat 是真正的 QQ 客户端（NTQQ 协议），`get_stranger_info` 拿到的 `nickname` 就是
- * 手机 QQ 资料卡上的昵称，不经过网页登录，因此不受那类风控影响。见 Server/docs/Account.md §4。
+ * 上一版走 QQ 空间网页扫码，QQ 侧风控会按 UA/来源吊销这种「非客户端」登录态，
+ * 会话只能维持很短时间，查昵称随之全站停摆。NapCat 是真正的 QQ 客户端（NTQQ 协议），
+ * `get_stranger_info` 拿到的 `nickname` 就是手机 QQ 资料卡上的昵称，不经过网页登录，
+ * 因此不受那类风控影响。见 Server/docs/Account.md §4。
  *
  * 协议要点：
  * - `POST {apiUrl}/{action}`，JSON 请求体；鉴权头 `Authorization: Bearer <accessToken>`。
  * - `get_login_info` → `{ user_id, nickname }`：登录号自身，用于后台状态面板。
  * - `get_stranger_info` → `{ user_id, nickname, ... }`：单号查询，响应还带生日、手机号等
  *   大量与昵称无关的资料，**只取 nickname**，其余字段一律不落地、不入日志。
- * - 昵称可能含方向隔离符等不可见字符（实测 `⁧` U+2067 / `⁦` U+2066），交给共享的
- *   `normalizeAccountName` 清洗与截断。
+ * - 昵称可能含方向隔离符等不可见字符，交给共享的 `normalizeAccountName` 清洗与截断。
  */
 
 const TIMEOUT_MS = 8_000;
 /** 单批并发上限：串行太慢，压满会触发 QQ 侧频率限制。 */
 const CONCURRENCY = 4;
-/** 相邻两次 OneBot 调用的最小间隔：批量刷新 200 个号时约 16 QPS。 */
+/** 相邻两次 OneBot 调用的最小间隔：控制批量刷新时对 QQ 侧的总速率。 */
 const DEFAULT_MIN_INTERVAL_MS = 60;
 
 /** NapCat 在 QQ 未登录 / 令牌错误时的固定提示。 */
@@ -89,8 +88,7 @@ export class QQNapCatClient {
   private async call<T>(action: string, payload: Record<string, unknown>): Promise<T | null> {
     const response = await this.request(action, payload);
     // 先取文本再自行解析，而不是直接 `response.json()`：反向代理挡住请求时回的是 HTML
-    // 错误页，先解析会让「403 被拒」表现成「返回格式异常」，只能翻访问日志才知道真相
-    // （2026-10-23 真实事故：容器丢了内网 hosts 映射，请求被边缘回源后由源站 403）。
+    // 错误页，先解析会让「403 被拒」表现成「返回格式异常」，只能翻访问日志才知道真相。
     let body: OneBotEnvelope<T> | null = null;
     try {
       const parsed: unknown = JSON.parse(await response.text());

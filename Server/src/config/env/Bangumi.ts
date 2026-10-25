@@ -99,8 +99,8 @@ export const readBangumiEnv = (deploymentEnvironment: string): EnvBangumi => ({
   bangumiUpdaterMinRate: Number(Bun.env.BANGUMI_UPDATER_MIN_RATE ?? 10),
   bangumiUpdaterMaxRate: Number(Bun.env.BANGUMI_UPDATER_MAX_RATE ?? 100),
   bangumiUpdaterPlayerScale: Number(Bun.env.BANGUMI_UPDATER_PLAYER_SCALE ?? 20),
-  // 不配就不跑：上游 diff 产物并不长期存在（实测 2026-10-11 仓库 outputs/ 下只有
-  // id_tags.js / id_tags.json），写死默认地址只会让每次启动都报「连不上」。
+  // 不配就不跑：上游 diff 产物并不长期存在（仓库只稳定发布 id_tags.js / id_tags.json），
+  // 写死默认地址只会让每次启动都报「连不上」。
   bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
   bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
   // 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：

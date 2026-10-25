@@ -1,36 +1,22 @@
 /**
  * Google Android Key Attestation 信任锚（内置固定，不做运行时拉取）。
  *
- * 为什么内置而不是每次去 `https://android.googleapis.com/attestation/root` 取：
+ * 为什么内置而不是每次去 Google 取：
  * - 服务端要能在 Google 侧域名被墙 / 抖动时继续判定（可达性风险不可假设）；
  * - 验证结论必须可复核：固定字节后，任何人重跑同一份常量都能得到同一个是否值，
  *   运行时拉取等于把信任锚交给一次 HTTP 响应。
  *
- * 为什么必须**同时**放两个硬件根：Google 于 2026-02 启用新根（ECDSA P-384），
- * RKP 设备在 2026-04-10 完成切换；工厂预置密钥的老设备仍用旧根且永不轮换。
- * 只放旧根会拒掉几乎所有新设备，只放新根会拒掉老机型。
+ * 为什么必须**同时**放两个硬件根：Google 已启用新的 RKP 硬件根，而工厂预置密钥的
+ * 老设备仍用旧根且永不轮换。只放旧根会拒掉新设备，只放新根会拒掉老机型。
  *
- * 字节来源（逐字节取自 Google 官方参考验证库，非手工转写）：
- * - 两个硬件根：`https://raw.githubusercontent.com/android/keyattestation/main/roots.json`
- *   （与 `https://android.googleapis.com/attestation/root` 当前下发的是同一份新根，
- *   旧根不在该下载端点里——端点只回一份，所以旧根只能靠仓库固定）。
- * - 两个软件根：`https://raw.githubusercontent.com/android/keyattestation/main/src/main/kotlin/SoftwareRoot.kt`
- *   （AOSP 生成源：`https://android.googlesource.com/platform/system/core/+/main/trusty/keymaster/set_attestation_key/keymaster_soft_attestation_keys.xml`）。
- *   无 TEE 的低端机 `attestationSecurityLevel = Software`，其链只能链到软件根；
- *   不放进信任库就会把「能力不足」误判成「根不受信」，与分档口径冲突。
+ * 软件根用于「链可信但能力不足」的降级判定：无 TEE 的低端机只能链到软件根，
+ * 不放进信任库就会把「能力不足」误判成「根不受信」，与分档口径冲突。
  *
- * 更新方式：只改本文件，把新 PEM 追加进对应数组，并在注释里写清来源、生效时间与指纹。
- * 指纹（SHA-256，DER）是复核锚点：重新下载后算出的值必须与这里一致，否则说明来源被替换。
+ * 更新方式：只改本文件，把新 PEM 追加进对应数组并核对 SHA-256 指纹（DER）；
+ * 指纹不符说明来源被替换，必须放弃这次更新。
  */
 
-/**
- * 硬件根 · 旧（工厂预置 fleet）。
- *
- * Subject/Issuer: `serialNumber=f92009e853b6b045`（自签，无 CN——按 DN 字符串匹配不可靠，
- * 验证侧只做 DER 逐字节比对与公钥验签）。
- * 公钥 RSA-4096；有效期 2022-03-20 → 2042-03-15；序列号 F1C172A699EAF51D；
- * SHA-256 `cedb1cb6dc896ae5ec797348bce9286753c2b38ee71ce0fbe34a9a1248800dfc`。
- */
+/** 硬件根 · 旧（工厂预置 fleet，RSA-4096）。自签且无 CN，验证侧只按 DER 比对与公钥验签。 */
 const ROOT_HARDWARE_RSA_PEM = `-----BEGIN CERTIFICATE-----
 MIIFHDCCAwSgAwIBAgIJAPHBcqaZ6vUdMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNV
 BAUTEGY5MjAwOWU4NTNiNmIwNDUwHhcNMjIwMzIwMTgwNzQ4WhcNNDIwMzE1MTgw
@@ -63,14 +49,7 @@ w1IdYIg2Wxg7yHcQZemFQg==
 -----END CERTIFICATE-----
 `;
 
-/**
- * 硬件根 · 新（RKP fleet，2026-02 起设备开始上报、2026-04-10 起独占）。
- *
- * Subject/Issuer: `CN=Key Attestation CA1, OU=Android, O=Google LLC, C=US`（自签）。
- * 公钥 ECDSA P-384；有效期 2025-07-17 → 2035-07-15；
- * 序列号 84A9D0297B0EB58AE7FF0E80DE760605；
- * SHA-256 `6d9db4ce6c5c0b293166d08986e05774a8776ceb525d9e4329520de12ba4bcc0`。
- */
+/** 硬件根 · 新（RKP fleet，ECDSA P-384，自签）。 */
 const ROOT_HARDWARE_ECDSA_PEM = `-----BEGIN CERTIFICATE-----
 MIICIjCCAaigAwIBAgIRAISp0Cl7DrWK5/8OgN52BgUwCgYIKoZIzj0EAwMwUjEc
 MBoGA1UEAwwTS2V5IEF0dGVzdGF0aW9uIENBMTEQMA4GA1UECwwHQW5kcm9pZDET
@@ -88,11 +67,8 @@ uR2zh/80lQyu9vAFCj6E4AXc+osmRg==
 `;
 
 /**
- * 软件根 · ECDSA P-256（`CN=Android Keystore Software Attestation Root`）。
- *
+ * 软件根 · ECDSA P-256。
  * 只用于「链可信但 SecurityLevel = Software」的降级判定，不构成硬件证明。
- * 有效期 2016-01-11 → 2036-01-06；序列号 A2059ED10E435B57；
- * SHA-256 `51d496ad4664190fbdaf1ad987278efa35d6fbf52e50a9c34ded8395477ede5c`。
  */
 const ROOT_SOFTWARE_ECDSA_PEM = `-----BEGIN CERTIFICATE-----
 MIICizCCAjKgAwIBAgIJAKIFntEOQ1tXMAoGCCqGSM49BAMCMIGYMQswCQYDVQQG
@@ -114,11 +90,7 @@ C/NR2TB8fVvaNTQdqEcbY6WFZTytTySn502vQX3xvw==
 
 /**
  * 软件根 · RSA-1024（与上一个同源，AOSP 早批软件 attestation 键）。
- *
- * Subject 只有 `O=Google, Inc., OU=Android, ...`（无 CN）。1024 位密钥本身偏弱，
- * 但它只服务于 Software 档（已经降级），不进入 trusted 判定路径。
- * 有效期 2016-01-04 → 2035-12-30；序列号 FF94D9DD9F07C80C；
- * SHA-256 `4e42730efd521b21d77b109b7532a0b664ddfefc73e129111936200c5e58cce0`。
+ * 密钥偏弱，但只服务 Software 档（已经降级），不进入 trusted 判定路径。
  */
 const ROOT_SOFTWARE_RSA_PEM = `-----BEGIN CERTIFICATE-----
 MIICpzCCAhCgAwIBAgIJAP+U2d2fB8gMMA0GCSqGSIb3DQEBCwUAMGMxCzAJBgNV

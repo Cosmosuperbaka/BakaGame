@@ -113,10 +113,9 @@ export const SUBJECT_FILTERABLE = [
 ];
 /**
  * 可排序字段。**`id` 必须在列**：无关键词出题时的 sort 用 `id:asc` 做最终稳定
- * 兜底（同 heat/rank/score 时保证结果确定），而 Meilisearch 的 sort 字段必须
- * 显式声明为 sortable，否则整个查询被 400 拒绝（`invalid_search_sort`）。
- * `id` 也是 rankingRules 里 `id:asc` 的引用字段 —— 那里引用未声明的字段不会报错，
- * 但查询侧 sort 会，两者语义不同，故 id 只在 sortable 里补，不进 rankingRules 之外。
+ * 兜底（同 heat/rank/score 时保证结果确定）。Meilisearch 只允许按显式声明为
+ * sortable 的字段排序，缺一个整个查询就会被拒；rankingRules 里的 `id:asc` 不受
+ * 此限制，两处语义不同。
  */
 export const SUBJECT_SORTABLE = ["id", "date", "score", "rating_count", "heat", "rank"];
 export const SUBJECT_SEARCHABLE = ["name", "aliases"];
@@ -130,11 +129,8 @@ type IndexWithDocuments<T extends Record<string, unknown>> = Index<T> & {
 };
 
 /**
- * 全部搜索索引的唯一适配器。
- *
- * 此前猜歌用 `bangumi_subjects`、CEE 用 `cee_subjects`，同一批作品被索引两遍：
- * 体积翻倍、更新要改两处、两边还可能不一致。现在合并成一个 `subjects` 索引，
- * 两个玩法共用；角色索引沿用 `characters`。
+ * 全部搜索索引的唯一适配器：猜歌与 CEE 共用 `subjects` 索引，角色索引为 `characters`。
+ * 同一批作品只索引一份，体积与更新口径都只有一处。
  */
 export class BangumiSearchIndex {
   private readonly client: Meilisearch;
@@ -143,7 +139,7 @@ export class BangumiSearchIndex {
   private readonly metadata: Index<{ [key: string]: unknown; id: string; revision: string }>;
 
   constructor(options: BangumiSearchOptions = {}) {
-    // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上每次请求约 40ms 的 TCP 罚时。
+    // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上的 TCP 罚时。
     this.client =
       options.client ??
       new Meilisearch({
