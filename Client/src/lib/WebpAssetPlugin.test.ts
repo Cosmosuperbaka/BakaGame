@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { publicWebpPlugin } from "../../vite.config";
+import { publicWebpPlugin } from "../../scripts/vite-plugins/PublicWebp";
 import { preparePublicWebp } from "../../scripts/prepare-public-webp.mjs";
 
 describe("publicWebpPlugin", () => {

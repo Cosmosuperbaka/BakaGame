@@ -12,7 +12,7 @@ import {
   type CreditLicenseBucket,
   type CreditsManifest,
 } from "./Credits";
-import { creditsManifestPlugin } from "../../vite.config";
+import { creditsManifestPlugin } from "../../scripts/vite-plugins/CreditsManifest";
 
 /**
  * 构建期致谢数据管线的回归测试。

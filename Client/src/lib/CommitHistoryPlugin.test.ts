@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { commitHistoryPlugin } from "../../vite.config";
+import { commitHistoryPlugin } from "../../scripts/vite-plugins/CommitHistory";
 import { requestUrlText } from "../test/RequestText";
 
 const RESOLVED_ID = "\0virtual:commit-history";

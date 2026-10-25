@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { appVersionPlugin } from "../../vite.config";
+import { appVersionPlugin } from "../../scripts/vite-plugins/AppVersion";
 import { resolveLatestVersion, type ChangelogEntry } from "./Changelog";
 import realChangelog from "../data/changelog.json";
 
