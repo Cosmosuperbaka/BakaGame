@@ -399,16 +399,10 @@ function hasCrossPlatformSource(primary: RankedSong, alternatives: RankedSong[])
 }
 
 /**
- * 排序优先级：可播 > 相关度 > 平台偏好，其后按衍生版 / 上游位次 / 双源互证 / 热度的确定性决胜链.
+ * 排序优先级：可播 > 相关度 > 平台偏好，其后是确定性决胜链（衍生版 / 上游位次 / 双源互证 / 热度）。
  *
- * 「可播」排在最前：池里当下放不出来的结果不该占住列表前几位。
- *
- * 平台偏好（默认网易云先于 QQ，见 MUSIC_PLATFORM_PREFERENCE；QQ-only 房间由调用方反转）
- * 刻意只压在**同等相关度**之后：
- * 共有曲目谁代表一次查询由 `shouldPromoteCandidate` 决定（那里的平台偏好能盖过曲名与位次），
- * 而这里若让平台盖过相关度，搜「反方向的钟」时一条只是**歌名包含**该词的网易云结果
- * 就会排到精确命中的 QQ 结果之前 —— 那是比原始问题更糟的体感。
- *
+ * 平台偏好只压在同等相关度之后：共有曲目的代表由 `shouldPromoteCandidate` 决定；
+ * 这里若让平台盖过相关度，只是歌名包含关键词的网易云结果会排到精确命中的 QQ 结果之前。
  * 末位以 URN 字典序收口，保证并发返回顺序不同也不抖动。
  */
 function compareAggregatedSongs(
@@ -513,5 +507,7 @@ export function aggregateAndDeduplicateSongs(
     ),
   }));
 
-  return aggregated.sort((a, b) => compareAggregatedSongs(a, b, platformPreference)).slice(0, limit);
+  return aggregated
+    .sort((a, b) => compareAggregatedSongs(a, b, platformPreference))
+    .slice(0, limit);
 }

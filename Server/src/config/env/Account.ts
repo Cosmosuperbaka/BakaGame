@@ -9,7 +9,7 @@ export interface SmtpEnv {
   port: number;
   user: string;
   pass: string;
-  /** 发件人，如 `BakaGame <noreply@baka.website>`；缺省用 SMTP_USER。 */
+  /** 发件人，如 `BakaGame <noreply@example.com>`；缺省用 SMTP_USER。 */
   from: string;
 }
 

@@ -11,9 +11,7 @@ if (!env.otelEndpoint) {
   console.log("⚠️ 未检测到 OTEL_EXPORTER_OTLP_ENDPOINT 环境变量！");
   console.log("\n请在 Server/.env 文件中添加如下配置（将占位符替换为你 Grafana 上的值）：");
   console.log("----------------------------------------------------------------");
-  console.log(
-    "OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-prod-us-central-0.grafana.net/otlp"
-  );
+  console.log("OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway.example.com/otlp");
   console.log("OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <YOUR_BASE64_TOKEN>");
   console.log("OTEL_SERVICE_NAME=Bakagame-Server");
   console.log("OTEL_SERVICE_NAMESPACE=Bakagame");

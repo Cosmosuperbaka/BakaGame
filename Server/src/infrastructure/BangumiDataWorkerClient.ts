@@ -94,12 +94,7 @@ const timeoutFor = (method: BangumiDataCall["method"]) => {
   return QUERY_TIMEOUT_MS;
 };
 
-/**
- * 猜歌与 CEE 共享的**同一个** Worker 进程。
- *
- * 两个 facade（`BangumiWorkerProvider` / `CEECharacterWorkerProvider`）都通过它发请求，
- * 于是 SQLite 与 Meilisearch 的写操作收口在单一线程里天然串行。
- */
+/** 猜歌与 CEE 共享的**同一个** Worker 进程；两个门面都经它发请求，写操作在单线程内天然串行。 */
 export class BangumiDataWorkerClient {
   private readonly worker: Worker;
   private readonly pending = new Map<number, Pending>();

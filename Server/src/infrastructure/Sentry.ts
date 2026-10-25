@@ -450,9 +450,7 @@ export const countServerMetric = (
   Sentry.metrics.count(name, value, { attributes });
 };
 
-/** 向 Sentry Cron Monitor 报告服务仍在运行。 */
-/**
- * 上报服务端心跳（Cron Monitor）。
+/** 向 Sentry Cron Monitor 报告服务仍在运行。
  *
  * 只由生产实例上报：Sentry 的 Cron Monitor 按环境分别判定，本地 dev 实例一旦在线
  * 就会顶替生产心跳，把生产停机掩盖成「已按时」；dev 停跑后又按其环境持续误报

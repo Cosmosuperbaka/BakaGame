@@ -15,13 +15,7 @@ export interface BangumiDataBundle {
   client: BangumiDataWorkerClient;
 }
 
-/**
- * 起**一个**数据 Worker，并给出猜歌与 CEE 两个门面。
- *
- * 两个玩法的数据请求原本各走一个 Worker 进程，各自打开 SQLite 与 Meilisearch。
- * 数据集改为可写、且要由后端自己更新之后，两个进程同写一个库文件会出现写写冲突；
- * 这里让两边共用同一进程，写操作因此天然串行，不需要额外的跨 Worker 队列。
- */
+/** 起**一个**数据 Worker（合流理由见 `BangumiDataWorker`），并给出猜歌与 CEE 两个门面。 */
 export function createBangumiData(options: {
   song: BangumiProviderInit;
   cee: CEEDataInit;

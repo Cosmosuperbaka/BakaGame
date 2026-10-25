@@ -9,12 +9,7 @@ import type {
 import type { CEEDataProvider, CEERawCharacter } from "./CEEData";
 import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
-/**
- * CEE 侧的数据门面：与猜歌共用同一个 Worker 进程（见 `BangumiDataWorkerClient`）。
- *
- * 曾经这里自己起一个 `CEECharacterWorker`。数据集改为可写后，两个进程同写一个库文件
- * 会出现写写冲突，所以收口到共享 Worker，写操作天然串行。
- */
+/** CEE 侧的数据门面：与猜歌共用同一个 Worker 进程（合流理由见 `BangumiDataWorker`）。 */
 export class CEECharacterWorkerProvider implements CEEDataProvider {
   constructor(
     private readonly client: BangumiDataWorkerClient,
