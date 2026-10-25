@@ -308,7 +308,7 @@ function FooterStatusLink() {
       type="button"
       {...pressable}
       onClick={() => void navigate(STATUS_PAGE_PATH)}
-      className="flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      className="flex min-h-8 items-center gap-1.5 rounded-md px-2 py-1 font-serif text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
     >
       <Activity aria-hidden="true" className="h-3.5 w-3.5" />
       服务状态

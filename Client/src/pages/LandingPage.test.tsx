@@ -150,6 +150,9 @@ describe("LandingPage", () => {
     expect(Array.from(row.children).indexOf(entry)).toBeLessThan(
       Array.from(row.children).indexOf(status)
     );
+    // 两个入口同为页脚操作标签：字体族与字重跟 Button 原语一致，不各写一套。
+    expect(entry).toHaveClass("font-serif", "font-medium");
+    expect(status).toHaveClass("font-serif", "font-medium");
     // 下载入口不再占用右上角：那一排只留设置、账号与反馈。
     const topRow = screen.getByRole("button", { name: "账号" }).parentElement as HTMLElement;
     expect(topRow.contains(entry)).toBe(false);
