@@ -390,34 +390,34 @@ function requestSync() {
     });
 }
 
+function applyCEESnapshotEvent(payload: unknown): void {
+  const result = consumeStateSync<CEERoomSnapshot>(rawSnapshot, snapshotRevision, payload);
+  if (result.needsFullSync || !result.state) {
+    requestSync();
+    return;
+  }
+  const previous = rawSnapshot;
+  rawSnapshot = result.state;
+  snapshotRevision = result.revision;
+  useCEEStore.setState({ snapshot: rawSnapshot });
+  // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
+  if (
+    previous &&
+    previous.roomId === rawSnapshot.roomId &&
+    rawSnapshot.roundNumber > previous.roundNumber &&
+    rawSnapshot.phase === "guessing"
+  ) {
+    playSound("roundStart");
+  }
+}
+
 export function handleCEEMessage(message: ServerMessage) {
   if (message.type !== "event") return;
   const store = useCEEStore.getState();
   if (message.event === "cee.lobby.rooms") {
     useCEEStore.setState({ rooms: message.payload as CEERoomSummary[] });
   } else if (message.event === "cee.room.snapshot") {
-    const result = consumeStateSync<CEERoomSnapshot>(
-      rawSnapshot,
-      snapshotRevision,
-      message.payload
-    );
-    if (result.needsFullSync || !result.state) {
-      requestSync();
-      return;
-    }
-    const previous = rawSnapshot;
-    rawSnapshot = result.state;
-    snapshotRevision = result.revision;
-    useCEEStore.setState({ snapshot: rawSnapshot });
-    // 只有「在房内看着回合数增加并进入猜测」才出声：首次进房、重连补快照都只是恢复现场。
-    if (
-      previous &&
-      previous.roomId === rawSnapshot.roomId &&
-      rawSnapshot.roundNumber > previous.roundNumber &&
-      rawSnapshot.phase === "guessing"
-    ) {
-      playSound("roundStart");
-    }
+    applyCEESnapshotEvent(message.payload);
   } else if (message.event === "mcp.focus") {
     useCEEStore.setState({ agentFocus: message.payload as AgentFocusEvent });
   } else if (message.event === "cee.game.privateState") {
