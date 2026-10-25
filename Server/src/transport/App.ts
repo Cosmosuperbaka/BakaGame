@@ -263,16 +263,11 @@ const executeWithDeduplication = async ({
 };
 
 /**
- * 内嵌壳（安卓 APK）的固定页面来源。
- *
- * 壳把前端产物打包进 WebView，`androidScheme: "https"` + 默认 hostname 让它**总是**以
- * `https://localhost` 作为页面 origin 发请求（见 `Mobile/capacitor.config.ts`），而接口
- * 指向上线的公网域名（构建时注入的 `VITE_SERVER_URL`）。所以壳必须能跨域直连后端。
- *
- * 为什么可以恒信：
- * - 远端页面拿不到这个 origin。要在 https 下提供 localhost 页面必须持有本机受信的
- *   证书，公网攻击者做不到；这跟「未配置白名单时只放行本机来源」的既有口径一致。
- * - 只认 https。`http://localhost:PORT` 任意本机进程都能提供，不在此列。
+ * 内嵌壳（安卓 APK）的固定页面来源：壳把前端产物打包进 WebView，总是以
+ * `https://localhost` 为 origin 直连公网后端（`Mobile/capacitor.config.ts`）。
+ * 恒信理由：https 下的 localhost 页面必须持有本机受信证书，公网攻击者拿不到该 origin
+ * （与「未配置白名单时只放行本机来源」口径一致）；且只认 https，`http://localhost:PORT`
+ * 任意本机进程都能提供，不在此列。
  */
 const EMBEDDED_APP_ORIGINS = new Set(["https://localhost"]);
 
@@ -395,10 +390,8 @@ const connectionIdOf = (ws: GameSocketLike): string | undefined =>
 /**
  * Origin 白名单校验：三个游戏入口完全一致，不通过即拒绝升级。
  *
- * 必须是 **throw** 而不是 return：Elysia 的 `.ws()` `upgrade` 钩子返回值会被忽略
- * （实测 1.4.29 / 1.4.30 均如此，返回 `{ status: 403 }` 与 `new Response(403)` 都拦不住，
- * 任意 Origin 照样 101 完成握手），只有抛出异常才会被转成响应。这个差别曾经让
- * 整道跨站 WebSocket 防护形同虚设，改动前请先跑 App.test.ts 里对应的用例。
+ * 必须是 **throw** 而不是 return：Elysia 的 `.ws()` `upgrade` 钩子返回值会被忽略，
+ * 只有抛出异常才会被转成响应。改动前先跑 App.test.ts 里对应的用例。
  */
 const rejectDisallowedOrigin = (
   headers: unknown,
