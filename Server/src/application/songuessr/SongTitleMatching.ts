@@ -1,27 +1,25 @@
 /** 曲名/专辑/歌手的归一、相似度与匹配门禁（出题候选过滤的纯函数）。 */
 import { AppError } from "../../domain/Errors";
 import {
+  BARE_VERSION_SUFFIX_PATTERN,
+  BRACKETED_VERSION_PATTERN,
+  DECORATED_VERSION_SUFFIX_PATTERN,
+  FEAT_SUFFIX_PATTERN,
+  VERSION_MARKER_PATTERN,
+} from "../../domain/TitlePatterns";
+import {
   BangumiMusicTrack,
   BangumiMusicTrackKind,
   BangumiSubjectDetails,
   SongSearchResult,
   isBangumiCreditsEntry,
 } from "../../shared/Index";
-/** 曲名/专辑/歌手的归一、相似度与匹配门禁（出题候选过滤的纯函数）。 */
 
 export const normalizeSongText = (value: string) =>
   value
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
-export const VERSION_MARKER_PATTERN =
-  /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
-export const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
-export const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
-export const BARE_VERSION_SUFFIX_PATTERN =
-  /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
-export const FEAT_SUFFIX_PATTERN =
-  /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
 export const stripSongVersionInfo = (value: string) => {
   let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>

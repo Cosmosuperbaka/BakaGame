@@ -3,6 +3,14 @@ import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { isBangumiCreditsEntry } from "../shared/Index";
 import { bangumiImageUrl } from "./BangumiImagePaths";
+import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
+import {
+  BARE_VERSION_SUFFIX_PATTERN,
+  BRACKETED_VERSION_PATTERN,
+  DECORATED_VERSION_SUFFIX_PATTERN,
+  FEAT_SUFFIX_PATTERN,
+  VERSION_MARKER_PATTERN,
+} from "../domain/TitlePatterns";
 import type {
   AnimeAutoFilters,
   BangumiMusicTrack,
@@ -33,20 +41,6 @@ const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 5_000;
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-const readString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim()
-    ? value.trim()
-    : typeof value === "number" && Number.isFinite(value)
-      ? String(value)
-      : undefined;
-const readNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
 const parseYear = (value: unknown) => {
   const match = readString(value)?.match(/\d{4}/);
   return match ? Number(match[0]) : undefined;
@@ -54,14 +48,6 @@ const parseYear = (value: unknown) => {
 
 const STAFF_KEY_PATTERN =
   /分[镜鏡]|演出|作画|動画|动画|制作|製作|设定|設定|设计|設計|监[督修]|企画|企划|录音|録音|混音|音效|音响|音響|选曲|選曲|协助|協力|协力|角色[设設]|主要角色|CAST|STAFF|作[词詞]|作曲|编曲|編曲|制作人|制片人/i;
-
-const VERSION_MARKER_PATTERN =
-  /(?:伴奏|纯音乐|电视尺寸|动画剪辑|\b(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|tv\s*size|anime\s*edit|radio\s*edit|ver(?:sion)?\.?|version|mix|edit|remaster(?:ed)?|live|acoustic|demo|cover|remix|feat(?:uring)?\.?)\b)/iu;
-const BRACKETED_VERSION_PATTERN = /\s*[（(【[]\s*([^）)】\]]*)\s*[）)】\]]/gu;
-const DECORATED_VERSION_SUFFIX_PATTERN = /\s*[-~～–—]+\s*(.*?)\s*(?:[-~～–—]+\s*)?$/u;
-const BARE_VERSION_SUFFIX_PATTERN =
-  /\s+(?:inst(?:rumental)?\.?|off\s*vocal|karaoke|伴奏|纯音乐|电视尺寸|动画剪辑|tv\s*size|anime\s*edit|radio\s*edit|remix|(?:[^\s]+\s+)?ver(?:sion)?\.?)\s*$/iu;
-const FEAT_SUFFIX_PATTERN = /\s*(?:[（(【[]\s*)?feat(?:uring)?\.?\s*[^）)】\]]+[）)】\]]?\s*$/iu;
 
 const stripTrackVersion = (value: string) => {
   let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>

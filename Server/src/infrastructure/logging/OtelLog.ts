@@ -1,5 +1,6 @@
 import { formatOtlpTraceId, toUnixNanoString } from "../OtlpExporter";
 import type { StructuredLogLevel } from "../StructuredLog";
+import { isRecord } from "../../shared/Json";
 
 const SEVERITY: Record<StructuredLogLevel, { number: number; text: string }> = {
   debug: { number: 5, text: "DEBUG" },
@@ -45,9 +46,6 @@ type OtelAnyValue =
   | { doubleValue: number }
   | { arrayValue: { values: OtelAnyValue[] } }
   | { kvlistValue: { values: Array<{ key: string; value: OtelAnyValue }> } };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 export const toUnixNano = (createdAt: number): string => toUnixNanoString(createdAt);
 

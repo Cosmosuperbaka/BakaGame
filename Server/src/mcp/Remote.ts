@@ -3,7 +3,7 @@ import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { AgentGameClient } from "./GameClient";
 import { MCP_INSTRUCTIONS } from "./Policy";
 import { TOOLS, withRemoteSessionSchema } from "./Tools";
-
+import { isRecord } from "../shared/Json";
 
 const SERVER_INFO = { name: "bakagame-mcp", version: "1.0.0" };
 const SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"] as const;
@@ -33,9 +33,6 @@ interface JsonRpcRequest {
   method?: unknown;
   params?: unknown;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const sanitizeName = (value: unknown): string => {
   if (typeof value !== "string") return "BakaAgent";
@@ -93,7 +90,9 @@ export class RemoteMcpSessions {
       }
     }
     if (this.sessions.size < MAX_SESSIONS) return;
-    const oldest = [...this.sessions.values()].sort((left, right) => left.lastUsedAt - right.lastUsedAt);
+    const oldest = [...this.sessions.values()].sort(
+      (left, right) => left.lastUsedAt - right.lastUsedAt
+    );
     for (const session of oldest.slice(0, this.sessions.size - MAX_SESSIONS + 1)) {
       session.client.close();
       this.sessions.delete(session.id);
@@ -339,10 +338,7 @@ async function handleRemoteToolCall(
     return {
       status: 200,
       headers: context.headers,
-      payload: rpcResult(
-        context.id,
-        toolFailure(code ? `${code}：${messageText}` : messageText)
-      ),
+      payload: rpcResult(context.id, toolFailure(code ? `${code}：${messageText}` : messageText)),
     };
   } finally {
     if (ephemeral) sessions.close(session.id);

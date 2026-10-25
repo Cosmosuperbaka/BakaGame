@@ -3,9 +3,7 @@ import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { MCP_INSTRUCTIONS } from "./Policy";
 import { TOOLS } from "./Tools";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+import { isRecord } from "../shared/Json";
 
 const writeStderr = (record: Record<string, unknown>): void => {
   process.stderr.write(`${JSON.stringify(record)}\n`);
@@ -55,10 +53,7 @@ const toolGame = (args: Record<string, unknown>): GameId | undefined => {
   return joined.length === 1 ? joined[0] : undefined;
 };
 
-const handleToolCall = async (
-  id: unknown,
-  params: unknown
-): Promise<void> => {
+const handleToolCall = async (id: unknown, params: unknown): Promise<void> => {
   const call = isRecord(params) ? params : {};
   const name = typeof call.name === "string" ? call.name : "";
   const args = isRecord(call.arguments) ? call.arguments : {};
@@ -152,9 +147,10 @@ const handleLine = async (line: string): Promise<void> => {
   const hasId = id !== undefined;
 
   if (method === "initialize") {
-    const requested = isRecord(params) && typeof params.protocolVersion === "string"
-      ? params.protocolVersion
-      : "2024-11-05";
+    const requested =
+      isRecord(params) && typeof params.protocolVersion === "string"
+        ? params.protocolVersion
+        : "2024-11-05";
     writeStdout({
       jsonrpc: "2.0",
       id,

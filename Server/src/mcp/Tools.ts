@@ -2,6 +2,7 @@ import type { AgentGameClient, GameId } from "./GameClient";
 import { GAME_IDS } from "./GameClient";
 import { MCP_POLICY } from "./Policy";
 import type { UiStep } from "./ui/Types";
+import { isRecord } from "../shared/Json";
 
 export interface ToolContext {
   client: AgentGameClient;
@@ -37,9 +38,6 @@ export const withRemoteSessionSchema = (
     },
   };
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const objectSchema = (
   properties: Record<string, unknown>,

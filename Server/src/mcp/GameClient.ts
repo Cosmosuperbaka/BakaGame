@@ -1,5 +1,6 @@
 import { applyPatch } from "fast-json-patch";
 import type { AgentFocusInput } from "../shared/AgentActivity";
+import { isRecord } from "../shared/Json";
 import { SeatUi } from "./ui/SeatUi";
 
 export type GameId = "faker" | "song" | "cee";
@@ -90,7 +91,11 @@ interface GameSession {
   closedReason?: string;
   /** 每次公开/私有状态到达都会递增；UI 操作后据此等待页面刷新。 */
   stateVersion: number;
-  versionWaiters: Array<{ since: number; resolve: () => void; timer: ReturnType<typeof setTimeout> }>;
+  versionWaiters: Array<{
+    since: number;
+    resolve: () => void;
+    timer: ReturnType<typeof setTimeout>;
+  }>;
 }
 
 /** 跨 WebSocket 断线保留的座位凭据；重连时用它接回原位。 */
@@ -106,9 +111,6 @@ export interface AgentGameClientOptions {
   /** 测试里关掉人类速度节拍；线上保持默认。 */
   uiPacing?: boolean;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 /** 聊天窗口在客户端与服务端都限制在 200 条；Agent 侧只保留同样上限。 */
 const CHAT_LIMIT = 200;
@@ -141,9 +143,7 @@ const mergeChat = (current: unknown, incoming: unknown): unknown[] => {
   const list = Array.isArray(current) ? current : [];
   const message = isRecord(incoming) ? incoming : undefined;
   if (!message || typeof message.id !== "string") return list;
-  const existing = list.findIndex(
-    (entry) => isRecord(entry) && entry.id === message.id
-  );
+  const existing = list.findIndex((entry) => isRecord(entry) && entry.id === message.id);
   if (existing >= 0) {
     const next = [...list];
     next[existing] = message;
@@ -243,8 +243,7 @@ export class AgentGameClient {
       { roomId, sessionToken },
       { timeoutMs: COMMAND_TIMEOUT_MS }
     )) as Record<string, unknown> | undefined;
-    if (!ack || typeof ack.roomId !== "string")
-      throw new Error("认领座位没有返回房间凭据");
+    if (!ack || typeof ack.roomId !== "string") throw new Error("认领座位没有返回房间凭据");
     session.roomId = ack.roomId;
     session.playerId = typeof ack.playerId === "string" ? ack.playerId : undefined;
     session.sessionToken = typeof ack.sessionToken === "string" ? ack.sessionToken : undefined;
@@ -447,10 +446,15 @@ export class AgentGameClient {
       targets.map(async ([, session]) => {
         if (!session || session.ws.readyState !== WebSocket.OPEN) return;
         try {
-          await this.command(session, "mcp.focus", { ...input }, {
-            roomId: session.roomId,
-            timeoutMs: 3_000,
-          });
+          await this.command(
+            session,
+            "mcp.focus",
+            { ...input },
+            {
+              roomId: session.roomId,
+              timeoutMs: 3_000,
+            }
+          );
         } catch {
           /* 活动提示是增强信息，失败不影响工具结果 */
         }
@@ -532,8 +536,7 @@ export class AgentGameClient {
       });
       ws.addEventListener("close", (event) => {
         clearTimeout(timer);
-        session.closedReason =
-          event.reason || "连接已关闭（Agent 接入未启用，或连接被服务端拒绝）";
+        session.closedReason = event.reason || "连接已关闭（Agent 接入未启用，或连接被服务端拒绝）";
         this.failPending(session, new Error(session.closedReason));
         if (!settled) {
           settled = true;
@@ -558,12 +561,15 @@ export class AgentGameClient {
     const seat = this.seats.get(game);
     if (!seat?.sessionToken) return;
     try {
-      const ack = (await this.command(session, GAME_META[game].reconnect, {
-        roomId: seat.roomId,
-        sessionToken: seat.sessionToken,
-      }, { roomId: seat.roomId, sessionToken: seat.sessionToken })) as
-        | Record<string, unknown>
-        | undefined;
+      const ack = (await this.command(
+        session,
+        GAME_META[game].reconnect,
+        {
+          roomId: seat.roomId,
+          sessionToken: seat.sessionToken,
+        },
+        { roomId: seat.roomId, sessionToken: seat.sessionToken }
+      )) as Record<string, unknown> | undefined;
       if (!isRecord(ack)) return;
       session.roomId = typeof ack.roomId === "string" ? ack.roomId : seat.roomId;
       session.sessionToken =
@@ -640,8 +646,7 @@ export class AgentGameClient {
     clearTimeout(pending.timer);
     session.pending.delete(id);
     const error = isRecord(value) ? value : {};
-    const message =
-      typeof error.message === "string" ? error.message : "游戏服务拒绝了命令";
+    const message = typeof error.message === "string" ? error.message : "游戏服务拒绝了命令";
     pending.reject(
       Object.assign(new Error(message), {
         code: typeof error.code === "string" ? error.code : undefined,

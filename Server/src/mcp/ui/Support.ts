@@ -1,5 +1,8 @@
 import type { GameId } from "../GameClient";
 import type { UiControl, UiPart, UiScreen } from "./Types";
+import { isRecord } from "../../shared/Json";
+
+export { isRecord };
 
 export interface UiSearchState {
   /** 搜索栏控件前缀，例如 song.submit.search。 */
@@ -69,9 +72,6 @@ export interface UiContext {
   state: UiState;
   now: number;
 }
-
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 export const str = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
@@ -154,14 +154,7 @@ export const assemble = (
   context: UiContext,
   screen: Omit<
     UiScreen,
-    | "game"
-    | "roomId"
-    | "roomName"
-    | "playerId"
-    | "players"
-    | "chat"
-    | "updatedAt"
-    | "controls"
+    "game" | "roomId" | "roomName" | "playerId" | "players" | "chat" | "updatedAt" | "controls"
   >,
   players: Array<Record<string, unknown>>
 ): UiScreen => {

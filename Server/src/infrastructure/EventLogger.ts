@@ -14,6 +14,7 @@ import {
   isServerSentryEnabled,
   recordServerMetric,
 } from "./Sentry";
+import { isRecord } from "../shared/Json";
 
 export interface LogEntry {
   type: string;
@@ -88,9 +89,6 @@ export interface EventLoggerOptions {
   /** 结构化日志中的操作范围：缺省只记失败与慢操作，`all` 记录全部。 */
   operationLogging?: OperationLogging;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const getEventLevel = (entry: LogEntry): EventLogLevel => {
   switch (entry.type) {

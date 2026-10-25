@@ -4,6 +4,7 @@ import {
   ANDROID_SOFTWARE_ATTESTATION_ROOT_PEMS,
 } from "./AndroidAttestationRoots";
 import type { ClientAttestationCheckInput, ClientAttestationLevel } from "./ClientChannel";
+import { isRecord } from "../shared/Json";
 
 /**
  * Android Key Attestation 服务端验证。
@@ -842,9 +843,6 @@ export interface RevocationCacheOptions {
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * 解析状态列表。容器键两种写法都接：Google 参考实现读 `entries`，线上端点历史上带过 `status` 外层。

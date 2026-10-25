@@ -3,6 +3,7 @@ import { CEE_LOBBY_ROOMS_EVENT, CEE_STATE_EVENTS } from "../shared/CEE";
 import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shared/Index";
 import { SONGUESSR_LOBBY_ROOMS_EVENT } from "../shared/SonGuessr";
 import { WHOISFAKER_LOBBY_ROOMS_EVENT } from "../shared/WhoIsFaker";
+import { isRecord } from "../shared/Json";
 
 export const STATE_FULL_SYNC_INTERVAL_MS = 60_000;
 export const STATE_MAX_PATCHES_BEFORE_FULL = 1_024;
@@ -37,9 +38,6 @@ const FULL_REFRESH_EVENTS = new Set([
  */
 const shedKindOf = (event: string): "state" | "refresh" | undefined =>
   STATE_EVENTS.has(event) ? "state" : FULL_REFRESH_EVENTS.has(event) ? "refresh" : undefined;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const isEventPacket = (value: unknown): value is EventPacket =>
   isRecord(value) && value.type === "event" && typeof value.event === "string";

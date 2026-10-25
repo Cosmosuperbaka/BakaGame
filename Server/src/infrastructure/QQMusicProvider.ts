@@ -6,6 +6,7 @@ import qqmusic from "qqmusic-api-enhanced";
 import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import { parseTTML, sanitizeLyrics } from "./LyricLines";
+import { asArray, asRecord, readNumber } from "./JsonReaders";
 import type {
   MusicCookieInput,
   MusicLoginSession,
@@ -79,14 +80,9 @@ export const stripHtmlTags = (val: unknown): string => {
   return val.replace(/<[^>]+>/g, "").trim();
 };
 
-// QQ 音乐上游返回的是未标注类型的 JSON，取值统一走下面这组窄化助手
-// （与 NeteaseMusicProvider 同名助手同一套约定），不引入 any。
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-
-const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+// QQ 音乐上游返回的是未标注类型的 JSON：通用窄化助手取自 JsonReaders（与网易云
+// 同一套约定）；`readString` 留在本地——它不 trim、不接受数字，与通用版语义不同，
+// 音频直链与 Cookie 判定依赖这一差异。不引入 any。
 
 /** 按顺序取第一个对象；用于 `data.body / body / data / 顶层` 这类历史形状兜底链。 */
 const firstRecord = (...values: unknown[]): Record<string, unknown> => {
@@ -112,9 +108,6 @@ const readText = (value: unknown): string => {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return "";
 };
-
-const readNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
 
 /**
  * 是否必须会员账号才能在线播放。
