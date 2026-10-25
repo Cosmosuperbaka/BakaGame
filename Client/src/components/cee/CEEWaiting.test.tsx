@@ -21,6 +21,21 @@ describe("restoreCEESettings", () => {
     expect(sendCommand).toHaveBeenCalledExactlyOnceWith("cee.room.settings", { settings });
   });
 
+  it("MCP 开关沿用当前房间值，不被玩法记忆重置", async () => {
+    const sendCommand = vi.fn().mockResolvedValue({});
+    useCEEStore.setState({
+      sendCommand,
+      snapshot: { settings: { allowAgents: true } } as never,
+    });
+    const settings = createDefaultCEESettings(2020);
+
+    await restoreCEESettings({ settings });
+
+    expect(sendCommand).toHaveBeenCalledExactlyOnceWith("cee.room.settings", {
+      settings: { ...settings, allowAgents: true },
+    });
+  });
+
   it("使用目录时先同步目录再保存设置", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
     useCEEStore.setState({ sendCommand });

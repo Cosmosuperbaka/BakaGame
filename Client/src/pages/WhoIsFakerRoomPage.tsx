@@ -40,6 +40,7 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
+import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
 import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
 import {
@@ -620,6 +621,7 @@ export default function WhoIsFakerRoomPage() {
             wordAnchorRef={wordAnchorRef}
           />
         }
+        actions={<RoomUtilityActions game="faker" />}
         connectionIssue={connected ? null : "断线中..."}
         player={
           <RoomPlayerAside

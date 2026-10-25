@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
 import { ClientUpdateNotice } from "@/components/ClientUpdateNotice";
+import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip";
 import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
 // 展示版本号构建期从 changelog.json 解析（与致谢页同一真相源），整份日志不随首屏下载。
@@ -351,10 +352,9 @@ export default function LandingPage() {
   return (
     <div className="relative grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <Seo path="/" />
-      {/* 右上角这一排：下载客户端在账号左边，浮着不占页头的纵向空间；账号服务不可用时入口仍保留。
-          在客户端里下载入口自己让位，只剩账号与反馈。 */}
+      {/* 右上角这一排：设置、账号与反馈，浮着不占页头的纵向空间；账号服务不可用时入口仍保留。 */}
       <div className="absolute right-3 top-3 z-panel flex items-center gap-1 sm:right-5 sm:top-4">
-        <ClientDownloadEntry />
+        <SettingsEntry />
         <AccountButton />
         <FeedbackButton />
       </div>
@@ -430,6 +430,7 @@ export default function LandingPage() {
           >
             {versionLabel}
           </motion.button>
+          <ClientDownloadEntry compact />
           <FooterStatusLink />
         </div>
       </footer>

@@ -5,6 +5,7 @@ import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, PlayerColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
+import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
 import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
 import { PlayerList } from "@/components/songuessr/PlayerList";
@@ -185,7 +186,12 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             ) : null}
           </>
         }
-        actions={<VolumeControl volume={volume} onVolumeChange={setVolume} />}
+        actions={
+          <>
+            <VolumeControl volume={volume} onVolumeChange={setVolume} />
+            <RoomUtilityActions game="song" />
+          </>
+        }
         connectionIssue={connected ? null : "断线中..."}
         player={
           solo ? undefined : (

@@ -4,6 +4,7 @@ import { SonGuessrProvider } from "@/contexts/SonGuessrContext";
 import { ToastViewport } from "@/components/Toast";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
+import { AccountDialogs } from "@/components/account/AccountEntry";
 import { SongSoundBridge } from "@/components/songuessr/SongSoundBridge";
 
 function SonGuessrLayout() {
@@ -16,6 +17,7 @@ function SonGuessrLayout() {
         <Outlet />
       </Suspense>
       <ToastViewport toasts={toasts} />
+      <AccountDialogs />
     </SonGuessrProvider>
   );
 }

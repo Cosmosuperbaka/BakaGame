@@ -33,10 +33,11 @@ export async function restoreCEESettings(memory: CEERoomSettingsMemory): Promise
   if (settings.useIndex && settings.indexId !== null) {
     await useCEEStore.getState().sendCommand("cee.directory.import", { indexId: settings.indexId });
   }
-  // MCP 开关属于房间级独立设置，不从上一局的玩法记忆里继承。
+  // MCP 开关属于房间级独立设置，不从上一局的玩法记忆里继承；沿用本次建房得到的值。
+  const allowAgents = useCEEStore.getState().snapshot?.settings.allowAgents === true;
   await useCEEStore
     .getState()
-    .sendCommand("cee.room.settings", { settings: { ...settings, allowAgents: false } });
+    .sendCommand("cee.room.settings", { settings: { ...settings, allowAgents } });
 }
 
 /** 房主的房间设置草稿：名称、是否公开、是否允许旁观与私密密码。 */

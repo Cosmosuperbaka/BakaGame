@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getSoundEnabled,
+  getSoundVolume,
   initSoundEffects,
   playSound,
   setSoundEnabled,
+  setSoundVolume,
   SOUND_STORAGE_KEY,
+  SOUND_VOLUME_STORAGE_KEY,
 } from "@/lib/SoundEffects";
 
 class FakeParam {
@@ -264,5 +267,40 @@ describe("sound effects", () => {
     expect(ctx.gains[4]!.gain.setValueAtTime).toHaveBeenCalledWith(0.55, 0);
     expect(ctx.oscillators[3]!.frequency.setValueAtTime).toHaveBeenCalledWith(1046.5, 0);
     expect(ctx.oscillators[4]!.frequency.setValueAtTime).toHaveBeenCalledWith(523.25, 0);
+  });
+
+  it("persists the cue volume and applies it to the master gain", () => {
+    stubAudio();
+    stop = initSoundEffects();
+    press();
+    const ctx = FakeAudioContext.instances[0]!;
+
+    expect(getSoundVolume()).toBe(1);
+    setSoundVolume(0.5);
+    expect(window.localStorage.getItem(SOUND_VOLUME_STORAGE_KEY)).toBe("0.5");
+    playSound("roundStart");
+    expect(ctx.gains[0]!.gain.setValueAtTime).toHaveBeenCalledWith(0.25, 0);
+    expect(ctx.oscillators).toHaveLength(2);
+
+    setSoundVolume(0);
+    playSound("roundStart");
+    expect(ctx.oscillators).toHaveLength(2);
+
+    setSoundVolume(2);
+    expect(getSoundVolume()).toBe(1);
+    setSoundVolume(-1);
+    expect(getSoundVolume()).toBe(0);
+  });
+
+  it("restores a stored volume before the first sound", () => {
+    stubAudio();
+    window.localStorage.setItem(SOUND_VOLUME_STORAGE_KEY, "0.4");
+    stop = initSoundEffects();
+    press();
+    const ctx = FakeAudioContext.instances[0]!;
+
+    expect(getSoundVolume()).toBe(0.4);
+    playSound("roundStart");
+    expect(ctx.gains[0]!.gain.setValueAtTime).toHaveBeenCalledWith(0.2, 0);
   });
 });

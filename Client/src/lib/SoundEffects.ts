@@ -5,6 +5,10 @@ export type SoundName = "roundStart" | "actionRequired" | "chatMessage";
 
 /** 与音效开关共用；刷新后保持上一次选择。 */
 export const SOUND_STORAGE_KEY = "bakagame:sound";
+/** 提示音音量（0–1 的字符串）；默认满音量，保持既有提示音响度。 */
+export const SOUND_VOLUME_STORAGE_KEY = "bakagame:sound-volume";
+
+const DEFAULT_VOLUME = 1;
 
 type Tone = {
   frequency: number;
@@ -119,6 +123,7 @@ const GESTURE_EVENTS = ["pointerdown", "keydown", "touchend"] as const;
 
 const listeners = new Set<() => void>();
 let enabled = true;
+let volume = DEFAULT_VOLUME;
 let context: AudioContext | null = null;
 let gestureArmed = false;
 let primed = false;
@@ -133,12 +138,31 @@ function readStoredEnabled(): boolean {
   }
 }
 
+function clampVolume(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_VOLUME;
+  return Math.min(1, Math.max(0, value));
+}
+
+function readStoredVolume(): number {
+  try {
+    const stored = window.localStorage.getItem(SOUND_VOLUME_STORAGE_KEY);
+    if (stored === null) return DEFAULT_VOLUME;
+    return clampVolume(Number(stored));
+  } catch {
+    return DEFAULT_VOLUME;
+  }
+}
+
 function emit(): void {
   for (const listener of listeners) listener();
 }
 
 export function getSoundEnabled(): boolean {
   return enabled;
+}
+
+export function getSoundVolume(): number {
+  return volume;
 }
 
 function subscribe(listener: () => void): () => void {
@@ -148,6 +172,10 @@ function subscribe(listener: () => void): () => void {
 
 export function useSoundEnabled(): boolean {
   return useSyncExternalStore(subscribe, getSoundEnabled, () => true);
+}
+
+export function useSoundVolume(): number {
+  return useSyncExternalStore(subscribe, getSoundVolume, () => DEFAULT_VOLUME);
 }
 
 function onFirstInteraction(): void {
@@ -250,7 +278,7 @@ function unlock(): void {
 
 /** 播放一个音效。未解锁、已关闭、不支持或上下文不在运行态时静默返回。 */
 export function playSound(name: SoundName): void {
-  if (!enabled) return;
+  if (!enabled || volume === 0) return;
   const ctx = context;
   if (!ctx || ctx.state !== "running") {
     // 挂起时排程只会在恢复后补播一条过期提示音；交给下一次用户手势重新解锁。
@@ -260,7 +288,7 @@ export function playSound(name: SoundName): void {
   try {
     const recipe = RECIPES[name];
     const master = ctx.createGain();
-    master.gain.setValueAtTime(recipe.master, ctx.currentTime);
+    master.gain.setValueAtTime(recipe.master * volume, ctx.currentTime);
     master.connect(ctx.destination);
     for (const tone of recipe.tones) {
       const start = ctx.currentTime + tone.offset;
@@ -303,6 +331,16 @@ export function setSoundEnabled(next: boolean): void {
   emit();
 }
 
+export function setSoundVolume(next: number): void {
+  volume = clampVolume(next);
+  try {
+    window.localStorage.setItem(SOUND_VOLUME_STORAGE_KEY, String(volume));
+  } catch {
+    // 隐私模式写不进去：本次会话仍然生效。
+  }
+  emit();
+}
+
 /**
  * 挂上「首次交互」监听。必须早于 React 渲染调用，且这里不创建 AudioContext。
  * 返回停止函数；重复调用会先拆掉上一份监听。
@@ -311,6 +349,7 @@ export function initSoundEffects(): () => void {
   if (typeof window === "undefined") return () => {};
   activeTeardown?.();
   enabled = readStoredEnabled();
+  volume = readStoredVolume();
   if (enabled) armGestureUnlock();
 
   const onVisibilityChange = () => {

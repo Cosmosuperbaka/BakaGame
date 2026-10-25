@@ -7,7 +7,7 @@ import LandingPage from "./LandingPage";
 import { formatRelativeTime } from "@/lib/Time";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
-// 右上角的下载入口点开才问发布信息：这里给一份已发布的制品，供断言弹窗内容。
+// 页脚的下载入口点开才问发布信息：这里给一份已发布的制品，供断言弹窗内容。
 const WINDOWS_PACKAGE_URL = "https://cdn.test/files/BakaGame-latest-x64.exe";
 const PACKAGES = [
   {
@@ -61,14 +61,16 @@ describe("LandingPage", () => {
     expect(screen.getByTestId("game-entry-animecharguessr")).toBeInTheDocument();
   });
 
-  it("反馈入口放在右上角账号右边，法务入口移入关于项目，页脚只留服务状态", () => {
+  it("设置、账号与反馈放在右上角同一排，法务入口移入关于项目", () => {
     useAccountStore.setState({ status: "guest", profile: null });
     renderLandingPage();
 
     const account = screen.getByRole("button", { name: "账号" });
     const feedback = screen.getByRole("button", { name: /反馈/ });
+    const settings = screen.getByRole("button", { name: "设置" });
     const row = account.parentElement as HTMLElement;
     expect(feedback.parentElement).toBe(row);
+    expect(settings.parentElement).toBe(row);
     expect(Array.from(row.children).indexOf(feedback)).toBeGreaterThan(
       Array.from(row.children).indexOf(account)
     );
@@ -132,7 +134,7 @@ describe("LandingPage", () => {
     expect(await screen.findByLabelText("标题")).toHaveValue("需要回复");
   });
 
-  it("下载客户端入口浮在右上角、排在账号左边，点了只谈系统与安装包", async () => {
+  it("下载客户端入口在页脚服务状态旁边，点了只谈系统与安装包", async () => {
     useAccountStore.setState({ status: "guest", profile: null });
     vi.stubGlobal(
       "fetch",
@@ -142,13 +144,15 @@ describe("LandingPage", () => {
     renderLandingPage();
 
     const entry = screen.getByRole("button", { name: "下载客户端" });
-    const account = screen.getByRole("button", { name: "账号" });
-    // 同一排、下载在前：入口的位置本身就是「先看见再决定」，不该藏在页脚里。
-    const row = entry.parentElement as HTMLElement;
-    expect(row.contains(account)).toBe(true);
+    const status = screen.getByRole("button", { name: "服务状态" });
+    const row = status.parentElement as HTMLElement;
+    expect(entry.parentElement).toBe(row);
     expect(Array.from(row.children).indexOf(entry)).toBeLessThan(
-      Array.from(row.children).indexOf(account)
+      Array.from(row.children).indexOf(status)
     );
+    // 下载入口不再占用右上角：那一排只留设置、账号与反馈。
+    const topRow = screen.getByRole("button", { name: "账号" }).parentElement as HTMLElement;
+    expect(topRow.contains(entry)).toBe(false);
 
     await user.click(entry);
     const dialog = await screen.findByRole("dialog");

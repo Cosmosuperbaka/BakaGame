@@ -127,11 +127,12 @@ export function ClientDownloadDialog({ open, onOpenChange, origin }: ClientDownl
 }
 
 /**
- * 首页右上角的客户端入口：只说「下载客户端」，点了才谈系统与安装包。
+ * 首页的客户端入口：只说「下载客户端」，点了才谈系统与安装包。
  * 网页里也能进反作弊房的是壳，不是这里——入口不该替玩家预设理由。
  * 壳内不渲染：已经在客户端里的人要的是新版，那条路归首页的更新提醒。
+ * `compact` 用于页脚服务状态旁：与相邻的文本入口同一档尺寸与弱化色。
  */
-export function ClientDownloadEntry() {
+export function ClientDownloadEntry({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [origin, setOrigin] = useState<OriginPoint | null>(null);
   if (isBakaClient()) return null;
@@ -140,15 +141,18 @@ export function ClientDownloadEntry() {
     <>
       <Button
         variant="ghost"
+        size={compact ? "sm" : "default"}
         aria-label="下载客户端"
+        className={compact ? "gap-1.5 px-2 text-xs text-muted-foreground" : undefined}
         onClick={(event) => {
           setOrigin(originOf(event));
           setOpen(true);
         }}
       >
         <Download />
-        {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
-        <span className="[@media(max-height:680px)]:hidden">下载客户端</span>
+        <span className={compact ? undefined : "[@media(max-height:680px)]:hidden"}>
+          下载客户端
+        </span>
       </Button>
       <ClientDownloadDialog open={open} onOpenChange={setOpen} origin={origin} />
     </>

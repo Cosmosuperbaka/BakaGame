@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
+import { getMcpNewRoomAllowed } from "@/lib/McpConfig";
 import { randomRoomId } from "@/lib/Random";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 
@@ -200,7 +201,12 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
         async (current, signal) => {
           const generatedRoomId = randomRoomId();
           await createRoom(
-            { ...params, roomId: generatedRoomId, userName: userName.trim() },
+            {
+              ...params,
+              allowAgents: getMcpNewRoomAllowed(),
+              roomId: generatedRoomId,
+              userName: userName.trim(),
+            },
             signal
           );
           if (!current()) return;

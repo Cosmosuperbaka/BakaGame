@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setMcpNewRoomAllowed } from "@/lib/McpConfig";
 import { useLobbySession } from "./UseLobbySession";
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
@@ -36,6 +37,7 @@ function setup(overrides = {}) {
 beforeEach(() => {
   navigate.mockClear();
   localStorage.setItem("bakagame:username", "玩家");
+  setMcpNewRoomAllowed(false);
 });
 describe("大厅入房事务", () => {
   it("恢复拒绝被统一接住，不继续加入或导航", async () => {
@@ -240,5 +242,21 @@ it("创建成功后把房号与本次选项交给回调，供记录与登记恢�
       allowSpectators: false,
       password: "1234",
     })
+  );
+});
+
+it("建房带上设置里的 MCP 新房间默认值，房间内仍由服务端设置决定", async () => {
+  setMcpNewRoomAllowed(true);
+  const h = setup();
+  await act(async () => {
+    await h.result.current.handleCreateRoom({
+      name: "新房",
+      visibility: "public",
+      allowSpectators: true,
+    });
+  });
+  expect(h.options.createRoom).toHaveBeenCalledWith(
+    expect.objectContaining({ allowAgents: true }),
+    expect.any(AbortSignal)
   );
 });

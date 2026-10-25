@@ -734,11 +734,11 @@ export const createApp = ({
       roomCount:
         fakerService.getHealthSnapshot().roomCount +
         (songService?.getHealthSnapshot().roomCount ?? 0) +
-        (characterService.getHealthSnapshot().roomCount ?? 0),
+        (characterService?.getHealthSnapshot().roomCount ?? 0),
       connectionCount:
         fakerService.getHealthSnapshot().connectionCount +
         (songService?.getHealthSnapshot().connectionCount ?? 0) +
-        (characterService.getHealthSnapshot().connectionCount ?? 0),
+        (characterService?.getHealthSnapshot().connectionCount ?? 0),
     }),
     version: () => resolveServerRelease() ?? "unknown",
     externalProbe: env.betterStackApiKey
@@ -814,12 +814,21 @@ export const createApp = ({
           "content-type",
           "x-trace-id",
           "accept",
+          "authorization",
           "mcp-session-id",
           "mcp-protocol-version",
           "mcp-method",
           "mcp-name",
         ],
-        exposeHeaders: ["mcp-session-id", "mcp-protocol-version"],
+        exposeHeaders: [
+          "mcp-session-id",
+          "mcp-protocol-version",
+          "x-trace-id",
+          "retry-after",
+          "ratelimit-limit",
+          "ratelimit-remaining",
+          "ratelimit-reset",
+        ],
         methods: ["GET", "POST", "DELETE", "OPTIONS"],
         credentials: true,
       })

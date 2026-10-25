@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CloudSettings } from "@bakagame/shared";
 
 import type { ApiClient } from "./Api";
-import { readLocalPreferences, startCloudSync } from "./CloudSync";
+import {
+  CLOUD_SYNC_STORAGE_KEY,
+  getCloudSyncEnabled,
+  readLocalPreferences,
+  setCloudSyncEnabled,
+  startCloudSync,
+} from "./CloudSync";
 import {
   getStoredSongMusicSession,
   saveSongMusicSession,
@@ -172,5 +178,16 @@ describe("云同步", () => {
       client.settings.savePreferences as unknown as ReturnType<typeof vi.fn>
     ).not.toHaveBeenCalled();
     stop();
+  });
+
+  it("云同步开关只保存在本机，不进入同步范围", () => {
+    setCloudSyncEnabled(true);
+    expect(getCloudSyncEnabled()).toBe(true);
+    setCloudSyncEnabled(false);
+    expect(getCloudSyncEnabled()).toBe(false);
+    expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
+    expect(readLocalPreferences()).not.toHaveProperty(CLOUD_SYNC_STORAGE_KEY);
+    setCloudSyncEnabled(true);
+    expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("1");
   });
 });

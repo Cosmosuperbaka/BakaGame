@@ -347,14 +347,17 @@ export const ENV_ENTRIES: EnvEntry[] = [
     layer: "T2",
     documented: true,
     sample: "false",
-    note: ["Agent（MCP）接入总开关，缺省关闭；关闭时握手直接拒绝声明为 Agent 的连接。"],
+    note: [
+      "Agent（MCP）接入总开关，缺省关闭；关闭时握手直接拒绝声明为 Agent 的连接，",
+      "远程 MCP（/api/mcp）与发现文件也会标记为不可用。stdio 进程同样读取本开关。",
+    ],
   },
   {
     name: "MCP_AGENT_NAME",
     layer: "T2",
     documented: true,
     sample: "BakaAgent",
-    note: ["MCP Agent 在房间内使用的默认昵称；缺省 BakaAgent。"],
+    note: ["MCP Agent 在房间内使用的默认昵称；缺省 BakaAgent。远程端点首次建连也用它。"],
   },
   {
     name: "BANGUMI_API_URL",

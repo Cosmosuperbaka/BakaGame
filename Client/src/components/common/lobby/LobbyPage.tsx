@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Seo } from "@/components/common/Seo";
+import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { RoomCardSkeleton } from "@/components/common/RoomCardSkeleton";
 import {
   usePageNavigate,
@@ -132,6 +133,9 @@ export function LobbyPage({
               </span>
             ) : null}
           </h1>
+          <div className="ml-auto flex shrink-0 items-center">
+            <SettingsEntry />
+          </div>
         </div>
       </header>
 

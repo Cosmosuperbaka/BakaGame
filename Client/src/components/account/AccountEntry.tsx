@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
-import { SoundToggle } from "@/components/common/SoundToggle";
-import { ThemeToggle } from "@/components/common/ThemeToggle";
 import { FeedbackDialog, type FeedbackDraft } from "@/components/account/FeedbackDialog";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
@@ -99,8 +97,6 @@ export function AccountButton() {
 
   return (
     <>
-      <ThemeToggle />
-      <SoundToggle />
       {status === "signedIn" && profile ? (
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Popover.Trigger asChild>
@@ -193,19 +189,20 @@ export function AccountButton() {
   );
 }
 
-/** 顶栏的反馈入口：始终可见；未登录也能提交匿名反馈。 */
-export function FeedbackButton() {
+/** 顶栏的反馈入口：始终可见；未登录也能提交匿名反馈。`compact` 只留图标，供房间顶栏这类窄位置使用。 */
+export function FeedbackButton({ compact = false }: { compact?: boolean }) {
   const unread = useAccountStore((state) => state.unreadFeedback);
   return (
     <Button
       variant="ghost"
+      size={compact ? "icon" : "default"}
       className="relative"
       aria-label={unread ? `反馈（${unread} 条新回复）` : "反馈"}
       onClick={(event) => openDialog("feedback", originOf(event))}
     >
       <MessageSquareText aria-hidden="true" />
       {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
-      <span className="[@media(max-height:680px)]:hidden">反馈</span>
+      {compact ? null : <span className="[@media(max-height:680px)]:hidden">反馈</span>}
       {unread ? <UnreadDot className="absolute right-1 top-1" /> : null}
     </Button>
   );

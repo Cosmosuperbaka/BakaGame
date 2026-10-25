@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { startCloudSync } from "@/lib/CloudSync";
+import { startCloudSync, useCloudSyncEnabled } from "@/lib/CloudSync";
 import { reportVisit, visitSection } from "@/lib/VisitReport";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
@@ -11,6 +11,7 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 export function useAccountBootstrap() {
   const status = useAccountStore((state) => state.status);
   const load = useAccountStore((state) => state.load);
+  const syncEnabled = useCloudSyncEnabled();
   const { pathname } = useLocation();
   const lastSection = useRef<string | null>(null);
 
@@ -19,9 +20,9 @@ export function useAccountBootstrap() {
   }, [load]);
 
   useEffect(() => {
-    if (status !== "signedIn") return;
+    if (status !== "signedIn" || !syncEnabled) return;
     return startCloudSync();
-  }, [status]);
+  }, [status, syncEnabled]);
 
   useEffect(() => {
     const section = visitSection(pathname);

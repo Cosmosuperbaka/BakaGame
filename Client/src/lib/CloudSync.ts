@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { PREFERENCES_MAX_BYTES, type CloudSettings, type MusicPlatform } from "@bakagame/shared";
 import { api, type ApiClient } from "@/lib/Api";
 import { ROOM_MEMORY_SYNC_PREFIXES } from "@/lib/RoomSettingsMemory";
@@ -27,6 +28,52 @@ import {
  */
 const PLATFORMS: MusicPlatform[] = ["netease", "qq"];
 const PUSH_DELAY_MS = 2_000;
+
+/** 云同步开关只属于本机：关闭后不再上传或读取云端，选项本身不参与同步。 */
+export const CLOUD_SYNC_STORAGE_KEY = "bakagame:cloud-sync";
+
+const syncListeners = new Set<() => void>();
+let syncEnabled = true;
+let syncInitialized = false;
+
+function ensureSyncPreference(): void {
+  if (syncInitialized) return;
+  syncInitialized = true;
+  try {
+    syncEnabled = window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY) !== "0";
+  } catch {
+    syncEnabled = true;
+  }
+}
+
+function emitSyncPreference(): void {
+  for (const listener of syncListeners) listener();
+}
+
+function subscribeSyncPreference(listener: () => void): () => void {
+  syncListeners.add(listener);
+  return () => syncListeners.delete(listener);
+}
+
+export function getCloudSyncEnabled(): boolean {
+  ensureSyncPreference();
+  return syncEnabled;
+}
+
+export function setCloudSyncEnabled(next: boolean): void {
+  syncEnabled = next;
+  syncInitialized = true;
+  try {
+    window.localStorage.setItem(CLOUD_SYNC_STORAGE_KEY, next ? "1" : "0");
+  } catch {
+    // 隐私模式写不进去：本次会话仍然生效。
+  }
+  emitSyncPreference();
+}
+
+export function useCloudSyncEnabled(): boolean {
+  return useSyncExternalStore(subscribeSyncPreference, getCloudSyncEnabled, () => true);
+}
 
 const isSyncedKey = (key: string): boolean =>
   key === USERNAME_KEY ||
