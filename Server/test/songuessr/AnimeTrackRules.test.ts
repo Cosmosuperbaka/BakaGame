@@ -18,6 +18,11 @@ import {
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
+  resolveAlbumTrackCandidates,
+  resolveAnimeLevelCandidates,
+} from "../../src/application/songuessr/AnimeResolution";
+import type { SonGuessrServiceInternals } from "../../src/application/songuessr/ServiceInternals";
+import {
   buildAlbumQueries,
   isSongTitleMatch,
   isUnplayableAlbumTrack,
@@ -1076,21 +1081,7 @@ describe("SonGuessrService 猜番原版优先", () => {
       bangumiProvider: {} as BangumiDataProvider,
       random: { nextInt: () => 0 },
     });
-    return service as unknown as {
-      resolveAlbumTrackCandidates: (
-        provider: MusicProvider,
-        track: { title: string; kind: BangumiMusicTrack["kind"] },
-        anime: BangumiSubjectDetails,
-        cookie: string | undefined,
-        budget: { search: number }
-      ) => Promise<unknown>;
-      resolveAnimeLevelCandidates: (
-        provider: MusicProvider,
-        anime: BangumiSubjectDetails,
-        cookie: string | undefined,
-        budget: { search: number }
-      ) => Promise<unknown>;
-    };
+    return service as unknown as SonGuessrServiceInternals;
   };
 
   /**
@@ -1135,7 +1126,8 @@ describe("SonGuessrService 猜番原版优先", () => {
         },
         getAlbumSongs: async () => [],
       };
-      await resolveInternals(musicProvider).resolveAlbumTrackCandidates(
+      await resolveAlbumTrackCandidates(
+        resolveInternals(musicProvider),
         musicProvider,
         albumTrack,
         anime,
@@ -1156,7 +1148,8 @@ describe("SonGuessrService 猜番原版优先", () => {
     };
     await expectParallelCalls(2, async (onCall) => {
       probe = onCall;
-      await resolveInternals(musicProvider).resolveAnimeLevelCandidates(
+      await resolveAnimeLevelCandidates(
+        resolveInternals(musicProvider),
         musicProvider,
         anime,
         undefined,
