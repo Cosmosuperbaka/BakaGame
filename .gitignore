@@ -86,6 +86,9 @@ Server/data/*.sqlite.backup
 Server/data/*.sqlite.backup-journal
 Server/data/tag-diff-state.json
 
+# 运行时存储：房间快照、本地日志与索引库都落在 Server/storage，可由服务重建。
+/Server/storage/
+
 # 本地构建工具不进 Git。数据集只在首次部署时构建一次（本地跑），之后由后端
 # 自己更新（爬 API + 应用角色标签 diff），CI 不再生产数据 —— 所以
 # build_bangumi_db.py 也一并移出：它不是运行时依赖。
@@ -106,3 +109,5 @@ Client/public/assets/fonts/lxgw-wenkai/
 # 只作当次交付材料；复现口径见 Agents/Deployment.md §6，不进 Git。
 Server/tasks/
 /.qoder-credits
+/.mimosa
+/.qoder
