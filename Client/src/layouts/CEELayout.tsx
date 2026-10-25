@@ -5,6 +5,7 @@ import { ToastViewport } from "@/components/Toast";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { AccountDialogs, requestLogin } from "@/components/account/AccountEntry";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
+import { CEESoundBridge } from "@/components/cee/CEESoundBridge";
 
 export default function CEELayout() {
   const notice = useCEEStore((state) => state.notice);
@@ -17,6 +18,7 @@ export default function CEELayout() {
   }, [requestLoginAt]);
   return (
     <>
+      <CEESoundBridge />
       <Suspense fallback={<PageLoadingFallback />}>
         <Outlet />
       </Suspense>
