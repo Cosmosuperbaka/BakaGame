@@ -12,7 +12,7 @@ import { tappable } from "@/lib/Motion";
 import { CreditBrandMark } from "./CreditsIcons";
 
 /**
- * 参与开发的大模型：公司按 `sortCompaniesByLetter` 排（英文按字母、中文按拼音合成一份 A-Z 序），
+ * 参与开发的大模型：公司按 `sortCompaniesByLetter` 排（英文公司在前按字母、中文公司在后按拼音），
  * 组内用 `sortModelsByRelease` 按发布时间从早到晚收口。两处的展示序都不看数据文件的书写顺序。
  *
  * 公司是一行：左侧厂商 Logo、名称与模型数（弱化），右侧模型徽章流式排列；

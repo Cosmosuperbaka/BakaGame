@@ -239,7 +239,8 @@ export interface ContributingModel {
 }
 
 /**
- * 模型按公司分组。展示序由 `sortCompaniesByLetter` 给出，数据文件的声明顺序不作依据。
+ * 模型按公司分组。展示序由 `sortCompaniesByLetter` 给出：英文公司在前、中文公司在后，
+ * 数据文件的声明顺序不作依据。
  */
 export interface ContributingCompany {
   company: string;
@@ -297,21 +298,25 @@ export function sortModelsByRelease(models: readonly ContributingModel[]): Contr
 }
 
 /**
- * 公司展示序：英文公司名按字母、中文公司名按拼音，合成同一份 A-Z 序。
+ * 公司展示序：英文公司在前、按名称字母排序；中文公司在后、按 `sortKey` 的拼音排序。
+ * 两个分组的先后固定，不把中英文混排成同一份 A-Z 序。
  *
- * 不能直接交给 `Intl.Collator` 的 zh 拼音排序：ICU 把汉字整块排在拉丁字母之前，
- * 得到的是「中文公司全在前、英文全在后」而不是交错结果。因此中文公司名在数据文件里
- * 给出拉丁转写 `sortKey`，这里只比转写；英文公司名不写 `sortKey`，直接用公司名。
- * 新增中文公司时必须补转写，否则它会按汉字码位排到英文之后。
+ * 不能直接交给 `Intl.Collator` 的 zh 拼音排序：它不会把英文公司整体排在中文公司之前。
+ * 因此中文公司名在数据文件里给出拉丁转写 `sortKey`，组内只比转写；英文公司名不写
+ * `sortKey`，直接用公司名。中文公司必须补转写，缺了只能按汉字码位排在拼音条目之后。
  */
 const companyCollator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+const latinCompanyInitial = /^[A-Za-z]/;
 
 export function sortCompaniesByLetter(
   companies: readonly ContributingCompany[]
 ): ContributingCompany[] {
-  return [...companies].sort((left, right) =>
-    companyCollator.compare(left.sortKey ?? left.company, right.sortKey ?? right.company)
-  );
+  return [...companies].sort((left, right) => {
+    const leftIsLatin = latinCompanyInitial.test(left.company);
+    const rightIsLatin = latinCompanyInitial.test(right.company);
+    if (leftIsLatin !== rightIsLatin) return leftIsLatin ? -1 : 1;
+    return companyCollator.compare(left.sortKey ?? left.company, right.sortKey ?? right.company);
+  });
 }
 
 /** 核心技术栈的分组。顺序即页面从上到下的展示顺序，标签由 `data/CreditsContent.ts` 给出。 */

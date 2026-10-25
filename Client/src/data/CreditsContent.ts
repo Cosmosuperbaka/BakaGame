@@ -7,9 +7,9 @@
  *     仅参与讨论、咨询、评审或规划的不算。
  *   - 完成改动后，在文件末尾按「公司 → 发布时间」补上自己的名字与 `releasedAt`；
  *     已有公司里新增模型直接追加，页面展示前由 `sortModelsByRelease` 统一按时间排序。
- *   - 公司展示序由 `sortCompaniesByLetter` 收口：英文名按字母、中文名按 `sortKey` 的拼音
- *     合成同一份 A-Z 序。本文件的声明顺序不作依据，新增公司直接追加到末尾即可；
- *     中文公司名必须补 `sortKey`，否则会按汉字码位排到英文之后。
+ *   - 公司展示序由 `sortCompaniesByLetter` 收口：英文公司在先并按字母，中文公司在后并按
+ *     `sortKey` 的拼音排序。本文件的声明顺序不作依据，新增公司直接追加到末尾即可；
+ *     中文公司名必须补 `sortKey`，否则只能按汉字码位排在拼音条目之后。
  *
  * `releasedAt` 只用于排序，页面上不展示；日期用 ISO `YYYY-MM-DD`。
  * 每个模型尽量带 `url` 发布页：优先厂商官方新闻/公告，其次官方文档的版本说明；确实没有公开页面时省略。
@@ -34,7 +34,7 @@ export const TECH_STACK_CATEGORIES: readonly { id: TechStackCategory; label: str
 export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
   {
     company: "深度求索",
-    sortKey: "shenduqiuisuo",
+    sortKey: "shenduqiusuo",
     logo: "deepseek",
     models: [
       // 预览版先于正式快照发布，按发布时间排在快照之前；Pro / Flash 同属 V4 预览版公告。

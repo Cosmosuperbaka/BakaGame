@@ -8,7 +8,9 @@ import {
   creditLicenseOptions,
   filterCreditDependencies,
   licenseBucket,
+  sortCompaniesByLetter,
   sortModelsByRelease,
+  type ContributingCompany,
   type ContributingModel,
   type CreditDependency,
 } from "./Credits";
@@ -115,6 +117,43 @@ describe("filterCreditDependencies", () => {
     const before = dependencies.map((item) => item.name);
     expect(filterCreditDependencies(dependencies, "不存在的包", null)).toEqual([]);
     expect(dependencies.map((item) => item.name)).toEqual(before);
+  });
+});
+
+describe("sortCompaniesByLetter", () => {
+  const company = (name: string, sortKey?: string): ContributingCompany => ({
+    company: name,
+    ...(sortKey === undefined ? {} : { sortKey }),
+    logo: "openai",
+    models: [],
+  });
+
+  const companies: ContributingCompany[] = [
+    company("智谱清言", "zhipuqingyan"),
+    company("OpenAI"),
+    company("阿里千问", "aliqianwen"),
+    company("Google DeepMind"),
+    company("深度求索", "shenduqiusuo"),
+    company("Anthropic"),
+    company("腾讯混元", "tengxunhunyuan"),
+  ];
+
+  it("英文公司在前按字母排，中文公司在后按拼音首字母排", () => {
+    expect(sortCompaniesByLetter(companies).map((item) => item.company)).toEqual([
+      "Anthropic",
+      "Google DeepMind",
+      "OpenAI",
+      "阿里千问",
+      "深度求索",
+      "腾讯混元",
+      "智谱清言",
+    ]);
+  });
+
+  it("返回新数组，不改动数据源顺序", () => {
+    const before = companies.map((item) => item.company);
+    sortCompaniesByLetter(companies);
+    expect(companies.map((item) => item.company)).toEqual(before);
   });
 });
 
