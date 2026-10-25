@@ -12,13 +12,9 @@ const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
 /**
  * 玩家级 IP 归属。
  *
- * 匿名请求没有 cookie 可以区分身份，历史上全部落在同一个 `"anonymous"` scope 上，
- * 于是所有玩家的请求共享同一个伪装 IP、也就共享同一份限流配额 —— 一个人把配额打满，
- * 全服跟着 405（生产日志里 48 分钟 2527 次搜索正是这么累积出来的）。
- *
- * 应用层在处理每条 WS 命令时把连接标识放进这个作用域，这里就能让不同玩家的匿名请求
- * 各自持有独立 IP。用 `AsyncLocalStorage` 而不是给十几个 provider 方法加参数：
- * 调用链很深（execute → search/getSong/getPlaylistSongs → call → scheduleRequest），
+ * 匿名请求没有 cookie 可区分身份，必须按玩家分桶：全部落在同一个 `"anonymous"` scope 上
+ * 就会共享伪装 IP 与限流配额，一个人打满、全服跟着 405。应用层在处理每条 WS 命令时把
+ * 连接标识放进这里。用 `AsyncLocalStorage` 而不是给每个 provider 方法加参数：调用链很深，
  * 逐个透传签名会把「玩家身份」这一件事扩散到每一层。
  */
 export const musicIpScope = new AsyncLocalStorage<string>();
@@ -76,12 +72,9 @@ interface MusicIpScopeRegistryOptions {
 export class MusicIpScopeRegistry {
   private readonly ipByScope = new Map<string, string>();
   private readonly chinaIpRanges: readonly ChinaIpRange[];
-  // 扫码登录是一次多条请求的会话：二维码创建、轮询、设备上报、状态校验必须共用同一个出口 IP。
-  // 网易云把登录凭证绑定在登录时的客户端 IP 上，会话中途换 IP 会直接导致刚拿到的 MUSIC_U 失效。
-  //
-  // 必须按「二维码 unikey」分桶，不能是单个字段：两个房间的房主在相近时间扫码时，
-  // 后发起者会覆盖前者，于是先完成的那位拿到的是别人的会话 IP（永久错绑），
-  // 后完成的那位则压根没绑上登录握手时的 IP。
+  // 扫码登录是一次多条请求的会话：创建、轮询、设备上报、状态校验必须共用同一个出口 IP，
+  // 中途换 IP 会让刚拿到的凭证失效。必须按「二维码 unikey」分桶，不能是单个字段：
+  // 两个房主在相近时间扫码时，单值会被后发起者覆盖，先完成的那位永久错绑到别人的会话 IP。
   private readonly qrLoginScopes = new Map<string, { scope: string; createdAt: number }>();
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
@@ -103,8 +96,8 @@ export class MusicIpScopeRegistry {
    *
    * 1. `loginScope` —— 扫码登录会话。整条链路（创建二维码 → 轮询 → 设备上报 → 状态校验）
    *    必须共用同一个 IP，否则登录态一建立就漂移。只有**显式属于某个扫码会话**的请求才走它：
-   *    旧实现无条件优先全局 qrLoginScope，等于任意一个用户处于扫码等待期时，全进程所有房间、
-   *    所有凭证的请求都被强行带上那个会话的 IP，凭证与出口 IP 的绑定被整体破坏。
+   *    若无条件优先，任意一人处于扫码等待期时，全进程所有房间、所有凭证的请求都会被带上
+   *    那个会话的 IP，凭证与出口 IP 的绑定被整体破坏。
    * 2. `host:<cookie 摘要>` —— 带房主凭证的请求，沿用登录时固化的那个 IP。
    * 3. `player:<连接标识>` —— 匿名请求按玩家分桶，互不占用对方的限流配额。
    * 4. `anonymous` —— 没有玩家上下文的兜底。走到这一层说明整条调用链没被 `musicIpScope.run`
@@ -124,12 +117,9 @@ export class MusicIpScopeRegistry {
   }
 
   /**
-   * 「作用域外调用」必须看得见。
-   *
-   * 它过去和后台预热共用同一条静默回落：新增一条没包作用域的调用链时，现场只看到全服 405，
-   * 看不到「所有人的匿名请求又挤回同一个出口」这层原因 —— 而注释里写着的前置条件不会报警。
-   * 口径与采集链路故障上报一致：每次降级都计数，聚合告警按固定间隔最多一条。
-   * 上下文只带接口名这类无凭据字段。
+   * 「作用域外调用」必须看得见：它和后台预热的显式共享出口不同，漏包作用域是配置错误，
+   * 现场只会看到全服 405，看不到「匿名请求又挤回同一个出口」这层原因。
+   * 每次降级都计数，聚合告警按固定间隔最多一条；上下文只带接口名这类无凭据字段。
    */
   private reportMissingIpScope(endpoints?: readonly string[]) {
     countServerMetric(IP_SCOPE_FALLBACK_METRIC, 1);

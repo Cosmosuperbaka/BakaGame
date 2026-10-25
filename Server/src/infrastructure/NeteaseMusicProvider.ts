@@ -204,10 +204,9 @@ const AUDIO_URL_CACHE_TTL_MS = 10 * 60_000;
  * 网易云「操作频繁」的响应码集合。
  *
  * - `405` 歌曲类接口的通用限流；
- * - `406` **登录链路限流**：实测 `login_qr_key` 第 20 次触发，文案与 405 完全一致
- *   （「操作频繁，请稍候再试」）。只认 405 会漏判整条扫码链路 —— 表现为房主扫码时
- *   一直撞墙、既不退避也不提示。
- * - `429` / `503` 同一语义的其它表现形式（文档记录 503 即「IP 高频错误」）。
+ * - `406` **登录链路限流**，文案与 405 完全一致，只认 405 会漏判整条扫码链路 ——
+ *   表现为房主扫码时一直撞墙、既不退避也不提示；
+ * - `429` / `503` 同一语义的其它表现形式。
  *
  * 判定必须同时覆盖 `body.code` 与 HTTP status：Enhanced API 的不同端点可能 resolve 一个
  * 带 code 的 body，也可能 reject 一个带 status 的错误。
@@ -243,7 +242,7 @@ const LOGIN_STATUS_CACHE_MAX_ENTRIES = 64;
  * 解灰音源优先级。包内 `matchID` 不传 `source` 时按 modules 目录的字母序尝试，`bugpk` 恰好排在最前，
  * 而它对没有自有音源的歌曲会返回网易云官方灰链兜底（`/song/media/outer/url`）：字符串非空所以被当成
  * 「解灰成功」，实际播放器只会拿到下载页 HTML，还会短路掉后面真正可用的音源。
- * 这里显式指定顺序：实测可用的多平台音源 `unm` 放最前，其余快速失败的放中间，慢且易伪解灰的 `bugpk` 压到最后。
+ * 这里显式指定顺序：多平台音源 `unm` 放最前，能快速失败的放中间，慢且易伪解灰的 `bugpk` 压到最后。
  */
 const UNBLOCK_SOURCE_ORDER = [
   "unm",
@@ -263,12 +262,12 @@ const DEFAULT_UNBLOCK_TOTAL_BUDGET_MS = 12_000;
 /**
  * 给上游 Promise 加一个上界。
  *
- * 解灰音源（尤其第三方聚合站）存在「请求被丢弃、返回的 Promise 永不 settle」的情况（实测约每 5~10 次一遇）。
+ * 解灰音源（尤其第三方聚合站）存在「请求被丢弃、返回的 Promise 永不 settle」的情况。
  * 一旦在 `await` 上无限等待，自动出题会永久停在 `automaticRoundLoading`：房间再也开不了下一轮，
- * 客户端因为对长任务发的是 `timeout: 0`，连超时提示都没有，只会一直显示「出题中」。
+ * 客户端因为对长任务发的是 `timeout: 0`，连超时提示都没有。
  *
  * 必须同时给原 Promise 挂上 `catch`：它在超时之后才拒绝时，若没有处理器就会变成
- * unhandledRejection —— Bun 会直接终止整个进程（实测 exit=1）。
+ * unhandledRejection —— Bun 会直接终止整个进程。
  */
 const settleWithin = async <T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -797,8 +796,7 @@ export class NeteaseMusicProvider implements MusicProvider {
           }
         }
 
-        // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
-        // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
+        // 单页装不下的歌单必须继续翻页，否则尾部曲目永远进不了题库。
         // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
         // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
         for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
@@ -955,7 +953,6 @@ export class NeteaseMusicProvider implements MusicProvider {
         const album = asRecord(body.album ?? body);
         // 曲目在**顶层** `body.songs`。`body.album.songs` 虽然存在，但在单曲 / 同名专辑上
         // 常是**空数组**——用 `??` 读它会拿到 `[]` 而不会回退到顶层，专辑路径会整条失效。
-        // 实测《風がそよぐ場所》：album.songs 长度 0、顶层 songs 长度 2。
         return asArray(body.songs ?? album.songs ?? asRecord(body.data).songs)
           .map(normalizeSong)
           .filter((song): song is SongSearchResult => Boolean(song));
@@ -1274,10 +1271,9 @@ export class NeteaseMusicProvider implements MusicProvider {
   /**
    * 预热音乐上游：在进程启动阶段就加载 API 模块并注册匿名令牌。
    *
-   * 冷进程第一次触碰音乐链路时要顺序支付「动态导入接口包（实测约 1.1 s）+ 注册匿名令牌 +
-   * 首个上游请求的 DNS/TCP 建连」，解析器冷启动时实测可达 12 s。保存了本机凭据的玩家一进房间
-   * 就会触发 `song.auth.useCookie`，等于替整个进程垫付这笔冷启动，房间徽标也就长时间停在
-   * 「本机已登录」。预热失败不阻断业务：只记告警，调用方照旧走惰性加载并重试。
+   * 冷进程第一次触碰音乐链路要顺序支付「动态导入接口包 + 注册匿名令牌 + 首个上游请求的
+   * DNS/TCP 建连」，不预热会让第一位进房玩家替整个进程垫付，房间徽标长时间停在「本机已登录」。
+   * 预热失败不阻断业务：只记告警，调用方照旧走惰性加载并重试。
    */
   async warmUp(): Promise<void> {
     try {
@@ -1372,8 +1368,7 @@ export class NeteaseMusicProvider implements MusicProvider {
         const songData = asRecord(asArray(body.data)[0]);
         // 试听片段（`freeTrialInfo`）不是可用的播放地址，整曲只能由解灰提供。
         // 不能把片段当成结果返回：它同样是 `audio/mpeg` 且能 Range 206，探测起来完全像正常音频，
-        // 实测只有约 30 秒（总字节 ÷ 时长折算等效码率仅 13~19 kbps）。一旦被出成题目，
-        // 玩家会在片段播完后对着静音猜歌，而服务端不会报任何错。
+        // 一旦被出成题目，玩家会在片段播完后对着静音猜歌，而服务端不会报任何错。
         const trialOnly = songData.freeTrialInfo != null;
         let audioUrl = trialOnly ? "" : (normalizeAudioUrl(songData.url) ?? "");
         const isRestricted = !audioUrl || trialOnly || songData.code === 404;

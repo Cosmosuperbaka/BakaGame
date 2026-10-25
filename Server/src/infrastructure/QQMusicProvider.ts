@@ -97,9 +97,9 @@ const PLAYLIST_MAX_PAGES = 50;
 /**
  * QQ 音乐上游的限流响应码集合。
  *
- * 上游没有公开的限流码表，CGI 网关（musicu.fcg）已知以 HTTP 层 429/503 表达限流；
- * 与网易云同口径同时检查响应封面的 `status` 与 `body.code`。真实的匿名限流更多表现为
- * 连续失败或空结果，由匿名熔断（streak 计数）兜底，这里只认明确形态。
+ * CGI 网关以 HTTP 层 429 / 503 表达限流；与网易云同口径同时检查响应封面的 `status`
+ * 与 `body.code`。上游没有公开的限流码表，匿名限流更多表现为连续失败或空结果，
+ * 由匿名熔断（streak 计数）兜底，这里只认明确形态。
  */
 const QQ_RATE_LIMIT_CODES: ReadonlySet<number> = new Set([429, 503]);
 const QQ_RATE_LIMIT_FALLBACK_MESSAGE = "QQ音乐请求过于频繁，请稍候再试";
@@ -165,7 +165,7 @@ const readText = (value: unknown): string => {
 /**
  * 是否必须会员账号才能在线播放。
  *
- * `pay_down` 只约束下载；把它算进播放门槛会把 `pay_play=0` 的可播曲误标成会员专享。
+ * `pay_down` 只约束下载，计入播放门槛会把 `pay_play=0` 的可播曲误标成会员专享；
  * `time_free=1` 是限时免费，此时即使 `pay_play=1` 也先放行，交给真实音频判定兜底。
  */
 const requiresVipAccount = (pay: Record<string, unknown>): boolean =>
@@ -192,8 +192,8 @@ const albumPictureUrl = (albumId: number): string | undefined =>
  * 属性值里的 `\n` 是字面量转义（XML 属性不能含真实换行），需还原成真实换行，
  * 否则所有行会被拼成一行。
  *
- * 注意用「提取属性值」而非「剔除标签」：剥离标签的正则会把开标签
- * `<Lyric_1 [0,500]…` 与结尾 `/>` 之间的整段歌词一并吃掉（实测结果为空）。
+ * 必须「提取属性值」而非「剔除标签」：剥离标签的正则会把开标签、结尾自闭合
+ * 与两者之间的整段歌词一并吃掉，结果为空。
  */
 export const extractQrcPayload = (raw: string): string => {
   const attr = /LyricContent="([\s\S]*?)"/.exec(raw);

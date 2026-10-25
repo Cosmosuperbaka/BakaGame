@@ -43,8 +43,8 @@ const isEventPacket = (value: unknown): value is EventPacket =>
   isRecord(value) && value.type === "event" && typeof value.event === "string";
 
 // 状态快照都是 JSON 纯数据（同一棵树随后就会被 JSON.stringify 发出去）。
-// structuredClone 要为 Date/Map/原型链这些用不上的能力付全套成本：实测一份 30 人房间快照
-// 105µs，这里的手写拷贝 11µs，而这一步在每个房间的每次发布上都要付一次。
+// structuredClone 要为 Date/Map/原型链这些用不上的能力付全套成本，而这一步在每个房间的
+// 每次发布上都要付一次，所以手写只覆盖 JSON 可表达形态的拷贝。
 const copyJsonValue = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     const list = new Array<unknown>(value.length);
@@ -127,10 +127,9 @@ const estimateSerializedLength = (value: unknown): number => {
  * 滑动窗口数组的补丁。
  *
  * `room.chat` 这类「装到 CHAT_LIMIT 就挤掉最旧一条」的数组，通用差分按同下标对齐：一条新消息
- * 要把窗口里每个元素的每个字段都 replace 一次。实测 20 条的聊天窗口动一条，产出 60 个操作、
- * 3.5 KB，比整份快照（1.9 KB）还大 81% —— 于是「补丁接近全量」那条规则把它退回整份重发，
- * 每房间每个成员各付一次。认出「头部挤掉若干个、尾部追加若干个」这个形状后，同样的改动只要
- * drop+append 个操作。
+ * 要把窗口里每个元素的每个字段都 replace 一次，产出的补丁比整份快照还大 —— 于是「补丁接近
+ * 全量」那条规则把它退回整份重发，每房间每个成员各付一次。认出「头部挤掉若干个、尾部追加
+ * 若干个」这个形状后，同样的改动只要 drop+append 个操作。
  */
 const WINDOW_PROBE_BUDGET = 96;
 const WINDOW_MAX_REWRITE = 8;

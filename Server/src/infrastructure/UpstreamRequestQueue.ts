@@ -4,13 +4,11 @@ import type { AppError } from "../domain/Errors";
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
 /**
- * 限流退避起点。实测网易云的限流窗口是**分钟级**（生产日志中的恢复点 179s / 231s / 237s / 1452s），
- * 而 5 秒起步会让「冷却一结束就重试」变成撞墙循环：strikes=1 之后 5.2~7.0s 就升到 2 级，
- * 20 秒内把冷却推到 60 秒 —— 本意是止损，实际把一次限流放大成近一分钟的全服不可用。
- * 起点直接对齐实测窗口下界。
+ * 限流退避起点。网易云的限流窗口是**分钟级**，秒级起步会让「冷却一结束就重试」变成撞墙循环，
+ * 把一次限流放大成近一分钟的全服不可用。起点直接对齐实测的恢复窗口下界。
  */
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
-/** 退避上限：覆盖实测最长恢复窗口的一半以上，避免长限流期间被反复唤醒、等级空转。 */
+/** 退避上限：覆盖长限流窗口，避免期间被反复唤醒、等级空转。 */
 const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 600_000;
 const DEFAULT_MAX_QUEUED_REQUESTS = 64;
 const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
@@ -196,8 +194,8 @@ export class UpstreamRequestQueue {
   /**
    * 进入限流退避。
    *
-   * `ipScope` 是触发本次限流的请求所属的 IP 归属。网易云按请求方声称的 IP 计算配额
-   * （实测：同参数继续打仍全 406，仅更换伪装 IP 即立刻恢复），因此这里顺手刷新该 scope 的 IP，
+   * `ipScope` 是触发本次限流的请求所属的 IP 归属。网易云按请求方声称的 IP 计算配额，
+   * 同一 IP 继续重试只会继续被拒，换一个伪装 IP 才能立刻恢复，因此这里顺手刷新该 scope，
    * 让退避结束后的下一次请求从新出口发出，而不是继续撞在同一个已经计满的 IP 上。
    */
   private enterRateLimitCooldown(error: unknown, ipScope?: string) {
@@ -242,8 +240,8 @@ export class UpstreamRequestQueue {
    * 本地队列拥塞（排队过多 / 等待超时）。
    *
    * 与上游限流是两回事：成因是本进程的并发与队列参数，排查方向也完全不同。
-   * 历史上两者复用 `MUSIC_API_RATE_LIMITED`，线上看到「限流」时无法区分
-   * 是网易云真的拒绝了，还是本地把自己堵死了 —— 必须分开编码。
+   * 两者必须用不同错误码，否则线上看到「限流」时无法区分是网易云真的拒绝了，
+   * 还是本地把自己堵死了。
    */
   private busyError(message: string) {
     return this.createBusyError(message, Math.max(0, this.queueTimeoutMs));
