@@ -42,6 +42,13 @@ type ListState =
   | { status: "ready"; items: FeedbackSummary[] }
   | { status: "error"; message: string };
 
+/** 游客填好的反馈内容：跨登录弹窗保留，登录成功后自动提交。 */
+export interface FeedbackDraft {
+  kind: FeedbackKind;
+  title: string;
+  content: string;
+}
+
 function Time({ value }: { value: string }) {
   return (
     <Hint label={formatAbsoluteTime(value)}>
@@ -50,18 +57,34 @@ function Time({ value }: { value: string }) {
   );
 }
 
-function FeedbackForm({ onCreated }: { onCreated: () => void }) {
-  const [kind, setKind] = useState<FeedbackKind>("suggestion");
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+function FeedbackForm({
+  onCreated,
+  guest = false,
+  draft = null,
+  autoSubmit = false,
+  onAutoSubmitted,
+  onRequestLogin,
+}: {
+  onCreated: () => void;
+  guest?: boolean;
+  draft?: FeedbackDraft | null;
+  autoSubmit?: boolean;
+  onAutoSubmitted?: () => void;
+  onRequestLogin?: (draft: FeedbackDraft) => void;
+}) {
+  const [kind, setKind] = useState<FeedbackKind>(draft?.kind ?? "suggestion");
+  const [title, setTitle] = useState(draft?.title ?? "");
+  const [content, setContent] = useState(draft?.content ?? "");
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const contentId = useId();
   const kindLabelId = useId();
+  const confirmId = useId();
+  const autoStarted = useRef(false);
   const ready = title.trim().length > 0 && content.trim().length > 0;
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const submit = useCallback(async () => {
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
@@ -74,16 +97,35 @@ function FeedbackForm({ onCreated }: { onCreated: () => void }) {
       });
       setTitle("");
       setContent("");
+      setConfirming(false);
       onCreated();
     } catch (cause) {
       setError(apiErrorMessage(cause, "提交失败，请稍后重试"));
     } finally {
       setBusy(false);
     }
+  }, [busy, content, kind, onCreated, ready, title]);
+
+  // 登录成功后自动提交登录前填好的草稿；失败时保留内容供手动重试。
+  useEffect(() => {
+    if (!autoSubmit || autoStarted.current || !ready) return;
+    autoStarted.current = true;
+    onAutoSubmitted?.();
+    void submit();
+  }, [autoSubmit, onAutoSubmitted, ready, submit]);
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (guest && !confirming) {
+      if (!ready || busy) return;
+      setConfirming(true);
+      return;
+    }
+    void submit();
   };
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="grid gap-4">
+    <form onSubmit={handleSubmit} className="grid gap-4">
       <SettingsFields>
         <div className="flex items-center justify-between gap-3">
           <span id={kindLabelId} className="text-sm font-medium">
@@ -127,11 +169,54 @@ function FeedbackForm({ onCreated }: { onCreated: () => void }) {
           {error}
         </p>
       ) : null}
-      <DialogFooter>
-        <Button type="submit" disabled={!ready} loading={busy}>
-          提交反馈
-        </Button>
-      </DialogFooter>
+      {guest && confirming ? (
+        <div
+          role="alertdialog"
+          aria-labelledby={confirmId}
+          className="grid gap-2 rounded-md border border-border bg-muted/40 p-3"
+        >
+          <p id={confirmId} className="text-sm font-medium">
+            是否确定提交匿名反馈？
+          </p>
+          <p className="text-xs text-muted-foreground">
+            反馈的优先级可能较低，您也无法看到反馈的结果。
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setConfirming(false);
+                setError(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button type="submit" loading={busy}>
+              确定提交
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <DialogFooter>
+          {guest ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!ready || busy || !onRequestLogin}
+              onClick={() =>
+                onRequestLogin?.({ kind, title: title.trim(), content: content.trim() })
+              }
+            >
+              登录并提交
+            </Button>
+          ) : null}
+          <Button type="submit" disabled={!ready} loading={busy}>
+            {guest ? "匿名提交" : "提交反馈"}
+          </Button>
+        </DialogFooter>
+      )}
     </form>
   );
 }
@@ -231,28 +316,49 @@ function FeedbackThread({
 }
 
 /**
- * 反馈弹窗：登录用户可提交并查看自己的反馈与管理员回复；游客提交匿名反馈，
- * 不显示列表，也无法查看结果（见 Server/docs/Account.md §7）。
- * 登录用户打开详情即标记已读；有未读回复时默认落在「我的反馈」。
+ * 反馈弹窗：登录用户可提交并查看自己的反馈与管理员回复；游客可选匿名提交
+ * （二次确认，不显示列表与结果）或登录后提交登录前填好的草稿
+ * （见 Server/docs/Account.md §7）。登录用户打开详情即标记已读；
+ * 有未读回复时默认落在「我的反馈」。
  */
 export function FeedbackDialog({
   open,
   onOpenChange,
   origin,
+  draft = null,
+  autoSubmit = false,
+  onAutoSubmitted,
+  onRequestLogin,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   origin?: OriginPoint | null;
+  /** 游客点「登录并提交」暂存的内容；登录成功后自动提交。 */
+  draft?: FeedbackDraft | null;
+  autoSubmit?: boolean;
+  onAutoSubmitted?: () => void;
+  onRequestLogin?: (draft: FeedbackDraft) => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} origin={origin}>
-      <FeedbackDialogBody />
+      <FeedbackDialogBody
+        draft={draft}
+        autoSubmit={autoSubmit}
+        onAutoSubmitted={onAutoSubmitted}
+        onRequestLogin={onRequestLogin}
+      />
     </Dialog>
   );
 }
 
 /** 未登录时的反馈面板：只提交，不显示列表与详情。 */
-function AnonymousFeedbackPanel() {
+function AnonymousFeedbackPanel({
+  draft,
+  onRequestLogin,
+}: {
+  draft: FeedbackDraft | null;
+  onRequestLogin?: (draft: FeedbackDraft) => void;
+}) {
   const [notice, setNotice] = useState<string | null>(null);
   return (
     <div className={cn(PANEL, "grid gap-3")}>
@@ -264,18 +370,117 @@ function AnonymousFeedbackPanel() {
           {notice}
         </p>
       ) : null}
-      <FeedbackForm onCreated={() => setNotice("已收到你的匿名反馈，感谢！")} />
+      <FeedbackForm
+        guest
+        draft={draft}
+        onRequestLogin={onRequestLogin}
+        onCreated={() => setNotice("已收到你的匿名反馈，感谢！")}
+      />
     </div>
   );
 }
 
-function FeedbackDialogBody() {
+/** 「我的反馈」：列表、详情与刚提交成功的提示。 */
+function MyFeedbackPanel({
+  list,
+  selected,
+  notice,
+  onSelect,
+  onBack,
+  onRead,
+}: {
+  list: ListState;
+  selected: string | null;
+  notice: string | null;
+  onSelect: (id: string) => void;
+  onBack: () => void;
+  onRead: () => void;
+}) {
+  return (
+    <>
+      {notice ? (
+        <p
+          role="status"
+          className="mb-3 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
+        >
+          {notice}
+        </p>
+      ) : null}
+      {selected ? (
+        <FeedbackThread id={selected} onBack={onBack} onRead={onRead} />
+      ) : list.status === "loading" ? (
+        <div role="status" className="flex justify-center py-8">
+          <Spinner className="size-5 text-muted-foreground" />
+          <span className="sr-only">加载中</span>
+        </div>
+      ) : list.status === "error" ? (
+        <p role="alert" className="text-sm text-destructive">
+          {list.message}
+        </p>
+      ) : list.items.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
+      ) : (
+        <ul className="grid gap-2">
+          {list.items.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(item.id)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40",
+                  item.unread && "border-primary/40"
+                )}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    {item.unread ? (
+                      <span
+                        aria-label="有新回复"
+                        className="h-2 w-2 shrink-0 rounded-full bg-destructive"
+                      />
+                    ) : null}
+                    <span className="truncate text-sm font-medium">{item.title}</span>
+                  </span>
+                  <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    {FEEDBACK_KIND_LABELS[item.kind]}
+                    <span aria-hidden="true">·</span>
+                    <Time value={item.lastReplyAt ?? item.createdAt} />
+                  </span>
+                </span>
+                <Badge
+                  variant={FEEDBACK_STATUS_BADGE[item.status]}
+                  size="xs"
+                  className="shrink-0"
+                >
+                  {FEEDBACK_STATUS_LABELS[item.status]}
+                </Badge>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function FeedbackDialogBody({
+  draft,
+  autoSubmit,
+  onAutoSubmitted,
+  onRequestLogin,
+}: {
+  draft: FeedbackDraft | null;
+  autoSubmit: boolean;
+  onAutoSubmitted?: () => void;
+  onRequestLogin?: (draft: FeedbackDraft) => void;
+}) {
   const status = useAccountStore((state) => state.status);
   const signedIn = status === "signedIn";
   const unread = useAccountStore((state) => state.unreadFeedback);
   const setUnread = useAccountStore((state) => state.setUnreadFeedback);
-  // 每次打开重新挂载：登录且有未读回复时直接落在「我的反馈」。
+  // 每次打开重新挂载：登录后待自动提交时落在提交页；否则有未读回复时落在「我的反馈」。
   const [tab, setTab] = useState<"create" | "mine">(() => {
+    if (autoSubmit) return "create";
     const state = useAccountStore.getState();
     return state.status === "signedIn" && state.unreadFeedback > 0 ? "mine" : "create";
   });
@@ -316,11 +521,11 @@ function FeedbackDialogBody() {
         <DialogDescription>
           {signedIn
             ? "建议与问题都会被认真看到，回复会出现在「我的反馈」里。"
-            : "无需登录即可匿名提交；匿名反馈不会展示结果，也无法查看回复。"}
+            : "建议与问题都会被认真看到。"}
         </DialogDescription>
       </DialogHeader>
       {!signedIn ? (
-        <AnonymousFeedbackPanel />
+        <AnonymousFeedbackPanel draft={draft} onRequestLogin={onRequestLogin} />
       ) : (
         <Tabs
           value={tab}
@@ -348,6 +553,9 @@ function FeedbackDialogBody() {
           </TabsList>
           <TabsContent value="create" className={PANEL}>
             <FeedbackForm
+              draft={autoSubmit ? draft : null}
+              autoSubmit={autoSubmit}
+              onAutoSubmitted={onAutoSubmitted}
               onCreated={() => {
                 setNotice("已收到你的反馈，感谢！");
                 setTab("mine");
@@ -356,67 +564,14 @@ function FeedbackDialogBody() {
             />
           </TabsContent>
           <TabsContent value="mine" className={PANEL}>
-            {notice ? (
-              <p
-                role="status"
-                className="mb-3 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm text-success"
-              >
-                {notice}
-              </p>
-            ) : null}
-            {selected ? (
-              <FeedbackThread id={selected} onBack={() => setSelected(null)} onRead={markRead} />
-            ) : list.status === "loading" ? (
-              <div role="status" className="flex justify-center py-8">
-                <Spinner className="size-5 text-muted-foreground" />
-                <span className="sr-only">加载中</span>
-              </div>
-            ) : list.status === "error" ? (
-              <p role="alert" className="text-sm text-destructive">
-                {list.message}
-              </p>
-            ) : list.items.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
-            ) : (
-              <ul className="grid gap-2">
-                {list.items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(item.id)}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-md border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/40",
-                        item.unread && "border-primary/40"
-                      )}
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          {item.unread ? (
-                            <span
-                              aria-label="有新回复"
-                              className="h-2 w-2 shrink-0 rounded-full bg-destructive"
-                            />
-                          ) : null}
-                          <span className="truncate text-sm font-medium">{item.title}</span>
-                        </span>
-                        <span className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          {FEEDBACK_KIND_LABELS[item.kind]}
-                          <span aria-hidden="true">·</span>
-                          <Time value={item.lastReplyAt ?? item.createdAt} />
-                        </span>
-                      </span>
-                      <Badge
-                        variant={FEEDBACK_STATUS_BADGE[item.status]}
-                        size="xs"
-                        className="shrink-0"
-                      >
-                        {FEEDBACK_STATUS_LABELS[item.status]}
-                      </Badge>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <MyFeedbackPanel
+              list={list}
+              selected={selected}
+              notice={notice}
+              onSelect={setSelected}
+              onBack={() => setSelected(null)}
+              onRead={markRead}
+            />
           </TabsContent>
         </Tabs>
       )}

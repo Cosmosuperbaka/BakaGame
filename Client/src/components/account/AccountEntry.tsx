@@ -10,7 +10,7 @@ import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { PlayerActionButton } from "@/components/common/PlayerRow";
 import { SoundToggle } from "@/components/common/SoundToggle";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
-import { FeedbackDialog } from "@/components/account/FeedbackDialog";
+import { FeedbackDialog, type FeedbackDraft } from "@/components/account/FeedbackDialog";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
@@ -20,13 +20,21 @@ import { useAccountStore } from "@/stores/UseAccountStore";
 
 type DialogKind = "login" | "profile" | "feedback" | null;
 
-/** 三个入口共用的弹窗状态：哪一个打开、从哪里展开。 */
+/** 三个入口共用的弹窗状态，以及游客「登录并提交」时跨弹窗保留的反馈草稿。 */
 const useEntryStore = create<{
   dialog: DialogKind;
   origin: OriginPoint | null;
+  /** 登录成功后接着打开的弹窗。 */
+  afterLogin: DialogKind;
+  feedbackDraft: FeedbackDraft | null;
+  /** 登录成功后自动提交草稿；取消登录时为 false，草稿回填到匿名表单。 */
+  submitAfterLogin: boolean;
 }>(() => ({
   dialog: null,
   origin: null,
+  afterLogin: null,
+  feedbackDraft: null,
+  submitAfterLogin: false,
 }));
 
 const originOf = (event: MouseEvent<HTMLElement>): OriginPoint => {
@@ -35,7 +43,24 @@ const originOf = (event: MouseEvent<HTMLElement>): OriginPoint => {
 };
 
 const openDialog = (dialog: DialogKind, origin: OriginPoint | null) =>
-  useEntryStore.setState({ dialog, origin });
+  useEntryStore.setState({
+    dialog,
+    origin,
+    afterLogin: null,
+    feedbackDraft: null,
+    submitAfterLogin: false,
+  });
+
+const loginForFeedback = (draft: FeedbackDraft) =>
+  useEntryStore.setState({
+    dialog: "login",
+    afterLogin: "feedback",
+    feedbackDraft: draft,
+    submitAfterLogin: false,
+  });
+
+const clearFeedbackDraft = () =>
+  useEntryStore.setState({ feedbackDraft: null, submitAfterLogin: false });
 
 /**
  * 从非账号入口（如反作弊房被服务端要求登录）请求打开登录弹窗。
@@ -190,17 +215,57 @@ export function FeedbackButton() {
 export function AccountDialogs() {
   const dialog = useEntryStore((state) => state.dialog);
   const origin = useEntryStore((state) => state.origin);
+  const feedbackDraft = useEntryStore((state) => state.feedbackDraft);
+  const submitAfterLogin = useEntryStore((state) => state.submitAfterLogin);
   // 切到没有这一层的页面时一并关掉，避免回到首页又弹出上一次的弹窗。
-  useEffect(() => () => useEntryStore.setState({ dialog: null }), []);
+  useEffect(
+    () => () =>
+      useEntryStore.setState({
+        dialog: null,
+        afterLogin: null,
+        feedbackDraft: null,
+        submitAfterLogin: false,
+      }),
+    []
+  );
   const close = (open: boolean) => {
-    if (!open) useEntryStore.setState({ dialog: null });
+    if (!open)
+      useEntryStore.setState({
+        dialog: null,
+        afterLogin: null,
+        feedbackDraft: null,
+        submitAfterLogin: false,
+      });
+  };
+  const closeLogin = (open: boolean) => {
+    if (open) return;
+    const { afterLogin } = useEntryStore.getState();
+    if (!afterLogin) {
+      close(false);
+      return;
+    }
+    // 登录成功才自动提交；取消则回到反馈表单，保留草稿。
+    const signedIn = useAccountStore.getState().status === "signedIn";
+    useEntryStore.setState({
+      dialog: afterLogin,
+      afterLogin: null,
+      submitAfterLogin: signedIn,
+    });
   };
 
   return (
     <>
-      <LoginDialog open={dialog === "login"} onOpenChange={close} origin={origin} />
+      <LoginDialog open={dialog === "login"} onOpenChange={closeLogin} origin={origin} />
       <ProfileDialog open={dialog === "profile"} onOpenChange={close} origin={origin} />
-      <FeedbackDialog open={dialog === "feedback"} onOpenChange={close} origin={origin} />
+      <FeedbackDialog
+        open={dialog === "feedback"}
+        onOpenChange={close}
+        origin={origin}
+        draft={feedbackDraft}
+        autoSubmit={submitAfterLogin && feedbackDraft !== null}
+        onAutoSubmitted={clearFeedbackDraft}
+        onRequestLogin={loginForFeedback}
+      />
     </>
   );
 }

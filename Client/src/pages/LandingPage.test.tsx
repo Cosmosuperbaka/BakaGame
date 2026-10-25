@@ -102,10 +102,28 @@ describe("LandingPage", () => {
 
     await user.click(screen.getByRole("button", { name: /反馈/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("匿名");
+    expect(dialog).toHaveTextContent("建议与问题都会被认真看到");
     expect(within(dialog).queryByRole("tab", { name: /我的反馈/ })).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("标题")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "提交反馈" })).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("标题"), "游客反馈");
+    await user.type(within(dialog).getByLabelText("详细说明"), "无需登录");
+    expect(within(dialog).getByRole("button", { name: "匿名提交" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "登录并提交" })).toBeEnabled();
+  });
+
+  it("游客点登录并提交会转到登录弹窗", async () => {
+    useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
+    const user = userEvent.setup();
+    renderLandingPage();
+
+    await user.click(screen.getByRole("button", { name: /反馈/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("标题"), "需要回复");
+    await user.type(within(dialog).getByLabelText("详细说明"), "登录后提交");
+    await user.click(within(dialog).getByRole("button", { name: "登录并提交" }));
+
+    expect(await screen.findByRole("heading", { name: "登录" })).toBeInTheDocument();
   });
 
   it("下载客户端入口浮在右上角、排在账号左边，点了只谈系统与安装包", async () => {
