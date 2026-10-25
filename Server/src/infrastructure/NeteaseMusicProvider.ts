@@ -1,15 +1,22 @@
 import { AppError } from "../domain/Errors";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
-import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
 import { describeError, type EventLogger } from "./EventLogger";
 import { isCreditLyricLine, parseTTML, sanitizeLyrics } from "./LyricLines";
-import { countServerMetric } from "./Sentry";
+import { readChinaIpRanges } from "./ChinaIpRanges";
+import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "./MusicIpScope";
+import {
+  adoptVerbatimLyrics,
+  mergeTranslations,
+  parseLrc,
+  parseYrc,
+  readLyricSources,
+  type LyricChainInput,
+} from "./NeteaseLyricParse";
+import { MusicCache } from "./MusicCache";
+import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
+import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
 import type {
   SongDetails,
   SongAlbumSearchResult,
@@ -23,6 +30,11 @@ import type {
   SongChorus,
 } from "../shared/Index";
 
+// 保持既有 API 边界：下列符号历史上从本文件导出，拆分到独立模块后仍从这里可导入。
+export { parseChinaIpRanges, randomChineseIp, readChinaIpRanges } from "./ChinaIpRanges";
+export { musicIpScope, runWithAnonymousMusicIpScope } from "./MusicIpScope";
+export { parseLrc, parseYrc, mergeTranslations } from "./NeteaseLyricParse";
+
 type ApiResponse = { body?: unknown } | unknown;
 type ApiFunction = (params: Record<string, unknown>) => Promise<ApiResponse>;
 type ApiModule = Record<string, unknown>;
@@ -32,10 +44,6 @@ type ApiModule = Record<string, unknown>;
  * 两端同时在房时是 `{ netease, qq }` 组合包，由聚合 provider 拆给各自上游。
  */
 export type MusicCookieInput = string | Partial<Record<"netease" | "qq", string>>;
-
-/** 把凭据窄化成组合包形态；裸字符串与非对象凭据都走 `false` 分支。 */
-const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
-  typeof cookie === "object" && cookie !== null;
 
 /**
  * 音乐上游适配层契约。实现有网易云、QQ 音乐与把两者合起来的聚合 provider。
@@ -176,113 +184,6 @@ export interface MusicQrLoginCheck {
   session?: MusicLoginSession;
 }
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-
-const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-
-// 对象键序无关的稳定序列化：用于把 cookie 对象映射成稳定的 IP scope，
-// 避免 JSON.stringify 受插入顺序影响导致同一登录态算出不同 IP。
-const stableStringify = (value: unknown): string => {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  const entries = Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
-  return `{${entries.join(",")}}`;
-};
-
-const readString = (value: unknown): string | undefined => {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return undefined;
-};
-
-const readNumber = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-type ChinaIpRange = { start: number; end: number; count: number };
-
-// 中国 IP 段真相源复用 Enhanced API 包内 `data/china_ip_ranges.txt`（4147 条 CIDR）。
-// 早前自写的 `116.25-94.x.x` 随机拼接并不保证落在真实 CN 网段，网易云按出口 IP
-// 绑定登录态时会因此判定为异地登录，是「设备还在但凭证失效」的根因之一。
-// 这里刻意绕开包内 `util/index.js`，因为它会在模块加载时连带引入其 `logger`，
-// 每次生成都会向 stdout 打印带 ANSI 色的 [INFO] 行，污染本项目的结构化日志。
-const CHINA_IP_CIDR_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
-
-// CN IP 段数据来自依赖包。**不能写死 `../../node_modules/...`**：本仓库是 pnpm
-// workspace，依赖会提升到仓库根（`<root>/node_modules`），Server 下并不存在
-// `Server/node_modules`，写死路径会让 parseChinaIpRanges 静默拿到空串，
-// 随机出口 IP 退化成兜底单段。这里走 Node 的模块解析，两种安装布局都能命中
-// （独立安装时命中 Server/node_modules，workspace 提升时命中根 node_modules）。
-const requireFromHere = createRequire(import.meta.url);
-const chinaIpRangeFile = (): string => {
-  const packageFile = requireFromHere.resolve("@neteasecloudmusicapienhanced/api/package.json");
-  return resolve(dirname(packageFile), "data/china_ip_ranges.txt");
-};
-
-export const parseChinaIpRanges = (content: string): ChinaIpRange[] => {
-  const ranges: ChinaIpRange[] = [];
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const matched = CHINA_IP_CIDR_PATTERN.exec(line);
-    if (!matched) continue;
-    const octets = matched.slice(1, 5).map(Number);
-    if (octets.some((octet) => octet > 255)) continue;
-    const prefix = Number(matched[5]);
-    if (prefix > 32) continue;
-    const base = octets.reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
-    const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
-    const start = (base & mask) >>> 0;
-    const end = (start | (~mask >>> 0)) >>> 0;
-    ranges.push({ start, end, count: end - start + 1 });
-  }
-  return ranges;
-};
-
-const intToIp = (value: number): string =>
-  [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff].join(".");
-
-export const readChinaIpRanges = (): ChinaIpRange[] => {
-  try {
-    const path = chinaIpRangeFile();
-    return existsSync(path) ? parseChinaIpRanges(readFileSync(path, "utf8")) : [];
-  } catch {
-    return [];
-  }
-};
-
-// 兜底：仅在 CN IP 段数据缺失/损坏时生效，保证不至于完全无法出网。
-const FALLBACK_CHINA_IP_RANGES: ChinaIpRange[] = [
-  { start: 0x74000000, end: 0x74ffffff, count: 0x1000000 }, // 116.0.0.0/8
-];
-
-// 生成落在真实 CN 网段内的随机 IP；random 可注入以便确定性测试。
-export const randomChineseIp = (
-  ranges: readonly ChinaIpRange[],
-  random?: { nextFloat?: () => number }
-): string => {
-  const rand = random?.nextFloat ?? Math.random;
-  const usable = ranges.length > 0 ? ranges : FALLBACK_CHINA_IP_RANGES;
-  const total = usable.reduce((sum, range) => sum + range.count, 0);
-  let offset = Math.floor(rand() * total);
-  let chosen = usable[usable.length - 1];
-  for (const range of usable) {
-    if (offset < range.count) {
-      chosen = range;
-      break;
-    }
-    offset -= range.count;
-  }
-  return intToIp((chosen.start + Math.floor(rand() * chosen.count)) >>> 0);
-};
-
-/** 二维码会话的有效期：开完不扫的会话超过这个时长就丢弃，避免分桶无限堆积。 */
-const QR_LOGIN_SCOPE_TTL_MS = 10 * 60_000;
 const SEARCH_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_METADATA_CACHE_TTL_MS = 24 * 60 * 60_000;
 const SONG_LYRICS_CACHE_TTL_MS = 24 * 60 * 60_000;
@@ -299,21 +200,6 @@ const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60_000;
 const POPULARITY_CACHE_TTL_MS = 6 * 60 * 60_000;
 const SONG_CHORUS_CACHE_TTL_MS = 3 * 24 * 60 * 60_000;
 const AUDIO_URL_CACHE_TTL_MS = 10 * 60_000;
-const DEFAULT_CACHE_MAX_ENTRIES = 512;
-const DEFAULT_CACHE_MAX_BYTES = 32 * 1024 * 1024;
-const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
-const DEFAULT_MIN_REQUEST_INTERVAL_MS = 100;
-/**
- * 限流退避起点。实测网易云的限流窗口是**分钟级**（生产日志中的恢复点 179s / 231s / 237s / 1452s），
- * 而 5 秒起步会让「冷却一结束就重试」变成撞墙循环：strikes=1 之后 5.2~7.0s 就升到 2 级，
- * 20 秒内把冷却推到 60 秒 —— 本意是止损，实际把一次限流放大成近一分钟的全服不可用。
- * 起点直接对齐实测窗口下界。
- */
-const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60_000;
-/** 退避上限：覆盖实测最长恢复窗口的一半以上，避免长限流期间被反复唤醒、等级空转。 */
-const DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS = 600_000;
-const DEFAULT_MAX_QUEUED_REQUESTS = 64;
-const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
 /**
  * 网易云「操作频繁」的响应码集合。
  *
@@ -342,49 +228,6 @@ const NON_RETRYABLE_API_ERROR_CODES: ReadonlySet<string> = new Set([
   "MUSIC_API_BUSY",
 ]);
 
-/**
- * 玩家级 IP 归属。
- *
- * 匿名请求没有 cookie 可以区分身份，历史上全部落在同一个 `"anonymous"` scope 上，
- * 于是所有玩家的请求共享同一个伪装 IP、也就共享同一份限流配额 —— 一个人把配额打满，
- * 全服跟着 405（生产日志里 48 分钟 2527 次搜索正是这么累积出来的）。
- *
- * 应用层在处理每条 WS 命令时把连接标识放进这个作用域，这里就能让不同玩家的匿名请求
- * 各自持有独立 IP。用 `AsyncLocalStorage` 而不是给十几个 provider 方法加参数：
- * 调用链很深（execute → search/getSong/getPlaylistSongs → call → scheduleRequest），
- * 逐个透传签名会把「玩家身份」这一件事扩散到每一层。
- */
-export const musicIpScope = new AsyncLocalStorage<string>();
-
-/** 匿名（无 cookie、且不在玩家作用域内）请求的 IP 归属，主要覆盖预热与后台任务。 */
-const IP_SCOPE_ANONYMOUS = "anonymous";
-
-/**
- * 显式声明「本次调用属于后台任务，按共享匿名出口工作」。
- *
- * 与「忘记包作用域」区分开是有意为之：后者是一条新调用链的配置错误，要靠告警暴露；
- * 前者是设计如此（预热、缓存维护没有玩家上下文），不该占用同一条告警的额度。
- */
-export const runWithAnonymousMusicIpScope = <T>(task: () => Promise<T>): Promise<T> =>
-  musicIpScope.run(IP_SCOPE_ANONYMOUS, task);
-
-/**
- * 伪装出口 IP 的缓存上限。
- *
- * 每个玩家一个 scope，房间多、进出频繁时条目会持续增长；超限按插入顺序淘汰最老的。
- * 256 足以覆盖同时在线规模，被淘汰的玩家下次请求重新分配一个 IP 即可（无正确性影响）。
- */
-const IP_SCOPE_MAX_ENTRIES = 256;
-
-/**
- * 「缺少玩家作用域」这条降级的告警最小间隔。
- *
- * 满载时每条匿名请求都会命中它，逐条 warn 会把日志刷成噪声、反而盖掉真正的故障；
- * 口径与服务端采集链路的故障上报一致：每一次都计数，聚合告警按间隔限频。
- */
-const IP_SCOPE_FALLBACK_WARN_INTERVAL_MS = 60_000;
-/** 无域调用次数指标：告警限频之后仍然能看出「这条链路一直在降级」。 */
-const IP_SCOPE_FALLBACK_METRIC = "bakagame.music.ip_scope_fallback";
 /**
  * 登录态校验结果的复用窗口。
  *
@@ -440,18 +283,6 @@ const settleWithin = async <T>(promise: Promise<T>, timeoutMs: number, fallback:
     if (timer !== undefined) clearTimeout(timer);
   }
 };
-
-type CacheEntry = {
-  value: unknown;
-  softExpireAt: number;
-  hardExpireAt: number;
-  lastAccessAt: number;
-  hits: number;
-  priority: number;
-  size: number;
-};
-
-const cloneCacheValue = <T>(value: T): T => (value === undefined ? value : structuredClone(value));
 
 const normalizeHttpsUrl = (value: unknown): string | undefined => {
   const raw = readString(value);
@@ -625,129 +456,6 @@ const normalizeSong = (value: unknown): SongSearchResult | undefined => {
   };
 };
 
-export const parseLrc = (raw: string): SongLyricLine[] => {
-  const lines: Array<Omit<SongLyricLine, "endTime">> = [];
-  const timePattern = /\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-
-  for (const sourceLine of raw.split(/\r?\n/)) {
-    const timestamps = [...sourceLine.matchAll(timePattern)];
-    const text = sourceLine.replace(timePattern, "").trim();
-    if (!text || timestamps.length === 0) continue;
-
-    for (const timestamp of timestamps) {
-      const minutes = Number(timestamp[1]);
-      const seconds = Number(timestamp[2]);
-      const milliseconds = Number((timestamp[3] ?? "0").padEnd(3, "0"));
-      lines.push({
-        time: minutes * 60_000 + seconds * 1_000 + milliseconds,
-        text,
-      });
-    }
-  }
-
-  lines.sort((left, right) => left.time - right.time);
-  return lines.map((line, index) => ({
-    ...line,
-    endTime: lines[index + 1]?.time ?? line.time + 5_000,
-  }));
-};
-
-export const parseYrc = (raw: string): SongLyricLine[] => {
-  const amllLines = amllParseYrc(raw);
-  return amllLines
-    .map((line) => {
-      const text =
-        line.words && line.words.length > 0
-          ? line.words
-              .map((w) => w.word)
-              .join("")
-              .trim()
-          : "";
-      const hasTranslation = Boolean(line.translatedLyric);
-      return {
-        time: line.startTime,
-        endTime: line.endTime,
-        text,
-        words:
-          line.words && line.words.length > 0
-            ? line.words.map((w) => ({
-                startTime: w.startTime,
-                endTime: w.endTime,
-                word: w.word,
-                romanWord: hasTranslation ? undefined : w.romanWord || undefined,
-              }))
-            : undefined,
-        translatedLyric: line.translatedLyric || undefined,
-        romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
-        isBG: line.isBG || undefined,
-        isDuet: line.isDuet || undefined,
-      };
-    })
-    .filter((line) => line.text.length > 0);
-};
-
-const pickNearestLyric = (candidates: SongLyricLine[], time: number): string | undefined => {
-  let best: SongLyricLine | undefined;
-  let minDiff = 1500;
-  for (const candidate of candidates) {
-    const diff = Math.abs(candidate.time - time);
-    if (diff >= minDiff) continue;
-    minDiff = diff;
-    best = candidate;
-  }
-  return best?.text.trim() || undefined;
-};
-
-/**
- * 将外文歌曲的翻译与音译歌词合并到主歌词行中。
- * 支持依据时间戳误差 <= 1500ms 智能就近匹配。
- * 规范铁律：当歌词具备翻译时，彻底清空注音（romanLyric 与 words.romanWord），仅呈现翻译。
- */
-export const mergeTranslations = (
-  lines: SongLyricLine[],
-  translationRaw?: string,
-  romanRaw?: string
-): SongLyricLine[] => {
-  if (!translationRaw && !romanRaw) return lines;
-
-  const transLines = translationRaw
-    ? parseLrc(translationRaw).filter((l) => !isCreditLyricLine(l.text))
-    : [];
-  const romanLines = romanRaw ? parseLrc(romanRaw).filter((l) => !isCreditLyricLine(l.text)) : [];
-
-  if (transLines.length === 0 && romanLines.length === 0) return lines;
-
-  return lines.map((line) => {
-    let translatedLyric = line.translatedLyric;
-    let romanLyric = line.romanLyric;
-
-    if (!translatedLyric && transLines.length > 0) {
-      translatedLyric = pickNearestLyric(transLines, line.time);
-    }
-
-    if (!romanLyric && romanLines.length > 0) {
-      romanLyric = pickNearestLyric(romanLines, line.time);
-    }
-
-    // 核心规范：当行存在翻译时，屏蔽注音（仅显示翻译）
-    if (translatedLyric) {
-      romanLyric = undefined;
-    }
-
-    const words = line.words?.map((w) => ({
-      ...w,
-      romanWord: translatedLyric ? undefined : w.romanWord,
-    }));
-
-    return {
-      ...line,
-      words: words || line.words,
-      translatedLyric: translatedLyric || undefined,
-      romanLyric: romanLyric || undefined,
-    };
-  });
-};
-
 const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
   const tags = new Set<string>();
   const aliases = new Set<string>();
@@ -812,91 +520,15 @@ const readWiki = (raw: unknown): SongEncyclopedia & { language?: string } => {
   };
 };
 
-/** 四级歌词优先链共享的输入：本曲元数据、各级原文与其译文、音译。 */
-type LyricChainInput = {
-  id: string;
-  song: SongSearchResult;
-  yrc?: string;
-  lrc?: string;
-  yrcTrans?: string;
-  yrcRoma?: string;
-  lrcTrans?: string;
-  lrcRoma?: string;
-};
-
-/**
- * 读出歌词响应里的原文字段。
- *
- * 译文与音译各有两个来源（ytlrc 与 tlyric、yromalrc 与 romalrc）：逐字歌词优先 y 开头的
- * 那份，行级歌词优先普通那份，两边互为备选。
- */
-const readLyricSources = (
-  id: string,
-  song: SongSearchResult,
-  lyricBody: Record<string, unknown>
-): LyricChainInput => {
-  const ytlrcRaw = readString(asRecord(lyricBody.ytlrc).lyric);
-  const tlyricRaw = readString(asRecord(lyricBody.tlyric).lyric);
-  const yromalrcRaw = readString(asRecord(lyricBody.yromalrc).lyric);
-  const romalrcRaw = readString(asRecord(lyricBody.romalrc).lyric);
-
-  return {
-    id,
-    song,
-    yrc: readString(asRecord(lyricBody.yrc).lyric),
-    lrc: readString(asRecord(lyricBody.lrc).lyric),
-    yrcTrans: ytlrcRaw || tlyricRaw,
-    yrcRoma: yromalrcRaw || romalrcRaw,
-    lrcTrans: tlyricRaw || ytlrcRaw,
-    lrcRoma: romalrcRaw || yromalrcRaw,
-  };
-};
-
-/** 逐字歌词只有真的带 `words` 时间轴才算命中，否则继续降级到下一优先级。 */
-const adoptVerbatimLyrics = (
-  parsed: SongLyricLine[],
-  input: LyricChainInput
-): SongLyricLine[] | undefined =>
-  parsed.length > 0 && parsed.some((line) => line.words && line.words.length > 0)
-    ? sanitizeLyrics(mergeTranslations(parsed, input.yrcTrans, input.yrcRoma), input.song)
-    : undefined;
-
 export class NeteaseMusicProvider implements MusicProvider {
   private apiPromise?: Promise<ApiModule>;
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
-  private readonly cache: LRUCache<string, CacheEntry>;
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  private readonly refreshers = new Map<
-    string,
-    { ttlMs: number; loader: () => Promise<unknown> }
-  >();
-  private readonly inFlight = new Map<string, Promise<unknown>>();
-  private readonly ipByScope = new Map<string, string>();
-  private readonly chinaIpRanges = readChinaIpRanges();
-  // 扫码登录是一次多条请求的会话：二维码创建、轮询、设备上报、状态校验必须共用同一个出口 IP。
-  // 网易云把登录凭证绑定在登录时的客户端 IP 上，会话中途换 IP 会直接导致刚拿到的 MUSIC_U 失效。
-  //
-  // 必须按「二维码 unikey」分桶，不能是单个字段：两个房间的房主在相近时间扫码时，
-  // 后发起者会覆盖前者，于是先完成的那位拿到的是别人的会话 IP（永久错绑），
-  // 后完成的那位则压根没绑上登录握手时的 IP。
-  private readonly qrLoginScopes = new Map<string, { scope: string; createdAt: number }>();
+  private readonly ipScopes: MusicIpScopeRegistry;
+  private readonly musicCache: MusicCache;
+  private readonly requestQueue: UpstreamRequestQueue;
   private readonly amllQueue: PQueue;
-  private readonly queue: PQueue;
-  private readonly pendingRejections = new Map<number, (error: unknown) => void>();
-  private requestIdCounter = 0;
-  private readonly maxConcurrentRequests: number;
-  private readonly minRequestIntervalMs: number;
-  private readonly rateLimitCooldownMs: number;
-  private readonly maxRateLimitCooldownMs: number;
-  private readonly maxQueuedRequests: number;
-  private readonly queueTimeoutMs: number;
-  private cooldownUntil = 0;
-  private rateLimitStrikes = 0;
-  private lastRateLimitAt = 0;
-  private lastRateLimitMessage = "操作频繁，请稍候再试";
-  // 首条「缺少玩家作用域」告警必须在第一次降级时就发出，所以初值设为「早就过期的间隔之前」。
-  private lastIpScopeFallbackWarnAt = Number.NEGATIVE_INFINITY;
 
   readonly deviceName: string;
   private readonly generalUnblockEnabled: () => boolean;
@@ -918,8 +550,6 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly logger?: EventLogger;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
-  private readonly maintenanceTimer: ReturnType<typeof setInterval>;
-  private lastUserRequestAt: number;
 
   constructor(private readonly options: NeteaseMusicProviderOptions = {}) {
     this.amllQueue = new PQueue({
@@ -939,45 +569,65 @@ export class NeteaseMusicProvider implements MusicProvider {
     this.logger = options.logger;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? { nextFloat: () => Math.random() };
-    this.lastUserRequestAt = this.now();
     this.randomCNIP = options.randomCNIP ?? true;
-    this.cache = new LRUCache<string, CacheEntry>({
-      max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
-      maxSize: Math.max(1, options.cacheMaxBytes ?? DEFAULT_CACHE_MAX_BYTES),
-      sizeCalculation: (entry) => entry.size,
-    });
     this.loginStatusCache = new LRUCache<string, MusicLoginSession>({
       max: LOGIN_STATUS_CACHE_MAX_ENTRIES,
       ttl: LOGIN_STATUS_REUSE_TTL_MS,
     });
-    this.maxConcurrentRequests = Math.max(
-      1,
-      options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS
-    );
-    this.minRequestIntervalMs = Math.max(
-      0,
-      options.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS
-    );
-    this.rateLimitCooldownMs = Math.max(
-      0,
-      options.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS
-    );
-    this.maxRateLimitCooldownMs = Math.max(
-      this.rateLimitCooldownMs,
-      options.maxRateLimitCooldownMs ?? DEFAULT_MAX_RATE_LIMIT_COOLDOWN_MS
-    );
-    this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
-    this.queueTimeoutMs = Math.max(1, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
-    this.queue = new PQueue({
-      concurrency: this.maxConcurrentRequests,
-      ...(this.minRequestIntervalMs > 0
-        ? { interval: this.minRequestIntervalMs, intervalCap: 1 }
-        : {}),
+    this.ipScopes = new MusicIpScopeRegistry({
+      now: this.now,
+      random: this.random,
+      chinaIpRanges: readChinaIpRanges(),
+      platformKey: "netease",
+      logger: this.logger,
     });
-    this.maintenanceTimer = setInterval(() => {
-      void this.runCacheMaintenance();
-    }, 60_000);
-    (this.maintenanceTimer as unknown as { unref?: () => void }).unref?.();
+    this.requestQueue = new UpstreamRequestQueue({
+      now: this.now,
+      random: this.random,
+      maxConcurrentRequests: options.maxConcurrentRequests,
+      minRequestIntervalMs: options.minRequestIntervalMs,
+      rateLimitCooldownMs: options.rateLimitCooldownMs,
+      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
+      maxQueuedRequests: options.maxQueuedRequests,
+      queueTimeoutMs: options.queueTimeoutMs,
+      queueFullMessage: "网易云请求排队过多，请稍后重试",
+      queueTimeoutMessage: "网易云请求等待超时，请稍后重试",
+      rateLimitFallbackMessage: "操作频繁，请稍候再试",
+      isRateLimitError: (error) => this.isRateLimitError(error),
+      readRateLimitMessage: (error, fallback) => responseMessage(responseBody(error), fallback),
+      onRateLimitCooldown: ({
+        scope,
+        strikes,
+        cooldownDurationMs,
+        cooldownUntil,
+        droppedQueuedRequests,
+        reason,
+      }) => {
+        // 限流后顺手刷新该 scope 的伪装 IP，退避结束的请求换一个出口（见 Registry.rotateScopeIp）。
+        this.ipScopes.rotateScopeIp(scope);
+        this.logger?.warn("网易云接口触发限流退避", {
+          strikes,
+          cooldownDurationMs,
+          cooldownUntil: new Date(cooldownUntil).toISOString(),
+          droppedQueuedRequests,
+          rotatedScope: scope,
+          reason,
+        });
+      },
+      createBusyError: (message, retryAfterMs) =>
+        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
+      createRateLimitError: (message, retryAfterMs) =>
+        new AppError("MUSIC_API_RATE_LIMITED", message, { upstreamCode: 405, retryAfterMs }),
+    });
+    this.musicCache = new MusicCache({
+      maxEntries: options.cacheMaxEntries,
+      maxBytes: options.cacheMaxBytes,
+      now: this.now,
+      isUpstreamBusy: () => this.requestQueue.isCoolingDown() || this.requestQueue.queuedCount > 0,
+      onRefreshFailure: (key, error) => {
+        this.logger?.warn("网易云缓存预刷新失败", { key, error: describeError(error) });
+      },
+    });
   }
 
   async search(
@@ -988,7 +638,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("search", cookie, normalized.toLocaleLowerCase(), normalizedLimit),
       SEARCH_CACHE_TTL_MS,
       async () => {
@@ -1020,23 +670,24 @@ export class NeteaseMusicProvider implements MusicProvider {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
     const key = this.cacheKey("audio", cookie, id);
-    this.cache.delete(key);
-    this.refreshers.delete(key);
+    this.musicCache.invalidate(key);
     return this.loadAudioUrl(id, cookie, true);
   }
 
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
-    return this.cached(this.cacheKey("metadata", undefined, id), SONG_METADATA_CACHE_TTL_MS, () =>
-      this.loadSong(id, false, cookie)
+    return this.musicCache.cached(
+      this.cacheKey("metadata", undefined, id),
+      SONG_METADATA_CACHE_TTL_MS,
+      () => this.loadSong(id, false, cookie)
     );
   }
 
   async getSongPopularity(songId: string, cookie?: MusicCookieInput): Promise<number | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("popularity", undefined, id),
       POPULARITY_CACHE_TTL_MS,
       async () => {
@@ -1052,7 +703,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getSongChorus(songId: string, cookie?: MusicCookieInput): Promise<SongChorus | undefined> {
     const id = songId.trim();
     if (!id) return undefined;
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("song-chorus", undefined, id),
       SONG_CHORUS_CACHE_TTL_MS,
       async () => {
@@ -1120,7 +771,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   ): Promise<string | undefined> {
     try {
       // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
-      return await this.cached(key, SONG_LYRICS_CACHE_TTL_MS, async () => {
+      return await this.musicCache.cached(key, SONG_LYRICS_CACHE_TTL_MS, async () => {
         if (this.amllQueue.size >= (this.options.amllMaxQueuedRequests ?? 64))
           throw new Error("AMLL 请求排队过多");
         const controller = new AbortController();
@@ -1181,87 +832,91 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getPlaylistSongs(playlistId: string, cookie?: MusicCookieInput) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
-    return this.cached(this.cacheKey("playlist", cookie, id), COLLECTION_CACHE_TTL_MS, async () => {
-      const songs: SongSearchResult[] = [];
-      const seenIds = new Set<string>();
-      let name: string | undefined;
-      let songCount: number | undefined;
+    return this.musicCache.cached(
+      this.cacheKey("playlist", cookie, id),
+      COLLECTION_CACHE_TTL_MS,
+      async () => {
+        const songs: SongSearchResult[] = [];
+        const seenIds = new Set<string>();
+        let name: string | undefined;
+        let songCount: number | undefined;
 
-      const collect = (rawSongs: unknown[]): number => {
-        let added = 0;
-        for (const raw of rawSongs) {
-          const song = normalizeSong(raw);
-          if (!song || seenIds.has(song.id)) continue;
-          seenIds.add(song.id);
-          songs.push(song);
-          added += 1;
-        }
-        return added;
-      };
+        const collect = (rawSongs: unknown[]): number => {
+          let added = 0;
+          for (const raw of rawSongs) {
+            const song = normalizeSong(raw);
+            if (!song || seenIds.has(song.id)) continue;
+            seenIds.add(song.id);
+            songs.push(song);
+            added += 1;
+          }
+          return added;
+        };
 
-      const firstResponse = await this.call(
-        ["playlist_track_all", "playlist_detail"],
-        {
-          id,
-          limit: PLAYLIST_PAGE_SIZE,
-          offset: 0,
-        },
-        cookie
-      );
-      const firstBody = responseBody(firstResponse);
-      const firstPlaylist = asRecord(firstBody.playlist ?? asRecord(firstBody.data).playlist);
-      name = readString(firstPlaylist.name);
-      songCount = readNumber(firstPlaylist.trackCount ?? firstPlaylist.trackNumber);
-      const firstAdded = collect(
-        asArray(firstBody.songs ?? firstPlaylist.tracks ?? asRecord(firstBody.data).songs)
-      );
-
-      // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
-      if (!name || songCount === undefined) {
-        const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
-        if (detailResponse) {
-          const detail = asRecord(responseBody(detailResponse).playlist);
-          name = name ?? readString(detail.name);
-          songCount = songCount ?? readNumber(detail.trackCount ?? detail.trackNumber);
-        }
-      }
-
-      // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
-      // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
-      // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
-      // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
-      for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
-        if (songCount !== undefined && songs.length >= songCount) break;
-        const response = await this.callOptional(
+        const firstResponse = await this.call(
           ["playlist_track_all", "playlist_detail"],
           {
             id,
             limit: PLAYLIST_PAGE_SIZE,
-            offset: page * PLAYLIST_PAGE_SIZE,
+            offset: 0,
           },
           cookie
         );
-        if (!response) break;
-        const body = responseBody(response);
-        const rawSongs = asArray(
-          body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs
+        const firstBody = responseBody(firstResponse);
+        const firstPlaylist = asRecord(firstBody.playlist ?? asRecord(firstBody.data).playlist);
+        name = readString(firstPlaylist.name);
+        songCount = readNumber(firstPlaylist.trackCount ?? firstPlaylist.trackNumber);
+        const firstAdded = collect(
+          asArray(firstBody.songs ?? firstPlaylist.tracks ?? asRecord(firstBody.data).songs)
         );
-        const added = collect(rawSongs);
-        if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
-      }
 
-      return {
-        info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
-        songs,
-      };
-    });
+        // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
+        if (!name || songCount === undefined) {
+          const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
+          if (detailResponse) {
+            const detail = asRecord(responseBody(detailResponse).playlist);
+            name = name ?? readString(detail.name);
+            songCount = songCount ?? readNumber(detail.trackCount ?? detail.trackNumber);
+          }
+        }
+
+        // 单页装不下的歌单必须继续翻页：此前固定 `limit: 1000, offset: 0`，
+        // 超过 1000 首的歌单尾部曲目永远进不了题库（实测 1201 首只读到 1000 首）。
+        // `playlist_detail` 不支持 offset（每页都返回同一份 tracks），
+        // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
+        for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
+          if (songCount !== undefined && songs.length >= songCount) break;
+          const response = await this.callOptional(
+            ["playlist_track_all", "playlist_detail"],
+            {
+              id,
+              limit: PLAYLIST_PAGE_SIZE,
+              offset: page * PLAYLIST_PAGE_SIZE,
+            },
+            cookie
+          );
+          if (!response) break;
+          const body = responseBody(response);
+          const rawSongs = asArray(
+            body.songs ?? asRecord(body.playlist).tracks ?? asRecord(body.data).songs
+          );
+          const added = collect(rawSongs);
+          if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
+        }
+
+        return {
+          info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
+          songs,
+        };
+      }
+    );
   }
 
   async searchArtists(keyword: string, limit = 20, cookie?: MusicCookieInput) {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 50));
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("artist-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
       SEARCH_CACHE_TTL_MS,
       async () => {
@@ -1293,7 +948,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getArtistSongs(artistId: string, cookie?: MusicCookieInput) {
     const id = artistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_ARTIST", "歌手 ID 无效");
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("artist-songs", undefined, id),
       ARTIST_SONGS_CACHE_TTL_MS,
       async () => {
@@ -1330,7 +985,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 30));
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("album-search", undefined, normalized.toLocaleLowerCase(), normalizedLimit),
       SEARCH_CACHE_TTL_MS,
       async () => {
@@ -1374,7 +1029,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getAlbumSongs(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
     const id = albumId.trim();
     if (!/^\d+$/.test(id)) return [];
-    return this.cached(
+    return this.musicCache.cached(
       this.cacheKey("album-songs", undefined, id),
       COLLECTION_CACHE_TTL_MS,
       async () => {
@@ -1428,8 +1083,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const key = readString(asRecord(keyBody.data).unikey ?? keyBody.unikey);
     if (!key) throw new AppError("MUSIC_LOGIN_FAILED", "无法创建登录二维码");
 
-    this.pruneLoginScopes();
-    this.qrLoginScopes.set(key, { scope, createdAt: this.now() });
+    this.ipScopes.setLoginScope(key, scope);
     try {
       const qrResponse = await this.call(
         ["login_qr_create"],
@@ -1448,16 +1102,8 @@ export class NeteaseMusicProvider implements MusicProvider {
       if (!qrUrl || !qrImage) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码");
       return { key, qrUrl, qrImage };
     } catch (error) {
-      this.qrLoginScopes.delete(key);
+      this.ipScopes.deleteLoginScope(key);
       throw error;
-    }
-  }
-
-  /** 丢弃开完二维码却长时间不扫的会话，避免条目无限堆积。 */
-  private pruneLoginScopes() {
-    const deadline = this.now() - QR_LOGIN_SCOPE_TTL_MS;
-    for (const [key, entry] of this.qrLoginScopes) {
-      if (entry.createdAt < deadline) this.qrLoginScopes.delete(key);
     }
   }
 
@@ -1465,7 +1111,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const key = keyValue.trim();
     if (!key) throw new AppError("INVALID_LOGIN", "二维码登录密钥不能为空");
     // 本次轮询只认自己那个二维码对应的会话 IP，别人同时扫码不会串到这里。
-    const scope = this.qrLoginScopes.get(key)?.scope;
+    const scope = this.ipScopes.getLoginScope(key);
     const response = await this.call(
       ["login_qr_check"],
       { key, ua: this.loginUserAgent() },
@@ -1487,22 +1133,14 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (!cookie) throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录 Cookie");
     // 先固化会话 IP 再发后续请求：否则设备上报与状态校验会按 cookie 另起一个 IP，
     // 等会话 IP 回填时又切一次 —— 凭证刚建立就漂移，正是登录态反复失效的成因。
-    this.bindSessionIp(cookie, scope);
+    this.ipScopes.bindSessionIp(cookie, scope);
     try {
       await this.uploadDeviceInfo(cookie, this.deviceName, scope);
       const session = await this.getLoginStatus(cookie, scope);
       return { status: "authorized", message, session };
     } finally {
-      this.qrLoginScopes.delete(key);
+      this.ipScopes.deleteLoginScope(key);
     }
-  }
-
-  // 将登录会话使用的 IP 固化到登录后凭证的 scope 上，随后同一凭证稳定复用该 IP。
-  private bindSessionIp(cookieValue: string, scope?: string) {
-    if (!scope) return;
-    const ip = this.ipByScope.get(scope);
-    const cookie = cookieValue.trim();
-    if (ip && cookie) this.ipByScope.set(this.cookieScope(cookie), ip);
   }
 
   async uploadDeviceInfo(
@@ -1580,7 +1218,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
 
-    const detailResponse = await this.cached(
+    const detailResponse = await this.musicCache.cached(
       this.cacheKey("song-detail", undefined, id),
       SONG_METADATA_CACHE_TTL_MS,
       () => this.call(["song_detail"], { ids: id }, cookie)
@@ -1590,14 +1228,16 @@ export class NeteaseMusicProvider implements MusicProvider {
     const base = normalizeSong(rawSong);
     if (!base) throw new AppError("SONG_NOT_FOUND", "未找到歌曲信息");
 
-    const wikiPromise = this.cached(
+    const wikiPromise = this.musicCache.cached(
       this.cacheKey("song-wiki", undefined, id),
       SONG_WIKI_CACHE_TTL_MS,
       () => this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie)
     );
     const lyricPromise = includeResources
-      ? this.cached(this.cacheKey("song-lyrics", undefined, id), SONG_LYRICS_CACHE_TTL_MS, () =>
-          this.call(["lyric_new", "lyric"], { id }, cookie)
+      ? this.musicCache.cached(
+          this.cacheKey("song-lyrics", undefined, id),
+          SONG_LYRICS_CACHE_TTL_MS,
+          () => this.call(["lyric_new", "lyric"], { id }, cookie)
         )
       : Promise.resolve(undefined);
     const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
@@ -1798,7 +1438,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     force = false
   ): Promise<string> {
     const key = this.cacheKey("audio", cookie, songId);
-    const value = await this.cached(
+    const value = await this.musicCache.cached(
       key,
       AUDIO_URL_CACHE_TTL_MS,
       async () => {
@@ -1841,13 +1481,13 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (this.anonymousCookie || typeof api.register_anonimous !== "function") return;
     try {
       // 匿名令牌是全进程共享的匿名身份，固定挂在匿名 scope 上，不落进任何玩家的桶。
-      const response = await this.scheduleRequest(
+      const response = await this.requestQueue.scheduleRequest(
         () =>
           (api.register_anonimous as ApiFunction)({
             crypto: "weapi",
             cookie: {},
             randomCNIP: this.randomCNIP,
-            ...(this.randomCNIP ? { realIP: this.ensureScopeIp(IP_SCOPE_ANONYMOUS) } : {}),
+            ...(this.randomCNIP ? { realIP: this.ipScopes.ensureScopeIp(IP_SCOPE_ANONYMOUS) } : {}),
           }),
         IP_SCOPE_ANONYMOUS
       );
@@ -1868,7 +1508,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   ): Promise<ApiResponse> {
     const api = await this.loadApi();
     // 在调度前定好 IP 归属：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
-    const ipScope = this.resolveIpScope(cookie, loginScope, names);
+    const ipScope = this.ipScopes.resolveIpScope(cookie, loginScope, names);
     let hasEndpoint = false;
     let lastErrorResponse: ApiResponse | undefined;
     let lastError: unknown;
@@ -1910,7 +1550,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     loginScope: string | undefined,
     ipScope: string | undefined
   ): Promise<ApiResponse> {
-    const response = await this.scheduleRequest(
+    const response = await this.requestQueue.scheduleRequest(
       () =>
         fn(
           this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie, loginScope, ipScope)
@@ -1980,274 +1620,9 @@ export class NeteaseMusicProvider implements MusicProvider {
   }
 
   private cacheKey(namespace: string, cookie: unknown, ...parts: unknown[]) {
-    const cookieStr =
-      typeof cookie === "string"
-        ? cookie.trim()
-        : isCookieRecord(cookie)
-          ? typeof cookie.netease === "string"
-            ? cookie.netease.trim()
-            : stableStringify(cookie)
-          : "";
-    const scope = cookieStr
-      ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)
-      : "anonymous";
+    // 同一份 cookie 原文映射到同一个缓存 scope（sha256 前 16 位），与 IP scope 的口径一致。
+    const scope = this.ipScopes.cookieFingerprint(cookie) || "anonymous";
     return [namespace, scope, ...parts].map(String).join(":");
-  }
-
-  private async cached<T>(
-    key: string,
-    ttlMs: number,
-    loader: () => Promise<T>,
-    options: {
-      force?: boolean;
-      priority?: number;
-      background?: boolean;
-      cacheNegative?: boolean;
-    } = {}
-  ): Promise<T> {
-    const now = this.now();
-    if (!options.background) this.lastUserRequestAt = now;
-    const entry = this.cache.get(key);
-    const hardTtl = Math.max(ttlMs, ttlMs * 3);
-    if (!options.force && entry) {
-      if (now < entry.hardExpireAt) {
-        entry.lastAccessAt = now;
-        entry.hits += 1;
-        if (now >= entry.softExpireAt)
-          void this.refreshCacheEntry(key, ttlMs, loader, options.priority ?? entry.priority);
-        return cloneCacheValue(entry.value as T);
-      }
-      this.cache.delete(key);
-      this.refreshers.delete(key);
-    }
-    const existing = this.inFlight.get(key) as Promise<T> | undefined;
-    if (existing) return cloneCacheValue(await existing);
-
-    const allowNegative = options.cacheNegative !== false;
-    this.refreshers.set(key, { ttlMs, loader });
-    const request = loader()
-      .then((value) => {
-        // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
-        // 玩家重试也只会拿到同一个空值。`cacheNegative` 缺省为 true 以保持既有缓存语义，
-        // 播放地址这类「重试可能成功」的取值显式传 false，只跳过空结果、正常地址照旧缓存。
-        const storeResult = allowNegative || Boolean(value);
-        if (storeResult) {
-          const fetchedAt = this.now();
-          const serializedSize =
-            value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
-          this.cache.set(key, {
-            value,
-            softExpireAt: fetchedAt + ttlMs * 0.8,
-            hardExpireAt: fetchedAt + hardTtl,
-            lastAccessAt: fetchedAt,
-            hits: 1,
-            priority: options.priority ?? 1,
-            size: serializedSize,
-          });
-        }
-        return value;
-      })
-      .finally(() => {
-        if (this.inFlight.get(key) === request) this.inFlight.delete(key);
-      });
-    this.inFlight.set(key, request);
-    return cloneCacheValue(await request);
-  }
-
-  private async refreshCacheEntry(
-    key: string,
-    ttlMs: number,
-    loader: () => Promise<unknown>,
-    priority: number
-  ) {
-    if (this.inFlight.has(key) || this.now() < this.cooldownUntil || this.queue.size > 0) return;
-    try {
-      await this.cached(key, ttlMs, loader, { priority, force: true, background: true });
-    } catch (error) {
-      this.logger?.warn("网易云缓存预刷新失败", { key, error: describeError(error) });
-    }
-  }
-
-  private async runCacheMaintenance() {
-    if (this.queue.size > 0 || this.now() < this.cooldownUntil) return;
-    const now = this.now();
-    if (now - this.lastUserRequestAt > 30 * 60_000) {
-      this.evictIdleCacheEntries(now);
-      return;
-    }
-    const candidates = [...this.cache.entries()]
-      .filter(([, entry]) => now >= entry.hardExpireAt || now >= entry.softExpireAt)
-      .sort(([, left], [, right]) => right.priority + right.hits - (left.priority + left.hits))
-      .slice(0, 4);
-    await this.refreshExpiredEntries(now, candidates);
-    this.pruneStaleRefreshers();
-  }
-
-  /**
-   * 后台维护路径。
-   *
-   * 定时器里没有玩家上下文，但这是设计如此、不是配置错误，所以显式声明走共享匿名出口：
-   * 否则每次维护都会被记成「作用域外调用」的降级，把真正需要被发现的新调用链淹成噪声。
-   * 该 scope 的配额与退避仍按 `anonymous` 正常计账。
-   */
-  private refreshExpiredEntries(
-    now: number,
-    candidates: Iterable<[string, CacheEntry]>
-  ): Promise<void> {
-    return runWithAnonymousMusicIpScope(async () => {
-      for (const [key, entry] of candidates) {
-        const refresher = this.refreshers.get(key);
-        if (!refresher) {
-          this.cache.delete(key);
-          continue;
-        }
-        if (now >= entry.hardExpireAt) this.cache.delete(key);
-        await this.refreshCacheEntry(key, refresher.ttlMs, refresher.loader, entry.priority);
-      }
-    });
-  }
-
-  /** 长时间没有用户请求：淘汰低命中且久未访问的条目，不做任何主动刷新。 */
-  private evictIdleCacheEntries(now: number) {
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.hits <= 1 && now - entry.lastAccessAt > 30 * 60_000) {
-        this.cache.delete(key);
-        this.refreshers.delete(key);
-      }
-    }
-    this.pruneStaleRefreshers();
-  }
-
-  /** 刷新器只服务于已缓存或仍在请求中的条目，其余一并回收。 */
-  private pruneStaleRefreshers() {
-    for (const key of this.refreshers.keys())
-      if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
-  }
-
-  /**
-   * 排队执行一次上游请求。
-   *
-   * `ipScope` 是本次请求使用的伪装出口 IP 的归属标识：限流一旦发生，就刷新该 scope 的 IP，
-   * 让下一次请求换一个出口重试（详见 `rotateScopeIp`）。
-   */
-  private scheduleRequest<T>(task: () => Promise<T>, ipScope?: string): Promise<T> {
-    if (this.now() < this.cooldownUntil) {
-      return Promise.reject(this.rateLimitError());
-    }
-    if (this.queue.size >= this.maxQueuedRequests) {
-      return Promise.reject(this.busyError("网易云请求排队过多，请稍后重试"));
-    }
-
-    const id = ++this.requestIdCounter;
-    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-    let rejectHandler: ((err: unknown) => void) | undefined;
-
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      rejectHandler = reject;
-      timeoutTimer = setTimeout(() => {
-        if (this.pendingRejections.has(id)) {
-          this.pendingRejections.delete(id);
-          reject(this.busyError("网易云请求等待超时，请稍后重试"));
-        }
-      }, this.queueTimeoutMs);
-    });
-
-    this.pendingRejections.set(id, (err) => {
-      clearTimeout(timeoutTimer);
-      rejectHandler?.(err);
-    });
-
-    const executionPromise = this.queue.add(async () => {
-      clearTimeout(timeoutTimer);
-      if (!this.pendingRejections.has(id)) {
-        return;
-      }
-      this.pendingRejections.delete(id);
-
-      if (this.now() < this.cooldownUntil) {
-        throw this.rateLimitError();
-      }
-      try {
-        const result = await task();
-        if (this.isRateLimitError(result)) {
-          this.enterRateLimitCooldown(result, ipScope);
-        }
-        return result;
-      } catch (error) {
-        if (this.isRateLimitError(error)) {
-          this.enterRateLimitCooldown(error, ipScope);
-        }
-        throw error;
-      }
-    }) as Promise<T>;
-
-    return Promise.race([executionPromise, timeoutPromise]);
-  }
-
-  /**
-   * 进入限流退避。
-   *
-   * `ipScope` 是触发本次限流的请求所属的 IP 归属。网易云按请求方声称的 IP 计算配额
-   * （实测：同参数继续打仍全 406，仅更换伪装 IP 即立刻恢复），因此这里顺手刷新该 scope 的 IP，
-   * 让退避结束后的下一次请求从新出口发出，而不是继续撞在同一个已经计满的 IP 上。
-   */
-  private enterRateLimitCooldown(error: unknown, ipScope?: string) {
-    const body = responseBody(error);
-    this.lastRateLimitMessage = responseMessage(body, this.lastRateLimitMessage);
-    this.rotateScopeIp(ipScope);
-    const now = this.now();
-    if (now - this.lastRateLimitAt > this.maxRateLimitCooldownMs) {
-      this.rateLimitStrikes = 0;
-    }
-    this.rateLimitStrikes = Math.min(this.rateLimitStrikes + 1, 8);
-    this.lastRateLimitAt = now;
-    const baseDuration = Math.min(
-      this.maxRateLimitCooldownMs,
-      this.rateLimitCooldownMs * 2 ** (this.rateLimitStrikes - 1)
-    );
-    // 注入微量随机 Jitter 抖动，防止限流恢复瞬间突发惊群重连
-    const jitter = Math.floor((this.random.nextFloat?.() ?? Math.random()) * (baseDuration * 0.05));
-    const duration = Math.min(this.maxRateLimitCooldownMs, baseDuration + jitter);
-    this.cooldownUntil = Math.max(this.cooldownUntil, now + duration);
-
-    const rejections = Array.from(this.pendingRejections.values());
-    this.queue.clear();
-    this.pendingRejections.clear();
-
-    this.logger?.warn("网易云接口触发限流退避", {
-      strikes: this.rateLimitStrikes,
-      cooldownDurationMs: duration,
-      cooldownUntil: new Date(this.cooldownUntil).toISOString(),
-      droppedQueuedRequests: rejections.length,
-      rotatedScope: ipScope,
-      reason: this.lastRateLimitMessage,
-    });
-
-    const rejected = this.rateLimitError(this.lastRateLimitMessage);
-    for (const reject of rejections) {
-      reject(rejected);
-    }
-  }
-
-  /**
-   * 本地队列拥塞（排队过多 / 等待超时）。
-   *
-   * 与上游限流是两回事：成因是本进程的并发与队列参数，排查方向也完全不同。
-   * 历史上两者复用 `MUSIC_API_RATE_LIMITED`，线上看到「限流」时无法区分
-   * 是网易云真的拒绝了，还是本地把自己堵死了 —— 必须分开编码。
-   */
-  private busyError(message: string) {
-    return new AppError("MUSIC_API_BUSY", message, {
-      retryAfterMs: Math.max(0, this.queueTimeoutMs),
-    });
-  }
-
-  /** 上游限流（含冷却期内的快速拒绝），也可用于拒绝已在队列中、但冷却已开始的请求。 */
-  private rateLimitError(message = this.lastRateLimitMessage) {
-    return new AppError("MUSIC_API_RATE_LIMITED", message, {
-      upstreamCode: 405,
-      retryAfterMs: Math.max(0, this.cooldownUntil - this.now()),
-    });
   }
 
   private upstreamError(error: unknown) {
@@ -2272,105 +1647,6 @@ export class NeteaseMusicProvider implements MusicProvider {
     );
   }
 
-  /**
-   * 解析一次请求应当使用的 IP 归属，优先级从高到低：
-   *
-   * 1. `loginScope` —— 扫码登录会话。整条链路（创建二维码 → 轮询 → 设备上报 → 状态校验）
-   *    必须共用同一个 IP，否则登录态一建立就漂移。只有**显式属于某个扫码会话**的请求才走它：
-   *    旧实现无条件优先全局 qrLoginScope，等于任意一个用户处于扫码等待期时，全进程所有房间、
-   *    所有凭证的请求都被强行带上那个会话的 IP，凭证与出口 IP 的绑定被整体破坏。
-   * 2. `host:<cookie 摘要>` —— 带房主凭证的请求，沿用登录时固化的那个 IP。
-   * 3. `player:<连接标识>` —— 匿名请求按玩家分桶，互不占用对方的限流配额。
-   * 4. `anonymous` —— 没有玩家上下文的兜底。走到这一层说明整条调用链没被 `musicIpScope.run`
-   *    包住，按降级上报（见 `reportMissingIpScope`），不再静默。
-   */
-  private resolveIpScope(
-    cookie?: string | Record<string, unknown>,
-    loginScope?: string,
-    endpoints?: readonly string[]
-  ) {
-    if (loginScope) return loginScope;
-    if (this.hasCookie(cookie)) return this.cookieScope(cookie);
-    const scope = musicIpScope.getStore();
-    if (scope) return scope;
-    this.reportMissingIpScope(endpoints);
-    return IP_SCOPE_ANONYMOUS;
-  }
-
-  /**
-   * 「作用域外调用」必须看得见。
-   *
-   * 它过去和后台预热共用同一条静默回落：新增一条没包作用域的调用链时，现场只看到全服 405，
-   * 看不到「所有人的匿名请求又挤回同一个出口」这层原因 —— 而注释里写着的前置条件不会报警。
-   * 口径与采集链路故障上报一致：每次降级都计数，聚合告警按固定间隔最多一条。
-   * 上下文只带接口名这类无凭据字段。
-   */
-  private reportMissingIpScope(endpoints?: readonly string[]) {
-    countServerMetric(IP_SCOPE_FALLBACK_METRIC, 1);
-    const at = this.now();
-    if (at - this.lastIpScopeFallbackWarnAt < IP_SCOPE_FALLBACK_WARN_INTERVAL_MS) return;
-    this.lastIpScopeFallbackWarnAt = at;
-    this.logger?.warn("音乐请求缺少玩家 IP 作用域，已回落共享匿名出口", {
-      fallbackScope: IP_SCOPE_ANONYMOUS,
-      ...(endpoints?.length ? { endpoints: [...endpoints] } : {}),
-    });
-  }
-
-  /** cookie 参数是否真的带了凭证；空串与空对象一律按匿名处理，避免落进房主那一桶。 */
-  private hasCookie(cookie?: string | Record<string, unknown>) {
-    if (typeof cookie === "string") return cookie.trim().length > 0;
-    if (cookie && typeof cookie === "object") {
-      if (typeof cookie.netease === "string") return cookie.netease.trim().length > 0;
-      return Object.keys(cookie).length > 0;
-    }
-    return false;
-  }
-
-  /**
-   * 刷新一个 scope 的伪装 IP。
-   *
-   * 只删缓存、不在这里生成新 IP：下一次请求会按 scope 重新分配，退避期间就不必空转，
-   * 没被再次用到的 scope 也不会留下无效条目。
-   *
-   * 注意这里**不做房主/玩家的区分**：刷新只发生在限流之后，此时该 scope 的配额已经被计满，
-   * 继续用同一个 IP 只会持续 405。房主凭证的 IP 由 `bindSessionIp` 固化的语义在限流兜底时
-   * 让位给可用性（变更缘由见 `Server/docs/NeteaseMusicApi.md`）。
-   */
-  private rotateScopeIp(scope?: string) {
-    if (!scope) return;
-    this.ipByScope.delete(scope);
-  }
-
-  // 同一份 cookie 原文必须映射到同一个 IP：Enhanced API 会把 cookie 对象补上随机的
-  // _ntes_nuid / NMTID，因此这里对字符串做哈希、对对象做稳定序列化，避免逐请求漂移。
-  private cookieScope(cookie?: string | Record<string, unknown>) {
-    const cookieStr =
-      typeof cookie === "string"
-        ? cookie.trim()
-        : isCookieRecord(cookie)
-          ? typeof cookie.netease === "string"
-            ? cookie.netease.trim()
-            : stableStringify(cookie)
-          : "";
-    return cookieStr
-      ? `host:${createHash("sha256").update(cookieStr).digest("hex").slice(0, 16)}`
-      : IP_SCOPE_ANONYMOUS;
-  }
-
-  // 每个 scope 只分配一次 IP、之后持续复用；超限按插入顺序淘汰最老的。
-  // IP 被替换的唯一入口是 `rotateScopeIp`（限流兜底），正常路径下同一 scope 不会漂移。
-  private ensureScopeIp(scope: string) {
-    const existing = this.ipByScope.get(scope);
-    if (existing) return existing;
-    const ip = randomChineseIp(this.chinaIpRanges, this.random);
-    this.ipByScope.set(scope, ip);
-    if (this.ipByScope.size > IP_SCOPE_MAX_ENTRIES) {
-      const oldest = this.ipByScope.keys().next().value;
-      if (oldest !== undefined) this.ipByScope.delete(oldest);
-    }
-    return ip;
-  }
-
   private withCookie(
     params: Record<string, unknown>,
     cookie?: string | Record<string, unknown>,
@@ -2385,14 +1661,14 @@ export class NeteaseMusicProvider implements MusicProvider {
         : cookie;
     const requestCookie = rawCookie ?? (includeAnonymousCookie ? this.anonymousCookie : undefined);
     // scope 由调用方在调度前算好并透传：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
-    const scope = ipScope ?? this.resolveIpScope(cookie, loginScope);
+    const scope = ipScope ?? this.ipScopes.resolveIpScope(cookie, loginScope);
     return {
       ...params,
       // 始终显式传入 cookie，阻止 Enhanced API 从进程环境变量 NETEASE_COOKIE 偷读旧凭据。
       cookie: requestCookie ?? {},
       // 伪装 IP 按 scope 稳定：同一玩家、同一凭证在各自作用域内复用同一个 IP，不同玩家各持一个，
       // 避免全部请求把配额挤在同一个出口上。
-      ...(randomCNIP ? { realIP: this.ensureScopeIp(scope) } : {}),
+      ...(randomCNIP ? { realIP: this.ipScopes.ensureScopeIp(scope) } : {}),
       randomCNIP,
     };
   }
