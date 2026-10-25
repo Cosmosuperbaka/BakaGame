@@ -1,5 +1,5 @@
 /**
- * 猜歌计分（三级模型）。
+ * 猜歌计分（三因子模型）。
  *
  * 旧口径（答题者固定 1 分、出题人按「猜中人数 × 3」加成）方向是反的：答对的人越多，
  * 出题人收益越高，等于奖励「出简单题」。新模型把「这轮题有多难」显式算成难度分 D，
@@ -8,8 +8,8 @@
  * 公式与常量只写在这一处：服务端结算与前端展示读同一份，避免两端各算一套。
  */
 
-/** 计分口径版本。1 = 旧口径，2 = 三因子模型。只影响新对局，不改历史 `game_record`。 */
-export const SONG_SCORING_VERSION: 1 | 2 = 2;
+/** 计分口径版本。只影响新对局，不改历史 `game_record`；旧口径已随 v1 分支删除。 */
+export const SONG_SCORING_VERSION = 2 as const;
 
 export const SONG_SCORE = {
   /** 答题者基准分：满分（速度 1.2 × 精度 1）即 12 分。 */
@@ -29,10 +29,6 @@ export const SONG_SCORE = {
   difficultySpeedWeight: 0.2,
   /** 无人猜中时出题人的硬扣分。 */
   nobodyCorrect: -2,
-  /** 旧口径常量，`SONG_SCORING_VERSION === 1` 时使用。 */
-  legacyCorrect: 1,
-  legacySubmitterPerCorrect: 3,
-  legacySubmitterNobodyCorrect: 2,
 } as const;
 
 const clamp = (min: number, max: number, value: number): number =>

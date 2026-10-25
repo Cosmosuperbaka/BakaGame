@@ -94,9 +94,15 @@ test("答题者：血战按抢答排名递减，最后一名最低但为正", ()
 
 test("答题者：无人猜中时没有得分（缺省 0）", () => {
   // 没有任何单元猜中 → 结算不会给谁记分；这里断言「没猜中就不该调计分」的默认值语义
-  expect(submitter({ answerableCount: 3, correctCount: 0, attemptsPerAnswerer: 3, elapsedRatio: 1, averageAnswererScore: 0 }).score).toBe(
-    SONG_SCORE.nobodyCorrect
-  );
+  expect(
+    submitter({
+      answerableCount: 3,
+      correctCount: 0,
+      attemptsPerAnswerer: 3,
+      elapsedRatio: 1,
+      averageAnswererScore: 0,
+    }).score
+  ).toBe(SONG_SCORE.nobodyCorrect);
 });
 
 test("出题人：1 人 1 次猜中、耗时 5% → 拿到约四分之一的答题分", () => {
@@ -113,8 +119,8 @@ test("出题人：1 人 1 次猜中、耗时 5% → 拿到约四分之一的答�
 });
 
 test("出题人：5 人全在 2 次内猜中仍远低于旧口径的 15", () => {
-  // 旧口径：5 个猜中 × 3 = 15；新口径按难度折扣只给个位数。
-  const legacy = 5 * SONG_SCORE.legacySubmitterPerCorrect;
+  // 旧口径（已删）：5 个猜中 × 3 = 15；新口径按难度折扣只给个位数。
+  const legacy = 15;
   expect(legacy).toBe(15);
   const half = submitter({
     answerableCount: 5,

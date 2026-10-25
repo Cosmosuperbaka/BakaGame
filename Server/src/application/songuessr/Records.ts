@@ -1,7 +1,6 @@
+/** 猜歌房间/回合的记录类型、默认设置与出题、账号池、限流的调优常量。 */
 import { AppError } from "../../domain/Errors";
 import { MusicLoginSession } from "../../infrastructure/NeteaseMusicProvider";
-/** 猜歌房间/回合的记录类型、默认设置与出题、账号池、限流的调优常量。 */
-import { SONG_SCORING_VERSION } from "../../domain/SongRules";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   SongGuessDirection,
@@ -49,9 +48,6 @@ export const DEFAULT_SETTINGS: SonGuessrSettings = {
  * 共有曲目的代表侧由 `musicSearchOptions` 的平台偏好决定，与默认题库是两件事。
  */
 export const DEFAULT_AUTO_PLAYLIST_ID = "3778678";
-
-/** 猜歌计分常量与公式统一在 `domain/SongRules`，这里不再各留一份。 */
-export const SCORING_VERSION = SONG_SCORING_VERSION;
 
 export interface SonGuessrPlayerRecord {
   id: string;

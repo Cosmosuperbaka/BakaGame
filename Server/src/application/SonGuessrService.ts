@@ -1,5 +1,4 @@
 import {
-  SONG_SCORE,
   computeSongAnswererFactors,
   computeSongDifficulty,
   computeSongSubmitterScore,
@@ -131,7 +130,6 @@ import {
   MusicSessionRevalidation,
   ROOM_EXPIRING_WARNING_MS,
   ROUND_HARD_TIMEOUT_MARGIN_S,
-  SCORING_VERSION,
   SUBMIT_SONG_TIMEOUT_MS,
   SonGuessrMusicPoolEntry,
   SonGuessrPlayerRecord,
@@ -4013,32 +4011,24 @@ export class SonGuessrService implements AdminRoomControl {
     state.correct = true;
     state.deadlineAt = undefined;
     player.correctGuesses += 1;
-    if (SCORING_VERSION === 1) {
-      // 旧口径：血战按玩家数减已猜中人数，普通模式固定 1 分。
-      const formalPlayerCount = this.activePlayers(room).length - round.observerIds.length;
-      player.score += round.settings.bloodMode
-        ? formalPlayerCount - round.correctPlayerIds.length
-        : SONG_SCORE.legacyCorrect;
-    } else {
-      const factors = computeSongAnswererFactors({
-        bloodMode: round.settings.bloodMode,
-        // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
-        rank: round.correctPlayerIds.length + 1,
-        answerableCount: this.answerableUnits(room, round).length,
-        elapsedRatio: this.answerElapsedRatio(round, this.now()),
-        guessesUsed: state.guessesUsed,
-        maxGuessesPerRound: round.settings.maxGuessesPerRound,
-      });
-      player.score += factors.score;
-      round.answererBreakdown.push({ playerId: player.id, ...factors });
-    }
+    const factors = computeSongAnswererFactors({
+      bloodMode: round.settings.bloodMode,
+      // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
+      rank: round.correctPlayerIds.length + 1,
+      answerableCount: this.answerableUnits(room, round).length,
+      elapsedRatio: this.answerElapsedRatio(round, this.now()),
+      guessesUsed: state.guessesUsed,
+      maxGuessesPerRound: round.settings.maxGuessesPerRound,
+    });
+    player.score += factors.score;
+    round.answererBreakdown.push({ playerId: player.id, ...factors });
     round.correctPlayerIds.push(player.id);
   }
 
   /**
-   * 本轮结算：出题人得分与（新口径下的）计分拆解。
+   * 本轮结算：出题人得分与计分拆解。
    *
-   * 新口径的难度分要先知道整轮的猜中率、平均尝试与平均用时，所以只能在这里算，
+   * 难度分要先知道整轮的猜中率、平均尝试与平均用时，所以只能在这里算，
    * 不能像答题者那样随每次猜中即时入账。`answererBreakdown` 里已是逐人系数，
    * 这里只补平均用时与难度分，不在两处各算一遍。
    */
@@ -4046,13 +4036,6 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     round: SonGuessrRoundRecord
   ): { submitterScore: number; breakdown?: SonGuessrScoreBreakdown } {
-    if (SCORING_VERSION === 1) {
-      return {
-        submitterScore: round.correctPlayerIds.length
-          ? round.correctPlayerIds.length * SONG_SCORE.legacySubmitterPerCorrect
-          : SONG_SCORE.legacySubmitterNobodyCorrect,
-      };
-    }
     const units = this.answerableUnits(room, round);
     const answerableCount = units.length;
     const correctCount = round.correctPlayerIds.length;

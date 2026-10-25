@@ -588,8 +588,8 @@ export interface SonGuessrRoundSummary {
   attempts: SongGuessAttempt[];
   scores: SonGuessrScore[];
   /**
-   * 计分拆解。旧口径（`SONG_SCORING_VERSION === 1`）与历史对局没有这个字段，
-   * 前端只在拿到时展示，不假设它一定存在。
+   * 计分拆解。历史对局与异常路径可能没有这个字段，前端只在拿到时展示，
+   * 不假设它一定存在。
    */
   breakdown?: SonGuessrScoreBreakdown;
 }
