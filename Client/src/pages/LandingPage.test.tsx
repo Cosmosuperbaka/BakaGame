@@ -123,7 +123,13 @@ describe("LandingPage", () => {
     await user.type(within(dialog).getByLabelText("详细说明"), "登录后提交");
     await user.click(within(dialog).getByRole("button", { name: "登录并提交" }));
 
-    expect(await screen.findByRole("heading", { name: "登录" })).toBeInTheDocument();
+    const login = (await screen.findByRole("heading", { name: "登录" })).closest(
+      "[role='dialog']"
+    ) as HTMLElement;
+    await user.click(within(login).getByRole("button", { name: "关闭" }));
+
+    // 取消登录回到匿名表单，已填内容不丢。
+    expect(await screen.findByLabelText("标题")).toHaveValue("需要回复");
   });
 
   it("下载客户端入口浮在右上角、排在账号左边，点了只谈系统与安装包", async () => {
