@@ -336,8 +336,9 @@ export class QQMusicProvider implements MusicProvider {
     this.now = options.now ?? (() => Date.now());
     const random = options.random ?? { nextFloat: () => Math.random() };
     // 出口归属登记与网易云共用一套 Registry：按玩家 / 凭证 / 扫码会话分桶，限流后按
-    // scope 轮换。QQ 上游库目前不透传 realIP（module 层不转发该参数），这里的分桶
-    // 主要服务于缓存键指纹、登录会话约束与作用域缺失告警。
+    // scope 轮换。注意 QQ 网关不信任客户端来源 IP 头（实测 GetSession 的 userip 恒为
+    // 真实出口，X-Real-IP / X-Forwarded-For 不生效），真正换出口只能走代理/中转；
+    // 当前分桶只服务于缓存键指纹、登录会话键与作用域告警，不产生上游 IP 变化。
     this.ipScopes = new MusicIpScopeRegistry({
       now: this.now,
       random,
