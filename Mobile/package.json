@@ -1,7 +1,7 @@
 {
   "name": "bakagame-mobile",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "BakaGame CEE 移动端 Android 壳（Capacitor，内嵌 Client 构建产物；独立于根 pnpm workspace，不进成员包列表）",
   "//": "本包不在 pnpm-workspace.yaml 的成员内（根与 Client/Server 的 package.json 不得新增依赖），安装请用 npm install，详见 README。",
   "type": "module",

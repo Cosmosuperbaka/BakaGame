@@ -8,9 +8,17 @@ import { ClientArtifacts, type ClientPackagePlatform } from "../src/infrastructu
 const stub = (ok: boolean, headers: Record<string, string>) =>
   ({ ok, headers: new Headers(headers) }) as unknown as Response;
 
+/** 版本旁文件只需要 `ok` 与 `text()`；缺省按 404 处理（旧发布流水线没写旁文件）。 */
+const versionStub = (ok: boolean, body = "") =>
+  ({ ok, text: async () => body }) as unknown as Response;
+
 const harness = (
   responses: Partial<Record<ClientPackagePlatform, Response | Error>>,
-  options?: { ttlMs?: number; clock?: { now: number } }
+  options?: {
+    ttlMs?: number;
+    clock?: { now: number };
+    versions?: Partial<Record<ClientPackagePlatform, Response | Error>>;
+  }
 ) => {
   const calls: { platform: ClientPackagePlatform; url: string; method?: string }[] = [];
   const urls: Record<ClientPackagePlatform, string> = {
@@ -23,13 +31,15 @@ const harness = (
     ttlMs: options?.ttlMs ?? 60_000,
     now: () => clock.now,
     fetcher: ((url: string, init?: RequestInit) => {
+      const isVersion = url.endsWith(".version");
+      const base = isVersion ? url.slice(0, -".version".length) : url;
       const platform = (Object.keys(urls) as ClientPackagePlatform[]).find(
-        (key) => urls[key] === url
+        (key) => urls[key] === base
       )!;
-      calls.push({ platform, url, method: init?.method });
-      const next = responses[platform];
+      calls.push({ platform, url, method: isVersion ? "GET" : init?.method });
+      const next = isVersion ? options?.versions?.[platform] : responses[platform];
       if (next instanceof Error) return Promise.reject(next);
-      return Promise.resolve(next ?? stub(false, {}));
+      return Promise.resolve(next ?? (isVersion ? versionStub(false) : stub(false, {})));
     }) as unknown as typeof fetch,
   });
   return { artifacts, calls };
@@ -65,8 +75,42 @@ test("读到制品时把大小与最后修改时间标上，架构按发布约�
       builtAt: "2026-10-18T23:59:59.000Z",
     },
   ]);
-  // 只问元数据，不该把安装包本身拖回来。
-  expect(calls.map((call) => call.method)).toEqual(["HEAD", "HEAD"]);
+  // 只问元数据与版本旁文件，不该把安装包本身拖回来。
+  expect(calls.filter((call) => call.method === "HEAD")).toHaveLength(2);
+  expect(calls.map((call) => call.method).sort()).toEqual(["GET", "GET", "HEAD", "HEAD"]);
+});
+
+test("读到版本旁文件时把已发布版本标上，软提醒才有依据", async () => {
+  const { artifacts } = harness(
+    { windows: stub(true, { "content-length": "10" }) },
+    { versions: { windows: versionStub(true, "0.1.1\n") } }
+  );
+
+  const [windows] = await artifacts.list();
+  expect(windows).toMatchObject({ platform: "windows", version: "0.1.1" });
+  expect(await artifacts.latestVersion("windows")).toBe("0.1.1");
+});
+
+test("版本旁文件缺失、格式不对或读失败都只当作没有版本", async () => {
+  const cases: Array<Response | Error | undefined> = [
+    undefined,
+    versionStub(false),
+    versionStub(true, "latest"),
+    versionStub(true, ""),
+    new Error("offline"),
+  ];
+  for (const versionResponse of cases) {
+    const { artifacts, calls } = harness(
+      { windows: stub(true, { "content-length": "10" }) },
+      { versions: { windows: versionResponse } }
+    );
+    const [windows] = await artifacts.list();
+    expect(windows.version).toBeUndefined();
+    expect(await artifacts.latestVersion("windows")).toBeUndefined();
+    // 版本读不到不影响安装包本身可用。
+    expect(windows.available).toBe(true);
+    expect(calls.filter((call) => call.method === "HEAD")).toHaveLength(2);
+  }
 });
 
 test("制品还没推上去（404）时标明未发布，平台本身照样进列表", async () => {
@@ -97,13 +141,14 @@ test("TTL 内复用同一次探测：并发打开首页不该把边缘节点锤�
   const { artifacts, calls } = harness({ windows: stub(true, { "content-length": "1" }) });
 
   await Promise.all([artifacts.list(), artifacts.list()]);
-  expect(calls).toHaveLength(2);
+  // 两个平台各一次 HEAD + 一次版本旁文件；并发调用共用同一份在途结果。
+  expect(calls).toHaveLength(4);
 
   // 404 一样进缓存：没发布的包更该少问，发布后最多等一个 TTL。
   const misses = harness({ windows: stub(false, {}) });
   await misses.artifacts.list();
   await misses.artifacts.list();
-  expect(misses.calls.filter((call) => call.platform === "windows")).toHaveLength(1);
+  expect(misses.calls.filter((call) => call.platform === "windows")).toHaveLength(2);
 });
 
 test("过 TTL 后重新探测：CI 刚推的新包不必等服务端重启", async () => {
@@ -115,7 +160,7 @@ test("过 TTL 后重新探测：CI 刚推的新包不必等服务端重启", asy
   await artifacts.list();
   clock.now = 61_000;
   await artifacts.list();
-  expect(calls.filter((call) => call.platform === "windows")).toHaveLength(2);
+  expect(calls.filter((call) => call.platform === "windows")).toHaveLength(4);
 });
 
 test("地址配成空串的平台不进列表：没发布的平台不该在弹窗里留一枚死按钮", async () => {

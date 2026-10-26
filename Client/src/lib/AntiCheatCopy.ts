@@ -28,8 +28,7 @@ const ANTI_CHEAT_MESSAGES: Readonly<Record<string, string>> = {
   CLIENT_REQUIRED: `该房间需要 BakaGame 客户端，请下载安装后再创建或加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
   CLIENT_OUTDATED: `BakaGame 客户端版本过旧，请更新到最新版后再创建或加入：${BAKA_CLIENT_DOWNLOAD_URL}`,
   // 已经是客户端、但这张连接没拿到服务端认可的通道证明：换票重连也失败后才会走到这里。
-  CLIENT_CHANNEL_NOT_READY:
-    "客户端通道校验未通过，请检查网络后重试；反复出现请重启客户端再试。",
+  CLIENT_CHANNEL_NOT_READY: "客户端通道校验未通过，请检查网络后重试；反复出现请重启客户端再试。",
   LOGIN_REQUIRED: "该房间要求登录后再创建、加入或旁观",
   SPECTATE_QUEUE_FULL: "待房主批准的旁观请求已满，请稍后再试",
 };
@@ -100,14 +99,21 @@ export const CEE_CLIENT_TYPE_LABELS: Record<AdminAntiCheatReview["clientType"], 
 // ==================== 首页客户端更新提醒 ====================
 
 /**
- * 首页提醒的正文。门槛是服务端读回的最低版本，措辞写明「只挡反作弊房」：
- * 普通房间照常玩，不能让玩家读成「不更新就打不开游戏」。
+ * 首页提醒的正文，分两档：
+ *
+ * - `required` 读的是服务端最低准入版本，措辞写明「只挡反作弊房」——普通房间照常玩，
+ *   不能让玩家读成「不更新就打不开游戏」。
+ * - `available` 读的是已发布的最新壳版本：发新版不等于协议破坏性变更，所以只说有新版本可拿，
+ *   不承诺任何准入后果。两档共用同一个下载入口。
  */
 export const clientUpdateNoticeText = (
   clientType: Exclude<BakaClientType, "web">,
-  minimumVersion: string
+  version: string,
+  mode: "required" | "available"
 ): string =>
-  `${CEE_CLIENT_TYPE_LABELS[clientType]}版本较旧，更新到 ${minimumVersion} 以上才能进反作弊房；普通房间不受影响。`;
+  mode === "required"
+    ? `${CEE_CLIENT_TYPE_LABELS[clientType]}版本较旧，更新到 ${version} 以上才能进反作弊房；普通房间不受影响。`
+    : `${CEE_CLIENT_TYPE_LABELS[clientType]}有新版本 ${version} 可用，建议更新到最新版。`;
 
 export const CLIENT_UPDATE_DOWNLOAD_LABEL = "下载最新版";
 /** 关闭只压到下一次抬档，不是「永不再提醒」，按钮文字据实写「暂不」。 */

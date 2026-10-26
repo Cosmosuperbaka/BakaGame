@@ -130,19 +130,23 @@ type SelfCheckReport = {
 Mobile/
 ├── package.json            # 独立 npm 包，不在根 pnpm workspace 成员内
 ├── capacitor.config.ts     # webDir=dist-web（内嵌产物），不做远程 URL
-├── bridge/baka-bridge.js   # 唯一前端桥接：四成员契约 + 注册 + 通道证明闭环（challenge/sign/attest）
+├── bridge/baka-bridge.js   # 唯一前端桥接：通道契约 + 注册/证明闭环 + 热更新检查
 ├── scripts/prepare-web.mjs # Client/dist → dist-web + 注入桥接 + 版本同步
+├── scripts/web-bundle.mjs  # dist-web → 热更新 zip + BakaGame-web-latest.json
 ├── scripts/apk.mjs         # Gradle 定位（wrapper 声明 → 同版本缓存 → PATH）并跑构建
 └── android/                # 手写最小工程（等效 cap add android 产物，未跑过 CLI）
     ├── settings.gradle / build.gradle / gradle.properties
     ├── app/build.gradle / src/main/AndroidManifest.xml
     └── app/src/main/java/website/baka/game/
-        ├── MainActivity.kt              # FLAG_SECURE + 注册插件
-        └── channel/
-            ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck
-            ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
-            ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17 本地最小解析（仅展示）
-            └── SelfCheck.kt             # P3.3 运行时检测
+        ├── MainActivity.kt              # FLAG_SECURE + 注册插件 + 启动时选择热更资源
+        ├── channel/
+        │   ├── BakaChannelPlugin.kt     # getKeyInfo / sign / selfCheck
+        │   ├── KeystoreChannel.kt       # KeyStore EC P-256 + attestation
+        │   ├── AttestationLocal.kt      # OID 1.3.6.1.4.1.11129.2.1.17 本地最小解析（仅展示）
+        │   └── SelfCheck.kt             # P3.3 运行时检测
+        └── update/
+            ├── BakaHotUpdatePlugin.kt   # 下载 / sha256 校验 / 安全解压
+            └── HotUpdateStore.kt        # 资源包落盘、启动选择与失败回退
 ```
 
 ## 6. 构建步骤
@@ -292,7 +296,8 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
 
 - **应用商店**：国内各安卓商店上架需软著/营业执照等资质与逐店审核，是商店分发路线上最高的固定成本。
   发布节奏：桥接契约变更（如换 `keyAlgorithm`）必须抬 `clientVersion` 并同步服务端最低版本策略（服务端强制更新链路）。
-- **包体积/更新**：内嵌产物意味着 Client 每次发版都要重打 APK；沿用发布流水线的固定文件名别名
+- **包体积/更新**：内嵌产物意味着壳的原生能力变更必须重打 APK；只改 Client 资源时走 §7.6 的
+  Web 资源热更新，不必让玩家重新安装。安装包仍沿用发布流水线的固定文件名别名
   （`BakaGame-<version>-release.apk` 实际名 + 无版本别名）分发。
 
 ### 7.5 WebView 内的通行密钥（WebAuthn）
@@ -319,6 +324,39 @@ ANDROID_ATTESTATION_SIGNATURE_DIGESTS=<release 的 base64>,<debug 的 base64>
 真机验证注意：CI 的 debug 包用的是 runner 上临时生成的 debug keystore，其指纹无法预先写进
 assetlinks，不能用它验收通行密钥；请用正式签名包，或本机固定 debug keystore 构建并把指纹列进
 assetlinks 后再测。
+
+### 7.6 Web 资源热更新
+
+只换 `dist-web` 资源、不换 APK。原生能力（密钥、自检、插件）仍必须靠安装包更新；热更新覆盖
+Client 的页面、脚本、样式、字体与图片。
+
+**发布侧**：CI 在 `prepare-web` 之后跑 `scripts/web-bundle.mjs`，把 `dist-web` 打成
+`BakaGame-web-<build>.zip` 并生成 `BakaGame-web-latest.json`（含 `build`、`sha256`、`sizeBytes`、
+`minShellVersion`）。`client-publish` 先传版本化 zip，最后写清单——顺序反了会让清单短暂指向
+不存在的对象。服务端 `GET /api/client/web-bundle` 读清单并只对移动壳返回更新信息。
+
+**壳内闭环**：
+
+1. 首页加载完 8 秒后，`baka-bridge.js` 用当前页的 `bakagame-build` 询问服务端清单；每次启动只问一次。
+2. 有更新且壳版本不低于 `minShellVersion` 时，调用原生 `BakaHotUpdate.install`。
+3. 原生只接受 https，按清单校验 SHA-256，按 canonical path 解压（拒绝 `..`、绝对路径、超量条目），
+   再核对包内 `index.html` 的 `bakagame-build` 与清单一致。
+4. 解压后的目录成为「待确认包」，`CapWebViewSettings.serverBasePath` 指向它；**下次启动生效**，
+   不打断当前对局。
+5. 启动时 `MainActivity` 在 `super.onCreate` 之前把路径交给 Capacitor；页面加载成功后桥接调用
+   `confirm` 把它转成当前包。连续两次启动都没确认就丢弃该包，回到内嵌产物。
+6. 壳版本变化（安装新 APK）时，旧资源包全部作废：新资源可能依赖旧壳没有的能力。
+
+**网络与安全**：只在非计费网络自动下载（`ACCESS_NETWORK_STATE`），计费网络直接跳过；下载失败、
+校验失败、离线都静默，下次在首页时再试。资源包来自我们自己的发布流水线，`sha256` 用于防传输损坏
+与清单/对象错配，不用于信任第三方内容。
+
+**版本纪律**：`minShellVersion` 取 `Mobile/package.json` 的版本。只要热更新包里的桥接开始调用
+新的原生方法，就必须同时抬 `Mobile/package.json`（并重新构建 APK）——否则 `minShellVersion`
+还是旧值，旧壳会装上一个自己跑不动的资源包。纯页面/样式/资源改动则不需要动版本。
+
+**尚未真机验证**：下载中断、WebView 白屏回退与壳升级后的清包只有真实设备能验收；CI 只保证
+Kotlin 编译与打包脚本产物可解压。首次上线前至少在一台真机上走一遍「下载 → 重启生效 → 断网启动」。
 
 ## 8. 已知限制与待真机验证
 

@@ -157,7 +157,13 @@ const DESKTOP_STEPS = [
   "Locate the installer",
   "Publish Windows installer",
 ];
-const ANDROID_STEPS = ["Download release APK", "Publish Android APK"];
+const ANDROID_STEPS = [
+  "Download release APK",
+  "Publish Android APK",
+  // 热更新资源包由安卓作业产出（dist-web 与 APK 同源），发布侧同样只认安卓结果。
+  "Download hot-update web bundle",
+  "Publish hot-update web bundle",
+];
 
 test("每个发布步骤只受自己那个平台的作业结果影响", () => {
   // 作业级放行后，步骤级必须再判自己那个平台；否则 desktop=skipped 时会去下载不存在的产物。

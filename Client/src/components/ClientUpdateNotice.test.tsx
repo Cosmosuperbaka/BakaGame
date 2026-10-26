@@ -38,6 +38,10 @@ const shellAt = (clientVersion: string, clientType: "desktop" | "mobile" = "desk
 interface ServerOptions {
   /** null = 通道未启用（503）；undefined 时按「过旧」回。 */
   floor?: string | null;
+  /** 是否低于最低准入版本，缺省 true。 */
+  outdated?: boolean;
+  /** 已发布的最新壳版本：给值时回 behindLatest。 */
+  latest?: string;
   /** undefined = 发布信息读不到（503）；null 表示服务端说这个平台还没发包。 */
   packages?: unknown;
 }
@@ -57,7 +61,13 @@ const server = (options: ServerOptions = {}) => {
         : json({ packages: options.packages === null ? [] : options.packages });
     }
     if (options.floor === null) return json({ error: "CLIENT_CHANNEL_DISABLED" }, 503);
-    return json({ outdated: true, minimumVersion: options.floor ?? "2.0.0" });
+    const latestVersion = options.latest ?? "";
+    return json({
+      outdated: options.outdated ?? true,
+      minimumVersion: options.floor ?? "2.0.0",
+      latestVersion,
+      behindLatest: latestVersion.length > 0,
+    });
   });
   vi.stubGlobal("fetch", fetchMock);
   return { fetchMock, urls, checks: () => urls.filter((url) => url.includes("update-check")) };
@@ -76,7 +86,7 @@ afterEach(() => {
 const mountNotice = async () => {
   vi.resetModules();
   const { ClientUpdateNotice } = await import("./ClientUpdateNotice");
-  return render(<ClientUpdateNotice />);
+  return { ...render(<ClientUpdateNotice />), ClientUpdateNotice };
 };
 
 describe("客户端更新提醒", () => {
@@ -152,7 +162,7 @@ describe("客户端更新提醒", () => {
     await screen.findByRole("status");
     await userEvent.click(screen.getByRole("button", { name: "暂不提醒" }));
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
-    expect(window.localStorage.getItem(DISMISS_KEY)).toBe("2.0.0");
+    expect(window.localStorage.getItem(DISMISS_KEY)).toBe("required:2.0.0");
 
     // 同一个门槛：这一台设备已经说过不要提醒了。
     unmount();
@@ -195,6 +205,52 @@ describe("客户端更新提醒", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
+  it("低于最低准入版本时用硬提醒的措辞，不降级成「有新版本」", async () => {
+    shellAt("1.0.0");
+    server({ floor: "2.0.0", outdated: true, latest: "2.5.0", packages: [WINDOWS_PACKAGE] });
+    await mountNotice();
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("更新到 2.0.0 以上才能进反作弊房");
+    expect(notice).not.toHaveTextContent("有新版本");
+  });
+
+  it("低于最新发布版但够进反作弊房时只提示有新版可拿", async () => {
+    shellAt("1.0.0");
+    server({
+      floor: "",
+      outdated: false,
+      latest: "1.0.1",
+      packages: [WINDOWS_PACKAGE, ANDROID_PACKAGE],
+    });
+    await mountNotice();
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("桌面端有新版本 1.0.1 可用");
+    expect(notice).not.toHaveTextContent("反作弊房");
+    expect(await screen.findByRole("link", { name: "下载最新版" })).toHaveAttribute(
+      "href",
+      WINDOWS_PACKAGE.url
+    );
+  });
+
+  it("软提醒被关掉后同一版本不再出现，硬门槛抬到同一版本时重新提醒", async () => {
+    shellAt("1.0.0");
+    server({ floor: "", outdated: false, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    const first = await mountNotice();
+
+    await screen.findByRole("status");
+    await userEvent.click(screen.getByRole("button", { name: "暂不提醒" }));
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(window.localStorage.getItem(DISMISS_KEY)).toBe("available:1.0.1");
+
+    // 同一版本变成硬门槛：关过软提醒不代表能忽略准入要求，必须重新说一次。
+    first.unmount();
+    server({ floor: "1.0.1", outdated: true, latest: "1.0.1", packages: [WINDOWS_PACKAGE] });
+    render(<first.ClientUpdateNotice />);
+    expect(await screen.findByRole("status")).toHaveTextContent("更新到 1.0.1 以上");
+  });
+
   it("展示层只由 props 驱动：关闭动作交给调用方", async () => {
     vi.resetModules();
     const { ClientUpdateBanner } = await import("./ClientUpdateNotice");
@@ -202,7 +258,7 @@ describe("客户端更新提醒", () => {
     render(
       <ClientUpdateBanner
         open
-        floor={{ clientType: "desktop", minimumVersion: "1.2.0" }}
+        floor={{ clientType: "desktop", mode: "required", version: "1.2.0" }}
         downloadUrl={WINDOWS_PACKAGE.url}
         onDismiss={onDismiss}
       />
@@ -219,7 +275,7 @@ describe("客户端更新提醒", () => {
     render(
       <ClientUpdateBanner
         open={false}
-        floor={{ clientType: "desktop", minimumVersion: "1.2.0" }}
+        floor={{ clientType: "desktop", mode: "required", version: "1.2.0" }}
         onDismiss={vi.fn()}
       />
     );

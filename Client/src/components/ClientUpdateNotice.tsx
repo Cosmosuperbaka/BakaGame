@@ -14,14 +14,18 @@ import { dropIn } from "@/lib/Motion";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 /**
- * 客户端更新提醒（仅首页）：壳版本低于服务端公布的最低门槛时，游戏列表上方浮出一条可关的提示。
+ * 客户端更新提醒（仅首页）：壳版本低于服务端公布的最低门槛、或低于已发布的最新壳版本时，
+ * 游戏列表上方浮出一条可关的提示。
  *
  * 提醒与门槛是两件事。这里只负责「让玩家早点更新」，拦人仍在服务端 `CEERooms.requireAdmission`：
  * 不进反作弊房就一直能玩，关掉提示、忽略提示都绕不过任何校验。版本比对也交给服务端
  * （`GET /api/client/update-check`），前端不实现第二份比较逻辑，免得两端口径漂移。
+ *
+ * 两档提醒的来源不同：`required` 是最低准入版本（与服务端硬门槛同源），`available` 是发布
+ * 流水线写下的最新壳版本。后者只说明「有新版可拿」，不代表协议变更，不能自动抬硬门槛。
  */
 
-/** 存档记的是「已经关掉过哪一档门槛」，服务端抬档后提醒会重新出现。 */
+/** 存档记的是「已经关掉过哪一档提醒」，服务端换档或抬版本后提醒会重新出现。 */
 const DISMISS_KEY = "bakagame:client-update-dismissed";
 
 /** 壳类型 → 安装包平台：提醒里那颗按钮按这个挑包。 */
@@ -32,9 +36,14 @@ const PLATFORM_BY_CLIENT_TYPE: Record<Exclude<BakaClientType, "web">, ClientPack
 
 export interface ClientUpdateFloor {
   clientType: Exclude<BakaClientType, "web">;
-  /** 服务端公布的最低版本，非空串。 */
-  minimumVersion: string;
+  /** `required` = 低于服务端最低准入版本；`available` = 低于已发布的最新壳版本。 */
+  mode: "required" | "available";
+  /** 要提示到的版本，非空串。 */
+  version: string;
 }
+
+/** 存档要区分「关了哪一档提醒」：同一版本从软提醒抬成硬门槛时必须重新说一次。 */
+const dismissKeyOf = (floor: ClientUpdateFloor): string => `${floor.mode}:${floor.version}`;
 
 /** 隐私模式下 localStorage 会抛错：读不到就当没关过，提醒照常出现。 */
 const readDismissed = (): string => {
@@ -45,9 +54,9 @@ const readDismissed = (): string => {
   }
 };
 
-const writeDismissed = (minimumVersion: string): void => {
+const writeDismissed = (key: string): void => {
   try {
-    window.localStorage.setItem(DISMISS_KEY, minimumVersion);
+    window.localStorage.setItem(DISMISS_KEY, key);
   } catch {
     // 存不下只是这条提示下次还会出现，不影响首页。
   }
@@ -71,10 +80,24 @@ export function ClientUpdateNotice() {
           { signal: controller.signal }
         );
         if (!response.ok) return;
-        const body = (await response.json()) as { outdated?: unknown; minimumVersion?: unknown };
-        if (body.outdated !== true || typeof body.minimumVersion !== "string") return;
-        if (!body.minimumVersion || readDismissed() === body.minimumVersion) return;
-        setFloor({ clientType, minimumVersion: body.minimumVersion });
+        const body = (await response.json()) as {
+          outdated?: unknown;
+          minimumVersion?: unknown;
+          latestVersion?: unknown;
+          behindLatest?: unknown;
+        };
+        // 硬门槛优先：低于最低准入版本时，文案必须说清「进不了反作弊房」，
+        // 不能降级成只说「有新版本可用」。服务端已按同一次读取给出两档。
+        const next: ClientUpdateFloor | null =
+          body.outdated === true && typeof body.minimumVersion === "string" && body.minimumVersion
+            ? { clientType, mode: "required", version: body.minimumVersion }
+            : body.behindLatest === true &&
+                typeof body.latestVersion === "string" &&
+                body.latestVersion
+              ? { clientType, mode: "available", version: body.latestVersion }
+              : null;
+        if (!next || readDismissed() === dismissKeyOf(next)) return;
+        setFloor(next);
       } catch {
         // 门槛读不到就不提醒：这条是便利，不该拦住首页，也不该反复重试。
       }
@@ -85,7 +108,7 @@ export function ClientUpdateNotice() {
 
   const dismiss = () => {
     if (!floor) return;
-    writeDismissed(floor.minimumVersion);
+    writeDismissed(dismissKeyOf(floor));
     // 只收起、不清门槛：退场动画期间这条还得用自己的文字收尾。
     setHidden(true);
   };
@@ -141,7 +164,7 @@ export function ClientUpdateBanner({
         >
           <Download className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-xs leading-snug">
-            {clientUpdateNoticeText(floor.clientType, floor.minimumVersion)}
+            {clientUpdateNoticeText(floor.clientType, floor.version, floor.mode)}
           </span>
           {/* 制品还没推上去时不给链接：不留一枚点了跳到 404 的下载按钮。 */}
           {downloadUrl && (

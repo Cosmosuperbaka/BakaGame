@@ -447,6 +447,16 @@ export const ENV_ENTRIES: EnvEntry[] = [
   },
   { name: "CLIENT_PACKAGE_ANDROID_URL", layer: "T2", documented: true, sample: "" },
   {
+    name: "CLIENT_WEB_BUNDLE_MANIFEST_URL",
+    layer: "T2",
+    documented: true,
+    sample: "",
+    note: [
+      "移动壳 Web 资源热更新清单地址；不设置时取发布约定缺省，显式空串 = 关闭热更新。",
+      "清单与安装包在同一个分发目录，下载地址由服务端相对清单地址解析。",
+    ],
+  },
+  {
     name: "CCB_ORIGINAL_SERVER_URL",
     layer: "T2",
     documented: true,

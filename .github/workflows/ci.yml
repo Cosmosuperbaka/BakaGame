@@ -457,6 +457,20 @@ jobs:
         working-directory: Mobile
         run: npm run sync
 
+      # 热更新包与 APK 同源：都来自这次 prepare-web 的 dist-web。打包不依赖 Gradle，
+      # 放在 APK 构建之前，签名失败也不影响资源包本身的产物完整性。
+      - name: Package hot-update web bundle
+        working-directory: Mobile
+        run: node scripts/web-bundle.mjs
+
+      - name: Upload hot-update web bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ !cancelled() }}
+        with:
+          name: web-update-bundle
+          path: Mobile/build/web-bundle/
+          retention-days: 14
+
       # apk.mjs 是「本地按 wrapper 构建」那条路径的入口：它选哪一枚 Gradle 决定本地构建能不能跑，
       # 而这正是 CI 全绿也看不出来的那段（缓存里往往同时留着好几枚）。夹具是临时目录，不碰 SDK 与网络。
       - name: Test the Gradle locator
@@ -609,7 +623,14 @@ jobs:
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$installer" \
             "s3://$R2_BUCKET/BakaGame-latest-x64.exe" \
             --cache-control "public, max-age=0, must-revalidate"
-          echo "已发布 BakaGame-$version-x64.exe 与别名 BakaGame-latest-x64.exe"
+          # 固定别名不带版本号，服务端靠这个旁文件回答「已发布的最新版是多少」。
+          # 必须与安装包同批更新，否则首页软提醒最多会晚一个服务端缓存周期（以 ClientArtifacts 的 TTL 为准）。
+          printf '%s\n' "$version" > "$RUNNER_TEMP/windows-version.txt"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$RUNNER_TEMP/windows-version.txt" \
+            "s3://$R2_BUCKET/BakaGame-latest-x64.exe.version" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "public, max-age=0, must-revalidate"
+          echo "已发布 BakaGame-$version-x64.exe、别名 BakaGame-latest-x64.exe 与版本旁文件"
 
       # 安卓只发布签过名的 release 包：debug 包的签名摘要对不上 attestation 的期望值，
       # 放进公开下载链等于给玩家发一个进不了反作弊房的客户端。
@@ -637,7 +658,45 @@ jobs:
           aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$apk" \
             "s3://$R2_BUCKET/BakaGame-latest-release.apk" \
             --cache-control "public, max-age=0, must-revalidate"
-          echo "已发布 BakaGame-$version-release.apk 与别名 BakaGame-latest-release.apk"
+          printf '%s\n' "$version" > "$RUNNER_TEMP/android-version.txt"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$RUNNER_TEMP/android-version.txt" \
+            "s3://$R2_BUCKET/BakaGame-latest-release.apk.version" \
+            --content-type "text/plain; charset=utf-8" \
+            --cache-control "public, max-age=0, must-revalidate"
+          echo "已发布 BakaGame-$version-release.apk、别名与版本旁文件"
+
+      # 热更新资源包：先传版本化 zip，最后写清单。顺序反了会让清单短暂指向一个不存在的对象。
+      - name: Download hot-update web bundle
+        if: env.HAS_R2 == 'true' && needs.android.result == 'success'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-update-bundle
+          path: inbound/web
+
+      - name: Publish hot-update web bundle
+        if: env.HAS_R2 == 'true' && needs.android.result == 'success'
+        run: |
+          set -euo pipefail
+          manifest="$(find inbound/web -name 'BakaGame-web-latest.json' -print -quit 2>/dev/null || true)"
+          bundle="$(find inbound/web -name 'BakaGame-web-*.zip' -print -quit 2>/dev/null || true)"
+          [ -n "$manifest" ] && [ -n "$bundle" ] || {
+            echo "::error::热更新包产物不完整（缺清单或 zip）"
+            exit 1
+          }
+          bundle_name="$(basename "$bundle")"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$bundle" \
+            "s3://$R2_BUCKET/$bundle_name" \
+            --content-type "application/zip" \
+            --cache-control "public, max-age=31536000, immutable"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$bundle" \
+            "s3://$R2_BUCKET/BakaGame-web-latest.zip" \
+            --content-type "application/zip" \
+            --cache-control "public, max-age=0, must-revalidate"
+          aws --endpoint-url "$R2_S3_ENDPOINT" s3 cp "$manifest" \
+            "s3://$R2_BUCKET/BakaGame-web-latest.json" \
+            --content-type "application/json; charset=utf-8" \
+            --cache-control "public, max-age=0, must-revalidate"
+          echo "已发布 $bundle_name 与 BakaGame-web-latest.json"
 
   # 格式门禁：全量触发（任何改动都跑）。它原先挂在 knip 作业里，而 knip 的过滤集合只有
   # Client/ Server/ 与几个根清单 —— 改 Desktop/**、Mobile/**、scripts/**、Agents/** 时

@@ -40,6 +40,7 @@ import { mcpDiscoveryRoutes } from "./routes/McpDiscovery";
 import { mcpRemoteRoutes } from "./routes/McpRemote";
 import { RemoteMcpSessions } from "../mcp/Remote";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
+import type { ClientWebBundle } from "../infrastructure/ClientWebBundle";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
@@ -83,6 +84,11 @@ export interface AppDependencies {
    * 未提供时 `/api/client/packages` 回空列表，弹窗只剩「尚未发布」。
    */
   clientArtifacts?: ClientArtifacts;
+  /**
+   * 移动壳 Web 资源热更新清单。未提供时 `/api/client/web-bundle` 恒回「没有可用更新」，
+   * 壳按内嵌产物运行。
+   */
+  clientWebBundle?: ClientWebBundle;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -759,6 +765,7 @@ export const createApp = ({
   handshakeQuota: handshakeQuotaOverride,
   clientChannel,
   clientArtifacts,
+  clientWebBundle,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -1021,7 +1028,7 @@ export const createApp = ({
     .use(bangumiImageRoutes(bangumiImages))
     // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
     .use(accountRoutes(account, logger))
-    .use(clientChannelRoutes(clientChannel, clientArtifacts))
+    .use(clientChannelRoutes(clientChannel, clientArtifacts, clientWebBundle))
     // ==================== WebSocket 入口 ====================
     // 状态页的只读通道：公开、不解析账号，只沿用同一把来源闸与停机闸。
     .use(

@@ -4,6 +4,11 @@
  */
 const DEFAULT_WINDOWS_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-x64.exe";
 const DEFAULT_ANDROID_PACKAGE_URL = "https://cdn.baka.website/files/BakaGame-latest-release.apk";
+/**
+ * 移动壳 Web 资源热更新清单：与安装包同一个分发目录、同样是不带版本号的固定别名。
+ * 清单里只写资源包文件名，下载地址由服务端相对本地址解析。
+ */
+const DEFAULT_WEB_BUNDLE_MANIFEST_URL = "https://cdn.baka.website/files/BakaGame-web-latest.json";
 
 /**
  * 客户端通道与上游互通（T0/T2/T3 混合，逐条见 `env/Registry.ts`）：
@@ -32,6 +37,8 @@ export interface EnvClientChannel {
   androidAttestationPackage?: string;
   /** 期望的 APK 签名证书摘要（base64，逗号分隔）。不配只能验包名，结论最高到 `degraded`。 */
   androidAttestationSignatureDigests?: string[];
+  /** 移动壳 Web 资源热更新清单地址；空串 = 不提供热更新。 */
+  clientWebBundleManifestUrl?: string;
   /** 原版兼容房地址；与密钥任一留空则不提供兼容入口。 */
   ceeOriginalServerUrl?: string;
   ceeOriginalAesSecret?: string;
@@ -49,6 +56,10 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
     Bun.env.CLIENT_PACKAGE_WINDOWS_URL?.trim() ?? DEFAULT_WINDOWS_PACKAGE_URL,
   clientPackageAndroidUrl:
     Bun.env.CLIENT_PACKAGE_ANDROID_URL?.trim() ?? DEFAULT_ANDROID_PACKAGE_URL,
+  // 显式空串 = 不提供热更新：与安装包地址不同，这里的「没配」有默认值，
+  // 想关掉时必须能表达「关掉」，所以只用 ?? 不用 ||。
+  clientWebBundleManifestUrl:
+    Bun.env.CLIENT_WEB_BUNDLE_MANIFEST_URL?.trim() ?? DEFAULT_WEB_BUNDLE_MANIFEST_URL,
   // Android Key Attestation 的期望包名：不配就不校验证明链（带链注册只记 degraded）。
   // 写死包名等于替所有 APK 定一个信任基准，必须由部署方明确给出。
   androidAttestationPackage: Bun.env.ANDROID_ATTESTATION_PACKAGE?.trim() || undefined,

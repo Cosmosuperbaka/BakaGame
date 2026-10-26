@@ -16,6 +16,8 @@ import com.getcapacitor.BridgeWebViewClient
 import website.baka.game.channel.BakaChannelPlugin
 import website.baka.game.network.DnsProxyServer
 import website.baka.game.network.HttpDns
+import website.baka.game.update.BakaHotUpdatePlugin
+import website.baka.game.update.HotUpdateStore
 import java.util.concurrent.Executor
 
 /**
@@ -38,6 +40,20 @@ class MainActivity : BridgeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(BakaChannelPlugin::class.java)
+        registerPlugin(BakaHotUpdatePlugin::class.java)
+        // 必须在 super.onCreate 之前：Capacitor 在 super 里创建 WebView 并读取
+        // `CapWebViewSettings.serverBasePath`，晚一步就会先加载内嵌产物、再被热更新目录覆盖。
+        // 启动路径选择失败不能把应用带崩：退回内嵌产物，下次热更新仍会重试。
+        try {
+            HotUpdateStore.prepareBoot(this)
+        } catch (err: Exception) {
+            Log.w(TAG, "热更新启动检查失败，按内嵌产物启动：${err.message}")
+            try {
+                HotUpdateStore.setServerBasePath(this, "")
+            } catch (_: Exception) {
+                // 连 SharedPreferences 都写不了时只能交给 Capacitor 自己的缺省行为。
+            }
+        }
         // 必须在 super.onCreate 之前应用：bridge 会在 super 里创建 WebView 并 loadUrl，
         // 覆写晚于页面加载时，该 WebView 的首批请求仍会直连，已有连接还会被复用。
         prepareHttpDns()

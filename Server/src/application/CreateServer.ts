@@ -38,6 +38,7 @@ import { InMemoryAntiCheatReviewQueue, type CEEAntiCheatReviewBoard } from "./CE
 import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
 import { ClientArtifacts } from "../infrastructure/ClientArtifacts";
+import { ClientWebBundle } from "../infrastructure/ClientWebBundle";
 import { ClientChannelRepository } from "../infrastructure/db/ClientChannelRepository";
 import { SettingCipher } from "../infrastructure/auth/SettingCipher";
 import {
@@ -214,6 +215,10 @@ export function createServer(
       android: env.clientPackageAndroidUrl,
     },
   });
+  // 热更新清单与安装包清单分开：前者只影响移动壳能否换资源，后者只影响下载弹窗。
+  const clientWebBundle = new ClientWebBundle({
+    manifestUrl: env.clientWebBundleManifestUrl,
+  });
   // 状态页的两本账：历史与实时样本都按部署环境标记分行，
   // 开发与生产共用一个库也互不污染——开发实例的探测读不到生产的条带，反之亦然。
   // 没库也照样在内存里记本次运行的账，页面有数据可读，只是重启后条带会空。
@@ -240,6 +245,7 @@ export function createServer(
     account,
     clientChannel,
     clientArtifacts,
+    clientWebBundle,
     disposeResources: async () => {
       // 回读定时器不参与退出竞赛，停机时先停掉。
       settings.close();

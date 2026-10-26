@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { ClientArtifacts } from "../src/infrastructure/ClientArtifacts";
 import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
+import { ClientWebBundle } from "../src/infrastructure/ClientWebBundle";
 import { clientChannelRoutes } from "../src/transport/routes/ClientChannelRoutes";
 
 /** 桌面一档给最低版本、移动一档留空：正好覆盖「两端各自门槛」的读回口径。 */
@@ -51,6 +52,66 @@ test("两端门槛各算各的：桌面的旧不代表移动的旧", async () =>
 test("提醒读回的门槛不许被边缘缓存：抬档要立刻生效", async () => {
   const result = await check(appAt("2.0.0"), "clientType=desktop&clientVersion=2.0.0");
   expect(result.cacheControl).toBe("no-store");
+});
+
+test("已发布最新版高于当前壳时回 behindLatest：发新版不必自动抬硬门槛", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe" },
+    fetcher: (async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith(".version")) {
+        return { ok: true, text: async () => "2.5.0\n" } as unknown as Response;
+      }
+      return {
+        ok: true,
+        headers: new Headers({ "content-length": "10" }),
+        method: init?.method,
+      } as unknown as Response;
+    }) as unknown as typeof fetch,
+  });
+  const app = clientChannelRoutes(
+    new ClientChannel({
+      store: new InMemoryClientChannelStore(),
+      minimumVersion: () => "2.0.0",
+    }),
+    artifacts
+  );
+
+  const result = await check(app, "clientType=desktop&clientVersion=2.0.0");
+  expect(result.status).toBe(200);
+  expect(result.body).toMatchObject({
+    minimumVersion: "2.0.0",
+    outdated: false,
+    latestVersion: "2.5.0",
+    behindLatest: true,
+  });
+});
+
+test("版本刚好等于最新发布版时不再提示；旁文件缺失时两档都为假", async () => {
+  const artifacts = new ClientArtifacts({
+    urls: { windows: "https://cdn.test/files/BakaGame-latest-x64.exe" },
+    fetcher: (async (url: string) => {
+      if (String(url).endsWith(".version")) {
+        return { ok: true, text: async () => "2.5.0" } as unknown as Response;
+      }
+      return { ok: true, headers: new Headers() } as unknown as Response;
+    }) as unknown as typeof fetch,
+  });
+  const upToDate = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "" }),
+    artifacts
+  );
+
+  expect(await check(upToDate, "clientType=desktop&clientVersion=2.5.0")).toMatchObject({
+    body: { latestVersion: "2.5.0", behindLatest: false },
+  });
+
+  // 同一份通道，但不给制品服务：没有旁文件就没有软提醒依据，只保留硬门槛口径。
+  const noArtifacts = clientChannelRoutes(
+    new ClientChannel({ store: new InMemoryClientChannelStore(), minimumVersion: () => "" })
+  );
+  expect(await check(noArtifacts, "clientType=desktop&clientVersion=0.1.0")).toMatchObject({
+    body: { latestVersion: "", behindLatest: false },
+  });
 });
 
 test("客户端类型不认识时拒绝，而不是当成够新放过", async () => {
@@ -112,4 +173,77 @@ test("通道没启用时下载信息照回：下载不该被准入相关的开�
 
 test("下载信息可以被短时间缓存：它在发版前根本不会变", async () => {
   expect((await packages(published)).cacheControl).toBe("public, max-age=60");
+});
+
+/** Web 资源热更新清单：只服务移动壳，桌面壳加载远程站点、没有内嵌资源要换。 */
+const webBundle = () =>
+  new ClientWebBundle({
+    manifestUrl: "https://cdn.test/files/BakaGame-web-latest.json",
+    fetcher: (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          build: "newbuild",
+          version: "1.9.5",
+          file: "BakaGame-web-newbuild.zip",
+          sha256: "b".repeat(64),
+          sizeBytes: 34_000_000,
+          minShellVersion: "0.1.2",
+          publishedAt: "2026-10-26T08:00:00.000Z",
+        }),
+      }) as unknown as Response) as unknown as typeof fetch,
+  });
+
+async function webBundleCheck(search: string, bundle: ClientWebBundle | null = webBundle()) {
+  const response = await clientChannelRoutes(undefined, undefined, bundle ?? undefined).handle(
+    new Request(`http://localhost/api/client/web-bundle?${search}`)
+  );
+  return {
+    status: response.status,
+    cacheControl: response.headers.get("cache-control"),
+    body: await response.json().catch(() => null),
+  };
+}
+
+test("移动壳有更新的资源包时给出下载地址与校验值", async () => {
+  const result = await webBundleCheck("clientType=mobile&shellVersion=0.1.2&build=oldbuild");
+  expect(result).toMatchObject({
+    status: 200,
+    cacheControl: "no-store",
+    body: {
+      available: true,
+      build: "newbuild",
+      version: "1.9.5",
+      url: "https://cdn.test/files/BakaGame-web-newbuild.zip",
+      sha256: "b".repeat(64),
+      sizeBytes: 34_000_000,
+    },
+  });
+});
+
+test("构建标记相同即没有更新：每次启动都下载同一份资源包没有意义", async () => {
+  expect(await webBundleCheck("clientType=mobile&shellVersion=0.1.2&build=newbuild")).toMatchObject(
+    { body: { available: false } }
+  );
+});
+
+test("壳低于清单要求的最低版本时不下发：旧壳可能没有新资源要用的桥接能力", async () => {
+  expect(await webBundleCheck("clientType=mobile&shellVersion=0.1.1&build=oldbuild")).toMatchObject(
+    { body: { available: false, reason: "SHELL_TOO_OLD" } }
+  );
+});
+
+test("桌面壳与没有清单的实例都回没有更新：热更新只属于内嵌产物的移动壳", async () => {
+  expect(
+    await webBundleCheck("clientType=desktop&shellVersion=0.1.2&build=oldbuild")
+  ).toMatchObject({ body: { available: false } });
+  expect(
+    await webBundleCheck("clientType=mobile&shellVersion=0.1.2&build=oldbuild", null)
+  ).toMatchObject({ body: { available: false } });
+});
+
+test("构建标记只接受安全字符：路径分隔符不该出现在查询参数里", async () => {
+  const result = await webBundleCheck("clientType=mobile&shellVersion=0.1.2&build=../evil");
+  expect(result.status).toBeGreaterThanOrEqual(400);
+  expect(result.status).toBeLessThan(500);
 });

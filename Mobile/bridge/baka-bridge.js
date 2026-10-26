@@ -20,6 +20,10 @@
 //   → 拿 ticket，挂到 channelTicket 上供页面拼 ws 握手查询串。
 // 票是 30 秒 TTL、用过即焚的：读一次就作废并同时补签一张，定时轮询保证页面任何时候同步
 // 读取都握着一张没用过、也没到期的票。注册依旧惰性——只有页面第一次要票时才走。
+//
+// Web 资源热更新（本文件末尾）：首页空闲时向服务端清单问一次有没有新构建，有就交给原生
+// `BakaHotUpdate` 插件下载、校验、落盘；下次启动由 MainActivity 切换资源基路径生效。
+// 这不是 `__BAKA_CHANNEL__` 的契约成员，页面不需要感知，也不参与通道证明。
 (function () {
   if (window.__BAKA_CHANNEL__) return;
 
@@ -341,4 +345,114 @@
     },
     false
   );
+
+  // —— Web 资源热更新：只换资源、不换 APK，下载完成后下次启动生效 ——
+  // 清单与下载地址都由服务端给（`/api/client/web-bundle`），本脚本只负责在首页空闲时
+  // 询问一次并交给原生插件。原生侧校验 sha256、解压与落盘，失败一律静默：
+  // 热更新是增强，不能影响当前对局，也不能因为一次下载失败就反复弹窗。
+  var HOT_UPDATE_DELAY_MS = 8000;
+  var HOT_UPDATE_RETRY_MS = 60000;
+  var HOT_UPDATE_PATH = "/api/client/web-bundle";
+  var HOT_UPDATE_BUILD_ATTR = 'meta[name="bakagame-build"]';
+
+  function hotUpdatePlugin() {
+    var C = window.Capacitor;
+    if (!C || typeof C.registerPlugin !== "function") return null;
+    try {
+      return C.registerPlugin("BakaHotUpdate");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // 当前页面来自哪个构建：内嵌产物与热更新包里的 index.html 都由构建期写入同一个标记。
+  function currentBuild() {
+    var meta = document.querySelector(HOT_UPDATE_BUILD_ATTR);
+    return meta && meta.content ? String(meta.content).trim() : "";
+  }
+
+  // 页面真正加载起来了才确认待生效包：连续几次没确认，原生侧会回退到内嵌产物。
+  function confirmRunningBuild() {
+    var plugin = hotUpdatePlugin();
+    var build = currentBuild();
+    if (!plugin || !build) return;
+    try {
+      Promise.resolve(plugin.confirm({ build: build })).catch(function () {});
+    } catch (e) {
+      /* 旧壳没有这个插件：按内嵌产物处理 */
+    }
+  }
+
+  function checkHotUpdate() {
+    var plugin = hotUpdatePlugin();
+    var build = currentBuild();
+    if (!plugin || !build) return;
+    var query =
+      "?clientType=mobile&shellVersion=" +
+      encodeURIComponent(CLIENT_VERSION) +
+      "&build=" +
+      encodeURIComponent(build);
+    fetch(apiBase() + HOT_UPDATE_PATH + query, { cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (body) {
+        if (!body || body.available !== true) return;
+        var next = String(body.build || "").trim();
+        var url = String(body.url || "").trim();
+        var sha256 = String(body.sha256 || "").trim();
+        if (!next || url.indexOf("https://") !== 0 || !/^[a-fA-F0-9]{64}$/.test(sha256)) return;
+        return Promise.resolve(
+          plugin.install({
+            build: next,
+            url: url,
+            sha256: sha256,
+            sizeBytes: Number(body.sizeBytes) || 0,
+          })
+        ).catch(function () {
+          // 计费网络、离线、校验失败都走这里：下次在首页且联网时再试。
+        });
+      })
+      .catch(function () {
+        /* 清单读不到不影响页面 */
+      });
+  }
+
+  // 自动检查只在两种时机发生：首页加载完 8 秒，或应用退到后台。
+  // 房间页里不主动拉几十 MB，避免和对局抢带宽；退后台时下载最不影响当前操作。
+  var hotUpdateAttempted = false;
+  function attemptHotUpdate() {
+    if (hotUpdateAttempted) return;
+    if (location.pathname !== "/" && document.visibilityState !== "hidden") return;
+    hotUpdateAttempted = true;
+    checkHotUpdate();
+  }
+
+  function whenPageLoaded(callback) {
+    if (document.readyState === "complete") {
+      setTimeout(callback, HOT_UPDATE_DELAY_MS);
+      return;
+    }
+    window.addEventListener(
+      "load",
+      function () {
+        setTimeout(callback, HOT_UPDATE_DELAY_MS);
+      },
+      { once: true }
+    );
+  }
+
+  document.addEventListener("DOMContentLoaded", confirmRunningBuild, false);
+  document.addEventListener(
+    "visibilitychange",
+    function () {
+      if (document.visibilityState === "hidden") attemptHotUpdate();
+    },
+    false
+  );
+  whenPageLoaded(attemptHotUpdate);
+  // 首页停留时间短、或一直待在房间页时，8 秒那一次可能错过；每分钟再看一次路由，
+  // 真正发起网络请求仍只在首页或退后台时发生。
+  setInterval(attemptHotUpdate, HOT_UPDATE_RETRY_MS);
 })();

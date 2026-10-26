@@ -54,6 +54,7 @@ function SkeletonRow() {
 function PackageDetails({ pkg }: { pkg: ClientPackage | undefined }) {
   return (
     <div className="rounded-md bg-muted/40 px-3 py-1.5">
+      <DetailRow label="客户端版本" value={pkg?.version ?? ""} />
       <DetailRow label="安装包架构" value={pkg?.arch ?? ""} />
       <DetailRow label="构建日期" value={formatPackageBuild(pkg?.builtAt)} />
       <DetailRow label="文件大小" value={formatPackageSize(pkg?.sizeBytes)} />

@@ -24,6 +24,7 @@ describe("VersionUpdateNotice", () => {
   });
 
   afterEach(() => {
+    delete window.__BAKA_CHANNEL__;
     vi.unstubAllEnvs();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -31,6 +32,21 @@ describe("VersionUpdateNotice", () => {
 
   it("does not check or display when running in dev environment", async () => {
     vi.stubEnv("DEV", true);
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+
+    render(<VersionUpdateNotice active={true} />);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("移动壳不轮询网页构建：资源更新走热更新清单", async () => {
+    window.__BAKA_CHANNEL__ = {
+      clientType: "mobile",
+      platform: "android",
+      clientVersion: "0.1.2",
+    };
     const fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy;
 

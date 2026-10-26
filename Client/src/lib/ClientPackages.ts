@@ -17,6 +17,8 @@ export interface ClientPackage {
   /** 安装包架构标签，如 `x64`、`全架构通用`。 */
   arch: string;
   url: string;
+  /** 发布流水线写下的壳版本；旧制品没有旁文件时缺省。 */
+  version?: string;
   /** 制品还没推上对象存储时为 false：弹窗把下载按钮置灰，而不是递一个 404 给玩家。 */
   available: boolean;
   sizeBytes?: number;
@@ -39,7 +41,8 @@ const isPackage = (value: unknown): value is ClientPackage => {
     (item.platform === "windows" || item.platform === "android") &&
     typeof item.url === "string" &&
     typeof item.arch === "string" &&
-    typeof item.available === "boolean"
+    typeof item.available === "boolean" &&
+    (item.version === undefined || typeof item.version === "string")
   );
 };
 

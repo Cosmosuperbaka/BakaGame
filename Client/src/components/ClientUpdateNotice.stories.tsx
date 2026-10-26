@@ -2,9 +2,18 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ClientUpdateBanner, type ClientUpdateFloor } from "./ClientUpdateNotice";
 
-/** 门槛读回依赖真实服务端，这里直接渲染展示层。 */
-const desktopFloor: ClientUpdateFloor = { clientType: "desktop", minimumVersion: "1.2.0" };
-const mobileFloor: ClientUpdateFloor = { clientType: "mobile", minimumVersion: "1.2.0" };
+/** 门槛与最新版号都依赖真实服务端，这里直接渲染展示层。 */
+const desktopFloor: ClientUpdateFloor = {
+  clientType: "desktop",
+  mode: "required",
+  version: "1.2.0",
+};
+const mobileFloor: ClientUpdateFloor = { clientType: "mobile", mode: "required", version: "1.2.0" };
+const desktopAvailable: ClientUpdateFloor = {
+  clientType: "desktop",
+  mode: "available",
+  version: "1.2.0",
+};
 
 const meta = {
   title: "公共组件/ClientUpdateNotice",
@@ -22,6 +31,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const DesktopOutdated: Story = { name: "桌面端版本过旧" };
+export const DesktopNewerAvailable: Story = {
+  name: "桌面端有新版本可用",
+  args: { floor: desktopAvailable },
+};
 export const MobileOutdated: Story = {
   name: "移动端版本过旧",
   args: {

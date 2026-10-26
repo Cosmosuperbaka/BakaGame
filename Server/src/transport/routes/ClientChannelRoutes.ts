@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
 import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
-import type { ClientChannel } from "../../infrastructure/ClientChannel";
+import { compareClientVersion, type ClientChannel } from "../../infrastructure/ClientChannel";
+import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
 import { resolveClientIp } from "../ClientIp";
 
 /**
@@ -24,6 +25,8 @@ const selfCheckSchema = t.Object(
   { additionalProperties: false }
 );
 const clientTypeSchema = t.Union([t.Literal("desktop"), t.Literal("mobile")]);
+/** 壳类型 → 安装包平台：制品清单按平台索引，更新检查按壳类型提问。 */
+const PACKAGE_PLATFORM = { desktop: "windows", mobile: "android" } as const;
 const versionSchema = t.String({ minLength: 1, maxLength: 32, pattern: "^\\d+(\\.\\d+){0,3}$" });
 const clientIdSchema = t.String({ minLength: 8, maxLength: 64 });
 /** 厂商链一般 3—5 张，留到 8 张；单张 PEM 上限按 EC P-384 根的量级给。 */
@@ -37,7 +40,8 @@ const attestationSchema = t.Object(
 
 export const clientChannelRoutes = (
   channel: ClientChannel | undefined,
-  artifacts?: ClientArtifacts
+  artifacts?: ClientArtifacts,
+  webBundle?: ClientWebBundle
 ) => {
   /** 未装配通道时明确报错，而不是静默放行：壳会把「注册成功」误判成「能进反作弊房」。 */
   const require = () => {
@@ -95,19 +99,67 @@ export const clientChannelRoutes = (
     )
     .get(
       "/api/client/update-check",
-      ({ query, set }) => {
+      async ({ query, set }) => {
         // 比对只用服务端这一份 compareClientVersion：前端再实现一遍，两端对「够不够新」
         // 的判断迟早各自漂移。这里读回的最低版本也只用于提醒，拦人仍在 requireAdmission。
         set.headers["cache-control"] = "no-store";
         const channel = require();
-        return {
-          minimumVersion: channel.minimumVersionFor(query.clientType),
-          outdated: channel.isOutdated(query.clientType, query.clientVersion),
-        };
+        const minimumVersion = channel.minimumVersionFor(query.clientType);
+        const outdated = channel.isOutdated(query.clientType, query.clientVersion);
+        // 软提醒的第二个依据：已发布的最新壳版本。它回答「有没有新版可拿」，
+        // 与「够不够格进反作弊房」是两件事——发新版不等于协议破坏性变更，不能自动抬硬门槛。
+        // 已经低于硬门槛时不必再问制品：硬提醒优先，也别让一次 CDN 探测拖慢「进不了房」这句提示。
+        const latestVersion = outdated
+          ? ""
+          : ((await artifacts?.latestVersion(PACKAGE_PLATFORM[query.clientType])) ?? "");
+        const behindLatest =
+          !outdated &&
+          latestVersion.length > 0 &&
+          compareClientVersion(query.clientVersion, latestVersion) < 0;
+        return { minimumVersion, outdated, latestVersion, behindLatest };
       },
       {
         // 查询串不锁 additionalProperties：多带一个排查用的参数不该让整条提醒失效。
         query: t.Object({ clientType: clientTypeSchema, clientVersion: versionSchema }),
+      }
+    )
+    .get(
+      "/api/client/web-bundle",
+      async ({ query, set }) => {
+        // 资源包只服务内嵌产物的移动壳：桌面壳加载远程站点，Web 版根本没有「内嵌资源」要换。
+        // 读清单本身有 30 秒服务端缓存，这里仍回 no-store，让发版后的第一次询问立刻看到新包。
+        set.headers["cache-control"] = "no-store";
+        if (query.clientType !== "mobile") return { available: false };
+        const current = await webBundle?.current();
+        if (!current) return { available: false };
+        // 新资源可能调用旧壳没有的桥接能力：低于最低壳版本就不下发，先让玩家更新壳。
+        if (
+          current.minShellVersion &&
+          compareClientVersion(query.shellVersion, current.minShellVersion) < 0
+        ) {
+          return { available: false, reason: "SHELL_TOO_OLD" };
+        }
+        if (current.build === query.build) return { available: false };
+        return {
+          available: true,
+          build: current.build,
+          version: current.version ?? "",
+          url: current.url,
+          sha256: current.sha256,
+          sizeBytes: current.sizeBytes ?? 0,
+          publishedAt: current.publishedAt ?? "",
+        };
+      },
+      {
+        query: t.Object({
+          clientType: clientTypeSchema,
+          shellVersion: versionSchema,
+          build: t.String({
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^(?!.*\\.\\.)(?!\\.$)[A-Za-z0-9._-]+$",
+          }),
+        }),
       }
     )
     .get("/api/client/packages", async ({ set }) => {

@@ -38,9 +38,9 @@ android {
         // Key Attestation 自 API 24 起可用，minSdk 与计划 P3.2 口径一致
         minSdk 24
         targetSdk 35
-        versionCode 2
+        versionCode 3
         // versionName 由 scripts/prepare-web.mjs 从 Mobile/package.json 同步，勿手改
-        versionName '0.1.1'
+        versionName '0.1.2'
 
         // 密钥进 DEX 的 BuildConfig，不进 Web 产物；空值表示本次构建未启用 HTTPDNS。
         buildConfigField "String", "HTTPDNS_APP_ID", bakaJavaString(bakaHttpDnsAppId)
