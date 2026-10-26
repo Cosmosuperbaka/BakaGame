@@ -41,7 +41,15 @@ export async function installLoopbackGuard(context: BrowserContext) {
       return;
     }
     // Terminal handling is not retried: fulfill and abort are mutually exclusive.
-    await route.fulfill({ response });
+    //
+    // 但 `route.fetch` 是异步的：这段等待里页面可能已经导航走，Playwright 随即把这条
+    // 请求判为已处理，`fulfill` 会抛「Route is already handled!」。请求既然不在了，
+    // 就没有什么要补的 —— 只放过这一种错误，其余照旧上抛，守卫本身仍是 fail-closed。
+    try {
+      await route.fulfill({ response });
+    } catch (error) {
+      if (!/Route is already handled/.test(String(error))) throw error;
+    }
   });
   await context.routeWebSocket("**/*", async (socket) => {
     if (isLoopbackUrl(socket.url())) {
