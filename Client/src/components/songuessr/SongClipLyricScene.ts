@@ -25,10 +25,12 @@ export class SongClipLyricScene {
   private frame = 0;
   private lastFrame: number | null = null;
   private readonly host: HTMLElement;
+  /** 首次排版完成时触发一次；用于把初始选段滚进可见范围，不参与播放中的任何滚动。 */
+  onReady?: () => void;
 
   constructor(host: HTMLElement) {
     this.host = host;
-    this.element.classList.add("baka-lyric-player", "baka-clip-lyric-selector");
+    this.element.classList.add("baka-lyric-player", "baka-clip-lyric-sheet");
     this.element.style.height = "auto";
     this.host.append(this.element);
     this.player.setOverscanPx(0x7fffffff);
@@ -174,6 +176,7 @@ export class SongClipLyricScene {
     this.player.update(0);
     this.ready = true;
     this.host.dataset.ready = "true";
+    this.onReady?.();
   };
 
   private scheduleFrame() {

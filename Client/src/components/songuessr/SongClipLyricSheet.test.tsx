@@ -88,7 +88,7 @@ vi.mock("@applemusic-like-lyrics/core", () => ({
   },
 }));
 
-import { SongClipLyricSelector } from "./SongClipLyricSelector";
+import { SongClipLyricSheet } from "./SongClipLyricSheet";
 
 const lines: SongLyricLine[] = [
   {
@@ -108,15 +108,10 @@ beforeEach(() => {
   players.length = 0;
 });
 
-describe("SongClipLyricSelector", () => {
+describe("SongClipLyricSheet", () => {
   it("按原始逐字能力标记行，并同步区间和起点状态", () => {
     const { rerender } = render(
-      <SongClipLyricSelector
-        lines={lines}
-        range={[10_000, 25_000]}
-        anchorIndex={0}
-        onPick={vi.fn()}
-      />
+      <SongClipLyricSheet lines={lines} range={[10_000, 25_000]} anchorIndex={0} onPick={vi.fn()} />
     );
     const timed = screen.getByRole("button", { name: "0:10.0 逐字句" });
     const plain = screen.getByRole("button", { name: "0:20.0 普通句" });
@@ -130,7 +125,7 @@ describe("SongClipLyricSelector", () => {
     );
 
     rerender(
-      <SongClipLyricSelector
+      <SongClipLyricSheet
         lines={lines}
         range={[30_000, 35_000]}
         anchorIndex={null}
@@ -149,7 +144,7 @@ describe("SongClipLyricSelector", () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
     render(
-      <SongClipLyricSelector
+      <SongClipLyricSheet
         lines={lines}
         range={[10_000, 25_000]}
         anchorIndex={null}
@@ -170,7 +165,7 @@ describe("SongClipLyricSelector", () => {
   it("内容快照不重建节点，逐字内容变化仍更新", () => {
     const onPick = vi.fn();
     const { rerender } = render(
-      <SongClipLyricSelector
+      <SongClipLyricSheet
         lines={lines}
         range={[10_000, 25_000]}
         anchorIndex={null}
@@ -179,7 +174,7 @@ describe("SongClipLyricSelector", () => {
     );
     const original = screen.getByRole("button", { name: "0:10.0 逐字句" });
     rerender(
-      <SongClipLyricSelector
+      <SongClipLyricSheet
         lines={structuredClone(lines)}
         range={[10_000, 25_000]}
         anchorIndex={null}
@@ -191,7 +186,7 @@ describe("SongClipLyricSelector", () => {
     changed[0]!.text = "改后句";
     changed[0]!.words![1]!.word = "改后";
     rerender(
-      <SongClipLyricSelector
+      <SongClipLyricSheet
         lines={changed}
         range={[10_000, 25_000]}
         anchorIndex={null}
@@ -200,5 +195,14 @@ describe("SongClipLyricSelector", () => {
     );
     expect(screen.getByRole("button", { name: "0:10.0 改后句" })).toBeInTheDocument();
     expect(players.at(-1)!.lines[0]!.words[1]!.word).toBe("改后");
+  });
+
+  it("没有歌词时给出纯音乐说明，不挂载歌词节点", () => {
+    render(
+      <SongClipLyricSheet lines={[]} range={[0, 30_000]} anchorIndex={null} onPick={vi.fn()} />
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("纯音乐，没有可选的歌词");
+    expect(screen.queryByTestId("song-clip-lyric-sheet")).not.toBeInTheDocument();
+    expect(players).toHaveLength(0);
   });
 });

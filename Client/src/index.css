@@ -720,8 +720,20 @@ img {
   background-color: var(--color-foreground);
 }
 
-/* 选词器保留 AMLL 的逐字更新，但把行盒固定回正常文档流，播放不改变任何行的位置或尺寸。 */
-.baka-clip-lyric-selector.amll-lyric-player {
+/* 截取歌词页：AMLL 仍负责逐字遮罩与测量，行盒固定在文档流里；
+   播放只推进当前行的遮罩，不滚动、不位移、不缩放。 */
+.baka-clip-lyric-scroller {
+  /* 上下轻淡出，提示还有歌词可滚，同时不把选点后的首行切成一刀。 */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 0.625rem,
+    black calc(100% - 0.75rem),
+    transparent 100%
+  );
+}
+
+.baka-clip-lyric-sheet.amll-lyric-player {
   position: relative;
   min-height: 0;
   overflow: visible;
@@ -729,42 +741,54 @@ img {
   --amll-lp-font-size: 1rem;
   --amll-lp-line-width-aspect: 1;
   --lyric-line-padding-x: 0px;
+  color: var(--color-muted-foreground);
 }
 
-.baka-clip-lyric-selector [class*="lyricLineWrapper"] {
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"] {
   position: relative !important;
   inset: auto !important;
-  align-items: stretch !important;
-  gap: 0;
-  padding: 0.125rem 0;
+  gap: 0.125rem;
+  padding: 0;
   transform: none !important;
   opacity: 1 !important;
   filter: none !important;
   will-change: auto;
-  text-align: left;
+  text-align: center;
 }
 
-.baka-clip-lyric-selector [class*="lyricLine"],
-.baka-clip-lyric-selector [class*="lyricMainLine"],
-.baka-clip-lyric-selector [class*="lyricMainLine"] span,
-.baka-clip-lyric-selector [class*="bgWrapper"] {
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"]:hover,
+.baka-clip-lyric-sheet [class*="lyricLineWrapper"]:active {
+  background-color: transparent;
+}
+
+.baka-clip-lyric-sheet [class*="lyricLine"],
+.baka-clip-lyric-sheet [class*="lyricMainLine"],
+.baka-clip-lyric-sheet [class*="lyricMainLine"] span,
+.baka-clip-lyric-sheet [class*="bgWrapper"] {
   transform: none !important;
   filter: none !important;
   will-change: auto;
 }
 
-.baka-clip-lyric-selector [class*="lyricMainLine"] {
-  justify-content: flex-start;
-  opacity: 1 !important;
-  text-align: left;
+.baka-clip-lyric-sheet [class*="lyricMainLine"] {
+  justify-content: center;
+  text-align: center;
+  color: inherit;
 }
 
-.baka-clip-lyric-selector [class*="lyricSubLine"] {
+.baka-clip-lyric-sheet [class*="lyricSubLine"] {
   margin-top: 0.15rem;
-  text-align: left;
+  color: inherit;
+  font-family: var(--font-serif);
+  text-align: center;
 }
 
-.baka-clip-lyric-selector [class*="bgWrapper"] {
+.baka-clip-lyric-sheet [class*="lyricSubLine"]:empty,
+.baka-clip-lyric-sheet [class*="romanWord"]:empty {
+  display: none;
+}
+
+.baka-clip-lyric-sheet [class*="bgWrapper"] {
   position: relative !important;
   inset: auto !important;
   width: 100% !important;
@@ -773,29 +797,30 @@ img {
   opacity: 1 !important;
 }
 
-.baka-clip-lyric-selector [class*="bottomLine"],
-.baka-clip-lyric-selector [class*="interludeDots"] {
+.baka-clip-lyric-sheet [class*="bottomLine"],
+.baka-clip-lyric-sheet [class*="interludeDots"] {
   display: none !important;
 }
 
 .baka-lyric-player .baka-clip-lyric-line {
   position: relative;
-  min-height: 2.25rem;
   margin: 0;
-  padding: 0.5rem 0.625rem 0.5rem 3.875rem;
-  border-radius: var(--radius-sm);
+  padding: 0.55rem 2.75rem;
+  border-radius: var(--radius-md);
   pointer-events: auto !important;
   cursor: pointer;
-  color: var(--color-foreground);
-  line-height: 1.5;
-  text-align: left !important;
+  color: var(--color-muted-foreground);
+  line-height: 1.55;
+  text-align: center !important;
   transition:
     background-color var(--motion-duration-quick) var(--motion-ease-out),
-    color var(--motion-duration-quick) var(--motion-ease-out);
+    color var(--motion-duration-quick) var(--motion-ease-out),
+    box-shadow var(--motion-duration-quick) var(--motion-ease-out);
 }
 
 .baka-lyric-player .baka-clip-lyric-line:hover {
-  background-color: var(--color-accent);
+  background-color: color-mix(in oklab, var(--color-accent) 55%, transparent);
+  color: var(--color-foreground);
 }
 
 .baka-lyric-player .baka-clip-lyric-line:focus-visible {
@@ -804,12 +829,14 @@ img {
 }
 
 .baka-lyric-player .baka-clip-lyric-line[data-selected="true"] {
-  background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
-  box-shadow: inset 2px 0 0 var(--color-primary);
+  border-radius: 0;
+  background-color: color-mix(in oklab, var(--color-primary) 7%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--color-primary) 50%, transparent);
+  color: var(--color-foreground);
 }
 
 .baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:hover {
-  background-color: color-mix(in oklab, var(--color-primary) 14%, transparent);
+  background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
 }
 
 .baka-lyric-player .baka-clip-lyric-line[data-active="true"] {
@@ -817,38 +844,51 @@ img {
 }
 
 .baka-clip-lyric-line::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.95rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: transparent;
+  transform: translateY(-50%);
+}
+
+.baka-clip-lyric-line[data-anchor="true"]::before {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 0.2rem color-mix(in oklab, var(--color-primary) 14%, transparent);
+}
+
+.baka-clip-lyric-line::after {
   content: attr(data-time);
   position: absolute;
-  top: 0.625rem;
-  left: 0.625rem;
-  width: 2.75rem;
+  top: 0.35rem;
+  right: 0.6rem;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--color-panel) 92%, transparent);
   color: var(--color-muted-foreground);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  line-height: 1.25rem;
-  tab-size: 4;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-duration-quick) var(--motion-ease-out);
 }
 
-.baka-clip-lyric-line[data-selected="true"]::before {
-  color: var(--color-primary);
-}
-
+.baka-clip-lyric-line:hover::after,
+.baka-clip-lyric-line:focus-visible::after,
 .baka-clip-lyric-line[data-anchor="true"]::after {
-  content: "起点";
-  position: absolute;
-  top: 2rem;
-  left: 0.625rem;
-  padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-  font-family: var(--font-kai);
-  font-size: var(--text-2xs);
-  line-height: 1.25rem;
+  opacity: 1;
 }
 
 .baka-clip-lyric-line[class*="lyricBgLine"] {
-  opacity: 0.68 !important;
+  opacity: 0.62 !important;
+}
+
+.baka-clip-lyric-line[class*="lyricBgLine"][data-selected="true"] {
+  opacity: 0.82 !important;
 }
 
 .baka-clip-lyric-line[data-word-timed="true"]:not([data-active="true"]) {
@@ -860,6 +900,20 @@ img {
 .baka-clip-lyric-line[data-word-timed="false"] * {
   -webkit-mask-image: none !important;
   mask-image: none !important;
+}
+
+@media (width <= 640px) {
+  .baka-lyric-player .baka-clip-lyric-line {
+    padding-inline: 1.75rem;
+  }
+
+  .baka-clip-lyric-line::before {
+    left: 0.65rem;
+  }
+
+  .baka-clip-lyric-line::after {
+    right: 0.4rem;
+  }
 }
 
 /*

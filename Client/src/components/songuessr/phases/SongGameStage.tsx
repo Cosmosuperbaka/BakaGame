@@ -57,8 +57,8 @@ import type {
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
 
-const SongClipConfig = lazy(async () => ({
-  default: (await import("@/components/songuessr/SongClipConfig")).SongClipConfig,
+const SongClipEditor = lazy(async () => ({
+  default: (await import("@/components/songuessr/SongClipEditor")).SongClipEditor,
 }));
 
 /** 方向箭头指向答案：higher 即答案比这次猜的更大（年份更晚、热度更高）。 */
@@ -760,7 +760,7 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
                   </div>
                 }
               >
-                <SongClipConfig
+                <SongClipEditor
                   song={preview}
                   onConfirm={(clip) =>
                     onSelectSearchSong(preview.id, "submit", undefined, clip, {

@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { SongClipPreview } from "@bakagame/shared";
+import { placeholderImage } from "@/stories/fixtures/Common";
 import { waitForLyrics } from "@/stories/fixtures/SonGuessr";
-import { SongClipConfig } from "./SongClipConfig";
+import { SongClipEditor } from "./SongClipEditor";
 
 // 极短静音 WAV：故事不依赖外网，音频控件能进入就绪态又不打扰截图。
 const SILENT_AUDIO =
@@ -12,6 +13,7 @@ const SONG: SongClipPreview = {
   title: "夜に駆ける",
   artist: "YOASOBI",
   album: "THE BOOK",
+  pictureUrl: placeholderImage("夜", 215, 160, 160),
   durationMs: 261_000,
   audioUrl: SILENT_AUDIO,
   chorus: { startTime: 60_000, endTime: 90_000 },
@@ -88,8 +90,8 @@ const SONG: SongClipPreview = {
 };
 
 const meta = {
-  title: "猜歌/SongClipConfig",
-  component: SongClipConfig,
+  title: "猜歌/SongClipEditor",
+  component: SongClipEditor,
   args: {
     song: SONG,
     onConfirm: async () => {},
@@ -104,12 +106,12 @@ const meta = {
   ],
   play: async ({ canvasElement, args }) =>
     waitForLyrics(canvasElement, args.song.lyrics.length > 0 ? 1 : 0),
-} satisfies Meta<typeof SongClipConfig>;
+} satisfies Meta<typeof SongClipEditor>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = { name: "逐字与普通歌词 · 统一截取面板" };
+export const Default: Story = { name: "逐字与普通歌词 · 统一剪辑台" };
 
 export const NoSuggestion: Story = {
   name: "无建议区间 · 回退副歌",
@@ -128,15 +130,27 @@ export const LineOnly: Story = {
   },
 };
 
+export const LongTitle: Story = {
+  name: "超长曲名 · 信息截断",
+  args: {
+    song: {
+      ...SONG,
+      title: "在海风吹过的第七个夏天里我们终于学会了告别",
+      artist: "北岸电台 / 苏木",
+      album: "潮汐时刻表",
+    },
+  },
+};
+
+export const Instrumental: Story = {
+  name: "纯音乐 · 空歌词",
+  args: {
+    song: { ...SONG, lyrics: [], chorus: undefined, suggestedClip: undefined, durationMs: 180_000 },
+  },
+};
+
 export const Mobile: Story = {
   name: "移动端 · 逐字与回退",
   tags: ["mobile"],
   globals: { viewport: { value: "mobile", isRotated: false } },
-};
-
-export const Instrumental: Story = {
-  name: "纯音乐",
-  args: {
-    song: { ...SONG, lyrics: [], chorus: undefined, suggestedClip: undefined, durationMs: 180_000 },
-  },
 };

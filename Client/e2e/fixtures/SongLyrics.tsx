@@ -7,16 +7,16 @@ import {
   type SongLyricPlayerProps,
 } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
-  SongClipLyricSelector,
-  type SongClipLyricSelectorProps,
-} from "@/components/songuessr/SongClipLyricSelector";
+  SongClipLyricSheet,
+  type SongClipLyricSheetProps,
+} from "@/components/songuessr/SongClipLyricSheet";
 import "@applemusic-like-lyrics/core/style.css";
 import "@/index.css";
 
 // 浏览器桥接只接受可序列化属性；audioRef 始终由夹具持有，不能跨 page.evaluate 传递。
 export type SongLyricsFixtureProps = Partial<Omit<SongLyricPlayerProps, "audioRef">>;
 export type SongClipSelectorFixtureProps = Partial<
-  Omit<SongClipLyricSelectorProps, "audioRef" | "onPick" | "listRef">
+  Omit<SongClipLyricSheetProps, "audioRef" | "onPick">
 >;
 
 // 仅计数，不替代 AMLL 实现；比较实际动画更新次数，不能据此推断 CPU 占用。
@@ -33,7 +33,7 @@ const audioRef = createRef<HTMLAudioElement>();
 audioRef.current = audio;
 let mode: "player" | "selector" = "player";
 let props: SongLyricPlayerProps = { lines: [], audioRef };
-let selectorProps: SongClipLyricSelectorProps = {
+let selectorProps: SongClipLyricSheetProps = {
   lines: [],
   range: [0, 0],
   anchorIndex: null,
@@ -47,7 +47,7 @@ function renderRoot() {
       <StrictMode>
         <main style={{ width: "min(100% - 32px, 760px)", margin: "32px auto" }}>
           {mode === "selector" ? (
-            <SongClipLyricSelector {...selectorProps} audioRef={audioRef} onPick={onPick} />
+            <SongClipLyricSheet {...selectorProps} audioRef={audioRef} onPick={onPick} />
           ) : (
             <SongLyricPlayer {...props} />
           )}

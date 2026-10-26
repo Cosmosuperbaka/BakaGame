@@ -49,7 +49,7 @@ function stageProps(overrides: Partial<SongGameAreaProps>): SongGameAreaProps {
   };
 }
 
-describe("手动出题的片段配置", () => {
+describe("手动出题的片段编辑", () => {
   it("选中歌曲后先取预览再出题，提交时带上确认的起止时间", async () => {
     const user = userEvent.setup();
     const sendCommand = vi.fn(async (type: string) =>
@@ -77,7 +77,7 @@ describe("手动出题的片段配置", () => {
       { songId: "song-1", sources: ["song-1", "qq:alt"], requiresVip: true },
       { timeout: 0 }
     );
-    expect(await screen.findByText("时间轴")).toBeInTheDocument();
+    expect(await screen.findByRole("slider", { name: "片段起点" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
     expect(onSelectSearchSong).toHaveBeenCalledExactlyOnceWith(
       "song-1",
