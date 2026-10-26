@@ -44,8 +44,9 @@ describe("SonGuessr PlayerList", () => {
     expect(
       screen.getByRole("img", { name: "房主小艾 逐轮结果：猜中、次数用尽、超时" })
     ).toBeInTheDocument();
-    // 没有作答过的玩家不产生结果条：整页只有这一枚。
-    expect(screen.getAllByRole("img")).toHaveLength(1);
+    // 没有作答过的玩家不产生结果条：按名字限定到结果条本身，
+    // 不去数整页的 `img` —— 房主、测试人机这类状态图标同样是图像角色。
+    expect(screen.getAllByRole("img", { name: /逐轮结果：/ })).toHaveLength(1);
   });
 
   it("渲染房主标识与玩家基础信息", () => {

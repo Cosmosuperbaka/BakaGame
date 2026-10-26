@@ -93,8 +93,11 @@ const PLAYER_STATUS_ICON_TONES: Record<PlayerStatusTone, string> = {
 /**
  * 状态图标：玩家栏要扫得快，房主、准备、离线这类状态收成一枚图标。
  *
- * 图标不是唯一的线索——同一份文字仍在 DOM 里：`sr-only` 给读屏，`Hint` 给悬停，
- * 形状与色调给视觉。所以「只靠颜色传达」这条红线没有被触碰，被拿掉的只是常驻可见的字。
+ * 图标不是唯一的线索——同一份文字在两处仍然可达：`aria-label` 决定这枚图标的
+ * **无障碍名**（读屏与按名定位都靠它），`sr-only` 把文字留在 DOM 里供文本查询与复制。
+ * 只有 `sr-only` 不够：无障碍名取的是 `aria-label`/`aria-labelledby`，一段视觉隐藏的
+ * 文本不构成名字，按名定位会直接落空。`Hint` 给悬停，形状与色调给视觉，所以
+ * 「只靠颜色传达」这条红线没有被触碰，被拿掉的只是常驻可见的字。
  * `icon` 省略时按 `label` 取共用映射，三个游戏因此对同一状态用同一字形。
  */
 export function PlayerStatusIcon({
@@ -109,7 +112,11 @@ export function PlayerStatusIcon({
   const Glyph = PLAYER_STATUS_ICONS[label] ?? CircleHelp;
   return (
     <Hint label={label}>
-      <span className={cn(PLAYER_STATUS_ICON_BASE, PLAYER_STATUS_ICON_TONES[tone])}>
+      <span
+        role="img"
+        aria-label={label}
+        className={cn(PLAYER_STATUS_ICON_BASE, PLAYER_STATUS_ICON_TONES[tone])}
+      >
         {icon ?? <Glyph aria-hidden="true" />}
         <span className="sr-only">{label}</span>
       </span>

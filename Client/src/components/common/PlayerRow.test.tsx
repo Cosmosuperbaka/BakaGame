@@ -21,22 +21,32 @@ afterEach(() => {
 });
 
 describe("PlayerRow 资料卡", () => {
-  it("房主与离线收成图标，但同一份文字仍以 sr-only 留在 DOM 里", () => {
+  it("房主与离线收成图标，无障碍名仍是同一份文字", () => {
     render(
       <>
         <PlayerRow name="房主小明" score={12} host />
         <PlayerRow name="掉线的小红" score={3} online={false} />
       </>
     );
-    // 可见的是图标；文字给读屏与悬停，状态因此不靠颜色单独表达。
-    const host = screen.getByText("房主");
-    const offline = screen.getByText("离线");
-    expect(host).not.toBeNull();
-    expect(offline).not.toBeNull();
-    for (const label of [host, offline]) {
-      expect(label.className).toContain("sr-only");
-      expect(label.parentElement?.querySelector("svg")).not.toBeNull();
+    // 可见的是图标；文字作为这枚图标的无障碍名（aria-label），读屏与按名定位都能命中。
+    // 状态因此不靠颜色单独表达，也不依赖一段视觉隐藏的文本。
+    for (const name of ["房主", "离线"]) {
+      const icon = screen.getByRole("img", { name });
+      expect(icon.querySelector("svg")).not.toBeNull();
     }
+  });
+
+  it("已出局与测试人机同样带无障碍名", () => {
+    render(
+      <>
+        <PlayerRow name="出局的人" score={0} eliminated />
+        <PlayerRow name="人机一号" score={0} bot />
+      </>
+    );
+    // 这两个名字是 E2E 用来数人头的锚点（`getByLabel("已出局")` / `getByLabel("测试人机")`），
+    // 单测在这里先钉住，免得玩家行再改版时只剩图标、名字又一次悄悄丢掉。
+    expect(screen.getByRole("img", { name: "已出局" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "测试人机" })).toBeInTheDocument();
   });
 
   it("游客且无操作权限时整行不可点", () => {
