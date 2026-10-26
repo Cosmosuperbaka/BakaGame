@@ -62,7 +62,7 @@ export interface SonGuessrPlayerRecord {
   team: number | null;
   correctGuesses: number;
   totalGuesses: number;
-  /** 本局逐轮作答结果，`finishRound` 按轮追加，开局清零。 */
+  /** 本轮作答结果，`finishRound` 写入；换轮与回到等待时清零。 */
   roundMarks: SonGuessrRoundMark[];
   isBot: boolean;
   isAgent?: boolean;

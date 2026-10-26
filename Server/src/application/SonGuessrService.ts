@@ -2215,10 +2215,8 @@ export class SonGuessrService implements AdminRoomControl {
       participantStates[candidate.id] = unit;
       audioReady[candidate.id] = candidate.isBot;
     }
-    // 第一轮即新的一局：标记串按局累计，不清零会把上一局的战绩接着画进玩家栏。
-    if (roundNumber === 1) {
-      for (const candidate of Object.values(room.players)) candidate.roundMarks = [];
-    }
+    // 逐轮结果只描述本轮：安装新回合时先清空，结算时再把本轮的结局写回去。
+    this.clearRoundMarks(room);
     room.roundNumber = roundNumber;
     room.currentRound = {
       number: roundNumber,
@@ -2963,6 +2961,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.pendingSubmitterDeadlineAt = undefined;
     room.submitterPrompt = undefined;
     room.phase = "waiting";
+    this.clearRoundMarks(room);
     this.resetReadyState(room);
     this.touch(room);
     this.publishRoom(room);
@@ -3045,6 +3044,8 @@ export class SonGuessrService implements AdminRoomControl {
       const nextSubmitter = room.settings.autoRotateSubmitter
         ? this.nextRotatingSubmitter(room, previousSubmitterId)
         : undefined;
+      // 「再来一轮」已经把界面切到下一轮：上一轮的结局不跟着进新回合。
+      this.clearRoundMarks(room);
       // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
       if (nextSubmitter) {
         room.pendingSubmitterPlayerId = nextSubmitter.id;
@@ -3077,6 +3078,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.currentRound = undefined;
     room.roundSummary = undefined;
     room.finalScores = undefined;
+    this.clearRoundMarks(room);
     this.applyQueuedMemberships(room);
     this.resetReadyState(room);
     this.touch(room);
@@ -3236,16 +3238,15 @@ export class SonGuessrService implements AdminRoomControl {
       round.hardDeadlineAt === undefined ? deadlineAt : Math.min(deadlineAt, round.hardDeadlineAt);
   }
 
+  /** 清空逐轮结果。标记只描述当前这一轮，换轮与回到等待时都不该留下上一轮的结局。 */
+  private clearRoundMarks(room: SonGuessrRoomRecord): void {
+    for (const player of Object.values(room.players)) player.roundMarks = [];
+  }
+
   /**
-   * @param skipped 房主直接跳过本回合。跳过不是「无人猜中」，
-   *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
-   *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
-   */
-  /**
-   * 给每个「本应作答」的玩家追加一枚本轮标记。
+   * 给每个「本应作答」的玩家写入本轮结局标记。
    *
-   * 出题人、其队友（本局观战）与旁观者不作答，因此不产生标记——玩家栏那一串读起来
-   * 就是「他真正作答过的轮次」，而不是每轮都多一个无关字符。
+   * 出题人、其队友（本局观战）与旁观者不作答，因此不产生标记。
    * 结果取 `SonGuessrRoundMark` 枚举，不沿用猜猜呗的 emoji 标记串：那套是为兼容原版房
    */
   private appendRoundMarks(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord): void {
@@ -3266,6 +3267,11 @@ export class SonGuessrService implements AdminRoomControl {
     }
   }
 
+  /**
+   * @param skipped 房主直接跳过本回合。跳过不是「无人猜中」，
+   *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
+   *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
+   */
   private finishRound(room: SonGuessrRoomRecord, skipped = false) {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;

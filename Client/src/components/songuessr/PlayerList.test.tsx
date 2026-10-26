@@ -25,28 +25,32 @@ const createMockPlayer = (overrides: Partial<SonGuessrPlayerView> = {}): SonGues
 });
 
 describe("SonGuessr PlayerList", () => {
-  it("逐轮作答结果按枚举渲染成一串图标，整串作为一个图像读给读屏", () => {
+  it("本轮作答结果按枚举渲染成图标，整串作为一个图像读给读屏", () => {
     const players: SonGuessrPlayerView[] = [
       createMockPlayer({
         id: "host-1",
         name: "房主小艾",
         isHost: true,
-        roundMarks: ["correct", "outOfGuesses", "timeout"],
+        roundMarks: ["correct"],
       }),
       createMockPlayer({ id: "player-2", name: "还没作答", isHost: false }),
     ];
 
     render(
-      <PlayerList players={players} myPlayerId="host-1" isHost phase="waiting" allowSpectators />
+      <PlayerList
+        players={players}
+        myPlayerId="host-1"
+        isHost
+        phase="roundResult"
+        allowSpectators
+      />
     );
 
     // 悬停与读屏给出同一份文字序列，颜色不是唯一线索。
-    expect(
-      screen.getByRole("img", { name: "房主小艾 逐轮结果：猜中、次数用尽、超时" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "房主小艾 本轮结果：猜中" })).toBeInTheDocument();
     // 没有作答过的玩家不产生结果条：按名字限定到结果条本身，
     // 不去数整页的 `img` —— 房主、测试人机这类状态图标同样是图像角色。
-    expect(screen.getAllByRole("img", { name: /逐轮结果：/ })).toHaveLength(1);
+    expect(screen.getAllByRole("img", { name: /本轮结果：/ })).toHaveLength(1);
   });
 
   it("渲染房主标识与玩家基础信息", () => {

@@ -224,6 +224,87 @@ describe("SonGuessrService", () => {
     );
   });
 
+  test("逐轮结果只保留当前回合，换轮与回到等待时清零", async () => {
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "marks-host");
+    const guest = connection(service, "marks-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家");
+    await startRound(service, host, guest, hostState.playerId);
+    await execute(service, guest, {
+      id: "marks-audio-first",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+    await execute(service, guest, {
+      id: "marks-guess-first",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    const firstResult = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(firstResult.phase).toBe("roundResult");
+    expect(firstResult.players.find((player) => player.name === "玩家")?.roundMarks).toEqual([
+      "correct",
+    ]);
+
+    // 点「再来一轮」就已经进入下一轮：上一轮的结局不能跟着进新回合。
+    await execute(service, host, {
+      id: "marks-next",
+      type: "song.game.nextRound",
+      roomId: "1234",
+      payload: {},
+    });
+    const between = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(between.phase).toBe("choosingSubmitter");
+    expect(between.players.every((player) => player.roundMarks.length === 0)).toBe(true);
+
+    await execute(service, host, {
+      id: "marks-choose-second",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+    await execute(service, host, {
+      id: "marks-submit-second",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    await execute(service, guest, {
+      id: "marks-audio-second",
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 2 },
+    });
+    await execute(service, guest, {
+      id: "marks-guess-second",
+      type: "song.game.guess",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+    const secondResult = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(secondResult.roundNumber).toBe(2);
+    expect(secondResult.players.find((player) => player.name === "玩家")?.roundMarks).toEqual([
+      "correct",
+    ]);
+
+    await execute(service, host, {
+      id: "marks-finish",
+      type: "song.game.finish",
+      roomId: "1234",
+      payload: {},
+    });
+    const waiting = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(waiting.phase).toBe("waiting");
+    expect(waiting.players.every((player) => player.roundMarks.length === 0)).toBe(true);
+  });
+
   test("中途加入者可以预约下轮席位，旁观真人也可以担任出题人", async () => {
     const service = new SonGuessrService({
       musicProvider: provider,
