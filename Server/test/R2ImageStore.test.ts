@@ -61,15 +61,17 @@ test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", as
   }
 });
 
-test("上传失败不落索引：宁可下次重抓，也不要 302 到不存在的对象", async () => {
+test("上传失败退回本地：图不丢，且不会被标成 remote（否则 302 到 404）", async () => {
   const directory = shards();
   const spy = spyOn(globalThis, "fetch").mockImplementation((async () =>
     new Response("boom", { status: 500 })) as unknown as typeof fetch);
   try {
     const store = new R2ImageStore(BangumiImageStore.open(directory)!, uploader());
     await expect(store.put("/r/200/pic/cover/l/ab/cd/2.jpg", AVIF)).rejects.toThrow("R2 写入失败");
+    // 退回本地：读得到字节，但不标 remote —— 读取侧继续本地直出，不会 302 到 404。
     expect(store.isRemote("/r/200/pic/cover/l/ab/cd/2.jpg")).toBe(false);
-    expect(store.has("/r/200/pic/cover/l/ab/cd/2.jpg")).toBe(false);
+    expect(store.has("/r/200/pic/cover/l/ab/cd/2.jpg")).toBe(true);
+    expect(store.get("/r/200/pic/cover/l/ab/cd/2.jpg")?.bytes).toEqual(AVIF);
     store.close();
   } finally {
     spy.mockRestore();

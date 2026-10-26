@@ -92,9 +92,19 @@ export class R2ImageStore implements ImageStore {
     return this.index.get(path);
   }
 
-  /** 先写 R2，成功了才落索引——顺序反了会留下「索引说有、R2 没有」的裂图。 */
+  /**
+   * 先写 R2，成功了才落索引——顺序反了会留下「索引说有、R2 没有」的裂图。
+   *
+   * R2 写失败时**退回本地分片**：图不能因为云侧抖动就丢，读取侧看到 isRemote 为 false
+   * 会照旧吐字节。错误照抛，让调用方记一笔告警（运维要知道云通道断了）。
+   */
   async put(path: string, bytes: Uint8Array, contentType = "image/avif"): Promise<void> {
-    await this.uploader.put(path, bytes, contentType);
+    try {
+      await this.uploader.put(path, bytes, contentType);
+    } catch (error) {
+      await this.index.put(path, bytes, contentType);
+      throw error;
+    }
     this.index.markRemote(path, contentType);
   }
 
