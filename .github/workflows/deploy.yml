@@ -79,9 +79,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gate]
     # 生产部署硬超时：与远端脚本「时间预算」块（script 内 BUDGET_* 常量）自洽。
-    # 远端最坏路径求和 = 同步 25 + 下载 115 + 落盘校验 20 + release 3 + 两片 53×2 + 收尾 10 = 279s，
-    # 远端自限到 BUDGET_JOB_S=285s；外层 6 分钟 = 285s 远端 + ≈45s runner 侧（检出、取制品、
-    # 暂存、SSH 建连与退出回传）+ ≈30s 余量。改预算任一项都要回来核对这里与 command_timeout。
+    # 远端最坏路径：单片（当前形态）= 同步 25 + 下载 115 + 落盘校验 20 + release 3
+    # + 单片 53 + 收尾 10 = 226s；重新拆片（两片）= 279s。
+    # 远端自限到 BUDGET_JOB_S=285s（按两片留，单片时余量更大）；外层 6 分钟 = 285s 远端
+    # + ≈45s runner 侧（检出、取制品、暂存、SSH 建连与退出回传）+ ≈30s 余量。
+    # 改预算任一项都要回来核对这里与 command_timeout。
     timeout-minutes: 6
     if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true' }}
     steps:
@@ -341,9 +343,11 @@ jobs:
 
             # ---------- 0.5 容器清点与预算闭合 ----------
             # 片数决定滚动开销，所以必须在下载之前先数清楚容器。
-            # 只处理实际存在的容器：分片回滚时不必改脚本。
+            # 已收敛为单片：统一入口 `/api/ws` 一条连接装三款游戏，边缘不再按 ws 路径分片
+            # （CEE 片 BakaGame-cee 与 nginx 的 `/api/cee/ws → 4852` 分流一并下线）。
+            # 仍只处理实际存在的容器，所以重新拆片时脚本不用改 —— 把容器名加回列表即可。
             CONTAINERS=""
-            for c in BakaGame BakaGame-cee; do
+            for c in BakaGame; do
               if sudo docker ps -a --format '{{.Names}}' | grep -qx "$c"; then
                 CONTAINERS="$CONTAINERS $c"
               fi
@@ -609,9 +613,10 @@ jobs:
             # ---------- Release 元数据准备结束 ----------
 
             # ---------- 4. 停机预告与客户端排空 (Graceful Drain) ----------
-            # 后端按 WS 路径分片后（主片 BakaGame + CEE 片 BakaGame-cee，`/api/cee/ws` 走后者），
-            # 统一入口 `/api/ws` 与会话级节点都落在主片，CEE 片目前只接旧路径别名：
-            # 这条分流与「一个入口装三款游戏」相冲突，收敛为单片还是保留两片须在部署侧定案。
+            # 单片部署（当前形态）：统一入口 `/api/ws` 一条连接装三款游戏 + 站点通道，
+            # 边缘不再把 `/api/cee/ws` 切到第二个进程（该路径只剩主进程上的兼容别名）。
+            # 因此这里只滚动一个容器；`SHARD_GAMES` 必须留空 —— 一旦仍写着旧的主片清单，
+            # 被排除的那款游戏的房间停机时不会被快照，重启即丢（且没有任何报错）。
             # 停机广播与 /readyz 摘流都是**进程内**的：每个容器都要各自走一遍完整流程，
             # 漏跑任何一片，那一片的玩家收不到广播、也不会被摘流。
             # 顺序必须是「该片通知 → 该片排空 → 该片重启」——先把所有片通知完再逐个重启，

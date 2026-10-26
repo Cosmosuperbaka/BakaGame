@@ -438,7 +438,8 @@ test("部署预算块的求和与作业硬超时自洽（审查 F59）", async (
     constant("BUDGET_DRAIN_S") +
     constant("BUDGET_RESTART_S") +
     constant("BUDGET_PROBE_MAX_MS") / 1000;
-  // 两片是当前的分片上限（主片 + CEE 片），最坏路径按两片算。
+  // 两片是「拆片回滚」时的上限（主片 + CEE 片）；当前生产已收敛为单片（实际最坏 226s），
+  // 这里仍按两片算，保证脚本在重新拆片时不必回来改预算就能闭合。
   const worst =
     constant("BUDGET_SYNC_S") +
     constant("BUDGET_DL_MAX_S") +
@@ -459,6 +460,12 @@ test("部署预算块的求和与作业硬超时自洽（审查 F59）", async (
   // 下载余量由预算块推导，不再是与总时长脱钩的独立常数。
   expect(script).toContain("DL_DEADLINE=$(( BUDGET_JOB_S");
   expect(script).toContain("- SHARD_S * SHARDS ))");
+  // 单片部署：清点列表只留主容器。CEE 片已下线，写回去会让脚本去滚动一个不存在的容器；
+  // 若将来重新拆片，应当同时在服务器上重建容器，而不是只改这一行。
+  expect(script).toContain("for c in BakaGame; do");
+  expect(script, "CEE 片已下线，容器清点不得再列它").not.toContain(
+    "for c in BakaGame BakaGame-cee; do"
+  );
   // 每片探针预算取剩余时间，保证「等就绪」不会把整段脚本拖到被取消。
   expect(script).toContain("DEPLOY_PROBE_BUDGET_MS=$PROBE_MS");
 });
