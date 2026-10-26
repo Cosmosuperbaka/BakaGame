@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "prepare-web": "node scripts/prepare-web.mjs",
-    "test": "node --test scripts",
+    "test": "node --test \"scripts/**/*.test.mjs\"",
     "sync": "cap sync android",
     "apk": "node scripts/apk.mjs",
     "open": "cap open android",

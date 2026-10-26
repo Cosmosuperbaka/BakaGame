@@ -30,7 +30,8 @@ describe("useActionRequiredSound", () => {
     vi.useRealTimers();
   });
 
-  const flush = () => act(() => vi.advanceTimersByTime(200));
+  // act 返回 thenable，而这里只推进定时器、不等异步副作用；显式 void 表明是有意忽略。
+  const flush = () => void act(() => vi.advanceTimersByTime(200));
 
   type Props = { needsAction: boolean; ready: boolean; roomKey: string | null };
   const render = (initialProps: Props) =>
