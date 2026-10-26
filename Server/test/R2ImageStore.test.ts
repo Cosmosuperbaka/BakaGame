@@ -22,8 +22,7 @@ function shards(count = 2) {
   return directory;
 }
 
-const uploader = () =>
-  new R2ImageUploader({ accountId: "acc", apiToken: "tok", bucket: "files" });
+const uploader = () => new R2ImageUploader({ accountId: "acc", apiToken: "tok", bucket: "files" });
 
 test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", async () => {
   const directory = shards();
@@ -36,7 +35,10 @@ test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", as
     return new Response("{}", { status: 200 });
   }) as unknown as typeof fetch);
   try {
-    const store = new R2ImageStore(BangumiImageStore.open(directory, { now: () => 3 })!, uploader());
+    const store = new R2ImageStore(
+      BangumiImageStore.open(directory, { now: () => 3 })!,
+      uploader()
+    );
     await store.put("/r/200/pic/cover/l/ab/cd/1.jpg", AVIF);
 
     // 端点与鉴权：走 REST API（S3 端点在境内被 TLS 阻断，不能用 SigV4）。
@@ -63,8 +65,9 @@ test("put 先传 R2 再落索引：本地不留字节，读取侧据此 302", as
 
 test("上传失败退回本地：图不丢，且不会被标成 remote（否则 302 到 404）", async () => {
   const directory = shards();
-  const spy = spyOn(globalThis, "fetch").mockImplementation((async () =>
-    new Response("boom", { status: 500 })) as unknown as typeof fetch);
+  const spy = spyOn(globalThis, "fetch").mockImplementation(
+    (async () => new Response("boom", { status: 500 })) as unknown as typeof fetch
+  );
   try {
     const store = new R2ImageStore(BangumiImageStore.open(directory)!, uploader());
     await expect(store.put("/r/200/pic/cover/l/ab/cd/2.jpg", AVIF)).rejects.toThrow("R2 写入失败");

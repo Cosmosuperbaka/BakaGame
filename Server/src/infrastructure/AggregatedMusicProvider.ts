@@ -582,9 +582,7 @@ export class AggregatedMusicProvider implements MusicProvider {
       list2,
       (album) => {
         const nameKey = normalizeComparableText(album.name);
-        return nameKey
-          ? `${nameKey}|${normalizeComparableText(album.artist ?? "")}`
-          : album.id;
+        return nameKey ? `${nameKey}|${normalizeComparableText(album.artist ?? "")}` : album.id;
       },
       options.platformPreference,
       limit

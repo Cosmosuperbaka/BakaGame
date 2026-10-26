@@ -159,11 +159,7 @@ export const PUBLIC_STATUS_INCIDENT_STATUSES = [
 export type PublicStatusIncidentStatus = (typeof PUBLIC_STATUS_INCIDENT_STATUSES)[number];
 
 /** 维护窗口的生命周期：计划中 → 进行中 → 已完成。 */
-export const PUBLIC_STATUS_MAINTENANCE_STATUSES = [
-  "scheduled",
-  "in_progress",
-  "done",
-] as const;
+export const PUBLIC_STATUS_MAINTENANCE_STATUSES = ["scheduled", "in_progress", "done"] as const;
 export type PublicStatusMaintenanceStatus = (typeof PUBLIC_STATUS_MAINTENANCE_STATUSES)[number];
 
 export type PublicStatusEventStatus = PublicStatusIncidentStatus | PublicStatusMaintenanceStatus;

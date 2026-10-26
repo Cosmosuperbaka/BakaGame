@@ -25,14 +25,17 @@ import {
   SettingsFields,
 } from "@/components/common/room/SettingFields";
 import { tappable } from "@/lib/Motion";
-import { AdminTable, AdminToolbar, ConfirmDialog, Pager, QueryState } from "@/components/admin/AdminParts";
+import {
+  AdminTable,
+  AdminToolbar,
+  ConfirmDialog,
+  Pager,
+  QueryState,
+} from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { formatDateTime } from "@/lib/AdminFormat";
-import {
-  STATUS_COMPONENT_LABELS,
-  STATUS_EVENT_STATUS_LABELS,
-} from "@/lib/SystemStatus";
+import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
 import { cn } from "@/lib/Utils";
 
 const PAGE_LIMIT = 20;
@@ -285,7 +288,9 @@ function EventDialog({
                 id="status-event-end"
                 type="datetime-local"
                 value={draft.plannedEndAt}
-                aria-invalid={endedMs === null || (startedMs !== null && endedMs <= startedMs) || undefined}
+                aria-invalid={
+                  endedMs === null || (startedMs !== null && endedMs <= startedMs) || undefined
+                }
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, plannedEndAt: event.target.value }))
                 }
@@ -422,8 +427,9 @@ export function StatusEventsPanel() {
                   </Badge>
                 </td>
                 <td className="max-w-48 truncate text-xs text-muted-foreground">
-                  {event.components.map((component) => STATUS_COMPONENT_LABELS[component]).join("、") ||
-                    "全站"}
+                  {event.components
+                    .map((component) => STATUS_COMPONENT_LABELS[component])
+                    .join("、") || "全站"}
                 </td>
                 <td className="whitespace-nowrap text-xs text-muted-foreground">
                   <span className="block font-mono tabular-nums">

@@ -486,7 +486,10 @@ const adminContract = {
           kind: statusEventKindSchema,
           title: z.string().trim().min(1, "请填写标题").max(STATUS_EVENT_TITLE_MAX_LENGTH),
           body: z.string().trim().min(1, "请填写内容").max(STATUS_EVENT_BODY_MAX_LENGTH),
-          components: z.array(statusComponentSchema).max(PUBLIC_STATUS_COMPONENT_IDS.length).default([]),
+          components: z
+            .array(statusComponentSchema)
+            .max(PUBLIC_STATUS_COMPONENT_IDS.length)
+            .default([]),
           startedAt: z.number().int().min(0),
           /** 维护窗口必填且须晚于开始时刻；故障事件忽略此字段。 */
           plannedEndAt: z.number().int().min(0).nullable().default(null),
@@ -500,10 +503,18 @@ const adminContract = {
       .input(
         z.object({
           id: z.number().int().min(1),
-          title: z.string().trim().min(1, "请填写标题").max(STATUS_EVENT_TITLE_MAX_LENGTH).optional(),
+          title: z
+            .string()
+            .trim()
+            .min(1, "请填写标题")
+            .max(STATUS_EVENT_TITLE_MAX_LENGTH)
+            .optional(),
           body: z.string().trim().min(1, "请填写内容").max(STATUS_EVENT_BODY_MAX_LENGTH).optional(),
           status: statusEventStatusSchema.optional(),
-          components: z.array(statusComponentSchema).max(PUBLIC_STATUS_COMPONENT_IDS.length).optional(),
+          components: z
+            .array(statusComponentSchema)
+            .max(PUBLIC_STATUS_COMPONENT_IDS.length)
+            .optional(),
           startedAt: z.number().int().min(0).optional(),
           plannedEndAt: z.number().int().min(0).nullable().optional(),
         })

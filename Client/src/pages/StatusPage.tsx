@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   PUBLIC_STATUS_GROUPS,
@@ -8,7 +14,14 @@ import {
   type PublicStatusLevel,
   type PublicStatusRealtime,
 } from "@bakagame/shared";
-import { ArrowLeft, CalendarClock, CheckCircle2, CircleHelp, TriangleAlert, Wrench } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  CircleHelp,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
 import { Seo } from "@/components/common/Seo";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -138,7 +151,9 @@ function CellTooltip({ cell, align }: { cell: BarCell; align: { left: number } }
           : `${LEVEL_TEXT[cell.level]} · 可用率 ${formatRatio(cell.ratio)}`}
       </p>
       {cell.latencyMs !== null ? (
-        <p className="font-sans text-2xs text-muted-foreground">平均延迟 {formatLatency(cell.latencyMs)}</p>
+        <p className="font-sans text-2xs text-muted-foreground">
+          平均延迟 {formatLatency(cell.latencyMs)}
+        </p>
       ) : null}
       {cell.events.length > 0 ? (
         <ul className="mt-1 space-y-0.5 border-t border-border pt-1">
@@ -190,7 +205,13 @@ function UptimeBar({ cells }: { cells: BarCell[] }) {
   return (
     <div className="relative mt-2" onPointerLeave={() => setHover(null)}>
       <AnimatePresence>
-        {hover ? <CellTooltip key={cells[hover.index]?.key} cell={cells[hover.index]!} align={{ left: hover.left }} /> : null}
+        {hover ? (
+          <CellTooltip
+            key={cells[hover.index]?.key}
+            cell={cells[hover.index]!}
+            align={{ left: hover.left }}
+          />
+        ) : null}
       </AnimatePresence>
       <div
         ref={containerRef}
@@ -278,7 +299,10 @@ function EventMeta({ event }: { event: PublicStatusEvent }) {
 function EventStatusBadge({ event }: { event: PublicStatusEvent }) {
   const resolved = event.kind === "incident" ? event.resolvedAt !== null : event.status === "done";
   return (
-    <Badge variant={resolved ? "subtle" : event.kind === "maintenance" ? "active" : "restricted"} size="xs">
+    <Badge
+      variant={resolved ? "subtle" : event.kind === "maintenance" ? "active" : "restricted"}
+      size="xs"
+    >
       {STATUS_EVENT_STATUS_LABELS[event.status]}
     </Badge>
   );
@@ -318,7 +342,10 @@ function StatusEventsSection({ events }: { events: PublicStatusEvent[] }) {
                 <div className="flex min-w-0 items-center gap-2">
                   {event.kind === "maintenance" ? (
                     event.status === "scheduled" ? (
-                      <CalendarClock aria-hidden="true" className="shrink-0 text-muted-foreground" />
+                      <CalendarClock
+                        aria-hidden="true"
+                        className="shrink-0 text-muted-foreground"
+                      />
                     ) : (
                       <Wrench aria-hidden="true" className="shrink-0 text-muted-foreground" />
                     )
@@ -342,8 +369,9 @@ function StatusEventsSection({ events }: { events: PublicStatusEvent[] }) {
                   </time>
                   <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
                   <span className="hidden shrink-0 truncate font-sans text-2xs text-muted-foreground sm:block">
-                    {event.components.map((component) => STATUS_COMPONENT_LABELS[component]).join("、") ||
-                      "全站"}
+                    {event.components
+                      .map((component) => STATUS_COMPONENT_LABELS[component])
+                      .join("、") || "全站"}
                   </span>
                   <EventStatusBadge event={event} />
                 </li>
@@ -425,9 +453,7 @@ export default function StatusPage() {
 
   const levels = useMemo(
     () =>
-      new Map(
-        snapshot?.components.map((component) => [component.id, component] as const) ?? []
-      ),
+      new Map(snapshot?.components.map((component) => [component.id, component] as const) ?? []),
     [snapshot]
   );
   const historyById = useMemo(
@@ -443,8 +469,7 @@ export default function StatusPage() {
   const realtimeCells = useMemo(() => {
     if (!realtime) return new Map<string, BarCell[]>();
     const count = Math.max(1, Math.round(realtime.windowMs / realtime.intervalMs));
-    const last =
-      Math.floor(realtime.generatedAt / realtime.intervalMs) * realtime.intervalMs;
+    const last = Math.floor(realtime.generatedAt / realtime.intervalMs) * realtime.intervalMs;
     const result = new Map<string, BarCell[]>();
     for (const entry of realtime.entries) {
       const byStart = new Map(entry.cells.map((cell) => [cell.start, cell] as const));
@@ -452,9 +477,7 @@ export default function StatusPage() {
         const start = last - (count - 1 - index) * realtime.intervalMs;
         const end = start + realtime.intervalMs;
         const cell = byStart.get(start);
-        const overlapping = (events ?? []).filter((event) =>
-          overlaps(event, entry.id, start, end)
-        );
+        const overlapping = (events ?? []).filter((event) => overlaps(event, entry.id, start, end));
         return {
           key: `r${start}`,
           level: cell?.level ?? "unknown",
@@ -616,10 +639,7 @@ export default function StatusPage() {
                     level={component?.level ?? "unknown"}
                     latencyMs={view === "realtime" ? (component?.latencyMs ?? null) : undefined}
                     ratio={ratio}
-                    cells={
-                      (view === "month" ? monthCells.get(id) : realtimeCells.get(id)) ??
-                      []
-                    }
+                    cells={(view === "month" ? monthCells.get(id) : realtimeCells.get(id)) ?? []}
                   />
                 );
               })}

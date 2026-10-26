@@ -456,8 +456,7 @@ export class CEERooms {
   publishAgentFocus(connection: ConnectionRecord, payload: AgentFocusInput) {
     if (connection.isAgent !== true)
       throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报活动焦点");
-    if (!isAgentFocusKind(payload.kind))
-      throw new AppError("INVALID_FOCUS", "未知的活动焦点");
+    if (!isAgentFocusKind(payload.kind)) throw new AppError("INVALID_FOCUS", "未知的活动焦点");
     if (payload.part !== undefined && !isAgentFocusPart(payload.part))
       throw new AppError("INVALID_FOCUS", "未知的界面区域");
     const event = {
@@ -488,11 +487,7 @@ export class CEERooms {
     if (!connection.roomId || !connection.playerId) return;
     const controller = this.mcpSeats.controllerFor(connection.roomId, connection.playerId);
     if (!controller || controller.connectionId === connection.id) return;
-    if (
-      type === "cee.room.leave" ||
-      type === "cee.room.requestSync" ||
-      type === "mcp.release"
-    )
+    if (type === "cee.room.leave" || type === "cee.room.requestSync" || type === "mcp.release")
       return;
     throw new AppError("MCP_CONTROL_ONLY", "本会话已由 MCP 接管，手动操作已锁定");
   }
@@ -527,9 +522,7 @@ export class CEERooms {
       source: "native",
       playerId: player.id,
       sessionToken: bound.token,
-      snapshot: ceeSnapshot(room, (playerId) =>
-        this.mcpSeats.isControlled(room.id, playerId)
-      ),
+      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
       privateState: ceePrivateState(room, player, true),
     };
   }
@@ -808,24 +801,23 @@ export class CEERooms {
     if (!this.rooms.has(room.id)) return;
     // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
     if (room.phase === "settled") this.recordSettled(room);
-    const snapshot = ceeSnapshot(room, (playerId) =>
-      this.mcpSeats.isControlled(room.id, playerId)
-    );
+    const snapshot = ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId));
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
       connection.send(createEvent("cee.room.snapshot", snapshot));
       // 私有态按连接裁剪：同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
       connection.send(
-        createEvent("cee.game.privateState", this.privateStateForConnection(room, player, connection))
+        createEvent(
+          "cee.game.privateState",
+          this.privateStateForConnection(room, player, connection)
+        )
       );
     }
     this.onChange?.();
   }
   calibrate(room: CEERoom): void {
-    const snapshot = ceeSnapshot(room, (playerId) =>
-      this.mcpSeats.isControlled(room.id, playerId)
-    );
+    const snapshot = ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId));
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
@@ -1007,14 +999,8 @@ export class CEERooms {
       roomId: room.id,
       source: "native",
       sessionToken: player.sessionToken,
-      snapshot: ceeSnapshot(room, (playerId) =>
-        this.mcpSeats.isControlled(room.id, playerId)
-      ),
-      privateState: ceePrivateState(
-        room,
-        player,
-        this.mcpSeats.isControlled(room.id, player.id)
-      ),
+      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
+      privateState: ceePrivateState(room, player, this.mcpSeats.isControlled(room.id, player.id)),
     };
   }
   private system(room: CEERoom, text: string) {
@@ -1082,7 +1068,6 @@ export class CEERooms {
     this.onChange?.();
   }
 }
-
 
 // ==================== 快照序列化 ====================
 
@@ -1171,11 +1156,11 @@ const deserializeRoom = (
       Object.entries(saved.spectatorRequests ?? {}).map(([id, at]) => [id, Number(at)])
     ),
     // 阶段截止时刻暂停：停机期间没人能作答，按原时刻结算等于用故障惩罚玩家。
-    phaseDeadlineAt:
-      saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
+    phaseDeadlineAt: saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
     lastActiveAt: now,
     emptyAt: undefined,
-    hostDeadlineAt: saved.hostDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
+    hostDeadlineAt:
+      saved.hostDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
     round,
   };
 };

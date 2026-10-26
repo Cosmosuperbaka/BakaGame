@@ -1,8 +1,7 @@
 import type { SongClipPreview } from "@bakagame/shared";
 import { SONG_CLIP_MIN_MS } from "@bakagame/shared";
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /** 毫秒转 `分:秒.十分位`，时间轴与歌词行共用一种读数。 */
 export function formatClipTime(ms: number): string {

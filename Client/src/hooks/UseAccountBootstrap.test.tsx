@@ -23,9 +23,7 @@ vi.mock("@/lib/VisitReport", () => ({
 
 const initialAccountState = useAccountStore.getState();
 
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <MemoryRouter>{children}</MemoryRouter>
-);
+const wrapper = ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
 
 afterEach(() => {
   useAccountStore.setState(initialAccountState, true);

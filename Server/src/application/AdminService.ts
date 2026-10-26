@@ -595,8 +595,12 @@ export class AdminService {
   }
 
   /** 事件的合法进度按类型收口：故障事件用事件档，维护窗口用维护档。 */
-  private statusOfKind(kind: PublicStatusIncidentKind, status: PublicStatusEventStatus | undefined) {
-    const allowed = kind === "incident" ? PUBLIC_STATUS_INCIDENT_STATUSES : PUBLIC_STATUS_MAINTENANCE_STATUSES;
+  private statusOfKind(
+    kind: PublicStatusIncidentKind,
+    status: PublicStatusEventStatus | undefined
+  ) {
+    const allowed =
+      kind === "incident" ? PUBLIC_STATUS_INCIDENT_STATUSES : PUBLIC_STATUS_MAINTENANCE_STATUSES;
     if (status !== undefined && !(allowed as readonly string[]).includes(status)) {
       throw new AppError(
         "BAD_REQUEST",

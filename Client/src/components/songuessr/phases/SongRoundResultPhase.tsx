@@ -180,7 +180,9 @@ export function SongScoreTable({
             ) : (
               score.playerName
             ),
-          detail: factor ? [`速度 ${factor.speed.toFixed(2)}`, `精度 ${factor.precision.toFixed(2)}`] : undefined,
+          detail: factor
+            ? [`速度 ${factor.speed.toFixed(2)}`, `精度 ${factor.precision.toFixed(2)}`]
+            : undefined,
           cells: {
             delta: score.delta,
             score: score.score,

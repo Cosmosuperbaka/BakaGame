@@ -271,7 +271,9 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     snapshot: songSnapshot({ roomId: "1234", hostPlayerId: HOST_ID, phase, musicPool: pool }),
     privateState: songPrivate({ playerId, sessionToken: "fixture-token" }),
   });
-  const myPoolEntry = (overrides: Partial<SonGuessrMusicPoolView> = {}): SonGuessrMusicPoolView => ({
+  const myPoolEntry = (
+    overrides: Partial<SonGuessrMusicPoolView> = {}
+  ): SonGuessrMusicPoolView => ({
     playerId: HOST_ID,
     playerName: "夹具玩家",
     platform: "netease",
@@ -458,7 +460,9 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
 
     // 换了一个账号（池里我这条还是旧账号）才算新凭据，需要重新装载。
     act(() => {
-      useSonGuessrStore.setState({ snapshot: receiptFor("waiting", [myPoolEntry({ account: SONG_ACCOUNTS.nonVip })]).snapshot });
+      useSonGuessrStore.setState({
+        snapshot: receiptFor("waiting", [myPoolEntry({ account: SONG_ACCOUNTS.nonVip })]).snapshot,
+      });
     });
     await flush();
     expect(uploads).toBe(1);

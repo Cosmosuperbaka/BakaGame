@@ -78,9 +78,10 @@ describe("SongSearch", () => {
     await flushDebounce();
     expect(searchMusic).toHaveBeenCalledExactlyOnceWith("夜");
     // 行内副标题是歌手与专辑；已移除会员专享图标；没有单独的「猜这首」按钮。
-    expect(
-      screen.getByRole("option", { name: /夜空中最亮的星.*逃跑计划 · 世界/ })
-    ).toHaveAttribute("data-agent-control", "song.guess.search.result.0");
+    expect(screen.getByRole("option", { name: /夜空中最亮的星.*逃跑计划 · 世界/ })).toHaveAttribute(
+      "data-agent-control",
+      "song.guess.search.result.0"
+    );
     expect(screen.getByRole("option", { name: /雨夜.*测试歌手/ })).toHaveAttribute(
       "data-agent-control",
       "song.guess.search.result.1"

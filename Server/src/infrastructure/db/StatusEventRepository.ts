@@ -45,7 +45,10 @@ export interface StatusEventFilter {
 }
 
 export interface StatusEventRepository {
-  list(environment: string, filter: StatusEventFilter): Promise<{
+  list(
+    environment: string,
+    filter: StatusEventFilter
+  ): Promise<{
     items: PublicStatusEvent[];
     total: number;
   }>;
@@ -116,7 +119,10 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
         .orderBy(desc(statusEvent.startedAt), desc(statusEvent.id))
         .limit(filter.limit)
         .offset(filter.offset),
-      this.database.db.select({ total: sql<number>`count(*)` }).from(statusEvent).where(where),
+      this.database.db
+        .select({ total: sql<number>`count(*)` })
+        .from(statusEvent)
+        .where(where),
     ]);
     return { items: rows.map(toEvent), total: Number(count?.total ?? 0) };
   }
@@ -152,7 +158,11 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
     return created;
   }
 
-  async update(environment: string, id: number, patch: StatusEventPatch): Promise<PublicStatusEvent> {
+  async update(
+    environment: string,
+    id: number,
+    patch: StatusEventPatch
+  ): Promise<PublicStatusEvent> {
     await this.database.ready;
     const values: Partial<typeof statusEvent.$inferInsert> = {};
     if (patch.title !== undefined) values.title = patch.title;

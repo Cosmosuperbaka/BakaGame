@@ -95,10 +95,15 @@ const waitingControls = (context: UiContext): UiControl[] => {
   const controls: UiControl[] = [];
   if (isHost(context)) {
     controls.push(
-      button("cee.start", settingsOf(context).answerMode === "manual" ? "开始并指定出题人" : "开始游戏", "game", {
-        disabled: !canStart(context),
-        hint: !canStart(context) ? "等待其他玩家准备，或暂无可选出题人" : undefined,
-      })
+      button(
+        "cee.start",
+        settingsOf(context).answerMode === "manual" ? "开始并指定出题人" : "开始游戏",
+        "game",
+        {
+          disabled: !canStart(context),
+          hint: !canStart(context) ? "等待其他玩家准备，或暂无可选出题人" : undefined,
+        }
+      )
     );
   } else if (me?.membership === "active") {
     controls.push(button("cee.ready", me.ready === true ? "取消准备" : "准备"));
@@ -185,9 +190,9 @@ const searchControls = (
   const banned = new Set(list(context.privateState.bannedCharacterIds));
   search.results.forEach((result, index) => {
     const isCast = Boolean(search.subject);
-    const view = isCast || search.kind === "character" ? characterView(result) : subjectView(result);
-    const disabled =
-      (isCast || search.kind === "character") && banned.has(Number(view.id));
+    const view =
+      isCast || search.kind === "character" ? characterView(result) : subjectView(result);
+    const disabled = (isCast || search.kind === "character") && banned.has(Number(view.id));
     controls.push(
       control(
         `${prefix}.result.${index}`,
@@ -282,9 +287,7 @@ const guessControls = (context: UiContext): UiControl[] => {
 };
 
 const preparingControls = (context: UiContext): UiControl[] =>
-  isHost(context) && context.snapshot.source === "native"
-    ? [button("cee.cancel", "取消本局")]
-    : [];
+  isHost(context) && context.snapshot.source === "native" ? [button("cee.cancel", "取消本局")] : [];
 
 const settledControls = (context: UiContext): UiControl[] => {
   if (!isHost(context)) return [];
@@ -398,10 +401,7 @@ export function buildCeeScreen(context: UiContext): UiScreen {
 const send = (context: UiContext, type: string, payload: Record<string, unknown> = {}) =>
   context.client.sendInRoom("cee", type, payload, { timeoutMs: 120_000 });
 
-const defaultModeFor = (
-  context: UiContext,
-  prefix: string
-): "character" | "subject" => {
+const defaultModeFor = (context: UiContext, prefix: string): "character" | "subject" => {
   const search = context.state.search;
   return search?.prefix === prefix && search.kind === "subject" ? "subject" : "character";
 };
@@ -428,9 +428,13 @@ const runSearch = async (
     return search;
   }
   try {
-    const ack = await send(context, kind === "subject" ? "cee.subject.search" : "cee.character.search", {
-      keyword,
-    });
+    const ack = await send(
+      context,
+      kind === "subject" ? "cee.subject.search" : "cee.character.search",
+      {
+        keyword,
+      }
+    );
     search.results = isRecord(ack) ? recordList(ack.results) : [];
     search.status = "ready";
   } catch (error) {
@@ -448,8 +452,7 @@ export async function autoSearchCee(context: UiContext, controlId: string): Prom
   await new Promise((resolve) => setTimeout(resolve, 420));
   const search = await runSearch(context, prefix, purpose);
   context.state.lastFeedback =
-    search.error ??
-    (search.keyword ? `找到 ${search.results.length} 条结果` : undefined);
+    search.error ?? (search.keyword ? `找到 ${search.results.length} 条结果` : undefined);
 }
 
 const needSearch = (context: UiContext, prefix: string): UiSearchState => {
@@ -466,7 +469,11 @@ const resultAt = (search: UiSearchState, index: string): Record<string, unknown>
   return result;
 };
 
-const openCast = async (context: UiContext, search: UiSearchState, subject: Record<string, unknown>) => {
+const openCast = async (
+  context: UiContext,
+  search: UiSearchState,
+  subject: Record<string, unknown>
+) => {
   const subjectId = Number(subject.id);
   if (!Number.isInteger(subjectId)) throw new Error("作品编号无效");
   const ack = await send(context, "cee.subject.characters", { subjectId });
@@ -625,9 +632,10 @@ const clickCeeImage = async (context: UiContext): Promise<string> => {
   const dataUrl = isRecord(ack) ? str(ack.dataUrl) : undefined;
   if (dataUrl)
     context.state.ceeImage = {
-      level: typeof context.privateState.imageHintLevel === "number"
-        ? context.privateState.imageHintLevel
-        : 0,
+      level:
+        typeof context.privateState.imageHintLevel === "number"
+          ? context.privateState.imageHintLevel
+          : 0,
       dataUrl,
     };
   return "已获取图片提示";

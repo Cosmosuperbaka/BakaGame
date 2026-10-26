@@ -7,9 +7,7 @@ const app = new Elysia({ normalize: false }).use(
 );
 
 test("MCP 发现文件只凭站点 Origin 给出远程端点与反作弊声明", async () => {
-  const response = await app.handle(
-    new Request("https://game.example.com/.well-known/mcp.json")
-  );
+  const response = await app.handle(new Request("https://game.example.com/.well-known/mcp.json"));
   expect(response.status).toBe(200);
   const body = (await response.json()) as {
     mcpServers: { bakagame: { type: string; url: string } };

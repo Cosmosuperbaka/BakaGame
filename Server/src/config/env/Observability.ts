@@ -157,7 +157,10 @@ const parseBetterStackMonitorMap = (
       );
     }
     if (!/^\d+$/.test(value)) {
-      throw new AppError("CONFIG_ERROR", `BETTERSTACK_MONITOR_MAP 里 ${key} 的 monitor ID 必须是数字`);
+      throw new AppError(
+        "CONFIG_ERROR",
+        `BETTERSTACK_MONITOR_MAP 里 ${key} 的 monitor ID 必须是数字`
+      );
     }
     map[key as UpstreamStatusComponentId] = value;
   }

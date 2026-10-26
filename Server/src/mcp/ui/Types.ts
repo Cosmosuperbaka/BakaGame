@@ -3,13 +3,7 @@ import type { GameId } from "../GameClient";
 
 export type UiPart = AgentFocusPart;
 
-export type UiControlRole =
-  | "button"
-  | "textbox"
-  | "switch"
-  | "slider"
-  | "select"
-  | "listitem";
+export type UiControlRole = "button" | "textbox" | "switch" | "slider" | "select" | "listitem";
 
 export interface UiControl {
   id: string;

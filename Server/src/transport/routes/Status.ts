@@ -179,7 +179,11 @@ export const createStatusAggregator = ({
       { id: "rooms", level: await settle(probeRooms, "degraded"), latencyMs: null },
       { id: "search", level: await settle(probeSearch, "degraded"), latencyMs: null },
       { id: "dataset", level: await settle(probeDataset, "degraded"), latencyMs: null },
-      { id: "images", level: imageCache ? levelOf(imageCache.available) : "unknown", latencyMs: null },
+      {
+        id: "images",
+        level: imageCache ? levelOf(imageCache.available) : "unknown",
+        latencyMs: null,
+      },
     ];
     const snapshot: PublicStatusSnapshot = {
       observedAt,

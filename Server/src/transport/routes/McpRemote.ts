@@ -18,11 +18,7 @@ export const mcpRemoteRoutes = ({
 }) =>
   new Elysia({ name: "mcp-remote", normalize: false })
     .post("/api/mcp", async ({ request, body, set }) => {
-      const outcome = await handleRemoteMcp(
-        { enabled, sessions, logger },
-        request,
-        body
-      );
+      const outcome = await handleRemoteMcp({ enabled, sessions, logger }, request, body);
       set.status = outcome.status;
       for (const [key, value] of Object.entries(outcome.headers)) set.headers[key] = value;
       set.headers["cache-control"] = "no-store";

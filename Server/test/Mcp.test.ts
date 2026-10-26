@@ -39,169 +39,163 @@ const readLine = async (
   }
 };
 
-test(
-  "MCP_ENABLED 关闭时进程拒绝启动",
-  async () => {
-    const process = spawnMcp({ MCP_ENABLED: "false" });
-    const stderr = await new Response(process.stderr).text();
-    const exitCode = await process.exited;
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain("MCP_ENABLED");
-  },
-  15_000
-);
+test("MCP_ENABLED 关闭时进程拒绝启动", async () => {
+  const process = spawnMcp({ MCP_ENABLED: "false" });
+  const stderr = await new Response(process.stderr).text();
+  const exitCode = await process.exited;
+  expect(exitCode).toBe(1);
+  expect(stderr).toContain("MCP_ENABLED");
+}, 15_000);
 
-test(
-  "stdio MCP 可列房间、进房并按公开快照读取状态，审计日志可追溯",
-  async () => {
-    const roomSnapshot = {
-      roomId: "1234",
-      name: "Agent 测试房",
-      phase: "waiting",
-      allowSpectators: true,
-      settings: { allowAgents: true },
-      players: [
-        {
-          id: "player-1",
-          name: "TestAgent",
-          score: 0,
-          online: true,
-          isReady: false,
-          isBot: false,
-          isAgent: true,
-          isHost: false,
-          roundStatus: "waiting",
-        },
-      ],
-      chat: [],
-    };
-    const server = Bun.serve({
-      port: 0,
-      fetch(request, server) {
-        if (server.upgrade(request)) return;
-        return new Response("upgrade required", { status: 400 });
+test("stdio MCP 可列房间、进房并按公开快照读取状态，审计日志可追溯", async () => {
+  const roomSnapshot = {
+    roomId: "1234",
+    name: "Agent 测试房",
+    phase: "waiting",
+    allowSpectators: true,
+    settings: { allowAgents: true },
+    players: [
+      {
+        id: "player-1",
+        name: "TestAgent",
+        score: 0,
+        online: true,
+        isReady: false,
+        isBot: false,
+        isAgent: true,
+        isHost: false,
+        roundStatus: "waiting",
       },
-      websocket: {
-        message(ws, raw) {
-          const message = JSON.parse(String(raw)) as {
-            id: string;
-            type: string;
-            payload?: unknown;
-          };
-          const ack = (payload: unknown) =>
-            ws.send(JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload }));
-          if (message.type === "lobby.subscribeRooms") {
-            ack({ subscribed: true });
-            ws.send(
-              JSON.stringify({
-                type: "event",
-                event: "lobby.rooms",
-                payload: [
-                  {
-                    roomId: "1234",
-                    name: "Agent 测试房",
-                    phase: "waiting",
-                    playerCount: 1,
-                    visibility: "public",
-                    allowSpectators: true,
-                  },
-                ],
-              })
-            );
-            return;
-          }
-          if (message.type === "room.join") {
-            ack({ roomId: "1234", playerId: "player-1", sessionToken: "agent-token" });
-            ws.send(
-              JSON.stringify({
-                type: "event",
-                event: "room.snapshot",
-                payload: { mode: "full", revision: 1, state: roomSnapshot },
-              })
-            );
-            return;
-          }
-          ack({});
-        },
+    ],
+    chat: [],
+  };
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, server) {
+      if (server.upgrade(request)) return;
+      return new Response("upgrade required", { status: 400 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as {
+          id: string;
+          type: string;
+          payload?: unknown;
+        };
+        const ack = (payload: unknown) =>
+          ws.send(
+            JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload })
+          );
+        if (message.type === "lobby.subscribeRooms") {
+          ack({ subscribed: true });
+          ws.send(
+            JSON.stringify({
+              type: "event",
+              event: "lobby.rooms",
+              payload: [
+                {
+                  roomId: "1234",
+                  name: "Agent 测试房",
+                  phase: "waiting",
+                  playerCount: 1,
+                  visibility: "public",
+                  allowSpectators: true,
+                },
+              ],
+            })
+          );
+          return;
+        }
+        if (message.type === "room.join") {
+          ack({ roomId: "1234", playerId: "player-1", sessionToken: "agent-token" });
+          ws.send(
+            JSON.stringify({
+              type: "event",
+              event: "room.snapshot",
+              payload: { mode: "full", revision: 1, state: roomSnapshot },
+            })
+          );
+          return;
+        }
+        ack({});
       },
+    },
+  });
+  servers.push(server);
+  const port = server.port;
+  const process = spawnMcp({
+    MCP_ENABLED: "true",
+    SERVER_URL: `http://127.0.0.1:${port}`,
+    MCP_AGENT_NAME: "TestAgent",
+  });
+  const stdoutReader = process.stdout.getReader();
+  const stderrPromise = new Response(process.stderr).text();
+  const buffered = { text: "" };
+  const send = async (message: Record<string, unknown>) => {
+    await process.stdin.write(`${JSON.stringify(message)}\n`);
+  };
+  const call = async (id: number, method: string, params?: unknown) => {
+    await send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
+    const line = await readLine(stdoutReader, buffered);
+    expect(line).toBeDefined();
+    return JSON.parse(line!) as Record<string, unknown>;
+  };
+
+  try {
+    const initialized = await call(1, "initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "test", version: "1" },
     });
-    servers.push(server);
-    const port = server.port;
-    const process = spawnMcp({
-      MCP_ENABLED: "true",
-      SERVER_URL: `http://127.0.0.1:${port}`,
-      MCP_AGENT_NAME: "TestAgent",
+    expect(initialized.result).toMatchObject({
+      protocolVersion: "2024-11-05",
+      serverInfo: { name: "bakagame-mcp" },
     });
-    const stdoutReader = process.stdout.getReader();
-    const stderrPromise = new Response(process.stderr).text();
-    const buffered = { text: "" };
-    const send = async (message: Record<string, unknown>) => {
-      await process.stdin.write(`${JSON.stringify(message)}\n`);
-    };
-    const call = async (id: number, method: string, params?: unknown) => {
-      await send({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) });
-      const line = await readLine(stdoutReader, buffered);
-      expect(line).toBeDefined();
-      return JSON.parse(line!) as Record<string, unknown>;
-    };
 
-    try {
-      const initialized = await call(1, "initialize", {
-        protocolVersion: "2024-11-05",
-        capabilities: {},
-        clientInfo: { name: "test", version: "1" },
-      });
-      expect(initialized.result).toMatchObject({
-        protocolVersion: "2024-11-05",
-        serverInfo: { name: "bakagame-mcp" },
-      });
+    const tools = await call(2, "tools/list");
+    const names = (tools.result as { tools: Array<{ name: string }> }).tools.map(
+      (tool) => tool.name
+    );
+    expect(names).toEqual(
+      expect.arrayContaining(["list_rooms", "join_room", "get_screen", "ui_run"])
+    );
 
-      const tools = await call(2, "tools/list");
-      const names = (tools.result as { tools: Array<{ name: string }> }).tools.map(
-        (tool) => tool.name
-      );
-      expect(names).toEqual(expect.arrayContaining(["list_rooms", "join_room", "get_screen", "ui_run"]));
+    const joined = await call(3, "tools/call", {
+      name: "join_room",
+      arguments: { game: "faker", roomId: "1234" },
+    });
+    expect(joined.result).toMatchObject({ isError: false });
+    const joinedText = (joined.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(joinedText).toContain('"isAgent":true');
+    expect(joinedText).toContain('"playerId":"player-1"');
 
-      const joined = await call(3, "tools/call", {
-        name: "join_room",
-        arguments: { game: "faker", roomId: "1234" },
-      });
-      expect(joined.result).toMatchObject({ isError: false });
-      const joinedText = (
-        joined.result as { content: Array<{ text: string }> }
-      ).content[0]!.text;
-      expect(joinedText).toContain('"isAgent":true');
-      expect(joinedText).toContain('"playerId":"player-1"');
+    const state = await call(4, "tools/call", {
+      name: "get_screen",
+      arguments: { game: "faker" },
+    });
+    const stateText = (state.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(stateText).toContain("Agent 测试房");
+    expect(stateText).toContain('"players"');
+    expect(stateText).toContain('"chat"');
+    expect(stateText).not.toContain("agent-token");
+    expect(stateText).not.toContain("privateState");
 
-      const state = await call(4, "tools/call", {
-        name: "get_screen",
-        arguments: { game: "faker" },
-      });
-      const stateText = (state.result as { content: Array<{ text: string }> }).content[0]!.text;
-      expect(stateText).toContain("Agent 测试房");
-      expect(stateText).toContain('"players"');
-      expect(stateText).toContain('"chat"');
-      expect(stateText).not.toContain("agent-token");
-      expect(stateText).not.toContain("privateState");
-
-      const rooms = await call(5, "tools/call", {
-        name: "list_rooms",
-        arguments: { game: "faker" },
-      });
-      const roomsText = (rooms.result as { content: Array<{ text: string }> }).content[0]!.text;
-      expect(roomsText).toContain('"roomId":"1234"');
-    } finally {
-      await process.stdin.end();
-      await process.exited;
-      const stderr = await stderrPromise;
-      expect(stderr).toContain('"msg":"mcp.tool"');
-      expect(stderr).toContain('"agent":"TestAgent"');
-      expect(stderr).toContain('"tool":"join_room"');
-      expect(stderr).toContain('"roomId":"1234"');
-    }
-  },
-  20_000
-);
+    const rooms = await call(5, "tools/call", {
+      name: "list_rooms",
+      arguments: { game: "faker" },
+    });
+    const roomsText = (rooms.result as { content: Array<{ text: string }> }).content[0]!.text;
+    expect(roomsText).toContain('"roomId":"1234"');
+  } finally {
+    await process.stdin.end();
+    await process.exited;
+    const stderr = await stderrPromise;
+    expect(stderr).toContain('"msg":"mcp.tool"');
+    expect(stderr).toContain('"agent":"TestAgent"');
+    expect(stderr).toContain('"tool":"join_room"');
+    expect(stderr).toContain('"roomId":"1234"');
+  }
+}, 20_000);
 
 test("状态同步 full / patch 都能落到公开快照", () => {
   const full = applyStateSync(undefined, {

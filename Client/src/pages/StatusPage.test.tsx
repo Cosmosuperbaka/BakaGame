@@ -96,13 +96,17 @@ const events = {
 };
 
 /** fetch 按路径分发三份数据；页面初始加载与分钟轮询都走它。 */
-const stubStatusFetch = (overrides: Partial<Record<"status" | "history" | "realtime" | "events", unknown>> = {}) => {
+const stubStatusFetch = (
+  overrides: Partial<Record<"status" | "history" | "realtime" | "events", unknown>> = {}
+) => {
   const bodies: Record<string, unknown> = {
     "/api/status": snapshot,
     "/api/status/history": history,
     "/api/status/realtime": realtime,
     "/api/status/events": events,
-    ...Object.fromEntries(Object.entries(overrides).map(([key, value]) => [`/api/status/${key}`, value])),
+    ...Object.fromEntries(
+      Object.entries(overrides).map(([key, value]) => [`/api/status/${key}`, value])
+    ),
   };
   return vi.fn(async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : String(input);
@@ -266,9 +270,7 @@ describe("公开状态页", () => {
     });
     expect(await screen.findByText("异常 · 可用率 0.00%")).toBeInTheDocument();
     // 异常格没有延迟读数：上一格的「平均延迟」沿退场动画离开。
-    await waitFor(() =>
-      expect(screen.queryByText("平均延迟 150 ms")).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByText("平均延迟 150 ms")).not.toBeInTheDocument());
 
     // 进行中的事件压在受影响的搜索行：连空格的悬停说明也带事件标题。
     const internal = screen.getByRole("region", { name: "本项目内部服务" });
@@ -289,9 +291,7 @@ describe("公开状态页", () => {
       fireEvent.pointerLeave(searchBar.parentElement!);
     });
     // 说明沿原路收回需要一拍：等它真正离开文档。
-    await waitFor(() =>
-      expect(screen.queryByText("没有探测样本")).not.toBeInTheDocument()
-    );
+    await waitFor(() => expect(screen.queryByText("没有探测样本")).not.toBeInTheDocument());
   });
 
   it("事件与维护分开展示：进行中的成卡，已结束的排进时间线", async () => {

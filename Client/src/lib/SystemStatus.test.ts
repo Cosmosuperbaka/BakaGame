@@ -261,7 +261,18 @@ describe("公开状态事件客户端", () => {
       events: [
         ...validEvents.events,
         { id: "two", kind: "incident" },
-        { id: 3, kind: "maintenance", title: "数据库维护", body: "迁移实例", status: "scheduled", components: ["search", "internal-db"], startedAt: 5, plannedEndAt: 6, resolvedAt: null, updatedAt: 5 },
+        {
+          id: 3,
+          kind: "maintenance",
+          title: "数据库维护",
+          body: "迁移实例",
+          status: "scheduled",
+          components: ["search", "internal-db"],
+          startedAt: 5,
+          plannedEndAt: 6,
+          resolvedAt: null,
+          updatedAt: 5,
+        },
       ],
     });
     expect(parsed.map((event) => event.id)).toEqual([1, 3]);

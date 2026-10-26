@@ -247,7 +247,11 @@ describe("公开状态实时条带", () => {
     const now = 1_700_000_000_000;
     const samples = new StatusSampleStore({ environment: "production", now: () => now });
     const history = new StatusHistoryStore({ environment: "production", now: () => now });
-    const snapshot = (observedAt: number, bangumiLatency: number, qqmusicLevel: "operational" | "degraded"): PublicStatusSnapshot => ({
+    const snapshot = (
+      observedAt: number,
+      bangumiLatency: number,
+      qqmusicLevel: "operational" | "degraded"
+    ): PublicStatusSnapshot => ({
       observedAt,
       level: "operational",
       version: "V1.2.3",
@@ -292,9 +296,7 @@ class MemoryStatusEventRepository implements StatusEventRepository {
           ? (event.resolvedAt === null && event.status !== "done") === filter.active
           : true
       )
-      .filter((event) =>
-        filter.since !== undefined ? event.startedAt >= filter.since : true
-      )
+      .filter((event) => (filter.since !== undefined ? event.startedAt >= filter.since : true))
       .sort((left, right) => right.startedAt - left.startedAt);
     return {
       items: items.slice(filter.offset, filter.offset + filter.limit),

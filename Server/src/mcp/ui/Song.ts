@@ -109,9 +109,7 @@ const songResultView = (song: Record<string, unknown>): Record<string, unknown> 
   requiresVip: song.requiresVip === true,
   sources: song.sources,
   playable: song.playable !== false,
-  ...(typeof song.unplayableReason === "string"
-    ? { unplayableReason: song.unplayableReason }
-    : {}),
+  ...(typeof song.unplayableReason === "string" ? { unplayableReason: song.unplayableReason } : {}),
 });
 
 const subjectResultView = (subject: Record<string, unknown>): Record<string, unknown> => ({
@@ -152,9 +150,10 @@ const resolveDuration = (preview: Record<string, unknown>): number => {
     return Math.max(max, end);
   }, 0);
   const fallback = Math.max(lastLyricEnd + 30_000, 60_000);
-  const raw = typeof preview.durationMs === "number" && preview.durationMs > 0
-    ? preview.durationMs
-    : fallback;
+  const raw =
+    typeof preview.durationMs === "number" && preview.durationMs > 0
+      ? preview.durationMs
+      : fallback;
   return Math.max(raw, MIN_CLIP_MS);
 };
 
@@ -254,10 +253,16 @@ const choosingControls = (context: UiContext): UiControl[] => {
 const searchControls = (context: UiContext, prefix: string): UiControl[] => {
   const search = context.state.search;
   const controls: UiControl[] = [
-    textbox(`${prefix}.input`, prefix === "song.submit.search" ? "搜索歌曲/番剧" : "搜索猜测", context.state.drafts[`${prefix}.input`] ?? "", "game", {
-      maxLength: 80,
-      hint: searchHint(context, prefix),
-    }),
+    textbox(
+      `${prefix}.input`,
+      prefix === "song.submit.search" ? "搜索歌曲/番剧" : "搜索猜测",
+      context.state.drafts[`${prefix}.input`] ?? "",
+      "game",
+      {
+        maxLength: 80,
+        hint: searchHint(context, prefix),
+      }
+    ),
   ];
   if (!search || search.prefix !== prefix) return controls;
   if (search.subject) {
@@ -273,16 +278,22 @@ const searchControls = (context: UiContext, prefix: string): UiControl[] => {
           : guessedSongIds(context).includes(id ?? "")
         : view.playable === false;
     controls.push(
-      control(`${prefix}.result.${index}`, str(view.title) ?? str(view.name) ?? `结果 ${index + 1}`, "listitem", "game", {
-        disabled,
-        hint:
-          typeof view.unplayableReason === "string"
-            ? view.unplayableReason
-            : disabled && search.purpose === "song_guess"
-              ? "已经猜过这一条"
-              : undefined,
-        data: view,
-      })
+      control(
+        `${prefix}.result.${index}`,
+        str(view.title) ?? str(view.name) ?? `结果 ${index + 1}`,
+        "listitem",
+        "game",
+        {
+          disabled,
+          hint:
+            typeof view.unplayableReason === "string"
+              ? view.unplayableReason
+              : disabled && search.purpose === "song_guess"
+                ? "已经猜过这一条"
+                : undefined,
+          data: view,
+        }
+      )
     );
   });
   return controls;
@@ -516,7 +527,8 @@ export async function autoSearchSong(context: UiContext, controlId: string): Pro
     search.status = "error";
     search.error = error instanceof Error ? error.message : String(error);
   }
-  if (context.state.search === search) context.state.lastFeedback = search.error ?? `找到 ${search.results.length} 条结果`;
+  if (context.state.search === search)
+    context.state.lastFeedback = search.error ?? `找到 ${search.results.length} 条结果`;
 }
 
 const clearSearch = (context: UiContext) => {
@@ -529,8 +541,7 @@ const needSearch = (context: UiContext, prefix: string): UiSearchState => {
   const search = context.state.search;
   if (!search || search.prefix !== prefix)
     throw new Error("搜索结果已变化，请重新在搜索框输入并等待检索完成");
-  if (search.status !== "ready" || search.results.length === 0)
-    throw new Error("当前没有可选结果");
+  if (search.status !== "ready" || search.results.length === 0) throw new Error("当前没有可选结果");
   return search;
 };
 
@@ -631,10 +642,7 @@ const clickSongClip = async (context: UiContext, id: string): Promise<string> =>
   return `已出题《${str(preview.title) ?? songId}》`;
 };
 
-const clickSongSearch = async (
-  context: UiContext,
-  id: string
-): Promise<string | undefined> => {
+const clickSongSearch = async (context: UiContext, id: string): Promise<string | undefined> => {
   for (const prefix of ["song.submit.search", "song.guess.search"]) {
     if (id === `${prefix}.back`) {
       const search = needSearch(context, prefix);
@@ -654,10 +662,7 @@ const clickSongSearch = async (
   return undefined;
 };
 
-const clickSongBasic = async (
-  context: UiContext,
-  id: string
-): Promise<string | undefined> => {
+const clickSongBasic = async (context: UiContext, id: string): Promise<string | undefined> => {
   switch (id) {
     case "song.ready": {
       const me = meOf(context);
@@ -714,7 +719,11 @@ export async function setSongControl(
     return value === "none" ? "已退出队伍" : `已加入 ${String(value)} 队`;
   }
   if (controlValue.id === "song.clip.range") {
-    if (!isRecord(value) || typeof value.startTime !== "number" || typeof value.endTime !== "number")
+    if (
+      !isRecord(value) ||
+      typeof value.startTime !== "number" ||
+      typeof value.endTime !== "number"
+    )
       throw new Error("片段需要 startTime 与 endTime 两个毫秒值");
     const preview = context.state.songPreview;
     if (!preview) throw new Error("还没有选择歌曲");

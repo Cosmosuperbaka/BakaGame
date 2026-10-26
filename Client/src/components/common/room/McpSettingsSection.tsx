@@ -27,11 +27,7 @@ const readSeatToken = (game: GameId, roomId: string): string | null => {
   return readCEESession(roomId);
 };
 
-const sendForGame = async (
-  game: GameId,
-  type: string,
-  payload: Record<string, unknown> = {}
-) => {
+const sendForGame = async (game: GameId, type: string, payload: Record<string, unknown> = {}) => {
   if (game === "faker")
     return useWhoIsFakerStore.getState().sendCommand(type as never, payload as never);
   if (game === "song")
@@ -127,7 +123,8 @@ function McpStatusPanel({
           Agent 已接入本座位
         </p>
         <p className="text-xs text-muted-foreground">
-          你的手动操作已全部锁定；Agent 收回控制或断线后恢复。会话凭证仍可用于重新接入，离开房间后旧凭证失效。
+          你的手动操作已全部锁定；Agent
+          收回控制或断线后恢复。会话凭证仍可用于重新接入，离开房间后旧凭证失效。
         </p>
       </div>
     );
@@ -140,7 +137,8 @@ function McpStatusPanel({
   return (
     <div className="space-y-2">
       <p className="text-xs leading-5 text-muted-foreground">
-        把下面的 Prompt 发给 Agent。它会用你的会话凭证接手座位；凭证等同于座位控制权，只发给可信 Agent。
+        把下面的 Prompt 发给 Agent。它会用你的会话凭证接手座位；凭证等同于座位控制权，只发给可信
+        Agent。
       </p>
       <div className="rounded-sm border border-border bg-muted/40 p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
         {prompt}

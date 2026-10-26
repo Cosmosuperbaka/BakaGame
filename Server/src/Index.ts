@@ -69,20 +69,27 @@ const whoIsFakerService = new WhoIsFakerService({
 
 let isShuttingDown = false;
 
-const { app, dispose, sonGuessrService, ceeService, reportBangumiLoad, statusHistory, statusSamples } =
-  createServer({
-    env,
-    database,
-    gameRecords,
-    whoIsFakerService,
-    logger,
-    isShuttingDown: () => isShuttingDown,
-    onTriggerShutdown: async () => {
-      isShuttingDown = true;
-      // 这里只翻停机标记：`/readyz` 随之回 503，新 WS 握手也一并被拒（两道闸门读同一份状态）。
-      // 向各房间广播停机通知是 notify-shutdown 路由自己的事，真正的排空与释放仍归后续 signal 的唯一任务。
-    },
-  });
+const {
+  app,
+  dispose,
+  sonGuessrService,
+  ceeService,
+  reportBangumiLoad,
+  statusHistory,
+  statusSamples,
+} = createServer({
+  env,
+  database,
+  gameRecords,
+  whoIsFakerService,
+  logger,
+  isShuttingDown: () => isShuttingDown,
+  onTriggerShutdown: async () => {
+    isShuttingDown = true;
+    // 这里只翻停机标记：`/readyz` 随之回 503，新 WS 握手也一并被拒（两道闸门读同一份状态）。
+    // 向各房间广播停机通知是 notify-shutdown 路由自己的事，真正的排空与释放仍归后续 signal 的唯一任务。
+  },
+});
 
 // 状态账本：启动时读回窗口内的日格与实时样本，之后每 5 分钟落一次库。
 // 探测由状态接口按需触发，外加 App 内按采样间隔常驻跑的实时采样器——

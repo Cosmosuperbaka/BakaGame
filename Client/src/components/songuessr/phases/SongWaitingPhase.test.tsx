@@ -47,7 +47,11 @@ describe("猜歌等待页开局条件", () => {
   it("单人视角：两平台都无时提示登录网易云或 QQ 音乐", () => {
     render(
       <SongWaitingPhase
-        snapshot={songSnapshot({ solo: true, musicAccountReady: false, qqMusicAccountReady: false })}
+        snapshot={songSnapshot({
+          solo: true,
+          musicAccountReady: false,
+          qqMusicAccountReady: false,
+        })}
         isHost
         run={run}
       />

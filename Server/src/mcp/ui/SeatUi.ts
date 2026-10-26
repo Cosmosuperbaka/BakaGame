@@ -1,12 +1,6 @@
 import type { AgentFocusKind } from "../../shared/AgentActivity";
 import type { AgentGameClient, GameId } from "../GameClient";
-import {
-  autoSearchCee,
-  buildCeeScreen,
-  clickCeeControl,
-  pressCee,
-  setCeeControl,
-} from "./Cee";
+import { autoSearchCee, buildCeeScreen, clickCeeControl, pressCee, setCeeControl } from "./Cee";
 import {
   autoSearchFaker,
   buildFakerScreen,
@@ -23,22 +17,8 @@ import {
   pressSong,
   setSongControl,
 } from "./Song";
-import {
-  createUiState,
-  isRecord,
-  str,
-  syncPhase,
-  type UiContext,
-  type UiState,
-} from "./Support";
-import type {
-  UiControl,
-  UiRunResult,
-  UiScreen,
-  UiStep,
-  UiStepAction,
-  UiStepReport,
-} from "./Types";
+import { createUiState, isRecord, str, syncPhase, type UiContext, type UiState } from "./Support";
+import type { UiControl, UiRunResult, UiScreen, UiStep, UiStepAction, UiStepReport } from "./Types";
 
 const MAX_STEPS = 16;
 const MAX_TYPE_LENGTH = 200;
@@ -134,7 +114,10 @@ export class SeatUi {
       this.states.set(game, fresh);
     }
     const current = this.state(game);
-    syncPhase(current, str(snapshot.phase) ?? str((snapshot.status as Record<string, unknown>)?.phase) ?? "waiting");
+    syncPhase(
+      current,
+      str(snapshot.phase) ?? str((snapshot.status as Record<string, unknown>)?.phase) ?? "waiting"
+    );
     return {
       game,
       client: this.client,
@@ -243,8 +226,7 @@ export class SeatUi {
     context: UiContext,
     control: UiControl
   ): Promise<string | undefined> {
-    if (control.id === "chat.send")
-      return sendChat(context, CHAT_COMMAND[game]);
+    if (control.id === "chat.send") return sendChat(context, CHAT_COMMAND[game]);
     return undefined;
   }
 
@@ -315,13 +297,17 @@ export class SeatUi {
   ): Promise<StepOutcome> {
     if (control.role !== "textbox") throw new Error(`控件「${control.label}」不是输入框，不能输入`);
     if (context.state.focus !== control.id)
-      throw new Error(`请先用 focus 选中「${control.label}」再输入（当前焦点：${context.state.focus ?? "无"}）`);
+      throw new Error(
+        `请先用 focus 选中「${control.label}」再输入（当前焦点：${context.state.focus ?? "无"}）`
+      );
     const incoming = step.text;
     if (typeof incoming !== "string") throw new Error("type 需要 text 参数");
     const current = context.state.drafts[control.id] ?? "";
     const next = step.replace === true ? incoming : current + incoming;
     if (next.length > (control.maxLength ?? MAX_TYPE_LENGTH))
-      throw new Error(`输入超过「${control.label}」的长度上限 ${control.maxLength ?? MAX_TYPE_LENGTH}`);
+      throw new Error(
+        `输入超过「${control.label}」的长度上限 ${control.maxLength ?? MAX_TYPE_LENGTH}`
+      );
     const start = step.replace === true ? "" : current;
     let typed = start;
     const chars = [...next.slice(start.length)];
@@ -381,7 +367,9 @@ export class SeatUi {
     }
     const control = this.findControl(screen, targetId);
     if (control.disabled)
-      throw new Error(`控件「${control.label}」当前是禁用的${control.hint ? `：${control.hint}` : ""}`);
+      throw new Error(
+        `控件「${control.label}」当前是禁用的${control.hint ? `：${control.hint}` : ""}`
+      );
     return control;
   }
 

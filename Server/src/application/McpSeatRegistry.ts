@@ -10,8 +10,7 @@ export interface McpController {
   pairedAt: number;
 }
 
-const hashToken = (token: string): string =>
-  createHash("sha256").update(token).digest("hex");
+const hashToken = (token: string): string => createHash("sha256").update(token).digest("hex");
 
 const seatKey = (roomId: string, playerId: string): string => `${roomId}:${playerId}`;
 

@@ -26,10 +26,7 @@ import {
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
 import * as ws from "@/lib/SonGuessrWs";
-import {
-  getStoredSongMusicSession,
-  saveSongMusicSession,
-} from "@/lib/SonGuessrMusicSession";
+import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { consumeStateSync } from "@/lib/StateSync";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);

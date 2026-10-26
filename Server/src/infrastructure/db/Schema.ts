@@ -509,7 +509,5 @@ export const statusEvent = mysqlTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [
-    index("status_event_env_idx").on(table.environment, table.startedAt),
-  ]
+  (table) => [index("status_event_env_idx").on(table.environment, table.startedAt)]
 );

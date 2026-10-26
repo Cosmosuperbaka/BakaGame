@@ -66,7 +66,9 @@ const Slider = React.forwardRef<
             aria-label={thumbLabels?.[index] ?? ariaLabel}
             aria-labelledby={thumbLabels?.[index] ? undefined : ariaLabelledBy}
             aria-describedby={ariaDescribedBy}
-            aria-valuetext={thumbValueTexts?.[index] ?? (thumbCount === 1 ? ariaValueText : undefined)}
+            aria-valuetext={
+              thumbValueTexts?.[index] ?? (thumbCount === 1 ? ariaValueText : undefined)
+            }
             className={cn(
               "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
               "transition-colors focus-visible:outline-offset-2",

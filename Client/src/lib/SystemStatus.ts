@@ -66,10 +66,14 @@ const parseComponents = (value: unknown): PublicStatusComponent[] => {
     if (typeof record.id !== "string" || !COMPONENT_IDS.has(record.id)) return [];
     if (!isLevel(record.level)) return [];
     const latency =
-      typeof record.latencyMs === "number" && Number.isFinite(record.latencyMs) && record.latencyMs >= 0
+      typeof record.latencyMs === "number" &&
+      Number.isFinite(record.latencyMs) &&
+      record.latencyMs >= 0
         ? Math.round(record.latencyMs)
         : null;
-    return [{ id: record.id as PublicStatusComponent["id"], level: record.level, latencyMs: latency }];
+    return [
+      { id: record.id as PublicStatusComponent["id"], level: record.level, latencyMs: latency },
+    ];
   });
 };
 
@@ -263,8 +267,7 @@ export const parseStatusEvents = (value: unknown): PublicStatusEvent[] => {
     }
     const components = Array.isArray(event.components)
       ? event.components.filter(
-          (id): id is PublicStatusComponentId =>
-            typeof id === "string" && COMPONENT_IDS.has(id)
+          (id): id is PublicStatusComponentId => typeof id === "string" && COMPONENT_IDS.has(id)
         )
       : [];
     const ended = (value: unknown): number | null =>

@@ -149,7 +149,12 @@ export class StatusHistoryStore {
           ? this.days.get(componentId as PublicStatusComponentId)?.get(day)
           : undefined;
       if (!count) continue;
-      values.push({ environment: this.environment, componentId: componentId!, day: day!, ...count });
+      values.push({
+        environment: this.environment,
+        componentId: componentId!,
+        day: day!,
+        ...count,
+      });
     }
     this.dirty.clear();
     if (values.length === 0) return;

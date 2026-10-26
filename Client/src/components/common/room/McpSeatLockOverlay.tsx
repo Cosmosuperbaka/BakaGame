@@ -10,12 +10,8 @@ type GameId = "faker" | "song" | "cee";
  * 画面保持原样，也不放置任何手动收回入口；恢复控制由 Agent 的 mcp.release 或断线触发。
  */
 export function McpSeatLockOverlay({ game }: { game: GameId }) {
-  const fakerControlled = useWhoIsFakerStore(
-    (state) => state.privateState?.mcpControlled === true
-  );
-  const songControlled = useSonGuessrStore(
-    (state) => state.privateState?.mcpControlled === true
-  );
+  const fakerControlled = useWhoIsFakerStore((state) => state.privateState?.mcpControlled === true);
+  const songControlled = useSonGuessrStore((state) => state.privateState?.mcpControlled === true);
   const ceeControlled = useCEEStore((state) => state.privateState?.mcpControlled === true);
   const controlled =
     game === "faker" ? fakerControlled : game === "song" ? songControlled : ceeControlled;

@@ -19,7 +19,9 @@ export interface ExternalStatusProbe {
   read(): Promise<ExternalStatusReading | null>;
 }
 
-export type ExternalStatusReading = Partial<Record<UpstreamStatusComponentId, ExternalMonitorReading>>;
+export type ExternalStatusReading = Partial<
+  Record<UpstreamStatusComponentId, ExternalMonitorReading>
+>;
 
 /** 未配置外部监测时的缺省适配器：不请求任何外部服务，页面把上游接口显示为「未知」。 */
 export class MockExternalStatusProbe implements ExternalStatusProbe {

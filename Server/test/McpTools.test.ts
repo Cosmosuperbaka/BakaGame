@@ -72,11 +72,7 @@ const fixture = ({ game, snapshot, privateState, handler }: FixtureOptions) => {
     currentPlayerId: () => String(privateState.playerId),
     currentSnapshot: () => snapshot,
     currentPrivateState: () => privateState,
-    sendInRoom: async (
-      target: string,
-      type: string,
-      payload: Record<string, unknown> = {}
-    ) => {
+    sendInRoom: async (target: string, type: string, payload: Record<string, unknown> = {}) => {
       calls.push({ game: target, type, payload });
       version += 1;
       return handler ? handler(type, payload) : { ok: true };
@@ -205,8 +201,36 @@ test("猜歌：搜索结果与玩家栏/聊天栏一起返回，点结果才提�
       lyricClip: { startTime: 1000, endTime: 16000, lines: [{ time: 1000, text: "歌词" }] },
     },
     players: [
-      { id: "p1", name: "测试员", score: 0, team: null, membership: "active", online: true, isReady: true, isBot: false, isHost: false, roundStatus: "guessing", guessesUsed: 0, correctGuesses: 0, totalGuesses: 0 },
-      { id: "p2", name: "出题人", score: 0, team: null, membership: "active", online: true, isReady: true, isBot: false, isHost: true, roundStatus: "submitter", guessesUsed: 0, correctGuesses: 0, totalGuesses: 0 },
+      {
+        id: "p1",
+        name: "测试员",
+        score: 0,
+        team: null,
+        membership: "active",
+        online: true,
+        isReady: true,
+        isBot: false,
+        isHost: false,
+        roundStatus: "guessing",
+        guessesUsed: 0,
+        correctGuesses: 0,
+        totalGuesses: 0,
+      },
+      {
+        id: "p2",
+        name: "出题人",
+        score: 0,
+        team: null,
+        membership: "active",
+        online: true,
+        isReady: true,
+        isBot: false,
+        isHost: true,
+        roundStatus: "submitter",
+        guessesUsed: 0,
+        correctGuesses: 0,
+        totalGuesses: 0,
+      },
     ],
     chat: [
       { id: "c1", playerId: "p2", playerName: "出题人", text: "来猜", createdAt: 1, system: false },
@@ -256,7 +280,21 @@ test("猜歌出题：搜索、选中详情、设置片段、确认出题都在�
     settings: { questionType: "song", showLyrics: true, allowAgents: true },
     pendingSubmitterPlayerId: "p1",
     players: [
-      { id: "p1", name: "测试员", score: 0, team: null, membership: "active", online: true, isReady: true, isBot: false, isHost: true, roundStatus: "submitter", guessesUsed: 0, correctGuesses: 0, totalGuesses: 0 },
+      {
+        id: "p1",
+        name: "测试员",
+        score: 0,
+        team: null,
+        membership: "active",
+        online: true,
+        isReady: true,
+        isBot: false,
+        isHost: true,
+        roundStatus: "submitter",
+        guessesUsed: 0,
+        correctGuesses: 0,
+        totalGuesses: 0,
+      },
     ],
     chat: [],
   };
@@ -272,7 +310,9 @@ test("猜歌出题：搜索、选中详情、设置片段、确认出题都在�
     },
     handler: (type) => {
       if (type === "song.music.search")
-        return { results: [{ id: "netease:9", title: "测试歌", artist: "歌手", durationMs: 120_000 }] };
+        return {
+          results: [{ id: "netease:9", title: "测试歌", artist: "歌手", durationMs: 120_000 }],
+        };
       if (type === "song.music.detail")
         return {
           song: {
@@ -311,7 +351,18 @@ test("猜角色出题：搜角色、选中答案、输入提示并确认", async
     hostPlayerId: "p1",
     settings: { allowAgents: true, answerMode: "manual", subjectSearch: true },
     players: [
-      { id: "p1", name: "测试员", online: true, ready: true, team: null, membership: "active", score: 0, status: "waiting", attempts: 0, marks: "" },
+      {
+        id: "p1",
+        name: "测试员",
+        online: true,
+        ready: true,
+        team: null,
+        membership: "active",
+        score: 0,
+        status: "waiting",
+        attempts: 0,
+        marks: "",
+      },
     ],
     spectateRequests: [],
     chat: [],
@@ -430,7 +481,10 @@ test("站点地图覆盖全部人类可达位置，visit_page 校验路径与标
     tool("visit_page").handler({ path: "/faker" }, { client, agentName: "TestAgent" })
   ).rejects.toThrow("未知页面");
   await expect(
-    tool("visit_page").handler({ path: "/abouts", tab: "secret" }, { client, agentName: "TestAgent" })
+    tool("visit_page").handler(
+      { path: "/abouts", tab: "secret" },
+      { client, agentName: "TestAgent" }
+    )
   ).rejects.toThrow("标签");
 });
 

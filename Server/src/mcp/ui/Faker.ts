@@ -88,8 +88,7 @@ const meOf = (context: UiContext) => selfPlayer(context);
 
 const isAlive = (context: UiContext): boolean => meOf(context)?.roundStatus === "alive";
 
-const isQuestioner = (context: UiContext): boolean =>
-  context.privateState.isQuestioner === true;
+const isQuestioner = (context: UiContext): boolean => context.privateState.isQuestioner === true;
 
 const canVote = (context: UiContext): boolean => {
   const status = statusOf(context);
@@ -280,9 +279,7 @@ const nightControls = (context: UiContext): UiControl[] => {
   const role = str(context.privateState.role);
   const acted = context.privateState.nightActionSubmitted === true;
   const canAct =
-    isAlive(context) &&
-    !isQuestioner(context) &&
-    (role === "civilian" || role === "undercover");
+    isAlive(context) && !isQuestioner(context) && (role === "civilian" || role === "undercover");
   if (canAct && !acted) {
     for (const target of recordList(context.snapshot.players)) {
       if (
@@ -361,9 +358,7 @@ const phaseControls = (context: UiContext): UiControl[] => {
     case "feedback":
       return advanceControl(context, "继续");
     case "gameOver":
-      return meOf(context)?.isHost === true
-        ? [button("faker.advance", "返回等待房间")]
-        : [];
+      return meOf(context)?.isHost === true ? [button("faker.advance", "返回等待房间")] : [];
     default:
       return [];
   }
@@ -500,10 +495,7 @@ const clickFakerBlank = async (context: UiContext, id: string): Promise<string |
   }
 };
 
-const clickFakerVoteNight = async (
-  context: UiContext,
-  id: string
-): Promise<string | undefined> => {
+const clickFakerVoteNight = async (context: UiContext, id: string): Promise<string | undefined> => {
   if (id.startsWith("faker.vote.")) {
     const target = id.slice("faker.vote.".length);
     await send(context, "game.submitVote", {
@@ -580,10 +572,7 @@ export async function pressFaker(
 ): Promise<string | undefined> {
   if (key !== "Enter") return undefined;
   if (controlValue.id === "faker.description.input") {
-    await clickFakerControl(
-      context,
-      control("faker.description.send", "发送", "button", "game")
-    );
+    await clickFakerControl(context, control("faker.description.send", "发送", "button", "game"));
     return "描述已发送";
   }
   return undefined;

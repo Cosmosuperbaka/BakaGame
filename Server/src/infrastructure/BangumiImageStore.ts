@@ -99,7 +99,9 @@ export class BangumiImageStore implements ImageStore {
     try {
       return (
         this.shard(path)
-          .query<{ present: number }, [string]>("SELECT 1 AS present FROM images_remote WHERE path=?")
+          .query<{ present: number }, [string]>(
+            "SELECT 1 AS present FROM images_remote WHERE path=?"
+          )
           .get(path) !== null
       );
     } catch {

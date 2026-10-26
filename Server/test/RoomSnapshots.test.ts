@@ -73,12 +73,18 @@ describe("房间快照编排", () => {
     };
     saveRoomSnapshots(targets, 1_000);
 
-    const late = restoreRoomSnapshots({ ...targets, now: () => 1_000 + SNAPSHOT_MAX_DOWNTIME_MS + 1 });
+    const late = restoreRoomSnapshots({
+      ...targets,
+      now: () => 1_000 + SNAPSHOT_MAX_DOWNTIME_MS + 1,
+    });
     expect(late.discarded).toEqual(["faker"]);
     expect(late.restored).toEqual({});
     expect(faker.calls).toHaveLength(0);
 
-    const inTime = restoreRoomSnapshots({ ...targets, now: () => 1_000 + SNAPSHOT_MAX_DOWNTIME_MS - 1 });
+    const inTime = restoreRoomSnapshots({
+      ...targets,
+      now: () => 1_000 + SNAPSHOT_MAX_DOWNTIME_MS - 1,
+    });
     expect(inTime.discarded).toEqual([]);
     expect(inTime.restored).toEqual({ faker: 1 });
   });

@@ -476,9 +476,10 @@ export function ChatPanel({
     [messages, myPlayerId]
   );
   // 最新一条玩家消息：只有它可以被 +1；系统提示没有气泡，不算复读对象
-  const latestMessageId = useMemo(() => messages.findLast((message) => !message.system)?.id, [
-    messages,
-  ]);
+  const latestMessageId = useMemo(
+    () => messages.findLast((message) => !message.system)?.id,
+    [messages]
+  );
   if (pendingEcho && lastMineId && lastMineId !== pendingEcho.baselineId) {
     setHandoffId(lastMineId);
     setPendingEcho(null);

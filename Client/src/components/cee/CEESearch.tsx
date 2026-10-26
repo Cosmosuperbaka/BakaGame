@@ -332,9 +332,7 @@ export function CEESearch({
               target="character"
               disabled={disabled}
               onSwitch={switchMode}
-              controlId={
-                agentControlPrefix ? `${agentControlPrefix}.mode.character` : undefined
-              }
+              controlId={agentControlPrefix ? `${agentControlPrefix}.mode.character` : undefined}
             />
             {allowSubjects ? (
               <ModeButton
@@ -342,9 +340,7 @@ export function CEESearch({
                 target="subject"
                 disabled={disabled}
                 onSwitch={switchMode}
-                controlId={
-                  agentControlPrefix ? `${agentControlPrefix}.mode.subject` : undefined
-                }
+                controlId={agentControlPrefix ? `${agentControlPrefix}.mode.subject` : undefined}
               />
             ) : null}
             {trailing}

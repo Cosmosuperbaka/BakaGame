@@ -39,10 +39,7 @@ import {
   saveSessionToken,
   saveSonGuessrSessionToken,
 } from "@/lib/Storage";
-import {
-  getStoredSongMusicSession,
-  saveSongMusicSession,
-} from "@/lib/SonGuessrMusicSession";
+import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { clearSonGuessrQueryCache, initSonGuessrWs, useSonGuessrStore } from "./UseSonGuessrStore";
 
 const initialState = useSonGuessrStore.getState();

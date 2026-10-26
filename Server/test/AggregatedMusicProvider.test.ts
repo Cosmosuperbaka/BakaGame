@@ -186,9 +186,9 @@ describe("AggregatedMusicProvider", () => {
     await agg.searchAlbums("范特西", 10, { netease: "nc_cookie_only" });
     expect(qqMock.searchArtists).not.toHaveBeenCalled();
     expect(qqMock.searchAlbums).not.toHaveBeenCalled();
-    await expect(
-      agg.getPlaylistSongs("qq:12345", { netease: "nc_cookie_only" })
-    ).rejects.toThrow("QQ 音乐匿名音源已关闭");
+    await expect(agg.getPlaylistSongs("qq:12345", { netease: "nc_cookie_only" })).rejects.toThrow(
+      "QQ 音乐匿名音源已关闭"
+    );
     expect(qqMock.getPlaylistSongs).not.toHaveBeenCalled();
   });
 

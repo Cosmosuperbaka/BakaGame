@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { BetterStackStatusProbe, monitorReadings } from "../src/infrastructure/BetterStackStatusProbe";
+import {
+  BetterStackStatusProbe,
+  monitorReadings,
+} from "../src/infrastructure/BetterStackStatusProbe";
 
 /** 夹具假令牌：仅供本文件构造探针，不是任何环境的真实凭据。 */
 const fixtureToken = ["test", "token"].join("-");

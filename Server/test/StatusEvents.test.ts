@@ -111,7 +111,9 @@ describe("状态事件管理", () => {
       status: "investigating",
       resolvedAt: null,
     });
-    expect((await rpc("admin/statusEvents/list", { active: true }, adminCookie)).body.total).toBe(1);
+    expect((await rpc("admin/statusEvents/list", { active: true }, adminCookie)).body.total).toBe(
+      1
+    );
   });
 
   test("维护窗口必须有晚于开始时刻的结束时间，事件不能带计划结束", async () => {

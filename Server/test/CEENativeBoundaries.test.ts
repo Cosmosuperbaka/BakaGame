@@ -340,16 +340,14 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
   const agent = h.connect("AgentOne");
   agent.record.isAgent = true;
 
-  await expect(
-    h.send(agent, "cee.room.join", { userName: "AgentOne" })
-  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+  await expect(h.send(agent, "cee.room.join", { userName: "AgentOne" })).rejects.toMatchObject({
+    code: "AGENTS_NOT_ALLOWED",
+  });
 
   await h.configure(host, { allowAgents: true });
   await h.send(agent, "cee.room.join", { userName: "AgentOne" });
   expect(h.snapshot(host).settings.allowAgents).toBe(true);
-  expect(h.snapshot(host).players.find((player) => player.name === "AgentOne")?.isAgent).toBe(
-    true
-  );
+  expect(h.snapshot(host).players.find((player) => player.name === "AgentOne")?.isAgent).toBe(true);
 });
 
 test("CEE MCP 配对：Agent 接管同一座位，人类手动操作被拒，收回后恢复", async () => {
@@ -383,9 +381,9 @@ test("CEE MCP 配对：Agent 接管同一座位，人类手动操作被拒，收
   );
   expect(h.privateState(host).mcpControlled).toBe(true);
 
-  await expect(
-    h.send(host, "cee.chat.send", { text: "人类手动消息" })
-  ).rejects.toMatchObject({ code: "MCP_CONTROL_ONLY" });
+  await expect(h.send(host, "cee.chat.send", { text: "人类手动消息" })).rejects.toMatchObject({
+    code: "MCP_CONTROL_ONLY",
+  });
 
   await h.send(agent, "cee.chat.send", { text: "Agent 消息" });
   await h.send(host, "mcp.release", {});

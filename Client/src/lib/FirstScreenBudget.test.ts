@@ -126,6 +126,5 @@ describe("first-screen-budget", () => {
     expect(failed.status).toBe(1);
     expect(failed.stderr).toContain("logoBytes");
     expect(failed.stderr).not.toContain("entryCssGzBytes:");
-  }, // 两次冷启动 node 子进程：机器满载时默认 5s 会把这条判红，与门禁逻辑无关。
-  30_000);
+  }, 30_000); // 两次冷启动 node 子进程：机器满载时默认 5s 会把这条判红，与门禁逻辑无关。
 });

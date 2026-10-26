@@ -82,8 +82,7 @@ const applyAgentInput = (focus: AgentFocusEvent) => {
   const controlId = focus.controlId;
   if (!controlId) return;
   if (focus.action === "type" && typeof focus.input === "string") {
-    for (const element of allControls(controlId))
-      setNativeInputValue(element, focus.input);
+    for (const element of allControls(controlId)) setNativeInputValue(element, focus.input);
     return;
   }
   if (focus.action !== "click") return;
