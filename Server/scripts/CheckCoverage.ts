@@ -11,7 +11,7 @@ type CoverageMetric = keyof typeof thresholds;
 
 // 覆盖率棘轮阈值。**与 bun 的插桩口径强绑定，换 bun 版本必须同步重校**。
 //
-// 实测对照（同一份代码、同一批 501 条测试，仅换 bun 可执行文件）：
+// 实测对照（同一份代码、同一批测试，仅换 bun 可执行文件）：
 //   bun 1.3.x  → functions 93.65% (3361/3589)、lines 97.00% (27380/28227)
 //   bun 1.4.2  → functions 90.66% (1495/1649)、lines 94.31% (13374/14181)
 // 两版的分母相差 2 倍以上（函数 3589 vs 1649），因此数值下降是**口径变化**，
@@ -26,9 +26,17 @@ type CoverageMetric = keyof typeof thresholds;
 //
 // 新增无库可跑的仓储会拉低实测行覆盖，这是阈值需要重校的信号：补覆盖的正路是给仓储做可注入的
 // 连接桩，而不是继续往下调阈值。
+//
+// 2026-10-26 按 1.4.2 口径重校：补上 9 个 Drizzle 仓储的连接桩用例（`test/DrizzleStub.ts`）、
+// 三款游戏的 MCP 界面层用例与 MCP 客户端的真实 WebSocket 用例后，实测
+// functions 92.38% (4447/4814)、lines 94.09% (39549/42033)，据此定下面的阈值。
+// 仍未覆盖的主要两处，都不适合按「无库可跑」的正路补：
+// `application/CreateServer.ts` 的生产装配体（要起数据 Worker 与真实上游，启动前的
+// 生产配置校验由 `test/Env.test.ts` 覆盖）、`scripts/SongRandomnessProbe.ts` 的联网
+// 主流程（显式运行的真实歌单探针，纯函数部分已由 `test/SongRandomnessProbe.test.ts` 覆盖）。
 const thresholds = {
-  functions: 90.6,
-  lines: 93.8,
+  functions: 92.2,
+  lines: 93.9,
 };
 
 // LCIF 单值总计记录（FNF / FNH / LF / LH）到累加字段的映射。
