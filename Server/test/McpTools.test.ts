@@ -1,92 +1,13 @@
 import { expect, test } from "bun:test";
-import type { AgentGameClient, GameId } from "../src/mcp/GameClient";
+import type { AgentGameClient } from "../src/mcp/GameClient";
 import { focusForTool } from "../src/mcp/Focus";
 import { TOOLS } from "../src/mcp/Tools";
-import { SeatUi } from "../src/mcp/ui/SeatUi";
-import type { AgentFocusInput } from "../src/shared/AgentActivity";
-
-type Call = { game: string; type: string; payload: Record<string, unknown> };
+import { baseFakerSnapshot, mcpFixture } from "./McpFixtures";
 
 const tool = (name: string) => {
   const found = TOOLS.find((entry) => entry.name === name);
   if (!found) throw new Error(`缺少工具 ${name}`);
   return found;
-};
-
-const baseFakerSnapshot = (phase = "waiting") => ({
-  roomId: "1234",
-  name: "测试房",
-  phase,
-  hostPlayerId: "p1",
-  testMode: false,
-  allowSpectators: true,
-  settings: {
-    roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
-    allowAgents: true,
-  },
-  roleLimits: { maxUndercoverCount: 2, canEnableAngel: false, canEnableBlank: false },
-  status: { phase, started: false, day: 1 },
-  players: [
-    {
-      id: "p1",
-      name: "测试员",
-      score: 0,
-      membership: "active",
-      online: true,
-      isReady: false,
-      isBot: false,
-      isHost: true,
-      roundStatus: "waiting",
-    },
-    {
-      id: "p2",
-      name: "对手",
-      score: 0,
-      membership: "active",
-      online: true,
-      isReady: true,
-      isBot: false,
-      isHost: false,
-      roundStatus: "waiting",
-    },
-  ],
-  descriptions: [],
-  chat: [],
-});
-
-interface FixtureOptions {
-  game: GameId;
-  snapshot: Record<string, unknown>;
-  privateState: Record<string, unknown>;
-  handler?: (type: string, payload: Record<string, unknown>) => unknown;
-}
-
-const fixture = ({ game, snapshot, privateState, handler }: FixtureOptions) => {
-  const calls: Call[] = [];
-  const focus: AgentFocusInput[] = [];
-  let version = 0;
-  const client = {
-    name: "TestAgent",
-    siteOrigin: "http://127.0.0.1:4850",
-    currentRoom: (target: string) => (target === game ? String(snapshot.roomId) : undefined),
-    currentPlayerId: () => String(privateState.playerId),
-    currentSnapshot: () => snapshot,
-    currentPrivateState: () => privateState,
-    sendInRoom: async (target: string, type: string, payload: Record<string, unknown> = {}) => {
-      calls.push({ game: target, type, payload });
-      version += 1;
-      return handler ? handler(type, payload) : { ok: true };
-    },
-    publishAgentFocus: async (input: AgentFocusInput) => {
-      focus.push(input);
-    },
-    stateVersion: () => version,
-    waitForStateChange: async () => true,
-    requestSync: async () => ({ synced: true }),
-  } as unknown as AgentGameClient;
-  const ui = new SeatUi(client, { pacing: false });
-  (client as unknown as { ui: SeatUi }).ui = ui;
-  return { client, ui, calls, focus };
 };
 
 test("工具面只保留大厅/进房/屏幕/界面操作，不再暴露绕过控件的动作接口", () => {
@@ -113,7 +34,7 @@ test("工具面只保留大厅/进房/屏幕/界面操作，不再暴露绕过�
 });
 
 test("导航工具只上报粗焦点；局内焦点交给控件", () => {
-  const { client } = fixture({
+  const { client } = mcpFixture({
     game: "song",
     snapshot: { roomId: "1234", phase: "waiting", players: [], chat: [] },
     privateState: { playerId: "p1" },
@@ -131,7 +52,7 @@ test("导航工具只上报粗焦点；局内焦点交给控件", () => {
 });
 
 test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令牌", async () => {
-  const { ui } = fixture({
+  const { ui } = mcpFixture({
     game: "faker",
     snapshot: baseFakerSnapshot(),
     privateState: {
@@ -153,7 +74,7 @@ test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令�
 test("输入必须先 focus；聚焦后逐字输入并在一次请求里串行提交词语", async () => {
   const snapshot = baseFakerSnapshot("wordSubmission");
   snapshot.status = { phase: "wordSubmission", started: true, day: 1 } as never;
-  const { ui, calls, focus } = fixture({
+  const { ui, calls, focus } = mcpFixture({
     game: "faker",
     snapshot,
     privateState: { playerId: "p1", isQuestioner: true, role: "civilian", word: "苹果" },
@@ -236,7 +157,7 @@ test("猜歌：搜索结果与玩家栏/聊天栏一起返回，点结果才提�
       { id: "c1", playerId: "p2", playerName: "出题人", text: "来猜", createdAt: 1, system: false },
     ],
   };
-  const { ui, calls } = fixture({
+  const { ui, calls } = mcpFixture({
     game: "song",
     snapshot,
     privateState: {
@@ -298,7 +219,7 @@ test("猜歌出题：搜索、选中详情、设置片段、确认出题都在�
     ],
     chat: [],
   };
-  const { ui, calls } = fixture({
+  const { ui, calls } = mcpFixture({
     game: "song",
     snapshot,
     privateState: {
@@ -367,7 +288,7 @@ test("猜角色出题：搜角色、选中答案、输入提示并确认", async
     spectateRequests: [],
     chat: [],
   };
-  const { ui, calls } = fixture({
+  const { ui, calls } = mcpFixture({
     game: "cee",
     snapshot,
     privateState: {
@@ -402,7 +323,7 @@ test("猜角色出题：搜角色、选中答案、输入提示并确认", async
 
 test("发送聊天后返回的屏幕同步包含新的聊天栏内容", async () => {
   const snapshot = baseFakerSnapshot();
-  const { ui } = fixture({
+  const { ui } = mcpFixture({
     game: "faker",
     snapshot,
     privateState: { playerId: "p1", isQuestioner: false },
@@ -432,7 +353,7 @@ test("发送聊天后返回的屏幕同步包含新的聊天栏内容", async ()
 
 test("ui_run 工具拒绝空步骤并透传界面操作", async () => {
   const snapshot = baseFakerSnapshot();
-  const { client } = fixture({
+  const { client } = mcpFixture({
     game: "faker",
     snapshot,
     privateState: { playerId: "p1" },
@@ -448,7 +369,7 @@ test("ui_run 工具拒绝空步骤并透传界面操作", async () => {
 });
 
 test("站点地图覆盖全部人类可达位置，visit_page 校验路径与标签", async () => {
-  const { client } = fixture({
+  const { client } = mcpFixture({
     game: "faker",
     snapshot: baseFakerSnapshot(),
     privateState: { playerId: "p1" },
