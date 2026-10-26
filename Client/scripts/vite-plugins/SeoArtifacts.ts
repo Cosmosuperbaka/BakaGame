@@ -7,6 +7,47 @@ import { PAGE_META, SITE_ORIGIN } from "../../src/data/PageMeta.ts";
 const OG_IMAGE_ROUTE = "/og/";
 const OG_SOURCE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 
+/**
+ * 收集「目标名 → 源文件」。
+ *
+ * 多个页面可以共用同一张分享图（首页与 /ceo 都用 logo.jpg），所以这里按名字去重：
+ * 同一个目标路径不能交给两路 sharp 并发写 —— 写完的那路与截断的那路重叠，
+ * 紧接着的 size 检查会读到 0 字节，报「分享图是空文件」，而源图与产物本身都没问题。
+ * 校验仍然对每个页面各做一次，只有落盘按唯一目标执行。
+ */
+function collectOgTargets(sourceDir: string): Map<string, string> {
+  const sourceFiles = fs.readdirSync(sourceDir);
+  const ogPrefix = `${SITE_ORIGIN}${OG_IMAGE_ROUTE}`;
+  const targets = new Map<string, string>();
+
+  for (const page of PAGE_META) {
+    const image = page.image;
+    if (!image || !image.startsWith(SITE_ORIGIN)) continue; // 未配置或外链分享图原样使用
+
+    if (!image.startsWith(ogPrefix) || !image.endsWith(".jpg")) {
+      console.warn(
+        `SEO 产物：${page.path} 的分享图不在 /og/*.jpg 约定下（${image}），未转制——` +
+          "部分分享抓取器（如 QQ）可能因格式不受支持而显示不出图。"
+      );
+      continue;
+    }
+
+    const name = image.slice(ogPrefix.length, -".jpg".length);
+    if (targets.has(name)) continue;
+    const sourceFile = sourceFiles.find(
+      (file) =>
+        path.parse(file).name === name &&
+        OG_SOURCE_EXTENSIONS.includes(path.extname(file).toLowerCase())
+    );
+    if (!sourceFile) {
+      throw new Error(`SEO 产物：${page.path} 的分享图找不到同名源图（public/assets/${name}.*）`);
+    }
+    targets.set(name, sourceFile);
+  }
+
+  return targets;
+}
+
 export function seoArtifactsPlugin() {
   return {
     name: "seo-artifacts",
@@ -61,35 +102,10 @@ export function seoArtifactsPlugin() {
 
       // ---- 分享图 ----
       const sourceDir = path.resolve(import.meta.dirname, "../../public/assets");
-      const sourceFiles = fs.readdirSync(sourceDir);
-      const ogPrefix = `${SITE_ORIGIN}${OG_IMAGE_ROUTE}`;
+      const targets = collectOgTargets(sourceDir);
 
-      const produced = await Promise.all(
-        PAGE_META.map(async (page) => {
-          const image = page.image;
-          if (!image) return null;
-          if (!image.startsWith(SITE_ORIGIN)) return null; // 外链分享图原样使用
-
-          if (!image.startsWith(ogPrefix) || !image.endsWith(".jpg")) {
-            console.warn(
-              `SEO 产物：${page.path} 的分享图不在 /og/*.jpg 约定下（${image}），未转制——` +
-                "部分分享抓取器（如 QQ）可能因格式不受支持而显示不出图。"
-            );
-            return null;
-          }
-
-          const name = image.slice(ogPrefix.length, -".jpg".length);
-          const sourceFile = sourceFiles.find(
-            (file) =>
-              path.parse(file).name === name &&
-              OG_SOURCE_EXTENSIONS.includes(path.extname(file).toLowerCase())
-          );
-          if (!sourceFile) {
-            throw new Error(
-              `SEO 产物：${page.path} 的分享图找不到同名源图（public/assets/${name}.*）`
-            );
-          }
-
+      const producedImages = await Promise.all(
+        [...targets].map(async ([name, sourceFile]) => {
           const target = path.join(distDir, "og", `${name}.jpg`);
           fs.mkdirSync(path.dirname(target), { recursive: true });
           // 分享卡片本来就是静态图：gif 源只取第一帧（sharp 默认行为）。
@@ -101,7 +117,6 @@ export function seoArtifactsPlugin() {
           return `${OG_IMAGE_ROUTE}${name}.jpg`;
         })
       );
-      const producedImages = produced.filter((item): item is string => item !== null);
 
       console.log(
         `SEO 产物生成完成：站点地图 ${PAGE_META.length} 条 URL、分享图 ${producedImages.length} 张（${producedImages.join("、")}）`
