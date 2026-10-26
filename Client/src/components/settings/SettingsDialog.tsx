@@ -14,13 +14,14 @@ import { SettingsSection, SettingSwitchRow } from "@/components/common/room/Sett
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { isBakaClient } from "@/lib/BakaChannel";
 import { setCloudSyncEnabled, useCloudSyncEnabled } from "@/lib/CloudSync";
+import { MCP_ENDPOINT_PATH, type McpGameId } from "@/lib/McpConfig";
 import {
-  MCP_ENDPOINT_PATH,
-  setMcpLinkEnabled,
-  useMcpLinkEnabled,
-  type McpGameId,
-} from "@/lib/McpConfig";
-import { SITE_WS_PATH, useSiteLinkConnected } from "@/lib/SiteWs";
+  closePageControl,
+  openPageControl,
+  SITE_WS_PATH,
+  useSiteLinkConnected,
+} from "@/lib/SiteWs";
+import { usePageControl } from "@/stores/UsePageControl";
 import {
   setSoundEnabled,
   setSoundVolume,
@@ -42,18 +43,20 @@ const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
 ];
 
 /**
- * 复制给 Agent 的公开端点：与房间 MCP 设置生成的 Prompt 同一口径。
- * 壳内的页面 origin 是本地资源地址，必须写站点地址；网页则用当前站点 origin。
+ * 站点根地址：壳内的页面 origin 是本地资源地址，必须写站点地址；网页则用当前站点 origin。
  */
-const mcpEndpoint = (): string => {
-  const origin =
-    typeof window === "undefined"
-      ? SITE_ORIGIN
-      : isBakaClient()
-        ? SITE_ORIGIN
-        : window.location.origin;
-  return `${origin}${MCP_ENDPOINT_PATH}`;
+const siteOrigin = (): string => {
+  if (typeof window === "undefined") return SITE_ORIGIN;
+  return isBakaClient() ? SITE_ORIGIN : window.location.origin;
 };
+
+/** 复制给 Agent 的公开端点：与房间 MCP 设置生成的 Prompt 同一口径。 */
+const mcpEndpoint = (): string => `${siteOrigin()}${MCP_ENDPOINT_PATH}`;
+
+/** 交给 Agent 的接管指令：端点 + 这把一次性配对码，别的一概不需要。 */
+const pageControlPrompt = (code: string): string =>
+  `请读取 ${siteOrigin()}/llms.txt，并用远程 MCP 连接 ${mcpEndpoint()}。` +
+  ` 调用 control_page({ code: "${code}" }) 接管我当前的页面，之后用 page_act 导航或点击，把页面带进我想玩的游戏。`;
 
 /**
  * 连接信息：站点连接的当前状态、远程端点与取用方式。
@@ -157,17 +160,105 @@ function RoomMcpSection({ game }: { game: McpGameId }) {
   );
 }
 
+/** 配对码区块：人类把它（或整段指令）交给 Agent；页面侧不落盘、刷新即失效。 */
+function PageCodeBlock({ code }: { code: string }) {
+  const [copied, setCopied] = useState<"code" | "prompt" | null>(null);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 1_600);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const copy = (kind: "code" | "prompt", text: string) => {
+    const writing = navigator.clipboard?.writeText(text);
+    if (writing === undefined) return;
+    void writing.then(
+      () => setCopied(kind),
+      () => {}
+    );
+  };
+
+  return (
+    <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">配对码 · 5 分钟内有效</span>
+        <div className="flex shrink-0 gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={() => copy("code", code)}
+          >
+            {copied === "code" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            {copied === "code" ? "已复制" : "复制码"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={() => copy("prompt", pageControlPrompt(code))}
+          >
+            {copied === "prompt" ? <Check aria-hidden="true" /> : <Bot aria-hidden="true" />}
+            {copied === "prompt" ? "已复制" : "复制指令"}
+          </Button>
+        </div>
+      </div>
+      <p className="mt-1 font-mono text-base font-semibold tracking-[0.3em] text-foreground">
+        {code}
+      </p>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+        把码或整段指令交给 Agent；它认领后就能导航与点击这台浏览器，你随时可以收回。
+      </p>
+    </div>
+  );
+}
+
 function LobbyMcpSection() {
-  const linkEnabled = useMcpLinkEnabled();
+  const { status, code, agentName } = usePageControl();
   const connected = useSiteLinkConnected();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const toggle = (next: boolean) => {
+    setBusy(true);
+    setFailure(null);
+    const task = next ? openPageControl() : closePageControl();
+    void task
+      .catch((error: unknown) => {
+        setFailure((error as { message?: string } | null)?.message ?? "操作失败，请重试");
+      })
+      .finally(() => setBusy(false));
+  };
+
   return (
     <SettingsSection title="MCP 连接" icon={Bot}>
       <SettingSwitchRow
-        label="开启首页连接"
-        description={`站点实时通道 ${SITE_WS_PATH}；开启即建连，Agent 的位置与动作从这里下发。`}
-        checked={linkEnabled}
-        onCheckedChange={setMcpLinkEnabled}
+        label="允许 Agent 接管本页"
+        description={`开启后生成一次性配对码，Agent 凭它驱动这台浏览器；指令只走站点通道（${SITE_WS_PATH}）。`}
+        checked={status !== "off"}
+        onCheckedChange={toggle}
+        disabled={busy}
       />
+      {status === "controlled" ? (
+        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 p-3">
+          <Lock aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{agentName || "Agent"} 正在接管本页</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              它会替你导航、点按钮；想自己操作就收回控制，配对码随即作废。
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {code ? <PageCodeBlock code={code} /> : null}
+      {failure ? (
+        <p role="alert" className="text-xs text-destructive">
+          {failure}
+        </p>
+      ) : null}
       <Collapsible title="连接信息" size="sm">
         <McpConnectionDetails connected={connected} />
       </Collapsible>

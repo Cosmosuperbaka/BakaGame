@@ -2,7 +2,7 @@ import type { EventLogger } from "../infrastructure/EventLogger";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { AgentGameClient } from "./GameClient";
 import { MCP_INSTRUCTIONS } from "./Policy";
-import { TOOLS, withRemoteSessionSchema } from "./Tools";
+import { TOOLS, withRemoteSessionSchema, type PageControlPort } from "./Tools";
 import { isRecord } from "../shared/Json";
 
 const SERVER_INFO = { name: "bakagame-mcp", version: "1.0.0" };
@@ -142,6 +142,8 @@ export interface RemoteMcpHandlerOptions {
   enabled: boolean;
   sessions: RemoteMcpSessions;
   logger: EventLogger;
+  /** 页面接管端口；stdio 入口没有它，control_page 会明确拒绝。 */
+  pages?: PageControlPort;
 }
 
 /** 远程 MCP 的 JSON-RPC 核心；HTTP 路由只负责取 Origin、Session 头与状态码。 */
@@ -268,7 +270,7 @@ async function handleRemoteToolCall(
   options: RemoteMcpHandlerOptions,
   context: ToolCallContext
 ): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
-  const { sessions, logger } = options;
+  const { sessions, logger, pages } = options;
   const name = typeof context.params.name === "string" ? context.params.name : "";
   const args = isRecord(context.params.arguments) ? { ...context.params.arguments } : {};
   const tool = TOOLS.find((entry) => entry.name === name);
@@ -290,6 +292,8 @@ async function handleRemoteToolCall(
     const result = await tool.handler(args, {
       client: session.client,
       agentName: session.agentName,
+      controllerId: session.id,
+      ...(pages ? { pages } : {}),
     });
     if (FOCUS_AFTER_TOOLS.has(tool.name))
       await publishToolFocus(session.client, session.agentName, tool.name, args);

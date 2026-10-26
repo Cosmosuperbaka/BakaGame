@@ -104,6 +104,11 @@ export function siteFocusForTool(
   if (tool === "get_mcp_policy") return undefined;
   if (tool === "get_site_map") return { kind: "site", page: "/" };
   if (tool === "visit_page") return pageFocus(args);
+  // 页面接管：导航沿用 path，点击只报「在做一件事」，不把页面状态塞进公开广播。
+  if (tool === "page_state" || tool === "release_page") return undefined;
+  if (tool === "control_page") return { kind: "site" };
+  if (tool === "page_act")
+    return args.action === "navigate" && pageArgOf(args) ? pageFocus(args) : { kind: "action" };
   const { kind, place } = SITE_FOCUS_TARGETS[tool] ?? DEFAULT_SITE_FOCUS;
   const game = focusGame(client, args);
   const current = game ? client.currentRoom(game) : undefined;

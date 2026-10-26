@@ -169,6 +169,7 @@ export function LobbyPage({
               />
               <Button
                 size="sm"
+                data-agent-control="lobby.create"
                 onClick={handleCreate}
                 disabled={disabled}
                 className="shrink-0 gap-1.5 text-sm shadow-2xs"

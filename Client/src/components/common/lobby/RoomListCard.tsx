@@ -108,6 +108,7 @@ export function RoomListCard({
     >
       <Card
         role="button"
+        data-agent-control={`lobby.room.${room.roomId}`}
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled || undefined}
         aria-busy={pending || undefined}

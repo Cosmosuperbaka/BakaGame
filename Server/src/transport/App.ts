@@ -32,12 +32,22 @@ import { isRecord } from "../shared/Json";
 import {
   SITE_FOCUS_COMMAND,
   SITE_LEAVE_COMMAND,
+  SITE_PAGE_CLOSE_COMMAND,
+  SITE_PAGE_COMMAND_SET,
+  SITE_PAGE_OPEN_COMMAND,
+  SITE_PAGE_RESULT_COMMAND,
+  SITE_PAGE_STATE_COMMAND,
   SITE_SUBSCRIBE_COMMAND,
   SITE_SUBSCRIBE_COMMAND_SET,
   SiteFocusPayloadSchema,
+  SitePageResultSchema,
+  SitePageStateSchema,
+  type SitePageResult,
+  type SitePageState,
 } from "../shared/AgentActivity";
 import { Value } from "@sinclair/typebox/value";
 import { SitePresence } from "./SitePresence";
+import { SitePages } from "./SitePages";
 import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
@@ -824,6 +834,8 @@ export const createApp = ({
   const remoteMcpSessions = new RemoteMcpSessions(logger);
   /** 站点级 Agent 活动：首页与大厅的只读广播，不参与任何游戏的房间状态。 */
   const sitePresence = new SitePresence();
+  /** 页面接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这台浏览器。 */
+  const sitePages = new SitePages();
   /**
    * 统一入口按需把连接登记进对应游戏的服务。
    *
@@ -842,12 +854,62 @@ export const createApp = ({
     else characterService?.registerConnection(record);
   };
 
-  /** 站点通道：订阅、焦点上报、离开。三条命令由统一入口直接处理，不进任何游戏服务。 */
+  /**
+   * 页面接管的人类侧命令：开/关租约、上报页面状态与指令结果。
+   *
+   * 谁都能开自己的页面，但只有拿到一次性配对码的 Agent 能驱动它 —— 配对码只在这里换发，
+   * 状态与结果也只按发起连接记账，因此这些命令都不进任何游戏服务。
+   */
+  const handleSitePageCommand = (
+    ws: GameSocketLike,
+    type: string,
+    message: Record<string, unknown>,
+    connectionId: string,
+    envelope: { id: string; type: string; traceId?: string }
+  ): void => {
+    if (type === SITE_PAGE_OPEN_COMMAND) {
+      sendPacket(
+        ws,
+        createAck(
+          envelope,
+          sitePages.open(connectionId, (payload) => sendPacket(ws, payload))
+        )
+      );
+      return;
+    }
+    if (type === SITE_PAGE_CLOSE_COMMAND) {
+      sendPacket(ws, createAck(envelope, { closed: sitePages.close(connectionId) }));
+      return;
+    }
+    if (!isRecord(message.payload))
+      throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
+    if (type === SITE_PAGE_STATE_COMMAND) {
+      // 封闭 schema：页面上报只含 `data-agent-control` 的 id 与标签，输入值带不进来。
+      if (!Value.Check(SitePageStateSchema, message.payload))
+        throw new AppError("INVALID_MESSAGE", "页面状态不合法");
+      sitePages.updateState(connectionId, message.payload as SitePageState);
+      sendPacket(ws, createAck(envelope, { ok: true }));
+      return;
+    }
+    if (type !== SITE_PAGE_RESULT_COMMAND)
+      throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知的页面命令：${type}`);
+    if (!Value.Check(SitePageResultSchema, message.payload))
+      throw new AppError("INVALID_MESSAGE", "指令结果不合法");
+    sitePages.recordResult(connectionId, message.payload as SitePageResult);
+    sendPacket(ws, createAck(envelope, { ok: true }));
+  };
+
+  /** 站点通道：订阅、页面接管、焦点上报、离开。这些命令由统一入口直接处理，不进任何游戏服务。 */
   const handleSiteCommand = (ws: GameSocketLike, message: Record<string, unknown>): boolean => {
     const type = message.type as string;
-    if (!SITE_SUBSCRIBE_COMMAND_SET.has(type)) return false;
+    const isPageCommand = SITE_PAGE_COMMAND_SET.has(type);
+    if (!SITE_SUBSCRIBE_COMMAND_SET.has(type) && !isPageCommand) return false;
     const connectionId = connectionIdFor(ws);
     const envelope = message as { id: string; type: string; traceId?: string };
+    if (isPageCommand) {
+      handleSitePageCommand(ws, type, message, connectionId, envelope);
+      return true;
+    }
     if (type === SITE_SUBSCRIBE_COMMAND) {
       sitePresence.subscribe(connectionId, (payload) => sendPacket(ws, payload));
       sendPacket(ws, createAck(envelope, { subscribed: true }));
@@ -932,6 +994,8 @@ export const createApp = ({
       const connectionId = connectionIdOf(ws);
       if (!connectionId) return;
       sitePresence.unsubscribe(connectionId);
+      // 页面断开即收回接管：配对码与租约都绑在这条连接上，断线后一律作废。
+      sitePages.dropConnection(connectionId);
       const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
       for (const game of registered ?? []) {
         try {
@@ -1182,6 +1246,7 @@ export const createApp = ({
         enabled: env.mcpEnabled === true,
         logger,
         sessions: remoteMcpSessions,
+        pages: sitePages,
       })
     )
     .use(

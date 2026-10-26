@@ -211,6 +211,7 @@ function GameRow({ game }: { game: GameEntry }) {
               variant="outline"
               size="sm"
               aria-label={`${game.title} 开始游戏`}
+              data-agent-control={`site.game.${game.id}`}
               onClick={() => handleEnter(game.path)}
               className="h-8 w-full text-xs sm:text-sm font-medium"
             >
@@ -265,6 +266,7 @@ function GameRow({ game }: { game: GameEntry }) {
                 variant="outline"
                 size="sm"
                 aria-label={`${game.title} ${mode.title}`}
+                data-agent-control={`site.mode.${mode.id}`}
                 onClick={() => handleEnter(mode.path)}
                 className={`h-8 w-full px-2.5 text-xs sm:text-sm font-medium ${spanClass}`}
               >

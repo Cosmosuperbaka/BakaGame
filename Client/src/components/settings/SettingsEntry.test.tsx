@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { CLOUD_SYNC_STORAGE_KEY, getCloudSyncEnabled, setCloudSyncEnabled } from "@/lib/CloudSync";
-import { getMcpLinkEnabled, MCP_LINK_STORAGE_KEY, setMcpLinkEnabled } from "@/lib/McpConfig";
+import { setPageControl } from "@/stores/UsePageControl";
 import {
   getSoundEnabled,
   getSoundVolume,
@@ -23,7 +23,7 @@ const resetPreferences = () => {
   setThemePreference("system");
   setSoundEnabled(true);
   setSoundVolume(1);
-  setMcpLinkEnabled(true);
+  setPageControl({ status: "off" });
   setCloudSyncEnabled(true);
   useWhoIsFakerStore.setState({ snapshot: null, privateState: null });
   useSonGuessrStore.setState({ snapshot: null, privateState: null });
@@ -43,7 +43,7 @@ describe("SettingsEntry", () => {
   it("齿轮入口打开统一设置面板，四组偏好都在同一处", async () => {
     const { user, dialog } = await openSettings();
     expect(dialog).toHaveTextContent("设置");
-    expect(within(dialog).getByRole("switch", { name: "开启首页连接" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "允许 Agent 接管本页" })).toBeInTheDocument();
     expect(within(dialog).getByRole("radiogroup", { name: "主题" })).toBeInTheDocument();
     expect(within(dialog).getByRole("switch", { name: "提示音" })).toBeInTheDocument();
     expect(within(dialog).getByRole("switch", { name: "启用云同步" })).toBeInTheDocument();
@@ -81,13 +81,21 @@ describe("SettingsEntry", () => {
     expect(window.localStorage.getItem(SOUND_VOLUME_STORAGE_KEY)).toBe("0.95");
   });
 
-  it("首页连接与云同步开关都持久化", async () => {
+  it("开启页面接管后展示一次性配对码与交给 Agent 的指令", async () => {
+    setPageControl({ status: "open", code: "ABCD2345", expiresAt: Date.now() + 60_000 });
+    const { dialog } = await openSettings();
+
+    expect(within(dialog).getByText("ABCD2345")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "复制码" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "复制指令" })).toBeInTheDocument();
+    // 接管开关不是本地偏好：配对本就该一次一码，刷新即失效。
+    expect(window.localStorage.getItem("bakagame:mcp-link")).toBeNull();
+  });
+
+  it("云同步开关持久化", async () => {
     const { user, dialog } = await openSettings();
-    await user.click(within(dialog).getByRole("switch", { name: "开启首页连接" }));
     await user.click(within(dialog).getByRole("switch", { name: "启用云同步" }));
 
-    expect(getMcpLinkEnabled()).toBe(false);
-    expect(window.localStorage.getItem(MCP_LINK_STORAGE_KEY)).toBe("0");
     expect(getCloudSyncEnabled()).toBe(false);
     expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
   });
@@ -102,7 +110,9 @@ describe("SettingsEntry", () => {
     expect(within(dialog).getByText("本房间已允许 MCP 接入")).toBeInTheDocument();
     expect(within(dialog).getByText(/尚未有 Agent 接管座位/)).toBeInTheDocument();
     expect(dialog).toHaveTextContent("/api/mcp");
-    expect(within(dialog).queryByRole("switch", { name: "开启首页连接" })).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("switch", { name: "允许 Agent 接管本页" })
+    ).not.toBeInTheDocument();
   });
 
   it("Agent 接管座位后，房间内显示锁定状态", async () => {
@@ -124,6 +134,8 @@ describe("SettingsEntry", () => {
     const { dialog } = await openSettings("cee");
 
     expect(within(dialog).queryByText("MCP 连接")).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("switch", { name: "开启首页连接" })).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("switch", { name: "允许 Agent 接管本页" })
+    ).not.toBeInTheDocument();
   });
 });

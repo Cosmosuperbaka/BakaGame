@@ -226,3 +226,25 @@ test("远程 MCP 自动为首次调用建立会话，未进房时给出可执行
   // 会话不再要求先建房/进房：Agent 从首页开始就要有连接，站点活动才能出现。
   expect(result.payload.result.content[0].text).toContain("尚未加入 faker 的房间");
 });
+
+test("页面接管只经站内远程 MCP：没有页面端口时四个工具都明确拒绝", async () => {
+  // stdio 进程既没有浏览器连接、也无法证明自己持有配对码，因此页面能力是可选注入的窄接口。
+  // 这里锁住「明确报错」这条底线：静默降级会让 Agent 以为自己在驱动页面，实际什么也没发生。
+  sessionsRef = new RemoteMcpSessions(logger);
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ["control_page", { code: "ABCD2345" }],
+    ["page_state", {}],
+    ["page_act", { action: "navigate", path: "/songuessr" }],
+    ["release_page", {}],
+  ];
+  for (const [name, args] of cases) {
+    const result = await rpc("http://127.0.0.1:9/api/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args },
+    });
+    expect(result.payload.result.isError).toBe(true);
+    expect(result.payload.result.content[0].text).toContain("页面接管只能经站内远程 MCP");
+  }
+});

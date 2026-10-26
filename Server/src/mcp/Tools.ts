@@ -4,10 +4,37 @@ import { MCP_POLICY } from "./Policy";
 import { absolutePageUrl, findSitePage, gamePathOf, roomPageOf, SITE_PAGES } from "./SiteMap";
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
+import type { SitePageCommand, SitePageResult, SitePageState } from "../shared/AgentActivity";
+
+/**
+ * 页面接管端口：由传输层实现（`SitePages`），工具只依赖这个窄接口。
+ * stdio 入口没有它——那里没有「站内浏览器页面」可接管，工具会给出明确错误。
+ */
+export interface PageControlPort {
+  claim(
+    code: string,
+    controllerId: string,
+    agentName: string
+  ): { pageId: string; agentName: string; state: SitePageState };
+  viewFor(
+    controllerId: string
+  ):
+    | { pageId: string; agentName: string; state: SitePageState; lastResult?: SitePageResult }
+    | undefined;
+  dispatch(
+    controllerId: string,
+    action: "navigate" | "click",
+    target: { path?: string; control?: string }
+  ): SitePageCommand;
+  closeByController(controllerId: string): boolean;
+}
 
 export interface ToolContext {
   client: AgentGameClient;
   agentName: string;
+  /** 站内远程 MCP 的会话号：页面接管靠它绑定「哪个 Agent 在驱动这台浏览器」。 */
+  controllerId?: string;
+  pages?: PageControlPort;
 }
 
 export interface McpTool {
@@ -86,6 +113,20 @@ const needString = (args: Record<string, unknown>, key: string): string => {
 
 const optionalString = (args: Record<string, unknown>, key: string): string | undefined =>
   typeof args[key] === "string" && args[key].trim() ? args[key].trim() : undefined;
+
+/**
+ * 页面接管必须由站内远程 MCP 发起：stdio 进程没有可绑定的浏览器连接，
+ * 也不能证明自己持有页面的配对码。
+ */
+const requirePageControl = (
+  context: ToolContext
+): { pages: PageControlPort; controllerId: string } => {
+  if (!context.pages || !context.controllerId)
+    throw Object.assign(new Error("页面接管只能经站内远程 MCP（/api/mcp）使用"), {
+      code: "PAGE_CONTROL_UNAVAILABLE",
+    });
+  return { pages: context.pages, controllerId: context.controllerId };
+};
 
 const summarizeRoom = (game: GameId, value: unknown) => {
   if (!isRecord(value)) return { game };
@@ -406,5 +447,85 @@ export const TOOLS: McpTool[] = [
     description: "读取本 MCP 的使用边界（只读）。",
     inputSchema: objectSchema({}),
     handler: async () => ({ policy: MCP_POLICY }),
+  },
+  {
+    name: "control_page",
+    description:
+      "接管一张人类页面（首页或大厅），像接管座位一样用自己的会话驱动它。" +
+      "人类在设置里点「允许 Agent 接管本页」会得到 8 位配对码，把它交给你后调这个工具。" +
+      "配对码一次有效、5 分钟内不用即过期，页面刷新或断开也会作废。" +
+      "接管成功后用 page_act 在这台浏览器里导航/点击，page_state 复查当前位置。",
+    inputSchema: objectSchema(
+      {
+        code: { type: "string", description: "8 位配对码，由页面设置生成并交给你的" },
+      },
+      ["code"]
+    ),
+    write: true,
+    handler: async (args, context) => {
+      const { pages, controllerId } = requirePageControl(context);
+      const lease = pages.claim(needString(args, "code"), controllerId, context.agentName);
+      return {
+        pageId: lease.pageId,
+        agentName: lease.agentName,
+        state: lease.state,
+        next: '用 page_act({ action: "navigate", path: "/songuessr" }) 进入对应游戏大厅',
+      };
+    },
+  },
+  {
+    name: "page_state",
+    description:
+      "读取已接管页面的当前状态（只读）：路径、标题、可点控件（`data-agent-control` 的 id 与标签），" +
+      "以及上一条指令的执行结果。不包含输入框内容与聊天正文。",
+    inputSchema: objectSchema({}),
+    handler: async (_args, context) => {
+      const { pages, controllerId } = requirePageControl(context);
+      const view = pages.viewFor(controllerId);
+      if (!view)
+        throw Object.assign(new Error("尚未接管页面：先调 control_page"), {
+          code: "PAGE_NOT_CONTROLLED",
+        });
+      return view;
+    },
+  },
+  {
+    name: "page_act",
+    description:
+      "在被接管的页面里执行一步：`navigate` 打开站点内的路径（只接受人类可达位置，含房间页），" +
+      "`click` 点击页面当前上报的控件 id（先 page_state 看有哪些）。" +
+      "指令异步执行，用 page_state 复查结果。",
+    inputSchema: objectSchema(
+      {
+        action: { type: "string", enum: ["navigate", "click"] },
+        path: {
+          type: "string",
+          description: "navigate 的目标路径，例如 /songuessr、/cee 或 /cee/room/1234",
+        },
+        control: { type: "string", description: "click 的控件 id，取自 page_state.controls" },
+      },
+      ["action"]
+    ),
+    write: true,
+    handler: async (args, context) => {
+      const { pages, controllerId } = requirePageControl(context);
+      const action = needString(args, "action");
+      if (action !== "navigate" && action !== "click")
+        throw new Error("action 只能是 navigate 或 click");
+      const command = pages.dispatch(controllerId, action, {
+        ...(typeof args.path === "string" ? { path: args.path } : {}),
+        ...(typeof args.control === "string" ? { control: args.control } : {}),
+      });
+      return { queued: command, next: "稍后用 page_state 确认页面已到新位置" };
+    },
+  },
+  {
+    name: "release_page",
+    description: "交还页面控制权，让人类重新手动操作这台浏览器。",
+    inputSchema: objectSchema({}),
+    handler: async (_args, context) => {
+      const { pages, controllerId } = requirePageControl(context);
+      return { released: pages.closeByController(controllerId) };
+    },
   },
 ];

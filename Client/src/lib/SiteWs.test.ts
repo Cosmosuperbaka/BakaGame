@@ -32,7 +32,7 @@ vi.mock("@/lib/WebsocketClient", () => ({
   }),
 }));
 
-import { connectSiteSocket, disconnectSiteSocket, getSiteLinkConnected } from "./SiteWs";
+import { connectSiteSocket, getSiteLinkConnected } from "./SiteWs";
 import { getSiteAgents, resetSiteAgents } from "@/stores/UseSiteAgents";
 
 const activity = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -45,7 +45,7 @@ const activity = (id: string, overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-/** 服务端事件交给站点通道：`site.*` 三类事件各写一次 store。 */
+/** 服务端事件交给站点通道：Agent 活动写 store，页面租约与指令走各自的出口。 */
 const emit = (event: string, payload: unknown) => {
   for (const handler of state.messages) handler({ type: "event", event, payload } as never);
 };
@@ -92,17 +92,18 @@ describe("站点通道", () => {
     expect(state.send).toHaveBeenCalledTimes(1);
   });
 
-  it("关掉首页连接会真的断开，并清空首页的 Agent 指示", () => {
+  it("收回页面接管不动共享连接：断线由链路自己决定，不由接管状态推断", () => {
     emit("site.agents", { agents: [activity("a")] });
     for (const handler of state.statuses) handler(true);
     expect(getSiteLinkConnected()).toBe(true);
 
-    disconnectSiteSocket();
+    // 租约失效（页面刷新、配对码过期）只清展示状态，连接与订阅保持不变：
+    // 服务端按连接统计在线，摘监听或断连都会让首页指示凭空消失。
+    emit("site.page.lease", { controlled: false });
 
-    // 只摘监听不关连接，服务端仍会把这条连接算作在线。
-    expect(state.disconnect).toHaveBeenCalledTimes(1);
-    expect(getSiteLinkConnected()).toBe(false);
-    expect(getSiteAgents()).toEqual([]);
+    expect(state.disconnect).not.toHaveBeenCalled();
+    expect(getSiteLinkConnected()).toBe(true);
+    expect(getSiteAgents()).toHaveLength(1);
   });
 
   it("快照覆盖、焦点增量、离开删除，三类事件都只留在站点 store 里", () => {

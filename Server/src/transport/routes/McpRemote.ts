@@ -1,24 +1,28 @@
 import { Elysia } from "elysia";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { handleRemoteMcp, RemoteMcpSessions } from "../../mcp/Remote";
+import type { PageControlPort } from "../../mcp/Tools";
 
 /**
  * 远程 MCP（Streamable HTTP）入口。
  * 支持 2025 系列的 initialize + Mcp-Session-Id，也接受 2026-07-28 的无状态请求；
  * 无状态客户端把 create_room / join_room 返回的 session 放进后续工具参数即可。
+ * `pages` 是页面接管租约：只有站内远程 MCP 能认领人类浏览器，stdio 入口拿不到它。
  */
 export const mcpRemoteRoutes = ({
   enabled,
   logger,
   sessions,
+  pages,
 }: {
   enabled: boolean;
   logger: EventLogger;
   sessions: RemoteMcpSessions;
+  pages?: PageControlPort;
 }) =>
   new Elysia({ name: "mcp-remote", normalize: false })
     .post("/api/mcp", async ({ request, body, set }) => {
-      const outcome = await handleRemoteMcp({ enabled, sessions, logger }, request, body);
+      const outcome = await handleRemoteMcp({ enabled, sessions, logger, pages }, request, body);
       set.status = outcome.status;
       for (const [key, value] of Object.entries(outcome.headers)) set.headers[key] = value;
       set.headers["cache-control"] = "no-store";

@@ -134,3 +134,78 @@ export const SiteAgentActivitySchema = t.Object(
 );
 
 export type SiteAgentActivity = Static<typeof SiteAgentActivitySchema>;
+
+// ==================== 站点页面接管（人类页面交给 Agent 驱动） ====================
+
+/**
+ * 首页/大厅的「页面接管」：人类在设置里开启后，页面拿到一枚**配对码**，把它交给 Agent；
+ * Agent 用远程 MCP 的 `control_page` 认领，之后由服务端向这台浏览器下发导航/点击指令。
+ *
+ * 凭据只有配对码：一次认领、短时效、绑在发起的那条连接上——页面刷新或断线即失效。
+ * 页面自己不上报"我是 Agent"，也不接受任何未认领方下发的指令。
+ */
+export const SITE_PAGE_OPEN_COMMAND = "site.page.open";
+export const SITE_PAGE_CLOSE_COMMAND = "site.page.close";
+export const SITE_PAGE_STATE_COMMAND = "site.page.state";
+export const SITE_PAGE_RESULT_COMMAND = "site.page.result";
+
+export const SITE_PAGE_COMMAND_SET: ReadonlySet<string> = new Set([
+  SITE_PAGE_OPEN_COMMAND,
+  SITE_PAGE_CLOSE_COMMAND,
+  SITE_PAGE_STATE_COMMAND,
+  SITE_PAGE_RESULT_COMMAND,
+]);
+
+/** 页面上的一个可操作控件（`data-agent-control`），只带标识与人类可读标签。 */
+export const SitePageControlSchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 96 }),
+    label: t.String({ maxLength: 48 }),
+  },
+  { additionalProperties: false }
+);
+
+/**
+ * 页面自报的可操作面：当前路径、标题与可见控件。
+ * **不带输入框内容、聊天正文或任何私有数据**——Agent 据此决定下一步，而不是抓取页面。
+ */
+export const SitePageStateSchema = t.Object(
+  {
+    path: t.String({ minLength: 1, maxLength: 96 }),
+    title: t.String({ maxLength: 64 }),
+    controls: t.Array(SitePageControlSchema, { maxItems: 32 }),
+    game: siteGameSchema,
+    roomId: t.Optional(t.String({ maxLength: 32 })),
+  },
+  { additionalProperties: false }
+);
+
+export type SitePageState = Static<typeof SitePageStateSchema>;
+
+/** 服务端下发给页面的指令；`navigate` 只接受站点地图里的路径，`click` 只接受已上报的控件 id。 */
+export const SitePageCommandSchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 64 }),
+    action: t.Union([t.Literal("navigate"), t.Literal("click")]),
+    path: t.Optional(t.String({ maxLength: 96 })),
+    control: t.Optional(t.String({ maxLength: 96 })),
+  },
+  { additionalProperties: false }
+);
+
+export type SitePageCommand = Static<typeof SitePageCommandSchema>;
+
+/** 页面执行结果：失败原因只回给服务端与发起指令的那条 Agent 会话。 */
+export const SitePageResultSchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 64 }),
+    ok: t.Boolean(),
+    error: t.Optional(t.String({ maxLength: 120 })),
+  },
+  { additionalProperties: false }
+);
+
+export type SitePageResult = Static<typeof SitePageResultSchema>;
+
+export const SITE_PAGE_COMMAND_EVENT = "site.page.command";
+export const SITE_PAGE_LEASE_EVENT = "site.page.lease";
