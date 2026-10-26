@@ -27,8 +27,19 @@ CREATE TABLE `status_sample` (
 	CONSTRAINT `status_sample_environment_component_id_bucket_pk` PRIMARY KEY(`environment`,`component_id`,`bucket`)
 );
 --> statement-breakpoint
-ALTER TABLE `status_daily` ADD `environment` varchar(24) DEFAULT 'production' NOT NULL;--> statement-breakpoint
-ALTER TABLE `status_daily` DROP PRIMARY KEY;--> statement-breakpoint
-ALTER TABLE `status_daily` ADD PRIMARY KEY(`environment`,`component_id`,`day`);--> statement-breakpoint
+CREATE TABLE `status_daily__v2` (
+	`environment` varchar(24) DEFAULT 'production' NOT NULL,
+	`component_id` varchar(24) NOT NULL,
+	`day` varchar(10) NOT NULL,
+	`total` int NOT NULL,
+	`operational` int NOT NULL,
+	`degraded` int NOT NULL,
+	`unknown` int NOT NULL,
+	CONSTRAINT `status_daily_environment_component_id_day_pk` PRIMARY KEY(`environment`,`component_id`,`day`)
+);--> statement-breakpoint
+INSERT INTO `status_daily__v2` (`environment`,`component_id`,`day`,`total`,`operational`,`degraded`,`unknown`) SELECT 'production',`component_id`,`day`,`total`,`operational`,`degraded`,`unknown` FROM `status_daily`;--> statement-breakpoint
+RENAME TABLE `status_daily` TO `status_daily__legacy`,`status_daily__v2` TO `status_daily`;--> statement-breakpoint
+DROP TABLE `status_daily__legacy`;--> statement-breakpoint
+CREATE INDEX `status_daily_day_idx` ON `status_daily` (`day`);--> statement-breakpoint
 CREATE INDEX `status_event_env_idx` ON `status_event` (`environment`,`started_at`);--> statement-breakpoint
 CREATE INDEX `status_sample_bucket_idx` ON `status_sample` (`bucket`);

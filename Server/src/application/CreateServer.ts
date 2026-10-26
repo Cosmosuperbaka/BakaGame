@@ -356,7 +356,11 @@ const createAccount = (
   void database.ready
     .then(() => badges.ensureCatalog())
     .then(() => service.ensureAutomaticBadges())
-    .catch((error: unknown) => logger.error("徽章自动授予失败", { error: String(error) }));
+    .catch((error: unknown) =>
+      logger.error("徽章自动授予失败", {
+        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+      })
+    );
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
   void database.ready
     .then(() => service.promoteAdmins(adminQqNumbers))

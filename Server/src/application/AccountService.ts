@@ -116,17 +116,26 @@ export class AccountService {
 
   /**
    * 启动时补齐自动徽章：给存量账号分配注册序号，前 1000 位补发先行者，
-   * 最高管理员独占主理人。管理员账号可能尚未注册，此时先清空其他人的主理人。
+   * 最高管理员独占主理人。
+   *
+   * 找不到主理人账号（配置写错、管理员尚未注册、查询失败）时**保留现有授予**：
+   * 清空换不来新的主理人，只会把已经生效的那一枚抹掉，且没有任何日志能事后追回。
    */
   async ensureAutomaticBadges(): Promise<void> {
     await this.options.registrations.ensureAll();
     const ownerQqNumber = this.options.ownerQqNumber;
     const owner = ownerQqNumber ? await this.findUserByQq(ownerQqNumber) : null;
-    await this.options.badges.resetExclusive("owner", owner?.id ?? null);
     if (owner) {
+      await this.options.badges.resetExclusive("owner", owner.id);
       const owned = await this.options.badges.badgesOf(owner.id);
-      if (!owned.some((badge) => badge.kind === "owner"))
+      if (!owned.some((badge) => badge.kind === "owner")) {
         await this.options.badges.grant(owner.id, "owner", null, new Date(this.now()));
+        this.options.logger.info("主理人徽章已授予", { userId: owner.id });
+      }
+    } else {
+      this.options.logger.warn("主理人账号未找到，保留现有主理人徽章", {
+        ownerQqNumber: ownerQqNumber ?? null,
+      });
     }
 
     const early = await this.options.registrations.earlyAdopters(PIONEER_BADGE_LIMIT);
