@@ -47,6 +47,12 @@ export default defineConfig(({ command }) => {
           changeOrigin: true,
           ws: true,
         },
+        // 发现文件与 `/api` 同理：preview 站内没有后端，不转发就会退回 SPA 的 HTML，
+        // E2E 断言的「JSON 可读」会假绿。
+        "/.well-known": {
+          target: "http://localhost:4850",
+          changeOrigin: true,
+        },
         // 图床前缀 `/api/bangumi` 已被上面这条 /api 规则覆盖，无需重复声明。
       },
     },

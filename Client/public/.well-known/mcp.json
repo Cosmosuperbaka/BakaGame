@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "mcpServers": {
+    "bakagame": {
+      "type": "http",
+      "url": "https://game.baka.website/api/mcp"
+    }
+  },
+  "serverCard": "https://game.baka.website/api/.well-known/mcp/server-card.json",
+  "documentation": "https://game.baka.website/llms.txt",
+  "canonical": "https://game.baka.website/api/.well-known/mcp.json",
+  "note": "静态发现指针：启用状态、反作弊声明与全量工具清单以 canonical 为准。"
+}

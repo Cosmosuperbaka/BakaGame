@@ -6,6 +6,24 @@ import { TOOLS } from "../../mcp/Tools";
 const POLICY = MCP_POLICY.split("\n");
 const INSTRUCTIONS = MCP_INSTRUCTIONS;
 
+/**
+ * 同一个发现文件的路径别名。
+ *
+ * - `/.well-known/mcp.json` 是 Agent 约定俗成的位置，必须存在。
+ * - `/api/...` 是**边缘只转发 `/api/*`** 时的逃生口：前端静态托管（ESA Pages）把
+ *   未命中静态资源的请求交给 SPA 兜底，`/.well-known/*` 会退回一份 HTML；而 `/api/*`
+ *   由边缘反代到后端，能拿到活数据（含 `enabled` 与全量工具清单）。
+ *
+ * 两份路径共用同一个 handler，不复制内容：静态文件只需要指向 `/api` 别名即可，
+ * 真相仍然只有这一处。
+ */
+const WELL_KNOWN_PATHS = ["/.well-known/mcp.json", "/api/.well-known/mcp.json"] as const;
+const SERVER_CARD_PATHS = [
+  "/.well-known/mcp/server-card.json",
+  "/api/.well-known/mcp/server-card.json",
+] as const;
+const LEGACY_CARD_PATHS = ["/mcp/server-card", "/api/mcp/server-card"] as const;
+
 const publicOrigin = (request: Request, fallback: string): string => {
   try {
     return new URL(request.url).origin;
@@ -22,9 +40,11 @@ export const mcpDiscoveryRoutes = ({
   mcpEnabled: boolean;
   serverUrl: string;
   version: string;
-}) =>
-  new Elysia({ name: "mcp-discovery", normalize: false })
-    .get("/.well-known/mcp.json", ({ request, set }) => {
+}) => {
+  const app = new Elysia({ name: "mcp-discovery", normalize: false });
+
+  for (const path of WELL_KNOWN_PATHS)
+    app.get(path, ({ request, set }) => {
       const origin = publicOrigin(request, serverUrl);
       set.headers["cache-control"] = "public, max-age=300";
       return {
@@ -38,13 +58,17 @@ export const mcpDiscoveryRoutes = ({
               },
             }
           : {},
-        serverCard: `${origin}/.well-known/mcp/server-card.json`,
+        // 指向 `/api` 别名：根路径在只转发 `/api/*` 的边缘上会被 SPA 兜底成 HTML，
+        // 而 server-card 里带全量工具清单，必须真的能读到。
+        serverCard: `${origin}/api/.well-known/mcp/server-card.json`,
         documentation: `${origin}/llms.txt`,
         instructions: INSTRUCTIONS,
         policy: POLICY,
       };
-    })
-    .get("/.well-known/mcp/server-card.json", ({ request, set }) => {
+    });
+
+  for (const path of SERVER_CARD_PATHS)
+    app.get(path, ({ request, set }) => {
       const origin = publicOrigin(request, serverUrl);
       set.headers["cache-control"] = "public, max-age=300";
       return {
@@ -67,8 +91,10 @@ export const mcpDiscoveryRoutes = ({
         policy: POLICY,
         tools: TOOLS.map(({ name, description }) => ({ name, description })),
       };
-    })
-    .get("/mcp/server-card", ({ request, set }) => {
+    });
+
+  for (const path of LEGACY_CARD_PATHS)
+    app.get(path, ({ request, set }) => {
       const origin = publicOrigin(request, serverUrl);
       set.headers["cache-control"] = "public, max-age=300";
       return {
@@ -79,3 +105,6 @@ export const mcpDiscoveryRoutes = ({
         policy: POLICY,
       };
     });
+
+  return app;
+};
