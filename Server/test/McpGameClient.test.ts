@@ -88,6 +88,48 @@ const startMockSocket = async (): Promise<MockSocket> => {
   };
 };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 轮询到条件成立为止；事件帧的到达不靠固定时长赌，等不到就显式失败。 */
+const until = async (label: string, settled: () => boolean): Promise<void> => {
+  for (let tick = 0; tick < 400; tick++) {
+    if (settled()) return;
+    await sleep(10);
+  }
+  throw new Error(`${label}：等待 4 秒仍未成立`);
+};
+
+/** 同 `until`，但把每轮的观测值带回来。 */
+const untilValue = async <T>(label: string, probe: () => Promise<T | undefined>): Promise<T> => {
+  for (let tick = 0; tick < 200; tick++) {
+    const value = await probe();
+    if (value !== undefined) return value;
+    await sleep(20);
+  }
+  throw new Error(`${label}：等待 4 秒仍未成立`);
+};
+
+/**
+ * 掉线后的第一条命令可能落在客户端还没察觉的旧连接上，因此按短超时重试，
+ * 直到服务端看到接回座位的 `room.reconnect` 为止；返回那一次的结果。
+ */
+const sendAfterDrop = async (client: AgentGameClient, socket: MockSocket) =>
+  await untilValue("掉线后始终没有发起接回", async () => {
+    socket.inbound.length = 0;
+    const outcome = await client
+      .sendInRoom("faker", "game.advancePhase", {}, { timeoutMs: 300 })
+      .then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({
+          ok: false as const,
+          message: (error as Error).message,
+        })
+      );
+    return socket.inbound.some((message) => message.type === "room.reconnect")
+      ? outcome
+      : undefined;
+  });
+
 const clients: AgentGameClient[] = [];
 const sockets: MockSocket[] = [];
 
@@ -433,12 +475,7 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
         : { reply: { type: "ack", payload: { ok: true } } }
     );
     socket.drop();
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    socket.inbound.length = 0;
-
-    await client.sendInRoom("faker", "game.advancePhase");
-    const types = socket.inbound.map((message) => message.type);
-    expect(types[0]).toBe("room.reconnect");
+    await sendAfterDrop(client, socket);
     expect(socket.inbound[0]?.payload).toMatchObject({ sessionToken: "seat-token" });
     expect(client.currentPlayerId("faker")).toBe("p7");
   });
@@ -458,9 +495,8 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
         : { reply: { type: "ack", payload: { ok: true } } }
     );
     socket.drop();
-    await new Promise((resolve) => setTimeout(resolve, 60));
-
-    await expect(client.sendInRoom("faker", "game.advancePhase")).rejects.toThrow("凭据失效");
+    const failure = await sendAfterDrop(client, socket);
+    expect(failure).toMatchObject({ ok: false, message: "凭据失效" });
     // 座位已被丢弃：下一次连接不再尝试接回，而是直接以无座位状态发命令。
     socket.inbound.length = 0;
     await client.sendInRoom("faker", "game.advancePhase");
@@ -482,8 +518,7 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
         : { reply: { type: "ack", payload: { ok: true, ...roomAck() } } }
     );
     socket.drop();
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    await expect(client.sendInRoom("faker", "game.advancePhase")).rejects.toThrow("上游繁忙");
+    expect(await sendAfterDrop(client, socket)).toMatchObject({ ok: false, message: "上游繁忙" });
 
     socket.inbound.length = 0;
     // 座位还在：下一次调用仍先尝试接回原位，而不是直接以无座位状态发命令。
@@ -502,8 +537,7 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
     });
     const before = client.stateVersion("song");
     socket.push("song.room.closed", { roomId: "1234" });
-    await new Promise((resolve) => setTimeout(resolve, 40));
-    expect(client.currentRoom("song")).toBeUndefined();
+    await until("关闭帧没有清掉座位", () => client.currentRoom("song") === undefined);
     expect(client.stateVersion("song")).toBe(before + 1);
   });
 
@@ -517,16 +551,17 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
       userName: "TestAgent",
     });
     socket.push("song.room.snapshot", { mode: "full", state: { roomId: "1234", chat: [] } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await until("整帧快照没有落到会话上", () =>
+      Array.isArray(client.currentSnapshot("song")?.chat)
+    );
     for (let index = 0; index < 205; index++)
       socket.push("song.chat.message", { message: { id: `m${index}`, text: `消息${index}` } });
+    const chatOf = () =>
+      (client.currentSnapshot("song")?.chat ?? []) as Array<{ id: string; text: string }>;
     socket.push("song.chat.message", { message: { id: "m204", text: "改写最后一条" } });
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    await until("聊天增量没有合并到窗口上限", () => chatOf().at(-1)?.text === "改写最后一条");
 
-    const chat = (client.currentSnapshot("song")?.chat ?? []) as Array<{
-      id: string;
-      text: string;
-    }>;
+    const chat = chatOf();
     expect(chat).toHaveLength(200);
     expect(chat.at(-1)).toMatchObject({ id: "m204", text: "改写最后一条" });
     expect(chat[0]).toMatchObject({ id: "m5" });
@@ -546,9 +581,8 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
     expect(client.currentSnapshot("cee")).toBeUndefined();
     const before = client.stateVersion("cee");
     socket.push("cee.room.closed", { roomId: "1234" });
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await until("关闭帧没有推进版本", () => client.stateVersion("cee") === before + 1);
     expect(client.currentSnapshot("cee")).toBeUndefined();
-    expect(client.stateVersion("cee")).toBe(before + 1);
   });
 
   test("状态版本等待在超时后如实回报未变化", async () => {
