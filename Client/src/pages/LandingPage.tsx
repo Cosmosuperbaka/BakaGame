@@ -12,6 +12,7 @@ import { faBilibili } from "@fortawesome/free-brands-svg-icons/faBilibili";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Seo } from "@/components/common/Seo";
+import { SiteAgentPresence } from "@/components/common/SiteAgentPresence";
 import { AccountButton, AccountDialogs, FeedbackButton } from "@/components/account/AccountEntry";
 import { ClientUpdateNotice } from "@/components/ClientUpdateNotice";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
@@ -392,6 +393,8 @@ export default function LandingPage() {
           {GAMES.map((game) => (
             <GameRow key={game.id} game={game} />
           ))}
+          {/* Agent（MCP）在站点上的活动：首页就连上，位置随工具调用实时更新。 */}
+          <SiteAgentPresence />
         </motion.div>
       </main>
 

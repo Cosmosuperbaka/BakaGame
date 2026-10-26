@@ -676,7 +676,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
   // 只替换必须访问真实网易云的二维码创建/轮询；房间与其余命令仍走隔离真实服务。
   let qrCreates = 0;
   await page.routeWebSocket(
-    (url) => isLoopbackUrl(url) && url.pathname === "/api/songuessr/ws",
+    (url) => isLoopbackUrl(url) && url.pathname === "/api/ws",
     (socket) => {
       const server = socket.connectToServer();
       socket.onMessage((message) => {
@@ -791,9 +791,24 @@ test("Songuessr test room exposes bots and guests can switch to spectator", asyn
 });
 
 test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且不溢出", async ({ page }) => {
-  await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/songuessr\/ws/, (socket) => {
+  await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/ws/, (socket) => {
     socket.onMessage((message) => {
       const command = JSON.parse(String(message)) as { id: string; type: string };
+      // 站点通道与猜歌共用 /api/ws：这套夹具只关心大厅列表，站点订阅照常回执。
+      if (command.type === "site.subscribe") {
+        socket.send(
+          JSON.stringify({
+            type: "ack",
+            id: command.id,
+            requestType: command.type,
+            payload: { subscribed: true },
+          })
+        );
+        socket.send(
+          JSON.stringify({ type: "event", event: "site.agents", payload: { agents: [] } })
+        );
+        return;
+      }
       if (command.type !== "song.lobby.subscribeRooms")
         throw new Error(`Unexpected fixture command: ${command.type}`);
       socket.send(

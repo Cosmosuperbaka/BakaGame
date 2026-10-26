@@ -1,6 +1,7 @@
 import type { AgentGameClient, GameId } from "./GameClient";
 import { GAME_IDS } from "./GameClient";
 import { MCP_POLICY } from "./Policy";
+import { absolutePageUrl, findSitePage, gamePathOf, roomPageOf, SITE_PAGES } from "./SiteMap";
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
 
@@ -30,10 +31,15 @@ export const withRemoteSessionSchema = (
     ...schema,
     properties: {
       ...properties,
+      agentName: {
+        type: "string",
+        maxLength: 32,
+        description: "站点首页显示的 Agent 名称；只在新建会话时生效。",
+      },
       session: {
         type: "string",
         description:
-          "远程 MCP 的 Agent 会话句柄；create_room / join_room 的返回值里带。支持 Mcp-Session-Id 的客户端可省略。",
+          "远程 MCP 的 Agent 会话句柄；任意工具调用的返回值里都带。支持 Mcp-Session-Id 的客户端可省略。",
       },
     },
   };
@@ -83,9 +89,12 @@ const optionalString = (args: Record<string, unknown>, key: string): string | un
 
 const summarizeRoom = (game: GameId, value: unknown) => {
   if (!isRecord(value)) return { game };
+  const roomId = typeof value.roomId === "string" ? value.roomId : undefined;
   return {
     game,
     roomId: value.roomId,
+    /** 页面内位置：Agent 需要能把「我在哪个房间」原样转给人类。 */
+    page: roomId ? roomPageOf(game, roomId) : undefined,
     name: value.name,
     phase: value.phase,
     playerCount:
@@ -97,6 +106,8 @@ const summarizeRoom = (game: GameId, value: unknown) => {
     visibility: value.visibility,
     allowSpectators: value.allowSpectators,
     allowAgents: value.allowAgents === true,
+    /** 只有开启 MCP 的房间能由 Agent 加入；密码房需要密码，但仍可加入。 */
+    joinable: value.allowAgents === true,
     hasPassword: value.hasPassword,
     solo: value.solo,
     source: value.source,
@@ -139,15 +150,74 @@ const uiStepSchema = {
 
 export const TOOLS: McpTool[] = [
   {
+    name: "get_site_map",
+    description:
+      "站点地图（只读）：列出人类可达的全部位置（三款游戏大厅、单人练习、关于项目、状态页）与用途。" +
+      "不知道从哪里开始时先调它，再用 visit_page 定位。",
+    inputSchema: objectSchema({}),
+    handler: async (_args, { client }) => ({
+      origin: client.siteOrigin,
+      pages: SITE_PAGES.map((page) => ({
+        ...page,
+        url: absolutePageUrl(client.siteOrigin, page),
+      })),
+    }),
+  },
+  {
+    name: "visit_page",
+    description:
+      "把 Agent 的位置移动到某个站点页面（与人类打开同一个链接等价），并返回该页的用途与绝对链接。" +
+      "游戏大厅之后用 list_rooms 看房间、create_room 建房或 join_room 入房。" +
+      policyNotice,
+    inputSchema: objectSchema(
+      {
+        path: {
+          type: "string",
+          description: "页面路径，取自 get_site_map，例如 /abouts 或 /cee",
+        },
+        tab: {
+          type: "string",
+          description: "仅 /abouts：credits / changelog / commits / privacy / terms",
+        },
+      },
+      ["path"]
+    ),
+    handler: async (args, { client }) => {
+      const path = needString(args, "path");
+      const page = findSitePage(path);
+      if (!page) throw new Error(`未知页面：${path}；先调用 get_site_map 查看可用路径`);
+      const tab = optionalString(args, "tab");
+      if (tab && !(page.tabs ?? []).includes(tab))
+        throw new Error(`该页没有 ${tab} 标签；可用：${(page.tabs ?? []).join(" / ") || "无"}`);
+      return {
+        path: page.path,
+        title: page.title,
+        description: page.description,
+        access: page.access,
+        ...(tab ? { tab } : {}),
+        url: absolutePageUrl(client.siteOrigin, page, tab),
+        next:
+          page.path === "/abouts" || page.path === "/status"
+            ? "这是只读页面；回到 get_site_map 选择游戏大厅"
+            : "先 list_rooms 查看可从外部加入的房间，或 create_room 自己建房",
+      };
+    },
+  },
+  {
     name: "list_rooms",
-    description: "列出房间（只读）。不传 game 时同时查询三款游戏。",
+    description:
+      "列出房间（只读）。不传 game 时同时查询三款游戏。`joinable` 为 true 的房间才允许 Agent 加入。",
     inputSchema: gameSchema(false),
     handler: async (args, { client }) => {
       const games = args.game === undefined ? GAME_IDS : [asGame(args.game)];
       const results = [];
       for (const game of games) {
         const rooms = await client.listRooms(game);
-        results.push({ game, rooms: rooms.map((room) => summarizeRoom(game, room)) });
+        results.push({
+          game,
+          lobby: absolutePageUrl(client.siteOrigin, findSitePage(gamePathOf(game))!),
+          rooms: rooms.map((room) => summarizeRoom(game, room)),
+        });
       }
       return { games: results };
     },
@@ -197,6 +267,7 @@ export const TOOLS: McpTool[] = [
       return {
         game,
         roomId: result.roomId,
+        page: roomPageOf(game, result.roomId),
         playerId: result.playerId,
         isAgent: true,
         allowAgents: args.allowAgents !== false,
@@ -230,6 +301,7 @@ export const TOOLS: McpTool[] = [
       return {
         game,
         roomId: result.roomId,
+        page: roomPageOf(game, result.roomId),
         playerId: result.playerId,
         isAgent: true,
         screen: await client.ui.screen(game),
@@ -260,6 +332,7 @@ export const TOOLS: McpTool[] = [
       return {
         game,
         roomId: result.roomId,
+        page: roomPageOf(game, result.roomId),
         playerId: result.playerId,
         isAgent: true,
         screen: await client.ui.screen(game),

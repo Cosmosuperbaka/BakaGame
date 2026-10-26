@@ -421,6 +421,8 @@ const createCEEMessageSchema = <K extends CEECommand>(type: K) =>
       id: t.String({ minLength: 1, maxLength: 128 }),
       traceId: optionalEnvelopeString(128),
       type: t.Literal(type),
+      // 统一入口的显式归属；CEE 线路其余字段沿用 nullable 变体，这一项新加，旧客户端不带。
+      game: t.Optional(t.Union([t.Literal("faker"), t.Literal("song"), t.Literal("cee")])),
       roomId: optionalEnvelopeString(32),
       sessionToken: optionalEnvelopeString(128),
       payload: CEEPayloadSchemas[type],

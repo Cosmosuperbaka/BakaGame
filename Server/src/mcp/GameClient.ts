@@ -1,16 +1,15 @@
 import { applyPatch } from "fast-json-patch";
-import type { AgentFocusInput } from "../shared/AgentActivity";
+import type { AgentFocusInput, SiteFocusPayload } from "../shared/AgentActivity";
 import { isRecord } from "../shared/Json";
+import { GAME_IDS, type GameId } from "../shared/Protocol";
 import { SeatUi } from "./ui/SeatUi";
 
-export type GameId = "faker" | "song" | "cee";
-
-export const GAME_IDS: readonly GameId[] = ["faker", "song", "cee"];
+export type { GameId };
+export { GAME_IDS };
 
 const GAME_META: Record<
   GameId,
   {
-    path: string;
     lobby: string;
     lobbyCommand: string;
     snapshot: string;
@@ -23,7 +22,6 @@ const GAME_META: Record<
   }
 > = {
   faker: {
-    path: "/api/whoisfaker/ws",
     lobby: "lobby.rooms",
     lobbyCommand: "lobby.subscribeRooms",
     snapshot: "room.snapshot",
@@ -35,7 +33,6 @@ const GAME_META: Record<
     leave: "room.leave",
   },
   song: {
-    path: "/api/songuessr/ws",
     lobby: "song.lobby.rooms",
     lobbyCommand: "song.lobby.subscribeRooms",
     snapshot: "song.room.snapshot",
@@ -47,7 +44,6 @@ const GAME_META: Record<
     leave: "song.room.leave",
   },
   cee: {
-    path: "/api/cee/ws",
     lobby: "cee.lobby.rooms",
     lobbyCommand: "cee.lobby.subscribeRooms",
     snapshot: "cee.room.snapshot",
@@ -60,11 +56,16 @@ const GAME_META: Record<
   },
 };
 
+/** 统一入口：三款游戏与站点通道共用一条升级路径。 */
+export const AGENT_WS_PATH = "/api/ws";
+
 const CONNECT_TIMEOUT_MS = 6_000;
 /** 普通命令 20s；出题/开局/下一轮这类上游装配是长任务，由调用方显式放宽。 */
 const COMMAND_TIMEOUT_MS = 20_000;
 const LONG_COMMAND_TIMEOUT_MS = 180_000;
 const EVENT_TIMEOUT_MS = 8_000;
+/** 站点焦点是广播用增强信息：超时与失败都不能拖慢工具本身的返回。 */
+const SITE_FOCUS_TIMEOUT_MS = 3_000;
 
 interface PendingCommand {
   resolve: (payload: unknown) => void;
@@ -77,20 +78,23 @@ interface EventWaiter {
   timer: ReturnType<typeof setTimeout>;
 }
 
+/**
+ * 一款游戏在**共享连接**上的会话状态。
+ *
+ * 连接与请求表都不在这里：一条 `/api/ws` 连接同时承载三款游戏与站点通道，
+ * 待回执的命令按 id 全局登记，事件按名字前缀归到各自的会话。
+ */
 interface GameSession {
-  ws: WebSocket;
-  ready: Promise<void>;
-  pending: Map<string, PendingCommand>;
-  waiters: Map<string, EventWaiter[]>;
   rooms: unknown[];
   snapshot?: Record<string, unknown>;
   privateState?: Record<string, unknown>;
   roomId?: string;
   playerId?: string;
   sessionToken?: string;
-  closedReason?: string;
   /** 每次公开/私有状态到达都会递增；UI 操作后据此等待页面刷新。 */
   stateVersion: number;
+  /** 生成号与 socket 实例对齐：换了一条连接就要重新接回座位。 */
+  restoredGeneration: number;
   versionWaiters: Array<{
     since: number;
     resolve: () => void;
@@ -152,8 +156,20 @@ const mergeChat = (current: unknown, incoming: unknown): unknown[] => {
   return [...list, message].slice(-CHAT_LIMIT);
 };
 
+/** 事件名归属：歌与角色游戏的整张事件表都带前缀，卧底的反过来一条都不带。 */
+export const gameOfEvent = (event: string): GameId => {
+  if (event.startsWith("song.")) return "song";
+  if (event.startsWith("cee.")) return "cee";
+  return "faker";
+};
+
 /**
  * MCP 的游戏客户端：以普通玩家身份连接现有 WebSocket 协议，不嵌入三款游戏的服务端逻辑。
+ *
+ * **一条连接**同时承载三款游戏与站点活动上报（`/api/ws`）：Agent 在首页/大厅就能建立
+ * 连接并读取三款游戏的大厅，不必先「进入」某款游戏。命令按信封上的 `game` 分发，
+ * 事件按名字前缀归到各自的会话；待回执命令用全局 id 表登记。
+ *
  * 只保存公开快照与本人座位的私有帧；其他座位的私有事件服务端根本不会发到这里。
  */
 export class AgentGameClient {
@@ -161,6 +177,12 @@ export class AgentGameClient {
   private readonly agentName: string;
   private readonly sessions = new Map<GameId, GameSession>();
   private readonly seats = new Map<GameId, SeatRecord>();
+  private readonly pending = new Map<string, PendingCommand>();
+  private readonly waiters = new Map<string, EventWaiter[]>();
+  private socket: WebSocket | null = null;
+  private socketReady: Promise<void> | null = null;
+  /** 每建立一条新连接 +1，方便判断某款游戏是否需要重新接回座位。 */
+  private socketGeneration = 0;
   /** 与人类页面同构的“屏幕”与控件操作层。 */
   readonly ui: SeatUi;
 
@@ -172,6 +194,11 @@ export class AgentGameClient {
 
   get name(): string {
     return this.agentName;
+  }
+
+  /** 站点公开地址：与 API 同源（边缘反代），用于把人类可达页面拼成绝对链接。 */
+  get siteOrigin(): string {
+    return this.serverUrl;
   }
 
   currentRoom(game: GameId): string | undefined {
@@ -194,8 +221,8 @@ export class AgentGameClient {
   /** 列房间：先订阅大厅，拿到该游戏的最新一帧房间列表。 */
   async listRooms(game: GameId): Promise<unknown[]> {
     const session = await this.connect(game);
-    const waiting = this.waitForEvent(session, GAME_META[game].lobby);
-    await this.command(session, GAME_META[game].lobbyCommand, {});
+    const waiting = this.waitForEvent(GAME_META[game].lobby);
+    await this.command(game, GAME_META[game].lobbyCommand, {});
     await waiting;
     return session.rooms;
   }
@@ -238,7 +265,7 @@ export class AgentGameClient {
     const session = await this.connect(game);
     if (session.roomId) await this.leave(game);
     const ack = (await this.command(
-      session,
+      game,
       "mcp.claim",
       { roomId, sessionToken },
       { timeoutMs: COMMAND_TIMEOUT_MS }
@@ -310,8 +337,8 @@ export class AgentGameClient {
     playerId?: string;
     snapshot?: Record<string, unknown>;
   }> {
-    const waiting = this.waitForEvent(session, GAME_META[game].snapshot);
-    const ack = (await this.command(session, type, payload, {
+    const waiting = this.waitForEvent(GAME_META[game].snapshot);
+    const ack = (await this.command(game, type, payload, {
       roomId,
       timeoutMs: LONG_COMMAND_TIMEOUT_MS,
     })) as Record<string, unknown> | undefined;
@@ -347,7 +374,7 @@ export class AgentGameClient {
   async leave(game: GameId): Promise<boolean> {
     const session = this.sessions.get(game);
     if (!session?.roomId) return false;
-    await this.command(session, GAME_META[game].leave, {});
+    await this.command(game, GAME_META[game].leave, {});
     session.roomId = undefined;
     session.playerId = undefined;
     session.sessionToken = undefined;
@@ -357,31 +384,41 @@ export class AgentGameClient {
     return true;
   }
 
-  /** 发送游戏命令；roomId 与 sessionToken 由当前会话自动补齐。 */
+  /**
+   * 发送命令；roomId 与 sessionToken 由该游戏的会话自动补齐。
+   * `game` 缺省时只用于站点命令（`site.focus` / `site.leave`），信封上不带归属。
+   */
   private command(
-    session: GameSession,
+    game: GameId | undefined,
     type: string,
     payload: Record<string, unknown>,
     options: { roomId?: string; sessionToken?: string; timeoutMs?: number } = {}
   ): Promise<unknown> {
     const id = crypto.randomUUID();
     const message: Record<string, unknown> = { id, type, payload };
-    const roomId = options.roomId ?? session.roomId;
-    const sessionToken = options.sessionToken ?? session.sessionToken;
+    const session = game ? this.sessions.get(game) : undefined;
+    if (game) message.game = game;
+    const roomId = options.roomId ?? session?.roomId;
+    const sessionToken = options.sessionToken ?? session?.sessionToken;
     if (roomId) message.roomId = roomId;
     if (sessionToken) message.sessionToken = sessionToken;
 
     return new Promise((resolve, reject) => {
+      const socket = this.socket;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        reject(new Error("与游戏服务的连接已断开"));
+        return;
+      }
       const timer = setTimeout(() => {
-        session.pending.delete(id);
+        this.pending.delete(id);
         reject(new Error(`游戏命令超时：${type}`));
       }, options.timeoutMs ?? COMMAND_TIMEOUT_MS);
-      session.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer });
       try {
-        session.ws.send(JSON.stringify(message));
+        socket.send(JSON.stringify(message));
       } catch (error) {
         clearTimeout(timer);
-        session.pending.delete(id);
+        this.pending.delete(id);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
@@ -395,7 +432,7 @@ export class AgentGameClient {
   ): Promise<unknown> {
     const session = await this.connect(game);
     if (!session.roomId) throw new Error("尚未加入该游戏的房间");
-    return this.command(session, type, payload, options);
+    return this.command(game, type, payload, options);
   }
 
   /** 当前页面状态版本；UI 操作前后对比它来确认人类页面已经刷新。 */
@@ -443,16 +480,16 @@ export class AgentGameClient {
       ? ([[game, this.sessions.get(game)]] as const)
       : [...this.sessions.entries()];
     await Promise.all(
-      targets.map(async ([, session]) => {
-        if (!session || session.ws.readyState !== WebSocket.OPEN) return;
+      targets.map(async ([target, session]) => {
+        if (!session || this.socket?.readyState !== WebSocket.OPEN) return;
         try {
           await this.command(
-            session,
+            target,
             "mcp.focus",
             { ...input },
             {
               roomId: session.roomId,
-              timeoutMs: 3_000,
+              timeoutMs: SITE_FOCUS_TIMEOUT_MS,
             }
           );
         } catch {
@@ -462,59 +499,87 @@ export class AgentGameClient {
     );
   }
 
+  /**
+   * 上报站点级活动：首页与大厅的访客据此看到 Agent「在哪个页面、做什么」。
+   *
+   * 这条通道**不要求已进房**——Agent 从首页开始就能被看见。字段封闭，逐字输入与
+   * 控件焦点不进这里；失败同样不阻断工具。
+   */
+  async publishSiteFocus(input: SiteFocusPayload): Promise<void> {
+    try {
+      await this.ensureSocket();
+      await this.command(
+        undefined,
+        "site.focus",
+        { ...input },
+        {
+          timeoutMs: SITE_FOCUS_TIMEOUT_MS,
+        }
+      );
+    } catch {
+      /* 首页指示器是增强信息，连不上或超时都不影响工具结果 */
+    }
+  }
+
   /** 主动同步：服务端会重发当前快照与本人私有状态。 */
   async requestSync(game: GameId): Promise<unknown> {
     const session = await this.connect(game);
     if (!session.roomId) throw new Error("尚未加入该游戏的房间");
     const privateEvent = GAME_META[game].privateState;
-    const privateWaiting = this.waitForEvent(session, privateEvent, 3_000);
-    const result = await this.command(session, GAME_META[game].requestSync, {});
+    const privateWaiting = this.waitForEvent(privateEvent, 3_000);
+    const result = await this.command(game, GAME_META[game].requestSync, {});
     await privateWaiting;
     return result;
   }
 
-  /** 关闭所有连接；MCP 进程退出前调用。 */
+  /** 关闭连接；MCP 进程退出前调用。 */
   close(): void {
-    for (const session of this.sessions.values()) {
-      try {
-        session.ws.close();
-      } catch {
-        /* 已经关闭 */
-      }
+    const socket = this.socket;
+    this.socket = null;
+    this.socketReady = null;
+    if (!socket) return;
+    try {
+      socket.close();
+    } catch {
+      /* 已经关闭 */
     }
-    this.sessions.clear();
   }
 
-  private gamePath(game: GameId): string {
+  private socketPath(): string {
     const base = new URL(this.serverUrl);
-    const target = new URL(GAME_META[game].path, base);
+    const target = new URL(AGENT_WS_PATH, base);
     target.protocol = base.protocol === "https:" ? "wss:" : "ws:";
     target.searchParams.set("agent", "1");
     return target.toString();
   }
 
-  private connect(game: GameId): Promise<GameSession> {
-    const existing = this.sessions.get(game);
-    if (existing && existing.ws.readyState === WebSocket.OPEN) return Promise.resolve(existing);
-    if (existing) this.sessions.delete(game);
-
-    const ws = new WebSocket(this.gamePath(game));
-    const session: GameSession = {
-      ws,
-      ready: Promise.resolve(),
-      pending: new Map(),
-      waiters: new Map(),
+  private createSession(): GameSession {
+    return {
       rooms: [],
       stateVersion: 0,
+      restoredGeneration: 0,
       versionWaiters: [],
     };
-    this.sessions.set(game, session);
+  }
 
-    session.ready = new Promise((resolve, reject) => {
+  /**
+   * 一条物理连接承载全部游戏。首次调用建立连接并挂上全局监听；
+   * 连接关闭后所有游戏的座位凭据仍保留在 `seats`，下一次调用重连并各自接回原位。
+   */
+  private ensureSocket(): Promise<void> {
+    if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
+    if (this.socketReady) return this.socketReady;
+
+    const ws = new WebSocket(this.socketPath());
+    this.socket = ws;
+    this.socketGeneration += 1;
+
+    this.socketReady = new Promise<void>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
+        this.forgetSocket(ws);
         try {
           ws.close();
         } catch {
@@ -532,25 +597,47 @@ export class AgentGameClient {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        this.forgetSocket(ws);
         reject(new Error("无法连接游戏服务；请确认服务端 MCP_ENABLED=true"));
       });
       ws.addEventListener("close", (event) => {
         clearTimeout(timer);
-        session.closedReason = event.reason || "连接已关闭（Agent 接入未启用，或连接被服务端拒绝）";
-        this.failPending(session, new Error(session.closedReason));
+        this.forgetSocket(ws);
+        const reason = event.reason || "连接已关闭（Agent 接入未启用，或连接被服务端拒绝）";
+        this.failPending(new Error(reason));
         if (!settled) {
           settled = true;
-          reject(new Error(session.closedReason));
+          reject(new Error(reason));
         }
       });
       ws.addEventListener("message", (event) => {
-        void this.handleMessage(session, event.data);
+        void this.handleMessage(event.data);
       });
+    }).catch((error: unknown) => {
+      this.socketReady = null;
+      throw error;
     });
-    return session.ready.then(async () => {
+    return this.socketReady;
+  }
+
+  private forgetSocket(ws: WebSocket): void {
+    if (this.socket !== ws) return;
+    this.socket = null;
+    this.socketReady = null;
+  }
+
+  private async connect(game: GameId): Promise<GameSession> {
+    let session = this.sessions.get(game);
+    if (!session) {
+      session = this.createSession();
+      this.sessions.set(game, session);
+    }
+    await this.ensureSocket();
+    if (session.restoredGeneration !== this.socketGeneration) {
       await this.restoreSeat(game, session);
-      return session;
-    });
+      session.restoredGeneration = this.socketGeneration;
+    }
+    return session;
   }
 
   /**
@@ -562,7 +649,7 @@ export class AgentGameClient {
     if (!seat?.sessionToken) return;
     try {
       const ack = (await this.command(
-        session,
+        game,
         GAME_META[game].reconnect,
         {
           roomId: seat.roomId,
@@ -602,7 +689,7 @@ export class AgentGameClient {
     }
   }
 
-  private async handleMessage(session: GameSession, raw: unknown): Promise<void> {
+  private async handleMessage(raw: unknown): Promise<void> {
     const text =
       typeof raw === "string"
         ? raw
@@ -617,34 +704,34 @@ export class AgentGameClient {
     }
     if (!isRecord(packet)) return;
     if (packet.type === "ack" && typeof packet.id === "string") {
-      this.settleCommand(session, packet.id, packet.payload);
+      this.settleCommand(packet.id, packet.payload);
       return;
     }
     if (packet.type === "error" && typeof packet.id === "string") {
-      this.rejectCommand(session, packet.id, packet.error);
+      this.rejectCommand(packet.id, packet.error);
       return;
     }
     if (packet.type !== "event" || typeof packet.event !== "string") return;
 
-    const game = [...this.sessions.entries()].find(([, value]) => value === session)?.[0];
-    if (!game) return;
-    this.applySessionEvent(session, game, packet.event, packet.payload);
-    this.resolveWaiters(session, packet.event, packet.payload);
+    const game = gameOfEvent(packet.event);
+    const session = this.sessions.get(game);
+    if (session) this.applySessionEvent(session, game, packet.event, packet.payload);
+    this.resolveWaiters(packet.event, packet.payload);
   }
 
-  private settleCommand(session: GameSession, id: string, payload: unknown): void {
-    const pending = session.pending.get(id);
+  private settleCommand(id: string, payload: unknown): void {
+    const pending = this.pending.get(id);
     if (!pending) return;
     clearTimeout(pending.timer);
-    session.pending.delete(id);
+    this.pending.delete(id);
     pending.resolve(payload);
   }
 
-  private rejectCommand(session: GameSession, id: string, value: unknown): void {
-    const pending = session.pending.get(id);
+  private rejectCommand(id: string, value: unknown): void {
+    const pending = this.pending.get(id);
     if (!pending) return;
     clearTimeout(pending.timer);
-    session.pending.delete(id);
+    this.pending.delete(id);
     const error = isRecord(value) ? value : {};
     const message = typeof error.message === "string" ? error.message : "游戏服务拒绝了命令";
     pending.reject(
@@ -677,7 +764,7 @@ export class AgentGameClient {
       return;
     }
     if (!session.snapshot) {
-      this.clearClosedSession(session, event);
+      this.clearClosedSession(session, game, event);
       return;
     }
     if (event === "song.chat.message" && isRecord(payload)) {
@@ -687,11 +774,11 @@ export class AgentGameClient {
       };
       this.bumpState(session);
     } else {
-      this.clearClosedSession(session, event);
+      this.clearClosedSession(session, game, event);
     }
   }
 
-  private clearClosedSession(session: GameSession, event: string): void {
+  private clearClosedSession(session: GameSession, game: GameId, event: string): void {
     if (!event.endsWith("room.closed")) return;
     session.roomId = undefined;
     session.playerId = undefined;
@@ -699,47 +786,42 @@ export class AgentGameClient {
     session.snapshot = undefined;
     session.privateState = undefined;
     this.bumpState(session);
-    const game = [...this.sessions.entries()].find(([, value]) => value === session)?.[0];
-    if (game) this.seats.delete(game);
+    this.seats.delete(game);
   }
 
-  private resolveWaiters(session: GameSession, event: string, payload: unknown): void {
-    const waiters = session.waiters.get(event);
+  private resolveWaiters(event: string, payload: unknown): void {
+    const waiters = this.waiters.get(event);
     if (!waiters) return;
-    session.waiters.delete(event);
+    this.waiters.delete(event);
     for (const waiter of waiters) {
       clearTimeout(waiter.timer);
       waiter.resolve(payload);
     }
   }
 
-  private waitForEvent(
-    session: GameSession,
-    event: string,
-    timeoutMs = EVENT_TIMEOUT_MS
-  ): Promise<unknown> {
+  private waitForEvent(event: string, timeoutMs = EVENT_TIMEOUT_MS): Promise<unknown> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        const waiters = session.waiters.get(event);
+        const waiters = this.waiters.get(event);
         if (waiters) {
           const remaining = waiters.filter((entry) => entry.resolve !== resolve);
-          if (remaining.length) session.waiters.set(event, remaining);
-          else session.waiters.delete(event);
+          if (remaining.length) this.waiters.set(event, remaining);
+          else this.waiters.delete(event);
         }
         resolve(undefined);
       }, timeoutMs);
       const waiter: EventWaiter = { resolve, timer };
-      const waiters = session.waiters.get(event) ?? [];
+      const waiters = this.waiters.get(event) ?? [];
       waiters.push(waiter);
-      session.waiters.set(event, waiters);
+      this.waiters.set(event, waiters);
     });
   }
 
-  private failPending(session: GameSession, error: Error): void {
-    for (const pending of session.pending.values()) {
+  private failPending(error: Error): void {
+    for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
-    session.pending.clear();
+    this.pending.clear();
   }
 }

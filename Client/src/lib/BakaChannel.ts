@@ -105,7 +105,7 @@ export const waitForChannelTicket = async (timeoutMs: number): Promise<boolean> 
 };
 
 /**
- * 追加到 `/api/cee/ws` 上的握手查询串。
+ * 追加到 `/api/ws` 上的握手查询串。
  *
  * 只在原生客户端里带上：`CEEPlayerSchemas` 是 strict 的，进房载荷塞不下这些字段，
  * 而共享的 `WebSocketClient` 只是把 `path` 原样拼进 URL、没有首帧注册机制——所以握手

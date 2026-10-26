@@ -1,6 +1,7 @@
 import { Type as t, type Static } from "@sinclair/typebox";
 
 export const AGENT_FOCUS_KINDS = [
+  "site",
   "lobby",
   "enter_room",
   "state",
@@ -25,7 +26,14 @@ export const AGENT_FOCUS_KINDS = [
 export type AgentFocusKind = (typeof AGENT_FOCUS_KINDS)[number];
 
 /** 房间页的五个界面区域；客户端按它把没有控件标记的焦点退回整块区域。 */
-export const AGENT_FOCUS_PARTS = ["header", "player", "game", "chat", "settings", "dialog"] as const;
+export const AGENT_FOCUS_PARTS = [
+  "header",
+  "player",
+  "game",
+  "chat",
+  "settings",
+  "dialog",
+] as const;
 
 export type AgentFocusPart = (typeof AGENT_FOCUS_PARTS)[number];
 
@@ -68,3 +76,61 @@ export interface AgentFocusEvent extends Omit<AgentFocusInput, "kind" | "part"> 
   playerId?: string;
   at: number;
 }
+
+// ==================== 站点级 Agent 活动（统一 ws 入口的公开只读通道） ====================
+
+/** 站点通道的三个命令：订阅、上报焦点、离开。它们由统一入口直接处理，不进任何游戏服务。 */
+export const SITE_SUBSCRIBE_COMMAND = "site.subscribe";
+export const SITE_FOCUS_COMMAND = "site.focus";
+export const SITE_LEAVE_COMMAND = "site.leave";
+
+export const SITE_SUBSCRIBE_COMMAND_SET: ReadonlySet<string> = new Set([
+  SITE_SUBSCRIBE_COMMAND,
+  SITE_FOCUS_COMMAND,
+  SITE_LEAVE_COMMAND,
+]);
+
+export const SITE_AGENTS_EVENT = "site.agents";
+export const SITE_AGENT_EVENT = "site.agent";
+export const SITE_AGENT_LEFT_EVENT = "site.agent.left";
+
+const siteGameSchema = t.Optional(
+  t.Union([t.Literal("faker"), t.Literal("song"), t.Literal("cee")])
+);
+
+/**
+ * Agent 上报的站点级焦点。字段是**封闭集合**：房间内的控件焦点与逐字输入进度不进这条通道，
+ * 它会广播给所有打开首页的访客，搜索词、猜测与聊天草稿都可能在里面。
+ */
+export const SiteFocusPayloadSchema = t.Object(
+  {
+    agentName: t.String({ minLength: 1, maxLength: 32 }),
+    tool: t.String({ minLength: 1, maxLength: 64 }),
+    kind: t.String({ minLength: 1, maxLength: 32 }),
+    game: siteGameSchema,
+    roomId: t.Optional(t.String({ maxLength: 32 })),
+    page: t.Optional(t.String({ maxLength: 96 })),
+    label: t.Optional(t.String({ maxLength: 48 })),
+  },
+  { additionalProperties: false }
+);
+
+export type SiteFocusPayload = Static<typeof SiteFocusPayloadSchema>;
+
+/** 广播给首页访客的一条 Agent 活动；`id` 是连接号，只用于列表去重。 */
+export const SiteAgentActivitySchema = t.Object(
+  {
+    id: t.String({ minLength: 1, maxLength: 64 }),
+    agentName: t.String({ minLength: 1, maxLength: 32 }),
+    tool: t.String({ minLength: 1, maxLength: 64 }),
+    kind: t.String({ minLength: 1, maxLength: 32 }),
+    game: siteGameSchema,
+    roomId: t.Optional(t.String({ maxLength: 32 })),
+    page: t.Optional(t.String({ maxLength: 96 })),
+    label: t.Optional(t.String({ maxLength: 48 })),
+    at: t.Number(),
+  },
+  { additionalProperties: false }
+);
+
+export type SiteAgentActivity = Static<typeof SiteAgentActivitySchema>;

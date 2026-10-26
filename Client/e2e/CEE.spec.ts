@@ -17,7 +17,7 @@ async function useLocalCharacterImages(page: Page) {
     return route.fallback();
   });
   await page.routeWebSocket(
-    (url) => isLoopbackUrl(url) && url.pathname === "/api/cee/ws",
+    (url) => isLoopbackUrl(url) && url.pathname === "/api/ws",
     (socket) => {
       const server = socket.connectToServer();
       socket.onMessage((message) => {

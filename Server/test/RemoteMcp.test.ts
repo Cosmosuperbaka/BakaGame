@@ -33,6 +33,8 @@ const rpc = async (
 let sessionsRef: RemoteMcpSessions;
 
 const fakeFakerServer = () => {
+  /** 探针记录：升级路径与信封上的 `game`，用来看住「统一入口 + 显式归属」这两条契约。 */
+  const seen = { paths: [] as string[], games: [] as Array<string | undefined> };
   const snapshot = {
     roomId: "1234",
     name: "远程 MCP 房",
@@ -45,6 +47,7 @@ const fakeFakerServer = () => {
   const server = Bun.serve({
     port: 0,
     fetch(request, server) {
+      seen.paths.push(new URL(request.url).pathname);
       if (server.upgrade(request)) return;
       return new Response("upgrade required", { status: 400 });
     },
@@ -53,8 +56,10 @@ const fakeFakerServer = () => {
         const message = JSON.parse(String(raw)) as {
           id: string;
           type: string;
+          game?: string;
           payload?: Record<string, unknown>;
         };
+        seen.games.push(message.game);
         const ack = (payload: unknown) =>
           ws.send(
             JSON.stringify({
@@ -96,11 +101,11 @@ const fakeFakerServer = () => {
     },
   });
   servers.push(server);
-  return server;
+  return { server, seen };
 };
 
 test("远程 MCP 支持 initialize / 工具调用 / 本人私有状态，并随 initialize 下发反作弊声明", async () => {
-  const server = fakeFakerServer();
+  const { server, seen } = fakeFakerServer();
   sessionsRef = new RemoteMcpSessions(logger);
   const url = `http://127.0.0.1:${server.port}/api/mcp`;
 
@@ -155,6 +160,12 @@ test("远程 MCP 支持 initialize / 工具调用 / 本人私有状态，并随 
   expect(mineText).toContain('"chat"');
   expect(mineText).not.toContain("remote-session");
 
+  // 统一入口 + 显式归属：Agent 只有一条 `/api/ws`，游戏命令都带信封 `game`，
+  // 站点通道的命令反过来不带（它不属于任何游戏）。
+  expect(new Set(seen.paths)).toEqual(new Set(["/api/ws"]));
+  expect(seen.games).toContain("faker");
+  expect(seen.games).toContain(undefined);
+
   const discovered = await rpc(url, {
     jsonrpc: "2.0",
     id: 5,
@@ -203,7 +214,7 @@ test("HTTP 路由回传 Mcp-Session-Id，GET 提示只接受 POST，DELETE 可�
   expect(closed.status).toBe(204);
 });
 
-test("远程 MCP 在没有会话时拒绝非建房工具，并给出可执行的下一步", async () => {
+test("远程 MCP 自动为首次调用建立会话，未进房时给出可执行的下一步", async () => {
   sessionsRef = new RemoteMcpSessions(logger);
   const result = await rpc("http://127.0.0.1:9/api/mcp", {
     jsonrpc: "2.0",
@@ -212,5 +223,6 @@ test("远程 MCP 在没有会话时拒绝非建房工具，并给出可执行的
     params: { name: "get_screen", arguments: { game: "faker" } },
   });
   expect(result.payload.result.isError).toBe(true);
-  expect(result.payload.result.content[0].text).toContain("会话");
+  // 会话不再要求先建房/进房：Agent 从首页开始就要有连接，站点活动才能出现。
+  expect(result.payload.result.content[0].text).toContain("尚未加入 faker 的房间");
 });

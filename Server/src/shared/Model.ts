@@ -147,6 +147,8 @@ export const createClientEnvelopeSchema = <TType extends string, TPayload extend
       id: t.String({ minLength: 1, maxLength: 128 }),
       type: t.Literal(type),
       traceId: t.Optional(t.String({ maxLength: 128 })),
+      // 统一入口的显式归属；缺省时按命令前缀推断，旧路径与旧客户端不需要它。
+      game: t.Optional(t.Union([t.Literal("faker"), t.Literal("song"), t.Literal("cee")])),
       roomId: t.Optional(t.String({ maxLength: 32 })),
       sessionToken: t.Optional(t.String({ maxLength: 128 })),
       payload,

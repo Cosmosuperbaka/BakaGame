@@ -1,7 +1,7 @@
 import type { SonGuessrAck, SonGuessrCommand, SonGuessrPayload } from "@bakagame/shared";
 import { createWebSocketClient, type SendOptions } from "@/lib/WebsocketClient";
 
-export const sonGuessrWsClient = createWebSocketClient("/api/songuessr/ws");
+export const sonGuessrWsClient = createWebSocketClient("/api/ws");
 
 /** 与卧底、CEE 同一组 facade 形状：连接、等待、发送、消息与状态订阅。 */
 export const connect = () => sonGuessrWsClient.connect();

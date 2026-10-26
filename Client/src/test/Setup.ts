@@ -84,6 +84,60 @@ if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
 
+/**
+ * 测试环境不建立真实连接。
+ *
+ * Node 的全局 WebSocket（undici）会真的去连 `ws://localhost/...`，在 jsdom 里抛
+ * 「event 必须是 Event 的实例」这类未捕获异常，而站点通道在根布局一挂载就建连。
+ * 这里换成一个永远停在 CONNECTING 的桩；需要断言连接行为的用例自行覆写
+ * `globalThis.WebSocket`（`WebsocketClient.test.ts` 就是这么做的）。
+ */
+class OfflineWebSocket extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  readonly CONNECTING = 0;
+  readonly OPEN = 1;
+  readonly CLOSING = 2;
+  readonly CLOSED = 3;
+  readyState = 0;
+  binaryType = "blob";
+  bufferedAmount = 0;
+  extensions = "";
+  protocol = "";
+  url: string;
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(url: string | URL) {
+    super();
+    this.url = String(url);
+  }
+
+  send(): void {}
+
+  close(): void {
+    this.readyState = 3;
+  }
+}
+
+Object.defineProperty(globalThis, "WebSocket", {
+  value: OfflineWebSocket,
+  configurable: true,
+  writable: true,
+});
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "WebSocket", {
+    value: OfflineWebSocket,
+    configurable: true,
+    writable: true,
+  });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();

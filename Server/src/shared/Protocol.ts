@@ -1,8 +1,22 @@
 // ==================== WebSocket 协议封包类型 ====================
 
+/** 三款游戏的稳定标识：统一 ws 入口按它分发命令，客户端与 MCP 共用同一份取值。 */
+export const GAME_IDS = ["faker", "song", "cee"] as const;
+
+export type GameId = (typeof GAME_IDS)[number];
+
+export const isGameId = (value: unknown): value is GameId =>
+  typeof value === "string" && (GAME_IDS as readonly string[]).includes(value);
+
+/**
+ * 命令信封。`game` 只在**统一入口**（`/api/ws`）上用于分发：
+ * 大多数命令的类型名本身带 `song.` / `cee.` 前缀可以推断，但 `mcp.*` 这类
+ * 三款游戏同名的命令必须由调用方显式声明归属。旧路径与旧客户端不带该字段。
+ */
 export interface ClientEnvelope<TType extends string, TPayload> {
   id: string;
   traceId?: string;
+  game?: GameId;
   type: TType;
   roomId?: string;
   sessionToken?: string;

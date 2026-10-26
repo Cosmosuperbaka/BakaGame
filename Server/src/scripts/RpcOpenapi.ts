@@ -315,5 +315,5 @@ export const RPC_PROTOCOL_NOTES = [
   "标了 `security` 的过程需要登录会话 Cookie（`bakagame.session_token`，由 `/api/auth/sign-in/email-otp` 下发，HttpOnly）；`Admin` 标签下还额外要求管理员角色。",
   '失败响应见 `components.responses`，统一为 `{"json": {"defined": false, code, status, message, data?}}`；`message` 可直接展示给玩家。',
   "整个 `/api/rpc/*` 前缀限流：60 秒滑动窗口内单客户端 300 次、全局 12000 次，超限回 429 并带 `Retry-After`。",
-  "三款游戏的实时对局不在本文档内，走 WebSocket：`/api/whoisfaker/ws`、`/api/songuessr/ws`、`/api/cee/ws`。",
+  "三款游戏的实时对局不在本文档内，走统一的 WebSocket 入口 `/api/ws`（一条连接按信封 `game` 字段与命令前缀分发到三款游戏；`site.subscribe` 等站点命令也走同一条路径）。旧路径 `/api/whoisfaker/ws`、`/api/songuessr/ws`、`/api/cee/ws` 仅作兼容保留。",
 ].join("\n");

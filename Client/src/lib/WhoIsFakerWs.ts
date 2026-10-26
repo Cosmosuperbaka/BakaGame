@@ -1,7 +1,7 @@
 import type { WhoIsFakerAck, WhoIsFakerCommand, WhoIsFakerPayload } from "@bakagame/shared";
 import { createWebSocketClient, type SendOptions } from "@/lib/WebsocketClient";
 
-export const whoIsFakerWsClient = createWebSocketClient("/api/whoisfaker/ws");
+export const whoIsFakerWsClient = createWebSocketClient("/api/ws");
 
 /** 三条游戏通道对外的 facade 形状一致：连接、等待、发送、消息与状态订阅。 */
 export const connect = () => whoIsFakerWsClient.connect();

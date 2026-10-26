@@ -22,7 +22,7 @@ export const createSwaggerPlugin = ({ serverUrl, enabled = true }: OpenApiOption
         title: "BakaGame Backend HTTP API",
         version: "unversioned",
         description:
-          "BakaGame 后端辅助 HTTP 接口文档。三个游戏的实时接口为 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws。" +
+          "BakaGame 后端辅助 HTTP 接口文档。实时接口统一为 /api/ws（三款游戏与站点通道共用）；旧路径 /api/whoisfaker/ws、/api/songuessr/ws、/api/cee/ws 仍作为兼容别名保留。" +
           "本页只列 Elysia 声明的路由；账号与后台 API（/api/rpc/*，oRPC 契约）由 scripts/ExportOpenapi.ts 一并写进仓库内的 Server/docs/http-openapi.json。",
       },
       servers: [

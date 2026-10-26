@@ -13,9 +13,12 @@ const MAX_SESSIONS = 256;
 const WRITE_WINDOW_MS = 60_000;
 const WRITE_MAX = 30;
 
-/** 不依赖房间状态、可以临时开一个会话就返回的工具。 */
-const STATELESS_TOOLS = new Set(["list_rooms", "get_mcp_policy"]);
-const SESSION_CREATING_TOOLS = new Set(["create_room", "join_room", "claim_seat"]);
+/**
+ * 真正无状态的工具：不读房间也不上报活动，临时开一个客户端就返回。
+ * 其余工具都绑定 Agent 会话——站点活动靠这条连接广播到首页，
+ * 临开临关会让首页指示器闪一下就没。
+ */
+const EPHEMERAL_TOOLS = new Set(["get_mcp_policy"]);
 
 export interface RemoteSession {
   id: string;
@@ -251,20 +254,14 @@ const resolveToolSession = (
   toolName: string,
   context: ToolCallContext,
   args: Record<string, unknown>
-): { session: RemoteSession; ephemeral: boolean } | { error: string } => {
+): { session: RemoteSession; ephemeral: boolean } => {
   const argSession = typeof args.session === "string" ? args.session.trim() : "";
   const sessionId = context.headerSessionId || argSession;
   const existing = sessionId ? sessions.get(sessionId) : undefined;
   if (existing) return { session: existing, ephemeral: false };
-  if (!SESSION_CREATING_TOOLS.has(toolName) && !STATELESS_TOOLS.has(toolName)) {
-    return {
-      error:
-        "缺少 Agent 会话：先调用 create_room 或 join_room，后续工具调用带上返回的 session（或让客户端回传 Mcp-Session-Id）。",
-    };
-  }
-  const session = sessions.create(context.baseUrl, "BakaAgent");
+  const session = sessions.create(context.baseUrl, sanitizeName(args.agentName));
   if (!context.headerSessionId) context.headers["mcp-session-id"] = session.id;
-  return { session, ephemeral: STATELESS_TOOLS.has(toolName) };
+  return { session, ephemeral: EPHEMERAL_TOOLS.has(toolName) };
 };
 
 async function handleRemoteToolCall(
@@ -283,15 +280,7 @@ async function handleRemoteToolCall(
     };
   }
 
-  const resolved = resolveToolSession(sessions, tool.name, context, args);
-  if ("error" in resolved) {
-    return {
-      status: 200,
-      headers: context.headers,
-      payload: rpcResult(context.id, toolFailure(resolved.error)),
-    };
-  }
-  const { session, ephemeral } = resolved;
+  const { session, ephemeral } = resolveToolSession(sessions, tool.name, context, args);
   const startedAt = performance.now();
   try {
     if (tool.write && !sessions.consumeWrite(session)) {
@@ -304,10 +293,8 @@ async function handleRemoteToolCall(
     });
     if (FOCUS_AFTER_TOOLS.has(tool.name))
       await publishToolFocus(session.client, session.agentName, tool.name, args);
-    const enriched =
-      SESSION_CREATING_TOOLS.has(tool.name) && isRecord(result)
-        ? { ...result, session: session.id }
-        : result;
+    // 每个绑定会话的调用都把会话号带回给 Agent：无状态客户端要把它放进下一次 arguments.session。
+    const enriched = !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
     const stepFailed = isRecord(enriched) && enriched.ok === false;
     logger.info("mcp.remote.tool", {
       session: session.id,

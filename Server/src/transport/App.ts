@@ -27,7 +27,18 @@ import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessr
 import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
 import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
-import type { ServerMessage } from "../shared/Protocol";
+import type { GameId, ServerMessage } from "../shared/Protocol";
+import { isRecord } from "../shared/Json";
+import {
+  SITE_FOCUS_COMMAND,
+  SITE_LEAVE_COMMAND,
+  SITE_SUBSCRIBE_COMMAND,
+  SITE_SUBSCRIBE_COMMAND_SET,
+  SiteFocusPayloadSchema,
+} from "../shared/AgentActivity";
+import { Value } from "@sinclair/typebox/value";
+import { SitePresence } from "./SitePresence";
+import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
 import { createStatusAggregator, startStatusSampler, statusRoutes } from "./routes/Status";
@@ -496,11 +507,17 @@ export const resolveAgentIdentity = (
   context.isAgent = true;
 };
 
-const openGameConnection = (
-  ws: GameSocketLike,
-  register: (connection: ConnectionRecord) => void
-): void => {
-  const connectionId = crypto.randomUUID();
+/** 连接号在一条物理 socket 上只发一次：统一入口要把同一条连接登记进多个服务。 */
+const connectionIdFor = (ws: GameSocketLike): string => {
+  const data = ws.data as { connectionId?: string };
+  return (data.connectionId ??= crypto.randomUUID());
+};
+
+/**
+ * 为**一个服务**构造连接记录。状态同步基线属于服务，不属于 socket：统一入口上
+ * 同一条连接会分别登记进三款游戏，各自必须持有独立的差量基线，不能共用一份。
+ */
+const createConnectionRecord = (ws: GameSocketLike, connectionId: string): ConnectionRecord => {
   const {
     account,
     clientIp,
@@ -512,14 +529,13 @@ const openGameConnection = (
     clientChannel?: ClientChannelProof;
     isAgent?: boolean;
   };
-  (ws.data as { connectionId?: string }).connectionId = connectionId;
   const stateSync = createStateSyncSender(
     (payload) => {
       sendPacket(ws, payload as ServerMessage);
     },
     () => socketBacklog(ws)
   );
-  register({
+  return {
     id: connectionId,
     ...(account ? { account } : {}),
     ...(clientIp ? { clientIp } : {}),
@@ -531,7 +547,14 @@ const openGameConnection = (
     sendStateSyncCalibration: stateSync.calibrate,
     sendPacket: (payload: unknown) => sendPacket(ws, payload as ServerMessage),
     close: (code?: number, reason?: string) => ws.close(code, reason),
-  });
+  };
+};
+
+const openGameConnection = (
+  ws: GameSocketLike,
+  register: (connection: ConnectionRecord) => void
+): void => {
+  register(createConnectionRecord(ws, connectionIdFor(ws)));
 };
 
 /**
@@ -713,6 +736,33 @@ interface GameSocketHandlersOptions<
 }
 
 /**
+ * 握手闸门：Origin → 登录身份 → Agent 标记 → 配额，CEE 额外换通道证明。
+ * 顺序是安全语义（拒绝不消耗配额、身份先于业务），旧入口与统一入口必须逐字一致。
+ */
+const applyHandshakeGates = async (
+  context: GameUpgradeContext,
+  {
+    env,
+    logger,
+    account,
+    handshakeQuota,
+    clientChannel,
+  }: {
+    env: AppEnv;
+    logger: EventLogger;
+    account: AccountDependencies | undefined;
+    handshakeQuota: WsHandshakeQuota;
+    clientChannel?: ClientChannel;
+  }
+): Promise<void> => {
+  rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
+  await resolveSocketAccount(context, account, logger);
+  resolveAgentIdentity(context, env.mcpEnabled);
+  reserveHandshakeSlot(context, handshakeQuota);
+  if (clientChannel) resolveSocketChannel(context, clientChannel);
+};
+
+/**
  * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
  * 握手闸门顺序（Origin → 登录身份 → Agent 标记 → 配额，CEE 额外换通道证明）是安全语义，
  * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
@@ -728,13 +778,8 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
   normalizeMessage,
   service,
 }: GameSocketHandlersOptions<TMessage>) => ({
-  upgrade: async (context: GameUpgradeContext) => {
-    rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
-    await resolveSocketAccount(context, account, logger);
-    resolveAgentIdentity(context, env.mcpEnabled);
-    reserveHandshakeSlot(context, handshakeQuota);
-    if (clientChannel) resolveSocketChannel(context, clientChannel);
-  },
+  upgrade: (context: GameUpgradeContext) =>
+    applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
   open: (ws: GameSocketLike) =>
     openGameConnection(ws, (connection) => service.registerConnection(connection)),
   message: (ws: GameSocketLike, incoming: TMessage) =>
@@ -777,6 +822,128 @@ export const createApp = ({
   const dispose = (): Promise<void> =>
     (disposal ??= disposeResources ? disposeResources() : characterService.close());
   const remoteMcpSessions = new RemoteMcpSessions(logger);
+  /** 站点级 Agent 活动：首页与大厅的只读广播，不参与任何游戏的房间状态。 */
+  const sitePresence = new SitePresence();
+  /**
+   * 统一入口按需把连接登记进对应游戏的服务。
+   *
+   * 一条物理连接可能先后用到三款游戏（MCP 就是这样），但绝不能一次性登记进三个服务：
+   * 在线连接数按服务各自统计，全部登记会让一条连接被数三次，而且没碰过的游戏里会留下
+   * 一条永远不订阅、不进房的影子记录。登记只发生在该游戏的第一条命令到来时。
+   */
+  const ensureGameConnection = (ws: GameSocketLike, game: GameId): void => {
+    const data = ws.data as { registeredGames?: Set<GameId> };
+    const registered = (data.registeredGames ??= new Set<GameId>());
+    if (registered.has(game)) return;
+    registered.add(game);
+    const record = createConnectionRecord(ws, connectionIdFor(ws));
+    if (game === "faker") fakerService.registerConnection(record);
+    else if (game === "song") songService?.registerConnection(record);
+    else characterService?.registerConnection(record);
+  };
+
+  /** 站点通道：订阅、焦点上报、离开。三条命令由统一入口直接处理，不进任何游戏服务。 */
+  const handleSiteCommand = (ws: GameSocketLike, message: Record<string, unknown>): boolean => {
+    const type = message.type as string;
+    if (!SITE_SUBSCRIBE_COMMAND_SET.has(type)) return false;
+    const connectionId = connectionIdFor(ws);
+    const envelope = message as { id: string; type: string; traceId?: string };
+    if (type === SITE_SUBSCRIBE_COMMAND) {
+      sitePresence.subscribe(connectionId, (payload) => sendPacket(ws, payload));
+      sendPacket(ws, createAck(envelope, { subscribed: true }));
+      return true;
+    }
+    if ((ws.data as { isAgent?: boolean }).isAgent !== true)
+      throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报站点活动");
+    if (!isRecord(message.payload))
+      throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
+    // 封闭 schema：房间内的控件焦点与逐字输入进度带不进来，首页广播只含界面位置。
+    if (!Value.Check(SiteFocusPayloadSchema, message.payload))
+      throw new AppError("INVALID_MESSAGE", "站点活动参数不合法");
+    if (type === SITE_FOCUS_COMMAND)
+      sitePresence.publish(connectionId, message.payload as Parameters<SitePresence["publish"]>[1]);
+    else if (type === SITE_LEAVE_COMMAND) sitePresence.leave(connectionId);
+    sendPacket(ws, createAck(envelope, { ok: true }));
+    return true;
+  };
+
+  /**
+   * 统一入口的消息分发：站点命令 → 判定游戏 → 该游戏的严格解析 → 交给对应服务执行。
+   *
+   * 解析必须在分发之后做：三张命令表的信封都拒绝未知字段，先统一校验会把 `game`
+   * 与另外两款游戏的字段判成非法。错误回包沿用旧入口的形状（同上，带 traceId）。
+   */
+  const handleUnifiedMessage = async (ws: GameSocketLike, incoming: unknown): Promise<void> => {
+    const identity = salvageMessageIdentity(incoming);
+    const respondError = (code: string, text: string) =>
+      sendPacket(
+        ws,
+        createErrorPacket(identity?.id ?? "unknown", code, text, undefined, identity?.traceId)
+      );
+    try {
+      if (!isRecord(incoming) || typeof incoming.type !== "string")
+        throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
+      if (handleSiteCommand(ws, incoming)) return;
+      const game = gameOfMessage(incoming);
+      ensureGameConnection(ws, game);
+      if (game === "song") {
+        if (!songService) throw new AppError("GAME_UNAVAILABLE", "猜歌服务未启用");
+        await handleGameMessage(ws, parseSonGuessrMessage(incoming), logger, {
+          serviceName: "SonGuessr",
+          execute: (connectionId, message) => songService.execute(connectionId, message),
+        });
+      } else if (game === "cee") {
+        if (!characterService) throw new AppError("GAME_UNAVAILABLE", "猜角色服务未启用");
+        await handleGameMessage(ws, normalizeCEEEnvelope(parseCEEMessage(incoming)), logger, {
+          serviceName: "CEE",
+          execute: (connectionId, message) => characterService.execute(connectionId, message),
+        });
+      } else {
+        await handleGameMessage(ws, parseWhoIsFakerMessage(incoming), logger, {
+          serviceName: "WhoIsFaker",
+          execute: (connectionId, message) => fakerService.execute(connectionId, message),
+        });
+      }
+    } catch (error) {
+      if (isAppError(error)) {
+        // 只在解析类失败上补原始帧的形状诊断：业务拒绝已经有 code 与消息。
+        if (error.code === "INVALID_MESSAGE" || error.code === "UNKNOWN_MESSAGE_TYPE")
+          logger.warn("统一 WS 消息解析失败", {
+            ...describeRawMessage(incoming),
+            message: error.message,
+          });
+        respondError(error.code, error.message);
+        return;
+      }
+      logger.error("统一 WS 内部异常", describeError(error));
+      respondError("INTERNAL_ERROR", "服务器内部错误");
+    }
+  };
+
+  const unifiedSocketHandlers = {
+    upgrade: (context: GameUpgradeContext) =>
+      applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
+    open: (ws: GameSocketLike) => {
+      connectionIdFor(ws);
+    },
+    message: (ws: GameSocketLike, incoming: unknown) => handleUnifiedMessage(ws, incoming),
+    close: async (ws: GameSocketLike) => {
+      releaseHandshakeSlot(ws, handshakeQuota);
+      const connectionId = connectionIdOf(ws);
+      if (!connectionId) return;
+      sitePresence.unsubscribe(connectionId);
+      const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
+      for (const game of registered ?? []) {
+        try {
+          if (game === "faker") await fakerService.unregisterConnection(connectionId);
+          else if (game === "song") await songService?.unregisterConnection(connectionId);
+          else await characterService?.unregisterConnection(connectionId);
+        } catch (error) {
+          logger.error("统一 WS 连接注销失败", { ...describeError(error), game, connectionId });
+        }
+      }
+    },
+  };
   const requests = new WeakMap<Request, { traceId: string; startedAt: number; clientIp: string }>();
   // 路由表在 createApp 装配完成时定形，模板索引到首个请求才惰性编译一次。
   let routeTemplates: readonly RouteTemplate[] | undefined;
@@ -1038,6 +1205,10 @@ export const createApp = ({
         sendError: (scope, error) => logger.warn(`${scope} 状态推送失败`, describeError(error)),
       })
     )
+    .ws(UNIFIED_WS_PATH, {
+      parse: decodeGameFrame,
+      ...unifiedSocketHandlers,
+    })
     .ws("/api/whoisfaker/ws", {
       body: WhoIsFakerClientMessageSchema,
       response: ServerMessageSchema,

@@ -256,7 +256,9 @@ export async function probeDeployment(
           console.warn(`探针提示：/health 期间被限流，但 /livez、/readyz 与三个订阅 ACK 全绿`);
         return;
       }
-      round.blockers.push(wsFailure);
+      // 预算耗尽时（remaining 被钳到 1ms）这一轮订阅必然超时，那是「没时间了」而不是「服务异常」：
+      // 让它进 blockers 会把上一轮拿到的真实现象覆盖掉，线上就只会看到一句「订阅 ACK 超时」。
+      if (remaining() > 1) round.blockers.push(wsFailure);
     }
 
     blocker = round.blockers.join("；") || blocker;

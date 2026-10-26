@@ -363,9 +363,10 @@ test("卧底每一条命令都能通过传输层解析", () => {
   }
 });
 
-test("卧底信封骨架统一为六个字段且保持严格", () => {
+test("卧底信封骨架统一为七个字段且保持严格", () => {
   for (const schema of Object.values(WhoIsFakerMessageSchemas)) {
     expect(Object.keys(schema.properties).sort()).toEqual([
+      "game",
       "id",
       "payload",
       "roomId",

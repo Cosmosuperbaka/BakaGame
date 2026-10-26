@@ -38,7 +38,7 @@
 - **单一真相源标识**：领域模型、协议、Store、持久化与网络客户端全栈只用一个权威命名，不建立同义别名导出（拼写变体、新旧命名并存均禁止）；依赖注入容器里每个服务只有一个命名，不双轨回退。游戏标识的权威写法见 [Conventions](Conventions.md)。
 - **现代常青基线**：对齐现代浏览器与当前 LTS 运行时。不写已被原生实现的 Web 标准 Polyfill，不做 UA 嗅探，不写厂商私有前缀 CSS。
 - **禁止级联回退链**：不堆 `a ?? b ?? c` 式多层兜底；状态在服务端建立单一权威并在快照显式下发，消费端只读权威字段。协议 DTO 边界显式 `additionalProperties: false`；业务域内不写 `"legacyField" in data` 这类向前兼容探测。
-- 专项约定：Songuessr 唯一公共入口是前端 `/songuessr` 与 WebSocket `/api/songuessr/ws`，不得重新添加旧路径或旧存储键。
+- 专项约定：Songuessr 唯一公共入口是前端 `/songuessr` 与统一 WebSocket `/api/ws`（`song.*` 命令）；旧 `/api/songuessr/ws` 仅为已发布客户端保留别名，不得新增旧路径或旧存储键。
 
 <a id="规范维护"></a>
 

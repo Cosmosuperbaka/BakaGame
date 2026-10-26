@@ -67,6 +67,7 @@ const fixture = ({ game, snapshot, privateState, handler }: FixtureOptions) => {
   let version = 0;
   const client = {
     name: "TestAgent",
+    siteOrigin: "http://127.0.0.1:4850",
     currentRoom: (target: string) => (target === game ? String(snapshot.roomId) : undefined),
     currentPlayerId: () => String(privateState.playerId),
     currentSnapshot: () => snapshot,
@@ -393,4 +394,60 @@ test("ui_run 工具拒绝空步骤并透传界面操作", async () => {
     { client, agentName: "TestAgent" }
   )) as { screen: { game: string } };
   expect(result.screen.game).toBe("faker");
+});
+
+test("站点地图覆盖全部人类可达位置，visit_page 校验路径与标签", async () => {
+  const { client } = fixture({
+    game: "faker",
+    snapshot: baseFakerSnapshot(),
+    privateState: { playerId: "p1" },
+  });
+  const map = (await tool("get_site_map").handler({}, { client, agentName: "TestAgent" })) as {
+    origin: string;
+    pages: Array<{ path: string; access: string; url: string }>;
+  };
+  expect(map.origin).toBe("http://127.0.0.1:4850");
+  expect(map.pages.map((page) => page.path)).toEqual([
+    "/",
+    "/whoisfaker",
+    "/songuessr",
+    "/songuessr/solo",
+    "/cee",
+    "/abouts",
+    "/status",
+  ]);
+  expect(map.pages.every((page) => page.url.startsWith("http://127.0.0.1:4850/"))).toBe(true);
+
+  const about = (await tool("visit_page").handler(
+    { path: "/abouts", tab: "changelog" },
+    { client, agentName: "TestAgent" }
+  )) as { url: string; tab: string; next: string };
+  expect(about.url).toBe("http://127.0.0.1:4850/abouts?tab=changelog");
+  expect(about.tab).toBe("changelog");
+  expect(about.next).toContain("只读");
+
+  await expect(
+    tool("visit_page").handler({ path: "/faker" }, { client, agentName: "TestAgent" })
+  ).rejects.toThrow("未知页面");
+  await expect(
+    tool("visit_page").handler({ path: "/abouts", tab: "secret" }, { client, agentName: "TestAgent" })
+  ).rejects.toThrow("标签");
+});
+
+test("list_rooms 标出可由 Agent 加入的房间与大厅地址", async () => {
+  const rooms = [
+    { roomId: "1234", name: "开放房", phase: "waiting", playerCount: 1, allowAgents: true },
+    { roomId: "5678", name: "人类房", phase: "waiting", playerCount: 2, allowAgents: false },
+  ];
+  const client = {
+    siteOrigin: "http://127.0.0.1:4850",
+    listRooms: async () => rooms,
+  } as unknown as AgentGameClient;
+  const result = (await tool("list_rooms").handler(
+    { game: "faker" },
+    { client, agentName: "TestAgent" }
+  )) as { games: Array<{ lobby: string; rooms: Array<{ joinable: boolean; page?: string }> }> };
+  expect(result.games[0]?.lobby).toBe("http://127.0.0.1:4850/whoisfaker");
+  expect(result.games[0]?.rooms.map((room) => room.joinable)).toEqual([true, false]);
+  expect(result.games[0]?.rooms[0]?.page).toBe("/whoisfaker/room/1234");
 });
