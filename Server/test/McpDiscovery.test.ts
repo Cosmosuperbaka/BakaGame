@@ -79,3 +79,26 @@ test("前端静态发现指针与后端生成的端点同源，不出现第二�
   expect(pointer.canonical).toBe("https://game.baka.website/api/.well-known/mcp.json");
   expect(pointer.serverCard).toBe("https://game.baka.website/api/.well-known/mcp/server-card.json");
 });
+
+test("边缘终止 TLS 后仍按公网 https 生成端点，不把内网 http 写进发现文件", async () => {
+  // 回源是明文，`request.url` 只看得到 http。若照抄，Agent 会连到一条要 301 的地址，
+  // POST 重定向还可能丢包体 —— 所以代理声明的协议与主机优先。
+  const body = (await (
+    await app.handle(
+      new Request("http://127.0.0.1:4850/api/.well-known/mcp/server-card.json", {
+        headers: { "x-forwarded-proto": "https", "x-forwarded-host": "game.example.com" },
+      })
+    )
+  ).json()) as { transport: { url: string }; enabled: boolean };
+  expect(body.transport.url).toBe("https://game.example.com/api/mcp");
+
+  // 只有协议、没有 forwarded host 时，主机名沿用请求本身。
+  const onlyProto = (await (
+    await app.handle(
+      new Request("http://origin.internal/.well-known/mcp.json", {
+        headers: { "x-forwarded-proto": "https" },
+      })
+    )
+  ).json()) as { serverCard: string };
+  expect(onlyProto.serverCard).toBe("https://origin.internal/api/.well-known/mcp/server-card.json");
+});

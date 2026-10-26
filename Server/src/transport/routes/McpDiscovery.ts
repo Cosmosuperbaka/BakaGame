@@ -24,9 +24,37 @@ const SERVER_CARD_PATHS = [
 ] as const;
 const LEGACY_CARD_PATHS = ["/mcp/server-card", "/api/mcp/server-card"] as const;
 
+/** 取代理链里最靠前的一跳值：`X-Forwarded-*` 允许逗号列表，只用第一个。 */
+const firstHop = (value: string | null): string | undefined => {
+  const head = value?.split(",")[0]?.trim();
+  return head ? head.toLowerCase() : undefined;
+};
+
+/**
+ * 公开 origin。
+ *
+ * 边缘（ESA / nginx）终止 TLS 后回源是明文，`request.url` 只看得到 http；
+ * 发现文件里写 `http://` 会让 Agent 连到一条要 301 的地址，POST 重定向还可能丢包体。
+ * 所以优先采信代理声明的协议与主机，两者都没有时才用请求本身的 origin。
+ * 只接受 http/https，避免把调用方传进来的奇怪协议拼进返回体。
+ */
 const publicOrigin = (request: Request, fallback: string): string => {
+  const proto = firstHop(request.headers.get("x-forwarded-proto"));
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || undefined;
+
+  let origin = fallback;
   try {
-    return new URL(request.url).origin;
+    origin = new URL(request.url).origin;
+  } catch {
+    // request.url 不可解析时保持 fallback
+  }
+
+  try {
+    const url = new URL(origin);
+    // 直接拼 origin：改 `protocol` 会把回源端口（4850）一起带过去，
+    // 而 forwarded host 不带端口时那个端口对外并不存在。
+    const scheme = proto === "https" || proto === "http" ? proto : url.protocol.replace(":", "");
+    return `${scheme}://${host ?? url.host}`;
   } catch {
     return fallback;
   }
