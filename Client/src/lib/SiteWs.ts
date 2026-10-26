@@ -1,6 +1,8 @@
+import { useSyncExternalStore } from "react";
 import type { ServerMessage } from "@bakagame/shared";
 import {
   removeSiteAgent,
+  resetSiteAgents,
   setSiteAgents,
   upsertSiteAgent,
   type SiteAgent,
@@ -44,6 +46,31 @@ const applySiteMessage = (message: ServerMessage): void => {
 siteWsClient.onMessage(applySiteMessage);
 
 /**
+ * 站点连接的当前状态：设置面板的「连接信息」直接读它，不再自己挂一份状态监听。
+ * 它表达的是**这条共享连接**是否打开，与游戏通道、房间是否允许 MCP 无关。
+ */
+let linkConnected = false;
+const statusListeners = new Set<() => void>();
+
+const subscribeStatus = (listener: () => void): (() => void) => {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+};
+
+siteWsClient.onStatus((connected) => {
+  linkConnected = connected;
+  for (const listener of statusListeners) listener();
+});
+
+export function getSiteLinkConnected(): boolean {
+  return linkConnected;
+}
+
+export function useSiteLinkConnected(): boolean {
+  return useSyncExternalStore(subscribeStatus, getSiteLinkConnected, () => false);
+}
+
+/**
  * 建立站点连接并订阅。返回解绑函数（只摘掉本次登记的状态监听，不关共享连接）。
  * 重连后必须重新订阅：服务端把订阅记在这条连接上，断开即失效。
  */
@@ -54,4 +81,13 @@ export function connectSiteSocket(): () => void {
   });
   siteWsClient.connect();
   return unsubscribe;
+}
+
+/**
+ * 关掉「开启首页连接」时真的断开：服务端按连接统计在线与订阅，
+ * 只摘监听不关连接等于没关，首页也还留着上次的 Agent 列表。
+ */
+export function disconnectSiteSocket(): void {
+  siteWsClient.disconnect();
+  resetSiteAgents();
 }

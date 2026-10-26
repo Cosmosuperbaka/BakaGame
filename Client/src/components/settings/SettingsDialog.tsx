@@ -16,10 +16,11 @@ import { isBakaClient } from "@/lib/BakaChannel";
 import { setCloudSyncEnabled, useCloudSyncEnabled } from "@/lib/CloudSync";
 import {
   MCP_ENDPOINT_PATH,
-  setMcpNewRoomAllowed,
-  useMcpNewRoomAllowed,
+  setMcpLinkEnabled,
+  useMcpLinkEnabled,
   type McpGameId,
 } from "@/lib/McpConfig";
+import { SITE_WS_PATH, useSiteLinkConnected } from "@/lib/SiteWs";
 import {
   setSoundEnabled,
   setSoundVolume,
@@ -54,7 +55,11 @@ const mcpEndpoint = (): string => {
   return `${origin}${MCP_ENDPOINT_PATH}`;
 };
 
-function McpConnectionDetails() {
+/**
+ * 连接信息：站点连接的当前状态、远程端点与取用方式。
+ * 房间内与首页共用同一块——它描述的是**站点级**链路，与当前在哪个房间无关。
+ */
+function McpConnectionDetails({ connected }: { connected: boolean }) {
   const [copied, setCopied] = useState(false);
   const endpoint = mcpEndpoint();
 
@@ -76,7 +81,17 @@ function McpConnectionDetails() {
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">远程 MCP 端点</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span
+            aria-hidden="true"
+            className={
+              connected
+                ? "h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
+                : "h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+            }
+          />
+          站点连接 · {connected ? "已连接" : "未连接"}
+        </span>
         <Button
           type="button"
           variant="ghost"
@@ -90,7 +105,7 @@ function McpConnectionDetails() {
       </div>
       <p className="mt-1 break-all font-mono text-xs leading-5 text-foreground">{endpoint}</p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-        Agent 从站点发现文件找到这个端点；接入房间还需要房主开启 MCP，并生成带座位凭证的 Prompt。
+        Agent 从站点发现文件读到这个端点；接入房间还要房主开启 MCP，并拿到带座位凭证的 Prompt。
       </p>
     </div>
   );
@@ -104,18 +119,10 @@ function useRoomMcpInfo(game: McpGameId | undefined): {
   allowed: boolean;
   controlled: boolean;
 } | null {
-  const fakerAllowed = useWhoIsFakerStore(
-    (state) => state.snapshot?.settings.allowAgents === true
-  );
-  const fakerControlled = useWhoIsFakerStore(
-    (state) => state.privateState?.mcpControlled === true
-  );
-  const songAllowed = useSonGuessrStore(
-    (state) => state.snapshot?.settings.allowAgents === true
-  );
-  const songControlled = useSonGuessrStore(
-    (state) => state.privateState?.mcpControlled === true
-  );
+  const fakerAllowed = useWhoIsFakerStore((state) => state.snapshot?.settings.allowAgents === true);
+  const fakerControlled = useWhoIsFakerStore((state) => state.privateState?.mcpControlled === true);
+  const songAllowed = useSonGuessrStore((state) => state.snapshot?.settings.allowAgents === true);
+  const songControlled = useSonGuessrStore((state) => state.privateState?.mcpControlled === true);
   const ceeAllowed = useCEEStore((state) => state.snapshot?.settings.allowAgents === true);
   const ceeControlled = useCEEStore((state) => state.privateState?.mcpControlled === true);
   if (!game) return null;
@@ -126,6 +133,7 @@ function useRoomMcpInfo(game: McpGameId | undefined): {
 
 function RoomMcpSection({ game }: { game: McpGameId }) {
   const info = useRoomMcpInfo(game);
+  const connected = useSiteLinkConnected();
   // 房间没开 MCP 也没有 Agent 接手时没有可展示的连接信息，整组让位给本机偏好。
   if (!info || (!info.allowed && !info.controlled)) return null;
   const StatusIcon = info.controlled ? Lock : Bot;
@@ -144,23 +152,24 @@ function RoomMcpSection({ game }: { game: McpGameId }) {
           </p>
         </div>
       </div>
-      <McpConnectionDetails />
+      <McpConnectionDetails connected={connected} />
     </SettingsSection>
   );
 }
 
 function LobbyMcpSection() {
-  const mcpNewRoomAllowed = useMcpNewRoomAllowed();
+  const linkEnabled = useMcpLinkEnabled();
+  const connected = useSiteLinkConnected();
   return (
     <SettingsSection title="MCP 连接" icon={Bot}>
       <SettingSwitchRow
-        label="允许 MCP 接入本会话"
-        description="开启后，本会话新建的房间默认允许 MCP 接入；已建房间仍由房主在房间设置里决定。"
-        checked={mcpNewRoomAllowed}
-        onCheckedChange={setMcpNewRoomAllowed}
+        label="开启首页连接"
+        description={`站点实时通道 ${SITE_WS_PATH}；开启即建连，Agent 的位置与动作从这里下发。`}
+        checked={linkEnabled}
+        onCheckedChange={setMcpLinkEnabled}
       />
-      <Collapsible title="连接详情" size="sm">
-        <McpConnectionDetails />
+      <Collapsible title="连接信息" size="sm">
+        <McpConnectionDetails connected={connected} />
       </Collapsible>
     </SettingsSection>
   );

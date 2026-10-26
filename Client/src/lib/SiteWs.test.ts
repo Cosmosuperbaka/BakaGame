@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
     subscribed: true,
   })),
   connect: vi.fn(),
+  disconnect: vi.fn(),
   messages: [] as Array<(message: never) => void>,
   statuses: [] as Array<(connected: boolean) => void>,
 }));
@@ -23,10 +24,15 @@ vi.mock("@/lib/WebsocketClient", () => ({
     },
     send: state.send,
     connect: state.connect,
+    // 与服务端实现一致：主动断开同样会通知状态回调。
+    disconnect: () => {
+      state.disconnect();
+      for (const handler of [...state.statuses]) handler(false);
+    },
   }),
 }));
 
-import { connectSiteSocket } from "./SiteWs";
+import { connectSiteSocket, disconnectSiteSocket, getSiteLinkConnected } from "./SiteWs";
 import { getSiteAgents, resetSiteAgents } from "@/stores/UseSiteAgents";
 
 const activity = (id: string, overrides: Record<string, unknown> = {}) => ({
@@ -44,10 +50,14 @@ const emit = (event: string, payload: unknown) => {
   for (const handler of state.messages) handler({ type: "event", event, payload } as never);
 };
 
+/** 模块加载时就登记了一条「同步连接状态」的回调，清理只回退到这条基线。 */
+const BASE_STATUSES = state.statuses.length;
+
 beforeEach(() => {
   state.send.mockClear();
   state.connect.mockClear();
-  state.statuses = [];
+  state.disconnect.mockClear();
+  state.statuses.length = BASE_STATUSES;
 });
 
 afterEach(() => {
@@ -78,8 +88,21 @@ describe("站点通道", () => {
     const stop = connectSiteSocket();
     for (const handler of state.statuses) handler(true);
     stop();
-    expect(state.statuses).toHaveLength(0);
+    expect(state.statuses).toHaveLength(BASE_STATUSES);
     expect(state.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("关掉首页连接会真的断开，并清空首页的 Agent 指示", () => {
+    emit("site.agents", { agents: [activity("a")] });
+    for (const handler of state.statuses) handler(true);
+    expect(getSiteLinkConnected()).toBe(true);
+
+    disconnectSiteSocket();
+
+    // 只摘监听不关连接，服务端仍会把这条连接算作在线。
+    expect(state.disconnect).toHaveBeenCalledTimes(1);
+    expect(getSiteLinkConnected()).toBe(false);
+    expect(getSiteAgents()).toEqual([]);
   });
 
   it("快照覆盖、焦点增量、离开删除，三类事件都只留在站点 store 里", () => {
