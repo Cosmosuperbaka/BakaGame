@@ -5,6 +5,7 @@ import type { BangumiProviderInit } from "./LocalBangumiProvider";
 import type { CEEDataInit } from "./CEEData";
 import type { TagDiffOptions } from "./BangumiDataWorker";
 import type { SubjectUpdaterInit } from "./SubjectUpdater";
+import type { R2Config } from "./R2ImageStore";
 
 export interface BangumiDataBundle {
   /** 猜歌侧门面，实现 `BangumiDataProvider`。 */
@@ -21,6 +22,8 @@ export function createBangumiData(options: {
   cee: CEEDataInit;
   tagDiff?: TagDiffOptions;
   imagesDir?: string;
+  /** 配上就把新图写进 R2（本地只留索引）；不配则沿用本地分片。 */
+  r2?: R2Config;
   updater?: SubjectUpdaterInit;
 }): BangumiDataBundle {
   const client = new BangumiDataWorkerClient();
@@ -31,6 +34,7 @@ export function createBangumiData(options: {
     cee: options.cee,
     tagDiff: options.tagDiff,
     imagesDir: options.imagesDir,
+    r2: options.r2,
     updater: options.updater,
   });
   return {

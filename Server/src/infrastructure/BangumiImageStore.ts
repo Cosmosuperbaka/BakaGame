@@ -16,9 +16,27 @@ export interface StoredImage {
   contentType: string;
 }
 
+/**
+ * 图床存储的读写口径。线上是 `R2ImageStore`（字节在 R2、本地只留索引），
+ * 没有 R2 配置时退回 `BangumiImageStore` 本身（字节与索引都在分片里）。
+ * 两者对调用方等价，切换只由装配决定，业务代码不分支。
+ */
+export interface ImageStore {
+  readonly shardCount: number;
+  has(path: string): boolean;
+  /** 字节是否已经搬到 R2；为 true 时读取侧应 302，不要再读本地。 */
+  isRemote(path: string): boolean;
+  /** 只落索引、不写字节（字节已经在 R2）。只读实例调用会抛错。 */
+  markRemote(path: string, contentType?: string): void;
+  get(path: string): StoredImage | undefined;
+  put(path: string, bytes: Uint8Array, contentType?: string): void | Promise<void>;
+  count(): number;
+  close(): void;
+}
+
 const SHARD_PATTERN = /^images-\d+\.sqlite$/;
 
-export class BangumiImageStore {
+export class BangumiImageStore implements ImageStore {
   private readonly connections: Database[];
   private readonly readOnly: boolean;
   private readonly now: () => number;
@@ -49,6 +67,10 @@ export class BangumiImageStore {
       // 因此可写连接不传选项对象。
       const db = this.readOnly ? new Database(target, { readonly: true }) : new Database(target);
       db.exec("PRAGMA busy_timeout = 5000");
+      // 只读连接也能看到这张表（可写连接建好之后）；老分片没有它时按「不在 R2」处理。
+      if (!this.readOnly) {
+        db.exec("CREATE TABLE IF NOT EXISTS images_remote (path TEXT PRIMARY KEY)");
+      }
       return db;
     });
   }
@@ -69,13 +91,42 @@ export class BangumiImageStore {
     );
   }
 
+  /**
+   * 字节是否已经搬到 R2。只读连接在可写连接建表之前会拿到 `no such table`，
+   * 那时按「不在 R2」处理，读取侧退回本地字节——宁可变慢，也不要 302 到不存在的对象。
+   */
+  isRemote(path: string): boolean {
+    try {
+      return (
+        this.shard(path)
+          .query<{ present: number }, [string]>("SELECT 1 AS present FROM images_remote WHERE path=?")
+          .get(path) !== null
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** 标记「字节在 R2」并落一条不含字节的索引（`bytes` 存空串，索引与字节彻底分家）。 */
+  markRemote(path: string, contentType = "image/avif"): void {
+    if (this.readOnly) throw new Error("只读图床实例不能写入");
+    const db = this.shard(path);
+    db.query<never, [string, string, number]>(
+      "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,x'',?,?)"
+    ).run(path, contentType, this.now());
+    db.query<never, [string]>("INSERT OR REPLACE INTO images_remote (path) VALUES (?)").run(path);
+  }
+
   get(path: string): StoredImage | undefined {
     const row = this.shard(path)
       .query<{ bytes: Uint8Array; content_type: string }, [string]>(
         "SELECT bytes, content_type FROM images WHERE path=?"
       )
       .get(path);
-    return row ? { bytes: row.bytes, contentType: row.content_type } : undefined;
+    if (!row) return undefined;
+    // 空字节只可能是 `markRemote` 留下的索引行：真图不可能 0 字节，别把它当可返回的内容。
+    if (row.bytes.byteLength === 0) return undefined;
+    return { bytes: row.bytes, contentType: row.content_type };
   }
 
   /** 写入（或覆盖）一张图；只读实例调用会抛错——路由侧应把写入转交数据 Worker。 */

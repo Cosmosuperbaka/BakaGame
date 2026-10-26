@@ -14,7 +14,8 @@ import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
  * `/r/400/` 与方格图 `/pic/crt/g/`），所以对外前缀写死成本路由（见
  * `Env.BANGUMI_IMAGE_ROUTE`）后，URL 改写逻辑一行不用动。
  *
- * 命中缓存直接回 avif；未命中回源抓一份（尽力而为）并异步落库。
+ * 命中缓存直接回 avif；已搬进 R2 的图（线上主路径）只回 302，让浏览器去 CDN 取，
+ * 生产机因此不再承担图床流量；未命中回源抓一份（尽力而为）并异步落库。
  * 路径即内容、内容不变，可以放心长缓存 + immutable。
  */
 const IMAGE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]*$/;
@@ -51,6 +52,16 @@ export const bangumiImageRoutes = (images?: BangumiImageService) =>
         Object.assign(set.headers, rateLimitHeaders(outcome.verdict));
         set.status = 429;
         return httpError("RATE_LIMITED", "图片回源配额已用完，请稍后重试", traceIdOf(set.headers));
+      }
+      if (outcome.state === "redirect") {
+        // 302 而不是 301：换 CDN 或回滚时只等一天，不用去清浏览器缓存。
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: outcome.location,
+            "cache-control": "public, max-age=86400",
+          },
+        });
       }
       if (outcome.state === "missing") {
         set.status = 404;

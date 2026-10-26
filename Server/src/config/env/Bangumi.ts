@@ -15,6 +15,13 @@ const DEFAULT_MEILISEARCH_URL = "http://127.0.0.1:7700";
  * 数据集、图床与搜索（T2）：每一项都有正确缺省，只在特殊部署形态下才需要覆盖。
  * 分层口径见 `Agents/Conventions.md` §5。
  */
+/** R2 写入所需的最小凭证集；结构与 `R2Config` 一致，装配层直接透传。 */
+export interface EnvR2Writable {
+  accountId: string;
+  apiToken: string;
+  bucket: string;
+}
+
 export interface EnvBangumi {
   bangumiApiUrl: string;
   /**
@@ -43,6 +50,18 @@ export interface EnvBangumi {
   bangumiDatasetWriter?: boolean;
   /** 自建图床分片目录（`/api/bangumi` 路由与更新器共用）；缺省跟随数据集目录。 */
   bangumiImagesDir?: string;
+  /**
+   * 图片字节的 CDN 前缀（如 `https://cdn.baka.website/files/bangumi`）。
+   *
+   * 配上之后：已经进 R2 的图由后端回 302，字节直接从 CDN 出，生产机不再承担图床
+   * 流量。留空即维持「本地分片直出」，线上要回滚只改这一个环境变量。
+   */
+  bangumiImageCdnBase?: string;
+  /**
+   * R2 写入配置。三项缺一就不启用：新图继续落本地分片，行为与改造前一致。
+   * 凭证只从环境变量读，不落仓库、不进日志。
+   */
+  r2?: EnvR2Writable;
   /** 运行时更新器（阶段 6）：缺省只在生产开启。 */
   bangumiUpdaterEnabled?: boolean;
   /**
@@ -76,6 +95,14 @@ const resolveDefaultBangumiEnrichmentPath = (): string => {
   return resolve(import.meta.dir, "../../../storage/bangumi-enrichment.sqlite");
 };
 
+/** 缺账号或令牌就等于没配：宁可不写云，也不要在运行时反复抛 401。 */
+const readR2Writable = (): EnvR2Writable | undefined => {
+  const accountId = Bun.env.R2_ACCOUNT_ID?.trim();
+  const apiToken = Bun.env.R2_API_TOKEN?.trim();
+  if (!accountId || !apiToken) return undefined;
+  return { accountId, apiToken, bucket: Bun.env.R2_BUCKET?.trim() || "files" };
+};
+
 export const readBangumiEnv = (deploymentEnvironment: string): EnvBangumi => ({
   bangumiApiUrl: (Bun.env.BANGUMI_API_URL ?? "https://api.bgm.tv").replace(/\/+$/, ""),
   bangumiImageUrl: BANGUMI_IMAGE_ROUTE,
@@ -91,6 +118,8 @@ export const readBangumiEnv = (deploymentEnvironment: string): EnvBangumi => ({
   bangumiImagesDir: Bun.env.BANGUMI_IMAGES_DIR
     ? resolve(Bun.env.BANGUMI_IMAGES_DIR)
     : resolve(import.meta.dir, "../../../data/images"),
+  bangumiImageCdnBase: (Bun.env.BANGUMI_IMAGE_CDN_BASE ?? "").replace(/\/+$/, "") || undefined,
+  r2: readR2Writable(),
   // 运行时更新器默认只在生产开启：E2E / 测试与本地开发不该打在线上上游。
   bangumiUpdaterEnabled:
     Bun.env.BANGUMI_UPDATER_ENABLED !== undefined

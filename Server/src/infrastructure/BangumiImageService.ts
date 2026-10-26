@@ -1,5 +1,5 @@
 import { LRUCache } from "lru-cache";
-import { BangumiImageStore, type StoredImage } from "./BangumiImageStore";
+import { BangumiImageStore, type ImageStore, type StoredImage } from "./BangumiImageStore";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import { fetchWithGuardedRedirects } from "./OutboundGuard";
 import { SlidingWindowRateLimiter, type RateLimitVerdict } from "./RateLimiter";
@@ -21,6 +21,14 @@ export interface BangumiImageServiceOptions {
   directory: string;
   /** 回源前缀（Bangumi 镜像地址，如 `https://bangumi.example.com`）；为空则只读缓存、不回源。 */
   sourceBase?: string;
+  /**
+   * 图片字节的 CDN 前缀（如 `https://cdn.baka.website/files/bangumi`）。
+   *
+   * 配上之后：已进 R2 的图不再由本进程吐字节，只回 302——生产机的图床流量归零，
+   * 边缘缓存命中后由 CDN 直出。留空则维持原样（本地分片直出），线上出问题可以
+   * 秒退回来，不用改代码。
+   */
+  cdnBase?: string;
   fetcher?: typeof fetch;
   logger?: { warn: (message: string, context?: Record<string, unknown>) => void };
   /** 把新抓到的图转交数据 Worker 落库；失败只记警告（这张图下次再抓）。 */
@@ -36,9 +44,10 @@ export interface BangumiImageServiceOptions {
   now?: () => number;
 }
 
-/** 一次读取的三种结局：拿到图、确实没有、配额用完（最后一种必须让调用方退避）。 */
+/** 一次读取的四种结局：拿到图、改走 CDN、确实没有、配额用完（最后一种必须让调用方退避）。 */
 export type BangumiImageOutcome =
   | { state: "ok"; image: StoredImage }
+  | { state: "redirect"; location: string }
   | { state: "missing" }
   | { state: "limited"; verdict: RateLimitVerdict };
 
@@ -64,8 +73,9 @@ export function hasAvifMagic(bytes: Uint8Array): boolean {
 }
 
 export class BangumiImageService {
-  private readonly store?: BangumiImageStore;
+  private readonly store?: ImageStore;
   private readonly sourceBase: string;
+  private readonly cdnBase: string;
   private readonly fetcher: typeof fetch;
   private readonly logger?: BangumiImageServiceOptions["logger"];
   private readonly persist?: BangumiImageServiceOptions["persist"];
@@ -82,6 +92,7 @@ export class BangumiImageService {
   constructor(options: BangumiImageServiceOptions) {
     this.store = BangumiImageStore.open(options.directory, { readOnly: true });
     this.sourceBase = (options.sourceBase ?? "").replace(/\/+$/, "");
+    this.cdnBase = (options.cdnBase ?? "").replace(/\/+$/, "");
     this.fetcher = options.fetcher ?? fetch;
     this.logger = options.logger;
     this.persist = options.persist;
@@ -107,6 +118,11 @@ export class BangumiImageService {
    * 而它的请求根本不该进入全局计数。在途合并的后续请求不重复占额度。
    */
   async fetch(path: string, clientIp = "anonymous"): Promise<BangumiImageOutcome> {
+    // 已进 R2 的图在边缘有缓存，让浏览器直接去 CDN 取：本进程只回一个 302，
+    // 不再为每个请求读分片、也不再吐字节。放在字节缓存之前，避免迁移后仍走老路径。
+    if (this.cdnBase && this.store?.isRemote(path)) {
+      return { state: "redirect", location: `${this.cdnBase}${path}` };
+    }
     const cached = this.imageCache.get(path);
     if (cached) return { state: "ok", image: cached };
     const hit = this.store?.get(path);

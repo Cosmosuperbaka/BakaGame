@@ -75,3 +75,25 @@ test("目录缺失或没有分片 → undefined（调用方降级为无图床）
     rmSync(empty, { recursive: true, force: true });
   }
 });
+
+test("markRemote 只落索引：has 为真、isRemote 为真、get 不再回字节", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bakagame-remote-"));
+  try {
+    const db = new Database(join(dir, "images-00.sqlite"));
+    db.exec(
+      "CREATE TABLE images (path TEXT PRIMARY KEY, bytes BLOB NOT NULL, content_type TEXT NOT NULL, fetched_at INTEGER NOT NULL);"
+    );
+    db.close();
+
+    const store = BangumiImageStore.open(dir, { now: () => 7 })!;
+    store.markRemote("/r/200/pic/cover/l/ab/cd/1.jpg");
+    expect(store.has("/r/200/pic/cover/l/ab/cd/1.jpg")).toBe(true);
+    expect(store.isRemote("/r/200/pic/cover/l/ab/cd/1.jpg")).toBe(true);
+    // 字节在 R2，本地没有内容可回：读取侧必须走 302，不能拿到空 buffer。
+    expect(store.get("/r/200/pic/cover/l/ab/cd/1.jpg")).toBeUndefined();
+    expect(store.isRemote("/r/200/pic/cover/l/ab/cd/2.jpg")).toBe(false);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

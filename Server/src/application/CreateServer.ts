@@ -98,6 +98,8 @@ export function createServer(
         : undefined,
     },
     imagesDir: env.bangumiImagesDir,
+    // 有 R2 凭证就让新图直接进 R2（本地分片退成索引），没配就维持本地写入。
+    r2: env.r2,
     tagDiff: env.bangumiTagDiffUrl
       ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
       : undefined,
@@ -120,6 +122,8 @@ export function createServer(
     ? new BangumiImageService({
         directory: env.bangumiImagesDir,
         sourceBase: env.bangumiImageSource,
+        // 配上 CDN 前缀后，已进 R2 的图只回 302：生产机不再吐图片字节。
+        cdnBase: env.bangumiImageCdnBase,
         logger,
         persist: (path, image) => {
           void data.client

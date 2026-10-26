@@ -308,3 +308,55 @@ test("字节缓存收敛重复读，并按条目数与总字节双封顶", async
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("已进 R2 的图回 302 到 CDN，不再吐字节", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
+  try {
+    const store = BangumiImageStore.open(shards(join(directory, "images")))!;
+    store.markRemote("/r/200/pic/cover/l/ab/cd/1.jpg");
+    store.close();
+
+    const service = new BangumiImageService({
+      directory: join(directory, "images"),
+      cdnBase: "https://cdn.baka.website/files/bangumi/",
+      now: () => 0,
+    });
+    const app = bangumiImageRoutes(service);
+    const response = await app.handle(
+      new Request("http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/1.jpg")
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "https://cdn.baka.website/files/bangumi/r/200/pic/cover/l/ab/cd/1.jpg"
+    );
+    // 一天而不是一年：换 CDN 或回滚时不用等一年才生效。
+    expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
+    service.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("配了 CDN 但图还没搬走时仍回本地字节（迁移中途不裂图）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
+  try {
+    const store = BangumiImageStore.open(shards(join(directory, "images")))!;
+    store.put("/r/200/pic/cover/l/ab/cd/1.jpg", AVIF);
+    store.close();
+
+    const service = new BangumiImageService({
+      directory: join(directory, "images"),
+      cdnBase: "https://cdn.baka.website/files/bangumi",
+      now: () => 0,
+    });
+    const app = bangumiImageRoutes(service);
+    const response = await app.handle(
+      new Request("http://localhost/api/bangumi/r/200/pic/cover/l/ab/cd/1.jpg")
+    );
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(AVIF);
+    service.close();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

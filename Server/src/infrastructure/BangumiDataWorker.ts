@@ -3,7 +3,8 @@ import { CEECharacterRepository } from "./CEECharacterRepository";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { scheduleDatasetBackup } from "./DatasetBackup";
 import { scheduleTagDiffSync, syncTagDiff } from "./TagDiffSync";
-import { BangumiImageStore } from "./BangumiImageStore";
+import { BangumiImageStore, type ImageStore } from "./BangumiImageStore";
+import { R2ImageStore, R2ImageUploader, type R2Config } from "./R2ImageStore";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import { openDataset } from "./OpenDataset";
 import { SubjectUpdater, type SubjectUpdaterInit } from "./SubjectUpdater";
@@ -30,6 +31,8 @@ export type BangumiDataRequest =
       cee: CEEDataInit;
       tagDiff?: TagDiffOptions;
       imagesDir?: string;
+      /** 配上就写 R2（字节上云、本地只留索引）；不配则维持本地分片。 */
+      r2?: R2Config;
       updater?: SubjectUpdaterInit;
     }
   // ---- 猜歌 ----
@@ -150,7 +153,7 @@ let stopBackup: (() => void) | undefined;
 /** 标签增量定时的停止函数。 */
 let stopTagDiff: (() => void) | undefined;
 let tagDiff: TagDiffOptions | undefined;
-let images: BangumiImageStore | undefined;
+let images: ImageStore | undefined;
 let updater: SubjectUpdater | undefined;
 
 /**
@@ -311,7 +314,13 @@ const initRuntime = async (request: InitRequest): Promise<true> => {
   await initSongLink(request);
   await initCeeLink(request);
   tagDiff = request.tagDiff;
-  images = request.imagesDir ? BangumiImageStore.open(request.imagesDir) : undefined;
+  const index = request.imagesDir ? BangumiImageStore.open(request.imagesDir) : undefined;
+  // 有 R2 就写云：本地分片退成「路径索引」，字节不再落在生产机。
+  images = index
+    ? request.r2
+      ? new R2ImageStore(index, new R2ImageUploader(request.r2))
+      : index
+    : undefined;
   createUpdater(request);
   scheduleRuntimeMaintenance(request);
   return true;
@@ -399,7 +408,7 @@ const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> =>
   if (request.method === "close") return closeRuntime();
   if (request.method === "images.put") {
     if (!images) throw new AppError("BANGUMI_DATA_UNAVAILABLE", "图床未就绪");
-    images.put(request.path, request.bytes);
+    await images.put(request.path, request.bytes);
     return true;
   }
   if (request.method === "updater.reportLoad") {

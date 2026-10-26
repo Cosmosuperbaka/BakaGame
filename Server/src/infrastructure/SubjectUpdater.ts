@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { bangumiImageCachePath } from "./BangumiImagePaths";
 import { hasAvifMagic } from "./BangumiImageService";
-import type { BangumiImageStore } from "./BangumiImageStore";
+import type { ImageStore } from "./BangumiImageStore";
 import type { BangumiSearchIndex } from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
@@ -72,7 +72,7 @@ export interface SubjectUpdaterOptions extends SubjectUpdaterInit {
   db: Database;
   search?: BangumiSearchIndex;
   /** 图床分片（Worker 侧可写实例）：刷新时顺手把缺的封面补上。 */
-  images?: BangumiImageStore;
+  images?: ImageStore;
   tiers?: RefreshTier[];
   roundLimit?: number;
   roundDelayMs?: number;
@@ -115,7 +115,7 @@ export class SubjectUpdater {
   private readonly db: Database;
   private readonly base: string;
   private readonly search?: BangumiSearchIndex;
-  private readonly images?: BangumiImageStore;
+  private readonly images?: ImageStore;
   private readonly imageSource: string;
   private readonly minRate: number;
   private readonly maxRate: number;
@@ -455,7 +455,7 @@ export class SubjectUpdater {
       const bytes = new Uint8Array(await response.arrayBuffer());
       // 只认 avif：上游异常时不要把 jpeg / 错误页写进图床（坏字节入库就不会再重下）。
       if (!hasAvifMagic(bytes)) return;
-      this.images.put(path, bytes, "image/avif");
+      await this.images.put(path, bytes, "image/avif");
     } catch {
       // 缺一张图不是可用性问题：下轮刷新会再试。
     }
