@@ -239,6 +239,17 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["管理后台概览代查 Sentry 的只读令牌（org:read、project:read、event:read），可不配"],
   },
   {
+    name: "R2_API_TOKEN",
+    layer: "T1",
+    documented: true,
+    secret: true,
+    sample: "",
+    note: [
+      "对象存储写入令牌（Account · Workers R2 Storage · Edit）；与 R2_ACCOUNT_ID 成套，缺一个即退回本地分片。",
+      "走 api.cloudflare.com 的 REST 上传，不用 S3 端点：后者在境内会被 TLS 阻断。",
+    ],
+  },
+  {
     name: "BETTERSTACK_API_KEY",
     layer: "T1",
     documented: true,
@@ -373,6 +384,24 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: [
       "图片对外前缀固定为站内图床路径（不可配）；下面这项只决定图床缺图时去哪补，留空 = 只服务已缓存的图。",
     ],
+  },
+  {
+    name: "BANGUMI_IMAGE_CDN_BASE",
+    layer: "T2",
+    documented: true,
+    sample: "",
+    note: [
+      "图片字节的 CDN 前缀；配上后已进对象存储的图只回 302，生产机不再承担图床流量。",
+      "留空即维持本地分片直出，线上回滚只改这一项。",
+    ],
+  },
+  { name: "R2_ACCOUNT_ID", layer: "T2", documented: true, sample: "" },
+  {
+    name: "R2_BUCKET",
+    layer: "T2",
+    documented: true,
+    sample: "files",
+    note: ["对象存储桶名，缺省 files；与 CDN 前缀必须指向同一个桶。"],
   },
   { name: "BANGUMI_ENRICHMENT_PATH", layer: "T2" },
   {
