@@ -290,6 +290,8 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           allowSpectators: false,
           userName: getSavedUsername() || "单人玩家",
           solo: true,
+          // 单人房只有一个座位，允许 MCP 接管不会影响任何人；房主仍可在房里关掉。
+          allowAgents: true,
         },
         signal
       );

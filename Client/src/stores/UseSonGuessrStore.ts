@@ -69,6 +69,8 @@ export interface SonGuessrStore {
       allowSpectators: boolean;
       userName: string;
       solo?: boolean;
+      /** 建房时就允许 MCP 接入；单人房由系统预置为 true，房主随后仍可关掉。 */
+      allowAgents?: boolean;
     },
     signal?: AbortSignal
   ) => Promise<void>;

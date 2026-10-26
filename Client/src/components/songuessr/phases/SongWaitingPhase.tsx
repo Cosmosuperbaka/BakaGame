@@ -27,7 +27,8 @@ const notifyCopyFailed = () =>
 
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。
- * 单人模式没有房间设置。账号组（`account`）在等待阶段对所有玩家都可编辑：B4 之后账号池由房内
+ * 单人模式没有房间设置，但保留 MCP 接入——把唯一那个座位交给 Agent 是单人练习的合法用法。
+ * 账号组（`account`）在等待阶段对所有玩家都可编辑：B4 之后账号池由房内
  * 成员各自贡献，谁都能登录自己的号并决定要不要共享给本房，不只是房主。`readOnly` 只管设置组。
  */
 function SongSettingsGroups({
@@ -71,25 +72,24 @@ function SongSettingsGroups({
         <SongGameSettings snapshot={snapshot} solo={solo} readOnly={readOnly} />
       </SettingsAccordion>
       {!solo ? (
-        <>
-          <SettingsAccordion
-            icon={Settings}
-            title="房间设置"
-            summary={summary.room}
-            readOnly={readOnly}
-            open={roomOpen}
-            onOpenChange={setRoomOpen}
-          >
-            <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
-          </SettingsAccordion>
-          <McpSettingsSection
-            game="song"
-            roomId={snapshot.roomId}
-            allowAgents={snapshot.settings.allowAgents === true}
-            isHost={!readOnly}
-          />
-        </>
+        <SettingsAccordion
+          icon={Settings}
+          title="房间设置"
+          summary={summary.room}
+          readOnly={readOnly}
+          open={roomOpen}
+          onOpenChange={setRoomOpen}
+        >
+          <SongRoomSettings snapshot={snapshot} readOnly={readOnly} />
+        </SettingsAccordion>
       ) : null}
+      {/* 单人房同样可以交给 Agent：房里只有自己那一个座位，凭证仍是自己的会话。 */}
+      <McpSettingsSection
+        game="song"
+        roomId={snapshot.roomId}
+        allowAgents={snapshot.settings.allowAgents === true}
+        isHost={!readOnly}
+      />
     </SettingsStack>
   );
 }
