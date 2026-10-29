@@ -896,8 +896,7 @@ describe("SonGuessrService", () => {
 
     now += 2_000;
     await service.runHousekeeping();
-    // 后台续期是 fire-and-forget；等它跑完再查下一次检索用的 Cookie。
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    await sessionPushed(guest);
 
     const sessionEvent = guest.sent
       .filter((item) => item.type === "event" && item.event === "song.auth.session")
@@ -965,7 +964,7 @@ describe("SonGuessrService", () => {
 
     now += 2_000;
     await service.runHousekeeping();
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    await sessionPushed(guest);
 
     // 客户端仍保存着旧副本，重新上传；上游校验仍可通过，但服务端应保留已续期的新 Cookie。
     const reupload = await execute<{ cookie: string }>(service, guest, {
@@ -1505,3 +1504,13 @@ describe("账号池凭据与开关的竞态边界", () => {
     ).rejects.toMatchObject({ code: "INVALID_PHASE" });
   });
 });
+
+/** 后台续期是 fire-and-forget：有界轮询号主是否收到新凭据，而不是睡一个猜出来的时长。 */
+async function sessionPushed(owner: TestConnection): Promise<void> {
+  for (let tick = 0; tick < 200; tick += 1) {
+    if (owner.sent.some((item) => item.type === "event" && item.event === "song.auth.session"))
+      return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error("后台续期没有把新凭据推给号主");
+}

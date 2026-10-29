@@ -189,7 +189,11 @@ test("跨键共享有界下载解码队列，同键合并且队列饱和拒绝",
   expect(calls).toBe(1);
   gates.shift()!();
   expect(await first).toBe(await duplicate);
-  while (!gates.length) await Bun.sleep(1);
+  // 有界等待：排队请求若始终没发起，这里应当失败而不是把整个套件挂到超时。
+  for (let tick = 0; !gates.length; tick += 1) {
+    if (tick > 500) throw new Error("排队的同键请求始终没有发起");
+    await Bun.sleep(1);
+  }
   gates.shift()!();
   await queued;
   expect(calls).toBe(2);

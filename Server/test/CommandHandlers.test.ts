@@ -50,7 +50,9 @@ type MissingCommandType = Exclude<
   WhoIsFakerClientMessage["type"],
   (typeof ALL_COMMAND_TYPES)[number]
 >;
+// 编译期守卫：漏登记命令时这一行类型检查不过；运行期断言它恒为 true 没有意义。
 const allCommandTypesCovered: MissingCommandType extends never ? true : never = true;
+void allCommandTypesCovered;
 
 const HANDLER_COMMAND_TYPES = [
   ...ROOM_COMMAND_TYPES,
@@ -61,7 +63,6 @@ const HANDLER_COMMAND_TYPES = [
 
 test("每个客户端命令恰好归属一个处理器", () => {
   expect(new Set(HANDLER_COMMAND_TYPES).size).toBe(HANDLER_COMMAND_TYPES.length);
-  expect(allCommandTypesCovered).toBe(true);
   expect([...HANDLER_COMMAND_TYPES].sort()).toEqual([...ALL_COMMAND_TYPES].sort());
 });
 

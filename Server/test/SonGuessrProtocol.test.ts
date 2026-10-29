@@ -471,13 +471,14 @@ type UnprobedSonGuessrCommand = Exclude<
   SonGuessrCommand,
   (typeof SONGUESSR_COMMAND_CASES)[number]["type"]
 >;
+// 编译期守卫：漏写探针时这一行类型检查不过；运行期断言它恒为 true 没有意义。
 const everySonGuessrCommandProbed: UnprobedSonGuessrCommand extends never ? true : never = true;
+void everySonGuessrCommandProbed;
 
 /** `Object.keys` 只给 `string[]`，比对前统一放宽，键集本身仍由上面的 satisfies/Exclude 锁死。 */
 const sortedNames = (values: readonly string[]): string[] => [...values].sort();
 
 test("猜歌命令表与传输层信封键集完全一致", () => {
-  expect(everySonGuessrCommandProbed).toBe(true);
   const payloadKeys = sortedNames(Object.keys(SonGuessrPayloadSchemas));
   expect(sortedNames(Object.keys(SonGuessrMessageSchemas))).toEqual(payloadKeys);
   expect(sortedNames(SONGUESSR_COMMAND_CASES.map((item) => item.type))).toEqual(payloadKeys);

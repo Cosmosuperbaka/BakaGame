@@ -73,9 +73,14 @@ describe("AppSettings 运行期旋钮", () => {
   it("取值不合法时拒绝写入并原样保留旧值", async () => {
     const repository = new FakeRepository();
     const settings = make(repository);
-    await settings.update("clientMinDesktopVersion", "0.3", "actor-1").catch(() => {});
+    // 拒绝必须是取值校验，而不是别的什么错误碰巧让写入没发生。
+    await expect(
+      settings.update("clientMinDesktopVersion", "0.3", "actor-1")
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(repository.rows.has("clientMinDesktopVersion")).toBe(false);
-    await settings.update("enableGeneralUnblock", "yes", "actor-1").catch(() => {});
+    await expect(settings.update("enableGeneralUnblock", "yes", "actor-1")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
     expect(repository.rows.has("enableGeneralUnblock")).toBe(false);
     expect(settings.version("clientMinDesktopVersion")).toBe("0.1.1");
   });
