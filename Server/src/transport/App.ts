@@ -12,6 +12,7 @@ import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
+import { resolveRequestTraceId } from "./RequestTraceId";
 import { securityHeaders } from "./SecurityHeaders";
 import { WsHandshakeQuota } from "./WsHandshakeQuota";
 import {
@@ -1075,12 +1076,7 @@ export const createApp = ({
       );
     })
     .onRequest(({ request, set, server }) => {
-      const traceId = sanitizeLogText(
-        request.headers.get("x-trace-id") ??
-          request.headers.get("x-request-id") ??
-          crypto.randomUUID(),
-        128
-      );
+      const traceId = sanitizeLogText(resolveRequestTraceId(request.headers), 128);
       // 边缘反代后 socket peer 恒为边缘节点地址：日志里的来源身份必须取真实 IP 标头，
       // 否则每条 HTTP 操作日志都记成同一个节点地址，按来源排查就失效了。
       const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
