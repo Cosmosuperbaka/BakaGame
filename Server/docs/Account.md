@@ -20,6 +20,7 @@
 - 通行密钥端点只能由浏览器直连 Better Auth，**不经 oRPC 转发**：挑战值写在签名 Cookie 与库中，转发丢掉 Cookie 必然 `CHALLENGE_NOT_FOUND`。
 - 验证码登录的前置钩子必须在**消耗验证码之前**校验邮箱、拒绝客户端自带头像、要求新号带昵称，避免用户白白作废验证码。
 - 业务错误码到 HTTP 状态的映射只有一份（`statusOfAppError`），HTTP 全局错误钩子与 oRPC 共用。
+- **RPC 写请求只接受 `application/json`**：生产 Cookie 是 `SameSite=None`，跨站 CSRF 只能靠「非简单请求先过 CORS 预检」挡住。oRPC 的 fetch 适配器另会解码 `multipart/form-data`，缺省 content-type 时又按 JSON 解析，两者都是不触发预检的简单请求，所以入口把非 JSON 的写请求一律回 415；契约不得新增文件或表单入参来绕开这条。
 - oRPC 契约的每个过程用 `op(说明, 鉴权层级)` 声明 `meta.description` 与 `meta.auth`（`public` / `session` / `admin`），不再另写文档注释；对外 OpenAPI 产物由导出脚本据此生成。`meta.auth` 必须与路由里实际套用的中间件一致，由 `RpcOpenapi` 测试逐一核对；新增过程漏写 `meta` 时生成器直接抛错。
 
 ## 3. 限流

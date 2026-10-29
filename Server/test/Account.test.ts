@@ -421,6 +421,28 @@ describe("资料与头像", () => {
     expect((await rpc("account/publicProfile", { userId: "missing" })).status).toBe(404);
   });
 
+  test("跨站表单与无类型请求体不能带着 Cookie 调写过程（CSRF）", async () => {
+    const { app, rpc, signIn } = createAccountTestApp();
+    const { cookie } = await signIn(QQ, "玩家");
+    const userId = String((await rpc("account/me", undefined, cookie)).body.id);
+    const payload = JSON.stringify({ json: { showQq: true } });
+    const form = new FormData();
+    form.set("data", payload);
+    // 一张跨站 HTML 表单（multipart）与一个不带类型的 Blob：两者都不触发 CORS 预检。
+    for (const body of [form, new Blob([payload])]) {
+      const response = await app.handle(
+        new Request("http://localhost/api/rpc/account/updateProfile", {
+          method: "POST",
+          headers: { cookie, origin: "https://attacker.example.com" },
+          body,
+        })
+      );
+      expect(response.status).toBe(415);
+      expect(await response.json()).toMatchObject({ json: { code: "UNSUPPORTED_MEDIA_TYPE" } });
+    }
+    expect((await rpc("account/publicProfile", { userId })).body).toMatchObject({ qqNumber: null });
+  });
+
   test("头像按访问节流刷新，版本变化后换 URL；当前版本可永久缓存", async () => {
     const time = clock();
     const { app, rpc, signIn, avatarFetcher } = createAccountTestApp({ now: time.now });

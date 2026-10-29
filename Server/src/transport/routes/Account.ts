@@ -24,6 +24,21 @@ import { TelemetryRateLimiter } from "./System";
 
 export const RPC_BASE_PATH = "/api/rpc";
 
+/**
+ * RPC 的写请求只接受 `application/json`。
+ *
+ * 生产 Cookie 是 `SameSite=None`，跨站 CSRF 只能靠「非简单请求必须先过 CORS 预检」兜住；
+ * 但 oRPC 的 fetch 适配器还会解码 `multipart/form-data`（取 `data` 字段的 JSON），缺省
+ * content-type 时又按 JSON 解析——前者是一张跨站 HTML 表单，后者是一个不带类型的 Blob，
+ * 两者都是简单请求、不触发预检，会带着受害者的 Cookie 直接执行写过程（含后台改角色）。
+ * 本站客户端只发 JSON，契约里也没有文件入参，因此在入口把其余形态一律挡掉。
+ */
+const isJsonRpcRequest = (request: Request): boolean =>
+  request.method === "GET" ||
+  request.method === "HEAD" ||
+  request.method === "OPTIONS" ||
+  (request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json");
+
 /** 账号系统运行时依赖：只有配置了数据库才装配。 */
 export interface AccountDependencies {
   auth: Auth;
@@ -350,6 +365,12 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
         const overQuota = rejectOverQuota(clientIp, peerIp, true, traceIdOf(set.headers));
         if (overQuota) return overQuota;
         if (!account || !rpc) return rpcAccountDisabled();
+        if (!isJsonRpcRequest(request)) {
+          return json(
+            415,
+            rpcError("UNSUPPORTED_MEDIA_TYPE", 415, "请求体必须是 application/json")
+          );
+        }
         await account.ready;
         const { matched, response } = await rpc.handle(request, {
           prefix: RPC_BASE_PATH,
