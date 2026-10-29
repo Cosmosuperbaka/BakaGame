@@ -119,3 +119,32 @@ describe("站点页面接管", () => {
     expect(pages.size).toBe(0);
   });
 });
+
+describe("可接管页面满表", () => {
+  it("只回收最早的未认领页面，已被 Agent 接管的不动；全部被接管时拒绝新开", () => {
+    let now = 0;
+    const pages = new SitePages(() => (now += 1));
+    // 第一页被接管，其余 127 页只开不认领，表正好满。
+    const claimed = pages.open("conn-0", recorder().send);
+    pages.claim(claimed.code, "mcp-0", "BakaAgent");
+    const idle = Array.from({ length: 127 }, (_, index) =>
+      pages.open(`conn-${index + 1}`, recorder().send)
+    );
+    expect(pages.size).toBe(128);
+
+    pages.open("conn-new", recorder().send);
+    expect(pages.size).toBe(128);
+    // 被挤掉的是最早的未认领页（conn-1），不是更早开启但已被接管的 conn-0。
+    expect(() => pages.claim(idle[0].code, "mcp-x", "Other")).toThrow(/无效或已使用/);
+    expect(() => pages.dispatch("mcp-0", "navigate", { path: "/" })).not.toThrow();
+
+    const full = new SitePages();
+    for (let index = 0; index < 128; index += 1) {
+      const opened = full.open(`c-${index}`, recorder().send);
+      full.claim(opened.code, `m-${index}`, "BakaAgent");
+    }
+    expect(() => full.open("c-new", recorder().send)).toThrow(
+      expect.objectContaining({ code: "PAGES_FULL" })
+    );
+  });
+});

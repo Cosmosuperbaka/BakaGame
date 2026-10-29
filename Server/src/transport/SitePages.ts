@@ -254,10 +254,15 @@ export class SitePages {
       }
   }
 
+  /**
+   * 满表时只回收最早开启、尚未被认领的页面；全部已被接管时拒绝新开。
+   * 开启接管不需要任何凭据，按全局最旧淘汰等于让匿名连接把别人正在被 Agent 操作的页面挤掉。
+   */
   private evictOldest(): void {
-    const oldest = [...this.byPageId.values()].sort(
-      (left, right) => left.openedAt - right.openedAt
-    )[0];
-    if (oldest) this.forget(oldest);
+    const oldest = [...this.byPageId.values()]
+      .filter((record) => !record.controllerId)
+      .sort((left, right) => left.openedAt - right.openedAt)[0];
+    if (!oldest) throw fail("PAGES_FULL", "可接管页面已满，请稍后再试");
+    this.forget(oldest);
   }
 }
