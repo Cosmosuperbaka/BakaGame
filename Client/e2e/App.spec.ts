@@ -395,8 +395,19 @@ test("独自一人在旁观动画途中切回，自己的玩家行仍然可见",
   // 抓住此刻这一行的节点：下面的中间态必须发生在「旧行」身上，新入场那一行同样半透明，按文本读分不开。
   const oldRow = await row.elementHandle();
   if (!oldRow) throw new Error("找不到本人的玩家行");
-  // 等进房的入场动画落定，下面的切换才是「第一次」换组。
-  await page.waitForTimeout(1_000);
+  // 等进房的入场动画落定，下面的切换才是「第一次」换组：以本行连同祖先完全不透明为准，
+  // 不睡固定时长——慢机器上 1 秒可能不够，快机器上又白等。
+  await expect
+    .poll(
+      () =>
+        row.evaluate((element) => {
+          for (let node: Element | null = element; node; node = node.parentElement)
+            if (getComputedStyle(node).opacity !== "1") return false;
+          return true;
+        }),
+      { message: "进房的入场动画没有落定：本行或其祖先仍未完全不透明" }
+    )
+    .toBe(true);
 
   await stretchFadeOut(page, name);
   await page.getByRole("button", { name: "加入旁观" }).click();
