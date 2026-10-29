@@ -196,7 +196,9 @@ export const installMusicSession = (
     const cookieChanged = existing.cookie !== cookie;
     existing.cookie = cookie;
     existing.account = account;
-    existing.enabled = sameCredential ? existing.enabled : active;
+    // 被平台判死时开关是服务端代关的，不是号主的选择：同账号重登也要按新凭据恢复。
+    existing.enabled = sameCredential && !existing.invalidated ? existing.enabled : active;
+    existing.invalidated = undefined;
     existing.cooldownUntil = undefined;
     existing.lastFailureReason = undefined;
     existing.recentOk = 0;
@@ -281,7 +283,8 @@ export const setPoolSharing = (
   enabled: boolean
 ) => {
   const { room, player } = service.requireRoomPlayer(connection);
-  if (room.phase !== "waiting") {
+  // 自动开局加载期间阶段仍停在 waiting，但出题链路已经在按池取号，同样算已开局。
+  if (room.phase !== "waiting" || room.automaticRoundLoading) {
     throw new AppError("INVALID_PHASE", "开局后不能再改账号共享开关");
   }
   const entry = musicPool(service, room).find(
@@ -500,6 +503,7 @@ export const releaseMusicAccount = (
     entry.lastFailureReason = result.reason ?? "上游请求失败";
     if (result.code === "MUSIC_SESSION_INVALID") {
       entry.enabled = false;
+      entry.invalidated = true;
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
     } else if (result.code === "MUSIC_LOGIN_RISK" || result.code === "MUSIC_API_RATE_LIMITED") {
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
@@ -808,9 +812,13 @@ export const refreshMusicPoolEntry = async (
     options?: { forceRefresh?: boolean }
   ) => Promise<MusicLoginSession>
 ): Promise<void> => {
+  // 号主在续期等待期间重新登录会原地替换同一条目，「还在池里」恒真；必须同时核对
+  // 凭据没换过，否则旧 Cookie 的续期结果（或失效判定）会盖掉刚登录的新凭据。
+  const sentCookie = entry.cookie;
+  const superseded = () => !musicPool(service, room).includes(entry) || entry.cookie !== sentCookie;
   try {
-    const result = await getLoginStatus(entry.cookie, "qq", { forceRefresh: true });
-    if (!musicPool(service, room).includes(entry)) return;
+    const result = await getLoginStatus(sentCookie, "qq", { forceRefresh: true });
+    if (superseded()) return;
     const cookieChanged = result.cookie !== entry.cookie;
     entry.cookie = requireMusicCookie(service, result.cookie);
     entry.account = result.account;
@@ -818,9 +826,10 @@ export const refreshMusicPoolEntry = async (
     entry.lastFailureReason = undefined;
     if (cookieChanged) publishMusicSession(service, room, entry);
   } catch (error) {
-    if (!musicPool(service, room).includes(entry)) return;
+    if (superseded()) return;
     if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") {
       entry.enabled = false;
+      entry.invalidated = true;
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
       entry.lastFailureReason = "QQ 音乐登录状态已失效，请重新扫码登录";
       service.publishRoom(room);
@@ -838,12 +847,15 @@ export const refreshMusicSessionAccount = async (
   check: MusicSessionRevalidation
 ): Promise<void> => {
   const { room, platform, entry, operation, label, verifySession, getLoginStatus } = check;
+  // 复核期间号主重登会原地换掉凭据：新凭据是刚登录拿到的，旧凭据的复核结果一律作废。
+  const sentCookie = entry.cookie;
   try {
     // QQ 的 key 寿命短：开局复核顺便强制换新，避免「还能用就不续期、过期后才救」。
-    const result = await getLoginStatus(entry.cookie, platform, {
+    const result = await getLoginStatus(sentCookie, platform, {
       forceRefresh: platform === "qq",
     });
     verifySession(platform);
+    if (entry.cookie !== sentCookie) return;
     const cookieChanged = result.cookie !== entry.cookie;
     entry.account = result.account;
     if (cookieChanged) {
@@ -858,6 +870,7 @@ export const refreshMusicSessionAccount = async (
       if (
         error.code === "MUSIC_SESSION_INVALID" &&
         musicPool(service, room).includes(entry) &&
+        entry.cookie === sentCookie &&
         room.musicAuthOperations?.[key] === operation
       ) {
         // 凭据已被平台判死：直接摘掉这一号（其余号与其它玩家的号都不动），

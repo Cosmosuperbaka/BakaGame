@@ -16,7 +16,11 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { publishMusicSession } from "../../src/application/songuessr/MusicAccounts";
+import {
+  publishMusicSession,
+  refreshMusicPoolEntry,
+  releaseMusicAccount,
+} from "../../src/application/songuessr/MusicAccounts";
 import {
   SongDetails,
   SongSearchResult,
@@ -1422,4 +1426,82 @@ test("续期凭据只回人类页面：同座位的 Agent 控制器连接收不�
   expect(received.human).toHaveLength(1);
   expect(received.agent).toEqual([]);
   expect(received.other).toEqual([]);
+});
+
+describe("账号池凭据与开关的竞态边界", () => {
+  const ownerService = () =>
+    new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie) => ({
+          cookie,
+          account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
+        }),
+      },
+    });
+  const hostEntry = async (service: SonGuessrService, host: TestConnection) => {
+    await createRoom(service, host);
+    const room = service.rooms.get("1234")!;
+    return { room, entry: room.musicPool!.find((item) => item.platform === "netease")! };
+  };
+
+  test("凭据被判死后同账号在等待阶段重登，开关随新凭据恢复", async () => {
+    const service = ownerService();
+    const host = connection(service, "dead-host");
+    const { room, entry } = await hostEntry(service, host);
+    expect(entry.enabled).toBe(true);
+    releaseMusicAccount(service as never, room.id, entry, {
+      ok: false,
+      code: "MUSIC_SESSION_INVALID",
+      reason: "登录状态已失效",
+    });
+    expect(entry.enabled).toBe(false);
+
+    // 关开关的是服务端不是号主：同一账号重登不能被当成「号主自己关的」而继续保持关闭。
+    await execute(service, host, {
+      id: "relogin",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "MUSIC_U=fresh" },
+    });
+    expect(entry.enabled).toBe(true);
+  });
+
+  test("续期等待期间号主重登，旧凭据的续期结果不覆盖新凭据", async () => {
+    const service = ownerService();
+    const host = connection(service, "renew-race-host");
+    const { room, entry } = await hostEntry(service, host);
+    let settle!: (
+      session: Awaited<ReturnType<Parameters<typeof refreshMusicPoolEntry>[3]>>
+    ) => void;
+    const pending = refreshMusicPoolEntry(
+      service as never,
+      room,
+      entry,
+      () => new Promise((resolve) => (settle = resolve))
+    );
+    // 重登原地替换同一条目，条目仍在池里，只有凭据换了。
+    entry.cookie = "MUSIC_U=relogin";
+    settle({
+      cookie: "MUSIC_U=renewed-old",
+      account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
+    });
+    await pending;
+    expect(entry.cookie).toBe("MUSIC_U=relogin");
+  });
+
+  test("自动开局加载期间阶段仍是 waiting，共享开关同样锁死", async () => {
+    const service = ownerService();
+    const host = connection(service, "loading-host");
+    const { room } = await hostEntry(service, host);
+    room.automaticRoundLoading = true;
+    await expect(
+      execute(service, host, {
+        id: "toggle-while-loading",
+        type: "song.auth.setPoolSharing",
+        roomId: "1234",
+        payload: { platform: "netease", enabled: false },
+      })
+    ).rejects.toMatchObject({ code: "INVALID_PHASE" });
+  });
 });

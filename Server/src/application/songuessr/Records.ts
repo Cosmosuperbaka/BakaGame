@@ -211,6 +211,8 @@ export interface SonGuessrMusicPoolEntry {
   lastFailureReason?: string;
   /** 最近一次成功校验/续期后写入 Cookie 的时刻；后台续期据此排期。 */
   cookieRefreshedAt?: number;
+  /** 凭据被平台判死、开关由服务端代关；号主重登（哪怕同一账号）即清除并恢复开关。 */
+  invalidated?: true;
 }
 
 /** 一次取号的租约：用完必须 `release`，否则该号的在途数会漏记、并发上限形同虚设。 */
