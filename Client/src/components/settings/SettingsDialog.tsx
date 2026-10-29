@@ -89,7 +89,7 @@ function McpConnectionDetails({ connected }: { connected: boolean }) {
             aria-hidden="true"
             className={
               connected
-                ? "h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
+                ? "h-1.5 w-1.5 shrink-0 rounded-full bg-success"
                 : "h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40"
             }
           />
@@ -206,7 +206,7 @@ function PageCodeBlock({ code }: { code: string }) {
           </Button>
         </div>
       </div>
-      <p className="mt-1 font-mono text-base font-semibold tracking-[0.3em] text-foreground">
+      <p className="mt-1 font-mono text-base font-semibold tracking-code text-foreground">
         {code}
       </p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">

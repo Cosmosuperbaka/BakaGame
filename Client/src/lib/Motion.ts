@@ -48,6 +48,8 @@ export const duration = {
   quick: 0.18,
   base: 0.26,
   slow: 0.42,
+  /** 持续状态的一次呼吸（`animate-breathe`：断线提示、骨架屏、在线点） */
+  breath: 2,
   /** 需要玩家读完内容的停留时长（词语揭示） */
   hold: 2.2,
 } as const;

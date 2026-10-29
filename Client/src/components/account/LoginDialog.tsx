@@ -319,7 +319,7 @@ function LoginDialogBody({
                   inputMode="numeric"
                   maxLength={LOGIN_CODE_LENGTH}
                   autoFocus
-                  inputClassName="h-10 font-mono tracking-widest"
+                  inputClassName="h-10 font-mono tracking-code placeholder:tracking-normal"
                   action={
                     <Button
                       type="button"

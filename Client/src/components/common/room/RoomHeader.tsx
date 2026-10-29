@@ -151,7 +151,7 @@ export function RoomHeader({
               animate="animate"
               exit="exit"
               role="status"
-              className="mr-1 hidden shrink-0 text-xs text-destructive motion-safe:animate-pulse sm:inline"
+              className="mr-1 hidden shrink-0 text-xs text-destructive motion-safe:animate-breathe sm:inline"
             >
               {connectionIssue}
             </motion.span>

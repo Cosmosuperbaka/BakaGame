@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { Bot } from "lucide-react";
 import { agentActivityLabel } from "@/lib/AgentActivityLabel";
+import { readoutSwap } from "@/lib/Motion";
 import { useSiteAgents } from "@/stores/UseSiteAgents";
 
 /** 同时最多展示两条；更多的折成 `+N`，不在首页堆一长串。 */
@@ -19,16 +20,18 @@ export function SiteAgentPresence() {
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
+      variants={readoutSwap}
+      initial="initial"
+      animate="animate"
+      exit="exit"
       aria-live="polite"
-      className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-1 text-[11px] text-muted-foreground"
+      className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-1 text-2xs text-muted-foreground"
     >
-      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-      </span>
+      {/* 在线是持续状态：成功色圆点随 breathe 明暗起伏，减弱动效时静止。 */}
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-success motion-safe:animate-breathe"
+        aria-hidden="true"
+      />
       {visible.map((agent) => (
         <span key={agent.id} className="inline-flex max-w-[15rem] items-center gap-1">
           <Bot className="h-3 w-3 shrink-0 opacity-70" aria-hidden="true" />

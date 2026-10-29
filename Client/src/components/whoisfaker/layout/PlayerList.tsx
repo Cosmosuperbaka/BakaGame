@@ -280,7 +280,7 @@ export function PlayerList(props: PlayerListProps) {
           <div
             key={column.key}
             className={cn(
-              "flex items-center whitespace-nowrap px-4 text-2xs font-semibold tracking-wide",
+              "flex items-center whitespace-nowrap px-4 text-2xs font-semibold",
               withRule && "mt-3",
               DESCRIPTION_HEAD_TONES[column.tone]
             )}

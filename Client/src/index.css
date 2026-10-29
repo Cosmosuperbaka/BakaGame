@@ -94,6 +94,12 @@
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);
   --tracking-wider: calc(var(--tracking-normal) + 0.05em);
   --tracking-widest: calc(var(--tracking-normal) + 0.1em);
+  /* 验证码、配对码这类逐位核对的短码：拉开字距方便逐位读与抄，是业务组件唯一可用的加宽字距。 */
+  --tracking-code: calc(var(--tracking-normal) + 0.3em);
+
+  /* 持续状态的呼吸（断线提示、骨架屏、在线点）：只动不透明度，时长与曲线取 Motion.ts 生成的变量。
+     CSS 关键帧不受 MotionConfig 约束，调用处一律写 `motion-safe:animate-breathe`。 */
+  --animate-breathe: breathe var(--motion-duration-breath) var(--motion-ease-in-out) infinite;
 
   /* 层级令牌。必须用 Tailwind 的 `--z-index-*` 命名空间：
      写成 `--z-*` 不会生成任何工具类，`z-overlay` 一类的类名会静默失效。 */
@@ -328,6 +334,12 @@ html {
 
 /* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
    在此提供与 popover 变体同尺度、同曲线的开合动画，保持全站节奏一致。 */
+@keyframes breathe {
+  50% {
+    opacity: 0.5;
+  }
+}
+
 @keyframes overlay-emerge {
   from {
     opacity: 0;
