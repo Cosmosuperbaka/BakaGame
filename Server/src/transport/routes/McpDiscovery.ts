@@ -37,8 +37,25 @@ const firstHop = (value: string | null): string | undefined => {
  * 发现文件里写 `http://` 会让 Agent 连到一条要 301 的地址，POST 重定向还可能丢包体。
  * 所以优先采信代理声明的协议与主机，两者都没有时才用请求本身的 origin。
  * 只接受 http/https，避免把调用方传进来的奇怪协议拼进返回体。
+ *
+ * 转发头与 Host 都由调用方控制，而结果会写进可公共缓存的发现文件：边缘若没有覆盖
+ * 客户端自带的 `X-Forwarded-Host`，一次请求就能把指向攻击者主机的 MCP 端点种进缓存，
+ * 让之后的 Agent 带着座位凭证连过去。因此拼出的 origin 必须落在站点来源白名单内，
+ * 否则退回配置的服务地址。
  */
-const publicOrigin = (request: Request, fallback: string): string => {
+const publicOrigin = (
+  request: Request,
+  fallback: string,
+  isTrustedOrigin?: (origin: string) => boolean
+): string => {
+  const origin = claimedOrigin(request, fallback);
+  return !isTrustedOrigin || isTrustedOrigin(origin) ? origin : fallback;
+};
+
+/** 结果随这两个头变化：共享缓存必须分开存，不能拿一份响应回给另一组头。 */
+const DISCOVERY_VARY = "x-forwarded-host, x-forwarded-proto";
+
+const claimedOrigin = (request: Request, fallback: string): string => {
   const proto = firstHop(request.headers.get("x-forwarded-proto"));
   const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || undefined;
 
@@ -64,17 +81,21 @@ export const mcpDiscoveryRoutes = ({
   mcpEnabled,
   serverUrl,
   version,
+  isTrustedOrigin,
 }: {
   mcpEnabled: boolean;
   serverUrl: string;
   version: string;
+  /** 站点来源白名单；不在其内的转发主机或 Host 一律退回 `serverUrl`。 */
+  isTrustedOrigin?: (origin: string) => boolean;
 }) => {
   const app = new Elysia({ name: "mcp-discovery", normalize: false });
 
   for (const path of WELL_KNOWN_PATHS)
     app.get(path, ({ request, set }) => {
-      const origin = publicOrigin(request, serverUrl);
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
       set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
       return {
         schemaVersion: 1,
         enabled: mcpEnabled,
@@ -97,8 +118,9 @@ export const mcpDiscoveryRoutes = ({
 
   for (const path of SERVER_CARD_PATHS)
     app.get(path, ({ request, set }) => {
-      const origin = publicOrigin(request, serverUrl);
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
       set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
       return {
         schemaVersion: 1,
         name: "bakagame-mcp",
@@ -123,8 +145,9 @@ export const mcpDiscoveryRoutes = ({
 
   for (const path of LEGACY_CARD_PATHS)
     app.get(path, ({ request, set }) => {
-      const origin = publicOrigin(request, serverUrl);
+      const origin = publicOrigin(request, serverUrl, isTrustedOrigin);
       set.headers["cache-control"] = "public, max-age=300";
+      set.headers.vary = DISCOVERY_VARY;
       return {
         schemaVersion: 1,
         name: "bakagame-mcp",

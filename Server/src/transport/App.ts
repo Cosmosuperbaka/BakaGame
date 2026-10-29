@@ -1238,6 +1238,7 @@ export const createApp = ({
         mcpEnabled: env.mcpEnabled === true,
         serverUrl: env.serverUrl,
         version: "1.0.0",
+        isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
       })
     )
     // ==================== 远程 MCP（Streamable HTTP） ====================

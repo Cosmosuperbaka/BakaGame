@@ -102,3 +102,40 @@ test("边缘终止 TLS 后仍按公网 https 生成端点，不把内网 http �
   ).json()) as { serverCard: string };
   expect(onlyProto.serverCard).toBe("https://origin.internal/api/.well-known/mcp/server-card.json");
 });
+
+test("转发主机与 Host 不在站点白名单内时退回配置地址，响应按转发头分缓存", async () => {
+  const guarded = new Elysia({ normalize: false }).use(
+    mcpDiscoveryRoutes({
+      mcpEnabled: true,
+      serverUrl: "https://api.example.com",
+      version: "1.0.0",
+      isTrustedOrigin: (origin) => origin === "https://game.example.com",
+    })
+  );
+  const read = async (url: string, headers: Record<string, string>) => {
+    const response = await guarded.handle(new Request(url, { headers }));
+    const body = (await response.json()) as { mcpServers: { bakagame: { url: string } } };
+    return { url: body.mcpServers.bakagame.url, vary: response.headers.get("vary") ?? "" };
+  };
+
+  // 边缘没覆盖客户端自带的转发头：不能把攻击者主机写进可公共缓存的发现文件。
+  const poisoned = await read("http://127.0.0.1:4850/.well-known/mcp.json", {
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "attacker.example.net",
+  });
+  expect(poisoned.url).toBe("https://api.example.com/api/mcp");
+  expect(poisoned.vary).toContain("x-forwarded-host");
+  // Host 本身同样由调用方决定。
+  expect((await read("https://attacker.example.net/.well-known/mcp.json", {})).url).toBe(
+    "https://api.example.com/api/mcp"
+  );
+  // 白名单内的站点照常还原公网地址。
+  expect(
+    (
+      await read("http://127.0.0.1:4850/.well-known/mcp.json", {
+        "x-forwarded-proto": "https",
+        "x-forwarded-host": "game.example.com",
+      })
+    ).url
+  ).toBe("https://game.example.com/api/mcp");
+});
