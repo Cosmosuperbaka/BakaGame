@@ -622,6 +622,8 @@ export const returnRoomToWaiting = (
 ) => {
   clearPhaseTimer(service, room);
   service.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
+  // 正常结算时记录侧已取走开局时间；测试房直接跳回等待会跳过结算，这里兜底，否则每跳一次漏一条。
+  if (room.round) service.roundStartedAtById.delete(room.round.id);
   room.round = undefined;
   for (const player of Object.values(room.players)) {
     // 机器人无法自行点击准备；旁观者则始终不参与准备计数。

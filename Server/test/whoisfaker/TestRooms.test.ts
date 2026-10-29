@@ -794,3 +794,27 @@ describe("测试房间", () => {
     expect(aliveCount).toBe(4);
   });
 });
+
+test("测试房在对局中途跳回等待，不留下开局时间记录", async () => {
+  const { service } = createTestContext();
+  const { host } = await createRoom(service, "Oblivionis");
+  await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 4 } });
+  await execute(service, host, {
+    id: "jump-words",
+    type: "test.jumpToPhase",
+    payload: { phase: "wordSubmission" },
+  });
+  await execute(service, host, {
+    id: "words",
+    type: "game.submitWords",
+    payload: { words: ["苹果", "香蕉"] },
+  });
+  expect(service.roundStartedAtById.size).toBe(1);
+  // 跳回等待跳过了结算：结算侧不会再来取走这条记录，必须在丢弃回合时一并清掉。
+  await execute(service, host, {
+    id: "back",
+    type: "test.jumpToPhase",
+    payload: { phase: "waiting" },
+  });
+  expect(service.roundStartedAtById.size).toBe(0);
+});
