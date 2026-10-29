@@ -140,7 +140,7 @@ describe("站点访问统计仓储（连接桩）", () => {
     expect(query.params).toEqual([stamp(T0)]);
   });
 
-  test("迁移未就绪时统计写入整体失败", async () => {
+  test("数据库未就绪时统计写入整体失败", async () => {
     const stub = createDrizzleStub({ ready: Promise.reject(new Error("db down")) });
     const repository = new DatabaseSiteStatsRepository(stub.database);
 

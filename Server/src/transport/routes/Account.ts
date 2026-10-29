@@ -46,7 +46,7 @@ export interface AccountDependencies {
   userData: UserDataService;
   admin: AdminService;
   visits: SiteStatsService;
-  /** 数据库迁移完成后才对外服务账号请求。 */
+  /** 数据库连通性检查通过后才对外服务账号请求。 */
   ready: Promise<void>;
 }
 

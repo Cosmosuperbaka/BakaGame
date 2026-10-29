@@ -18,7 +18,7 @@ import {
  * - 时间列一律 `datetime(3)` + UTC（连接层固定 `timezone: "Z"`）：`timestamp` 在 2038 年溢出，
  *   封禁到期之类的远期时间放不下。
  * - 表的 JS 属性名即 Better Auth 字段名（drizzle 适配器按属性名映射），列名用蛇形。
- * - 变更 schema 后执行 `bun run db:generate` 生成迁移；服务启动时自动应用。
+ * - 本文件是表结构的唯一来源：空库用 `db:push` 建表；已有数据的库把变更写成一次性 SQL，`db:oneoff` 执行后删掉。
  */
 
 const createdAt = () =>

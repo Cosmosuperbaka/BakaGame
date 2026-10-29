@@ -114,7 +114,7 @@ const inferSystemScope = (message: string, context: Record<string, unknown>): st
   const explicit = context.scope;
   if (typeof explicit === "string" && explicit.trim()) return explicit.trim().slice(0, 6);
   if (/快照/.test(message)) return "快照";
-  if (/数据库|迁移|落库/.test(message)) return "数据库";
+  if (/数据库|落库/.test(message)) return "数据库";
   if (/音乐|网易|QQ/.test(message)) return "音乐";
   if (/Sentry|遥测|指标|心跳/.test(message)) return "遥测";
   if (/停机|启动/.test(message)) return "启停";

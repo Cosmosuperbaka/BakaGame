@@ -2,7 +2,7 @@
  * 一次性迁移：把旧版 `storage/word-bank.json` 的词对导入数据库 `word_pair`。
  *
  * 用法：`bun run scripts/ImportWordBank.ts [文件路径]`（缺省 `storage/word-bank.json`）。
- * 读取 `DATABASE_URL`，先应用迁移；重复执行安全（已存在的词对跳过，不累加次数）。
+ * 读取 `DATABASE_URL`，先确认库可连；重复执行安全（已存在的词对跳过，不累加次数）。
  */
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";

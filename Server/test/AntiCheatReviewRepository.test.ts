@@ -176,7 +176,7 @@ describe("CEE 反作弊复核仓储（连接桩）", () => {
     expect(stub.queryAt(0).params).toEqual(["actioned", "r-1"]);
   });
 
-  test("迁移未就绪时读写整体失败，队列退回不写而不是半写", async () => {
+  test("数据库未就绪时读写整体失败，队列退回不写而不是半写", async () => {
     const stub = createDrizzleStub({ ready: Promise.reject(new Error("db down")) });
     const warnings: string[] = [];
     const repository = new AntiCheatReviewRepository(stub.database, (message) =>

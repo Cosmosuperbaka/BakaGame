@@ -206,7 +206,7 @@ describe("状态事件仓储（连接桩）", () => {
     expect(last.params).toEqual(["dev", 99]);
   });
 
-  test("迁移未就绪时读写整体失败，不会把半截语句打到池子上", async () => {
+  test("数据库未就绪时读写整体失败，不会把半截语句打到池子上", async () => {
     const stub = createDrizzleStub({ ready: Promise.reject(new Error("migration failed")) });
     const repository = new DatabaseStatusEventRepository(stub.database);
 

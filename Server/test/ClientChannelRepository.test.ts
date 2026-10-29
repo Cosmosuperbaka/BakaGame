@@ -124,7 +124,7 @@ describe("客户端通道设备仓储（连接桩）", () => {
     expect(query.params).toEqual([stamp(T1), "client-1"]);
   });
 
-  test("迁移未就绪时准入读写整体失败", async () => {
+  test("数据库未就绪时准入读写整体失败", async () => {
     const stub = createDrizzleStub({ ready: Promise.reject(new Error("db down")) });
     const repository = new ClientChannelRepository(stub.database);
 
