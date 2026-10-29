@@ -3,7 +3,9 @@ import { AppError } from "../../domain/Errors";
 import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
 import { compareClientVersion, type ClientChannel } from "../../infrastructure/ClientChannel";
 import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
+import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { resolveClientIp } from "../ClientIp";
+import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 
 /**
  * 客户端通道证明的 HTTP 面：注册设备公钥、领挑战、交签名换一次性 ticket，
@@ -38,6 +40,19 @@ const attestationSchema = t.Object(
   { additionalProperties: false }
 );
 
+/**
+ * 注册、领挑战、交签名三个写入口的共享额度（按来源地址三层分桶，口径同账号与打点）。
+ *
+ * 三者都匿名可达：不设额度时，注册会把任意伪造的设备公钥逐条写进设备表，领挑战会
+ * 把有界的待验挑战表刷满、挤掉正在验证中的真实设备。正常壳一次进房只走挑战 + 签名
+ * 两步、注册只在首次安装，单来源额度留足重试余量即可；peer 与全局桶按整站流量放宽，
+ * 只封顶伪造来源标头自造新桶的路径。
+ */
+const CLIENT_CHANNEL_WINDOW_MS = 60_000;
+const CLIENT_CHANNEL_IP_MAX_REQUESTS = 30;
+const CLIENT_CHANNEL_PEER_MAX_REQUESTS = 3_000;
+const CLIENT_CHANNEL_GLOBAL_MAX_REQUESTS = 6_000;
+
 export const clientChannelRoutes = (
   channel: ClientChannel | undefined,
   artifacts?: ClientArtifacts,
@@ -48,7 +63,26 @@ export const clientChannelRoutes = (
     if (!channel) throw new AppError("CLIENT_CHANNEL_DISABLED", "服务端未启用客户端通道");
     return channel;
   };
+  const limiter = new ThreeTierRateLimiter({
+    windowMs: CLIENT_CHANNEL_WINDOW_MS,
+    ipMaxRequests: CLIENT_CHANNEL_IP_MAX_REQUESTS,
+    peerMaxRequests: CLIENT_CHANNEL_PEER_MAX_REQUESTS,
+    globalMaxRequests: CLIENT_CHANNEL_GLOBAL_MAX_REQUESTS,
+  });
   return new Elysia({ name: "client-channel", normalize: false })
+    .onBeforeHandle(({ request, server, set }) => {
+      if (request.method !== "POST") return;
+      const peerIp = server?.requestIP(request)?.address ?? "unknown";
+      const verdict = limiter.consume(resolveClientIp(request.headers, peerIp), peerIp);
+      if (verdict.allowed) return;
+      Object.assign(set.headers, rateLimitHeaders(verdict));
+      set.status = 429;
+      return httpError(
+        "RATE_LIMITED",
+        "客户端通道请求过于频繁，请稍后重试",
+        traceIdOf(set.headers)
+      );
+    })
     .post(
       "/api/client/register",
       async ({ body }) => {

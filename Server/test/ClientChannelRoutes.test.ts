@@ -24,6 +24,26 @@ async function check(app: ReturnType<typeof appAt>, search: string) {
   };
 }
 
+test("注册与领挑战按来源限流：同一来源超额 429，换来源照常，读回接口不受影响", async () => {
+  const app = appAt("2.0.0");
+  const challenge = (ip: string) =>
+    app.handle(
+      new Request("http://localhost/api/client/challenge", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-real-ip": ip },
+        body: JSON.stringify({ clientId: "client-abcdef" }),
+      })
+    );
+  for (let index = 0; index < 30; index += 1)
+    expect((await challenge("203.0.113.9")).status).toBe(200);
+  const refused = await challenge("203.0.113.9");
+  expect(refused.status).toBe(429);
+  expect(refused.headers.get("retry-after")).not.toBeNull();
+  expect(await refused.json()).toMatchObject({ error: { code: "RATE_LIMITED" } });
+  expect((await challenge("203.0.113.10")).status).toBe(200);
+  expect((await check(app, "clientType=desktop&clientVersion=2.0.0")).status).toBe(200);
+});
+
 test("低于最低版本回 outdated，并把门槛一起回显给提醒用", async () => {
   expect(await check(appAt("2.0.0"), "clientType=desktop&clientVersion=1.9.0")).toMatchObject({
     status: 200,
