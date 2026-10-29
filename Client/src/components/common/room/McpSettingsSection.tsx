@@ -140,7 +140,7 @@ function McpStatusPanel({
         把下面的 Prompt 发给 Agent。它会用你的会话凭证接手座位；凭证等同于座位控制权，只发给可信
         Agent。
       </p>
-      <div className="rounded-sm border border-border bg-muted/40 p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+      <div className="rounded-sm border border-border bg-muted/40 p-2.5 font-mono text-2xs leading-5 text-muted-foreground">
         {prompt}
       </div>
       <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onCopy}>

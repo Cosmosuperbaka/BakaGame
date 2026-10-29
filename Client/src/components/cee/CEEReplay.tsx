@@ -4,6 +4,7 @@ import { Pause, Play, RotateCcw, SkipBack, SkipForward } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { buildReplaySteps, isCeeReplayEnabled, type ReplayRound } from "@/lib/CeeReplay";
+import { readoutSwap } from "@/lib/Motion";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEEFeedbackChips } from "./CEEFeedbackTable";
 
@@ -81,9 +82,9 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
 
       <motion.div
         key={step.guess.id}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.18 }}
+        variants={readoutSwap}
+        initial="initial"
+        animate="animate"
         className="flex items-start gap-3"
       >
         <CEECharacterImage

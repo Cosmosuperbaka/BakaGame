@@ -14,7 +14,7 @@ import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Slider } from "@/components/ui/Slider";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { digitRoll, iconTappable, popover, readoutSwap } from "@/lib/Motion";
+import { digitRoll, duration, ease, iconTappable, popover, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 export interface VolumeControlProps {
@@ -277,8 +277,8 @@ function VolumeCapsule({
     }
 
     const controls = animate(displayVolume, volume, {
-      duration: 0.3,
-      ease: [0.2, 0, 0, 1], // emphasized 曲线：起步顺畅，收尾极其细腻自然
+      duration: duration.base,
+      ease: ease.emphasized,
       onUpdate: (latest) => {
         setDisplayVolume(latest);
       },

@@ -291,7 +291,7 @@ function SongClipRail({
         aria-valuemax={endTime}
         aria-valuenow={Math.round(clamp(currentTimeMs, startTime, endTime))}
         aria-valuetext={formatClipTime(clamp(currentTimeMs, startTime, endTime))}
-        className="absolute inset-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-panel"
+        className="absolute inset-0 rounded-sm focus-visible:outline-offset-2"
         onPointerDown={(event) => beginDrag("seek", event)}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
@@ -310,7 +310,7 @@ function SongClipRail({
             key={kind}
             {...handleProps(kind)}
             className={cn(
-              "group absolute top-1/2 flex h-10 w-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-panel",
+              "group absolute top-1/2 flex h-10 w-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm focus-visible:outline-offset-2",
               active && "cursor-ew-resize"
             )}
             style={{ left: `${kind === "start" ? startPercent : endPercent}%` }}

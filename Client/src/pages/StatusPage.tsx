@@ -600,15 +600,15 @@ export default function StatusPage() {
           <p className="flex flex-wrap items-center gap-3 font-sans text-2xs text-muted-foreground">
             {/* 图例：颜色之外同时给出文字，条格读作什么由这里定。 */}
             <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-[2px] bg-success" />
+              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-success" />
               正常
             </span>
             <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-[2px] bg-destructive" />
+              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-destructive" />
               异常
             </span>
             <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-[2px] bg-muted" />
+              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-muted" />
               无数据
             </span>
             <span className="hidden sm:inline">悬停条格查看时段详情</span>
