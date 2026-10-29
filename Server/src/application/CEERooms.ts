@@ -1,5 +1,10 @@
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import { McpSeatRegistry, redactPrivateState, type McpController } from "./McpSeatRegistry";
+import {
+  controllerPrivateState,
+  McpSeatRegistry,
+  redactPrivateState,
+  type McpController,
+} from "./McpSeatRegistry";
 import { ADMIN_CLOSE_MESSAGE, ADMIN_KICK_MESSAGE, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
@@ -826,7 +831,8 @@ export class CEERooms {
   ): CEEPrivateState {
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     const state = ceePrivateState(room, player, Boolean(controller));
-    if (!controller || controller.connectionId === connection.id) return state;
+    if (!controller) return state;
+    if (controller.connectionId === connection.id) return controllerPrivateState(state);
     return redactPrivateState(
       "cee",
       state as unknown as Record<string, unknown>

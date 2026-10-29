@@ -390,6 +390,12 @@ describe("隐私开关与 Agent 接管", () => {
     const viewerState = getLastEventPayload<WhoIsFakerPrivateState>(host, "game.privateState");
     expect(viewerState?.mcpControlled).toBe(true);
     expect(viewerState?.sessionToken).toBe(created.sessionToken);
+    // Agent 拿完整私有状态，但人类会话凭证只用于首次认领，之后不再推给它。
+    await execute(service, agent, { id: "pair-sync", type: "room.requestSync", payload: {} });
+    const controllerState = getLastEventPayload<WhoIsFakerPrivateState>(agent, "game.privateState");
+    expect(controllerState?.playerId).toBe(created.playerId);
+    expect(controllerState?.sessionToken).toBe("");
+    expect(JSON.stringify(agent.sent)).not.toContain(created.sessionToken);
 
     await expect(
       execute(service, host, {

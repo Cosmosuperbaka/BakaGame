@@ -1,6 +1,6 @@
 import { createEvent } from "../../transport/Packets";
 import { getRoomRoleLimits } from "../../domain/Rules";
-import { redactPrivateState } from "../McpSeatRegistry";
+import { controllerPrivateState, redactPrivateState } from "../McpSeatRegistry";
 import {
   ROOM_ID_TEST_MODE,
   type ConnectionRecord,
@@ -397,7 +397,8 @@ export const privateStateForConnection = (
 ): WhoIsFakerPrivateState => {
   const state = buildPrivateState(service, room, player);
   const controller = service.mcpSeats.controllerFor(room.id, player.id);
-  if (!controller || controller.connectionId === connection.id) return state;
+  if (!controller) return state;
+  if (controller.connectionId === connection.id) return controllerPrivateState(state);
   return redactPrivateState(
     "faker",
     state as unknown as Record<string, unknown>

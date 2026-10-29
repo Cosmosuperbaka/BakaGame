@@ -184,6 +184,13 @@ const REDACTED_KEYS: Record<SeatGame, readonly string[]> = {
   ],
 };
 
+/**
+ * 控制器连接收到完整私有状态，但人类会话凭证除外：它只用于首次认领，之后 Agent 一律凭控制器令牌。
+ * 把原始凭证随私有状态继续推给 Agent，等于让它绕开控制器令牌、直接以人类身份重连或发命令。
+ */
+export const controllerPrivateState = <T extends object>(state: T): T =>
+  "sessionToken" in state ? { ...state, sessionToken: "" } : state;
+
 export const redactPrivateState = (
   game: SeatGame,
   state: Record<string, unknown>

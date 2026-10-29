@@ -117,7 +117,12 @@ import {
 import { type BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import { McpController, McpSeatRegistry, redactPrivateState } from "./McpSeatRegistry";
+import {
+  controllerPrivateState,
+  McpController,
+  McpSeatRegistry,
+  redactPrivateState,
+} from "./McpSeatRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import {
   AUDIO_READY_GRACE_MS,
@@ -3474,7 +3479,8 @@ export class SonGuessrService implements AdminRoomControl {
   ): SonGuessrPrivateState {
     const state = this.buildPrivateState(room, player);
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    if (!controller || controller.connectionId === connection.id) return state;
+    if (!controller) return state;
+    if (controller.connectionId === connection.id) return controllerPrivateState(state);
     return redactPrivateState(
       "song",
       state as unknown as Record<string, unknown>

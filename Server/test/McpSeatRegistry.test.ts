@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
-import { redactPrivateState } from "../src/application/McpSeatRegistry";
+import { controllerPrivateState, redactPrivateState } from "../src/application/McpSeatRegistry";
+
+test("控制器视图保留全部私有字段，只清掉人类会话凭证", () => {
+  const full = { playerId: "p1", sessionToken: "human-token", role: "civilian", word: "苹果" };
+  expect(controllerPrivateState(full)).toEqual({ ...full, sessionToken: "" });
+  // 没有凭证字段的私有状态原样返回，不平白多出一个空字段。
+  const tokenless = { playerId: "p1", canGuess: true };
+  expect(controllerPrivateState(tokenless)).toBe(tokenless);
+});
 
 test("接管座位的人类查看器保留渲染控件的能力位，但拿不到词语、答案与猜测内容", () => {
   const faker = redactPrivateState("faker", {
