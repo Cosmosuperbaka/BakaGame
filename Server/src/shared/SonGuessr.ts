@@ -855,7 +855,7 @@ export const SonGuessrPayloadSchemas = {
   "song.game.submitSong": t.Object(
     {
       songId,
-      /** 手动选定片段；缺省时沿用自动切片，越界或无效时服务端退回整曲。 */
+      /** 手动选定片段；缺省、越界或无效时服务端一律回退到自动随机切片，不退回整曲。 */
       clip: t.Optional(
         t.Object(
           {
