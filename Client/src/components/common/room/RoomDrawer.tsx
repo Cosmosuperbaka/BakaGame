@@ -59,7 +59,7 @@ export function RoomDrawer({
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="absolute inset-0 z-drawer bg-foreground/20 dark:bg-black/50"
+                className="scrim absolute inset-0 z-drawer"
               />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content

@@ -52,7 +52,7 @@ export function Sheet({
                 initial="initial"
                 animate="animate"
                 exit="exit"
-                className="fixed inset-0 z-overlay bg-foreground/25 backdrop-blur-[2px] dark:bg-black/50"
+                className="scrim fixed inset-0 z-overlay"
               />
             </DialogPrimitive.Overlay>
             <DialogPrimitive.Content
