@@ -124,8 +124,47 @@ describe("房间快照编排", () => {
     };
     saveRoomSnapshots(targets, 1_000);
 
-    const summary = restoreRoomSnapshots({ ...targets, now: () => 2_000 });
+    const errors: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const logger = {
+      info() {},
+      error: (message: string, context?: Record<string, unknown>) =>
+        errors.push({ message, context }),
+    };
+    const summary = restoreRoomSnapshots({ ...targets, now: () => 2_000, logger });
     expect(summary.restored).toEqual({ faker: 1, cee: 0 });
+    // 失败要按错误级别带上原因，否则「重启后某款房间全没了」在日志里无从查起。
+    expect(errors).toEqual([
+      {
+        message: "房间快照恢复失败，已跳过该游戏",
+        context: expect.objectContaining({ game: "cee", errorMessage: "boom" }),
+      },
+    ]);
+  });
+
+  test("导出侧抛错记错误日志，其余游戏照常保存", () => {
+    const errors: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const thrower: RoomSnapshotService = {
+      exportSnapshots: () => {
+        throw new Error("flatten failed");
+      },
+      restoreSnapshots: () => 0,
+    };
+    const summary = saveRoomSnapshots(
+      {
+        store: store(),
+        games: ["faker", "cee"],
+        services: { faker: fakeService().service, cee: thrower, song: fakeService().service },
+        logger: { info() {}, error: (message, context) => errors.push({ message, context }) },
+      },
+      1_000
+    );
+    expect(summary.saved).toEqual({ faker: 1 });
+    expect(errors).toEqual([
+      {
+        message: "房间快照导出失败，该游戏本次停机不保存",
+        context: expect.objectContaining({ game: "cee", errorMessage: "flatten failed" }),
+      },
+    ]);
   });
 
   test("没有快照时什么都不做", () => {

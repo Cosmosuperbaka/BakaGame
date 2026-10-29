@@ -1,6 +1,7 @@
 import type { SnapshottedRoom, RoomSnapshotGame } from "../shared/RoomSnapshot";
 import type { RoomSnapshotStore } from "../infrastructure/RoomSnapshotStore";
 import { SNAPSHOT_MAX_DOWNTIME_MS } from "../config/Constants";
+import { describeError } from "../infrastructure/EventLogger";
 
 /** 一款游戏的快照出入两端；三款服务的实现形态一致，编排只按名字取用。 */
 export interface RoomSnapshotService {
@@ -14,7 +15,10 @@ export interface RoomSnapshotTargets {
   games: readonly RoomSnapshotGame[];
   services: Record<RoomSnapshotGame, RoomSnapshotService>;
   now?: () => number;
-  logger?: { info(message: string, context?: Record<string, unknown>): void };
+  logger?: {
+    info(message: string, context?: Record<string, unknown>): void;
+    error(message: string, context?: Record<string, unknown>): void;
+  };
 }
 
 export interface SnapshotSaveSummary {
@@ -42,8 +46,13 @@ export const saveRoomSnapshots = (
   for (const game of targets.games) {
     try {
       saved[game] = targets.store.save(game, targets.services[game].exportSnapshots(), savedAt);
-    } catch {
-      // store 内部已降级为 no-op 并记过日志，这里只兜住导出侧的意外。
+    } catch (error) {
+      // 写盘失败由 store 自己降级记日志；走到这里的是导出侧（服务把房间摊平成快照）抛错，
+      // store 看不到它，不在这里记就成了「停机后房间全没了却查不到原因」。
+      targets.logger?.error("房间快照导出失败，该游戏本次停机不保存", {
+        game,
+        ...describeError(error),
+      });
     }
   }
   return { saved };
@@ -73,10 +82,10 @@ export const restoreRoomSnapshots = (targets: RoomSnapshotTargets): SnapshotRest
     }
     try {
       restored[game] = targets.services[game].restoreSnapshots(loaded.rooms, loaded.savedAt);
-    } catch {
+    } catch (error) {
       // 单款恢复失败不能让其余游戏与整个进程起不来：这一款退回「重启即清空」的旧行为。
       restored[game] = 0;
-      targets.logger?.info("房间快照恢复失败，已跳过该游戏", { game });
+      targets.logger?.error("房间快照恢复失败，已跳过该游戏", { game, ...describeError(error) });
     }
   }
 
