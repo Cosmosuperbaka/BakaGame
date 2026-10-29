@@ -226,6 +226,14 @@ export class CEENativeService {
           break;
         case "cee.game.imageHint":
           return this.imageHint(room, player);
+        default: {
+          // 编译期穷尽：新增 CEE 命令却没接到这里时类型检查不过，而不是全套测试照绿、运行时静默回 {}。
+          const unhandled: never = message;
+          throw new AppError(
+            "UNKNOWN_MESSAGE_TYPE",
+            `未处理的指令：${(unhandled as { type: string }).type}`
+          );
+        }
       }
       return {};
     } finally {
