@@ -10,9 +10,16 @@ import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp";
 import { staticShellPlugin } from "./scripts/vite-plugins/StaticShell";
 import { seoArtifactsPlugin } from "./scripts/vite-plugins/SeoArtifacts";
 import { generatedFontsPlugin } from "./scripts/vite-plugins/GeneratedFonts";
+import {
+  sentrySourcemapsPlugin,
+  sourcemapUploadEnabled,
+} from "./scripts/vite-plugins/SentrySourcemaps";
 
 export default defineConfig(({ command }) => {
   const emojiDir = path.resolve(import.meta.dirname, "./public/emojis");
+  const changelogPath = path.resolve(import.meta.dirname, "./src/data/changelog.json");
+  // source map 只在要上传的那次生产构建里产出（hidden：产物不带引用注释），上传后即删除。
+  const uploadSourcemaps = command === "build" && sourcemapUploadEnabled(process.env);
 
   return {
     // publicDir 交给 public-webp 插件在 config 钩子里给出：只读取配置的工具
@@ -62,13 +69,15 @@ export default defineConfig(({ command }) => {
       tailwindcss(),
       // 只有生产构建才走远端接口：开发期读本地 git 历史，离线可用且反映当前工作区。
       commitHistoryPlugin({ useRemote: command === "build" }),
-      appVersionPlugin(path.resolve(import.meta.dirname, "./src/data/changelog.json")),
+      appVersionPlugin(changelogPath),
       stickerManifestPlugin(emojiDir),
       creditsManifestPlugin(),
       publicWebpPlugin(),
       staticShellPlugin(),
       seoArtifactsPlugin(),
+      uploadSourcemaps ? sentrySourcemapsPlugin(changelogPath, process.env) : [],
     ],
+    build: { sourcemap: uploadSourcemaps ? "hidden" : false },
     resolve: {
       // 共享源码的运行依赖按客户端安装边界解析。独立安装的构建只在 Client 里
       // 装依赖：从 Server/src/shared 出发的裸导入必须落到这里的副本，

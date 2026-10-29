@@ -413,7 +413,13 @@ jobs:
       # `/api/*` 会被 WebView 的本地资源服务当成静态文件处理，找不到就回空/404，症状是
       # 「头像能看（<img> 走绝对地址）、昵称读不到、验证码发不出、WS 连不上、进不了对局」。
       # 网页端仍不注入（同源由边缘反代），所以这条只作用于壳内产物。
+      # 这份产物会被打进 APK 与热更新资源包，是真正上线的那份，所以由它把 source map 传给 Sentry；
+      # 凭据缺任一项时构建照常、只是不产出也不上传 map（见 Client/scripts/vite-plugins/SentrySourcemaps.ts）。
       - name: Build client assets
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: pnpm --filter client build
 
       # Capacitor 7 的 capacitor-android 模块自己声明 source/target 21，
