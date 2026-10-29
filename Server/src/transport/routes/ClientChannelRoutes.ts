@@ -45,11 +45,12 @@ const attestationSchema = t.Object(
  *
  * 三者都匿名可达：不设额度时，注册会把任意伪造的设备公钥逐条写进设备表，领挑战会
  * 把有界的待验挑战表刷满、挤掉正在验证中的真实设备。正常壳一次进房只走挑战 + 签名
- * 两步、注册只在首次安装，单来源额度留足重试余量即可；peer 与全局桶按整站流量放宽，
- * 只封顶伪造来源标头自造新桶的路径。
+ * 两步、注册只在首次安装；但聚会、校园网这类场景一屋子人共用一个出口地址，单来源额度
+ * 要按「十几个人同时进房再各重试一次」来留，不能按单台设备算。peer 与全局桶按整站流量
+ * 放宽，只封顶伪造来源标头自造新桶的路径。
  */
 const CLIENT_CHANNEL_WINDOW_MS = 60_000;
-const CLIENT_CHANNEL_IP_MAX_REQUESTS = 30;
+const CLIENT_CHANNEL_IP_MAX_REQUESTS = 120;
 const CLIENT_CHANNEL_PEER_MAX_REQUESTS = 3_000;
 const CLIENT_CHANNEL_GLOBAL_MAX_REQUESTS = 6_000;
 

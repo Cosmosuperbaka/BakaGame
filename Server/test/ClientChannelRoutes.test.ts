@@ -34,7 +34,8 @@ test("注册与领挑战按来源限流：同一来源超额 429，换来源照�
         body: JSON.stringify({ clientId: "client-abcdef" }),
       })
     );
-  for (let index = 0; index < 30; index += 1)
+  // 共用出口的一屋子玩家同时进房（每人挑战 + 签名两步）不能被误伤：额度按几十台设备留。
+  for (let index = 0; index < 120; index += 1)
     expect((await challenge("203.0.113.9")).status).toBe(200);
   const refused = await challenge("203.0.113.9");
   expect(refused.status).toBe(429);
