@@ -652,7 +652,7 @@ describe("Google 吊销状态列表", () => {
   test("结构不正确或顶层是数组时抛错，让缓存层沿用旧快照", () => {
     expect(() => parseRevocationStatus("{}")).toThrow(/容器/);
     expect(() => parseRevocationStatus("[]")).toThrow(/顶层/);
-    expect(() => parseRevocationStatus("not json")).toThrow();
+    expect(() => parseRevocationStatus("not json")).toThrow(SyntaxError);
   });
 
   test("首次拉取成功后缓存，TTL 内不再回源", async () => {

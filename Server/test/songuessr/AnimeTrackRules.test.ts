@@ -165,7 +165,9 @@ describe("SonGuessr 非歌音轨否决", () => {
       search: async () => [drama],
       getSong: async () => drama,
     };
-    await expect(animeSoloRound(musicProvider, bonusCdProvider([drama]))).rejects.toThrow();
+    await expect(animeSoloRound(musicProvider, bonusCdProvider([drama]))).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 
   test("原声带里的纯编号轨（M-815 / Track 01）一律否决", () => {
@@ -242,7 +244,9 @@ describe("SonGuessr 番剧级兜底归属证据", () => {
       search: async () => [song],
       getSong: async () => song,
     };
-    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow();
+    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 
   test("专辑名带动画发行上下文时照旧认归属", async () => {
@@ -266,7 +270,9 @@ describe("SonGuessr 番剧级兜底归属证据", () => {
       search: async () => [song],
       getSong: async () => song,
     };
-    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow();
+    await expect(soloRound(musicProvider, unreachableTrack)).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 });
 
@@ -897,7 +903,9 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => weak,
     };
 
-    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 
   test("专辑型关联条目改走「搜专辑 → 取专辑曲目」", async () => {
@@ -957,7 +965,9 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => otherAlbumTrack,
     };
 
-    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 
   test("专辑路径的子串命中在歌手对不上时须有番剧归属，同名无关专辑被拒", async () => {
@@ -993,7 +1003,9 @@ describe("SonGuessrService 猜番原版优先", () => {
       getSong: async () => foreignTrack,
     };
 
-    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow();
+    await expect(animeSoloRound(musicProvider, bangumiProvider)).rejects.toThrow(
+      expect.objectContaining({ code: "BANGUMI_NO_MUSIC" })
+    );
   });
 
   test("专辑路径的子串命中在专辑名自带番剧归属时放行", async () => {

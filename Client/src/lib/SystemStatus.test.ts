@@ -118,11 +118,15 @@ describe("公开状态接口客户端", () => {
   });
 
   it("响应结构不完整时拒绝", () => {
-    expect(() => parseSystemStatus({ ...valid, components: undefined })).toThrow();
-    expect(() => parseSystemStatus({ ...valid, level: "ok" })).toThrow();
-    expect(() => parseSystemStatus({ ...valid, observedAt: Number.NaN })).toThrow();
-    expect(() => parseSystemStatus({ ...valid, version: 1 })).toThrow();
-    expect(() => parseSystemStatus(null)).toThrow();
+    expect(() => parseSystemStatus({ ...valid, components: undefined })).toThrow(
+      "状态接口返回了无效数据"
+    );
+    expect(() => parseSystemStatus({ ...valid, level: "ok" })).toThrow("状态接口返回了无效数据");
+    expect(() => parseSystemStatus({ ...valid, observedAt: Number.NaN })).toThrow(
+      "状态接口返回了无效数据"
+    );
+    expect(() => parseSystemStatus({ ...valid, version: 1 })).toThrow("状态接口返回了无效数据");
+    expect(() => parseSystemStatus(null)).toThrow("状态接口返回了无效数据");
   });
 
   it("请求 /api/status，非 2xx 时抛错", async () => {
@@ -136,7 +140,7 @@ describe("公开状态接口客户端", () => {
       "fetch",
       vi.fn(async () => new Response("{}", { status: 503 }))
     );
-    await expect(fetchSystemStatus()).rejects.toThrow();
+    await expect(fetchSystemStatus()).rejects.toThrow("状态接口返回 HTTP 503");
   });
 });
 
@@ -186,14 +190,14 @@ describe("公开状态历史客户端", () => {
   });
 
   it("历史结构不完整时拒绝，请求非 2xx 时抛错", async () => {
-    expect(() => parseStatusHistory({ days: 3 })).toThrow();
-    expect(() => parseStatusHistory(null)).toThrow();
+    expect(() => parseStatusHistory({ days: 3 })).toThrow("历史接口返回了无效数据");
+    expect(() => parseStatusHistory(null)).toThrow("历史接口返回了无效数据");
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 503 }))
     );
-    await expect(fetchStatusHistory()).rejects.toThrow();
+    await expect(fetchStatusHistory()).rejects.toThrow("历史接口返回 HTTP 503");
   });
 
   it("请求 /api/status/history", async () => {
@@ -232,14 +236,14 @@ describe("公开实时条带客户端", () => {
   });
 
   it("结构不完整时拒绝，请求非 2xx 时抛错", async () => {
-    expect(() => parseStatusRealtime({ entries: [] })).toThrow();
-    expect(() => parseStatusRealtime(null)).toThrow();
+    expect(() => parseStatusRealtime({ entries: [] })).toThrow("实时接口返回了无效数据");
+    expect(() => parseStatusRealtime(null)).toThrow("实时接口返回了无效数据");
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 503 }))
     );
-    await expect(fetchStatusRealtime()).rejects.toThrow();
+    await expect(fetchStatusRealtime()).rejects.toThrow("实时接口返回 HTTP 503");
   });
 
   it("请求 /api/status/realtime", async () => {
@@ -280,14 +284,14 @@ describe("公开状态事件客户端", () => {
   });
 
   it("结构不完整时拒绝，请求非 2xx 时抛错", async () => {
-    expect(() => parseStatusEvents({ events: "none" })).toThrow();
-    expect(() => parseStatusEvents(null)).toThrow();
+    expect(() => parseStatusEvents({ events: "none" })).toThrow("事件接口返回了无效数据");
+    expect(() => parseStatusEvents(null)).toThrow("事件接口返回了无效数据");
 
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("{}", { status: 503 }))
     );
-    await expect(fetchStatusEvents()).rejects.toThrow();
+    await expect(fetchStatusEvents()).rejects.toThrow("事件接口返回 HTTP 503");
   });
 
   it("请求 /api/status/events", async () => {

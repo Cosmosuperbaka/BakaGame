@@ -31,10 +31,16 @@ describe("MusicUrn", () => {
   });
 
   test("对裸数字或无前缀ID严格抛出异常 (不保留任何兼容逻辑)", () => {
-    expect(() => parseSongUrn("1899705498")).toThrow();
-    expect(() => parseSongUrn("0017K7gL4WYnw2")).toThrow();
-    expect(() => parseSongUrn("kugou:123")).toThrow();
-    expect(() => parseSongUrn("")).toThrow();
+    expect(() => parseSongUrn("1899705498")).toThrow(
+      expect.objectContaining({ code: "INVALID_SONG_URN" })
+    );
+    expect(() => parseSongUrn("0017K7gL4WYnw2")).toThrow(
+      expect.objectContaining({ code: "INVALID_SONG_URN" })
+    );
+    expect(() => parseSongUrn("kugou:123")).toThrow(
+      expect.objectContaining({ code: "INVALID_SONG_URN" })
+    );
+    expect(() => parseSongUrn("")).toThrow(expect.objectContaining({ code: "INVALID_SONG_URN" }));
   });
 
   test("格式化 URN", () => {

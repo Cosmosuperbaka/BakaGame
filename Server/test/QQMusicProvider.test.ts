@@ -247,8 +247,12 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
 describe("QQMusicProvider · 歌曲 ID（URN）校验", () => {
   it("拒绝空 ID、非 qq 平台 URN，接受裸 mid 与 qq URN", async () => {
     const provider = new QQMusicProvider();
-    await expect(provider.getSongMetadata("")).rejects.toThrow();
-    await expect(provider.getSongMetadata("netease:123")).rejects.toThrow();
+    await expect(provider.getSongMetadata("")).rejects.toThrow(
+      expect.objectContaining({ code: "INVALID_SONG" })
+    );
+    await expect(provider.getSongMetadata("netease:123")).rejects.toThrow(
+      expect.objectContaining({ code: "INVALID_PLATFORM" })
+    );
   });
 });
 
@@ -290,7 +294,9 @@ describe("QQMusicProvider · getSongMetadata", () => {
       status: 200,
       body: { data: { track_info: {} } },
     })) as any;
-    await expect(provider.getSongMetadata("qq:nope")).rejects.toThrow();
+    await expect(provider.getSongMetadata("qq:nope")).rejects.toThrow(
+      expect.objectContaining({ code: "INVALID_SONG" })
+    );
   });
 
   it("元数据第二次请求命中缓存", async () => {
@@ -414,7 +420,9 @@ describe("QQMusicProvider · getSong 与音频直链", () => {
     qqmusic.lyric = mock(async () => ({ status: 200, body: { lyric: LRC } })) as any;
     qqmusic.song_url = mock(async () => ({ status: 200, body: { data: [{}] } })) as any;
 
-    await expect(provider.getSong("qq:noaudio")).rejects.toThrow();
+    await expect(provider.getSong("qq:noaudio")).rejects.toThrow(
+      expect.objectContaining({ code: "SONG_UNAVAILABLE" })
+    );
   });
 
   it("refreshSongAudio 绕过缓存重新取直链", async () => {
@@ -464,7 +472,9 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
 
   it("getPlaylistSongs 对无数字 ID 抛 INVALID_PLAYLIST", async () => {
     const provider = new QQMusicProvider();
-    await expect(provider.getPlaylistSongs("abc")).rejects.toThrow();
+    await expect(provider.getPlaylistSongs("abc")).rejects.toThrow(
+      expect.objectContaining({ code: "INVALID_PLAYLIST" })
+    );
   });
 
   it("searchArtists 映射歌手与头像", async () => {

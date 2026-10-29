@@ -13,7 +13,7 @@ describe("Database（启动连通性检查的失败语义）", () => {
       onRetry: ({ attempt }) => attempts.push(attempt),
     });
 
-    await expect(database.ready).rejects.toThrow();
+    await expect(database.ready).rejects.toThrow("Failed query: SELECT 1");
     expect(attempts).toEqual([1]);
     await database.close();
   });
@@ -25,7 +25,7 @@ describe("Database（启动连通性检查的失败语义）", () => {
       onRetry: ({ attempt }) => attempts.push(attempt),
     });
 
-    await expect(database.ready).rejects.toThrow();
+    await expect(database.ready).rejects.toThrow("Failed query: SELECT 1");
     expect(attempts).toEqual([]);
     await database.close();
   });

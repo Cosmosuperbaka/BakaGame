@@ -112,7 +112,7 @@ test("元数据只含 schemaVersion、完整 SHA 和稳定版本，拒绝无效�
     "a".repeat(64),
     `${SHA}\n`,
   ])
-    expect(() => buildServerReleaseMetadata(revision, changelog)).toThrow();
+    expect(() => buildServerReleaseMetadata(revision, changelog)).toThrow("完整 40 位小写 Git SHA");
   expect(() => buildServerReleaseMetadata(SHA, { entries: [] })).toThrow(/稳定 semver/);
   for (const value of [
     null,
