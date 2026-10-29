@@ -480,28 +480,32 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
     expect(client.currentPlayerId("faker")).toBe("p7");
   });
 
-  test("凭据失效时丢弃座位，下一次连接不再尝试接回", async () => {
-    const { socket, client } = await harness();
-    await client.create("faker", "1234", {
-      name: "f",
-      visibility: "public",
-      allowSpectators: true,
-      allowAgents: true,
-      userName: "TestAgent",
-    });
-    socket.route((message) =>
-      message.type === "room.reconnect"
-        ? { reply: { type: "error", error: { code: "SESSION_INVALID", message: "凭据失效" } } }
-        : { reply: { type: "ack", payload: { ok: true } } }
-    );
-    socket.drop();
-    const failure = await sendAfterDrop(client, socket);
-    expect(failure).toMatchObject({ ok: false, message: "凭据失效" });
-    // 座位已被丢弃：下一次连接不再尝试接回，而是直接以无座位状态发命令。
-    socket.inbound.length = 0;
-    await client.sendInRoom("faker", "game.advancePhase");
-    expect(socket.inbound.map((message) => message.type)).toEqual(["game.advancePhase"]);
-  });
+  // SESSION_NOT_FOUND 是控制器令牌对应的座位已不在时服务端实际回的码。
+  test.each(["SESSION_INVALID", "SESSION_NOT_FOUND"])(
+    "凭据失效（%s）时丢弃座位，下一次连接不再尝试接回",
+    async (code) => {
+      const { socket, client } = await harness();
+      await client.create("faker", "1234", {
+        name: "f",
+        visibility: "public",
+        allowSpectators: true,
+        allowAgents: true,
+        userName: "TestAgent",
+      });
+      socket.route((message) =>
+        message.type === "room.reconnect"
+          ? { reply: { type: "error", error: { code, message: "凭据失效" } } }
+          : { reply: { type: "ack", payload: { ok: true } } }
+      );
+      socket.drop();
+      const failure = await sendAfterDrop(client, socket);
+      expect(failure).toMatchObject({ ok: false, message: "凭据失效" });
+      // 座位已被丢弃：下一次连接不再尝试接回，而是直接以无座位状态发命令。
+      socket.inbound.length = 0;
+      await client.sendInRoom("faker", "game.advancePhase");
+      expect(socket.inbound.map((message) => message.type)).toEqual(["game.advancePhase"]);
+    }
+  );
 
   test("网络抖动不算凭据失效，座位留给下一次重试", async () => {
     const { socket, client } = await harness();

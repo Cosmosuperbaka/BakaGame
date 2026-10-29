@@ -1,6 +1,7 @@
 import { applyPatch } from "fast-json-patch";
 import type { AgentFocusInput, SiteFocusPayload } from "../shared/AgentActivity";
 import { isRecord } from "../shared/Json";
+import { isPermanentRoomError } from "../shared/Model";
 import { GAME_IDS, type GameId } from "../shared/Protocol";
 import { SeatUi } from "./ui/SeatUi";
 
@@ -676,15 +677,9 @@ export class AgentGameClient {
         sessionToken: session.sessionToken,
       });
     } catch (error) {
-      const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
-      if (
-        code === "SESSION_INVALID" ||
-        code === "SESSION_EXPIRED" ||
-        code === "ROOM_NOT_FOUND" ||
-        code === "ROOM_CLOSED"
-      ) {
-        this.seats.delete(game);
-      }
+      // 与玩家客户端同一张永久码表：手写一份会漏掉服务端实际发出的码（如 SESSION_NOT_FOUND），
+      // 死座位就会被反复拿去重连。
+      if (isPermanentRoomError(error)) this.seats.delete(game);
       throw error;
     }
   }
