@@ -3,7 +3,6 @@ import { createServer, type Server as HttpServer } from "node:http";
 import { createRequire } from "node:module";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { once } from "node:events";
 import { io as connect } from "socket.io-client";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
 import type { CEEDataProvider, CEERawCharacter } from "../src/infrastructure/CEEData";
@@ -16,6 +15,7 @@ import {
 
 const originalRoot = resolve(import.meta.dir, "../../../anime-character-guessr/server");
 const sourceAvailable = existsSync(resolve(originalRoot, "utils/socket.js"));
+const LOCAL_AES_SECRET = "local-integration-secret";
 const character = (id: number): CEECharacterView => ({
   id,
   name: `角色${id}`,
@@ -59,6 +59,12 @@ const data: CEEDataProvider = {
   async resolveCharacterImage() {
     return undefined;
   },
+  async getSubjects() {
+    return [];
+  },
+  async resolveSubjectImage() {
+    return undefined;
+  },
   close() {},
 };
 /**
@@ -80,6 +86,8 @@ test.skipIf(!sourceAvailable)(
         options: { path: string }
       ) => { close(callback: () => void): void };
     };
+    // 两端用同一把本地密钥：bun 会自动加载 .env，读那里的真实密钥只会让本地原版解不开答案。
+    process.env.AES_SECRET = LOCAL_AES_SECRET;
     const setupSocket = requireOriginal("./utils/socket.js") as (
       io: unknown,
       rooms: Map<string, unknown>
@@ -100,11 +108,22 @@ test.skipIf(!sourceAvailable)(
     const service = new CEEOriginalService({
       data,
       serverUrl: url,
-      aesSecret: process.env.CCB_ORIGINAL_AES_SECRET || "My-Secret-Key",
+      aesSecret: LOCAL_AES_SECRET,
     });
     const tokens = new Map<string, string>();
+    // 入房走统一房号目录给出的目标；联调直接按「别名即上游房号」构造，同 CEEOriginalService 单测。
+    const target = (roomId = "1234") => ({
+      source: "original" as const,
+      roomId,
+      upstreamRoomId: roomId,
+    });
     const execute = async (id: string, message: CEEClientMessage): Promise<unknown> => {
-      const result = await service.execute(id, { ...message, sessionToken: tokens.get(id) });
+      const result =
+        message.type === "cee.room.create"
+          ? await service.create(id, target(message.payload.roomId), message.payload)
+          : message.type === "cee.room.join"
+            ? await service.join(id, target(message.roomId), message.payload)
+            : await service.execute(id, { ...message, sessionToken: tokens.get(id) });
       if (
         result &&
         typeof result === "object" &&
@@ -119,6 +138,11 @@ test.skipIf(!sourceAvailable)(
       transports: ["websocket"],
       reconnection: false,
     });
+    // socket.io 客户端不是 EventTarget，node:events 的 once 类型对不上，这里自己包一层。
+    const next = (event: string) =>
+      new Promise<unknown[]>((resolve) =>
+        original.once(event, (...args: unknown[]) => resolve(args))
+      );
     const packets: unknown[] = [];
     service.registerConnection({
       id: "host",
@@ -146,15 +170,15 @@ test.skipIf(!sourceAvailable)(
         },
       })) as CEERoomEnterResult;
       expect(entered.snapshot.name).toBe("混合联调");
-      if (!original.connected) await once(original, "connect");
+      if (!original.connected) await next("connect");
       original.emit("joinRoom", { roomId: "1234", username: "原版玩家" });
-      await once(original, "updatePlayers");
+      await next("updatePlayers");
       original.emit("toggleReady", { roomId: "1234" });
       await execute("guest", {
         id: "join",
         type: "cee.room.join",
         roomId: "1234",
-        payload: { source: "original", userName: "增强玩家" },
+        payload: { userName: "增强玩家" },
       });
       await execute("guest", { id: "ready", type: "cee.player.ready", payload: { ready: true } });
       await execute("host", {
@@ -195,7 +219,7 @@ test.skipIf(!sourceAvailable)(
       expect(firstRound.tagBanApplied).toBe(true);
       expect((await state()).snapshot.syncRound).toBe(2);
       await execute("guest", { id: "win1", type: "cee.game.guess", payload: { characterId: 900 } });
-      const ending = once(original, "gameEnded");
+      const ending = next("gameEnded");
       const win = await original.timeout(3000).emitWithAck("playerGuess", {
         roomId: "1234",
         sharedMetaTags: [],

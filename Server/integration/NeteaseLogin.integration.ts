@@ -11,7 +11,8 @@ test("真实网易云 Cookie 可以校验账号并读取会员状态", async () 
   const provider = new NeteaseMusicProvider();
   const session = await provider.getLoginStatus(cookie);
   expect(session.account.nickname.length).toBeGreaterThan(0);
-  expect(["vip", "nonVip", "unknown"]).toContain(session.account.vipStatus);
+  // 缺字段同样算失败：真实接口少给会员状态，正是这条联调要抓的变化。
+  expect(["vip", "nonVip", "unknown"]).toContain(session.account.vipStatus ?? "");
 });
 
 test("真实网易云二维码登录入口可以生成二维码", async () => {
