@@ -50,7 +50,11 @@ vi.mock("@/lib/WhoIsFakerWs", () => ({
 }));
 
 import { getSessionToken, saveSessionToken } from "@/lib/Storage";
-import { initWhoIsFakerWs as initGameSocket, useWhoIsFakerStore } from "./UseWhoIsFakerStore";
+import {
+  initWhoIsFakerWs as initGameSocket,
+  useWhoIsFakerStore,
+  withChannelNotices,
+} from "./UseWhoIsFakerStore";
 
 const initialState = useWhoIsFakerStore.getState();
 
@@ -308,13 +312,13 @@ describe("game store integration", () => {
     );
   });
 
-  it("keeps the current round summary when a transient game-over snapshot omits it", () => {
+  it("结算摘要只认服务端快照：快照不带摘要时不回填上一份", () => {
+    // 摘要与 gameOver 在服务端同一步写入并随快照下发；旧的独立摘要事件已删除，
+    // 客户端再回填只会把服务端已经清掉的结算重新显示出来。
     useWhoIsFakerStore.getState().setSnapshot(gameOverSnapshot("round-1", roundSummary));
-    useWhoIsFakerStore.getState().setSnapshot(gameOverSnapshot("round-1"));
-
     expect(useWhoIsFakerStore.getState().snapshot?.summary).toEqual(roundSummary);
 
-    useWhoIsFakerStore.getState().setSnapshot(gameOverSnapshot("round-2"));
+    useWhoIsFakerStore.getState().setSnapshot(gameOverSnapshot("round-1"));
     expect(useWhoIsFakerStore.getState().snapshot?.summary).toBeUndefined();
   });
 
@@ -442,7 +446,7 @@ describe("game store integration", () => {
     };
 
     useWhoIsFakerStore.getState().setSnapshot(ingameAlive);
-    expect(useWhoIsFakerStore.getState().snapshot?.chat).toHaveLength(0);
+    expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
 
     // 玩家被淘汰 -> 触发进入观战频道提示
     const ingameDead: WhoIsFakerRoomSnapshot = {
@@ -456,7 +460,7 @@ describe("game store integration", () => {
     };
 
     useWhoIsFakerStore.getState().setSnapshot(ingameDead);
-    const chatAfterDead = useWhoIsFakerStore.getState().snapshot?.chat ?? [];
+    const chatAfterDead = useWhoIsFakerStore.getState().channelNotices;
     expect(chatAfterDead).toHaveLength(1);
     expect(chatAfterDead[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
 
@@ -468,10 +472,14 @@ describe("game store integration", () => {
 
     useWhoIsFakerStore.getState().setSnapshot(gameOverState);
     vi.advanceTimersByTime(1500);
-    const chatAfterGameOver = useWhoIsFakerStore.getState().snapshot?.chat ?? [];
+    const chatAfterGameOver = useWhoIsFakerStore.getState().channelNotices;
     expect(chatAfterGameOver).toHaveLength(2);
     expect(chatAfterGameOver[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
     expect(chatAfterGameOver[1]?.text).toBe("已返回公共聊天频道，所有玩家均可见发言");
+    // 本地提示不进服务端投影，只在展示时并入。
+    const { snapshot, channelNotices } = useWhoIsFakerStore.getState();
+    expect(snapshot?.chat).toEqual([]);
+    expect(withChannelNotices(snapshot!.chat, channelNotices)).toHaveLength(2);
   });
 
   it("keeps spectators in main channel during assigningQuestioner and wordSubmission, and transitions to ghost upon description", () => {
@@ -504,7 +512,7 @@ describe("game store integration", () => {
       chat: [],
     };
     useWhoIsFakerStore.getState().setSnapshot(assigningState);
-    expect(useWhoIsFakerStore.getState().snapshot?.chat).toHaveLength(0);
+    expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
 
     // 2. 出题阶段 -> 保持在 main 频道，无进入观战频道提示
     const wordSubState: WhoIsFakerRoomSnapshot = {
@@ -512,7 +520,7 @@ describe("game store integration", () => {
       status: { phase: "wordSubmission", roundId: "round-spec", started: true, day: 1 },
     };
     useWhoIsFakerStore.getState().setSnapshot(wordSubState);
-    expect(useWhoIsFakerStore.getState().snapshot?.chat).toHaveLength(0);
+    expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
 
     // 3. 描述阶段（正式开局）-> 触发进入观战频道提示
     const descState: WhoIsFakerRoomSnapshot = {
@@ -520,7 +528,7 @@ describe("game store integration", () => {
       status: { phase: "description", roundId: "round-spec", started: true, day: 1 },
     };
     useWhoIsFakerStore.getState().setSnapshot(descState);
-    const chat = useWhoIsFakerStore.getState().snapshot?.chat ?? [];
+    const chat = useWhoIsFakerStore.getState().channelNotices;
     expect(chat).toHaveLength(1);
     expect(chat[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
   });

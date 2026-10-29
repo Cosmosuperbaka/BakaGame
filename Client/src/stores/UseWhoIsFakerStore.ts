@@ -22,6 +22,8 @@ export interface ToastItem {
   type: "info" | "error" | "success";
 }
 
+type WhoIsFakerChatMessage = WhoIsFakerRoomSnapshot["chat"][number];
+
 export interface WhoIsFakerGameState {
   connected: boolean;
   /** 本次连接已收到首个房间列表；断线复位。大厅据此区分「加载中」与「暂无房间」。 */
@@ -33,6 +35,12 @@ export interface WhoIsFakerGameState {
   privateState: WhoIsFakerPrivateState | null;
   agentFocus: AgentFocusEvent | null;
   toasts: ToastItem[];
+  /**
+   * 本机生成的频道切换提示（进入观战频道 / 返回公共频道）。
+   * 与 `snapshot` 分开存：快照只放服务端下发的投影，本地提示混进去就分不清哪些是房间事实；
+   * 展示时由 `withChannelNotices` 按时间并入聊天列表。
+   */
+  channelNotices: WhoIsFakerChatMessage[];
   /**
    * 房间被服务端关闭的时刻。房间页据此立刻退回大厅：
    * 关闭是一次明确的服务端事件，不能靠「没有快照」这种同时也匹配初次挂载的推断来判断。
@@ -143,53 +151,47 @@ const computePlayerChannel = (
   return isDeadOrSpectator ? "ghost" : "main";
 };
 
-const applyChannelTransitions = (
+const channelNotice = (
+  kind: "init" | "trans",
+  channel: "main" | "ghost"
+): WhoIsFakerChatMessage => ({
+  id: `local-chan-${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  playerId: "system",
+  playerName: "系统",
+  text:
+    channel === "ghost"
+      ? "已进入观战频道，发言仅对淘汰玩家与观战者可见"
+      : "已返回公共聊天频道，所有玩家均可见发言",
+  createdAt: Date.now(),
+  system: true,
+  channel,
+});
+
+/** 只算出这次快照是否让本机玩家换了频道，返回要追加的本地提示；不改快照。 */
+const channelTransitionNotice = (
   snapshot: WhoIsFakerRoomSnapshot,
   playerId: string | null | undefined
-): WhoIsFakerRoomSnapshot => {
-  if (!playerId) return snapshot;
+): WhoIsFakerChatMessage | undefined => {
+  if (!playerId) return undefined;
   const currentKey = `${snapshot.roomId}:${snapshot.status.roundId ?? snapshot.status.phase ?? "lobby"}`;
   const nextChannel = computePlayerChannel(snapshot, playerId);
 
   if (lastRoomAndRoundKey !== currentKey) {
     lastRoomAndRoundKey = currentKey;
     lastPlayerChannel = nextChannel;
-    if (nextChannel === "ghost") {
-      const notice: WhoIsFakerRoomSnapshot["chat"][number] = {
-        id: `local-chan-init-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        playerId: "system",
-        playerName: "系统",
-        text: "已进入观战频道，发言仅对淘汰玩家与观战者可见",
-        createdAt: Date.now(),
-        system: true,
-        channel: "ghost",
-      };
-      return { ...snapshot, chat: mergeChat(snapshot.chat, [notice]) };
-    }
-    return snapshot;
+    return nextChannel === "ghost" ? channelNotice("init", "ghost") : undefined;
   }
 
-  if (lastPlayerChannel && lastPlayerChannel !== nextChannel) {
-    const noticeText =
-      nextChannel === "ghost"
-        ? "已进入观战频道，发言仅对淘汰玩家与观战者可见"
-        : "已返回公共聊天频道，所有玩家均可见发言";
-    const notice: WhoIsFakerRoomSnapshot["chat"][number] = {
-      id: `local-chan-trans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      playerId: "system",
-      playerName: "系统",
-      text: noticeText,
-      createdAt: Date.now(),
-      system: true,
-      channel: nextChannel,
-    };
-    lastPlayerChannel = nextChannel;
-    return { ...snapshot, chat: mergeChat(snapshot.chat, [notice]) };
-  }
-
+  const changed = lastPlayerChannel && lastPlayerChannel !== nextChannel;
   lastPlayerChannel = nextChannel;
-  return snapshot;
+  return changed ? channelNotice("trans", nextChannel) : undefined;
 };
+
+/** 聊天面板的展示列表：服务端聊天与本机频道提示按时间合并。 */
+export const withChannelNotices = (
+  chat: WhoIsFakerRoomSnapshot["chat"],
+  notices: readonly WhoIsFakerChatMessage[]
+): WhoIsFakerRoomSnapshot["chat"] => (notices.length ? mergeChat(chat, [...notices]) : chat);
 
 const requestFullSync = () => {
   if (syncRequestPending) return;
@@ -240,6 +242,15 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       }
     },
   }));
+  const noticeUpdate = (
+    snapshot: WhoIsFakerRoomSnapshot,
+    playerId: string | null | undefined
+  ): Partial<WhoIsFakerGameState> => {
+    const notice = channelTransitionNotice(snapshot, playerId);
+    return notice
+      ? { channelNotices: [...get().channelNotices, notice].slice(-MAX_CHAT_MESSAGES) }
+      : {};
+  };
   return {
     connected: false,
     lobbyReady: false,
@@ -250,14 +261,22 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     privateState: null,
     agentFocus: null,
     toasts: [],
+    channelNotices: [],
     roomClosedAt: null,
     phaseTimedOutEndsAt: null,
 
     setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
     setRooms: (rooms) => set({ rooms, lobbyReady: true }),
     joinRoomState: (roomId, sessionToken) => {
-      if (get().roomId !== roomId) resetWhoIsFakerStateSync();
-      set({ roomId, sessionToken, roomClosedAt: null, phaseTimedOutEndsAt: null });
+      const changedRoom = get().roomId !== roomId;
+      if (changedRoom) resetWhoIsFakerStateSync();
+      set({
+        roomId,
+        sessionToken,
+        roomClosedAt: null,
+        phaseTimedOutEndsAt: null,
+        ...(changedRoom ? { channelNotices: [] } : {}),
+      });
     },
     leaveRoomState: () => {
       resetWhoIsFakerStateSync();
@@ -269,6 +288,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         snapshot: null,
         privateState: null,
         agentFocus: null,
+        channelNotices: [],
         phaseTimedOutEndsAt: null,
         roomClosedAt: null,
       });
@@ -285,33 +305,26 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         return;
       }
       // 出局后的停顿由服务端的阶段反馈承担，这里不再暂扣结算快照。
+      // 结算摘要也只认服务端：gameOver 与 summary 在服务端同一步写入，客户端不回填旧摘要。
       const previousSnapshot = get().snapshot;
-      const previousSummary =
-        incomingSnapshot.status.phase === "gameOver" &&
-        !incomingSnapshot.summary &&
-        previousSnapshot?.status.roundId === incomingSnapshot.status.roundId
-          ? previousSnapshot?.summary
-          : undefined;
-      let snapshot = previousSummary
-        ? { ...incomingSnapshot, summary: previousSummary }
-        : incomingSnapshot;
-      snapshot = { ...snapshot, chat: snapshot.chat.slice(-MAX_CHAT_MESSAGES) };
+      let snapshot = {
+        ...incomingSnapshot,
+        chat: incomingSnapshot.chat.slice(-MAX_CHAT_MESSAGES),
+      };
 
+      // 服务端只保留最近一段聊天，同房间内把已收到的历史续上，供玩家往回翻。
       if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
         snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
       }
 
-      set({ snapshot: applyChannelTransitions(snapshot, get().privateState?.playerId) });
+      set({ snapshot, ...noticeUpdate(snapshot, get().privateState?.playerId) });
     },
     applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
     setPrivateState: (privateState) => {
       set({ privateState });
       const currentSnapshot = get().snapshot;
       if (currentSnapshot && privateState?.playerId) {
-        const updated = applyChannelTransitions(currentSnapshot, privateState.playerId);
-        if (updated !== currentSnapshot) {
-          set({ snapshot: updated });
-        }
+        set(noticeUpdate(currentSnapshot, privateState.playerId));
       }
     },
     setAgentFocus: (agentFocus) => set({ agentFocus }),

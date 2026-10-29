@@ -25,7 +25,7 @@ import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
 import { duration, iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
-import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
   PLAYER_COLUMN_WIDTH,
   PlayerList,
@@ -227,6 +227,11 @@ export default function WhoIsFakerRoomPage() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const roomClosedAt = useWhoIsFakerStore((s) => s.roomClosedAt);
+  const channelNotices = useWhoIsFakerStore((s) => s.channelNotices);
+  const chatMessages = useMemo(
+    () => withChannelNotices(snapshot?.chat ?? [], channelNotices),
+    [snapshot?.chat, channelNotices]
+  );
   const alreadyInRoom = storeRoomId === roomId && snapshot?.roomId === roomId;
 
   const handleSendChatMessage = useCallback(
@@ -636,7 +641,7 @@ export default function WhoIsFakerRoomPage() {
         chat={
           <ChatColumn>
             <ChatPanel
-              messages={snapshot?.chat ?? []}
+              messages={chatMessages}
               players={snapshot?.players ?? []}
               myPlayerId={privateState?.playerId}
               onSendMessage={handleSendChatMessage}
@@ -683,7 +688,7 @@ export default function WhoIsFakerRoomPage() {
             closeFrom: "xl",
             content: (
               <ChatPanel
-                messages={snapshot?.chat ?? []}
+                messages={chatMessages}
                 players={snapshot?.players ?? []}
                 myPlayerId={privateState?.playerId}
                 onSendMessage={handleSendChatMessage}
