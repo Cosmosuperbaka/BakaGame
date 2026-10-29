@@ -15,7 +15,7 @@ import {
 } from "@bakagame/shared";
 import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
-import type { PlayerListHistory } from "@/components/whoisfaker/layout/PlayerList";
+import type { PlayerListHistory } from "@/components/whoisfaker/layout/FakerPlayerList";
 import { presetWhoIsFaker } from "@/stories/StorePresets";
 import { STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS } from "./Common";
 

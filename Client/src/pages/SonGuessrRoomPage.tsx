@@ -8,8 +8,8 @@ import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
 import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
-import { PlayerList } from "@/components/songuessr/PlayerList";
-import { VolumeControl } from "@/components/songuessr/layout/VolumeControl";
+import { SongPlayerList } from "@/components/songuessr/SongPlayerList";
+import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
@@ -188,7 +188,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
         }
         actions={
           <>
-            <VolumeControl volume={volume} onVolumeChange={setVolume} />
+            <SongVolumeControl volume={volume} onVolumeChange={setVolume} />
             <RoomUtilityActions game="song" />
           </>
         }
@@ -197,7 +197,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           solo ? undefined : (
             <PlayerColumn>
               <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-                <PlayerList
+                <SongPlayerList
                   players={snapshot.players}
                   myPlayerId={privateState.playerId}
                   isHost={isHost}
@@ -288,7 +288,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   title: "玩家",
                   closeFrom: "md",
                   content: (
-                    <PlayerList
+                    <SongPlayerList
                       players={snapshot.players}
                       myPlayerId={privateState.playerId}
                       isHost={isHost}

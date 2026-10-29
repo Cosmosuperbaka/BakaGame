@@ -28,14 +28,14 @@ import { duration, iconTappable, spring, springSettleMs, wordRevealTiming } from
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
   PLAYER_COLUMN_WIDTH,
-  PlayerList,
+  FakerPlayerList,
   type PlayerListHistory,
   type PlayerMark,
   type PlayerMarks,
-} from "@/components/whoisfaker/layout/PlayerList";
+} from "@/components/whoisfaker/layout/FakerPlayerList";
 import { buildDescriptionColumns, pendingColumn } from "@/lib/DescriptionColumns";
-import { AssignedWord } from "@/components/whoisfaker/layout/AssignedWord";
-import { GameArea } from "@/components/whoisfaker/layout/GameArea";
+import { FakerAssignedWord } from "@/components/whoisfaker/layout/FakerAssignedWord";
+import { FakerGameArea } from "@/components/whoisfaker/layout/FakerGameArea";
 import { ChatPanel } from "@/components/common/ChatPanel";
 import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
@@ -105,7 +105,7 @@ function RoomHeaderCenter({
           className="hidden xl:inline-flex"
         />
       ) : null}
-      {/* 词语停靠位。真实词语由 AssignedWord 以固定定位覆盖在此，
+      {/* 词语停靠位。真实词语由 FakerAssignedWord 以固定定位覆盖在此，
         此处只占位撑开顶栏空间，避免停靠时挤动相邻元素；停靠后的词语对读屏隐藏，由这里读出。 */}
       {privateInfoVisible && assignedWordText ? (
         <span
@@ -256,7 +256,7 @@ export default function WhoIsFakerRoomPage() {
   // 不会在切换按钮已隐藏时仍盖住游戏区，也不会在下一局一进描述阶段就自己弹开。
   const [historyRoundKey, setHistoryRoundKey] = useState<string | null>(null);
   const [historyDrawerRoundKey, setHistoryDrawerRoundKey] = useState<string | null>(null);
-  // 延迟清除：宽度动画收回期间保持 history prop，避免 PlayerList 瞬间膨胀
+  // 延迟清除：宽度动画收回期间保持 history prop，避免 FakerPlayerList 瞬间膨胀
   const [historyRendered, setHistoryRendered] = useState(false);
   // 身份预测推理笔记按局次 (roundId) 隔离，换局自动读取新局空映射，杜绝渲染期 setState 截断
   const [playerMarksByRound, setPlayerMarksByRound] = useState<Record<string, PlayerMarks>>({});
@@ -521,7 +521,7 @@ export default function WhoIsFakerRoomPage() {
   const historyDrawerOpen = historyAvailable && historyDrawerRoundKey === roundKey;
   const openDrawer = pickOpenDrawer(historyDrawerOpen, mobilePanel);
 
-  // 展开：立即渲染；收起：等宽度动画（spring.settle）静止后再移除列，避免 PlayerList 瞬间膨胀
+  // 展开：立即渲染；收起：等宽度动画（spring.settle）静止后再移除列，避免 FakerPlayerList 瞬间膨胀
   useEffect(() => {
     const t = window.setTimeout(
       () => setHistoryRendered(historyOpen),
@@ -584,7 +584,7 @@ export default function WhoIsFakerRoomPage() {
   const globalWords = privateInfoVisible ? privateState?.globalWords : undefined;
 
   const playerList = (withHistory: boolean, compact = false) => (
-    <PlayerList
+    <FakerPlayerList
       players={snapshot.players}
       hostPlayerId={snapshot.hostPlayerId}
       myPlayerId={privateState?.playerId}
@@ -637,7 +637,7 @@ export default function WhoIsFakerRoomPage() {
           />
         }
         gameRef={stageRef}
-        game={<GameArea wordRevealed={wordRevealed} />}
+        game={<FakerGameArea wordRevealed={wordRevealed} />}
         chat={
           <ChatColumn>
             <ChatPanel
@@ -701,7 +701,7 @@ export default function WhoIsFakerRoomPage() {
 
       {/* 词语本体：始终是同一个元素，在居中揭示位与顶栏停靠位之间连续移动 */}
       {privateInfoVisible && assignedWordText ? (
-        <AssignedWord
+        <FakerAssignedWord
           word={assignedWordText}
           revealed={wordRevealed}
           anchorRef={wordAnchorRef}

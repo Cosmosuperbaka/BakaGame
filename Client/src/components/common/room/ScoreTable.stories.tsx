@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { RoleBadge } from "@/components/whoisfaker/layout/RoleBadge";
+import { FakerRoleBadge } from "@/components/whoisfaker/layout/FakerRoleBadge";
 import type { WhoIsFakerRole } from "@bakagame/shared";
 import { ScoreTable, type ScoreTableColumn } from "./ScoreTable";
 
@@ -42,7 +42,7 @@ export const RoleColumn: Story = {
         key: row.name,
         name: row.name,
         cells: {
-          role: <RoleBadge role={row.role} inset />,
+          role: <FakerRoleBadge role={row.role} inset />,
           delta: row.delta,
           total: row.total,
         },

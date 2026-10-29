@@ -34,12 +34,14 @@ vi.mock("@/lib/WhoIsFakerWs", () => ({
 }));
 vi.mock("@/components/common/Seo", () => ({ Seo: () => null }));
 vi.mock("@/components/common/ChatPanel", () => ({ ChatPanel: () => null }));
-vi.mock("@/components/whoisfaker/layout/GameArea", () => ({ GameArea: () => null }));
-vi.mock("@/components/whoisfaker/layout/PlayerList", () => ({
+vi.mock("@/components/whoisfaker/layout/FakerGameArea", () => ({ FakerGameArea: () => null }));
+vi.mock("@/components/whoisfaker/layout/FakerPlayerList", () => ({
   PLAYER_COLUMN_WIDTH: 200,
-  PlayerList: () => null,
+  FakerPlayerList: () => null,
 }));
-vi.mock("@/components/whoisfaker/layout/AssignedWord", () => ({ AssignedWord: () => null }));
+vi.mock("@/components/whoisfaker/layout/FakerAssignedWord", () => ({
+  FakerAssignedWord: () => null,
+}));
 const initial = useWhoIsFakerStore.getState();
 function deferred<T>() {
   let resolve!: (value: T) => void;
