@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { StatusHistoryStore } from "../src/infrastructure/StatusHistoryStore";
+import { StatusSampleStore } from "../src/infrastructure/StatusSampleStore";
+import { createDrizzleStub } from "./DrizzleStub";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
   type PublicStatusHistoryEntry,
@@ -27,6 +29,47 @@ const entryOf = (history: { entries: PublicStatusHistoryEntry[] }, id: string) =
   if (!entry) throw new Error(`历史里缺少组件 ${id}`);
   return entry;
 };
+
+describe("状态账本的落库失败", () => {
+  test("读取失败抛给调用方告警，而不是静默成空历史", async () => {
+    const stub = createDrizzleStub().reject(0, new Error("连接被拒"));
+    const store = new StatusHistoryStore({ environment: "production", database: stub.database });
+    await expect(store.load()).rejects.toMatchObject({ cause: { message: "连接被拒" } });
+  });
+
+  test("写库失败先抛出，下一轮 flush 不靠新样本也会把同一批账重写", async () => {
+    const stub = createDrizzleStub().reject(0, new Error("写入超时"));
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    store.record(snapshotAt(NOW, "operational"));
+    await expect(store.flush()).rejects.toMatchObject({ cause: { message: "写入超时" } });
+
+    await store.flush();
+    expect(stub.queries).toHaveLength(2);
+    expect(stub.queryAt(1).statement).toContain("insert into `status_daily`");
+  });
+
+  test("实时样本账本同口径：读写失败都抛出，失败的那批键留待重试", async () => {
+    const readStub = createDrizzleStub().reject(0, new Error("连接被拒"));
+    await expect(
+      new StatusSampleStore({ environment: "production", database: readStub.database }).load()
+    ).rejects.toMatchObject({ cause: { message: "连接被拒" } });
+
+    const writeStub = createDrizzleStub().reject(0, new Error("写入超时"));
+    const samples = new StatusSampleStore({
+      environment: "production",
+      database: writeStub.database,
+      now: () => NOW,
+    });
+    samples.record(snapshotAt(NOW, "operational"));
+    await expect(samples.flush()).rejects.toMatchObject({ cause: { message: "写入超时" } });
+    await samples.flush();
+    expect(writeStub.queries).toHaveLength(2);
+  });
+});
 
 describe("状态历史账本", () => {
   test("没有数据库也照常记账，读得出日格", () => {

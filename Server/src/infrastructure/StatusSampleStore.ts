@@ -79,34 +79,31 @@ export class StatusSampleStore {
     for (const id of PUBLIC_STATUS_COMPONENT_IDS) this.buckets.set(id, new Map());
   }
 
-  /** 启动时把保留窗内的既有账读回来；数据库不可用时静默跳过，条带从本次运行开始积累。 */
+  /**
+   * 启动时把保留窗内的既有账读回来。失败原样抛给调用方告警：条带会从本次运行开始积累，
+   * 但不能把「账本坏了」静默成「本来就没有样本」。
+   */
   async load(): Promise<void> {
     if (!this.database) return;
     const cutoff = sampleBucketOf(this.now() - PUBLIC_STATUS_SAMPLE_RETENTION_MS);
-    try {
-      await this.database.ready;
-      const rows = await this.database.db
-        .select()
-        .from(statusSample)
-        .where(
-          and(eq(statusSample.environment, this.environment), gte(statusSample.bucket, cutoff))
-        );
-      for (const row of rows) {
-        const bucket = this.buckets.get(row.componentId as PublicStatusComponentId);
-        if (!bucket) continue;
-        bucket.set(row.bucket, {
-          total: row.total,
-          operational: row.operational,
-          degraded: row.degraded,
-          unknown: row.unknown,
-          latencySum: row.latencySum,
-          latencyCount: row.latencyCount,
-        });
-      }
-      this.prune(cutoff);
-    } catch {
-      // 读不到样本只影响实时条带，日格与当前状态另有账本，不把状态页拖成错误。
+    await this.database.ready;
+    const rows = await this.database.db
+      .select()
+      .from(statusSample)
+      .where(and(eq(statusSample.environment, this.environment), gte(statusSample.bucket, cutoff)));
+    for (const row of rows) {
+      const bucket = this.buckets.get(row.componentId as PublicStatusComponentId);
+      if (!bucket) continue;
+      bucket.set(row.bucket, {
+        total: row.total,
+        operational: row.operational,
+        degraded: row.degraded,
+        unknown: row.unknown,
+        latencySum: row.latencySum,
+        latencyCount: row.latencyCount,
+      });
     }
+    this.prune(cutoff);
   }
 
   /** 一轮采样记一笔：等级进计数，带延迟读数的组件顺带累计延迟。 */
@@ -127,7 +124,7 @@ export class StatusSampleStore {
     }
   }
 
-  /** 把格子累计写回库；没有数据库或没有新账时直接返回。 */
+  /** 把格子累计写回库；没有数据库或没有新账时直接返回。写失败时这批键放回待写集合再抛出，下一轮重试。 */
   async flush(): Promise<void> {
     if (!this.database || this.dirty.size === 0) return;
     const values: {
@@ -154,6 +151,7 @@ export class StatusSampleStore {
         ...count,
       });
     }
+    const pending = [...this.dirty];
     this.dirty.clear();
     if (values.length === 0) return;
     try {
@@ -171,8 +169,9 @@ export class StatusSampleStore {
             latencyCount: sql`values(${statusSample.latencyCount})`,
           },
         });
-    } catch {
-      // 落库失败只丢实时样本，不影响探测；下一轮 flush 带着内存里的账重试。
+    } catch (error) {
+      for (const key of pending) this.dirty.add(key);
+      throw error;
     }
   }
 

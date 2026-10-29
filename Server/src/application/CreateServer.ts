@@ -256,8 +256,8 @@ export function createServer(
       // 先等在途对局记录写完再关数据库连接。
       await gameRecords?.close();
       // 状态账本最后各落一次库：计数只在内存里攒着，停机不 flush 就丢掉这一段。
-      await statusHistory.flush();
-      await statusSamples.flush();
+      // 落库失败不能挡住后面的资源释放，失败并入下方的汇总一起抛。
+      const ledgers = await Promise.allSettled([statusHistory.flush(), statusSamples.flush()]);
       await account?.visits.close();
       const results = await Promise.allSettled([
         cee.close(),
@@ -265,7 +265,7 @@ export function createServer(
         Promise.resolve().then(() => images?.close()),
         Promise.resolve().then(() => database?.close()),
       ]);
-      const failures = results.flatMap((result) =>
+      const failures = [...ledgers, ...results].flatMap((result) =>
         result.status === "rejected" ? [result.reason] : []
       );
       if (failures.length) throw new AggregateError(failures, "服务资源释放失败");

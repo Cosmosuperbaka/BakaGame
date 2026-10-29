@@ -91,30 +91,29 @@ export class StatusHistoryStore {
     for (const id of PUBLIC_STATUS_COMPONENT_IDS) this.days.set(id, new Map());
   }
 
-  /** 启动时把窗口内的既有账读回来；数据库不可用时静默跳过，不影响服务起不来。 */
+  /**
+   * 启动时把窗口内的既有账读回来。失败原样抛给调用方告警：读不到历史只意味着条带为空，
+   * 不影响服务启动，但必须留下信号——吞掉就会把「账本坏了」读成「历史本来就是空的」。
+   */
   async load(): Promise<void> {
     if (!this.database) return;
     const cutoff = beijingDay(this.now() - (this.retentionDays - 1) * 86_400_000);
-    try {
-      await this.database.ready;
-      const rows = await this.database.db
-        .select()
-        .from(statusDaily)
-        .where(and(eq(statusDaily.environment, this.environment), gte(statusDaily.day, cutoff)));
-      for (const row of rows) {
-        const bucket = this.days.get(row.componentId as PublicStatusComponentId);
-        if (!bucket) continue;
-        bucket.set(row.day, {
-          total: row.total,
-          operational: row.operational,
-          degraded: row.degraded,
-          unknown: row.unknown,
-        });
-      }
-      this.prune(cutoff);
-    } catch {
-      // 读不到历史只意味着条带为空，当前状态仍由快照给出，不把状态页整体拖成错误。
+    await this.database.ready;
+    const rows = await this.database.db
+      .select()
+      .from(statusDaily)
+      .where(and(eq(statusDaily.environment, this.environment), gte(statusDaily.day, cutoff)));
+    for (const row of rows) {
+      const bucket = this.days.get(row.componentId as PublicStatusComponentId);
+      if (!bucket) continue;
+      bucket.set(row.day, {
+        total: row.total,
+        operational: row.operational,
+        degraded: row.degraded,
+        unknown: row.unknown,
+      });
     }
+    this.prune(cutoff);
   }
 
   /** 一次快照记一笔账。探测失败留下的 `unknown` 同样计数，可用率才不会被「没探到」抬成 100%。 */
@@ -130,7 +129,11 @@ export class StatusHistoryStore {
     }
   }
 
-  /** 把当日累计写回库；没有数据库或没有新账时直接返回。 */
+  /**
+   * 把当日累计写回库；没有数据库或没有新账时直接返回。
+   * 写失败时把这批键放回待写集合再抛出：下一轮 flush 带着仍在内存里的账重试，
+   * 不会因为当天之后再无新样本（例如跨过零点的前一天）而永久丢掉那一格。
+   */
   async flush(): Promise<void> {
     if (!this.database || this.dirty.size === 0) return;
     const values: {
@@ -156,6 +159,7 @@ export class StatusHistoryStore {
         ...count,
       });
     }
+    const pending = [...this.dirty];
     this.dirty.clear();
     if (values.length === 0) return;
     try {
@@ -171,8 +175,9 @@ export class StatusHistoryStore {
             unknown: sql`values(${statusDaily.unknown})`,
           },
         });
-    } catch {
-      // 落库失败只丢历史，不影响探测本身；下一轮 flush 会带着仍在内存里的账重试。
+    } catch (error) {
+      for (const key of pending) this.dirty.add(key);
+      throw error;
     }
   }
 
