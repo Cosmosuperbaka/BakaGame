@@ -69,7 +69,7 @@ const EXPECTED_OPERATIONS = [
 ];
 
 /** Elysia 自己声明的那几条 HTTP 路径：打点、探活、优雅停机、Sentry 隧道。 */
-const HTTP_PATH_COUNT = 6;
+const HTTP_PATH_COUNT = 5;
 
 const pathOf = (operationId: string): string =>
   `${RPC_BASE_PATH}/${operationId.replaceAll(".", "/")}`;
@@ -212,7 +212,7 @@ test("合并后的文档版本取自更新日志，且每个 $ref 都解析得�
 
   const paths = Object.keys(document.paths as Json);
   expect(paths).toContain("/readyz");
-  expect(paths).toContain("/api/monitoring/telemetry");
+  expect(paths).toContain("/health");
   expect(paths).toContain(pathOf("settings.get"));
   expect(paths).toHaveLength(EXPECTED_OPERATIONS.length + HTTP_PATH_COUNT);
 

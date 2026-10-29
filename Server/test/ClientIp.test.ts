@@ -50,23 +50,21 @@ describe("来源 IP 解析", () => {
  */
 describe("源站被直连时的额度兜底", () => {
   it("轮换 x-real-ip 自造新桶，合计放行量仍被回源 peer 桶封顶，响应头点明是谁的额度用完", async () => {
-    const { systemRoutes, TelemetryRateLimiter } = await import("../src/transport/routes/System");
+    const { systemRoutes } = await import("../src/transport/routes/System");
+    const { ThreeTierRateLimiter } = await import("../src/infrastructure/RateLimiter");
     const app = systemRoutes({
-      rateLimiter: new TelemetryRateLimiter({
+      probeRateLimiter: new ThreeTierRateLimiter({
         windowMs: 60_000,
         ipMaxRequests: 2,
         peerMaxRequests: 6,
       }),
-      sampleRate: 0,
     });
     let accepted = 0;
     let denied: Response | undefined;
     for (let index = 0; index < 40; index++) {
       const response = await app.handle(
-        new Request("http://localhost/api/monitoring/telemetry", {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-real-ip": `203.0.113.${index + 1}` },
-          body: JSON.stringify({ level: "error", message: `伪造来源${index}` }),
+        new Request("http://localhost/health", {
+          headers: { "x-real-ip": `203.0.113.${index + 1}` },
         })
       );
       if (response.status === 200) accepted += 1;

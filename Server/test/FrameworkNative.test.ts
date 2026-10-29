@@ -39,7 +39,7 @@ function fixture(badHealth = false) {
   };
 }
 const post = (body: string) =>
-  new Request("http://localhost/api/monitoring/telemetry", {
+  new Request("http://localhost/api/client/challenge", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
@@ -53,7 +53,8 @@ describe("框架原生契约回归", () => {
     const f = fixture();
     try {
       expect(
-        (await f.app.handle(post(JSON.stringify({ message: "ok", unknown: true })))).status
+        (await f.app.handle(post(JSON.stringify({ clientId: "client-abcdef", unknown: true }))))
+          .status
       ).toBe(422);
       const malformed = await f.app.handle(post("{broken"));
       expect(malformed.status).toBe(400);
@@ -115,7 +116,7 @@ describe("框架原生契约回归", () => {
     const response = await app.handle(new Request("http://localhost/openapi/json"));
     const document = await response.json();
     expect(document.paths["/readyz"].get.responses[503]).toBeDefined();
-    expect(document.paths["/api/monitoring/telemetry"]).toBeDefined();
+    expect(document.paths["/health"]).toBeDefined();
     expect(document.info.title).toContain("BakaGame");
   });
 });

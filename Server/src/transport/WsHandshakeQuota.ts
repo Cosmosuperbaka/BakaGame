@@ -1,4 +1,4 @@
-import { TelemetryRateLimiter } from "./routes/System";
+import { ThreeTierRateLimiter } from "../infrastructure/RateLimiter";
 
 /**
  * WebSocket 握手的两层闸门：在途连接数 + 新建速率，都按真实客户端地址分桶。
@@ -10,7 +10,7 @@ import { TelemetryRateLimiter } from "./routes/System";
 export class WsHandshakeQuota {
   /** 桶键 → 在途连接数；连接关闭即减，归零立刻删键，因此键数不会随历史客户端增长。 */
   private readonly live = new Map<string, number>();
-  private readonly rate: TelemetryRateLimiter;
+  private readonly rate: ThreeTierRateLimiter;
   private readonly maxConnectionsPerClient: number;
 
   constructor(options: {
@@ -20,7 +20,7 @@ export class WsHandshakeQuota {
     ipMaxConnections: number;
   }) {
     this.maxConnectionsPerClient = options.ipMaxConnections;
-    this.rate = new TelemetryRateLimiter({
+    this.rate = new ThreeTierRateLimiter({
       windowMs: options.windowMs,
       ipMaxRequests: options.ipMaxRequests,
       globalMaxRequests: options.globalMaxRequests,

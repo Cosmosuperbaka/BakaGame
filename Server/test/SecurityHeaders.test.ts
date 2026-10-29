@@ -6,7 +6,8 @@ import { resolveDeploymentEnvironment } from "../src/config/env/Observability";
 import type { CEEService } from "../src/application/CEEService";
 import type { SonGuessrService } from "../src/application/SonGuessrService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { TelemetryRateLimiter, systemRoutes } from "../src/transport/routes/System";
+import { systemRoutes } from "../src/transport/routes/System";
+import { ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
 import { createTestApp } from "./AppFixtures";
 
 const env = {
@@ -60,7 +61,7 @@ test("文档页只放宽 CSP，其余收紧项照旧", async () => {
 const healthApp = (input: {
   counts: { roomCount: number; connectionCount: number; onlinePlayerCount: number };
   maintenanceToken?: string;
-  probeRateLimiter?: TelemetryRateLimiter;
+  probeRateLimiter?: ThreeTierRateLimiter;
 }) =>
   systemRoutes({
     whoIsFakerService: { getHealthSnapshot: () => input.counts } as unknown as WhoIsFakerService,
@@ -111,7 +112,7 @@ test("/health 匿名只给一位有效数字的量级，维护凭据才拿精确
 test("/health 按来源地址限流，超额回 429 与退避头（livez 与 readyz 不受额度影响）", async () => {
   const app = healthApp({
     counts: { roomCount: 1, connectionCount: 1, onlinePlayerCount: 1 },
-    probeRateLimiter: new TelemetryRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 }),
+    probeRateLimiter: new ThreeTierRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 }),
   });
   // 桶键只采信边缘写入的 `x-real-ip`：`X-Forwarded-For` 客户端可任意伪造，拿它当键等于让扫描者自造新桶。
   const headers = { "x-real-ip": "203.0.113.22" };

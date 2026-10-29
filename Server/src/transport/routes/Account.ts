@@ -20,7 +20,7 @@ import {
 } from "../HttpErrorEnvelope";
 import { ACCOUNT_AVATAR_PATH, AUTH_BASE_PATH } from "../../shared/Account";
 import { apiContract } from "../../shared/ApiContract";
-import { TelemetryRateLimiter } from "./System";
+import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 
 export const RPC_BASE_PATH = "/api/rpc";
 
@@ -307,12 +307,12 @@ const AVATAR_GLOBAL_MAX_REQUESTS = 30_000;
  */
 export const accountRoutes = (account: AccountDependencies | undefined, logger: EventLogger) => {
   const rpc = account ? new RPCHandler(createRpcRouter(account, logger)) : undefined;
-  const limiter = new TelemetryRateLimiter({
+  const limiter = new ThreeTierRateLimiter({
     windowMs: ACCOUNT_WINDOW_MS,
     ipMaxRequests: ACCOUNT_IP_MAX_REQUESTS,
     globalMaxRequests: ACCOUNT_GLOBAL_MAX_REQUESTS,
   });
-  const avatarLimiter = new TelemetryRateLimiter({
+  const avatarLimiter = new ThreeTierRateLimiter({
     windowMs: ACCOUNT_WINDOW_MS,
     ipMaxRequests: AVATAR_IP_MAX_REQUESTS,
     globalMaxRequests: AVATAR_GLOBAL_MAX_REQUESTS,

@@ -5,17 +5,10 @@ import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
 import type { SonGuessrService } from "../../application/SonGuessrService";
 import type { CEEService } from "../../application/CEEService";
 import { resolveDeploymentEnvironment } from "../../config/env/Observability";
-import { redactData, sanitizeLogText, type EventLogger } from "../../infrastructure/EventLogger";
+import type { EventLogger } from "../../infrastructure/EventLogger";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 import { resolveClientIp } from "../ClientIp";
-
-/**
- * 打点上报的三层桶（单客户端 / 回源 peer / 全局）就是通用口径本身，
- * 保留这个名字给账号入口与握手配额引用。
- */
-export const TelemetryRateLimiter = ThreeTierRateLimiter;
-export type TelemetryRateLimiter = ThreeTierRateLimiter;
 
 export const isPrivateLanHost = (rawHost: string): boolean => {
   const host = rawHost
@@ -28,53 +21,6 @@ export const isPrivateLanHost = (rawHost: string): boolean => {
   if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   return false;
 };
-
-const TELEMETRY_LOG_LEVELS: Record<"ERROR" | "WARN" | "INFO", "error" | "warn" | "info"> = {
-  ERROR: "error",
-  WARN: "warn",
-  INFO: "info",
-};
-
-type TelemetryLevel = keyof typeof TELEMETRY_LOG_LEVELS;
-type TelemetryMetadata = Record<string, unknown> | undefined;
-
-// 白名单隔离：丢弃外部试图伪造系统连接/房间/玩家标识的字段
-const FORBIDDEN_TELEMETRY_KEYS = new Set([
-  "connectionid",
-  "roomid",
-  "playerid",
-  "ip",
-  "identifier",
-]);
-
-const resolveTelemetryLevel = (level?: string): TelemetryLevel => {
-  const lowered = level?.toLowerCase();
-  if (lowered === "error") return "ERROR";
-  if (lowered === "warn") return "WARN";
-  return "INFO";
-};
-
-const resolveTelemetryTraceId = (
-  payloadTraceId?: string,
-  traceHeader?: unknown
-): string | undefined => {
-  const rawTrace = payloadTraceId ?? (typeof traceHeader === "string" ? traceHeader : undefined);
-  return rawTrace ? sanitizeLogText(rawTrace, 64) : undefined;
-};
-
-const sanitizeTelemetryMetadata = (metadata: TelemetryMetadata): Record<string, unknown> => {
-  const safeMetadata: Record<string, unknown> = {};
-  if (metadata && typeof metadata === "object") {
-    for (const [key, value] of Object.entries(metadata)) {
-      if (FORBIDDEN_TELEMETRY_KEYS.has(key.toLowerCase())) continue;
-      safeMetadata[key] = typeof value === "string" ? sanitizeLogText(value, 256) : value;
-    }
-  }
-  return redactData(safeMetadata) as Record<string, unknown>;
-};
-
-const shouldRecordTelemetry = (level: TelemetryLevel, sampleRate: number): boolean =>
-  level === "ERROR" || sampleRate >= 1.0 || Math.random() < sampleRate;
 
 /**
  * 一位有效数字的量级：1234 → 1000、42 → 40、7 → 7。
@@ -93,19 +39,6 @@ const coarse = (value: number): number => {
 const PROBE_WINDOW_MS = 60_000;
 const PROBE_IP_MAX_REQUESTS = 120;
 const PROBE_GLOBAL_MAX_REQUESTS = 6_000;
-
-const writeClientTelemetryLog = (input: {
-  logger: EventLogger;
-  level: TelemetryLevel;
-  message: string;
-  logContext: Record<string, unknown>;
-}): void => {
-  const headline = `[CLIENT] ${input.message}`;
-  input.logger[TELEMETRY_LOG_LEVELS[input.level]](headline, input.logContext);
-};
-
-const sanitizeTelemetryMessage = (message?: string): string =>
-  sanitizeLogText(message || "前端上报遥测事件", 500);
 
 /**
  * 停机中新连接的拒绝码与文案：与 `/readyz` 的 503 同一语义，握手闸门与任何「新会话」入口共用，
@@ -142,10 +75,8 @@ export interface SystemRoutesDependencies {
   maintenanceToken?: string;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
-  rateLimiter?: TelemetryRateLimiter;
-  /** 状态查询额度：独立于打点桶，避免前端批量上报把运维探活挤掉。测试可注入。 */
-  probeRateLimiter?: TelemetryRateLimiter;
-  sampleRate?: number;
+  /** `/health` 的查询额度，测试可注入。 */
+  probeRateLimiter?: ThreeTierRateLimiter;
 }
 
 export const systemRoutes = ({
@@ -155,17 +86,14 @@ export const systemRoutes = ({
   logger,
   isShuttingDown,
   onTriggerShutdown,
-  rateLimiter,
   probeRateLimiter,
   maintenanceToken,
-  sampleRate = 1.0,
 }: SystemRoutesDependencies) => {
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
-  const limiter = rateLimiter ?? new TelemetryRateLimiter();
   const probeLimiter =
     probeRateLimiter ??
-    new TelemetryRateLimiter({
+    new ThreeTierRateLimiter({
       windowMs: PROBE_WINDOW_MS,
       ipMaxRequests: PROBE_IP_MAX_REQUESTS,
       globalMaxRequests: PROBE_GLOBAL_MAX_REQUESTS,
@@ -187,79 +115,6 @@ export const systemRoutes = ({
         500: errorSchema,
       },
     })
-    .post(
-      "/api/monitoring/telemetry",
-      async ({ body, headers, set, request, server }) => {
-        // 客户端身份取 边缘层写入的真实 IP 标头；缺失或非 IP 字面量时退回 peer，
-        // peer 桶单独封顶，避免标头被伪造成无限个新桶。
-        const peerIp = server?.requestIP(request)?.address ?? "unknown";
-        const clientIp = resolveClientIp(request.headers, peerIp);
-
-        const verdict = limiter.consume(clientIp, peerIp);
-        Object.assign(set.headers, rateLimitHeaders(verdict));
-        if (!verdict.allowed) {
-          set.status = 429;
-          return httpError("RATE_LIMITED", "打点上报过于频繁，请稍后重试", traceIdOf(set.headers));
-        }
-
-        const payload = body;
-        const level = resolveTelemetryLevel(payload.level);
-        const traceId = resolveTelemetryTraceId(payload.traceId, headers["x-trace-id"]);
-        const message = sanitizeTelemetryMessage(payload.message);
-        const sanitizedMeta = sanitizeTelemetryMetadata(payload.metadata);
-
-        if (logger && shouldRecordTelemetry(level, sampleRate)) {
-          writeClientTelemetryLog({
-            logger,
-            level,
-            message,
-            logContext: {
-              source: "client_telemetry",
-              traceId,
-              ...sanitizedMeta,
-            },
-          });
-        }
-
-        return { ok: true };
-      },
-      {
-        detail: {
-          tags: ["System"],
-          summary: "前端可观测性遥测打点代理",
-          description:
-            "接收前端报错与监控数据，服务端统一脱敏并中转至观测平台，保障安全与国内免翻直连。",
-        },
-        body: t.Object(
-          {
-            traceId: t.Optional(t.String({ maxLength: 64, pattern: "^[a-zA-Z0-9_.-]+$" })),
-            level: t.Optional(
-              t.Union([
-                t.Literal("info"),
-                t.Literal("warn"),
-                t.Literal("error"),
-                t.Literal("INFO"),
-                t.Literal("WARN"),
-                t.Literal("ERROR"),
-              ])
-            ),
-            message: t.Optional(t.String({ maxLength: 500 })),
-            metadata: t.Optional(
-              t.Record(
-                t.String({ maxLength: 32, pattern: "^[a-zA-Z0-9_.-]+$" }),
-                t.Union([t.String({ maxLength: 256 }), t.Number(), t.Boolean(), t.Null()]),
-                { maxProperties: 16 }
-              )
-            ),
-          },
-          { additionalProperties: false }
-        ),
-        response: {
-          200: t.Object({ ok: t.Boolean() }),
-          429: errorSchema,
-        },
-      }
-    )
     .get(
       "/livez",
       () => ({

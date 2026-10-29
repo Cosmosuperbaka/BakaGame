@@ -8,7 +8,6 @@ import {
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
 import { createTestApp as createApp } from "./AppFixtures";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
@@ -114,73 +113,6 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
   expect(attrMap.roomId).toBe("room-abc");
 });
 
-test("POST /api/monitoring/telemetry 接收前端打点，完成脱敏并记录至日志体系", async () => {
-  const loggedLines: string[] = [];
-  const records: OtelLogRecord[] = [];
-  const logger = new EventLogger(
-    (line) => loggedLines.push(line),
-    undefined,
-    undefined,
-    undefined,
-    { sinks: [{ write: (record) => records.push(record) }] }
-  );
-
-  const env: AppEnv = {
-    clientUrl: "http://localhost:5173",
-    serverUrl: "http://127.0.0.1",
-    serverListenHost: "127.0.0.1",
-    serverPort: 4899,
-    bangumiApiUrl: "https://api.bgm.tv",
-    bangumiImageUrl: "",
-  };
-
-  const whoIsFakerService = new WhoIsFakerService({
-    eventLogger: logger,
-  });
-
-  const { app } = createApp({
-    env,
-    whoIsFakerService,
-    logger,
-  });
-
-  const res = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-trace-id": "client-trace-999",
-      },
-      body: JSON.stringify({
-        level: "error",
-        message: "前端音频加载超时",
-        metadata: {
-          audioUrl: "https://music.163.com/song.mp3",
-          cookie: "MUSIC_U=secret1234567890",
-          password: "plain-user-password",
-        },
-      }),
-    })
-  );
-
-  expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ ok: true });
-
-  const clientLog = loggedLines.find((l) => l.includes("[CLIENT] 前端音频加载超时"));
-  expect(clientLog).toBeTruthy();
-  expect(clientLog).not.toContain("plain-user-password");
-  expect(clientLog).not.toContain("secret1234567890");
-  expect(clientLog).toContain("追踪=client-t");
-
-  const record = records.find((item) => item.body.includes("[CLIENT] 前端音频加载超时"));
-  expect(record).toBeTruthy();
-  expect(record!.traceId).toHaveLength(32);
-  expect(record!.attributes["trace.id.original"]).toBe("client-trace-999");
-  expect(JSON.stringify(record)).toContain("***[REDACTED]");
-  expect(JSON.stringify(record)).not.toContain("plain-user-password");
-  expect(JSON.stringify(record)).not.toContain("secret1234567890");
-});
-
 test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志", async () => {
   let requests = 0;
   const exporter = createExporter({
@@ -221,7 +153,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
 
   // 1. 跨域预检 POST 请求与自定义 x-trace-id
   const preflightRes = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
+    new Request("http://localhost/api/client/challenge", {
       method: "OPTIONS",
       headers: {
         Origin: "http://localhost:5173",
@@ -235,7 +167,7 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
 
   // 2. 局域网私有网段（192.168.x.x）跨端访问放行
   const lanRes = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
+    new Request("http://localhost/api/client/challenge", {
       method: "OPTIONS",
       headers: {
         Origin: "http://192.168.1.100:5173",
@@ -303,103 +235,6 @@ test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元
   expect(span.status.code).toBe(1);
   expect(span.traceId.length).toBe(32);
   expect(span.spanId.length).toBe(16);
-});
-
-test("POST /api/monitoring/telemetry 拦截超长/深度嵌套/过多键的恶意载荷并防身份伪造", async () => {
-  const loggedLines: string[] = [];
-  const records: OtelLogRecord[] = [];
-  const logger = new EventLogger(
-    (line) => loggedLines.push(line),
-    undefined,
-    undefined,
-    undefined,
-    { sinks: [{ write: (record) => records.push(record) }] }
-  );
-
-  const env: AppEnv = {
-    clientUrl: "http://localhost:5173",
-    serverUrl: "http://127.0.0.1",
-    serverListenHost: "127.0.0.1",
-    serverPort: 4899,
-    bangumiApiUrl: "https://api.bgm.tv",
-    bangumiImageUrl: "",
-  };
-
-  const whoIsFakerService = new WhoIsFakerService({
-    eventLogger: logger,
-  });
-
-  const { app } = createApp({
-    env,
-    whoIsFakerService,
-    logger,
-  });
-
-  // 1. 尝试伪造内部连接标识与注入换行
-  const normalRes = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        level: "info",
-        message: "正常打点\r\n[BAKA] 伪造的日志行",
-        metadata: {
-          connectionId: "fake-admin-conn",
-          ip: "10.0.0.1",
-          customField: "safe_value\nwith_newline",
-        },
-      }),
-    })
-  );
-  expect(normalRes.status).toBe(200);
-
-  const clientLog = loggedLines.find((l) => l.includes("正常打点"));
-  expect(clientLog).toBeTruthy();
-  // 确认日志单行未被拆分成多行，换行已被清洗为空格
-  expect(clientLog).not.toContain("\n[BAKA]");
-  expect(clientLog).not.toContain("\r");
-  expect(clientLog).not.toContain("fake-admin-conn");
-  const record = records.find((item) => item.body.includes("正常打点"));
-  expect(record).toBeTruthy();
-  expect(record!.body).toBe("[CLIENT] 正常打点  [BAKA] 伪造的日志行");
-  // 伪造的连接标识被白名单丢弃，不能变成日志一级索引。
-  expect(record!.attributes.identifier).toBeUndefined();
-  expect(record!.attributes.connectionId).toBeUndefined();
-  expect(record!.attributes.ip).toBeUndefined();
-  expect(record!.attributes.customField).toBe("safe_value with_newline");
-  expect(JSON.stringify(record)).not.toContain("fake-admin-conn");
-
-  // 2. 尝试传入过多键（超过 16 个）
-  const tooManyKeys: Record<string, string> = {};
-  for (let i = 0; i < 20; i++) {
-    tooManyKeys[`key_${i}`] = "val";
-  }
-  const rejectKeysRes = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: "超多键上报",
-        metadata: tooManyKeys,
-      }),
-    })
-  );
-  expect(rejectKeysRes.status).toBe(422);
-
-  // 3. 尝试传入嵌套对象
-  const rejectNestedRes = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: "嵌套对象上报",
-        metadata: {
-          nested: { deeply: "nested" },
-        },
-      }),
-    })
-  );
-  expect(rejectNestedRes.status).toBe(422);
 });
 
 test("toUnixNanoString 兼容整型与高精度浮点毫秒并防止 BigInt RangeError", () => {
@@ -546,67 +381,6 @@ test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
   expect(notFoundOp?.traceId).toBe("custom-trace-404-456");
   await dispose();
   await whoIsFakerService.drainPendingWrites();
-});
-
-test("POST /api/monitoring/telemetry 滑动窗口限流与采样控制", async () => {
-  const { systemRoutes, TelemetryRateLimiter } = await import("../src/transport/routes/System");
-  const loggedEntries: Array<{ level: string; msg: string; ctx: any }> = [];
-  const mockLogger = {
-    info: (msg: string, ctx: any) => loggedEntries.push({ level: "INFO", msg, ctx }),
-    warn: (msg: string, ctx: any) => loggedEntries.push({ level: "WARN", msg, ctx }),
-    error: (msg: string, ctx: any) => loggedEntries.push({ level: "ERROR", msg, ctx }),
-  } as unknown as EventLogger;
-
-  // 1. 测试限流（限制单 IP 最多 2 次）
-  const rateLimiter = new TelemetryRateLimiter({ ipMaxRequests: 2, windowMs: 60_000 });
-  const app = systemRoutes({
-    logger: mockLogger,
-    rateLimiter,
-    sampleRate: 0.0, // 0 采样率，除 ERROR 外全丢弃
-  });
-
-  const headers = {
-    "Content-Type": "application/json",
-    "x-forwarded-for": "203.0.113.10",
-  };
-
-  const r1 = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ level: "error", message: "重大错误" }),
-    })
-  );
-  expect(r1.status).toBe(200);
-
-  const r2 = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ level: "info", message: "普通打点" }),
-    })
-  );
-  expect(r2.status).toBe(200);
-
-  // 第 3 次触发 429 限流
-  const r3 = await app.handle(
-    new Request("http://localhost/api/monitoring/telemetry", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ level: "info", message: "频繁打点" }),
-    })
-  );
-  expect(r3.status).toBe(429);
-  const r3Json = (await r3.json()) as { error?: { code?: string; message?: string } };
-  expect(r3Json.error?.code).toBe("RATE_LIMITED");
-  expect(r3Json.error?.message).toBe("打点上报过于频繁，请稍后重试");
-  expect(Number(r3.headers.get("retry-after"))).toBeGreaterThan(0);
-  expect(r3.headers.get("x-ratelimit-limit")).toBe("2");
-  expect(r3.headers.get("x-ratelimit-remaining")).toBe("0");
-
-  // 2. 验证采样控制：sampleRate=0.0 时 ERROR 依然 100% 记录，而 INFO 被丢弃
-  expect(loggedEntries.some((e) => e.level === "ERROR" && e.msg.includes("重大错误"))).toBe(true);
-  expect(loggedEntries.some((e) => e.level === "INFO" && e.msg.includes("普通打点"))).toBe(false);
 });
 
 test("OtlpExporter 遇到 503 响应不会清空丢弃日志，保留在缓冲区并在重试成功后排空", async () => {
