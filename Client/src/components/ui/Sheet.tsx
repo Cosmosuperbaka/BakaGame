@@ -24,7 +24,7 @@ export interface SheetProps {
  * 覆盖式侧边面板。基于 Radix Dialog：焦点锁在面板内、Esc 与点背板关闭、
  * 读屏读得到标题，关闭后焦点回到打开它的元素，这些都由 Radix 保证。
  *
- * 遮罩走 `backdrop`、面板走 `sheetSlide`，两个变体分工见 Animation §5：
+ * 遮罩走 `backdrop`、面板走 `sheetSlide`，两个变体分工见 DesignGuide §8：
  * 遮罩先出现后消失，面板只做位移、沿原路边进边出。
  * 面板是固定高度外壳，标题栏固定在顶部，内容区自己滚动，长许可证原文不会把页面撑高。
  */

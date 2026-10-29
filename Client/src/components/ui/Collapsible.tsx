@@ -11,7 +11,7 @@ const SIZES = {
 } as const;
 
 /**
- * 折叠区的指示箭头：展开时翻转朝上，与内容区是同一状态的两种表现（Animation §2.4）。
+ * 折叠区的指示箭头：展开时翻转朝上，与内容区是同一状态的两种表现（DesignGuide §8）。
  * 装饰性图标，对读屏隐藏；展开状态由触发按钮的 `aria-expanded` 表达。
  */
 export function DisclosureChevron({

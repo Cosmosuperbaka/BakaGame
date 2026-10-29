@@ -12,7 +12,7 @@ const page = (load: () => Promise<{ default: ComponentType }>, key: string) => a
   Component: (await retryLazyImport(load, key)).default,
 });
 
-/** 数据路由：跨页过渡（`viewTransition`）只在数据路由下生效，见 Animation §2.4。 */
+/** 数据路由：跨页过渡（`viewTransition`）只在数据路由下生效，见 DesignGuide §8。 */
 export function createAppRouter() {
   return createBrowserRouter([
     {

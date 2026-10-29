@@ -112,7 +112,7 @@ TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
  * 旧内容经 popLayout 抽出文档流叠在原位退场，两幅内容同时在动，而不是先清空再出现。
  * 首次挂载不播放：所在弹窗或面板自己有入场，内容不再叠一层。
  * 抽出文档流按边框盒定位，外边距会让退场内容错开一截，所以内容不写外边距，间距交给 `TabsList`。
- * 动画结束清除残留 transform，避免文本停在子像素位移上（Animation §4.3）。
+ * 动画结束清除残留 transform，避免文本停在子像素位移上（DesignGuide §8）。
  */
 const TabsContent = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Content>,

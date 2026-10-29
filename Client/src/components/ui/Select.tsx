@@ -23,7 +23,7 @@ const SelectTrigger = React.forwardRef<
       )}
     >
       {children}
-      {/* 展开时箭头翻转，与浮层开合同一状态（Animation §2.4）。 */}
+      {/* 展开时箭头翻转，与浮层开合同一状态（DesignGuide §8）。 */}
       <SelectPrimitive.Icon asChild>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-(--motion-spring-snap-duration) ease-(--motion-spring-snap) group-data-[state=open]/select:rotate-180" />
       </SelectPrimitive.Icon>

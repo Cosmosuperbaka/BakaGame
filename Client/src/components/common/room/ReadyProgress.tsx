@@ -17,7 +17,7 @@ export function ReadyProgress({
   variant: "host" | "guest";
 }) {
   const bar = (
-    // 轨道取前景色的淡档：bg-muted 在暗色下比面板更暗，几乎看不出轨道（Design §3 骨架条同理）。
+    // 轨道取前景色的淡档：bg-muted 在暗色下比面板更暗，几乎看不出轨道（DesignGuide §3 骨架条同理）。
     <div
       role="progressbar"
       aria-label="玩家准备进度"

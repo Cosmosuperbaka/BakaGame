@@ -405,7 +405,7 @@ export default function WhoIsFakerRoomPage() {
   }, [nameDraft, addToast, enterWithName]);
 
   // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，过渡拍下的旧页就成了加入中的转圈，
-  // 清空还会触发上面「脱离房间」的 effect 再导航一次，打断进行中的过渡（Animation §2.4）。
+  // 清空还会触发上面「脱离房间」的 effect 再导航一次，打断进行中的过渡（DesignGuide §8）。
   const [exiting, setExiting] = useState(false);
   useEffect(() => {
     if (!exiting) return;

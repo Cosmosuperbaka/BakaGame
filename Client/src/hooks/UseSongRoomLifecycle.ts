@@ -532,7 +532,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     }
   };
 
-  // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的占位（Animation §2.4）。
+  // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，跨页过渡拍下的旧页就成了加入中的占位（DesignGuide §8）。
   const [exiting, setExiting] = useState(false);
   useEffect(() => {
     if (!exiting) return;

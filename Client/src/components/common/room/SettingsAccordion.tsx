@@ -78,7 +78,7 @@ export function SettingsAccordion({
               <span id={titleId} className="sr-only">
                 {title}
               </span>
-              {/* 两态在同一格里叠放交叉替换（Animation §2.4）。这一格必须定位：popLayout 量的是
+              {/* 两态在同一格里叠放交叉替换（DesignGuide §8）。这一格必须定位：popLayout 量的是
                   「相对 offsetParent 的 offsetTop/offsetLeft」，播放时却按包含块解释。按钮的 whileTap
                   缩放会让它自己成为包含块（测量瞬间更近、优先命中），松手后弹簧归位把 transform 抹成
                   none，包含块就塌到更上层的阶段舞台（它靠 will-change: transform 当包含块）——

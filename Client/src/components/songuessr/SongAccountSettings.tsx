@@ -57,7 +57,7 @@ const PLATFORM_TABS: readonly {
 /**
  * 平台切换器：分段单选，选中的那一端决定下方展示哪份账号信息与哪一条登录二维码。
  * 该端凭据已加载到房间时在标签后点一枚绿点；绿点只是提示，读屏改读 `sr-only` 的文字，
- * 不让颜色单独承担状态（Design §3）。
+ * 不让颜色单独承担状态（DesignGuide §3）。
  */
 function PlatformSwitcher({
   active,

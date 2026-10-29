@@ -91,7 +91,7 @@ function ModelBadge({ model }: { model: ContributingModel }) {
     >
       {glyph}
       {model.name}
-      {/* 外链指示：静止时压淡，悬停沿外链方向挪动并归位到不透明（Design §3 的箭头例外）。 */}
+      {/* 外链指示：静止时压淡，悬停沿外链方向挪动并归位到不透明，只作装饰、不承载状态。 */}
       <ArrowUpRight
         className="size-3 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
         aria-hidden="true"

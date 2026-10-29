@@ -90,7 +90,7 @@ export function LobbyPage({
   };
   const handleCreate = (event: React.MouseEvent<HTMLElement>) => requireName(() => onCreate(event));
   return (
-    // 整页只做显影，不带纵向位移（Animation §2.2）；列表项的入场由 listItem 负责。
+    // 整页只做显影，不带纵向位移（DesignGuide §8）；列表项的入场由 listItem 负责。
     <motion.div
       initial={arriving ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}

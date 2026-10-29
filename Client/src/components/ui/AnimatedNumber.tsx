@@ -182,7 +182,7 @@ function GainFloat({
       data-glyph={`+${amount}`}
       className={cn(
         GLYPH,
-        // 与分数本身同为衬线体：无衬线只留给 Design §4 列出的四类微型文字
+        // 字族继承分数本身，只缩到微型标记档，不另起一层字体（DesignGuide §4）
         "pointer-events-none absolute whitespace-nowrap text-2xs font-semibold leading-none text-primary",
         placement === "above"
           ? "bottom-full right-0"

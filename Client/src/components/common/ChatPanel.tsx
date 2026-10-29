@@ -321,7 +321,7 @@ function MessageText({
               "rounded-md px-1 font-medium",
               isMe && !isGhost
                 ? "bg-primary-foreground/20"
-                : // 他人气泡上主色作文字对比度不足（Design §3.1），浅底标出提及，文字保持正文色。
+                : // 他人气泡上主色作文字对比度不足（DesignGuide §3），浅底标出提及，文字保持正文色。
                   "bg-primary/10 text-foreground"
             )}
           >

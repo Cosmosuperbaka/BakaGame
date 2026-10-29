@@ -218,7 +218,7 @@ function CreateRoomForm({
         />
         <SettingSwitchRow
           label={privacyCopy.label}
-          // 原版房的「不在大厅显示」没有密码，开启时不用锁（Design §6）。
+          // 原版房的「不在大厅显示」没有密码，开启时不用锁（DesignGuide §6）。
           icon={isPrivate ? (privacy === "unlisted" ? EyeOff : Lock) : Globe}
           description={privacyCopy.description}
           checked={isPrivate}

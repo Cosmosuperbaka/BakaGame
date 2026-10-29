@@ -374,7 +374,7 @@ export const scoreRow: Variants = {
 /**
  * 贡献者行的浅底：这一局真正做出贡献的玩家（CEE 猜中者、猜歌首位答对者），
  * 行落定后底色浮起并留作常驻档，读作「这几分是他挣的」而不是随后消失的提示。
- * 取 `primary` 的浅底档（Design §3.1 的 `/10`）：与行悬停的 `accent/40` 不同层，
+ * 取 `primary` 的浅底档（DesignGuide §3 的 `/10`）：与行悬停的 `accent/40` 不同层，
  * 且是流内区块，只铺底色不加描边，避免整表读成一堆按钮。
  */
 export const contributorWash = {

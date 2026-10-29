@@ -70,7 +70,7 @@
   --text-2xs: 11px;
 
   /* `transition-colors` 等过渡类不写 duration-* / ease-* 时取这里，指向 lib/Motion.ts 生成的变量，
-     业务组件不再写 `duration-150` 之类的裸数字（Animation §2.5）。 */
+     业务组件不再写 `duration-150` 之类的裸数字（DesignGuide §8）。 */
   --default-transition-duration: var(--motion-duration-quick);
   --default-transition-timing-function: var(--motion-ease-out);
 
@@ -126,7 +126,7 @@
   --card-foreground: oklch(0.376 0.0225 64.3434);
   --popover: oklch(0.9914 0.0098 87.4695);
   --popover-foreground: oklch(0.376 0.0225 64.3434);
-  /* 主色按 WCAG AA 双向标定，口径与状态色一致（见 Design §3）：白字压 primary 实底，
+  /* 主色按 WCAG AA 双向标定，口径与状态色一致（见 DesignGuide §3）：白字压 primary 实底，
      以及 primary 作文字压 background、card、panel、secondary、muted，和压自身叠在
      background、card、panel、muted 上的 `/10` 浅底，都不低于 4.5:1（铺纸纹理的 `background`
      一档另留 4% 余量）。`accent` 只作悬停与浮层高亮，与状态色一样不标定。
@@ -164,7 +164,7 @@
   /* 房间页三个工作面板的表面色：比页面底色略暗，避免大面积高亮；
      同时与 muted 保持可辨差值，使面板内的小块控件仍能浮起。 */
   --panel: oklch(0.943 0.0168 87);
-  /* 状态语义色。见 Design §3：绿=成功/完成，琥珀=提示/测试，
+  /* 状态语义色。见 DesignGuide §3：绿=成功/完成，琥珀=提示/测试，
      天蓝=补充发言与平民、好人阵营，红=危险/断线/淘汰（复用 destructive），紫=出题人。
      底色与边框由透明度修饰符派生（`bg-success/10`、`border-success/40`），
      不再逐处手写深浅，同一含义只此一套取值。明度与 muted-foreground 同档标定：
@@ -206,7 +206,7 @@
   --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
   --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
   --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.3);
-  /* 纸纹理：160px 平铺的道林纸微细纸齿（SVG feTurbulence），仅应用于整页底层背景 body，见 Design §3.2。
+  /* 纸纹理：160px 平铺的道林纸微细纸齿（SVG feTurbulence），仅应用于整页底层背景 body，见 DesignGuide §3。
      亮色为超微观哑光微纸齿（baseFrequency 0.75，Alpha 峰值约 5.0%，均值约 2.0%），极其平整细腻，无任何中频粗斑与污渍；
      上方文字令牌的对比度按铺纹理后标定，调整强度须重新核对。 */
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.32 0 0 0 0 0.24 0 0 0 0 0.15 0.08 0 0 0 -0.03'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
@@ -282,7 +282,7 @@
 
 /**
  * 面板之上的就近浮层表面：表情选择、提及候选、玩家操作、Select、Tooltip、测试控制器等。
- * 见 Design §3：靠模糊与阴影从面板里立起来，不靠加深底色。本类不带阴影，调用处按 Design §5 的三档给出。
+ * 见 DesignGuide §3：靠模糊与阴影从面板里立起来，不靠加深底色。本类不带阴影，调用处按 DesignGuide §5 的三档给出。
  * 自定义工具类不参与 tailwind-merge 的冲突合并，调用处不要再叠加同类圆角、描边或底色。
  */
 @utility floating-surface {
@@ -338,7 +338,7 @@ html {
 }
 
 /* 纯 CSS 动效的 `--motion-*` 变量（曲线、时长、弹性 linear()、浮层尺度）不在这里手写：
-   由 lib/Motion.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 Animation §2.5。 */
+   由 lib/Motion.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 DesignGuide §8。 */
 
 /* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
    在此提供与 popover 变体同尺度、同曲线的开合动画，保持全站节奏一致。 */
@@ -555,7 +555,7 @@ html {
   :where(strong, b) {
     font-family: var(--font-serif);
   }
-  /* 纸纹理仅应用于整页底层画布（body），见 Design §3.2。
+  /* 纸纹理仅应用于整页底层画布（body），见 DesignGuide §3。
      所有业务表面（卡片 .bg-card、面板 .bg-panel、按钮 .bg-secondary、弹窗 .bg-popover 等）
      均保持纯净实底，不铺纹理，确保按钮文字与组件层级清晰锐利、零杂质。 */
   body {
@@ -563,11 +563,11 @@ html {
     background-size: 160px 160px;
   }
   /* 选中文字铺主色淡底、保留原文字色。选中是瞬时状态，档位比常驻浅底的 /10 高：/10 叠在表面上几乎看不出。
-     主色实底上的文字（本人气泡）由调用处反转成 primary-foreground 底，见 Design §3。 */
+     主色实底上的文字（本人气泡）由调用处反转成 primary-foreground 底，见 DesignGuide §3。 */
   ::selection {
     @apply bg-primary/30;
   }
-  /* 中文断行：标题平衡各行长度，段落避免末行只剩一两个字，见 Design §4。
+  /* 中文断行：标题平衡各行长度，段落避免末行只剩一两个字，见 DesignGuide §4。
      只写 text-wrap-style：简写 text-wrap 会把 text-wrap-mode 重置为 wrap，打断继承来的 nowrap 与 truncate。 */
   h1,
   h2,

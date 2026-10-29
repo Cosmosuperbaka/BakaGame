@@ -53,7 +53,7 @@ const DialogContent = React.forwardRef<
   const origin = React.useContext(DialogOriginContext);
   const innerRef = React.useRef<HTMLDivElement>(null);
   React.useImperativeHandle(ref, () => innerRef.current as HTMLDivElement);
-  // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（Animation §4.1）。
+  // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（DesignGuide §8）。
   const originStyle = useOriginStyle(innerRef, origin);
 
   return (

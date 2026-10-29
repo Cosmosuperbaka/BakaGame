@@ -23,7 +23,7 @@ const badgeVariants = cva(
         matched: "border-success/40 bg-success/10 font-normal text-success",
         subtle: "border-border font-normal text-muted-foreground",
         active: "border-primary/40 bg-primary/10 font-normal text-primary",
-        // 不可用整体降不透明度（Design §3），文字仍取 muted-foreground，不另叠一档文字透明度。
+        // 不可用整体降不透明度（DesignGuide §3），文字仍取 muted-foreground，不另叠一档文字透明度。
         unavailable: "border-dashed border-border font-normal text-muted-foreground opacity-60",
         upcoming: "border-transparent bg-muted font-normal text-muted-foreground",
         restricted: "border-warning/40 bg-warning/10 font-medium text-warning",

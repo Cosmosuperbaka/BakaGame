@@ -159,7 +159,7 @@ export function CreditsView({
                 >
                   ·
                 </span>
-                {/* 窄屏省略提交哈希，标题与返回入口保留（Design §7.5）。 */}
+                {/* 窄屏省略提交哈希，标题与返回入口保留（DesignGuide §7）。 */}
                 <span className="hidden shrink-0 font-mono text-xs text-muted-foreground sm:inline">
                   {commitLabel}
                 </span>
