@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { handleRemoteMcp, RemoteMcpSessions } from "../../mcp/Remote";
 import type { PageControlPort } from "../../mcp/Tools";
+import { resolveClientIp } from "../ClientIp";
 
 /**
  * 远程 MCP（Streamable HTTP）入口。
@@ -21,8 +22,14 @@ export const mcpRemoteRoutes = ({
   pages?: PageControlPort;
 }) =>
   new Elysia({ name: "mcp-remote", normalize: false })
-    .post("/api/mcp", async ({ request, body, set }) => {
-      const outcome = await handleRemoteMcp({ enabled, sessions, logger, pages }, request, body);
+    .post("/api/mcp", async ({ request, body, set, server }) => {
+      const clientKey = resolveClientIp(request.headers, server?.requestIP(request)?.address);
+      const outcome = await handleRemoteMcp(
+        { enabled, sessions, logger, pages },
+        request,
+        body,
+        clientKey
+      );
       set.status = outcome.status;
       for (const [key, value] of Object.entries(outcome.headers)) set.headers[key] = value;
       set.headers["cache-control"] = "no-store";

@@ -14,7 +14,8 @@ const logger = new EventLogger(() => {});
 const rpc = async (
   url: string,
   body: Record<string, unknown>,
-  sessionId?: string
+  sessionId?: string,
+  clientKey = "198.51.100.7"
 ): Promise<{ status: number; headers: Record<string, string>; payload: any }> => {
   const sessions = sessionsRef;
   return handleRemoteMcp(
@@ -26,9 +27,23 @@ const rpc = async (
         ...(sessionId ? { "mcp-session-id": sessionId } : {}),
       },
     }),
-    body
+    body,
+    clientKey
   );
 };
+
+const initialize = (clientKey: string) =>
+  rpc(
+    "http://127.0.0.1:9/api/mcp",
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", clientInfo: { name: "cap-test" } },
+    },
+    undefined,
+    clientKey
+  );
 
 let sessionsRef: RemoteMcpSessions;
 
@@ -225,6 +240,55 @@ test("远程 MCP 自动为首次调用建立会话，未进房时给出可执行
   expect(result.payload.result.isError).toBe(true);
   // 会话不再要求先建房/进房：Agent 从首页开始就要有连接，站点活动才能出现。
   expect(result.payload.result.content[0].text).toContain("尚未加入 faker 的房间");
+});
+
+test("不带会话号的写操作按来源计额度：每次新开会话也拿不到新额度", async () => {
+  sessionsRef = new RemoteMcpSessions(logger);
+  // control_page 是写工具，且没有页面端口时立刻失败，适合只数额度。
+  const write = (clientKey: string) =>
+    rpc(
+      "http://127.0.0.1:9/api/mcp",
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "control_page", arguments: { code: "ABCD2345" } },
+      },
+      undefined,
+      clientKey
+    );
+  const texts: string[] = [];
+  for (let attempt = 0; attempt < 121; attempt += 1) {
+    texts.push((await write("203.0.113.5")).payload.result.content[0].text as string);
+  }
+  expect(texts.slice(0, 120).every((text) => text.includes("页面接管只能经站内远程 MCP"))).toBe(
+    true
+  );
+  expect(texts[120]).toContain("Agent 操作过于频繁");
+  // 额度按来源记：另一来源不受影响。
+  expect((await write("203.0.113.6")).payload.result.content[0].text).toContain(
+    "页面接管只能经站内远程 MCP"
+  );
+});
+
+test("会话表满时拒绝新会话而不挤掉别人，同一来源超额只回收它自己最旧的会话", async () => {
+  sessionsRef = new RemoteMcpSessions(logger);
+  const own: string[] = [];
+  for (let index = 0; index < 9; index += 1) {
+    own.push((await initialize("192.0.2.1")).headers["mcp-session-id"]!);
+  }
+  expect(sessionsRef.get(own[0]!)).toBeUndefined();
+  expect(own.slice(1).every((id) => sessionsRef.get(id))).toBe(true);
+
+  const others: string[] = [];
+  for (let index = 0; index < 248; index += 1) {
+    others.push((await initialize(`10.0.${index >> 8}.${index & 255}`)).headers["mcp-session-id"]!);
+  }
+  const refused = await initialize("192.0.2.99");
+  expect(refused.status).toBe(503);
+  expect(refused.payload.error.message).toContain("会话已满");
+  expect(sessionsRef.get(own[1]!)).toBeDefined();
+  expect(sessionsRef.get(others[0]!)).toBeDefined();
 });
 
 test("页面接管只经站内远程 MCP：没有页面端口时四个工具都明确拒绝", async () => {

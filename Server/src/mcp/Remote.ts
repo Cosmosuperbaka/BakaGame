@@ -1,4 +1,5 @@
 import type { EventLogger } from "../infrastructure/EventLogger";
+import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { AgentGameClient } from "./GameClient";
 import { MCP_INSTRUCTIONS } from "./Policy";
@@ -10,8 +11,15 @@ const SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-2
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_SESSIONS = 256;
+/** 同一来源最多同时持有的会话数；超出时回收它自己最久未用的那个，不碰别人的会话。 */
+const MAX_SESSIONS_PER_CLIENT = 8;
 const WRITE_WINDOW_MS = 60_000;
 const WRITE_MAX = 30;
+/**
+ * 同一来源跨会话的写操作额度。会话号由调用方决定、可随手新开，只按会话计数等于
+ * 不设限：不带会话号的每次调用都会落进一个新会话、拿到一份新额度。
+ */
+const CLIENT_WRITE_MAX = WRITE_MAX * 4;
 
 /**
  * 真正无状态的工具：不读房间也不上报活动，临时开一个客户端就返回。
@@ -20,11 +28,15 @@ const WRITE_MAX = 30;
  */
 const EPHEMERAL_TOOLS = new Set(["get_mcp_policy"]);
 
+const SESSIONS_FULL = "远程 MCP 会话已满，请稍后再试";
+
 export interface RemoteSession {
   id: string;
   client: AgentGameClient;
   baseUrl: string;
   agentName: string;
+  /** 建会话的来源（真实客户端 IP），用于按来源封顶会话数与写额度。 */
+  clientKey: string;
   createdAt: number;
   lastUsedAt: number;
   writes: number[];
@@ -45,16 +57,32 @@ const sanitizeName = (value: unknown): string => {
 
 export class RemoteMcpSessions {
   private readonly sessions = new Map<string, RemoteSession>();
+  private readonly clientWrites = new SlidingWindowRateLimiter({
+    windowMs: WRITE_WINDOW_MS,
+    maxRequests: CLIENT_WRITE_MAX,
+  });
 
   constructor(private readonly logger: EventLogger) {}
 
-  create(baseUrl: string, agentName: string): RemoteSession {
+  /**
+   * 新建会话。全表已满时拒绝（返回 undefined）而不是挤掉最旧的会话：
+   * 建会话不需要任何凭据，按全局最旧淘汰等于让匿名调用方把别人的 Agent 连同座位一起踢下线。
+   */
+  create(baseUrl: string, agentName: string, clientKey: string): RemoteSession | undefined {
     this.prune();
+    const own = [...this.sessions.values()]
+      .filter((session) => session.clientKey === clientKey)
+      .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
+    for (const session of own.slice(0, Math.max(0, own.length - MAX_SESSIONS_PER_CLIENT + 1))) {
+      this.close(session.id);
+    }
+    if (this.sessions.size >= MAX_SESSIONS) return undefined;
     const session: RemoteSession = {
       id: crypto.randomUUID(),
       client: new AgentGameClient({ serverUrl: baseUrl, agentName }),
       baseUrl,
       agentName,
+      clientKey,
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       writes: [],
@@ -92,20 +120,14 @@ export class RemoteMcpSessions {
         this.sessions.delete(id);
       }
     }
-    if (this.sessions.size < MAX_SESSIONS) return;
-    const oldest = [...this.sessions.values()].sort(
-      (left, right) => left.lastUsedAt - right.lastUsedAt
-    );
-    for (const session of oldest.slice(0, this.sessions.size - MAX_SESSIONS + 1)) {
-      session.client.close();
-      this.sessions.delete(session.id);
-    }
   }
 
+  /** 写操作同时扣会话额度与来源额度；任一用完即拒。 */
   consumeWrite(session: RemoteSession): boolean {
     const now = Date.now();
     session.writes = session.writes.filter((at) => now - at < WRITE_WINDOW_MS);
     if (session.writes.length >= WRITE_MAX) return false;
+    if (!this.clientWrites.allow(session.clientKey, now)) return false;
     session.writes.push(now);
     return true;
   }
@@ -146,11 +168,15 @@ export interface RemoteMcpHandlerOptions {
   pages?: PageControlPort;
 }
 
-/** 远程 MCP 的 JSON-RPC 核心；HTTP 路由只负责取 Origin、Session 头与状态码。 */
+/**
+ * 远程 MCP 的 JSON-RPC 核心；HTTP 路由只负责取 Origin、Session 头、来源 IP 与状态码。
+ * `clientKey` 是调用方的真实来源（边缘写入的客户端 IP），会话数与写额度按它封顶。
+ */
 export async function handleRemoteMcp(
   options: RemoteMcpHandlerOptions,
   request: Request,
-  body: unknown
+  body: unknown,
+  clientKey: string
 ): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
   const { enabled, sessions } = options;
   if (!enabled) {
@@ -175,7 +201,8 @@ export async function handleRemoteMcp(
   switch (message.method) {
     case "initialize": {
       const clientInfo = isRecord(params.clientInfo) ? params.clientInfo : {};
-      const session = sessions.create(baseUrl, sanitizeName(clientInfo.name));
+      const session = sessions.create(baseUrl, sanitizeName(clientInfo.name), clientKey);
+      if (!session) return { status: 503, headers, payload: rpcError(id, -32000, SESSIONS_FULL) };
       headers["mcp-session-id"] = session.id;
       return {
         status: 200,
@@ -221,6 +248,7 @@ export async function handleRemoteMcp(
       if (id === undefined || id === null) return { status: 202, headers, payload: null };
       return handleRemoteToolCall(options, {
         baseUrl,
+        clientKey,
         headerSessionId: request.headers.get("mcp-session-id")?.trim() || "",
         id,
         params,
@@ -245,6 +273,7 @@ const originOf = (request: Request): string => {
 
 interface ToolCallContext {
   baseUrl: string;
+  clientKey: string;
   headerSessionId: string;
   id: unknown;
   params: Record<string, unknown>;
@@ -256,12 +285,13 @@ const resolveToolSession = (
   toolName: string,
   context: ToolCallContext,
   args: Record<string, unknown>
-): { session: RemoteSession; ephemeral: boolean } => {
+): { session: RemoteSession; ephemeral: boolean } | undefined => {
   const argSession = typeof args.session === "string" ? args.session.trim() : "";
   const sessionId = context.headerSessionId || argSession;
   const existing = sessionId ? sessions.get(sessionId) : undefined;
   if (existing) return { session: existing, ephemeral: false };
-  const session = sessions.create(context.baseUrl, sanitizeName(args.agentName));
+  const session = sessions.create(context.baseUrl, sanitizeName(args.agentName), context.clientKey);
+  if (!session) return undefined;
   if (!context.headerSessionId) context.headers["mcp-session-id"] = session.id;
   return { session, ephemeral: EPHEMERAL_TOOLS.has(toolName) };
 };
@@ -270,7 +300,7 @@ async function handleRemoteToolCall(
   options: RemoteMcpHandlerOptions,
   context: ToolCallContext
 ): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
-  const { sessions, logger, pages } = options;
+  const { sessions } = options;
   const name = typeof context.params.name === "string" ? context.params.name : "";
   const args = isRecord(context.params.arguments) ? { ...context.params.arguments } : {};
   const tool = TOOLS.find((entry) => entry.name === name);
@@ -282,7 +312,26 @@ async function handleRemoteToolCall(
     };
   }
 
-  const { session, ephemeral } = resolveToolSession(sessions, tool.name, context, args);
+  const resolved = resolveToolSession(sessions, tool.name, context, args);
+  if (!resolved) {
+    return {
+      status: 200,
+      headers: context.headers,
+      payload: rpcResult(context.id, toolFailure(SESSIONS_FULL)),
+    };
+  }
+  return runRemoteTool(options, context, tool, resolved, args);
+}
+
+/** 已解析出会话后的一次工具执行：扣额度、发焦点、执行、写审计日志。 */
+async function runRemoteTool(
+  options: RemoteMcpHandlerOptions,
+  context: ToolCallContext,
+  tool: (typeof TOOLS)[number],
+  { session, ephemeral }: { session: RemoteSession; ephemeral: boolean },
+  args: Record<string, unknown>
+): Promise<{ status: number; headers: Record<string, string>; payload: unknown }> {
+  const { sessions, logger, pages } = options;
   const startedAt = performance.now();
   try {
     if (tool.write && !sessions.consumeWrite(session)) {
