@@ -1798,8 +1798,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
           reason,
         })
       );
-      connection.roomId = undefined;
-      connection.playerId = undefined;
+      this.connectionRegistry.detach(connection);
     }
 
     this.rooms.delete(room.id);

@@ -8,8 +8,9 @@ export class ConnectionRegistry {
   private readonly lobbySubscribers = new Set<ConnectionRecord>();
 
   // ==================== 席位变更入口 ====================
-  // 索引只由 registerConnection 里拦截的属性赋值维护：下面两个方法就是全部入口，
-  // 业务代码改 roomId / playerId 时索引跟着动，不需要也不该再有第二种写法。
+  // 索引由 registerConnection 里拦截的属性赋值维护，任何一处赋值都会同步索引。
+  // 业务代码改席位一律走下面两个方法：房间与玩家成对改，不留「换了房间还挂着旧玩家」的中间态。
+  // 唯一例外是 CEE 原版适配器：它不持有本登记表，只能经属性赋值改席位，索引同样由拦截维护。
   /** 连接与其席位彻底脱钩（房间与玩家一起清空）。 */
   detach(connection: ConnectionRecord): void {
     connection.roomId = undefined;

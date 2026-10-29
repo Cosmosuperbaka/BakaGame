@@ -481,7 +481,6 @@ export const attachConnection = (
   player.account = connection.account;
   player.lastSeenAt = service.now();
   connection.resetStateSync?.();
-  connection.roomId = room.id;
-  connection.playerId = player.id;
+  service.connectionRegistry.attach(connection, room.id, player.id);
   return previousRoomUpdate;
 };

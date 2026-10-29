@@ -177,8 +177,7 @@ const markPlayerDisconnected = (service: WhoIsFakerServiceInternals, ctx: Offlin
   player.lastSeenAt = service.now();
   const connection = service.connectionRegistry.findConnectionByPlayerId(player.id);
   if (connection) {
-    connection.playerId = undefined;
-    connection.roomId = undefined;
+    service.connectionRegistry.detach(connection);
   }
 
   if (service.getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(room)) {
@@ -350,8 +349,7 @@ const sendKickNotice = (
       reason: "kicked",
     })
   );
-  connection.playerId = undefined;
-  connection.roomId = undefined;
+  service.connectionRegistry.detach(connection);
 };
 
 const markPlayerAsKicked = (player: WhoIsFakerPlayerRecord) => {
