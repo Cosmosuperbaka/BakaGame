@@ -2208,6 +2208,7 @@ export class SonGuessrService implements AdminRoomControl {
           guessesUsed: candidate.isBot ? roundSettings.maxGuessesPerRound : 0,
           correct: false,
           gaveUp: candidate.isBot,
+          ...(candidate.isBot ? { bot: true as const } : {}),
         };
         units.set(key, unit);
       }
@@ -2669,6 +2670,10 @@ export class SonGuessrService implements AdminRoomControl {
   /**
    * 可作答的作答单元：出题人（测试房里出题人自己也能猜）、出题人的观战队友与人机都不算。
    * 计分的分母（正确率、血战排名、难度分）统一取自这里，不能再各自用 `activePlayers` 凑。
+   *
+   * 单元一经登记就留在分母里：已猜中的人随后离房或被清理，名次（分子）不会回退，
+   * 分母若按结算时的在房成员重算就会小于名次，血战速度系数变负。口径与 CEE 的
+   * 「血战分母冻结为开局实际猜题人数」一致；回合中途加入的玩家登记新单元时同样计入。
    */
   private answerableUnits(
     room: SonGuessrRoomRecord,
@@ -2676,13 +2681,9 @@ export class SonGuessrService implements AdminRoomControl {
   ): SonGuessrRoundPlayerState[] {
     const submitterState = round.players[round.submitterPlayerId];
     const submitterAnswers = this.canTestSubmitterGuess(room, round.submitterPlayerId);
-    return [...new Set(Object.values(round.players))].filter((unit) => {
-      if (!submitterAnswers && unit === submitterState) return false;
-      return unit.memberIds.some((memberId) => {
-        const member = room.players[memberId];
-        return Boolean(member && !member.isBot);
-      });
-    });
+    return [...new Set(Object.values(round.players))].filter(
+      (unit) => !unit.bot && (submitterAnswers || unit !== submitterState)
+    );
   }
 
   /** 用时占比：从「首名玩家能答题」起算，除以单次作答时限，夹到 0–1。 */

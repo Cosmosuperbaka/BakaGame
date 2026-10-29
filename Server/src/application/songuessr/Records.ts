@@ -83,6 +83,8 @@ export interface SonGuessrRoundPlayerState {
   gaveUp: boolean;
   deadlineAt?: number;
   inFlight?: boolean;
+  /** 开局即放弃的人机单元；不进计分分母。在开局时定下，之后成员离房也不改变单元是否计入。 */
+  bot?: true;
 }
 
 export interface SonGuessrRoundRecord {

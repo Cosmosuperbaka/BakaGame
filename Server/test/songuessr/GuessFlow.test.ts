@@ -17,7 +17,91 @@ import {
   type SonGuessrPrivateState,
 } from "../../src/shared/Index";
 
+const guessAnswer = (
+  service: SonGuessrService,
+  client: ReturnType<typeof connection>,
+  id: string
+) =>
+  execute(service, client, {
+    id: `guess-${id}`,
+    type: "song.game.guess",
+    roomId: "1234",
+    payload: { songId: "answer" },
+  });
+
+/** 三名作答者 + 一名旁观者的血战回合，出题人为房主，全员音频就绪。 */
+async function startBloodRound() {
+  const service = new SonGuessrService({
+    musicProvider: provider,
+    random: { nextInt: () => 0 },
+  });
+  const host = connection(service, "blood-host");
+  const first = connection(service, "blood-first");
+  const second = connection(service, "blood-second");
+  const third = connection(service, "blood-third");
+  await createRoom(service, host);
+  const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+  const states = [
+    await joinRoom(service, first, "第一名"),
+    await joinRoom(service, second, "第二名"),
+    await joinRoom(service, third, "第三名"),
+  ];
+  await execute(service, host, {
+    id: "blood-settings",
+    type: "song.room.updateSettings",
+    roomId: "1234",
+    payload: { bloodMode: true },
+  });
+  const guests = [first, second, third];
+  // startRound 会替 first 准备，这里只准备另外两位。
+  for (const [index, client] of [second, third].entries()) {
+    await execute(service, client, {
+      id: `ready-${index}`,
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+  }
+  await startRound(service, host, first, hostState.playerId);
+  for (const [index, client] of guests.entries()) {
+    await execute(service, client, {
+      id: `audio-${index}`,
+      type: "song.game.audioReady",
+      roomId: "1234",
+      payload: { roundNumber: 1 },
+    });
+  }
+  return { service, host, guests, states };
+}
+
 describe("SonGuessrService", () => {
+  test("血战分母开局冻结：先猜中的人离房后，后来者的名次分不会变成负数", async () => {
+    const { service, host, guests, states } = await startBloodRound();
+    const [first, second, third] = guests;
+    await guessAnswer(service, first, "first");
+    await guessAnswer(service, second, "second");
+    for (const [client, id] of [
+      [first, "first"],
+      [second, "second"],
+    ] as const) {
+      await execute(service, client, {
+        id: `leave-${id}`,
+        type: "song.room.leave",
+        roomId: "1234",
+        payload: {},
+      });
+    }
+
+    await guessAnswer(service, third, "third");
+    const snapshot = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
+    expect(snapshot.phase).toBe("roundResult");
+    // 第 3 名仍按开局 3 个作答单元计：(3 - 3 + 1) / 3 → round(10 / 3) = 3。
+    expect(snapshot.players).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: states[2].playerId, score: 3 })])
+    );
+    expect(snapshot.roundSummary?.breakdown?.answerableCount).toBe(3);
+  });
+
   test("血战模式按抢答排名递减计分且不会在首位答对后提前结算", async () => {
     const service = new SonGuessrService({
       musicProvider: provider,
