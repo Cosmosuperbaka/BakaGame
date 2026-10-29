@@ -492,6 +492,19 @@ export const readoutSwap: Variants = {
 
 /** 拖动中连续变化的读数：起点更贴近终值，快速连续刷新时不闪烁。 */
 export const readoutTick = {
+/** Agent 点击回声：焦点框上叠一圈主色描边向外扩开后消散，读作「这里被按了一下」。 */
+export const agentClickEcho: {
+  initial: TargetAndTransition;
+  animate: TargetAndTransition;
+  exit: TargetAndTransition;
+  transition: Transition;
+} = {
+  initial: { opacity: 0.55, scale: 1 },
+  animate: { opacity: 0, scale: 1.045 },
+  exit: { opacity: 0 },
+  transition: { duration: duration.slow, ease: ease.out },
+};
+
   initial: { opacity: 0.5, y: 2, scale: 0.92 },
   animate: { opacity: 1, y: 0, scale: 1 },
   transition: spring.snap,

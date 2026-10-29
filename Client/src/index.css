@@ -105,6 +105,8 @@
   --z-index-overlay: 50;
   --z-index-modal: 60;
   --z-index-popover: 70;
+  /* Agent 焦点框与状态条：要框住弹窗与浮层里的控件，压在它们之上，低于全局提示。 */
+  --z-index-agent: 80;
   --z-index-toast: 100;
 }
 
@@ -965,29 +967,30 @@ img {
   }
 }
 
-/* Agent 控件焦点框：首次出现淡入，之后在控件之间平滑变形移动。 */
+/* Agent 控件焦点框：首次出现淡入，之后在控件之间按 spring.settle 变形移动。
+   框是 2px 描边：换成缩放会把描边一起拉粗拉细，所以这里例外地补间位置与宽高。 */
 .agent-focus-box {
   transition:
-    opacity 160ms ease,
-    transform 160ms ease;
+    opacity var(--motion-duration-quick) var(--motion-ease-out),
+    transform var(--motion-duration-quick) var(--motion-ease-out);
 }
 
 .agent-focus-box[data-animate="true"] {
   transition:
-    top 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
-    left 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
-    width 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
-    height 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
-    opacity 160ms ease,
-    transform 160ms ease;
+    top var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    left var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    width var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    height var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    opacity var(--motion-duration-quick) var(--motion-ease-out),
+    transform var(--motion-duration-quick) var(--motion-ease-out);
   will-change: top, left, width, height;
 }
 
-/* 状态条跟着操作区走，不固定在整页顶部。 */
+/* 状态条跟着操作区走，不固定在整页顶部；与焦点框同一档弹簧。 */
 .agent-focus-hud {
   transition:
-    left 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1)),
-    top 280ms var(--motion-ease-out, cubic-bezier(0.22, 0.8, 0.2, 1));
+    left var(--motion-spring-settle-duration) var(--motion-spring-settle),
+    top var(--motion-spring-settle-duration) var(--motion-spring-settle);
 }
 
 @media (prefers-reduced-motion: reduce) {

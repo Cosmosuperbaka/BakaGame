@@ -7,6 +7,7 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { AGENT_ACTION_LABELS, agentActivityLabel } from "@/lib/AgentActivityLabel";
+import { agentClickEcho, popover } from "@/lib/Motion";
 
 type GameId = "faker" | "song" | "cee";
 
@@ -253,27 +254,9 @@ export function AgentFocusOverlay({ game }: { game: GameId }) {
       : Math.min(window.innerHeight - 36, rect.top + rect.height + 8)
     : 72;
 
+  // 焦点框与状态条同在 z-agent 一层，状态条排在后面，叠在框上方。
   return createPortal(
     <>
-      <div
-        className="agent-focus-hud pointer-events-none fixed z-[81] -translate-x-1/2"
-        style={{ left: hudLeft, top: hudTop }}
-      >
-        <motion.div
-          role="status"
-          aria-live="polite"
-          layout
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18 }}
-          className="flex max-w-[min(34rem,calc(100vw-2rem))] items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-card/95 px-2.5 py-1 text-[11px] shadow-md"
-        >
-          <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
-          <span className="shrink-0 font-medium">{visibleFocus.agentName}</span>
-          <span className="min-w-0 truncate text-muted-foreground">{shown}</span>
-        </motion.div>
-      </div>
-
       <div
         aria-hidden="true"
         style={{
@@ -285,7 +268,7 @@ export function AgentFocusOverlay({ game }: { game: GameId }) {
           transform: rect ? "scale(1)" : "scale(0.96)",
         }}
         data-animate={animateMove ? "true" : undefined}
-        className="agent-focus-box pointer-events-none fixed z-[80] rounded-lg border-2 border-primary/75 shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_0_22px_rgba(99,102,241,0.35)]"
+        className="agent-focus-box pointer-events-none fixed z-agent rounded-md border-2 border-primary/75 shadow-md ring-4 ring-primary/15"
       >
         <AnimatePresence>
           {visibleFocus.action === "click" ||
@@ -293,14 +276,30 @@ export function AgentFocusOverlay({ game }: { game: GameId }) {
           visibleFocus.action === "set" ? (
             <motion.span
               key={visibleFocus.at}
-              initial={{ opacity: 0.55, scale: 1 }}
-              animate={{ opacity: 0, scale: 1.045 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.55, ease: "easeOut" }}
-              className="absolute inset-0 rounded-lg border-2 border-primary"
+              {...agentClickEcho}
+              className="absolute inset-0 rounded-md border-2 border-primary"
             />
           ) : null}
         </AnimatePresence>
+      </div>
+
+      <div
+        className="agent-focus-hud pointer-events-none fixed z-agent -translate-x-1/2"
+        style={{ left: hudLeft, top: hudTop }}
+      >
+        <motion.div
+          role="status"
+          aria-live="polite"
+          layout
+          variants={popover}
+          initial="initial"
+          animate="animate"
+          className="flex max-w-[min(34rem,calc(100vw-2rem))] items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-card/95 px-2.5 py-1 text-2xs shadow-md"
+        >
+          <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="shrink-0 font-medium">{visibleFocus.agentName}</span>
+          <span className="min-w-0 truncate text-muted-foreground">{shown}</span>
+        </motion.div>
       </div>
     </>,
     document.body
