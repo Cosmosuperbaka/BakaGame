@@ -16,6 +16,7 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { publishMusicSession } from "../../src/application/songuessr/MusicAccounts";
 import {
   SongDetails,
   SongSearchResult,
@@ -1387,4 +1388,38 @@ describe("SonGuessrService", () => {
     expect(submitted).toMatchObject({ roundNumber: 1 });
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
   });
+});
+
+test("续期凭据只回人类页面：同座位的 Agent 控制器连接收不到号主 Cookie", () => {
+  const received: Record<string, unknown[]> = { human: [], agent: [], other: [] };
+  const conn = (id: string, playerId: string, isAgent?: boolean) => ({
+    id,
+    playerId,
+    isAgent,
+    lobbySubscribed: false,
+    send: (payload: unknown) => received[id]!.push(payload),
+    close() {},
+  });
+  const service = {
+    connections: {
+      getRoomConnections: () => [
+        conn("human", "p1"),
+        conn("agent", "p1", true),
+        conn("other", "p2"),
+      ],
+    },
+  } as unknown as Parameters<typeof publishMusicSession>[0];
+  publishMusicSession(
+    service,
+    { id: "1234" } as Parameters<typeof publishMusicSession>[1],
+    {
+      playerId: "p1",
+      platform: "qq",
+      cookie: "qm_keyst=secret",
+      account: { platform: "qq", userId: "u", nickname: "号主", vipStatus: "nonVip" },
+    } as Parameters<typeof publishMusicSession>[2]
+  );
+  expect(received.human).toHaveLength(1);
+  expect(received.agent).toEqual([]);
+  expect(received.other).toEqual([]);
 });

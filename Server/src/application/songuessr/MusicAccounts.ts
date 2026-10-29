@@ -878,6 +878,9 @@ export const refreshMusicSessionAccount = async (
  * 客户端会在本机保存一份凭据；服务端后台续期后如果不同步，下一次进房会拿旧副本
  * 覆盖新 Cookie，时间一长就只能重新扫码。这里只发 `entry.playerId` 的连接，
  * 不广播、不落快照、不写日志。
+ *
+ * 座位被 Agent 接管时同样只发人类页面：这份凭据只为本机存档，Agent 用不上，
+ * 而第三方账号凭据与人类会话凭证同属「不交给 Agent」的人类凭据。
  */
 export const publishMusicSession = (
   service: SonGuessrServiceInternals,
@@ -885,7 +888,7 @@ export const publishMusicSession = (
   entry: SonGuessrMusicPoolEntry
 ) => {
   for (const connection of service.connections.getRoomConnections(room.id)) {
-    if (connection.playerId !== entry.playerId) continue;
+    if (connection.playerId !== entry.playerId || connection.isAgent === true) continue;
     connection.send(
       createEvent("song.auth.session", {
         platform: entry.platform,
