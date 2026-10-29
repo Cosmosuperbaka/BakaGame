@@ -435,6 +435,58 @@ describe("SonGuessr service 音乐认证意图", () => {
     expect(snapshot.currentRound?.audioUrl).toBe(testSong.audioUrl);
   });
 
+  test("自动出题取候选时凭据被判死，账号池按失败归还：摘号并记失败原因", async () => {
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie: string) => ({
+          cookie,
+          account: { platform: "netease" as const, nickname: "号主", vipStatus: "vip" as const },
+        }),
+        getPlaylistSongs: async () => {
+          throw new AppError("MUSIC_SESSION_INVALID", "登录状态已失效");
+        },
+      },
+    });
+    const solo = connection(service, "candidate-dead");
+    await createRoom(service, solo, {
+      roomId: "9998",
+      name: "候选判死",
+      userName: "独狼",
+      solo: true,
+    });
+    await execute(service, solo, {
+      id: "candidate-auth",
+      type: "song.auth.useCookie",
+      roomId: "9998",
+      payload: { cookie: "MUSIC_U=dead-token", platform: "netease" },
+    });
+
+    await expect(
+      execute(service, solo, {
+        id: "candidate-start",
+        type: "song.game.start",
+        roomId: "9998",
+        payload: {},
+      })
+    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+    await execute(service, solo, {
+      id: "candidate-sync",
+      type: "song.room.requestSync",
+      roomId: "9998",
+      payload: {},
+    });
+
+    const entry = lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").musicPool?.find(
+      (candidate) => candidate.platform === "netease"
+    );
+    expect(entry).toMatchObject({
+      enabled: false,
+      recentOk: 0,
+      lastFailureReason: "登录状态已失效",
+    });
+  });
+
   test("QQ音乐凭据失效时 useCookie 抛出 MUSIC_SESSION_INVALID 且开局校验清除失效会话", async () => {
     let qqValid = true;
     const testSong = makeSong("netease:1", "选曲测试", 2022);

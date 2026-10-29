@@ -19,7 +19,6 @@ import {
   resolveSpecifiedAnimeSong,
 } from "./songuessr/AnimeResolution";
 import {
-  acquireAggregatedAccounts,
   checkMusicQrLogin,
   clearMusicAccount,
   clearMusicSession,
@@ -1745,13 +1744,6 @@ export class SonGuessrService implements AdminRoomControl {
     return refreshRoundAudio(this, room, round, refresh);
   }
 
-  private async acquireAggregatedAccounts(room: SonGuessrRoomRecord): Promise<{
-    cookie: MusicCookieInput | undefined;
-    release: (result: { ok: boolean; reason?: string; code?: string }) => void;
-  }> {
-    return acquireAggregatedAccounts(this, room);
-  }
-
   private async withAggregatedAccounts<T>(
     room: SonGuessrRoomRecord,
     run: (cookie: MusicCookieInput | undefined) => Promise<T>
@@ -2371,12 +2363,10 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 自动题库取候选：整轮（歌单 / 歌手 / 热度补全）共用一次取号，结束即归还。 */
   private async resolveAutomaticCandidates(room: SonGuessrRoomRecord): Promise<SongSearchResult[]> {
-    const lease = await this.acquireAggregatedAccounts(room);
-    try {
-      return await this.collectAutomaticCandidates(room, lease.cookie);
-    } finally {
-      lease.release({ ok: true });
-    }
+    // 必须按成败归还：判死、风控与限流只在失败结果上摘号或冷却，恒记成功会让死号反复被选中。
+    return this.withAggregatedAccounts(room, (cookie) =>
+      this.collectAutomaticCandidates(room, cookie)
+    );
   }
 
   /**

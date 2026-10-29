@@ -1238,6 +1238,67 @@ describe("SonGuessrService 猜番出题等概率", () => {
   });
 });
 
+test("猜番取歌时凭据被判死：整段解析的租约按失败归还并摘号", async () => {
+  const musicProvider: MusicProvider = {
+    ...provider,
+    getLoginStatus: async (cookie: string) => ({
+      cookie,
+      account: { platform: "netease" as const, nickname: "号主", vipStatus: "vip" as const },
+    }),
+    search: async () => {
+      throw new AppError("MUSIC_SESSION_INVALID", "登录状态已失效");
+    },
+  };
+  const bangumiProvider = {
+    getSubject: async () => ({
+      ...anime,
+      musicTracks: [{ title: "片头曲", kind: "opening" as const }],
+    }),
+    searchSubjects: async () => [anime],
+  } as unknown as BangumiDataProvider;
+  const service = new SonGuessrService({ musicProvider, bangumiProvider });
+  const solo = connection(service, "anime-dead-account");
+  await createRoom(service, solo, {
+    roomId: "8887",
+    name: "猜番判死",
+    userName: "独狼",
+    solo: true,
+  });
+  await execute(service, solo, {
+    id: "anime-dead-auth",
+    type: "song.auth.useCookie",
+    roomId: "8887",
+    payload: { cookie: "MUSIC_U=dead-token", platform: "netease" },
+  });
+  await execute(service, solo, {
+    id: "anime-dead-settings",
+    type: "song.room.updateSettings",
+    roomId: "8887",
+    payload: { questionType: "anime" },
+  });
+
+  await expect(
+    execute(service, solo, {
+      id: "anime-dead-start",
+      type: "song.game.start",
+      roomId: "8887",
+      payload: {},
+    })
+  ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+  await execute(service, solo, {
+    id: "anime-dead-sync",
+    type: "song.room.requestSync",
+    roomId: "8887",
+    payload: {},
+  });
+
+  expect(
+    lastEvent<SonGuessrRoomSnapshot>(solo, "song.room.snapshot").musicPool?.find(
+      (entry) => entry.platform === "netease"
+    )
+  ).toMatchObject({ enabled: false, recentOk: 0 });
+});
+
 describe("SonGuessrService 猜番曲目类型校准", () => {
   /**
    * 手动出题后推进到回合结算，返回包含关联歌曲详情的结算摘要。

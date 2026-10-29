@@ -25,7 +25,7 @@ import {
   type FallbackPickEntry,
   type TrackCandidatePool,
 } from "./AnimeSongEvidence";
-import { acquireAggregatedAccounts, withSongAccount } from "./MusicAccounts";
+import { withAggregatedAccounts, withSongAccount } from "./MusicAccounts";
 import {
   ANIME_SONG_DETAIL_BUDGET,
   ANIME_SONG_SEARCH_BUDGET,
@@ -124,50 +124,55 @@ export const resolveAnimeSong = async (
   ).slice(0, ANIME_TRACK_LOOKUP_LIMIT);
   // 整段解析（多个候选、每个都可能多次回源）共用一次取号：这确实是同一批在途请求，
   // 一次一租比每个内部请求各自取号更省，也让池里的在途数反映真实的占用者。
-  const lease = await acquireAggregatedAccounts(service, room);
-  const lookup: AnimeSongLookup = {
-    provider: service.options.musicProvider,
-    anime,
-    cookie: lease.cookie,
-    animeNames,
-    minPopularity: filters.songMinPopularity ?? 0,
-    recentSongIds: new Set(room.recentSongIds ?? []),
-    // 已经由翻唱回指过的原曲 ID，防止两个翻唱互相指向、反复插队。
-    originRetryIds: new Set<string>(),
-    // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
-    // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
-    budget: { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET },
-  };
-  try {
-    for (const track of candidates) {
-      if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
-      const pick = await resolveTrackSong(service, lookup, track);
-      if (pick) return pick;
-    }
+  // 按成败归还：内部只吞单曲不可用，凭据判死、风控与限流原样透传到这里摘号或冷却。
+  return withAggregatedAccounts(service, room, (cookie) =>
+    pickAnimeSong(service, candidates, {
+      provider: service.options.musicProvider,
+      anime,
+      cookie,
+      animeNames,
+      minPopularity: filters.songMinPopularity ?? 0,
+      recentSongIds: new Set(room.recentSongIds ?? []),
+      // 已经由翻唱回指过的原曲 ID，防止两个翻唱互相指向、反复插队。
+      originRetryIds: new Set<string>(),
+      // 冷缓存下每个候选曲目都可能触发多次回源，必须设总预算，
+      // 否则一次出题会退化成上百次串行上游请求（实测最坏 60s+）。
+      budget: { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET },
+    })
+  );
+};
 
-    // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
-    // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
-    if (lookup.fallbackRecent) {
-      return lookup.fallbackRecent;
-    }
-
-    // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
-    // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
-    if (lookup.fallbackYear) {
-      return lookup.fallbackYear;
-    }
-
-    // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
-    // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
-    // 出题总比让整部番剧出不了题好。
-    if (lookup.fallbackCover) {
-      return lookup.fallbackCover;
-    }
-
-    throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
-  } finally {
-    lease.release({ ok: true });
+const pickAnimeSong = async (
+  service: SonGuessrServiceInternals,
+  candidates: BangumiMusicTrack[],
+  lookup: AnimeSongLookup
+): Promise<AnimeSongPick> => {
+  for (const track of candidates) {
+    if (lookup.budget.search <= 0 || lookup.budget.detail <= 0) break;
+    const pick = await resolveTrackSong(service, lookup, track);
+    if (pick) return pick;
   }
+
+  // 三档兜底按「离这首歌还有多远」排序：先是真正属于本番、只是近期出过的歌，
+  // 再是同名不同曲（年份错配），最后才是别人的演唱录音。
+  if (lookup.fallbackRecent) {
+    return lookup.fallbackRecent;
+  }
+
+  // 所有候选都年份错配时才认它：有歌可出优先于出不了题，
+  // 但排在「近期重复过的正确歌曲」之后（那至少是同一部番的歌）。
+  if (lookup.fallbackYear) {
+    return lookup.fallbackYear;
+  }
+
+  // 最后才认翻唱：曲名对得上、可播放，但演唱者不是原唱。保留这条兜底是为了
+  // 「有歌可出优先」——整池候选全是翻唱时（原版是会员专享且解灰失败），
+  // 出题总比让整部番剧出不了题好。
+  if (lookup.fallbackCover) {
+    return lookup.fallbackCover;
+  }
+
+  throw new AppError("BANGUMI_NO_MUSIC", "该番剧没有可播放的关联歌曲");
 };
 
 /** 单条关联曲目的出题：拼检索词 → 证据排序 → 三级候选池 → 逐首验证。 */
@@ -576,29 +581,24 @@ export const resolveAnimeMatchedSongs = async (
   const animeNames = [anime.name, anime.nameCn].filter((name): name is string => Boolean(name));
 
   const budget = { search: ANIME_SONG_SEARCH_BUDGET, detail: ANIME_SONG_DETAIL_BUDGET };
-  const lease = await acquireAggregatedAccounts(service, room);
-  const ctx: AnimeTrackMatchContext = {
-    provider,
-    cookie: lease.cookie,
-    anime,
-    animeNames,
-    budget,
-    results: [],
-    seenSongIds: new Set<string>(),
-  };
-
-  try {
+  // 与自动出题同口径按成败归还租约，凭据失效才能在这里摘号。
+  return withAggregatedAccounts(service, room, async (cookie) => {
+    const ctx: AnimeTrackMatchContext = {
+      provider,
+      cookie,
+      anime,
+      animeNames,
+      budget,
+      results: [],
+      seenSongIds: new Set<string>(),
+    };
     for (const track of anime.musicTracks) {
       if (budget.search <= 0) break;
       await matchAnimeTrack(service, ctx, track);
     }
-
     await fillAnimeLevelFallback(service, ctx);
-
     return ctx.results;
-  } finally {
-    lease.release({ ok: true });
-  }
+  });
 };
 
 /** 单个音乐条目：常规检索 → 专辑兜底 → 按展示规则写入结果。 */
