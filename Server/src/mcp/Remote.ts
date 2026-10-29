@@ -11,15 +11,21 @@ const SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-2
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_SESSIONS = 256;
-/** 同一来源最多同时持有的会话数；超出时回收它自己最久未用的那个，不碰别人的会话。 */
-const MAX_SESSIONS_PER_CLIENT = 8;
+/**
+ * 同一来源最多同时持有的会话数。云端 Agent 平台从共享出口发起调用，一个「来源」背后
+ * 可能是许多互不相识的用户，所以按全表的四分之一给：单个来源占不满全表，又不至于让
+ * 同一平台的正常用户刚到几个人就被拒。
+ */
+const MAX_SESSIONS_PER_CLIENT = MAX_SESSIONS / 4;
+/** 同来源满额时，只有闲置超过这么久的旧会话才可被新会话回收。 */
+const RECYCLE_IDLE_MS = 2 * 60_000;
 const WRITE_WINDOW_MS = 60_000;
 const WRITE_MAX = 30;
 /**
  * 同一来源跨会话的写操作额度。会话号由调用方决定、可随手新开，只按会话计数等于
  * 不设限：不带会话号的每次调用都会落进一个新会话、拿到一份新额度。
  */
-const CLIENT_WRITE_MAX = WRITE_MAX * 4;
+const CLIENT_WRITE_MAX = WRITE_MAX * 16;
 
 /**
  * 真正无状态的工具：不读房间也不上报活动，临时开一个客户端就返回。
@@ -62,19 +68,25 @@ export class RemoteMcpSessions {
     maxRequests: CLIENT_WRITE_MAX,
   });
 
-  constructor(private readonly logger: EventLogger) {}
+  constructor(
+    private readonly logger: EventLogger,
+    private readonly now: () => number = Date.now
+  ) {}
 
   /**
-   * 新建会话。全表已满时拒绝（返回 undefined）而不是挤掉最旧的会话：
-   * 建会话不需要任何凭据，按全局最旧淘汰等于让匿名调用方把别人的 Agent 连同座位一起踢下线。
+   * 新建会话。全表或本来源已满时拒绝（返回 undefined），不挤掉正在用的会话：
+   * 建会话不需要任何凭据，按全局最旧淘汰等于让匿名调用方把别人的 Agent 连同座位一起踢下线；
+   * 同来源内也一样——共享出口背后的另一个用户同样是「别人」。只回收本来源里已闲置的旧会话。
    */
   create(baseUrl: string, agentName: string, clientKey: string): RemoteSession | undefined {
     this.prune();
     const own = [...this.sessions.values()]
       .filter((session) => session.clientKey === clientKey)
       .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
-    for (const session of own.slice(0, Math.max(0, own.length - MAX_SESSIONS_PER_CLIENT + 1))) {
-      this.close(session.id);
+    if (own.length >= MAX_SESSIONS_PER_CLIENT) {
+      const oldest = own[0]!;
+      if (this.now() - oldest.lastUsedAt < RECYCLE_IDLE_MS) return undefined;
+      this.close(oldest.id);
     }
     if (this.sessions.size >= MAX_SESSIONS) return undefined;
     const session: RemoteSession = {
@@ -83,8 +95,8 @@ export class RemoteMcpSessions {
       baseUrl,
       agentName,
       clientKey,
-      createdAt: Date.now(),
-      lastUsedAt: Date.now(),
+      createdAt: this.now(),
+      lastUsedAt: this.now(),
       writes: [],
     };
     this.sessions.set(session.id, session);
@@ -95,7 +107,7 @@ export class RemoteMcpSessions {
   get(id: string): RemoteSession | undefined {
     const session = this.sessions.get(id);
     if (!session) return undefined;
-    session.lastUsedAt = Date.now();
+    session.lastUsedAt = this.now();
     return session;
   }
 
@@ -113,7 +125,7 @@ export class RemoteMcpSessions {
   }
 
   private prune(): void {
-    const now = Date.now();
+    const now = this.now();
     for (const [id, session] of this.sessions) {
       if (now - session.lastUsedAt > SESSION_IDLE_MS) {
         session.client.close();
@@ -124,7 +136,7 @@ export class RemoteMcpSessions {
 
   /** 写操作同时扣会话额度与来源额度；任一用完即拒。 */
   consumeWrite(session: RemoteSession): boolean {
-    const now = Date.now();
+    const now = this.now();
     session.writes = session.writes.filter((at) => now - at < WRITE_WINDOW_MS);
     if (session.writes.length >= WRITE_MAX) return false;
     if (!this.clientWrites.allow(session.clientKey, now)) return false;
