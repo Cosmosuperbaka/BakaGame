@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  createOtlpExporter,
   OtlpExporter,
   OtlpShutdownError,
   toUnixNanoString,
@@ -1020,4 +1021,18 @@ test("traces 端点持续 5xx 时日志导出照常进行，两路退避互不�
   expect(stats.droppedCount).toBe(0);
   expect(stats.failureCount).toBe(4);
   expect(stats.successCount).toBe(1);
+});
+
+test("配了 OTLP 端点却没有显式环境标记时拒启，不带着推测的环境外发", () => {
+  expect(() =>
+    createOtlpExporter({ otelEndpoint: "http://127.0.0.1:4318", deploymentMarkerExplicit: false })
+  ).toThrow(expect.objectContaining({ code: "CONFIG_ERROR" }));
+  expect(createOtlpExporter({ deploymentMarkerExplicit: false })).toBeUndefined();
+  expect(
+    createOtlpExporter({
+      otelEndpoint: "http://127.0.0.1:4318",
+      deploymentMarkerExplicit: true,
+      otelDeploymentEnvironment: "production",
+    })?.deploymentEnvironment
+  ).toBe("production");
 });

@@ -3,7 +3,7 @@ import { readEnv } from "./config/Env";
 import { HTTP_MAX_REQUEST_BODY_BYTES } from "./config/Constants";
 import { describeError } from "./infrastructure/EventLogger";
 import { createServerLogger } from "./infrastructure/logging/LoggerRuntime";
-import { OtlpExporter } from "./infrastructure/OtlpExporter";
+import { createOtlpExporter } from "./infrastructure/OtlpExporter";
 import {
   captureServerCheckIn,
   closeServerSentry,
@@ -32,15 +32,7 @@ import type { GameId } from "./shared/Protocol";
 const env = readEnv();
 initServerSentry(env);
 captureServerCheckIn();
-const otlpExporter = env.otelEndpoint
-  ? new OtlpExporter({
-      endpoint: env.otelEndpoint,
-      headers: env.otelHeaders,
-      serviceName: env.otelServiceName,
-      serviceNamespace: env.otelServiceNamespace,
-      deploymentEnvironment: env.otelDeploymentEnvironment,
-    })
-  : undefined;
+const otlpExporter = createOtlpExporter(env);
 
 if (otlpExporter) {
   void otlpExporter.sendHeartbeatTrace();

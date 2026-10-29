@@ -1,3 +1,5 @@
+import { AppError } from "../domain/Errors";
+
 export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface OtlpExporterConfig {
@@ -526,3 +528,38 @@ export class OtlpExporter {
     return this.shutdownPromise;
   }
 }
+
+/** 由环境装配导出器所需的那几项；与 `AppEnv` 结构兼容，单测不必造整份环境。 */
+export interface OtlpExporterEnv {
+  otelEndpoint?: string;
+  otelHeaders?: Record<string, string>;
+  otelServiceName?: string;
+  otelServiceNamespace?: string;
+  otelDeploymentEnvironment?: string;
+  deploymentMarkerExplicit?: boolean;
+}
+
+/**
+ * 按环境创建 OTLP 导出器；没配端点时返回 undefined。
+ *
+ * 与 Sentry 同一道安全失败：配了外发端点却没有显式环境标记，说明这台实例的环境是推测出来的，
+ * 带着推测的 `deployment.environment` 外发会让生产与本地流量在后端同池、事后无法区分，
+ * 因此拒绝启动。字段缺席（测试或嵌入用法传的精简环境）时不拦截。
+ */
+export const createOtlpExporter = (env: OtlpExporterEnv): OtlpExporter | undefined => {
+  if (!env.otelEndpoint) return undefined;
+  if (env.deploymentMarkerExplicit === false) {
+    throw new AppError(
+      "CONFIG_ERROR",
+      "已配置 OTEL_EXPORTER_OTLP_ENDPOINT 但部署环境标记缺失：请显式注入 DEPLOYMENT_ENVIRONMENT" +
+        "（production / development），拒绝以推测环境外发遥测"
+    );
+  }
+  return new OtlpExporter({
+    endpoint: env.otelEndpoint,
+    headers: env.otelHeaders,
+    serviceName: env.otelServiceName,
+    serviceNamespace: env.otelServiceNamespace,
+    deploymentEnvironment: env.otelDeploymentEnvironment,
+  });
+};

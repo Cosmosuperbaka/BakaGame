@@ -175,14 +175,17 @@ export async function createIndexShutdownHarness(
       createServerLogger: () => new Logger(),
     },
     "./infrastructure/OtlpExporter": {
-      OtlpExporter: class {
-        sendHeartbeatTrace() {
-          return Promise.resolve();
-        }
-        shutdown() {
-          return execute("otlp");
-        }
-      },
+      createOtlpExporter: (env: { otelEndpoint?: string }) =>
+        env.otelEndpoint
+          ? {
+              sendHeartbeatTrace() {
+                return Promise.resolve();
+              },
+              shutdown() {
+                return execute("otlp");
+              },
+            }
+          : undefined,
     },
     "./infrastructure/Sentry": {
       initServerSentry() {},
