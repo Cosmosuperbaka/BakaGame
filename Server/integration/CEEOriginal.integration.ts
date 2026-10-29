@@ -61,6 +61,15 @@ const data: CEEDataProvider = {
   },
   close() {},
 };
+/**
+ * 这个文件只会被 `test:integration:cee` 显式点名运行（bun test 不收 `.integration.ts`），
+ * 点名运行却缺原版源码时必须失败：跳过等于整份联调静默通过，看不出其实什么都没测。
+ */
+test("原版仓库源码就位", () => {
+  if (!sourceAvailable)
+    throw new Error(`缺少原版仓库源码：${originalRoot}，请先在同级目录检出后再运行联调`);
+});
+
 test.skipIf(!sourceAvailable)(
   "真实原版与增强客户端在本地同房同步猜测、聊天隔离和连续结算",
   async () => {
