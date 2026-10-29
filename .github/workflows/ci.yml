@@ -295,6 +295,10 @@ jobs:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
         run: pnpm --filter client build
 
+      # 首屏包体预算：上限取有记录的实测值加余量，只挡累积，不在本地 verify 之外另成一套口径。
+      - name: Check first-screen bundle budget
+        run: pnpm --filter client check:bundle
+
       - name: Smoke test production assets
         working-directory: Client
         run: node scripts/asset-smoke.mjs
