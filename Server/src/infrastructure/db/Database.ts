@@ -22,7 +22,7 @@ export interface Database {
   close(): Promise<void>;
 }
 
-/** 迁移目录基于模块定位（Spec §12.3），与 `drizzle.config.ts` 的 `out` 一致。 */
+/** 迁移目录按本模块位置定位、不依赖进程工作目录，与 `drizzle.config.ts` 的 `out` 一致。 */
 export const MIGRATIONS_DIR = resolve(import.meta.dir, "../../../drizzle");
 
 /**

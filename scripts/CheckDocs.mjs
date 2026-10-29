@@ -3,11 +3,12 @@
  *
  * 检查范围：仓库根的 AGENTS.md、CLAUDE.md、README.md，Client/AGENTS.md、Server/AGENTS.md，
  * 以及 Agents/、Client/docs/、Server/docs/ 下的全部 Markdown。
- * 四件事：
+ * 五件事：
  *   1. 相对链接指向的文件必须存在；
  *   2. 带锚点的链接，目标标题必须能生成该锚点（GitHub slug 规则，兼容手写 <a id>）；
  *   3. 每个文档目录里的每篇文档都必须在其入口文档里登记（见 NAV_RULES）；
- *   4. 冻结文档的内容哈希必须与登记值一致（见 FROZEN_DOCS）。
+ *   4. 冻结文档的内容哈希必须与登记值一致（见 FROZEN_DOCS）；
+ *   5. 源码注释里形如「文档名 §章节号」的引用必须命中该文档的编号标题。
  *
  * 纯 Node、无依赖：node scripts/CheckDocs.mjs
  */
@@ -174,10 +175,50 @@ for (const [rel, expected] of Object.entries(FROZEN_DOCS)) {
   }
 }
 
+// 5：源码注释里的章节引用（`Spec §4.2`、`DesignGuide.md §8`）必须命中目标文档的编号标题。
+// 文档改章节号时代码注释不会跟着报错，读者照着去找只会落空——这类漂移已经复发过。
+const numberedSections = new Map();
+for (const rel of files) {
+  const numbers = new Set();
+  for (const match of read(rel).matchAll(/^#{1,6}\s+(\d+(?:\.\d+)*)[.、\s]/gm))
+    numbers.add(match[1]);
+  numberedSections.set(path.posix.basename(rel, ".md"), numbers);
+}
+const SOURCE_DIRS = [
+  "Server/src",
+  "Server/scripts",
+  "Server/test",
+  "Client/src",
+  "Client/scripts",
+  "Client/e2e",
+];
+const sourceFiles = (dir) =>
+  fs.existsSync(path.join(ROOT, dir))
+    ? fs
+        .readdirSync(path.join(ROOT, dir), { recursive: true })
+        .map((name) => path.posix.join(dir, String(name).replaceAll("\\", "/")))
+        .filter((rel) => /\.(?:[cm]?[jt]sx?|css)$/.test(rel))
+    : [];
+for (const rel of SOURCE_DIRS.flatMap(sourceFiles)) {
+  read(rel)
+    .split(/\r?\n/)
+    .forEach((line, index) => {
+      for (const [, name, number] of line.matchAll(
+        /\b([A-Z][A-Za-z]+)(?:\.md)? ?§ ?(\d+(?:\.\d+)*)/g
+      )) {
+        const sections = numberedSections.get(name);
+        if (sections && !sections.has(number))
+          problems.push(
+            `${rel}:${index + 1}: 引用的 ${name} §${number} 不存在，请改成现有章节或去掉章节号`
+          );
+      }
+    });
+}
+
 if (problems.length) {
   console.error(`发现 ${problems.length} 个文档问题：`);
   for (const problem of problems) console.error(`  - ${problem}`);
   process.exit(1);
 }
 
-console.log(`文档校验通过：${files.length} 个文件，链接、导航与冻结哈希均有效。`);
+console.log(`文档校验通过：${files.length} 个文件，链接、导航、冻结哈希与源码章节引用均有效。`);
