@@ -762,7 +762,7 @@ export class SonGuessrService implements AdminRoomControl {
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
     const roomId = ensureRoomId(payload.roomId);
-    if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "房间号已被使用");
+    if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     const password =
       payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
 
@@ -1004,7 +1004,7 @@ export class SonGuessrService implements AdminRoomControl {
     player: SonGuessrPlayerRecord
   ) {
     if (connection.isAgent === true)
-      throw new AppError("MCP_SEAT_TAKEN", "该座位已由另一个 MCP 连接控制");
+      throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
     if (!(connection.roomId === targetRoomId && connection.playerId)) {
       this.ensureConnectionFree(connection);
     }

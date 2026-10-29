@@ -919,7 +919,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       if (connection.isAgent !== true)
         throw new AppError("AGENT_REQUIRED", "控制器令牌只能用于 Agent 连接");
       const player = room.players[controller.playerId];
-      if (!player) throw new AppError("SESSION_NOT_FOUND", "找不到对应的玩家会话");
+      if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
       const previous = this.connectionRegistry.findConnection(controller.connectionId);
       if (previous && previous.id !== connection.id) {
         this.connectionRegistry.detach(previous);
@@ -955,7 +955,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     );
 
     if (!player) {
-      throw new AppError("SESSION_NOT_FOUND", "找不到对应的玩家会话");
+      throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
     }
 
     if (player.membership === "kicked") {
@@ -969,7 +969,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     if (this.mcpSeats.isControlled(room.id, player.id)) {
       if (connection.isAgent === true)
-        throw new AppError("MCP_SEAT_TAKEN", "该座位已由另一个 MCP 连接控制");
+        throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
       // 人类刷新页面：只恢复只读观看，不抢回座位所有权，也不顶掉 MCP 控制器。
       connection.resetStateSync?.();
       this.connectionRegistry.attach(connection, room.id, player.id);
@@ -2334,7 +2334,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         (player) => player.id !== exceptPlayerId && player.name === normalized
       )
     ) {
-      throw new AppError("NAME_CONFLICT", "该用户名已在房间内被占用");
+      throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
     }
   }
 

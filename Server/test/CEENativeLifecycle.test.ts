@@ -111,7 +111,7 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(oldHost).hostPlayerId).toBe(guest.id!);
     await expect(
       h.send(oldHost, "cee.room.transferHost", { playerId: host.id! })
-    ).rejects.toMatchObject({ code: "NOT_HOST" });
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   test("连接替换只允许最新会话操作，凭据不会出现在公共快照", async () => {
@@ -507,7 +507,7 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(host).phase).toBe("settled");
     expect(h.privateState(host).canStart).toBe(true);
     expect(h.privateState(guest).canStart).toBe(false);
-    await expect(h.send(guest, "cee.game.start", {})).rejects.toMatchObject({ code: "NOT_HOST" });
+    await expect(h.send(guest, "cee.game.start", {})).rejects.toMatchObject({ code: "FORBIDDEN" });
     await h.send(host, "cee.game.start", {});
     expect(h.snapshot(host).phase).toBe("guessing");
     expect(h.snapshot(host).roundNumber).toBe(2);

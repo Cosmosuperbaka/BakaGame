@@ -355,7 +355,7 @@ export class CEERooms {
     const player = [...room.players.values()].find((member) =>
       safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
     );
-    if (!player) throw new AppError("SESSION_NOT_FOUND", "房间身份已失效，请重新加入");
+    if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
 
     if (connection.isAgent === true && player.isAgent !== true)
       throw new AppError("AGENT_CLAIM_REQUIRED", "Agent 接手人类座位必须先通过 MCP 认领");
@@ -402,7 +402,7 @@ export class CEERooms {
     if (connection.isAgent !== true)
       throw new AppError("AGENT_REQUIRED", "控制器令牌只能用于 Agent 连接");
     const target = room.players.get(controller.playerId);
-    if (!target) throw new AppError("SESSION_NOT_FOUND", "房间身份已失效，请重新加入");
+    if (!target) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
     const previous = this.connections.findConnection(controller.connectionId);
     if (previous && previous.id !== connection.id) {
       this.connections.detach(previous);
@@ -430,7 +430,7 @@ export class CEERooms {
     player: CEEPlayerRecord
   ): CEERoomEnterResult {
     if (connection.isAgent === true)
-      throw new AppError("MCP_SEAT_TAKEN", "该座位已由另一个 MCP 连接控制");
+      throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
     // 人类刷新页面：只恢复只读观看，不抢回座位所有权，也不顶掉 MCP 控制器。
     connection.resetStateSync?.();
     this.connections.attach(connection, room.id, player.id);
@@ -568,7 +568,7 @@ export class CEERooms {
     return { released: true };
   }
   requireHost(room: CEERoom, player: CEEPlayerRecord): void {
-    if (player.id !== room.hostPlayerId) throw new AppError("NOT_HOST", "仅房主可以执行此操作");
+    if (player.id !== room.hostPlayerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
   requireWaiting(room: CEERoom): void {
     if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "请在等待阶段修改");
@@ -704,7 +704,7 @@ export class CEERooms {
   }
   private adminRoom(roomId: string): CEERoom {
     const room = this.rooms.get(roomId);
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已经关闭");
+    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     return room;
   }
   private evict(room: CEERoom, target: CEEPlayerRecord, reason: string): void {
@@ -926,7 +926,7 @@ export class CEERooms {
   }
   private room(id: string | undefined): CEERoom {
     const room = id ? this.rooms.get(ensureRoomId(id)) : undefined;
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已经关闭");
+    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     return room;
   }
   private name(value: string): string {

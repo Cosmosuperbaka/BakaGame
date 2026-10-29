@@ -34,7 +34,7 @@ it("测试房直链房间不存在时自动用本地用户名按规范房号创�
   localStorage.setItem("bakagame:username", "测试房主");
   const joinRoom = vi
     .fn()
-    .mockRejectedValue({ code: "ROOM_NOT_FOUND", message: "房间不存在或已经关闭" });
+    .mockRejectedValue({ code: "ROOM_NOT_FOUND", message: "房间不存在或已关闭" });
   const createRoom = vi.fn().mockResolvedValue(undefined);
   useCEEStore.setState({
     connected: true,

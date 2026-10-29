@@ -799,7 +799,7 @@ export class CEEOriginalService {
     return player;
   }
   private requireHost(session: CEEOriginalSession): void {
-    if (!this.me(session).isHost) throw new AppError("HOST_ONLY", "只有房主可以操作");
+    if (!this.me(session).isHost) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
   private requireSubjectSearch(session: CEEOriginalSession): void {
     if (

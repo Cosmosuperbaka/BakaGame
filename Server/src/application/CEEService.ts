@@ -104,7 +104,7 @@ export class CEEService implements AdminRoomControl {
     // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
     if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
     if (message.type === "cee.lobby.subscribeRooms") {
-      if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开房间");
+      if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间");
       connection.lobbySubscribed = true;
       await this.refreshRemote();
       const rooms = this.listRooms();
@@ -259,13 +259,13 @@ export class CEEService implements AdminRoomControl {
 
   /** 房号未命中时回源刷新一次（受缓存时长节流）：服务重启后的首个分享链接也能解析到原版房。 */
   private async resolveRoom(roomId: string | undefined): Promise<CEERoomTarget> {
-    if (!roomId?.trim()) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已经关闭");
+    if (!roomId?.trim()) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     const id = normalizeCEERoomId(roomId);
     const known = this.directory.resolve(id);
     if (known) return known;
     await this.refreshRemote();
     const refreshed = this.directory.resolve(id);
-    if (!refreshed) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已经关闭");
+    if (!refreshed) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     return refreshed;
   }
 

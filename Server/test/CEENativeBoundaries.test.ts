@@ -52,7 +52,7 @@ describe("CEE 房间与提示边界", () => {
     await expect(
       h.send(host, "cee.game.chooseSetter", { playerId: setter.id! })
     ).rejects.toMatchObject({ code: "INVALID_PHASE" });
-    await expect(h.send(setter, "cee.game.start", {})).rejects.toMatchObject({ code: "NOT_HOST" });
+    await expect(h.send(setter, "cee.game.start", {})).rejects.toMatchObject({ code: "FORBIDDEN" });
     await h.send(host, "cee.game.start", {});
     expect(h.snapshot(host).phase).toBe("choosingSetter");
     expect(h.privateState(host).setterCandidateIds).toContain(setter.id!);
