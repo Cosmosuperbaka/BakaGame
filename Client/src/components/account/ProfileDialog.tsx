@@ -367,7 +367,6 @@ function BadgeSection({ profile }: { profile: AccountProfile }) {
           type="button"
           variant="outline"
           size="sm"
-          aria-pressed={equipped}
           disabled={busy !== null}
           loading={busy === badge.kind || (equipped && busy === "none")}
           onClick={() => void equip(equipped ? null : badge.kind)}

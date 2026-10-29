@@ -112,6 +112,9 @@ describe("账号资料弹窗的身份徽章", () => {
     expect(await screen.findByText("先行者·№42")).toBeInTheDocument();
     expect(screen.getByText("BakaGame的第42位注册用户")).toBeInTheDocument();
     expect(screen.getByText("佩戴中")).toBeInTheDocument();
+    // 状态由文案「佩戴 / 取消佩戴」表达；再叠 aria-pressed，读屏会念出「取消佩戴，已按下」这种自相矛盾的组合。
+    for (const button of screen.getAllByRole("button", { name: /佩戴/ }))
+      expect(button).not.toHaveAttribute("aria-pressed");
 
     await user.click(screen.getByRole("button", { name: "佩戴" }));
 
