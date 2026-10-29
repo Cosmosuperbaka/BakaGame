@@ -1,7 +1,7 @@
 import { render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CEECharacterView } from "@bakagame/shared";
-import { ceeWs } from "@/lib/CEEWs";
+import { ceeWsClient } from "@/lib/CEEWs";
 import { CEEAnswerCard } from "./CEEAnswerCard";
 
 /** jsdom 没有 IntersectionObserver：这里把「被观察」直接当成已滚进视口。 */
@@ -54,7 +54,7 @@ describe("CEE 答案卡", () => {
 
   it("结算答案卡用大图：方格图先撑住版式，大图回来后替换", async () => {
     vi.stubGlobal("IntersectionObserver", ImmediateObserver);
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({ imageUrl: LARGE } as never);
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({ imageUrl: LARGE } as never);
     const { container } = render(<CEEAnswerCard answer={answer} />);
     const image = () => container.querySelector("img");
     // 快照里带的是方格图：先用它顶上，不闪占位图标。

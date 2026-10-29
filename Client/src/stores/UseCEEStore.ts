@@ -12,7 +12,7 @@ import type {
   ServerMessage,
 } from "@bakagame/shared";
 import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared";
-import { ceeWs, sendCEE } from "@/lib/CEEWs";
+import * as ws from "@/lib/CEEWs";
 import {
   normalizeCEERoomId,
   readCEESession,
@@ -84,10 +84,7 @@ export interface CEEStore {
   /** 作废在途的入房/恢复事务，但不改动当前房间状态（供房间结束类事件调用）。 */
   cancelEntry: () => void;
   resetRoom: (closed?: boolean) => void;
-  sendCommand: <T extends CEECommand>(
-    command: T,
-    payload: CEEPayload<T>
-  ) => Promise<CEEResponse<T>>;
+  sendCommand: ws.CEESendCommand;
   /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
   searchCharacters: (keyword: string) => Promise<CEEResponse<"cee.character.search">["results"]>;
   /** 搜作品；同一关键词在复用窗口内不会重复请求上游。 */
@@ -210,7 +207,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         if (isAbandoned()) {
           // ACK 已建立服务器会话，但页面不再拥有该意图：用 ACK 凭据释放，不写入本地身份。
           try {
-            await sendCEE(
+            await ws.send(
               "cee.room.leave",
               {},
               { roomId: result.roomId, sessionToken: result.sessionToken }
@@ -261,19 +258,19 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     },
     subscribeLobby: async () => {
       const generation = connectionGeneration;
-      const result = await sendCEE("cee.lobby.subscribeRooms", {});
+      const result = await ws.send("cee.lobby.subscribeRooms", {});
       if (generation !== connectionGeneration) return;
       set({ lobbyReady: true, originalAvailable: result.originalAvailable });
     },
     createRoom: (payload, signal) =>
       enterRequest(
-        () => sendCEE("cee.room.create", payload, { timeout: 0 }),
+        () => ws.send("cee.room.create", payload, { timeout: 0 }),
         () => signal?.aborted ?? false
       ),
     joinRoom: (roomId, userName, password, signal) =>
       enterRequest(
         () =>
-          sendCEE(
+          ws.send(
             "cee.room.join",
             { userName, ...(password ? { password } : {}) },
             { roomId: normalizeCEERoomId(roomId), timeout: 0 }
@@ -289,7 +286,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         const owners = new Set<AbortSignal | undefined>();
         owners.add(signal);
         const promise = enterRequest(
-          () => sendCEE("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
+          () => ws.send("cee.room.reconnect", { roomId, sessionToken: token }, { timeout: 0 }),
           () => [...owners].every((owner) => owner?.aborted)
         )
           .then(() => true)
@@ -338,7 +335,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     cancelEntry,
     sendCommand: (command, payload) => {
       const { roomId, sessionToken } = get();
-      return sendCEE(command, payload, {
+      return ws.send(command, payload, {
         roomId: roomId ?? undefined,
         sessionToken: sessionToken ?? undefined,
         timeout: serverTimedCommands.has(command) ? 0 : undefined,
@@ -460,8 +457,8 @@ let initialized = false;
 export function initCEEWs() {
   if (initialized) return () => {};
   initialized = true;
-  const unsubscribeMessage = ceeWs.onMessage(handleCEEMessage);
-  const unsubscribeStatus = ceeWs.onStatus((connected) => {
+  const unsubscribeMessage = ws.onMessage(handleCEEMessage);
+  const unsubscribeStatus = ws.onStatus((connected) => {
     connectionGeneration++;
     resetCEEStateSync();
     useCEEStore.setState({ connected, lobbyReady: false, snapshot: null, privateState: null });
@@ -474,10 +471,10 @@ export function initCEEWs() {
         store.setNotice(ceeErrorMessage(error));
     });
   });
-  ceeWs.connect();
+  ws.connect();
   return () => {
     initialized = false;
-    ceeWs.disconnect();
+    ws.disconnect();
     unsubscribeMessage();
     unsubscribeStatus();
     useCEEStore.getState().cancelEntry();

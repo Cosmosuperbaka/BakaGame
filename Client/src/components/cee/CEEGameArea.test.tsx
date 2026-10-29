@@ -9,7 +9,7 @@ import {
   type CEEScoreDetail,
 } from "@bakagame/shared";
 import { useCEEStore } from "@/stores/UseCEEStore";
-import { ceeWs } from "@/lib/CEEWs";
+import { ceeWsClient } from "@/lib/CEEWs";
 import { CEEGameArea } from "./CEEGameArea";
 import { CEEGameSettings } from "./CEEGameSettings";
 import { CEEPlayerList } from "./CEEPlayerList";
@@ -75,7 +75,7 @@ afterEach(() => {
 describe("CEE 操作区", () => {
   it("指定出题人模式由房主开始后进入选人阶段，候选只取服务端名单", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const guest = { ...host, id: "guest", name: "桃子" };
@@ -171,7 +171,7 @@ describe("CEE 操作区", () => {
 
   it("旁观切换挂在目标分组下方，空旁观分组只在可加入时出现", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const view = render(<CEEPlayerList snapshot={room()} privateState={privateState()} />);
@@ -213,7 +213,7 @@ describe("CEE 操作区", () => {
 
   it("等待页队伍面板点格即入队，旁观者没有队伍面板", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const players = [host, { ...host, id: "mate", name: "队友", team: 2 }];
@@ -298,7 +298,7 @@ describe("CEE 操作区", () => {
 
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "original", roomId: "1234", sessionToken: "token" });
     render(<CEEGameArea snapshot={room({ source: "original" })} privateState={privateState()} />);
     await user.click(screen.getByText("房间设置", { exact: true }));
@@ -321,7 +321,7 @@ describe("CEE 操作区", () => {
 
   it("玩家准备、房主随机出题开始使用真实命令", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const players = [host, { ...host, id: "guest", name: "桃子" }];
@@ -456,7 +456,7 @@ describe("CEE 操作区", () => {
 
   it("取消本局先经确认弹窗，确认后才发命令", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     render(<CEEGameArea snapshot={room({ phase: "preparing" })} privateState={privateState()} />);
     await user.click(screen.getByRole("button", { name: "取消本局" }));
@@ -516,7 +516,7 @@ describe("CEE 操作区", () => {
 
   it("结算的下一步按来源区分：增强房支持返回等待与再来一轮，原版房直接开下一局", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const answer: CEECharacterView = {
       id: 1,
@@ -606,7 +606,7 @@ describe("CEE 操作区", () => {
 
   it("设置面板覆盖四个玩法开关，且只在实际生效的阶段提交草稿", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const settings = createDefaultCEESettings(2026);
     const view = render(<CEEGameSettings settings={settings} source="native" waiting={false} />);
@@ -656,7 +656,7 @@ describe("CEE 操作区", () => {
 
   it("房主在等待页也拿不到反作弊开关：标记只在建房那一刻定", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const settings = createDefaultCEESettings(2026);
     render(<CEEGameSettings settings={settings} source="native" waiting readOnly={false} />);
@@ -676,7 +676,7 @@ describe("CEE 操作区", () => {
 
   it("反作弊房：房主看到待批准旁观请求，同意/拒绝分别提交 approveSpectate", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const requester = {
@@ -707,7 +707,7 @@ describe("CEE 操作区", () => {
 
   it("反作弊房：非房主看不到批准区；本人待批准时显示「等待房主批准」并可取消", async () => {
     const user = userEvent.setup();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const [host] = room().players;
     const requester = {

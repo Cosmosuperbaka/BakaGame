@@ -94,13 +94,32 @@ client.send = (async (
   }
 }) as unknown as typeof client.send;
 
-export const ceeWs = client;
+export const ceeWsClient = client;
+
+/** 与卧底、猜歌同一组 facade 形状：连接、等待、发送、消息与状态订阅。 */
+export const connect = () => ceeWsClient.connect();
+export const disconnect = () => ceeWsClient.disconnect();
+export const waitForConnection = (timeoutMs?: number) => ceeWsClient.waitForConnection(timeoutMs);
 
 /** 命令名、载荷与 ack 形状一律由 shared 的命令表推导（`CEEResponse` 就定义在那张表旁边）。 */
-export function sendCEE<T extends CEECommand>(
+export function send<T extends CEECommand>(
   type: T,
   payload: CEEPayload<T>,
   options?: SendOptions
 ): Promise<CEEResponse<T>> {
-  return ceeWs.send(type, payload, options) as Promise<CEEResponse<T>>;
+  return ceeWsClient.send(type, payload, options) as Promise<CEEResponse<T>>;
 }
+
+export const onMessage = (handler: Parameters<typeof ceeWsClient.onMessage>[0]) =>
+  ceeWsClient.onMessage(handler);
+export const onStatus = (handler: Parameters<typeof ceeWsClient.onStatus>[0]) =>
+  ceeWsClient.onStatus(handler);
+
+/**
+ * store 的 `sendCommand` 与组件 props 之间传的是同一个函数，形状只在这里写一次。
+ * 房号、会话凭据与超时由 store 按当前房间补齐，调用方只给命令与载荷。
+ */
+export type CEESendCommand = <T extends CEECommand>(
+  type: T,
+  payload: CEEPayload<T>
+) => Promise<CEEResponse<T>>;

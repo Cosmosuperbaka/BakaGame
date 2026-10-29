@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultCEESettings, type CEERoomSnapshot } from "@bakagame/shared";
-import { ceeWs } from "@/lib/CEEWs";
+import { ceeWsClient } from "@/lib/CEEWs";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import {
   ceeErrorMessage,
@@ -61,7 +61,7 @@ describe("CEE 状态同步", () => {
   it("原版会话过期后删除旧凭据并允许重新加入", async () => {
     writeCEESession("1234", "expired");
     const send = vi
-      .spyOn(ceeWs, "send")
+      .spyOn(ceeWsClient, "send")
       .mockRejectedValue({ code: "SESSION_EXPIRED", message: "会话已过期" });
     await expect(useCEEStore.getState().reconnectRoom("1234")).resolves.toBe(false);
     expect(readCEESession("1234")).toBeNull();
@@ -73,7 +73,7 @@ describe("CEE 状态同步", () => {
     "恢复命中共享永久码 %s 时同样丢弃本地凭据",
     async (code) => {
       writeCEESession("1234", "dead");
-      vi.spyOn(ceeWs, "send").mockRejectedValue({ code, message: "x" });
+      vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code, message: "x" });
       await expect(useCEEStore.getState().reconnectRoom("1234")).resolves.toBe(false);
       expect(readCEESession("1234")).toBeNull();
     }
@@ -81,7 +81,7 @@ describe("CEE 状态同步", () => {
 
   it("网络类错误不算永久失效，本地凭据留着下次再试", async () => {
     writeCEESession("1234", "alive");
-    vi.spyOn(ceeWs, "send").mockRejectedValue({ code: "TIMEOUT", message: "超时" });
+    vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "TIMEOUT", message: "超时" });
     await expect(useCEEStore.getState().reconnectRoom("1234")).rejects.toMatchObject({
       code: "TIMEOUT",
     });
@@ -90,13 +90,13 @@ describe("CEE 状态同步", () => {
 
   it("重建连接只订阅大厅并等待页面恢复，卸载释放连接且保留刷新凭据", async () => {
     let status: (connected: boolean) => void = () => {};
-    vi.spyOn(ceeWs, "onStatus").mockImplementation((handler) => {
+    vi.spyOn(ceeWsClient, "onStatus").mockImplementation((handler) => {
       status = handler;
       return () => {};
     });
-    vi.spyOn(ceeWs, "connect").mockImplementation(() => {});
-    const disconnect = vi.spyOn(ceeWs, "disconnect").mockImplementation(() => status(false));
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({ originalAvailable: false });
+    vi.spyOn(ceeWsClient, "connect").mockImplementation(() => {});
+    const disconnect = vi.spyOn(ceeWsClient, "disconnect").mockImplementation(() => status(false));
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({ originalAvailable: false });
     writeCEESession("1234", "token");
     useCEEStore.setState({
       source: "native",
@@ -129,7 +129,7 @@ describe("CEE 状态同步", () => {
   });
 
   it("受服务端计时的角色与图片请求不受短客户端超时截断", async () => {
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     const store = useCEEStore.getState();
     await store.sendCommand("cee.game.next", {});
     await store.sendCommand("cee.game.setAnswer", { characterId: 1, hints: [] });
@@ -141,7 +141,7 @@ describe("CEE 状态同步", () => {
   it("CEE 只读查询在复用窗口内复用结果，同键不重复请求上游", async () => {
     // 复用窗口是模块级状态，先清干净再断言调用序列。
     clearCEEQueryCache();
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({ results: [] });
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({ results: [] });
     const store = useCEEStore.getState();
 
     await store.searchCharacters("初音");
@@ -193,7 +193,7 @@ describe("CEE 状态同步", () => {
   });
 
   it("发现补丁缺口时请求全量且不覆盖现有房态", async () => {
-    const send = vi.spyOn(ceeWs, "send").mockResolvedValue({});
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
     handleCEEMessage({
       type: "event",
       event: "cee.room.snapshot",
@@ -221,7 +221,7 @@ describe("CEE 状态同步", () => {
    */
   it("进入原版房间期间不抢发同步，凭据写回后补一次全量", async () => {
     const calls: Array<{ command: string; options?: { sessionToken?: string } }> = [];
-    vi.spyOn(ceeWs, "send").mockImplementation(
+    vi.spyOn(ceeWsClient, "send").mockImplementation(
       (command: string, _payload?: unknown, options?: { sessionToken?: string }) => {
         calls.push({ command, options });
         if (command === "cee.room.join") {
@@ -275,7 +275,7 @@ it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", as
   const ack = new Promise<Record<string, unknown>>((done) => {
     resolve = done;
   });
-  const send = vi.spyOn(ceeWs, "send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const send = vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(ack).mockResolvedValue({});
   const controller = new AbortController();
   const outcome = useCEEStore
     .getState()
@@ -303,7 +303,7 @@ it("取消加入的晚到 ACK 使用结果凭据离房，不写入新会话", as
   });
 });
 it("加入前已取消的意图不发送网络命令", async () => {
-  const send = vi.spyOn(ceeWs, "send");
+  const send = vi.spyOn(ceeWsClient, "send");
   const controller = new AbortController();
   controller.abort();
   const error = await useCEEStore
@@ -316,7 +316,7 @@ it("加入前已取消的意图不发送网络命令", async () => {
 it("临时恢复失败保留会话并向调用者拒绝，而非伪装成功", async () => {
   writeCEESession("Oblivionis", "recoverable");
   const send = vi
-    .spyOn(ceeWs, "send")
+    .spyOn(ceeWsClient, "send")
     .mockRejectedValue({ code: "DISCONNECTED", message: "连接已断开" });
   const error = await useCEEStore
     .getState()
@@ -336,7 +336,7 @@ it("StrictMode 重挂载接管同房在途恢复，不重复恢复或离房", as
     resolveAck = resolve;
   });
   writeCEESession("1234", "old-token");
-  const send = vi.spyOn(ceeWs, "send").mockReturnValueOnce(ack);
+  const send = vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(ack);
   const oldOwner = new AbortController();
   const newOwner = new AbortController();
   const cancelled = useCEEStore
@@ -369,7 +369,7 @@ it("取消后的旧离房尚未完成时，新加入必须等待旧会话释放"
     resolveLeave = resolve;
   });
   const send = vi
-    .spyOn(ceeWs, "send")
+    .spyOn(ceeWsClient, "send")
     .mockReturnValueOnce(ack)
     .mockReturnValueOnce(leave)
     .mockResolvedValue({
@@ -411,7 +411,7 @@ it("房间关闭作废在途入房：晚到 ACK 只用结果凭据离房并保�
   const ack = new Promise<Record<string, unknown>>((resolve) => {
     resolveAck = resolve;
   });
-  const send = vi.spyOn(ceeWs, "send").mockReturnValueOnce(ack).mockResolvedValue({});
+  const send = vi.spyOn(ceeWsClient, "send").mockReturnValueOnce(ack).mockResolvedValue({});
   const outcome = useCEEStore
     .getState()
     .joinRoom("1234", "玩家")
@@ -441,7 +441,7 @@ it("房间关闭作废在途入房：晚到 ACK 只用结果凭据离房并保�
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
 it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
-  const send = vi.spyOn(ceeWs, "send").mockImplementation((command: string) => {
+  const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
     if (command === "cee.room.requestSync") return new Promise<never>(() => {});
     return Promise.resolve({});
   });
