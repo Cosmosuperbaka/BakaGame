@@ -40,7 +40,7 @@ export class CEERoomDirectory {
   /** 本站在原版服务器新建房间前占号；上游建房失败时调用方负责 `release`。 */
   claimOriginal(roomId: string): CEEOriginalTarget {
     const id = roomId.trim();
-    if (!FOUR_DIGITS.test(id)) throw new AppError("INVALID_ROOM_ID", "请输入四位数字房间号");
+    if (!FOUR_DIGITS.test(id)) throw new AppError("INVALID_ROOM_ID", "房间号必须为四位数字");
     if (this.hasNativeRoom(id) || this.aliasToUpstream.has(id) || this.upstreamToAlias.has(id)) {
       throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     }
