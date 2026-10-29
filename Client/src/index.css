@@ -529,6 +529,39 @@ html {
   }
 }
 
+/* 答案卡抬起的投影（revealCard）：伪元素只带投影、不带底色，透明度按 revealCard 的 times 起落，
+   卡片抬到最高时投影最远，放回原位后消失，落定的卡片不留重阴影。 */
+@keyframes reveal-lift-shadow {
+  0%,
+  25%,
+  100% {
+    opacity: 0;
+  }
+  65% {
+    opacity: 1;
+  }
+}
+
+.reveal-lift {
+  position: relative;
+}
+
+.reveal-lift::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--shadow-xl);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-lift::after {
+    animation: reveal-lift-shadow var(--motion-reveal-lift-duration) var(--motion-ease-in-out);
+  }
+}
+
 /* 减弱动效：不播放任何页面过渡，直接换页。 */
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*),

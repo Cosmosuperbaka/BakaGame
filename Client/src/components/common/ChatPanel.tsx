@@ -32,6 +32,8 @@ import {
   jitterShape,
   optionTappable,
   popover,
+  receiptMark,
+  repeatStair,
   spring,
   springWithVelocity,
   stepJitterAnimation,
@@ -335,7 +337,6 @@ function MessageText({
   );
 }
 
-/** 单条消息的 +1 按钮：计数为 0 时只显示按钮本身。 */
 /** 复读按钮：点击即以当前玩家身份再发一条相同文本，不做计数。 */
 function RepeatButton({ onRepeat }: { onRepeat: () => void }) {
   return (
@@ -351,6 +352,45 @@ function RepeatButton({ onRepeat }: { onRepeat: () => void }) {
   );
 }
 
+/**
+ * 复读链：聊天末尾连续几条相同文本的玩家消息（系统提示不算、也不打断）。
+ * 返回每条消息在链里的序号；不足两条不算链，返回空表。
+ */
+function trailingRepeatChain(messages: ChatMessage[]): Map<string, number> {
+  const chain: string[] = [];
+  let text: string | null = null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.system) continue;
+    if (text !== null && message.text !== text) break;
+    text = message.text;
+    chain.push(message.id);
+  }
+  if (chain.length < 2) return new Map();
+  return new Map(chain.reverse().map((id, order) => [id, order]));
+}
+
+/** 复读链最前面那条的 ×N 角标：计数变了就重新弹一次。只是视觉，读屏照旧逐条读消息。 */
+function RepeatCount({ count, isMe }: { count: number; isMe: boolean }) {
+  return (
+    <AnimatePresence initial={false}>
+      <motion.span
+        key={count}
+        aria-hidden="true"
+        initial={receiptMark.initial}
+        animate={receiptMark.animate}
+        transition={receiptMark.transition}
+        className={cn(
+          "pointer-events-none absolute -top-2 flex h-4 items-center rounded-full border border-border bg-background px-1 font-mono text-2xs leading-none tabular-nums text-muted-foreground",
+          isMe ? "-left-2" : "-right-2"
+        )}
+      >
+        ×{count}
+      </motion.span>
+    </AnimatePresence>
+  );
+}
+
 /** 玩家消息气泡与右侧 +1；按钮绝对定位，不改变气泡宽度或滚动位置。 */
 function MessageBubble({
   message,
@@ -360,6 +400,7 @@ function MessageBubble({
   players,
   myPlayerId,
   showRepeat,
+  repeatCount,
   onRepeatMessage,
 }: {
   message: ChatMessage;
@@ -369,6 +410,8 @@ function MessageBubble({
   players: ChatMentionPlayer[];
   myPlayerId?: string;
   showRepeat: boolean;
+  /** 这条是复读链最前面那条时的链长，其余为 0 */
+  repeatCount: number;
   onRepeatMessage: (text: string) => Promise<void> | void;
 }) {
   const isSticker = message.text.startsWith(STICKER_PREFIX);
@@ -406,6 +449,7 @@ function MessageBubble({
           <MessageText text={message.text} players={players} isMe={isMe} isGhost={isGhost} />
         )}
       </div>
+      {repeatCount > 1 ? <RepeatCount count={repeatCount} isMe={isMe} /> : null}
       {showRepeat && !isMe ? (
         <RepeatButton onRepeat={() => void onRepeatMessage(message.text)} />
       ) : null}
@@ -480,6 +524,7 @@ export function ChatPanel({
     () => messages.findLast((message) => !message.system)?.id,
     [messages]
   );
+  const repeatChain = useMemo(() => trailingRepeatChain(messages), [messages]);
   if (pendingEcho && lastMineId && lastMineId !== pendingEcho.baselineId) {
     setHandoffId(lastMineId);
     setPendingEcho(null);
@@ -635,7 +680,8 @@ export function ChatPanel({
           role="log"
           aria-live="polite"
           aria-relevant="additions"
-          className="min-w-0 space-y-2"
+          // 复读台阶的错开与放大会把整宽的外壳推出右缘：横向裁掉这截空白，不让滚动区长出横向滚动条
+          className="min-w-0 space-y-2 overflow-x-clip"
         >
           {notice ? <p className={SYSTEM_TEXT}>{notice}</p> : null}
           <AnimatePresence initial={false}>
@@ -660,6 +706,10 @@ export function ChatPanel({
               }
 
               const takesThrow = handoffId === message.id;
+              // 复读链台阶：第几级就向内错开、放大几级；链断了 step 回到 0，按同一条弹簧收回。
+              const chainOrder = repeatChain.get(message.id);
+              const step = Math.min(chainOrder ?? 0, repeatStair.maxSteps);
+              const isChainFront = chainOrder !== undefined && chainOrder === repeatChain.size - 1;
 
               return (
                 <motion.div
@@ -673,21 +723,37 @@ export function ChatPanel({
                   style={{ originX: isMe ? 1 : 0, originY: 1 }}
                   className={cn("flex w-full min-w-0 flex-col", isMe ? "items-end" : "items-start")}
                 >
-                  <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
-                    <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
-                      {message.playerName}
-                    </span>
-                    <MessageBubble
-                      message={message}
-                      isMe={isMe}
-                      isGhost={isGhost}
-                      stickerLabels={stickerLabels}
-                      players={players}
-                      myPlayerId={myPlayerId}
-                      showRepeat={Boolean(onRepeatMessage) && message.id === latestMessageId}
-                      onRepeatMessage={handleRepeatMessage}
-                    />
-                  </MessageShell>
+                  {/* 台阶单独占一层：外层管弹入与重排，MessageShell 管接手胶囊，三者的 transform 互不覆盖 */}
+                  <motion.div
+                    initial={false}
+                    animate={{
+                      x: (isMe ? -1 : 1) * step * repeatStair.shift,
+                      scale: 1 + step * repeatStair.grow,
+                    }}
+                    transition={repeatStair.transition}
+                    style={{ originX: isMe ? 1 : 0, originY: 1 }}
+                    className={cn(
+                      "flex w-full min-w-0 flex-col",
+                      isMe ? "items-end" : "items-start"
+                    )}
+                  >
+                    <MessageShell isMe={isMe} handoff={takesThrow ? handoff : undefined}>
+                      <span className="font-sans text-2xs font-normal text-muted-foreground mb-0.5 px-1 select-none">
+                        {message.playerName}
+                      </span>
+                      <MessageBubble
+                        message={message}
+                        isMe={isMe}
+                        isGhost={isGhost}
+                        stickerLabels={stickerLabels}
+                        players={players}
+                        myPlayerId={myPlayerId}
+                        showRepeat={Boolean(onRepeatMessage) && message.id === latestMessageId}
+                        repeatCount={isChainFront ? repeatChain.size : 0}
+                        onRepeatMessage={handleRepeatMessage}
+                      />
+                    </MessageShell>
+                  </motion.div>
                 </motion.div>
               );
             })}

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
-import { followDelay, listItem, revealCard, springSettleMs } from "@/lib/Motion";
+import { followDelay, listItem, revealCard } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 import {
@@ -96,7 +96,7 @@ export function SongSettlementDetails({
 }
 
 /** 累计得分在答案卡落定之后再滚，读作这一轮的分数落进了总分。 */
-const SOLO_ROLL_DELAY = springSettleMs(revealCard.transition) / 1000;
+const SOLO_ROLL_DELAY = revealCard.settle;
 
 export function SoloRoundOutcome({
   correct,
@@ -231,12 +231,12 @@ export function SongRoundResultPhase({
         icon={snapshot.settings.questionType === "anime" ? Film : Music2}
         title="答案揭晓"
       />
-      {/* 答案卡：整卡回弹落定；下方得分表在卡之外，两者各落各的 */}
+      {/* 答案卡：整卡沉一下再抬起亮相、放回原位；下方得分表在卡之外，两者各落各的 */}
       <motion.section
         initial={revealCard.initial}
         animate={revealCard.animate}
         transition={revealCard.transition}
-        className="space-y-4 rounded-md bg-muted p-4"
+        className="reveal-lift space-y-4 rounded-md bg-muted p-4"
       >
         {snapshot.settings.questionType === "anime" && summary.anime ? (
           <>

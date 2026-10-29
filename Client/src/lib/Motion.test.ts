@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   byAxes,
+  clueFlip,
+  clueFlipRow,
   creditsPage,
+  repeatStair,
+  revealCard,
   duration,
   ease,
   followDelay,
@@ -49,6 +53,27 @@ describe("Motion tokens", () => {
       scaleX: "across",
       scaleY: "along",
     });
+  });
+
+  it("答案卡抬起：沉、抬、放三段关键帧与 times 对齐，投影时长与卡片放稳同刻，落定回到原大", () => {
+    const { animate, transition } = revealCard;
+    expect(animate.scale).toHaveLength(transition.times.length);
+    expect(animate.y).toHaveLength(transition.times.length);
+    expect(transition.ease).toHaveLength(transition.times.length - 1);
+    expect(animate.y[1]).toBeGreaterThan(0);
+    expect(Math.max(...animate.scale)).toBeGreaterThan(1);
+    expect(animate.scale.at(-1)).toBe(1);
+    expect(animate.y.at(-1)).toBe(0);
+    expect(parseFloat(motionCssVariables()["reveal-lift-duration"])).toBeCloseTo(revealCard.settle);
+  });
+
+  it("复读台阶封顶：最高一级放大不超过 1.15，猜中行的翻牌不错峰", () => {
+    expect(1 + repeatStair.grow * repeatStair.maxSteps).toBeLessThanOrEqual(1.15);
+    const animate = clueFlipRow.animate as (correct: boolean) => {
+      transition: { staggerChildren: number };
+    };
+    expect(animate(true).transition.staggerChildren).toBe(0);
+    expect(animate(false).transition.staggerChildren).toBe(clueFlip.step);
   });
 
   it("负的初速度先朝反方向走，正的初速度更早到达", () => {

@@ -589,6 +589,46 @@ describe("ChatPanel (Common)", () => {
     expect(onRepeatMessage).toHaveBeenCalledWith("复读这一条");
   });
 
+  it("末尾连续相同文本叠成复读链：只在最前面那条挂 ×N，系统提示不打断，链断了角标消失", () => {
+    const say = (id: string, text: string, playerId = "p-other"): ChatMessage => ({
+      id,
+      playerId,
+      playerName: playerId === "p-me" ? "我" : "对手",
+      text,
+      createdAt: 0,
+      system: false,
+    });
+    const chain: ChatMessage[] = [
+      say("m-1", "前面的话"),
+      say("m-2", "草"),
+      say("m-3", "草", "p-me"),
+      { ...say("m-sys", "第 2 天开始"), playerId: "system", playerName: "系统", system: true },
+      say("m-4", "草"),
+    ];
+    const { container, rerender } = render(
+      <ChatPanel messages={chain} players={mockPlayers} myPlayerId="p-me" onSendMessage={vi.fn()} />
+    );
+
+    const counts = () =>
+      [...container.querySelectorAll("[aria-hidden='true']")].filter((node) =>
+        /^×\d+$/.test(node.textContent ?? "")
+      );
+    expect(counts()).toHaveLength(1);
+    expect(counts()[0]).toHaveTextContent("×3");
+    const bubbles = screen.getAllByTestId("chat-message-bubble");
+    expect(bubbles[3].parentElement).toContainElement(counts()[0] as HTMLElement);
+
+    rerender(
+      <ChatPanel
+        messages={[...chain, say("m-5", "说点别的")]}
+        players={mockPlayers}
+        myPlayerId="p-me"
+        onSendMessage={vi.fn()}
+      />
+    );
+    expect(counts()).toHaveLength(0);
+  });
+
   it("最新一条是自己发送的消息时不显示 +1", () => {
     const messages: ChatMessage[] = [
       {

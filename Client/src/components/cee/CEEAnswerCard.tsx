@@ -23,7 +23,7 @@ function Fact({ label, value }: { label: string; value: string | number }) {
 }
 
 /**
- * 本局答案卡。`sealed` 只在本局揭晓时打开：卡片回弹落定，
+ * 本局答案卡。`sealed` 只在本局揭晓时打开：卡片沉一下再被抬起亮相、放回原位（`revealCard`），
  * 与中途对观战者公开的同一张卡区分开（那时还没结算）。
  * 与猜歌答案卡同一排布：窄屏图片在上、文字居中，`sm` 起左图右文。
  * 不展示角色编号；收藏与评论数之和按 Bangumi 的叫法称「人气值」。简介按 Bangumi 维基的富文本渲染。
@@ -128,7 +128,7 @@ export function CEEAnswerCard({
       initial={revealCard.initial}
       animate={revealCard.animate}
       transition={revealCard.transition}
-      className="space-y-4 rounded-md bg-muted p-4"
+      className="reveal-lift space-y-4 rounded-md bg-muted p-4"
     >
       {info}
       {details}

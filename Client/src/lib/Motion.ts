@@ -157,6 +157,7 @@ export function motionCssVariables(): Record<string, string> {
   variables["page-behind-scale"] = String(pageScale.behind);
   variables["page-ahead-scale"] = String(pageScale.ahead);
   variables["page-credits-travel"] = `${creditsPage.travel}%`;
+  variables["reveal-lift-duration"] = seconds(revealCard.settle);
   variables["room-entrance-scale"] = String(roomEntrance.scale);
   roomEntrance.parts.forEach((part, index) => {
     variables[`room-entrance-delay-${part}`] = seconds(index * roomEntrance.step);
@@ -541,12 +542,95 @@ export const receiptMarkFollow = {
 } as const;
 
 /**
- * 结算答案卡的落定：卡片以 `impulse` 回弹就位，与 `receiptCard` 同一条语汇，只是这里的「回执」是一局的答案。
+ * 结算答案卡的抬起：卡片先轻轻下沉，再被抬起来亮给所有人看（略放大、投影拉远），最后放回原位。
+ * 揭晓是一轮的高潮，比回执多一个「翻牌」的动作；落定后不留重阴影，流内内容保持轻阴影。
+ * 三段关键帧（沉、抬、放）弹簧给不了，用确定时长的分段缓动；投影由 `.reveal-lift` 的伪元素按同一组 `times` 淡入淡出，
+ * 时长经 `--motion-reveal-lift-duration` 传给 CSS。`settle` 是卡片放稳的时刻（秒），卡外的分数从这时开始滚。
  */
+const revealLiftDuration = duration.slow + duration.base;
 export const revealCard = {
-  initial: { opacity: 0, scale: 0.97 },
-  animate: { opacity: 1, scale: 1 },
-  transition: spring.impulse,
+  initial: { opacity: 0, scale: 0.97, y: 0 },
+  animate: { opacity: 1, scale: [0.97, 0.96, 1.02, 1], y: [0, 4, -1, 0] },
+  transition: {
+    duration: revealLiftDuration,
+    times: [0, 0.25, 0.65, 1],
+    ease: [ease.out, ease.emphasized, ease.inOut],
+    opacity: { duration: duration.quick, ease: ease.out },
+  },
+  settle: revealLiftDuration,
+} satisfies {
+  initial: TargetAndTransition;
+  animate: TargetAndTransition;
+  transition: Transition;
+  settle: number;
+};
+
+/**
+ * 阶段标题自基线下方的遮罩里升起：外层裁切，内层整行上移到位，读作「翻到了新的一页」。
+ * 晚阶段内容 `followDelay` 起步，标题是从属于这次切换的那一拍；减弱动效下直接显示终态。
+ */
+export const phaseTitleRise = {
+  initial: { y: "110%" },
+  animate: { y: "0%" },
+  transition: { ...spring.settle, delay: followDelay },
+} as const;
+
+/**
+ * 线索表新行逐格翻开：角色名先滑入，数值块依次绕 X 轴翻开，视线被从左带到右，像开奖。
+ * 旧行按 `push` 下推，新行等它基本推到位（`rowDelay`）再翻，两行不重叠；猜中那一行所有格子同时翻开（不错峰），与普通猜测拉开反差。
+ * 翻牌走 `spring.impulse`，落位带一次轻微过冲；透明度只用来遮住转到背面的那几帧。
+ */
+export const clueFlip = {
+  push: { layout: spring.swift } satisfies Transition,
+  rowDelay: springReachMs(spring.swift, 0.95) / 1000,
+  step: 0.05,
+  perspective: 500,
+  from: -100,
+  slide: -12,
+} as const;
+
+/** 翻开前的数值块与滑入前的角色名、标签列：只在新到的那一行上挂这组变体。 */
+export const clueFlipChip: Variants = {
+  initial: { rotateX: clueFlip.from, opacity: 0, transformPerspective: clueFlip.perspective },
+  animate: {
+    rotateX: 0,
+    opacity: 1,
+    transformPerspective: clueFlip.perspective,
+    transition: {
+      rotateX: spring.impulse,
+      opacity: { duration: duration.instant, ease: ease.out },
+    },
+  },
+};
+
+export const clueFlipName: Variants = {
+  initial: { x: clueFlip.slide, opacity: 0 },
+  animate: { x: 0, opacity: 1, transition: spring.swift },
+};
+
+export const clueFlipFade: Variants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: duration.base, ease: ease.out } },
+};
+
+/** 新行本身：不做缩放，只负责等待与把子项按格错峰（猜中时 `custom` 传 true，所有格同时翻）。 */
+export const clueFlipRow: Variants = {
+  initial: {},
+  animate: (correct: boolean) => ({
+    transition: { delayChildren: clueFlip.rowDelay, staggerChildren: correct ? 0 : clueFlip.step },
+  }),
+};
+
+/**
+ * 复读链叠成台阶：聊天末尾连续几条相同文本，从第二条起逐条向内错开 `shift` 像素、放大 `grow`，
+ * 叠成一道向前的台阶；最前面那条带 ×N 角标。有人说了别的，链就断了，台阶按同一条弹簧收回成普通气泡。
+ * 级数封顶 `maxSteps`，放大不超过 `1 + grow × maxSteps`，不至于压到相邻消息；只改视觉，消息与读屏不变。
+ */
+export const repeatStair = {
+  shift: 6,
+  grow: 0.025,
+  maxSteps: 4,
+  transition: spring.settle,
 } as const;
 
 /** 自右侧滑入的提示（Toast）：从屏幕边缘被推进来，退出沿原路回去。堆叠重排由组件的 `layout` 配 `spring.settle` 负责。 */

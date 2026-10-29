@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import type { CEEGuess } from "@bakagame/shared";
+import { Button } from "@/components/ui/Button";
 import { STORY_PLAYERS } from "@/stories/fixtures/Common";
 import { ceeGuess } from "@/stories/fixtures/CEE";
 import { CEEFeedbackTable } from "./CEEFeedbackTable";
@@ -57,6 +59,29 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const AllTones: Story = { name: "一局猜测 · 全部档位" };
+
+/** 逐条到达：挂载时只有第一条，点按钮再来一条，新行逐格翻开；最后一条猜中，所有格同时翻开。 */
+function ArrivingGuesses(props: React.ComponentProps<typeof CEEFeedbackTable>) {
+  const [count, setCount] = useState(1);
+  return (
+    <div className="space-y-3">
+      <Button
+        type="button"
+        size="sm"
+        disabled={count >= props.guesses.length}
+        onClick={() => setCount((current) => current + 1)}
+      >
+        下一次猜测
+      </Button>
+      <CEEFeedbackTable {...props} guesses={props.guesses.slice(0, count)} />
+    </div>
+  );
+}
+
+export const Arriving: Story = {
+  name: "新猜测逐格翻开",
+  render: (args) => <ArrivingGuesses {...args} />,
+};
 
 export const SyncRounds: Story = {
   name: "同步模式 · 标出轮次",

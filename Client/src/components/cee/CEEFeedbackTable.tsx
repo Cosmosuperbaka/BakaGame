@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useId, useLayoutEffect, useRef, useState, type Ref } from "react";
 import {
   ArrowDown,
@@ -17,7 +17,17 @@ import { Button } from "@/components/ui/Button";
 import { Collapsible, DisclosureChevron } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
-import { listContainer, listItem, skeletonFade, spring } from "@/lib/Motion";
+import {
+  clueFlip,
+  clueFlipChip,
+  clueFlipFade,
+  clueFlipName,
+  clueFlipRow,
+  listContainer,
+  listItem,
+  skeletonFade,
+  spring,
+} from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
 
@@ -60,8 +70,19 @@ const FIELD_LABEL: Record<NumericField | "gender", string> = {
   earliestAppearance: "最早登场",
 };
 
-/** 一格数值：值与指向答案的箭头同处一个色块；成对的字段上下叠放，读屏先报字段名再报值。 */
-function ValueChip({ field, data }: { field: NumericField | "gender"; data: CEEFeedbackValue }) {
+/**
+ * 一格数值：值与指向答案的箭头同处一个色块；成对的字段上下叠放，读屏先报字段名再报值。
+ * `flip` 只在新到的那一行上打开：色块挂 `clueFlipChip`，跟着行的错峰逐格翻开。
+ */
+function ValueChip({
+  field,
+  data,
+  flip = false,
+}: {
+  field: NumericField | "gender";
+  data: CEEFeedbackValue;
+  flip?: boolean;
+}) {
   const { label, icon: Icon, tone } = COMPARISON[data.comparison];
   const missing = data.value === "" || data.value === "?" || data.value === -1;
   const text = missing
@@ -72,7 +93,8 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CEEF
   // 字段名只在读屏里出现，视觉上只剩数值与箭头；悬停补上「字段名：判定」，与读屏口径一致。
   return (
     <Hint label={`${FIELD_LABEL[field]}：${label}`}>
-      <span
+      <motion.span
+        variants={flip ? clueFlipChip : undefined}
         className={cn(
           "inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-md border px-1.5 tabular-nums",
           TONE_CLASS[tone]
@@ -81,7 +103,7 @@ function ValueChip({ field, data }: { field: NumericField | "gender"; data: CEEF
         <span className="sr-only">{FIELD_LABEL[field]}</span>
         <span>{text}</span>
         <Icon className="size-3.5 shrink-0" role="img" aria-label={label} />
-      </span>
+      </motion.span>
     </Hint>
   );
 }
@@ -104,15 +126,17 @@ export function CEEFeedbackChips({ feedback }: { feedback: CEEFeedback }) {
 function ValueCell({
   feedback,
   fields,
+  flip,
 }: {
   feedback: CEEFeedback;
   fields: Array<NumericField | "gender">;
+  flip: boolean;
 }) {
   return (
     <td className="px-1 py-2 text-center whitespace-nowrap">
       <span className="inline-flex flex-col items-stretch gap-1">
         {fields.map((field) => (
-          <ValueChip key={field} field={field} data={feedback[field]} />
+          <ValueChip key={field} field={field} data={feedback[field]} flip={flip} />
         ))}
       </span>
     </td>
@@ -181,11 +205,29 @@ function SharedAppearances({ subjects }: { subjects: CEEFeedback["sharedAppearan
 
 const pinned = "sticky left-0 shadow-[inset_-1px_0_0_var(--color-border)]";
 
-function GuessRow({ guess, showRound }: { guess: CEEGuess; showRound: boolean }) {
+/**
+ * 一次猜测。`fresh` 是表格挂载之后才到的猜测：旧行照常 `layout="position"` 下推，
+ * 这一行不整行推入，而是角色名滑入、数值块逐格翻开、标签列最后显影（`clueFlip`）。
+ */
+function GuessRow({
+  guess,
+  showRound,
+  fresh,
+}: {
+  guess: CEEGuess;
+  showRound: boolean;
+  fresh: boolean;
+}) {
   const { character, feedback } = guess;
   const subtitle = character.nameCn && character.nameCn !== character.name ? character.nameCn : "";
   return (
-    <motion.tr variants={listItem} layout="position" className="origin-left border-t align-middle">
+    <motion.tr
+      variants={fresh ? clueFlipRow : listItem}
+      custom={guess.correct}
+      layout="position"
+      transition={clueFlip.push}
+      className="origin-left border-t align-middle"
+    >
       <th
         scope="row"
         className={cn(
@@ -195,7 +237,10 @@ function GuessRow({ guess, showRound }: { guess: CEEGuess; showRound: boolean })
             "shadow-[inset_3px_0_0_var(--color-success),inset_-1px_0_0_var(--color-border)]"
         )}
       >
-        <span className="flex items-center gap-2">
+        <motion.span
+          variants={fresh ? clueFlipName : undefined}
+          className="flex items-center gap-2"
+        >
           <CEECharacterImage character={character} className="hidden h-10 w-8 @[30rem]:flex" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
             <span className="block leading-snug font-medium">
@@ -222,16 +267,23 @@ function GuessRow({ guess, showRound }: { guess: CEEGuess; showRound: boolean })
               ) : null}
             </span>
           </span>
-        </span>
+        </motion.span>
       </th>
-      <ValueCell feedback={feedback} fields={["gender", "popularity"]} />
-      <ValueCell feedback={feedback} fields={["appearancesCount", "rating"]} />
-      <ValueCell feedback={feedback} fields={["latestAppearance", "earliestAppearance"]} />
+      <ValueCell feedback={feedback} fields={["gender", "popularity"]} flip={fresh} />
+      <ValueCell feedback={feedback} fields={["appearancesCount", "rating"]} flip={fresh} />
+      <ValueCell
+        feedback={feedback}
+        fields={["latestAppearance", "earliestAppearance"]}
+        flip={fresh}
+      />
       <td className="py-2 pr-3 pl-2">
         {/* 共同作品并入标签列首行：1440 宽房间页的游戏区不足 600px，单独成列会把整表顶出横滚。
             容器窄于 26rem 时整表无论如何都要横滚，标签列取「容器宽 − 角色列 6rem − 本格内边距 1.25rem」：
             滚到最右时恰好填满角色列右侧的可视区，不被贴边的角色列遮住开头，行也更矮。 */}
-        <div className="min-w-[calc(100cqw-7.25rem)] space-y-1.5 @[26rem]:min-w-[7rem]">
+        <motion.div
+          variants={fresh ? clueFlipFade : undefined}
+          className="min-w-[calc(100cqw-7.25rem)] space-y-1.5 @[26rem]:min-w-[7rem]"
+        >
           {feedback.sharedAppearances.length ? (
             <SharedAppearances subjects={feedback.sharedAppearances} />
           ) : null}
@@ -272,7 +324,7 @@ function GuessRow({ guess, showRound }: { guess: CEEGuess; showRound: boolean })
               </div>
             </Collapsible>
           ) : null}
-        </div>
+        </motion.div>
       </td>
     </motion.tr>
   );
@@ -298,12 +350,16 @@ export function CEEFeedbackTable({
   showRound?: boolean;
 }) {
   const rows = [...guesses].reverse();
-  // 空状态与表格叠在同一格：第一条猜测到达时空状态原地淡出、表格行以 listItem 推上来，两者交叉而不是先清空再出现。
+  // 挂载时已有的猜测（进房、重连、换阶段）照常整行推入；之后才到的才逐格翻开。减弱动效下一律不翻。
+  const reducedMotion = useReducedMotion();
+  const [seenAtMount] = useState(() => new Set(guesses.map((guess) => guess.id)));
+  const isFresh = (guess: CEEGuess) => !reducedMotion && !seenAtMount.has(guess.id);
+  // 空状态与表格叠在同一格：第一条猜测到达时空状态原地淡出、表格行推上来，两者交叉而不是先清空再出现。
   return (
     <div className="relative grid">
       <AnimatePresence initial={false} mode="popLayout">
         {rows.length ? (
-          <FeedbackRows key="rows" rows={rows} showRound={showRound} />
+          <FeedbackRows key="rows" rows={rows} showRound={showRound} isFresh={isFresh} />
         ) : (
           <motion.p
             key="empty"
@@ -322,10 +378,12 @@ function FeedbackRows({
   ref,
   rows,
   showRound,
+  isFresh,
 }: {
   ref?: Ref<HTMLDivElement>;
   rows: CEEGuess[];
   showRound: boolean;
+  isFresh: (guess: CEEGuess) => boolean;
 }) {
   return (
     <div
@@ -365,7 +423,7 @@ function FeedbackRows({
         </thead>
         <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
           {rows.map((guess) => (
-            <GuessRow key={guess.id} guess={guess} showRound={showRound} />
+            <GuessRow key={guess.id} guess={guess} showRound={showRound} fresh={isFresh(guess)} />
           ))}
         </motion.tbody>
       </table>

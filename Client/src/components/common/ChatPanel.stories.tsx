@@ -115,6 +115,34 @@ export const SendFlight: Story = {
   render: (args) => <EchoChat {...args} />,
 };
 
+/** 复读链：点 +1 由本地回显成自己的一条，台阶再上一级、角标重新弹一次；随后发一句别的，台阶收回。 */
+function RepeatChat(props: React.ComponentProps<typeof ChatPanel>) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [...props.messages]);
+  const append = (text: string) =>
+    setMessages((current) => [...current, say(me, text, 600 + current.length)]);
+  return (
+    <ChatPanel
+      {...props}
+      messages={messages}
+      onSendMessage={(text) => append(text)}
+      onRepeatMessage={(text) => append(text)}
+    />
+  );
+}
+
+export const RepeatChain: Story = {
+  name: "复读链",
+  args: {
+    messages: [
+      say(azumi, "这轮谁是卧底", 1),
+      say(peach, "草", 2),
+      say(kanade, "草", 3),
+      say(kitagawa, "草", 4),
+    ],
+  },
+  render: (args) => <RepeatChat {...args} />,
+};
+
 export const Mentioned: Story = {
   name: "对话 · 被提及",
   // 以房主视角查看：海豹的「@小布丁」提及了本人，气泡带描边高亮。
