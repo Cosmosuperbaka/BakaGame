@@ -992,7 +992,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const { room, player } = this.requireRoomPlayer(connection);
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (controller?.connectionId === connection.id) {
-      // MCP 控制器离房：把座位交还仍在线的人类页面，避免把人的记录一起删掉。
+      // MCP 控制器离房：座位交还人类——页面还开着就直接接回，否则按断线保留离线席位，
+      // 与 mcp.release 同口径，不把人的记录一起删掉。
       this.mcpSeats.unbind(room.id, player.id);
       this.connectionRegistry.detach(connection);
       const viewer = this.connectionRegistry
@@ -1007,6 +1008,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         this.publishLobby();
         return { left: true };
       }
+      await this.handlePlayerOffline(room, player.id, "disconnect");
+      return { left: true };
     }
 
     await this.handlePlayerOffline(room, player.id, "leave");

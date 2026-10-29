@@ -350,6 +350,38 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
   expect(h.snapshot(host).players.find((player) => player.name === "AgentOne")?.isAgent).toBe(true);
 });
 
+test("CEE 人类页面已关时 Agent 离房：座位转为离线保留，人类凭证仍可重连", async () => {
+  const h = keep(ceeTestHarness());
+  const host = h.connect("离房房主");
+  await h.send(host, "cee.room.create", {
+    source: "native",
+    roomId: "1234",
+    name: "离房房",
+    userName: "离房房主",
+    visibility: "public",
+    allowSpectators: true,
+    allowAgents: true,
+  });
+  const guest = await h.join("玩家");
+  const agent = h.connect("离房 Agent");
+  agent.record.isAgent = true;
+  agent.token = (
+    (await h.send(agent, "mcp.claim", { roomId: "1234", sessionToken: host.token! })) as {
+      sessionToken: string;
+    }
+  ).sessionToken;
+  h.service.unregisterConnection(host.record.id);
+
+  await h.send(agent, "cee.room.leave", {});
+
+  expect(h.snapshot(guest).players.find((player) => player.id === host.id)).toMatchObject({
+    online: false,
+  });
+  const back = h.connect("离房房主回来");
+  await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: host.token! });
+  expect(back.id).toBe(host.id);
+});
+
 test("CEE MCP 配对：Agent 接管同一座位，人类手动操作被拒，收回后恢复", async () => {
   const h = keep(ceeTestHarness());
   const host = h.connect("配对房主");

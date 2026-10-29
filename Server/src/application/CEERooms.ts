@@ -218,20 +218,29 @@ export class CEERooms {
         return;
       }
       this.mcpSeats.unbind(room.id, player.id);
-      const viewer = this.connections
-        .getRoomConnections(room.id)
-        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
-      if (viewer) {
-        player.connectionId = viewer.id;
-        player.online = true;
-        delete player.offlineAt;
-        this.publish(room);
-        return;
-      }
+      if (this.handSeatBackToViewer(room, player)) return;
     } else if (player.connectionId !== connectionId) {
       return;
     }
-
+    this.markSeatOffline(room, player);
+  }
+  /**
+   * MCP 控制器退出后把座位交还给同一玩家仍开着的人类页面。
+   * 断线、`mcp.release` 与控制器离房三条路径共用，返回 false 表示人类页面也不在。
+   */
+  private handSeatBackToViewer(room: CEERoom, player: CEEPlayerRecord): boolean {
+    const viewer = this.connections
+      .getRoomConnections(room.id)
+      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
+    if (!viewer) return false;
+    player.connectionId = viewer.id;
+    player.online = true;
+    delete player.offlineAt;
+    this.publish(room);
+    return true;
+  }
+  /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
+  private markSeatOffline(room: CEERoom, player: CEEPlayerRecord): void {
     player.online = false;
     player.offlineAt = this.now();
     delete player.connectionId;
@@ -534,9 +543,6 @@ export class CEERooms {
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (!controller) return { released: false };
     const controllerConnection = this.connections.findConnection(controller.connectionId);
-    const viewer = this.connections
-      .getRoomConnections(room.id)
-      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
     this.mcpSeats.unbind(room.id, player.id);
     if (controllerConnection) {
       try {
@@ -553,17 +559,7 @@ export class CEERooms {
         }
       }, 50);
     }
-    if (viewer) {
-      player.connectionId = viewer.id;
-      player.online = true;
-      delete player.offlineAt;
-      this.publish(room);
-      return { released: true };
-    }
-    player.online = false;
-    player.connectionId = undefined;
-    player.offlineAt = this.now();
-    this.publish(room);
+    if (!this.handSeatBackToViewer(room, player)) this.markSeatOffline(room, player);
     return { released: true };
   }
   requireHost(room: CEERoom, player: CEEPlayerRecord): void {
@@ -655,20 +651,11 @@ export class CEERooms {
   leave(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (controller?.connectionId === connection.id) {
-      // MCP 控制器离房：座位交还仍在线的人类页面，避免把人一起删掉。
+      // MCP 控制器离房：座位交还人类——页面还开着就直接接回，否则按断线保留离线席位，
+      // 不把人的记录与会话凭证一起删掉。
       this.mcpSeats.unbind(room.id, player.id);
       this.connections.detach(connection);
-      const viewer = this.connections
-        .getRoomConnections(room.id)
-        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
-      if (viewer) {
-        player.connectionId = viewer.id;
-        player.online = true;
-        delete player.offlineAt;
-        this.publish(room);
-        return;
-      }
-      this.remove(room, player);
+      if (!this.handSeatBackToViewer(room, player)) this.markSeatOffline(room, player);
       return;
     }
     this.connections.detach(connection);

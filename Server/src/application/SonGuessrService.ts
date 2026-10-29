@@ -374,27 +374,49 @@ export class SonGuessrService implements AdminRoomControl {
         return;
       }
       this.mcpSeats.unbind(room.id, player.id);
-      const viewer = this.connections
-        .getRoomConnections(room.id)
-        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
-      if (viewer) {
-        player.online = true;
-        player.connectionId = viewer.id;
-        player.lastSeenAt = this.now();
-        this.connections.detach(connection);
-        this.touch(room);
-        this.publishRoom(room);
-        return;
-      }
+      this.connections.detach(connection);
+      if (this.handSeatBackToViewer(room, player)) return;
     } else if (player.connectionId !== connection.id) {
       this.connections.detach(connection);
       return;
+    } else {
+      this.connections.detach(connection);
     }
 
+    this.markSeatOffline(room, player, `${player.name} 断线，出题已中止，请重新指定出题人`);
+    this.log("song.player.disconnected", room.id, player.id);
+  }
+
+  /**
+   * MCP 控制器退出后把座位交还给同一玩家仍开着的人类页面。
+   * 断线、`mcp.release` 与控制器离房三条路径共用，返回 false 表示人类页面也不在。
+   */
+  private handSeatBackToViewer(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord): boolean {
+    const viewer = this.connections
+      .getRoomConnections(room.id)
+      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
+    if (!viewer) return false;
+    player.online = true;
+    player.connectionId = viewer.id;
+    player.lastSeenAt = this.now();
+    this.touch(room);
+    this.publishRoom(room);
+    this.publishLobby();
+    return true;
+  }
+
+  /**
+   * 座位转为离线保留：与网络断线同一套后果（空房计时、房主重连期限、中止待出题），
+   * 给人类留出用会话凭证重连的时间。调用方先解绑连接。
+   */
+  private markSeatOffline(
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord,
+    submitterNotice: string
+  ) {
     player.online = false;
     player.connectionId = undefined;
     player.lastSeenAt = this.now();
-    this.connections.detach(connection);
 
     if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
       room.emptySinceAt ??= this.now();
@@ -414,18 +436,13 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.hostPlayerId === player.id && !this.isTestRoom(room)) {
       room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
     }
-    this.releasePendingSubmitter(
-      room,
-      player.id,
-      `${player.name} 断线，出题已中止，请重新指定出题人`
-    );
+    this.releasePendingSubmitter(room, player.id, submitterNotice);
 
     // 普通断线可能只是刷新或切到后台，不能因此把仍在进行的回合提前结算。
     // 显式离开和踢出会移除正式席位，并在各自路径重新检查回合完成状态。
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
-    this.log("song.player.disconnected", room.id, player.id);
   }
 
   async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
@@ -1094,9 +1111,6 @@ export class SonGuessrService implements AdminRoomControl {
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (!controller) return { released: false };
     const controllerConnection = this.connections.findConnection(controller.connectionId);
-    const viewer = this.connections
-      .getRoomConnections(room.id)
-      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
     this.mcpSeats.unbind(room.id, player.id);
     if (controllerConnection) {
       try {
@@ -1113,24 +1127,13 @@ export class SonGuessrService implements AdminRoomControl {
         }
       }, 50);
     }
-    if (viewer) {
-      player.online = true;
-      player.connectionId = viewer.id;
-      player.lastSeenAt = this.now();
-      this.touch(room);
-      this.publishRoom(room);
-      this.publishLobby();
-      return { released: true };
+    if (!this.handSeatBackToViewer(room, player)) {
+      this.markSeatOffline(
+        room,
+        player,
+        `${player.name} 的 Agent 已退出，出题已中止，请重新指定出题人`
+      );
     }
-    player.online = false;
-    player.connectionId = undefined;
-    player.lastSeenAt = this.now();
-    if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
-      room.emptySinceAt ??= this.now();
-    }
-    this.touch(room);
-    this.publishRoom(room);
-    this.publishLobby();
     return { released: true };
   }
 
@@ -1138,22 +1141,18 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (controller?.connectionId === connection.id) {
-      // MCP 控制器离房：把座位交还仍在线的人类页面，而不是把人的记录一起删掉。
+      // MCP 控制器离房：座位交还人类——页面还开着就直接接回，否则按断线保留离线席位，
+      // 不把人的记录与贡献的账号一起删掉。
       this.mcpSeats.unbind(room.id, player.id);
       this.connections.detach(connection);
-      const viewer = this.connections
-        .getRoomConnections(room.id)
-        .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
-      if (viewer) {
-        player.online = true;
-        player.connectionId = viewer.id;
-        player.lastSeenAt = this.now();
-        this.touch(room);
-        this.publishRoom(room);
-        this.publishLobby();
-        return { left: true, roomClosed: false };
+      if (!this.handSeatBackToViewer(room, player)) {
+        this.markSeatOffline(
+          room,
+          player,
+          `${player.name} 的 Agent 已退出，出题已中止，请重新指定出题人`
+        );
       }
-      return this.detachFromRoom(connection);
+      return { left: true, roomClosed: false };
     }
     // 显式离开代表账号主动退出：号跟着人一起撤掉。
     return this.detachFromRoom(connection);

@@ -417,6 +417,52 @@ describe("隐私开关与 Agent 接管", () => {
     });
   });
 
+  test("人类页面已关时 Agent 离房：座位转为离线保留，人类凭证仍可重连", async () => {
+    const { service } = createTestContext();
+    const host = createConnection(service, "away-host");
+    const created = (await execute(service, host, {
+      id: "away-create",
+      type: "room.create",
+      payload: {
+        roomId: "9292",
+        name: "离房房",
+        visibility: "public",
+        allowSpectators: true,
+        userName: "房主",
+        allowAgents: true,
+      },
+    })) as { playerId: string; sessionToken: string };
+    const guest = createConnection(service, "away-guest");
+    await execute(service, guest, {
+      id: "away-guest-join",
+      type: "room.join",
+      roomId: "9292",
+      payload: { userName: "玩家" },
+    });
+    const agent = createConnection(service, "away-agent");
+    agent.record.isAgent = true;
+    await execute(service, agent, {
+      id: "away-claim",
+      type: "mcp.claim",
+      payload: { roomId: "9292", sessionToken: created.sessionToken },
+    });
+    await service.unregisterConnection(host.record.id);
+
+    await execute(service, agent, { id: "away-leave", type: "room.leave", payload: {} });
+
+    const seat = getLastEventPayload<WhoIsFakerRoomSnapshot>(guest, "room.snapshot")?.players.find(
+      (player) => player.id === created.playerId
+    );
+    expect(seat).toMatchObject({ online: false });
+    const back = createConnection(service, "away-host-back");
+    const resumed = (await execute(service, back, {
+      id: "away-reconnect",
+      type: "room.reconnect",
+      payload: { roomId: "9292", sessionToken: created.sessionToken },
+    })) as { playerId: string };
+    expect(resumed.playerId).toBe(created.playerId);
+  });
+
   test("会话凭证只能走 MCP 认领，Agent 不能直接重连顶掉人类页面", async () => {
     const { service } = createTestContext();
     const host = createConnection(service, "claim-guard-host");

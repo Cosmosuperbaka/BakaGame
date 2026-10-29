@@ -142,6 +142,44 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
   );
 });
 
+test("猜歌人类页面已关时 Agent 离房：座位转为离线保留，人类凭证仍可重连", async () => {
+  const service = new SonGuessrService({ musicProvider: provider });
+  const host = connection(service, "song-away-host");
+  const created = (await createRoom(service, host, { allowAgents: true })) as {
+    playerId: string;
+    sessionToken: string;
+  };
+  const guest = connection(service, "song-away-guest");
+  await joinRoom(service, guest, "玩家");
+  const agent = connection(service, "song-away-agent");
+  agent.record.isAgent = true;
+  await execute(service, agent, {
+    id: "song-away-claim",
+    type: "mcp.claim",
+    payload: { roomId: "1234", sessionToken: created.sessionToken },
+  });
+  await service.unregisterConnection(host.record.id);
+
+  await execute(service, agent, {
+    id: "song-away-leave",
+    type: "song.room.leave",
+    roomId: "1234",
+    payload: {},
+  });
+
+  const seat = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").players.find(
+    (player) => player.id === created.playerId
+  );
+  expect(seat).toMatchObject({ online: false });
+  const back = connection(service, "song-away-host-back");
+  const resumed = await execute<{ playerId: string }>(service, back, {
+    id: "song-away-reconnect",
+    type: "song.room.reconnect",
+    payload: { roomId: "1234", sessionToken: created.sessionToken },
+  });
+  expect(resumed.playerId).toBe(created.playerId);
+});
+
 test("猜歌 MCP 配对：Agent 接管人类座位，人类操作被服务端锁定，收回后恢复", async () => {
   const service = new SonGuessrService({ musicProvider: provider });
   const host = connection(service, "song-pair-host");
