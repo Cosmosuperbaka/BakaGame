@@ -1,6 +1,7 @@
 import { applyPatch } from "fast-json-patch";
 import type { AgentFocusInput, SiteFocusPayload } from "../shared/AgentActivity";
 import { isRecord } from "../shared/Json";
+import { mergeChatWindow, type ChatWindowEntry } from "../shared/ChatWindow";
 import { isPermanentRoomError } from "../shared/Model";
 import { GAME_IDS, type GameId } from "../shared/Protocol";
 import { SeatUi } from "./ui/SeatUi";
@@ -117,9 +118,6 @@ export interface AgentGameClientOptions {
   uiPacing?: boolean;
 }
 
-/** 聊天窗口在客户端与服务端都限制在 200 条；Agent 侧只保留同样上限。 */
-const CHAT_LIMIT = 200;
-
 /** 把状态同步帧（full / patch）应用成最新公开快照；不认识的形状原样保留。 */
 export const applyStateSync = (
   current: Record<string, unknown> | undefined,
@@ -144,18 +142,15 @@ export const applyStateSync = (
   return "roomId" in payload ? payload : current;
 };
 
-const mergeChat = (current: unknown, incoming: unknown): unknown[] => {
-  const list = Array.isArray(current) ? current : [];
-  const message = isRecord(incoming) ? incoming : undefined;
-  if (!message || typeof message.id !== "string") return list;
-  const existing = list.findIndex((entry) => isRecord(entry) && entry.id === message.id);
-  if (existing >= 0) {
-    const next = [...list];
-    next[existing] = message;
-    return next;
-  }
-  return [...list, message].slice(-CHAT_LIMIT);
-};
+type ChatRecord = ChatWindowEntry & Record<string, unknown>;
+/** 快照与推送都是未校验的 JSON：只收有 id 与时间的条目，再按与玩家页面同一份窗口口径续接。 */
+const chatRecords = (value: unknown): ChatRecord[] =>
+  (Array.isArray(value) ? value : [value]).filter(
+    (entry): entry is ChatRecord =>
+      isRecord(entry) && typeof entry.id === "string" && typeof entry.createdAt === "number"
+  );
+const mergeChat = (current: unknown, incoming: unknown): ChatRecord[] =>
+  mergeChatWindow(chatRecords(current), chatRecords(incoming));
 
 /** 事件名归属：歌与角色游戏的整张事件表都带前缀，卧底的反过来一条都不带。 */
 export const gameOfEvent = (event: string): GameId => {

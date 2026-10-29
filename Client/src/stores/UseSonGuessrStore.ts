@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
+import { permanentRoomErrorMessage } from "@/lib/PermanentRoomError";
 import {
   type ChatMessage,
   type EventPacket,
@@ -18,7 +19,7 @@ import {
   type BangumiSongCandidate,
   SERVER_SHUTDOWN_MESSAGE,
   isPermanentRoomError,
-  protocolErrorCode,
+  mergeChatWindow,
 } from "@bakagame/shared";
 import {
   clearSonGuessrSessionToken,
@@ -114,24 +115,6 @@ export const resetSonGuessrStateSync = () => {
   rawPrivateState = null;
 };
 
-const MAX_CHAT_MESSAGES = 200;
-
-const mergeChat = (
-  existing: SonGuessrRoomSnapshot["chat"] = [],
-  incoming: SonGuessrRoomSnapshot["chat"] = []
-): SonGuessrRoomSnapshot["chat"] => {
-  const map = new Map<string, SonGuessrRoomSnapshot["chat"][number]>();
-  for (const msg of existing) {
-    map.set(msg.id, msg);
-  }
-  for (const msg of incoming) {
-    map.set(msg.id, msg);
-  }
-  return Array.from(map.values())
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-MAX_CHAT_MESSAGES);
-};
-
 const requestFullSync = () => {
   if (syncRequestPending) return;
   syncRequestPending = true;
@@ -190,7 +173,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     set({
       roomId: targetRoomId,
       sessionToken,
-      snapshot: nextSnapshot ? { ...nextSnapshot, chat: mergeChat([], nextSnapshot.chat) } : null,
+      snapshot: nextSnapshot
+        ? { ...nextSnapshot, chat: mergeChatWindow([], nextSnapshot.chat) }
+        : null,
       privateState: nextPrivate,
       roomClosedAt: null,
     });
@@ -285,14 +270,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             current.resetRoomState();
             set({ roomClosedAt: Date.now() });
           }
-          const code = protocolErrorCode(error);
-          const message =
-            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-              ? "会话已失效，请重新加入"
-              : code === "PLAYER_KICKED"
-                ? "你已被移出房间"
-                : "房间已解散或不存在";
-          get().setNotice(message, "error");
+          get().setNotice(permanentRoomErrorMessage(error), "error");
           return true;
         },
         signal
@@ -436,7 +414,7 @@ function applyRoomSnapshotEvent(payload: unknown) {
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
   const nextSnapshot = {
     ...snapshot,
-    chat: mergeChat(
+    chat: mergeChatWindow(
       currentSnapshot?.roomId === snapshot.roomId ? currentSnapshot.chat : [],
       snapshot.chat
     ),
@@ -487,7 +465,7 @@ function applyChatMessageEvent(payload: unknown) {
   useSonGuessrStore.setState({
     snapshot: {
       ...current,
-      chat: mergeChat(current.chat, [incoming]),
+      chat: mergeChatWindow(current.chat, [incoming]),
     },
   });
 }

@@ -1,4 +1,5 @@
 export * from "./Model";
+export * from "./ChatWindow";
 export * from "./Protocol";
 export * from "./WhoIsFaker";
 export * from "./SonGuessr";

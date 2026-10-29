@@ -559,10 +559,14 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
       Array.isArray(client.currentSnapshot("song")?.chat)
     );
     for (let index = 0; index < 205; index++)
-      socket.push("song.chat.message", { message: { id: `m${index}`, text: `消息${index}` } });
+      socket.push("song.chat.message", {
+        message: { id: `m${index}`, text: `消息${index}`, createdAt: index },
+      });
     const chatOf = () =>
       (client.currentSnapshot("song")?.chat ?? []) as Array<{ id: string; text: string }>;
-    socket.push("song.chat.message", { message: { id: "m204", text: "改写最后一条" } });
+    socket.push("song.chat.message", {
+      message: { id: "m204", text: "改写最后一条", createdAt: 204 },
+    });
     await until("聊天增量没有合并到窗口上限", () => chatOf().at(-1)?.text === "改写最后一条");
 
     const chat = chatOf();

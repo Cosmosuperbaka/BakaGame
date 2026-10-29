@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { createRoomEntry } from "@/lib/RoomEntry";
+import { permanentRoomErrorMessage } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
   isPermanentRoomError,
-  protocolErrorCode,
+  mergeChatWindow,
+  CLIENT_CHAT_WINDOW,
   type WhoIsFakerRoomEnterAck,
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerPrivateState,
@@ -110,24 +112,6 @@ export const resetWhoIsFakerStateSync = () => {
   syncedPrivateState = null;
 };
 
-const MAX_CHAT_MESSAGES = 200;
-
-const mergeChat = (
-  existing: WhoIsFakerRoomSnapshot["chat"] = [],
-  incoming: WhoIsFakerRoomSnapshot["chat"] = []
-): WhoIsFakerRoomSnapshot["chat"] => {
-  const map = new Map<string, WhoIsFakerRoomSnapshot["chat"][number]>();
-  for (const msg of existing) {
-    map.set(msg.id, msg);
-  }
-  for (const msg of incoming) {
-    map.set(msg.id, msg);
-  }
-  return Array.from(map.values())
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .slice(-MAX_CHAT_MESSAGES);
-};
-
 let lastPlayerChannel: "main" | "ghost" | undefined;
 let lastRoomAndRoundKey: string | undefined;
 
@@ -191,7 +175,7 @@ const channelTransitionNotice = (
 export const withChannelNotices = (
   chat: WhoIsFakerRoomSnapshot["chat"],
   notices: readonly WhoIsFakerChatMessage[]
-): WhoIsFakerRoomSnapshot["chat"] => (notices.length ? mergeChat(chat, [...notices]) : chat);
+): WhoIsFakerRoomSnapshot["chat"] => (notices.length ? mergeChatWindow(chat, [...notices]) : chat);
 
 const requestFullSync = () => {
   if (syncRequestPending) return;
@@ -248,7 +232,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   ): Partial<WhoIsFakerGameState> => {
     const notice = channelTransitionNotice(snapshot, playerId);
     return notice
-      ? { channelNotices: [...get().channelNotices, notice].slice(-MAX_CHAT_MESSAGES) }
+      ? { channelNotices: [...get().channelNotices, notice].slice(-CLIENT_CHAT_WINDOW) }
       : {};
   };
   return {
@@ -309,12 +293,12 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
       const previousSnapshot = get().snapshot;
       let snapshot = {
         ...incomingSnapshot,
-        chat: incomingSnapshot.chat.slice(-MAX_CHAT_MESSAGES),
+        chat: incomingSnapshot.chat.slice(-CLIENT_CHAT_WINDOW),
       };
 
       // 服务端只保留最近一段聊天，同房间内把已收到的历史续上，供玩家往回翻。
       if (previousSnapshot && previousSnapshot.roomId === snapshot.roomId) {
-        snapshot = { ...snapshot, chat: mergeChat(previousSnapshot.chat, snapshot.chat) };
+        snapshot = { ...snapshot, chat: mergeChatWindow(previousSnapshot.chat, snapshot.chat) };
       }
 
       set({ snapshot, ...noticeUpdate(snapshot, get().privateState?.playerId) });
@@ -370,14 +354,7 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
             current.leaveRoomState();
             current.markRoomClosed();
           }
-          const code = protocolErrorCode(error);
-          const message =
-            code === "SESSION_NOT_FOUND" || code === "SESSION_INVALID"
-              ? "会话已失效，请重新加入"
-              : code === "PLAYER_KICKED"
-                ? "你已被移出房间"
-                : "房间已解散或不存在";
-          get().addToast(message, "error");
+          get().addToast(permanentRoomErrorMessage(error), "error");
           return true;
         },
         signal
