@@ -22,7 +22,7 @@ import {
 } from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
-import { ensureRoomId, safeEqualToken } from "../domain/Rules";
+import { ensureRoomId, normalizeWord, safeEqualToken } from "../domain/Rules";
 import {
   createDefaultCEESettings,
   isCEEAntiCheatRoom,
@@ -762,7 +762,8 @@ export class CEERooms {
     return player;
   }
   sendChat(room: CEERoom, player: CEEPlayerRecord, rawText: string): void {
-    const text = rawText.trim().slice(0, 500);
+    // 与另两款同一口径：剔除控制字符并折叠空白，只剩空白或不可见字符的消息按空消息拒绝。
+    const text = normalizeWord(rawText).slice(0, 500);
     if (!text) throw new AppError("EMPTY_MESSAGE", "消息不能为空");
     room.chat.push({
       id: crypto.randomUUID(),

@@ -236,6 +236,12 @@ describe("CEE 房间与提示边界", () => {
     await expect(h.send(guest, "cee.chat.send", { text: "   " })).rejects.toMatchObject({
       code: "EMPTY_MESSAGE",
     });
+    // 与另两款同一口径：控制字符剔除、连续空白折叠，只剩不可见字符也算空消息。
+    await h.send(guest, "cee.chat.send", { text: "a\u0007b \t\n c" });
+    expect(h.snapshot(host).chat.at(-1)?.text).toBe("ab c");
+    await expect(h.send(guest, "cee.chat.send", { text: "\u0000\u001b" })).rejects.toMatchObject({
+      code: "EMPTY_MESSAGE",
+    });
     await h.send(guest, "cee.room.leave", {});
     expect(h.snapshot(host).players).toHaveLength(1);
     const recovered = h.connect("恢复");
