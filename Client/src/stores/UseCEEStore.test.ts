@@ -69,6 +69,25 @@ describe("CEE 状态同步", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["ROOM_NOT_FOUND", "SESSION_NOT_FOUND", "SESSION_INVALID", "PLAYER_KICKED"])(
+    "恢复命中共享永久码 %s 时同样丢弃本地凭据",
+    async (code) => {
+      writeCEESession("1234", "dead");
+      vi.spyOn(ceeWs, "send").mockRejectedValue({ code, message: "x" });
+      await expect(useCEEStore.getState().reconnectRoom("1234")).resolves.toBe(false);
+      expect(readCEESession("1234")).toBeNull();
+    }
+  );
+
+  it("网络类错误不算永久失效，本地凭据留着下次再试", async () => {
+    writeCEESession("1234", "alive");
+    vi.spyOn(ceeWs, "send").mockRejectedValue({ code: "TIMEOUT", message: "超时" });
+    await expect(useCEEStore.getState().reconnectRoom("1234")).rejects.toMatchObject({
+      code: "TIMEOUT",
+    });
+    expect(readCEESession("1234")).not.toBeNull();
+  });
+
   it("重建连接只订阅大厅并等待页面恢复，卸载释放连接且保留刷新凭据", async () => {
     let status: (connected: boolean) => void = () => {};
     vi.spyOn(ceeWs, "onStatus").mockImplementation((handler) => {

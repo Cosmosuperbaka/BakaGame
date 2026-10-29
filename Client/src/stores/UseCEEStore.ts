@@ -11,6 +11,7 @@ import type {
   AgentFocusEvent,
   ServerMessage,
 } from "@bakagame/shared";
+import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared";
 import { ceeWs, sendCEE } from "@/lib/CEEWs";
 import {
   normalizeCEERoomId,
@@ -124,14 +125,12 @@ let connectionGeneration = 0;
  * 在途请求即使晚到 ACK 也不能再把已经结束的会话写回本地。
  */
 let entryGeneration = 0;
-const permanentErrors = new Set([
-  "ROOM_NOT_FOUND",
-  "SESSION_NOT_FOUND",
-  "SESSION_INVALID",
-  "SESSION_EXPIRED",
-  "PLAYER_KICKED",
-  "CEE_SESSION_INVALID",
-]);
+/**
+ * 恢复失败即放弃本地会话的错误码：共享永久码表，加上 CEE 原版房自己的会话过期码。
+ * 共享部分不在这里再抄一份——抄的那份迟早会漏掉或多出服务端根本不发的码。
+ */
+const isPermanentCEEError = (error: unknown): boolean =>
+  isPermanentRoomError(error) || protocolErrorCode(error) === "SESSION_EXPIRED";
 const serverTimedCommands = new Set<CEECommand>([
   "cee.game.start",
   "cee.game.next",
@@ -295,7 +294,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         )
           .then(() => true)
           .catch((error: unknown) => {
-            if (!isProtocolError(error) || !permanentErrors.has(error.code)) throw error;
+            if (!isPermanentCEEError(error)) throw error;
             removeCEESession(roomId);
             get().resetRoom();
             get().reportError(error);
