@@ -12,7 +12,14 @@ const facadeOf = (module: Record<string, unknown>) =>
 
 describe("WS facade 形状", () => {
   it("卧底、猜歌、CEE 导出同一组连接、发送与订阅函数", () => {
-    const expected = ["connect", "disconnect", "onMessage", "onStatus", "send", "waitForConnection"];
+    const expected = [
+      "connect",
+      "disconnect",
+      "onMessage",
+      "onStatus",
+      "send",
+      "waitForConnection",
+    ];
     expect(facadeOf(faker)).toEqual(expected);
     expect(facadeOf(song)).toEqual(expected);
     expect(facadeOf(cee)).toEqual(expected);

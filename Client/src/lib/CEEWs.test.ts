@@ -61,7 +61,9 @@ describe("CEE 客户端通道补偿", () => {
     state.lastHandshakeHadTicket.mockReturnValue(true);
     state.send.mockRejectedValueOnce(refused).mockResolvedValueOnce({ roomId: "123456" });
 
-    await expect(ceeWsClient.send("cee.room.create", { bakaAntiCheat: true })).resolves.toMatchObject({
+    await expect(
+      ceeWsClient.send("cee.room.create", { bakaAntiCheat: true })
+    ).resolves.toMatchObject({
       roomId: "123456",
     });
     expect(state.refreshIdentity).toHaveBeenCalledTimes(1);
@@ -79,7 +81,9 @@ describe("CEE 客户端通道补偿", () => {
   it("壳签不出票：不发注定被拒的建房请求", async () => {
     state.waitForChannelTicket.mockResolvedValue(false);
 
-    await expect(ceeWsClient.send("cee.room.create", { bakaAntiCheat: true })).rejects.toMatchObject({
+    await expect(
+      ceeWsClient.send("cee.room.create", { bakaAntiCheat: true })
+    ).rejects.toMatchObject({
       code: "CLIENT_CHANNEL_NOT_READY",
     });
     expect(state.refreshIdentity).not.toHaveBeenCalled();
