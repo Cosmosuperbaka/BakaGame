@@ -25,9 +25,9 @@ describe("CEE 协议边界", () => {
     expect(parseCEEMessage(message)).toEqual(message);
     expect(() =>
       parseCEEMessage({ ...message, payload: { ...message.payload, isCorrect: true } })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
     expect(() => parseCEEMessage({ ...message, type: "cee.player.setMessage" })).toThrow(
-      "未知的角色游戏指令"
+      "未知消息类型"
     );
   });
   test("完整设置保留所有组合且拒绝非法队伍和数值", () => {
@@ -48,10 +48,10 @@ describe("CEE 协议边界", () => {
     ).toBe("cee.room.settings");
     expect(() =>
       parseCEEMessage({ id: "team-1", type: "cee.player.team", payload: { team: 0 } })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
     expect(() =>
       parseCEEMessage({ id: "guess-2", type: "cee.game.guess", payload: { characterId: -1 } })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
   });
   /**
    * 前端 zustand store 用 `null` 表示「尚未加入房间」，`JSON.stringify` 会原样保留 null，
@@ -94,18 +94,21 @@ describe("CEE 协议边界", () => {
       roomId: "1234",
       payload: { userName: "甲" },
     };
-    expect(() => parseCEEMessage({ ...join, sessionToken: 42 })).toThrow("指令参数不合法");
-    expect(() => parseCEEMessage({ ...join, roomId: 1234 })).toThrow("指令参数不合法");
+    // 与另两个玩法同一口径：错误带出第一处不合法字段的路径，排障不必再猜是哪一项。
+    expect(() => parseCEEMessage({ ...join, sessionToken: 42 })).toThrow(
+      "消息校验失败 (/sessionToken)"
+    );
+    expect(() => parseCEEMessage({ ...join, roomId: 1234 })).toThrow("消息校验失败");
     expect(() => parseCEEMessage({ ...join, payload: { ...join.payload, userName: 12 } })).toThrow(
-      "指令参数不合法"
+      "消息校验失败"
     );
     expect(() =>
       parseCEEMessage({ ...join, payload: { ...join.payload, roomId: "1234" } })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
     // 入房来源由统一房号目录解析，客户端不再声明。
     expect(() =>
       parseCEEMessage({ ...join, payload: { ...join.payload, source: "original" } })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
   });
   /**
    * 恢复会话的凭据为空/缺席属于**可恢复状态**，解析层必须放行、由业务层回明确的失效语义。
@@ -124,8 +127,8 @@ describe("CEE 协议边界", () => {
     expect(parseCEEMessage(reconnect("")).type).toBe("cee.room.reconnect");
     expect(parseCEEMessage(reconnect(null)).type).toBe("cee.room.reconnect");
     expect(parseCEEMessage(reconnect()).type).toBe("cee.room.reconnect");
-    expect(() => parseCEEMessage(reconnect(123))).toThrow("指令参数不合法");
-    expect(() => parseCEEMessage(reconnect("x".repeat(129)))).toThrow("指令参数不合法");
+    expect(() => parseCEEMessage(reconnect(123))).toThrow("消息校验失败");
+    expect(() => parseCEEMessage(reconnect("x".repeat(129)))).toThrow("消息校验失败");
   });
   /**
    * 客户端只见到统一房号目录的 4 位号，服务端内部的 `original:` 连接标记从不下发，
@@ -147,7 +150,7 @@ describe("CEE 协议边界", () => {
         roomId: `original:${"1".repeat(32)}`,
         payload: {},
       })
-    ).toThrow("指令参数不合法");
+    ).toThrow("消息校验失败");
   });
 });
 

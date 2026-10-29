@@ -956,7 +956,7 @@ export const createApp = ({
         });
       } else if (game === "cee") {
         if (!characterService) throw new AppError("GAME_UNAVAILABLE", "猜角色服务未启用");
-        await handleGameMessage(ws, normalizeCEEEnvelope(parseCEEMessage(incoming)), logger, {
+        await handleGameMessage(ws, parseCEEMessage(incoming), logger, {
           serviceName: "CEE",
           execute: (connectionId, message) => characterService.execute(connectionId, message),
         });
