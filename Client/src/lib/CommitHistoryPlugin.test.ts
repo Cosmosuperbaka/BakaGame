@@ -29,7 +29,8 @@ const GIT_LOG_RAW = [
 /** 桩 git：测试跑不了子进程，用固定输出替代真实仓库状态。 */
 function fakeGit(args: string) {
   if (args === "rev-parse HEAD") return HEAD_SHA;
-  if (args === "rev-parse --short HEAD") return HEAD_SHA.slice(0, 7);
+  // 真实 git 在短前缀有歧义时会加长 --short 的输出；插件必须不受影响，固定给 7 位。
+  if (args === "rev-parse --short HEAD") return HEAD_SHA.slice(0, 9);
   if (args.startsWith("log")) return GIT_LOG_RAW;
   throw new Error(`unexpected git command: ${args}`);
 }
@@ -41,7 +42,6 @@ function brokenGit(): string {
 /** 哈希取得到但历史读不到，等价于浅克隆里 git log 被截断。 */
 function revisionOnlyGit(args: string) {
   if (args === "rev-parse HEAD") return HEAD_SHA;
-  if (args === "rev-parse --short HEAD") return HEAD_SHA.slice(0, 7);
   throw new Error("git log 不可用");
 }
 

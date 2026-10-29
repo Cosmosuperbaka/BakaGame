@@ -50,13 +50,11 @@ export function commitHistoryPlugin(options: {
   }
 
   function shortRevision() {
-    try {
-      // 空串等同取不到：版本提示与 Sentry release 都靠它判断，不能留空值。
-      return runGit("rev-parse --short HEAD") || "dev";
-    } catch {
-      // 非 git 工作区（平台直接给源码包）时退化为占位值，前端据此跳过版本提示。
-      return "dev";
-    }
+    // 固定截 7 位，与服务端 `Release.ts` 的 release 口径一致：`--short` 在前缀有歧义时会自动加长，
+    // 两端就会给同一次构建报出两个不同的 Sentry release。
+    // 空串等同取不到：版本提示与 Sentry release 都靠它判断，不能留空值；
+    // 非 git 工作区（平台直接给源码包）时退化为占位值，前端据此跳过版本提示。
+    return revision().slice(0, 7) || "dev";
   }
 
   /**
