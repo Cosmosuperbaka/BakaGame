@@ -63,6 +63,8 @@ export const restoreRoomSnapshots = (targets: RoomSnapshotTargets): SnapshotRest
   for (const game of targets.games) {
     const loaded = targets.store.load(game);
     if (!loaded) continue;
+    // 读到即消费：无论恢复成功、失败还是过期丢弃，同一份快照都不能在下一次启动里再用。
+    targets.store.clear(game);
     const downtimeMs = Math.max(0, now - loaded.savedAt);
     if (downtimeMs > SNAPSHOT_MAX_DOWNTIME_MS) {
       discarded.push(game);

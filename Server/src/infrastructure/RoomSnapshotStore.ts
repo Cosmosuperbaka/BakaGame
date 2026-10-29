@@ -124,6 +124,23 @@ export class RoomSnapshotStore {
     return { savedAt: meta.saved_at, rooms };
   }
 
+  /**
+   * 消费掉一款游戏的快照（删房间行，load 随之返回 undefined）。
+   *
+   * 快照只代表「最后一次优雅停机」时的状态：恢复后若进程再被强杀、OOM 或回滚，
+   * 不经优雅停机就不会写新快照，留着旧行等于把同一份旧状态再恢复一次——已结束的
+   * 对局、已关的房间与旧分数全部复活。
+   */
+  clear(game: RoomSnapshotGame): void {
+    const db = this.database(game);
+    if (!db) return;
+    try {
+      db.exec("DELETE FROM room_snapshot");
+    } catch (error) {
+      this.markUnavailable(game, error);
+    }
+  }
+
   close(): void {
     for (const db of this.databases.values()) {
       try {

@@ -80,13 +80,32 @@ describe("房间快照编排", () => {
     expect(late.discarded).toEqual(["faker"]);
     expect(late.restored).toEqual({});
     expect(faker.calls).toHaveLength(0);
+    // 丢弃同样算消费：过期快照不会在下一次启动里卷土重来。
+    expect(snapshotStore.load("faker")).toBeUndefined();
 
+    saveRoomSnapshots(targets, 1_000);
     const inTime = restoreRoomSnapshots({
       ...targets,
       now: () => 1_000 + SNAPSHOT_MAX_DOWNTIME_MS - 1,
     });
     expect(inTime.discarded).toEqual([]);
     expect(inTime.restored).toEqual({ faker: 1 });
+  });
+
+  test("恢复即消费：恢复后再次非优雅重启不会把同一份旧快照再恢复一次", () => {
+    const snapshotStore = store();
+    const faker = fakeService();
+    const targets = {
+      store: snapshotStore,
+      games: ["faker"] as const,
+      services: { faker: faker.service, song: fakeService().service, cee: fakeService().service },
+    };
+    saveRoomSnapshots(targets, 1_000);
+
+    expect(restoreRoomSnapshots({ ...targets, now: () => 2_000 }).restored).toEqual({ faker: 1 });
+    // 恢复后进程被强杀（没有优雅停机写新快照），下一次启动仍在可恢复窗口内。
+    expect(restoreRoomSnapshots({ ...targets, now: () => 3_000 }).restored).toEqual({});
+    expect(faker.calls).toHaveLength(1);
   });
 
   test("单款恢复抛错不影响其余游戏", () => {
