@@ -2,7 +2,7 @@ import type { Where } from "better-auth";
 
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
-import { beijingDay } from "./SiteStatsService";
+import { beijingDay } from "../domain/BeijingDay";
 import { capTimeline } from "./GameRecordService";
 import { RECORDED_GAMES } from "../domain/GameRecord";
 import type { BadgeRepository } from "../infrastructure/db/BadgeRepository";

@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  beijingDay,
-  normalizeVisitPath,
-  SiteStatsService,
-} from "../src/application/SiteStatsService";
+import { normalizeVisitPath, SiteStatsService } from "../src/application/SiteStatsService";
+import { beijingDay } from "../src/domain/BeijingDay";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { deriveSentryApiConfig, SentryApiClient } from "../src/infrastructure/SentryApi";
 import {

@@ -1,5 +1,6 @@
 import { createHmac, hkdfSync } from "node:crypto";
 
+import { beijingDay } from "../domain/BeijingDay";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import type {
   PageDelta,
@@ -15,11 +16,6 @@ export const SITE_VISITOR_RETENTION_DAYS = 90;
 /** 单个刷写窗口最多跟踪的新访客数：伪造访客 ID 刷量时保护进程内存，超出的访客只计页面浏览。 */
 const MAX_PENDING_VISITORS = 5000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-/** 北京时间自然日 `YYYY-MM-DD`，与库内按日统计同一口径。 */
-export const beijingDay = (time: number): string =>
-  new Date(time + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
 
 /**
  * 页面只按板块统计：房间号、单人房等路径参数一律折叠，防止统计表按房号无限膨胀，

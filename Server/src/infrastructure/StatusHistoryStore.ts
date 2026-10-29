@@ -1,5 +1,5 @@
 import { and, eq, gte, sql } from "drizzle-orm";
-import { beijingDay } from "../application/SiteStatsService";
+import { beijingDay } from "../domain/BeijingDay";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
   PUBLIC_STATUS_HISTORY_DAYS,
