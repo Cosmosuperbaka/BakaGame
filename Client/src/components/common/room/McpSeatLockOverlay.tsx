@@ -1,9 +1,8 @@
+import type { GameId } from "@bakagame/shared";
 import { useEffect } from "react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
-
-type GameId = "faker" | "song" | "cee";
 
 /**
  * MCP 接管期间的输入冻结：不使用遮罩或模糊，只把 #root 设为 inert 并拦截键盘/快捷键。

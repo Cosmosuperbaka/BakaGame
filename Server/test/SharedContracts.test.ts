@@ -16,6 +16,17 @@ import {
   protocolErrorCode,
   type PermanentRoomErrorCode,
 } from "../src/shared/Model";
+import { GAME_IDS } from "../src/shared/Protocol";
+import { ROOM_SNAPSHOT_GAMES } from "../src/shared/RoomSnapshot";
+import { recordedGameSchema } from "../src/shared/ApiContract";
+import { RECORDED_GAMES } from "../src/domain/GameRecord";
+
+test("对局记录、后台接口与停机快照的游戏集合都取自协议的同一份标识", () => {
+  // 新增玩法只改 GAME_IDS：记录统计、后台筛选与快照分文件不能有一处还停在旧集合。
+  expect(RECORDED_GAMES).toEqual(GAME_IDS);
+  expect(ROOM_SNAPSHOT_GAMES).toEqual(GAME_IDS);
+  expect(recordedGameSchema.options).toEqual([...GAME_IDS]);
+});
 
 // 编译期夹具和运行时共用源码，避免解析后的类型虚构完整字段。
 const partial: Static<typeof SongAutoFiltersInputSchema> = { playlist: { id: "1" } };

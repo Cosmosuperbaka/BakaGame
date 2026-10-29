@@ -25,6 +25,7 @@ import {
   type RoomSnapshotTargets,
 } from "./application/RoomSnapshots";
 import { ROOM_SNAPSHOT_GAMES } from "./shared/RoomSnapshot";
+import type { GameId } from "./shared/Protocol";
 
 // ==================== 服务启动 ====================
 
@@ -139,7 +140,7 @@ function reportRuntimeMetrics(): void {
   // 面板上的「在线人数」就凭空少一半；带 game 标签后各进程互不覆盖，跨系列求和仍是全站总数。
   const games: Array<
     [
-      game: "cee" | "faker" | "song",
+      game: GameId,
       snapshot: { roomCount: number; connectionCount: number; onlinePlayerCount: number },
     ]
   > = [

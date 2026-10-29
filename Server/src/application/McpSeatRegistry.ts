@@ -1,6 +1,7 @@
+import type { GameId } from "../shared/Protocol";
 import { createHash, randomUUID } from "node:crypto";
 
-type SeatGame = "faker" | "song" | "cee";
+type SeatGame = GameId;
 
 export interface McpController {
   roomId: string;

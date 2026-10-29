@@ -9,6 +9,7 @@ import {
   QQ_NUMBER_PATTERN,
 } from "./Account";
 import { BADGE_KINDS } from "./Badges";
+import { GAME_IDS } from "./Protocol";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
@@ -160,7 +161,7 @@ export const adminStatusEventSchema = z.object({
   updatedAt: z.number().int(),
 });
 const userId = z.string().min(1).max(64);
-export const recordedGameSchema = z.enum(["faker", "song", "cee"]);
+export const recordedGameSchema = z.enum(GAME_IDS);
 const reason = z.string().trim().max(200);
 
 /** 后台只引用账号时的最小信息；账号已注销时为空。 */

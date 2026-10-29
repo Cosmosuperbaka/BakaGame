@@ -1,3 +1,4 @@
+import type { GameId } from "@bakagame/shared";
 import { useState } from "react";
 import { Bot, Check, Copy, Lock } from "lucide-react";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
@@ -11,8 +12,6 @@ import { readCEESession } from "@/lib/CEESession";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
-
-type GameId = "faker" | "song" | "cee";
 
 const useControlled = (game: GameId): boolean => {
   const faker = useWhoIsFakerStore((state) => state.privateState?.mcpControlled === true);

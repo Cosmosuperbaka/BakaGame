@@ -1,3 +1,5 @@
+import { GAME_IDS } from "./Protocol";
+
 /**
  * 房间快照的落盘契约（服务端内部使用，不下发给客户端）。
  *
@@ -14,7 +16,7 @@
 export const ROOM_SNAPSHOT_VERSION = 1;
 
 /** 快照按游戏分文件：同一份代码会被多个容器挂载共享，合在一起会互相恢复影子房间。 */
-export const ROOM_SNAPSHOT_GAMES = ["faker", "song", "cee"] as const;
+export const ROOM_SNAPSHOT_GAMES = GAME_IDS;
 
 export type RoomSnapshotGame = (typeof ROOM_SNAPSHOT_GAMES)[number];
 

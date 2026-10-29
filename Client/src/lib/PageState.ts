@@ -1,13 +1,14 @@
+import type { GameId } from "@bakagame/shared";
 /** 页面向服务端上报的可操作面：位置 + 可见控件，不含输入内容与聊天正文。 */
 export interface PageStateReport {
   path: string;
   title: string;
   controls: Array<{ id: string; label: string }>;
-  game?: "faker" | "song" | "cee";
+  game?: GameId;
   roomId?: string;
 }
 
-const GAME_PREFIXES: ReadonlyArray<readonly [string, "faker" | "song" | "cee"]> = [
+const GAME_PREFIXES: ReadonlyArray<readonly [string, GameId]> = [
   ["/whoisfaker", "faker"],
   ["/songuessr", "song"],
   ["/cee", "cee"],

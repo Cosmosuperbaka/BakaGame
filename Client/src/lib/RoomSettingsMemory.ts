@@ -1,3 +1,4 @@
+import type { GameId } from "@bakagame/shared";
 import { notifyPreferencesChanged } from "@/lib/Storage";
 import type {
   AnimeAutoFilters,
@@ -13,7 +14,7 @@ import type {
  * 房间内的玩法设置另外存一份，由等待页在新建房间时重放。
  * 按产品决定不落盘名称与密码（用户明确）；所有读写都容错——存储被禁用或数据损坏时按「没有记忆」处理。
  */
-export type RoomGame = "faker" | "song" | "cee";
+export type RoomGame = GameId;
 
 /** 创建弹窗里可沿用的选项；`source` 是猜猜呗的服务器来源（兼容原版）。 */
 export interface RoomCreateDefaults {

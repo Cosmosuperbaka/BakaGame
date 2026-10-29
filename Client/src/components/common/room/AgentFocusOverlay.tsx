@@ -1,3 +1,4 @@
+import type { GameId } from "@bakagame/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,8 +9,6 @@ import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { AGENT_ACTION_LABELS, agentActivityLabel } from "@/lib/AgentActivityLabel";
 import { agentClickEcho, popover } from "@/lib/Motion";
-
-type GameId = "faker" | "song" | "cee";
 
 const PART_SELECTOR: Record<string, string> = {
   header: '[data-room-part="header"]',

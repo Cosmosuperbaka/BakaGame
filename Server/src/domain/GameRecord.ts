@@ -1,12 +1,15 @@
+import { GAME_IDS, type GameId } from "../shared/Protocol";
+
 /**
  * 对局记录端口：一款游戏的一个房间从创建到销毁记为一局，局内每次结算上交一个回合，
  * 房间销毁时收尾。由基础设施异步落库，记录永久保留。
  *
  * 记录只服务后台复盘与统计（回放系统暂缓），因此写入失败只记日志，绝不影响对局本身。
  */
-export type RecordedGame = "faker" | "song" | "cee";
+/** 记录口径与协议的游戏标识同一份：新增玩法时不会有一处静默漏算。 */
+export type RecordedGame = GameId;
 
-export const RECORDED_GAMES: readonly RecordedGame[] = ["faker", "song", "cee"];
+export const RECORDED_GAMES: readonly RecordedGame[] = GAME_IDS;
 
 export interface GameRecordPlayer {
   playerId: string;

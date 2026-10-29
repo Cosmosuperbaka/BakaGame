@@ -1,3 +1,4 @@
+import type { GameId } from "../shared/Protocol";
 /**
  * 人类可达的站点位置表：给 Agent 的「地图」。
  *
@@ -71,10 +72,10 @@ export const GAME_PATHS = {
   cee: "/cee",
 } as const;
 
-export const gamePathOf = (game: "faker" | "song" | "cee"): string => GAME_PATHS[game];
+export const gamePathOf = (game: GameId): string => GAME_PATHS[game];
 
 /** 加入房间后的页内位置；只在已经知道房间号时使用。 */
-export const roomPageOf = (game: "faker" | "song" | "cee", roomId: string): string =>
+export const roomPageOf = (game: GameId, roomId: string): string =>
   `${GAME_PATHS[game]}/room/${roomId}`;
 
 export const findSitePage = (path: string): SitePage | undefined => {

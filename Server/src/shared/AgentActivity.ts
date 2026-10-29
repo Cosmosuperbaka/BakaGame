@@ -1,3 +1,4 @@
+import type { GameId } from "./Protocol";
 import { Type as t, type Static } from "@sinclair/typebox";
 
 export const AGENT_FOCUS_KINDS = [
@@ -71,7 +72,7 @@ export const isAgentFocusPart = (value: string): value is AgentFocusPart =>
 export interface AgentFocusEvent extends Omit<AgentFocusInput, "kind" | "part"> {
   kind: AgentFocusKind;
   part?: AgentFocusPart;
-  game: "faker" | "song" | "cee";
+  game: GameId;
   roomId?: string;
   playerId?: string;
   at: number;
