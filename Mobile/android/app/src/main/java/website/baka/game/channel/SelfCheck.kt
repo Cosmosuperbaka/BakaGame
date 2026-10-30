@@ -138,6 +138,9 @@ object SelfCheck {
                 }
             } catch (e: Exception) { /* best-effort */ }
         }
+        // unsafeCheckOpNoThrow 自 API 29 起才有；更老的系统上调用会抛 NoSuchMethodError（Error，
+        // 下面的 catch 接不住），只能跳过这一项 best-effort 探测。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         try {
             val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager
             val mode = appOps?.unsafeCheckOpNoThrow(

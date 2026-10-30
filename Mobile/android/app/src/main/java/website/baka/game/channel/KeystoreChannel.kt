@@ -2,6 +2,7 @@ package website.baka.game.channel
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.annotation.WorkerThread
@@ -62,6 +63,9 @@ object KeystoreChannel {
     private fun generateKey(context: Context, nonce: ByteArray): Boolean {
         var strongBox = false
         try {
+            // setIsStrongBoxBacked 自 API 28 起才有；老系统上调用是 NoSuchMethodError（Error 不是
+            // Exception，下面的 catch 接不住），所以先按版本直接走普通 Keystore 分支。
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) throw UnsupportedOperationException("StrongBox requires API 28")
             val withSb = specBuilder(nonce).setIsStrongBoxBacked(true)
             // initialize() 返回 Unit，不能链式接 generateKeyPair()，必须分两步。
             keyPairGenerator().apply { initialize(withSb.build()) }.generateKeyPair()
