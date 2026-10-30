@@ -656,7 +656,7 @@ export const WhoIsFakerMessageSchemas = Object.fromEntries(
 export const WhoIsFakerClientMessageSchema = schemaUnion(Object.values(WhoIsFakerMessageSchemas));
 
 /**
- * 进房三条命令的 ack：服务端 `restorePlayerConnection` / `handleRoomCreate` / `handleRoomJoin`
+ * 进房三条命令的 ack：服务端 `restorePlayerConnection` / `createRoom` / `joinRoom`
  * 的返回值就是这三行，快照与私有态另有 event 下发，不在 ack 里。
  */
 export interface WhoIsFakerRoomEnterAck {

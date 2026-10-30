@@ -66,14 +66,14 @@ export class CEENativeService {
     return this.state.listRooms();
   }
   adminListRooms() {
-    return this.state.adminList();
+    return this.state.adminListRooms();
   }
   adminCloseRoom(roomId: string) {
-    this.state.adminClose(roomId);
+    this.state.adminCloseRoom(roomId);
     this.rescheduleAll();
   }
   adminKickPlayer(roomId: string, playerId: string) {
-    this.state.adminKick(roomId, playerId);
+    this.state.adminKickPlayer(roomId, playerId);
     const room = this.state.rooms.get(roomId);
     if (room) this.schedule(room);
     else this.rescheduleAll();
@@ -94,7 +94,7 @@ export class CEENativeService {
   }
   runHousekeeping() {
     for (const room of this.state.rooms.values()) {
-      if (tickCEERound(room, this.now())) this.state.publish(room);
+      if (tickCEERound(room, this.now())) this.state.publishRoom(room);
     }
     this.state.housekeeping();
     this.rescheduleAll();
@@ -109,11 +109,11 @@ export class CEENativeService {
     }
     switch (message.type) {
       case "cee.room.create":
-        return this.state.create(connection, message.payload);
+        return this.state.createRoom(connection, message.payload);
       case "cee.room.join":
-        return this.state.join(connection, message.roomId, message.payload);
+        return this.state.joinRoom(connection, message.roomId, message.payload);
       case "cee.room.reconnect": {
-        const result = this.state.reconnect(connection, message.payload);
+        const result = this.state.reconnectRoom(connection, message.payload);
         this.rescheduleAll();
         return result;
       }
@@ -130,7 +130,7 @@ export class CEENativeService {
     try {
       switch (message.type) {
         case "cee.room.leave":
-          this.state.leave(connection, room, player);
+          this.state.leaveRoom(connection, room, player);
           break;
         case "cee.room.requestSync":
           connection.resetStateSync?.();
@@ -144,7 +144,7 @@ export class CEENativeService {
           break;
         }
         case "cee.room.update":
-          await this.state.update(room, player, message.payload);
+          await this.state.updateSettings(room, player, message.payload);
           break;
         // 房主没有准备态：开局权在房主手里，准备与否对他没有意义，界面也不显示准备按钮。
         case "cee.player.ready":
@@ -172,7 +172,7 @@ export class CEENativeService {
           this.state.kick(room, player, message.payload.playerId);
           break;
         case "cee.room.transferHost":
-          this.state.transfer(room, player, message.payload.playerId);
+          this.state.transferHost(room, player, message.payload.playerId);
           break;
         case "cee.chat.send":
           this.state.sendChat(room, player, message.payload.text);
@@ -237,7 +237,7 @@ export class CEENativeService {
       }
       return {};
     } finally {
-      this.state.publish(room);
+      this.state.publishRoom(room);
       this.schedule(room);
     }
   }
@@ -289,7 +289,7 @@ export class CEENativeService {
     room.phaseDeadlineAt = this.now() + 30000;
     const preparationId = crypto.randomUUID();
     room.preparationId = preparationId;
-    this.state.publish(room);
+    this.state.publishRoom(room);
     this.schedule(room);
     try {
       const answer = await this.data.chooseRandomCharacter(room.settings, this.random);
@@ -304,7 +304,7 @@ export class CEENativeService {
     } catch (error) {
       if (room.phase === "preparing" && room.preparationId === preparationId)
         this.state.resetWaiting(room);
-      this.state.publish(room);
+      this.state.publishRoom(room);
       this.schedule(room);
       throw error;
     }
@@ -426,7 +426,7 @@ export class CEENativeService {
         if (room.phaseDeadlineAt !== null && this.now() >= room.phaseDeadlineAt)
           this.state.resetWaiting(room);
         tickCEERound(room, this.now());
-        this.state.publish(room);
+        this.state.publishRoom(room);
         this.schedule(room);
       },
       Math.max(1, Math.min(...times) - this.now())

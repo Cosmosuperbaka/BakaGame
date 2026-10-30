@@ -30,7 +30,7 @@ import {
 } from "./BlankGuess";
 import { runBots } from "./BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
-import { publishLobby, publishRoomState } from "./RoomViews";
+import { publishLobby, publishRoom } from "./RoomViews";
 import {
   createDescription,
   createDescriptionOrder,
@@ -66,7 +66,7 @@ const summarizeRoundWords = (words: GameRound["words"]): RoundSummary["words"] =
       }
     : undefined;
 
-export const handleAdvancePhase = async (
+export const advancePhase = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord
 ) => {
@@ -124,7 +124,7 @@ export const handleAdvancePhase = async (
       throw new AppError("INVALID_PHASE", "当前阶段不能手动推进");
   }
 
-  service.touchRoom(room);
+  service.touch(room);
   // 新阶段可能开始等待某个此前被放过的掉线玩家，这里补上暂停。
   requeuePendingDisconnects(service, room);
   await service.log({
@@ -137,7 +137,7 @@ export const handleAdvancePhase = async (
     },
   });
 
-  publishRoomState(service, room);
+  publishRoom(service, room);
   await runBots(service, room);
 
   return { phase: room.round?.phase ?? "waiting" };
@@ -225,7 +225,7 @@ const advanceFromNight = async (
   await resolveNight(service, room);
 };
 
-export const handleStartPhaseTimer = (
+export const startPhaseTimer = (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   durationSeconds: number
@@ -278,14 +278,14 @@ export const handleStartPhaseTimer = (
   }, timeoutMs);
   service.phaseTimerTimeoutByRoomId.set(room.id, timer);
 
-  service.touchRoom(room);
+  service.touch(room);
   service.appendSystemMessage(room, `主持人开启了本阶段倒计时（${durationSeconds / 60}分钟）`);
-  publishRoomState(service, room);
+  publishRoom(service, room);
 
   return { phaseTimer: timerState };
 };
 
-export const handleStopPhaseTimer = (
+export const stopPhaseTimer = (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord
 ) => {
@@ -300,9 +300,9 @@ export const handleStopPhaseTimer = (
   clearPhaseTimer(service, room);
 
   if (hadTimer) {
-    service.touchRoom(room);
+    service.touch(room);
     service.appendSystemMessage(room, "主持人取消了本阶段倒计时");
-    publishRoomState(service, room);
+    publishRoom(service, room);
   }
 
   return { stopped: true };
@@ -415,9 +415,9 @@ const timeoutDescriptionPhase = async (
     round.speechMode = undefined;
     round.votes = [];
   }
-  service.touchRoom(room);
+  service.touch(room);
   requeuePendingDisconnects(service, room);
-  publishRoomState(service, room);
+  publishRoom(service, room);
   await runBots(service, room);
 };
 
@@ -497,8 +497,8 @@ const timeoutVotingPhase = async (
     }
   }
   await resolveVoting(service, room, false);
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   await runBots(service, room);
 };
 
@@ -516,9 +516,9 @@ const timeoutTieBreakPhase = async (
     tieBreak.stage = "vote";
     round.speechMode = undefined;
     tieBreak.votes = [];
-    service.touchRoom(room);
+    service.touch(room);
     requeuePendingDisconnects(service, room);
-    publishRoomState(service, room);
+    publishRoom(service, room);
     await runBots(service, room);
     return;
   }
@@ -533,8 +533,8 @@ const timeoutTieBreakPhase = async (
       }
     }
     await resolveVoting(service, room, true);
-    service.touchRoom(room);
-    publishRoomState(service, room);
+    service.touch(room);
+    publishRoom(service, room);
     await runBots(service, room);
   }
 };
@@ -579,8 +579,8 @@ const timeoutNightPhase = async (
     }
   }
   await resolveNight(service, room);
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   await runBots(service, room);
 };
 
@@ -590,7 +590,7 @@ export const broadcastPhaseAndPublish = (
 ) => {
   // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
   requeuePendingDisconnects(service, room);
-  publishRoomState(service, room);
+  publishRoom(service, room);
 };
 
 export const startRound = async (
@@ -620,7 +620,7 @@ export const startRound = async (
   };
   service.roundStartedAtById.set(room.round.id, service.now());
 
-  service.touchRoom(room);
+  service.touch(room);
 
   await service.log({
     type: "game.started",
@@ -632,7 +632,7 @@ export const startRound = async (
     },
   });
 
-  publishRoomState(service, room);
+  publishRoom(service, room);
 };
 
 export const returnRoomToWaiting = (
@@ -649,8 +649,8 @@ export const returnRoomToWaiting = (
     player.isReady = player.membership === "active" && player.isBot;
   }
 
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   publishLobby(service);
 };
 
@@ -897,7 +897,7 @@ export const finishRound = async (
     player.isReady = false;
   }
 
-  service.touchRoom(room);
+  service.touch(room);
 
   await service.log({
     type: "game.finished",
@@ -911,7 +911,7 @@ export const finishRound = async (
 
   // 结算必然改变阶段与摘要，这里统一发布快照；对局小结只走状态通道，
   // 调用方无需也不得再补发 game.roundSummary 事件。
-  publishRoomState(service, room);
+  publishRoom(service, room);
 };
 
 /** 只给获胜阵营的玩家加分；加到分的玩家进当局摘要，其余不进。 */

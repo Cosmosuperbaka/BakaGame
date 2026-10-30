@@ -70,17 +70,17 @@ import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
 import { createRoomCommandHandler } from "./whoisfaker/RoomCommandHandler";
 import { createTestCommandHandler } from "./whoisfaker/TestCommandHandler";
 import {
-  handleEnterBlankGuess,
-  handleReviewBlankGuess,
-  handleSubmitBlankGuess,
-  handleUpdateBlankGuessDraft,
+  enterBlankGuess,
+  reviewBlankGuess,
+  submitBlankGuess,
+  updateBlankGuessDraft,
 } from "./whoisfaker/BlankGuess";
 import type { WhoIsFakerServiceInternals } from "./whoisfaker/ServiceInternals";
 import {
   clearPendingDisconnect,
   forceRemovePlayer,
   handlePlayerOffline,
-  handleResolveDisconnect,
+  resolveDisconnect,
   requeuePendingDisconnects,
   shouldAutoCloseWhenEmpty,
   type PlayerOfflineReason,
@@ -88,10 +88,10 @@ import {
 import {
   clearPhaseTimer,
   finishRound,
-  handleAdvancePhase,
+  advancePhase,
   handlePhaseTimeout,
-  handleStartPhaseTimer,
-  handleStopPhaseTimer,
+  startPhaseTimer,
+  stopPhaseTimer,
   restoreInterruptedTimer,
 } from "./whoisfaker/PhaseFlow";
 import { runBots } from "./whoisfaker/BotActors";
@@ -110,10 +110,10 @@ import {
   replaceVote,
 } from "./whoisfaker/RoundRules";
 import {
-  handleTestAddBot,
-  handleTestJumpToPhase,
-  handleTestRemoveBot,
-  handleTestSetMyRole,
+  testAddBot,
+  testJumpToPhase,
+  testRemoveBot,
+  testSetMyRole,
 } from "./whoisfaker/TestControls";
 import {
   attachConnection,
@@ -123,8 +123,8 @@ import {
   buildRoomSummary,
   privateStateForConnection,
   publishLobby,
-  publishRoomState,
-  publishRoomStateCalibration,
+  publishRoom,
+  publishRoomCalibration,
 } from "./whoisfaker/RoomViews";
 
 export interface WhoIsFakerServiceOptions {
@@ -237,15 +237,15 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
           this.lobbyFanout.sendTo(connection);
           return { subscribed: true };
         },
-        create: (connection, message) => this.handleRoomCreate(connection, message),
-        join: (connection, message) => this.handleRoomJoin(connection, message),
-        reconnect: (connection, message) => this.handleRoomReconnect(connection, message),
-        leave: (connection) => this.handleRoomLeave(connection),
-        requestSync: (connection) => this.handleRequestSync(connection),
-        updateSettings: (connection, payload) => this.handleUpdateSettings(connection, payload),
-        kick: (connection, playerId) => this.handleKick(connection, playerId),
-        transferHost: (connection, playerId) => this.handleTransferHost(connection, playerId),
-        sendChat: (connection, text) => this.handleChat(connection, text),
+        create: (connection, message) => this.createRoom(connection, message),
+        join: (connection, message) => this.joinRoom(connection, message),
+        reconnect: (connection, message) => this.reconnectRoom(connection, message),
+        leave: (connection) => this.leaveRoom(connection),
+        requestSync: (connection) => this.requestSync(connection),
+        updateSettings: (connection, payload) => this.updateSettings(connection, payload),
+        kick: (connection, playerId) => this.kick(connection, playerId),
+        transferHost: (connection, playerId) => this.transferHost(connection, playerId),
+        sendChat: (connection, text) => this.sendChat(connection, text),
       }),
       createPlayerCommandHandler({
         now: () => this.now(),
@@ -254,42 +254,42 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
           this.ensureUniqueName(room, name, exceptPlayerId),
         isRoundActive: (room) => this.isRoundActive(room),
         normalizeRoleConfig: (room) => normalizeRoomRoleConfig(room),
-        touchRoom: (room) => this.touchRoom(room),
+        touch: (room) => this.touch(room),
         log: (entry) => this.log(entry),
-        publishRoomState: (room) => this.publishRoomState(room),
+        publishRoom: (room) => this.publishRoom(room),
         publishLobby: () => this.publishLobby(),
       }),
       createGameCommandHandler({
         assignQuestioner: (connection, playerId) =>
-          this.handleAssignQuestioner(connection, playerId),
+          this.assignQuestioner(connection, playerId),
         submitWords: (connection, payload) =>
-          this.handleSubmitWords(connection, payload.words, payload.blankHint, payload.manualRoles),
-        advancePhase: (connection) => this.handleAdvancePhase(connection),
-        submitDescription: (connection, text) => this.handleSubmitDescription(connection, text),
-        submitVote: (connection, targetId) => this.handleSubmitVote(connection, targetId),
+          this.submitWords(connection, payload.words, payload.blankHint, payload.manualRoles),
+        advancePhase: (connection) => this.advancePhase(connection),
+        submitDescription: (connection, text) => this.submitDescription(connection, text),
+        submitVote: (connection, targetId) => this.submitVote(connection, targetId),
         submitNightAction: (connection, targetId) =>
-          this.handleSubmitNightAction(connection, targetId),
-        submitBlankGuess: (connection, words) => this.handleSubmitBlankGuess(connection, words),
-        enterBlankGuess: (connection) => this.handleEnterBlankGuess(connection),
+          this.submitNightAction(connection, targetId),
+        submitBlankGuess: (connection, words) => this.submitBlankGuess(connection, words),
+        enterBlankGuess: (connection) => this.enterBlankGuess(connection),
         updateBlankGuessDraft: (connection, words) =>
-          this.handleUpdateBlankGuessDraft(connection, words),
-        reviewBlankGuess: (connection, approve) => this.handleReviewBlankGuess(connection, approve),
-        cancelVote: (connection) => this.handleCancelVote(connection),
-        cancelNightAction: (connection) => this.handleCancelNightAction(connection),
+          this.updateBlankGuessDraft(connection, words),
+        reviewBlankGuess: (connection, approve) => this.reviewBlankGuess(connection, approve),
+        cancelVote: (connection) => this.cancelVote(connection),
+        cancelNightAction: (connection) => this.cancelNightAction(connection),
         requestSupplement: (connection, playerIds) =>
-          this.handleRequestSupplement(connection, playerIds),
+          this.requestSupplement(connection, playerIds),
         resolveDisconnect: (connection, payload) =>
-          this.handleResolveDisconnect(connection, payload.playerId, payload.resolution),
+          this.resolveDisconnect(connection, payload.playerId, payload.resolution),
         startPhaseTimer: (connection, durationSeconds) =>
-          this.handleStartPhaseTimer(connection, durationSeconds),
-        stopPhaseTimer: (connection) => this.handleStopPhaseTimer(connection),
+          this.startPhaseTimer(connection, durationSeconds),
+        stopPhaseTimer: (connection) => this.stopPhaseTimer(connection),
       }),
       createTestCommandHandler({
-        jumpToPhase: (connection, phase) => this.handleTestJumpToPhase(connection, phase),
-        setMyRole: (connection, role) => this.handleTestSetMyRole(connection, role),
-        addBot: (connection, count) => this.handleTestAddBot(connection, count),
+        jumpToPhase: (connection, phase) => this.testJumpToPhase(connection, phase),
+        setMyRole: (connection, role) => this.testSetMyRole(connection, role),
+        addBot: (connection, count) => this.testAddBot(connection, count),
         removeBot: (connection, playerId, count) =>
-          this.handleTestRemoveBot(connection, playerId, count),
+          this.testRemoveBot(connection, playerId, count),
       }),
     ];
   }
@@ -317,7 +317,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (controller) {
       if (controller.connectionId !== connection.id) {
         // 人类旁观连接断开：座位仍由 MCP 控制，不触发离线清理。
-        this.publishRoomState(room);
+        this.publishRoom(room);
         return;
       }
       this.mcpSeats.unbind(room.id, connection.playerId);
@@ -328,8 +328,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         player.online = true;
         player.connectionId = viewer.id;
         player.lastSeenAt = this.now();
-        this.touchRoom(room);
-        this.publishRoomState(room);
+        this.touch(room);
+        this.publishRoom(room);
         return;
       }
     } else if (player?.connectionId !== connection.id) {
@@ -431,8 +431,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     connection.resetStateSync?.();
     connection.lobbySubscribed = false;
     this.connectionRegistry.attach(connection, room.id, player.id);
-    this.touchRoom(room);
-    this.publishRoomState(room);
+    this.touch(room);
+    this.publishRoom(room);
     this.publishLobby();
     return {
       roomId: room.id,
@@ -474,8 +474,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       player.online = true;
       player.connectionId = viewer.id;
       player.lastSeenAt = this.now();
-      this.touchRoom(room);
-      this.publishRoomState(room);
+      this.touch(room);
+      this.publishRoom(room);
       this.publishLobby();
       return { released: true };
     }
@@ -494,7 +494,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       await this.removeOfflinePlayers(room, currentTime);
       await this.handOverStalledRoles(room, currentTime);
       await this.finishExpiredPhaseTimer(room, currentTime);
-      this.publishRoomStateCalibration(room);
+      this.publishRoomCalibration(room);
     }
   }
 
@@ -553,7 +553,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         this.reassignHost(room);
       }
       normalizeRoomRoleConfig(room);
-      this.touchRoom(room);
+      this.touch(room);
     }
   }
 
@@ -773,7 +773,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return room;
   }
 
-  private async handleRoomCreate(
+  private async createRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.create" }>
   ) {
@@ -836,7 +836,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     const previousRoomUpdate = this.attachConnection(room, host, connection);
     this.appendSystemMessage(room, `${host.name} 创建了房间`);
-    this.touchRoom(room);
+    this.touch(room);
 
     await previousRoomUpdate;
     await this.log({
@@ -849,7 +849,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
 
     return {
@@ -859,7 +859,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     };
   }
 
-  private async handleRoomJoin(
+  private async joinRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.join" }>
   ) {
@@ -889,7 +889,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const previousRoomUpdate = this.attachConnection(room, player, connection);
     normalizeRoomRoleConfig(room);
     this.appendSystemMessage(room, `${player.name} 加入了房间`);
-    this.touchRoom(room);
+    this.touch(room);
 
     await previousRoomUpdate;
     await this.log({
@@ -902,7 +902,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
 
     return {
@@ -912,7 +912,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     };
   }
 
-  private async handleRoomReconnect(
+  private async reconnectRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.reconnect" }>
   ) {
@@ -942,8 +942,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       room.emptySinceAt = undefined;
       connection.resetStateSync?.();
       this.connectionRegistry.attach(connection, room.id, player.id);
-      this.touchRoom(room);
-      this.publishRoomState(room);
+      this.touch(room);
+      this.publishRoom(room);
       return {
         roomId: room.id,
         playerId: player.id,
@@ -979,7 +979,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       // 人类刷新页面：只恢复只读观看，不抢回座位所有权，也不顶掉 MCP 控制器。
       connection.resetStateSync?.();
       this.connectionRegistry.attach(connection, room.id, player.id);
-      this.publishRoomState(room, connection);
+      this.publishRoom(room, connection);
       return {
         roomId: room.id,
         playerId: player.id,
@@ -994,7 +994,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     });
   }
 
-  private async handleRoomLeave(connection: ConnectionRecord) {
+  private async leaveRoom(connection: ConnectionRecord) {
     const { room, player } = this.requireRoomPlayer(connection);
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (controller?.connectionId === connection.id) {
@@ -1009,8 +1009,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         player.online = true;
         player.connectionId = viewer.id;
         player.lastSeenAt = this.now();
-        this.touchRoom(room);
-        this.publishRoomState(room);
+        this.touch(room);
+        this.publishRoom(room);
         this.publishLobby();
         return { left: true };
       }
@@ -1023,14 +1023,14 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return { left: true };
   }
 
-  private handleRequestSync(connection: ConnectionRecord) {
+  private requestSync(connection: ConnectionRecord) {
     const { room } = this.requireRoomPlayer(connection);
     connection.resetStateSync?.();
-    this.publishRoomState(room, connection);
+    this.publishRoom(room, connection);
     return { synced: true };
   }
 
-  private async handleUpdateSettings(
+  private async updateSettings(
     connection: ConnectionRecord,
     payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"]
   ) {
@@ -1103,7 +1103,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       normalizeRoomRoleConfig(room);
     }
 
-    this.touchRoom(room);
+    this.touch(room);
 
     await this.log({
       type: "room.settings_changed",
@@ -1113,7 +1113,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       payload: room.settings,
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
 
     return {
@@ -1121,7 +1121,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     };
   }
 
-  private async handleKick(connection: ConnectionRecord, targetPlayerId: string) {
+  private async kick(connection: ConnectionRecord, targetPlayerId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
 
@@ -1151,12 +1151,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     await this.forceRemovePlayer(room, target.id, `${by}已将其移出房间`);
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
     await this.runBots(room);
   }
 
-  private async handleAssignQuestioner(connection: ConnectionRecord, targetPlayerId: string) {
+  private async assignQuestioner(connection: ConnectionRecord, targetPlayerId: string) {
     // 出题人可以是正式玩家，也可以是旁观者；旁观者出题时所有正式玩家直接参赛。
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -1191,7 +1191,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     round.questionerPlayerId = target.id;
     round.phase = "wordSubmission";
     round.speechMode = undefined;
-    this.touchRoom(room);
+    this.touch(room);
 
     await this.log({
       type: "game.questioner_assigned",
@@ -1200,13 +1200,13 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       playerId: target.id,
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     await this.runBots(room);
 
     return { questionerPlayerId: target.id };
   }
 
-  private async handleSubmitWords(
+  private async submitWords(
     connection: ConnectionRecord,
     words: [string, string],
     blankHint?: string,
@@ -1269,7 +1269,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     round.tieBreak = undefined;
     round.nightActions = [];
     round.blankGuessContext = undefined;
-    this.touchRoom(room);
+    this.touch(room);
 
     // 异步后台保存词库，避免阻塞 WebSocket 主流程
     void this.options.wordBankRepository?.savePair(words).catch((error: unknown) => {
@@ -1287,14 +1287,14 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       playerId: player.id,
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     await this.runBots(room);
 
     return { phase: round.phase };
   }
 
-  private handleAdvancePhase(connection: ConnectionRecord) {
-    return handleAdvancePhase(this, connection);
+  private advancePhase(connection: ConnectionRecord) {
+    return advancePhase(this, connection);
   }
 
   /** PhaseTimer.test.ts 通过内部面直接驱动恢复倒计时，类上保留委托。 */
@@ -1302,7 +1302,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     restoreInterruptedTimer(this, room, remainingMs);
   }
 
-  private async handleSubmitDescription(connection: ConnectionRecord, text: string) {
+  private async submitDescription(connection: ConnectionRecord, text: string) {
     // 描述和 PK 补充描述都复用同一份存储结构，只靠 kind 区分。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1327,7 +1327,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("INVALID_PHASE", "当前阶段不能提交描述");
     }
 
-    this.touchRoom(room);
+    this.touch(room);
     // 补充发言完成会直接切回原阶段，同样要重新检查掉线玩家。
     this.requeuePendingDisconnects(room);
     await this.log({
@@ -1336,7 +1336,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       roomId: room.id,
       playerId: player.id,
     });
-    this.publishRoomState(room);
+    this.publishRoom(room);
     await this.runBots(room);
 
     return { submitted: true };
@@ -1404,7 +1404,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     );
   }
 
-  private async handleCancelVote(connection: ConnectionRecord) {
+  private async cancelVote(connection: ConnectionRecord) {
     // 撤销设计为幂等操作：客户端重试或快速连点时仍会收到最新私有状态。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1420,12 +1420,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("INVALID_PHASE", "当前阶段不能撤销投票");
     }
 
-    this.touchRoom(room);
-    this.publishRoomState(room);
+    this.touch(room);
+    this.publishRoom(room);
     return { cancelled };
   }
 
-  private async handleCancelNightAction(connection: ConnectionRecord) {
+  private async cancelNightAction(connection: ConnectionRecord) {
     // 允许已提交夜晚操作的玩家在主持人推进前撤销。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1436,12 +1436,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     const cancelled = round.nightActions.some((a) => a.actorId === player.id);
     round.nightActions = round.nightActions.filter((a) => a.actorId !== player.id);
-    this.touchRoom(room);
-    this.publishRoomState(room);
+    this.touch(room);
+    this.publishRoom(room);
     return { cancelled };
   }
 
-  private async handleRequestSupplement(connection: ConnectionRecord, playerIds: string[]) {
+  private async requestSupplement(connection: ConnectionRecord, playerIds: string[]) {
     // 出题人在本轮描述完成后、投票结算前，可点名若干玩家补充发言一次。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1495,10 +1495,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     round.phase = "description";
     round.speechMode = "supplement";
 
-    this.touchRoom(room);
+    this.touch(room);
     this.requeuePendingDisconnects(room);
     await this.runBots(room);
-    this.publishRoomState(room);
+    this.publishRoom(room);
     return { requested: true };
   }
 
@@ -1525,7 +1525,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return true;
   }
 
-  private async handleSubmitVote(connection: ConnectionRecord, targetId: string) {
+  private async submitVote(connection: ConnectionRecord, targetId: string) {
     // 第一轮投票与平票第二轮投票复用同一个入口，但资格校验不同。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1540,7 +1540,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("INVALID_PHASE", "当前阶段不能提交投票");
     }
 
-    this.touchRoom(room);
+    this.touch(room);
     await this.log({
       type: "game.vote_submitted",
       createdAt: this.now(),
@@ -1551,13 +1551,13 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         tieBreak: round.phase === "tieBreak",
       },
     });
-    this.publishRoomState(room);
+    this.publishRoom(room);
     await this.runBots(room);
 
     return { submitted: true };
   }
 
-  private async handleSubmitNightAction(connection: ConnectionRecord, targetId?: string | null) {
+  private async submitNightAction(connection: ConnectionRecord, targetId?: string | null) {
     // 空 targetId 表示“本夜不行动”，不是错误输入。
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireRound(room);
@@ -1586,7 +1586,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       actorRole: state.role,
       targetId: targetId ?? undefined,
     });
-    this.touchRoom(room);
+    this.touch(room);
 
     await this.log({
       type: "game.night_action_submitted",
@@ -1598,42 +1598,42 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     await this.runBots(room);
 
     return { submitted: true };
   }
 
-  private handleSubmitBlankGuess(connection: ConnectionRecord, words: [string, string]) {
-    return handleSubmitBlankGuess(this, connection, words);
+  private submitBlankGuess(connection: ConnectionRecord, words: [string, string]) {
+    return submitBlankGuess(this, connection, words);
   }
 
-  private handleEnterBlankGuess(connection: ConnectionRecord) {
-    return handleEnterBlankGuess(this, connection);
+  private enterBlankGuess(connection: ConnectionRecord) {
+    return enterBlankGuess(this, connection);
   }
 
-  private handleUpdateBlankGuessDraft(connection: ConnectionRecord, words: [string, string]) {
-    return handleUpdateBlankGuessDraft(this, connection, words);
+  private updateBlankGuessDraft(connection: ConnectionRecord, words: [string, string]) {
+    return updateBlankGuessDraft(this, connection, words);
   }
 
-  private handleReviewBlankGuess(connection: ConnectionRecord, approve: boolean) {
-    return handleReviewBlankGuess(this, connection, approve);
+  private reviewBlankGuess(connection: ConnectionRecord, approve: boolean) {
+    return reviewBlankGuess(this, connection, approve);
   }
 
-  private handleResolveDisconnect(
+  private resolveDisconnect(
     connection: ConnectionRecord,
     targetPlayerId: string,
     resolution: "wait" | "eliminate"
   ) {
-    return handleResolveDisconnect(this, connection, targetPlayerId, resolution);
+    return resolveDisconnect(this, connection, targetPlayerId, resolution);
   }
 
-  private handleStartPhaseTimer(connection: ConnectionRecord, durationSeconds: number) {
-    return handleStartPhaseTimer(this, connection, durationSeconds);
+  private startPhaseTimer(connection: ConnectionRecord, durationSeconds: number) {
+    return startPhaseTimer(this, connection, durationSeconds);
   }
 
-  private handleStopPhaseTimer(connection: ConnectionRecord) {
-    return handleStopPhaseTimer(this, connection);
+  private stopPhaseTimer(connection: ConnectionRecord) {
+    return stopPhaseTimer(this, connection);
   }
 
   private clearPhaseTimer(room: WhoIsFakerRoomRecord): void {
@@ -1675,7 +1675,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return { channel: "main" };
   }
 
-  private async handleChat(connection: ConnectionRecord, text: string) {
+  private async sendChat(connection: ConnectionRecord, text: string) {
     // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
     const { room, player } = this.requireRoomPlayer(connection);
     if (!this.chatLimiter.allow(connection.id, this.now())) {
@@ -1699,7 +1699,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     );
     room.chat.push(message);
     room.chat = room.chat.slice(-CHAT_LIMIT);
-    this.touchRoom(room);
+    this.touch(room);
 
     await this.log({
       type: "chat.sent",
@@ -1713,11 +1713,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     return { sent: true };
   }
 
-  private async handleTransferHost(connection: ConnectionRecord, targetPlayerId: string) {
+  private async transferHost(connection: ConnectionRecord, targetPlayerId: string) {
     // 房主手动转移：任意阶段均可转移给房间内未被踢出的成员。
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -1733,7 +1733,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
 
     room.hostPlayerId = target.id;
-    this.touchRoom(room);
+    this.touch(room);
     this.appendSystemMessage(room, `${player.name} 将房主转移给了 ${target.name}`);
 
     await this.log({
@@ -1744,31 +1744,31 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       payload: { nextHostId: target.id },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
     return { hostPlayerId: target.id };
   }
 
-  private handleTestJumpToPhase(connection: ConnectionRecord, target: WhoIsFakerPhase) {
-    return handleTestJumpToPhase(this, connection, target);
+  private testJumpToPhase(connection: ConnectionRecord, target: WhoIsFakerPhase) {
+    return testJumpToPhase(this, connection, target);
   }
 
-  private handleTestSetMyRole(connection: ConnectionRecord, role: WhoIsFakerRole) {
-    return handleTestSetMyRole(this, connection, role);
+  private testSetMyRole(connection: ConnectionRecord, role: WhoIsFakerRole) {
+    return testSetMyRole(this, connection, role);
   }
 
   /** 测试房间批量补入机器人的口径见 whoisfaker/TestControls.ts。 */
-  private handleTestAddBot(connection: ConnectionRecord, count: number) {
-    return handleTestAddBot(this, connection, count);
+  private testAddBot(connection: ConnectionRecord, count: number) {
+    return testAddBot(this, connection, count);
   }
 
   /** 测试房间移除机器人走与踢人相同的路径，见 whoisfaker/TestControls.ts。 */
-  private handleTestRemoveBot(
+  private testRemoveBot(
     connection: ConnectionRecord,
     playerId: string | undefined,
     count: number
   ) {
-    return handleTestRemoveBot(this, connection, playerId, count);
+    return testRemoveBot(this, connection, playerId, count);
   }
 
   private finishRound(room: WhoIsFakerRoomRecord, winner: RoundWinner, reason: string) {
@@ -1847,12 +1847,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return privateStateForConnection(this, room, player, connection);
   }
 
-  private publishRoomState(room: WhoIsFakerRoomRecord, targetConnection?: ConnectionRecord) {
-    publishRoomState(this, room, targetConnection);
+  private publishRoom(room: WhoIsFakerRoomRecord, targetConnection?: ConnectionRecord) {
+    publishRoom(this, room, targetConnection);
   }
 
-  private publishRoomStateCalibration(room: WhoIsFakerRoomRecord) {
-    publishRoomStateCalibration(this, room);
+  private publishRoomCalibration(room: WhoIsFakerRoomRecord) {
+    publishRoomCalibration(this, room);
   }
 
   private publishLobby() {
@@ -1929,7 +1929,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       room.hostReconnectDeadlineAt = undefined;
     }
 
-    this.touchRoom(room);
+    this.touch(room);
     this.appendSystemMessage(room, options.appendMessage);
 
     await previousRoomUpdate;
@@ -1940,7 +1940,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       playerId: player.id,
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
 
     return {
@@ -2015,7 +2015,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return `${prefix}_${this.idCounter.toString(36)}`;
   }
 
-  touchRoom(room: WhoIsFakerRoomRecord) {
+  touch(room: WhoIsFakerRoomRecord) {
     room.updatedAt = this.now();
     room.lastActivityAt = this.now();
   }
@@ -2172,7 +2172,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     room.hostReconnectDeadlineAt = undefined;
     room.hostPlayerId = nextHost.id;
-    this.touchRoom(room);
+    this.touch(room);
     this.appendSystemMessage(room, `${previousHost.name} 断线超时，房主已转移给 ${nextHost.name}`);
 
     await this.log({
@@ -2186,7 +2186,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       },
     });
 
-    this.publishRoomState(room);
+    this.publishRoom(room);
     this.publishLobby();
   }
 

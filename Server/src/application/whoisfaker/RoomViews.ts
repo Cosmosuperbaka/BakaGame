@@ -350,7 +350,7 @@ const createRoomSnapshotViewSelector = (
   };
 };
 
-export const publishRoomState = (
+export const publishRoom = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord,
   targetConnection?: ConnectionRecord
@@ -406,7 +406,7 @@ export const privateStateForConnection = (
   ) as unknown as WhoIsFakerPrivateState;
 };
 
-export const publishRoomStateCalibration = (
+export const publishRoomCalibration = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
 ) => {

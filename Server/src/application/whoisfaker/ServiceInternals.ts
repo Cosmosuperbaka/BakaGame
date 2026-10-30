@@ -50,7 +50,7 @@ export interface WhoIsFakerServiceInternals {
   createPlayer(name: string, isBot: boolean, isAgent?: boolean): WhoIsFakerPlayerRecord;
   createId(prefix: string): string;
   appendSystemMessage(room: WhoIsFakerRoomRecord, text: string): void;
-  touchRoom(room: WhoIsFakerRoomRecord): void;
+  touch(room: WhoIsFakerRoomRecord): void;
   log(entry: LogEntry): Promise<void>;
   closeRoom(room: WhoIsFakerRoomRecord, reason: string): Promise<void>;
   completeSupplementIfReady(room: WhoIsFakerRoomRecord): boolean;

@@ -26,11 +26,11 @@ import {
   handlePhaseTimeout,
   restoreInterruptedTimer,
 } from "./PhaseFlow";
-import { publishRoomState } from "./RoomViews";
+import { publishRoom } from "./RoomViews";
 import { ensurePhaseNotBlocked } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
-export const handleSubmitBlankGuess = async (
+export const submitBlankGuess = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   words: [string, string]
@@ -66,7 +66,7 @@ export const handleSubmitBlankGuess = async (
   // 机会在提交这一刻就消耗掉，裁定只决定这一次算不算猜中。
   round.blankGuessUsed = true;
   round.blankGuessRecords.push(guess);
-  service.touchRoom(room);
+  service.touch(room);
 
   await service.log({
     type: "game.blank_guess_submitted",
@@ -91,13 +91,13 @@ export const handleSubmitBlankGuess = async (
     service.appendSystemMessage(room, `${player.name} 的猜词未完全匹配，等待主持人裁定`);
   }
 
-  publishRoomState(service, room);
+  publishRoom(service, room);
   await runBots(service, room);
 
   return { success: guess.success, pendingReview: !guess.success };
 };
 
-export const handleEnterBlankGuess = async (
+export const enterBlankGuess = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord
 ) => {
@@ -153,7 +153,7 @@ export const handleEnterBlankGuess = async (
   round.phase = "blankGuess";
   round.speechMode = undefined;
 
-  service.touchRoom(room);
+  service.touch(room);
   service.appendSystemMessage(room, `${player.name} 发起了白板猜词`);
 
   await service.log({
@@ -168,7 +168,7 @@ export const handleEnterBlankGuess = async (
   return { phase: round.phase };
 };
 
-export const handleUpdateBlankGuessDraft = async (
+export const updateBlankGuessDraft = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   words: [string, string]
@@ -186,12 +186,12 @@ export const handleUpdateBlankGuessDraft = async (
   }
 
   round.blankGuessContext.draft = words;
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   return { updated: true };
 };
 
-export const handleReviewBlankGuess = async (
+export const reviewBlankGuess = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   approve: boolean
@@ -238,7 +238,7 @@ export const handleReviewBlankGuess = async (
       : { type: "blankFailed", message: "白板猜词未通过，游戏继续" }
   );
 
-  service.touchRoom(room);
+  service.touch(room);
   requeuePendingDisconnects(service, room);
   broadcastPhaseAndPublish(service, room);
   await runBots(service, room);
@@ -276,7 +276,7 @@ export const timeoutBlankGuessPhase = async (
   const ctx = round.blankGuessContext;
   if (!ctx) return;
   await settleBlankGuessTimeout(service, room, round, ctx);
-  service.touchRoom(room);
+  service.touch(room);
   requeuePendingDisconnects(service, room);
   broadcastPhaseAndPublish(service, room);
   await runBots(service, room);
@@ -387,7 +387,7 @@ export const applyEliminationAndMove = async (
   if (eliminatedIds.length > 0) {
     recordEliminations(round.assignments, eliminatedIds, reason, service.now());
     // 保持当前阶段推送一次淘汰后的快照，再进入白板残局或游戏结算。
-    publishRoomState(service, room);
+    publishRoom(service, room);
   }
 
   if (tryTransitionToFinaleBlankGuess(service, room)) {

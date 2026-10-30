@@ -24,9 +24,9 @@ interface PlayerCommandDependencies {
   ensureUniqueName(room: WhoIsFakerRoomRecord, name: string, exceptPlayerId?: string): void;
   isRoundActive(room: WhoIsFakerRoomRecord): boolean;
   normalizeRoleConfig(room: WhoIsFakerRoomRecord): void;
-  touchRoom(room: WhoIsFakerRoomRecord): void;
+  touch(room: WhoIsFakerRoomRecord): void;
   log(entry: LogEntry): Promise<void>;
-  publishRoomState(room: WhoIsFakerRoomRecord): void;
+  publishRoom(room: WhoIsFakerRoomRecord): void;
   publishLobby(): void;
 }
 
@@ -49,7 +49,7 @@ const renamePlayer = async (
   dependencies.ensureUniqueName(room, normalized, player.id);
   player.name = normalized;
   player.lastSeenAt = dependencies.now();
-  dependencies.touchRoom(room);
+  dependencies.touch(room);
 
   await dependencies.log({
     type: "player.renamed",
@@ -59,7 +59,7 @@ const renamePlayer = async (
     payload: { name: player.name },
   });
 
-  dependencies.publishRoomState(room);
+  dependencies.publishRoom(room);
   return { name: player.name };
 };
 
@@ -86,7 +86,7 @@ const setSpectator = async (
   player.membership = spectator ? "spectator" : "active";
   player.isReady = false;
   dependencies.normalizeRoleConfig(room);
-  dependencies.touchRoom(room);
+  dependencies.touch(room);
 
   await dependencies.log({
     type: "player.membership_changed",
@@ -96,7 +96,7 @@ const setSpectator = async (
     payload: { membership: player.membership },
   });
 
-  dependencies.publishRoomState(room);
+  dependencies.publishRoom(room);
   dependencies.publishLobby();
   return { membership: player.membership };
 };
@@ -113,7 +113,7 @@ const setReady = async (
   }
 
   player.isReady = ready;
-  dependencies.touchRoom(room);
+  dependencies.touch(room);
 
   await dependencies.log({
     type: "player.ready_changed",
@@ -123,7 +123,7 @@ const setReady = async (
     payload: { ready },
   });
 
-  dependencies.publishRoomState(room);
+  dependencies.publishRoom(room);
   return { ready };
 };
 

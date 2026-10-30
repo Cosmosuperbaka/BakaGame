@@ -20,7 +20,7 @@ import {
   returnRoomToWaiting,
   startRound,
 } from "./PhaseFlow";
-import { publishRoomState } from "./RoomViews";
+import { publishRoom } from "./RoomViews";
 import {
   clampRoleConfig,
   createDescriptionOrder,
@@ -128,7 +128,7 @@ const ensureTestJumpWords = (
   }
 };
 
-export const handleTestJumpToPhase = async (
+export const testJumpToPhase = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   target: WhoIsFakerPhase
@@ -275,14 +275,14 @@ export const handleTestJumpToPhase = async (
       return { phase: "gameOver" as WhoIsFakerPhase };
   }
 
-  service.touchRoom(room);
+  service.touch(room);
   broadcastPhaseAndPublish(service, room);
   // 跳转后让机器人补齐新阶段的提交，否则出题人永远推不动。
   await runBots(service, room);
   return { phase: round.phase };
 };
 
-export const handleTestSetMyRole = async (
+export const testSetMyRole = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   role: WhoIsFakerRole
@@ -323,8 +323,8 @@ export const handleTestSetMyRole = async (
     round.words.blankHint = "测试提示";
   }
 
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   return { role };
 };
 
@@ -333,7 +333,7 @@ export const handleTestSetMyRole = async (
  * 机器人是真实的 WhoIsFakerPlayerRecord，走与真人完全相同的规则校验，
  * 只是没有连接、由 runBots 代为提交发言/投票/夜晚行动。
  */
-export const handleTestAddBot = async (
+export const testAddBot = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   count: number
@@ -362,15 +362,15 @@ export const handleTestAddBot = async (
 
   // 人数变了，阵营配置的上限也跟着变，必须重新夹一次。
   normalizeRoomRoleConfig(room);
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   await runBots(service, room);
 
   return { added };
 };
 
 /** 测试房间：移除机器人。未指定 playerId 时从最后加入的开始移除。 */
-export const handleTestRemoveBot = async (
+export const testRemoveBot = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   playerId: string | undefined,
@@ -399,8 +399,8 @@ export const handleTestRemoveBot = async (
 
   service.reassignHost(room);
   normalizeRoomRoleConfig(room);
-  service.touchRoom(room);
-  publishRoomState(service, room);
+  service.touch(room);
+  publishRoom(service, room);
   await runBots(service, room);
 
   return { removed: targets.map((bot) => bot.id) };

@@ -219,7 +219,7 @@ export class CEERooms {
     if (controller) {
       if (controller.connectionId !== connectionId) {
         // 人类旁观连接断开：座位仍由 MCP 控制，不触发离线清理。
-        this.publish(room);
+        this.publishRoom(room);
         return;
       }
       this.mcpSeats.unbind(room.id, player.id);
@@ -241,7 +241,7 @@ export class CEERooms {
     player.connectionId = viewer.id;
     player.online = true;
     delete player.offlineAt;
-    this.publish(room);
+    this.publishRoom(room);
     return true;
   }
   /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
@@ -254,9 +254,9 @@ export class CEERooms {
     if (![...room.players.values()].some((member) => member.online)) room.emptyAt = this.now();
     if (room.phase === "answering" && room.setterPlayerId === player.id) this.resetWaiting(room);
     advanceCEERound(room, this.now());
-    this.publish(room);
+    this.publishRoom(room);
   }
-  async create(
+  async createRoom(
     connection: ConnectionRecord,
     payload: CEEPayload<"cee.room.create">
   ): Promise<CEERoomEnterResult> {
@@ -305,14 +305,14 @@ export class CEERooms {
       player.ready = true;
       this.attach(connection, room, player);
       this.system(room, `${player.name} 创建了房间`);
-      this.publish(room);
+      this.publishRoom(room);
       return this.entry(room, player);
     } catch (error) {
       this.rooms.delete(id);
       throw error;
     }
   }
-  async join(
+  async joinRoom(
     connection: ConnectionRecord,
     roomId: string | undefined,
     payload: CEEPayload<"cee.room.join">
@@ -337,10 +337,10 @@ export class CEERooms {
     room.players.set(player.id, player);
     this.attach(connection, room, player);
     this.system(room, `${name} 加入了房间`);
-    this.publish(room);
+    this.publishRoom(room);
     return this.entry(room, player);
   }
-  reconnect(
+  reconnectRoom(
     connection: ConnectionRecord,
     payload: CEEPayload<"cee.room.reconnect">
   ): CEERoomEnterResult {
@@ -391,7 +391,7 @@ export class CEERooms {
       unit.deadlineAt === null
     )
       unit.deadlineAt = this.now() + room.settings.timeLimit * 1000;
-    this.publish(room);
+    this.publishRoom(room);
     return this.entry(room, player);
   }
   private reconnectController(
@@ -414,7 +414,7 @@ export class CEERooms {
     }
     const rebound = this.mcpSeats.rebind(controller, connection.id);
     this.attach(connection, room, target);
-    this.publish(room);
+    this.publishRoom(room);
     return {
       roomId: room.id,
       source: "native",
@@ -434,7 +434,7 @@ export class CEERooms {
     // 人类刷新页面：只恢复只读观看，不抢回座位所有权，也不顶掉 MCP 控制器。
     connection.resetStateSync?.();
     this.connections.attach(connection, room.id, player.id);
-    this.publish(room);
+    this.publishRoom(room);
     return {
       roomId: room.id,
       source: "native",
@@ -530,7 +530,7 @@ export class CEERooms {
       throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
     const bound = this.mcpSeats.bind(room.id, player.id, connection.id);
     this.attach(connection, room, player);
-    this.publish(room);
+    this.publishRoom(room);
     return {
       roomId: room.id,
       source: "native",
@@ -653,7 +653,7 @@ export class CEERooms {
     connection?.send(createEvent("cee.player.spectateResult", { approved }));
   }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
-  leave(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
+  leaveRoom(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
     const controller = this.mcpSeats.controllerFor(room.id, player.id);
     if (controller?.connectionId === connection.id) {
       // MCP 控制器离房：座位交还人类——页面还开着就直接接回，否则按断线保留离线席位，
@@ -669,9 +669,9 @@ export class CEERooms {
   kick(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
     this.requireHost(room, actor);
     if (id === actor.id) throw new AppError("INVALID_PLAYER", "不能移除自己");
-    this.evict(room, this.member(room, id), "你已被房主移出房间");
+    this.kickPlayer(room, this.member(room, id), "你已被房主移出房间");
   }
-  adminList(): AdminRoomView[] {
+  adminListRooms(): AdminRoomView[] {
     return [...this.rooms.values()].map((room) => ({
       game: "cee",
       roomId: room.id,
@@ -694,20 +694,20 @@ export class CEERooms {
       })),
     }));
   }
-  adminClose(roomId: string): void {
+  adminCloseRoom(roomId: string): void {
     this.closeRoom(this.adminRoom(roomId), ADMIN_CLOSE_MESSAGE);
   }
   /** 后台移人可以移走房主：`remove` 会按掉线口径重选房主。 */
-  adminKick(roomId: string, playerId: string): void {
+  adminKickPlayer(roomId: string, playerId: string): void {
     const room = this.adminRoom(roomId);
-    this.evict(room, this.member(room, playerId), ADMIN_KICK_MESSAGE);
+    this.kickPlayer(room, this.member(room, playerId), ADMIN_KICK_MESSAGE);
   }
   private adminRoom(roomId: string): CEERoom {
     const room = this.rooms.get(roomId);
     if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     return room;
   }
-  private evict(room: CEERoom, target: CEEPlayerRecord, reason: string): void {
+  private kickPlayer(room: CEERoom, target: CEEPlayerRecord, reason: string): void {
     const connection = target.connectionId
       ? this.connections.findConnection(target.connectionId)
       : undefined;
@@ -717,7 +717,7 @@ export class CEERooms {
     }
     this.remove(room, target);
   }
-  transfer(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
+  transferHost(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
     this.requireHost(room, actor);
     const target = this.member(room, id);
     if (!target.online || target.membership !== "active")
@@ -730,7 +730,7 @@ export class CEERooms {
     this.system(room, `${target.name} 成为房主`);
   }
   /** 私密即有密码：切到私密时必须带新密码或已有密码；留空保留原密码；公开房清除密码。 */
-  async update(
+  async updateSettings(
     room: CEERoom,
     actor: CEEPlayerRecord,
     payload: CEEPayload<"cee.room.update">
@@ -790,7 +790,7 @@ export class CEERooms {
       player.syncCompleted = false;
     }
   }
-  publish(room: CEERoom): void {
+  publishRoom(room: CEERoom): void {
     if (!this.rooms.has(room.id)) return;
     // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
     if (room.phase === "settled") this.recordSettled(room);
@@ -809,7 +809,7 @@ export class CEERooms {
     }
     this.onChange?.();
   }
-  calibrate(room: CEERoom): void {
+  publishRoomCalibration(room: CEERoom): void {
     const snapshot = ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId));
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
@@ -893,8 +893,8 @@ export class CEERooms {
       }
       // 旁观请求的兜底收口：超时自动拒绝，玩家已离开的条目也要从队列里摘掉。
       if (this.expireSpectateRequests(room, now)) changed = true;
-      if (changed) this.publish(room);
-      else this.calibrate(room);
+      if (changed) this.publishRoom(room);
+      else this.publishRoomCalibration(room);
     }
   }
   private sweepOfflinePlayers(room: CEERoom, now: number): boolean {
@@ -1030,7 +1030,7 @@ export class CEERooms {
     else {
       if (![...room.players.values()].some((member) => member.online)) room.emptyAt = this.now();
       advanceCEERound(room, this.now());
-      this.publish(room);
+      this.publishRoom(room);
     }
   }
   private assignHost(room: CEERoom) {

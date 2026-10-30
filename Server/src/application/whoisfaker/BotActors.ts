@@ -6,7 +6,7 @@ import {
 } from "../../shared/Index";
 import { BOT_DESCRIPTION_TEMPLATES, BOT_NAME_SUFFIXES } from "../../config/Constants";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
-import { publishRoomState } from "./RoomViews";
+import { publishRoom } from "./RoomViews";
 import {
   createDescription,
   getAliveAssignedPlayerIds,
@@ -64,9 +64,9 @@ export const runBots = async (service: WhoIsFakerServiceInternals, room: WhoIsFa
 
   service.completeSupplementIfReady(room);
 
-  service.touchRoom(room);
+  service.touch(room);
   requeuePendingDisconnects(service, room);
-  publishRoomState(service, room);
+  publishRoom(service, room);
 };
 
 /**
@@ -90,7 +90,7 @@ const actAsBot = (
   );
 };
 
-/** 补充发言：被点名且尚未补过的机器人补一句。优先级最高，与 handleSubmitDescription 的判定顺序一致。 */
+/** 补充发言：被点名且尚未补过的机器人补一句。优先级最高，与 submitDescription 的判定顺序一致。 */
 const fillBotSupplement = (
   service: WhoIsFakerServiceInternals,
   round: GameRound,

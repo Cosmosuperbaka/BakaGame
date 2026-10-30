@@ -23,7 +23,7 @@ import {
   broadcastRoomEvent,
   getCurrentSpeechState,
   publishLobby,
-  publishRoomState,
+  publishRoom,
 } from "./RoomViews";
 import { getOnlineCount, normalizeRoomRoleConfig } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
@@ -72,7 +72,7 @@ const isExpendableSpectator = (ctx: OfflineContext): boolean => {
   );
 };
 
-export const handleResolveDisconnect = async (
+export const resolveDisconnect = async (
   service: WhoIsFakerServiceInternals,
   connection: ConnectionRecord,
   targetPlayerId: string,
@@ -101,7 +101,7 @@ export const handleResolveDisconnect = async (
     }
   }
 
-  service.touchRoom(room);
+  service.touch(room);
   await service.log({
     type: "game.disconnect_resolved",
     createdAt: service.now(),
@@ -113,7 +113,7 @@ export const handleResolveDisconnect = async (
     },
   });
 
-  publishRoomState(service, room);
+  publishRoom(service, room);
   await runBots(service, room);
 
   return { resolved: true };
@@ -158,7 +158,7 @@ export const handlePlayerOffline = async (
     service.reassignHost(room);
   }
 
-  service.touchRoom(room);
+  service.touch(room);
   await service.log({
     type: `player.${reason}`,
     createdAt: service.now(),
@@ -219,7 +219,7 @@ const settleOfflineOutsideRound = async (
   }
 
   normalizeRoomRoleConfig(room);
-  service.touchRoom(room);
+  service.touch(room);
   await publishOrCloseIfEmpty(service, room, ctx.reason);
 };
 
@@ -290,7 +290,7 @@ const publishOrCloseIfEmpty = async (
     return;
   }
 
-  publishRoomState(service, room);
+  publishRoom(service, room);
   publishLobby(service);
 };
 
@@ -585,7 +585,7 @@ const finishForcedRemoval = async (
   const room = ctx.room;
   service.reassignHost(room);
   normalizeRoomRoleConfig(room);
-  service.touchRoom(room);
+  service.touch(room);
   // 猜词的白板被移除后没人能推进阻塞阶段，必须就地收束。
   await resolveAbandonedBlankGuess(service, room);
   await service.maybeAbortRoundAfterRosterChange(room);
