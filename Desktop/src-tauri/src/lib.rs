@@ -24,14 +24,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-/// 首次注册失败后的重试间隔：给离线启动留出口，又不会变成对注册接口的轰炸
-const REGISTER_RETRY_SECONDS: u64 = 60;
-
 /// 等密钥就绪的上限：超过就返回错误，让页面按「桌面通道不可用」处理
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 签发失败后的重试间隔：桥接脚本每几秒就来要一张票，离线时不能把它变成对证明接口的轰炸
-/// （与注册的 60 秒节流同款口径，只是票的时间窗更短，所以间隔也更短）
+/// （票的 TTL 只有几十秒，间隔再长就会让页面长时间拿不到票）
 const TICKET_RETRY_SECONDS: u64 = 10;
 
 /// 壳的运行状态
@@ -40,8 +37,6 @@ pub struct AppState {
     device: Mutex<Option<Arc<device::Device>>>,
     /// 密钥与 `clientId` 的目录
     dir: PathBuf,
-    /// 上一次注册尝试的 Unix 秒（离线启动后的懒重试节流用）
-    last_register_attempt: AtomicU64,
     /// 最近一次签发失败的 Unix 秒（0 表示没有失败过）；与 `TICKET_RETRY_SECONDS` 一起做退避
     last_attest_failure: AtomicU64,
     /// 最近签发的票据。`served == true` 表示已经交给过页面（一次性，不再给出第二次）；
@@ -72,18 +67,6 @@ impl AppState {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-    }
-
-    /// 注册没成功时是否该再试一次（60 秒节流）
-    fn should_retry_register(&self) -> bool {
-        let now = Self::now_secs();
-        let previous = self.last_register_attempt.load(Ordering::Relaxed);
-        if now < previous + REGISTER_RETRY_SECONDS {
-            return false;
-        }
-        self.last_register_attempt
-            .compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
     }
 
     /// 取缓存里那张**还没交给页面**且仍然新鲜的票；取出即记为已用，绝不二次给出
@@ -233,32 +216,6 @@ async fn baka_ticket(app: tauri::AppHandle) -> Result<Option<attest::TicketPaylo
     })
     .await
     .map_err(|err| format!("取票任务异常：{err}"))?
-}
-
-/// 桥接的 `sign(challenge)`：用设备私钥对 challenge 的 ASCII 字节做 Ed25519 签名，返回 base64
-#[tauri::command]
-async fn baka_sign(app: tauri::AppHandle, challenge: String) -> Result<String, String> {
-    let handle = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = handle.state::<AppState>();
-        let current = state
-            .wait_for_device()
-            .ok_or_else(|| "设备密钥尚未就绪".to_string())?;
-        // 离线启动过：注册还没拿到 clientId 就按节流补一次，失败也只记日志
-        if current.client_id().is_none() && state.should_retry_register() {
-            let dir = state.dir.clone();
-            let retry = Arc::clone(&current);
-            std::thread::spawn(move || {
-                let report = selfcheck::run(retry.protection());
-                if let Err(err) = device::register(&dir, &retry, &report) {
-                    eprintln!("补注册仍未成功：{err}");
-                }
-            });
-        }
-        current.sign(&challenge)
-    })
-    .await
-    .map_err(|err| format!("签名任务异常：{err}"))?
 }
 
 /// 桥接的 `selfCheck()`：每次调用都重新跑一遍，不缓存（调试器可能中途才附着）
@@ -415,7 +372,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            baka_sign,
             baka_self_check,
             baka_client_id,
             baka_ticket
@@ -426,7 +382,6 @@ pub fn run() {
             app.manage(AppState {
                 device: Mutex::new(None),
                 dir: dir.clone().unwrap_or_default(),
-                last_register_attempt: AtomicU64::new(0),
                 last_attest_failure: AtomicU64::new(0),
                 ticket: Mutex::new(None),
                 attesting: Mutex::new(()),

@@ -11,7 +11,6 @@
 //!   platform: "windows",
 //!   clientVersion: string,
 //!   channelTicket: string,                    // 壳签好的一次性票据；无票时为空串
-//!   sign(challenge: string): Promise<string>,     // base64(Ed25519(ASCII challenge 的字节))
 //!   selfCheck(): Promise<SelfCheckReport>,        // { hardFail, softFail, keyProtection }
 //! }
 //! ```
@@ -19,6 +18,9 @@
 //! `channelTicket` 是**一次性**的：服务端 30 秒 TTL、用过即焚，所以它是「读一次就作废」的
 //! 访问器属性（不是普通字符串字段），读走的同时脚本立刻向壳再要一张。票由 Rust 侧
 //! `attest` 模块签发（challenge → 签名 → attest），脚本只管取与缓存。
+//!
+//! 页面**拿不到签名能力**：签名只在壳内部用于通道证明，由 `attest` 直接调用设备私钥，
+//! 不经过本脚本。页面一旦被注入脚本，也不该能拿设备私钥对任意内容签名。
 //!
 //! 注入失败（非桌面环境、无 IPC、被安全策略拒）时**保持静默且不注入**，页面按 Web 处理；
 //! 这是有意为之：不能注入一个永远 reject 的假通道，否则桌面用户反而进不了普通房。
@@ -95,21 +97,6 @@ const BRIDGE_JS: &str = r#"(function () {
     clientType: "desktop",
     platform: "windows",
     clientVersion: "__BAKA_CLIENT_VERSION__",
-    sign: function (challenge) {
-      if (typeof challenge !== "string" || challenge.length === 0 || challenge.length > 4096) {
-        return Promise.reject(new Error("challenge 必须是非空字符串且不超过 4096 字符"));
-      }
-      var invoke = resolveInvoke();
-      if (!invoke) { return Promise.reject(new Error("桌面 IPC 不可用")); }
-      try {
-        return invoke("baka_sign", { challenge: challenge }).then(function (value) {
-          if (typeof value !== "string" || value.length === 0) {
-            throw new Error("签名返回值不是非空字符串");
-          }
-          return value;
-        });
-      } catch (error) { return Promise.reject(error); }
-    },
     selfCheck: function () {
       var invoke = resolveInvoke();
       if (!invoke) { return Promise.reject(new Error("桌面 IPC 不可用")); }
@@ -181,7 +168,8 @@ mod tests {
     fn bridge_has_no_terminating_sequences() {
         assert!(!BRIDGE_JS.contains("\"#"));
         assert!(BRIDGE_JS.contains("__BAKA_CHANNEL__"));
-        assert!(BRIDGE_JS.contains("baka_sign"));
+        // 签名只在壳内部用于通道证明：页面可达面上不能再出现签名命令
+        assert!(!BRIDGE_JS.contains("baka_sign"));
         assert!(BRIDGE_JS.contains("baka_self_check"));
         // 票据通道：契约里的名字与命令名都必须出现在脚本原文里
         assert!(BRIDGE_JS.contains("channelTicket"));
