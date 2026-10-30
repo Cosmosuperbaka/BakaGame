@@ -14,6 +14,7 @@ import {
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
 import { handlePlayerOffline } from "./OfflineSettlement";
+import { getConfigurableParticipantCount } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 export const buildRoomSummary = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSummary => {
@@ -131,7 +132,7 @@ export const buildRoomSnapshot = (
     hasPassword: Boolean(room.passwordHash),
     hostPlayerId: room.hostPlayerId,
     testMode: room.id === ROOM_ID_TEST_MODE,
-    roleLimits: getRoomRoleLimits(service.getConfigurableParticipantCount(room)),
+    roleLimits: getRoomRoleLimits(getConfigurableParticipantCount(room)),
     settings: {
       roleConfig: room.settings.roleConfig,
       revealRoleOnDeath: room.settings.revealRoleOnDeath ?? true,

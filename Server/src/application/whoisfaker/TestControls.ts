@@ -21,6 +21,12 @@ import {
   startRound,
 } from "./PhaseFlow";
 import { publishRoomState } from "./RoomViews";
+import {
+  clampRoleConfig,
+  createDescriptionOrder,
+  getActivePlayerIds,
+  normalizeRoomRoleConfig,
+} from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 /**
@@ -102,7 +108,7 @@ const ensureTestJumpWords = (
       Object.keys(round.assignments).length === 0 ||
       participantIds.some((id) => !round.assignments[id]))
   ) {
-    const config = service.clampRoleConfig(room.settings.roleConfig, participantIds.length);
+    const config = clampRoleConfig(room.settings.roleConfig, participantIds.length);
     // clampRoleConfig 已按真实人数上限夹过天使/白板，这里不再额外放宽。
     const effectiveConfig: RoleConfig = config;
     const assigned = assignRoles(
@@ -196,7 +202,7 @@ export const handleTestJumpToPhase = async (
       round.phase = "description";
       round.speechMode = "normal";
       round.descriptionCycle = Math.max(1, round.descriptionCycle);
-      round.descriptionOrder = service.createDescriptionOrder(room);
+      round.descriptionOrder = createDescriptionOrder(service, room);
       round.descriptionSubmittedBy = [];
       round.votes = [];
       round.tieBreak = undefined;
@@ -338,7 +344,7 @@ export const handleTestAddBot = async (
   const added: string[] = [];
 
   for (let index = 0; index < count; index += 1) {
-    if (service.getActivePlayerIds(room).length >= TEST_MODE_MAX_PLAYERS) {
+    if (getActivePlayerIds(room).length >= TEST_MODE_MAX_PLAYERS) {
       break;
     }
 
@@ -355,7 +361,7 @@ export const handleTestAddBot = async (
   }
 
   // 人数变了，阵营配置的上限也跟着变，必须重新夹一次。
-  service.normalizeRoomRoleConfig(room);
+  normalizeRoomRoleConfig(room);
   service.touchRoom(room);
   publishRoomState(service, room);
   await runBots(service, room);
@@ -392,7 +398,7 @@ export const handleTestRemoveBot = async (
   }
 
   service.reassignHost(room);
-  service.normalizeRoomRoleConfig(room);
+  normalizeRoomRoleConfig(room);
   service.touchRoom(room);
   publishRoomState(service, room);
   await runBots(service, room);

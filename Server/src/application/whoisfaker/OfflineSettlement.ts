@@ -25,6 +25,7 @@ import {
   publishLobby,
   publishRoomState,
 } from "./RoomViews";
+import { getOnlineCount, normalizeRoomRoleConfig } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 /** 玩家离线的两种来源：连接断开与主动离开房间。 */
@@ -180,7 +181,7 @@ const markPlayerDisconnected = (service: WhoIsFakerServiceInternals, ctx: Offlin
     service.connectionRegistry.detach(connection);
   }
 
-  if (service.getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(room)) {
+  if (getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(room)) {
     room.emptySinceAt ??= service.now();
   }
 };
@@ -217,7 +218,7 @@ const settleOfflineOutsideRound = async (
     service.reassignHost(room);
   }
 
-  service.normalizeRoomRoleConfig(room);
+  normalizeRoomRoleConfig(room);
   service.touchRoom(room);
   await publishOrCloseIfEmpty(service, room, ctx.reason);
 };
@@ -284,7 +285,7 @@ const publishOrCloseIfEmpty = async (
   room: WhoIsFakerRoomRecord,
   reason: PlayerOfflineReason
 ) => {
-  if (reason === "leave" && service.getOnlineCount(room) === 0) {
+  if (reason === "leave" && getOnlineCount(room) === 0) {
     await service.closeRoom(room, "empty");
     return;
   }
@@ -583,7 +584,7 @@ const finishForcedRemoval = async (
 ) => {
   const room = ctx.room;
   service.reassignHost(room);
-  service.normalizeRoomRoleConfig(room);
+  normalizeRoomRoleConfig(room);
   service.touchRoom(room);
   // 猜词的白板被移除后没人能推进阻塞阶段，必须就地收束。
   await resolveAbandonedBlankGuess(service, room);

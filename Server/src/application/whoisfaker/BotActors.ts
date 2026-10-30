@@ -7,6 +7,12 @@ import {
 import { BOT_DESCRIPTION_TEMPLATES, BOT_NAME_SUFFIXES } from "../../config/Constants";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
 import { publishRoomState } from "./RoomViews";
+import {
+  createDescription,
+  getAliveAssignedPlayerIds,
+  replaceNightAction,
+  replaceVote,
+} from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 /** 发言位次：按给定的发言顺序表取 1 起的序号，不在表里的玩家不标序。 */
@@ -98,7 +104,8 @@ const fillBotSupplement = (
 
   supplement.donePlayers.push(bot.id);
   round.descriptions.push(
-    service.createDescription(
+    createDescription(
+      service,
       bot,
       pickBotDescription(round, bot.id),
       "supplement",
@@ -123,7 +130,8 @@ const fillBotDescription = (
 
   round.descriptionSubmittedBy.push(bot.id);
   round.descriptions.push(
-    service.createDescription(
+    createDescription(
+      service,
       bot,
       pickBotDescription(round, bot.id),
       "description",
@@ -149,7 +157,8 @@ const fillBotTieBreakDescription = (
 
   tieBreak.descriptionsDone.push(bot.id);
   round.descriptions.push(
-    service.createDescription(
+    createDescription(
+      service,
       bot,
       pickBotDescription(round, bot.id),
       "tieBreak",
@@ -183,9 +192,9 @@ const castBotVote = (
 
   const targetId = pickBotVoteTarget(service, room, round, bot.id, tieBreak);
   if (tieBreak) {
-    round.tieBreak!.votes = service.replaceVote(votes, bot.id, targetId);
+    round.tieBreak!.votes = replaceVote(votes, bot.id, targetId);
   } else {
-    round.votes = service.replaceVote(votes, bot.id, targetId);
+    round.votes = replaceVote(votes, bot.id, targetId);
   }
   return true;
 };
@@ -210,7 +219,7 @@ const actBotNight = (
   const targetId =
     state.role === "undercover" ? pickBotNightTarget(service, room, bot.id) : undefined;
 
-  round.nightActions = service.replaceNightAction(round.nightActions, bot.id, {
+  round.nightActions = replaceNightAction(round.nightActions, bot.id, {
     actorId: bot.id,
     actorRole: state.role,
     targetId,
@@ -235,7 +244,7 @@ const pickBotVoteTarget = (
 ): string => {
   const candidates = tieBreak
     ? (round.tieBreak?.candidateIds ?? []).filter((id) => round.assignments[id]?.alive)
-    : service.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
+    : getAliveAssignedPlayerIds(service, room).filter((id) => id !== botId);
 
   if (candidates.length === 0) {
     return ABSTAIN_TARGET_ID;
@@ -250,7 +259,7 @@ const pickBotNightTarget = (
   room: WhoIsFakerRoomRecord,
   botId: string
 ) => {
-  const candidates = service.getAliveAssignedPlayerIds(room).filter((id) => id !== botId);
+  const candidates = getAliveAssignedPlayerIds(service, room).filter((id) => id !== botId);
 
   if (candidates.length === 0) {
     return undefined;

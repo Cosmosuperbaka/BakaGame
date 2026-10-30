@@ -5,23 +5,18 @@ import {
   type ChatChannel,
   type ChatMessage,
   type ConnectionRecord,
-  type DescriptionRecord,
   type WhoIsFakerPhase,
   type GameRound,
-  type NightActionRecord,
   type PhaseTimerState,
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRole,
   type WhoIsFakerPrivateState,
-  type RoleConfig,
   type WhoIsFakerRoomRecord,
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
   type RoundWinner,
   type SpeechMode,
   type TieBreakStage,
-  type VoteRecord,
-  ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   WHOISFAKER_LOBBY_ROOMS_EVENT,
@@ -37,13 +32,10 @@ import {
   createDefaultRoleConfig,
   assignRoles,
   ensureRoomId,
-  getBlankPlayerId,
-  getRoomRoleLimits,
   listPlayablePlayerIds,
   normalizeName,
   normalizeWord,
   safeEqualToken,
-  shuffle,
   isRoleConfigSatisfied,
   validateRoleConfig,
   type RandomSource,
@@ -103,6 +95,20 @@ import {
   restoreInterruptedTimer,
 } from "./whoisfaker/PhaseFlow";
 import { runBots } from "./whoisfaker/BotActors";
+import {
+  clampRoleConfig,
+  createDescription,
+  createDescriptionOrder,
+  ensureCanVote,
+  getConfigurableParticipantCount,
+  getOnlineCount,
+  getParticipantCount,
+  hasValidQuestionerCandidate,
+  isDescriptionComplete,
+  normalizeRoomRoleConfig,
+  replaceNightAction,
+  replaceVote,
+} from "./whoisfaker/RoundRules";
 import {
   handleTestAddBot,
   handleTestJumpToPhase,
@@ -247,7 +253,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         ensureUniqueName: (room, name, exceptPlayerId) =>
           this.ensureUniqueName(room, name, exceptPlayerId),
         isRoundActive: (room) => this.isRoundActive(room),
-        normalizeRoleConfig: (room) => this.normalizeRoomRoleConfig(room),
+        normalizeRoleConfig: (room) => normalizeRoomRoleConfig(room),
         touchRoom: (room) => this.touchRoom(room),
         log: (entry) => this.log(entry),
         publishRoomState: (room) => this.publishRoomState(room),
@@ -497,7 +503,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     room: WhoIsFakerRoomRecord,
     currentTime: number
   ): Promise<boolean> {
-    if (!shouldAutoCloseWhenEmpty(room) || this.getOnlineCount(room) !== 0) {
+    if (!shouldAutoCloseWhenEmpty(room) || getOnlineCount(room) !== 0) {
       room.emptySinceAt = undefined;
       return false;
     }
@@ -546,7 +552,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       if (room.hostPlayerId === player.id) {
         this.reassignHost(room);
       }
-      this.normalizeRoomRoleConfig(room);
+      normalizeRoomRoleConfig(room);
       this.touchRoom(room);
     }
   }
@@ -707,7 +713,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       roomCount: this.rooms.size,
       connectionCount: this.connectionRegistry.stats.totalConnections,
       onlinePlayerCount: [...this.rooms.values()].reduce(
-        (sum, room) => sum + this.getOnlineCount(room),
+        (sum, room) => sum + getOnlineCount(room),
         0
       ),
     };
@@ -812,9 +818,9 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       room.settings.name = `${host.name}的房间`;
     }
 
-    room.settings.roleConfig = this.clampRoleConfig(
+    room.settings.roleConfig = clampRoleConfig(
       message.payload.roleConfig ?? createDefaultRoleConfig(),
-      this.getConfigurableParticipantCount(room)
+      getConfigurableParticipantCount(room)
     );
 
     // 算摘要要跨一次 await，先占住房号再算，避免并发建房互相覆盖（与 CEE 同一口径）。
@@ -881,7 +887,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     room.players[player.id] = player;
     const previousRoomUpdate = this.attachConnection(room, player, connection);
-    this.normalizeRoomRoleConfig(room);
+    normalizeRoomRoleConfig(room);
     this.appendSystemMessage(room, `${player.name} 加入了房间`);
     this.touchRoom(room);
 
@@ -1089,12 +1095,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (payload.roleConfig) {
       // 人数不够时不再直接拒绝保存，而是静默夹到当前允许的范围；这样房主依然能把
       // 其它设置（房间名、私密、旁观等）改掉。前端通过 roleLimits 给出禁用提示。
-      room.settings.roleConfig = this.clampRoleConfig(
+      room.settings.roleConfig = clampRoleConfig(
         payload.roleConfig,
-        this.getConfigurableParticipantCount(room)
+        getConfigurableParticipantCount(room)
       );
     } else {
-      this.normalizeRoomRoleConfig(room);
+      normalizeRoomRoleConfig(room);
     }
 
     this.touchRoom(room);
@@ -1172,11 +1178,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
 
     // 旁观者出题 → 正式玩家全员参战；正式玩家出题 → 扣掉自身名额。
-    const participantCount = this.getParticipantCount(room, target.id);
+    const participantCount = getParticipantCount(room, target.id);
 
     // 正式玩家担任出题人时若人数不够，自动把卧底数夹到上限（而不是直接拒绝）。
     if (target.membership === "active") {
-      room.settings.roleConfig = this.clampRoleConfig(room.settings.roleConfig, participantCount);
+      room.settings.roleConfig = clampRoleConfig(room.settings.roleConfig, participantCount);
     }
 
     validateRoleConfig(room.settings.roleConfig, participantCount);
@@ -1255,7 +1261,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     round.phase = "description";
     round.speechMode = "normal";
     round.descriptionCycle = 1;
-    round.descriptionOrder = this.createDescriptionOrder(room);
+    round.descriptionOrder = createDescriptionOrder(this, room);
     round.descriptionSubmittedBy = [];
     round.votes = [];
     round.voteHistory = [];
@@ -1349,7 +1355,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     supplement.donePlayers.push(player.id);
     const order = (supplement.requestedPlayerIds ?? []).indexOf(player.id) + 1;
     round.descriptions.push(
-      this.createDescription(player, text, "supplement", round.descriptionCycle, {
+      createDescription(this, player, text, "supplement", round.descriptionCycle, {
         supplementIndex: supplement.index,
         order: order > 0 ? order : undefined,
       })
@@ -1367,7 +1373,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     round.descriptionSubmittedBy.push(player.id);
     const order = (round.descriptionOrder ?? []).indexOf(player.id) + 1;
     round.descriptions.push(
-      this.createDescription(player, text, "description", round.descriptionCycle, {
+      createDescription(this, player, text, "description", round.descriptionCycle, {
         order: order > 0 ? order : undefined,
       })
     );
@@ -1391,7 +1397,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     tieBreak.descriptionsDone.push(player.id);
     const order = (tieBreak.candidateIds ?? []).indexOf(player.id) + 1;
     round.descriptions.push(
-      this.createDescription(player, text, "tieBreak", round.descriptionCycle, {
+      createDescription(this, player, text, "tieBreak", round.descriptionCycle, {
         tieBreakIndex: round.tieBreakCount,
         order: order > 0 ? order : undefined,
       })
@@ -1449,7 +1455,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("INVALID_PHASE", "只能在本轮描述完成后、正常投票结算前发起补充");
     }
 
-    if (!this.isDescriptionComplete(round)) {
+    if (!isDescriptionComplete(round)) {
       throw new AppError("PHASE_INCOMPLETE", "所有玩家完成描述后才能发起补充");
     }
 
@@ -1525,11 +1531,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const round = this.requireRound(room);
 
     if (round.phase === "voting") {
-      this.ensureCanVote(room, player.id, targetId, false);
-      round.votes = this.replaceVote(round.votes, player.id, targetId);
+      ensureCanVote(this, room, player.id, targetId, false);
+      round.votes = replaceVote(round.votes, player.id, targetId);
     } else if (round.phase === "tieBreak" && round.tieBreak?.stage === "vote") {
-      this.ensureCanVote(room, player.id, targetId, true);
-      round.tieBreak.votes = this.replaceVote(round.tieBreak.votes, player.id, targetId);
+      ensureCanVote(this, room, player.id, targetId, true);
+      round.tieBreak.votes = replaceVote(round.tieBreak.votes, player.id, targetId);
     } else {
       throw new AppError("INVALID_PHASE", "当前阶段不能提交投票");
     }
@@ -1575,7 +1581,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       }
     }
 
-    round.nightActions = this.replaceNightAction(round.nightActions, player.id, {
+    round.nightActions = replaceNightAction(round.nightActions, player.id, {
       actorId: player.id,
       actorRole: state.role,
       targetId: targetId ?? undefined,
@@ -1865,258 +1871,6 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return attachConnection(this, room, player, connection);
   }
 
-  getOnlineCount(room: WhoIsFakerRoomRecord) {
-    return Object.values(room.players).filter((player) => player.online).length;
-  }
-
-  getActivePlayerIds(room: WhoIsFakerRoomRecord) {
-    return Object.values(room.players)
-      .filter((player) => player.membership === "active")
-      .map((player) => player.id);
-  }
-
-  getConfigurableParticipantCount(room: WhoIsFakerRoomRecord) {
-    const activeIds = this.getActivePlayerIds(room);
-    const hasOnlineSpectator = Object.values(room.players).some(
-      (player) => player.membership === "spectator" && player.online
-    );
-
-    if (hasOnlineSpectator) {
-      return activeIds.length;
-    }
-
-    return Math.max(activeIds.length - (activeIds.length > 0 ? 1 : 0), 0);
-  }
-
-  getParticipantCount(room: WhoIsFakerRoomRecord, questionerId?: string) {
-    const activeIds = this.getActivePlayerIds(room);
-
-    if (!questionerId) {
-      return this.getConfigurableParticipantCount(room);
-    }
-
-    const questioner = room.players[questionerId];
-
-    if (questioner?.membership === "spectator") {
-      return activeIds.length;
-    }
-
-    return Math.max(activeIds.filter((playerId) => playerId !== questionerId).length, 0);
-  }
-
-  private getAssignableQuestionerCandidates(room: WhoIsFakerRoomRecord) {
-    return Object.values(room.players).filter(
-      (player) =>
-        player.online && (player.membership === "active" || player.membership === "spectator")
-    );
-  }
-
-  private hasValidQuestionerCandidate(room: WhoIsFakerRoomRecord) {
-    return this.getAssignableQuestionerCandidates(room).some((candidate) =>
-      isRoleConfigSatisfied(room.settings.roleConfig, this.getParticipantCount(room, candidate.id))
-    );
-  }
-
-  clampRoleConfig(config: RoleConfig, participantCount: number): RoleConfig {
-    const limits = getRoomRoleLimits(Math.max(participantCount, 0));
-
-    return {
-      undercoverCount: Math.max(
-        1,
-        Math.min(config.undercoverCount || 1, limits.maxUndercoverCount)
-      ),
-      hasAngel: limits.canEnableAngel && config.hasAngel,
-      hasBlank: limits.canEnableBlank && config.hasBlank,
-    };
-  }
-
-  normalizeRoomRoleConfig(room: WhoIsFakerRoomRecord) {
-    room.settings.roleConfig = this.clampRoleConfig(
-      room.settings.roleConfig,
-      this.getConfigurableParticipantCount(room)
-    );
-  }
-
-  /** 房主没有准备态：开局只看其他参与者，房主不必先发准备指令。 */
-  ensureAllReady(room: WhoIsFakerRoomRecord) {
-    const everyoneReady = Object.values(room.players)
-      .filter((player) => player.membership === "active" && player.id !== room.hostPlayerId)
-      .every((player) => player.isReady);
-
-    if (!everyoneReady) {
-      throw new AppError("NOT_ALL_READY", "还有玩家未准备");
-    }
-  }
-
-  ensureMinimumPlayers(room: WhoIsFakerRoomRecord) {
-    const activeCount = Object.values(room.players).filter(
-      (player) => player.membership === "active"
-    ).length;
-
-    // 对局需要 4 名参战玩家，出题人不参战：
-    // 有在线旁观者时旁观出题，4 名正式玩家即可；否则需正式玩家中出一人，至少 5 名。
-    const hasOnlineSpectator = Object.values(room.players).some(
-      (player) => player.membership === "spectator" && player.online
-    );
-    const requiredActive = hasOnlineSpectator ? 4 : 5;
-
-    if (activeCount < requiredActive) {
-      throw new AppError(
-        "INSUFFICIENT_PLAYERS",
-        hasOnlineSpectator ? "游戏至少需要 4 名玩家" : "游戏至少需要 4 名玩家和 1 名出题人"
-      );
-    }
-
-    if (!this.hasValidQuestionerCandidate(room)) {
-      throw new AppError("INSUFFICIENT_PLAYERS", "当前人数与阵营配置下无法指定合法出题人");
-    }
-  }
-
-  ensurePhaseNotBlocked(round: GameRound) {
-    if (round.pendingDisconnectPlayerIds.length > 0) {
-      throw new AppError("PLAYER_PENDING", "仍有掉线玩家等待出题人处理");
-    }
-
-    if (round.questionerReconnectDeadlineAt) {
-      throw new AppError("QUESTIONER_PENDING", "出题人重连倒计时尚未结束");
-    }
-  }
-
-  private ensureCanVote(
-    room: WhoIsFakerRoomRecord,
-    voterId: string,
-    targetId: string,
-    tieBreak: boolean
-  ) {
-    const round = this.requireRound(room);
-    const voter = round.assignments[voterId];
-    const target = round.assignments[targetId];
-    const isAbstain = targetId === ABSTAIN_TARGET_ID;
-
-    // 不能投自己，测试房间同样适用：测试房要复现真实规则。
-    if (!voter?.alive || (!isAbstain && !target?.alive) || (!isAbstain && voterId === targetId)) {
-      throw new AppError("INVALID_VOTE", "投票对象无效");
-    }
-
-    if (tieBreak) {
-      const candidates = round.tieBreak?.candidateIds ?? [];
-
-      if (candidates.includes(voterId)) {
-        throw new AppError("INVALID_VOTE", "平票玩家不能参与第二轮投票");
-      }
-
-      if (!isAbstain && !candidates.includes(targetId)) {
-        throw new AppError("INVALID_VOTE", "第二轮只能投给平票玩家");
-      }
-    }
-  }
-
-  isDescriptionComplete(round: GameRound) {
-    const aliveIds = Object.entries(round.assignments)
-      .filter(([, state]) => state.alive)
-      .map(([playerId]) => playerId);
-
-    return aliveIds.every((playerId) => round.descriptionSubmittedBy.includes(playerId));
-  }
-
-  isTieBreakDescriptionComplete(room: WhoIsFakerRoomRecord) {
-    const round = this.requireRound(room);
-    const candidates = round.tieBreak?.candidateIds ?? [];
-
-    return candidates.every(
-      (playerId) =>
-        !round.assignments[playerId]?.alive || round.tieBreak?.descriptionsDone.includes(playerId)
-    );
-  }
-
-  isVotingComplete(room: WhoIsFakerRoomRecord, tieBreak: boolean) {
-    const round = this.requireRound(room);
-    const aliveIds = this.getAliveAssignedPlayerIds(room);
-
-    if (tieBreak) {
-      const candidates = round.tieBreak?.candidateIds ?? [];
-      const voterIds = aliveIds.filter((playerId) => !candidates.includes(playerId));
-      const votes = round.tieBreak?.votes ?? [];
-      return voterIds.every((playerId) => votes.some((vote) => vote.voterId === playerId));
-    }
-
-    return aliveIds.every((playerId) => round.votes.some((vote) => vote.voterId === playerId));
-  }
-
-  isNightActionComplete(room: WhoIsFakerRoomRecord) {
-    const round = this.requireRound(room);
-    const actorIds = Object.entries(round.assignments)
-      .filter(
-        ([, state]) => state.alive && (state.role === "civilian" || state.role === "undercover")
-      )
-      .map(([playerId]) => playerId);
-
-    return actorIds.every((playerId) =>
-      round.nightActions.some((action) => action.actorId === playerId)
-    );
-  }
-
-  getAliveAssignedPlayerIds(room: WhoIsFakerRoomRecord) {
-    return Object.entries(this.requireRound(room).assignments)
-      .filter(([, state]) => state.alive)
-      .map(([playerId]) => playerId);
-  }
-
-  createDescriptionOrder(room: WhoIsFakerRoomRecord) {
-    const round = this.requireRound(room);
-    const order = shuffle(this.getAliveAssignedPlayerIds(room), this.random);
-
-    if (round.day === 1) {
-      const blankPlayerId = getBlankPlayerId(round.assignments);
-      const blankIndex = blankPlayerId ? order.indexOf(blankPlayerId) : -1;
-      const secondHalfStart = Math.floor(order.length / 2);
-
-      if (blankIndex >= 0 && blankIndex < secondHalfStart) {
-        const swapIndex = secondHalfStart + this.random.nextInt(order.length - secondHalfStart);
-        [order[blankIndex], order[swapIndex]] = [order[swapIndex], order[blankIndex]];
-      }
-    }
-
-    return order;
-  }
-
-  replaceVote(votes: VoteRecord[], voterId: string, targetId: string): VoteRecord[] {
-    const nextVotes = votes.filter((vote) => vote.voterId !== voterId);
-    nextVotes.push({ voterId, targetId });
-    return nextVotes;
-  }
-
-  replaceNightAction(
-    actions: NightActionRecord[],
-    actorId: string,
-    nextAction: NightActionRecord
-  ): NightActionRecord[] {
-    const nextActions = actions.filter((action) => action.actorId !== actorId);
-    nextActions.push(nextAction);
-    return nextActions;
-  }
-
-  createDescription(
-    player: Pick<WhoIsFakerPlayerRecord, "id" | "name">,
-    text: string,
-    kind: DescriptionRecord["kind"],
-    cycle: number,
-    extra?: { tieBreakIndex?: number; supplementIndex?: number; order?: number }
-  ): DescriptionRecord {
-    return {
-      id: this.createId("description"),
-      playerId: player.id,
-      playerName: player.name,
-      text,
-      kind,
-      cycle,
-      tieBreakIndex: extra?.tieBreakIndex,
-      supplementIndex: extra?.supplementIndex,
-      order: extra?.order,
-      createdAt: this.now(),
-    };
-  }
-
   private createChatMessage(
     playerId: string,
     playerName: string,
@@ -2213,7 +1967,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
 
     if (round.phase === "assigningQuestioner") {
-      if (!this.hasValidQuestionerCandidate(room)) {
+      if (!hasValidQuestionerCandidate(room)) {
         await this.finishRound(room, "aborted", "当前人数不足，系统已取消本局");
       }
       return;
@@ -2222,7 +1976,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (round.phase === "wordSubmission" && round.questionerPlayerId) {
       const satisfied = isRoleConfigSatisfied(
         room.settings.roleConfig,
-        this.getParticipantCount(room, round.questionerPlayerId)
+        getParticipantCount(room, round.questionerPlayerId)
       );
       if (!satisfied) {
         await this.finishRound(room, "aborted", "当前人数不足，系统已取消本局");

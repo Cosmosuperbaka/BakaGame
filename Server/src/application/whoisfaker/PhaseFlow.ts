@@ -31,6 +31,18 @@ import {
 import { runBots } from "./BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
 import { publishLobby, publishRoomState } from "./RoomViews";
+import {
+  createDescription,
+  createDescriptionOrder,
+  ensureAllReady,
+  ensureMinimumPlayers,
+  ensurePhaseNotBlocked,
+  getAliveAssignedPlayerIds,
+  isDescriptionComplete,
+  isNightActionComplete,
+  isTieBreakDescriptionComplete,
+  isVotingComplete,
+} from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 /** 结算给分：白板阵营猜中得 2 分，好人与卧底阵营各自获胜得 1 分。 */
@@ -74,8 +86,8 @@ export const handleAdvancePhase = async (
 
   if (phase === "waiting") {
     service.ensureHost(room, player.id);
-    service.ensureAllReady(room);
-    service.ensureMinimumPlayers(room);
+    ensureAllReady(room);
+    ensureMinimumPlayers(room);
     await startRound(service, room);
     return { phase: room.round?.phase ?? "waiting" };
   }
@@ -85,7 +97,7 @@ export const handleAdvancePhase = async (
   if (!(phase === "feedback" && room.id === ROOM_ID_TEST_MODE)) {
     service.ensureQuestioner(round, player.id);
   }
-  service.ensurePhaseNotBlocked(round);
+  ensurePhaseNotBlocked(round);
 
   // 白板从补充发言中途猜词失败时，反馈期间补充上下文仍保留，不能挡住继续。
   if (round.supplement && phase !== "feedback") {
@@ -146,7 +158,7 @@ const advanceFromDescription = async (
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ) => {
-  if (!service.isDescriptionComplete(round)) {
+  if (!isDescriptionComplete(round)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
   }
   clearPhaseTimer(service, room);
@@ -163,7 +175,7 @@ const advanceFromVoting = async (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
 ) => {
-  if (!service.isVotingComplete(room, false)) {
+  if (!isVotingComplete(service, room, false)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
   }
   clearPhaseTimer(service, room);
@@ -183,7 +195,7 @@ const advanceFromTieBreak = async (
   }
 
   if (round.tieBreak.stage === "description") {
-    if (!service.isTieBreakDescriptionComplete(room)) {
+    if (!isTieBreakDescriptionComplete(service, room)) {
       throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
     }
 
@@ -194,7 +206,7 @@ const advanceFromTieBreak = async (
     return;
   }
 
-  if (!service.isVotingComplete(room, true)) {
+  if (!isVotingComplete(service, room, true)) {
     throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
   }
 
@@ -206,7 +218,7 @@ const advanceFromNight = async (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
 ) => {
-  if (!service.isNightActionComplete(room)) {
+  if (!isNightActionComplete(service, room)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
   }
   clearPhaseTimer(service, room);
@@ -238,7 +250,7 @@ export const handleStartPhaseTimer = (
   if (room.id !== ROOM_ID_TEST_MODE) {
     service.ensureQuestioner(round, player.id);
   }
-  service.ensurePhaseNotBlocked(round);
+  ensurePhaseNotBlocked(round);
 
   clearPhaseTimer(service, room);
 
@@ -432,9 +444,16 @@ const fillDescriptionTimeouts = (
       round.descriptionSubmittedBy.push(playerId);
       const order = round.descriptionOrder.indexOf(playerId) + 1;
       round.descriptions.push(
-        service.createDescription(player, "（超时未发言）", "description", round.descriptionCycle, {
-          order: order > 0 ? order : undefined,
-        })
+        createDescription(
+          service,
+          player,
+          "（超时未发言）",
+          "description",
+          round.descriptionCycle,
+          {
+            order: order > 0 ? order : undefined,
+          }
+        )
       );
     }
   }
@@ -453,7 +472,7 @@ const fillSupplementTimeouts = (
       supplement.donePlayers.push(playerId);
       const order = supplement.requestedPlayerIds.indexOf(playerId) + 1;
       round.descriptions.push(
-        service.createDescription(player, "（超时未发言）", "supplement", round.descriptionCycle, {
+        createDescription(service, player, "（超时未发言）", "supplement", round.descriptionCycle, {
           supplementIndex: supplement.index,
           order: order > 0 ? order : undefined,
         })
@@ -469,9 +488,9 @@ const timeoutVotingPhase = async (
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
-  const aliveIds = service
-    .getAliveAssignedPlayerIds(room)
-    .filter((id) => id !== round.questionerPlayerId);
+  const aliveIds = getAliveAssignedPlayerIds(service, room).filter(
+    (id) => id !== round.questionerPlayerId
+  );
   for (const voterId of aliveIds) {
     if (!round.votes.some((v) => v.voterId === voterId)) {
       round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
@@ -505,9 +524,9 @@ const timeoutTieBreakPhase = async (
   }
 
   if (tieBreak.stage === "vote") {
-    const aliveIds = service
-      .getAliveAssignedPlayerIds(room)
-      .filter((id) => id !== round.questionerPlayerId);
+    const aliveIds = getAliveAssignedPlayerIds(service, room).filter(
+      (id) => id !== round.questionerPlayerId
+    );
     for (const voterId of aliveIds) {
       if (!tieBreak.votes.some((v) => v.voterId === voterId)) {
         tieBreak.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
@@ -533,7 +552,7 @@ const fillTieBreakTimeouts = (
       tieBreak.descriptionsDone.push(candidateId);
       const order = tieBreak.candidateIds.indexOf(candidateId) + 1;
       round.descriptions.push(
-        service.createDescription(player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
+        createDescription(service, player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
           tieBreakIndex: round.tieBreakCount,
           order: order > 0 ? order : undefined,
         })
@@ -650,7 +669,7 @@ const resolveVoting = async (
     tieBreak,
     votes: votes.map((vote) => ({ ...vote })),
   });
-  const aliveIds = service.getAliveAssignedPlayerIds(room);
+  const aliveIds = getAliveAssignedPlayerIds(service, room);
   const outcome = computeVoteOutcome(votes);
   const leaders = outcome.leaders;
 
@@ -829,7 +848,7 @@ const applyFeedbackContinuation = async (
   round.speechMode = "normal";
   round.day += 1;
   round.descriptionCycle += 1;
-  round.descriptionOrder = service.createDescriptionOrder(room);
+  round.descriptionOrder = createDescriptionOrder(service, room);
   round.descriptionSubmittedBy = [];
   round.supplement = undefined;
 };

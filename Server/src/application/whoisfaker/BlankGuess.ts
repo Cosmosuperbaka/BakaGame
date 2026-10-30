@@ -27,6 +27,7 @@ import {
   restoreInterruptedTimer,
 } from "./PhaseFlow";
 import { publishRoomState } from "./RoomViews";
+import { ensurePhaseNotBlocked } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 export const handleSubmitBlankGuess = async (
@@ -133,7 +134,7 @@ export const handleEnterBlankGuess = async (
     throw new AppError("INVALID_PHASE", "当前阶段不能进入白板猜词");
   }
 
-  service.ensurePhaseNotBlocked(round);
+  ensurePhaseNotBlocked(round);
 
   // 暂存被打断阶段的剩余倒计时毫秒数
   const timerState = round.phaseTimer;
