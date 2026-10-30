@@ -260,24 +260,20 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         publishLobby: () => this.publishLobby(),
       }),
       createGameCommandHandler({
-        assignQuestioner: (connection, playerId) =>
-          this.assignQuestioner(connection, playerId),
+        assignQuestioner: (connection, playerId) => this.assignQuestioner(connection, playerId),
         submitWords: (connection, payload) =>
           this.submitWords(connection, payload.words, payload.blankHint, payload.manualRoles),
         advancePhase: (connection) => this.advancePhase(connection),
         submitDescription: (connection, text) => this.submitDescription(connection, text),
         submitVote: (connection, targetId) => this.submitVote(connection, targetId),
-        submitNightAction: (connection, targetId) =>
-          this.submitNightAction(connection, targetId),
+        submitNightAction: (connection, targetId) => this.submitNightAction(connection, targetId),
         submitBlankGuess: (connection, words) => this.submitBlankGuess(connection, words),
         enterBlankGuess: (connection) => this.enterBlankGuess(connection),
-        updateBlankGuessDraft: (connection, words) =>
-          this.updateBlankGuessDraft(connection, words),
+        updateBlankGuessDraft: (connection, words) => this.updateBlankGuessDraft(connection, words),
         reviewBlankGuess: (connection, approve) => this.reviewBlankGuess(connection, approve),
         cancelVote: (connection) => this.cancelVote(connection),
         cancelNightAction: (connection) => this.cancelNightAction(connection),
-        requestSupplement: (connection, playerIds) =>
-          this.requestSupplement(connection, playerIds),
+        requestSupplement: (connection, playerIds) => this.requestSupplement(connection, playerIds),
         resolveDisconnect: (connection, payload) =>
           this.resolveDisconnect(connection, payload.playerId, payload.resolution),
         startPhaseTimer: (connection, durationSeconds) =>
@@ -288,8 +284,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         jumpToPhase: (connection, phase) => this.testJumpToPhase(connection, phase),
         setMyRole: (connection, role) => this.testSetMyRole(connection, role),
         addBot: (connection, count) => this.testAddBot(connection, count),
-        removeBot: (connection, playerId, count) =>
-          this.testRemoveBot(connection, playerId, count),
+        removeBot: (connection, playerId, count) => this.testRemoveBot(connection, playerId, count),
       }),
     ];
   }
@@ -1763,11 +1758,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   /** 测试房间移除机器人走与踢人相同的路径，见 whoisfaker/TestControls.ts。 */
-  private testRemoveBot(
-    connection: ConnectionRecord,
-    playerId: string | undefined,
-    count: number
-  ) {
+  private testRemoveBot(connection: ConnectionRecord, playerId: string | undefined, count: number) {
     return testRemoveBot(this, connection, playerId, count);
   }
 

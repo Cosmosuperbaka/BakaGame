@@ -309,8 +309,7 @@ export const collectAutomaticCandidates = async (
       throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持自动题库");
     }
     sets.push(
-      (await service.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie))
-        .songs
+      (await service.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)).songs
     );
   }
   const first = new Map(sets[0].map((song) => [song.id, song]));

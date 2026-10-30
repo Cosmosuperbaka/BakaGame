@@ -19,12 +19,7 @@ import {
 } from "./BlankGuess";
 import { runBots } from "./BotActors";
 import { clearPhaseTimer, finishRound } from "./PhaseFlow";
-import {
-  broadcastRoomEvent,
-  getCurrentSpeechState,
-  publishLobby,
-  publishRoom,
-} from "./RoomViews";
+import { broadcastRoomEvent, getCurrentSpeechState, publishLobby, publishRoom } from "./RoomViews";
 import { getOnlineCount, normalizeRoomRoleConfig } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
