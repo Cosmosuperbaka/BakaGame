@@ -15,6 +15,7 @@ import { createEvent } from "../../transport/Packets";
 import {
   MUSIC_COOKIE_FRESH_MS,
   MUSIC_POOL_COOLDOWN_MS,
+  MUSIC_POOL_MAX_COOLDOWN_MS,
   MUSIC_POOL_MAX_IN_FLIGHT,
   MUSIC_POOL_QUEUE_TIMEOUT_MS,
   MUSIC_POOL_STATS_WINDOW,
@@ -200,6 +201,7 @@ export const installMusicSession = (
     existing.enabled = sameCredential && !existing.invalidated ? existing.enabled : active;
     existing.invalidated = undefined;
     existing.cooldownUntil = undefined;
+    existing.rateLimitStrikes = undefined;
     existing.lastFailureReason = undefined;
     existing.recentOk = 0;
     existing.recentTotal = 0;
@@ -486,7 +488,8 @@ export const wakeMusicPoolWaiters = (service: SonGuessrServiceInternals, roomId:
  *
  * 两种冷却的收尾不同：凭据判死只能靠号主重新登录（重登即清冷却并恢复开关，见
  * `installMusicSession`），所以顺手关掉开关、让快照一眼看出这号要重登；风控与限流是
- * 上游暂时的态度、凭据多半还有效，只冷却到点自动恢复，不擅自改号主的开关。
+ * 上游暂时的态度、凭据多半还有效，只冷却到点自动恢复，不擅自改号主的开关。限流冷却
+ * 按连续命中次数翻倍，避免同一个还没恢复的号每 5 分钟回来再撞一次。
  */
 export const releaseMusicAccount = (
   service: SonGuessrServiceInternals,
@@ -499,14 +502,25 @@ export const releaseMusicAccount = (
   if (result.ok) {
     entry.recentOk = Math.min(entry.recentOk + 1, MUSIC_POOL_STATS_WINDOW);
     entry.lastFailureReason = undefined;
+    entry.rateLimitStrikes = undefined;
   } else {
     entry.lastFailureReason = result.reason ?? "上游请求失败";
     if (result.code === "MUSIC_SESSION_INVALID") {
       entry.enabled = false;
       entry.invalidated = true;
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
-    } else if (result.code === "MUSIC_LOGIN_RISK" || result.code === "MUSIC_API_RATE_LIMITED") {
+    } else if (result.code === "MUSIC_LOGIN_RISK") {
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
+    } else if (result.code === "MUSIC_API_RATE_LIMITED") {
+      // 连续限流说明这个号的额度还没恢复，按次数拉长冷却；固定 5 分钟会在恢复窗口
+      // （实测最长可达二十分钟以上）里反复把它放回池子、再撞一轮 405。
+      const strikes = Math.min((entry.rateLimitStrikes ?? 0) + 1, 4);
+      entry.rateLimitStrikes = strikes;
+      const cooldownMs = Math.min(
+        MUSIC_POOL_MAX_COOLDOWN_MS,
+        MUSIC_POOL_COOLDOWN_MS * 2 ** (strikes - 1)
+      );
+      entry.cooldownUntil = service.now() + cooldownMs;
     }
   }
   // 空出一个在途位：叫醒本房排队的请求，让它们重新竞争。
@@ -519,6 +533,9 @@ export const releaseMusicAccount = (
  * `songId` 是 URN（`netease:` / `qq:`），未知前缀按网易云处理；该平台有凭据但都在忙时
  * 先排队，只有**没有任何可用凭据**时 `cookie` 才为 undefined（网易云匿名检索仍可用，
  * QQ 由聚合器短路），由调用方与上游决定结果。
+ *
+ * 租约账号被上游限流时，归还租约已经把它放进冷却；同一次业务请求里直接换号或走匿名
+ * 出口再试一次。限流只说明那一条出口打满了，不该让玩家点的「开始 / 下一轮」整轮失败。
  */
 export const withSongAccount = async <T>(
   service: SonGuessrServiceInternals,
@@ -528,19 +545,29 @@ export const withSongAccount = async <T>(
   options: { requireVip?: boolean } = {}
 ): Promise<T> => {
   const platform: MusicAuthPlatform = songId?.startsWith("qq:") ? "qq" : "netease";
+  const runWithLease = async (lease: MusicAccountLease): Promise<T> => {
+    try {
+      const value = await run(lease.cookie);
+      lease.release({ ok: true });
+      return value;
+    } catch (error) {
+      lease.release({
+        ok: false,
+        code: error instanceof AppError ? error.code : "",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
   const lease = await acquireMusicAccount(service, room, platform, options);
   if (!lease) return run(undefined);
   try {
-    const value = await run(lease.cookie);
-    lease.release({ ok: true });
-    return value;
+    return await runWithLease(lease);
   } catch (error) {
-    lease.release({
-      ok: false,
-      code: error instanceof AppError ? error.code : "",
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    if (!(error instanceof AppError) || error.code !== "MUSIC_API_RATE_LIMITED") throw error;
+    const fallback = await acquireMusicAccount(service, room, platform, options);
+    return fallback ? runWithLease(fallback) : run(undefined);
   }
 };
 
@@ -669,24 +696,39 @@ export const acquireAggregatedAccounts = async (
  * 里会被当成「两家都能用」，于是没挂 QQ 账号的房间照样拿网易云凭据去搜 QQ，
  * 搜出的独占曲目一条都播不了（见 `isPlatformMismatchedCookie` 的判据与 B3 的实测问题）。
  * 池里某端没有可用号就不带该端的键，聚合器据此短路那次检索（B3 与 B4 的联动点）。
+ *
+ * 与 `withSongAccount` 同一口径：账号被上游限流时归还租约即已冷却，同一次业务请求
+ * 换剩余账号或匿名出口再跑一次，不让一次账号级限流变成玩家看到的整轮失败。
  */
 export const withAggregatedAccounts = async <T>(
   service: SonGuessrServiceInternals,
   room: SonGuessrRoomRecord,
   run: (cookie: MusicCookieInput | undefined) => Promise<T>
 ): Promise<T> => {
+  const runWithLease = async (lease: {
+    cookie: MusicCookieInput | undefined;
+    release: (result: { ok: boolean; reason?: string; code?: string }) => void;
+  }): Promise<T> => {
+    try {
+      const value = await run(lease.cookie);
+      lease.release({ ok: true });
+      return value;
+    } catch (error) {
+      lease.release({
+        ok: false,
+        code: error instanceof AppError ? error.code : "",
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
   const lease = await acquireAggregatedAccounts(service, room);
   try {
-    const value = await run(lease.cookie);
-    lease.release({ ok: true });
-    return value;
+    return await runWithLease(lease);
   } catch (error) {
-    lease.release({
-      ok: false,
-      code: error instanceof AppError ? error.code : "",
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+    if (!(error instanceof AppError) || error.code !== "MUSIC_API_RATE_LIMITED") throw error;
+    return runWithLease(await acquireAggregatedAccounts(service, room));
   }
 };
 

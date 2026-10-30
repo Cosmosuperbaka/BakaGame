@@ -207,6 +207,8 @@ export interface SonGuessrMusicPoolEntry {
   recentTotal: number;
   /** 风控摘除后的冷却截止；到点前不参与取号，号主重新登录即解除。 */
   cooldownUntil?: number;
+  /** 连续被上游限流的次数：决定冷却档位，成功一次即清零。 */
+  rateLimitStrikes?: number;
   /** 最近一次失败原因。 */
   lastFailureReason?: string;
   /** 最近一次成功校验/续期后写入 Cookie 的时刻；后台续期据此排期。 */
@@ -338,6 +340,13 @@ export const MUSIC_POOL_MAX_IN_FLIGHT = 3;
 export const MUSIC_POOL_QUEUE_TIMEOUT_MS = 8_000;
 /** 该号不可用后的冷却时长：这段时间里不参与取号；风控与限流到点自动恢复，凭据判死要号主重新登录。 */
 export const MUSIC_POOL_COOLDOWN_MS = 5 * 60_000;
+/**
+ * 限流冷却的上限。
+ *
+ * 网易云限流恢复窗口实测可达二十分钟以上；固定 5 分钟就恢复取号，会让同一个仍然受限的号
+ * 每隔几分钟再撞一次 405。限流冷却按次数翻倍（5 → 10 → 20 → 30 分钟），成功一次即清零。
+ */
+export const MUSIC_POOL_MAX_COOLDOWN_MS = 30 * 60_000;
 
 /**
  * QQ 凭证主动续期节奏。QQ 的 musickey 寿命比网易云短得多，不能只等开局复核：

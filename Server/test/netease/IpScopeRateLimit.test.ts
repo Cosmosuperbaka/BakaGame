@@ -209,6 +209,119 @@ describe("IP 作用域与限流", () => {
     expect(requests[0]?.realIP).not.toBe(requests[1]?.realIP);
   });
 
+  test("一个作用域触发限流不阻断其它作用域的请求", async () => {
+    const virtualTime = 1_000;
+    const requests: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 30,
+      loadApi: async () => ({
+        cloudsearch: async ({ keywords }: { keywords: string }) => {
+          requests.push(keywords);
+          return keywords === "限流"
+            ? { body: { code: 405, message: "操作频繁，请稍候再试" } }
+            : { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    await musicIpScope.run("player:conn-a", async () => {
+      await expect(provider.search("限流")).rejects.toMatchObject({
+        code: "MUSIC_API_RATE_LIMITED",
+      });
+      // 同一作用域的配额确实被打满：冷却期内继续快速失败。
+      await expect(provider.search("限流后")).rejects.toMatchObject({
+        code: "MUSIC_API_RATE_LIMITED",
+      });
+    });
+    // 另一个玩家的出口有自己的配额，不能因为别人撞了 405 一起停掉。
+    await musicIpScope.run("player:conn-b", () => provider.search("正常"));
+
+    expect(requests).toEqual(["限流", "正常"]);
+  });
+
+  test("同一作用域同一波并发 405 只记一档退避", async () => {
+    let virtualTime = 1_000;
+    let calls = 0;
+    let started = 0;
+    let releaseBoth!: () => void;
+    const bothStarted = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
+      maxConcurrentRequests: 2,
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 600,
+      loadApi: async () => ({
+        cloudsearch: async () => {
+          calls += 1;
+          if (calls > 2) return { body: { result: { songs: [] } } };
+          started += 1;
+          if (started === 2) releaseBoth();
+          await bothStarted;
+          return { body: { code: 405, message: "操作频繁，请稍候再试" } };
+        },
+      }),
+    });
+
+    await musicIpScope.run("player:conn-burst", async () => {
+      const settled = await Promise.allSettled([
+        provider.search("并发甲"),
+        provider.search("并发乙"),
+      ]);
+      expect(settled.every((result) => result.status === "rejected")).toBe(true);
+      // 一次出题会并发五六条请求，若每条 405 各记一档，30ms 的起点会被顶成分钟级。
+      virtualTime += 31;
+      await expect(provider.search("恢复")).resolves.toEqual([]);
+    });
+    expect(calls).toBe(3);
+  });
+
+  test("一个作用域限流时，其它作用域已排队的请求重新入队并照常执行", async () => {
+    const virtualTime = 1_000;
+    let firstStarted = false;
+    let releaseFirst!: () => void;
+    const firstBlocker = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const calls: string[] = [];
+    const provider = new NeteaseMusicProvider({
+      now: () => virtualTime,
+      random: { nextFloat: () => 0 },
+      maxConcurrentRequests: 1,
+      minRequestIntervalMs: 0,
+      rateLimitCooldownMs: 30,
+      maxRateLimitCooldownMs: 30,
+      queueTimeoutMs: 1_000,
+      loadApi: async () => ({
+        cloudsearch: async ({ keywords }: { keywords: string }) => {
+          calls.push(keywords);
+          if (keywords === "甲") {
+            firstStarted = true;
+            await firstBlocker;
+            return { body: { code: 405, message: "操作频繁，请稍候再试" } };
+          }
+          return { body: { result: { songs: [] } } };
+        },
+      }),
+    });
+
+    const limited = musicIpScope.run("player:conn-a", () => provider.search("甲"));
+    while (!firstStarted) await new Promise((resolve) => setTimeout(resolve, 1));
+    const queued = musicIpScope.run("player:conn-b", () => provider.search("乙"));
+    releaseFirst();
+
+    await expect(limited).rejects.toMatchObject({ code: "MUSIC_API_RATE_LIMITED" });
+    await expect(queued).resolves.toEqual([]);
+    expect(calls).toEqual(["甲", "乙"]);
+  });
+
   test("随机中国 IP 生成必然落在包内 CN 网段且不携带日志副作用", () => {
     const ranges = readChinaIpRanges();
     expect(ranges.length).toBeGreaterThan(4000);

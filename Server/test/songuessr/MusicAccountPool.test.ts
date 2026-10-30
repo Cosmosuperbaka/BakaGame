@@ -1,5 +1,8 @@
 import { AggregatedMusicProvider } from "../../src/infrastructure/AggregatedMusicProvider";
-import { MUSIC_POOL_COOLDOWN_MS } from "../../src/application/songuessr/Records";
+import {
+  MUSIC_POOL_COOLDOWN_MS,
+  MUSIC_POOL_MAX_COOLDOWN_MS,
+} from "../../src/application/songuessr/Records";
 import { AppError } from "../../src/domain/Errors";
 import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import { describe, expect, test } from "bun:test";
@@ -1391,6 +1394,79 @@ describe("SonGuessrService", () => {
     expect(submitted).toMatchObject({ roundNumber: 1 });
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
   });
+
+  test("账号取歌被限流时，同一请求改用匿名出口再试一次而不是整轮失败", async () => {
+    const cookies: Array<MusicCookieInput | undefined> = [];
+    const rateLimitedProvider: MusicProvider = {
+      ...provider,
+      getSong: async (_id, cookie) => {
+        cookies.push(cookie);
+        // 账号出口打满：上游只认这条出口的配额，匿名出口仍取得到歌。
+        if (cookie) throw new AppError("MUSIC_API_RATE_LIMITED", "操作频繁，请稍候再试");
+        return songs.answer;
+      },
+    };
+    const service = new SonGuessrService({ musicProvider: rateLimitedProvider });
+    const host = connection(service, "rate-submit-host");
+    const guest = connection(service, "rate-submit-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家");
+    await execute(service, guest, {
+      id: "ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+
+    await execute(service, host, {
+      id: "submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer" },
+    });
+
+    // 第一次用池内账号，被限流归还后池子已把它冷却，重试落到匿名出口。
+    expect(cookies).toEqual(["MUSIC_U=test-host", undefined]);
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+  });
+
+  test("检索取号被限流时，同一请求改用匿名出口再试一次", async () => {
+    const cookies: Array<MusicCookieInput | undefined> = [];
+    const rateLimitedProvider: MusicProvider = {
+      ...provider,
+      search: async (_keyword, _limit, cookie) => {
+        cookies.push(cookie);
+        if (cookie) throw new AppError("MUSIC_API_RATE_LIMITED", "操作频繁，请稍候再试");
+        return [songs.answer];
+      },
+    };
+    const service = new SonGuessrService({ musicProvider: rateLimitedProvider });
+    const host = connection(service, "rate-search-host");
+    await createRoom(service, host);
+
+    const result = await execute<{ results: SongSearchResult[] }>(service, host, {
+      id: "search",
+      type: "song.music.search",
+      roomId: "1234",
+      payload: { keyword: "答案" },
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(cookies).toEqual([{ netease: "MUSIC_U=test-host" }, undefined]);
+  });
 });
 
 test("续期凭据只回人类页面：同座位的 Agent 控制器连接收不到号主 Cookie", () => {
@@ -1502,6 +1578,47 @@ describe("账号池凭据与开关的竞态边界", () => {
         payload: { platform: "netease", enabled: false },
       })
     ).rejects.toMatchObject({ code: "INVALID_PHASE" });
+  });
+
+  test("连续限流的账号冷却逐次拉长，成功一次即回到基础冷却", async () => {
+    let now = 0;
+    const service = new SonGuessrService({
+      now: () => now,
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie) => ({
+          cookie,
+          account: { userId: "u-1", nickname: "号主", vipStatus: "vip" },
+        }),
+      },
+    });
+    const host = connection(service, "cooldown-host");
+    const { room, entry } = await hostEntry(service, host);
+    const rateLimited = () =>
+      releaseMusicAccount(service, room.id, entry, {
+        ok: false,
+        code: "MUSIC_API_RATE_LIMITED",
+        reason: "操作频繁，请稍候再试",
+      });
+
+    rateLimited();
+    expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_COOLDOWN_MS);
+    now += MUSIC_POOL_COOLDOWN_MS + 1;
+    rateLimited();
+    expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_COOLDOWN_MS * 2);
+    now += MUSIC_POOL_COOLDOWN_MS * 2 + 1;
+    rateLimited();
+    expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_COOLDOWN_MS * 4);
+    now += MUSIC_POOL_COOLDOWN_MS * 4 + 1;
+    rateLimited();
+    expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_MAX_COOLDOWN_MS);
+
+    // 成功取歌说明额度已恢复：下一次再被限流从基础档重新计。
+    releaseMusicAccount(service, room.id, entry, { ok: true });
+    expect(entry.rateLimitStrikes).toBeUndefined();
+    now += 1;
+    rateLimited();
+    expect(entry.cooldownUntil).toBe(now + MUSIC_POOL_COOLDOWN_MS);
   });
 });
 

@@ -191,9 +191,8 @@ export class SonGuessrService implements AdminRoomControl {
   /**
    * 按连接统计的音乐上游调用配额。
    *
-   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64 / 触发限流后冷却 60s→600s），
-   * 没有按连接的配额时，一个人打满队列会让上游返回 405 并进入全局冷却，
-   * 结果是全服所有房间在这段时间里搜歌、出题一起报错。
+   * `NeteaseMusicProvider` 是全进程单例（并发 3 / 队列 64），退避虽然按出口作用域隔离，
+   * 没有按连接的配额时，一个人仍会先把本进程的并发与队列打满，搜歌与出题一起排队。
    */
   private readonly musicLimiter = new SlidingWindowRateLimiter({
     windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
