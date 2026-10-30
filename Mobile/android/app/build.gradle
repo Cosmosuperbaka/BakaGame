@@ -106,6 +106,16 @@ android {
     }
 }
 
+// 依赖锁（F71）：APK 的 JVM 依赖面以 app/gradle.lockfile 为准，解析结果与锁不一致就构建失败。
+// capacitor-android 的传递依赖经 project 依赖汇入本模块的类路径，已被这里的锁覆盖；
+// 它的工程目录在 node_modules 里，不单独加锁。STRICT 让「没有锁状态的配置」同样报错，
+// 新增依赖或升级版本后必须在 Mobile/android 下重新执行：
+//   gradle :app:dependencies --write-locks
+dependencyLocking {
+    lockAllConfigurations()
+    lockMode = LockMode.STRICT
+}
+
 dependencies {
     implementation project(':capacitor-android')
     // styles.xml 的 AppTheme.NoActionBarLaunch 继承 Theme.SplashScreen，该主题由这个库提供。

@@ -136,6 +136,7 @@ Mobile/
 ├── scripts/apk.mjs         # Gradle 定位（wrapper 声明 → 同版本缓存 → PATH）并跑构建
 └── android/                # 手写最小工程（等效 cap add android 产物，未跑过 CLI）
     ├── settings.gradle / build.gradle / gradle.properties
+    ├── buildscript-gradle.lockfile / app/gradle.lockfile  # Gradle 依赖锁（入库，勿手改）
     ├── app/build.gradle / src/main/AndroidManifest.xml
     └── app/src/main/java/website/baka/game/
         ├── MainActivity.kt              # FLAG_SECURE + 注册插件 + 启动时选择热更资源
@@ -151,12 +152,18 @@ Mobile/
 
 ## 6. 构建步骤
 
-前置：JDK 17/21（**本机默认 JDK 25 与 AGP 8.7 未验证兼容**，出问题用
+前置：JDK 21（CI 同款，已验证；**JDK 25 跑不了 wrapper 声明的 Gradle 8.x**，用
 `android/gradle.properties` 里注释掉的 `org.gradle.java.home` 指定）；Android SDK
 （本机在 `D:\AndroidSdk`，需设 `ANDROID_HOME` 或让 Studio 写 `android/local.properties`）；
 Gradle 的版本出处是 `android/gradle/wrapper/gradle-wrapper.properties`（必须与 CI 的 Setup Gradle
 同一枚、且落在 `android/build.gradle` 里 AGP 的支持范围内，由 `Server/scripts/BuildToolchain.mjs` 断言）；
 `apk.mjs` 只取缓存里与声明同枚的发行版，取不到就报错，不会退回版本号最大的那一枚。
+
+JVM 依赖由 Gradle 依赖锁约束：插件类路径锁在 `android/buildscript-gradle.lockfile`，
+app 模块的全部配置锁在 `android/app/gradle.lockfile`（STRICT 模式，解析结果与锁不一致、
+或出现没有锁状态的配置都会让构建失败）。capacitor-android 的传递依赖经 project 依赖汇入 app，
+已被 app 的锁覆盖。新增、升级依赖或抬升 AGP/Kotlin 插件后，在 `Mobile/android` 下用 wrapper 声明
+的那一枚 Gradle 执行 `gradle :app:dependencies --write-locks` 重写两份锁，与改动同批提交。
 
 ```bash
 # 0.（一次性）生成 Gradle wrapper：用 Android Studio 打开 Mobile/android/，
