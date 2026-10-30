@@ -206,9 +206,7 @@ function PageCodeBlock({ code }: { code: string }) {
           </Button>
         </div>
       </div>
-      <p className="mt-1 font-mono text-base font-semibold tracking-code text-foreground">
-        {code}
-      </p>
+      <p className="mt-1 font-mono text-base font-semibold tracking-code text-foreground">{code}</p>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
         把码或整段指令交给 Agent；它认领后就能导航与点击这台浏览器，你随时可以收回。
       </p>
