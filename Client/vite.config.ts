@@ -2,18 +2,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import { commitHistoryPlugin } from "./scripts/vite-plugins/CommitHistory";
-import { appVersionPlugin } from "./scripts/vite-plugins/AppVersion";
-import { stickerManifestPlugin } from "./scripts/vite-plugins/StickerManifest";
-import { creditsManifestPlugin } from "./scripts/vite-plugins/CreditsManifest";
-import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp";
-import { staticShellPlugin } from "./scripts/vite-plugins/StaticShell";
-import { seoArtifactsPlugin } from "./scripts/vite-plugins/SeoArtifacts";
-import { generatedFontsPlugin } from "./scripts/vite-plugins/GeneratedFonts";
+import { commitHistoryPlugin } from "./scripts/vite-plugins/CommitHistory.ts";
+import { appVersionPlugin } from "./scripts/vite-plugins/AppVersion.ts";
+import { stickerManifestPlugin } from "./scripts/vite-plugins/StickerManifest.ts";
+import { creditsManifestPlugin } from "./scripts/vite-plugins/CreditsManifest.ts";
+import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp.ts";
+import { staticShellPlugin } from "./scripts/vite-plugins/StaticShell.ts";
+import { seoArtifactsPlugin } from "./scripts/vite-plugins/SeoArtifacts.ts";
+import { generatedFontsPlugin } from "./scripts/vite-plugins/GeneratedFonts.ts";
 import {
   sentrySourcemapsPlugin,
   sourcemapUploadEnabled,
-} from "./scripts/vite-plugins/SentrySourcemaps";
+} from "./scripts/vite-plugins/SentrySourcemaps.ts";
 
 export default defineConfig(({ command }) => {
   const emojiDir = path.resolve(import.meta.dirname, "./public/emojis");
