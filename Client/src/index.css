@@ -224,7 +224,7 @@
   --popover-foreground: oklch(0.9239 0.019 83.0636);
   /* 暗色主色与亮色同一口径双向标定：前景取页面底色，primary 作文字在 background、card、
      panel、muted 上，以及这些面上的 `/10` 浅底上均不低于 4.5:1。
-     `secondary` 与 `accent` 只出现在悬停与浮层高亮，与状态色一样不标定。 */
+     `secondary` 与 `accent` 只出现在悬停与浮层高亮，主色不在这两档上标定。 */
   --primary: oklch(0.745 0.0581 66.6967);
   --primary-foreground: oklch(0.2747 0.0139 57.6523);
   --secondary: oklch(0.3795 0.0181 57.128);
@@ -233,10 +233,9 @@
   --muted-foreground: oklch(0.7982 0.0243 82.1078);
   --accent: oklch(0.4186 0.0281 56.3404);
   --accent-foreground: oklch(0.9239 0.019 83.0636);
-  /* 基线取值（0.5471）在深底上只有约 2.5:1，红字读不清；抬高明度后在 background、card、
-     panel、muted 及 panel 上的 `/10` 浅底不低于 4.5:1（含纸纹理）。彩度略收，避免抬明后超出 sRGB。
-     填充随之变亮，白字对比度不足，前景与 primary 一样翻转为页面底色。 */
-  --destructive: oklch(0.755 0.145 30);
+  /* 基线取值（0.5471）在深底上只有约 2.5:1，红字读不清；抬高明度后按下方状态色同一口径标定。
+     彩度略收，避免抬明后超出 sRGB。填充随之变亮，白字对比度不足，前景与 primary 一样翻转为页面底色。 */
+  --destructive: oklch(0.77 0.135 30);
   --destructive-foreground: oklch(0.2747 0.0139 57.6523);
   --border: oklch(0.3795 0.0181 57.128);
   --input: oklch(0.3795 0.0181 57.128);
@@ -255,17 +254,17 @@
   --sidebar-border: oklch(0.3795 0.0181 57.128);
   --sidebar-ring: oklch(0.745 0.0581 66.6967);
   --panel: oklch(0.308 0.0148 58);
-  /* 状态语义色在暗色下抬高明度：在 background、card、panel、muted 上，以及叠在 background、
-     panel、muted 上的自身 `/10` 浅底上不低于 4.5:1（含纸纹理）。红、绿、蓝、紫在 secondary 上
-     与 card 上的 `/10` 浅底只有约 4.1 至 4.5:1，暗色只用于组件截图，暂不标定这两档。
-     配套前景反转为页面底色，实底填充仍能读清。 */
-  --success: oklch(0.72 0.13 165);
+  /* 状态语义色在暗色下抬高明度，与亮色同一口径标定：在 background、card、panel、secondary、muted
+     上，以及叠在 background、card、panel、muted 上的自身 `/10` 浅底上，文字均不低于 4.5:1（含纸纹理）。
+     暗色主题向玩家开放，悬停行与浮层高亮（secondary）里同样会出现状态文字，因此这一档也纳入标定；
+     红、紫抬明时彩度略收，保持在 sRGB 内。配套前景反转为页面底色，实底填充仍能读清。 */
+  --success: oklch(0.735 0.13 165);
   --success-foreground: oklch(0.2747 0.0139 57.6523);
   --warning: oklch(0.78 0.13 72);
   --warning-foreground: oklch(0.2747 0.0139 57.6523);
-  --info: oklch(0.74 0.11 240);
+  --info: oklch(0.75 0.11 240);
   --info-foreground: oklch(0.2747 0.0139 57.6523);
-  --questioner: oklch(0.75 0.14 300);
+  --questioner: oklch(0.768 0.128 300);
   --questioner-foreground: oklch(0.2747 0.0139 57.6523);
   --radius: 0.25rem;
   --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);

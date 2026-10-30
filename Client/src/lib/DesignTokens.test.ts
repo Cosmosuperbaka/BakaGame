@@ -13,9 +13,12 @@ import { describe, expect, it } from "vitest";
  * - 实底方向：`--primary` 作背景压 `--primary-foreground`；
  * - 文字方向：`--primary` 作文字压各档标定表面，以及压自身叠在标定表面上的 `/10` 浅底；
  * - 页面底（`background`）铺纸纹理会压暗表面、实测约降 4%，这一档另留余量；
- * - `accent` 与暗色 `secondary` 只作悬停与浮层高亮，与状态色一样不参与标定；
- *   `secondary` 的 `/10` 浅底同样留在标定期外（状态色在这一档也只有约 4.2:1，
- *   要闭合得把整套状态色一起重标定，不属于只改主色的范围）。
+ * - `accent` 与暗色 `secondary` 只作悬停与浮层高亮，主色不在这两档上标定；
+ *   `secondary` 的 `/10` 浅底在标定范围外（主色与状态色在这一档都只有约 3.9 至 4.3:1）。
+ *
+ * 状态色（成功、提示、补充、危险、出题人）与次要文字同档标定，明暗两套都要满足：
+ * 作文字压全部五档表面（悬停行里同样会出现状态文字），作文字压自身 `/10` 浅底，
+ * 以及实底填充压配套 `*-foreground`。
  */
 
 /**
@@ -193,6 +196,51 @@ describe("index.css 主色令牌", () => {
           expect(tokens[`--${token}`], token).toBe(tokens["--primary"]);
         }
       });
+    });
+  }
+});
+
+/** 状态语义色：与 `index.css` 注释的同档口径一一对应，`destructive` 兼作危险、断线与淘汰。 */
+const STATUS_TOKENS = ["destructive", "success", "warning", "info", "questioner"] as const;
+
+/** 状态文字与次要文字的标定表面：比主色多出 `secondary`，悬停行与浮层高亮里也要读清。 */
+const STATUS_TEXT_SURFACES = ["background", "card", "panel", "secondary", "muted"] as const;
+
+describe("index.css 状态色与次要文字令牌", () => {
+  for (const theme of THEMES) {
+    describe(theme.name, () => {
+      const tokens = themeTokens(theme.selector);
+      const colorOf = (name: string): Oklch => oklchOf(tokens[`--${name}`], `--${name}`);
+
+      it("次要文字压标定表面 ≥ 4.5:1（页面底另留纸纹理余量）", () => {
+        const muted = colorOf("muted-foreground");
+        for (const name of STATUS_TEXT_SURFACES) {
+          const ratio = contrast(luminanceOf(colorOf(name)), luminanceOf(muted));
+          expect(ratio, `${name} ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+            requiredRatio(name) - 0.0001
+          );
+        }
+      });
+
+      for (const token of STATUS_TOKENS) {
+        it(`${token} 作文字压标定表面与自身 \`/10\` 浅底 ≥ 4.5:1，实底压前景 ≥ 4.5:1`, () => {
+          const status = colorOf(token);
+          for (const name of STATUS_TEXT_SURFACES) {
+            const ratio = contrast(luminanceOf(colorOf(name)), luminanceOf(status));
+            expect(ratio, `文字 ${name} ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+              requiredRatio(name) - 0.0001
+            );
+          }
+          for (const name of theme.tintSurfaces) {
+            const ratio = contrast(tinted(status, colorOf(name), 0.1), luminanceOf(status));
+            expect(ratio, `浅底 ${name} ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+              requiredRatio(name) - 0.0001
+            );
+          }
+          const solid = contrast(luminanceOf(status), luminanceOf(colorOf(`${token}-foreground`)));
+          expect(solid, `实底 ${solid.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+        });
+      }
     });
   }
 });
