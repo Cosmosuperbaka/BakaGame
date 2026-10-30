@@ -1,5 +1,11 @@
 import type { RandomSource } from "../../domain/Rules";
-import type { ConnectionRecord } from "../../shared/Index";
+import type {
+  BangumiMusicTrack,
+  BangumiSubjectDetails,
+  ConnectionRecord,
+  SongDetails,
+  SongLyricClip,
+} from "../../shared/Index";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { McpSeatRegistry } from "../McpSeatRegistry";
 import type { SonGuessrServiceOptions } from "../SonGuessrService";
@@ -33,6 +39,16 @@ export interface SonGuessrServiceInternals {
     room: SonGuessrRoomRecord;
     player: SonGuessrPlayerRecord;
   };
+  parsePlaylistId(value: string): string;
+  installRound(
+    room: SonGuessrRoomRecord,
+    song: SongDetails,
+    submitterPlayerId: string,
+    anime?: BangumiSubjectDetails,
+    animeTrack?: BangumiMusicTrack,
+    recentSongWindow?: number,
+    lyricClipOverride?: SongLyricClip
+  ): number;
   ensureRoundPlayerState(
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord
