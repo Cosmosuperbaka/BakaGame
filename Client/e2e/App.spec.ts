@@ -419,8 +419,12 @@ test("独自一人在旁观动画途中切回，自己的玩家行仍然可见",
       message: "没捕获到旧玩家行的淡出中间态：本例退化成「切旁观再切回」的正例，没测到竞争",
     })
     .toBe("exiting");
-  // force 跳过 Playwright 的稳定性等待，否则点击会被拖到动画播完之后。
-  await page.getByRole("button", { name: "取消旁观" }).click({ force: true });
+  // 此刻按钮正被 layout 动画在「玩家」与「旁观」两组之间搬运：force 点击按动画中的
+  // 包围盒取坐标，CI 上连续三次都点空。用例要的是「淡出到一半时点得进去」这件事，
+  // 不是像素命中，所以直接派发元素自身的 click()——disabled 时它同样不会触发。
+  await page
+    .getByRole("button", { name: "取消旁观" })
+    .evaluate((element) => (element as HTMLElement).click());
   await expect(page.getByRole("button", { name: "加入旁观" })).toBeVisible();
   // 旧行淡出卸载后只剩一行，且它连同祖先都完全不透明。
   await expect
