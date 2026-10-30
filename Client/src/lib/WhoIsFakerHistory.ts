@@ -1,9 +1,9 @@
-import {
-  ABSTAIN_TARGET_ID,
-  type PublicPlayerView,
-  type RoundFeedback,
-  type RoundHistoryEntry,
-  type VoteRecord,
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
+import type {
+  PublicPlayerView,
+  RoundFeedback,
+  RoundHistoryEntry,
+  VoteRecord,
 } from "@bakagame/shared";
 
 /** 名单里查不到（极少见的旧数据）时退回编号，不留空白。 */

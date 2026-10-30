@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft } from "lucide-react";
-import {
-  FEEDBACK_CONTENT_MAX_LENGTH,
-  FEEDBACK_TITLE_MAX_LENGTH,
-  type FeedbackDetail,
-  type FeedbackKind,
-  type FeedbackSummary,
-} from "@bakagame/shared";
+import { FEEDBACK_CONTENT_MAX_LENGTH, FEEDBACK_TITLE_MAX_LENGTH } from "@bakagame/shared/values";
+import type { FeedbackDetail, FeedbackKind, FeedbackSummary } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {

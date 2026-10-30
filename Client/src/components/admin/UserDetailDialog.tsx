@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { badgeDescriptionOf, PIONEER_BADGE_LIMIT, type AdminUserDetail } from "@bakagame/shared";
+import { badgeDescriptionOf, PIONEER_BADGE_LIMIT } from "@bakagame/shared/values";
+import type { AdminUserDetail } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";

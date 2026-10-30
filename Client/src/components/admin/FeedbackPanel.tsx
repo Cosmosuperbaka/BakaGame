@@ -1,10 +1,6 @@
 import { useId, useState, type FormEvent } from "react";
-import {
-  FEEDBACK_REPLY_MAX_LENGTH,
-  type AdminFeedbackDetail,
-  type FeedbackKind,
-  type FeedbackStatus,
-} from "@bakagame/shared";
+import { FEEDBACK_REPLY_MAX_LENGTH } from "@bakagame/shared/values";
+import type { AdminFeedbackDetail, FeedbackKind, FeedbackStatus } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {

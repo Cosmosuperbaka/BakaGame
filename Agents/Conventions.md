@@ -71,6 +71,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 
 - 共享定义只有一份物理源码：`Server/src/shared/`。服务端通过相对路径引入；部署时只挂载 `Server/` 作为应用根，因此被引用的模块必须物理位于该目录内。
 - 客户端用 `@bakagame/shared`，必须在两处保持同步映射：TypeScript `paths`（类型检查）与 Vite `resolve.alias`（打包）。Vite 不读 tsconfig paths，只改一处会让构建隐蔽失败。
+- **运行时值走 `@bakagame/shared/values`，`@bakagame/shared` 只留给 `import type`**：后者（`Index.ts`）会带入构造 schema 的模块与 TypeBox 运行时，整包打进浏览器；`Values.ts` 只汇出不会加载 TypeBox 的纯值模块，纯值模块也不得引入 schema 构造模块。`@bakagame/shared/values` 的映射在 TypeScript `paths`、Vite 与 Vitest 三处都要有，且排在 `@bakagame/shared` 之前；客户端 ESLint 禁止对 `@bakagame/shared` 做静态的非 type 导入。确实要按 schema 校验的少数函数（如设置文件解析）在调用点动态 `import("@bakagame/shared")`，不在纯值模块里手抄一份校验。
 - **严禁用 `file:../packages/...` 之类文件符号链接依赖**（会解析成宿主机绝对路径软链，导致容器 `ENOENT`）。
 - 共享源码的运行依赖由消费端显式声明，两端都声明 TypeBox，不依赖对方的依赖目录，也不复制 schema。
 

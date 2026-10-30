@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  SERVER_SHUTDOWN_MESSAGE,
-  type ServerMessage,
-  type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
-} from "@bakagame/shared";
+import { SERVER_SHUTDOWN_MESSAGE } from "@bakagame/shared/values";
+import type { ServerMessage, SonGuessrPrivateState, SonGuessrRoomSnapshot } from "@bakagame/shared";
 
 const wsMock = vi.hoisted(() => ({
   send: vi.fn(),

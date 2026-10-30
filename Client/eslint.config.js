@@ -53,6 +53,21 @@ export default defineConfig([
       // 认知复杂度阈值 20。存量由 eslint-suppressions.json 记录，新增违规直接失败；
       // 重构使复杂度下降后跑 `npm run lint:prune` 递减基线，避免基线腐烂。
       "sonarjs/cognitive-complexity": ["error", 20],
+      // 共享契约入口携带 TypeBox：非 type 导入会把校验库整体打进浏览器包。
+      // 运行时值一律走纯值入口，类型仍可用 import type 从原入口取。
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@bakagame/shared",
+              allowTypeImports: true,
+              message:
+                "运行时值请从 @bakagame/shared/values 导入，@bakagame/shared 只用于 import type。",
+            },
+          ],
+        },
+      ],
     },
   },
   {

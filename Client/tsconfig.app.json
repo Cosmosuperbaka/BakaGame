@@ -25,6 +25,8 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "paths": {
+      // 更具体的前缀必须排在前面：运行时值走 Values.ts，类型仍从 Index.ts 取。
+      "@bakagame/shared/values": ["../Server/src/shared/Values.ts"],
       "@bakagame/shared": ["../Server/src/shared/Index.ts"],
       "@sinclair/typebox": ["./node_modules/@sinclair/typebox"],
       "@sinclair/typebox/*": ["./node_modules/@sinclair/typebox/*"],

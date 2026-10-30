@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createDefaultCEESettings } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { restoreCEESettings } from "./CEEWaiting";
 

@@ -18,13 +18,8 @@ import {
   SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import {
-  isValidRoomId,
-  ROOM_ID_TEST_MODE,
-  type SonGuessrAck,
-  type SonGuessrCommand,
-  type SonGuessrPayload,
-} from "@bakagame/shared";
+import { isValidRoomId, ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
+import type { SonGuessrAck, SonGuessrCommand, SonGuessrPayload } from "@bakagame/shared";
 
 const LONG_RUNNING_COMMANDS = ["song.game.start", "song.game.nextRound"] as const;
 const LONG_RUNNING_POLL_INTERVAL_MS = 3_000;

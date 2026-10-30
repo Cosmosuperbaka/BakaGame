@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import {
-  PUBLIC_STATUS_COMPONENT_IDS,
-  type PublicStatusComponentId,
-  type PublicStatusEvent,
-  type PublicStatusIncidentKind,
+import { PUBLIC_STATUS_COMPONENT_IDS } from "@bakagame/shared/values";
+import type {
+  PublicStatusComponentId,
+  PublicStatusEvent,
+  PublicStatusIncidentKind,
 } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";

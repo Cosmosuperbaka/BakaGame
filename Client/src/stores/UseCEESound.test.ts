@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultCEESettings, type CEERoomSnapshot } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
+import type { CEERoomSnapshot } from "@bakagame/shared";
 
 const { playSound } = vi.hoisted(() => ({ playSound: vi.fn() }));
 

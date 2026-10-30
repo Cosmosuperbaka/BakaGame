@@ -13,12 +13,14 @@ import {
   BANGUMI_TRACK_KIND_LABELS,
   hasMusicAccount,
   refineTrackKindByText,
-  type BangumiMusicTrack,
-  type BangumiMusicTrackKind,
-  type SonGuessrPlayerView,
-  type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
-  type SonGuessrRoundSummary,
+} from "@bakagame/shared/values";
+import type {
+  BangumiMusicTrack,
+  BangumiMusicTrackKind,
+  SonGuessrPlayerView,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+  SonGuessrRoundSummary,
 } from "@bakagame/shared";
 
 /**

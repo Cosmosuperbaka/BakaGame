@@ -6,13 +6,13 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  PUBLIC_STATUS_GROUPS,
-  type PublicStatusComponentId,
-  type PublicStatusEvent,
-  type PublicStatusHistory,
-  type PublicStatusLevel,
-  type PublicStatusRealtime,
+import { PUBLIC_STATUS_GROUPS } from "@bakagame/shared/values";
+import type {
+  PublicStatusComponentId,
+  PublicStatusEvent,
+  PublicStatusHistory,
+  PublicStatusLevel,
+  PublicStatusRealtime,
 } from "@bakagame/shared";
 import {
   ArrowLeft,

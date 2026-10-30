@@ -1,4 +1,4 @@
-import { protocolErrorCode } from "@bakagame/shared";
+import { protocolErrorCode } from "@bakagame/shared/values";
 
 /**
  * 恢复房间命中永久错误（见共享 `PERMANENT_ROOM_ERROR_CODES`）时给玩家看的说明。

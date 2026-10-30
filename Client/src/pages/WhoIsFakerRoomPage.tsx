@@ -43,12 +43,8 @@ import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
 import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
-import {
-  isValidRoomId,
-  type WhoIsFakerPrivateState,
-  type WhoIsFakerRole,
-  type PublicPlayerView,
-} from "@bakagame/shared";
+import { isValidRoomId } from "@bakagame/shared/values";
+import type { WhoIsFakerPrivateState, WhoIsFakerRole, PublicPlayerView } from "@bakagame/shared";
 
 interface RoomHeaderCenterProps {
   day: number;

@@ -1,11 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Award, KeyRound, Pencil } from "lucide-react";
-import {
-  badgeDescriptionOf,
-  type AccountBadge,
-  type AccountProfile,
-  type BadgeKind,
-} from "@bakagame/shared";
+import { badgeDescriptionOf } from "@bakagame/shared/values";
+import type { AccountBadge, AccountProfile, BadgeKind } from "@bakagame/shared";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
 import {

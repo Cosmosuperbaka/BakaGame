@@ -3,23 +3,25 @@ import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/Que
 import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage } from "@/lib/PermanentRoomError";
 import {
-  type ChatMessage,
-  type EventPacket,
-  type ServerMessage,
-  type SonGuessrRoomEnterAck,
-  type SonGuessrPrivateState,
-  type SonGuessrRoomSnapshot,
-  type SonGuessrRoomSummary,
-  type SonGuessrMusicAccount,
-  type AgentFocusEvent,
-  type SongArtistSearchResult,
-  type SongPlaylistInfo,
-  type SongSearchResult,
-  type BangumiSubjectSearchResult,
-  type BangumiSongCandidate,
   SERVER_SHUTDOWN_MESSAGE,
   isPermanentRoomError,
   mergeChatWindow,
+} from "@bakagame/shared/values";
+import type {
+  ChatMessage,
+  EventPacket,
+  ServerMessage,
+  SonGuessrRoomEnterAck,
+  SonGuessrPrivateState,
+  SonGuessrRoomSnapshot,
+  SonGuessrRoomSummary,
+  SonGuessrMusicAccount,
+  AgentFocusEvent,
+  SongArtistSearchResult,
+  SongPlaylistInfo,
+  SongSearchResult,
+  BangumiSubjectSearchResult,
+  BangumiSongCandidate,
 } from "@bakagame/shared";
 import {
   clearSonGuessrSessionToken,

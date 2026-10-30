@@ -18,7 +18,7 @@ import {
 } from "@/components/songuessr/settings/SongSettingsPanels";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { hasMusicAccount } from "@bakagame/shared";
+import { hasMusicAccount } from "@bakagame/shared/values";
 import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@bakagame/shared";
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 

@@ -1,12 +1,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createDefaultCEESettings,
-  type CEECharacterView,
-  type CEEPrivateState,
-  type CEERoomSnapshot,
-  type CEEScoreDetail,
+import { createDefaultCEESettings } from "@bakagame/shared/values";
+import type {
+  CEECharacterView,
+  CEEPrivateState,
+  CEERoomSnapshot,
+  CEEScoreDetail,
 } from "@bakagame/shared";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { ceeWsClient } from "@/lib/CEEWs";

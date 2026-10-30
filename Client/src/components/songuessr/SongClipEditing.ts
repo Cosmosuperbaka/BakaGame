@@ -1,5 +1,5 @@
 import type { SongClipPreview } from "@bakagame/shared";
-import { SONG_CLIP_MIN_MS } from "@bakagame/shared";
+import { SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 

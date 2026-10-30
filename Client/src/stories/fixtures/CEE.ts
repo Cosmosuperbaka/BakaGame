@@ -14,7 +14,7 @@ import type {
   CEESettings,
   ChatMessage,
 } from "@bakagame/shared";
-import { createDefaultCEESettings } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
 import { getSavedUsername, saveUsername } from "@/lib/Storage";
 import { fromNow, placeholderImage, STORY_EPOCH, STORY_PLAYERS, STORY_SPECTATORS } from "./Common";
 

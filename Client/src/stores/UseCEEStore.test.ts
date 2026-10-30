@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDefaultCEESettings, type CEERoomSnapshot } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
+import type { CEERoomSnapshot } from "@bakagame/shared";
 import { ceeWsClient } from "@/lib/CEEWs";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import {

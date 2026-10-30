@@ -5,6 +5,9 @@ import type { ChatMessage, PlayerAccount, RoomVisibility } from "./Model";
 import type { ClientEnvelope } from "./Protocol";
 import { AgentFocusInputSchema } from "./AgentActivity";
 
+// 默认值住在 CEEDefaults.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
+export * from "./CEEDefaults";
+
 const strict = { additionalProperties: false } as const;
 const integer = (minimum: number, maximum: number) => t.Integer({ minimum, maximum });
 export const CEESettingsSchema = t.Object(
@@ -44,12 +47,10 @@ export const CEESettingsSchema = t.Object(
 );
 export type CEESettings = Static<typeof CEESettingsSchema>;
 export type CEEAnswerMode = CEESettings["answerMode"];
-/** 房间是否按反作弊口径收口：只有显式 `true` 才算开启，缺省与 `false` 同义。 */
-export const isCEEAntiCheatRoom = (settings: Pick<CEESettings, "bakaAntiCheat">): boolean =>
-  settings.bakaAntiCheat === true;
 /**
  * 导入设置文件。出题方式与反作弊开关都晚于文件格式加入，旧文件缺这些项时分别按随机出题、
  * 关闭补齐；「显示常见标签」已固定开启，旧文件里的 `commonTags` 直接丢弃。
+ * 依赖 schema 校验，客户端只能动态加载本函数，不经 `@bakagame/shared/values`。
  */
 export function parseCEESettings(value: unknown): CEESettings {
   let filled = value;
@@ -64,32 +65,6 @@ export function parseCEESettings(value: unknown): CEESettings {
   if (!Value.Check(CEESettingsSchema, filled)) throw new Error("设置文件格式不正确");
   return filled;
 }
-export const createDefaultCEESettings = (year = new Date().getFullYear()): CEESettings => ({
-  startYear: year - 5,
-  endYear: year,
-  topNSubjects: 20,
-  useSubjectPerYear: false,
-  metaTags: ["", "", ""],
-  useIndex: false,
-  indexId: null,
-  addedSubjects: [],
-  mainCharacterOnly: true,
-  characterNum: 6,
-  maxAttempts: 10,
-  timeLimit: 60,
-  subjectSearch: true,
-  subjectTagNum: 4,
-  characterTagNum: 4,
-  useHints: [],
-  useImageHint: 0,
-  globalPick: false,
-  tagBan: false,
-  syncMode: false,
-  nonstopMode: false,
-  answerMode: "random",
-  bakaAntiCheat: false,
-  allowAgents: false,
-});
 export type CEESource = "native" | "original";
 /**
  * 角色/作品图的取用尺寸，只有两档，`small` / `medium` / `common` 一律不取：

@@ -1,7 +1,8 @@
 import { ORPCError, createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import { AUTH_BASE_PATH, type ApiContract } from "@bakagame/shared";
+import { AUTH_BASE_PATH } from "@bakagame/shared/values";
+import type { ApiContract } from "@bakagame/shared";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 
 /**

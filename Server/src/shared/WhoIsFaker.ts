@@ -12,6 +12,9 @@ import {
 import type { ClientEnvelope } from "./Protocol";
 import { password, playerId, positiveInt, roomId, sessionToken, userName } from "./Validation";
 
+// 纯值住在 WhoIsFakerValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
+export * from "./WhoIsFakerValues";
+
 // ==================== 谁是卧底 (WhoIsFaker) 领域模型与协议 ====================
 
 const strict = { additionalProperties: false } as const;
@@ -126,13 +129,6 @@ export interface DescriptionRecord {
   order?: number;
   createdAt: number;
 }
-
-/**
- * 弃票在 VoteRecord 里占用一个保留的 targetId：
- * 弃票同样是一次已完成的投票，必须计入「谁还没投」的判定，
- * 因此不能用「没有记录」来表示。计票时不计入任何玩家的得票。
- */
-export const ABSTAIN_TARGET_ID = "abstain";
 
 // 投票阶段只记录“谁投给了谁”，统计在运行时计算。
 export interface VoteRecord {

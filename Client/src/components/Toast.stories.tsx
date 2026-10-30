@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ToastItem } from "./Toast";
-import { SERVER_SHUTDOWN_MESSAGE } from "@bakagame/shared";
+import { SERVER_SHUTDOWN_MESSAGE } from "@bakagame/shared/values";
 import { ToastViewport } from "./Toast";
 
 const meta = {

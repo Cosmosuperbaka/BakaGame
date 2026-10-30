@@ -2,7 +2,7 @@ import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FastForward, Vote } from "lucide-react";
-import { ABSTAIN_TARGET_ID } from "@bakagame/shared";
+import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { listContainer, useOriginTracker } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";

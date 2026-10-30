@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createDefaultCEESettings } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
 import {
   markPendingRestore,
   peekPendingRestore,

@@ -11,7 +11,7 @@ import type {
   AgentFocusEvent,
   ServerMessage,
 } from "@bakagame/shared";
-import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared";
+import { isPermanentRoomError, protocolErrorCode } from "@bakagame/shared/values";
 import * as ws from "@/lib/CEEWs";
 import {
   normalizeCEERoomId,

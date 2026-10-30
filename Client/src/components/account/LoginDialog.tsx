@@ -8,7 +8,7 @@ import {
   qlogoUrlOf,
   qqEmailOf,
   QQ_NUMBER_PATTERN,
-} from "@bakagame/shared";
+} from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { Collapsible, CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";

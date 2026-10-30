@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Music2, Pause, Play, TriangleAlert } from "lucide-react";
 import type { SongClipPreview, SongClipRange } from "@bakagame/shared";
-import { SONG_CLIP_MIN_MS } from "@bakagame/shared";
+import { SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { countdownTickMs, readoutSwap, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";

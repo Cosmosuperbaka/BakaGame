@@ -13,12 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import {
-  parseCEESettings,
-  type CEEAnswerMode,
-  type CEESettings,
-  type CEESource,
-} from "@bakagame/shared";
+import type { CEEAnswerMode, CEESettings, CEESource } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
@@ -254,6 +249,8 @@ export function CEEGameSettings({
     if (!file) return;
     try {
       if (file.size > SETTINGS_FILE_LIMIT) throw new Error("配置文件过大");
+      // 设置文件按 schema 校验，校验库只在真正导入文件时才加载，不进首屏包。
+      const { parseCEESettings } = await import("@bakagame/shared");
       setDraft(parseCEESettings(JSON.parse(await file.text()) as unknown));
       setPresetName("");
       setFileError("");

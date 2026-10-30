@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
 import { Film, Music2 } from "lucide-react";
-import {
-  type BangumiSongCandidate,
-  type BangumiSubjectSearchResult,
-  type SongSearchResult,
-  BANGUMI_TRACK_KIND_LABELS,
+import { BANGUMI_TRACK_KIND_LABELS } from "@bakagame/shared/values";
+import type {
+  BangumiSongCandidate,
+  BangumiSubjectSearchResult,
+  SongSearchResult,
 } from "@bakagame/shared";
 import {
   SearchCombobox,

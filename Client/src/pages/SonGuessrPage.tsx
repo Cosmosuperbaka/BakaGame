@@ -9,7 +9,8 @@ import {
   readRoomCreateDefaults,
   saveRoomCreateDefaults,
 } from "@/lib/RoomSettingsMemory";
-import { SONG_QUESTION_TYPE_LABELS, type SonGuessrRoomSummary } from "@bakagame/shared";
+import { SONG_QUESTION_TYPE_LABELS } from "@bakagame/shared/values";
+import type { SonGuessrRoomSummary } from "@bakagame/shared";
 
 /** 猜歌的大厅区分「等待中」与「游戏中」两态；听歌识番的房间带题型标签。 */
 const toRoomView = (room: SonGuessrRoomSummary): LobbyRoomView => ({

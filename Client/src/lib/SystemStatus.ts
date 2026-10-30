@@ -1,18 +1,17 @@
-import {
-  PUBLIC_STATUS_COMPONENT_IDS,
-  PUBLIC_STATUS_GROUP_IDS,
-  type PublicStatusCell,
-  type PublicStatusComponent,
-  type PublicStatusComponentId,
-  type PublicStatusEvent,
-  type PublicStatusGroupId,
-  type PublicStatusHistory,
-  type PublicStatusHistoryEntry,
-  type PublicStatusLevel,
-  type PublicStatusRealtime,
-  type PublicStatusRealtimeEntry,
-  type PublicStatusSampleCell,
-  type PublicStatusSnapshot,
+import { PUBLIC_STATUS_COMPONENT_IDS, PUBLIC_STATUS_GROUP_IDS } from "@bakagame/shared/values";
+import type {
+  PublicStatusCell,
+  PublicStatusComponent,
+  PublicStatusComponentId,
+  PublicStatusEvent,
+  PublicStatusGroupId,
+  PublicStatusHistory,
+  PublicStatusHistoryEntry,
+  PublicStatusLevel,
+  PublicStatusRealtime,
+  PublicStatusRealtimeEntry,
+  PublicStatusSampleCell,
+  PublicStatusSnapshot,
 } from "@bakagame/shared";
 import { resolveServerUrl } from "@/lib/ServerEndpoint";
 

@@ -8,14 +8,16 @@ import {
   isPermanentRoomError,
   mergeChatWindow,
   CLIENT_CHAT_WINDOW,
-  type WhoIsFakerRoomEnterAck,
-  type WhoIsFakerRoomSnapshot,
-  type WhoIsFakerPrivateState,
-  type WhoIsFakerRoomSummary,
-  type AgentFocusEvent,
-  type ServerMessage,
-  type EventPacket,
   SERVER_SHUTDOWN_MESSAGE,
+} from "@bakagame/shared/values";
+import type {
+  WhoIsFakerRoomEnterAck,
+  WhoIsFakerRoomSnapshot,
+  WhoIsFakerPrivateState,
+  WhoIsFakerRoomSummary,
+  AgentFocusEvent,
+  ServerMessage,
+  EventPacket,
 } from "@bakagame/shared";
 
 export interface ToastItem {

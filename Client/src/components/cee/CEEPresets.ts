@@ -1,4 +1,5 @@
-import { createDefaultCEESettings, type CEESettings } from "@bakagame/shared";
+import { createDefaultCEESettings } from "@bakagame/shared/values";
+import type { CEESettings } from "@bakagame/shared";
 
 export function ceePresets(year = new Date().getFullYear()): Record<string, CEESettings> {
   const base = {

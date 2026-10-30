@@ -3,7 +3,7 @@ import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import { whoIsFakerWsClient } from "@/lib/WhoIsFakerWs";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { dropFocus } from "@/stories/PlayHelpers";
-import { ROOM_ID_TEST_MODE } from "@bakagame/shared";
+import { ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
 import {
   presetWifRoom,
   readyPlayers,

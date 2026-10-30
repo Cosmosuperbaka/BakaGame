@@ -84,6 +84,11 @@ export default defineConfig(({ command }) => {
       // 否则打包阶段同样解析不到（与 tsconfig paths 是同一份边界的两侧）。
       dedupe: ["@sinclair/typebox", "@orpc/contract", "zod"],
       alias: [
+        // 更具体的前缀必须排在前面：运行时值走 Values.ts，类型仍从 Index.ts 取。
+        {
+          find: "@bakagame/shared/values",
+          replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Values.ts"),
+        },
         {
           find: "@bakagame/shared",
           replacement: path.resolve(import.meta.dirname, "../Server/src/shared/Index.ts"),

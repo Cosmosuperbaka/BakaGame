@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { PREFERENCES_MAX_BYTES, type CloudSettings, type MusicPlatform } from "@bakagame/shared";
+import { PREFERENCES_MAX_BYTES } from "@bakagame/shared/values";
+import type { CloudSettings, MusicPlatform } from "@bakagame/shared";
 import { api, type ApiClient } from "@/lib/Api";
 import { ROOM_MEMORY_SYNC_PREFIXES } from "@/lib/RoomSettingsMemory";
 import { captureClientLog } from "@/lib/Sentry";
