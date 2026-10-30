@@ -45,7 +45,7 @@ export function SongPlayerList({
   maxGuesses,
 }: PlayerListProps) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const activePlayers = players.filter((player) => player.membership === "active");
   const observers = players.filter((player) => player.membership === "spectator");
   const groups = teamGroups(activePlayers);
@@ -67,10 +67,10 @@ export function SongPlayerList({
       try {
         await sendCommand("song.room.kick", { playerId });
       } catch (error) {
-        setNotice((error as { message: string }).message, "error");
+        showToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, setNotice]
+    [sendCommand, showToast]
   );
 
   const handleTransferHost = useCallback(
@@ -78,10 +78,10 @@ export function SongPlayerList({
       try {
         await sendCommand("song.room.transferHost", { playerId });
       } catch (error) {
-        setNotice((error as { message: string }).message, "error");
+        showToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, setNotice]
+    [sendCommand, showToast]
   );
 
   const handleSetSpectator = useCallback(
@@ -89,10 +89,10 @@ export function SongPlayerList({
       try {
         await sendCommand("song.player.setSpectator", { spectator });
       } catch (error) {
-        setNotice((error as { message: string }).message, "error");
+        showToast((error as { message: string }).message, "error");
       }
     },
-    [sendCommand, setNotice]
+    [sendCommand, showToast]
   );
 
   const renderRow = (player: SonGuessrPlayerView, hideSpectatorStatus: boolean) => (

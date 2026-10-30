@@ -289,14 +289,14 @@ function PoolReloginButton({
 /** 共享开关的命令通道：忙碌态与失败提示都收在这里，账号组件本身只读结果。 */
 function usePoolSharing() {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [sharingBusy, setSharingBusy] = useState(false);
   const setSharing = async (platform: SongMusicPlatform, enabled: boolean) => {
     setSharingBusy(true);
     try {
       await sendCommand("song.auth.setPoolSharing", { platform, enabled });
     } catch (error) {
-      setNotice((error as { message?: string }).message ?? "切换账号共享失败，请重试", "error");
+      showToast((error as { message?: string }).message ?? "切换账号共享失败，请重试", "error");
     } finally {
       setSharingBusy(false);
     }
@@ -312,7 +312,7 @@ function RoomAccountSettings({
   me?: SonGuessrPlayerView;
 }) {
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [open, setOpen] = useState(false);
   const [activePlatform, setActivePlatform] = useState<SongMusicPlatform>("netease");
   const [qqScanType, setQqScanType] = useState<QqScanMode>("qq");
@@ -385,15 +385,15 @@ function RoomAccountSettings({
       );
       if (platform === "qq") {
         setStoredQq({ cookie: session.cookie, account: accountToSave, persistent });
-        setNotice("QQ音乐账号已加载到当前房间", "success");
+        showToast("QQ音乐账号已加载到当前房间", "success");
       } else {
         setStoredNetease({ cookie: session.cookie, account: accountToSave, persistent });
-        setNotice("网易云账号已加载到当前房间", "success");
+        showToast("网易云账号已加载到当前房间", "success");
       }
       setQr(null);
       setQrStatus("登录成功");
     },
-    [setNotice]
+    [showToast]
   );
 
   const createQr = useCallback(
@@ -424,12 +424,12 @@ function RoomAccountSettings({
       } catch (error) {
         if (generation !== loginGenerationRef.current) return;
         setQrStatus((error as { message?: string }).message ?? "二维码生成失败，请稍后重试");
-        setNotice((error as { message?: string }).message ?? "二维码生成失败", "error");
+        showToast((error as { message?: string }).message ?? "二维码生成失败", "error");
       } finally {
         if (generation === loginGenerationRef.current) setBusy(false);
       }
     },
-    [activePlatform, qqScanType, sendCommand, setNotice]
+    [activePlatform, qqScanType, sendCommand, showToast]
   );
 
   const checkQr = useCallback(async () => {
@@ -524,10 +524,10 @@ function RoomAccountSettings({
     clearStoredSongMusicSession(platform);
     if (platform === "qq") {
       setStoredQq(null);
-      setNotice("已退出QQ音乐账号", "success");
+      showToast("已退出QQ音乐账号", "success");
     } else {
       setStoredNetease(null);
-      setNotice("已退出网易云账号", "success");
+      showToast("已退出网易云账号", "success");
     }
     setQr(null);
     if (open) void createQr(platform, qqScanType);

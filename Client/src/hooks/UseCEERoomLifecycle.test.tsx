@@ -168,7 +168,7 @@ it("直链加入被非密码类拒绝时回大厅并提示", async () => {
     ),
   });
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
-  expect(useCEEStore.getState().notice?.text).toBe("房间已满");
+  expect(useCEEStore.getState().toast?.text).toBe("房间已满");
   await waitFor(() => expect(h.result.current.joining).toBe(false));
 });
 it("恢复会话临时失败时回大厅提示，不卡在正在加入", async () => {
@@ -189,6 +189,6 @@ it("恢复会话临时失败时回大厅提示，不卡在正在加入", async (
     ),
   });
   await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
-  expect(useCEEStore.getState().notice?.text).toBe("连接已断开");
+  expect(useCEEStore.getState().toast?.text).toBe("连接已断开");
   await waitFor(() => expect(h.result.current.joining).toBe(false));
 });

@@ -23,7 +23,7 @@ import type { SonGuessrPlayerView, SonGuessrRoomSnapshot } from "@bakagame/share
 import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
 
 const notifyCopyFailed = () =>
-  useSonGuessrStore.getState().setNotice("复制失败，请手动复制", "error");
+  useSonGuessrStore.getState().showToast("复制失败，请手动复制", "error");
 
 /**
  * 三组折叠设置，房主、单人与其他玩家共用同一份结构：收起时各有摘要，`readOnly` 时字段只显示取值。

@@ -8,9 +8,9 @@ import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { CEESoundBridge } from "@/components/cee/CEESoundBridge";
 
 export default function CEELayout() {
-  const notice = useCEEStore((state) => state.notice);
+  const toast = useCEEStore((state) => state.toast);
   const requestLoginAt = useCEEStore((state) => state.requestLoginAt);
-  const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
+  const toasts = toast ? [{ id: `${toast.type}:${toast.text}`, ...toast }] : [];
   useEffect(() => initCEEWs(), []);
   // LOGIN_REQUIRED 由 Store 记下时刻，这里（挂着登录弹窗的一层）去打开它。
   useEffect(() => {

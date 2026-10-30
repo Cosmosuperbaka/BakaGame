@@ -56,7 +56,7 @@ function mount(solo = false, strict = false) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  useSonGuessrStore.setState({ ...initial, connected: true, setNotice: vi.fn() }, true);
+  useSonGuessrStore.setState({ ...initial, connected: true, showToast: vi.fn() }, true);
   waitConnection.mockResolvedValue(undefined);
   randomId.mockReturnValue("5678");
   send.mockImplementation(
@@ -152,7 +152,7 @@ describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS�
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/", { replace: true }));
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0][0]).toBe("song.room.reconnect");
-    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith("恢复暂时断开", "error");
+    expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledWith("恢复暂时断开", "error");
     h.unmount();
   });
   it("StrictMode 恢复只发一个请求，成功不自动加入", async () => {
@@ -342,7 +342,7 @@ describe("保存凭据的房间装载重试（真实 hook / 假定时器）", ()
     await flush();
     expect(uploads).toBe(1);
     expect(getStoredSongMusicSession()).toBeNull();
-    expect(useSonGuessrStore.getState().setNotice).toHaveBeenCalledWith(
+    expect(useSonGuessrStore.getState().showToast).toHaveBeenCalledWith(
       "网易云登录状态已失效，请重新扫码登录",
       "error"
     );

@@ -36,6 +36,7 @@ export interface WhoIsFakerGameState {
   snapshot: WhoIsFakerRoomSnapshot | null;
   privateState: WhoIsFakerPrivateState | null;
   agentFocus: AgentFocusEvent | null;
+  /** 队列：可同时显示多条，与猜歌 / CEE 的单槽提示相对。 */
   toasts: ToastItem[];
   /**
    * 本机生成的频道切换提示（进入观战频道 / 返回公共频道）。

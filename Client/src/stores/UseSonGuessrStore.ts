@@ -56,9 +56,10 @@ export interface SonGuessrStore {
   privateState: SonGuessrPrivateState | null;
   agentFocus: AgentFocusEvent | null;
   roomClosedAt: number | null;
-  notice: { text: string; type: "info" | "error" | "success" } | null;
-  setNotice: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
-  clearNotice: () => void;
+  /** 单槽：新提示顶掉旧提示。 */
+  toast: { text: string; type: "info" | "error" | "success" } | null;
+  showToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
+  clearToast: () => void;
 
   subscribeLobby: () => Promise<void>;
   createRoom: (
@@ -100,7 +101,7 @@ type RoomEntryReceipt = SonGuessrRoomEnterAck & { previousToken?: string | null 
 
 let connectionGeneration = 0;
 let roomEntry: ReturnType<typeof createRoomEntry<RoomEntryReceipt>>;
-let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let snapshotRevision: number | undefined;
 let privateStateRevision: number | undefined;
 let syncRequestPending = false;
@@ -219,21 +220,21 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     privateState: null,
     agentFocus: null,
     roomClosedAt: null,
-    notice: null,
+    toast: null,
 
-    setNotice: (text, type = "info", durationMs = 3000) => {
-      if (noticeTimer) clearTimeout(noticeTimer);
-      set({ notice: { text, type } });
-      noticeTimer = setTimeout(() => {
-        set({ notice: null });
-        noticeTimer = undefined;
+    showToast: (text, type = "info", durationMs = 3000) => {
+      if (toastTimer) clearTimeout(toastTimer);
+      set({ toast: { text, type } });
+      toastTimer = setTimeout(() => {
+        set({ toast: null });
+        toastTimer = undefined;
       }, durationMs);
     },
 
-    clearNotice: () => {
-      if (noticeTimer) clearTimeout(noticeTimer);
-      noticeTimer = undefined;
-      set({ notice: null });
+    clearToast: () => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = undefined;
+      set({ toast: null });
     },
 
     subscribeLobby: async () => {
@@ -270,7 +271,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             current.resetRoomState();
             set({ roomClosedAt: Date.now() });
           }
-          get().setNotice(permanentRoomErrorMessage(error), "error");
+          get().showToast(permanentRoomErrorMessage(error), "error");
           return true;
         },
         signal
@@ -313,7 +314,7 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
             snapshot: null,
             privateState: null,
             roomClosedAt: null,
-            notice: null,
+            toast: null,
           });
         } else if (sessionToken && getSonGuessrSessionToken(roomId) === sessionToken) {
           clearSonGuessrSessionToken(roomId);
@@ -477,8 +478,8 @@ function applyChatMessageEvent(payload: unknown) {
  */
 function leaveRoom(
   closedRoomId: string | null | undefined,
-  notice: string,
-  noticeDurationMs?: number
+  toastText: string,
+  toastDurationMs?: number
 ) {
   if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
   resetSonGuessrStateSync();
@@ -490,7 +491,7 @@ function leaveRoom(
     agentFocus: null,
     roomClosedAt: Date.now(),
   });
-  useSonGuessrStore.getState().setNotice(notice, "error", noticeDurationMs);
+  useSonGuessrStore.getState().showToast(toastText, "error", toastDurationMs);
 }
 
 export function initSonGuessrWs() {
@@ -540,7 +541,7 @@ export function initSonGuessrWs() {
         break;
       }
       case "song.room.expiring":
-        store.setNotice("房间即将因超时关闭", "error");
+        store.showToast("房间即将因超时关闭", "error");
         break;
       case "song.chat.message":
         applyChatMessageEvent(evt.payload);
@@ -573,7 +574,7 @@ export function initSonGuessrWs() {
           (evt.payload as { message?: string } | undefined)?.message || SERVER_SHUTDOWN_MESSAGE;
         // 原地待命：保留票据与快照。连接恢复后 onStatus 会带原 sessionToken 自动
         // 重新入房；真回不去（快照被丢弃）时那一步会走会话失效分支并清票据。
-        useSonGuessrStore.getState().setNotice(message, "error", 10_000);
+        useSonGuessrStore.getState().showToast(message, "error", 10_000);
         break;
       }
     }

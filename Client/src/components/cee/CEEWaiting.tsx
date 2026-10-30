@@ -311,7 +311,7 @@ export function CEEWaiting({
 
       <RoomLinkShare
         path={ceeRoomPath(snapshot.roomId)}
-        onCopyError={() => useCEEStore.getState().setNotice("复制失败，请手动复制", "error")}
+        onCopyError={() => useCEEStore.getState().showToast("复制失败，请手动复制", "error")}
       />
 
       {others.length ? (

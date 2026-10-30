@@ -99,7 +99,7 @@ export function CEEPlayerList({
     if (!pendingMe) return;
     if (watchdog.current) clearTimeout(watchdog.current);
     watchdog.current = setTimeout(
-      () => useCEEStore.getState().setNotice(SPECTATE_TIMEOUT_TEXT, "error"),
+      () => useCEEStore.getState().showToast(SPECTATE_TIMEOUT_TEXT, "error"),
       SPECTATE_APPROVAL_WATCHDOG_MS
     );
     return () => {

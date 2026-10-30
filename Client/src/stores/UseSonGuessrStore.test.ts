@@ -296,7 +296,7 @@ describe("Songuessr store integration", () => {
     expect(getSonGuessrSessionToken("2345")).toBeNull();
     expect(getSessionToken("2345")).toBe("live-faker-token");
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
-    expect(useSonGuessrStore.getState().notice).toEqual({
+    expect(useSonGuessrStore.getState().toast).toEqual({
       text: "会话已失效，请重新加入",
       type: "error",
     });
@@ -414,7 +414,7 @@ describe("Songuessr store integration", () => {
     ["song.room.closed", "房间已关闭"],
     ["song.room.kicked", "你已被移出房间"],
     ["session.replaced", "当前席位已在另一个标签页接管"],
-  ])("clears local authority when receiving %s", (event, notice) => {
+  ])("clears local authority when receiving %s", (event, toast) => {
     saveSonGuessrSessionToken("4567", "room-token");
     useSonGuessrStore.setState({
       roomId: "4567",
@@ -432,7 +432,7 @@ describe("Songuessr store integration", () => {
       sessionToken: null,
       snapshot: null,
       privateState: null,
-      notice: { text: notice, type: "error" },
+      toast: { text: toast, type: "error" },
     });
     expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
     dispose();
@@ -455,7 +455,7 @@ describe("Songuessr store integration", () => {
       expect(useSonGuessrStore.getState()).toMatchObject({
         roomId: "4567",
         sessionToken: "room-token",
-        notice: { text: SERVER_SHUTDOWN_MESSAGE, type: "error" },
+        toast: { text: SERVER_SHUTDOWN_MESSAGE, type: "error" },
       });
       expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
     } finally {

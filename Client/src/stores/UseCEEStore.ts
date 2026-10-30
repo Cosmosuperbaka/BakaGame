@@ -62,10 +62,11 @@ export interface CEEStore {
   privateState: CEEPrivateState | null;
   agentFocus: AgentFocusEvent | null;
   roomClosedAt: number | null;
-  notice: { text: string; type: "info" | "error" | "success" } | null;
+  /** 单槽：新提示顶掉旧提示。 */
+  toast: { text: string; type: "info" | "error" | "success" } | null;
   /** 最近一次要求登录的时刻；CEELayout 监听它去打开登录弹窗。0 表示没有待办请求。 */
   requestLoginAt: number;
-  setNotice: (text: string, type?: "info" | "error" | "success") => void;
+  showToast: (text: string, type?: "info" | "error" | "success") => void;
   setAgentFocus: (focus: AgentFocusEvent | null) => void;
   /** 统一处理命令/同步失败：按错误码取文案弹提示，LOGIN_REQUIRED 顺带请求打开登录弹窗。 */
   reportError: (error: unknown) => void;
@@ -115,7 +116,7 @@ let syncDeferred = false;
  * 任何主动同步都会被原版会话校验拒绝。
  */
 let enteringRoom = false;
-let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let connectionGeneration = 0;
 /**
  * 入房/恢复事务的作废代次。退房、房间关闭、被踢与会话接管都会让它前进：
@@ -243,17 +244,17 @@ export const useCEEStore = create<CEEStore>((set, get) => {
     privateState: null,
     agentFocus: null,
     roomClosedAt: null,
-    notice: null,
+    toast: null,
     requestLoginAt: 0,
-    setNotice: (text, type = "error") => {
-      clearTimeout(noticeTimer);
-      set({ notice: { text, type } });
-      noticeTimer = setTimeout(() => set({ notice: null }), 5000);
+    showToast: (text, type = "error") => {
+      clearTimeout(toastTimer);
+      set({ toast: { text, type } });
+      toastTimer = setTimeout(() => set({ toast: null }), 5000);
     },
     setAgentFocus: (agentFocus) => set({ agentFocus }),
     promptLogin: () => set({ requestLoginAt: Date.now() }),
     reportError: (error) => {
-      get().setNotice(ceeErrorMessage(error));
+      get().showToast(ceeErrorMessage(error));
       if (isProtocolError(error) && isLoginRequiredCode(error.code)) get().promptLogin();
     },
     subscribeLobby: async () => {
@@ -430,7 +431,7 @@ export function handleCEEMessage(message: ServerMessage) {
     const approved = (message.payload as { approved?: boolean }).approved === true;
     useCEEStore
       .getState()
-      .setNotice(
+      .showToast(
         approved ? SPECTATE_APPROVED_TEXT : SPECTATE_REJECTED_TEXT,
         approved ? "success" : "error"
       );
@@ -444,12 +445,12 @@ export function handleCEEMessage(message: ServerMessage) {
     if (store.roomId) removeCEESession(store.roomId);
     store.resetRoom(true);
     const payload = message.payload as { reason?: string; message?: string };
-    store.setNotice(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");
+    store.showToast(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");
   } else if (message.event === "server.shutdown") {
     // 原地待命：不清会话、不重置房间。重启后由 useCEERoomLifecycle 带原票据重进；
     // 真回不去时会走上面的会话结束分支。
     const payload = message.payload as { message?: string; reason?: string };
-    store.setNotice(payload.message ?? payload.reason ?? "服务正在重启，稍后将自动重连");
+    store.showToast(payload.message ?? payload.reason ?? "服务正在重启，稍后将自动重连");
   }
 }
 
@@ -468,7 +469,7 @@ export function initCEEWs() {
     // URL 房间会话仅由 useCEERoomLifecycle 恢复，避免订阅 ACK 与页面 effect 争抢重连。
     void store.subscribeLobby().catch((error: unknown) => {
       if (initialized && generation === connectionGeneration && useCEEStore.getState().connected)
-        store.setNotice(ceeErrorMessage(error));
+        store.showToast(ceeErrorMessage(error));
     });
   });
   ws.connect();

@@ -2,7 +2,7 @@ import { protocolErrorCode } from "@bakagame/shared";
 
 /**
  * 恢复房间命中永久错误（见共享 `PERMANENT_ROOM_ERROR_CODES`）时给玩家看的说明。
- * 卧底与猜歌只是提示通道不同（toast / notice），文案口径只有这一份。
+ * 卧底与猜歌只是提示通道不同（队列 / 单槽），文案口径只有这一份。
  */
 export const permanentRoomErrorMessage = (error: unknown): string => {
   const code = protocolErrorCode(error);

@@ -31,7 +31,7 @@ export default function SonGuessrPage() {
   const createRoom = useSonGuessrStore((state) => state.createRoom);
   const joinRoom = useSonGuessrStore((state) => state.joinRoom);
   const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
 
   const {
     userName,
@@ -58,7 +58,7 @@ export default function SonGuessrPage() {
     createRoom,
     joinRoom,
     reconnectRoom,
-    showError: (message) => setNotice(message, "error"),
+    showError: (message) => showToast(message, "error"),
     // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的房间设置套进新房间。
     onRoomCreated: (roomId, params) => {
       saveRoomCreateDefaults("song", {

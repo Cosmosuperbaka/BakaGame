@@ -8,8 +8,8 @@ import { AccountDialogs } from "@/components/account/AccountEntry";
 import { SongSoundBridge } from "@/components/songuessr/SongSoundBridge";
 
 function SonGuessrLayout() {
-  const notice = useSonGuessrStore((state) => state.notice);
-  const toasts = notice ? [{ id: `${notice.type}:${notice.text}`, ...notice }] : [];
+  const toast = useSonGuessrStore((state) => state.toast);
+  const toasts = toast ? [{ id: `${toast.type}:${toast.text}`, ...toast }] : [];
   return (
     <SonGuessrProvider>
       <SongSoundBridge />

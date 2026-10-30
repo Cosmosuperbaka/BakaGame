@@ -54,7 +54,7 @@ const pickPlayback = (
 
 export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) {
   const navigate = usePageNavigate();
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const connected = useSonGuessrStore((state) => state.connected);
 
   const {
@@ -95,12 +95,12 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
       try {
         await sendCommand("song.chat.send", { text: chatText });
       } catch (error) {
-        setNotice((error as { message: string }).message, "error");
+        showToast((error as { message: string }).message, "error");
         // 继续抛出：聊天面板要靠这次 reject 把原文收回输入框，吞掉就等于让玩家白打一遍
         throw error;
       }
     },
-    [sendCommand, setNotice]
+    [sendCommand, showToast]
   );
 
   // 严禁给这个 audio 加 crossOrigin：解灰音源（kuwo 等）不返回 Access-Control-Allow-Origin，

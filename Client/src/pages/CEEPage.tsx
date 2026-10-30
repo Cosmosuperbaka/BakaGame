@@ -64,7 +64,7 @@ export default function CEEPage() {
         if (active && useCEEStore.getState().connected) return store.subscribeLobby();
       })
       .catch((failure) => {
-        if (active) store.setNotice(ceeErrorMessage(failure));
+        if (active) store.showToast(ceeErrorMessage(failure));
       })
       .finally(() => {
         if (active) setLeaving(false);
@@ -115,7 +115,7 @@ export default function CEEPage() {
     joinRoom: (roomId, name, password, signal) =>
       useCEEStore.getState().joinRoom(roomId, name, password, signal),
     reconnectRoom: (roomId, signal) => useCEEStore.getState().reconnectRoom(roomId, signal),
-    showError: (message) => useCEEStore.getState().setNotice(message, "error"),
+    showError: (message) => useCEEStore.getState().showToast(message, "error"),
     // 反作弊房在进房前就被拒（需要客户端 / 需要登录）：走统一入口，给具体文案并顺带拉起登录。
     onEntryError: (error) => useCEEStore.getState().reportError(error),
     // 创建成功后记住这次的选项并登记：进房后等待页据此把上次的玩法设置套进新房间。

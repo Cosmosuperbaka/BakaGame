@@ -48,7 +48,7 @@ const panel = () =>
 
 describe("SongAccountSettings", () => {
   let sendCommand: ReturnType<typeof vi.fn<SonGuessrStore["sendCommand"]>>;
-  let setNotice: ReturnType<typeof vi.fn<SonGuessrStore["setNotice"]>>;
+  let showToast: ReturnType<typeof vi.fn<SonGuessrStore["showToast"]>>;
 
   beforeEach(() => {
     clearStoredSongMusicSession();
@@ -57,10 +57,10 @@ describe("SongAccountSettings", () => {
     sendCommand = vi
       .fn<SonGuessrStore["sendCommand"]>()
       .mockResolvedValue(qrResponse("initial-qr"));
-    setNotice = vi.fn<SonGuessrStore["setNotice"]>();
+    showToast = vi.fn<SonGuessrStore["showToast"]>();
     useSonGuessrStore.setState({
       sendCommand: sendCommand as unknown as SonGuessrStore["sendCommand"],
-      setNotice,
+      showToast,
     });
   });
 
@@ -208,7 +208,7 @@ describe("SongAccountSettings", () => {
 
     expect(sendCommand.mock.calls).toEqual([["song.auth.clear"], ["song.auth.qr.create"]]);
     expect(getStoredSongMusicSession()).toBeNull();
-    expect(setNotice).toHaveBeenCalledWith("已退出网易云账号", "success");
+    expect(showToast).toHaveBeenCalledWith("已退出网易云账号", "success");
     expect(await screen.findByAltText("网易云登录二维码")).toHaveAttribute(
       "src",
       qrResponse("after-logout").qrImage
@@ -248,7 +248,7 @@ describe("SongAccountSettings", () => {
       expect(screen.queryByAltText("网易云登录二维码")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "刷新二维码" })).toBeDisabled();
       expect(screen.queryByText("旧二维码请求失败")).not.toBeInTheDocument();
-      expect(setNotice).not.toHaveBeenCalled();
+      expect(showToast).not.toHaveBeenCalled();
 
       await act(async () => {
         freshCreate.resolve(qrResponse("fresh-qr"));
@@ -284,7 +284,7 @@ describe("SongAccountSettings", () => {
       oldCheck.resolve(authorizedResponse);
     });
     expect(getStoredSongMusicSession()).toBeNull();
-    expect(setNotice).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "刷新二维码" })).toBeDisabled();
 
     await act(async () => {
@@ -302,7 +302,7 @@ describe("SongAccountSettings", () => {
     // 服务端装好会话后推送的快照里 musicAccountReady 为真，账号随之出现。
     view.rerender(<SongAccountSettings snapshot={snapshot(true)} />);
     expect(panel().getByText("夹具账号")).toBeInTheDocument();
-    expect(setNotice).toHaveBeenCalledExactlyOnceWith("网易云账号已加载到当前房间", "success");
+    expect(showToast).toHaveBeenCalledExactlyOnceWith("网易云账号已加载到当前房间", "success");
   });
 
   it.each(["close", "room-change", "unmount"])(
@@ -340,7 +340,7 @@ describe("SongAccountSettings", () => {
       });
       expect(sendCommand).toHaveBeenCalledTimes(2);
       expect(getStoredSongMusicSession()).toEqual(previousSession);
-      expect(setNotice).not.toHaveBeenCalled();
+      expect(showToast).not.toHaveBeenCalled();
       expect(screen.queryByText("夹具账号")).not.toBeInTheDocument();
     }
   );

@@ -22,7 +22,7 @@ export default function CEERoomPage() {
   // 整局回放的历史要在房间页累积：游戏区按局数重挂载，放进去会被换局清空。
   const replayRounds = useCEERoundHistory(snapshot);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
-  const showError = (error: unknown) => useCEEStore.getState().setNotice(ceeErrorMessage(error));
+  const showError = (error: unknown) => useCEEStore.getState().showToast(ceeErrorMessage(error));
   const sendChat = async (text: string) => {
     await useCEEStore.getState().sendCommand("cee.chat.send", { text });
   };
@@ -46,7 +46,7 @@ export default function CEERoomPage() {
   // 密码步的失败写在密码框下（RoomJoinGate 的 passwordError）；其余加入失败（房间已满、已关闭等）以提示条报出。
   const passwordFailure = CEE_PASSWORD_ERROR_CODES.has(lifecycle.errorCode);
   useEffect(() => {
-    if (lifecycle.error && !passwordFailure) useCEEStore.getState().setNotice(lifecycle.error);
+    if (lifecycle.error && !passwordFailure) useCEEStore.getState().showToast(lifecycle.error);
   }, [lifecycle.error, passwordFailure]);
 
   if (!ready) {

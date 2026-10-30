@@ -106,7 +106,7 @@ export function SongQuestionSettings({
   solo?: boolean;
   readOnly?: boolean;
 }) {
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [draft, setDraft] = useState(() => questionOf(snapshot));
   const values = readOnly ? questionOf(snapshot) : draft;
   const edit = <K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) =>
@@ -134,7 +134,7 @@ export function SongQuestionSettings({
     {
       enabled: !readOnly && snapshot.phase === "waiting",
       onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
     }
   );
 
@@ -270,7 +270,7 @@ function SongAutoFilters({
   const readOnly = useSettingsReadOnly();
   const searchArtist = useSonGuessrStore((state) => state.searchArtist);
   const resolvePlaylistQuery = useSonGuessrStore((state) => state.resolvePlaylist);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [playlistDraft, setPlaylistDraft] = useState(values.playlist?.id ?? "");
   const [resolvingPlaylist, setResolvingPlaylist] = useState(false);
   const [artistDraft, setArtistDraft] = useState("");
@@ -307,9 +307,9 @@ function SongAutoFilters({
       // 走 store 封装：同一份链接在复用窗口内不会重复请求上游。
       const result = await resolvePlaylistQuery(playlistDraft);
       edit("playlist", result);
-      setNotice(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
+      showToast(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
     } catch (error) {
-      setNotice((error as { message?: string }).message ?? "读取歌单失败", "error");
+      showToast((error as { message?: string }).message ?? "读取歌单失败", "error");
     } finally {
       setResolvingPlaylist(false);
     }
@@ -515,7 +515,7 @@ export function SongGameSettings({
   solo?: boolean;
   readOnly?: boolean;
 }) {
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [draft, setDraft] = useState(() => gameOf(snapshot));
   const values = readOnly ? gameOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
@@ -531,7 +531,7 @@ export function SongGameSettings({
     {
       enabled: !readOnly && snapshot.phase === "waiting",
       onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
     }
   );
 
@@ -605,7 +605,7 @@ export function SongRoomSettings({
   snapshot: SonGuessrRoomSnapshot;
   readOnly?: boolean;
 }) {
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
   const [draft, setDraft] = useState(() => roomOf(snapshot));
   const values = readOnly ? roomOf(snapshot) : draft;
   const edit = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
@@ -625,7 +625,7 @@ export function SongRoomSettings({
         snapshot.phase === "waiting" &&
         (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
       onError: (error) =>
-        setNotice((error as { message?: string }).message ?? "保存设置失败", "error"),
+        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
     }
   );
 

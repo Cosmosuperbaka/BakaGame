@@ -127,7 +127,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const joinRoom = useSonGuessrStore((state) => state.joinRoom);
   const reconnectRoom = useSonGuessrStore((state) => state.reconnectRoom);
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const setNotice = useSonGuessrStore((state) => state.setNotice);
+  const showToast = useSonGuessrStore((state) => state.showToast);
 
   const alreadyInRoom = storedRoomId === roomId && snapshot?.roomId === roomId;
   const [joining, setJoining] = useState(!alreadyInRoom);
@@ -191,7 +191,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           if (appError.code === "MUSIC_SESSION_INVALID") {
             cancelMusicSessionUpload(platform);
             clearStoredSongMusicSession(platform);
-            setNotice(`${platformName}登录状态已失效，请重新扫码登录`, "error");
+            showToast(`${platformName}登录状态已失效，请重新扫码登录`, "error");
             return;
           }
           const delay = musicSessionRetryDelay(attempt, appError);
@@ -205,7 +205,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         }
       }
     },
-    [cancelMusicSessionUpload, sendCommand, setNotice]
+    [cancelMusicSessionUpload, sendCommand, showToast]
   );
 
   useEffect(() => () => cancelMusicSessionUpload(), [cancelMusicSessionUpload]);
@@ -243,11 +243,11 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         return true;
       } catch (createError) {
         if (signal.aborted) return true;
-        setNotice((createError as { message?: string }).message ?? "创建房间失败", "error");
+        showToast((createError as { message?: string }).message ?? "创建房间失败", "error");
         return false;
       }
     },
-    [createRoom, roomId, setNotice]
+    [createRoom, roomId, showToast]
   );
 
   const enterWithName = useCallback(
@@ -271,12 +271,12 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
           setJoining(false);
           return;
         } else {
-          setNotice(appError.message ?? "加入房间失败", "error");
+          showToast(appError.message ?? "加入房间失败", "error");
         }
         void navigate(exitPath, { replace: true });
       }
     },
-    [createMissingRoom, exitPath, joinRoom, navigate, roomId, setNotice]
+    [createMissingRoom, exitPath, joinRoom, navigate, roomId, showToast]
   );
 
   const createSoloRoom = useCallback(
@@ -312,7 +312,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       } catch (error) {
         if (signal.aborted) return;
         if ((error as { code?: string }).code !== "ROOM_EXISTS") {
-          setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
+          showToast((error as { message?: string }).message ?? "创建单人房间失败", "error");
           void navigate("/", { replace: true });
           return;
         }
@@ -326,11 +326,11 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         setJoining(false);
       } catch (error) {
         if (signal.aborted) return;
-        setNotice((error as { message?: string }).message ?? "创建单人房间失败", "error");
+        showToast((error as { message?: string }).message ?? "创建单人房间失败", "error");
         void navigate("/", { replace: true });
       }
     },
-    [createSoloRoom, navigate, setNotice]
+    [createSoloRoom, navigate, showToast]
   );
 
   useEffect(() => {
@@ -352,7 +352,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     // 只按房间身份清理；snapshot/ACK 更新不能取消已成功接入的会话。
     if (!roomId || alreadyInRoom) return cleanup;
     if (!isValidRoomId(roomId)) {
-      setNotice("房间号无效，请检查链接", "error");
+      showToast("房间号无效，请检查链接", "error");
       void navigate(exitPath, { replace: true });
       return cleanup;
     }
@@ -364,7 +364,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
         await waitForConnection(8_000);
       } catch {
         if (signal.aborted) return;
-        setNotice("连接服务器超时，请刷新重试", "error");
+        showToast("连接服务器超时，请刷新重试", "error");
         void navigate(exitPath, { replace: true });
         return;
       }
@@ -375,7 +375,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
       } catch (error) {
         if (signal.aborted) return;
         // 临时恢复失败不是“没有可恢复会话”，不能继续自动创建。
-        setNotice((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
+        showToast((error as { message?: string }).message ?? "恢复房间失败，请重试", "error");
         void navigate(exitPath, { replace: true });
         return;
       }
@@ -486,7 +486,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const handleConfirmName = async () => {
     const name = nameDraft.trim();
     if (!name) {
-      setNotice("请输入用户名", "error");
+      showToast("请输入用户名", "error");
       return;
     }
     saveUsername(name);
@@ -512,15 +512,15 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     setPendingCommands((prev) => ({ ...prev, [type]: true }));
     try {
       await sendCommand(type, payload, isLongRunningCommand(type) ? { timeout: 0 } : undefined);
-      if (success) setNotice(success, "success");
+      if (success) showToast(success, "success");
     } catch (error) {
       const appError = error as { code?: string; message?: string };
       if (appError.code === "MUSIC_SESSION_INVALID") {
         cancelMusicSessionUpload();
-        setNotice(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
+        showToast(appError.message ?? "音乐登录会话已失效，请重新确认登录状态", "error");
         return;
       }
-      setNotice(appError.message ?? "操作失败", "error");
+      showToast(appError.message ?? "操作失败", "error");
     } finally {
       inFlightCommandsRef.current.delete(type);
       setPendingCommands((prev) => {
