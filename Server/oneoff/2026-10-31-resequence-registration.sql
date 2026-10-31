@@ -8,6 +8,10 @@
 -- 执行：`cd Server && bun run db:oneoff oneoff/2026-10-31-resequence-registration.sql --dry-run`
 -- 核对语句后去掉 `--dry-run` 在每个环境各跑一次，随后删除本文件（规则见 Server/docs/Database.md）。
 -- 可重跑：重排结果不变，补发与佩戴都按「尚缺才补」判定。
+--
+-- ⚠️ 不要为了「把表自增计数改回去」追加 `ALTER TABLE ... AUTO_INCREMENT = 1`：
+--    TiDB 不接受调低，会把下一条插入推到更大的随机值（v8.5 实测调 1 之后下一条拿到 1687982）。
+--    重排后表 `AUTO_INCREMENT` 停在百万级属正常，应用层按 `max(seq)+1` 显式赋值，不受它影响。
 
 -- 1. 先整体挪到高位，避开重排过程中的主键冲突。
 UPDATE `user_registration` SET `seq` = `seq` + 1000000;
