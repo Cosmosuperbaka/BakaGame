@@ -177,18 +177,18 @@ describe("LandingPage", () => {
     expect(screen.queryByText(/反作弊/)).not.toBeInTheDocument();
   });
 
-  it("开放猜角色多人模式并保留排位与锦标赛未上线状态", () => {
+  it("开放猜角色多人模式与排位赛，锦标赛保留未上线状态", () => {
     renderLandingPage();
 
     const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
     const songEntry = screen.getByTestId("game-entry-songuessr");
     expect(ceeEntry).toBeInTheDocument();
     expect(ceeEntry.querySelector("[aria-disabled='true']")).toBeInTheDocument();
-    expect(within(ceeEntry).getAllByText("即将上线")).toHaveLength(2);
+    expect(within(ceeEntry).getAllByText("即将上线")).toHaveLength(1);
 
     expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    expect(within(ceeEntry).getByRole("button", { name: /排位赛/ })).toBeEnabled();
     expect(within(ceeEntry).getByText("多人模式")).toBeInTheDocument();
-    expect(within(ceeEntry).getByText("排位赛")).toBeInTheDocument();
     expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
 
     // Songuessr 两个子模式都已开放，不应再出现即将上线角标

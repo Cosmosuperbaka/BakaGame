@@ -93,7 +93,8 @@ const GAMES: GameEntry[] = [
       {
         id: "ranked",
         title: "排位赛",
-        available: false,
+        path: "/cee/ranked",
+        available: true,
       },
       {
         id: "tournament",
