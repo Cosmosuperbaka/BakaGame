@@ -298,7 +298,27 @@ fn spawn_device_bootstrap(app: tauri::AppHandle, dir: PathBuf) {
 
 /// 只允许留在壳自己的站点与空白页上，其余导航一律拒绝（外链应由页面用系统浏览器打开）
 fn navigation_allowed(url: &str, site: &str) -> bool {
-    url.starts_with(site) || url == "about:blank" || url.starts_with("https://bg.baka.website")
+    url == "about:blank" || within_site(url, site) || within_site(url, "https://bg.baka.website")
+}
+
+/// `url` 是否落在 `base` 这个站点上：整串相等，或紧接 `/`、`?`、`#` 的子路径。
+///
+/// 不能用 `starts_with(base)` 了事——那样 `https://game.baka.website.evil.example`
+/// 也算「同一个站点」，页面能把窗口导航到外站，站内身份就成了钓鱼的外壳。
+fn within_site(url: &str, base: &str) -> bool {
+    let base = base.trim_end_matches('/');
+    if base.is_empty() {
+        return false;
+    }
+    match url.strip_prefix(base) {
+        Some(rest) => {
+            rest.is_empty()
+                || rest.starts_with('/')
+                || rest.starts_with('?')
+                || rest.starts_with('#')
+        }
+        None => false,
+    }
 }
 
 fn create_main_window(app: &tauri::App) -> Result<tauri::WebviewWindow, Box<dyn std::error::Error>> {
@@ -397,4 +417,26 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("BakaGame 桌面壳运行失败");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 站内导航要放行，前缀相同的域名要挡住（否则窗口能被导航去外站当钓鱼壳）
+    #[test]
+    fn navigation_stays_on_site() {
+        let site = "https://game.baka.website";
+        assert!(navigation_allowed("https://game.baka.website", site));
+        assert!(navigation_allowed("https://game.baka.website/", site));
+        assert!(navigation_allowed("https://game.baka.website/cee?x=1", site));
+        assert!(navigation_allowed("https://game.baka.website#top", site));
+        assert!(navigation_allowed("about:blank", site));
+        assert!(navigation_allowed("https://bg.baka.website/a.png", site));
+
+        assert!(!navigation_allowed("https://game.baka.website.evil.example/", site));
+        assert!(!navigation_allowed("https://evil.example/?next=https://game.baka.website", site));
+        assert!(!navigation_allowed("https://game.baka.website:8443/", site));
+        assert!(!navigation_allowed("http://localhost:5173/", site));
+    }
 }
