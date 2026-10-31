@@ -14,6 +14,7 @@
 | Bangumi 数据集构建、标签、声优或角色资料 | [BangumiDataset](docs/BangumiDataset.md) |
 | 番剧筛选、曲目匹配或出题预算 | [BangumiSongMatch](docs/BangumiSongMatch.md) |
 | CEE 玩法、房间、隐私、协议或原版互通 | [CEE](docs/CEE.md)；数据口径另查 BangumiDataset |
+| CEE 排位赛的赛制、评分、难度档、人机、匹配或审计记录 | [CEERanked](docs/CEERanked.md) |
 | 桌面 / 移动客户端通道证明、完整性自检、强制更新 | [ClientChannel](docs/ClientChannel.md) |
 | 登录、账号资料、头像、账号 HTTP API、云同步、站内反馈、管理员 | [Account](docs/Account.md) |
 | 数据库表结构、迁移、连接或数据导入 | [Database](docs/Database.md) |
