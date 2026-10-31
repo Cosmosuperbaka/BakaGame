@@ -1,5 +1,5 @@
 // ==================== 一次性建表脚本与 schema 的一致性 ====================
-// `Server/drizzle/0014_cee_ranked.sql` 是真正在各环境执行的那份文本，Schema.ts 是唯一真相源。
+// `Server/oneoff/2026-10-31-cee-ranked.sql` 是真正在各环境执行的那份文本，Schema.ts 是唯一真相源。
 // 两者靠人工同步，最容易漏的是「加了列忘了脚本」和「列宽改了脚本没改」，所以这里逐列比对，
 // 而不是只数一下列的个数。脚本尚未在任何环境执行过，因此它直接写 CREATE TABLE，不含 ALTER。
 import { describe, expect, test } from "bun:test";
@@ -15,7 +15,7 @@ import {
   ceeRankedSeriesPlayer,
 } from "../src/infrastructure/db/Schema";
 
-const SQL_PATH = resolve(import.meta.dir, "../drizzle/0014_cee_ranked.sql");
+const SQL_PATH = resolve(import.meta.dir, "../oneoff/2026-10-31-cee-ranked.sql");
 const SCRIPT = readFileSync(SQL_PATH, "utf8").replaceAll("\r\n", "\n");
 
 /** drizzle 列对象上这一批用得着的元数据；只读比对，不参与建表。 */
