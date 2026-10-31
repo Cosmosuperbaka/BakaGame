@@ -667,6 +667,10 @@ const tuneSection = (pool: TierPool, seed: number): string[] => {
     "写回 `CEE_RANKED_BOT_ANCHORS` 时只替换下面这些字段，维度、策略、锁定阈值、开局 K 与 `thinkSigma` 不动。"
   );
   lines.push("");
+  lines.push(
+    "搜索结果只作参考：知识面与推理等级能互相替代，多组取值都贴合 d1 目标，贪心搜索还会在第一档就把知识面抬高、锁死后面各档。写回前对照默认模式的 d3、d5 两档，优先选两者都随分数平稳上升的组合。"
+  );
+  lines.push("");
   lines.push("```ts");
   for (const [index, result] of results.entries()) {
     const target = TARGETS[index];
