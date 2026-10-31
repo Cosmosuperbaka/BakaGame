@@ -84,7 +84,7 @@ where
         .post(&url)
         .json(body)
         .send()
-        .map_err(|e| ApiError::local(format!("请求 {path} 失败：{e}")))?;
+        .map_err(|e| ApiError::local(format!("请求 {url} 失败：{e}")))?;
     let status = response.status();
     if !status.is_success() {
         // 4xx 的响应体只有几百字节，读全文不改变「不重试」的结论；读不动就退回状态码文本
@@ -94,10 +94,17 @@ where
             .and_then(|envelope| envelope.error)
             .map(ErrorBody::split)
             .unwrap_or_default();
+        if code.is_none() && message.is_none() {
+            // 解不出信封多半是中间网关插了一手（生产边缘 502 是 HTML 兜底页）：
+            // 把地址与响应体开头打到控制台，省得只看「HTTP 502」时连打到哪都不知道。
+            let head: String = text.chars().take(160).collect();
+            let head = head.split_whitespace().collect::<Vec<_>>().join(" ");
+            eprintln!("[BakaGame http] POST {url} -> {status}，响应体开头：{head}");
+        }
         return Err(ApiError {
             message: message
                 .filter(|m| !m.trim().is_empty())
-                .unwrap_or_else(|| format!("{path} 被拒绝：HTTP {status}")),
+                .unwrap_or_else(|| format!("{url} 被拒绝：HTTP {status}")),
             code,
         });
     }

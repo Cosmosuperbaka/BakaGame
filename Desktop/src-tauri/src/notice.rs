@@ -44,6 +44,10 @@ pub fn log_identity() {
         crate::config::build_id(),
         BUILD_CANARY,
     );
+    // 站点与实际接口基址各打一行：注册被 502 这类「不知道请求打到哪」的问题，
+    // 第一眼就能看出是不是被环境私有的变量指去了别的入口（生产网关返回的 502 是 HTML）。
+    eprintln!("[BakaGame desktop] site={}", crate::config::site_url());
+    eprintln!("[BakaGame desktop] api={}", crate::config::api_base());
     // 引用条款常量：即使将来不再打印全文，`.rodata` 里也必须留着它
     let notice_len = CLIENT_NOTICE.len();
     if notice_len == 0 {
