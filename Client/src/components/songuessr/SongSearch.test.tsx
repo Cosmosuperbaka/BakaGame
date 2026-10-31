@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -262,9 +262,10 @@ describe("AnimeSearch", () => {
     await waitFor(() =>
       expect(screen.queryByRole("option", { name: /更换番剧/ })).not.toBeInTheDocument()
     );
-    const subject = screen.getByRole("option", { name: /夏空旋律/ });
+    const subject = await screen.findByRole("option", { name: /夏空旋律/ });
 
-    await user.click(subject);
+    // 列表切换时退场项会保留 `pointer-events: none`，直接派发点击，不依赖像素命中。
+    fireEvent.click(subject);
     await user.click(
       await screen.findByRole("option", { name: /OP.*コトノハ · OP 单曲|コトノハ · OP 单曲.*OP/ })
     );
