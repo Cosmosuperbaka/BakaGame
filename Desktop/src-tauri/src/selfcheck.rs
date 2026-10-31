@@ -150,9 +150,12 @@ pub fn run(key_protection: KeyProtection) -> SelfCheckReport {
             None => {}
         }
 
-        // 3. 模块枚举 + 4. PEB LDR 交叉验证
-        let snapshot = toolhelp_modules();
-        let ldr = crate::peb::load_order_modules();
+        // 3. 模块枚举 + 4. PEB LDR 交叉验证。
+        //    模块是并发载入的：Toolhelp 快照与 PEB 遍历之间只要有一条 DLL 正在加载，
+        //    两份列表就会瞬时差一条（PEB 先建表项、快照还看不到），照直判 mismatch 会把
+        //    正常启动记成 Untrusted——实测冷启动后第一次自检就撞上过 `twinapi.dll`。
+        //    所以重采几次，只有持续不一致才认定枚举 API 被 hook。
+        let (snapshot, ldr) = sample_module_lists();
         match (&snapshot, &ldr) {
             (Some(modules), Some(entries)) => {
                 // 交叉验证：两份列表的基址集合必须一致，不一致说明有人 hook 了模块枚举 API
@@ -265,6 +268,34 @@ fn toolhelp_modules() -> Option<Vec<ModuleRecord>> {
     }
     unsafe { w::CloseHandle(snapshot) };
     Some(out)
+}
+
+/// 交叉验证的采样次数：模块并发载入时单次采样可能撞上「正在加载」的那一条
+const MODULE_SAMPLE_ATTEMPTS: usize = 3;
+/// 两次采样之间的间隔，让在途的载入/卸载有机会落定
+const MODULE_SAMPLE_RETRY: std::time::Duration = std::time::Duration::from_millis(15);
+
+/// 取 Toolhelp 与 PEB 两份模块列表；基址集合不一致就重采，直到一致或次数用尽。
+/// 用尽时把最后一次（仍不一致）的结果交给调用方，由它按 `ldr_list_mismatch` 上报。
+#[cfg(target_os = "windows")]
+fn sample_module_lists() -> (Option<Vec<ModuleRecord>>, Option<Vec<crate::peb::LoadedModule>>) {
+    let mut sample = (toolhelp_modules(), crate::peb::load_order_modules());
+    for _ in 1..MODULE_SAMPLE_ATTEMPTS {
+        let agree = match (&sample.0, &sample.1) {
+            (Some(left), Some(right)) => {
+                sorted_bases(left.iter().map(|m| m.base))
+                    == sorted_bases(right.iter().map(|m| m.base))
+            }
+            // 单边失败属于「无法执行」，不在这里重试，交给调用方按失败关闭处理
+            _ => true,
+        };
+        if agree {
+            break;
+        }
+        std::thread::sleep(MODULE_SAMPLE_RETRY);
+        sample = (toolhelp_modules(), crate::peb::load_order_modules());
+    }
+    sample
 }
 
 /// 进程快照里找到自己那一条，取父进程名
@@ -529,5 +560,26 @@ mod diag {
     #[allow(dead_code)]
     pub fn note(id: &str, detail: &str) {
         line("NOTE", id, detail);
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    /// 两份模块列表在静默进程里必须一致且非空：`PEB_LDR` 偏移写错、枚举被拦、
+    /// 交叉验证逻辑改坏，都会在这条用例上露头（而不是等到线上判 Untrusted 才发现）。
+    #[test]
+    fn module_lists_agree() {
+        let (snapshot, ldr) = sample_module_lists();
+        let snapshot = snapshot.expect("Toolhelp 模块枚举必须成功");
+        let ldr = ldr.expect("PEB 模块链表遍历必须成功");
+        assert!(snapshot.len() > 4, "Toolhelp 模块数偏少：{}", snapshot.len());
+        assert!(ldr.len() > 4, "PEB 模块数偏少：{}", ldr.len());
+        assert_eq!(
+            sorted_bases(snapshot.iter().map(|m| m.base)),
+            sorted_bases(ldr.iter().map(|m| m.base)),
+            "两份模块列表基址不一致"
+        );
     }
 }

@@ -10,8 +10,10 @@
 
 use std::ffi::c_void;
 
-/// `PEB.Ldr`
-const PEB_LDR: usize = 0x10;
+/// `PEB.Ldr`。x64 上 `0x10` 是 `ImageBaseAddress`，`Ldr` 在 `0x18`——
+/// 写成 0x10 会把主模块基址当链表头，走出野指针后 `load_order_modules()` 直接返回 `None`，
+/// 自检于是恒报 `ldr_enumeration_failed`、整机所有客户端都判 Untrusted。
+const PEB_LDR: usize = 0x18;
 /// `PEB_LDR_DATA.InLoadOrderModuleList`（`LIST_ENTRY`）
 const LDR_IN_LOAD_ORDER_LIST: usize = 0x10;
 /// `LDR_DATA_TABLE_ENTRY.InLoadOrderLinks`（`LIST_ENTRY`，本结构体首字段）
@@ -147,4 +149,25 @@ fn read_unicode_string(value: &UnicodeString) -> Option<String> {
     }
     let usable = (read / 2).min(chars);
     Some(String::from_utf16_lossy(&buf[..usable]))
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::*;
+
+    /// 回归守卫：`PEB_LDR` 写成 `0x10`（x64 上那是 `ImageBaseAddress`）时，遍历会立刻撞上
+    /// 野指针并返回 `None`，自检于是恒报 `ldr_enumeration_failed`、所有客户端一律 Untrusted，
+    /// 而日志里只有「枚举失败」四个字，根本看不出是偏移量写错了。这条用例把
+    /// 「能走通且内容合理」钉死：偏移错了第一句断言就炸。
+    #[test]
+    fn walks_own_module_list() {
+        let modules = load_order_modules().expect("自身模块链表必须能遍历");
+        assert!(modules.len() > 4, "模块数明显偏少：{}", modules.len());
+        assert!(modules.iter().all(|m| m.base != 0), "存在基址为 0 的模块");
+        let paths: Vec<String> = modules.iter().map(|m| m.path.to_ascii_lowercase()).collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("ntdll.dll")),
+            "遍历结果里没有 ntdll.dll，偏移量或用例取值可能不对"
+        );
+    }
 }
