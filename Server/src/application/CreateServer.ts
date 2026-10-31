@@ -256,6 +256,8 @@ export function createServer(
     clientChannel,
     clientArtifacts,
     clientWebBundle,
+    // 入口可见性读运行期旋钮的同步快照：没库时就是环境变量缺省，与其它 T3 项同一口径。
+    siteFeatures: () => ({ ceeRankedEntry: settings.boolean("enableCeeRankedEntry") }),
     disposeResources: async () => {
       // 回读定时器不参与退出竞赛，停机时先停掉。
       settings.close();

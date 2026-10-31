@@ -12,6 +12,7 @@ export const runtimeSettingKeySchema = z.enum([
   "clientMinMobileVersion",
   "enableGeneralUnblock",
   "enableAnonymousQqSearch",
+  "enableCeeRankedEntry",
 ]);
 
 export type RuntimeSettingKey = z.infer<typeof runtimeSettingKeySchema>;
@@ -51,6 +52,7 @@ export interface RuntimeSettingDefaults {
   clientMinMobileVersion?: string;
   enableGeneralUnblock?: boolean;
   enableAnonymousQqSearch?: boolean;
+  enableCeeRankedEntry?: boolean;
 }
 
 export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescriptor> = {
@@ -88,6 +90,15 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
     note: "关闭后没有 QQ 账号的房间不再用匿名通道补充检索；已选中的匿名曲目仍会尝试播放。上游限流时可手动止损，系统也会在连续失败后自动熔断。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableAnonymousQqSearch === false ? "false" : "true"),
+    kind: "boolean",
+  },
+  enableCeeRankedEntry: {
+    key: "enableCeeRankedEntry",
+    envVar: "ENABLE_CEE_RANKED_ENTRY",
+    title: "CEE 排位赛入口",
+    note: "关闭后主页不再出现排位赛入口，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
+    schema: booleanText,
+    defaultValue: (defaults) => (defaults.enableCeeRankedEntry === false ? "false" : "true"),
     kind: "boolean",
   },
 };

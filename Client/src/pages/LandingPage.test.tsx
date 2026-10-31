@@ -1,9 +1,10 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import LandingPage from "./LandingPage";
+import { resetSiteFeaturesForTest } from "@/lib/SiteConfig";
 import { formatRelativeTime } from "@/lib/Time";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
@@ -200,6 +201,24 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
+  it("排位入口被服务端关掉后整格消失，同卡其它入口照常", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ceeRankedEntry: false }) }))
+    );
+    renderLandingPage();
+
+    const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
+    // 配置是挂载后异步回来的：入口消失要等这一轮，不能同步断言碰运气。
+    await waitFor(() =>
+      expect(within(ceeEntry).queryByRole("button", { name: /排位赛/ })).not.toBeInTheDocument()
+    );
+    expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
+    // 不是置灰而是整格不渲染：关掉的入口不该留下点了才知道进不去的格子。
+    expect(within(ceeEntry).queryByText("排位赛")).not.toBeInTheDocument();
+  });
+
   it("版本号打开完整版本信息页并落在更新日志标签", async () => {
     const user = userEvent.setup();
     function CreditsProbe() {
@@ -261,7 +280,16 @@ describe("LandingPage", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    resetSiteFeaturesForTest();
     useAccountStore.setState({ status: "loading", profile: null, unreadFeedback: 0 });
+  });
+
+  // 挂载时就会问一次站点配置：给一份全开，用例不必为每次渲染都写桩。
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ ceeRankedEntry: true }) }))
+    );
   });
 
   it.each([

@@ -68,8 +68,8 @@ const EXPECTED_OPERATIONS = [
   "admin.stats.sentry",
 ];
 
-/** Elysia 自己声明的那几条 HTTP 路径：打点、探活、优雅停机、Sentry 隧道。 */
-const HTTP_PATH_COUNT = 5;
+/** Elysia 自己声明的那几条 HTTP 路径：打点、探活、站点配置、优雅停机、Sentry 隧道。 */
+const HTTP_PATH_COUNT = 6;
 
 const pathOf = (operationId: string): string =>
   `${RPC_BASE_PATH}/${operationId.replaceAll(".", "/")}`;

@@ -542,6 +542,16 @@ export const ENV_ENTRIES: EnvEntry[] = [
       "上游限流时可关闭止损，系统连续失败后也会自动熔断。",
     ],
   },
+  {
+    name: "ENABLE_CEE_RANKED_ENTRY",
+    layer: "T3",
+    documented: true,
+    sample: "true",
+    note: [
+      "CEE 排位赛入口的缺省可见性（默认开启）：缺省值，线上开关存 app_setting。",
+      "关掉后落地页不再出现排位赛入口；只停入口不停服务，直连与在途对局不受影响。",
+    ],
+  },
 
   // ==================== DEV 脚本与 CI 专用 ====================
   { name: "NETEASE_COOKIE", layer: "DEV", secret: true },

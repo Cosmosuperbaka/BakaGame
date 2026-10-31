@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { AppSettings } from "../src/application/AppSettings";
 import { AppError } from "../src/domain/Errors";
+import { RUNTIME_SETTING_KEYS } from "../src/shared/RuntimeSettings";
 import type {
   AppSettingRepository,
   StoredAppSetting,
@@ -129,7 +130,8 @@ describe("AppSettings 运行期旋钮", () => {
     });
     const mobile = settings.snapshot().find((item) => item.key === "clientMinMobileVersion");
     expect(mobile).toMatchObject({ storedValue: null, effectiveValue: "" });
-    expect(settings.snapshot()).toHaveLength(4);
+    // 一项不漏：后台列表就是这份快照，新增旋钮忘了进列表等于线上没法改。
+    expect(settings.snapshot()).toHaveLength(RUNTIME_SETTING_KEYS.length);
   });
 
   it("QQ 匿名补充检索默认开启，关闭后只认 false", async () => {
@@ -138,5 +140,14 @@ describe("AppSettings 运行期旋钮", () => {
     expect(settings.boolean("enableAnonymousQqSearch")).toBe(true);
     await settings.update("enableAnonymousQqSearch", "false", "actor-1");
     expect(settings.boolean("enableAnonymousQqSearch")).toBe(false);
+  });
+
+  it("排位入口默认开放，后台关掉后只认 false", async () => {
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    // 缺省必须是开放：这一项是运维止血用的，不能默认把入口藏起来。
+    expect(settings.boolean("enableCeeRankedEntry")).toBe(true);
+    await settings.update("enableCeeRankedEntry", "false", "actor-1");
+    expect(settings.boolean("enableCeeRankedEntry")).toBe(false);
   });
 });

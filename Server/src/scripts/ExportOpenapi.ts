@@ -5,6 +5,7 @@ import { Elysia } from "elysia";
 import { createSwaggerPlugin } from "../transport/Openapi";
 import { RPC_BASE_PATH } from "../transport/routes/Account";
 import { systemRoutes } from "../transport/routes/System";
+import { siteConfigRoutes } from "../transport/routes/SiteConfig";
 import { sentryTunnelRoutes } from "../transport/routes/SentryTunnel";
 import { RPC_PROTOCOL_NOTES, buildRpcOpenApiFragment } from "./RpcOpenapi";
 
@@ -21,6 +22,7 @@ export function createDocumentationApp(serverUrl = DOC_SERVER_URL) {
   return new Elysia({ normalize: false })
     .use(createSwaggerPlugin({ serverUrl }))
     .use(systemRoutes({}))
+    .use(siteConfigRoutes({}))
     .use(sentryTunnelRoutes({}));
 }
 

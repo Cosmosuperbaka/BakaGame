@@ -46,6 +46,8 @@ export interface EnvClientChannel {
   enableGeneralUnblock?: boolean;
   /** QQ 音乐匿名补充检索：默认开启；关闭后没有 QQ 账号的房间只搜网易云。 */
   enableAnonymousQqSearch?: boolean;
+  /** CEE 排位赛入口的缺省可见性：默认开启，线上生效值由运行期旋钮覆盖。 */
+  enableCeeRankedEntry?: boolean;
 }
 
 export const readClientChannelEnv = (): EnvClientChannel => ({
@@ -74,5 +76,9 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
   enableAnonymousQqSearch:
     Bun.env.ENABLE_ANONYMOUS_QQ_SEARCH !== undefined
       ? Bun.env.ENABLE_ANONYMOUS_QQ_SEARCH === "true"
+      : true,
+  enableCeeRankedEntry:
+    Bun.env.ENABLE_CEE_RANKED_ENTRY !== undefined
+      ? Bun.env.ENABLE_CEE_RANKED_ENTRY === "true"
       : true,
 });

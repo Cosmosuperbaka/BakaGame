@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
@@ -22,6 +22,7 @@ import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
 import appVersion from "virtual:app-version";
 import commitHistory from "virtual:commit-history";
 import { REPOSITORY_URL } from "@/data/PageMeta";
+import { useSiteFeatures, type SiteFeatures } from "@/lib/SiteConfig";
 import { cn } from "@/lib/Utils";
 
 interface GameSubMode {
@@ -29,6 +30,11 @@ interface GameSubMode {
   title: string;
   path?: string;
   available: boolean;
+  /**
+   * 挂在服务端开关上的入口：关掉时整格不渲染（不是置灰），
+   * 卡片按剩下的子模式重新排，免得留下一个点了才知道进不去的空位。
+   */
+  feature?: keyof SiteFeatures;
 }
 
 interface GameEntry {
@@ -95,6 +101,7 @@ const GAMES: GameEntry[] = [
         title: "排位赛",
         path: "/cee/ranked",
         available: true,
+        feature: "ceeRankedEntry",
       },
       {
         id: "tournament",
@@ -343,8 +350,22 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
 /** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
 const VERSION_PAGE_PATH = "/abouts?tab=changelog";
 
+/** 按服务端可见性过滤子模式：受控入口关掉后整格消失，不置灰也不留空位。 */
+const visibleGames = (features: SiteFeatures): GameEntry[] =>
+  GAMES.map((game) =>
+    game.subModes
+      ? {
+          ...game,
+          subModes: game.subModes.filter((mode) => !mode.feature || features[mode.feature]),
+        }
+      : game
+  );
+
 export default function LandingPage() {
   const navigate = usePageNavigate();
+  // 入口可见性读服务端运行期旋钮；没读到之前按全开，列表不会先空一块。
+  const features = useSiteFeatures();
+  const games = useMemo(() => visibleGames(features), [features]);
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关；
   // 解析在构建期完成，运行时不再为了一个字符串背下整份日志。
@@ -386,14 +407,14 @@ export default function LandingPage() {
             auto 边距在有空间时居中、空间不足时归零，矮屏下自然退化为顶部对齐。 */}
         <motion.div
           className="my-auto flex w-full flex-col gap-2.5 sm:gap-3"
-          variants={listContainer(GAMES.length)}
+          variants={listContainer(games.length)}
           initial="initial"
           animate="animate"
         >
           {/* 客户端过旧的提醒落在游戏列表上方：底部那条浮层是网页新版本提醒的位置，
               两条「该更新了」叠在同一处会互相盖掉。壳没装或版本够新时整条不渲染。 */}
           <ClientUpdateNotice />
-          {GAMES.map((game) => (
+          {games.map((game) => (
             <GameRow key={game.id} game={game} />
           ))}
           {/* Agent（MCP）在站点上的活动：首页就连上，位置随工具调用实时更新。 */}

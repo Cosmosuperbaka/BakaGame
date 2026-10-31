@@ -53,6 +53,7 @@ import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
 import { createStatusAggregator, startStatusSampler, statusRoutes } from "./routes/Status";
+import { siteConfigRoutes } from "./routes/SiteConfig";
 import { statusWsRoutes } from "./routes/StatusWs";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
@@ -111,6 +112,11 @@ export interface AppDependencies {
    * 壳按内嵌产物运行。
    */
   clientWebBundle?: ClientWebBundle;
+  /**
+   * 站点级功能可见性（`/api/site/config`）。未提供时全部开放：
+   * 独立挂载本组路由的测试与没有数据库的实例都不该被动失去入口。
+   */
+  siteFeatures?: () => { ceeRankedEntry: boolean };
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -822,6 +828,7 @@ export const createApp = ({
   clientChannel,
   clientArtifacts,
   clientWebBundle,
+  siteFeatures,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
   if (!fakerService) {
@@ -1228,6 +1235,8 @@ export const createApp = ({
         events: statusEvents,
       })
     )
+    // ==================== 站点配置（入口可见性，公开只读） ====================
+    .use(siteConfigRoutes({ features: siteFeatures }))
     // ==================== MCP 发现（Agent 只凭站点链接即可找到远程端点） ====================
     .use(
       mcpDiscoveryRoutes({
