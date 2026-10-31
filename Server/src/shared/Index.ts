@@ -8,6 +8,7 @@ export * from "./AgentActivity";
 export * from "./Account";
 export * from "./Badges";
 export * from "./Status";
+export * from "./CEERanked";
 export type { AdminRuntimeSetting, RuntimeSettingKey } from "./RuntimeSettings";
 export type {
   ApiContract,
