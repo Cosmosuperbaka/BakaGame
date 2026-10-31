@@ -100,6 +100,11 @@ export class AccountService {
     return (await (await this.adapter()).findUserById(userId)) as AccountRow | null;
   }
 
+  /** 账号昵称（排位赛显示名）；账号不存在为 null。 */
+  async displayName(userId: string): Promise<string | null> {
+    return (await this.findUser(userId))?.name ?? null;
+  }
+
   /** 把指定 QQ 号对应的已注册账号提升为管理员；尚未注册的在建号钩子里按同一名单处理。 */
   async promoteAdmins(qqNumbers: readonly string[]): Promise<void> {
     if (!qqNumbers.length) return;

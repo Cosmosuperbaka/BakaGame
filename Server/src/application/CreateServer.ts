@@ -34,6 +34,7 @@ import { DatabaseRegistrationRepository } from "../infrastructure/db/Registratio
 import { DatabaseGameRecordRepository } from "../infrastructure/db/GameRecordRepository";
 import { DatabaseStatusEventRepository } from "../infrastructure/db/StatusEventRepository";
 import { AntiCheatReviewRepository } from "../infrastructure/db/AntiCheatReviewRepository";
+import { CEERankedRepository } from "../infrastructure/db/CEERankedRepository";
 import { InMemoryAntiCheatReviewQueue, type CEEAntiCheatReviewBoard } from "./CEEAntiCheatSignals";
 import { createAndroidAttestationChecker } from "../infrastructure/AndroidAttestation";
 import { ClientChannel, InMemoryClientChannelStore } from "../infrastructure/ClientChannel";
@@ -180,6 +181,11 @@ export function createServer(
     // 复核队列：有库落库，本地与隔离测试退回内存，行为特征本身两边一致。
     // 后台读的也是这一个对象——写进去的条目只有这条队列，不存在两份口径。
     reviewQueue: antiCheatReviews,
+    // 排位与账号同模式：没有数据库就不注入审计仓储，排位整体不可用。
+    rankedStore: database ? new CEERankedRepository(database) : undefined,
+    rankedPool: data.cee,
+    // 账号装配在 CEE 之后（它要拿 CEE 做后台房间控制），所以昵称在调用时才去取。
+    resolveRankedName: async (userId) => (await account?.service.displayName(userId)) ?? null,
   });
   // 状态事件的部署环境标记与仓储：与状态账本同一口径，先于账号装配创建，两边共用一个实例。
   // 标记缺省读作 development，与 `resolveDeploymentEnvironment` 的缺省一致。
