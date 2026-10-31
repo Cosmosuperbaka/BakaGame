@@ -45,7 +45,10 @@ export const RANKED_CANDIDATE_IDS = [11, 12, 13, 14, 15, 16];
 
 const poolSettings = createCEERankedSettings(ceeRankedTier("d1"), 2024);
 
-/** 手写题库：候选按 id 升序、权重递减，`openings` 沿用同一顺序。 */
+/**
+ * 手写题库：候选按 id 升序、权重递减，`openings` 沿用同一顺序。开局全标为解题型、
+ * 不标知名：普通人格第一手照旧落在题库角色上，服务测试不必关心开局谱。
+ */
 export function rankedPool(
   candidateIds: readonly number[] = RANKED_CANDIDATE_IDS,
   extras: readonly CEECharacterView[] = []
@@ -63,6 +66,9 @@ export function rankedPool(
       id: item.character.id,
       expectedRemaining: candidates.length - index,
       worstClass: 0,
+      solver: true,
+      famous: false,
+      popularity: item.character.popularity,
     })),
     extras: [...extras],
   };

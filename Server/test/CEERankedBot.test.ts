@@ -18,11 +18,15 @@ import {
 } from "../src/domain/CEERankedBot";
 import {
   CEE_RANKED_ALL_DIMENSIONS,
+  CEE_RANKED_NUMERIC_DIMENSIONS,
   type CEERankedCandidate,
+  type CEERankedDimension,
+  type CEERankedObservation,
   evaluateCEEGuess,
   filterCEECandidates,
   rankCEEOpenings,
 } from "../src/domain/CEERankedSolver";
+import { type CEERankedOpening } from "../src/domain/CEERankedOpeningBook";
 import { buildCEEFeedback } from "../src/domain/CEERules";
 import {
   createDefaultCEESettings,
@@ -254,7 +258,6 @@ const pool: CEERankedCandidate[] = SPECS.map((spec) => {
     }),
   };
 });
-const openings = rankCEEOpenings(pool, settings);
 const poolIds = pool.map((item) => item.character.id);
 const idsOf = (candidates: readonly CEERankedCandidate[]): number[] =>
   candidates.map((item) => item.character.id);
@@ -263,6 +266,32 @@ const viewOf = (id: number): CEECharacterView => {
   if (!found) throw new Error(`夹具缺少角色 ${id}`);
   return found.character;
 };
+/**
+ * 夹具开局谱：按本场题库评估整档候选，`solver` / `famous` 由用例点亮。
+ *
+ * 默认全 false —— 需要开局谱的用例自己指定，避免「没点亮也能被抽到」这种假通过。
+ */
+const openingBook = (options: { solver?: number[]; famous?: number[] } = {}): CEERankedOpening[] =>
+  rankCEEOpenings(pool, settings).map((entry) => ({
+    ...entry,
+    solver: options.solver?.includes(entry.id) ?? false,
+    famous: options.famous?.includes(entry.id) ?? false,
+    popularity: viewOf(entry.id).popularity,
+  }));
+const openings = openingBook();
+/** 构造一段开局列表：expectedRemaining 按给出顺序递增，方便断言「前 K 个」。 */
+const scriptedOpenings = (
+  ids: number[],
+  flags: { solver?: boolean; famous?: boolean; popularity?: number } = {}
+): CEERankedOpening[] =>
+  ids.map((id, index) => ({
+    id,
+    expectedRemaining: index + 1,
+    worstClass: 1,
+    solver: flags.solver ?? true,
+    famous: flags.famous ?? true,
+    popularity: flags.popularity ?? 100,
+  }));
 const personaOf = (id: CEERankedPersonaId): CEERankedPersona => {
   const found = CEE_RANKED_PERSONAS.find((persona) => persona.id === id);
   if (!found) throw new Error(`缺少人格 ${id}`);
@@ -272,6 +301,11 @@ const anchorStrength = (rating: number): CEERankedBotStrength =>
   ceeRankedBotStrength(rating, scripted([0.5]));
 const unguessed = (brain: CEERankedBotBrain): CEERankedCandidate[] =>
   pool.filter((item) => !brain.guessed.has(item.character.id));
+const observe = (guessId: number, answerId: number): CEERankedObservation => {
+  const guess = viewOf(guessId);
+  const answer = viewOf(answerId);
+  return { guess, feedback: buildCEEFeedback(guess, answer, settings) };
+};
 
 /** 让大脑打一局并返回猜测序列；题库外的首猜（爱噶）只计次数。 */
 const playGuesses = (
@@ -304,16 +338,21 @@ describe("CEE 排位人机强度", () => {
       expect(ceeRankedBotStrength(anchor.rating, scripted([0.5]))).toEqual(anchor.strength);
   });
 
-  it("1250 分的 knowledge 恰为 0.675，其余数值在相邻锚点间线性插值", () => {
+  it("1250 分（1100 与 1400 正中间）的数值在相邻锚点间线性插值", () => {
     const strength = ceeRankedBotStrength(1250, scripted([0.5]));
-    expect(strength.knowledge).toBe(0.675);
-    expect(strength.thinkMedianMs).toBe(19000);
-    expect(strength.thinkSigma).toBeCloseTo(0.425, 12);
+    expect(strength.knowledge).toBeCloseTo(0.15, 12);
+    expect(strength.thinkMedianMs).toBe(33500);
+    expect(strength.thinkSigma).toBe(0.8);
     expect(strength.noise).toBeCloseTo(0.65, 12);
-    expect(strength.mistakeRate).toBeCloseTo(0.14, 12);
-    expect(strength.recallRate).toBeCloseTo(0.175, 12);
+    expect(strength.mistakeRate).toBeCloseTo(0.185, 12);
+    expect(strength.recallRate).toBeCloseTo(0.1, 12);
     expect(strength.sampleSize).toBe(12);
     expect(strength.openingTopK).toBe(10);
+    // 不完美推理的四个字段同样线性插值：memory 取整（2.5 → 3），两个可靠度与首猜中位数照抄插值结果。
+    expect(strength.memory).toBe(3);
+    expect(strength.numericReliability).toBeCloseTo(0.425, 12);
+    expect(strength.evidenceReliability).toBeCloseTo(0.15, 12);
+    expect(strength.firstGuessMedianMs).toBe(11500);
   });
 
   it("分数超出锚点范围时夹到两端", () => {
@@ -453,8 +492,28 @@ describe("CEE 排位人机爱噶", () => {
     expect(first[first.length - 1]).toBe(108);
   });
 
-  it("思考时长只看对手分数：1500 分的中位数是 18000，且随分数单调递减", () => {
-    expect(ceeRankedAigaThinkMs(1500, scripted(FLAT_Z))).toBe(18000);
+  it("爱噶的记忆与可靠度不看强度表，忽略传进来的低档取值", () => {
+    const brain = createCEERankedBot({
+      persona: personaOf("aiga"),
+      strength: {
+        ...anchorStrength(800),
+        memory: 1,
+        numericReliability: 0,
+        evidenceReliability: 0,
+      },
+      opponentRating: 1000,
+      pool,
+      random: seeded(1),
+    });
+    expect(brain.strength.memory).toBe(Number.POSITIVE_INFINITY);
+    expect(brain.strength.numericReliability).toBe(1);
+    expect(brain.strength.evidenceReliability).toBe(1);
+  });
+
+  it("思考时长只看对手分数：按锚点插值，且随分数单调递减", () => {
+    // 锚点 800/1100/1400/1700/2000/2300 → 113/96/53/32/15/10 秒；1500 落在 1400 与 1700 的三分之一处。
+    expect(ceeRankedAigaThinkMs(1400, scripted(FLAT_Z))).toBe(53000);
+    expect(ceeRankedAigaThinkMs(1500, scripted(FLAT_Z))).toBe(46000);
     expect(ceeRankedAigaThinkMs(500, scripted(FLAT_Z))).toBe(
       ceeRankedAigaThinkMs(800, scripted(FLAT_Z))
     );
@@ -464,12 +523,19 @@ describe("CEE 排位人机爱噶", () => {
     const samples = [800, 1000, 1500, 1900, 2300].map((rating) =>
       ceeRankedAigaThinkMs(rating, scripted(FLAT_Z))
     );
-    expect(samples[0]).toBe(35000);
-    expect(samples[2]).toBe(18000);
-    expect(samples[4]).toBe(7000);
+    expect(samples[0]).toBe(113000);
+    expect(samples[2]).toBe(46000);
+    expect(samples[4]).toBe(10000);
     samples.forEach((value, index) => {
       if (index > 0) expect(value).toBeLessThan(samples[index - 1]);
     });
+  });
+
+  it("爱噶的上限放宽到 120 秒：低分段的长尾不再被 60 秒夹平", () => {
+    // z ≈ 7.43 的极端抽样：按旧上限会落在 60000，新上限下 2000 分能给出超过 60 秒的间隔。
+    expect(ceeRankedAigaThinkMs(2000, scripted([1e-12, 0, 0.999]))).toBeGreaterThan(60000);
+    expect(ceeRankedAigaThinkMs(2000, scripted([1e-12, 0, 0.999]))).toBeLessThan(120000);
+    expect(ceeRankedAigaThinkMs(800, scripted([1e-12, 0, 0.999]))).toBe(120000);
   });
 });
 
@@ -480,7 +546,7 @@ describe("CEE 排位人机出手规则", () => {
   it("整局不重复猜、不猜题库外的角色，最终猜中答案", () => {
     const brain = createCEERankedBot({
       persona: dango,
-      strength: anchorStrength(2300),
+      strength: { ...anchorStrength(2300), knowledge: 1 },
       opponentRating: 2300,
       pool,
       random: seeded(11),
@@ -563,7 +629,15 @@ describe("CEE 排位人机出手规则", () => {
     const build = (recallRate: number): CEERankedBotBrain => {
       const brain = createCEERankedBot({
         persona: dango,
-        strength: { ...anchorStrength(800), ...weak, recallRate },
+        // 精确回忆口径：记忆与可靠度拉满，本用例只考察 recallRate 这条路。
+        strength: {
+          ...anchorStrength(800),
+          ...weak,
+          recallRate,
+          memory: Number.POSITIVE_INFINITY,
+          numericReliability: 1,
+          evidenceReliability: 1,
+        },
         opponentRating: 800,
         pool,
         random: seeded(16),
@@ -607,12 +681,38 @@ describe("CEE 排位人机思考时长", () => {
   ): CEERankedBotBrain =>
     createCEERankedBot({ persona, strength, opponentRating: 1500, pool, random: seeded(21) });
 
-  it("结果夹在 2500 到 60000 毫秒之间", () => {
+  it("结果夹在 2500 到 90000 毫秒之间", () => {
     const awen = personaOf("awen");
-    const huge = brainWith({ ...anchorStrength(2300), thinkMedianMs: 500000, thinkSigma: 0 }, awen);
-    expect(ceeRankedBotThinkMs(huge, 10, scripted(FLAT_Z))).toBe(60000);
-    const tiny = brainWith({ ...anchorStrength(2300), thinkMedianMs: 10, thinkSigma: 0 }, awen);
+    const stepped = (brain: CEERankedBotBrain): CEERankedBotBrain => {
+      recordCEERankedBotFeedback(
+        brain,
+        viewOf(101),
+        buildCEEFeedback(viewOf(101), viewOf(102), settings)
+      );
+      return brain;
+    };
+    const huge = stepped(
+      brainWith({ ...anchorStrength(2300), thinkMedianMs: 500000, thinkSigma: 0 }, awen)
+    );
+    expect(ceeRankedBotThinkMs(huge, 10, scripted(FLAT_Z))).toBe(90000);
+    const tiny = stepped(
+      brainWith({ ...anchorStrength(2300), thinkMedianMs: 10, thinkSigma: 0 }, awen)
+    );
     expect(ceeRankedBotThinkMs(tiny, 10, scripted(FLAT_Z))).toBe(2500);
+  });
+
+  it("第一手用 firstGuessMedianMs，第二手起换回 thinkMedianMs", () => {
+    const awen = brainWith(anchorStrength(800), personaOf("awen"));
+    // FLAT_Z 给出 z = 0，取值就是中位数；0.999 落在 idleRate 之外。
+    expect(ceeRankedBotThinkMs(awen, 10, scripted(FLAT_Z))).toBe(19500);
+    recordCEERankedBotFeedback(
+      awen,
+      viewOf(101),
+      buildCEEFeedback(viewOf(101), viewOf(102), settings)
+    );
+    expect(ceeRankedBotThinkMs(awen, 10, scripted(FLAT_Z))).toBe(58500);
+    // 只剩三个候选时按 0.6 倍收尾。
+    expect(ceeRankedBotThinkMs(awen, 3, scripted(FLAT_Z))).toBe(35100);
   });
 
   it("发呆按 idleRate 追加 10000 到 20000 毫秒", () => {
@@ -620,13 +720,19 @@ describe("CEE 排位人机思考时长", () => {
       { ...anchorStrength(2300), thinkMedianMs: 10000, thinkSigma: 0 },
       personaOf("yemao")
     );
+    recordCEERankedBotFeedback(
+      idle,
+      viewOf(101),
+      buildCEEFeedback(viewOf(101), viewOf(102), settings)
+    );
     const plain = ceeRankedBotThinkMs(idle, 10, scripted([0.5, 0.25, 0.999]));
     const spaced = ceeRankedBotThinkMs(idle, 10, scripted([0.5, 0.25, 0.05, 0.5]));
-    expect(plain).toBe(23400);
+    // 第二手：thinkMedianMs 10000 × 慢热派 step 1 的 1.5 倍。
+    expect(plain).toBe(15000);
     expect(spaced - plain).toBe(15000);
   });
 
-  it("慢热派第一手明显慢于第三手", () => {
+  it("慢热派的手速按 warmup 系数走：第一手 1.8、第二手 1.5、之后 0.8", () => {
     const yemao = brainWith(anchorStrength(1700), personaOf("yemao"));
     const first = ceeRankedBotThinkMs(yemao, 10, scripted(FLAT_Z));
     recordCEERankedBotFeedback(
@@ -634,15 +740,17 @@ describe("CEE 排位人机思考时长", () => {
       viewOf(101),
       buildCEEFeedback(viewOf(101), viewOf(102), settings)
     );
+    const second = ceeRankedBotThinkMs(yemao, 10, scripted(FLAT_Z));
     recordCEERankedBotFeedback(
       yemao,
       viewOf(103),
       buildCEEFeedback(viewOf(103), viewOf(102), settings)
     );
     const third = ceeRankedBotThinkMs(yemao, 10, scripted(FLAT_Z));
-    expect(first).toBe(32760);
-    expect(third).toBe(11200);
-    expect(first).toBeGreaterThan(third * 2);
+    // 首猜只看 firstGuessMedianMs 8000，之后只看 thinkMedianMs 20000。
+    expect(first).toBe(14400);
+    expect(second).toBe(30000);
+    expect(third).toBe(16000);
   });
 
   it("乱节奏派的抽样跨度大于稳节奏派", () => {
@@ -653,5 +761,276 @@ describe("CEE 排位人机思考时长", () => {
       return high / low;
     };
     expect(spreadOf(personaOf("mangmang"))).toBeGreaterThan(spreadOf(personaOf("awen")));
+  });
+});
+
+// ==================== 开局谱第一手 ====================
+describe("CEE 排位人机开局", () => {
+  const fresh = (
+    persona: CEERankedPersona,
+    strength: CEERankedBotStrength,
+    seed: number
+  ): CEERankedBotBrain =>
+    createCEERankedBot({
+      persona,
+      strength: { ...strength, knowledge: 1 },
+      opponentRating: 2300,
+      pool,
+      random: seeded(seed),
+    });
+  const firstPicks = (
+    persona: CEERankedPersona,
+    strength: CEERankedBotStrength,
+    book: CEERankedOpening[]
+  ): number[] =>
+    Array.from({ length: 60 }, (_unused, index) =>
+      nextCEERankedBotGuess(
+        fresh(persona, strength, 40 + index),
+        pool,
+        book,
+        settings,
+        seeded(440 + index)
+      )
+    );
+
+  it("ranked 风格且 openingTopK = 3 时第一手只在前三个开局里，并且能选到题库外的角色", () => {
+    const book = scriptedOpenings([901, 902, 903, 904]);
+    expect(poolIds).not.toContain(901);
+    const picks = firstPicks(personaOf("awen"), anchorStrength(2300), book);
+    expect(picks.every((id) => [901, 902, 903].includes(id))).toBe(true);
+    expect(new Set(picks).size).toBe(3);
+  });
+
+  it("弱档 openingTopK = 0 与 popular 风格都只用 famous 条目", () => {
+    // 前三条不是 famous：切分效果再好也不会被这两类人格抽到。
+    const book = scriptedOpenings([911, 912, 913], { famous: false }).concat(
+      scriptedOpenings([921, 922], { solver: false })
+    );
+    const popular = firstPicks(personaOf("dango"), anchorStrength(2300), book);
+    expect(popular.every((id) => [921, 922].includes(id))).toBe(true);
+    expect(new Set(popular).size).toBe(2);
+    const weak = firstPicks(personaOf("awen"), anchorStrength(1100), book);
+    expect(anchorStrength(1100).openingTopK).toBe(0);
+    expect(weak.every((id) => [921, 922].includes(id))).toBe(true);
+  });
+
+  it("第一手猜题库外的开局后，第二手起只在题库内推理", () => {
+    const brain = fresh(personaOf("awen"), anchorStrength(2300), 51);
+    const book = scriptedOpenings([901]);
+    expect(nextCEERankedBotGuess(brain, pool, book, settings, seeded(52))).toBe(901);
+    const outsider = view({ id: 901, popularity: 300 });
+    recordCEERankedBotFeedback(brain, outsider, buildCEEFeedback(outsider, viewOf(106), settings));
+    for (let step = 0; step < poolIds.length; step += 1) {
+      const id = nextCEERankedBotGuess(brain, pool, book, settings, seeded(60 + step));
+      expect(poolIds).toContain(id);
+      if (id === 106) return;
+      recordCEERankedBotFeedback(
+        brain,
+        viewOf(id),
+        buildCEEFeedback(viewOf(id), viewOf(106), settings)
+      );
+    }
+    throw new Error("没能猜中答案");
+  });
+
+  it("开局列表为空时退回在已知题库角色里按热度加权", () => {
+    const picks = firstPicks(personaOf("dango"), anchorStrength(2300), []);
+    expect(picks.every((id) => poolIds.includes(id))).toBe(true);
+    // 团子的热度指数 1.5：夹具里最热的 108（480）必然被抽到，最冷的 107（90）未必。
+    expect(picks).toContain(108);
+  });
+
+  it("猜过的开局不再重复出现在第一手", () => {
+    // 开局谱只剩 931 与 932，931 已经猜过：第一手只能是 932。
+    const brain = {
+      ...fresh(personaOf("awen"), anchorStrength(2300), 53),
+      guessed: new Set([931]),
+    };
+    const book = scriptedOpenings([931, 932]);
+    const picks = Array.from({ length: 30 }, (_unused, index) =>
+      nextCEERankedBotGuess(brain, pool, book, settings, seeded(540 + index))
+    );
+    expect(picks.every((id) => id === 932)).toBe(true);
+  });
+});
+
+// ==================== 不完美推理 ====================
+describe("CEE 排位人机不完美推理", () => {
+  const sortedIds = (candidates: readonly CEERankedCandidate[]): number[] =>
+    idsOf(candidates).sort((a, b) => a - b);
+
+  /** 观测过的编号不再进候选集。 */
+  const remainingAfter = (observations: readonly CEERankedObservation[]): CEERankedCandidate[] => {
+    const guessed = new Set(observations.map((item) => item.guess.id));
+    return pool.filter((item) => !guessed.has(item.character.id));
+  };
+
+  /** 连换 300 颗骰子，收集这一步所有可能被猜到的编号。 */
+  const pickSet = (
+    strength: CEERankedBotStrength,
+    dims: readonly CEERankedDimension[],
+    observations: readonly CEERankedObservation[]
+  ): number[] => {
+    const brain = createCEERankedBot({
+      persona: personaOf("awen"),
+      strength: {
+        ...strength,
+        dims,
+        knowledge: 1,
+        strategy: "consistent",
+        lockThreshold: 0,
+        mistakeRate: 0,
+        noise: 0,
+        recallRate: 0,
+        openingTopK: 0,
+      },
+      opponentRating: 2300,
+      pool,
+      random: seeded(301),
+    });
+    for (const observation of observations)
+      recordCEERankedBotFeedback(brain, observation.guess, observation.feedback);
+    const picks = new Set<number>();
+    for (let seed = 0; seed < 300; seed += 1)
+      picks.add(nextCEERankedBotGuess(brain, pool, openings, settings, seeded(500 + seed)));
+    return [...picks].sort((a, b) => a - b);
+  };
+  /** 精确回忆口径的基准：全记得、两组线索都用上。 */
+  const full = {
+    ...anchorStrength(2300),
+    memory: Number.POSITIVE_INFINITY,
+    numericReliability: 1,
+    evidenceReliability: 1,
+  };
+
+  // 只比对热度：观测 101 把候选压到 1 个，观测 107 只压到 7 个，先后顺序体现「忘掉早先的观测」。
+  const heatDims: CEERankedDimension[] = ["popularity"];
+  const heatNotes = [observe(101, 106), observe(107, 106)];
+  const heatRemaining = remainingAfter(heatNotes);
+
+  // 热度（数值组）与共同作品（证据组）各排除一部分候选，用来分开看两个可靠度。
+  const mixedDims: CEERankedDimension[] = ["popularity", "sharedAppearances"];
+  const mixedNotes = [observe(105, 103)];
+  const mixedRemaining = remainingAfter(mixedNotes);
+
+  it("两组线索都用上、全部记得时与原精确排除口径完全一致", () => {
+    for (const dims of [
+      CEE_RANKED_NUMERIC_DIMENSIONS,
+      CEE_RANKED_ALL_DIMENSIONS,
+      heatDims,
+      mixedDims,
+    ]) {
+      for (const notes of [heatNotes, mixedNotes])
+        expect(pickSet(full, dims, notes)).toEqual(
+          sortedIds(filterCEECandidates(remainingAfter(notes), notes, dims, settings))
+        );
+    }
+  });
+
+  it("memory = 1 时只按最后一条反馈过滤，早先的观测不再排除候选", () => {
+    const exact = sortedIds(filterCEECandidates(heatRemaining, heatNotes, heatDims, settings));
+    const lastOnly = sortedIds(
+      filterCEECandidates(heatRemaining, [heatNotes[1]], heatDims, settings)
+    );
+    expect(exact.length).toBe(1);
+    expect(lastOnly.length).toBeGreaterThan(exact.length);
+    expect(pickSet(full, heatDims, heatNotes)).toEqual(exact);
+    expect(pickSet({ ...full, memory: 1 }, heatDims, heatNotes)).toEqual(lastOnly);
+    // memory = 2 覆盖这两条观测，行为回到全部记得。
+    expect(pickSet({ ...full, memory: 2 }, heatDims, heatNotes)).toEqual(exact);
+  });
+
+  it("可靠度为 0 的那组维度不参与过滤", () => {
+    const both = sortedIds(filterCEECandidates(mixedRemaining, mixedNotes, mixedDims, settings));
+    const numericOnly = sortedIds(
+      filterCEECandidates(mixedRemaining, mixedNotes, ["popularity"], settings)
+    );
+    const evidenceOnly = sortedIds(
+      filterCEECandidates(mixedRemaining, mixedNotes, ["sharedAppearances"], settings)
+    );
+    expect([both.length, numericOnly.length, evidenceOnly.length, mixedRemaining.length]).toEqual([
+      2, 4, 6, 9,
+    ]);
+    expect(pickSet(full, mixedDims, mixedNotes)).toEqual(both);
+    expect(pickSet({ ...full, numericReliability: 0 }, mixedDims, mixedNotes)).toEqual(
+      evidenceOnly
+    );
+    expect(pickSet({ ...full, evidenceReliability: 0 }, mixedDims, mixedNotes)).toEqual(
+      numericOnly
+    );
+    // 两组都抽不到：等于不比对任何维度。
+    expect(
+      pickSet({ ...full, numericReliability: 0, evidenceReliability: 0 }, mixedDims, mixedNotes)
+    ).toEqual(sortedIds(mixedRemaining));
+  });
+
+  it("爱噶的记忆不看强度表：低档强度也按全部观测精确排除", () => {
+    const brain = createCEERankedBot({
+      persona: personaOf("aiga"),
+      strength: {
+        ...anchorStrength(800),
+        memory: 1,
+        numericReliability: 0,
+        evidenceReliability: 0,
+      },
+      opponentRating: 1000,
+      pool,
+      random: seeded(1),
+    });
+    for (const observation of mixedNotes)
+      recordCEERankedBotFeedback(brain, observation.guess, observation.feedback);
+    const id = nextCEERankedBotGuess(brain, pool, openings, settings, seeded(2));
+    const exact = idsOf(
+      filterCEECandidates(
+        remainingAfter(mixedNotes),
+        mixedNotes,
+        CEE_RANKED_ALL_DIMENSIONS,
+        settings
+      )
+    );
+    expect(exact).toContain(id);
+  });
+});
+
+// ==================== 锚点表单调 ====================
+describe("CEE 排位人机锚点表单调", () => {
+  const strengthOf = (index: number): CEERankedBotStrength =>
+    CEE_RANKED_BOT_ANCHORS[index].strength;
+
+  it("分数越高知道得越多、回忆更勤、记得更多、两条可靠度更高", () => {
+    for (let index = 1; index < CEE_RANKED_BOT_ANCHORS.length; index += 1) {
+      const previous = strengthOf(index - 1);
+      const next = strengthOf(index);
+      expect(next.knowledge).toBeGreaterThanOrEqual(previous.knowledge);
+      expect(next.recallRate).toBeGreaterThanOrEqual(previous.recallRate);
+      expect(next.memory).toBeGreaterThanOrEqual(previous.memory);
+      expect(next.numericReliability).toBeGreaterThan(previous.numericReliability);
+      expect(next.evidenceReliability).toBeGreaterThan(previous.evidenceReliability);
+    }
+  });
+
+  it("分数越高思考越快，首猜与后续间隔都单调递减", () => {
+    for (let index = 1; index < CEE_RANKED_BOT_ANCHORS.length; index += 1) {
+      const previous = strengthOf(index - 1);
+      const next = strengthOf(index);
+      expect(next.thinkMedianMs).toBeLessThan(previous.thinkMedianMs);
+      expect(next.firstGuessMedianMs).toBeLessThan(previous.firstGuessMedianMs);
+      // 首猜比后续每一手都快：看题与回忆名单的时间算在首猜里，弱档也不能慢于真人 p90。
+      expect(next.firstGuessMedianMs).toBeLessThanOrEqual(next.thinkMedianMs);
+    }
+  });
+
+  it("插值后的四个新字段同样单调（1200 分介于两档之间）", () => {
+    const low = ceeRankedBotStrength(1100, scripted([0.5]));
+    const mid = ceeRankedBotStrength(1200, scripted([0.5]));
+    const high = ceeRankedBotStrength(1400, scripted([0.5]));
+    expect(mid.memory).toBeGreaterThanOrEqual(low.memory);
+    expect(mid.memory).toBeLessThanOrEqual(high.memory);
+    expect(mid.numericReliability).toBeGreaterThan(low.numericReliability);
+    expect(mid.numericReliability).toBeLessThan(high.numericReliability);
+    expect(mid.evidenceReliability).toBeGreaterThan(low.evidenceReliability);
+    expect(mid.evidenceReliability).toBeLessThan(high.evidenceReliability);
+    expect(mid.firstGuessMedianMs).toBeLessThan(low.firstGuessMedianMs);
+    expect(mid.firstGuessMedianMs).toBeGreaterThan(high.firstGuessMedianMs);
   });
 });

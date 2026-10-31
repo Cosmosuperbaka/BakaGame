@@ -4,11 +4,13 @@ import {
   CEE_RANKED_PERSONAS,
   ceeRankedBotStrength,
   createCEERankedBot,
+  nextCEERankedBotGuess,
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
 } from "../src/domain/CEERankedBot";
-import { type CEERankedCandidate, rankCEEOpenings } from "../src/domain/CEERankedSolver";
+import type { CEERankedOpening } from "../src/domain/CEERankedOpeningBook";
+import { type CEERankedCandidate } from "../src/domain/CEERankedSolver";
 import {
   type CEERankedSimBot,
   type CEERankedSimInput,
@@ -150,7 +152,20 @@ const pool: CEERankedCandidate[] = [
   ),
 ];
 const settings = createDefaultCEESettings();
-const openings = rankCEEOpenings(pool, settings);
+/** 夹具开局谱默认空表：第一手退化成在题库角色里按热度挑，与接入开局谱前的口径一致。 */
+const openings: CEERankedOpening[] = [];
+/** 题库外开局条目：编号不在 pool 里，视图要靠 extraViews 给。 */
+const OUTSIDER_ID = 900;
+const outsiderBook = (): CEERankedOpening[] => [
+  {
+    id: OUTSIDER_ID,
+    expectedRemaining: 1,
+    worstClass: 1,
+    solver: true,
+    famous: true,
+    popularity: 300,
+  },
+];
 const personaOf = (id: CEERankedPersonaId): CEERankedPersona => {
   const found = CEE_RANKED_PERSONAS.find((persona) => persona.id === id);
   if (!found) throw new Error(`缺少人格 ${id}`);
@@ -198,7 +213,8 @@ describe("CEE 排位赛跑模拟", () => {
       buildInput(seeded(42), [bot("awen", 1700), bot("dango", 1100)])
     );
     expect(first).toEqual(second);
-    expect(first.points[0] + first.points[1]).toBe(2);
+    // 每局合计 1 分：两局分出胜负合计 2，打满三局合计 3。
+    expect([2, 3]).toContain(first.points[0] + first.points[1]);
     expect([0, 1, null]).toContain(first.winner);
   });
 
@@ -242,13 +258,59 @@ describe("CEE 排位赛跑模拟", () => {
     expect(withoutView.attempts[0]).toBeGreaterThanOrEqual(withView.attempts[0]);
   });
 
+  it("开局谱角色不在题库时先猜她，拿到反馈后照常推进并猜中", () => {
+    const random = seeded(21);
+    const brain = createCEERankedBot({
+      persona: personaOf("awen"),
+      strength: strengthOf(2000),
+      opponentRating: 2000,
+      pool,
+      random,
+    });
+    const outsiderViews = new Map([
+      ...aigaOpeningViews(),
+      [OUTSIDER_ID, view({ id: OUTSIDER_ID, popularity: 300, gender: "male" })],
+    ]);
+    expect(nextCEERankedBotGuess(brain, pool, outsiderBook(), settings, random)).toBe(OUTSIDER_ID);
+    const result = simulateCEERankedGame({
+      ...buildInput(seeded(21), [bot("awen", 2000), bot("dango", 800)], {
+        openings: outsiderBook(),
+        extraViews: outsiderViews,
+      }),
+      answerId: 104,
+    });
+    expect(result.winner).toBe(0);
+    expect(result.overtime).toBe(false);
+    expect(result.attempts[0]).toBeGreaterThanOrEqual(2);
+    expect(result.finishMs).toBeGreaterThan(timing.countdownMs);
+    expect(result.finishMs).toBeLessThan(timing.gameMs);
+  });
+
+  it("开局谱角色取不到视图时只废一手，之后仍按题库推进", () => {
+    // 两边都认识全部题库角色、都先撞上取不到视图的开局：只验证废掉的那一手不卡住对局，
+    // 不让知识边界掺进来；谁先猜中不重要。
+    const actor = { ...bot("mangmang", 1700), strength: { ...strengthOf(1700), knowledge: 1 } };
+    const input = buildInput(seeded(22), [actor, actor], {
+      openings: outsiderBook(),
+      extraViews: new Map(),
+    });
+    const result = simulateCEERankedGame({ ...input, answerId: 107 });
+    expect(result.winner).not.toBeNull();
+    expect(Math.max(...result.attempts)).toBeGreaterThan(1);
+  });
+
   it("双方都没出手时判平局，每局各记 0.5 分", () => {
     const stalled = simulateCEERankedGame({
       ...buildInput(seeded(10), [bot("awen", 2300), bot("awen", 2300)]),
       timing: { ...timing, maxAttempts: 0, overtimeAttempts: 0 },
       answerId: 105,
     });
-    expect(stalled).toEqual({ winner: null, attempts: [0, 0], overtime: true });
+    expect(stalled).toEqual({
+      winner: null,
+      attempts: [0, 0],
+      overtime: true,
+      finishMs: timing.gameMs + timing.overtimeMs,
+    });
     const series = simulateCEERankedSeries(
       buildInput(seeded(10), [bot("awen", 2300), bot("awen", 2300)], {
         timing: { ...timing, maxAttempts: 0, overtimeAttempts: 0 },
@@ -270,7 +332,7 @@ describe("CEE 排位赛跑模拟", () => {
     expect(tight.attempts[1]).toBeLessThanOrEqual(tight.attempts[0]);
   });
 
-  it("2300 档对 800 档打 200 场系列赛，强者胜率超过七成", () => {
+  it("2300 档对 800 档打 200 场系列赛，强者胜场是弱者的三倍以上", () => {
     const strong = bot("awen", 2300);
     const weak = bot("dango", 800);
     let strongWins = 0;
@@ -280,8 +342,8 @@ describe("CEE 排位赛跑模拟", () => {
       if (series.winner === 0) strongWins += 1;
       if (series.winner === 1) weakWins += 1;
     }
-    expect(strongWins / 200).toBeGreaterThan(0.7);
-    expect(weakWins).toBeLessThan(strongWins / 2);
+    // 合成题库只有 8 个角色，双方都常不认识答案，平局多；只比两边的胜场。
+    expect(strongWins).toBeGreaterThan(weakWins * 3);
   });
 
   it("创建大脑不消耗题库以外的角色，且整局都能按 weight 抽题", () => {

@@ -1,13 +1,15 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { CEECharacterRepository } from "../src/infrastructure/CEECharacterRepository";
 import {
   CEECharacterWorkerProvider,
-  LocalCEERankedPoolProvider,
+  type CeeWorkerRequester,
 } from "../src/infrastructure/CEECharacterWorkerProvider";
-import { BangumiDataWorkerClient } from "../src/infrastructure/BangumiDataWorkerClient";
+import {
+  BangumiDataWorkerClient,
+  type BangumiDataCall,
+} from "../src/infrastructure/BangumiDataWorkerClient";
 import { AppError } from "../src/domain/Errors";
-import { rankCEEOpenings } from "../src/domain/CEERankedSolver";
 import { ceeRankedTier, createCEERankedSettings } from "../src/shared/CEERankedValues";
 import { beijingDay } from "../src/domain/BeijingDay";
 import { createCEECharacterFixture } from "./CEECharacterFixtures";
@@ -194,11 +196,9 @@ test("Worker 路径返回同一份题库，首猜排名在 Worker 内算好", as
     expect(pool.candidates).toEqual(direct);
     expect(pool.tier).toBe("d5");
     expect(pool.day).toBe(beijingDay(now));
-    expect(pool.openings).toEqual(rankCEEOpenings(direct, pool.settings));
-    expect(pool.openings).toHaveLength(direct.length);
-    const rank = pool.openings.map((opening) => opening.expectedRemaining);
-    expect([...rank].sort((a, b) => a - b)).toEqual(rank);
-    // 夹具里没有丰川祥子：补充视图为空而不是报错
+    // 夹具里唯一进开局谱的角色是坂上智代（角色 8），热度 25 低于开局下限，
+    // 其余开局谱角色和丰川祥子都不在这份数据集里：开局表与补充视图一起为空。
+    expect(pool.openings).toEqual([]);
     expect(pool.extras).toEqual([]);
   } finally {
     await local.close();
@@ -207,63 +207,57 @@ test("Worker 路径返回同一份题库，首猜排名在 Worker 内算好", as
   }
 }, 30_000);
 
+/** 假 worker 客户端：只实现 `request`，记下调用并按时返回题库形状的回包。 */
+class FakeRankedPoolRequester implements CeeWorkerRequester {
+  readonly calls: BangumiDataCall[] = [];
+  reply: () => Promise<unknown> = async () => ({ candidates: [], openings: [], extras: [] });
+  async request(payload: BangumiDataCall): Promise<unknown> {
+    this.calls.push(payload);
+    return this.reply();
+  }
+}
+
 test("提供者按档位与北京日缓存题库，失败不留缓存", async () => {
-  const client = new BangumiDataWorkerClient();
-  const provider = new CEECharacterWorkerProvider(client, Promise.resolve());
-  const request = spyOn(client, "request").mockImplementation(async () => ({
-    candidates: [],
-    openings: [],
-    extras: [],
-  }));
-  try {
-    const dayOne = now;
-    const dayTwo = now + dayMs;
-    await Promise.all([provider.getRankedPool("d3", dayOne), provider.getRankedPool("d3", dayOne)]);
-    expect(request.mock.calls.length).toBe(1);
-    await provider.getRankedPool("d3", dayOne);
-    expect(request.mock.calls.length).toBe(1);
-    await provider.getRankedPool("d1", dayOne);
-    expect(request.mock.calls.length).toBe(2);
-    await provider.getRankedPool("d3", dayTwo);
-    expect(request.mock.calls.length).toBe(3);
-    // 换日后只保留当天那一批键，档位复用同样重新请求
-    await provider.getRankedPool("d1", dayTwo);
-    expect(request.mock.calls.length).toBe(4);
+  const requester = new FakeRankedPoolRequester();
+  const provider = new CEECharacterWorkerProvider(requester, Promise.resolve());
+  const dayOne = now;
+  const dayTwo = now + dayMs;
 
-    request.mockImplementation(async () => {
-      throw new AppError("CEE_RANKED_SETTINGS_INVALID", "排位题库只支持固定参数档");
-    });
-    const failed = new CEECharacterWorkerProvider(client, Promise.resolve());
-    expect(await rejectionOf(failed.getRankedPool("d2", dayTwo))).toMatchObject({
-      code: "CEE_RANKED_SETTINGS_INVALID",
-    });
-    expect(request.mock.calls.length).toBe(5);
-    request.mockImplementation(async () => ({ candidates: [], openings: [], extras: [] }));
-    await failed.getRankedPool("d2", dayTwo);
-    expect(request.mock.calls.length).toBe(6);
-  } finally {
-    request.mockRestore();
-    await client.close();
-  }
-}, 30_000);
+  const cold: CEERankedPool = await provider.getRankedPool("d3", dayOne);
+  expect(requester.calls.length).toBe(1);
+  expect(requester.calls[0]).toMatchObject({ method: "cee.rankedPool" });
+  expect(cold.tier).toBe("d3");
+  expect(cold.day).toBe(beijingDay(dayOne));
+  // 已缓存的键不再请求，同键并发共享同一个 Promise
+  const [first, second] = await Promise.all([
+    provider.getRankedPool("d3", dayOne),
+    provider.getRankedPool("d3", dayOne),
+  ]);
+  expect(requester.calls.length).toBe(1);
+  expect(second).toBe(first);
+  expect(first).toBe(cold);
+  await provider.getRankedPool("d3", dayOne);
+  expect(requester.calls.length).toBe(1);
+  // 换档位重新请求
+  await provider.getRankedPool("d1", dayOne);
+  expect(requester.calls.length).toBe(2);
+  // 换日丢掉旧键：档位复用同样要重新请求
+  await provider.getRankedPool("d3", dayTwo);
+  expect(requester.calls.length).toBe(3);
+  await provider.getRankedPool("d1", dayTwo);
+  expect(requester.calls.length).toBe(4);
 
-test("本地提供者的缓存口径与 Worker 版一致", async () => {
-  const fixture = createCEECharacterFixture();
-  const provider = new LocalCEERankedPoolProvider({
-    dbPath: fixture.dbPath,
-    enrichmentPath: fixture.enrichmentPath,
-    now: () => now,
-    fetcher: offlineFetcher,
+  // 失败不留缓存：下一次同样请求会重试并成功
+  requester.reply = async () => {
+    throw new AppError("CEE_RANKED_SETTINGS_INVALID", "排位题库只支持固定参数档");
+  };
+  const failed = new CEECharacterWorkerProvider(requester, Promise.resolve());
+  expect(await rejectionOf(failed.getRankedPool("d2", dayTwo))).toMatchObject({
+    code: "CEE_RANKED_SETTINGS_INVALID",
   });
-  try {
-    const first: CEERankedPool = await provider.getRankedPool("d1", now);
-    const second = await provider.getRankedPool("d1", now);
-    expect(second).toBe(first);
-    expect(first.candidates.map((candidate) => candidate.character.id)).toEqual([6, 7, 8, 9]);
-    expect(first.extras).toEqual([]);
-    expect((await provider.getRankedPool("d1", now + dayMs)).day).toBe(beijingDay(now + dayMs));
-  } finally {
-    await provider.close();
-    await rm(fixture.directory, { recursive: true, force: true });
-  }
+  expect(requester.calls.length).toBe(5);
+  requester.reply = async () => ({ candidates: [], openings: [], extras: [] });
+  const retried = await failed.getRankedPool("d2", dayTwo);
+  expect(requester.calls.length).toBe(6);
+  expect(retried.tier).toBe("d2");
 });

@@ -7,6 +7,7 @@ import {
   countCEEViolations,
   evaluateCEEGuess,
   filterCEECandidates,
+  rankCEEOpeningGuesses,
   rankCEEOpenings,
   type CEERankedCandidate,
   type CEERankedDimension,
@@ -262,6 +263,82 @@ describe("CEE 排位候选过滤与二分评估", () => {
       { id: 21, expectedRemaining: 2.5, worstClass: 3 },
       { id: 24, expectedRemaining: 2.5, worstClass: 3 },
     ]);
+  });
+
+  it("rankCEEOpeningGuesses 评估题库外的开局，并列时按 id 升序", () => {
+    // 与候选 23 只差编号：反馈分组完全相同，并列按 id 排在 23 之后。
+    const outsider = view({ id: 25, popularity: 90 });
+    expect(
+      rankCEEOpeningGuesses(
+        [outsider, ...popularityPool.map((item) => item.character)],
+        popularityPool,
+        settings
+      ).slice(0, 3)
+    ).toEqual([
+      { id: 22, expectedRemaining: 1.5, worstClass: 2 },
+      { id: 23, expectedRemaining: 1.5, worstClass: 2 },
+      { id: 25, expectedRemaining: 1.5, worstClass: 2 },
+    ]);
+    expect(rankCEEOpeningGuesses([], popularityPool, settings)).toEqual([]);
+    // 开局是候选自身时与 rankCEEOpenings 完全同口径。
+    expect(
+      rankCEEOpeningGuesses(
+        popularityPool.map((item) => item.character),
+        popularityPool,
+        settings
+      )
+    ).toEqual(rankCEEOpenings(popularityPool, settings));
+  });
+
+  it("dimsPerObservation 按每条观测各自记住的维度过滤，不记住就等于不过滤", () => {
+    const observations = [observe(1, 3, yearPool), observe(6, 3, yearPool)];
+    // 两条都只比对热度：10 对 90 是「低很多」，200 对 90 是「高很多」，交集只剩 2 与 3。
+    expect(
+      idsOf(
+        filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [
+          ["popularity"],
+          ["popularity"],
+        ])
+      )
+    ).toEqual([2, 3]);
+    // 第二条什么都没记住：只剩第一条的排除。
+    expect(
+      idsOf(
+        filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [
+          ["popularity"],
+          [],
+        ])
+      )
+    ).toEqual([2, 3, 4, 5, 6]);
+    expect(
+      idsOf(
+        filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [
+          [],
+          ["popularity"],
+        ])
+      )
+    ).toEqual([1, 2, 3]);
+    // 全忘掉就等于不过滤。
+    expect(
+      idsOf(
+        filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [[], []])
+      )
+    ).toEqual([1, 2, 3, 4, 5, 6]);
+    // 每条都记住全部数值维度时，与不给该参数的原口径一致。
+    expect(
+      filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [
+        CEE_RANKED_NUMERIC_DIMENSIONS,
+        CEE_RANKED_NUMERIC_DIMENSIONS,
+      ])
+    ).toEqual(filterCEECandidates(yearPool, observations, CEE_RANKED_NUMERIC_DIMENSIONS, settings));
+    // 缺项按没记住任何维度处理，不会退化成整组维度。
+    expect(
+      idsOf(
+        filterCEECandidates(yearPool, observations, CEE_RANKED_ALL_DIMENSIONS, settings, [
+          ["popularity"],
+        ])
+      )
+    ).toEqual([2, 3, 4, 5, 6]);
   });
 
   it("chooseCEEBisectionGuess 取最坏组最小的候选并按规则打破并列", () => {

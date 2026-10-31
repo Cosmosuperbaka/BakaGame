@@ -84,23 +84,33 @@ export function ceeFeedbackSignature(
   return dims.map((dim) => `${dim}=${dimensionSignature(feedback, dim)}`).join(DIMENSION_JOINER);
 }
 
-/** 保留与全部观测一致的候选（只比较 dims 内的维度）。 */
+/**
+ * 保留与全部观测一致的候选。
+ *
+ * `dimsPerObservation` 给出时按「每条观测各自记住的维度」比对（人机不完美推理用），
+ * 长度不足的那条按没记住任何维度处理，也就是不参与排除；不给时全部观测都按 `dims` 比对。
+ */
 export function filterCEECandidates(
   candidates: readonly CEERankedCandidate[],
   observations: readonly CEERankedObservation[],
   dims: readonly CEERankedDimension[],
-  settings: CEESettings
+  settings: CEESettings,
+  dimsPerObservation?: readonly (readonly CEERankedDimension[])[]
 ): CEERankedCandidate[] {
-  const expected = observations.map((observation) => ({
-    guess: observation.guess,
-    signature: ceeFeedbackSignature(observation.feedback, dims),
-  }));
+  const expected = observations.map((observation, index) => {
+    const used = dimsPerObservation ? (dimsPerObservation[index] ?? []) : dims;
+    return {
+      guess: observation.guess,
+      dims: used,
+      signature: ceeFeedbackSignature(observation.feedback, used),
+    };
+  });
   return candidates.filter((candidate) =>
     expected.every(
       (observation) =>
         ceeFeedbackSignature(
           buildCEEFeedback(observation.guess, candidate.character, settings),
-          dims
+          observation.dims
         ) === observation.signature
     )
   );
@@ -139,21 +149,17 @@ export function evaluateCEEGuess(
   return { expectedRemaining, worstClass, classes: groups.size };
 }
 
-/** 每位候选作为首猜的评估，按 expectedRemaining 升序、worstClass 升序、id 升序。 */
-export function rankCEEOpenings(
+/** 用本场题库评估一组开局（不要求开局在题库内），按 expectedRemaining → worstClass → id 升序。 */
+export function rankCEEOpeningGuesses(
+  guesses: readonly CEECharacterView[],
   candidates: readonly CEERankedCandidate[],
   settings: CEESettings
 ): Array<{ id: number; expectedRemaining: number; worstClass: number }> {
-  return candidates
-    .map((candidate) => {
-      const split = evaluateCEEGuess(
-        candidate.character,
-        candidates,
-        CEE_RANKED_ALL_DIMENSIONS,
-        settings
-      );
+  return guesses
+    .map((guess) => {
+      const split = evaluateCEEGuess(guess, candidates, CEE_RANKED_ALL_DIMENSIONS, settings);
       return {
-        id: candidate.character.id,
+        id: guess.id,
         expectedRemaining: split.expectedRemaining,
         worstClass: split.worstClass,
       };
@@ -162,6 +168,18 @@ export function rankCEEOpenings(
       (a, b) =>
         a.expectedRemaining - b.expectedRemaining || a.worstClass - b.worstClass || a.id - b.id
     );
+}
+
+/** 每位候选作为首猜的评估，按 expectedRemaining 升序、worstClass 升序、id 升序。 */
+export function rankCEEOpenings(
+  candidates: readonly CEERankedCandidate[],
+  settings: CEESettings
+): Array<{ id: number; expectedRemaining: number; worstClass: number }> {
+  return rankCEEOpeningGuesses(
+    candidates.map((candidate) => candidate.character),
+    candidates,
+    settings
+  );
 }
 
 /** 二分选法：只在 candidates 内选，按 worstClass 升序 → expectedRemaining 升序 → weight 降序 → id 升序取第一个。 */

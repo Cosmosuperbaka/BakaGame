@@ -1,7 +1,7 @@
 import { AppError, isAppError } from "../domain/Errors";
 import { CEECharacterRepository } from "./CEECharacterRepository";
-import { rankCEEOpenings } from "../domain/CEERankedSolver";
 import { CEE_RANKED_AIGA_OPENING_ID } from "../domain/CEERankedBot";
+import { assembleCEERankedOpenings } from "../domain/CEERankedOpeningBook";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { scheduleDatasetBackup } from "./DatasetBackup";
 import { scheduleTagDiffSync, syncTagDiff } from "./TagDiffSync";
@@ -56,7 +56,7 @@ export type BangumiDataRequest =
   | { id: number; method: "cee.getRawCharacter"; characterId: number }
   | { id: number; method: "cee.getCharacter"; characterId: number; settings: CEESettings }
   | { id: number; method: "cee.chooseRandomCharacter"; settings: CEESettings; rolls: number[] }
-  /** 排位题库：整档答案池 + 首猜排名 + 题库外补充视图，一次性算好在 worker 里。 */
+  /** 排位题库：整档答案池 + 开局谱评估出的开局 + 题库外开局视图，一次性算好在 worker 里。 */
   | { id: number; method: "cee.rankedPool"; settings: CEESettings }
   | { id: number; method: "cee.importDirectory"; indexId: number }
   | { id: number; method: "cee.resolveCharacterImage"; characterId: number; size?: CEEImageSize }
@@ -365,19 +365,18 @@ const dispatchSongRequest = async (
 };
 
 /**
- * 爱噶首猜用的题库外角色视图。
- *
- * 丰川祥子不一定在本档题库里；数据集里没这个角色时人机退化成普通首猜：只吞「不存在」这一类错误，
- * 库损坏或未就绪之类的故障必须照原样抛出，否则题库会被静默降级成没有爱噶首猜。
+ * 开局谱角色的视图：数据集里没有她时返回 undefined（开局谱来自全库分析，本档题库可能没她），
+ * 库损坏或未就绪之类的故障必须照原样抛出，否则题库会被静默降级成人机没有开局谱。
  */
-const aigaOpeningView = async (
+const viewOfCharacter = async (
   repository: CEECharacterRepository,
+  id: number,
   settings: CEESettings
-): Promise<CEECharacterView[]> => {
+): Promise<CEECharacterView | undefined> => {
   try {
-    return [await repository.getCharacter(CEE_RANKED_AIGA_OPENING_ID, settings)];
+    return await repository.getCharacter(id, settings);
   } catch (error) {
-    if (isAppError(error) && error.code === "CEE_CHARACTER_NOT_FOUND") return [];
+    if (isAppError(error) && error.code === "CEE_CHARACTER_NOT_FOUND") return undefined;
     throw error;
   }
 };
@@ -409,13 +408,14 @@ const dispatchCeeRequest = async (
     }
     case "cee.rankedPool": {
       const candidates = await repository.listRankedCandidates(request.settings);
-      // 首猜排名是题库大小平方次反馈计算，必须留在 worker 线程，回主线程会卡住游戏循环。
-      const openings = rankCEEOpenings(candidates, request.settings);
-      return {
+      // 开局评估要拿每个开局对整档题库算一遍反馈，必须留在 worker 线程，回主线程会卡住游戏循环。
+      const { openings, extras } = await assembleCEERankedOpenings({
         candidates,
-        openings,
-        extras: await aigaOpeningView(repository, request.settings),
-      };
+        settings: request.settings,
+        viewOf: (id) => viewOfCharacter(repository, id, request.settings),
+        extraIds: [CEE_RANKED_AIGA_OPENING_ID],
+      });
+      return { candidates, openings, extras };
     }
     case "cee.importDirectory":
       return repository.importDirectory(request.indexId);

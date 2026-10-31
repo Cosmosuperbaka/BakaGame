@@ -10,6 +10,7 @@ import {
   evaluateCEEGuess,
   filterCEECandidates,
 } from "./CEERankedSolver";
+import type { CEERankedOpening } from "./CEERankedOpeningBook";
 import { AppError } from "./Errors";
 
 export type CEERankedStrategy = "random" | "consistent" | "sampled" | "optimal";
@@ -32,6 +33,14 @@ export interface CEERankedBotStrength {
   openingTopK: number;
   /** 一致的已知候选为空时，每步「想起」一个一致但原本不认识的角色的概率。 */
   recallRate: number;
+  /** 只记得最近几条反馈；Infinity 表示全部。 */
+  memory: number;
+  /** 每一步、每条反馈里，数值与性别线索被用上的概率。 */
+  numericReliability: number;
+  /** 每一步、每条反馈里，共同作品与标签类线索被用上的概率。 */
+  evidenceReliability: number;
+  /** 第一手的思考间隔中位数（看题、回忆名单的时间都算在这里）。 */
+  firstGuessMedianMs: number;
 }
 
 /** 强度锚点：数值型字段在两档之间线性插值，离散字段取最近锚点并可小幅偏移。 */
@@ -42,97 +51,121 @@ export const CEE_RANKED_BOT_ANCHORS: ReadonlyArray<{
   {
     rating: 800,
     strength: {
-      knowledge: 0.45,
+      knowledge: 0.15,
       dims: [...CEE_RANKED_NUMERIC_DIMENSIONS],
       strategy: "random",
       noise: 1,
       sampleSize: 0,
-      mistakeRate: 0.25,
+      mistakeRate: 0.3,
       lockThreshold: 1,
-      thinkMedianMs: 26000,
-      thinkSigma: 0.5,
+      thinkMedianMs: 45000,
+      thinkSigma: 0.8,
       openingTopK: 0,
       recallRate: 0.1,
+      memory: 1,
+      numericReliability: 0.2,
+      evidenceReliability: 0.05,
+      firstGuessMedianMs: 15000,
     },
   },
   {
     rating: 1100,
     strength: {
-      knowledge: 0.6,
+      knowledge: 0.15,
       dims: [...CEE_RANKED_NUMERIC_DIMENSIONS, "sharedAppearances"],
       strategy: "consistent",
       noise: 0.8,
       sampleSize: 0,
-      mistakeRate: 0.18,
+      mistakeRate: 0.22,
       lockThreshold: 2,
-      thinkMedianMs: 21000,
-      thinkSigma: 0.45,
+      thinkMedianMs: 36000,
+      thinkSigma: 0.8,
       openingTopK: 0,
-      recallRate: 0.15,
+      recallRate: 0.1,
+      memory: 2,
+      numericReliability: 0.35,
+      evidenceReliability: 0.1,
+      firstGuessMedianMs: 12000,
     },
   },
   {
     rating: 1400,
     strength: {
-      knowledge: 0.75,
+      knowledge: 0.15,
       dims: [...CEE_RANKED_NUMERIC_DIMENSIONS, "sharedAppearances", "tags"],
       strategy: "sampled",
       noise: 0.5,
       sampleSize: 24,
-      mistakeRate: 0.1,
+      mistakeRate: 0.15,
       lockThreshold: 2,
-      thinkMedianMs: 17000,
-      thinkSigma: 0.4,
+      thinkMedianMs: 31000,
+      thinkSigma: 0.8,
       openingTopK: 20,
-      recallRate: 0.2,
+      recallRate: 0.1,
+      memory: 3,
+      numericReliability: 0.5,
+      evidenceReliability: 0.2,
+      firstGuessMedianMs: 11000,
     },
   },
   {
     rating: 1700,
     strength: {
-      knowledge: 0.88,
+      knowledge: 0.15,
       dims: [...CEE_RANKED_ALL_DIMENSIONS],
       strategy: "sampled",
       noise: 0.25,
       sampleSize: 64,
-      mistakeRate: 0.06,
+      mistakeRate: 0.09,
       lockThreshold: 3,
-      thinkMedianMs: 14000,
-      thinkSigma: 0.35,
+      thinkMedianMs: 20000,
+      thinkSigma: 0.8,
       openingTopK: 10,
-      recallRate: 0.25,
+      recallRate: 0.1,
+      memory: 4,
+      numericReliability: 0.65,
+      evidenceReliability: 0.35,
+      firstGuessMedianMs: 8000,
     },
   },
   {
     rating: 2000,
     strength: {
-      knowledge: 0.96,
+      knowledge: 0.25,
       dims: [...CEE_RANKED_ALL_DIMENSIONS],
       strategy: "optimal",
       noise: 0.1,
       sampleSize: 0,
-      mistakeRate: 0.03,
+      mistakeRate: 0.05,
       lockThreshold: 3,
-      thinkMedianMs: 11000,
-      thinkSigma: 0.3,
+      thinkMedianMs: 15000,
+      thinkSigma: 0.8,
       openingTopK: 5,
-      recallRate: 0.3,
+      recallRate: 0.12,
+      memory: 6,
+      numericReliability: 0.8,
+      evidenceReliability: 0.5,
+      firstGuessMedianMs: 6000,
     },
   },
   {
     rating: 2300,
     strength: {
-      knowledge: 1,
+      knowledge: 0.3,
       dims: [...CEE_RANKED_ALL_DIMENSIONS],
       strategy: "optimal",
       noise: 0.02,
       sampleSize: 0,
-      mistakeRate: 0.01,
+      mistakeRate: 0.02,
       lockThreshold: 3,
-      thinkMedianMs: 8500,
-      thinkSigma: 0.3,
+      thinkMedianMs: 11000,
+      thinkSigma: 0.8,
       openingTopK: 3,
-      recallRate: 0.35,
+      recallRate: 0.15,
+      memory: 8,
+      numericReliability: 0.9,
+      evidenceReliability: 0.65,
+      firstGuessMedianMs: 5000,
     },
   },
 ];
@@ -192,6 +225,10 @@ export function ceeRankedBotStrength(
     thinkSigma: mix(from.thinkSigma, to.thinkSigma),
     openingTopK: Math.round(mix(from.openingTopK, to.openingTopK)),
     recallRate: mix(from.recallRate, to.recallRate),
+    memory: Math.round(mix(from.memory, to.memory)),
+    numericReliability: mix(from.numericReliability, to.numericReliability),
+    evidenceReliability: mix(from.evidenceReliability, to.evidenceReliability),
+    firstGuessMedianMs: mix(from.firstGuessMedianMs, to.firstGuessMedianMs),
   };
 }
 
@@ -302,9 +339,10 @@ export interface CEERankedBotBrain {
   step: number;
 }
 
-const KAOJU_EVIDENCE_DIMENSIONS: readonly CEERankedDimension[] = [
-  "tags",
+/** 证据类线索：共同作品与两种标签，人机按 evidenceReliability 决定用不用得上。 */
+const EVIDENCE_DIMENSIONS: readonly CEERankedDimension[] = [
   "sharedAppearances",
+  "tags",
   "extraTags",
 ];
 
@@ -315,8 +353,14 @@ const effectiveDims = (
 ): readonly CEERankedDimension[] => {
   if (personaId === "aiga") return [...CEE_RANKED_ALL_DIMENSIONS];
   if (personaId !== "kaoju") return dims;
-  return [...dims, ...KAOJU_EVIDENCE_DIMENSIONS.filter((dim) => !dims.includes(dim))];
+  return [...dims, ...EVIDENCE_DIMENSIONS.filter((dim) => !dims.includes(dim))];
 };
+
+/** 强度表里抽出的维度子集：只保留 `dims` 与本组的交集，保持 `dims` 的先后顺序。 */
+const dimsOfGroup = (
+  dims: readonly CEERankedDimension[],
+  group: readonly CEERankedDimension[]
+): CEERankedDimension[] => dims.filter((dim) => group.includes(dim));
 
 const randomIndex = (length: number, random: () => number): number =>
   Math.min(length - 1, Math.floor(random() * length));
@@ -393,7 +437,17 @@ export function createCEERankedBot(input: {
   random: () => number;
 }): CEERankedBotBrain {
   const dims = effectiveDims(input.persona.id, input.strength.dims);
-  const strength = { ...input.strength, dims };
+  // 爱噶的推理固定：记忆与可靠度不看强度表，否则她的步数会随强度档抖动。
+  const strength: CEERankedBotStrength =
+    input.persona.id === "aiga"
+      ? {
+          ...input.strength,
+          dims,
+          memory: Number.POSITIVE_INFINITY,
+          numericReliability: 1,
+          evidenceReliability: 1,
+        }
+      : { ...input.strength, dims };
   const known =
     input.persona.id === "aiga"
       ? new Set(input.pool.map((item) => item.character.id))
@@ -430,18 +484,50 @@ export const ceeRankedBotEligible = (
       (brain.persona.id === "aiga" || brain.known.has(item.character.id))
   );
 
+/** 同一步抽到的一份「记忆」：最近 memory 条观测，以及每条观测各自用得上哪些维度。 */
+interface CEERankedRecall {
+  observations: readonly CEERankedObservation[];
+  dimsPerObservation: readonly (readonly CEERankedDimension[])[];
+}
+
+/**
+ * 回忆这一步：只取最后 memory 条反馈，每条按两个可靠度各抽一次，决定数值组与证据组线索
+ * 是否用上。同一步只抽一次，让回忆、犯错、下注与策略都基于同一份结果。
+ */
+const drawRecall = (brain: CEERankedBotBrain, random: () => number): CEERankedRecall => {
+  const { memory, numericReliability, evidenceReliability, dims } = brain.strength;
+  const observations = brain.observations.slice(
+    Math.max(0, brain.observations.length - Math.trunc(memory))
+  );
+  const dimsPerObservation = observations.map(() => {
+    const numeric =
+      random() < numericReliability ? dimsOfGroup(dims, CEE_RANKED_NUMERIC_DIMENSIONS) : [];
+    const evidence = random() < evidenceReliability ? dimsOfGroup(dims, EVIDENCE_DIMENSIONS) : [];
+    return [...numeric, ...evidence];
+  });
+  return { observations, dimsPerObservation };
+};
+
 const consistentFor = (
   brain: CEERankedBotBrain,
   candidates: readonly CEERankedCandidate[],
+  recall: CEERankedRecall,
   settings: CEESettings
 ): CEERankedCandidate[] =>
-  filterCEECandidates(candidates, brain.observations, brain.strength.dims, settings);
+  filterCEECandidates(
+    candidates,
+    recall.observations,
+    brain.strength.dims,
+    settings,
+    recall.dimsPerObservation
+  );
 
 /** 一致候选为空时按概率「想起」一个一致但原本不认识的角色。 */
 const recallConsistent = (
   brain: CEERankedBotBrain,
   eligible: readonly CEERankedCandidate[],
   pool: readonly CEERankedCandidate[],
+  recall: CEERankedRecall,
   settings: CEESettings,
   random: () => number
 ): CEERankedCandidate[] => {
@@ -449,11 +535,11 @@ const recallConsistent = (
   const strangers = pool.filter(
     (item) => !brain.known.has(item.character.id) && !brain.guessed.has(item.character.id)
   );
-  const remembered = consistentFor(brain, strangers, settings);
+  const remembered = consistentFor(brain, strangers, recall, settings);
   if (!remembered.length) return [];
   const recalled = pickWeighted(remembered, (item) => item.character.popularity + 1, random);
   brain.known.add(recalled.character.id);
-  return consistentFor(brain, [...eligible, recalled], settings);
+  return consistentFor(brain, [...eligible, recalled], recall, settings);
 };
 
 const fewestViolations = (
@@ -492,17 +578,26 @@ const slipGuess = (
   return slips.length ? pickTied(slips, random).character.id : null;
 };
 
+/** 开局热度权重：与 `heatWeight` 同口径，热度 0 也要有权重所以基数取 1。 */
+const openingWeight = (opening: CEERankedOpening, persona: CEERankedPersona): number =>
+  Math.pow(opening.popularity + 1, persona.popularityBias);
+
 const openingGuess = (
   brain: CEERankedBotBrain,
   eligible: readonly CEERankedCandidate[],
-  openings: ReadonlyArray<{ id: number }>,
+  openings: ReadonlyArray<CEERankedOpening>,
   random: () => number
 ): number => {
+  const fresh = openings.filter((entry) => !brain.guessed.has(entry.id));
   const { openingTopK } = brain.strength;
-  if (brain.persona.openingStyle === "ranked" && openingTopK > 0) {
-    const knownIds = new Set(eligible.map((item) => item.character.id));
-    const ranked = openings.filter((entry) => knownIds.has(entry.id)).slice(0, openingTopK);
-    if (ranked.length) return pickTied(ranked, random).id;
+  // 开局谱角色不要求在本场题库里，也不要求她「被认识」：猜她照样有反馈。
+  const options =
+    brain.persona.openingStyle === "ranked" && openingTopK > 0
+      ? fresh.slice(0, openingTopK)
+      : fresh.filter((entry) => entry.famous);
+  if (options.length) {
+    const weights = options.map((entry) => openingWeight(entry, brain.persona));
+    return options[weightedIndex(weights, random)].id;
   }
   return pickWeighted(eligible, (item) => heatWeight(item.character, brain.persona), random)
     .character.id;
@@ -594,16 +689,17 @@ const aigaGuess = (
 const regularGuess = (
   brain: CEERankedBotBrain,
   pool: readonly CEERankedCandidate[],
-  openings: ReadonlyArray<{ id: number }>,
+  openings: ReadonlyArray<CEERankedOpening>,
   settings: CEESettings,
   random: () => number
 ): number => {
   const eligible = ceeRankedBotEligible(brain, pool);
   if (!eligible.length) throw new AppError("RANKED_NO_CANDIDATE", "人机已没有可猜的已知角色");
   if (brain.step === 0) return openingGuess(brain, eligible, openings, random);
-  let consistent = consistentFor(brain, eligible, settings);
+  const recall = drawRecall(brain, random);
+  let consistent = consistentFor(brain, eligible, recall, settings);
   if (!consistent.length) {
-    consistent = recallConsistent(brain, eligible, pool, settings, random);
+    consistent = recallConsistent(brain, eligible, pool, recall, settings, random);
     if (!consistent.length)
       return pickTied(fewestViolations(brain, eligible, settings), random).character.id;
   }
@@ -617,7 +713,7 @@ const regularGuess = (
 export function nextCEERankedBotGuess(
   brain: CEERankedBotBrain,
   pool: readonly CEERankedCandidate[],
-  openings: ReadonlyArray<{ id: number }>,
+  openings: ReadonlyArray<CEERankedOpening>,
   settings: CEESettings,
   random: () => number
 ): number {
@@ -627,21 +723,38 @@ export function nextCEERankedBotGuess(
 }
 
 const THINK_FLOOR_MS = 2500;
-const THINK_CEILING_MS = 60000;
+/** 普通人格的间隔上限：真人 p90 的相邻间隔约 1 分钟，留出发呆的余量。 */
+const THINK_CEILING_MS = 90000;
+/** 爱噶的间隔上限：低分段她的中位数接近两分钟，再低会把曲线夹平。 */
+const AIGA_CEILING_MS = 120000;
 
 /** 标准正态：Box–Muller，只依赖传入的 random。 */
 const gaussian = (random: () => number): number =>
   Math.sqrt(-2 * Math.log(Math.max(1e-12, random()))) * Math.cos(2 * Math.PI * random());
 
-const logNormalMs = (median: number, sigma: number, random: () => number): number =>
-  clamp(Math.round(median * Math.exp(sigma * gaussian(random))), THINK_FLOOR_MS, THINK_CEILING_MS);
+const logNormalMs = (
+  median: number,
+  sigma: number,
+  ceiling: number,
+  random: () => number
+): number =>
+  clamp(Math.round(median * Math.exp(sigma * gaussian(random))), THINK_FLOOR_MS, ceiling);
 
-const AIGA_CURVE: ReadonlyArray<{ rating: number; medianMs: number }> = [
-  { rating: 800, medianMs: 35000 },
-  { rating: 1500, medianMs: 18000 },
-  { rating: 2300, medianMs: 7000 },
+/**
+ * 爱噶每手思考间隔的中位数，只按对手分数插值。她的推理固定且完美（基本 2～3 手猜中），
+ * 难度全靠速度：每个锚点让她对同分基线人机的系列赛胜率在七成五左右（标定脚本「爱噶对齐」一节），
+ * 比同分普通人机难缠但打得过。她比标称分强出的部分记在计分上（见 `CEERankedHandicap` 的先验）。
+ */
+export const CEE_RANKED_AIGA_THINK_CURVE: ReadonlyArray<{ rating: number; medianMs: number }> = [
+  { rating: 800, medianMs: 113000 },
+  { rating: 1100, medianMs: 96000 },
+  { rating: 1400, medianMs: 53000 },
+  { rating: 1700, medianMs: 32000 },
+  { rating: 2000, medianMs: 15000 },
+  { rating: 2300, medianMs: 10000 },
 ];
-const AIGA_SIGMA = 0.15;
+const AIGA_CURVE = CEE_RANKED_AIGA_THINK_CURVE;
+const AIGA_SIGMA = 0.2;
 
 /** 爱噶的思考时长：只看对手分数。 */
 export function ceeRankedAigaThinkMs(opponentRating: number, random: () => number): number {
@@ -655,7 +768,12 @@ export function ceeRankedAigaThinkMs(opponentRating: number, random: () => numbe
   const from = AIGA_CURVE[segment];
   const to = AIGA_CURVE[Math.min(segment + 1, AIGA_CURVE.length - 1)];
   const ratio = to.rating === from.rating ? 0 : (bounded - from.rating) / (to.rating - from.rating);
-  return logNormalMs(from.medianMs + (to.medianMs - from.medianMs) * ratio, AIGA_SIGMA, random);
+  return logNormalMs(
+    from.medianMs + (to.medianMs - from.medianMs) * ratio,
+    AIGA_SIGMA,
+    AIGA_CEILING_MS,
+    random
+  );
 }
 
 const tempoFactor = (tempo: CEERankedTempo, step: number): number => {
@@ -670,13 +788,11 @@ export function ceeRankedBotThinkMs(
   random: () => number
 ): number {
   if (brain.persona.id === "aiga") return ceeRankedAigaThinkMs(brain.opponentRating, random);
-  const phase = brain.step === 0 ? 1.3 : candidatesLeft <= 3 ? 0.6 : 1;
+  const phase = candidatesLeft <= 3 ? 0.6 : 1;
   const sigma = brain.strength.thinkSigma + (brain.persona.tempo === "erratic" ? 0.3 : 0);
+  const base = brain.step === 0 ? brain.strength.firstGuessMedianMs : brain.strength.thinkMedianMs;
   const median =
-    brain.strength.thinkMedianMs *
-    brain.persona.thinkFactor *
-    phase *
-    tempoFactor(brain.persona.tempo, brain.step);
+    base * brain.persona.thinkFactor * phase * tempoFactor(brain.persona.tempo, brain.step);
   const value = median * Math.exp(sigma * gaussian(random));
   const idle = random() < brain.persona.idleRate ? 10000 + random() * 10000 : 0;
   return clamp(Math.round(value + idle), THINK_FLOOR_MS, THINK_CEILING_MS);

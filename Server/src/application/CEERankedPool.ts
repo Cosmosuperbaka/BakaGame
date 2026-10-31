@@ -1,5 +1,6 @@
 import type { CEECharacterView, CEESettings } from "../shared/CEE";
 import type { CEERankedTierId } from "../shared/CEERanked";
+import type { CEERankedOpening } from "../domain/CEERankedOpeningBook";
 import type { CEERankedCandidate } from "../domain/CEERankedSolver";
 
 /** 一个难度档在某个北京日的排位题库。 */
@@ -10,9 +11,9 @@ export interface CEERankedPool {
   day: string;
   /** 用本档设置派生的角色视图与被抽为答案的先验权重；按 id 升序。 */
   candidates: CEERankedCandidate[];
-  /** `rankCEEOpenings` 的结果。 */
-  openings: Array<{ id: number; expectedRemaining: number; worstClass: number }>;
-  /** 题库外但人机会用到的角色视图（目前只有爱噶首猜的丰川祥子）；数据集里没有就为空。 */
+  /** 开局谱里热度达标、视图可取的角色，按本场题库评估的切分效果排序。 */
+  openings: CEERankedOpening[];
+  /** 本场题库之外、人机会猜到的角色视图（开局谱角色与爱噶首猜），按 id 升序。 */
   extras: CEECharacterView[];
 }
 

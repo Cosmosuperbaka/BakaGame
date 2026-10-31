@@ -393,7 +393,8 @@ describe("人机开局与爱噶", () => {
     const client = harness.connect("甲");
     await startBotSeries(harness, client);
     await openPlay(harness);
-    await harness.advance(60_000);
+    // 夹具的随机数恒为 0：爱噶每手都顶到 120 秒上限。
+    await harness.advance(120_000);
     const audit = await exitAndAudit(harness, client);
     const botGuesses = audit.guesses.filter((guess) => guess.seat === 1);
     expect(botGuesses.map((guess) => guess.characterId)).toEqual([AIGA_ID]);
@@ -409,7 +410,7 @@ describe("人机开局与爱噶", () => {
     const client = harness.connect("甲");
     await startBotSeries(harness, client);
     await openPlay(harness);
-    await harness.advance(60_000);
+    await harness.advance(120_000);
     const audit = await exitAndAudit(harness, client);
     const botGuesses = audit.guesses.filter((guess) => guess.seat === 1);
     // 跳过只推进大脑内部步数：本局只留下一次真实出手，且不是那个取不到视图的编号。

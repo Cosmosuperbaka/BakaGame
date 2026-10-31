@@ -9,6 +9,7 @@ import {
   recordCEERankedBotFeedback,
 } from "./CEERankedBot";
 import { type CEERankedCandidate, filterCEECandidates } from "./CEERankedSolver";
+import type { CEERankedOpening } from "./CEERankedOpeningBook";
 import { buildCEEFeedback } from "./CEERules";
 import type { CEECharacterView, CEESettings } from "../shared/CEE";
 
@@ -26,9 +27,9 @@ export interface CEERankedSimTiming {
 }
 export interface CEERankedSimInput {
   pool: readonly CEERankedCandidate[];
-  openings: ReadonlyArray<{ id: number }>;
+  openings: ReadonlyArray<CEERankedOpening>;
   settings: CEESettings;
-  /** 题库外但可能被猜到的角色视图（爱噶首猜的丰川祥子）。 */
+  /** 题库外但可能被猜到的角色视图（开局谱角色与爱噶首猜）。 */
   extraViews: ReadonlyMap<number, CEECharacterView>;
   bots: [CEERankedSimBot, CEERankedSimBot];
   timing: CEERankedSimTiming;
@@ -52,6 +53,8 @@ interface GameOutcome {
   winner: 0 | 1 | null;
   attempts: [number, number];
   overtime: boolean;
+  /** 猜中那一刻的时刻（平局时为本局结束的时刻），标定用它算中位用时。 */
+  finishMs: number;
 }
 
 /** 一局赛跑：双方按各自的思考时刻出手，先猜中者胜，两边都到点或用尽则平局。 */
@@ -91,10 +94,11 @@ export function simulateCEERankedGame(
         ? Number.POSITIVE_INFINITY
         : from + ceeRankedBotThinkMs(runner.brain, consistentCount(runner.brain), random);
   };
-  const outcome = (winner: 0 | 1 | null, overtime: boolean): GameOutcome => ({
+  const outcome = (winner: 0 | 1 | null, overtime: boolean, finishMs: number): GameOutcome => ({
     winner,
     attempts: [runners[0].attempts, runners[1].attempts],
     overtime,
+    finishMs,
   });
   let overtime = false;
   const enterOvertime = (at: number): void => {
@@ -116,7 +120,7 @@ export function simulateCEERankedGame(
       const guessId = nextCEERankedBotGuess(actor.brain, pool, openings, settings, random);
       actor.attempts += 1;
       actor.used += 1;
-      if (guessId === input.answerId) return outcome(actor.index, overtime);
+      if (guessId === input.answerId) return outcome(actor.index, overtime, time);
       const character = viewOf(guessId);
       if (character && answer)
         recordCEERankedBotFeedback(
@@ -132,7 +136,7 @@ export function simulateCEERankedGame(
       schedule(actor, time);
       continue;
     }
-    if (overtime) return outcome(null, true);
+    if (overtime) return outcome(null, true, phaseDeadline);
     enterOvertime(phaseDeadline);
     phaseDeadline += timing.overtimeMs;
   }
