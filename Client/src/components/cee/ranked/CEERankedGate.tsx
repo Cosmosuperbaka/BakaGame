@@ -7,7 +7,7 @@ import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
  * 排位的门槛说明：网页端只说明「需要客户端」并给下载入口，客户端未登录时引导登录。
  * 这里只是展示，真正的准入由服务端判定。
  */
-export function RankedGate({
+export function CEERankedGate({
   reason,
   onLogin,
 }: {

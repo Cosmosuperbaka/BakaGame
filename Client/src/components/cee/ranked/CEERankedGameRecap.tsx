@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Check, Lightbulb, X } from "lucide-react";
 import type { CEEGuess, CEERankedGameSummary } from "@bakagame/shared";
-import { rankedGameHeadline } from "./RankedFormat";
+import { rankedGameHeadline } from "./CEERankedFormat";
 import { CEEAnswerCard } from "../CEEAnswerCard";
 import { listContainer, listItem } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -67,7 +67,7 @@ function GuessList({ title, guesses }: { title: string; guesses: CEEGuess[] }) {
  * 一局的复盘：答案揭晓卡加双方完整猜测。局间展示刚结束的那一局（答案卡按揭晓动效亮相），
  * 结算页逐局回看时不再重播揭晓。
  */
-export function RankedGameRecap({
+export function CEERankedGameRecap({
   game,
   reveal = false,
 }: {

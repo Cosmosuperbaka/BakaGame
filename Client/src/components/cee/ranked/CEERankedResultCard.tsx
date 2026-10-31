@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { phaseTitleRise, revealCard } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { formatRankedPoints } from "./RankedFormat";
+import { formatRankedPoints } from "./CEERankedFormat";
 
 const OUTCOME_TITLE = { won: "胜利", lost: "惜败", drawn: "平局" } as const;
 
@@ -98,7 +98,7 @@ function RatingBlock({
  * 整场结算卡：结果标题自基线升起，卡片按揭晓动效亮相，分数从赛前滚到赛后。
  * 「再来一场」直接重新排队；「返回」回到排位首页。
  */
-export function RankedResultCard({
+export function CEERankedResultCard({
   series,
   placementTotal,
   requeueing = false,

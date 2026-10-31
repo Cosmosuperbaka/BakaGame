@@ -115,7 +115,7 @@ function ClueRow({ guess }: { guess: CEERankedMaskedGuess }) {
  * 看不到猜了谁、具体数值与标签文字（服务端已脱敏，这里只是如实画出来）。
  * 最新的一次在最上面，与本人的反馈表同一读序；挂载时已有的行不再推入，之后推来的新行从左缘推到前面。
  */
-export function RankedOpponentClues({
+export function CEERankedOpponentClues({
   guesses,
   attempts,
   allowance,

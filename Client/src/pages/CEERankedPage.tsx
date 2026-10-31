@@ -6,12 +6,12 @@ import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { Button } from "@/components/ui/Button";
-import { RankedGameRecap } from "@/components/cee/ranked/RankedGameRecap";
-import { RankedGate } from "@/components/cee/ranked/RankedGate";
-import { RankedHome } from "@/components/cee/ranked/RankedHome";
-import { RankedMatch } from "@/components/cee/ranked/RankedMatch";
-import { RankedResultCard } from "@/components/cee/ranked/RankedResultCard";
-import { RankedScoreboard } from "@/components/cee/ranked/RankedScoreboard";
+import { CEERankedGameRecap } from "@/components/cee/ranked/CEERankedGameRecap";
+import { CEERankedGate } from "@/components/cee/ranked/CEERankedGate";
+import { CEERankedHome } from "@/components/cee/ranked/CEERankedHome";
+import { CEERankedMatch } from "@/components/cee/ranked/CEERankedMatch";
+import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard";
+import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/lib/CEEDataSource";
 import { isBakaClient, setSecureScreen } from "@/lib/BakaChannel";
 import { dropIn, phaseSwap } from "@/lib/Motion";
@@ -37,7 +37,7 @@ function RankedSeriesStage() {
     series.phase === "settled" ? "settled" : series.phase === "intermission" ? "recap" : "play";
   return (
     <div className="space-y-4">
-      <RankedScoreboard series={series} />
+      <CEERankedScoreboard series={series} />
       <AnimatePresence initial={false} mode="popLayout">
         <motion.div
           key={
@@ -53,7 +53,7 @@ function RankedSeriesStage() {
         >
           {stage === "settled" ? (
             <>
-              <RankedResultCard
+              <CEERankedResultCard
                 series={series}
                 placementTotal={CEE_RANKED_PLACEMENT_SERIES}
                 requeueing={Boolean(pending.queue)}
@@ -62,14 +62,14 @@ function RankedSeriesStage() {
                 onLeave={() => void store.leave()}
               />
               {[...series.games].reverse().map((game) => (
-                <RankedGameRecap key={game.number} game={game} />
+                <CEERankedGameRecap key={game.number} game={game} />
               ))}
             </>
           ) : stage === "recap" && last ? (
-            <RankedGameRecap game={last} reveal />
+            <CEERankedGameRecap game={last} reveal />
           ) : (
             <CEEDataSourceContext.Provider value={rankedCEEDataSource}>
-              <RankedMatch
+              <CEERankedMatch
                 series={series}
                 pending={pending}
                 onGuess={(characterId) => store.guess(characterId)}
@@ -95,7 +95,7 @@ function RankedHomeStage() {
   if (!state || state.status === "series") return null;
   const store = useCEERankedStore.getState();
   return (
-    <RankedHome
+    <CEERankedHome
       profile={profile}
       state={state}
       placementTotal={CEE_RANKED_PLACEMENT_SERIES}
@@ -180,9 +180,9 @@ function RankedBody({
   inSeries: boolean;
 }) {
   const promptLogin = () => useCEEStore.getState().promptLogin();
-  if (!client) return <RankedGate reason="client" onLogin={promptLogin} />;
+  if (!client) return <CEERankedGate reason="client" onLogin={promptLogin} />;
   if (accountStatus === "loading") return null;
-  if (accountStatus !== "signedIn") return <RankedGate reason="login" onLogin={promptLogin} />;
+  if (accountStatus !== "signedIn") return <CEERankedGate reason="login" onLogin={promptLogin} />;
   if (!ready)
     return (
       <div

@@ -10,7 +10,7 @@ import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { dropIn, listContainer, listItem, readoutTick, skeletonFade } from "@/lib/Motion";
 import { formatRelativeTime } from "@/lib/Time";
 import { cn } from "@/lib/Utils";
-import { formatRankedClock, formatRankedPoints } from "./RankedFormat";
+import { formatRankedClock, formatRankedPoints } from "./CEERankedFormat";
 
 type QueuedState = Extract<CEERankedState, { status: "queued" }>;
 
@@ -198,7 +198,7 @@ function HistoryRow({ entry }: { entry: CEERankedHistoryEntry }) {
  * 排位首页：左边是分数与匹配，右边是最近战绩。
  * 空闲态给「开始匹配」（定级中写作「开始定级赛」，对手都是人机），排队态原地换成排队读数。
  */
-export function RankedHome({
+export function CEERankedHome({
   profile,
   state,
   placementTotal,

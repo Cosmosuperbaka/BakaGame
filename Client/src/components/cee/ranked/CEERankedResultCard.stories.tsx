@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { rankedSeries } from "@/stories/fixtures/CEERanked";
-import { RankedResultCard } from "./RankedResultCard";
+import { CEERankedResultCard } from "./CEERankedResultCard";
 
 const meta = {
   title: "CEE/Ranked/结算",
-  component: RankedResultCard,
+  component: CEERankedResultCard,
   args: {
     series: rankedSeries("won"),
     placementTotal: 5,
@@ -19,7 +19,7 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof RankedResultCard>;
+} satisfies Meta<typeof CEERankedResultCard>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

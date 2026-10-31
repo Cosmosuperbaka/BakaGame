@@ -15,7 +15,7 @@ import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { bannerRise, dropIn, readoutTick } from "@/lib/Motion";
 import { CEEFeedbackTable } from "../CEEFeedbackTable";
 import { CEESearch } from "../CEESearch";
-import { RankedOpponentClues } from "./RankedOpponentClues";
+import { CEERankedOpponentClues } from "./CEERankedOpponentClues";
 
 /** 退出整场是判负的操作：显式确认，取消在前、确认用危险色。 */
 function ExitDialog({
@@ -84,7 +84,7 @@ function GameCountdown({ number, startsAt }: { number: number; startsAt: number 
  * 进行中的一局：左边是本人的搜索与反馈表，右边是对手的脱敏线索。
  * 加时公开的提示从上方横幅落下；认输只放弃本局，退出整场要二次确认。
  */
-export function RankedMatch({
+export function CEERankedMatch({
   series,
   pending,
   onGuess,
@@ -166,7 +166,7 @@ export function RankedMatch({
           </AnimatePresence>
         </section>
         <aside className="min-w-0 space-y-3">
-          <RankedOpponentClues
+          <CEERankedOpponentClues
             key={game.number}
             guesses={game.opponentGuesses}
             attempts={series.opponent.attempts}

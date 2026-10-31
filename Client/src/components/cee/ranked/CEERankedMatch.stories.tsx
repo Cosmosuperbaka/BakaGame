@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import type { CEERankedSeriesView } from "@bakagame/shared";
 import { rankedSeries } from "@/stories/fixtures/CEERanked";
-import { RankedGameRecap } from "./RankedGameRecap";
-import { RankedMatch } from "./RankedMatch";
-import { RankedScoreboard } from "./RankedScoreboard";
+import { CEERankedGameRecap } from "./CEERankedGameRecap";
+import { CEERankedMatch } from "./CEERankedMatch";
+import { CEERankedScoreboard } from "./CEERankedScoreboard";
 
 /** 对局页的上下两段：顶栏比分 + 进行中的一局（或局间复盘），与排位页同一组合。 */
 function RankedTable({
@@ -21,11 +21,11 @@ function RankedTable({
   const last = series.games.at(-1);
   return (
     <div className="space-y-4">
-      <RankedScoreboard series={series} />
+      <CEERankedScoreboard series={series} />
       {series.phase === "intermission" && last ? (
-        <RankedGameRecap game={last} reveal />
+        <CEERankedGameRecap game={last} reveal />
       ) : (
-        <RankedMatch
+        <CEERankedMatch
           series={series}
           pending={{}}
           onGuess={onGuess}

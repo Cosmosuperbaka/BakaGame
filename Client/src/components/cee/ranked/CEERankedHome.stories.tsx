@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { RANKED_IDLE_STATE, rankedProfile, rankedQueuedState } from "@/stories/fixtures/CEERanked";
-import { RankedGate } from "./RankedGate";
-import { RankedHome } from "./RankedHome";
+import { CEERankedGate } from "./CEERankedGate";
+import { CEERankedHome } from "./CEERankedHome";
 
 const meta = {
   title: "CEE/Ranked/首页",
-  component: RankedHome,
+  component: CEERankedHome,
   args: {
     profile: rankedProfile("rated"),
     state: RANKED_IDLE_STATE,
@@ -23,7 +23,7 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof RankedHome>;
+} satisfies Meta<typeof CEERankedHome>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -51,9 +51,9 @@ export const Narrow: Story = {
 /** 准入说明：网页端与未登录各一张。 */
 export const GateClient: Story = {
   name: "网页端准入说明",
-  render: () => <RankedGate reason="client" onLogin={fn()} />,
+  render: () => <CEERankedGate reason="client" onLogin={fn()} />,
 };
 export const GateLogin: Story = {
   name: "客户端未登录",
-  render: () => <RankedGate reason="login" onLogin={fn()} />,
+  render: () => <CEERankedGate reason="login" onLogin={fn()} />,
 };

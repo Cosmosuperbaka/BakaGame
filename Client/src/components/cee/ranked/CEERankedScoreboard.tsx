@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { readoutTick, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { formatRankedClock, formatRankedPoints } from "./RankedFormat";
+import { formatRankedClock, formatRankedPoints } from "./CEERankedFormat";
 
 /** 名牌上的身份：人机标明「人机」、定级中只给进度、已定级给整数分；人机的强度从不出现。 */
 function SeatIdentity({ seat }: { seat: CEERankedSeatView }) {
@@ -157,7 +157,7 @@ function SeriesClock({ series }: { series: CEERankedSeriesView }) {
  * 排位对局顶栏：左右是双方名牌，中间是系列赛比分、三局胜负点、本场难度与时钟。
  * 窄屏时名牌与比分仍在同一行，名字截断让位给比分。
  */
-export function RankedScoreboard({ series }: { series: CEERankedSeriesView }) {
+export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView }) {
   const gameNumber = series.game?.number ?? series.games.length;
   return (
     <header className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border bg-panel px-3 py-2.5 sm:flex-nowrap sm:px-4">
