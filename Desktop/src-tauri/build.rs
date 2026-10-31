@@ -59,7 +59,17 @@ fn main() {
 
     write_notice(&canary);
 
-    tauri_build::build();
+    // 应用自身的命令默认**不在 ACL 里**：只有在这里声明过，tauri-build 才会为每个命令
+    // 生成 `allow-<命令名>` 权限条目，能力文件（capability）才可能把它授给页面。
+    // 漏了这一步的表现很隐蔽：命令自己照常工作，但页面调用一律
+    // `baka_ticket not allowed. Plugin not found`——桥接取票失败，通道校验永远不过。
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(
+            tauri_build::AppManifest::new()
+                .commands(&["baka_self_check", "baka_client_id", "baka_ticket"]),
+        ),
+    )
+    .expect("tauri-build 失败");
 }
 
 /// 构建批次标识：CI 传入优先，其次短提交号，最后时间戳。

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-baka-client-id"
+description = "Enables the baka_client_id command without any pre-configured scope."
+commands.allow = ["baka_client_id"]
+
+[[permission]]
+identifier = "deny-baka-client-id"
+description = "Denies the baka_client_id command without any pre-configured scope."
+commands.deny = ["baka_client_id"]

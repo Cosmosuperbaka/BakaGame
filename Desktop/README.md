@@ -42,6 +42,11 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 `capabilities/dev-local-bridge.json`，两处要一起改。release 产物里既没有这条放行分支、也没有本地默认值，
 仍只认 https。
 
+页面调用壳的命令要过两道门，缺一道的表现都是「壳里能用、页面拿到 `not allowed`」：一是 `build.rs` 的
+`AppManifest::commands` 必须列出每个命令（`tauri-build` 据此生成 `allow-<命令>` 权限条目），二是 capability
+按来源把这些权限授出去——`capabilities/site-bridge.json` 管生产站点，`dev-local-bridge.json` 管本地
+开发服务器。新增桥接命令时两处都要加，否则注册/取票在页面上永远失败，而控制台只留一句「通道校验未通过」。
+
 ### 图标
 
 图标按 `tauri.conf.json` 的 `bundle.icon` 命名，源图与 `Client/` 共用同一枚 favicon。重新生成的命令与

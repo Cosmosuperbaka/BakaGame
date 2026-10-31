@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-baka-self-check"
+description = "Enables the baka_self_check command without any pre-configured scope."
+commands.allow = ["baka_self_check"]
+
+[[permission]]
+identifier = "deny-baka-self-check"
+description = "Denies the baka_self_check command without any pre-configured scope."
+commands.deny = ["baka_self_check"]

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "site-bridge",
+  "description": "站点页面调用桥接命令的授权。页面本身就是客户端界面，而 Tauri 把远程来源的 IPC 一并挡在权限层：不在这里列出，壳里命令照常可用，页面却拿到 `not allowed`。这里只放三条桥接命令，不给 core 能力——窗口/事件那套面留给壳自己。",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "remote": {
+    "urls": ["https://game.baka.website"]
+  },
+  "permissions": ["allow-baka-ticket", "allow-baka-self-check", "allow-baka-client-id"]
+}
