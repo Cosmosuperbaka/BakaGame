@@ -1,4 +1,5 @@
 import { ConnectionRegistry } from "./ConnectionRegistry";
+import { requireCEEClientAdmission } from "./CEEClientAdmission";
 import {
   controllerPrivateState,
   McpSeatRegistry,
@@ -587,14 +588,7 @@ export class CEERooms {
    * 建房时查的是「建房的这条连接」自己——房间里还没有别人，不存在要清场才能开启的顾虑。
    */
   requireClientAdmission(connection: ConnectionRecord): void {
-    if (!connection.clientChannel)
-      // 无票与票被拒都落在这里，原因由 ClientChannel.consume 的日志区分；给玩家的文案
-      // 只说明「这条连接没有客户端通道」，不臆断是网页、过期还是地址不符。
-      throw new AppError("CLIENT_REQUIRED", "当前连接没有客户端通道证明，请使用客户端重新进入游戏");
-    // 强制更新只拦这类房间：旧壳在普通房照常玩，协议变更不该波及他们。
-    if (connection.clientChannel.outdated)
-      throw new AppError("CLIENT_OUTDATED", "客户端版本过低，请更新后再创建该房间");
-    if (!connection.account) throw new AppError("LOGIN_REQUIRED", "创建反作弊房间要求已登录");
+    requireCEEClientAdmission(connection, "antiCheatRoom");
   }
   /**
    * 应用房主提交的玩法设置。反作弊那一位**不跟随入参**：它由建房那一刻决定，之后锁死。

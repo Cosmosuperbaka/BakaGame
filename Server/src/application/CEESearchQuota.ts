@@ -3,7 +3,7 @@ import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { ConnectionRecord } from "../shared/Index";
 
 /**
- * CEE 里会枚举角色与作品候选的三条命令。
+ * CEE 里会枚举角色与作品候选的检索命令：增强房三条，排位三条同口径。
  *
  * 外挂不需要服务端接口也能工作（自带 Bangumi dump 时角色 ID 现成），所以这里挡的是
  * 「没有本地库、从零重建候选集」那条最廉价的路径：把循环跑二十分钟并且要对抗限流。
@@ -12,12 +12,33 @@ const SEARCH_COMMANDS = [
   "cee.character.search",
   "cee.subject.search",
   "cee.subject.characters",
+  "cee.ranked.characterSearch",
+  "cee.ranked.subjectSearch",
+  "cee.ranked.subjectCharacters",
 ] as const;
 
 export type CEESearchCommand = (typeof SEARCH_COMMANDS)[number];
 
 export const isCEESearchCommand = (type: string): type is CEESearchCommand =>
   (SEARCH_COMMANDS as readonly string[]).includes(type);
+
+/** 配额桶的种类：三条等价命令组各一个桶。 */
+type SearchBucket = "cee.character.search" | "cee.subject.search" | "cee.subject.characters";
+
+/**
+ * 配额桶的归属：排位那三条与增强房的同名检索共用一个桶。
+ *
+ * 成本与滥用方式完全一致（同一个连接上循环检索重建候选集），分成两个桶等于把这条连接的
+ * 检索预算翻倍，所以按「等价命令」而不是按命令字面量计额度。
+ */
+const SEARCH_BUCKET_OF: Record<CEESearchCommand, SearchBucket> = {
+  "cee.character.search": "cee.character.search",
+  "cee.ranked.characterSearch": "cee.character.search",
+  "cee.subject.search": "cee.subject.search",
+  "cee.ranked.subjectSearch": "cee.subject.search",
+  "cee.subject.characters": "cee.subject.characters",
+  "cee.ranked.subjectCharacters": "cee.subject.characters",
+};
 
 /** 统计窗口。 */
 export const CEE_SEARCH_WINDOW_MS = 60_000;
@@ -39,10 +60,10 @@ export const CEE_SUBJECT_CHARACTERS_RATIO = 1 / 2;
 export const CEE_SUBJECT_CHARACTERS_CONNECTION_MAX =
   CEE_SEARCH_CONNECTION_MAX * CEE_SUBJECT_CHARACTERS_RATIO;
 
-/** 三条检索命令各自的配额桶。 */
+/** 每条检索命令各自的配额桶。 */
 export class CEESearchQuota {
   private readonly buckets: Record<
-    CEESearchCommand,
+    SearchBucket,
     { connection: SlidingWindowRateLimiter; ip: SlidingWindowRateLimiter }
   >;
 
@@ -76,7 +97,7 @@ export class CEESearchQuota {
    * 来源地址只在握手时解析一次并随连接记录带下来，这里不反查 HTTP 头。
    */
   require(type: CEESearchCommand, connection: ConnectionRecord): void {
-    const { connection: byConnection, ip: byIp } = this.buckets[type];
+    const { connection: byConnection, ip: byIp } = this.buckets[SEARCH_BUCKET_OF[type]];
     if (!byConnection.allow(connection.id, this.now()))
       throw new AppError("RATE_LIMITED", "搜索过于频繁，请稍后再试");
     if (connection.clientIp && !byIp.allow(connection.clientIp, this.now()))

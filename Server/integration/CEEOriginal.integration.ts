@@ -10,7 +10,7 @@ import {
   createDefaultCEESettings,
   type CEECharacterView,
   type CEERoomEnterResult,
-  type CEEClientMessage,
+  type CEERoomClientMessage,
 } from "../src/shared/CEE";
 
 const originalRoot = resolve(import.meta.dir, "../../../anime-character-guessr/server");
@@ -117,7 +117,7 @@ test.skipIf(!sourceAvailable)(
       roomId,
       upstreamRoomId: roomId,
     });
-    const execute = async (id: string, message: CEEClientMessage): Promise<unknown> => {
+    const execute = async (id: string, message: CEERoomClientMessage): Promise<unknown> => {
       const result =
         message.type === "cee.room.create"
           ? await service.create(id, target(message.payload.roomId), message.payload)

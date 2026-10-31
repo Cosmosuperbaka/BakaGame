@@ -31,7 +31,7 @@ import {
 import {
   createDefaultCEESettings,
   type CEECharacterView,
-  type CEEClientMessage,
+  type CEERoomClientMessage,
   type CEEGuess,
   type CEEPayload,
   type CEERoomEnterResult,
@@ -186,7 +186,7 @@ export class CEEOriginalService {
   }
 
   /** 已进入原版房间后的指令；信封房号是客户端见到的别名。 */
-  async execute(connectionId: string, message: CEEClientMessage): Promise<unknown> {
+  async execute(connectionId: string, message: CEERoomClientMessage): Promise<unknown> {
     this.requireConnection(connectionId);
     const session = this.requireSession(connectionId);
     if (!safeEqualToken(message.sessionToken, session.token))
@@ -268,7 +268,7 @@ export class CEEOriginalService {
 
   private async executeInRoom(
     session: CEEOriginalSession,
-    message: CEEClientMessage
+    message: CEERoomClientMessage
   ): Promise<unknown> {
     if (!session.confirmed || session.revoked || !session.socket.connected)
       throw new AppError("CEE_ORIGINAL_DISCONNECTED", "原版连接已中断，请重新加入");

@@ -5,8 +5,8 @@ import { AppError } from "../src/domain/Errors";
 import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtocol";
 import {
   createDefaultCEESettings,
-  type CEEClientMessage,
   type CEEPrivateState,
+  type CEERoomClientMessage,
   type CEERoomEnterResult,
 } from "../src/shared/CEE";
 
@@ -58,7 +58,7 @@ const target = (roomId = "1234") => ({
 const request = async (
   service: CEEOriginalService,
   id: string,
-  message: CEEClientMessage
+  message: CEERoomClientMessage
 ): Promise<unknown> => {
   if (!tokens.has(service)) tokens.set(service, new Map());
   const result =

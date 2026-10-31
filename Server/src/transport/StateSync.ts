@@ -1,5 +1,6 @@
 import { compare } from "fast-json-patch";
 import { CEE_LOBBY_ROOMS_EVENT, CEE_STATE_EVENTS } from "../shared/CEE";
+import { CEE_RANKED_STATE_EVENT } from "../shared/CEERanked";
 import type { EventPacket, StatePatchOperation, StateSyncPayload } from "../shared/Index";
 import { SONGUESSR_LOBBY_ROOMS_EVENT } from "../shared/SonGuessr";
 import { WHOISFAKER_LOBBY_ROOMS_EVENT } from "../shared/WhoIsFaker";
@@ -19,6 +20,7 @@ const STATE_EVENTS = new Set([
   "song.room.snapshot",
   "song.game.privateState",
   ...CEE_STATE_EVENTS,
+  CEE_RANKED_STATE_EVENT,
 ]);
 
 /**

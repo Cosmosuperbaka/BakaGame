@@ -5,7 +5,7 @@ import { encodeOriginalCharacter } from "../src/infrastructure/CEEOriginalProtoc
 import { originalRequest } from "../src/infrastructure/CEEOriginalSocket";
 import {
   createDefaultCEESettings,
-  type CEEClientMessage,
+  type CEERoomClientMessage,
   type CEERoomSnapshot,
 } from "../src/shared/CEE";
 import { deferred } from "./CEENativeFixtures";
@@ -116,7 +116,7 @@ async function setup(options: Partial<ConstructorParameters<typeof CEEOriginalSe
       roomId: "1234",
       sessionToken: entry.sessionToken,
       payload: type === "cee.game.setAnswer" ? { characterId: 900, hints: ["提示"] } : {},
-    } as CEEClientMessage);
+    } as CEERoomClientMessage);
   const snapshot = () =>
     [...packets].reverse().find((packet) => packet.event === "cee.room.snapshot")
       ?.payload as CEERoomSnapshot;

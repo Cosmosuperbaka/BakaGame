@@ -5,12 +5,13 @@ import type { CEEDataProvider, CEERawCharacter } from "../src/infrastructure/CEE
 import {
   createDefaultCEESettings,
   type CEECharacterView,
-  type CEEClientMessage,
+  type CEERoomClientMessage,
   type CEECommand,
   type CEEPayload,
   type CEEPrivateState,
   type CEERoomEnterResult,
 } from "../src/shared/CEE";
+import type { CEERankedCommand } from "../src/shared/CEERanked";
 import { FixtureRoom, originalCharacter as character, originalData } from "./CEEOriginalFixtures";
 import { deferred } from "./CEENativeFixtures";
 
@@ -44,14 +45,18 @@ async function setup(
         for (const listener of listeners) listener();
       },
     });
-  const send = async <T extends CEECommand>(id: string, type: T, payload: CEEPayload<T>) => {
+  const send = async <T extends Exclude<CEECommand, CEERankedCommand>>(
+    id: string,
+    type: T,
+    payload: CEEPayload<T>
+  ) => {
     const result = await service.execute(id, {
       id: crypto.randomUUID(),
       type,
       roomId: "1234",
       sessionToken: tokens.get(id),
       payload,
-    } as CEEClientMessage);
+    } as CEERoomClientMessage);
     if (result && typeof result === "object" && "sessionToken" in result)
       tokens.set(id, String(result.sessionToken));
     return result;

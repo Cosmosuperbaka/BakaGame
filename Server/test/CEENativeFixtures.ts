@@ -11,8 +11,9 @@ import type { CEEImageHints } from "../src/infrastructure/CEEImageHints";
 import {
   createDefaultCEESettings,
   type CEECharacterView,
-  type CEEClientMessage,
   type CEECommand,
+  type CEERankedCommand,
+  type CEERoomClientMessage,
   type CEEPayload,
   type CEEPrivateState,
   type CEERoomEnterResult,
@@ -143,7 +144,8 @@ export function ceeTestHarness(
     service.registerConnection(record);
     return { record, sent, closed };
   };
-  const send = async <T extends CEECommand>(
+  // 夹具直连增强房服务：排位命令在入口层就被分流，不会走到这里。
+  const send = async <T extends Exclude<CEECommand, CEERankedCommand>>(
     client: CEETestClient,
     type: T,
     payload: CEEPayload<T>,
@@ -155,7 +157,7 @@ export function ceeTestHarness(
       roomId,
       sessionToken: client.token,
       payload,
-    } as CEEClientMessage);
+    } as CEERoomClientMessage);
     // 与生产入口同构：检索结果由入口层记进台账，猜测时据此判断「有没有先搜再猜」。
     if (type === "cee.character.search")
       provenance.note(client.record.id, ceeCharacterIdsOf(result));

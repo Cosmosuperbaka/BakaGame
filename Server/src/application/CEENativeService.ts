@@ -1,6 +1,6 @@
 import type { GameRecorder } from "../domain/GameRecord";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
-import type { CEEClientMessage, CEEGuess, ConnectionRecord } from "../shared/Index";
+import type { CEEGuess, CEERoomClientMessage, ConnectionRecord } from "../shared/Index";
 import { AppError } from "../domain/Errors";
 import type { CEEPlayerRecord, CEERoom } from "../domain/CEEModel";
 import { ceeUnitId } from "../domain/CEEModel";
@@ -99,7 +99,7 @@ export class CEENativeService {
     this.state.housekeeping();
     this.rescheduleAll();
   }
-  async execute(connectionId: string, message: CEEClientMessage): Promise<unknown> {
+  async execute(connectionId: string, message: CEERoomClientMessage): Promise<unknown> {
     const connection = this.state.connections.getConnection(connectionId);
     this.state.assertMcpManualControl(connection, message.type);
     if (message.type === "mcp.focus")

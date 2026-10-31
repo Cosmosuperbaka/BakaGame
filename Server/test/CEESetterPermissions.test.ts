@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
-import type { CEEClientMessage, CEERoomEnterResult } from "../src/shared/CEE";
+import type { CEERoomClientMessage, CEERoomEnterResult } from "../src/shared/CEE";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
 
 test("原版手动出题：出题方式只记在本服务端，开始后进入选人阶段，出题人不必准备，可取消退回", async () => {
@@ -14,7 +14,7 @@ test("原版手动出题：出题方式只记在本服务端，开始后进入�
   });
   for (const id of ["host", "guest"])
     service.registerConnection({ id, lobbySubscribed: false, send() {}, close() {} });
-  const send = (id: string, token: string, message: CEEClientMessage) =>
+  const send = (id: string, token: string, message: CEERoomClientMessage) =>
     service.execute(id, { ...message, sessionToken: token });
   const target = { source: "original" as const, roomId: "1234", upstreamRoomId: "1234" };
   try {

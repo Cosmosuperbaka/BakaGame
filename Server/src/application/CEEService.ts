@@ -3,10 +3,12 @@ import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { GameRecorder } from "../domain/GameRecord";
 import type {
   CEEClientMessage,
+  CEERoomClientMessage,
   CEERoomEnterResult,
   CEERoomSummary,
   ConnectionRecord,
 } from "../shared/Index";
+import type { CEERankedCommand } from "../shared/CEERanked";
 import { CEE_LOBBY_ROOMS_EVENT } from "../shared/CEE";
 import { AppError } from "../domain/Errors";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
@@ -19,6 +21,9 @@ import {
   ceeCharacterIdsOf,
   type CEEAntiCheatReviewQueue,
 } from "./CEEAntiCheatSignals";
+import { CEERankedService } from "./CEERankedService";
+import type { CEERankedPoolProvider } from "./CEERankedPool";
+import type { CEERankedStore } from "./CEERankedStore";
 import { CEESearchQuota, isCEESearchCommand } from "./CEESearchQuota";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
@@ -28,9 +33,15 @@ import { LobbyFanout } from "./LobbyFanout";
 /** 上游房间列表的缓存时长；失败后同样等待该时长再重试，避免每次房号未命中都回源。 */
 const REMOTE_ROOMS_TTL_MS = 5000;
 
+/** 统一入口的排位命令：`cee.ranked.` 前缀在类型层与运行层都用同一条判据分流。 */
+type CEERankedClientMessage = Extract<CEEClientMessage, { type: CEERankedCommand }>;
+const isCEERankedMessage = (message: CEEClientMessage): message is CEERankedClientMessage =>
+  message.type.startsWith("cee.ranked.");
+
 export class CEEService implements AdminRoomControl {
   readonly native: CEENativeService;
   readonly original: CEEOriginalService;
+  readonly ranked: CEERankedService;
   /** 统一房号目录：增强房与原版房共用一个 4 位号空间，客户端只见到这一个号。 */
   readonly directory: CEERoomDirectory;
   private readonly connections = new Map<string, ConnectionRecord>();
@@ -58,6 +69,12 @@ export class CEEService implements AdminRoomControl {
       gameRecorder?: GameRecorder;
       /** 反作弊人工复核队列：只在反作弊房产生条目，任何处罚都由人决定。 */
       reviewQueue?: CEEAntiCheatReviewQueue;
+      /** 排位审计仓储；未注入时排位整体不可用。 */
+      rankedStore?: CEERankedStore;
+      /** 排位题库；未注入时排位整体不可用。 */
+      rankedPool?: CEERankedPoolProvider;
+      /** 取账号昵称作为排位显示名。 */
+      resolveRankedName?: (userId: string) => Promise<string | null>;
     }
   ) {
     this.now = options.now ?? Date.now;
@@ -72,6 +89,16 @@ export class CEEService implements AdminRoomControl {
     this.original =
       options.originalService ??
       new CEEOriginalService({ ...options, logger: options.eventLogger });
+    this.ranked = new CEERankedService({
+      data: options.data,
+      provenance: this.provenance,
+      store: options.rankedStore,
+      pool: options.rankedPool,
+      resolveName: options.resolveRankedName,
+      logger: options.eventLogger,
+      now: options.now,
+      random: options.random,
+    });
     this.lobbyFanout = new LobbyFanout({
       event: CEE_LOBBY_ROOMS_EVENT,
       now: () => this.now(),
@@ -84,6 +111,7 @@ export class CEEService implements AdminRoomControl {
     this.connections.set(connection.id, connection);
     this.native.registerConnection(connection);
     this.original.registerConnection(connection);
+    this.ranked.registerConnection(connection);
   }
   async unregisterConnection(id: string): Promise<void> {
     const connection = this.connections.get(id);
@@ -91,6 +119,7 @@ export class CEEService implements AdminRoomControl {
     if (isOriginal && connection) this.native.state.connections.detach(connection);
     this.original.unregisterConnection(id);
     this.native.unregisterConnection(id);
+    this.ranked.unregisterConnection(id);
     this.provenance.forget(id);
     this.connections.delete(id);
   }
@@ -103,6 +132,13 @@ export class CEEService implements AdminRoomControl {
       throw new AppError("RATE_LIMITED", "消息发送过快，请稍后再试");
     // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
     if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
+    if (isCEERankedMessage(message)) {
+      const result = await this.ranked.execute(connection, message);
+      // 排位检索与增强房共用台账：猜测时的「先搜后猜」判据要能查到这次检索。
+      if (message.type === "cee.ranked.characterSearch")
+        this.provenance.note(connection.id, ceeCharacterIdsOf(result));
+      return result;
+    }
     if (message.type === "cee.lobby.subscribeRooms") {
       if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间");
       connection.lobbySubscribed = true;
@@ -198,6 +234,7 @@ export class CEEService implements AdminRoomControl {
   async runHousekeeping(): Promise<void> {
     this.native.runHousekeeping();
     this.original.runHousekeeping();
+    this.ranked.runHousekeeping();
     if (
       [...this.connections.values()].some(
         (connection) => connection.lobbySubscribed && !connection.roomId
@@ -208,6 +245,7 @@ export class CEEService implements AdminRoomControl {
   }
   notifyShutdown(): void {
     this.native.notifyShutdown();
+    this.ranked.notifyShutdown();
   }
   /** 只有本地原生房间进快照；原版房是上游代理，恢复时按上游重新同步即可。 */
   exportSnapshots(): SnapshottedRoom[] {
@@ -217,6 +255,7 @@ export class CEEService implements AdminRoomControl {
     return this.native.restoreSnapshots(rooms, savedAt);
   }
   async close(): Promise<void> {
+    this.ranked.close();
     this.native.close();
     this.original.close();
     this.directory.clear();
@@ -226,7 +265,7 @@ export class CEEService implements AdminRoomControl {
   private async enter(
     id: string,
     message: Extract<
-      CEEClientMessage,
+      CEERoomClientMessage,
       { type: "cee.room.create" | "cee.room.join" | "cee.room.reconnect" }
     >
   ): Promise<CEERoomEnterResult> {

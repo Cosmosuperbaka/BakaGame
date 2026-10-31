@@ -4,6 +4,11 @@ import { Value } from "@sinclair/typebox/value";
 import type { ChatMessage, PlayerAccount, RoomVisibility } from "./Model";
 import type { ClientEnvelope } from "./Protocol";
 import { AgentFocusInputSchema } from "./AgentActivity";
+import {
+  CEERankedPayloadSchemas,
+  type CEERankedCommand,
+  type CEERankedResponse,
+} from "./CEERanked";
 
 // 默认值住在 CEEDefaults.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
 export * from "./CEEDefaults";
@@ -379,10 +384,14 @@ export const CEEPayloadSchemas = {
   "cee.game.surrender": empty,
   "cee.game.next": empty,
   "cee.game.imageHint": empty,
+  // 排位命令与房间命令共用同一入口：合并后信封 schema、命令联合与解析自动覆盖排位。
+  ...CEERankedPayloadSchemas,
 } as const;
 export type CEECommand = keyof typeof CEEPayloadSchemas;
 export type CEEPayload<T extends CEECommand> = Static<(typeof CEEPayloadSchemas)[T]>;
 export type CEEClientMessage = { [K in CEECommand]: ClientEnvelope<K, CEEPayload<K>> }[CEECommand];
+/** 房间与原版路径只吃非排位命令：排位在入口就被分流到排位服务。 */
+export type CEERoomClientMessage = Exclude<CEEClientMessage, { type: CEERankedCommand }>;
 export const CEE_STATE_EVENTS = ["cee.room.snapshot", "cee.game.privateState"] as const;
 /** 大厅房间列表的事件名；口径同另外两个游戏，服务端与传输层丢弃判定读同一个常量。 */
 export const CEE_LOBBY_ROOMS_EVENT = "cee.lobby.rooms";
@@ -417,21 +426,23 @@ export type CEEClientWireMessage = Static<typeof CEEClientMessageSchema>;
  * 客户端手写一条条件类型链，服务端改 handler 返回值时这里不会跟着变。挪到命令表旁边，
  * 两端引用同一条推导。
  */
-export type CEEResponse<TCommand extends CEECommand> = TCommand extends "cee.lobby.subscribeRooms"
-  ? { originalAvailable: boolean }
-  : TCommand extends "cee.room.create" | "cee.room.join" | "cee.room.reconnect"
-    ? CEERoomEnterResult
-    : TCommand extends "cee.character.search" | "cee.subject.characters"
-      ? { results: CEECharacterSummary[] }
-      : TCommand extends "cee.subject.search" | "cee.subject.lookup"
-        ? { results: CEESubjectSummary[] }
-        : TCommand extends "cee.directory.import"
-          ? CEEDirectoryResult
-          : TCommand extends "cee.character.image" | "cee.subject.image"
-            ? { imageUrl?: string }
-            : TCommand extends "cee.game.imageHint"
-              ? { dataUrl: string }
-              : Record<string, unknown>;
+export type CEEResponse<TCommand extends CEECommand> = TCommand extends CEERankedCommand
+  ? CEERankedResponse<TCommand>
+  : TCommand extends "cee.lobby.subscribeRooms"
+    ? { originalAvailable: boolean }
+    : TCommand extends "cee.room.create" | "cee.room.join" | "cee.room.reconnect"
+      ? CEERoomEnterResult
+      : TCommand extends "cee.character.search" | "cee.subject.characters"
+        ? { results: CEECharacterSummary[] }
+        : TCommand extends "cee.subject.search" | "cee.subject.lookup"
+          ? { results: CEESubjectSummary[] }
+          : TCommand extends "cee.directory.import"
+            ? CEEDirectoryResult
+            : TCommand extends "cee.character.image" | "cee.subject.image"
+              ? { imageUrl?: string }
+              : TCommand extends "cee.game.imageHint"
+                ? { dataUrl: string }
+                : Record<string, unknown>;
 
 export function normalizeCEEEnvelope(input: CEEClientWireMessage): CEEClientMessage {
   const message = { ...input };
