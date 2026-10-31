@@ -76,9 +76,15 @@ export const user = mysqlTable("user", {
   }),
 });
 
-/** 注册序号：按建号顺序递增，先行者按它授予；序号不因注销回收。 */
+/**
+ * 注册序号：按建号顺序连续递增，先行者按它授予；序号不因注销回收。
+ *
+ * 序号由应用层按「当前最大值 + 1」写入（见 `RegistrationRepository`），**不能交给数据库自增**：
+ * TiDB 按缓存段预取自增值（`AUTO_ID_CACHE` 默认一段 30000），真实注册名次会被跳号顶穿
+ * 先行者名额。线上列仍带 AUTO_INCREMENT，显式赋值照常写入，行为与普通整数列一致。
+ */
 export const userRegistration = mysqlTable("user_registration", {
-  seq: int("seq", { unsigned: true }).autoincrement().primaryKey(),
+  seq: int("seq", { unsigned: true }).primaryKey(),
   userId: varchar("user_id", { length: 64 })
     .notNull()
     .unique()
