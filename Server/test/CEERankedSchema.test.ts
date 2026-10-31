@@ -1,7 +1,8 @@
 // ==================== 一次性建表脚本与 schema 的一致性 ====================
 // `Server/oneoff/2026-10-31-cee-ranked.sql` 是真正在各环境执行的那份文本，Schema.ts 是唯一真相源。
 // 两者靠人工同步，最容易漏的是「加了列忘了脚本」和「列宽改了脚本没改」，所以这里逐列比对，
-// 而不是只数一下列的个数。脚本尚未在任何环境执行过，因此它直接写 CREATE TABLE，不含 ALTER。
+// 而不是只数一下列的个数。脚本是首次建表文本：直接写 CREATE TABLE，不含 ALTER，
+// 因此执行过的环境不能重跑（重复执行会因表已存在失败）。
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
