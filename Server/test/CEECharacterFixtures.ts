@@ -25,6 +25,11 @@ export function createCEECharacterFixture() {
     [3, "Game hero", "游戏主角", "male", ["百分%号", "下划_线"], 5, 50],
     [4, "Music hero", "音乐角色", "?", [], 0, 10],
     [5, "Quiet hero", "安静角色", "?", [], 0, 5],
+    // 排位题库夹具：两位主角分属不同作品、跨作角色在两部里各得一份权重。
+    [6, "Pool alpha", "排位主角甲", "female", [], 1, 30],
+    [7, "Pool beta", "排位主角乙", "male", [], 1, 20],
+    [8, "Pool bridge", "排位跨作角色", "?", [], 1, 25],
+    [9, "Pool gamma", "排位主角丙", "female", [], 1, 15],
   ] as const;
   for (const [id, name, nameCn, gender, aliases, comments, collects] of characters) {
     db.query("INSERT INTO characters VALUES (?,1,?,?,?,?,?,?,?)").run(
@@ -65,6 +70,9 @@ export function createCEECharacterFixture() {
     [16, 2, "无年作品", "", 0, { 无年: 1000 }, ["无年"], 10, 1000, 1],
     [17, 2, "空角色作品", "2022-01-01", 0, {}, [], 5, 0, 2],
     [18, 2, "冷门作品", "2020-01-01", 0, { 安静: 1 }, [], 5, 1, 5],
+    // 排位夹具作品：热度都压在原作品 10 之下，年份落在 d1 窗口内，主角数 3 与 2。
+    [20, 2, "排位作品甲", "2023-01-01", 0, { 竞技: 3 }, [], 8, 20, 700],
+    [21, 2, "排位作品乙", "2024-01-01", 0, { 日常: 2 }, [], 7, 20, 600],
   ] as const;
   for (const [id, type, name, date, nsfw, tags, metas, score, ratingCount, heat] of subjects) {
     db.query("INSERT INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
@@ -92,6 +100,11 @@ export function createCEECharacterFixture() {
     [3, 11, 1, 0],
     [4, 13, 1, 0],
     [5, 18, 1, 0],
+    [6, 20, 1, 0],
+    [7, 20, 1, 1],
+    [8, 20, 1, 2],
+    [8, 21, 1, 0],
+    [9, 21, 1, 1],
   ]) {
     db.query("INSERT INTO character_subject_relations VALUES (?,?,?,?)").run(
       characterId,

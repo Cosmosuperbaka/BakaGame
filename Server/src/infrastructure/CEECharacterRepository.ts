@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { openDataset } from "./OpenDataset";
 import { discoverNewSubjects, type DiscoveryResult } from "./SubjectDiscovery";
 import { AppError } from "../domain/Errors";
+import type { CEERankedCandidate } from "../domain/CEERankedSolver";
 import type {
   CEECharacterSummary,
   CEECharacterView,
@@ -438,9 +439,13 @@ export class CEECharacterRepository implements CEEDataProvider {
     return this.pickSubjectFromHeatPool({ settings, year, endYear, index }, roll);
   }
 
-  /** 按标签与年份窗口取热度榜候选作品；下标越界或按年抽时改在候选内随机。 */
-  private pickSubjectFromHeatPool(draw: YearSubjectDraw, roll: SubjectRoll): number {
-    const { settings, year, endYear, index } = draw;
+  /**
+   * 按标签与年份窗口取热度榜候选作品编号（热度降序、同热度按编号升序）。
+   *
+   * 抽取与排位题库共用这一条口径：排位要把整档作品铺开算权重，若另写一份 SQL，
+   * 两边的「哪些作品算主角作品」迟早会分叉。
+   */
+  private heatPoolSubjectIds(settings: CEESettings, year: number, endYear: number): number[] {
     const types = resolveCEESubjectTypes(settings.metaTags, true);
     const tags = subjectMetaTags(settings.metaTags);
     const endDate = `${settings.useSubjectPerYear ? year + 1 : endYear + 1}-01-01`;
@@ -459,11 +464,38 @@ export class CEECharacterRepository implements CEEDataProvider {
         ...tags,
         settings.topNSubjects
       ) as { id: number }[];
-    if (!rows.length) throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
-    return rows[settings.useSubjectPerYear || index >= rows.length ? roll(rows.length) : index].id;
+    return rows.map((row) => row.id);
   }
 
-  /** 从选定作品的登场角色里抽一个；主角模式只取 `relation_type=1`。 */
+  /** 热度榜里按抽到的下标落一部作品；下标越界或按年抽时改在候选内随机。 */
+  private pickSubjectFromHeatPool(draw: YearSubjectDraw, roll: SubjectRoll): number {
+    const { settings, year, endYear, index } = draw;
+    const ids = this.heatPoolSubjectIds(settings, year, endYear);
+    if (!ids.length) throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
+    return ids[settings.useSubjectPerYear || index >= ids.length ? roll(ids.length) : index];
+  }
+
+  /**
+   * 一部作品里符合主角口径的角色编号。
+   *
+   * 主角模式下多取一条（`LIMIT 2001`）而不是直接夹到 2000：超限时抽取要报错、
+   * 排位要跳过整部作品，两边都需要知道「确实超过 2000」而不是「恰好 2000」。
+   */
+  private subjectCharacterIds(subjectId: number, settings: CEESettings): number[] {
+    const relation = settings.mainCharacterOnly ? "r.relation_type=1" : "r.relation_type IN (1,2)";
+    return (
+      this.db
+        .query(
+          `SELECT c.id FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
+        WHERE r.subject_id=? AND ${relation} ORDER BY r.relation_order,c.id LIMIT ?`
+        )
+        .all(subjectId, settings.mainCharacterOnly ? 2001 : settings.characterNum) as {
+        id: number;
+      }[]
+    ).map((row) => row.id);
+  }
+
+  /** 从选定作品的登场角色里抽一个。 */
   private async pickCharacterOfSubject(
     subjectId: number,
     settings: CEESettings,
@@ -471,20 +503,52 @@ export class CEECharacterRepository implements CEEDataProvider {
   ): Promise<CEECharacterView> {
     const subject = this.db.query("SELECT id FROM subjects WHERE id=? AND nsfw=0").get(subjectId);
     if (!subject) throw new AppError("CEE_SUBJECT_NOT_FOUND", "指定作品不在本地可用数据集中");
-    const relation = settings.mainCharacterOnly ? "r.relation_type=1" : "r.relation_type IN (1,2)";
-    const candidates = this.db
-      .query(
-        `SELECT c.id FROM character_subject_relations r JOIN characters c ON c.id=r.character_id
-      WHERE r.subject_id=? AND ${relation} ORDER BY r.relation_order,c.id LIMIT ?`
-      )
-      .all(subjectId, settings.mainCharacterOnly ? 2001 : settings.characterNum) as {
-      id: number;
-    }[];
+    const candidates = this.subjectCharacterIds(subjectId, settings);
     if (candidates.length > 2000)
       throw new AppError("CEE_SUBJECT_TOO_LARGE", "作品主角数量过多，请调整出题范围");
     if (!candidates.length)
       throw new AppError("CEE_NO_CHARACTER", "选到的作品没有符合条件的本地角色");
-    return this.getCharacter(candidates[roll(candidates.length)].id, settings);
+    return this.getCharacter(candidates[roll(candidates.length)], settings);
+  }
+
+  /**
+   * 排位题库：把固定参数档下的全部主角铺开，并给出每位角色被抽为答案的先验权重。
+   *
+   * 权重口径与抽取一致 —— 先均匀抽一部作品，再在该作品主角里均匀抽一位，
+   * 所以每部作品的主角数为 n、参与作品数为 S 时每位加 `1/(S×n)`；同一角色
+   * 出现在多部作品里时权重累加（他在每次抽取里都有更多机会被抽到）。
+   */
+  async listRankedCandidates(settings: CEESettings): Promise<CEERankedCandidate[]> {
+    this.assertOpen();
+    await this.ready;
+    if (
+      settings.useIndex ||
+      settings.useSubjectPerYear ||
+      settings.addedSubjects.length > 0 ||
+      !settings.mainCharacterOnly
+    )
+      throw new AppError("CEE_RANKED_SETTINGS_INVALID", "排位题库只支持固定参数档");
+    const currentYear = new Date(this.now()).getUTCFullYear();
+    const endYear = Math.min(currentYear, settings.endYear);
+    const leadsBySubject: number[][] = [];
+    for (const subjectId of this.heatPoolSubjectIds(settings, settings.startYear, endYear)) {
+      const leads = this.subjectCharacterIds(subjectId, settings);
+      // 与抽取同口径：超限或无主角的作品不出题，也就不参与权重分配（S 只数留下的作品）
+      if (!leads.length || leads.length > 2000) continue;
+      leadsBySubject.push(leads);
+    }
+    if (!leadsBySubject.length)
+      throw new AppError("CEE_NO_SUBJECT", "选不到符合条件的作品，请调整范围");
+    const weights = new Map<number, number>();
+    for (const leads of leadsBySubject) {
+      const share = 1 / (leadsBySubject.length * leads.length);
+      for (const id of leads) weights.set(id, (weights.get(id) ?? 0) + share);
+    }
+    const candidates: CEERankedCandidate[] = [];
+    for (const [id, weight] of [...weights].sort(([a], [b]) => a - b)) {
+      candidates.push({ weight, character: await this.getCharacter(id, settings) });
+    }
+    return candidates;
   }
 
   async importDirectory(indexId: number): Promise<CEEDirectoryResult> {
