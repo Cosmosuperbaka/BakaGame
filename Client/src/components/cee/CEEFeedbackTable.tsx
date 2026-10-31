@@ -1,17 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useId, useLayoutEffect, useRef, useState, type Ref } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  ChevronsDown,
-  ChevronsUp,
-  Lightbulb,
-  Minus,
-  X,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import type { CEEComparison, CEEFeedback, CEEFeedbackValue, CEEGuess } from "@bakagame/shared";
+import { Check, Lightbulb } from "lucide-react";
+import type { CEEFeedback, CEEFeedbackValue, CEEGuess } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible, DisclosureChevron } from "@/components/ui/Collapsible";
@@ -30,30 +20,7 @@ import {
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
-
-/**
- * 比较值来自「猜测减答案」（服务端 buildCEEFeedback）；箭头指向答案，方向与差值相反。
- * 色块只分三档：相同为绿，落在近似阈值内为金，差得远或不匹配保持中性；
- * 远近另由单箭头与双箭头区分，不只靠颜色传达。
- */
-type Tone = "match" | "near" | "far" | "unknown";
-const COMPARISON: Record<CEEComparison, { label: string; icon: LucideIcon; tone: Tone }> = {
-  "=": { label: "相同", icon: Check, tone: "match" },
-  yes: { label: "匹配", icon: Check, tone: "match" },
-  "+": { label: "答案更低", icon: ArrowDown, tone: "near" },
-  "-": { label: "答案更高", icon: ArrowUp, tone: "near" },
-  "++": { label: "答案低很多", icon: ChevronsDown, tone: "far" },
-  "--": { label: "答案高很多", icon: ChevronsUp, tone: "far" },
-  no: { label: "不匹配", icon: X, tone: "far" },
-  "?": { label: "无法比较", icon: Minus, tone: "unknown" },
-};
-
-const TONE_CLASS: Record<Tone, string> = {
-  match: "border-success/40 bg-success/10 text-success",
-  near: "border-warning/40 bg-warning/10 text-warning",
-  far: "border-transparent bg-muted text-foreground",
-  unknown: "border-dashed border-border text-muted-foreground",
-};
+import { CEE_COMPARISON, CEE_TONE_CLASS } from "./CEEComparison";
 
 const GENDER_TEXT: Record<string, string> = { female: "女", male: "男" };
 
@@ -83,7 +50,7 @@ function ValueChip({
   data: CEEFeedbackValue;
   flip?: boolean;
 }) {
-  const { label, icon: Icon, tone } = COMPARISON[data.comparison];
+  const { label, icon: Icon, tone } = CEE_COMPARISON[data.comparison];
   const missing = data.value === "" || data.value === "?" || data.value === -1;
   const text = missing
     ? "未知"
@@ -97,7 +64,7 @@ function ValueChip({
         variants={flip ? clueFlipChip : undefined}
         className={cn(
           "inline-flex h-7 min-w-14 items-center justify-center gap-0.5 rounded-md border px-1.5 tabular-nums",
-          TONE_CLASS[tone]
+          CEE_TONE_CLASS[tone]
         )}
       >
         <span className="sr-only">{FIELD_LABEL[field]}</span>

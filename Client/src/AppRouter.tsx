@@ -62,6 +62,7 @@ export function createAppRouter() {
           children: [
             { index: true, lazy: page(() => import("@/pages/CEEPage"), "cee") },
             { path: "room/:roomId", lazy: page(() => import("@/pages/CEERoomPage"), "cee-room") },
+            { path: "ranked", lazy: page(() => import("@/pages/CEERankedPage"), "cee-ranked") },
             { path: "*", element: <Navigate to="/cee" replace /> },
           ],
         },
