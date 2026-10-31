@@ -37,6 +37,19 @@ const ANTI_CHEAT_MESSAGES: Readonly<Record<string, string>> = {
 export const antiCheatMessage = (code: string): string | undefined =>
   Object.hasOwn(ANTI_CHEAT_MESSAGES, code) ? ANTI_CHEAT_MESSAGES[code] : undefined;
 
+/**
+ * 排位赛里同一批通道错误码的措辞：准入不是「创建或加入房间」，而是「参与排位」，
+ * 照抄房间文案会让玩家以为要专门去开一个反作弊房。其余错误码沿用服务端原文。
+ */
+const RANKED_ANTI_CHEAT_MESSAGES: Readonly<Record<string, string>> = {
+  CLIENT_REQUIRED: `排位赛需要使用 BakaGame 客户端，请下载安装后再参与：${BAKA_CLIENT_DOWNLOAD_URL}`,
+  CLIENT_OUTDATED: `BakaGame 客户端版本过旧，请更新到最新版后再参与排位：${BAKA_CLIENT_DOWNLOAD_URL}`,
+};
+
+/** 排位命令失败时命中专用文案的错误码；未命中返回 `undefined`，由排位 store 回落到通用上报。 */
+export const rankedAntiCheatMessage = (code: string): string | undefined =>
+  Object.hasOwn(RANKED_ANTI_CHEAT_MESSAGES, code) ? RANKED_ANTI_CHEAT_MESSAGES[code] : undefined;
+
 /** 该错误码是否要求打开登录弹窗。 */
 export const isLoginRequiredCode = (code: string): boolean => code === "LOGIN_REQUIRED";
 

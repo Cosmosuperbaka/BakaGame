@@ -8,6 +8,7 @@ import {
 } from "@/components/common/SearchCombobox";
 import { Button } from "@/components/ui/Button";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
+import { useCEEDataSource } from "@/lib/CEEDataSource";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { CEECharacterImage, CEESubjectImage } from "./CEECharacterImage";
 
@@ -190,9 +191,10 @@ export function CEESearch({
   /** Agent 操作追踪：输入框、模式按钮与结果行的控件 id 前缀。 */
   agentControlPrefix?: string;
 }) {
-  const searchCharacters = useCEEStore((state) => state.searchCharacters);
-  const searchSubjects = useCEEStore((state) => state.searchSubjects);
-  const controlled = useCEEStore((state) => state.privateState?.mcpControlled === true);
+  const source = useCEEDataSource();
+  const searchCharacters = source.searchCharacters;
+  const searchSubjects = source.searchSubjects;
+  const controlled = source.useControlled();
   const [keyword, setKeyword] = useState("");
   const [chosenMode, setMode] = useState<CEESearchMode>(defaultMode);
   const mode: CEESearchMode = allowSubjects ? chosenMode : "character";
@@ -241,7 +243,7 @@ export function CEESearch({
     setPendingKey(key);
     setActionError("");
     try {
-      const characters = await useCEEStore.getState().loadSubjectCharacters(subject.id);
+      const characters = await source.loadSubjectCharacters(subject.id);
       if (request === generation.current)
         setCast({ key: `cast-${subject.id}-${request}`, subject, characters });
     } catch (failure) {

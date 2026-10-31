@@ -1,7 +1,7 @@
 import { UserRound } from "lucide-react";
 import type { CEECharacterSummary, CEEImageSize, CEESubjectSummary } from "@bakagame/shared";
-import { useCEEStore } from "@/stores/UseCEEStore";
 import { LazyImage } from "@/components/common/LazyImage";
+import { useCEEDataSource } from "@/lib/CEEDataSource";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -20,20 +20,16 @@ export function CEECharacterImage({
   className?: string;
   size?: CEEImageSize;
 }) {
+  const source = useCEEDataSource();
   return (
     <LazyImage
-      cacheKey={`cee-character:${character.id}:${size}`}
+      cacheKey={`${source.cacheKeyPrefix}-character:${character.id}:${size}`}
       initial={character.imageUrl}
       upgrade={size === "large" && Boolean(character.imageUrl)}
       className={cn("h-10 w-10", className)}
       imageClassName="object-top"
       fallback={<UserRound aria-hidden="true" />}
-      request={async () => {
-        const { imageUrl } = await useCEEStore
-          .getState()
-          .sendCommand("cee.character.image", { characterId: character.id, size });
-        return imageUrl;
-      }}
+      request={() => source.characterImage(character.id, size)}
     />
   );
 }
@@ -48,18 +44,14 @@ export function CEESubjectImage({
   className?: string;
   fallback: React.ReactNode;
 }) {
+  const source = useCEEDataSource();
   return (
     <LazyImage
-      cacheKey={`cee-subject:${subject.id}`}
+      cacheKey={`${source.cacheKeyPrefix}-subject:${subject.id}`}
       initial={subject.imageUrl}
       className={cn("h-12 w-9", className)}
       fallback={fallback}
-      request={async () => {
-        const { imageUrl } = await useCEEStore
-          .getState()
-          .sendCommand("cee.subject.image", { subjectId: subject.id });
-        return imageUrl;
-      }}
+      request={() => source.subjectImage(subject.id)}
     />
   );
 }

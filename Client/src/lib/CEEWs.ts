@@ -23,10 +23,17 @@ const client = createWebSocketClient("/api/ws", bakaChannelQuery);
 const CHANNEL_TICKET_WAIT_MS = 6_000;
 /** 换票重连的等待上限：要覆盖 1 秒退避加一次握手，不能用普通请求的 10 秒语义。 */
 const CHANNEL_RECONNECT_WAIT_MS = 8_000;
+const RANKED_ADMISSION_COMMANDS = new Set<string>([
+  "cee.ranked.status",
+  "cee.ranked.queue",
+  "cee.ranked.playBot",
+]);
 const ADMISSION_COMMANDS = new Set<string>([
   "cee.room.create",
   "cee.room.join",
   "cee.room.reconnect",
+  // 排位的三条准入命令同样吃连接级通道证明；服务端入口按 `cee.ranked.` 前缀分流。
+  ...RANKED_ADMISSION_COMMANDS,
 ]);
 
 const channelNotReady = (): ProtocolError => ({
@@ -79,8 +86,12 @@ client.send = (async (
   const shell = isBakaClient();
   const antiCheatCreate = type === "cee.room.create" && payload.bakaAntiCheat === true;
   // 进入 CEE 页面时壳还在异步签票：这条连接建出来就没有通道证明，且不会自己补。
-  // 建房前先换一次带票连接，否则开关可见、建房必被服务端拒。
-  if (shell && antiCheatCreate && !lastHandshakeHadTicket()) {
+  // 反作弊建房与排位准入都先换一次带票连接，否则开关可见、请求必被服务端拒。
+  if (
+    shell &&
+    (antiCheatCreate || RANKED_ADMISSION_COMMANDS.has(type)) &&
+    !lastHandshakeHadTicket()
+  ) {
     if (!(await reconnectWithTicket())) return rejectedProtocol(channelNotReady());
   }
   try {
