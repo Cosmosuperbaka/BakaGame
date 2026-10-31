@@ -48,9 +48,55 @@ pub fn log_identity() {
     // 第一眼就能看出是不是被环境私有的变量指去了别的入口（生产网关返回的 502 是 HTML）。
     eprintln!("[BakaGame desktop] site={}", crate::config::site_url());
     eprintln!("[BakaGame desktop] api={}", crate::config::api_base());
+    // 终端里挂 `HTTP_PROXY` 是本地开发最容易踩的坑：reqwest 默认吃这个变量，
+    // 本地回环请求会被送给代理进程，回来一个空体 502。壳已对回环强制直连，
+    // 但生产域名仍然走它，所以「设了代理」这件事本身就值得写在日志里。
+    if let Some(hint) = proxy_hint() {
+        eprintln!("[BakaGame desktop] proxy={hint}（回环地址已强制直连，其余照旧走代理）");
+    }
     // 引用条款常量：即使将来不再打印全文，`.rodata` 里也必须留着它
     let notice_len = CLIENT_NOTICE.len();
     if notice_len == 0 {
         eprintln!("条款常量异常为空");
+    }
+}
+
+/// 环境里生效的代理（大小写写法都认，`HTTPS` 优先于 `HTTP`），供启动横幅打一行。
+fn proxy_hint() -> Option<String> {
+    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"]
+        .iter()
+        .find_map(|key| {
+            let value = std::env::var(key).ok()?;
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                None
+            } else {
+                Some(format!("{key}={}", redact_proxy(&value)))
+            }
+        })
+}
+
+/// 代理地址可能带 `用户:密码@`：日志只留协议与主机，凭据不进控制台。
+fn redact_proxy(proxy: &str) -> String {
+    match (proxy.find("://"), proxy.rfind('@')) {
+        (Some(scheme_end), Some(at)) if at > scheme_end => {
+            format!("{}://***@{}", &proxy[..scheme_end], &proxy[at + 1..])
+        }
+        _ => proxy.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 代理凭据不得落进日志
+    #[test]
+    fn redacts_proxy_credentials() {
+        assert_eq!(redact_proxy("http://127.0.0.1:7897"), "http://127.0.0.1:7897");
+        assert_eq!(
+            redact_proxy("http://user:secret@127.0.0.1:7897"),
+            "http://***@127.0.0.1:7897"
+        );
     }
 }

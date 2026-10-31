@@ -77,6 +77,13 @@ where
     if let Some(resolver) = crate::httpdns::shared() {
         builder = builder.dns_resolver(Arc::new(crate::httpdns::ReqwestResolver::new(resolver)));
     }
+    // 回环目标一律直连。终端里常驻的 `HTTP_PROXY`（Clash 等，`Set-Proxy` 之类一行就设上）
+    // 会把发往 localhost 的请求交给代理进程，代理再把它转到远端节点——那边连不到这台机器，
+    // 回来就是一个**空响应体的 502**，看着像本地后端挂了，其实请求连 Vite 都没到过。
+    // 生产域名照旧走环境里的代理，这里只掐回环。
+    if is_loopback(&url) {
+        builder = builder.no_proxy();
+    }
     let client = builder
         .build()
         .map_err(|e| ApiError::local(format!("HTTP 客户端初始化失败：{e}")))?;
@@ -100,6 +107,12 @@ where
             let head: String = text.chars().take(160).collect();
             let head = head.split_whitespace().collect::<Vec<_>>().join(" ");
             eprintln!("[BakaGame http] POST {url} -> {status}，响应体开头：{head}");
+            if head.is_empty() && is_loopback(&url) {
+                eprintln!(
+                    "[BakaGame http] 回环请求的空体 {status} 通常是代理软件拦的：壳已对 localhost \
+                     禁用代理，若仍出现请检查代理是否处于 TUN / 全局模式。"
+                );
+            }
         }
         return Err(ApiError {
             message: message
@@ -113,9 +126,44 @@ where
         .map_err(|e| ApiError::local(format!("{path} 响应格式错误：{e}")))
 }
 
+/// 目标是否为回环地址（`localhost` / `127.0.0.0/8` / `[::1]`）。
+///
+/// 只用于「这条请求要不要绕过代理」：本地站点与本地接口永远在本机，绕代理才连得到。
+/// 判据取自 URL 解析结果，`localhost.evil.example` 这类前缀相同的域名不算。
+fn is_loopback(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    // IPv6 字面量带方括号（`[::1]`），去掉后才能交给 `IpAddr` 解析
+    let host = host.trim_matches(['[', ']']);
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 回环目标必须直连：靠它把本地请求从代理手里抢回来（代理会给出空体 502）
+    #[test]
+    fn detects_loopback_targets() {
+        assert!(is_loopback("http://localhost:5173/api/client/register"));
+        assert!(is_loopback("http://127.0.0.1:4850/api/client/challenge"));
+        assert!(is_loopback("http://[::1]:5173/api/client/register"));
+        assert!(is_loopback("http://LOCALHOST:5173/api"));
+
+        // 生产域名与「看着像回环」的域名都不算
+        assert!(!is_loopback("https://game.baka.website/api/client/register"));
+        assert!(!is_loopback("http://localhost.evil.example/api/client/register"));
+        assert!(!is_loopback("http://10.0.0.2:5173/api"));
+    }
 
     /// 服务端信封：`{ error: { code, message } }` 与 `{ error: "CODE" }` 两种写法都要能拿到码
     #[test]
