@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  CEE_RANKED_BOT_BIAS_PRIOR,
   CEERankedHandicap,
   estimateCEERankedBotBias,
   type CEERankedBotSample,
@@ -115,11 +116,25 @@ describe("排位人机校准窗口", () => {
     expect(handicap.bias("regular")).toBeCloseTo((estimateCEERankedBotBias(fresh) * 3) / 53, 6);
   });
 
+  test("爱噶的偏差从先验出发：样本不足取先验，样本够了按样本量向估计值收缩", () => {
+    const prior = CEE_RANKED_BOT_BIAS_PRIOR.aiga;
+    expect(prior).toBeGreaterThan(0);
+    expect(CEE_RANKED_BOT_BIAS_PRIOR.regular).toBe(0);
+    const handicap = new CEERankedHandicap({ minSamples: 30, limit: 1_000 });
+    expect(handicap.bias("aiga")).toBe(prior);
+    // 对半胜负：估计值是 0，30 条样本把先验收缩掉 30/80。
+    const even = mix("aiga", 30, 15);
+    for (const item of even) handicap.add(item);
+    const estimate = estimateCEERankedBotBias(even);
+    expect(handicap.bias("aiga")).toBeCloseTo(prior + ((estimate - prior) * 30) / 80, 6);
+    expect(handicap.bias("aiga")).toBeLessThan(prior);
+  });
+
   test("两组人机的样本互不干扰", () => {
     const handicap = new CEERankedHandicap({ minSamples: 2, limit: 400 });
     handicap.add(sample("aiga", 0));
     for (const item of mix("regular", 2, 0)) handicap.add(item);
-    expect(handicap.bias("aiga")).toBe(0);
+    expect(handicap.bias("aiga")).toBe(CEE_RANKED_BOT_BIAS_PRIOR.aiga);
     expect(handicap.bias("regular")).toBeGreaterThan(0);
     for (const item of mix("aiga", 40, 40)) handicap.add(item);
     expect(handicap.bias("aiga")).toBeLessThan(0);

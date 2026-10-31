@@ -1,9 +1,20 @@
 // ==================== 排位人机强度自动校准 ====================
 // 人机按标称分数生成强度，但锚点表与真人的实际水平可能有系统偏差。这里从已计分的真人战绩
-// 反推每组人机「实际比标称强多少」，开局时把这个偏差从标称分里扣掉；爱噶与普通人格各自一组。
+// 反推每组人机「实际比标称强多少」；爱噶与普通人格各自一组，用法不同（见服务开局处）：
+// 普通人格把偏差从生成强度里扣掉，爱噶有意比同分人机强，偏差加到她计分用的分数上。
 import { CEE_RANKED_BOT_RD, expectedCEESeriesScore } from "../domain/CEERankedRating";
 
 export type CEERankedBotGroup = "aiga" | "regular";
+
+/**
+ * 每组偏差的先验：样本不足时直接用它，样本够了从它出发按样本量向估计值收缩。
+ * 普通人格按锚点表标定，先验为 0。爱噶对同分基线人机的系列赛胜率标定在七成五左右
+ * （标定脚本「爱噶对齐」一节），按人机偏差下的系列赛期望得分折算，约比标称强 190 分。
+ */
+export const CEE_RANKED_BOT_BIAS_PRIOR: Readonly<Record<CEERankedBotGroup, number>> = {
+  regular: 0,
+  aiga: 190,
+};
 
 export interface CEERankedBotSample {
   group: CEERankedBotGroup;
@@ -90,12 +101,13 @@ export class CEERankedHandicap {
     this.remember(sample);
   }
 
-  /** 当前应施加的偏差：样本不足为 0；否则为估计值按样本量收缩后的结果，夹到 ±limit。 */
+  /** 当前应施加的偏差：样本不足为该组先验；否则从先验向估计值按样本量收缩，夹到 ±limit。 */
   bias(group: CEERankedBotGroup): number {
     const list = this.samples[group];
-    if (list.length < this.minSamples) return 0;
+    const prior = CEE_RANKED_BOT_BIAS_PRIOR[group];
+    if (list.length < this.minSamples) return prior;
     const estimate = estimateCEERankedBotBias(list);
-    const shrunk = (estimate * list.length) / (list.length + SHRINKAGE);
+    const shrunk = prior + ((estimate - prior) * list.length) / (list.length + SHRINKAGE);
     return Math.min(this.limit, Math.max(-this.limit, shrunk));
   }
 

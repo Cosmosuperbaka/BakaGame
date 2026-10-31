@@ -137,9 +137,9 @@ interface CEERankedSeatRuntime {
 /** 人机席位的整场常量：目标分用于结算，抽定后不再变。 */
 interface CEERankedBotSpec {
   persona: CEERankedPersona;
-  /** 计分用的对手 μ。 */
+  /** 计分用的对手 μ：普通人格为标称分，爱噶为标称分加该组校准偏差。 */
   targetRating: number;
-  /** 生成 `strength` 与爱噶思考节奏时真正喂进去的分数：目标分减去该组校准偏差。 */
+  /** 生成 `strength` 与爱噶思考节奏时真正喂进去的分数：普通人格为标称分减偏差，爱噶为标称分。 */
   strengthRating: number;
   strength: CEERankedBotStrength;
 }
@@ -717,11 +717,14 @@ export class CEERankedService {
       return;
     }
     const persona = pickCEERankedPersona(this.random, this.lastPersona.get(userId));
-    // 爱噶的目标分就是玩家自己的分数，其余人格在 ±120 内浮动。
-    const targetRating =
+    // 爱噶的标称分就是玩家自己的分数，其余人格在 ±120 内浮动。
+    const nominal =
       persona.id === "aiga" ? rating.rating : rating.rating + (this.random() * 240 - 120);
-    // 按该组的校准偏差回退后才生成强度，计分仍用目标分。
-    const strengthRating = targetRating - this.handicap.bias(botGroupOf(persona.id));
+    const bias = this.handicap.bias(botGroupOf(persona.id));
+    // 普通人格：按校准偏差回退后才生成强度，计分用标称分，真人对它的期望得分因此回到标称。
+    // 爱噶：她有意比同分人机强，强度只跟玩家分数走；偏差加到计分用的分数上，赢她多涨、输给她少掉。
+    const strengthRating = persona.id === "aiga" ? nominal : nominal - bias;
+    const targetRating = persona.id === "aiga" ? nominal + bias : nominal;
     const rated = shouldRateBotSeries(prior, now);
     const name = await this.displayName(userId);
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [

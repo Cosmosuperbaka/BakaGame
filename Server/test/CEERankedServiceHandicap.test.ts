@@ -1,8 +1,13 @@
 // ==================== 排位人机强度校准的服务接线 ====================
-// 校准只在两个地方影响对局：生成强度用的分数（写进审计的 bot_strength_rating）和爱噶的思考节奏。
-// 计分始终按目标分，所以这些用例盯的是「偏差用在哪、没用在哪」，以及样本从历史与结算里怎么攒起来。
+// 普通人格的偏差只影响生成强度用的分数（写进审计的 bot_strength_rating），计分按标称分；
+// 爱噶反过来：强度只跟玩家分数走，偏差（含先验溢价）加到计分用的分数上。这些用例盯的是
+// 「偏差用在哪、没用在哪」，以及样本从历史与结算里怎么攒起来。
 import { describe, expect, test } from "bun:test";
-import type { CEERankedBotGroup, CEERankedBotSample } from "../src/application/CEERankedHandicap";
+import {
+  CEE_RANKED_BOT_BIAS_PRIOR,
+  type CEERankedBotGroup,
+  type CEERankedBotSample,
+} from "../src/application/CEERankedHandicap";
 import { InMemoryCEERankedStore } from "../src/application/CEERankedStore";
 import { AppError } from "../src/domain/Errors";
 import { beijingDay } from "../src/domain/BeijingDay";
@@ -13,7 +18,10 @@ import { RANKED_START_MS, exitAndAudit, rankedHarness, startBotSeries } from "./
 /** 让出事件循环：启动种子是异步读的，播好种之前不排队。 */
 const flushSeed = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-/** 一组同质的样本：真人 1500/350 全输，估计出的偏差落在搜索上界 600，收缩后是 225。 */
+/**
+ * 一组同质的样本：真人 1500/350 全输，估计出的偏差落在搜索上界 600。
+ * 30 条收缩后，普通人格（先验 0）是 225，爱噶（先验 190）是 190 + 410 × 30/80。
+ */
 const samplesOf = (group: CEERankedBotGroup, count: number): CEERankedBotSample[] =>
   Array.from({ length: count }, () => ({
     group,
@@ -51,9 +59,10 @@ class RejectingStore extends InMemoryCEERankedStore {
 }
 
 describe("排位人机校准接线", () => {
-  test("启动种子攒够 30 条：第一场就按偏差生成强度，计分仍用目标分", async () => {
-    const store = new SampleStore(samplesOf("aiga", 30));
-    const harness = rankedHarness({ store });
+  test("启动种子攒够 30 条：普通人格第一场就按偏差生成强度，计分仍用标称分", async () => {
+    // 随机源固定 0.5 时首位是团子之后的普通人格，标称分正好等于玩家 μ。
+    const store = new SampleStore(samplesOf("regular", 30));
+    const harness = rankedHarness({ store, randomValue: 0.5 });
     harness.seedRated("u-甲");
     await flushSeed();
     const client = harness.connect("甲");
@@ -62,14 +71,14 @@ describe("排位人机校准接线", () => {
 
     await startBotSeries(harness, client);
     const audit = await exitAndAudit(harness, client);
+    expect(audit.players[1]?.botPersona).not.toBe("aiga");
     expect(audit.players[1]).toMatchObject({
-      botPersona: "aiga",
       botTargetRating: 1500,
       // 1500 减去收缩后的偏差 225。
       botStrengthRating: 1275,
     });
 
-    // 按 1275 结算的话掉分会明显更小：这条断言把「计分用目标分」钉住。
+    // 按 1275 结算的话掉分会明显更小：这条断言把「计分用标称分」钉住。
     const expected = rateCEEBotSeries(createCEERating(), 1500, 0, audit.series.endedAt);
     const rating = await harness.store.getRating(client.userId);
     if (!rating) throw new Error("结算后读不到账号 甲 的评级");
@@ -77,16 +86,56 @@ describe("排位人机校准接线", () => {
     expect(rating.rd).toBeCloseTo(expected.rd, 6);
   });
 
-  test("样本不足 30 条时不加偏差：生成强度用的分数与目标分相同", async () => {
-    const harness = rankedHarness({ store: new SampleStore(samplesOf("aiga", 29)) });
+  test("爱噶：强度只跟玩家分数走，样本不足时按先验溢价计分，攒够后按收缩偏差计分", async () => {
+    const thin = rankedHarness({ store: new SampleStore(samplesOf("aiga", 29)) });
+    thin.seedRated("u-甲");
+    await flushSeed();
+    const early = thin.connect("甲");
+    await startBotSeries(thin, early);
+    const before = await exitAndAudit(thin, early);
+    expect(before.players[1]).toMatchObject({
+      botPersona: "aiga",
+      botTargetRating: 1500 + CEE_RANKED_BOT_BIAS_PRIOR.aiga,
+      botStrengthRating: 1500,
+    });
+    // 输给她按溢价后的分数结算：比按 1500 结算掉得少。
+    const expected = rateCEEBotSeries(
+      createCEERating(),
+      1500 + CEE_RANKED_BOT_BIAS_PRIOR.aiga,
+      0,
+      before.series.endedAt
+    );
+    const rating = await thin.store.getRating(early.userId);
+    if (!rating) throw new Error("结算后读不到账号 甲 的评级");
+    expect(rating.rating).toBeCloseTo(expected.rating, 6);
+
+    const full = rankedHarness({ store: new SampleStore(samplesOf("aiga", 30)) });
+    full.seedRated("u-甲");
+    await flushSeed();
+    const late = full.connect("甲");
+    await startBotSeries(full, late);
+    const after = await exitAndAudit(full, late);
+    const prior = CEE_RANKED_BOT_BIAS_PRIOR.aiga;
+    expect(after.players[1]?.botStrengthRating).toBe(1500);
+    expect(after.players[1]?.botTargetRating).toBeCloseTo(
+      1500 + prior + ((600 - prior) * 30) / 80,
+      6
+    );
+  });
+
+  test("普通人格样本不足 30 条时不加偏差：生成强度用的分数与标称分相同", async () => {
+    const harness = rankedHarness({
+      store: new SampleStore(samplesOf("regular", 29)),
+      randomValue: 0.5,
+    });
     harness.seedRated("u-甲");
     await flushSeed();
     const client = harness.connect("甲");
 
     await startBotSeries(harness, client);
     const audit = await exitAndAudit(harness, client);
+    expect(audit.players[1]?.botPersona).not.toBe("aiga");
     expect(audit.players[1]).toMatchObject({
-      botPersona: "aiga",
       botTargetRating: 1500,
       botStrengthRating: 1500,
     });
@@ -138,7 +187,10 @@ describe("排位人机校准接线", () => {
   });
 
   test("不计分的人机局不进样本窗口：次日恢复计分后偏差仍是 0", async () => {
-    const harness = rankedHarness({ store: new SampleStore(samplesOf("aiga", 29)) });
+    const harness = rankedHarness({
+      store: new SampleStore(samplesOf("regular", 29)),
+      randomValue: 0.5,
+    });
     harness.seedRated("u-甲", {
       botRatedDay: beijingDay(RANKED_START_MS),
       botRatedCount: CEE_RANKED_BOT_DAILY_RATED,
@@ -163,8 +215,8 @@ describe("排位人机校准接线", () => {
     expect(bot.botStrengthRating).toBe(bot.botTargetRating);
   });
 
-  test("种子读取失败只记一条 warn：偏差保持 0 且照常开赛", async () => {
-    const harness = rankedHarness({ store: new RejectingStore() });
+  test("种子读取失败只记一条 warn：偏差保持先验且照常开赛", async () => {
+    const harness = rankedHarness({ store: new RejectingStore(), randomValue: 0.5 });
     harness.seedRated("u-甲");
     await flushSeed();
     const client = harness.connect("甲");

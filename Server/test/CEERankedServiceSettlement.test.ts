@@ -2,7 +2,10 @@
 // 这里只跑「一场人机系列赛打完之后发生了什么」：审计行数、评级写回、定级进度、
 // 每日人机额度与写库退避重试。对局推进全部靠夹具的假时钟，不出现真实等待。
 import { describe, expect, test } from "bun:test";
-import type { CEERankedBotSample } from "../src/application/CEERankedHandicap";
+import {
+  CEE_RANKED_BOT_BIAS_PRIOR,
+  type CEERankedBotSample,
+} from "../src/application/CEERankedHandicap";
 import {
   InMemoryCEERankedStore,
   type CEERankedHistoryRecord,
@@ -185,9 +188,8 @@ describe("人机系列赛结算", () => {
       points: 0,
       score: 0,
       botPersona: "aiga",
-      // 爱噶的目标分就是玩家自己的分数，其余人格才在 ±120 内浮动。
-      botTargetRating: 1500,
-      // 还没有校准样本，生成强度用的分数与目标分相同。
+      // 还没有校准样本：爱噶的强度按玩家自己的分数生成，计分分数加上先验溢价。
+      botTargetRating: 1500 + CEE_RANKED_BOT_BIAS_PRIOR.aiga,
       botStrengthRating: 1500,
       clientType: null,
       queueWaitMs: null,
@@ -226,7 +228,12 @@ describe("人机系列赛结算", () => {
     ]);
 
     // 评级写回按领域函数的结果逐项对齐：只断言「涨了」抓不出用错对手分或得分的 bug。
-    const expected = rateCEEBotSeries(createCEERating(), 1500, 1, endedAt);
+    const expected = rateCEEBotSeries(
+      createCEERating(),
+      1500 + CEE_RANKED_BOT_BIAS_PRIOR.aiga,
+      1,
+      endedAt
+    );
     const rating = await readRating(harness, client.userId);
     expect(rating.rating).toBeCloseTo(expected.rating, 6);
     expect(rating.rd).toBeCloseTo(expected.rd, 6);
