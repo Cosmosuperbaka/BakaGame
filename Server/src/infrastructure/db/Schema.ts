@@ -2,6 +2,7 @@ import {
   bigint,
   boolean,
   datetime,
+  double,
   index,
   int,
   json,
@@ -332,6 +333,131 @@ export const ceeAntiCheatReview = mysqlTable(
     index("cee_ac_review_created_idx").on(table.createdAt),
     index("cee_ac_review_status_idx").on(table.status, table.createdAt),
     index("cee_ac_review_user_idx").on(table.userId),
+  ]
+);
+
+// ==================== 排位审计 ====================
+
+/**
+ * 排位赛的审计流水，与通用对局记录分开：只写不改不删，永久保留。
+ * 一场系列赛的结算（`cee_ranked_series` 及席位、单局、猜测三张子表 + 评级 upsert）在同一事务里落库。
+ */
+
+/** 一行一个账号的排位评级与累计战绩；`bot_rated_day` 是人机计分所在的北京自然日。 */
+export const ceeRankedRating = mysqlTable(
+  "cee_ranked_rating",
+  {
+    userId: varchar("user_id", { length: 64 })
+      .primaryKey()
+      .references(() => user.id, { onDelete: "cascade" }),
+    rating: double("rating").notNull(),
+    rd: double("rd").notNull(),
+    seriesPlayed: int("series_played").notNull().default(0),
+    wins: int("wins").notNull().default(0),
+    losses: int("losses").notNull().default(0),
+    draws: int("draws").notNull().default(0),
+    botRatedDay: varchar("bot_rated_day", { length: 10 }),
+    botRatedCount: int("bot_rated_count").notNull().default(0),
+    lastPlayedAt: datetime("last_played_at", { mode: "date", fsp: 3 }),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index("cee_ranked_rating_rating_idx").on(table.rating)]
+);
+
+/** 一场系列赛（三局两胜）的结算头：一行一场，记题库档位与是否计分。 */
+export const ceeRankedSeries = mysqlTable(
+  "cee_ranked_series",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    ruleset: varchar("ruleset", { length: 16 }).notNull(),
+    tier: varchar("tier", { length: 8 }).notNull(),
+    answerIds: json("answer_ids").notNull(),
+    startedAt: datetime("started_at", { mode: "date", fsp: 3 }).notNull(),
+    endedAt: datetime("ended_at", { mode: "date", fsp: 3 }).notNull(),
+    endReason: varchar("end_reason", { length: 16 }).notNull(),
+    rated: boolean("rated").notNull(),
+    /** 不计分的原因，例如 `bot_daily_limit`；计分为空。 */
+    unratedReason: varchar("unrated_reason", { length: 32 }),
+    bot: boolean("bot").notNull(),
+    botEntry: varchar("bot_entry", { length: 8 }),
+  },
+  (table) => [index("cee_ranked_series_ended_idx").on(table.endedAt)]
+);
+
+/** 系列赛的一个席位：一行一席，人机席位没有账号 ID；账号注销后 `user_id` 置空而行保留。 */
+export const ceeRankedSeriesPlayer = mysqlTable(
+  "cee_ranked_series_player",
+  {
+    seriesId: varchar("series_id", { length: 36 })
+      .notNull()
+      .references(() => ceeRankedSeries.id, { onDelete: "cascade" }),
+    seat: int("seat").notNull(),
+    userId: varchar("user_id", { length: 64 }).references(() => user.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 64 }).notNull(),
+    clientType: varchar("client_type", { length: 16 }),
+    clientVersion: varchar("client_version", { length: 32 }),
+    botPersona: varchar("bot_persona", { length: 16 }),
+    botTargetRating: double("bot_target_rating"),
+    queueWaitMs: int("queue_wait_ms"),
+    points: double("points").notNull(),
+    score: double("score").notNull(),
+    placement: boolean("placement").notNull(),
+    ratingBefore: double("rating_before"),
+    ratingAfter: double("rating_after"),
+    rdBefore: double("rd_before"),
+    rdAfter: double("rd_after"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.seriesId, table.seat] }),
+    index("cee_ranked_series_player_user_idx").on(table.userId),
+  ]
+);
+
+/** 系列赛里的一局：一行一局，记答案、胜方席位与双方各自的出手次数。 */
+export const ceeRankedGame = mysqlTable(
+  "cee_ranked_game",
+  {
+    seriesId: varchar("series_id", { length: 36 })
+      .notNull()
+      .references(() => ceeRankedSeries.id, { onDelete: "cascade" }),
+    number: int("number").notNull(),
+    answerCharacterId: int("answer_character_id").notNull(),
+    answerName: varchar("answer_name", { length: 128 }).notNull(),
+    /** 平局没有胜方。 */
+    winnerSeat: int("winner_seat"),
+    endReason: varchar("end_reason", { length: 16 }).notNull(),
+    attempts0: int("attempts_0").notNull(),
+    attempts1: int("attempts_1").notNull(),
+    overtime: boolean("overtime").notNull(),
+    startedAt: datetime("started_at", { mode: "date", fsp: 3 }).notNull(),
+    endedAt: datetime("ended_at", { mode: "date", fsp: 3 }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.seriesId, table.number] })]
+);
+
+/** 一次猜测：一行一次出手，按 (系列赛, 局号, 席位, 第几次) 唯一。 */
+export const ceeRankedGuess = mysqlTable(
+  "cee_ranked_guess",
+  {
+    seriesId: varchar("series_id", { length: 36 })
+      .notNull()
+      .references(() => ceeRankedSeries.id, { onDelete: "cascade" }),
+    gameNumber: int("game_number").notNull(),
+    seat: int("seat").notNull(),
+    attempt: int("attempt").notNull(),
+    characterId: int("character_id").notNull(),
+    characterName: varchar("character_name", { length: 128 }).notNull(),
+    correct: boolean("correct").notNull(),
+    createdAt: datetime("created_at", { mode: "date", fsp: 3 }).notNull(),
+    clientType: varchar("client_type", { length: 16 }),
+    /** 该次出手前最近一次角色检索的时刻与命中情况；从未检索时两者为空。 */
+    searchedAt: datetime("searched_at", { mode: "date", fsp: 3 }),
+    searchMatched: boolean("search_matched"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.seriesId, table.gameNumber, table.seat, table.attempt] }),
   ]
 );
 
