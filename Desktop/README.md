@@ -35,9 +35,12 @@ pnpm dlx @tauri-apps/cli build           # 打 NSIS 安装包
 `Cargo.lock` 与源码一起进 Git：壳是要发布出去的二进制，锁住整套依赖版本才能让每次构建复现同一份代码。
 改完 `Cargo.toml` 要重跑一次 `cargo check` 把 lock 一起更新再提交，否则带 `--locked` 的构建会直接失败。
 
-壳按远程地址加载页面，`frontendDist` 非 https 会被 `config.rs` 拒绝并退回默认站点，因此开发也要能访问
-那个站点。要用本地页面调试，得提供一个真正能给 https 的地址（本地反向代理或已签发的预览域），通过
-`BAKA_SITE_URL` 注入。
+壳按远程地址加载页面，`frontendDist` 非 https 会被 `config.rs` 拒绝并退回默认站点，因此 release 构建必须能
+访问那个站点。**开发构建（`debug_assertions`）例外**：没设 `BAKA_SITE_URL` 时默认加载
+`http://localhost:5173`（`pnpm dev:client` 起的 Vite 服务器），并且只对回环 http（主机为 `localhost` /
+`127.0.0.1`，端口不限）放行；换端口用 `BAKA_SITE_URL` 注入，桥接命令的远程白名单在
+`capabilities/dev-local-bridge.json`，两处要一起改。release 产物里既没有这条放行分支、也没有本地默认值，
+仍只认 https。
 
 ### 图标
 

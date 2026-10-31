@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "dev-local-bridge",
+  "description": "开发构建：允许本地 Vite 开发服务器（回环 http）上的页面调用桥接命令。正式分发没有可达路径——发布壳的站点是 https 站点，导航层也只放行站点自身，页面永远到不了这里列出的来源。端口换成别的（如歌词套件的 5177）要同步改这里，否则 selfCheck / baka_ticket 会被权限层拒掉。",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "remote": {
+    "urls": ["http://localhost:5173", "http://127.0.0.1:5173"]
+  },
+  "permissions": ["core:default"]
+}
