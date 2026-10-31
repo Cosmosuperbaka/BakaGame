@@ -63,6 +63,7 @@ const botSettlement = (): CEERankedSettlementRecord => ({
       clientVersion: "1.0.0",
       botPersona: null,
       botTargetRating: null,
+      botStrengthRating: null,
       queueWaitMs: 1200,
       points: 2,
       score: 0.5,
@@ -80,6 +81,7 @@ const botSettlement = (): CEERankedSettlementRecord => ({
       clientVersion: null,
       botPersona: "rush",
       botTargetRating: 1180,
+      botStrengthRating: 1150,
       queueWaitMs: null,
       points: 2,
       score: 0.5,
@@ -190,7 +192,7 @@ describe("排位审计仓储（连接桩）", () => {
     ]);
 
     const players = stub.queryAt(2);
-    // 两席一行：人机一侧没有账号 ID，评级四列也为空。
+    // 两席一行：人机一侧没有账号 ID，评级四列也为空；强度列记的是真正生成强度用的分。
     expect(players.params).toEqual([
       "s1",
       0,
@@ -198,6 +200,7 @@ describe("排位审计仓储（连接桩）", () => {
       "小明",
       "web",
       "1.0.0",
+      null,
       null,
       null,
       1200,
@@ -216,6 +219,7 @@ describe("排位审计仓储（连接桩）", () => {
       null,
       "rush",
       1180,
+      1150,
       null,
       2,
       0.5,
@@ -334,6 +338,34 @@ describe("排位审计仓储（连接桩）", () => {
     expect(query.params).toEqual(["u1", 50]);
   });
 
+  test("校准样本只取计分人机局、按结束时间倒序，limit 夹到 1000 并跳过缺列的旧行", async () => {
+    const stub = createDrizzleStub();
+    const repository = new CEERankedRepository(stub.database);
+    stub.reply([
+      tupleOf("aiga", 1480, 1500, 220, 1),
+      // 旧数据没有强度列：这一行不可能是有效样本，必须被丢掉而不是算成 0 分。
+      tupleOf("rush", null, 1500, 220, 0),
+      tupleOf("rush", 1150, 1200, 250, 0.5),
+    ]);
+
+    const samples = await repository.listRecentBotSamples(9999);
+    expect(samples).toEqual([
+      { group: "aiga", playerRating: 1500, playerRd: 220, strengthRating: 1480, score: 1 },
+      { group: "regular", playerRating: 1200, playerRd: 250, strengthRating: 1150, score: 0.5 },
+    ]);
+
+    const query = stub.queryAt(0);
+    expect(query.statement).toContain("inner join `cee_ranked_series_player` `opponent`");
+    expect(query.statement).toContain("`cee_ranked_series`.`bot` = ?");
+    expect(query.statement).toContain("`cee_ranked_series`.`rated` = ?");
+    expect(query.statement).toContain("`cee_ranked_series`.`ended_at` desc");
+    expect(query.params).toEqual([true, true, 1000]);
+
+    stub.reset();
+    await repository.listRecentBotSamples(0);
+    expect(stub.queryAt(0).params).toEqual([true, true, 1]);
+  });
+
   test("审计明细分四张表读回；系列赛不存在时只查一次", async () => {
     const stub = createDrizzleStub();
     const repository = new CEERankedRepository(stub.database);
@@ -362,6 +394,7 @@ describe("排位审计仓储（连接桩）", () => {
           userId: null,
           name: "快枪手",
           botPersona: "rush",
+          botStrengthRating: 1150,
           points: 0,
           score: 0,
           placement: false,
@@ -400,7 +433,12 @@ describe("排位审计仓储（连接桩）", () => {
     expect(audit?.series.id).toBe("s1");
     expect(audit?.series.startedAt).toBe(T0);
     expect(audit?.players.map((player) => player.seat)).toEqual([0, 1]);
-    expect(audit?.players[1]).toMatchObject({ userId: null, botPersona: "rush", score: 0 });
+    expect(audit?.players[1]).toMatchObject({
+      userId: null,
+      botPersona: "rush",
+      botStrengthRating: 1150,
+      score: 0,
+    });
     expect(audit?.games[0]).toMatchObject({ number: 1, attempts: [2, 1], winnerSeat: 0 });
     expect(audit?.guesses[0]).toMatchObject({ attempt: 1, correct: true, createdAt: T0 });
 
@@ -430,6 +468,7 @@ describe("排位审计仓储（连接桩）", () => {
     await expect(repository.saveSettlement(botSettlement())).rejects.toThrow("db down");
     await expect(repository.listHistory("u1", 10)).rejects.toThrow("db down");
     await expect(repository.listSeriesByUser("u1", 10)).rejects.toThrow("db down");
+    await expect(repository.listRecentBotSamples(10)).rejects.toThrow("db down");
     await expect(repository.getSeriesAudit("s1")).rejects.toThrow("db down");
     expect(stub.queries).toHaveLength(0);
   });

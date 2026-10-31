@@ -385,7 +385,7 @@ export const ceeRankedSeries = mysqlTable(
     /** 不计分的原因，例如 `bot_daily_limit`；计分为空。 */
     unratedReason: varchar("unrated_reason", { length: 32 }),
     bot: boolean("bot").notNull(),
-    botEntry: varchar("bot_entry", { length: 8 }),
+    botEntry: varchar("bot_entry", { length: 16 }),
   },
   (table) => [index("cee_ranked_series_ended_idx").on(table.endedAt)]
 );
@@ -406,6 +406,8 @@ export const ceeRankedSeriesPlayer = mysqlTable(
     clientVersion: varchar("client_version", { length: 32 }),
     botPersona: varchar("bot_persona", { length: 16 }),
     botTargetRating: double("bot_target_rating"),
+    /** 生成人机强度时真正喂进去的分数：校准偏差使它不同于用于计分的 `bot_target_rating`。 */
+    botStrengthRating: double("bot_strength_rating"),
     queueWaitMs: int("queue_wait_ms"),
     points: double("points").notNull(),
     score: double("score").notNull(),

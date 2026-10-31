@@ -2,6 +2,7 @@
 // 这里只跑「一场人机系列赛打完之后发生了什么」：审计行数、评级写回、定级进度、
 // 每日人机额度与写库退避重试。对局推进全部靠夹具的假时钟，不出现真实等待。
 import { describe, expect, test } from "bun:test";
+import type { CEERankedBotSample } from "../src/application/CEERankedHandicap";
 import {
   InMemoryCEERankedStore,
   type CEERankedHistoryRecord,
@@ -16,7 +17,6 @@ import { beijingDay } from "../src/domain/BeijingDay";
 import { createCEERating, displayCEERating, rateCEEBotSeries } from "../src/domain/CEERankedRating";
 import {
   CEE_RANKED_BOT_DAILY_RATED,
-  CEE_RANKED_BOT_FALLBACK_MS,
   CEE_RANKED_COUNTDOWN_MS,
   CEE_RANKED_INTERMISSION_MS,
   CEE_RANKED_PLACEMENT_SERIES,
@@ -57,8 +57,7 @@ const settleOneBotSeries = async (
   harness: RankedHarness,
   client: RankedClient
 ): Promise<string> => {
-  await harness.send(client, "cee.ranked.queue", {});
-  await harness.advance(CEE_RANKED_BOT_FALLBACK_MS);
+  await startBotSeries(harness, client);
   const seriesId = harness.seriesView(client).seriesId;
   await harness.send(client, "cee.ranked.exit", {});
   return seriesId;
@@ -124,6 +123,10 @@ class FlakyStore implements CEERankedStore {
   getSeriesAudit(seriesId: string): Promise<CEERankedSeriesAudit | null> {
     return this.inner.getSeriesAudit(seriesId);
   }
+
+  listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]> {
+    return this.inner.listRecentBotSamples(limit);
+  }
 }
 
 describe("人机系列赛结算", () => {
@@ -159,7 +162,8 @@ describe("人机系列赛结算", () => {
     expect(audit.series.rated).toBe(true);
     expect(audit.series.unratedReason).toBeNull();
     expect(audit.series.bot).toBe(true);
-    expect(audit.series.botEntry).toBe("auto");
+    // 定级期排队即开人机：没等过兜底时长，入场方式记 placement。
+    expect(audit.series.botEntry).toBe("placement");
 
     expect(audit.players.length).toBe(2);
     expect(audit.players[0]).toMatchObject({
@@ -168,7 +172,7 @@ describe("人机系列赛结算", () => {
       points: 2,
       score: 1,
       placement: true,
-      queueWaitMs: CEE_RANKED_BOT_FALLBACK_MS,
+      queueWaitMs: 0,
       clientType: "desktop",
       clientVersion: "9.9.9",
       botPersona: null,
@@ -183,6 +187,8 @@ describe("人机系列赛结算", () => {
       botPersona: "aiga",
       // 爱噶的目标分就是玩家自己的分数，其余人格才在 ±120 内浮动。
       botTargetRating: 1500,
+      // 还没有校准样本，生成强度用的分数与目标分相同。
+      botStrengthRating: 1500,
       clientType: null,
       queueWaitMs: null,
       ratingBefore: null,
@@ -463,10 +469,10 @@ describe("结算写库的退避重试", () => {
     expect(harness.logs.error.map((item) => item.message)).toContain("排位结算写库失败");
     expect(await harness.store.getSeriesAudit(seriesId)).toBeNull();
 
-    // 写库失败不锁死账号：结算标记落定后既能重新排队，下一场照常落库。
+    // 写库失败不锁死账号：结算标记落定后还能再开赛，下一场照常落库。
+    // 评级行始终没写进去，账号还在定级期，所以这一场排队直接开成人机。
     await harness.send(client, "cee.ranked.queue", {});
-    expect(harness.latest(client).status).toBe("queued");
-    await harness.advance(CEE_RANKED_BOT_FALLBACK_MS);
+    expect(harness.latest(client).status).toBe("series");
     const nextSeriesId = harness.seriesView(client).seriesId;
     await harness.send(client, "cee.ranked.exit", {});
     expect(store.attempts).toBe(5);

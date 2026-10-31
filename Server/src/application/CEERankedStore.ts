@@ -1,4 +1,5 @@
 import type { CEEGuessClientType } from "./CEEAntiCheatSignals";
+import type { CEERankedBotSample } from "./CEERankedHandicap";
 
 /**
  * 排位审计的存储端口：一场系列赛（三局两胜）结算后的全部流水。
@@ -36,7 +37,8 @@ export interface CEERankedSeriesRecord {
   /** 不计分的原因，例如 "bot_daily_limit"；计分为 null。 */
   unratedReason: string | null;
   bot: boolean;
-  botEntry: "manual" | "auto" | null;
+  /** placement：定级期直开的人机；manual/auto：排队后主动或兜底进人机。 */
+  botEntry: "manual" | "auto" | "placement" | null;
 }
 
 export interface CEERankedSeriesPlayerRecord {
@@ -48,6 +50,8 @@ export interface CEERankedSeriesPlayerRecord {
   clientVersion: string | null;
   botPersona: string | null;
   botTargetRating: number | null;
+  /** 生成人机强度（爱噶则含思考时长）时真正用的分数；与计分的 botTargetRating 可差一个校准偏差。 */
+  botStrengthRating: number | null;
   queueWaitMs: number | null;
   points: number;
   score: 0 | 0.5 | 1;
@@ -131,6 +135,8 @@ export interface CEERankedStore {
   ): Promise<CEERankedSeriesRecord[]>;
   /** 审计：一场系列赛的全部行；不存在为 null。games 按局号、guesses 按 (局号, 出手时刻, 席位, 第几次) 排序。 */
   getSeriesAudit(seriesId: string): Promise<CEERankedSeriesAudit | null>;
+  /** 人机校准样本：只取计分时的人机系列赛，按结束时间倒序；limit 夹到 [1, 1000]。 */
+  listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]>;
 }
 
 /** 测试与无库夹具用的内存实现，语义与 MySQL 适配一致（含 upsert 与历史推导）。 */
@@ -209,6 +215,19 @@ export class InMemoryCEERankedStore implements CEERankedStore {
     };
   }
 
+  async listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]> {
+    const capped = Math.min(Math.max(limit, 1), 1_000);
+    const rows: CEERankedBotSample[] = [];
+    for (const item of this.byEndedAtDesc()) {
+      if (!item.series.bot || !item.series.rated) continue;
+      const sample = ceeRankedBotSampleOf(item.players);
+      if (!sample) continue;
+      rows.push(sample);
+      if (rows.length === capped) break;
+    }
+    return rows;
+  }
+
   private byEndedAtDesc(): CEERankedSettlementRecord[] {
     return [...this.settled].sort((a, b) => b.series.endedAt - a.series.endedAt);
   }
@@ -225,3 +244,25 @@ const copySettlement = (record: CEERankedSettlementRecord): CEERankedSettlementR
   guesses: record.guesses.map((guess) => ({ ...guess })),
   ratings: record.ratings.map((rating) => ({ ...rating })),
 });
+
+/**
+ * 从一场人机系列赛的两个席位还原校准样本。
+ *
+ * 校准要的是「赛前分 vs 实际战绩」，缺赛前 μ/φ 或旧数据没有强度列的行一律不参与。
+ */
+export function ceeRankedBotSampleOf(
+  players: readonly CEERankedSeriesPlayerRecord[]
+): CEERankedBotSample | null {
+  const bot = players.find((player) => player.userId === null);
+  const human = players.find((player) => player.userId !== null);
+  if (!bot || !human || bot.botPersona === null) return null;
+  if (human.ratingBefore === null || human.rdBefore === null || bot.botStrengthRating === null)
+    return null;
+  return {
+    group: bot.botPersona === "aiga" ? "aiga" : "regular",
+    playerRating: human.ratingBefore,
+    playerRd: human.rdBefore,
+    strengthRating: bot.botStrengthRating,
+    score: human.score,
+  };
+}

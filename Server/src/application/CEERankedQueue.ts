@@ -15,6 +15,8 @@ export const CEE_RANKED_WINDOW_STEP = 50;
 export const CEE_RANKED_WINDOW_STEP_MS = 5_000;
 export const CEE_RANKED_WINDOW_MAX = 500;
 export const CEE_RANKED_REMATCH_COOLDOWN_MS = 180_000;
+/** 双方都等满这个时长后，冷却不再阻断配对：宁可重复对手也不让人一直排着。 */
+export const CEE_RANKED_REMATCH_RELEASE_MS = 15_000;
 
 /** 等待越久窗口越宽：每 5 秒放宽一档，到顶后不再放宽。 */
 export function ceeRankedWindow(entry: CEERankedQueueEntry, now: number): number {
@@ -93,9 +95,10 @@ export class CEERankedQueue {
       const gap = Math.abs(first.rating - candidate.rating);
       const windowOfCandidate = ceeRankedWindow(candidate, now);
       if (gap > Math.max(windowOfFirst, windowOfCandidate)) continue;
-      const bothMaxed =
-        windowOfFirst >= CEE_RANKED_WINDOW_MAX && windowOfCandidate >= CEE_RANKED_WINDOW_MAX;
-      if (!bothMaxed && blockedByRematch(first, candidate, now)) continue;
+      const released =
+        now - first.queuedAt >= CEE_RANKED_REMATCH_RELEASE_MS &&
+        now - candidate.queuedAt >= CEE_RANKED_REMATCH_RELEASE_MS;
+      if (!released && blockedByRematch(first, candidate, now)) continue;
       if (
         gap < bestGap ||
         (gap === bestGap && best !== undefined && candidate.queuedAt < best.queuedAt)

@@ -3,15 +3,21 @@
 // 都由 `advance` 推进，测试里不出现真实的 sleep。
 import { CEESearchProvenance, ceeCharacterIdsOf } from "../src/application/CEEAntiCheatSignals";
 import { CEERankedService } from "../src/application/CEERankedService";
+import type { CEERankedBotSample } from "../src/application/CEERankedHandicap";
 import {
   InMemoryCEERankedStore,
+  type CEERankedHistoryRecord,
+  type CEERankedRatingRecord,
   type CEERankedSeriesAudit,
+  type CEERankedSeriesRecord,
+  type CEERankedSettlementRecord,
   type CEERankedStore,
 } from "../src/application/CEERankedStore";
 import type { CEERankedPool, CEERankedPoolProvider } from "../src/application/CEERankedPool";
 import { AppError } from "../src/domain/Errors";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
 import {
+  CEE_RANKED_PLACEMENT_SERIES,
   CEE_RANKED_STATE_EVENT,
   createCEERankedSettings,
   ceeRankedTier,
@@ -121,6 +127,71 @@ export interface RankedClient {
   sent: Array<{ event?: string; payload?: unknown }>;
 }
 
+/** 已定级的预置评级：分数与初值相同，只差「打满五场」这个门槛。 */
+export const ratedSeedOf = (
+  userId: string,
+  overrides: Partial<CEERankedRatingRecord> = {}
+): CEERankedRatingRecord => ({
+  userId,
+  rating: 1500,
+  rd: 350,
+  seriesPlayed: CEE_RANKED_PLACEMENT_SERIES,
+  wins: 0,
+  losses: 0,
+  draws: 0,
+  botRatedDay: null,
+  botRatedCount: 0,
+  lastPlayedAt: null,
+  ...overrides,
+});
+
+/**
+ * 给任意仓储垫一行评级。
+ *
+ * 定级期排队直开人机，很多用例要的是「已定级」之后的排队行为，逐场打满五场既慢又把
+ * 匹配逻辑淹在定级流水里。没写过的账号读垫进去的行，写过之后以落库行为准。
+ */
+class SeedingStore implements CEERankedStore {
+  private readonly seeds = new Map<string, CEERankedRatingRecord>();
+
+  constructor(private readonly inner: CEERankedStore) {}
+
+  seed(record: CEERankedRatingRecord): void {
+    this.seeds.set(record.userId, record);
+  }
+
+  async getRating(userId: string): Promise<CEERankedRatingRecord | null> {
+    const saved = await this.inner.getRating(userId);
+    if (saved) return saved;
+    const seed = this.seeds.get(userId);
+    return seed ? { ...seed } : null;
+  }
+
+  saveSettlement(record: CEERankedSettlementRecord): Promise<void> {
+    return this.inner.saveSettlement(record);
+  }
+
+  listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]> {
+    return this.inner.listHistory(userId, limit);
+  }
+
+  listSeriesByUser(
+    userId: string,
+    limit: number,
+    before?: number
+  ): Promise<CEERankedSeriesRecord[]> {
+    return this.inner.listSeriesByUser(userId, limit, before);
+  }
+
+  getSeriesAudit(seriesId: string): Promise<CEERankedSeriesAudit | null> {
+    return this.inner.getSeriesAudit(seriesId);
+  }
+
+  listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]> {
+    return this.inner.listRecentBotSamples(limit);
+  }
+}
+
 export interface RankedClientIdentity {
   account?: PlayerAccount;
   clientChannel?: ClientChannelProof;
@@ -140,6 +211,8 @@ export interface RankedHarnessOptions {
   randomValue?: number;
   store?: CEERankedStore;
   pool?: CEERankedPool;
+  /** 这一档的题库读取直接抛错：用来验证一场开失败不会带走整跳。 */
+  failingTier?: CEERankedTierId;
   settleRetryDelaysMs?: readonly number[];
   data?: Partial<CEEDataProvider>;
   startAt?: number;
@@ -171,11 +244,13 @@ export function rankedHarness(options: RankedHarnessOptions = {}) {
   const provider: CEERankedPoolProvider = {
     getRankedPool: async (tier, at) => {
       poolCalls.push({ tier, now: at });
+      if (options.failingTier === tier)
+        throw new AppError("RANKED_POOL_UNAVAILABLE", "测试用题库读取失败");
       return pool;
     },
   };
   const provenance = new CEESearchProvenance(() => clock);
-  const store = options.store ?? new InMemoryCEERankedStore();
+  const store = new SeedingStore(options.store ?? new InMemoryCEERankedStore());
   const service = new CEERankedService({
     data: rankedData(pool, options.data),
     store,
@@ -286,6 +361,9 @@ export function rankedHarness(options: RankedHarnessOptions = {}) {
     seriesView,
     advance,
     clock: () => clock,
+    /** 把账号当成已定级：排队才会进人池，否则定级期排队直开人机。 */
+    seedRated: (userId: string, overrides: Partial<CEERankedRatingRecord> = {}) =>
+      store.seed(ratedSeedOf(userId, overrides)),
   };
 }
 
@@ -302,10 +380,14 @@ export async function appErrorOf(run: () => Promise<unknown>): Promise<AppError>
   throw new Error("预期抛出 AppError，但调用成功了");
 }
 
-/** 排队 → 兜底人机开局：多数用例都从这里进入对局，省掉逐例重复的三秒跳。 */
+/**
+ * 进入一场人机局：已定级账号排队等 30 秒兜底，定级期账号排队即开。
+ *
+ * 已经在对局里时不再推进时钟——多走的 30 秒会让爱噶先出手，改掉用例想看的局面。
+ */
 export async function startBotSeries(harness: RankedHarness, client: RankedClient): Promise<void> {
   await harness.send(client, "cee.ranked.queue", {});
-  await harness.advance(30_000);
+  if (harness.latest(client).status !== "series") await harness.advance(30_000);
 }
 
 /** 把当前这一局推到「进行中」：开赛后前 5 秒是读秒，读秒里不能猜。 */

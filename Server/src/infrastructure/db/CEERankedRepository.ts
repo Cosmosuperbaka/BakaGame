@@ -1,7 +1,8 @@
-import { and, desc, eq, getTableColumns, lt, ne, type SQL } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNotNull, isNull, lt, ne, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 
 import type { CEEGuessClientType } from "../../application/CEEAntiCheatSignals";
+import type { CEERankedBotSample } from "../../application/CEERankedHandicap";
 import type {
   CEERankedGameRecord,
   CEERankedGuessRecord,
@@ -53,6 +54,7 @@ const toPlayer = (row: typeof ceeRankedSeriesPlayer.$inferSelect): CEERankedSeri
   clientVersion: row.clientVersion,
   botPersona: row.botPersona,
   botTargetRating: row.botTargetRating,
+  botStrengthRating: row.botStrengthRating,
   queueWaitMs: row.queueWaitMs,
   points: row.points,
   score: row.score as CEERankedSeriesPlayerRecord["score"],
@@ -296,5 +298,54 @@ export class CEERankedRepository implements CEERankedStore {
       games: gameRows.map(toGame),
       guesses: guessRows.map(toGuess),
     };
+  }
+
+  async listRecentBotSamples(limit: number): Promise<CEERankedBotSample[]> {
+    await this.database.ready;
+    const capped = Math.min(Math.max(limit, 1), 1_000);
+    const rows = await this.database.db
+      .select({
+        botPersona: opponent.botPersona,
+        botStrengthRating: opponent.botStrengthRating,
+        playerRating: ceeRankedSeriesPlayer.ratingBefore,
+        playerRd: ceeRankedSeriesPlayer.rdBefore,
+        score: ceeRankedSeriesPlayer.score,
+      })
+      .from(ceeRankedSeriesPlayer)
+      .innerJoin(ceeRankedSeries, eq(ceeRankedSeriesPlayer.seriesId, ceeRankedSeries.id))
+      .innerJoin(
+        opponent,
+        and(
+          eq(opponent.seriesId, ceeRankedSeriesPlayer.seriesId),
+          ne(opponent.seat, ceeRankedSeriesPlayer.seat)
+        )
+      )
+      .where(
+        and(
+          eq(ceeRankedSeries.bot, true),
+          eq(ceeRankedSeries.rated, true),
+          isNotNull(ceeRankedSeriesPlayer.userId),
+          isNull(opponent.userId),
+          isNotNull(opponent.botPersona),
+          isNotNull(opponent.botStrengthRating),
+          isNotNull(ceeRankedSeriesPlayer.ratingBefore),
+          isNotNull(ceeRankedSeriesPlayer.rdBefore)
+        )
+      )
+      .orderBy(desc(ceeRankedSeries.endedAt))
+      .limit(capped);
+    const samples: CEERankedBotSample[] = [];
+    for (const row of rows) {
+      const { playerRating, playerRd, botStrengthRating } = row;
+      if (playerRating === null || playerRd === null || botStrengthRating === null) continue;
+      samples.push({
+        group: row.botPersona === "aiga" ? "aiga" : "regular",
+        playerRating,
+        playerRd,
+        strengthRating: botStrengthRating,
+        score: row.score as CEERankedBotSample["score"],
+      });
+    }
+    return samples;
   }
 }

@@ -14,6 +14,7 @@ import {
   CEE_RANKED_BOT_FALLBACK_MS,
   CEE_RANKED_BOT_OPTION_MS,
   CEE_RANKED_OFFLINE_FORFEIT_MS,
+  CEE_RANKED_PLACEMENT_SERIES,
   type CEERankedCommand,
   type CEERankedPayload,
   type ClientChannelProof,
@@ -34,6 +35,7 @@ import {
   type RankedClient,
   type RankedHarness,
 } from "./CEERankedFixtures";
+import { character } from "./CEENativeFixtures";
 
 /** 夹具之外还要能单独构造「没装配全」的服务，因此连接也按最小形状手写一份。 */
 const bareConnection = (id: string): ConnectionRecord => {
@@ -111,10 +113,25 @@ describe("排位依赖缺席时整体不可用", () => {
   });
 });
 
+describe("状态查询", () => {
+  test("cee.ranked.status 先清掉这条连接的差量基线，随后推的那一帧才能当全量基线", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    let resets = 0;
+    client.record.resetStateSync = () => {
+      resets += 1;
+    };
+    await harness.send(client, "cee.ranked.status", {});
+    expect(resets).toBe(1);
+    expect(harness.latest(client)).toEqual({ status: "idle" });
+  });
+});
+
 describe("排队与人机入口", () => {
   test("入队推送 queued 状态：人机可选时刻、兜底时刻与当前窗口一并给出", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await harness.send(client, "cee.ranked.status", {});
     expect(harness.latest(client)).toEqual({ status: "idle" });
 
@@ -132,6 +149,7 @@ describe("排队与人机入口", () => {
   test("排队 10 秒内选人机被拒，满 10 秒后开成 manual 人机局", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await startBotQueue(harness, client, 9_000);
     const error = await appErrorOf(() => harness.send(client, "cee.ranked.playBot", {}));
     expect({ code: error.code, message: error.message }).toEqual({
@@ -144,7 +162,9 @@ describe("排队与人机入口", () => {
     const view = harness.seriesView(client);
     expect(view.opponent.isBot).toBe(true);
     expect(view.opponent.name).toBe("爱噶");
-    expect(view.self.rating).toBeNull();
+    // 已定级：状态帧里给出展示分，不再报定级进度。
+    expect(view.self.rating).toBe(1500);
+    expect(view.self.placementPlayed).toBeNull();
     const audit = await exitAndAudit(harness, client);
     expect(audit.series.botEntry).toBe("manual");
     expect(audit.series.bot).toBe(true);
@@ -153,6 +173,7 @@ describe("排队与人机入口", () => {
   test("不操作满 30 秒自动开人机，botEntry 为 auto", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await startBotSeries(harness, client);
     expect(harness.seriesView(client).opponent.isBot).toBe(true);
     const audit = await exitAndAudit(harness, client);
@@ -162,6 +183,7 @@ describe("排队与人机入口", () => {
   test("重复入队被拒；取消后回 idle 并停止匹配", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await harness.send(client, "cee.ranked.queue", {});
     const error = await appErrorOf(() => harness.send(client, "cee.ranked.queue", {}));
     expect(error.code).toBe("RANKED_ALREADY_QUEUED");
@@ -175,6 +197,7 @@ describe("排队与人机入口", () => {
   test("窗口放宽时给仍在排队的人推新帧", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await harness.send(client, "cee.ranked.queue", {});
     const framesBefore = harness.states(client).length;
     await harness.advance(10_000);
@@ -186,6 +209,50 @@ describe("排队与人机入口", () => {
   });
 });
 
+describe("定级赛只打人机", () => {
+  test("定级期排队直开人机：一帧 queued 都没有，审计 botEntry 记 placement", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.states(client).map((state) => state.status)).toEqual(["series"]);
+
+    const view = harness.seriesView(client);
+    expect(view.opponent.isBot).toBe(true);
+    expect(view.self.placementPlayed).toBe(0);
+
+    const audit = await exitAndAudit(harness, client);
+    expect(audit.series.botEntry).toBe("placement");
+    expect(audit.players.find((player) => player.seat === 0)?.placement).toBe(true);
+  });
+
+  test("定级第 5 场结算完，再排队才进人池", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    harness.seedRated(client.userId, { seriesPlayed: CEE_RANKED_PLACEMENT_SERIES - 1 });
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.latest(client).status).toBe("series");
+    await harness.send(client, "cee.ranked.exit", {});
+
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.latest(client).status).toBe("queued");
+  });
+
+  test("两名定级期玩家排队不会互相配对，各开各的人机", async () => {
+    const harness = rankedHarness();
+    const first = harness.connect("甲", { account: { userId: "u1", image: null } });
+    const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    await harness.send(first, "cee.ranked.queue", {});
+    await harness.send(second, "cee.ranked.queue", {});
+    await harness.advance(1_000);
+
+    expect(harness.seriesView(first).opponent.isBot).toBe(true);
+    expect(harness.seriesView(second).opponent.isBot).toBe(true);
+    expect(harness.seriesView(first).seriesId).not.toBe(harness.seriesView(second).seriesId);
+    expect((await exitAndAudit(harness, first)).series.botEntry).toBe("placement");
+    expect((await exitAndAudit(harness, second)).series.botEntry).toBe("placement");
+  });
+});
+
 describe("两名真人配对", () => {
   test("一跳配对开局，双方收到 series 状态且看不到对方猜过的角色名", async () => {
     const harness = rankedHarness({
@@ -193,6 +260,8 @@ describe("两名真人配对", () => {
     });
     const first = harness.connect("甲", { account: { userId: "u1", image: null } });
     const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
     await harness.send(first, "cee.ranked.queue", {});
     await harness.send(second, "cee.ranked.queue", {});
     await harness.advance(1_000);
@@ -219,6 +288,8 @@ describe("两名真人配对", () => {
     const harness = rankedHarness();
     const first = harness.connect("甲", { account: { userId: "u1", image: null } });
     const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
     await harness.send(first, "cee.ranked.queue", {});
     await harness.send(second, "cee.ranked.queue", {});
     await harness.advance(1_000);
@@ -232,6 +303,8 @@ describe("两名真人配对", () => {
     const harness = rankedHarness({ pool: rankedPool(RANKED_CANDIDATE_IDS.slice(0, 2)) });
     const first = harness.connect("甲", { account: { userId: "u1", image: null } });
     const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
     await harness.send(first, "cee.ranked.queue", {});
     await harness.send(second, "cee.ranked.queue", {});
     await harness.advance(1_000);
@@ -246,6 +319,7 @@ describe("连接接管与断线", () => {
     const harness = rankedHarness();
     const oldClient = harness.connect("旧", { account: { userId: "u1", image: null } });
     const newClient = harness.connect("新", { account: { userId: "u1", image: null } });
+    harness.seedRated("u1");
     await harness.send(oldClient, "cee.ranked.status", {});
     expect(harness.states(oldClient)).toEqual([{ status: "idle" }]);
 
@@ -261,6 +335,7 @@ describe("连接接管与断线", () => {
   test("断线时还在排队就被移出队列，重连后是 idle 而不是继续排", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");
+    harness.seedRated(client.userId);
     await harness.send(client, "cee.ranked.queue", {});
     client.record.close();
     await harness.advance(120_000);
@@ -324,7 +399,9 @@ describe("人机开局与爱噶", () => {
     expect(botGuesses.map((guess) => guess.characterId)).toEqual([AIGA_ID]);
     expect(botGuesses[0]?.attempt).toBe(1);
     expect(botGuesses[0]?.clientType).toBeNull();
-    expect(botGuesses[0]?.characterName).toBe(`Character ${AIGA_ID}`);
+    // 审计里的名字用中文名，英文名为空时才回退。
+    expect(botGuesses[0]?.characterName).toBe(`角色${AIGA_ID}`);
+    expect(audit.games[0]?.answerName).toBe("角色11");
   });
 
   test("数据集里没有该角色时跳过这一手，不占人机次数", async () => {
@@ -339,6 +416,22 @@ describe("人机开局与爱噶", () => {
     expect(botGuesses.map((guess) => guess.attempt)).toEqual([1]);
     expect(botGuesses[0]?.characterId).not.toBe(AIGA_ID);
     expect(audit.games[0]?.attempts[1]).toBe(botGuesses.length);
+  });
+});
+
+describe("审计名称", () => {
+  test("中文名为空时退回英文名，答案名不受影响", async () => {
+    const harness = rankedHarness({
+      data: { getCharacter: async (id) => ({ ...character(id), nameCn: "" }) },
+    });
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    await openPlay(harness);
+    await harness.send(client, "cee.ranked.guess", { characterId: 11 });
+    const audit = await exitAndAudit(harness, client);
+    // 答案视图来自题库，仍带中文名；出手记录现查数据提供者，空的中文名才退回英文名。
+    expect(audit.games[0]?.answerName).toBe("角色11");
+    expect(audit.guesses[0]?.characterName).toBe("Character 11");
   });
 });
 
@@ -362,6 +455,8 @@ describe("排位检索", () => {
     const harness = rankedHarness();
     const first = harness.connect("甲", { account: { userId: "u1", image: null } });
     const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
     await harness.send(first, "cee.ranked.queue", {});
     await harness.send(second, "cee.ranked.queue", {});
     await harness.advance(1_000);

@@ -25,7 +25,7 @@ CREATE TABLE `cee_ranked_series` (
 	`rated` boolean NOT NULL,
 	`unrated_reason` varchar(32),
 	`bot` boolean NOT NULL,
-	`bot_entry` varchar(8),
+	`bot_entry` varchar(16),
 	CONSTRAINT `cee_ranked_series_id` PRIMARY KEY(`id`)
 );
 --> statement-breakpoint
@@ -38,6 +38,7 @@ CREATE TABLE `cee_ranked_series_player` (
 	`client_version` varchar(32),
 	`bot_persona` varchar(16),
 	`bot_target_rating` double,
+	`bot_strength_rating` double,
 	`queue_wait_ms` int,
 	`points` double NOT NULL,
 	`score` double NOT NULL,

@@ -72,6 +72,7 @@ import {
   type CEESearchProvenance,
 } from "./CEEAntiCheatSignals";
 import { requireCEEClientAdmission } from "./CEEClientAdmission";
+import { CEERankedHandicap, type CEERankedBotGroup } from "./CEERankedHandicap";
 import { CEERankedQueue, ceeRankedWindow, type CEERankedQueueEntry } from "./CEERankedQueue";
 import type { CEERankedPool, CEERankedPoolProvider } from "./CEERankedPool";
 import {
@@ -80,14 +81,15 @@ import {
   type CEERankedSeatResultMeta,
   type CEERankedViewMeta,
 } from "./CEERankedViews";
-import type {
-  CEERankedGameRecord,
-  CEERankedGuessRecord,
-  CEERankedRatingRecord,
-  CEERankedSeriesPlayerRecord,
-  CEERankedSeriesRecord,
-  CEERankedSettlementRecord,
-  CEERankedStore,
+import {
+  ceeRankedBotSampleOf,
+  type CEERankedGameRecord,
+  type CEERankedGuessRecord,
+  type CEERankedRatingRecord,
+  type CEERankedSeriesPlayerRecord,
+  type CEERankedSeriesRecord,
+  type CEERankedSettlementRecord,
+  type CEERankedStore,
 } from "./CEERankedStore";
 
 /**
@@ -100,12 +102,18 @@ type CEERankedMessage = {
 
 /** 人机席位固定在 1 号席：真人对局里 0 号是发起者，人机对局里真人也排在 0 号。 */
 const BOT_SEAT: CEERankedSeatIndex = 1;
+/** 进入人机局的来路：定级期直接开、排队后主动选、排队超时兜底；真人局为空。 */
+type CEERankedBotEntry = "manual" | "auto" | "placement" | null;
 /** 匹配跳周期：1 秒一跳，只在队列非空时运行。 */
 const MATCH_TICK_MS = 1_000;
 /** 结算写库缺省重试等待：1 / 3 / 9 秒。 */
 const DEFAULT_SETTLE_RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
 /** 缺省昵称解析失败时的显示名。 */
 const FALLBACK_NAME = "玩家";
+/** 启动时灌入的校准样本上限：两组各占 300 的窗口，多取一些才能每组都填满。 */
+const HANDICAP_SEED_LIMIT = 600;
+/** 每组每攒满这么多新样本打一次当前偏差，便于观察收敛。 */
+const HANDICAP_LOG_EVERY = 20;
 /** 这三条命令自带准入：其余命令必须已经绑定在该账号的排位连接上。 */
 const ADMISSION_COMMANDS: readonly CEERankedCommand[] = [
   "cee.ranked.status",
@@ -126,10 +134,13 @@ interface CEERankedSeatRuntime {
   queueWaitMs: number | null;
 }
 
-/** 人机席位的整场常量：目标分同时决定强度与结算时的对手 μ，抽定后不再变。 */
+/** 人机席位的整场常量：目标分用于结算，抽定后不再变。 */
 interface CEERankedBotSpec {
   persona: CEERankedPersona;
+  /** 计分用的对手 μ。 */
   targetRating: number;
+  /** 生成 `strength` 与爱噶思考节奏时真正喂进去的分数：目标分减去该组校准偏差。 */
+  strengthRating: number;
   strength: CEERankedBotStrength;
 }
 
@@ -139,7 +150,7 @@ interface CEERankedSeriesRuntime {
   rated: boolean;
   unratedReason: string | null;
   bot: boolean;
-  botEntry: "manual" | "auto" | null;
+  botEntry: CEERankedBotEntry;
   seats: [CEERankedSeatRuntime, CEERankedSeatRuntime];
   /** 人机对局的目标分、人格与强度；真人对局为 null。 */
   botSpec: CEERankedBotSpec | null;
@@ -215,6 +226,10 @@ export class CEERankedService {
   private readonly guessing = new Set<string>();
   /** 账号 → 最近一次推送的排队窗口：窗口没变就不重复推。 */
   private readonly pushedWindow = new Map<string, number>();
+  /** 正在开赛的账号：异步组装题库与昵称期间，`queue` 报忙、`cancel` 无效。 */
+  private readonly starting = new Set<string>();
+  /** 人机强度校准：把历史人机战绩折算成每组的偏差，生成强度时扣掉。 */
+  private readonly handicap = new CEERankedHandicap();
   private matchCancel: (() => void) | null = null;
   private closed = false;
 
@@ -235,6 +250,21 @@ export class CEERankedService {
         return () => clearTimeout(timer);
       });
     this.settleRetryDelaysMs = options.settleRetryDelaysMs ?? DEFAULT_SETTLE_RETRY_DELAYS_MS;
+    this.seedHandicap();
+  }
+
+  /** 启动灌入近期人机战绩作为校准种子：读不到就从零攒，不影响排位可用。 */
+  private seedHandicap(): void {
+    const store = this.store;
+    if (store === undefined) return;
+    void store
+      .listRecentBotSamples(HANDICAP_SEED_LIMIT)
+      .then((samples) => {
+        this.handicap.seed(samples);
+      })
+      .catch((error: unknown) => {
+        this.logger?.warn("排位人机校准种子读取失败", { error: errorMessageOf(error) });
+      });
   }
 
   // ==================== 连接生命周期 ====================
@@ -323,6 +353,8 @@ export class CEERankedService {
   ): Promise<unknown> {
     switch (message.type) {
       case "cee.ranked.status":
+        // 客户端要的是一份能当基线的全量：清掉这条连接的差量基线，随后推的那一帧带修订号。
+        connection.resetStateSync?.();
         return this.handleStatus(userId);
       case "cee.ranked.queue":
         return this.handleQueue(userId);
@@ -489,6 +521,7 @@ export class CEERankedService {
 
   private async handleQueue(userId: string): Promise<Record<string, never>> {
     if (this.settling.has(userId)) throw new AppError("RANKED_SETTLING", "上一场还在结算");
+    if (this.starting.has(userId)) throw new AppError("RANKED_STARTING", "正在为你开赛");
     if (this.queue.get(userId)) throw new AppError("RANKED_ALREADY_QUEUED", "已经在排队了");
     const current = this.seriesByUser.get(userId);
     if (current) {
@@ -498,20 +531,36 @@ export class CEERankedService {
       this.forgetSeries(current, userId);
       this.push(userId, idleState());
     }
-    const prior = (await this.requireStore().getRating(userId)) ?? initialRatingRecord(userId);
-    const entry: CEERankedQueueEntry = {
-      userId,
-      rating: prior.rating,
-      queuedAt: this.now(),
-      lastOpponent: this.lastOpponent.get(userId) ?? null,
-    };
-    this.queue.add(entry);
-    this.push(userId, this.queuedState(entry, this.now()));
-    if (!this.closed) this.scheduleMatchTick();
-    return {};
+    // 在读评级之前就先占位：连点两次 `queue` 不会开出两场。
+    this.starting.add(userId);
+    try {
+      const prior = (await this.requireStore().getRating(userId)) ?? initialRatingRecord(userId);
+      const entry: CEERankedQueueEntry = {
+        userId,
+        rating: prior.rating,
+        queuedAt: this.now(),
+        lastOpponent: this.lastOpponent.get(userId) ?? null,
+      };
+      // 定级赛只打人机：不满 5 场不进真人队列，直接开一场，推给客户端的就是系列赛。
+      if (prior.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES) {
+        await this.startBotSeries(userId, "placement", entry);
+        return {};
+      }
+      this.queue.add(entry);
+      this.push(userId, this.queuedState(entry, this.now()));
+      if (!this.closed) this.scheduleMatchTick();
+      return {};
+    } catch (error) {
+      this.resetToIdle(userId);
+      throw error;
+    } finally {
+      this.starting.delete(userId);
+    }
   }
 
   private handleCancel(userId: string): Record<string, never> {
+    // 正在开赛：此时取消不会收回已经在开的那场，直接忽略。
+    if (this.starting.has(userId)) return {};
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
     this.push(userId, idleState());
@@ -525,26 +574,71 @@ export class CEERankedService {
       throw new AppError("RANKED_BOT_NOT_READY", "再等一会儿才能选择人机");
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
-    await this.startBotSeries(userId, "manual", entry);
+    try {
+      await this.guardedStart([userId], () => this.startBotSeries(userId, "manual", entry));
+    } catch (error) {
+      this.resetToIdle(userId);
+      throw error;
+    }
     return {};
+  }
+
+  /** 开赛护栏：组装是异步的，这期间同一账号的 `queue` 报忙、`cancel` 无效。 */
+  private async guardedStart(userIds: readonly string[], open: () => Promise<void>): Promise<void> {
+    for (const userId of userIds) this.starting.add(userId);
+    try {
+      await open();
+    } finally {
+      for (const userId of userIds) this.starting.delete(userId);
+    }
   }
 
   private scheduleMatchTick(): void {
     if (this.matchCancel !== null || this.queue.size === 0 || this.closed) return;
     this.matchCancel = this.setTimer(() => {
       this.matchCancel = null;
-      void this.tickMatch().finally(() => {
-        if (!this.closed && this.queue.size > 0 && this.matchCancel === null)
-          this.scheduleMatchTick();
-      });
+      void this.tickMatch()
+        .catch((error: unknown) => {
+          this.logger?.error("排位匹配跳异常", { error: errorMessageOf(error) });
+        })
+        .finally(() => {
+          if (!this.closed && this.queue.size > 0 && this.matchCancel === null)
+            this.scheduleMatchTick();
+        });
     }, MATCH_TICK_MS);
   }
 
   private async tickMatch(): Promise<void> {
     const now = this.now();
     const { pairs, fallbacks } = this.queue.tick(now);
-    for (const [first, second] of pairs) await this.startHumanSeries(first, second, now);
-    for (const entry of fallbacks) await this.startBotSeries(entry.userId, "auto", entry, now);
+    // 一场开失败不能带走整跳：其余候选照常开赛，失败的两位回队列外等下一次点排队。
+    for (const [first, second] of pairs) {
+      try {
+        await this.guardedStart([first.userId, second.userId], () =>
+          this.startHumanSeries(first, second, now)
+        );
+      } catch (error) {
+        this.logger?.error("排位开赛失败", {
+          userIds: [first.userId, second.userId],
+          error: errorMessageOf(error),
+        });
+        this.resetToIdle(first.userId);
+        this.resetToIdle(second.userId);
+      }
+    }
+    for (const entry of fallbacks) {
+      try {
+        await this.guardedStart([entry.userId], () =>
+          this.startBotSeries(entry.userId, "auto", entry, now)
+        );
+      } catch (error) {
+        this.logger?.error("排位开赛失败", {
+          userIds: [entry.userId],
+          error: errorMessageOf(error),
+        });
+        this.resetToIdle(entry.userId);
+      }
+    }
     // 仍在排队的人窗口可能又放宽了一档，只给变化的推一帧。
     for (const userId of this.attachment.keys()) {
       const entry = this.queue.get(userId);
@@ -608,7 +702,7 @@ export class CEERankedService {
 
   private async startBotSeries(
     userId: string,
-    botEntry: "manual" | "auto",
+    botEntry: Exclude<CEERankedBotEntry, null>,
     entry: CEERankedQueueEntry,
     now = this.now()
   ): Promise<void> {
@@ -626,6 +720,8 @@ export class CEERankedService {
     // 爱噶的目标分就是玩家自己的分数，其余人格在 ±120 内浮动。
     const targetRating =
       persona.id === "aiga" ? rating.rating : rating.rating + (this.random() * 240 - 120);
+    // 按该组的校准偏差回退后才生成强度，计分仍用目标分。
+    const strengthRating = targetRating - this.handicap.bias(botGroupOf(persona.id));
     const rated = shouldRateBotSeries(prior, now);
     const name = await this.displayName(userId);
     const seats: [CEERankedSeatRuntime, CEERankedSeatRuntime] = [
@@ -650,7 +746,12 @@ export class CEERankedService {
       unratedReason: rated ? null : "bot_daily_limit",
       bot: true,
       botEntry,
-      botSpec: { persona, targetRating, strength: ceeRankedBotStrength(targetRating, this.random) },
+      botSpec: {
+        persona,
+        targetRating,
+        strengthRating,
+        strength: ceeRankedBotStrength(strengthRating, this.random),
+      },
     });
     this.lastPersona.set(userId, persona.id);
   }
@@ -697,7 +798,7 @@ export class CEERankedService {
     rated: boolean;
     unratedReason: string | null;
     bot: boolean;
-    botEntry: "manual" | "auto" | null;
+    botEntry: CEERankedBotEntry;
     botSpec: CEERankedBotSpec | null;
   }): void {
     const series = createCEERankedSeries({
@@ -808,7 +909,14 @@ export class CEERankedService {
     const now = this.now();
     tickCEERankedSeries(runtime.series, now);
     if (runtime.bot) this.driveBot(runtime, now);
-    if (runtime.series.phase === "settled" && !runtime.settlementDone) await this.settle(runtime);
+    // 写库可能带重试，不能压住命令 ACK：结算自己会先推「结算中」再推结果。
+    if (runtime.series.phase === "settled" && !runtime.settlementDone)
+      void this.settle(runtime).catch((error: unknown) => {
+        this.logger?.error("排位结算异常", {
+          seriesId: runtime.series.id,
+          error: errorMessageOf(error),
+        });
+      });
     this.pushSeries(runtime);
     this.scheduleTimer(runtime);
   }
@@ -955,7 +1063,8 @@ export class CEERankedService {
     const brain = createCEERankedBot({
       persona: spec.persona,
       strength: spec.strength,
-      opponentRating: runtime.seats[0].prior?.rating ?? createCEERating().rating,
+      // 爱噶的思考节奏按开赛时定下的强度分（已扣校准偏差），整场不变，与审计记录一致。
+      opponentRating: spec.strengthRating,
       pool: runtime.pool.candidates,
       random: this.random,
     });
@@ -1084,7 +1193,23 @@ export class CEERankedService {
     };
     const written = await this.saveWithRetry(record, runtime.series.id);
     if (!written) return { written: false, results: [null, null] };
+    // 只有真写进审计的计分人机局才算校准样本：写库失败或人机不计分都不进窗口。
+    if (runtime.rated && runtime.bot) this.rememberBotSample(record.players);
     return { written: true, results: settlementResults(runtime, rating) };
+  }
+
+  /** 记一笔人机校准样本，每组每满 20 条打一次当前偏差。 */
+  private rememberBotSample(players: readonly CEERankedSeriesPlayerRecord[]): void {
+    const sample = ceeRankedBotSampleOf(players);
+    if (sample === null) return;
+    this.handicap.add(sample);
+    const samples = this.handicap.count(sample.group);
+    if (samples % HANDICAP_LOG_EVERY !== 0) return;
+    this.logger?.info("排位人机校准", {
+      group: sample.group,
+      bias: this.handicap.bias(sample.group),
+      samples,
+    });
   }
 
   private async saveWithRetry(
@@ -1102,7 +1227,7 @@ export class CEERankedService {
           this.logger?.error("排位结算写库失败", {
             seriesId,
             record,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessageOf(error),
           });
           return false;
         }
@@ -1166,6 +1291,21 @@ export class CEERankedService {
 }
 
 const idleState = (): CEERankedState => ({ status: "idle" });
+
+/** 写日志用的错误摘要：Error 取 message，其余原样转字符串。 */
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 校准分组：爱噶单独一组，其余人格共用一组。 */
+function botGroupOf(personaId: CEERankedPersonaId): CEERankedBotGroup {
+  return personaId === "aiga" ? "aiga" : "regular";
+}
+
+/** 审计表里的角色名：中文名优先，没有中文名的旧数据回落到原名。 */
+function auditNameOf(character: { name: string; nameCn: string }): string {
+  return character.nameCn || character.name;
+}
 
 /** 从审计记录取回评级三参数。 */
 function toRating(record: CEERankedRatingRecord): CEERating {
@@ -1354,6 +1494,7 @@ function playerRecord(
     clientVersion: seat.isBot ? null : seat.clientVersion,
     botPersona: spec === null ? null : spec.persona.id,
     botTargetRating: spec === null ? null : spec.targetRating,
+    botStrengthRating: spec === null ? null : spec.strengthRating,
     queueWaitMs: seat.queueWaitMs,
     points: runtime.series.seats[index].points,
     score,
@@ -1369,7 +1510,7 @@ function gameRecords(runtime: CEERankedSeriesRuntime, endedAt: number): CEERanke
   return runtime.series.games.map((game): CEERankedGameRecord => ({
     number: game.number,
     answerCharacterId: game.answer.id,
-    answerName: game.answer.name,
+    answerName: auditNameOf(game.answer),
     winnerSeat: game.winner,
     endReason: game.endReason ?? "draw",
     attempts: [game.seats[0].attempts, game.seats[1].attempts],
@@ -1391,7 +1532,7 @@ function guessRecords(runtime: CEERankedSeriesRuntime): CEERankedGuessRecord[] {
           seat: index,
           attempt: position + 1,
           characterId: guess.character.id,
-          characterName: guess.character.name,
+          characterName: auditNameOf(guess.character),
           correct: guess.correct,
           createdAt: guess.createdAt,
           clientType: seat.isBot ? null : seat.clientType,

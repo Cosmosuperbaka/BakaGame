@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { AppError } from "../src/domain/Errors";
 import {
   CEE_RANKED_REMATCH_COOLDOWN_MS,
+  CEE_RANKED_REMATCH_RELEASE_MS,
   CEE_RANKED_WINDOW_INITIAL,
   CEE_RANKED_WINDOW_MAX,
   CEE_RANKED_WINDOW_STEP,
@@ -96,20 +97,37 @@ describe("排位匹配队列", () => {
     expect(pairIds(queue, BASE)).toEqual([["a", "c"]]);
   });
 
-  test("双方窗口都到顶时解除重复匹配限制", () => {
+  test("双方都等满 15 秒即解除重复匹配限制", () => {
     const queue = new CEERankedQueue();
     const lastAt = BASE - 1_000;
-    // 一侧等 36 秒（窗口 500）、一侧等 34 秒（窗口 450）：没同时到顶，限制仍生效。
-    // 两人都等满了兜底时长，所以这一跳谁也没配上真人。
-    queue.add(entry("a", 1500, BASE - 36_000, { userId: "c", at: lastAt }));
-    queue.add(entry("c", 1510, BASE - 34_000, { userId: "a", at: lastAt }));
-    const early = queue.tick(BASE);
-    expect(early.pairs).toEqual([]);
-    expect(early.fallbacks.map((item) => item.userId)).toEqual(["a", "c"]);
+    // 只有一侧等满 15 秒：限制仍生效，两人都没到兜底时长，所以这一跳什么都没发生。
+    queue.add(
+      entry("a", 1500, BASE - CEE_RANKED_REMATCH_RELEASE_MS - 1_000, { userId: "c", at: lastAt })
+    );
+    queue.add(
+      entry("c", 1510, BASE - CEE_RANKED_REMATCH_RELEASE_MS + 1_000, { userId: "a", at: lastAt })
+    );
+    expect(queue.tick(BASE)).toEqual({ pairs: [], fallbacks: [] });
+    expect(queue.size).toBe(2);
 
-    queue.add(entry("a", 1500, BASE - 36_000, { userId: "c", at: lastAt }));
-    queue.add(entry("c", 1510, BASE - 36_000, { userId: "a", at: lastAt }));
-    expect(pairIds(queue, BASE)).toEqual([["a", "c"]]);
+    // 换成双方都等满 15 秒：冷却还没结束也允许再次相遇。
+    const released = new CEERankedQueue();
+    released.add(
+      entry("a", 1500, BASE - CEE_RANKED_REMATCH_RELEASE_MS - 1_000, { userId: "c", at: lastAt })
+    );
+    released.add(
+      entry("c", 1510, BASE - CEE_RANKED_REMATCH_RELEASE_MS, { userId: "a", at: lastAt })
+    );
+    expect(pairIds(released, BASE)).toEqual([["a", "c"]]);
+  });
+
+  test("解除的是重复匹配限制而不是窗口：分差超出窗口仍未满 15 秒都不配", () => {
+    const queue = new CEERankedQueue();
+    // 都等了 20 秒，窗口 350 装不下 400 的分差。
+    queue.add(entry("a", 1500, BASE - 20_000));
+    queue.add(entry("c", 1900, BASE - 20_000));
+    expect(ceeRankedWindow(entry("a", 1500, BASE - 20_000), BASE)).toBe(350);
+    expect(queue.tick(BASE).pairs).toEqual([]);
   });
 
   test("只有单侧记录了对手也会拦住", () => {

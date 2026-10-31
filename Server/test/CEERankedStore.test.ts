@@ -40,6 +40,7 @@ const playerOf = (
   clientVersion: "1.0.0",
   botPersona: null,
   botTargetRating: null,
+  botStrengthRating: null,
   queueWaitMs: 1200,
   points: 3,
   score: 1,
@@ -228,6 +229,71 @@ describe("排位审计内存实现", () => {
       [1, T0 + 2000, 0, 2],
       [2, T0 + 5000, 1, 1],
     ]);
+  });
+
+  test("校准样本只取计分的人机局：真人局、不计分、缺强度列的都跳过", async () => {
+    const store = new InMemoryCEERankedStore();
+    const botOf = (overrides: Partial<CEERankedSeriesPlayerRecord> = {}) =>
+      playerOf(1, {
+        userId: null,
+        name: "团子",
+        clientType: null,
+        clientVersion: null,
+        botPersona: "dango",
+        botTargetRating: 1180,
+        botStrengthRating: 1150,
+        points: 0,
+        score: 0,
+        ratingBefore: null,
+        ratingAfter: null,
+        rdBefore: null,
+        rdAfter: null,
+        ...overrides,
+      });
+
+    // 真人局：没有「强度 vs 战绩」这回事。
+    await store.saveSettlement(settlementOf("s-human", T0));
+    // 人机但不计分：这一场的人机没有按真实水平出手，不代表任何强度。
+    await store.saveSettlement(
+      settlementOf("s-unrated", T0 + 1000, {
+        series: seriesOf("s-unrated", T0 + 1000, {
+          bot: true,
+          rated: false,
+          unratedReason: "bot_daily_limit",
+          botEntry: "auto",
+        }),
+        players: [playerOf(0), botOf()],
+      })
+    );
+    // 计分人机（爱噶）：真人赛前 μ/φ 与强度分都在。
+    await store.saveSettlement(
+      settlementOf("s-aiga", T0 + 2000, {
+        series: seriesOf("s-aiga", T0 + 2000, { bot: true, botEntry: "placement" }),
+        players: [playerOf(0), botOf({ botPersona: "aiga" })],
+      })
+    );
+    // 旧数据没有强度列：凑不出样本。
+    await store.saveSettlement(
+      settlementOf("s-legacy", T0 + 3000, {
+        series: seriesOf("s-legacy", T0 + 3000, { bot: true, botEntry: "auto" }),
+        players: [playerOf(0), botOf({ botStrengthRating: null })],
+      })
+    );
+    // 最新一场计分人机（普通人格）：倒序后应当排第一。
+    await store.saveSettlement(
+      settlementOf("s-regular", T0 + 4000, {
+        series: seriesOf("s-regular", T0 + 4000, { bot: true, botEntry: "manual" }),
+        players: [playerOf(0, { points: 0, score: 0 }), botOf({ points: 3, score: 1 })],
+      })
+    );
+
+    expect(await store.listRecentBotSamples(10)).toEqual([
+      { group: "regular", playerRating: 1200, playerRd: 250, strengthRating: 1150, score: 0 },
+      { group: "aiga", playerRating: 1200, playerRd: 250, strengthRating: 1150, score: 1 },
+    ]);
+    expect(await store.listRecentBotSamples(1)).toHaveLength(1);
+    // 下界夹到 1：0 条不会把整个校准窗口清空。
+    expect(await store.listRecentBotSamples(0)).toHaveLength(1);
   });
 
   test("读不到就返回 null，不编造评级与明细", async () => {
