@@ -7,5 +7,10 @@
   "remote": {
     "urls": ["http://localhost:5173", "http://127.0.0.1:5173"]
   },
-  "permissions": ["core:default", "allow-baka-ticket", "allow-baka-self-check", "allow-baka-client-id"]
+  "permissions": [
+    "core:default",
+    "allow-baka-ticket",
+    "allow-baka-self-check",
+    "allow-baka-client-id"
+  ]
 }
