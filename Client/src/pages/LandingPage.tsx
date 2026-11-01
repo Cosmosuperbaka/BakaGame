@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { listItem, listContainer, iconTappable, pressable } from "@/lib/Motion";
 import { usePageNavigate, useSharedElementName } from "@/hooks/UsePageTransition";
@@ -31,8 +31,8 @@ interface GameSubMode {
   path?: string;
   available: boolean;
   /**
-   * 挂在服务端开关上的入口：关掉时整格不渲染（不是置灰），
-   * 卡片按剩下的子模式重新排，免得留下一个点了才知道进不去的空位。
+   * 挂在服务端开关上的入口：关掉后**留在原位、置灰、标注「已关闭」、点不进去**。
+   * 与 `available: false`（还没上线）同一种不可用态，区别只在徽章文案与原因。
    */
   feature?: keyof SiteFeatures;
 }
@@ -145,6 +145,15 @@ function ComingSoonBadge() {
   );
 }
 
+/** 运营关掉的入口：与「即将上线」同为不可用态，但原因不同，不能共用一句「即将上线」。 */
+function ClosedBadge() {
+  return (
+    <Badge variant="upcoming" size="xs" className="shrink-0 select-none">
+      已关闭
+    </Badge>
+  );
+}
+
 /** 卡片头部的图标、标题与副标题。标题与大厅顶栏的游戏名是同一个跨页共享元素，只在两页互相过渡时命名。 */
 function GameIdentity({ game }: { game: GameEntry }) {
   const sharedName = useSharedElementName("game-title", game.lobbyPath ?? false);
@@ -174,7 +183,7 @@ function GameIdentity({ game }: { game: GameEntry }) {
   );
 }
 
-function GameRow({ game }: { game: GameEntry }) {
+function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }) {
   const navigate = usePageNavigate();
   // 只用来挡住重复点击：分块还在加载时旧页仍可点，第二次点击会往历史里再压一条同样的记录。
   const [enteringPath, setEnteringPath] = useState<string | null>(null);
@@ -251,7 +260,11 @@ function GameRow({ game }: { game: GameEntry }) {
           }`}
         >
           {game.subModes.map((mode, index) => {
-            const isModeAvailable = !isWholeGameDisabled && mode.available;
+            // 受控子模式（如排位）关掉时**不隐藏**：格子留着、置灰、标注「已关闭」，
+            // 让玩家看得出这个玩法存在但暂时不可进，而不是以为站点少了点什么。
+            const isAllowed = !mode.feature || features[mode.feature];
+            const isModeAvailable = !isWholeGameDisabled && mode.available && isAllowed;
+            const isModeClosed = !isWholeGameDisabled && mode.available && !isAllowed;
             // 三个子模式在窄屏排成两行，首项独占一行：三等分时每格不到 110px，放不下模式名加「即将上线」。
             const spanClass = subModeCount === 3 && index === 0 ? "max-sm:col-span-2" : "";
 
@@ -263,7 +276,7 @@ function GameRow({ game }: { game: GameEntry }) {
                   className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
                 >
                   <span className="truncate">{mode.title}</span>
-                  {!isWholeGameDisabled && <ComingSoonBadge />}
+                  {isModeClosed ? <ClosedBadge /> : !isWholeGameDisabled && <ComingSoonBadge />}
                 </div>
               );
             }
@@ -350,22 +363,10 @@ function FriendLinkItem({ link }: { link: FriendLink }) {
 /** 版本号入口：打开统一的版本信息页（更新日志 / 提交历史 / 开源致谢三个标签）。 */
 const VERSION_PAGE_PATH = "/abouts?tab=changelog";
 
-/** 按服务端可见性过滤子模式：受控入口关掉后整格消失，不置灰也不留空位。 */
-const visibleGames = (features: SiteFeatures): GameEntry[] =>
-  GAMES.map((game) =>
-    game.subModes
-      ? {
-          ...game,
-          subModes: game.subModes.filter((mode) => !mode.feature || features[mode.feature]),
-        }
-      : game
-  );
-
 export default function LandingPage() {
   const navigate = usePageNavigate();
-  // 入口可见性读服务端运行期旋钮；没读到之前按全开，列表不会先空一块。
+  // 入口可用性读服务端运行期旋钮；没读到之前按全开。关掉的入口仍会渲染，只是置灰不可点。
   const features = useSiteFeatures();
-  const games = useMemo(() => visibleGames(features), [features]);
 
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关；
   // 解析在构建期完成，运行时不再为了一个字符串背下整份日志。
@@ -407,15 +408,15 @@ export default function LandingPage() {
             auto 边距在有空间时居中、空间不足时归零，矮屏下自然退化为顶部对齐。 */}
         <motion.div
           className="my-auto flex w-full flex-col gap-2.5 sm:gap-3"
-          variants={listContainer(games.length)}
+          variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
         >
           {/* 客户端过旧的提醒落在游戏列表上方：底部那条浮层是网页新版本提醒的位置，
               两条「该更新了」叠在同一处会互相盖掉。壳没装或版本够新时整条不渲染。 */}
           <ClientUpdateNotice />
-          {games.map((game) => (
-            <GameRow key={game.id} game={game} />
+          {GAMES.map((game) => (
+            <GameRow key={game.id} game={game} features={features} />
           ))}
           {/* Agent（MCP）在站点上的活动：首页就连上，位置随工具调用实时更新。 */}
           <SiteAgentPresence />

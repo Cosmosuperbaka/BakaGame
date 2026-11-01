@@ -12,7 +12,7 @@ import { resolveServerUrl } from "@/lib/ServerEndpoint";
  */
 
 export interface SiteFeatures {
-  /** CEE 排位赛入口：关闭时落地页整格不渲染。 */
+  /** CEE 排位赛入口：关闭时落地页把它渲染成置灰的不可用格子，不隐藏。 */
   ceeRankedEntry: boolean;
 }
 

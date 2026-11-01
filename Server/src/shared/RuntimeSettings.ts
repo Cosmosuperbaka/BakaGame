@@ -96,7 +96,7 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
     key: "enableCeeRankedEntry",
     envVar: "ENABLE_CEE_RANKED_ENTRY",
     title: "CEE 排位赛入口",
-    note: "关闭后主页不再出现排位赛入口，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
+    note: "关闭后主页上的排位入口置灰并标注「已关闭」，不可进入，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableCeeRankedEntry === false ? "false" : "true"),
     kind: "boolean",

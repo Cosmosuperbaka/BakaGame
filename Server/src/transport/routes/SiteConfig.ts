@@ -26,10 +26,10 @@ export const siteConfigRoutes = ({ features }: SiteConfigRoutesDependencies = {}
         tags: ["System"],
         summary: "读取站点配置",
         description:
-          "返回站点级功能可见性（当前为 CEE 排位赛入口），由运行期旋钮控制；响应不缓存，开关改完即生效。",
+          "返回站点级功能可用性（当前为 CEE 排位赛入口），由运行期旋钮控制；响应不缓存，开关改完即生效。关掉的入口在页面上仍然呈现，只是置灰不可点。",
       },
       response: {
-        200: t.Object({ ceeRankedEntry: t.Boolean({ description: "排位赛入口是否呈现" }) }),
+        200: t.Object({ ceeRankedEntry: t.Boolean({ description: "排位赛入口是否可用" }) }),
       },
     }
   );

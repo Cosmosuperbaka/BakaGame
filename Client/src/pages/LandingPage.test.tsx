@@ -201,7 +201,8 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
-  it("排位入口被服务端关掉后整格消失，同卡其它入口照常", async () => {
+  it("排位入口被服务端关掉后置灰标注已关闭，同卡其它入口照常", async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({ ok: true, json: async () => ({ ceeRankedEntry: false }) }))
@@ -209,14 +210,22 @@ describe("LandingPage", () => {
     renderLandingPage();
 
     const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
-    // 配置是挂载后异步回来的：入口消失要等这一轮，不能同步断言碰运气。
-    await waitFor(() =>
-      expect(within(ceeEntry).queryByRole("button", { name: /排位赛/ })).not.toBeInTheDocument()
-    );
+    // 配置是挂载后异步回来的：状态要等这一轮，不能同步断言碰运气。
+    await waitFor(() => expect(within(ceeEntry).getByText("已关闭")).toBeInTheDocument());
+
+    // 入口仍在页面上，只是不再是按钮：看得出这个玩法存在，但点不进去。
+    expect(within(ceeEntry).queryByRole("button", { name: /排位赛/ })).not.toBeInTheDocument();
+    const rankedLabel = within(ceeEntry).getByText("排位赛");
+    expect(rankedLabel.closest('[aria-disabled="true"]')).not.toBeNull();
+
+    // 点它不该导航：关掉的是入口，不该留一个能误触的按钮。
+    await user.click(rankedLabel);
+    expect(window.location.pathname).toBe("/");
+
+    // 同卡其它入口照常：多人模式可点，锦标赛仍是「即将上线」，两种不可用态不混用文案。
     expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
     expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
-    // 不是置灰而是整格不渲染：关掉的入口不该留下点了才知道进不去的格子。
-    expect(within(ceeEntry).queryByText("排位赛")).not.toBeInTheDocument();
+    expect(within(ceeEntry).getByText("即将上线")).toBeInTheDocument();
   });
 
   it("版本号打开完整版本信息页并落在更新日志标签", async () => {
