@@ -59,6 +59,9 @@ describe("身份徽章", () => {
   test("第 1000 位仍自动获得先行者，第 1001 位不再获得", async () => {
     const { rpc, adminCookie, registrations, signIn, idOf } = await setup();
 
+    // 名次和序号在库里是一致的：先铺满前 999 位，第 1000 位才落到边界上。
+    for (let serial = 3; serial < PIONEER_BADGE_LIMIT; serial += 1)
+      registrations.rows.set(`filler-${serial}`, serial);
     registrations.nextSerial = PIONEER_BADGE_LIMIT;
     const boundary = await signIn("10002", "第一千位");
     expect((await rpc("account/me", undefined, boundary.cookie)).body).toMatchObject({
@@ -81,6 +84,19 @@ describe("身份徽章", () => {
       badges: [{ kind: "contributor", serial: null }],
       equippedBadge: "contributor",
     });
+  });
+
+  test("序号被历史跳号写坏时按名次授予，不在建号时静默漏发", async () => {
+    const { rpc, registrations, signIn } = await setup();
+
+    // 托管库按段预取自增的真实形态：第 5 个账号拿到 30001，名次却仍是第 3 位。
+    registrations.nextSerial = 30_001;
+    const drifted = await signIn("10004", "跳号受害者");
+
+    const me = (await rpc("account/me", undefined, drifted.cookie)).body as {
+      badges: Array<{ kind: string }>;
+    };
+    expect(me.badges.map((badge) => badge.kind)).toEqual(["pioneer"]);
   });
 
   test("贡献者手动授予、撤销与佩戴切换；未获得的徽章不能佩戴", async () => {

@@ -108,4 +108,26 @@ describe("注册序号仓储（连接桩）", () => {
     expect(query.statement).toContain("limit ?");
     expect(query.params).toEqual([2]);
   });
+
+  test("名次按序号升序数出来，与序号的绝对值无关", async () => {
+    const stub = createDrizzleStub();
+    const repository = new DatabaseRegistrationRepository(stub.database);
+    stub.reply([tupleOf(30_001)], [tupleOf(5)]);
+
+    // 序号被跳号写到 30001，名次仍是第 5 位：先行者判定按名次兜底。
+    expect(await repository.rankOf("u5")).toBe(5);
+    const count = stub.queryAt(1);
+    expect(count.statement).toContain("count(*)");
+    expect(count.statement).toContain("`user_registration`.`seq` <=");
+    expect(count.params).toEqual([30_001]);
+  });
+
+  test("还没有序号的账号没有名次", async () => {
+    const stub = createDrizzleStub();
+    const repository = new DatabaseRegistrationRepository(stub.database);
+    stub.reply([]);
+
+    expect(await repository.rankOf("u404")).toBeNull();
+    expect(stub.queries).toHaveLength(1);
+  });
 });

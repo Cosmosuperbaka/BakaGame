@@ -1,4 +1,4 @@
-import { asc, eq, isNull, sql } from "drizzle-orm";
+import { asc, eq, isNull, lte, sql } from "drizzle-orm";
 
 import type { Database } from "./Database";
 import { user, userRegistration } from "./Schema";
@@ -9,6 +9,8 @@ export interface RegistrationRepository {
   ensureAll(): Promise<void>;
   /** 给刚建好的账号分配序号；同一账号重复调用返回原序号。 */
   register(userId: string): Promise<number>;
+  /** 账号的注册名次（1 起，按序号排序是第几位）；账号没有序号返回 `null`。 */
+  rankOf(userId: string): Promise<number | null>;
   earlyAdopters(limit: number): Promise<Array<{ userId: string; serial: number }>>;
 }
 
@@ -68,6 +70,17 @@ export class DatabaseRegistrationRepository implements RegistrationRepository {
     const serial = await this.seqOf(userId);
     if (serial === null) throw new Error("注册序号写入后读不回来");
     return serial;
+  }
+
+  async rankOf(userId: string): Promise<number | null> {
+    await this.database.ready;
+    const seq = await this.seqOf(userId);
+    if (seq === null) return null;
+    const [row] = await this.database.db
+      .select({ value: sql<number>`count(*)` })
+      .from(userRegistration)
+      .where(lte(userRegistration.seq, seq));
+    return Number(row?.value ?? 0);
   }
 
   /** 一批账号接在现有最大值之后连续编号；被并发建号抢先就重读最大值重来。 */

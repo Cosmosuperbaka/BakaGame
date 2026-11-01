@@ -145,20 +145,48 @@ export class AccountService {
 
     const early = await this.options.registrations.earlyAdopters(PIONEER_BADGE_LIMIT);
     const existing = await this.options.badges.badgesOfMany(early.map((entry) => entry.userId));
-    for (const { userId } of early) {
+    const granted: number[] = [];
+    for (const { userId, serial } of early) {
       if (existing.get(userId)?.some((badge) => badge.kind === "pioneer")) continue;
       await this.options.badges.grant(userId, "pioneer", null, new Date(this.now()));
+      granted.push(serial);
     }
+    // 新号的先行者由建号钩子当场发出，这里只补历史上的漏发；健康的库启动时应该一枚都不补，
+    // 所以补了就打日志，不让第二次「注册时没发、重启后才发」再悄无声息地发生。
+    if (granted.length)
+      this.options.logger.warn("启动补发先行者徽章", {
+        count: granted.length,
+        serials: granted.slice(0, 20),
+      });
   }
 
-  /** 建号钩子：分配注册序号并补上系统徽章；失败由调用方记录，不回滚建号。 */
+  /** 建号钩子：分配注册序号并当场补上系统徽章；失败由调用方记录，不回滚建号。 */
   async afterRegistration(user: { id: string; qqNumber?: string | null }): Promise<void> {
     const serial = await this.options.registrations.register(user.id);
     const now = new Date(this.now());
     if (this.options.ownerQqNumber && user.qqNumber === this.options.ownerQqNumber)
       await this.options.badges.grant(user.id, "owner", null, now);
-    if (serial <= PIONEER_BADGE_LIMIT)
+    if (await this.pioneerEligible(user.id, serial))
       await this.options.badges.grant(user.id, "pioneer", null, now);
+  }
+
+  /**
+   * 先行者判定：序号在名额内即授予。
+   *
+   * 序号本身就是「第几位」且注销不回收，正常情况下这一条就够。但序号可能被历史跳号写坏
+   * （托管库按段预取自增，第 5 个账号拿到 30001），那时绝对值超出名额、名次却仍在名额内——
+   * 再按名次兜一层并告警，避免又一次静默漏发；根治仍是重排序号。
+   */
+  private async pioneerEligible(userId: string, serial: number): Promise<boolean> {
+    if (serial <= PIONEER_BADGE_LIMIT) return true;
+    const rank = await this.options.registrations.rankOf(userId);
+    if (rank === null || rank > PIONEER_BADGE_LIMIT) return false;
+    this.options.logger.warn("注册序号超出先行者名额但名次仍在名额内，按名次授予", {
+      userId,
+      serial,
+      rank,
+    });
+    return true;
   }
 
   private async findUserByQq(qqNumber: string): Promise<AccountRow | null> {

@@ -116,6 +116,12 @@ export class MemoryRegistrationRepository implements RegistrationRepository {
     return serial;
   }
 
+  async rankOf(userId: string): Promise<number | null> {
+    const serial = this.rows.get(userId);
+    if (serial === undefined) return null;
+    return [...this.rows.values()].filter((value) => value <= serial).length;
+  }
+
   async earlyAdopters(limit: number): Promise<Array<{ userId: string; serial: number }>> {
     return [...this.rows]
       .filter(([, serial]) => serial <= limit)
