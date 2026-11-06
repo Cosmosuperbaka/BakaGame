@@ -296,7 +296,7 @@ export const SubmittingAnime: Story = {
 
 export const SubmittingNoCustomClip: Story = {
   name: "出题阶段 · 关闭自选片段",
-  play: undefined,
+  play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
   args: {
     snapshot: submittingSnapshot({ settings: songSettings({ allowCustomClip: false }) }),
     privateState: songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }),
