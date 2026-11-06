@@ -6,6 +6,7 @@ import {
   type SongClipRange,
   SONG_CLIP_MIN_MS,
 } from "../../shared/Index";
+import { countTitleLines, prepareTitleNames } from "./LyricTitleGuard";
 import { clampInt } from "./Records";
 
 export const LYRIC_CLIP_LEAD_MS = 1_000;
@@ -53,12 +54,20 @@ export const MAX_LYRIC_INTERLUDE_GAP_MS = 6_000;
  */
 export const MIN_LYRIC_WINDOW_LINES = 2;
 
+/**
+ * 随机切片。`titleNames` 给出时（歌名与别名），先尽量选不含歌名的区间：
+ * 从设定行数起逐行收缩，每个行数都先只看不含歌名的窗口；所有行数下都找不到干净窗口，
+ * 才回退到含歌名的窗口，并在其中挑唱出歌名行数最少的。收缩仍受 `MIN_LYRIC_WINDOW_LINES` 约束，
+ * 连续性、单行跨度等既有门槛不因回避歌名而放宽。手动自定义区间不经过本函数。
+ */
 export const createSongLyricClip = (
   lyrics: SongDetails["lyrics"],
   lineCount: number,
   random: RandomSource,
-  durationMs?: number
+  durationMs?: number,
+  titleNames?: readonly string[]
 ): SongLyricClip => {
+  const prepared = prepareTitleNames(titleNames ?? []);
   const safeCount = clampInt(lineCount, 1, 10);
   const isCompactLine = (line: SongDetails["lyrics"][number]) =>
     line.endTime > line.time && line.endTime - line.time <= MAX_LYRIC_LINE_DURATION_MS;
@@ -79,17 +88,20 @@ export const createSongLyricClip = (
   const candidatePool =
     mainLyrics.length >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount) ? mainLyrics : lyrics;
 
-  for (let count = safeCount; count >= Math.min(MIN_LYRIC_WINDOW_LINES, safeCount); count -= 1) {
-    if (candidatePool.length < count) continue;
-    const windows = Array.from({ length: candidatePool.length - count + 1 }, (_, startIndex) =>
+  const windowsOf = (count: number) =>
+    Array.from({ length: Math.max(0, candidatePool.length - count + 1) }, (_, startIndex) =>
       candidatePool.slice(startIndex, startIndex + count)
     ).filter(isContinuousWindow);
-    if (windows.length === 0) continue;
+  /** 窗口实际展示给玩家的行：含落在区间内的和声行。 */
+  const shownLines = (window: SongDetails["lyrics"]) => {
+    const start = window[0].time;
+    const end = window.at(-1)!.endTime;
+    const inside = lyrics.filter((line) => line.time >= start && line.time < end);
+    return inside.length > 0 ? inside : window;
+  };
 
-    const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
-    const candidates = padded.length > 0 ? padded : windows;
+  const buildClip = (candidates: SongDetails["lyrics"][]): SongLyricClip => {
     const selectedMainLines = candidates[random.nextInt(candidates.length)];
-
     const windowStartTime = selectedMainLines[0].time;
     const windowEndTime = selectedMainLines.at(-1)!.endTime;
 
@@ -111,6 +123,35 @@ export const createSongLyricClip = (
       endTime: clipEndTime,
       lines: mergedLines,
     };
+  };
+
+  /** 某个行数下可选的窗口；`clean` 只要不含歌名的，`any` 取唱出歌名最少的那批。 */
+  const chooseWindows = (count: number, pass: "clean" | "any"): SongDetails["lyrics"][] => {
+    if (candidatePool.length < count) return [];
+    const windows = windowsOf(count);
+    // 避开曲首曲尾的窗口先于歌名过滤划定，再在其中筛；筛空才放开到全部窗口。
+    const padded = windows.length >= 5 ? windows.slice(2, -2) : windows;
+    if (prepared.length === 0) return padded.length > 0 ? padded : windows;
+    const hits = new Map(
+      windows.map((window) => [window, countTitleLines(shownLines(window), prepared)])
+    );
+    const select = (group: SongDetails["lyrics"][]) => {
+      if (group.length === 0) return group;
+      const target = pass === "clean" ? 0 : Math.min(...group.map((window) => hits.get(window)!));
+      return group.filter((window) => hits.get(window) === target);
+    };
+    const preferred = select(padded);
+    return preferred.length > 0 ? preferred : select(windows);
+  };
+
+  // 先按行数收缩找「干净」窗口；整条收缩路径上都没有，再放开含歌名的窗口重走一遍。
+  const passes: ("clean" | "any")[] = prepared.length > 0 ? ["clean", "any"] : ["any"];
+  const minCount = Math.min(MIN_LYRIC_WINDOW_LINES, safeCount);
+  for (const pass of passes) {
+    for (let count = safeCount; count >= minCount; count -= 1) {
+      const chosen = chooseWindows(count, pass);
+      if (chosen.length > 0) return buildClip(chosen);
+    }
   }
 
   const clipDuration = safeCount * FALLBACK_CLIP_SECONDS_PER_LINE * 1_000;

@@ -5,6 +5,7 @@ import {
 } from "../domain/SongRules";
 import { AnimeSongPick } from "./songuessr/AnimeSongEvidence";
 import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
+import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import {
   buildPrivateState,
   buildRoomSnapshot,
@@ -1967,7 +1968,8 @@ export class SonGuessrService implements AdminRoomControl {
       song.lyrics,
       room.settings.lyricsLineCount,
       this.random,
-      song.durationMs
+      song.durationMs,
+      songTitleNames(song)
     );
     return {
       song: {
@@ -2125,9 +2127,16 @@ export class SonGuessrService implements AdminRoomControl {
     if (!room.solo && this.activePlayers(room).filter((candidate) => candidate.online).length < 2) {
       throw new AppError("NOT_ENOUGH_PLAYERS", "下一轮至少需要两名在线正式玩家");
     }
+    // 随机切片优先避开唱出歌名的区间；猜番题的答案是番剧而不是曲名，不做这层回避。
     const lyricClip =
       lyricClipOverride ??
-      createSongLyricClip(song.lyrics, room.settings.lyricsLineCount, this.random, song.durationMs);
+      createSongLyricClip(
+        song.lyrics,
+        room.settings.lyricsLineCount,
+        this.random,
+        song.durationMs,
+        anime ? undefined : songTitleNames(song)
+      );
     const roundNumber = room.roundNumber + 1;
     const roundSettings = cloneSettings(room.settings);
     const observerIds = this.teammateIds(room, submitterPlayerId);
