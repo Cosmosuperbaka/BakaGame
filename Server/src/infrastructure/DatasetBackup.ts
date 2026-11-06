@@ -12,6 +12,8 @@ export interface DatasetBackupOptions {
   /** 备份落点。**只保留这一份**：新一轮开始前先删掉上一轮。 */
   backupPath: string;
   logger?: { warn: (message: string) => void };
+  /** 每次备份结束都回报结果（含失败），供状态页留痕。 */
+  onResult?: (result: { ok: boolean; error: string | null }) => void;
   now?: () => number;
   /**
    * 每日 04:00 的额外维护任务（备份之后执行）。抛错只记警告，不影响排程。
@@ -28,6 +30,14 @@ export interface DatasetBackupOptions {
   onBackup?: { pause: () => void; resume: () => void };
 }
 
+/** 下一次每日任务的时刻（进程本地时区的 04:00），后台状态页读同一口径。 */
+export const nextDailyRunAt = (current: number): number => {
+  const next = new Date(current);
+  next.setHours(BACKUP_HOUR, 0, 0, 0);
+  if (next.getTime() <= current) next.setTime(next.getTime() + DAY_MS);
+  return next.getTime();
+};
+
 /**
  * 数据集备份：**启动时立刻备一份**，之后每天 04:00 覆盖，只保留最新一份。
  *
@@ -42,6 +52,7 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
 
   const runBackup = () => {
     options.onBackup?.pause();
+    let failure: string | null = null;
     try {
       // 必须先查存在性：SQLite 打开不存在的路径会**默默建一个空库**，
       // 于是「源库缺失」会被伪装成一次成功的空备份——比失败更危险。
@@ -58,26 +69,23 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
       }
     } catch (error) {
       // 备份失败绝不阻断主流程：库本身还在，缺一次快照不是可用性问题。
-      options.logger?.warn(
-        `数据集备份失败：${error instanceof Error ? error.message : String(error)}`
-      );
+      failure = error instanceof Error ? error.message : String(error);
+      options.logger?.warn(`数据集备份失败：${failure}`);
     } finally {
       // 备份失败也必须恢复：更新器卡在暂停态会让数据集永远不再更新。
       options.onBackup?.resume();
     }
+    options.onResult?.({ ok: failure === null, error: failure });
   };
 
   const scheduleNext = () => {
     if (stopped) return;
     const current = now();
-    const next = new Date(current);
-    next.setHours(BACKUP_HOUR, 0, 0, 0);
-    if (next.getTime() <= current) next.setTime(next.getTime() + DAY_MS);
     timer = setTimeout(() => {
       runBackup();
       void runDailyTask();
       scheduleNext();
-    }, next.getTime() - current);
+    }, nextDailyRunAt(current) - current);
   };
 
   const runDailyTask = async () => {

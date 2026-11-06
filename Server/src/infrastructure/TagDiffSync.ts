@@ -39,6 +39,8 @@ export interface TagDiffResult {
  * 首跑延后一分钟 —— 刚起来时索引正在重建，别去抢它的窗口。
  */
 const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+/** 未应用的正常原因：只有它算成功，其余未应用（如基线不匹配）都需要有人处理。 */
+const TAG_DIFF_UP_TO_DATE = "已是最新版本";
 const FIRST_DELAY_MS = 60_000;
 
 export function scheduleTagDiffSync(options: {
@@ -48,6 +50,8 @@ export function scheduleTagDiffSync(options: {
   statePath: string;
   fetcher?: typeof fetch;
   logger?: { warn?: (message: string) => void; info?: (message: string) => void };
+  /** 每轮结束回报结果，供状态页留痕。 */
+  onResult?: (result: { ok: boolean; summary: string; error: string | null }) => void;
 }): () => void {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -60,17 +64,22 @@ export function scheduleTagDiffSync(options: {
         fetcher: options.fetcher,
       });
       if (result.applied) {
-        options.logger?.info?.(
-          `角色标签增量已应用：${result.replaced} 条变更 / ${result.removed} 条移除`
-        );
+        const summary = `${result.replaced} 条变更 / ${result.removed} 条移除`;
+        options.logger?.info?.(`角色标签增量已应用：${summary}`);
+        options.onResult?.({ ok: true, summary: `已应用 ${summary}`, error: null });
       } else if (result.reason) {
         options.logger?.info?.(`角色标签增量未应用：${result.reason}`);
+        options.onResult?.({
+          ok: result.reason === TAG_DIFF_UP_TO_DATE,
+          summary: result.reason,
+          error: null,
+        });
       }
     } catch (error) {
       // 增量同步失败不影响服务：下一轮会重试，库里的标签仍是上一版。
-      options.logger?.warn?.(
-        `角色标签增量同步失败：${error instanceof Error ? error.message : String(error)}`
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      options.logger?.warn?.(`角色标签增量同步失败：${message}`);
+      options.onResult?.({ ok: false, summary: "增量同步失败", error: message });
     }
   };
   const schedule = (delay: number): void => {
@@ -149,7 +158,7 @@ export async function syncTagDiff(options: {
   if (state.appliedSha256 === payload.targetSha256) {
     return {
       applied: false,
-      reason: "已是最新版本",
+      reason: TAG_DIFF_UP_TO_DATE,
       replaced: 0,
       removed: 0,
       targetSha256: payload.targetSha256,

@@ -24,6 +24,11 @@ import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
  */
 
 import { infoboxToWikitext, type ApiInfobox } from "./SubjectDiscovery";
+import {
+  readDatasetStatus,
+  type BangumiDatasetStatus,
+  type MaintenanceRun,
+} from "./BangumiMirrorStatus";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const HOUR_MS = 60 * 60 * 1_000;
@@ -115,13 +120,14 @@ const heatOf = (subject: ApiSubject): number =>
     0
   );
 
-/** 维护任务最近一次的结果，给后台状态页读。 */
-export interface MaintenanceRun {
-  task: string;
-  finishedAt: number;
-  ok: boolean;
-  summary: string;
-  error: string | null;
+/** 循环自身的状态：只含内存里的量，后台状态页跨线程读。 */
+export interface UpdaterRuntimeStatus {
+  running: boolean;
+  paused: boolean;
+  rate: number;
+  players: number;
+  startedAt: number | null;
+  lastRound: { at: number; refreshed: number; error: string | null } | null;
 }
 
 /** 摘要会展示给管理员：抹掉上游地址与本机路径，排障细节留在日志里。 */
@@ -156,6 +162,7 @@ export class SubjectUpdater {
   /** 玩家看过的条目：下一轮优先刷新。 */
   private readonly manual = new Set<number>();
   private lastRound: { at: number; refreshed: number; error: string | null } | undefined;
+  private startedAt: number | null = null;
 
   constructor(options: SubjectUpdaterOptions) {
     this.db = options.db;
@@ -228,6 +235,7 @@ export class SubjectUpdater {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.startedAt = this.now();
     this.schedule(0);
   }
 
@@ -602,60 +610,20 @@ export class SubjectUpdater {
     }
   }
 
-  private count(table: "subjects" | "characters" | "bangumi_refresh" | "bangumi_index_pending") {
-    const sql = `SELECT count(*) AS n FROM ${table}`;
-    return Number(this.db.query<{ n: number }, []>(sql).get()?.n ?? 0);
-  }
-
-  /** 运维视角的快照：排障时最想知道的就是「现在跑多快、有没有停」。 */
-  stats(): {
-    running: boolean;
-    paused: boolean;
-    rate: number;
-    players: number;
-    refreshed: number;
-    pendingIndex: number;
-    subjects: number;
-    characters: number;
-    /** 最近一次真实回源刷新成功的时刻；基线登记（tier = -1）不算。 */
-    latestRefreshAt: number | null;
-    failingSubjects: number;
-    lastRound: { at: number; refreshed: number; error: string | null } | null;
-    maintenance: MaintenanceRun[];
-  } {
-    const refreshed = this.count("bangumi_refresh");
-    const pendingIndex = this.count("bangumi_index_pending");
-    const freshness = this.db
-      .query<{ latest: number | null; failing: number | null }, []>(
-        "SELECT max(CASE WHEN failures = 0 AND tier >= 0 THEN refreshed_at END) AS latest," +
-          " sum(failures > 0) AS failing FROM bangumi_refresh"
-      )
-      .get();
-    const maintenance = this.db
-      .query<
-        { task: string; finished_at: number; ok: number; summary: string; error: string | null },
-        []
-      >("SELECT task, finished_at, ok, summary, error FROM bangumi_maintenance_runs ORDER BY task")
-      .all();
+  /** 循环自身的状态，给后台状态页。 */
+  runtime(): UpdaterRuntimeStatus {
     return {
       running: this.running,
       paused: this.paused,
       rate: this.rate,
       players: this.players,
-      refreshed,
-      pendingIndex,
-      subjects: this.count("subjects"),
-      characters: this.count("characters"),
-      latestRefreshAt: freshness?.latest ?? null,
-      failingSubjects: Number(freshness?.failing ?? 0),
+      startedAt: this.startedAt,
       lastRound: this.lastRound ?? null,
-      maintenance: maintenance.map((row) => ({
-        task: row.task,
-        finishedAt: Number(row.finished_at),
-        ok: Boolean(row.ok),
-        summary: row.summary,
-        error: row.error,
-      })),
     };
+  }
+
+  /** 运维视角的快照：排障时最想知道的就是「现在跑多快、有没有停」。 */
+  stats(): UpdaterRuntimeStatus & BangumiDatasetStatus {
+    return { ...this.runtime(), ...readDatasetStatus(this.db, this.now()) };
   }
 }

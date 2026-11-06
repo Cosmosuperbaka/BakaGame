@@ -310,6 +310,13 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
     dbPath: request.song.dbPath,
     backupPath: `${request.song.dbPath}.backup`,
     logger: bridgedLogger("maintenance.backup"),
+    onResult: ({ ok, error }) =>
+      updater?.recordMaintenanceRun({
+        task: "backup",
+        ok,
+        summary: ok ? "快照已更新" : "快照失败",
+        error,
+      }),
     // 备份期间停更新器：VACUUM INTO 出一致快照，别让写入拖长它。
     onBackup: { pause: () => updater?.pause(), resume: () => updater?.resume() },
     onDailyTask: () => discoverNewSubjectsDaily(request),
@@ -321,6 +328,7 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
         diffUrl: tagDiff!.diffUrl,
         statePath: tagDiff!.statePath,
         logger: bridgedLogger("maintenance.tagDiff"),
+        onResult: (run) => updater?.recordMaintenanceRun({ task: "tagDiff", ...run }),
       })
     : undefined;
 };

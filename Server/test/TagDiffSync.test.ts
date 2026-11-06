@@ -123,3 +123,51 @@ test("定时同步：首跑延后一分钟，之后每 6 小时一轮，stop 后
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("每轮结果回报给状态页：已是最新算成功，基线不匹配与拉取失败算失败", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
+  const statePath = join(directory, "state.json");
+  type Result = { ok: boolean; summary: string; error: string | null };
+  const runOnce = async (fetcher: typeof fetch): Promise<Result> => {
+    const spy = spyOn(globalThis, "setTimeout");
+    try {
+      return await new Promise<Result>((resolve) => {
+        const stop = scheduleTagDiffSync({
+          repository: () => ({ applyTagChanges: async () => {} }),
+          diffUrl: "https://example.invalid/diff.json",
+          statePath,
+          fetcher,
+          onResult: (result) => {
+            stop();
+            resolve(result);
+          },
+        });
+        (spy.mock.calls.at(-1)![0] as () => void)();
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  };
+  const respondWith = (payload: unknown) =>
+    (async () => Response.json(payload)) as unknown as typeof fetch;
+
+  try {
+    const first = { baseSha256: null, targetSha256: "v1", added: { "1": ["蓝发"] } };
+    expect(await runOnce(respondWith(first))).toMatchObject({ ok: true, error: null });
+    expect(await runOnce(respondWith(first))).toEqual({
+      ok: true,
+      summary: "已是最新版本",
+      error: null,
+    });
+    const stale = await runOnce(respondWith({ baseSha256: "aaa", targetSha256: "v2" }));
+    expect(stale.ok).toBe(false);
+    expect(stale.summary).toContain("基线不匹配");
+    const failed = await runOnce(
+      (async () => new Response(null, { status: 503 })) as unknown as typeof fetch
+    );
+    expect(failed).toMatchObject({ ok: false, summary: "增量同步失败" });
+    expect(failed.error).toContain("503");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

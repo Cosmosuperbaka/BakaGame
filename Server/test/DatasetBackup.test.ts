@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scheduleDatasetBackup } from "../src/infrastructure/DatasetBackup";
+import { nextDailyRunAt, scheduleDatasetBackup } from "../src/infrastructure/DatasetBackup";
 
 const makeDataset = (directory: string) => {
   const dbPath = join(directory, "bangumi.sqlite");
@@ -105,4 +105,26 @@ test("源库缺失时备份失败不抛出，只记一条警告", () => {
   } finally {
     spy.mockRestore();
   }
+});
+
+test("每次备份都回报结果：成功与失败都能留痕", () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-backup-"));
+  const dbPath = makeDataset(directory);
+  const results: Array<{ ok: boolean; error: string | null }> = [];
+  const onResult = (result: { ok: boolean; error: string | null }) => results.push(result);
+  scheduleDatasetBackup({ dbPath, backupPath: `${dbPath}.backup`, onResult })();
+  scheduleDatasetBackup({
+    dbPath: join(directory, "missing.sqlite"),
+    backupPath: join(directory, "missing.backup"),
+    onResult,
+  })();
+  expect(results[0]).toEqual({ ok: true, error: null });
+  expect(results[1].ok).toBe(false);
+  expect(results[1].error).toContain("数据集不存在");
+});
+
+test("下一次每日任务：过了 04:00 顺延到次日", () => {
+  const at = (text: string) => new Date(text).getTime();
+  expect(nextDailyRunAt(at("2026-10-10T03:00:00"))).toBe(at("2026-10-10T04:00:00"));
+  expect(nextDailyRunAt(at("2026-10-10T05:00:00"))).toBe(at("2026-10-11T04:00:00"));
 });
