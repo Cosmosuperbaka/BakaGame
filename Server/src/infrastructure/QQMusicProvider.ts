@@ -1103,12 +1103,14 @@ export class QQMusicProvider implements MusicProvider {
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLogin> {
     const qrType = type || "qq";
-    // 扫码登录走独立的登录域名（ptlogin / 微信 / MQTT 通道），不占用 musicu 的限流队列；
-    // 否则微信长轮询会占住匿名队列的唯一并发位，拖垮匿名检索并推高熔断计数。
+    // QQ 和微信二维码走独立的登录域名，不占用 musicu 的限流队列；
+    // App 二维码要调 musicu 的 CreateQRCode，并开一条实时通道，必须继续排队限速。
+    const create = () => qqmusic.login_qr_create({ type: qrType });
     let res: Awaited<ReturnType<typeof qqmusic.login_qr_create>>;
     try {
-      res = await qqmusic.login_qr_create({ type: qrType });
+      res = qrType === "mobile" ? await this.callUpstream(undefined, create) : await create();
     } catch (error) {
+      if (error instanceof AppError) throw error;
       this.options.logger?.warn?.("QQ 音乐登录二维码生成失败", { qrType, ...describeError(error) });
       throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
     }
