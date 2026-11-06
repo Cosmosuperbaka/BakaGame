@@ -6,6 +6,7 @@ import {
 } from "@/config/Constants";
 import { resolveServerBase } from "@/lib/ServerEndpoint";
 import { rejectProtocol } from "@/lib/ProtocolFailure";
+import type { PreludeExchange } from "@/lib/TabSession";
 import {
   captureClientLog,
   captureClientException,
@@ -74,6 +75,24 @@ export function generateUuid(): string {
   });
 }
 
+/**
+ * 连接打开后、对外宣告可用之前要走完的前置帧（领取或挂上标签页身份）。
+ * 前置帧自身失败不拦业务，见 `lib/TabSession.ts`。
+ */
+export type ConnectionPrelude = (exchange: PreludeExchange) => Promise<void>;
+
+/** 前置帧的请求超时：要覆盖服务端探测现持有者的等待。 */
+const PRELUDE_REQUEST_TIMEOUT_MS = 5_000;
+
+export interface WebSocketClientOptions {
+  /**
+   * 每次建连时现算的握手查询串。一次性凭据（如反作弊房的 ticket）绝不能固定在构造时
+   * 读一次，否则重连必然带上废票。日志与指标仍只记 `path`，避免把凭据写进遥测。
+   */
+  handshakeQuery?: () => string;
+  prelude?: ConnectionPrelude;
+}
+
 /** 全部游戏连接：登录或退出后逐个重连，让服务端在握手时重新解析会话 Cookie。 */
 const clients = new Set<WebSocketClient>();
 
@@ -88,16 +107,20 @@ export class WebSocketClient {
   private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> =
     [];
   private readonly path: string;
-  /**
-   * 每次建连时现算的握手查询串。一次性凭据（如反作弊房的 ticket）绝不能固定在构造时
-   * 读一次，否则重连必然带上废票。日志与指标仍只记 `path`，避免把凭据写进遥测。
-   */
   private readonly handshakeQuery?: () => string;
+  private readonly prelude?: ConnectionPrelude;
+  /** 前置帧还没走完：业务命令绝不能抢在身份绑定之前发出。 */
+  private preluding = false;
 
-  constructor(path: string, handshakeQuery?: () => string) {
+  constructor(path: string, options: WebSocketClientOptions = {}) {
     this.path = path;
-    this.handshakeQuery = handshakeQuery;
+    this.handshakeQuery = options.handshakeQuery;
+    this.prelude = options.prelude;
     clients.add(this);
+  }
+
+  private isReady(): boolean {
+    return !this.preluding && this.socket?.readyState === WebSocket.OPEN;
   }
 
   /**
@@ -134,14 +157,13 @@ export class WebSocketClient {
       return;
     }
 
+    const socket = this.socket;
     this.socket.onopen = () => {
       this.reconnectAttempts = 0;
       captureClientLog("WebSocket 已连接", "info", { path: this.path });
       countClientMetric("bakagame.websocket.connections", 1, { path: this.path });
-      this.statusHandlers.forEach((handler) => handler(true));
-      const waiters = this.connectWaiters;
-      this.connectWaiters = [];
-      waiters.forEach((waiter) => waiter.resolve());
+      if (this.prelude) void this.runPrelude(this.prelude, socket);
+      else this.announceOpen();
     };
 
     this.socket.onmessage = (event) => {
@@ -177,6 +199,7 @@ export class WebSocketClient {
 
     this.socket.onclose = () => {
       this.socket = null;
+      this.preluding = false;
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       for (const [id, pending] of this.pendingRequests) {
@@ -199,6 +222,7 @@ export class WebSocketClient {
     this.reconnectTimer = null;
     const socket = this.socket;
     this.socket = null;
+    this.preluding = false;
     if (socket) {
       socket.onopen = null;
       socket.onmessage = null;
@@ -217,8 +241,57 @@ export class WebSocketClient {
     this.statusHandlers.forEach((handler) => handler(false));
   }
 
+  private announceOpen(): void {
+    this.statusHandlers.forEach((handler) => handler(true));
+    const waiters = this.connectWaiters;
+    this.connectWaiters = [];
+    waiters.forEach((waiter) => waiter.resolve());
+  }
+
+  /** 走完前置帧再宣告可用；期间连接已换就交给新连接，这次不再宣告。 */
+  private async runPrelude(prelude: ConnectionPrelude, socket: WebSocket): Promise<void> {
+    this.preluding = true;
+    try {
+      await prelude((type, payload) => this.exchange(socket, type, payload));
+    } catch {
+      // 身份是增强能力：前置帧失败按无身份继续，不把玩家挡在游戏外。
+    }
+    if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
+    this.preluding = false;
+    this.announceOpen();
+  }
+
+  /** 绕过可用门闩的一次请求-应答，只给前置帧用：业务命令一律走 `send`。 */
+  private exchange(
+    socket: WebSocket,
+    type: string,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const id = `pre-${Date.now().toString(36)}-${++this.requestCounter}`;
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        rejectProtocol(reject, { code: "TIMEOUT", message: "请求超时" });
+      }, PRELUDE_REQUEST_TIMEOUT_MS);
+      this.pendingRequests.set(id, { resolve, reject, timer });
+      socket.send(JSON.stringify({ id, traceId: generateUuid(), type, payload }));
+    });
+  }
+
+  /** 站点连接在已打开的连接上回一帧（应答服务端探测），不等待业务门闩。 */
+  exchangeOnOpenSocket(
+    type: string,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const socket = this.socket;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error("WebSocket 未连接"));
+    }
+    return this.exchange(socket, type, payload);
+  }
+
   waitForConnection(timeoutMs = CONNECT_WAIT_TIMEOUT_MS): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
+    if (this.isReady()) return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
       const waiter = {
         resolve: () => {
@@ -249,8 +322,11 @@ export class WebSocketClient {
     options?: SendOptions
   ): Promise<T> {
     const timeoutMs = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      if (this.socket?.readyState === WebSocket.CONNECTING) {
+    if (!this.isReady()) {
+      if (
+        this.socket?.readyState === WebSocket.CONNECTING ||
+        this.socket?.readyState === WebSocket.OPEN
+      ) {
         // 建连等待与请求超时语义不同：无超时请求只能在已建连的连接上等待。
         await this.waitForConnection(timeoutMs > 0 ? timeoutMs : DEFAULT_REQUEST_TIMEOUT_MS);
       } else {
@@ -354,7 +430,7 @@ export class WebSocketClient {
 
   onStatus(handler: StatusHandler): () => void {
     this.statusHandlers.push(handler);
-    if (this.socket?.readyState === WebSocket.OPEN) handler(true);
+    if (this.isReady()) handler(true);
     return () => {
       this.statusHandlers = this.statusHandlers.filter((candidate) => candidate !== handler);
     };
@@ -371,8 +447,8 @@ export class WebSocketClient {
   }
 }
 
-export const createWebSocketClient = (path: string, handshakeQuery?: () => string) =>
-  new WebSocketClient(path, handshakeQuery);
+export const createWebSocketClient = (path: string, options?: WebSocketClientOptions) =>
+  new WebSocketClient(path, options);
 
 export const refreshSocketIdentities = (): void => {
   for (const client of clients) client.refreshIdentity();

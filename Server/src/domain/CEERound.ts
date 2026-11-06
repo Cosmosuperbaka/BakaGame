@@ -90,6 +90,17 @@ export function beginCEERound(
     pendingTagOwners: new Map(),
   };
 }
+/**
+ * 单位里还有没有能行动的队员。只看「在线」不够：同一张标签页退房再进回到同一个玩家号，
+ * 本局身份却已是观战，算进来会让全队都走了的单位一直等一个不能行动的人。
+ */
+export function unitHasActor(room: CEERoom, unit: CEEUnit, exceptPlayerId?: string): boolean {
+  return unit.memberIds.some((id) => {
+    if (id === exceptPlayerId) return false;
+    const member = room.players.get(id);
+    return Boolean(member?.online && member.status === "playing");
+  });
+}
 export function getCEEUnit(room: CEERoom, player: CEEPlayerRecord): CEEUnit | undefined {
   const unit = room.round?.units.get(ceeUnitId(player));
   return unit?.memberIds.includes(player.id) ? unit : undefined;
@@ -303,9 +314,7 @@ export function advanceCEERound(room: CEERoom, now: number): boolean {
   const round = room.round;
   if (room.phase !== "guessing" || !round) return false;
   const unfinished = [...round.units.values()].filter((unit) => !unit.ended);
-  const active = unfinished.filter((unit) =>
-    unit.memberIds.some((id) => room.players.get(id)?.online)
-  );
+  const active = unfinished.filter((unit) => unitHasActor(room, unit));
   const syncComplete = active.every((unit) => unit.completed);
   if (
     !unfinished.length ||

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   captureClientException: vi.fn(),
@@ -21,7 +21,12 @@ vi.mock("@/lib/Sentry", () => ({
   },
 }));
 
-import { generateUuid, isProtocolError, WebSocketClient } from "./WebsocketClient";
+import {
+  generateUuid,
+  isProtocolError,
+  WebSocketClient,
+  type ConnectionPrelude,
+} from "./WebsocketClient";
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/config/Constants";
 
 interface MockSocketInstance {
@@ -100,6 +105,86 @@ describe("WebSocketClient", () => {
   it("在安全上下文中优先使用原生 crypto.randomUUID", () => {
     const uuid = generateUuid();
     expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  });
+
+  describe("连接前置帧", () => {
+    const openWithPrelude = (prelude: ConnectionPrelude) => {
+      const MockWebSocket = createMockSocketClass();
+      vi.stubGlobal("WebSocket", MockWebSocket);
+      const client = new WebSocketClient("/api/ws", { prelude });
+      const statuses: boolean[] = [];
+      client.onStatus((connected) => statuses.push(connected));
+      client.connect();
+      const socket = MockWebSocket.instances.at(-1)!;
+      socket.onopen!();
+      return { client, socket, statuses };
+    };
+
+    const ack = (socket: MockSocketInstance, index: number, payload: object) => {
+      const { id } = JSON.parse(socket.sent[index]) as { id: string };
+      socket.onmessage!({ data: JSON.stringify({ type: "ack", id, payload }) });
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("前置帧走完才宣告可用：业务命令排在身份绑定之后", async () => {
+      const { client, socket, statuses } = openWithPrelude(async (exchange) => {
+        await exchange("site.session.attach", { token: "tab" });
+      });
+
+      expect(statuses).toEqual([]);
+      const pending = client.send("room.join", { userName: "玩家" });
+      await Promise.resolve();
+      expect(socket.sent.map((frame) => (JSON.parse(frame) as { type: string }).type)).toEqual([
+        "site.session.attach",
+      ]);
+
+      ack(socket, 0, { attached: true });
+      await vi.waitFor(() => expect(statuses).toEqual([true]));
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+      expect((JSON.parse(socket.sent[1]) as { type: string }).type).toBe("room.join");
+
+      ack(socket, 1, { roomId: "1234" });
+      await expect(pending).resolves.toEqual({ roomId: "1234" });
+      client.disconnect();
+    });
+
+    it("前置帧失败不拦业务：按无身份继续", async () => {
+      const { client, statuses } = openWithPrelude(() => Promise.reject(new Error("旧服务端")));
+
+      await vi.waitFor(() => expect(statuses).toEqual([true]));
+      await expect(client.waitForConnection(10)).resolves.toBeUndefined();
+      client.disconnect();
+    });
+
+    it("前置帧途中连接断开：不宣告可用，等待者交给下一次建连", async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { client, socket, statuses } = openWithPrelude(() => gate);
+
+      (socket as { readyState: number }).readyState = 3;
+      socket.onclose!();
+      release();
+      await gate;
+      await Promise.resolve();
+
+      expect(statuses).toEqual([false]);
+      client.disconnect();
+    });
+
+    it("令牌只走首帧，握手地址里没有它", async () => {
+      const { client, socket } = openWithPrelude(async (exchange) => {
+        await exchange("site.session.attach", { token: "secret-tab-token" });
+      });
+
+      expect(socket.url).not.toContain("secret-tab-token");
+      expect(socket.sent[0]).toContain("secret-tab-token");
+      client.disconnect();
+    });
   });
 
   it("正确去除服务器地址末尾斜杠，避免双斜杠路径", () => {

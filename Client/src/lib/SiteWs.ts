@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { ServerMessage } from "@bakagame/shared";
+import { SITE_SESSION_PROBE_EVENT } from "@bakagame/shared/values";
 import {
   removeSiteAgent,
   setSiteAgents,
@@ -8,17 +9,18 @@ import {
 } from "@/stores/UseSiteAgents";
 import { resetPageControl, setPageControl } from "@/stores/UsePageControl";
 import type { PageStateReport } from "@/lib/PageState";
+import { answerTabProbe, claimTabSession } from "@/lib/TabSession";
 import { createWebSocketClient } from "@/lib/WebsocketClient";
 
 /**
- * 站点通道：**首页即连**的统一 ws 入口。
+ * 站点通道：**任意页面一进入就建立**的统一 ws 入口，标签页身份由它领取。
  *
- * 它只订阅 Agent 活动（哪款游戏、哪个房间、正在做什么），既不下发房间状态也不参与对局；
- * 三款游戏的通道仍各自按需建立，避免一款游戏换票重连把别的游戏的座位一起掐断。
+ * 它不下发房间状态也不参与对局。三款游戏的通道仍各自按需建立，只在首帧挂上同一份身份：
+ * 游戏连接的开合就是座位在线与否，CEE 换票也要重新握手，并进这一条会让这些动作互相牵连。
  * 页面接管也走这条连接：配对码、指令与执行结果都只在页面对应的那条 socket 上。
  */
 export const SITE_WS_PATH = "/api/ws";
-export const siteWsClient = createWebSocketClient(SITE_WS_PATH);
+export const siteWsClient = createWebSocketClient(SITE_WS_PATH, { prelude: claimTabSession });
 
 const SITE_SUBSCRIBE_COMMAND = "site.subscribe";
 const SITE_AGENTS_EVENT = "site.agents";
@@ -103,6 +105,12 @@ const applySiteMessage = (message: ServerMessage): void => {
       return;
     case SITE_PAGE_COMMAND_EVENT:
       applyPageCommand(payload);
+      return;
+    case SITE_SESSION_PROBE_EVENT:
+      if (isRecord(payload) && typeof payload.nonce === "string")
+        answerTabProbe(payload.nonce, (type, body) =>
+          siteWsClient.exchangeOnOpenSocket(type, body)
+        );
       return;
     default:
       return;

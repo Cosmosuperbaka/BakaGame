@@ -73,6 +73,11 @@ export interface ConnectionRecord {
   clientChannel?: ClientChannelProof;
   /** 握手时声明并由服务端标记的 Agent 连接；房间设置可据此拒绝或放行。 */
   isAgent?: boolean;
+  /**
+   * 标签页身份键（令牌的摘要）：浏览器连接在首帧绑定，Agent 与旧客户端为空。
+   * 只在服务端内部用于派生玩家号与归属判定，不进快照、私有状态、日志或任何下行帧。
+   */
+  tabKey?: string;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

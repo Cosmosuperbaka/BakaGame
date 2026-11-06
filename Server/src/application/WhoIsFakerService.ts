@@ -28,6 +28,7 @@ import {
   type AgentFocusInput,
 } from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
+import { tabSeatId } from "./TabSeat";
 import {
   createDefaultRoleConfig,
   assignRoles,
@@ -804,7 +805,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       chat: [],
     };
 
-    const host = this.createPlayer(message.payload.userName, false, connection.isAgent === true);
+    const host = this.createPlayer(
+      message.payload.userName,
+      false,
+      connection.isAgent === true,
+      tabSeatId(connection, "faker", room.id)
+    );
     room.players[host.id] = host;
     room.hostPlayerId = host.id;
 
@@ -863,6 +869,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const room = this.getRoom(roomId);
 
     this.ensureAgentsAllowed(room, connection);
+    // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
+    // 被踢的记录不算座位，再进来走普通加入。
+    const seat = this.tabSeat(room, connection);
+    if (seat && seat.membership !== "kicked") return this.resumeSeat(room, seat, connection);
     await this.ensurePasswordMatch(room, message.payload.password, connection);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room)
@@ -877,7 +887,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("SPECTATOR_DISABLED", "当前房间不允许旁观");
     }
 
-    const player = this.createPlayer(message.payload.userName, false, connection.isAgent === true);
+    const player = this.createPlayer(
+      message.payload.userName,
+      false,
+      connection.isAgent === true,
+      tabSeatId(connection, "faker", room.id)
+    );
     player.membership = joiningAsSpectator ? "spectator" : "active";
 
     room.players[player.id] = player;
@@ -951,14 +966,30 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       };
     }
 
-    const player = Object.values(room.players).find((item) =>
-      safeEqualToken(item.sessionToken, message.payload.sessionToken)
-    );
+    const player =
+      Object.values(room.players).find((item) =>
+        safeEqualToken(item.sessionToken, message.payload.sessionToken)
+      ) ?? this.tabSeat(room, connection);
 
     if (!player) {
       throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
     }
 
+    return this.resumeSeat(room, player, connection);
+  }
+
+  /** 这张标签页在本房的席位记录；没有标签页身份的连接恒为空。 */
+  private tabSeat(room: WhoIsFakerRoomRecord, connection: ConnectionRecord) {
+    const seatId = tabSeatId(connection, "faker", room.id);
+    return seatId ? room.players[seatId] : undefined;
+  }
+
+  /** 把连接接回既有席位：重连与同标签页再次加入共用，准入判定只有这一份。 */
+  private async resumeSeat(
+    room: WhoIsFakerRoomRecord,
+    player: WhoIsFakerPlayerRecord,
+    connection: ConnectionRecord
+  ) {
     if (player.membership === "kicked") {
       throw new AppError("PLAYER_KICKED", "该玩家已被移出房间");
     }
@@ -1975,7 +2006,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
   }
 
-  createPlayer(name: string, isBot: boolean, isAgent = false): WhoIsFakerPlayerRecord {
+  createPlayer(
+    name: string,
+    isBot: boolean,
+    isAgent = false,
+    seatId?: string
+  ): WhoIsFakerPlayerRecord {
     const normalized = normalizeName(name);
 
     if (!normalized) {
@@ -1983,7 +2019,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
 
     return {
-      id: this.createId("player"),
+      id: seatId ?? this.createId("player"),
       sessionToken: this.createSessionToken(),
       name: normalized,
       score: 0,

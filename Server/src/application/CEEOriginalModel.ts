@@ -14,6 +14,11 @@ import type { LRUCache } from "lru-cache";
 export interface CEEOriginalChatRoom {
   generation: string;
   chat: ChatMessage[];
+  /**
+   * 标签页身份键 → 它当前的上游玩家号。上游每次进房都换一个 socket id，
+   * 同一张标签页再进来时靠这张表把本地聊天的归属挪到新号上。
+   */
+  chatAuthors?: Map<string, string>;
   seenRoundKeys: LRUCache<string, number>;
   /** 首个结束/开局事件推进代数，其余上游连接绑定同一局。 */
   round?: {

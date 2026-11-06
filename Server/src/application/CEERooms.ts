@@ -22,7 +22,8 @@ import {
   type AgentFocusInput,
 } from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
-import { advanceCEERound, getCEEUnit, surrenderCEE } from "../domain/CEERound";
+import { advanceCEERound, getCEEUnit, surrenderCEE, unitHasActor } from "../domain/CEERound";
+import { tabSeatId } from "./TabSeat";
 import { ensureRoomId, normalizeWord, safeEqualToken } from "../domain/Rules";
 import {
   createDefaultCEESettings,
@@ -273,7 +274,7 @@ export class CEERooms {
     const antiCheat = payload.bakaAntiCheat === true;
     if (antiCheat) this.requireClientAdmission(connection);
     // 密码处理前占用房号，失败时由局部事务撤销，防止并发创建覆盖。
-    const player = this.player(userName);
+    const player = this.player(userName, tabSeatId(connection, "cee", id));
     if (connection.isAgent === true) player.isAgent = true;
     const room: CEERoom = {
       id,
@@ -321,6 +322,9 @@ export class CEERooms {
     this.ensureFree(connection);
     const room = this.room(roomId);
     this.requireAdmission(connection, room);
+    // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
+    const seat = this.tabSeat(room, connection);
+    if (seat) return this.resumeSeat(connection, room, seat);
     const name = this.name(payload.userName);
     if (room.passwordHash)
       await this.verifyPassword(connection, room.id, room.passwordHash, payload.password);
@@ -332,7 +336,7 @@ export class CEERooms {
       throw new AppError("NAME_TAKEN", "房间中已有同名玩家");
     if (room.phase !== "waiting" && !room.allowSpectators)
       throw new AppError("SPECTATING_DISABLED", "该房间不允许中途加入");
-    const player = this.player(name);
+    const player = this.player(name, tabSeatId(connection, "cee", room.id));
     if (connection.isAgent === true) player.isAgent = true;
     if (room.phase !== "waiting") player.status = "observing";
     room.players.set(player.id, player);
@@ -353,11 +357,27 @@ export class CEERooms {
     if (controller && controller.roomId === room.id)
       return this.reconnectController(connection, room, controller);
 
-    const player = [...room.players.values()].find((member) =>
-      safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
-    );
+    const player =
+      [...room.players.values()].find((member) =>
+        safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
+      ) ?? this.tabSeat(room, connection);
     if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
 
+    return this.resumeSeat(connection, room, player);
+  }
+
+  /** 这张标签页在本房的席位记录；没有标签页身份的连接恒为空。 */
+  private tabSeat(room: CEERoom, connection: ConnectionRecord): CEEPlayerRecord | undefined {
+    const seatId = tabSeatId(connection, "cee", room.id);
+    return seatId ? room.players.get(seatId) : undefined;
+  }
+
+  /** 把连接接回既有席位：重连与同标签页再次加入共用，准入判定只有这一份。 */
+  private resumeSeat(
+    connection: ConnectionRecord,
+    room: CEERoom,
+    player: CEEPlayerRecord
+  ): CEERoomEnterResult {
     if (connection.isAgent === true && player.isAgent !== true)
       throw new AppError("AGENT_CLAIM_REQUIRED", "Agent 接手人类座位必须先通过 MCP 认领");
 
@@ -953,9 +973,9 @@ export class CEERooms {
       throw new AppError("SESSION_INVALID", "连接已经断开，请重新加入");
     if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间");
   }
-  private player(name: string): CEEPlayerRecord {
+  private player(name: string, seatId?: string): CEEPlayerRecord {
     return {
-      id: `cee_player_${crypto.randomUUID()}`,
+      id: seatId ?? `cee_player_${crypto.randomUUID()}`,
       sessionToken: crypto.randomUUID(),
       name,
       online: true,
@@ -1005,12 +1025,7 @@ export class CEERooms {
   private remove(room: CEERoom, player: CEEPlayerRecord): void {
     this.mcpSeats.unbind(room.id, player.id);
     const unit = getCEEUnit(room, player);
-    if (
-      room.phase === "guessing" &&
-      unit &&
-      !unit.ended &&
-      unit.memberIds.every((id) => id === player.id || !room.players.get(id)?.online)
-    )
+    if (room.phase === "guessing" && unit && !unit.ended && !unitHasActor(room, unit, player.id))
       surrenderCEE(room, player, this.now());
     player.online = false;
     room.players.delete(player.id);

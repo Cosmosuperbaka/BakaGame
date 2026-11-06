@@ -12,6 +12,7 @@ export const USERNAME_KEY = "bakagame:username";
 export const SONG_VOLUME_KEY = "songuessr_volume";
 const SESSION_PREFIX = "whoisfaker_session_";
 const SONG_SESSION_PREFIX = "songuessr_session_";
+export const CEE_SESSION_PREFIX = "cee_session:";
 const SOLO_ROOM_KEY = "songuessr_solo_room";
 const LEGACY_USERNAME_KEY = "wif_username";
 const LEGACY_SESSION_PREFIX = "wif_session_";
@@ -126,6 +127,33 @@ export function saveUsername(name: string): void {
  */
 export function guestName(): string {
   return `玩家${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+/**
+ * 丢掉本标签页的全部座位凭证：这份存储是从别的标签页继承来的，留着就会坐到人家的座位上。
+ * 昵称在 localStorage，本就是跨标签页共用的，不受影响。
+ */
+export function clearSeatCredentials(): void {
+  const storage = getSessionStorage();
+  if (!storage) return;
+  try {
+    const seatKeys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (
+        key &&
+        (key === SOLO_ROOM_KEY ||
+          key.startsWith(SESSION_PREFIX) ||
+          key.startsWith(SONG_SESSION_PREFIX) ||
+          key.startsWith(CEE_SESSION_PREFIX) ||
+          key.startsWith(LEGACY_SESSION_PREFIX))
+      )
+        seatKeys.push(key);
+    }
+    for (const key of seatKeys) storage.removeItem(key);
+  } catch {
+    // 存储被禁用时没有可清理的凭证。
+  }
 }
 
 export function getSessionToken(roomId: string): string | null {

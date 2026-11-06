@@ -1,6 +1,7 @@
 ﻿import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  clearSeatCredentials,
   clearSessionToken,
   clearSonGuessrSessionToken,
   getSavedUsername,
@@ -16,6 +17,26 @@ describe("storage utilities", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+  });
+
+  it("clearSeatCredentials 只清座位凭证，不动昵称与别的会话数据", () => {
+    saveUsername("测试玩家");
+    saveSessionToken("1234", "faker");
+    saveSonGuessrSessionToken("1234", "song");
+    window.sessionStorage.setItem("cee_session:1234", "cee");
+    window.sessionStorage.setItem("songuessr_solo_room", "9999");
+    window.sessionStorage.setItem("wif_session_1234", "legacy");
+    window.sessionStorage.setItem("bakagame:unrelated", "keep");
+
+    clearSeatCredentials();
+
+    expect(getSessionToken("1234")).toBeNull();
+    expect(getSonGuessrSessionToken("1234")).toBeNull();
+    expect(window.sessionStorage.getItem("cee_session:1234")).toBeNull();
+    expect(window.sessionStorage.getItem("songuessr_solo_room")).toBeNull();
+    expect(window.sessionStorage.getItem("wif_session_1234")).toBeNull();
+    expect(window.sessionStorage.getItem("bakagame:unrelated")).toBe("keep");
+    expect(getSavedUsername()).toBe("测试玩家");
   });
 
   it("canonicalizes the test room id for routing and sessions", () => {

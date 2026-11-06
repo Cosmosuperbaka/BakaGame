@@ -1,4 +1,5 @@
 import { TEST_ROOM_ID } from "@/config/Constants";
+import { CEE_SESSION_PREFIX } from "@/lib/Storage";
 import type { CEEPhase, CEERoomSnapshot, CEESource } from "@bakagame/shared";
 
 /**
@@ -11,7 +12,7 @@ export function normalizeCEERoomId(roomId: string): string {
 }
 
 const sessionKey = (roomId: string) =>
-  `cee_session:${encodeURIComponent(normalizeCEERoomId(roomId))}`;
+  `${CEE_SESSION_PREFIX}${encodeURIComponent(normalizeCEERoomId(roomId))}`;
 export function readCEESession(roomId: string): string | null {
   try {
     return sessionStorage.getItem(sessionKey(roomId));

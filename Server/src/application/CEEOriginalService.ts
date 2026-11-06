@@ -431,6 +431,7 @@ export class CEEOriginalService {
         });
       // 后来者沿用共享房间已知局数；否则在下一次开局前，顶栏局数与同房其他人不一致。
       session.roundNumber = this.chats.get(roomId)!.round?.number ?? 0;
+      this.adoptChatHistory(this.chats.get(roomId)!, connection.tabKey, socket.id);
       connection.resetStateSync?.();
       connection.roomId = `original:${roomId}`;
       connection.playerId = socket.id;
@@ -447,6 +448,22 @@ export class CEEOriginalService {
       this.revoke(session, "无法加入原版房间", false);
       throw error;
     }
+  }
+
+  /** 同一张标签页换了上游 socket 后，本地聊天记录仍算它发的；没有标签页身份的连接不做关联。 */
+  private adoptChatHistory(
+    room: CEEOriginalChatRoom,
+    tabKey: string | undefined,
+    playerId: string | undefined
+  ): void {
+    if (!tabKey || !playerId) return;
+    const authors = (room.chatAuthors ??= new Map());
+    const previous = authors.get(tabKey);
+    authors.set(tabKey, playerId);
+    if (!previous || previous === playerId) return;
+    room.chat = room.chat.map((message) =>
+      message.playerId === previous ? { ...message, playerId } : message
+    );
   }
 
   private async enterOnce(

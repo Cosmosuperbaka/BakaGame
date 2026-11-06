@@ -68,6 +68,7 @@ import {
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
+import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
 import { AppError, unsupportedCommand } from "../domain/Errors";
 import {
@@ -758,7 +759,12 @@ export class SonGuessrService implements AdminRoomControl {
     const password =
       payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
 
-    const player = this.createPlayer(payload.userName, true);
+    const player = this.createPlayer(
+      payload.userName,
+      true,
+      false,
+      tabSeatId(connection, "song", roomId)
+    );
     if (connection.isAgent === true) player.isAgent = true;
     const now = this.now();
     const solo = payload.solo === true;
@@ -823,6 +829,9 @@ export class SonGuessrService implements AdminRoomControl {
     payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"]
   ) {
     const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
+    // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
+    const seat = this.tabSeat(room, connection);
+    if (seat) return this.resumeSeat(connection, room, seat);
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
     this.ensureAgentsAllowed(room, connection);
     await this.ensurePassword(room, payload.password, connection);
@@ -844,7 +853,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     // 目标校验全部通过后才解绑旧席位：密码错误、房号不存在等拒绝不得销毁原绑定。
     this.ensureConnectionFree(connection);
-    const player = this.createPlayer(name, false);
+    const player = this.createPlayer(name, false, false, tabSeatId(connection, "song", room.id));
     if (connection.isAgent === true) player.isAgent = true;
     player.membership = membership;
     room.players[player.id] = player;
@@ -886,22 +895,39 @@ export class SonGuessrService implements AdminRoomControl {
     if (controller && controller.roomId === targetRoomId)
       return this.reconnectControllerSeat(connection, room, controller);
 
-    const player = Object.values(room.players).find(
-      (candidate) =>
-        safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
-    );
+    const player =
+      Object.values(room.players).find(
+        (candidate) =>
+          safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
+      ) ?? this.tabSeat(room, connection);
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
+    return this.resumeSeat(connection, room, player);
+  }
+
+  /** 这张标签页在本房的席位；被踢的记录不算座位，再进来走普通加入。 */
+  private tabSeat(room: SonGuessrRoomRecord, connection: ConnectionRecord) {
+    const seatId = tabSeatId(connection, "song", room.id);
+    const seat = seatId ? room.players[seatId] : undefined;
+    return seat?.membership === "kicked" ? undefined : seat;
+  }
+
+  /** 把连接接回既有席位：重连与同标签页再次加入共用，准入判定只有这一份。 */
+  private async resumeSeat(
+    connection: ConnectionRecord,
+    room: SonGuessrRoomRecord,
+    player: SonGuessrPlayerRecord
+  ) {
     if (connection.isAgent === true && player.isAgent !== true)
       throw new AppError("AGENT_CLAIM_REQUIRED", "Agent 接手人类座位必须先通过 MCP 认领");
 
     if (this.mcpSeats.isControlled(room.id, player.id))
-      return this.reconnectViewerSeat(connection, targetRoomId, room, player);
+      return this.reconnectViewerSeat(connection, room.id, room, player);
 
     // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
     // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
     // 换房重连则要等目标房号与令牌都校验通过后再解绑旧席位。
-    if (!(connection.roomId === targetRoomId && connection.playerId)) {
+    if (!(connection.roomId === room.id && connection.playerId)) {
       this.ensureConnectionFree(connection);
     }
 
@@ -3274,11 +3300,16 @@ export class SonGuessrService implements AdminRoomControl {
     ].slice(-CHAT_LIMIT);
   }
 
-  private createPlayer(nameValue: string, host: boolean, isBot = false): SonGuessrPlayerRecord {
+  private createPlayer(
+    nameValue: string,
+    host: boolean,
+    isBot = false,
+    seatId?: string
+  ): SonGuessrPlayerRecord {
     const name = this.requireName(nameValue);
     const now = this.now();
     return {
-      id: this.createId("song_player"),
+      id: seatId ?? this.createId("song_player"),
       sessionToken: `${this.createId("song_session")}_${crypto.randomUUID()}`,
       name,
       membership: "active",

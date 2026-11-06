@@ -41,12 +41,15 @@ describe("websocket client", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.resetModules();
+    // 这组用例测通用连接行为；身份前置帧由 TabSession 与 WebsocketClient 的用例覆盖。
+    vi.doMock("@/lib/TabSession", () => ({ attachTabSession: undefined }));
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.doUnmock("@/lib/TabSession");
     vi.unstubAllGlobals();
   });
 

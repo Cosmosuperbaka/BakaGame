@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   })),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  exchange: vi.fn(async () => ({ ok: true })),
   messages: [] as Array<(message: never) => void>,
   statuses: [] as Array<(connected: boolean) => void>,
 }));
@@ -23,6 +24,7 @@ vi.mock("@/lib/WebsocketClient", () => ({
       };
     },
     send: state.send,
+    exchangeOnOpenSocket: state.exchange,
     connect: state.connect,
     // 与服务端实现一致：主动断开同样会通知状态回调。
     disconnect: () => {
@@ -104,6 +106,11 @@ describe("站点通道", () => {
     expect(state.disconnect).not.toHaveBeenCalled();
     expect(getSiteLinkConnected()).toBe(true);
     expect(getSiteAgents()).toHaveLength(1);
+  });
+
+  it("收到身份探测立即应答：另一条连接在问本页还开不开着", () => {
+    emit("site.session.probe", { nonce: "nonce-1" });
+    expect(state.exchange).toHaveBeenCalledWith("site.session.alive", { nonce: "nonce-1" });
   });
 
   it("快照覆盖、焦点增量、离开删除，三类事件都只留在站点 store 里", () => {

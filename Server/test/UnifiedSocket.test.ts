@@ -92,6 +92,185 @@ test("统一入口按命令前缀分发：同一条连接先卧底后猜歌都�
   }
 });
 
+interface TabClaimPayload {
+  token: string;
+  rotated: boolean;
+  serverEpoch: string;
+}
+
+let requestCounter = 0;
+
+/** 发一条命令并等它的 ack 或 error；用例关心的是回包，不关心中间的事件。 */
+const request = async (socket: WebSocket, type: string, payload: object, roomId?: string) => {
+  const id = `tab-${(requestCounter += 1)}`;
+  const reply = nextMessage(socket, (m) => (m.type === "ack" || m.type === "error") && m.id === id);
+  send(socket, { id, type, payload, ...(roomId ? { roomId } : {}) });
+  return reply;
+};
+
+const claimTab = async (socket: WebSocket, token?: string) => {
+  const reply = await request(socket, "site.session.claim", token ? { token } : {});
+  return reply.payload as unknown as TabClaimPayload;
+};
+
+/** 一张标签页：站点连接领取身份，游戏连接挂上同一身份。 */
+const openTab = async (port: number, token?: string) => {
+  const site = await openSocket(port);
+  const claim = await claimTab(site, token);
+  const game = await openSocket(port);
+  await request(game, "site.session.attach", { token: claim.token });
+  return { site, game, claim };
+};
+
+const closeSocket = (socket: WebSocket) =>
+  new Promise<void>((resolve) => {
+    socket.addEventListener("close", () => setTimeout(resolve, 20));
+    socket.close();
+  });
+
+const createFakerRoom = (socket: WebSocket, roomId: string) =>
+  request(socket, "room.create", {
+    roomId,
+    name: "房间",
+    visibility: "public",
+    allowSpectators: true,
+    userName: "房主",
+  });
+
+test("站点连接分配身份，游戏连接挂上后刷新回到原座位", async () => {
+  const { port, stop } = start();
+
+  try {
+    const hostTab = await openTab(port);
+    await createFakerRoom(hostTab.game, "1234");
+
+    const tab = await openTab(port);
+    const joined = await request(tab.game, "room.join", { userName: "访客" }, "1234");
+    expect(joined.payload?.playerId).toMatch(/^tab_/);
+
+    // 刷新：两条连接都断开，新页面带原令牌回来。
+    await closeSocket(tab.game);
+    await closeSocket(tab.site);
+    const refreshed = await openTab(port, tab.claim.token);
+    expect(refreshed.claim).toMatchObject({ token: tab.claim.token, rotated: false });
+
+    const resumed = await request(refreshed.game, "room.reconnect", {
+      roomId: "1234",
+      sessionToken: joined.payload?.sessionToken,
+    });
+    expect(resumed.payload?.playerId).toBe(joined.payload?.playerId);
+  } finally {
+    await stop();
+  }
+});
+
+test("复制标签页：两条站点连接同时在线时，后来者换新身份且不影响原标签页的座位", async () => {
+  const { port, stop } = start();
+
+  try {
+    const original = await openTab(port);
+    await createFakerRoom(original.game, "1234");
+
+    // 原页面按协议应答探测：这正是「还开着」与「刷新残留」的区别。
+    original.site.addEventListener("message", (event) => {
+      const message = JSON.parse(String(event.data)) as Envelope;
+      if (message.event !== "site.session.probe") return;
+      send(original.site, {
+        id: "alive-1",
+        type: "site.session.alive",
+        payload: { nonce: message.payload?.nonce },
+      });
+    });
+
+    const copied = await openSocket(port);
+    const claim = await claimTab(copied, original.claim.token);
+    expect(claim.rotated).toBe(true);
+    expect(claim.token).not.toBe(original.claim.token);
+
+    const ping = await request(original.game, "room.requestSync", {});
+    expect(ping.type).toBe("ack");
+  } finally {
+    await stop();
+  }
+});
+
+test("身份绑定有边界：畸形令牌被拒、一条连接只绑一次、Agent 不持有标签页身份", async () => {
+  const { port, stop } = start({ mcpEnabled: true });
+
+  try {
+    const socket = await openSocket(port);
+    const malformed = await request(socket, "site.session.claim", { token: "short" });
+    expect(malformed.error?.code).toBe("INVALID_MESSAGE");
+
+    const extra = await request(socket, "site.session.claim", { token: undefined, name: "x" });
+    expect(extra.error?.code).toBe("INVALID_MESSAGE");
+
+    const { token } = await claimTab(socket);
+    const rebind = await request(socket, "site.session.attach", { token });
+    expect(rebind.error?.code).toBe("TAB_SESSION_BOUND");
+
+    const agent = await openSocket(port, "/api/ws?agent=1");
+    const claimed = await request(agent, "site.session.claim", {});
+    expect(claimed.error?.code).toBe("TAB_SESSION_FORBIDDEN");
+    const attached = await request(agent, "site.session.attach", { token });
+    expect(attached.error?.code).toBe("TAB_SESSION_FORBIDDEN");
+  } finally {
+    await stop();
+  }
+});
+
+test("标签页令牌与身份键不随任何下行帧发给房间里的其他人", async () => {
+  const { port, stop } = start();
+
+  try {
+    const hostTab = await openTab(port);
+    await createFakerRoom(hostTab.game, "1234");
+    const frames: string[] = [];
+    hostTab.game.addEventListener("message", (event) => frames.push(String(event.data)));
+
+    const tab = await openTab(port);
+    const ownFrames: string[] = [];
+    tab.game.addEventListener("message", (event) => ownFrames.push(String(event.data)));
+    await request(tab.game, "room.join", { userName: "访客" }, "1234");
+    const chatted = await request(tab.game, "chat.send", { text: "你好" }, "1234");
+    expect(chatted.type).toBe("ack");
+    await request(hostTab.game, "room.requestSync", {}, "1234");
+
+    const { createHash } = await import("node:crypto");
+    const key = createHash("sha256").update(tab.claim.token).digest("hex");
+    expect(frames.length).toBeGreaterThan(0);
+    for (const frame of [...frames, ...ownFrames]) {
+      expect(frame).not.toContain(tab.claim.token);
+      expect(frame).not.toContain(key);
+    }
+    // 别人的座位凭证同样不随公开帧下发。
+    const seatTokens = ownFrames
+      .map((frame) => (JSON.parse(frame) as Envelope).payload?.sessionToken)
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+    expect(seatTokens.length).toBeGreaterThan(0);
+    for (const frame of frames) for (const seat of seatTokens) expect(frame).not.toContain(seat);
+  } finally {
+    await stop();
+  }
+});
+
+test("不带标签页身份的旧客户端在统一入口与旧路径上都照常入房", async () => {
+  const { port, stop } = start();
+
+  try {
+    const legacy = await openSocket(port);
+    const created = await createFakerRoom(legacy, "1234");
+    expect(created.payload?.playerId).toMatch(/^player_/);
+
+    const oldPath = await openSocket(port, "/api/whoisfaker/ws");
+    const joined = await request(oldPath, "room.join", { userName: "访客" }, "1234");
+    expect(joined.type).toBe("ack");
+    expect(joined.payload?.playerId).toMatch(/^player_/);
+  } finally {
+    await stop();
+  }
+});
+
 test("统一入口保留各游戏的严格校验与可归因错误包", async () => {
   const { port, stop } = start();
 

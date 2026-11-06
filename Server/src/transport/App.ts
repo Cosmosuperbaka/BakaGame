@@ -21,7 +21,7 @@ import {
   WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
   WS_HANDSHAKE_WINDOW_MS,
 } from "../config/Constants";
-import { createAck, createErrorPacket } from "./Packets";
+import { createAck, createErrorPacket, createEvent } from "./Packets";
 import { traceIdOf } from "./HttpErrorEnvelope";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
@@ -46,9 +46,19 @@ import {
   type SitePageResult,
   type SitePageState,
 } from "../shared/AgentActivity";
+import {
+  SITE_SESSION_ALIVE_COMMAND,
+  SITE_SESSION_ATTACH_COMMAND,
+  SITE_SESSION_CLAIM_COMMAND,
+  SITE_SESSION_PROBE_EVENT,
+  TabSessionAliveSchema,
+  TabSessionAttachSchema,
+  TabSessionClaimSchema,
+} from "../shared/TabSession";
 import { Value } from "@sinclair/typebox/value";
 import { SitePresence } from "./SitePresence";
 import { SitePages } from "./SitePages";
+import { tabKeyOf, TabSessions } from "./TabSessions";
 import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { createStateSyncSender } from "./StateSync";
 import { isPrivateLanHost, shutdownRejection, systemRoutes } from "./routes/System";
@@ -540,11 +550,13 @@ const createConnectionRecord = (ws: GameSocketLike, connectionId: string): Conne
     clientIp,
     clientChannel: proof,
     isAgent,
+    tabKey,
   } = ws.data as {
     account?: PlayerAccount;
     clientIp?: string;
     clientChannel?: ClientChannelProof;
     isAgent?: boolean;
+    tabKey?: string;
   };
   const stateSync = createStateSyncSender(
     (payload) => {
@@ -558,6 +570,7 @@ const createConnectionRecord = (ws: GameSocketLike, connectionId: string): Conne
     ...(clientIp ? { clientIp } : {}),
     ...(proof ? { clientChannel: proof } : {}),
     ...(isAgent ? { isAgent: true } : {}),
+    ...(tabKey ? { tabKey } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,
@@ -844,6 +857,8 @@ export const createApp = ({
   const sitePresence = new SitePresence();
   /** 页面接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这台浏览器。 */
   const sitePages = new SitePages();
+  /** 标签页身份的在线索引：站点连接领取，游戏连接挂上同一身份。 */
+  const tabSessions = new TabSessions();
   /**
    * 统一入口按需把连接登记进对应游戏的服务。
    *
@@ -907,6 +922,63 @@ export const createApp = ({
     sendPacket(ws, createAck(envelope, { ok: true }));
   };
 
+  /**
+   * 标签页身份命令：站点连接领取、游戏连接挂上、持有者应答探测。
+   *
+   * 身份在首帧确定，之后这条连接上的席位都归它，所以一条连接只绑定一次：连接中途改绑，
+   * 等于让已入座的连接换了主人。Agent 不持有标签页身份：它只能凭 `mcp.claim` 认领座位，
+   * 放它绑定等于给「人类座位必须先认领」开一道旁路。
+   */
+  const handleTabSessionCommand = async (
+    ws: GameSocketLike,
+    message: Record<string, unknown>
+  ): Promise<boolean> => {
+    const type = message.type as string;
+    if (
+      type !== SITE_SESSION_CLAIM_COMMAND &&
+      type !== SITE_SESSION_ATTACH_COMMAND &&
+      type !== SITE_SESSION_ALIVE_COMMAND
+    )
+      return false;
+    const data = ws.data as { isAgent?: boolean; tabKey?: string; socketClosed?: boolean };
+    if (data.isAgent === true)
+      throw new AppError("TAB_SESSION_FORBIDDEN", "Agent 连接不持有标签页身份");
+    const envelope = message as { id: string; type: string; traceId?: string };
+    const connectionId = connectionIdFor(ws);
+    if (type === SITE_SESSION_ALIVE_COMMAND) {
+      if (!Value.Check(TabSessionAliveSchema, message.payload))
+        throw new AppError("INVALID_MESSAGE", "探测应答不合法");
+      tabSessions.confirmAlive(connectionId, message.payload.nonce);
+      sendPacket(ws, createAck(envelope, { ok: true }));
+      return true;
+    }
+    if (data.tabKey) throw new AppError("TAB_SESSION_BOUND", "本连接已绑定标签页身份");
+    if (type === SITE_SESSION_ATTACH_COMMAND) {
+      if (!Value.Check(TabSessionAttachSchema, message.payload))
+        throw new AppError("INVALID_MESSAGE", "标签页身份不合法");
+      data.tabKey = tabKeyOf(message.payload.token);
+      sendPacket(ws, createAck(envelope, { attached: true }));
+      return true;
+    }
+    if (!Value.Check(TabSessionClaimSchema, message.payload))
+      throw new AppError("INVALID_MESSAGE", "标签页身份不合法");
+    const { key, ...claim } = await tabSessions.claim(
+      connectionId,
+      message.payload.token,
+      (nonce) => {
+        sendPacket(ws, createEvent(SITE_SESSION_PROBE_EVENT, { nonce }));
+      }
+    );
+    // 探测要跨一次等待：这期间连接可能已断，不能把死连接登记成持有者。
+    if (data.socketClosed) {
+      tabSessions.release(connectionId);
+      return true;
+    }
+    data.tabKey = key;
+    sendPacket(ws, createAck(envelope, claim));
+    return true;
+  };
+
   /** 站点通道：订阅、页面接管、焦点上报、离开。这些命令由统一入口直接处理，不进任何游戏服务。 */
   const handleSiteCommand = (ws: GameSocketLike, message: Record<string, unknown>): boolean => {
     const type = message.type as string;
@@ -953,6 +1025,7 @@ export const createApp = ({
     try {
       if (!isRecord(incoming) || typeof incoming.type !== "string")
         throw new AppError("INVALID_MESSAGE", "消息必须为 JSON 对象");
+      if (await handleTabSessionCommand(ws, incoming)) return;
       if (handleSiteCommand(ws, incoming)) return;
       const game = gameOfMessage(incoming);
       ensureGameConnection(ws, game);
@@ -999,8 +1072,10 @@ export const createApp = ({
     message: (ws: GameSocketLike, incoming: unknown) => handleUnifiedMessage(ws, incoming),
     close: async (ws: GameSocketLike) => {
       releaseHandshakeSlot(ws, handshakeQuota);
+      (ws.data as { socketClosed?: boolean }).socketClosed = true;
       const connectionId = connectionIdOf(ws);
       if (!connectionId) return;
+      tabSessions.release(connectionId);
       sitePresence.unsubscribe(connectionId);
       // 页面断开即收回接管：配对码与租约都绑在这条连接上，断线后一律作废。
       sitePages.dropConnection(connectionId);

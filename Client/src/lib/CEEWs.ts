@@ -12,12 +12,16 @@ import {
   type SendOptions,
 } from "@/lib/WebsocketClient";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { attachTabSession } from "@/lib/TabSession";
 
 // 原生客户端在每次建连时把通道凭据拼进握手 URL，网页环境拿到空串。
 // 走查询串而非进房载荷：CEE 命令 schema 是 strict 的塞不下额外字段，而共享 WS 客户端只把
 // path 原样拼进 URL、没有首帧注册机制——查询串是不改动公共客户端的最小通道。
 // 必须传函数而不是结果：ticket 一次性、30 秒即焚，构造时读一次会让重连全部带上废票。
-const client = createWebSocketClient("/api/ws", bakaChannelQuery);
+const client = createWebSocketClient("/api/ws", {
+  handshakeQuery: bakaChannelQuery,
+  prelude: attachTabSession,
+});
 
 /** 等壳签票的上限：等不到就不建带票连接，给可重试错误，不白跑一次注定被拒的握手。 */
 const CHANNEL_TICKET_WAIT_MS = 6_000;

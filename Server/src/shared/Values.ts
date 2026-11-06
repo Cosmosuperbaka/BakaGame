@@ -52,4 +52,10 @@ export {
   PUBLIC_STATUS_GROUP_IDS,
   PUBLIC_STATUS_GROUPS,
 } from "./Status";
+export {
+  SITE_SESSION_ALIVE_COMMAND,
+  SITE_SESSION_ATTACH_COMMAND,
+  SITE_SESSION_CLAIM_COMMAND,
+  SITE_SESSION_PROBE_EVENT,
+} from "./TabSessionValues";
 export { ABSTAIN_TARGET_ID } from "./WhoIsFakerValues";
