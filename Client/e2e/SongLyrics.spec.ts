@@ -250,6 +250,83 @@ test("减弱动效直接落位且纯音乐后能载入歌词", async ({ page }) 
   ).toBe(0);
 });
 
+const longLines: SongLyricLine[] = Array.from({ length: 40 }, (_, index) => ({
+  time: 35000 + index * 4000,
+  endTime: 39000 + index * 4000,
+  text: `夜空に浮かぶ星たち 静寂を切り裂いていく ${index + 1}`,
+  translatedLyric: "浮现在夜空中的群星点点",
+}));
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  test(`${viewport.width}px 超长片段的高度受视口约束，播放居中，总览可滚动`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await render(page, { lines: longLines, audioPlaybackState: "playing" });
+    const windowBox = page.getByTestId("baka-song-lyric-viewport");
+    const box = await windowBox.boundingBox();
+    expect(box!.height).toBeLessThanOrEqual(viewport.height * 0.6);
+
+    await page.evaluate(() => window.lyricsFixture.time(35000 + 20 * 4000 + 500, true));
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
+          const center = view.getBoundingClientRect().top + view.clientHeight / 2;
+          const row = [
+            ...view.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]"),
+          ][20]!.getBoundingClientRect();
+          return Math.abs(row.top + row.height / 2 - center);
+        })
+      )
+      .toBeLessThan(6);
+    expect((await windowBox.boundingBox())!.height).toBe(box!.height);
+
+    await page.evaluate(() => window.lyricsFixture.render({ audioPlaybackState: "completed" }));
+    await expect(windowBox).toHaveAttribute("data-scrollable", "true");
+    expect((await windowBox.boundingBox())!.height).toBe(box!.height);
+    await expect(windowBox).toHaveAttribute("data-at-start", "true");
+
+    // 总览从首行看起，滚轮能走到末行，键盘也能滚。
+    await windowBox.hover();
+    await page.mouse.wheel(0, 100_000);
+    await expect(windowBox).toHaveAttribute("data-at-end", "true");
+    const last = await page.evaluate(() => {
+      const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
+      const rows = view.querySelectorAll<HTMLElement>("[class*=lyricLineWrapper]");
+      return {
+        bottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
+        limit: view.getBoundingClientRect().bottom,
+      };
+    });
+    expect(last.bottom).toBeLessThanOrEqual(last.limit);
+    await windowBox.focus();
+    await page.keyboard.press("Home");
+    await expect(windowBox).toHaveAttribute("data-at-start", "true");
+
+    // 滚动过再重播：窗口回到顶部、关闭滚动，节点不重建。
+    await page.mouse.wheel(0, 300);
+    await expect(windowBox).toHaveAttribute("data-at-start", "false");
+    await page.evaluate(() => window.lyricsFixture.render({ audioPlaybackState: "playing" }));
+    await expect(windowBox).not.toHaveAttribute("data-scrollable", "true");
+    expect(await windowBox.evaluate((element) => element.scrollTop)).toBe(0);
+    expect((await windowBox.boundingBox())!.height).toBe(box!.height);
+  });
+}
+
+test("放得下的片段窗口贴合内容，没有淡出边", async ({ page }) => {
+  await render(page, { lines: lines.slice(0, 3), audioPlaybackState: "playing" });
+  const windowBox = page.getByTestId("baka-song-lyric-viewport");
+  await expect(windowBox).not.toHaveAttribute("data-overflowing", "true");
+  const fit = await page.evaluate(() => {
+    const view = document.querySelector<HTMLElement>(".baka-lyric-viewport")!;
+    const host = view.querySelector<HTMLElement>(".baka-lyric-host")!;
+    return { view: view.clientHeight, host: host.clientHeight, inset: host.offsetTop };
+  });
+  expect(fit.view).toBe(fit.host + fit.inset * 2);
+});
+
 test("和声活动切换不改变外壳高度，也不接管页面滚动", async ({ page }) => {
   const source = lines.flatMap((line) => [
     line,

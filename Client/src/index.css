@@ -692,6 +692,46 @@ img {
   visibility: hidden;
 }
 
+/* 歌词片段的可见窗口：高度跟内容走，但不超过视口的一半多一点，超长片段不把猜测栏顶出屏。 */
+.baka-lyric-viewport {
+  max-height: clamp(13rem, 52dvh, 32rem);
+  overflow: hidden;
+}
+
+.baka-lyric-viewport[data-scrollable="true"] {
+  overflow-y: auto;
+}
+
+.baka-lyric-viewport[data-scrollable="true"]:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+/* 窗口上下的淡出边：提示还有歌词，也不把滚动中的行切成一刀。 */
+.baka-lyric-edge {
+  position: absolute;
+  inset-inline: 0;
+  height: 1.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--motion-duration-quick) var(--motion-ease-out);
+}
+
+.baka-lyric-edge-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-background), transparent);
+}
+
+.baka-lyric-edge-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-background), transparent);
+}
+
+.baka-lyric-viewport[data-overflowing="true"]:not([data-at-start="true"]) ~ .baka-lyric-edge-top,
+.baka-lyric-viewport[data-overflowing="true"]:not([data-at-end="true"]) ~ .baka-lyric-edge-bottom {
+  opacity: 1;
+}
+
 .baka-lyric-player.amll-lyric-player {
   width: 100%;
   position: absolute;

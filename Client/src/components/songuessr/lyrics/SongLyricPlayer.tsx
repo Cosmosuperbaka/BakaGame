@@ -45,9 +45,9 @@ export function SongLyricPlayer({
   return (
     <div
       className={cn(
-        "relative w-full overflow-hidden rounded-md bg-background p-3 sm:p-4 select-none",
+        "relative w-full overflow-hidden rounded-md bg-background select-none",
         empty &&
-          "flex h-24 sm:h-28 items-center justify-center text-center text-sm text-muted-foreground",
+          "flex h-24 sm:h-28 items-center justify-center p-3 sm:p-4 text-center text-sm text-muted-foreground",
         className
       )}
       data-testid={empty ? "baka-song-lyric-empty" : "baka-song-lyric-container"}
@@ -64,14 +64,24 @@ export function SongLyricPlayer({
         </div>
       )}
       <div
-        ref={hostRef}
         hidden={empty}
-        className="baka-lyric-host"
-        aria-hidden="true"
-        data-testid={
-          audioPlaybackState === "completed" ? "baka-song-lyric-overview" : "baka-song-lyric-player"
-        }
-      />
+        className="baka-lyric-viewport scrollbar-hidden p-3 sm:p-4"
+        data-testid="baka-song-lyric-viewport"
+      >
+        <div
+          ref={hostRef}
+          hidden={empty}
+          className="baka-lyric-host"
+          aria-hidden="true"
+          data-testid={
+            audioPlaybackState === "completed"
+              ? "baka-song-lyric-overview"
+              : "baka-song-lyric-player"
+          }
+        />
+      </div>
+      <div aria-hidden="true" className="baka-lyric-edge baka-lyric-edge-top" />
+      <div aria-hidden="true" className="baka-lyric-edge baka-lyric-edge-bottom" />
     </div>
   );
 }

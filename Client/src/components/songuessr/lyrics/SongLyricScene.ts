@@ -28,9 +28,14 @@ export class SongLyricScene {
   private animations: Animation[] = [];
   private switchTimer: number | null = null;
   private readonly host: HTMLElement;
+  /** 受视口约束的可见窗口：播放时裁掉超长片段，总览时在这里滚动。 */
+  private readonly viewport: HTMLElement | null;
+  private alignPosition: number = lyricOverview.scale / 2;
+  private overflowing = false;
 
   constructor(host: HTMLElement) {
     this.host = host;
+    this.viewport = host.parentElement;
     this.element.classList.add("baka-lyric-player");
     this.element.style.height = "0px";
     this.host.append(this.element);
@@ -41,6 +46,8 @@ export class SongLyricScene {
     this.observer = new ResizeObserver(this.measure);
     this.observer.observe(host);
     this.observer.observe(this.element);
+    if (this.viewport) this.observer.observe(this.viewport);
+    this.viewport?.addEventListener("scroll", this.syncEdges, { passive: true });
     document.fonts?.addEventListener("loadingdone", this.measure);
     this.reducedMotion.addEventListener("change", this.onMotionChange);
   }
@@ -61,6 +68,7 @@ export class SongLyricScene {
     this.observer.disconnect();
     this.observer.observe(this.host);
     this.observer.observe(this.element);
+    if (this.viewport) this.observer.observe(this.viewport);
     this.lines = structuredClone(lines);
     this.player.setLyricLines(toAMLLLines(lines), this.initialTime());
     for (const group of this.player.currentLyricGroups) {
@@ -129,7 +137,7 @@ export class SongLyricScene {
 
   private align(force: boolean) {
     this.player.setAlignAnchor(this.overview ? "top" : "center");
-    this.player.setAlignPosition(this.overview ? 0 : lyricOverview.scale / 2);
+    this.player.setAlignPosition(this.overview ? 0 : this.alignPosition);
     this.player.setCurrentTime(
       this.overview ? (this.lines[0]?.time ?? 0) : this.initialTime(),
       true
@@ -145,6 +153,9 @@ export class SongLyricScene {
     ];
     // 从屏幕上当前真正显示的位置取起点，快速重播也能接住尚未结束的过渡。
     const from = elements.map((element) => getComputedStyle(element).transform);
+    // 总览被滚动过时，回到播放要把滚动量并进起点，文字才不会跳一下。
+    const scrolled = this.viewport?.scrollTop ?? 0;
+    if (scrolled > 0) from[0] = `translateY(${-scrolled}px) ${from[0] === "none" ? "" : from[0]}`;
     this.cancelAnimations();
     // 先挂上过渡再切总览：明暗、模糊与逐字遮罩随缩放一起补间（index.css 的 baka-overview-switching），结束后摘掉，不拖慢播放中的逐帧高亮。
     if (this.ready && !this.reducedMotion.matches) {
@@ -158,6 +169,7 @@ export class SongLyricScene {
     this.element.classList.toggle("baka-overview-mode", overview);
     this.element.style.transform = overview ? `scale(${lyricOverview.scale})` : "none";
     this.player.setEnableBlur(!overview);
+    this.syncScrollable();
     this.align(true);
     if (!this.ready || this.reducedMotion.matches) return;
     this.animations = elements.map((element, index) =>
@@ -180,7 +192,59 @@ export class SongLyricScene {
     if (this.switchTimer !== null) window.clearTimeout(this.switchTimer);
     this.switchTimer = null;
     this.element.classList.remove("baka-overview-switching");
+    this.syncScrollable();
   }
+
+  /**
+   * 片段比可见窗口长时，播放的对齐点改到窗口中心，总览改为在窗口内滚动。
+   * 上限只写在样式里：这里读实际窗口高度，视口变化由 ResizeObserver 带回。
+   */
+  private fitViewport(natural: number, shown: number) {
+    const viewport = this.viewport;
+    if (!viewport) return;
+    const inset = this.host.offsetTop;
+    this.overflowing = shown > viewport.clientHeight - inset * 2 + 1;
+    if (this.overflowing) viewport.dataset.overflowing = "true";
+    else delete viewport.dataset.overflowing;
+    const alignPosition = this.overflowing
+      ? (viewport.clientHeight / 2 - inset) / natural
+      : lyricOverview.scale / 2;
+    if (alignPosition !== this.alignPosition) {
+      this.alignPosition = alignPosition;
+      if (!this.overview) this.player.setAlignPosition(alignPosition);
+    }
+    this.syncScrollable();
+  }
+
+  /** 只有总览落定后才开放滚动；过渡途中行盒的位移不能变成滚动范围。 */
+  private syncScrollable() {
+    const viewport = this.viewport;
+    if (!viewport) return;
+    const scrollable = this.overview && this.overflowing && this.switchTimer === null;
+    if (scrollable) {
+      viewport.dataset.scrollable = "true";
+      viewport.tabIndex = 0;
+      viewport.setAttribute("role", "region");
+      viewport.setAttribute("aria-label", "歌词总览");
+    } else if (viewport.dataset.scrollable) {
+      delete viewport.dataset.scrollable;
+      viewport.removeAttribute("tabindex");
+      viewport.removeAttribute("role");
+      viewport.removeAttribute("aria-label");
+    }
+    if (!scrollable) viewport.scrollTop = 0;
+    this.syncEdges();
+  }
+
+  /** 淡出边只留在还有内容的一侧。 */
+  private syncEdges = () => {
+    const viewport = this.viewport;
+    if (!viewport) return;
+    const scrollable = viewport.dataset.scrollable === "true";
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    viewport.dataset.atStart = String(scrollable && scrollTop <= 1);
+    viewport.dataset.atEnd = String(scrollable && scrollTop + clientHeight >= scrollHeight - 1);
+  };
 
   private onMotionChange = () => {
     if (this.reducedMotion.matches) {
@@ -196,8 +260,10 @@ export class SongLyricScene {
     // CSS 保证背景行始终占位且关闭 content-visibility 占位尺寸。
     const height = groups.reduce((total, group) => total + group.element.clientHeight, 0);
     if (height === 0) return;
+    const shown = Math.ceil(height * lyricOverview.scale);
     this.element.style.height = `${height}px`;
-    this.host.style.height = `${Math.ceil(height * lyricOverview.scale)}px`;
+    this.host.style.height = `${shown}px`;
+    this.fitViewport(height, shown);
     // 必须等内核读到相同的盒模型，再将首帧交给用户；不按固定帧数猜测就绪。
     const measured =
       this.player.size[1] === height &&
@@ -248,6 +314,7 @@ export class SongLyricScene {
     this.cancelAnimations();
     this.listenAudio(false);
     this.observer.disconnect();
+    this.viewport?.removeEventListener("scroll", this.syncEdges);
     document.fonts?.removeEventListener("loadingdone", this.measure);
     this.reducedMotion.removeEventListener("change", this.onMotionChange);
     this.player.dispose();
