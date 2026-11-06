@@ -153,7 +153,7 @@ describe("CreditsView", () => {
     expect(within(reactCard).getByText("v19.3.0")).toBeInTheDocument();
   });
 
-  it("特别鸣谢按固定顺序列出五个来源，每条带标识且全部为新标签外链", () => {
+  it("特别鸣谢按固定顺序列出六个来源，每条带标识且全部为新标签外链", () => {
     renderView();
 
     const section = screen.getByRole("region", { name: "特别鸣谢" });
@@ -162,6 +162,7 @@ describe("CreditsView", () => {
       "anime-character-guessr",
       "Bangumi 番组计划",
       "萌娘百科",
+      "Sensitive-lexicon",
       "QQ音乐",
       "网易云音乐",
     ]);
@@ -173,7 +174,7 @@ describe("CreditsView", () => {
     }
 
     const links = within(section).getAllByRole("link");
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(6);
     for (const link of links) {
       expect(link).toHaveAttribute("target", "_blank");
       expect(link).toHaveAttribute("rel", "noreferrer");
