@@ -163,6 +163,23 @@ describe("游戏连接挂上身份", () => {
     expect(attach).not.toHaveBeenCalled();
   });
 
+  it("站点连接领取途中断开：不提前放行，等重连后领到身份再挂", async () => {
+    const { attachTabSession, claimTabSession } = await loadPage();
+    const attach = vi.fn(ackWith({ attached: true }));
+    const attaching = attachTabSession(attach);
+
+    await expect(
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- 与连接层一致：拒绝值是协议错误体
+      claimTabSession(() => Promise.reject({ code: "DISCONNECTED", message: "连接已断开" }))
+    ).rejects.toMatchObject({ code: "DISCONNECTED" });
+    await Promise.resolve();
+    expect(attach).not.toHaveBeenCalled();
+
+    await claimTabSession(ackWith({ token: TOKEN, rotated: false }));
+    await attaching;
+    expect(attach).toHaveBeenCalledWith("site.session.attach", { token: TOKEN });
+  });
+
   it("旧服务端不认识领取命令：不挂身份，游戏照常走旧路径", async () => {
     const { attachTabSession, claimTabSession } = await loadPage();
     await expect(

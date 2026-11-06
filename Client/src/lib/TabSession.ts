@@ -1,4 +1,5 @@
 import {
+  protocolErrorCode,
   SITE_SESSION_ALIVE_COMMAND,
   SITE_SESSION_ATTACH_COMMAND,
   SITE_SESSION_CLAIM_COMMAND,
@@ -118,15 +119,18 @@ const applyClaim = (ack: Record<string, unknown>): void => {
 };
 
 /**
- * 站点连接的前置帧：领取或续用身份。失败（旧服务端不认识这条命令、连接中断）不拦业务，
+ * 站点连接的前置帧：领取或续用身份。服务端明确答不了（旧服务端不认识这条命令）时不拦业务，
  * 游戏连接按无身份继续，退回每个座位一份随机玩家号的旧行为。
+ * 连接中途断开不算答复：站点连接会自己重连再领一次，游戏连接接着等，超时再放行。
  */
 export const claimTabSession = async (exchange: PreludeExchange): Promise<void> => {
   try {
     applyClaim(await exchange(SITE_SESSION_CLAIM_COMMAND, tabToken ? { token: tabToken } : {}));
-  } finally {
-    settle();
+  } catch (error) {
+    if (protocolErrorCode(error) !== "DISCONNECTED") settle();
+    throw error;
   }
+  settle();
 };
 
 const waitForTabToken = (timeoutMs: number): Promise<string | null> => {
