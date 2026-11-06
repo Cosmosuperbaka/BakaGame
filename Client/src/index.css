@@ -580,11 +580,13 @@ html {
     letter-spacing: var(--tracking-normal);
     margin: 0;
   }
-  /* 标题与行内强调回到衬线，正文与说明保持楷体；:where() 不增加特异性，
-     业务类（font-mono、font-sans、PlayerStatusPill 的微型标签等）仍可覆盖。 */
+  /* 标题与行内强调回到衬线，正文与说明保持楷体。字重本身就是层级信号：写了 semibold 以上的
+     都是标题、标签或强调，不靠标签名也落到衬线层，业务组件不用再逐处声明字体族。
+     :where() 不增加特异性，业务类（font-mono、font-sans 等）仍可覆盖。 */
   :where(h1, h2, h3, h4, h5, h6),
   :where(th),
-  :where(strong, b) {
+  :where(strong, b),
+  :where(.font-semibold, .font-bold) {
     font-family: var(--font-serif);
   }
   /* 纸纹理仅应用于整页底层画布（body），见 DesignGuide §3。

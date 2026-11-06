@@ -317,7 +317,7 @@ function StatusEventsSection({ events }: { events: PublicStatusEvent[] }) {
 
   return (
     <section aria-labelledby="status-events" className="mt-6">
-      <h2 id="status-events" className="font-sans text-2xs text-muted-foreground">
+      <h2 id="status-events" className="text-2xs text-muted-foreground">
         事件与维护
       </h2>
       {events.length === 0 ? (

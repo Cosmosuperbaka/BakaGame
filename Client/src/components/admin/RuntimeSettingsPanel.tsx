@@ -194,7 +194,7 @@ export function RuntimeSettingsPanel() {
                 </td>
                 <td className="whitespace-nowrap font-mono text-muted-foreground">
                   {readValue(item.kind, item.defaultValue)}
-                  <span className="ml-2 font-sans text-xs">{item.envVar}</span>
+                  <span className="ml-2 font-mono text-xs">{item.envVar}</span>
                 </td>
                 <td className="whitespace-nowrap text-muted-foreground">
                   {item.updatedAt

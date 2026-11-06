@@ -34,7 +34,7 @@ export const PLAYER_GROUP_TITLE_HEIGHT = "1.25rem";
 
 /** 徽章基底类名：各游戏玩家栏的状态徽章与谁是卧底的身份徽章（`RoleBadge`）共用，底色由各自色调给 */
 export const PLAYER_BADGE_BASE =
-  "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-0.5 font-sans text-2xs font-normal leading-none tracking-normal";
+  "inline-flex shrink-0 items-center justify-center gap-1 rounded-md px-1.5 py-0.5 font-serif text-2xs font-normal leading-none tracking-normal";
 
 /** 玩家栏共用的行布局基底；游戏房间在此基础上追加自身状态 */
 export const PLAYER_ROW_BASE =
@@ -159,7 +159,7 @@ export function PlayerGroupTitle({
       className={cn("flex items-center gap-2 px-2", withRule && "mt-1.5")}
       style={{ height: PLAYER_GROUP_TITLE_HEIGHT }}
     >
-      <h3 className="font-sans text-2xs font-normal text-muted-foreground">{label}</h3>
+      <h3 className="text-2xs font-normal text-muted-foreground">{label}</h3>
       <span className="font-sans text-2xs font-normal tabular-nums text-muted-foreground">
         {count}
       </span>

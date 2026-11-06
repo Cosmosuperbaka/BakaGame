@@ -11,7 +11,7 @@ import { cn } from "@/lib/Utils";
  * - upcoming / restricted：挂在条目旁的微型提示，配 `size="xs"`；upcoming 是尚未上线的入口，restricted 是受限的条目（会员专享）
  */
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-md border font-sans font-semibold transition-colors",
+  "inline-flex items-center gap-1 rounded-md border font-serif font-semibold transition-colors",
   {
     variants: {
       variant: {
@@ -19,14 +19,14 @@ const badgeVariants = cva(
         secondary: "border-transparent bg-secondary text-secondary-foreground",
         destructive: "border-transparent bg-destructive text-destructive-foreground shadow-sm",
         outline: "text-foreground",
-        muted: "border-transparent bg-muted font-normal text-foreground",
-        matched: "border-success/40 bg-success/10 font-normal text-success",
-        subtle: "border-border font-normal text-muted-foreground",
-        active: "border-primary/40 bg-primary/10 font-normal text-primary",
+        muted: "border-transparent bg-muted font-sans font-normal text-foreground",
+        matched: "border-success/40 bg-success/10 font-sans font-normal text-success",
+        subtle: "border-border font-sans font-normal text-muted-foreground",
+        active: "border-primary/40 bg-primary/10 font-sans font-normal text-primary",
         // 不可用整体降不透明度（DesignGuide §3），文字仍取 muted-foreground，不另叠一档文字透明度。
-        unavailable: "border-dashed border-border font-normal text-muted-foreground opacity-60",
-        upcoming: "border-transparent bg-muted font-normal text-muted-foreground",
-        restricted: "border-warning/40 bg-warning/10 font-medium text-warning",
+        unavailable: "border-dashed border-border font-sans font-normal text-muted-foreground opacity-60",
+        upcoming: "border-transparent bg-muted font-sans font-normal text-muted-foreground",
+        restricted: "border-warning/40 bg-warning/10 font-sans font-medium text-warning",
         placeholder: "border-transparent bg-foreground/8",
       },
       size: {

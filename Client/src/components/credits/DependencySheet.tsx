@@ -208,7 +208,7 @@ export function DependencySheet({
               .filter((group) => group.entries.length > 0)
               .map((group) => (
                 <section key={group.label} aria-label={group.label}>
-                  <h3 className="font-sans text-2xs text-muted-foreground">
+                  <h3 className="text-2xs text-muted-foreground">
                     {`${group.label} ${group.entries.length} 个`}
                   </h3>
                   <div className="mt-1 overflow-hidden rounded-md border bg-card">

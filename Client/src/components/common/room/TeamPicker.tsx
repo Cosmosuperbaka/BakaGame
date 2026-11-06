@@ -87,7 +87,7 @@ export function TeamPicker({
                 className="sr-only"
               />
               <span className="relative flex items-baseline justify-between gap-1">
-                <span className="text-sm font-medium">{teamLabel(team)}</span>
+                <span className="font-serif text-sm font-medium">{teamLabel(team)}</span>
                 <span className="font-sans text-2xs tabular-nums">
                   {list.length ? `${list.length} 人` : "空"}
                 </span>
