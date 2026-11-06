@@ -280,7 +280,36 @@ async function importSubject(
     String((subject.images ?? {}).large ?? "")
   );
 
-  // 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。
+  await importCharacters(fetcher, base, db, search, subjectId, characterRows);
+  await importMusicRelations(fetcher, base, db, subjectId, relationRows);
+
+  search
+    ?.updateSubject({
+      id: subjectId,
+      name: String(subject.name ?? ""),
+      aliases,
+      tag: tagNames,
+      meta_tag: (subject.meta_tags ?? []).map(String),
+      date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
+      score: Number(rating.score ?? 0),
+      rating_count: Number(rating.total ?? 0),
+      heat,
+      rank: Number(rating.rank ?? 0),
+      type: Number(subject.type ?? 0),
+    })
+    .catch(() => {});
+  return true;
+}
+
+/** 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。 */
+async function importCharacters(
+  fetcher: typeof fetch,
+  base: string,
+  db: Database,
+  search: BangumiSearchIndex | undefined,
+  subjectId: number,
+  characterRows: ApiCharacter[]
+): Promise<void> {
   for (const [order, row] of characterRows.entries()) {
     const characterId = Number(row.id);
     if (!Number.isInteger(characterId) || characterId <= 0) continue;
@@ -323,8 +352,16 @@ async function importSubject(
       order
     );
   }
+}
 
-  // 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。
+/** 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。 */
+async function importMusicRelations(
+  fetcher: typeof fetch,
+  base: string,
+  db: Database,
+  subjectId: number,
+  relationRows: Array<{ id?: number; type?: number; relation?: string }>
+): Promise<void> {
   for (const [order, row] of relationRows.entries()) {
     const relatedId = Number(row.id);
     if (Number(row.type) === 3) {
@@ -343,23 +380,6 @@ async function importSubject(
       }
     }
   }
-
-  search
-    ?.updateSubject({
-      id: subjectId,
-      name: String(subject.name ?? ""),
-      aliases,
-      tag: tagNames,
-      meta_tag: (subject.meta_tags ?? []).map(String),
-      date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
-      score: Number(rating.score ?? 0),
-      rating_count: Number(rating.total ?? 0),
-      heat,
-      rank: Number(rating.rank ?? 0),
-      type: Number(subject.type ?? 0),
-    })
-    .catch(() => {});
-  return true;
 }
 
 /**
