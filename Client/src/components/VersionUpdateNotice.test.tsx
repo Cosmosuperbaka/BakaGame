@@ -185,4 +185,31 @@ describe("VersionUpdateNotice", () => {
     expect(removeWindowListenerSpy).toHaveBeenCalledWith("focus", expect.any(Function));
     expect(removeDocListenerSpy).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
   });
+
+  it("在途检查期间的重复触发被合并，且请求不带取消信号", async () => {
+    let release: (() => void) | undefined;
+    const fetchSpy = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () =>
+            resolve({
+              ok: true,
+              text: async () =>
+                '<!doctype html><html><head><meta name="bakagame-build" content="commit-v1"></head></html>',
+            } as Response);
+        })
+    );
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    render(<VersionUpdateNotice active={true} />);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit;
+    expect(init.signal).toBeUndefined();
+    await act(async () => release?.());
+  });
 });

@@ -44,18 +44,19 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
     }
 
     let disposed = false;
-    let controller: AbortController | undefined;
+    // 不用 AbortController 取消上一次请求：被取消的请求会让 SDK 对响应体的旁路读取
+    // 变成未处理的 AbortError 上报。改为同一时刻只保留一个在途检查，其余直接跳过。
+    let checking = false;
 
     const check = async () => {
-      controller?.abort();
-      controller = new AbortController();
+      if (checking) return;
+      checking = true;
       try {
         const url = new URL(import.meta.env.BASE_URL, window.location.origin);
         url.searchParams.set("version-check", String(Date.now()));
         const response = await fetch(url, {
           cache: "no-store",
           headers: { Accept: "text/html" },
-          signal: controller.signal,
         });
         if (!response.ok) return;
         const deployedBuild = readBuildFromHtml(await response.text());
@@ -69,6 +70,8 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
         }
       } catch {
         // 版本检查失败不影响正常游玩，下一次定时或回到前台时继续检查。
+      } finally {
+        checking = false;
       }
     };
 
@@ -87,7 +90,6 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
 
     return () => {
       disposed = true;
-      controller?.abort();
       window.clearInterval(timer);
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);

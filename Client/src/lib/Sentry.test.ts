@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as SentryTypes from "@sentry/react";
 import {
   initClientSentry,
+  isInjectedBrowserAdRejection,
   captureClientException,
   captureClientMessage,
   captureClientLog,
@@ -350,5 +351,16 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     const integrationNames = (initOptions.integrations ?? []).map((i) => i.name ?? "");
     expect(integrationNames).not.toContain("BrowserProfiling");
     expect(integrationNames.some((name) => name.toLowerCase().includes("profil"))).toBe(false);
+  });
+});
+
+describe("isInjectedBrowserAdRejection", () => {
+  it("只识别浏览器注入广告 SDK 的拒绝对象", () => {
+    expect(
+      isInjectedBrowserAdRejection({ code: 30005, message: "Ad loaded,but response is empty" })
+    ).toBe(true);
+    expect(isInjectedBrowserAdRejection({ code: 500, message: "房间不存在" })).toBe(false);
+    expect(isInjectedBrowserAdRejection(new Error("Ad loaded"))).toBe(false);
+    expect(isInjectedBrowserAdRejection(null)).toBe(false);
   });
 });

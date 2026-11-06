@@ -131,6 +131,16 @@ const isModuleScriptParseFailure = (event: Sentry.Event): boolean =>
       (value.stacktrace?.frames ?? []).some((frame) => frame.function === "parseModule")
   );
 
+/**
+ * 国产手机浏览器会向页面注入广告 SDK，其加载失败以「带 code 与 message 的普通对象」
+ * 形式变成未处理拒绝，与应用代码无关，且没有堆栈可归因，上报侧直接丢弃。
+ */
+export function isInjectedBrowserAdRejection(reason: unknown): boolean {
+  if (typeof reason !== "object" || reason === null || reason instanceof Error) return false;
+  const { code, message } = reason as { code?: unknown; message?: unknown };
+  return typeof code === "number" && typeof message === "string" && /^Ad loaded/i.test(message);
+}
+
 /** 与事件侧 ignoreErrors 同类的良性文案；日志通道按同一边界过滤，避免比事件侧更吵或更钝。 */
 const BENIGN_CLIENT_NOISE_TEXT =
   /(Failed to fetch dynamically imported module|error loading dynamically imported module|Loading chunk [\d]+ failed|Importing a module script failed|ResizeObserver loop|removeChild' on 'Node'|Transition was (aborted|skipped)|play\(\) request was interrupted)/i;
@@ -206,6 +216,7 @@ export const initClientSentry = (
     ],
     beforeSend: (event, hint) => {
       if (isModuleScriptParseFailure(event)) return null;
+      if (isInjectedBrowserAdRejection(hint?.originalException)) return null;
       // 已被 retryLazyImport 自愈重载吸收的模块加载失败不再上报（页面即将重载，非用户可见缺陷）。
       if (isSelfHealedModuleLoadError(hint?.originalException)) return null;
       return event;
