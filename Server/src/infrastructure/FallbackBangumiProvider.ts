@@ -18,6 +18,16 @@ export interface BangumiFallbackLogger {
   warn(message: string, context?: Record<string, unknown>): void;
 }
 
+/** 查询链路的现状，给后台状态页；计数只算本进程启动以来，重启清零。 */
+export interface BangumiProviderStatus {
+  mode: "local" | "remote";
+  /** 冷却结束、下一次重新探测本地的时刻；走本地时为空。 */
+  retryAt: number | null;
+  degradedCount: number;
+  lastDegradedAt: number | null;
+  lastErrorCode: string | null;
+}
+
 export interface FallbackBangumiProviderOptions {
   local: BangumiDataProvider;
   remote: BangumiDataProvider;
@@ -38,6 +48,9 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
   private readonly now: () => number;
   /** 0 表示本地可用；非 0 表示降级到该时刻为止，到点后重新尝试本地。 */
   private localRetryAt = 0;
+  private degradedCount = 0;
+  private lastDegradedAt: number | null = null;
+  private lastErrorCode: string | null = null;
 
   constructor({ local, remote, logger, now = Date.now }: FallbackBangumiProviderOptions) {
     this.local = local;
@@ -88,6 +101,16 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     );
   }
 
+  status(): BangumiProviderStatus {
+    return {
+      mode: this.localRetryAt === 0 ? "local" : "remote",
+      retryAt: this.localRetryAt === 0 ? null : this.localRetryAt,
+      degradedCount: this.degradedCount,
+      lastDegradedAt: this.lastDegradedAt,
+      lastErrorCode: this.lastErrorCode,
+    };
+  }
+
   async close(): Promise<void> {
     await Promise.all([this.local.close?.(), this.remote.close?.()]);
   }
@@ -104,8 +127,11 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     } catch (error) {
       const code = (error as { code?: string })?.code;
       if (code !== "BANGUMI_DATA_UNAVAILABLE" && code !== "BANGUMI_QUERY_TIMEOUT") throw error;
+      this.lastErrorCode = code ?? null;
       // 冷却期内的连续失败不重复告警，避免把真正的问题淹在日志里。
       if (this.localRetryAt === 0) {
+        this.degradedCount += 1;
+        this.lastDegradedAt = this.now();
         this.logger?.warn("Bangumi 本地数据集不可用，暂改网络回源", {
           code,
           retryInMs: BANGUMI_LOCAL_RETRY_COOLDOWN_MS,

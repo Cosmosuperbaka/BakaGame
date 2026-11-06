@@ -125,7 +125,7 @@ export const CHARACTER_SORTABLE = ["comment", "collect"];
 export const CHARACTER_SEARCHABLE = ["name", "aliases"];
 
 type IndexWithDocuments<T extends Record<string, unknown>> = Index<T> & {
-  getStats(): Promise<{ numberOfDocuments: number }>;
+  getStats(): Promise<{ numberOfDocuments: number; isIndexing?: boolean }>;
 };
 
 /**
@@ -155,6 +155,20 @@ export class BangumiSearchIndex {
       CHARACTER_INDEX
     ) as IndexWithDocuments<CharacterSearchDocument>;
     this.metadata = this.client.index(METADATA_INDEX);
+  }
+
+  /** 只读探测：服务可达性与两个索引的文档数，给后台状态页。 */
+  async status(): Promise<{ subjects: number; characters: number; isIndexing: boolean }> {
+    await this.client.health();
+    const [subjects, characters] = await Promise.all([
+      this.subjects.getStats(),
+      this.characters.getStats(),
+    ]);
+    return {
+      subjects: subjects.numberOfDocuments,
+      characters: characters.numberOfDocuments,
+      isIndexing: Boolean(subjects.isIndexing || characters.isIndexing),
+    };
   }
 
   async initialize(db: Database, sourcePath: string): Promise<void> {
