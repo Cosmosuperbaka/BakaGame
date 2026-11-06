@@ -585,6 +585,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
                 questionType: "song",
                 questionMode: "automatic",
                 autoRotateSubmitter: false,
+                allowCustomClip: true,
                 autoFilters: { playlist: undefined, artists: [], minPopularity: 0 },
                 animeAutoFilters: {},
               }
