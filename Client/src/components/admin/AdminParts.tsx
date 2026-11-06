@@ -118,6 +118,19 @@ export function AdminTable({
   );
 }
 
+/** 面板顶部的数字卡片。 */
+export function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
+  return (
+    <div className="rounded-md border bg-card p-3">
+      <div className="text-xs font-serif text-muted-foreground">{label}</div>
+      <div className="mt-1 font-serif text-2xl font-semibold tabular-nums">
+        {formatNumber(value)}
+      </div>
+      {detail ? <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div> : null}
+    </div>
+  );
+}
+
 /** 表格行里打开详情的入口：整格是一个按钮，键盘可达。 */
 export function RowButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (

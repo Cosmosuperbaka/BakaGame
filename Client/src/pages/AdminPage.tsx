@@ -8,6 +8,7 @@ import { Seo } from "@/components/common/Seo";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { AntiCheatPanel } from "@/components/admin/AntiCheatPanel";
 import { AuditPanel } from "@/components/admin/AuditPanel";
+import { BangumiMirrorPanel } from "@/components/admin/BangumiMirrorPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { GamesPanel } from "@/components/admin/GamesPanel";
 import { OverviewPanel } from "@/components/admin/OverviewPanel";
@@ -30,6 +31,7 @@ const TABS = [
   { value: "audit", label: "审计", panel: AuditPanel },
   { value: "qq", label: "QQ 查询号", panel: QQLookupPanel },
   { value: "runtime", label: "运行期旋钮", panel: RuntimeSettingsPanel },
+  { value: "bangumi", label: "Bangumi 镜像", panel: BangumiMirrorPanel },
 ] as const;
 type TabValue = (typeof TABS)[number]["value"];
 const isTab = (value: string | null): value is TabValue => TABS.some((tab) => tab.value === value);

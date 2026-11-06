@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
-import { AdminTable, AdminToolbar, QueryState } from "@/components/admin/AdminParts";
+import { AdminTable, AdminToolbar, QueryState, Stat } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import {
@@ -33,18 +33,6 @@ const FEEDBACK_ORDER: FeedbackStatus[] = ["open", "processing", "resolved", "clo
 const GAMES = GAME_OPTIONS.map((option) => option.value);
 const sumGames = (games: Record<RecordedGameKind, number>) =>
   GAMES.reduce((total, game) => total + games[game], 0);
-
-function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
-  return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="text-xs font-serif text-muted-foreground">{label}</div>
-      <div className="mt-1 font-serif text-2xl font-semibold tabular-nums">
-        {formatNumber(value)}
-      </div>
-      {detail ? <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div> : null}
-    </div>
-  );
-}
 
 function OverviewStats({ data }: { data: AdminOverview }) {
   const live = GAMES.reduce(

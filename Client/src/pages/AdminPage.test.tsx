@@ -12,6 +12,7 @@ import type {
   QQLookupStatus,
 } from "@bakagame/shared";
 import { resetAccountStoreForTest, useAccountStore } from "@/stores/UseAccountStore";
+import { MIRROR_STALE } from "@/stories/fixtures/BangumiMirror";
 import AdminPage from "./AdminPage";
 
 const admin = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ const admin = vi.hoisted(() => ({
   audit: { list: vi.fn() },
   qq: { status: vi.fn(), refreshNames: vi.fn() },
   settings: { list: vi.fn(), set: vi.fn() },
+  bangumiMirror: { status: vi.fn() },
 }));
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
@@ -378,6 +380,24 @@ describe("管理后台", () => {
     await events.click(screen.getByRole("button", { name: "刷新全部昵称" }));
     expect(admin.qq.refreshNames).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/已检查 3 个账号，更新 1 个昵称/)).toBeInTheDocument();
+  });
+
+  it("Bangumi 镜像：从接口读状态，超期时列出提示，可手动刷新", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.bangumiMirror.status.mockResolvedValue(MIRROR_STALE);
+    const events = renderAdmin("/admin?tab=bangumi");
+    expect(await screen.findByText("作品数据已超过 3 天没有成功刷新")).toBeInTheDocument();
+    expect(admin.bangumiMirror.status).toHaveBeenCalledTimes(1);
+
+    await events.click(screen.getByRole("button", { name: "刷新" }));
+    expect(admin.bangumiMirror.status).toHaveBeenCalledTimes(2);
+  });
+
+  it("Bangumi 镜像：读取失败时给出错误态", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.bangumiMirror.status.mockRejectedValue(new Error("网络错误"));
+    renderAdmin("/admin?tab=bangumi");
+    expect(await screen.findByText("镜像状态加载失败")).toBeInTheDocument();
   });
 
   it("QQ 昵称来源：不可用时给出原因并禁用刷新", async () => {
