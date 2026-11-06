@@ -113,7 +113,7 @@ describe("卧底：标签页身份即玩家", () => {
   test("同账号的两张标签页各占一席，互不覆盖", async () => {
     const { service } = createTestContext();
     await fakerCreate(service, tabConnection(service, "host", TAB_B));
-    const account = { userId: "user-1", name: "同一账号" } as ConnectionRecord["account"];
+    const account = { userId: "user-1", image: null };
     const left = tabConnection(service, "left", "c".repeat(64));
     const right = tabConnection(service, "right", "d".repeat(64));
     left.record.account = account;
