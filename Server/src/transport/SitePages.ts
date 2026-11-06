@@ -296,6 +296,8 @@ export class SitePages {
     assertStep(step);
     this.touch(record);
     if (!record.send) throw fail("PAGE_DETACHED", "页面正在重新连接，稍后重试");
+    // 一次只做一件事：人类的页面只有一个焦点，并发读取还会让页面反复遍历 DOM。
+    if (record.pending.size > 0) throw fail("PAGE_BUSY", "上一步还没执行完");
     const command: SitePageCommand = {
       ...step,
       id: `page-${++record.commandSeq}-${record.pageId.slice(0, 8)}`,

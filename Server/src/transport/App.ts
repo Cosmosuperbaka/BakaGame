@@ -1004,10 +1004,13 @@ export const createApp = ({
     }
     if (type === SITE_SUBSCRIBE_COMMAND) {
       sitePresence.subscribe(connectionId, (payload) => sendPacket(ws, payload));
-      sendPacket(ws, createAck(envelope, { subscribed: true }));
       // 订阅是页面连上后的第一条业务命令：身份已经绑定，刷新前的接管在这里续上。
+      // 回执带上结果：页面据此判断断线期间接管是否已经结束，不必等到超时。
       const { tabKey } = ws.data as { tabKey?: string };
-      if (tabKey) sitePages.attach(tabKey, connectionId, (payload) => sendPacket(ws, payload));
+      const controlled =
+        tabKey !== undefined &&
+        sitePages.attach(tabKey, connectionId, (payload) => sendPacket(ws, payload));
+      sendPacket(ws, createAck(envelope, { subscribed: true, controlled }));
       return true;
     }
     if ((ws.data as { isAgent?: boolean }).isAgent !== true)

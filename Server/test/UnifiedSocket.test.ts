@@ -300,7 +300,7 @@ test("站点通道：订阅者收到快照，Agent 焦点广播到首页，且�
     const snapshot = nextMessage(viewer, (m) => m.type === "event" && m.event === "site.agents");
     const subscribed = nextMessage(viewer, (m) => m.type === "ack" && m.id === "sub-1");
     send(viewer, { id: "sub-1", type: "site.subscribe", payload: {} });
-    expect((await subscribed).payload).toEqual({ subscribed: true });
+    expect((await subscribed).payload).toEqual({ subscribed: true, controlled: false });
     expect((await snapshot).payload).toEqual({ agents: [] });
 
     const agent = await openSocket(port, "/api/ws?agent=1");

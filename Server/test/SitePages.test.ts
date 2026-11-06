@@ -122,6 +122,15 @@ describe("指令", () => {
     await expect(pending).resolves.toMatchObject({ ok: true });
   });
 
+  it("上一步没做完时拒绝下一步，页面一次只做一件事", async () => {
+    const { pages, page, opened } = setup();
+    pages.claim(opened.code, "agent-1", "A");
+    const first = pages.dispatch("agent-1", { action: "read" });
+    expect(() => pages.dispatch("agent-1", { action: "read" })).toThrow("还没执行完");
+    answer(pages, "conn-1", lastCommand(page.sent));
+    await first;
+  });
+
   it("别的连接猜中指令号也写不进结果", async () => {
     const { pages, page, opened } = setup({ commandTimeoutMs: 20 });
     pages.claim(opened.code, "agent-1", "A");
