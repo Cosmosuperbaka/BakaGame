@@ -7,6 +7,8 @@ import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import { StatusSampleStore } from "../infrastructure/StatusSampleStore";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
+import { BangumiMirrorMonitor } from "./BangumiMirrorMonitor";
+import type { BangumiMirrorSnapshot } from "../shared/BangumiMirror";
 import { NeteaseMusicProvider } from "../infrastructure/NeteaseMusicProvider";
 import { BangumiImageService } from "../infrastructure/BangumiImageService";
 import { QQMusicProvider } from "../infrastructure/QQMusicProvider";
@@ -202,7 +204,12 @@ export function createServer(
     antiCheatReviews,
     settings,
     statusEvents,
-    statusEnvironment
+    statusEnvironment,
+    new BangumiMirrorMonitor({
+      snapshot: () =>
+        data.client.request({ method: "mirror.status" }) as Promise<BangumiMirrorSnapshot>,
+      provider: () => bangumi.status(),
+    })
   );
   // 通道证明按设备公钥落库；没有数据库时退回内存表，本地与 E2E 仍能跑通整条准入链路。
   const clientChannel = new ClientChannel({
@@ -306,7 +313,8 @@ const createAccount = (
   reviews: CEEAntiCheatReviewBoard,
   settings: AppSettings,
   statusEvents: DatabaseStatusEventRepository | undefined,
-  statusEnvironment: string
+  statusEnvironment: string,
+  bangumiMirror: BangumiMirrorMonitor
 ) => {
   if (!database || !env.account) return undefined;
   const mailer = createMailer(env.account.mail, logger);
@@ -398,6 +406,7 @@ const createAccount = (
     settings,
     qq: nicknames,
     statusEvents,
+    bangumiMirror,
     environment: statusEnvironment,
     sentry:
       env.sentryApiToken && env.sentryDsn

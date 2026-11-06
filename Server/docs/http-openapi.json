@@ -4763,6 +4763,381 @@
         }
       }
     },
+    "/api/rpc/admin/bangumiMirror/status": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "admin.bangumiMirror.status",
+        "summary": "admin.bangumiMirror.status",
+        "description": "读取 Bangumi 本地镜像状态：数据量、更新任务结果、查询链路与搜索索引，不含路径、地址与密钥。",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "该过程无入参：请求体给 `{}` 即可，`json` 包络可省。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "调用成功；业务数据在 `json` 字段内。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "json": {
+                      "type": "object",
+                      "properties": {
+                        "generatedAt": {
+                          "type": "number"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "writer",
+                            "reader"
+                          ]
+                        },
+                        "dataset": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "subjects": {
+                                  "type": "number"
+                                },
+                                "characters": {
+                                  "type": "number"
+                                },
+                                "refreshed": {
+                                  "type": "number"
+                                },
+                                "pendingIndex": {
+                                  "type": "number"
+                                },
+                                "latestRefreshAt": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "baselineAt": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "failingSubjects": {
+                                  "type": "number"
+                                },
+                                "latestSubjectDate": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "fileUpdatedAt": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "maintenance": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "task": {
+                                        "type": "string"
+                                      },
+                                      "finishedAt": {
+                                        "type": "number"
+                                      },
+                                      "ok": {
+                                        "type": "boolean"
+                                      },
+                                      "summary": {
+                                        "type": "string"
+                                      },
+                                      "error": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "task",
+                                      "finishedAt",
+                                      "ok",
+                                      "summary",
+                                      "error"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                }
+                              },
+                              "required": [
+                                "subjects",
+                                "characters",
+                                "refreshed",
+                                "pendingIndex",
+                                "latestRefreshAt",
+                                "baselineAt",
+                                "failingSubjects",
+                                "latestSubjectDate",
+                                "fileUpdatedAt",
+                                "maintenance"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updater": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "running": {
+                                  "type": "boolean"
+                                },
+                                "paused": {
+                                  "type": "boolean"
+                                },
+                                "rate": {
+                                  "type": "number"
+                                },
+                                "players": {
+                                  "type": "number"
+                                },
+                                "startedAt": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
+                                },
+                                "lastRound": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "at": {
+                                          "type": "number"
+                                        },
+                                        "refreshed": {
+                                          "type": "number"
+                                        },
+                                        "error": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "at",
+                                        "refreshed",
+                                        "error"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "running",
+                                "paused",
+                                "rate",
+                                "players",
+                                "startedAt",
+                                "lastRound"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schedule": {
+                          "type": "object",
+                          "properties": {
+                            "nextDailyAt": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "tagDiffConfigured": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "nextDailyAt",
+                            "tagDiffConfigured"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "provider": {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "local",
+                                "remote"
+                              ]
+                            },
+                            "retryAt": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "degradedCount": {
+                              "type": "number"
+                            },
+                            "lastDegradedAt": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "lastErrorCode": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "mode",
+                            "retryAt",
+                            "degradedCount",
+                            "lastDegradedAt",
+                            "lastErrorCode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "search": {
+                          "type": "object",
+                          "properties": {
+                            "configured": {
+                              "type": "boolean"
+                            },
+                            "healthy": {
+                              "type": "boolean"
+                            },
+                            "subjects": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "characters": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "isIndexing": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "configured",
+                            "healthy",
+                            "subjects",
+                            "characters",
+                            "isIndexing"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "alerts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "level": {
+                                "type": "string",
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
+                              },
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "level",
+                              "code",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "generatedAt",
+                        "role",
+                        "dataset",
+                        "updater",
+                        "schedule",
+                        "provider",
+                        "search",
+                        "alerts"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "json"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AccountDisabled"
+          }
+        }
+      }
+    },
     "/api/rpc/admin/statusEvents/list": {
       "post": {
         "tags": [

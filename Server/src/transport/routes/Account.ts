@@ -194,6 +194,9 @@ const createRpcRouter = (
           items: await admin.updateRuntimeSetting(context.userId, input),
         })),
       },
+      bangumiMirror: {
+        status: adminOnly.admin.bangumiMirror.status.handler(() => admin.bangumiMirrorStatus()),
+      },
       statusEvents: {
         list: adminOnly.admin.statusEvents.list.handler(({ input }) =>
           admin.listStatusEvents(input)

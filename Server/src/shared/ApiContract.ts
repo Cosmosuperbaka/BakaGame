@@ -11,6 +11,7 @@ import {
 import { BADGE_KINDS } from "./Badges";
 import { GAME_IDS } from "./Protocol";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
+import { adminBangumiMirrorStatusSchema } from "./BangumiMirror";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
   PUBLIC_STATUS_INCIDENT_KINDS,
@@ -467,6 +468,12 @@ const adminContract = {
     )
       .input(z.object({ key: runtimeSettingKeySchema, value: z.string().max(64) }))
       .output(z.object({ items: z.array(adminRuntimeSettingSchema) })),
+  },
+  bangumiMirror: {
+    status: op(
+      "读取 Bangumi 本地镜像状态：数据量、更新任务结果、查询链路与搜索索引，不含路径、地址与密钥。",
+      "admin"
+    ).output(adminBangumiMirrorStatusSchema),
   },
   statusEvents: {
     list: op("分页查状态页的事件与维护窗口，可按类型与是否进行中过滤；只含本环境的数据。", "admin")

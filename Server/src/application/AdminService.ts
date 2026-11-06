@@ -14,6 +14,7 @@ import type { RecordedGame } from "../domain/GameRecord";
 import type { Auth } from "../infrastructure/auth/Auth";
 import type { AppSettings } from "./AppSettings";
 import type { AdminRuntimeSetting, RuntimeSettingKey } from "../shared/RuntimeSettings";
+import type { AdminBangumiMirrorStatus } from "../shared/BangumiMirror";
 import type { AuditLogRepository } from "../infrastructure/db/AuditLogRepository";
 import type {
   StatusEventFilter,
@@ -93,6 +94,8 @@ export interface AdminServiceOptions {
   sentry: SentryApiClient | null;
   /** QQ 昵称查询号；缺省时 `admin.qq.*` 回 503。 */
   qq?: QQNicknameService | null;
+  /** Bangumi 镜像状态的来源；未装配时接口报不可用。 */
+  bangumiMirror?: { status(): Promise<AdminBangumiMirrorStatus> } | null;
   /** 状态页事件仓储；缺省时 `admin.statusEvents.*` 回 503（未配置数据库的实例）。 */
   statusEvents?: StatusEventRepository;
   /** 本进程的部署环境标记：状态事件按它隔离，与状态历史同一口径。 */
@@ -559,6 +562,15 @@ export class AdminService {
     });
     await this.options.rooms[input.game].adminKickPlayer(room.roomId, player.id);
     return { ok: true };
+  }
+
+  // ==================== Bangumi 镜像 ====================
+
+  async bangumiMirrorStatus(): Promise<AdminBangumiMirrorStatus> {
+    if (!this.options.bangumiMirror) {
+      throw new AppError("BANGUMI_DATA_UNAVAILABLE", "镜像状态未启用");
+    }
+    return this.options.bangumiMirror.status();
   }
 
   // ==================== 运行期旋钮（T3） ====================

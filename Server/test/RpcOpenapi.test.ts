@@ -45,6 +45,7 @@ const EXPECTED_OPERATIONS = [
   "admin.users.revokeBadge",
   "admin.settings.list",
   "admin.settings.set",
+  "admin.bangumiMirror.status",
   "admin.statusEvents.list",
   "admin.statusEvents.create",
   "admin.statusEvents.update",

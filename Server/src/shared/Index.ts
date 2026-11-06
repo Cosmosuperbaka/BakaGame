@@ -10,6 +10,7 @@ export * from "./Badges";
 export * from "./Status";
 export * from "./CEERanked";
 export type { AdminRuntimeSetting, RuntimeSettingKey } from "./RuntimeSettings";
+export type { AdminBangumiMirrorStatus } from "./BangumiMirror";
 export type {
   ApiContract,
   AccountProfile,

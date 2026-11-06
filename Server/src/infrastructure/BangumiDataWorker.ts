@@ -1,9 +1,11 @@
+import { statSync } from "node:fs";
 import { AppError, isAppError } from "../domain/Errors";
 import { CEECharacterRepository } from "./CEECharacterRepository";
 import { CEE_RANKED_AIGA_OPENING_ID } from "../domain/CEERankedBot";
 import { assembleCEERankedOpenings } from "../domain/CEERankedOpeningBook";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
-import { scheduleDatasetBackup } from "./DatasetBackup";
+import { readDatasetStatus } from "./BangumiMirrorStatus";
+import { nextDailyRunAt, scheduleDatasetBackup } from "./DatasetBackup";
 import { scheduleTagDiffSync, syncTagDiff } from "./TagDiffSync";
 import { BangumiImageStore, type ImageStore } from "./BangumiImageStore";
 import { R2ImageStore, R2ImageUploader, type R2Config } from "./R2ImageStore";
@@ -11,6 +13,7 @@ import { BangumiSearchIndex } from "./BangumiSearchIndex";
 import { openDataset } from "./OpenDataset";
 import { SubjectUpdater, type SubjectUpdaterInit } from "./SubjectUpdater";
 import type { AnimeAutoFilters } from "../shared/Index";
+import type { BangumiMirrorSnapshot } from "../shared/BangumiMirror";
 import type { BangumiProviderInit } from "./LocalBangumiProvider";
 import type { CEEDataInit } from "./CEEData";
 import type { CEECharacterView, CEEImageSize, CEESettings } from "../shared/CEE";
@@ -72,6 +75,8 @@ export type BangumiDataRequest =
   | { id: number; method: "updater.refreshSubject"; subjectId: number }
   /** 运维快照：排障时看更新器是否在跑、跑多快。 */
   | { id: number; method: "updater.stats" }
+  /** 后台状态页：数据集、更新器、计划与搜索索引的现状。 */
+  | { id: number; method: "mirror.status" }
   | { id: number; method: "close" };
 
 /**
@@ -159,6 +164,9 @@ let stopTagDiff: (() => void) | undefined;
 let tagDiff: TagDiffOptions | undefined;
 let images: ImageStore | undefined;
 let updater: SubjectUpdater | undefined;
+let searchIndex: BangumiSearchIndex | undefined;
+let datasetPath: string | undefined;
+let datasetWriter = false;
 
 /**
  * 两条链路共用一次 init，但**分别容错**：猜歌的库缺失不该让 CEE 一起不可用
@@ -251,12 +259,7 @@ const createUpdater = (request: InitRequest): void => {
         ? new SubjectUpdater({
             db: openDataset(request.song.dbPath),
             // 没配搜索就不建索引适配器：否则待同步队列会一直攒着却永远没人消费。
-            search: request.song.meilisearch?.apiKey
-              ? new BangumiSearchIndex({
-                  apiKey: request.song.meilisearch.apiKey,
-                  host: request.song.meilisearch.host,
-                })
-              : undefined,
+            search: searchIndex,
             images,
             logger: bridgedLogger("updater"),
             ...request.updater,
@@ -333,8 +336,57 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
     : undefined;
 };
 
+/** 状态页读库另开只读连接：只读分片与未启用更新器时同样要能看到数量。 */
+const readMirrorDataset = (): BangumiMirrorSnapshot["dataset"] => {
+  if (!datasetPath) return null;
+  try {
+    const db = openDataset(datasetPath, true);
+    try {
+      return {
+        ...readDatasetStatus(db, Date.now()),
+        fileUpdatedAt: Math.floor(statSync(datasetPath).mtimeMs),
+      };
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    postLog("warn", "mirror.status", "读取数据集状态失败", error);
+    return null;
+  }
+};
+
+const readMirrorSearch = async (): Promise<BangumiMirrorSnapshot["search"]> => {
+  const unavailable = { healthy: false, subjects: null, characters: null, isIndexing: false };
+  if (!searchIndex) return { configured: false, ...unavailable };
+  try {
+    return { configured: true, healthy: true, ...(await searchIndex.status()) };
+  } catch (error) {
+    postLog("warn", "mirror.status", "读取搜索索引状态失败", error);
+    return { configured: true, ...unavailable };
+  }
+};
+
+const readMirrorSnapshot = async (): Promise<BangumiMirrorSnapshot> => ({
+  role: datasetWriter ? "writer" : "reader",
+  dataset: readMirrorDataset(),
+  updater: updater?.runtime() ?? null,
+  schedule: {
+    nextDailyAt: datasetWriter ? nextDailyRunAt(Date.now()) : null,
+    tagDiffConfigured: Boolean(tagDiff),
+  },
+  search: await readMirrorSearch(),
+});
+
 /** 两条链路共用一次 init，但分别容错；两边的库各自建索引，串行初始化。 */
 const initRuntime = async (request: InitRequest): Promise<true> => {
+  datasetPath = request.song.dbPath;
+  datasetWriter = !request.song.readonly;
+  searchIndex = request.song.meilisearch?.apiKey
+    ? new BangumiSearchIndex({
+        apiKey: request.song.meilisearch.apiKey,
+        host: request.song.meilisearch.host,
+      })
+    : undefined;
   // 同一进程内共用一个 Meilisearch 客户端即可，但索引写入仍由各自适配器排队，
   // 并发只会让两边互相拖慢。
   await initSongLink(request);
@@ -470,6 +522,7 @@ const dispatchRequest = async (request: BangumiDataRequest): Promise<unknown> =>
     return true;
   }
   if (request.method === "updater.stats") return updater?.stats() ?? { running: false };
+  if (request.method === "mirror.status") return readMirrorSnapshot();
   if (request.method === "updater.refreshSubject")
     return updater ? updater.refresh(request.subjectId) : false;
   if (isSongRequest(request)) return dispatchSongRequest(request, requireSong());
