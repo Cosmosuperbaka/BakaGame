@@ -572,6 +572,26 @@ export const withSongAccount = async <T>(
 };
 
 /**
+ * 候选音源排序：本房有可用账号的平台排在前面，其余保持原相对顺序。
+ *
+ * 只有 QQ 账号的房间，网易云一侧是匿名出口；匿名出口共用一条分钟级限流线，
+ * 一旦被限流玩家会反复看到「操作频繁」。有 QQ 账号时先走 QQ 候选，匿名网易云只做兜底，
+ * 而不是反过来先撞限流再回退。
+ */
+export const prioritizeCandidatesByRoomAccounts = (
+  service: SonGuessrServiceInternals,
+  room: SonGuessrRoomRecord,
+  candidateIds: readonly string[]
+): string[] => {
+  const rank = (id: string) =>
+    hasAvailablePoolAccount(service, room, id.startsWith("qq:") ? "qq" : "netease") ? 0 : 1;
+  return candidateIds
+    .map((id, index) => ({ id, index, rank: rank(id) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((item) => item.id);
+};
+
+/**
  * 按「主选 + 检索时给出的备用音源」取完整歌曲。
  *
  * 每个候选按自己的平台租号，只有 QQ 候选才可能要求会员号。已知候选全部失败后，
@@ -585,7 +605,10 @@ export const loadSongWithSources = async (
   sources?: readonly string[],
   requiresVip?: boolean
 ): Promise<{ song: SongDetails; alternateSongIds: string[] }> => {
-  const candidates = [songId, ...(sources ?? [])]
+  const candidates = prioritizeCandidatesByRoomAccounts(service, room, [
+    songId,
+    ...(sources ?? []),
+  ])
     .filter((id, index, list) => list.indexOf(id) === index)
     .slice(0, 6);
   const requireVipFor = (candidateId: string) =>
@@ -639,9 +662,10 @@ export const refreshRoundAudio = async (
   round: SonGuessrRoundRecord,
   refresh: (songId: string, cookie?: MusicCookieInput) => Promise<string>
 ): Promise<string> => {
-  const candidateIds = [round.song.id, ...(round.alternateSongIds ?? [])].filter(
-    (id, index, list) => list.indexOf(id) === index
-  );
+  const candidateIds = prioritizeCandidatesByRoomAccounts(service, room, [
+    round.song.id,
+    ...(round.alternateSongIds ?? []),
+  ]).filter((id, index, list) => list.indexOf(id) === index);
   let lastError: unknown;
   for (const candidateId of candidateIds) {
     try {
