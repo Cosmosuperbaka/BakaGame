@@ -689,6 +689,42 @@ for (const width of [390, 820, 1280]) {
   });
 }
 
+for (const width of [390, 820]) {
+  test(`${width}px 初始选段落在可视区，字体与折行落定后也不跑掉`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const wrapped = longLines.map((line) => ({
+      ...line,
+      text: `${line.text}，即使为了选取显示更长的正文也不移动`,
+    }));
+    await renderSelector(page, { lines: wrapped, range: [115000, 127000], anchorIndex: null });
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(400);
+    await expect(page.locator('[data-line-index="20"]')).toBeInViewport();
+    await expect(page.getByRole("button", { name: "回到选段" })).toBeHidden();
+  });
+}
+
+test("窗口变窄导致折行时，没碰过列表的玩家仍看得到选段；滚过列表后不再被拉回", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const wrapped = longLines.map((line) => ({
+    ...line,
+    text: `${line.text}，即使为了选取显示更长的正文也不移动`,
+  }));
+  await renderSelector(page, { lines: wrapped, range: [115000, 127000], anchorIndex: null });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('[data-line-index="20"]')).toBeInViewport();
+
+  const scroller = page.getByTestId("song-clip-lyric-scroll");
+  await scroller.hover();
+  await page.mouse.wheel(0, 900);
+  const back = page.getByRole("button", { name: "回到选段" });
+  await expect(back).toBeVisible();
+  await page.setViewportSize({ width: 340, height: 844 });
+  await page.waitForTimeout(300);
+  // 浏览器自身的滚动锚定可以微调，但不能把玩家拉回选段。
+  await expect(back).toBeVisible();
+});
+
 test.describe("截取选择器滚动", () => {
   test.use({ hasTouch: true });
 

@@ -27,6 +27,9 @@ class SelectorLyricPlayer extends LyricPlayer {
   }
 }
 
+/** 玩家亲手动列表的入口：程序滚动不会触发这些事件。 */
+const USER_SCROLL_EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+
 const setFlag = (element: HTMLElement, name: string, on: boolean) => {
   if (on) element.dataset[name] = "true";
   else delete element.dataset[name];
@@ -57,6 +60,9 @@ export class SongClipLyricScene {
   /** 列表唯一的 Tab 停靠行；玩家没聚焦过时跟着选段走。 */
   private rovingIndex: number | null = null;
   private placement: SelectionPlacement = null;
+  /** 排版落定前选段都要留在视野里；玩家动过列表或选段后就不再替他滚动。 */
+  private anchored = true;
+  private measuredHeight = 0;
   /** 选段滚出或滚回可视区时通知，用来显示「回到选段」。 */
   onPlacement?: (placement: SelectionPlacement) => void;
 
@@ -64,6 +70,9 @@ export class SongClipLyricScene {
     this.host = host;
     this.scroller = host.parentElement;
     this.scroller?.addEventListener("scroll", this.syncPlacement, { passive: true });
+    for (const event of USER_SCROLL_EVENTS) {
+      this.scroller?.addEventListener(event, this.releaseAnchor, { passive: true });
+    }
     this.element.classList.add("baka-lyric-player", "baka-clip-lyric-sheet");
     this.element.style.height = "auto";
     this.host.append(this.element);
@@ -87,6 +96,7 @@ export class SongClipLyricScene {
     this.cancelTick();
     this.rows.clear();
     this.rovingIndex = null;
+    this.anchored = true;
     this.ready = false;
     this.fontsReady = false;
     delete this.host.dataset.ready;
@@ -120,6 +130,9 @@ export class SongClipLyricScene {
   }
 
   setSelection(range: readonly [number, number], anchorIndex: number | null) {
+    if (this.ready && (range[0] !== this.range[0] || range[1] !== this.range[1])) {
+      this.releaseAnchor();
+    }
     this.range = range;
     this.anchorIndex = anchorIndex;
     this.applySelection();
@@ -159,6 +172,10 @@ export class SongClipLyricScene {
     });
     if (smooth) first.focus({ preventScroll: true });
   }
+
+  private releaseAnchor = () => {
+    this.anchored = false;
+  };
 
   private selectedRows() {
     return [...this.rows.values()]
@@ -276,6 +293,9 @@ export class SongClipLyricScene {
     const height = groups.reduce((total, group) => total + group.element.clientHeight, 0);
     if (height === 0) return;
     this.element.style.height = `${height}px`;
+    // 字体与折行落定、窗口变窄都会改行高；选段不能因此被挤出视野。
+    if (this.ready && this.anchored && height !== this.measuredHeight) this.revealSelection(false);
+    this.measuredHeight = height;
     const measured =
       this.player.size[1] === height &&
       groups.every(
@@ -317,6 +337,9 @@ export class SongClipLyricScene {
     this.listenAudio(false);
     this.observer.disconnect();
     this.scroller?.removeEventListener("scroll", this.syncPlacement);
+    for (const event of USER_SCROLL_EVENTS) {
+      this.scroller?.removeEventListener(event, this.releaseAnchor);
+    }
     document.fonts?.removeEventListener("loadingdone", this.measure);
     this.rows.clear();
     this.player.dispose();
