@@ -809,6 +809,17 @@ test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且�
   await page.routeWebSocket(/ws:\/\/127\.0\.0\.1:4850\/api\/ws/, (socket) => {
     socket.onMessage((message) => {
       const command = JSON.parse(String(message)) as { id: string; type: string };
+      // 这套夹具里没有真实服务端：按旧服务端回「不认识」，页面走无身份路径，大厅不受影响。
+      if (command.type.startsWith("site.session.")) {
+        socket.send(
+          JSON.stringify({
+            type: "error",
+            id: command.id,
+            error: { code: "UNKNOWN_MESSAGE_TYPE", message: "未知的消息类型" },
+          })
+        );
+        return;
+      }
       // 站点通道与猜歌共用 /api/ws：这套夹具只关心大厅列表，站点订阅照常回执。
       if (command.type === "site.subscribe") {
         socket.send(
