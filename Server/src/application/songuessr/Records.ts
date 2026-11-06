@@ -165,6 +165,11 @@ export interface SonGuessrRoomRecord {
   manualRoundStarting?: boolean;
   hostReconnectDeadlineAt?: number;
   recentSongIds?: string[];
+  /**
+   * 近期取不到音频的候选（候选 ID → 记下的时刻）。纯内存态：
+   * 同一批取不到的歌不再每轮占用有限的尝试次数，也让命中率不再决定「实际抽到的是哪几首」。
+   */
+  unavailableSongIds?: Record<string, number>;
   recentSubjectIds?: string[];
   /** 空闲关闭预警是否已经广播过，避免每个巡检周期重复下发。 */
   expiringNotified?: boolean;
@@ -295,6 +300,10 @@ export const MIN_RECENT_SONG_WINDOW = 10;
  * 避免超大歌单把每个房间的最近列表撑成任意长度。
  */
 export const MAX_RECENT_SONG_WINDOW = 500;
+/** 取不到音频的候选在房间里被降权的时长；过期后允许重试（下架、限流都可能恢复）。 */
+export const UNAVAILABLE_SONG_TTL_MS = 2 * 60 * 60_000;
+/** 取不到音频记录的条数上界，避免超大歌单撑大房间内存。 */
+export const MAX_UNAVAILABLE_SONG_RECORDS = 1_000;
 
 /**
  * 按候选池规模计算「最近不出」窗口长度。

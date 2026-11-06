@@ -470,6 +470,37 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     expect(info.songCount).toBe(1);
   });
 
+  it("getPlaylistSongs 同一歌单在缓存期内只读一次上游，截断结果记告警", async () => {
+    const warn = mock(() => {});
+    const provider = new QQMusicProvider({ logger: { warn } as any });
+    const detail = mock(async () => ({ status: 200, body: { dirinfo: { title: "大歌单" } } }));
+    // 声明 100 首但只翻到 3 首：题库被悄悄缩小，必须有日志。
+    const trackAll = mock(async () => ({
+      status: 200,
+      body: {
+        total: 100,
+        songs: ["a1", "a2", "a3"].map((mid) => ({
+          songmid: mid,
+          songname: mid,
+          singer: [{ name: "歌手" }],
+        })),
+      },
+    }));
+    qqmusic.playlist_detail = detail as any;
+    qqmusic.playlist_track_all = trackAll as any;
+
+    await provider.getPlaylistSongs("qq:23456789");
+    const callsAfterFirst = trackAll.mock.calls.length;
+    const again = await provider.getPlaylistSongs("23456789");
+    expect(again.songs).toHaveLength(3);
+    expect(trackAll).toHaveBeenCalledTimes(callsAfterFirst);
+    expect(detail).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      "QQ音乐歌单读取不完整，题库被缩小",
+      expect.objectContaining({ declared: 100, fetched: 3 })
+    );
+  });
+
   it("getPlaylistSongs 对无数字 ID 抛 INVALID_PLAYLIST", async () => {
     const provider = new QQMusicProvider();
     await expect(provider.getPlaylistSongs("abc")).rejects.toThrow(

@@ -7,7 +7,7 @@ import { describeError, type EventLogger } from "./EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
 import { parseTTML, sanitizeLyrics } from "./LyricLines";
 import { asArray, asRecord, readNumber } from "./JsonReaders";
-import { MusicCache } from "./MusicCache";
+import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
 import { AmllLyricClient } from "./AmllLyricClient";
 import type {
@@ -70,6 +70,7 @@ const ANONYMOUS_FAILURE_THRESHOLD = 3;
 const ANONYMOUS_EMPTY_THRESHOLD = 5;
 const ANONYMOUS_COOLDOWN_MS = 60 * 1000;
 const SONG_METADATA_CACHE_TTL_MS = 10 * 60 * 1000;
+const PLAYLIST_CACHE_TTL_MS = 30 * 60 * 1000;
 const SONG_AUDIO_CACHE_TTL_MS = 5 * 60 * 1000;
 const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
 const LOGIN_STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -893,7 +894,25 @@ export class QQMusicProvider implements MusicProvider {
     if (!dissId) {
       throw new AppError("INVALID_PLAYLIST", `无效的 QQ 音乐歌单 ID: ${playlistId}`);
     }
+    // 自动出题每一轮都要读题库：不缓存时 1500 首的歌单每轮要打三次上游，
+    // 既拖慢开局又白白推高限流计数。按账号作用域缓存，私密歌单不会串号。
+    return this.musicCache.cached(
+      `playlist:${this.audioCacheScope(cookie)}:${dissId}`,
+      PLAYLIST_CACHE_TTL_MS,
+      () => this.fetchPlaylistSongs(dissId, cookie),
+      {
+        ttlForResult: (result) =>
+          isPlaylistTruncated(result.info.songCount, result.songs.length)
+            ? PLAYLIST_TRUNCATED_CACHE_TTL_MS
+            : PLAYLIST_CACHE_TTL_MS,
+      }
+    );
+  }
 
+  private async fetchPlaylistSongs(
+    dissId: string,
+    cookie: string | undefined
+  ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }> {
     const detailRes = await this.callUpstream(cookie, async () =>
       qqmusic.playlist_detail({ id: dissId, cookie })
     );
@@ -967,6 +986,13 @@ export class QQMusicProvider implements MusicProvider {
       if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
     }
 
+    if (isPlaylistTruncated(songCount, songs.length)) {
+      this.options.logger?.warn?.("QQ音乐歌单读取不完整，题库被缩小", {
+        dissId,
+        declared: songCount,
+        fetched: songs.length,
+      });
+    }
     const info: SongPlaylistInfo = {
       id: buildSongUrn("qq", dissId),
       name: dissName,

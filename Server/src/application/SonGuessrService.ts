@@ -2113,7 +2113,12 @@ export class SonGuessrService implements AdminRoomControl {
      */
     recentSongWindow = MIN_RECENT_SONG_WINDOW,
     /** 手动出题选定的片段；缺省时按房间设置自动切片。 */
-    lyricClipOverride?: SongLyricClip
+    lyricClipOverride?: SongLyricClip,
+    /**
+     * 自动选曲时被抽中的候选 ID。取曲可能经聚合器跨平台兜底，返回的 `song.id` 与候选 ID 不一致，
+     * 去重必须按候选 ID 记，否则兜底成功的歌永远不会被排除，反复被抽中。
+     */
+    recordedSongId?: string
   ): number {
     // 席位预约只在「下一轮开始」的转移点生效（点再来一轮进入选出题人时），这里不应用：
     // 选出题人与选歌已经属于本轮，交歌这一刻再把人切成旁观等于在本轮中间换席位。
@@ -2183,7 +2188,8 @@ export class SonGuessrService implements AdminRoomControl {
     room.phase = "playing";
 
     const recentSongIds = room.recentSongIds ?? [];
-    room.recentSongIds = [song.id, ...recentSongIds.filter((id) => id !== song.id)].slice(
+    const recordedId = recordedSongId ?? song.id;
+    room.recentSongIds = [recordedId, ...recentSongIds.filter((id) => id !== recordedId)].slice(
       0,
       recentSongWindow
     );

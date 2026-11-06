@@ -28,6 +28,8 @@ import {
   AUTO_POPULARITY_LOOKUP_LIMIT,
   AUTO_SONG_CANDIDATE_LIMIT,
   DEFAULT_AUTO_PLAYLIST_ID,
+  MAX_UNAVAILABLE_SONG_RECORDS,
+  UNAVAILABLE_SONG_TTL_MS,
   SonGuessrRoomRecord,
   clampInt,
   isUnusableSongCandidate,
@@ -145,7 +147,82 @@ export const startAutomaticAnimeRound = async (
   throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
 };
 
-/** 自动出题（歌曲）：先按整池定近期窗口，再在剩下的候选里试到能拿到音频的一首。 */
+/** 自动选曲的候选分层：靠前的层先抽，抽空或全部失败后才落到下一层。 */
+export interface AutomaticCandidateTiers {
+  /** 每层按抽取顺序给出；`ordered` 为真的层依次取（最久没播的先出），否则层内均匀随机。 */
+  tiers: { name: string; songs: SongSearchResult[]; ordered: boolean }[];
+  fresh: number;
+  recycled: number;
+  knownUnavailable: number;
+}
+
+/**
+ * 把候选池分成「新鲜 → 回收 → 已知取不到」三类，并让可播的先于不可播。
+ *
+ * - 新鲜：不在近期窗口、也不在近期取不到记录里。这一层才是随机出题的主体。
+ * - 回收：近期窗口里的歌，按最久没播的先出。只有新鲜层抽空或全部失败才会用到，
+ *   这样小歌单耗尽后重复的间隔也最大。
+ * - 已知取不到：近期失败过的候选，放最后兜底（下架、限流恢复后可能又能播）。
+ * 软排序必须落实在分层上：此前仅对数组排序再按随机下标抽，排序对结果毫无作用。
+ */
+export const buildAutomaticCandidateTiers = (
+  candidates: readonly SongSearchResult[],
+  recentIds: readonly string[],
+  unavailableIds: ReadonlySet<string>,
+  isPlayable: (song: SongSearchResult) => boolean
+): AutomaticCandidateTiers => {
+  const recentRank = new Map(recentIds.map((id, index) => [id, index]));
+  const fresh = candidates.filter(
+    (song) => !recentRank.has(song.id) && !unavailableIds.has(song.id)
+  );
+  const recycled = candidates
+    .filter((song) => recentRank.has(song.id))
+    .sort((left, right) => recentRank.get(right.id)! - recentRank.get(left.id)!);
+  const knownUnavailable = candidates.filter(
+    (song) => !recentRank.has(song.id) && unavailableIds.has(song.id)
+  );
+  return {
+    tiers: [
+      { name: "fresh-playable", songs: fresh.filter(isPlayable), ordered: false },
+      {
+        name: "fresh-unplayable",
+        songs: fresh.filter((song) => !isPlayable(song)),
+        ordered: false,
+      },
+      { name: "recycled", songs: recycled, ordered: true },
+      { name: "unavailable", songs: knownUnavailable, ordered: false },
+    ],
+    fresh: fresh.length,
+    recycled: recycled.length,
+    knownUnavailable: knownUnavailable.length,
+  };
+};
+
+const songPlatformOf = (id: string): "qq" | "netease" => (id.startsWith("qq:") ? "qq" : "netease");
+
+/** 取不到音频的候选记进房间：过期项顺手清掉，总量封顶。 */
+const rememberUnavailableSong = (room: SonGuessrRoomRecord, id: string, now: number): void => {
+  const records = room.unavailableSongIds ?? {};
+  for (const [key, at] of Object.entries(records)) {
+    if (now - at >= UNAVAILABLE_SONG_TTL_MS) delete records[key];
+  }
+  records[id] = now;
+  const overflow = Object.keys(records).length - MAX_UNAVAILABLE_SONG_RECORDS;
+  if (overflow > 0) {
+    // 对象键按插入序遍历，最早记下的先丢。
+    for (const key of Object.keys(records).slice(0, overflow)) delete records[key];
+  }
+  room.unavailableSongIds = records;
+};
+
+const liveUnavailableIds = (room: SonGuessrRoomRecord, now: number): Set<string> =>
+  new Set(
+    Object.entries(room.unavailableSongIds ?? {})
+      .filter(([, at]) => now - at < UNAVAILABLE_SONG_TTL_MS)
+      .map(([id]) => id)
+  );
+
+/** 自动出题（歌曲）：先按整池定近期窗口，再分层抽取，试到能拿到音频的一首。 */
 export const startAutomaticSongRound = async (
   service: SonGuessrServiceInternals,
   room: SonGuessrRoomRecord,
@@ -160,36 +237,99 @@ export const startAutomaticSongRound = async (
   // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
   // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
   const recentSongWindow = resolveRecentSongWindow(candidates.length);
-  const recentSongIds = new Set((room.recentSongIds ?? []).slice(0, recentSongWindow));
-  const freshCandidates = candidates.filter((song) => !recentSongIds.has(song.id));
-  // 可播的排前面只是软排序：会员专享曲仍留在池里，前面的候选都取不到音频时照常继续试。
-  // 这样非会员 QQ 号不会每轮先拿 VIP 曲去撞 `getSong`，把尝试次数耗在必失败的请求上。
+  const now = service.now();
   const playability = songPlayabilityContext(service, room);
-  const pool = [...(freshCandidates.length > 0 ? freshCandidates : candidates)].sort(
-    (a, b) => Number(isPlayableSong(b, playability)) - Number(isPlayableSong(a, playability))
+  const layout = buildAutomaticCandidateTiers(
+    candidates,
+    (room.recentSongIds ?? []).slice(0, recentSongWindow),
+    liveUnavailableIds(room, now),
+    (song) => isPlayableSong(song, playability)
   );
+  // 候选被近期窗口、失败记录或不可播悄悄缩小时必须留痕，否则「总是那几首」无从排查。
+  service.log("song.auto.pool", room.id, undefined, {
+    candidates: candidates.length,
+    fresh: layout.fresh,
+    recycled: layout.recycled,
+    knownUnavailable: layout.knownUnavailable,
+    freshPlayable: layout.tiers[0].songs.length,
+    window: recentSongWindow,
+  });
+
+  const limitedPlatforms = new Set<string>();
+  let rateLimited: AppError | undefined;
   let attempts = 0;
-  while (pool.length > 0 && attempts < AUTO_SONG_CANDIDATE_LIMIT) {
+  let failures = 0;
+  const draw = (): SongSearchResult | undefined => {
+    for (const tier of layout.tiers) {
+      // 已被限流的平台本轮不再碰：同一条限流线继续打只会空转。
+      const usable = tier.songs.findIndex((song) => !limitedPlatforms.has(songPlatformOf(song.id)));
+      if (usable < 0) continue;
+      const index = tier.ordered
+        ? usable
+        : pickUsableIndex(tier.songs, limitedPlatforms, service.random);
+      return tier.songs.splice(index, 1)[0];
+    }
+    return undefined;
+  };
+  for (let selected = draw(); selected && attempts < AUTO_SONG_CANDIDATE_LIMIT; selected = draw()) {
     attempts += 1;
-    const selected = pool.splice(service.random.nextInt(pool.length), 1)[0];
     let song: SongDetails;
     try {
       song = await withSongAccount(
         service,
         room,
         selected.id,
-        (cookie) => service.options.musicProvider.getSong(selected.id, cookie),
+        (cookie) => service.options.musicProvider.getSong(selected!.id, cookie),
         { requireVip: selected.id.startsWith("qq:") && selected.requiresVip === true }
       );
     } catch (error) {
+      if (error instanceof AppError && error.code === "MUSIC_API_RATE_LIMITED") {
+        // 限流不代表这首歌不能播：不记失败，只让这个平台本轮退场，改抽别的平台的候选。
+        rateLimited = error;
+        limitedPlatforms.add(songPlatformOf(selected.id));
+        continue;
+      }
       if (!isUnusableSongCandidate(error)) throw error;
+      failures += 1;
+      rememberUnavailableSong(room, selected.id, service.now());
       continue;
     }
     verify();
-    service.installRound(room, song, "", undefined, undefined, recentSongWindow);
+    service.installRound(
+      room,
+      song,
+      "",
+      undefined,
+      undefined,
+      recentSongWindow,
+      undefined,
+      selected.id
+    );
     return;
   }
+  service.log("song.auto.exhausted", room.id, undefined, {
+    candidates: candidates.length,
+    attempts,
+    failures,
+    limitedPlatforms: [...limitedPlatforms],
+  });
+  // 只要有一条限流线被挡过，就把限流如实抛出：玩家看到的是「稍后再试」而不是「歌都不能播」。
+  if (rateLimited) throw rateLimited;
   throw new AppError("SONG_UNAVAILABLE", "筛选结果中没有可播放的歌曲，请更换题库或稍后重试");
+};
+
+/** 在未被限流的候选里均匀随机取一个下标。 */
+const pickUsableIndex = (
+  songs: readonly SongSearchResult[],
+  limitedPlatforms: ReadonlySet<string>,
+  random: SonGuessrServiceInternals["random"]
+): number => {
+  if (limitedPlatforms.size === 0) return random.nextInt(songs.length);
+  const usable: number[] = [];
+  songs.forEach((song, index) => {
+    if (!limitedPlatforms.has(songPlatformOf(song.id))) usable.push(index);
+  });
+  return usable[random.nextInt(usable.length)];
 };
 
 /** 自动题库取候选：整轮（歌单 / 歌手 / 热度补全）共用一次取号，结束即归还。 */

@@ -237,3 +237,20 @@ export class MusicCache {
       if (!this.cache.has(key) && !this.inFlight.has(key)) this.refreshers.delete(key);
   }
 }
+
+/** 歌单读取结果比声明的曲目数少这么多以上，视为被截断：短缓存并告警，不能把残缺题库钉住整个 TTL。 */
+const PLAYLIST_TRUNCATION_TOLERANCE = 0.9;
+/** 被截断的歌单结果只缓存这么久，让下一轮出题有机会重新读全。 */
+export const PLAYLIST_TRUNCATED_CACHE_TTL_MS = 60_000;
+
+/**
+ * 歌单实际取到的曲目是否明显少于声明总数。
+ * 上游声明数里含已下架曲目，所以留一成容差；声明数未知时无从判断，按完整处理。
+ */
+export const isPlaylistTruncated = (
+  declaredCount: number | undefined,
+  fetchedCount: number
+): boolean =>
+  declaredCount !== undefined &&
+  declaredCount > 0 &&
+  fetchedCount < declaredCount * PLAYLIST_TRUNCATION_TOLERANCE;

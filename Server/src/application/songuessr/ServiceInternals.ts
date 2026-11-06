@@ -47,7 +47,8 @@ export interface SonGuessrServiceInternals {
     anime?: BangumiSubjectDetails,
     animeTrack?: BangumiMusicTrack,
     recentSongWindow?: number,
-    lyricClipOverride?: SongLyricClip
+    lyricClipOverride?: SongLyricClip,
+    recordedSongId?: string
   ): number;
   ensureRoundPlayerState(
     room: SonGuessrRoomRecord,

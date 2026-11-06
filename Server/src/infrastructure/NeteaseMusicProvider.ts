@@ -14,7 +14,7 @@ import {
   readLyricSources,
   type LyricChainInput,
 } from "./NeteaseLyricParse";
-import { MusicCache } from "./MusicCache";
+import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
 import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
 import type {
@@ -819,10 +819,23 @@ export class NeteaseMusicProvider implements MusicProvider {
           if (added === 0 || rawSongs.length < PLAYLIST_PAGE_SIZE) break;
         }
 
+        if (isPlaylistTruncated(songCount, songs.length)) {
+          this.logger?.warn("网易云歌单读取不完整，题库被缩小", {
+            playlistId: id,
+            declared: songCount,
+            fetched: songs.length,
+          });
+        }
         return {
           info: { id, name: name ?? `歌单 ${id}`, songCount: songCount ?? songs.length },
           songs,
         };
+      },
+      {
+        ttlForResult: (result) =>
+          isPlaylistTruncated(result.info.songCount, result.songs.length)
+            ? PLAYLIST_TRUNCATED_CACHE_TTL_MS
+            : COLLECTION_CACHE_TTL_MS,
       }
     );
   }
