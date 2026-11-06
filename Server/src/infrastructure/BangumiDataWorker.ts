@@ -274,13 +274,27 @@ const createUpdater = (request: InitRequest): void => {
 const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => {
   const base = (request.song.apiBase ?? "").trim();
   if (!base) return; // 未配置上游地址时静默跳过（本地开发常见）。
-  const result = await requireCee().discoverNewSubjects(base);
-  postLog(
-    "info",
-    "maintenance.discoverNewSubjects",
-    `新条目发现：窗口自 ${result.window}，候选 ${result.candidates}，` +
-      `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`
-  );
+  try {
+    const result = await requireCee().discoverNewSubjects(base);
+    const summary =
+      `窗口自 ${result.window}，候选 ${result.candidates}，` +
+      `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`;
+    postLog("info", "maintenance.discoverNewSubjects", `新条目发现：${summary}`);
+    updater?.recordMaintenanceRun({
+      task: "discovery",
+      ok: result.failed === 0,
+      summary,
+      error: null,
+    });
+  } catch (error) {
+    updater?.recordMaintenanceRun({
+      task: "discovery",
+      ok: false,
+      summary: "新条目发现失败",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 };
 
 /**

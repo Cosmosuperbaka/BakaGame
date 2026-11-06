@@ -47,6 +47,7 @@ function upstream(spec: (url: string) => FetchSpec) {
 function dataset(directory: string, rows: Array<{ id: number; heat: number; name?: string }>) {
   const dbPath = join(directory, "bangumi.sqlite");
   const db = new Database(dbPath);
+  db.exec("CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY)");
   db.exec(`CREATE TABLE subjects (
     id INTEGER PRIMARY KEY, type INTEGER NOT NULL, name TEXT NOT NULL, name_cn TEXT NOT NULL,
     aliases TEXT NOT NULL, infobox TEXT NOT NULL, summary TEXT NOT NULL, date TEXT NOT NULL,
@@ -109,6 +110,7 @@ function imageStore(directory: string, shards = 2) {
   mkdirSync(dir, { recursive: true });
   for (let i = 0; i < shards; i += 1) {
     const db = new Database(join(dir, `images-${String(i).padStart(2, "0")}.sqlite`));
+    db.exec("CREATE TABLE IF NOT EXISTS characters(id INTEGER PRIMARY KEY)");
     db.exec(
       "CREATE TABLE images (path TEXT PRIMARY KEY, bytes BLOB NOT NULL, content_type TEXT NOT NULL, fetched_at INTEGER NOT NULL);"
     );

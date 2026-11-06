@@ -33,6 +33,8 @@ const MAX_BACKOFF_MS = 7 * DAY_MS;
 const MAX_INDEX_ATTEMPTS = 5;
 /** 单轮刷新上限：一轮跑太久会让按需更新排不到。 */
 const DEFAULT_ROUND_LIMIT = 1_000;
+/** 错误摘要的长度上限：给后台看个大概，完整上下文在日志里。 */
+const MAX_ERROR_SUMMARY = 200;
 /** 两轮之间的间隔。 */
 const DEFAULT_ROUND_DELAY_MS = 60_000;
 /** 按需队列上限：异常流量下不能让内存无限涨。 */
@@ -113,6 +115,21 @@ const heatOf = (subject: ApiSubject): number =>
     0
   );
 
+/** 维护任务最近一次的结果，给后台状态页读。 */
+export interface MaintenanceRun {
+  task: string;
+  finishedAt: number;
+  ok: boolean;
+  summary: string;
+  error: string | null;
+}
+
+/** 摘要会展示给管理员：抹掉上游地址与本机路径，排障细节留在日志里。 */
+const redactError = (message: string): string =>
+  message
+    .replace(/https?:\/\/\S+|(?:[A-Za-z]:)?[\\/][^\s：]+/g, "<已隐藏>")
+    .slice(0, MAX_ERROR_SUMMARY);
+
 export class SubjectUpdater {
   private readonly db: Database;
   private readonly base: string;
@@ -138,6 +155,7 @@ export class SubjectUpdater {
   private nextSlotAt = 0;
   /** 玩家看过的条目：下一轮优先刷新。 */
   private readonly manual = new Set<number>();
+  private lastRound: { at: number; refreshed: number; error: string | null } | undefined;
 
   constructor(options: SubjectUpdaterOptions) {
     this.db = options.db;
@@ -175,6 +193,13 @@ export class SubjectUpdater {
         subject_id INTEGER PRIMARY KEY,
         queued_at INTEGER NOT NULL,
         attempts INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS bangumi_maintenance_runs (
+        task TEXT PRIMARY KEY,
+        finished_at INTEGER NOT NULL,
+        ok INTEGER NOT NULL,
+        summary TEXT NOT NULL,
+        error TEXT
       );
     `);
   }
@@ -228,12 +253,13 @@ export class SubjectUpdater {
     }
     try {
       const refreshed = await this.runRound();
+      this.lastRound = { at: this.now(), refreshed, error: null };
       if (refreshed)
         this.logger?.info?.(`作品刷新：本轮 ${refreshed} 条（速率 ${this.rate.toFixed(1)} req/s）`);
     } catch (error) {
-      this.logger?.warn?.(
-        `作品刷新轮次失败：${error instanceof Error ? error.message : String(error)}`
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastRound = { at: this.now(), refreshed: 0, error: redactError(message) };
+      this.logger?.warn?.(`作品刷新轮次失败：${message}`);
     }
     this.schedule(this.roundDelayMs);
   }
@@ -550,6 +576,37 @@ export class SubjectUpdater {
     if (wait > 0) await this.sleep(wait);
   }
 
+  /**
+   * 记下维护任务的结果。存进数据集而不是内存：每日任务只在固定时刻跑，部署重启后
+   * 内存里的结果就没了，后台会一直显示「从未运行」。留痕失败不影响任务本身。
+   */
+  recordMaintenanceRun(run: Omit<MaintenanceRun, "finishedAt">): void {
+    try {
+      this.db
+        .query<never, [string, number, number, string, string | null]>(
+          "INSERT INTO bangumi_maintenance_runs (task, finished_at, ok, summary, error) VALUES (?,?,?,?,?)" +
+            " ON CONFLICT(task) DO UPDATE SET finished_at = excluded.finished_at, ok = excluded.ok," +
+            " summary = excluded.summary, error = excluded.error"
+        )
+        .run(
+          run.task,
+          this.now(),
+          run.ok ? 1 : 0,
+          run.summary,
+          run.error === null ? null : redactError(run.error)
+        );
+    } catch (error) {
+      this.logger?.warn?.(
+        `维护结果留痕失败：${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  private count(table: "subjects" | "characters" | "bangumi_refresh" | "bangumi_index_pending") {
+    const sql = `SELECT count(*) AS n FROM ${table}`;
+    return Number(this.db.query<{ n: number }, []>(sql).get()?.n ?? 0);
+  }
+
   /** 运维视角的快照：排障时最想知道的就是「现在跑多快、有没有停」。 */
   stats(): {
     running: boolean;
@@ -558,14 +615,28 @@ export class SubjectUpdater {
     players: number;
     refreshed: number;
     pendingIndex: number;
+    subjects: number;
+    characters: number;
+    /** 最近一次真实回源刷新成功的时刻；基线登记（tier = -1）不算。 */
+    latestRefreshAt: number | null;
+    failingSubjects: number;
+    lastRound: { at: number; refreshed: number; error: string | null } | null;
+    maintenance: MaintenanceRun[];
   } {
-    const refreshed = Number(
-      this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_refresh").get()?.n ?? 0
-    );
-    const pendingIndex = Number(
-      this.db.query<{ n: number }, []>("SELECT count(*) AS n FROM bangumi_index_pending").get()
-        ?.n ?? 0
-    );
+    const refreshed = this.count("bangumi_refresh");
+    const pendingIndex = this.count("bangumi_index_pending");
+    const freshness = this.db
+      .query<{ latest: number | null; failing: number | null }, []>(
+        "SELECT max(CASE WHEN failures = 0 AND tier >= 0 THEN refreshed_at END) AS latest," +
+          " sum(failures > 0) AS failing FROM bangumi_refresh"
+      )
+      .get();
+    const maintenance = this.db
+      .query<
+        { task: string; finished_at: number; ok: number; summary: string; error: string | null },
+        []
+      >("SELECT task, finished_at, ok, summary, error FROM bangumi_maintenance_runs ORDER BY task")
+      .all();
     return {
       running: this.running,
       paused: this.paused,
@@ -573,6 +644,18 @@ export class SubjectUpdater {
       players: this.players,
       refreshed,
       pendingIndex,
+      subjects: this.count("subjects"),
+      characters: this.count("characters"),
+      latestRefreshAt: freshness?.latest ?? null,
+      failingSubjects: Number(freshness?.failing ?? 0),
+      lastRound: this.lastRound ?? null,
+      maintenance: maintenance.map((row) => ({
+        task: row.task,
+        finishedAt: Number(row.finished_at),
+        ok: Boolean(row.ok),
+        summary: row.summary,
+        error: row.error,
+      })),
     };
   }
 }
