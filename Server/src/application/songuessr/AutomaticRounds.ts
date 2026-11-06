@@ -89,11 +89,35 @@ export const startAutomaticRound = async (
   if (room.settings.questionType === "anime") {
     const provider = service.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-    await startAutomaticAnimeRound(service, room, provider, verify);
+    await runLoggedAutomaticRound(service, room, () =>
+      startAutomaticAnimeRound(service, room, provider, verify)
+    );
     return;
   }
 
-  await startAutomaticSongRound(service, room, verify);
+  await runLoggedAutomaticRound(service, room, () =>
+    startAutomaticSongRound(service, room, verify)
+  );
+};
+
+/**
+ * 自动开局/下一轮失败在传输层日志里只是一条 400，看不出是限流、没歌可播还是别的原因；
+ * 失败时留下错误码，原样再抛，不改变对玩家的报错。
+ */
+const runLoggedAutomaticRound = async (
+  service: SonGuessrServiceInternals,
+  room: SonGuessrRoomRecord,
+  run: () => Promise<void>
+): Promise<void> => {
+  try {
+    await run();
+  } catch (error) {
+    service.log("song.auto.failed", room.id, undefined, {
+      questionType: room.settings.questionType,
+      code: error instanceof AppError ? error.code : "UNKNOWN",
+    });
+    throw error;
+  }
 };
 
 /** 自动出题（番剧）：在筛选池里逐个试到第一部有可播关联曲的番剧为止。 */
@@ -279,7 +303,15 @@ export const startAutomaticSongRound = async (
         service,
         room,
         selected.id,
-        (cookie) => service.options.musicProvider.getSong(selected!.id, cookie),
+        (cookie) =>
+          service.options.musicProvider.getSong(selected!.id, cookie, {
+            // 题库里已有标题与歌手：原平台被限流时，跨平台兜底不必再回源取元数据。
+            hint: {
+              title: selected!.title,
+              artist: selected!.artist,
+              durationMs: selected!.durationMs,
+            },
+          }),
         { requireVip: selected.id.startsWith("qq:") && selected.requiresVip === true }
       );
     } catch (error) {

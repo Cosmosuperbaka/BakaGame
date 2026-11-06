@@ -1,4 +1,5 @@
 import { describe, expect, test, mock } from "bun:test";
+import { AppError } from "../src/domain/Errors";
 import { AggregatedMusicProvider } from "../src/infrastructure/AggregatedMusicProvider";
 import type {
   MusicProvider,
@@ -509,6 +510,40 @@ describe("AggregatedMusicProvider", () => {
     const song = await agg.getSong("netease:1001");
     expect(song.audioUrl).toBe("https://cdn.example/qq-failover.mp3");
     expect(qqMock.search).toHaveBeenCalled();
+  });
+
+  test("getSong 带曲目提示时，原平台被限流也能跨平台兜底，且不再回源取元数据", async () => {
+    const rateLimited = () => {
+      throw new AppError("MUSIC_API_RATE_LIMITED", "操作频繁，请稍候再试");
+    };
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async () => rateLimited()),
+      getSongMetadata: mock(async () => rateLimited()),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:hit", title: "反方向的钟", artist: "周杰伦", durationMs: 258500 },
+      ]),
+      getSong: mock(async (id: string) => ({
+        id: `qq:${id}`,
+        title: "反方向的钟",
+        artist: "周杰伦",
+        album: "范特西",
+        durationMs: 258500,
+        lyrics: [],
+        audioUrl: "https://cdn.example/qq-hinted.mp3",
+        encyclopedia: { tags: [] },
+      })),
+    });
+
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const song = await agg.getSong("netease:1001", undefined, {
+      hint: { title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
+    });
+    expect(song.audioUrl).toBe("https://cdn.example/qq-hinted.mp3");
+    expect(neteaseMock.getSongMetadata).not.toHaveBeenCalled();
+    // 没有提示时仍要回源取元数据，撞上限流就落空：证明提示确实改变了结果。
+    await expect(agg.getSong("netease:1001")).rejects.toThrow("操作频繁");
   });
 
   test("getSong 主平台失败且备选平台也取不到时抛原错误", async () => {

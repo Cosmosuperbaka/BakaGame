@@ -213,6 +213,30 @@ describe("QQMusicProvider · search 字段映射与降级", () => {
     expect(calls).toBe(6);
   });
 
+  it("同一关键词反复得到空结果不会熔断，并在熔断日志里写明原因", async () => {
+    const warn = mock(() => {});
+    let calls = 0;
+    const provider = new QQMusicProvider({
+      now: () => 0,
+      logger: { warn } as any,
+      // 缓存读不到命中：每次都真实发往上游。
+      anonymousSearchCacheTtlMs: 0,
+    });
+    qqmusic.search = mock(async () => {
+      calls++;
+      return { status: 200, body: { songs: [] } };
+    }) as any;
+    for (let index = 0; index < 8; index += 1)
+      await provider.search("QQ 没有收录的曲子", 5 + index);
+    expect(warn).not.toHaveBeenCalled();
+    expect(calls).toBeGreaterThan(5);
+    for (let index = 0; index < 5; index += 1) await provider.search(`另一首${index}`, 5);
+    expect(warn).toHaveBeenCalledWith(
+      "QQ 音乐匿名检索连续失败，暂时熔断",
+      expect.objectContaining({ reason: "empty", streak: 5 })
+    );
+  });
+
   it("匿名检索连续抛错后熔断，不再持续打上游", async () => {
     let calls = 0;
     const provider = new QQMusicProvider({ now: () => 0 });
@@ -623,7 +647,11 @@ describe("QQMusicProvider · 限流退避按账号隔离", () => {
     const provider = new QQMusicProvider({ rateLimitCooldownMs: 60_000 });
     const cookieA = "uin=1; qm_keyst=key_a";
     const cookieB = "uin=2; qm_keyst=key_b";
-    const okBody = { code: 0, data: {}, songs: [{ mid: "m1", name: "歌", singer: [{ name: "人" }] }] };
+    const okBody = {
+      code: 0,
+      data: {},
+      songs: [{ mid: "m1", name: "歌", singer: [{ name: "人" }] }],
+    };
     qqmusic.search = mock(async ({ cookie }: any) =>
       cookie === cookieA ? { status: 429, body: { code: 429 } } : { status: 200, body: okBody }
     ) as any;
@@ -669,14 +697,20 @@ describe("QQMusicProvider · 扫码失败原因区分", () => {
     expect(protocol.message).toContain("authorize");
     expect(warns[0]?.[1]).toMatchObject({ stage: "authorize", detail: { host: "graph.qq.com" } });
 
-    await expect(checkWith({ code: 500, reason: "auth_invalid", stage: "wx-login" })).rejects.toMatchObject({
+    await expect(
+      checkWith({ code: 500, reason: "auth_invalid", stage: "wx-login" })
+    ).rejects.toMatchObject({
       code: "MUSIC_LOGIN_FAILED",
       message: expect.stringContaining("已失效"),
     });
-    await expect(checkWith({ code: 500, reason: "rate_limited", stage: "qqlogin" })).rejects.toMatchObject({
+    await expect(
+      checkWith({ code: 500, reason: "rate_limited", stage: "qqlogin" })
+    ).rejects.toMatchObject({
       code: "MUSIC_LOGIN_RISK",
     });
-    await expect(checkWith({ code: 500, reason: "device_limit", stage: "wx-login" })).rejects.toMatchObject({
+    await expect(
+      checkWith({ code: 500, reason: "device_limit", stage: "wx-login" })
+    ).rejects.toMatchObject({
       code: "MUSIC_LOGIN_FAILED",
       message: expect.stringContaining("设备"),
     });

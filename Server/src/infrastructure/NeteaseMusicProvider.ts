@@ -73,6 +73,13 @@ export interface MusicSearchOptions {
   platformPreference?: readonly MusicPlatform[];
 }
 
+/** 跨平台兜底检索所需的曲目信息。 */
+export interface SongFailoverHint {
+  title: string;
+  artist: string;
+  durationMs?: number;
+}
+
 export interface MusicProvider {
   search(
     keyword: string,
@@ -83,11 +90,13 @@ export interface MusicProvider {
   /**
    * 取完整歌曲（含音频与歌词）。`allowFailover=false` 只允许解析本 ID 所属平台，
    * 供调用方按已知备用音源逐个尝试时避免每失败一次就重新按歌名跨平台搜索。
+   * `hint` 是调用方已知的曲目信息：跨平台兜底直接用它检索，不必再回源取原曲元数据
+   * （原平台正被限流时，取元数据会撞上同一条限流线，兜底随之落空）。
    */
   getSong(
     songId: string,
     cookie?: MusicCookieInput,
-    options?: { allowFailover?: boolean }
+    options?: { allowFailover?: boolean; hint?: SongFailoverHint }
   ): Promise<SongDetails>;
   refreshSongAudio?(songId: string, cookie?: MusicCookieInput): Promise<string>;
   getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails>;

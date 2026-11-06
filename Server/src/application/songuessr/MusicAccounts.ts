@@ -88,7 +88,18 @@ export const useMusicCookie = async (
   const getLoginStatus = provider.getLoginStatus?.bind(provider);
   if (!getLoginStatus) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
   const verify = beginMusicAuthentication(service, room, player, connection, platform);
-  const result = await getLoginStatus(cookie, platform);
+  let result: Awaited<ReturnType<typeof getLoginStatus>>;
+  try {
+    result = await getLoginStatus(cookie, platform);
+  } catch (error) {
+    // 凭据过期、上游限流与上游故障在日志里都只是一条 400；留下错误码才分得清
+    // 是玩家本机凭据失效（预期）还是上游出了问题。凭据内容不进日志。
+    service.log("song.auth.cookieRejected", room.id, player.id, {
+      platform,
+      code: error instanceof AppError ? error.code : "UNKNOWN",
+    });
+    throw error;
+  }
   verify();
   // 本机凭据只是副本；服务端同账号若已续期出更新的 Cookie，优先保留服务端那份。
   const session = installMusicSession(service, room, player.id, result, {
@@ -605,10 +616,7 @@ export const loadSongWithSources = async (
   sources?: readonly string[],
   requiresVip?: boolean
 ): Promise<{ song: SongDetails; alternateSongIds: string[] }> => {
-  const candidates = prioritizeCandidatesByRoomAccounts(service, room, [
-    songId,
-    ...(sources ?? []),
-  ])
+  const candidates = prioritizeCandidatesByRoomAccounts(service, room, [songId, ...(sources ?? [])])
     .filter((id, index, list) => list.indexOf(id) === index)
     .slice(0, 6);
   const requireVipFor = (candidateId: string) =>

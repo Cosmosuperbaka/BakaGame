@@ -192,6 +192,62 @@ describe("自动出题的候选池覆盖与去重", () => {
   });
 });
 
+describe("自动出题的取曲提示与失败留痕", () => {
+  test("取曲时带上题库里的标题与歌手，供原平台限流时跨平台兜底", async () => {
+    const pool = makePool(5);
+    const hints: unknown[] = [];
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "小池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id, _cookie, options) => {
+        hints.push(options?.hint);
+        return makeSong(id, id, 2020);
+      },
+    };
+    const { playRound } = await startSoloService(music, "6005", 3, pool.length);
+    expect((await playRound(1)).error).toBeUndefined();
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toEqual(
+      expect.objectContaining({ artist: "测试歌手", title: expect.stringMatching(/^曲目\d$/) })
+    );
+  });
+
+  test("自动开局失败时留下带错误码的日志，并原样抛出", async () => {
+    const written: Array<{ type: string; payload?: unknown }> = [];
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "空池", songCount: 0 },
+        songs: [],
+      }),
+    };
+    const service = new SonGuessrService({
+      musicProvider: music,
+      random: seeded(1),
+      eventLogger: {
+        write: (entry: { type: string; payload?: unknown }) => written.push(entry),
+      } as never,
+    });
+    const solo = connection(service, "solo-log");
+    await createRoom(service, solo, {
+      roomId: "6006",
+      name: "日志",
+      allowSpectators: false,
+      userName: "独狼",
+      solo: true,
+    });
+    await expect(
+      execute(service, solo, { id: "start", type: "song.game.start", roomId: "6006", payload: {} })
+    ).rejects.toMatchObject({ code: "AUTO_NO_MATCH" });
+    expect(written.find((entry) => entry.type === "song.auto.failed")?.payload).toEqual(
+      expect.objectContaining({ code: "AUTO_NO_MATCH" })
+    );
+  });
+});
+
 describe("buildAutomaticCandidateTiers", () => {
   test("近期窗口里的歌进回收层，按最久没播的先出", () => {
     const tiers = buildAutomaticCandidateTiers(

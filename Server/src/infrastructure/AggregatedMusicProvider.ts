@@ -18,6 +18,7 @@ import type {
   MusicQrLogin,
   MusicQrLoginCheck,
   MusicSearchOptions,
+  SongFailoverHint,
 } from "./NeteaseMusicProvider";
 import type {
   SongAlbumSearchResult,
@@ -296,7 +297,7 @@ export class AggregatedMusicProvider implements MusicProvider {
   async getSong(
     songId: string,
     cookie?: MusicCookieInput,
-    options: { allowFailover?: boolean } = {}
+    options: { allowFailover?: boolean; hint?: SongFailoverHint } = {}
   ): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
     const platformCookie = resolvePlatformCookie(cookie, platform);
@@ -322,7 +323,8 @@ export class AggregatedMusicProvider implements MusicProvider {
           this.qqProvider,
           "qq",
           neteaseCookie,
-          qqCookie
+          qqCookie,
+          options.hint
         );
         if (fallback) return fallback;
         throw error;
@@ -349,7 +351,8 @@ export class AggregatedMusicProvider implements MusicProvider {
           this.neteaseProvider,
           "netease",
           qqCookie,
-          neteaseCookie
+          neteaseCookie,
+          options.hint
         );
         if (fallback) return fallback;
         throw error;
@@ -364,13 +367,17 @@ export class AggregatedMusicProvider implements MusicProvider {
     targetProvider: MusicProvider,
     targetPlatform: MusicPlatform,
     originCookie?: string,
-    targetCookie?: string
+    targetCookie?: string,
+    hint?: SongFailoverHint
   ): Promise<SongDetails | null> {
     // 匿名 QQ 只是检索补充源；开关关闭时不再用它做隐式 failover。
     if (targetPlatform === "qq" && !targetCookie && !this.anonymousQqAllowed()) return null;
     try {
-      // 1. 尝试读取原歌曲元数据
-      const originMeta = await this.getSongMetadata(originalSongId, originCookie);
+      // 1. 优先用调用方给的曲目信息；没有才回源读原歌曲元数据
+      const originMeta =
+        hint?.title && hint.artist
+          ? hint
+          : await this.getSongMetadata(originalSongId, originCookie);
       if (!originMeta.title) return null;
 
       // 2. 在备选平台检索

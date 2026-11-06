@@ -321,7 +321,8 @@ export class QQMusicProvider implements MusicProvider {
   private readonly options: QQMusicProviderOptions;
   private readonly now: () => number;
   private anonymousFailureStreak = 0;
-  private anonymousEmptyStreak = 0;
+  /** 当前这段连续空结果里出现过的不同关键词。 */
+  private readonly anonymousEmptyKeywords = new Set<string>();
   private anonymousBlockedUntil = 0;
   private warmupPromise?: Promise<void>;
 
@@ -495,28 +496,35 @@ export class QQMusicProvider implements MusicProvider {
   private noteAnonymousSearchResult(keyword: string, resultCount: number): void {
     if (resultCount > 0) {
       this.anonymousFailureStreak = 0;
-      this.anonymousEmptyStreak = 0;
+      this.anonymousEmptyKeywords.clear();
       return;
     }
     this.anonymousFailureStreak = 0;
-    this.anonymousEmptyStreak += 1;
-    if (this.anonymousEmptyStreak >= ANONYMOUS_EMPTY_THRESHOLD) this.openAnonymousCircuit(keyword);
-  }
-
-  private noteAnonymousSearchFailure(keyword: string): void {
-    this.anonymousEmptyStreak = 0;
-    this.anonymousFailureStreak += 1;
-    if (this.anonymousFailureStreak >= ANONYMOUS_FAILURE_THRESHOLD) {
-      this.openAnonymousCircuit(keyword);
+    // 空结果按不同关键词计数：同一首歌被反复检索（重试、兜底、多处同时问）只算一次，
+    // 否则一首 QQ 本来就没有的曲子就能独自凑够连续空结果，把正常的未收录误当限流。
+    this.anonymousEmptyKeywords.add(keyword.trim().toLowerCase());
+    if (this.anonymousEmptyKeywords.size >= ANONYMOUS_EMPTY_THRESHOLD) {
+      this.openAnonymousCircuit(keyword, "empty", this.anonymousEmptyKeywords.size);
     }
   }
 
-  private openAnonymousCircuit(keyword: string): void {
+  private noteAnonymousSearchFailure(keyword: string): void {
+    this.anonymousEmptyKeywords.clear();
+    this.anonymousFailureStreak += 1;
+    if (this.anonymousFailureStreak >= ANONYMOUS_FAILURE_THRESHOLD) {
+      this.openAnonymousCircuit(keyword, "failure", this.anonymousFailureStreak);
+    }
+  }
+
+  private openAnonymousCircuit(keyword: string, reason: "empty" | "failure", streak: number): void {
     this.anonymousFailureStreak = 0;
-    this.anonymousEmptyStreak = 0;
+    this.anonymousEmptyKeywords.clear();
     this.anonymousBlockedUntil = this.now() + ANONYMOUS_COOLDOWN_MS;
+    // 带上触发原因：「连续空结果」与「连续抛错/超时」的处置完全不同，只写一句话无法区分。
     this.options.logger?.warn?.("QQ 音乐匿名检索连续失败，暂时熔断", {
       keyword,
+      reason,
+      streak,
       cooldownMs: ANONYMOUS_COOLDOWN_MS,
     });
   }
