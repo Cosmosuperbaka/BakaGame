@@ -2,7 +2,7 @@ import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
 import { lyricOverview } from "@/lib/Motion";
-import { toAMLLLines } from "./SongLyricLines";
+import { isMediaClockRunning, MEDIA_CLOCK_EVENTS, toAMLLLines } from "./SongLyricLines";
 
 type Playback = "idle" | "playing" | "paused" | "completed";
 type AudioStatus = "loading" | "ready" | "error";
@@ -15,6 +15,7 @@ export class SongLyricScene {
   private readonly reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   private lines: SongLyricLine[] = [];
   private audio: HTMLAudioElement | null = null;
+  private clipStartTime: number | undefined;
   private playback: Playback = "idle";
   private audioStatus: AudioStatus = "ready";
   private overview = false;
@@ -44,7 +45,8 @@ export class SongLyricScene {
     this.reducedMotion.addEventListener("change", this.onMotionChange);
   }
 
-  setSource(lines: SongLyricLine[], audio: HTMLAudioElement | null) {
+  setSource(lines: SongLyricLine[], audio: HTMLAudioElement | null, clipStartTime?: number) {
+    this.clipStartTime = clipStartTime;
     if (audio !== this.audio) {
       this.listenAudio(false);
       this.audio = audio;
@@ -88,9 +90,12 @@ export class SongLyricScene {
   private initialTime() {
     const firstTime = this.lines[0]?.time ?? 0;
     const audioTime = Math.floor((this.audio?.currentTime ?? 0) * 1000);
+    // 「音频时间异常」要按片段起点判：手动片段可以从前奏或间奏起播，离首句多远都是正常的；
+    // 拿首句当基准会把时间轴锁在首句，遮罩在前奏里就把首句演完。
+    const earliest = Math.min(firstTime, this.clipStartTime ?? firstTime);
     return this.audio &&
       this.playback !== "idle" &&
-      audioTime >= Math.max(0, firstTime - 3000) &&
+      audioTime >= Math.max(0, earliest - 3000) &&
       this.audioStatus === "ready"
       ? audioTime
       : firstTime;
@@ -101,9 +106,9 @@ export class SongLyricScene {
       this.playback === "playing" &&
       this.audioStatus === "ready" &&
       this.audio !== null &&
-      !this.audio.paused &&
-      !this.audio.ended;
-    if (playing !== this.player.getIsPlaying()) {
+      isMediaClockRunning(this.audio);
+    const changed = playing !== this.player.getIsPlaying();
+    if (changed) {
       if (playing) this.player.resume();
       else this.player.pause();
       // 媒体恢复时取消低频等待，下一显示帧立即接回逐帧同步。
@@ -111,11 +116,12 @@ export class SongLyricScene {
       this.scheduleFrame();
     }
     // pause/ended 只停表，绝不能先倒回首句、下一次提交才进入总览。
-    if (playing && !this.overview) this.player.setCurrentTime(this.initialTime());
+    // 媒体重新走起来时按 seek 提交：重新启用热行，把停摆期间的遮罩对齐到真实媒体时间。
+    if (playing && !this.overview) this.player.setCurrentTime(this.initialTime(), changed);
   };
 
   private listenAudio(add: boolean) {
-    for (const event of ["play", "pause", "ended", "timeupdate", "seeked"]) {
+    for (const event of MEDIA_CLOCK_EVENTS) {
       if (add) this.audio?.addEventListener(event, this.syncAudio);
       else this.audio?.removeEventListener(event, this.syncAudio);
     }

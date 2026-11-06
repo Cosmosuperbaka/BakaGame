@@ -43,9 +43,13 @@ export {
   ALL_BANGUMI_TRACK_KINDS,
   BANGUMI_TRACK_KIND_LABELS,
   refineTrackKindByText,
+  LYRIC_CLIP_TAIL_MS,
   SONG_CLIP_MIN_MS,
   SONG_QUESTION_TYPE_LABELS,
   hasMusicAccount,
+  isLyricLineInClip,
+  lyricLeadMs,
+  lyricSungEnd,
 } from "./SonGuessrValues";
 export {
   PUBLIC_STATUS_COMPONENT_IDS,

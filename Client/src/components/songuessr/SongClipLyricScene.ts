@@ -1,8 +1,9 @@
 import { LyricPlayer } from "@applemusic-like-lyrics/core";
 import equal from "fast-deep-equal";
 import type { SongLyricLine } from "@bakagame/shared";
+import { isLyricLineInClip } from "@bakagame/shared/values";
 import { formatClipTime } from "./SongClipEditing";
-import { toAMLLLines } from "./lyrics/SongLyricLines";
+import { isMediaClockRunning, MEDIA_CLOCK_EVENTS, toAMLLLines } from "./lyrics/SongLyricLines";
 
 interface SelectorRow {
   element: HTMLElement;
@@ -120,7 +121,7 @@ export class SongClipLyricScene {
   private applySelection() {
     const [startTime, endTime] = this.range;
     for (const [index, { element, line }] of this.rows) {
-      const selected = line.time < endTime && line.endTime > startTime;
+      const selected = isLyricLineInClip(line, startTime, endTime);
       if (selected) element.dataset.selected = "true";
       else delete element.dataset.selected;
       if (index === this.anchorIndex) element.dataset.anchor = "true";
@@ -130,7 +131,7 @@ export class SongClipLyricScene {
 
   private syncPlayback = () => {
     const playing = Boolean(
-      this.playing && this.audio && !this.audio.paused && !this.audio.ended && this.lines.length
+      this.playing && this.audio && isMediaClockRunning(this.audio) && this.lines.length
     );
     const changed = playing !== this.player.getIsPlaying();
     if (changed) {
@@ -153,7 +154,7 @@ export class SongClipLyricScene {
   }
 
   private listenAudio(add: boolean) {
-    for (const event of ["play", "pause", "ended", "timeupdate", "seeked"]) {
+    for (const event of MEDIA_CLOCK_EVENTS) {
       if (add) this.audio?.addEventListener(event, this.syncPlayback);
       else this.audio?.removeEventListener(event, this.syncPlayback);
     }

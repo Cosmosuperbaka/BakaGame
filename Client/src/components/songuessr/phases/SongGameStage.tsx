@@ -501,6 +501,7 @@ function ClipArea({
   return (
     <SongLyricPlayer
       lines={round.lyricClip?.lines ?? []}
+      clipStartTime={round.lyricClip?.startTime}
       audioRef={audioRef}
       audioPlaybackState={audioPlaybackState}
       audioStatus={audioStatus}

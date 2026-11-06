@@ -1,5 +1,10 @@
-import type { SongClipPreview } from "@bakagame/shared";
-import { SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
+import type { SongClipPreview, SongLyricLine } from "@bakagame/shared";
+import {
+  LYRIC_CLIP_TAIL_MS,
+  lyricLeadMs,
+  lyricSungEnd,
+  SONG_CLIP_MIN_MS,
+} from "@bakagame/shared/values";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -32,6 +37,23 @@ export function clampClipRange(start: number, end: number, domain: number): [num
   const nextStart = clamp(Math.round(start), 0, maxStart);
   const nextEnd = clamp(Math.round(end), nextStart + SONG_CLIP_MIN_MS, domain);
   return [nextStart, nextEnd];
+}
+
+/**
+ * 点选歌词得到的音频区间：与自动切片同一套留白。
+ *
+ * 片段两端有渐入渐出，起止贴着唱词会把首尾的字吞进淡入淡出里；所以起点按上一句结束时间留
+ * 提前量，终点在唱完后留出渐出的余量。
+ */
+export function lineSpanRange(
+  lyrics: readonly SongLyricLine[],
+  first: SongLyricLine,
+  last: SongLyricLine,
+  domain: number
+): [number, number] {
+  const start = first.time - lyricLeadMs(lyrics, first.time);
+  const end = Math.max(lyricSungEnd(last) + LYRIC_CLIP_TAIL_MS, start + SONG_CLIP_MIN_MS);
+  return clampClipRange(start, end, domain);
 }
 
 /**

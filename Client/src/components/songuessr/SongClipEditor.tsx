@@ -10,6 +10,7 @@ import {
   clampClipRange,
   defaultClipRange,
   formatClipTime,
+  lineSpanRange,
   resolveClipDuration,
 } from "./SongClipEditing";
 import { SongClipLyricSheet } from "./SongClipLyricSheet";
@@ -403,7 +404,8 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
     if (!line) return;
     if (anchorIndex === null) {
       const width = Math.max(selectedLength, SONG_CLIP_MIN_MS);
-      const next = clampClipRange(line.time, line.time + width, domain);
+      const [start] = lineSpanRange(song.lyrics, line, line, domain);
+      const next = clampClipRange(start, start + width, domain);
       setRange(next);
       setAnchorIndex(index);
       seekDirect(next[0]);
@@ -412,11 +414,7 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
     const anchor = song.lyrics[anchorIndex] ?? line;
     const first = anchor.time <= line.time ? anchor : line;
     const last = anchor.time <= line.time ? line : anchor;
-    const next = clampClipRange(
-      first.time,
-      Math.max(last.endTime, first.time + SONG_CLIP_MIN_MS),
-      domain
-    );
+    const next = lineSpanRange(song.lyrics, first, last, domain);
     setRange(next);
     setAnchorIndex(null);
     if (currentTimeMs < next[0] || currentTimeMs >= next[1]) {

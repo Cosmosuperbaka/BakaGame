@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { SongClipPreview } from "@bakagame/shared";
 import { SongClipEditor } from "./SongClipEditor";
-import { clampClipRange, defaultClipRange, formatClipTime } from "./SongClipEditing";
+import {
+  clampClipRange,
+  defaultClipRange,
+  formatClipTime,
+  lineSpanRange,
+} from "./SongClipEditing";
 import type { SongClipLyricSheetProps } from "./SongClipLyricSheet";
 
 vi.mock("./SongClipLyricSheet", async () => {
@@ -90,6 +95,28 @@ describe("片段编辑的纯函数", () => {
     expect(clampClipRange(-5_000, 2_000, 120_000)).toEqual([0, 5_000]);
   });
 
+  it("点选歌词的区间给渐入渐出留白，提前量不越过上一句", () => {
+    const [first, second] = SONG.lyrics;
+    // 第一句前没有歌词：取完整提前量；终点在唱完后留出渐出。
+    expect(lineSpanRange(SONG.lyrics, first!, second!, 120_000)).toEqual([9_000, 26_000]);
+    // 上一句是行级歌词，结束时间不可信：取固定的较短提前量。
+    expect(lineSpanRange(SONG.lyrics, second!, second!, 120_000)).toEqual([19_300, 26_000]);
+    // 上一句逐字唱到紧贴下一句：不留提前量，不叠音。
+    const sung = [
+      {
+        time: 10_000,
+        endTime: 19_800,
+        text: "上一句",
+        words: [{ startTime: 10_000, endTime: 19_800, word: "上一句" }],
+      },
+      { time: 20_000, endTime: 25_000, text: "这一句" },
+    ];
+    expect(lineSpanRange(sung, sung[1]!, sung[1]!, 120_000)[0]).toBe(19_800);
+    // 行级歌词后面是长间奏时，终点不把间奏算进去。
+    const gap = [{ time: 10_000, endTime: 80_000, text: "间奏前" }];
+    expect(lineSpanRange(gap, gap[0]!, gap[0]!, 120_000)[1]).toBe(23_000);
+  });
+
   it("默认区间优先用服务端建议，没有建议时回退副歌或首句", () => {
     expect(
       defaultClipRange({
@@ -118,9 +145,9 @@ describe("SongClipEditor", () => {
     await user.click(screen.getByRole("button", { name: /0:20.0 第二句/ }));
 
     expect(await screen.findByText("点两句歌词定起止，拖动截取条可微调")).toBeInTheDocument();
-    expect(screen.getByText(/0:10\.0 – 0:25\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/0:09\.0 – 0:26\.0/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
-    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 10_000, endTime: 25_000 });
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 9_000, endTime: 26_000 });
   });
 
   it("截取轨可以用键盘选到整首，歌词高亮跟着新区间走", async () => {

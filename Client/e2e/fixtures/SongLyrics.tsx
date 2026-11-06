@@ -31,6 +31,13 @@ const root = createRoot(document.getElementById("root")!);
 const audio = document.createElement("audio");
 const audioRef = createRef<HTMLAudioElement>();
 audioRef.current = audio;
+// 夹具没有真实媒体：默认按「数据就绪」报告，`stall` 模拟 seek 或缓冲期间媒体时钟不走。
+let stalled = false;
+Object.defineProperty(audio, "readyState", {
+  configurable: true,
+  get: () => (stalled ? HTMLMediaElement.HAVE_METADATA : HTMLMediaElement.HAVE_ENOUGH_DATA),
+});
+Object.defineProperty(audio, "seeking", { configurable: true, get: () => stalled });
 let mode: "player" | "selector" = "player";
 let props: SongLyricPlayerProps = { lines: [], audioRef };
 let selectorProps: SongClipLyricSheetProps = {
@@ -81,6 +88,10 @@ Object.assign(window, {
       Object.defineProperty(audio, "paused", { configurable: true, value: !playing });
       audio.dispatchEvent(new Event(playing ? "play" : "pause"));
       audio.dispatchEvent(new Event("timeupdate"));
+    },
+    stall(next: boolean) {
+      stalled = next;
+      audio.dispatchEvent(new Event(next ? "waiting" : "playing"));
     },
   },
 });

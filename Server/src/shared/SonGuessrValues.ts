@@ -1,6 +1,6 @@
 // ==================== 猜歌（SonGuessr）纯值 ====================
 // 客户端从这里取值；本文件不得引入任何 schema 构造模块。
-import type { BangumiMusicTrackKind, SongQuestionType } from "./SonGuessr";
+import type { BangumiMusicTrackKind, SongLyricLine, SongQuestionType } from "./SonGuessr";
 
 export const SONG_QUESTION_TYPE_LABELS: Record<SongQuestionType, string> = {
   song: "听歌识曲",
@@ -151,6 +151,59 @@ export const refineTrackKindByText = (
 
 /** 手动片段的最短长度：再短就听不出旋律。最长不超过整首歌。 */
 export const SONG_CLIP_MIN_MS = 5_000;
+
+export const LYRIC_CLIP_LEAD_MS = 1_000;
+/**
+ * 上一句没有真实结束时间戳时使用的提前量。
+ *
+ * 行级兜底歌词的 `endTime` 是清洗时按「下一句起始时间」补算出来的，拿它当边界等于把提前量
+ * 压成 0，首句会在静音渐入中唱完；因此这种情况下仍给固定提前量，只是比有逐字时间时短。
+ */
+export const LYRIC_CLIP_LEAD_WITHOUT_END_MS = 700;
+/** 片段终点在最后一句唱完后的留白，给客户端渐出让位。 */
+export const LYRIC_CLIP_TAIL_MS = 1_000;
+export const MAX_LYRIC_LINE_DURATION_MS = 12_000;
+
+/** 与 `sanitizeLyrics` 同一口径：只有带逐字且原始终点晚于起点的行，才算有真实结束时间戳。 */
+export const hasRealLyricEnd = (line: SongLyricLine) =>
+  Boolean(line.words && line.words.length > 0) && line.endTime > line.time;
+
+/**
+ * 一句歌词实际唱到的时刻。行级歌词的 `endTime` 只是下一句的起始时间，后面可能跟着长间奏，
+ * 所以按单句跨度上限收口，不能把间奏当成这句还在唱。
+ */
+export const lyricSungEnd = (line: SongLyricLine) =>
+  hasRealLyricEnd(line)
+    ? line.endTime
+    : Math.min(line.endTime, line.time + MAX_LYRIC_LINE_DURATION_MS);
+
+/**
+ * 出题窗口可用的提前量：最多退到窗口前最后一句（含和声）的结束时刻。
+ *
+ * 退得比上一句唱完更早，玩家会在题目开始前先听半句无关唱词，歌词也跟着亮出窗口外的行。
+ */
+export const lyricLeadMs = (lyrics: readonly SongLyricLine[], windowStartTime: number): number => {
+  let previous: SongLyricLine | undefined;
+  for (const line of lyrics) {
+    if (line.time >= windowStartTime) continue;
+    if (!previous || line.time > previous.time) previous = line;
+  }
+  if (!previous) return LYRIC_CLIP_LEAD_MS;
+  if (!hasRealLyricEnd(previous)) return LYRIC_CLIP_LEAD_WITHOUT_END_MS;
+  return Math.min(LYRIC_CLIP_LEAD_MS, Math.max(0, windowStartTime - previous.endTime));
+};
+
+/**
+ * 一句歌词算不算在手动片段里。服务端写回合、编辑器画选区都用这一条，两边看到的行才一致。
+ *
+ * 起点落在某句中间时那一句仍算在内，但只剩提前量那点尾巴的不算：它在渐入里就结束了，
+ * 留下来只会让歌词组件把一句根本没唱的行摆在最前面，读作「首句一开始就播完了」。
+ * 终点同理，渐出段里才起头的下一句不算。
+ */
+export const isLyricLineInClip = (line: SongLyricLine, startTime: number, endTime: number) => {
+  if (line.time >= endTime - LYRIC_CLIP_TAIL_MS) return false;
+  return line.time >= startTime || lyricSungEnd(line) - startTime > LYRIC_CLIP_LEAD_MS;
+};
 
 /**
  * 能不能开局看「有没有账号可用」：网易云与 QQ 是并列可选项，服务端 `startGame` 也是

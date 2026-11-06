@@ -6,6 +6,8 @@ import { SongLyricScene } from "./SongLyricScene";
 export interface SongLyricPlayerProps {
   lines: SongLyricLine[];
   audioRef?: RefObject<HTMLAudioElement | null>;
+  /** 片段音频的起点（毫秒）：手动片段可以早于首句，异常判定要以它为准。 */
+  clipStartTime?: number;
   audioPlaybackState?: "idle" | "playing" | "paused" | "completed";
   audioStatus?: "loading" | "ready" | "error";
   className?: string;
@@ -14,6 +16,7 @@ export interface SongLyricPlayerProps {
 export function SongLyricPlayer({
   lines,
   audioRef,
+  clipStartTime,
   audioPlaybackState = "idle",
   audioStatus = "ready",
   className,
@@ -34,9 +37,9 @@ export function SongLyricPlayer({
 
   // 单一提交入口；音频帧只驱动 AMLL，不再引起 React 每帧重渲染。
   useLayoutEffect(() => {
-    sceneRef.current?.setSource(lines, audioRef?.current ?? null);
+    sceneRef.current?.setSource(lines, audioRef?.current ?? null, clipStartTime);
     sceneRef.current?.setPlayback(audioPlaybackState, audioStatus);
-  }, [lines, audioRef, audioPlaybackState, audioStatus]);
+  }, [lines, audioRef, clipStartTime, audioPlaybackState, audioStatus]);
 
   const empty = lines.length === 0;
   return (

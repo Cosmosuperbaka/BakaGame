@@ -326,8 +326,62 @@ describe("手动出题片段", () => {
     expect(createManualLyricClip(song, { startTime: 2_000, endTime: 8_000 })).toEqual({
       startTime: 2_000,
       endTime: 8_000,
-      lines: songs.answer.lyrics.slice(1, 7),
+      lines: songs.answer.lyrics.slice(1, 6),
     });
+  });
+
+  test("起点前的行只剩尾巴时不算进片段，否则歌词组件首行是一句没唱的歌词", () => {
+    const sung = (time: number, endTime: number, text: string) => ({
+      time,
+      endTime,
+      text,
+      words: [{ startTime: time, endTime, word: text }],
+    });
+    // 逐字歌词常见的相邻行重叠：点第二句定起点时，上一句的尾音还拖着。
+    const overlapped = {
+      lyrics: [sung(10_000, 14_500, "上一句"), sung(14_200, 18_000, "第二句")],
+      durationMs: 60_000,
+    };
+    expect(
+      createManualLyricClip(overlapped, { startTime: 14_200, endTime: 20_000 })?.lines.map(
+        (line) => line.text
+      )
+    ).toEqual(["第二句"]);
+    // 起点真的落在一句中间时，那一句仍然算。
+    expect(
+      createManualLyricClip(overlapped, { startTime: 12_000, endTime: 20_000 })?.lines.map(
+        (line) => line.text
+      )
+    ).toEqual(["上一句", "第二句"]);
+
+    // 行级歌词的 endTime 是下一句的起始时间，起点落在长间奏里时上一句早就唱完了。
+    const lineLevel = {
+      lyrics: [
+        { time: 10_000, endTime: 40_000, text: "间奏前" },
+        { time: 40_000, endTime: 45_000, text: "间奏后" },
+      ],
+      durationMs: 60_000,
+    };
+    expect(
+      createManualLyricClip(lineLevel, { startTime: 35_000, endTime: 44_000 })?.lines.map(
+        (line) => line.text
+      )
+    ).toEqual(["间奏后"]);
+  });
+
+  test("终点渐出段里才起头的下一句不算进片段", () => {
+    const song = {
+      lyrics: [
+        { time: 10_000, endTime: 15_000, text: "末句" },
+        { time: 15_300, endTime: 20_000, text: "下一句" },
+      ],
+      durationMs: 60_000,
+    };
+    expect(
+      createManualLyricClip(song, { startTime: 9_000, endTime: 16_000 })?.lines.map(
+        (line) => line.text
+      )
+    ).toEqual(["末句"]);
   });
 
   test("越界、反向或过短的手动片段返回空，交给原来的随机切片", () => {
@@ -501,7 +555,7 @@ describe("手动出题片段", () => {
     expect(round?.lyricClip).toEqual({
       startTime: 2_000,
       endTime: 8_000,
-      lines: songs.answer.lyrics.slice(1, 7),
+      lines: songs.answer.lyrics.slice(1, 6),
     });
 
     const exported = service.exportSnapshots();
@@ -519,7 +573,7 @@ describe("手动出题片段", () => {
     ).toEqual({
       startTime: 2_000,
       endTime: 8_000,
-      lines: songs.answer.lyrics.slice(1, 7),
+      lines: songs.answer.lyrics.slice(1, 6),
     });
   });
 

@@ -82,6 +82,15 @@ const lines: SongLyricLine[] = [
   { time: 39000, endTime: 43000, text: "いつか届くはずの想い" },
 ];
 
+/** jsdom 的媒体元素没有数据：标成可播放，走到「媒体时钟在走」的分支。 */
+function markRunning(audio: HTMLAudioElement) {
+  Object.defineProperty(audio, "paused", { configurable: true, value: false });
+  Object.defineProperty(audio, "readyState", {
+    configurable: true,
+    value: HTMLMediaElement.HAVE_ENOUGH_DATA,
+  });
+}
+
 beforeEach(() => {
   players.length = 0;
   vi.stubGlobal("matchMedia", () => ({
@@ -151,7 +160,7 @@ describe("歌词数据、媒体事件与组件生命周期", () => {
     const audio = document.createElement("audio");
     const audioRef = createRef<HTMLAudioElement>();
     audioRef.current = audio;
-    Object.defineProperty(audio, "paused", { configurable: true, value: false });
+    markRunning(audio);
     audio.currentTime = 34;
     const { rerender, unmount } = render(
       <SongLyricPlayer lines={lines} audioRef={audioRef} audioPlaybackState="playing" />
@@ -181,6 +190,48 @@ describe("歌词数据、媒体事件与组件生命周期", () => {
       audio.dispatchEvent(new Event("timeupdate"));
     });
     expect(player.time).toBe(35000);
+  });
+
+  it("媒体 seek 或缓冲时不算在播，走起来才恢复", () => {
+    const audio = document.createElement("audio");
+    const audioRef = createRef<HTMLAudioElement>();
+    audioRef.current = audio;
+    markRunning(audio);
+    Object.defineProperty(audio, "seeking", { configurable: true, value: true });
+    audio.currentTime = 35;
+    render(<SongLyricPlayer lines={lines} audioRef={audioRef} audioPlaybackState="playing" />);
+    const player = players.at(-1)!;
+    expect(player.playing).toBe(false);
+    act(() => {
+      Object.defineProperty(audio, "seeking", { configurable: true, value: false });
+      audio.dispatchEvent(new Event("playing"));
+    });
+    expect(player.playing).toBe(true);
+    act(() => {
+      Object.defineProperty(audio, "readyState", {
+        configurable: true,
+        value: HTMLMediaElement.HAVE_CURRENT_DATA,
+      });
+      audio.dispatchEvent(new Event("waiting"));
+    });
+    expect(player.playing).toBe(false);
+  });
+
+  it("片段从前奏起播时用真实音频时间，不锁在首句", () => {
+    const audio = document.createElement("audio");
+    const audioRef = createRef<HTMLAudioElement>();
+    audioRef.current = audio;
+    markRunning(audio);
+    audio.currentTime = 25;
+    render(
+      <SongLyricPlayer
+        lines={lines}
+        clipStartTime={25_000}
+        audioRef={audioRef}
+        audioPlaybackState="playing"
+      />
+    );
+    expect(players.at(-1)!.time).toBe(25_000);
   });
 
   it("新曲尚未就绪时停在该曲首句，不继承上一轮时间", () => {
@@ -259,7 +310,7 @@ describe("歌词动画调度", () => {
     scene.setSource(lines, audio);
     scene.setPlayback("playing", "ready");
     expect(vi.getTimerCount()).toBe(1);
-    Object.defineProperty(audio, "paused", { configurable: true, value: false });
+    markRunning(audio);
     audio.dispatchEvent(new Event("play"));
     expect(vi.getTimerCount()).toBe(0);
     expect(frames.size).toBe(1);

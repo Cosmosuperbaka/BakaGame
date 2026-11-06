@@ -9,6 +9,7 @@ declare global {
       render(props: SongLyricsFixtureProps): void;
       renderSelector(props: SongClipSelectorFixtureProps): void;
       time(ms: number, playing: boolean): void;
+      stall(stalled: boolean): void;
       updates(): number;
       picks(): number[];
     };
@@ -82,6 +83,21 @@ async function expectOverviewFits(page: Page) {
   expect(gap).toBeGreaterThanOrEqual(-1);
   expect(gap).toBeLessThan(2);
 }
+
+/** 首行逐字遮罩的时钟：内核用自由运行的 Web Animation 驱动，读它才知道遮罩实际走到哪。 */
+const readFirstLineMask = (page: Page) =>
+  page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>(".baka-lyric-host, .baka-clip-lyric-host")!;
+    const line = host.querySelector<HTMLElement>("[class*=lyricMainLine]")!.parentElement!;
+    const animation = [line, ...line.querySelectorAll<HTMLElement>("*")]
+      .flatMap((element) => element.getAnimations())
+      .find((item) => item.id.startsWith("fade-word"));
+    return {
+      time: Number(animation?.currentTime ?? -1),
+      state: animation?.playState ?? "none",
+      active: line.className.includes("active"),
+    };
+  });
 
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", (error) => {
@@ -318,6 +334,78 @@ test("暂停保留弹簧收敛但降低更新频率，重播恢复逐帧", async
     body: JSON.stringify({ playing, paused, replay, sampleMs: 700, motion }),
     contentType: "application/json",
   });
+});
+
+const timedLines: SongLyricLine[] = lines.map((line) => ({
+  ...line,
+  translatedLyric: "",
+  words: [
+    { startTime: line.time, endTime: line.time + 2000, word: "夜空に浮かぶ" },
+    { startTime: line.time + 2000, endTime: line.endTime, word: "星たち" },
+  ],
+}));
+
+test("媒体还没真正起播时首句遮罩不前进，起播后对齐媒体时间", async ({ page }) => {
+  await render(page, { lines: timedLines, audioPlaybackState: "idle" });
+  // 片段起点正好落在首句：play 事件已发出，seek 或缓冲还没结束，媒体时钟停在起点。
+  await page.evaluate(() => {
+    window.lyricsFixture.stall(true);
+    window.lyricsFixture.time(35000, true);
+    window.lyricsFixture.render({ audioPlaybackState: "playing" });
+  });
+  const before = await readFirstLineMask(page);
+  await page.waitForTimeout(1200);
+  const stalled = await readFirstLineMask(page);
+  expect(stalled.state).not.toBe("running");
+  expect(stalled.time - before.time).toBeLessThan(50);
+
+  await page.evaluate(() => {
+    window.lyricsFixture.stall(false);
+    window.lyricsFixture.time(35000, true);
+  });
+  const resumed = await readFirstLineMask(page);
+  expect(resumed.state).toBe("running");
+  // 内核把行首提前 600ms，遮罩时钟从行首起算：媒体在 35000 时应读到约 600，而不是已跑过的时长。
+  expect(resumed.time).toBeLessThan(800);
+});
+
+test("片段起点早于首句超过 3 秒时，前奏里首句不提前演完", async ({ page }) => {
+  await render(page, { lines: timedLines, clipStartTime: 25000, audioPlaybackState: "idle" });
+  await page.evaluate(() => {
+    window.lyricsFixture.time(25000, true);
+    window.lyricsFixture.render({ audioPlaybackState: "playing" });
+  });
+  await page.waitForTimeout(600);
+  const prelude = await readFirstLineMask(page);
+  expect(prelude.active).toBe(false);
+  expect(prelude.state).not.toBe("running");
+
+  // 到了行首才开始走，而且从开头走。
+  await page.evaluate(() => window.lyricsFixture.time(34700, true));
+  const singing = await readFirstLineMask(page);
+  expect(singing.active).toBe(true);
+  expect(singing.time).toBeLessThan(600);
+});
+
+test("截取选择器在媒体起播前同样不推进遮罩", async ({ page }) => {
+  await renderSelector(page, { lines: timedLines, range: [35000, 43000], anchorIndex: null });
+  await page.evaluate(() => {
+    window.lyricsFixture.stall(true);
+    window.lyricsFixture.time(35000, true);
+    window.lyricsFixture.renderSelector({ playing: true });
+  });
+  const before = await readFirstLineMask(page);
+  await page.waitForTimeout(1200);
+  const stalled = await readFirstLineMask(page);
+  expect(stalled.state).not.toBe("running");
+  expect(stalled.time - before.time).toBeLessThan(50);
+  await page.evaluate(() => {
+    window.lyricsFixture.stall(false);
+    window.lyricsFixture.time(35000, true);
+  });
+  const resumed = await readFirstLineMask(page);
+  expect(resumed.state).toBe("running");
+  expect(resumed.time).toBeLessThan(800);
 });
 
 test("截取选择器只推进逐字遮罩，不移动行盒、重建节点或改变滚动位置", async ({ page }) => {

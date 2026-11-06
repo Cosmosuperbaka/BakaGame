@@ -4,41 +4,16 @@ import {
   type SongDetails,
   type SongLyricClip,
   type SongClipRange,
+  isLyricLineInClip,
+  LYRIC_CLIP_TAIL_MS,
+  lyricLeadMs,
+  MAX_LYRIC_LINE_DURATION_MS,
   SONG_CLIP_MIN_MS,
 } from "../../shared/Index";
 import { countTitleLines, prepareTitleNames } from "./LyricTitleGuard";
 import { clampInt } from "./Records";
 
-export const LYRIC_CLIP_LEAD_MS = 1_000;
-/**
- * 上一句没有真实结束时间戳时使用的提前量。
- *
- * 行级兜底歌词的 `endTime` 是清洗时按「下一句起始时间」补算出来的，拿它当边界等于把提前量
- * 压成 0，首句会在静音渐入中唱完；因此这种情况下仍给固定提前量，只是比有逐字时间时短。
- */
-export const LYRIC_CLIP_LEAD_WITHOUT_END_MS = 700;
-/** 与 `sanitizeLyrics` 同一口径：只有带逐字且原始终点晚于起点的行，才算有真实结束时间戳。 */
-export const hasRealLyricEnd = (line: SongDetails["lyrics"][number]) =>
-  Boolean(line.words && line.words.length > 0) && line.endTime > line.time;
-
-/**
- * 出题窗口可用的提前量：最多退到窗口前最后一句（含和声）的结束时刻。
- *
- * 退得比上一句唱完更早，玩家会在题目开始前先听半句无关唱词，歌词也跟着亮出窗口外的行。
- */
-export const lyricLeadMs = (lyrics: SongDetails["lyrics"], windowStartTime: number): number => {
-  let previous: SongDetails["lyrics"][number] | undefined;
-  for (const line of lyrics) {
-    if (line.time >= windowStartTime) continue;
-    if (!previous || line.time > previous.time) previous = line;
-  }
-  if (!previous) return LYRIC_CLIP_LEAD_MS;
-  if (!hasRealLyricEnd(previous)) return LYRIC_CLIP_LEAD_WITHOUT_END_MS;
-  return Math.min(LYRIC_CLIP_LEAD_MS, Math.max(0, windowStartTime - previous.endTime));
-};
-
 export const FALLBACK_CLIP_SECONDS_PER_LINE = 6;
-export const MAX_LYRIC_LINE_DURATION_MS = 12_000;
 /**
  * 歌词片段相邻两句之间的最大间奏间隔。
  *
@@ -115,8 +90,8 @@ export const createSongLyricClip = (
     const maxLineEnd = Math.max(windowEndTime, ...mergedLines.map((l) => l.endTime));
     // 前置提前量供音频平滑渐入，但不越过上一句歌词的结尾；终点后延 1 秒供渐出。
     const clipStartTime = Math.max(0, windowStartTime - lyricLeadMs(lyrics, windowStartTime));
-    const maxAllowedEnd = durationMs !== undefined ? durationMs : maxLineEnd + 1_000;
-    const clipEndTime = Math.min(maxAllowedEnd, maxLineEnd + 1_000);
+    const maxAllowedEnd = durationMs !== undefined ? durationMs : maxLineEnd + LYRIC_CLIP_TAIL_MS;
+    const clipEndTime = Math.min(maxAllowedEnd, maxLineEnd + LYRIC_CLIP_TAIL_MS);
 
     return {
       startTime: clipStartTime,
@@ -193,7 +168,6 @@ export const createManualLyricClip = (
   return {
     startTime,
     endTime,
-    // 取与区间有交集的歌词行：起点落在某句中间时，那一句仍然算在本片段里。
-    lines: song.lyrics.filter((line) => line.time < endTime && line.endTime > startTime),
+    lines: song.lyrics.filter((line) => isLyricLineInClip(line, startTime, endTime)),
   };
 };
