@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createQueryReuseCache, exactQueryKey, keywordQueryKey } from "@/lib/QueryReuse";
 import { createRoomEntry } from "@/lib/RoomEntry";
-import { permanentRoomErrorMessage } from "@/lib/PermanentRoomError";
+import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import {
   SERVER_SHUTDOWN_MESSAGE,
   isPermanentRoomError,
@@ -269,10 +269,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
           if (!isPermanentRoomError(error)) return false;
           if (getSonGuessrSessionToken(roomId) === token) clearSonGuessrSessionToken(roomId);
           const current = get();
-          if (current.roomId === roomId && current.sessionToken === token) {
-            current.resetRoomState();
-            set({ roomClosedAt: Date.now() });
-          }
+          const inThisRoom = current.roomId === roomId && current.sessionToken === token;
+          if (inThisRoom) current.resetRoomState();
+          if (inThisRoom || roomIsGone(error)) set({ roomClosedAt: Date.now() });
           get().showToast(permanentRoomErrorMessage(error), "error");
           return true;
         },

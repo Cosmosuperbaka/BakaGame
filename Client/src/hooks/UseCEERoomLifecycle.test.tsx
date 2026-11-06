@@ -30,6 +30,33 @@ it("小写测试房链接恢复 canonical 凭据，不要求重新加入", async
   expect(reconnect).toHaveBeenCalledWith("Oblivionis", expect.any(AbortSignal));
   expect(h.result.current.needsJoin).toBe(false);
 });
+it("持有凭据的房间已不在（如服务器重启）：退回大厅，不按房号开一间同号空房", async () => {
+  writeCEESession("1234", "orphan-token");
+  const joinRoom = vi.fn();
+  const createRoom = vi.fn();
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    reconnectRoom: vi.fn().mockImplementation(() => {
+      useCEEStore.setState({ roomClosedAt: Date.now() });
+      return Promise.resolve(false);
+    }),
+    joinRoom,
+    createRoom,
+  });
+  renderHook(() => useCEERoomLifecycle(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={["/cee/room/1234"]}>
+        <Routes>
+          <Route path="/cee/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    ),
+  });
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith("/cee", { replace: true }));
+  expect(joinRoom).not.toHaveBeenCalled();
+  expect(createRoom).not.toHaveBeenCalled();
+});
 it("测试房直链房间不存在时自动用本地用户名按规范房号创建后进入，不弹设置用户名", async () => {
   localStorage.setItem("bakagame:username", "测试房主");
   const joinRoom = vi

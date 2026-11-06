@@ -128,7 +128,9 @@ export function useCEERoomLifecycle() {
       try {
         const restored = await store.reconnectRoom(roomId, controller.signal);
         if (controller.signal.aborted) return;
-        if (!restored) await autoJoin(roomId, controller);
+        // 房间确已不在时由上面的关闭分支退回大厅，这里不能再按房号开一间。
+        if (!restored && useCEEStore.getState().roomClosedAt === null)
+          await autoJoin(roomId, controller);
       } catch (failure) {
         if (!cancelled(failure, controller)) leaveWithNotice(failure);
       } finally {

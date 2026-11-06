@@ -80,6 +80,25 @@ describe("CEE 状态同步", () => {
     }
   );
 
+  it("房间已不在：标记关闭让页面退回大厅；座位失效时房间还在，不标记", async () => {
+    writeCEESession("1234", "dead");
+    vi.spyOn(ceeWsClient, "send").mockRejectedValueOnce({
+      code: "SESSION_NOT_FOUND",
+      message: "x",
+    });
+    await useCEEStore.getState().reconnectRoom("1234");
+    expect(useCEEStore.getState().roomClosedAt).toBeNull();
+
+    writeCEESession("1234", "dead");
+    vi.spyOn(ceeWsClient, "send").mockRejectedValueOnce({
+      code: "ROOM_NOT_FOUND",
+      message: "x",
+    });
+    await useCEEStore.getState().reconnectRoom("1234");
+    expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+    expect(useCEEStore.getState().toast?.text).toBe("房间已解散或不存在");
+  });
+
   it("网络类错误不算永久失效，本地凭据留着下次再试", async () => {
     writeCEESession("1234", "alive");
     vi.spyOn(ceeWsClient, "send").mockRejectedValue({ code: "TIMEOUT", message: "超时" });

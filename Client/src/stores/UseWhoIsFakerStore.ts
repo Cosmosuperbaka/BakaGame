@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createRoomEntry } from "@/lib/RoomEntry";
-import { permanentRoomErrorMessage } from "@/lib/PermanentRoomError";
+import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
@@ -353,10 +353,9 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
           if (!isPermanentRoomError(error)) return false;
           if (getSessionToken(roomId) === token) clearSessionToken(roomId);
           const current = get();
-          if (current.roomId === roomId && current.sessionToken === token) {
-            current.leaveRoomState();
-            current.markRoomClosed();
-          }
+          const inThisRoom = current.roomId === roomId && current.sessionToken === token;
+          if (inThisRoom) current.leaveRoomState();
+          if (inThisRoom || roomIsGone(error)) current.markRoomClosed();
           get().addToast(permanentRoomErrorMessage(error), "error");
           return true;
         },

@@ -293,9 +293,18 @@ describe("Songuessr store integration", () => {
     expect(getSessionToken("2345")).toBe("live-faker-token");
     expect(useSonGuessrStore.getState().roomClosedAt).toBeNull();
     expect(useSonGuessrStore.getState().toast).toEqual({
-      text: "会话已失效，请重新加入",
+      text: "原座位已失效，可能掉线过久或房间已重建",
       type: "error",
     });
+  });
+
+  it("刷新时房间已不在：标记关闭让页面退回大厅，不留给页面按房号重建", async () => {
+    saveSonGuessrSessionToken("2346", "orphan-song-token");
+    wsMock.send.mockRejectedValue({ code: "ROOM_NOT_FOUND" });
+
+    await expect(useSonGuessrStore.getState().reconnectRoom("2346")).resolves.toBe(false);
+    expect(getSonGuessrSessionToken("2346")).toBeNull();
+    expect(useSonGuessrStore.getState().roomClosedAt).not.toBeNull();
   });
 
   it("临时重连失败保留猜歌凭据但拒绝调用方，不伪装成功", async () => {

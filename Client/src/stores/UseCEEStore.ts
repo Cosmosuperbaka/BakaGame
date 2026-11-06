@@ -25,6 +25,7 @@ import {
   antiCheatMessage,
   isLoginRequiredCode,
 } from "@/lib/AntiCheatCopy";
+import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { playSound } from "@/lib/SoundEffects";
@@ -294,8 +295,10 @@ export const useCEEStore = create<CEEStore>((set, get) => {
           .catch((error: unknown) => {
             if (!isPermanentCEEError(error)) throw error;
             removeCEESession(roomId);
-            get().resetRoom();
-            get().reportError(error);
+            get().resetRoom(roomIsGone(error));
+            // 原版房的会话过期码不在共享表里，文案仍用服务端给的那句。
+            if (isPermanentRoomError(error)) get().showToast(permanentRoomErrorMessage(error));
+            else get().reportError(error);
             return false;
           });
         const entry = { roomId, token, owners, promise };

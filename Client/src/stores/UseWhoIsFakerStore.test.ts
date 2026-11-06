@@ -195,7 +195,22 @@ describe("game store integration", () => {
     expect(useWhoIsFakerStore.getState().roomId).toBeNull();
     expect(useWhoIsFakerStore.getState().roomClosedAt).toBeNull();
     expect(useWhoIsFakerStore.getState().toasts).toContainEqual(
-      expect.objectContaining({ text: "会话已失效，请重新加入", type: "error" })
+      expect.objectContaining({
+        text: "原座位已失效，可能掉线过久或房间已重建",
+        type: "error",
+      })
+    );
+  });
+
+  it("刷新时房间已不在：标记关闭让页面退回大厅，不留给页面按房号重建", async () => {
+    saveSessionToken("2347", "orphan-token");
+    wsMock.send.mockRejectedValue({ code: "ROOM_NOT_FOUND" });
+
+    await expect(useWhoIsFakerStore.getState().reconnectRoom("2347")).resolves.toBe(false);
+    expect(getSessionToken("2347")).toBeNull();
+    expect(useWhoIsFakerStore.getState().roomClosedAt).not.toBeNull();
+    expect(useWhoIsFakerStore.getState().toasts).toContainEqual(
+      expect.objectContaining({ text: "房间已解散或不存在", type: "error" })
     );
   });
 
