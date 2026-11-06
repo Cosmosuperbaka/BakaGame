@@ -3,12 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { SongClipPreview } from "@bakagame/shared";
 import { SongClipEditor } from "./SongClipEditor";
-import {
-  clampClipRange,
-  defaultClipRange,
-  formatClipTime,
-  lineSpanRange,
-} from "./SongClipEditing";
+import { clampClipRange, defaultClipRange, formatClipTime, lineSpanRange } from "./SongClipEditing";
 import type { SongClipLyricSheetProps } from "./SongClipLyricSheet";
 
 vi.mock("./SongClipLyricSheet", async () => {
@@ -138,7 +133,7 @@ describe("SongClipEditor", () => {
   it("点两句歌词定出区间，确认时带上同一份起止", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn().mockResolvedValue(undefined);
-    render(<SongClipEditor song={SONG} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<SongClipEditor song={SONG} volume={0.65} onConfirm={onConfirm} onCancel={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: /0:10.0 第一句/ }));
     expect(await screen.findByText("已点一句 0:10.0，再点另一句定起止")).toBeInTheDocument();
@@ -153,7 +148,7 @@ describe("SongClipEditor", () => {
   it("截取轨可以用键盘选到整首，歌词高亮跟着新区间走", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn().mockResolvedValue(undefined);
-    render(<SongClipEditor song={SONG} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<SongClipEditor song={SONG} volume={0.65} onConfirm={onConfirm} onCancel={vi.fn()} />);
 
     const endHandle = screen.getByRole("slider", { name: "片段终点" });
     endHandle.focus();
@@ -176,7 +171,9 @@ describe("SongClipEditor", () => {
 
   it("试听从片段起点开始，到终点停下并回到起点", async () => {
     const user = userEvent.setup();
-    const view = render(<SongClipEditor song={SONG} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const view = render(
+      <SongClipEditor song={SONG} volume={0.65} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
     const audio = stubAudio(view.container);
 
     await user.click(screen.getByRole("button", { name: "试听片段" }));
@@ -196,8 +193,37 @@ describe("SongClipEditor", () => {
     expect(screen.getByRole("button", { name: "试听片段" })).toBeInTheDocument();
   });
 
+  it("试听音量跟随猜歌音量设置，调整时立即生效，片段两端按包络淡入淡出", async () => {
+    const user = userEvent.setup();
+    const view = render(
+      <SongClipEditor song={SONG} volume={0.4} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+    const audio = stubAudio(view.container);
+
+    await user.click(screen.getByRole("button", { name: "试听片段" }));
+    // 从片段起点起播：包络是 0，第一帧不能漏出满音量。
+    expect(audio.audio.volume).toBe(0);
+
+    audio.seek(17_000);
+    fireEvent.timeUpdate(audio.audio);
+    await vi.waitFor(() => expect(audio.audio.volume).toBeCloseTo(0.4, 5));
+    view.rerender(
+      <SongClipEditor song={SONG} volume={0.1} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+    expect(audio.audio.volume).toBeCloseTo(0.1, 5);
+
+    // 距终点半秒：与正式播放同一条包络。
+    audio.seek(24_500);
+    view.rerender(
+      <SongClipEditor song={SONG} volume={0.2} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
+    expect(audio.audio.volume).toBeCloseTo(0.1, 5);
+  });
+
   it("播放位置滑轨可用键盘在片段内微调", () => {
-    const view = render(<SongClipEditor song={SONG} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const view = render(
+      <SongClipEditor song={SONG} volume={0.65} onConfirm={vi.fn()} onCancel={vi.fn()} />
+    );
     const audio = stubAudio(view.container);
 
     const seek = screen.getByRole("slider", { name: "播放位置" });
@@ -214,7 +240,7 @@ describe("SongClipEditor", () => {
   it("出题失败的提示留在配置页，可以改完片段再试", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn().mockRejectedValue({ message: "上游取不到音频" });
-    render(<SongClipEditor song={SONG} onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<SongClipEditor song={SONG} volume={0.65} onConfirm={onConfirm} onCancel={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("上游取不到音频");

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
+import { clipVolume } from "@/lib/ClipFade";
 import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
 import { notifyPreferencesChanged, PREFERENCES_APPLIED, SONG_VOLUME_KEY } from "@/lib/Storage";
 
@@ -109,35 +110,20 @@ export function useAudioClipPlayer({
     const startSeconds = currentClipStartTime / 1_000;
     const endSeconds = currentClipEndTime !== undefined ? currentClipEndTime / 1_000 : undefined;
 
-    const computeFadeFactor = (currentTime: number): number => {
-      if (endSeconds === undefined) return 1;
-      const clipDuration = Math.max(0.1, endSeconds - startSeconds);
-      const fadeDuration = Math.min(1.0, clipDuration / 2);
-
-      const elapsed = currentTime - startSeconds;
-      const remaining = endSeconds - currentTime;
-
-      if (elapsed <= 0 || remaining <= 0) return 0;
-
-      const fadeIn = Math.max(0, Math.min(1, elapsed / fadeDuration));
-      const fadeOut = Math.max(0, Math.min(1, remaining / fadeDuration));
-
-      return Math.min(fadeIn, fadeOut);
-    };
+    const volumeAt = (currentTime: number) =>
+      clipVolume(volumeRef.current, currentTime, startSeconds, endSeconds);
 
     let fadeRafId: number | null = null;
     const updateAudioFade = () => {
       if (!audio.paused && !audio.ended) {
-        const factor = computeFadeFactor(audio.currentTime);
-        audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
+        audio.volume = volumeAt(audio.currentTime);
         fadeRafId = requestAnimationFrame(updateAudioFade);
       }
     };
 
     const startFadeLoop = () => {
       if (fadeRafId !== null) cancelAnimationFrame(fadeRafId);
-      const factor = computeFadeFactor(audio.currentTime);
-      audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
+      audio.volume = volumeAt(audio.currentTime);
       fadeRafId = requestAnimationFrame(updateAudioFade);
     };
 
@@ -151,7 +137,7 @@ export function useAudioClipPlayer({
 
     const moveToStart = () => {
       if (Math.abs(audio.currentTime - startSeconds) > 0.15) audio.currentTime = startSeconds;
-      audio.volume = Math.max(0, Math.min(1, volumeRef.current * computeFadeFactor(startSeconds)));
+      audio.volume = volumeAt(startSeconds);
     };
     const stopAtEnd = () => {
       if (endSeconds !== undefined && audio.currentTime >= endSeconds) {
@@ -160,8 +146,7 @@ export function useAudioClipPlayer({
         audio.currentTime = startSeconds;
         setAudioPlaybackState("completed");
       } else if (endSeconds !== undefined) {
-        const factor = computeFadeFactor(audio.currentTime);
-        audio.volume = Math.max(0, Math.min(1, volumeRef.current * factor));
+        audio.volume = volumeAt(audio.currentTime);
       }
     };
     const keepPlaybackInClip = () => {

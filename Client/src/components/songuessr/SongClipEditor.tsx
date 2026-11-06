@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Music2, Pause, Play, TriangleAlert } from "lucide-react";
 import type { SongClipPreview, SongClipRange } from "@bakagame/shared";
 import { SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
+import { useClipPreviewAudio } from "@/hooks/UseClipPreviewAudio";
 import { countdownTickMs, readoutSwap, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import {
@@ -332,20 +333,27 @@ function SongClipRail({
 
 export interface SongClipEditorProps {
   song: SongClipPreview;
+  /** 猜歌播放音量，与正式播放同一份设置。 */
+  volume: number;
   onConfirm: (clip: SongClipRange) => Promise<void>;
   onCancel: () => void;
 }
 
-export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProps) {
+export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEditorProps) {
   const domain = useMemo(() => resolveClipDuration(song), [song]);
   const [range, setRange] = useState<[number, number]>(() => defaultClipRange(song));
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTimeMs, setCurrentTimeMs] = useState(range[0]);
-  const [audioFailed, setAudioFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const {
+    audioRef,
+    playing,
+    currentTimeMs,
+    failed: audioFailed,
+    seek,
+    togglePlay,
+    audioEvents,
+  } = useClipPreviewAudio({ range, volume });
   const [startTime, endTime] = range;
   const selectedLength = endTime - startTime;
   const selectionValid =
@@ -361,32 +369,8 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
       ? "纯音乐：拖动上方截取条选择片段"
       : "点两句歌词定起止，拖动截取条可微调";
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const ms = audio.currentTime * 1_000;
-    if (ms < startTime || ms >= endTime) {
-      audio.currentTime = startTime / 1_000;
-      setCurrentTimeMs(startTime);
-    }
-  }, [endTime, startTime]);
-
-  useEffect(
-    () => () => {
-      audioRef.current?.pause();
-    },
-    []
-  );
-
-  const seekDirect = (ms: number) => {
-    const target = Math.round(ms);
-    const audio = audioRef.current;
-    if (audio) audio.currentTime = target / 1_000;
-    setCurrentTimeMs((previous) => (previous === target ? previous : target));
-  };
-
   const movePlayhead = (ms: number) => {
-    seekDirect(clamp(ms, startTime, endTime));
+    seek(clamp(ms, startTime, endTime));
   };
 
   const updateRange = (nextStart: number, nextEnd: number) => {
@@ -408,7 +392,7 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
       const next = clampClipRange(start, start + width, domain);
       setRange(next);
       setAnchorIndex(index);
-      seekDirect(next[0]);
+      seek(next[0]);
       return;
     }
     const anchor = song.lyrics[anchorIndex] ?? line;
@@ -418,48 +402,8 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
     setRange(next);
     setAnchorIndex(null);
     if (currentTimeMs < next[0] || currentTimeMs >= next[1]) {
-      seekDirect(next[0]);
+      seek(next[0]);
     }
-  };
-
-  const togglePlay = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (!audio.paused) {
-      audio.pause();
-      setPlaying(false);
-      return;
-    }
-    const ms = audio.currentTime * 1_000;
-    if (ms < startTime || ms >= endTime) {
-      audio.currentTime = startTime / 1_000;
-      setCurrentTimeMs(startTime);
-    }
-    try {
-      await audio.play();
-      setPlaying(true);
-    } catch {
-      setPlaying(false);
-    }
-  };
-
-  const handleTimeUpdate = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const ms = audio.currentTime * 1_000;
-    if (ms < startTime - 250) {
-      audio.currentTime = startTime / 1_000;
-      setCurrentTimeMs(startTime);
-      return;
-    }
-    if (ms >= endTime) {
-      audio.pause();
-      audio.currentTime = startTime / 1_000;
-      setCurrentTimeMs(startTime);
-      setPlaying(false);
-      return;
-    }
-    setCurrentTimeMs(ms);
   };
 
   const confirm = async () => {
@@ -490,16 +434,7 @@ export function SongClipEditor({ song, onConfirm, onCancel }: SongClipEditorProp
         src={song.audioUrl}
         preload="auto"
         className="hidden"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={() => {
-          setPlaying(false);
-          const audio = audioRef.current;
-          if (audio) audio.currentTime = startTime / 1_000;
-          setCurrentTimeMs(startTime);
-        }}
-        onError={() => setAudioFailed(true)}
+        {...audioEvents}
       />
 
       <div className="flex items-start gap-3 px-4 pb-1 pt-4 sm:gap-4 sm:px-5 sm:pt-5">

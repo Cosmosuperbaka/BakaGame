@@ -94,6 +94,7 @@ const meta = {
   component: SongClipEditor,
   args: {
     song: SONG,
+    volume: 0.65,
     onConfirm: async () => {},
     onCancel: () => {},
   },

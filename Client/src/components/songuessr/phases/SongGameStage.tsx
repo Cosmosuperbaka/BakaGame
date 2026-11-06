@@ -706,7 +706,12 @@ function ChoosingSubmitterPhase({
  *
  * 猜番仍是一步提交：番剧与关联曲由服务端匹配，没有「选歌词片段」这一层。
  */
-function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: SongGameAreaProps) {
+function SubmittingSongPhase({
+  snapshot,
+  privateState,
+  volume,
+  onSelectSearchSong,
+}: SongGameAreaProps) {
   const anime = snapshot.settings.questionType === "anime";
   const sendCommand = useSonGuessrStore((state) => state.sendCommand);
   const [preview, setPreview] = useState<SongClipPreview | null>(null);
@@ -763,6 +768,7 @@ function SubmittingSongPhase({ snapshot, privateState, onSelectSearchSong }: Son
               >
                 <SongClipEditor
                   song={preview}
+                  volume={volume}
                   onConfirm={(clip) =>
                     onSelectSearchSong(preview.id, "submit", undefined, clip, {
                       sources: preview.sources,
