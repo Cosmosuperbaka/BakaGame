@@ -23,6 +23,8 @@ import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
  * 不需要额外的锁或队列（见 BangumiDataWorker 的注释）。
  */
 
+import { infoboxToWikitext, type ApiInfobox } from "./SubjectDiscovery";
+
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const HOUR_MS = 60 * 60 * 1_000;
 /** 失败退避上限：连续失败也别把条目永久钉死，一周后总得再试一次。 */
@@ -414,7 +416,7 @@ export class SubjectUpdater {
       .run(
         String(subject.name ?? ""),
         String(subject.name_cn ?? ""),
-        String(subject.infobox ?? ""),
+        infoboxToWikitext(subject.infobox as ApiInfobox | undefined),
         String(subject.summary ?? ""),
         String(subject.date ?? ""),
         JSON.stringify(tagNames),
