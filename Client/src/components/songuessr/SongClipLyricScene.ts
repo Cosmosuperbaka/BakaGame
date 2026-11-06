@@ -10,8 +10,35 @@ interface SelectorRow {
   line: SongLyricLine;
 }
 
+/** 选段相对可视区的位置；有一部分在视野内时为 null。 */
+export type SelectionPlacement = "above" | "below" | null;
+
+/** 选区离可视区边缘多远才算看不见，避开上下的淡出边。 */
+const PLACEMENT_MARGIN_PX = 12;
+
+/**
+ * 内核把滚轮与触摸处理器挂在播放器根节点上，并在里面 `preventDefault`。选取页的行要接管
+ * 指针，事件冒泡到根节点就把外层列表的原生滚动拦掉了，所以在内核层关掉它自己的滚动。
+ */
+class SelectorLyricPlayer extends LyricPlayer {
+  constructor() {
+    super();
+    this.scrollState.allowScroll = false;
+  }
+}
+
+const setFlag = (element: HTMLElement, name: string, on: boolean) => {
+  if (on) element.dataset[name] = "true";
+  else delete element.dataset[name];
+};
+
+const rangeMark = (index: number, first?: number, last?: number) => {
+  if (index === first) return index === last ? "起止" : "起";
+  return index === last ? "止" : "";
+};
+
 export class SongClipLyricScene {
-  private readonly player = new LyricPlayer();
+  private readonly player = new SelectorLyricPlayer();
   private readonly element = this.player.getElement();
   private readonly observer: ResizeObserver;
   private readonly rows = new Map<number, SelectorRow>();
@@ -26,11 +53,17 @@ export class SongClipLyricScene {
   private frame = 0;
   private lastFrame: number | null = null;
   private readonly host: HTMLElement;
-  /** 首次排版完成时触发一次；用于把初始选段滚进可见范围，不参与播放中的任何滚动。 */
-  onReady?: () => void;
+  private readonly scroller: HTMLElement | null;
+  /** 列表唯一的 Tab 停靠行；玩家没聚焦过时跟着选段走。 */
+  private rovingIndex: number | null = null;
+  private placement: SelectionPlacement = null;
+  /** 选段滚出或滚回可视区时通知，用来显示「回到选段」。 */
+  onPlacement?: (placement: SelectionPlacement) => void;
 
   constructor(host: HTMLElement) {
     this.host = host;
+    this.scroller = host.parentElement;
+    this.scroller?.addEventListener("scroll", this.syncPlacement, { passive: true });
     this.element.classList.add("baka-lyric-player", "baka-clip-lyric-sheet");
     this.element.style.height = "auto";
     this.host.append(this.element);
@@ -53,6 +86,7 @@ export class SongClipLyricScene {
     if (equal(this.lines, lines)) return;
     this.cancelTick();
     this.rows.clear();
+    this.rovingIndex = null;
     this.ready = false;
     this.fontsReady = false;
     delete this.host.dataset.ready;
@@ -91,6 +125,71 @@ export class SongClipLyricScene {
     this.applySelection();
   }
 
+  setRovingRow(index: number) {
+    this.rovingIndex = index;
+    this.applyRoving();
+  }
+
+  focusRow(move: "next" | "previous" | "first" | "last", from: number) {
+    const order = [...this.rows.keys()];
+    const position = order.indexOf(from);
+    const target =
+      move === "first"
+        ? 0
+        : move === "last"
+          ? order.length - 1
+          : position + (move === "next" ? 1 : -1);
+    const index = order[target];
+    if (index !== undefined) this.rows.get(index)?.element.focus();
+  }
+
+  /** 玩家按下「回到选段」或首次排版时调用；播放与改选段都不会主动滚动列表。 */
+  revealSelection(smooth = true) {
+    const scroller = this.scroller;
+    const first = this.selectedRows()[0];
+    if (!scroller || !first) return;
+    const offset =
+      first.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top -
+      PLACEMENT_MARGIN_PX;
+    const motionless = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    scroller.scrollTo({
+      top: Math.max(0, scroller.scrollTop + offset),
+      behavior: smooth && !motionless ? "smooth" : "auto",
+    });
+    if (smooth) first.focus({ preventScroll: true });
+  }
+
+  private selectedRows() {
+    return [...this.rows.values()]
+      .map((row) => row.element)
+      .filter((element) => element.dataset.selected);
+  }
+
+  private syncPlacement = () => {
+    const placement = this.readPlacement();
+    if (placement === this.placement) return;
+    this.placement = placement;
+    this.onPlacement?.(placement);
+  };
+
+  private readPlacement(): SelectionPlacement {
+    const scroller = this.scroller;
+    const rows = this.selectedRows();
+    if (!this.ready || !scroller || scroller.clientHeight === 0 || rows.length === 0) return null;
+    const view = scroller.getBoundingClientRect();
+    if (rows[0]!.getBoundingClientRect().top > view.bottom - PLACEMENT_MARGIN_PX) return "below";
+    if (rows.at(-1)!.getBoundingClientRect().bottom < view.top + PLACEMENT_MARGIN_PX)
+      return "above";
+    return null;
+  }
+
+  private applyRoving() {
+    const fallback = [...this.rows].find(([, row]) => row.element.dataset.selected)?.[0];
+    const current = this.rovingIndex ?? fallback ?? this.rows.keys().next().value;
+    for (const [index, { element }] of this.rows) element.tabIndex = index === current ? 0 : -1;
+  }
+
   private mediaTime() {
     return Math.max(0, (this.audio?.currentTime ?? 0) * 1_000);
   }
@@ -112,7 +211,7 @@ export class SongClipLyricScene {
     element.dataset.lineIndex = String(index);
     element.dataset.wordTimed = line.words?.length ? "true" : "false";
     element.dataset.time = time;
-    element.tabIndex = 0;
+    element.tabIndex = -1;
     element.setAttribute("role", "button");
     element.setAttribute("aria-label", `${time} ${line.text}`);
     this.rows.set(index, { element, line });
@@ -120,13 +219,24 @@ export class SongClipLyricScene {
 
   private applySelection() {
     const [startTime, endTime] = this.range;
-    for (const [index, { element, line }] of this.rows) {
-      const selected = isLyricLineInClip(line, startTime, endTime);
-      if (selected) element.dataset.selected = "true";
-      else delete element.dataset.selected;
-      if (index === this.anchorIndex) element.dataset.anchor = "true";
-      else delete element.dataset.anchor;
+    const inClip = [...this.rows.keys()].filter((index) =>
+      isLyricLineInClip(this.rows.get(index)!.line, startTime, endTime)
+    );
+    const first = inClip[0];
+    const last = inClip.at(-1);
+    for (const [index, { element }] of this.rows) {
+      const selected = inClip.includes(index);
+      element.setAttribute("aria-pressed", String(selected));
+      setFlag(element, "selected", selected);
+      setFlag(element, "anchor", index === this.anchorIndex);
+      setFlag(element, "first", index === first);
+      setFlag(element, "last", index === last);
+      const mark = index === this.anchorIndex ? "已点" : rangeMark(index, first, last);
+      if (mark) element.dataset.mark = mark;
+      else delete element.dataset.mark;
     }
+    this.applyRoving();
+    this.syncPlacement();
   }
 
   private syncPlayback = () => {
@@ -177,7 +287,8 @@ export class SongClipLyricScene {
     this.player.update(0);
     this.ready = true;
     this.host.dataset.ready = "true";
-    this.onReady?.();
+    this.revealSelection(false);
+    this.syncPlacement();
   };
 
   private scheduleFrame() {
@@ -205,6 +316,7 @@ export class SongClipLyricScene {
     this.cancelTick();
     this.listenAudio(false);
     this.observer.disconnect();
+    this.scroller?.removeEventListener("scroll", this.syncPlacement);
     document.fonts?.removeEventListener("loadingdone", this.measure);
     this.rows.clear();
     this.player.dispose();

@@ -39,6 +39,15 @@ export function clampClipRange(start: number, end: number, domain: number): [num
   return [nextStart, nextEnd];
 }
 
+/** 上游给了完整副歌区间时，换算成可提交的片段；缺终点或区间不成立时返回 null。 */
+export function chorusRange(song: SongClipPreview, domain: number): [number, number] | null {
+  const chorus = song.chorus;
+  if (!chorus || chorus.endTime === undefined) return null;
+  const { startTime, endTime } = chorus;
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return null;
+  return clampClipRange(startTime, endTime, domain);
+}
+
 /**
  * 点选歌词得到的音频区间：与自动切片同一套留白。
  *

@@ -28,6 +28,7 @@ vi.mock("@applemusic-like-lyrics/core", () => ({
     lyricGroupSize = new WeakMap();
     size = [0, 0];
     element = document.createElement("div");
+    scrollState = { allowScroll: true };
 
     constructor() {
       players.push(this);
@@ -160,6 +161,75 @@ describe("SongClipLyricSheet", () => {
     await user.keyboard(" ");
     expect(onPick).toHaveBeenLastCalledWith(0);
     expect(onPick).toHaveBeenCalledTimes(3);
+  });
+
+  it("关掉内核自己的滚动，歌词行才能把滚轮和触摸交给列表", () => {
+    render(
+      <SongClipLyricSheet
+        lines={lines}
+        range={[10_000, 25_000]}
+        anchorIndex={null}
+        onPick={vi.fn()}
+      />
+    );
+    expect(
+      (players.at(-1) as unknown as { scrollState: { allowScroll: boolean } }).scrollState
+    ).toEqual({ allowScroll: false });
+  });
+
+  it("起止行带文字标记，已点的行优先；列表只留一个 Tab 停靠点", () => {
+    const { rerender } = render(
+      <SongClipLyricSheet
+        lines={lines}
+        range={[10_000, 25_000]}
+        anchorIndex={null}
+        onPick={vi.fn()}
+      />
+    );
+    const first = screen.getByRole("button", { name: "0:10.0 逐字句" });
+    const second = screen.getByRole("button", { name: "0:20.0 普通句" });
+    const third = screen.getByRole("button", { name: "0:30.0 未选句" });
+    expect(first).toHaveAttribute("data-mark", "起");
+    expect(second).toHaveAttribute("data-mark", "止");
+    expect(third).not.toHaveAttribute("data-mark");
+    expect(first).toHaveAttribute("aria-pressed", "true");
+    expect(third).toHaveAttribute("aria-pressed", "false");
+    expect([first.tabIndex, second.tabIndex, third.tabIndex]).toEqual([0, -1, -1]);
+
+    rerender(
+      <SongClipLyricSheet lines={lines} range={[10_000, 25_000]} anchorIndex={1} onPick={vi.fn()} />
+    );
+    expect(second).toHaveAttribute("data-mark", "已点");
+  });
+
+  it("方向键在行间移动，Esc 取消已点的一句", async () => {
+    const user = userEvent.setup();
+    const onClearAnchor = vi.fn();
+    render(
+      <SongClipLyricSheet
+        lines={lines}
+        range={[10_000, 25_000]}
+        anchorIndex={0}
+        onPick={vi.fn()}
+        onClearAnchor={onClearAnchor}
+      />
+    );
+    const first = screen.getByRole("button", { name: "0:10.0 逐字句" });
+    const second = screen.getByRole("button", { name: "0:20.0 普通句" });
+    const third = screen.getByRole("button", { name: "0:30.0 未选句" });
+    first.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(second).toHaveFocus();
+    expect(second.tabIndex).toBe(0);
+    expect(first.tabIndex).toBe(-1);
+    await user.keyboard("{End}");
+    expect(third).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(first).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(first).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(onClearAnchor).toHaveBeenCalledTimes(1);
   });
 
   it("内容快照不重建节点，逐字内容变化仍更新", () => {

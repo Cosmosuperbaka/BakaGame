@@ -815,8 +815,14 @@ img {
 }
 
 /* 截取歌词页：AMLL 仍负责逐字遮罩与测量，行盒固定在文档流里；
-   播放只推进当前行的遮罩，不滚动、不位移、不缩放。 */
+   播放只推进当前行的遮罩，不滚动、不位移、不缩放。
+   版式是一张带时间栏的台账：左侧常显时间，选段是一整块连续的底色与竖线。 */
 .baka-clip-lyric-scroller {
+  height: clamp(15rem, 46dvh, 26rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
   /* 上下轻淡出，提示还有歌词可滚，同时不把选点后的首行切成一刀。 */
   mask-image: linear-gradient(
     to bottom,
@@ -825,6 +831,10 @@ img {
     black calc(100% - 0.75rem),
     transparent 100%
   );
+}
+
+.baka-clip-lyric-host {
+  padding-block: 0.375rem;
 }
 
 .baka-clip-lyric-sheet.amll-lyric-player {
@@ -841,13 +851,14 @@ img {
 .baka-clip-lyric-sheet [class*="lyricLineWrapper"] {
   position: relative !important;
   inset: auto !important;
-  gap: 0.125rem;
+  align-items: stretch !important;
+  gap: 0;
   padding: 0;
   transform: none !important;
   opacity: 1 !important;
   filter: none !important;
   will-change: auto;
-  text-align: center;
+  text-align: left;
 }
 
 .baka-clip-lyric-sheet [class*="lyricLineWrapper"]:hover,
@@ -865,16 +876,16 @@ img {
 }
 
 .baka-clip-lyric-sheet [class*="lyricMainLine"] {
-  justify-content: center;
-  text-align: center;
+  justify-content: flex-start;
+  text-align: left;
   color: inherit;
 }
 
 .baka-clip-lyric-sheet [class*="lyricSubLine"] {
-  margin-top: 0.15rem;
+  margin-top: 0.125rem;
   color: inherit;
-  font-family: var(--font-serif);
-  text-align: center;
+  font-family: var(--font-kai);
+  text-align: left;
 }
 
 .baka-clip-lyric-sheet [class*="lyricSubLine"]:empty,
@@ -899,17 +910,18 @@ img {
 .baka-lyric-player .baka-clip-lyric-line {
   position: relative;
   margin: 0;
-  padding: 0.55rem 2.75rem;
-  border-radius: var(--radius-md);
+  padding: 0.4375rem 3rem 0.4375rem 4.25rem;
+  border-radius: var(--radius-sm);
   pointer-events: auto !important;
   cursor: pointer;
+  /* 竖向拖动交给列表滚动，横向不留给浏览器手势。 */
+  touch-action: pan-y;
   color: var(--color-muted-foreground);
   line-height: 1.55;
-  text-align: center !important;
+  text-align: left !important;
   transition:
     background-color var(--motion-duration-quick) var(--motion-ease-out),
-    color var(--motion-duration-quick) var(--motion-ease-out),
-    box-shadow var(--motion-duration-quick) var(--motion-ease-out);
+    color var(--motion-duration-quick) var(--motion-ease-out);
 }
 
 .baka-lyric-player .baka-clip-lyric-line:hover {
@@ -917,64 +929,81 @@ img {
   color: var(--color-foreground);
 }
 
+.baka-lyric-player .baka-clip-lyric-line:active {
+  background-color: var(--color-accent);
+}
+
 .baka-lyric-player .baka-clip-lyric-line:focus-visible {
   outline: 2px solid var(--color-ring);
   outline-offset: -2px;
 }
 
+/* 选段读作一整块：相邻行之间不留缝，竖线贯通，只有首尾两端收圆角。 */
 .baka-lyric-player .baka-clip-lyric-line[data-selected="true"] {
   border-radius: 0;
-  background-color: color-mix(in oklab, var(--color-primary) 7%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--color-primary) 50%, transparent);
+  background-color: color-mix(in oklab, var(--color-primary) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-primary);
   color: var(--color-foreground);
 }
 
 .baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:hover {
-  background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
+  background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-selected="true"]:active {
+  background-color: color-mix(in oklab, var(--color-primary) 16%, transparent);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-first="true"] {
+  border-top-right-radius: var(--radius-sm);
+}
+
+.baka-lyric-player .baka-clip-lyric-line[data-last="true"] {
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .baka-lyric-player .baka-clip-lyric-line[data-active="true"] {
   color: var(--color-primary);
 }
 
+/* 时间栏：常显，精确选行时不用先悬停。 */
 .baka-clip-lyric-line::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 0.95rem;
-  width: 0.375rem;
-  height: 0.375rem;
-  border-radius: 9999px;
-  background: transparent;
-  transform: translateY(-50%);
-}
-
-.baka-clip-lyric-line[data-anchor="true"]::before {
-  background: var(--color-primary);
-  box-shadow: 0 0 0 0.2rem color-mix(in oklab, var(--color-primary) 14%, transparent);
-}
-
-.baka-clip-lyric-line::after {
   content: attr(data-time);
   position: absolute;
-  top: 0.35rem;
-  right: 0.6rem;
-  padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
-  background: color-mix(in oklab, var(--color-panel) 92%, transparent);
+  top: 0.6875rem;
+  left: 0.75rem;
   color: var(--color-muted-foreground);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
   line-height: 1.4;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity var(--motion-duration-quick) var(--motion-ease-out);
 }
 
-.baka-clip-lyric-line:hover::after,
-.baka-clip-lyric-line:focus-visible::after,
+.baka-clip-lyric-line[data-active="true"]::before,
+.baka-clip-lyric-line[data-anchor="true"]::before {
+  color: var(--color-primary);
+}
+
+/* 起止与已点的标记：颜色之外再给一个字。 */
+.baka-clip-lyric-line[data-mark]::after {
+  content: attr(data-mark);
+  position: absolute;
+  top: 0.5625rem;
+  right: 0.5rem;
+  padding: 0 0.25rem;
+  border: 1px solid color-mix(in oklab, var(--color-primary) 45%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
+  font-family: var(--font-serif);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .baka-clip-lyric-line[data-anchor="true"]::after {
-  opacity: 1;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
 }
 
 .baka-clip-lyric-line[class*="lyricBgLine"] {
@@ -998,15 +1027,15 @@ img {
 
 @media (width <= 640px) {
   .baka-lyric-player .baka-clip-lyric-line {
-    padding-inline: 1.75rem;
+    padding-inline: 3.25rem 2rem;
   }
 
   .baka-clip-lyric-line::before {
-    left: 0.65rem;
+    left: 0.5rem;
   }
 
-  .baka-clip-lyric-line::after {
-    right: 0.4rem;
+  .baka-clip-lyric-line[data-mark]::after {
+    right: 0.25rem;
   }
 }
 

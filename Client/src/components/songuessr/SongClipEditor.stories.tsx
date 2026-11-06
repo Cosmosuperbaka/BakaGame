@@ -150,8 +150,60 @@ export const Instrumental: Story = {
   },
 };
 
+const LONG_SONG: SongClipPreview = {
+  ...SONG,
+  title: "フェンス越しの長い夜",
+  durationMs: 300_000,
+  chorus: { startTime: 96_000, endTime: 136_000 },
+  suggestedClip: { startTime: 95_000, endTime: 116_000 },
+  lyrics: Array.from({ length: 48 }, (_, index) => ({
+    time: 12_000 + index * 5_000,
+    endTime: 16_500 + index * 5_000,
+    text: `${["沈むように溶けてゆくように", "二人だけの空が広がる夜に", "「さよなら」だけだった", "その一言で全てが分かった"][index % 4]}`,
+    translatedLyric: index % 2 === 0 ? "仿佛渐渐溶化，沉入夜色" : undefined,
+    words:
+      index % 3 === 0
+        ? [
+            {
+              startTime: 12_000 + index * 5_000,
+              endTime: 14_000 + index * 5_000,
+              word: "沈むように",
+            },
+            {
+              startTime: 14_000 + index * 5_000,
+              endTime: 16_500 + index * 5_000,
+              word: "溶けてゆくように",
+            },
+          ]
+        : undefined,
+  })),
+};
+
+export const LongLyrics: Story = {
+  name: "长歌词 · 列表内滚动",
+  args: { song: LONG_SONG },
+};
+
+export const ShortLyrics: Story = {
+  name: "短歌词 · 不足一屏",
+  args: {
+    song: {
+      ...SONG,
+      lyrics: SONG.lyrics.slice(0, 3),
+      suggestedClip: { startTime: 11_000, endTime: 19_000 },
+    },
+  },
+};
+
 export const Mobile: Story = {
   name: "移动端 · 逐字与回退",
   tags: ["mobile"],
   globals: { viewport: { value: "mobile", isRotated: false } },
+};
+
+export const MobileLongLyrics: Story = {
+  name: "移动端 · 长歌词",
+  tags: ["mobile"],
+  globals: { viewport: { value: "mobile", isRotated: false } },
+  args: { song: LONG_SONG },
 };

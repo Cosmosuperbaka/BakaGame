@@ -1,20 +1,27 @@
 import {
   useLayoutEffect,
   useRef,
+  useState,
+  type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
 } from "react";
-import { Music2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ArrowDown, ArrowUp, Music2 } from "lucide-react";
 import type { SongLyricLine } from "@bakagame/shared";
+import { Button } from "@/components/ui/Button";
+import { readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { SongClipLyricScene } from "./SongClipLyricScene";
+import { SongClipLyricScene, type SelectionPlacement } from "./SongClipLyricScene";
 
 export interface SongClipLyricSheetProps {
   lines: SongLyricLine[];
   range: readonly [number, number];
   anchorIndex: number | null;
   onPick: (index: number) => void;
+  /** Esc 取消已点的那一句。 */
+  onClearAnchor?: () => void;
   audioRef?: RefObject<HTMLAudioElement | null>;
   playing?: boolean;
   className?: string;
@@ -26,23 +33,31 @@ function eventLine(target: EventTarget | null, host: HTMLElement) {
   return line && host.contains(line) ? line : null;
 }
 
+const ROW_KEYS = {
+  ArrowDown: "next",
+  ArrowUp: "previous",
+  Home: "first",
+  End: "last",
+} as const;
+
 /**
  * 静止的逐字歌词选取页：AMLL 只负责逐字遮罩与排版测量，行盒留在文档流里。
  * 普通行按原始 `words` 判定，不借用转换层的整行兜底词。
+ * 整张列表只占一个 Tab 停靠点，方向键在行间移动。
  */
 export function SongClipLyricSheet({
   lines,
   range,
   anchorIndex,
   onPick,
+  onClearAnchor,
   audioRef,
   playing = false,
   className,
 }: SongClipLyricSheetProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const scrollerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<SongClipLyricScene | null>(null);
-  const positionedRef = useRef(false);
+  const [placement, setPlacement] = useState<SelectionPlacement>(null);
   const empty = lines.length === 0;
 
   useLayoutEffect(() => {
@@ -50,18 +65,9 @@ export function SongClipLyricSheet({
     if (!host) return;
     const scene = new SongClipLyricScene(host);
     sceneRef.current = scene;
-    scene.onReady = () => {
-      if (positionedRef.current) return;
-      positionedRef.current = true;
-      const scroller = scrollerRef.current;
-      const firstSelected = host.querySelector<HTMLElement>('[data-selected="true"]');
-      if (!scroller || !firstSelected) return;
-      const offset =
-        firstSelected.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-      scroller.scrollTop = Math.max(0, scroller.scrollTop + offset - 12);
-    };
+    scene.onPlacement = setPlacement;
     return () => {
-      scene.onReady = undefined;
+      scene.onPlacement = undefined;
       scene.dispose();
       sceneRef.current = null;
     };
@@ -87,12 +93,27 @@ export function SongClipLyricSheet({
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
     pick(eventLine(event.target, event.currentTarget));
   };
+  const onFocus = (event: FocusEvent<HTMLDivElement>) => {
+    const line = eventLine(event.target, event.currentTarget);
+    if (line) sceneRef.current?.setRovingRow(Number(line.dataset.lineIndex));
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
     const line = eventLine(event.target, event.currentTarget);
     if (!line) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      pick(line);
+      return;
+    }
+    if (event.key === "Escape" && anchorIndex !== null) {
+      event.stopPropagation();
+      onClearAnchor?.();
+      return;
+    }
+    const move = ROW_KEYS[event.key as keyof typeof ROW_KEYS];
+    if (!move) return;
     event.preventDefault();
-    pick(line);
+    sceneRef.current?.focusRow(move, Number(line.dataset.lineIndex));
   };
 
   return (
@@ -109,22 +130,51 @@ export function SongClipLyricSheet({
           <p className="text-2xs text-muted-foreground">拖动上方截取条，或用键盘微调起止时间。</p>
         </div>
       ) : (
-        <div
-          ref={scrollerRef}
-          className="baka-clip-lyric-scroller h-72 overflow-y-auto overscroll-contain sm:h-80"
-          data-testid="song-clip-lyric-scroll"
-        >
-          <div
-            ref={hostRef}
-            role="group"
-            aria-label="歌词选取"
-            className="baka-lyric-host baka-clip-lyric-host px-1 py-1 sm:px-2"
-            data-testid="song-clip-lyric-sheet"
-            onClick={onClick}
-            onKeyDown={onKeyDown}
-          />
-          <div aria-hidden="true" className="h-3" />
-        </div>
+        <>
+          <div className="baka-clip-lyric-scroller" data-testid="song-clip-lyric-scroll">
+            <div
+              ref={hostRef}
+              role="group"
+              aria-label="歌词选取"
+              className="baka-lyric-host baka-clip-lyric-host"
+              data-testid="song-clip-lyric-sheet"
+              onClick={onClick}
+              onFocus={onFocus}
+              onKeyDown={onKeyDown}
+            />
+            <div aria-hidden="true" className="h-3" />
+          </div>
+          <AnimatePresence initial={false}>
+            {placement ? (
+              <motion.div
+                key="back-to-selection"
+                variants={readoutSwap}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className={cn(
+                  "absolute right-3 z-panel",
+                  placement === "above" ? "top-2" : "bottom-2"
+                )}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => sceneRef.current?.revealSelection()}
+                  data-agent-control="song.clip.reveal"
+                >
+                  {placement === "above" ? (
+                    <ArrowUp aria-hidden="true" />
+                  ) : (
+                    <ArrowDown aria-hidden="true" />
+                  )}
+                  回到选段
+                </Button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </>
       )}
     </div>
   );

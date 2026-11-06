@@ -140,7 +140,9 @@ describe("SongClipEditor", () => {
     await user.click(screen.getByRole("button", { name: /0:20.0 第二句/ }));
 
     expect(await screen.findByText("点两句歌词定起止，拖动截取条可微调")).toBeInTheDocument();
-    expect(screen.getByText(/0:09\.0 – 0:26\.0/)).toBeInTheDocument();
+    expect(screen.getByTestId("song-clip-start")).toHaveTextContent("0:09.0");
+    expect(screen.getByTestId("song-clip-end")).toHaveTextContent("0:26.0");
+    expect(screen.getByTestId("song-clip-summary")).toHaveTextContent("2 句");
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
     expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 9_000, endTime: 26_000 });
   });
@@ -154,8 +156,9 @@ describe("SongClipEditor", () => {
     endHandle.focus();
     fireEvent.keyDown(endHandle, { key: "End" });
 
-    expect(screen.getByText("110.0 秒")).toBeInTheDocument();
-    expect(screen.getByText(/0:10\.0 – 2:00\.0/)).toBeInTheDocument();
+    expect(screen.getByTestId("song-clip-summary")).toHaveTextContent("110.0 秒");
+    expect(screen.getByTestId("song-clip-start")).toHaveTextContent("0:10.0");
+    expect(screen.getByTestId("song-clip-end")).toHaveTextContent("2:00.0");
     expect(endHandle).toHaveAttribute("aria-valuetext", "2:00.0");
     expect(screen.getByRole("button", { name: /1:35\.0 末句/ })).toHaveAttribute(
       "data-selected",
@@ -167,6 +170,61 @@ describe("SongClipEditor", () => {
     );
     await user.click(screen.getByRole("button", { name: "用这段出题" }));
     expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 10_000, endTime: 120_000 });
+  });
+
+  it("起止可按 0.1 秒微调，到最短长度与歌曲两端时对应方向不可再按", async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SongClipEditor
+        song={{ ...SONG, suggestedClip: { startTime: 100, endTime: 5_200 } }}
+        volume={0.65}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "终点提前 0.1 秒" }));
+    expect(screen.getByTestId("song-clip-end")).toHaveTextContent("0:05.1");
+    expect(screen.getByRole("button", { name: "终点提前 0.1 秒" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "起点延后 0.1 秒" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "起点提前 0.1 秒" }));
+    expect(screen.getByTestId("song-clip-start")).toHaveTextContent("0:00.0");
+    expect(screen.getByRole("button", { name: "起点提前 0.1 秒" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "用这段出题" }));
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith({ startTime: 0, endTime: 5_100 });
+  });
+
+  it("可以一键选副歌，改动后能恢复默认区间，取消已点的一句不动选区", async () => {
+    const user = userEvent.setup();
+    render(
+      <SongClipEditor
+        song={{
+          ...SONG,
+          chorus: { startTime: 50_000, endTime: 90_000 },
+          suggestedClip: { startTime: 40_000, endTime: 52_000 },
+        }}
+        volume={0.65}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: "恢复默认" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "选副歌" }));
+    expect(screen.getByTestId("song-clip-start")).toHaveTextContent("0:50.0");
+    expect(screen.getByTestId("song-clip-end")).toHaveTextContent("1:30.0");
+    expect(screen.getByRole("button", { name: "选副歌" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "恢复默认" }));
+    expect(screen.getByTestId("song-clip-start")).toHaveTextContent("0:40.0");
+
+    await user.click(screen.getByRole("button", { name: /0:20.0 第二句/ }));
+    await user.click(screen.getByRole("button", { name: "取消已点的歌词" }));
+    expect(await screen.findByText("点两句歌词定起止，拖动截取条可微调")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消已点的歌词" })).not.toBeInTheDocument();
+  });
+
+  it("没有副歌信息时不出现选副歌", () => {
+    render(<SongClipEditor song={SONG} volume={0.65} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "选副歌" })).not.toBeInTheDocument();
   });
 
   it("试听从片段起点开始，到终点停下并回到起点", async () => {

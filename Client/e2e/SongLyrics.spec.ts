@@ -689,6 +689,44 @@ for (const width of [390, 820, 1280]) {
   });
 }
 
+test.describe("截取选择器滚动", () => {
+  test.use({ hasTouch: true });
+
+  test("鼠标悬在歌词行上滚轮能滚，触屏上下拖也能滚", async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 900 });
+    await renderSelector(page, { lines: longLines, range: [35000, 43000], anchorIndex: null });
+    const scroller = page.getByTestId("song-clip-lyric-scroll");
+    const top = () => scroller.evaluate((element) => element.scrollTop);
+    await page.locator('[data-line-index="2"]').hover();
+    await page.mouse.wheel(0, 400);
+    await expect.poll(top).toBeGreaterThan(300);
+    // 选段滚出视野后给出回去的入口，按下才滚回来。
+    await page.mouse.wheel(0, 1200);
+    const back = page.getByRole("button", { name: "回到选段" });
+    await expect(back).toBeVisible();
+    await back.click();
+    await expect(page.locator('[data-line-index="0"]')).toBeInViewport();
+    await expect(back).toBeHidden();
+    await page.locator('[data-line-index="2"]').hover();
+    await page.mouse.wheel(0, 400);
+    await expect.poll(top).toBeGreaterThan(300);
+
+    const before = await top();
+    const box = (await scroller.boundingBox())!;
+    const cdp = await page.context().newCDPSession(page);
+    const x = box.x + box.width / 2;
+    let y = box.y + box.height - 40;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (let step = 0; step < 14; step++) {
+      y -= 20;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
+      await page.waitForTimeout(16);
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(top).toBeGreaterThan(before + 120);
+  });
+});
+
 test("截取选择器的点击、回车与空格提交原始索引并同步选中状态", async ({ page }) => {
   await renderSelector(page, {
     lines: selectorLines,
