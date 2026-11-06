@@ -523,6 +523,27 @@ describe("手动出题片段", () => {
     });
   });
 
+  test("重启恢复后新玩家不会盖掉恢复回来的同号玩家", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "restore-host");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    const guestState = await joinRoom(service, connection(service, "restore-guest"), "老玩家");
+
+    const restarted = new SonGuessrService({ musicProvider: provider });
+    expect(restarted.restoreSnapshots(service.exportSnapshots(), Date.now())).toBe(1);
+    const newcomer = await joinRoom(restarted, connection(restarted, "restore-new"), "新玩家");
+
+    expect([hostState.playerId, guestState.playerId]).not.toContain(newcomer.playerId);
+    const refreshed = connection(restarted, "restore-refreshed");
+    const resumed = await execute<{ playerId: string }>(restarted, refreshed, {
+      id: "restore-reconnect",
+      type: "song.room.reconnect",
+      payload: { roomId: "1234", sessionToken: guestState.sessionToken },
+    });
+    expect(resumed.playerId).toBe(guestState.playerId);
+  });
+
   test("无效手动片段回退到原来的随机切片", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest } = await enterSubmittingPhase(service);

@@ -309,9 +309,32 @@ export class SonGuessrService implements AdminRoomControl {
       const room = this.adoptSnapshot(raw, now, pausedMs);
       if (!room || this.rooms.has(room.id)) continue;
       this.rooms.set(room.id, room);
+      this.absorbSnapshotIds(room);
       restored += 1;
     }
     return restored;
+  }
+
+  /**
+   * 把 id 计数器抬到快照里已用过的最大序号之上。
+   * 计数器每次启动从 0 重来，不抬高的话重启后第一个新玩家就会拿到 `song_player_1`，
+   * 直接盖掉恢复回来的同号玩家：被盖的人再刷新，凭证就对不上任何座位了。
+   */
+  private absorbSnapshotIds(room: SonGuessrRoomRecord): void {
+    const seen = new Set<object>();
+    const visit = (value: unknown): void => {
+      if (typeof value === "string") {
+        const matched = /^song_(?:chat|guess|player)_([0-9a-z]+)$/.exec(value);
+        if (!matched) return;
+        const index = Number.parseInt(matched[1], 36);
+        if (Number.isFinite(index) && index > this.idCounter) this.idCounter = index;
+        return;
+      }
+      if (!value || typeof value !== "object" || seen.has(value)) return;
+      seen.add(value);
+      for (const item of Object.values(value as Record<string, unknown>)) visit(item);
+    };
+    visit(room);
   }
 
   private adoptSnapshot(
