@@ -382,7 +382,6 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
 
       <McpSettingsSection
         game="faker"
-        roomId={snapshot.roomId}
         allowAgents={snapshot.settings.allowAgents === true}
         isHost={!readOnly}
       />

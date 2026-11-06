@@ -66,6 +66,7 @@ const sanitizeName = (value: unknown): string => {
 
 export class RemoteMcpSessions {
   private readonly sessions = new Map<string, RemoteSession>();
+  private sessionClosed: (id: string) => void = () => undefined;
   private readonly clientWrites = new SlidingWindowRateLimiter({
     windowMs: WRITE_WINDOW_MS,
     maxRequests: CLIENT_WRITE_MAX,
@@ -107,6 +108,11 @@ export class RemoteMcpSessions {
     return session;
   }
 
+  /** 会话结束的回调：被它接管的标签页要立刻解锁，不能等租约到期。 */
+  onSessionClosed(listener: (id: string) => void): void {
+    this.sessionClosed = listener;
+  }
+
   get(id: string): RemoteSession | undefined {
     const session = this.sessions.get(id);
     if (!session) return undefined;
@@ -117,24 +123,24 @@ export class RemoteMcpSessions {
   close(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
-    session.client.close();
-    this.sessions.delete(id);
+    this.dispose(session);
     return true;
   }
 
   closeAll(): void {
-    for (const session of this.sessions.values()) session.client.close();
-    this.sessions.clear();
+    for (const session of [...this.sessions.values()]) this.dispose(session);
+  }
+
+  private dispose(session: RemoteSession): void {
+    session.client.close();
+    this.sessions.delete(session.id);
+    this.sessionClosed(session.id);
   }
 
   private prune(): void {
     const now = this.now();
-    for (const [id, session] of this.sessions) {
-      if (now - session.lastUsedAt > SESSION_IDLE_MS) {
-        session.client.close();
-        this.sessions.delete(id);
-      }
-    }
+    for (const session of [...this.sessions.values()])
+      if (now - session.lastUsedAt > SESSION_IDLE_MS) this.dispose(session);
   }
 
   /** 写操作同时扣会话额度与来源额度；任一用完即拒。 */
@@ -179,7 +185,7 @@ export interface RemoteMcpHandlerOptions {
   enabled: boolean;
   sessions: RemoteMcpSessions;
   logger: EventLogger;
-  /** 页面接管端口；stdio 入口没有它，control_page 会明确拒绝。 */
+  /** 标签页接管端口；stdio 入口没有它，control_page 会明确拒绝。 */
   pages?: PageControlPort;
 }
 

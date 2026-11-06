@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import type { AgentGameClient } from "../src/mcp/GameClient";
-import { focusForTool } from "../src/mcp/Focus";
 import { TOOLS } from "../src/mcp/Tools";
 import { baseFakerSnapshot, mcpFixture } from "./McpFixtures";
 
@@ -17,38 +16,24 @@ test("工具面只保留大厅/进房/屏幕/界面操作，不再暴露绕过�
       "list_rooms",
       "create_room",
       "join_room",
-      "claim_seat",
-      "release_seat",
+      "control_page",
+      "page_state",
+      "page_act",
+      "release_page",
       "leave_room",
       "get_screen",
       "ui_run",
       "get_mcp_policy",
     ])
   );
+  expect(names).not.toContain("claim_seat");
+  expect(names).not.toContain("release_seat");
   expect(names).not.toContain("faker_action");
   expect(names).not.toContain("song_action");
   expect(names).not.toContain("cee_action");
   expect(names).not.toContain("send_chat");
   expect(names).not.toContain("song_search");
   expect(names).not.toContain("cee_character_search");
-});
-
-test("导航工具只上报粗焦点；局内焦点交给控件", () => {
-  const { client } = mcpFixture({
-    game: "song",
-    snapshot: { roomId: "1234", phase: "waiting", players: [], chat: [] },
-    privateState: { playerId: "p1" },
-  });
-  expect(focusForTool("list_rooms", { game: "song" }, client)).toEqual({
-    game: "song",
-    kind: "lobby",
-  });
-  expect(focusForTool("create_room", { game: "song" }, client)).toEqual({
-    game: "song",
-    kind: "enter_room",
-  });
-  expect(focusForTool("song_search", { keyword: "秘密" }, client)).toBeUndefined();
-  expect(focusForTool("faker_action", { action: "vote" }, client)).toBeUndefined();
 });
 
 test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令牌", async () => {
@@ -74,7 +59,7 @@ test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令�
 test("输入必须先 focus；聚焦后逐字输入并在一次请求里串行提交词语", async () => {
   const snapshot = baseFakerSnapshot("wordSubmission");
   snapshot.status = { phase: "wordSubmission", started: true, day: 1 } as never;
-  const { ui, calls, focus } = mcpFixture({
+  const { ui, calls } = mcpFixture({
     game: "faker",
     snapshot,
     privateState: { playerId: "p1", isQuestioner: true, role: "civilian", word: "苹果" },
@@ -99,11 +84,6 @@ test("输入必须先 focus；聚焦后逐字输入并在一次请求里串行�
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
-  const typing = focus
-    .filter((entry) => entry.action === "type" && entry.controlId === "faker.word.civilian")
-    .at(-1);
-  expect(typing).toMatchObject({ part: "game", label: "平民词" });
-  expect(typing?.input).toContain("苹果");
   expect(result.screen.players).toHaveLength(2);
 });
 

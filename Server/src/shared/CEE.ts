@@ -3,7 +3,6 @@ import { Type as t, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { ChatMessage, PlayerAccount, RoomVisibility } from "./Model";
 import type { ClientEnvelope } from "./Protocol";
-import { AgentFocusInputSchema } from "./AgentActivity";
 import {
   CEERankedPayloadSchemas,
   type CEERankedCommand,
@@ -240,8 +239,6 @@ export interface CEERoomSnapshot {
 }
 export interface CEEPrivateState {
   playerId: string;
-  /** 本座位已交给 MCP；人类连接收到的是脱敏私有状态。 */
-  mcpControlled?: boolean;
   canGuess: boolean;
   canSurrender: boolean;
   canStart: boolean;
@@ -333,15 +330,6 @@ export const CEEPayloadSchemas = {
   "cee.room.reconnect": t.Object({ roomId, sessionToken: recoverySessionToken }, strict),
   "cee.room.leave": empty,
   "cee.room.requestSync": empty,
-  /** MCP 连接凭人类会话凭证认领座位；只有 Agent 连接可用。 */
-  "mcp.claim": t.Object(
-    { roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) },
-    strict
-  ),
-  /** 人类或控制器主动收回座位。 */
-  "mcp.release": empty,
-  /** MCP 上报「正在操作哪类界面」；不得携带答案、词语或搜索词。 */
-  "mcp.focus": AgentFocusInputSchema,
   // 切到私密时 `password` 给新密码；留空或缺席表示沿用已有密码。转为公开会清除密码。
   "cee.room.update": t.Object(
     {

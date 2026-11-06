@@ -1116,9 +1116,66 @@ img {
     top var(--motion-spring-settle-duration) var(--motion-spring-settle);
 }
 
+/* 点击回声：框上叠一圈主色描边向外扩开后消散，读作「这里被按了一下」。 */
+.agent-click-echo {
+  animation: agent-click-echo var(--motion-duration-quick) var(--motion-ease-out) forwards;
+}
+
+@keyframes agent-click-echo {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.045);
+  }
+}
+
+/* 接管条从底边浮入；人类试图操作时轻顶一下，告诉他入口在这里。 */
+.agent-takeover-bar {
+  animation: agent-bar-enter var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+}
+
+.agent-takeover-bar[data-nudge="true"] {
+  animation: agent-bar-nudge var(--motion-spring-swift-duration) var(--motion-spring-swift) both;
+}
+
+@keyframes agent-bar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes agent-bar-nudge {
+  from {
+    transform: scale(1.04);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* 接管期间页面不可选中，光标也不再暗示可以操作。 */
+html[data-agent-locked] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .agent-focus-box,
   .agent-focus-hud {
     transition-duration: 1ms;
+  }
+
+  .agent-click-echo,
+  .agent-takeover-bar,
+  .agent-takeover-bar[data-nudge="true"] {
+    animation: none;
   }
 }

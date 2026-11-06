@@ -4,35 +4,34 @@ import { MCP_POLICY } from "./Policy";
 import { absolutePageUrl, findSitePage, gamePathOf, roomPageOf, SITE_PAGES } from "./SiteMap";
 import type { UiStep } from "./ui/Types";
 import { isRecord } from "../shared/Json";
-import type { SitePageCommand, SitePageResult, SitePageState } from "../shared/AgentActivity";
+import type { SitePageResult, SitePageStep } from "../shared/AgentActivity";
+import {
+  SITE_PAGE_ACTIONS,
+  SITE_PAGE_KEYS,
+  SITE_PAGE_SCROLLS,
+  type SitePageEndReason,
+} from "../shared/AgentPages";
 
 /**
- * 页面接管端口：由传输层实现（`SitePages`），工具只依赖这个窄接口。
- * stdio 入口没有它——那里没有「站内浏览器页面」可接管，工具会给出明确错误。
+ * 标签页接管端口：由传输层实现（`SitePages`），工具只依赖这个窄接口。
+ * stdio 入口没有它——那里没有可接管的浏览器标签页，工具会给出明确错误。
  */
 export interface PageControlPort {
-  claim(
-    code: string,
-    controllerId: string,
-    agentName: string
-  ): { pageId: string; agentName: string; state: SitePageState };
-  viewFor(
-    controllerId: string
-  ):
-    | { pageId: string; agentName: string; state: SitePageState; lastResult?: SitePageResult }
-    | undefined;
-  dispatch(
-    controllerId: string,
-    action: "navigate" | "click",
-    target: { path?: string; control?: string }
-  ): SitePageCommand;
-  closeByController(controllerId: string): boolean;
+  claim(code: string, controllerId: string, agentName: string): PageLease;
+  dispatch(controllerId: string, step: SitePageStep): Promise<SitePageResult>;
+  isControlling(controllerId: string): boolean;
+  closeByController(controllerId: string, reason?: SitePageEndReason): boolean;
+}
+
+interface PageLease {
+  pageId: string;
+  agentName: string;
 }
 
 export interface ToolContext {
   client: AgentGameClient;
   agentName: string;
-  /** 站内远程 MCP 的会话号：页面接管靠它绑定「哪个 Agent 在驱动这台浏览器」。 */
+  /** 站内远程 MCP 的会话号：标签页接管靠它绑定「哪个 Agent 在驱动这张标签页」。 */
   controllerId?: string;
   pages?: PageControlPort;
 }
@@ -115,7 +114,7 @@ const optionalString = (args: Record<string, unknown>, key: string): string | un
   typeof args[key] === "string" && args[key].trim() ? args[key].trim() : undefined;
 
 /**
- * 页面接管必须由站内远程 MCP 发起：stdio 进程没有可绑定的浏览器连接，
+ * 标签页接管必须由站内远程 MCP 发起：stdio 进程没有可绑定的浏览器连接，
  * 也不能证明自己持有页面的配对码。
  */
 const requirePageControl = (
@@ -127,6 +126,21 @@ const requirePageControl = (
     });
   return { pages: context.pages, controllerId: context.controllerId };
 };
+
+/**
+ * Agent 自有座位与标签页接管互斥：接管期间局内一律走真实页面，
+ * 否则同一个 Agent 既占人类的座位又占自己的座位，还能绕开页面直接发命令。
+ */
+const seatTool = (tool: McpTool): McpTool => ({
+  ...tool,
+  handler: async (args, context) => {
+    if (context.controllerId && context.pages?.isControlling(context.controllerId))
+      throw Object.assign(new Error("正在接管页面：请用 page_state / page_act 操作页面"), {
+        code: "PAGE_CONTROL_ACTIVE",
+      });
+    return tool.handler(args, context);
+  },
+});
 
 const summarizeRoom = (game: GameId, value: unknown) => {
   if (!isRecord(value)) return { game };
@@ -165,6 +179,35 @@ const activeGame = (args: Record<string, unknown>, client: AgentGameClient): Gam
   if (joined.length === 1) return joined[0]!;
   if (joined.length === 0) throw new Error("尚未加入任何房间；先用 join_room 加入");
   throw new Error(`同时加入了多个房间（${joined.join(", ")}），请指定 game`);
+};
+
+const pageStepProperties = {
+  action: { type: "string", enum: SITE_PAGE_ACTIONS.filter((action) => action !== "read") },
+  path: { type: "string", description: "navigate 的站内路径，例如 /cee 或 /cee/room/1234" },
+  control: { type: "string", description: "控件 id，取自 view.controls；type 与 press 可省略" },
+  text: { type: "string", maxLength: 400, description: "type 要输入的内容" },
+  replace: { type: "boolean", description: "type 时先清空原内容" },
+  key: { type: "string", enum: [...SITE_PAGE_KEYS], description: "press 的按键" },
+  value: { type: "string", description: "select 的取值：选项标签或值" },
+  direction: { type: "string", enum: [...SITE_PAGE_SCROLLS], description: "scroll 的方向" },
+};
+
+/** 只取一步操作的已知字段：远程会话句柄等工具级参数不进页面指令。 */
+const pageStepOf = (raw: unknown, withView: boolean): SitePageStep => {
+  if (!isRecord(raw)) throw new Error("每一步都必须是对象");
+  const action = raw.action;
+  if (action === "read" || !SITE_PAGE_ACTIONS.includes(action as SitePageStep["action"]))
+    throw new Error(`action 只能是 ${pageStepProperties.action.enum.join(" / ")}`);
+  const step: SitePageStep = { action: action as SitePageStep["action"], withView };
+  if (typeof raw.path === "string") step.path = raw.path;
+  if (typeof raw.control === "string") step.control = raw.control;
+  if (typeof raw.text === "string") step.text = raw.text;
+  if (typeof raw.replace === "boolean") step.replace = raw.replace;
+  if (typeof raw.key === "string") step.key = raw.key as SitePageStep["key"];
+  if (typeof raw.value === "string") step.value = raw.value;
+  if (typeof raw.direction === "string")
+    step.direction = raw.direction as SitePageStep["direction"];
+  return step;
 };
 
 const uiStepSchema = {
@@ -263,7 +306,7 @@ export const TOOLS: McpTool[] = [
       return { games: results };
     },
   },
-  {
+  seatTool({
     name: "create_room",
     description:
       "创建并加入一个房间（Agent 作为房主）。MCP 建房默认允许其他 Agent 加入；显式 allowAgents:false 才会关闭。song 可建 solo 房；faker 可传 roleConfig 配置卧底/天使/白板。" +
@@ -315,8 +358,8 @@ export const TOOLS: McpTool[] = [
         screen: await client.ui.screen(game),
       };
     },
-  },
-  {
+  }),
+  seatTool({
     name: "join_room",
     description:
       "以 Agent 身份加入房间。房间未开启 MCP（allowAgents != true）时返回 AGENTS_NOT_ALLOWED；先 list_rooms 看 allowAgents。" +
@@ -348,49 +391,8 @@ export const TOOLS: McpTool[] = [
         screen: await client.ui.screen(game),
       };
     },
-  },
-  {
-    name: "claim_seat",
-    description:
-      "用房间的会话凭证认领座位：接手该玩家的座位并锁定其手动操作。认领后本连接就是该座位的唯一控制器。" +
-      policyNotice,
-    inputSchema: objectSchema(
-      {
-        game: gameProperty,
-        roomId: { type: "string", description: "房间号" },
-        sessionToken: { type: "string", description: "玩家在 MCP 设置里复制的会话凭证" },
-      },
-      ["game", "roomId", "sessionToken"]
-    ),
-    write: true,
-    handler: async (args, { client }) => {
-      const game = asGame(args.game);
-      const result = await client.claimSeat(
-        game,
-        needString(args, "roomId"),
-        needString(args, "sessionToken")
-      );
-      return {
-        game,
-        roomId: result.roomId,
-        page: roomPageOf(game, result.roomId),
-        playerId: result.playerId,
-        isAgent: true,
-        screen: await client.ui.screen(game),
-      };
-    },
-  },
-  {
-    name: "release_seat",
-    description: "释放当前 MCP 接管的座位，把控制权交还人类会话。" + policyNotice,
-    inputSchema: gameSchema(false),
-    write: true,
-    handler: async (args, { client }) => {
-      const game = activeGame(args, client);
-      return client.sendInRoom(game, "mcp.release", {});
-    },
-  },
-  {
+  }),
+  seatTool({
     name: "leave_room",
     description: "离开当前游戏的房间。",
     inputSchema: gameSchema(true),
@@ -399,8 +401,8 @@ export const TOOLS: McpTool[] = [
       const game = asGame(args.game);
       return { game, left: await client.leave(game) };
     },
-  },
-  {
+  }),
+  seatTool({
     name: "get_screen",
     description:
       "读取当前游戏界面（与人类玩家页面一致）：阶段标题、玩家栏、聊天栏、可见面板、可操作控件。控件用 id 标识，操作前先看这里。" +
@@ -415,10 +417,10 @@ export const TOOLS: McpTool[] = [
     handler: async (args, { client }) => {
       const game = activeGame(args, client);
       if (args.refresh === true) await client.requestSync(game);
-      return { game, screen: await client.ui.screen(game, { announce: true }) };
+      return { game, screen: await client.ui.screen(game) };
     },
-  },
-  {
+  }),
+  seatTool({
     name: "ui_run",
     description:
       "像人类一样操作界面：按顺序串行执行多个步骤，并以人类速度回放。输入前必须先 focus 输入框（type 只能作用于当前焦点），再逐字输入；点结果或按钮用 click。每次操作后返回步骤结果与最新屏幕，屏幕里始终同步玩家栏、聊天栏和可见面板。" +
@@ -441,7 +443,7 @@ export const TOOLS: McpTool[] = [
       if (!Array.isArray(args.steps)) throw new Error("steps 必须是数组");
       return client.ui.run(game, args.steps as UiStep[]);
     },
-  },
+  }),
   {
     name: "get_mcp_policy",
     description: "读取本 MCP 的使用边界（只读）。",
@@ -451,10 +453,11 @@ export const TOOLS: McpTool[] = [
   {
     name: "control_page",
     description:
-      "接管一张人类页面（首页或大厅），像接管座位一样用自己的会话驱动它。" +
-      "人类在设置里点「允许 Agent 接管本页」会得到 8 位配对码，把它交给你后调这个工具。" +
-      "配对码一次有效、5 分钟内不用即过期，页面刷新或断开也会作废。" +
-      "接管成功后用 page_act 在这台浏览器里导航/点击，page_state 复查当前位置。",
+      "接管人类的一张标签页（任意页面，含房间内）。人类在设置的「MCP 连接」里开启后会得到 8 位配对码，" +
+      "把它交给你后调这个工具。配对码一次有效、5 分钟内不用即过期，认领后人类只能旁观并随时收回。" +
+      "接管后用 page_state 看页面、page_act 操作控件；游戏房间也走这一套，座位就是这张标签页本来的座位。" +
+      "房间未开启 MCP 时认领会被拒绝。" +
+      policyNotice,
     inputSchema: objectSchema(
       {
         code: { type: "string", description: "8 位配对码，由页面设置生成并交给你的" },
@@ -464,68 +467,81 @@ export const TOOLS: McpTool[] = [
     write: true,
     handler: async (args, context) => {
       const { pages, controllerId } = requirePageControl(context);
+      if (GAME_IDS.some((game) => context.client.currentRoom(game)))
+        throw Object.assign(new Error("已经坐在自己的座位上：先 leave_room 再接管页面"), {
+          code: "PAGE_CONTROL_SEATED",
+        });
       const lease = pages.claim(needString(args, "code"), controllerId, context.agentName);
-      return {
-        pageId: lease.pageId,
-        agentName: lease.agentName,
-        state: lease.state,
-        next: '用 page_act({ action: "navigate", path: "/songuessr" }) 进入对应游戏大厅',
-      };
+      const { view } = await pages.dispatch(controllerId, { action: "read" });
+      return { pageId: lease.pageId, agentName: lease.agentName, view };
     },
   },
   {
     name: "page_state",
     description:
-      "读取已接管页面的当前状态（只读）：路径、标题、可点控件（`data-agent-control` 的 id 与标签），" +
-      "以及上一条指令的执行结果。不包含输入框内容与聊天正文。",
+      "查看被接管页面此刻的样子：路径、人类可见的文字（lines 在视口内，offscreenLines 要滚动才看得到）、" +
+      "可操作控件（id、角色、标签、当前值、状态）与当前弹窗。看到的和人类一样：隐藏内容、" +
+      "别人的私有信息、账号与登录相关区域都不在其中。页面不可达时 restricted 为 true 且正文为空。",
     inputSchema: objectSchema({}),
     handler: async (_args, context) => {
       const { pages, controllerId } = requirePageControl(context);
-      const view = pages.viewFor(controllerId);
-      if (!view)
-        throw Object.assign(new Error("尚未接管页面：先调 control_page"), {
-          code: "PAGE_NOT_CONTROLLED",
-        });
-      return view;
+      const result = await pages.dispatch(controllerId, { action: "read" });
+      if (!result.ok)
+        throw Object.assign(new Error(result.error ?? "读取页面失败"), { code: "PAGE_FAILED" });
+      return { view: result.view };
     },
   },
   {
     name: "page_act",
     description:
-      "在被接管的页面里执行一步：`navigate` 打开站点内的路径（只接受人类可达位置，含房间页），" +
-      "`click` 点击页面当前上报的控件 id（先 page_state 看有哪些）。" +
-      "指令异步执行，用 page_state 复查结果。",
-    inputSchema: objectSchema(
-      {
-        action: { type: "string", enum: ["navigate", "click"] },
-        path: {
-          type: "string",
-          description: "navigate 的目标路径，例如 /songuessr、/cee 或 /cee/room/1234",
+      "在被接管的页面上像人类一样操作，焦点会先移到控件上再动手，走与人类相同的处理函数和校验。" +
+      "可传单步字段，也可传 steps 串行执行（失败即停）。返回每步结果与最新页面。" +
+      "动作：navigate 打开站内路径；click 点击控件；focus 聚焦控件；type 向控件或当前焦点逐字输入" +
+      "（replace 先清空）；press 按键；select 选中下拉或滑杆的取值；scroll 滚动页面或把控件滚入视野。" +
+      "下拉、弹窗的选项在点击后才出现，点开后看返回的 view 再点选项。" +
+      policyNotice,
+    inputSchema: objectSchema({
+      ...pageStepProperties,
+      steps: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: pageStepProperties,
+          required: ["action"],
+          additionalProperties: false,
         },
-        control: { type: "string", description: "click 的控件 id，取自 page_state.controls" },
       },
-      ["action"]
-    ),
+    }),
     write: true,
     handler: async (args, context) => {
       const { pages, controllerId } = requirePageControl(context);
-      const action = needString(args, "action");
-      if (action !== "navigate" && action !== "click")
-        throw new Error("action 只能是 navigate 或 click");
-      const command = pages.dispatch(controllerId, action, {
-        ...(typeof args.path === "string" ? { path: args.path } : {}),
-        ...(typeof args.control === "string" ? { control: args.control } : {}),
-      });
-      return { queued: command, next: "稍后用 page_state 确认页面已到新位置" };
+      const steps = Array.isArray(args.steps) ? args.steps : [args];
+      if (steps.length === 0 || steps.length > 8) throw new Error("steps 需要 1 到 8 步");
+      const results: Array<{ action: unknown; ok: boolean; error?: string }> = [];
+      let view: unknown;
+      for (const [index, raw] of steps.entries()) {
+        const step = pageStepOf(raw, index === steps.length - 1);
+        const result = await pages.dispatch(controllerId, step);
+        results.push({
+          action: step.action,
+          ok: result.ok,
+          ...(result.error ? { error: result.error } : {}),
+        });
+        view = result.view ?? view;
+        if (!result.ok) return { ok: false, steps: results, view };
+      }
+      return { ok: true, steps: results, view };
     },
   },
   {
     name: "release_page",
-    description: "交还页面控制权，让人类重新手动操作这台浏览器。",
+    description: "交还页面控制权，人类立刻恢复手动操作。",
     inputSchema: objectSchema({}),
     handler: async (_args, context) => {
       const { pages, controllerId } = requirePageControl(context);
-      return { released: pages.closeByController(controllerId) };
+      return { released: pages.closeByController(controllerId, "released") };
     },
   },
 ];

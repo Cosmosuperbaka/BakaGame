@@ -145,6 +145,20 @@ export class ConnectionRegistry {
     return connection?.roomId === roomId ? connection : undefined;
   }
 
+  /** 这条连接所在的标签页是否正被 Agent 操作：座位徽标与进房准入都看这里。 */
+  isAgentDriven(connectionId: string | undefined): boolean {
+    if (!connectionId) return false;
+    return this.connections.get(connectionId)?.agentDriven?.() === true;
+  }
+
+  /** 这张标签页坐在哪些房间：一张标签页在一款游戏里通常只有一个，这里不假设。 */
+  roomIdsOfTab(tabKey: string): string[] {
+    const rooms = new Set<string>();
+    for (const connection of this.connections.values())
+      if (connection.tabKey === tabKey && connection.roomId) rooms.add(connection.roomId);
+    return [...rooms];
+  }
+
   getLobbySubscribers(): ConnectionRecord[] {
     return Array.from(this.lobbySubscribers);
   }

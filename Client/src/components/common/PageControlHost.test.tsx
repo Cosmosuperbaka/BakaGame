@@ -1,32 +1,31 @@
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setPageControl } from "@/stores/UsePageControl";
+import type { SitePageCommand } from "@bakagame/shared";
+import {
+  clearPageNotice,
+  getPageControl,
+  resetPageControl,
+  setAgentFocus,
+  setPageControl,
+  showPageNotice,
+} from "@/stores/UsePageControl";
 import { PageControlHost } from "./PageControlHost";
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  pathname: "/",
-  handlers: [] as Array<
-    (command: { id: string; action: "navigate" | "click"; path?: string; control?: string }) => void
-  >,
-  reportPageState: vi.fn(),
+  handlers: [] as Array<(command: SitePageCommand) => void>,
   reportPageResult: vi.fn(),
-  clickByControl: vi.fn(),
-  snapshotPageState: vi.fn(() => ({ path: "/", title: "", controls: [] })),
+  closePageControl: vi.fn(),
+  runPageCommand: vi.fn(),
 }));
 
-// 只替换导航与位置：其余路由能力保持真实，组件仍按真实 hook 契约工作。
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
-  return {
-    ...actual,
-    useNavigate: () => mocks.navigate,
-    useLocation: () => ({ pathname: mocks.pathname }),
-  };
+  return { ...actual, useNavigate: () => mocks.navigate };
 });
 
 vi.mock("@/lib/SiteWs", () => ({
-  onPageCommand: (handler: (typeof mocks.handlers)[number]) => {
+  onPageCommand: (handler: (command: SitePageCommand) => void) => {
     mocks.handlers.push(handler);
     return () => {
       const index = mocks.handlers.indexOf(handler);
@@ -34,137 +33,170 @@ vi.mock("@/lib/SiteWs", () => ({
     };
   },
   reportPageResult: mocks.reportPageResult,
-  reportPageState: mocks.reportPageState,
+  closePageControl: mocks.closePageControl,
 }));
 
-vi.mock("@/lib/PageState", () => ({
-  clickByControl: mocks.clickByControl,
-  snapshotPageState: mocks.snapshotPageState,
-}));
+vi.mock("@/lib/PageActions", () => ({ runPageCommand: mocks.runPageCommand }));
 
-const dispatch = async (command: Parameters<(typeof mocks.handlers)[number]>[0]) => {
+const dispatch = async (command: SitePageCommand) => {
   await act(async () => {
     for (const handler of [...mocks.handlers]) handler(command);
+    await Promise.resolve();
   });
 };
 
-/** 推进假定时器并让 React 冲刷由此产生的 effect。 */
-const advance = async (ms: number) => {
-  await act(async () => {
-    vi.advanceTimersByTime(ms);
-  });
-};
+const takeOver = () => act(() => setPageControl({ status: "controlled", agentName: "BakaAgent" }));
 
 beforeEach(() => {
-  vi.useFakeTimers();
   mocks.navigate.mockReset();
   mocks.reportPageResult.mockReset();
-  mocks.reportPageState.mockReset();
-  mocks.clickByControl.mockReset();
-  mocks.snapshotPageState.mockClear();
-  mocks.handlers.length = 0;
-  mocks.pathname = "/";
-  setPageControl({ status: "off" });
+  mocks.closePageControl.mockReset();
+  mocks.runPageCommand.mockReset();
+  mocks.runPageCommand.mockResolvedValue({ id: "c1", ok: true });
+  resetPageControl();
+  clearPageNotice();
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  resetPageControl();
+  clearPageNotice();
 });
 
-describe("页面接管执行端", () => {
-  it("导航缺目标时回执失败，不调用路由", async () => {
+describe("标签页接管的执行端", () => {
+  it("指令交给执行模块，结果回执给服务端", async () => {
     render(<PageControlHost />);
-    await dispatch({ id: "c1", action: "navigate" });
+    takeOver();
+    await dispatch({ id: "c1", action: "click", control: "room.ready" });
+    await vi.dynamicImportSettled();
+    await act(async () => Promise.resolve());
+    expect(mocks.runPageCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "c1", action: "click" }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(mocks.reportPageResult).toHaveBeenCalledWith({ id: "c1", ok: true });
+  });
 
-    expect(mocks.navigate).not.toHaveBeenCalled();
-    expect(mocks.reportPageResult).toHaveBeenCalledWith({
-      id: "c1",
-      ok: false,
-      error: "缺少导航目标",
+  it("接管结束时中止手上的动作并清掉焦点", async () => {
+    let signal: AbortSignal | undefined;
+    mocks.runPageCommand.mockImplementation((_command, context: { signal: AbortSignal }) => {
+      signal = context.signal;
+      return new Promise(() => undefined);
     });
+    render(<PageControlHost />);
+    takeOver();
+    await dispatch({ id: "c1", action: "type", control: "chat.input", text: "你好" });
+    await vi.dynamicImportSettled();
+    await act(async () => Promise.resolve());
+    expect(signal?.aborted).toBe(false);
+    act(() => resetPageControl());
+    expect(signal?.aborted).toBe(true);
+  });
+});
+
+describe("接管层", () => {
+  it("未接管时什么都不渲染，不占任何事件", () => {
+    render(<PageControlHost />);
+    expect(screen.queryByRole("button", { name: "收回控制" })).toBeNull();
+    expect(document.documentElement.dataset.agentLocked).toBeUndefined();
   });
 
-  it("导航先回执「已接受」，150ms 后再补报落点", async () => {
+  /**
+   * `isTrusted` 不可伪造，测试里派发的事件永远是脚本事件：
+   * 直接拿到接管层注册的捕获监听，用「人类事件」的形状调用它。
+   */
+  const lockListener = () => {
+    const add = vi.spyOn(window, "addEventListener");
     render(<PageControlHost />);
-    await dispatch({ id: "c2", action: "navigate", path: "/songuessr" });
+    takeOver();
+    const block = add.mock.calls.find(([type]) => type === "pointerdown")?.[1] as (
+      event: Event
+    ) => void;
+    add.mockRestore();
+    return (type: string, target: EventTarget, init: Record<string, unknown> = {}) => {
+      const event = {
+        type,
+        target,
+        isTrusted: true,
+        preventDefault: vi.fn(),
+        stopImmediatePropagation: vi.fn(),
+        ...init,
+      };
+      act(() => block(event as unknown as Event));
+      return event;
+    };
+  };
 
-    expect(mocks.navigate).toHaveBeenCalledWith("/songuessr");
-    expect(mocks.reportPageResult).toHaveBeenCalledWith({ id: "c2", ok: true });
-    expect(mocks.reportPageState).not.toHaveBeenCalled();
+  it("人类的点击、按键与滚动都被挡下，Agent 回放的脚本事件照常通过", () => {
+    const send = lockListener();
+    expect(document.documentElement.dataset.agentLocked).toBe("true");
 
-    await advance(150);
-    expect(mocks.snapshotPageState).toHaveBeenCalled();
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(1);
+    const page = document.createElement("button");
+    document.body.append(page);
+    for (const type of ["click", "keydown", "wheel", "touchmove", "paste"]) {
+      const event = send(type, page);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopImmediatePropagation).toHaveBeenCalled();
+    }
+    const scripted = send("click", page, { isTrusted: false });
+    expect(scripted.preventDefault).not.toHaveBeenCalled();
+    page.remove();
   });
 
-  it("点击缺控件 id 时回执失败", async () => {
-    render(<PageControlHost />);
-    await dispatch({ id: "c3", action: "click" });
+  it("收回入口放行；Esc 与 Tab 把键盘焦点送到入口上，刷新键不拦", () => {
+    const send = lockListener();
+    const release = screen.getByRole("button", { name: "收回控制" });
 
-    expect(mocks.clickByControl).not.toHaveBeenCalled();
-    expect(mocks.reportPageResult).toHaveBeenCalledWith({
-      id: "c3",
-      ok: false,
-      error: "当前页面没有可点控件：",
-    });
+    expect(send("click", release).preventDefault).not.toHaveBeenCalled();
+    fireEvent.click(release);
+    expect(mocks.closePageControl).toHaveBeenCalledTimes(1);
+
+    expect(send("keydown", document.body, { key: "Escape" }).preventDefault).toHaveBeenCalled();
+    expect(document.activeElement).toBe(release);
+    for (const init of [{ key: "F5" }, { key: "r", ctrlKey: true }])
+      expect(send("keydown", document.body, init).preventDefault).not.toHaveBeenCalled();
   });
 
-  it("控件不在当前页面时回执失败", async () => {
-    mocks.clickByControl.mockReturnValue(false);
+  it("焦点框框住目标，状态条说明动作；接管层本身不进入 Agent 的画面", async () => {
+    const target = document.createElement("button");
+    target.textContent = "开始";
+    target.getBoundingClientRect = () =>
+      ({ top: 100, left: 40, width: 120, height: 40, bottom: 140, right: 160 }) as DOMRect;
+    document.body.append(target);
     render(<PageControlHost />);
-    await dispatch({ id: "c4", action: "click", control: "lobby.create" });
-
-    expect(mocks.reportPageResult).toHaveBeenCalledWith({
-      id: "c4",
-      ok: false,
-      error: "当前页面没有可点控件：lobby.create",
-    });
-  });
-
-  it("点击成功后 400ms 补报一次状态", async () => {
-    mocks.clickByControl.mockReturnValue(true);
-    render(<PageControlHost />);
-    await dispatch({ id: "c5", action: "click", control: "site.game.faker" });
-
-    expect(mocks.clickByControl).toHaveBeenCalledWith("site.game.faker");
-    expect(mocks.reportPageResult).toHaveBeenCalledWith({ id: "c5", ok: true });
-    expect(mocks.reportPageState).not.toHaveBeenCalled();
-
-    await advance(400);
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(1);
-  });
-
-  it("未开启接管时不上报状态，也不建立补报定时器", async () => {
-    render(<PageControlHost />);
-
-    await advance(6_000);
-    expect(mocks.reportPageState).not.toHaveBeenCalled();
-  });
-
-  it("接管期间立即上报并按 2s 补齐控件，切换路径重建、卸载清理", async () => {
-    render(<PageControlHost />);
-    await act(async () => setPageControl({ status: "controlled", agentName: "agent" }));
-
-    // 开启瞬间先报一次，之后每个 2s 周期再报。
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(1);
-    await advance(2_000);
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(2);
-
-    // 路径变化会重建定时器：立即补报一次，且旧定时器不再叠加。
+    takeOver();
     await act(async () => {
-      mocks.pathname = "/songuessr";
-      setPageControl({ status: "open" });
+      setAgentFocus({ action: "click", element: target, label: "开始" });
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
     });
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(3);
-    await advance(2_000);
-    expect(mocks.reportPageState).toHaveBeenCalledTimes(4);
+    const box = document.querySelector<HTMLElement>(".agent-focus-box");
+    expect(box?.style.top).toBe("93px");
+    expect(box?.querySelector(".agent-click-echo")).not.toBeNull();
+    expect(screen.getAllByText("正在点击 · 开始").length).toBeGreaterThan(0);
+
+    const { readPageView } = await import("@/lib/PageView");
+    window.history.replaceState(null, "", "/");
+    const view = readPageView();
+    expect(view.controls.map((control) => control.label)).toEqual(["开始"]);
+    target.remove();
   });
 
-  it("卸载时解除命令订阅", () => {
-    const { unmount } = render(<PageControlHost />);
-    expect(mocks.handlers).toHaveLength(1);
+  it("断线期间保持锁定并说明在恢复", () => {
+    render(<PageControlHost />);
+    act(() => setPageControl({ status: "controlled", agentName: "BakaAgent", reconnecting: true }));
+    expect(screen.getByText("连接中断，正在恢复")).toBeInTheDocument();
+    expect(document.documentElement.dataset.agentLocked).toBe("true");
+  });
 
-    unmount();
-    expect(mocks.handlers).toHaveLength(0);
+  it("接管结束后立刻解锁并留一句话说明原因", () => {
+    render(<PageControlHost />);
+    takeOver();
+    act(() => {
+      resetPageControl();
+      showPageNotice("BakaAgent 已断开，页面已解锁");
+    });
+    expect(getPageControl().status).toBe("off");
+    expect(document.documentElement.dataset.agentLocked).toBeUndefined();
+    expect(screen.getByText("BakaAgent 已断开，页面已解锁")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "收回控制" })).toBeNull();
   });
 });

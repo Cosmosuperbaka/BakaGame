@@ -8,7 +8,7 @@ import { resolveClientIp } from "../ClientIp";
  * 远程 MCP（Streamable HTTP）入口。
  * 支持 2025 系列的 initialize + Mcp-Session-Id，也接受 2026-07-28 的无状态请求；
  * 无状态客户端把 create_room / join_room 返回的 session 放进后续工具参数即可。
- * `pages` 是页面接管租约：只有站内远程 MCP 能认领人类浏览器，stdio 入口拿不到它。
+ * `pages` 是标签页接管租约：只有站内远程 MCP 能认领人类浏览器，stdio 入口拿不到它。
  */
 export const mcpRemoteRoutes = ({
   enabled,

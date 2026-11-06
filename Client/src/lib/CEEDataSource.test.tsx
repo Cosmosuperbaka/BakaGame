@@ -4,7 +4,6 @@ import type { CEECharacterSummary, CEESubjectSummary } from "@bakagame/shared";
 import type { ReactNode } from "react";
 import { ceeWsClient, type CEESendCommand } from "@/lib/CEEWs";
 import { CEECharacterImage } from "@/components/cee/CEECharacterImage";
-import { ceePrivateState } from "@/stories/fixtures/CEE";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { clearCEERankedQueryCache, useCEERankedStore } from "@/stores/UseCEERankedStore";
 import {
@@ -113,17 +112,6 @@ describe("数据源缺省值", () => {
     });
     expect(sendCommand).toHaveBeenCalledWith("cee.subject.image", { subjectId: 42 });
   });
-
-  it("MCP 接管只从房间私有状态读出", () => {
-    const { result, rerender } = renderHook(() => useCEEDataSource().useControlled(), {
-      wrapper: asIs,
-    });
-    expect(result.current).toBe(false);
-
-    useCEEStore.setState({ privateState: ceePrivateState({ mcpControlled: true }) });
-    rerender();
-    expect(result.current).toBe(true);
-  });
 });
 
 describe("排位数据源", () => {
@@ -162,13 +150,6 @@ describe("排位数据源", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("排位来源恒不认为 MCP 接管，即使房间已被接管", () => {
-    useCEEStore.setState({ privateState: ceePrivateState({ mcpControlled: true }) });
-    const { result } = renderHook(() => useCEEDataSource().useControlled(), {
-      wrapper: withRanked,
-    });
-    expect(result.current).toBe(false);
-  });
 
   it("排位来源的图片缓存键前缀与多人房不同", () => {
     expect(rankedCEEDataSource.cacheKeyPrefix).not.toBe("cee");

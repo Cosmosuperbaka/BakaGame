@@ -35,7 +35,7 @@ test("MCP Server Card 暴露协议版本、工具清单与端点", async () => {
   };
   expect(body.transport.url).toBe("https://game.example.com/api/mcp");
   expect(body.protocolVersions).toContain("2026-07-28");
-  expect(body.tools.map((tool) => tool.name)).toContain("claim_seat");
+  expect(body.tools.map((tool) => tool.name)).toContain("control_page");
 });
 
 test("/api 前缀别名与根路径给同一份发现数据", async () => {

@@ -164,11 +164,7 @@ function emptyCEEPrivateState(player: CEEPlayerRecord, spectatePending: boolean)
     spectatePending,
   };
 }
-export function ceePrivateState(
-  room: CEERoom,
-  player: CEEPlayerRecord,
-  mcpControlled = false
-): CEEPrivateState {
+export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPrivateState {
   const round = room.round;
   const spectatePending = player.membership === "pendingSpectator";
   // 待批准旁观按「尚未入房」处理：私有状态整体清空，否则请求者能提前看到答案与全场猜测。
@@ -193,7 +189,6 @@ export function ceePrivateState(
     : [];
   return {
     playerId: player.id,
-    ...(mcpControlled ? { mcpControlled: true } : {}),
     canGuess,
     canSurrender: inGame && !unit!.ended,
     // 随机出题在等待阶段需其他参与者准备（结算阶段再来一轮直接沿用在线参与者）；

@@ -9,7 +9,6 @@ import type { RandomSource } from "../../domain/Rules";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { LobbyFanout } from "../LobbyFanout";
-import type { McpSeatRegistry } from "../McpSeatRegistry";
 import type { WhoIsFakerServiceOptions } from "../WhoIsFakerService";
 
 /**
@@ -23,7 +22,6 @@ export interface WhoIsFakerServiceInternals {
   readonly rooms: Map<string, WhoIsFakerRoomRecord>;
   readonly connectionRegistry: ConnectionRegistry;
   /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
-  readonly mcpSeats: McpSeatRegistry;
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;
   readonly options: WhoIsFakerServiceOptions;

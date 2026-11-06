@@ -1,5 +1,5 @@
 import { applyPatch } from "fast-json-patch";
-import type { AgentFocusInput, SiteFocusPayload } from "../shared/AgentActivity";
+import type { SiteFocusPayload } from "../shared/AgentActivity";
 import { isRecord } from "../shared/Json";
 import { mergeChatWindow, type ChatWindowEntry } from "../shared/ChatWindow";
 import { isPermanentRoomError } from "../shared/Model";
@@ -244,47 +244,6 @@ export class AgentGameClient {
     return this.enter(game, session, GAME_META[game].join, roomId, payload);
   }
 
-  /**
-   * 认领人类玩家在 MCP 设置里复制的会话凭证：MCP 连接接手该座位，
-   * 服务端随后只允许这个 Agent 连接执行该座位的操作。
-   */
-  async claimSeat(
-    game: GameId,
-    roomId: string,
-    sessionToken: string
-  ): Promise<{
-    game: GameId;
-    roomId: string;
-    playerId?: string;
-    snapshot?: Record<string, unknown>;
-  }> {
-    const session = await this.connect(game);
-    if (session.roomId) await this.leave(game);
-    const ack = (await this.command(
-      game,
-      "mcp.claim",
-      { roomId, sessionToken },
-      { timeoutMs: COMMAND_TIMEOUT_MS }
-    )) as Record<string, unknown> | undefined;
-    if (!ack || typeof ack.roomId !== "string") throw new Error("认领座位没有返回房间凭据");
-    session.roomId = ack.roomId;
-    session.playerId = typeof ack.playerId === "string" ? ack.playerId : undefined;
-    session.sessionToken = typeof ack.sessionToken === "string" ? ack.sessionToken : undefined;
-    session.snapshot = isRecord(ack.snapshot) ? ack.snapshot : undefined;
-    session.privateState = isRecord(ack.privateState) ? ack.privateState : undefined;
-    this.seats.set(game, {
-      roomId: session.roomId,
-      playerId: session.playerId,
-      sessionToken: session.sessionToken,
-    });
-    return {
-      game,
-      roomId: session.roomId,
-      playerId: session.playerId,
-      snapshot: session.snapshot,
-    };
-  }
-
   async create(
     game: GameId,
     roomId: string,
@@ -465,34 +424,6 @@ export class AgentGameClient {
       if (session.stateVersion > waiter.since) waiter.resolve();
       else session.versionWaiters.push(waiter);
     }
-  }
-
-  /**
-   * 上报「正在操作哪类界面」。只携带界面焦点，不携带答案、词语或搜索词；
-   * 失败不阻断工具本身，人类页面最多少一次提示。
-   */
-  async publishAgentFocus(input: AgentFocusInput, game?: GameId): Promise<void> {
-    const targets = game
-      ? ([[game, this.sessions.get(game)]] as const)
-      : [...this.sessions.entries()];
-    await Promise.all(
-      targets.map(async ([target, session]) => {
-        if (!session || this.socket?.readyState !== WebSocket.OPEN) return;
-        try {
-          await this.command(
-            target,
-            "mcp.focus",
-            { ...input },
-            {
-              roomId: session.roomId,
-              timeoutMs: SITE_FOCUS_TIMEOUT_MS,
-            }
-          );
-        } catch {
-          /* 活动提示是增强信息，失败不影响工具结果 */
-        }
-      })
-    );
   }
 
   /**

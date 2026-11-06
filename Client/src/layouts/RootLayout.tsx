@@ -14,7 +14,7 @@ export function RootLayout() {
   useEffect(() => connectSiteSocket(), []);
   return (
     <>
-      {/* 页面接管的执行端：只在人类把配对码交给 Agent 之后才会收到指令。 */}
+      {/* 标签页接管的执行端与接管层：只在人类把配对码交给 Agent 之后才有动作。 */}
       <PageControlHost />
       <Suspense fallback={<PageLoadingFallback />}>
         <Outlet />

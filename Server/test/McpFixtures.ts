@@ -1,6 +1,5 @@
 import type { AgentGameClient, GameId } from "../src/mcp/GameClient";
 import { SeatUi } from "../src/mcp/ui/SeatUi";
-import type { AgentFocusInput } from "../src/shared/AgentActivity";
 
 export interface SentCall {
   game: string;
@@ -61,7 +60,6 @@ export const mcpFixture = (options: {
 }) => {
   const { game, snapshot, privateState, handler } = options;
   const calls: SentCall[] = [];
-  const focus: AgentFocusInput[] = [];
   let version = 0;
   const client = {
     name: "TestAgent",
@@ -75,16 +73,13 @@ export const mcpFixture = (options: {
       version += 1;
       return handler ? handler(type, payload) : { ok: true };
     },
-    publishAgentFocus: async (input: AgentFocusInput) => {
-      focus.push(input);
-    },
     stateVersion: () => version,
     waitForStateChange: async () => true,
     requestSync: async () => ({ synced: true }),
   } as unknown as AgentGameClient;
   const ui = new SeatUi(client, { pacing: false });
   (client as unknown as { ui: SeatUi }).ui = ui;
-  return { client, ui, calls, focus };
+  return { client, ui, calls };
 };
 
 /** 取某条已发命令的载荷；没有发出时直接失败，避免用 undefined 继续断言。 */

@@ -1,3 +1,4 @@
+import { getPageControl } from "@/stores/UsePageControl";
 import type {
   SpeechMode,
   WhoIsFakerPrivateState,
@@ -69,7 +70,7 @@ export function whoIsFakerNeedsAction(
   snapshot: Snapshot | null,
   privateState: WhoIsFakerPrivateState | null
 ): boolean {
-  if (!snapshot || !privateState || privateState.mcpControlled) return false;
+  if (!snapshot || !privateState || getPageControl().status === "controlled") return false;
   const phase = snapshot.status.phase;
   const me = snapshot.players.find((player) => player.id === privateState.playerId);
 

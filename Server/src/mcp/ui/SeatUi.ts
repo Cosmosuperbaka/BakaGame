@@ -1,4 +1,3 @@
-import type { AgentFocusKind } from "../../shared/AgentActivity";
 import type { AgentGameClient, GameId } from "../GameClient";
 import { autoSearchCee, buildCeeScreen, clickCeeControl, pressCee, setCeeControl } from "./Cee";
 import {
@@ -38,28 +37,6 @@ const LONG_ACTIONS = new Set([
   "faker.advance",
   "faker.words.submit",
 ]);
-
-const KIND_BY_CONTROL: Array<[RegExp, AgentFocusKind]> = [
-  [/^chat\./, "chat"],
-  [/faker\.description/, "describe"],
-  [/faker\.word/, "submit_words"],
-  [/faker\.vote/, "vote"],
-  [/faker\.night/, "action"],
-  [/faker\.blank/, "action"],
-  [/^song\.submit.*result|^song\.clip/, "submit_song"],
-  [/^song\.(submit|guess)\.search/, "song_search"],
-  [/^song\.guess/, "guess"],
-  [/song\.audio/, "song_audio"],
-  [/^cee\.answer/, "set_answer"],
-  [/^cee\.guess/, "guess"],
-  [/cee\.hint/, "image_hint"],
-  [/search/, "action"],
-];
-
-const focusKind = (controlId: string): AgentFocusKind => {
-  for (const [pattern, kind] of KIND_BY_CONTROL) if (pattern.test(controlId)) return kind;
-  return "action";
-};
 
 const CHAT_COMMAND: Record<GameId, string> = {
   faker: "chat.send",
@@ -140,8 +117,7 @@ export class SeatUi {
     return { context, screen };
   }
 
-  /** 读取屏幕；`announce` 时把“正在查看”焦点推给接管座位的人类页面。 */
-  async screen(game: GameId, options: { announce?: boolean } = {}): Promise<UiScreen> {
+  async screen(game: GameId): Promise<UiScreen> {
     const { context, screen } = this.build(game);
     if (game === "song") {
       try {
@@ -150,43 +126,7 @@ export class SeatUi {
         /* 音频就绪是增强信号，不影响读屏 */
       }
     }
-    if (options.announce) {
-      await this.publish(game, context.state, {
-        action: "focus",
-        kind: "state",
-        part: "game",
-        label: `查看${screen.title}`,
-      });
-    }
     return screen;
-  }
-
-  private async publish(
-    game: GameId,
-    state: UiState,
-    input: {
-      action: string;
-      kind: AgentFocusKind;
-      controlId?: string;
-      part?: UiControl["part"];
-      label?: string;
-      typed?: string;
-    }
-  ): Promise<void> {
-    if (this.client.currentRoom(game) === undefined) return;
-    await this.client.publishAgentFocus(
-      {
-        agentName: this.client.name.slice(0, 32),
-        tool: "ui_run",
-        action: input.action,
-        kind: input.kind,
-        ...(input.controlId ? { controlId: input.controlId } : {}),
-        ...(input.part ? { part: input.part } : {}),
-        ...(input.label ? { label: input.label.slice(0, 48) } : {}),
-        ...(input.typed !== undefined ? { input: input.typed.slice(0, MAX_TYPE_LENGTH) } : {}),
-      },
-      game
-    );
   }
 
   private findControl(screen: UiScreen, id: string): UiControl {
@@ -315,15 +255,6 @@ export class SeatUi {
       typed += chars[index]!;
       context.state.drafts[control.id] = typed;
       await this.pause(humanDelay(28, 58));
-      if (index % 2 === 0 || index === chars.length - 1)
-        await this.publish(game, context.state, {
-          action: "type",
-          kind: focusKind(control.id),
-          controlId: control.id,
-          part: control.part,
-          label: control.label,
-          typed,
-        });
     }
     await this.pause(humanDelay(360, 620));
     await this.autoSearch(game, context, control.id);
@@ -337,14 +268,6 @@ export class SeatUi {
     control: UiControl
   ): Promise<StepOutcome> {
     context.state.focus = control.id;
-    await this.publish(game, context.state, {
-      action: "focus",
-      kind: focusKind(control.id),
-      controlId: control.id,
-      part: control.part,
-      label: control.label,
-      ...(control.role === "textbox" ? { typed: context.state.drafts[control.id] ?? "" } : {}),
-    });
     await this.pause(humanDelay(120, 220));
     return { feedback: `已选中「${control.label}」`, mutate: false };
   }
@@ -382,18 +305,7 @@ export class SeatUi {
   ): Promise<StepOutcome> {
     if (action === "focus") return this.executeFocus(game, context, control);
     if (action === "type") return this.executeType(game, context, control, step);
-    const focusControl = {
-      action,
-      kind: focusKind(control.id),
-      controlId: control.id,
-      part: control.part,
-      label:
-        action === "press"
-          ? `${control.label} · ${typeof step.key === "string" ? step.key : "Enter"}`
-          : control.label,
-    };
     context.state.focus = control.id;
-    await this.publish(game, context.state, focusControl);
     await this.pause(humanDelay(90, 180));
     if (action === "press")
       return this.executePress(

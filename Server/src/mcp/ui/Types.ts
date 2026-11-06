@@ -1,7 +1,6 @@
-import type { AgentFocusPart } from "../../shared/AgentActivity";
 import type { GameId } from "../GameClient";
 
-export type UiPart = AgentFocusPart;
+export type UiPart = "header" | "player" | "game" | "chat" | "settings" | "dialog";
 
 export type UiControlRole = "button" | "textbox" | "switch" | "slider" | "select" | "listitem";
 

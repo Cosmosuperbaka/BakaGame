@@ -194,7 +194,6 @@ export function CEESearch({
   const source = useCEEDataSource();
   const searchCharacters = source.searchCharacters;
   const searchSubjects = source.searchSubjects;
-  const controlled = source.useControlled();
   const [keyword, setKeyword] = useState("");
   const [chosenMode, setMode] = useState<CEESearchMode>(defaultMode);
   const mode: CEESearchMode = allowSubjects ? chosenMode : "character";
@@ -210,13 +209,12 @@ export function CEESearch({
     []
   );
 
-  // MCP 接管时输入由服务端驱动；人类页面只回显文本，不再自己发查询。
   const characterSearch = useIdleSearch(keyword, searchCharacters, ceeErrorMessage, {
-    enabled: mode === "character" && !disabled && !controlled,
+    enabled: mode === "character" && !disabled,
     scope: "character",
   });
   const subjectSearch = useIdleSearch(keyword, searchSubjects, ceeErrorMessage, {
-    enabled: mode === "subject" && !disabled && !controlled,
+    enabled: mode === "subject" && !disabled,
     scope: "subject",
   });
   const search = mode === "character" ? characterSearch : subjectSearch;

@@ -41,8 +41,6 @@ import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
-import { McpSeatLockOverlay } from "@/components/common/room/McpSeatLockOverlay";
-import { AgentFocusOverlay } from "@/components/common/room/AgentFocusOverlay";
 import { isValidRoomId } from "@bakagame/shared/values";
 import type { WhoIsFakerPrivateState, WhoIsFakerRole, PublicPlayerView } from "@bakagame/shared";
 
@@ -602,8 +600,6 @@ export default function WhoIsFakerRoomPage() {
         before={
           <>
             {seoNode}
-            <McpSeatLockOverlay game="faker" />
-            <AgentFocusOverlay game="faker" />
           </>
         }
         onLeave={handleLeave}

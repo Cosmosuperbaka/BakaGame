@@ -506,7 +506,7 @@ function FeedbackDialogBody({
   }, [list, selected, setUnread]);
 
   return (
-    <DialogContent className="sm:max-w-xl">
+    <DialogContent data-agent-sensitive className="sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>反馈</DialogTitle>
         <DialogDescription>

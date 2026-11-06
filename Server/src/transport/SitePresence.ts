@@ -20,7 +20,7 @@ type Send = (payload: ServerMessage) => void;
  * 站点级 Agent 活动：一条只读广播，给所有打开首页/大厅的访客看。
  *
  * 这里只保存**界面位置**（哪款游戏、哪个房间、哪个页面、在做什么），不保存搜索词、
- * 猜测或聊天草稿——房间内的控件级焦点仍走各游戏的 `mcp.focus`，只发给接管座位的人类。
+ * 猜测或聊天草稿——控件级焦点由被接管的页面自己画，不经过服务端广播。
  */
 export class SitePresence {
   private readonly subscribers = new Map<string, Send>();

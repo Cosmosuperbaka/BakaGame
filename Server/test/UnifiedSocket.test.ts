@@ -354,15 +354,12 @@ test("未声明为 Agent 的连接不能上报站点焦点", async () => {
 });
 
 test("命令归属：显式 game 优先，其次按前缀推断，卧底命令无需前缀", () => {
-  expect(gameOfMessage({ type: "mcp.focus", game: "cee" })).toBe("cee");
+  expect(gameOfMessage({ type: "room.join", game: "cee" })).toBe("cee");
   expect(gameOfMessage({ type: "song.room.join" })).toBe("song");
   expect(gameOfMessage({ type: "cee.game.guess" })).toBe("cee");
   expect(gameOfMessage({ type: "room.join" })).toBe("faker");
   expect(gameOfMessage(null)).toBe("faker");
 });
-
-/** 三款游戏同名、只能靠信封上的 `game` 区分的控制命令（客户端一条都不发，只有 Agent 用）。 */
-const SHARED_CONTROL_COMMANDS = new Set(["mcp.claim", "mcp.release", "mcp.focus"]);
 
 /**
  * 归属推断要么靠前缀，要么靠显式 `game`，没有第三条路。
@@ -372,15 +369,12 @@ const SHARED_CONTROL_COMMANDS = new Set(["mcp.claim", "mcp.release", "mcp.focus"
  */
 test("命令表与归属推断一致：无前缀的命令只允许出现在卧底", () => {
   for (const type of Object.keys(SonGuessrPayloadSchemas)) {
-    if (SHARED_CONTROL_COMMANDS.has(type)) continue;
     expect({ type, game: gameOfMessage({ type }) }).toEqual({ type, game: "song" });
   }
   for (const type of Object.keys(CEEPayloadSchemas)) {
-    if (SHARED_CONTROL_COMMANDS.has(type)) continue;
     expect({ type, game: gameOfMessage({ type }) }).toEqual({ type, game: "cee" });
   }
   for (const type of Object.keys(WhoIsFakerPayloadSchemas)) {
-    if (SHARED_CONTROL_COMMANDS.has(type)) continue;
     expect({ type, game: gameOfMessage({ type }) }).toEqual({ type, game: "faker" });
   }
 });

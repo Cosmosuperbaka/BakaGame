@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { CLOUD_SYNC_STORAGE_KEY, getCloudSyncEnabled, setCloudSyncEnabled } from "@/lib/CloudSync";
@@ -43,7 +43,7 @@ describe("SettingsEntry", () => {
   it("齿轮入口打开统一设置面板，四组偏好都在同一处", async () => {
     const { user, dialog } = await openSettings();
     expect(dialog).toHaveTextContent("设置");
-    expect(within(dialog).getByRole("switch", { name: "允许 Agent 接管本页" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "交给 Agent 操作" })).toBeInTheDocument();
     expect(within(dialog).getByRole("radiogroup", { name: "主题" })).toBeInTheDocument();
     expect(within(dialog).getByRole("switch", { name: "提示音" })).toBeInTheDocument();
     expect(within(dialog).getByRole("switch", { name: "启用云同步" })).toBeInTheDocument();
@@ -81,7 +81,7 @@ describe("SettingsEntry", () => {
     expect(window.localStorage.getItem(SOUND_VOLUME_STORAGE_KEY)).toBe("0.95");
   });
 
-  it("开启页面接管后展示一次性配对码与交给 Agent 的指令", async () => {
+  it("开启接管后展示一次性配对码与交给 Agent 的指令", async () => {
     setPageControl({ status: "open", code: "ABCD2345", expiresAt: Date.now() + 60_000 });
     const { dialog } = await openSettings();
 
@@ -100,42 +100,30 @@ describe("SettingsEntry", () => {
     expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
   });
 
-  it("房间内只显示 MCP 连接信息，不重复建房默认开关", async () => {
+  it("房间内与任何页面是同一块配对入口；房主开了 MCP 才能交给 Agent", async () => {
     useWhoIsFakerStore.setState({
       snapshot: { settings: { allowAgents: true } } as never,
-      privateState: { mcpControlled: false } as never,
     });
     const { dialog } = await openSettings("faker");
-
-    expect(within(dialog).getByText("本房间已允许 MCP 接入")).toBeInTheDocument();
-    expect(within(dialog).getByText(/尚未有 Agent 接管座位/)).toBeInTheDocument();
-    expect(dialog).toHaveTextContent("/api/mcp");
-    expect(
-      within(dialog).queryByRole("switch", { name: "允许 Agent 接管本页" })
-    ).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "交给 Agent 操作" })).toBeEnabled();
+    expect(dialog).not.toHaveTextContent("会话凭证");
   });
 
-  it("Agent 接管座位后，房间内显示锁定状态", async () => {
-    useSonGuessrStore.setState({
-      snapshot: { settings: { allowAgents: true } } as never,
-      privateState: { mcpControlled: true } as never,
-    });
-    const { dialog } = await openSettings("song");
-
-    expect(within(dialog).getByText("Agent 已接入本座位")).toBeInTheDocument();
-    expect(within(dialog).getByText(/你的手动操作已锁定/)).toBeInTheDocument();
-  });
-
-  it("房间未开启 MCP 且没有 Agent 接入时，MCP 分区整组不显示", async () => {
-    useCEEStore.setState({
+  it("房间没开 MCP 时说明原因，开关不可用", async () => {
+    useWhoIsFakerStore.setState({
       snapshot: { settings: { allowAgents: false } } as never,
-      privateState: { mcpControlled: false } as never,
     });
-    const { dialog } = await openSettings("cee");
-
-    expect(within(dialog).queryByText("MCP 连接")).not.toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("switch", { name: "允许 Agent 接管本页" })
-    ).not.toBeInTheDocument();
+    const { dialog } = await openSettings("faker");
+    expect(within(dialog).getByRole("switch", { name: /交给 Agent 操作/ })).toBeDisabled();
+    expect(dialog).toHaveTextContent("本房间未开启 MCP");
   });
+
+  it("配对码区块对 Agent 不可见，配对成功后设置面板自动收起", async () => {
+    setPageControl({ status: "open", code: "ABCD2345", expiresAt: Date.now() + 60_000 });
+    const { dialog } = await openSettings();
+    expect(within(dialog).getByText("ABCD2345").closest("[data-agent-sensitive]")).not.toBeNull();
+    act(() => setPageControl({ status: "controlled", agentName: "BakaAgent" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
 });

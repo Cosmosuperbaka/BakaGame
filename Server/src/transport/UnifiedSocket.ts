@@ -13,8 +13,7 @@ export const LEGACY_WS_PATHS: Readonly<Record<GameId, string>> = {
 /**
  * 这条命令属于哪款游戏。
  *
- * 优先读信封上的 `game`：`mcp.focus` / `mcp.claim` / `mcp.release` 三款游戏同名，
- * 靠类型名推不出来。其余命令按各自的前缀推断——歌与角色游戏的整张命令表都带
+ * 优先读信封上的 `game`，其余命令按各自的前缀推断——歌与角色游戏的整张命令表都带
  * `song.` / `cee.` 前缀，卧底的反过来一条都不带，所以兜底给卧底是唯一无歧义的选择。
  */
 export const gameOfMessage = (message: unknown): GameId => {

@@ -1,6 +1,5 @@
 import { Type as t, type Static } from "@sinclair/typebox";
 import { schemaUnion } from "./SchemaUnion";
-import { AgentFocusInputSchema } from "./AgentActivity";
 import {
   createClientEnvelopeSchema,
   RoomVisibilitySchema,
@@ -495,8 +494,6 @@ export interface WhoIsFakerRoomSnapshot {
 export interface WhoIsFakerPrivateState {
   playerId: string;
   sessionToken: string;
-  /** 本座位已交给 MCP；人类连接收到的是脱敏私有状态。 */
-  mcpControlled?: boolean;
   role?: WhoIsFakerRole;
   side?: PlayerSide;
   word?: string;
@@ -568,15 +565,6 @@ export const WhoIsFakerPayloadSchemas = {
   "room.reconnect": t.Object({ roomId, sessionToken }, strict),
   "room.leave": emptyPayload,
   "room.requestSync": emptyPayload,
-  /** MCP 连接凭人类会话凭证认领座位；只有 Agent 连接可用。 */
-  "mcp.claim": t.Object(
-    { roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) },
-    strict
-  ),
-  /** 人类或控制器主动收回座位。 */
-  "mcp.release": emptyPayload,
-  /** MCP 上报「正在操作哪类界面」；不得携带答案、词语或搜索词。 */
-  "mcp.focus": AgentFocusInputSchema,
   "player.rename": t.Object({ name: userName }, strict),
   "player.setSpectator": t.Object({ spectator: t.Boolean() }, strict),
   "player.setReady": t.Object({ ready: t.Boolean() }, strict),

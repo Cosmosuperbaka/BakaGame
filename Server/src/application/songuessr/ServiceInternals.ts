@@ -7,7 +7,6 @@ import type {
   SongLyricClip,
 } from "../../shared/Index";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
-import type { McpSeatRegistry } from "../McpSeatRegistry";
 import type { SonGuessrServiceOptions } from "../SonGuessrService";
 import type {
   SonGuessrPlayerRecord,
@@ -29,7 +28,6 @@ export interface SonGuessrServiceInternals {
   readonly now: () => number;
   readonly random: RandomSource;
   /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
-  readonly mcpSeats: McpSeatRegistry;
   /** 每个房间在等号的请求；租约归还或池子变化时唤醒。 */
   readonly musicPoolWaiters: Map<string, Set<() => void>>;
   nextMusicRefreshSweepAt: number;

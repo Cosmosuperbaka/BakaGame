@@ -17,8 +17,6 @@ export interface CEEDataSource {
   characterImage: (characterId: number, size: CEEImageSize) => Promise<string | undefined>;
   /** 排位没有作品封面命令时返回 undefined，组件显示类型图标。 */
   subjectImage: (subjectId: number) => Promise<string | undefined>;
-  /** MCP 接管时搜索框只回显；排位恒为 false。 */
-  useControlled: () => boolean;
   /**
    * `LazyImage` 缓存键的前缀：解析结果与失败都按 `cacheKey` 全局记账，
    * 同一角色在两种来源下不能互相污染。多人房沿用既有键名，页面行为零变化。
@@ -40,7 +38,6 @@ const roomSubjectImage = async (subjectId: number) => {
   const { imageUrl } = await useCEEStore.getState().sendCommand("cee.subject.image", { subjectId });
   return imageUrl;
 };
-const useRoomControlled = () => useCEEStore((state) => state.privateState?.mcpControlled === true);
 
 /** 没有 Provider 时的缺省来源就是多人房那套：房间页面与既有测试零改动。 */
 const roomCEEDataSource: CEEDataSource = {
@@ -49,7 +46,6 @@ const roomCEEDataSource: CEEDataSource = {
   loadSubjectCharacters: roomLoadSubjectCharacters,
   characterImage: roomCharacterImage,
   subjectImage: roomSubjectImage,
-  useControlled: useRoomControlled,
   cacheKeyPrefix: "cee",
 };
 
@@ -70,6 +66,5 @@ export const rankedCEEDataSource: CEEDataSource = {
     useCEERankedStore.getState().characterImage(characterId, size),
   // 服务端没有排位的作品封面命令：直接给 undefined，作品行显示类型图标而不是空跑一次请求。
   subjectImage: async () => undefined,
-  useControlled: () => false,
   cacheKeyPrefix: "cee-ranked",
 };

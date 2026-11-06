@@ -1,11 +1,5 @@
 import { ConnectionRegistry } from "./ConnectionRegistry";
 import { requireCEEClientAdmission } from "./CEEClientAdmission";
-import {
-  controllerPrivateState,
-  McpSeatRegistry,
-  redactPrivateState,
-  type McpController,
-} from "./McpSeatRegistry";
 import { ADMIN_CLOSE_MESSAGE, ADMIN_KICK_MESSAGE, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
@@ -15,12 +9,7 @@ import {
   type CEERound,
   type CEEUnit,
 } from "../domain/CEEModel";
-import {
-  isAgentFocusKind,
-  isAgentFocusPart,
-  type AgentFocusEvent,
-  type AgentFocusInput,
-} from "../shared/AgentActivity";
+import {} from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { advanceCEERound, getCEEUnit, surrenderCEE, unitHasActor } from "../domain/CEERound";
 import { tabSeatId } from "./TabSeat";
@@ -31,9 +20,7 @@ import {
   ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   type CEEPayload,
-  type CEEClientMessage,
   type CEECharacterView,
-  type CEEPrivateState,
   type CEERoomEnterResult,
   type CEESettings,
   type ConnectionRecord,
@@ -67,7 +54,6 @@ export const CEE_SPECTATE_QUEUE_MAX = 8;
 
 export class CEERooms {
   readonly connections = new ConnectionRegistry();
-  private readonly mcpSeats = new McpSeatRegistry();
   readonly rooms = new Map<string, CEERoom>();
   onChange?: () => void;
   /**
@@ -217,34 +203,8 @@ export class CEERooms {
     const player = room?.players.get(connection.playerId);
     if (!room || !player) return;
 
-    const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    if (controller) {
-      if (controller.connectionId !== connectionId) {
-        // 人类旁观连接断开：座位仍由 MCP 控制，不触发离线清理。
-        this.publishRoom(room);
-        return;
-      }
-      this.mcpSeats.unbind(room.id, player.id);
-      if (this.handSeatBackToViewer(room, player)) return;
-    } else if (player.connectionId !== connectionId) {
-      return;
-    }
+    if (player.connectionId !== connectionId) return;
     this.markSeatOffline(room, player);
-  }
-  /**
-   * MCP 控制器退出后把座位交还给同一玩家仍开着的人类页面。
-   * 断线、`mcp.release` 与控制器离房三条路径共用，返回 false 表示人类页面也不在。
-   */
-  private handSeatBackToViewer(room: CEERoom, player: CEEPlayerRecord): boolean {
-    const viewer = this.connections
-      .getRoomConnections(room.id)
-      .find((candidate) => candidate.playerId === player.id && !candidate.isAgent);
-    if (!viewer) return false;
-    player.connectionId = viewer.id;
-    player.online = true;
-    delete player.offlineAt;
-    this.publishRoom(room);
-    return true;
   }
   /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
   private markSeatOffline(room: CEERoom, player: CEEPlayerRecord): void {
@@ -286,7 +246,7 @@ export class CEERooms {
       settings: {
         ...createDefaultCEESettings(),
         bakaAntiCheat: antiCheat,
-        allowAgents: payload.allowAgents === true,
+        allowAgents: payload.allowAgents === true || connection.agentDriven?.() === true,
       },
       phase: "waiting",
       roundNumber: 0,
@@ -322,6 +282,8 @@ export class CEERooms {
     this.ensureFree(connection);
     const room = this.room(roomId);
     this.requireAdmission(connection, room);
+    if (connection.agentDriven?.() === true && room.settings.allowAgents !== true)
+      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
     const seat = this.tabSeat(room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
@@ -353,10 +315,6 @@ export class CEERooms {
     const room = this.room(payload.roomId);
     this.requireAdmission(connection, room);
 
-    const controller = this.mcpSeats.findByControllerToken(payload.sessionToken ?? "");
-    if (controller && controller.roomId === room.id)
-      return this.reconnectController(connection, room, controller);
-
     const player =
       [...room.players.values()].find((member) =>
         safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
@@ -379,10 +337,8 @@ export class CEERooms {
     player: CEEPlayerRecord
   ): CEERoomEnterResult {
     if (connection.isAgent === true && player.isAgent !== true)
-      throw new AppError("AGENT_CLAIM_REQUIRED", "Agent 接手人类座位必须先通过 MCP 认领");
+      throw new AppError("AGENT_SEAT_FORBIDDEN", "Agent 不能接手人类座位");
 
-    if (this.mcpSeats.isControlled(room.id, player.id))
-      return this.reconnectViewer(connection, room, player);
     if (player.connectionId && player.connectionId !== connection.id) {
       const previous = this.connections.findConnection(player.connectionId);
       if (previous) {
@@ -415,56 +371,6 @@ export class CEERooms {
     this.publishRoom(room);
     return this.entry(room, player);
   }
-  private reconnectController(
-    connection: ConnectionRecord,
-    room: CEERoom,
-    controller: McpController
-  ): CEERoomEnterResult {
-    if (connection.isAgent !== true)
-      throw new AppError("AGENT_REQUIRED", "控制器令牌只能用于 Agent 连接");
-    const target = room.players.get(controller.playerId);
-    if (!target) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
-    const previous = this.connections.findConnection(controller.connectionId);
-    if (previous && previous.id !== connection.id) {
-      this.connections.detach(previous);
-      try {
-        previous.close(4001, "session replaced");
-      } catch {
-        /* 已关闭 */
-      }
-    }
-    const rebound = this.mcpSeats.rebind(controller, connection.id);
-    this.attach(connection, room, target);
-    this.publishRoom(room);
-    return {
-      roomId: room.id,
-      source: "native",
-      sessionToken: rebound.token,
-      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
-      privateState: ceePrivateState(room, target, true),
-    };
-  }
-
-  private reconnectViewer(
-    connection: ConnectionRecord,
-    room: CEERoom,
-    player: CEEPlayerRecord
-  ): CEERoomEnterResult {
-    if (connection.isAgent === true)
-      throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
-    // 人类刷新页面：只恢复只读观看，不抢回座位所有权，也不顶掉 MCP 控制器。
-    connection.resetStateSync?.();
-    this.connections.attach(connection, room.id, player.id);
-    this.publishRoom(room);
-    return {
-      roomId: room.id,
-      source: "native",
-      sessionToken: player.sessionToken,
-      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
-      privateState: this.privateStateForConnection(room, player, connection),
-    };
-  }
-
   authenticate(
     connection: ConnectionRecord,
     token?: string,
@@ -473,14 +379,7 @@ export class CEERooms {
     const room = this.room(connection.roomId);
     const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
     if (!player || !token) throw new AppError("SESSION_INVALID", "请重新加入房间");
-    const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    const isController = controller?.connectionId === connection.id;
-    const isViewer = Boolean(controller && connection.playerId === player.id && !isController);
-    const ownsSeat = player.connectionId === connection.id;
-    const tokenOk =
-      safeEqualToken(player.sessionToken, token) ||
-      (isController && this.mcpSeats.matchesControllerToken(room.id, player.id, token));
-    if (!tokenOk || (!ownsSeat && !isViewer))
+    if (!safeEqualToken(player.sessionToken, token) || player.connectionId !== connection.id)
       throw new AppError("SESSION_INVALID", "请重新加入房间");
     if (expectedRoomId && expectedRoomId !== room.id)
       throw new AppError("ROOM_MISMATCH", "指令房间与当前会话不一致");
@@ -488,106 +387,6 @@ export class CEERooms {
     return { room, player };
   }
 
-  publishAgentFocus(connection: ConnectionRecord, payload: AgentFocusInput) {
-    if (connection.isAgent !== true)
-      throw new AppError("AGENT_REQUIRED", "只有 Agent 连接可以上报活动焦点");
-    if (!isAgentFocusKind(payload.kind)) throw new AppError("INVALID_FOCUS", "未知的活动焦点");
-    if (payload.part !== undefined && !isAgentFocusPart(payload.part))
-      throw new AppError("INVALID_FOCUS", "未知的界面区域");
-    const event = {
-      ...payload,
-      kind: payload.kind,
-      game: "cee",
-      roomId: connection.roomId,
-      playerId: connection.playerId,
-      at: this.now(),
-    } as AgentFocusEvent;
-    // 控件焦点与输入进度只给接管座位的人类查看器，避免搜索词/猜测提前泄露给同房玩家。
-    if (connection.roomId) {
-      for (const viewer of this.connections.getRoomConnections(connection.roomId)) {
-        if (viewer.playerId === connection.playerId && viewer.isAgent !== true) {
-          try {
-            viewer.send(createEvent("mcp.focus", event));
-          } catch {
-            /* 查看器已断开 */
-          }
-        }
-      }
-    }
-    return { published: true };
-  }
-
-  /** 座位被 MCP 接管后，人类连接只能同步、退房与收回控制。 */
-  assertMcpManualControl(connection: ConnectionRecord, type: CEEClientMessage["type"]): void {
-    if (!connection.roomId || !connection.playerId) return;
-    const controller = this.mcpSeats.controllerFor(connection.roomId, connection.playerId);
-    if (!controller || controller.connectionId === connection.id) return;
-    if (type === "cee.room.leave" || type === "cee.room.requestSync" || type === "mcp.release")
-      return;
-    throw new AppError("MCP_CONTROL_ONLY", "本会话已由 MCP 接管，手动操作已锁定");
-  }
-
-  async handleMcpCommand(
-    connection: ConnectionRecord,
-    message: Extract<CEEClientMessage, { type: "mcp.claim" | "mcp.release" }>
-  ): Promise<unknown> {
-    if (message.type === "mcp.claim")
-      return this.claimSeat(connection, message.payload.roomId, message.payload.sessionToken);
-    return this.releaseSeat(connection);
-  }
-
-  private claimSeat(connection: ConnectionRecord, roomIdValue: string, sessionToken: string) {
-    if (connection.isAgent !== true)
-      throw new AppError("AGENT_REQUIRED", "只有声明为 Agent 的连接可以认领 MCP 座位");
-    if (connection.roomId) throw new AppError("ALREADY_IN_ROOM", "请先离开当前房间再认领座位");
-    const room = this.room(roomIdValue);
-    const player = [...room.players.values()].find((candidate) =>
-      safeEqualToken(candidate.sessionToken, sessionToken)
-    );
-    if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
-    if (room.settings.allowAgents !== true)
-      throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
-    if (this.mcpSeats.isControlled(room.id, player.id))
-      throw new AppError("MCP_SEAT_TAKEN", "该座位已被另一个 MCP 连接控制");
-    const bound = this.mcpSeats.bind(room.id, player.id, connection.id);
-    this.attach(connection, room, player);
-    this.publishRoom(room);
-    return {
-      roomId: room.id,
-      source: "native",
-      playerId: player.id,
-      sessionToken: bound.token,
-      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
-      privateState: ceePrivateState(room, player, true),
-    };
-  }
-
-  private releaseSeat(connection: ConnectionRecord) {
-    const room = this.room(connection.roomId);
-    const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
-    if (!player) throw new AppError("PLAYER_NOT_FOUND", "玩家不在房间中");
-    const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    if (!controller) return { released: false };
-    const controllerConnection = this.connections.findConnection(controller.connectionId);
-    this.mcpSeats.unbind(room.id, player.id);
-    if (controllerConnection) {
-      try {
-        controllerConnection.send(createEvent("mcp.released", { roomId: room.id }));
-      } catch {
-        /* 已断线 */
-      }
-      this.connections.detach(controllerConnection);
-      setTimeout(() => {
-        try {
-          controllerConnection.close(4002, "mcp_released");
-        } catch {
-          /* 已关闭 */
-        }
-      }, 50);
-    }
-    if (!this.handSeatBackToViewer(room, player)) this.markSeatOffline(room, player);
-    return { released: true };
-  }
   requireHost(room: CEERoom, player: CEEPlayerRecord): void {
     if (player.id !== room.hostPlayerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
@@ -668,15 +467,6 @@ export class CEERooms {
   }
   /** 先解绑再移除：最后一人离开时房间随之关闭，离开者自己不该再收到关闭通知（与另外两个游戏一致）。 */
   leaveRoom(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
-    const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    if (controller?.connectionId === connection.id) {
-      // MCP 控制器离房：座位交还人类——页面还开着就直接接回，否则按断线保留离线席位，
-      // 不把人的记录与会话凭证一起删掉。
-      this.mcpSeats.unbind(room.id, player.id);
-      this.connections.detach(connection);
-      if (!this.handSeatBackToViewer(room, player)) this.markSeatOffline(room, player);
-      return;
-    }
     this.connections.detach(connection);
     this.remove(room, player);
   }
@@ -808,51 +598,28 @@ export class CEERooms {
     if (!this.rooms.has(room.id)) return;
     // 结算散落在领域函数的多条路径里，但都以一次发布收尾：在这里统一交对局记录。
     if (room.phase === "settled") this.recordSettled(room);
-    const snapshot = ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId));
+    const snapshot = this.snapshotOf(room);
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
       connection.send(createEvent("cee.room.snapshot", snapshot));
       // 私有态按连接裁剪：同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
-      connection.send(
-        createEvent(
-          "cee.game.privateState",
-          this.privateStateForConnection(room, player, connection)
-        )
-      );
+      connection.send(createEvent("cee.game.privateState", ceePrivateState(room, player)));
     }
     this.onChange?.();
   }
   publishRoomCalibration(room: CEERoom): void {
-    const snapshot = ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId));
+    const snapshot = this.snapshotOf(room);
     for (const connection of this.connections.getRoomConnections(room.id)) {
       const player = connection.playerId ? room.players.get(connection.playerId) : undefined;
       if (!player) continue;
       connection.sendStateSyncCalibration?.(createEvent("cee.room.snapshot", snapshot));
       connection.sendStateSyncCalibration?.(
-        createEvent(
-          "cee.game.privateState",
-          this.privateStateForConnection(room, player, connection)
-        )
+        createEvent("cee.game.privateState", ceePrivateState(room, player))
       );
     }
   }
 
-  /** 被 MCP 接管时，只有控制器连接能收到完整私有状态；人类页面只拿到脱敏视图。 */
-  private privateStateForConnection(
-    room: CEERoom,
-    player: CEEPlayerRecord,
-    connection: ConnectionRecord
-  ): CEEPrivateState {
-    const controller = this.mcpSeats.controllerFor(room.id, player.id);
-    const state = ceePrivateState(room, player, Boolean(controller));
-    if (!controller) return state;
-    if (controller.connectionId === connection.id) return controllerPrivateState(state);
-    return redactPrivateState(
-      "cee",
-      state as unknown as Record<string, unknown>
-    ) as unknown as CEEPrivateState;
-  }
   /**
    * 导出全部房间以供停机保存。
    *
@@ -1002,13 +769,34 @@ export class CEERooms {
     if (player.id === room.hostPlayerId) delete room.hostDeadlineAt;
     room.lastActiveAt = this.now();
   }
+  /** 公开快照：座位是否被 Agent 操作看连接所在的标签页，同房玩家据此看到 MCP 徽标。 */
+  private snapshotOf(room: CEERoom) {
+    return ceeSnapshot(room, (playerId) =>
+      this.connections.isAgentDriven(room.players.get(playerId)?.connectionId)
+    );
+  }
+  /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
+  assertTabAgentsAllowed(tabKey: string): void {
+    for (const roomId of this.connections.roomIdsOfTab(tabKey)) {
+      const settings = this.rooms.get(roomId)?.settings;
+      if (settings?.allowAgents !== true || isCEEAntiCheatRoom(settings))
+        throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
+    }
+  }
+  /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
+  publishTabRooms(tabKey: string): void {
+    for (const roomId of this.connections.roomIdsOfTab(tabKey)) {
+      const room = this.rooms.get(roomId);
+      if (room) this.publishRoom(room);
+    }
+  }
   private entry(room: CEERoom, player: CEEPlayerRecord): CEERoomEnterResult {
     return {
       roomId: room.id,
       source: "native",
       sessionToken: player.sessionToken,
-      snapshot: ceeSnapshot(room, (playerId) => this.mcpSeats.isControlled(room.id, playerId)),
-      privateState: ceePrivateState(room, player, this.mcpSeats.isControlled(room.id, player.id)),
+      snapshot: this.snapshotOf(room),
+      privateState: ceePrivateState(room, player),
     };
   }
   private system(room: CEERoom, text: string) {
@@ -1023,7 +811,6 @@ export class CEERooms {
     room.chat = room.chat.slice(-CHAT_LIMIT);
   }
   private remove(room: CEERoom, player: CEEPlayerRecord): void {
-    this.mcpSeats.unbind(room.id, player.id);
     const unit = getCEEUnit(room, player);
     if (room.phase === "guessing" && unit && !unit.ended && !unitHasActor(room, unit, player.id))
       surrenderCEE(room, player, this.now());
@@ -1067,7 +854,6 @@ export class CEERooms {
       connection.resetStateSync?.();
     }
     this.rooms.delete(room.id);
-    this.mcpSeats.clearRoom(room.id);
     this.onChange?.();
   }
 }

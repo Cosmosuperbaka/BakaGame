@@ -16,7 +16,6 @@ import type {
   SonGuessrRoomSnapshot,
   SonGuessrRoomSummary,
   SonGuessrMusicAccount,
-  AgentFocusEvent,
   SongArtistSearchResult,
   SongPlaylistInfo,
   SongSearchResult,
@@ -56,7 +55,6 @@ export interface SonGuessrStore {
   sessionToken: string | null;
   snapshot: SonGuessrRoomSnapshot | null;
   privateState: SonGuessrPrivateState | null;
-  agentFocus: AgentFocusEvent | null;
   roomClosedAt: number | null;
   /** 单槽：新提示顶掉旧提示。 */
   toast: { text: string; type: "info" | "error" | "success" } | null;
@@ -87,7 +85,6 @@ export interface SonGuessrStore {
   reconnectRoom: (roomId: string, signal?: AbortSignal) => Promise<boolean>;
   clearRoomClosed: () => void;
   resetRoomState: () => void;
-  setAgentFocus: (focus: AgentFocusEvent | null) => void;
   leaveRoom: () => Promise<void>;
   searchMusic: (keyword: string) => Promise<SongSearchResult[]>;
   searchBangumi: (keyword: string) => Promise<BangumiSubjectSearchResult[]>;
@@ -220,7 +217,6 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
     sessionToken: null,
     snapshot: null,
     privateState: null,
-    agentFocus: null,
     roomClosedAt: null,
     toast: null,
 
@@ -288,11 +284,9 @@ export const useSonGuessrStore = create<SonGuessrStore>((set, get) => {
         sessionToken: null,
         snapshot: null,
         privateState: null,
-        agentFocus: null,
         roomClosedAt: null,
       });
     },
-    setAgentFocus: (agentFocus) => set({ agentFocus }),
 
     leaveRoom: async () => {
       entry.cancel();
@@ -489,7 +483,6 @@ function leaveRoom(
     sessionToken: null,
     snapshot: null,
     privateState: null,
-    agentFocus: null,
     roomClosedAt: Date.now(),
   });
   useSonGuessrStore.getState().showToast(toastText, "error", toastDurationMs);
@@ -516,9 +509,6 @@ export function initSonGuessrWs() {
         break;
       case "song.game.privateState":
         applyPrivateStateEvent(evt.payload);
-        break;
-      case "mcp.focus":
-        useSonGuessrStore.setState({ agentFocus: evt.payload as AgentFocusEvent });
         break;
       case "song.auth.session": {
         // 服务端后台续期后把新 Cookie 只推给号主；同步本机副本，下次进房不再拿旧凭据覆盖。

@@ -1,82 +1,9 @@
-import type { GameId } from "./Protocol";
 import { Type as t, type Static } from "@sinclair/typebox";
+import type { SitePageAction, SitePageEndReason, SitePageKey, SitePageScroll } from "./AgentPages";
 
-export const AGENT_FOCUS_KINDS = [
-  "site",
-  "lobby",
-  "enter_room",
-  "state",
-  "private_state",
-  "record",
-  "song_search",
-  "song_audio",
-  "cee_search",
-  "vote",
-  "describe",
-  "submit_words",
-  "submit_song",
-  "guess",
-  "set_answer",
-  "image_hint",
-  "chat",
-  "settings",
-  "claim",
-  "action",
-] as const;
+export const AGENT_FOCUS_KINDS = ["site", "lobby", "enter_room", "state", "action"] as const;
 
 export type AgentFocusKind = (typeof AGENT_FOCUS_KINDS)[number];
-
-/** 房间页的五个界面区域；客户端按它把没有控件标记的焦点退回整块区域。 */
-export const AGENT_FOCUS_PARTS = [
-  "header",
-  "player",
-  "game",
-  "chat",
-  "settings",
-  "dialog",
-] as const;
-
-export type AgentFocusPart = (typeof AGENT_FOCUS_PARTS)[number];
-
-/**
- * Agent 上报「正在看/操作哪个控件」。
- *
- * `input` 是逐步输入的当前文本，只发给被接管座位的人类查看器，不广播给同房其他玩家：
- * 搜索词、猜测和发言都可能提前泄露意图。
- */
-export const AgentFocusInputSchema = t.Object(
-  {
-    agentName: t.String({ minLength: 1, maxLength: 32 }),
-    tool: t.String({ minLength: 1, maxLength: 64 }),
-    action: t.Optional(t.String({ maxLength: 64 })),
-    // 用短字符串而不是字面量联合：把三款游戏的整张命令表推导到过深会导致类型实例化爆炸。
-    // 真正的取值校验在服务端 handleAgentFocus 里按 AGENT_FOCUS_KINDS 做。
-    kind: t.String({ minLength: 1, maxLength: 32 }),
-    targetId: t.Optional(t.String({ maxLength: 64 })),
-    controlId: t.Optional(t.String({ pattern: "^[A-Za-z0-9_.:-]{1,96}$" })),
-    part: t.Optional(t.String({ maxLength: 16 })),
-    label: t.Optional(t.String({ maxLength: 48 })),
-    input: t.Optional(t.String({ maxLength: 200 })),
-  },
-  { additionalProperties: false }
-);
-
-export type AgentFocusInput = Static<typeof AgentFocusInputSchema>;
-
-export const isAgentFocusKind = (value: string): value is AgentFocusKind =>
-  (AGENT_FOCUS_KINDS as readonly string[]).includes(value);
-
-export const isAgentFocusPart = (value: string): value is AgentFocusPart =>
-  (AGENT_FOCUS_PARTS as readonly string[]).includes(value);
-
-export interface AgentFocusEvent extends Omit<AgentFocusInput, "kind" | "part"> {
-  kind: AgentFocusKind;
-  part?: AgentFocusPart;
-  game: GameId;
-  roomId?: string;
-  playerId?: string;
-  at: number;
-}
 
 // ==================== 站点级 Agent 活动（统一 ws 入口的公开只读通道） ====================
 
@@ -100,7 +27,7 @@ const siteGameSchema = t.Optional(
 );
 
 /**
- * Agent 上报的站点级焦点。字段是**封闭集合**：房间内的控件焦点与逐字输入进度不进这条通道，
+ * Agent 上报的站点级焦点。字段是**封闭集合**：控件焦点与逐字输入进度不进这条通道，
  * 它会广播给所有打开首页的访客，搜索词、猜测与聊天草稿都可能在里面。
  */
 export const SiteFocusPayloadSchema = t.Object(
@@ -136,77 +63,112 @@ export const SiteAgentActivitySchema = t.Object(
 
 export type SiteAgentActivity = Static<typeof SiteAgentActivitySchema>;
 
-// ==================== 站点页面接管（人类页面交给 Agent 驱动） ====================
+// ==================== 标签页接管（人类页面交给 Agent 驱动） ====================
 
 /**
- * 首页/大厅的「页面接管」：人类在设置里开启后，页面拿到一枚**配对码**，把它交给 Agent；
- * Agent 用远程 MCP 的 `control_page` 认领，之后由服务端向这台浏览器下发导航/点击指令。
+ * 任意页面的「标签页接管」：人类在设置里开启后拿到一枚**配对码**，交给 Agent；
+ * Agent 用远程 MCP 的 `control_page` 认领，之后由服务端向这张标签页下发指令，
+ * 指令在真实页面上执行，走的是人类同样的处理函数与校验。
  *
- * 凭据只有配对码：一次认领、短时效、绑在发起的那条连接上——页面刷新或断线即失效。
- * 页面自己不上报"我是 Agent"，也不接受任何未认领方下发的指令。
+ * 配对码一次有效、短时效；认领后租约按标签页身份记账，刷新不用重新配对。
+ * 页面不接受任何未认领方下发的指令，也不向 Agent 出示标签页身份。
  */
 export const SITE_PAGE_OPEN_COMMAND = "site.page.open";
 export const SITE_PAGE_CLOSE_COMMAND = "site.page.close";
-export const SITE_PAGE_STATE_COMMAND = "site.page.state";
 export const SITE_PAGE_RESULT_COMMAND = "site.page.result";
 
 export const SITE_PAGE_COMMAND_SET: ReadonlySet<string> = new Set([
   SITE_PAGE_OPEN_COMMAND,
   SITE_PAGE_CLOSE_COMMAND,
-  SITE_PAGE_STATE_COMMAND,
   SITE_PAGE_RESULT_COMMAND,
 ]);
 
-/** 页面上的一个可操作控件（`data-agent-control`），只带标识与人类可读标签。 */
+const pageControlId = t.String({ pattern: "^[A-Za-z0-9_.:-]{1,96}$" });
+
+/** 页面上一个人类能看到、能操作的控件；密码类输入框不带 `value`。 */
 export const SitePageControlSchema = t.Object(
   {
-    id: t.String({ minLength: 1, maxLength: 96 }),
-    label: t.String({ maxLength: 48 }),
+    id: pageControlId,
+    role: t.String({ maxLength: 24 }),
+    label: t.String({ maxLength: 80 }),
+    value: t.Optional(t.String({ maxLength: 400 })),
+    options: t.Optional(t.Array(t.String({ maxLength: 80 }), { maxItems: 32 })),
+    states: t.Optional(t.Array(t.String({ maxLength: 16 }), { maxItems: 8 })),
+    inView: t.Boolean(),
   },
   { additionalProperties: false }
 );
 
+export type SitePageControl = Static<typeof SitePageControlSchema>;
+
 /**
- * 页面自报的可操作面：当前路径、标题与可见控件。
- * **不带输入框内容、聊天正文或任何私有数据**——Agent 据此决定下一步，而不是抓取页面。
+ * Agent 看到的页面：人类此刻能看到的文字、控件与状态。
+ *
+ * `lines` 在视口内，`offscreenLines` 已渲染但要滚动才看得到；隐藏节点、
+ * 敏感区域与接管提示都不进来。`restricted` 表示当前页面不在 Agent 可达范围，正文一律为空。
  */
-export const SitePageStateSchema = t.Object(
+export const SitePageViewSchema = t.Object(
   {
     path: t.String({ minLength: 1, maxLength: 96 }),
     title: t.String({ maxLength: 64 }),
-    controls: t.Array(SitePageControlSchema, { maxItems: 32 }),
     game: siteGameSchema,
     roomId: t.Optional(t.String({ maxLength: 32 })),
+    restricted: t.Optional(t.Boolean()),
+    dialog: t.Optional(t.String({ maxLength: 80 })),
+    focused: t.Optional(pageControlId),
+    scroll: t.Object(
+      { top: t.Number(), max: t.Number(), viewport: t.Number() },
+      { additionalProperties: false }
+    ),
+    lines: t.Array(t.String({ maxLength: 400 }), { maxItems: 240 }),
+    offscreenLines: t.Array(t.String({ maxLength: 400 }), { maxItems: 120 }),
+    controls: t.Array(SitePageControlSchema, { maxItems: 120 }),
+    truncated: t.Optional(t.Boolean()),
   },
   { additionalProperties: false }
 );
 
-export type SitePageState = Static<typeof SitePageStateSchema>;
+export type SitePageView = Static<typeof SitePageViewSchema>;
 
-/** 服务端下发给页面的指令；`navigate` 只接受站点地图里的路径，`click` 只接受已上报的控件 id。 */
-export const SitePageCommandSchema = t.Object(
-  {
-    id: t.String({ minLength: 1, maxLength: 64 }),
-    action: t.Union([t.Literal("navigate"), t.Literal("click")]),
-    path: t.Optional(t.String({ maxLength: 96 })),
-    control: t.Optional(t.String({ maxLength: 96 })),
-  },
-  { additionalProperties: false }
-);
+/** Agent 请求的一步操作：动作的取值与范围由 `SitePages.dispatch` 校验。 */
+export interface SitePageStep {
+  action: SitePageAction;
+  path?: string;
+  control?: string;
+  text?: string;
+  replace?: boolean;
+  key?: SitePageKey;
+  value?: string;
+  direction?: SitePageScroll;
+  withView?: boolean;
+}
 
-export type SitePageCommand = Static<typeof SitePageCommandSchema>;
+/** 服务端下发给页面的指令。 */
+export interface SitePageCommand extends SitePageStep {
+  id: string;
+}
 
 /** 页面执行结果：失败原因只回给服务端与发起指令的那条 Agent 会话。 */
 export const SitePageResultSchema = t.Object(
   {
     id: t.String({ minLength: 1, maxLength: 64 }),
     ok: t.Boolean(),
-    error: t.Optional(t.String({ maxLength: 120 })),
+    error: t.Optional(t.String({ maxLength: 160 })),
+    view: t.Optional(SitePageViewSchema),
   },
   { additionalProperties: false }
 );
 
 export type SitePageResult = Static<typeof SitePageResultSchema>;
+
+/** 接管状态推给页面。`resumed` 表示刷新后续上同一份租约，`focusControl` 是刷新前的焦点控件。 */
+export interface SitePageLease {
+  controlled: boolean;
+  agentName?: string;
+  resumed?: boolean;
+  focusControl?: string;
+  reason?: SitePageEndReason;
+}
 
 export const SITE_PAGE_COMMAND_EVENT = "site.page.command";
 export const SITE_PAGE_LEASE_EVENT = "site.page.lease";

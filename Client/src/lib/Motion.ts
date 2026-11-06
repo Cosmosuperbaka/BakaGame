@@ -493,18 +493,26 @@ export const readoutSwap: Variants = {
   exit: { opacity: 0, transition: { duration: duration.instant, ease: ease.inOut } },
 };
 
-/** Agent 点击回声：焦点框上叠一圈主色描边向外扩开后消散，读作「这里被按了一下」。 */
-export const agentClickEcho: {
-  initial: TargetAndTransition;
-  animate: TargetAndTransition;
-  exit: TargetAndTransition;
-  transition: Transition;
-} = {
-  initial: { opacity: 0.55, scale: 1 },
-  animate: { opacity: 0, scale: 1.045 },
-  exit: { opacity: 0 },
-  transition: { duration: duration.slow, ease: ease.out },
-};
+/**
+ * Agent 操作页面的节拍。`moveMs` 是焦点框从上一个控件落到新控件的时间，与 `.agent-focus-box`
+ * 的过渡是同一枚弹簧：框到位才动手，人类才来得及看清它要做什么。
+ * 其余是等页面响应的上限，不是动效，放在一起便于统一调整。
+ */
+export const agentPace = {
+  moveMs: Math.round(springToCss(spring.settle).duration * 1000),
+  reducedMoveMs: 80,
+  dwellMs: 160,
+  keyMinMs: 16,
+  keyMaxMs: 70,
+  typeBudgetMs: 2_400,
+  quietMs: 180,
+  quietLimitMs: 1_800,
+  scrollPollMs: 80,
+  scrollLimitMs: 1_200,
+  scrollSettleMs: 420,
+  scrollPageRatio: 0.8,
+  sliderStepLimit: 200,
+} as const;
 
 /** 拖动中连续变化的读数：起点更贴近终值，快速连续刷新时不闪烁。 */
 export const readoutTick = {

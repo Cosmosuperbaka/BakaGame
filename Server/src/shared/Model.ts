@@ -78,6 +78,8 @@ export interface ConnectionRecord {
    * 只在服务端内部用于派生玩家号与归属判定，不进快照、私有状态、日志或任何下行帧。
    */
   tabKey?: string;
+  /** 这条连接所在的标签页此刻是否被 Agent 操作；由传输层按租约回答，不存状态。 */
+  agentDriven?: () => boolean;
   roomId?: string;
   playerId?: string;
   lobbySubscribed: boolean;

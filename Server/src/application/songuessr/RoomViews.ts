@@ -155,7 +155,7 @@ export const buildPlayerView = (
     isReady: player.isReady,
     isBot: player.isBot,
     ...(player.isAgent ? { isAgent: true } : {}),
-    ...(service.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
+    ...(service.connections.isAgentDriven(player.connectionId) ? { mcpControlled: true } : {}),
     isHost: room.hostPlayerId === player.id,
     account: player.account,
     correctGuesses: player.correctGuesses,
@@ -190,7 +190,6 @@ export const buildPrivateState = (
   return {
     playerId: player.id,
     sessionToken: player.sessionToken,
-    ...(service.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
     isSubmitter,
     teamObserver,
     submitterCandidateIds: needsCandidates

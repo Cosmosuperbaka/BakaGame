@@ -572,7 +572,6 @@ describe("谁是卧底界面：控件动作", () => {
       currentPrivateState: () => undefined,
       currentPlayerId: () => undefined,
       sendInRoom: async () => ({}),
-      publishAgentFocus: async () => {},
       stateVersion: () => 0,
       waitForStateChange: async () => true,
     } as unknown as AgentGameClient;

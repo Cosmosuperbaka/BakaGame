@@ -2,13 +2,6 @@ import type { AgentFocusKind, SiteFocusPayload } from "../shared/AgentActivity";
 import { GAME_IDS, type AgentGameClient, type GameId } from "./GameClient";
 import { findSitePage, gamePathOf, roomPageOf } from "./SiteMap";
 
-export interface ToolFocus {
-  game?: GameId;
-  action?: string;
-  kind: AgentFocusKind;
-  targetId?: string;
-}
-
 const focusGame = (client: AgentGameClient, args: Record<string, unknown>): GameId | undefined => {
   if (typeof args.game === "string" && GAME_IDS.includes(args.game as GameId))
     return args.game as GameId;
@@ -16,30 +9,8 @@ const focusGame = (client: AgentGameClient, args: Record<string, unknown>): Game
   return joined.length === 1 ? joined[0] : undefined;
 };
 
-/**
- * 只给「进房/大厅」这类没有控件可指的导航动作留一个粗焦点。
- * 局内操作全部由 `ui_run` 按控件上报，浏览器页面上框住的就是实际控件。
- */
-export function focusForTool(
-  tool: string,
-  args: Record<string, unknown>,
-  client: AgentGameClient
-): ToolFocus | undefined {
-  const game = focusGame(client, args);
-  switch (tool) {
-    case "list_rooms":
-      return args.game ? { game, kind: "lobby" } : undefined;
-    case "create_room":
-    case "join_room":
-    case "claim_seat":
-      return { game, kind: "enter_room" };
-    default:
-      return undefined;
-  }
-}
-
 /** 进房类工具在完成后还要再报一次：房内页面在调用前收不到（此时还没绑定房间）。 */
-export const FOCUS_AFTER_TOOLS = new Set(["list_rooms", "create_room", "join_room", "claim_seat"]);
+export const FOCUS_AFTER_TOOLS = new Set(["list_rooms", "create_room", "join_room"]);
 
 const lobbyPage = (game?: GameId): string => (game ? gamePathOf(game) : "/");
 
@@ -77,9 +48,7 @@ const SITE_FOCUS_TARGETS: Record<string, { kind: AgentFocusKind; place: FocusPla
   list_rooms: { kind: "lobby", place: "lobby" },
   create_room: { kind: "enter_room", place: "room" },
   join_room: { kind: "enter_room", place: "room" },
-  claim_seat: { kind: "enter_room", place: "room" },
   leave_room: { kind: "lobby", place: "lobby" },
-  release_seat: { kind: "lobby", place: "lobby" },
   get_screen: { kind: "state", place: "current" },
   ui_run: { kind: "action", place: "current" },
 };
@@ -104,7 +73,7 @@ export function siteFocusForTool(
   if (tool === "get_mcp_policy") return undefined;
   if (tool === "get_site_map") return { kind: "site", page: "/" };
   if (tool === "visit_page") return pageFocus(args);
-  // 页面接管：导航沿用 path，点击只报「在做一件事」，不把页面状态塞进公开广播。
+  // 标签页接管：导航沿用 path，其余只报「在做一件事」，不把页面内容塞进公开广播。
   if (tool === "page_state" || tool === "release_page") return undefined;
   if (tool === "control_page") return { kind: "site" };
   if (tool === "page_act")
@@ -123,37 +92,14 @@ export function siteFocusForTool(
   };
 }
 
-/**
- * 两条焦点同时上报：
- * - 站点通道（公开）：首页与大厅的访客看到 Agent 当前在哪一页、在做什么；
- * - 房间通道（`mcp.focus`）：只发给接管座位的人类查看器，用于框住实际控件。
- */
+/** 上报站点活动：首页与大厅的访客看到 Agent 当前在哪一页、在做什么。 */
 export async function publishToolFocus(
   client: AgentGameClient,
   agentName: string,
   tool: string,
   args: Record<string, unknown>
 ): Promise<void> {
-  const name = agentName.slice(0, 32);
   const siteFocus = siteFocusForTool(tool, args, client);
-  // `game` 缺省时 `publishAgentFocus` 会把这条焦点按会话逐条带上显式 game 发出去，
-  // 不存在「被统一入口判成卧底」的问题（它从不让 game 留空）。
-  const roomFocus = focusForTool(tool, args, client);
-  await Promise.all([
-    siteFocus
-      ? client.publishSiteFocus({ agentName: name, tool, ...siteFocus })
-      : Promise.resolve(),
-    roomFocus
-      ? client.publishAgentFocus(
-          {
-            agentName: name,
-            tool,
-            kind: roomFocus.kind,
-            ...(roomFocus.action ? { action: roomFocus.action } : {}),
-            ...(roomFocus.targetId ? { targetId: roomFocus.targetId } : {}),
-          },
-          roomFocus.game
-        )
-      : Promise.resolve(),
-  ]);
+  if (siteFocus)
+    await client.publishSiteFocus({ agentName: agentName.slice(0, 32), tool, ...siteFocus });
 }

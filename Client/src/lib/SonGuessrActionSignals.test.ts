@@ -1,3 +1,4 @@
+import { resetPageControl, setPageControl } from "@/stores/UsePageControl";
 import { describe, expect, it } from "vitest";
 
 import { SONG_PEOPLE, songPrivate, songSnapshot } from "@/stories/fixtures/SonGuessr";
@@ -48,9 +49,9 @@ describe("sonGuessrNeedsAction", () => {
 
   it("never prompts a seat controlled by an agent or without both states", () => {
     const snapshot = songSnapshot({ phase: "playing", roundNumber: 1 });
-    expect(
-      sonGuessrNeedsAction(snapshot, songPrivate({ canGuess: true, mcpControlled: true }))
-    ).toBe(false);
+    setPageControl({ status: "controlled" });
+    expect(sonGuessrNeedsAction(snapshot, songPrivate({ canGuess: true }))).toBe(false);
+    resetPageControl();
     expect(sonGuessrNeedsAction(null, songPrivate({ canGuess: true }))).toBe(false);
     expect(sonGuessrNeedsAction(snapshot, null)).toBe(false);
   });

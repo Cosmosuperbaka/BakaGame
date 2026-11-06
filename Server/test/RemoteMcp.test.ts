@@ -139,7 +139,7 @@ test("远程 MCP 支持 initialize / 工具调用 / 本人私有状态，并随 
   const tools = await rpc(url, { jsonrpc: "2.0", id: 2, method: "tools/list" }, sessionId);
   const names = (tools.payload.result.tools as Array<{ name: string }>).map((tool) => tool.name);
   expect(names).toEqual(
-    expect.arrayContaining(["create_room", "claim_seat", "get_screen", "ui_run"])
+    expect.arrayContaining(["create_room", "control_page", "page_act", "get_screen", "ui_run"])
   );
 
   const created = await rpc(

@@ -114,6 +114,16 @@ export class CEEService implements AdminRoomControl {
     this.original.registerConnection(connection);
     this.ranked.registerConnection(connection);
   }
+  /** 原版房不支持 Agent：标签页坐在原版房里一律不能交出去，原生房看房主的开关。 */
+  assertTabAgentsAllowed(tabKey: string): void {
+    for (const connection of this.connections.values())
+      if (connection.tabKey === tabKey && connection.roomId?.startsWith("original:"))
+        throw new AppError("AGENTS_NOT_ALLOWED", "原版房不支持 Agent 进入");
+    this.native.state.assertTabAgentsAllowed(tabKey);
+  }
+  publishTabRooms(tabKey: string): void {
+    this.native.state.publishTabRooms(tabKey);
+  }
   async unregisterConnection(id: string): Promise<void> {
     const connection = this.connections.get(id);
     const isOriginal = Boolean(connection?.roomId?.startsWith("original:"));

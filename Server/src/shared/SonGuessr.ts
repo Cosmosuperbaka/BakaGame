@@ -1,6 +1,5 @@
 import { Type as t, type Static } from "@sinclair/typebox";
 import { schemaUnion } from "./SchemaUnion";
-import { AgentFocusInputSchema } from "./AgentActivity";
 import {
   createClientEnvelopeSchema,
   RoomVisibilitySchema,
@@ -552,8 +551,6 @@ export interface SonGuessrRoomSnapshot {
 export interface SonGuessrPrivateState {
   playerId: string;
   sessionToken: string;
-  /** 本座位已交给 MCP；人类连接收到的是脱敏私有状态。 */
-  mcpControlled?: boolean;
   isSubmitter: boolean;
   /** 队友出题、本局观战：与出题人同样看得到答案与全房猜测，但不能作答。 */
   teamObserver: boolean;
@@ -609,15 +606,6 @@ export const SonGuessrPayloadSchemas = {
   "song.room.reconnect": t.Object({ roomId, sessionToken }, strict),
   "song.room.leave": emptyPayload,
   "song.room.requestSync": emptyPayload,
-  /** MCP 连接凭人类会话凭证认领座位；只有 Agent 连接可用。 */
-  "mcp.claim": t.Object(
-    { roomId, sessionToken: t.String({ minLength: 1, maxLength: 128 }) },
-    strict
-  ),
-  /** 人类或控制器主动收回座位。 */
-  "mcp.release": emptyPayload,
-  /** MCP 上报「正在操作哪类界面」；不得携带答案、词语或搜索词。 */
-  "mcp.focus": AgentFocusInputSchema,
   "song.player.setReady": t.Object({ ready: t.Boolean() }, strict),
   "song.player.setSpectator": t.Object({ spectator: t.Boolean() }, strict),
   "song.player.setTeam": t.Object(

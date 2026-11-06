@@ -194,13 +194,12 @@ export function SongSearch({
   onSelect: (song: SongSearchResult) => Promise<void>;
 }) {
   const searchMusic = useSonGuessrStore((state) => state.searchMusic);
-  const controlled = useSonGuessrStore((state) => state.privateState?.mcpControlled === true);
   const controlPrefix = mode === "submit" ? "song.submit.search" : "song.guess.search";
   const [keyword, setKeyword] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState("");
   // 座位被 MCP 接管时由服务端驱动输入；人类页面只显示 Agent 键入的文本，不再自己发查询。
-  const search = useIdleSearch(keyword, searchMusic, describeSongError, { enabled: !controlled });
+  const search = useIdleSearch(keyword, searchMusic, describeSongError);
 
   const choose = async (song: SongSearchResult) => {
     setPendingId(song.id);
@@ -274,7 +273,6 @@ export function AnimeSearch({
 }) {
   const searchBangumi = useSonGuessrStore((state) => state.searchBangumi);
   const resolveAnimeSongs = useSonGuessrStore((state) => state.resolveAnimeSongs);
-  const controlled = useSonGuessrStore((state) => state.privateState?.mcpControlled === true);
   const controlPrefix = mode === "submit" ? "song.submit.search" : "song.guess.search";
   const [keyword, setKeyword] = useState("");
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -291,9 +289,7 @@ export function AnimeSearch({
     },
     []
   );
-  const search = useIdleSearch(keyword, searchBangumi, describeAnimeError, {
-    enabled: !controlled,
-  });
+  const search = useIdleSearch(keyword, searchBangumi, describeAnimeError);
 
   const leavePicked = () => {
     generation.current++;

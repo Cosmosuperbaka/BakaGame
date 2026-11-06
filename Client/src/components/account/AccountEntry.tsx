@@ -96,7 +96,7 @@ export function AccountButton() {
   const [menuOrigin, setMenuOrigin] = useState<OriginPoint | null>(null);
 
   return (
-    <>
+    <div data-agent-sensitive className="contents">
       {status === "signedIn" && profile ? (
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Popover.Trigger asChild>
@@ -185,7 +185,7 @@ export function AccountButton() {
           账号
         </Button>
       )}
-    </>
+    </div>
   );
 }
 
@@ -194,6 +194,7 @@ export function FeedbackButton({ compact = false }: { compact?: boolean }) {
   const unread = useAccountStore((state) => state.unreadFeedback);
   return (
     <Button
+      data-agent-sensitive
       variant="ghost"
       size={compact ? "icon" : "default"}
       className="relative"

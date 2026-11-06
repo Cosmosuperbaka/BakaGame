@@ -1,3 +1,4 @@
+import { resetPageControl, setPageControl } from "@/stores/UsePageControl";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -89,9 +90,9 @@ describe("whoIsFakerNeedsAction", () => {
 
   it("never prompts an agent-controlled seat or a missing state", () => {
     const snapshot = wifSnapshot("vote1");
-    expect(
-      whoIsFakerNeedsAction(snapshot, wifPrivate("me", "vote1", { mcpControlled: true }))
-    ).toBe(false);
+    setPageControl({ status: "controlled" });
+    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "vote1"))).toBe(false);
+    resetPageControl();
     expect(whoIsFakerNeedsAction(null, wifPrivate("me", "vote1"))).toBe(false);
     expect(whoIsFakerNeedsAction(snapshot, null)).toBe(false);
   });

@@ -50,7 +50,11 @@ function SongSettingsGroups({
   const summary = songSettingsSummary(snapshot);
   return (
     <SettingsStack>
-      {account ? <SongAccountSettings snapshot={snapshot} me={me} /> : null}
+      {account ? (
+        <div data-agent-sensitive className="contents">
+          <SongAccountSettings snapshot={snapshot} me={me} />
+        </div>
+      ) : null}
       <SettingsAccordion
         icon={Music2}
         title="题目设置"
@@ -86,7 +90,6 @@ function SongSettingsGroups({
       {/* 单人房同样可以交给 Agent：房里只有自己那一个座位，凭证仍是自己的会话。 */}
       <McpSettingsSection
         game="song"
-        roomId={snapshot.roomId}
         allowAgents={snapshot.settings.allowAgents === true}
         isHost={!readOnly}
       />

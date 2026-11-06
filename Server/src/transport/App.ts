@@ -37,14 +37,11 @@ import {
   SITE_PAGE_COMMAND_SET,
   SITE_PAGE_OPEN_COMMAND,
   SITE_PAGE_RESULT_COMMAND,
-  SITE_PAGE_STATE_COMMAND,
   SITE_SUBSCRIBE_COMMAND,
   SITE_SUBSCRIBE_COMMAND_SET,
   SiteFocusPayloadSchema,
   SitePageResultSchema,
-  SitePageStateSchema,
   type SitePageResult,
-  type SitePageState,
 } from "../shared/AgentActivity";
 import {
   SITE_SESSION_ALIVE_COMMAND,
@@ -544,7 +541,11 @@ const connectionIdFor = (ws: GameSocketLike): string => {
  * 为**一个服务**构造连接记录。状态同步基线属于服务，不属于 socket：统一入口上
  * 同一条连接会分别登记进三款游戏，各自必须持有独立的差量基线，不能共用一份。
  */
-const createConnectionRecord = (ws: GameSocketLike, connectionId: string): ConnectionRecord => {
+const createConnectionRecord = (
+  ws: GameSocketLike,
+  connectionId: string,
+  isTabDriven: (tabKey: string) => boolean = () => false
+): ConnectionRecord => {
   const {
     account,
     clientIp,
@@ -570,7 +571,7 @@ const createConnectionRecord = (ws: GameSocketLike, connectionId: string): Conne
     ...(clientIp ? { clientIp } : {}),
     ...(proof ? { clientChannel: proof } : {}),
     ...(isAgent ? { isAgent: true } : {}),
-    ...(tabKey ? { tabKey } : {}),
+    ...(tabKey ? { tabKey, agentDriven: () => isTabDriven(tabKey) } : {}),
     lobbySubscribed: false,
     send: stateSync.send,
     resetStateSync: stateSync.reset,
@@ -855,8 +856,20 @@ export const createApp = ({
   const remoteMcpSessions = new RemoteMcpSessions(logger);
   /** 站点级 Agent 活动：首页与大厅的只读广播，不参与任何游戏的房间状态。 */
   const sitePresence = new SitePresence();
-  /** 页面接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这台浏览器。 */
-  const sitePages = new SitePages();
+  /** 标签页接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这张标签页。 */
+  const sitePages = new SitePages({
+    admitTab: (tabKey) => {
+      fakerService.assertTabAgentsAllowed(tabKey);
+      songService?.assertTabAgentsAllowed(tabKey);
+      characterService?.assertTabAgentsAllowed(tabKey);
+    },
+    onControlChange: (tabKey) => {
+      fakerService.publishTabRooms(tabKey);
+      songService?.publishTabRooms(tabKey);
+      characterService?.publishTabRooms(tabKey);
+    },
+  });
+  remoteMcpSessions.onSessionClosed((id) => sitePages.closeByController(id, "agent_left"));
   /** 标签页身份的在线索引：站点连接领取，游戏连接挂上同一身份。 */
   const tabSessions = new TabSessions();
   /**
@@ -871,17 +884,20 @@ export const createApp = ({
     const registered = (data.registeredGames ??= new Set<GameId>());
     if (registered.has(game)) return;
     registered.add(game);
-    const record = createConnectionRecord(ws, connectionIdFor(ws));
+    const record = createConnectionRecord(ws, connectionIdFor(ws), (tabKey) =>
+      sitePages.isTabControlled(tabKey)
+    );
     if (game === "faker") fakerService.registerConnection(record);
     else if (game === "song") songService?.registerConnection(record);
     else characterService?.registerConnection(record);
   };
 
   /**
-   * 页面接管的人类侧命令：开/关租约、上报页面状态与指令结果。
+   * 标签页接管的人类侧命令：开/关租约、回报指令结果。
    *
    * 谁都能开自己的页面，但只有拿到一次性配对码的 Agent 能驱动它 —— 配对码只在这里换发，
-   * 状态与结果也只按发起连接记账，因此这些命令都不进任何游戏服务。
+   * 租约按站点连接领到的标签页身份记账，结果只认持有这份身份的连接，这些命令都不进任何游戏服务。
+   * 未绑定身份的旧页面退回按连接记账，刷新后不续接。
    */
   const handleSitePageCommand = (
     ws: GameSocketLike,
@@ -890,12 +906,16 @@ export const createApp = ({
     connectionId: string,
     envelope: { id: string; type: string; traceId?: string }
   ): void => {
+    const data = ws.data as { isAgent?: boolean; tabKey?: string };
+    if (data.isAgent === true) throw new AppError("PAGE_FORBIDDEN", "Agent 连接不能开启接管");
     if (type === SITE_PAGE_OPEN_COMMAND) {
       sendPacket(
         ws,
         createAck(
           envelope,
-          sitePages.open(connectionId, (payload) => sendPacket(ws, payload))
+          sitePages.open(data.tabKey ?? `connection:${connectionId}`, connectionId, (payload) =>
+            sendPacket(ws, payload)
+          )
         )
       );
       return;
@@ -906,14 +926,6 @@ export const createApp = ({
     }
     if (!isRecord(message.payload))
       throw new AppError("INVALID_MESSAGE", "消息载荷 payload 必须为对象");
-    if (type === SITE_PAGE_STATE_COMMAND) {
-      // 封闭 schema：页面上报只含 `data-agent-control` 的 id 与标签，输入值带不进来。
-      if (!Value.Check(SitePageStateSchema, message.payload))
-        throw new AppError("INVALID_MESSAGE", "页面状态不合法");
-      sitePages.updateState(connectionId, message.payload as SitePageState);
-      sendPacket(ws, createAck(envelope, { ok: true }));
-      return;
-    }
     if (type !== SITE_PAGE_RESULT_COMMAND)
       throw new AppError("UNKNOWN_MESSAGE_TYPE", `未知的页面命令：${type}`);
     if (!Value.Check(SitePageResultSchema, message.payload))
@@ -926,8 +938,8 @@ export const createApp = ({
    * 标签页身份命令：站点连接领取、游戏连接挂上、持有者应答探测。
    *
    * 身份在首帧确定，之后这条连接上的席位都归它，所以一条连接只绑定一次：连接中途改绑，
-   * 等于让已入座的连接换了主人。Agent 不持有标签页身份：它只能凭 `mcp.claim` 认领座位，
-   * 放它绑定等于给「人类座位必须先认领」开一道旁路。
+   * 等于让已入座的连接换了主人。Agent 不持有标签页身份：放它绑定等于让它
+   * 直接拿到人类的座位，绕开页面配对。
    */
   const handleTabSessionCommand = async (
     ws: GameSocketLike,
@@ -979,7 +991,7 @@ export const createApp = ({
     return true;
   };
 
-  /** 站点通道：订阅、页面接管、焦点上报、离开。这些命令由统一入口直接处理，不进任何游戏服务。 */
+  /** 站点通道：订阅、标签页接管、焦点上报、离开。这些命令由统一入口直接处理，不进任何游戏服务。 */
   const handleSiteCommand = (ws: GameSocketLike, message: Record<string, unknown>): boolean => {
     const type = message.type as string;
     const isPageCommand = SITE_PAGE_COMMAND_SET.has(type);
@@ -993,6 +1005,9 @@ export const createApp = ({
     if (type === SITE_SUBSCRIBE_COMMAND) {
       sitePresence.subscribe(connectionId, (payload) => sendPacket(ws, payload));
       sendPacket(ws, createAck(envelope, { subscribed: true }));
+      // 订阅是页面连上后的第一条业务命令：身份已经绑定，刷新前的接管在这里续上。
+      const { tabKey } = ws.data as { tabKey?: string };
+      if (tabKey) sitePages.attach(tabKey, connectionId, (payload) => sendPacket(ws, payload));
       return true;
     }
     if ((ws.data as { isAgent?: boolean }).isAgent !== true)
@@ -1077,7 +1092,7 @@ export const createApp = ({
       if (!connectionId) return;
       tabSessions.release(connectionId);
       sitePresence.unsubscribe(connectionId);
-      // 页面断开即收回接管：配对码与租约都绑在这条连接上，断线后一律作废。
+      // 配对码随连接作废；已接管的租约按身份记账，等同一身份回来，超时才结束。
       sitePages.dropConnection(connectionId);
       const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
       for (const game of registered ?? []) {

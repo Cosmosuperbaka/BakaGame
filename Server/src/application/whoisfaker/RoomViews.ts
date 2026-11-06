@@ -1,6 +1,5 @@
 import { createEvent } from "../../transport/Packets";
 import { getRoomRoleLimits } from "../../domain/Rules";
-import { controllerPrivateState, redactPrivateState } from "../McpSeatRegistry";
 import {
   ROOM_ID_TEST_MODE,
   type ConnectionRecord,
@@ -210,7 +209,9 @@ const buildPublicPlayers = (
           player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
         isBot: player.isBot,
         ...(player.isAgent ? { isAgent: true } : {}),
-        ...(service.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
+        ...(service.connectionRegistry.isAgentDriven(player.connectionId)
+          ? { mcpControlled: true }
+          : {}),
         isHost: room.hostPlayerId === player.id,
         account: player.account,
         roundStatus,
@@ -287,7 +288,6 @@ export const buildPrivateState = (
   return {
     playerId: player.id,
     sessionToken: player.sessionToken,
-    ...(service.mcpSeats.isControlled(room.id, player.id) ? { mcpControlled: true } : {}),
     role: state?.role,
     side: state?.side,
     word: state?.role === "angel" ? undefined : state?.word,
@@ -382,28 +382,11 @@ export const publishRoom = (
       connection.send(
         createEvent(
           "game.privateState",
-          privateStateForConnection(service, room, player, connection)
+          buildPrivateState(service, room, player)
         )
       );
     }
   }
-};
-
-/** 被 MCP 接管时，只有控制器连接能收到完整私有状态；人类页面只拿到脱敏视图。 */
-export const privateStateForConnection = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord,
-  player: WhoIsFakerPlayerRecord,
-  connection: ConnectionRecord
-): WhoIsFakerPrivateState => {
-  const state = buildPrivateState(service, room, player);
-  const controller = service.mcpSeats.controllerFor(room.id, player.id);
-  if (!controller) return state;
-  if (controller.connectionId === connection.id) return controllerPrivateState(state);
-  return redactPrivateState(
-    "faker",
-    state as unknown as Record<string, unknown>
-  ) as unknown as WhoIsFakerPrivateState;
 };
 
 export const publishRoomCalibration = (
@@ -419,7 +402,7 @@ export const publishRoomCalibration = (
 
     if (!connection.playerId || !player) continue;
     connection.sendStateSyncCalibration?.(
-      createEvent("game.privateState", privateStateForConnection(service, room, player, connection))
+      createEvent("game.privateState", buildPrivateState(service, room, player))
     );
   }
 };

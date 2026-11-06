@@ -291,27 +291,6 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
     ).rejects.toThrow("进入房间没有返回会话凭据");
   });
 
-  test("认领人类座位后凭据登记在案，回缺房间号时报错", async () => {
-    const { socket, client } = await harness();
-    socket.route((message) =>
-      message.type === "mcp.claim"
-        ? {
-            reply: {
-              type: "ack",
-              payload: { roomId: "1234", playerId: "p9", sessionToken: "t9", snapshot: { a: 1 } },
-            },
-          }
-        : { reply: { type: "ack", payload: {} } }
-    );
-    const claimed = await client.claimSeat("faker", "1234", "human-token");
-    expect(claimed).toMatchObject({ roomId: "1234", playerId: "p9" });
-    expect(client.currentSnapshot("faker")).toEqual({ a: 1 });
-    expect(socket.inbound[0]?.payload).toMatchObject({ sessionToken: "human-token" });
-
-    socket.route(() => ({ reply: { type: "ack", payload: { ok: true } } }));
-    await expect(client.claimSeat("faker", "5678", "t")).rejects.toThrow("没有返回房间凭据");
-  });
-
   test("游戏命令带座位信封，未进房时拒绝发送", async () => {
     const { socket, client } = await harness();
     await expect(client.sendInRoom("song", "song.game.start")).rejects.toThrow(
@@ -409,50 +388,6 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
     );
     expect(await client.requestSync("song")).toEqual({ synced: true });
     expect(client.currentPrivateState("song")).toMatchObject({ canGuess: true });
-  });
-
-  test("界面焦点逐游戏上报，站点通道不带游戏归属", async () => {
-    const { socket, client } = await harness();
-    await client.create("song", "1234", {
-      name: "s",
-      visibility: "public",
-      allowSpectators: true,
-      allowAgents: true,
-      userName: "TestAgent",
-    });
-    socket.inbound.length = 0;
-    await client.publishAgentFocus({
-      agentName: "TestAgent",
-      tool: "ui_run",
-      action: "focus",
-      kind: "state",
-    });
-    expect(socket.inbound[0]).toMatchObject({ type: "mcp.focus", game: "song", roomId: "1234" });
-
-    socket.inbound.length = 0;
-    await client.publishSiteFocus({ page: "/abouts", kind: "page" } as never);
-    expect(socket.inbound[0]).toMatchObject({ type: "site.focus" });
-    expect(socket.inbound[0]).not.toHaveProperty("game");
-  });
-
-  test("焦点上报被拒绝也不阻断工具返回", async () => {
-    const { socket, client } = await harness();
-    await client.create("song", "1234", {
-      name: "s",
-      visibility: "public",
-      allowSpectators: true,
-      allowAgents: true,
-      userName: "TestAgent",
-    });
-    socket.route(() => ({ reply: { type: "error", error: { message: "拒绝" } } }));
-    await expect(
-      client.publishAgentFocus({
-        agentName: "TestAgent",
-        tool: "ui_run",
-        action: "focus",
-        kind: "state",
-      })
-    ).resolves.toBeUndefined();
   });
 
   test("掉线后靠座位凭据接回原位", async () => {

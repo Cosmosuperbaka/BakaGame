@@ -348,7 +348,6 @@ export function CEEWaiting({
         {snapshot.source === "native" ? (
           <McpSettingsSection
             game="cee"
-            roomId={snapshot.roomId}
             allowAgents={snapshot.settings.allowAgents === true}
             isHost={isHost}
           />

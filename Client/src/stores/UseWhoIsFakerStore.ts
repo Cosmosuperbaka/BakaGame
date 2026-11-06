@@ -15,7 +15,6 @@ import type {
   WhoIsFakerRoomSnapshot,
   WhoIsFakerPrivateState,
   WhoIsFakerRoomSummary,
-  AgentFocusEvent,
   ServerMessage,
   EventPacket,
 } from "@bakagame/shared";
@@ -37,7 +36,6 @@ export interface WhoIsFakerGameState {
   sessionToken: string | null;
   snapshot: WhoIsFakerRoomSnapshot | null;
   privateState: WhoIsFakerPrivateState | null;
-  agentFocus: AgentFocusEvent | null;
   /** 队列：可同时显示多条，与猜歌 / CEE 的单槽提示相对。 */
   toasts: ToastItem[];
   /**
@@ -64,7 +62,6 @@ export interface WhoIsFakerGameState {
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   applyIncomingSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
-  setAgentFocus: (focus: AgentFocusEvent | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
 
@@ -246,7 +243,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     sessionToken: null,
     snapshot: null,
     privateState: null,
-    agentFocus: null,
     toasts: [],
     channelNotices: [],
     roomClosedAt: null,
@@ -274,7 +270,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         sessionToken: null,
         snapshot: null,
         privateState: null,
-        agentFocus: null,
         channelNotices: [],
         phaseTimedOutEndsAt: null,
         roomClosedAt: null,
@@ -314,7 +309,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         set(noticeUpdate(currentSnapshot, privateState.playerId));
       }
     },
-    setAgentFocus: (agentFocus) => set({ agentFocus }),
     addToast: (text, type = "info", durationMs = 3000) => {
       const id = ++toastCounter;
       set((state) => ({ toasts: [...state.toasts, { id, text, type }] }));
@@ -420,9 +414,6 @@ export function initWhoIsFakerWs() {
           syncedSnapshot = result.state as WhoIsFakerRoomSnapshot;
           if (!roomEntry.isPending()) currentStore.setSnapshot(syncedSnapshot);
         }
-        break;
-      case "mcp.focus":
-        currentStore.setAgentFocus(evt.payload as AgentFocusEvent);
         break;
       case "game.privateState":
         {
