@@ -47,6 +47,8 @@ export function isolatedEnvironment(
     NETEASE_COOKIE: "",
     OTEL_EXPORTER_OTLP_ENDPOINT: "",
     OTEL_EXPORTER_OTLP_HEADERS: "",
+    // 标签页接管的浏览器回归要走真实的远程 MCP 端点。
+    MCP_ENABLED: "true",
     BAKAGAME_TEST_OWNER: owner,
   });
 }
