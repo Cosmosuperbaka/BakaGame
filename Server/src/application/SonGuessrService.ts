@@ -64,6 +64,7 @@ import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
+  SPECTATOR_OFFLINE_GRACE_MS,
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
@@ -417,16 +418,6 @@ export class SonGuessrService implements AdminRoomControl {
       room.emptySinceAt ??= this.now();
     }
 
-    // 0分数的旁观者掉线立即移除
-    if (
-      player.membership === "spectator" &&
-      player.score === 0 &&
-      !player.isBot &&
-      room.hostPlayerId !== player.id
-    ) {
-      delete room.players[player.id];
-    }
-
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
     if (room.hostPlayerId === player.id && !this.isTestRoom(room)) {
       room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
@@ -629,13 +620,23 @@ export class SonGuessrService implements AdminRoomControl {
     return "keep";
   }
 
-  /** 清理掉线超过 3 分钟的真人玩家；被清掉的是房主时先移交，房间空了立即回收。 */
+  /** 离线席位保留多久：0 分真人旁观者没有分数可保留，只留够一次刷新的时间。 */
+  private offlineSeatGraceMs(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord): number {
+    return player.membership === "spectator" &&
+      player.score === 0 &&
+      !player.isBot &&
+      room.hostPlayerId !== player.id
+      ? SPECTATOR_OFFLINE_GRACE_MS
+      : PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS;
+  }
+
+  /** 清理离线超过保留时长的真人玩家；被清掉的是房主时先移交，房间空了立即回收。 */
   private cleanupOfflinePlayers(room: SonGuessrRoomRecord, currentTime: number): void {
     for (const player of Object.values(room.players)) {
       if (
         player.online ||
         player.isBot ||
-        currentTime - player.lastSeenAt < PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+        currentTime - player.lastSeenAt < this.offlineSeatGraceMs(room, player)
       ) {
         continue;
       }

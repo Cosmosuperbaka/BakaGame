@@ -11,6 +11,7 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { SPECTATOR_OFFLINE_GRACE_MS } from "../../src/config/Constants";
 import {
   SERVER_SHUTDOWN_MESSAGE,
   SonGuessrRoomSnapshot,
@@ -471,8 +472,13 @@ describe("SonGuessrService", () => {
     );
   });
 
-  test("0分数的旁观者掉线立即移除", async () => {
-    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+  test("0 分旁观者掉线留够一次刷新的时间，超过宽限才移出", async () => {
+    let clock = 1_000_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+      now: () => clock,
+    });
     const host = connection(service, "spec-host");
     const spectator = connection(service, "spec-spectator");
     await createRoom(service, host);
@@ -483,9 +489,34 @@ describe("SonGuessrService", () => {
       roomId: "1234",
       payload: { spectator: true },
     });
-    expect((service as any).rooms.get("1234")!.players[specState.playerId]).toBeDefined();
+    const room = (service as any).rooms.get("1234")!;
+    expect(room.players[specState.playerId]).toBeDefined();
+
+    // 刷新：连接断开后席位还在，新连接凭原票据回到旁观席。
     await service.unregisterConnection(spectator.record.id);
-    expect((service as any).rooms.get("1234")!.players[specState.playerId]).toBeUndefined();
+    expect(room.players[specState.playerId]).toMatchObject({
+      online: false,
+      membership: "spectator",
+    });
+    const refreshed = connection(service, "spec-refreshed");
+    await execute(service, refreshed, {
+      id: "reconnect-spectator",
+      type: "song.room.reconnect",
+      payload: { roomId: "1234", sessionToken: specState.sessionToken },
+    });
+    expect(room.players[specState.playerId]).toMatchObject({
+      online: true,
+      membership: "spectator",
+    });
+
+    // 真走了：宽限内仍保留，超过才移出，且不等普通玩家那么久。
+    await service.unregisterConnection(refreshed.record.id);
+    clock += SPECTATOR_OFFLINE_GRACE_MS - 1;
+    await service.runHousekeeping();
+    expect(room.players[specState.playerId]).toBeDefined();
+    clock += 1;
+    await service.runHousekeeping();
+    expect(room.players[specState.playerId]).toBeUndefined();
   });
 
   test("离线旁观者的下轮参战预约不会阻塞回合", async () => {

@@ -52,7 +52,6 @@ import {
   ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
   HOST_RECONNECT_TIMEOUT_MS,
-  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
@@ -80,6 +79,7 @@ import {
   clearPendingDisconnect,
   forceRemovePlayer,
   handlePlayerOffline,
+  offlineSeatGraceMs,
   resolveDisconnect,
   requeuePendingDisconnects,
   shouldAutoCloseWhenEmpty,
@@ -526,13 +526,13 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return true;
   }
 
-  /** 清理掉线超过3分钟的玩家（3分钟清理超时） */
+  /** 清理离线超过保留时长的玩家：时长按席位而定，见 `offlineSeatGraceMs`。 */
   private async removeOfflinePlayers(room: WhoIsFakerRoomRecord, currentTime: number) {
     for (const player of Object.values(room.players)) {
       if (
         player.online ||
         player.isBot ||
-        currentTime - player.lastSeenAt < PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+        currentTime - player.lastSeenAt < offlineSeatGraceMs(room, player)
       ) {
         continue;
       }

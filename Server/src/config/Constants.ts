@@ -22,6 +22,12 @@ export const HOST_RECONNECT_TIMEOUT_MS = 60 * 1000;
 /** 玩家掉线清理超时时间（3分钟） */
 export const PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS = 3 * 60 * 1000;
 
+/**
+ * 0 分真人旁观者的离线保留时长：没有分数可保留，不占名册太久，
+ * 但要留够一次刷新的时间，否则刷新就等于被移出房间。巡检粒度见 Index.ts 的定时器。
+ */
+export const SPECTATOR_OFFLINE_GRACE_MS = 30 * 1000;
+
 /** 房间聊天记录最大保留条数 */
 export const CHAT_LIMIT = 20;
 

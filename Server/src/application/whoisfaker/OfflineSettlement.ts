@@ -10,7 +10,12 @@ import {
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
-import { HOST_RECONNECT_TIMEOUT_MS, QUESTIONER_RECONNECT_TIMEOUT_MS } from "../../config/Constants";
+import {
+  HOST_RECONNECT_TIMEOUT_MS,
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
+  QUESTIONER_RECONNECT_TIMEOUT_MS,
+  SPECTATOR_OFFLINE_GRACE_MS,
+} from "../../config/Constants";
 import {
   applyEliminationAndMove,
   predictFeedbackNext,
@@ -55,17 +60,17 @@ type RoundPreservation = {
 /** 白板猜词者离场可能当场终局，此时必须跳过踢人收尾与日志。 */
 type ForcedRemovalFlow = "continue" | "done";
 
-/** 0 分真人旁观者掉线后没有保留价值，立即移出。 */
-const isExpendableSpectator = (ctx: OfflineContext): boolean => {
-  const { player, reason, wasHost } = ctx;
-  return (
-    reason === "disconnect" &&
-    player.membership === "spectator" &&
-    player.score === 0 &&
-    !player.isBot &&
-    !wasHost
-  );
-};
+/** 离线席位保留多久：0 分真人旁观者没有分数可保留，只留够一次刷新的时间。 */
+export const offlineSeatGraceMs = (
+  room: WhoIsFakerRoomRecord,
+  player: WhoIsFakerPlayerRecord
+): number =>
+  player.membership === "spectator" &&
+  player.score === 0 &&
+  !player.isBot &&
+  room.hostPlayerId !== player.id
+    ? SPECTATOR_OFFLINE_GRACE_MS
+    : PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS;
 
 export const resolveDisconnect = async (
   service: WhoIsFakerServiceInternals,
@@ -137,10 +142,6 @@ export const handlePlayerOffline = async (
 
   markPlayerDisconnected(service, ctx);
   releaseHostSlot(service, ctx);
-  // 0分数的旁观者掉线立即移除
-  if (isExpendableSpectator(ctx)) {
-    delete room.players[player.id];
-  }
 
   if (!round || round.phase === "gameOver") {
     await settleOfflineOutsideRound(service, ctx);

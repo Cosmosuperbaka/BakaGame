@@ -3,6 +3,7 @@ import { createRoom, joinPlayers } from "./Fixtures";
 import {
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
+  SPECTATOR_OFFLINE_GRACE_MS,
 } from "../../src/config/Constants";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from ".././Helpers";
@@ -34,8 +35,8 @@ describe("清理与聊天", () => {
     expect(createResult.roomId).toBe("Oblivionis");
   });
 
-  test("0分数的旁观者掉线立即移除", async () => {
-    const { service } = createTestContext();
+  test("0 分旁观者掉线留够一次刷新的时间，超过宽限才移出", async () => {
+    const { service, advanceTime } = createTestContext();
     await createRoom(service, "3333");
     const spectatorConn = createConnection(service, "spec-conn");
     const joinResult = (await execute(service, spectatorConn, {
@@ -43,7 +44,7 @@ describe("清理与聊天", () => {
       type: "room.join",
       roomId: "3333",
       payload: { userName: "旁观者" },
-    })) as { playerId: string };
+    })) as { playerId: string; sessionToken: string };
     await execute(service, spectatorConn, {
       id: "set-spec",
       type: "player.setSpectator",
@@ -53,7 +54,31 @@ describe("清理与聊天", () => {
     const room = (service as any).rooms.get("3333")!;
     expect(room.players[joinResult.playerId]).toBeDefined();
 
+    // 刷新：连接断开后席位还在，新连接凭原票据回到旁观席。
     await service.unregisterConnection(spectatorConn.record.id);
+    expect(room.players[joinResult.playerId]).toMatchObject({
+      online: false,
+      membership: "spectator",
+    });
+    const refreshed = createConnection(service, "spec-refreshed");
+    const resumed = (await execute(service, refreshed, {
+      id: "reconnect-spec",
+      type: "room.reconnect",
+      payload: { roomId: "3333", sessionToken: joinResult.sessionToken },
+    })) as { playerId: string };
+    expect(resumed.playerId).toBe(joinResult.playerId);
+    expect(room.players[joinResult.playerId]).toMatchObject({
+      online: true,
+      membership: "spectator",
+    });
+
+    // 真走了：宽限内仍保留，超过才移出，且不等普通玩家那么久。
+    await service.unregisterConnection(refreshed.record.id);
+    advanceTime(SPECTATOR_OFFLINE_GRACE_MS - 1);
+    await service.runHousekeeping();
+    expect(room.players[joinResult.playerId]).toBeDefined();
+    advanceTime(1);
+    await service.runHousekeeping();
     expect(room.players[joinResult.playerId]).toBeUndefined();
   });
 
