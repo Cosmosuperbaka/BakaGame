@@ -153,6 +153,8 @@ export interface SonGuessrSettings {
   questionType: SongQuestionType;
   questionMode: SongQuestionMode;
   autoRotateSubmitter: boolean;
+  /** 手动出题时出题人能否自选片段；缺省 true。关闭后选歌即出题，片段由服务端随机截取。 */
+  allowCustomClip?: boolean;
   autoFilters: SongAutoFilters;
   animeAutoFilters?: AnimeAutoFilters;
   lyricsLineCount: number;
@@ -631,6 +633,7 @@ export const SonGuessrPayloadSchemas = {
       questionType: t.Optional(questionTypeSchema),
       questionMode: t.Optional(questionModeSchema),
       autoRotateSubmitter: t.Optional(t.Boolean()),
+      allowCustomClip: t.Optional(t.Boolean()),
       autoFilters: t.Optional(SongAutoFiltersInputSchema),
       animeAutoFilters: t.Optional(AnimeAutoFiltersSchema),
       lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),

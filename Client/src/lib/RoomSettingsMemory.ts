@@ -35,6 +35,8 @@ export interface SongRoomQuestionMemory {
   questionType: SongQuestionType;
   questionMode: SongQuestionMode;
   autoRotateSubmitter: boolean;
+  /** 旧记录没有这一项：缺席时按服务端缺省重放。 */
+  allowCustomClip?: boolean;
   autoFilters: SongAutoFilters;
   animeAutoFilters: AnimeAutoFilters;
 }

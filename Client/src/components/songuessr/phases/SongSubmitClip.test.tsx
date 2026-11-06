@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SongClipPreview, SongSearchResult } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import { submittingSnapshot, submitterPrivate } from "@/stories/fixtures/SonGuessr";
+import { songSettings, submittingSnapshot, submitterPrivate } from "@/stories/fixtures/SonGuessr";
 import { GameStage, type SongGameAreaProps } from "./SongGameStage";
 
 const initialState = useSonGuessrStore.getState();
@@ -89,5 +89,41 @@ describe("手动出题的片段编辑", () => {
       },
       { sources: ["song-1", "qq:alt"], requiresVip: true }
     );
+  });
+
+  it("关闭自选片段后选中即出题，不取预览也不进编辑器", async () => {
+    const user = userEvent.setup();
+    const sendCommand = vi.fn(async () => ({}));
+    useSonGuessrStore.setState({
+      sendCommand: sendCommand as never,
+      searchMusic: vi.fn().mockResolvedValue([SONG]) as never,
+    });
+    const onSelectSearchSong = vi.fn(async () => {});
+    const snapshot = submittingSnapshot({ settings: songSettings({ allowCustomClip: false }) });
+    render(<GameStage {...stageProps({ snapshot, onSelectSearchSong })} />);
+
+    expect(screen.getByText(/选中即出题，片段由系统随机截取/)).toBeInTheDocument();
+    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "测试");
+    await act(
+      () =>
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 400);
+        })
+    );
+    await user.click(await screen.findByRole("option", { name: /测试歌/ }));
+
+    expect(sendCommand).not.toHaveBeenCalledWith(
+      "song.music.detail",
+      expect.anything(),
+      expect.anything()
+    );
+    expect(onSelectSearchSong).toHaveBeenCalledExactlyOnceWith(
+      "song-1",
+      "submit",
+      undefined,
+      undefined,
+      { sources: ["song-1", "qq:alt"], requiresVip: true }
+    );
+    expect(screen.queryByRole("slider", { name: "片段起点" })).not.toBeInTheDocument();
   });
 });

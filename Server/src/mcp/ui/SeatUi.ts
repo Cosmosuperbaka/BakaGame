@@ -242,7 +242,7 @@ export class SeatUi {
       return { feedback, mutate: mutatesFaker(control.id) };
     }
     if (game === "song") {
-      const mutate = mutatesSong(control.id, context.state);
+      const mutate = mutatesSong(control.id, context);
       const feedback = await clickSongControl(context, control);
       return { feedback, mutate };
     }
@@ -485,7 +485,7 @@ const mutatesFaker = (id: string): boolean =>
   id === "faker.blank.approve" ||
   id === "faker.blank.reject";
 
-const mutatesSong = (id: string, state: UiState): boolean => {
+const mutatesSong = (id: string, { state, snapshot }: UiContext): boolean => {
   if (
     id === "song.ready" ||
     id === "song.start" ||
@@ -498,8 +498,11 @@ const mutatesSong = (id: string, state: UiState): boolean => {
   )
     return true;
   if (id === "song.guess.search.result" || id.startsWith("song.guess.search.result.")) return true;
-  if (id.startsWith("song.submit.search.result."))
-    return state.search?.kind === "anime" && Boolean(state.search.subject);
+  if (id.startsWith("song.submit.search.result.")) {
+    // 猜番选到关联曲才出题；猜歌关闭自选片段时选中即出题，开着时只是打开片段确认。
+    if (state.search?.kind === "anime") return Boolean(state.search.subject);
+    return isRecord(snapshot.settings) && snapshot.settings.allowCustomClip === false;
+  }
   if (id === "chat.send") return true;
   return false;
 };

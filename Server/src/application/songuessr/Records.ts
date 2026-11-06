@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: SonGuessrSettings = {
   questionType: "song",
   questionMode: "manual",
   autoRotateSubmitter: false,
+  allowCustomClip: true,
   autoFilters: { artists: [], minPopularity: 0 },
   animeAutoFilters: {
     ranking: "all",

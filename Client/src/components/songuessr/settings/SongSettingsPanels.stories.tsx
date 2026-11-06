@@ -134,6 +134,17 @@ export const QuestionManual: Story = {
   ),
 };
 
+export const QuestionManualNoClip: Story = {
+  name: "题目设置 · 手动出题 · 关闭自选片段",
+  render: () => (
+    <div className={panel}>
+      <SongQuestionSettings
+        snapshot={songSnapshot({ settings: songSettings({ allowCustomClip: false }) })}
+      />
+    </div>
+  ),
+};
+
 export const QuestionAutoSong: Story = {
   name: "题目设置 · 自动出题 · 歌单与歌手",
   render: () => (

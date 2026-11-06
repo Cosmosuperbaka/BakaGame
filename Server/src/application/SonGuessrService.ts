@@ -1364,6 +1364,9 @@ export class SonGuessrService implements AdminRoomControl {
     if (!solo && payload.autoRotateSubmitter !== undefined) {
       settings.autoRotateSubmitter = payload.autoRotateSubmitter;
     }
+    if (!solo && payload.allowCustomClip !== undefined) {
+      settings.allowCustomClip = payload.allowCustomClip;
+    }
     if (payload.autoFilters !== undefined)
       settings.autoFilters = normalizeAutoFilters(this, payload.autoFilters);
     if (payload.animeAutoFilters !== undefined) {
@@ -1998,6 +2001,9 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== player.id) {
       throw new AppError("NOT_SUBMITTER", "只有当前出题人可以预览歌曲");
     }
+    if (room.settings.allowCustomClip === false) {
+      throw new AppError("CUSTOM_CLIP_DISABLED", "本房间未开放自选片段");
+    }
     this.requireMusicQuota(room, connection, player);
     const submitterId = player.id;
     const { song, alternateSongIds } = await this.loadSongWithSources(
@@ -2078,7 +2084,8 @@ export class SonGuessrService implements AdminRoomControl {
       player.id,
       undefined,
       undefined,
-      createManualLyricClip(song, clip)
+      // 关闭自选片段后忽略客户端带来的区间，与没传片段完全一致。
+      createManualLyricClip(song, room.settings.allowCustomClip === false ? undefined : clip)
     );
     if (room.currentRound?.number === roundNumber) {
       room.currentRound.alternateSongIds = alternateSongIds;

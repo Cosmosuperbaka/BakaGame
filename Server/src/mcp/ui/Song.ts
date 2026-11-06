@@ -575,11 +575,17 @@ const clickSubmitResult = async (context: UiContext, search: UiSearchState, inde
   }
   const songId = str(result.id);
   if (!songId) throw new Error("歌曲缺少 songId");
-  const ack = await send(context, "song.music.detail", {
+  const pick = {
     songId,
     ...(Array.isArray(result.sources) ? { sources: result.sources.map(String) } : {}),
     ...(typeof result.requiresVip === "boolean" ? { requiresVip: result.requiresVip } : {}),
-  });
+  };
+  if (settingsOf(context).allowCustomClip === false) {
+    await send(context, "song.game.submitSong", pick);
+    clearSearch(context);
+    return `已出题《${str(result.title) ?? songId}》，片段由系统随机截取`;
+  }
+  const ack = await send(context, "song.music.detail", pick);
   const preview = isRecord(ack) && isRecord(ack.song) ? ack.song : undefined;
   if (!preview) throw new Error("歌曲详情没有返回");
   context.state.songPreview = preview;

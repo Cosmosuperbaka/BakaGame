@@ -489,6 +489,26 @@ describe("猜歌界面：控件动作", () => {
     expect(run.steps.at(-1)?.feedback).toContain("请确认截取片段");
   });
 
+  test("房间关闭自选片段时选中即出题，不取预览", async () => {
+    const { ui, calls } = open("submittingSong", {
+      snapshot: songSnapshot("submittingSong", {
+        settings: { questionType: "song", questionMode: "manual", allowCustomClip: false },
+      }),
+      privateState: { canSubmitSong: true },
+      handler: (type, payload) => searchResults(type, payload),
+    });
+    const run = await ui.run("song", [
+      { action: "focus", control: "song.submit.search.input" },
+      { action: "type", text: "测试" },
+      { action: "click", control: "song.submit.search.result.0" },
+    ]);
+    expect(run.ok).toBe(true);
+    expect(typesOf(calls)).not.toContain("song.music.detail");
+    expect(payloadOf(calls, "song.game.submitSong")).toEqual({ songId: "netease:9" });
+    expect(ui.state("song").songPreview).toBeUndefined();
+    expect(run.steps.at(-1)?.feedback).toContain("随机截取");
+  });
+
   test("没有副歌时退回首句歌词，再退回零起点", async () => {
     const { ui } = open("submittingSong", {
       privateState: { canSubmitSong: true },

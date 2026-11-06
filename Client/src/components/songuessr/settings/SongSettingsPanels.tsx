@@ -85,6 +85,7 @@ const questionOf = (snapshot: SonGuessrRoomSnapshot) => ({
   questionType: snapshot.settings.questionType,
   questionMode: snapshot.settings.questionMode,
   autoRotateSubmitter: snapshot.settings.autoRotateSubmitter,
+  allowCustomClip: snapshot.settings.allowCustomClip !== false,
   playlist: snapshot.settings.autoFilters.playlist,
   artists: snapshot.settings.autoFilters.artists,
   minPopularity: snapshot.settings.autoFilters.minPopularity,
@@ -118,6 +119,7 @@ export function SongQuestionSettings({
       questionType: draft.questionType,
       questionMode: draft.questionMode,
       autoRotateSubmitter: draft.autoRotateSubmitter,
+      allowCustomClip: draft.allowCustomClip,
       autoFilters: {
         playlist: draft.playlist,
         artists: draft.artists,
@@ -166,6 +168,14 @@ export function SongQuestionSettings({
             description="每轮按玩家加入顺序自动指定下一位出题人。"
             checked={values.autoRotateSubmitter}
             onCheckedChange={(value) => edit("autoRotateSubmitter", value)}
+          />
+        </SettingReveal>
+        <SettingReveal open={!automatic && values.questionType === "song"}>
+          <SettingSwitchRow
+            label="自选片段"
+            description="关闭后选歌即出题，片段由系统随机截取。"
+            checked={values.allowCustomClip}
+            onCheckedChange={(value) => edit("allowCustomClip", value)}
           />
         </SettingReveal>
       </SettingsSection>
@@ -679,6 +689,9 @@ function questionSummaryLines(snapshot: SonGuessrRoomSnapshot): string[] {
         : settings.autoRotateSubmitter
           ? "手动轮流出题"
           : "手动出题",
+    !automatic && settings.questionType === "song" && settings.allowCustomClip === false
+      ? "随机片段"
+      : "",
     automatic && settings.questionType === "song"
       ? settings.autoFilters.playlist
         ? `歌单 ${settings.autoFilters.playlist.name ?? settings.autoFilters.playlist.id}`

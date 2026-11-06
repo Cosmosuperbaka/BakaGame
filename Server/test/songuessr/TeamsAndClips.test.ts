@@ -542,6 +542,66 @@ describe("手动出题片段", () => {
     expect(calls).toEqual(["answer", "qq:alt", "answer", "qq:alt"]);
   });
 
+  test("房主关闭自选片段：全房看到同一状态，预览被拒，带来的区间被忽略", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "switch-host");
+    const guest = connection(service, "switch-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "玩家");
+    // 默认保持现有行为：允许自选。
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").settings).toMatchObject({
+      allowCustomClip: true,
+    });
+    await execute(service, host, {
+      id: "switch-off",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { allowCustomClip: false },
+    });
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").settings).toMatchObject({
+      allowCustomClip: false,
+    });
+    await execute(service, guest, {
+      id: "switch-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await execute(service, host, {
+      id: "switch-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, host, {
+      id: "switch-choose",
+      type: "song.game.chooseSubmitter",
+      roomId: "1234",
+      payload: { playerId: hostState.playerId },
+    });
+
+    await expect(
+      execute(service, host, {
+        id: "switch-preview",
+        type: "song.music.detail",
+        roomId: "1234",
+        payload: { songId: "answer" },
+      })
+    ).rejects.toMatchObject({ code: "CUSTOM_CLIP_DISABLED" });
+
+    await execute(service, host, {
+      id: "switch-submit",
+      type: "song.game.submitSong",
+      roomId: "1234",
+      payload: { songId: "answer", clip: { startTime: 2_000, endTime: 8_000 } },
+    });
+    const clip = lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound
+      ?.lyricClip;
+    expect(clip).toBeDefined();
+    expect([clip?.startTime, clip?.endTime]).not.toEqual([2_000, 8_000]);
+  });
+
   test("手动片段随回合下发，快照导出恢复后仍在", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest, guestState } = await enterSubmittingPhase(service);

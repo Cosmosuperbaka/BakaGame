@@ -294,6 +294,51 @@ export const SubmittingAnime: Story = {
   play: async ({ canvasElement }) => waitForLyrics(canvasElement, 0),
 };
 
+export const SubmittingNoCustomClip: Story = {
+  name: "出题阶段 · 关闭自选片段",
+  play: undefined,
+  args: {
+    snapshot: submittingSnapshot({ settings: songSettings({ allowCustomClip: false }) }),
+    privateState: songPrivate({ playerId: peach.id, isSubmitter: true, canSubmitSong: true }),
+    me: submittingSnapshot().players.find((player) => player.id === peach.id),
+    isHost: false,
+  },
+};
+
+const longClip = {
+  startTime: 34_000,
+  endTime: 160_000,
+  lines: Array.from({ length: 30 }, (_, index) => ({
+    time: 35_000 + index * 4_000,
+    endTime: 39_000 + index * 4_000,
+    text: ["沈むように溶けてゆくように", "二人だけの空が広がる夜に", "「さよなら」だけだった"][
+      index % 3
+    ]!,
+    translatedLyric: index % 2 === 0 ? "仿佛渐渐溶化，沉入夜色" : undefined,
+  })),
+};
+
+const longClipRound = {
+  currentRound: {
+    roundNumber: 3,
+    submitterPlayerId: peach.id,
+    audioUrl: "",
+    lyricClip: longClip,
+  },
+};
+
+export const LongClipPlaying: Story = {
+  name: "超长片段 · 播放中居中",
+  tags: ["page"],
+  args: { snapshot: playingSnapshot(longClipRound), audioPlaybackState: "playing" },
+};
+
+export const LongClipOverview: Story = {
+  name: "超长片段 · 总览可滚动",
+  tags: ["page"],
+  args: { snapshot: playingSnapshot(longClipRound), audioPlaybackState: "completed" },
+};
+
 export const RomanLyrics: Story = {
   name: "歌词注音",
   args: {

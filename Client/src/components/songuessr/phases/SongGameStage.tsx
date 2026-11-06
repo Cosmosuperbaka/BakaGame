@@ -701,6 +701,13 @@ function ChoosingSubmitterPhase({
   );
 }
 
+const submitPrompt = (anime: boolean, customClip: boolean) => {
+  if (anime) return "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。";
+  return customClip
+    ? "搜索一首可播放的歌曲，选中后可试听并截取片段。"
+    : "搜索一首可播放的歌曲，选中即出题，片段由系统随机截取。";
+};
+
 /**
  * 手动出题：先搜歌，选中后进入片段配置，再由出题人确认区间。
  *
@@ -719,7 +726,16 @@ function SubmittingSongPhase({
     (player) => player.id === snapshot.pendingSubmitterPlayerId
   );
 
+  const customClip = snapshot.settings.allowCustomClip !== false;
+
   const pickSong = async (song: SongSearchResult) => {
+    if (!customClip) {
+      await onSelectSearchSong(song.id, "submit", undefined, undefined, {
+        sources: song.sources,
+        requiresVip: song.requiresVip,
+      });
+      return;
+    }
     const payload: { songId: string; sources?: string[]; requiresVip?: boolean } = {
       songId: song.id,
     };
@@ -781,9 +797,7 @@ function SubmittingSongPhase({
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  {anime
-                    ? "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。"
-                    : "搜索一首可播放的歌曲，选中后可试听并截取片段。"}
+                  {submitPrompt(anime, customClip)}
                   歌曲信息只会在回合结束后公开。
                 </p>
                 {anime ? (
