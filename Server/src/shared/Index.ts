@@ -5,7 +5,6 @@ export * from "./WhoIsFaker";
 export * from "./SonGuessr";
 export * from "./CEE";
 export * from "./AgentActivity";
-export type { TabSessionClaimAck } from "./TabSession";
 export * from "./Account";
 export * from "./Badges";
 export * from "./Status";

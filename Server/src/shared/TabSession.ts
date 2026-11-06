@@ -1,4 +1,4 @@
-import { Type as t, type Static } from "@sinclair/typebox";
+import { Type as t } from "@sinclair/typebox";
 import { TAB_TOKEN_PATTERN } from "./TabSessionValues";
 
 export * from "./TabSessionValues";
@@ -12,10 +12,6 @@ export const TabSessionAliveSchema = t.Object(
   { nonce: t.String({ minLength: 1, maxLength: 64 }) },
   strict
 );
-
-export type TabSessionClaimPayload = Static<typeof TabSessionClaimSchema>;
-export type TabSessionAttachPayload = Static<typeof TabSessionAttachSchema>;
-export type TabSessionAlivePayload = Static<typeof TabSessionAliveSchema>;
 
 export interface TabSessionClaimAck {
   token: string;
