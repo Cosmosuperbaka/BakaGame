@@ -207,6 +207,15 @@ describe("服务端重启归因", () => {
     expect(first.serverRestartedRecently()).toBe(false);
   });
 
+  it("游戏连接先于站点连接重连：恢复房间之前就知道服务端重启过", async () => {
+    const { attachTabSession, claimTabSession, serverRestartedRecently } = await loadPage();
+    await claimTabSession(ackWith({ token: TOKEN, rotated: false, serverEpoch: "boot-1" }));
+
+    await attachTabSession(ackWith({ attached: true, serverEpoch: "boot-2" }));
+
+    expect(serverRestartedRecently()).toBe(true);
+  });
+
   it("首次见到 epoch 不算重启", async () => {
     const { claimTabSession, serverRestartedRecently } = await loadPage();
     await claimTabSession(ackWith({ token: TOKEN, rotated: false, serverEpoch: "boot-1" }));

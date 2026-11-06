@@ -118,7 +118,8 @@ const openTab = async (port: number, token?: string) => {
   const site = await openSocket(port);
   const claim = await claimTab(site, token);
   const game = await openSocket(port);
-  await request(game, "site.session.attach", { token: claim.token });
+  const attached = await request(game, "site.session.attach", { token: claim.token });
+  expect(attached.payload).toEqual({ attached: true, serverEpoch: claim.serverEpoch });
   return { site, game, claim };
 };
 

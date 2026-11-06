@@ -957,7 +957,7 @@ export const createApp = ({
       if (!Value.Check(TabSessionAttachSchema, message.payload))
         throw new AppError("INVALID_MESSAGE", "标签页身份不合法");
       data.tabKey = tabKeyOf(message.payload.token);
-      sendPacket(ws, createAck(envelope, { attached: true }));
+      sendPacket(ws, createAck(envelope, { attached: true, serverEpoch: tabSessions.serverEpoch }));
       return true;
     }
     if (!Value.Check(TabSessionClaimSchema, message.payload))

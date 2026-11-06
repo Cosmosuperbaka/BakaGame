@@ -106,16 +106,21 @@ const settle = (): void => {
   for (const resolve of pending) resolve();
 };
 
+/** 两种连接都带回 epoch：重启后谁先连上由退避决定，游戏连接先到时也要先知道服务端重启过。 */
+const noteServerEpoch = (epoch: unknown): void => {
+  if (typeof epoch !== "string") return;
+  const previous = readStored(SERVER_EPOCH_KEY);
+  if (previous !== null && previous !== epoch) serverRestartedAt = Date.now();
+  writeStored(SERVER_EPOCH_KEY, epoch);
+};
+
 const applyClaim = (ack: Record<string, unknown>): void => {
   if (typeof ack.token !== "string") return;
   // 带去的身份正被另一张开着的标签页占用：这份存储是继承来的，座位凭证也要一起丢。
   if (ack.rotated === true) forgetInheritedIdentity();
   tabToken = ack.token;
   writeStored(TAB_TOKEN_KEY, ack.token);
-  if (typeof ack.serverEpoch !== "string") return;
-  const previous = readStored(SERVER_EPOCH_KEY);
-  if (previous !== null && previous !== ack.serverEpoch) serverRestartedAt = Date.now();
-  writeStored(SERVER_EPOCH_KEY, ack.serverEpoch);
+  noteServerEpoch(ack.serverEpoch);
 };
 
 /**
@@ -154,7 +159,7 @@ const waitForTabToken = (timeoutMs: number): Promise<string | null> => {
  */
 export const attachTabSession = async (exchange: PreludeExchange): Promise<void> => {
   const token = await waitForTabToken(TAB_READY_TIMEOUT_MS);
-  if (token) await exchange(SITE_SESSION_ATTACH_COMMAND, { token });
+  if (token) noteServerEpoch((await exchange(SITE_SESSION_ATTACH_COMMAND, { token })).serverEpoch);
 };
 
 /** 应答服务端探测：另一条连接带着同一份身份来领取时，靠这一帧证明本页还开着。 */
