@@ -466,6 +466,15 @@ function RoomAccountSettings({
             ? "QQ音乐暂时拒绝了本次登录，请稍后重新扫码"
             : "网易云暂时拒绝了本次登录，请稍后重新扫码"
         );
+      } else if (
+        appError.code === "MUSIC_LOGIN_CANCELLED" ||
+        appError.code === "MUSIC_LOGIN_FAILED" ||
+        appError.code === "MUSIC_SESSION_INVALID"
+      ) {
+        // 取消、授权失效与上游协议失败都是该二维码的终态：不再轮询同一张码
+        // （重复提交会反复消耗一次性授权），提示原因并等待玩家刷新。
+        setQr(null);
+        setQrStatus(appError.message ?? "登录失败，请点击刷新二维码");
       } else {
         setQrStatus(appError.message ?? "二维码状态检查失败");
       }

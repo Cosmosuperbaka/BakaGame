@@ -465,7 +465,12 @@ export class QQMusicProvider implements MusicProvider {
 
   /** 排队执行一次 QQ 音乐上游请求；正常 resolve 的限流形状响应转成业务异常。 */
   private async callUpstream<T>(cookie: string | undefined, task: () => Promise<T>): Promise<T> {
-    const response = await this.queueFor(cookie).scheduleRequest(task);
+    // 带凭据的请求按账号指纹记限流退避：一个号撞限流只冷却它自己，
+    // 池里其它账号照常工作；匿名请求仍共用一条退避。
+    const response = await this.queueFor(cookie).scheduleRequest(
+      task,
+      cookie ? `account:${this.audioCacheScope(cookie)}` : undefined
+    );
     if (this.isRateLimitError(response)) {
       const record = asRecord(response);
       const bodyCode = readNumber(asRecord(record.body).code);
@@ -1098,40 +1103,37 @@ export class QQMusicProvider implements MusicProvider {
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLogin> {
     const qrType = type || "qq";
-    const res = await this.callUpstream(undefined, () => qqmusic.login_qr_create({ type: qrType }));
+    // 扫码登录走独立的登录域名（ptlogin / 微信 / MQTT 通道），不占用 musicu 的限流队列；
+    // 否则微信长轮询会占住匿名队列的唯一并发位，拖垮匿名检索并推高熔断计数。
+    let res: Awaited<ReturnType<typeof qqmusic.login_qr_create>>;
+    try {
+      res = await qqmusic.login_qr_create({ type: qrType });
+    } catch (error) {
+      this.options.logger?.warn?.("QQ 音乐登录二维码生成失败", { qrType, ...describeError(error) });
+      throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
+    }
     const body = asRecord(res.body);
-    let key: string;
     if (qrType === "qq") {
       const qrsig = readText(body.qrsig);
       const ptqrtoken = readText(body.ptqrtoken);
-      key = `${qrsig}:::${ptqrtoken}`;
-    } else if (qrType === "wx") {
-      key = readText(body.uuid);
-    } else {
-      key = readText(body.qrcodeID);
-    }
-    if (qrType === "qq") {
-      return {
-        key,
-        qrUrl: readText(body.url),
-        qrImage: readText(body.qrimg),
-      };
+      const qrImage = readText(body.qrimg);
+      if (!qrsig || !ptqrtoken || !qrImage) {
+        throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
+      }
+      return { key: `${qrsig}:::${ptqrtoken}`, qrUrl: readText(body.url), qrImage };
     }
     if (qrType === "wx") {
       const uuid = readText(body.uuid);
+      if (!uuid) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成微信登录二维码，请稍后重试");
       const qrurl = readString(body.qrurl) || `https://open.weixin.qq.com/connect/qrcode/${uuid}`;
-      return {
-        key: uuid,
-        qrUrl: qrurl,
-        qrImage: qrurl,
-      };
+      return { key: uuid, qrUrl: qrurl, qrImage: qrurl };
     }
-    // mobile
-    return {
-      key,
-      qrUrl: "https://y.qq.com",
-      qrImage: readText(body.qrcode),
-    };
+    const qrcodeID = readText(body.qrcodeID);
+    const qrImage = readText(body.qrcode);
+    if (!qrcodeID || !qrImage) {
+      throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
+    }
+    return { key: qrcodeID, qrUrl: "https://y.qq.com", qrImage };
   }
 
   async checkQrLogin(
@@ -1141,21 +1143,43 @@ export class QQMusicProvider implements MusicProvider {
   ): Promise<MusicQrLoginCheck> {
     const qrType = type || "qq";
     const [qrsig, ptqrtoken] = key.split(":::");
-    const res = await this.callUpstream(undefined, () =>
-      qqmusic.login_qr_check(
+    let res: Awaited<ReturnType<typeof qqmusic.login_qr_check>>;
+    try {
+      res = await qqmusic.login_qr_check(
         qrType === "qq"
           ? { type: "qq", qrsig, ptqrtoken: ptqrtoken || undefined }
           : qrType === "wx"
             ? { type: "wx", uuid: key }
             : { type: "mobile", qrcodeID: key }
-      )
-    );
+      );
+    } catch (error) {
+      // 轮询自身的瞬时异常不等于二维码作废：继续等，下一轮重试。
+      this.options.logger?.debug?.("QQ 音乐扫码轮询异常，按等待处理", {
+        qrType,
+        ...describeError(error),
+      });
+      return { status: "waiting", message: "等待扫码" };
+    }
     const body = asRecord(res.body);
 
     const code = readNumber(body.code);
     if (code === 200) {
       const cookieStr = readString(body.cookieStr) ?? "";
-      const session = await this.resolveLoginSession(cookieStr, {});
+      if (!cookieStr) {
+        throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录凭证，请重新扫码");
+      }
+      let session: MusicLoginSession;
+      try {
+        session = await this.resolveLoginSession(cookieStr, {});
+      } catch (error) {
+        if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") {
+          // 凭证刚签发就校验不过：说明扫码链路拿到的是无效凭证，而不是“旧登录态过期”。
+          // 单独标记，避免玩家看到笼统的“登录状态已失效”而不知道该重新扫码。
+          this.options.logger?.warn?.("QQ 音乐扫码登录后凭证校验未通过", { qrType });
+          throw new AppError("MUSIC_LOGIN_FAILED", "扫码已通过但 QQ 音乐校验未通过，请重新扫码");
+        }
+        throw error;
+      }
       return {
         status: "authorized",
         message: "登录成功",
@@ -1168,7 +1192,39 @@ export class QQMusicProvider implements MusicProvider {
     if (code === 802 || code === 67) {
       return { status: "scanned", message: "已扫码，等待确认" };
     }
+    if (code === 803) {
+      throw new AppError("MUSIC_LOGIN_CANCELLED", "已在手机上取消登录，请重新扫码");
+    }
+    if (code === 500) throw this.qrProtocolError(qrType, body);
     return { status: "waiting", message: readString(body.message) ?? "等待扫码" };
+  }
+
+  /** 上游协议失败 → 业务异常：保留阶段与上游码进日志，面向玩家的文案按原因区分。 */
+  private qrProtocolError(qrType: string, body: Record<string, unknown>): AppError {
+    const reason = readString(body.reason) ?? "protocol";
+    const stage = readString(body.stage) ?? "unknown";
+    const upstreamCode = readNumber(body.upstreamCode);
+    this.options.logger?.warn?.("QQ 音乐扫码登录协议失败", {
+      qrType,
+      stage,
+      reason,
+      upstreamCode,
+      detail: body.detail,
+    });
+    if (reason === "rate_limited") {
+      return new AppError("MUSIC_LOGIN_RISK", "QQ 音乐暂时拒绝了本次登录，请稍后重新扫码", {
+        upstreamCode,
+      });
+    }
+    const message =
+      reason === "auth_invalid"
+        ? "本次扫码授权已失效，请重新扫码"
+        : reason === "device_limit"
+          ? "该账号登录设备数量已达上限，请先在 QQ 音乐中下线其他设备"
+          : reason === "account_restricted"
+            ? "该账号当前被 QQ 音乐限制登录"
+            : `QQ 音乐登录接口异常（${stage}），请稍后重新扫码`;
+    return new AppError("MUSIC_LOGIN_FAILED", message, { upstreamCode });
   }
 
   async getLoginStatus(

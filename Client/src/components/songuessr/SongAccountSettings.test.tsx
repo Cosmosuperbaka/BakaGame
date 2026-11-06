@@ -305,6 +305,32 @@ describe("SongAccountSettings", () => {
     expect(showToast).toHaveBeenCalledExactlyOnceWith("网易云账号已加载到当前房间", "success");
   });
 
+  it.each(["MUSIC_LOGIN_CANCELLED", "MUSIC_LOGIN_FAILED"])(
+    "扫码遇到 %s 终态时显示原因并停止轮询同一张二维码",
+    async (code) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      sendCommand
+        .mockResolvedValueOnce(qrResponse("dead-qr"))
+        .mockRejectedValueOnce(Object.assign(new Error("授权已失效，请重新扫码"), { code }));
+      render(<SongAccountSettings snapshot={snapshot(false)} />);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000);
+      });
+      expect(screen.getByText("授权已失效，请重新扫码")).toBeInTheDocument();
+      const callsAfterFailure = sendCommand.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      // 二维码已作废：之后不再对同一个 key 发 check（重复提交会消耗一次性授权）
+      expect(
+        sendCommand.mock.calls.slice(callsAfterFailure).filter(([type]) => type === "song.auth.qr.check")
+      ).toEqual([]);
+    }
+  );
+
   it.each(["close", "room-change", "unmount"])(
     "%s使在途二维码授权失效，不覆盖本机账号或发成功提示",
     async (boundary) => {

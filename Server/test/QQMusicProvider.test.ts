@@ -587,6 +587,126 @@ describe("QQMusicProvider · 扫码登录", () => {
   });
 });
 
+describe("QQMusicProvider · 限流退避按账号隔离", () => {
+  it("一个账号撞限流只冷却它自己，另一个账号与匿名请求照常工作", async () => {
+    const provider = new QQMusicProvider({ rateLimitCooldownMs: 60_000 });
+    const cookieA = "uin=1; qm_keyst=key_a";
+    const cookieB = "uin=2; qm_keyst=key_b";
+    const okBody = { code: 0, data: {}, songs: [{ mid: "m1", name: "歌", singer: [{ name: "人" }] }] };
+    qqmusic.search = mock(async ({ cookie }: any) =>
+      cookie === cookieA ? { status: 429, body: { code: 429 } } : { status: 200, body: okBody }
+    ) as any;
+
+    await expect(provider.search("甲", 5, cookieA)).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+    });
+    // A 在冷却期内被快速拒绝，不再打上游
+    const before = (qqmusic.search as any).mock.calls.length;
+    await expect(provider.search("乙", 5, cookieA)).rejects.toMatchObject({
+      code: "MUSIC_API_RATE_LIMITED",
+    });
+    expect((qqmusic.search as any).mock.calls.length).toBe(before);
+
+    // B 与匿名不受 A 的冷却影响
+    expect((await provider.search("丙", 5, cookieB)).length).toBe(1);
+    expect((await provider.search("丁", 5)).length).toBe(1);
+  });
+});
+
+describe("QQMusicProvider · 扫码失败原因区分", () => {
+  const checkWith = async (body: Record<string, unknown>) => {
+    const provider = new QQMusicProvider();
+    qqmusic.login_qr_check = mock(async () => ({ status: 200, body })) as any;
+    return provider.checkQrLogin("sig:::123", "qq", "qq");
+  };
+
+  it("用户取消是独立异常码，不当作等待", async () => {
+    await expect(checkWith({ code: 803 })).rejects.toMatchObject({ code: "MUSIC_LOGIN_CANCELLED" });
+  });
+
+  it("上游协议失败按原因给出不同文案，并把阶段写进日志而不是玩家文案", async () => {
+    const warns: unknown[][] = [];
+    const provider = new QQMusicProvider({
+      logger: { warn: (...args: unknown[]) => void warns.push(args) } as any,
+    });
+    qqmusic.login_qr_check = mock(async () => ({
+      status: 200,
+      body: { code: 500, stage: "authorize", reason: "protocol", detail: { host: "graph.qq.com" } },
+    })) as any;
+    const protocol = await provider.checkQrLogin("sig:::1", "qq", "qq").catch((e) => e);
+    expect(protocol).toMatchObject({ code: "MUSIC_LOGIN_FAILED" });
+    expect(protocol.message).toContain("authorize");
+    expect(warns[0]?.[1]).toMatchObject({ stage: "authorize", detail: { host: "graph.qq.com" } });
+
+    await expect(checkWith({ code: 500, reason: "auth_invalid", stage: "wx-login" })).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_FAILED",
+      message: expect.stringContaining("已失效"),
+    });
+    await expect(checkWith({ code: 500, reason: "rate_limited", stage: "qqlogin" })).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_RISK",
+    });
+    await expect(checkWith({ code: 500, reason: "device_limit", stage: "wx-login" })).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_FAILED",
+      message: expect.stringContaining("设备"),
+    });
+  });
+
+  it("成功但没有凭证、或凭证刚签发就校验不过，都明确报登录失败而不是笼统的“状态已失效”", async () => {
+    await expect(checkWith({ code: 200, cookieStr: "" })).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_FAILED",
+    });
+    const provider = new QQMusicProvider();
+    qqmusic.login_qr_check = mock(async () => ({
+      status: 200,
+      body: { code: 200, cookieStr: "uin=1" },
+    })) as any;
+    qqmusic.login_status = mock(async () => ({ status: 200, body: { isLogin: false } })) as any;
+    qqmusic.login_refresh = mock(async () => ({ status: 200, body: { code: 301 } })) as any;
+    await expect(provider.checkQrLogin("sig:::1", "qq", "qq")).rejects.toMatchObject({
+      code: "MUSIC_LOGIN_FAILED",
+      message: expect.stringContaining("重新扫码"),
+    });
+  });
+
+  it("轮询自身抛出网络异常时按等待处理，二维码不作废", async () => {
+    const provider = new QQMusicProvider();
+    qqmusic.login_qr_check = mock(async () => {
+      throw new Error("ECONNRESET");
+    }) as any;
+    expect((await provider.checkQrLogin("u", "qq", "wx")).status).toBe("waiting");
+  });
+
+  it("扫码轮询不占用匿名检索队列（微信长轮询不能挤掉匿名检索的并发位）", async () => {
+    const provider = new QQMusicProvider({ anonymousMaxConcurrentRequests: 1 });
+    let release!: () => void;
+    qqmusic.login_qr_check = mock(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ status: 200, body: { code: 801 } });
+        })
+    ) as any;
+    qqmusic.search = mock(async () => ({
+      status: 200,
+      body: { code: 0, data: { list: [] } },
+    })) as any;
+    const pending = provider.checkQrLogin("u", "qq", "wx");
+    await provider.search("周杰伦", 5).catch(() => undefined);
+    expect((qqmusic.search as any).mock.calls.length).toBe(1);
+    release();
+    await pending;
+  });
+
+  it("二维码生成缺少关键字段时报明确失败", async () => {
+    const provider = new QQMusicProvider();
+    qqmusic.login_qr_create = mock(async () => ({ status: 200, body: {} })) as any;
+    for (const type of ["qq", "wx", "mobile"] as const) {
+      await expect(provider.createQrLogin("qq", type)).rejects.toMatchObject({
+        code: "MUSIC_LOGIN_FAILED",
+      });
+    }
+  });
+});
+
 describe("QQMusicProvider · getLoginStatus 刷新降级", () => {
   it("首次未登录时尝试 login_refresh，刷新后取到新 Cookie 与账号", async () => {
     const provider = new QQMusicProvider();
