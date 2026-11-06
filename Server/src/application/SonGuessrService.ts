@@ -125,7 +125,7 @@ import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import {
   AUDIO_READY_GRACE_MS,
   DEFAULT_SETTINGS,
-  MIN_RECENT_SONG_WINDOW,
+  MAX_RECENT_SONG_WINDOW,
   MUSIC_RATE_LIMIT_PER_CONNECTION,
   MUSIC_RATE_LIMIT_WINDOW_MS,
   MusicAuthPlatform,
@@ -2028,7 +2028,6 @@ export class SonGuessrService implements AdminRoomControl {
       player.id,
       undefined,
       undefined,
-      MIN_RECENT_SONG_WINDOW,
       createManualLyricClip(song, clip)
     );
     if (room.currentRound?.number === roundNumber) {
@@ -2108,17 +2107,11 @@ export class SonGuessrService implements AdminRoomControl {
     submitterPlayerId: string,
     anime?: BangumiSubjectDetails,
     animeTrack?: BangumiMusicTrack,
-    /**
-     * 本回合「最近不出」集合的长度。只有自动选曲知道候选池规模并按池子自适应，
-     * 手动出题与猜番没有候选池概念，沿用 `MIN_RECENT_SONG_WINDOW`。
-     * 必须在 `installRound` 之前用同一数值过滤候选，否则写入与排除的口径会不一致。
-     */
-    recentSongWindow = MIN_RECENT_SONG_WINDOW,
     /** 手动出题选定的片段；缺省时按房间设置自动切片。 */
     lyricClipOverride?: SongLyricClip,
     /**
      * 自动选曲时被抽中的候选 ID。取曲可能经聚合器跨平台兜底，返回的 `song.id` 与候选 ID 不一致，
-     * 去重必须按候选 ID 记，否则兜底成功的歌永远不会被排除，反复被抽中。
+     * 候选和实际播放的歌都要记，否则兜底成功的歌永远不会被排除，反复被抽中。
      */
     recordedSongId?: string
   ): number {
@@ -2197,11 +2190,13 @@ export class SonGuessrService implements AdminRoomControl {
     room.phase = "playing";
 
     const recentSongIds = room.recentSongIds ?? [];
-    const recordedId = recordedSongId ?? song.id;
-    room.recentSongIds = [recordedId, ...recentSongIds.filter((id) => id !== recordedId)].slice(
-      0,
-      recentSongWindow
-    );
+    // 写入时固定存满上限，窗口长度只在读取时取：单次候选池偏小或穿插一轮手动出题，
+    // 都不能把长窗口的历史截短。
+    const recordedIds = [...new Set([recordedSongId ?? song.id, song.id])];
+    room.recentSongIds = [
+      ...recordedIds,
+      ...recentSongIds.filter((id) => !recordedIds.includes(id)),
+    ].slice(0, MAX_RECENT_SONG_WINDOW);
     if (anime) {
       const recentSubjectIds = room.recentSubjectIds ?? [];
       room.recentSubjectIds = [anime.id, ...recentSubjectIds.filter((id) => id !== anime.id)].slice(

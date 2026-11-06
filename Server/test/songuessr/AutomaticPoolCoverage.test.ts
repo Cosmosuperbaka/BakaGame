@@ -140,9 +140,9 @@ describe("自动出题的候选池覆盖与去重", () => {
     expect(picked).toHaveLength(120);
     const directPicks = picked.filter((id) => id.startsWith("netease:"));
     expect(new Set(directPicks).size).toBe(directPicks.length);
-    // 兜底成功的候选以候选 ID 记入近期窗口：房间里记的是候选，不是兜底歌的 ID。
+    // 兜底成功的歌：候选 ID 和实际播放的 ID 都进近期窗口，候选每轮恰好记一条。
     const recent = service.rooms.get("6002")!.recentSongIds!;
-    expect(recent.every((id) => id.startsWith("netease:"))).toBe(true);
+    expect(recent.filter((id) => id.startsWith("netease:"))).toHaveLength(120);
     expect(new Set(recent).size).toBe(recent.length);
     // 失败候选被记下后不再每轮占用尝试次数，失败轮数应远小于盲抽的期望。
     expect(failedRounds).toBeLessThan(40);
@@ -278,5 +278,45 @@ describe("buildAutomaticCandidateTiers", () => {
     expect(byName["fresh-playable"]).toEqual(["netease:1", "netease:2"]);
     expect(byName["fresh-unplayable"]).toEqual(["qq:vip"]);
     expect(byName.unavailable).toEqual(["netease:0"]);
+  });
+});
+
+describe("近期窗口的写入", () => {
+  const prepare = async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: seeded(5) });
+    const solo = connection(service, "solo-window");
+    await createRoom(service, solo, {
+      roomId: "7301",
+      name: "窗口",
+      allowSpectators: false,
+      userName: "独狼",
+      solo: true,
+    });
+    const room = service.rooms.get("7301")!;
+    room.recentSongIds = Array.from({ length: 300 }, (_, index) => `netease:old-${index}`);
+    return { service, room };
+  };
+
+  test("手动出题或猜番这类不带池子的回合不会把长窗口截短", async () => {
+    const { service, room } = await prepare();
+    service.installRound(room, makeSong("netease:manual", "手动", 2020), "");
+    expect(room.recentSongIds).toHaveLength(301);
+    expect(room.recentSongIds?.[0]).toBe("netease:manual");
+    expect(room.recentSongIds).toContain("netease:old-299");
+  });
+
+  test("跨平台兜底时候选和实际播放的歌都进窗口", async () => {
+    const { service, room } = await prepare();
+    service.installRound(
+      room,
+      makeSong("qq:played", "兜底", 2020),
+      "",
+      undefined,
+      undefined,
+      undefined,
+      "netease:candidate"
+    );
+    expect(room.recentSongIds?.slice(0, 2)).toEqual(["netease:candidate", "qq:played"]);
+    expect(room.recentSongIds).toHaveLength(302);
   });
 });

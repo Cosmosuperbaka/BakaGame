@@ -327,16 +327,7 @@ export const startAutomaticSongRound = async (
       continue;
     }
     verify();
-    service.installRound(
-      room,
-      song,
-      "",
-      undefined,
-      undefined,
-      recentSongWindow,
-      undefined,
-      selected.id
-    );
+    service.installRound(room, song, "", undefined, undefined, undefined, selected.id);
     return;
   }
   service.log("song.auto.exhausted", room.id, undefined, {
