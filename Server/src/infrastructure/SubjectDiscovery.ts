@@ -24,8 +24,11 @@ export interface DiscoveryOptions {
   since?: string;
   /** 单次最多带入多少条，防止上游异常时灌爆。 */
   limit?: number;
+  /** 相邻候选之间的间隔：上游是公益服务，每日任务不该连续猛打。 */
+  pauseMs?: number;
   fetcher?: typeof fetch;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface DiscoveryResult {
@@ -39,6 +42,63 @@ export interface DiscoveryResult {
 const DAY_MS = 24 * 60 * 60 * 1_000;
 /** 作品类型：书籍 / 动画 / 音乐 / 游戏 / 三次元。 */
 const ALL_TYPES = [1, 2, 3, 4, 6];
+/** 上游单页上限：`limit` 只认查询串，且超过 20 会被压回 20。 */
+const SEARCH_PAGE_SIZE = 20;
+const DEFAULT_PAUSE_MS = 100;
+/** 角色关联：接口只给中文关系名，`type` 是角色类型（人物 / 机体 / 组织…），不能当关系码。 */
+const CHARACTER_RELATIONS: Record<string, number> = {
+  主角: 1,
+  配角: 2,
+  客串: 3,
+  闲角: 4,
+  旁白: 5,
+  声库: 6,
+};
+/** 音乐关联：与 dump 的关系码同义，运行时据此区分片头、片尾与插曲。 */
+const MUSIC_RELATIONS: Record<string, number> = {
+  原声集: 3001,
+  角色歌: 3002,
+  片头曲: 3003,
+  片尾曲: 3004,
+  插入歌: 3005,
+  印象曲: 3006,
+  广播剧: 3007,
+};
+const OTHER_MUSIC_RELATION = 3099;
+
+/** 接口形态的 infobox 是键值数组，dump 形态是 wikitext；多值项的元素形如 `{ v }`。 */
+export type ApiInfobox = string | Array<{ key?: string; value?: unknown }>;
+
+const infoboxValues = (value: unknown): string[] =>
+  (Array.isArray(value) ? value : [value])
+    .map((item) => {
+      const text = typeof item === "object" && item ? (item as { v?: unknown }).v : item;
+      return typeof text === "string" || typeof text === "number" ? String(text).trim() : "";
+    })
+    .filter(Boolean);
+
+/** 把接口的键值数组还原成 dump 同形的 wikitext，库里 `infobox` 列只有这一种形态。 */
+export const infoboxToWikitext = (infobox: ApiInfobox | null | undefined): string => {
+  if (typeof infobox === "string") return infobox;
+  if (!Array.isArray(infobox) || !infobox.length) return "";
+  const lines = infobox.map(({ key, value }) =>
+    Array.isArray(value)
+      ? `|${key}={\r\n${infoboxValues(value)
+          .map((item) => `[${item}]`)
+          .join("\r\n")}\r\n}`
+      : `|${key}= ${infoboxValues(value)[0] ?? ""}`
+  );
+  return `{{Infobox\r\n${lines.join("\r\n")}\r\n}}`;
+};
+
+const infoboxField = (infobox: ApiInfobox | undefined, keys: string[]): string[] => {
+  if (!Array.isArray(infobox)) return [];
+  for (const key of keys) {
+    const values = infoboxValues(infobox.find((item) => item.key === key)?.value);
+    if (values.length) return values;
+  }
+  return [];
+};
 
 /** `/v0/subjects/{id}` 里本项目用得到的字段。 */
 interface ApiSubject {
@@ -47,7 +107,7 @@ interface ApiSubject {
   name?: string;
   name_cn?: string;
   date?: string;
-  infobox?: string;
+  infobox?: ApiInfobox;
   summary?: string;
   nsfw?: boolean;
   tags?: Array<{ name?: string; count?: number }>;
@@ -59,15 +119,15 @@ interface ApiSubject {
 
 interface ApiCharacter {
   id?: number;
-  role?: number;
-  /** 关联类型（1 主角 / 2 配角…），角色列表接口会带。 */
+  /** 角色类型（1 人物 / 2 机体 / 3 舰船 / 4 组织），对应库里的 `role` 列。 */
   type?: number;
+  /** 关联关系的中文名，只有作品的角色列表接口才带。 */
+  relation?: string;
   name?: string;
-  name_cn?: string;
-  gender?: string;
+  gender?: string | null;
   summary?: string;
-  comments?: number;
-  collects?: number;
+  infobox?: ApiInfobox;
+  stat?: { comments?: number; collects?: number };
 }
 
 const ymd = (time: number) => new Date(time).toISOString().slice(0, 10);
@@ -77,6 +137,8 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
   const now = options.now ?? Date.now;
   const since = options.since ?? ymd(now() - 30 * DAY_MS);
   const limit = options.limit ?? 1000;
+  const pauseMs = options.pauseMs ?? DEFAULT_PAUSE_MS;
+  const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
 
   const candidates = await searchSince(fetcher, options.base, since, limit);
   const result: DiscoveryResult = {
@@ -100,6 +162,7 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
       result.skipped += 1;
       continue;
     }
+    if (pauseMs > 0) await sleep(pauseMs);
     try {
       const added = await importSubject(
         fetcher,
@@ -125,8 +188,10 @@ async function searchSince(
   limit: number
 ): Promise<number[]> {
   const ids: number[] = [];
-  for (let offset = 0; offset < limit; offset += 100) {
-    const response = await fetcher(`${base}/v0/search/subjects`, {
+  let offset = 0;
+  while (ids.length < limit) {
+    const page = new URLSearchParams({ limit: String(SEARCH_PAGE_SIZE), offset: String(offset) });
+    const response = await fetcher(`${base}/v0/search/subjects?${page}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -137,17 +202,18 @@ async function searchSince(
         keyword: "",
         filter: { air_date: [`>=${since}`], type: ALL_TYPES },
         sort: "heat",
-        limit: 100,
-        offset,
       }),
     });
-    if (!response.ok) break;
-    const body = (await response.json()) as { data?: Array<{ id: number }> };
-    const page = (body.data ?? []).map((item) => Number(item.id));
-    ids.push(...page);
-    if (page.length < 100) break;
+    // 搜索失败必须抛出：否则「上游挂了」和「这段时间没有新条目」在结果上一模一样。
+    if (!response.ok) throw new Error(`新条目搜索失败：HTTP ${response.status}`);
+    const body = (await response.json()) as { data?: Array<{ id: number }>; total?: number };
+    const found = (body.data ?? []).map((item) => Number(item.id));
+    ids.push(...found);
+    offset += found.length;
+    // 翻页只看 total：实际页大小由上游决定，不能拿「不满一页」判断结束。
+    if (!found.length || offset >= Number(body.total ?? 0)) break;
   }
-  return ids;
+  return ids.slice(0, limit);
 }
 
 /**
@@ -164,7 +230,7 @@ async function importSubject(
   const [subject, characters, related] = await Promise.all([
     getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${subjectId}`),
     getJson<ApiCharacter[]>(fetcher, `${base}/v0/subjects/${subjectId}/characters`),
-    getJson<Array<{ id?: number; type?: number }>>(
+    getJson<Array<{ id?: number; type?: number; relation?: string }>>(
       fetcher,
       `${base}/v0/subjects/${subjectId}/subjects`
     ),
@@ -200,7 +266,7 @@ async function importSubject(
     String(subject.name ?? ""),
     String(subject.name_cn ?? ""),
     JSON.stringify(aliases),
-    String(subject.infobox ?? ""),
+    infoboxToWikitext(subject.infobox),
     String(subject.summary ?? ""),
     String(subject.date ?? ""),
     0,
@@ -215,31 +281,36 @@ async function importSubject(
   );
 
   // 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。
-  for (const row of characterRows) {
+  for (const [order, row] of characterRows.entries()) {
     const characterId = Number(row.id);
     if (!Number.isInteger(characterId) || characterId <= 0) continue;
     const exists = db.query("SELECT 1 FROM characters WHERE id=?").get(characterId);
     if (!exists) {
       const detail = await getJson<ApiCharacter>(fetcher, `${base}/v0/characters/${characterId}`);
       if (!detail) continue;
+      // 角色详情没有中文名字段，与构建脚本一样只能从 infobox 取。
+      const nameCn = infoboxField(detail.infobox, ["简体中文名", "中文名"])[0] ?? "";
+      const characterAliases = infoboxField(detail.infobox, ["别名"]);
+      const comments = Number(detail.stat?.comments ?? 0);
+      const collects = Number(detail.stat?.collects ?? 0);
       db.query("INSERT OR REPLACE INTO characters VALUES (?,?,?,?,?,?,?,?,?)").run(
         characterId,
-        Number(detail.role ?? 0),
+        Number(detail.type ?? row.type ?? 0),
         String(detail.name ?? ""),
-        String(detail.name_cn ?? ""),
-        String(detail.gender ?? ""),
-        JSON.stringify([]),
+        nameCn,
+        detail.gender === "male" || detail.gender === "female" ? detail.gender : "?",
+        JSON.stringify(characterAliases),
         String(detail.summary ?? ""),
-        Number(detail.comments ?? 0),
-        Number(detail.collects ?? 0)
+        comments,
+        collects
       );
       search
         ?.updateCharacter({
           id: characterId,
           name: String(detail.name ?? ""),
-          aliases: [String(detail.name_cn ?? "")].filter(Boolean),
-          comment: Number(detail.comments ?? 0),
-          collect: Number(detail.collects ?? 0),
+          aliases: [nameCn, ...characterAliases].filter(Boolean),
+          comment: comments,
+          collect: collects,
         })
         .catch(() => {
           /* 索引失败不影响数据落库，下轮重建会补上 */
@@ -248,13 +319,13 @@ async function importSubject(
     db.query("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)").run(
       characterId,
       subjectId,
-      Number(row.type ?? 0),
-      0
+      CHARACTER_RELATIONS[String(row.relation ?? "")] ?? 0,
+      order
     );
   }
 
   // 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。
-  for (const row of relationRows) {
+  for (const [order, row] of relationRows.entries()) {
     const relatedId = Number(row.id);
     if (Number(row.type) === 3) {
       const music = await getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${relatedId}`);
@@ -263,10 +334,10 @@ async function importSubject(
         db.query("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)").run(
           subjectId,
           relatedId,
-          0,
-          0,
+          MUSIC_RELATIONS[String(row.relation ?? "")] ?? OTHER_MUSIC_RELATION,
+          order,
           title,
-          null,
+          infoboxField(music?.infobox, ["艺术家", "歌手", "演唱"]).join("、") || null,
           "theme"
         );
       }
@@ -291,14 +362,15 @@ async function importSubject(
   return true;
 }
 
+/**
+ * 只有 404 算「条目不存在」。其余失败必须抛出：吞掉的话一次限流就会让角色列表变成空，
+ * 作品被当成无角色裁掉，结果里还只记一条「跳过」。
+ */
 async function getJson<T>(fetcher: typeof fetch, url: string): Promise<T | null> {
-  try {
-    const response = await fetcher(url, {
-      headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
-  } catch {
-    return null;
-  }
+  const response = await fetcher(url, {
+    headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`上游请求失败：HTTP ${response.status}`);
+  return (await response.json()) as T;
 }
