@@ -152,6 +152,9 @@ describe("接管层", () => {
 
     expect(send("keydown", document.body, { key: "Escape" }).preventDefault).toHaveBeenCalled();
     expect(document.activeElement).toBe(release);
+    // 弹窗的焦点陷阱会抢走焦点：按过 Esc 之后确认键直接收回。
+    send("keydown", document.body, { key: "Enter" });
+    expect(mocks.closePageControl).toHaveBeenCalledTimes(2);
     for (const init of [{ key: "F5" }, { key: "r", ctrlKey: true }])
       expect(send("keydown", document.body, init).preventDefault).not.toHaveBeenCalled();
   });

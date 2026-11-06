@@ -26,6 +26,8 @@ export interface AgentFocus {
   element?: HTMLElement;
   controlId?: string;
   label?: string;
+  /** 这一步已做完、Agent 在想下一步：框留在原处，文案不再说它正在点击。 */
+  idle?: boolean;
   /** 每次动作递增：连点同一个控件时点击回声也要重放。 */
   seq: number;
 }
@@ -42,7 +44,7 @@ interface Signal<T> {
   subscribe: (listener: () => void) => () => void;
 }
 
-const createSignal = <T,>(initial: T): Signal<T> => {
+const createSignal = <T>(initial: T): Signal<T> => {
   let value = initial;
   const listeners = new Set<() => void>();
   return {
@@ -73,6 +75,10 @@ export const usePageControl = (): PageControlState =>
 export const getAgentFocus = focus.get;
 export const setAgentFocus = (next: Omit<AgentFocus, "seq">): void =>
   focus.set({ ...next, seq: (focus.get()?.seq ?? 0) + 1 });
+export const markAgentIdle = (): void => {
+  const current = focus.get();
+  if (current) focus.set({ ...current, idle: true });
+};
 export const clearAgentFocus = (): void => focus.set(null);
 export const useAgentFocus = (): AgentFocus | null =>
   useSyncExternalStore(focus.subscribe, focus.get, () => null);

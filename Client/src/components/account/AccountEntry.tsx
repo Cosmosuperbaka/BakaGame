@@ -96,11 +96,12 @@ export function AccountButton() {
   const [menuOrigin, setMenuOrigin] = useState<OriginPoint | null>(null);
 
   return (
-    <div data-agent-sensitive className="contents">
+    <>
       {status === "signedIn" && profile ? (
         <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Popover.Trigger asChild>
             <motion.button
+              data-agent-sensitive
               type="button"
               {...headerTappable}
               aria-label={`账号菜单：${profile.name}${unread ? `，${unread} 条未读回复` : ""}`}
@@ -177,6 +178,7 @@ export function AccountButton() {
         </Popover.Root>
       ) : (
         <Button
+          data-agent-sensitive
           variant="ghost"
           disabled={status === "loading"}
           onClick={(event) => openDialog("login", originOf(event))}
@@ -185,7 +187,7 @@ export function AccountButton() {
           账号
         </Button>
       )}
-    </div>
+    </>
   );
 }
 

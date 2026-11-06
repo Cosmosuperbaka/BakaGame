@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { onPageCommand, reportPageResult } from "@/lib/SiteWs";
-import { clearAgentFocus, usePageControl } from "@/stores/UsePageControl";
+import { clearAgentFocus, markAgentIdle, usePageControl } from "@/stores/UsePageControl";
 import { AgentTakeoverLayer } from "@/components/common/AgentTakeoverLayer";
 
 /**
@@ -31,7 +31,8 @@ export function PageControlHost() {
           )
           .then(reportPageResult, () =>
             reportPageResult({ id: command.id, ok: false, error: "页面执行失败" })
-          );
+          )
+          .finally(markAgentIdle);
       }),
     [navigate]
   );

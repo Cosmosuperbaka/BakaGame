@@ -21,10 +21,10 @@ export const AGENT_ACTION_LABELS: Record<string, string> = {
   scroll: "正在滚动",
 };
 
-/** 接管时显示的一句话：动作加目标，没有动作时说明它在等什么。 */
-export const agentActivityText = (action?: string, label?: string): string => {
+/** 接管时显示的一句话：动作加目标；两步之间它在想下一步，不再重复上一个动作。 */
+export const agentActivityText = (action?: string, label?: string, idle = false): string => {
   const verb = action ? AGENT_ACTION_LABELS[action] : undefined;
-  if (!verb) return "正在操作";
+  if (idle || !verb) return "正在思考";
   return label ? `${verb} · ${label}` : verb;
 };
 

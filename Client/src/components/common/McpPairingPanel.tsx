@@ -4,7 +4,7 @@ import { SettingSwitchRow } from "@/components/common/room/SettingFields";
 import { Button } from "@/components/ui/Button";
 import { mcpEndpoint, mcpSiteOrigin } from "@/lib/McpConfig";
 import { closePageControl, openPageControl } from "@/lib/SiteWs";
-import { usePageControl } from "@/stores/UsePageControl";
+import { resetPageControl, usePageControl } from "@/stores/UsePageControl";
 
 /** 交给 Agent 的接管指令：端点 + 这把一次性配对码，别的一概不需要。 */
 const pageControlPrompt = (code: string): string =>
@@ -70,9 +70,16 @@ function PageCodeBlock({ code }: { code: string }) {
  * 整块对 Agent 不可见：它不该读到配对码，也不该替人类开关接管。
  */
 export function McpPairingPanel({ blockedReason }: { blockedReason?: string }) {
-  const { status, code, agentName } = usePageControl();
+  const { status, code, expiresAt, agentName } = usePageControl();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+
+  // 过期的码已经认领不了，留在面板上只会让人类发出一条没用的指令。
+  useEffect(() => {
+    if (status !== "open" || expiresAt === undefined) return;
+    const timer = window.setTimeout(resetPageControl, Math.max(0, expiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [status, expiresAt]);
 
   const toggle = (next: boolean) => {
     setBusy(true);

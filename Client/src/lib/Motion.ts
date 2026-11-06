@@ -511,6 +511,7 @@ export const agentPace = {
   scrollLimitMs: 1_200,
   scrollSettleMs: 420,
   scrollPageRatio: 0.8,
+  barReservePx: 72,
   sliderStepLimit: 200,
 } as const;
 

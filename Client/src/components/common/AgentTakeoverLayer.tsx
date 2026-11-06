@@ -145,6 +145,8 @@ function useTakeoverLock(
 ): void {
   useEffect(() => {
     if (!active) return;
+    // 模态弹窗的焦点陷阱会把焦点拉回去，所以按过 Tab / Esc 之后，确认键不看焦点在哪。
+    let armed = false;
     const block = (event: Event) => {
       if (!event.isTrusted || isBrowserShortcut(event)) return;
       const target = event.target;
@@ -154,8 +156,15 @@ function useTakeoverLock(
       if (event.type === "pointerdown" || event.type === "touchstart") onBlocked();
       if (event.type === "keydown") {
         const { key } = event as KeyboardEvent;
-        if (key === "Tab" || key === "Escape") releaseRef.current?.focus();
-        else onBlocked();
+        if (key === "Tab" || key === "Escape") {
+          armed = true;
+          releaseRef.current?.focus();
+        } else if (armed && (key === "Enter" || key === " ")) {
+          void closePageControl();
+        } else {
+          armed = false;
+          onBlocked();
+        }
       }
     };
     for (const type of BLOCKED_EVENTS)
@@ -169,7 +178,9 @@ function useTakeoverLock(
 }
 
 function FocusBox({ focus, rect, moving }: { focus: AgentFocus; rect: BoxRect; moving: boolean }) {
-  const echo = focus.action === "click" || focus.action === "press" || focus.action === "select";
+  const echo =
+    !focus.idle &&
+    (focus.action === "click" || focus.action === "press" || focus.action === "select");
   return (
     <div
       aria-hidden="true"
@@ -278,7 +289,7 @@ function Takeover({ agentName, reconnecting }: { agentName: string; reconnecting
   const releaseRef = useRef<HTMLButtonElement | null>(null);
   const bump = useCallback(() => setNudge((value) => value + 1), []);
   useTakeoverLock(true, releaseRef, bump);
-  const activity = agentActivityText(focus?.action, focus?.label);
+  const activity = agentActivityText(focus?.action, focus?.label, focus?.idle);
 
   return (
     <>
@@ -287,7 +298,7 @@ function Takeover({ agentName, reconnecting }: { agentName: string; reconnecting
       {focus && rect ? (
         <>
           <FocusBox focus={focus} rect={rect} moving={moving} />
-          <FocusHud text={activity} rect={rect} />
+          {focus.idle ? null : <FocusHud text={activity} rect={rect} />}
         </>
       ) : null}
       <TakeoverBar

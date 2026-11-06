@@ -97,9 +97,7 @@ function McpSettingsBody({
         pending={pending}
         onChange={(value) => void changeAllowAgents(value)}
       />
-      <McpPairingPanel
-        {...(allowAgents ? {} : { blockedReason: "开启 MCP 后才能交给 Agent。" })}
-      />
+      <McpPairingPanel {...(allowAgents ? {} : { blockedReason: "开启 MCP 后才能交给 Agent。" })} />
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -112,6 +110,7 @@ function McpSettingsBody({
 /**
  * 房间的 MCP 设置项：房主的房间开关在这里，交给 Agent 的入口与任何页面是同一块，
  * 不再出现在建房弹窗或通用房间设置里，也不向玩家展示接入文档。
+ * 整组不设只读：配对是每位玩家自己的事，房主开关对非房主本来就只是一行说明。
  */
 export function McpSettingsSection({
   game,
@@ -135,7 +134,6 @@ export function McpSettingsSection({
       ]}
       open={open}
       onOpenChange={setOpen}
-      readOnly={!isHost}
     >
       <McpSettingsBody game={game} allowAgents={allowAgents} isHost={isHost} />
     </SettingsAccordion>

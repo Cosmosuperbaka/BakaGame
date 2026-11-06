@@ -366,7 +366,12 @@ const restrictedView = (path: string): SitePageView => ({
   controls: [],
 });
 
+const pruneRefs = (): void => {
+  for (const [id, target] of refTargets) if (!target.deref()?.isConnected) refTargets.delete(id);
+};
+
 const collectPage = (): Collector => {
+  pruneRefs();
   const collector: Collector = {
     lines: [],
     offscreenLines: [],

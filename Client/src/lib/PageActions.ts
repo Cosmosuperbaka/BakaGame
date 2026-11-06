@@ -9,7 +9,7 @@ import {
   readPageView,
   SENSITIVE_SELECTOR,
 } from "@/lib/PageView";
-import { setAgentFocus, type AgentFocus } from "@/stores/UsePageControl";
+import { getAgentFocus, setAgentFocus, type AgentFocus } from "@/stores/UsePageControl";
 
 /**
  * Agent 动作的执行端：所有动作都落在真实控件上，触发的是人类同样的事件与处理函数，
@@ -66,9 +66,10 @@ const waitForQuiet = (context: PageActionContext): Promise<void> =>
     context.signal.addEventListener("abort", finish, { once: true });
   });
 
+/** 底部留给接管条：目标压在收回入口下面时，人类看不清它要点什么。 */
 const isOnScreen = (element: HTMLElement): boolean => {
   const rect = element.getBoundingClientRect();
-  return rect.top >= 0 && rect.bottom <= window.innerHeight;
+  return rect.top >= 0 && rect.bottom <= window.innerHeight - agentPace.barReservePx;
 };
 
 /** 平滑滚动的终点不可知：连续两次采样位置不变才算到位。 */
@@ -325,7 +326,13 @@ const targetOf = (command: SitePageCommand): HTMLElement =>
 
 const ACTIONS: Record<SitePageCommand["action"], ActionRunner> = {
   read: () => {
-    setAgentFocus({ action: "read" });
+    // 看页面不换目标：框留在上一个控件上，刷新后找回的焦点也不会被一次读取冲掉。
+    const { element, controlId } = getAgentFocus() ?? {};
+    setAgentFocus({
+      action: "read",
+      ...(element ? { element } : {}),
+      ...(controlId ? { controlId } : {}),
+    });
     return Promise.resolve();
   },
   navigate: async (command, context) => {
