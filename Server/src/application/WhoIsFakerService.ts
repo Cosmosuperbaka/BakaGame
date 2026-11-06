@@ -1,4 +1,5 @@
 import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from "../domain/AdminRoom";
+import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
@@ -775,6 +776,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   ) {
     // 创建房间时同时把当前连接绑定为房主与首个正式玩家。
     const roomId = ensureRoomId(message.payload.roomId);
+    assertTextAllowed(message.payload.name, message.payload.userName);
 
     if (this.rooms.has(roomId)) {
       throw new AppError("ROOM_ALREADY_EXISTS", "房间已存在");
@@ -879,6 +881,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     // 同名重入不按「自己让给自己」放行：掉线席位默认保留在名册里等凭票重连，
     // 例外放行会让名册里同时留下两个同名玩家。要走接管就用 room.reconnect 的会话票据。
+    assertTextAllowed(message.payload.userName);
     this.ensureUniqueName(room, message.payload.userName);
 
     const joiningAsSpectator = this.isRoundActive(room);
@@ -1070,6 +1073,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
     if (payload.name != null) {
       const normalized = normalizeName(payload.name);
+      assertTextAllowed(normalized);
 
       if (!normalized) {
         throw new AppError("INVALID_ROOM_NAME", "房间名不能为空");
@@ -1246,6 +1250,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (round.phase !== "wordSubmission") {
       throw new AppError("INVALID_PHASE", "当前阶段不能提交词语");
     }
+    assertTextAllowed(words[0], words[1], blankHint);
 
     let participantIds = listPlayablePlayerIds(room).filter(
       (item) => item !== round.questionerPlayerId
@@ -1337,6 +1342,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (!normalized) {
       throw new AppError("INVALID_DESCRIPTION", "描述不能为空");
     }
+    assertTextAllowed(normalized);
 
     const pendingSupplement =
       round.supplement?.requestedPlayerIds.includes(player.id) &&
@@ -1712,6 +1718,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (!normalized) {
       throw new AppError("INVALID_CHAT", "聊天内容不能为空");
     }
+    assertTextAllowed(normalized);
 
     const { channel, ghostRole } = this.chatChannelOf(room, player);
 

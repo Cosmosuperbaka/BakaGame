@@ -288,6 +288,12 @@ export const SPECIAL_THANKS: readonly SpecialThanksEntry[] = [
     icon: "moegirl",
   },
   {
+    name: "Sensitive-lexicon",
+    description: "提供了敏感词词库（MIT 许可）",
+    url: "https://github.com/konsheng/Sensitive-lexicon",
+    icon: "database",
+  },
+  {
     name: "QQ音乐",
     description: "提供了音乐服务",
     url: "https://y.qq.com/",

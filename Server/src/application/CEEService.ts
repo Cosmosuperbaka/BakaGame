@@ -1,4 +1,5 @@
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
+import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { GameRecorder } from "../domain/GameRecord";
 import type {
@@ -130,6 +131,26 @@ export class CEEService implements AdminRoomControl {
       throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
     if (message.type === "cee.chat.send" && !this.chatLimiter.allow(id, this.now()))
       throw new AppError("RATE_LIMITED", "消息发送过快，请稍后再试");
+    // 敏感词在服务端入口统一检查：名称、昵称、聊天与自填提示都会展示给其他玩家。
+    switch (message.type) {
+      case "cee.room.create":
+        assertTextAllowed(message.payload.name, message.payload.userName);
+        break;
+      case "cee.room.join":
+        assertTextAllowed(message.payload.userName);
+        break;
+      case "cee.room.update":
+        assertTextAllowed(message.payload.name);
+        break;
+      case "cee.chat.send":
+        assertTextAllowed(message.payload.text);
+        break;
+      case "cee.game.setAnswer":
+        assertTextAllowed(...message.payload.hints);
+        break;
+      default:
+        break;
+    }
     // 三条检索命令在入口统一配额：回源之后才检查会让并发请求在挂起窗口内全部穿透。
     if (isCEESearchCommand(message.type)) this.searchQuota.require(message.type, connection);
     if (isCEERankedMessage(message)) {

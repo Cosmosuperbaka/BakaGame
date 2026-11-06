@@ -71,6 +71,7 @@ import {
 import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
 import { AppError, unsupportedCommand } from "../domain/Errors";
+import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import {
   ensureRoomId,
   normalizeName,
@@ -778,6 +779,7 @@ export class SonGuessrService implements AdminRoomControl {
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
     const roomId = ensureRoomId(payload.roomId);
+    assertTextAllowed(payload.name, payload.userName);
     if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     const password =
       payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
@@ -1338,7 +1340,10 @@ export class SonGuessrService implements AdminRoomControl {
     next: Pick<SonGuessrRoomRecord, "name" | "visibility" | "passwordHash" | "allowSpectators">,
     payload: SongUpdateSettingsPayload
   ) {
-    if (payload.name !== undefined) next.name = normalizeWord(payload.name) || next.name;
+    if (payload.name !== undefined) {
+      assertTextAllowed(payload.name);
+      next.name = normalizeWord(payload.name) || next.name;
+    }
     if (payload.visibility !== undefined) next.visibility = payload.visibility;
     if (payload.allowSpectators !== undefined) next.allowSpectators = payload.allowSpectators;
     if (payload.visibility === "public") next.passwordHash = undefined;
@@ -1633,6 +1638,7 @@ export class SonGuessrService implements AdminRoomControl {
     }
     const text = normalizeWord(rawText).slice(0, 200);
     if (!text) throw new AppError("INVALID_MESSAGE", "消息不能为空");
+    assertTextAllowed(text);
     const message: ChatMessage = {
       id: this.createId("song_chat"),
       playerId: player.id,
@@ -3452,6 +3458,7 @@ export class SonGuessrService implements AdminRoomControl {
   private requireName(value: string) {
     const normalized = normalizeName(value).slice(0, 20);
     if (!normalized) throw new AppError("INVALID_NAME", "用户名不能为空");
+    assertTextAllowed(normalized);
     return normalized;
   }
 

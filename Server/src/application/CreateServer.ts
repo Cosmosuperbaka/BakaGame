@@ -1,4 +1,5 @@
 import { createApp, type AppDependencies } from "../transport/App";
+import { warmUpSensitiveText } from "../infrastructure/SensitiveText";
 import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
@@ -61,6 +62,8 @@ export function createServer(
   }
 ) {
   const { env, logger, database, gameRecords, ...appOptions } = options;
+  // 敏感词自动机启动时构建一次，首个请求不承担构建耗时。
+  warmUpSensitiveText();
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
     throw new AppError("CONFIG_ERROR", "生产环境搜索需要 MEILISEARCH_KEY");
   }

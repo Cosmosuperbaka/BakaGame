@@ -1,4 +1,5 @@
 import { AppError } from "../../domain/Errors";
+import { assertTextAllowed } from "../../infrastructure/SensitiveText";
 import {
   evaluateBlankGuess,
   evaluateBlankGuessDraft,
@@ -35,6 +36,7 @@ export const submitBlankGuess = async (
   connection: ConnectionRecord,
   words: [string, string]
 ) => {
+  assertTextAllowed(words[0], words[1]);
   // 白板可以主动猜，也可以在被动 blankGuess 阶段猜，但总次数只有一次。
   const { room, player } = service.requireRoomPlayer(connection);
   const round = service.requireRound(room);
@@ -173,6 +175,7 @@ export const updateBlankGuessDraft = async (
   connection: ConnectionRecord,
   words: [string, string]
 ) => {
+  assertTextAllowed(words[0], words[1]);
   // 猜词过程本身是这一阶段的看点，草稿实时广播给全房。
   const { room, player } = service.requireRoomPlayer(connection);
   const round = service.requireRound(room);

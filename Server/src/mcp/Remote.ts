@@ -1,4 +1,5 @@
 import type { EventLogger } from "../infrastructure/EventLogger";
+import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { AgentGameClient } from "./GameClient";
@@ -58,6 +59,8 @@ interface JsonRpcRequest {
 const sanitizeName = (value: unknown): string => {
   if (typeof value !== "string") return "BakaAgent";
   const trimmed = value.trim().slice(0, 24);
+  // Agent 名字会作为玩家昵称和活动提示展示给其他玩家，与人类昵称同一口径。
+  assertTextAllowed(trimmed);
   return trimmed || "BakaAgent";
 };
 

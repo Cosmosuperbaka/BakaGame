@@ -6,6 +6,7 @@ import type {
   WhoIsFakerClientMessage,
 } from "../../shared/Index";
 import { normalizeName } from "../../domain/Rules";
+import { assertTextAllowed } from "../../infrastructure/SensitiveText";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import { type CommandHandler, ownsCommand } from "./CommandHandler";
 
@@ -45,6 +46,8 @@ const renamePlayer = async (
   if (player.name === normalized) {
     return { name: player.name };
   }
+
+  assertTextAllowed(normalized);
 
   dependencies.ensureUniqueName(room, normalized, player.id);
   player.name = normalized;
