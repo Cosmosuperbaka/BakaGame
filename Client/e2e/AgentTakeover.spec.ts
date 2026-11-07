@@ -389,8 +389,16 @@ test.describe("完整对局", () => {
       if (action) done.add(action);
       for (const [index, guest] of guests.entries())
         await guestTurn(guest, tick * 10 + index, async () => {
-          // 发言要全员交齐才公开：主持人推进之前看一眼，确认别的玩家真的收到了。
-          spoken ||= await guest.getByText(SPEECH).first().isVisible();
+          // 发言要全员交齐才公开：主持人推进之前等一下，确认别的玩家真的收到了。
+          // 推进按钮和发言列表不一定在同一帧渲染，不能只取样一次；进入投票后发言不再显示，等待要有上限。
+          spoken ||= await guest
+            .getByText(SPEECH)
+            .first()
+            .waitFor({ state: "visible", timeout: 2_000 })
+            .then(
+              () => true,
+              () => false
+            );
         });
     }
     expect([...done]).toEqual(expect.arrayContaining(["describe", "vote"]));
