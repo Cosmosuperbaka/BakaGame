@@ -1,0 +1,31 @@
+name: 内容问题
+description: 歌曲、歌词、角色资料或线索不对
+labels: ["content"]
+body:
+  - type: markdown
+    attributes:
+      value: 谁是卧底的词由出题人现场写，没有公共词库；Bangumi 条目本身的错误请到 Bangumi 修改。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 什么内容
+      options:
+        - 猜歌的歌曲或歌词
+        - 猜歌的番剧匹配
+        - CEE 的角色资料或标签
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: 歌名、番名或角色名
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: 哪里不对
+      description: 现在显示什么，你认为应该是什么。有来源链接就贴上。
+    validations:
+      required: true

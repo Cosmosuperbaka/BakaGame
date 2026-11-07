@@ -15,8 +15,10 @@
 - [ ] refactor 重构（不改变外部行为）
 - [ ] perf 性能优化
 - [ ] test 测试补充
+- [ ] style 样式
 - [ ] docs 文档
-- [ ] chore 构建 / 依赖 / 工程化
+- [ ] build / ci 构建与流水线
+- [ ] chore 依赖与工程杂项
 
 ## 影响范围
 
@@ -38,8 +40,9 @@
 
 ## 自查清单
 
-- [ ] PR 标题符合 `type(scope): 中文摘要`，摘要不超过 12 个中文字（见 Agents/Commitment.md）
+- [ ] PR 标题符合 `type(scope): 中文摘要`，摘要不超过 20 字（见 Agents/Commitment.md）
 - [ ] 修复缺陷时附带一条修复前会失败的回归测试（见 Agents/Testing.md）
 - [ ] 协议、模型或共享定义的变更已同步双端与相关文档
 - [ ] 替换旧规范时已删除旧实现，未保留兼容分支（见 Agents/Spec.md §2）
-- [ ] 用户可见的行为变化已在 `Client/src/data/changelog.json` 记录，或说明无需记录
+- [ ] 用户可见的行为变化已在变更说明里写清楚，更新日志由维护者发布时结算
+- [ ] 没有写入生产部署信息、密钥或真实账号

@@ -26,6 +26,10 @@
   color: fef2c0
   description: 构建、依赖、CI 等工程杂项
 
+- name: content
+  color: f9d0c4
+  description: 歌曲、歌词、角色资料等内容问题
+
 # 范围：与 commit scope 对应，按主要受影响对象选择
 - name: scope/Faker
   color: 1d76db

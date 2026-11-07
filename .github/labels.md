@@ -15,8 +15,9 @@
 | `perf` | 性能优化 |
 | `test` | 测试补充或修复 |
 | `chore` | 构建、依赖、CI 等工程杂项 |
+| `content` | 歌曲、歌词、角色资料等内容问题 |
 
-`bug` 与 `enhancement` 由 Issue 模板自动携带；其余类型标签通常只出现在 PR 上（Issue 阶段往往难以区分 refactor / perf / chore）。
+`bug`、`enhancement` 与 `content` 由 Issue 模板自动携带；其余类型标签通常只出现在 PR 上（Issue 阶段往往难以区分 refactor / perf / chore）。
 
 ### 范围（按主要受影响对象选择）
 
@@ -61,7 +62,7 @@
 
 ## 使用规则
 
-1. 每个 Issue 至少一个类型标签；Bug 报告与功能建议模板已自动携带 `bug` / `enhancement`。
+1. 每个 Issue 至少一个类型标签；三个 Issue 模板分别自动携带 `bug`、`enhancement` 与 `content`。
 2. 范围标签按影响对象选择，与 PR 标题的 scope 用词一致。
 3. 层级标签可选，无法定位时可以不打，由分诊时补充。
 4. 处理完成后关闭 Issue，不引入 `done` / `fixed` 之类的终态标签，避免与关闭状态重复表达。

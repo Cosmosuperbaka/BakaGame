@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: 站内反馈
+    url: https://game.baka.website
+    about: 不想用 GitHub 的话，站内右上角有反馈入口
+  - name: 安全问题
+    url: https://github.com/Cosmosuperbaka/BakaGame/security/advisories/new
+    about: 漏洞请私下报告，不要公开提 Issue
