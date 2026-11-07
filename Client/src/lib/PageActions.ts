@@ -361,9 +361,13 @@ const ACTIONS: Record<SitePageCommand["action"], ActionRunner> = {
   },
   press: async (command, context) => {
     const target = command.control ? targetOf(command) : currentTarget();
+    const key = command.key ?? "Enter";
+    // 回车和空格等于点击：焦点停在链接上时同样不能绕过站外与敏感页面的限制。
+    if (target instanceof HTMLElement && (key === "Enter" || key === "Space"))
+      assertLinkAllowed(target);
     if (target instanceof HTMLElement && target !== document.body)
       await approach(target, "press", context);
-    pressKey(target, command.key ?? "Enter");
+    pressKey(target, key);
   },
   select: async (command, context) => {
     const element = targetOf(command);
@@ -381,12 +385,23 @@ const ACTIONS: Record<SitePageCommand["action"], ActionRunner> = {
   },
 };
 
+/**
+ * 受限页面上只能读取和离开：按钮也可能把页面带过去，或者人类本来就停在那里，
+ * 只查链接目标拦不住，而 Tab 加回车不需要控件 id 就能盲操作。
+ */
+const assertPageAllowed = (action: SitePageCommand["action"]): void => {
+  if (action === "read" || action === "navigate") return;
+  const { pathname } = window.location;
+  if (!isAgentPagePath(pathname)) refuse(`不在 Agent 可达位置内：${pathname}`);
+};
+
 /** 执行一步并回报结果。失败也带上最新画面：Agent 看的多半是旧状态，要能立刻重新决策。 */
 export async function runPageCommand(
   command: SitePageCommand,
   context: PageActionContext
 ): Promise<SitePageResult> {
   try {
+    assertPageAllowed(command.action);
     await ACTIONS[command.action](command, context);
     if (command.action !== "read" && !command.withView) return { id: command.id, ok: true };
     await waitForQuiet(context);

@@ -161,6 +161,46 @@ describe("Agent 动作", () => {
     expect((await run({ action: "click", control: "ok" })).ok).toBe(true);
   });
 
+  it("焦点停在链接上时，回车和空格同样受链接限制，Tab 不受影响", async () => {
+    mount(`
+      <a href="https://example.com/x" data-agent-control="out">外链</a>
+      <a href="/admin" data-agent-control="admin">后台</a>
+      <button data-agent-control="next">下一个</button>
+    `);
+    const clicked = vi.fn((event: Event) => event.preventDefault());
+    document.addEventListener("click", clicked);
+    await run({ action: "focus", control: "out" });
+    expect((await run({ action: "press", key: "Enter" })).ok).toBe(false);
+    expect((await run({ action: "press", key: "Space" })).ok).toBe(false);
+    expect((await run({ action: "press", key: "Enter", control: "admin" })).ok).toBe(false);
+    expect(clicked).not.toHaveBeenCalled();
+    await run({ action: "focus", control: "out" });
+    expect((await run({ action: "press", key: "Tab" })).ok).toBe(true);
+    document.removeEventListener("click", clicked);
+  });
+
+  it("受限页面上只能读取和离开，其它动作一律拒绝", async () => {
+    window.history.replaceState(null, "", "/admin");
+    mount(`<button data-agent-control="danger">删除</button>`);
+    const clicked = vi.fn();
+    document.querySelector("button")?.addEventListener("click", clicked);
+    for (const command of [
+      { action: "click", control: "danger" },
+      { action: "focus", control: "danger" },
+      { action: "press", key: "Enter" },
+      { action: "type", text: "x" },
+      { action: "scroll", direction: "down" },
+    ] as Omit<SitePageCommand, "id">[]) {
+      const result = await run(command);
+      expect(result.ok).toBe(false);
+      expect(result.view?.restricted).toBe(true);
+    }
+    expect(clicked).not.toHaveBeenCalled();
+    expect((await run({ action: "read" })).view?.restricted).toBe(true);
+    expect((await run({ action: "navigate", path: "/cee" })).ok).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/cee");
+  });
+
   it("过期 id、禁用与敏感控件都失败，并带上最新画面供 Agent 重新决策", async () => {
     mount(`
       <button data-agent-control="off" disabled>开始</button>
