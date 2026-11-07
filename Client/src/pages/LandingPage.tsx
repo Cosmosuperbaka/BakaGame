@@ -31,7 +31,7 @@ interface GameSubMode {
   path?: string;
   available: boolean;
   /**
-   * 挂在服务端开关上的入口：关掉后**留在原位、置灰、标注「已关闭」、点不进去**。
+   * 挂在服务端开关上的入口：后台临时关掉后**留在原位、置灰、标注「暂时关闭」、点不进去**。
    * 与 `available: false`（还没上线）同一种不可用态，区别只在徽章文案与原因。
    */
   feature?: keyof SiteFeatures;
@@ -48,6 +48,8 @@ interface GameEntry {
   /** 条目副标题；无副标题时省略 */
   subtitle?: string;
   available: boolean;
+  /** 单一入口游戏挂的服务端开关，语义同子模式的 `feature`。 */
+  feature?: keyof SiteFeatures;
   subModes?: GameSubMode[];
 }
 
@@ -59,6 +61,7 @@ const GAMES: GameEntry[] = [
     icon: "/assets/Faker.png",
     title: "Who is Faker",
     available: true,
+    feature: "fakerEntry",
   },
   {
     id: "songuessr",
@@ -72,12 +75,14 @@ const GAMES: GameEntry[] = [
         title: "单人模式",
         path: "/songuessr/solo",
         available: true,
+        feature: "songSoloEntry",
       },
       {
         id: "multiplayer",
         title: "多人模式",
         path: "/songuessr",
         available: true,
+        feature: "songMultiplayerEntry",
       },
     ],
   },
@@ -95,6 +100,7 @@ const GAMES: GameEntry[] = [
         title: "多人模式",
         path: "/cee",
         available: true,
+        feature: "ceeMultiplayerEntry",
       },
       {
         id: "ranked",
@@ -145,14 +151,18 @@ function ComingSoonBadge() {
   );
 }
 
-/** 运营关掉的入口：与「即将上线」同为不可用态，但原因不同，不能共用一句「即将上线」。 */
+/** 后台临时关掉的入口：与「即将上线」同为不可用态，但原因不同，不能共用一句「即将上线」。 */
 function ClosedBadge() {
   return (
     <Badge variant="upcoming" size="xs" className="shrink-0 select-none">
-      已关闭
+      暂时关闭
     </Badge>
   );
 }
+
+/** 不可用入口的占位格：虚线、降色、不可点，尺寸与可点的按钮一致，关掉入口不让卡片跳动。 */
+const closedSlotClass =
+  "flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none";
 
 /** 卡片头部的图标、标题与副标题。标题与大厅顶栏的游戏名是同一个跨页共享元素，只在两页互相过渡时命名。 */
 function GameIdentity({ game }: { game: GameEntry }) {
@@ -195,10 +205,13 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
     void navigate(targetPath);
   };
 
-  // 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给可用的卡片，读作「这一张能进」；未上线的卡片不响应悬停。
+  // 单一入口游戏被后台临时关掉：卡片照常呈现，入口按钮换成「暂时关闭」的占位格。
+  const isGameClosed = game.available && Boolean(game.feature && !features[game.feature]);
+
+  // 卡片容器本身不可点（入口是里面的按钮），悬停描边只留给可用的卡片，读作「这一张能进」；未上线或暂时关闭的卡片不响应悬停。
   const cardContainerClass = cn(
     "flex h-full min-h-0 w-full flex-col justify-between gap-2.5 sm:gap-3 overflow-hidden rounded-md border bg-card p-3 sm:p-3.5 text-left shadow-2xs transition-colors [@media(max-height:680px)]:gap-1.5 [@media(max-height:680px)]:p-2",
-    game.available && "hover:border-primary/40"
+    game.available && !isGameClosed && "hover:border-primary/40"
   );
 
   // 单一入口游戏（如 Who is Faker）
@@ -224,16 +237,23 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
           </div>
 
           <div className="w-full">
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`${game.title} 开始游戏`}
-              data-agent-control={`site.game.${game.id}`}
-              onClick={() => handleEnter(game.path)}
-              className="h-8 w-full text-xs sm:text-sm font-medium"
-            >
-              开始游戏
-            </Button>
+            {isGameClosed ? (
+              <div aria-disabled="true" className={closedSlotClass}>
+                <span className="truncate">开始游戏</span>
+                <ClosedBadge />
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={`${game.title} 开始游戏`}
+                data-agent-control={`site.game.${game.id}`}
+                onClick={() => handleEnter(game.path)}
+                className="h-8 w-full text-xs sm:text-sm font-medium"
+              >
+                开始游戏
+              </Button>
+            )}
           </div>
         </div>
       </motion.div>
@@ -260,7 +280,7 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
           }`}
         >
           {game.subModes.map((mode, index) => {
-            // 受控子模式（如排位）关掉时**不隐藏**：格子留着、置灰、标注「已关闭」，
+            // 受控子模式被后台关掉时**不隐藏**：格子留着、置灰、标注「暂时关闭」，
             // 让玩家看得出这个玩法存在但暂时不可进，而不是以为站点少了点什么。
             const isAllowed = !mode.feature || features[mode.feature];
             const isModeAvailable = !isWholeGameDisabled && mode.available && isAllowed;
@@ -270,11 +290,7 @@ function GameRow({ game, features }: { game: GameEntry; features: SiteFeatures }
 
             if (!isModeAvailable) {
               return (
-                <div
-                  key={mode.id}
-                  aria-disabled="true"
-                  className={`flex h-8 items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-muted/40 px-1.5 text-center text-xs text-muted-foreground select-none ${spanClass}`}
-                >
+                <div key={mode.id} aria-disabled="true" className={cn(closedSlotClass, spanClass)}>
                   <span className="truncate">{mode.title}</span>
                   {isModeClosed ? <ClosedBadge /> : !isWholeGameDisabled && <ComingSoonBadge />}
                 </div>

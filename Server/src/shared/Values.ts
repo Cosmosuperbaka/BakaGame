@@ -59,6 +59,12 @@ export {
   lyricSungEnd,
 } from "./SonGuessrValues";
 export {
+  OPEN_SITE_FEATURES,
+  SITE_FEATURE_KEYS,
+  SITE_FEATURE_LABELS,
+  parseSiteFeatures,
+} from "./SiteFeatures";
+export {
   PUBLIC_STATUS_COMPONENT_IDS,
   PUBLIC_STATUS_GROUP_IDS,
   PUBLIC_STATUS_GROUPS,

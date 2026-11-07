@@ -30,6 +30,8 @@ import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { GameId, ServerMessage } from "../shared/Protocol";
 import { isRecord } from "../shared/Json";
+import type { SiteFeatures } from "../shared/SiteFeatures";
+import { assertModeOpen } from "./ModeGate";
 import {
   SITE_FOCUS_COMMAND,
   SITE_LEAVE_COMMAND,
@@ -123,7 +125,7 @@ export interface AppDependencies {
    * 站点级功能可见性（`/api/site/config`）。未提供时全部开放：
    * 独立挂载本组路由的测试与没有数据库的实例都不该被动失去入口。
    */
-  siteFeatures?: () => { ceeRankedEntry: boolean };
+  siteFeatures?: () => SiteFeatures;
 }
 
 const messageAckCache = new LRUCache<string, object>({
@@ -751,6 +753,10 @@ interface GameSocketHandlersOptions<
   TMessage extends { id: string; type: string; traceId?: string },
 > {
   serviceName: string;
+  /** 建房闸门按它判断这条消息要开哪个模式的房间。 */
+  game: GameId;
+  /** 各模式入口的生效值；未提供时不拦建房。 */
+  siteFeatures?: () => SiteFeatures;
   env: AppEnv;
   logger: EventLogger;
   account: AccountDependencies | undefined;
@@ -801,6 +807,8 @@ const applyHandshakeGates = async (
  */
 const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId?: string }>({
   serviceName,
+  game,
+  siteFeatures,
   env,
   logger,
   account,
@@ -816,7 +824,10 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
   message: (ws: GameSocketLike, incoming: TMessage) =>
     handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, logger, {
       serviceName,
-      execute: (connectionId, message) => service.execute(connectionId, message),
+      execute: async (connectionId, message) => {
+        assertModeOpen(game, message, siteFeatures);
+        return service.execute(connectionId, message);
+      },
     }),
   close: (ws: GameSocketLike) => {
     releaseHandshakeSlot(ws, handshakeQuota);
@@ -1051,18 +1062,27 @@ export const createApp = ({
         if (!songService) throw new AppError("GAME_UNAVAILABLE", "猜歌服务未启用");
         await handleGameMessage(ws, parseSonGuessrMessage(incoming), logger, {
           serviceName: "SonGuessr",
-          execute: (connectionId, message) => songService.execute(connectionId, message),
+          execute: async (connectionId, message) => {
+            assertModeOpen("song", message, siteFeatures);
+            return songService.execute(connectionId, message);
+          },
         });
       } else if (game === "cee") {
         if (!characterService) throw new AppError("GAME_UNAVAILABLE", "猜角色服务未启用");
         await handleGameMessage(ws, parseCEEMessage(incoming), logger, {
           serviceName: "CEE",
-          execute: (connectionId, message) => characterService.execute(connectionId, message),
+          execute: async (connectionId, message) => {
+            assertModeOpen("cee", message, siteFeatures);
+            return characterService.execute(connectionId, message);
+          },
         });
       } else {
         await handleGameMessage(ws, parseWhoIsFakerMessage(incoming), logger, {
           serviceName: "WhoIsFaker",
-          execute: (connectionId, message) => fakerService.execute(connectionId, message),
+          execute: async (connectionId, message) => {
+            assertModeOpen("faker", message, siteFeatures);
+            return fakerService.execute(connectionId, message);
+          },
         });
       }
     } catch (error) {
@@ -1380,6 +1400,8 @@ export const createApp = ({
       error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
       ...gameSocketHandlers({
         serviceName: "WhoIsFaker",
+        game: "faker",
+        siteFeatures,
         env,
         logger,
         account,
@@ -1394,6 +1416,8 @@ export const createApp = ({
       error: gameSocketError(logger, "CEE", parseCEEMessage),
       ...gameSocketHandlers({
         serviceName: "CEE",
+        game: "cee",
+        siteFeatures,
         env,
         logger,
         account,
@@ -1410,6 +1434,8 @@ export const createApp = ({
       error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
       ...gameSocketHandlers({
         serviceName: "SonGuessr",
+        game: "song",
+        siteFeatures,
         env,
         logger,
         account,

@@ -88,8 +88,9 @@ function EditDialog({
         <DialogHeader>
           <DialogTitle>{item.title}</DialogTitle>
           <DialogDescription>
-            环境变量 {item.envVar} 的缺省值是 {readValue(item.kind, item.defaultValue)}。
-            这里填的值会盖过它；填成与缺省相同的值即可回到跟随环境变量。
+            {item.envVar
+              ? `环境变量 ${item.envVar} 的缺省值是 ${readValue(item.kind, item.defaultValue)}。这里填的值会盖过它；填成与缺省相同的值即可回到跟随环境变量。`
+              : `缺省为${readValue(item.kind, item.defaultValue)}，没有对应的环境变量。这里填的值会盖过缺省，改回${readValue(item.kind, item.defaultValue)}即恢复。`}
           </DialogDescription>
         </DialogHeader>
         <SettingsFields>
@@ -140,7 +141,7 @@ export function RuntimeSettingsPanel() {
       />
       <p className="mb-4 text-sm text-muted-foreground">
         这几项的生效值存在站点数据库里，环境变量同名项只作缺省；改完不需要重建容器。
-        保存的写操作会记进审计。
+        各模式开关用来临时关闭某个玩法，缺省为开。保存的写操作会记进审计。
       </p>
       <QueryState
         loading={query.loading}
@@ -157,7 +158,7 @@ export function RuntimeSettingsPanel() {
               <th scope="col">旋钮</th>
               <th scope="col">生效值</th>
               <th scope="col">取值来源</th>
-              <th scope="col">环境变量缺省</th>
+              <th scope="col">缺省值</th>
               <th scope="col">最后修改</th>
               <th scope="col"> </th>
             </tr>
@@ -178,7 +179,7 @@ export function RuntimeSettingsPanel() {
                   <span className="flex flex-wrap gap-1">
                     {item.storedValue === null ? (
                       <Badge variant="subtle" size="xs">
-                        环境变量缺省
+                        {item.envVar ? "环境变量缺省" : "缺省"}
                       </Badge>
                     ) : (
                       <Badge variant="active" size="xs">
@@ -194,7 +195,9 @@ export function RuntimeSettingsPanel() {
                 </td>
                 <td className="whitespace-nowrap font-mono text-muted-foreground">
                   {readValue(item.kind, item.defaultValue)}
-                  <span className="ml-2 font-mono text-xs">{item.envVar}</span>
+                  {item.envVar ? (
+                    <span className="ml-2 font-mono text-xs">{item.envVar}</span>
+                  ) : null}
                 </td>
                 <td className="whitespace-nowrap text-muted-foreground">
                   {item.updatedAt

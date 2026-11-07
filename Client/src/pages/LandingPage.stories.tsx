@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { OPEN_SITE_FEATURES } from "@bakagame/shared/values";
+import { resetSiteFeaturesForTest } from "@/lib/SiteConfig";
 import LandingPage from "./LandingPage";
 
 /**
@@ -17,3 +19,32 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = { name: "默认" };
+
+/**
+ * 后台临时关掉部分模式：入口留在原位、置灰并标注「暂时关闭」。
+ * 这里只桩站点配置一个接口，其余请求照常放行。
+ */
+export const ModesClosed: Story = {
+  name: "部分模式暂时关闭",
+  beforeEach: () => {
+    resetSiteFeaturesForTest();
+    const original = window.fetch.bind(window);
+    window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.includes("/api/site/config")) return original(input, init);
+      const body = {
+        ...OPEN_SITE_FEATURES,
+        fakerEntry: false,
+        songSoloEntry: false,
+        ceeRankedEntry: false,
+      };
+      return new Response(JSON.stringify(body), {
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    return () => {
+      window.fetch = original;
+      resetSiteFeaturesForTest();
+    };
+  },
+};

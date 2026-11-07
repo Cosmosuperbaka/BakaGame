@@ -1,12 +1,15 @@
 import { Elysia, t } from "elysia";
+import { OPEN_SITE_FEATURES, type SiteFeatures } from "../../shared/SiteFeatures";
 
 export interface SiteConfigRoutesDependencies {
   /**
-   * 站点级功能可见性。当前只有 CEE 排位赛入口一项，值由运行期旋钮
-   * （`enableCeeRankedEntry`）给出；未装配时全部开放，与没有数据库的实例一致。
+   * 各模式入口的可用性，值由运行期旋钮（`enable*Entry`）给出；
+   * 未装配时全部开放，与没有数据库的实例一致。
    */
-  features?: () => { ceeRankedEntry: boolean };
+  features?: () => SiteFeatures;
 }
+
+const flag = (description: string) => t.Boolean({ description });
 
 /**
  * 站点配置的公开读口：只回答「哪些入口现在该露出来」，不含任何账号或运营数据。
@@ -19,17 +22,23 @@ export const siteConfigRoutes = ({ features }: SiteConfigRoutesDependencies = {}
     "/api/site/config",
     ({ set }) => {
       set.headers["cache-control"] = "no-store";
-      return { ceeRankedEntry: features?.().ceeRankedEntry ?? true };
+      return features?.() ?? OPEN_SITE_FEATURES;
     },
     {
       detail: {
         tags: ["System"],
         summary: "读取站点配置",
         description:
-          "返回站点级功能可用性（当前为 CEE 排位赛入口），由运行期旋钮控制；响应不缓存，开关改完即生效。关掉的入口在页面上仍然呈现，只是置灰不可点。",
+          "返回各模式入口的可用性，由后台运行期旋钮控制；响应不缓存，开关改完即生效。关掉的入口在页面上仍然呈现，置灰并标注「暂时关闭」。",
       },
       response: {
-        200: t.Object({ ceeRankedEntry: t.Boolean({ description: "排位赛入口是否可用" }) }),
+        200: t.Object({
+          fakerEntry: flag("谁是卧底是否开放"),
+          songSoloEntry: flag("听歌猜歌单人模式是否开放"),
+          songMultiplayerEntry: flag("听歌猜歌多人模式是否开放"),
+          ceeMultiplayerEntry: flag("猜动漫角色多人模式是否开放"),
+          ceeRankedEntry: flag("排位赛入口是否可用"),
+        }),
       },
     }
   );

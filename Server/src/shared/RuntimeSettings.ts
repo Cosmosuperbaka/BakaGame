@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SiteFeatureKey } from "./SiteFeatures";
 
 /**
  * 运行期旋钮（T3）：线上生效值存 `app_setting`，环境变量同名项只是**缺省**。
@@ -12,6 +13,10 @@ export const runtimeSettingKeySchema = z.enum([
   "clientMinMobileVersion",
   "enableGeneralUnblock",
   "enableAnonymousQqSearch",
+  "enableFakerEntry",
+  "enableSongSoloEntry",
+  "enableSongMultiplayerEntry",
+  "enableCeeMultiplayerEntry",
   "enableCeeRankedEntry",
 ]);
 
@@ -33,8 +38,11 @@ const booleanText = z
 
 export interface RuntimeSettingDescriptor {
   key: RuntimeSettingKey;
-  /** 缺省值来自哪个环境变量；后台把它显示成「未覆盖时的取值」。 */
-  envVar: string;
+  /**
+   * 缺省值来自哪个环境变量；后台把它显示成「未覆盖时的取值」。
+   * 模式开关没有对应的环境变量（`null`）：它们只为临时止血，缺省恒为开。
+   */
+  envVar: string | null;
   title: string;
   /** 给管理员看的一句话后果，不写操作步骤。 */
   note: string;
@@ -92,11 +100,47 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
     defaultValue: (defaults) => (defaults.enableAnonymousQqSearch === false ? "false" : "true"),
     kind: "boolean",
   },
+  enableFakerEntry: {
+    key: "enableFakerEntry",
+    envVar: null,
+    title: "谁是卧底",
+    note: "临时关闭后首页入口置灰并标注「暂时关闭」，不能新开房间；已开的房间、凭链接加入和进行中的对局不受影响。",
+    schema: booleanText,
+    defaultValue: () => "true",
+    kind: "boolean",
+  },
+  enableSongSoloEntry: {
+    key: "enableSongSoloEntry",
+    envVar: null,
+    title: "听歌猜歌单人模式",
+    note: "临时关闭后首页的单人入口置灰并标注「暂时关闭」，不能新开单人局；进行中的单人局不受影响。",
+    schema: booleanText,
+    defaultValue: () => "true",
+    kind: "boolean",
+  },
+  enableSongMultiplayerEntry: {
+    key: "enableSongMultiplayerEntry",
+    envVar: null,
+    title: "听歌猜歌多人模式",
+    note: "临时关闭后首页的多人入口置灰并标注「暂时关闭」，不能新开多人房间；已开的房间、凭链接加入和进行中的对局不受影响。",
+    schema: booleanText,
+    defaultValue: () => "true",
+    kind: "boolean",
+  },
+  enableCeeMultiplayerEntry: {
+    key: "enableCeeMultiplayerEntry",
+    envVar: null,
+    title: "猜动漫角色多人模式",
+    note: "临时关闭后首页的多人入口置灰并标注「暂时关闭」，增强房和原版房都不能新开；已开的房间、凭链接加入和进行中的对局不受影响。",
+    schema: booleanText,
+    defaultValue: () => "true",
+    kind: "boolean",
+  },
   enableCeeRankedEntry: {
     key: "enableCeeRankedEntry",
     envVar: "ENABLE_CEE_RANKED_ENTRY",
     title: "CEE 排位赛入口",
-    note: "关闭后主页上的排位入口置灰并标注「已关闭」，不可进入，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
+    note: "关闭后主页上的排位入口置灰并标注「暂时关闭」，不可进入，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableCeeRankedEntry === false ? "false" : "true"),
     kind: "boolean",
@@ -105,12 +149,22 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
 
 export const RUNTIME_SETTING_KEYS = runtimeSettingKeySchema.options;
 
+/** 站点模式开关与旋钮键一一对应：`/api/site/config` 和建房闸门都按这张表读生效值。 */
+export const SITE_FEATURE_SETTING_KEYS = {
+  fakerEntry: "enableFakerEntry",
+  songSoloEntry: "enableSongSoloEntry",
+  songMultiplayerEntry: "enableSongMultiplayerEntry",
+  ceeMultiplayerEntry: "enableCeeMultiplayerEntry",
+  ceeRankedEntry: "enableCeeRankedEntry",
+} as const satisfies Record<SiteFeatureKey, RuntimeSettingKey>;
+
 /** 后台列表项：缺省、库内覆盖值与当前生效值一起给出，避免管理员猜现在到底是多少。 */
 export const adminRuntimeSettingSchema = z.object({
   key: runtimeSettingKeySchema,
   title: z.string(),
   note: z.string(),
-  envVar: z.string(),
+  /** 模式开关没有对应的环境变量，为 null。 */
+  envVar: z.string().nullable(),
   /** 编辑器形态：后台据此决定用开关还是版本输入框，不再在前端硬写键名单。 */
   kind: z.enum(["version", "boolean"]),
   defaultValue: z.string(),

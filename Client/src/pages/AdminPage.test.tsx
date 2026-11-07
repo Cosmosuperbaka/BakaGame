@@ -152,7 +152,7 @@ const review: AdminAntiCheatReview = {
   createdAt: "2026-10-18T10:05:00.000Z",
 };
 
-/** 三个旋钮各给一种典型状态：跟随缺省、库内覆盖、布尔项。 */
+/** 每个旋钮给一种典型状态：跟随缺省、库内覆盖、布尔项、没有环境变量的模式开关。 */
 const runtimeSettings: AdminRuntimeSetting[] = [
   {
     key: "clientMinDesktopVersion",
@@ -189,6 +189,18 @@ const runtimeSettings: AdminRuntimeSetting[] = [
     effectiveValue: "true",
     updatedAt: null,
     updatedBy: null,
+  },
+  {
+    key: "enableFakerEntry",
+    title: "谁是卧底",
+    note: "临时关闭后首页入口置灰并标注「暂时关闭」，不能新开房间。",
+    envVar: null,
+    kind: "boolean",
+    defaultValue: "true",
+    storedValue: "false",
+    effectiveValue: "false",
+    updatedAt: "2026-11-07T10:05:00.000Z",
+    updatedBy: "Alice",
   },
 ];
 
@@ -426,6 +438,23 @@ describe("管理后台", () => {
     // 布尔项只显示开/关，true 与 false 不露给管理员。
     expect(cells(unblock)[1]).toHaveTextContent("开");
     expect(unblock).not.toHaveTextContent("true");
+  });
+
+  it("运行期旋钮：模式开关没有环境变量，缺省一栏只写开，弹窗不提环境变量", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    const events = renderAdmin("/admin?tab=runtime");
+    const table = await screen.findByRole("table", { name: "运行期旋钮" });
+    const faker = within(table).getAllByRole("row")[4];
+    const cells = within(faker).getAllByRole("cell");
+    expect(cells[1]).toHaveTextContent("关");
+    expect(cells[2]).toHaveTextContent("库内覆盖");
+    expect(cells[3]).toHaveTextContent(/^开$/);
+
+    await events.click(within(faker).getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("缺省为开，没有对应的环境变量");
+    expect(dialog).not.toHaveTextContent("null");
+    expect(within(dialog).getByRole("switch", { name: "谁是卧底" })).not.toBeChecked();
   });
 
   it("运行期旋钮：改版本门槛写回服务端并重新拉取，失败留在弹窗内", async () => {

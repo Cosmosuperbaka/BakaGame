@@ -6,10 +6,12 @@ import type {
 import {
   RUNTIME_SETTING_KEYS,
   RUNTIME_SETTINGS,
+  SITE_FEATURE_SETTING_KEYS,
   type AdminRuntimeSetting,
   type RuntimeSettingDefaults,
   type RuntimeSettingKey,
 } from "../shared/RuntimeSettings";
+import { SITE_FEATURE_KEYS, type SiteFeatures } from "../shared/SiteFeatures";
 
 /**
  * 多进程分片下让各片自行收敛：写的那一片立刻更新，其余片按这个周期回读。
@@ -90,13 +92,15 @@ export class AppSettings {
     return this.raw(key);
   }
 
-  boolean(
-    key: Extract<
-      RuntimeSettingKey,
-      "enableGeneralUnblock" | "enableAnonymousQqSearch" | "enableCeeRankedEntry"
-    >
-  ): boolean {
+  boolean(key: Exclude<RuntimeSettingKey, "clientMinDesktopVersion" | "clientMinMobileVersion">) {
     return this.raw(key) === "true";
+  }
+
+  /** 各模式入口的当前生效值，供站点配置与建房闸门同步读取。 */
+  siteFeatures(): SiteFeatures {
+    return Object.fromEntries(
+      SITE_FEATURE_KEYS.map((key) => [key, this.boolean(SITE_FEATURE_SETTING_KEYS[key])])
+    ) as SiteFeatures;
   }
 
   snapshot(): AdminRuntimeSetting[] {

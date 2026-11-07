@@ -16,6 +16,7 @@ import type { AppEnv } from "../src/config/Env";
 import { describeError, EventLogger, redactData } from "../src/infrastructure/EventLogger";
 import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
+import { OPEN_SITE_FEATURES, type SiteFeatures } from "../src/shared/SiteFeatures";
 import { createTestApp as createApp } from "./AppFixtures";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
@@ -205,6 +206,7 @@ const startTestServer = (options?: {
   onTriggerShutdown?: () => Promise<void> | void;
   isShuttingDown?: () => boolean;
   logger?: EventLogger;
+  siteFeatures?: () => SiteFeatures;
 }) => {
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
@@ -225,6 +227,7 @@ const startTestServer = (options?: {
     whoIsFakerService,
     logger,
     isShuttingDown: options?.isShuttingDown ?? (() => shuttingDown),
+    siteFeatures: options?.siteFeatures,
     onTriggerShutdown: async () => {
       shuttingDown = true;
       if (options?.onTriggerShutdown) {
@@ -337,6 +340,63 @@ test("HTTP 与 WebSocket 路由可以联通", async () => {
 
     expect(invalidMessageError.error.code).toBe("INVALID_MESSAGE");
     socket.close();
+  } finally {
+    await stop();
+  }
+});
+
+test("后台临时关闭模式后两条 WS 入口都拒绝新开房间，重新打开即恢复", async () => {
+  let fakerOpen = false;
+  const { port, stop } = startTestServer({
+    siteFeatures: () => ({ ...OPEN_SITE_FEATURES, fakerEntry: fakerOpen }),
+  });
+  const createMessage = (id: string, roomId: string, game?: string) =>
+    JSON.stringify({
+      id,
+      ...(game ? { game } : {}),
+      type: "room.create",
+      payload: {
+        roomId,
+        name: "关闭测试",
+        visibility: "public",
+        allowSpectators: true,
+        userName: "房主",
+      },
+    });
+  const errorOf = (id: string) => (payload: unknown) =>
+    (payload as { type?: string; id?: string }).type === "error" &&
+    (payload as { id?: string }).id === id;
+
+  try {
+    const legacy = await openSocket(port);
+    const waitLegacy = createSocketCollector(legacy);
+    legacy.send(createMessage("closed", "8801"));
+    const rejected = (await waitLegacy(errorOf("closed"))) as {
+      error: { code: string; message: string };
+    };
+    expect(rejected.error).toMatchObject({
+      code: "MODE_CLOSED",
+      message: "谁是卧底暂时关闭，请稍后再来",
+    });
+
+    const unified = new WebSocket(`ws://127.0.0.1:${port}/api/ws`);
+    await new Promise<void>((resolve) => unified.addEventListener("open", () => resolve()));
+    const waitUnified = createSocketCollector(unified);
+    unified.send(createMessage("unified-closed", "8802", "faker"));
+    expect(
+      ((await waitUnified(errorOf("unified-closed"))) as { error: { code: string } }).error.code
+    ).toBe("MODE_CLOSED");
+
+    // 后台改回开放后不需要重连，下一条建房命令就能成功。
+    fakerOpen = true;
+    legacy.send(createMessage("reopened", "8803"));
+    await waitLegacy(
+      (payload) =>
+        (payload as { event?: string }).event === "room.snapshot" &&
+        (payload as { payload?: { state?: { roomId?: string } } }).payload?.state?.roomId === "8803"
+    );
+    legacy.close();
+    unified.close();
   } finally {
     await stop();
   }

@@ -4,6 +4,7 @@ import { BrowserRouter, MemoryRouter, Route, Routes, useLocation } from "react-r
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import LandingPage from "./LandingPage";
+import { OPEN_SITE_FEATURES } from "@bakagame/shared/values";
 import { resetSiteFeaturesForTest } from "@/lib/SiteConfig";
 import { formatRelativeTime } from "@/lib/Time";
 import { useAccountStore } from "@/stores/UseAccountStore";
@@ -201,7 +202,7 @@ describe("LandingPage", () => {
     expect(within(songEntry).getByRole("button", { name: /单人模式/ })).toBeInTheDocument();
   });
 
-  it("排位入口被服务端关掉后置灰标注已关闭，同卡其它入口照常", async () => {
+  it("排位入口被服务端关掉后置灰标注暂时关闭，同卡其它入口照常", async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
@@ -211,7 +212,7 @@ describe("LandingPage", () => {
 
     const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
     // 配置是挂载后异步回来的：状态要等这一轮，不能同步断言碰运气。
-    await waitFor(() => expect(within(ceeEntry).getByText("已关闭")).toBeInTheDocument());
+    await waitFor(() => expect(within(ceeEntry).getByText("暂时关闭")).toBeInTheDocument());
 
     // 入口仍在页面上，只是不再是按钮：看得出这个玩法存在，但点不进去。
     expect(within(ceeEntry).queryByRole("button", { name: /排位赛/ })).not.toBeInTheDocument();
@@ -226,6 +227,36 @@ describe("LandingPage", () => {
     expect(within(ceeEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
     expect(within(ceeEntry).getByText("锦标赛")).toBeInTheDocument();
     expect(within(ceeEntry).getByText("即将上线")).toBeInTheDocument();
+  });
+
+  it("后台临时关掉谁是卧底和猜歌单人后，入口原位置灰，其余模式照常", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ ...OPEN_SITE_FEATURES, fakerEntry: false, songSoloEntry: false }),
+      }))
+    );
+    renderLandingPage();
+
+    const fakerEntry = screen.getByTestId("game-entry-whoisfaker");
+    await waitFor(() => expect(within(fakerEntry).getByText("暂时关闭")).toBeInTheDocument());
+    // 单一入口的卡片不消失，「开始游戏」换成点不进去的占位格。
+    expect(within(fakerEntry).queryByRole("button")).not.toBeInTheDocument();
+    const startLabel = within(fakerEntry).getByText("开始游戏");
+    expect(startLabel.closest('[aria-disabled="true"]')).not.toBeNull();
+    await user.click(startLabel);
+    expect(window.location.pathname).toBe("/");
+
+    // 只关单人：同卡的多人入口照常可点。
+    const songEntry = screen.getByTestId("game-entry-songuessr");
+    expect(within(songEntry).getByText("暂时关闭")).toBeInTheDocument();
+    expect(within(songEntry).queryByRole("button", { name: /单人模式/ })).not.toBeInTheDocument();
+    expect(within(songEntry).getByRole("button", { name: /多人模式/ })).toBeEnabled();
+    // 没关的游戏不受影响。
+    const ceeEntry = screen.getByTestId("game-entry-animecharguessr");
+    expect(within(ceeEntry).queryByText("暂时关闭")).not.toBeInTheDocument();
   });
 
   it("版本号打开完整版本信息页并落在更新日志标签", async () => {
