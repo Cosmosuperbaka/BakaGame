@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { TOOLS } from "../src/mcp/Tools";
 import { Elysia } from "elysia";
 import { expect, test } from "bun:test";
 import { mcpDiscoveryRoutes } from "../src/transport/routes/McpDiscovery";
@@ -78,6 +79,17 @@ test("前端静态发现指针与后端生成的端点同源，不出现第二�
   });
   expect(pointer.canonical).toBe("https://game.baka.website/api/.well-known/mcp.json");
   expect(pointer.serverCard).toBe("https://game.baka.website/api/.well-known/mcp/server-card.json");
+});
+
+test("llms.txt 写到的 MCP 工具都真实存在，接管流程的工具一个不漏", () => {
+  // llms.txt 是配对指令让 Agent 去读的第一份文档，写错工具名 Agent 只能撞错。
+  const llms = readFileSync(new URL("../../Client/public/llms.txt", import.meta.url), "utf8");
+  const section = llms.slice(llms.indexOf("## MCP / Agent 接入"), llms.indexOf("## 常见问题"));
+  const known = new Set(TOOLS.map((tool) => tool.name));
+  const mentioned = [...section.matchAll(/`([a-z]+_[a-z_]+)[`(]/g)].map((match) => match[1]!);
+  expect(mentioned.length).toBeGreaterThan(0);
+  expect(mentioned.filter((name) => !known.has(name))).toEqual([]);
+  expect(new Set(mentioned)).toEqual(known);
 });
 
 test("边缘终止 TLS 后仍按公网 https 生成端点，不把内网 http 写进发现文件", async () => {
