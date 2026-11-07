@@ -305,7 +305,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
           />
           <SettingSwitchRow
             label="天使"
-            description={limits.canEnableAngel ? "持有双词，首夜选阵营，有一次护盾。" : "8 人开启"}
+            description={limits.canEnableAngel ? "同时拿到两个词，属于好人阵营。" : "8 人开启"}
             checked={roleConfig.hasAngel}
             disabled={!limits.canEnableAngel}
             onCheckedChange={(value) => edit("hasAngel", value)}
