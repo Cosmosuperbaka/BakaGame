@@ -47,7 +47,9 @@ const datasetAlerts = ({ dataset }: BangumiMirrorAlertInput, now: number): Alert
 const updaterAlerts = ({ role, updater }: BangumiMirrorAlertInput, now: number): Alert[] => {
   if (role === "reader") return [];
   if (!updater) {
-    return [{ level: "warning", code: "updater_disabled", message: "更新器未启用，作品数据不会自动更新" }];
+    return [
+      { level: "warning", code: "updater_disabled", message: "更新器未启用，作品数据不会自动更新" },
+    ];
   }
   if (!updater.running) {
     return [{ level: "error", code: "updater_stopped", message: "更新器已停止" }];
@@ -102,8 +104,7 @@ const maintenanceAlerts = (status: BangumiMirrorAlertInput, now: number): Alert[
 };
 
 const hasDrifted = (indexed: number | null, stored: number, pending: number): boolean =>
-  indexed !== null &&
-  Math.abs(indexed - stored) > Math.max(pending, stored * SEARCH_DRIFT_RATIO);
+  indexed !== null && Math.abs(indexed - stored) > Math.max(pending, stored * SEARCH_DRIFT_RATIO);
 
 const searchAlerts = ({ search, dataset }: BangumiMirrorAlertInput): Alert[] => {
   if (!search.configured) return [];

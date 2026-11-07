@@ -326,7 +326,9 @@ describe("SongAccountSettings", () => {
       });
       // 二维码已作废：之后不再对同一个 key 发 check（重复提交会消耗一次性授权）
       expect(
-        sendCommand.mock.calls.slice(callsAfterFailure).filter(([type]) => type === "song.auth.qr.check")
+        sendCommand.mock.calls
+          .slice(callsAfterFailure)
+          .filter(([type]) => type === "song.auth.qr.check")
       ).toEqual([]);
     }
   );

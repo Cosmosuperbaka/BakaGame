@@ -27,9 +27,11 @@ export interface BangumiDatasetStatus {
 
 const hasTable = (db: Database, name: string): boolean =>
   Boolean(
-    db.query<{ found: number }, [string]>(
-      "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?"
-    ).get(name)
+    db
+      .query<{ found: number }, [string]>(
+        "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?"
+      )
+      .get(name)
   );
 
 const countRows = (db: Database, table: string): number =>

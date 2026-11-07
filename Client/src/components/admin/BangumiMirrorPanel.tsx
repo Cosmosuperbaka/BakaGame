@@ -198,11 +198,7 @@ function SearchFields({ search }: { search: AdminBangumiMirrorStatus["search"] }
 function RunResult({ run, configured }: { run?: Run; configured: boolean }) {
   if (!configured) return <Badge variant="unavailable">未配置</Badge>;
   if (!run) return <Badge variant="upcoming">暂无记录</Badge>;
-  return run.ok ? (
-    <Badge variant="matched">成功</Badge>
-  ) : (
-    <Badge variant="destructive">失败</Badge>
-  );
+  return run.ok ? <Badge variant="matched">成功</Badge> : <Badge variant="destructive">失败</Badge>;
 }
 
 const runSummary = (run: Run | undefined, configured: boolean): string => {

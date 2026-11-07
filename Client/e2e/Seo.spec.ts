@@ -67,9 +67,7 @@ test.describe("页面 SEO 元信息", () => {
     await expect(faqData).toHaveCount(1);
     expect(JSON.parse((await faqData.textContent())!)).toMatchObject({
       "@type": "FAQPage",
-      mainEntity: expect.arrayContaining([
-        expect.objectContaining({ name: "猜动漫角色怎么玩？" }),
-      ]),
+      mainEntity: expect.arrayContaining([expect.objectContaining({ name: "猜动漫角色怎么玩？" })]),
     });
   });
 

@@ -598,11 +598,7 @@ export default function WhoIsFakerRoomPage() {
   return (
     <>
       <RoomShell
-        before={
-          <>
-            {seoNode}
-          </>
-        }
+        before={<>{seoNode}</>}
         onLeave={handleLeave}
         title={snapshot.name}
         roomId={snapshot.roomId}

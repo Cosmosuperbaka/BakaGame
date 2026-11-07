@@ -355,5 +355,4 @@ describe("隐私开关与 Agent 接管", () => {
     expect(snapshot?.settings.allowAgents).toBe(true);
     expect(snapshot?.players.find((player) => player.id === joined.playerId)?.isAgent).toBe(true);
   });
-
 });

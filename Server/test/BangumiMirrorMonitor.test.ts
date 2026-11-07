@@ -48,7 +48,13 @@ const healthy = (): BangumiMirrorAlertInput => ({
     lastDegradedAt: null,
     lastErrorCode: null,
   },
-  search: { configured: true, healthy: true, subjects: 1_000, characters: 2_000, isIndexing: false },
+  search: {
+    configured: true,
+    healthy: true,
+    subjects: 1_000,
+    characters: 2_000,
+    isIndexing: false,
+  },
 });
 
 const codes = (mutate: (status: BangumiMirrorAlertInput) => void) => {

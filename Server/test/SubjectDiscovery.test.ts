@@ -72,7 +72,9 @@ test("发现新作品：入库详情、角色与关联，已在库里的跳过",
       rating: { score: 7.5, total: 120, rank: 3000 },
       collection: { wish: 40, collect: 30, doing: 20, on_hold: 5, dropped: 5 },
     },
-    [`${BASE}/v0/subjects/900001/characters`]: [{ id: 700001, name: "新角色", type: 1, relation: "主角" }],
+    [`${BASE}/v0/subjects/900001/characters`]: [
+      { id: 700001, name: "新角色", type: 1, relation: "主角" },
+    ],
     [`${BASE}/v0/subjects/900001/subjects`]: [],
     [`${BASE}/v0/characters/700001`]: {
       id: 700001,

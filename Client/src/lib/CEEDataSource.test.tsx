@@ -150,7 +150,6 @@ describe("排位数据源", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-
   it("排位来源的图片缓存键前缀与多人房不同", () => {
     expect(rankedCEEDataSource.cacheKeyPrefix).not.toBe("cee");
   });

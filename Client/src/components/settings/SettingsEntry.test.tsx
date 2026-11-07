@@ -125,5 +125,4 @@ describe("SettingsEntry", () => {
     act(() => setPageControl({ status: "controlled", agentName: "BakaAgent" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
-
 });

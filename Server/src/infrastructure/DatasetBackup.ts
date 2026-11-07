@@ -81,11 +81,14 @@ export function scheduleDatasetBackup(options: DatasetBackupOptions): () => void
   const scheduleNext = () => {
     if (stopped) return;
     const current = now();
-    timer = setTimeout(() => {
-      runBackup();
-      void runDailyTask();
-      scheduleNext();
-    }, nextDailyRunAt(current) - current);
+    timer = setTimeout(
+      () => {
+        runBackup();
+        void runDailyTask();
+        scheduleNext();
+      },
+      nextDailyRunAt(current) - current
+    );
   };
 
   const runDailyTask = async () => {

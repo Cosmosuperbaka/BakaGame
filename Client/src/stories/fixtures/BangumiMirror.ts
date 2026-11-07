@@ -51,7 +51,13 @@ export const MIRROR_HEALTHY: AdminBangumiMirrorStatus = {
     lastDegradedAt: null,
     lastErrorCode: null,
   },
-  search: { configured: true, healthy: true, subjects: 36342, characters: 223204, isIndexing: false },
+  search: {
+    configured: true,
+    healthy: true,
+    subjects: 36342,
+    characters: 223204,
+    isIndexing: false,
+  },
   alerts: [],
 };
 
@@ -125,5 +131,11 @@ export const MIRROR_READER: AdminBangumiMirrorStatus = {
   dataset: { ...MIRROR_HEALTHY.dataset!, latestRefreshAt: null, maintenance: [] },
   updater: null,
   schedule: { nextDailyAt: null, tagDiffConfigured: false },
-  search: { configured: false, healthy: false, subjects: null, characters: null, isIndexing: false },
+  search: {
+    configured: false,
+    healthy: false,
+    subjects: null,
+    characters: null,
+    isIndexing: false,
+  },
 };

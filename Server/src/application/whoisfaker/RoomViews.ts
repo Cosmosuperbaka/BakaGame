@@ -379,12 +379,7 @@ export const publishRoom = (
     connection.send(createEvent("room.snapshot", connectionSnapshot));
 
     if (connection.playerId && player) {
-      connection.send(
-        createEvent(
-          "game.privateState",
-          buildPrivateState(service, room, player)
-        )
-      );
+      connection.send(createEvent("game.privateState", buildPrivateState(service, room, player)));
     }
   }
 };
