@@ -40,7 +40,7 @@ test("MCP Server Card 暴露协议版本、工具清单与端点", async () => {
 });
 
 test("/api 前缀别名与根路径给同一份发现数据", async () => {
-  // 前端托管在 ESA Pages：未命中静态资源的路径会被 SPA 兜底成 HTML，只有 `/api/*`
+  // 前端静态托管：未命中静态资源的路径会被 SPA 兜底成 HTML，只有 `/api/*`
   // 由边缘反代到后端。别名让「边缘只转发 /api」的环境也能读到活数据。
   for (const [root, alias] of [
     ["/.well-known/mcp.json", "/api/.well-known/mcp.json"],

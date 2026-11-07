@@ -10,7 +10,7 @@ const INSTRUCTIONS = MCP_INSTRUCTIONS;
  * 同一个发现文件的路径别名。
  *
  * - `/.well-known/mcp.json` 是 Agent 约定俗成的位置，必须存在。
- * - `/api/...` 是**边缘只转发 `/api/*`** 时的逃生口：前端静态托管（ESA Pages）把
+ * - `/api/...` 是**边缘只转发 `/api/*`** 时的逃生口：前端静态托管把
  *   未命中静态资源的请求交给 SPA 兜底，`/.well-known/*` 会退回一份 HTML；而 `/api/*`
  *   由边缘反代到后端，能拿到活数据（含 `enabled` 与全量工具清单）。
  *
@@ -33,7 +33,7 @@ const firstHop = (value: string | null): string | undefined => {
 /**
  * 公开 origin。
  *
- * 边缘（ESA / nginx）终止 TLS 后回源是明文，`request.url` 只看得到 http；
+ * 边缘终止 TLS 后回源是明文，`request.url` 只看得到 http；
  * 发现文件里写 `http://` 会让 Agent 连到一条要 301 的地址，POST 重定向还可能丢包体。
  * 所以优先采信代理声明的协议与主机，两者都没有时才用请求本身的 origin。
  * 只接受 http/https，避免把调用方传进来的奇怪协议拼进返回体。
