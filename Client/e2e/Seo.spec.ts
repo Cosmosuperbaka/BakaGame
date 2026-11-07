@@ -60,8 +60,8 @@ test.describe("页面 SEO 元信息", () => {
     const structuredData = page.locator('head script[id="bakagame-structured-data"]');
     await expect(structuredData).toHaveCount(1);
     expect(JSON.parse((await structuredData.textContent())!)).toMatchObject({
-      "@type": "SoftwareApplication",
-      name: "CEE 猜动漫角色",
+      "@type": ["VideoGame", "WebApplication"],
+      name: "CEE（二刺猿笑传之猜猜呗增强版）",
       url: "https://game.baka.website/cee",
     });
     const faqData = page.locator('head script[id="bakagame-faq-structured-data"]');
@@ -69,7 +69,7 @@ test.describe("页面 SEO 元信息", () => {
     expect(JSON.parse((await faqData.textContent())!)).toMatchObject({
       "@type": "FAQPage",
       mainEntity: expect.arrayContaining([
-        expect.objectContaining({ name: "在线猜动漫角色怎么玩？" }),
+        expect.objectContaining({ name: "猜动漫角色怎么玩？" }),
       ]),
     });
   });
@@ -87,8 +87,8 @@ test.describe("页面 SEO 元信息", () => {
   // 这里把应用脚本全部掐掉，模拟「首屏 JS 最慢」的极端情况：外壳仍不得出现在页面上，
   // 而原始 HTML 里必须留有正文——两边都不能少。
   for (const [route, text] of [
-    ["/whoisfaker", "在线版谁是卧底"],
-    ["/cee", "在线猜动漫角色"],
+    ["/whoisfaker", "出题人现场写词的谁是卧底"],
+    ["/cee", "多人猜动漫角色"],
   ]) {
     test(`${route} 静态外壳对爬虫可见、对执行 JS 的客户端首帧前即被清空`, async ({
       page,

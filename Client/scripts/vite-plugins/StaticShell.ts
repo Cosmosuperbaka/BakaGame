@@ -93,6 +93,12 @@ function buildShellPage(
   const body = [
     `<h1>${escapeHtml(meta.shell.h1)}</h1>`,
     ...meta.shell.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
+    ...(meta.shell.sections ?? []).map(
+      (section) =>
+        `<section><h2>${escapeHtml(section.heading)}</h2>${section.paragraphs
+          .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+          .join("")}</section>`
+    ),
     `<ul>${meta.shell.links
       .map((link) => `<li><a href="${link.href}">${escapeHtml(link.label)}</a></li>`)
       .join("")}</ul>`,

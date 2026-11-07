@@ -121,8 +121,8 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
     <Seo
       description={
         solo
-          ? "Songuessr 音乐与番剧单人挑战中，冲击更高连胜纪录！"
-          : "Songuessr 音乐与番剧竞猜激战中，点击立即上车听前奏抢答！"
+          ? "Songuessr 单人模式，系统出题，自己和耳朵较劲。"
+          : "这间 Songuessr 正在听歌猜题，进房一起抢答。"
       }
       path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
       indexable={false}

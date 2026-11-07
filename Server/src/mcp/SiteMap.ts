@@ -20,14 +20,14 @@ export const SITE_PAGES: readonly SitePage[] = [
   {
     path: "/",
     title: "BakaGame 首页",
-    description: "三款游戏入口、客户端下载、友情链接与版本信息；所有游戏免注册即点即玩。",
+    description: "三款游戏入口、客户端下载、友情链接与版本信息。",
     access: "public",
   },
   {
     path: "/whoisfaker",
     title: "WhoisFaker 谁是卧底大厅",
     description:
-      "语言推理游戏（4~16 人）的大厅：查看公开房间、创建房间、加入房间；房内可出题、发言、投票与夜间行动。",
+      "语言推理游戏（至少 4 名参战玩家加 1 名出题人）的大厅：查看公开房间、创建房间、加入房间；房内可出题、发言、投票与夜间行动。",
     access: "public",
   },
   {
@@ -60,7 +60,7 @@ export const SITE_PAGES: readonly SitePage[] = [
   {
     path: "/status",
     title: "站点状态",
-    description: "公开的可用性、在线房间与连接数量级、历史样本与事件。",
+    description: "公开的可用性、当前房间与连接数量级、历史样本与事件。",
     access: "public",
   },
 ];

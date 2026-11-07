@@ -29,7 +29,7 @@ export default function CEERoomPage() {
   const seo = (
     <Seo
       path={lifecycle.roomId ? ceeRoomPath(lifecycle.roomId) : "/cee"}
-      description="CEE 猜动漫角色对局中，快进房比拼二次元浓度与看番量！"
+      description="这间 CEE 正在猜动漫角色，进房看看谁的番没白看。"
       indexable={false}
     />
   );
