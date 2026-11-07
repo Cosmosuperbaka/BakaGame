@@ -54,12 +54,16 @@ function assertShareDescription(): void {
   }
 }
 
+/** index.html 的兜底标题：未登记的路径启动前显示它，登记页面在构建期替换成各自的标题。 */
+const FALLBACK_TITLE = `<title>${SITE_NAME}</title>`;
+
 /** 单页静态外壳：在 index.html 原文上补齐 head 元信息与正文，并给出双形态落盘路径。 */
 function buildShellPage(
   original: string,
   meta: PageMeta
-): { path: string; html: string; outputs: string[] } {
+): { path: string; title: string; html: string; outputs: string[] } {
   const canonical = `${SITE_ORIGIN}${meta.path}`;
+  const title = escapeHtml(meta.title);
   const description = escapeHtml(meta.description);
   const image = escapeHtml(meta.image ?? `${SITE_ORIGIN}/og/logo.jpg`);
   const faqStructuredData = buildFaqStructuredData(meta.faq);
@@ -74,12 +78,12 @@ function buildShellPage(
     `<meta name="robots" content="index,follow" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta property="og:type" content="website" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta property="og:site_name" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta property="og:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta property="og:title" content="${title}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta property="og:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta property="og:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta property="og:url" content="${canonical}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta name="twitter:card" content="summary_large_image" ${STATIC_SEO_ATTRIBUTE}="1" />`,
-    `<meta name="twitter:title" content="${SITE_NAME}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
+    `<meta name="twitter:title" content="${title}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta name="twitter:description" content="${description}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<meta name="twitter:image" content="${image}" ${STATIC_SEO_ATTRIBUTE}="1" />`,
     `<script id="${STRUCTURED_DATA_ID}" type="application/ld+json">${JSON.stringify(meta.structuredData)}</script>`,
@@ -108,6 +112,7 @@ function buildShellPage(
   ].join("");
 
   const html = original
+    .replace(FALLBACK_TITLE, `<title>${title}</title>`)
     .replace("</head>", `  ${head}\n  </head>`)
     .replace(
       '<div id="root"></div>',
@@ -117,6 +122,7 @@ function buildShellPage(
   const segment = meta.path.replace(/^\//, "").replace(/\/$/, "");
   return {
     path: meta.path,
+    title: meta.title,
     html,
     // 双形态落盘：目录索引型主机与 clean URL 型主机各覆盖一种，别名 canonical 指向正式路径。
     outputs: segment === "" ? ["index.html"] : [`${segment}/index.html`, `${segment}.html`],
@@ -139,6 +145,9 @@ export function staticShellPlugin() {
       if (!original.includes("</head>")) {
         throw new Error("静态外壳：dist/index.html 里找不到 </head>");
       }
+      if (!original.includes(FALLBACK_TITLE)) {
+        throw new Error(`静态外壳：dist/index.html 里找不到 ${FALLBACK_TITLE}`);
+      }
 
       assertShellFaq();
       assertShareDescription();
@@ -155,6 +164,7 @@ export function staticShellPlugin() {
         const primary = path.join(distDir, page.outputs[0]);
         const written = fs.readFileSync(primary, "utf8");
         for (const marker of [
+          `<title>${escapeHtml(page.title)}</title>`,
           '<div id="root"><main>',
           SHELL_CLEAR_CODE,
           `${STATIC_SEO_ATTRIBUTE}="1"`,

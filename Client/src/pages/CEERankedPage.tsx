@@ -128,6 +128,7 @@ export default function CEERankedPage() {
     <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto">
       <Seo
         path="/cee/ranked"
+        title="CEE 排位赛 - BakaGame"
         description="二刺猿笑传之猜猜呗排位赛：三局两胜同题竞速，按分数匹配对手与题库难度。"
         indexable={false}
       />

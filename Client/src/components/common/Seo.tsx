@@ -35,6 +35,8 @@ function useStructuredDataScript(id: string, json: string | null) {
 interface SeoProps {
   /** 站内路径（以 / 开头）；用于生成 canonical 与 og:url，并据此查 PageMeta。 */
   path: string;
+  /** 页面标题。已登记在 `PageMeta` 的路径可省略；未登记且未传时退回站名。 */
+  title?: string;
   /** 页面描述。已登记在 `PageMeta` 的路径可省略，自动取单一真相源。 */
   description?: string;
   /** 社交媒体预览大图。已登记在 `PageMeta` 的路径可省略。 */
@@ -57,13 +59,11 @@ interface SeoProps {
  * 之所以引入 react-helmet-async 而不是把 meta 写死在 index.html：
  * 本站是 SPA，多个页面需要各自独立的 description 与 canonical，写死在入口 HTML 里
  * 只能覆盖首页一种情况，其余页面在搜索结果中会共用首页描述，造成描述缺失与 canonical 错指。
- *
- * 浏览器标签页标题刻意不在此管理：产品决策（2026-09-14）要求所有页面统一显示纯站名
- * 「BakaGame」，不带任何后缀，由 index.html 的兜底 <title> 提供。本组件因此不渲染 <title>，
- * og:title 也固定为站名。
+
  */
 export function Seo({
   path,
+  title,
   description,
   image,
   keywords,
@@ -78,6 +78,7 @@ export function Seo({
   }
 
   const canonical = `${SITE_ORIGIN}${path}`;
+  const resolvedTitle = title ?? meta?.title ?? SITE_NAME;
   const resolvedImage = image ?? meta?.image ?? `${SITE_ORIGIN}/og/logo.jpg`;
   const resolvedKeywords = keywords ?? meta?.keywords;
   const resolvedStructuredData = structuredData ?? meta?.structuredData;
@@ -90,6 +91,7 @@ export function Seo({
 
   return (
     <Helmet prioritizeSeoTags>
+      <title>{resolvedTitle}</title>
       <meta name="description" content={resolvedDescription} />
       {resolvedKeywords && resolvedKeywords.length > 0 ? (
         <meta name="keywords" content={resolvedKeywords.join(", ")} />
@@ -99,13 +101,13 @@ export function Seo({
 
       <meta property="og:type" content="website" />
       <meta property="og:site_name" content={SITE_NAME} />
-      <meta property="og:title" content={SITE_NAME} />
+      <meta property="og:title" content={resolvedTitle} />
       <meta property="og:description" content={resolvedDescription} />
       <meta property="og:image" content={resolvedImage} />
       <meta property="og:url" content={canonical} />
 
       <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={SITE_NAME} />
+      <meta name="twitter:title" content={resolvedTitle} />
       <meta name="twitter:description" content={resolvedDescription} />
       <meta name="twitter:image" content={resolvedImage} />
     </Helmet>

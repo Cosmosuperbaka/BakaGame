@@ -19,8 +19,7 @@ function renderSeo(props: React.ComponentProps<typeof Seo>) {
 }
 
 describe("Seo", () => {
-  it("不接管标题，只写入描述与自指向 canonical", async () => {
-    // 模拟 index.html 兜底标题：所有页面统一纯站名，Seo 不得追加或改写。
+  it("写入页面标题、描述与自指向 canonical", async () => {
     document.title = "BakaGame";
     renderSeo({
       description: "测试描述",
@@ -33,8 +32,18 @@ describe("Seo", () => {
     });
     const canonical = document.head.querySelector('link[rel="canonical"]');
     expect(canonical?.getAttribute("href")).toBe("https://game.baka.website/whoisfaker");
-    // 反向断言：标签页标题必须保持纯站名（产品决策，禁止加后缀）。
-    expect(document.title).toBe("BakaGame");
+    await waitFor(() => expect(document.title).toBe("谁是卧底 Who is Faker - BakaGame"));
+  });
+
+  it("未登记的页面用显式标题", async () => {
+    renderSeo({ description: "房间", path: "/cee/room/1234", title: "猜动漫角色房间" });
+    await waitFor(() => expect(document.title).toBe("猜动漫角色房间"));
+  });
+
+  it("未登记且没传标题时退回站名", async () => {
+    document.title = "上一页";
+    renderSeo({ description: "房间", path: "/cee/room/1234" });
+    await waitFor(() => expect(document.title).toBe("BakaGame"));
   });
 
   it("默认允许索引", async () => {
@@ -59,13 +68,13 @@ describe("Seo", () => {
     });
   });
 
-  it("写入 og 系列标签，og:title 固定为站名，并注入社交卡片大图", async () => {
+  it("写入 og 系列标签，og:title 跟随页面标题，并注入社交卡片大图", async () => {
     renderSeo({ description: "分享描述", path: "/songuessr" });
 
     await waitFor(() => {
       expect(
         document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")
-      ).toBe("BakaGame");
+      ).toBe("听歌猜歌 Songuessr - BakaGame");
       expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute("content")).toBe(
         "https://game.baka.website/songuessr"
       );

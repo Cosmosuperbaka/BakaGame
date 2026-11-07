@@ -29,6 +29,7 @@ export default function CEERoomPage() {
   const seo = (
     <Seo
       path={lifecycle.roomId ? ceeRoomPath(lifecycle.roomId) : "/cee"}
+      title="猜动漫角色房间 - BakaGame"
       description="这间 CEE 正在猜动漫角色，进房看看谁的番没白看。"
       indexable={false}
     />

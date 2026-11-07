@@ -2,13 +2,12 @@ import { test, expect, getLoopback, isLoopbackUrl } from "./fixtures/Isolation";
 
 // 该用例验证 SEO 元信息是否正确注入：
 // 本项目是 SPA，静态外壳提供爬虫正文与元信息，启动后由 react-helmet-async
-// 写入当前路由的 description/canonical/robots，真实浏览器同时验证没有重复标签。
-// 标签页标题按产品决策（2026-09-14）统一为纯站名「BakaGame」（index.html 兜底），
-// Seo 组件不写 <title>；toHaveTitle 用严格相等断言，一旦有人给标题追加后缀即失败。
+// 写入当前路由的 title/description/canonical/robots，真实浏览器同时验证没有重复标签。
+// 页面标题写页面是什么，不堆搜索词；toHaveTitle 用严格相等断言，防止被悄悄加长。
 test.describe("页面 SEO 元信息", () => {
-  test("首页标题为纯站名，注入描述与 canonical", async ({ page }) => {
+  test("首页标题带标语，注入描述与 canonical", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle("BakaGame");
+    await expect(page).toHaveTitle("BakaGame - 1000万以内最好玩的小游戏网站");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /BakaGame/);
@@ -17,9 +16,9 @@ test.describe("页面 SEO 元信息", () => {
     await expect(canonical).toHaveAttribute("href", "https://game.baka.website/");
   });
 
-  test("谁是卧底大厅标题仍为纯站名，有独立描述与 canonical", async ({ page }) => {
+  test("谁是卧底大厅有独立标题、描述与 canonical", async ({ page }) => {
     await page.goto("/whoisfaker");
-    await expect(page).toHaveTitle("BakaGame");
+    await expect(page).toHaveTitle("谁是卧底 Who is Faker - BakaGame");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /谁是卧底/);
@@ -28,9 +27,9 @@ test.describe("页面 SEO 元信息", () => {
     await expect(canonical).toHaveAttribute("href", "https://game.baka.website/whoisfaker");
   });
 
-  test("听歌猜歌大厅标题仍为纯站名，有独立描述与 canonical", async ({ page }) => {
+  test("听歌猜歌大厅有独立标题、描述与 canonical", async ({ page }) => {
     await page.goto("/songuessr");
-    await expect(page).toHaveTitle("BakaGame");
+    await expect(page).toHaveTitle("听歌猜歌 Songuessr - BakaGame");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /听歌猜歌/);
@@ -41,7 +40,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
     await page.goto("/cee");
-    await expect(page).toHaveTitle("BakaGame");
+    await expect(page).toHaveTitle("猜动漫角色 CEE - BakaGame");
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /猜动漫角色/);
     await expect(page.locator('head meta[property="og:description"]')).toHaveAttribute(

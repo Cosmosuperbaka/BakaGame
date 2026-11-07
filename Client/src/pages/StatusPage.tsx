@@ -527,6 +527,7 @@ export default function StatusPage() {
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
       <Seo
         path="/status"
+        title="服务状态 - BakaGame"
         description="BakaGame 服务状态：前端、后端、上游接口与本项目内部各能力的实时状态、历史可用率与事件维护记录。"
         indexable={false}
       />

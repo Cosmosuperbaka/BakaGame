@@ -540,6 +540,7 @@ export default function WhoIsFakerRoomPage() {
     <Seo
       description="这间 Who is Faker 正在等人，进房拿词，看谁演得更像。"
       path={`/whoisfaker/room/${roomId}`}
+      title="谁是卧底房间 - BakaGame"
       indexable={false}
     />
   );

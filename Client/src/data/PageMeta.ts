@@ -13,12 +13,15 @@
 export const SITE_ORIGIN = "https://game.baka.website";
 export const SITE_NAME = "BakaGame";
 
+/** 站点标语本体：首页标题用它，不带句号。 */
+export const SITE_SLOGAN = "1000万以内最好玩的小游戏网站";
+
 /**
  * 分享标语：每个登记页面的 description 第一句都必须是它。
  * 社媒卡片正文由 og:description 渲染，抓取器普遍只展示前两行——最想让人看到的一句
  * 放在最前面，写在正文之后会被直接截掉。构建期断言与 SEO E2E 都以它为约束。
  */
-export const SITE_TAGLINE = "1000万以内最好玩的小游戏网站。";
+export const SITE_TAGLINE = `${SITE_SLOGAN}。`;
 
 /**
  * 公开代码仓库。页脚外链、提交历史的取数接口与提交页跳转都从这里取，
@@ -52,6 +55,8 @@ export interface PageFaqItem {
 export interface PageMeta {
   /** 站内路径；静态外壳按它决定落盘位置 */
   path: string;
+  /** 标签页标题与 og:title：写页面是什么，不堆搜索词 */
+  title: string;
   /**
    * 站点地图的 lastmod（YYYY-MM-DD）。只在页面文案或结构有显著变更时更新：
    * 每次构建都刷新会让搜索引擎判定该字段不可信，进而整体忽略它（不写比写错好）。
@@ -110,6 +115,7 @@ const GAME_ENTITY = {
 export const PAGE_META: PageMeta[] = [
   {
     path: "/",
+    title: `${SITE_NAME} - ${SITE_SLOGAN}`,
     lastmod: "2026-11-07",
     description: `${SITE_TAGLINE}${HOME_SUMMARY}开一间房，把房号发进群，人齐就开。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
@@ -213,6 +219,7 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/whoisfaker",
+    title: `谁是卧底 Who is Faker - ${SITE_NAME}`,
     lastmod: "2026-11-07",
     description: `${SITE_TAGLINE}${FAKER_SUMMARY}5 人起开局，参战满 8 人可加白板和天使。`,
     image: `${SITE_ORIGIN}/og/Faker.jpg`,
@@ -313,6 +320,7 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/songuessr",
+    title: `听歌猜歌 Songuessr - ${SITE_NAME}`,
     lastmod: "2026-11-07",
     description: `${SITE_TAGLINE}${SONG_SUMMARY}听歌识曲猜错时，年份、热度、语种和共同标签都会告诉你偏到了哪里。曲库来自网易云音乐与 QQ 音乐，番剧资料来自 Bangumi。`,
     image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
@@ -414,6 +422,7 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/cee",
+    title: `猜动漫角色 CEE - ${SITE_NAME}`,
     lastmod: "2026-11-07",
     description: `${SITE_TAGLINE}${CEE_SUMMARY}能组队、能 BP、能进原版房间，专治自称看过很多番的人。`,
     image: `${SITE_ORIGIN}/og/CEE.jpg`,
@@ -524,6 +533,7 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/abouts",
+    title: `关于 ${SITE_NAME}`,
     lastmod: "2026-11-07",
     description: `${SITE_TAGLINE}${ABOUTS_SUMMARY}`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,

@@ -110,6 +110,13 @@ try {
     { route: "/cee", text: "多人猜动漫角色", canonical: "https://game.baka.website/cee" },
     { route: "/abouts", text: "开源致谢", canonical: "https://game.baka.website/abouts" },
   ];
+  const shellTitles = {
+    "/": "BakaGame - 1000万以内最好玩的小游戏网站",
+    "/whoisfaker": "谁是卧底 Who is Faker - BakaGame",
+    "/songuessr": "听歌猜歌 Songuessr - BakaGame",
+    "/cee": "猜动漫角色 CEE - BakaGame",
+    "/abouts": "关于 BakaGame",
+  };
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();
     const markers = [
@@ -119,7 +126,7 @@ try {
       `<link rel="canonical" href="${canonical}" data-static-seo="1" />`,
       `<meta name="description"`,
       'type="application/ld+json"',
-      "<title>BakaGame</title>",
+      `<title>${shellTitles[route]}</title>`,
       // FAQ：每页问答正文 + FAQPage 结构化数据（构建期由 static-shell 插件注入，用户不可见）
       'id="bakagame-faq-structured-data"',
       '"@type":"FAQPage"',

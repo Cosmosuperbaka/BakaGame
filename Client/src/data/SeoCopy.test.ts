@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PAGE_META, SITE_ORIGIN, SITE_TAGLINE } from "@/data/PageMeta";
+import { PAGE_META, SITE_NAME, SITE_ORIGIN, SITE_SLOGAN, SITE_TAGLINE } from "@/data/PageMeta";
 
 const PUBLIC_DIR = path.resolve(import.meta.dirname, "../../public");
 const readPublic = (name: string) => readFileSync(path.join(PUBLIC_DIR, name), "utf8");
@@ -11,7 +11,7 @@ const BANNED_PHRASES =
   /在线|线上|免下载|免注册|无需下载|无需注册|不用下载|点击即玩|打开就玩|即点即玩|即开即玩|一键开玩|打开就能玩|畅玩|海量|极致/;
 
 /** 标语是用户刻意保留的句子，排除后再检查「最好玩」不会出现在别处。 */
-const withoutTagline = (text: string) => text.split(SITE_TAGLINE).join("");
+const withoutTagline = (text: string) => text.split(SITE_SLOGAN).join("");
 
 describe("SEO 文案", () => {
   const llms = readPublic("llms.txt");
@@ -22,6 +22,15 @@ describe("SEO 文案", () => {
     expect(withoutTagline(pageCopy)).not.toContain("最好玩");
     expect(withoutTagline(llms)).not.toMatch(BANNED_PHRASES);
     expect(withoutTagline(llms)).not.toContain("最好玩");
+  });
+
+  it("每页标题各不相同、都带站名，只有首页带标语", () => {
+    const titles = PAGE_META.map((meta) => meta.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    for (const meta of PAGE_META) {
+      expect(meta.title, meta.path).toContain(SITE_NAME);
+      expect(meta.title.includes(SITE_SLOGAN), meta.path).toBe(meta.path === "/");
+    }
   });
 
   it("llms.txt 开头就是标语，首页正文也带标语", () => {

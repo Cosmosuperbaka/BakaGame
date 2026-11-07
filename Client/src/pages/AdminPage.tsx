@@ -122,7 +122,12 @@ function AdminPage() {
 
   return (
     <div className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto">
-      <Seo path="/admin" description="BakaGame 管理后台" indexable={false} />
+      <Seo
+        path="/admin"
+        title="管理后台 - BakaGame"
+        description="BakaGame 管理后台"
+        indexable={false}
+      />
       <header className="border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-6 pb-4 pt-6 md:px-10 md:pt-8">
           <Button

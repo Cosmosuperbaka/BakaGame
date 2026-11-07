@@ -125,6 +125,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           : "这间 Songuessr 正在听歌猜题，进房一起抢答。"
       }
       path={solo ? "/songuessr/solo" : `/songuessr/room/${roomId}`}
+      title={solo ? "听歌猜歌单人模式 - BakaGame" : "听歌猜歌房间 - BakaGame"}
       indexable={false}
     />
   );
