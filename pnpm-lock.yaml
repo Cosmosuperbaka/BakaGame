@@ -301,8 +301,8 @@ importers:
         specifier: ^9.3.3
         version: 9.3.4
       qqmusic-api-enhanced:
-        specifier: ^1.0.9
-        version: 1.0.9
+        specifier: ^1.0.10
+        version: 1.0.10
       sharp:
         specifier: ^0.35.4
         version: 0.35.5(@types/node@26.6.5)
@@ -5289,8 +5289,8 @@ packages:
     resolution: {integrity: sha512-+Owyggi9IxT1ePKGafcI87ubSmxol6smwJ+RAHDQlx9+9cPwFWDiKFFCPuWhr9ignlGpZ9vDQLw67N4dcTVFEA==}
     engines: {node: '>=20'}
 
-  qqmusic-api-enhanced@1.0.9:
-    resolution: {integrity: sha512-8j/p8CWHv7K56oBbZuW18Q+FMoUHXgfAahumP3/bqzsAUUofxUhZoUAtoCt6arocZuoA0iAx7qxOM7T1crf34w==}
+  qqmusic-api-enhanced@1.0.10:
+    resolution: {integrity: sha512-8V254uveO/E4OvRRSgjwt7TrceUbAo7X4CnUBLdmvrs05yjLveFYQ3kbtELlTkWCiIRBVvZgII2W5bhcSNo/8Q==}
     engines: {node: '>=20'}
 
   qrcode@1.5.4:
@@ -10827,7 +10827,7 @@ snapshots:
     dependencies:
       hookified: 2.2.0
 
-  qqmusic-api-enhanced@1.0.9: {}
+  qqmusic-api-enhanced@1.0.10: {}
 
   qrcode@1.5.4:
     dependencies:
