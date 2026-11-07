@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import { buildAutomaticCandidateTiers } from "../../src/application/songuessr/AutomaticRounds";
+import {
+  buildAutomaticCandidateTiers,
+  collapseSameWorks,
+} from "../../src/application/songuessr/AutomaticRounds";
 import { AppError } from "../../src/domain/Errors";
 import type { MusicProvider } from "../../src/infrastructure/NeteaseMusicProvider";
 import type { SongSearchResult, SonGuessrRoomSnapshot } from "../../src/shared/Index";
@@ -110,6 +113,40 @@ describe("自动出题的候选池覆盖与去重", () => {
     }
   });
 
+  test("同一首歌的多个 ID 合并成一首：窗口内不会再听到同名版本", async () => {
+    // 20 首作品，每首在歌单里出现两次：录音室版和现场版，ID 不同。
+    const pool: SongSearchResult[] = Array.from({ length: 40 }, (_, index) => {
+      const work = Math.floor(index / 2);
+      return {
+        id: `netease:${index}`,
+        title: index % 2 === 0 ? `作品${work}` : `作品${work} (Live)`,
+        artist: "测试歌手",
+      };
+    });
+    const titleOf = new Map(pool.map((song) => [song.id, song.title.replace(" (Live)", "")]));
+    const music: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "同名池", songCount: pool.length },
+        songs: pool,
+      }),
+      getSong: async (id) => makeSong(id, titleOf.get(id)!, 2020),
+    };
+    const { playRound } = await startSoloService(music, "6009", 23, pool.length);
+    const heard: string[] = [];
+    for (let round = 1; round <= 30; round += 1) {
+      const result = await playRound(round);
+      expect(result.error).toBeUndefined();
+      heard.push(titleOf.get(result.id!)!);
+    }
+    // 20 首作品的窗口是 10：任意连续 11 轮里同一作品只能出现一次。
+    for (let start = 0; start + 11 <= heard.length; start += 1) {
+      const slice = heard.slice(start, start + 11);
+      expect(new Set(slice).size).toBe(slice.length);
+    }
+    expect(new Set(heard).size).toBeGreaterThan(10);
+  });
+
   test("多数候选走跨平台兜底或取不到时，原候选仍被去重且失败轮数有限", async () => {
     const pool = makePool(1000);
     // 每 5 首：0 直接可播；1 兜底到另一平台（返回的 ID 与候选不同，且多个候选兜到同一首）；其余取不到。
@@ -149,7 +186,8 @@ describe("自动出题的候选池覆盖与去重", () => {
   });
 
   test("限流的平台本轮退场，改抽别的平台的候选", async () => {
-    const pool = [...makePool(30, "netease:"), ...makePool(30, "qq:")];
+    const qqPool = makePool(30, "qq:").map((song) => ({ ...song, artist: "另一位歌手" }));
+    const pool = [...makePool(30, "netease:"), ...qqPool];
     const tried: string[] = [];
     const music: MusicProvider = {
       ...provider,
@@ -245,6 +283,58 @@ describe("自动出题的取曲提示与失败留痕", () => {
     expect(written.find((entry) => entry.type === "song.auto.failed")?.payload).toEqual(
       expect.objectContaining({ code: "AUTO_NO_MATCH" })
     );
+  });
+});
+
+describe("collapseSameWorks", () => {
+  const song = (id: string, title: string, artist = "歌手甲"): SongSearchResult => ({
+    id,
+    title,
+    artist,
+  });
+  const always = () => true;
+
+  test("版本后缀不同算同一首，翻唱的不同歌手不合并", () => {
+    const works = collapseSameWorks(
+      [
+        song("a", "晴天"),
+        song("b", "晴天 (Live)"),
+        song("c", "晴天 - 伴奏"),
+        song("d", "晴天", "歌手乙"),
+        song("e", "雨天"),
+      ],
+      [],
+      always
+    );
+    expect(works.map((work) => work.id)).toEqual(["a", "d", "e"]);
+  });
+
+  test("合作歌手只看第一位", () => {
+    const works = collapseSameWorks(
+      [song("a", "晴天", "歌手甲"), song("b", "晴天", "歌手甲 / 歌手乙")],
+      [],
+      always
+    );
+    expect(works).toHaveLength(1);
+  });
+
+  test("优先留近期播过的 ID，否则窗口认不出它", () => {
+    const works = collapseSameWorks([song("a", "晴天"), song("b", "晴天 (Live)")], ["b"], always);
+    expect(works.map((work) => work.id)).toEqual(["b"]);
+  });
+
+  test("没有近期记录时优先留能播的", () => {
+    const works = collapseSameWorks(
+      [song("a", "晴天"), song("b", "晴天 (Live)")],
+      [],
+      (candidate) => candidate.id === "b"
+    );
+    expect(works.map((work) => work.id)).toEqual(["b"]);
+  });
+
+  test("曲名规范化后为空时按 ID 保留，不互相吞掉", () => {
+    const works = collapseSameWorks([song("a", "!!!"), song("b", "???")], [], always);
+    expect(works).toHaveLength(2);
   });
 });
 

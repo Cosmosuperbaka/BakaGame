@@ -1,6 +1,10 @@
 import { AppError } from "../../domain/Errors";
 import { normalizeWord } from "../../domain/Rules";
-import { isPlayableSong } from "../../infrastructure/MusicDeduplicator";
+import {
+  extractArtistTokens,
+  extractCanonicalTitle,
+  isPlayableSong,
+} from "../../infrastructure/MusicDeduplicator";
 import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
 import type {
   MusicCookieInput,
@@ -171,6 +175,37 @@ export const startAutomaticAnimeRound = async (
   throw new AppError("BANGUMI_NO_MUSIC", "筛选结果中没有可播放关联歌曲的番剧");
 };
 
+/** 同一作品的归并键：曲名去掉版本后缀，歌手取第一位。 */
+const songWorkKey = (song: SongSearchResult): string => {
+  const title = extractCanonicalTitle(song.title);
+  if (!title) return song.id;
+  return `${title}|${extractArtistTokens(song.artist)[0] ?? ""}`;
+};
+
+/**
+ * 把同一作品的多个 ID 合并成一首。
+ *
+ * 歌单常把一首歌收录多次（专辑版、单曲版、现场版），ID 各不相同。近期窗口按 ID 记账，
+ * 不合并的话玩家隔几轮就会再听到“同一首”，答案也一样。每首作品只留一个候选：
+ * 优先留近期播过的那个 ID，窗口才认得它；其次留能播的。
+ */
+export const collapseSameWorks = (
+  candidates: readonly SongSearchResult[],
+  recentIds: readonly string[],
+  isPlayable: (song: SongSearchResult) => boolean
+): SongSearchResult[] => {
+  const recent = new Set(recentIds);
+  const score = (song: SongSearchResult): number =>
+    (recent.has(song.id) ? 2 : 0) + (isPlayable(song) ? 1 : 0);
+  const works = new Map<string, SongSearchResult>();
+  for (const song of candidates) {
+    const key = songWorkKey(song);
+    const kept = works.get(key);
+    if (!kept || score(song) > score(kept)) works.set(key, song);
+  }
+  return [...works.values()];
+};
+
 /** 自动选曲的候选分层：靠前的层先抽，抽空或全部失败后才落到下一层。 */
 export interface AutomaticCandidateTiers {
   /** 每层按抽取顺序给出；`ordered` 为真的层依次取（最久没播的先出），否则层内均匀随机。 */
@@ -258,20 +293,23 @@ export const startAutomaticSongRound = async (
   }
   // 候选池不再按会员状态预剔除：会员专享曲会由 `getSong` 的解灰链路取回完整音频，
   // 能否出题以「实际拿到的音频」为准，不再看账号是不是会员。
-  // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
-  // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
-  const recentSongWindow = resolveRecentSongWindow(candidates.length);
   const now = service.now();
   const playability = songPlayabilityContext(service, room);
+  const isPlayable = (song: SongSearchResult): boolean => isPlayableSong(song, playability);
+  const works = collapseSameWorks(candidates, room.recentSongIds ?? [], isPlayable);
+  // 窗口长度取自整池而不是「扣掉近期后的剩余」，否则窗口会依赖自己的结果：
+  // 池子被扣小时窗口跟着缩，等价于每回合都在放宽去重。必须先用整池定长度，再排除。
+  const recentSongWindow = resolveRecentSongWindow(works.length);
   const layout = buildAutomaticCandidateTiers(
-    candidates,
+    works,
     (room.recentSongIds ?? []).slice(0, recentSongWindow),
     liveUnavailableIds(room, now),
-    (song) => isPlayableSong(song, playability)
+    isPlayable
   );
   // 候选被近期窗口、失败记录或不可播悄悄缩小时必须留痕，否则「总是那几首」无从排查。
   service.log("song.auto.pool", room.id, undefined, {
     candidates: candidates.length,
+    works: works.length,
     fresh: layout.fresh,
     recycled: layout.recycled,
     knownUnavailable: layout.knownUnavailable,
