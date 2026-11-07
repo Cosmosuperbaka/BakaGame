@@ -6,6 +6,11 @@ BakaGame is an open-source, Chinese-language party game site for anime fans: Who
 
 [开始玩](https://game.baka.website) · [反馈问题](https://github.com/Cosmosuperbaka/BakaGame/issues/new/choose) · [参与贡献](CONTRIBUTING.md) · [更新日志](https://game.baka.website/abouts?tab=changelog)
 
+<p>
+  <img src=".github/assets/home.jpg" alt="BakaGame 首页，三款游戏的入口" width="49%">
+  <img src=".github/assets/room.jpg" alt="Who is Faker 等待房间，左侧玩家列表，中间房间设置，右侧聊天" width="49%">
+</p>
+
 ## 三款游戏
 
 | 游戏 | 玩什么 | 开局条件 |
