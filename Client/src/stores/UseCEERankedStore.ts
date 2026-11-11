@@ -68,6 +68,8 @@ let rawState: CEERankedState | null = null;
 let stateRevision: number | undefined;
 /** 全量请求的进行中标记：同一时刻只发一条 `cee.ranked.status`。 */
 let syncPending = false;
+/** 事件流装入状态的次数：全量回包据此判断事件流是否已经抢先给过带修订号的基线。 */
+let streamInstalls = 0;
 /** 在途命令的归属代次：释放后晚到的回包一律忽略。 */
 let commandGeneration = 0;
 let attachCount = 0;
@@ -99,14 +101,21 @@ const attached = (generation: number): boolean =>
  */
 const ownsGeneration = (generation: number): boolean => generation === commandGeneration;
 
-/** 全量同步：回包本身就是一份完整状态；事件流里的全量帧会覆盖它并补上修订号。 */
+/**
+ * 全量同步：回包本身就是一份完整状态。
+ *
+ * 服务端先推一帧带修订号的全量、再回 ACK，所以事件通常先到。此时回包与那帧是同一份状态，
+ * 再装一次只会把修订号清成 undefined，之后每个差量都对不上基线、白白再拉一次全量。
+ * 事件流在请求途中装过状态就以它为准，回包只在事件丢失（例如积压丢帧）时兜底。
+ */
 async function requestStatus(): Promise<void> {
   if (syncPending) return;
   syncPending = true;
   const generation = commandGeneration;
+  const installsBefore = streamInstalls;
   try {
     const state = await ws.send("cee.ranked.status", {});
-    if (attached(generation)) installState(state, undefined);
+    if (attached(generation) && streamInstalls === installsBefore) installState(state, undefined);
   } catch (error) {
     if (attached(generation)) reportFailure(error);
   } finally {
@@ -122,6 +131,7 @@ function handleRankedMessage(generation: number, message: ServerMessage): void {
     void requestStatus();
     return;
   }
+  streamInstalls += 1;
   installState(result.state, result.revision);
 }
 

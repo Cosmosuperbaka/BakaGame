@@ -268,6 +268,27 @@ describe("排位状态同步", () => {
     expect(callsOf("cee.ranked.status")).toHaveLength(3);
   });
 
+  it("全量帧先于状态回包到达时，回包不清掉修订号，后续补丁照常增量应用", async () => {
+    // 服务端处理 status 时先推带修订号的全量帧、再回 ACK：回包到达时事件流已经给过基线。
+    const pendingStatus = deferred<CEERankedState>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.status" ? pendingStatus.promise : Promise.resolve({})
+    );
+    attachRanked();
+    await settle();
+
+    socket.emit(fullFrame(5, queuedState));
+    await settle();
+    pendingStatus.resolve(queuedState);
+    await settle();
+
+    socket.emit(patchFrame(6, 5, [{ op: "replace", path: "/window", value: 2 }]));
+    await settle();
+    const state = useCEERankedStore.getState().state;
+    expect(state?.status === "queued" && state.window).toBe(2);
+    expect(callsOf("cee.ranked.status")).toHaveLength(1);
+  });
+
   it("断线清空状态与修订号，重连后自动重新请求全量", async () => {
     attachRanked();
     await settle();
