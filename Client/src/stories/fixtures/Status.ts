@@ -110,12 +110,16 @@ export function statusFixture(scenario: StatusScenario, now = Date.now()) {
   const history: PublicStatusHistory = {
     days: PUBLIC_STATUS_HISTORY_DAYS,
     generatedAt: now,
-    entries: PUBLIC_STATUS_COMPONENT_IDS.map((id) => {
+    entries: PUBLIC_STATUS_COMPONENT_IDS.map((id, componentIndex) => {
+      const random = seeded(componentIndex + 31);
+      const base = LATENCY_BASE[id];
       let operational = 0;
       let determinate = 0;
+      let latencySum = 0;
+      let latencyDays = 0;
       const cells: PublicStatusCell[] = days.map((day, index) => {
         // 状态页上线前的日子没有样本。
-        if (index < 9) return { day, total: 0, ratio: null, level: "unknown" };
+        if (index < 9) return { day, total: 0, ratio: null, level: "unknown", latencyMs: null };
         const level = levelAt(scenario, id, index, days.length);
         const total = 480;
         const ratio = level === "unknown" ? null : level === "operational" ? 1 : 0.9625;
@@ -123,11 +127,28 @@ export function statusFixture(scenario: StatusScenario, now = Date.now()) {
           determinate += total;
           operational += ratio * total;
         }
-        return { day, total, ratio, level };
+        // 日均延迟带一点逐日起伏与缓慢的趋势；出过故障的那天均值偏高。
+        const latencyMs =
+          base !== undefined && level !== "unknown"
+            ? Math.max(
+                1,
+                Math.round(
+                  base *
+                    (1 + Math.sin(index / 4 + componentIndex) * 0.08 + (random() - 0.5) * 0.1) *
+                    (level === "degraded" ? 1.35 : 1)
+                )
+              )
+            : null;
+        if (latencyMs !== null) {
+          latencySum += latencyMs;
+          latencyDays += 1;
+        }
+        return { day, total, ratio, level, latencyMs };
       });
       return {
         id,
         cells,
+        latencyMs: latencyDays > 0 ? Math.round(latencySum / latencyDays) : null,
         uptime: [
           {
             days: PUBLIC_STATUS_HISTORY_DAYS,

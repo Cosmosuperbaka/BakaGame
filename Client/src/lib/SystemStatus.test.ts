@@ -31,11 +31,12 @@ const validHistory = {
     {
       id: "backend",
       uptime: [{ days: 30, ratio: 0.5 }],
+      latencyMs: 140,
       cells: [
-        { day: "2026-10-21", total: 12, ratio: 1, level: "operational" },
-        { day: "2026-10-22", total: 12, ratio: 0.5, level: "degraded" },
+        { day: "2026-10-21", total: 12, ratio: 1, level: "operational", latencyMs: 120 },
+        { day: "2026-10-22", total: 12, ratio: 0.5, level: "degraded", latencyMs: 160 },
         // 没有样本的一天：total 0 且 ratio 为 null，页面读作无数据而不是 0%。
-        { day: "2026-10-23", total: 0, ratio: null, level: "unknown" },
+        { day: "2026-10-23", total: 0, ratio: null, level: "unknown", latencyMs: null },
       ],
     },
   ],
@@ -166,6 +167,28 @@ describe("公开状态历史客户端", () => {
     expect(parsed.entries[0].uptime[0].ratio).toBe(1);
     expect(parsed.entries[0].cells[0].ratio).toBe(0);
     expect(parsed.entries[0].cells[1].ratio).toBeNull();
+  });
+
+  it("日格与窗口延迟取整收下，旧后端缺字段或给出非法值时读作 null", () => {
+    const parsed = parseStatusHistory({
+      ...validHistory,
+      entries: [
+        {
+          id: "bangumi",
+          uptime: [{ days: 30, ratio: 1 }],
+          latencyMs: 132.6,
+          cells: [
+            { day: "2026-10-21", total: 3, ratio: 1, level: "operational", latencyMs: 98.4 },
+            { day: "2026-10-22", total: 3, ratio: 1, level: "operational", latencyMs: -5 },
+            { day: "2026-10-23", total: 3, ratio: 1, level: "operational" },
+          ],
+        },
+        { id: "rooms", uptime: [], cells: [] },
+      ],
+    });
+    expect(parsed.entries[0].latencyMs).toBe(133);
+    expect(parsed.entries[0].cells.map((cell) => cell.latencyMs)).toEqual([98, null, null]);
+    expect(parsed.entries[1].latencyMs).toBeNull();
   });
 
   it("丢弃白名单外的组件与形状不合的格子，不把整份历史读失败", () => {

@@ -260,12 +260,29 @@ function Legend() {
   );
 }
 
+/**
+ * 行内延迟读的是哪一种数：实时视图给当前探测耗时；月视图给窗口内的样本加权均值；
+ * 后端一行给浏览器到后端的往返（服务端探不了自己）。后两种在数字前标出口径，免得和「当前」混读。
+ */
+type LatencyKind = "current" | "average" | "roundTrip";
+
+const LATENCY_PREFIX: Record<LatencyKind, string | null> = {
+  current: null,
+  average: "平均",
+  roundTrip: "往返",
+};
+
+const LATENCY_TITLE: Record<LatencyKind, string> = {
+  current: "服务端访问这项服务的响应耗时",
+  average: `${VIEW_LABEL.month}服务端访问这项服务的平均响应耗时`,
+  roundTrip: "从你的浏览器到后端服务的往返耗时，每分钟测一次",
+};
+
 interface RowLatency {
   value: number | null;
-  /** 实时窗口里每格的平均延迟，画成走势；没有窗口数据（往返延迟）时为 null。 */
+  /** 当前视图窗口里每格的平均延迟，画成走势；没有窗口数据（往返延迟）时为 null。 */
   series: (number | null)[] | null;
-  /** 浏览器到后端的往返，而不是服务端对这项服务的探测耗时。 */
-  roundTrip: boolean;
+  kind: LatencyKind;
 }
 
 function ComponentRow({
@@ -297,19 +314,14 @@ function ComponentRow({
           {STATUS_COMPONENT_LABELS[id]}
         </span>
         {latency ? (
-          <span
-            className="flex shrink-0 items-center gap-2"
-            title={
-              latency.roundTrip
-                ? "从你的浏览器到后端服务的往返耗时，每分钟测一次"
-                : "服务端访问这项服务的响应耗时"
-            }
-          >
+          <span className="flex shrink-0 items-center gap-2" title={LATENCY_TITLE[latency.kind]}>
             {latency.series ? (
               <LatencySparkline values={latency.series} className="hidden sm:block" />
             ) : null}
             <span className="flex items-baseline gap-1 font-mono text-xs tabular-nums text-muted-foreground">
-              {latency.roundTrip ? <span className="font-sans">往返</span> : null}
+              {LATENCY_PREFIX[latency.kind] ? (
+                <span className="font-sans">{LATENCY_PREFIX[latency.kind]}</span>
+              ) : null}
               <Readout value={formatLatency(latency.value)} />
             </span>
           </span>
@@ -426,7 +438,13 @@ export default function StatusPage() {
     for (const id of ALL_COMPONENTS) {
       const source =
         historyById.get(id)?.cells ??
-        days.map((day) => ({ day, total: 0, ratio: null, level: "unknown" as const }));
+        days.map((day) => ({
+          day,
+          total: 0,
+          ratio: null,
+          level: "unknown" as const,
+          latencyMs: null,
+        }));
       result.set(
         id,
         source.map((cell) => {
@@ -437,7 +455,7 @@ export default function StatusPage() {
             level: cell.level,
             total: cell.total,
             ratio: cell.ratio,
-            latencyMs: null,
+            latencyMs: cell.latencyMs,
             when: DAY_FORMAT.format(start),
             events: (events ?? []).filter((event) => eventOverlaps(event, id, start, end)),
           };
@@ -447,6 +465,8 @@ export default function StatusPage() {
     return result;
   }, [history, historyById, events]);
 
+  const cellsByView = view === "month" ? monthCells : realtimeCells;
+
   const ratioOf = (id: PublicStatusComponentId): number | null =>
     view === "month"
       ? (historyById.get(id)?.uptime.find((span) => span.days === PUBLIC_STATUS_HISTORY_DAYS)
@@ -454,20 +474,24 @@ export default function StatusPage() {
       : (realtimeById.get(id)?.uptime ?? null);
 
   const latencyOf = (id: PublicStatusComponentId): RowLatency | null => {
-    if (view !== "realtime") return null;
-    if (id === "backend") return { value: roundTripMs, series: null, roundTrip: true };
-    const series = realtimeCells?.get(id)?.map((cell) => cell.latencyMs) ?? null;
-    const current = levels.get(id)?.latencyMs ?? null;
+    // 往返延迟只有此刻这一个数，没有历史：月视图里后端一行不出延迟，不拿当下冒充 30 天。
+    if (id === "backend") {
+      return view === "realtime" ? { value: roundTripMs, series: null, kind: "roundTrip" } : null;
+    }
+    const series = cellsByView?.get(id)?.map((cell) => cell.latencyMs) ?? null;
+    const value =
+      view === "month"
+        ? (historyById.get(id)?.latencyMs ?? null)
+        : (levels.get(id)?.latencyMs ?? null);
     // 进程内组件（房间、数据集、图片缓存）没有延迟口径：整栏不出，不摆一排「—」。
-    if (current === null && !series?.some((value) => value !== null)) return null;
-    return { value: current, series, roundTrip: false };
+    if (value === null && !series?.some((latency) => latency !== null)) return null;
+    return { value, series, kind: view === "month" ? "average" : "current" };
   };
 
   const tally = tallyOf(ALL_COMPONENTS, levelOf);
   const overall = snapshot?.level ?? "unknown";
   const headline = headlineOf(snapshot, tally);
   const overallUptime = meanOf(ALL_COMPONENTS.map(ratioOf));
-  const cellsByView = view === "month" ? monthCells : realtimeCells;
   const viewData = view === "month" ? history : realtime;
 
   return (

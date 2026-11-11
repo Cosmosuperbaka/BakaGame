@@ -6,6 +6,8 @@ const HEIGHT = 18;
 const INSET = 2;
 /** 每个点至少占的像素宽：120 格挤进 72 像素会把逐格抖动画成一团毛线，先按像素分桶取均值。 */
 const POINT_SPACING = 2;
+/** 纵轴最小量程占均值的比例：小于它的相对起伏按比例缩在中间，不被放大成满高。 */
+const MIN_RELATIVE_RANGE = 0.5;
 
 /**
  * 把序列按桶合并成不超过画幅能分辨的点数：桶内取有读数的均值，整桶都没有读数时留空（断线）。
@@ -42,10 +44,14 @@ export function LatencySparkline({
 
   const min = Math.min(...known);
   const max = Math.max(...known);
+  const mean = known.reduce((sum, value) => sum + value, 0) / known.length;
+  // 纵轴量程至少取均值的一个比例：4 ms 到 5 ms 的抖动不该被铺满画成一道悬崖，
+  // 起伏占到均值的这个比例才画满高度；数据居中在量程里。
+  const range = Math.max(max - min, mean * MIN_RELATIVE_RANGE, 1);
+  const floor = (min + max) / 2 - range / 2;
   const step = (WIDTH - INSET * 2) / Math.max(1, values.length - 1);
   const xOf = (index: number) => INSET + index * step;
-  const yOf = (value: number) =>
-    max === min ? HEIGHT / 2 : INSET + (HEIGHT - INSET * 2) * (1 - (value - min) / (max - min));
+  const yOf = (value: number) => INSET + (HEIGHT - INSET * 2) * (1 - (value - floor) / range);
 
   const segments: string[] = [];
   let current = "";

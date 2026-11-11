@@ -37,7 +37,11 @@ const history = {
     {
       id: "bangumi",
       uptime: [{ days: 30, ratio: null }],
-      cells: [],
+      latencyMs: 165,
+      cells: [
+        { day: "2026-10-22", total: 12, ratio: 1, level: "operational", latencyMs: 150 },
+        { day: "2026-10-23", total: 12, ratio: 1, level: "operational", latencyMs: 180 },
+      ],
     },
   ],
 };
@@ -249,8 +253,20 @@ describe("公开状态页", () => {
     });
     expect(screen.getByText("近 30 天可用率")).toBeInTheDocument();
     expect(screen.getAllByText("30 天前").length).toBeGreaterThan(0);
-    // 月视图没有「当前延迟」这个口径：Bangumi 行不再显示 180 ms。
-    expect(within(rowOf("Bangumi API")).queryByText("180 ms")).not.toBeInTheDocument();
+    // 月视图读窗口内的平均延迟并标出口径，不再显示当前的 180 ms；往返延迟没有历史，后端一行不出。
+    // 同一格读数换值：新值顶上来，旧值沿退场离开。
+    expect(await within(rowOf("Bangumi API")).findByText("165 ms")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(rowOf("Bangumi API")).queryByText("180 ms")).not.toBeInTheDocument()
+    );
+    expect(within(rowOf("Bangumi API")).getByText("平均")).toBeInTheDocument();
+    expect(within(rowOf("后端服务")).queryByText("往返")).not.toBeInTheDocument();
+    // 悬停日格读当天的平均延迟。
+    const dayCells = within(rowOf("Bangumi API")).getByRole("img").querySelectorAll("[data-cell]");
+    act(() => {
+      fireEvent.pointerEnter(dayCells[dayCells.length - 1]!);
+    });
+    expect(await screen.findByText("平均延迟 180 ms")).toBeInTheDocument();
     expect(await within(rowOf("后端服务")).findByText("100.0%")).toBeInTheDocument();
   });
 

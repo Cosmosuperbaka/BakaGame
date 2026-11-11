@@ -57,6 +57,13 @@ export const STATUS_EVENT_STATUS_LABELS = {
 export const isLevel = (value: unknown): value is PublicStatusLevel =>
   typeof value === "string" && LEVELS.has(value);
 
+/**
+ * 延迟毫秒数：只认有限的非负数，四舍五入成整数；缺字段或不合形状读作 null（页面显示「—」或不显示）。
+ * 快照、实时格与日格共用这一份：旧后端不给日格延迟时同样落成 null，页面照常渲染。
+ */
+const parseLatency = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+
 const parseComponents = (value: unknown): PublicStatusComponent[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -64,14 +71,12 @@ const parseComponents = (value: unknown): PublicStatusComponent[] => {
     const record = item as Record<string, unknown>;
     if (typeof record.id !== "string" || !COMPONENT_IDS.has(record.id)) return [];
     if (!isLevel(record.level)) return [];
-    const latency =
-      typeof record.latencyMs === "number" &&
-      Number.isFinite(record.latencyMs) &&
-      record.latencyMs >= 0
-        ? Math.round(record.latencyMs)
-        : null;
     return [
-      { id: record.id as PublicStatusComponent["id"], level: record.level, latencyMs: latency },
+      {
+        id: record.id as PublicStatusComponent["id"],
+        level: record.level,
+        latencyMs: parseLatency(record.latencyMs),
+      },
     ];
   });
 };
@@ -136,7 +141,13 @@ export const parseStatusHistory = (value: unknown): PublicStatusHistory => {
         return [];
       }
       return [
-        { day: cell.day, total: cell.total, ratio: parseRatio(cell.ratio), level: cell.level },
+        {
+          day: cell.day,
+          total: cell.total,
+          ratio: parseRatio(cell.ratio),
+          level: cell.level,
+          latencyMs: parseLatency(cell.latencyMs),
+        },
       ];
     });
     const uptime = Array.isArray(entry.uptime)
@@ -147,7 +158,14 @@ export const parseStatusHistory = (value: unknown): PublicStatusHistory => {
           return [{ days: span.days, ratio: parseRatio(span.ratio) }];
         })
       : [];
-    return [{ id: entry.id as PublicStatusComponentId, uptime, cells }];
+    return [
+      {
+        id: entry.id as PublicStatusComponentId,
+        uptime,
+        latencyMs: parseLatency(entry.latencyMs),
+        cells,
+      },
+    ];
   });
   return {
     days: record.days,
@@ -180,17 +198,13 @@ const parseSampleCells = (value: unknown): PublicStatusSampleCell[] => {
     ) {
       return [];
     }
-    const latencyMs =
-      typeof cell.latencyMs === "number" && Number.isFinite(cell.latencyMs) && cell.latencyMs >= 0
-        ? Math.round(cell.latencyMs)
-        : null;
     return [
       {
         start: cell.start,
         total: cell.total,
         ratio: parseRatio(cell.ratio),
         level: cell.level,
-        latencyMs,
+        latencyMs: parseLatency(cell.latencyMs),
       },
     ];
   });
