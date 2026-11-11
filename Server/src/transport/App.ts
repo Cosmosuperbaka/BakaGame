@@ -75,7 +75,7 @@ import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
 import type { ClientWebBundle } from "../infrastructure/ClientWebBundle";
 import type { ClientChannel } from "../infrastructure/ClientChannel";
 import type { BangumiImageService } from "../infrastructure/BangumiImageService";
-import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
+import type { ExternalStatusProbe } from "../infrastructure/ExternalStatusProbe";
 import type { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import type { StatusSampleStore } from "../infrastructure/StatusSampleStore";
 import type { StatusEventRepository } from "../infrastructure/db/StatusEventRepository";
@@ -99,6 +99,11 @@ export interface AppDependencies {
   statusSamples?: StatusSampleStore;
   /** 状态事件仓储：提供时开放 `/api/status/events`（未配置数据库的实例没有事件）。 */
   statusEvents?: StatusEventRepository;
+  /**
+   * 上游组件的外部读数探针（Better Stack 与直连探测的组合结果）。
+   * 未提供时上游接口读作未知：单测装配因此不会发起任何真实外网请求。
+   */
+  statusExternalProbe?: ExternalStatusProbe;
   /** 账号系统（登录、oRPC、头像代理）：未提供时相关路由回 503 `ACCOUNT_DISABLED`。 */
   account?: AccountDependencies;
   /**
@@ -848,6 +853,7 @@ export const createApp = ({
   statusHistory,
   statusSamples,
   statusEvents,
+  statusExternalProbe,
   account,
   handshakeQuota: handshakeQuotaOverride,
   clientChannel,
@@ -1160,12 +1166,9 @@ export const createApp = ({
         (characterService?.getHealthSnapshot().connectionCount ?? 0),
     }),
     version: () => resolveServerRelease() ?? "unknown",
-    externalProbe: env.betterStackApiKey
-      ? new BetterStackStatusProbe({
-          apiKey: env.betterStackApiKey,
-          monitors: env.betterStackMonitorMap ?? {},
-        })
-      : undefined,
+    // 探针在 CreateServer 装配（外部监测与直连探测的组合），未传时聚合器回落到 Mock：
+    // createApp 的单测装配因此不请求任何外网。
+    externalProbe: statusExternalProbe,
     history: statusHistory,
   });
   // 实时条带的后台采样器：没人开页面时也按采样间隔跑一轮探测记一笔，

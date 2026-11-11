@@ -4,6 +4,7 @@ import {
   type ExternalMonitorReading,
   type ExternalStatusProbe,
 } from "../../infrastructure/ExternalStatusProbe";
+import { fetchWithGuardedRedirects } from "../../infrastructure/OutboundGuard";
 import type { StatusHistoryStore } from "../../infrastructure/StatusHistoryStore";
 import type { StatusSampleStore } from "../../infrastructure/StatusSampleStore";
 import {
@@ -66,14 +67,21 @@ const PUBLIC_EVENTS_LIMIT = 100;
 
 const levelOf = (available: boolean): PublicStatusLevel => (available ? "operational" : "degraded");
 
+/** 一次带耗时读数的探测结果：延迟只在 operational 时有意义，其余一律 null。 */
+interface ProbeReading {
+  level: PublicStatusLevel;
+  latencyMs: number | null;
+}
+
 const settle = async (
-  probe: () => Promise<PublicStatusLevel> | PublicStatusLevel,
+  probe: () => Promise<ProbeReading | PublicStatusLevel> | ProbeReading | PublicStatusLevel,
   onError: PublicStatusLevel
-): Promise<PublicStatusLevel> => {
+): Promise<ProbeReading> => {
   try {
-    return await probe();
+    const reading = await probe();
+    return typeof reading === "string" ? { level: reading, latencyMs: null } : reading;
   } catch {
-    return onError;
+    return { level: onError, latencyMs: null };
   }
 };
 
@@ -100,12 +108,17 @@ export const createStatusAggregator = ({
   let cached: { at: number; snapshot: PublicStatusSnapshot } | undefined;
   let inflight: Promise<PublicStatusSnapshot> | undefined;
 
-  const probeSearch = async (): Promise<PublicStatusLevel> => {
-    if (!meilisearchUrl) return "unknown";
+  const probeSearch = async (): Promise<ProbeReading> => {
+    if (!meilisearchUrl) return { level: "unknown", latencyMs: null };
+    const startedAt = performance.now();
     const response = await fetcher(`${meilisearchUrl.replace(/\/+$/, "")}/health`, {
       signal: AbortSignal.timeout(SEARCH_PROBE_TIMEOUT_MS),
     });
-    return levelOf(response.ok);
+    // 计时到响应头为止；正文立即释放，探测不消费 body。
+    const latencyMs = Math.round(performance.now() - startedAt);
+    await response.body?.cancel().catch(() => {});
+    const level = levelOf(response.ok);
+    return { level, latencyMs: level === "operational" ? latencyMs : null };
   };
 
   const probeDataset = (): PublicStatusLevel => {
@@ -125,17 +138,26 @@ export const createStatusAggregator = ({
     }
   };
 
-  /** 前端可达性：静态外壳要真的吐出 HTML，拿到 SPA 兜底页之外的 200 才算活着。 */
-  const probeFrontend = async (): Promise<PublicStatusLevel> => {
-    if (!frontendUrl) return "unknown";
-    const response = await fetcher(frontendUrl, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(FRONTEND_PROBE_TIMEOUT_MS),
-    });
-    if (!response.ok) return "degraded";
-    return /text\/html/i.test(response.headers.get("content-type") ?? "")
-      ? "operational"
-      : "degraded";
+  /**
+   * 前端可达性：静态外壳要真的吐出 HTML，拿到 SPA 兜底页之外的 200 才算活着。
+   * 出站抓取不交给运行时自动跟随跳转（Deployment §3）：跳离本站由护栏抛错，settle 记成 degraded。
+   */
+  const probeFrontend = async (): Promise<ProbeReading> => {
+    if (!frontendUrl) return { level: "unknown", latencyMs: null };
+    const startedAt = performance.now();
+    const response = await fetchWithGuardedRedirects(
+      fetcher,
+      frontendUrl,
+      { signal: AbortSignal.timeout(FRONTEND_PROBE_TIMEOUT_MS) },
+      { pinOrigin: true }
+    );
+    const latencyMs = Math.round(performance.now() - startedAt);
+    await response.body?.cancel().catch(() => {});
+    const level =
+      response.ok && /text\/html/i.test(response.headers.get("content-type") ?? "")
+        ? "operational"
+        : "degraded";
+    return { level, latencyMs: level === "operational" ? latencyMs : null };
   };
 
   /**
@@ -170,15 +192,15 @@ export const createStatusAggregator = ({
     const netease = upstreamOf("netease");
     const qq = upstreamOf("qq");
     const components: PublicStatusComponent[] = [
-      { id: "frontend", level: await settle(probeFrontend, "degraded"), latencyMs: null },
+      { id: "frontend", ...(await settle(probeFrontend, "degraded")) },
       { id: "backend", level: levelOf(isServiceAvailable?.() ?? true), latencyMs: null },
       { id: "bangumi", ...bangumi },
       { id: "qqmusic", ...qqmusic },
       { id: "netease", ...netease },
       { id: "qq", ...qq },
-      { id: "rooms", level: await settle(probeRooms, "degraded"), latencyMs: null },
-      { id: "search", level: await settle(probeSearch, "degraded"), latencyMs: null },
-      { id: "dataset", level: await settle(probeDataset, "degraded"), latencyMs: null },
+      { id: "rooms", ...(await settle(probeRooms, "degraded")) },
+      { id: "search", ...(await settle(probeSearch, "degraded")) },
+      { id: "dataset", ...(await settle(probeDataset, "degraded")) },
       {
         id: "images",
         level: imageCache ? levelOf(imageCache.available) : "unknown",

@@ -4,6 +4,7 @@ import { readClientChannelEnv, type EnvClientChannel } from "./env/ClientChannel
 import {
   readObservabilityEnv,
   resolveDeploymentEnvironment,
+  resolveStatusFrontendUrl,
   type EnvObservability,
 } from "./env/Observability";
 import { readBangumiEnv, type EnvBangumi } from "./env/Bangumi";
@@ -23,10 +24,16 @@ export interface AppEnv
 export const readEnv = (): AppEnv => {
   const bootstrap = readBootstrapEnv();
   const deploymentEnvironment = resolveDeploymentEnvironment();
+  const observability = readObservabilityEnv(deploymentEnvironment);
 
   return {
     ...bootstrap,
-    ...readObservabilityEnv(deploymentEnvironment),
+    ...observability,
+    // 前端探测地址跟着 CLIENT_URL 兜底：放在装配这一层解析，直接构造 env 的单测不会因此去探本机端口。
+    statusFrontendUrl: resolveStatusFrontendUrl(
+      observability.statusFrontendUrl,
+      bootstrap.clientUrl
+    ),
     ...readAccountGroupEnv(bootstrap.clientUrl),
     ...readBangumiEnv(deploymentEnvironment),
     ...readClientChannelEnv(),

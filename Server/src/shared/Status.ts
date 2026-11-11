@@ -50,8 +50,8 @@ export interface PublicStatusComponent {
   id: PublicStatusComponentId;
   level: PublicStatusLevel;
   /**
-   * 当前平均响应耗时（毫秒）：只在上游接口组件上有值（来自外部监测），
-   * 其余组件为 null，页面读作「—」而不是 0ms。
+   * 有探测耗时的组件给毫秒数：上游接口、前端站点与搜索索引；进程内组件为 null，
+   * 页面读作「—」而不是 0ms。
    */
   latencyMs: number | null;
 }
@@ -74,9 +74,9 @@ export interface PublicStatusCell {
   day: string;
   /** 当天探测次数；为 0 表示这一天没有样本。 */
   total: number;
-  /** 当天正常探测占比，0–1；没有样本时为 null，页面读作「无数据」而不是 0%。 */
+  /** 有结论样本（正常+降级）里正常所占的比例，0–1；unknown 不进分母；没有结论时为 null，页面读作「无数据」而不是 0%。 */
   ratio: number | null;
-  /** 这一天整体读作什么：有降级即降级，全正常才正常，没有样本为未知。 */
+  /** 这一天整体读作什么：有降级即降级，有正常即正常，其余（没样本或全是 unknown）为未知。 */
   level: PublicStatusLevel;
 }
 
@@ -107,6 +107,7 @@ export interface PublicStatusSampleCell {
   /** 格子起点，UTC 毫秒，按采样间隔对齐。 */
   start: number;
   total: number;
+  /** 有结论样本（正常+降级）里正常所占的比例；unknown 不进分母，没有结论时为 null。 */
   ratio: number | null;
   level: PublicStatusLevel;
   latencyMs: number | null;
@@ -114,7 +115,7 @@ export interface PublicStatusSampleCell {
 
 export interface PublicStatusRealtimeEntry {
   id: PublicStatusComponentId;
-  /** 实时窗口内的整体可用率；没有样本时为 null。 */
+  /** 实时窗口内的可用率，按有结论的原始计数算；unknown 不进分母，没有结论样本时为 null。 */
   uptime: number | null;
   cells: PublicStatusSampleCell[];
 }

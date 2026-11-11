@@ -36,20 +36,24 @@ const emptyCount = (): SampleCount => ({
 export const sampleBucketOf = (time: number): number =>
   Math.floor(time / PUBLIC_STATUS_SAMPLE_INTERVAL_MS) * PUBLIC_STATUS_SAMPLE_INTERVAL_MS;
 
-const toCell = (start: number, count: SampleCount): PublicStatusSampleCell => ({
-  start,
-  total: count.total,
-  ratio: count.total > 0 ? count.operational / count.total : null,
-  level:
-    count.total === 0
-      ? "unknown"
-      : count.degraded > 0
-        ? "degraded"
-        : count.operational === count.total
-          ? "operational"
-          : "unknown",
-  latencyMs: count.latencyCount > 0 ? Math.round(count.latencySum / count.latencyCount) : null,
-});
+/** 可用率只由「有结论」的样本算：unknown 表示没有结论，不进分母，既不压成 0% 也不抬高真故障。 */
+const toCell = (start: number, count: SampleCount): PublicStatusSampleCell => {
+  const decided = count.operational + count.degraded;
+  return {
+    start,
+    total: count.total,
+    ratio: decided > 0 ? count.operational / decided : null,
+    level:
+      count.total === 0
+        ? "unknown"
+        : count.degraded > 0
+          ? "degraded"
+          : count.operational > 0
+            ? "operational"
+            : "unknown",
+    latencyMs: count.latencyCount > 0 ? Math.round(count.latencySum / count.latencyCount) : null,
+  };
+};
 
 export interface StatusSampleStoreOptions {
   /** 本进程的部署环境标记，口径与状态历史账本一致。 */
@@ -182,16 +186,17 @@ export class StatusSampleStore {
     const entries: PublicStatusRealtimeEntry[] = [];
     for (const [id, bucket] of this.buckets) {
       const cells: PublicStatusSampleCell[] = [];
-      let total = 0;
       let operational = 0;
+      let degraded = 0;
       for (const [start, count] of bucket) {
         if (start < windowStart) continue;
         cells.push(toCell(start, count));
-        total += count.total;
         operational += count.operational;
+        degraded += count.degraded;
       }
       cells.sort((left, right) => left.start - right.start);
-      entries.push({ id, uptime: total > 0 ? operational / total : null, cells });
+      const decided = operational + degraded;
+      entries.push({ id, uptime: decided > 0 ? operational / decided : null, cells });
     }
     this.prune(sampleBucketOf(now - PUBLIC_STATUS_SAMPLE_RETENTION_MS));
     return {

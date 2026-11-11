@@ -36,7 +36,7 @@ export interface EnvObservability {
   betterStackMonitorMap?: Partial<Record<UpstreamStatusComponentId, string>>;
   /**
    * 前端公开基址：状态页的「前端」一格由服务端从外侧探这个地址得到。
-   * 不配则显示未知——后端无法凭「自己还活着」推断静态站点可达。
+   * 不配则从 CLIENT_URL 里挑（见 `resolveStatusFrontendUrl`，由 `readEnv` 装配时解析），都没有才显示未知。
    */
   statusFrontendUrl?: string;
   /** 链路采样率：只认 `0`–`1` 之间的数，其余按未配置处理，缺省值由消费方套用。 */
@@ -169,6 +169,41 @@ const parseBetterStackMonitorMap = (
 
 /** 是否存在显式注入的环境标记（四个来源任一非空）；全缺时消费方必须安全失败，不能静默按开发态跑。 */
 export const hasExplicitDeploymentMarker = (): boolean => deploymentMarkerChain().some(Boolean);
+
+/** 回环、`localhost` 家族与私网地址：生产里它们只可能是开发来源或内网入口，不是玩家访问的前端。 */
+const isLocalHostname = (hostname: string): boolean =>
+  hostname === "localhost" ||
+  hostname.endsWith(".localhost") ||
+  hostname === "[::1]" ||
+  /^127\./.test(hostname) ||
+  /^10\./.test(hostname) ||
+  /^192\.168\./.test(hostname) ||
+  /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+
+/**
+ * 状态页前端探测地址：`STATUS_FRONTEND_URL` 优先；未配时从 `CLIENT_URL`（逗号分隔）里挑——
+ * CORS 准入名单上的来源就是部署中的前端，状态页不必额外配一遍。
+ * 先取第一个公网 http(s) 来源，没有公网来源（本机开发）才退到第一个 http(s) 来源：
+ * 生产名单里若排着开发或内网来源，探它只会在容器里连不上，把好好的前端误报成异常。
+ * 两边都没有可用地址时回 undefined，组件读作未知。
+ */
+export const resolveStatusFrontendUrl = (
+  statusFrontendUrl: string | undefined,
+  clientUrl: string | undefined
+): string | undefined => {
+  const explicit = statusFrontendUrl?.trim();
+  if (explicit) return explicit;
+  const candidates = (clientUrl?.split(",") ?? []).flatMap((source) => {
+    try {
+      const url = new URL(source.trim());
+      return url.protocol === "http:" || url.protocol === "https:" ? [url] : [];
+    } catch {
+      return [];
+    }
+  });
+  const chosen = candidates.find((url) => !isLocalHostname(url.hostname)) ?? candidates[0];
+  return chosen ? chosen.origin + "/" : undefined;
+};
 
 export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservability => {
   const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);

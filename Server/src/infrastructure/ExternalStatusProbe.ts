@@ -1,4 +1,8 @@
-import type { PublicStatusLevel, UpstreamStatusComponentId } from "../shared/Status";
+import {
+  UPSTREAM_STATUS_COMPONENT_IDS,
+  type PublicStatusLevel,
+  type UpstreamStatusComponentId,
+} from "../shared/Status";
 
 /** 单个上游接口的一次读数：等级与（拿得到时的）平均响应耗时。 */
 export interface ExternalMonitorReading {
@@ -29,3 +33,37 @@ export class MockExternalStatusProbe implements ExternalStatusProbe {
     return null;
   }
 }
+
+/**
+ * 组合两个探针：主探针定等级，副探针只补缺失的读数与延迟。
+ *
+ * Better Stack 的 monitor 列表不带响应耗时字段，延迟只能靠直连探测补上；
+ * 等级仍以运维显式配置的外部监测为准。两边并行读，任一抛错按 null 处理。
+ */
+export const combineStatusProbes = (
+  primary: ExternalStatusProbe,
+  fallback: ExternalStatusProbe
+): ExternalStatusProbe => ({
+  async read(): Promise<ExternalStatusReading | null> {
+    const [main, backup] = await Promise.all([
+      primary.read().catch(() => null),
+      fallback.read().catch(() => null),
+    ]);
+    if (main === null && backup === null) return null;
+    const merged: ExternalStatusReading = {};
+    for (const id of UPSTREAM_STATUS_COMPONENT_IDS) {
+      const first = main?.[id];
+      const second = backup?.[id];
+      const chosen = first && first.level !== "unknown" ? first : second;
+      if (!chosen) continue;
+      merged[id] = {
+        level: chosen.level,
+        latencyMs:
+          chosen.level === "operational"
+            ? (chosen.latencyMs ?? (chosen === first ? second?.latencyMs : undefined) ?? null)
+            : null,
+      };
+    }
+    return merged;
+  },
+});

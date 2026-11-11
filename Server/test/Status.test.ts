@@ -15,6 +15,7 @@ import {
 import { StatusHistoryStore } from "../src/infrastructure/StatusHistoryStore";
 import { StatusSampleStore, sampleBucketOf } from "../src/infrastructure/StatusSampleStore";
 import type { ExternalStatusProbe } from "../src/infrastructure/ExternalStatusProbe";
+import { resolveStatusFrontendUrl } from "../src/config/env/Observability";
 import type {
   StatusEventFilter,
   StatusEventInput,
@@ -279,6 +280,115 @@ describe("公开状态实时条带", () => {
     // 内部组件没有延迟口径，读作 null 而不是 0ms。
     const backend = realtime.entries.find((entry) => entry.id === "backend");
     expect(backend?.cells.every((cell) => cell.latencyMs === null)).toBe(true);
+  });
+
+  test("实时格子的可用率只算有结论样本，unknown 不进分母", async () => {
+    const now = 1_700_000_000_000;
+    const samples = new StatusSampleStore({ environment: "production", now: () => now });
+    const history = new StatusHistoryStore({ environment: "production", now: () => now });
+    const backendSnapshot = (levels: ("operational" | "degraded" | "unknown")[]) => ({
+      observedAt: now,
+      level: "operational" as const,
+      version: "V1.2.3",
+      components: levels.map((level) => ({ id: "backend" as const, level, latencyMs: null })),
+    });
+    // 全 unknown：没有结论，格子与窗口都不给比例。
+    samples.record(backendSnapshot(["unknown", "unknown"]));
+    let realtime = await realtimeOf({ samples, history, now: () => now });
+    let backend = realtime.entries.find((entry) => entry.id === "backend");
+    expect(backend?.uptime).toBeNull();
+    expect(backend?.cells[0]).toMatchObject({ total: 2, ratio: null, level: "unknown" });
+
+    // 混入 unknown：分母只数有结论的样本。
+    samples.record(backendSnapshot(["operational"]));
+    realtime = await realtimeOf({ samples, history, now: () => now });
+    backend = realtime.entries.find((entry) => entry.id === "backend");
+    expect(backend?.uptime).toBe(1);
+    expect(backend?.cells[0]).toMatchObject({ total: 3, ratio: 1, level: "operational" });
+
+    // 有降级即降级，unknown 依旧不拉低比例。
+    samples.record(backendSnapshot(["degraded", "unknown"]));
+    realtime = await realtimeOf({ samples, history, now: () => now });
+    backend = realtime.entries.find((entry) => entry.id === "backend");
+    expect(backend?.uptime).toBeCloseTo(1 / 2);
+    expect(backend?.cells[0]).toMatchObject({ total: 5, ratio: 1 / 2, level: "degraded" });
+  });
+});
+
+describe("前端与搜索探测", () => {
+  test("operational 时给出非负整数延迟，降级不给延迟", async () => {
+    const fetcher = (async () =>
+      new Response("<html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      })) as unknown as typeof fetch;
+    const { body } = await readStatus({
+      frontendUrl: "https://frontend.example.com/",
+      meilisearchUrl: INTERNAL_SEARCH_URL,
+      fetcher,
+    });
+    for (const id of ["frontend", "search"]) {
+      const component = body.components.find((item) => item.id === id);
+      expect(component?.level).toBe("operational");
+      expect(Number.isInteger(component?.latencyMs)).toBe(true);
+      expect((component?.latencyMs ?? -1) >= 0).toBe(true);
+    }
+  });
+
+  test("前端非 HTML 或 5xx 时读作降级，延迟为空", async () => {
+    const fetcher = (async () =>
+      new Response(null, {
+        status: 503,
+        headers: { "content-type": "text/plain" },
+      })) as unknown as typeof fetch;
+    const { body } = await readStatus({
+      frontendUrl: "https://frontend.example.com/",
+      fetcher,
+    });
+    const frontend = body.components.find((item) => item.id === "frontend");
+    expect(frontend).toEqual({ id: "frontend", level: "degraded", latencyMs: null });
+  });
+
+  test("前端探测不自动跟随跳转：跳离本站即降级，且只请求一次", async () => {
+    const calls: { url: string; redirect: RequestInit["redirect"] }[] = [];
+    const fetcher = (async (input: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), redirect: init?.redirect });
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://elsewhere.example.com/" },
+      });
+    }) as unknown as typeof fetch;
+    const { body } = await readStatus({
+      frontendUrl: "https://frontend.example.com/",
+      fetcher,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].redirect).toBe("manual");
+    expect(body.components.find((item) => item.id === "frontend")?.level).toBe("degraded");
+  });
+});
+
+describe("前端探测地址兜底", () => {
+  test("显式配置优先，否则取 CLIENT_URL 第一个 http(s) 来源", () => {
+    expect(resolveStatusFrontendUrl("https://a.example.com", "https://b.example.com")).toBe(
+      "https://a.example.com"
+    );
+    // 名单里排在前面的本机与内网来源让位给公网来源：探它们只会在容器里连不上。
+    expect(
+      resolveStatusFrontendUrl(
+        undefined,
+        "http://localhost:5173, http://192.168.1.8:5173, https://c.example.com/app"
+      )
+    ).toBe("https://c.example.com/");
+    // 只有本机来源（本地开发）时退回第一个 http(s) 来源。
+    expect(resolveStatusFrontendUrl(undefined, "http://localhost:5173")).toBe(
+      "http://localhost:5173/"
+    );
+    expect(resolveStatusFrontendUrl("   ", "ws://d.example.com, https://e.example.com")).toBe(
+      "https://e.example.com/"
+    );
+    expect(resolveStatusFrontendUrl(undefined, "ws://d.example.com, not a url")).toBeUndefined();
+    expect(resolveStatusFrontendUrl(undefined, undefined)).toBeUndefined();
   });
 });
 

@@ -30,29 +30,34 @@ const addLevel = (count: DayCount, level: PublicStatusLevel): void => {
   count[level] += 1;
 };
 
-/** 日格与窗口可用率都只由计数派生：有降级即降级，全正常才正常，没样本为未知。 */
-const toCell = (day: string, count: DayCount): PublicStatusCell => ({
-  day,
-  total: count.total,
-  ratio: count.total > 0 ? count.operational / count.total : null,
-  level:
-    count.total === 0
-      ? "unknown"
-      : count.degraded > 0
-        ? "degraded"
-        : count.operational === count.total
-          ? "operational"
-          : "unknown",
-});
+/**
+ * 日格与窗口可用率都只由计数派生。可用率的分母只算有结论的样本（operational+degraded）：
+ * 内部组件探测失败已经记成 degraded，unknown 只表示「没有结论」（未接入监测或监测本身取不到），
+ * 它不进分母——既不把「没接入」压成 0%，也不把真故障抬高。
+ */
+const toCell = (day: string, count: DayCount): PublicStatusCell => {
+  const decided = count.operational + count.degraded;
+  return {
+    day,
+    total: count.total,
+    ratio: decided > 0 ? count.operational / decided : null,
+    level:
+      count.total === 0
+        ? "unknown"
+        : count.degraded > 0
+          ? "degraded"
+          : count.operational > 0
+            ? "operational"
+            : "unknown",
+  };
+};
 
-const windowRatio = (cells: PublicStatusCell[], days: number): PublicStatusUptime => {
-  const window = cells.slice(-days);
-  const total = window.reduce((sum, cell) => sum + cell.total, 0);
-  const operational = window.reduce(
-    (sum, cell) => sum + (cell.ratio === null ? 0 : Math.round(cell.ratio * cell.total)),
-    0
-  );
-  return { days, ratio: total > 0 ? operational / total : null };
+const windowRatio = (counts: DayCount[], days: number): PublicStatusUptime => {
+  const window = counts.slice(-days);
+  const operational = window.reduce((sum, count) => sum + count.operational, 0);
+  const degraded = window.reduce((sum, count) => sum + count.degraded, 0);
+  const decided = operational + degraded;
+  return { days, ratio: decided > 0 ? operational / decided : null };
 };
 
 export interface StatusHistoryStoreOptions {
@@ -116,7 +121,11 @@ export class StatusHistoryStore {
     this.prune(cutoff);
   }
 
-  /** 一次快照记一笔账。探测失败留下的 `unknown` 同样计数，可用率才不会被「没探到」抬成 100%。 */
+  /**
+   * 一次快照记一笔账。内部组件探测失败已经记成 degraded，unknown 只表示「没有结论」
+   * （未接入监测或监测本身取不到）：它仍计数进 total，但不进可用率分母——
+   * 既不把「没接入」压成 0%，也不把真故障抬高。
+   */
   record(snapshot: PublicStatusSnapshot): void {
     const day = beijingDay(snapshot.observedAt || this.now());
     for (const component of snapshot.components) {
@@ -191,11 +200,12 @@ export class StatusHistoryStore {
     }
     const entries: PublicStatusHistoryEntry[] = [];
     for (const [id, bucket] of this.days) {
-      const cells = window.map((day) => toCell(day, bucket.get(day) ?? emptyCount()));
+      const counts = window.map((day) => bucket.get(day) ?? emptyCount());
+      const cells = counts.map((count, index) => toCell(window[index]!, count));
       entries.push({
         id,
         cells,
-        uptime: PUBLIC_STATUS_UPTIME_DAYS.map((span) => windowRatio(cells, span)),
+        uptime: PUBLIC_STATUS_UPTIME_DAYS.map((span) => windowRatio(counts, span)),
       });
     }
     this.prune(window[0] ?? today);

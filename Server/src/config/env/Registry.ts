@@ -275,7 +275,9 @@ export const ENV_ENTRIES: EnvEntry[] = [
     documented: true,
     secret: false,
     sample: "https://example.com/",
-    note: ["公开状态页「前端」一格的探测地址；不配则该组件显示未知。"],
+    note: [
+      "公开状态页「前端」一格的探测地址；不配则取 CLIENT_URL 里第一个公网 http(s) 来源，没有公网来源才取第一个。",
+    ],
   },
   {
     name: "OTEL_EXPORTER_OTLP_ENDPOINT",

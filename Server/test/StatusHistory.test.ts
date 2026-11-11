@@ -97,18 +97,54 @@ describe("状态历史账本", () => {
     expect(empty.uptime.map((span) => span.ratio)).toEqual([null]);
   });
 
-  test("降级日按占比读，未知样本也计入分母", () => {
+  test("降级日按有结论样本占比读，unknown 不进分母", () => {
     const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
     store.record(snapshotAt(NOW, "operational"));
     store.record(snapshotAt(NOW, "operational"));
     store.record(snapshotAt(NOW, "degraded"));
-    // 未知同样是「没正常」：不因为读不到就把可用率抬上去。
+    // unknown 只是「没有结论」：既不拉低可用率，也不抬高真故障。
     store.record(snapshotAt(NOW, "unknown"));
 
     const backend = entryOf(store.read(7), "backend");
     const today = backend.cells.find((cell) => cell.total === 4);
-    expect(today?.ratio).toBeCloseTo(0.5);
+    expect(today?.ratio).toBeCloseTo(2 / 3);
     expect(today?.level).toBe("degraded");
+  });
+
+  test("全 unknown 的日子读作无结论：ratio null、level unknown", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    store.record(snapshotAt(NOW, "unknown"));
+    store.record(snapshotAt(NOW, "unknown"));
+
+    const backend = entryOf(store.read(7), "backend");
+    const today = backend.cells.find((cell) => cell.total === 2);
+    expect(today?.ratio).toBeNull();
+    expect(today?.level).toBe("unknown");
+    expect(backend.uptime.map((span) => span.ratio)).toEqual([null]);
+  });
+
+  test("operational 与 unknown 混合：可用率仍是 1，等级读作 operational", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    store.record(snapshotAt(NOW, "operational"));
+    store.record(snapshotAt(NOW, "unknown"));
+
+    const backend = entryOf(store.read(7), "backend");
+    const today = backend.cells.find((cell) => cell.total === 2);
+    expect(today?.ratio).toBe(1);
+    expect(today?.level).toBe("operational");
+    expect(backend.uptime[0]?.ratio).toBe(1);
+  });
+
+  test("窗口可用率直接按原始计数算，跨天混入 unknown 不进分母", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    store.record(snapshotAt(NOW - DAY_MS, "operational"));
+    store.record(snapshotAt(NOW - DAY_MS, "degraded"));
+    store.record(snapshotAt(NOW, "operational"));
+    store.record(snapshotAt(NOW, "unknown"));
+
+    const backend = entryOf(store.read(30), "backend");
+    // 两天合计 2 operational、1 degraded、1 unknown：分母只算有结论的 3。
+    expect(backend.uptime.find((span) => span.days === 30)?.ratio).toBeCloseTo(2 / 3);
   });
 
   test("窗口只取最近 30 天，跨天分别累计", () => {

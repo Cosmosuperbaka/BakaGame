@@ -5,6 +5,12 @@ import { SonGuessrService } from "./SonGuessrService";
 import { createBangumiData } from "../infrastructure/CreateBangumiData";
 import { StatusHistoryStore } from "../infrastructure/StatusHistoryStore";
 import { StatusSampleStore } from "../infrastructure/StatusSampleStore";
+import { BetterStackStatusProbe } from "../infrastructure/BetterStackStatusProbe";
+import {
+  DirectUpstreamStatusProbe,
+  defaultUpstreamTargets,
+} from "../infrastructure/DirectUpstreamStatusProbe";
+import { combineStatusProbes } from "../infrastructure/ExternalStatusProbe";
 import { BangumiProvider } from "../infrastructure/BangumiProvider";
 import { FallbackBangumiProvider } from "../infrastructure/FallbackBangumiProvider";
 import { BangumiMirrorMonitor } from "./BangumiMirrorMonitor";
@@ -252,6 +258,21 @@ export function createServer(
     database,
     now: () => Date.now(),
   });
+  // 上游读数的探针在这里装配而非 createApp：单测直接 createApp 时不带探针，
+  // 不会发起任何真实外网请求。配了 Better Stack 就以它定等级、用直连探测补延迟，
+  // 没配就完全靠直连。
+  const directUpstreamProbe = new DirectUpstreamStatusProbe({
+    targets: defaultUpstreamTargets(env.bangumiApiUrl),
+  });
+  const statusExternalProbe = env.betterStackApiKey
+    ? combineStatusProbes(
+        new BetterStackStatusProbe({
+          apiKey: env.betterStackApiKey,
+          monitors: env.betterStackMonitorMap ?? {},
+        }),
+        directUpstreamProbe
+      )
+    : directUpstreamProbe;
   const app = createApp({
     ...appOptions,
     env,
@@ -260,6 +281,7 @@ export function createServer(
     statusHistory,
     statusSamples,
     statusEvents,
+    statusExternalProbe,
     sonGuessrService: song,
     ceeService: cee,
     account,
