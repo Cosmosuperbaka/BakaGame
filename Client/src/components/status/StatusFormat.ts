@@ -39,9 +39,18 @@ export const DATETIME_FORMAT = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
 });
 
-/** 百分比只在有结论时给；没探过或探不出结论的窗口读作「—」，不拿 0% 冒充全挂。 */
-export const formatRatio = (ratio: number | null): string =>
-  ratio === null ? "—" : `${(ratio * 100).toFixed(ratio >= 0.9995 ? 1 : 2)}%`;
+/**
+ * 百分比只在有结论时给；没探过或探不出结论的窗口读作「—」，不拿 0% 冒充全挂。
+ * 不满分一律向下截到两位小数、封顶 99.99%：失败过哪怕一次也不能四舍五入成满分，
+ * 否则红格旁边写着 100.0%。满分写 100.0%，与两位小数的读数同宽，行尾对齐。
+ */
+export const formatRatio = (ratio: number | null): string => {
+  if (ratio === null) return "—";
+  if (ratio >= 1) return "100.0%";
+  // 补一个远小于计数粒度的余量，抵掉 0.29 * 10000 = 2899.999… 这类浮点误差。
+  const basisPoints = Math.min(Math.floor(ratio * 10_000 + 1e-6), 9_999);
+  return `${(basisPoints / 100).toFixed(2)}%`;
+};
 
 export const formatLatency = (latencyMs: number | null): string =>
   latencyMs === null ? "—" : `${latencyMs} ms`;
