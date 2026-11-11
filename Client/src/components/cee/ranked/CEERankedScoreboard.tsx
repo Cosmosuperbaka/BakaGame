@@ -27,7 +27,16 @@ function SeatIdentity({ seat }: { seat: CEERankedSeatView }) {
   );
 }
 
-function SeatPlate({ seat, side }: { seat: CEERankedSeatView; side: "self" | "opponent" }) {
+function SeatPlate({
+  seat,
+  side,
+  live,
+}: {
+  seat: CEERankedSeatView;
+  side: "self" | "opponent";
+  /** 本场还没结束：离线标记只在这时有意义，结算后掉线方回来看结果页不该还挂着「离线」。 */
+  live: boolean;
+}) {
   return (
     <div
       className={cn(
@@ -54,7 +63,7 @@ function SeatPlate({ seat, side }: { seat: CEERankedSeatView; side: "self" | "op
         <span className="font-mono tabular-nums">
           已猜 {seat.attempts} / {seat.allowance}
         </span>
-        {seat.online ? null : (
+        {seat.online || !live ? null : (
           <span className="inline-flex items-center gap-1 text-warning">
             <WifiOff className="size-3" aria-hidden="true" />
             离线
@@ -159,9 +168,10 @@ function SeriesClock({ series }: { series: CEERankedSeriesView }) {
  */
 export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView }) {
   const gameNumber = series.game?.number ?? series.games.length;
+  const live = series.phase !== "settled";
   return (
     <header className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border bg-panel px-3 py-2.5 sm:flex-nowrap sm:px-4">
-      <SeatPlate seat={series.self} side="self" />
+      <SeatPlate seat={series.self} side="self" live={live} />
       <div className="order-last flex basis-full flex-col items-center gap-1 sm:order-none sm:basis-auto sm:shrink-0">
         <div
           className="flex items-baseline gap-2 font-serif text-2xl font-semibold tabular-nums"
@@ -180,7 +190,7 @@ export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView })
         </span>
         <SeriesClock series={series} />
       </div>
-      <SeatPlate seat={series.opponent} side="opponent" />
+      <SeatPlate seat={series.opponent} side="opponent" live={live} />
     </header>
   );
 }

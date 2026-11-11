@@ -288,6 +288,8 @@ export class CEERankedService {
     const seat = this.seatOf(runtime, userId);
     if (seat === null) return;
     setCEERankedSeatOnline(runtime.series, seat, false, this.now());
+    // 对手要立刻看到「离线」：安静期里可能几分钟都没有别的状态变化顺带把它推出去。
+    this.pushSeries(runtime);
     this.scheduleTimer(runtime);
   }
 
@@ -423,7 +425,10 @@ export class CEERankedService {
     if (!runtime || runtime.series.phase === "settled") return;
     const seat = this.seatOf(runtime, userId);
     if (seat === null) return;
+    const wasOffline = runtime.series.seats[seat].offlineSince !== null;
     setCEERankedSeatOnline(runtime.series, seat, true, this.now());
+    // 重连回来同样要让对手立刻看到恢复在线；本人这一帧由随后的状态回包负责。
+    if (wasOffline) this.pushSeries(runtime);
     this.scheduleTimer(runtime);
   }
 

@@ -376,6 +376,24 @@ describe("连接接管与断线", () => {
     expect(await harness.store.getSeriesAudit(seriesId)).toBeNull();
   });
 
+  test("真人对手断线与重连当场推给另一方，不等下一次状态变化", async () => {
+    const harness = rankedHarness();
+    const first = harness.connect("甲", { account: { userId: "u1", image: null } });
+    const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
+    await harness.send(first, "cee.ranked.queue", {});
+    await harness.send(second, "cee.ranked.queue", {});
+    await harness.advance(1_000);
+    await openPlay(harness);
+
+    second.record.close();
+    expect(harness.seriesView(first).opponent.online).toBe(false);
+    const reconnected = harness.connect("乙-重连", { account: { userId: "u2", image: null } });
+    await harness.send(reconnected, "cee.ranked.status", {});
+    expect(harness.seriesView(first).opponent.online).toBe(true);
+  });
+
   test("未绑定排位连接的连接只能先走 status", async () => {
     const harness = rankedHarness();
     const client = harness.connect("甲");

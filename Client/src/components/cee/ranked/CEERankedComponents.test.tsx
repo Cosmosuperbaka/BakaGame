@@ -278,6 +278,21 @@ describe("CEERankedScoreboard", () => {
     expect(screen.getByText("1588")).toBeInTheDocument();
     expect(screen.getByText("离线")).toBeInTheDocument();
   });
+
+  it("本场结束后不再挂离线标记：掉线方回来看结果页时自己并不离线", () => {
+    const series = rankedSeries("won");
+    withProviders(
+      <CEERankedScoreboard
+        series={{
+          ...series,
+          self: { ...series.self, online: false },
+          opponent: { ...series.opponent, isBot: false, online: false },
+        }}
+      />
+    );
+
+    expect(screen.queryByText("离线")).not.toBeInTheDocument();
+  });
 });
 
 describe("CEERankedOpponentClues", () => {
