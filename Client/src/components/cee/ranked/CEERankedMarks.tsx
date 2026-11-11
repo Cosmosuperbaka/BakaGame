@@ -148,3 +148,79 @@ export function RankedRatingDelta({
     </span>
   );
 }
+
+const GAME_LABEL = { self: "你赢", opponent: "对手赢", none: "双方都没猜中，不算" } as const;
+
+/**
+ * 一局的结果记号：本人赢主色描边打勾，对手赢中性底打叉，没人猜中虚线框一道横线（这局不算）。
+ * 可访问名写全，图标只是视觉速记。
+ */
+export function RankedGameMark({
+  winner,
+  number,
+  size = "md",
+}: {
+  winner: "self" | "opponent" | null;
+  number?: number;
+  size?: "sm" | "md";
+}) {
+  const key = winner ?? "none";
+  const Icon = winner === "self" ? Check : winner === "opponent" ? X : Minus;
+  return (
+    <span
+      role="img"
+      aria-label={number === undefined ? GAME_LABEL[key] : `第 ${number} 局：${GAME_LABEL[key]}`}
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-md border",
+        size === "sm" ? "size-6" : "size-9",
+        winner === "self" && "border-primary/50 bg-primary/10 text-primary",
+        winner === "opponent" && "border-transparent bg-foreground/10 text-foreground",
+        winner === null && "border-dashed border-border text-muted-foreground"
+      )}
+    >
+      <Icon
+        className={size === "sm" ? "size-3.5" : "size-4"}
+        strokeWidth={2.5}
+        aria-hidden="true"
+      />
+    </span>
+  );
+}
+
+/**
+ * 本局次数：一格一次，用掉的填满，本人用主色、对手用墨色；格子后跟一个小号读数。
+ * 对手一侧整体镜像，格子从外侧往中间填。
+ */
+export function RankedAttemptMeter({
+  used,
+  allowance,
+  side,
+}: {
+  used: number;
+  allowance: number;
+  side: "self" | "opponent";
+}) {
+  const slots = Math.max(allowance, used);
+  return (
+    <span
+      role="img"
+      aria-label={`已猜 ${used} / ${allowance}`}
+      className={cn("inline-flex items-center gap-1.5", side === "opponent" && "flex-row-reverse")}
+    >
+      <span className={cn("flex gap-0.5", side === "opponent" && "flex-row-reverse")}>
+        {Array.from({ length: slots }, (_, index) => (
+          <span
+            key={index}
+            className={cn(
+              "h-2.5 w-1.5 rounded-xs",
+              index >= used ? "bg-muted" : side === "self" ? "bg-primary" : "bg-foreground/60"
+            )}
+          />
+        ))}
+      </span>
+      <span className="font-mono text-2xs text-muted-foreground tabular-nums">
+        {used}/{allowance}
+      </span>
+    </span>
+  );
+}

@@ -195,7 +195,10 @@ export function CEERankedHome({
   const tabRef = useRef(tab);
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-      <section aria-label="我的排位" className="space-y-5 rounded-md border bg-card p-5 shadow-sm">
+      <section
+        aria-label="我的排位"
+        className="space-y-5 self-start rounded-md border bg-card p-5 shadow-sm"
+      >
         {profile ? (
           <RatingSummary
             profile={profile}

@@ -328,8 +328,11 @@ describe("CEERankedScoreboard", () => {
     expect(screen.getByText("人机")).toBeInTheDocument();
     expect(screen.getByRole("timer")).toHaveTextContent("剩余");
     expect(screen.getByRole("timer")).toHaveTextContent(/\d+:\d{2}/);
-    expect(screen.getByText(/第 2 局 · 进阶/)).toBeInTheDocument();
+    expect(screen.getByText("第 2 局")).toBeInTheDocument();
+    expect(screen.getByText("进阶")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "已猜 2 / 10" })).toBeInTheDocument();
     expect(screen.queryByText(/不计分/)).not.toBeInTheDocument();
+    expect(screen.queryByText("加赛")).not.toBeInTheDocument();
   });
 
   it("平局不算分，加赛局逐个追加局点并标明加赛", () => {
@@ -349,12 +352,13 @@ describe("CEERankedScoreboard", () => {
     expect(screen.getByLabelText("第 2 局：双方都没猜中，不算")).toBeInTheDocument();
     expect(screen.getByLabelText("第 4 局：进行中")).toBeInTheDocument();
     expect(screen.queryByLabelText(/第 5 局/)).not.toBeInTheDocument();
-    expect(screen.getByText(/第 4 局（加赛） · 进阶/)).toBeInTheDocument();
+    expect(screen.getByText("第 4 局")).toBeInTheDocument();
+    expect(screen.getByText("加赛")).toBeInTheDocument();
   });
 
   it("不计分的场次在对局中就标出来", () => {
     withProviders(<CEERankedScoreboard series={{ ...rankedSeries("playing"), rated: false }} />);
-    expect(screen.getByText(/第 2 局 · 进阶 · 不计分/)).toBeInTheDocument();
+    expect(screen.getByText("不计分")).toBeInTheDocument();
   });
 
   it("读秒阶段与局间用秒数表达", () => {
@@ -376,7 +380,7 @@ describe("CEERankedScoreboard", () => {
 
     withProviders(<CEERankedScoreboard series={rankedSeries("won")} />);
     expect(screen.queryByRole("timer")).not.toBeInTheDocument();
-    expect(screen.getByText(/本场结束 · 进阶/)).toBeInTheDocument();
+    expect(screen.getByText("本场结束")).toBeInTheDocument();
   });
 
   it("定级中的座位只写定级中，离线另有标记", () => {
@@ -487,7 +491,16 @@ describe("CEERankedResultCard", () => {
     );
 
     expect(screen.getByRole("heading", { name: "胜利" })).toBeInTheDocument();
-    expect(screen.getByText(/三局两胜/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "胜" })).toBeInTheDocument();
+    const series = rankedSeries("won");
+    expect(
+      screen.getByLabelText(`比分 ${series.self.points} 比 ${series.opponent.points}`)
+    ).toBeInTheDocument();
+    const games = within(screen.getByRole("list", { name: "各局结果" })).getAllByRole("listitem");
+    expect(games).toHaveLength(series.games.length);
+    expect(screen.getByRole("img", { name: "第 1 局：对手赢" })).toBeInTheDocument();
+    // 正常打完不另挂收场原因。
+    expect(screen.queryByText(/退出|掉线|加赛打满/)).not.toBeInTheDocument();
     expect(screen.getByText("+15")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "再来一场" }));
     await userEvent.click(screen.getByRole("button", { name: "返回" }));

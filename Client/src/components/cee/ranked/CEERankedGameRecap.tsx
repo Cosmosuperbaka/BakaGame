@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Check, Lightbulb, X } from "lucide-react";
 import type { CEEGuess, CEERankedGameSummary } from "@bakagame/shared";
 import { rankedGameHeadline } from "./CEERankedFormat";
+import { RankedGameMark } from "./CEERankedMarks";
 import { CEEAnswerCard } from "../CEEAnswerCard";
 import { listContainer, listItem } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -76,7 +77,10 @@ export function CEERankedGameRecap({
 }) {
   return (
     <section aria-label={`第 ${game.number} 局复盘`} className="space-y-3">
-      <h3 className="font-serif text-lg font-semibold">{rankedGameHeadline(game)}</h3>
+      <div className="flex items-center gap-2">
+        <RankedGameMark winner={game.winner} size="sm" />
+        <h3 className="font-serif text-lg font-semibold">{rankedGameHeadline(game)}</h3>
+      </div>
       <CEEAnswerCard answer={game.answer} sealed={reveal} />
       <div className="grid gap-3 sm:grid-cols-2">
         <GuessList title="你的猜测" guesses={game.guesses} />

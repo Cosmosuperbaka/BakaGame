@@ -7,6 +7,7 @@ import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { readoutTick, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { formatRankedClock, formatRankedPoints } from "./CEERankedFormat";
+import { RankedAttemptMeter } from "./CEERankedMarks";
 
 /** 名牌上的身份：人机标明「人机」、定级中只给进度、已定级给整数分；人机的强度从不出现。 */
 function SeatIdentity({ seat }: { seat: CEERankedSeatView }) {
@@ -61,9 +62,7 @@ function SeatPlate({
           side === "opponent" && "flex-row-reverse"
         )}
       >
-        <span className="font-mono tabular-nums">
-          已猜 {seat.attempts} / {seat.allowance}
-        </span>
+        <RankedAttemptMeter used={seat.attempts} allowance={seat.allowance} side={side} />
         {seat.online || !live ? null : (
           <span className="inline-flex items-center gap-1 text-warning">
             <WifiOff className="size-3" aria-hidden="true" />
@@ -165,7 +164,7 @@ function SeriesClock({ series }: { series: CEERankedSeriesView }) {
 }
 
 /**
- * 排位对局顶栏：左右是双方名牌，中间是系列赛比分、三局胜负点、本场难度与时钟。
+ * 排位对局顶栏：左右是双方名牌与本局次数格，中间是系列赛比分、各局胜负点、局号与难度标签和时钟。
  * 窄屏时名牌与比分仍在同一行，名字截断让位给比分。
  */
 export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView }) {
@@ -186,14 +185,25 @@ export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView })
           <span>{formatRankedPoints(series.opponent.points)}</span>
         </div>
         <GamePips series={series} />
-        <span className="text-2xs text-muted-foreground">
-          {series.phase === "settled"
-            ? "本场结束"
-            : `第 ${Math.max(1, gameNumber)} 局${gameNumber > CEE_RANKED_SERIES_GAMES ? "（加赛）" : ""}`}{" "}
-          · {series.tier.name}
+        <div className="flex flex-wrap items-center justify-center gap-1">
+          <Badge variant="subtle" size="xs">
+            {series.phase === "settled" ? "本场结束" : `第 ${Math.max(1, gameNumber)} 局`}
+          </Badge>
+          {series.phase !== "settled" && gameNumber > CEE_RANKED_SERIES_GAMES ? (
+            <Badge variant="active" size="xs">
+              加赛
+            </Badge>
+          ) : null}
+          <Badge variant="outline" size="xs">
+            {series.tier.name}
+          </Badge>
           {/* 不计分要在开打时就看得到，而不是打完才在结果页得知。 */}
-          {series.rated ? null : " · 不计分"}
-        </span>
+          {series.rated ? null : (
+            <Badge variant="restricted" size="xs">
+              不计分
+            </Badge>
+          )}
+        </div>
         <SeriesClock series={series} />
       </div>
       <SeatPlate seat={series.opponent} side="opponent" live={live} />

@@ -15,7 +15,7 @@ function HistoryRow({ entry }: { entry: CEERankedHistoryEntry }) {
   return (
     <motion.li
       variants={listItem}
-      className="flex items-center gap-3 py-2.5"
+      className="flex items-center gap-2 py-2.5 sm:gap-3"
       aria-label={`${OUTCOME_TEXT[entry.outcome]}，对手 ${entry.opponentName}，比分 ${entry.selfPoints} 比 ${entry.opponentPoints}`}
     >
       <RankedOutcomeMark outcome={entry.outcome} />
@@ -28,7 +28,7 @@ function HistoryRow({ entry }: { entry: CEERankedHistoryEntry }) {
             </Badge>
           ) : null}
         </div>
-        <div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-2xs text-muted-foreground">
           <span>{ceeRankedTier(entry.tierId).name}</span>
           <span aria-hidden="true">·</span>
           <time dateTime={new Date(entry.endedAt).toISOString()}>
