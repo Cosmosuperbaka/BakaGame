@@ -317,8 +317,10 @@ const historySchema = t.Object({
           total: t.Number(),
           ratio: t.Nullable(t.Number()),
           level: levelSchema,
+          latencyMs: t.Nullable(t.Number()),
         })
       ),
+      latencyMs: t.Nullable(t.Number()),
     })
   ),
 });
@@ -437,7 +439,7 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
       detail: {
         tags: ["System"],
         summary: "公开站点状态历史",
-        description: "按北京时间自然日聚合的可用率窗口与日格，覆盖最近 30 天。",
+        description: "按北京时间自然日聚合的可用率窗口与日格，覆盖最近 30 天。含日均延迟。",
       },
       response: historySchema,
     }

@@ -576,6 +576,7 @@ export const sitePageDaily = mysqlTable(
  * - 存计数而不是存每次探测的结果：30 天 × 10 个组件固定 300 行，探测频率再高也不会膨胀，
  *   而可用率与日格都只由计数派生。`total` 为 0 的行不会出现（没有探测就不写），
  *   「那一天没数据」由缺行表达，不用一行全零去冒充。
+ * - 除各等级计数外还累计带延迟读数的样本（和值 + 个数，读时求均值），口径同 `status_sample`。
  */
 export const statusDaily = mysqlTable(
   "status_daily",
@@ -587,6 +588,8 @@ export const statusDaily = mysqlTable(
     operational: int("operational").notNull(),
     degraded: int("degraded").notNull(),
     unknown: int("unknown").notNull(),
+    latencySum: bigint("latency_sum", { mode: "number", unsigned: true }).notNull().default(0),
+    latencyCount: int("latency_count").notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.environment, table.componentId, table.day] }),

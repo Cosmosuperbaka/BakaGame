@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { StatusHistoryStore } from "../src/infrastructure/StatusHistoryStore";
 import { StatusSampleStore } from "../src/infrastructure/StatusSampleStore";
-import { createDrizzleStub } from "./DrizzleStub";
+import { createDrizzleStub, rowOf, schema } from "./DrizzleStub";
 import {
   PUBLIC_STATUS_COMPONENT_IDS,
+  type PublicStatusComponentId,
   type PublicStatusHistoryEntry,
   type PublicStatusLevel,
   type PublicStatusSnapshot,
@@ -29,6 +30,18 @@ const entryOf = (history: { entries: PublicStatusHistoryEntry[] }, id: string) =
   if (!entry) throw new Error(`历史里缺少组件 ${id}`);
   return entry;
 };
+
+/** 只含单个组件的快照，延迟读数由用例决定。 */
+const snapOf = (
+  observedAt: number,
+  latencyMs: number | null,
+  id: PublicStatusComponentId = "bangumi"
+): PublicStatusSnapshot => ({
+  observedAt,
+  level: "operational",
+  version: "V1.2.3",
+  components: [{ id, level: "operational", latencyMs }],
+});
 
 describe("状态账本的落库失败", () => {
   test("读取失败抛给调用方告警，而不是静默成空历史", async () => {
@@ -173,5 +186,89 @@ describe("状态历史账本", () => {
 
     const backend = entryOf(store.read(3), "backend");
     expect(backend.cells.filter((cell) => cell.total > 0)).toHaveLength(1);
+  });
+
+  test("带延迟的快照累计成日均，没有延迟读数的组件为 null", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    store.record(snapOf(NOW, 100));
+    store.record(snapOf(NOW, 200));
+
+    const bangumi = entryOf(store.read(7), "bangumi");
+    const today = bangumi.cells.find((cell) => cell.total === 2);
+    expect(today?.latencyMs).toBe(150);
+    // backend 从没被记过延迟：整条都是 null，不冒充 0ms。
+    const backend = entryOf(store.read(7), "backend");
+    expect(backend.cells.every((cell) => cell.latencyMs === null)).toBe(true);
+  });
+
+  test("负数或 null 的延迟不计入，但样本照样进 total", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    store.record(snapOf(NOW, 100));
+    store.record(snapOf(NOW, null));
+    store.record(snapOf(NOW, -5));
+
+    const bangumi = entryOf(store.read(7), "bangumi");
+    const today = bangumi.cells.find((cell) => cell.total === 3);
+    expect(today?.latencyMs).toBe(100);
+  });
+
+  test("entry 的 latencyMs 是跨天的样本加权均值，不是各格日均的简单平均", () => {
+    const store = new StatusHistoryStore({ environment: "production", now: () => NOW });
+    // 第一天 3 个 100、第二天 1 个 300：加权是 (300+300)/4=150，简单平均会是 200。
+    store.record(snapOf(NOW - DAY_MS, 300));
+    store.record(snapOf(NOW, 100));
+    store.record(snapOf(NOW, 100));
+    store.record(snapOf(NOW, 100));
+
+    const bangumi = entryOf(store.read(7), "bangumi");
+    expect(bangumi.latencyMs).toBe(150);
+  });
+
+  test("flush 写库语句与参数带上延迟两列，upsert 覆盖列同样带上", async () => {
+    const stub = createDrizzleStub();
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    store.record(snapOf(NOW, 100));
+    store.record(snapOf(NOW, 200));
+    await store.flush();
+
+    const query = stub.queryAt(0);
+    expect(query.statement).toContain("insert into `status_daily`");
+    expect(query.statement).toContain("`latency_sum`");
+    expect(query.statement).toContain("`latency_count`");
+    expect(query.statement).toContain("values(`status_daily`.`latency_sum`)");
+    expect(query.statement).toContain("values(`status_daily`.`latency_count`)");
+    // 参数按列序：environment, component_id, day, total, operational, degraded, unknown, latency_sum, latency_count
+    expect(query.params).toEqual(["production", "bangumi", "2026-10-23", 2, 2, 0, 0, 300, 2]);
+  });
+
+  test("load 把行里的延迟两列读回成日均", async () => {
+    const stub = createDrizzleStub().reply([
+      rowOf(schema.statusDaily, {
+        environment: "production",
+        componentId: "bangumi",
+        day: "2026-10-23",
+        total: 2,
+        operational: 2,
+        degraded: 0,
+        unknown: 0,
+        latencySum: 300,
+        latencyCount: 2,
+      }),
+    ]);
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    await store.load();
+
+    const bangumi = entryOf(store.read(7), "bangumi");
+    const today = bangumi.cells.find((cell) => cell.total === 2);
+    expect(today?.latencyMs).toBe(150);
+    expect(bangumi.latencyMs).toBe(150);
   });
 });

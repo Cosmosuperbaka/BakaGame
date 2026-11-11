@@ -78,6 +78,8 @@ export interface PublicStatusCell {
   ratio: number | null;
   /** 这一天整体读作什么：有降级即降级，有正常即正常，其余（没样本或全是 unknown）为未知。 */
   level: PublicStatusLevel;
+  /** 当天带延迟读数的样本均值，毫秒；没有延迟口径的组件或没有读数时为 null，页面读作「—」。 */
+  latencyMs: number | null;
 }
 
 /** 一个可用率窗口。窗口内没有样本时 `ratio` 为 null，页面不显示百分比。 */
@@ -90,6 +92,8 @@ export interface PublicStatusHistoryEntry {
   id: PublicStatusComponentId;
   uptime: PublicStatusUptime[];
   cells: PublicStatusCell[];
+  /** 展示窗口内的样本加权均值（样本多的日子权重大），毫秒；没有延迟样本时为 null。 */
+  latencyMs: number | null;
 }
 
 /** `GET /api/status/history` 的响应。 */

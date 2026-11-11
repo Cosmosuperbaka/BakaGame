@@ -21,9 +21,18 @@ interface DayCount {
   operational: number;
   degraded: number;
   unknown: number;
+  latencySum: number;
+  latencyCount: number;
 }
 
-const emptyCount = (): DayCount => ({ total: 0, operational: 0, degraded: 0, unknown: 0 });
+const emptyCount = (): DayCount => ({
+  total: 0,
+  operational: 0,
+  degraded: 0,
+  unknown: 0,
+  latencySum: 0,
+  latencyCount: 0,
+});
 
 const addLevel = (count: DayCount, level: PublicStatusLevel): void => {
   count.total += 1;
@@ -49,6 +58,7 @@ const toCell = (day: string, count: DayCount): PublicStatusCell => {
           : count.operational > 0
             ? "operational"
             : "unknown",
+    latencyMs: count.latencyCount > 0 ? Math.round(count.latencySum / count.latencyCount) : null,
   };
 };
 
@@ -58,6 +68,14 @@ const windowRatio = (counts: DayCount[], days: number): PublicStatusUptime => {
   const degraded = window.reduce((sum, count) => sum + count.degraded, 0);
   const decided = operational + degraded;
   return { days, ratio: decided > 0 ? operational / decided : null };
+};
+
+/** 窗口内的日均延迟：按样本加权的均值（Σ 和值 / Σ 个数），样本多的日子权重大；没有延迟样本时为 null。 */
+const windowLatency = (counts: DayCount[], days: number): number | null => {
+  const window = counts.slice(-days);
+  const latencySum = window.reduce((sum, count) => sum + count.latencySum, 0);
+  const latencyCount = window.reduce((sum, count) => sum + count.latencyCount, 0);
+  return latencyCount > 0 ? Math.round(latencySum / latencyCount) : null;
 };
 
 export interface StatusHistoryStoreOptions {
@@ -116,6 +134,8 @@ export class StatusHistoryStore {
         operational: row.operational,
         degraded: row.degraded,
         unknown: row.unknown,
+        latencySum: row.latencySum,
+        latencyCount: row.latencyCount,
       });
     }
     this.prune(cutoff);
@@ -133,6 +153,10 @@ export class StatusHistoryStore {
       if (!bucket) continue;
       const count = bucket.get(day) ?? emptyCount();
       addLevel(count, component.level);
+      if (component.latencyMs !== null && component.latencyMs >= 0) {
+        count.latencySum += component.latencyMs;
+        count.latencyCount += 1;
+      }
       bucket.set(day, count);
       this.dirty.add(`${component.id}|${day}`);
     }
@@ -153,6 +177,8 @@ export class StatusHistoryStore {
       operational: number;
       degraded: number;
       unknown: number;
+      latencySum: number;
+      latencyCount: number;
     }[] = [];
     for (const key of this.dirty) {
       const [componentId, day] = key.split("|");
@@ -182,6 +208,8 @@ export class StatusHistoryStore {
             operational: sql`values(${statusDaily.operational})`,
             degraded: sql`values(${statusDaily.degraded})`,
             unknown: sql`values(${statusDaily.unknown})`,
+            latencySum: sql`values(${statusDaily.latencySum})`,
+            latencyCount: sql`values(${statusDaily.latencyCount})`,
           },
         });
     } catch (error) {
@@ -205,6 +233,7 @@ export class StatusHistoryStore {
       entries.push({
         id,
         cells,
+        latencyMs: windowLatency(counts, days),
         uptime: PUBLIC_STATUS_UPTIME_DAYS.map((span) => windowRatio(counts, span)),
       });
     }
