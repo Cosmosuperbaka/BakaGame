@@ -1,446 +1,367 @@
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { AnimatePresence, motion, type TargetAndTransition, type Variants } from "framer-motion";
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { PUBLIC_STATUS_GROUPS } from "@bakagame/shared/values";
+  PUBLIC_STATUS_GROUPS,
+  PUBLIC_STATUS_HISTORY_DAYS,
+  PUBLIC_STATUS_REALTIME_WINDOW_MS,
+  PUBLIC_STATUS_SAMPLE_INTERVAL_MS,
+} from "@bakagame/shared/values";
 import type {
   PublicStatusComponentId,
   PublicStatusEvent,
   PublicStatusHistory,
   PublicStatusLevel,
   PublicStatusRealtime,
+  PublicStatusSnapshot,
 } from "@bakagame/shared";
-import {
-  ArrowLeft,
-  CalendarClock,
-  CheckCircle2,
-  CircleHelp,
-  TriangleAlert,
-  Wrench,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, CircleHelp, TriangleAlert } from "lucide-react";
 import { Seo } from "@/components/common/Seo";
+import { LatencySparkline } from "@/components/status/LatencySparkline";
+import { StatusEventsSection } from "@/components/status/StatusEventsSection";
+import {
+  CELL_TONE,
+  CLOCK_FORMAT,
+  DAY_FORMAT,
+  LEVEL_TEXT,
+  TIME_FORMAT,
+  eventOverlaps,
+  formatLatency,
+  formatRatio,
+  type BarCell,
+} from "@/components/status/StatusFormat";
+import { UptimeBar } from "@/components/status/UptimeBar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useStatusLive } from "@/hooks/UseStatusLive";
-import { popover } from "@/lib/Motion";
+import { duration, readoutSwap, statusGlyphSwap, uptimeReveal } from "@/lib/Motion";
 import {
   fetchStatusEvents,
   fetchStatusHistory,
   fetchStatusRealtime,
   STATUS_COMPONENT_LABELS,
-  STATUS_EVENT_STATUS_LABELS,
   STATUS_GROUP_LABELS,
   STATUS_POLL_INTERVAL_MS,
 } from "@/lib/SystemStatus";
 import { cn } from "@/lib/Utils";
 
 type StatusView = "realtime" | "month";
+/** 轮询数据的三态：`undefined` 读取中；`null` 读失败且此前没读到过；其余为最近一次读到的数据。 */
+type Loadable<T> = T | null | undefined;
 
-const LEVEL_TEXT: Record<PublicStatusLevel, string> = {
-  operational: "正常",
-  degraded: "异常",
-  unknown: "未知",
+const REALTIME_CELLS = Math.round(
+  PUBLIC_STATUS_REALTIME_WINDOW_MS / PUBLIC_STATUS_SAMPLE_INTERVAL_MS
+);
+const REALTIME_HOURS = PUBLIC_STATUS_REALTIME_WINDOW_MS / 3_600_000;
+const SAMPLE_MINUTES = PUBLIC_STATUS_SAMPLE_INTERVAL_MS / 60_000;
+const VIEW_LABEL: Record<StatusView, string> = {
+  realtime: `近 ${REALTIME_HOURS} 小时`,
+  month: `近 ${PUBLIC_STATUS_HISTORY_DAYS} 天`,
+};
+const AXIS_LABEL: Record<StatusView, readonly [string, string]> = {
+  realtime: [`${REALTIME_HOURS} 小时前`, "现在"],
+  month: [`${PUBLIC_STATUS_HISTORY_DAYS} 天前`, "今天"],
 };
 
-const CELL_CLASS: Record<PublicStatusLevel, string> = {
-  operational: "bg-success",
-  degraded: "bg-destructive",
-  unknown: "bg-muted-foreground/30",
-};
-
-/** 状态页的时间一律北京时间：日格的服务端口径就是北京自然日，展示跟着同一时区读。 */
-const BEIJING = "Asia/Shanghai";
-const DAY_FORMAT = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: BEIJING,
-  month: "long",
-  day: "numeric",
-});
-const TIME_FORMAT = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: BEIJING,
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-const DATETIME_FORMAT = new Intl.DateTimeFormat("zh-CN", {
-  timeZone: BEIJING,
-  month: "long",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
-/** 百分比只在有样本时给；没探过的窗口读作「—」，不拿 0% 冒充全挂。 */
-const formatRatio = (ratio: number | null): string =>
-  ratio === null ? "—" : `${(ratio * 100).toFixed(ratio >= 0.9995 ? 1 : 2)}%`;
-
-const formatLatency = (latencyMs: number | null): string =>
-  latencyMs === null ? "—" : `${latencyMs} ms`;
-
-/** 事件在时段上是否还压着：维护窗口读计划结束，事件读到恢复为止。 */
-const overlaps = (
-  event: PublicStatusEvent,
-  componentId: PublicStatusComponentId,
-  start: number,
-  end: number
-): boolean => {
-  const touches = event.components.length === 0 || event.components.includes(componentId);
-  if (!touches) return false;
-  const eventEnd = event.resolvedAt ?? event.plannedEndAt ?? Number.POSITIVE_INFINITY;
-  return event.startedAt < end && eventEnd > start;
-};
-
-/** 条格里的一格：悬停说明需要的全部信息在构建时算好，渲染层不再做时间换算。 */
-interface BarCell {
-  key: string;
-  level: PublicStatusLevel;
-  total: number;
-  ratio: number | null;
-  latencyMs: number | null;
-  /** 时段标题，如「10月21日」或「14:03–14:06」。 */
-  when: string;
-  events: PublicStatusEvent[];
-}
+/** 页面按分组顺序排出的全部组件：显影错峰、总数与汇总都按这一份走。 */
+const ALL_COMPONENTS: readonly PublicStatusComponentId[] = PUBLIC_STATUS_GROUPS.flatMap(
+  (group) => group.components
+);
 
 const monthCellStart = (day: string): number => Date.parse(`${day}T00:00:00+08:00`);
 
+/** 全站可用率：各组件窗口可用率的平均，只算有结论的组件；一个都没有时读作「—」。 */
+const meanOf = (values: readonly (number | null)[]): number | null => {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length > 0 ? known.reduce((sum, value) => sum + value, 0) / known.length : null;
+};
+
+const LEVEL_BADGE = {
+  operational: { variant: "matched", Icon: CheckCircle2 },
+  degraded: { variant: "alert", Icon: TriangleAlert },
+  unknown: { variant: "subtle", Icon: CircleHelp },
+} as const;
+
+/** 窄屏只留图标：形状本身区分三档，文字转给读屏，把宽度让给组件名。 */
 function LevelBadge({ level }: { level: PublicStatusLevel }) {
-  if (level === "operational") {
-    return (
-      <Badge variant="matched" size="sm">
-        <CheckCircle2 aria-hidden="true" className="h-3 w-3" />
-        {LEVEL_TEXT.operational}
-      </Badge>
-    );
-  }
-  if (level === "degraded") {
-    return (
-      <Badge variant="restricted" size="sm">
-        <TriangleAlert aria-hidden="true" className="h-3 w-3" />
-        {LEVEL_TEXT.degraded}
-      </Badge>
-    );
-  }
+  const { variant, Icon } = LEVEL_BADGE[level];
   return (
-    <Badge variant="subtle" size="sm">
-      <CircleHelp aria-hidden="true" className="h-3 w-3" />
-      {LEVEL_TEXT.unknown}
+    <Badge variant={variant} size="sm" className="shrink-0">
+      <Icon aria-hidden="true" className="size-3" />
+      <span className="sr-only sm:not-sr-only">{LEVEL_TEXT[level]}</span>
     </Badge>
   );
 }
 
-/** 悬停时跟随条格的说明：可用率、延迟与压在这个时段上的事件，一条一格。 */
-function CellTooltip({ cell, align }: { cell: BarCell; align: { left: number } }) {
+const PLACEHOLDER = "—";
+
+/**
+ * 推送或轮询换来的新读数自下方顶上来，读作「这个数被换掉了」；值不变不动。
+ * 占位「—」换成第一次读到的值不算「被换掉」：占位直接撤走，不和新值叠在一起闪成一道删除线。
+ */
+const readoutVariants: Variants = {
+  ...readoutSwap,
+  exit: (value: string): TargetAndTransition =>
+    value === PLACEHOLDER
+      ? { opacity: 0, transition: { duration: duration.none } }
+      : (readoutSwap.exit as TargetAndTransition),
+};
+
+function Readout({ value }: { value: string }) {
   return (
-    <motion.div
-      variants={popover}
-      aria-hidden="true"
-      style={{ left: align.left }}
-      className="floating-surface pointer-events-none absolute bottom-full z-popover mb-2 w-max max-w-64 -translate-x-1/2 rounded-md px-3 py-2 text-left shadow-md"
-    >
-      <p className="font-sans text-2xs text-muted-foreground">{cell.when}</p>
-      <p className="mt-0.5 text-xs">
-        {cell.total === 0
-          ? "没有探测样本"
-          : `${LEVEL_TEXT[cell.level]} · 可用率 ${formatRatio(cell.ratio)}`}
-      </p>
-      {cell.latencyMs !== null ? (
-        <p className="font-sans text-2xs text-muted-foreground">
-          平均延迟 {formatLatency(cell.latencyMs)}
-        </p>
-      ) : null}
-      {cell.events.length > 0 ? (
-        <ul className="mt-1 space-y-0.5 border-t border-border pt-1">
-          {cell.events.map((event) => (
-            <li key={event.id} className="flex items-center gap-1 text-2xs">
-              {event.kind === "maintenance" ? (
-                <Wrench aria-hidden="true" className="h-3 w-3 shrink-0 text-muted-foreground" />
-              ) : (
-                <TriangleAlert aria-hidden="true" className="h-3 w-3 shrink-0 text-destructive" />
-              )}
-              <span className="truncate">{event.title}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </motion.div>
+    <span className="relative inline-flex">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={value}
+          custom={value}
+          variants={readoutVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="inline-block whitespace-nowrap"
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
   );
 }
 
-/**
- * 日格 / 实时共用的条带：左旧右新，一格一个时段。
- *
- * 悬停说明按「一整条一个浮层」实现：格子上只记指针位置，浮层是同一块 DOM 顺着挪，
- * 120 格也不产生 120 份浮层。整条带仍作为一张图像读给读屏（逐格细节悬停可见，
- * 键盘侧每行右侧另有文字状态、可用率与延迟，颜色不是唯一线索）。
- */
-function UptimeBar({ cells }: { cells: BarCell[] }) {
-  const [hover, setHover] = useState<{ index: number; left: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+const GLYPH = {
+  operational: { Icon: CheckCircle2, tone: "bg-success/10 text-success" },
+  degraded: { Icon: TriangleAlert, tone: "bg-destructive/10 text-destructive" },
+  unknown: { Icon: CircleHelp, tone: "bg-muted text-muted-foreground" },
+} as const;
 
-  const operational = cells.filter((cell) => cell.level === "operational").length;
-  const degraded = cells.filter((cell) => cell.level === "degraded").length;
-  const sampled = cells.filter((cell) => cell.total > 0).length;
-  const label =
-    sampled === 0
-      ? "这段时间还没有探测样本"
-      : `${sampled} 个时段有数据，其中 ${operational} 个正常、${degraded} 个异常`;
-
-  const onEnter = (index: number) => (event: ReactPointerEvent<HTMLSpanElement>) => {
-    const cell = event.currentTarget;
-    const container = containerRef.current;
-    if (!container) return;
-    // 说明钉在格子上方居中，靠边时往条带内侧收，不越过条带两端。
-    const center = cell.offsetLeft + cell.offsetWidth / 2;
-    const clamped = Math.min(Math.max(center, 72), container.offsetWidth - 72);
-    setHover({ index, left: clamped });
-  };
-
+/** 主卡左侧的状态图标：等级变了才换档，读取中按统一呼吸令牌起伏。 */
+function StatusGlyph({ level, loading }: { level: PublicStatusLevel; loading: boolean }) {
+  const { Icon, tone } = GLYPH[loading ? "unknown" : level];
   return (
-    <div className="relative mt-2" onPointerLeave={() => setHover(null)}>
-      <AnimatePresence>
-        {hover ? (
-          <CellTooltip
-            key={cells[hover.index]?.key}
-            cell={cells[hover.index]!}
-            align={{ left: hover.left }}
-          />
-        ) : null}
+    <span
+      aria-hidden="true"
+      className={cn(
+        "grid size-10 shrink-0 place-items-center rounded-md transition-colors duration-(--motion-duration-base) ease-(--motion-ease-out) sm:size-11",
+        tone
+      )}
+    >
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={loading ? "loading" : level}
+          variants={statusGlyphSwap}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="grid place-items-center"
+        >
+          <Icon className={cn("size-5", loading && "motion-safe:animate-breathe")} />
+        </motion.span>
       </AnimatePresence>
-      <div
-        ref={containerRef}
-        role="img"
-        aria-label={label}
-        className="flex h-5 items-stretch gap-px overflow-hidden rounded-sm"
-      >
-        {cells.map((cell, index) => (
-          <span
-            key={cell.key}
-            aria-hidden="true"
-            onPointerEnter={onEnter(index)}
-            className={cn(
-              "min-w-0 flex-1 transition-colors",
-              cell.total === 0 ? "bg-muted" : CELL_CLASS[cell.level],
-              hover?.index === index && "opacity-80"
-            )}
-          />
-        ))}
-      </div>
+    </span>
+  );
+}
+
+interface Tally {
+  operational: PublicStatusComponentId[];
+  degraded: PublicStatusComponentId[];
+  unknown: PublicStatusComponentId[];
+}
+
+const tallyOf = (
+  ids: readonly PublicStatusComponentId[],
+  levelOf: (id: PublicStatusComponentId) => PublicStatusLevel
+): Tally => {
+  const tally: Tally = { operational: [], degraded: [], unknown: [] };
+  for (const id of ids) tally[levelOf(id)].push(id);
+  return tally;
+};
+
+/** 主卡标题与说明：异常点名到组件；部分组件没有监测结论时不说「所有系统正常」。 */
+const headlineOf = (
+  snapshot: PublicStatusSnapshot | null,
+  tally: Tally
+): { title: string; detail: string } => {
+  if (!snapshot) return { title: "正在读取服务状态…", detail: "连上实时通道后自动更新" };
+  const total = ALL_COMPONENTS.length;
+  if (tally.degraded.length > 0) {
+    return {
+      title: `${tally.degraded.length} 项服务异常`,
+      detail: `异常：${tally.degraded.map((id) => STATUS_COMPONENT_LABELS[id]).join("、")}`,
+    };
+  }
+  if (tally.unknown.length === total) {
+    return { title: "暂时无法确认服务状态", detail: "各项服务都还没有可用的监测结论" };
+  }
+  if (tally.unknown.length > 0) {
+    return {
+      title: "已监测的服务运行正常",
+      detail: `另有 ${tally.unknown.length} 项暂无监测结论`,
+    };
+  }
+  return { title: "所有系统运行正常", detail: `${total} 项服务全部在线` };
+};
+
+const groupSummaryOf = (tally: Tally, size: number): string => {
+  if (tally.degraded.length > 0) return `${tally.degraded.length} 项异常`;
+  if (tally.unknown.length === size) return "暂无监测结论";
+  if (tally.unknown.length > 0) {
+    return `${tally.operational.length} 项正常 · ${tally.unknown.length} 项未知`;
+  }
+  return "全部正常";
+};
+
+function SummaryStat({
+  label,
+  shortLabel,
+  value,
+}: {
+  label: string;
+  /** 窄屏三栏各只有七八十像素：换一个不必折行的短名，时间窗口由下方的范围切换说明。 */
+  shortLabel: string;
+  value: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col-reverse justify-end gap-1.5 border-l border-border px-3 first:border-l-0 first:pl-0 sm:px-5">
+      <dt className="text-2xs leading-snug text-muted-foreground">
+        <span className="sm:hidden">{shortLabel}</span>
+        <span className="hidden sm:inline">{label}</span>
+      </dt>
+      <dd className="font-mono text-xl leading-none tabular-nums">
+        <Readout value={value} />
+      </dd>
     </div>
   );
+}
+
+/** 图例：每一档同时给形状与文字，条格读作什么由这里定。 */
+const LEGEND = [
+  { label: "正常", tone: CELL_TONE.operational },
+  { label: "异常", tone: CELL_TONE.degraded },
+  { label: "未知", tone: CELL_TONE.unknown },
+  { label: "无样本", tone: CELL_TONE.empty },
+] as const;
+
+function Legend() {
+  return (
+    <ul
+      aria-label="条带图例"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-muted-foreground"
+    >
+      {LEGEND.map((item) => (
+        <li key={item.label} className="flex items-center gap-1">
+          <span aria-hidden="true" className="flex h-3 w-1.5 items-end">
+            <span className={cn("w-full rounded-xs", item.tone)} />
+          </span>
+          {item.label}
+        </li>
+      ))}
+      <li className="hidden md:block">悬停条格看时段详情</li>
+    </ul>
+  );
+}
+
+interface RowLatency {
+  value: number | null;
+  /** 实时窗口里每格的平均延迟，画成走势；没有窗口数据（往返延迟）时为 null。 */
+  series: (number | null)[] | null;
+  /** 浏览器到后端的往返，而不是服务端对这项服务的探测耗时。 */
+  roundTrip: boolean;
 }
 
 function ComponentRow({
   id,
   level,
-  latencyMs,
   ratio,
+  latency,
   cells,
+  loading,
+  placeholderCount,
+  revealKey,
+  revealDelay,
 }: {
-  id: keyof typeof STATUS_COMPONENT_LABELS;
+  id: PublicStatusComponentId;
   level: PublicStatusLevel;
-  /** 当前延迟（毫秒）；只在实时视图传入，月视图不显示这个口径。 */
-  latencyMs: number | null | undefined;
   ratio: number | null;
-  cells: BarCell[];
+  /** 只在实时视图、且这项服务有延迟口径时给；月视图与进程内组件不显示这一栏。 */
+  latency: RowLatency | null;
+  cells: BarCell[] | null;
+  loading: boolean;
+  placeholderCount: number;
+  revealKey: string;
+  revealDelay: number;
 }) {
-  const label = STATUS_COMPONENT_LABELS[id];
   return (
-    <li className="px-4 py-3">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <span className="truncate text-sm font-medium">{label}</span>
-        <div className="flex shrink-0 items-center gap-3">
-          {latencyMs !== undefined ? (
-            <span className="font-mono text-xs tabular-nums text-muted-foreground">
-              {formatLatency(latencyMs)}
+    <li className="px-4 py-3.5">
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {STATUS_COMPONENT_LABELS[id]}
+        </span>
+        {latency ? (
+          <span
+            className="flex shrink-0 items-center gap-2"
+            title={
+              latency.roundTrip
+                ? "从你的浏览器到后端服务的往返耗时，每分钟测一次"
+                : "服务端访问这项服务的响应耗时"
+            }
+          >
+            {latency.series ? (
+              <LatencySparkline values={latency.series} className="hidden sm:block" />
+            ) : null}
+            <span className="flex items-baseline gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+              {latency.roundTrip ? <span className="font-sans">往返</span> : null}
+              <Readout value={formatLatency(latency.value)} />
             </span>
-          ) : null}
-          {/* 百分比与状态徽章并排：数字给趋势，徽章给当下，两者互为文字说明。 */}
-          <span className="font-sans text-xs tabular-nums text-muted-foreground">
-            {formatRatio(ratio)}
           </span>
-          <LevelBadge level={level} />
-        </div>
+        ) : null}
+        <span className="w-11 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:w-14">
+          <Readout value={formatRatio(ratio)} />
+        </span>
+        <LevelBadge level={level} />
       </div>
-      <UptimeBar cells={cells} />
+      <UptimeBar
+        className="mt-2.5"
+        cells={cells}
+        loading={loading}
+        placeholderCount={placeholderCount}
+        revealKey={revealKey}
+        revealDelay={revealDelay}
+      />
     </li>
   );
-}
-
-/** 事件卡的元信息：时间段与受影响组件，维护窗口带计划结束。 */
-function EventMeta({ event }: { event: PublicStatusEvent }) {
-  const range =
-    event.kind === "maintenance"
-      ? `${DATETIME_FORMAT.format(event.startedAt)} – ${
-          event.plannedEndAt === null ? "待定" : TIME_FORMAT.format(event.plannedEndAt)
-        }`
-      : DATETIME_FORMAT.format(event.startedAt);
-  return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-2xs text-muted-foreground">
-      <span className="font-mono tabular-nums">{range}</span>
-      {event.components.length > 0 ? (
-        <span className="text-border" aria-hidden="true">
-          ·
-        </span>
-      ) : null}
-      <span className="truncate">
-        {event.components.map((component) => STATUS_COMPONENT_LABELS[component]).join("、")}
-      </span>
-    </p>
-  );
-}
-
-function EventStatusBadge({ event }: { event: PublicStatusEvent }) {
-  const resolved = event.kind === "incident" ? event.resolvedAt !== null : event.status === "done";
-  return (
-    <Badge
-      variant={resolved ? "subtle" : event.kind === "maintenance" ? "active" : "restricted"}
-      size="xs"
-    >
-      {STATUS_EVENT_STATUS_LABELS[event.status]}
-    </Badge>
-  );
-}
-
-/** 事件与维护一览：进行中的成卡，已结束的排成时间线；两者都给足文字，不只靠颜色。 */
-function StatusEventsSection({ events }: { events: PublicStatusEvent[] }) {
-  const isActive = (event: PublicStatusEvent): boolean =>
-    event.kind === "incident" ? event.resolvedAt === null : event.status !== "done";
-  const active = events.filter(isActive);
-  const past = events.filter((event) => !isActive(event));
-
-  return (
-    <section aria-labelledby="status-events" className="mt-6">
-      <h2 id="status-events" className="text-2xs text-muted-foreground">
-        事件与维护
-      </h2>
-      {events.length === 0 ? (
-        <p className="mt-2 rounded-md border bg-card p-4 text-sm text-muted-foreground shadow-2xs">
-          近一个月没有记录在案的事件或维护。
-        </p>
-      ) : (
-        <div className="mt-2 space-y-2">
-          <AnimatePresence initial={false}>
-            {active.map((event) => (
-              <motion.article
-                key={event.id}
-                layout
-                variants={popover}
-                className={cn(
-                  "rounded-md border p-4 shadow-2xs",
-                  event.kind === "incident"
-                    ? "border-destructive/40 bg-destructive/10"
-                    : "border-border bg-card"
-                )}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  {event.kind === "maintenance" ? (
-                    event.status === "scheduled" ? (
-                      <CalendarClock
-                        aria-hidden="true"
-                        className="shrink-0 text-muted-foreground"
-                      />
-                    ) : (
-                      <Wrench aria-hidden="true" className="shrink-0 text-muted-foreground" />
-                    )
-                  ) : (
-                    <TriangleAlert aria-hidden="true" className="shrink-0 text-destructive" />
-                  )}
-                  <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{event.title}</h3>
-                  <EventStatusBadge event={event} />
-                </div>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{event.body}</p>
-                <EventMeta event={event} />
-              </motion.article>
-            ))}
-          </AnimatePresence>
-          {past.length > 0 ? (
-            <ul className="divide-y divide-border overflow-hidden rounded-md border bg-card shadow-2xs">
-              {past.map((event) => (
-                <li key={event.id} className="flex min-w-0 items-center gap-3 px-4 py-3">
-                  <time className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                    {DAY_FORMAT.format(event.startedAt)}
-                  </time>
-                  <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
-                  <span className="hidden shrink-0 truncate font-sans text-2xs text-muted-foreground sm:block">
-                    {event.components
-                      .map((component) => STATUS_COMPONENT_LABELS[component])
-                      .join("、") || "全站"}
-                  </span>
-                  <EventStatusBadge event={event} />
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      )}
-      <p className="sr-only">
-        时间均为北京时间。{active.length} 条进行中，{past.length} 条已结束。
-      </p>
-    </section>
-  );
-}
-
-/** 全站可用率（月视图）：把窗口内所有组件的样本合起来算，样本多的日子权重就大。 */
-function computeOverallUptime(history: PublicStatusHistory | null): number | null {
-  if (!history) return null;
-  let total = 0;
-  let operational = 0;
-  for (const entry of history.entries) {
-    for (const cell of entry.cells) {
-      if (cell.total === 0 || cell.ratio === null) continue;
-      total += cell.total;
-      operational += cell.ratio * cell.total;
-    }
-  }
-  return total > 0 ? operational / total : null;
-}
-
-/** 全站可用率（实时视图）：与月视图同一口径，只是样本换成 3 分钟格。 */
-function computeOverallRealtime(realtime: PublicStatusRealtime | null): number | null {
-  if (!realtime) return null;
-  let total = 0;
-  let operational = 0;
-  for (const entry of realtime.entries) {
-    for (const cell of entry.cells) {
-      if (cell.total === 0) continue;
-      total += cell.total;
-      operational += (cell.ratio ?? 0) * cell.total;
-    }
-  }
-  return total > 0 ? operational / total : null;
 }
 
 export default function StatusPage() {
   const navigate = usePageNavigate();
   const { snapshot } = useStatusLive();
   const [view, setView] = useState<StatusView>("realtime");
-  const [history, setHistory] = useState<PublicStatusHistory | null>(null);
-  const [realtime, setRealtime] = useState<PublicStatusRealtime | null>(null);
-  const [events, setEvents] = useState<PublicStatusEvent[] | null>(null);
+  const [history, setHistory] = useState<Loadable<PublicStatusHistory>>(undefined);
+  const [realtime, setRealtime] = useState<Loadable<PublicStatusRealtime>>(undefined);
+  const [events, setEvents] = useState<Loadable<PublicStatusEvent[]>>(undefined);
+  const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
-    // 三份数据各自降级：历史读不到不拖实时条带，事件读不到不拖其它两块。
+    // 三份数据各自降级：一份读不到不拖其它两块。轮询失败时留着上一份读到的，
+    // 条带不因一次超时被清空；从没读到过才落成「读失败」。
+    const keepPrevious =
+      <T,>(set: Dispatch<SetStateAction<Loadable<T>>>) =>
+      (): void => {
+        if (alive) set((previous) => previous ?? null);
+      };
     const load = (): void => {
       void fetchStatusHistory().then(
         (value) => alive && setHistory(value),
-        () => alive && setHistory(null)
+        keepPrevious(setHistory)
       );
-      void fetchStatusRealtime().then(
+      void fetchStatusRealtime((milliseconds) => alive && setRoundTripMs(milliseconds)).then(
         (value) => alive && setRealtime(value),
-        () => alive && setRealtime(null)
+        () => {
+          keepPrevious(setRealtime)();
+          if (alive) setRoundTripMs(null);
+        }
       );
-      void fetchStatusEvents().then(
-        (value) => alive && setEvents(value),
-        () => alive && setEvents(null)
-      );
+      void fetchStatusEvents().then((value) => alive && setEvents(value), keepPrevious(setEvents));
     };
     load();
     // 采样本身 3 分钟一轮，页面按分钟对齐就够；离开页面即停。
@@ -456,6 +377,9 @@ export default function StatusPage() {
       new Map(snapshot?.components.map((component) => [component.id, component] as const) ?? []),
     [snapshot]
   );
+  const levelOf = (id: PublicStatusComponentId): PublicStatusLevel =>
+    levels.get(id)?.level ?? "unknown";
+
   const historyById = useMemo(
     () => new Map(history?.entries.map((entry) => [entry.id, entry] as const) ?? []),
     [history]
@@ -467,17 +391,18 @@ export default function StatusPage() {
 
   /** 实时窗口的格子序列：以服务端的窗口参数为准，缺样本的时段补空格。 */
   const realtimeCells = useMemo(() => {
-    if (!realtime) return new Map<string, BarCell[]>();
+    if (!realtime) return null;
     const count = Math.max(1, Math.round(realtime.windowMs / realtime.intervalMs));
     const last = Math.floor(realtime.generatedAt / realtime.intervalMs) * realtime.intervalMs;
-    const result = new Map<string, BarCell[]>();
-    for (const entry of realtime.entries) {
-      const byStart = new Map(entry.cells.map((cell) => [cell.start, cell] as const));
+    const result = new Map<PublicStatusComponentId, BarCell[]>();
+    for (const id of ALL_COMPONENTS) {
+      const byStart = new Map(
+        (realtimeById.get(id)?.cells ?? []).map((cell) => [cell.start, cell] as const)
+      );
       const cells: BarCell[] = Array.from({ length: count }, (_, index) => {
         const start = last - (count - 1 - index) * realtime.intervalMs;
         const end = start + realtime.intervalMs;
         const cell = byStart.get(start);
-        const overlapping = (events ?? []).filter((event) => overlaps(event, entry.id, start, end));
         return {
           key: `r${start}`,
           level: cell?.level ?? "unknown",
@@ -485,50 +410,72 @@ export default function StatusPage() {
           ratio: cell?.ratio ?? null,
           latencyMs: cell?.latencyMs ?? null,
           when: `${DAY_FORMAT.format(start)} ${TIME_FORMAT.format(start)}–${TIME_FORMAT.format(end)}`,
-          events: overlapping,
+          events: (events ?? []).filter((event) => eventOverlaps(event, id, start, end)),
         };
       });
-      result.set(entry.id, cells);
+      result.set(id, cells);
     }
     return result;
-  }, [realtime, events]);
+  }, [realtime, realtimeById, events]);
 
-  /** 月视图的日格：服务端按北京自然日给格子，这里只补事件重叠。 */
+  /** 月视图的日格：服务端按北京自然日给格子，这里只补事件重叠；缺条目的组件按同一串日子补空格。 */
   const monthCells = useMemo(() => {
-    const result = new Map<string, BarCell[]>();
-    for (const entry of history?.entries ?? []) {
-      const cells: BarCell[] = entry.cells.map((cell) => {
-        const start = monthCellStart(cell.day);
-        const end = start + 86_400_000;
-        return {
-          key: `d${cell.day}`,
-          level: cell.level,
-          total: cell.total,
-          ratio: cell.ratio,
-          latencyMs: null,
-          when: DAY_FORMAT.format(start),
-          events: (events ?? []).filter((event) => overlaps(event, entry.id, start, end)),
-        };
-      });
-      result.set(entry.id, cells);
+    if (!history) return null;
+    const days = history.entries[0]?.cells.map((cell) => cell.day) ?? [];
+    const result = new Map<PublicStatusComponentId, BarCell[]>();
+    for (const id of ALL_COMPONENTS) {
+      const source =
+        historyById.get(id)?.cells ??
+        days.map((day) => ({ day, total: 0, ratio: null, level: "unknown" as const }));
+      result.set(
+        id,
+        source.map((cell) => {
+          const start = monthCellStart(cell.day);
+          const end = start + 86_400_000;
+          return {
+            key: `d${cell.day}`,
+            level: cell.level,
+            total: cell.total,
+            ratio: cell.ratio,
+            latencyMs: null,
+            when: DAY_FORMAT.format(start),
+            events: (events ?? []).filter((event) => eventOverlaps(event, id, start, end)),
+          };
+        })
+      );
     }
     return result;
-  }, [history, events]);
+  }, [history, historyById, events]);
 
+  const ratioOf = (id: PublicStatusComponentId): number | null =>
+    view === "month"
+      ? (historyById.get(id)?.uptime.find((span) => span.days === PUBLIC_STATUS_HISTORY_DAYS)
+          ?.ratio ?? null)
+      : (realtimeById.get(id)?.uptime ?? null);
+
+  const latencyOf = (id: PublicStatusComponentId): RowLatency | null => {
+    if (view !== "realtime") return null;
+    if (id === "backend") return { value: roundTripMs, series: null, roundTrip: true };
+    const series = realtimeCells?.get(id)?.map((cell) => cell.latencyMs) ?? null;
+    const current = levels.get(id)?.latencyMs ?? null;
+    // 进程内组件（房间、数据集、图片缓存）没有延迟口径：整栏不出，不摆一排「—」。
+    if (current === null && !series?.some((value) => value !== null)) return null;
+    return { value: current, series, roundTrip: false };
+  };
+
+  const tally = tallyOf(ALL_COMPONENTS, levelOf);
   const overall = snapshot?.level ?? "unknown";
-  const degradedCount = snapshot
-    ? snapshot.components.filter((component) => component.level === "degraded").length
-    : 0;
-  const overallUptime =
-    view === "month" ? computeOverallUptime(history) : computeOverallRealtime(realtime);
-  const uptimeLabel = view === "month" ? "30 天全站可用率" : "近 6 小时全站可用率";
+  const headline = headlineOf(snapshot, tally);
+  const overallUptime = meanOf(ALL_COMPONENTS.map(ratioOf));
+  const cellsByView = view === "month" ? monthCells : realtimeCells;
+  const viewData = view === "month" ? history : realtime;
 
   return (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
       <Seo
         path="/status"
         title="服务状态 - BakaGame"
-        description="BakaGame 服务状态：前端、后端、上游接口与本项目内部各能力的实时状态、历史可用率与事件维护记录。"
+        description="BakaGame 服务状态：前端、后端、上游接口与本项目内部各能力的实时状态、延迟、历史可用率与事件维护记录。"
         indexable={false}
       />
       <header>
@@ -546,109 +493,119 @@ export default function StatusPage() {
         </div>
       </header>
 
-      <article className="mx-auto w-full max-w-3xl px-6 pb-10">
+      <article className="mx-auto w-full max-w-3xl px-6 pb-12">
         <section
-          aria-live="polite"
+          aria-labelledby="status-summary"
           className={cn(
-            "rounded-md border p-4",
-            overall === "degraded"
-              ? "border-destructive/40 bg-destructive/10"
-              : overall === "operational"
-                ? "border-success/40 bg-success/10"
-                : "border-border bg-muted/40"
+            "rounded-md border bg-card p-5 shadow-sm transition-colors duration-(--motion-duration-base) ease-(--motion-ease-out)",
+            overall === "degraded" && "border-destructive/40"
           )}
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              {overall === "operational" ? (
-                <CheckCircle2 aria-hidden="true" className="text-success" />
-              ) : overall === "degraded" ? (
-                <TriangleAlert aria-hidden="true" className="text-destructive" />
-              ) : (
-                <CircleHelp aria-hidden="true" className="text-muted-foreground" />
-              )}
-              <h2 className="text-base font-semibold">
-                {!snapshot
-                  ? "正在读取服务状态…"
-                  : overall === "operational"
-                    ? "所有系统运行正常"
-                    : overall === "degraded"
-                      ? `${degradedCount} 项服务异常`
-                      : "暂时无法确认服务状态"}
+          <div className="flex items-start gap-3 sm:gap-4">
+            <StatusGlyph level={overall} loading={!snapshot} />
+            {/* 只播报标题与说明：数字每分钟都在变，放进 live region 会一直打断读屏。 */}
+            <div className="min-w-0 flex-1 pt-0.5" aria-live="polite">
+              <h2 id="status-summary" className="text-base leading-snug font-semibold sm:text-lg">
+                {headline.title}
               </h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{headline.detail}</p>
             </div>
-            {snapshot ? <LevelBadge level={overall} /> : null}
           </div>
-          {/* 全站可用率：当前视图窗口内所有组件的样本合起来算的一个数。 */}
-          <p className="mt-2 flex items-baseline gap-2 text-sm">
-            <span className="font-mono text-2xl leading-none tabular-nums">
-              {formatRatio(overallUptime)}
-            </span>
-            <span className="font-sans text-2xs text-muted-foreground">{uptimeLabel}</span>
-          </p>
+          <dl className="mt-5 grid grid-cols-3 border-t border-border pt-4">
+            <SummaryStat
+              label={`${VIEW_LABEL[view]}可用率`}
+              shortLabel="可用率"
+              value={formatRatio(overallUptime)}
+            />
+            <SummaryStat
+              label="服务正常"
+              shortLabel="服务正常"
+              value={snapshot ? `${tally.operational.length}/${ALL_COMPONENTS.length}` : "—"}
+            />
+            <SummaryStat
+              label="你的往返延迟"
+              shortLabel="往返延迟"
+              value={formatLatency(roundTripMs)}
+            />
+          </dl>
         </section>
+        <p className="mt-2 flex min-h-4 flex-wrap justify-between gap-x-4 gap-y-0.5 px-1 text-2xs text-muted-foreground">
+          {snapshot ? (
+            <span>
+              更新于{" "}
+              <time
+                dateTime={new Date(snapshot.observedAt).toISOString()}
+                className="font-mono tabular-nums"
+              >
+                {CLOCK_FORMAT.format(snapshot.observedAt)}
+              </time>
+            </span>
+          ) : null}
+          {snapshot && snapshot.version !== "unknown" ? (
+            <span className="font-mono">{snapshot.version}</span>
+          ) : null}
+        </p>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <SegmentedControl<StatusView>
-            aria-label="状态视图"
+            aria-label="时间范围"
+            size="sm"
             value={view}
             onValueChange={setView}
             options={[
-              { value: "realtime", label: "实时" },
-              { value: "month", label: "一月" },
+              { value: "realtime", label: VIEW_LABEL.realtime },
+              { value: "month", label: VIEW_LABEL.month },
             ]}
           />
-          <p className="flex flex-wrap items-center gap-3 font-sans text-2xs text-muted-foreground">
-            {/* 图例：颜色之外同时给出文字，条格读作什么由这里定。 */}
-            <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-success" />
-              正常
-            </span>
-            <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-destructive" />
-              异常
-            </span>
-            <span className="flex items-center gap-1">
-              <span aria-hidden="true" className="h-2 w-2 rounded-sm bg-muted" />
-              无数据
-            </span>
-            <span className="hidden sm:inline">悬停条格查看时段详情</span>
-          </p>
+          <Legend />
         </div>
 
         {PUBLIC_STATUS_GROUPS.map((group) => (
-          <section key={group.id} aria-labelledby={`status-group-${group.id}`} className="mt-4">
-            <h2
-              id={`status-group-${group.id}`}
-              className="font-sans text-2xs text-muted-foreground"
-            >
-              {STATUS_GROUP_LABELS[group.id]}
-            </h2>
-            <ul className="mt-2 divide-y divide-border overflow-hidden rounded-md border bg-card shadow-2xs">
-              {group.components.map((id) => {
-                const component = levels.get(id);
-                const monthEntry = historyById.get(id);
-                const realtimeEntry = realtimeById.get(id);
-                const ratio =
-                  view === "month"
-                    ? (monthEntry?.uptime.find((span) => span.days === 30)?.ratio ?? null)
-                    : (realtimeEntry?.uptime ?? null);
-                return (
-                  <ComponentRow
-                    key={id}
-                    id={id}
-                    level={component?.level ?? "unknown"}
-                    latencyMs={view === "realtime" ? (component?.latencyMs ?? null) : undefined}
-                    ratio={ratio}
-                    cells={(view === "month" ? monthCells.get(id) : realtimeCells.get(id)) ?? []}
-                  />
-                );
-              })}
+          <section key={group.id} aria-labelledby={`status-group-${group.id}`} className="mt-6">
+            <div className="flex items-baseline justify-between gap-3 px-1">
+              <h2 id={`status-group-${group.id}`} className="text-sm font-semibold">
+                {STATUS_GROUP_LABELS[group.id]}
+              </h2>
+              {snapshot ? (
+                <p className="text-2xs text-muted-foreground">
+                  {groupSummaryOf(tallyOf(group.components, levelOf), group.components.length)}
+                </p>
+              ) : null}
+            </div>
+            <ul className="mt-2 divide-y divide-border rounded-md border bg-card shadow-2xs">
+              {group.components.map((id) => (
+                <ComponentRow
+                  key={id}
+                  id={id}
+                  level={levelOf(id)}
+                  ratio={ratioOf(id)}
+                  latency={latencyOf(id)}
+                  cells={cellsByView?.get(id) ?? null}
+                  loading={viewData === undefined}
+                  placeholderCount={view === "month" ? PUBLIC_STATUS_HISTORY_DAYS : REALTIME_CELLS}
+                  revealKey={view}
+                  revealDelay={Math.min(
+                    ALL_COMPONENTS.indexOf(id) * uptimeReveal.step,
+                    uptimeReveal.span
+                  )}
+                />
+              ))}
             </ul>
+            <div
+              aria-hidden="true"
+              className="mt-1.5 flex justify-between px-4 font-mono text-2xs text-muted-foreground"
+            >
+              <span>{AXIS_LABEL[view][0]}</span>
+              <span>{AXIS_LABEL[view][1]}</span>
+            </div>
           </section>
         ))}
 
-        <StatusEventsSection events={events ?? []} />
+        <StatusEventsSection events={events} />
+
+        <p className="mt-10 text-center text-2xs text-muted-foreground">
+          时间均为北京时间 · 实时条带每 {SAMPLE_MINUTES} 分钟一格 · 页面自动刷新
+        </p>
       </article>
     </div>
   );

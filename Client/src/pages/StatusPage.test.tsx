@@ -221,11 +221,15 @@ describe("公开状态页", () => {
     expect(within(upstream).getByText("QQ API")).toBeInTheDocument();
     expect(within(internal).getByText("图片缓存")).toBeInTheDocument();
 
-    // 实时视图带当前延迟：上游组件有读数，内部组件读作「—」。
+    // 实时视图带当前延迟：上游组件有读数；后端读浏览器到后端的往返；进程内组件整栏不出。
     expect(within(rowOf("Bangumi API")).getByText("180 ms")).toBeInTheDocument();
-    expect(within(rowOf("后端服务")).getAllByText("—").length).toBeGreaterThan(0);
+    expect(await within(rowOf("后端服务")).findByText("往返")).toBeInTheDocument();
+    expect(within(rowOf("房间服务")).queryByText(/ms$/)).not.toBeInTheDocument();
+    expect(within(rowOf("房间服务")).queryByText("往返")).not.toBeInTheDocument();
     expect(within(rowOf("QQ音乐 API")).getByText("异常")).toBeInTheDocument();
     expect(within(rowOf("QQ API")).getByText("未知")).toBeInTheDocument();
+    // 组标题旁给出这一组的汇总。
+    expect(within(upstream).getByText("1 项异常")).toBeInTheDocument();
   });
 
   it("实时与一月两个视图切换：条带、可用率口径与延迟随之换", async () => {
@@ -236,13 +240,15 @@ describe("公开状态页", () => {
     await screen.findByText("2 项服务异常");
 
     // 实时视图：可用率读近 6 小时窗口，上游延迟来自快照。
-    expect(screen.getByText("近 6 小时全站可用率")).toBeInTheDocument();
+    expect(screen.getByText("近 6 小时可用率")).toBeInTheDocument();
+    expect(screen.getAllByText("6 小时前").length).toBeGreaterThan(0);
     expect(await within(rowOf("Bangumi API")).findByText("50.00%")).toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("radio", { name: "一月" }));
+      fireEvent.click(screen.getByRole("radio", { name: "近 30 天" }));
     });
-    expect(screen.getByText("30 天全站可用率")).toBeInTheDocument();
+    expect(screen.getByText("近 30 天可用率")).toBeInTheDocument();
+    expect(screen.getAllByText("30 天前").length).toBeGreaterThan(0);
     // 月视图没有「当前延迟」这个口径：Bangumi 行不再显示 180 ms。
     expect(within(rowOf("Bangumi API")).queryByText("180 ms")).not.toBeInTheDocument();
     expect(await within(rowOf("后端服务")).findByText("100.0%")).toBeInTheDocument();
@@ -258,7 +264,7 @@ describe("公开状态页", () => {
     // Bangumi 行最新一格正常带延迟，上一格异常没有延迟读数。
     const row = rowOf("Bangumi API");
     const bar = await within(row).findByRole("img", { name: /2 个时段有数据/ });
-    const cells = bar.querySelectorAll("span");
+    const cells = bar.querySelectorAll("[data-cell]");
     expect(cells.length).toBe(120);
     act(() => {
       fireEvent.pointerEnter(cells[cells.length - 1]!);
@@ -278,7 +284,7 @@ describe("公开状态页", () => {
     const searchBar = within(searchRow).getByRole("img", {
       name: "这段时间还没有探测样本",
     });
-    const searchCells = searchBar.querySelectorAll("span");
+    const searchCells = searchBar.querySelectorAll("[data-cell]");
     // 最新一格落在事件开始之后，悬停它才带事件标题。
     act(() => {
       fireEvent.pointerEnter(searchCells[searchCells.length - 1]!);
@@ -311,21 +317,93 @@ describe("公开状态页", () => {
     expect(within(section).getAllByText("已完成")).toHaveLength(1);
   });
 
-  it("历史与实时读不到时页面照常显示当前状态，可用率显示「—」", async () => {
+  it("历史与实时读不到时页面照常显示当前状态，可用率与往返延迟显示「—」", async () => {
     stubSocket();
     vi.stubGlobal("fetch", stubStatusFetch({ history: null, realtime: null, events: null }));
     renderPage();
     connectAndPush();
 
     expect(await screen.findByText("2 项服务异常")).toBeInTheDocument();
+    // 读失败的条带停在静止的占位桩上，不冒充「还在加载」。
+    await waitFor(() =>
+      expect(screen.getByText("事件记录暂时读不到，稍后会自动重试。")).toBeInTheDocument()
+    );
     for (const bar of screen.getAllByRole("img", { name: "这段时间还没有探测样本" })) {
-      expect(bar).toBeInTheDocument();
+      expect(bar.querySelector('[class*="animate-breathe"]')).toBeNull();
     }
-    // 读不到窗口数据时可用率没有样本，读作「—」而不是 0%。
-    expect(screen.getByText("近 6 小时全站可用率")).toBeInTheDocument();
-    const summary = screen.getByText("近 6 小时全站可用率").closest("p");
-    expect(summary).not.toBeNull();
-    expect(within(summary!).getByText("—")).toBeInTheDocument();
-    expect(screen.getByText("近一个月没有记录在案的事件或维护。")).toBeInTheDocument();
+    // 读不到窗口数据时可用率没有样本，读作「—」而不是 0%；往返也没测到。
+    const uptime = screen.getByText("近 6 小时可用率").closest("div")!;
+    expect(within(uptime).getByText("—")).toBeInTheDocument();
+    const roundTrip = screen.getByText("你的往返延迟").closest("div")!;
+    expect(within(roundTrip).getByText("—")).toBeInTheDocument();
+    // 读失败不冒充「近一个月没有事件」。
+    expect(screen.queryByText("近一个月没有记录在案的事件或维护。")).not.toBeInTheDocument();
+  });
+
+  it("部分组件没有监测结论时不说「所有系统运行正常」，可用率只算有结论的组件", async () => {
+    stubSocket();
+    vi.stubGlobal(
+      "fetch",
+      stubStatusFetch({
+        realtime: {
+          ...realtime,
+          entries: [
+            { id: "backend", uptime: 1, cells: [] },
+            { id: "rooms", uptime: 0.5, cells: [] },
+            { id: "bangumi", uptime: null, cells: [] },
+          ],
+        },
+      })
+    );
+    renderPage();
+    connectAndPush({
+      ...snapshot,
+      level: "operational",
+      components: snapshot.components.map((component) =>
+        component.level === "degraded"
+          ? { ...component, level: "unknown", latencyMs: null }
+          : component
+      ),
+    });
+
+    expect(await screen.findByText("已监测的服务运行正常")).toBeInTheDocument();
+    expect(screen.getByText("另有 3 项暂无监测结论")).toBeInTheDocument();
+    // 只有 backend 与 rooms 有结论：(100% + 50%) / 2，bangumi 的 null 不拉低成 0。
+    const uptime = screen.getByText("近 6 小时可用率").closest("div")!;
+    expect(await within(uptime).findByText("75.00%")).toBeInTheDocument();
+    expect(screen.getByText("7/10")).toBeInTheDocument();
+  });
+
+  it("实时通道连上后退避清零，再断开时从最短间隔重连", async () => {
+    vi.useFakeTimers();
+    stubSocket();
+    vi.stubGlobal("fetch", stubStatusFetch());
+    renderPage();
+
+    act(() => FakeSocket.latest().fireClose());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(FakeSocket.instances).toHaveLength(2);
+    act(() => FakeSocket.latest().fireClose());
+    // 第二次失败按退避翻倍：1 秒后还没重连。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(FakeSocket.instances).toHaveLength(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(FakeSocket.instances).toHaveLength(3);
+
+    // 这一次连上了：之后再断，从 1 秒重新起算，而不是接着翻倍等 4 秒。
+    act(() => {
+      FakeSocket.latest().fireOpen();
+      FakeSocket.latest().fireClose();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(FakeSocket.instances).toHaveLength(4);
   });
 });

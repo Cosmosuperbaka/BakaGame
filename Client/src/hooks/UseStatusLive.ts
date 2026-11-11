@@ -41,6 +41,10 @@ export function useStatusLive(): { snapshot: PublicStatusSnapshot | null } {
       }
       socketRef.current = socket;
 
+      // 连上即清零退避：否则断过几次之后，哪怕中间稳定连了很久，下一次重连也一直按封顶间隔等。
+      socket.onopen = () => {
+        attempts = 0;
+      };
       socket.onmessage = (event) => {
         try {
           setSnapshot(parseSystemStatus(JSON.parse(String(event.data))));
@@ -72,6 +76,7 @@ export function useStatusLive(): { snapshot: PublicStatusSnapshot | null } {
       socketRef.current = null;
       if (socket) {
         // 先摘掉回调再关：卸载瞬间触发的 close 不该再去排一次重连。
+        socket.onopen = null;
         socket.onmessage = null;
         socket.onclose = null;
         socket.onerror = null;

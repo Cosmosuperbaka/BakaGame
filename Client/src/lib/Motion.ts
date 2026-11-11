@@ -494,6 +494,29 @@ export const readoutSwap: Variants = {
 };
 
 /**
+ * 服务状态页的条带显影：数据到达或切换视图时，一层与卡片同色的遮罩自左向右收起，
+ * 条带读作沿时间轴从旧到新被铺开。逐行晚 `step`、整页封顶 `span`，末行不久等；只动 transform。
+ */
+export const uptimeReveal = {
+  step: 0.025,
+  span: 0.24,
+  transition: { duration: duration.slow, ease: ease.out },
+} as const;
+
+/**
+ * 状态条带的悬停说明与选中框：同一块浮层顺着指针在格子之间滑动，不逐格关了再开。
+ * 取 snap：跟得上手，扫过一整条也不拖尾。
+ */
+export const uptimeGlide = spring.snap;
+
+/** 状态主卡的图标换档：服务端推来新等级时新图标带一次回弹落位，读作「状态被改写了」。 */
+export const statusGlyphSwap: Variants = {
+  initial: { opacity: 0, scale: 0.7 },
+  animate: { opacity: 1, scale: 1, transition: spring.impulse },
+  exit: { opacity: 0, scale: popoverScale.exit, transition: { duration: duration.instant } },
+};
+
+/**
  * Agent 操作页面的节拍。`moveMs` 是焦点框从上一个控件落到新控件的时间，与 `.agent-focus-box`
  * 的过渡是同一枚弹簧：框到位才动手，人类才来得及看清它要做什么。
  * 其余是等页面响应的上限，不是动效，放在一起便于统一调整。

@@ -9,6 +9,7 @@ import { cn } from "@/lib/Utils";
  * - muted / matched：密集的标签列表（CEE 反馈表），常规字重；matched 是命中的线索，靠描边而不只靠颜色与 muted 区分
  * - subtle / active / unavailable：卡片上的次要信息，常规字重；active 表示进行中，unavailable 表示该项不可用
  * - upcoming / restricted：挂在条目旁的微型提示，配 `size="xs"`；upcoming 是尚未上线的入口，restricted 是受限的条目（会员专享）
+ * - alert：与 matched 成对的「出了问题」标记（服务状态页的组件异常、进行中的故障），描边与浅底取 destructive
  */
 const badgeVariants = cva(
   "inline-flex items-center gap-1 rounded-md border font-serif font-semibold transition-colors",
@@ -28,6 +29,7 @@ const badgeVariants = cva(
           "border-dashed border-border font-sans font-normal text-muted-foreground opacity-60",
         upcoming: "border-transparent bg-muted font-sans font-normal text-muted-foreground",
         restricted: "border-warning/40 bg-warning/10 font-sans font-medium text-warning",
+        alert: "border-destructive/40 bg-destructive/10 font-sans font-normal text-destructive",
         placeholder: "border-transparent bg-foreground/8",
       },
       size: {

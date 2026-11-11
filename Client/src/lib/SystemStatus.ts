@@ -230,13 +230,22 @@ export const parseStatusRealtime = (value: unknown): PublicStatusRealtime => {
   };
 };
 
-export const fetchStatusRealtime = async (): Promise<PublicStatusRealtime> => {
+/**
+ * 读实时条带。`onRoundTrip` 拿到这次请求从发出到响应头到达的毫秒数：
+ * 实时接口只读内存账本、几乎不占服务端时间，这段耗时就是浏览器到后端的往返，
+ * 状态页拿它给「后端服务」一行配延迟，不为测延迟另开一条请求。
+ */
+export const fetchStatusRealtime = async (
+  onRoundTrip?: (milliseconds: number) => void
+): Promise<PublicStatusRealtime> => {
+  const startedAt = performance.now();
   const response = await fetch(resolveServerUrl("/api/status/realtime"), {
     cache: "no-store",
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`实时接口返回 HTTP ${response.status}`);
+  onRoundTrip?.(Math.max(0, Math.round(performance.now() - startedAt)));
   return parseStatusRealtime(await response.json());
 };
 

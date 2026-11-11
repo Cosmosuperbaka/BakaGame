@@ -30,6 +30,17 @@ export const Variants: Story = {
         <Badge variant="matched">傲娇</Badge>
       </div>
       <div className="flex flex-wrap items-center gap-3">
+        <Badge variant="matched" size="sm">
+          正常
+        </Badge>
+        <Badge variant="alert" size="sm">
+          异常
+        </Badge>
+        <Badge variant="alert" size="xs">
+          调查中
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
         <Badge variant="subtle">等待中</Badge>
         <Badge variant="active">游戏中</Badge>
         <Badge variant="subtle">
