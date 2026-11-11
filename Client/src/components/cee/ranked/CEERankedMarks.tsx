@@ -213,7 +213,11 @@ export function RankedAttemptMeter({
             key={index}
             className={cn(
               "h-2.5 w-1.5 rounded-xs",
-              index >= used ? "bg-muted" : side === "self" ? "bg-primary" : "bg-foreground/60"
+              index >= used
+                ? "bg-foreground/12"
+                : side === "self"
+                  ? "bg-primary"
+                  : "bg-foreground/60"
             )}
           />
         ))}
