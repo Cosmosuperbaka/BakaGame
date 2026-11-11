@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { HelmetProvider } from "react-helmet-async";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +38,7 @@ function renderPage() {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   delete window.__BAKA_CHANNEL__;
   useAccountStore.setState(initialAccount, true);
   useCEEStore.setState(initialCEE, true);
@@ -112,4 +113,43 @@ describe("CEERankedPage", () => {
     expect(screen.getByRole("region", { name: "你的猜测" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "返回主页" })).toBeDisabled();
   });
+
+  it.each(["intermission", "won"] as const)(
+    "%s 阶段的答案图走排位命令，不向多人房取图",
+    async (stage) => {
+      // 懒加载图片靠视口观察器触发取图：桩成「一挂上就可见」。
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          private readonly callback: IntersectionObserverCallback;
+          constructor(callback: IntersectionObserverCallback) {
+            this.callback = callback;
+          }
+          observe() {
+            this.callback(
+              [{ isIntersecting: true } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver
+            );
+          }
+          disconnect() {}
+        }
+      );
+      installShell();
+      useAccountStore.setState({ status: "signedIn", profile: {} as never });
+      const characterImage = vi.fn(async () => "/api/bangumi/pic/answer.jpg");
+      const sendCommand = vi.fn(async () => ({}));
+      useCEEStore.setState({ sendCommand } as never);
+      useCEERankedStore.setState({
+        ready: true,
+        state: { status: "series", series: rankedSeries(stage) },
+        profile: rankedProfile("rated"),
+        loadProfile: vi.fn(async () => {}),
+        characterImage,
+      });
+      renderPage();
+
+      await waitFor(() => expect(characterImage).toHaveBeenCalled());
+      expect(sendCommand).not.toHaveBeenCalled();
+    }
+  );
 });

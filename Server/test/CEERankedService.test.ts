@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CEEService } from "../src/application/CEEService";
-import { CEERankedService } from "../src/application/CEERankedService";
+import { CEERankedService, SETTLED_RETENTION_MS } from "../src/application/CEERankedService";
 import { CEE_SEARCH_CONNECTION_MAX } from "../src/application/CEESearchQuota";
 import { CEESearchProvenance } from "../src/application/CEEAntiCheatSignals";
 import { CEE_RANKED_WINDOW_INITIAL } from "../src/application/CEERankedQueue";
@@ -490,6 +490,61 @@ describe("排位检索", () => {
     expect(harness.seriesView(client).result?.settlement).toBe("rated");
     await harness.send(client, "cee.ranked.leave", {});
     expect(harness.latest(client)).toEqual({ status: "idle" });
+  });
+
+  test("真人局一方先离开结果页，另一方仍停在结果页并能正常离开", async () => {
+    const harness = rankedHarness();
+    const first = harness.connect("甲", { account: { userId: "u1", image: null } });
+    const second = harness.connect("乙", { account: { userId: "u2", image: null } });
+    harness.seedRated("u1");
+    harness.seedRated("u2");
+    await harness.send(first, "cee.ranked.queue", {});
+    await harness.send(second, "cee.ranked.queue", {});
+    await harness.advance(1_000);
+    await openPlay(harness);
+    await harness.send(first, "cee.ranked.exit", {});
+    expect(harness.seriesView(second).result?.outcome).toBe("won");
+
+    await harness.send(first, "cee.ranked.leave", {});
+    expect(harness.latest(first)).toEqual({ status: "idle" });
+    // 乙没点离开：刷新拿到的仍是结果页，答案图照样能取，离开不报错。
+    const refreshed = await harness.send(second, "cee.ranked.status", {});
+    expect(refreshed.status).toBe("series");
+    const image = await harness.send(second, "cee.ranked.characterImage", { characterId: 11 });
+    expect(image.imageUrl).toBe("https://images.invalid/11.jpg");
+    await harness.send(second, "cee.ranked.leave", {});
+    expect(harness.latest(second)).toEqual({ status: "idle" });
+  });
+
+  test("结果页可以取答案图，检索命令仍只在进行中可用", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    await harness.send(client, "cee.ranked.exit", {});
+    const image = await harness.send(client, "cee.ranked.characterImage", { characterId: 12 });
+    expect(image.imageUrl).toBe("https://images.invalid/12.jpg");
+    const error = await appErrorOf(() =>
+      harness.send(client, "cee.ranked.characterSearch", { keyword: "角色" })
+    );
+    expect(error.code).toBe("INVALID_PHASE");
+    await harness.send(client, "cee.ranked.leave", {});
+    const after = await appErrorOf(() =>
+      harness.send(client, "cee.ranked.characterImage", { characterId: 12 })
+    );
+    expect(after.code).toBe("INVALID_PHASE");
+  });
+
+  test("结果页停留超过保留时长后替玩家离开并推 idle", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    await harness.send(client, "cee.ranked.exit", {});
+    await harness.advance(SETTLED_RETENTION_MS - 1_000);
+    expect(harness.latest(client).status).toBe("series");
+    await harness.advance(2_000);
+    expect(harness.latest(client)).toEqual({ status: "idle" });
+    const error = await appErrorOf(() => harness.send(client, "cee.ranked.leave", {}));
+    expect(error.code).toBe("INVALID_PHASE");
   });
 });
 

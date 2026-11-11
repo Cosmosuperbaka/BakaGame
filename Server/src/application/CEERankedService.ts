@@ -114,6 +114,8 @@ const FALLBACK_NAME = "玩家";
 const HANDICAP_SEED_LIMIT = 600;
 /** 每组每攒满这么多新样本打一次当前偏差，便于观察收敛。 */
 const HANDICAP_LOG_EVERY = 20;
+/** 结算后结果页最长保留时长：超过就替还挂着的玩家离开，运行时不常驻内存。 */
+export const SETTLED_RETENTION_MS = 30 * 60_000;
 /** 这三条命令自带准入：其余命令必须已经绑定在该账号的排位连接上。 */
 const ADMISSION_COMMANDS: readonly CEERankedCommand[] = [
   "cee.ranked.status",
@@ -315,6 +317,7 @@ export class CEERankedService {
     if (this.closed) return;
     if (this.queue.size > 0 && !this.matchCancel) this.scheduleMatchTick();
     const now = this.now();
+    this.sweepSettled(now);
     for (const runtime of [...this.seriesById.values()]) {
       if (runtime.timerWakeAt === null || runtime.timerWakeAt > now) continue;
       this.cancelTimer(runtime);
@@ -385,7 +388,8 @@ export class CEERankedService {
         return { results: await this.data.getSubjectCharacters(message.payload.subjectId) };
       }
       case "cee.ranked.characterImage": {
-        this.requireInSeries(userId);
+        // 结果页逐局回看答案与双方猜测也要取图：结算后的那场仍算在内，检索命令则不放行。
+        this.requireSeriesView(userId);
         return {
           imageUrl: await this.data.resolveCharacterImage(
             message.payload.characterId,
@@ -440,6 +444,12 @@ export class CEERankedService {
     const runtime = this.seriesByUser.get(userId);
     if (runtime && runtime.series.phase !== "settled") return;
     throw new AppError("INVALID_PHASE", "排位搜索只在系列赛进行中可用");
+  }
+
+  /** 命令要求账号正看着一场系列赛：进行中或停在结果页都算。 */
+  private requireSeriesView(userId: string): void {
+    if (this.seriesByUser.has(userId)) return;
+    throw new AppError("INVALID_PHASE", "当前没有排位对局");
   }
 
   private push(userId: string, state: CEERankedState): void {
@@ -1268,16 +1278,38 @@ export class CEERankedService {
     }
   }
 
-  /** 结果页离开：两位玩家都不再看这场时才彻底丢弃运行时。 */
+  /**
+   * 结果页离开：只解开离开的这一方，两位玩家都不再看这场时才彻底丢弃运行时。
+   * 另一方可能还停在结果页上，替他解绑会让他的「返回」报「没有可离开的结果页」。
+   */
   private forgetSeries(runtime: CEERankedSeriesRuntime, userId: string): void {
-    this.seriesByUser.delete(userId);
-    for (const seat of runtime.seats) {
-      if (seat.userId !== null) this.seriesByUser.delete(seat.userId);
-    }
-    const stillWatched = [...this.seriesByUser.values()].includes(runtime);
+    if (this.seriesByUser.get(userId) === runtime) this.seriesByUser.delete(userId);
+    const stillWatched = runtime.seats.some(
+      (seat) => seat.userId !== null && this.seriesByUser.get(seat.userId) === runtime
+    );
     if (stillWatched) return;
     this.cancelTimer(runtime);
     this.seriesById.delete(runtime.series.id);
+  }
+
+  /**
+   * 结果页停留过久的场次：结算落定且超过保留时长就替还挂着的玩家离开并推 idle。
+   * 一方关掉客户端不再回来时，运行时不能一直留在内存里。
+   */
+  private sweepSettled(now: number): void {
+    for (const runtime of [...this.seriesById.values()]) {
+      const { series } = runtime;
+      if (series.phase !== "settled" || !runtime.settlementDone) continue;
+      if ((series.endedAt ?? now) + SETTLED_RETENTION_MS > now) continue;
+      for (const seat of runtime.seats) {
+        if (seat.userId === null || this.seriesByUser.get(seat.userId) !== runtime) continue;
+        this.forgetSeries(runtime, seat.userId);
+        this.push(seat.userId, idleState());
+      }
+      // 没有任何人挂着（理论上不会出现）也照样丢掉。
+      this.cancelTimer(runtime);
+      this.seriesById.delete(series.id);
+    }
   }
 
   private requireStore(): CEERankedStore {

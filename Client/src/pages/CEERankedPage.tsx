@@ -35,40 +35,42 @@ function RankedSeriesStage() {
   const last = series.games.at(-1);
   const stage =
     series.phase === "settled" ? "settled" : series.phase === "intermission" ? "recap" : "play";
+  // 数据源包住整个系列赛：对局里的搜索、局间复盘与结算页的答案图都得走排位命令，
+  // 漏包的组件会落回多人房那套，向不存在的房间取图。
   return (
-    <div className="space-y-4">
-      <CEERankedScoreboard series={series} />
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={
-            stage === "play"
-              ? `play-${series.game?.number ?? 0}`
-              : `${stage}-${series.games.length}`
-          }
-          variants={phaseSwap}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className="space-y-6"
-        >
-          {stage === "settled" ? (
-            <>
-              <CEERankedResultCard
-                series={series}
-                placementTotal={CEE_RANKED_PLACEMENT_SERIES}
-                requeueing={Boolean(pending.queue)}
-                leaving={Boolean(pending.leave)}
-                onRequeue={() => void store.queue()}
-                onLeave={() => void store.leave()}
-              />
-              {[...series.games].reverse().map((game) => (
-                <CEERankedGameRecap key={game.number} game={game} />
-              ))}
-            </>
-          ) : stage === "recap" && last ? (
-            <CEERankedGameRecap game={last} reveal />
-          ) : (
-            <CEEDataSourceContext.Provider value={rankedCEEDataSource}>
+    <CEEDataSourceContext.Provider value={rankedCEEDataSource}>
+      <div className="space-y-4">
+        <CEERankedScoreboard series={series} />
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.div
+            key={
+              stage === "play"
+                ? `play-${series.game?.number ?? 0}`
+                : `${stage}-${series.games.length}`
+            }
+            variants={phaseSwap}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="space-y-6"
+          >
+            {stage === "settled" ? (
+              <>
+                <CEERankedResultCard
+                  series={series}
+                  placementTotal={CEE_RANKED_PLACEMENT_SERIES}
+                  requeueing={Boolean(pending.queue)}
+                  leaving={Boolean(pending.leave)}
+                  onRequeue={() => void store.queue()}
+                  onLeave={() => void store.leave()}
+                />
+                {[...series.games].reverse().map((game) => (
+                  <CEERankedGameRecap key={game.number} game={game} />
+                ))}
+              </>
+            ) : stage === "recap" && last ? (
+              <CEERankedGameRecap game={last} reveal />
+            ) : (
               <CEERankedMatch
                 series={series}
                 pending={pending}
@@ -76,11 +78,11 @@ function RankedSeriesStage() {
                 onSurrender={() => void store.surrender()}
                 onExit={() => void store.exit()}
               />
-            </CEEDataSourceContext.Provider>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </CEEDataSourceContext.Provider>
   );
 }
 
