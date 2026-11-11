@@ -6,6 +6,7 @@ import {
   CEE_RANKED_INTERMISSION_MS,
   CEE_RANKED_OFFLINE_FORFEIT_MS,
   CEE_RANKED_OVERTIME_MS,
+  CEE_RANKED_SERIES_MAX_GAMES,
   createCEERankedSettings,
   CEE_RANKED_TIERS,
 } from "../src/shared/CEERanked";
@@ -47,23 +48,24 @@ const view = (overrides: Partial<CEECharacterView> = {}): CEECharacterView => ({
   ...overrides,
 });
 
-const answers = (): [CEECharacterView, CEECharacterView, CEECharacterView] => [
-  view({ id: 777001, name: "题一", nameCn: "题一" }),
-  view({ id: 777002, name: "题二", nameCn: "题二" }),
-  view({ id: 777003, name: "题三", nameCn: "题三" }),
-];
+/** 默认按加赛上限抽满题；传 count 模拟题库不够上限的情况。 */
+const answers = (count = CEE_RANKED_SERIES_MAX_GAMES): CEECharacterView[] =>
+  Array.from({ length: count }, (_, index) =>
+    view({ id: 777001 + index, name: `题${index + 1}`, nameCn: `题${index + 1}` })
+  );
 
 const newSeries = (
   seatOverrides: [Partial<CEERankedSeries["seats"][0]>, Partial<CEERankedSeries["seats"][1]>] = [
     {},
     {},
-  ]
+  ],
+  answerCount = CEE_RANKED_SERIES_MAX_GAMES
 ): CEERankedSeries =>
   createCEERankedSeries({
     id: "s1",
     tier: "d2",
     settings,
-    answers: answers(),
+    answers: answers(answerCount),
     seats: [
       { userId: "u1", name: "甲", isBot: false, ...seatOverrides[0] },
       { userId: null, name: "小咔", isBot: true, ...seatOverrides[1] },
@@ -144,6 +146,27 @@ describe("排位系列赛：创建", () => {
     );
   });
 
+  it("题目少于 3 道或多于加赛上限直接拒绝", () => {
+    for (const count of [2, CEE_RANKED_SERIES_MAX_GAMES + 1])
+      expectAppError(
+        () =>
+          createCEERankedSeries({
+            id: "s3",
+            tier: "d2",
+            settings,
+            answers: answers(count),
+            seats: [
+              { userId: "u1", name: "甲", isBot: false },
+              { userId: "u2", name: "乙", isBot: false },
+            ],
+            now: 0,
+            random: () => 0,
+          }),
+        "RANKED_INVALID_ANSWERS",
+        "系列赛题目数量不对"
+      );
+  });
+
   it("创建后立即可读秒，加时提示按题生成", () => {
     const series = newSeries();
     expect(series.phase).toBe("countdown");
@@ -157,11 +180,9 @@ describe("排位系列赛：创建", () => {
     expect(game.answer.id).toBe(777001);
     expect(game.seats[0].name).toBe("甲");
     expect(game.seats[1].name).toBe("小咔");
-    expect(series.overtimeHints).toEqual([
-      "答案最早登场于 2020 年",
-      "答案最早登场于 2020 年",
-      "答案最早登场于 2020 年",
-    ]);
+    expect(series.overtimeHints).toEqual(
+      Array.from({ length: CEE_RANKED_SERIES_MAX_GAMES }, () => "答案最早登场于 2020 年")
+    );
     expect(game.overtimeHint).toBe(series.overtimeHints[0]);
   });
 });
@@ -204,43 +225,78 @@ describe("排位系列赛：胜负流程", () => {
     expect(game.overtimeHint).toBe(series.overtimeHints[2]);
   });
 
-  it("胜、平、平：第三局后 2:1 获胜", () => {
+  it("平局双方都不得分，第三局后仍未拿满两局就加赛第四局", () => {
     const series = newSeries();
     winGame(series, 0);
     startNext(series);
     drawGame(series);
-    expect(series.seats.map((seat) => seat.points)).toEqual([1.5, 0.5]);
+    expect(series.seats.map((seat) => seat.points)).toEqual([1, 0]);
     expect(series.phase).toBe("intermission");
     startNext(series);
     drawGame(series);
-    expect(series.phase).toBe("settled");
-    expect(series.winner).toBe(0);
-    expect(series.seats.map((seat) => seat.points)).toEqual([2, 1]);
+    expect(series.seats.map((seat) => seat.points)).toEqual([1, 0]);
+    expect(series.phase).toBe("intermission");
+    startNext(series);
+    const game = assertCurrent(series);
+    expect(game.number).toBe(4);
+    expect(game.answer.id).toBe(777004);
+    expect(game.overtimeHint).toBe(series.overtimeHints[3]);
   });
 
-  it("平、平、平：1.5:1.5 平局", () => {
+  it("加赛直到有人拿满两局：平、平、平、胜、负、胜", () => {
     const series = newSeries();
-    drawGame(series);
+    for (let index = 0; index < 3; index += 1) {
+      drawGame(series);
+      startNext(series);
+    }
+    winGame(series, 0);
     startNext(series);
-    drawGame(series);
+    winGame(series, 1);
     startNext(series);
-    drawGame(series);
+    winGame(series, 0);
     expect(series.phase).toBe("settled");
     expect(series.endReason).toBe("completed");
-    expect(series.winner).toBeNull();
-    expect(ceeRankedSeriesScore(series, 0)).toBe(0.5);
-    expect(ceeRankedSeriesScore(series, 1)).toBe(0.5);
+    expect(series.winner).toBe(0);
+    expect(series.games.length).toBe(6);
+    expect(series.seats.map((seat) => seat.points)).toEqual([2, 1]);
+    expect(ceeRankedSeriesScore(series, 0)).toBe(1);
+    expect(ceeRankedSeriesScore(series, 1)).toBe(0);
   });
 
-  it("胜、负、平：1.5:1.5 平局", () => {
-    const series = newSeries();
+  it("加赛打到上限：胜局多者胜，仍同分才记平", () => {
+    const leading = newSeries();
+    winGame(leading, 0);
+    for (let index = 1; index < CEE_RANKED_SERIES_MAX_GAMES; index += 1) {
+      startNext(leading);
+      drawGame(leading);
+    }
+    expect(leading.phase).toBe("settled");
+    expect(leading.games.length).toBe(CEE_RANKED_SERIES_MAX_GAMES);
+    expect(leading.winner).toBe(0);
+    expect(leading.seats.map((seat) => seat.points)).toEqual([1, 0]);
+
+    const stalled = newSeries();
+    drawGame(stalled);
+    for (let index = 1; index < CEE_RANKED_SERIES_MAX_GAMES; index += 1) {
+      startNext(stalled);
+      drawGame(stalled);
+    }
+    expect(stalled.phase).toBe("settled");
+    expect(stalled.winner).toBeNull();
+    expect(stalled.seats.map((seat) => seat.points)).toEqual([0, 0]);
+    expect(ceeRankedSeriesScore(stalled, 0)).toBe(0.5);
+  });
+
+  it("题库不够上限时题目用完即收口：胜、负、平 1:1 记平", () => {
+    const series = newSeries([{}, {}], 3);
     winGame(series, 0);
     startNext(series);
     winGame(series, 1);
     startNext(series);
     drawGame(series);
+    expect(series.phase).toBe("settled");
     expect(series.winner).toBeNull();
-    expect(series.seats.map((seat) => seat.points)).toEqual([1.5, 1.5]);
+    expect(series.seats.map((seat) => seat.points)).toEqual([1, 1]);
   });
 
   it("局间到点自动开下一局，读秒从开局时刻起算", () => {

@@ -13,7 +13,7 @@ const OUTCOME_TITLE = { won: "胜利", lost: "惜败", drawn: "平局" } as cons
 function reasonText(result: NonNullable<CEERankedSeriesView["result"]>): string {
   if (result.reason === "exit") return result.outcome === "won" ? "对手退出了比赛" : "你退出了比赛";
   if (result.reason === "offline") return result.outcome === "won" ? "对手掉线超时" : "你掉线超时";
-  return result.outcome === "drawn" ? "三局打完，比分持平" : "三局两胜";
+  return result.outcome === "drawn" ? "加赛打满仍未分出胜负" : "三局两胜";
 }
 
 /** 定级进度：已完成的场次实心，形状与「x / 5」文字一起表达，不只靠颜色。 */

@@ -325,7 +325,7 @@ describe("排位视图：结算结果", () => {
     expect(seen.result?.placementPlayed).toBe(5);
   });
 
-  it("三局全平判 drawn、退出判 lost", () => {
+  it("题目用完仍同分（安全阀）判 drawn、退出判 lost", () => {
     const drawSeries = newSeries();
     drawGame(drawSeries);
     startNext(drawSeries);

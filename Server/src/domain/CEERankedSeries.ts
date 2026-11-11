@@ -4,6 +4,7 @@ import {
   CEE_RANKED_INTERMISSION_MS,
   CEE_RANKED_OFFLINE_FORFEIT_MS,
   CEE_RANKED_SERIES_GAMES,
+  CEE_RANKED_SERIES_MAX_GAMES,
   CEE_RANKED_SERIES_WIN_POINTS,
   type CEERankedSeriesEndReason,
   type CEERankedSeriesPhase,
@@ -33,10 +34,13 @@ export interface CEERankedSeries {
   id: string;
   tier: CEERankedTierId;
   settings: CEESettings;
-  /** 开赛前抽好的三道题，互不相同。 */
-  answers: [CEECharacterView, CEECharacterView, CEECharacterView];
+  /**
+   * 开赛前一次抽好的题，互不相同：前 3 道是正赛，其余留给平局后的加赛，用不到的不公开。
+   * 状态机因此保持纯同步，不在加赛时再去取题。
+   */
+  answers: CEECharacterView[];
   /** 与 answers 一一对应的加时提示。 */
-  overtimeHints: [string, string, string];
+  overtimeHints: string[];
   seats: [CEERankedSeriesSeat, CEERankedSeriesSeat];
   /** 已结束的局。 */
   games: CEERankedGame[];
@@ -56,7 +60,7 @@ export function createCEERankedSeries(input: {
   id: string;
   tier: CEERankedTierId;
   settings: CEESettings;
-  answers: [CEECharacterView, CEECharacterView, CEECharacterView];
+  answers: CEECharacterView[];
   seats: [
     Omit<CEERankedSeriesSeat, "points" | "offlineSince">,
     Omit<CEERankedSeriesSeat, "points" | "offlineSince">,
@@ -64,11 +68,14 @@ export function createCEERankedSeries(input: {
   now: number;
   random: () => number;
 }): CEERankedSeries {
+  if (
+    input.answers.length < CEE_RANKED_SERIES_GAMES ||
+    input.answers.length > CEE_RANKED_SERIES_MAX_GAMES
+  )
+    throw new AppError("RANKED_INVALID_ANSWERS", "系列赛题目数量不对");
   if (new Set(input.answers.map((answer) => answer.id)).size !== input.answers.length)
     throw new AppError("RANKED_INVALID_ANSWERS", "系列赛题目必须互不相同");
-  const overtimeHints = input.answers.map((answer) =>
-    ceeRankedOvertimeHint(answer, input.random)
-  ) as [string, string, string];
+  const overtimeHints = input.answers.map((answer) => ceeRankedOvertimeHint(answer, input.random));
   const seats: [CEERankedSeriesSeat, CEERankedSeriesSeat] = [
     { ...input.seats[0], points: 0, offlineSince: null },
     { ...input.seats[1], points: 0, offlineSince: null },
@@ -106,16 +113,11 @@ export function ceeRankedSeriesPhase(series: CEERankedSeries): CEERankedSeriesPh
   return "intermission";
 }
 
-/** 给已结算的当前局记分并移入 games；不改动系列赛阶段。 */
+/** 给已结算的当前局记分并移入 games；平局双方都不得分（随后加赛）。不改动系列赛阶段。 */
 function archiveCurrentGame(series: CEERankedSeries): void {
   const game = series.current;
   if (!game) return;
-  if (game.winner === null) {
-    series.seats[0].points += 0.5;
-    series.seats[1].points += 0.5;
-  } else {
-    series.seats[game.winner].points += 1;
-  }
+  if (game.winner !== null) series.seats[game.winner].points += 1;
   series.games.push(game);
   series.current = null;
 }
@@ -185,10 +187,11 @@ export function tickCEERankedSeries(series: CEERankedSeries, now: number): boole
     }
     archiveCurrentGame(series);
     const [left, right] = series.seats;
+    // 有人拿满胜局即结束；平局只会让局数增加，直到题目用完（加赛上限）才按胜局多少收口。
     if (
       left.points >= CEE_RANKED_SERIES_WIN_POINTS ||
       right.points >= CEE_RANKED_SERIES_WIN_POINTS ||
-      series.games.length >= CEE_RANKED_SERIES_GAMES
+      series.games.length >= series.answers.length
     ) {
       settleSeries(
         series,
@@ -261,7 +264,7 @@ export function setCEERankedSeatOnline(
   if (target.offlineSince === null) target.offlineSince = now;
 }
 
-/** 系列赛得分：胜 1、平 0.5、负 0；未结算抛错。 */
+/** 系列赛得分：胜 1、负 0；只有触到加赛上限仍同分才是 0.5。未结算抛错。 */
 export function ceeRankedSeriesScore(
   series: CEERankedSeries,
   seat: CEERankedSeatIndex

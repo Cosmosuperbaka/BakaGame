@@ -281,7 +281,8 @@ export function CEERankedHome({
         </AnimatePresence>
         <Collapsible title="规则" size="sm">
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            <li>三局两胜：每局双方猜同一个角色，先猜中者得 1 分，平局各得半分。</li>
+            <li>三局两胜：每局双方猜同一个角色，先猜中者赢下这局，先赢两局者胜。</li>
+            <li>一局双方都没猜中就不算，加赛一局，直到有人赢满两局。</li>
             <li>每局 3 分钟、各 10 次；都没猜中进入 45 秒加时，各加 2 次并公开一条提示。</li>
             <li>你看得到对手每次猜测的方向与远近，看不到猜了谁；对手看你也一样。</li>
             <li>题库难度随分数升档；匹配不到真人时由人机补位，人机会明确标出。</li>

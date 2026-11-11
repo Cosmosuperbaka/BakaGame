@@ -213,9 +213,10 @@ describe("CEE 排位赛跑模拟", () => {
       buildInput(seeded(42), [bot("awen", 1700), bot("dango", 1100)])
     );
     expect(first).toEqual(second);
-    // 每局合计 1 分：两局分出胜负合计 2，打满三局合计 3。
-    expect([2, 3]).toContain(first.points[0] + first.points[1]);
-    expect([0, 1, null]).toContain(first.winner);
+    // 平局不计分：拿满 2 局即结束；夹具题库很小，加赛把题抽空时按胜局多少收口。
+    expect(Math.max(...first.points)).toBeLessThanOrEqual(2);
+    if (first.winner !== null)
+      expect(first.points[first.winner]).toBeGreaterThan(first.points[first.winner === 0 ? 1 : 0]);
   });
 
   it("出手更快的一方先猜中，即使两人的人格完全相同", () => {
@@ -299,7 +300,7 @@ describe("CEE 排位赛跑模拟", () => {
     expect(Math.max(...result.attempts)).toBeGreaterThan(1);
   });
 
-  it("双方都没出手时判平局，每局各记 0.5 分", () => {
+  it("双方都没出手时每局判平、都不得分，加赛到上限仍同分才记平", () => {
     const stalled = simulateCEERankedGame({
       ...buildInput(seeded(10), [bot("awen", 2300), bot("awen", 2300)]),
       timing: { ...timing, maxAttempts: 0, overtimeAttempts: 0 },
@@ -316,7 +317,7 @@ describe("CEE 排位赛跑模拟", () => {
         timing: { ...timing, maxAttempts: 0, overtimeAttempts: 0 },
       })
     );
-    expect(series).toEqual({ winner: null, points: [1.5, 1.5] });
+    expect(series).toEqual({ winner: null, points: [0, 0] });
   });
 
   it("常规次数用尽后进入加时，双方都补上加时次数并继续出手", () => {

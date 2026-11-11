@@ -51,7 +51,7 @@ export interface CEERankedSeatView {
   rating: number | null;
   /** 定级中为已完成的定级场数；已定级或人机为 null。 */
   placementPlayed: number | null;
-  /** 本场系列赛得分（可为 0.5 的倍数）。 */
+  /** 本场系列赛赢下的局数（平局不计）。 */
   points: number;
   /** 当前局已用次数与可用总次数；局间为上一局的数值。 */
   attempts: number;

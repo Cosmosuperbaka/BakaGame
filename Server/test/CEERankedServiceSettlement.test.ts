@@ -158,7 +158,8 @@ describe("人机系列赛结算", () => {
 
     const audit = await readAudit(harness, seriesId);
     expect(audit.series.ruleset).toBe(CEE_RANKED_RULESET);
-    expect(audit.series.answerIds).toEqual([11, 12, 13]);
+    // 开赛时连同加赛备用题一起抽好：题库只有 6 个角色，上限 7 道时全数抽出。
+    expect(audit.series.answerIds).toEqual([11, 12, 13, 14, 15, 16]);
     expect(audit.series.startedAt).toBe(startedAt);
     expect(audit.series.endedAt).toBe(endedAt);
     expect(audit.series.endReason).toBe("completed");

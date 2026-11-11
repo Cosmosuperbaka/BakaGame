@@ -12,6 +12,10 @@ import { type CEERankedCandidate, filterCEECandidates } from "./CEERankedSolver"
 import type { CEERankedOpening } from "./CEERankedOpeningBook";
 import { buildCEEFeedback } from "./CEERules";
 import type { CEECharacterView, CEESettings } from "../shared/CEE";
+import {
+  CEE_RANKED_SERIES_MAX_GAMES,
+  CEE_RANKED_SERIES_WIN_POINTS,
+} from "../shared/CEERankedValues";
 
 export interface CEERankedSimBot {
   persona: CEERankedPersona;
@@ -142,14 +146,23 @@ export function simulateCEERankedGame(
   }
 }
 
-/** 三局两胜：每局从 pool 里按 weight 抽一道本场未用过的题，胜 1 分、平各 0.5，先到 2 分者胜。 */
+/**
+ * 三局两胜：每局从 pool 里按 weight 抽一道本场未用过的题，胜者得 1 局，平局不计并加赛，
+ * 先拿满胜局者胜；与真实系列赛同一个加赛上限，触顶仍同分记平。
+ */
 export function simulateCEERankedSeries(input: CEERankedSimInput): {
   winner: 0 | 1 | null;
   points: [number, number];
 } {
   const remaining = [...input.pool];
   const points: [number, number] = [0, 0];
-  for (let game = 0; game < 3 && points[0] < 2 && points[1] < 2; game += 1) {
+  for (
+    let game = 0;
+    game < CEE_RANKED_SERIES_MAX_GAMES &&
+    points[0] < CEE_RANKED_SERIES_WIN_POINTS &&
+    points[1] < CEE_RANKED_SERIES_WIN_POINTS;
+    game += 1
+  ) {
     if (!remaining.length) break;
     const total = remaining.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
     let roll = input.random() * total;
@@ -163,10 +176,7 @@ export function simulateCEERankedSeries(input: CEERankedSimInput): {
     }
     const answerId = remaining.splice(picked, 1)[0].character.id;
     const result = simulateCEERankedGame({ ...input, answerId });
-    if (result.winner === null) {
-      points[0] += 0.5;
-      points[1] += 0.5;
-    } else points[result.winner] += 1;
+    if (result.winner !== null) points[result.winner] += 1;
   }
   return {
     winner: points[0] > points[1] ? 0 : points[1] > points[0] ? 1 : null,

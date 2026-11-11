@@ -19,6 +19,8 @@ import {
   CEE_RANKED_OFFLINE_FORFEIT_MS,
   CEE_RANKED_PLACEMENT_SERIES,
   CEE_RANKED_RULESET,
+  CEE_RANKED_SERIES_GAMES,
+  CEE_RANKED_SERIES_MAX_GAMES,
   CEE_RANKED_STATE_EVENT,
   ceeRankedTierFor,
   type CEERankedSettlement,
@@ -810,7 +812,7 @@ export class CEERankedService {
   private open(input: {
     tier: CEERankedTier;
     pool: CEERankedPool;
-    answers: [CEECharacterView, CEECharacterView, CEECharacterView];
+    answers: CEECharacterView[];
     seats: [CEERankedSeatRuntime, CEERankedSeatRuntime];
     now: number;
     rated: boolean;
@@ -1370,14 +1372,16 @@ function initialRatingRecord(userId: string): CEERankedRatingRecord {
 }
 
 /** 按先验权重无放回抽 3 个答案；题库不足 3 个返回 null。 */
+/** 按先验权重不放回地抽题：正赛 3 道加上加赛备用，题库不够上限时有多少抽多少，不足 3 道返回 null。 */
 function pickAnswers(
   candidates: readonly CEERankedCandidate[],
   random: () => number
-): [CEECharacterView, CEECharacterView, CEECharacterView] | null {
-  if (candidates.length < 3) return null;
+): CEECharacterView[] | null {
+  if (candidates.length < CEE_RANKED_SERIES_GAMES) return null;
   const rest = [...candidates];
   const picked: CEERankedCandidate[] = [];
-  while (picked.length < 3) {
+  const count = Math.min(CEE_RANKED_SERIES_MAX_GAMES, candidates.length);
+  while (picked.length < count) {
     const index = weightedIndex(
       rest.map((item) => Math.max(0, item.weight)),
       random
@@ -1385,7 +1389,7 @@ function pickAnswers(
     picked.push(rest[index]);
     rest.splice(index, 1);
   }
-  return [picked[0].character, picked[1].character, picked[2].character];
+  return picked.map((item) => item.character);
 }
 
 function weightedIndex(weights: readonly number[], random: () => number): number {

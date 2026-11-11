@@ -5,10 +5,19 @@ import { createDefaultCEESettings } from "./CEEDefaults";
 import type { CEESettings } from "./CEE";
 
 /** 排位规则版本：写进对局记录；下面任何规则或难度档变化都要换新版本号。 */
-export const CEE_RANKED_RULESET = "r1";
-/** 三局两胜：先到 2 分者赢下系列赛（胜 1 分、平各 0.5 分），最多 3 局。 */
-export const CEE_RANKED_SERIES_GAMES = 3;
+export const CEE_RANKED_RULESET = "r2";
+/**
+ * 三局两胜：先拿到 2 局者赢下系列赛。一局双方都没猜中不算分，加赛一局，直到有人拿满 2 局；
+ * 系列赛因此没有平局（只有触到加赛上限仍同分这一道安全阀）。
+ */
 export const CEE_RANKED_SERIES_WIN_POINTS = 2;
+/** 不加赛时一场最多打的局数，也是开赛前至少要抽到的题数。 */
+export const CEE_RANKED_SERIES_GAMES = 3;
+/**
+ * 加赛的安全上限（含前 3 局）：防双方挂机无限加赛。题目开赛时按上限一次抽好；
+ * 打到上限仍无人拿满 2 局，按胜局多者胜，仍相同才记平。
+ */
+export const CEE_RANKED_SERIES_MAX_GAMES = 7;
 /** 每局开始前的读秒。 */
 export const CEE_RANKED_COUNTDOWN_MS = 5_000;
 /** 每局常规时段。 */

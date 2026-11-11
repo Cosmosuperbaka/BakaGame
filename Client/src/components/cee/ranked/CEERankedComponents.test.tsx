@@ -44,7 +44,7 @@ describe("排位读数格式", () => {
 
   it("一局标题区分猜中、认输与平局", () => {
     const game = { number: 2 } as unknown as CEERankedGameSummary;
-    expect(rankedGameHeadline({ ...game, winner: null })).toBe("第 2 局 · 平局，双方都没猜中");
+    expect(rankedGameHeadline({ ...game, winner: null })).toBe("第 2 局 · 双方都没猜中，这局不算");
     expect(rankedGameHeadline({ ...game, winner: "self", reason: "solved" })).toBe(
       "第 2 局 · 你先猜中了"
     );
@@ -259,6 +259,26 @@ describe("CEERankedScoreboard", () => {
     expect(screen.queryByText(/不计分/)).not.toBeInTheDocument();
   });
 
+  it("平局不算分，加赛局逐个追加局点并标明加赛", () => {
+    const series = rankedSeries("playing");
+    const [first] = series.games;
+    const drawn = (number: number) => ({ ...first, number, winner: null, reason: "draw" as const });
+    withProviders(
+      <CEERankedScoreboard
+        series={{
+          ...series,
+          games: [first, drawn(2), drawn(3)],
+          game: series.game && { ...series.game, number: 4 },
+        }}
+      />
+    );
+
+    expect(screen.getByLabelText("第 2 局：双方都没猜中，不算")).toBeInTheDocument();
+    expect(screen.getByLabelText("第 4 局：进行中")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/第 5 局/)).not.toBeInTheDocument();
+    expect(screen.getByText(/第 4 局（加赛） · 进阶/)).toBeInTheDocument();
+  });
+
   it("不计分的场次在对局中就标出来", () => {
     withProviders(<CEERankedScoreboard series={{ ...rankedSeries("playing"), rated: false }} />);
     expect(screen.getByText(/第 2 局 · 进阶 · 不计分/)).toBeInTheDocument();
@@ -412,7 +432,7 @@ describe("CEERankedResultCard", () => {
 
     withProviders(<CEERankedResultCard {...props} series={rankedSeries("drawn")} />);
     expect(screen.getByRole("heading", { name: "平局" })).toBeInTheDocument();
-    expect(screen.getByText(/三局打完，比分持平/)).toBeInTheDocument();
+    expect(screen.getByText(/加赛打满仍未分出胜负/)).toBeInTheDocument();
   });
 
   it("退出与掉线按胜负给出不同说明", () => {

@@ -307,7 +307,7 @@ const runSeriesWinRate = (
       random,
       bots: [left, right],
     });
-    // 平局按各 0.5 分计，与积分口径一致。
+    // 只有触到加赛上限仍同分才是平局，按 0.5 计，与积分口径一致。
     points += series.winner === null ? 0.5 : series.winner === 0 ? 1 : 0;
   }
   return points / SERIES_GAMES;

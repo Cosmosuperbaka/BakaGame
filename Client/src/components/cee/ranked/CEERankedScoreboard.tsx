@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Bot, Clock3, Hourglass, WifiOff } from "lucide-react";
 import type { CEERankedSeatView, CEERankedSeriesView } from "@bakagame/shared";
+import { CEE_RANKED_SERIES_GAMES } from "@bakagame/shared/values";
 import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { readoutTick, spring } from "@/lib/Motion";
@@ -75,17 +76,18 @@ function SeatPlate({
 }
 
 /**
- * 三局的胜负点：本人赢的实心主色、对手赢的实心墨色、平局虚线浅灰，进行中的那一局只描主色边。
- * 形状与文字共同表达结果，不只靠颜色。
+ * 各局胜负点：本人赢的实心主色、对手赢的实心墨色、不算的平局虚线浅灰，进行中的那一局只描主色边。
+ * 至少画满正赛三局；平局后的加赛局逐个追加。形状与文字共同表达结果，不只靠颜色。
  */
 function GamePips({ series }: { series: CEERankedSeriesView }) {
+  const count = Math.max(CEE_RANKED_SERIES_GAMES, series.games.length + (series.game ? 1 : 0));
   return (
     <ol className="flex items-center gap-1.5" aria-label="各局结果">
-      {[0, 1, 2].map((index) => {
+      {Array.from({ length: count }, (_, index) => {
         const game = series.games[index];
         const live = !game && series.game?.number === index + 1;
         const label = game
-          ? `第 ${index + 1} 局：${game.winner === "self" ? "你赢" : game.winner === "opponent" ? "对手赢" : "平局"}`
+          ? `第 ${index + 1} 局：${game.winner === "self" ? "你赢" : game.winner === "opponent" ? "对手赢" : "双方都没猜中，不算"}`
           : live
             ? `第 ${index + 1} 局：进行中`
             : `第 ${index + 1} 局：未开始`;
@@ -185,8 +187,10 @@ export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView })
         </div>
         <GamePips series={series} />
         <span className="text-2xs text-muted-foreground">
-          {series.phase === "settled" ? "本场结束" : `第 ${Math.max(1, gameNumber)} 局`} ·{" "}
-          {series.tier.name}
+          {series.phase === "settled"
+            ? "本场结束"
+            : `第 ${Math.max(1, gameNumber)} 局${gameNumber > CEE_RANKED_SERIES_GAMES ? "（加赛）" : ""}`}{" "}
+          · {series.tier.name}
           {/* 不计分要在开打时就看得到，而不是打完才在结果页得知。 */}
           {series.rated ? null : " · 不计分"}
         </span>
