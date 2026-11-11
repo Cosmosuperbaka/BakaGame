@@ -187,6 +187,8 @@ export function CEERankedScoreboard({ series }: { series: CEERankedSeriesView })
         <span className="text-2xs text-muted-foreground">
           {series.phase === "settled" ? "本场结束" : `第 ${Math.max(1, gameNumber)} 局`} ·{" "}
           {series.tier.name}
+          {/* 不计分要在开打时就看得到，而不是打完才在结果页得知。 */}
+          {series.rated ? null : " · 不计分"}
         </span>
         <SeriesClock series={series} />
       </div>

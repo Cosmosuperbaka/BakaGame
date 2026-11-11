@@ -81,12 +81,15 @@ function RatingSummary({
 /** 排队中的读数：已等时长、匹配范围，满 10 秒出现「先打人机」，30 秒自动开人机。 */
 function QueuePanel({
   queued,
+  botUnrated,
   pendingCancel,
   pendingBot,
   onCancel,
   onPlayBot,
 }: {
   queued: QueuedState;
+  /** 今日计分的人机局已用完：主动或兜底进的人机局都不计分，排队时就要说清。 */
+  botUnrated: boolean;
   pendingCancel: boolean;
   pendingBot: boolean;
   onCancel: () => void;
@@ -119,6 +122,7 @@ function QueuePanel({
       <p className="text-xs text-muted-foreground">
         匹配范围 ±{queued.window} 分 ·{" "}
         {toFallback > 0 ? `${toFallback} 秒后自动匹配人机` : "正在匹配人机"}
+        {botUnrated ? " · 今日人机局已不计分" : null}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" onClick={onCancel} loading={pendingCancel} disabled={pendingBot}>
@@ -238,6 +242,11 @@ export function CEERankedHome({
             >
               <QueuePanel
                 queued={state}
+                botUnrated={
+                  profile !== null &&
+                  profile.rating !== null &&
+                  profile.botRatedToday >= profile.botRatedLimit
+                }
                 pendingCancel={Boolean(pending.cancel)}
                 pendingBot={Boolean(pending.playBot)}
                 onCancel={onCancel}

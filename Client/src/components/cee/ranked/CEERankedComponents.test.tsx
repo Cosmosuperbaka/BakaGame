@@ -224,6 +224,24 @@ describe("CEERankedHome", () => {
     await userEvent.click(screen.getByRole("button", { name: "取消匹配" }));
     expect(onCancel).toHaveBeenCalledOnce();
   });
+
+  it("今日人机计分局用完时，排队就说明人机局不再计分", () => {
+    const rated = rankedProfile("rated");
+    const { unmount } = withProviders(
+      <CEERankedHome {...props} profile={rated} state={rankedQueuedState(12_000)} />
+    );
+    expect(screen.queryByText(/今日人机局已不计分/)).not.toBeInTheDocument();
+    unmount();
+
+    withProviders(
+      <CEERankedHome
+        {...props}
+        profile={{ ...rated, botRatedToday: rated.botRatedLimit }}
+        state={rankedQueuedState(12_000)}
+      />
+    );
+    expect(screen.getByText(/今日人机局已不计分/)).toBeInTheDocument();
+  });
 });
 
 describe("CEERankedScoreboard", () => {
@@ -238,6 +256,12 @@ describe("CEERankedScoreboard", () => {
     expect(screen.getByRole("timer")).toHaveTextContent("剩余");
     expect(screen.getByRole("timer")).toHaveTextContent(/\d+:\d{2}/);
     expect(screen.getByText(/第 2 局 · 进阶/)).toBeInTheDocument();
+    expect(screen.queryByText(/不计分/)).not.toBeInTheDocument();
+  });
+
+  it("不计分的场次在对局中就标出来", () => {
+    withProviders(<CEERankedScoreboard series={{ ...rankedSeries("playing"), rated: false }} />);
+    expect(screen.getByText(/第 2 局 · 进阶 · 不计分/)).toBeInTheDocument();
   });
 
   it("读秒阶段与局间用秒数表达", () => {
