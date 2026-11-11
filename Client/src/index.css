@@ -289,6 +289,22 @@
 }
 
 /**
+ * 面板内的纵向滚动列表（战绩、排行榜等）。全站不画滚动条，上下边缘各淡出一小段，
+ * 读得出「还有内容可滚」；调用处给出上下内边距，首末行停稳后不会被淡出段切掉。
+ */
+@utility scroll-fade-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 0.75rem,
+    black calc(100% - 0.75rem),
+    transparent 100%
+  );
+}
+
+/**
  * 模态遮罩：弹窗、侧边抽屉与房间覆盖面板共用一档，见 DesignGuide §3。
  * 前景色压暗加一点模糊；暗色下前景是浅色，改用黑色压暗。
  */

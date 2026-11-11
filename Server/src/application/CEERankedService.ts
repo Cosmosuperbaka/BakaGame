@@ -5,6 +5,8 @@ import type { ClientEnvelope } from "../shared/Protocol";
 import type {
   CEERankedCommand,
   CEERankedHistoryEntry,
+  CEERankedHistoryPage,
+  CEERankedLeaderboard,
   CEERankedOutcome,
   CEERankedPayload,
   CEERankedProfile,
@@ -87,6 +89,8 @@ import {
   ceeRankedBotSampleOf,
   type CEERankedGameRecord,
   type CEERankedGuessRecord,
+  type CEERankedHistoryRecord,
+  type CEERankedLeaderboardRecord,
   type CEERankedRatingRecord,
   type CEERankedSeriesPlayerRecord,
   type CEERankedSeriesRecord,
@@ -118,6 +122,11 @@ const HANDICAP_SEED_LIMIT = 600;
 const HANDICAP_LOG_EVERY = 20;
 /** 结算后结果页最长保留时长：超过就替还挂着的玩家离开，运行时不常驻内存。 */
 export const SETTLED_RETENTION_MS = 30 * 60_000;
+/** 战绩每页条数（首页资料带第一页，往前翻页同一口径）。 */
+const HISTORY_PAGE = 20;
+/** 排行榜条数与缓存时长：榜单人人都看，结算写库成功时立即作废。 */
+const LEADERBOARD_SIZE = 50;
+const LEADERBOARD_TTL_MS = 30_000;
 /** 这三条命令自带准入：其余命令必须已经绑定在该账号的排位连接上。 */
 const ADMISSION_COMMANDS: readonly CEERankedCommand[] = [
   "cee.ranked.status",
@@ -224,6 +233,12 @@ export class CEERankedService {
   private readonly lastOpponent = new Map<string, { userId: string; at: number }>();
   /** 账号 → 上一场人机人格：抽人格时避开。 */
   private readonly lastPersona = new Map<string, CEERankedPersonaId>();
+  /** 排行榜头部缓存；本人名次每次单独算，不进缓存。 */
+  private leaderboardCache: {
+    rows: CEERankedLeaderboardRecord[];
+    total: number;
+    at: number;
+  } | null = null;
   /** 结算尚未落定的账号：期间 `queue` 回 RANKED_SETTLING。 */
   private readonly settling = new Set<string>();
   /** 同账号在途猜测：一次只允许一条。 */
@@ -379,6 +394,10 @@ export class CEERankedService {
         return this.handleLeave(userId);
       case "cee.ranked.profile":
         return this.handleProfile(userId);
+      case "cee.ranked.history":
+        return this.handleHistory(userId, message.payload.before);
+      case "cee.ranked.leaderboard":
+        return this.handleLeaderboard(userId);
       case "cee.ranked.characterSearch": {
         this.requireInSeries(userId);
         return { results: await this.data.searchCharacters(message.payload.keyword) };
@@ -1013,7 +1032,7 @@ export class CEERankedService {
   private async handleProfile(userId: string): Promise<CEERankedProfile> {
     const store = this.requireStore();
     const record = (await store.getRating(userId)) ?? initialRatingRecord(userId);
-    const history = await store.listHistory(userId, 20);
+    const page = await this.historyPage(userId);
     const placed = record.seriesPlayed >= CEE_RANKED_PLACEMENT_SERIES;
     const today = beijingDay(this.now());
     return {
@@ -1026,26 +1045,60 @@ export class CEERankedService {
       draws: record.draws,
       botRatedToday: record.botRatedDay === today ? record.botRatedCount : 0,
       botRatedLimit: CEE_RANKED_BOT_DAILY_RATED,
-      recent: history.map((item): CEERankedHistoryEntry => {
-        const outcome: CEERankedOutcome =
-          item.score === 1 ? "won" : item.score === 0.5 ? "drawn" : "lost";
-        const delta =
-          item.rated && item.ratingBefore !== null && item.ratingAfter !== null
-            ? Math.round(item.ratingAfter) - Math.round(item.ratingBefore)
-            : null;
-        return {
-          seriesId: item.seriesId,
-          endedAt: item.endedAt,
-          tierId: item.tier as CEERankedTierId,
-          opponentName: item.opponentName,
-          opponentIsBot: item.opponentIsBot,
-          outcome,
-          selfPoints: item.selfPoints,
-          opponentPoints: item.opponentPoints,
-          ratingDelta: delta,
-          placement: item.placement,
-        };
-      }),
+      recent: page.entries,
+      recentHasMore: page.hasMore,
+    };
+  }
+
+  private handleHistory(userId: string, before: number): Promise<CEERankedHistoryPage> {
+    return this.historyPage(userId, before);
+  }
+
+  /** 多取一条判断是否还有更早的战绩，不另发计数查询。 */
+  private async historyPage(userId: string, before?: number): Promise<CEERankedHistoryPage> {
+    const rows = await this.requireStore().listHistory(userId, HISTORY_PAGE + 1, before);
+    return {
+      entries: rows.slice(0, HISTORY_PAGE).map(historyEntryOf),
+      hasMore: rows.length > HISTORY_PAGE,
+    };
+  }
+
+  private async handleLeaderboard(userId: string): Promise<CEERankedLeaderboard> {
+    const store = this.requireStore();
+    const now = this.now();
+    let cache = this.leaderboardCache;
+    if (!cache || now - cache.at >= LEADERBOARD_TTL_MS) {
+      const [rows, counted] = await Promise.all([
+        store.listLeaderboard(CEE_RANKED_PLACEMENT_SERIES, LEADERBOARD_SIZE),
+        store.countLeaderboard(CEE_RANKED_PLACEMENT_SERIES),
+      ]);
+      cache = { rows, total: counted.total, at: now };
+      this.leaderboardCache = cache;
+    }
+    const entries = cache.rows.map((row, index) => ({
+      rank: index + 1,
+      name: row.name,
+      rating: displayCEERating(row),
+      wins: row.wins,
+      losses: row.losses,
+      seriesPlayed: row.seriesPlayed,
+      self: row.userId === userId,
+    }));
+    const listed = entries.find((entry) => entry.self);
+    if (listed)
+      return { entries, self: { rank: listed.rank, rating: listed.rating }, total: cache.total };
+    // 榜外的本人现查名次：定级中或没打过不进榜。
+    const record = await store.getRating(userId);
+    if (!record || record.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES)
+      return { entries, self: null, total: cache.total };
+    const { above, total } = await store.countLeaderboard(
+      CEE_RANKED_PLACEMENT_SERIES,
+      record.rating
+    );
+    return {
+      entries,
+      self: { rank: above + 1, rating: displayCEERating(record) },
+      total: Math.max(total, cache.total),
     };
   }
 
@@ -1241,6 +1294,8 @@ export class CEERankedService {
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         await store.saveSettlement(record);
+        // 分数变了：排行榜下次现查，刚打完的人看得到自己的新名次。
+        this.leaderboardCache = null;
         return true;
       } catch (error) {
         if (attempt + 1 >= attempts) {
@@ -1372,6 +1427,27 @@ function initialRatingRecord(userId: string): CEERankedRatingRecord {
 }
 
 /** 按先验权重无放回抽 3 个答案；题库不足 3 个返回 null。 */
+function historyEntryOf(item: CEERankedHistoryRecord): CEERankedHistoryEntry {
+  const outcome: CEERankedOutcome =
+    item.score === 1 ? "won" : item.score === 0.5 ? "drawn" : "lost";
+  const delta =
+    item.rated && item.ratingBefore !== null && item.ratingAfter !== null
+      ? Math.round(item.ratingAfter) - Math.round(item.ratingBefore)
+      : null;
+  return {
+    seriesId: item.seriesId,
+    endedAt: item.endedAt,
+    tierId: item.tier as CEERankedTierId,
+    opponentName: item.opponentName,
+    opponentIsBot: item.opponentIsBot,
+    outcome,
+    selfPoints: item.selfPoints,
+    opponentPoints: item.opponentPoints,
+    ratingDelta: delta,
+    placement: item.placement,
+  };
+}
+
 /** 按先验权重不放回地抽题：正赛 3 道加上加赛备用，题库不够上限时有多少抽多少，不足 3 道返回 null。 */
 function pickAnswers(
   candidates: readonly CEERankedCandidate[],

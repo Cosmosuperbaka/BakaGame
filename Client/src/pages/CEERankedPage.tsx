@@ -86,13 +86,18 @@ function RankedSeriesStage() {
   );
 }
 
-/** 排位首页：分数、匹配与最近战绩；首页与系列赛之间由服务端推来的状态切换。 */
+/** 排位首页：分数、匹配、全部战绩与排行榜；首页与系列赛之间由服务端推来的状态切换。 */
 function RankedHomeStage() {
   const state = useCEERankedStore((store) => store.state);
   const profile = useCEERankedStore((store) => store.profile);
   const pending = useCEERankedStore((store) => store.pending);
+  const historyLoading = useCEERankedStore((store) => store.historyLoading);
+  const leaderboard = useCEERankedStore((store) => store.leaderboard);
   useEffect(() => {
-    void useCEERankedStore.getState().loadProfile();
+    const store = useCEERankedStore.getState();
+    void store.loadProfile();
+    // 分数区挂全服名次，进首页就取一次；切到排行榜标签再现取。
+    void store.loadLeaderboard();
   }, []);
   if (!state || state.status === "series") return null;
   const store = useCEERankedStore.getState();
@@ -102,9 +107,13 @@ function RankedHomeStage() {
       state={state}
       placementTotal={CEE_RANKED_PLACEMENT_SERIES}
       pending={pending}
+      historyLoading={historyLoading}
+      leaderboard={leaderboard}
       onQueue={() => void store.queue()}
       onCancel={() => void store.cancel()}
       onPlayBot={() => void store.playBot()}
+      onLoadMoreHistory={() => void store.loadMoreHistory()}
+      onOpenLeaderboard={() => void store.loadLeaderboard()}
     />
   );
 }

@@ -3,6 +3,7 @@ import type {
   CEECharacterSummary,
   CEEImageSize,
   CEERankedCommand,
+  CEERankedLeaderboard,
   CEERankedPayload,
   CEERankedProfile,
   CEERankedState,
@@ -42,6 +43,10 @@ export interface CEERankedStore {
   state: CEERankedState | null;
   profile: CEERankedProfile | null;
   profileLoading: boolean;
+  /** 正在往前翻更早的战绩。 */
+  historyLoading: boolean;
+  leaderboard: CEERankedLeaderboard | null;
+  leaderboardLoading: boolean;
   /** 正在提交的命令（按钮的进行中锁与加载反馈用）；同一时刻同类命令只有一条。 */
   pending: Partial<Record<CEERankedAction, true>>;
   /** 进入排位页时调用：发 `cee.ranked.status`，之后服务端推送 `cee.ranked.state`。返回释放函数（离开页面时调用，停止响应推送并清理本地状态）。 */
@@ -55,6 +60,9 @@ export interface CEERankedStore {
   exit: () => Promise<void>;
   leave: () => Promise<void>;
   loadProfile: () => Promise<void>;
+  /** 接着 profile.recent 的最后一条往前翻一页，拼到 recent 后面。 */
+  loadMoreHistory: () => Promise<void>;
+  loadLeaderboard: () => Promise<void>;
   searchCharacters: (keyword: string) => Promise<CEECharacterSummary[]>;
   searchSubjects: (keyword: string) => Promise<CEESubjectSummary[]>;
   loadSubjectCharacters: (subjectId: number) => Promise<CEECharacterSummary[]>;
@@ -188,6 +196,9 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
     state: null,
     profile: null,
     profileLoading: false,
+    historyLoading: false,
+    leaderboard: null,
+    leaderboardLoading: false,
     pending: {},
     attach: () => {
       const generation = commandGeneration;
@@ -210,7 +221,13 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
         stateRevision = undefined;
         // 释放把节流放开：下一次进入页面必须能重新发一条状态请求。
         syncPending = false;
-        set({ ready: false, state: null, pending: {} });
+        set({
+          ready: false,
+          state: null,
+          pending: {},
+          historyLoading: false,
+          leaderboardLoading: false,
+        });
       };
     },
     queue: async () => {
@@ -242,6 +259,48 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
         if (ownsGeneration(generation)) reportFailure(error);
       } finally {
         if (ownsGeneration(generation)) set({ profileLoading: false });
+      }
+    },
+    loadMoreHistory: async () => {
+      const { profile, historyLoading } = get();
+      const last = profile?.recent.at(-1);
+      if (historyLoading || !profile?.recentHasMore || !last) return;
+      const generation = commandGeneration;
+      set({ historyLoading: true });
+      try {
+        const page = await ws.send("cee.ranked.history", { before: last.endedAt });
+        const current = get().profile;
+        // 翻页途中资料被刷新（刚结算完一场）：新资料已从第一页重来，旧游标的这一页丢掉。
+        if (!ownsGeneration(generation) || current?.recent.at(-1)?.seriesId !== last.seriesId)
+          return;
+        const seen = new Set(current.recent.map((entry) => entry.seriesId));
+        set({
+          profile: {
+            ...current,
+            recent: [
+              ...current.recent,
+              ...page.entries.filter((entry) => !seen.has(entry.seriesId)),
+            ],
+            recentHasMore: page.hasMore,
+          },
+        });
+      } catch (error) {
+        if (ownsGeneration(generation)) reportFailure(error);
+      } finally {
+        if (ownsGeneration(generation)) set({ historyLoading: false });
+      }
+    },
+    loadLeaderboard: async () => {
+      if (get().leaderboardLoading) return;
+      const generation = commandGeneration;
+      set({ leaderboardLoading: true });
+      try {
+        const leaderboard = await ws.send("cee.ranked.leaderboard", {});
+        if (ownsGeneration(generation)) set({ leaderboard });
+      } catch (error) {
+        if (ownsGeneration(generation)) reportFailure(error);
+      } finally {
+        if (ownsGeneration(generation)) set({ leaderboardLoading: false });
       }
     },
     searchCharacters: (keyword) =>

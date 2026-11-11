@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
-import { RANKED_IDLE_STATE, rankedProfile, rankedQueuedState } from "@/stories/fixtures/CEERanked";
+import {
+  RANKED_IDLE_STATE,
+  rankedLeaderboard,
+  rankedProfile,
+  rankedQueuedState,
+} from "@/stories/fixtures/CEERanked";
 import { CEERankedGate } from "./CEERankedGate";
 import { CEERankedHome } from "./CEERankedHome";
 
@@ -12,9 +17,12 @@ const meta = {
     state: RANKED_IDLE_STATE,
     placementTotal: 5,
     pending: {},
+    leaderboard: rankedLeaderboard(),
     onQueue: fn(),
     onCancel: fn(),
     onPlayBot: fn(),
+    onLoadMoreHistory: fn(),
+    onOpenLeaderboard: fn(),
   },
   decorators: [
     (Story) => (
@@ -42,6 +50,25 @@ export const Queued: Story = {
 export const QueuedBotReady: Story = {
   name: "排队满 10 秒 · 可先打人机",
   args: { state: rankedQueuedState(12_000) },
+};
+export const HistoryEnd: Story = {
+  name: "战绩翻到底",
+  args: { profile: { ...rankedProfile("rated"), recentHasMore: false } },
+};
+export const HistoryLoading: Story = {
+  name: "战绩翻页中",
+  args: { historyLoading: true },
+};
+export const LeaderboardLoading: Story = {
+  name: "排行榜读取中",
+  args: { leaderboard: null },
+};
+export const LeaderboardUnplaced: Story = {
+  name: "定级中看排行榜",
+  args: {
+    profile: rankedProfile("placement"),
+    leaderboard: { ...rankedLeaderboard(), self: null },
+  },
 };
 export const Narrow: Story = {
   name: "窄屏",

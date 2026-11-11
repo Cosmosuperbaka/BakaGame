@@ -7,6 +7,7 @@ import type { CEERankedBotSample } from "../src/application/CEERankedHandicap";
 import {
   InMemoryCEERankedStore,
   type CEERankedHistoryRecord,
+  type CEERankedLeaderboardRecord,
   type CEERankedRatingRecord,
   type CEERankedSeriesAudit,
   type CEERankedSeriesRecord,
@@ -177,8 +178,43 @@ class SeedingStore implements CEERankedStore {
     return this.inner.saveSettlement(record);
   }
 
-  listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]> {
-    return this.inner.listHistory(userId, limit);
+  listHistory(userId: string, limit: number, before?: number): Promise<CEERankedHistoryRecord[]> {
+    return this.inner.listHistory(userId, limit, before);
+  }
+
+  /** 垫进去但还没落过库的评级也上榜，名字用账号 ID 代替。 */
+  async listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]> {
+    return (await this.mergedLeaderboard(minSeries)).slice(0, Math.min(Math.max(limit, 1), 100));
+  }
+
+  async countLeaderboard(
+    minSeries: number,
+    rating?: number
+  ): Promise<{ above: number; total: number }> {
+    const rows = await this.mergedLeaderboard(minSeries);
+    const above = rating === undefined ? 0 : rows.filter((row) => row.rating > rating).length;
+    return { above, total: rows.length };
+  }
+
+  private async mergedLeaderboard(minSeries: number): Promise<CEERankedLeaderboardRecord[]> {
+    const saved = await this.inner.listLeaderboard(minSeries, 100);
+    const savedIds = new Set(saved.map((row) => row.userId));
+    const seeded: CEERankedLeaderboardRecord[] = [];
+    for (const seed of this.seeds.values()) {
+      if (savedIds.has(seed.userId) || seed.seriesPlayed < minSeries) continue;
+      if (await this.inner.getRating(seed.userId)) continue;
+      seeded.push({
+        userId: seed.userId,
+        name: seed.userId,
+        rating: seed.rating,
+        wins: seed.wins,
+        losses: seed.losses,
+        seriesPlayed: seed.seriesPlayed,
+      });
+    }
+    return [...saved, ...seeded].sort(
+      (a, b) => b.rating - a.rating || b.seriesPlayed - a.seriesPlayed
+    );
   }
 
   listSeriesByUser(

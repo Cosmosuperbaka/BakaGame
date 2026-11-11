@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import {
   RANKED_IDLE_STATE,
+  rankedLeaderboard,
   rankedProfile,
   rankedQueuedState,
   rankedSeries,
@@ -100,14 +101,22 @@ describe("CEERankedHome", () => {
     expect(screen.getByRole("button", { name: "开始匹配" })).toBeDisabled();
   });
 
-  it("已定级时显示分数、胜负与今日人机计分", () => {
+  it("已定级时显示分数、胜负条、近况与全服名次，不再列人机计分额度", () => {
     withProviders(
-      <CEERankedHome {...props} profile={rankedProfile("rated")} state={RANKED_IDLE_STATE} />
+      <CEERankedHome
+        {...props}
+        profile={rankedProfile("rated")}
+        leaderboard={rankedLeaderboard()}
+        state={RANKED_IDLE_STATE}
+      />
     );
 
     expect(screen.getByText("排位分")).toBeInTheDocument();
     expect(screen.getByText("1532")).toBeInTheDocument();
-    expect(screen.getByText(/胜 13 · 负 9 · 平 1 · 今日人机计分 3 \/ 5/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "13 胜 9 负，胜率 57%" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: /^最近 10 场：/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("全服第 4 名")).toBeInTheDocument();
+    expect(screen.queryByText(/人机计分/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始匹配" })).toBeEnabled();
     expect(screen.queryByText(/定级赛的对手都是人机/)).not.toBeInTheDocument();
   });
@@ -118,7 +127,8 @@ describe("CEERankedHome", () => {
     );
 
     expect(screen.getByText("定级赛")).toBeInTheDocument();
-    expect(screen.getByText("已完成 2 / 5 场，打满后显示分数")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "定级赛已完成 2 / 5 场" })).toBeInTheDocument();
+    expect(screen.getByText("打满 5 场后显示分数")).toBeInTheDocument();
     expect(screen.getByText(/定级赛的对手都是人机，打满 5 场后开始匹配真人/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "开始定级赛" })).toBeInTheDocument();
     expect(screen.queryByText(/今日人机计分/)).not.toBeInTheDocument();
@@ -159,12 +169,75 @@ describe("CEERankedHome", () => {
       />
     );
 
-    const rows = within(screen.getByRole("region", { name: "最近战绩" })).getAllByRole("listitem");
-    expect(rows).toHaveLength(4);
+    const rows = within(screen.getByLabelText("全部战绩")).getAllByRole("listitem");
+    expect(rows).toHaveLength(profile.recent.length + 1);
+    expect(rows[0]).toHaveAccessibleName("胜，对手 凉宫同学，比分 2 比 1");
     expect(rows[0]).toHaveTextContent("+15");
     expect(rows[1]).toHaveTextContent("人机");
-    expect(rows[2]).toHaveTextContent("-12");
-    expect(rows[3]).toHaveTextContent("定级");
+    expect(rows[2]).toHaveTextContent("−12");
+    expect(rows.at(-1)).toHaveTextContent("定级");
+  });
+
+  it("战绩还有更早的就给翻页入口，翻完写明到底", async () => {
+    const onLoadMoreHistory = vi.fn();
+    const profile = rankedProfile("rated");
+    const { unmount } = withProviders(
+      <CEERankedHome
+        {...props}
+        profile={profile}
+        state={RANKED_IDLE_STATE}
+        onLoadMoreHistory={onLoadMoreHistory}
+      />
+    );
+    await userEvent.click(screen.getByRole("button", { name: "加载更早的战绩" }));
+    expect(onLoadMoreHistory).toHaveBeenCalled();
+    unmount();
+
+    withProviders(
+      <CEERankedHome
+        {...props}
+        profile={{ ...profile, recentHasMore: false }}
+        state={RANKED_IDLE_STATE}
+      />
+    );
+    expect(screen.queryByRole("button", { name: "加载更早的战绩" })).not.toBeInTheDocument();
+    expect(screen.getByText(`共 ${profile.recent.length} 场，已经到底了`)).toBeInTheDocument();
+  });
+
+  it("切到排行榜标签时现取榜单，本人名次与本人那行都标出来", async () => {
+    const onOpenLeaderboard = vi.fn();
+    withProviders(
+      <CEERankedHome
+        {...props}
+        profile={rankedProfile("rated")}
+        leaderboard={rankedLeaderboard()}
+        state={RANKED_IDLE_STATE}
+        onOpenLeaderboard={onOpenLeaderboard}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: /排行榜/ }));
+    expect(onOpenLeaderboard).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("你的名次第 4 名，共 214 人")).toBeInTheDocument();
+    const rows = within(screen.getByRole("list", { name: "排行榜" })).getAllByRole("listitem");
+    expect(rows).toHaveLength(30);
+    expect(within(rows[0]).getByRole("img", { name: "第 1 名" })).toBeInTheDocument();
+    expect(rows[3]).toHaveAttribute("aria-current", "true");
+    expect(rows[3]).toHaveTextContent("你");
+  });
+
+  it("定级中的本人在排行榜上只给上榜条件", async () => {
+    withProviders(
+      <CEERankedHome
+        {...props}
+        profile={rankedProfile("placement")}
+        leaderboard={{ ...rankedLeaderboard(), self: null }}
+        state={RANKED_IDLE_STATE}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: /排行榜/ }));
+    expect(screen.getByText("打满定级赛后上榜")).toBeInTheDocument();
   });
 
   it("空闲态点开始匹配交给上层排队", async () => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  CEERankedHistoryEntry,
   CEERankedProfile,
   CEERankedSeatView,
   CEERankedSettlement,
@@ -144,6 +145,7 @@ const profileFixture: CEERankedProfile = {
   botRatedToday: 2,
   botRatedLimit: 5,
   recent: [],
+  recentHasMore: false,
 };
 
 const fullFrame = (revision: number, state: CEERankedState): ServerMessage => ({
@@ -202,6 +204,9 @@ beforeEach(() => {
     state: null,
     profile: null,
     profileLoading: false,
+    historyLoading: false,
+    leaderboard: null,
+    leaderboardLoading: false,
     pending: {},
   });
   reply();
@@ -560,5 +565,87 @@ describe("壳内排位准入", () => {
     expect(socket.waitForChannelTicket).not.toHaveBeenCalled();
     expect(socket.refreshIdentity).not.toHaveBeenCalled();
     expect(callsOf("cee.ranked.queue")).toHaveLength(1);
+  });
+});
+
+describe("战绩翻页与排行榜", () => {
+  const entry = (seriesId: string, endedAt: number): CEERankedHistoryEntry => ({
+    seriesId,
+    endedAt,
+    tierId: "d1",
+    opponentName: "阿稳",
+    opponentIsBot: true,
+    outcome: "won",
+    selfPoints: 2,
+    opponentPoints: 0,
+    ratingDelta: 8,
+    placement: false,
+  });
+
+  it("按最后一条的结束时刻往前翻，拼在后面并去重，翻完不再请求", async () => {
+    useCEERankedStore.setState({
+      profile: {
+        ...profileFixture,
+        recent: [entry("a", 300), entry("b", 200)],
+        recentHasMore: true,
+      },
+    });
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(
+        command === "cee.ranked.history"
+          ? { entries: [entry("b", 200), entry("c", 100)], hasMore: false }
+          : {}
+      )
+    );
+
+    await useCEERankedStore.getState().loadMoreHistory();
+
+    expect(firstPayloadOf("cee.ranked.history")).toEqual({ before: 200 });
+    const profile = useCEERankedStore.getState().profile;
+    expect(profile?.recent.map((item) => item.seriesId)).toEqual(["a", "b", "c"]);
+    expect(profile?.recentHasMore).toBe(false);
+    expect(useCEERankedStore.getState().historyLoading).toBe(false);
+
+    await useCEERankedStore.getState().loadMoreHistory();
+    expect(callsOf("cee.ranked.history")).toHaveLength(1);
+  });
+
+  it("翻页途中资料被刷新（刚结算完），旧游标的那一页丢掉", async () => {
+    const page = deferred<unknown>();
+    useCEERankedStore.setState({
+      profile: { ...profileFixture, recent: [entry("a", 300)], recentHasMore: true },
+    });
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.history" ? page.promise : Promise.resolve({})
+    );
+
+    const loading = useCEERankedStore.getState().loadMoreHistory();
+    const refreshed = {
+      ...profileFixture,
+      recent: [entry("n", 400)],
+      recentHasMore: true,
+    };
+    useCEERankedStore.setState({ profile: refreshed });
+    page.resolve({ entries: [entry("z", 1)], hasMore: false });
+    await loading;
+
+    expect(useCEERankedStore.getState().profile).toEqual(refreshed);
+  });
+
+  it("排行榜取到后落进 store，同一时刻只发一条", async () => {
+    const board = deferred<unknown>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.leaderboard" ? board.promise : Promise.resolve({})
+    );
+    const first = useCEERankedStore.getState().loadLeaderboard();
+    const second = useCEERankedStore.getState().loadLeaderboard();
+    expect(useCEERankedStore.getState().leaderboardLoading).toBe(true);
+    const value = { entries: [], self: null, total: 0 };
+    board.resolve(value);
+    await Promise.all([first, second]);
+
+    expect(callsOf("cee.ranked.leaderboard")).toHaveLength(1);
+    expect(useCEERankedStore.getState().leaderboard).toEqual(value);
+    expect(useCEERankedStore.getState().leaderboardLoading).toBe(false);
   });
 });

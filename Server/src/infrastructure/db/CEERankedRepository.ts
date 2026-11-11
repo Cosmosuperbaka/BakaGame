@@ -1,4 +1,17 @@
-import { and, desc, eq, getTableColumns, isNotNull, isNull, lt, ne, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/mysql-core";
 
 import type { CEEGuessClientType } from "../../application/CEEAntiCheatSignals";
@@ -7,6 +20,7 @@ import type {
   CEERankedGameRecord,
   CEERankedGuessRecord,
   CEERankedHistoryRecord,
+  CEERankedLeaderboardRecord,
   CEERankedRatingRecord,
   CEERankedSeriesAudit,
   CEERankedSeriesPlayerRecord,
@@ -21,6 +35,7 @@ import {
   ceeRankedRating,
   ceeRankedSeries,
   ceeRankedSeriesPlayer,
+  user,
 } from "./Schema";
 
 /** 猜测单批最多行数：上千行的单条 INSERT 语句过长，分批发出去更稳。 */
@@ -102,6 +117,13 @@ const toRating = (row: typeof ceeRankedRating.$inferSelect): CEERankedRatingReco
   botRatedCount: row.botRatedCount,
   lastPlayedAt: msOf(row.lastPlayedAt),
 });
+
+/** 排行榜口径：打满定级赛、账号未被封禁（封禁列可能为空）。 */
+const leaderboardScope = (minSeries: number): SQL | undefined =>
+  and(
+    gte(ceeRankedRating.seriesPlayed, minSeries),
+    or(isNull(user.banned), eq(user.banned, false))
+  );
 
 /** 按批大小切开；空数组返回空列表，调用方据此跳过语句。 */
 const inBatches = <T>(items: readonly T[], size: number): T[][] => {
@@ -195,9 +217,15 @@ export class CEERankedRepository implements CEERankedStore {
     });
   }
 
-  async listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]> {
+  async listHistory(
+    userId: string,
+    limit: number,
+    before?: number
+  ): Promise<CEERankedHistoryRecord[]> {
     await this.database.ready;
     const capped = Math.min(Math.max(limit, 1), 50);
+    const conditions: SQL[] = [eq(ceeRankedSeriesPlayer.userId, userId)];
+    if (before !== undefined) conditions.push(lt(ceeRankedSeries.endedAt, new Date(before)));
     const rows = await this.database.db
       .select({
         seriesId: ceeRankedSeries.id,
@@ -223,7 +251,7 @@ export class CEERankedRepository implements CEERankedStore {
           ne(opponent.seat, ceeRankedSeriesPlayer.seat)
         )
       )
-      .where(eq(ceeRankedSeriesPlayer.userId, userId))
+      .where(and(...conditions))
       .orderBy(desc(ceeRankedSeries.endedAt))
       .limit(capped);
     return rows.map((row) => ({
@@ -241,6 +269,43 @@ export class CEERankedRepository implements CEERankedStore {
       ratingBefore: row.ratingBefore,
       ratingAfter: row.ratingAfter,
     }));
+  }
+
+  async listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]> {
+    await this.database.ready;
+    const capped = Math.min(Math.max(limit, 1), 100);
+    return this.database.db
+      .select({
+        userId: ceeRankedRating.userId,
+        name: user.name,
+        rating: ceeRankedRating.rating,
+        wins: ceeRankedRating.wins,
+        losses: ceeRankedRating.losses,
+        seriesPlayed: ceeRankedRating.seriesPlayed,
+      })
+      .from(ceeRankedRating)
+      .innerJoin(user, eq(user.id, ceeRankedRating.userId))
+      .where(leaderboardScope(minSeries))
+      .orderBy(desc(ceeRankedRating.rating), desc(ceeRankedRating.seriesPlayed))
+      .limit(capped);
+  }
+
+  async countLeaderboard(
+    minSeries: number,
+    rating?: number
+  ): Promise<{ above: number; total: number }> {
+    await this.database.ready;
+    const above =
+      rating === undefined
+        ? sql<number>`0`
+        : sql<number>`coalesce(sum(case when ${ceeRankedRating.rating} > ${rating} then 1 else 0 end), 0)`;
+    const [row] = await this.database.db
+      .select({ total: sql<number>`count(*)`, above })
+      .from(ceeRankedRating)
+      .innerJoin(user, eq(user.id, ceeRankedRating.userId))
+      .where(leaderboardScope(minSeries));
+    // MySQL 的 count/sum 经驱动可能回成字符串或 BigInt，统一转成数字。
+    return { above: Number(row?.above ?? 0), total: Number(row?.total ?? 0) };
   }
 
   async listSeriesByUser(

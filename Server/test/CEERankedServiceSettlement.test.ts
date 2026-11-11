@@ -9,6 +9,7 @@ import {
 import {
   InMemoryCEERankedStore,
   type CEERankedHistoryRecord,
+  type CEERankedLeaderboardRecord,
   type CEERankedRatingRecord,
   type CEERankedSeriesAudit,
   type CEERankedSeriesRecord,
@@ -111,8 +112,16 @@ class FlakyStore implements CEERankedStore {
     await this.inner.saveSettlement(record);
   }
 
-  listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]> {
-    return this.inner.listHistory(userId, limit);
+  listHistory(userId: string, limit: number, before?: number): Promise<CEERankedHistoryRecord[]> {
+    return this.inner.listHistory(userId, limit, before);
+  }
+
+  listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]> {
+    return this.inner.listLeaderboard(minSeries, limit);
+  }
+
+  countLeaderboard(minSeries: number, rating?: number): Promise<{ above: number; total: number }> {
+    return this.inner.countLeaderboard(minSeries, rating);
   }
 
   listSeriesByUser(

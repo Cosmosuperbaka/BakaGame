@@ -2,6 +2,7 @@ import type {
   CEEGuess,
   CEERankedGameSummary,
   CEERankedMaskedGuess,
+  CEERankedLeaderboard,
   CEERankedProfile,
   CEERankedSeatView,
   CEERankedSeriesResult,
@@ -284,6 +285,7 @@ export function rankedProfile(kind: "placement" | "rated" | "empty"): CEERankedP
       botRatedToday: 0,
       botRatedLimit: 5,
       recent: [],
+      recentHasMore: false,
     };
   if (kind === "placement")
     return {
@@ -366,6 +368,38 @@ export function rankedProfile(kind: "placement" | "rated" | "empty"): CEERankedP
         ratingDelta: -12,
         placement: false,
       },
+      // 再垫一批较早的战绩，战绩栏才滚得起来。
+      ...Array.from({ length: 17 }, (_, index) => {
+        const won = index % 3 !== 1;
+        return {
+          seriesId: `r0-${index}`,
+          endedAt: STORY_EPOCH - (3 + index) * day,
+          tierId: "d2" as const,
+          opponentName: index % 2 ? "阿稳" : "路过的猜谜人",
+          opponentIsBot: index % 2 === 1,
+          outcome: won ? ("won" as const) : ("lost" as const),
+          selfPoints: won ? 2 : index % 2,
+          opponentPoints: won ? index % 2 : 2,
+          ratingDelta: won ? 11 : -9,
+          placement: false,
+        };
+      }),
     ],
+    recentHasMore: true,
   };
+}
+
+/** 全服排行榜：本人在榜内第 4 名。 */
+export function rankedLeaderboard(): CEERankedLeaderboard {
+  const names = ["夜空的猜谜王", "凉宫同学", "名字很长很长的一位榜上玩家", "我", "阿稳的对手"];
+  const entries = Array.from({ length: 30 }, (_, index) => ({
+    rank: index + 1,
+    name: names[index] ?? `玩家${index + 1}`,
+    rating: 2140 - index * 23,
+    wins: 60 - index,
+    losses: 20 + (index % 7),
+    seriesPlayed: 80 - index + (index % 7),
+    self: index === 3,
+  }));
+  return { entries, self: { rank: 4, rating: entries[3].rating }, total: 214 };
 }

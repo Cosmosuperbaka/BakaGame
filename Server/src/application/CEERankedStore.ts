@@ -114,6 +114,16 @@ export interface CEERankedHistoryRecord {
   ratingAfter: number | null;
 }
 
+/** 排行榜一行：名字取账号当前昵称。 */
+export interface CEERankedLeaderboardRecord {
+  userId: string;
+  name: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  seriesPlayed: number;
+}
+
 export interface CEERankedSeriesAudit {
   series: CEERankedSeriesRecord;
   players: CEERankedSeriesPlayerRecord[];
@@ -125,8 +135,18 @@ export interface CEERankedStore {
   getRating(userId: string): Promise<CEERankedRatingRecord | null>;
   /** 单事务写入一场系列赛的全部审计行并 upsert 评级；失败抛出。 */
   saveSettlement(record: CEERankedSettlementRecord): Promise<void>;
-  /** 本账号最近的系列赛，按结束时间倒序；limit 夹到 [1, 50]。 */
-  listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]>;
+  /** 本账号的系列赛，按结束时间倒序；before 给定时只取结束时间早于它的；limit 夹到 [1, 50]。 */
+  listHistory(userId: string, limit: number, before?: number): Promise<CEERankedHistoryRecord[]>;
+  /**
+   * 全服排行：只取场数达到 minSeries（打满定级赛）且未被封禁的账号，按分数倒序、同分按场数倒序；
+   * limit 夹到 [1, 100]。
+   */
+  listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]>;
+  /**
+   * 与 listLeaderboard 同口径的总人数，以及分数严格高于 rating 的人数（用来给榜外的本人算名次）；
+   * 不给 rating 时 above 为 0。
+   */
+  countLeaderboard(minSeries: number, rating?: number): Promise<{ above: number; total: number }>;
   /** 审计：本账号参与过的系列赛，按结束时间倒序；before 给定时只取结束时间早于它的；limit 夹到 [1, 100]。 */
   listSeriesByUser(
     userId: string,
@@ -154,10 +174,15 @@ export class InMemoryCEERankedStore implements CEERankedStore {
     for (const rating of record.ratings) this.ratings.set(rating.userId, { ...rating });
   }
 
-  async listHistory(userId: string, limit: number): Promise<CEERankedHistoryRecord[]> {
+  async listHistory(
+    userId: string,
+    limit: number,
+    before?: number
+  ): Promise<CEERankedHistoryRecord[]> {
     const capped = Math.min(Math.max(limit, 1), 50);
     const rows: CEERankedHistoryRecord[] = [];
     for (const item of this.byEndedAtDesc()) {
+      if (before !== undefined && item.series.endedAt >= before) continue;
       const self = item.players.find((player) => player.userId === userId);
       const opponent = item.players.find(
         (player) => self !== undefined && player.seat !== self.seat
@@ -180,6 +205,38 @@ export class InMemoryCEERankedStore implements CEERankedStore {
       if (rows.length === capped) break;
     }
     return rows;
+  }
+
+  async listLeaderboard(minSeries: number, limit: number): Promise<CEERankedLeaderboardRecord[]> {
+    const capped = Math.min(Math.max(limit, 1), 100);
+    return this.leaderboardRows(minSeries).slice(0, capped);
+  }
+
+  async countLeaderboard(
+    minSeries: number,
+    rating?: number
+  ): Promise<{ above: number; total: number }> {
+    const rows = this.leaderboardRows(minSeries);
+    const above = rating === undefined ? 0 : rows.filter((row) => row.rating > rating).length;
+    return { above, total: rows.length };
+  }
+
+  /** 内存实现没有账号表：名字取该账号最近一场结算时的席位名，封禁不在这里建模。 */
+  private leaderboardRows(minSeries: number): CEERankedLeaderboardRecord[] {
+    const names = new Map<string, string>();
+    for (const item of [...this.byEndedAtDesc()].reverse())
+      for (const player of item.players) if (player.userId) names.set(player.userId, player.name);
+    return [...this.ratings.values()]
+      .filter((rating) => rating.seriesPlayed >= minSeries)
+      .sort((a, b) => b.rating - a.rating || b.seriesPlayed - a.seriesPlayed)
+      .map((rating) => ({
+        userId: rating.userId,
+        name: names.get(rating.userId) ?? rating.userId,
+        rating: rating.rating,
+        wins: rating.wins,
+        losses: rating.losses,
+        seriesPlayed: rating.seriesPlayed,
+      }));
   }
 
   async listSeriesByUser(

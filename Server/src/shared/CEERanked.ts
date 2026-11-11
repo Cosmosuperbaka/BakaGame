@@ -143,7 +143,35 @@ export interface CEERankedProfile {
   draws: number;
   botRatedToday: number;
   botRatedLimit: number;
+  /** 战绩第一页（最新在前）；更早的经 `cee.ranked.history` 按页往前翻。 */
   recent: CEERankedHistoryEntry[];
+  /** recent 之后是否还有更早的战绩。 */
+  recentHasMore: boolean;
+}
+/** 战绩分页：按结束时间倒序。 */
+export interface CEERankedHistoryPage {
+  entries: CEERankedHistoryEntry[];
+  hasMore: boolean;
+}
+export interface CEERankedLeaderboardEntry {
+  /** 名次从 1 开始，按排位分从高到低。 */
+  rank: number;
+  name: string;
+  /** 展示分（整数）。 */
+  rating: number;
+  wins: number;
+  losses: number;
+  seriesPlayed: number;
+  /** 是否本人。 */
+  self: boolean;
+}
+/** 全服排行榜：只收打满定级赛的账号。 */
+export interface CEERankedLeaderboard {
+  entries: CEERankedLeaderboardEntry[];
+  /** 本人名次；定级中或未打过为 null。本人在榜单之外时也照样给出。 */
+  self: { rank: number; rating: number } | null;
+  /** 已定级的总人数。 */
+  total: number;
 }
 
 const strict = { additionalProperties: false } as const;
@@ -166,6 +194,9 @@ export const CEERankedPayloadSchemas = {
   /** 结算后离开结果页回到空闲态。 */
   "cee.ranked.leave": empty,
   "cee.ranked.profile": empty,
+  /** 更早的战绩：before 为上一页最后一条的结束时刻（毫秒）。 */
+  "cee.ranked.history": t.Object({ before: t.Integer({ minimum: 0 }) }, strict),
+  "cee.ranked.leaderboard": empty,
   "cee.ranked.characterSearch": t.Object(
     { keyword: t.String({ minLength: 1, maxLength: 80 }) },
     strict
@@ -188,10 +219,14 @@ export type CEERankedResponse<T extends CEERankedCommand> = T extends "cee.ranke
   ? CEERankedState
   : T extends "cee.ranked.profile"
     ? CEERankedProfile
-    : T extends "cee.ranked.characterSearch" | "cee.ranked.subjectCharacters"
-      ? { results: CEECharacterSummary[] }
-      : T extends "cee.ranked.subjectSearch"
-        ? { results: CEESubjectSummary[] }
-        : T extends "cee.ranked.characterImage"
-          ? { imageUrl?: string }
-          : Record<string, never>;
+    : T extends "cee.ranked.history"
+      ? CEERankedHistoryPage
+      : T extends "cee.ranked.leaderboard"
+        ? CEERankedLeaderboard
+        : T extends "cee.ranked.characterSearch" | "cee.ranked.subjectCharacters"
+          ? { results: CEECharacterSummary[] }
+          : T extends "cee.ranked.subjectSearch"
+            ? { results: CEESubjectSummary[] }
+            : T extends "cee.ranked.characterImage"
+              ? { imageUrl?: string }
+              : Record<string, never>;
