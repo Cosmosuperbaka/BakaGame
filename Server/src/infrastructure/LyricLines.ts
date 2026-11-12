@@ -168,6 +168,9 @@ const BARE_ORG_SUFFIX_PATTERN =
 const ZH_STUDIO_EN_ORG_PATTERN =
   /^[\u4e00-\u9fff]{2,20}(?:录音棚|录音室|工作室)[\s\u3000]*[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\s+Studios?$/u;
 
+/** 最外层 `isCreditLabelOnly` 调用期间共享的递归记忆表；返回即丢弃。 */
+let creditLabelMemo: Map<string, boolean> | undefined;
+
 /**
  * 判断标签头部是否「完全由署名标签构成」。
  *
@@ -175,6 +178,24 @@ const ZH_STUDIO_EN_ORG_PATTERN =
  * 全部落空后回到「连接符分段」兜底。各子判定只读 `value`，无副作用。
  */
 const isCreditLabelOnly = (value: string): boolean => {
+  // 粘连拆分、括号剥离、词缀剥离会对同一批子串反复递归，不记忆化时每多一个字耗时翻倍。
+  // 判定是同步纯函数：最外层调用建一张表，递归期间共享，返回时丢弃，不跨调用持有状态。
+  if (creditLabelMemo) {
+    const known = creditLabelMemo.get(value);
+    if (known !== undefined) return known;
+    const result = classifyCreditLabel(value);
+    creditLabelMemo.set(value, result);
+    return result;
+  }
+  creditLabelMemo = new Map();
+  try {
+    return classifyCreditLabel(value);
+  } finally {
+    creditLabelMemo = undefined;
+  }
+};
+
+const classifyCreditLabel = (value: string): boolean => {
   if (!value) return false;
   if (
     isSpacedBilingualLabel(value) ||
