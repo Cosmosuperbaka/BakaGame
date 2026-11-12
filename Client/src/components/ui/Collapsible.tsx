@@ -73,7 +73,12 @@ export function CollapsibleRegion({
   );
 }
 
-/** 行内折叠区：标题文字按钮 + 同步翻转的箭头，内容按 collapsible 变体展开收起。 */
+/**
+ * 行内折叠区：标题文字按钮 + 同步翻转的箭头，内容按 collapsible 变体展开收起。
+ * 标题是一枚轻量的可点胶囊：负外边距抵掉内边距，文字仍与上下文左对齐；悬停铺一层 accent/40
+ * （与折叠设置组、复盘标题的整行悬停同一档），展开时标题转为正文色，读得出「这一段是打开的」。
+ * 资料行、表格单元里「默认截断、按需展开全文」的长文本不用它，用 `ClampedText`。
+ */
 export function Collapsible({
   title,
   defaultOpen = false,
@@ -100,7 +105,7 @@ export function Collapsible({
         // 收起时内容已卸载，只在展开时指向内容区，免得引用不存在的元素。
         aria-controls={open ? contentId : undefined}
         className={cn(
-          "inline-flex items-center gap-1 font-serif text-muted-foreground transition-colors hover:text-foreground",
+          "-mx-1.5 inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-serif text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground aria-expanded:text-foreground",
           sizing.trigger
         )}
       >
@@ -108,7 +113,7 @@ export function Collapsible({
         <DisclosureChevron open={open} iconClassName={sizing.icon} />
       </motion.button>
       <CollapsibleRegion open={open} id={contentId}>
-        <div className="pt-2">{children}</div>
+        <div className="pt-1.5">{children}</div>
       </CollapsibleRegion>
     </div>
   );

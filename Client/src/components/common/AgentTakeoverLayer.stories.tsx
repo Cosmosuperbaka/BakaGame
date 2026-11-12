@@ -47,6 +47,8 @@ function Ended() {
 const meta = {
   title: "公共组件/标签页接管",
   component: AgentTakeoverLayer,
+  // 状态条与结束提示经 Portal 固定在视口底边：按整页截取，否则只拍到故事根元素（结束提示时根元素为空，截图超时）。
+  tags: ["overlay"],
 } satisfies Meta<typeof AgentTakeoverLayer>;
 
 export default meta;
