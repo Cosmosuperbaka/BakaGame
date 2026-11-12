@@ -13,6 +13,14 @@ import type { BangumiDataProvider } from "./LocalBangumiProvider";
  */
 export const BANGUMI_LOCAL_RETRY_COOLDOWN_MS = 5 * 60_000;
 
+/**
+ * 查询超时（区别于数据不可用）要在窗口内累计到这个次数才算本地真的出了问题：一次慢查询
+ * 可能只是线程恰好被一次备份或批处理占着，不值得让整个进程转网络回源五分钟。
+ * 窗口要比单次查询超时（20 秒）长得多，否则「连续两次」永远凑不齐。
+ */
+const TIMEOUT_DEGRADE_THRESHOLD = 2;
+const TIMEOUT_WINDOW_MS = 60_000;
+
 /** 只需 warn 即可，避免为一个降级告警把基础设施日志器整体拖进来。 */
 export interface BangumiFallbackLogger {
   warn(message: string, context?: Record<string, unknown>): void;
@@ -51,6 +59,8 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
   private degradedCount = 0;
   private lastDegradedAt: number | null = null;
   private lastErrorCode: string | null = null;
+  /** 窗口内的查询超时时刻。 */
+  private recentTimeouts: number[] = [];
 
   constructor({ local, remote, logger, now = Date.now }: FallbackBangumiProviderOptions) {
     this.local = local;
@@ -119,6 +129,7 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
     if (this.now() < this.localRetryAt) return remoteCall();
     try {
       const value = await localCall();
+      this.recentTimeouts = [];
       if (this.localRetryAt !== 0) {
         this.localRetryAt = 0;
         this.logger?.warn("Bangumi 本地数据集已恢复，改回本地查询");
@@ -128,6 +139,8 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
       const code = (error as { code?: string })?.code;
       if (code !== "BANGUMI_DATA_UNAVAILABLE" && code !== "BANGUMI_QUERY_TIMEOUT") throw error;
       this.lastErrorCode = code ?? null;
+      // 零星的单次超时只让本次请求走网络，不进入冷却。
+      if (code === "BANGUMI_QUERY_TIMEOUT" && !this.timeoutsReachedThreshold()) return remoteCall();
       // 冷却期内的连续失败不重复告警，避免把真正的问题淹在日志里。
       if (this.localRetryAt === 0) {
         this.degradedCount += 1;
@@ -140,5 +153,13 @@ export class FallbackBangumiProvider implements BangumiDataProvider {
       this.localRetryAt = this.now() + BANGUMI_LOCAL_RETRY_COOLDOWN_MS;
       return remoteCall();
     }
+  }
+
+  /** 记一次查询超时，并判断窗口内是否已累计到降级阈值。 */
+  private timeoutsReachedThreshold(): boolean {
+    const current = this.now();
+    this.recentTimeouts = this.recentTimeouts.filter((at) => current - at < TIMEOUT_WINDOW_MS);
+    this.recentTimeouts.push(current);
+    return this.recentTimeouts.length >= TIMEOUT_DEGRADE_THRESHOLD;
   }
 }

@@ -149,4 +149,66 @@ describe("FallbackBangumiProvider", () => {
     expect(calls.local).toBe(1);
     expect(calls.remote).toBe(0);
   });
+
+  describe("查询超时只算一次慢查询", () => {
+    const timeoutLocal = (calls: { local: number }): BangumiDataProvider => ({
+      searchSubjects: async () => {
+        calls.local += 1;
+        throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
+      },
+      getSubject: async () => {
+        throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
+      },
+      chooseRandomSubject: async () => {
+        throw new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时");
+      },
+      resolveCharacterImage: async () => undefined,
+      resolveSubjectImage: async () => undefined,
+    });
+
+    test("单次超时本次请求走网络，但不把整个进程切到网络回源", async () => {
+      const now = 1_000;
+      const { calls, remote } = makeProviders(() => true);
+      const provider = new FallbackBangumiProvider({
+        local: timeoutLocal(calls),
+        remote,
+        now: () => now,
+      });
+      expect(await provider.searchSubjects("测试")).toEqual(result);
+      expect(provider.status().mode).toBe("local");
+      // 下一个请求仍然先探测本地。
+      await provider.searchSubjects("测试");
+      expect(calls.local).toBe(2);
+    });
+
+    test("窗口内连续超时才进入冷却，窗口外的零星超时不累计", async () => {
+      let now = 1_000;
+      const { calls, remote } = makeProviders(() => true);
+      const provider = new FallbackBangumiProvider({
+        local: timeoutLocal(calls),
+        remote,
+        now: () => now,
+      });
+      await provider.searchSubjects("测试");
+      // 超出窗口：之前那次超时作废。
+      now += 10 * 60_000;
+      await provider.searchSubjects("测试");
+      expect(provider.status().mode).toBe("local");
+      // 窗口内第二次：进入冷却，之后直接走网络。
+      now += 20_000;
+      await provider.searchSubjects("测试");
+      expect(provider.status().mode).toBe("remote");
+      const before = calls.local;
+      await provider.searchSubjects("测试");
+      expect(calls.local).toBe(before);
+    });
+
+    test("数据不可用仍然一次就降级", async () => {
+      const { calls, local, remote } = makeProviders(() => false);
+      const provider = new FallbackBangumiProvider({ local, remote, now: () => 1_000 });
+      await provider.searchSubjects("测试");
+      expect(provider.status().mode).toBe("remote");
+      expect(calls.local).toBe(1);
+    });
+  });
 });
