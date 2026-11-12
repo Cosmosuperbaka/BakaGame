@@ -19,7 +19,17 @@ import type {
 // 只供 Storybook 与截图使用。时间轴以故事运行时刻为准（页面按 generatedAt 对齐格子），
 // 起伏用固定种子生成，每次截图形状一致。
 
-export type StatusScenario = "healthy" | "incident" | "unmonitored";
+export type StatusScenario = "healthy" | "incident" | "unmonitored" | "outage";
+
+/** 「大面积故障」场景里最近一段一起挂掉的组件：上游接口全线、前端站点与搜索索引。 */
+const OUTAGE: readonly PublicStatusComponentId[] = [
+  "frontend",
+  "bangumi",
+  "qqmusic",
+  "netease",
+  "qq",
+  "search",
+];
 
 /** 有延迟口径的组件与它们的基准毫秒数；其余是进程内组件，没有延迟。 */
 const LATENCY_BASE: Partial<Record<PublicStatusComponentId, number>> = {
@@ -56,6 +66,7 @@ const levelAt = (
   count: number
 ): PublicStatusLevel => {
   if (scenario === "unmonitored" && UNMONITORED.includes(id)) return "unknown";
+  if (scenario === "outage" && OUTAGE.includes(id) && index >= count - 12) return "degraded";
   if (scenario === "incident") {
     if (id === "qqmusic" && index >= count - 7) return "degraded";
     if (id === "search" && index >= count - 2) return "degraded";
@@ -297,4 +308,61 @@ export function installStatusFixture(
     window.fetch = originalFetch;
     window.WebSocket = OriginalSocket;
   };
+}
+
+/**
+ * 刚上线、还没有任何探测样本：实时与日格全是空格，可用率与延迟都没有结论，事件为空。
+ * 实时快照照常推送（服务本身在跑），页面应读作「暂时无法确认」而不是全挂。
+ */
+export function emptyStatusFixture(now = Date.now()) {
+  const base = statusFixture("healthy", now);
+  return {
+    snapshot: {
+      ...base.snapshot,
+      level: "unknown" as const,
+      components: base.snapshot.components.map((component) => ({
+        ...component,
+        level: "unknown" as const,
+        latencyMs: null,
+      })),
+    },
+    realtime: {
+      ...base.realtime,
+      entries: base.realtime.entries.map((entry) => ({ ...entry, uptime: null, cells: [] })),
+    },
+    history: {
+      ...base.history,
+      entries: base.history.entries.map((entry) => ({
+        ...entry,
+        latencyMs: null,
+        uptime: entry.uptime.map((span) => ({ ...span, ratio: null })),
+        cells: entry.cells.map((cell) => ({
+          ...cell,
+          total: 0,
+          ratio: null,
+          level: "unknown" as const,
+          latencyMs: null,
+        })),
+      })),
+    },
+    events: { generatedAt: now, events: [] },
+  };
+}
+
+/**
+ * 三个状态接口都读失败（网络断开、网关报错），实时通道照常推来快照：
+ * 主卡有结论，条带静止在矮桩、可用率读作「—」，事件区写「暂时读不到」而不是「没有事件」。
+ */
+export function installFailingStatusFixture(
+  snapshot: ReturnType<typeof statusFixture>["snapshot"]
+): () => void {
+  const fixture = statusFixture("healthy");
+  const restore = installStatusFixture({ ...fixture, snapshot });
+  const stubbedFetch = window.fetch.bind(window);
+  window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.includes("/api/status")) throw new TypeError("Failed to fetch");
+    return stubbedFetch(input, init);
+  }) as typeof fetch;
+  return restore;
 }
