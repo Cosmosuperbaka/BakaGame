@@ -416,7 +416,7 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
     <DialogContent>
       {/* min-w-0：弹窗本体是 grid，表单作为网格项默认不小于内容最小宽度；
           通行密钥名一行不换行（截断），会把整张表单撑出弹窗右缘。 */}
-      <form onSubmit={(event) => void submit(event)} className="grid min-w-0 gap-4">
+      <form onSubmit={(event) => void submit(event)} className="grid min-w-0 grid-cols-1 gap-4">
         <DialogHeader>
           <DialogTitle>账号资料</DialogTitle>
           <DialogDescription>

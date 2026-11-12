@@ -413,7 +413,7 @@ function MyFeedbackPanel({
       ) : list.items.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid grid-cols-1 gap-2">
           {list.items.map((item) => (
             <li key={item.id}>
               <button
@@ -516,7 +516,10 @@ function FeedbackDialogBody({
       {!signedIn ? (
         <AnonymousFeedbackPanel draft={draft} onRequestLogin={onRequestLogin} />
       ) : (
+        // min-w-0：弹窗本体是 grid，标签页作为网格项默认不小于内容最小宽度，
+        // 列表标题单行截断的全文宽度会把整块撑出弹窗右缘（手机上最明显）。
         <Tabs
+          className="min-w-0"
           value={tab}
           onValueChange={(value) => {
             setTab(value as "create" | "mine");
