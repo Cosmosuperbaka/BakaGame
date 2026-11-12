@@ -845,17 +845,12 @@ export class SonGuessrService implements AdminRoomControl {
     const hostGraceExpired =
       room.hostReconnectDeadlineAt === undefined || this.now() >= room.hostReconnectDeadlineAt;
     if (
-      !currentHost ||
-      currentHost.isBot ||
-      currentHost.membership === "kicked" ||
-      (!currentHost.online && (this.isTestRoom(room) || hostGraceExpired))
+      this.isHostSeatVacant(room) ||
+      (!currentHost?.online && (this.isTestRoom(room) || hostGraceExpired))
     ) {
-      room.hostPlayerId = player.id;
-      room.hostReconnectDeadlineAt = undefined;
-      player.isReady = true;
+      this.installHost(room, player);
     }
     this.attachConnection(room, player, connection);
-    if (room.hostPlayerId === player.id) room.hostReconnectDeadlineAt = undefined;
     this.touch(room);
     this.appendSystemMessage(room, `${player.name} 加入了房间`);
     this.publishRoom(room);
@@ -910,7 +905,9 @@ export class SonGuessrService implements AdminRoomControl {
 
     this.attachConnection(room, player, connection);
     room.emptySinceAt = undefined;
+    // 房主空缺时回座的人当场接任：重选只挑在线的人，空缺期间回来的人不会再有第二次机会。
     if (room.hostPlayerId === player.id) room.hostReconnectDeadlineAt = undefined;
+    else if (this.isHostSeatVacant(room) && !player.isBot) this.installHost(room, player);
     this.ensureRoundPlayerState(room, player);
 
     // 网易云播放地址可能带有效期。刷新页面后重新取一次当前回合地址，
@@ -980,7 +977,6 @@ export class SonGuessrService implements AdminRoomControl {
 
     if (room.hostPlayerId === player.id) {
       room.hostPlayerId = "";
-      room.hostReconnectDeadlineAt = undefined;
       this.reassignHost(room);
     }
     this.releasePendingSubmitter(
@@ -1389,12 +1385,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (!target || !target.online || target.membership !== "active") {
       throw new AppError("INVALID_TARGET", "只能转让给在线正式玩家");
     }
-    room.musicAuthOperations = undefined;
-    room.automaticRoundOperation = undefined;
-    room.automaticRoundLoading = false;
-    room.hostPlayerId = target.id;
-    room.hostReconnectDeadlineAt = undefined;
-    target.isReady = true;
+    this.installHost(room, target);
     this.touch(room);
     this.publishRoom(room);
     return { hostPlayerId: target.id };
@@ -3224,6 +3215,33 @@ export class SonGuessrService implements AdminRoomControl {
     return normalized;
   }
 
+  /**
+   * 房主席位是否空缺：没有房主记录、房主被踢或是机器人，或房主离线且重连期限已过。
+   * 离线但仍在期限内的房主不算空缺，给他留出重连的时间。
+   */
+  private isHostSeatVacant(room: SonGuessrRoomRecord) {
+    const host = room.players[room.hostPlayerId];
+    if (!host || host.isBot || host.membership === "kicked") return true;
+    return (
+      !host.online &&
+      room.hostReconnectDeadlineAt !== undefined &&
+      this.now() >= room.hostReconnectDeadlineAt
+    );
+  }
+
+  private installHost(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
+    room.musicAuthOperations = undefined;
+    room.automaticRoundOperation = undefined;
+    room.automaticRoundLoading = false;
+    room.hostPlayerId = player.id;
+    room.hostReconnectDeadlineAt = undefined;
+    player.isReady = true;
+  }
+
+  /**
+   * 重选房主，只挑在线的真人。选不到时房主置空，但保留一个已到期的截止：
+   * 巡检每一跳都会重试，不会因为这一刻没人在线就永远没有房主。
+   */
   private reassignHost(room: SonGuessrRoomRecord) {
     const next =
       Object.values(room.players)
@@ -3233,24 +3251,22 @@ export class SonGuessrService implements AdminRoomControl {
         .filter((player) => player.online && player.membership !== "kicked" && !player.isBot)
         .sort((left, right) => left.joinedAt - right.joinedAt)[0];
     if (next) {
-      room.musicAuthOperations = undefined;
-      room.automaticRoundOperation = undefined;
-      room.automaticRoundLoading = false;
-      room.hostPlayerId = next.id;
-      next.isReady = true;
+      this.installHost(room, next);
     } else {
       room.hostPlayerId = "";
+      room.hostReconnectDeadlineAt = this.now();
     }
   }
 
+  /** 房主离线超时或席位空缺时由巡检调用；这一跳选不到人就保留截止，下一跳再试。 */
   private transferHostAfterDisconnect(room: SonGuessrRoomRecord) {
-    const previousHost = room.players[room.hostPlayerId];
-    if (!previousHost || previousHost.online || previousHost.membership === "kicked") {
+    if (room.players[room.hostPlayerId]?.online) {
       room.hostReconnectDeadlineAt = undefined;
       return;
     }
-    room.hostReconnectDeadlineAt = undefined;
+    const before = room.hostPlayerId;
     this.reassignHost(room);
+    if (room.hostPlayerId === before) return;
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();

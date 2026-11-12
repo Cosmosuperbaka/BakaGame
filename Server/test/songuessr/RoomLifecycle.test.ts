@@ -1104,4 +1104,89 @@ describe("SonGuessrService", () => {
       })
     ).rejects.toMatchObject({ code: "PLAYER_NOT_IN_ROOM" });
   });
+
+  describe("房主离开而其余成员全部离线", () => {
+    /** 两人房：客人先断线（座位离线保留），房主随后离开或被后台移走。 */
+    const setupVacancy = async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "vacancy-host");
+      const guest = connection(service, "vacancy-guest");
+      await createRoom(service, host);
+      const hostId = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId;
+      const guestState = await joinRoom(service, guest, "客人");
+      await service.unregisterConnection(guest.record.id);
+      const comeBack = async () => {
+        const client = connection(service, "vacancy-guest-2");
+        await execute(service, client, {
+          id: "vacancy-reconnect",
+          type: "song.room.reconnect",
+          payload: { roomId: "1234", sessionToken: guestState.sessionToken },
+        });
+        return client;
+      };
+      return {
+        service,
+        host,
+        hostId,
+        guestId: guestState.playerId,
+        comeBack,
+        advance: (ms: number) => {
+          now += ms;
+        },
+      };
+    };
+    const renameRoom = (service: SonGuessrService, client: TestConnection) =>
+      execute(service, client, {
+        id: "vacancy-rename",
+        type: "song.room.updateSettings",
+        roomId: "1234",
+        payload: { name: "改名" },
+      });
+
+    test("房主显式离开后，离线的客人回来当场成为房主", async () => {
+      const ctx = await setupVacancy();
+      await execute(ctx.service, ctx.host, {
+        id: "vacancy-leave",
+        type: "song.room.leave",
+        roomId: "1234",
+        payload: {},
+      });
+      ctx.advance(10_000);
+      const back = await ctx.comeBack();
+      expect(lastEvent<SonGuessrRoomSnapshot>(back, "song.room.snapshot").hostPlayerId).toBe(
+        ctx.guestId
+      );
+      await ctx.service.runHousekeeping();
+      ctx.advance(70_000);
+      await ctx.service.runHousekeeping();
+      expect(lastEvent<SonGuessrRoomSnapshot>(back, "song.room.snapshot").hostPlayerId).toBe(
+        ctx.guestId
+      );
+      await expect(renameRoom(ctx.service, back)).resolves.toMatchObject({});
+    });
+
+    test("房主被后台移走后，离线的客人回来当场成为房主", async () => {
+      const ctx = await setupVacancy();
+      await ctx.service.adminKickPlayer("1234", ctx.hostId);
+      ctx.advance(10_000);
+      const back = await ctx.comeBack();
+      expect(lastEvent<SonGuessrRoomSnapshot>(back, "song.room.snapshot").hostPlayerId).toBe(
+        ctx.guestId
+      );
+      await expect(renameRoom(ctx.service, back)).resolves.toMatchObject({});
+    });
+
+    test("房主与客人先后断线，重连期限过后客人回来当场接任", async () => {
+      const ctx = await setupVacancy();
+      await ctx.service.unregisterConnection(ctx.host.record.id);
+      // 超过房主重连期限、仍在空房宽限内：巡检不会重选，回来的人要自己接上。
+      ctx.advance(70_000);
+      const back = await ctx.comeBack();
+      expect(lastEvent<SonGuessrRoomSnapshot>(back, "song.room.snapshot").hostPlayerId).toBe(
+        ctx.guestId
+      );
+      await expect(renameRoom(ctx.service, back)).resolves.toMatchObject({});
+    });
+  });
 });
