@@ -239,9 +239,9 @@ describe("转离线", () => {
   test("最后一人掉线起空房计时，已有的起点不被刷新；豁免的房间不起计时", () => {
     const first = setup();
     markSeatOffline(first.ctx, first.room, first.host, { emptyRoomExempt: false });
-    expect(
-      markSeatOffline(first.ctx, first.room, first.guest, { emptyRoomExempt: false })
-    ).toEqual({ wasHost: false, roomEmpty: true });
+    expect(markSeatOffline(first.ctx, first.room, first.guest, { emptyRoomExempt: false })).toEqual(
+      { wasHost: false, roomEmpty: true }
+    );
     expect(first.room.emptySinceAt).toBe(NOW);
     first.room.emptySinceAt = 7;
     markSeatOffline(first.ctx, first.room, first.guest, { emptyRoomExempt: false });
@@ -307,7 +307,10 @@ describe("标签页接管", () => {
     const open = makeRoom([], { id: "1111", allowAgents: true });
     const closed = makeRoom([], { id: "2222", allowAgents: false });
     expect(() => assertTabAgentsAllowed(setup([open]), "tab")).not.toThrow();
-    expectAppError(() => assertTabAgentsAllowed(setup([open, closed]), "tab"), "AGENTS_NOT_ALLOWED");
+    expectAppError(
+      () => assertTabAgentsAllowed(setup([open, closed]), "tab"),
+      "AGENTS_NOT_ALLOWED"
+    );
     expectAppError(
       () => assertTabAgentsAllowed(setup([open]), "tab", (room) => room.id === "1111"),
       "AGENTS_NOT_ALLOWED"

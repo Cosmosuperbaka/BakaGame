@@ -31,7 +31,9 @@ type HostState =
 /** 候选的五种情形：有在线真人（active 与更早入房的旁观者）、只有在线旁观者、只有离线成员、只有机器人、空。 */
 type Candidates = "onlineHuman" | "spectatorOnly" | "offlineOnly" | "botsOnly" | "empty";
 
-const buildHost = (state: HostState): { seats: KernelSeat[]; hostId: string; deadline?: number } => {
+const buildHost = (
+  state: HostState
+): { seats: KernelSeat[]; hostId: string; deadline?: number } => {
   const host = makeSeat("H", { joinedAt: 0 });
   switch (state) {
     case "online":
@@ -75,7 +77,10 @@ const buildCandidates = (candidates: Candidates): KernelSeat[] => {
 const scene = (state: HostState, candidates: Candidates) => {
   const host = buildHost(state);
   const seats = [...host.seats, ...buildCandidates(candidates)];
-  const room = makeRoom(seats, { hostPlayerId: host.hostId, hostReconnectDeadlineAt: host.deadline });
+  const room = makeRoom(seats, {
+    hostPlayerId: host.hostId,
+    hostReconnectDeadlineAt: host.deadline,
+  });
   return { room, seats };
 };
 
@@ -297,7 +302,8 @@ describe("房主策略：手动转让", () => {
     const target = makeSeat("T");
     const room = makeRoom([host, target], { hostReconnectDeadlineAt: INSIDE });
     expectAppError(
-      () => transferHost(room, undefined, { code: "INVALID_PLAYER", message: "请选择在线参与玩家" }),
+      () =>
+        transferHost(room, undefined, { code: "INVALID_PLAYER", message: "请选择在线参与玩家" }),
       "INVALID_PLAYER"
     );
     transferHost(room, target);

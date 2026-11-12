@@ -79,10 +79,7 @@ export const markIdleWarningSent = (room: RoomCore): void => {
 };
 
 /** 离线席位保留多久：0 分真人旁观者没有分数可保留，只留够一次刷新的时间；房主照常长保留。 */
-export const offlineSeatGraceMs = (
-  room: RoomCore,
-  seat: SeatCore & { score?: number }
-): number =>
+export const offlineSeatGraceMs = (room: RoomCore, seat: SeatCore & { score?: number }): number =>
   seat.membership === "spectator" &&
   (seat.score ?? 0) === 0 &&
   seat.isBot !== true &&

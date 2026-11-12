@@ -115,9 +115,9 @@ describe("回收结论", () => {
 
   test("测试房只豁免空房、不豁免闲置", () => {
     const room = makeRoom([], { lastActivityAt: T0, emptySinceAt: T0 - 10 });
-    expect(
-      judgeReclaim(room, 0, T0 + ROOM_EMPTY_GRACE_PERIOD_MS, { emptyRoomExempt: true })
-    ).toBe("keep");
+    expect(judgeReclaim(room, 0, T0 + ROOM_EMPTY_GRACE_PERIOD_MS, { emptyRoomExempt: true })).toBe(
+      "keep"
+    );
     expect(room.emptySinceAt).toBeUndefined();
     expect(judgeReclaim(room, 0, T0 + ROOM_IDLE_TIMEOUT_MS, { emptyRoomExempt: true })).toBe(
       "close-idle"

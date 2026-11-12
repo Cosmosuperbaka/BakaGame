@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import type { RoomCore, SeatCore } from "../../src/application/room/RoomCore";
-import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "../../src/application/songuessr/Records";
+import type {
+  SonGuessrPlayerRecord,
+  SonGuessrRoomRecord,
+} from "../../src/application/songuessr/Records";
 import type { CEEPlayerRecord, CEERoom } from "../../src/domain/CEEModel";
 import type { WhoIsFakerPlayerRecord, WhoIsFakerRoomRecord } from "../../src/shared/WhoIsFaker";
 import { kernelShape, makeRoom, makeSeat } from "./RoomKernelFixtures";
