@@ -745,13 +745,6 @@ export async function pressSong(
   key: string
 ): Promise<string | undefined> {
   if (key !== "Enter") return undefined;
-  if (controlValue.id === "chat.input") {
-    await context.client.sendInRoom("song", "song.chat.send", {
-      text: (context.state.drafts["chat.input"] ?? "").trim(),
-    });
-    delete context.state.drafts["chat.input"];
-    return "聊天消息已发送";
-  }
   if (controlValue.id.endsWith(".search.input")) {
     const prefix = controlValue.id.slice(0, -".input".length);
     const purpose = prefix === "song.submit.search" ? "song_submit" : "song_guess";

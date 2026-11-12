@@ -692,12 +692,5 @@ export async function pressCee(
     await runSearch(context, prefix, purpose);
     return "已立即搜索";
   }
-  if (controlValue.id === "chat.input") {
-    const value = (context.state.drafts["chat.input"] ?? "").trim();
-    if (!value) throw new Error("聊天内容不能为空");
-    await context.client.sendInRoom("cee", "cee.chat.send", { text: value });
-    delete context.state.drafts["chat.input"];
-    return "聊天消息已发送";
-  }
   return undefined;
 }
