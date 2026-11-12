@@ -37,6 +37,10 @@ export interface AppSettingsOptions {
  */
 export class AppSettings {
   private stored = new Map<RuntimeSettingKey, StoredAppSetting>();
+  /** 回读时按当前校验规范化过的生效值；校验不过的键没有条目，读取退回缺省。读路径不再重复校验。 */
+  private effective = new Map<RuntimeSettingKey, string>();
+  /** 已经为「库里的值不合校验」告过警的键；该键的值恢复合法后才清除，别的键的回读成功不影响它。 */
+  private readonly invalidWarned = new Set<RuntimeSettingKey>();
   private timer?: ReturnType<typeof setInterval>;
   /** 只在「从正常转为失败」时记一条，避免每 15 秒刷一条同样的告警。 */
   private warned = false;
@@ -58,11 +62,22 @@ export class AppSettings {
     try {
       const rows = await repository.loadAll();
       const next = new Map<RuntimeSettingKey, StoredAppSetting>();
+      const effective = new Map<RuntimeSettingKey, string>();
       for (const key of RUNTIME_SETTING_KEYS) {
         const row = rows[key];
-        if (row) next.set(key, row);
+        if (!row) continue;
+        next.set(key, row);
+        const parsed = RUNTIME_SETTINGS[key].schema.safeParse(row.value);
+        if (parsed.success) {
+          effective.set(key, parsed.data);
+          this.invalidWarned.delete(key);
+        } else if (!this.invalidWarned.has(key)) {
+          this.invalidWarned.add(key);
+          this.options.logger?.warn("运行期设置的值不合当前校验，按缺省执行", { key });
+        }
       }
       this.stored = next;
+      this.effective = effective;
       this.warned = false;
     } catch (error) {
       if (this.warned) return;
@@ -73,19 +88,7 @@ export class AppSettings {
 
   /** 当前生效值（规范化字符串）；库里的值不合当前校验时按缺省处理。 */
   raw(key: RuntimeSettingKey): string {
-    const descriptor = RUNTIME_SETTINGS[key];
-    const fallback = descriptor.defaultValue(this.options.defaults);
-    const row = this.stored.get(key);
-    if (!row) return fallback;
-    const parsed = descriptor.schema.safeParse(row.value);
-    if (!parsed.success) {
-      if (!this.warned) {
-        this.warned = true;
-        this.options.logger?.warn("运行期设置的值不合当前校验，按缺省执行", { key });
-      }
-      return fallback;
-    }
-    return parsed.data;
+    return this.effective.get(key) ?? RUNTIME_SETTINGS[key].defaultValue(this.options.defaults);
   }
 
   version(key: Extract<RuntimeSettingKey, "clientMinDesktopVersion" | "clientMinMobileVersion">) {

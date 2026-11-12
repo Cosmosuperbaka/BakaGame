@@ -116,6 +116,22 @@ describe("AppSettings 运行期旋钮", () => {
     expect(warnings.some((message) => message.includes("按缺省执行"))).toBe(true);
   });
 
+  it("不合校验的值多次回读只告警一次，读取成功不会让告警复位", async () => {
+    warnings.length = 0;
+    const repository = new FakeRepository();
+    repository.rows.set("clientMinDesktopVersion", {
+      value: "not-a-version",
+      updatedBy: null,
+      updatedAt: new Date(),
+    });
+    const settings = make(repository);
+    for (let round = 0; round < 4; round += 1) {
+      await settings.refresh();
+      settings.version("clientMinDesktopVersion");
+    }
+    expect(warnings.filter((message) => message.includes("按缺省执行"))).toHaveLength(1);
+  });
+
   it("snapshot 同时给出缺省、覆盖值与生效值，管理员不用猜现在是多少", async () => {
     const repository = new FakeRepository();
     const settings = make(repository);
