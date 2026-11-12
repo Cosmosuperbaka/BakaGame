@@ -585,6 +585,73 @@ describe("大厅与房间", () => {
     expect(service.rooms.has("2131")).toBe(false);
   });
 
+  test("建私密房算摘要期间：无口令加入进不去，同号再建被拒，大厅与后台看不到半成品", async () => {
+    let releaseHash: () => void = () => {};
+    const hashGate = new Promise<void>((resolve) => {
+      releaseHash = resolve;
+    });
+    const service = new WhoIsFakerService({
+      eventLogger: new EventLogger(),
+      passwordHasher: {
+        hash: async (password) => {
+          await hashGate;
+          return `digest:${password}`;
+        },
+        verify: async (password, digest) => digest === `digest:${password}`,
+      },
+    });
+    const payload = {
+      roomId: "2133",
+      name: "私房",
+      visibility: "private" as const,
+      password: "secret",
+      allowSpectators: true,
+      userName: "房主",
+    };
+    const creator = createConnection(service, "2133-host");
+    const creating = execute(service, creator, {
+      id: "create-private",
+      type: "room.create",
+      payload,
+    });
+
+    // 摘要还没算完：房间表里没有这间房，不会出现「私密却没有口令」的窗口。
+    expect(service.rooms.has("2133")).toBe(false);
+    expect(service.getRoomSummaries()).toHaveLength(0);
+    expect(service.adminListRooms()).toHaveLength(0);
+
+    const intruder = createConnection(service, "2133-intruder");
+    await expect(
+      execute(service, intruder, {
+        id: "join-no-password",
+        type: "room.join",
+        roomId: "2133",
+        payload: { userName: "闯入者" },
+      })
+    ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+
+    const rival = createConnection(service, "2133-rival");
+    await expect(
+      execute(service, rival, { id: "create-again", type: "room.create", payload })
+    ).rejects.toMatchObject({ code: "ROOM_ALREADY_EXISTS" });
+
+    releaseHash();
+    await creating;
+    const room = service.rooms.get("2133")!;
+    expect(room.passwordHash).toBe("digest:secret");
+    expect(Object.keys(room.players)).toHaveLength(1);
+
+    // 建好之后仍然要口令。
+    await expect(
+      execute(service, intruder, {
+        id: "join-no-password-2",
+        type: "room.join",
+        roomId: "2133",
+        payload: { userName: "闯入者" },
+      })
+    ).rejects.toMatchObject({ code: "PASSWORD_REQUIRED" });
+  });
+
   test("入私密房比对口令期间连接断开，座位不会被标成在线", async () => {
     let gate: Promise<void> = Promise.resolve();
     let releaseVerify: () => void = () => {};

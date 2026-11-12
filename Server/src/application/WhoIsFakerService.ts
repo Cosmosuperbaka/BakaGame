@@ -55,12 +55,11 @@ import {
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
-  JOIN_PASSWORD_MAX_ATTEMPTS,
-  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
-  JOIN_PASSWORD_WINDOW_MS,
 } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
+import { RoomIdReservations } from "./room/RoomIdReservations";
+import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import type { CommandHandler } from "./whoisfaker/CommandHandler";
 import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
 import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
@@ -124,17 +123,6 @@ import {
   publishRoomCalibration,
 } from "./whoisfaker/RoomViews";
 
-/** 私密房口令的慢哈希：生产用 Bun 自带的 argon2，隔离测试注入可控实现来卡住 await 窗口。 */
-export interface PasswordHasher {
-  hash(password: string): Promise<string>;
-  verify(password: string, digest: string): Promise<boolean>;
-}
-
-const BUN_PASSWORD_HASHER: PasswordHasher = {
-  hash: (password) => Bun.password.hash(password),
-  verify: (password, digest) => Bun.password.verify(password, digest),
-};
-
 /** 改设置的纯校验产物：失败在产生它之前就抛出，不会留下半截设置。 */
 interface SettingsPatch {
   name?: string;
@@ -150,8 +138,8 @@ interface SettingsPatch {
 
 export interface WhoIsFakerServiceOptions {
   now?: () => number;
-  /** 缺省为 Bun 的 argon2；测试可注入以控制慢哈希期间的并发窗口。 */
-  passwordHasher?: PasswordHasher;
+  /** 缺省为 Bun 的 argon2；测试可注入以控制慢哈希期间的并发窗口，原样交给口令门。 */
+  passwordHasher?: RoomPasswordGateOptions["hasher"];
   random?: RandomSource;
   /** 未配置数据库（本地开发、隔离测试）时为空：词对不落库。 */
   wordBankRepository?: WordBankRepository;
@@ -212,22 +200,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   /** 对局记录用的开局时间，按回合 ID 索引；结算或删房时移除。 */
   readonly roundStartedAtById = new Map<string, number>();
   readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
-  /**
-   * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
-   * 房间号只有 9000 个且私密房带锁出现在大厅，不设限流就能一直试。
-   */
-  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
+  /** 建房期间的房号占用：半成品房间不进房间表，读房间表的路径看不到它。 */
+  private readonly reservations = new RoomIdReservations({
+    takenError: { code: "ROOM_ALREADY_EXISTS", message: "房间已存在" },
   });
-  /**
-   * 同一房间的聚合密码尝试配额（只按房间计数）。
-   * 每连接各算一份时，开 N 条连接就有 N 份额度，词表爆破在聚合上不受限。
-   */
-  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
-  });
+  /** 私密房口令：规范化、摘要与入房校验（含两层尝试限流）。 */
+  private readonly passwords: RoomPasswordGate;
   /** 每条聊天都会广播全房快照，限流口径与 SonGuessr 一致。 */
   private readonly chatLimiter = new SlidingWindowRateLimiter({
     windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
@@ -236,19 +214,25 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;
   private idCounter = 0;
-  private readonly passwordHasher: PasswordHasher;
 
   readonly testRooms: TestRoomPolicy;
 
   constructor(readonly options: WhoIsFakerServiceOptions) {
     this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
-    this.passwordHasher = options.passwordHasher ?? BUN_PASSWORD_HASHER;
     this.now = options.now ?? (() => Date.now());
     this.random =
       options.random ??
       ({
         nextInt: (maxExclusive: number) => Math.floor(Math.random() * Math.max(maxExclusive, 1)),
       } satisfies RandomSource);
+    const missingPassword = { code: "PASSWORD_REQUIRED", message: "该操作需要有效密码" };
+    this.passwords = new RoomPasswordGate({
+      now: () => this.now(),
+      normalize: normalizeWord,
+      missingOnCreate: missingPassword,
+      missingOnJoin: missingPassword,
+      hasher: options.passwordHasher,
+    });
     this.connectionRegistry = new ConnectionRegistry();
     this.lobbyFanout = new LobbyFanout({
       event: WHOISFAKER_LOBBY_ROOMS_EVENT,
@@ -665,14 +649,54 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const roomId = ensureRoomId(message.payload.roomId, this.testRooms);
     assertTextAllowed(message.payload.name, message.payload.userName);
 
-    if (this.rooms.has(roomId)) {
-      throw new AppError("ROOM_ALREADY_EXISTS", "房间已存在");
+    // 同步占号：占号期间同号的第二次建房被拒，而半成品房间不进房间表，入房、大厅、巡检都看不到它。
+    const releaseRoomId = this.reservations.hold(roomId, (id) => this.rooms.has(id));
+    let room: WhoIsFakerRoomRecord;
+    let host: WhoIsFakerPlayerRecord;
+    try {
+      ({ room, host } = await this.buildAndRegisterRoom(connection, message, roomId));
+    } finally {
+      releaseRoomId();
     }
 
+    const previousRoomUpdate = this.attachConnection(room, host, connection);
+    this.appendSystemMessage(room, `${host.name} 创建了房间`);
+    this.touch(room);
+
+    await previousRoomUpdate;
+    await this.log({
+      type: "room.created",
+      createdAt: this.now(),
+      roomId: room.id,
+      playerId: host.id,
+      payload: {
+        visibility: room.settings.visibility,
+      },
+    });
+
+    this.publishRoom(room);
+    this.publishLobby();
+
+    return {
+      roomId: room.id,
+      playerId: host.id,
+      sessionToken: host.sessionToken,
+    };
+  }
+
+  /**
+   * 构造房间并登记进房间表。私密房要跨一次 await 算口令摘要：摘要算完、复核连接仍在之后才登记，
+   * 登记前任何读房间表的路径都看不到这间房，不会出现「私密却没有口令」的窗口。
+   */
+  private async buildAndRegisterRoom(
+    connection: ConnectionRecord,
+    message: Extract<WhoIsFakerClientMessage, { type: "room.create" }>,
+    roomId: string
+  ): Promise<{ room: WhoIsFakerRoomRecord; host: WhoIsFakerPlayerRecord }> {
     // 私密房口令只存 argon2 摘要：房间记录、快照与日志里都不该出现可读的口令。
     const password =
       message.payload.visibility === "private"
-        ? this.requirePassword(message.payload.password)
+        ? this.passwords.require(message.payload.password)
         : undefined;
 
     const room: WhoIsFakerRoomRecord = {
@@ -713,45 +737,15 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       getConfigurableParticipantCount(room)
     );
 
-    // 算摘要要跨一次 await，先占住房号再算，避免并发建房互相覆盖（与 CEE 同一口径）。
-    this.rooms.set(room.id, room);
     if (password) {
-      try {
-        room.passwordHash = await this.passwordHasher.hash(password);
-      } catch (error) {
-        this.rooms.delete(room.id);
-        throw error;
-      }
+      room.passwordHash = await this.passwords.hash(password);
       // 算摘要期间连接可能已断开：此时再绑定会留下没有任何连接会触发离线的幽灵席位。
       if (!this.connectionRegistry.findConnection(connection.id)) {
-        this.rooms.delete(room.id);
         throw new AppError("CONNECTION_CLOSED", "连接已断开");
       }
     }
-
-    const previousRoomUpdate = this.attachConnection(room, host, connection);
-    this.appendSystemMessage(room, `${host.name} 创建了房间`);
-    this.touch(room);
-
-    await previousRoomUpdate;
-    await this.log({
-      type: "room.created",
-      createdAt: this.now(),
-      roomId: room.id,
-      playerId: host.id,
-      payload: {
-        visibility: room.settings.visibility,
-      },
-    });
-
-    this.publishRoom(room);
-    this.publishLobby();
-
-    return {
-      roomId: room.id,
-      playerId: host.id,
-      sessionToken: host.sessionToken,
-    };
+    this.rooms.set(room.id, room);
+    return { room, host };
   }
 
   private async joinRoom(
@@ -769,7 +763,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     // 被踢的记录不算座位，再进来走普通加入。
     const seat = this.tabSeat(room, connection);
     if (seat && seat.membership !== "kicked") return this.resumeSeat(room, seat, connection);
-    await this.ensurePasswordMatch(room, message.payload.password, connection);
+    await this.passwords.verify(
+      room,
+      room.settings.visibility,
+      message.payload.password,
+      connection.id
+    );
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room)
       throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
@@ -891,7 +890,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     // 两阶段：纯校验产出补丁（失败不改任何状态）→ 必要时 await 慢哈希 → 复核后同步一次写入。
     const patch = this.buildSettingsPatch(room, player.id, payload);
     const passwordHash =
-      patch.password === undefined ? undefined : await this.passwordHasher.hash(patch.password);
+      patch.password === undefined ? undefined : await this.passwords.hash(patch.password);
 
     // await 期间房间可能已被关闭、房主换人或开局，回来先复核再写（Spec §4.2）。
     if (this.rooms.get(room.id) !== room) {
@@ -963,7 +962,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     // 公开房没有口令；私密房本次带了口令就换新，没带则沿用已有摘要，两者都没有才拒绝。
     if ((patch.visibility ?? room.settings.visibility) === "private") {
       if (payload.password != null) {
-        patch.password = this.requirePassword(payload.password);
+        patch.password = this.passwords.require(payload.password);
       } else if (!room.passwordHash) {
         throw new AppError("PASSWORD_REQUIRED", "私密房间必须设置密码");
       }
@@ -1988,41 +1987,6 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     ) {
       throw new AppError("NAME_CONFLICT", "该用户名已在房间中");
     }
-  }
-
-  private async ensurePasswordMatch(
-    room: WhoIsFakerRoomRecord,
-    password: string | null | undefined,
-    connection: ConnectionRecord
-  ) {
-    if (room.settings.visibility !== "private") return;
-    // 缺少密码回 PASSWORD_REQUIRED，不消耗尝试次数。
-    const normalized = this.requirePassword(password);
-    // 先计数再校验：超限后正确密码同样被拒，攻击者无法区分猜中与猜错。
-    if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    }
-    // 房间级聚合额度：多开连接各自占一份额度时，爆破速度随连接数线性增长。
-    if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    }
-    // 只按摘要比对：房间记录里没有可读的口令。
-    const matched = room.passwordHash
-      ? await this.passwordHasher.verify(normalized, room.passwordHash)
-      : false;
-    if (!matched) {
-      throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
-    }
-  }
-
-  private requirePassword(password?: string | null) {
-    const normalized = normalizeWord(password ?? "");
-
-    if (!normalized) {
-      throw new AppError("PASSWORD_REQUIRED", "该操作需要有效密码");
-    }
-
-    return normalized;
   }
 
   reassignHost(room: WhoIsFakerRoomRecord) {
