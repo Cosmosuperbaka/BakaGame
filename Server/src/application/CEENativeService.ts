@@ -20,6 +20,9 @@ import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
 import { CEERooms } from "./CEERooms";
 import { ceePrivateState } from "./CEEViews";
 
+/** 增强房处理的命令：大厅订阅由统一入口 `CEEService` 先行处理，不会下沉到这里。 */
+export type CEENativeMessage = Exclude<CEERoomClientMessage, { type: "cee.lobby.subscribeRooms" }>;
+
 export class CEENativeService {
   readonly state: CEERooms;
   private readonly now: () => number;
@@ -99,7 +102,7 @@ export class CEENativeService {
     this.state.housekeeping();
     this.rescheduleAll();
   }
-  async execute(connectionId: string, message: CEERoomClientMessage): Promise<unknown> {
+  async execute(connectionId: string, message: CEENativeMessage): Promise<unknown> {
     const connection = this.state.connections.getConnection(connectionId);
     switch (message.type) {
       case "cee.room.create":
@@ -111,9 +114,6 @@ export class CEENativeService {
         this.rescheduleAll();
         return result;
       }
-      case "cee.lobby.subscribeRooms":
-        connection.lobbySubscribed = true;
-        return { rooms: this.listRooms() };
     }
     const { room, player } = this.state.authenticate(
       connection,

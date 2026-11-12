@@ -1,5 +1,5 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
-import { CEENativeService } from "../src/application/CEENativeService";
+import { CEENativeService, type CEENativeMessage } from "../src/application/CEENativeService";
 import {
   CEESearchProvenance,
   ceeCharacterIdsOf,
@@ -13,7 +13,6 @@ import {
   type CEECharacterView,
   type CEECommand,
   type CEERankedCommand,
-  type CEERoomClientMessage,
   type CEEPayload,
   type CEEPrivateState,
   type CEERoomEnterResult,
@@ -157,7 +156,7 @@ export function ceeTestHarness(
       roomId,
       sessionToken: client.token,
       payload,
-    } as CEERoomClientMessage);
+    } as CEENativeMessage);
     // 与生产入口同构：检索结果由入口层记进台账，猜测时据此判断「有没有先搜再猜」。
     if (type === "cee.character.search")
       provenance.note(client.record.id, ceeCharacterIdsOf(result));

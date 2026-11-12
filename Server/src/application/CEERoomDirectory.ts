@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { AppError } from "../domain/Errors";
+import { normalizeRoomId } from "../domain/Rules";
 import { ROOM_ID_TEST_MODE } from "../shared/Index";
 
 /** 统一房号解析出的房间归属：增强房由本服务运行，原版房对应原版服务器上的真实房号。 */
@@ -9,12 +10,6 @@ export type CEERoomTarget = { source: "native"; roomId: string } | CEEOriginalTa
 const FOUR_DIGITS = /^\d{4}$/;
 const ALIAS_MIN = 1000;
 const ALIAS_SPAN = 9000;
-
-/** 房号比较口径：去空白，测试房号大小写不敏感，与增强房的建房规则一致。 */
-export const normalizeCEERoomId = (roomId: string): string => {
-  const trimmed = roomId.trim();
-  return trimmed.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase() ? ROOM_ID_TEST_MODE : trimmed;
-};
 
 /**
  * CEE 统一房号目录：大厅、路由与会话只认一个 4 位房号。
@@ -34,7 +29,7 @@ export class CEERoomDirectory {
 
   /** 该号是否已被增强房或原版房别名占用；增强房建房前据此避让。 */
   isAliasTaken(roomId: string): boolean {
-    return this.aliasToUpstream.has(normalizeCEERoomId(roomId));
+    return this.aliasToUpstream.has(normalizeRoomId(roomId));
   }
 
   /** 本站在原版服务器新建房间前占号；上游建房失败时调用方负责 `release`。 */
@@ -56,7 +51,7 @@ export class CEERoomDirectory {
   }
 
   resolve(roomId: string): CEERoomTarget | null {
-    const id = normalizeCEERoomId(roomId);
+    const id = normalizeRoomId(roomId);
     const upstream = this.aliasToUpstream.get(id);
     if (upstream !== undefined) return { source: "original", roomId: id, upstreamRoomId: upstream };
     return this.hasNativeRoom(id) ? { source: "native", roomId: id } : null;

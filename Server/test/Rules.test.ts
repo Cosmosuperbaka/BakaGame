@@ -9,6 +9,7 @@ import {
   evaluateBlankGuessDraft,
   getRoomRoleLimits,
   isRoleConfigSatisfied,
+  normalizeRoomId,
   normalizeWordPair,
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
@@ -30,6 +31,12 @@ test("房间号校验：四位数字与测试房间号合法，其余一律拒�
 
   // 测试房间号统一归一成标准大小写，避免同房间分裂成两间。
   expect(ensureRoomId("oblivionis")).toBe("Oblivionis");
+});
+
+test("房号归一只归一不校验：去空白、测试房号大小写归一，非法房号原样返回", () => {
+  expect(normalizeRoomId(" 1234 ")).toBe("1234");
+  expect(normalizeRoomId("OBLIVIONIS")).toBe("Oblivionis");
+  expect(normalizeRoomId(" abc ")).toBe("abc");
 });
 
 // ==================== 纯规则测试 ====================

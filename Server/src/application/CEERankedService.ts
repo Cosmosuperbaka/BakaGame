@@ -1496,7 +1496,7 @@ function initialRatingRecord(userId: string): CEERankedRatingRecord {
   };
 }
 
-/** 按先验权重无放回抽 3 个答案；题库不足 3 个返回 null。 */
+/** 战绩列表的一条：由结算记录换算结果与分差。 */
 function historyEntryOf(item: CEERankedHistoryRecord): CEERankedHistoryEntry {
   const outcome: CEERankedOutcome =
     item.score === 1 ? "won" : item.score === 0.5 ? "drawn" : "lost";

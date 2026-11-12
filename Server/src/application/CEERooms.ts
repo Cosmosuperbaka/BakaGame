@@ -9,7 +9,6 @@ import {
   type CEERound,
   type CEEUnit,
 } from "../domain/CEEModel";
-import {} from "../shared/AgentActivity";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import { advanceCEERound, getCEEUnit, surrenderCEE, unitHasActor } from "../domain/CEERound";
 import { tabSeatId } from "./TabSeat";

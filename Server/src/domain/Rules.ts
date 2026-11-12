@@ -518,13 +518,17 @@ export const safeEqualToken = (left?: string, right?: string): boolean => {
   return timingSafeEqual(leftBytes, rightBytes);
 };
 
+/** 房号归一：去首尾空白，测试房号大小写不敏感地归为规范写法；只归一、不校验，供查询类路径使用。 */
+export const normalizeRoomId = (roomId: string): string => {
+  const trimmed = roomId.trim();
+  return trimmed.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase() ? ROOM_ID_TEST_MODE : trimmed;
+};
+
 export const ensureRoomId = (roomId: string): string => {
   // 校验规则来自 shared 的 isValidRoomId，客户端路由用的是同一份。
-  const normalized = roomId.trim();
+  const normalized = normalizeRoomId(roomId);
 
-  if (normalized.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase()) {
-    return ROOM_ID_TEST_MODE;
-  }
+  if (normalized === ROOM_ID_TEST_MODE) return normalized;
 
   if (!isValidRoomId(normalized)) {
     throw new AppError("INVALID_ROOM_ID", "房间号必须为四位数字");

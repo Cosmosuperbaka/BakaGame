@@ -3,6 +3,7 @@ import {
   CEE_ORIGINAL_ENTER_WINDOW_MS,
 } from "../config/Constants";
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
+import { normalizeRoomId } from "../domain/Rules";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { GameRecorder } from "../domain/GameRecord";
@@ -32,7 +33,7 @@ import type { CEERankedStore } from "./CEERankedStore";
 import { CEESearchQuota, isCEESearchCommand } from "./CEESearchQuota";
 import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
-import { CEERoomDirectory, normalizeCEERoomId, type CEERoomTarget } from "./CEERoomDirectory";
+import { CEERoomDirectory, type CEERoomTarget } from "./CEERoomDirectory";
 import { LobbyFanout } from "./LobbyFanout";
 
 /** 上游房间列表的缓存时长；失败后同样等待该时长再重试，避免每次房号未命中都回源。 */
@@ -349,7 +350,7 @@ export class CEEService implements AdminRoomControl {
   /** 房号未命中时回源刷新一次（受缓存时长节流）：服务重启后的首个分享链接也能解析到原版房。 */
   private async resolveRoom(roomId: string | undefined): Promise<CEERoomTarget> {
     if (!roomId?.trim()) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
-    const id = normalizeCEERoomId(roomId);
+    const id = normalizeRoomId(roomId);
     const known = this.directory.resolve(id);
     if (known) return known;
     await this.refreshRemote();
