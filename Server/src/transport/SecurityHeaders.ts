@@ -5,7 +5,7 @@
  */
 
 /** Swagger UI 需要内联脚本与外部资源，给不了 `default-src 'none'`；它只在 `/openapi` 及其子路径出现。 */
-const DOCS_PATHS = ["/openapi"];
+const DOCS_PATH = "/openapi";
 
 const STATIC_HEADERS: Record<string, string> = {
   // API 永不该被嵌进别人的框架；图床是浏览器可直接导航的图片，同样按最严格口径。
@@ -30,7 +30,7 @@ const isHttps = (headers: Headers): boolean =>
   (headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ?? "") === "https";
 
 const isDocsPath = (pathname: string): boolean =>
-  pathname === "/openapi" || DOCS_PATHS.some((prefix) => pathname.startsWith(`${prefix}/`));
+  pathname === DOCS_PATH || pathname.startsWith(`${DOCS_PATH}/`);
 
 export const securityHeaders = (request: Request): Record<string, string> => {
   const { pathname } = new URL(request.url);

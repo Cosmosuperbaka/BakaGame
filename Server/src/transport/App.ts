@@ -869,9 +869,6 @@ export const createApp = ({
   siteFeatures,
 }: AppDependencies) => {
   const fakerService = whoIsFakerService;
-  if (!fakerService) {
-    throw new Error("WhoIsFakerService dependency is required");
-  }
   const songService = sonGuessrService;
   const characterService = ceeService;
   let disposal: Promise<void> | undefined;
@@ -884,13 +881,13 @@ export const createApp = ({
   const sitePages = new SitePages({
     admitTab: (tabKey) => {
       fakerService.assertTabAgentsAllowed(tabKey);
-      songService?.assertTabAgentsAllowed(tabKey);
-      characterService?.assertTabAgentsAllowed(tabKey);
+      songService.assertTabAgentsAllowed(tabKey);
+      characterService.assertTabAgentsAllowed(tabKey);
     },
     onControlChange: (tabKey) => {
       fakerService.publishTabRooms(tabKey);
-      songService?.publishTabRooms(tabKey);
-      characterService?.publishTabRooms(tabKey);
+      songService.publishTabRooms(tabKey);
+      characterService.publishTabRooms(tabKey);
     },
   });
   remoteMcpSessions.onSessionClosed((id) => sitePages.closeByController(id, "agent_left"));
@@ -912,8 +909,8 @@ export const createApp = ({
       sitePages.isTabControlled(tabKey)
     );
     if (game === "faker") fakerService.registerConnection(record);
-    else if (game === "song") songService?.registerConnection(record);
-    else characterService?.registerConnection(record);
+    else if (game === "song") songService.registerConnection(record);
+    else characterService.registerConnection(record);
   };
 
   /**
@@ -1072,7 +1069,6 @@ export const createApp = ({
       const game = gameOfMessage(incoming);
       ensureGameConnection(ws, game);
       if (game === "song") {
-        if (!songService) throw new AppError("GAME_UNAVAILABLE", "猜歌服务未启用");
         await handleGameMessage(ws, parseSonGuessrMessage(incoming), logger, {
           serviceName: "SonGuessr",
           execute: async (connectionId, message) => {
@@ -1081,7 +1077,6 @@ export const createApp = ({
           },
         });
       } else if (game === "cee") {
-        if (!characterService) throw new AppError("GAME_UNAVAILABLE", "猜角色服务未启用");
         await handleGameMessage(ws, parseCEEMessage(incoming), logger, {
           serviceName: "CEE",
           execute: async (connectionId, message) => {
@@ -1135,8 +1130,8 @@ export const createApp = ({
       for (const game of registered ?? []) {
         try {
           if (game === "faker") await fakerService.unregisterConnection(connectionId);
-          else if (game === "song") await songService?.unregisterConnection(connectionId);
-          else await characterService?.unregisterConnection(connectionId);
+          else if (game === "song") await songService.unregisterConnection(connectionId);
+          else await characterService.unregisterConnection(connectionId);
         } catch (error) {
           logger.error("统一 WS 连接注销失败", { ...describeError(error), game, connectionId });
         }
