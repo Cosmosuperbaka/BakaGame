@@ -21,6 +21,13 @@ const MAX_SESSIONS = 256;
 const MAX_SESSIONS_PER_CLIENT = MAX_SESSIONS / 4;
 /** 同来源满额时，只有闲置超过这么久的旧会话才可被新会话回收。 */
 const RECYCLE_IDLE_MS = 2 * 60_000;
+/**
+ * 同一会话的工具调用串行执行：焦点、草稿、搜索与座位状态都挂在会话上，并行调用会互相踩踏，
+ * 双发的 join 还会重复入房。等待与持有都有上限，一个挂起的调用不能永久堵死后续调用。
+ */
+const CALL_WAIT_MS = 30_000;
+const CALL_HOLD_MAX_MS = 4 * 60_000;
+const CALL_QUEUE_MAX = 8;
 const WRITE_WINDOW_MS = 60_000;
 const WRITE_MAX = 30;
 /**
@@ -47,6 +54,9 @@ export interface RemoteSession {
   createdAt: number;
   lastUsedAt: number;
   writes: number[];
+  /** 当前持有串行锁的调用结束（或被强制释放）后落定。 */
+  tail: Promise<void>;
+  queued: number;
 }
 
 interface JsonRpcRequest {
@@ -79,6 +89,9 @@ export interface RemoteMcpSessionsOptions {
   selfUrl: string;
   /** 站点对外基址：只用来给 Agent 拼人类可达的页面链接，不参与任何出站连接。 */
   siteUrl: string;
+  /** 串行锁的等待与持有上限；缺省取生产值，测试里压短。 */
+  callWaitMs?: number;
+  callHoldMaxMs?: number;
 }
 
 export class RemoteMcpSessions {
@@ -129,6 +142,8 @@ export class RemoteMcpSessions {
       createdAt: this.now(),
       lastUsedAt: this.now(),
       writes: [],
+      tail: Promise.resolve(),
+      queued: 0,
     };
     this.sessions.set(session.id, session);
     this.logger.info("mcp.remote.session", { session: refOf(session.id), agent: agentName });
@@ -147,6 +162,43 @@ export class RemoteMcpSessions {
     if (!oldest) return false;
     this.close(oldest.id);
     return true;
+  }
+
+  /**
+   * 按会话串行执行 `run`。前一个调用超过等待上限仍未结束就如实回 BUSY（由 `onBusy` 构造），
+   * 不无限排队；持有方超过持有上限会被强制放行，后续调用不会被一个挂起的调用永久堵住。
+   */
+  async runExclusive<T>(session: RemoteSession, run: () => Promise<T>, onBusy: () => T): Promise<T> {
+    if (session.queued >= CALL_QUEUE_MAX) return onBusy();
+    session.queued += 1;
+    const previous = session.tail;
+    let release: () => void = () => undefined;
+    const mine = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    session.tail = mine;
+    let waitTimer: ReturnType<typeof setTimeout> | undefined;
+    const turn = await Promise.race([
+      previous.then(() => true),
+      new Promise<boolean>((resolve) => {
+        waitTimer = setTimeout(() => resolve(false), this.options.callWaitMs ?? CALL_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(waitTimer);
+    if (!turn) {
+      // 没轮到：把自己的位置让回去，后面的调用只需等前面真正持有锁的那个。
+      session.queued -= 1;
+      void previous.then(release);
+      return onBusy();
+    }
+    const holdTimer = setTimeout(release, this.options.callHoldMaxMs ?? CALL_HOLD_MAX_MS);
+    try {
+      return await run();
+    } finally {
+      clearTimeout(holdTimer);
+      session.queued -= 1;
+      release();
+    }
   }
 
   /** 会话结束的回调：被它接管的标签页要立刻解锁，不能等租约到期。 */
@@ -372,7 +424,18 @@ async function handleRemoteToolCall(
       payload: rpcResult(context.id, toolFailure(SESSIONS_FULL)),
     };
   }
-  return runRemoteTool(options, context, tool, resolved, args);
+  return sessions.runExclusive(
+    resolved.session,
+    () => runRemoteTool(options, context, tool, resolved, args),
+    () => ({
+      status: 200,
+      headers: context.headers,
+      payload: rpcResult(
+        context.id,
+        toolFailure("BUSY：同一会话上一个调用仍在执行，请等它返回后再发下一个")
+      ),
+    })
+  );
 }
 
 /** 已解析出会话后的一次工具执行：扣额度、发焦点、执行、写审计日志。 */

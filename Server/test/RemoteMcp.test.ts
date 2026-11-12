@@ -463,3 +463,118 @@ test("全表满额回收不动占着座位的会话", async () => {
   expect(sessionsRef.get(seatedId)).toBeDefined();
   expect(others.filter((id) => sessionsRef.get(id)).length).toBe(254);
 });
+
+/** 建房回执延迟 ack、并记录收发先后的假服务端，用来看同一会话的调用是否交错。 */
+const slowCreateServer = (ackDelayMs: number) => {
+  const order: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, srv) {
+      if (srv.upgrade(request)) return;
+      return new Response("upgrade required", { status: 400 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as {
+          id: string;
+          type: string;
+          payload?: { roomId?: string };
+        };
+        const reply = (payload: unknown) =>
+          ws.send(JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload }));
+        if (message.type === "room.create") {
+          const roomId = message.payload?.roomId ?? "";
+          order.push(`recv:${roomId}`);
+          setTimeout(() => {
+            order.push(`ack:${roomId}`);
+            reply({
+              roomId,
+              playerId: `p-${roomId}`,
+              sessionToken: `t-${roomId}`,
+              snapshot: { roomId, phase: "waiting", players: [], chat: [] },
+              privateState: { playerId: `p-${roomId}` },
+            });
+          }, ackDelayMs);
+          return;
+        }
+        reply({});
+      },
+    },
+  });
+  servers.push(server);
+  return { server, order };
+};
+
+const createRoomCall = (url: string, roomId: string, session?: string) =>
+  rpc(
+    url,
+    {
+      jsonrpc: "2.0",
+      id: roomId,
+      method: "tools/call",
+      params: {
+        name: "create_room",
+        arguments: { game: "faker", roomId, name: "x", allowAgents: true },
+      },
+    },
+    session
+  );
+
+test("同一会话并发的工具调用按到达顺序串行，不交错", async () => {
+  const { server, order } = slowCreateServer(80);
+  sessionsRef = newSessions(`http://127.0.0.1:${server.port}`);
+  const url = `http://127.0.0.1:${server.port}/api/mcp`;
+  const first = await createRoomCall(url, "1001");
+  const session = first.headers["mcp-session-id"]!;
+  order.length = 0;
+  await Promise.all([createRoomCall(url, "2001", session), createRoomCall(url, "2002", session)]);
+  // 串行：前一个建房的回执发出之后，后一个建房才会到达服务端。
+  expect(order.filter((entry) => entry.startsWith("recv:") || entry.startsWith("ack:"))).toEqual([
+    "recv:2001",
+    "ack:2001",
+    "recv:2002",
+    "ack:2002",
+  ]);
+});
+
+test("挂起的调用不会永久堵住同一会话：等待超时回 BUSY，持有超时后放行", async () => {
+  const { server } = slowCreateServer(400);
+  sessionsRef = new RemoteMcpSessions(logger, {
+    selfUrl: `http://127.0.0.1:${server.port}`,
+    siteUrl: "https://game.example.com",
+    callWaitMs: 50,
+    callHoldMaxMs: 120,
+  });
+  const url = `http://127.0.0.1:${server.port}/api/mcp`;
+  const session = (await initialize("198.51.100.9")).headers["mcp-session-id"]!;
+  const slow = createRoomCall(url, "3001", session);
+  await Bun.sleep(10);
+  const waiter = await createRoomCall(url, "3002", session);
+  expect(waiter.payload.result.isError).toBe(true);
+  expect(waiter.payload.result.content[0].text).toContain("BUSY");
+  await slow;
+  // 持有方结束后后续调用恢复正常，不留下死锁。
+  const after = await createRoomCall(url, "3003", session);
+  expect(after.payload.result.content[0].text).not.toContain("BUSY");
+});
+
+test("持有方超过持有上限会被强制放行，后续调用不必等它真正返回", async () => {
+  const { server, order } = slowCreateServer(600);
+  sessionsRef = new RemoteMcpSessions(logger, {
+    selfUrl: `http://127.0.0.1:${server.port}`,
+    siteUrl: "https://game.example.com",
+    callWaitMs: 1000,
+    callHoldMaxMs: 100,
+  });
+  const url = `http://127.0.0.1:${server.port}/api/mcp`;
+  const session = (await initialize("198.51.100.9")).headers["mcp-session-id"]!;
+  const stuck = createRoomCall(url, "4001", session);
+  await Bun.sleep(10);
+  const startedAt = performance.now();
+  const next = createRoomCall(url, "4002", session);
+  await Bun.sleep(250);
+  // 第二个调用在持有上限（100ms）后就已发到服务端，而不是等满第一个的 600ms。
+  expect(order).toContain("recv:4002");
+  expect(performance.now() - startedAt).toBeLessThan(600);
+  await Promise.all([stuck, next]);
+});
