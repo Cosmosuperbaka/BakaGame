@@ -6,6 +6,7 @@ import type {
   PublicStatusEvent,
   PublicStatusIncidentKind,
 } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -302,9 +303,7 @@ function EventDialog({
           ) : null}
         </SettingsFields>
         {action.error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {action.error}
-          </p>
+          <FormAlert>{action.error}</FormAlert>
         ) : null}
         <DialogFooter>
           <Button

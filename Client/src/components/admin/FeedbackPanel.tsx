@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from "react";
 import { FEEDBACK_REPLY_MAX_LENGTH } from "@bakagame/shared/values";
 import type { AdminFeedbackDetail, FeedbackKind, FeedbackStatus } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -148,9 +149,7 @@ function FeedbackThread({
           />
           <div className="flex items-center justify-between gap-3">
             {action.error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {action.error}
-              </p>
+              <FormAlert>{action.error}</FormAlert>
             ) : (
               <span className="text-xs text-muted-foreground tabular-nums">
                 {reply.length}/{FEEDBACK_REPLY_MAX_LENGTH}

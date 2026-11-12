@@ -1,6 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { badgeDescriptionOf, PIONEER_BADGE_LIMIT } from "@bakagame/shared/values";
 import type { AdminUserDetail } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
@@ -94,6 +95,12 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   const [hours, setHours] = useState("24");
   const action = useAdminAction();
   const hasContributor = user.badges.some((badge) => badge.kind === "contributor");
+  const banFormRef = useRef<HTMLFormElement>(null);
+  // 封禁表单接在长弹窗末尾，弹窗滚动条是隐藏的：展开后把整张表单（含确认按钮）滚进可见范围。
+  // jsdom 没有 scrollIntoView，按可选调用处理。
+  useEffect(() => {
+    if (mode === "ban") banFormRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [mode]);
   const after = (ok: boolean) => {
     if (!ok) return;
     setMode("view");
@@ -134,7 +141,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         {user.recentGames.length ? (
           <ul className="grid gap-1 text-sm">
             {user.recentGames.map((game) => (
-              <li key={game.id} className="flex flex-wrap gap-x-2 text-muted-foreground">
+              <li key={game.id} className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
                 <Badge variant="outline" size="xs">
                   {GAME_LABELS[game.game]}
                 </Badge>
@@ -157,8 +164,11 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
               <li key={badge.kind} className="flex flex-wrap items-center gap-2">
                 <BadgeChip badge={badge} />
                 <span className="text-xs text-muted-foreground">{badgeDescriptionOf(badge)}</span>
+                {/* 佩戴状态是一枚标记，不是说明句的延续：裸灰字紧跟在说明后面会读成同一句话。 */}
                 {user.equippedBadge === badge.kind ? (
-                  <span className="text-xs text-muted-foreground">佩戴中</span>
+                  <Badge variant="active" size="xs">
+                    佩戴中
+                  </Badge>
                 ) : null}
               </li>
             ))}
@@ -169,7 +179,8 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant={hasContributor ? "outline" : "default"}
+            // 授予与撤销同为描边：实心主色在一屏操作里比「封禁」还抢眼，状态由按钮文字表达。
+            variant="outline"
             size="sm"
             loading={action.busy === "badge"}
             disabled={action.busy !== null}
@@ -197,6 +208,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
 
       {mode === "ban" ? (
         <form
+          ref={banFormRef}
           onSubmit={(event) => void submit(event)}
           className="grid gap-3 rounded-md border bg-card p-3"
         >
@@ -213,9 +225,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
             <SettingSelect label="时长" value={hours} options={BAN_DURATIONS} onChange={setHours} />
           </SettingsFields>
           {action.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {action.error}
-            </p>
+            <FormAlert>{action.error}</FormAlert>
           ) : null}
           <div className="flex justify-end gap-2">
             <Button
@@ -242,9 +252,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
       ) : (
         <>
           {action.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {action.error}
-            </p>
+            <FormAlert>{action.error}</FormAlert>
           ) : null}
           {self ? (
             <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p>

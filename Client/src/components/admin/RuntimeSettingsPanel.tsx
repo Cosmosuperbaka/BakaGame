@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AdminRuntimeSetting } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
@@ -97,9 +98,7 @@ function EditDialog({
           <Editor item={item} value={value} onChange={setValue} />
         </SettingsFields>
         {action.error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {action.error}
-          </p>
+          <FormAlert>{action.error}</FormAlert>
         ) : null}
         <DialogFooter>
           <Button

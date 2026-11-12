@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RefreshCw, RotateCcw } from "lucide-react";
 import type { QQLookupStatus } from "@bakagame/shared";
+import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AdminToolbar, QueryState } from "@/components/admin/AdminParts";
@@ -103,9 +104,7 @@ export function QQLookupPanel() {
             </p>
           ) : null}
           {action.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {action.error}
-            </p>
+            <FormAlert>{action.error}</FormAlert>
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button
