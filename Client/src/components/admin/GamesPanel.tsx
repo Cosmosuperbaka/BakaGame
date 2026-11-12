@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
+import { Collapsible } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
 import { SettingSelect, SettingTextField } from "@/components/common/room/SettingFields";
 import {
@@ -59,10 +60,13 @@ function GameDetail({ record }: { record: GameRecordDetail }) {
         <tbody>
           {players.map((player) => (
             <tr key={player.playerId}>
-              <th scope="row" className="font-normal text-foreground">
+              {/* 行表头默认继承表头的衬线体，玩家名改回正文无衬线，与其它表格里的昵称一致。 */}
+              <th scope="row" className="font-sans font-normal text-foreground">
                 {player.name}
               </th>
-              <td className="font-mono text-xs text-muted-foreground">{player.userId ?? "游客"}</td>
+              <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                {player.userId ?? "游客"}
+              </td>
               <td className="text-right tabular-nums">{player.score}</td>
             </tr>
           ))}
@@ -75,25 +79,27 @@ function GameDetail({ record }: { record: GameRecordDetail }) {
         {record.rounds.length ? (
           <div className="grid max-h-80 gap-2 overflow-y-auto">
             {record.rounds.map((round) => (
-              <details key={round.number} className="rounded-md border bg-card p-3">
-                <summary className="cursor-pointer text-sm">
-                  第 {round.number} 回合 · {formatShortDateTime(round.startedAt)} · 历时{" "}
-                  {formatDuration(round.startedAt, round.endedAt)}
-                </summary>
-                <div className="mt-2 grid gap-2">
-                  {round.players.length ? (
-                    <p className="text-xs text-muted-foreground">
-                      本回合得分：
-                      {round.players
-                        .map((player) => `${player.name} ${signed(player.score)}`)
-                        .join(" · ")}
-                    </p>
-                  ) : null}
-                  <pre className="max-h-60 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all">
-                    {JSON.stringify(round.summary, null, 2)}
-                  </pre>
-                </div>
-              </details>
+              // 用站内折叠原语代替原生 details：浏览器默认的黑三角没有悬停与展开态，和弹窗里其它控件不是一套。
+              <div key={round.number} className="rounded-md border bg-card px-3 py-2">
+                <Collapsible
+                  size="sm"
+                  title={`第 ${round.number} 回合 · ${formatShortDateTime(round.startedAt)} · 历时 ${formatDuration(round.startedAt, round.endedAt)}`}
+                >
+                  <div className="grid gap-2 pb-1">
+                    {round.players.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        本回合得分：
+                        {round.players
+                          .map((player) => `${player.name} ${signed(player.score)}`)
+                          .join(" · ")}
+                      </p>
+                    ) : null}
+                    <pre className="max-h-60 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-all">
+                      {JSON.stringify(round.summary, null, 2)}
+                    </pre>
+                  </div>
+                </Collapsible>
+              </div>
             ))}
           </div>
         ) : (
@@ -223,18 +229,21 @@ export function GamesPanel() {
               <th scope="col">游戏</th>
               <th scope="col">玩家</th>
               <th scope="col">结束时间</th>
-              <th scope="col">时长</th>
+              <th scope="col" className="text-right">
+                时长
+              </th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.id}>
-                <td>
+                {/* 房号与游戏徽章不折行：窄屏时表格横向滚动，折行会把「谁是卧底」拆成两行。 */}
+                <td className="whitespace-nowrap">
                   <RowButton onClick={() => setOpen(item)}>
                     <span className="font-mono">{item.roomId}</span> · {item.roundCount} 回合
                   </RowButton>
                 </td>
-                <td>
+                <td className="whitespace-nowrap">
                   <Badge variant="outline" size="xs">
                     {GAME_LABELS[item.game]}
                   </Badge>
@@ -248,7 +257,7 @@ export function GamesPanel() {
                 <td className="whitespace-nowrap tabular-nums text-muted-foreground">
                   {formatShortDateTime(item.endedAt)}
                 </td>
-                <td className="whitespace-nowrap tabular-nums text-muted-foreground">
+                <td className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
                   {formatDuration(item.startedAt, item.endedAt)}
                 </td>
               </tr>
