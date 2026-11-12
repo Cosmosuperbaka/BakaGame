@@ -271,7 +271,7 @@ export const Scoring: Story = {
   render: () => <ScoringRows />,
 };
 
-/** 与附加徽章并排：徽章槽不限制数量，由各游戏自行组合。 */
+/** 与附加徽章并排：徽章槽不限制数量，由各游戏自行组合；行内附加徽章取 xs 档，与状态胶囊同高。 */
 export const WithBadgeSlot: Story = {
   name: "与附加徽章并排",
   render: () => (
@@ -282,7 +282,9 @@ export const WithBadgeSlot: Story = {
       badges={
         <>
           <PlayerStatusPill label="平民" tone="default" />
-          <Badge variant="outline">原版</Badge>
+          <Badge variant="subtle" size="xs">
+            原版
+          </Badge>
         </>
       }
     />
