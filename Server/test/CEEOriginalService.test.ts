@@ -436,7 +436,7 @@ describe("原版房间适配", () => {
     expect(state.privateState.hints).toEqual([]);
     expect(state.privateState.guesses).toHaveLength(1);
     expect(state.privateState.guesses[0].feedback.tags[0]).toEqual({
-      text: "",
+      text: "???",
       matched: false,
       hidden: true,
       kind: "subject",

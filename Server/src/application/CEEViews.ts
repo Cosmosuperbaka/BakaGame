@@ -11,6 +11,7 @@ import {
   type CEERound,
   type CEEUnit,
 } from "../domain/CEEModel";
+import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
 import { ceeParticipants, getCEEUnit } from "../domain/CEERound";
 import { isCEEAntiCheatRoom, ROOM_ID_TEST_MODE } from "../shared/Index";
 
@@ -89,18 +90,12 @@ function visibleGuesses(room: CEERoom, player: CEEPlayerRecord, observing: boole
   const unit = getCEEUnit(room, player);
   return round.guesses
     .filter((guess) => observing || unit?.memberIds.includes(guess.playerId))
-    .map((guess) => ({
-      ...guess,
-      feedback: {
-        ...guess.feedback,
-        tags: guess.feedback.tags.map((tag) => {
-          const owners = round.tagOwners.get(tag.text);
-          const hidden =
-            !observing && room.phase !== "settled" && Boolean(owners && !owners.has(player.id));
-          return hidden ? { text: "???", matched: false, hidden: true, kind: tag.kind } : tag;
-        }),
-      },
-    }));
+    .map((guess) =>
+      maskGuessTags(guess, (tagText) => {
+        const owners = round.tagOwners.get(tagText);
+        return !observing && room.phase !== "settled" && Boolean(owners && !owners.has(player.id));
+      })
+    );
 }
 /** 本单位剩余可猜次数；没有当前局时为 0。 */
 function ceeRemainingAttempts(round: CEERound | null, unit: CEEUnit | undefined): number {
@@ -125,25 +120,16 @@ function hostCanStartRound(
     participants.every((member) => member.id === room.hostPlayerId || member.ready)
   );
 }
-/** 全局 BP 下该玩家视角的禁用角色编号：其他玩家猜过的角色，答案豁免与本人重复除外。 */
-function bannedCharacterIdsFor(round: CEERound | null, player: CEEPlayerRecord): number[] {
-  if (!round || !round.settings.globalPick) return [];
-  const usedCharacterIds = new Set(
-    round.guesses.filter((guess) => guess.playerId === player.id).map((guess) => guess.character.id)
-  );
-  return [
-    ...new Set(
-      round.guesses
-        .filter(
-          (guess) =>
-            !usedCharacterIds.has(guess.character.id) &&
-            guess.playerId !== player.id &&
-            (!round.settings.syncMode || guess.syncRound < round.syncRound) &&
-            !(guess.correct && (round.settings.syncMode || round.settings.nonstopMode))
-        )
-        .map((guess) => guess.character.id)
-    ),
-  ];
+/** 全局 BP 下该玩家视角的禁用角色编号：规则本体在 CEEPickRules，这里只把房间设置换成判定上下文。 */
+function bannedIdsOf(round: CEERound | null, player: CEEPlayerRecord): number[] {
+  if (!round) return [];
+  return bannedCharacterIdsFor(round.guesses, {
+    playerId: player.id,
+    globalPick: round.settings.globalPick,
+    syncMode: round.settings.syncMode,
+    nonstopMode: round.settings.nonstopMode,
+    syncRound: round.syncRound,
+  });
 }
 /** 待批准旁观者的私有状态：只说得出「在等批准」，其余全部为空。 */
 function emptyCEEPrivateState(player: CEEPlayerRecord, spectatePending: boolean): CEEPrivateState {
@@ -214,7 +200,7 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
     ),
     imageHintLevel: remaining,
     deadlineAt: canGuess ? unit!.deadlineAt : null,
-    bannedCharacterIds: bannedCharacterIdsFor(round, player),
+    bannedCharacterIds: bannedIdsOf(round, player),
     spectatePending: false,
   };
 }

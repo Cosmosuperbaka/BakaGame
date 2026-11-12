@@ -6,6 +6,7 @@ import type {
   CEESettings,
 } from "../shared/CEE";
 import { AppError } from "./Errors";
+import { isCharacterBanned } from "./CEEPickRules";
 import {
   ceeUnitId,
   type CEEPlayerRecord,
@@ -152,30 +153,21 @@ type CEEGuessAction = {
   unit: CEEUnit;
   now: number;
 };
-/** 全局 BP 下该角色是否已被同局其他玩家猜过；同步模式只看往轮。 */
-function isPickedByOthers(action: CEEGuessAction): boolean {
-  const { round, player, character } = action;
-  return round.guesses.some(
-    (guess) =>
-      guess.character.id === character.id &&
-      guess.playerId !== player.id &&
-      (!round.settings.syncMode || guess.syncRound < round.syncRound)
-  );
-}
 /** 全局 BP 只拦其他玩家猜过的角色：本人重复提交不算违规，答案本身在同步与血战下豁免。 */
 function rejectBannedPick(action: CEEGuessAction): void {
   const { round, player, character } = action;
-  const correct = character.id === round.answer.id;
-  const previouslyUsed = round.guesses.some(
-    (guess) => guess.character.id === character.id && guess.playerId === player.id
+  const banned = isCharacterBanned(
+    round.guesses,
+    {
+      playerId: player.id,
+      globalPick: round.settings.globalPick,
+      syncMode: round.settings.syncMode,
+      nonstopMode: round.settings.nonstopMode,
+      syncRound: round.syncRound,
+    },
+    character.id
   );
-  if (
-    !round.settings.globalPick ||
-    previouslyUsed ||
-    (correct && (round.settings.syncMode || round.settings.nonstopMode))
-  )
-    return;
-  if (isPickedByOthers(action)) throw new AppError("CHARACTER_BANNED", "该角色已被其他玩家猜过");
+  if (banned) throw new AppError("CHARACTER_BANNED", "该角色已被其他玩家猜过");
 }
 /** 服务端权威生成的猜测记录：判定与反馈都按冻结答案计算，不接受客户端提交的判中结果。 */
 function createCEEGuess(action: CEEGuessAction): CEEGuess {

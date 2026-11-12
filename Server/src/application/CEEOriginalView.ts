@@ -1,3 +1,4 @@
+import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
 import type { CEEGuess, CEEPrivateState, CEERoomSnapshot } from "../shared/CEE";
 import type { CEEOriginalChatRoom, CEEOriginalSession } from "./CEEOriginalModel";
 
@@ -24,18 +25,12 @@ export function originalPrivateState(session: CEEOriginalSession): CEEPrivateSta
   const visibleGuesses = session.guesses.filter(
     (guess) => watching || ended || teamIds.has(guess.playerId)
   );
-  const guesses: CEEGuess[] = visibleGuesses.map((guess) => ({
-    ...guess,
-    feedback: {
-      ...guess.feedback,
-      tags: guess.feedback.tags.map((tag) => {
-        const revealers = session.bannedTags.get(tag.text);
-        const hidden =
-          !watching && !ended && !!revealers && ![...revealers].some((id) => teamIds.has(id));
-        return hidden ? { text: "", matched: false, hidden: true, kind: tag.kind } : tag;
-      }),
-    },
-  }));
+  const guesses: CEEGuess[] = visibleGuesses.map((guess) =>
+    maskGuessTags(guess, (tagText) => {
+      const revealers = session.bannedTags.get(tagText);
+      return !watching && !ended && !!revealers && ![...revealers].some((id) => teamIds.has(id));
+    })
+  );
   const remaining = Math.max(0, session.settings.maxAttempts - (me?.attempts || 0));
   const canGuess =
     !!me &&
@@ -45,26 +40,13 @@ export function originalPrivateState(session: CEEOriginalSession): CEEPrivateSta
     !watching &&
     !ownCorrect &&
     (!session.settings.syncMode || !me.syncCompleted);
-  const mine = new Set(
-    session.guesses
-      .filter((guess) => guess.playerId === playerId)
-      .map((guess) => guess.character.id)
-  );
-  const bannedCharacterIds = session.settings.globalPick
-    ? [
-        ...new Set(
-          session.guesses
-            .filter(
-              (guess) =>
-                guess.playerId !== playerId &&
-                !mine.has(guess.character.id) &&
-                (!session.settings.syncMode || guess.syncRound < session.syncRound) &&
-                !((session.settings.syncMode || session.settings.nonstopMode) && guess.correct)
-            )
-            .map((guess) => guess.character.id)
-        ),
-      ]
-    : [];
+  const bannedCharacterIds = bannedCharacterIdsFor(session.guesses, {
+    playerId,
+    globalPick: session.settings.globalPick,
+    syncMode: session.settings.syncMode,
+    nonstopMode: session.settings.nonstopMode,
+    syncRound: session.syncRound,
+  });
   return {
     playerId,
     canGuess,
