@@ -918,6 +918,64 @@ describe("SonGuessrService", () => {
     expect(qqSearchedCookies).toContain("qm_keyst=swept");
   });
 
+  test("后台续期间隔未到时，巡检不会向 QQ 上游重复发登录状态请求", async () => {
+    const minute = 60_000;
+    let now = 1_000;
+    let qqStatusCalls = 0;
+    const qqMock: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie) => {
+        qqStatusCalls += 1;
+        return {
+          cookie,
+          account: { platform: "qq", userId: "qq-1", nickname: "QQ用户", vipStatus: "nonVip" },
+        };
+      },
+    };
+    const service = new SonGuessrService({
+      musicProvider: new AggregatedMusicProvider({
+        neteaseProvider: { ...provider, search: async () => [] },
+        qqProvider: qqMock,
+      }),
+      now: () => now,
+      // 续期间隔大于巡检扫描周期：扫描会跑，但没到期的号不该被续。
+      musicSessionRefreshIntervalMs: 15 * minute,
+    });
+    const host = connection(service, "interval-host");
+    await createRoom(service, host);
+    await execute(service, host, {
+      id: "interval-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=interval", platform: "qq" },
+    });
+    const sweep = async (advanceMs: number) => {
+      now += advanceMs;
+      // 房间闲置久了会被巡检回收：每一步先发一条聊天保持活跃。
+      await execute(service, host, {
+        id: `interval-chat-${now}`,
+        type: "song.chat.send",
+        roomId: "1234",
+        payload: { text: "在线" },
+      });
+      await service.runHousekeeping();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+    const loginCalls = qqStatusCalls;
+
+    await sweep(0);
+    await sweep(11 * minute);
+    expect(qqStatusCalls).toBe(loginCalls);
+
+    // 距上次续期满 22 分钟、超过间隔：这一次才续。
+    await sweep(11 * minute);
+    expect(qqStatusCalls).toBe(loginCalls + 1);
+
+    // 刚续完又到下一次扫描：间隔没到，不再续。
+    await sweep(11 * minute);
+    expect(qqStatusCalls).toBe(loginCalls + 1);
+  });
+
   test("号主重传旧 Cookie 时不会被服务端已续期的新 Cookie 反向覆盖", async () => {
     let now = 1_000;
     let qqStatusCalls = 0;
