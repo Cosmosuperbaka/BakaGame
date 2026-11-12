@@ -45,6 +45,23 @@ test("注册与领挑战按来源限流：同一来源超额 429，换来源照�
   expect((await check(app, "clientType=desktop&clientVersion=2.0.0")).status).toBe(200);
 });
 
+test("请求体不合法的请求同样计入来源额度：校验失败不能成为免费的探测通道", async () => {
+  const app = appAt("2.0.0");
+  const malformed = (ip: string) =>
+    app.handle(
+      new Request("http://localhost/api/client/challenge", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-real-ip": ip },
+        body: JSON.stringify({ clientId: "x" }),
+      })
+    );
+  const statuses: number[] = [];
+  for (let index = 0; index < 130; index += 1)
+    statuses.push((await malformed("203.0.113.20")).status);
+  expect(statuses.filter((status) => status === 429).length).toBeGreaterThan(0);
+  expect(statuses[0]).not.toBe(429);
+});
+
 test("低于最低版本回 outdated，并把门槛一起回显给提醒用", async () => {
   expect(await check(appAt("2.0.0"), "clientType=desktop&clientVersion=1.9.0")).toMatchObject({
     status: 200,

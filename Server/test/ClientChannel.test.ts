@@ -18,6 +18,11 @@ import type { AndroidAttestationChecker } from "../src/infrastructure/AndroidAtt
 
 const clean: ClientSelfCheckReport = { hardFail: [], softFail: [], keyProtection: "hardware" };
 
+/** 移动端注册要过公钥解析：夹具用真的 P-256 公钥，不再拿任意字符串充数。 */
+const ANDROID_SPKI = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  .publicKey.export({ format: "der", type: "spki" })
+  .toString("base64");
+
 /** 真密钥对：验签走的是与生产完全相同的路径，不用假签名糊弄自己。 */
 function desktopDevice() {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -161,6 +166,22 @@ describe("客户端通道换票", () => {
     });
     expect(first.clientId).toBe(device.clientId);
     expect(again.clientId).toBe(first.clientId);
+  });
+  test("公钥解析不了的注册直接拒绝，不落库", async () => {
+    const { channel, store } = harness();
+    const base = {
+      clientType: "desktop" as const,
+      platform: "windows",
+      clientVersion: "1.0.0",
+      selfCheck: clean,
+    };
+    const garbage = Buffer.alloc(40, 7).toString("base64");
+    for (const keyAlgorithm of ["ed25519", "ec-p256"] as const) {
+      await expect(
+        channel.register({ ...base, keyAlgorithm, publicKey: garbage })
+      ).rejects.toMatchObject({ code: "INVALID_PUBLIC_KEY" });
+    }
+    expect(await store.find(clientIdOfPublicKey(garbage))).toBeUndefined();
   });
   test("完整链路：注册 → 领挑战 → 签名换票 → 握手凭票拿到通道证明", async () => {
     const { channel } = harness();
@@ -535,7 +556,7 @@ describe("移动端自检词表接入", () => {
     platform: "android",
     clientVersion: "1.0.0",
     keyAlgorithm: "ec-p256",
-    publicKey: Buffer.from("spki-of-an-android-device").toString("base64"),
+    publicKey: ANDROID_SPKI,
     selfCheck,
   });
 
@@ -574,7 +595,7 @@ describe("Android 平台证明接入", () => {
     platform: "android",
     clientVersion: "1.0.0",
     keyAlgorithm: "ec-p256",
-    publicKey: Buffer.from("spki-of-this-device").toString("base64"),
+    publicKey: ANDROID_SPKI,
     selfCheck: { ...clean, keyProtection: "hardware" },
     ...over,
   });

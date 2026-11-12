@@ -178,7 +178,7 @@ export function compareClientVersion(a: string, b: string): number {
 
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
-function publicKeyOf(device: StoredClientDevice) {
+function publicKeyOf(device: Pick<StoredClientDevice, "keyAlgorithm" | "publicKey">) {
   const raw = Buffer.from(device.publicKey, "base64");
   if (device.keyAlgorithm === "ed25519") {
     if (raw.length !== 32) throw new AppError("CLIENT_UNTRUSTED", "设备公钥长度不正确");
@@ -304,6 +304,12 @@ export class ClientChannel {
     minimumVersion: string;
     outdated: boolean;
   }> {
+    // 公钥解析不了的注册没有任何用处，只会往设备表里堆垃圾行：落库之前先拒。
+    try {
+      publicKeyOf(input);
+    } catch {
+      throw new AppError("INVALID_PUBLIC_KEY", "设备公钥无法解析");
+    }
     const integrity = this.requireTrusted(input.selfCheck, "register");
     if (integrity === "suspect")
       this.onWarn("客户端以可疑状态注册", {

@@ -70,18 +70,23 @@ export const clientChannelRoutes = (
     peerMaxRequests: CLIENT_CHANNEL_PEER_MAX_REQUESTS,
     globalMaxRequests: CLIENT_CHANNEL_GLOBAL_MAX_REQUESTS,
   });
+  // 限流挂在请求入口、先于 body 校验：挂在 beforeHandle 上，校验失败的请求就不计额度，
+  // 非法请求体成了不限速的探测通道。
   return new Elysia({ name: "client-channel", normalize: false })
-    .onBeforeHandle(({ request, server, set }) => {
-      if (request.method !== "POST") return;
+    .onRequest(({ request, server, set }) => {
+      if (request.method !== "POST" || !new URL(request.url).pathname.startsWith("/api/client/"))
+        return;
       const peerIp = server?.requestIP(request)?.address ?? "unknown";
       const verdict = limiter.consume(resolveClientIp(request.headers, peerIp), peerIp);
       if (verdict.allowed) return;
-      Object.assign(set.headers, rateLimitHeaders(verdict));
-      set.status = 429;
-      return httpError(
-        "RATE_LIMITED",
-        "客户端通道请求过于频繁，请稍后重试",
-        traceIdOf(set.headers)
+      return new Response(
+        JSON.stringify(
+          httpError("RATE_LIMITED", "客户端通道请求过于频繁，请稍后重试", traceIdOf(set.headers))
+        ),
+        {
+          status: 429,
+          headers: { "content-type": "application/json", ...rateLimitHeaders(verdict) },
+        }
       );
     })
     .post(
