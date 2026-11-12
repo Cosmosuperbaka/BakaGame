@@ -210,11 +210,11 @@ export class CEERooms {
   /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
   private markSeatOffline(room: CEERoom, player: CEEPlayerRecord): void {
     player.online = false;
-    player.offlineAt = this.now();
+    player.lastSeenAt = this.now();
     delete player.connectionId;
     if (room.hostPlayerId === player.id)
-      room.hostDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
-    if (![...room.players.values()].some((member) => member.online)) room.emptyAt = this.now();
+      room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
+    if (![...room.players.values()].some((member) => member.online)) room.emptySinceAt = this.now();
     if (room.phase === "answering" && room.setterPlayerId === player.id) this.resetWaiting(room);
     advanceCEERound(room, this.now());
     this.publishRoom(room);
@@ -258,7 +258,7 @@ export class CEERooms {
       chat: [],
       spectatorRequests: new Map(),
       createdAt: this.now(),
-      lastActiveAt: this.now(),
+      lastActivityAt: this.now(),
     };
     this.rooms.set(id, room);
     try {
@@ -385,7 +385,7 @@ export class CEERooms {
       throw new AppError("SESSION_INVALID", "请重新加入房间");
     if (expectedRoomId && expectedRoomId !== room.id)
       throw new AppError("ROOM_MISMATCH", "指令房间与当前会话不一致");
-    room.lastActiveAt = this.now();
+    room.lastActivityAt = this.now();
     return { room, player };
   }
 
@@ -488,7 +488,7 @@ export class CEERooms {
       hidden: this.testRooms.isTestRoom(room.id),
       roundNumber: room.roundNumber,
       createdAt: room.createdAt,
-      lastActiveAt: room.lastActiveAt,
+      lastActiveAt: room.lastActivityAt,
       players: [...room.players.values()].map((player) => ({
         id: player.id,
         name: player.name,
@@ -532,7 +532,7 @@ export class CEERooms {
     actor.ready = false;
     target.ready = true;
     room.hostPlayerId = id;
-    delete room.hostDeadlineAt;
+    delete room.hostReconnectDeadlineAt;
     this.system(room, `${target.name} 成为房主`);
   }
   /** 私密即有密码：切到私密时必须带新密码或已有密码；留空保留原密码；公开房清除密码。 */
@@ -659,15 +659,15 @@ export class CEERooms {
     for (const room of this.rooms.values()) {
       if (
         !this.testRooms.isTestRoom(room.id) &&
-        ((room.emptyAt !== undefined && now - room.emptyAt >= ROOM_EMPTY_GRACE_PERIOD_MS) ||
-          now - room.lastActiveAt >= ROOM_IDLE_TIMEOUT_MS)
+        ((room.emptySinceAt !== undefined && now - room.emptySinceAt >= ROOM_EMPTY_GRACE_PERIOD_MS) ||
+          now - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS)
       ) {
         this.closeRoom(room, "房间长时间无人活动，已关闭");
         continue;
       }
       let changed = false;
       if (this.sweepOfflinePlayers(room, now)) changed = true;
-      if (room.hostDeadlineAt !== undefined && now >= room.hostDeadlineAt) {
+      if (room.hostReconnectDeadlineAt !== undefined && now >= room.hostReconnectDeadlineAt) {
         this.assignHost(room);
         changed = true;
       }
@@ -685,9 +685,7 @@ export class CEERooms {
   private sweepOfflinePlayers(room: CEERoom, now: number): boolean {
     const expired = [...room.players.values()].filter(
       (player) =>
-        !player.online &&
-        player.offlineAt !== undefined &&
-        now - player.offlineAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
+        !player.online && now - player.lastSeenAt >= PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS
     );
     for (const player of expired) this.remove(room, player);
     return expired.length > 0;
@@ -760,6 +758,7 @@ export class CEERooms {
       marks: "",
       syncCompleted: false,
       joinedAt: this.now(),
+      lastSeenAt: this.now(),
     };
   }
   private attach(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
@@ -769,15 +768,15 @@ export class CEERooms {
     player.connectionId = connection.id;
     player.online = true;
     player.account = connection.account;
-    delete player.offlineAt;
-    delete room.emptyAt;
+    player.lastSeenAt = this.now();
+    delete room.emptySinceAt;
     if (!room.players.has(room.hostPlayerId)) {
       // 房主被移除时只剩离线保留座位：回来的第一个人当场接任，不必等巡检。
       room.hostPlayerId = player.id;
       player.ready = true;
-      delete room.hostDeadlineAt;
-    } else if (player.id === room.hostPlayerId) delete room.hostDeadlineAt;
-    room.lastActiveAt = this.now();
+      delete room.hostReconnectDeadlineAt;
+    } else if (player.id === room.hostPlayerId) delete room.hostReconnectDeadlineAt;
+    room.lastActivityAt = this.now();
   }
   /** 公开快照：座位是否被 Agent 操作看连接所在的标签页，同房玩家据此看到 MCP 徽标。 */
   private snapshotOf(room: CEERoom) {
@@ -834,7 +833,7 @@ export class CEERooms {
     if (room.hostPlayerId === player.id) this.assignHost(room);
     if (!room.players.size) this.closeRoom(room, "房间已关闭");
     else {
-      if (![...room.players.values()].some((member) => member.online)) room.emptyAt = this.now();
+      if (![...room.players.values()].some((member) => member.online)) room.emptySinceAt = this.now();
       advanceCEERound(room, this.now());
       this.publishRoom(room);
     }
@@ -847,10 +846,10 @@ export class CEERooms {
     if (next) {
       room.hostPlayerId = next.id;
       next.ready = true;
-      delete room.hostDeadlineAt;
+      delete room.hostReconnectDeadlineAt;
     } else {
       // 没有在线候选：留下截止让巡检每跳重试，不让房主一直悬空。
-      room.hostDeadlineAt = this.now();
+      room.hostReconnectDeadlineAt = this.now();
     }
   }
   private closeRoom(room: CEERoom, reason: string): void {
@@ -931,8 +930,8 @@ const deserializeRoom = (
       ...player,
       online: false,
       connectionId: undefined,
-      // 离线清理按 offlineAt 起算：不设值的话恢复出来的玩家永远不会被回收。
-      offlineAt: now,
+      // 离线清理按 lastSeenAt 起算：恢复时从当下重新计，旧值不可信。
+      lastSeenAt: now,
     });
   }
 
@@ -961,10 +960,10 @@ const deserializeRoom = (
     ),
     // 阶段截止时刻暂停：停机期间没人能作答，按原时刻结算等于用故障惩罚玩家。
     phaseDeadlineAt: saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
-    lastActiveAt: now,
-    emptyAt: undefined,
-    hostDeadlineAt:
-      saved.hostDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
+    lastActivityAt: now,
+    emptySinceAt: undefined,
+    hostReconnectDeadlineAt:
+      saved.hostReconnectDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
     round,
   };
 };

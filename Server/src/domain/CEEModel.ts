@@ -14,7 +14,8 @@ export interface CEEPlayerRecord extends CEEPlayer {
   sessionToken: string;
   connectionId?: string;
   joinedAt: number;
-  offlineAt?: number;
+  /** 最近一次在线的时刻：入座、每次绑定、转离线时更新；离线席位清理以它起算。 */
+  lastSeenAt: number;
 }
 export interface CEEUnit {
   id: string;
@@ -72,9 +73,9 @@ export interface CEERoom {
    */
   spectatorRequests: Map<string, number>;
   createdAt: number;
-  lastActiveAt: number;
-  emptyAt?: number;
-  hostDeadlineAt?: number;
+  lastActivityAt: number;
+  emptySinceAt?: number;
+  hostReconnectDeadlineAt?: number;
 }
 export const ceeUnitId = (player: Pick<CEEPlayer, "id" | "team">): string =>
   player.team === null ? player.id : `team:${player.team}`;
