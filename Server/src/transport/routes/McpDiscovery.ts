@@ -52,6 +52,27 @@ const publicOrigin = (
   return !isTrustedOrigin || isTrustedOrigin(origin) ? origin : fallback;
 };
 
+/**
+ * 发现文件可信的公开来源：只认站点前端与服务端自己的公开地址。
+ * 不复用 WebSocket 的来源白名单——那份名单还放行内嵌壳的 `https://localhost` 与私网互认，
+ * 对「指向哪里的 MCP 端点」这个问题它们都不是合法答案。
+ */
+export const isPublicSiteOrigin = (
+  origin: string,
+  clientUrl: string,
+  serverUrl: string
+): boolean => {
+  const publicOrigins = new Set<string>();
+  for (const raw of [...clientUrl.split(","), serverUrl]) {
+    try {
+      publicOrigins.add(new URL(raw.trim()).origin);
+    } catch {
+      // 配置项里无法解析的条目不构成可信来源
+    }
+  }
+  return publicOrigins.has(origin);
+};
+
 /** 结果随这两个头变化：共享缓存必须分开存，不能拿一份响应回给另一组头。 */
 const DISCOVERY_VARY = "x-forwarded-host, x-forwarded-proto";
 

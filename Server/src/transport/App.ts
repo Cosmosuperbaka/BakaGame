@@ -69,7 +69,7 @@ import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
 import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
-import { mcpDiscoveryRoutes } from "./routes/McpDiscovery";
+import { isPublicSiteOrigin, mcpDiscoveryRoutes } from "./routes/McpDiscovery";
 import { mcpRemoteRoutes } from "./routes/McpRemote";
 import { RemoteMcpSessions } from "../mcp/Remote";
 import type { ClientArtifacts } from "../infrastructure/ClientArtifacts";
@@ -1374,7 +1374,7 @@ export const createApp = ({
         mcpEnabled: env.mcpEnabled === true,
         serverUrl: env.serverUrl,
         version: "1.0.0",
-        isTrustedOrigin: (origin) => isAllowedOrigin(origin, env.clientUrl),
+        isTrustedOrigin: (origin) => isPublicSiteOrigin(origin, env.clientUrl, env.serverUrl),
       })
     )
     // ==================== 远程 MCP（Streamable HTTP） ====================

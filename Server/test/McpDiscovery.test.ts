@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { TOOLS } from "../src/mcp/Tools";
 import { Elysia } from "elysia";
 import { expect, test } from "bun:test";
-import { mcpDiscoveryRoutes } from "../src/transport/routes/McpDiscovery";
+import { isPublicSiteOrigin, mcpDiscoveryRoutes } from "../src/transport/routes/McpDiscovery";
 
 const app = new Elysia({ normalize: false }).use(
   mcpDiscoveryRoutes({ mcpEnabled: true, serverUrl: "http://127.0.0.1:4850", version: "1.0.0" })
@@ -150,4 +150,32 @@ test("转发主机与 Host 不在站点白名单内时退回配置地址，响�
       })
     ).url
   ).toBe("https://game.example.com/api/mcp");
+});
+
+test("真实站点来源判定：内嵌壳与私网来源不能充当发现文件的公开主机", async () => {
+  const guarded = new Elysia({ normalize: false }).use(
+    mcpDiscoveryRoutes({
+      mcpEnabled: true,
+      serverUrl: "https://api.example.com",
+      version: "1.0.0",
+      isTrustedOrigin: (origin) =>
+        isPublicSiteOrigin(origin, "https://game.example.com", "https://api.example.com"),
+    })
+  );
+  const read = async (headers: Record<string, string>) => {
+    const response = await guarded.handle(
+      new Request("http://127.0.0.1:4850/.well-known/mcp.json", { headers })
+    );
+    return ((await response.json()) as { mcpServers: { bakagame: { url: string } } }).mcpServers
+      .bakagame.url;
+  };
+  expect(await read({ "x-forwarded-proto": "https", "x-forwarded-host": "localhost" })).toBe(
+    "https://api.example.com/api/mcp"
+  );
+  expect(await read({ "x-forwarded-proto": "http", "x-forwarded-host": "192.168.1.8" })).toBe(
+    "https://api.example.com/api/mcp"
+  );
+  expect(await read({ "x-forwarded-proto": "https", "x-forwarded-host": "game.example.com" })).toBe(
+    "https://game.example.com/api/mcp"
+  );
 });
