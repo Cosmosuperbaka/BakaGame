@@ -1,3 +1,4 @@
+import { FAKER_DESCRIPTION_MAX_UNITS, textUnits } from "../../shared/TextUnits";
 import { ABSTAIN_TARGET_ID } from "../../shared/WhoIsFaker";
 import {
   assemble,
@@ -52,32 +53,6 @@ const selfPlayer = (context: UiContext) =>
   recordList(context.snapshot.players).find(
     (player) => player.id === (context.playerId ?? context.privateState.playerId)
   );
-
-/** 描述输入框与服务端同一口径：CJK/全角字符算 2 单位，上限 20。 */
-const charUnits = (char: string): number => {
-  const code = char.codePointAt(0) ?? 0;
-  return (code >= 0x2e80 && code <= 0x9fff) ||
-    (code >= 0xac00 && code <= 0xd7af) ||
-    (code >= 0xf900 && code <= 0xfaff) ||
-    (code >= 0xfe30 && code <= 0xfe6f) ||
-    (code >= 0xff01 && code <= 0xff60) ||
-    (code >= 0x1b000 && code <= 0x1b0ff) ||
-    (code >= 0x20000 && code <= 0x3fffd)
-    ? 2
-    : 1;
-};
-
-export const clampSpeech = (value: string): string => {
-  let units = 0;
-  let result = "";
-  for (const char of value) {
-    const width = charUnits(char);
-    if (units + width > 20) break;
-    units += width;
-    result += char;
-  }
-  return result;
-};
 
 const statusOf = (context: UiContext): Record<string, unknown> =>
   isRecord(context.snapshot.status) ? context.snapshot.status : {};
@@ -230,7 +205,7 @@ const descriptionControls = (context: UiContext): UiControl[] => {
         "描述内容",
         context.state.drafts["faker.description.input"] ?? "",
         "game",
-        { maxLength: 20, hint: "上限 10 个汉字或 20 个英文字符；按 Enter 或点发送" }
+        { maxLength: 20, hint: "上限 10 个汉字或 20 个英文字符（汉字算 2 个字宽）；超限发送会被拒绝，需自行缩短；按 Enter 或点发送" }
       ),
       button("faker.description.send", "发送", "game", {
         disabled: !(context.state.drafts["faker.description.input"] ?? "").trim(),
@@ -538,8 +513,14 @@ const clickFakerBasic = async (context: UiContext, id: string): Promise<string |
   }
   if (id === "faker.words.submit") return submitFakerWords(context);
   if (id === "faker.description.send") {
-    const value = clampSpeech(needDraft(context, "faker.description.input", "描述内容"));
+    const value = needDraft(context, "faker.description.input", "描述内容").trim();
     if (!value) throw new Error("描述内容不能为空");
+    // 超长如实拒绝而不是静默截断：截断后的内容 Agent 并不知情，却会被当作它的发言公开给全桌。
+    const units = textUnits(value);
+    if (units > FAKER_DESCRIPTION_MAX_UNITS)
+      throw new Error(
+        `描述超出上限：最多 ${FAKER_DESCRIPTION_MAX_UNITS} 个字宽单位（约 10 个汉字或 20 个英文字符，汉字与全角字符算 2），当前 ${units}；请缩短后再发送`
+      );
     await send(context, "game.submitDescription", { text: value });
     delete context.state.drafts["faker.description.input"];
     return "描述已发送";

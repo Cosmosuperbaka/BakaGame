@@ -4,7 +4,7 @@ import type { AgentGameClient } from "../src/mcp/GameClient";
 
 import { SeatUi } from "../src/mcp/ui/SeatUi";
 import { ABSTAIN_TARGET_ID } from "../src/shared/WhoIsFaker";
-import { clampSpeech } from "../src/mcp/ui/Faker";
+import { textUnits } from "../src/shared/TextUnits";
 import {
   baseFakerSnapshot,
   idsOf,
@@ -481,14 +481,30 @@ describe("谁是卧底界面：控件动作", () => {
     expect(payloadOf(judge.calls, "game.reviewBlankGuess")).toEqual({ approve: true });
   });
 
-  test("描述按服务端口径截断，超长输入不会打出去", async () => {
+  test("描述刚好占满上限时照原文发出", async () => {
+    const snapshot = alivePlayers(inPhase("description"));
+    const { ui, calls } = open("description", { snapshot });
+    await ui.screen("faker");
+    ui.state("faker").drafts["faker.description.input"] = "十个汉字的描述刚好占";
+    const result = await ui.run("faker", [{ action: "click", control: "faker.description.send" }]);
+    expect(result.ok).toBe(true);
+    expect(payloadOf(calls, "game.submitDescription")).toEqual({ text: "十个汉字的描述刚好占" });
+  });
+
+  test("描述超长如实拒绝并说明上限，不截断、不回已发送、也不发出去", async () => {
     const snapshot = alivePlayers(inPhase("description"));
     const { ui, calls } = open("description", { snapshot });
     await ui.screen("faker");
     ui.state("faker").drafts["faker.description.input"] = "十个汉字的描述刚好占满额度";
     const result = await ui.run("faker", [{ action: "click", control: "faker.description.send" }]);
-    expect(result.ok).toBe(true);
-    expect(payloadOf(calls, "game.submitDescription")).toEqual({ text: "十个汉字的描述刚好占" });
+    expect(result.ok).toBe(false);
+    const feedback = JSON.stringify(result.steps[0]);
+    expect(feedback).toContain("描述超出上限");
+    expect(feedback).toContain("20");
+    expect(feedback).not.toContain("描述已发送");
+    expect(typesOf(calls)).not.toContain("game.submitDescription");
+    // 草稿保留，Agent 缩短后可以接着发。
+    expect(ui.state("faker").drafts["faker.description.input"]).toBe("十个汉字的描述刚好占满额度");
   });
 
   test("回车发送描述，其它按键与控件不绑动作", async () => {
@@ -538,12 +554,12 @@ describe("谁是卧底界面：控件动作", () => {
     expect(result.steps[0]?.feedback).toContain("在当前页面不可见");
   });
 
-  test("描述截断按显示宽度算，半角字符不占双倍", () => {
-    expect(clampSpeech("abcdefghijklmnopqrst")).toBe("abcdefghijklmnopqrst");
-    expect(clampSpeech("abcdefghijklmnopqrstu")).toBe("abcdefghijklmnopqrst");
-    expect(clampSpeech("五个汉字加五个字")).toBe("五个汉字加五个字");
-    expect(clampSpeech("十个汉字的描述刚好占满额度")).toBe("十个汉字的描述刚好占");
-    expect(clampSpeech("")).toBe("");
+  test("描述字宽按显示宽度算，半角字符不占双倍", () => {
+    expect(textUnits("abcdefghijklmnopqrst")).toBe(20);
+    expect(textUnits("abcdefghijklmnopqrstu")).toBe(21);
+    expect(textUnits("五个汉字加五个字")).toBe(16);
+    expect(textUnits("十个汉字的描述刚好占")).toBe(20);
+    expect(textUnits("")).toBe(0);
   });
 
   test("私密状态里的词语与特权预览会出现在本人面板，但绝不进聊天控件", async () => {
