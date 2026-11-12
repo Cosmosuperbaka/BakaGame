@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Input } from "./Input";
 import { Label } from "./Label";
+import { Textarea } from "./Textarea";
 
 const meta = {
   title: "基础控件/Input",
@@ -70,6 +71,32 @@ export const Invalid: Story = {
       <p id="story-input-password-error" className="text-xs text-destructive">
         私密房间需要设置密码
       </p>
+    </div>
+  ),
+};
+
+/** 多行输入（反馈正文）：外框与 Input 同为 field-frame，只能纵向拉伸；禁用与校验失败与单行同口径。 */
+export const Multiline: Story = {
+  name: "多行输入",
+  render: () => (
+    <div className="w-80 space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="story-textarea">反馈内容</Label>
+        <Textarea id="story-textarea" placeholder="说说遇到了什么问题" />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="story-textarea-invalid">反馈内容</Label>
+        <Textarea
+          id="story-textarea-invalid"
+          defaultValue="太短"
+          aria-invalid="true"
+          aria-describedby="story-textarea-invalid-error"
+        />
+        <p id="story-textarea-invalid-error" className="text-xs text-destructive">
+          至少写 10 个字
+        </p>
+      </div>
+      <Textarea aria-label="已提交的反馈" defaultValue="已提交，等待处理。" disabled />
     </div>
   ),
 };
