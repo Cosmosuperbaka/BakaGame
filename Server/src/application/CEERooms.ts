@@ -3,6 +3,7 @@ import { requireCEEClientAdmission } from "./CEEClientAdmission";
 import { ADMIN_CLOSE_MESSAGE, ADMIN_KICK_MESSAGE, type AdminRoomView } from "../domain/AdminRoom";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
+import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   type CEEPlayerRecord,
   type CEERoom,
@@ -16,7 +17,6 @@ import { ensureRoomId, normalizeWord, safeEqualToken } from "../domain/Rules";
 import {
   createDefaultCEESettings,
   isCEEAntiCheatRoom,
-  ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   type CEEPayload,
   type CEECharacterView,
@@ -79,7 +79,9 @@ export class CEERooms {
     readonly now: () => number,
     private readonly isRoomIdReserved: (roomId: string) => boolean = () => false,
     private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER,
-    private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE
+    private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE,
+    /** 测试房特权（大厅隐藏、豁免回收、单人开局）的唯一判定来源；缺省关闭。 */
+    readonly testRooms: TestRoomPolicy = TEST_ROOMS_DISABLED
   ) {}
   /** 提交猜测时由服务层登记：那里才拿得到连接（平台类型与检索台账）。 */
   noteGuessSignal(roomId: string, signal: CEEGuessSignal): void {
@@ -189,7 +191,7 @@ export class CEERooms {
   /** 私密房带锁列出，与其它游戏的大厅口径一致；测试房不进大厅。 */
   listRooms() {
     return [...this.rooms.values()]
-      .filter((room) => room.id !== ROOM_ID_TEST_MODE)
+      .filter((room) => !this.testRooms.isTestRoom(room.id))
       .map(ceeRoomSummary);
   }
   registerConnection(connection: ConnectionRecord) {
@@ -222,7 +224,7 @@ export class CEERooms {
     payload: CEEPayload<"cee.room.create">
   ): Promise<CEERoomEnterResult> {
     this.ensureFree(connection);
-    const id = ensureRoomId(payload.roomId);
+    const id = ensureRoomId(payload.roomId, this.testRooms);
     if (this.rooms.has(id) || this.isRoomIdReserved(id))
       throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     const password =
@@ -483,7 +485,7 @@ export class CEERooms {
       phase: room.phase,
       visibility: room.visibility,
       hasPassword: Boolean(room.passwordHash),
-      hidden: room.id === ROOM_ID_TEST_MODE,
+      hidden: this.testRooms.isTestRoom(room.id),
       roundNumber: room.roundNumber,
       createdAt: room.createdAt,
       lastActiveAt: room.lastActiveAt,
@@ -604,7 +606,9 @@ export class CEERooms {
       if (!player) continue;
       connection.send(createEvent("cee.room.snapshot", snapshot));
       // 私有态按连接裁剪：同一条猜测在不同成员眼里遮蔽不同，不能合并成共享帧。
-      connection.send(createEvent("cee.game.privateState", ceePrivateState(room, player)));
+      connection.send(
+        createEvent("cee.game.privateState", ceePrivateState(room, player, this.testRooms))
+      );
     }
     this.onChange?.();
   }
@@ -615,7 +619,7 @@ export class CEERooms {
       if (!player) continue;
       connection.sendStateSyncCalibration?.(createEvent("cee.room.snapshot", snapshot));
       connection.sendStateSyncCalibration?.(
-        createEvent("cee.game.privateState", ceePrivateState(room, player))
+        createEvent("cee.game.privateState", ceePrivateState(room, player, this.testRooms))
       );
     }
   }
@@ -654,7 +658,7 @@ export class CEERooms {
     const now = this.now();
     for (const room of this.rooms.values()) {
       if (
-        room.id !== ROOM_ID_TEST_MODE &&
+        !this.testRooms.isTestRoom(room.id) &&
         ((room.emptyAt !== undefined && now - room.emptyAt >= ROOM_EMPTY_GRACE_PERIOD_MS) ||
           now - room.lastActiveAt >= ROOM_IDLE_TIMEOUT_MS)
       ) {
@@ -706,7 +710,7 @@ export class CEERooms {
     );
   }
   private room(id: string | undefined): CEERoom {
-    const room = id ? this.rooms.get(ensureRoomId(id)) : undefined;
+    const room = id ? this.rooms.get(ensureRoomId(id, this.testRooms)) : undefined;
     if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
     return room;
   }
@@ -802,7 +806,7 @@ export class CEERooms {
       source: "native",
       sessionToken: player.sessionToken,
       snapshot: this.snapshotOf(room),
-      privateState: ceePrivateState(room, player),
+      privateState: ceePrivateState(room, player, this.testRooms),
     };
   }
   private system(room: CEERoom, text: string) {

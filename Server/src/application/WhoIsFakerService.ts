@@ -2,6 +2,7 @@ import { ADMIN_CLOSE_REASON, type AdminRoomControl, type AdminRoomView } from ".
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { AppError } from "../domain/Errors";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
+import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   type ChatChannel,
   type ChatMessage,
@@ -20,7 +21,6 @@ import {
   type RoundWinner,
   type SpeechMode,
   type TieBreakStage,
-  ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   WHOISFAKER_LOBBY_ROOMS_EVENT,
 } from "../shared/Index";
@@ -158,6 +158,8 @@ export interface WhoIsFakerServiceOptions {
   eventLogger: EventLogger;
   /** 未配置数据库时为空：对局记录不落库。 */
   gameRecorder?: GameRecorder;
+  /** 测试房策略；缺省关闭，只有组合根与测试夹具显式注入打开的策略时测试房才存在。 */
+  testRooms?: TestRoomPolicy;
   /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
@@ -236,7 +238,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   private idCounter = 0;
   private readonly passwordHasher: PasswordHasher;
 
+  readonly testRooms: TestRoomPolicy;
+
   constructor(readonly options: WhoIsFakerServiceOptions) {
+    this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
     this.passwordHasher = options.passwordHasher ?? BUN_PASSWORD_HASHER;
     this.now = options.now ?? (() => Date.now());
     this.random =
@@ -381,7 +386,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     room: WhoIsFakerRoomRecord,
     currentTime: number
   ): Promise<boolean> {
-    if (!shouldAutoCloseWhenEmpty(room) || getOnlineCount(room) !== 0) {
+    if (!shouldAutoCloseWhenEmpty(this, room) || getOnlineCount(room) !== 0) {
       room.emptySinceAt = undefined;
       return false;
     }
@@ -398,7 +403,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     room: WhoIsFakerRoomRecord,
     currentTime: number
   ): Promise<boolean> {
-    if (room.id === ROOM_ID_TEST_MODE) return false;
+    if (this.testRooms.isTestRoom(room.id)) return false;
     if (currentTime - room.lastActivityAt < ROOM_IDLE_TIMEOUT_MS) return false;
 
     this.broadcastRoomEvent(room, "room.expiring", {
@@ -602,7 +607,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return (
       [...this.rooms.values()]
         // 测试房间不出现在大厅列表，避免污染正式用户视线。
-        .filter((room) => room.id !== ROOM_ID_TEST_MODE)
+        .filter((room) => !this.testRooms.isTestRoom(room.id))
         .map((room) => this.buildRoomSummary(room))
         .sort((left, right) => left.roomId.localeCompare(right.roomId))
     );
@@ -616,7 +621,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       phase: room.round?.phase ?? "waiting",
       visibility: room.settings.visibility,
       hasPassword: Boolean(room.passwordHash),
-      hidden: room.id === ROOM_ID_TEST_MODE,
+      hidden: this.testRooms.isTestRoom(room.id),
       roundNumber: room.roundCount ?? 0,
       createdAt: room.createdAt,
       lastActiveAt: room.lastActivityAt,
@@ -657,7 +662,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     message: Extract<WhoIsFakerClientMessage, { type: "room.create" }>
   ) {
     // 创建房间时同时把当前连接绑定为房主与首个正式玩家。
-    const roomId = ensureRoomId(message.payload.roomId);
+    const roomId = ensureRoomId(message.payload.roomId, this.testRooms);
     assertTextAllowed(message.payload.name, message.payload.userName);
 
     if (this.rooms.has(roomId)) {
@@ -754,7 +759,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     message: Extract<WhoIsFakerClientMessage, { type: "room.join" }>
   ) {
     // 开局后新连接默认只能作为旁观者进入，避免临时插入正式席位打乱本局。
-    const roomId = ensureRoomId(message.roomId ?? "");
+    const roomId = ensureRoomId(message.roomId ?? "", this.testRooms);
     const room = this.getRoom(roomId);
 
     this.ensureAgentsAllowed(room, connection);
@@ -822,7 +827,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     message: Extract<WhoIsFakerClientMessage, { type: "room.reconnect" }>
   ) {
     // 重连不会创建新玩家，只会把会话重新挂回原连接。
-    const room = this.getRoom(ensureRoomId(message.payload.roomId));
+    const room = this.getRoom(ensureRoomId(message.payload.roomId, this.testRooms));
     this.ensureAgentsAllowed(room, connection);
 
     const player =
@@ -994,7 +999,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     if (patch.roleConfig) {
       // 人数不够时不再直接拒绝保存，而是静默夹到当前允许的范围；这样房主依然能把
       // 其它设置（房间名、私密、旁观等）改掉。前端通过 roleLimits 给出禁用提示。
-      settings.roleConfig = clampRoleConfig(patch.roleConfig, getConfigurableParticipantCount(room));
+      settings.roleConfig = clampRoleConfig(
+        patch.roleConfig,
+        getConfigurableParticipantCount(room)
+      );
     } else {
       normalizeRoomRoleConfig(room);
     }
@@ -1108,7 +1116,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       (item) => item !== round.questionerPlayerId
     );
 
-    if (participantIds.length === 0 && room.id === ROOM_ID_TEST_MODE) {
+    if (participantIds.length === 0 && this.testRooms.isTestRoom(room.id)) {
       // 单人测试房间允许房主先以出题人视角输入词语，再切回参赛者视角验收后续 UI。
       participantIds = [player.id];
       round.questionerPlayerId = undefined;
@@ -1704,7 +1712,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   private buildRoomSummary(room: WhoIsFakerRoomRecord): WhoIsFakerRoomSummary {
-    return buildRoomSummary(room);
+    return buildRoomSummary(this, room);
   }
 
   private buildRoomSnapshot(room: WhoIsFakerRoomRecord): WhoIsFakerRoomSnapshot {

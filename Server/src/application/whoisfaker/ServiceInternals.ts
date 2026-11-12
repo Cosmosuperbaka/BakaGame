@@ -6,6 +6,7 @@ import type {
   WhoIsFakerRoomSnapshot,
 } from "../../shared/Index";
 import type { RandomSource } from "../../domain/Rules";
+import type { TestRoomPolicy } from "../../domain/TestRooms";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { LobbyFanout } from "../LobbyFanout";
@@ -27,6 +28,8 @@ export interface WhoIsFakerServiceInternals {
   readonly options: WhoIsFakerServiceOptions;
   readonly now: () => number;
   readonly random: RandomSource;
+  /** 测试房策略：测试房特权一律问它，不再比较房号。 */
+  readonly testRooms: TestRoomPolicy;
   readonly phaseTimerTimeoutByRoomId: Map<string, ReturnType<typeof setTimeout>>;
   readonly publishedPhaseKeyByRoomId: Map<string, string>;
   readonly gameOverAdvanceAllowedAtByRoomId: Map<string, number>;

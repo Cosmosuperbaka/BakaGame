@@ -1,7 +1,6 @@
 import { createEvent } from "../../transport/Packets";
 import { getRoomRoleLimits } from "../../domain/Rules";
 import {
-  ROOM_ID_TEST_MODE,
   type ConnectionRecord,
   type DescriptionRecord,
   type GameRound,
@@ -17,7 +16,10 @@ import { handlePlayerOffline } from "./OfflineSettlement";
 import { getConfigurableParticipantCount } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
-export const buildRoomSummary = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSummary => {
+export const buildRoomSummary = (
+  service: WhoIsFakerServiceInternals,
+  room: WhoIsFakerRoomRecord
+): WhoIsFakerRoomSummary => {
   const activeCount = Object.values(room.players).filter(
     (player) => player.membership === "active" && player.online
   ).length;
@@ -34,7 +36,7 @@ export const buildRoomSummary = (room: WhoIsFakerRoomRecord): WhoIsFakerRoomSumm
     spectatorCount,
     onlineCount: activeCount + spectatorCount,
     phase: room.round?.phase ?? "waiting",
-    testMode: room.id === ROOM_ID_TEST_MODE,
+    testMode: service.testRooms.isTestRoom(room.id),
     allowAgents: room.settings.allowAgents === true,
   };
 };
@@ -151,7 +153,7 @@ export const buildRoomSnapshot = (
     allowSpectators: room.settings.allowSpectators,
     hasPassword: Boolean(room.passwordHash),
     hostPlayerId: room.hostPlayerId,
-    testMode: room.id === ROOM_ID_TEST_MODE,
+    testMode: service.testRooms.isTestRoom(room.id),
     roleLimits: getRoomRoleLimits(getConfigurableParticipantCount(room)),
     settings: {
       roleConfig: room.settings.roleConfig,
@@ -315,7 +317,7 @@ export const buildPrivateState = (
       Boolean(state?.alive) && (state?.role === "civilian" || state?.role === "undercover"),
     specialRole: state?.role === "angel" || state?.role === "blank" ? state.role : undefined,
     // 调试身份只在测试房下发，普通房间的私有帧里没有任何能区分平民与卧底的字段。
-    debugRole: room.id === ROOM_ID_TEST_MODE ? state?.role : undefined,
+    debugRole: service.testRooms.isTestRoom(room.id) ? state?.role : undefined,
     word: state?.role === "angel" ? undefined : state?.word,
     angelWordOptions: state?.role === "angel" && round.words ? round.words.pair : undefined,
     blankHint: state?.role === "blank" ? round.words?.blankHint : undefined,

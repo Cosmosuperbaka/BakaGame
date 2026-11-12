@@ -14,6 +14,7 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { TEST_ROOMS_ON } from "../TestRoomPolicy";
 import {
   type SongDetails,
   type SonGuessrPrivateState,
@@ -78,7 +79,7 @@ describe("SonGuessrService", () => {
   });
 
   test("Oblivionis 测试房支持人机并不会进入大厅或被空房清理", async () => {
-    const service = new SonGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ testRooms: TEST_ROOMS_ON, musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
 
@@ -115,7 +116,7 @@ describe("SonGuessrService", () => {
   });
 
   test("Oblivionis 测试房刷新重连后保留房主权限", async () => {
-    const service = new SonGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ testRooms: TEST_ROOMS_ON, musicProvider: provider });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
@@ -151,7 +152,11 @@ describe("SonGuessrService", () => {
   });
 
   test("Oblivionis 测试房允许出题人自己猜且提交歌曲不会被误判为猜对", async () => {
-    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const service = new SonGuessrService({
+      testRooms: TEST_ROOMS_ON,
+      musicProvider: provider,
+      random: { nextInt: () => 0 },
+    });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");

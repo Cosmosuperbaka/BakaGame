@@ -46,6 +46,7 @@ import {
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
+import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   BOT_NAME_SUFFIXES,
   CHAT_LIMIT,
@@ -77,7 +78,6 @@ import {
   BangumiMusicTrack,
   BangumiSubjectSearchResult,
   ChatMessage,
-  ROOM_ID_TEST_MODE,
   SERVER_SHUTDOWN_MESSAGE,
   SONGUESSR_LOBBY_ROOMS_EVENT,
   SONGUESSR_MAX_TEAM,
@@ -147,6 +147,8 @@ export interface SonGuessrServiceOptions {
   musicSessionRefreshIntervalMs?: number;
   /** 未配置数据库时为空：对局记录不落库。 */
   gameRecorder?: GameRecorder;
+  /** 测试房策略；缺省关闭，只有组合根与测试夹具显式注入打开的策略时测试房才存在。 */
+  testRooms?: TestRoomPolicy;
   /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
@@ -211,7 +213,10 @@ export class SonGuessrService implements AdminRoomControl {
   nextMusicRefreshSweepAt = 0;
   musicRefreshSweepInFlight = false;
 
+  readonly testRooms: TestRoomPolicy;
+
   constructor(readonly options: SonGuessrServiceOptions) {
+    this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
     this.now = options.now ?? (() => Date.now());
     this.random = options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
@@ -729,7 +734,7 @@ export class SonGuessrService implements AdminRoomControl {
     connection: ConnectionRecord,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.create" }>["payload"]
   ) {
-    const roomId = ensureRoomId(payload.roomId);
+    const roomId = ensureRoomId(payload.roomId, this.testRooms);
     assertTextAllowed(payload.name, payload.userName);
     if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "该房间号已被使用");
     const password =
@@ -804,7 +809,7 @@ export class SonGuessrService implements AdminRoomControl {
     roomIdValue: string | undefined,
     payload: Extract<SonGuessrClientMessage, { type: "song.room.join" }>["payload"]
   ) {
-    const room = this.getRoom(ensureRoomId(roomIdValue ?? ""));
+    const room = this.getRoom(ensureRoomId(roomIdValue ?? "", this.testRooms));
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
     const seat = this.tabSeat(room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
@@ -860,7 +865,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private async reconnectRoom(connection: ConnectionRecord, roomIdValue: string, token: string) {
-    const targetRoomId = ensureRoomId(roomIdValue);
+    const targetRoomId = ensureRoomId(roomIdValue, this.testRooms);
     const room = this.getRoom(targetRoomId);
     this.ensureAgentsAllowed(room, connection);
 
@@ -3281,8 +3286,9 @@ export class SonGuessrService implements AdminRoomControl {
     this.publishLobby();
   }
 
+  /** 测试房特权的唯一判定点：只认策略，房号对上而开关关闭时就是普通房。 */
   isTestRoom(room: SonGuessrRoomRecord) {
-    return room.id.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase();
+    return this.testRooms.isTestRoom(room.id);
   }
 
   touch(room: SonGuessrRoomRecord) {

@@ -2,7 +2,6 @@ import { AppError } from "../../domain/Errors";
 import { createEvent } from "../../transport/Packets";
 import { recordEliminations } from "../../domain/Rules";
 import {
-  ROOM_ID_TEST_MODE,
   type ConnectionRecord,
   type GameRound,
   type RoundHistoryEntry,
@@ -177,7 +176,7 @@ const markPlayerDisconnected = (service: WhoIsFakerServiceInternals, ctx: Offlin
     service.connectionRegistry.detach(connection);
   }
 
-  if (getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(room)) {
+  if (getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(service, room)) {
     room.emptySinceAt ??= service.now();
   }
 };
@@ -294,8 +293,11 @@ const publishOrCloseIfEmpty = async (
  * 空房是否应当自动关闭。测试房间要能在最后一人刷新页面后仍然存在，
  * 否则每次刷新都会丢掉正在调试的房间状态。
  */
-export const shouldAutoCloseWhenEmpty = (room: WhoIsFakerRoomRecord) => {
-  return room.id !== ROOM_ID_TEST_MODE;
+export const shouldAutoCloseWhenEmpty = (
+  service: WhoIsFakerServiceInternals,
+  room: WhoIsFakerRoomRecord
+) => {
+  return !service.testRooms.isTestRoom(room.id);
 };
 
 export const forceRemovePlayer = async (

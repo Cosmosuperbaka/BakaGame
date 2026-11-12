@@ -8,7 +8,6 @@ import {
 import { NOOP_GAME_RECORDER, type GameRecordEvent } from "../../domain/GameRecord";
 import {
   ABSTAIN_TARGET_ID,
-  ROOM_ID_TEST_MODE,
   type ConnectionRecord,
   type GameRound,
   type PhaseTimerState,
@@ -94,7 +93,7 @@ export const advancePhase = async (
 
   const round = service.requireRound(room);
   // 测试房跳转后可能没有出题人，反馈继续与计时一样放开给房内任何人，免得卡在反馈里。
-  if (!(phase === "feedback" && room.id === ROOM_ID_TEST_MODE)) {
+  if (!(phase === "feedback" && service.testRooms.isTestRoom(room.id))) {
     service.ensureQuestioner(round, player.id);
   }
   ensurePhaseNotBlocked(round);
@@ -247,7 +246,7 @@ export const startPhaseTimer = (
     throw new AppError("INVALID_PHASE", "当前阶段不支持设置倒计时");
   }
 
-  if (room.id !== ROOM_ID_TEST_MODE) {
+  if (!service.testRooms.isTestRoom(room.id)) {
     service.ensureQuestioner(round, player.id);
   }
   ensurePhaseNotBlocked(round);
@@ -292,7 +291,7 @@ export const stopPhaseTimer = (
   const { room, player } = service.requireRoomPlayer(connection);
   const round = service.requireRound(room);
 
-  if (room.id !== ROOM_ID_TEST_MODE) {
+  if (!service.testRooms.isTestRoom(room.id)) {
     service.ensureQuestioner(round, player.id);
   }
 

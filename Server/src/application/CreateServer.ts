@@ -32,8 +32,7 @@ import { AccountService } from "./AccountService";
 import type { GameRecordService } from "./GameRecordService";
 import { UserDataService } from "./UserDataService";
 import { AdminService } from "./AdminService";
-import { AppSettings } from "./AppSettings";
-import { DatabaseAppSettingRepository } from "../infrastructure/db/AppSettingRepository";
+import type { AppSettings } from "./AppSettings";
 import { SiteStatsService } from "./SiteStatsService";
 import { DatabaseSiteStatsRepository } from "../infrastructure/db/SiteStatsRepository";
 import { deriveSentryApiConfig, SentryApiClient } from "../infrastructure/SentryApi";
@@ -60,16 +59,21 @@ import { isAllowedOrigin } from "../transport/App";
 import type { AppEnv } from "../config/Env";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import type { AdminRoomControl } from "../domain/AdminRoom";
-import type { RecordedGame } from "../domain/GameRecord";
+import { skipTestRooms, type RecordedGame } from "../domain/GameRecord";
+import type { TestRoomPolicy } from "../domain/TestRooms";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
 export function createServer(
   options: Omit<AppDependencies, "sonGuessrService" | "ceeService" | "disposeResources"> & {
     database?: Database;
     gameRecords?: GameRecordService;
+    /** 运行期旋钮快照：由入口创建，因为卧底服务要在 `createServer` 之前就拿到测试房策略。 */
+    settings: AppSettings;
+    /** 测试房策略：三款玩法共用同一份，与 `settings` 的开关同源。 */
+    testRooms: TestRoomPolicy;
   }
 ) {
-  const { env, logger, database, gameRecords, ...appOptions } = options;
+  const { env, logger, database, gameRecords, settings, testRooms, ...appOptions } = options;
   // 敏感词自动机启动时构建一次，首个请求不承担构建耗时。
   warmUpSensitiveText();
   if (env.otelDeploymentEnvironment === "production" && !env.meilisearchKey) {
@@ -152,11 +156,6 @@ export function createServer(
     : undefined;
   // 运行期旋钮（T3）：值存 app_setting，环境变量项退成缺省。没有数据库时这里不接仓储，
   // 快照永远是缺省值，行为与引入本表之前逐字一致。
-  const settings = new AppSettings({
-    repository: database ? new DatabaseAppSettingRepository(database) : undefined,
-    defaults: env,
-    logger,
-  });
   const local = data.song;
   const netease = new NeteaseMusicProvider({
     logger,
@@ -178,11 +177,14 @@ export function createServer(
   // 而不是整局卡死。
   // 注意兜底只在**本地链路确实报错**时触发；正常路径仍走本地索引，召回与排序不受影响。
   const bangumi = new FallbackBangumiProvider({ local, remote, logger });
+  // 测试房的记录与关房收尾不进永久保留的复盘与统计。
+  const gameRecorder = gameRecords && skipTestRooms(gameRecords, testRooms);
   const song = new SonGuessrService({
     eventLogger: logger,
     musicProvider: music,
     bangumiProvider: bangumi,
-    gameRecorder: gameRecords,
+    gameRecorder,
+    testRooms,
   });
   const antiCheatReviews = database
     ? new AntiCheatReviewRepository(database, (message, context) => logger.warn(message, context))
@@ -192,7 +194,8 @@ export function createServer(
     eventLogger: logger,
     serverUrl: env.ceeOriginalServerUrl,
     aesSecret: env.ceeOriginalAesSecret,
-    gameRecorder: gameRecords,
+    gameRecorder,
+    testRooms,
     // 复核队列：有库落库，本地与隔离测试退回内存，行为特征本身两边一致。
     // 后台读的也是这一个对象——写进去的条目只有这条队列，不存在两份口径。
     reviewQueue: antiCheatReviews,

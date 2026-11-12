@@ -17,6 +17,7 @@ import {
   type ConnectionRecord,
 } from "../src/shared/Index";
 import { FixtureRoom, originalData } from "./CEEOriginalFixtures";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
 
 const UUID_PUBLIC = "6b0d3c1e-2f4a-4e5b-9c7d-8e9f0a1b2c3d";
 const UUID_PRIVATE = "c4d5e6f7-0819-4a2b-8c3d-4e5f60718293";
@@ -72,6 +73,7 @@ function setup() {
     data: originalData,
     now: () => clock,
     originalService: original,
+    testRooms: TEST_ROOMS_ON,
   });
   services.push(service);
   const tokens = new Map<string, string>();

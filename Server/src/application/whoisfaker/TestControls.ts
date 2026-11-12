@@ -1,7 +1,6 @@
-import { AppError } from "../../domain/Errors";
+import { AppError, unsupportedCommand } from "../../domain/Errors";
 import { assignRoles, getBlankPlayerId } from "../../domain/Rules";
 import {
-  ROOM_ID_TEST_MODE,
   type ConnectionRecord,
   type GameRound,
   type RoleConfig,
@@ -135,10 +134,7 @@ export const testJumpToPhase = async (
 ) => {
   // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
   const { room, player } = service.requireRoomPlayer(connection);
-
-  if (room.id !== ROOM_ID_TEST_MODE) {
-    throw new AppError("FORBIDDEN", "仅测试房间允许使用跳转控制器");
-  }
+  ensureTestRoomHost(service, room, player.id);
 
   // 反馈阶段只由结算产生，没有可凭空构造的结果。
   if (target === "feedback") {
@@ -289,10 +285,7 @@ export const testSetMyRole = async (
 ) => {
   // 仅测试房间：强制替换当前玩家在本局中的角色分配。
   const { room, player } = service.requireRoomPlayer(connection);
-
-  if (room.id !== ROOM_ID_TEST_MODE) {
-    throw new AppError("FORBIDDEN", "仅测试房间允许切换身份");
-  }
+  ensureTestRoomHost(service, room, player.id);
 
   const round = service.requireRound(room);
 
@@ -338,8 +331,8 @@ export const testAddBot = async (
   connection: ConnectionRecord,
   count: number
 ) => {
-  const { room } = service.requireRoomPlayer(connection);
-  ensureTestRoom(room);
+  const { room, player } = service.requireRoomPlayer(connection);
+  ensureTestRoomHost(service, room, player.id);
 
   const added: string[] = [];
 
@@ -376,8 +369,8 @@ export const testRemoveBot = async (
   playerId: string | undefined,
   count: number
 ) => {
-  const { room } = service.requireRoomPlayer(connection);
-  ensureTestRoom(room);
+  const { room, player } = service.requireRoomPlayer(connection);
+  ensureTestRoomHost(service, room, player.id);
 
   const bots = Object.values(room.players).filter((player) => player.isBot);
   const targets = playerId ? bots.filter((bot) => bot.id === playerId) : bots.slice(-count);
@@ -406,8 +399,20 @@ export const testRemoveBot = async (
   return { removed: targets.map((bot) => bot.id) };
 };
 
-const ensureTestRoom = (room: WhoIsFakerRoomRecord) => {
-  if (room.id !== ROOM_ID_TEST_MODE) {
-    throw new AppError("FORBIDDEN", "仅测试房间允许管理机器人");
-  }
+/**
+ * 四条测试指令的统一入口守卫：先问策略、再验房主。
+ * 非测试房（含策略关闭）一律当作协议里没有这条指令，与未知指令同码同文案，
+ * 不给探测者区分「开关关了」与「这间房不是测试房」的信号；房主校验在后，
+ * 因为测试指令能改身份、加删机器人，不能让房里任意玩家使用。
+ * 唯一的例外是房主被交给了机器人：机器人不会发指令，此时放行房内真人，
+ * 否则交出房主的真人会被锁死在一间永不回收的调试房里。
+ */
+const ensureTestRoomHost = (
+  service: WhoIsFakerServiceInternals,
+  room: WhoIsFakerRoomRecord,
+  playerId: string
+) => {
+  if (!service.testRooms.isTestRoom(room.id)) unsupportedCommand();
+  if (room.players[room.hostPlayerId ?? ""]?.isBot) return;
+  service.ensureHost(room, playerId);
 };

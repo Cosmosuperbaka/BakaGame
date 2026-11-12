@@ -161,6 +161,19 @@ export async function createIndexShutdownHarness(
         }
       },
     },
+    // 运行期旋钮与测试房策略：停机用例只关心资源收口，这里是恒关闭的替身。
+    "./application/AppSettings": {
+      AppSettings: class {
+        boolean() {
+          return false;
+        }
+      },
+    },
+    "./infrastructure/db/AppSettingRepository": { DatabaseAppSettingRepository: class {} },
+    "./domain/GameRecord": { skipTestRooms: (recorder: unknown) => recorder },
+    "./domain/TestRooms": {
+      createTestRoomPolicy: () => ({ isEnabled: () => false, isTestRoom: () => false }),
+    },
     "./infrastructure/EventLogger": {
       EventLogger: Logger,
       describeError: (error: Error) => ({

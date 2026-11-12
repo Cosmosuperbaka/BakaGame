@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { AppError } from "./Errors";
+import type { TestRoomPolicy } from "./TestRooms";
 import {
   ABSTAIN_TARGET_ID,
   ROOM_ID_TEST_MODE,
@@ -524,11 +525,17 @@ export const normalizeRoomId = (roomId: string): string => {
   return trimmed.toLowerCase() === ROOM_ID_TEST_MODE.toLowerCase() ? ROOM_ID_TEST_MODE : trimmed;
 };
 
-export const ensureRoomId = (roomId: string): string => {
+export const ensureRoomId = (roomId: string, testRooms: TestRoomPolicy): string => {
   // 校验规则来自 shared 的 isValidRoomId，客户端路由用的是同一份。
   const normalized = normalizeRoomId(roomId);
 
-  if (normalized === ROOM_ID_TEST_MODE) return normalized;
+  if (normalized === ROOM_ID_TEST_MODE) {
+    // 策略关闭时测试房号与其它非法房号同码同文案：不泄漏「这是测试房号」，也探测不出开关状态。
+    if (!testRooms.isEnabled()) {
+      throw new AppError("INVALID_ROOM_ID", "房间号必须为四位数字");
+    }
+    return normalized;
+  }
 
   if (!isValidRoomId(normalized)) {
     throw new AppError("INVALID_ROOM_ID", "房间号必须为四位数字");

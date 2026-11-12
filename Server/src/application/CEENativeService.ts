@@ -1,4 +1,5 @@
 import type { GameRecorder } from "../domain/GameRecord";
+import type { TestRoomPolicy } from "../domain/TestRooms";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { CEEGuess, CEERoomClientMessage, ConnectionRecord } from "../shared/Index";
 import { AppError } from "../domain/Errors";
@@ -43,6 +44,7 @@ export class CEENativeService {
     gameRecorder?: GameRecorder;
     reviewQueue?: CEEAntiCheatReviewQueue;
     provenance?: CEESearchProvenance;
+    testRooms?: TestRoomPolicy;
   }) {
     this.data = options.data;
     this.now = options.now ?? Date.now;
@@ -53,7 +55,8 @@ export class CEENativeService {
       this.now,
       options.isRoomIdReserved,
       options.gameRecorder,
-      options.reviewQueue
+      options.reviewQueue,
+      options.testRooms
     );
   }
   registerConnection(connection: ConnectionRecord) {
@@ -270,7 +273,7 @@ export class CEENativeService {
     this.state.requireHost(room, player);
     if (room.phase !== "waiting" && room.phase !== "settled")
       throw new AppError("INVALID_PHASE", "当前阶段无法开始游戏");
-    if (!canStartCEERound(room, player))
+    if (!canStartCEERound(room, player, this.state.testRooms))
       throw new AppError("PLAYERS_NOT_READY", "至少两名玩家在线，且其他参与者准备后才能开始");
     validateCEESettings(room.settings);
     room.round = null;

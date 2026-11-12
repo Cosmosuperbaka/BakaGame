@@ -1,4 +1,6 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
+import type { TestRoomPolicy } from "../src/domain/TestRooms";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
 import { CEENativeService, type CEENativeMessage } from "../src/application/CEENativeService";
 import {
   CEESearchProvenance,
@@ -78,7 +80,13 @@ export function ceeTestHarness(
     roomId: defaultRoomId = "1234",
     gameRecorder,
     reviewQueue,
-  }: { roomId?: string; gameRecorder?: GameRecorder; reviewQueue?: CEEAntiCheatReviewQueue } = {}
+    testRooms = TEST_ROOMS_ON,
+  }: {
+    roomId?: string;
+    gameRecorder?: GameRecorder;
+    reviewQueue?: CEEAntiCheatReviewQueue;
+    testRooms?: TestRoomPolicy;
+  } = {}
 ) {
   let clock = 1_000_000;
   const getCalls: number[] = [];
@@ -124,6 +132,7 @@ export function ceeTestHarness(
     gameRecorder,
     reviewQueue,
     provenance,
+    testRooms,
   });
   const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],

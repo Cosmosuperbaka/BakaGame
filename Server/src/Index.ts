@@ -16,6 +16,10 @@ import { createDatabase } from "./infrastructure/db/Database";
 import { DatabaseWordBankRepository } from "./infrastructure/WordBankRepository";
 import { DatabaseGameRecordRepository } from "./infrastructure/db/GameRecordRepository";
 import { GameRecordService } from "./application/GameRecordService";
+import { AppSettings } from "./application/AppSettings";
+import { DatabaseAppSettingRepository } from "./infrastructure/db/AppSettingRepository";
+import { skipTestRooms } from "./domain/GameRecord";
+import { createTestRoomPolicy } from "./domain/TestRooms";
 import { createServer } from "./application/CreateServer";
 import { join } from "node:path";
 import { RoomSnapshotStore } from "./infrastructure/RoomSnapshotStore";
@@ -54,10 +58,19 @@ database?.ready.then(
 const gameRecords = database
   ? new GameRecordService({ repository: new DatabaseGameRecordRepository(database), logger })
   : undefined;
+// 运行期旋钮在此创建：测试房开关要在三款玩法构造之前就位，且三款共用同一份策略。
+// 缺省关闭——策略现读开关，关闭时测试房号是非法房号。
+const settings = new AppSettings({
+  repository: database ? new DatabaseAppSettingRepository(database) : undefined,
+  defaults: env,
+  logger,
+});
+const testRooms = createTestRoomPolicy(() => settings.boolean("enableTestRooms"));
 const whoIsFakerService = new WhoIsFakerService({
   eventLogger: logger,
   wordBankRepository: database ? new DatabaseWordBankRepository(database) : undefined,
-  gameRecorder: gameRecords,
+  gameRecorder: gameRecords && skipTestRooms(gameRecords, testRooms),
+  testRooms,
 });
 
 let isShuttingDown = false;
@@ -74,6 +87,8 @@ const {
   env,
   database,
   gameRecords,
+  settings,
+  testRooms,
   whoIsFakerService,
   logger,
   isShuttingDown: () => isShuttingDown,

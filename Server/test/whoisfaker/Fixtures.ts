@@ -1,4 +1,5 @@
 import { createConnection, createTestContext, execute } from ".././Helpers";
+import type { WhoIsFakerRole } from "../../src/shared/Index";
 
 export interface JoinedPlayer {
   connection: ReturnType<typeof createConnection>;
@@ -45,4 +46,32 @@ export const joinPlayers = async (
     joined.push({ connection, joinResult });
   }
   return joined;
+};
+
+/**
+ * 测试指令只认房主：让指定真人临时接过房主发 `test.setMyRole`，发完把房主交还。
+ * 测试房的使用者本来就是房主，这里只是让「另一名真人改自己身份」的场景仍可构造。
+ */
+export const setMyRoleAs = async (
+  service: ReturnType<typeof createTestContext>["service"],
+  host: ReturnType<typeof createConnection>,
+  hostPlayerId: string,
+  player: JoinedPlayer,
+  role: WhoIsFakerRole
+) => {
+  await execute(service, host, {
+    id: `hand-host-${player.joinResult.playerId}`,
+    type: "room.transferHost",
+    payload: { playerId: player.joinResult.playerId },
+  });
+  await execute(service, player.connection, {
+    id: `set-role-${role}`,
+    type: "test.setMyRole",
+    payload: { role },
+  });
+  await execute(service, player.connection, {
+    id: "hand-host-back",
+    type: "room.transferHost",
+    payload: { playerId: hostPlayerId },
+  });
 };

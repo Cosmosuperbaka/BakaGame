@@ -12,6 +12,7 @@ import {
   type CEEUnit,
 } from "../domain/CEEModel";
 import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
+import type { TestRoomPolicy } from "../domain/TestRooms";
 import {
   canStartCEERound,
   ceeImageHintAvailability,
@@ -137,7 +138,11 @@ function emptyCEEPrivateState(player: CEEPlayerRecord, spectatePending: boolean)
     spectatePending,
   };
 }
-export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPrivateState {
+export function ceePrivateState(
+  room: CEERoom,
+  player: CEEPlayerRecord,
+  testRooms: TestRoomPolicy
+): CEEPrivateState {
   const round = room.round;
   const spectatePending = player.membership === "pendingSpectator";
   // 待批准旁观按「尚未入房」处理：私有状态整体清空，否则请求者能提前看到答案与全场猜测。
@@ -156,7 +161,7 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
     // 随机出题在等待阶段需其他参与者准备（结算阶段再来一轮直接沿用在线参与者）；
     // 手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
     // 单人不能开局，只有测试房允许房主一个人试玩。
-    canStart: canStartCEERound(room, player),
+    canStart: canStartCEERound(room, player, testRooms),
     canSetAnswer: room.phase === "answering" && player.id === room.setterPlayerId,
     setterCandidateIds:
       room.phase === "choosingSetter" && isHost

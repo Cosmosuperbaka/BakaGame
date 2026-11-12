@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { createRoom, joinPlayers } from "./Fixtures";
+import { createRoom, joinPlayers, setMyRoleAs } from "./Fixtures";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import { createTestContext, execute, getLastEventPayload } from ".././Helpers";
 
 describe("白板猜词打断", () => {
   test("白板猜词打断发言阶段后，裁定未通过恢复原阶段并还原剩余倒计时", async () => {
     const { service, advanceTime } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "白板玩家");
 
     await execute(service, host, {
@@ -28,11 +28,7 @@ describe("白板猜词打断", () => {
     });
 
     // 设置玩家角色为白板
-    await execute(service, player.connection, {
-      id: "set-blank",
-      type: "test.setMyRole",
-      payload: { role: "blank" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
     // 主持人开启 60 秒倒计时
     await execute(service, host, {
@@ -82,7 +78,7 @@ describe("白板猜词打断", () => {
 
   test("白板猜词期间白板掉线且出题人选择等待时，系统强制挂载 60 秒倒计时兜底避免死锁", async () => {
     const { service, advanceTime } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "白板玩家");
 
     await execute(service, host, {
@@ -102,11 +98,7 @@ describe("白板猜词打断", () => {
       payload: { words: ["苹果", "香蕉"] },
     });
 
-    await execute(service, player.connection, {
-      id: "set-blank",
-      type: "test.setMyRole",
-      payload: { role: "blank" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
     // 白板进入猜词
     await execute(service, player.connection, {
@@ -149,7 +141,7 @@ describe("白板猜词打断", () => {
 
   test("平票阶段白板猜词掉线并被出题人淘汰时自动流转至夜晚且无状态异常", async () => {
     const { service } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "真人白板");
 
     await execute(service, host, {
@@ -171,11 +163,7 @@ describe("白板猜词打断", () => {
     });
 
     // 设置 player 为白板，并确保其他机器人有卧底和平民存活（1卧底 + 2平民）
-    await execute(service, player.connection, {
-      id: "set-blank",
-      type: "test.setMyRole",
-      payload: { role: "blank" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
     const room = (
       service as unknown as {
@@ -253,7 +241,7 @@ describe("白板猜词打断", () => {
 
   test("平票 PK 中白板猜词掉线且出题人选等待，兜底到期后离开猜词而不是一直卡住", async () => {
     const { service, advanceTime } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "真人白板");
 
     await execute(service, host, { id: "add-bots", type: "test.addBot", payload: { count: 3 } });
@@ -267,11 +255,7 @@ describe("白板猜词打断", () => {
       type: "game.submitWords",
       payload: { words: ["苹果", "香蕉"] },
     });
-    await execute(service, player.connection, {
-      id: "set-blank",
-      type: "test.setMyRole",
-      payload: { role: "blank" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
     await execute(service, host, {
       id: "jump-to-tie-break",
       type: "test.jumpToPhase",
@@ -382,7 +366,7 @@ describe("白板猜词打断", () => {
 
   test("白板猜词期间，描述阶段尚未轮到的发言内容仍保持隐藏", async () => {
     const { service } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "白板玩家");
     await execute(service, host, { id: "add-bots", type: "test.addBot", payload: { count: 3 } });
     await execute(service, host, {
@@ -395,11 +379,7 @@ describe("白板猜词打断", () => {
       type: "game.submitWords",
       payload: { words: ["苹果", "香蕉"] },
     });
-    await execute(service, player.connection, {
-      id: "set-blank",
-      type: "test.setMyRole",
-      payload: { role: "blank" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "blank");
 
     // 白板以外的某位后序玩家先交了发言：按规则要等前序都交完才公开。
     const room = (
@@ -434,9 +414,9 @@ describe("白板猜词打断", () => {
     ];
     await execute(service, host, { id: "refresh", type: "chat.send", payload: { text: "刷新" } });
     const publicTexts = () =>
-      (
-        getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.descriptions ?? []
-      ).map((item) => item.text);
+      (getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.descriptions ?? []).map(
+        (item) => item.text
+      );
     expect(publicTexts()).not.toContain("还不该公开的发言");
 
     // 白板进入猜词打断描述阶段：隐藏规则不能因此失效。

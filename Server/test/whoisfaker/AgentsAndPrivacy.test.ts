@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createRoom, joinPlayers } from "./Fixtures";
+import { createRoom, joinPlayers, setMyRoleAs } from "./Fixtures";
 import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import {
@@ -455,7 +455,7 @@ describe("隐私开关与 Agent 接管", () => {
 
   test("夜间资格随出局取消，普通房间不下发调试身份而测试房下发", async () => {
     const { service } = createTestContext();
-    const { host } = await createRoom(service, "Oblivionis");
+    const { host, result: hostSeat } = await createRoom(service, "Oblivionis");
     const [player] = await joinPlayers(service, "Oblivionis", 1, "玩家");
     await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 3 } });
     await execute(service, host, {
@@ -468,11 +468,7 @@ describe("隐私开关与 Agent 接管", () => {
       type: "game.submitWords",
       payload: { words: ["苹果", "香蕉"] },
     });
-    await execute(service, player.connection, {
-      id: "set-civilian",
-      type: "test.setMyRole",
-      payload: { role: "civilian" },
-    });
+    await setMyRoleAs(service, host, hostSeat.playerId, player, "civilian");
 
     let frame = getLastEventPayload<WhoIsFakerPrivateState>(player.connection, "game.privateState");
     expect(frame?.debugRole).toBe("civilian");

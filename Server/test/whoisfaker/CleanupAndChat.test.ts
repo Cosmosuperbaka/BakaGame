@@ -12,6 +12,7 @@ import { WhoIsFakerService } from "../../src/application/WhoIsFakerService";
 import { EventLogger, type LogEntry } from "../../src/infrastructure/EventLogger";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from ".././Helpers";
+import { TEST_ROOMS_ON } from "../TestRoomPolicy";
 
 describe("清理与聊天", () => {
   test("真人离开测试房间后测试房间自动关闭", async () => {
@@ -346,6 +347,7 @@ describe("清理与聊天", () => {
     }
     const service = new WhoIsFakerService({
       now: () => currentTime,
+      testRooms: TEST_ROOMS_ON,
       eventLogger: new RecordingLogger(),
     });
     const { host } = await createRoom(service, "Oblivionis");

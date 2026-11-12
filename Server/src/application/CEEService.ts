@@ -7,6 +7,7 @@ import { normalizeRoomId } from "../domain/Rules";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { GameRecorder } from "../domain/GameRecord";
+import type { TestRoomPolicy } from "../domain/TestRooms";
 import type {
   CEEClientMessage,
   CEERoomClientMessage,
@@ -78,6 +79,8 @@ export class CEEService implements AdminRoomControl {
       originalService?: CEEOriginalService;
       /** 只记录增强房：原版房的对局在上游服务器进行，本端拿不到完整答案与全员猜测。 */
       gameRecorder?: GameRecorder;
+      /** 测试房策略；缺省关闭，只有组合根与测试夹具显式注入打开的策略时测试房才存在。 */
+      testRooms?: TestRoomPolicy;
       /** 反作弊人工复核队列：只在反作弊房产生条目，任何处罚都由人决定。 */
       reviewQueue?: CEEAntiCheatReviewQueue;
       /** 排位审计仓储；未注入时排位整体不可用。 */

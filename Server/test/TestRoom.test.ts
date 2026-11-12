@@ -43,6 +43,18 @@ const createTestRoom = async (
   return { host, playerId: result.playerId };
 };
 
+/** 测试指令只认房主：需要由另一名真人发测试指令时，先把房主交给他。 */
+const handHost = (
+  service: ReturnType<typeof createTestContext>["service"],
+  from: ReturnType<typeof createConnection>,
+  toPlayerId: string
+) =>
+  execute(service, from, {
+    id: `hand-host-${toPlayerId}`,
+    type: "room.transferHost",
+    payload: { playerId: toPlayerId },
+  });
+
 const snapshotOf = (connection: ReturnType<typeof createConnection>) =>
   getLastEventPayload<WhoIsFakerRoomSnapshot>(connection, "room.snapshot")!;
 
@@ -423,7 +435,7 @@ test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束",
 test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async () => {
   const { service } = createTestContext();
   // 房主当白板，出题人另找一名真人，这样才有人能裁定。
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const questioner = createConnection(service, "review-questioner");
   const questionerJoin = (await execute(service, questioner, {
@@ -433,6 +445,7 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
     payload: { userName: "主持人" },
   })) as { playerId: string };
 
+  await handHost(service, host, questionerJoin.playerId);
   await execute(service, questioner, {
     id: "jump-words",
     type: "test.jumpToPhase",
@@ -443,6 +456,7 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, questioner, hostId);
   await execute(service, host, {
     id: "be-blank",
     type: "test.setMyRole",
@@ -500,15 +514,15 @@ test("猜词未完全匹配时交主持人裁定，判对则白板获胜", async
 test("主动猜词猜错后，主持人判错则离开猜词并清理待裁定状态", async () => {
   // 此夹具触发主动猜词而非残局：判错后恢复原阶段，清理待裁定标记。
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const blank = createConnection(service, "finale-blank");
-  await execute(service, blank, {
+  const blankJoin = (await execute(service, blank, {
     id: "join-blank",
     type: "room.join",
     roomId: ROOM_ID_TEST_MODE,
     payload: { userName: "白板" },
-  });
+  })) as { playerId: string };
 
   await execute(service, host, {
     id: "jump-words",
@@ -520,11 +534,13 @@ test("主动猜词猜错后，主持人判错则离开猜词并清理待裁定�
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, host, blankJoin.playerId);
   await execute(service, blank, {
     id: "be-blank",
     type: "test.setMyRole",
     payload: { role: "blank" },
   });
+  await handHost(service, blank, hostId);
 
   // 跳到 blankGuess 会带上 finale 之外的上下文，这里直接用主动路径进入，
   // 再断言「猜错 → 裁定 → 有明确结局」这段收尾在任何 reason 下都成立。
@@ -556,15 +572,15 @@ test("主动猜词猜错后，主持人判错则离开猜词并清理待裁定�
 
 test("结算后开新局，上一局的待裁定状态不会残留", async () => {
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const blank = createConnection(service, "reset-blank");
-  await execute(service, blank, {
+  const blankJoin = (await execute(service, blank, {
     id: "join-blank",
     type: "room.join",
     roomId: ROOM_ID_TEST_MODE,
     payload: { userName: "白板" },
-  });
+  })) as { playerId: string };
 
   await execute(service, host, {
     id: "jump-words",
@@ -576,11 +592,13 @@ test("结算后开新局，上一局的待裁定状态不会残留", async () =>
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, host, blankJoin.playerId);
   await execute(service, blank, {
     id: "be-blank",
     type: "test.setMyRole",
     payload: { role: "blank" },
   });
+  await handHost(service, blank, hostId);
   await execute(service, blank, { id: "enter", type: "game.enterBlankGuess", payload: {} });
   await execute(service, blank, {
     id: "near-miss",
@@ -611,7 +629,7 @@ test("猜词中的白板被踢出后阶段不会卡住", async () => {
   // blankGuess 是阻塞阶段且没有手动推进入口：如果猜词的人离场后
   // 阶段还留在 blankGuess，全房就永远动不了。
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const blank = createConnection(service, "abandon-blank");
   const blankJoin = (await execute(service, blank, {
@@ -631,11 +649,13 @@ test("猜词中的白板被踢出后阶段不会卡住", async () => {
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, host, blankJoin.playerId);
   await execute(service, blank, {
     id: "be-blank",
     type: "test.setMyRole",
     payload: { role: "blank" },
   });
+  await handHost(service, blank, hostId);
 
   await execute(service, blank, { id: "enter", type: "game.enterBlankGuess", payload: {} });
   expect(snapshotOf(host).status.phase).toBe("blankGuess");
@@ -656,7 +676,7 @@ test("待裁定时主持人被踢出，本局不会卡在待裁定", async () =>
   // pendingReview 只能由出题人推进。出题人一走，若阶段仍停在待裁定，
   // 全房同样再没有出口。
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const questioner = createConnection(service, "gone-questioner");
   const questionerJoin = (await execute(service, questioner, {
@@ -666,6 +686,7 @@ test("待裁定时主持人被踢出，本局不会卡在待裁定", async () =>
     payload: { userName: "主持人" },
   })) as { playerId: string };
 
+  await handHost(service, host, questionerJoin.playerId);
   await execute(service, questioner, {
     id: "jump-words",
     type: "test.jumpToPhase",
@@ -676,6 +697,7 @@ test("待裁定时主持人被踢出，本局不会卡在待裁定", async () =>
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, questioner, hostId);
   await execute(service, host, {
     id: "be-blank",
     type: "test.setMyRole",
@@ -704,16 +726,17 @@ test("待裁定时主持人被踢出，本局不会卡在待裁定", async () =>
 
 test("主持人判错时回到原阶段继续游戏，机会不再返还", async () => {
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 4);
+  const { host, playerId: hostId } = await createTestRoom(service, 4);
 
   const questioner = createConnection(service, "reject-questioner");
-  await execute(service, questioner, {
+  const questionerJoin = (await execute(service, questioner, {
     id: "join-questioner",
     type: "room.join",
     roomId: ROOM_ID_TEST_MODE,
     payload: { userName: "主持人" },
-  });
+  })) as { playerId: string };
 
+  await handHost(service, host, questionerJoin.playerId);
   await execute(service, questioner, {
     id: "jump-words",
     type: "test.jumpToPhase",
@@ -724,6 +747,7 @@ test("主持人判错时回到原阶段继续游戏，机会不再返还", async
     type: "game.submitWords",
     payload: { words: ["苹果", "香蕉"] },
   });
+  await handHost(service, questioner, hostId);
   await execute(service, host, {
     id: "be-blank",
     type: "test.setMyRole",

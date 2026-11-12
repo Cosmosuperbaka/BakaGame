@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { CEEImageHints } from "../src/infrastructure/CEEImageHints";
 import { ceeTestHarness, character, deferred } from "./CEENativeFixtures";
 import { ensureRoomId } from "../src/domain/Rules";
+import { TEST_ROOMS_DISABLED } from "../src/domain/TestRooms";
 import { ROOM_EMPTY_GRACE_PERIOD_MS, ROOM_IDLE_TIMEOUT_MS } from "../src/config/Constants";
 import { ROOM_ID_TEST_MODE } from "../src/shared/Index";
 
@@ -277,7 +278,7 @@ describe("CEE 房间与提示边界", () => {
     // 这条用例故意把期望取自 `ensureRoomId` 本身：谁再在 CEE 侧复制一份守卫，文案就会分叉并让用例变红。
     const rejectReason = (value: string) => {
       try {
-        ensureRoomId(value);
+        ensureRoomId(value, TEST_ROOMS_DISABLED);
       } catch (error) {
         return error as { code: string; message: string };
       }

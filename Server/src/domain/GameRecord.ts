@@ -1,4 +1,5 @@
 import { GAME_IDS, type GameId } from "../shared/Protocol";
+import type { TestRoomPolicy } from "./TestRooms";
 
 /**
  * 对局记录端口：一款游戏的一个房间从创建到销毁记为一局，局内每次结算上交一个回合，
@@ -60,3 +61,18 @@ export interface GameRecorder {
 
 /** 未配置数据库或隔离测试时使用：丢弃记录。 */
 export const NOOP_GAME_RECORDER: GameRecorder = { record() {}, finishRoom() {} };
+
+/**
+ * 测试房的记录与关房收尾直接丢弃：测试房用于手动调试，局面不代表真实对局，
+ * 写进永久保留的复盘与统计只会污染数据。每次现问策略，开关的开合立即生效。
+ */
+export const skipTestRooms = (recorder: GameRecorder, policy: TestRoomPolicy): GameRecorder => ({
+  record(round) {
+    if (policy.isTestRoom(round.roomId)) return;
+    recorder.record(round);
+  },
+  finishRoom(room) {
+    if (policy.isTestRoom(room.roomId)) return;
+    recorder.finishRoom(room);
+  },
+});

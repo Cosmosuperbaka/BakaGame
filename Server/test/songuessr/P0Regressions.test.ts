@@ -19,6 +19,7 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
+import { TEST_ROOMS_ON } from "../TestRoomPolicy";
 import {
   SonGuessrClientMessage,
   SonGuessrRoomSnapshot,
@@ -126,7 +127,7 @@ describe("上线前 P0 修复回归", () => {
   });
 
   test("P0-2a 测试房间加机器人到总人数上限后拒绝继续添加", async () => {
-    const service = new SonGuessrService({ musicProvider: provider });
+    const service = new SonGuessrService({ testRooms: TEST_ROOMS_ON, musicProvider: provider });
     const host = connection(service, "bot-host");
     await createRoom(service, host, { roomId: "Oblivionis" });
 
@@ -150,7 +151,11 @@ describe("上线前 P0 修复回归", () => {
 
   test("P0-2b 测试房间空闲超时后被回收，未超时则保留", async () => {
     let now = 1_000_000;
-    const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+    const service = new SonGuessrService({
+      testRooms: TEST_ROOMS_ON,
+      musicProvider: provider,
+      now: () => now,
+    });
     const host = connection(service, "idle-test-host");
     await createRoom(service, host, { roomId: "Oblivionis" });
 

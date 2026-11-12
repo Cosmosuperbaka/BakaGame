@@ -715,9 +715,10 @@ test("夜晚反馈不公开凶手，结算历史公开每人的夜晚行动", as
   expect(JSON.stringify(f.snapshot())).not.toContain('"actorId"');
   await f.advance();
   expect(f.snapshot().status).toMatchObject({ phase: "description", day: 2 });
+  // 普通房间里测试指令等同于不存在：与未知指令同码，探测不出这是不是测试房。
   await expect(
     f.command(f.questioner, { type: "test.jumpToPhase", payload: { phase: "feedback" } })
-  ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  ).rejects.toMatchObject({ code: "UNSUPPORTED_COMMAND" });
   // 结束本局查看历史：出题人以中止方式离开会直接结算。
   await f.command(f.questioner, { type: "room.leave", payload: {} });
   const room = (f.service as unknown as { rooms: Map<string, WhoIsFakerRoomRecord> }).rooms.get(

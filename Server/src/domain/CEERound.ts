@@ -5,8 +5,8 @@ import type {
   CEEScoreDetail,
   CEESettings,
 } from "../shared/CEE";
-import { ROOM_ID_TEST_MODE } from "../shared/Index";
 import { AppError } from "./Errors";
+import type { TestRoomPolicy } from "./TestRooms";
 import { isCharacterBanned } from "./CEEPickRules";
 import {
   ceeUnitId,
@@ -43,12 +43,16 @@ export function ceeSetterCandidates(room: CEERoom): CEEPlayerRecord[] {
  * 随机出题要其他参与者备好（结算阶段再来一轮直接沿用在线参与者），手动出题要有可选出题人。
  * 命令路径与私有视图共用这一个判定，视图字段怎么裁剪都不会改变命令是否放行。
  */
-export function canStartCEERound(room: CEERoom, player: CEEPlayerRecord): boolean {
+export function canStartCEERound(
+  room: CEERoom,
+  player: CEEPlayerRecord,
+  testRooms: TestRoomPolicy
+): boolean {
   if (player.id !== room.hostPlayerId) return false;
   if (room.phase !== "waiting" && room.phase !== "settled") return false;
   const participants = ceeParticipants(room, null);
   const enoughPlayers =
-    participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0);
+    participants.length > 1 || (testRooms.isTestRoom(room.id) && participants.length > 0);
   if (!enoughPlayers) return false;
   if (room.settings.answerMode === "manual") return ceeSetterCandidates(room).length > 0;
   return (

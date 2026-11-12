@@ -1,4 +1,6 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
+import type { TestRoomPolicy } from "../src/domain/TestRooms";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ConnectionRecord, WhoIsFakerClientMessage } from "../src/shared/Index";
@@ -10,7 +12,10 @@ export interface TestConnection {
 }
 
 // 为每条测试创建独立的服务实例和可控时钟，避免用例互相污染。
-export const createTestContext = (options: { gameRecorder?: GameRecorder } = {}) => {
+// 夹具缺省打开测试房策略（生产缺省是关闭的）；要验证关闭行为的用例显式传 `TEST_ROOMS_DISABLED`。
+export const createTestContext = (
+  options: { gameRecorder?: GameRecorder; testRooms?: TestRoomPolicy } = {}
+) => {
   let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
   // 大厅合并窗的尾沿跟着注入时钟走：挂在真实定时器上的话，「窗口内不重复下发」这类断言
   // 取决于用例跑了多少墙钟时间，满载机器上会时好时坏。实现保证同一时刻至多一个尾沿。
@@ -23,6 +28,7 @@ export const createTestContext = (options: { gameRecorder?: GameRecorder } = {})
   };
   const service = new WhoIsFakerService({
     gameRecorder: options.gameRecorder,
+    testRooms: options.testRooms ?? TEST_ROOMS_ON,
     now: () => currentTime,
     random: {
       nextInt: (maxExclusive: number) => Math.max(maxExclusive - 1, 0),

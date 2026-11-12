@@ -14,23 +14,53 @@ import {
   shouldEnterFinalBlankGuess,
   validateRoleConfig,
 } from "../src/domain/Rules";
+import { TEST_ROOMS_DISABLED, createTestRoomPolicy } from "../src/domain/TestRooms";
 import { isValidRoomId, type GameRound } from "../src/shared/Index";
+import { TEST_ROOMS_ON } from "./TestRoomPolicy";
 
-test("房间号校验：四位数字与测试房间号合法，其余一律拒绝", () => {
+test("房间号校验：四位数字与（策略打开时的）测试房间号合法，其余一律拒绝", () => {
   for (const valid of ["0000", "1234", "9999", "Oblivionis", "oblivionis", " 1234 "]) {
     expect(isValidRoomId(valid)).toBe(true);
-    expect(() => ensureRoomId(valid)).not.toThrow();
+    expect(() => ensureRoomId(valid, TEST_ROOMS_ON)).not.toThrow();
   }
 
   for (const invalid of ["", "12", "12345", "abcd", "12a4", "room", "１２３４"]) {
     expect(isValidRoomId(invalid)).toBe(false);
-    expect(() => ensureRoomId(invalid)).toThrow(
+    expect(() => ensureRoomId(invalid, TEST_ROOMS_ON)).toThrow(
       expect.objectContaining({ code: "INVALID_ROOM_ID" })
     );
   }
 
   // 测试房间号统一归一成标准大小写，避免同房间分裂成两间。
-  expect(ensureRoomId("oblivionis")).toBe("Oblivionis");
+  expect(ensureRoomId("oblivionis", TEST_ROOMS_ON)).toBe("Oblivionis");
+});
+
+test("策略关闭时测试房号是非法房号：同码同文案，普通房号不受影响", () => {
+  const rejectionOf = (value: string) => {
+    try {
+      ensureRoomId(value, TEST_ROOMS_DISABLED);
+    } catch (error) {
+      return error as { code: string; message: string };
+    }
+    return undefined;
+  };
+  const ordinary = rejectionOf("abcd");
+  expect(ordinary?.code).toBe("INVALID_ROOM_ID");
+  for (const value of ["Oblivionis", "oblivionis", "  OBLIVIONIS "]) {
+    const rejected = rejectionOf(value);
+    expect(rejected?.code).toBe("INVALID_ROOM_ID");
+    // 文案与其它非法房号逐字一致：不泄漏「这是测试房号」。
+    expect(rejected?.message).toBe(ordinary?.message);
+  }
+  expect(ensureRoomId("1234", TEST_ROOMS_DISABLED)).toBe("1234");
+});
+
+test("测试房策略现读开关：开关翻转后房号校验立即跟随", () => {
+  let enabled = false;
+  const policy = createTestRoomPolicy(() => enabled);
+  expect(() => ensureRoomId("Oblivionis", policy)).toThrow();
+  enabled = true;
+  expect(ensureRoomId("Oblivionis", policy)).toBe("Oblivionis");
 });
 
 test("房号归一只归一不校验：去空白、测试房号大小写归一，非法房号原样返回", () => {
