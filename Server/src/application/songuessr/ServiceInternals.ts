@@ -27,7 +27,6 @@ export interface SonGuessrServiceInternals {
   readonly options: SonGuessrServiceOptions;
   readonly now: () => number;
   readonly random: RandomSource;
-  /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
   /** 每个房间在等号的请求；租约归还或池子变化时唤醒。 */
   readonly musicPoolWaiters: Map<string, Set<() => void>>;
   nextMusicRefreshSweepAt: number;

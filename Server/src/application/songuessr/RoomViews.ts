@@ -51,7 +51,7 @@ export const buildMusicPoolView = (
   room: SonGuessrRoomRecord
 ): SonGuessrMusicPoolView[] => {
   const now = service.now();
-  return musicPool(service, room)
+  return musicPool(room)
     .slice()
     .sort((left, right) => {
       if (left.platform !== right.platform) return left.platform === "qq" ? 1 : -1;
@@ -65,7 +65,7 @@ export const buildMusicPoolView = (
       account: entry.account,
       enabled: entry.enabled,
       // 只下发还在生效的冷却：过期时间发给客户端只会让面板永远显示「冷却中」。
-      ...(isCoolingDown(service, entry, now) ? { cooldownUntil: entry.cooldownUntil } : {}),
+      ...(isCoolingDown(entry, now) ? { cooldownUntil: entry.cooldownUntil } : {}),
       inFlight: entry.inFlight,
       recentOk: entry.recentOk,
       recentTotal: entry.recentTotal,
@@ -222,8 +222,8 @@ export const buildPrivateState = (
     ),
     guessDeadlineAt: state?.deadlineAt,
     // 出题人、出题人的队友与旁观者在游戏中均可看到本题答案
-    submittedSong: seesAnswer && round ? publicSong(service, round.song) : undefined,
-    submittedAnime: seesAnswer && round?.anime ? publicAnime(service, round.anime) : undefined,
+    submittedSong: seesAnswer && round ? publicSong(round.song) : undefined,
+    submittedAnime: seesAnswer && round?.anime ? publicAnime(round.anime) : undefined,
     // 猜歌玩家看得到本队的全部猜测（队伍共用记录），看不到别队的
     visibleAttempts: round
       ? round.attempts.filter(
@@ -256,10 +256,7 @@ export const buildScores = (
     );
 };
 
-export const publicSong = (
-  service: SonGuessrServiceInternals,
-  song: SongDetails
-): SongSearchResult => {
+export const publicSong = (song: SongDetails): SongSearchResult => {
   return {
     id: song.id,
     title: song.title,
@@ -271,10 +268,7 @@ export const publicSong = (
   };
 };
 
-export const publicAnime = (
-  service: SonGuessrServiceInternals,
-  anime: BangumiSubjectDetails
-): BangumiSubjectSearchResult => {
+export const publicAnime = (anime: BangumiSubjectDetails): BangumiSubjectSearchResult => {
   return {
     id: anime.id,
     name: anime.name,

@@ -9,7 +9,6 @@
  */
 
 /** 计分口径版本。只影响新对局，不改历史 `game_record`；旧口径已随 v1 分支删除。 */
-export const SONG_SCORING_VERSION = 2 as const;
 
 export const SONG_SCORE = {
   /** 答题者基准分：满分（速度 1.2 × 精度 1）即 12 分。 */
@@ -104,14 +103,6 @@ export function computeSongAnswererFactors(input: SongAnswererInput): {
   );
   return { speed, precision, score: Math.round(SONG_SCORE.base * speed * precision) };
 }
-
-/**
- * 答题者得分：`round(10 × 速度系数 × 精度系数)`。
- *
- * 普通模式的速度系数看「解得快不快」，血战看「排第几」——血战是抢答，排名本身就是速度。
- */
-export const computeSongAnswererScore = (input: SongAnswererInput): number =>
-  computeSongAnswererFactors(input).score;
 
 export interface SongSubmitterInput {
   answerableCount: number;

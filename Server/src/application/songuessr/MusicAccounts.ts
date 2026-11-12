@@ -83,7 +83,7 @@ export const useMusicCookie = async (
   platform: "netease" | "qq" = "netease"
 ) => {
   const { room, player } = service.requireRoomPlayer(connection);
-  const cookie = requireMusicCookie(service, cookieValue);
+  const cookie = requireMusicCookie(cookieValue);
   const provider = service.options.musicProvider;
   const getLoginStatus = provider.getLoginStatus?.bind(provider);
   if (!getLoginStatus) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
@@ -162,7 +162,7 @@ export const installMusicSession = (
   session: MusicLoginSession,
   options: { preferExistingCookie?: boolean } = {}
 ): MusicLoginSession => {
-  const incomingCookie = requireMusicCookie(service, session.cookie);
+  const incomingCookie = requireMusicCookie(session.cookie);
   const isQq = session.account.platform === "qq";
   const account = {
     platform: session.account.platform || "netease",
@@ -182,7 +182,7 @@ export const installMusicSession = (
   // 开局加载期间阶段仍是 waiting，但开关已经锁死：同样不入池。
   const active =
     room.phase === "waiting" && !room.automaticRoundLoading && !room.manualRoundStarting;
-  const pool = musicPool(service, room);
+  const pool = musicPool(room);
   const existing = pool.find(
     (entry) => entry.playerId === ownerPlayerId && entry.platform === platform
   );
@@ -196,7 +196,7 @@ export const installMusicSession = (
     existing.account.userId === account.userId &&
     existing.cookieRefreshedAt !== undefined &&
     existing.lastFailureReason === undefined &&
-    !isCoolingDown(service, existing, service.now()) &&
+    !isCoolingDown(existing, service.now()) &&
     service.now() - existing.cookieRefreshedAt <= MUSIC_COOKIE_FRESH_MS;
   const cookie = preferExisting ? existing.cookie : incomingCookie;
   if (existing) {
@@ -238,7 +238,7 @@ export const installMusicSession = (
   return { cookie, account };
 };
 
-export const requireMusicCookie = (service: SonGuessrServiceInternals, value: string): string => {
+export const requireMusicCookie = (value: string): string => {
   const cookie = value.trim();
   if (!cookie || cookie.length > MAX_SONGUESSR_COOKIE_LENGTH) {
     throw new AppError("MUSIC_SESSION_INVALID", "音乐登录状态无效");
@@ -247,10 +247,7 @@ export const requireMusicCookie = (service: SonGuessrServiceInternals, value: st
 };
 
 /** 池内所有条目；房间记录里没有池时按空池建一个，调用方不必各自判空。 */
-export const musicPool = (
-  service: SonGuessrServiceInternals,
-  room: SonGuessrRoomRecord
-): SonGuessrMusicPoolEntry[] => {
+export const musicPool = (room: SonGuessrRoomRecord): SonGuessrMusicPoolEntry[] => {
   room.musicPool ??= [];
   return room.musicPool;
 };
@@ -266,7 +263,7 @@ export const clearMusicSession = (
   ownerPlayerId?: string,
   platform: "netease" | "qq" | "all" = "all"
 ): boolean => {
-  const pool = musicPool(service, room);
+  const pool = musicPool(room);
   const before = pool.length;
   // 在途登录锁按「人 + 平台」清：清掉自己的号时顺手作废自己那一次在途登录，
   // 不动别人正在跑的那次（否则 A 退出登录会把 B 的扫码结果一起作废）。
@@ -302,7 +299,7 @@ export const setPoolSharing = (
   if (room.phase !== "waiting" || room.automaticRoundLoading) {
     throw new AppError("INVALID_PHASE", "开局后不能再改账号共享开关");
   }
-  const entry = musicPool(service, room).find(
+  const entry = musicPool(room).find(
     (candidate) => candidate.playerId === player.id && candidate.platform === platform
   );
   if (!entry) throw new AppError("MUSIC_SESSION_INVALID", "请先登录该平台账号");
@@ -324,13 +321,9 @@ export const setPoolSharing = (
  * `cleanupOfflinePlayers` 连号一起清掉。也不看在途数：快照展示、开局复核与
  * VIP 标注只需要知道「这号是否可用」，取号时才卡并发。
  */
-export const isPoolEntryUsable = (
-  service: SonGuessrServiceInternals,
-  entry: SonGuessrMusicPoolEntry,
-  now: number
-): boolean => {
+export const isPoolEntryUsable = (entry: SonGuessrMusicPoolEntry, now: number): boolean => {
   if (!entry.enabled) return false;
-  if (isCoolingDown(service, entry, now)) return false;
+  if (isCoolingDown(entry, now)) return false;
   return true;
 };
 
@@ -338,11 +331,7 @@ export const isPoolEntryUsable = (
  * 冷却是否还在生效。顺手把过期的冷却清掉：冷却到点就是自动恢复在途可用，
  * 留着它既会让快照一直显示「冷却中」，也会让开局判定永远把这个号排除在外。
  */
-export const isCoolingDown = (
-  service: SonGuessrServiceInternals,
-  entry: SonGuessrMusicPoolEntry,
-  now: number
-): boolean => {
+export const isCoolingDown = (entry: SonGuessrMusicPoolEntry, now: number): boolean => {
   if (entry.cooldownUntil === undefined) return false;
   if (entry.cooldownUntil > now) return true;
   entry.cooldownUntil = undefined;
@@ -357,10 +346,10 @@ export const hasAvailablePoolAccount = (
   options: { requireVip?: boolean } = {}
 ): boolean => {
   const now = service.now();
-  return musicPool(service, room).some(
+  return musicPool(room).some(
     (entry) =>
       entry.platform === platform &&
-      isPoolEntryUsable(service, entry, now) &&
+      isPoolEntryUsable(entry, now) &&
       (!options.requireVip || entry.account.vipStatus === "vip")
   );
 };
@@ -418,8 +407,8 @@ export const pickMusicPoolEntry = (
   enforceCap: boolean
 ): SonGuessrMusicPoolEntry | undefined => {
   const now = service.now();
-  const usable = musicPool(service, room).filter(
-    (entry) => entry.platform === platform && isPoolEntryUsable(service, entry, now)
+  const usable = musicPool(room).filter(
+    (entry) => entry.platform === platform && isPoolEntryUsable(entry, now)
   );
   const tiered =
     platform === "qq" && options.requireVip
@@ -855,8 +844,8 @@ export const primaryPoolEntry = (
   platform: MusicAuthPlatform
 ): SonGuessrMusicPoolEntry | undefined => {
   const now = service.now();
-  return musicPool(service, room)
-    .filter((entry) => entry.platform === platform && isPoolEntryUsable(service, entry, now))
+  return musicPool(room)
+    .filter((entry) => entry.platform === platform && isPoolEntryUsable(entry, now))
     .sort((left, right) => {
       if (left.inFlight !== right.inFlight) return left.inFlight - right.inFlight;
       if (left.addedAt !== right.addedAt) return left.addedAt - right.addedAt;
@@ -871,8 +860,8 @@ export const hasEnabledPoolAccount = (
   platform: MusicAuthPlatform
 ): boolean => {
   const now = service.now();
-  return musicPool(service, room).some(
-    (entry) => entry.platform === platform && entry.enabled && !isCoolingDown(service, entry, now)
+  return musicPool(room).some(
+    (entry) => entry.platform === platform && entry.enabled && !isCoolingDown(entry, now)
   );
 };
 
@@ -905,7 +894,7 @@ export const refreshDueMusicSessions = async (
 
   for (const room of [...service.rooms.values()]) {
     if (service.rooms.get(room.id) !== room) continue;
-    for (const entry of [...musicPool(service, room)]) {
+    for (const entry of [...musicPool(room)]) {
       if (!shouldRefreshMusicEntry(service, entry)) continue;
       await refreshMusicPoolEntry(service, room, entry, getLoginStatus);
     }
@@ -916,7 +905,7 @@ export const shouldRefreshMusicEntry = (
   service: SonGuessrServiceInternals,
   entry: SonGuessrMusicPoolEntry
 ): boolean => {
-  if (entry.platform !== "qq" || !isPoolEntryUsable(service, entry, service.now())) return false;
+  if (entry.platform !== "qq" || !isPoolEntryUsable(entry, service.now())) return false;
   const lastRefreshed = entry.cookieRefreshedAt ?? entry.addedAt;
   return (
     service.now() - lastRefreshed >=
@@ -937,12 +926,12 @@ export const refreshMusicPoolEntry = async (
   // 号主在续期等待期间重新登录会原地替换同一条目，「还在池里」恒真；必须同时核对
   // 凭据没换过，否则旧 Cookie 的续期结果（或失效判定）会盖掉刚登录的新凭据。
   const sentCookie = entry.cookie;
-  const superseded = () => !musicPool(service, room).includes(entry) || entry.cookie !== sentCookie;
+  const superseded = () => !musicPool(room).includes(entry) || entry.cookie !== sentCookie;
   try {
     const result = await getLoginStatus(sentCookie, "qq", { forceRefresh: true });
     if (superseded()) return;
     const cookieChanged = result.cookie !== entry.cookie;
-    entry.cookie = requireMusicCookie(service, result.cookie);
+    entry.cookie = requireMusicCookie(result.cookie);
     entry.account = result.account;
     entry.cookieRefreshedAt = service.now();
     entry.lastFailureReason = undefined;
@@ -978,7 +967,7 @@ export const refreshMusicSessionAccount = async (
     const cookieChanged = result.cookie !== entry.cookie;
     entry.account = result.account;
     if (cookieChanged) {
-      entry.cookie = requireMusicCookie(service, result.cookie);
+      entry.cookie = requireMusicCookie(result.cookie);
       // 服务端替号主续期后，把新 Cookie 只发给号主自己的连接，客户端同步本机副本。
       publishMusicSession(service, room, entry);
     }
@@ -988,7 +977,7 @@ export const refreshMusicSessionAccount = async (
       const key = musicAuthOperationKey(entry.playerId, platform);
       if (
         error.code === "MUSIC_SESSION_INVALID" &&
-        musicPool(service, room).includes(entry) &&
+        musicPool(room).includes(entry) &&
         entry.cookie === sentCookie &&
         room.musicAuthOperations?.[key] === operation
       ) {

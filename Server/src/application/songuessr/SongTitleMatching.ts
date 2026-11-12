@@ -506,11 +506,12 @@ export const buildAlbumQueries = (
   return queries;
 };
 
+export const ALBUM_RETRY_DELAY_MS = 1_200;
+
 /**
  * 上游偶发失败时重试一次。**只重试瞬态失败**：限流（`MUSIC_API_RATE_LIMITED`）与
  * 队列拥塞（`MUSIC_API_BUSY`）下立即重试只会再撞一次冷却，直接放弃让上层换下一首。
  */
-export const ALBUM_RETRY_DELAY_MS = 1_200;
 export const retryOnce = async <T>(task: () => Promise<T>): Promise<T> => {
   try {
     return await task();

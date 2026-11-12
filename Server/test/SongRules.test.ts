@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   computeSongAnswererFactors,
-  computeSongAnswererScore,
   computeSongDifficulty,
   computeSongSubmitterScore,
   SONG_SCORE,
@@ -17,14 +16,14 @@ const answerer = (options: {
   elapsedRatio: number;
   guessesUsed: number;
 }) =>
-  computeSongAnswererScore({
+  computeSongAnswererFactors({
     bloodMode: options.bloodMode ?? false,
     rank: options.rank ?? 1,
     answerableCount: options.answerableCount,
     elapsedRatio: options.elapsedRatio,
     guessesUsed: options.guessesUsed,
     maxGuessesPerRound: MAX_GUESSES,
-  });
+  }).score;
 
 /** 一轮的难度分与出题人得分，`attemptsPerAnswerer` 是每个可作答单元的尝试次数。 */
 const submitter = (options: {

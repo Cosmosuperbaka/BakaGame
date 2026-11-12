@@ -45,7 +45,6 @@ import {
   normalizeAutoFilters,
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
-import {} from "../shared/AgentActivity";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
   BOT_NAME_SUFFIXES,
@@ -152,6 +151,7 @@ export interface SonGuessrServiceOptions {
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
 }
 
+/** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
 type RoomReclaim = "skip" | "grace" | "keep";
 
 /** 一轮回合巡检的共享扫描状态：同一时刻与同一硬超时判定贯穿「补就绪」与「判超时」两步。 */
@@ -163,10 +163,6 @@ type RoundSweep = {
   isRoundHardExpired: boolean;
   units: Set<SonGuessrRoundPlayerState>;
 };
-
-/** 手动选曲的条目匹配上下文：一次解析内共享的检索资源、预算与已产出的结果。 */
-
-/** 出题窗口前可用于音频渐入的提前量。 */
 
 export class SonGuessrService implements AdminRoomControl {
   readonly rooms = new Map<string, SonGuessrRoomRecord>();
@@ -1452,7 +1448,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private musicPool(room: SonGuessrRoomRecord): SonGuessrMusicPoolEntry[] {
-    return musicPool(this, room);
+    return musicPool(room);
   }
 
   private clearMusicSession(
@@ -1472,11 +1468,11 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private isPoolEntryUsable(entry: SonGuessrMusicPoolEntry, now: number): boolean {
-    return isPoolEntryUsable(this, entry, now);
+    return isPoolEntryUsable(entry, now);
   }
 
   private isCoolingDown(entry: SonGuessrMusicPoolEntry, now: number): boolean {
-    return isCoolingDown(this, entry, now);
+    return isCoolingDown(entry, now);
   }
 
   private wakeMusicPoolWaiters(roomId: string): void {
@@ -2560,33 +2556,28 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 手动出题下一回合：轮换开启则自动指定出题人，否则回到选出题人阶段。 */
   private beginManualNextRound(room: SonGuessrRoomRecord) {
-    if (room.manualRoundStarting) throw new AppError("ROUND_BUSY", "正在准备下一回合");
+    // 全程同步没有 await：不需要任何开局锁，并发的请求不可能插进来。
     const previousSubmitterId = room.currentRound?.submitterPlayerId;
-    room.manualRoundStarting = true;
-    try {
-      room.currentRound = undefined;
-      room.roundSummary = undefined;
-      this.applyQueuedMemberships(room);
-      if (!this.hasNextRoundQuorum(room)) {
-        this.fallBackToWaiting(room);
-        return { nextRound: room.roundNumber + 1, waiting: true };
-      }
-      const nextSubmitter = room.settings.autoRotateSubmitter
-        ? this.nextRotatingSubmitter(room, previousSubmitterId)
-        : undefined;
-      // 「再来一轮」已经把界面切到下一轮：上一轮的结局不跟着进新回合。
-      this.clearRoundMarks(room);
-      // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
-      if (nextSubmitter) {
-        room.pendingSubmitterPlayerId = nextSubmitter.id;
-        this.assignSubmitterDeadline(room);
-        room.submitterPrompt = undefined;
-        room.phase = "submittingSong";
-      } else {
-        room.phase = "choosingSubmitter";
-      }
-    } finally {
-      room.manualRoundStarting = false;
+    room.currentRound = undefined;
+    room.roundSummary = undefined;
+    this.applyQueuedMemberships(room);
+    if (!this.hasNextRoundQuorum(room)) {
+      this.fallBackToWaiting(room);
+      return { nextRound: room.roundNumber + 1, waiting: true };
+    }
+    const nextSubmitter = room.settings.autoRotateSubmitter
+      ? this.nextRotatingSubmitter(room, previousSubmitterId)
+      : undefined;
+    // 「再来一轮」已经把界面切到下一轮：上一轮的结局不跟着进新回合。
+    this.clearRoundMarks(room);
+    // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
+    if (nextSubmitter) {
+      room.pendingSubmitterPlayerId = nextSubmitter.id;
+      this.assignSubmitterDeadline(room);
+      room.submitterPrompt = undefined;
+      room.phase = "submittingSong";
+    } else {
+      room.phase = "choosingSubmitter";
     }
     this.touch(room);
     this.publishRoom(room);
@@ -3129,11 +3120,11 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private publicSong(song: SongDetails): SongSearchResult {
-    return publicSong(this, song);
+    return publicSong(song);
   }
 
   private publicAnime(anime: BangumiSubjectDetails): BangumiSubjectSearchResult {
-    return publicAnime(this, anime);
+    return publicAnime(anime);
   }
 
   requireRoomPlayer(connection: ConnectionRecord) {

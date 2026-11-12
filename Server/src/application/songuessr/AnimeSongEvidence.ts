@@ -39,11 +39,6 @@ export const isNonVocalTrack = (title: string): boolean =>
   TRACK_NUMBER_TITLE_PATTERN.test(title);
 
 /**
- * 为网易云候选歌曲打「原版优先」分，分数越高越接近 Bangumi 记录的原唱版本。
- * resolveAnimeSong 会按此分数降序取首个可播放歌曲，从而在翻唱、器乐改编、伴奏等
- * 版本混排时优先选中原版，避免「原版存在却抽到翻唱」。
- */
-/**
  * 候选是否具备「就是这首歌」的准入证据（准入看身份，与看版本的排序分刻意解耦）。
  * 曲名完全一致（此时不看歌手）、专辑名与原曲目名完全一致、候选名完整包含条目名 →
  * 有资格；候选名只是条目名的一截 → 须另有锚点（歌手交集 / 专辑指向本番，见
@@ -113,12 +108,6 @@ export const buildTrackQueries = (
   if (anime.name) queries.push(`${track.title} ${anime.name}`);
   if (anime.nameCn && anime.nameCn !== anime.name) queries.push(`${track.title} ${anime.nameCn}`);
   queries.push(track.title);
-  const broadQueries = [
-    anime.name ? `${track.title} ${anime.name}` : "",
-    anime.nameCn && anime.nameCn !== anime.name ? `${track.title} ${anime.nameCn}` : "",
-    track.title,
-  ].filter((query) => query && !queries.includes(query));
-  queries.push(...broadQueries);
 
   const scopeQueries = [
     anime.name ? `${track.title} ${anime.name}` : "",
@@ -220,5 +209,3 @@ export const fallbackKindOfSong = (
 /** 详情已带热度时再过一道门槛：热度缺失按不达标处理。 */
 export const isBelowMinPopularity = (song: SongDetails, minPopularity: number): boolean =>
   minPopularity > 0 && (song.popularity === undefined || song.popularity < minPopularity);
-
-/** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */

@@ -92,7 +92,7 @@ export const resolveSpecifiedAnimeSong = async (
       artist: song.artist,
       kind: "theme" as BangumiMusicTrackKind,
     };
-  const trackKind = refineTrackKind(service, matchedTrack.kind, song);
+  const trackKind = refineTrackKind(matchedTrack.kind, song);
   return {
     song,
     track: { ...matchedTrack, kind: trackKind },
@@ -186,7 +186,6 @@ export const resolveTrackSong = async (
   // 同一曲目的多个检索词之间没有依赖，并行回源把最坏等待压到一次上游往返。
   // 带番剧名的检索词单独标出来：命中它们的候选是「确实属于本番」的强证据。
   const matched = await searchAnimeTrackCandidates(
-    service,
     provider,
     queries,
     track,
@@ -270,10 +269,10 @@ export const verifyTrackPool = async (
       attempts -= 1;
       continue;
     }
-    const pick = buildTrackPick(service, pool.track, song, pool.fromAnimeLevel);
+    const pick = buildTrackPick(pool.track, song, pool.fromAnimeLevel);
     const kind = fallbackKindOfSong(song, lookup.anime, lookup.recentSongIds);
     if (!kind) return pick;
-    recordFallbackPick(service, lookup, pool, { index, candidate, kind, pick });
+    recordFallbackPick(lookup, pool, { index, candidate, kind, pick });
     if (kind !== "recent") attempts -= 1;
   }
   return undefined;
@@ -317,7 +316,6 @@ export const loadPlayableSong = async (
  * （与手动选曲列表同源）；其余路径仍以条目分类为基准，再用歌曲文本细化。
  */
 export const buildTrackPick = (
-  service: SonGuessrServiceInternals,
   track: BangumiMusicTrack,
   song: SongDetails,
   fromAnimeLevel: boolean
@@ -326,14 +324,13 @@ export const buildTrackPick = (
     song,
     track: {
       ...track,
-      kind: refineTrackKind(service, fromAnimeLevel ? "theme" : track.kind, song),
+      kind: refineTrackKind(fromAnimeLevel ? "theme" : track.kind, song),
     },
   };
 };
 
 /** 把让位候选记进对应兜底槽；翻唱还要把它自带的原曲插回队首。 */
 export const recordFallbackPick = (
-  service: SonGuessrServiceInternals,
   lookup: AnimeSongLookup,
   pool: TrackCandidatePool,
   entry: FallbackPickEntry
@@ -372,7 +369,6 @@ export const recordFallbackPick = (
  * 召回挂在整张原声带专辑下的官方原版（见 `isSongAlbumMatch`）。
  */
 export const searchAnimeTrackCandidates = async (
-  service: SonGuessrServiceInternals,
   provider: MusicProvider,
   queries: string[],
   track: BangumiMusicTrack,
@@ -612,7 +608,6 @@ export const matchAnimeTrack = async (
   let matchedCandidates: SongSearchResult[] = [];
   try {
     const matched = await searchAnimeTrackCandidates(
-      service,
       ctx.provider,
       queries,
       track,
@@ -649,7 +644,6 @@ export const matchAnimeTrack = async (
   // 专辑兜底返回的是整张专辑的**不同曲目**（不是同一首歌的多版本），全部保留供挑选；
   // 被跨条目去重挡下的候选直接跳过，不顺延到同条目的次名版本，否则翻唱又会被带回来。
   registerMatchedSongs(
-    service,
     ctx,
     track,
     albumFallback ? matchedCandidates : matchedCandidates.slice(0, 1)
@@ -658,7 +652,6 @@ export const matchAnimeTrack = async (
 
 /** 把条目候选写进手动选曲列表；已在别的条目出现过的歌曲直接跳过。 */
 export const registerMatchedSongs = (
-  service: SonGuessrServiceInternals,
   ctx: AnimeTrackMatchContext,
   track: BangumiMusicTrack,
   candidates: SongSearchResult[]
@@ -712,7 +705,6 @@ export const fillAnimeLevelFallback = async (
 };
 
 export const refineTrackKind = (
-  service: SonGuessrServiceInternals,
   kind: BangumiMusicTrackKind,
   song: SongDetails
 ): BangumiMusicTrackKind => {
