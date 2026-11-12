@@ -530,7 +530,8 @@ export function CEEGameSettings({
             />
             <SettingStepper
               label="每次行动限时"
-              description="设为 0 表示不限行动时间。"
+              // 「设为 0」是给房主的操作说明，只读视角的取值已写成「不限」
+              description={readOnly ? undefined : "设为 0 表示不限行动时间。"}
               unit="秒"
               value={values.timeLimit}
               minimum={0}
@@ -566,7 +567,9 @@ export function CEEGameSettings({
 
           <SettingsSection title="提示" icon={Lightbulb}>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              提示在剩余次数降到设定值时出现，0 为关闭，按从大到小填写。
+              {readOnly
+                ? "提示在剩余次数降到设定值时出现。"
+                : "提示在剩余次数降到设定值时出现，0 为关闭，按从大到小填写。"}
             </p>
             {[0, 1, 2].map((index) => (
               <SettingStepper
