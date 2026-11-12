@@ -105,10 +105,9 @@ export class DatabaseStatusEventRepository implements StatusEventRepository {
     if (filter.since !== undefined)
       conditions.push(gte(statusEvent.startedAt, new Date(filter.since)));
     if (filter.active !== undefined) {
-      const activeCondition = filter.active
-        ? sql`${statusEvent.resolvedAt} is null and ${statusEvent.status} <> 'done'`
-        : sql`(${statusEvent.resolvedAt} is not null or ${statusEvent.status} = 'done')`;
-      conditions.push(activeCondition);
+      // 与 `isStatusEventActive` 逐字同口径：故障看恢复时刻，维护看是否 done，两者不互相借用。
+      const active = sql`((${statusEvent.kind} = 'incident' and ${statusEvent.resolvedAt} is null) or (${statusEvent.kind} = 'maintenance' and ${statusEvent.status} <> 'done'))`;
+      conditions.push(filter.active ? active : sql`not ${active}`);
     }
     const where = and(...conditions);
     const [rows, [count]] = await Promise.all([

@@ -75,22 +75,21 @@ describe("状态事件仓储（连接桩）", () => {
     expect(count.params).toEqual(select.params.slice(0, 3));
   });
 
-  test("进行中只看 resolvedAt 与 done，故障与维护不再混为一谈", async () => {
+  test("进行中的查询条件与 isStatusEventActive 同口径：故障看 resolvedAt，维护看 done", async () => {
     const stub = createDrizzleStub();
     const repository = new DatabaseStatusEventRepository(stub.database);
 
     stub.reply([], [tupleOf(0)]);
     await repository.list("dev", { active: true, limit: 10, offset: 0 });
-    expect(stub.queryAt(0).statement).toContain(
-      "`status_event`.`resolved_at` is null and `status_event`.`status` <> 'done'"
-    );
+    const active =
+      "((`status_event`.`kind` = 'incident' and `status_event`.`resolved_at` is null) or (`status_event`.`kind` = 'maintenance' and `status_event`.`status` <> 'done'))";
+    expect(stub.queryAt(0).statement).toContain(active);
+    expect(stub.queryAt(0).statement).not.toContain(`not ${active}`);
 
     stub.reset();
     stub.reply([], [tupleOf(0)]);
     await repository.list("dev", { active: false, limit: 10, offset: 0 });
-    expect(stub.queryAt(0).statement).toContain(
-      "(`status_event`.`resolved_at` is not null or `status_event`.`status` = 'done')"
-    );
+    expect(stub.queryAt(0).statement).toContain(`not ${active}`);
   });
 
   test("进行中的判定与查询口径同源", () => {
