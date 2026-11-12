@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type JoinedPlayer, createRoom, joinPlayers } from "./Fixtures";
+import { createTestRoomPolicy, TEST_ROOMS_DISABLED } from "../../src/domain/TestRooms";
 import { PHASE_RESULT_DISPLAY_MS, ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
 import {
   SERVER_SHUTDOWN_MESSAGE,
@@ -26,11 +27,12 @@ describe("测试房间", () => {
     // 测试房间不应出现在大厅摘要里。
     expect(service.getRoomSummaries().find((item) => item.roomId === "Oblivionis")).toBeUndefined();
 
-    // 闲置超时后也不应被清理。
+    // 闲置超时后也不应被清理。读房间当前状态与 room.closed 事件：
+    // 房间被关闭时不会再发快照，读最后一帧快照会把「已关闭」读成「还在」。
     advanceTime(30 * 60 * 1000);
     await service.runHousekeeping();
-    const afterSnapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
-    expect(afterSnapshot?.roomId).toBe("Oblivionis");
+    expect(getEventPayloads(host, "room.closed")).toHaveLength(0);
+    expect(service.rooms.has("Oblivionis")).toBe(true);
   });
 
   test("测试房间最后一人掉线后仍然保留，可凭令牌回到原席位", async () => {
@@ -817,4 +819,126 @@ test("测试房在对局中途跳回等待，不留下开局时间记录", async
     payload: { phase: "waiting" },
   });
   expect(service.roundStartedAtById.size).toBe(0);
+});
+
+describe("测试房守卫", () => {
+  const TEST_COMMANDS = [
+    { type: "test.jumpToPhase", payload: { phase: "description" } },
+    { type: "test.setMyRole", payload: { role: "civilian" } },
+    { type: "test.addBot", payload: { count: 1 } },
+    { type: "test.removeBot", payload: { count: 1 } },
+  ] as const;
+
+  test("策略关闭时建测试房与加入测试房都得非法房号，与其它非法房号同文案", async () => {
+    const { service } = createTestContext({ testRooms: TEST_ROOMS_DISABLED });
+    const host = createConnection(service, "guard-host");
+    const rejected = async (roomId: string) => {
+      try {
+        await execute(service, host, {
+          id: `create-${roomId}`,
+          type: "room.create",
+          payload: {
+            roomId,
+            name: "房",
+            visibility: "public",
+            allowSpectators: true,
+            userName: "房主",
+          },
+        });
+      } catch (error) {
+        return error as { code: string; message: string };
+      }
+      throw new Error(`${roomId} 应被拒绝`);
+    };
+    const ordinary = await rejected("abcd");
+    for (const roomId of ["Oblivionis", "oblivionis"]) {
+      const error = await rejected(roomId);
+      expect(error.code).toBe("INVALID_ROOM_ID");
+      expect(error.message).toBe(ordinary.message);
+    }
+
+    const guest = createConnection(service, "guard-guest");
+    await expect(
+      execute(service, guest, {
+        id: "join",
+        type: "room.join",
+        roomId: "Oblivionis",
+        payload: { userName: "访客" },
+      })
+    ).rejects.toMatchObject({ code: "INVALID_ROOM_ID" });
+    expect(service.rooms.size).toBe(0);
+  });
+
+  test("非房主发四条测试指令一律被拒", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    const [guest] = await joinPlayers(service, "Oblivionis", 1, "访客");
+    await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 2 } });
+    const before = JSON.stringify(
+      getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.players
+    );
+
+    for (const command of TEST_COMMANDS) {
+      await expect(
+        execute(service, guest.connection, { id: `guest-${command.type}`, ...command })
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    expect(
+      JSON.stringify(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.players)
+    ).toBe(before);
+  });
+
+  test("普通房间里的测试指令一律当作未知指令，即使房主发也一样", async () => {
+    for (const testRooms of [TEST_ROOMS_DISABLED, createTestRoomPolicy(() => true)]) {
+      const { service } = createTestContext({ testRooms });
+      const { host } = await createRoom(service, "1234");
+      for (const command of TEST_COMMANDS) {
+        await expect(
+          execute(service, host, { id: `plain-${command.type}`, ...command })
+        ).rejects.toMatchObject({ code: "UNSUPPORTED_COMMAND" });
+      }
+    }
+  });
+
+  test("开关在房间存续期间关闭：测试特权立即失效，房间退回普通房", async () => {
+    let enabled = true;
+    const { service, advanceTime } = createTestContext({
+      testRooms: createTestRoomPolicy(() => enabled),
+    });
+    const { host } = await createRoom(service, "Oblivionis");
+    const [guest] = await joinPlayers(service, "Oblivionis", 1, "访客");
+    await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump",
+      type: "test.jumpToPhase",
+      payload: { phase: "description" },
+    });
+    expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.testMode).toBe(true);
+    expect(
+      getLastEventPayload<WhoIsFakerPrivateState>(guest.connection, "game.privateState")?.debugRole
+    ).toBeDefined();
+
+    enabled = false;
+    await execute(service, guest.connection, { id: "sync", type: "room.requestSync", payload: {} });
+    expect(
+      getLastEventPayload<WhoIsFakerRoomSnapshot>(guest.connection, "room.snapshot")
+    ).toMatchObject({
+      testMode: false,
+    });
+    expect(
+      getLastEventPayload<WhoIsFakerPrivateState>(guest.connection, "game.privateState")?.debugRole
+    ).toBeUndefined();
+    // 测试指令不再受理。
+    for (const command of TEST_COMMANDS) {
+      await expect(
+        execute(service, host, { id: `off-${command.type}`, ...command })
+      ).rejects.toMatchObject({ code: "UNSUPPORTED_COMMAND" });
+    }
+    // 大厅与后台不再把它当测试房隐藏，调试身份也不再下发。
+    expect(service.getRoomSummaries().some((item) => item.roomId === "Oblivionis")).toBe(true);
+    // 空房与闲置回收恢复：不再豁免。
+    advanceTime(30 * 60 * 1000);
+    await service.runHousekeeping();
+    expect(getEventPayloads(host, "room.closed")).toHaveLength(1);
+  });
 });
