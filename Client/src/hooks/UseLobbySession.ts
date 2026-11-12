@@ -54,6 +54,11 @@ export interface UseLobbySessionOptions<TRoom extends LobbyRoomTarget> {
   onRoomCreated?: (roomId: string, params: CreateRoomParams) => void;
 }
 
+/** 房号已被占用的服务端错误码：卧底与猜歌、增强房目前各回各的，大厅统一按这一组识别。 */
+const ROOM_ID_TAKEN_CODES: ReadonlySet<string> = new Set(["ROOM_EXISTS", "ROOM_ALREADY_EXISTS"]);
+/** 撞号后最多换几次号：九千个四位号在现有规模下连撞几次已属极端。 */
+const MAX_ROOM_ID_RETRIES = 3;
+
 export function useLobbySession<TRoom extends LobbyRoomTarget>({
   gamePath,
   rooms,
@@ -198,15 +203,23 @@ export function useLobbySession<TRoom extends LobbyRoomTarget>({
       const outcome: { failed: boolean; error?: unknown } = { failed: false };
       await runEntry(
         async (current, signal) => {
-          const generatedRoomId = randomRoomId();
-          await createRoom(
-            {
-              ...params,
-              roomId: generatedRoomId,
-              userName: userName.trim(),
-            },
-            signal
-          );
+          let generatedRoomId = randomRoomId();
+          // 四位号会撞：只对「房号已占用」换号重试，次数有上限；其它错误与取消照常抛出。
+          for (let retries = 0; ; retries += 1) {
+            try {
+              await createRoom(
+                { ...params, roomId: generatedRoomId, userName: userName.trim() },
+                signal
+              );
+              break;
+            } catch (error) {
+              const code = (error as { code?: string } | null)?.code;
+              const taken = code !== undefined && ROOM_ID_TAKEN_CODES.has(code);
+              if (!taken || retries >= MAX_ROOM_ID_RETRIES || signal.aborted || !current())
+                throw error;
+              generatedRoomId = randomRoomId();
+            }
+          }
           if (!current()) return;
           // 先记录再导航：等待页靠这份记录把上次的房间设置套进新房间。
           onRoomCreated?.(generatedRoomId, params);

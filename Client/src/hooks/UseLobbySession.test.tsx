@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLobbySession } from "./UseLobbySession";
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => navigate }));
+const randomRoomId = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/Random", () => ({ randomRoomId }));
 const room: { roomId: string; name: string; hasPassword?: boolean } = {
   roomId: "1234",
   name: "测试房",
@@ -35,6 +37,8 @@ function setup(overrides = {}) {
 }
 beforeEach(() => {
   navigate.mockClear();
+  let seq = 1000;
+  randomRoomId.mockReset().mockImplementation(() => String(seq++));
   localStorage.setItem("bakagame:username", "玩家");
 });
 describe("大厅入房事务", () => {
@@ -219,6 +223,66 @@ it("建房失败抛回给弹窗、不另弹 Toast", async () => {
     ).rejects.toThrow("房间已满");
   });
   expect(h.options.showError).not.toHaveBeenCalled();
+});
+const createParams = { name: "新房", visibility: "public" as const, allowSpectators: true };
+describe("建房撞号重试", () => {
+  it.each(["ROOM_EXISTS", "ROOM_ALREADY_EXISTS"])(
+    "%s 时自动换号重试，成功后按最终房号导航",
+    async (code) => {
+      const createRoom = vi
+        .fn()
+        .mockRejectedValueOnce({ code, message: "房间号已被占用" })
+        .mockRejectedValueOnce({ code, message: "房间号已被占用" })
+        .mockResolvedValue(undefined);
+      const onRoomCreated = vi.fn();
+      const h = setup({ createRoom, onRoomCreated });
+      await act(async () => {
+        await h.result.current.handleCreateRoom(createParams);
+      });
+      expect(createRoom.mock.calls.map(([params]) => params.roomId)).toEqual([
+        "1000",
+        "1001",
+        "1002",
+      ]);
+      expect(onRoomCreated).toHaveBeenCalledWith("1002", createParams);
+      expect(navigate).toHaveBeenCalledWith("/cee/room/1002");
+    }
+  );
+  it("连续撞号超过上限后把错误抛给弹窗，不无限重试", async () => {
+    const taken = { code: "ROOM_EXISTS", message: "房间号已被占用" };
+    const createRoom = vi.fn().mockRejectedValue(taken);
+    const h = setup({ createRoom });
+    await act(async () => {
+      await expect(h.result.current.handleCreateRoom(createParams)).rejects.toMatchObject(taken);
+    });
+    expect(createRoom).toHaveBeenCalledTimes(4);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+  it("其它建房错误不重试", async () => {
+    const createRoom = vi.fn().mockRejectedValue({ code: "ROOM_LIMIT", message: "房间已满" });
+    const h = setup({ createRoom });
+    await act(async () => {
+      await expect(h.result.current.handleCreateRoom(createParams)).rejects.toMatchObject({
+        code: "ROOM_LIMIT",
+      });
+    });
+    expect(createRoom).toHaveBeenCalledTimes(1);
+  });
+  it("重试期间页面已卸载则不再换号重发", async () => {
+    const first = deferred<void>();
+    const createRoom = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(undefined);
+    const h = setup({ createRoom });
+    let task!: Promise<void>;
+    act(() => {
+      task = h.result.current.handleCreateRoom(createParams).catch(() => {});
+    });
+    h.unmount();
+    first.reject({ code: "ROOM_EXISTS", message: "房间号已被占用" });
+    await act(async () => {
+      await task;
+    });
+    expect(createRoom).toHaveBeenCalledTimes(1);
+  });
 });
 it("创建成功后把房号与本次选项交给回调，供记录与登记恢复", async () => {
   const onRoomCreated = vi.fn();
