@@ -47,12 +47,13 @@ describe("注册序号仓储（连接桩）", () => {
 
     const failing = createDrizzleStub();
     const second = new DatabaseRegistrationRepository(failing.database);
-    failing.reject(1, new Error("user table missing"));
-    await expect(second.ensureAll()).rejects.toThrow(/select .* from `user_registration`/);
+    failing.reject(3, new Error("user table missing"));
+    await expect(second.ensureAll()).rejects.toThrow(/select .* from `user`/);
 
     failing.reset();
     await second.ensureAll();
-    expect(failing.queries).toHaveLength(5);
+    // 自愈本进程只试一次，重试只剩回填探测与次序自检。
+    expect(failing.queries).toHaveLength(2);
   });
 
   test("新号先等存量回填，再接在当前最大值之后", async () => {

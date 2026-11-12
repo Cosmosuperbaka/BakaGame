@@ -30,6 +30,9 @@ const createRegistrationDb = (seed: {
     /** 在事务提交前插入别的连接的写入，模拟压实期间的并发建号。 */
     beforeCommit: (() => {}) as () => void,
     failOnUpdateNumber: 0,
+    /** 接下来这么多次插入抛错（模拟回填暂时失败）。 */
+    failInserts: 0,
+    failJoin: false,
   };
   let updates = 0;
   const duplicate = (): Error =>
@@ -91,6 +94,10 @@ const createRegistrationDb = (seed: {
     [
       (sql) => sql.startsWith("insert into `user_registration`"),
       (query) => {
+        if (hooks.failInserts > 0) {
+          hooks.failInserts -= 1;
+          throw new Error("insert refused");
+        }
         const values = query.params as Array<number | string>;
         const batch: Array<[number, string]> = [];
         for (let index = 0; index < values.length; index += 2) {
@@ -122,7 +129,10 @@ const createRegistrationDb = (seed: {
     ],
     [
       (sql) => sql.includes("inner join `user`"),
-      () => sorted().map(([seq, id]) => tupleOf(seq, stamp(created.get(id) ?? 0))),
+      () => {
+        if (hooks.failJoin) throw new Error("join refused");
+        return sorted().map(([seq, id]) => tupleOf(seq, stamp(created.get(id) ?? 0)));
+      },
     ],
   ];
   stub.fallback((query: StubQuery) => {
@@ -132,14 +142,18 @@ const createRegistrationDb = (seed: {
   });
 
   const warnings: Array<{ message: string; context: Record<string, unknown> | undefined }> = [];
+  const errors: Array<{ message: string; context: Record<string, unknown> | undefined }> = [];
   const logger = {
     warn: (message: string, context?: Record<string, unknown>) =>
       warnings.push({ message, context }),
+    error: (message: string, context?: Record<string, unknown>) =>
+      errors.push({ message, context }),
   };
   return {
     stub,
     hooks,
     warnings,
+    errors,
     repository: () => new DatabaseRegistrationRepository(stub.database, logger),
     serials: (): number[] => sorted().map(([seq]) => seq),
     updateCount: (): number => updates,
@@ -301,16 +315,16 @@ describe("注册序号跳号压实", () => {
     expect(db.serials()).toEqual(range(1, 7));
   });
 
-  test("事务中途失败整体回滚，不留半压实的表；下一次调用重试成功", async () => {
+  test("压实事务中途失败整体回滚，不留半压实的表；下次进程启动重试成功", async () => {
     const db = createRegistrationDb({ serials: seedOf([1, 2, 3, 4, 30_001, 30_002]) });
     db.hooks.failOnUpdateNumber = 2;
-    const repository = db.repository();
 
-    await expect(repository.ensureAll()).rejects.toThrow(/Failed query: update/);
+    await db.repository().ensureAll();
     expect(db.serials()).toEqual([1, 2, 3, 4, 30_001, 30_002]);
+    expect(db.errors).toHaveLength(1);
 
     db.hooks.failOnUpdateNumber = 0;
-    await repository.ensureAll();
+    await db.repository().ensureAll();
     expect(db.serials()).toEqual(range(1, 6));
   });
 });
@@ -335,5 +349,177 @@ describe("注册序号次序自检", () => {
     await db.repository().ensureAll();
 
     expect(db.warnings).toEqual([]);
+  });
+});
+
+describe("跳号且次序不可信：按建号时间重排", () => {
+  /** 序号 1,2,3,30001，创建时间让 3 与 30001 互为逆序。 */
+  const crossed = () =>
+    createRegistrationDb({
+      serials: seedOf([1, 2, 3, 30_001]),
+      createdAt: { u1: 100, u2: 200, u3: 400, u30001: 300 },
+    });
+
+  test("跳号加逆序：整表按创建时间重排为 1..N，新旧值交叉也不撞主键", async () => {
+    const db = crossed();
+    const repository = db.repository();
+
+    await repository.ensureAll();
+
+    expect(db.serials()).toEqual([1, 2, 3, 4]);
+    const early = await repository.earlyAdopters(10);
+    expect(early.map((entry) => entry.userId)).toEqual(["u1", "u2", "u30001", "u3"]);
+    const warning = db.warnings.find((entry) => entry.message.includes("重排"));
+    expect(warning?.context).toMatchObject({ rows: 2, maxBefore: 30_001, maxAfter: 4 });
+    expect(JSON.stringify(warning?.context)).not.toContain("u30001");
+    expect(db.warnings.some((entry) => entry.message.includes("压实"))).toBe(false);
+  });
+
+  test("同一创建时间按账号 id 排，结果确定", async () => {
+    const db = createRegistrationDb({
+      serials: [
+        [1, "b"],
+        [2, "a"],
+        [30_001, "c"],
+      ],
+      createdAt: { a: 100, b: 100, c: 50 },
+    });
+    const repository = db.repository();
+
+    await repository.ensureAll();
+
+    expect((await repository.earlyAdopters(10)).map((entry) => entry.userId)).toEqual([
+      "c",
+      "a",
+      "b",
+    ]);
+  });
+
+  test("整批倒序的大跳号表：全部落到 1..N 且账号次序等于创建时间次序", async () => {
+    const serials = [1, ...range(30_001, 30_010)];
+    const createdAt: Record<string, number> = {};
+    serials.forEach((seq, index) => (createdAt[`u${seq}`] = 10_000 - index * 10));
+    const db = createRegistrationDb({ serials: seedOf(serials), createdAt });
+    const repository = db.repository();
+
+    await repository.ensureAll();
+
+    expect(db.serials()).toEqual(range(1, 11));
+    const owners = (await repository.earlyAdopters(20)).map((entry) => entry.userId);
+    expect(owners).toEqual([...serials].reverse().map((seq) => `u${seq}`));
+  });
+
+  test("重排与保序压实都幂等：再跑一遍零改动、零告警", async () => {
+    for (const db of [
+      crossed(),
+      createRegistrationDb({ serials: seedOf([1, 2, 4, 30_001, 30_003]) }),
+    ]) {
+      await db.repository().ensureAll();
+      const updates = db.updateCount();
+      const warnings = db.warnings.length;
+      const after = db.serials();
+
+      await db.repository().ensureAll();
+
+      expect(db.serials()).toEqual(after);
+      expect(db.updateCount()).toBe(updates);
+      expect(db.warnings).toHaveLength(warnings);
+    }
+  });
+
+  test("跳号无逆序：仍是保序压实，小空洞保留，日志写「已压实」", async () => {
+    const db = createRegistrationDb({ serials: seedOf([1, 2, 4, 30_001, 30_003]) });
+
+    await db.repository().ensureAll();
+
+    expect(db.serials()).toEqual([1, 2, 4, 5, 7]);
+    expect(db.warnings.some((entry) => entry.message.includes("压实"))).toBe(true);
+    expect(db.warnings.some((entry) => entry.message.includes("重排"))).toBe(false);
+  });
+
+  test("无跳号有逆序：一行不动，只告警次序", async () => {
+    const db = createRegistrationDb({
+      serials: seedOf([1, 2, 4, 5]),
+      createdAt: { u1: 100, u2: 400, u4: 300, u5: 500 },
+    });
+
+    await db.repository().ensureAll();
+
+    expect(db.serials()).toEqual([1, 2, 4, 5]);
+    expect(db.updateCount()).toBe(0);
+    expect(db.warnings.map((entry) => entry.message).join()).not.toContain("重排");
+    expect(db.warnings.find((entry) => entry.message.includes("次序"))?.context).toEqual({
+      inversions: 1,
+    });
+  });
+
+  test("重排事务中途失败整体回滚，序号原样；日后重试成功", async () => {
+    const db = crossed();
+    db.hooks.failOnUpdateNumber = 3;
+    const repository = db.repository();
+
+    await repository.ensureAll();
+    expect(db.serials()).toEqual([1, 2, 3, 30_001]);
+    expect(db.errors).toHaveLength(1);
+
+    await db.repository().ensureAll();
+    expect(db.serials()).toEqual([1, 2, 3, 4]);
+  });
+
+  test("目标位挪高会溢出无符号整型时放弃并记错误，不改表", async () => {
+    const db = createRegistrationDb({
+      serials: seedOf([1, 4_000_000_000]),
+      createdAt: { u1: 200, u4000000000: 100 },
+    });
+
+    await db.repository().ensureAll();
+
+    expect(db.serials()).toEqual([1, 4_000_000_000]);
+    expect(db.errors).toHaveLength(1);
+  });
+});
+
+describe("自愈失败不连带阻断回填与建号", () => {
+  test("压实事务被拒：ensureAll 仍成功，回填照做，之后能建号，压实只尝试一次", async () => {
+    const db = createRegistrationDb({
+      serials: seedOf([1, 2, 30_001]),
+      unregistered: ["old-a"],
+    });
+    db.hooks.failOnUpdateNumber = 1;
+    const repository = db.repository();
+
+    await repository.ensureAll();
+    expect(db.serials()).toEqual([1, 2, 30_001, 30_002]);
+    // 错误级日志只带错误类别，不带账号标识与语句参数。
+    expect(db.errors).toHaveLength(1);
+    expect(JSON.stringify(db.errors[0]?.context)).not.toContain("old-a");
+
+    expect(await repository.register("fresh")).toBe(30_003);
+    expect(db.updateCount()).toBe(1);
+  });
+
+  test("回填暂时失败后 ensureAll 重试：不再重跑已失败的压实", async () => {
+    const db = createRegistrationDb({
+      serials: seedOf([1, 2, 30_001]),
+      unregistered: ["old-a"],
+    });
+    db.hooks.failOnUpdateNumber = 1;
+    db.hooks.failInserts = 1;
+    const repository = db.repository();
+
+    await expect(repository.ensureAll()).rejects.toThrow(/Failed query: insert/);
+    await repository.ensureAll();
+
+    expect(db.updateCount()).toBe(1);
+    expect(db.serials()).toEqual([1, 2, 30_001, 30_002]);
+  });
+
+  test("次序自检失败只记日志，不挡 ensureAll", async () => {
+    const db = createRegistrationDb({ serials: seedOf([1, 2, 3]) });
+    db.hooks.failJoin = true;
+
+    await db.repository().ensureAll();
+
+    expect(db.errors).toHaveLength(1);
   });
 });
