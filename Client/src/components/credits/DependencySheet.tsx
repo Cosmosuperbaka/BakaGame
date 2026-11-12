@@ -25,7 +25,8 @@ function Crumb({ name, current, onPick }: { name: string; current: boolean; onPi
       type="button"
       onClick={onPick}
       // 可回退的路径格带常驻淡下划线，与当前层（纯文字）分得开；口径同提交历史里的哈希链接。
-      className="min-w-0 shrink truncate rounded-sm font-mono text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:-outline-offset-2"
+      // 聚焦环不内收：格子紧贴文字，内收的环会压在字形上（交互实拍 focus-crumb）。
+      className="min-w-0 shrink truncate rounded-sm font-mono text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60"
     >
       {name}
     </button>
