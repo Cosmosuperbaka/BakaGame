@@ -948,7 +948,7 @@ export function SettingsSection({
           <div className="[section:not(:first-child)>&]:mt-4 [section:not(:first-child)>&]:border-t [section:not(:first-child)>&]:pt-4">
             <SettingsFields>
               {title ? (
-                <h4 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <h4 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
                   {Icon ? <Icon className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                   {title}
                 </h4>
