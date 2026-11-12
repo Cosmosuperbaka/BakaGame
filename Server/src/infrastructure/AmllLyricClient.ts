@@ -4,6 +4,9 @@ import { parseTTML } from "./LyricLines";
 import { asRecord } from "./JsonReaders";
 import type { MusicCache } from "./MusicCache";
 
+/** 单次响应体上限：数百 KB 的 TTML 是正常上限，超过它说明上游异常，不值得读进内存。 */
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+
 export interface AmllLyricClientOptions {
   /** 按 ID 取正文的查询参数名：网易云 `ncmMusicId`、QQ 音乐 `qqMusicId`。 */
   idQueryParam: string;
@@ -91,25 +94,18 @@ export class AmllLyricClient {
       // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
       return await this.options.cache.cached(key, this.options.cacheTtlMs, async () => {
         if (this.queue.size >= this.maxQueuedRequests) throw new Error("AMLL 请求排队过多");
-        const controller = new AbortController();
-        const timer = setTimeout(
-          () => controller.abort(new Error("AMLL 请求超时")),
-          this.requestTimeoutMs
+        // 超时同时覆盖排队等待与请求本身；原生超时信号自带定时器回收，无需手写 finally。
+        const signal = AbortSignal.timeout(this.requestTimeoutMs);
+        return await this.queue.add(
+          async () => {
+            const lyrics = await loader(signal);
+            signal.throwIfAborted();
+            if (lyrics !== undefined && !parseTTML(lyrics).length)
+              throw new Error("AMLL TTML 歌词无效");
+            return lyrics;
+          },
+          { signal }
         );
-        try {
-          return await this.queue.add(
-            async () => {
-              const lyrics = await loader(controller.signal);
-              controller.signal.throwIfAborted();
-              if (lyrics !== undefined && !parseTTML(lyrics).length)
-                throw new Error("AMLL TTML 歌词无效");
-              return lyrics;
-            },
-            { signal: controller.signal }
-          );
-        } finally {
-          clearTimeout(timer);
-        }
       });
     } catch (error) {
       this.options.logger?.warn?.("获取 AMLL 歌词失败", { ...context, ...describeError(error) });
@@ -125,13 +121,15 @@ export class AmllLyricClient {
       `https://api.amll.dev/v1/lyrics/${path}`,
       {
         signal,
+        // 固定主机的歌词库不该跳转；跳转即异常，不跟随（与出站探测口径一致）。
+        redirect: "error",
         headers: { "User-Agent": "BakaGame-Songuessr/1.0" },
       }
     );
     signal.throwIfAborted();
     if (response.status === 404) return undefined;
     if (!response.ok) throw new Error(`AMLL 请求失败（${response.status}）`);
-    const json = asRecord(await response.json());
+    const json = asRecord(await readBoundedJson(response));
     signal.throwIfAborted();
     if (json.status === 404) return undefined;
     if (json.status !== 200) throw new Error("AMLL 返回无效状态");
@@ -147,3 +145,27 @@ export class AmllLyricClient {
     return lyrics.trim();
   }
 }
+
+/** 读取 JSON 响应体并限制总字节数：先看声明长度，再在流式读取时累计，超限立即中止。 */
+const readBoundedJson = async (response: Response): Promise<unknown> => {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_RESPONSE_BYTES) {
+    await response.body?.cancel();
+    throw new Error("AMLL 响应体过大");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return JSON.parse(await response.text());
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error("AMLL 响应体过大");
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+};
