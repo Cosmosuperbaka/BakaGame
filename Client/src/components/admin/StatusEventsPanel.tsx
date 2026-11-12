@@ -168,6 +168,8 @@ function EventDialog({
   const editing = event !== null;
   const [draft, setDraft] = useState<EventDraft>(() => draftOf(event ?? undefined));
   const [status, setStatus] = useState<string>(event?.status ?? "investigating");
+  // 内容框只在动过之后才标红：新建表单一打开就是一圈红框，读作「已经填错了」。
+  const [bodyTouched, setBodyTouched] = useState(false);
   const action = useAdminAction();
 
   const startedMs = fromInputValue(draft.startedAt);
@@ -261,10 +263,11 @@ function EventDialog({
               value={draft.body}
               maxLength={4000}
               placeholder="影响范围、原因与预计恢复时间"
-              aria-invalid={draft.body.trim().length === 0 || undefined}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, body: event.target.value }))
-              }
+              aria-invalid={(bodyTouched && draft.body.trim().length === 0) || undefined}
+              onChange={(event) => {
+                setBodyTouched(true);
+                setDraft((current) => ({ ...current, body: event.target.value }));
+              }}
             />
           </div>
           <ComponentChips
