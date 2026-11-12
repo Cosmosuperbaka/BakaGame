@@ -33,7 +33,7 @@ export function SiteAgentPresence() {
         aria-hidden="true"
       />
       {visible.map((agent) => (
-        <span key={agent.id} className="inline-flex max-w-[15rem] items-center gap-1">
+        <span key={agent.id} className="inline-flex max-w-60 items-center gap-1">
           <Bot className="h-3 w-3 shrink-0 opacity-70" aria-hidden="true" />
           <span className="truncate font-medium text-foreground/70">{agent.agentName}</span>
           <span className="truncate">{agentActivityLabel(agent.kind, agent.label)}</span>

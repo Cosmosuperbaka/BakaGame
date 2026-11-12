@@ -249,7 +249,7 @@ function TakeoverBar({
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-breathe"
         />
         <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
-        <span className="max-w-[9rem] shrink-0 truncate font-medium">{agentName}</span>
+        <span className="max-w-36 shrink-0 truncate font-medium">{agentName}</span>
         <span role="status" className="min-w-0 truncate text-muted-foreground">
           {reconnecting ? "连接中断，正在恢复" : activity}
         </span>
