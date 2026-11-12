@@ -39,6 +39,8 @@ export const deriveSentryApiConfig = (
 };
 
 const CACHE_MS = 60 * 1000;
+/** 有查询失败时的缓存时长：只防刷新页面打满限额，令牌修好后很快恢复，不必等满一分钟。 */
+const FAILURE_CACHE_MS = 5 * 1000;
 const TIMEOUT_MS = 8000;
 
 const issueSchema = z.object({
@@ -57,9 +59,9 @@ const tableSchema = z.object({ data: z.array(z.record(z.string(), z.unknown())) 
 const numberOrNull = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
-/** 后台概览用的 Sentry 只读查询：三个查询各自容错，结果缓存 60 秒，避免刷新页面打满 API 限额。 */
+/** 后台概览用的 Sentry 只读查询：三个查询各自容错，成功的结果缓存 60 秒、有失败的只缓存几秒，避免刷新页面打满 API 限额又不把故障固化。 */
 export class SentryApiClient {
-  private cache: { at: number; value: SentryOverview } | undefined;
+  private cache: { at: number; ttlMs: number; value: SentryOverview } | undefined;
   private loading: Promise<SentryOverview> | undefined;
 
   constructor(
@@ -70,7 +72,7 @@ export class SentryApiClient {
   ) {}
 
   async overview(): Promise<SentryOverview> {
-    if (this.cache && this.now() - this.cache.at < CACHE_MS) return this.cache.value;
+    if (this.cache && this.now() - this.cache.at < this.cache.ttlMs) return this.cache.value;
     this.loading ??= this.load().finally(() => {
       this.loading = undefined;
     });
@@ -107,7 +109,11 @@ export class SentryApiClient {
       warnings,
       fetchedAt: new Date(this.now()).toISOString(),
     };
-    this.cache = { at: this.now(), value };
+    this.cache = {
+      at: this.now(),
+      ttlMs: warnings.length > 0 ? FAILURE_CACHE_MS : CACHE_MS,
+      value,
+    };
     return value;
   }
 

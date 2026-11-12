@@ -225,4 +225,36 @@ describe("Sentry 概览", () => {
     await client.overview();
     expect(calls).toHaveLength(6);
   });
+
+  test("查询出现失败时只短暂缓存：令牌修好后不必等满一分钟才恢复", async () => {
+    let clock = Date.parse("2026-10-20T00:00:00Z");
+    let healthy = false;
+    let calls = 0;
+    const fetcher = (async (input: string | URL | Request) => {
+      calls += 1;
+      if (!healthy) return new Response("unauthorized", { status: 401 });
+      const url = new URL(requestUrlText(input));
+      if (url.pathname.endsWith("/issues/"))
+        return Response.json([], { headers: { "x-hits": "0" } });
+      return Response.json({ data: [{ "count()": 5 }] });
+    }) as typeof fetch;
+    const client = new SentryApiClient(
+      deriveSentryApiConfig("https://key@o123.ingest.us.sentry.io/456", ["456"], "tok"),
+      new EventLogger(() => {}),
+      fetcher,
+      () => clock
+    );
+
+    const failed = await client.overview();
+    expect(failed.warnings).toHaveLength(3);
+    // 极短时间内的重复刷新仍吃缓存，不把限额打满。
+    await client.overview();
+    expect(calls).toBe(3);
+
+    healthy = true;
+    clock += 6_000;
+    const recovered = await client.overview();
+    expect(recovered.warnings).toEqual([]);
+    expect(recovered.errors24h).toBe(5);
+  });
 });
