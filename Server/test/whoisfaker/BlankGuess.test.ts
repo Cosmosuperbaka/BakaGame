@@ -379,4 +379,75 @@ describe("白板猜词打断", () => {
     expect(snapshot?.status.phase).toBe("night");
     expect(snapshot?.status.phaseTimer).toBeUndefined();
   });
+
+  test("白板猜词期间，描述阶段尚未轮到的发言内容仍保持隐藏", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    const [player] = await joinPlayers(service, "Oblivionis", 1, "白板玩家");
+    await execute(service, host, { id: "add-bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(service, host, {
+      id: "submit-words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+    await execute(service, player.connection, {
+      id: "set-blank",
+      type: "test.setMyRole",
+      payload: { role: "blank" },
+    });
+
+    // 白板以外的某位后序玩家先交了发言：按规则要等前序都交完才公开。
+    const room = (
+      service as unknown as {
+        rooms: Map<
+          string,
+          {
+            round: {
+              descriptionOrder: string[];
+              descriptionSubmittedBy: string[];
+              descriptionCycle: number;
+              descriptions: Array<Record<string, unknown>>;
+            };
+          }
+        >;
+      }
+    ).rooms.get("Oblivionis")!;
+    const order = room.round.descriptionOrder;
+    const early = order.filter((id) => id !== player.joinResult.playerId).at(-1)!;
+    room.round.descriptionSubmittedBy = [early];
+    room.round.descriptions = [
+      {
+        id: "hidden-1",
+        playerId: early,
+        playerName: "后序玩家",
+        text: "还不该公开的发言",
+        kind: "description",
+        cycle: room.round.descriptionCycle,
+        order: order.indexOf(early) + 1,
+        createdAt: 0,
+      },
+    ];
+    await execute(service, host, { id: "refresh", type: "chat.send", payload: { text: "刷新" } });
+    const publicTexts = () =>
+      (
+        getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.descriptions ?? []
+      ).map((item) => item.text);
+    expect(publicTexts()).not.toContain("还不该公开的发言");
+
+    // 白板进入猜词打断描述阶段：隐藏规则不能因此失效。
+    await execute(service, player.connection, {
+      id: "enter-blank-guess",
+      type: "game.enterBlankGuess",
+      payload: {},
+    });
+    expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot")?.status.phase).toBe(
+      "blankGuess"
+    );
+    expect(publicTexts()).not.toContain("还不该公开的发言");
+  });
 });
