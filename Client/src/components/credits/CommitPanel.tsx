@@ -39,7 +39,8 @@ export function CommitPanel({ commits }: { commits: readonly CommitEntry[] }) {
               href={`${REPOSITORY_URL}/commit/${commit.hash}`}
               target="_blank"
               rel="noreferrer"
-              className="font-mono transition-colors hover:text-foreground"
+              // 常驻淡下划线，读得出「这是链接」而不是和作者名一样的说明字；悬停加深（与富文本链接同一口径）。
+              className="rounded-sm font-mono underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60"
             >
               {commit.hash}
             </a>

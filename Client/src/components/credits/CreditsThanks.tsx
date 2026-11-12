@@ -6,11 +6,14 @@ import { cn } from "@/lib/Utils";
 import { ThanksGlyph } from "./CreditsIcons";
 
 const CARD_CLASS =
-  "flex h-full min-w-0 items-start gap-2.5 rounded-md border bg-card p-3 shadow-2xs";
+  "flex h-full min-w-0 items-start gap-3 rounded-md border bg-card p-3 shadow-2xs";
 
-/** 图标收在一枚固定尺寸的方块里：条目多起来时左缘成一条直线。 */
+/**
+ * 图标收在一枚固定尺寸的方块里：条目多起来时左缘成一条直线。
+ * 方块与字形尺寸、外链箭头的位置与浓度都与紧挨着的「核心技术栈」卡片同一套，两组卡片读作同一种东西。
+ */
 const ICON_TILE_CLASS =
-  "flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground";
+  "flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground";
 
 /**
  * 特别鸣谢：玩法原型、资料站与曲库来源，内容和顺序只在 `data/CreditsContent.ts` 维护。
@@ -57,23 +60,21 @@ function ThanksContent({
   return (
     <>
       <span data-slot="thanks-icon" className={ICON_TILE_CLASS}>
-        <ThanksGlyph icon={entry.icon} />
+        <ThanksGlyph icon={entry.icon} className="size-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-serif text-sm font-medium">{entry.name}</span>
-          {/* 外链指示：静止压淡，悬停沿外链方向挪动并归位到前景色。 */}
-          {withArrow ? (
-            <ArrowUpRight
-              aria-hidden="true"
-              className="size-3.5 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground"
-            />
-          ) : null}
-        </span>
+        <span className="block truncate font-serif text-sm font-medium">{entry.name}</span>
         <span className="mt-0.5 block text-xs break-words text-muted-foreground">
           {entry.description}
         </span>
       </span>
+      {/* 外链指示：卡片右上角、静止压淡，悬停沿外链方向挪动并归位到不透明（与技术栈卡片一致）。 */}
+      {withArrow ? (
+        <ArrowUpRight
+          aria-hidden="true"
+          className="size-3.5 shrink-0 opacity-40 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100"
+        />
+      ) : null}
     </>
   );
 }
