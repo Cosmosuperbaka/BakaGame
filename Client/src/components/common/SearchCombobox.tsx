@@ -368,8 +368,10 @@ function SearchPanel<T>({
                     onClick={() => onChoose(item)}
                     className={cn(
                       "flex min-h-11 cursor-pointer items-center gap-3 border-t px-3 py-2 text-sm transition-colors first:border-t-0",
-                      "data-active:bg-accent data-active:text-accent-foreground",
-                      blocked && "cursor-not-allowed",
+                      // 不可选的行被键盘或指针经过时只铺弱化底：仍让人看见当前位置，但不像可选行那样亮起来
+                      blocked
+                        ? "cursor-not-allowed data-active:bg-muted"
+                        : "data-active:bg-accent data-active:text-accent-foreground",
                       item.kind === "back" && "text-muted-foreground"
                     )}
                   >

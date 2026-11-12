@@ -345,7 +345,8 @@ function MessageText({
  */
 function RepeatButton({ onRepeat }: { onRepeat: () => void }) {
   return (
-    <Hint label="复读这条消息">
+    // 说明放在按钮右侧：默认朝上会盖住发言人名字与 ×N 角标
+    <Hint label="复读这条消息" side="right">
       <motion.button
         type="button"
         aria-label="复读这条消息"

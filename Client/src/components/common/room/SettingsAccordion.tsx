@@ -65,7 +65,8 @@ export function SettingsAccordion({
         // 可访问名只取标题：摘要虽在按钮里，作为描述读出，按名字查找时不受摘要内容影响。
         aria-labelledby={titleId}
         aria-describedby={describedBy}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+        // 外层 overflow-hidden 会把贴边画的聚焦环整圈裁掉，环向内收（与玩家行、表情页签同一写法）。
+        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40 focus-visible:-outline-offset-2"
       >
         {media ??
           (Icon ? (
