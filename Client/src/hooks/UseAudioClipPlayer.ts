@@ -59,6 +59,7 @@ export function useAudioClipPlayer({
   const audioReadyKey = useRef<string | null>(null);
   const audioAutoPlayKey = useRef<string | null>(null);
   const loadedAudioUrlRef = useRef<string | null>(null);
+  const handledRetryTokenRef = useRef(0);
   const audioFailureKey = useRef<string | null>(null);
   const sendCommandRef = useRef(sendCommand);
   const volumeRef = useRef(volume);
@@ -232,6 +233,11 @@ export function useAudioClipPlayer({
     audio.addEventListener("canplaythrough", ready);
     audio.addEventListener("loadeddata", ready);
     audio.addEventListener("error", failed);
+    // 失败后元素停在无可用源状态，src 没变就不会重新加载；重试必须强制重设 src 并 load()。
+    if (handledRetryTokenRef.current !== audioRetryToken) {
+      handledRetryTokenRef.current = audioRetryToken;
+      loadedAudioUrlRef.current = null;
+    }
     if (loadedAudioUrlRef.current !== currentAudioUrl) {
       loadedAudioUrlRef.current = currentAudioUrl;
       audio.src = currentAudioUrl;

@@ -86,6 +86,47 @@ describe("useAudioClipPlayer", () => {
     expect(result.current.audioPlaybackState).toBe("completed");
   });
 
+  it("加载失败后点重试会重新拉取音频，并重新向服务端报告失败", async () => {
+    const load = vi.spyOn(mockAudio, "load").mockImplementation(() => {});
+    const sendCommand = vi.fn().mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(
+      ({ audioUrl }) =>
+        useAudioClipPlayer({
+          roomId: "test-room",
+          phase: "playing",
+          currentPhaseRoundNumber: 1,
+          currentAudioUrl: audioUrl,
+          currentClipStartTime: 10_000,
+          currentClipEndTime: 20_000,
+          isPlayingPhase: true,
+          sendCommand,
+        }),
+      { initialProps: { audioUrl: undefined as string | undefined } }
+    );
+
+    result.current.audioRef.current = mockAudio;
+    rerender({ audioUrl: "https://example.com/song.mp3" });
+    expect(load).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      mockAudio.dispatchEvent(new Event("error"));
+    });
+    expect(result.current.audioStatus).toBe("error");
+    expect(sendCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.retryAudio();
+    });
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(result.current.audioStatus).toBe("loading");
+
+    await act(async () => {
+      mockAudio.dispatchEvent(new Event("error"));
+    });
+    expect(sendCommand).toHaveBeenCalledTimes(2);
+  });
+
   describe("初始音量", () => {
     it.each([
       { label: "没有存档时用默认 65%", saved: null, expected: 0.65 },
