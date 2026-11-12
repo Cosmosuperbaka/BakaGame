@@ -8,6 +8,7 @@ import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions"
 import { HeaderChip, HeaderCounter } from "@/components/common/room/RoomHeader";
 import { CEEPlayerList } from "@/components/cee/CEEPlayerList";
 import { CEEGameArea } from "@/components/cee/CEEGameArea";
+import { useCEESecureScreen } from "@/components/cee/UseCEESecureScreen";
 import { CEE_PASSWORD_ERROR_CODES, useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
 import { useCEERoundHistory } from "@/hooks/UseCEERoundHistory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
@@ -25,6 +26,8 @@ export default function CEERoomPage() {
     await useCEEStore.getState().sendCommand("cee.chat.send", { text });
   };
   const ready = snapshot && privateState && snapshot.roomId === lifecycle.roomId;
+  // 反作弊房要挡录屏与投屏：只在确认进了该房间后开启，断线清空视图、换房与离开都会恢复。
+  useCEESecureScreen(Boolean(ready && snapshot.bakaAntiCheat));
 
   const seo = (
     <Seo

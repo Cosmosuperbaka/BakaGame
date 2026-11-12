@@ -10,10 +10,11 @@ import { CEERankedGameRecap } from "@/components/cee/ranked/CEERankedGameRecap";
 import { CEERankedGate } from "@/components/cee/ranked/CEERankedGate";
 import { CEERankedHome } from "@/components/cee/ranked/CEERankedHome";
 import { CEERankedMatch } from "@/components/cee/ranked/CEERankedMatch";
+import { useCEESecureScreen } from "@/components/cee/UseCEESecureScreen";
 import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard";
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/lib/CEEDataSource";
-import { isBakaClient, setSecureScreen } from "@/lib/BakaChannel";
+import { isBakaClient } from "@/lib/BakaChannel";
 import { dropIn, phaseSwap } from "@/lib/Motion";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
@@ -26,10 +27,7 @@ function RankedSeriesStage() {
   const series = state?.status === "series" ? state.series : null;
   // 系列赛进行中挡录屏：与反作弊房同一口径，结束或离开即恢复。
   const live = Boolean(series && series.phase !== "settled");
-  useEffect(() => {
-    setSecureScreen(live);
-    return () => setSecureScreen(false);
-  }, [live]);
+  useCEESecureScreen(live);
   if (!series) return null;
   const store = useCEERankedStore.getState();
   const last = series.games.at(-1);
