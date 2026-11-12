@@ -10,6 +10,7 @@ import {
 } from "../src/transport/App";
 import {
   HTTP_MAX_REQUEST_BODY_BYTES,
+  STATUS_WS_IP_MAX_CONNECTIONS,
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
 } from "../src/config/Constants";
 import type { AppEnv } from "../src/config/Env";
@@ -194,7 +195,8 @@ const createSocketCollector = (socket: WebSocket) => {
     });
 };
 
-const openSocket = async (port: number, game = "whoisfaker") => openSocketAt(port, `/api/${game}/ws`);
+const openSocket = async (port: number, game = "whoisfaker") =>
+  openSocketAt(port, `/api/${game}/ws`);
 
 const openSocketAt = async (port: number, path: string) => {
   const socket = new WebSocket(`ws://127.0.0.1:${port}${path}`);
@@ -449,14 +451,22 @@ test("WebSocket 握手按来源地址配额：在途连接超限回 429，断开
 // 畸形升级：带 `Upgrade: websocket` 却缺握手必需头。运行时会在钩子之后拒掉它们，
 // 既不会触发 open 也不会触发 close，名额若在钩子里就记为在途，就永远没有人归还。
 const MALFORMED_UPGRADES: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["缺 Sec-WebSocket-Key", ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13"]],
+  [
+    "缺 Sec-WebSocket-Key",
+    ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13"],
+  ],
   [
     "缺 Sec-WebSocket-Version",
     ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="],
   ],
   [
     "Sec-WebSocket-Key 长度不对",
-    ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: abc", "Sec-WebSocket-Version: 13"],
+    [
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Key: abc",
+      "Sec-WebSocket-Version: 13",
+    ],
   ],
   [
     "Sec-WebSocket-Version 不是 13",
@@ -575,7 +585,9 @@ test("账号查询期间客户端断开，升级没能完成，租约到期后�
   const handshakeQuota = quotaOf({ leaseMs: 30 });
   const { port, stop } = startTestServer({
     handshakeQuota,
-    account: accountWithLookup(() => new Promise((resolve) => setTimeout(() => resolve(undefined), 250))),
+    account: accountWithLookup(
+      () => new Promise((resolve) => setTimeout(() => resolve(undefined), 250))
+    ),
   });
   try {
     await new Promise<void>((resolve) => {
@@ -1026,6 +1038,58 @@ test("WebSocket 升级按 Origin 白名单拦截（防跨站 WebSocket 劫持）
     const missing = await upgradeStatusLine(port);
     expect(missing).toContain("101");
   } finally {
+    await stop();
+  }
+});
+
+test("全部 WebSocket 路径只在网关判一次 Origin：第三方来源一律 403，缺 Origin 放行", async () => {
+  const { port, stop } = startTestServer();
+  try {
+    for (const path of [
+      "/api/ws",
+      "/api/whoisfaker/ws",
+      "/api/songuessr/ws",
+      "/api/cee/ws",
+      "/api/status/ws",
+    ]) {
+      expect(await upgradeStatusLine(port, "https://evil.example", { path }), path).toContain(
+        "403"
+      );
+      expect(await upgradeStatusLine(port, "http://localhost:5173", { path }), path).toContain(
+        "101"
+      );
+      expect(await upgradeStatusLine(port, undefined, { path }), path).toContain("101");
+    }
+  } finally {
+    await stop();
+  }
+});
+
+test("状态页实时通道按来源限制并发：一个来源占满自己的名额后，别的来源仍能连", async () => {
+  const { port, stop } = startTestServer();
+  const sockets: WebSocket[] = [];
+  const from = (ip: string) => [...VALID_HANDSHAKE_HEADERS, `X-Real-IP: ${ip}`];
+  try {
+    // 持有 4 条（单来源上限）：raw 请求在读到状态行后即销毁，所以用真实 WebSocket 占住。
+    for (let index = 0; index < STATUS_WS_IP_MAX_CONNECTIONS; index += 1) {
+      sockets.push(await openSocketAt(port, "/api/status/ws"));
+    }
+    expect(await upgradeStatusLine(port, undefined, { path: "/api/status/ws" })).toContain("429");
+    // 别的来源不受影响，且握手之后确实收到了推送。
+    expect(
+      await upgradeStatusLine(port, undefined, {
+        path: "/api/status/ws",
+        headers: from("203.0.113.77"),
+      })
+    ).toContain("101");
+    // 畸形升级同样不占名额。
+    for (const [, headers] of MALFORMED_UPGRADES) {
+      expect(
+        await upgradeStatusLine(port, undefined, { path: "/api/status/ws", headers })
+      ).toContain("400");
+    }
+  } finally {
+    for (const socket of sockets) socket.close();
     await stop();
   }
 });

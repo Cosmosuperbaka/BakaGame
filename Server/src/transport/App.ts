@@ -20,6 +20,7 @@ import {
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
   WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
   WS_HANDSHAKE_WINDOW_MS,
+  STATUS_WS_IP_MAX_CONNECTIONS,
 } from "../config/Constants";
 import { createAck, createErrorPacket, createEvent } from "./Packets";
 import { httpError, traceIdOf } from "./HttpErrorEnvelope";
@@ -81,6 +82,7 @@ import type { StatusSampleStore } from "../infrastructure/StatusSampleStore";
 import type { StatusEventRepository } from "../infrastructure/db/StatusEventRepository";
 import { PUBLIC_STATUS_SAMPLE_INTERVAL_MS } from "../shared/Status";
 import { resolveServerRelease } from "../infrastructure/Release";
+import { countServerMetric } from "../infrastructure/Sentry";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -445,23 +447,6 @@ const connectionIdOf = (ws: GameSocketLike): string | undefined =>
   (ws.data as { connectionId?: string }).connectionId;
 
 /**
- * Origin 白名单校验：三个游戏入口完全一致，不通过即拒绝升级。
- *
- * 必须是 **throw** 而不是 return：Elysia 的 `.ws()` `upgrade` 钩子返回值会被忽略，
- * 只有抛出异常才会被转成响应。改动前先跑 App.test.ts 里对应的用例。
- */
-const rejectDisallowedOrigin = (
-  headers: unknown,
-  request: Request | undefined,
-  clientUrl?: string
-): void => {
-  const origin =
-    request?.headers?.get("origin") ?? (headers as Record<string, string> | undefined)?.["origin"];
-  if (isAllowedOrigin(origin, clientUrl)) return;
-  throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
-};
-
-/**
  * 握手阶段解析登录身份，结果挂到升级上下文上（Elysia 会把上下文展开进 `ws.data`）。
  * 账号系统故障只让本次连接以游客身份进入，绝不拦截游戏握手。
  */
@@ -481,7 +466,7 @@ const resolveSocketAccount = async (
 /**
  * 握手配额闸门：Origin 通过之后、真正接受连接之前占一个名额。
  *
- * 超限必须 **throw**（理由同 `rejectDisallowedOrigin`：upgrade 钩子的返回值会被 Elysia 忽略）。
+ * 超限必须 **throw**（upgrade 钩子的返回值会被 Elysia 忽略）。
  * 抛 `RATE_LIMITED` 由全局错误钩子回 429；占位成功时把租约写进上下文，Elysia 会把它带进
  * `ws.data`：open 钩子确认、close 钩子归还；钩子之后升级若失败，租约到期自行归还。
  */
@@ -792,7 +777,7 @@ interface GameSocketHandlersOptions<
 }
 
 /**
- * 握手闸门：Origin → Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明。
+ * 握手闸门：Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明；Origin 与停机闸在全局 onRequest 统一判定。
  * 顺序是安全语义（拒绝不消耗配额、身份先于业务），旧入口与统一入口必须逐字一致。
  */
 const applyHandshakeGates = async (
@@ -811,7 +796,6 @@ const applyHandshakeGates = async (
     clientChannel?: ClientChannel;
   }
 ): Promise<void> => {
-  rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
   resolveAgentIdentity(context, env.mcpEnabled);
   reserveHandshakeSlot(context, handshakeQuota);
   try {
@@ -827,7 +811,7 @@ const applyHandshakeGates = async (
 
 /**
  * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
- * 握手闸门顺序（Origin → Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明）是安全语义，
+ * 握手闸门顺序（Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明）是安全语义，
  * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
  * 留在各路由字面量里交给 Elysia 推断。
  */
@@ -1171,6 +1155,13 @@ export const createApp = ({
       globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
       ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
     });
+  // 状态页实时通道的来源名额独立于游戏通道：公开只读，单来源只允许少量并发。
+  const statusWsQuota = new WsHandshakeQuota({
+    windowMs: WS_HANDSHAKE_WINDOW_MS,
+    ipMaxRequests: WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
+    globalMaxRequests: WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
+    ipMaxConnections: STATUS_WS_IP_MAX_CONNECTIONS,
+  });
   // 状态聚合器只建一份：HTTP 快照、历史接口与 WS 实时通道读同一份缓存、记同一本账，
   // 各建一套会让页面在轮询与推送之间看到两种口径。
   const statusAggregator = createStatusAggregator({
@@ -1244,7 +1235,12 @@ export const createApp = ({
       // 判在 Origin 与握手配额之前：拒绝不消耗配额桶，也不给来源探测留可分辨的差异。
       const rejection = shutdownRejection(isShuttingDown, traceIdOf(set.headers));
       if (rejection) return rejection;
-      if (!isAllowedOrigin(request.headers.get("origin"), env.clientUrl))
+      const origin = request.headers.get("origin");
+      // 不带 Origin 的只可能是非浏览器客户端（MCP 进程、本地工具）：Origin 防的是浏览器被第三方页面
+      // 借用，而浏览器的跨站升级一定带 Origin，非浏览器客户端本来就能随意伪造它，所以空值放行。
+      // 计数留作证据：哪天要收紧，先看这条指标有多少合法流量。
+      if (!origin) countServerMetric("bakagame.ws.origin_missing", 1);
+      else if (!isAllowedOrigin(origin, env.clientUrl))
         throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
       // 缺握手必需头的升级运行时一定会拒，但它会先进入 upgrade 钩子：在这里直接回 400，不进钩子。
       if (!isValidHandshakeHeaders(request.headers))
@@ -1420,7 +1416,7 @@ export const createApp = ({
     .use(
       statusWsRoutes({
         aggregator: statusAggregator,
-        rejectOrigin: (headers, request) => rejectDisallowedOrigin(headers, request, env.clientUrl),
+        quota: statusWsQuota,
         sendError: (scope, error) => logger.warn(`${scope} 状态推送失败`, describeError(error)),
       })
     )

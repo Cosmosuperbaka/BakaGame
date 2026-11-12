@@ -1,5 +1,8 @@
 import { Elysia, t } from "elysia";
+import { AppError } from "../../domain/Errors";
 import type { PublicStatusSnapshot } from "../../shared/Status";
+import { resolveClientIp } from "../ClientIp";
+import type { HandshakeLease, WsHandshakeQuota } from "../WsHandshakeQuota";
 import type { StatusAggregator } from "./Status";
 
 /**
@@ -26,11 +29,8 @@ const snapshotSchema = t.Object({
 
 export interface StatusWsDependencies {
   aggregator: StatusAggregator;
-  /**
-   * 与游戏 socket 同一把来源闸。Origin 判定只在 App 里实现一次，
-   * 这里经参数注入，不在公开端点上另写一份宽松版。
-   */
-  rejectOrigin: (headers: unknown, request: Request | undefined) => void;
+  /** 按来源的握手配额：全局 128 个名额挡不住一个来源占满，所以每个来源另有在途上限与新建速率。 */
+  quota: WsHandshakeQuota;
   sendError?: (scope: string, error: unknown) => void;
 }
 
@@ -43,7 +43,7 @@ export interface StatusWsDependencies {
  */
 export const statusWsRoutes = ({
   aggregator,
-  rejectOrigin,
+  quota,
   sendError = () => {},
 }: StatusWsDependencies) => {
   const sockets = new Set<{ send: (data: PublicStatusSnapshot) => unknown }>();
@@ -81,10 +81,20 @@ export const statusWsRoutes = ({
 
   return new Elysia({ name: "public-status-ws", normalize: false }).ws("/api/status/ws", {
     response: snapshotSchema,
-    upgrade: (context) => {
-      rejectOrigin(context.headers, context.request);
+    // Origin 与停机闸在全局 onRequest 里统一判定，这里只占来源名额：拒绝必须 throw（返回值被忽略）。
+    upgrade: (context: {
+      request: Request;
+      server?: { requestIP(request: Request): { address?: string } | null } | null;
+      handshakeLease?: HandshakeLease;
+    }) => {
+      const peerIp = context.server?.requestIP(context.request)?.address;
+      const clientIp = resolveClientIp(context.request.headers, peerIp);
+      const lease = quota.reserve(clientIp, peerIp ?? clientIp);
+      if (!lease) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
+      context.handshakeLease = lease;
     },
     open: (ws) => {
+      (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.confirm();
       if (sockets.size >= MAX_CLIENTS) {
         ws.close(1013, "too-many-viewers");
         return;
@@ -94,6 +104,7 @@ export const statusWsRoutes = ({
       void push();
     },
     close: (ws) => {
+      (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.release();
       sockets.delete(ws);
       stopTimer();
     },
