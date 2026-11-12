@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { phaseTitleRise, revealCard } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { formatRankedPoints } from "./CEERankedFormat";
+import { formatRankedDelta, formatRankedPoints } from "./CEERankedFormat";
 import { RankedGameMark, RankedOutcomeMark } from "./CEERankedMarks";
 
 const OUTCOME_TITLE = { won: "胜利", lost: "惜败", drawn: "平局" } as const;
@@ -169,7 +169,7 @@ function RatingBlock({
       />
       <Badge variant={delta > 0 ? "matched" : delta < 0 ? "muted" : "subtle"} className="font-mono">
         {/* 负号用数学减号，与战绩列表的分差同一写法 */}
-        {delta > 0 ? `+${delta}` : delta === 0 ? "±0" : `−${Math.abs(delta)}`}
+        {formatRankedDelta(delta)}
       </Badge>
     </div>
   );

@@ -6,12 +6,7 @@ import { ClampedText } from "@/components/ui/ClampedText";
 import { revealCard } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
-
-const GENDER_TEXT: Record<CEECharacterView["gender"], string> = {
-  female: "女",
-  male: "男",
-  "?": "未知",
-};
+import { CEE_GENDER_TEXT, CEE_UNKNOWN_NUMBER } from "./CEEComparison";
 
 /**
  * 资料表的一行：窄屏字段名在上、内容占满整宽（并排时简介每行只剩六七个字，作品名也被截得只剩开头），
@@ -64,10 +59,10 @@ export function CEEAnswerCard({
           <Fact label="人气值" value={answer.popularity} />
           <Fact
             label="最高评分"
-            value={answer.highestRating === -1 ? "未知" : answer.highestRating}
+            value={answer.highestRating === CEE_UNKNOWN_NUMBER ? "未知" : answer.highestRating}
           />
-          <Fact label="性别" value={GENDER_TEXT[answer.gender] ?? "未知"} />
-          {answer.earliestAppearance !== -1 ? (
+          <Fact label="性别" value={CEE_GENDER_TEXT[answer.gender] ?? "未知"} />
+          {answer.earliestAppearance !== CEE_UNKNOWN_NUMBER ? (
             <Fact
               label="登场年份"
               value={

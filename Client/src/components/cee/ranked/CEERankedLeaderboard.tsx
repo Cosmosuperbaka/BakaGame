@@ -4,6 +4,7 @@ import type { CEERankedLeaderboard, CEERankedLeaderboardEntry } from "@bakagame/
 import { Badge } from "@/components/ui/Badge";
 import { listContainer, listItem, skeletonFade } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
+import { rankedRecordLabel, rankedWinRate } from "./CEERankedFormat";
 
 /** 名次：第一名皇冠、二三名奖牌，其余等宽数字。 */
 function RankCell({ rank }: { rank: number }) {
@@ -33,8 +34,7 @@ function RankCell({ rank }: { rank: number }) {
 }
 
 function LeaderboardRow({ entry }: { entry: CEERankedLeaderboardEntry }) {
-  const total = entry.wins + entry.losses;
-  const rate = total ? Math.round((entry.wins / total) * 100) : null;
+  const rate = rankedWinRate(entry.wins, entry.losses);
   return (
     <motion.li
       variants={listItem}
@@ -57,7 +57,7 @@ function LeaderboardRow({ entry }: { entry: CEERankedLeaderboardEntry }) {
         <div
           className="mt-1 flex h-1 w-24 gap-px overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={`${entry.wins} 胜 ${entry.losses} 负${rate === null ? "" : `，胜率 ${rate}%`}`}
+          aria-label={rankedRecordLabel(entry.wins, entry.losses, rate)}
         >
           {entry.wins ? <span className="bg-primary" style={{ flexGrow: entry.wins }} /> : null}
           {entry.losses ? (

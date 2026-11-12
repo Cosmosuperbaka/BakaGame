@@ -4,7 +4,7 @@ import type { CEEComparison, CEERankedMaskedGuess } from "@bakagame/shared";
 import { Hint } from "@/components/ui/Tooltip";
 import { listItem, skeletonFade } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { CEE_COMPARISON, CEE_TONE_CLASS } from "../CEEComparison";
+import { CEE_COMPARISON, CEE_FIELD_LABEL, CEE_TONE_CLASS } from "../CEEComparison";
 
 type MaskedField = Exclude<
   keyof CEERankedMaskedGuess["feedback"],
@@ -13,12 +13,12 @@ type MaskedField = Exclude<
 
 /** 与反馈表同一列序：性别与人气、作品数与最高分、最晚与最早登场。 */
 const FIELDS: Array<{ key: MaskedField; label: string; short: string }> = [
-  { key: "gender", label: "性别", short: "性别" },
-  { key: "popularity", label: "人气", short: "人气" },
-  { key: "appearancesCount", label: "作品数", short: "作品" },
-  { key: "rating", label: "最高分", short: "评分" },
-  { key: "latestAppearance", label: "最晚登场", short: "最晚" },
-  { key: "earliestAppearance", label: "最早登场", short: "最早" },
+  { key: "gender", label: CEE_FIELD_LABEL.gender, short: "性别" },
+  { key: "popularity", label: CEE_FIELD_LABEL.popularity, short: "人气" },
+  { key: "appearancesCount", label: CEE_FIELD_LABEL.appearancesCount, short: "作品" },
+  { key: "rating", label: CEE_FIELD_LABEL.rating, short: "评分" },
+  { key: "latestAppearance", label: CEE_FIELD_LABEL.latestAppearance, short: "最晚" },
+  { key: "earliestAppearance", label: CEE_FIELD_LABEL.earliestAppearance, short: "最早" },
 ];
 
 /** 一格只有方向与远近：图标代替数值，读屏报「字段：判定」。 */

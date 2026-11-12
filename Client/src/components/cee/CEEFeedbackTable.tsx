@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useState, type Ref } from "react";
 import { Check, Lightbulb } from "lucide-react";
-import type { CEEFeedback, CEEFeedbackValue, CEEGuess } from "@bakagame/shared";
+import type { CEECharacterView, CEEFeedback, CEEFeedbackValue, CEEGuess } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { Collapsible } from "@/components/ui/Collapsible";
@@ -18,22 +18,18 @@ import {
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
-import { CEE_COMPARISON, CEE_TONE_CLASS } from "./CEEComparison";
-
-const GENDER_TEXT: Record<string, string> = { female: "女", male: "男" };
+import {
+  CEE_COMPARISON,
+  CEE_FIELD_LABEL,
+  CEE_GENDER_TEXT,
+  CEE_TONE_CLASS,
+  CEE_UNKNOWN_NUMBER,
+} from "./CEEComparison";
 
 type NumericField = Exclude<
   keyof CEEFeedback,
   "sharedAppearances" | "tags" | "extraTags" | "gender"
 >;
-const FIELD_LABEL: Record<NumericField | "gender", string> = {
-  gender: "性别",
-  popularity: "人气",
-  appearancesCount: "作品数",
-  rating: "最高分",
-  latestAppearance: "最晚登场",
-  earliestAppearance: "最早登场",
-};
 
 /**
  * 一格数值：值与指向答案的箭头同处一个色块；成对的字段上下叠放，读屏先报字段名再报值。
@@ -49,15 +45,15 @@ function ValueChip({
   flip?: boolean;
 }) {
   const { label, icon: Icon, tone } = CEE_COMPARISON[data.comparison];
-  const missing = data.value === "" || data.value === "?" || data.value === -1;
+  const missing = data.value === "" || data.value === "?" || data.value === CEE_UNKNOWN_NUMBER;
   const text = missing
     ? "未知"
     : field === "gender"
-      ? (GENDER_TEXT[String(data.value)] ?? "未知")
+      ? (CEE_GENDER_TEXT[data.value as CEECharacterView["gender"]] ?? "未知")
       : data.value;
   // 字段名只在读屏里出现，视觉上只剩数值与箭头；悬停补上「字段名：判定」，与读屏口径一致。
   return (
-    <Hint label={`${FIELD_LABEL[field]}：${label}`}>
+    <Hint label={`${CEE_FIELD_LABEL[field]}：${label}`}>
       <motion.span
         variants={flip ? clueFlipChip : undefined}
         className={cn(
@@ -65,7 +61,7 @@ function ValueChip({
           CEE_TONE_CLASS[tone]
         )}
       >
-        <span className="sr-only">{FIELD_LABEL[field]}</span>
+        <span className="sr-only">{CEE_FIELD_LABEL[field]}</span>
         <span>{text}</span>
         <Icon className="size-3.5 shrink-0" role="img" aria-label={label} />
       </motion.span>
@@ -108,8 +104,6 @@ function ValueCell({
   );
 }
 
-// 角色列横向滚动时贴住左缘；底色须不透明，滚过的数值列才不会透出来。右缘一道细线把它与滚动区分开。
-// 容器窄于 30rem 时收起头像、收窄角色列：再窄就放不下带头像的整行，横滚前先让出这块宽度。
 /** 共同作品：默认最多两行，书名多到放不下时行尾省略，右上角的箭头展开全文（`ClampedText`）。 */
 function SharedAppearances({ subjects }: { subjects: CEEFeedback["sharedAppearances"] }) {
   const text = subjects
@@ -122,6 +116,8 @@ function SharedAppearances({ subjects }: { subjects: CEEFeedback["sharedAppearan
   );
 }
 
+// 角色列横向滚动时贴住左缘；底色须不透明，滚过的数值列才不会透出来。右缘一道细线把它与滚动区分开。
+// 容器窄于 30rem 时收起头像、收窄角色列：再窄就放不下带头像的整行，横滚前先让出这块宽度。
 const pinned = "sticky left-0 shadow-[inset_-1px_0_0_var(--color-border)]";
 
 /**

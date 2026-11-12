@@ -1,3 +1,4 @@
+import { formatRankedDelta, rankedRecordLabel, rankedWinRate } from "./CEERankedFormat";
 import type { ReactElement } from "react";
 import type { CEERankedGameSummary } from "@bakagame/shared";
 import { render, screen, within } from "@testing-library/react";
@@ -652,5 +653,23 @@ describe("CEERankedMatch", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /认输本局/ }));
     expect(onSurrender).toHaveBeenCalledOnce();
+  });
+});
+
+describe("排位格式化", () => {
+  it("分差用数学减号，零写 ±0", () => {
+    expect([formatRankedDelta(12), formatRankedDelta(0), formatRankedDelta(-7)]).toEqual([
+      "+12",
+      "±0",
+      "−7",
+    ]);
+  });
+
+  it("胜率取整，没有对局时为空", () => {
+    expect(rankedWinRate(2, 1)).toBe(67);
+    expect(rankedWinRate(1, 1, 2)).toBe(25);
+    expect(rankedWinRate(0, 0)).toBeNull();
+    expect(rankedRecordLabel(2, 1, 67)).toBe("2 胜 1 负，胜率 67%");
+    expect(rankedRecordLabel(0, 0, null)).toBe("0 胜 0 负");
   });
 });

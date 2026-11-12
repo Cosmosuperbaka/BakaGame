@@ -2,6 +2,7 @@ import { Check, Handshake, Minus, TrendingDown, TrendingUp, Trophy, Swords, X } 
 import type { CEERankedHistoryEntry, CEERankedOutcome } from "@bakagame/shared";
 import { cn } from "@/lib/Utils";
 
+import { formatRankedDelta, rankedRecordLabel, rankedWinRate } from "./CEERankedFormat";
 const OUTCOME_LABEL: Record<CEERankedOutcome, string> = { won: "胜", lost: "负", drawn: "平" };
 const OUTCOME_ICON = { won: Trophy, lost: Swords, drawn: Handshake } as const;
 
@@ -51,13 +52,13 @@ export function RankedRecordMeter({
   draws: number;
 }) {
   const total = wins + losses + draws;
-  const rate = total ? Math.round((wins / total) * 100) : null;
+  const rate = rankedWinRate(wins, losses, draws);
   return (
     <div className="space-y-1.5">
       <div
         className="flex h-2 gap-px overflow-hidden rounded-full bg-foreground/10"
         role="img"
-        aria-label={total ? `${wins} 胜 ${losses} 负，胜率 ${rate}%` : "还没有对局"}
+        aria-label={total ? rankedRecordLabel(wins, losses, rate) : "还没有对局"}
       >
         {wins ? <span className="bg-primary" style={{ flexGrow: wins }} /> : null}
         {draws ? <span className="bg-muted-foreground/40" style={{ flexGrow: draws }} /> : null}
@@ -144,7 +145,7 @@ export function RankedRatingDelta({
       )}
     >
       <Icon className="size-3.5" aria-hidden="true" />
-      {delta > 0 ? `+${delta}` : delta === 0 ? "±0" : `−${Math.abs(delta)}`}
+      {formatRankedDelta(delta)}
     </span>
   );
 }

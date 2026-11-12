@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Check, ChevronsDown, ChevronsUp, Minus, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { CEEComparison } from "@bakagame/shared";
+import type { CEECharacterView, CEEComparison, CEEFeedback } from "@bakagame/shared";
 
 /**
  * 比较值来自「猜测减答案」（服务端 buildCEEFeedback）；箭头指向答案，方向与差值相反。
@@ -29,4 +29,27 @@ export const CEE_TONE_CLASS: Record<CEEComparisonTone, string> = {
   near: "border-warning/40 bg-warning/10 text-warning",
   far: "border-transparent bg-muted text-foreground",
   unknown: "border-dashed border-border text-muted-foreground",
+};
+
+/** 服务端用 -1 表示「查不到」的数值字段（最高分、最早登场）；展示时一律读作未知，不显示哨兵值本身。 */
+export const CEE_UNKNOWN_NUMBER = -1;
+
+/** 性别展示：答案卡与反馈表同一口径，`?` 是服务端对未知性别的写法。 */
+export const CEE_GENDER_TEXT: Record<CEECharacterView["gender"], string> = {
+  female: "女",
+  male: "男",
+  "?": "未知",
+};
+
+/** 反馈字段的中文名：反馈表、回放芯片与排位对手线索共用。 */
+export const CEE_FIELD_LABEL: Record<
+  Exclude<keyof CEEFeedback, "sharedAppearances" | "tags" | "extraTags">,
+  string
+> = {
+  gender: "性别",
+  popularity: "人气",
+  appearancesCount: "作品数",
+  rating: "最高分",
+  latestAppearance: "最晚登场",
+  earliestAppearance: "最早登场",
 };

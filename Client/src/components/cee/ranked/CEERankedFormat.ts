@@ -25,3 +25,17 @@ export function rankedGameHeadline(game: CEERankedGameSummary): string {
         : "对手先猜中了";
   return prefix + reason;
 }
+
+/** 排位分变化的读法：正数带加号，零写 ±0，负数用数学减号（与战绩列表同一写法）。 */
+export const formatRankedDelta = (delta: number): string =>
+  delta > 0 ? `+${delta}` : delta === 0 ? "±0" : `−${Math.abs(delta)}`;
+
+/** 胜率取整百分比；没有对局时为 null（调用方显示「—」或不显示）。 */
+export const rankedWinRate = (wins: number, losses: number, draws = 0): number | null => {
+  const total = wins + losses + draws;
+  return total ? Math.round((wins / total) * 100) : null;
+};
+
+/** 战绩的可访问名：胜负数，有对局时带胜率。 */
+export const rankedRecordLabel = (wins: number, losses: number, rate: number | null): string =>
+  `${wins} 胜 ${losses} 负${rate === null ? "" : `，胜率 ${rate}%`}`;
