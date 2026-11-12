@@ -134,7 +134,7 @@ test("本局没有白板时不能跳转到白板猜词，且不会篡改任何�
     payload: { phase: "description" },
   });
 
-  const roleBefore = privateOf(host).role;
+  const roleBefore = privateOf(host).debugRole;
   let errorCode: string | undefined;
 
   try {
@@ -150,7 +150,7 @@ test("本局没有白板时不能跳转到白板猜词，且不会篡改任何�
   expect(errorCode).toBe("INVALID_PHASE");
   // 阶段与身份都不该被这次失败的跳转改动。
   expect(snapshotOf(host).status.phase).toBe("description");
-  expect(privateOf(host).role).toBe(roleBefore);
+  expect(privateOf(host).debugRole).toBe(roleBefore);
   expect(privateOf(host).playerId).toBe(playerId);
 });
 

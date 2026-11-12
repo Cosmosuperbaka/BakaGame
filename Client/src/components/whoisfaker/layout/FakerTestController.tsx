@@ -101,7 +101,7 @@ export function FakerTestController() {
     [privateState, run]
   );
 
-  const activeRole = privateState?.role;
+  const activeRole = privateState?.debugRole;
 
   return (
     <div className="absolute bottom-3 right-3 left-3 md:left-auto md:right-5 md:bottom-5 z-drawer pointer-events-none">

@@ -80,7 +80,7 @@ async function setup(separateHost = false) {
   });
   const privateState = (client: TestConnection) =>
     getLastEventPayload<WhoIsFakerPrivateState>(client, "game.privateState")!;
-  const blank = players.find((player) => privateState(player).role === "blank")!;
+  const blank = players.find((player) => privateState(player).specialRole === "blank")!;
   const observer = players.find((player) => player !== blank)!;
   const snapshot = (client = observer) =>
     getLastEventPayload<WhoIsFakerRoomSnapshot>(client, "room.snapshot")!;

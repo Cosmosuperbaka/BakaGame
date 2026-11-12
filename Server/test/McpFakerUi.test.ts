@@ -246,7 +246,7 @@ describe("谁是卧底界面：阶段与控件", () => {
 
   test("夜晚：活人拿到出手名单，已行动只剩撤销，主持人只看到天亮", async () => {
     const snapshot = alivePlayers(inPhase("night"));
-    const { ui } = open("night", { snapshot, privateState: { role: "undercover" } });
+    const { ui } = open("night", { snapshot, privateState: { canActAtNight: true } });
     expect(idsOf(await (await ui.screen("faker")).controls)).toEqual([
       "faker.night.p2",
       "faker.night.skip",
@@ -256,7 +256,7 @@ describe("谁是卧底界面：阶段与控件", () => {
 
     const acted = open("night", {
       snapshot,
-      privateState: { role: "civilian", nightActionSubmitted: true },
+      privateState: { canActAtNight: true, nightActionSubmitted: true },
     });
     expect(idsOf(await (await acted.ui.screen("faker")).controls)).toContain("faker.cancelNight");
 
@@ -265,10 +265,37 @@ describe("谁是卧底界面：阶段与控件", () => {
 
     const dead = alivePlayers(inPhase("night"));
     (dead.players as Record<string, unknown>[])[0].roundStatus = "eliminated";
-    const victim = open("night", { snapshot: dead, privateState: { role: "civilian" } });
+    const victim = open("night", { snapshot: dead, privateState: { canActAtNight: true } });
     expect(idsOf(await (await victim.ui.screen("faker")).controls)).not.toContain(
       "faker.night.skip"
     );
+  });
+
+  test("夜晚：没有夜间资格的玩家没有出手控件，屏幕里也不出现本人角色与阵营", async () => {
+    const snapshot = alivePlayers(inPhase("night"));
+    // role 与 side 只是敌意输入：即便私有状态里有，界面也不得转发给 Agent。
+    const { ui } = open("night", {
+      snapshot,
+      privateState: {
+        canActAtNight: false,
+        specialRole: "blank",
+        blankHint: "水果",
+        role: "undercover",
+        side: "undercover",
+      },
+    });
+    const screen = await ui.screen("faker");
+    expect(idsOf(screen.controls)).not.toContain("faker.night.skip");
+    expect(screen.you).not.toHaveProperty("role");
+    expect(screen.you).not.toHaveProperty("side");
+    expect(screen.you).toMatchObject({ specialRole: "blank" });
+
+    // 平民与卧底的屏幕除词语外没有差别：Agent 同样不知道自己站哪一边。
+    const asCivilian = await open("description", {
+      privateState: { canActAtNight: true, word: "苹果" },
+    }).ui.screen("faker");
+    expect(asCivilian.you).not.toHaveProperty("role");
+    expect(asCivilian.you).not.toHaveProperty("side");
   });
 
   test("白板猜词：猜词人填两个词，其余人只在待裁定时看到裁定按钮", async () => {
@@ -395,7 +422,7 @@ describe("谁是卧底界面：控件动作", () => {
     expect(lastPayloadOf(vote.calls, "game.submitVote")).toEqual({ targetId: ABSTAIN_TARGET_ID });
 
     const night = alivePlayers(inPhase("night"));
-    const act = open("night", { snapshot: night, privateState: { role: "undercover" } });
+    const act = open("night", { snapshot: night, privateState: { canActAtNight: true } });
     await act.ui.screen("faker");
     await act.ui.run("faker", [{ action: "click", control: "faker.night.p2" }]);
     expect(payloadOf(act.calls, "game.submitNightAction")).toEqual({ targetId: "p2" });
@@ -415,7 +442,7 @@ describe("谁是卧底界面：控件动作", () => {
     const night = alivePlayers(inPhase("night"));
     const cancelNight = open("night", {
       snapshot: night,
-      privateState: { role: "civilian", nightActionSubmitted: true },
+      privateState: { canActAtNight: true, nightActionSubmitted: true },
     });
     await cancelNight.ui.run("faker", [{ action: "click", control: "faker.cancelNight" }]);
     expect(typesOf(cancelNight.calls)).toEqual(["game.cancelNightAction"]);
@@ -525,8 +552,6 @@ describe("谁是卧底界面：控件动作", () => {
       snapshot,
       privateState: {
         isQuestioner: true,
-        role: "civilian",
-        side: "light",
         word: "苹果",
         blankHint: "自由发挥",
         angelWordOptions: ["a"],
@@ -537,8 +562,6 @@ describe("谁是卧底界面：控件动作", () => {
     });
     const screen = await ui.screen("faker");
     expect(screen.you).toMatchObject({
-      role: "civilian",
-      side: "light",
       word: "苹果",
       blankHint: "自由发挥",
       angelWordOptions: ["a"],

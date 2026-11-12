@@ -49,12 +49,19 @@ describe("whoIsFakerNeedsAction", () => {
     expect(
       whoIsFakerNeedsAction(snapshot, wifPrivate("me", "night1", { nightActionSubmitted: true }))
     ).toBe(false);
-    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "night1", { role: "angel" }))).toBe(
-      false
-    );
-    expect(whoIsFakerNeedsAction(snapshot, wifPrivate("me", "night1", { role: "blank" }))).toBe(
-      false
-    );
+    // 天使与白板夜里没有行动资格，不提示；资格只看服务端下发的能力位。
+    expect(
+      whoIsFakerNeedsAction(
+        snapshot,
+        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "angel" })
+      )
+    ).toBe(false);
+    expect(
+      whoIsFakerNeedsAction(
+        snapshot,
+        wifPrivate("me", "night1", { canActAtNight: false, specialRole: "blank" })
+      )
+    ).toBe(false);
   });
 
   it("prompts the blank to submit a guess unless review is pending", () => {

@@ -247,6 +247,7 @@ export const buildPrivateState = (
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
+      canActAtNight: false,
       isQuestioner: false,
       canSubmitBlankGuess: false,
       blankGuessUsed: false,
@@ -258,6 +259,7 @@ export const buildPrivateState = (
     return {
       playerId: player.id,
       sessionToken: player.sessionToken,
+      canActAtNight: false,
       isQuestioner: round.questionerPlayerId === player.id,
       canSubmitBlankGuess: false,
       blankGuessUsed: round.blankGuessUsed,
@@ -288,8 +290,11 @@ export const buildPrivateState = (
   return {
     playerId: player.id,
     sessionToken: player.sessionToken,
-    role: state?.role,
-    side: state?.side,
+    canActAtNight:
+      Boolean(state?.alive) && (state?.role === "civilian" || state?.role === "undercover"),
+    specialRole: state?.role === "angel" || state?.role === "blank" ? state.role : undefined,
+    // 调试身份只在测试房下发，普通房间的私有帧里没有任何能区分平民与卧底的字段。
+    debugRole: room.id === ROOM_ID_TEST_MODE ? state?.role : undefined,
     word: state?.role === "angel" ? undefined : state?.word,
     angelWordOptions: state?.role === "angel" && round.words ? round.words.pair : undefined,
     blankHint: state?.role === "blank" ? round.words?.blankHint : undefined,

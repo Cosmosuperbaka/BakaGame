@@ -89,7 +89,7 @@ export function whoIsFakerNeedsAction(
       me &&
       me.roundStatus === "alive" &&
       !privateState.isQuestioner &&
-      (privateState.role === "civilian" || privateState.role === "undercover") &&
+      privateState.canActAtNight &&
       !privateState.nightActionSubmitted
     );
   }

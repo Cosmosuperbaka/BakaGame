@@ -498,8 +498,8 @@ function roleExtras(person: Person, stage: WifStage): Partial<WhoIsFakerPrivateS
           : { blankHint: WIF_WORDS.blankHint };
   const guessUsed = role === "blank" && at(stage) >= at("blankGuess");
   return {
-    role,
-    side: SIDE_OF[role],
+    canActAtNight: isAlive(person.id, stage) && (role === "civilian" || role === "undercover"),
+    specialRole: role === "angel" || role === "blank" ? role : undefined,
     ...words,
     canSubmitBlankGuess:
       role === "blank" && isAlive(person.id, stage) && !guessUsed && stage !== "over",

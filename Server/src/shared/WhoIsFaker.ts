@@ -494,8 +494,18 @@ export interface WhoIsFakerRoomSnapshot {
 export interface WhoIsFakerPrivateState {
   playerId: string;
   sessionToken: string;
-  role?: WhoIsFakerRole;
-  side?: PlayerSide;
+  /**
+   * 本人今晚是否有夜间行动资格（存活的平民或卧底）。平民与卧底都不知道自己是哪一边，
+   * 所以私有帧里不下发本人的角色与阵营，只给这个对两边取值相同的能力位；缺省按 false 处理。
+   */
+  canActAtNight?: boolean;
+  /**
+   * 规则上本来就该自己知道的特殊身份：天使与白板分别拿到候选词或词性提示，早已知情。
+   * 平民与卧底没有取值。
+   */
+  specialRole?: "angel" | "blank";
+  /** 仅测试房下发的调试身份，供阶段控制器高亮；普通房间永远没有。 */
+  debugRole?: WhoIsFakerRole;
   word?: string;
   angelWordOptions?: [string, string];
   blankHint?: string;

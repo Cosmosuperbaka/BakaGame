@@ -23,14 +23,13 @@ export function FakerNightPhase() {
   const isQuestioner = privateState?.isQuestioner ?? false;
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const amAlive = me?.roundStatus === "alive";
-  const role = privateState?.role;
 
   const acted = privateState?.nightActionSubmitted ?? false;
   const actionTargetName = snapshot.players.find(
     (p) => p.id === privateState?.myCurrentNightTargetId
   )?.name;
 
-  const canAct = amAlive && !isQuestioner && (role === "civilian" || role === "undercover");
+  const canAct = amAlive && !isQuestioner && (privateState?.canActAtNight ?? false);
 
   // 自己永远不是夜晚目标，测试房间也一样。
   const targets = snapshot.players.filter(
@@ -73,7 +72,7 @@ export function FakerNightPhase() {
       ? null
       : !amAlive
         ? "你已出局，等待天亮"
-        : role === "angel" || role === "blank"
+        : privateState?.specialRole
           ? "你今晚没有行动，等待天亮"
           : null;
 

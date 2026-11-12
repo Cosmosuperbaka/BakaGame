@@ -157,8 +157,11 @@ describe("角色可见性与房主", () => {
       "game.privateState"
     );
     expect(privateState?.isQuestioner).toBe(false);
-    expect(privateState?.role).toBeUndefined();
-    expect(privateState?.side).toBeUndefined();
+    // 旁观者没有夜间资格，私有帧里也不再有任何本人身份字段。
+    expect(privateState?.canActAtNight).toBe(false);
+    expect(privateState).not.toHaveProperty("role");
+    expect(privateState).not.toHaveProperty("side");
+    expect(privateState?.specialRole).toBeUndefined();
     expect(privateState?.word).toBeUndefined();
     expect(privateState?.angelWordOptions).toBeUndefined();
     expect(privateState?.blankHint).toBeUndefined();
@@ -276,7 +279,7 @@ describe("角色可见性与房主", () => {
         connection,
         "game.privateState"
       );
-      return privateState?.role === "angel";
+      return privateState?.specialRole === "angel";
     });
     const angelPrivateState = angelConnection
       ? getLastEventPayload<WhoIsFakerPrivateState>(angelConnection, "game.privateState")

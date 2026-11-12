@@ -129,8 +129,7 @@ const canSpeak = (context: UiContext): boolean => {
 const wordsPanel = (context: UiContext) => {
   const privateState = context.privateState;
   return {
-    ...(str(privateState.role) ? { role: privateState.role } : {}),
-    ...(str(privateState.side) ? { side: privateState.side } : {}),
+    ...(str(privateState.specialRole) ? { specialRole: privateState.specialRole } : {}),
     ...(str(privateState.word) ? { word: privateState.word } : {}),
     ...(Array.isArray(privateState.angelWordOptions)
       ? { angelWordOptions: privateState.angelWordOptions }
@@ -276,10 +275,9 @@ const voteControls = (context: UiContext): UiControl[] => {
 
 const nightControls = (context: UiContext): UiControl[] => {
   const controls: UiControl[] = [];
-  const role = str(context.privateState.role);
   const acted = context.privateState.nightActionSubmitted === true;
   const canAct =
-    isAlive(context) && !isQuestioner(context) && (role === "civilian" || role === "undercover");
+    isAlive(context) && !isQuestioner(context) && context.privateState.canActAtNight === true;
   if (canAct && !acted) {
     for (const target of recordList(context.snapshot.players)) {
       if (

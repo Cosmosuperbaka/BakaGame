@@ -2,8 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { createRoom, joinPlayers } from "./Fixtures";
 import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
-import { type WhoIsFakerRole } from "../../src/shared/WhoIsFaker";
-import { createConnection, createTestContext, execute, getLastEventPayload } from ".././Helpers";
+import { type WhoIsFakerPrivateState, type WhoIsFakerRole } from "../../src/shared/WhoIsFaker";
+import {
+  createConnection,
+  createTestContext,
+  execute,
+  getEventPayloads,
+  getLastEventPayload,
+} from ".././Helpers";
 
 describe("隐私开关与 Agent 接管", () => {
   test("revealRoleOnDeath 开关控制死亡玩家身份是否在对局中公开", async () => {
@@ -354,5 +360,131 @@ describe("隐私开关与 Agent 接管", () => {
     const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
     expect(snapshot?.settings.allowAgents).toBe(true);
     expect(snapshot?.players.find((player) => player.id === joined.playerId)?.isAgent).toBe(true);
+  });
+
+  test("私有帧不下发本人身份：平民与卧底的私有帧除词语外逐字段相同", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "4141");
+    const joined = await joinPlayers(service, "4141", 9, "玩家");
+    await execute(service, host, {
+      id: "settings",
+      type: "room.updateSettings",
+      payload: { roleConfig: { undercoverCount: 1, hasAngel: true, hasBlank: true } },
+    });
+    for (const connection of [host, ...joined.map((item) => item.connection)]) {
+      await execute(service, connection, {
+        id: `ready-${connection.record.id}`,
+        type: "player.setReady",
+        payload: { ready: true },
+      });
+    }
+    await execute(service, host, { id: "start", type: "game.advancePhase", payload: {} });
+    const questioner = joined[8];
+    await execute(service, host, {
+      id: "assign",
+      type: "game.assignQuestioner",
+      payload: { playerId: questioner.joinResult.playerId },
+    });
+
+    // 手动指定身份：卧底、天使、白板各一人，其余平民。
+    const manualRoles: Record<string, WhoIsFakerRole> = {
+      [host.record.playerId!]: "civilian",
+      [joined[0].joinResult.playerId]: "undercover",
+      [joined[1].joinResult.playerId]: "angel",
+      [joined[2].joinResult.playerId]: "blank",
+    };
+    for (const index of [3, 4, 5, 6, 7]) {
+      manualRoles[joined[index].joinResult.playerId] = "civilian";
+    }
+    await execute(service, questioner.connection, {
+      id: "words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"], blankHint: "水果", manualRoles },
+    });
+
+    const frameOf = (connection: typeof host) =>
+      getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")!;
+    const civilian = frameOf(host);
+    const undercover = frameOf(joined[0].connection);
+    const angel = frameOf(joined[1].connection);
+    const blank = frameOf(joined[2].connection);
+
+    // 参与对局的连接从头到尾收到的每一帧私有状态里都没有身份与调试字段。
+    for (const connection of [host, ...joined.slice(0, 8).map((item) => item.connection)]) {
+      for (const payload of getEventPayloads<Record<string, unknown>>(
+        connection,
+        "game.privateState"
+      )) {
+        // 线上帧是 JSON：值为 undefined 的键不会出现，这里按线上形态断言键集。
+        const wire = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+        for (const key of ["role", "side", "debugRole"]) {
+          expect(Object.keys(wire)).not.toContain(key);
+        }
+      }
+    }
+
+    // 平民与卧底：只有词语不同，其余字段（含能力位）完全一致，无法反推身份。
+    const strip = (frame: WhoIsFakerPrivateState) => {
+      const { playerId: _playerId, sessionToken: _sessionToken, word: _word, ...rest } = frame;
+      return rest;
+    };
+    expect(civilian.word).toBeDefined();
+    expect(undercover.word).toBeDefined();
+    expect(civilian.word).not.toBe(undercover.word);
+    expect(strip(undercover)).toEqual(strip(civilian));
+    expect(civilian.canActAtNight).toBe(true);
+    expect(civilian.specialRole).toBeUndefined();
+
+    // 天使与白板本来就知情：靠候选词与词性提示，且夜里没有行动资格。
+    expect(angel.specialRole).toBe("angel");
+    expect(angel.angelWordOptions).toEqual(["苹果", "香蕉"]);
+    expect(angel.canActAtNight).toBe(false);
+    expect(blank.specialRole).toBe("blank");
+    expect(blank.blankHint).toBe("水果");
+    expect(blank.canSubmitBlankGuess).toBe(true);
+    expect(blank.canActAtNight).toBe(false);
+
+    // 出题人走上帝视角，不是玩家，没有夜间资格。
+    expect(frameOf(questioner.connection).canActAtNight).toBe(false);
+    expect(frameOf(questioner.connection).questionerView).toHaveLength(9);
+  });
+
+  test("夜间资格随出局取消，普通房间不下发调试身份而测试房下发", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    const [player] = await joinPlayers(service, "Oblivionis", 1, "玩家");
+    await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(service, host, {
+      id: "words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+    await execute(service, player.connection, {
+      id: "set-civilian",
+      type: "test.setMyRole",
+      payload: { role: "civilian" },
+    });
+
+    let frame = getLastEventPayload<WhoIsFakerPrivateState>(player.connection, "game.privateState");
+    expect(frame?.debugRole).toBe("civilian");
+    expect(frame?.canActAtNight).toBe(true);
+    expect(frame).not.toHaveProperty("role");
+    expect(frame).not.toHaveProperty("side");
+
+    // 出局后即使角色仍是平民，也不再有夜间行动资格。
+    const room = (
+      service as unknown as {
+        rooms: Map<string, { round: { assignments: Record<string, { alive: boolean }> } }>;
+      }
+    ).rooms.get("Oblivionis")!;
+    room.round.assignments[player.joinResult.playerId].alive = false;
+    await execute(service, host, { id: "touch", type: "chat.send", payload: { text: "刷新" } });
+    frame = getLastEventPayload<WhoIsFakerPrivateState>(player.connection, "game.privateState");
+    expect(frame?.canActAtNight).toBe(false);
   });
 });

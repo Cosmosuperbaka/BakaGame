@@ -43,7 +43,9 @@ test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令�
     privateState: {
       playerId: "p1",
       sessionToken: "secret-token",
+      // 敌意输入：私有状态里即便混进身份字段，屏幕也不得转发给 Agent。
       role: "civilian",
+      side: "good",
       word: "苹果",
       isQuestioner: false,
     },
@@ -51,7 +53,9 @@ test("屏幕给玩家栏、聊天栏与本人可见信息，但不带会话令�
   const screen = await ui.screen("faker");
   expect(screen.players.map((player) => player.name)).toEqual(["测试员", "对手"]);
   expect(screen.chat).toEqual([]);
-  expect(screen.you).toMatchObject({ role: "civilian", word: "苹果" });
+  expect(screen.you).toMatchObject({ word: "苹果" });
+  expect(screen.you).not.toHaveProperty("role");
+  expect(screen.you).not.toHaveProperty("side");
   expect(screen.controls.map((entry) => entry.id)).toContain("faker.start");
   expect(JSON.stringify(screen)).not.toContain("secret-token");
 });
@@ -62,7 +66,7 @@ test("输入必须先 focus；聚焦后逐字输入并在一次请求里串行�
   const { ui, calls } = mcpFixture({
     game: "faker",
     snapshot,
-    privateState: { playerId: "p1", isQuestioner: true, role: "civilian", word: "苹果" },
+    privateState: { playerId: "p1", isQuestioner: true, word: "苹果" },
     handler: () => ({ ok: true }),
   });
 

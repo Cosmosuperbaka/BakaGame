@@ -114,7 +114,7 @@ describe("测试房间", () => {
     expect(
       snapshot?.players.find((player) => player.id === privateState?.playerId)?.roundStatus
     ).toBe("alive");
-    expect(privateState?.role).toBeDefined();
+    expect(privateState?.debugRole).toBeDefined();
   });
 
   test("指定自己为出题人后始终保持出题人身份，不会退化成玩家", async () => {
@@ -538,7 +538,7 @@ describe("测试房间", () => {
 
     const target = humans.find(
       ({ connection }) =>
-        getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")?.role ===
+        getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")?.debugRole ===
         "civilian"
     );
     const remaining = humans.find((item) => item !== target);
@@ -595,7 +595,7 @@ describe("测试房间", () => {
 
     const target = humans.find(
       ({ connection }) =>
-        getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")?.role ===
+        getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")?.debugRole ===
         "civilian"
     );
     const actor = humans.find((item) => item !== target);
