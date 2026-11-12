@@ -125,6 +125,22 @@ describe("useChatMessageSound", () => {
     expect(playSound).toHaveBeenCalledTimes(1);
   });
 
+  it("消息窗口滑动后，仍在窗口内的旧消息不会再响，只有真正的新消息响一次", () => {
+    const { rerender } = render({
+      ...base,
+      messages: [message("a", "other"), message("b", "other")],
+    });
+    rerender({ ...base, messages: [message("b", "other"), message("c", "other")] });
+    expect(playSound).toHaveBeenCalledTimes(1);
+    rerender({ ...base, messages: [message("c", "other"), message("d", "me")] });
+    expect(playSound).toHaveBeenCalledTimes(1);
+    rerender({
+      ...base,
+      messages: [message("c", "other"), message("d", "me"), message("e", "other")],
+    });
+    expect(playSound).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores own messages and system notices", () => {
     const { rerender } = render(base);
     const withNoise = [...history, message("c", "me"), message("d", "system", true)];

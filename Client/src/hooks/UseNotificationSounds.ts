@@ -64,7 +64,8 @@ export function useChatMessageSound(
         incoming = true;
       }
     }
-    previous.current = { roomKey, seen };
+    // 已读集合只保留当前窗口里的消息：传入的消息本身是有界窗口，整个房间生命周期累加只会无谓增长。
+    previous.current = { roomKey, seen: new Set(messages.map((entry) => entry.id)) };
     if (incoming) playSound("chatMessage");
   }, [messages, roomKey, selfPlayerId]);
 }
