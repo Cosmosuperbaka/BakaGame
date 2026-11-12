@@ -8,6 +8,7 @@ import {
   execute,
   joinRoom,
   lastEvent,
+  makeSong,
   provider,
   songs,
   startRound,
@@ -1145,6 +1146,64 @@ describe("SonGuessrService", () => {
       roundNumber: 1,
       roundSummary: summary,
     });
+  });
+
+  test("自动出题取歌期间房间被关闭，候选循环不再继续回源", async () => {
+    const gate = deferredServiceResult<void>();
+    const calls: string[] = [];
+    // 曲名各不相同：同名的候选会被并成一首，循环就只有一个候选了。
+    const candidates = ["c1", "c2", "c3"].map((id) => makeSong(id, `候选${id}`, 2020));
+    const autoProvider: MusicProvider = {
+      ...provider,
+      getPlaylistSongs: async () => ({
+        info: { id: "42", name: "测试歌单", songCount: 3 },
+        songs: candidates,
+      }),
+      getSong: async (id) => {
+        calls.push(id);
+        if (calls.length === 1) await gate.promise;
+        throw new AppError("SONG_UNAVAILABLE", "歌曲暂时无法播放");
+      },
+    };
+    const service = new SonGuessrService({
+      musicProvider: autoProvider,
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "dead-loop-host");
+    const guest = connection(service, "dead-loop-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "客人");
+    await execute(service, host, {
+      id: "dead-loop-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionMode: "automatic", autoFilters: { artists: [], minPopularity: 0 } },
+    });
+    await execute(service, guest, {
+      id: "dead-loop-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    const starting = execute(service, host, {
+      id: "dead-loop-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    const outcome = starting.then(
+      () => "started",
+      (error: unknown) => (error as { code?: string }).code
+    );
+    for (let spin = 0; spin < 200 && calls.length === 0; spin += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    expect(calls).toHaveLength(1);
+    await service.adminCloseRoom("1234");
+    gate.resolve();
+    await outcome;
+    // 房间已经没了：剩余候选不该再逐个回源，白白消耗匿名出口额度。
+    expect(calls).toHaveLength(1);
   });
 
   describe("开局加载期间的并发与设置", () => {

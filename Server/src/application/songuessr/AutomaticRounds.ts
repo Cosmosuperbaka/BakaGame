@@ -155,6 +155,7 @@ export const startAutomaticAnimeRound = async (
   let attempts = 0;
   while (pool.length > 0 && attempts < AUTO_ANIME_CANDIDATE_LIMIT) {
     attempts += 1;
+    verify();
     const selected = pool.splice(service.random.nextInt(pool.length), 1)[0];
     try {
       const anime = await provider.getSubject(selected.id);
@@ -336,6 +337,8 @@ export const startAutomaticSongRound = async (
   };
   for (let selected = draw(); selected && attempts < AUTO_SONG_CANDIDATE_LIMIT; selected = draw()) {
     attempts += 1;
+    // 每次回源前先确认这次开局还有效：房间关闭、房主变更后继续逐个回源只会白耗出口额度。
+    verify();
     let song: SongDetails;
     try {
       song = await withSongAccount(
