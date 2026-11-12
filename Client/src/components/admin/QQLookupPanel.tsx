@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { CircleCheck, RefreshCw } from "lucide-react";
 import type { QQLookupStatus } from "@bakagame/shared";
 import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
@@ -8,6 +8,7 @@ import { AdminToolbar, QueryState } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { formatDateTime, formatNumber } from "@/lib/AdminFormat";
+import { cn } from "@/lib/Utils";
 
 type Notice = { tone: "info" | "error"; text: string };
 
@@ -33,7 +34,8 @@ function StatusSummary({ status }: { status: QQLookupStatus }) {
           <span className="text-muted-foreground">NapCat 没有在线账号</span>
         )}
       </div>
-      {status.error ? <div className="text-xs text-destructive">{status.error}</div> : null}
+      {/* 不可用原因与弹窗失败说明同一写法（带图标），不只靠红色。 */}
+      {status.error ? <FormAlert>{status.error}</FormAlert> : null}
       {status.checkedAt ? (
         <div className="text-xs text-muted-foreground">
           检测于 {formatDateTime(status.checkedAt)}
@@ -95,12 +97,18 @@ export function QQLookupPanel() {
       {current ? (
         <section aria-label="查询号状态" className="grid gap-4 rounded-md border bg-card p-4">
           <StatusSummary status={current} />
+          {/* 结果说明与失败说明同一种「图标 + xs」写法，成功用对勾与成功色；裸正文像是卡片里多出来的一段说明。
+              「重新检测」与标题行的「刷新」做同一件事，已去掉，只留一个入口。 */}
           {notice ? (
             <p
               role={notice.tone === "error" ? "alert" : "status"}
-              className={notice.tone === "error" ? "text-sm text-destructive" : "text-sm"}
+              className={cn(
+                "flex items-start gap-1.5 text-xs leading-relaxed",
+                notice.tone === "error" ? "text-destructive" : "text-success"
+              )}
             >
-              {notice.text}
+              <CircleCheck aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+              <span className="min-w-0">{notice.text}</span>
             </p>
           ) : null}
           {action.error ? <FormAlert>{action.error}</FormAlert> : null}
@@ -112,18 +120,9 @@ export function QQLookupPanel() {
               disabled={action.busy !== null || current.state !== "active"}
               onClick={refresh}
             >
-              <RefreshCw />
+              {/* 读取中只留按钮自带的转圈，两枚旋转图标并排读不出哪个在转。 */}
+              {action.busy === "refresh" ? null : <RefreshCw />}
               刷新全部昵称
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              loading={status.loading}
-              disabled={action.busy !== null}
-              onClick={() => status.reload()}
-            >
-              <RotateCcw />
-              重新检测
             </Button>
           </div>
         </section>
