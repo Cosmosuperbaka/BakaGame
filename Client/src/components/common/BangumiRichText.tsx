@@ -17,6 +17,10 @@ function safeUrl(value: string): string | null {
   }
 }
 
+/**
+ * 遮罩取弱化前景色的半透明块，不用正文色实心块：正文色在暗色主题是近白，整条亮块在暗色卡片里比正文还抢眼。
+ * 文字靠 `text-transparent` 藏住，块的深浅只负责「这里有东西被盖住」；两种主题都比正文更安静，悬停时加深一档提示可点。
+ */
 function Spoiler({ children }: { children: ReactNode }) {
   const [shown, setShown] = useState(false);
   if (shown) return <span className="rounded-sm bg-foreground/8">{children}</span>;
@@ -24,7 +28,7 @@ function Spoiler({ children }: { children: ReactNode }) {
     <button
       type="button"
       onClick={() => setShown(true)}
-      className="rounded-sm bg-foreground px-0.5 text-transparent transition-colors hover:bg-foreground/85 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+      className="cursor-pointer rounded-sm bg-muted-foreground/55 px-0.5 text-transparent transition-colors hover:bg-muted-foreground/70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring dark:bg-muted-foreground/25 dark:hover:bg-muted-foreground/40"
     >
       <span className="sr-only">剧透，点按显示</span>
       <span aria-hidden="true">{children}</span>
