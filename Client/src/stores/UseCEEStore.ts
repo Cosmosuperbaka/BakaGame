@@ -434,11 +434,7 @@ export function handleCEEMessage(message: ServerMessage) {
         approved ? SPECTATE_APPROVED_TEXT : SPECTATE_REJECTED_TEXT,
         approved ? "success" : "error"
       );
-  } else if (
-    ["cee.room.closed", "cee.player.kicked", "session.replaced", "cee.session.replaced"].includes(
-      message.event
-    )
-  ) {
+  } else if (["cee.room.closed", "cee.player.kicked", "session.replaced"].includes(message.event)) {
     // 房间已经结束：在途入房/恢复的 ACK 即使晚到也不能再接回这个会话。
     const payload = message.payload as { roomId?: string; reason?: string; message?: string };
     const { roomId, foreign } = resolveEndedRoom(payload.roomId, store.roomId);

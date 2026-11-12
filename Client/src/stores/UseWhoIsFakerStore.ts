@@ -61,7 +61,6 @@ export interface WhoIsFakerGameState {
   clearRoomClosed: () => void;
   triggerPhaseTimeout: () => void;
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
-  applyIncomingSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
   removeToast: (id: number) => void;
@@ -302,7 +301,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
 
       set({ snapshot, ...noticeUpdate(snapshot, get().privateState?.playerId) });
     },
-    applyIncomingSnapshot: (snapshot) => get().setSnapshot(snapshot),
     setPrivateState: (privateState) => {
       set({ privateState });
       const currentSnapshot = get().snapshot;

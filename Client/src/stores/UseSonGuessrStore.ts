@@ -418,9 +418,7 @@ function applyRoomSnapshotEvent(payload: unknown) {
   };
 
   const currentPrivate = useSonGuessrStore.getState().privateState;
-  const tokenToSave = roomEntry.isPending()
-    ? null
-    : (currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken);
+  const tokenToSave = currentPrivate?.sessionToken ?? useSonGuessrStore.getState().sessionToken;
   if (tokenToSave && nextSnapshot.roomId) {
     saveSonGuessrSessionToken(nextSnapshot.roomId, tokenToSave);
   }
@@ -442,7 +440,7 @@ function applyPrivateStateEvent(payload: unknown) {
   if (roomEntry.isPending()) return;
   const nextPrivateState = rawPrivateState;
   const currentSnapshot = useSonGuessrStore.getState().snapshot;
-  if (!roomEntry.isPending() && nextPrivateState.sessionToken && currentSnapshot?.roomId) {
+  if (nextPrivateState.sessionToken && currentSnapshot?.roomId) {
     saveSonGuessrSessionToken(currentSnapshot.roomId, nextPrivateState.sessionToken);
     useSonGuessrStore.setState({
       roomId: currentSnapshot.roomId,

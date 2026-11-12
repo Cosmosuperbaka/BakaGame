@@ -460,7 +460,7 @@ it("房间关闭作废在途入房：晚到 ACK 只用结果凭据离房并保�
   });
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
-it.each(["cee.room.closed", "cee.player.kicked", "session.replaced", "cee.session.replaced"])(
+it.each(["cee.room.closed", "cee.player.kicked", "session.replaced"])(
   "%s 的房号不是当前房间时只清那间的会话，不动当前房间",
   (event) => {
     writeCEESession("1111", "current-token");
