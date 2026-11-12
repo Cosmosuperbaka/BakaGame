@@ -50,8 +50,10 @@ function SongSettingsGroups({
   const summary = songSettingsSummary(snapshot);
   return (
     <SettingsStack>
+      {/* 包装必须是块级：`SettingsStack` 的 space-y 间距落在直接子元素上，`display: contents` 吃掉外边距，
+          账号卡会与下方题目设置贴成一条粗描边。 */}
       {account ? (
-        <div data-agent-sensitive className="contents">
+        <div data-agent-sensitive>
           <SongAccountSettings snapshot={snapshot} me={me} />
         </div>
       ) : null}
@@ -293,7 +295,7 @@ export function SongWaitingPhase({
             disabled={isReadyPending}
             loading={isReadyPending}
             onClick={() => void run("song.player.setReady", { ready: !me.isReady })}
-            className="gap-2 min-w-[120px]"
+            className="gap-2 min-w-30"
             data-agent-control="song.ready"
           >
             {me.isReady ? (
