@@ -1,6 +1,16 @@
 import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
-import { FlaskConical, UserCog, Eye, Shield, Bot, Minus, Plus } from "lucide-react";
+import {
+  Bot,
+  Eye,
+  FlaskConical,
+  ListOrdered,
+  Minus,
+  Plus,
+  Shield,
+  UserCog,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -106,7 +116,8 @@ export function FakerTestController() {
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
             {...headerTappable}
-            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            // 外层 overflow-hidden 会裁掉贴边的聚焦环，环向内收（与折叠设置组标题同一写法）
+            className="flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:-outline-offset-2"
           >
             <FlaskConical className="h-4 w-4 text-primary" />
             <span>阶段控制器</span>
@@ -114,7 +125,7 @@ export function FakerTestController() {
           </motion.button>
           <CollapsibleRegion open={open}>
             <div className="px-4 pb-4 pt-1 space-y-3">
-              <ControlGroup label="跳转游戏阶段">
+              <ControlGroup label="跳转游戏阶段" icon={ListOrdered}>
                 <div className="grid grid-cols-2 gap-1.5">
                   {PHASES.map((p) => (
                     <Button
@@ -130,7 +141,7 @@ export function FakerTestController() {
                 </div>
               </ControlGroup>
 
-              <ControlGroup label="切换观察视角" icon={<Eye className="h-3.5 w-3.5 text-info" />}>
+              <ControlGroup label="切换观察视角" icon={Eye}>
                 <div className="grid grid-cols-3 gap-1.5">
                   <Button
                     variant={currentPerspective === "player" ? "default" : "outline"}
@@ -146,7 +157,7 @@ export function FakerTestController() {
                     className="h-7 text-xs gap-1"
                     onClick={() => void handleSetPerspective("questioner")}
                   >
-                    <Shield className="h-3 w-3 text-questioner" />
+                    <Shield className="h-3 w-3" />
                     出题人
                   </Button>
                   <Button
@@ -161,10 +172,7 @@ export function FakerTestController() {
               </ControlGroup>
 
               {currentPerspective === "player" && (
-                <ControlGroup
-                  label="切换玩家身份"
-                  icon={<UserCog className="h-3.5 w-3.5 text-success" />}
-                >
+                <ControlGroup label="切换玩家身份" icon={UserCog}>
                   <div className="grid grid-cols-4 gap-1.5">
                     {ROLES.map((r) => (
                       <Button
@@ -181,7 +189,7 @@ export function FakerTestController() {
                 </ControlGroup>
               )}
 
-              <ControlGroup label="测试人机" icon={<Bot className="h-3.5 w-3.5 text-info" />}>
+              <ControlGroup label="测试人机" icon={Bot}>
                 <div className="flex items-center gap-1.5">
                   <Button
                     variant="outline"
@@ -217,22 +225,26 @@ export function FakerTestController() {
   );
 }
 
+/**
+ * 控制器里的一组按钮。组标题取全站区块小标题的口径（标题标签、xs 半粗、弱化色，图标 3.5 与文字同色）：
+ * 图标只是组的记号，不按氛围着色；选中按钮是主色实底，按钮里的图标随文字取前景色。
+ */
 function ControlGroup({
   label,
-  icon,
+  icon: Icon,
   children,
 }: {
   label: string;
-  icon?: React.ReactNode;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-1.5 text-2xs font-semibold text-muted-foreground">
-        {icon}
+    <section>
+      <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {label}
-      </div>
+      </h3>
       {children}
-    </div>
+    </section>
   );
 }
