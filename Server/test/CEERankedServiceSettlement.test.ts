@@ -87,6 +87,17 @@ class SeededStore extends InMemoryCEERankedStore {
 }
 
 /** 前 `failures` 次写库抛错，之后转给内存实现：用来验证退避重试与彻底失败。 */
+/** 事务已提交但响应丢失：首次写库真的落了库，却抛出超时。 */
+class LostAckStore extends InMemoryCEERankedStore {
+  attempts = 0;
+
+  override async saveSettlement(record: CEERankedSettlementRecord): Promise<void> {
+    this.attempts += 1;
+    await super.saveSettlement(record);
+    if (this.attempts === 1) throw new AppError("RANKED_STORE_TIMEOUT", "测试用 ACK 丢失");
+  }
+}
+
 class FlakyStore implements CEERankedStore {
   private readonly inner = new InMemoryCEERankedStore();
   private readonly failures: number;
@@ -520,5 +531,21 @@ describe("结算写库的退避重试", () => {
     await harness.send(client, "cee.ranked.leave", {});
     await harness.send(client, "cee.ranked.queue", {});
     expect(harness.latest(client).status).toBe("series");
+  });
+  test("事务已提交但响应丢失：重试识别已落库当作成功，不记写库失败也不重复落库", async () => {
+    const store = new LostAckStore();
+    const harness = rankedHarness({ store });
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    const seriesId = harness.seriesView(client).seriesId;
+
+    await harness.send(client, "cee.ranked.exit", {});
+    await harness.advance(2_000);
+
+    expect(harness.seriesView(client).result?.settlement).not.toBe("failed");
+    expect(harness.seriesView(client).result?.settlement).not.toBe("pending");
+    expect(harness.logs.error.filter((item) => item.message === "排位结算写库失败")).toEqual([]);
+    expect(store.attempts).toBe(1);
+    expect((await readAudit(harness, seriesId)).players.length).toBe(2);
   });
 });

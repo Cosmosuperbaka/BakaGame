@@ -170,6 +170,9 @@ export class InMemoryCEERankedStore implements CEERankedStore {
   }
 
   async saveSettlement(record: CEERankedSettlementRecord): Promise<void> {
+    // 与 MySQL 适配同口径：系列赛主键重复即整笔失败，不重复追加。
+    if (this.settled.some((item) => item.series.id === record.series.id))
+      throw new Error(`系列赛 ${record.series.id} 已经结算过`);
     this.settled.push(copySettlement(record));
     for (const rating of record.ratings) this.ratings.set(rating.userId, { ...rating });
   }

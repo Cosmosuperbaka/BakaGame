@@ -1336,6 +1336,11 @@ export class CEERankedService {
         this.leaderboardCache = null;
         return true;
       } catch (error) {
+        // 事务可能已提交而响应丢了：重试会撞主键。先确认这场是否已落库，已落库就当作成功。
+        if (await this.alreadySaved(seriesId)) {
+          this.leaderboardCache = null;
+          return true;
+        }
         if (attempt + 1 >= attempts) {
           this.logger?.error("排位结算写库失败", {
             seriesId,
@@ -1348,6 +1353,16 @@ export class CEERankedService {
       }
     }
     return false;
+  }
+
+  /** 审计里已有这场系列赛；读失败按「未落库」处理，交给重试。 */
+  private async alreadySaved(seriesId: string): Promise<boolean> {
+    try {
+      return (await this.requireStore().getSeriesAudit(seriesId)) !== null;
+    } catch (error) {
+      this.logger?.warn("排位结算落库确认读取失败", { seriesId, error: errorMessageOf(error) });
+      return false;
+    }
   }
 
   private wait(ms: number): Promise<void> {
