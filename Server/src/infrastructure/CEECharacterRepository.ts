@@ -16,6 +16,7 @@ import type { CEEDataOptions, CEEDataProvider, CEERawAppearance, CEERawCharacter
 import { CEEEnrichment } from "./CEEEnrichment";
 import { deriveCEECharacter, resolveCEESubjectTypes } from "./CEECharacterDerivation";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 
 interface CharacterRow {
   id: number;
@@ -42,7 +43,7 @@ interface SubjectRow {
 }
 const boundedLimit = (limit: number, maximum = 50) =>
   Math.min(maximum, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 20));
-const like = (keyword: string) => `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
+const like = (keyword: string) => `%${escapeLike(keyword)}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
 const validTypes = (types: number[]) =>
   [...new Set(types)].filter((type) => [1, 2, 3, 4, 6].includes(type));
@@ -173,7 +174,7 @@ export class CEECharacterRepository implements CEEDataProvider {
 
   /** FTS5 短语检索；纯数字关键词还要把精确 ID 命中的角色补到最前。 */
   private queryCharacterPhraseRows(query: string, count: number): CharacterRow[] {
-    const phrase = `"${query.replace(/"/g, '""')}"`;
+    const phrase = ftsPhrase(query);
     const rows = this.db
       .query(
         `SELECT c.* FROM character_search f JOIN characters c ON c.id=f.rowid WHERE character_search MATCH ?

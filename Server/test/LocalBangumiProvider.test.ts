@@ -21,6 +21,90 @@ const removeFiles = async (...paths: string[]) => {
     }
 };
 
+describe("LocalBangumiProvider 全文检索的查询转义", () => {
+  const titles: Array<[number, string, string]> = [
+    [1, "Re:Zero kara Hajimeru Isekai Seikatsu", "Re：从零开始的异世界生活"],
+    [2, "K-ON!", "轻音少女"],
+    [3, "Fate/stay night", "命运之夜"],
+    [4, "Steins;Gate", "命运石之门"],
+    [5, "(abc) NOT AND test", "括号关键字"],
+  ];
+  const createProvider = () => {
+    const path = join(tmpdir(), `bangumi-fts-${crypto.randomUUID()}.sqlite`);
+    const db = new Database(path);
+    db.run(
+      "CREATE TABLE subjects (id INTEGER PRIMARY KEY, type INTEGER, name TEXT, name_cn TEXT, infobox TEXT, summary TEXT, date TEXT, nsfw INTEGER, tags TEXT, meta_tags TEXT, score REAL, rank INTEGER, heat INTEGER, image TEXT)"
+    );
+    db.run(
+      "CREATE VIRTUAL TABLE subject_search USING fts5(name, name_cn, content='subjects', content_rowid='id', tokenize='trigram')"
+    );
+    for (const [id, name, nameCn] of titles) {
+      db.query(
+        "INSERT INTO subjects VALUES (?,2,?,?,'','','2020-01-01',0,'[]','[]',8,10,100,'')"
+      ).run(id, name, nameCn);
+      db.query("INSERT INTO subject_search(rowid,name,name_cn) VALUES (?,?,?)").run(
+        id,
+        name,
+        nameCn
+      );
+    }
+    db.close();
+    return { path, provider: new LocalBangumiProvider({ dbPath: path }) };
+  };
+
+  test("含语法字符的合法标题不抛错，并能按字面命中", async () => {
+    const { provider } = createProvider();
+    try {
+      const idsOf = async (keyword: string) =>
+        (await provider.searchSubjects(keyword, 10)).map((row) => row.id);
+      expect(await idsOf("Re:Zero")).toEqual(["1"]);
+      expect(await idsOf("K-ON")).toEqual(["2"]);
+      expect(await idsOf("Fate/stay")).toEqual(["3"]);
+      expect(await idsOf("Steins;Gate")).toEqual(["4"]);
+      expect(await idsOf("(abc)")).toEqual(["5"]);
+    } finally {
+      provider.close();
+    }
+  });
+
+  test.each([
+    "a-b",
+    "-minus",
+    "(abc",
+    "abc)",
+    "NOT",
+    "abc AND",
+    "OR abc",
+    '"quoted',
+    'say "hi" now',
+    "*star",
+    "col:val",
+    "NEAR(a b)",
+    "it's here",
+    "^caret",
+    "a:b:c:d",
+  ])("任意输入 %p 都不抛 SQL 错误", async (keyword) => {
+    const { provider } = createProvider();
+    try {
+      await expect(provider.searchSubjects(keyword, 10)).resolves.toBeArray();
+    } finally {
+      provider.close();
+    }
+  });
+
+  test("不足三个字符的关键词（三元分词索引无法检索）回退到字面前缀匹配", async () => {
+    const { provider } = createProvider();
+    try {
+      expect((await provider.searchSubjects("轻音", 10)).map((row) => row.id)).toEqual(["2"]);
+      expect((await provider.searchSubjects("K-", 10)).map((row) => row.id)).toEqual(["2"]);
+      // `%` 与 `_` 是 LIKE 的通配符，必须按字面处理。
+      expect(await provider.searchSubjects("%", 10)).toEqual([]);
+    } finally {
+      provider.close();
+    }
+  });
+});
+
 describe("LocalBangumiProvider", () => {
   test("searches and loads local records", async () => {
     const songPath = join(tmpdir(), `bangumi-test-${crypto.randomUUID()}.sqlite`);

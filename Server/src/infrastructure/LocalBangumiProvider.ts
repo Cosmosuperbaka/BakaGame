@@ -12,6 +12,7 @@ import type {
   BangumiSubjectSearchResult,
 } from "../shared/Index";
 import { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
@@ -368,12 +369,19 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       });
     }
     if (q) {
+      // 三元分词索引检索不了不足三个字符的词：退回字面前缀匹配，否则「K-」「轻音」这类输入永远搜不到。
+      const short = [...q].length < 3;
+      const match = short
+        ? "(s.name LIKE ? ESCAPE '\\' OR s.name_cn LIKE ? ESCAPE '\\')"
+        : "subject_search MATCH ?";
+      const source = short ? "subjects s" : "subject_search f JOIN subjects s ON s.id=f.rowid";
+      const matchArgs = short ? [`${escapeLike(q)}%`, `${escapeLike(q)}%`] : [`${ftsPhrase(q)}*`];
       rows = this.db
         .query(
-          `SELECT s.* FROM subject_search f JOIN subjects s ON s.id=f.rowid WHERE subject_search MATCH ? AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`
+          `SELECT s.* FROM ${source} WHERE ${match} AND ${clauses.join(" AND ")} ORDER BY CASE WHEN s.name = ? OR s.name_cn = ? THEN 0 WHEN s.name LIKE ? OR s.name_cn LIKE ? THEN 1 ELSE 2 END, s.heat DESC, s.rank ASC, s.score DESC, s.id ASC LIMIT ?`
         )
         .all(
-          `${q.replace(/["*]/g, " ")}*`,
+          ...matchArgs,
           ...args,
           q,
           q,
