@@ -5,6 +5,7 @@ import {
   TestConnection,
   connection,
   createRoom,
+  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -710,5 +711,121 @@ describe("手动出题片段", () => {
     expect(
       lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.lyricClip
     ).toEqual(auto);
+  });
+
+  describe("开局加载期间停机再恢复", () => {
+    /** 卡在开局复核的那一刻导出快照（带 JSON 往返，和真实落盘一致），再在新进程里恢复。 */
+    const restoreWhileStarting = async (questionMode: "manual" | "automatic") => {
+      const gate = deferredServiceResult<void>();
+      let hold = false;
+      const slowProvider: MusicProvider = {
+        ...provider,
+        getLoginStatus: async (cookie) => {
+          if (hold) await gate.promise;
+          return { cookie, account: { nickname: "测试账号", vipStatus: "vip" } };
+        },
+        getPlaylistSongs: async () => ({
+          info: { id: "42", name: "测试歌单", songCount: 1 },
+          songs: [songs.answer],
+        }),
+      };
+      const service = new SonGuessrService({
+        musicProvider: slowProvider,
+        random: { nextInt: () => 0 },
+      });
+      const host = connection(service, "lock-host");
+      const guest = connection(service, "lock-guest");
+      await createRoom(service, host);
+      const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+      const guestState = await joinRoom(service, guest, "客人");
+      await execute(service, host, {
+        id: "lock-settings",
+        type: "song.room.updateSettings",
+        roomId: "1234",
+        payload: { questionMode, autoFilters: { artists: [], minPopularity: 0 } },
+      });
+      await execute(service, guest, {
+        id: "lock-ready",
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+
+      hold = true;
+      const inFlight = execute(service, host, {
+        id: "lock-start",
+        type: "song.game.start",
+        roomId: "1234",
+        payload: {},
+      });
+      const exported = JSON.parse(JSON.stringify(service.exportSnapshots())) as ReturnType<
+        SonGuessrService["exportSnapshots"]
+      >;
+
+      const restarted = new SonGuessrService({
+        musicProvider: slowProvider,
+        random: { nextInt: () => 0 },
+      });
+      hold = false;
+      expect(restarted.restoreSnapshots(exported, Date.now())).toBe(1);
+      const back = async (id: string, token: string) => {
+        const client = connection(restarted, id);
+        await execute(restarted, client, {
+          id: `${id}-reconnect`,
+          type: "song.room.reconnect",
+          payload: { roomId: "1234", sessionToken: token },
+        });
+        return client;
+      };
+      const restoredHost = await back("lock-host-2", hostState.sessionToken);
+      await back("lock-guest-2", guestState.sessionToken);
+      // 账号池不落盘：恢复后房主要重新登录才能开局。
+      await execute(restarted, restoredHost, {
+        id: "lock-relogin",
+        type: "song.auth.useCookie",
+        roomId: "1234",
+        payload: { cookie: "MUSIC_U=test-host" },
+      });
+      return {
+        restarted,
+        restoredHost,
+        cleanup: async () => {
+          gate.resolve();
+          await inFlight;
+        },
+      };
+    };
+
+    test("自动出题开局加载中停机再恢复，房主可以重新开局", async () => {
+      const { restarted, restoredHost, cleanup } = await restoreWhileStarting("automatic");
+      await expect(
+        execute(restarted, restoredHost, {
+          id: "lock-restart",
+          type: "song.game.start",
+          roomId: "1234",
+          payload: {},
+        })
+      ).resolves.toEqual({ started: true });
+      expect(lastEvent<SonGuessrRoomSnapshot>(restoredHost, "song.room.snapshot").phase).toBe(
+        "playing"
+      );
+      await cleanup();
+    });
+
+    test("手动出题开局复核中停机再恢复，房主可以重新开局", async () => {
+      const { restarted, restoredHost, cleanup } = await restoreWhileStarting("manual");
+      await expect(
+        execute(restarted, restoredHost, {
+          id: "lock-restart",
+          type: "song.game.start",
+          roomId: "1234",
+          payload: {},
+        })
+      ).resolves.toEqual({ started: true });
+      expect(lastEvent<SonGuessrRoomSnapshot>(restoredHost, "song.room.snapshot").phase).toBe(
+        "choosingSubmitter"
+      );
+      await cleanup();
+    });
   });
 });

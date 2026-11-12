@@ -260,8 +260,9 @@ export class SonGuessrService implements AdminRoomControl {
    * 导出全部房间以供停机保存。
    *
    * 三类字段挡在落盘之外：
-   * - `musicAuthOperations` / `automaticRoundOperation` 是 `symbol` 在途锁，JSON 往返会静默丢键，
-   *   恢复后是 undefined 正是要的结果 —— 重启后不存在任何在途操作。
+   * - 开局与登录的在途锁：`symbol` 锁 JSON 往返会丢键，但 `automaticRoundLoading` /
+   *   `manualRoundStarting` 是布尔值会被原样保留，所以恢复时由 `adoptSnapshot` 统一清掉 ——
+   *   重启后不存在任何在途操作。
    * - 音乐账号池（`musicPool`）的每条都带着第三方 `cookie`，落盘等于把玩家的登录态写进
    *   本机文件。整段丢弃，恢复后由各贡献者重新登录，宁可少一段体验也不留凭据。
    */
@@ -343,6 +344,12 @@ export class SonGuessrService implements AdminRoomControl {
     }
 
     room.emptySinceAt = undefined;
+    // 开局锁与登录锁是运行时状态：布尔锁会随 JSON 往返保留下来，重启后那次开局不会再有结果，
+    // 留着会让房间永久无法开局（手动出题的锁没有任何别的清除路径）。
+    room.automaticRoundLoading = false;
+    room.manualRoundStarting = false;
+    room.automaticRoundOperation = undefined;
+    room.musicAuthOperations = undefined;
     room.updatedAt = now;
     room.lastActivityAt = now;
     if (room.hostReconnectDeadlineAt !== undefined) {
