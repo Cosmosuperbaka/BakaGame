@@ -1,6 +1,7 @@
+import { AppError } from "../../src/domain/Errors";
 import { SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { describe, expect, test } from "bun:test";
-import { connection, createRoom, execute, joinRoom, provider, songs } from "./Fixtures";
+import { connection, createRoom, execute, joinRoom, lastEvent, provider, songs } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   type MusicCookieInput,
@@ -101,6 +102,77 @@ describe("账号池单号并发", () => {
     expect(usedCookies.every(Boolean)).toBe(true);
     releases.splice(0).forEach((release) => release());
     await Promise.all(pending);
+  });
+});
+
+describe("聚合租约按平台归还", () => {
+  test("QQ 歌单取曲因 QQ 凭据失效失败时，不会把网易云账号判死", async () => {
+    const musicProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (cookie, platform) => ({
+        cookie,
+        account: { platform: platform === "qq" ? "qq" : "netease", nickname: "号主" },
+      }),
+      getPlaylistSongs: async (playlistId) => {
+        if (playlistId.startsWith("qq:")) {
+          throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录状态已失效");
+        }
+        return { info: { id: playlistId, name: "歌单", songCount: 1 }, songs: [songs.answer] };
+      },
+    };
+    const service = new SonGuessrService({ musicProvider, random: { nextInt: () => 0 } });
+    const host = connection(service, "lease-host");
+    const guest = connection(service, "lease-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "QQ 号主");
+    await execute(service, guest, {
+      id: "lease-qq",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "qm_keyst=qq-cookie", platform: "qq" },
+    });
+    await execute(service, host, {
+      id: "lease-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: {
+        questionMode: "automatic",
+        autoFilters: {
+          playlist: { id: "qq:42", name: "QQ 歌单", songCount: 1 },
+          artists: [],
+          minPopularity: 0,
+        },
+      },
+    });
+    await execute(service, guest, {
+      id: "lease-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await expect(
+      execute(service, host, {
+        id: "lease-start",
+        type: "song.game.start",
+        roomId: "1234",
+        payload: {},
+      })
+    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+
+    await execute(service, host, {
+      id: "lease-sync",
+      type: "song.room.requestSync",
+      roomId: "1234",
+      payload: {},
+    });
+    const pool = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicPool ?? [];
+    const netease = pool.find((entry) => entry.platform === "netease");
+    const qq = pool.find((entry) => entry.platform === "qq");
+    // 失败只属于 QQ：它的账号被判死关闭，网易云账号照常可用、没有冷却与失败记录。
+    expect(qq).toMatchObject({ enabled: false });
+    expect(netease).toMatchObject({ enabled: true });
+    expect(netease?.cooldownUntil).toBeUndefined();
+    expect(netease?.lastFailureReason).toBeUndefined();
   });
 });
 

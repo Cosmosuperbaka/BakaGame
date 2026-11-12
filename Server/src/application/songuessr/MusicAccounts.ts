@@ -698,12 +698,39 @@ export const refreshRoundAudio = async (
     : new AppError("SONG_UNAVAILABLE", "无法刷新播放地址");
 };
 
+/** 归还租约时的结果；`platform` 标明失败归属哪个平台，缺省视为两端都可能有份。 */
+type AggregatedReleaseResult = {
+  ok: boolean;
+  reason?: string;
+  code?: string;
+  platform?: MusicAuthPlatform;
+};
+
+/** 错误到平台的归属：上游抛出的错误不带平台，由知道自己在调哪个平台的调用点登记。 */
+const errorPlatforms = new WeakMap<object, MusicAuthPlatform>();
+
+/**
+ * 声明这次上游调用只属于某个平台：它失败时，聚合租约只把失败记在该平台的账号上，
+ * 另一端的健康账号不会被连带判死或冷却。
+ */
+export const onMusicPlatform = async <T>(
+  platform: MusicAuthPlatform,
+  task: Promise<T>
+): Promise<T> => {
+  try {
+    return await task;
+  } catch (error) {
+    if (typeof error === "object" && error !== null) errorPlatforms.set(error, platform);
+    throw error;
+  }
+};
+
 export const acquireAggregatedAccounts = async (
   service: SonGuessrServiceInternals,
   room: SonGuessrRoomRecord
 ): Promise<{
   cookie: MusicCookieInput | undefined;
-  release: (result: { ok: boolean; reason?: string; code?: string }) => void;
+  release: (result: AggregatedReleaseResult) => void;
 }> => {
   const [netease, qq] = await Promise.all([
     acquireMusicAccount(service, room, "netease"),
@@ -715,8 +742,11 @@ export const acquireAggregatedAccounts = async (
         ? { ...(netease ? { netease: netease.cookie } : {}), ...(qq ? { qq: qq.cookie } : {}) }
         : undefined,
     release: (result) => {
-      netease?.release(result);
-      qq?.release(result);
+      // 失败归属另一端时，这一端的请求本身没有出错，按成功归还。
+      const forPlatform = (platform: MusicAuthPlatform) =>
+        result.platform !== undefined && result.platform !== platform ? { ok: true } : result;
+      netease?.release(forPlatform("netease"));
+      qq?.release(forPlatform("qq"));
     },
   };
 };
@@ -739,7 +769,7 @@ export const withAggregatedAccounts = async <T>(
 ): Promise<T> => {
   const runWithLease = async (lease: {
     cookie: MusicCookieInput | undefined;
-    release: (result: { ok: boolean; reason?: string; code?: string }) => void;
+    release: (result: AggregatedReleaseResult) => void;
   }): Promise<T> => {
     try {
       const value = await run(lease.cookie);
@@ -750,6 +780,8 @@ export const withAggregatedAccounts = async <T>(
         ok: false,
         code: error instanceof AppError ? error.code : "",
         reason: error instanceof Error ? error.message : String(error),
+        platform:
+          typeof error === "object" && error !== null ? errorPlatforms.get(error) : undefined,
       });
       throw error;
     }

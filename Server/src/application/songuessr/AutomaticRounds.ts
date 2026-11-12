@@ -23,6 +23,7 @@ import { resolveAnimeSong } from "./AnimeResolution";
 import {
   hasAvailablePoolAccount,
   musicSearchOptions,
+  onMusicPlatform,
   songPlayabilityContext,
   withAggregatedAccounts,
   withSongAccount,
@@ -455,8 +456,8 @@ export const resolveArtistFilterSongs = async (
   };
   const perArtist = await Promise.all(
     filters.artists.map(async (artist) => {
-      const primary = await getArtistSongs(artist.id, cookie);
-      const artistPlatform = artist.id.startsWith("qq:") ? "qq" : "netease";
+      const artistPlatform = songPlatformOf(artist.id);
+      const primary = await onMusicPlatform(artistPlatform, getArtistSongs(artist.id, cookie));
       if (!playlistPlatform || !searchArtists || artistPlatform === playlistPlatform) {
         return primary;
       }
@@ -466,7 +467,10 @@ export const resolveArtistFilterSongs = async (
           normalizeSongText(candidate.name) === normalizeSongText(artist.name)
       );
       if (!match) return primary;
-      return [...primary, ...(await getArtistSongs(match.id, cookie))];
+      return [
+        ...primary,
+        ...(await onMusicPlatform(playlistPlatform, getArtistSongs(match.id, cookie))),
+      ];
     })
   );
   return perArtist.flat();
@@ -498,8 +502,14 @@ export const collectAutomaticCandidates = async (
   assertAutomaticFiltersSupported(service, room, filters);
   const sets: SongSearchResult[][] = [];
   if (filters.playlist && service.options.musicProvider.getPlaylistSongs) {
+    const playlistId = filters.playlist.id;
     sets.push(
-      (await service.options.musicProvider.getPlaylistSongs(filters.playlist.id, cookie)).songs
+      (
+        await onMusicPlatform(
+          songPlatformOf(playlistId),
+          service.options.musicProvider.getPlaylistSongs(playlistId, cookie)
+        )
+      ).songs
     );
   }
   if (filters.artists.length > 0) {
@@ -510,7 +520,12 @@ export const collectAutomaticCandidates = async (
       throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持自动题库");
     }
     sets.push(
-      (await service.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)).songs
+      (
+        await onMusicPlatform(
+          songPlatformOf(DEFAULT_AUTO_PLAYLIST_ID),
+          service.options.musicProvider.getPlaylistSongs(DEFAULT_AUTO_PLAYLIST_ID, cookie)
+        )
+      ).songs
     );
   }
   const first = new Map(sets[0].map((song) => [song.id, song]));
@@ -546,7 +561,9 @@ export const collectAutomaticCandidates = async (
     const values = await Promise.all(
       batch.map(async (song) => ({
         ...song,
-        popularity: (await getPopularity(song.id, cookie)) ?? song.popularity,
+        popularity:
+          (await onMusicPlatform(songPlatformOf(song.id), getPopularity(song.id, cookie))) ??
+          song.popularity,
       }))
     );
     enriched.push(...values);
