@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -111,6 +111,20 @@ export function CreditsView({
 }: CreditsViewProps) {
   const byName = useMemo(() => creditDependencyIndex(dependencies), [dependencies]);
   const [path, setPath] = useState<string[]>([]);
+  const tabScrollerRef = useRef<HTMLDivElement>(null);
+
+  // 窄屏五个标签放不下、整行横滑：带着 `?tab=terms` 进来时当前标签在视口外，读不出自己在哪一页。
+  // 当前标签变了就把它横向挪进可见范围（留一点余量露出相邻标签，读得出「还能滑」）；放得下时不动。
+  useEffect(() => {
+    const scroller = tabScrollerRef.current;
+    const active = scroller?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    if (!scroller || !active) return;
+    const bounds = scroller.getBoundingClientRect();
+    const target = active.getBoundingClientRect();
+    const margin = 32;
+    if (target.right > bounds.right) scroller.scrollLeft += target.right - bounds.right + margin;
+    else if (target.left < bounds.left) scroller.scrollLeft -= bounds.left - target.left + margin;
+  }, [tab]);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const currentName = path.length > 0 ? path[path.length - 1] : null;
@@ -135,7 +149,9 @@ export function CreditsView({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    // overflow-clip 而不是 hidden：hidden 的容器仍可被脚本与焦点滚动（scrollIntoView、Tab 到深处的元素），
+    // 外壳一被滚动，顶栏与标签栏就被推出视口、底部露出空白；clip 不建立滚动容器，只有标签内容区会滚。
+    <div className="flex h-full min-h-0 flex-col overflow-clip">
       <header className="shrink-0 border-b border-border">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-6 py-3 md:px-10 md:py-4">
           <Button
@@ -188,7 +204,10 @@ export function CreditsView({
       >
         <div className="shrink-0">
           {/* 窄屏五个标签放不下时整行横向滚动，不折行。 */}
-          <div className="scrollbar-hidden mx-auto w-full max-w-6xl overflow-x-auto px-6 md:px-10">
+          <div
+            ref={tabScrollerRef}
+            className="scrollbar-hidden mx-auto w-full max-w-6xl overflow-x-auto px-6 md:px-10"
+          >
             <TabsList className="w-full justify-start">
               {TAB_ITEMS.map((item) => (
                 <TabsTrigger key={item.value} value={item.value}>

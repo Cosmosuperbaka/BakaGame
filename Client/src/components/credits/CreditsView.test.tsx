@@ -277,4 +277,25 @@ describe("CreditsView", () => {
     expect(screen.getByText("用户条款")).toBeInTheDocument();
     expect(screen.getByText(/欢迎使用 BakaGame/)).toBeInTheDocument();
   });
+  it("窄屏标签栏横滑时，当前标签被挪进可见范围", () => {
+    // jsdom 没有布局：只给标签栏滚动容器与当前标签各一个矩形，其余元素都是零矩形。
+    const rect = (left: number, right: number) =>
+      ({ left, right, top: 0, bottom: 40, width: right - left, height: 40, x: left, y: 0 }) as DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "tab" && this.dataset.state === "active")
+          return rect(420, 500);
+        if (this.querySelector(':scope > [role="tablist"]')) return rect(0, 340);
+        return rect(0, 0);
+      });
+    try {
+      renderView({ initialTab: "terms" });
+      const scroller = screen.getByRole("tablist").parentElement as HTMLElement;
+      // 500 - 340 + 32 的余量。
+      expect(scroller.scrollLeft).toBe(192);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
