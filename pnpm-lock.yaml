@@ -292,8 +292,8 @@ importers:
         specifier: 3.24.5
         version: 3.24.5(@types/node@26.6.5)
       nodemailer:
-        specifier: 10.1.0
-        version: 10.1.0
+        specifier: 10.1.7
+        version: 10.1.7
       p-queue:
         specifier: ^9.3.3
         version: 9.3.4
@@ -5049,8 +5049,8 @@ packages:
   node-windows@1.0.0-beta.8:
     resolution: {integrity: sha512-uLekXnSeem3nW5escID224Fd0U/1VtvE796JpSpOY+c73Cslz/Qn2WUHRJyPQJEMrNGAy/FMRFjjhh4z1alZTA==}
 
-  nodemailer@10.1.0:
-    resolution: {integrity: sha512-fXW8AulB25aOTuwfRYV6lqHyfz2VM4rr4SGXH03mE7x5znEUpzL5mu6anARUpZN7744Ziwkmr4AxSLPJsBQspg==}
+  nodemailer@10.1.7:
+    resolution: {integrity: sha512-OQa6FDln5fLttmqSbjDiRYvFDOFNrBqfiOwHPlEbURil3b+vPB1v8xpi+Sp46drzNDlsTnNsS502vthmz56r4w==}
     engines: {node: '>=20.0.0'}
 
   nwsapi@2.2.28:
@@ -10488,7 +10488,7 @@ snapshots:
       xml: 1.0.1
       yargs: 17.7.3
 
-  nodemailer@10.1.0: {}
+  nodemailer@10.1.7: {}
 
   nwsapi@2.2.28: {}
 
