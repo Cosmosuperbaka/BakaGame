@@ -1,5 +1,5 @@
-import CryptoJS from "crypto-js";
 import { AppError } from "../domain/Errors";
+import { aesDecrypt, aesEncrypt } from "./CEEOriginalCipher";
 import {
   createDefaultCEESettings,
   type CEECharacterView,
@@ -48,7 +48,7 @@ export function decodeOriginalCharacter(value: unknown, secret: string): CEEChar
   let decoded = value;
   if (typeof value === "string") {
     try {
-      decoded = JSON.parse(CryptoJS.AES.decrypt(value, secret).toString(CryptoJS.enc.Utf8));
+      decoded = JSON.parse(aesDecrypt(value, secret));
     } catch {
       throw new AppError("CEE_ORIGINAL_CIPHER", "无法读取原版题目，请检查服务端兼容配置");
     }
@@ -145,7 +145,7 @@ export function toOriginalCharacter(character: CEECharacterView): Record<string,
 }
 
 export const encodeOriginalCharacter = (character: CEECharacterView, secret: string): string =>
-  CryptoJS.AES.encrypt(JSON.stringify(toOriginalCharacter(character)), secret).toString();
+  aesEncrypt(JSON.stringify(toOriginalCharacter(character)), secret);
 
 /**
  * 上游设置转为本地设置。出题方式只在本服务端记录（原版协议没有这一项），
