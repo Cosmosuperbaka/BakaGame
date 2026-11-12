@@ -97,8 +97,38 @@ const installState = (next: CEERankedState | null, revision: number | undefined)
   rawState = next;
   stateRevision = revision;
   useCEERankedStore.setState({ state: next, ready: true });
-  if (settlementLanded(previous, next)) void useCEERankedStore.getState().loadProfile();
+  if (settlementLanded(previous, next)) void fetchProfile(true);
 };
+
+/**
+ * 档案请求：加载中再来的请求只合并，不重复发。
+ * 结算落定触发的刷新（`refresh`）例外——在途请求发出时结算还没落定，回包可能是旧战绩，
+ * 所以先记下，等它结束后再补刷一次。
+ */
+let profileRefreshQueued = false;
+async function fetchProfile(refresh: boolean): Promise<void> {
+  const { profileLoading } = useCEERankedStore.getState();
+  if (profileLoading) {
+    if (refresh) profileRefreshQueued = true;
+    return;
+  }
+  const generation = commandGeneration;
+  useCEERankedStore.setState({ profileLoading: true });
+  try {
+    const profile = await ws.send("cee.ranked.profile", {});
+    if (ownsGeneration(generation)) useCEERankedStore.setState({ profile });
+  } catch (error) {
+    if (ownsGeneration(generation)) reportFailure(error);
+  } finally {
+    if (ownsGeneration(generation)) {
+      useCEERankedStore.setState({ profileLoading: false });
+      if (profileRefreshQueued) {
+        profileRefreshQueued = false;
+        void fetchProfile(false);
+      }
+    }
+  }
+}
 
 const attached = (generation: number): boolean =>
   generation === commandGeneration && attachCount > 0;
@@ -219,11 +249,16 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
         unsubscribeStatus = null;
         rawState = null;
         stateRevision = undefined;
+        profileRefreshQueued = false;
         // 释放把节流放开：下一次进入页面必须能重新发一条状态请求。
         syncPending = false;
         set({
           ready: false,
           state: null,
+          // 换号后再进页面不能短暂显示上一个账号的战绩与榜单。
+          profile: null,
+          profileLoading: false,
+          leaderboard: null,
           pending: {},
           historyLoading: false,
           leaderboardLoading: false,
@@ -249,18 +284,7 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
     leave: async () => {
       await runAction("leave", "cee.ranked.leave", {});
     },
-    loadProfile: async () => {
-      const generation = commandGeneration;
-      set({ profileLoading: true });
-      try {
-        const profile = await ws.send("cee.ranked.profile", {});
-        if (ownsGeneration(generation)) set({ profile });
-      } catch (error) {
-        if (ownsGeneration(generation)) reportFailure(error);
-      } finally {
-        if (ownsGeneration(generation)) set({ profileLoading: false });
-      }
-    },
+    loadProfile: () => fetchProfile(false),
     loadMoreHistory: async () => {
       const { profile, historyLoading } = get();
       const last = profile?.recent.at(-1);

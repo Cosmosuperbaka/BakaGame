@@ -457,6 +457,73 @@ describe("排位命令", () => {
     expect(useCEERankedStore.getState().profileLoading).toBe(false);
   });
 
+  it("同时发起的档案加载只发一条请求，回包前加载态不提前消失", async () => {
+    const ack = deferred<CEERankedProfile>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.profile" ? ack.promise : Promise.resolve({})
+    );
+    attachRanked();
+
+    const first = useCEERankedStore.getState().loadProfile();
+    const second = useCEERankedStore.getState().loadProfile();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+    await second;
+    expect(useCEERankedStore.getState().profileLoading).toBe(true);
+
+    ack.resolve(profileFixture);
+    await first;
+    expect(useCEERankedStore.getState().profileLoading).toBe(false);
+  });
+
+  it("档案加载途中结算落定：先到的旧回包之后补刷一次，不留下结算前的战绩", async () => {
+    const stale = deferred<CEERankedProfile>();
+    let profileCalls = 0;
+    socket.send.mockImplementation((command: unknown) => {
+      if (command === "cee.ranked.status") return Promise.resolve(idleState);
+      if (command !== "cee.ranked.profile") return Promise.resolve({});
+      profileCalls += 1;
+      return profileCalls === 1 ? stale.promise : Promise.resolve(profileFixture);
+    });
+    attachRanked();
+    await settle();
+
+    const running = useCEERankedStore.getState().loadProfile();
+    socket.emit(fullFrame(1, seriesState("pending")));
+    socket.emit(fullFrame(2, seriesState("rated")));
+    expect(callsOf("cee.ranked.profile")).toHaveLength(1);
+
+    stale.resolve({ ...profileFixture, recent: [] });
+    await running;
+    await settle();
+    expect(callsOf("cee.ranked.profile")).toHaveLength(2);
+    expect(useCEERankedStore.getState().profile).toEqual(profileFixture);
+  });
+
+  it("释放页面后清掉上一个账号的档案与榜单，换号进入不会短暂看到旧战绩", async () => {
+    socket.send.mockImplementation((command: unknown) =>
+      Promise.resolve(
+        command === "cee.ranked.profile"
+          ? profileFixture
+          : command === "cee.ranked.leaderboard"
+            ? { entries: [] }
+            : {}
+      )
+    );
+    attachRanked();
+    await useCEERankedStore.getState().loadProfile();
+    await useCEERankedStore.getState().loadLeaderboard();
+    expect(useCEERankedStore.getState().profile).not.toBeNull();
+    expect(useCEERankedStore.getState().leaderboard).not.toBeNull();
+
+    release?.();
+    release = null;
+    expect(useCEERankedStore.getState()).toMatchObject({
+      profile: null,
+      leaderboard: null,
+      profileLoading: false,
+    });
+  });
+
   it("四个查询各发对应的排位命令，并在复用窗口内合并同键请求", async () => {
     attachRanked();
     await settle();
