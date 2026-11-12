@@ -79,7 +79,12 @@ import {
 } from "./CEEAntiCheatSignals";
 import { requireCEEClientAdmission } from "./CEEClientAdmission";
 import { CEERankedHandicap, type CEERankedBotGroup } from "./CEERankedHandicap";
-import { CEERankedQueue, ceeRankedWindow, type CEERankedQueueEntry } from "./CEERankedQueue";
+import {
+  CEE_RANKED_REMATCH_COOLDOWN_MS,
+  CEERankedQueue,
+  ceeRankedWindow,
+  type CEERankedQueueEntry,
+} from "./CEERankedQueue";
 import type { CEERankedPool, CEERankedPoolProvider } from "./CEERankedPool";
 import {
   ceeRankedSeriesView,
@@ -236,7 +241,7 @@ export class CEERankedService {
   /** 账号 → 上一位真人与该场结束时刻：三分钟内不重复匹配。 */
   private readonly lastOpponent = new Map<string, { userId: string; at: number }>();
   /** 账号 → 上一场人机人格：抽人格时避开。 */
-  private readonly lastPersona = new Map<string, CEERankedPersonaId>();
+  private readonly lastPersona = new Map<string, { id: CEERankedPersonaId; at: number }>();
   /** 排行榜头部缓存；本人名次每次单独算，不进缓存。 */
   private leaderboardCache: {
     rows: CEERankedLeaderboardRecord[];
@@ -341,6 +346,7 @@ export class CEERankedService {
     if (this.queue.size > 0 && !this.matchCancel) this.scheduleMatchTick();
     const now = this.now();
     this.sweepSettled(now);
+    this.sweepRecentOpponents(now);
     for (const runtime of [...this.seriesById.values()]) {
       if (runtime.timerWakeAt === null || runtime.timerWakeAt > now) continue;
       this.cancelTimer(runtime);
@@ -767,7 +773,7 @@ export class CEERankedService {
       this.resetToIdle(userId);
       return;
     }
-    const persona = pickCEERankedPersona(this.random, this.lastPersona.get(userId));
+    const persona = pickCEERankedPersona(this.random, this.lastPersona.get(userId)?.id);
     // 爱噶的标称分就是玩家自己的分数，其余人格在 ±120 内浮动。
     const nominal =
       persona.id === "aiga" ? rating.rating : rating.rating + (this.random() * 240 - 120);
@@ -807,7 +813,7 @@ export class CEERankedService {
         strength: ceeRankedBotStrength(strengthRating, this.random),
       },
     });
-    this.lastPersona.set(userId, persona.id);
+    this.lastPersona.set(userId, { id: persona.id, at: this.now() });
   }
 
   private humanSeat(
@@ -1390,7 +1396,7 @@ export class CEERankedService {
       if (self.isBot || self.userId === null) continue;
       if (other.isBot) {
         const spec = runtime.botSpec;
-        if (spec !== null) this.lastPersona.set(self.userId, spec.persona.id);
+        if (spec !== null) this.lastPersona.set(self.userId, { id: spec.persona.id, at });
       } else if (other.userId !== null)
         this.lastOpponent.set(self.userId, { userId: other.userId, at });
     }
@@ -1414,6 +1420,14 @@ export class CEERankedService {
    * 结果页停留过久的场次：结算落定且超过保留时长就替还挂着的玩家离开并推 idle。
    * 一方关掉客户端不再回来时，运行时不能一直留在内存里。
    */
+  /** 上一位对手与人格只在各自的避让窗口内有意义，过期即清，账号数再多也不会无界增长。 */
+  private sweepRecentOpponents(now: number): void {
+    for (const [userId, last] of this.lastOpponent)
+      if (now - last.at >= CEE_RANKED_REMATCH_COOLDOWN_MS) this.lastOpponent.delete(userId);
+    for (const [userId, last] of this.lastPersona)
+      if (now - last.at >= SETTLED_RETENTION_MS) this.lastPersona.delete(userId);
+  }
+
   private sweepSettled(now: number): void {
     for (const runtime of [...this.seriesById.values()]) {
       const { series } = runtime;

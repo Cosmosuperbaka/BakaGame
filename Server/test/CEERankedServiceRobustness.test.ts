@@ -13,6 +13,7 @@ import {
   CEE_RANKED_INTERMISSION_MS,
   CEE_RANKED_OFFLINE_FORFEIT_MS,
 } from "../src/shared/Index";
+import { SETTLED_RETENTION_MS } from "../src/application/CEERankedService";
 import { appErrorOf, openPlay, rankedHarness, startBotSeries } from "./CEERankedFixtures";
 
 /** 让出事件循环，把已经在飞的 `await` 链跑到挂起点为止。 */
@@ -296,5 +297,31 @@ describe("计时器唤醒容错", () => {
     await harness.advance(10 * 60_000);
     const phase = harness.seriesView(client).game?.phase;
     expect(phase === undefined || phase !== "countdown").toBe(true);
+  });
+});
+
+describe("人机人格避让", () => {
+  test("同账号紧接着再打人机会避开上一场的人格", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    const first = harness.seriesView(client).opponent.name;
+    await harness.send(client, "cee.ranked.exit", {});
+
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.seriesView(client).opponent.name).not.toBe(first);
+  });
+
+  test("避让只在窗口内有效：过期后不再记着上一场的人格", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    const first = harness.seriesView(client).opponent.name;
+    await harness.send(client, "cee.ranked.exit", {});
+
+    // 随机数固定取第一个人格：不被记录挤开时，下一场就会回到同一个人格。
+    await harness.advance(SETTLED_RETENTION_MS + 1);
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.seriesView(client).opponent.name).toBe(first);
   });
 });

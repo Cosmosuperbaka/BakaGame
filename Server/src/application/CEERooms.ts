@@ -863,6 +863,8 @@ export class CEERooms {
       this.connections.detach(connection);
       connection.resetStateSync?.();
     }
+    // 回合中途关房时结算不会再来清，信号表要随房间一起走。
+    this.guessSignals.delete(room.id);
     this.rooms.delete(room.id);
     this.onChange?.();
   }
