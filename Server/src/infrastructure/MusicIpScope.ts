@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { LRUCache } from "lru-cache";
 import type { EventLogger } from "./EventLogger";
 import { countServerMetric } from "./Sentry";
 import { stableStringify } from "./JsonReaders";
@@ -34,10 +35,11 @@ export const runWithAnonymousMusicIpScope = <T>(task: () => Promise<T>): Promise
 /**
  * 伪装出口 IP 的缓存上限。
  *
- * 每个玩家一个 scope，房间多、进出频繁时条目会持续增长；超限按插入顺序淘汰最老的。
- * 256 足以覆盖同时在线规模，被淘汰的玩家下次请求重新分配一个 IP 即可（无正确性影响）。
+ * 每个连接一个 scope，重连与扫码都会产生新条目；超限按最近使用淘汰最久没用的。
+ * 房主凭证的 scope 持续被请求命中，不会因新连接涌入而被挤掉；被淘汰的玩家下次请求
+ * 重新分配一个 IP 即可（无正确性影响）。
  */
-const IP_SCOPE_MAX_ENTRIES = 256;
+const IP_SCOPE_MAX_ENTRIES = 4096;
 
 /**
  * 「缺少玩家作用域」这条降级的告警最小间隔。
@@ -70,7 +72,7 @@ interface MusicIpScopeRegistryOptions {
  * 本平台的那份键名）通过构造参数注入，这里不出现任何平台专有概念。
  */
 export class MusicIpScopeRegistry {
-  private readonly ipByScope = new Map<string, string>();
+  private readonly ipByScope = new LRUCache<string, string>({ max: IP_SCOPE_MAX_ENTRIES });
   private readonly chinaIpRanges: readonly ChinaIpRange[];
   // 扫码登录是一次多条请求的会话：创建、轮询、设备上报、状态校验必须共用同一个出口 IP，
   // 中途换 IP 会让刚拿到的凭证失效。必须按「二维码 unikey」分桶，不能是单个字段：
@@ -180,17 +182,13 @@ export class MusicIpScopeRegistry {
     return "";
   }
 
-  // 每个 scope 只分配一次 IP、之后持续复用；超限按插入顺序淘汰最老的。
+  // 每个 scope 只分配一次 IP、之后持续复用；命中即刷新最近使用，超限淘汰最久没用的。
   // IP 被替换的唯一入口是 `rotateScopeIp`（限流兜底），正常路径下同一 scope 不会漂移。
   ensureScopeIp(scope: string) {
     const existing = this.ipByScope.get(scope);
     if (existing) return existing;
     const ip = randomChineseIp(this.chinaIpRanges, this.random);
     this.ipByScope.set(scope, ip);
-    if (this.ipByScope.size > IP_SCOPE_MAX_ENTRIES) {
-      const oldest = this.ipByScope.keys().next().value;
-      if (oldest !== undefined) this.ipByScope.delete(oldest);
-    }
     return ip;
   }
 
