@@ -344,6 +344,8 @@
       :focus-visible,
       :has(:focus-visible)
     ) {
+    /* 聚焦规则的 :has(...:focus-visible) 特异性更高，会把红描边换回主色：校验失败的框聚焦时也保持红描边 */
+    border-color: var(--color-destructive);
     --field-glow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 18%, transparent);
   }
 }
