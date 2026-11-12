@@ -492,6 +492,22 @@ export const wakeMusicPoolWaiters = (service: SonGuessrServiceInternals, roomId:
 };
 
 /**
+ * 凭据被平台判死：关开关、打失效标记并冷却，条目留在池里。
+ * 三条判死路径（取号归还、后台续期、开局复核）共用这一处，号主才能在面板上看到
+ * 「失效、需要重登」；重登会清掉标记并恢复开关（见 `installMusicSession`）。
+ */
+export const markEntryInvalidated = (
+  service: SonGuessrServiceInternals,
+  entry: SonGuessrMusicPoolEntry,
+  reason: string
+): void => {
+  entry.enabled = false;
+  entry.invalidated = true;
+  entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
+  entry.lastFailureReason = reason;
+};
+
+/**
  * 归还租约并按结果更新池内状态。
  *
  * 失败口径：凭据被平台判死（`MUSIC_SESSION_INVALID`）与风控/限流
@@ -519,9 +535,7 @@ export const releaseMusicAccount = (
   } else {
     entry.lastFailureReason = result.reason ?? "上游请求失败";
     if (result.code === "MUSIC_SESSION_INVALID") {
-      entry.enabled = false;
-      entry.invalidated = true;
-      entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
+      markEntryInvalidated(service, entry, entry.lastFailureReason);
     } else if (result.code === "MUSIC_LOGIN_RISK") {
       entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
     } else if (result.code === "MUSIC_API_RATE_LIMITED") {
@@ -936,10 +950,7 @@ export const refreshMusicPoolEntry = async (
   } catch (error) {
     if (superseded()) return;
     if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") {
-      entry.enabled = false;
-      entry.invalidated = true;
-      entry.cooldownUntil = service.now() + MUSIC_POOL_COOLDOWN_MS;
-      entry.lastFailureReason = "QQ 音乐登录状态已失效，请重新扫码登录";
+      markEntryInvalidated(service, entry, "QQ 音乐登录状态已失效，请重新扫码登录");
       service.publishRoom(room);
       return;
     }
@@ -981,9 +992,9 @@ export const refreshMusicSessionAccount = async (
         entry.cookie === sentCookie &&
         room.musicAuthOperations?.[key] === operation
       ) {
-        // 凭据已被平台判死：直接摘掉这一号（其余号与其它玩家的号都不动），
-        // 房间因此可能整体降级到「无号」，由开局门槛或运行期短路承接。
-        room.musicPool = musicPool(service, room).filter((candidate) => candidate !== entry);
+        // 凭据已被平台判死：关掉这一号并标记失效，条目留在面板里提示号主重登
+        // （其余号与其它玩家的号都不动），房间因此可能整体降级到「无号」，由开局门槛承接。
+        markEntryInvalidated(service, entry, `${label}登录状态已失效，请重新扫码登录`);
         wakeMusicPoolWaiters(service, room.id);
         service.publishRoom(room);
       }

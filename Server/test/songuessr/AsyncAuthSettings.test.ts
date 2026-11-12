@@ -543,6 +543,44 @@ describe("SonGuessr service 音乐认证意图", () => {
     expect(snapshot.qqMusicAccountReady).toBe(false);
     expect(snapshot.musicAccounts?.qq).toBeUndefined();
   });
+
+  test("开局复核发现凭据失效时，账号留在面板里关闭并标记需要重登", async () => {
+    let qqValid = true;
+    const mockProvider: MusicProvider = {
+      ...provider,
+      getLoginStatus: async (_cookie, platform) => {
+        if (platform === "qq" && !qqValid) {
+          throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录状态已失效，请重新扫码登录");
+        }
+        return {
+          cookie: "valid-cookie",
+          account: { platform: platform || "netease", userId: "123", nickname: "用户" },
+        };
+      },
+      getSong: async () => makeSong("netease:1", "选曲测试", 2022),
+    };
+    const service = new SonGuessrService({ musicProvider: mockProvider });
+    const host = connection(service, "qq-keep-host");
+    await createRoom(service, host, { roomId: "8888", name: "QQ测试房", solo: true });
+    await execute(service, host, {
+      id: "keep-qq",
+      type: "song.auth.useCookie",
+      roomId: "8888",
+      payload: { cookie: "initial-qq-cookie", platform: "qq" },
+    });
+
+    qqValid = false;
+    await expect(
+      execute(service, host, { id: "start", type: "song.game.start", roomId: "8888", payload: {} })
+    ).rejects.toMatchObject({ code: "MUSIC_SESSION_INVALID" });
+
+    // 号主要能在面板上看到「失效、需要重登」，而不是账号凭空消失。
+    const qq = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicPool?.find(
+      (entry) => entry.platform === "qq"
+    );
+    expect(qq).toMatchObject({ enabled: false });
+    expect(qq?.lastFailureReason).toContain("失效");
+  });
 });
 
 describe("房主变更与他人的在途登录", () => {
