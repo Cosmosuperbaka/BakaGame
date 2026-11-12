@@ -1,6 +1,15 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Dices, Flag, Image, PenLine, Search, Trophy } from "lucide-react";
+import {
+  CheckCircle2,
+  Dices,
+  Flag,
+  Image,
+  Lightbulb,
+  PenLine,
+  Search,
+  Trophy,
+} from "lucide-react";
 import type {
   CEECharacterSummary,
   CEEGuess,
@@ -611,9 +620,17 @@ function CEEHints({ privateState }: { privateState: CEEPrivateState }) {
                   variants={listItem}
                   initial="initial"
                   animate="animate"
-                  className="origin-left text-sm"
+                  className="flex origin-left items-start gap-2 text-sm"
                 >
-                  提示 {index + 1}：{hint}
+                  {/* 与排位加时提示同一写法：灯泡领起、字段名加重，折行悬挂在正文起点 */}
+                  <Lightbulb
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0">
+                    <span className="font-medium">提示 {index + 1}：</span>
+                    {hint}
+                  </span>
                 </motion.li>
               ))}
             </AnimatePresence>
