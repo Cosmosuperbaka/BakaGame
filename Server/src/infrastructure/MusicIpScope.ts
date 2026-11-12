@@ -208,7 +208,13 @@ export class MusicIpScopeRegistry {
 
   /** 读取二维码会话对应的出口归属；会话不存在或已过期返回 undefined。 */
   getLoginScope(key: string): string | undefined {
-    return this.qrLoginScopes.get(key)?.scope;
+    const entry = this.qrLoginScopes.get(key);
+    if (!entry) return undefined;
+    if (entry.createdAt < this.now() - QR_LOGIN_SCOPE_TTL_MS) {
+      this.qrLoginScopes.delete(key);
+      return undefined;
+    }
+    return entry.scope;
   }
 
   /** 会话结束（授权成功或失败）后丢弃对应分桶。 */
