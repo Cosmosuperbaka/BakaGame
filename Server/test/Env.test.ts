@@ -486,3 +486,33 @@ describe("readEnv 的多进程分片开关", () => {
     }
   });
 });
+
+describe("速率类环境变量启动期强校验", () => {
+  const withEnv = (name: string, value: string, run: () => void) => {
+    const saved = Bun.env[name];
+    try {
+      Bun.env[name] = value;
+      run();
+    } finally {
+      if (saved === undefined) delete Bun.env[name];
+      else Bun.env[name] = saved;
+    }
+  };
+
+  it("更新器速率写成非数字或非正数时以配置错误中断，不静默变成 NaN", () => {
+    for (const name of [
+      "BANGUMI_UPDATER_MIN_RATE",
+      "BANGUMI_UPDATER_MAX_RATE",
+      "BANGUMI_UPDATER_PLAYER_SCALE",
+    ]) {
+      for (const value of ["abc", "0", "-3"]) {
+        withEnv(name, value, () => {
+          expect(() => readEnv()).toThrow(expect.objectContaining({ code: "CONFIG_ERROR" }));
+        });
+      }
+      withEnv(name, "15", () => {
+        expect(() => readEnv()).not.toThrow();
+      });
+    }
+  });
+});

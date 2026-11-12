@@ -1,3 +1,4 @@
+import { readPositiveNumber } from "./Parse";
 import { resolve } from "node:path";
 
 /**
@@ -125,9 +126,21 @@ export const readBangumiEnv = (deploymentEnvironment: string): EnvBangumi => ({
     Bun.env.BANGUMI_UPDATER_ENABLED !== undefined
       ? Bun.env.BANGUMI_UPDATER_ENABLED === "true"
       : deploymentEnvironment === "production",
-  bangumiUpdaterMinRate: Number(Bun.env.BANGUMI_UPDATER_MIN_RATE ?? 10),
-  bangumiUpdaterMaxRate: Number(Bun.env.BANGUMI_UPDATER_MAX_RATE ?? 100),
-  bangumiUpdaterPlayerScale: Number(Bun.env.BANGUMI_UPDATER_PLAYER_SCALE ?? 20),
+  bangumiUpdaterMinRate: readPositiveNumber(
+    "BANGUMI_UPDATER_MIN_RATE",
+    Bun.env.BANGUMI_UPDATER_MIN_RATE,
+    10
+  ),
+  bangumiUpdaterMaxRate: readPositiveNumber(
+    "BANGUMI_UPDATER_MAX_RATE",
+    Bun.env.BANGUMI_UPDATER_MAX_RATE,
+    100
+  ),
+  bangumiUpdaterPlayerScale: readPositiveNumber(
+    "BANGUMI_UPDATER_PLAYER_SCALE",
+    Bun.env.BANGUMI_UPDATER_PLAYER_SCALE,
+    20
+  ),
   // 不配就不跑：上游 diff 产物并不长期存在（仓库只稳定发布 id_tags.js / id_tags.json），
   // 写死默认地址只会让每次启动都报「连不上」。
   bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,

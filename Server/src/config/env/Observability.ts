@@ -77,41 +77,27 @@ const parseSlowOperationMs = (raw: string | undefined): number | undefined => {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
 };
 
-const parseOtelResourceAttributes = (raw?: string): Record<string, string> => {
-  if (!raw) return {};
-  const attrs: Record<string, string> = {};
+/** `k=v,k=v` 形式的键值列表（OTel 资源属性与导出请求头共用）；值按 URL 编码解一次，解不开保留原文。 */
+const parseKeyValueList = (raw?: string): Record<string, string> => {
+  const entries: Record<string, string> = {};
+  if (!raw) return entries;
   for (const part of raw.split(",")) {
     const eqIdx = part.indexOf("=");
-    if (eqIdx > 0) {
-      const key = part.slice(0, eqIdx).trim();
-      let value = part.slice(eqIdx + 1).trim();
-      try {
-        value = decodeURIComponent(value);
-      } catch {
-        // fallback
-      }
-      attrs[key] = value;
+    if (eqIdx <= 0) continue;
+    const key = part.slice(0, eqIdx).trim();
+    let value = part.slice(eqIdx + 1).trim();
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      // 解码异常时退回原始值
     }
+    entries[key] = value;
   }
-  return attrs;
+  return entries;
 };
 
 const parseOtelHeaders = (raw?: string): Record<string, string> | undefined => {
-  if (!raw) return undefined;
-  const headers: Record<string, string> = {};
-  for (const part of raw.split(",")) {
-    const eqIdx = part.indexOf("=");
-    if (eqIdx > 0) {
-      const key = part.slice(0, eqIdx).trim();
-      let value = part.slice(eqIdx + 1).trim();
-      try {
-        value = decodeURIComponent(value);
-      } catch {
-        // 解码异常时退回原始值
-      }
-      headers[key] = value;
-    }
-  }
+  const headers = parseKeyValueList(raw);
   return Object.keys(headers).length > 0 ? headers : undefined;
 };
 
@@ -120,7 +106,7 @@ const parseOtelHeaders = (raw?: string): Record<string, string> | undefined => {
  * 视同未设置，不允许空串顶掉后续兜底、把事件标成无名环境。
  */
 const deploymentMarkerChain = (): string[] => {
-  const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
+  const resourceAttrs = parseKeyValueList(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
   return [
     Bun.env.DEPLOYMENT_ENVIRONMENT,
     Bun.env.OTEL_DEPLOYMENT_ENVIRONMENT,
@@ -206,7 +192,7 @@ export const resolveStatusFrontendUrl = (
 };
 
 export const readObservabilityEnv = (deploymentEnvironment: string): EnvObservability => {
-  const resourceAttrs = parseOtelResourceAttributes(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
+  const resourceAttrs = parseKeyValueList(Bun.env.OTEL_RESOURCE_ATTRIBUTES);
   const sentryDsn = Bun.env.SENTRY_DSN;
   let sentryAllowedProjectIds = (Bun.env.SENTRY_ALLOWED_PROJECT_IDS ?? "")
     .split(",")
