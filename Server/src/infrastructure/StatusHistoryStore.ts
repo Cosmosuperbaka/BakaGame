@@ -34,6 +34,15 @@ const emptyCount = (): DayCount => ({
   latencyCount: 0,
 });
 
+const sumCounts = (left: DayCount, right: DayCount): DayCount => ({
+  total: left.total + right.total,
+  operational: left.operational + right.operational,
+  degraded: left.degraded + right.degraded,
+  unknown: left.unknown + right.unknown,
+  latencySum: left.latencySum + right.latencySum,
+  latencyCount: left.latencyCount + right.latencyCount,
+});
+
 const addLevel = (count: DayCount, level: PublicStatusLevel): void => {
   count.total += 1;
   count[level] += 1;
@@ -93,7 +102,8 @@ export interface StatusHistoryStoreOptions {
  *
  * 30 天 × 10 个组件最多 300 条计数，整份放在内存里读，页面与 WS 每次取历史都不碰数据库；
  * 落库只发生在定时 flush 与停机前，写的是「当日累计」的绝对值而不是增量——
- * 本进程是这张表在所属环境下的唯一写入方，绝对值让重启后的 `load()` 直接覆盖回同一份账，不会重复计数。
+ * 本进程是这张表在所属环境下的唯一写入方，所以只要先把库里的旧账读回来并与内存求和，
+ * 绝对值就不会重复计数；读回之前不写，否则会把旧账整格覆盖。
  *
  * 没有探测就不写行：「那一天没有数据」由缺行表达，页面读作无数据，而不是拿 0% 冒充全挂。
  */
@@ -105,6 +115,9 @@ export class StatusHistoryStore {
   /** componentId → 北京时间自然日 → 计数。 */
   private readonly days = new Map<PublicStatusComponentId, Map<string, DayCount>>();
   private readonly dirty = new Set<string>();
+  private loading: Promise<void> | undefined;
+  private loaded = false;
+  private loadFailed = false;
 
   constructor(options: StatusHistoryStoreOptions) {
     this.environment = options.environment;
@@ -117,26 +130,48 @@ export class StatusHistoryStore {
   /**
    * 启动时把窗口内的既有账读回来。失败原样抛给调用方告警：读不到历史只意味着条带为空，
    * 不影响服务启动，但必须留下信号——吞掉就会把「账本坏了」读成「历史本来就是空的」。
+   *
+   * 读回来的行与加载期间已经记下的样本**求和**，不是覆盖：采样器不等它，启动几秒内的样本
+   * 会先进内存，覆盖就把它们丢了。并发与重复调用共用同一次读取，成功后不再重复累加。
    */
   async load(): Promise<void> {
-    if (!this.database) return;
+    if (!this.database || this.loaded) return;
+    this.loading ??= this.readLedger()
+      .then(() => {
+        this.loaded = true;
+        this.loadFailed = false;
+      })
+      .catch((error: unknown) => {
+        this.loadFailed = true;
+        throw error;
+      })
+      .finally(() => {
+        this.loading = undefined;
+      });
+    await this.loading;
+  }
+
+  private async readLedger(): Promise<void> {
+    const database = this.database!;
     const cutoff = beijingDay(this.now() - (this.retentionDays - 1) * 86_400_000);
-    await this.database.ready;
-    const rows = await this.database.db
+    await database.ready;
+    const rows = await database.db
       .select()
       .from(statusDaily)
       .where(and(eq(statusDaily.environment, this.environment), gte(statusDaily.day, cutoff)));
     for (const row of rows) {
       const bucket = this.days.get(row.componentId as PublicStatusComponentId);
       if (!bucket) continue;
-      bucket.set(row.day, {
+      const stored: DayCount = {
         total: row.total,
         operational: row.operational,
         degraded: row.degraded,
         unknown: row.unknown,
         latencySum: row.latencySum,
         latencyCount: row.latencyCount,
-      });
+      };
+      const current = bucket.get(row.day);
+      bucket.set(row.day, current ? sumCounts(current, stored) : stored);
     }
     this.prune(cutoff);
   }
@@ -168,7 +203,12 @@ export class StatusHistoryStore {
    * 不会因为当天之后再无新样本（例如跨过零点的前一天）而永久丢掉那一格。
    */
   async flush(): Promise<void> {
-    if (!this.database || this.dirty.size === 0) return;
+    if (!this.database) return;
+    // 写回的是绝对值：历史还没读回来就写，会把库里的旧账整格覆盖。读取在途就等它；
+    // 读取失败过就先重试，仍失败则抛出并保持待写集合不动，等下一轮。
+    if (this.loading) await this.loading.catch(() => undefined);
+    if (this.loadFailed) await this.load();
+    if (this.dirty.size === 0) return;
     const values: {
       environment: string;
       componentId: string;

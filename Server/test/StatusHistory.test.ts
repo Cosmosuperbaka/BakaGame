@@ -272,3 +272,134 @@ describe("状态历史账本", () => {
     expect(bangumi.latencyMs).toBe(150);
   });
 });
+
+describe("账本加载与启动期记录的竞争", () => {
+  const deferredReady = () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { ready, release };
+  };
+
+  test("日格账本：load 与加载期间已记的样本求和，而不是整格覆盖", async () => {
+    const { ready, release } = deferredReady();
+    const stub = createDrizzleStub({ ready }).reply([
+      rowOf(schema.statusDaily, {
+        environment: "production",
+        componentId: "bangumi",
+        day: "2026-10-23",
+        total: 2,
+        operational: 2,
+        degraded: 0,
+        unknown: 0,
+        latencySum: 300,
+        latencyCount: 2,
+      }),
+    ]);
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    const loading = store.load();
+    // 启动期采样器先于历史读回就记了一笔。
+    store.record(snapOf(NOW, 100));
+    release();
+    await loading;
+
+    const today = entryOf(store.read(7), "bangumi").cells.find((cell) => cell.total > 0);
+    expect(today?.total).toBe(3);
+    expect(today?.latencyMs).toBe(133);
+  });
+
+  test("日格账本：load 未完成时 flush 等它，写回的是合并后的累计而不是只有新样本", async () => {
+    const { ready, release } = deferredReady();
+    const stub = createDrizzleStub({ ready }).reply([
+      rowOf(schema.statusDaily, {
+        environment: "production",
+        componentId: "bangumi",
+        day: "2026-10-23",
+        total: 2,
+        operational: 2,
+        degraded: 0,
+        unknown: 0,
+        latencySum: 300,
+        latencyCount: 2,
+      }),
+    ]);
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    const loading = store.load();
+    store.record(snapOf(NOW, 100));
+    const flushing = store.flush();
+    release();
+    await Promise.all([loading, flushing]);
+
+    expect(stub.queryAt(0).statement).toContain("select");
+    expect(stub.queryAt(1).statement).toContain("insert into `status_daily`");
+    // 参数按列序：environment, component_id, day, total, operational, degraded, unknown, latency_sum, latency_count
+    expect(stub.queryAt(1).params).toEqual([
+      "production",
+      "bangumi",
+      "2026-10-23",
+      3,
+      3,
+      0,
+      0,
+      400,
+      3,
+    ]);
+  });
+
+  test("实时样本账本同口径：load 与已记样本求和，flush 等 load", async () => {
+    const { ready, release } = deferredReady();
+    const stub = createDrizzleStub({ ready });
+    const samples = new StatusSampleStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    const { PUBLIC_STATUS_SAMPLE_INTERVAL_MS } = await import("../src/shared/Status");
+    const start =
+      Math.floor(NOW / PUBLIC_STATUS_SAMPLE_INTERVAL_MS) * PUBLIC_STATUS_SAMPLE_INTERVAL_MS;
+    stub.reply([
+      rowOf(schema.statusSample, {
+        environment: "production",
+        componentId: "bangumi",
+        bucket: start,
+        total: 2,
+        operational: 2,
+        degraded: 0,
+        unknown: 0,
+        latencySum: 300,
+        latencyCount: 2,
+      }),
+    ]);
+    const loading = samples.load();
+    samples.record(snapOf(NOW, 100));
+    const flushing = samples.flush();
+    release();
+    await Promise.all([loading, flushing]);
+    expect(stub.queryAt(1).statement).toContain("insert into `status_sample`");
+    expect(stub.queryAt(1).params).toEqual(["production", "bangumi", start, 3, 3, 0, 0, 400, 3]);
+  });
+
+  test("读取失败过的账本在 flush 时先重试读取，不拿只有新样本的绝对值覆盖库里的旧账", async () => {
+    const stub = createDrizzleStub().reject(0, new Error("连接被拒"));
+    const store = new StatusHistoryStore({
+      environment: "production",
+      database: stub.database,
+      now: () => NOW,
+    });
+    await expect(store.load()).rejects.toBeTruthy();
+    store.record(snapOf(NOW, 100));
+    await store.flush();
+    // 第 0 条是失败的读取，第 1 条是 flush 里的重试读取，第 2 条才是写回。
+    expect(stub.queryAt(1).statement).toContain("select");
+    expect(stub.queryAt(2).statement).toContain("insert into `status_daily`");
+  });
+});

@@ -32,6 +32,15 @@ const emptyCount = (): SampleCount => ({
   latencyCount: 0,
 });
 
+const sumCounts = (left: SampleCount, right: SampleCount): SampleCount => ({
+  total: left.total + right.total,
+  operational: left.operational + right.operational,
+  degraded: left.degraded + right.degraded,
+  unknown: left.unknown + right.unknown,
+  latencySum: left.latencySum + right.latencySum,
+  latencyCount: left.latencyCount + right.latencyCount,
+});
+
 /** 格子起点对齐采样间隔：与时钟漂移无关，同一格永远同一起点。 */
 export const sampleBucketOf = (time: number): number =>
   Math.floor(time / PUBLIC_STATUS_SAMPLE_INTERVAL_MS) * PUBLIC_STATUS_SAMPLE_INTERVAL_MS;
@@ -75,6 +84,9 @@ export class StatusSampleStore {
   /** componentId → 格子起点（UTC 毫秒）→ 累计。 */
   private readonly buckets = new Map<PublicStatusComponentId, Map<number, SampleCount>>();
   private readonly dirty = new Set<string>();
+  private loading: Promise<void> | undefined;
+  private loaded = false;
+  private loadFailed = false;
 
   constructor(options: StatusSampleStoreOptions) {
     this.environment = options.environment;
@@ -85,27 +97,47 @@ export class StatusSampleStore {
 
   /**
    * 启动时把保留窗内的既有账读回来。失败原样抛给调用方告警：条带会从本次运行开始积累，
-   * 但不能把「账本坏了」静默成「本来就没有样本」。
+   * 但不能把「账本坏了」静默成「本来就没有样本」。读回的行与加载期间已记的样本求和而不是覆盖，
+   * 口径与日格账本一致。
    */
   async load(): Promise<void> {
-    if (!this.database) return;
+    if (!this.database || this.loaded) return;
+    this.loading ??= this.readLedger()
+      .then(() => {
+        this.loaded = true;
+        this.loadFailed = false;
+      })
+      .catch((error: unknown) => {
+        this.loadFailed = true;
+        throw error;
+      })
+      .finally(() => {
+        this.loading = undefined;
+      });
+    await this.loading;
+  }
+
+  private async readLedger(): Promise<void> {
+    const database = this.database!;
     const cutoff = sampleBucketOf(this.now() - PUBLIC_STATUS_SAMPLE_RETENTION_MS);
-    await this.database.ready;
-    const rows = await this.database.db
+    await database.ready;
+    const rows = await database.db
       .select()
       .from(statusSample)
       .where(and(eq(statusSample.environment, this.environment), gte(statusSample.bucket, cutoff)));
     for (const row of rows) {
       const bucket = this.buckets.get(row.componentId as PublicStatusComponentId);
       if (!bucket) continue;
-      bucket.set(row.bucket, {
+      const stored: SampleCount = {
         total: row.total,
         operational: row.operational,
         degraded: row.degraded,
         unknown: row.unknown,
         latencySum: row.latencySum,
         latencyCount: row.latencyCount,
-      });
+      };
+      const current = bucket.get(row.bucket);
+      bucket.set(row.bucket, current ? sumCounts(current, stored) : stored);
     }
     this.prune(cutoff);
   }
@@ -130,7 +162,11 @@ export class StatusSampleStore {
 
   /** 把格子累计写回库；没有数据库或没有新账时直接返回。写失败时这批键放回待写集合再抛出，下一轮重试。 */
   async flush(): Promise<void> {
-    if (!this.database || this.dirty.size === 0) return;
+    if (!this.database) return;
+    // 写回的是绝对值：历史还没读回来就写会覆盖库里的旧账，口径同日格账本。
+    if (this.loading) await this.loading.catch(() => undefined);
+    if (this.loadFailed) await this.load();
+    if (this.dirty.size === 0) return;
     const values: {
       environment: string;
       componentId: string;
