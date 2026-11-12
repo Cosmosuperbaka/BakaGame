@@ -463,3 +463,63 @@ export const Disconnected: Story = {
     useWhoIsFakerStore.setState({ connected: false });
   },
 };
+
+// ==================== 折叠区与结算下半页（视觉审查补齐） ====================
+
+/** 出题人关掉随机分配：手动身份表从开关下方展开，表头逐项核对数量，数量与房间配置不符时提交钮禁用并给出原因。 */
+export const SubmittingWordsManualRoles: Story = {
+  name: "出题阶段 · 主持人 · 手动分配身份",
+  beforeEach: () => presetWifRoom(wifSnapshot("words"), wifPrivate("host", "words")),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("switch", { name: "随机分配身份" }));
+    await canvas.findAllByRole("radiogroup", { name: /分配身份/ });
+    dropFocus();
+  },
+};
+
+/** 主持人在投票阶段打开「请求补充发言」：选人面板是按钮行上方的整宽凹块，已选两人。 */
+export const VotingHostSupplementPanel: Story = {
+  name: "投票阶段 · 主持人 · 选择补充发言",
+  beforeEach: () => presetWifRoom(wifSnapshot("vote3"), asHost),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "请求补充发言" }));
+    const title = await canvas.findByRole("heading", { name: "选择补充发言玩家" });
+    const panel = within(title.closest<HTMLElement>(".bg-muted")!);
+    for (const name of [kanade.name, kita.name])
+      await userEvent.click(panel.getByRole("button", { name }));
+    await canvas.findByRole("button", { name: /发起补充 \(2\)/ });
+    dropFocus();
+  },
+};
+
+/** 房主打开私密房间：密码框作为从属字段从开关下方展开（与 CEE、猜歌同一写法）。 */
+export const SettingsPanelPrivate: Story = {
+  name: "设置面板 · 房主 · 私密房间",
+  beforeEach: () =>
+    presetWifRoom(
+      wifSnapshot("waiting", { players: readyPlayers() }),
+      wifPrivate("host", "waiting")
+    ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "房间设置" }));
+    await userEvent.click(await canvas.findByRole("switch", { name: "私密房间" }));
+    const password = await canvas.findByLabelText("房间密码");
+    password.scrollIntoView({ block: "center" });
+    dropFocus();
+  },
+};
+
+/** 结算页下半段：词语解密、得分表之后的「全局历史」折叠区（视口默认只截到得分表）。 */
+export const GameOverHistory: Story = {
+  name: "游戏结束 · 全局历史",
+  beforeEach: () => presetWifRoom(wifSnapshot("over"), wifPrivate("host", "over")),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const header = await canvas.findByRole("button", { name: "全局历史" });
+    header.scrollIntoView({ block: "start" });
+    dropFocus();
+  },
+};
