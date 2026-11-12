@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { Elysia } from "elysia";
 
+import { compareDottedVersion } from "../shared/ModelValues";
 import { createSwaggerPlugin } from "../transport/Openapi";
 import { RPC_BASE_PATH } from "../transport/routes/Account";
 import { systemRoutes } from "../transport/routes/System";
@@ -31,18 +32,6 @@ export function createDocumentationApp(serverUrl = DOC_SERVER_URL) {
 /** 更新日志是产品版本的唯一真相源（见 `Agents/Commitment.md`）；包清单里的 `0.0.0` 不是版本。 */
 const CHANGELOG_PATH = resolve(import.meta.dir, "../../../Client/src/data/changelog.json");
 
-const semverOf = (version: string): number[] => version.split(".").map((part) => Number(part) || 0);
-
-const compareSemver = (a: string, b: string): number => {
-  const left = semverOf(a);
-  const right = semverOf(b);
-  for (let index = 0; index < Math.max(left.length, right.length); index++) {
-    const diff = (left[index] ?? 0) - (right[index] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
-
 const productVersion = async (): Promise<string> => {
   const { entries } = JSON.parse(await readFile(CHANGELOG_PATH, "utf8")) as { entries?: unknown };
   const versions = (Array.isArray(entries) ? entries : [])
@@ -50,7 +39,7 @@ const productVersion = async (): Promise<string> => {
     .filter(
       (version): version is string => typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version)
     );
-  const latest = versions.sort(compareSemver).at(-1);
+  const latest = versions.sort(compareDottedVersion).at(-1);
   if (!latest) throw new Error(`读不到版本号：${CHANGELOG_PATH} 里没有可用的 semver`);
   return latest;
 };

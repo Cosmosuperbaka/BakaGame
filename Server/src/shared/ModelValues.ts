@@ -48,3 +48,14 @@ export const isPermanentRoomError = (error: unknown): boolean => {
   const code = protocolErrorCode(error);
   return code !== undefined && isPermanentRoomErrorCode(code);
 };
+
+/** 点分数字版本比较：`a < b` 为负、相等为 0、`a > b` 为正；缺省段按 0 补齐，非数字段按 0。 */
+export const compareDottedVersion = (a: string, b: string): number => {
+  const left = a.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const right = b.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff !== 0) return diff < 0 ? -1 : 1;
+  }
+  return 0;
+};

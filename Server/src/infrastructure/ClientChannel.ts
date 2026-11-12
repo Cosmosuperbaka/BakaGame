@@ -1,5 +1,6 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { AppError } from "../domain/Errors";
+import { compareDottedVersion } from "../shared/ModelValues";
 import type { ClientChannelProof } from "../shared/Model";
 import type { AndroidAttestationChecker } from "./AndroidAttestation";
 
@@ -165,17 +166,6 @@ export function judgeSelfCheck(report: ClientSelfCheckReport): {
   return { trusted: true, integrity: soft.length === 1 || marked ? "suspect" : "clean" };
 }
 
-/** 版本号比较：`a < b` 为负、相等为 0、`a > b` 为正；缺省段按 0 补齐。 */
-export function compareClientVersion(a: string, b: string): number {
-  const left = a.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const right = b.split(".").map((part) => Number.parseInt(part, 10) || 0);
-  for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) return diff < 0 ? -1 : 1;
-  }
-  return 0;
-}
-
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 function publicKeyOf(device: Pick<StoredClientDevice, "keyAlgorithm" | "publicKey">) {
@@ -256,7 +246,7 @@ export class ClientChannel {
   }
   isOutdated(clientType: ClientChannelProof["clientType"], clientVersion: string): boolean {
     const minimum = this.minimumVersion(clientType);
-    return minimum.length > 0 && compareClientVersion(clientVersion, minimum) < 0;
+    return minimum.length > 0 && compareDottedVersion(clientVersion, minimum) < 0;
   }
   /** 该端的最低版本，未配置为空串。首页的更新提醒读这一处，拦人仍只在反作弊房。 */
   minimumVersionFor(clientType: ClientChannelProof["clientType"]): string {

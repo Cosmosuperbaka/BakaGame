@@ -6,7 +6,6 @@ import {
   CLIENT_CHALLENGE_TTL_MS,
   CLIENT_TICKET_TTL_MS,
   clientIdOfPublicKey,
-  compareClientVersion,
   judgeSelfCheck,
   verifyClientSignature,
   type ClientAttestationLevel,
@@ -14,6 +13,7 @@ import {
   type ClientSelfCheckReport,
   type StoredClientDevice,
 } from "../src/infrastructure/ClientChannel";
+import { compareDottedVersion } from "../src/shared/ModelValues";
 import type { AndroidAttestationChecker } from "../src/infrastructure/AndroidAttestation";
 
 const clean: ClientSelfCheckReport = { hardFail: [], softFail: [], keyProtection: "hardware" };
@@ -138,9 +138,9 @@ describe("客户端通道判定", () => {
     ).toBe(false);
   });
   test("版本比较按段补零，不按字典序", () => {
-    expect(compareClientVersion("1.9.0", "1.10.0")).toBe(-1);
-    expect(compareClientVersion("1.10.0", "1.9.9")).toBe(1);
-    expect(compareClientVersion("1.2", "1.2.0")).toBe(0);
+    expect(compareDottedVersion("1.9.0", "1.10.0")).toBe(-1);
+    expect(compareDottedVersion("1.10.0", "1.9.9")).toBe(1);
+    expect(compareDottedVersion("1.2", "1.2.0")).toBe(0);
   });
 });
 

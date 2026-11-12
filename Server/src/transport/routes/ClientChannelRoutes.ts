@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
 import { AppError } from "../../domain/Errors";
 import type { ClientArtifacts } from "../../infrastructure/ClientArtifacts";
-import { compareClientVersion, type ClientChannel } from "../../infrastructure/ClientChannel";
+import type { ClientChannel } from "../../infrastructure/ClientChannel";
+import { compareDottedVersion } from "../../shared/ModelValues";
 import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { resolveClientIp } from "../ClientIp";
@@ -140,7 +141,7 @@ export const clientChannelRoutes = (
     .get(
       "/api/client/update-check",
       async ({ query, set }) => {
-        // 比对只用服务端这一份 compareClientVersion：前端再实现一遍，两端对「够不够新」
+        // 比对只用服务端这一份 compareDottedVersion：前端再实现一遍，两端对「够不够新」
         // 的判断迟早各自漂移。这里读回的最低版本也只用于提醒，拦人仍在 requireAdmission。
         set.headers["cache-control"] = "no-store";
         const channel = require();
@@ -155,7 +156,7 @@ export const clientChannelRoutes = (
         const behindLatest =
           !outdated &&
           latestVersion.length > 0 &&
-          compareClientVersion(query.clientVersion, latestVersion) < 0;
+          compareDottedVersion(query.clientVersion, latestVersion) < 0;
         return { minimumVersion, outdated, latestVersion, behindLatest };
       },
       {
@@ -175,7 +176,7 @@ export const clientChannelRoutes = (
         // 新资源可能调用旧壳没有的桥接能力：低于最低壳版本就不下发，先让玩家更新壳。
         if (
           current.minShellVersion &&
-          compareClientVersion(query.shellVersion, current.minShellVersion) < 0
+          compareDottedVersion(query.shellVersion, current.minShellVersion) < 0
         ) {
           return { available: false, reason: "SHELL_TOO_OLD" };
         }
