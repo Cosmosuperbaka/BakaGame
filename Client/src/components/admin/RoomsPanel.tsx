@@ -3,11 +3,13 @@ import { Lock, UserMinus, X } from "lucide-react";
 import type { AdminRoom, RecordedGameKind } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Hint } from "@/components/ui/Tooltip";
 import { SettingSelect } from "@/components/common/room/SettingFields";
 import { AdminToolbar, ConfirmDialog, QueryState } from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { GAME_LABELS, GAME_OPTIONS, formatShortDateTime } from "@/lib/AdminFormat";
+import { cn } from "@/lib/Utils";
 
 type Pending =
   | { kind: "close"; room: AdminRoom }
@@ -27,14 +29,16 @@ function RoomCard({
 }) {
   const online = room.players.filter((player) => player.online).length;
   return (
-    <li className="rounded-md border bg-card p-4">
+    // min-w-0：卡片是网格项，长房名或长昵称不折行时会按内容撑宽整列，手机上把页面撑出右缘。
+    <li className="min-w-0 rounded-md border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Badge variant="outline" size="xs">
               {GAME_LABELS[room.game]}
             </Badge>
-            <h3 className="min-w-0 truncate font-semibold">{room.name}</h3>
+            {/* 房名是关房确认里核对对象的依据，折行完整显示，不截断。 */}
+            <h3 className="min-w-0 break-words font-semibold">{room.name}</h3>
             {room.hasPassword ? (
               <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="有密码" />
             ) : null}
@@ -55,7 +59,14 @@ function RoomCard({
             活跃 {formatShortDateTime(room.lastActiveAt)}
           </div>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={onClose}>
+        {/* 危险操作用危险色文字与悬停底，与状态事件的「删除」同一口径；真正执行前还有确认弹窗。 */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={onClose}
+        >
           <X />
           关闭房间
         </Button>
@@ -65,26 +76,30 @@ function RoomCard({
           {room.players.map((player) => (
             <li
               key={player.id}
-              className="flex h-8 items-center gap-1.5 rounded-md border bg-background pl-2.5 text-sm"
+              className="flex h-8 max-w-full items-center gap-1.5 rounded-md border bg-background pl-2.5 text-sm"
             >
-              <span className={player.online ? "" : "text-muted-foreground"}>{player.name}</span>
+              <Hint label={player.name}>
+                <span className={cn("min-w-0 truncate", !player.online && "text-muted-foreground")}>
+                  {player.name}
+                </span>
+              </Hint>
               {player.host ? (
-                <Badge variant="active" size="xs">
+                <Badge variant="active" size="xs" className="shrink-0">
                   房主
                 </Badge>
               ) : null}
               {player.bot ? (
-                <Badge variant="upcoming" size="xs">
+                <Badge variant="upcoming" size="xs" className="shrink-0">
                   机器人
                 </Badge>
               ) : null}
               {player.membership !== "active" ? (
-                <Badge variant="subtle" size="xs">
+                <Badge variant="subtle" size="xs" className="shrink-0">
                   {MEMBERSHIP_LABELS[player.membership] ?? player.membership}
                 </Badge>
               ) : null}
               {player.userId ? (
-                <Badge variant="subtle" size="xs">
+                <Badge variant="subtle" size="xs" className="shrink-0">
                   已登录
                 </Badge>
               ) : null}

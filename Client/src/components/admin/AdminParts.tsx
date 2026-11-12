@@ -22,12 +22,18 @@ export function AdminToolbar({
   children,
   onReload,
   loading,
+  compact = false,
 }: {
   title: string;
   count?: number | null;
   children?: ReactNode;
   onReload?: () => void;
   loading?: boolean;
+  /**
+   * 筛选控件是 sm 高度（如概览的分段控件）时传入。缺省时刷新按钮与面板筛选用的
+   * SettingSelect / SettingTextField（h-10）同高，底边对齐的一排控件才不会一高一矮。
+   */
+  compact?: boolean;
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -42,7 +48,14 @@ export function AdminToolbar({
       <div className="flex flex-wrap items-end gap-3">
         {children}
         {onReload ? (
-          <Button type="button" variant="outline" size="sm" loading={loading} onClick={onReload}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={compact ? undefined : "h-10"}
+            loading={loading}
+            onClick={onReload}
+          >
             {/* 读取中由按钮自己的转圈表示，刷新图标让位：两枚旋转图标并排读不出哪个在转。 */}
             {loading ? null : <RotateCw />}
             刷新

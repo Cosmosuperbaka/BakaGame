@@ -320,6 +320,7 @@ export function OverviewPanel() {
       <div>
         <AdminToolbar
           title="站点概览"
+          compact
           onReload={overview.reload}
           loading={overview.loading && Boolean(data)}
         >
