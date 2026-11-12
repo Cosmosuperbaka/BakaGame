@@ -23,6 +23,7 @@ import { ceeRoomPath } from "@/lib/CEESession";
 import type { CEERoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { CEEGameSettings } from "./CEEGameSettings";
 import { CEETeamPicker } from "./CEETeamPicker";
+import { useCEEDraft } from "./UseCEEDraft";
 
 /**
  * 套用上局的玩法设置：用了 Bangumi 目录时先同步入库（服务端只从已落库的成员出题），
@@ -267,13 +268,16 @@ export function CEEWaiting({
   const readying = pending.has("cee.player.ready");
   const [roomOpen, setRoomOpen] = useState(false);
 
-  // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。
-  const [roomDraft, setRoomDraft] = useState<RoomDraft>(() => ({
-    name: snapshot.name,
-    visibility: snapshot.visibility,
-    allowSpectators: snapshot.allowSpectators,
-    password: "",
-  }));
+  // 房间设置的草稿：名称、是否公开、是否允许旁观与私密密码。随房主身份与服务端当前值同步，见 useCEEDraft。
+  const { draft: roomDraft, setDraft: setRoomDraft } = useCEEDraft<RoomDraft>(
+    {
+      name: snapshot.name,
+      visibility: snapshot.visibility,
+      allowSpectators: snapshot.allowSpectators,
+      password: "",
+    },
+    isHost
+  );
   const [roomNotice, setRoomNotice] = useState("");
 
   const roomValidation = roomValidationText(snapshot.source, roomDraft, snapshot.hasPassword);
@@ -281,6 +285,16 @@ export function CEEWaiting({
   useAutoSave(
     roomDraft,
     async (value) => {
+      const live = useCEEStore.getState().snapshot;
+      // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
+      if (
+        live &&
+        !value.password.trim() &&
+        value.name.trim() === live.name &&
+        value.visibility === live.visibility &&
+        value.allowSpectators === live.allowSpectators
+      )
+        return;
       await useCEEStore.getState().sendCommand("cee.room.update", {
         name: value.name.trim(),
         visibility: value.visibility,

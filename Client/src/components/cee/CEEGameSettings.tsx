@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import equal from "fast-deep-equal";
 import {
   BookOpen,
   Download,
@@ -35,6 +36,7 @@ import { listItem } from "@/lib/Motion";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { ceePresets } from "./CEEPresets";
+import { useCEEDraft } from "./UseCEEDraft";
 import { CEESubjectSearch } from "./CEESearch";
 
 const CATEGORIES = [
@@ -184,12 +186,15 @@ export function CEEGameSettings({
   waiting: boolean;
   readOnly?: boolean;
 }) {
-  const [draft, setDraft] = useState(() => structuredClone(settings));
+  const { draft, setDraft, epoch } = useCEEDraft(settings, !readOnly);
   const [presetName, setPresetName] = useState("");
   const [antiCheatOpen, setAntiCheatOpen] = useState(false);
   const [questionOpen, setQuestionOpen] = useState(false);
   const [guessOpen, setGuessOpen] = useState(false);
-  const [syncedIndexId, setSyncedIndexId] = useState(settings.useIndex ? settings.indexId : null);
+  // 目录同步是本机动作；草稿重置为服务端值后，已同步的目录也回到服务端当前的那一个。
+  const [syncedIndex, setSyncedIndex] = useState<{ epoch: number; id: number } | null>(null);
+  const serverIndexId = settings.useIndex ? settings.indexId : null;
+  const syncedIndexId = syncedIndex?.epoch === epoch ? syncedIndex.id : serverIndexId;
   const [directoryNotice, setDirectoryNotice] = useState("");
   const [fileError, setFileError] = useState("");
   const upload = useRef<HTMLInputElement>(null);
@@ -206,11 +211,12 @@ export function CEEGameSettings({
     draft,
     (value) => {
       // MCP 是独立设置项，不随玩法设置记忆；保存时保留服务端当前的开关，避免旧草稿把它改回去。
-      const allowAgents = useCEEStore.getState().snapshot?.settings.allowAgents === true;
+      const live = useCEEStore.getState().snapshot?.settings;
+      const next = { ...value, allowAgents: live?.allowAgents === true };
+      // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
+      if (live && equal(next, live)) return Promise.resolve();
       saveRoomSettingsMemory("cee", { settings: { ...value, allowAgents: false } });
-      return useCEEStore
-        .getState()
-        .sendCommand("cee.room.settings", { settings: { ...value, allowAgents } });
+      return useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
     },
     {
       enabled: !readOnly && waiting && !validation,
@@ -221,7 +227,7 @@ export function CEEGameSettings({
   const syncDirectory = async (indexId: number) => {
     const result = await run("cee.directory.import", { indexId });
     if (!result) return;
-    setSyncedIndexId(indexId);
+    setSyncedIndex({ epoch, id: indexId });
     setDirectoryNotice(
       `已同步 ${result.subjectIds.length} 部作品${result.missingSubjectIds.length ? `，缺失 ${result.missingSubjectIds.length} 部` : ""}`
     );

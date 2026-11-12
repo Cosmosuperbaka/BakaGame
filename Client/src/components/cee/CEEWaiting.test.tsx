@@ -1,8 +1,12 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createDefaultCEESettings } from "@bakagame/shared/values";
 import { useCEEStore } from "@/stores/UseCEEStore";
-import { restoreCEESettings } from "./CEEWaiting";
+import { ceeWsClient } from "@/lib/CEEWs";
+import { ceePrivateState, ceeSnapshot } from "@/stories/fixtures/CEE";
+import { CEEWaiting, restoreCEESettings } from "./CEEWaiting";
 
 const initialStoreState = useCEEStore.getState();
 
@@ -58,5 +62,68 @@ describe("restoreCEESettings", () => {
 
     await expect(restoreCEESettings({ settings })).rejects.toThrow("目录同步失败");
     expect(sendCommand).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("等待页的房间设置草稿", () => {
+  const player = (id: string) => ({
+    id,
+    name: id,
+    online: true,
+    ready: false,
+    team: null,
+    membership: "active" as const,
+    score: 0,
+    status: "waiting" as const,
+    attempts: 0,
+    marks: "",
+    syncCompleted: false,
+  });
+  const room = (name: string, hostPlayerId: string) => {
+    const snapshot = ceeSnapshot({
+      name,
+      hostPlayerId,
+      players: [player("old-host"), player("me")],
+    });
+    useCEEStore.setState({
+      source: "native",
+      roomId: snapshot.roomId,
+      sessionToken: "t",
+      snapshot,
+    });
+    return snapshot;
+  };
+  const me = ceePrivateState({ playerId: "me" });
+
+  it("成为房主后显示服务端当前房名，保存不会把进房时的旧房名写回去", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = render(
+      <CEEWaiting snapshot={room("进房时的房名", "old-host")} privateState={me} />
+    );
+    // 原房主改了房名，随后把房主移交给我。
+    view.rerender(<CEEWaiting snapshot={room("改过的房名", "old-host")} privateState={me} />);
+    view.rerender(<CEEWaiting snapshot={room("改过的房名", "me")} privateState={me} />);
+
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("改过的房名");
+    await user.click(screen.getByRole("switch", { name: "允许旁观" }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "cee.room.update",
+        expect.objectContaining({ name: "改过的房名", allowSpectators: false }),
+        expect.any(Object)
+      )
+    );
+  });
+
+  it("成为房主时不会立刻把服务端原值再写一遍", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = render(
+      <CEEWaiting snapshot={room("进房时的房名", "old-host")} privateState={me} />
+    );
+    view.rerender(<CEEWaiting snapshot={room("改过的房名", "me")} privateState={me} />);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(send).not.toHaveBeenCalled();
   });
 });
