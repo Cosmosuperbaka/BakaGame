@@ -29,6 +29,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-solid: var(--destructive-solid);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -145,6 +146,8 @@
   --accent-foreground: oklch(0.376 0.0225 64.3434);
   --destructive: oklch(0.484 0.1438 32.9149);
   --destructive-foreground: oklch(1 0 0);
+  /* 危险色实底（按钮、徽章、菜单悬停整行）。亮色与文字档同值；暗色另取一档，见 .dark。 */
+  --destructive-solid: oklch(0.484 0.1438 32.9149);
   --border: oklch(0.8606 0.0321 84.5881);
   --input: oklch(0.8606 0.0321 84.5881);
   --ring: oklch(0.48 0.0778 65.5444);
@@ -237,6 +240,9 @@
      彩度略收，避免抬明后超出 sRGB。填充随之变亮，白字对比度不足，前景与 primary 一样翻转为页面底色。 */
   --destructive: oklch(0.77 0.135 30);
   --destructive-foreground: oklch(0.2747 0.0139 57.6523);
+  /* 文字档为在深底上读清抬到 0.77，作实底时比主色实底还亮、彩度又高，成了全页最抢眼的块。
+     实底单取一档：明度低于主色实底、彩度收一点；前景仍是页面底色，实底与 /90 悬停叠在面板上都不低于 4.5:1。 */
+  --destructive-solid: oklch(0.7 0.11 30);
   --border: oklch(0.3795 0.0181 57.128);
   --input: oklch(0.3795 0.0181 57.128);
   --ring: oklch(0.745 0.0581 66.6967);

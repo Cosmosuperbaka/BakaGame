@@ -18,7 +18,7 @@ const badgeVariants = cva(
       variant: {
         default: "border-transparent bg-primary text-primary-foreground shadow-sm",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground shadow-sm",
+        destructive: "border-transparent bg-destructive-solid text-destructive-foreground shadow-sm",
         outline: "text-foreground",
         // muted / upcoming 的底取前景色淡档：bg-muted 在暗色面板与卡片上只差约 1.05~1.1:1，徽章轮廓消失。
         muted: "border-transparent bg-foreground/8 font-sans font-normal text-foreground",

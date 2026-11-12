@@ -241,6 +241,13 @@ describe("index.css 状态色与次要文字令牌", () => {
           expect(solid, `实底 ${solid.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
         });
       }
+
+      it("危险实底 destructive-solid 压前景 ≥ 4.5:1，且不比主色实底更亮", () => {
+        const solid = colorOf("destructive-solid");
+        const ratio = contrast(luminanceOf(solid), luminanceOf(colorOf("destructive-foreground")));
+        expect(ratio, `实底 ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+        expect(luminanceOf(solid)).toBeLessThanOrEqual(luminanceOf(colorOf("primary")) + 0.0001);
+      });
     });
   }
 });

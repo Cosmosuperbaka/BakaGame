@@ -314,7 +314,7 @@ export function PlayerActionButton({
           "border-t first:border-t-0",
           "disabled:pointer-events-none disabled:opacity-50",
           destructive
-            ? "text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            ? "text-destructive hover:bg-destructive-solid hover:text-destructive-foreground"
             : "text-foreground hover:bg-accent hover:text-accent-foreground"
         )}
       >
