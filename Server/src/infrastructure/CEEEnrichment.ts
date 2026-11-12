@@ -215,7 +215,7 @@ export class CEEEnrichment {
     }
     this.db
       .query(
-        "INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at"
+        "INSERT INTO enrichment VALUES ('subject',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=json_patch(payload,excluded.payload),fetched_at=excluded.fetched_at"
       )
       .run(id, JSON.stringify(picked), this.now());
     return rewriteBangumiImageUrl(chosen, this.imageBase);
@@ -257,7 +257,7 @@ export class CEEEnrichment {
       if (chosen)
         this.db
           .query(
-            "INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=excluded.payload,fetched_at=excluded.fetched_at"
+            "INSERT INTO enrichment VALUES ('character',?,?,?) ON CONFLICT(entity,id) DO UPDATE SET payload=json_patch(payload,excluded.payload),fetched_at=excluded.fetched_at"
           )
           .run(id, JSON.stringify(picked), this.now());
     })();

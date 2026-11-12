@@ -342,6 +342,49 @@ describe("LocalBangumiProvider · Bangumi API 回填缓存", () => {
     await removeFiles(songPath, enrichmentPath);
   });
 
+  test("回填缓存与 CEE 共用同一张表：猜歌写封面时不抹掉 CEE 已落的缩略图地址", async () => {
+    const { dbPath: songPath } = createDatasetFiles();
+    const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);
+    const fetcher = async () =>
+      new Response(
+        JSON.stringify({
+          images: { large: "https://lain.bgm.tv/pic/crt/l/aa/bb/12393_crt_x.jpg" },
+        }),
+        { status: 200 }
+      );
+    const provider = new LocalBangumiProvider({
+      dbPath: songPath,
+      enrichmentPath,
+      imageBase: "https://mirror.example",
+      apiBase: "https://api.example",
+      fetcher,
+    });
+    // CEE 先落了缩略图（还没有大图）。
+    const seeded = new Database(enrichmentPath);
+    seeded
+      .query("INSERT INTO enrichment VALUES ('character', 12393, ?, 0)")
+      .run(JSON.stringify({ grid: "https://lain.bgm.tv/pic/crt/g/aa/bb/12393_crt_x.jpg" }));
+    seeded.close();
+
+    await provider.resolveCharacterImage(12393);
+    const check = new Database(enrichmentPath, { readonly: true });
+    const payload = JSON.parse(
+      (
+        check
+          .query("SELECT payload FROM enrichment WHERE entity='character' AND id=12393")
+          .get() as {
+          payload: string;
+        }
+      ).payload
+    ) as Record<string, string>;
+    check.close();
+    // 整体覆盖会让 grid 消失，CEE 列表缩略图随后退成大图。
+    expect(payload.image).toContain("12393_crt_x.jpg");
+    expect(payload.grid).toContain("/pic/crt/g/");
+    provider.close();
+    await removeFiles(songPath, enrichmentPath);
+  });
+
   test("回填缓存落盘：重启后不再回源", async () => {
     const { dbPath: songPath } = createDatasetFiles();
     const enrichmentPath = join(tmpdir(), `bangumi-enrich-${crypto.randomUUID()}.sqlite`);

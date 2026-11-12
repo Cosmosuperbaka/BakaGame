@@ -195,6 +195,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       // 使用期的读写异常是另一回事，只记日志、不影响出题（见 read/writeEnrichment）。
       mkdirSync(dirname(options.enrichmentPath), { recursive: true });
       const enrichment = new Database(options.enrichmentPath, { create: true });
+      // 与 CEE 的回填连接指向同一个文件，两边写入时要互相等锁而不是直接报 busy。
+      enrichment.run("PRAGMA busy_timeout = 1000");
       enrichment.run(`
         CREATE TABLE IF NOT EXISTS enrichment (
           entity TEXT NOT NULL, id INTEGER NOT NULL,
@@ -244,7 +246,7 @@ export class LocalBangumiProvider implements BangumiDataProvider {
     try {
       this.enrichment
         .query<null, [string, number, string, number]>(
-          "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at"
+          "INSERT INTO enrichment (entity, id, payload, fetched_at) VALUES (?,?,?,?) ON CONFLICT(entity, id) DO UPDATE SET payload = json_patch(payload, excluded.payload), fetched_at = excluded.fetched_at"
         )
         .run(entity, id, JSON.stringify(payload), Date.now());
     } catch (error) {
