@@ -628,3 +628,34 @@ test("远程审计日志带动作、游戏、房间与来源摘要，不含原�
   expect(entry).toMatch(/"client":"[0-9a-f]{8}"/);
   expect(entry).not.toContain("198.51.100.7");
 });
+
+test("站点焦点上报是增强信息：服务端不应答它时，工具调用也不被拖住", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, srv) {
+      if (srv.upgrade(request)) return;
+      return new Response("upgrade required", { status: 400 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as { id: string; type: string };
+        // site.focus 永不应答；其余命令正常回执。
+        if (message.type === "site.focus") return;
+        ws.send(
+          JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload: {} })
+        );
+      },
+    },
+  });
+  servers.push(server);
+  sessionsRef = newSessions(`http://127.0.0.1:${server.port}`);
+  const startedAt = performance.now();
+  const result = await rpc("http://127.0.0.1:9/api/mcp", {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: "get_screen", arguments: { game: "faker" } },
+  });
+  expect(result.payload.result.isError).toBe(true);
+  expect(performance.now() - startedAt).toBeLessThan(1500);
+});

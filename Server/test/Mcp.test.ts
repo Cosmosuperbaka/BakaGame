@@ -251,14 +251,14 @@ test("stdio 写限流按 Agent 与游戏计数：每次换房号拿不到新额�
 }, 30_000);
 
 test("状态同步 full / patch 都能落到公开快照", () => {
-  const full = applyStateSync(undefined, {
+  const { state: full } = applyStateSync(undefined, {
     mode: "full",
     revision: 1,
     state: { roomId: "1", players: [{ id: "p1", name: "A", score: 1 }] },
   });
   expect(full).toMatchObject({ roomId: "1" });
 
-  const patched = applyStateSync(full, {
+  const { state: patched } = applyStateSync(full, {
     mode: "patch",
     baseRevision: 1,
     revision: 2,

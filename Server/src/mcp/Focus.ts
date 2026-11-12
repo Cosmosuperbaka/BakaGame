@@ -92,14 +92,17 @@ export function siteFocusForTool(
   };
 }
 
-/** 上报站点活动：首页与大厅的访客看到 Agent 当前在哪一页、在做什么。 */
-export async function publishToolFocus(
+/**
+ * 上报站点活动：首页与大厅的访客看到 Agent 当前在哪一页、在做什么。
+ * 它只是增强信息，所以不等待：连接不上或服务端迟迟不应答时，工具调用不能被它拖住几秒。
+ */
+export function publishToolFocus(
   client: AgentGameClient,
   agentName: string,
   tool: string,
   args: Record<string, unknown>
-): Promise<void> {
+): void {
   const siteFocus = siteFocusForTool(tool, args, client);
   if (siteFocus)
-    await client.publishSiteFocus({ agentName: agentName.slice(0, 32), tool, ...siteFocus });
+    void client.publishSiteFocus({ agentName: agentName.slice(0, 32), tool, ...siteFocus });
 }

@@ -88,9 +88,9 @@ const handleToolCall = async (id: unknown, params: unknown): Promise<void> => {
     if (tool.write && !consumeWrite(bucketKey)) {
       throw Object.assign(new Error("Agent 操作过于频繁，请稍后再试"), { code: "RATE_LIMITED" });
     }
-    await publishToolFocus(client, agentName, name, args);
+    publishToolFocus(client, agentName, name, args);
     const result = await tool.handler(args, { client, agentName });
-    if (FOCUS_AFTER_TOOLS.has(name)) await publishToolFocus(client, agentName, name, args);
+    if (FOCUS_AFTER_TOOLS.has(name)) publishToolFocus(client, agentName, name, args);
     writeStdout({
       jsonrpc: "2.0",
       id,

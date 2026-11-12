@@ -470,7 +470,7 @@ async function runRemoteTool(
     if (tool.write && !sessions.consumeWrite(session)) {
       throw Object.assign(new Error("Agent 操作过于频繁，请稍后再试"), { code: "RATE_LIMITED" });
     }
-    await publishToolFocus(session.client, session.agentName, tool.name, args);
+    publishToolFocus(session.client, session.agentName, tool.name, args);
     const result = await tool.handler(args, {
       client: session.client,
       agentName: session.agentName,
@@ -478,7 +478,7 @@ async function runRemoteTool(
       ...(pages ? { pages } : {}),
     });
     if (FOCUS_AFTER_TOOLS.has(tool.name))
-      await publishToolFocus(session.client, session.agentName, tool.name, args);
+      publishToolFocus(session.client, session.agentName, tool.name, args);
     // 每个绑定会话的调用都把会话号带回给 Agent：无状态客户端要把它放进下一次 arguments.session。
     const enriched = !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
     const stepFailed = isRecord(enriched) && enriched.ok === false;

@@ -643,22 +643,63 @@ describe("快照合并", () => {
     const base = { roomId: "1234", players: [{ id: "p1", score: 0 }], chat: [] };
     expect(
       applyStateSync(base, { mode: "full", state: { roomId: "1234", phase: "playing" } })
-    ).toEqual({ roomId: "1234", phase: "playing" });
-    expect(
-      applyStateSync(base, {
-        mode: "patch",
-        operations: [{ op: "replace", path: "/players/0/score", value: 9 }],
-      })
-    ).toMatchObject({ players: [{ id: "p1", score: 9 }] });
-    // 差量打不上时保留旧快照，不让一次坏帧把整屏清空。
+    ).toEqual({ state: { roomId: "1234", phase: "playing" }, needsSync: false });
+    const patched = applyStateSync(base, {
+      mode: "patch",
+      operations: [{ op: "replace", path: "/players/0/score", value: 9 }],
+    });
+    expect(patched.state).toMatchObject({ players: [{ id: "p1", score: 9 }] });
+    expect(patched.needsSync).toBe(false);
+    // 差量打不上时保留旧快照（不让一次坏帧把整屏清空），同时要求全量同步。
     expect(
       applyStateSync(base, {
         mode: "patch",
         operations: [{ op: "replace", path: "/nope/x", value: 1 }],
       })
-    ).toEqual(base);
-    expect(applyStateSync(base, { roomId: "5678" })).toEqual({ roomId: "5678" });
-    expect(applyStateSync(base, "not-a-record")).toBe(base);
-    expect(applyStateSync(undefined, { mode: "patch", operations: [] })).toBeUndefined();
+    ).toEqual({ state: base, needsSync: true });
+    expect(applyStateSync(base, { roomId: "5678" })).toEqual({
+      state: { roomId: "5678" },
+      needsSync: false,
+    });
+    expect(applyStateSync(base, "not-a-record")).toEqual({ state: base, needsSync: false });
+    // 没有基线的差量无从叠加，同样要全量同步。
+    expect(applyStateSync(undefined, { mode: "patch", operations: [] })).toEqual({
+      state: undefined,
+      needsSync: true,
+    });
+  });
+
+  test("差量打不上时发起一次全量同步，同步回来的整帧替换旧快照", async () => {
+    const { socket, client } = await harness();
+    await client.create("faker", "1234", {
+      name: "f",
+      visibility: "public",
+      allowSpectators: true,
+      allowAgents: true,
+      userName: "TestAgent",
+    });
+    socket.route((message) =>
+      message.type === "room.requestSync"
+        ? {
+            reply: { type: "ack", payload: { ok: true } },
+            events: [
+              {
+                event: "room.snapshot",
+                payload: { mode: "full", state: { roomId: "1234", phase: "playing" } },
+              },
+              { event: "game.privateState", payload: { mode: "full", state: { playerId: "p1" } } },
+            ],
+          }
+        : { reply: { type: "ack", payload: { ok: true } } }
+    );
+    socket.inbound.length = 0;
+    socket.push("room.snapshot", {
+      mode: "patch",
+      operations: [{ op: "replace", path: "/nope/x", value: 1 }],
+    });
+    await until("没有发起全量同步", () =>
+      socket.inbound.some((message) => message.type === "room.requestSync")
+    );
+    await until("整帧没有替换旧快照", () => client.currentSnapshot("faker")?.phase === "playing");
   });
 });

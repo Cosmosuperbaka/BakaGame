@@ -97,6 +97,8 @@ interface GameSession {
   stateVersion: number;
   /** 生成号与 socket 实例对齐：换了一条连接就要重新接回座位。 */
   restoredGeneration: number;
+  /** 补丁失败后的全量同步正在进行，避免坏帧连发时堆叠同步请求。 */
+  resyncing?: boolean;
   versionWaiters: Array<{
     since: number;
     resolve: () => void;
@@ -121,28 +123,37 @@ export interface AgentGameClientOptions {
   uiPacing?: boolean;
 }
 
-/** 把状态同步帧（full / patch）应用成最新公开快照；不认识的形状原样保留。 */
+/**
+ * 把状态同步帧（full / patch）应用成最新公开快照；不认识的形状原样保留。
+ * 差量打不上（或没有可叠加的基线）时保留旧状态并要求重新全量同步：旧快照继续被当作最新屏幕读，
+ * Agent 会在不知情的情况下基于陈旧状态操作。
+ */
 export const applyStateSync = (
   current: Record<string, unknown> | undefined,
   payload: unknown
-): Record<string, unknown> | undefined => {
-  if (!isRecord(payload)) return current;
-  if (payload.mode === "full" && isRecord(payload.state)) return payload.state;
-  if (payload.mode === "patch" && Array.isArray(payload.operations) && current) {
+): { state: Record<string, unknown> | undefined; needsSync: boolean } => {
+  if (!isRecord(payload)) return { state: current, needsSync: false };
+  if (payload.mode === "full" && isRecord(payload.state))
+    return { state: payload.state, needsSync: false };
+  if (payload.mode === "patch" && Array.isArray(payload.operations)) {
+    if (!current) return { state: current, needsSync: true };
     try {
-      return applyPatch(
-        structuredClone(current),
-        payload.operations as Parameters<typeof applyPatch>[1],
-        false,
-        false,
-        true
-      ).newDocument;
+      return {
+        state: applyPatch(
+          structuredClone(current),
+          payload.operations as Parameters<typeof applyPatch>[1],
+          false,
+          false,
+          true
+        ).newDocument,
+        needsSync: false,
+      };
     } catch {
-      return current;
+      return { state: current, needsSync: true };
     }
   }
   // 少数事件直接发原始快照（没有状态同步包装）。
-  return "roomId" in payload ? payload : current;
+  return { state: "roomId" in payload ? payload : current, needsSync: false };
 };
 
 type ChatRecord = ChatWindowEntry & Record<string, unknown>;
@@ -672,6 +683,17 @@ export class AgentGameClient {
     );
   }
 
+  /** 补丁应用失败后的全量同步：异步发起、同一游戏同时只留一次，失败留给下一次工具调用重试。 */
+  private resync(game: GameId, session: GameSession): void {
+    if (session.resyncing || !session.roomId) return;
+    session.resyncing = true;
+    void this.requestSync(game)
+      .catch(() => undefined)
+      .finally(() => {
+        session.resyncing = false;
+      });
+  }
+
   private applySessionEvent(
     session: GameSession,
     game: GameId,
@@ -685,13 +707,17 @@ export class AgentGameClient {
       return;
     }
     if (event === meta.snapshot) {
-      session.snapshot = applyStateSync(session.snapshot, payload);
+      const applied = applyStateSync(session.snapshot, payload);
+      session.snapshot = applied.state;
       this.bumpState(session);
+      if (applied.needsSync) this.resync(game, session);
       return;
     }
     if (event === meta.privateState) {
-      session.privateState = applyStateSync(session.privateState, payload);
+      const applied = applyStateSync(session.privateState, payload);
+      session.privateState = applied.state;
       this.bumpState(session);
+      if (applied.needsSync) this.resync(game, session);
       return;
     }
     if (!session.snapshot) {
