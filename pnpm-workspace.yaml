@@ -27,3 +27,8 @@ onlyBuiltDependencies:
 # 覆写只针对依赖名 typescript，不动 typescript7 这个别名键。
 overrides:
   typescript: npm:@typescript/typescript6
+  # 网易云 API 包的传递依赖有已公告的漏洞：follow-redirects 跨域跳转时敏感头处理缺陷
+  # （该包请求带用户音乐 Cookie，生产可达），node-forge 的多项公告。都是同一大版本内的补丁，
+  # 上游版本范围放得下，故在此抬高下限；上游自己升级到不低于这些版本后可删除。
+  follow-redirects: ">=1.16.2"
+  node-forge: ">=1.4.3"
