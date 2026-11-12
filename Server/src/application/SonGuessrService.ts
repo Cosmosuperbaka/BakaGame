@@ -353,6 +353,8 @@ export class SonGuessrService implements AdminRoomControl {
     }
     if (room.pendingSubmitterDeadlineAt !== undefined) {
       room.pendingSubmitterDeadlineAt += pausedMs;
+      if (room.pendingSubmitterAssignedAt !== undefined)
+        room.pendingSubmitterAssignedAt += pausedMs;
     }
 
     const round = room.currentRound;
@@ -1655,6 +1657,7 @@ export class SonGuessrService implements AdminRoomControl {
 
       room.pendingSubmitterPlayerId = undefined;
       room.pendingSubmitterDeadlineAt = undefined;
+      room.pendingSubmitterAssignedAt = undefined;
       room.submitterPrompt = undefined;
       room.currentRound = undefined;
       room.roundSummary = undefined;
@@ -1724,6 +1727,21 @@ export class SonGuessrService implements AdminRoomControl {
     }
   }
 
+  /** 指定出题人：时限从此刻起算，同时记下起点作为后续顺延的封顶基准。 */
+  private assignSubmitterDeadline(room: SonGuessrRoomRecord) {
+    room.pendingSubmitterAssignedAt = this.now();
+    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+  }
+
+  /** 出题人提交时顺延时限，但以指定时刻起算的两个时限封顶：选题阶段必须有服务端硬上限。 */
+  private extendSubmitterDeadline(room: SonGuessrRoomRecord) {
+    const assignedAt = room.pendingSubmitterAssignedAt ?? this.now();
+    room.pendingSubmitterDeadlineAt = Math.min(
+      this.now() + SUBMIT_SONG_TIMEOUT_MS,
+      assignedAt + 2 * SUBMIT_SONG_TIMEOUT_MS
+    );
+  }
+
   private chooseSubmitter(connection: ConnectionRecord, targetPlayerId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
@@ -1738,7 +1756,7 @@ export class SonGuessrService implements AdminRoomControl {
     }
 
     room.pendingSubmitterPlayerId = target.id;
-    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+    this.assignSubmitterDeadline(room);
     room.submitterPrompt = undefined;
     room.phase = "submittingSong";
     room.roundSummary = undefined;
@@ -1822,7 +1840,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     const submitterId = player.id;
     // 按下选歌即视为还在出题：时限顺延，慢一点的上游回源不该被巡检判成弃题。
-    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+    this.extendSubmitterDeadline(room);
     const { song, alternateSongIds } = await this.loadSongWithSources(
       room,
       songId,
@@ -1875,7 +1893,7 @@ export class SonGuessrService implements AdminRoomControl {
     const provider = this.options.bangumiProvider;
     if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
     const submitterId = player.id;
-    room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+    this.extendSubmitterDeadline(room);
     const anime = await provider.getSubject(subjectId);
     const resolved = songId
       ? await this.resolveSpecifiedAnimeSong(room, anime, songId)
@@ -2005,6 +2023,7 @@ export class SonGuessrService implements AdminRoomControl {
     };
     room.pendingSubmitterPlayerId = undefined;
     room.pendingSubmitterDeadlineAt = undefined;
+    room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = undefined;
     room.roundSummary = undefined;
     room.phase = "playing";
@@ -2460,6 +2479,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.phase !== "submittingSong" || room.pendingSubmitterPlayerId !== playerId) return;
     room.pendingSubmitterPlayerId = undefined;
     room.pendingSubmitterDeadlineAt = undefined;
+    room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = reason;
     room.phase = "choosingSubmitter";
     this.appendSystemMessage(room, reason);
@@ -2469,6 +2489,7 @@ export class SonGuessrService implements AdminRoomControl {
   private fallBackToWaiting(room: SonGuessrRoomRecord) {
     room.pendingSubmitterPlayerId = undefined;
     room.pendingSubmitterDeadlineAt = undefined;
+    room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = undefined;
     room.phase = "waiting";
     this.clearRoundMarks(room);
@@ -2559,7 +2580,7 @@ export class SonGuessrService implements AdminRoomControl {
       // 没轮到出题人时保留原 pendingSubmitterPlayerId，只换阶段。
       if (nextSubmitter) {
         room.pendingSubmitterPlayerId = nextSubmitter.id;
-        room.pendingSubmitterDeadlineAt = this.now() + SUBMIT_SONG_TIMEOUT_MS;
+        this.assignSubmitterDeadline(room);
         room.submitterPrompt = undefined;
         room.phase = "submittingSong";
       } else {
@@ -2584,6 +2605,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.phase = "waiting";
     room.pendingSubmitterPlayerId = undefined;
     room.pendingSubmitterDeadlineAt = undefined;
+    room.pendingSubmitterAssignedAt = undefined;
     room.submitterPrompt = undefined;
     room.currentRound = undefined;
     room.roundSummary = undefined;

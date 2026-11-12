@@ -1,3 +1,4 @@
+import { AppError } from "../../src/domain/Errors";
 import { SongLyricLine } from "../../src/shared/SonGuessr";
 import { LOBBY_MERGE_WINDOW_MS } from "../../src/application/LobbyFanout";
 import { createSongLyricClip } from "../../src/application/songuessr/LyricClip";
@@ -1133,6 +1134,44 @@ describe("SonGuessrService", () => {
         payload: { text: "还在吗" },
       })
     ).rejects.toMatchObject({ code: "PLAYER_NOT_IN_ROOM" });
+  });
+
+  test("出题人反复提交取不到音频的歌，也不能无限期占住选题阶段", async () => {
+    let now = 1_000_000;
+    const musicProvider: MusicProvider = {
+      ...provider,
+      getSong: async () => {
+        throw new AppError("SONG_UNAVAILABLE", "歌曲暂时无法播放");
+      },
+    };
+    const service = new SonGuessrService({ musicProvider, now: () => now });
+    const host = connection(service, "stall-host");
+    const guest = connection(service, "stall-guest");
+    await createRoom(service, host);
+    const hostId = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId;
+    await joinRoom(service, guest, "客人");
+    const send = (id: string, type: string, payload: unknown) =>
+      execute(service, host, { id, type, roomId: "1234", payload } as never);
+    await execute(service, guest, {
+      id: "stall-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    await send("stall-start", "song.game.start", {});
+    await send("stall-choose", "song.game.chooseSubmitter", { playerId: hostId });
+
+    // 每次提交都会顺延时限；累计超过两个时限后必须被巡检退回选出题人。
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      now += 100_000;
+      await expect(
+        send(`stall-submit-${attempt}`, "song.game.submitSong", { songId: "missing" })
+      ).rejects.toMatchObject({ code: "SONG_UNAVAILABLE" });
+      await service.runHousekeeping();
+    }
+    expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")).toMatchObject({
+      phase: "choosingSubmitter",
+    });
   });
 
   describe("房主离开而其余成员全部离线", () => {

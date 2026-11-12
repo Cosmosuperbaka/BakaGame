@@ -142,6 +142,8 @@ export interface SonGuessrRoomRecord {
   pendingSubmitterPlayerId?: string;
   /** 手动出题的选题截止：每次提交尝试都会顺延，过期后回到选出题人并在房间公告里说明。 */
   pendingSubmitterDeadlineAt?: number;
+  /** 出题人被指定的时刻：顺延只能到它之后的两个时限，出题人不能靠反复提交无限期占住选题阶段。 */
+  pendingSubmitterAssignedAt?: number;
   /** 退回选出题人的原因，随房间快照下发给界面；重新指定出题人即清除。 */
   submitterPrompt?: string;
   currentRound?: SonGuessrRoundRecord;
