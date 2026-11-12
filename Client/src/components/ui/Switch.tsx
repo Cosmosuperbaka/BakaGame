@@ -16,6 +16,8 @@ const Switch = React.forwardRef<
   <SwitchPrimitives.Root
     className={cn(
       "group peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
+      // 悬停反馈（DesignGuide §6）：关闭态轨道加深到 accent，开启态与主按钮同样降一档主色；禁用时不响应。
+      "enabled:data-[state=checked]:hover:bg-primary/90 enabled:data-[state=unchecked]:hover:bg-accent",
       className
     )}
     {...props}

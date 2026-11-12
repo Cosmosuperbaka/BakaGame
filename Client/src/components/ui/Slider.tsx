@@ -71,7 +71,9 @@ const Slider = React.forwardRef<
             }
             className={cn(
               "block h-4 w-4 rounded-full border-2 border-background bg-primary shadow-sm",
-              "transition-colors focus-visible:outline-offset-2",
+              "transition-[color,background-color,box-shadow] focus-visible:outline-offset-2",
+              // 拇指可拖：抓手光标，悬停与按住时外晕一圈淡主色（只动阴影，不缩放）；禁用时 Radix 已拦截指针，这里不再响应。
+              "cursor-grab active:cursor-grabbing not-data-[disabled]:hover:ring-4 not-data-[disabled]:hover:ring-primary/15 not-data-[disabled]:active:ring-primary/25 data-[disabled]:cursor-not-allowed",
               thumbClassName
             )}
           />
