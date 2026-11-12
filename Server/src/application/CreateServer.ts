@@ -381,7 +381,7 @@ const createAccount = (
   resolveNickname = (qqNumber) =>
     nicknames ? nicknames.resolveNickname(qqNumber) : Promise.resolve(null);
   const badges = new DatabaseBadgeRepository(database);
-  const registrations = new DatabaseRegistrationRepository(database);
+  const registrations = new DatabaseRegistrationRepository(database, logger);
   const service = new AccountService({
     auth,
     mailer,
