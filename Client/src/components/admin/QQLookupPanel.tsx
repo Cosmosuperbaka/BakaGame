@@ -103,9 +103,7 @@ export function QQLookupPanel() {
               {notice.text}
             </p>
           ) : null}
-          {action.error ? (
-            <FormAlert>{action.error}</FormAlert>
-          ) : null}
+          {action.error ? <FormAlert>{action.error}</FormAlert> : null}
           <div className="flex flex-wrap gap-2">
             <Button
               type="button"

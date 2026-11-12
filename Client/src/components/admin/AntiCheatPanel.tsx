@@ -187,9 +187,7 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
             </Button>
           ))}
       </div>
-      {action.error ? (
-        <FormAlert>{action.error}</FormAlert>
-      ) : null}
+      {action.error ? <FormAlert>{action.error}</FormAlert> : null}
     </div>
   );
 }

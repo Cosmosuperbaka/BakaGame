@@ -16,10 +16,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const ready = () => screen.findByText(ADMIN_SETTINGS[0].title);
-const edit = async (
-  userEvent: { click: (element: Element) => Promise<void> },
-  index: number
-) => {
+const edit = async (userEvent: { click: (element: Element) => Promise<void> }, index: number) => {
   await ready();
   await userEvent.click(screen.getAllByRole("button", { name: "修改" })[index]);
   return within(await screen.findByRole("dialog"));

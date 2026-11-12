@@ -141,7 +141,10 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         {user.recentGames.length ? (
           <ul className="grid gap-1 text-sm">
             {user.recentGames.map((game) => (
-              <li key={game.id} className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
+              <li
+                key={game.id}
+                className="flex flex-wrap items-center gap-x-2 text-muted-foreground"
+              >
                 <Badge variant="outline" size="xs">
                   {GAME_LABELS[game.game]}
                 </Badge>
@@ -224,9 +227,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
             />
             <SettingSelect label="时长" value={hours} options={BAN_DURATIONS} onChange={setHours} />
           </SettingsFields>
-          {action.error ? (
-            <FormAlert>{action.error}</FormAlert>
-          ) : null}
+          {action.error ? <FormAlert>{action.error}</FormAlert> : null}
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -251,9 +252,7 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
         </form>
       ) : (
         <>
-          {action.error ? (
-            <FormAlert>{action.error}</FormAlert>
-          ) : null}
+          {action.error ? <FormAlert>{action.error}</FormAlert> : null}
           {self ? (
             <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p>
           ) : null}

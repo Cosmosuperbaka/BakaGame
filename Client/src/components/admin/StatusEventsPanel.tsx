@@ -302,9 +302,7 @@ function EventDialog({
             </div>
           ) : null}
         </SettingsFields>
-        {action.error ? (
-          <FormAlert>{action.error}</FormAlert>
-        ) : null}
+        {action.error ? <FormAlert>{action.error}</FormAlert> : null}
         <DialogFooter>
           <Button
             type="button"

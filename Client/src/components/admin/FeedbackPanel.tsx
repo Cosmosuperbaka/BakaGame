@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
-import { Label } from "@/components/ui/Label";
 import { Textarea } from "@/components/ui/Textarea";
 import { SettingSelect } from "@/components/common/room/SettingFields";
 import {
@@ -91,26 +90,29 @@ function FeedbackThread({
       <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md border bg-card p-3 text-sm">
         {detail.content}
       </p>
-      <dl className="grid gap-1 text-xs text-muted-foreground">
-        {detail.page ? (
-          <div>
-            <dt className="inline">页面：</dt>
-            <dd className="inline font-mono">{detail.page}</dd>
-          </div>
-        ) : null}
-        {detail.userAgent ? (
-          <div>
-            <dt className="inline">浏览器：</dt>
-            <dd className="inline break-all font-mono">{detail.userAgent}</dd>
-          </div>
-        ) : null}
-        {detail.sentryEventId ? (
-          <div>
-            <dt className="inline">Sentry：</dt>
-            <dd className="inline font-mono">{detail.sentryEventId}</dd>
-          </div>
-        ) : null}
-      </dl>
+      {/* 三项都没有时不渲染空 dl / 空 section：网格的 gap 会把空元素也算一格，正文与状态之间空出双倍间距。 */}
+      {detail.page || detail.userAgent || detail.sentryEventId ? (
+        <dl className="grid gap-1 text-xs text-muted-foreground">
+          {detail.page ? (
+            <div>
+              <dt className="inline">页面：</dt>
+              <dd className="inline font-mono">{detail.page}</dd>
+            </div>
+          ) : null}
+          {detail.userAgent ? (
+            <div>
+              <dt className="inline">浏览器：</dt>
+              <dd className="inline break-all font-mono">{detail.userAgent}</dd>
+            </div>
+          ) : null}
+          {detail.sentryEventId ? (
+            <div>
+              <dt className="inline">Sentry：</dt>
+              <dd className="inline font-mono">{detail.sentryEventId}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
       <div className="w-40">
         <SettingSelect
           label="状态"
@@ -120,26 +122,31 @@ function FeedbackThread({
           disabled={action.busy !== null}
         />
       </div>
-      <section aria-label="回复记录" className="grid gap-2">
-        {detail.replies.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
-          >
-            <p className="whitespace-pre-wrap break-words">{item.content}</p>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {item.author?.name ?? "管理员"} · {formatShortDateTime(item.createdAt)}
+      {detail.replies.length ? (
+        <section aria-label="回复记录" className="grid gap-2">
+          {detail.replies.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+            >
+              <p className="whitespace-pre-wrap break-words">{item.content}</p>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {item.author?.name ?? "管理员"} · {formatShortDateTime(item.createdAt)}
+              </div>
             </div>
-          </div>
-        ))}
-      </section>
+          ))}
+        </section>
+      ) : null}
       {anonymous ? (
         <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
           匿名反馈没有可联系的对象，无法通过站内回复送达。
         </p>
       ) : (
         <form onSubmit={(event) => void submit(event)} className="grid gap-1.5">
-          <Label htmlFor={replyId}>回复</Label>
+          {/* 与上方「状态」字段同一种标签（衬线常规）：同一弹窗里不并存两种字段标签写法。 */}
+          <label htmlFor={replyId} className="font-serif text-sm leading-snug">
+            回复
+          </label>
           <Textarea
             id={replyId}
             value={reply}

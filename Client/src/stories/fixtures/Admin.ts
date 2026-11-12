@@ -76,7 +76,8 @@ export const ADMIN_USERS: AdminUser[] = Array.from({ length: 57 }, (_, index) =>
     banReason: banned ? "多次在聊天里刷屏广告" : null,
     banExpires: index === 2 ? at("2027-01-07T20:00:00") : null,
     showQq: index % 3 === 0,
-    qqName: index % 4 === 3 ? null : `${base.name}${index % 5 === 1 ? "（QQ 昵称也很长很长很长）" : ""}`,
+    qqName:
+      index % 4 === 3 ? null : `${base.name}${index % 5 === 1 ? "（QQ 昵称也很长很长很长）" : ""}`,
     badges:
       index === 0
         ? [
@@ -227,7 +228,13 @@ export const ADMIN_SENTRY = {
     },
   ],
   transactions: [
-    { name: "POST /api/rpc/admin/stats/overview", project: "server", count: 120, p75: 84, p95: 412 },
+    {
+      name: "POST /api/rpc/admin/stats/overview",
+      project: "server",
+      count: 120,
+      p75: 84,
+      p95: 412,
+    },
     { name: "GET /api/song/search", project: "server", count: 18_402, p75: 230, p95: 1_870 },
     {
       name: "WS /ws/songuessr/room/{roomId}/very/long/transaction/name/that/keeps/going",
@@ -428,7 +435,10 @@ export const ADMIN_REVIEWS: AdminAntiCheatReview[] = Array.from({ length: 24 }, 
         ]
       : ["首猜即中", "检索落空 6 次后命中"].slice(0, (index % 2) + 1),
   features: {
-    intervals: index === 0 ? [1200, 1210, 1190, 1205, 1198, 1202, 1201, 1199, 1200, 1203, 1197] : [3400, 5100],
+    intervals:
+      index === 0
+        ? [1200, 1210, 1190, 1205, 1198, 1202, 1201, 1199, 1200, 1203, 1197]
+        : [3400, 5100],
     cv: index === 0 ? 0.031 : null,
     noSearchGuesses: index === 0 ? 7 : 0,
     unmatchedSearches: index === 0 ? 0 : 6,
@@ -456,7 +466,11 @@ export const ADMIN_GAMES = Array.from({ length: 47 }, (_, index) => ({
   roomId: index === 0 ? "R48213-周五番剧OP专场" : `R${48_000 + index * 13}`,
   roundCount: [17, 1, 6, 40, 3][index % 5],
   startedAt: new Date(ms("2027-01-01T10:00:00") - index * 11 * 3_600_000).toISOString(),
-  endedAt: new Date(ms("2027-01-01T10:00:00") - index * 11 * 3_600_000 + (index % 5 === 3 ? 7_380_000 : 42_000 + index * 9_000)).toISOString(),
+  endedAt: new Date(
+    ms("2027-01-01T10:00:00") -
+      index * 11 * 3_600_000 +
+      (index % 5 === 3 ? 7_380_000 : 42_000 + index * 9_000)
+  ).toISOString(),
   players: Array.from({ length: index === 0 ? 12 : (index % 6) + 1 }, (_, slot) => ({
     playerId: `p-${slot}`,
     userId: slot % 2 ? `u-${slot}` : null,
@@ -471,7 +485,9 @@ export const ADMIN_GAME_DETAIL = {
     number: index + 1,
     startedAt: new Date(ms("2027-01-01T08:00:00") + index * 300_000).toISOString(),
     endedAt: new Date(ms("2027-01-01T08:00:00") + index * 300_000 + 95_000).toISOString(),
-    players: ADMIN_GAMES[0].players.slice(0, 4).map((item, slot) => ({ ...item, score: slot === 3 ? -5 : 10 - slot * 3 })),
+    players: ADMIN_GAMES[0].players
+      .slice(0, 4)
+      .map((item, slot) => ({ ...item, score: slot === 3 ? -5 : 10 - slot * 3 })),
     summary: {
       answer: { title: "残酷な天使のテーゼ", artist: "高橋洋子", source: "新世纪福音战士" },
       hintsUsed: index % 3,
@@ -482,7 +498,9 @@ export const ADMIN_GAME_DETAIL = {
     at: ms("2027-01-01T08:00:00") + index * 61_000,
     type: ["round.start", "guess", "guess.correct", "player.join", "round.end"][index % 5],
     ...(index % 5 === 4 ? {} : { round: Math.floor(index / 5) + 1 }),
-    ...(index % 5 === 1 ? { player: NAMES[index % NAMES.length], text: "残酷な天使のテーゼ（OP 版）" } : {}),
+    ...(index % 5 === 1
+      ? { player: NAMES[index % NAMES.length], text: "残酷な天使のテーゼ（OP 版）" }
+      : {}),
   })),
 };
 
@@ -493,7 +511,11 @@ const AUDIT_ACTIONS = [
   ["room.close", "room", { game: "song", roomId: "R48213" }],
   ["runtimeSetting.update", "runtimeSetting", { key: "clientMinDesktopVersion", value: "0.1.2" }],
   ["feedback.reply", "feedback", { length: 18 }],
-  ["statusEvent.create", "statusEvent", { title: LONG_BODY.slice(0, 80), components: ["netease", "rooms"] }],
+  [
+    "statusEvent.create",
+    "statusEvent",
+    { title: LONG_BODY.slice(0, 80), components: ["netease", "rooms"] },
+  ],
   ["user.setRole", "user", { role: "admin" }],
   ["qq.refreshNames", "qq", null],
   ["legacy.unknownAction", "misc", { note: "旧版本写入的动作名，没有中文标签" }],

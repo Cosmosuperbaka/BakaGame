@@ -186,7 +186,8 @@ export function RowButton({ children, onClick }: { children: ReactNode; onClick:
     <button
       type="button"
       onClick={onClick}
-      className="min-w-0 cursor-pointer text-left font-medium underline-offset-4 hover:underline focus-visible:underline"
+      // 块级且不超过单元格：里面的 truncate 才有可截断的宽度；行内按钮会让长标题溢出单元格、压到右边几列上。
+      className="block min-w-0 max-w-full cursor-pointer text-left font-medium underline-offset-4 hover:underline focus-visible:underline"
     >
       {children}
     </button>

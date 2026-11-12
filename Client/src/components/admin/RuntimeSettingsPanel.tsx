@@ -97,9 +97,7 @@ function EditDialog({
         <SettingsFields>
           <Editor item={item} value={value} onChange={setValue} />
         </SettingsFields>
-        {action.error ? (
-          <FormAlert>{action.error}</FormAlert>
-        ) : null}
+        {action.error ? <FormAlert>{action.error}</FormAlert> : null}
         <DialogFooter>
           <Button
             type="button"

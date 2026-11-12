@@ -61,7 +61,9 @@ export const KickRunning: Story = {
   beforeEach: () => installAdmin({ "admin/rooms/kick": "pending" }),
   play: async ({ userEvent }) => {
     await screen.findByText(ADMIN_ROOMS[1].name);
-    await userEvent.click(screen.getByRole("button", { name: `移出 ${ADMIN_ROOMS[0].players[1].name}` }));
+    await userEvent.click(
+      screen.getByRole("button", { name: `移出 ${ADMIN_ROOMS[0].players[1].name}` })
+    );
     const dialog = within(await screen.findByRole("dialog"));
     await userEvent.click(dialog.getByRole("button", { name: "移出" }));
     dropFocus();

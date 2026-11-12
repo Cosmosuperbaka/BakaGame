@@ -1,6 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen } from "storybook/test";
-import { ADMIN_OVERVIEW, ADMIN_SENTRY_OFF, adminPanelFrame, installAdmin } from "@/stories/fixtures/Admin";
+import {
+  ADMIN_OVERVIEW,
+  ADMIN_SENTRY_OFF,
+  adminPanelFrame,
+  installAdmin,
+} from "@/stories/fixtures/Admin";
 import { OverviewPanel } from "./OverviewPanel";
 
 /** 后台概览：数字卡、待复核条、每日数据、板块浏览与 Sentry 卡片，接口由共享夹具桩住。 */
@@ -38,7 +43,11 @@ export const Sparse: Story = {
   name: "Sentry 未配置 · 无浏览",
   beforeEach: () =>
     installAdmin({
-      "admin/stats/overview": { ...ADMIN_OVERVIEW, daily: ADMIN_OVERVIEW.daily.slice(-3), pages: [] },
+      "admin/stats/overview": {
+        ...ADMIN_OVERVIEW,
+        daily: ADMIN_OVERVIEW.daily.slice(-3),
+        pages: [],
+      },
       "admin/stats/sentry": ADMIN_SENTRY_OFF,
       "admin/antiCheat/list": { items: [], total: 0 },
     }),
