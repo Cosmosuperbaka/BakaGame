@@ -179,7 +179,9 @@ export const installMusicSession = (
   const platform: MusicAuthPlatform = isQq ? "qq" : "netease";
   // 局中登录进来的号默认不入池（`enabled: false`）：开关「只在等待阶段可改、开局锁死」是 B4 的
   // 硬约束，默认打开等于绕开它。回到准备页后由号主自己打开，池子因此在局中只会变小不会变大。
-  const active = room.phase === "waiting";
+  // 开局加载期间阶段仍是 waiting，但开关已经锁死：同样不入池。
+  const active =
+    room.phase === "waiting" && !room.automaticRoundLoading && !room.manualRoundStarting;
   const pool = musicPool(service, room);
   const existing = pool.find(
     (entry) => entry.playerId === ownerPlayerId && entry.platform === platform

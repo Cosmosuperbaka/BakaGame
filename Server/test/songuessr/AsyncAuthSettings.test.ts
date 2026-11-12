@@ -591,6 +591,64 @@ describe("房主变更与他人的在途登录", () => {
   });
 });
 
+describe("开局加载期间新登录的账号", () => {
+  test("自动开局加载中登录的账号默认不入池", async () => {
+    const gate = deferredServiceResult<void>();
+    let hold = false;
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie) => {
+          // 只卡住房主开局复核的那次校验，客人的登录照常返回。
+          if (hold && cookie === "MUSIC_U=test-host") await gate.promise;
+          return { cookie, account: { nickname: cookie, vipStatus: "vip" } };
+        },
+        getPlaylistSongs: async () => ({
+          info: { id: "42", name: "测试歌单", songCount: 1 },
+          songs: [songs.answer],
+        }),
+      },
+      random: { nextInt: () => 0 },
+    });
+    const host = connection(service, "late-host");
+    const guest = connection(service, "late-guest");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "晚到的号主");
+    await execute(service, host, {
+      id: "late-settings",
+      type: "song.room.updateSettings",
+      roomId: "1234",
+      payload: { questionMode: "automatic", autoFilters: { artists: [], minPopularity: 0 } },
+    });
+    await execute(service, guest, {
+      id: "late-ready",
+      type: "song.player.setReady",
+      roomId: "1234",
+      payload: { ready: true },
+    });
+    hold = true;
+    const starting = execute(service, host, {
+      id: "late-start",
+      type: "song.game.start",
+      roomId: "1234",
+      payload: {},
+    });
+    await execute(service, guest, {
+      id: "late-login",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "late-guest-cookie" },
+    });
+    const entry = (
+      lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").musicPool ?? []
+    ).find((candidate) => candidate.playerName === "晚到的号主");
+    // 开局即锁死、局中池只会变小：加载期间新登录的号不能悄悄入池。
+    expect(entry).toMatchObject({ enabled: false });
+    gate.resolve();
+    await starting;
+  });
+});
+
 describe("SonGuessr service 设置原子更新", () => {
   for (const invalid of ["password", "playlist"] as const) {
     test(invalid + "校验失败整包保持原状态并仍能公开加入", async () => {
