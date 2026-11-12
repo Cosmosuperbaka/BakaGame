@@ -326,7 +326,9 @@ test("上游缺字段时不抹掉既有热度与封面", async () => {
   });
 });
 
-test("失败退避：指数后推，成功清零", async () => {
+test("失败退避：指数后推，退避一过下一轮就重试，成功清零", async () => {
+  // 真实时钟远大于任何层间隔：从未刷新的条目（refreshed_at=0）据此天然「已过期」。
+  const T0 = 100 * DAY;
   await withTemp(async (directory) => {
     const db = dataset(directory, [{ id: 5, heat: 10 }]);
     const { fetcher } = upstream(() => ({ status: 500, body: {} }));
@@ -336,7 +338,7 @@ test("失败退避：指数后推，成功清零", async () => {
       base: "https://api.bgm.tv",
       fetcher,
       logger: { warn: (message) => warnings.push(message) },
-      now: () => 1_000,
+      now: () => T0 + 1_000,
       sleep: () => Promise.resolve(),
     });
     const state = () =>
@@ -345,21 +347,28 @@ test("失败退避：指数后推，成功清零", async () => {
         .get() as { failures: number; next_at: number; refreshed_at: number };
     expect(await updater.refresh(5)).toBe(false);
     expect(state().failures).toBe(1);
-    expect(state().next_at - state().refreshed_at).toBe(HOUR);
+    expect(state().next_at).toBe(T0 + 1_000 + HOUR);
+    // 失败不算刷新：新条目从未成功过，refreshed_at 不能被写成「刚刷新」。
+    expect(state().refreshed_at).toBe(0);
     expect(warnings.some((message) => message.includes("刷新失败"))).toBe(true);
 
-    // 新鲜度没过（2 天）时即便 now 很大也不该重复打扰。
-    const sameDay = new SubjectUpdater({
+    // 退避期内（30 分钟后）不该重复打扰。
+    const { calls: earlyCalls, fetcher: earlyFetcher } = upstream(() => ({
+      status: 500,
+      body: {},
+    }));
+    const early = new SubjectUpdater({
       db,
       base: "https://api.bgm.tv",
-      fetcher,
-      now: () => 2 * HOUR,
+      fetcher: earlyFetcher,
+      now: () => T0 + 30 * 60_000,
       sleep: () => Promise.resolve(),
     });
-    expect(await sameDay.runRound()).toBe(0);
+    expect(await early.runRound()).toBe(0);
+    expect(earlyCalls).toHaveLength(0);
 
-    // 过了新鲜度窗口再试一次：失败计数累加、退避翻倍（本轮全是 500，成功数为 0，
-    // 所以看的是「确实发起了请求」而不是返回值）。
+    // 退避（1 小时）一过，下一轮就该再试，而不是被层间隔（天级）压住：失败计数累加、
+    // 退避翻倍（本轮仍是 500，看的是「确实发起了请求」）。
     const { calls: retryCalls, fetcher: retryFetcher } = upstream(() => ({
       status: 500,
       body: {},
@@ -368,24 +377,82 @@ test("失败退避：指数后推，成功清零", async () => {
       db,
       base: "https://api.bgm.tv",
       fetcher: retryFetcher,
-      now: () => 3 * DAY,
+      now: () => T0 + 2 * HOUR,
       sleep: () => Promise.resolve(),
     });
     expect(await retry.runRound()).toBe(0);
     expect(retryCalls).toHaveLength(1);
     expect(state().failures).toBe(2);
-    expect(state().next_at - state().refreshed_at).toBe(2 * HOUR);
+    expect(state().next_at).toBe(T0 + 2 * HOUR + 2 * HOUR);
 
-    // 上游恢复 → 失败计数清零。
+    // 上游恢复 → 失败计数清零，并记下这次成功的刷新时间。
     const healed = new SubjectUpdater({
       db,
       base: "https://api.bgm.tv",
       fetcher: upstream(() => ({ body: { name: "好了" } })).fetcher,
-      now: () => 10 * DAY,
+      now: () => T0 + 10 * DAY,
       sleep: () => Promise.resolve(),
     });
     expect(await healed.refresh(5)).toBe(true);
     expect(state().failures).toBe(0);
+    expect(state().refreshed_at).toBe(T0 + 10 * DAY);
+    db.close();
+  });
+});
+
+test("失败保留上一次成功刷新的时间，冷层条目不必等整整一个层间隔才重试", async () => {
+  await withTemp(async (directory) => {
+    const db = dataset(directory, [{ id: 6, heat: 10 }]);
+    const base = { db, base: "https://api.bgm.tv", sleep: () => Promise.resolve() };
+    // 这条作品在 0 时刻成功刷新过（基线登记）。
+    new SubjectUpdater({
+      ...base,
+      fetcher: upstream(() => ({})).fetcher,
+      now: () => 0,
+    }).markDatasetFresh();
+
+    const failing = upstream(() => ({ status: 503, body: {} }));
+    const atThreeDays = new SubjectUpdater({
+      ...base,
+      fetcher: failing.fetcher,
+      now: () => 3 * DAY,
+    });
+    expect(await atThreeDays.runRound()).toBe(0);
+    expect(failing.calls).toHaveLength(1);
+    const row = db
+      .query("SELECT refreshed_at, next_at FROM bangumi_refresh WHERE subject_id = 6")
+      .get() as { refreshed_at: number; next_at: number };
+    expect(row.refreshed_at).toBe(0);
+    expect(row.next_at).toBe(3 * DAY + HOUR);
+
+    // 退避一过就再试；旧写法把 refreshed_at 记成失败时刻，会让它再等两天。
+    const retry = upstream(() => ({ status: 503, body: {} }));
+    const afterBackoff = new SubjectUpdater({
+      ...base,
+      fetcher: retry.fetcher,
+      now: () => 3 * DAY + 2 * HOUR,
+    });
+    await afterBackoff.runRound();
+    expect(retry.calls).toHaveLength(1);
+    db.close();
+  });
+});
+
+test("玩家按需刷新同样遵守退避：失败条目在退避期内不会被反复点开打上游", async () => {
+  const T0 = 100 * DAY;
+  await withTemp(async (directory) => {
+    const db = dataset(directory, [{ id: 8, heat: 10 }]);
+    const base = { db, base: "https://api.bgm.tv", sleep: () => Promise.resolve() };
+    const failing = upstream(() => ({ status: 500, body: {} }));
+    const first = new SubjectUpdater({ ...base, fetcher: failing.fetcher, now: () => T0 });
+    await first.runRound();
+    expect(failing.calls).toHaveLength(1);
+
+    const again = upstream(() => ({ status: 500, body: {} }));
+    const viewer = new SubjectUpdater({ ...base, fetcher: again.fetcher, now: () => T0 + 60_000 });
+    viewer.requestRefresh(8);
+    await viewer.runRound();
+    expect(again.calls).toHaveLength(0);
     db.close();
   });
 });
@@ -408,7 +475,7 @@ test("nsfw 守卫：上游标记 nsfw 的条目不落库且长期不再尝试", 
     const row = db
       .query("SELECT next_at, refreshed_at FROM bangumi_refresh WHERE subject_id = 9")
       .get() as { next_at: number; refreshed_at: number };
-    expect(row.next_at - row.refreshed_at).toBe(30 * DAY);
+    expect(row.next_at).toBe(2_000 + 30 * DAY);
     db.close();
   });
 });

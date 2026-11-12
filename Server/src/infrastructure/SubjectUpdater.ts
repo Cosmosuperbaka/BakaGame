@@ -328,7 +328,8 @@ export class SubjectUpdater {
    *
    * 到期判定有两条且必须同时满足：
    * - **新鲜度**：`now - refreshed_at >= 该层间隔`（分位本轮重算，所以同一条
-   *   作品变热后会提前到期、变冷后会被推迟）。
+   *   作品变热后会提前到期、变冷后会被推迟）。`refreshed_at` 只记**成功**刷新的时刻，
+   *   失败不会把它推到现在，否则层间隔（天级）会压过退避，失败的条目被晾上几天甚至一个月。
    * - **退避**：`now >= next_at`（连续失败的条目按指数退避往后压）。
    */
   private selectDue(): Array<{ id: number | string; tier: number }> {
@@ -365,11 +366,13 @@ export class SubjectUpdater {
   /** 是否过期到值得为一次玩家请求回源（口径取最热的那一层间隔）。 */
   private isStale(subjectId: number): boolean {
     const row = this.db
-      .query<{ refreshed_at: number }, [number]>(
-        "SELECT refreshed_at FROM bangumi_refresh WHERE subject_id = ?"
+      .query<{ refreshed_at: number; next_at: number }, [number]>(
+        "SELECT refreshed_at, next_at FROM bangumi_refresh WHERE subject_id = ?"
       )
       .get(subjectId);
     if (!row) return true;
+    // 退避期内的失败条目不接受按需刷新：否则玩家反复点开同一条就会反复打上游。
+    if (this.now() < row.next_at) return false;
     const shortest = Math.min(...this.tiers.map((tier) => tier.intervalDays));
     return this.now() - row.refreshed_at >= shortest * DAY_MS;
   }
@@ -391,7 +394,7 @@ export class SubjectUpdater {
       // 这里绝不把它写进来 —— 只记状态、长期不再尝试。
       if (subject.nsfw) {
         this.logger?.warn?.(`作品 ${subjectId} 上游标记 nsfw，跳过本次更新`);
-        this.mark(subjectId, now, tier, 0, now + NSFW_RETRY_MS);
+        this.markFailed(subjectId, tier, 0, now + NSFW_RETRY_MS);
         return false;
       }
       ok = this.applySubject(subjectId, subject, now);
@@ -401,8 +404,11 @@ export class SubjectUpdater {
         `作品 ${subjectId} 刷新失败：${error instanceof Error ? error.message : String(error)}`
       );
     }
-    const failures = ok ? 0 : this.failuresOf(subjectId) + 1;
-    this.mark(subjectId, now, tier, failures, ok ? now : now + this.backoffFor(failures));
+    if (ok) this.markRefreshed(subjectId, now, tier);
+    else {
+      const failures = this.failuresOf(subjectId) + 1;
+      this.markFailed(subjectId, tier, failures, now + this.backoffFor(failures));
+    }
     return ok;
   }
 
@@ -557,21 +563,29 @@ export class SubjectUpdater {
     return Math.min(MAX_BACKOFF_MS, HOUR_MS * 2 ** Math.max(0, failures - 1));
   }
 
-  /** 记录一次尝试的结果（成功清零失败计数，失败则退避）。 */
-  private mark(
-    subjectId: number,
-    now: number,
-    tier: number,
-    failures: number,
-    nextAt: number
-  ): void {
+  /** 成功：记下刷新时刻，清零失败计数与退避。 */
+  private markRefreshed(subjectId: number, now: number, tier: number): void {
     this.db
       .query<never, [number, number, number, number, number]>(
         "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,?,?,?)" +
           " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier, refreshed_at = excluded.refreshed_at," +
           " failures = excluded.failures, next_at = excluded.next_at"
       )
-      .run(subjectId, tier, now, failures, nextAt);
+      .run(subjectId, tier, now, 0, 0);
+  }
+
+  /**
+   * 失败（或 nsfw 跳过）：只推后下次尝试时刻，**保留**上一次成功刷新的时刻。
+   * 从未成功过的新条目写 0，表示「从未刷新」，退避一过就会被再次选中。
+   */
+  private markFailed(subjectId: number, tier: number, failures: number, nextAt: number): void {
+    this.db
+      .query<never, [number, number, number, number]>(
+        "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,0,?,?)" +
+          " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier," +
+          " failures = excluded.failures, next_at = excluded.next_at"
+      )
+      .run(subjectId, tier, failures, nextAt);
   }
 
   /** 等到一个属于自己的请求时隙：限速就靠这一个点，所有回源都得先过它。 */
