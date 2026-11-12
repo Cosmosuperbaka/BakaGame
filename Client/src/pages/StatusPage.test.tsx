@@ -422,4 +422,20 @@ describe("公开状态页", () => {
     });
     expect(FakeSocket.instances).toHaveLength(4);
   });
+  it("异常说明按组件名整体换行；进行中故障的图标是危险色", async () => {
+    stubSocket();
+    vi.stubGlobal("fetch", stubStatusFetch());
+    renderPage();
+    connectAndPush();
+    await screen.findByText("2 项服务异常");
+
+    // 每个组件名一个不换行的片段，读屏仍读到一整句。
+    const detail = screen.getByText(/^异常：/).closest("p")!;
+    const names = [...detail.querySelectorAll(".whitespace-nowrap")].map((node) => node.textContent);
+    expect(names.length).toBeGreaterThan(1);
+    expect(detail.textContent).toMatch(/^异常：.+、.+$/);
+
+    const card = (await screen.findByText("搜索索引不可用")).closest("article")!;
+    expect(card.querySelector("svg")).toHaveClass("text-destructive");
+  });
 });

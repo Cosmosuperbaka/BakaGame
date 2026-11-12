@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { PublicStatusEvent } from "@bakagame/shared";
-import { CalendarClock, CircleCheck, TriangleAlert, Wrench } from "lucide-react";
+import { CalendarClock, CircleCheck, CloudOff, TriangleAlert, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { popover } from "@/lib/Motion";
 import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
@@ -21,7 +21,8 @@ function EventMeta({ event }: { event: PublicStatusEvent }) {
   return (
     <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs text-muted-foreground">
       <span className="font-mono tabular-nums">{range}</span>
-      <span aria-hidden="true" className="text-border">
+      {/* 间隔号取弱化前景色：描边色当字色在亮色下几乎看不见。 */}
+      <span aria-hidden="true" className="text-muted-foreground/60">
         ·
       </span>
       <span className="truncate">{affectedOf(event)}</span>
@@ -46,7 +47,8 @@ function EventIcon({ event, className }: { event: PublicStatusEvent; className?:
     return (
       <TriangleAlert
         aria-hidden="true"
-        className={cn("shrink-0", isEventActive(event) && "text-destructive", className)}
+        // 进行中的故障固定用危险色，排在调用方类名之后：调用方给的弱化色不能把它盖掉。
+        className={cn("shrink-0", className, isEventActive(event) && "text-destructive")}
       />
     );
   }
@@ -86,7 +88,9 @@ export function StatusEventsSection({
           className="mt-2 h-14 motion-safe:animate-breathe rounded-md bg-muted"
         />
       ) : events === null ? (
-        <p className="mt-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+        // 与下面「没有事件」同一种虚线框加前导图标：两种空状态只差图标与文案，不是一个有图标一个没有。
+        <p className="mt-2 flex items-center gap-2 rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          <CloudOff aria-hidden="true" className="size-4 shrink-0" />
           事件记录暂时读不到，稍后会自动重试。
         </p>
       ) : list.length === 0 ? (
@@ -137,7 +141,8 @@ export function StatusEventsSection({
                     {DAY_FORMAT.format(event.startedAt)}
                   </time>
                   <EventIcon event={event} className="size-3.5 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{event.title}</span>
+                  {/* 窄屏日期列、图标与状态徽章已占去大半行：标题换行完整显示，宽屏才单行截断。 */}
+                  <span className="min-w-0 flex-1 text-sm break-words sm:truncate">{event.title}</span>
                   <span className="hidden max-w-40 shrink-0 truncate text-2xs text-muted-foreground sm:block">
                     {affectedOf(event)}
                   </span>

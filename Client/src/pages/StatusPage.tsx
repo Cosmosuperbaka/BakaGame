@@ -33,6 +33,7 @@ import { UptimeBar } from "@/components/status/UptimeBar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Hint } from "@/components/ui/Tooltip";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useStatusLive } from "@/hooks/UseStatusLive";
 import { duration, readoutSwap, statusGlyphSwap, uptimeReveal } from "@/lib/Motion";
@@ -180,13 +181,15 @@ const tallyOf = (
 const headlineOf = (
   snapshot: PublicStatusSnapshot | null,
   tally: Tally
-): { title: string; detail: string } => {
+): { title: string; detail: string; names?: string[] } => {
   if (!snapshot) return { title: "正在读取服务状态…", detail: "连上实时通道后自动更新" };
   const total = ALL_COMPONENTS.length;
   if (tally.degraded.length > 0) {
+    const names = tally.degraded.map((id) => STATUS_COMPONENT_LABELS[id]);
     return {
       title: `${tally.degraded.length} 项服务异常`,
-      detail: `异常：${tally.degraded.map((id) => STATUS_COMPONENT_LABELS[id]).join("、")}`,
+      detail: `异常：${names.join("、")}`,
+      names,
     };
   }
   if (tally.unknown.length === total) {
@@ -314,17 +317,20 @@ function ComponentRow({
           {STATUS_COMPONENT_LABELS[id]}
         </span>
         {latency ? (
-          <span className="flex shrink-0 items-center gap-2" title={LATENCY_TITLE[latency.kind]}>
-            {latency.series ? (
-              <LatencySparkline values={latency.series} className="hidden sm:block" />
-            ) : null}
-            <span className="flex items-baseline gap-1 font-mono text-xs tabular-nums text-muted-foreground">
-              {LATENCY_PREFIX[latency.kind] ? (
-                <span className="font-sans">{LATENCY_PREFIX[latency.kind]}</span>
+          // 口径说明走统一的悬停说明（与站内其它说明同一种浮层），不用浏览器原生 title。
+          <Hint label={LATENCY_TITLE[latency.kind]}>
+            <span className="flex shrink-0 items-center gap-2">
+              {latency.series ? (
+                <LatencySparkline values={latency.series} className="hidden sm:block" />
               ) : null}
-              <Readout value={formatLatency(latency.value)} />
+              <span className="flex items-baseline gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+                {LATENCY_PREFIX[latency.kind] ? (
+                  <span className="font-sans">{LATENCY_PREFIX[latency.kind]}</span>
+                ) : null}
+                <Readout value={formatLatency(latency.value)} />
+              </span>
             </span>
-          </span>
+          </Hint>
         ) : null}
         <span className="w-11 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:w-14">
           <Readout value={formatRatio(ratio)} />
@@ -532,7 +538,18 @@ export default function StatusPage() {
               <h2 id="status-summary" className="text-base leading-snug font-semibold sm:text-lg">
                 {headline.title}
               </h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">{headline.detail}</p>
+              {/* 组件名整体换行：窄屏不把「搜索索引」「网易云音乐 API」拆到两行；整句仍是同一段文字。 */}
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {headline.names
+                  ? headline.names.map((name, index, names) => (
+                      // 「异常：」与第一个名字绑在一起，不在行尾单独剩下一个前缀。
+                      <span key={name} className="whitespace-nowrap">
+                        {index === 0 ? `异常：${name}` : name}
+                        {index < names.length - 1 ? "、" : null}
+                      </span>
+                    ))
+                  : headline.detail}
+              </p>
             </div>
           </div>
           <dl className="mt-5 grid grid-cols-3 border-t border-border pt-4">
