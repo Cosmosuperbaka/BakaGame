@@ -4,7 +4,7 @@ import { parseSystemStatus } from "@/lib/SystemStatus";
 import { resolveServerBase } from "@/lib/ServerEndpoint";
 
 /** 断线重连的退避上限：状态页是长期开着的页面，重连再密也不该超过推送节奏本身。 */
-const MAX_RECONNECT_DELAY_MS = 15_000;
+const STATUS_RECONNECT_CAP_MS = 15_000;
 
 const socketUrl = (): string => {
   const base = resolveServerBase() || `${location.protocol}//${location.host}`;
@@ -63,7 +63,7 @@ export function useStatusLive(): { snapshot: PublicStatusSnapshot | null } {
     };
 
     const schedule = (): void => {
-      const delay = Math.min(1_000 * 2 ** attempts, MAX_RECONNECT_DELAY_MS);
+      const delay = Math.min(1_000 * 2 ** attempts, STATUS_RECONNECT_CAP_MS);
       attempts += 1;
       timer = setTimeout(connect, delay);
     };

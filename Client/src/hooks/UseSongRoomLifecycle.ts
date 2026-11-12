@@ -355,7 +355,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
     const tryEnter = async () => {
       setJoining(true);
       try {
-        await waitForConnection(8_000);
+        await waitForConnection();
       } catch {
         if (signal.aborted) return;
         showToast("连接服务器超时，请刷新重试", "error");
