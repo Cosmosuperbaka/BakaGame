@@ -60,6 +60,16 @@ import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
+import {
+  assertAgentAdmission,
+  assertSeatResumable,
+  assertTabAgentsAllowed,
+  findSeat,
+  roomsOfTab,
+  type SeatBindingContext,
+  type TabSeatContext,
+} from "./room/SeatBinding";
+import { whoIsFakerShape } from "./whoisfaker/RoomShape";
 import type { CommandHandler } from "./whoisfaker/CommandHandler";
 import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
 import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
@@ -191,6 +201,9 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
   readonly rooms = new Map<string, WhoIsFakerRoomRecord>();
   readonly connectionRegistry: ConnectionRegistry;
+  readonly seatContext: SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
+  /** 标签页接管 Agent 时按标签页找房间用的上下文。 */
+  private readonly tabSeats: TabSeatContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
   /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
   readonly now: () => number;
   readonly random: RandomSource;
@@ -234,6 +247,16 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       hasher: options.passwordHasher,
     });
     this.connectionRegistry = new ConnectionRegistry();
+    this.seatContext = {
+      shape: whoIsFakerShape,
+      connections: this.connectionRegistry,
+      now: () => this.now(),
+    };
+    this.tabSeats = {
+      shape: whoIsFakerShape,
+      connections: this.connectionRegistry,
+      rooms: this.rooms,
+    };
     this.lobbyFanout = new LobbyFanout({
       event: WHOISFAKER_LOBBY_ROOMS_EVENT,
       now: () => this.now(),
@@ -756,13 +779,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const roomId = ensureRoomId(message.roomId ?? "", this.testRooms);
     const room = this.getRoom(roomId);
 
-    this.ensureAgentsAllowed(room, connection);
-    if (connection.agentDriven?.() === true && room.settings.allowAgents !== true)
-      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
+    assertAgentAdmission(connection, whoIsFakerShape.admission(room));
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
     // 被踢的记录不算座位，再进来走普通加入。
-    const seat = this.tabSeat(room, connection);
-    if (seat && seat.membership !== "kicked") return this.resumeSeat(room, seat, connection);
+    const seat = findSeat(this.seatContext, room, connection);
+    if (seat) return this.resumeSeat(room, seat, connection);
     await this.passwords.verify(
       room,
       room.settings.visibility,
@@ -853,14 +874,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     player: WhoIsFakerPlayerRecord,
     connection: ConnectionRecord
   ) {
-    if (player.membership === "kicked") {
-      throw new AppError("PLAYER_KICKED", "该玩家已被移出房间");
-    }
-
-    if (connection.isAgent === true && player.isAgent !== true) {
-      // 人类的座位只属于人类的标签页；Agent 要操作它，只能由人类把标签页交出来。
-      throw new AppError("AGENT_SEAT_FORBIDDEN", "Agent 不能接手人类座位");
-    }
+    // 被踢的记录不能回来；人类的座位只属于人类的标签页，Agent 只能由人类把标签页交出来。
+    assertSeatResumable(player, connection);
 
     return this.restorePlayerConnection(room, player, connection, {
       appendMessage: `${player.name} 已重新连接`,
@@ -1803,10 +1818,6 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       room.round.questionerReconnectDeadlineAt = undefined;
     }
 
-    if (room.hostPlayerId === player.id) {
-      room.hostReconnectDeadlineAt = undefined;
-    }
-
     this.touch(room);
     this.appendSystemMessage(room, options.appendMessage);
 
@@ -1958,17 +1969,12 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
   /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
   assertTabAgentsAllowed(tabKey: string): void {
-    for (const roomId of this.connectionRegistry.roomIdsOfTab(tabKey))
-      if (this.rooms.get(roomId)?.settings.allowAgents !== true)
-        throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
+    assertTabAgentsAllowed(this.tabSeats, tabKey);
   }
 
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
-    for (const roomId of this.connectionRegistry.roomIdsOfTab(tabKey)) {
-      const room = this.rooms.get(roomId);
-      if (room) this.publishRoom(room);
-    }
+    for (const room of roomsOfTab(this.tabSeats, tabKey)) this.publishRoom(room);
   }
 
   ensureQuestioner(round: GameRound, playerId: string) {

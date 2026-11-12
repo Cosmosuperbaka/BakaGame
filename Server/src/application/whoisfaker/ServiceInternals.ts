@@ -10,6 +10,7 @@ import type { TestRoomPolicy } from "../../domain/TestRooms";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { LobbyFanout } from "../LobbyFanout";
+import type { SeatBindingContext } from "../room/SeatBinding";
 import type { WhoIsFakerServiceOptions } from "../WhoIsFakerService";
 
 /**
@@ -22,6 +23,8 @@ import type { WhoIsFakerServiceOptions } from "../WhoIsFakerService";
 export interface WhoIsFakerServiceInternals {
   readonly rooms: Map<string, WhoIsFakerRoomRecord>;
   readonly connectionRegistry: ConnectionRegistry;
+  /** 内核座位绑定的上下文：绑定、转离线都经它。 */
+  readonly seatContext: SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
   /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;

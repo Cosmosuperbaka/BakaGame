@@ -10,7 +10,6 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import {
-  HOST_RECONNECT_TIMEOUT_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
   SPECTATOR_OFFLINE_GRACE_MS,
@@ -21,6 +20,7 @@ import {
   resolveAbandonedBlankGuess,
   startFallbackBlankGuessTimer,
 } from "./BlankGuess";
+import { markSeatOffline } from "../room/SeatBinding";
 import { runBots } from "./BotActors";
 import { clearPhaseTimer, finishRound } from "./PhaseFlow";
 import { broadcastRoomEvent, getCurrentSpeechState, publishLobby, publishRoom } from "./RoomViews";
@@ -140,7 +140,7 @@ export const handlePlayerOffline = async (
   };
 
   markPlayerDisconnected(service, ctx);
-  releaseHostSlot(service, ctx);
+  releaseHostSlot(ctx);
 
   if (!round || round.phase === "gameOver") {
     await settleOfflineOutsideRound(service, ctx);
@@ -164,36 +164,24 @@ export const handlePlayerOffline = async (
   await publishOrCloseIfEmpty(service, room, reason);
 };
 
-/** 标记离线并解绑连接；整房都没人在线时才起空房计时。 */
+/**
+ * 标记离线并解绑连接；整房都没人在线时才起空房计时（测试房豁免），
+ * 房主掉线时由内核给出重连截止时刻。
+ */
 const markPlayerDisconnected = (service: WhoIsFakerServiceInternals, ctx: OfflineContext) => {
-  const room = ctx.room;
-  const player = ctx.player;
-  player.online = false;
-  player.connectionId = undefined;
-  player.lastSeenAt = service.now();
-  const connection = service.connectionRegistry.findConnectionByPlayerId(player.id);
-  if (connection) {
-    service.connectionRegistry.detach(connection);
-  }
-
-  if (getOnlineCount(room) === 0 && shouldAutoCloseWhenEmpty(service, room)) {
-    room.emptySinceAt ??= service.now();
-  }
+  markSeatOffline(service.seatContext, ctx.room, ctx.player, {
+    emptyRoomExempt: !shouldAutoCloseWhenEmpty(service, ctx.room),
+  });
 };
 
-/** 房主席位让位：显式离开直接腾空，掉线则给一个重连截止时刻。 */
-const releaseHostSlot = (service: WhoIsFakerServiceInternals, ctx: OfflineContext) => {
-  if (!ctx.wasHost) {
+/** 显式离开的房主直接腾空席位；掉线的房主保留席位，截止时刻已由 markPlayerDisconnected 写好。 */
+const releaseHostSlot = (ctx: OfflineContext) => {
+  if (!ctx.wasHost || ctx.reason !== "leave") {
     return;
   }
 
-  if (ctx.reason === "leave") {
-    ctx.room.hostPlayerId = "";
-    ctx.room.hostReconnectDeadlineAt = undefined;
-    return;
-  }
-
-  ctx.room.hostReconnectDeadlineAt = service.now() + HOST_RECONNECT_TIMEOUT_MS;
+  ctx.room.hostPlayerId = "";
+  ctx.room.hostReconnectDeadlineAt = undefined;
 };
 
 /** 局外掉线：显式离开的真人无条件移出房间，房主离开后重选房主。 */

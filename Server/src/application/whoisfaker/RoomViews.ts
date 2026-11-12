@@ -12,6 +12,7 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
+import { bindSeat } from "../room/SeatBinding";
 import { handlePlayerOffline } from "./OfflineSettlement";
 import { getConfigurableParticipantCount } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
@@ -450,7 +451,8 @@ export const attachConnection = (
   connection: ConnectionRecord
 ) => {
   // 目标先校验；旧席位断线状态和新绑定在首次 await 前完成，防止并发建房/同名加入穿透。
-  // handlePlayerOffline 的 disconnect 分支在首个 await 前完成所有领域状态变更。
+  // handlePlayerOffline 的 disconnect 分支在首个 await 前完成所有领域状态变更，
+  // 它会把连接从旧席位上解下来：内核的 bindSeat 要求连接空闲，旧席位必须先按玩法规则释放。
   const previousRoom = connection.roomId ? service.rooms.get(connection.roomId) : undefined;
   const previousRoomUpdate =
     previousRoom &&
@@ -458,36 +460,18 @@ export const attachConnection = (
     (previousRoom.id !== room.id || connection.playerId !== player.id)
       ? handlePlayerOffline(service, previousRoom, connection.playerId, "disconnect")
       : Promise.resolve();
-  // 同一 sessionToken 只允许挂一个在线连接，新连接会顶掉旧连接。
-  const previousConnection = service.getConnectionByPlayer(player.id);
 
-  if (previousConnection && previousConnection.id !== connection.id) {
-    // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
-    // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
-    try {
-      previousConnection.send(
-        createEvent("session.replaced", {
-          roomId: room.id,
-        })
-      );
-    } catch {
-      /* 发不出去就不发，接管照常 */
-    }
-    previousConnection.playerId = undefined;
-    previousConnection.roomId = undefined;
-    try {
-      previousConnection.close(4001, "session_replaced");
-    } catch {
-      /* 已经关掉的连接不需要再关一次 */
-    }
+  // 房主空缺或宽限已过时，回来的人可能当场接任（也可能是另一位在线正式玩家）。
+  const hostBefore = room.players[room.hostPlayerId];
+  bindSeat(service.seatContext, room, player, connection);
+  const hostAfter = room.players[room.hostPlayerId];
+  if (hostAfter && hostAfter !== hostBefore) {
+    service.appendSystemMessage(
+      room,
+      hostBefore
+        ? `${hostBefore.name} 断线超时，房主已转移给 ${hostAfter.name}`
+        : `房主已转移给 ${hostAfter.name}`
+    );
   }
-
-  player.online = true;
-  room.emptySinceAt = undefined;
-  player.connectionId = connection.id;
-  player.account = connection.account;
-  player.lastSeenAt = service.now();
-  connection.resetStateSync?.();
-  service.connectionRegistry.attach(connection, room.id, player.id);
   return previousRoomUpdate;
 };
