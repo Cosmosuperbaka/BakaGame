@@ -21,12 +21,18 @@ if (!env.otelEndpoint) {
   process.exit(1);
 }
 
+/** 对端明确拒收（4xx）时导出器直接丢弃批次，状态码只能从汇报里拿到，用来给出排错提示。 */
+const rejected: Array<{ signal: string; status?: number }> = [];
+
 const exporter = new OtlpExporter({
   endpoint: env.otelEndpoint,
   headers: env.otelHeaders,
   serviceName: env.otelServiceName,
   serviceNamespace: env.otelServiceNamespace,
   deploymentEnvironment: env.otelDeploymentEnvironment,
+  onDrop: (drop) => {
+    if (drop.reason === "rejected") rejected.push({ signal: drop.signal, status: drop.status });
+  },
 });
 
 console.log(`[1/3] 目标端点配置:`);
@@ -39,74 +45,49 @@ console.log(`  - 部署环境:    deployment.environment="${exporter.deploymentE
 
 console.log("\n[2/3] 正在向 Grafana Cloud 发送验证数据包 (Traces & Logs)...");
 
-try {
+/** 两路信号各自检查返回值：任何一路没送达都不能打印成功横幅。 */
+const verify = async (): Promise<{ traces: boolean; logs: boolean }> => {
   const now = Date.now();
-  const tracePayload = {
-    resourceSpans: [
-      {
-        resource: { attributes: exporter.getResourceAttributes() },
-        scopeSpans: [
-          {
-            scope: { name: "bakagame-tracer", version: "1.0.0" },
-            spans: [
-              {
-                traceId: crypto.randomUUID().replace(/-/g, "").toLowerCase(),
-                spanId: crypto.randomUUID().replace(/-/g, "").slice(0, 16).toLowerCase(),
-                name: "server.startup",
-                kind: 1,
-                startTimeUnixNano: String(BigInt(now - 50) * 1_000_000n),
-                endTimeUnixNano: String(BigInt(now) * 1_000_000n),
-                attributes: [
-                  { key: "server.status", value: { stringValue: "ready" } },
-                  { key: "test.probe", value: { stringValue: "connection-check" } },
-                ],
-                status: { code: 1 },
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  };
-
-  const traceRes = await fetch(exporter.tracesEndpoint!, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(env.otelHeaders ?? {}),
-    },
-    body: JSON.stringify(tracePayload),
+  exporter.enqueueSpan({
+    traceId: crypto.randomUUID().replace(/-/g, "").toLowerCase(),
+    name: "server.startup",
+    startTime: now - 50,
+    endTime: now,
+    status: "OK",
+    attributes: { "server.status": "ready", "test.probe": "connection-check" },
   });
+  exporter.enqueue(
+    createOtelLogRecord({
+      createdAt: now,
+      level: "info",
+      body: "BakaGame Grafana Cloud connection verified successfully",
+      attributes: { tester: "BakaGame-DevOps", status: "verified" },
+    })
+  );
+  // force：忽略退避窗口，这是一次主动的连通性检测。导出器自带请求超时，不会无限挂住。
+  const [traces, logs] = await Promise.all([exporter.flushSpans(true), exporter.flushLogs(true)]);
+  return { traces, logs };
+};
 
-  if (!traceRes.ok) {
-    const errorText = await traceRes.text();
-    console.error(
-      `\n❌ Grafana Cloud Traces 接口返回异常 (HTTP ${traceRes.status} ${traceRes.statusText})`
-    );
-    console.error(`响应内容: ${errorText}`);
-    if (traceRes.status === 401 || traceRes.status === 403) {
+try {
+  const result = await verify();
+  if (!result.traces || !result.logs) {
+    const failed = [!result.traces ? "Traces" : "", !result.logs ? "Logs" : ""].filter(Boolean);
+    console.error(`\n❌ Grafana Cloud ${failed.join(" 与 ")} 数据未送达`);
+    for (const item of rejected)
+      console.error(`  - ${item.signal} 被对端拒收 (HTTP ${item.status ?? "未知"})`);
+    if (rejected.some((item) => item.status === 401 || item.status === 403)) {
       console.error(
         "\n💡 排错建议：认证失败，请检查 OTEL_EXPORTER_OTLP_HEADERS 是否包含正确的 Basic Auth Token。"
       );
       console.error("生成方式：Basic <Base64(Instance_ID:API_Token)>");
+    } else if (rejected.length === 0) {
+      console.error("  - 未收到对端的明确拒绝：多为网络不通、超时或对端 5xx，请检查端点与网络。");
     }
     process.exit(1);
   }
 
-  exporter.enqueue(
-    createOtelLogRecord({
-      createdAt: Date.now(),
-      level: "info",
-      body: "BakaGame Grafana Cloud connection verified successfully",
-      attributes: {
-        tester: "BakaGame-DevOps",
-        status: "verified",
-      },
-    })
-  );
-  await exporter.flushLogs();
-
-  console.log("\n[3/3] 数据推送完毕！(HTTP 200 OK)");
+  console.log("\n[3/3] 数据推送完毕！(Traces 与 Logs 均已送达)");
   console.log("================================================================");
   console.log("✅ 成功！已向 Grafana Cloud (Tempo) 写入符合 TraceQL 检索的链路数据。");
   console.log("👉 请回到 Grafana 网页端，点击蓝色「Test connection」按钮，即可秒级通过！");
