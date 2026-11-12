@@ -95,6 +95,9 @@ const CONSOLE_EVENT_TYPES = new Set([
   "game.finished",
 ]);
 
+/** 节流键表的容量：键由调用点给定、本应有限，仍要有硬上限，挤出最早的键。 */
+const MAX_THROTTLE_KEYS = 256;
+
 export interface EventLoggerOptions {
   console?: ConsoleLogSink;
   sinks?: LogSink[];
@@ -336,6 +339,8 @@ export class EventLogger {
   private readonly slowOperationMs: number;
   private readonly operationLogging: OperationLogging;
   private readonly now: () => number;
+  /** 节流状态：键 → 上次放行时刻与其后被压制的条数；Map 的插入序即「最早放行」序。 */
+  private readonly throttles = new Map<string, { at: number; suppressed: number }>();
 
   constructor(
     output?: LogOutputLike,
@@ -560,6 +565,31 @@ export class EventLogger {
 
   warn(message: string, context?: Record<string, unknown>) {
     this.emitSystem("WARN", message, context, this.now());
+  }
+
+  /**
+   * 突发告警按键节流：同一个键在窗口内只记一条，被压制的条数计入指标，窗口过后下一次放行时
+   * 附带 `suppressed`。用于「同一件事成百上千次」的预期安全事件（如客户端完整性拒绝），
+   * 否则一次扫描或一批旧版客户端就把告警配额与文件日志占满。不需要定时器：压制只发生在下一次调用里结算。
+   */
+  warnThrottled(key: string, windowMs: number, message: string, context?: Record<string, unknown>) {
+    const now = this.now();
+    const state = this.throttles.get(key);
+    if (state && now - state.at < windowMs) {
+      state.suppressed += 1;
+      countServerMetric("bakagame.log.suppressed", 1, { key });
+      return;
+    }
+    this.throttles.delete(key);
+    this.throttles.set(key, { at: now, suppressed: 0 });
+    if (this.throttles.size > MAX_THROTTLE_KEYS)
+      this.throttles.delete(this.throttles.keys().next().value!);
+    this.emitSystem(
+      "WARN",
+      message,
+      state?.suppressed ? { ...context, suppressed: state.suppressed } : context,
+      now
+    );
   }
 
   error(message: string, context?: Record<string, unknown>) {

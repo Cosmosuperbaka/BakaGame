@@ -231,8 +231,18 @@ export function createServer(
       clientType === "desktop"
         ? settings.version("clientMinDesktopVersion")
         : settings.version("clientMinMobileVersion"),
-    // 完整性类告警显式归「安全」：检索范围不再靠正文关键词猜，改文案不会改分类。
-    onWarn: (message, detail) => logger.warn(message, { ...detail, scope: "安全" }),
+    // 完整性类告警显式归「安全」，并按阶段节流：旧版客户端或扫描会让同一件事一天成百上千次，
+    // 每个阶段每分钟只留一条，被压制的条数进指标与下一条的 suppressed。
+    onWarn: (message, detail) =>
+      logger.warnThrottled(
+        `${message}|${typeof detail?.stage === "string" ? detail.stage : ""}`,
+        60_000,
+        message,
+        {
+          ...detail,
+          scope: "安全",
+        }
+      ),
     // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
     attestation: env.androidAttestationPackage
       ? createAndroidAttestationChecker({

@@ -374,6 +374,53 @@ test("显式 scope 优先于正文关键词推断", () => {
   expect(records[0]!.attributes["log.scope"]).toBe("安全");
 });
 
+test("突发告警按键节流：窗口内只记一条，窗口过后带上被压制的条数再记", () => {
+  const { records, sink } = memorySink();
+  let now = 1_000;
+  const logger = new EventLogger(
+    () => undefined,
+    () => now,
+    undefined,
+    undefined,
+    {
+      sinks: [sink],
+    }
+  );
+  const burst = () => logger.warnThrottled("完整性|register", 60_000, "客户端完整性校验未通过");
+  burst();
+  now += 10_000;
+  burst();
+  burst();
+  // 不同的键互不影响。
+  logger.warnThrottled("完整性|attest", 60_000, "客户端完整性校验未通过");
+  expect(records).toHaveLength(2);
+  expect(records[0]!.attributes.suppressed).toBeUndefined();
+
+  now += 60_000;
+  burst();
+  expect(records).toHaveLength(3);
+  expect(records[2]!.attributes.suppressed).toBe(2);
+  expect(records[2]!.severityText).toBe("WARN");
+});
+
+test("节流键表有上限：被挤出的键下次出现时重新记一条，内存不随键数无限增长", () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    undefined,
+    {
+      sinks: [sink],
+    }
+  );
+  logger.warnThrottled("首个键", 60_000, "告警");
+  for (let index = 0; index < 400; index += 1) logger.warnThrottled(`键 ${index}`, 60_000, "告警");
+  const before = records.length;
+  logger.warnThrottled("首个键", 60_000, "告警");
+  expect(records.length).toBe(before + 1);
+});
+
 test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {
   const { records, sink } = memorySink();
   const logger = new EventLogger(
