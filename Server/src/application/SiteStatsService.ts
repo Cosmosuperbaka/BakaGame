@@ -2,6 +2,7 @@ import { createHmac, hkdfSync } from "node:crypto";
 
 import { beijingDay } from "../domain/BeijingDay";
 import type { EventLogger } from "../infrastructure/EventLogger";
+import { GAME_PATHS, SITE_PAGES } from "../mcp/SiteMap";
 import type {
   PageDelta,
   SiteStatsRepository,
@@ -20,16 +21,30 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * 页面只按板块统计：房间号、单人房等路径参数一律折叠，防止统计表按房号无限膨胀，
  * 也不把房号这类可定位到具体对局的信息落库。
+ *
+ * 板块表由站点地图派生而不是手写第二份：新增页面只登记一处，统计自然跟上；
+ * 手写表漏过关于页与状态页，它们的流量被混进 other。管理后台不在站点地图里（Agent 不可达），单列。
  */
-const SECTIONS = new Set(["whoisfaker", "songuessr", "cee", "admin"]);
+const ADMIN_SECTION = "admin";
+const SECTIONS = new Set([
+  ...SITE_PAGES.map((page) => page.path.split("/").filter(Boolean)[0]).filter(
+    (section): section is string => Boolean(section)
+  ),
+  ADMIN_SECTION,
+]);
+/** 登记的多段页面（如单人练习）整条保留，其余第二段一律折叠。 */
+const REGISTERED_PATHS = new Set(SITE_PAGES.map((page) => page.path));
+/** 只有玩法大厅有「房间页」。 */
+const ROOM_SECTIONS = new Set(Object.values(GAME_PATHS).map((path) => path.slice(1)));
+
 export const normalizeVisitPath = (raw: string): string => {
   const segments = raw.split(/[?#]/)[0]!.toLowerCase().split("/").filter(Boolean);
   if (!segments.length) return "/";
   const [section, child] = segments;
   if (!section || !SECTIONS.has(section)) return "other";
-  if (section === "admin") return "/admin";
-  if (child === "room") return `/${section}/room`;
-  if (section === "songuessr" && child === "solo") return "/songuessr/solo";
+  if (section === ADMIN_SECTION) return "/admin";
+  if (child === "room" && ROOM_SECTIONS.has(section)) return `/${section}/room`;
+  if (child && REGISTERED_PATHS.has(`/${section}/${child}`)) return `/${section}/${child}`;
   return `/${section}`;
 };
 

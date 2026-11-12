@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { SITE_PAGES } from "../src/mcp/SiteMap";
 import { normalizeVisitPath, SiteStatsService } from "../src/application/SiteStatsService";
 import { beijingDay } from "../src/domain/BeijingDay";
 import { EventLogger } from "../src/infrastructure/EventLogger";
@@ -22,6 +23,17 @@ describe("站点访问统计", () => {
     expect(normalizeVisitPath("/cee/room/1234#chat")).toBe("/cee/room");
     expect(normalizeVisitPath("/admin/users/abc")).toBe("/admin");
     expect(normalizeVisitPath("/wp-login.php")).toBe("other");
+  });
+
+  test("站点地图登记的页面都有自己的板块，不再混进 other；页内标签与查询串折叠", () => {
+    expect(normalizeVisitPath("/abouts")).toBe("/abouts");
+    expect(normalizeVisitPath("/abouts?tab=credits")).toBe("/abouts");
+    expect(normalizeVisitPath("/status")).toBe("/status");
+    // 每个登记路径（含两段的单人练习）都能被统计到，漏登记会立刻在这里红。
+    for (const page of SITE_PAGES) expect(normalizeVisitPath(page.path)).toBe(page.path);
+    // 只有玩法大厅有房间页：别的板块下的第二段仍折叠到板块本身。
+    expect(normalizeVisitPath("/status/anything")).toBe("/status");
+    expect(normalizeVisitPath("/abouts/room/1")).toBe("/abouts");
   });
 
   test("同一访客同日累加浏览，跨天摘要不同且不含原始 ID", async () => {
