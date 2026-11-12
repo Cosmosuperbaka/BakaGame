@@ -1230,8 +1230,11 @@ export class CEERankedService {
     if (running) return running;
     const work = this.doSettle(runtime);
     runtime.settling = work;
-    await work;
-    runtime.settling = null;
+    try {
+      await work;
+    } finally {
+      runtime.settling = null;
+    }
   }
 
   private async doSettle(runtime: CEERankedSeriesRuntime): Promise<void> {
@@ -1242,14 +1245,21 @@ export class CEERankedService {
       userIds.push(seat.userId);
     }
     for (const userId of userIds) this.settling.add(userId);
-    runtime.settlement = "pending";
-    this.pushSeries(runtime);
+    try {
+      runtime.settlement = "pending";
+      this.pushSeries(runtime);
 
-    const outcome = await this.writeSettlement(runtime, endedAt);
-    runtime.results = outcome.results;
-    runtime.settlement = outcome.written ? (runtime.rated ? "rated" : "unrated") : "failed";
-    runtime.settlementDone = true;
-    for (const userId of userIds) this.settling.delete(userId);
+      const outcome = await this.writeSettlement(runtime, endedAt);
+      runtime.results = outcome.results;
+      runtime.settlement = outcome.written ? (runtime.rated ? "rated" : "unrated") : "failed";
+    } catch (error) {
+      // 中途抛错也要落定：标记未计分并放开账号，否则账号会永远卡在「上一场还在结算」。
+      runtime.settlement = "failed";
+      throw error;
+    } finally {
+      runtime.settlementDone = true;
+      for (const userId of userIds) this.settling.delete(userId);
+    }
     this.rememberOpponents(runtime, endedAt);
     this.pushSeries(runtime);
   }

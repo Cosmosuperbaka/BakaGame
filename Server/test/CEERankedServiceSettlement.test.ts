@@ -495,4 +495,30 @@ describe("结算写库的退避重试", () => {
     expect(store.attempts).toBe(5);
     expect((await readAudit(harness, nextSeriesId)).players.length).toBe(2);
   });
+  test("结算过程抛错：账号不会永久卡在结算中，场次落为未计分并记错误日志", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    // 推送「结算中」那一帧时连接抛错一次：结算流程在写库之前就中断。
+    const send = client.record.send;
+    let armed = true;
+    client.record.send = (payload) => {
+      const state = (payload as { payload: { series?: { result?: { settlement?: string } } } })
+        .payload;
+      if (armed && state.series?.result?.settlement === "pending") {
+        armed = false;
+        throw new Error("测试用推送失败");
+      }
+      send(payload);
+    };
+
+    await harness.send(client, "cee.ranked.exit", {});
+    await harness.advance(0);
+
+    expect(harness.logs.error.map((item) => item.message)).toContain("排位结算异常");
+    // 不再报「上一场还在结算」：账号离开结果页后能重新排队。
+    await harness.send(client, "cee.ranked.leave", {});
+    await harness.send(client, "cee.ranked.queue", {});
+    expect(harness.latest(client).status).toBe("series");
+  });
 });
