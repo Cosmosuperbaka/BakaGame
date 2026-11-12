@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CEECharacterView } from "@bakagame/shared";
 import { ceeWsClient } from "@/lib/CEEWs";
@@ -65,5 +65,28 @@ describe("CEE 答案卡", () => {
       { characterId: 1, size: "large" },
       expect.anything()
     );
+  });
+
+  it("简介是资料表的一行：与作品、声优同一张表，正文直接可读，不藏在折叠标题后面", () => {
+    vi.stubGlobal("IntersectionObserver", ImmediateObserver);
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({ imageUrl: LARGE } as never);
+    render(
+      <CEEAnswerCard
+        answer={{ ...answer, voiceActors: ["铃代纱弓"], summary: "结束乐队的鼓手兼队长。" }}
+      />
+    );
+    const term = screen.getByText("简介");
+    expect(term.tagName).toBe("DT");
+    expect(term.closest("dl")).toContainElement(screen.getByText("声优"));
+    expect(term.closest("dl")).toContainElement(screen.getByText("结束乐队的鼓手兼队长。"));
+    expect(screen.queryByRole("button", { name: "角色简介" })).not.toBeInTheDocument();
+  });
+
+  it("没有作品、声优与简介时不渲染资料表", () => {
+    vi.stubGlobal("IntersectionObserver", ImmediateObserver);
+    vi.spyOn(ceeWsClient, "send").mockResolvedValue({ imageUrl: LARGE } as never);
+    render(<CEEAnswerCard answer={answer} />);
+    expect(screen.queryByText("作品")).not.toBeInTheDocument();
+    expect(screen.queryByText("简介")).not.toBeInTheDocument();
   });
 });

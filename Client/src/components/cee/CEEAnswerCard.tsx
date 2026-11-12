@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import type { CEECharacterView } from "@bakagame/shared";
 import { BangumiRichText } from "@/components/common/BangumiRichText";
 import { Badge } from "@/components/ui/Badge";
-import { Collapsible } from "@/components/ui/Collapsible";
+import { ClampedText } from "@/components/ui/ClampedText";
 import { revealCard } from "@/lib/Motion";
 import { CEECharacterImage } from "./CEECharacterImage";
 
@@ -26,7 +26,8 @@ function Fact({ label, value }: { label: string; value: string | number }) {
  * 本局答案卡。`sealed` 只在本局揭晓时打开：卡片沉一下再被抬起亮相、放回原位（`revealCard`），
  * 与中途对观战者公开的同一张卡区分开（那时还没结算）。
  * 与猜歌答案卡同一排布：窄屏图片在上、文字居中，`sm` 起左图右文。
- * 不展示角色编号；收藏与评论数之和按 Bangumi 的叫法称「人气值」。简介按 Bangumi 维基的富文本渲染。
+ * 不展示角色编号；收藏与评论数之和按 Bangumi 的叫法称「人气值」。简介按 Bangumi 维基的富文本渲染，
+ * 作为资料表的一行默认收成三行（`ClampedText`）。
  */
 export function CEEAnswerCard({
   answer,
@@ -81,40 +82,45 @@ export function CEEAnswerCard({
       </div>
     </div>
   );
-  const details = (
-    <>
-      {answer.appearances.length || answer.voiceActors.length ? (
-        <dl className="space-y-2 border-t border-background pt-3 text-sm">
-          {answer.appearances.length ? (
-            <div className="flex gap-3">
-              <dt className="w-10 shrink-0 text-muted-foreground">作品</dt>
-              <dd className="flex min-w-0 flex-wrap gap-1">
-                {answer.appearances.map((entry) => (
-                  <Badge key={entry.id} variant="subtle" className="max-w-full">
-                    <span className="truncate">{entry.nameCn || entry.name}</span>
-                    {entry.year > 0 ? (
-                      <span className="shrink-0 tabular-nums">· {entry.year}</span>
-                    ) : null}
-                  </Badge>
-                ))}
-              </dd>
-            </div>
-          ) : null}
-          {answer.voiceActors.length ? (
-            <div className="flex gap-3">
-              <dt className="w-10 shrink-0 text-muted-foreground">声优</dt>
-              <dd className="min-w-0 break-words">{answer.voiceActors.join("、")}</dd>
-            </div>
-          ) : null}
-        </dl>
-      ) : null}
-      {answer.summary ? (
-        <Collapsible title="角色简介">
-          <BangumiRichText text={answer.summary} className="text-sm leading-relaxed" />
-        </Collapsible>
-      ) : null}
-    </>
-  );
+  // 作品、声优、简介是同一张资料表的三行：左列字段名、右列内容。简介就地收成三行，右上角箭头展开全文，
+  // 不另起一个折叠标题（那样会在卡片里冒出一行没有容器语言的裸文字）。
+  const details =
+    answer.appearances.length || answer.voiceActors.length || answer.summary ? (
+      <dl className="space-y-2 border-t border-background pt-3 text-sm">
+        {answer.appearances.length ? (
+          <div className="flex gap-3">
+            <dt className="w-10 shrink-0 text-muted-foreground">作品</dt>
+            <dd className="flex min-w-0 flex-wrap gap-1">
+              {answer.appearances.map((entry) => (
+                <Badge key={entry.id} variant="subtle" className="max-w-full">
+                  <span className="truncate">{entry.nameCn || entry.name}</span>
+                  {entry.year > 0 ? (
+                    <span className="shrink-0 tabular-nums">· {entry.year}</span>
+                  ) : null}
+                </Badge>
+              ))}
+            </dd>
+          </div>
+        ) : null}
+        {answer.voiceActors.length ? (
+          <div className="flex gap-3">
+            <dt className="w-10 shrink-0 text-muted-foreground">声优</dt>
+            <dd className="min-w-0 break-words">{answer.voiceActors.join("、")}</dd>
+          </div>
+        ) : null}
+        {answer.summary ? (
+          // 字段名与正文取同一行高，两列首行对齐。
+          <div className="flex gap-3 leading-relaxed">
+            <dt className="w-10 shrink-0 text-muted-foreground">简介</dt>
+            <dd className="min-w-0 flex-1">
+              <ClampedText label="角色简介" lines={3}>
+                <BangumiRichText text={answer.summary} />
+              </ClampedText>
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+    ) : null;
   // 揭晓时不另加包装层，直接把外层升为 motion：多一层包裹会打断卡片自身的圆角与留白
   if (!sealed)
     return (
