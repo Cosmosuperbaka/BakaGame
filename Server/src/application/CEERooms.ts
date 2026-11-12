@@ -288,7 +288,8 @@ export class CEERooms {
     const seat = this.tabSeat(room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
     const name = this.name(payload.userName);
-    if (room.passwordHash)
+    // 以可见性为准而不是以摘要是否存在为准：建房途中摘要尚未算出，私密房也不能无口令进入。
+    if (room.visibility === "private")
       await this.verifyPassword(connection, room.id, room.passwordHash, payload.password);
     this.ensureFree(connection);
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
@@ -723,7 +724,7 @@ export class CEERooms {
   private async verifyPassword(
     connection: ConnectionRecord,
     roomId: string,
-    hash: string,
+    hash: string | undefined,
     value: string | null | undefined
   ): Promise<void> {
     const password = value?.trim();
@@ -732,7 +733,8 @@ export class CEERooms {
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
     if (!this.joinRoomPasswordLimiter.allow(roomId, this.now()))
       throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    if (!(await Bun.password.verify(password, hash)))
+    // 没有摘要可比对（房间仍在初始化）一律不匹配。
+    if (hash === undefined || !(await Bun.password.verify(password, hash)))
       throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
   }
   private ensureFree(connection: ConnectionRecord) {

@@ -477,6 +477,39 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(host).players.map((player) => player.name)).toEqual(["房主", "溢出者"]);
   });
 
+  test("私密房创建途中并发加入：无口令与带口令都被拒，创建完成后仍只有房主", async () => {
+    const h = harness();
+    const host = h.connect("房主");
+    const intruder = h.connect("闯入者");
+    // 不 await：建房在算口令摘要期间让出事件循环，闯入者的请求恰在这段窗口里到达。
+    const creating = h.send(host, "cee.room.create", {
+      source: "native",
+      roomId: "1234",
+      name: "加密房",
+      userName: "房主",
+      visibility: "private",
+      allowSpectators: true,
+      password: "正确密码",
+    });
+    const withoutPassword = h.send(intruder, "cee.room.join", { userName: "闯入者" });
+    await expect(withoutPassword).rejects.toMatchObject({ code: "PASSWORD_REQUIRED" });
+    // 窗口里连正确口令也不能进：此刻还没有可供比对的摘要，一律不匹配。
+    const withPassword = h.send(intruder, "cee.room.join", {
+      userName: "闯入者",
+      password: "正确密码",
+    });
+    await expect(withPassword).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+    await creating;
+
+    await expect(h.send(intruder, "cee.room.join", { userName: "闯入者" })).rejects.toMatchObject({
+      code: "PASSWORD_REQUIRED",
+    });
+    expect(h.snapshot(host).players).toHaveLength(1);
+    // 房主自己的创建不受影响，口令正确的人事后照常能进。
+    await h.send(intruder, "cee.room.join", { userName: "闯入者", password: "正确密码" });
+    expect(h.snapshot(host).players).toHaveLength(2);
+  });
+
   test("密码校验期间连接断开，不创建幽灵在线成员", async () => {
     const h = harness();
     const host = h.connect("房主");
