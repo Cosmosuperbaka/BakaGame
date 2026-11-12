@@ -230,12 +230,28 @@ const operationTarget = (action: string): { isHttp: boolean; isWs: boolean; targ
   return { isHttp: false, isWs: false, target: action };
 };
 
+interface OperationEvent {
+  status: number;
+  durationMs: number;
+  identifier: string;
+  action: string;
+  level: LogLevel;
+  createdAt: number;
+  traceId?: string;
+}
+
+interface OperationText {
+  body: string;
+  scope: string;
+  replay: boolean;
+}
+
 const operationBody = (
   action: string,
   status: number,
   durationMs: number,
   slowOperationMs: number
-): { body: string; scope: string; replay: boolean } => {
+): OperationText => {
   const { isHttp, isWs, target } = operationTarget(action);
   const replay = target.endsWith(" (replay)");
   const command = replay ? target.slice(0, -" (replay)".length) : target;
@@ -399,7 +415,67 @@ export class EventLogger {
     }
   }
 
-  private emitOperation({
+  /** 一次操作的各出口依次编排：本地与 OTLP 日志、控制台、指标与 Sentry span、OTLP span。 */
+  private emitOperation(operation: OperationEvent): void {
+    const text = operationBody(
+      operation.action,
+      operation.status,
+      operation.durationMs,
+      this.slowOperationMs
+    );
+    this.writeOperationLog(operation, text);
+    this.writeOperationConsole(operation, text);
+    this.emitOperationTelemetry(operation);
+  }
+
+  /** 日志记录：本地文件与 OTLP 的过滤相互独立，记录只按真实级别构造一次，各出口各自判断是否收。 */
+  private writeOperationLog(
+    { action, status, durationMs, identifier, level, createdAt, traceId }: OperationEvent,
+    { body, scope, replay }: OperationText
+  ): void {
+    const slow = durationMs >= this.slowOperationMs;
+    // 本地文件的取舍：默认只留失败与慢操作；成功操作降为 debug 档，随详细度调高才出现。
+    let structuredLevel: LogLevel = level;
+    if (level === "INFO" && this.operationLogging === "errors" && !slow && status < 400)
+      structuredLevel = "DEBUG";
+    const toLocal = this.isEnabled(structuredLevel);
+    const toOtlp = !!this.otlpExporter?.isEnabled && level !== "DEBUG";
+    if (!toLocal && !toOtlp) return;
+    const record = createOtelLogRecord({
+      createdAt,
+      level: LOWER_LEVEL[level],
+      body,
+      attributes: operationAttributes({ action, status, durationMs, identifier, scope, replay }),
+      traceId,
+    });
+    if (toLocal) this.dispatch(record);
+    if (toOtlp) this.enqueueOtlp(record, level);
+  }
+
+  /** 控制台只给人看失败与慢操作；成功请求永不逐条打印。 */
+  private writeOperationConsole(
+    { status, durationMs, identifier, level, createdAt, traceId }: OperationEvent,
+    { body, scope }: OperationText
+  ): void {
+    const slow = durationMs >= this.slowOperationMs;
+    if (!(level === "WARN" || level === "ERROR" || (level === "INFO" && slow))) return;
+    if (!this.isEnabled(level)) return;
+    this.console.write({
+      createdAt,
+      level: LOWER_LEVEL[level],
+      scope,
+      message: body,
+      fields: [
+        ["status", status],
+        ["durationMs", durationMs],
+        ["identifier", identifier],
+      ],
+      traceId,
+    });
+  }
+
+  /** 指标与 span 不因本地过滤而缺失（只有调试级跳过 OTLP span）。 */
+  private emitOperationTelemetry({
     status,
     durationMs,
     identifier,
@@ -407,62 +483,7 @@ export class EventLogger {
     level,
     createdAt,
     traceId,
-  }: {
-    status: number;
-    durationMs: number;
-    identifier: string;
-    action: string;
-    level: LogLevel;
-    createdAt: number;
-    traceId?: string;
-  }): void {
-    const { body, scope, replay } = operationBody(action, status, durationMs, this.slowOperationMs);
-    const slow = durationMs >= this.slowOperationMs;
-    // 本地文件的取舍：默认只留失败与慢操作；成功操作降为 debug 档，随详细度调高才出现。
-    let structuredLevel: LogLevel = level;
-    if (level === "INFO" && this.operationLogging === "errors" && !slow && status < 400)
-      structuredLevel = "DEBUG";
-
-    // 本地文件与 OTLP 的过滤相互独立：记录只按真实级别构造一次，各出口各自判断是否收。
-    const toLocal = this.isEnabled(structuredLevel);
-    const toOtlp = !!this.otlpExporter?.isEnabled && level !== "DEBUG";
-    if (toLocal || toOtlp) {
-      const record = createOtelLogRecord({
-        createdAt,
-        level: LOWER_LEVEL[level],
-        body,
-        attributes: operationAttributes({
-          action,
-          status,
-          durationMs,
-          identifier,
-          scope,
-          replay,
-        }),
-        traceId,
-      });
-      if (toLocal) this.dispatch(record);
-      if (toOtlp) this.enqueueOtlp(record, level);
-    }
-
-    if (
-      (level === "WARN" || level === "ERROR" || (level === "INFO" && slow)) &&
-      this.isEnabled(level)
-    ) {
-      this.console.write({
-        createdAt,
-        level: LOWER_LEVEL[level],
-        scope,
-        message: body,
-        fields: [
-          ["status", status],
-          ["durationMs", durationMs],
-          ["identifier", identifier],
-        ],
-        traceId,
-      });
-    }
-
+  }: OperationEvent): void {
     captureServerOperation({
       name: action,
       durationMs,
