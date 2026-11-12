@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { BADGE_CATALOG, BADGE_KINDS } from "../src/shared/Badges";
+import { BADGE_CATALOG } from "../src/shared/Badges";
 import { DatabaseBadgeRepository } from "../src/infrastructure/db/BadgeRepository";
 import { createDrizzleStub, stamp, tupleOf } from "./DrizzleStub";
 
 const T0 = Date.parse("2026-01-02T03:04:05.678Z");
 
 describe("徽章仓储（连接桩）", () => {
-  test("目录幂等补齐，并清掉已下线类型的授予关系", async () => {
+  test("目录幂等补齐；没有显式下线的类型时不删任何行，回滚旧代码也不会抹掉新类型的授予", async () => {
     const stub = createDrizzleStub();
     const repository = new DatabaseBadgeRepository(stub.database);
 
@@ -26,12 +26,19 @@ describe("徽章仓储（连接桩）", () => {
       expect.any(String),
       1,
     ]);
+    // 「不在当前目录」不等于「已下线」：新版本新增并已授予的类型，旧版本启动时不能把它连同授予关系删掉。
+    expect(stub.queries).toHaveLength(BADGE_CATALOG.length);
+    expect(stub.queries.some((query) => query.statement.startsWith("delete from"))).toBe(false);
+  });
 
+  test("只按显式声明的下线类型清理，授予关系随外键级联", async () => {
+    const stub = createDrizzleStub();
+    const repository = new DatabaseBadgeRepository(stub.database, ["legacy-a", "legacy-b"]);
+
+    await repository.ensureCatalog();
     const cleanup = stub.queryAt(BADGE_CATALOG.length);
-    expect(cleanup.statement).toBe(
-      `delete from \`badge\` where \`badge\`.\`id\` not in (${BADGE_KINDS.map(() => "?").join(", ")})`
-    );
-    expect(cleanup.params).toEqual([...BADGE_KINDS]);
+    expect(cleanup.statement).toBe("delete from `badge` where `badge`.`id` in (?, ?)");
+    expect(cleanup.params).toEqual(["legacy-a", "legacy-b"]);
   });
 
   test("并发补齐目录只跑一次，不重复打整批 upsert", async () => {
@@ -42,7 +49,7 @@ describe("徽章仓储（连接桩）", () => {
     const second = repository.ensureCatalog();
     expect(first).toBe(second);
     await Promise.all([first, second]);
-    expect(stub.queries).toHaveLength(BADGE_CATALOG.length + 1);
+    expect(stub.queries).toHaveLength(BADGE_CATALOG.length);
   });
 
   test("目录补齐失败不留缓存，下一次调用会重试", async () => {
@@ -55,7 +62,7 @@ describe("徽章仓储（连接桩）", () => {
 
     stub.reset();
     await repository.ensureCatalog();
-    expect(stub.queries).toHaveLength(BADGE_CATALOG.length + 1);
+    expect(stub.queries).toHaveLength(BADGE_CATALOG.length);
   });
 
   test("徽章按目录顺序分组，先行者带注册序号、其余不冒充序号", async () => {
@@ -87,6 +94,14 @@ describe("徽章仓储（连接桩）", () => {
     expect(query.params).toEqual(["u1", "u2"]);
   });
 
+  test("库里出现当前版本不认识的徽章类型时跳过，不下发给客户端", async () => {
+    const stub = createDrizzleStub();
+    const repository = new DatabaseBadgeRepository(stub.database);
+    stub.reply([tupleOf("u1", "owner", 1), tupleOf("u1", "from-the-future", null)]);
+
+    expect((await repository.badgesOf("u1")).map((item) => item.kind)).toEqual(["owner"]);
+  });
+
   test("空用户列表不查库，单人读取复用批量口径", async () => {
     const stub = createDrizzleStub();
     const repository = new DatabaseBadgeRepository(stub.database);
@@ -106,12 +121,12 @@ describe("徽章仓储（连接桩）", () => {
 
     const statements = stub.queries.map((query) => query.statement);
     expect(statements[0]).toContain("insert into `badge`");
-    expect(statements[BADGE_CATALOG.length + 1]).toBe("begin");
+    expect(statements[BADGE_CATALOG.length]).toBe("begin");
     expect(statements.at(-1)).toBe("commit");
-    const insert = stub.queryAt(BADGE_CATALOG.length + 2);
+    const insert = stub.queryAt(BADGE_CATALOG.length + 1);
     expect(insert.statement).toContain("insert into `user_badge`");
     expect(insert.params).toEqual(["u1", "contributor", "admin", stamp(T0), "admin", stamp(T0)]);
-    const equip = stub.queryAt(BADGE_CATALOG.length + 3);
+    const equip = stub.queryAt(BADGE_CATALOG.length + 2);
     expect(equip.statement).toBe(
       "update `user` set `updated_at` = ?, `equipped_badge` = ? where (`user`.`id` = ? and `user`.`equipped_badge` is null)"
     );
@@ -139,12 +154,12 @@ describe("徽章仓储（连接桩）", () => {
     const repository = new DatabaseBadgeRepository(stub.database);
 
     await repository.resetExclusive("owner", "u1");
-    const remove = stub.queryAt(BADGE_CATALOG.length + 2);
+    const remove = stub.queryAt(BADGE_CATALOG.length + 1);
     expect(remove.statement).toContain(
       "`user_badge`.`badge_id` = ? and `user_badge`.`user_id` <> ?"
     );
     expect(remove.params).toEqual(["owner", "u1"]);
-    const unequip = stub.queryAt(BADGE_CATALOG.length + 3);
+    const unequip = stub.queryAt(BADGE_CATALOG.length + 2);
     expect(unequip.params.slice(1)).toEqual([null, "owner", "u1"]);
 
     stub.reset();

@@ -1,11 +1,17 @@
-import { and, asc, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne } from "drizzle-orm";
 
-import { BADGE_CATALOG, BADGE_KINDS, type AccountBadge, type BadgeKind } from "../../shared/Badges";
+import {
+  BADGE_CATALOG,
+  BADGE_KINDS,
+  RETIRED_BADGE_IDS,
+  type AccountBadge,
+  type BadgeKind,
+} from "../../shared/Badges";
 import type { Database } from "./Database";
 import { badge, user, userBadge, userRegistration } from "./Schema";
 
 /**
- * 账号徽章的读写口。目录由 `ensureCatalog` 幂等补齐并清理已下线类型；
+ * 账号徽章的读写口。目录由 `ensureCatalog` 幂等补齐并清理显式下线的类型；
  * 授予关系只经这里写入，房间与对局快照不读这里。
  */
 export interface BadgeRepository {
@@ -19,10 +25,17 @@ export interface BadgeRepository {
   resetExclusive(badgeId: BadgeKind, keepUserId: string | null): Promise<void>;
 }
 
+const isBadgeKind = (value: string): value is BadgeKind =>
+  (BADGE_KINDS as readonly string[]).includes(value);
+
 export class DatabaseBadgeRepository implements BadgeRepository {
   private catalog: Promise<void> | null = null;
 
-  constructor(private readonly database: Database) {}
+  constructor(
+    private readonly database: Database,
+    /** 显式下线的类型；缺省取共享清单。仅测试注入。 */
+    private readonly retiredIds: readonly string[] = RETIRED_BADGE_IDS
+  ) {}
 
   ensureCatalog(): Promise<void> {
     this.catalog ??= this.syncCatalog().catch((error: unknown) => {
@@ -42,8 +55,9 @@ export class DatabaseBadgeRepository implements BadgeRepository {
           set: { label: entry.label, description: entry.description, sortOrder: entry.sortOrder },
         });
     }
-    // 已下线的旧类型连同授予关系一起清掉，避免客户端拿到不认识的徽章。
-    await this.database.db.delete(badge).where(notInArray(badge.id, [...BADGE_KINDS]));
+    // 只清显式下线的类型（授予关系随外键级联）；未知类型原样保留，读取侧会跳过它们。
+    if (this.retiredIds.length > 0)
+      await this.database.db.delete(badge).where(inArray(badge.id, [...this.retiredIds]));
   }
 
   async badgesOf(userId: string): Promise<AccountBadge[]> {
@@ -67,7 +81,9 @@ export class DatabaseBadgeRepository implements BadgeRepository {
       .orderBy(asc(badge.sortOrder));
     const grouped = new Map<string, AccountBadge[]>();
     for (const row of rows) {
-      const kind = row.badgeId as BadgeKind;
+      // 回滚到旧版本时，库里可能有新版本才认识的类型：跳过，不下发给客户端。
+      if (!isBadgeKind(row.badgeId)) continue;
+      const kind = row.badgeId;
       const list = grouped.get(row.userId) ?? [];
       list.push({ kind, serial: kind === "pioneer" ? (row.serial ?? null) : null });
       grouped.set(row.userId, list);

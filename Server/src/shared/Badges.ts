@@ -10,6 +10,13 @@
 export const BADGE_KINDS = ["owner", "contributor", "pioneer"] as const;
 export type BadgeKind = (typeof BADGE_KINDS)[number];
 
+/**
+ * 已正式下线的徽章类型编号：启动时只删除这里**显式列出**的类型（授予关系随外键级联删除）。
+ * 不能按「不在当前目录」删除：新版本新增并已授予的类型，在部署回滚到旧版本时会被旧代码
+ * 当成「未知类型」整类抹掉，再次前滚后授予关系无法恢复。
+ */
+export const RETIRED_BADGE_IDS: readonly string[] = [];
+
 /** 先行者只覆盖最早注册的这一批账号。 */
 export const PIONEER_BADGE_LIMIT = 1000;
 
