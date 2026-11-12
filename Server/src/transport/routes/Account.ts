@@ -119,8 +119,8 @@ const createRpcRouter = (
       }),
     },
     account: {
-      requestLoginCode: base.account.requestLoginCode.handler(({ input }) =>
-        service.requestLoginCode(input.qqNumber)
+      requestLoginCode: base.account.requestLoginCode.handler(({ input, context }) =>
+        service.requestLoginCode(input.qqNumber, context.clientIp)
       ),
       qqName: base.account.qqName.handler(({ input, context }) =>
         service.qqNickname(input.qqNumber, context.clientIp)

@@ -75,6 +75,18 @@ export class AccountService {
     maxRequests: 30,
   });
   /**
+   * 发码按来源地址的配额：没有这一层，单个匿名客户端换着号码就能耗尽全站额度，
+   * 让所有人收不到验证码。分钟额度明显低于全站额度，才挤不满全站；小时额度压住慢速消耗。
+   */
+  private readonly clientLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 10,
+  });
+  private readonly clientHourlyLimiter = new SlidingWindowRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    maxRequests: 60,
+  });
+  /**
    * 登录弹窗按 QQ 号回显昵称的配额：按客户端地址分桶。
    * 这个接口不必发信就能拿到昵称，不限住就成了按号枚举昵称的入口（见 Server/docs/Account.md §4）。
    */
@@ -196,19 +208,12 @@ export class AccountService {
   }
 
   async requestLoginCode(
-    qqNumber: string
+    qqNumber: string,
+    clientKey: string
   ): Promise<{ registered: boolean; resendAfterSeconds: number; qqName: string | null }> {
     const email = qqEmailOf(qqNumber);
+    this.takeLoginCodeQuota(email, clientKey, this.now());
     const now = this.now();
-    if (!this.globalLimiter.allow("global", now)) {
-      throw new AppError("RATE_LIMITED", "验证码发送繁忙，请稍后再试");
-    }
-    if (!this.resendLimiter.allow(email, now)) {
-      throw new AppError("RATE_LIMITED", `请 ${LOGIN_CODE_RESEND_SECONDS} 秒后再获取验证码`);
-    }
-    if (!this.hourlyLimiter.allow(email, now)) {
-      throw new AppError("RATE_LIMITED", "验证码获取过于频繁，请一小时后再试");
-    }
     const existing = (await (await this.adapter()).findUserByEmail(email))?.user as
       | {
           banned?: boolean | null;
@@ -240,6 +245,25 @@ export class AccountService {
       throw new AppError("MAIL_UNAVAILABLE", "验证码邮件发送失败，请稍后重试");
     }
     return { registered: Boolean(existing), resendAfterSeconds: LOGIN_CODE_RESEND_SECONDS, qqName };
+  }
+
+  /**
+   * 发码配额：从细到粗逐层只读判定（邮箱冷却 → 邮箱小时 → 来源地址 → 全站），全部放行才一起记账。
+   * 细键被拒的请求不消耗粗键额度：否则对同一邮箱的重复请求就能把来源额度与全站额度耗光。
+   * 判定与记账之间没有 await，并发请求不会交错。
+   */
+  private takeLoginCodeQuota(email: string, clientKey: string, now: number): void {
+    const gates: Array<[SlidingWindowRateLimiter, string, string]> = [
+      [this.resendLimiter, email, `请 ${LOGIN_CODE_RESEND_SECONDS} 秒后再获取验证码`],
+      [this.hourlyLimiter, email, "验证码获取过于频繁，请一小时后再试"],
+      [this.clientLimiter, clientKey, "验证码获取过于频繁，请稍后再试"],
+      [this.clientHourlyLimiter, clientKey, "验证码获取过于频繁，请一小时后再试"],
+      [this.globalLimiter, "global", "验证码发送繁忙，请稍后再试"],
+    ];
+    for (const [limiter, key, message] of gates) {
+      if (!limiter.peek(key, now).allowed) throw new AppError("RATE_LIMITED", message);
+    }
+    for (const [limiter, key] of gates) limiter.consume(key, now);
   }
 
   /**

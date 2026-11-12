@@ -601,10 +601,16 @@ export const createAccountTestApp = (
     else if (!napcat.state.names.has(qqNumber)) napcat.state.names.set(qqNumber, `玩家${qqNumber}`);
   };
 
+  let signInCounter = 0;
+
   /** 完整走一遍「发码 → 填码登录」，返回会话 Cookie；`name` 会作为该 QQ 号查到的昵称，成为账号昵称。 */
   const signIn = async (qqNumber: string, name?: string) => {
     await prepareSignup(qqNumber, name);
-    const sent = await rpc("account/requestLoginCode", { qqNumber });
+    // 夹具一口气登录很多个号：每次换一个来源地址，避免撞上单来源的发码额度。
+    signInCounter += 1;
+    const sent = await rpc("account/requestLoginCode", { qqNumber }, undefined, {
+      "x-real-ip": `10.${Math.floor(signInCounter / 250)}.0.${(signInCounter % 250) + 1}`,
+    });
     if (sent.status !== 200) throw new Error(`发码失败: ${JSON.stringify(sent.body)}`);
     const email = `${qqNumber}@qq.com`;
     const response = await app.handle(
