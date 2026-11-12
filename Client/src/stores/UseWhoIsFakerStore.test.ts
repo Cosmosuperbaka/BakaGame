@@ -46,11 +46,19 @@ vi.mock("@/lib/WhoIsFakerWs", () => ({
 }));
 
 import { getSessionToken, saveSessionToken } from "@/lib/Storage";
-import {
-  initWhoIsFakerWs as initGameSocket,
-  useWhoIsFakerStore,
-  withChannelNotices,
-} from "./UseWhoIsFakerStore";
+import { initWhoIsFakerWs, useWhoIsFakerStore, withChannelNotices } from "./UseWhoIsFakerStore";
+import { wifPrivate, WIF_PEOPLE } from "@/stories/fixtures/WhoIsFaker";
+
+// 初始化带幂等门闩：每个用例结束必须释放，否则后一个用例拿到的是空操作。
+const disposers: Array<() => void> = [];
+const initGameSocket = () => {
+  const dispose = initWhoIsFakerWs();
+  disposers.push(dispose);
+  return dispose;
+};
+afterEach(() => {
+  disposers.splice(0).forEach((dispose) => dispose());
+});
 
 const initialState = useWhoIsFakerStore.getState();
 
@@ -227,6 +235,42 @@ describe("game store integration", () => {
       sessionToken: null,
       roomClosedAt: null,
     });
+  });
+
+  it("重复初始化不叠加第二路消息与状态订阅", () => {
+    initGameSocket();
+    initGameSocket();
+    expect(wsMock.getMessageHandlers()).toHaveLength(1);
+    expect(wsMock.getStatusHandlers()).toHaveLength(1);
+    expect(wsMock.connect).toHaveBeenCalledOnce();
+  });
+
+  it("重连后私有态基线作废：旧版本号的补丁改为请求全量，不落在旧基线上", () => {
+    wsMock.send.mockResolvedValue({});
+    initGameSocket();
+    const privateState = wifPrivate(WIF_PEOPLE.host, "waiting");
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: { mode: "full", revision: 1, state: privateState },
+    });
+    expect(useWhoIsFakerStore.getState().privateState).toEqual(privateState);
+
+    wsMock.emitStatus(true);
+    wsMock.send.mockClear();
+    wsMock.emitMessage({
+      type: "event",
+      event: "game.privateState",
+      payload: {
+        mode: "patch",
+        baseRevision: 1,
+        revision: 2,
+        operations: [{ op: "replace", path: "/playerId", value: "tampered" }],
+      },
+    });
+
+    expect(wsMock.send).toHaveBeenCalledWith("room.requestSync", {}, expect.anything());
+    expect(useWhoIsFakerStore.getState().privateState).toEqual(privateState);
   });
 
   it("subscribes and restores the active session after socket reconnection", async () => {
@@ -546,6 +590,7 @@ describe("game store integration", () => {
 });
 
 it("玩法清理关闭连接、释放订阅并保留刷新凭据，可重新初始化", () => {
+  wsMock.disconnect.mockClear();
   saveSessionToken("1234", "recoverable");
   useWhoIsFakerStore.setState({ connected: true, lobbyReady: true });
   const cleanup = initGameSocket();

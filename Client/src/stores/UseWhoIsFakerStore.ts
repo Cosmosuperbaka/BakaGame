@@ -405,7 +405,13 @@ function endRoom(
   currentStore.addToast(toastText, "error");
 }
 
+/** 幂等门闩：重复调用 initWhoIsFakerWs 不应叠加第二路消息与状态订阅。 */
+let whoIsFakerWsInitialized = false;
+
 export function initWhoIsFakerWs() {
+  if (whoIsFakerWsInitialized) return () => {};
+  whoIsFakerWsInitialized = true;
+
   const unsubMsg = ws.onMessage((msg: ServerMessage) => {
     if (msg.type !== "event") return;
     const evt = msg as EventPacket;
@@ -417,11 +423,7 @@ export function initWhoIsFakerWs() {
         break;
       case "room.snapshot":
         {
-          const result = consumeStateSync(
-            syncedSnapshot ?? currentStore.snapshot,
-            snapshotRevision,
-            evt.payload
-          );
+          const result = consumeStateSync(syncedSnapshot, snapshotRevision, evt.payload);
           if (result.needsFullSync || !result.state) {
             requestFullSync();
             break;
@@ -433,11 +435,7 @@ export function initWhoIsFakerWs() {
         break;
       case "game.privateState":
         {
-          const result = consumeStateSync(
-            syncedPrivateState ?? currentStore.privateState,
-            privateStateRevision,
-            evt.payload
-          );
+          const result = consumeStateSync(syncedPrivateState, privateStateRevision, evt.payload);
           if (result.needsFullSync || !result.state) {
             requestFullSync();
             break;
@@ -487,9 +485,8 @@ export function initWhoIsFakerWs() {
     currentStore.setConnected(connected);
 
     if (connected) {
-      snapshotRevision = undefined;
-      privateStateRevision = undefined;
-      syncedSnapshot = null;
+      // 快照与私有态的基线一起作废：旧连接上的版本号对新连接没有意义。
+      resetWhoIsFakerStateSync();
       ws.send("lobby.subscribeRooms", {}).catch(() => {});
       if (currentStore.roomId && currentStore.sessionToken) {
         saveSessionToken(currentStore.roomId, currentStore.sessionToken);
@@ -501,6 +498,7 @@ export function initWhoIsFakerWs() {
   ws.connect();
 
   return () => {
+    whoIsFakerWsInitialized = false;
     unsubMsg();
     unsubStatus();
     connectionGeneration += 1;
