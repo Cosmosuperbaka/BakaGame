@@ -151,6 +151,18 @@ interface Tlv {
   contentEnd: number;
 }
 
+/**
+ * 不可信字节的解析兜底上限，取值都远大于真实证书链（单张证书约 1~2 KiB、链 3~5 张、
+ * 单个 SEQUENCE 的子节点不过几十个），只用来挡恶意输入。
+ * 本模块的解析器是按固定结构逐层读取、没有递归，嵌套深度由代码结构本身限定，
+ * 因此这里只需限制「总字节数、链长、单容器子节点数、标签号续位字节数」。
+ */
+const MAX_CERTIFICATE_DER_BYTES = 32 * 1024;
+const MAX_CHAIN_CERTIFICATES = 16;
+const MAX_CHILDREN_PER_CONTAINER = 2048;
+/** 4 个续位字节即 28 位，足以覆盖本模块用到的 704/709，且不会撑破 32 位有符号运算。 */
+const MAX_TAG_CONTINUATION_BYTES = 4;
+
 const CLASS_UNIVERSAL = 0;
 const CLASS_CONTEXT = 2;
 
@@ -177,7 +189,8 @@ const readLength = (buf: Buffer, cursor: number): { start: number; end: number }
   let length = 0;
   for (let index = 0; index < bytes; index += 1) {
     if (start >= buf.length) throw new DerError("DER 长度字段越界");
-    length = (length << 8) | buf[start];
+    // 不能用 `<<`：它按 32 位有符号整数算，最高字节 >= 0x80 时会变成负数，使 end < start。
+    length = length * 256 + buf[start];
     start += 1;
   }
   return { start, end: start + length };
@@ -192,23 +205,32 @@ const readTlv = (buf: Buffer, offset: number): Tlv => {
   if (tagNumber === 0x1f) {
     // 高标签号（>30）用 base-128 续位编码：rootOfTrust=704、attestationApplicationId=709 走的就是这条路。
     tagNumber = 0;
-    for (;;) {
+    for (let used = 0; ; used += 1) {
+      if (used >= MAX_TAG_CONTINUATION_BYTES) throw new DerError("DER 标签号过长");
       if (cursor >= buf.length) throw new DerError("DER 标签不完整");
       const byte = buf[cursor];
       cursor += 1;
-      tagNumber = (tagNumber << 7) | (byte & 0x7f);
+      tagNumber = tagNumber * 128 + (byte & 0x7f);
       if ((byte & 0x80) === 0) break;
     }
   }
   const { start, end } = readLength(buf, cursor);
   if (end > buf.length) throw new DerError("DER 内容超出缓冲区");
+  // 防御性不变量：内容区间不得倒退。长度累加一旦再被改回位运算而溢出成负数，
+  // 游标会回到原点、遍历永不结束，所以这里独立于 readLength 再拦一次。
+  if (end < start) throw new DerError("DER 内容区间倒退");
   return { tagClass, tagNumber, start: offset, contentStart: start, contentEnd: end };
 };
 
 function* childrenOf(buf: Buffer, tlv: Tlv): Generator<Tlv> {
   let cursor = tlv.contentStart;
+  let count = 0;
   while (cursor < tlv.contentEnd) {
+    count += 1;
+    if (count > MAX_CHILDREN_PER_CONTAINER) throw new DerError("DER 容器子节点过多");
     const child = readTlv(buf, cursor);
+    // 每个子节点至少占标识 + 长度两字节，游标必须严格前进，否则生成器永不结束。
+    if (child.contentEnd <= cursor) throw new DerError("DER 游标未前进");
     yield child;
     cursor = child.contentEnd;
   }
@@ -335,7 +357,9 @@ const pemToDer = (pem: string): Buffer => {
   if (!pem.includes("BEGIN CERTIFICATE")) throw new DerError("链中出现非证书 PEM");
   const body = pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   if (body.length === 0) throw new DerError("证书 PEM 为空");
-  return Buffer.from(body, "base64");
+  const der = Buffer.from(body, "base64");
+  if (der.length > MAX_CERTIFICATE_DER_BYTES) throw new DerError("证书过大");
+  return der;
 };
 
 const parseExtensions = (
@@ -653,6 +677,7 @@ const collectEvidence = (
 ): Collected => {
   const evidence: Evidence = {};
   if (request.chain.length < 2) return { failure: "chain_too_short", evidence };
+  if (request.chain.length > MAX_CHAIN_CERTIFICATES) throw new DerError("证书链过长");
   const chain = request.chain.map((pem) => parseCertificate(pemToDer(pem)));
   // 除叶子外再出现 attestation 扩展，就是在把别人的证明接到自己的密钥上。
   if (chain.slice(1).some((cert) => cert.extensions.has(ANDROID_KEY_DESCRIPTION_OID)))

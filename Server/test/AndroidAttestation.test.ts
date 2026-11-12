@@ -622,6 +622,66 @@ describe("Android Key Attestation 链验证", () => {
     expect(verdict.reasons).toEqual(["malformed_attestation"]);
   });
 
+  describe("恶意 DER 必须被干净拒绝（不挂死、不抛未捕获异常）", () => {
+    const hex = (text: string): Buffer => Buffer.from(text.replace(/\s+/g, ""), "hex");
+    const verifyMalicious = (der: Buffer) =>
+      verifyAndroidAttestation(
+        {
+          chain: [pemOf(der), pemOf(der)],
+          expectedChallenge: Buffer.alloc(0),
+          expectedPackageName: "x",
+        },
+        { revocation: sourceOf(snapshotOf({})) }
+      );
+    const expectRejected = async (der: Buffer): Promise<void> => {
+      const started = Date.now();
+      const verdict = await verifyMalicious(der);
+      expect(verdict.level).toBe("rejected");
+      expect(verdict.reasons).toEqual(["malformed_attestation"]);
+      expect(Date.now() - started).toBeLessThan(2000);
+    };
+
+    test("4 字节长度最高位为 1（有符号溢出成负数）→ rejected 且立即返回", async () => {
+      await expectRejected(hex("30 06 30 84 FF FF FF FA"));
+    });
+
+    test("4 字节长度取最大值 / 恰好越界 → rejected", async () => {
+      await expectRejected(hex("30 84 FF FF FF FF 00"));
+      await expectRejected(hex("30 84 7F FF FF FF 00"));
+      await expectRejected(hex("30 84 00 00 00 10 00"));
+    });
+
+    test("长度字段自身被截断 / 超过 4 字节 / 不定长 → rejected", async () => {
+      await expectRejected(hex("30 84 00 00"));
+      await expectRejected(hex("30 85 00 00 00 00 01 00"));
+      await expectRejected(hex("30 80 00 00"));
+    });
+
+    test("超长标签号续位（全 0xFF）→ rejected 且不溢出", async () => {
+      await expectRejected(Buffer.concat([Buffer.from([0x1f]), Buffer.alloc(64, 0xff), Buffer.from([0x00])]));
+      await expectRejected(Buffer.concat([Buffer.from([0x30, 0x20, 0x1f]), Buffer.alloc(30, 0xff)]));
+    });
+
+    test("子节点数量超过上限（大量空 NULL）→ rejected", async () => {
+      const nulls = Buffer.alloc(6000 * 2);
+      for (let index = 0; index < 6000; index += 1) nulls[index * 2] = 0x05;
+      await expectRejected(encode([0x30], nulls));
+    });
+
+    test("单张证书过大 / 链过长 → rejected", async () => {
+      await expectRejected(encode([0x30], Buffer.alloc(100_000)));
+      const verdict = await verifyAndroidAttestation(
+        {
+          chain: Array.from({ length: 40 }, () => pemOf(hex("30 00"))),
+          expectedChallenge: Buffer.alloc(0),
+          expectedPackageName: "x",
+        },
+        { revocation: sourceOf(snapshotOf({})) }
+      );
+      expect(verdict.level).toBe("rejected");
+    });
+  });
+
   test("吊销判定覆盖信任锚自身", async () => {
     const built = buildChain({ rootSerial: 0x7777 });
     const verdict = await verify(built, {}, snapshotOf({ "7777": "revoked" }));
