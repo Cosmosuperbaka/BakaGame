@@ -457,6 +457,15 @@ describe("排位系列赛：离线判定", () => {
     expect(series.seats[1].offlineSince).toBe(6_000);
   });
 
+  it("双方都超过阈值时判先离线的一方负，与席位序无关", () => {
+    const series = twoHumans();
+    setCEERankedSeatOnline(series, 1, false, 6_000);
+    setCEERankedSeatOnline(series, 0, false, 8_000);
+    tickCEERankedSeries(series, 8_000 + CEE_RANKED_OFFLINE_FORFEIT_MS);
+    expect(series.endReason).toBe("offline");
+    expect(series.winner).toBe(0);
+  });
+
   it("人机席位下线不参与判负", () => {
     const series = newSeries();
     setCEERankedSeatOnline(series, 1, false, 6_000);

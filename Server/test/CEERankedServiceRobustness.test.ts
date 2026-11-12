@@ -11,6 +11,7 @@ import {
   CEE_RANKED_BOT_FALLBACK_MS,
   CEE_RANKED_COUNTDOWN_MS,
   CEE_RANKED_INTERMISSION_MS,
+  CEE_RANKED_OFFLINE_FORFEIT_MS,
 } from "../src/shared/Index";
 import { appErrorOf, openPlay, rankedHarness, startBotSeries } from "./CEERankedFixtures";
 
@@ -202,6 +203,28 @@ describe("正在开赛时的排队与取消", () => {
       expect(harness.seriesView(client).opponent.isBot).toBe(false);
     expect(harness.seriesView(third).seriesId).not.toBe(harness.seriesView(first).seriesId);
     expect(harness.states(third).filter((state) => state.status === "queued")).toHaveLength(1);
+  });
+
+  test("开赛窗口里断线又没重连：席位照常计离线，满阈值后判负", async () => {
+    const store = new GatedRatingStore();
+    const harness = rankedHarness({ store });
+    const client = harness.connect("甲");
+
+    const pending = harness.send(client, "cee.ranked.queue", {});
+    await yieldToEventLoop();
+    client.record.close();
+    store.release();
+    await pending;
+    await harness.advance(CEE_RANKED_OFFLINE_FORFEIT_MS + 1_000);
+
+    const reconnected = harness.connect("甲-重连", {
+      account: { userId: client.userId, image: null },
+    });
+    await harness.send(reconnected, "cee.ranked.status", {});
+    const view = harness.seriesView(reconnected);
+    expect(view.phase).toBe("settled");
+    expect(view.result?.reason).toBe("offline");
+    expect(view.result?.outcome).toBe("lost");
   });
 
   test("开赛窗口里断线：这一场照常开出，重连后看得到", async () => {

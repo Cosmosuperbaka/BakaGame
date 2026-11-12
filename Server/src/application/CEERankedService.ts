@@ -896,10 +896,13 @@ export class CEERankedService {
       timerWakeAt: null,
     };
     this.seriesById.set(series.id, runtime);
-    for (const seat of input.seats) {
+    for (const [index, seat] of input.seats.entries()) {
       if (seat.isBot || seat.userId === null) continue;
       this.seriesByUser.set(seat.userId, runtime);
       this.pushedWindow.delete(seat.userId);
+      // 开赛是异步的：窗口里断线的人此刻没有系列赛可标，开出来后补记离线，否则永远没人给他计时。
+      if (!this.attachment.has(seat.userId))
+        setCEERankedSeatOnline(series, index === 0 ? 0 : 1, false, this.now());
     }
     this.pushSeries(runtime);
     this.scheduleTimer(runtime);

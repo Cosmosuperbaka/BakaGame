@@ -167,16 +167,21 @@ function finishByLeaving(
 /** 推进时间驱动的变化（离线判负、局结算、局间开局）；有变化返回 true。 */
 export function tickCEERankedSeries(series: CEERankedSeries, now: number): boolean {
   if (series.phase === "settled") return false;
+  // 双方都已超过阈值时判先离线的一方负；同一时刻离线才按席位序。
+  let forfeitSeat: CEERankedSeatIndex | null = null;
+  let earliest = Number.POSITIVE_INFINITY;
   for (const seat of [0, 1] as const) {
     const target = series.seats[seat];
-    if (
-      !target.isBot &&
-      target.offlineSince !== null &&
-      now - target.offlineSince >= CEE_RANKED_OFFLINE_FORFEIT_MS
-    ) {
-      finishByLeaving(series, seat, "offline", now);
-      return true;
+    if (target.isBot || target.offlineSince === null) continue;
+    if (now - target.offlineSince < CEE_RANKED_OFFLINE_FORFEIT_MS) continue;
+    if (target.offlineSince < earliest) {
+      earliest = target.offlineSince;
+      forfeitSeat = seat;
     }
+  }
+  if (forfeitSeat !== null) {
+    finishByLeaving(series, forfeitSeat, "offline", now);
+    return true;
   }
   const current = series.current;
   if (current) {
