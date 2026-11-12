@@ -9,9 +9,17 @@ import { retryLazyImport } from "@/lib/LazyImport";
  * 路由级懒加载：数据路由先取到页面分块、再提交导航，
  * 跨页过渡因此总在新页可渲染之后才开始，不会把加载占位拍进快照。
  */
-const page = (load: () => Promise<{ default: ComponentType }>, key: string) => async () => ({
-  Component: (await retryLazyImport(load, key)).default,
-});
+const page =
+  <P extends object = object>(
+    load: () => Promise<{ default: ComponentType<P> }>,
+    key: string,
+    props?: P
+  ) =>
+  async () => {
+    const Page = (await retryLazyImport(load, key)).default;
+    // 要给页面传固定属性（如单人房）时只能走 element；其余一律交给路由库按 Component 渲染。
+    return props ? { element: <Page {...props} /> } : { Component: Page as ComponentType };
+  };
 
 /** 数据路由：跨页过渡（`viewTransition`）只在数据路由下生效，见 DesignGuide §8。 */
 export function createAppRouter() {
@@ -44,13 +52,7 @@ export function createAppRouter() {
             { index: true, lazy: page(() => import("@/pages/SonGuessrPage"), "song") },
             {
               path: "solo",
-              lazy: async () => {
-                const { default: SonGuessrRoomPage } = await retryLazyImport(
-                  () => import("@/pages/SonGuessrRoomPage"),
-                  "song-room"
-                );
-                return { element: <SonGuessrRoomPage solo /> };
-              },
+              lazy: page(() => import("@/pages/SonGuessrRoomPage"), "song-room", { solo: true }),
             },
             {
               path: "room/:roomId",

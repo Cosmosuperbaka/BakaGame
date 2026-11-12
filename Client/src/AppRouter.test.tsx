@@ -28,6 +28,12 @@ vi.mock("@/layouts/RootLayout", async () => ({
   RootLayout: (await import("react-router-dom")).Outlet,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
+vi.mock("@/layouts/SonGuessrLayout", async () => ({
+  default: (await import("react-router-dom")).Outlet,
+}));
+vi.mock("@/pages/SonGuessrRoomPage", () => ({
+  default: ({ solo }: { solo?: boolean }) => <h1>{solo ? "song-solo-room" : "song-room"}</h1>,
+}));
 vi.mock("@/pages/StatusPage", () => ({
   default: () => {
     throw new Error("page-render-boom");
@@ -97,5 +103,13 @@ describe("路由错误出口", () => {
       bakagameSelfHealedModuleLoad?: true;
     };
     expect(reported.bakagameSelfHealedModuleLoad).toBe(true);
+  });
+
+  it.each([
+    ["/songuessr/solo", "song-solo-room"],
+    ["/songuessr/room/1234", "song-room"],
+  ])("猜歌房间路由 %s 渲染对应的页面形态", async (path, text) => {
+    renderAt(path);
+    expect(await screen.findByText(text)).toBeInTheDocument();
   });
 });
