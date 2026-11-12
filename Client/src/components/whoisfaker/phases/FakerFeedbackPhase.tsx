@@ -75,9 +75,10 @@ function VoteFeedback({
               const out = feedback.eliminatedPlayerIds.includes(targetId);
               return (
                 <motion.li key={targetId} variants={listItem}>
+                  {/* 出局者是实底红胶囊，只有描边胶囊才垫页面底：给实底胶囊垫底会把白字压在白底上 */}
                   <Badge
                     variant={out ? "destructive" : "outline"}
-                    className="gap-1.5 bg-background"
+                    className={out ? "gap-1.5" : "gap-1.5 bg-background"}
                   >
                     <span>{targetId === ABSTAIN_TARGET_ID ? "弃票" : nameOf(targetId)}</span>
                     <span className="tabular-nums">{count} 票</span>
@@ -110,9 +111,12 @@ function VoteFeedback({
                   <span className="shrink-0 text-muted-foreground">
                     {abstained ? "选择" : "投给"}
                   </span>
+                  {/* 被投对象是这一行的结论：不随投票人一起被压缩，最多占半行，超出才截断 */}
                   <span
                     className={
-                      abstained ? "shrink-0 text-muted-foreground" : "min-w-0 truncate font-medium"
+                      abstained
+                        ? "shrink-0 text-muted-foreground"
+                        : "min-w-0 max-w-1/2 shrink-0 truncate font-medium"
                     }
                   >
                     {abstained ? "弃票" : nameOf(vote.targetId)}
