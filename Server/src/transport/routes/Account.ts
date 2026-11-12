@@ -1,6 +1,6 @@
 import { ORPCError, implement } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 
 import type { AccountService } from "../../application/AccountService";
 import type { AdminService } from "../../application/AdminService";
@@ -414,6 +414,14 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
           },
         });
       },
-      { detail: { hide: true } }
+      {
+        // 入口立契约：用户号与版本戳不设上限，未命中缓存时超长用户号会直接拿去查库。
+        params: t.Object({ userId: t.String({ minLength: 1, maxLength: 64 }) }),
+        query: t.Object({
+          size: t.Optional(t.String({ maxLength: 8 })),
+          v: t.Optional(t.String({ maxLength: 64 })),
+        }),
+        detail: { hide: true },
+      }
     );
 };

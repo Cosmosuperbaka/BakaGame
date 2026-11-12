@@ -103,3 +103,33 @@ describe("单个来源超额不影响其他来源", () => {
     expect((await probe("198.51.100.1")).status).toBe(200);
   });
 });
+
+describe("头像路由入参边界", () => {
+  it("超长的用户号与查询参数在入口被拒，不进账号服务查库", async () => {
+    const { accountRoutes } = await import("../src/transport/routes/Account");
+    const { EventLogger } = await import("../src/infrastructure/EventLogger");
+    let lookups = 0;
+    const app = accountRoutes(
+      {
+        ready: Promise.resolve(),
+        service: {
+          avatar: async () => {
+            lookups += 1;
+            return {
+              image: { bytes: new Uint8Array([1]), contentType: "image/png" },
+              current: true,
+            };
+          },
+        },
+      } as never,
+      new EventLogger()
+    );
+    const get = (path: string) => app.handle(new Request(`http://localhost${path}`));
+
+    expect((await get(`/api/account/avatar/${"a".repeat(200)}`)).status).toBe(422);
+    expect((await get(`/api/account/avatar/u1?v=${"v".repeat(200)}`)).status).toBe(422);
+    expect(lookups).toBe(0);
+    expect((await get("/api/account/avatar/u1?size=100&v=abc")).status).toBe(200);
+    expect(lookups).toBe(1);
+  });
+});
