@@ -1070,11 +1070,11 @@ export class SonGuessrService implements AdminRoomControl {
   private async updateSettings(connection: ConnectionRecord, payload: SongUpdateSettingsPayload) {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
-    if (room.phase !== "waiting") {
-      throw new AppError("INVALID_PHASE", "只能在等待阶段修改房间设置");
-    }
+    this.assertSettingsEditable(room);
     const next = { ...room, settings: cloneSettings(room.settings) };
     await this.applyRoomAdmission(next, payload);
+    // 口令摘要要跨 await：期间房间可能已开局或关闭，回来先复核再整块覆盖。
+    this.assertSettingsEditable(room);
     this.applyRoundSettings(next, room.solo, payload);
 
     room.name = next.name;
@@ -1086,6 +1086,22 @@ export class SonGuessrService implements AdminRoomControl {
     this.publishRoom(room);
     this.publishLobby();
     return { settings: room.settings };
+  }
+
+  /**
+   * 设置只在「等待且没有开局在途」时可改。开局加载期间阶段仍是 waiting，
+   * 只看阶段会放过题型或出题方式的改动，让回合按旧条件选歌却克隆新设置。
+   */
+  private assertSettingsEditable(room: SonGuessrRoomRecord) {
+    if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
+    if (room.phase !== "waiting" || this.isStarting(room)) {
+      throw new AppError("INVALID_PHASE", "只能在等待阶段修改房间设置");
+    }
+  }
+
+  /** 房间正在开局：自动与手动两种开局共用同一口径，设置、开局与入池开关都按它拦。 */
+  private isStarting(room: SonGuessrRoomRecord) {
+    return room.automaticRoundLoading === true || room.manualRoundStarting === true;
   }
 
   /** 先算出公开/私密的密码归属再校验，校验失败时 room 上还没有任何写入。 */
@@ -1576,11 +1592,7 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     const automatic = room.solo || room.settings.questionMode === "automatic";
-    if (
-      room.phase !== "waiting" ||
-      (automatic && room.automaticRoundLoading) ||
-      (!automatic && room.manualRoundStarting)
-    ) {
+    if (room.phase !== "waiting" || this.isStarting(room)) {
       throw new AppError("INVALID_PHASE", "当前不能开始新游戏");
     }
 
@@ -1643,6 +1655,11 @@ export class SonGuessrService implements AdminRoomControl {
           verifySession,
           getLoginStatus,
         });
+      }
+
+      // 上面的复核跨了 await：回来先确认房间还在、阶段没被别的流程推进，再动任何状态。
+      if (this.rooms.get(room.id) !== room || room.phase !== "waiting") {
+        throw new AppError("ROUND_EXPIRED", "出题操作已失效");
       }
 
       // 开局同样是轮次起点：把只可能在离线期间留下的席位预约先结算，再按最终席位查准备。

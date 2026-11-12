@@ -1,9 +1,10 @@
 import { AppError } from "../../src/domain/Errors";
 import { GameRoundRecord } from "../../src/domain/GameRecord";
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   connection,
   createRoom,
+  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -1143,6 +1144,99 @@ describe("SonGuessrService", () => {
       phase: "roundResult",
       roundNumber: 1,
       roundSummary: summary,
+    });
+  });
+
+  describe("开局加载期间的并发与设置", () => {
+    // 断言失败时也要放行卡住的开局，否则悬着的 Promise 会拖住整个测试进程。
+    let releaseGate: (() => void) | undefined;
+    afterEach(() => releaseGate?.());
+    /** 开局复核卡在 getLoginStatus：此时阶段仍是 waiting，但房间已经在开局。 */
+    const setupStarting = async (questionMode: "manual" | "automatic", startNow = true) => {
+      const gate = deferredServiceResult<void>();
+      let hold = false;
+      const slowProvider: MusicProvider = {
+        ...provider,
+        getLoginStatus: async (cookie) => {
+          if (hold) await gate.promise;
+          return { cookie, account: { nickname: "测试账号", vipStatus: "vip" } };
+        },
+        getPlaylistSongs: async () => ({
+          info: { id: "42", name: "测试歌单", songCount: 1 },
+          songs: [songs.answer],
+        }),
+      };
+      const service = new SonGuessrService({
+        musicProvider: slowProvider,
+        random: { nextInt: () => 0 },
+      });
+      const host = connection(service, "starting-host");
+      const guest = connection(service, "starting-guest");
+      await createRoom(service, host);
+      await joinRoom(service, guest, "客人");
+      const send = (id: string, type: string, payload: unknown) =>
+        execute(service, host, { id, type, roomId: "1234", payload } as never);
+      await send("starting-settings", "song.room.updateSettings", {
+        questionMode,
+        autoFilters: { artists: [], minPopularity: 0 },
+      });
+      await execute(service, guest, {
+        id: "starting-ready",
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+      hold = true;
+      releaseGate = () => gate.resolve();
+      const begin = () => send("starting-first", "song.game.start", {});
+      return {
+        service,
+        host,
+        send,
+        begin,
+        first: startNow ? begin() : undefined!,
+        release: () => gate.resolve(),
+        snapshot: () => lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot"),
+      };
+    };
+
+    test("自动开局加载期间改题型被拒，回合设置仍是猜歌", async () => {
+      const ctx = await setupStarting("automatic");
+      await expect(
+        ctx.send("starting-type", "song.room.updateSettings", { questionType: "anime" })
+      ).rejects.toMatchObject({ code: "INVALID_PHASE" });
+      ctx.release();
+      await expect(ctx.first).resolves.toEqual({ started: true });
+      expect(ctx.snapshot().settings.questionType).toBe("song");
+    });
+
+    test("手动开局复核期间不能改成自动再开第二局，回合不被吞", async () => {
+      const ctx = await setupStarting("manual");
+      await expect(
+        ctx.send("starting-mode", "song.room.updateSettings", { questionMode: "automatic" })
+      ).rejects.toMatchObject({ code: "INVALID_PHASE" });
+      await expect(ctx.send("starting-second", "song.game.start", {})).rejects.toMatchObject({
+        code: "INVALID_PHASE",
+      });
+      ctx.release();
+      await expect(ctx.first).resolves.toEqual({ started: true });
+      expect(ctx.snapshot()).toMatchObject({ phase: "choosingSubmitter", roundNumber: 0 });
+      expect(ctx.snapshot().settings.questionMode).toBe("manual");
+    });
+
+    test("改口令的哈希计算期间开局，回来后设置更新被拒且不覆盖房间", async () => {
+      const ctx = await setupStarting("automatic", false);
+      // 先发设置更新：它停在口令摘要的 await 上，此时入口检查已经通过。
+      const update = ctx.send("starting-password", "song.room.updateSettings", {
+        name: "改名",
+        visibility: "private",
+        password: "secret-1",
+      });
+      const first = ctx.begin();
+      await expect(update).rejects.toMatchObject({ code: "INVALID_PHASE" });
+      ctx.release();
+      await expect(first).resolves.toEqual({ started: true });
+      expect(ctx.snapshot()).toMatchObject({ name: "猜歌房", visibility: "public" });
     });
   });
 });
