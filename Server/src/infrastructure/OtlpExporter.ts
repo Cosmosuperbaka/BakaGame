@@ -1,5 +1,11 @@
 import { AppError } from "../domain/Errors";
-import { formatOtlpSpanId, formatOtlpTraceId, toUnixNanoString } from "./logging/OtelEncoding";
+import {
+  formatOtlpSpanId,
+  formatOtlpTraceId,
+  toAttributes,
+  toUnixNanoString,
+} from "./logging/OtelEncoding";
+import { toOtlpLogRecord, type OtelLogRecord } from "./logging/OtelLog";
 import { countServerMetric } from "./Sentry";
 
 export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -28,16 +34,10 @@ export interface OtlpDrop {
   status?: number;
 }
 
-export interface OtlpLogRecord {
-  timestamp: number;
-  level: "INFO" | "WARN" | "ERROR";
-  message: string;
-  traceId?: string;
-  attributes?: Record<string, unknown>;
-}
-
 export interface OtlpSpanRecord {
   name: string;
+  /** 入站请求（HTTP）用 `server`，其余为进程内操作，缺省 `internal`。 */
+  kind?: "server" | "internal";
   traceId?: string;
   spanId?: string;
   parentSpanId?: string;
@@ -91,16 +91,6 @@ export class OtlpShutdownError extends Error {
   }
 }
 
-const toAnyValue = (v: unknown): Record<string, unknown> => {
-  if (typeof v === "boolean") return { boolValue: v };
-  if (typeof v === "number") {
-    if (Number.isInteger(v)) return { intValue: v };
-    return { doubleValue: v };
-  }
-  if (typeof v === "string") return { stringValue: v };
-  return { stringValue: JSON.stringify(v) };
-};
-
 /**
  * 只有「对端暂时处理不了」的状态才值得重发：超时、限流与 5xx。
  * 其余 4xx（坏载荷、过大、认证失败）原样重发只会得到同样的结果，还会堵住后面的日志。
@@ -122,7 +112,7 @@ export class OtlpExporter {
   /** 自上次汇报以来的丢弃：键为 `信号|原因|状态码`，值为条数。 */
   private readonly pendingDrops = new Map<string, number>();
 
-  private logBuffer: OtlpLogRecord[] = [];
+  private logBuffer: OtelLogRecord[] = [];
   private spanBuffer: OtlpSpanRecord[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private isShuttingDown = false;
@@ -193,7 +183,7 @@ export class OtlpExporter {
     return Boolean(this.logsEndpoint || this.tracesEndpoint);
   }
 
-  get buffer(): OtlpLogRecord[] {
+  get buffer(): OtelLogRecord[] {
     return this.logBuffer;
   }
 
@@ -233,7 +223,7 @@ export class OtlpExporter {
     return attrs;
   }
 
-  enqueue(record: OtlpLogRecord): void {
+  enqueue(record: OtelLogRecord): void {
     if (!this.logsEndpoint || this.isShuttingDown) return;
     if (this.logBuffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
       this.logBuffer.shift(); // 缓冲区达上限时淘汰最旧条目
@@ -298,10 +288,10 @@ export class OtlpExporter {
   }
 
   /** 可重试的失败：批次放回队首，缓冲超限时淘汰最旧。 */
-  private handleFailure(batch: OtlpLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
+  private handleFailure(batch: OtelLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
     this.bumpBackoff(type);
     if (type === "logs") {
-      this.logBuffer.unshift(...(batch as OtlpLogRecord[]));
+      this.logBuffer.unshift(...(batch as OtelLogRecord[]));
       if (this.logBuffer.length > OtlpExporter.MAX_BUFFER_SIZE) {
         const excess = this.logBuffer.length - OtlpExporter.MAX_BUFFER_SIZE;
         this.logBuffer.splice(0, excess);
@@ -328,7 +318,7 @@ export class OtlpExporter {
 
   /** 按响应结算一个批次：成功清退避，可重试回队，永久失败丢弃。 */
   private settle(
-    batch: OtlpLogRecord[] | OtlpSpanRecord[],
+    batch: OtelLogRecord[] | OtlpSpanRecord[],
     signal: OtlpSignal,
     response: Response
   ): boolean {
@@ -418,21 +408,7 @@ export class OtlpExporter {
             scopeLogs: [
               {
                 scope: { name: "bakagame-logger" },
-                logRecords: batch.map((item) => ({
-                  timeUnixNano: toUnixNanoString(item.timestamp),
-                  severityNumber: item.level === "ERROR" ? 17 : item.level === "WARN" ? 13 : 9,
-                  severityText: item.level,
-                  body: { stringValue: item.message },
-                  attributes: Object.entries({
-                    ...(item.attributes ?? {}),
-                    ...(item.traceId ? { trace_id: item.traceId } : {}),
-                  }).map(([k, v]) => ({
-                    key: k,
-                    value: {
-                      stringValue: typeof v === "string" ? v : JSON.stringify(v),
-                    },
-                  })),
-                })),
+                logRecords: batch.map(toOtlpLogRecord),
               },
             ],
           },
@@ -486,13 +462,11 @@ export class OtlpExporter {
                     ? { parentSpanId: formatOtlpSpanId(item.parentSpanId) }
                     : {}),
                   name: item.name,
-                  kind: 1, // SPAN_KIND_INTERNAL
+                  // SPAN_KIND_SERVER = 2（入站请求），SPAN_KIND_INTERNAL = 1。
+                  kind: item.kind === "server" ? 2 : 1,
                   startTimeUnixNano: toUnixNanoString(item.startTime),
                   endTimeUnixNano: toUnixNanoString(item.endTime),
-                  attributes: Object.entries(item.attributes ?? {}).map(([k, v]) => ({
-                    key: k,
-                    value: toAnyValue(v),
-                  })),
+                  attributes: toAttributes(item.attributes ?? {}),
                   status: {
                     code: item.status === "ERROR" ? 2 : 1,
                     ...(item.statusMessage ? { message: item.statusMessage } : {}),

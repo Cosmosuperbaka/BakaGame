@@ -341,13 +341,7 @@ export class EventLogger {
 
   private enqueueOtlp(record: OtelLogRecord, level: LogLevel): void {
     if (!this.otlpExporter?.isEnabled || level === "DEBUG") return;
-    this.otlpExporter.enqueue({
-      timestamp: Number(BigInt(record.timeUnixNano) / 1_000_000n),
-      level: level === "ERROR" ? "ERROR" : level === "WARN" ? "WARN" : "INFO",
-      message: record.body,
-      traceId: record.traceId,
-      attributes: record.attributes,
-    });
+    this.otlpExporter.enqueue(record);
   }
 
   private emitSystem(
@@ -491,8 +485,10 @@ export class EventLogger {
         name: action,
         startTime: createdAt - durationMs,
         endTime: createdAt,
+        // 入站 HTTP 请求是服务端跨度；WS 命令与其余操作是进程内跨度。
+        kind: action.startsWith("HTTP ") ? "server" : "internal",
         attributes: {
-          "http.status_code": status,
+          "http.response.status_code": status,
           "operation.identifier": identifier,
           "operation.action": action,
           ...(traceId ? { "trace.id": traceId } : {}),

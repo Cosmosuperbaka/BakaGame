@@ -89,6 +89,21 @@ export const createOtelLogRecord = ({
   };
 };
 
+/**
+ * 线上 OTLP/JSON 的单条 logRecord：本地文件与 OTLP 导出共用，追踪号写在顶层字段
+ * （后端按它把日志与追踪串起来），数值属性保持数值类型。
+ */
+export const toOtlpLogRecord = (record: OtelLogRecord) => ({
+  timeUnixNano: record.timeUnixNano,
+  observedTimeUnixNano: record.observedTimeUnixNano,
+  severityNumber: record.severityNumber,
+  severityText: record.severityText,
+  body: { stringValue: record.body },
+  attributes: toAttributes(record.attributes),
+  ...(record.traceId ? { traceId: record.traceId } : {}),
+  ...(record.spanId ? { spanId: record.spanId } : {}),
+});
+
 /** 单条 OTLP/JSON 日志（resourceLogs 信封），一行一条，便于 JSONL 与按行摄入。 */
 export const formatOtelLogLine = (
   record: OtelLogRecord,
@@ -102,18 +117,7 @@ export const formatOtelLogLine = (
         scopeLogs: [
           {
             scope: { name: scopeName },
-            logRecords: [
-              {
-                timeUnixNano: record.timeUnixNano,
-                observedTimeUnixNano: record.observedTimeUnixNano,
-                severityNumber: record.severityNumber,
-                severityText: record.severityText,
-                body: { stringValue: record.body },
-                attributes: toAttributes(record.attributes),
-                ...(record.traceId ? { traceId: record.traceId } : {}),
-                ...(record.spanId ? { spanId: record.spanId } : {}),
-              },
-            ],
+            logRecords: [toOtlpLogRecord(record)],
           },
         ],
       },

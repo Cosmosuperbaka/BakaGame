@@ -8,12 +8,27 @@ import {
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
 import { toUnixNanoString } from "../src/infrastructure/logging/OtelEncoding";
+import { createOtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
 import { createTestApp as createApp } from "./AppFixtures";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
+
+/** 导出器收的是已规范化的日志记录（与本地文件同一份），测试按同样的入口构造。 */
+const log = (
+  timestamp: number,
+  level: "INFO" | "WARN" | "ERROR",
+  message: string,
+  extra: { attributes?: Record<string, unknown>; traceId?: string } = {}
+) =>
+  createOtelLogRecord({
+    createdAt: timestamp,
+    level: level.toLowerCase() as "info" | "warn" | "error",
+    body: message,
+    ...extra,
+  });
 
 const exporters: OtlpExporter[] = [];
 const createExporter = (config: OtlpExporterConfig = {}): OtlpExporter => {
@@ -36,11 +51,7 @@ test("OtlpExporter 未配置 endpoint 时处于静默禁用状态", async () => 
   expect(exporter.isEnabled).toBe(false);
 
   // enqueue 不抛出错误
-  exporter.enqueue({
-    timestamp: Date.now(),
-    level: "INFO",
-    message: "测试消息",
-  });
+  exporter.enqueue(log(Date.now(), "INFO", "测试消息"));
   await exporter.flush();
   await exporter.shutdown();
 });
@@ -71,15 +82,12 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
   expect(exporter.isEnabled).toBe(true);
 
   const timestamp = 1700000000000;
-  exporter.enqueue({
-    timestamp,
-    level: "ERROR",
-    message: "房间处理异常",
-    traceId: "test-trace-123",
-    attributes: {
-      roomId: "room-abc",
-    },
-  });
+  exporter.enqueue(
+    log(timestamp, "ERROR", "房间处理异常", {
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+      attributes: { roomId: "room-abc", duration_ms: 12 },
+    })
+  );
 
   await exporter.flush();
   await exporter.shutdown();
@@ -93,10 +101,12 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
       scopeLogs: Array<{
         logRecords: Array<{
           timeUnixNano: string;
+          observedTimeUnixNano: string;
           severityText: string;
           severityNumber: number;
+          traceId?: string;
           body: { stringValue: string };
-          attributes: Array<{ key: string; value: { stringValue: string } }>;
+          attributes: Array<{ key: string; value: Record<string, unknown> }>;
         }>;
       }>;
     }>;
@@ -108,10 +118,15 @@ test("OtlpExporter 正确封装 OTLP JSON 并批量导出至观测网关", async
   expect(record.severityNumber).toBe(17);
   expect(record.body.stringValue).toBe("房间处理异常");
   expect(record.timeUnixNano).toBe(String(BigInt(timestamp) * 1_000_000n));
+  expect(record.observedTimeUnixNano).toBe(record.timeUnixNano);
+  // 追踪号是 LogRecord 的顶层字段，后端据此把日志与追踪串起来，不再塞进属性里。
+  expect(record.traceId).toBe("4bf92f3577b34da6a3ce929d0e0e4736");
 
-  const attrMap = Object.fromEntries(record.attributes.map((a) => [a.key, a.value.stringValue]));
-  expect(attrMap.trace_id).toBe("test-trace-123");
-  expect(attrMap.roomId).toBe("room-abc");
+  const attrMap = Object.fromEntries(record.attributes.map((a) => [a.key, a.value]));
+  expect(attrMap.trace_id).toBeUndefined();
+  expect(attrMap.roomId).toEqual({ stringValue: "room-abc" });
+  // 数值属性保持数值类型（OTLP/JSON 的 int64 写成十进制字符串），聚合才有意义。
+  expect(attrMap.duration_ms).toEqual({ intValue: "12" });
 });
 
 test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志", async () => {
@@ -124,12 +139,11 @@ test("OtlpExporter 缓冲队列达到 500 条上限时自动丢弃最旧日志",
       return new Response("503", { status: 503 });
     },
   });
-  exporter.enqueue({ timestamp: 1700000000000, level: "INFO", message: "backoff seed" });
+  exporter.enqueue(log(1700000000000, "INFO", "backoff seed"));
   expect(await exporter.flushLogs()).toBe(false);
-  for (let i = 0; i < 550; i++)
-    exporter.enqueue({ timestamp: 1700000000000 + i, level: "INFO", message: `日志条目 ${i}` });
+  for (let i = 0; i < 550; i++) exporter.enqueue(log(1700000000000 + i, "INFO", `日志条目 ${i}`));
   expect(exporter.buffer).toHaveLength(500);
-  expect(exporter.buffer[0].message).toBe("日志条目 50");
+  expect(exporter.buffer[0].body).toBe("日志条目 50");
   expect(exporter.getStats().droppedCount).toBe(51);
   expect(requests).toBe(1);
   await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
@@ -238,6 +252,60 @@ test("OtlpExporter 正确将 Traces (Spans) 发送至 /v1/traces 并携带三元
   expect(span.spanId.length).toBe(16);
 });
 
+test("span 的跨度类型：入站 HTTP 请求是服务端，其余默认进程内；数值属性保持数值", async () => {
+  const bodies: any[] = [];
+  const exporter = createExporter({
+    endpoint: "https://collector.example.com/otlp",
+    fetcher: async (input: string | URL | Request, options?: RequestInit) => {
+      if (requestUrlText(input).includes("/v1/traces"))
+        bodies.push(JSON.parse(requestBodyText(options)));
+      return new Response("{}");
+    },
+  });
+  exporter.enqueueSpan({
+    name: "HTTP GET /health",
+    kind: "server",
+    startTime: 1,
+    endTime: 2,
+    attributes: { "http.response.status_code": 200, ok: true, ratio: 0.5 },
+  });
+  exporter.enqueueSpan({ name: "WS room.join", startTime: 1, endTime: 2 });
+  await exporter.flushSpans();
+  const [server, internal] = bodies[0].resourceSpans[0].scopeSpans[0].spans;
+  expect(server.kind).toBe(2);
+  expect(internal.kind).toBe(1);
+  const attrs = Object.fromEntries(server.attributes.map((a: any) => [a.key, a.value]));
+  expect(attrs["http.response.status_code"]).toEqual({ intValue: "200" });
+  expect(attrs.ok).toEqual({ boolValue: true });
+  expect(attrs.ratio).toEqual({ doubleValue: 0.5 });
+});
+
+test("EventLogger 经导出器发出的日志载荷与本地文件同一套编码，追踪号在顶层", async () => {
+  const bodies: any[] = [];
+  const exporter = createExporter({
+    endpoint: "https://collector.example.com/otlp",
+    fetcher: async (input: string | URL | Request, options?: RequestInit) => {
+      if (requestUrlText(input).includes("/v1/logs"))
+        bodies.push(JSON.parse(requestBodyText(options)));
+      return new Response("{}");
+    },
+  });
+  const logger = new EventLogger(
+    () => {},
+    () => 1_700_000_000_000,
+    exporter
+  );
+  const traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+  logger.logOperation({ action: "HTTP GET /health", status: 500, durationMs: 42, traceId });
+  await exporter.flush();
+  const record = bodies[0].resourceLogs[0].scopeLogs[0].logRecords[0];
+  expect(record.traceId).toBe(traceId);
+  const attrs = Object.fromEntries(record.attributes.map((a: any) => [a.key, a.value]));
+  expect(attrs.duration_ms).toEqual({ intValue: "42" });
+  expect(attrs["operation.status"]).toEqual({ intValue: "500" });
+  expect(attrs.trace_id).toBeUndefined();
+});
+
 test("toUnixNanoString 兼容整型与高精度浮点毫秒并防止 BigInt RangeError", () => {
   // 1. 整数毫秒
   expect(toUnixNanoString(1700000000000)).toBe("1700000000000000000");
@@ -275,11 +343,7 @@ test("OtlpExporter 容错处理浮点时间戳的 Span 与 Log，杜绝 unhandle
     status: "OK",
   });
 
-  exporter.enqueue({
-    timestamp: now + 0.123, // 浮点 timestamp
-    level: "INFO",
-    message: "浮点打点",
-  });
+  exporter.enqueue(log(now + 0.123, "INFO", "浮点打点"));
 
   // 必须平稳 flush，不抛出 RangeError: Not an integer
   await expect(exporter.flush()).resolves.toMatchObject({ success: true, remaining: 0, sent: 2 });
@@ -321,7 +385,8 @@ test("EventLogger.logOperation 正确接收并透传 traceId 至 enqueueSpan 及
   expect(capturedSpan.traceId).toBe(testTraceId);
   expect(capturedSpan.name).toBe("WS game.vote");
   expect(capturedSpan.attributes["trace.id"]).toBe(testTraceId);
-  expect(capturedSpan.attributes["http.status_code"]).toBe(200);
+  expect(capturedSpan.attributes["http.response.status_code"]).toBe(200);
+  expect(capturedSpan.kind).toBe("internal");
 });
 
 test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
@@ -403,11 +468,7 @@ test("OtlpExporter 遇到 503 响应不会清空丢弃日志，保留在缓冲�
     now: () => virtualTime,
   });
 
-  exporter.enqueue({
-    timestamp: virtualTime,
-    level: "ERROR",
-    message: "关键系统错误",
-  });
+  exporter.enqueue(log(virtualTime, "ERROR", "关键系统错误"));
 
   expect(exporter.buffer.length).toBe(1);
 
@@ -417,7 +478,7 @@ test("OtlpExporter 遇到 503 响应不会清空丢弃日志，保留在缓冲�
   expect(callCount).toBe(1);
   // 核心断言：彻底修复 {"calls":1,"buffer":0} 丢数据缺陷，数据保留在缓冲区中
   expect(exporter.buffer.length).toBe(1);
-  expect(exporter.buffer[0].message).toBe("关键系统错误");
+  expect(exporter.buffer[0].body).toBe("关键系统错误");
 
   let stats = exporter.getStats();
   expect(stats.totalAttempts).toBe(1);
@@ -471,11 +532,7 @@ test("OtlpExporter 在网络异常与请求超时下安全重新入队，杜绝�
     now: () => virtualTime,
   });
 
-  exporter.enqueue({
-    timestamp: virtualTime,
-    level: "WARN",
-    message: "网络抖动警告",
-  });
+  exporter.enqueue(log(virtualTime, "WARN", "网络抖动警告"));
 
   // 1. 网络异常触发重新入队
   const netResult = await exporter.flushLogs();
@@ -519,11 +576,7 @@ test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录�
 
   // 压入 550 条日志
   for (let i = 0; i < 550; i++) {
-    exporter.enqueue({
-      timestamp: virtualTime + i,
-      level: "INFO",
-      message: `日志条目 ${i}`,
-    });
+    exporter.enqueue(log(virtualTime + i, "INFO", `日志条目 ${i}`));
   }
 
   // 等待在途由于 50 条触发的自动 flush 失败并重新入队，触发淘汰
@@ -532,22 +585,18 @@ test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录�
   // 容量上限 500，溢出的 50 条被淘汰
   expect(exporter.buffer.length).toBe(500);
   expect(exporter.getStats().droppedCount).toBe(50);
-  expect(exporter.buffer[0].message).toBe("日志条目 50");
-  expect(exporter.buffer[499].message).toBe("日志条目 549");
+  expect(exporter.buffer[0].body).toBe("日志条目 50");
+  expect(exporter.buffer[499].body).toBe("日志条目 549");
 
   // 退避窗口期内继续压入 10 条，直接在 enqueue 触发淘汰
   for (let i = 550; i < 560; i++) {
-    exporter.enqueue({
-      timestamp: virtualTime + i,
-      level: "INFO",
-      message: `日志条目 ${i}`,
-    });
+    exporter.enqueue(log(virtualTime + i, "INFO", `日志条目 ${i}`));
   }
 
   expect(exporter.buffer.length).toBe(500);
   expect(exporter.getStats().droppedCount).toBe(60);
-  expect(exporter.buffer[0].message).toBe("日志条目 60");
-  expect(exporter.buffer[499].message).toBe("日志条目 559");
+  expect(exporter.buffer[0].body).toBe("日志条目 60");
+  expect(exporter.buffer[499].body).toBe("日志条目 559");
 
   await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 });
@@ -567,8 +616,7 @@ test.each([400, 401, 403, 413, 422])(
       now: () => virtualTime,
       onDrop: (drop) => drops.push(drop),
     });
-    for (let i = 0; i < 3; i += 1)
-      exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: `坏批次 ${i}` });
+    for (let i = 0; i < 3; i += 1) exporter.enqueue(log(virtualTime, "INFO", `坏批次 ${i}`));
 
     expect(await exporter.flushLogs()).toBe(false);
     // 坏批次不回队：队列里没有它，后续日志不会被它堵住。
@@ -578,7 +626,7 @@ test.each([400, 401, 403, 413, 422])(
 
     // 退避窗口过后新日志照常发送，只发一次。
     virtualTime += 5_000;
-    exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "后续日志" });
+    exporter.enqueue(log(virtualTime, "INFO", "后续日志"));
     await exporter.flushLogs();
     expect(calls).toBe(2);
     expect(exporter.buffer.length).toBe(0);
@@ -593,7 +641,7 @@ test.each([408, 429, 500, 503])(
       fetcher: async () => new Response("later", { status }),
       now: () => 1_700_000_000_000,
     });
-    exporter.enqueue({ timestamp: 1, level: "INFO", message: "待重试" });
+    exporter.enqueue(log(1, "INFO", "待重试"));
     await exporter.flushLogs();
     expect(exporter.buffer.length).toBe(1);
     expect(exporter.getStats().droppedCount).toBe(0);
@@ -609,8 +657,7 @@ test("OtlpExporter 缓冲溢出的丢弃数通过 onDrop 汇总上报，而不�
     now: () => virtualTime,
     onDrop: (drop) => drops.push(drop),
   });
-  for (let i = 0; i < 520; i += 1)
-    exporter.enqueue({ timestamp: virtualTime + i, level: "INFO", message: `条目 ${i}` });
+  for (let i = 0; i < 520; i += 1) exporter.enqueue(log(virtualTime + i, "INFO", `条目 ${i}`));
   await exporter.flush();
 
   const overflow = drops.filter((drop) => drop.reason === "overflow");
@@ -677,7 +724,7 @@ test("OtlpExporter 指数退避窗口（1s, 2s, 4s...最大 30s）计算与运�
     now: () => virtualTime,
   });
 
-  exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "m1" });
+  exporter.enqueue(log(virtualTime, "INFO", "m1"));
 
   // 失败 1: 退避 1000ms (1000 * 2^0)
   expect(await exporter.flushLogs()).toBe(false);
@@ -724,11 +771,11 @@ test("shutdown 绕过退避最后尝试并发幂等，停止接受新记录", as
     now: () => 100,
     fetcher: async () => new Response("{}", { status: ++attempts === 1 ? 503 : 200 }),
   });
-  exporter.enqueue({ timestamp: 100, level: "INFO", message: "shutdown log" });
+  exporter.enqueue(log(100, "INFO", "shutdown log"));
   expect(await exporter.flush()).toMatchObject({ success: false, remaining: 1 });
   const first = exporter.shutdown();
   expect(exporter.shutdown()).toBe(first);
-  exporter.enqueue({ timestamp: 100, level: "INFO", message: "ignored after shutdown" });
+  exporter.enqueue(log(100, "INFO", "ignored after shutdown"));
   await first;
   expect(attempts).toBe(2);
   expect(exporter.buffer).toHaveLength(0);
@@ -748,9 +795,9 @@ test("shutdown 等待在途日志和 span，并排空请求期间新增的批次
       return new Response("{}");
     },
   });
-  exporter.enqueue({ timestamp: 100, level: "INFO", message: "first" });
+  exporter.enqueue(log(100, "INFO", "first"));
   const flushing = exporter.flushLogs();
-  exporter.enqueue({ timestamp: 101, level: "INFO", message: "second" });
+  exporter.enqueue(log(101, "INFO", "second"));
   exporter.enqueueSpan({ name: "operation", startTime: 100, endTime: 101 });
   let finished = false;
   const closing = exporter.shutdown().then(() => {
@@ -770,7 +817,7 @@ test("shutdown 永久失败返回可观察残留和统计，不无限重试", as
     endpoint: "https://collector.example.com",
     fetcher: async () => new Response("503", { status: 503 }),
   });
-  exporter.enqueue({ timestamp: 100, level: "ERROR", message: "retained" });
+  exporter.enqueue(log(100, "ERROR", "retained"));
   try {
     await exporter.shutdown();
     throw new Error("expected shutdown failure");
@@ -797,7 +844,7 @@ test("shutdown 对忽略 AbortSignal 的 fetcher 也有总预算并清理请求 
       return await new Promise<Response>(() => {});
     },
   });
-  exporter.enqueue({ timestamp: 100, level: "INFO", message: "never resolves" });
+  exporter.enqueue(log(100, "INFO", "never resolves"));
   const inFlight = exporter.flushLogs();
   await expect(exporter.shutdown(0)).rejects.toBeInstanceOf(OtlpShutdownError);
   expect(await inFlight).toBe(false);
@@ -853,7 +900,7 @@ test("traces 端点持续 5xx 时日志导出照常进行，两路退避互不�
 
   // traces 仍深处退避窗口（还要 4 秒），只推进 1 毫秒：日志必须照样发出去。
   virtualTime += 1;
-  exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "traces 故障期间的日志" });
+  exporter.enqueue(log(virtualTime, "INFO", "traces 故障期间的日志"));
   expect(await exporter.flushLogs()).toBe(true);
   expect(logCalls).toBe(1);
   expect(logBodies[0]).toContain("traces 故障期间的日志");

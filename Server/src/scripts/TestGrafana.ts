@@ -1,4 +1,5 @@
 import { readEnv } from "../config/Env";
+import { createOtelLogRecord } from "../infrastructure/logging/OtelLog";
 import { OtlpExporter } from "../infrastructure/OtlpExporter";
 
 const env = readEnv();
@@ -92,15 +93,17 @@ try {
     process.exit(1);
   }
 
-  exporter.enqueue({
-    timestamp: Date.now(),
-    level: "INFO",
-    message: "BakaGame Grafana Cloud connection verified successfully",
-    attributes: {
-      tester: "BakaGame-DevOps",
-      status: "verified",
-    },
-  });
+  exporter.enqueue(
+    createOtelLogRecord({
+      createdAt: Date.now(),
+      level: "info",
+      body: "BakaGame Grafana Cloud connection verified successfully",
+      attributes: {
+        tester: "BakaGame-DevOps",
+        status: "verified",
+      },
+    })
+  );
   await exporter.flushLogs();
 
   console.log("\n[3/3] 数据推送完毕！(HTTP 200 OK)");
