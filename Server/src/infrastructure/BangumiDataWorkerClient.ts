@@ -94,19 +94,146 @@ const timeoutFor = (method: BangumiDataCall["method"]) => {
   return QUERY_TIMEOUT_MS;
 };
 
-/** 猜歌与 CEE 共享的**同一个** Worker 进程；两个门面都经它发请求，写操作在单线程内天然串行。 */
-export class BangumiDataWorkerClient {
-  private readonly worker: Worker;
-  private readonly pending = new Map<number, Pending>();
-  private nextId = 0;
-  private closed = false;
+/** 崩溃恢复参数：默认值是生产口径，测试注入极小值以免真等。 */
+export interface BangumiWorkerRecovery {
+  /** 首次重启前的等待，之后每连续崩溃一次翻倍。 */
+  baseDelayMs: number;
+  /** 退避上限。 */
+  maxDelayMs: number;
+  /** 连续崩溃超过这个次数就停止重启，请求快速失败，避免崩溃循环。 */
+  maxRestarts: number;
+  /** 重启并完成初始化后，稳定运行满这么久才清零连续崩溃计数。 */
+  stableMs: number;
+}
 
-  constructor(private readonly logger?: BangumiWorkerLogger) {
-    this.worker = new Worker(new URL("./BangumiDataWorker.ts", import.meta.url).href);
-    this.worker.onmessage = ({ data }: MessageEvent<BangumiDataFrame>) => this.handleFrame(data);
+const DEFAULT_RECOVERY: BangumiWorkerRecovery = {
+  baseDelayMs: 1_000,
+  maxDelayMs: 30_000,
+  maxRestarts: 5,
+  stableMs: 60_000,
+};
+
+/** 交给门面的就绪承诺：首次初始化成功才落定，崩溃重启不会让它作废。 */
+interface ReadyDeferred {
+  settled: boolean;
+  resolve(): void;
+  reject(error: unknown): void;
+}
+
+/**
+ * 猜歌与 CEE 共享的**同一个** Worker 进程；两个门面都经它发请求，写操作在单线程内天然串行。
+ *
+ * 线程崩溃（未捕获异常）后：在途请求立刻以 `BANGUMI_DATA_UNAVAILABLE` 落定；退避期内的新请求
+ * 快速失败（让降级链路接管而不是挂到查询超时）；退避结束后重新起线程并重放 init，重放完成前
+ * 的查询排队等待。连续崩溃超过上限后不再重启，请求持续快速失败。
+ */
+export class BangumiDataWorkerClient {
+  private worker: Worker | undefined;
+  private readonly pending = new Map<number, Pending>();
+  private readonly recovery: BangumiWorkerRecovery;
+  private nextId = 0;
+  private closing = false;
+  private closed = false;
+  private broken = false;
+  private restarts = 0;
+  private restartTimer: ReturnType<typeof setTimeout> | undefined;
+  private stableTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 重放用的 init 载荷；首次 init 时记下。 */
+  private initPayload: BangumiDataCall | undefined;
+  /** 当前这一代线程的初始化进度；落定前普通请求在此排队。 */
+  private initGate: Promise<void> | undefined;
+  private readyDeferred: ReadyDeferred | undefined;
+
+  constructor(
+    private readonly logger?: BangumiWorkerLogger,
+    recovery: Partial<BangumiWorkerRecovery> = {}
+  ) {
+    this.recovery = { ...DEFAULT_RECOVERY, ...recovery };
+    this.spawn();
+  }
+
+  private spawn(): Worker {
+    const worker = new Worker(new URL("./BangumiDataWorker.ts", import.meta.url).href);
+    this.worker = worker;
+    // 旧线程的迟到事件（崩溃后又回包、或被 terminate 前的最后一帧）一律忽略。
+    worker.onmessage = ({ data }: MessageEvent<BangumiDataFrame>) => {
+      if (this.worker === worker) this.handleFrame(data);
+    };
     // ErrorEvent 的 message/filename/lineno 是唯一标着 worker 侧崩溃位置的字段，
     // 整体丢弃后只剩「线程异常」四个字，分不清是启动失败还是运行期崩、崩在哪一行。
-    this.worker.onerror = (event: ErrorEvent) => this.abort(this.threadFailure(event));
+    worker.onerror = (event: ErrorEvent) => this.handleCrash(worker, this.threadFailure(event));
+    worker.onmessageerror = () =>
+      this.handleCrash(
+        worker,
+        new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程消息无法解析")
+      );
+    return worker;
+  }
+
+  /** 线程已不可用：拒绝在途请求、回收旧线程，并按退避安排重启。 */
+  private handleCrash(worker: Worker, error: AppError): void {
+    if (this.worker !== worker || this.closed) return;
+    this.worker = undefined;
+    this.initGate = undefined;
+    clearTimeout(this.stableTimer);
+    worker.terminate();
+    this.abort(error);
+    if (!this.closing) this.scheduleRestart();
+  }
+
+  private scheduleRestart(): void {
+    this.restarts += 1;
+    if (this.restarts > this.recovery.maxRestarts) {
+      this.broken = true;
+      this.logger?.error("Bangumi 数据 Worker 连续崩溃，已停止自动重启", {
+        restarts: this.restarts - 1,
+      });
+      this.readyDeferred?.reject(
+        new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程反复崩溃，已停止重启")
+      );
+      return;
+    }
+    const delay = Math.min(
+      this.recovery.baseDelayMs * 2 ** (this.restarts - 1),
+      this.recovery.maxDelayMs
+    );
+    this.logger?.warn("Bangumi 数据 Worker 将重新启动", { attempt: this.restarts, delayMs: delay });
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = undefined;
+      if (this.closing) return;
+      const worker = this.spawn();
+      if (this.initPayload) this.beginInit(worker, this.initPayload);
+    }, delay);
+  }
+
+  /** 在指定线程上发起（重放）初始化，并登记为这一代线程的就绪门。 */
+  private beginInit(worker: Worker, payload: BangumiDataCall): void {
+    this.initGate = this.send(payload, false).then(
+      () => {
+        if (this.worker !== worker) return;
+        this.readyDeferred?.resolve();
+        // 稳定运行满一段时间才清零：否则「起来就崩」会以最短退避无限循环。
+        clearTimeout(this.stableTimer);
+        this.stableTimer = setTimeout(() => {
+          this.restarts = 0;
+        }, this.recovery.stableMs);
+        this.stableTimer.unref?.();
+      },
+      (error: unknown) => {
+        // 线程已被替换说明是崩溃导致的拒绝，恢复由 handleCrash 负责。
+        if (this.worker !== worker || this.closing) return;
+        if (this.readyDeferred && !this.readyDeferred.settled) {
+          this.readyDeferred.reject(error);
+          return;
+        }
+        // 重放失败：线程没有数据却会接请求，必须当作崩溃处理，否则查询全落到未初始化的线程上。
+        this.logger?.error("Bangumi 数据 Worker 重放初始化失败", { error });
+        this.handleCrash(
+          worker,
+          new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程重放初始化失败")
+        );
+      }
+    );
   }
 
   private handleFrame(frame: BangumiDataFrame): void {
@@ -166,14 +293,41 @@ export class BangumiDataWorkerClient {
 
   /** 初始化失败通过业务请求返回，不产生无人接收的 Promise 拒绝。 */
   init(payload: BangumiDataCall): Promise<unknown> {
-    const request = this.request(payload);
-    void request.catch(() => {});
-    return request;
+    this.initPayload = payload;
+    const deferred = { settled: false } as ReadyDeferred;
+    const ready = new Promise<void>((resolve, reject) => {
+      deferred.resolve = () => {
+        deferred.settled = true;
+        resolve();
+      };
+      deferred.reject = (error) => {
+        deferred.settled = true;
+        reject(error as Error);
+      };
+    });
+    void ready.catch(() => {});
+    this.readyDeferred = deferred;
+    if (this.worker) this.beginInit(this.worker, payload);
+    return ready;
   }
 
   request(payload: BangumiDataCall): Promise<unknown> {
+    return this.send(payload, true);
+  }
+
+  /** `gated` 为真时，请求要等这一代线程的初始化完成后才投递（init 与 close 自己不排队）。 */
+  private send(payload: BangumiDataCall, gated: boolean): Promise<unknown> {
     if (this.closed)
       return Promise.reject(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据服务已关闭"));
+    if (this.broken)
+      return Promise.reject(
+        new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程反复崩溃，已停止重启")
+      );
+    const worker = this.worker;
+    if (!worker)
+      return Promise.reject(
+        new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据线程崩溃，正在重启")
+      );
     if (this.pending.size >= 64)
       return Promise.reject(
         new AppError("BANGUMI_RATE_LIMITED", "Bangumi 查询排队过多，请稍后重试")
@@ -186,19 +340,30 @@ export class BangumiDataWorkerClient {
         reject(new AppError("BANGUMI_QUERY_TIMEOUT", "本地番剧查询超时"));
       }, timeoutFor(payload.method));
       this.pending.set(id, { resolve, reject, timer });
-      this.worker.postMessage({ ...payload, id });
+      const post = () => {
+        // 排队期间若线程崩溃，请求已随 abort 落定，这里不再向新线程补发。
+        if (this.pending.has(id) && this.worker === worker) worker.postMessage({ ...payload, id });
+      };
+      const gate = gated ? this.initGate : undefined;
+      if (gate) void gate.then(post);
+      else post();
     });
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closed || this.closing) return;
+    this.closing = true;
+    clearTimeout(this.restartTimer);
+    clearTimeout(this.stableTimer);
+    const worker = this.worker;
     try {
-      // 必须在置 closed 之前发：request 见到 closed 会直接拒绝。
-      await this.request({ method: "close" });
+      // 线程已崩溃（或正在退避重启）时没有谁会回包，直接回收，不白等 close 请求的超时。
+      if (worker) await this.send({ method: "close" }, false);
     } finally {
       this.closed = true;
+      this.worker = undefined;
       this.abort(new AppError("BANGUMI_DATA_UNAVAILABLE", "Bangumi 数据服务已关闭"));
-      this.worker.terminate();
+      worker?.terminate();
     }
   }
 
