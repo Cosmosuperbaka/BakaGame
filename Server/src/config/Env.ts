@@ -9,7 +9,7 @@ import {
 } from "./env/Observability";
 import { readBangumiEnv, type EnvBangumi } from "./env/Bangumi";
 
-export type { AccountEnv, NapCatEnv, SmtpEnv } from "./env/Account";
+export type { AccountEnv, SmtpEnv } from "./env/Account";
 
 /**
  * 全部分组解析结果合成的启动配置。

@@ -5,8 +5,8 @@ import {
   SENTRY_TUNNEL_FAILURE_METRIC,
   SENTRY_TUNNEL_ISSUE_INTERVAL_MS,
   sentryTunnelRoutes,
-  SentryTunnelRateLimiter,
 } from "../src/transport/routes/SentryTunnel";
+import { ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
 import { requestUrlText } from "./RequestFixtures";
 
 /** 全仓统一的失败信封：`{ error: { code, message, traceId? } }`，独立挂载本路由时没有 traceId。 */
@@ -146,7 +146,7 @@ describe("SentryTunnel (同源信封代理与安全校验)", () => {
   it("应用级限流：请求频率超限时返回 429 Too Many Requests", async () => {
     const mockFetcher = (async () =>
       new Response("{}", { status: 200 })) as unknown as typeof fetch;
-    const limiter = new SentryTunnelRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 });
+    const limiter = new ThreeTierRateLimiter({ windowMs: 60_000, ipMaxRequests: 2 });
     const app = sentryTunnelRoutes({
       allowedProjectIds,
       rateLimiter: limiter,
@@ -484,7 +484,7 @@ it("二进制信封原字节转发且轮换来源仍受总预算限制", async (
   const app = sentryTunnelRoutes({
     allowedProjectIds: ["100001"],
     fetcher,
-    rateLimiter: new SentryTunnelRateLimiter({ globalMaxRequests: 2 }),
+    rateLimiter: new ThreeTierRateLimiter({ globalMaxRequests: 2 }),
   });
   for (let index = 0; index < 3; index++) {
     const response = await app.handle(
@@ -549,7 +549,7 @@ for (const realTransport of [false, true]) {
     const app = sentryTunnelRoutes({
       allowedProjectIds: ["100001"],
       fetcher,
-      rateLimiter: new SentryTunnelRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }),
+      rateLimiter: new ThreeTierRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }),
     });
     const started = realTransport ? app.listen({ hostname: "127.0.0.1", port: 0 }) : undefined;
     const base = started ? `http://127.0.0.1:${started.server!.port}` : "http://localhost";
@@ -583,7 +583,7 @@ for (const realTransport of [false, true]) {
     const app = sentryTunnelRoutes({
       allowedProjectIds: ["100001"],
       fetcher,
-      rateLimiter: new SentryTunnelRateLimiter({
+      rateLimiter: new ThreeTierRateLimiter({
         ipMaxRequests: 2,
         peerMaxRequests: 2,
         globalMaxRequests: 100,
@@ -622,7 +622,7 @@ it("非法真实 IP 标头退回 peer 桶，不给随机字符串发新桶", asy
   const app = sentryTunnelRoutes({
     allowedProjectIds: ["100001"],
     fetcher,
-    rateLimiter: new SentryTunnelRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }),
+    rateLimiter: new ThreeTierRateLimiter({ ipMaxRequests: 2, globalMaxRequests: 100 }),
   });
   const envelope =
     JSON.stringify({ dsn: "https://public@o000000.ingest.us.sentry.io/100001" }) + "\n{}\n{}";

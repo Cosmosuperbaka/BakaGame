@@ -20,14 +20,6 @@ export const ROOM_SNAPSHOT_GAMES = GAME_IDS;
 
 export type RoomSnapshotGame = (typeof ROOM_SNAPSHOT_GAMES)[number];
 
-/** 快照信封：一次写入的完整内容，`savedAt` 是恢复时做时间平移的唯一依据。 */
-export interface RoomSnapshotEnvelope {
-  v: number;
-  savedAt: number;
-  game: RoomSnapshotGame;
-  rooms: unknown[];
-}
-
 /** 房间记录的最小可恢复形状：没有 id 就无法定位，直接丢弃；其余字段由各游戏自己定义。 */
 export interface SnapshottedRoom {
   id: string;

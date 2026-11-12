@@ -22,21 +22,13 @@ export {
 export {
   PAGE_REATTACH_GRACE_MS,
   SITE_PAGE_ACTIONS,
-  SITE_PAGE_KEYS,
-  SITE_PAGE_SCROLLS,
   isAgentPagePath,
 } from "./AgentPages";
 export { PIONEER_BADGE_LIMIT, badgeDescriptionOf, badgeLabelOf } from "./Badges";
 export { createDefaultCEESettings } from "./CEEDefaults";
 export {
-  CEE_RANKED_BOT_DAILY_RATED,
-  CEE_RANKED_BOT_FALLBACK_MS,
-  CEE_RANKED_BOT_OPTION_MS,
   CEE_RANKED_PLACEMENT_SERIES,
   CEE_RANKED_SERIES_GAMES,
-  CEE_RANKED_SERIES_MAX_GAMES,
-  CEE_RANKED_SERIES_WIN_POINTS,
-  CEE_RANKED_TIERS,
   ceeRankedTier,
 } from "./CEERankedValues";
 export { CLIENT_CHAT_WINDOW, mergeChatWindow } from "./ChatWindow";
@@ -62,7 +54,6 @@ export {
 export {
   OPEN_SITE_FEATURES,
   SITE_FEATURE_KEYS,
-  SITE_FEATURE_LABELS,
   parseSiteFeatures,
 } from "./SiteFeatures";
 export {

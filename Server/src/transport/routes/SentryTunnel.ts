@@ -10,22 +10,13 @@ export const MAX_ENVELOPE_BYTES = 256 * 1024; // 256KB
 const SENTRY_INGEST_REGEX =
   /^[a-z0-9-]+\.(ingest\.sentry\.io|ingest\.us\.sentry\.io|ingest\.de\.sentry\.io)$/i;
 
-/**
- * 隧道限流用的就是通用三层桶（单客户端 / 回源 peer / 全局），口径与打点、账号入口一致：
- * 单客户端桶按真实客户端 IP 分（边缘层写入的标头），否则同一边缘节点后面
- * 的所有玩家会共享一个桶，按用户计的上报预算就退化成按节点计；peer 桶只封顶
- * 「伪造标头自造新桶」这一条滥用路径，因此给到单客户端预算的十倍。
- * 仍按用途导出这个名字，调用方不必知道通用类的存在。
- */
-export const SentryTunnelRateLimiter = ThreeTierRateLimiter;
-export type SentryTunnelRateLimiter = ThreeTierRateLimiter;
-
 export interface SentryTunnelOptions {
   allowedProjectIds?: string[];
   allowedHosts?: string[];
   sentryDsn?: string;
   fetcher?: typeof fetch;
-  rateLimiter?: SentryTunnelRateLimiter;
+  /** 隧道限流用通用三层桶，口径与打点、账号入口一致；peer 桶只封顶「伪造标头自造新桶」这条路径。 */
+  rateLimiter?: ThreeTierRateLimiter;
   logger?: Pick<EventLogger, "error" | "warn" | "info">;
   /**
    * 隧道故障出口（指标 + 限频 issue）；缺省自建限速聚合器。
@@ -432,7 +423,7 @@ export const sentryTunnelRoutes = ({
     }
   }
 
-  const limiter = rateLimiter ?? new SentryTunnelRateLimiter();
+  const limiter = rateLimiter ?? new ThreeTierRateLimiter();
   const policy: SentryTunnelPolicy = { allowedProjects: allowedSet, allowedHosts: allowedHostSet };
 
   return new Elysia({ name: "sentry-tunnel" }).post(
