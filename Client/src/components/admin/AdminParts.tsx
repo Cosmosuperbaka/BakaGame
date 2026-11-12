@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, RotateCw } from "lucide-react";
+import { Fragment, useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, CircleAlert, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -72,7 +72,9 @@ export function QueryState({
   if (error) {
     return (
       <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-        <span role="alert" className="text-destructive">
+        {/* 失败不只靠红色传达：与弹窗里的 FormAlert 同一个前导图标。 */}
+        <span role="alert" className="flex items-center gap-1.5 text-destructive">
+          <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
           {error}
         </span>
         <Button type="button" variant="outline" size="sm" onClick={onRetry}>
@@ -89,13 +91,22 @@ export function QueryState({
       </div>
     );
   }
-  if (empty)
-    return (
-      <p className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-        {emptyText}
-      </p>
-    );
+  if (empty) return <EmptyNote className="py-10">{emptyText}</EmptyNote>;
   return null;
+}
+
+/** 区块内的空态：虚线框加居中灰字，与列表空态同一写法；小区块传更小的内边距。 */
+export function EmptyNote({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <p
+      className={cn(
+        "rounded-md border border-dashed px-3 py-4 text-center text-sm text-muted-foreground",
+        className
+      )}
+    >
+      {children}
+    </p>
+  );
 }
 
 /** 表格外框：窄屏横向滚动，表头弱化、行间细线。 */
@@ -123,14 +134,34 @@ export function AdminTable({
 }
 
 /** 面板顶部的数字卡片。 */
-export function Stat({ label, value, detail }: { label: string; value: number; detail?: string }) {
+export function Stat({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  /** 多段分项传数组：每段整体换行，窄卡片里不会把「已解决 142」拆成两行。 */
+  detail?: string | string[];
+}) {
+  const parts = typeof detail === "string" ? [detail] : (detail ?? []);
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="text-xs font-serif text-muted-foreground">{label}</div>
       <div className="mt-1 font-serif text-2xl font-semibold tabular-nums">
         {formatNumber(value)}
       </div>
-      {detail ? <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div> : null}
+      {parts.length ? (
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {/* 间隔号留在不折行的片段外面：换行只发生在两段之间。 */}
+          {parts.map((part, index) => (
+            <Fragment key={`${index}:${part}`}>
+              {index ? " · " : null}
+              <span className="whitespace-nowrap">{part}</span>
+            </Fragment>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

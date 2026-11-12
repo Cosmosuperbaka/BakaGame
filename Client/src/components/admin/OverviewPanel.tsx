@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RotateCw } from "lucide-react";
 import type {
   AdminOverview,
   FeedbackStatus,
@@ -11,7 +11,14 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
-import { AdminTable, AdminToolbar, QueryState, Stat } from "@/components/admin/AdminParts";
+import { FormAlert } from "@/components/account/FormAlert";
+import {
+  AdminTable,
+  AdminToolbar,
+  EmptyNote,
+  QueryState,
+  Stat,
+} from "@/components/admin/AdminParts";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import {
@@ -47,26 +54,28 @@ function OverviewStats({ data }: { data: AdminOverview }) {
       <Stat
         label="注册账号"
         value={data.users.total}
-        detail={`今日新增 ${formatNumber(data.users.newToday)} · 管理员 ${data.users.admins} · 封禁 ${data.users.banned}`}
+        detail={[
+          `今日新增 ${formatNumber(data.users.newToday)}`,
+          `管理员 ${data.users.admins}`,
+          `封禁 ${data.users.banned}`,
+        ]}
       />
       <Stat
         label="待处理反馈"
         value={data.feedback.open ?? 0}
-        detail={FEEDBACK_ORDER.slice(1)
-          .map((status) => `${FEEDBACK_STATUS_LABELS[status]} ${data.feedback[status] ?? 0}`)
-          .join(" · ")}
+        detail={FEEDBACK_ORDER.slice(1).map(
+          (status) => `${FEEDBACK_STATUS_LABELS[status]} ${data.feedback[status] ?? 0}`
+        )}
       />
       <Stat
         label="实时房间"
         value={live.rooms}
-        detail={GAMES.map((game) => `${GAME_LABELS[game]} ${data.live[game].rooms}`).join(" · ")}
+        detail={GAMES.map((game) => `${GAME_LABELS[game]} ${data.live[game].rooms}`)}
       />
       <Stat
         label="在线玩家"
         value={live.players}
-        detail={GAMES.map((game) => `${GAME_LABELS[game]} ${data.live[game].onlinePlayers}`).join(
-          " · "
-        )}
+        detail={GAMES.map((game) => `${GAME_LABELS[game]} ${data.live[game].onlinePlayers}`)}
       />
     </div>
   );
@@ -124,24 +133,32 @@ function DailyTable({ data }: { data: AdminOverview }) {
 }
 
 function PageViews({ data }: { data: AdminOverview }) {
-  if (!data.pages.length)
-    return <p className="text-sm text-muted-foreground">所选时段内没有浏览记录</p>;
+  if (!data.pages.length) return <EmptyNote>所选时段内没有浏览记录</EmptyNote>;
   const max = Math.max(...data.pages.map((page) => page.views));
   return (
-    <ol className="grid gap-2 text-sm">
+    <ol className="grid gap-3 text-sm sm:gap-2">
       {data.pages.map((page) => (
+        // 窄屏路径与数字同一行、横条另起一整行：三列并排时路径列吃掉大半宽度，横条只剩几十像素。
         <li
           key={page.path}
-          className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto] items-center gap-3"
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)_auto]"
         >
-          <span className="truncate font-mono text-xs">{page.path}</span>
-          <span className="h-2 rounded-full bg-muted" aria-hidden="true">
+          <Hint label={page.path}>
+            <span className="truncate font-mono text-xs">{page.path}</span>
+          </Hint>
+          {/* 轨道取前景色淡档：bg-muted 在暗色卡片上与底色几乎相同，短条会变成孤立的小点。 */}
+          <span
+            className="col-span-2 row-start-2 h-2 rounded-full bg-foreground/8 sm:col-span-1 sm:col-start-2 sm:row-start-1"
+            aria-hidden="true"
+          >
             <span
               className="block h-2 rounded-full bg-primary/60"
               style={{ width: `${Math.max(2, (page.views / max) * 100)}%` }}
             />
           </span>
-          <span className="tabular-nums text-muted-foreground">{formatNumber(page.views)}</span>
+          <span className="col-start-2 row-start-1 tabular-nums text-muted-foreground sm:col-start-3">
+            {formatNumber(page.views)}
+          </span>
         </li>
       ))}
     </ol>
@@ -163,21 +180,32 @@ function SentryCard({
         <h3 id="admin-sentry" className="font-semibold">
           错误与性能（近 24 小时）
         </h3>
-        <Button type="button" variant="ghost" size="sm" loading={loading} onClick={onReload}>
+        {/* 与面板标题行的刷新同一写法：裸文字按钮在卡片里看不出能点。 */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          loading={loading}
+          onClick={onReload}
+        >
+          {loading ? null : <RotateCw />}
           刷新
         </Button>
       </div>
       {!data ? (
-        <p className="text-sm text-muted-foreground">
-          {loading ? "正在查询 Sentry" : "Sentry 查询失败"}
-        </p>
+        loading ? (
+          <p className="text-sm text-muted-foreground">正在查询 Sentry</p>
+        ) : (
+          <FormAlert>Sentry 查询失败</FormAlert>
+        )
       ) : !data.configured ? (
         <p className="text-sm text-muted-foreground">
           服务端未配置 SENTRY_API_TOKEN，暂不展示错误与性能数据。
         </p>
       ) : (
         <div className="grid gap-4">
-          <div className="flex flex-wrap gap-6 text-sm">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span>
               错误事件 <strong className="tabular-nums">{formatNumber(data.errors24h)}</strong>
             </span>
@@ -235,7 +263,7 @@ function SentryCard({
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">没有未解决的问题</p>
+            <EmptyNote>没有未解决的问题</EmptyNote>
           )}
           {data.transactions?.length ? (
             <AdminTable label="接口耗时" className="shadow-none">
