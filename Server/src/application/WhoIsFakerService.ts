@@ -419,7 +419,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       ) {
         continue;
       }
-      if (room.round && room.round.phase !== "gameOver") {
+      // 被踢记录在踢人当时已完成强制移除，这里只清掉占位。
+      if (player.membership !== "kicked" && room.round && room.round.phase !== "gameOver") {
         if (room.round.questionerPlayerId === player.id) {
           await this.finishRound(room, "aborted", "出题人掉线超时，本局已结束");
         } else {
@@ -1005,7 +1006,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
     }
 
-    await this.kickPlayer(room, target, "房主");
+    // 已被踢的记录只是等待清理的占位，重复踢不再重走一遍移除与日志。
+    if (target.membership !== "kicked") {
+      await this.kickPlayer(room, target, "房主");
+    }
     return { playerId: target.id };
   }
 

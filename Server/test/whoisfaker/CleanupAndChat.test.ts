@@ -3,10 +3,13 @@ import { createRoom, joinPlayers } from "./Fixtures";
 import {
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   SPECTATOR_OFFLINE_GRACE_MS,
 } from "../../src/config/Constants";
 import { NOOP_GAME_RECORDER } from "../../src/domain/GameRecord";
+import { WhoIsFakerService } from "../../src/application/WhoIsFakerService";
+import { EventLogger, type LogEntry } from "../../src/infrastructure/EventLogger";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from ".././Helpers";
 
@@ -330,5 +333,53 @@ describe("清理与聊天", () => {
 
     const remaining = [...(service as any).rooms.keys()] as string[];
     expect(remaining).toEqual(["1111"]);
+  });
+
+  test("被踢玩家只记一次移出，重复踢人与后续巡检都不再重复处理", async () => {
+    let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
+    const entries: LogEntry[] = [];
+    class RecordingLogger extends EventLogger {
+      override async write(entry: LogEntry): Promise<void> {
+        entries.push(entry);
+        await super.write(entry);
+      }
+    }
+    const service = new WhoIsFakerService({
+      now: () => currentTime,
+      eventLogger: new RecordingLogger(),
+    });
+    const { host } = await createRoom(service, "Oblivionis");
+    const [player] = await joinPlayers(service, "Oblivionis", 1, "被踢者");
+    await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(service, host, {
+      id: "words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+
+    const kick = () =>
+      execute(service, host, {
+        id: "kick",
+        type: "room.kick",
+        payload: { playerId: player.joinResult.playerId },
+      });
+    const kickedCount = () => entries.filter((entry) => entry.type === "player.kicked").length;
+    await kick();
+    expect(kickedCount()).toBe(1);
+
+    // 房主对已被踢者再踢一次：幂等，不再写第二条记录。
+    await kick();
+    expect(kickedCount()).toBe(1);
+
+    // 被踢记录过了掉线保留期被巡检清掉时，也不再走一遍强制移除。
+    currentTime += PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS + 1_000;
+    await service.runHousekeeping();
+    expect(kickedCount()).toBe(1);
+    expect(service.rooms.get("Oblivionis")!.players[player.joinResult.playerId]).toBeUndefined();
   });
 });
