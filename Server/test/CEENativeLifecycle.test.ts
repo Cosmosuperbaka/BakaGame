@@ -510,6 +510,41 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(host).players).toHaveLength(2);
   });
 
+  test("房主离开而其余成员全部离线保留座位：回来的人当场成为房主并能改设置", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    h.service.unregisterConnection(guest.record.id);
+    await h.send(host, "cee.room.leave", {});
+
+    const back = h.connect("客人回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+
+    expect(h.snapshot(back).hostPlayerId).toBe(guest.id!);
+    await h.send(back, "cee.room.update", {
+      name: "新房名",
+      visibility: "public",
+      allowSpectators: true,
+    });
+    expect(h.snapshot(back).name).toBe("新房名");
+  });
+
+  test("房主悬空期间巡检不让房间崩坏，之后上线的成员同样接任", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    h.service.unregisterConnection(guest.record.id);
+    await h.send(host, "cee.room.leave", {});
+    // 悬空期间多跳巡检：没有候选时不得抛错，也不得把房间当成已有主。
+    h.advance(1);
+    h.advance(1);
+
+    const back = h.connect("客人回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+    h.advance(1);
+    expect(h.snapshot(back).hostPlayerId).toBe(guest.id!);
+  });
+
   test("密码校验期间连接断开，不创建幽灵在线成员", async () => {
     const h = harness();
     const host = h.connect("房主");

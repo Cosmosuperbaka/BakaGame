@@ -768,7 +768,12 @@ export class CEERooms {
     player.account = connection.account;
     delete player.offlineAt;
     delete room.emptyAt;
-    if (player.id === room.hostPlayerId) delete room.hostDeadlineAt;
+    if (!room.players.has(room.hostPlayerId)) {
+      // 房主被移除时只剩离线保留座位：回来的第一个人当场接任，不必等巡检。
+      room.hostPlayerId = player.id;
+      player.ready = true;
+      delete room.hostDeadlineAt;
+    } else if (player.id === room.hostPlayerId) delete room.hostDeadlineAt;
     room.lastActiveAt = this.now();
   }
   /** 公开快照：座位是否被 Agent 操作看连接所在的标签页，同房玩家据此看到 MCP 徽标。 */
@@ -840,6 +845,9 @@ export class CEERooms {
       room.hostPlayerId = next.id;
       next.ready = true;
       delete room.hostDeadlineAt;
+    } else {
+      // 没有在线候选：留下截止让巡检每跳重试，不让房主一直悬空。
+      room.hostDeadlineAt = this.now();
     }
   }
   private closeRoom(room: CEERoom, reason: string): void {
