@@ -7,6 +7,8 @@ import { ceeUnitId } from "../domain/CEEModel";
 import {
   applyCEEGuess,
   beginCEERound,
+  canStartCEERound,
+  ceeImageHintAvailability,
   ceeParticipants,
   requireCEEAction,
   surrenderCEE,
@@ -18,7 +20,6 @@ import { CEEImageHints } from "../infrastructure/CEEImageHints";
 import type { CEEAntiCheatReviewQueue, CEESearchProvenance } from "./CEEAntiCheatSignals";
 import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
 import { CEERooms } from "./CEERooms";
-import { ceePrivateState } from "./CEEViews";
 
 /** 增强房处理的命令：大厅订阅由统一入口 `CEEService` 先行处理，不会下沉到这里。 */
 export type CEENativeMessage = Exclude<CEERoomClientMessage, { type: "cee.lobby.subscribeRooms" }>;
@@ -269,7 +270,7 @@ export class CEENativeService {
     this.state.requireHost(room, player);
     if (room.phase !== "waiting" && room.phase !== "settled")
       throw new AppError("INVALID_PHASE", "当前阶段无法开始游戏");
-    if (!ceePrivateState(room, player).canStart)
+    if (!canStartCEERound(room, player))
       throw new AppError("PLAYERS_NOT_READY", "至少两名玩家在线，且其他参与者准备后才能开始");
     validateCEESettings(room.settings);
     room.round = null;
@@ -385,13 +386,13 @@ export class CEENativeService {
     });
   }
   private async imageHint(room: CEERoom, player: CEEPlayerRecord): Promise<{ dataUrl: string }> {
-    const state = ceePrivateState(room, player);
+    const hint = ceeImageHintAvailability(room, player);
     const round = room.round;
-    if (!state.imageHintAvailable || !round) throw new AppError("HINT_LOCKED", "图片提示尚未解锁");
+    if (!hint.available || !round) throw new AppError("HINT_LOCKED", "图片提示尚未解锁");
     const url = await this.data.resolveCharacterImage(round.answer.id);
     if (!url) throw new AppError("IMAGE_UNAVAILABLE", "该角色暂时没有图片");
-    const dataUrl = await this.imageHints.render(url, state.imageHintLevel);
-    if (room.round !== round || !ceePrivateState(room, player).imageHintAvailable)
+    const dataUrl = await this.imageHints.render(url, hint.level);
+    if (room.round !== round || !ceeImageHintAvailability(room, player).available)
       throw new AppError("HINT_LOCKED", "图片提示已失效");
     return { dataUrl };
   }

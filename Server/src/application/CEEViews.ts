@@ -12,8 +12,14 @@ import {
   type CEEUnit,
 } from "../domain/CEEModel";
 import { bannedCharacterIdsFor, maskGuessTags } from "../domain/CEEPickRules";
-import { ceeParticipants, getCEEUnit } from "../domain/CEERound";
-import { isCEEAntiCheatRoom, ROOM_ID_TEST_MODE } from "../shared/Index";
+import {
+  canStartCEERound,
+  ceeImageHintAvailability,
+  ceeRemainingAttempts,
+  ceeSetterCandidates,
+  getCEEUnit,
+} from "../domain/CEERound";
+import { isCEEAntiCheatRoom } from "../shared/Index";
 
 /** 大厅人数与其它游戏同口径：只计在线成员，参与与旁观分开统计。 */
 export function ceeRoomSummary(room: CEERoom): CEERoomSummary {
@@ -97,28 +103,9 @@ function visibleGuesses(room: CEERoom, player: CEEPlayerRecord, observing: boole
       })
     );
 }
-/** 本单位剩余可猜次数；没有当前局时为 0。 */
-function ceeRemainingAttempts(round: CEERound | null, unit: CEEUnit | undefined): number {
-  return round ? Math.max(0, round.settings.maxAttempts - (unit?.attempts ?? 0)) : 0;
-}
 /** 是否还能提交猜测：本局未结束，同步模式下还需等本轮完成。 */
 function canSubmitCEEGuess(round: CEERound, unit: CEEUnit): boolean {
   return !unit.ended && (!round.settings.syncMode || !unit.completed);
-}
-/** 房主开局条件：人数达标（仅测试房允许房主一人试玩），随机出题要其他人备好、手动出题要有可选出题人。 */
-function hostCanStartRound(
-  room: CEERoom,
-  participants: CEEPlayerRecord[],
-  setterCandidates: CEEPlayerRecord[]
-): boolean {
-  const enoughPlayers =
-    participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0);
-  if (!enoughPlayers) return false;
-  if (room.settings.answerMode === "manual") return setterCandidates.length > 0;
-  return (
-    room.phase === "settled" ||
-    participants.every((member) => member.id === room.hostPlayerId || member.ready)
-  );
 }
 /** 全局 BP 下该玩家视角的禁用角色编号：规则本体在 CEEPickRules，这里只把房间设置换成判定上下文。 */
 function bannedIdsOf(round: CEERound | null, player: CEEPlayerRecord): number[] {
@@ -160,19 +147,8 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
   const remaining = ceeRemainingAttempts(round, unit);
   const inGame = room.phase === "guessing" && Boolean(unit) && player.status === "playing";
   const canGuess = inGame && Boolean(round && unit && canSubmitCEEGuess(round, unit));
-  const inStartablePhase = room.phase === "waiting" || room.phase === "settled";
-  const participants = ceeParticipants(room, inStartablePhase ? null : room.setterPlayerId);
-  // 能当出题人的：在线、且他出题后（连同队友一起观战）还留得下猜题者。逐人重算参与者是 O(n²)，
   const isHost = player.id === room.hostPlayerId;
-  const needsCandidates =
-    isHost &&
-    (room.phase === "choosingSetter" ||
-      (inStartablePhase && room.settings.answerMode === "manual"));
-  const setterCandidates = needsCandidates
-    ? [...room.players.values()].filter(
-        (candidate) => candidate.online && ceeParticipants(room, candidate.id).length > 0
-      )
-    : [];
+  const imageHint = ceeImageHintAvailability(room, player);
   return {
     playerId: player.id,
     canGuess,
@@ -180,11 +156,11 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
     // 随机出题在等待阶段需其他参与者准备（结算阶段再来一轮直接沿用在线参与者）；
     // 手动出题开始后先进入选人阶段，出题人不必准备，有可选的出题人即可。
     // 单人不能开局，只有测试房允许房主一个人试玩。
-    canStart: inStartablePhase && isHost && hostCanStartRound(room, participants, setterCandidates),
+    canStart: canStartCEERound(room, player),
     canSetAnswer: room.phase === "answering" && player.id === room.setterPlayerId,
     setterCandidateIds:
       room.phase === "choosingSetter" && isHost
-        ? setterCandidates.map((candidate) => candidate.id)
+        ? ceeSetterCandidates(room).map((candidate) => candidate.id)
         : [],
     guesses: visibleGuesses(room, player, observing),
     answer: round && observing ? round.answer : null,
@@ -195,10 +171,8 @@ export function ceePrivateState(room: CEERoom, player: CEEPlayerRecord): CEEPriv
               round.settings.useHints[index]! > 0 && remaining <= round.settings.useHints[index]!
           )
         : [],
-    imageHintAvailable: Boolean(
-      round && inGame && round.settings.useImageHint > 0 && remaining <= round.settings.useImageHint
-    ),
-    imageHintLevel: remaining,
+    imageHintAvailable: imageHint.available,
+    imageHintLevel: imageHint.level,
     deadlineAt: canGuess ? unit!.deadlineAt : null,
     bannedCharacterIds: bannedIdsOf(round, player),
     spectatePending: false,

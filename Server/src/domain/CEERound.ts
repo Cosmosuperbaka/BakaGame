@@ -5,6 +5,7 @@ import type {
   CEEScoreDetail,
   CEESettings,
 } from "../shared/CEE";
+import { ROOM_ID_TEST_MODE } from "../shared/Index";
 import { AppError } from "./Errors";
 import { isCharacterBanned } from "./CEEPickRules";
 import {
@@ -30,6 +31,50 @@ export function ceeParticipants(room: CEERoom, setterId = room.setterPlayerId): 
       player.id !== setter?.id &&
       !(setter?.team !== null && setter?.team !== undefined && player.team === setter.team)
   );
+}
+/** 能当出题人的：在线、且他出题后（连同队友一起观战）还留得下猜题者。逐人重算参与者是 O(n²)，只在需要时算。 */
+export function ceeSetterCandidates(room: CEERoom): CEEPlayerRecord[] {
+  return [...room.players.values()].filter(
+    (candidate) => candidate.online && ceeParticipants(room, candidate.id).length > 0
+  );
+}
+/**
+ * 房主能否开局：只有房主、且在等待或结算阶段；人数达标（仅测试房允许房主一人试玩）；
+ * 随机出题要其他参与者备好（结算阶段再来一轮直接沿用在线参与者），手动出题要有可选出题人。
+ * 命令路径与私有视图共用这一个判定，视图字段怎么裁剪都不会改变命令是否放行。
+ */
+export function canStartCEERound(room: CEERoom, player: CEEPlayerRecord): boolean {
+  if (player.id !== room.hostPlayerId) return false;
+  if (room.phase !== "waiting" && room.phase !== "settled") return false;
+  const participants = ceeParticipants(room, null);
+  const enoughPlayers =
+    participants.length > 1 || (room.id === ROOM_ID_TEST_MODE && participants.length > 0);
+  if (!enoughPlayers) return false;
+  if (room.settings.answerMode === "manual") return ceeSetterCandidates(room).length > 0;
+  return (
+    room.phase === "settled" ||
+    participants.every((member) => member.id === room.hostPlayerId || member.ready)
+  );
+}
+/** 本单位剩余可猜次数；没有当前局时为 0。 */
+export function ceeRemainingAttempts(round: CEERound | null, unit: CEEUnit | undefined): number {
+  return round ? Math.max(0, round.settings.maxAttempts - (unit?.attempts ?? 0)) : 0;
+}
+/** 图片提示是否已解锁：本人在局中、设置开启且剩余次数降到阈值内；level 是模糊档位（取剩余次数）。 */
+export function ceeImageHintAvailability(
+  room: CEERoom,
+  player: CEEPlayerRecord
+): { available: boolean; level: number } {
+  const round = room.round;
+  const unit = getCEEUnit(room, player);
+  const remaining = ceeRemainingAttempts(round, unit);
+  const inGame = room.phase === "guessing" && Boolean(unit) && player.status === "playing";
+  return {
+    available: Boolean(
+      round && inGame && round.settings.useImageHint > 0 && remaining <= round.settings.useImageHint
+    ),
+    level: remaining,
+  };
 }
 export function beginCEERound(
   room: CEERoom,
