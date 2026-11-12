@@ -10,6 +10,7 @@ import type {
 } from "@bakagame/shared";
 import { BAKA_CLIENT_DOWNLOAD_URL } from "@/lib/AntiCheatCopy";
 import { rejectedProtocol } from "@/lib/ProtocolFailure";
+import { useAccountStore } from "./UseAccountStore";
 
 // 只假到最底层的 WS 客户端与壳通道：`@/lib/CEEWs` 用真实实现，这样排位准入命令的
 // 「先换票再发」也一并被这份测试覆盖（简报要求）。
@@ -522,6 +523,28 @@ describe("排位命令", () => {
       leaderboard: null,
       profileLoading: false,
     });
+  });
+
+  it("账号变化时清掉档案与榜单，旧账号在途的回包不再落进新账号的页面", async () => {
+    const ack = deferred<CEERankedProfile>();
+    socket.send.mockImplementation((command: unknown) =>
+      command === "cee.ranked.profile" ? ack.promise : Promise.resolve({})
+    );
+    useCEERankedStore.setState({ profile: profileFixture, leaderboard: { entries: [] } as never });
+    attachRanked();
+    useAccountStore.setState({ profile: { id: "account-a" } as never });
+    const running = useCEERankedStore.getState().loadProfile();
+
+    useAccountStore.setState({ profile: { id: "account-b" } as never });
+    expect(useCEERankedStore.getState()).toMatchObject({
+      profile: null,
+      leaderboard: null,
+      profileLoading: false,
+    });
+
+    ack.resolve(profileFixture);
+    await running;
+    expect(useCEERankedStore.getState().profile).toBeNull();
   });
 
   it("四个查询各发对应的排位命令，并在复用窗口内合并同键请求", async () => {

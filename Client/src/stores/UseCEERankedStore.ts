@@ -15,6 +15,7 @@ import { createQueryReuseCache, keywordQueryKey } from "@/lib/QueryReuse";
 import { consumeStateSync } from "@/lib/StateSync";
 import { isProtocolError } from "@/lib/WebsocketClient";
 import { rankedAntiCheatMessage } from "@/lib/AntiCheatCopy";
+import { useAccountStore } from "./UseAccountStore";
 import { useCEEStore } from "./UseCEEStore";
 
 /** 排位状态事件名，与服务端 `CEE_RANKED_STATE_EVENT` 同值；那份常量住在带 TypeBox 的模块里，客户端不能引。 */
@@ -80,6 +81,11 @@ let syncPending = false;
 let streamInstalls = 0;
 /** 在途命令的归属代次：释放后晚到的回包一律忽略。 */
 let commandGeneration = 0;
+/**
+ * 账号换了：档案与榜单属于上一个账号，在途的查询回包也必须作废。
+ * 单独计数而不复用 `commandGeneration`——后者变化会让已挂上的事件订阅整体失效。
+ */
+let accountEpoch = 0;
 let attachCount = 0;
 let unsubscribeMessage: (() => void) | null = null;
 let unsubscribeStatus: (() => void) | null = null;
@@ -113,14 +119,15 @@ async function fetchProfile(refresh: boolean): Promise<void> {
     return;
   }
   const generation = commandGeneration;
+  const epoch = accountEpoch;
   useCEERankedStore.setState({ profileLoading: true });
   try {
     const profile = await ws.send("cee.ranked.profile", {});
-    if (ownsGeneration(generation)) useCEERankedStore.setState({ profile });
+    if (ownsQuery(generation, epoch)) useCEERankedStore.setState({ profile });
   } catch (error) {
-    if (ownsGeneration(generation)) reportFailure(error);
+    if (ownsQuery(generation, epoch)) reportFailure(error);
   } finally {
-    if (ownsGeneration(generation)) {
+    if (ownsQuery(generation, epoch)) {
       useCEERankedStore.setState({ profileLoading: false });
       if (profileRefreshQueued) {
         profileRefreshQueued = false;
@@ -138,6 +145,10 @@ const attached = (generation: number): boolean =>
  * 命令本身可能是玩家在没有 attach 的入口上按下的，失败照样要说给他听。
  */
 const ownsGeneration = (generation: number): boolean => generation === commandGeneration;
+
+/** 档案与榜单类查询：页面释放（代次）与账号变化（纪元）都会让在途回包作废。 */
+const ownsQuery = (generation: number, epoch: number): boolean =>
+  ownsGeneration(generation) && epoch === accountEpoch;
 
 /**
  * 全量同步：回包本身就是一份完整状态。
@@ -290,12 +301,13 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
       const last = profile?.recent.at(-1);
       if (historyLoading || !profile?.recentHasMore || !last) return;
       const generation = commandGeneration;
+      const epoch = accountEpoch;
       set({ historyLoading: true });
       try {
         const page = await ws.send("cee.ranked.history", { before: last.endedAt });
         const current = get().profile;
         // 翻页途中资料被刷新（刚结算完一场）：新资料已从第一页重来，旧游标的这一页丢掉。
-        if (!ownsGeneration(generation) || current?.recent.at(-1)?.seriesId !== last.seriesId)
+        if (!ownsQuery(generation, epoch) || current?.recent.at(-1)?.seriesId !== last.seriesId)
           return;
         const seen = new Set(current.recent.map((entry) => entry.seriesId));
         set({
@@ -309,22 +321,23 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
           },
         });
       } catch (error) {
-        if (ownsGeneration(generation)) reportFailure(error);
+        if (ownsQuery(generation, epoch)) reportFailure(error);
       } finally {
-        if (ownsGeneration(generation)) set({ historyLoading: false });
+        if (ownsQuery(generation, epoch)) set({ historyLoading: false });
       }
     },
     loadLeaderboard: async () => {
       if (get().leaderboardLoading) return;
       const generation = commandGeneration;
+      const epoch = accountEpoch;
       set({ leaderboardLoading: true });
       try {
         const leaderboard = await ws.send("cee.ranked.leaderboard", {});
-        if (ownsGeneration(generation)) set({ leaderboard });
+        if (ownsQuery(generation, epoch)) set({ leaderboard });
       } catch (error) {
-        if (ownsGeneration(generation)) reportFailure(error);
+        if (ownsQuery(generation, epoch)) reportFailure(error);
       } finally {
-        if (ownsGeneration(generation)) set({ leaderboardLoading: false });
+        if (ownsQuery(generation, epoch)) set({ leaderboardLoading: false });
       }
     },
     searchCharacters: (keyword) =>
@@ -352,4 +365,18 @@ export const useCEERankedStore = create<CEERankedStore>((set, get) => {
       return imageUrl;
     },
   };
+});
+
+// 账号变化（退出、换号登录）时清掉依赖账号的数据；排位页即使没有挂着也要清，下次进入才不会先闪出旧账号的战绩。
+useAccountStore.subscribe((state, previous) => {
+  if (state.profile?.id === previous.profile?.id) return;
+  accountEpoch += 1;
+  profileRefreshQueued = false;
+  useCEERankedStore.setState({
+    profile: null,
+    profileLoading: false,
+    leaderboard: null,
+    leaderboardLoading: false,
+    historyLoading: false,
+  });
 });
