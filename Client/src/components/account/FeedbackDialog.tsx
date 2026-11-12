@@ -291,7 +291,10 @@ function FeedbackThread({
             <Badge variant={FEEDBACK_STATUS_BADGE[detail.status]} size="xs">
               {FEEDBACK_STATUS_LABELS[detail.status]}
             </Badge>
-            <h3 className="min-w-0 flex-1 font-semibold break-words">{detail.title}</h3>
+            {/* 窄屏标题另起一行占满宽度：挤在两枚徽章右边会被压成一列三四字的窄条。 */}
+            <h3 className="min-w-0 flex-1 basis-full font-semibold break-words sm:basis-0">
+              {detail.title}
+            </h3>
           </header>
           <p className="whitespace-pre-wrap break-words rounded-md border bg-card p-3 text-sm">
             {detail.content}
