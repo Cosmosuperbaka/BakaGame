@@ -79,22 +79,22 @@ function DailyTable({ data }: { data: AdminOverview }) {
       <thead>
         <tr>
           <th scope="col">日期</th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             访客
           </th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             登录访客
           </th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             浏览
           </th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             新注册
           </th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             对局
           </th>
-          <th scope="col" className="text-right!">
+          <th scope="col" className="text-right">
             参与人次
           </th>
         </tr>
@@ -102,7 +102,7 @@ function DailyTable({ data }: { data: AdminOverview }) {
       <tbody className="tabular-nums">
         {rows.map((day) => (
           <tr key={day.day}>
-            <th scope="row" className="font-mono font-normal! text-foreground!">
+            <th scope="row" className="font-mono font-normal text-foreground">
               {formatDayKey(day.day)}
             </th>
             <td className="text-right">{formatNumber(day.visitors)}</td>
@@ -242,13 +242,13 @@ function SentryCard({
               <thead>
                 <tr>
                   <th scope="col">事务</th>
-                  <th scope="col" className="text-right!">
+                  <th scope="col" className="text-right">
                     次数
                   </th>
-                  <th scope="col" className="text-right!">
+                  <th scope="col" className="text-right">
                     p75
                   </th>
-                  <th scope="col" className="text-right!">
+                  <th scope="col" className="text-right">
                     p95
                   </th>
                 </tr>

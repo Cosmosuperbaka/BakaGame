@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
+import { FormAlert } from "@/components/account/FormAlert";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { formatNumber } from "@/lib/AdminFormat";
 import { cn } from "@/lib/Utils";
@@ -110,7 +111,9 @@ export function AdminTable({
     <div className={cn("overflow-x-auto rounded-md border bg-card", className)}>
       <table
         aria-label={label}
-        className="w-full min-w-[40rem] text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-medium [&_th]:text-muted-foreground [&_thead]:border-b [&_tbody_tr+tr]:border-t"
+        // 单元格默认样式放在 :where() 里：特异性降到最低，列上自己写的 text-right、font-normal 直接生效，
+        // 调用处不必再用 `!` 去压表格的后代选择器。
+        className="w-full min-w-160 text-sm [:where(&)_td]:px-3 [:where(&)_td]:py-2 [:where(&)_th]:px-3 [:where(&)_th]:py-2 [:where(&)_th]:text-left [:where(&)_th]:font-medium [:where(&)_th]:text-muted-foreground [&_thead]:border-b [&_tbody_tr+tr]:border-t"
       >
         {children}
       </table>
@@ -250,11 +253,7 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
+        {error ? <FormAlert>{error}</FormAlert> : null}
         <DialogFooter>
           <Button
             type="button"

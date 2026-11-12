@@ -51,7 +51,7 @@ function GameDetail({ record }: { record: GameRecordDetail }) {
           <tr>
             <th scope="col">玩家</th>
             <th scope="col">账号</th>
-            <th scope="col" className="text-right!">
+            <th scope="col" className="text-right">
               本局总分
             </th>
           </tr>
@@ -59,7 +59,7 @@ function GameDetail({ record }: { record: GameRecordDetail }) {
         <tbody>
           {players.map((player) => (
             <tr key={player.playerId}>
-              <th scope="row" className="font-normal! text-foreground!">
+              <th scope="row" className="font-normal text-foreground">
                 {player.name}
               </th>
               <td className="font-mono text-xs text-muted-foreground">{player.userId ?? "游客"}</td>
