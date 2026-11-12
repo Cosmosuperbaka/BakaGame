@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CEEOriginalService } from "../src/application/CEEOriginalService";
 import { CEEService } from "../src/application/CEEService";
+import {
+  CEE_ORIGINAL_ENTER_MAX_PER_WINDOW,
+  CEE_ORIGINAL_ENTER_WINDOW_MS,
+} from "../src/config/Constants";
 import { AppError } from "../src/domain/Errors";
 import {
   ROOM_ID_TEST_MODE,
@@ -286,6 +290,27 @@ describe("CEE 统一房号路由", () => {
     expect(h.service.directory.resolve("1357")).toBeNull();
     await h.send("c", "cee.room.create", createNative("1357"));
     expect(h.service.directory.resolve("1357")).toEqual({ source: "native", roomId: "1357" });
+  });
+
+  test("原版房入房有专属限额：超限当场拒绝不再开上游连接，窗口过后恢复", async () => {
+    const h = setup();
+    h.connect("spammer");
+    h.failSockets(true);
+    for (let attempt = 0; attempt < CEE_ORIGINAL_ENTER_MAX_PER_WINDOW; attempt++)
+      await expect(
+        h.send("spammer", "cee.room.create", createOriginal("1357"))
+      ).rejects.toMatchObject({ code: "CEE_ORIGINAL_UNAVAILABLE" });
+    await expect(
+      h.send("spammer", "cee.room.create", createOriginal("1357"))
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    // 增强房建房不受原版额度影响。
+    await h.send("spammer", "cee.room.create", createNative("2468"));
+
+    h.advance(CEE_ORIGINAL_ENTER_WINDOW_MS + 1);
+    h.connect("another");
+    await expect(
+      h.send("another", "cee.room.create", createOriginal("1357"))
+    ).rejects.toMatchObject({ code: "CEE_ORIGINAL_UNAVAILABLE" });
   });
 
   test("本站新建的原版房在上游列表出现前保留房号，全员离开且上游无此房后释放", async () => {

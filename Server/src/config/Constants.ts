@@ -3,6 +3,10 @@
 /** 原版上游请求与事件确认的等待上限（8 秒）；服务选项可注入更小的值给测试用。 */
 export const CEE_ORIGINAL_ACK_TIMEOUT_MS = 8_000;
 
+/** 原版房入房（新建与加入）的限额窗口与次数：每次都会新开一条上游连接，成本落在第三方上。 */
+export const CEE_ORIGINAL_ENTER_WINDOW_MS = 60_000;
+export const CEE_ORIGINAL_ENTER_MAX_PER_WINDOW = 10;
+
 /** 房间无活动清理超时时间（10分钟） */
 export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 

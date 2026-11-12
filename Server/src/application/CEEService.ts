@@ -1,3 +1,7 @@
+import {
+  CEE_ORIGINAL_ENTER_MAX_PER_WINDOW,
+  CEE_ORIGINAL_ENTER_WINDOW_MS,
+} from "../config/Constants";
 import type { AdminRoomControl, AdminRoomView } from "../domain/AdminRoom";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
@@ -48,6 +52,11 @@ export class CEEService implements AdminRoomControl {
   private readonly connections = new Map<string, ConnectionRecord>();
   private readonly limiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 80 });
   private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 8 });
+  /** 原版房入房额度：按来源地址聚合，换连接不换额度。 */
+  private readonly originalEnterLimiter = new SlidingWindowRateLimiter({
+    windowMs: CEE_ORIGINAL_ENTER_WINDOW_MS,
+    maxRequests: CEE_ORIGINAL_ENTER_MAX_PER_WINDOW,
+  });
   private readonly searchQuota: CEESearchQuota;
   private readonly provenance: CEESearchProvenance;
   private readonly entering = new Set<string>();
@@ -304,6 +313,7 @@ export class CEEService implements AdminRoomControl {
       if (message.payload.source === "native")
         return this.native.execute(id, message) as Promise<CEERoomEnterResult>;
       this.original.assertAvailable();
+      this.requireOriginalEnterQuota(id);
       const target = this.directory.claimOriginal(message.payload.roomId);
       try {
         return await this.original.create(id, target, message.payload);
@@ -322,9 +332,18 @@ export class CEEService implements AdminRoomControl {
           : { ...message, payload: { ...message.payload, roomId: target.roomId } };
       return this.native.execute(id, normalized) as Promise<CEERoomEnterResult>;
     }
+    if (message.type === "cee.room.join") this.requireOriginalEnterQuota(id);
     return message.type === "cee.room.join"
       ? this.original.join(id, target, message.payload)
       : this.original.reconnect(id, target, message.payload.sessionToken);
+  }
+
+  /** 每次进原版房都新开一条上游 websocket：额度在开连接之前扣，超限当场拒绝。 */
+  private requireOriginalEnterQuota(id: string): void {
+    const connection = this.connections.get(id);
+    const key = connection?.clientIp ?? id;
+    if (!this.originalEnterLimiter.allow(key, this.now()))
+      throw new AppError("RATE_LIMITED", "进入原版房间过于频繁，请稍后再试");
   }
 
   /** 房号未命中时回源刷新一次（受缓存时长节流）：服务重启后的首个分享链接也能解析到原版房。 */
