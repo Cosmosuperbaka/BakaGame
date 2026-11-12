@@ -1,9 +1,8 @@
+import { type CEERankedBotStrength, type CEERankedPersona } from "./CEERankedBotProfile";
+import { ceeRankedBotThinkMs } from "./CEERankedBotTiming";
 import {
   type CEERankedBotBrain,
-  type CEERankedBotStrength,
-  type CEERankedPersona,
   ceeRankedBotEligible,
-  ceeRankedBotThinkMs,
   createCEERankedBot,
   nextCEERankedBotGuess,
   recordCEERankedBotFeedback,

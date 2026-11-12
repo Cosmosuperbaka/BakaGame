@@ -15,7 +15,7 @@ import {
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
-} from "../src/domain/CEERankedBot";
+} from "../src/domain/CEERankedBotProfile";
 import {
   CEE_RANKED_ALL_DIMENSIONS,
   evaluateCEEGuess,

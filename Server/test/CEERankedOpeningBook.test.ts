@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { CEE_RANKED_AIGA_OPENING_ID } from "../src/domain/CEERankedBot";
+import { CEE_RANKED_AIGA_OPENING_ID } from "../src/domain/CEERankedBotProfile";
 import {
   assembleCEERankedOpenings,
   CEE_RANKED_OPENING_BOOK,

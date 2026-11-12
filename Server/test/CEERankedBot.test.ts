@@ -3,18 +3,19 @@ import {
   CEE_RANKED_AIGA_OPENING_ID,
   CEE_RANKED_BOT_ANCHORS,
   CEE_RANKED_PERSONAS,
-  ceeRankedAigaThinkMs,
-  ceeRankedBotEligible,
   ceeRankedBotStrength,
-  ceeRankedBotThinkMs,
-  createCEERankedBot,
-  nextCEERankedBotGuess,
   pickCEERankedPersona,
-  recordCEERankedBotFeedback,
-  type CEERankedBotBrain,
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
+} from "../src/domain/CEERankedBotProfile";
+import { ceeRankedAigaThinkMs, ceeRankedBotThinkMs } from "../src/domain/CEERankedBotTiming";
+import {
+  ceeRankedBotEligible,
+  createCEERankedBot,
+  nextCEERankedBotGuess,
+  recordCEERankedBotFeedback,
+  type CEERankedBotBrain,
 } from "../src/domain/CEERankedBot";
 import {
   CEE_RANKED_ALL_DIMENSIONS,

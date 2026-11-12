@@ -3,12 +3,11 @@ import {
   CEE_RANKED_AIGA_OPENING_ID,
   CEE_RANKED_PERSONAS,
   ceeRankedBotStrength,
-  createCEERankedBot,
-  nextCEERankedBotGuess,
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
-} from "../src/domain/CEERankedBot";
+} from "../src/domain/CEERankedBotProfile";
+import { createCEERankedBot, nextCEERankedBotGuess } from "../src/domain/CEERankedBot";
 import type { CEERankedOpening } from "../src/domain/CEERankedOpeningBook";
 import { type CEERankedCandidate } from "../src/domain/CEERankedSolver";
 import {

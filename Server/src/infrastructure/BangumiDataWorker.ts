@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { AppError, isAppError } from "../domain/Errors";
 import { CEECharacterRepository } from "./CEECharacterRepository";
-import { CEE_RANKED_AIGA_OPENING_ID } from "../domain/CEERankedBot";
+import { CEE_RANKED_AIGA_OPENING_ID } from "../domain/CEERankedBotProfile";
 import { assembleCEERankedOpenings } from "../domain/CEERankedOpeningBook";
 import { LocalBangumiProvider } from "./LocalBangumiProvider";
 import { readDatasetStatus } from "./BangumiMirrorStatus";

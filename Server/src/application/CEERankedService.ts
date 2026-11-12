@@ -55,16 +55,18 @@ import {
 } from "../domain/CEERankedRating";
 import {
   ceeRankedBotStrength,
-  ceeRankedBotThinkMs,
-  ceeRankedBotEligible,
-  createCEERankedBot,
-  nextCEERankedBotGuess,
   pickCEERankedPersona,
-  recordCEERankedBotFeedback,
-  type CEERankedBotBrain,
   type CEERankedBotStrength,
   type CEERankedPersona,
   type CEERankedPersonaId,
+} from "../domain/CEERankedBotProfile";
+import { ceeRankedBotThinkMs } from "../domain/CEERankedBotTiming";
+import {
+  ceeRankedBotEligible,
+  createCEERankedBot,
+  nextCEERankedBotGuess,
+  recordCEERankedBotFeedback,
+  type CEERankedBotBrain,
 } from "../domain/CEERankedBot";
 import { filterCEECandidates, type CEERankedCandidate } from "../domain/CEERankedSolver";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
