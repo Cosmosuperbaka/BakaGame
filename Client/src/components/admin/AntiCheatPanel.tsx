@@ -67,7 +67,8 @@ function ReviewHistory({ itemId }: { itemId: string }) {
         {data ? antiCheatHistoryTitle(data.windowDays) : "同身份近窗记录"}
       </h3>
       {history.error ? (
-        <p className="text-xs text-muted-foreground">{history.error}</p>
+        // 读失败要与「窗口内没有其它可比条目」这类正常灰字区分开，用与其它失败说明同一个带图标的写法。
+        <FormAlert>{history.error}</FormAlert>
       ) : !data ? (
         <p className="text-xs text-muted-foreground">加载中…</p>
       ) : data.rounds === 0 ? (
@@ -162,7 +163,8 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
         </div>
         <div>
           <dt className="inline">相邻间隔：</dt>
-          <dd className="inline break-all font-mono">{intervalText(item.features.intervals)}</dd>
+          {/* 按「 · 」间隔处换行：break-all 会把 1.2s 拆成「1.」与「2s」两行。 */}
+          <dd className="inline break-words font-mono">{intervalText(item.features.intervals)}</dd>
         </div>
         <div>
           <dt className="inline">首猜即中：</dt>
@@ -170,6 +172,8 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
         </div>
       </dl>
       <ReviewHistory itemId={item.id} />
+      {/* 失败说明放在处置按钮之前：放在最后会落到长弹窗的下沿以外，点了没反应似的。 */}
+      {action.error ? <FormAlert>{action.error}</FormAlert> : null}
       <div className="flex flex-wrap items-center gap-2">
         {(["cleared", "actioned", "open"] as const)
           .filter((next) => next !== item.status)
@@ -187,7 +191,6 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
             </Button>
           ))}
       </div>
-      {action.error ? <FormAlert>{action.error}</FormAlert> : null}
     </div>
   );
 }
@@ -244,7 +247,9 @@ export function AntiCheatPanel() {
               <th scope="col">玩家</th>
               <th scope="col">房间 · 回合</th>
               <th scope="col">客户端</th>
-              <th scope="col">分值</th>
+              <th scope="col" className="text-right">
+                分值
+              </th>
               <th scope="col">依据</th>
               <th scope="col">状态</th>
               <th scope="col">记录时间</th>
@@ -262,7 +267,7 @@ export function AntiCheatPanel() {
                   {item.roomId} · {item.roundNumber}
                 </td>
                 <td>{CEE_CLIENT_TYPE_LABELS[item.clientType]}</td>
-                <td className="tabular-nums">{item.score}</td>
+                <td className="text-right tabular-nums">{item.score}</td>
                 <td className="max-w-72">
                   <span className="block truncate text-muted-foreground">
                     {item.reasons.join("；")}
