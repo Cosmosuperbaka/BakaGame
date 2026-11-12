@@ -18,7 +18,7 @@ export function FakerPendingSpeech({
 }) {
   return (
     <span
-      className={cn("inline-flex items-center gap-[3px] align-middle", className)}
+      className={cn("inline-flex items-center gap-0.5 align-middle", className)}
       role="status"
       aria-label={label}
     >
@@ -29,7 +29,7 @@ export function FakerPendingSpeech({
           variants={ellipsisDot}
           animate="animate"
           aria-hidden="true"
-          className="block h-[3px] w-[3px] rounded-full bg-muted-foreground/70"
+          className="block size-1 rounded-full bg-muted-foreground"
         />
       ))}
     </span>
