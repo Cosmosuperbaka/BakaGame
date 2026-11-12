@@ -289,3 +289,185 @@ test("infobox 已是 wikitext 时原样保留，缺失时落空串", () => {
   expect(infoboxToWikitext(undefined)).toBe("");
   expect(infoboxToWikitext([])).toBe("");
 });
+
+/** 一部带两个新角色与一条音乐关联的作品，供原子性与并发用例复用。 */
+const richPayloads = (): Record<string, unknown> => ({
+  [`${BASE}/v0/subjects/900001`]: {
+    id: 900001,
+    type: 2,
+    name: "新番",
+    tags: [],
+    meta_tags: [],
+    rating: {},
+    collection: {},
+  },
+  [`${BASE}/v0/subjects/900001/characters`]: [
+    { id: 700001, name: "角色一", type: 1, relation: "主角" },
+    { id: 700002, name: "角色二", type: 1, relation: "配角" },
+  ],
+  [`${BASE}/v0/subjects/900001/subjects`]: [{ id: 800001, type: 3, relation: "片头曲" }],
+  [`${BASE}/v0/characters/700001`]: { id: 700001, name: "角色一", stat: {} },
+  [`${BASE}/v0/characters/700002`]: { id: 700002, name: "角色二", stat: {} },
+  [`${BASE}/v0/subjects/800001`]: { id: 800001, type: 3, name: "片头曲" },
+});
+
+const countRows = (db: Database) => ({
+  subjects: (db.query("SELECT count(*) AS n FROM subjects").get() as { n: number }).n,
+  characters: (db.query("SELECT count(*) AS n FROM characters").get() as { n: number }).n,
+  relations: (
+    db.query("SELECT count(*) AS n FROM character_subject_relations").get() as { n: number }
+  ).n,
+  music: (db.query("SELECT count(*) AS n FROM subject_music_relations").get() as { n: number }).n,
+});
+
+/** 搜索只返回 900001；`failing` 里的地址返回 500，其余按 payloads 分派。 */
+const makeSingleSubjectFetcher = (payloads: Record<string, unknown>, failing: Set<string>) =>
+  (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = requestUrlText(input);
+    if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
+    if (failing.has(url)) return new Response(null, { status: 500 });
+    const body = payloads[url];
+    return body === undefined ? new Response(null, { status: 404 }) : Response.json(body);
+  }) as unknown as typeof fetch;
+
+test("角色详情中途失败时整部作品不落库，下次发现仍当作新作品重试", async () => {
+  const db = makeDb();
+  const failing = new Set([`${BASE}/v0/characters/700002`]);
+  const fetcher = makeSingleSubjectFetcher(richPayloads(), failing);
+  const first = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
+  expect(first).toMatchObject({ added: 0, failed: 1 });
+  // 失败要带出作品编号与原因，运维才能排查。
+  expect(first.failures).toHaveLength(1);
+  expect(first.failures[0]).toMatchObject({ id: 900001 });
+  expect(first.failures[0]!.message).toContain("500");
+  // 不留半截：作品行、已拉到的角色、关联都不能落库。
+  expect(countRows(db)).toEqual({ subjects: 0, characters: 0, relations: 0, music: 0 });
+
+  failing.clear();
+  const second = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
+  expect(second).toMatchObject({ added: 1, failed: 0 });
+  expect(countRows(db)).toEqual({ subjects: 1, characters: 2, relations: 2, music: 1 });
+  db.close();
+});
+
+test("关联音乐详情失败时同样整体不落库", async () => {
+  const db = makeDb();
+  const fetcher = makeSingleSubjectFetcher(richPayloads(), new Set([`${BASE}/v0/subjects/800001`]));
+  const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
+  expect(result).toMatchObject({ added: 0, failed: 1 });
+  expect(countRows(db)).toEqual({ subjects: 0, characters: 0, relations: 0, music: 0 });
+  db.close();
+});
+
+test("写库阶段出错时事务回滚，不留下作品行", async () => {
+  const db = makeDb();
+  // 去掉音乐关联表：写库的最后一步必然失败，前面写入的作品与角色必须一并回滚。
+  db.exec("DROP TABLE subject_music_relations");
+  const fetcher = makeSingleSubjectFetcher(richPayloads(), new Set());
+  const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
+  expect(result).toMatchObject({ added: 0, failed: 1 });
+  expect(db.query("SELECT count(*) AS n FROM subjects").get()).toEqual({ n: 0 });
+  expect(db.query("SELECT count(*) AS n FROM characters").get()).toEqual({ n: 0 });
+  db.close();
+});
+
+/** 只在被 abort 时才结束的挂起请求：模拟半开连接。 */
+const hang = (init?: RequestInit) =>
+  new Promise<Response>((_, reject) => {
+    init?.signal?.addEventListener(
+      "abort",
+      () =>
+        reject(init.signal!.reason instanceof Error ? init.signal!.reason : new Error("已中止")),
+      { once: true }
+    );
+  });
+
+test("搜索请求挂起时按请求超时中止并抛出，不会让每日任务永远不返回", async () => {
+  const db = makeDb();
+  const fetcher = ((_: unknown, init?: RequestInit) => hang(init)) as unknown as typeof fetch;
+  const startedAt = Date.now();
+  await expect(
+    discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0, requestTimeoutMs: 30 })
+  ).rejects.toThrow();
+  expect(Date.now() - startedAt).toBeLessThan(1_000);
+  db.close();
+});
+
+test("详情请求挂起时该作品记为失败，其余流程继续", async () => {
+  const db = makeDb();
+  const fetcher = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
+    return hang(init);
+  }) as unknown as typeof fetch;
+  const result = await discoverNewSubjects({
+    db,
+    base: BASE,
+    fetcher,
+    pauseMs: 0,
+    requestTimeoutMs: 30,
+  });
+  expect(result).toMatchObject({ added: 0, failed: 1 });
+  db.close();
+});
+
+test("超过总预算后不再处理剩余候选，并如实记为失败", async () => {
+  const db = makeDb();
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = requestUrlText(input);
+    if (init?.method === "POST")
+      return Response.json({ data: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }], total: 4 });
+    await Bun.sleep(40);
+    return url.endsWith("/characters") || url.endsWith("/subjects")
+      ? Response.json([])
+      : Response.json({ id: 1, type: 2, name: "x" });
+  }) as unknown as typeof fetch;
+  const result = await discoverNewSubjects({
+    db,
+    base: BASE,
+    fetcher,
+    pauseMs: 0,
+    totalBudgetMs: 60,
+  });
+  expect(result.candidates).toBe(4);
+  expect(result.added + result.skipped + result.failed).toBe(4);
+  expect(result.failed).toBeGreaterThan(0);
+  expect(result.failures.some((item) => item.message.includes("预算"))).toBe(true);
+  db.close();
+});
+
+test("同一部作品的角色与关联详情并发抓取，但不超过并发上限", async () => {
+  const db = makeDb();
+  const characters = Array.from({ length: 8 }, (_, index) => ({
+    id: 700100 + index,
+    name: `角色${index}`,
+    type: 1,
+    relation: "配角",
+  }));
+  const payloads: Record<string, unknown> = {
+    [`${BASE}/v0/subjects/900001`]: { id: 900001, type: 2, name: "新番" },
+    [`${BASE}/v0/subjects/900001/characters`]: characters,
+    [`${BASE}/v0/subjects/900001/subjects`]: [],
+  };
+  let inFlight = 0;
+  let peak = 0;
+  const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = requestUrlText(input);
+    if (init?.method === "POST") return Response.json({ data: [{ id: 900001 }], total: 1 });
+    const isCharacterDetail = /\/v0\/characters\/\d+$/.test(url);
+    if (isCharacterDetail) {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Bun.sleep(15);
+      inFlight -= 1;
+      return Response.json({ id: Number(url.split("/").pop()), name: "角色", stat: {} });
+    }
+    const body = payloads[url];
+    return body === undefined ? new Response(null, { status: 404 }) : Response.json(body);
+  }) as unknown as typeof fetch;
+  const result = await discoverNewSubjects({ db, base: BASE, fetcher, pauseMs: 0 });
+  expect(result.added).toBe(1);
+  expect(peak).toBeGreaterThan(1);
+  expect(peak).toBeLessThanOrEqual(3);
+  expect(countRows(db).characters).toBe(8);
+  db.close();
+});

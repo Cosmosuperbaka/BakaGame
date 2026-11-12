@@ -112,3 +112,18 @@ export const HTTP_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
  * 攒满槽位后整条队列失效。取值要大于任何合法单次请求的耗时，又不能长到让队列卡死太久。
  */
 export const MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS = 30_000;
+
+/** 新条目发现：单次出站请求的超时（搜索、作品、角色与关联详情）。 */
+export const BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS = 10_000;
+
+/** 新条目发现：一次每日任务的总时间预算，超出后不再处理剩余候选，避免上游拖慢时任务不返回。 */
+export const BANGUMI_DISCOVERY_TOTAL_BUDGET_MS = 30 * 60 * 1000;
+
+/** 新条目发现：同一部作品内角色与关联详情的并发上限（上游是公益服务）。 */
+export const BANGUMI_DISCOVERY_CONCURRENCY = 3;
+
+/** 角色标签增量：拉取 diff 的超时。 */
+export const BANGUMI_TAG_DIFF_TIMEOUT_MS = 30_000;
+
+/** 角色标签增量：拉取全量标签产物的超时（文件远大于 diff）。 */
+export const BANGUMI_TAG_FULL_TIMEOUT_MS = 120_000;

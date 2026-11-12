@@ -1,5 +1,15 @@
 import type { Database } from "bun:sqlite";
-import type { BangumiSearchIndex } from "./BangumiSearchIndex";
+import PQueue from "p-queue";
+import {
+  BANGUMI_DISCOVERY_CONCURRENCY,
+  BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS,
+  BANGUMI_DISCOVERY_TOTAL_BUDGET_MS,
+} from "../config/Constants";
+import type {
+  BangumiSearchIndex,
+  CharacterSearchDocument,
+  SubjectSearchDocument,
+} from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 /**
@@ -29,6 +39,10 @@ export interface DiscoveryOptions {
   fetcher?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** 单次出站请求超时；缺省取常量。 */
+  requestTimeoutMs?: number;
+  /** 本次发现的总时间预算；缺省取常量。 */
+  totalBudgetMs?: number;
 }
 
 export interface DiscoveryResult {
@@ -37,6 +51,20 @@ export interface DiscoveryResult {
   added: number;
   skipped: number;
   failed: number;
+  /** 失败作品的编号与原因（有上限）：运维靠它排查，光有计数说明不了为什么。 */
+  failures: Array<{ id: number; message: string }>;
+}
+
+/** 失败样本只留前若干条：上游整体故障时几百条同样的原因没有信息量。 */
+const MAX_FAILURE_SAMPLES = 20;
+
+/** 出站请求的公共上下文：同一次发现共用的取数函数、地址与截止时间。 */
+interface FetchContext {
+  fetcher: typeof fetch;
+  base: string;
+  requestTimeoutMs: number;
+  /** 总预算的信号；与每个请求自己的超时合并，任何一个触发都中止。 */
+  budget: AbortSignal;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -133,20 +161,26 @@ interface ApiCharacter {
 const ymd = (time: number) => new Date(time).toISOString().slice(0, 10);
 
 export async function discoverNewSubjects(options: DiscoveryOptions): Promise<DiscoveryResult> {
-  const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? Date.now;
   const since = options.since ?? ymd(now() - 30 * DAY_MS);
   const limit = options.limit ?? 1000;
   const pauseMs = options.pauseMs ?? DEFAULT_PAUSE_MS;
   const sleep = options.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const context: FetchContext = {
+    fetcher: options.fetcher ?? fetch,
+    base: options.base,
+    requestTimeoutMs: options.requestTimeoutMs ?? BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS,
+    budget: AbortSignal.timeout(options.totalBudgetMs ?? BANGUMI_DISCOVERY_TOTAL_BUDGET_MS),
+  };
 
-  const candidates = await searchSince(fetcher, options.base, since, limit);
+  const candidates = await searchSince(context, since, limit);
   const result: DiscoveryResult = {
     window: since,
     candidates: candidates.length,
     added: 0,
     skipped: 0,
     failed: 0,
+    failures: [],
   };
   if (!candidates.length) return result;
 
@@ -155,6 +189,14 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
       Number(row.id)
     )
   );
+  const fail = (id: number, error: unknown) => {
+    result.failed += 1;
+    if (result.failures.length < MAX_FAILURE_SAMPLES)
+      result.failures.push({
+        id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+  };
 
   for (const subjectId of candidates) {
     // 已经在库里的不动：它们的评分/热度由日常刷新负责，这里只补「新」的。
@@ -162,36 +204,33 @@ export async function discoverNewSubjects(options: DiscoveryOptions): Promise<Di
       result.skipped += 1;
       continue;
     }
+    if (context.budget.aborted) {
+      fail(subjectId, new Error("超出本次发现的总时间预算，留待下次"));
+      continue;
+    }
     if (pauseMs > 0) await sleep(pauseMs);
     try {
-      const added = await importSubject(
-        fetcher,
-        options.base,
-        options.db,
-        options.search,
-        subjectId
-      );
+      const added = await importSubject(context, options.db, options.search, subjectId);
       if (added) result.added += 1;
       else result.skipped += 1;
-    } catch {
-      result.failed += 1;
+    } catch (error) {
+      fail(subjectId, error);
     }
   }
   return result;
 }
 
+/** 单个请求的取消信号：自身超时与整体预算任一触发都中止。 */
+const requestSignal = (context: FetchContext): AbortSignal =>
+  AbortSignal.any([AbortSignal.timeout(context.requestTimeoutMs), context.budget]);
+
 /** 按首播日期过滤 + 分页取全（total 有上限，够一个同步窗口用）。 */
-async function searchSince(
-  fetcher: typeof fetch,
-  base: string,
-  since: string,
-  limit: number
-): Promise<number[]> {
+async function searchSince(context: FetchContext, since: string, limit: number): Promise<number[]> {
   const ids: number[] = [];
   let offset = 0;
   while (ids.length < limit) {
     const page = new URLSearchParams({ limit: String(SEARCH_PAGE_SIZE), offset: String(offset) });
-    const response = await fetcher(`${base}/v0/search/subjects?${page}`, {
+    const response = await context.fetcher(`${context.base}/v0/search/subjects?${page}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -203,6 +242,7 @@ async function searchSince(
         filter: { air_date: [`>=${since}`], type: ALL_TYPES },
         sort: "heat",
       }),
+      signal: requestSignal(context),
     });
     // 搜索失败必须抛出：否则「上游挂了」和「这段时间没有新条目」在结果上一模一样。
     if (!response.ok) throw new Error(`新条目搜索失败：HTTP ${response.status}`);
@@ -216,28 +256,61 @@ async function searchSince(
   return ids.slice(0, limit);
 }
 
+interface ApiRelation {
+  id?: number;
+  type?: number;
+  relation?: string;
+}
+
+/** 一部作品入库所需的全部上游数据：拿齐之后才写库。 */
+interface SubjectBundle {
+  subject: ApiSubject;
+  characterRows: ApiCharacter[];
+  relationRows: ApiRelation[];
+  /** 库里还没有的角色的详情；上游 404 的角色不在其中。 */
+  characterDetails: Map<number, ApiCharacter>;
+  /** 关联音乐条目的详情，键为条目编号；上游 404 记为 null。 */
+  musicDetails: Map<number, ApiSubject | null>;
+}
+
 /**
- * 导入单个作品：拉详情 → 判裁剪 → 写作品与它的角色/关联 → 更新索引。
+ * 导入单个作品，分两个阶段：先把所有上游数据**抓齐**（只读库），再在**一个事务**里写入。
+ * 抓取途中任何一次失败都整体放弃、库里不留任何东西，该作品下次发现仍是「未知」，会自然重试；
+ * 若边抓边写，作品行先落库后角色抓取失败，它就会永远被当成「已有」而跳过，残缺且不可自愈。
  * 返回是否真的入库（被裁掉的返回 false）。
  */
 async function importSubject(
-  fetcher: typeof fetch,
-  base: string,
+  context: FetchContext,
   db: Database,
   search: BangumiSearchIndex | undefined,
   subjectId: number
 ): Promise<boolean> {
+  const bundle = await fetchBundle(context, db, subjectId);
+  if (!bundle) return false;
+  const characterDocuments = db.transaction(() => writeBundle(db, subjectId, bundle))();
+  // 索引在提交之后再写：索引失败不影响数据落库，下轮重建会补上。
+  if (search) {
+    search.updateSubject(subjectDocument(subjectId, bundle.subject)).catch(() => {});
+    for (const document of characterDocuments) search.updateCharacter(document).catch(() => {});
+  }
+  return true;
+}
+
+/** 抓取阶段：只读库、只发请求；返回 null 表示该作品不该入库。 */
+async function fetchBundle(
+  context: FetchContext,
+  db: Database,
+  subjectId: number
+): Promise<SubjectBundle | null> {
+  const { base } = context;
   const [subject, characters, related] = await Promise.all([
-    getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${subjectId}`),
-    getJson<ApiCharacter[]>(fetcher, `${base}/v0/subjects/${subjectId}/characters`),
-    getJson<Array<{ id?: number; type?: number; relation?: string }>>(
-      fetcher,
-      `${base}/v0/subjects/${subjectId}/subjects`
-    ),
+    getJson<ApiSubject>(context, `${base}/v0/subjects/${subjectId}`),
+    getJson<ApiCharacter[]>(context, `${base}/v0/subjects/${subjectId}/characters`),
+    getJson<ApiRelation[]>(context, `${base}/v0/subjects/${subjectId}/subjects`),
   ]);
-  if (!subject) return false;
+  if (!subject) return null;
   // 合规：匿名拿到的条目 nsfw 恒为 false，这里再挡一道，防止上游行为变化。
-  if (subject.nsfw) return false;
+  if (subject.nsfw) return null;
 
   const characterRows = Array.isArray(characters) ? characters : [];
   const relationRows = Array.isArray(related) ? related : [];
@@ -245,19 +318,79 @@ async function importSubject(
     .filter((row) => Number(row.type) === 3)
     .map((row) => Number(row.id));
   // 裁剪：没角色也没音乐的直接丢，与全量构建同一条判据。
-  if (!characterRows.length && !musicIds.length) return false;
+  if (!characterRows.length && !musicIds.length) return null;
 
+  // 缺失角色与音乐的详情并发抓取（并发窗口受限）：作品常有数十个角色，串行会拖到天亮。
+  const queue = new PQueue({ concurrency: BANGUMI_DISCOVERY_CONCURRENCY });
+  const characterDetails = new Map<number, ApiCharacter>();
+  const musicDetails = new Map<number, ApiSubject | null>();
+  const requested = new Set<number>();
+  const jobs: Array<Promise<void>> = [];
+  for (const row of characterRows) {
+    const characterId = Number(row.id);
+    if (!Number.isInteger(characterId) || characterId <= 0 || requested.has(characterId)) continue;
+    requested.add(characterId);
+    if (hasCharacter(db, characterId)) continue;
+    jobs.push(
+      queue.add(async () => {
+        const detail = await getJson<ApiCharacter>(context, `${base}/v0/characters/${characterId}`);
+        if (detail) characterDetails.set(characterId, detail);
+      })
+    );
+  }
+  for (const musicId of new Set(musicIds)) {
+    jobs.push(
+      queue.add(async () => {
+        musicDetails.set(
+          musicId,
+          await getJson<ApiSubject>(context, `${base}/v0/subjects/${musicId}`)
+        );
+      })
+    );
+  }
+  // 任何一个失败都让整部作品失败；等其余任务落定，避免失败之后还有请求在占用额度。
+  const settled = await Promise.allSettled(jobs);
+  for (const item of settled) if (item.status === "rejected") throw item.reason;
+
+  return { subject, characterRows, relationRows, characterDetails, musicDetails };
+}
+
+const hasCharacter = (db: Database, characterId: number): boolean =>
+  db.query("SELECT 1 FROM characters WHERE id=?").get(characterId) !== null;
+
+const heatOf = (subject: ApiSubject): number =>
+  Object.values(subject.collection ?? {}).reduce<number>(
+    (sum, value) => sum + Number(value ?? 0),
+    0
+  );
+
+const subjectDocument = (subjectId: number, subject: ApiSubject): SubjectSearchDocument => ({
+  id: subjectId,
+  name: String(subject.name ?? ""),
+  aliases: [String(subject.name_cn ?? "")].filter(Boolean),
+  tag: (subject.tags ?? []).map((tag) => String(tag.name)).filter(Boolean),
+  meta_tag: (subject.meta_tags ?? []).map(String),
+  date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
+  score: Number(subject.rating?.score ?? 0),
+  rating_count: Number(subject.rating?.total ?? 0),
+  heat: heatOf(subject),
+  rank: Number(subject.rating?.rank ?? 0),
+  type: Number(subject.type ?? 0),
+});
+
+/** 写库阶段（在事务内同步执行）：作品、角色、关联一起落库；返回需要写进索引的角色文档。 */
+function writeBundle(
+  db: Database,
+  subjectId: number,
+  bundle: SubjectBundle
+): CharacterSearchDocument[] {
+  const { subject } = bundle;
   const tags = subject.tags ?? [];
   const tagNames = tags.map((tag) => String(tag.name)).filter(Boolean);
   const rawTags = Object.fromEntries(
     tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)])
   );
   const rating = subject.rating ?? {};
-  const collection = subject.collection ?? {};
-  const heat = Object.values(collection).reduce<number>(
-    (sum, value) => sum + Number(value ?? 0),
-    0
-  );
   const aliases = [String(subject.name_cn ?? "")].filter(Boolean);
 
   db.query("INSERT OR REPLACE INTO subjects VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(
@@ -275,48 +408,28 @@ async function importSubject(
     JSON.stringify(subject.meta_tags ?? []),
     Number(rating.score ?? 0),
     Number(rating.total ?? 0),
-    heat,
+    heatOf(subject),
     Number(rating.rank ?? 0),
     String((subject.images ?? {}).large ?? "")
   );
 
-  await importCharacters(fetcher, base, db, search, subjectId, characterRows);
-  await importMusicRelations(fetcher, base, db, subjectId, relationRows);
-
-  search
-    ?.updateSubject({
-      id: subjectId,
-      name: String(subject.name ?? ""),
-      aliases,
-      tag: tagNames,
-      meta_tag: (subject.meta_tags ?? []).map(String),
-      date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
-      score: Number(rating.score ?? 0),
-      rating_count: Number(rating.total ?? 0),
-      heat,
-      rank: Number(rating.rank ?? 0),
-      type: Number(subject.type ?? 0),
-    })
-    .catch(() => {});
-  return true;
+  const characterDocuments = writeCharacters(db, subjectId, bundle);
+  writeMusicRelations(db, subjectId, bundle);
+  return characterDocuments;
 }
 
 /** 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。 */
-async function importCharacters(
-  fetcher: typeof fetch,
-  base: string,
+function writeCharacters(
   db: Database,
-  search: BangumiSearchIndex | undefined,
   subjectId: number,
-  characterRows: ApiCharacter[]
-): Promise<void> {
-  for (const [order, row] of characterRows.entries()) {
+  bundle: SubjectBundle
+): CharacterSearchDocument[] {
+  const documents: CharacterSearchDocument[] = [];
+  for (const [order, row] of bundle.characterRows.entries()) {
     const characterId = Number(row.id);
     if (!Number.isInteger(characterId) || characterId <= 0) continue;
-    const exists = db.query("SELECT 1 FROM characters WHERE id=?").get(characterId);
-    if (!exists) {
-      const detail = await getJson<ApiCharacter>(fetcher, `${base}/v0/characters/${characterId}`);
-      if (!detail) continue;
+    const detail = bundle.characterDetails.get(characterId);
+    if (detail) {
       // 角色详情没有中文名字段，与构建脚本一样只能从 infobox 取。
       const nameCn = infoboxField(detail.infobox, ["简体中文名", "中文名"])[0] ?? "";
       const characterAliases = infoboxField(detail.infobox, ["别名"]);
@@ -333,17 +446,16 @@ async function importCharacters(
         comments,
         collects
       );
-      search
-        ?.updateCharacter({
-          id: characterId,
-          name: String(detail.name ?? ""),
-          aliases: [nameCn, ...characterAliases].filter(Boolean),
-          comment: comments,
-          collect: collects,
-        })
-        .catch(() => {
-          /* 索引失败不影响数据落库，下轮重建会补上 */
-        });
+      documents.push({
+        id: characterId,
+        name: String(detail.name ?? ""),
+        aliases: [nameCn, ...characterAliases].filter(Boolean),
+        comment: comments,
+        collect: collects,
+      });
+    } else if (!hasCharacter(db, characterId)) {
+      // 上游已无此角色（404）且库里也没有：不建指向不存在角色的关联。
+      continue;
     }
     db.query("INSERT OR IGNORE INTO character_subject_relations VALUES (?,?,?,?)").run(
       characterId,
@@ -352,43 +464,37 @@ async function importCharacters(
       order
     );
   }
+  return documents;
 }
 
 /** 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。 */
-async function importMusicRelations(
-  fetcher: typeof fetch,
-  base: string,
-  db: Database,
-  subjectId: number,
-  relationRows: Array<{ id?: number; type?: number; relation?: string }>
-): Promise<void> {
-  for (const [order, row] of relationRows.entries()) {
+function writeMusicRelations(db: Database, subjectId: number, bundle: SubjectBundle): void {
+  for (const [order, row] of bundle.relationRows.entries()) {
+    if (Number(row.type) !== 3) continue;
     const relatedId = Number(row.id);
-    if (Number(row.type) === 3) {
-      const music = await getJson<ApiSubject>(fetcher, `${base}/v0/subjects/${relatedId}`);
-      const title = String(music?.name_cn || music?.name || "");
-      if (title) {
-        db.query("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)").run(
-          subjectId,
-          relatedId,
-          MUSIC_RELATIONS[String(row.relation ?? "")] ?? OTHER_MUSIC_RELATION,
-          order,
-          title,
-          infoboxField(music?.infobox, ["艺术家", "歌手", "演唱"]).join("、") || null,
-          "theme"
-        );
-      }
-    }
+    const music = bundle.musicDetails.get(relatedId);
+    const title = String(music?.name_cn || music?.name || "");
+    if (!title) continue;
+    db.query("INSERT OR IGNORE INTO subject_music_relations VALUES (?,?,?,?,?,?,?)").run(
+      subjectId,
+      relatedId,
+      MUSIC_RELATIONS[String(row.relation ?? "")] ?? OTHER_MUSIC_RELATION,
+      order,
+      title,
+      infoboxField(music?.infobox, ["艺术家", "歌手", "演唱"]).join("、") || null,
+      "theme"
+    );
   }
 }
 
 /**
  * 只有 404 算「条目不存在」。其余失败必须抛出：吞掉的话一次限流就会让角色列表变成空，
- * 作品被当成无角色裁掉，结果里还只记一条「跳过」。
+ * 作品被当成无角色裁掉，结果里还只记一条「跳过」。每个请求都带超时，挂起的连接卡不死整条任务。
  */
-async function getJson<T>(fetcher: typeof fetch, url: string): Promise<T | null> {
-  const response = await fetcher(url, {
+async function getJson<T>(context: FetchContext, url: string): Promise<T | null> {
+  const response = await context.fetcher(url, {
     headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+    signal: requestSignal(context),
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`上游请求失败：HTTP ${response.status}`);

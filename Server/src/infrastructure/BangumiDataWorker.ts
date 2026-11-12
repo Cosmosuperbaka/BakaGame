@@ -286,12 +286,21 @@ const discoverNewSubjectsDaily = async (request: InitRequest): Promise<void> => 
     const summary =
       `窗口自 ${result.window}，候选 ${result.candidates}，` +
       `入库 ${result.added}，跳过 ${result.skipped}，失败 ${result.failed}`;
-    postLog("info", "maintenance.discoverNewSubjects", `新条目发现：${summary}`);
+    // 失败样本带上作品编号与原因：只有计数的话，运维看到「失败 3」无从下手。
+    const sample = result.failures
+      .slice(0, 3)
+      .map((item) => `${item.id}：${item.message}`)
+      .join("；");
+    postLog(
+      result.failed ? "warn" : "info",
+      "maintenance.discoverNewSubjects",
+      `新条目发现：${summary}${sample ? `（${sample}）` : ""}`
+    );
     updater?.recordMaintenanceRun({
       task: "discovery",
       ok: result.failed === 0,
       summary,
-      error: null,
+      error: sample || null,
     });
   } catch (error) {
     updater?.recordMaintenanceRun({
