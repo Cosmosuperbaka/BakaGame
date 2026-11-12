@@ -53,8 +53,8 @@ describe("按房具名定时器", () => {
   test("同房同名重挂先清：只有最后一次挂的回调会触发", () => {
     const { timers, clock } = createTimers();
     const fired: string[] = [];
-    timers.arm("r1", "deadline", 100, () => fired.push("first"));
-    timers.arm("r1", "deadline", 300, () => fired.push("second"));
+    timers.arm("r1", "deadline", 100, () => void fired.push("first"));
+    timers.arm("r1", "deadline", 300, () => void fired.push("second"));
     expect(clock.live()).toBe(1);
     clock.advance(300);
     expect(fired).toEqual(["second"]);
@@ -63,8 +63,8 @@ describe("按房具名定时器", () => {
   test("取消没拦住的旧回调不执行，也不摘掉新挂的同名定时器", () => {
     const { timers, clock } = createTimers(createClock(false));
     const fired: string[] = [];
-    timers.arm("r1", "deadline", 100, () => fired.push("stale"));
-    timers.arm("r1", "deadline", 300, () => fired.push("fresh"));
+    timers.arm("r1", "deadline", 100, () => void fired.push("stale"));
+    timers.arm("r1", "deadline", 300, () => void fired.push("fresh"));
     clock.advance(100);
     expect(fired).toEqual([]);
     expect(timers.isArmed("r1", "deadline")).toBe(true);
@@ -75,9 +75,9 @@ describe("按房具名定时器", () => {
   test("不同房间、不同名称互不影响", () => {
     const { timers, clock } = createTimers();
     const fired: string[] = [];
-    timers.arm("r1", "a", 100, () => fired.push("r1:a"));
-    timers.arm("r1", "b", 100, () => fired.push("r1:b"));
-    timers.arm("r2", "a", 100, () => fired.push("r2:a"));
+    timers.arm("r1", "a", 100, () => void fired.push("r1:a"));
+    timers.arm("r1", "b", 100, () => void fired.push("r1:b"));
+    timers.arm("r2", "a", 100, () => void fired.push("r2:a"));
     timers.clear("r1", "a");
     clock.advance(100);
     expect(fired).toEqual(["r1:b", "r2:a"]);
@@ -87,8 +87,8 @@ describe("按房具名定时器", () => {
     const { timers, clock } = createTimers();
     const fired: string[] = [];
     for (const name of ["phase", "fallback", "deadline"])
-      timers.arm("r1", name, 100, () => fired.push(name));
-    timers.arm("r2", "phase", 100, () => fired.push("other"));
+      timers.arm("r1", name, 100, () => void fired.push(name));
+    timers.arm("r2", "phase", 100, () => void fired.push("other"));
     timers.clear("r1");
     // 底层定时器也要真的取消，不能只靠登记表把回调挡掉。
     expect(clock.live()).toBe(1);
@@ -143,14 +143,14 @@ describe("按房具名定时器", () => {
   test("clearAll 清掉全部房间；负的延迟按立即处理", () => {
     const { timers, clock } = createTimers();
     const fired: string[] = [];
-    timers.arm("r1", "a", 100, () => fired.push("a"));
-    timers.arm("r2", "b", 100, () => fired.push("b"));
+    timers.arm("r1", "a", 100, () => void fired.push("a"));
+    timers.arm("r2", "b", 100, () => void fired.push("b"));
     timers.clearAll();
     expect(clock.live()).toBe(0);
     expect([timers.isArmed("r1", "a"), timers.isArmed("r2", "b")]).toEqual([false, false]);
     clock.advance(100);
     expect(fired).toEqual([]);
-    timers.arm("r3", "late", -50, () => fired.push("late"));
+    timers.arm("r3", "late", -50, () => void fired.push("late"));
     clock.advance(0);
     expect(fired).toEqual(["late"]);
   });
