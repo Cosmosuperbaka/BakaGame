@@ -1,175 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useMemo, useState } from "react";
 import equal from "fast-deep-equal";
-import {
-  BookOpen,
-  Download,
-  Filter,
-  Lightbulb,
-  Search,
-  ShieldCheck,
-  Swords,
-  Tags,
-  Upload,
-  Users,
-  X,
-} from "lucide-react";
-import type { CEEAnswerMode, CEESettings, CEESource } from "@bakagame/shared";
-import { Button } from "@/components/ui/Button";
-import type { SegmentedOption } from "@/components/ui/SegmentedControl";
-import { Hint } from "@/components/ui/Tooltip";
+import { ShieldCheck } from "lucide-react";
+import type { CEESettings, CEESource } from "@bakagame/shared";
 import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
-import {
-  SettingReveal,
-  SettingSegmented,
-  SettingSelect,
-  SettingStepper,
-  SettingSwitchRow,
-  SettingTextField,
-  SettingValue,
-  SettingYearRange,
-  SettingsSection,
-} from "@/components/common/room/SettingFields";
+import { SettingValue, SettingsSection } from "@/components/common/room/SettingFields";
 import { useAutoSave } from "@/hooks/UseAutoSave";
 import { useCEEAction } from "@/hooks/UseCEEAction";
-import { listItem } from "@/lib/Motion";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { ceePresets } from "./CEEPresets";
 import { waitingSnapshotOf } from "./CEEWaitingSave";
+import { CEEGuessPanel } from "./CEEGuessPanel";
+import { CEEQuestionPanel } from "./CEEQuestionPanel";
+import { SETTINGS_FILE_LIMIT } from "./CEESettingOptions";
+import { settingsValidationMessage, summaries } from "./CEESettingsRules";
 import { useCEEDraft } from "./UseCEEDraft";
-import { CEESubjectSearch } from "./CEESearch";
-
-const CATEGORIES = [
-  "",
-  "全部",
-  "游戏",
-  "书籍",
-  "三次元",
-  "TV",
-  "Galgame",
-  "WEB",
-  "OVA",
-  "剧场版",
-  "动态漫画",
-  "其他",
-];
-const SOURCES = ["", "原创", "漫画改", "游戏改", "小说改"];
-const GENRES = [
-  "",
-  "科幻",
-  "喜剧",
-  "百合",
-  "校园",
-  "惊悚",
-  "后宫",
-  "机战",
-  "悬疑",
-  "恋爱",
-  "奇幻",
-  "推理",
-  "运动",
-  "耽美",
-  "音乐",
-  "战斗",
-  "冒险",
-  "萌系",
-  "穿越",
-  "玄幻",
-  "乙女",
-  "恐怖",
-  "历史",
-  "日常",
-  "剧情",
-  "武侠",
-  "美食",
-  "职场",
-];
-const META_TAGS = [
-  { label: "作品分类", values: CATEGORIES, all: "全部动画" },
-  { label: "作品来源", values: SOURCES, all: "全部来源" },
-  { label: "作品题材", values: GENRES, all: "全部题材" },
-] as const;
-const ANSWER_MODE_OPTIONS: SegmentedOption<CEEAnswerMode>[] = [
-  { value: "random", label: "随机出题" },
-  { value: "manual", label: "指定出题人" },
-];
-/** 玩法配置文件的大小上限：正常配置只有几 KB，拒绝异常大的文件。 */
-const SETTINGS_FILE_LIMIT = 100_000;
-const MAX_ADDED_SUBJECTS = 500;
-const offOr = (value: number, text: string) => (value === 0 ? "关闭" : text);
-
-/** 两个折叠组收起时的摘要。 */
-function summaries(settings: CEESettings) {
-  return {
-    // 这个面板只在房间确实开着反作弊时出现（建房那一刻决定，之后改不了），摘要无需再判开关。
-    antiCheat: ["已开启：仅客户端、需登录"],
-    question: [
-      settings.answerMode === "manual" ? "指定出题人" : "随机出题",
-      settings.useIndex
-        ? `目录 ${settings.indexId ?? "未填"}`
-        : `${settings.startYear}–${settings.endYear} 前 ${settings.topNSubjects} 部`,
-      settings.mainCharacterOnly ? "仅主角" : `每部 ${settings.characterNum} 人`,
-      settings.addedSubjects.length ? `追加 ${settings.addedSubjects.length} 部` : "",
-    ],
-    guess: [
-      `${settings.maxAttempts} 次机会`,
-      settings.timeLimit ? `每次 ${settings.timeLimit} 秒` : "不限行动时间",
-      settings.syncMode ? "同步模式" : "",
-      settings.nonstopMode ? "血战模式" : "",
-      settings.globalPick ? "角色 BP" : "",
-      settings.tagBan ? "标签 BP" : "",
-    ],
-  };
-}
-/** 草稿能否保存：年份倒挂、目录未填或目录还没同步入库时，自动保存先停住并给出原因。 */
-function settingsValidationMessage(draft: CEESettings, syncedIndexId: number | null): string {
-  if (draft.startYear > draft.endYear) return "起始年份不能晚于结束年份";
-  if (draft.useIndex && !draft.indexId) return "请填写 Bangumi 目录编号";
-  if (draft.useIndex && draft.indexId !== syncedIndexId) return "目录需要先同步，同步后自动保存";
-  return "";
-}
-
-/**
- * 追加作品的名称：设置里只存编号，搜索添加时顺手记下名字；导入、预设或非房主看到的编号经 `cee.subject.lookup` 补齐。
- * 每个编号只查一次，查不到的保持「作品 #编号」。
- */
-function useSubjectNames(ids: number[]) {
-  const [names, setNames] = useState<Record<number, string>>({});
-  const requested = useRef(new Set<number>());
-  const key = ids.filter((id) => !(id in names)).join(",");
-  useEffect(() => {
-    // 已经发出过的编号不再查；查不到的不会进 names，靠这里挡住重复请求。
-    const subjectIds = key
-      ? key
-          .split(",")
-          .map(Number)
-          .filter((id) => !requested.current.has(id))
-      : [];
-    if (!subjectIds.length) return;
-    subjectIds.forEach((id) => requested.current.add(id));
-    let alive = true;
-    void useCEEStore
-      .getState()
-      .sendCommand("cee.subject.lookup", { subjectIds })
-      .then(({ results }) => {
-        if (alive)
-          setNames((current) => ({
-            ...current,
-            ...Object.fromEntries(
-              results.map((subject) => [subject.id, subject.nameCn || subject.name])
-            ),
-          }));
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [key]);
-  const remember = (id: number, name: string) =>
-    setNames((current) => ({ ...current, [id]: name }));
-  return { nameOf: (id: number) => names[id] ?? `作品 #${id}`, remember };
-}
+import { useCEESubjectNames } from "./UseCEESubjectNames";
 
 /**
  * 题目与猜测设置。两个折叠面板共用一份草稿、一条防抖自动保存：分开保存会让后保存的一方用旧值覆盖另一方的修改。
@@ -201,11 +47,10 @@ export function CEEGameSettings({
   const syncedIndexId = syncedIndex?.epoch === epoch ? syncedIndex.id : serverIndexId;
   const [directoryNotice, setDirectoryNotice] = useState("");
   const [fileError, setFileError] = useState("");
-  const upload = useRef<HTMLInputElement>(null);
   const { run, pending } = useCEEAction();
   const presets = useMemo(() => ceePresets(), []);
   const values = readOnly ? settings : draft;
-  const subjects = useSubjectNames(values.addedSubjects);
+  const subjects = useCEESubjectNames(values.addedSubjects);
   const change = <K extends keyof CEESettings>(key: K, value: CEESettings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
@@ -270,17 +115,6 @@ export function CEEGameSettings({
       setFileError(ceeErrorMessage(failure));
     }
   };
-  const setMetaTag = (index: number, value: string) =>
-    change(
-      "metaTags",
-      [0, 1, 2].map((position) => (position === index ? value : (draft.metaTags[position] ?? "")))
-    );
-  const setHint = (index: number, value: number) =>
-    change(
-      "useHints",
-      [0, 1, 2].map((position) => (position === index ? value : (draft.useHints[position] ?? 0)))
-    );
-  const scopedByDirectory = values.useIndex;
   const summary = summaries(values);
   /**
    * 反作弊由**建房那一刻**决定：面板只显示结果，不给开关。中途开关会让同一间房里的人
@@ -312,326 +146,36 @@ export function CEEGameSettings({
         </SettingsAccordion>
       ) : null}
 
-      <SettingsAccordion
-        icon={BookOpen}
-        title="题目设置"
-        summary={summary.question}
+      <CEEQuestionPanel
+        values={values}
+        draft={draft}
+        setDraft={setDraft}
+        change={change}
         readOnly={readOnly}
+        summary={summary.question}
         open={questionOpen}
         onOpenChange={setQuestionOpen}
-      >
-        <div>
-          <SettingsSection>
-            <SettingSegmented
-              label="出题方式"
-              value={values.answerMode}
-              options={ANSWER_MODE_OPTIONS}
-              onValueChange={(value) => change("answerMode", value)}
-              description={
-                values.answerMode === "manual"
-                  ? "开始后由房主指定一位出题人，出题人与队友本局观战。"
-                  : "开始后从下面的范围里随机抽一位角色。"
-              }
-            />
-            {!readOnly ? (
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-40 flex-1">
-                  <SettingSelect
-                    label="玩法预设"
-                    value={presetName}
-                    onChange={(name) => {
-                      if (name) applyPreset(name);
-                    }}
-                    options={[
-                      { value: "", label: "选择预设" },
-                      ...Object.keys(presets).map((name) => ({ value: name, label: name })),
-                    ]}
-                  />
-                </div>
-                <Button variant="outline" onClick={exportSettings}>
-                  <Download />
-                  导出
-                </Button>
-                <Button variant="outline" onClick={() => upload.current?.click()}>
-                  <Upload />
-                  导入
-                </Button>
-                <input
-                  ref={upload}
-                  type="file"
-                  accept="application/json,.json"
-                  aria-label="导入玩法配置"
-                  className="hidden"
-                  onChange={(event) => {
-                    void importSettings(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-              </div>
-            ) : null}
-            {fileError ? (
-              <p role="alert" className="text-xs text-destructive">
-                {fileError}
-              </p>
-            ) : null}
-          </SettingsSection>
+        subjects={subjects}
+        directoryNotice={directoryNotice}
+        syncDirectory={syncDirectory}
+        pending={pending}
+        presets={presets}
+        presetName={presetName}
+        fileError={fileError}
+        applyPreset={applyPreset}
+        exportSettings={exportSettings}
+        importSettings={(file) => void importSettings(file)}
+      />
 
-          <SettingsSection title="抽题范围" icon={Filter}>
-            <SettingSwitchRow
-              label="使用 Bangumi 目录"
-              description="开启后只从目录中的作品出题，年份与热度范围不再生效。"
-              checked={values.useIndex}
-              onCheckedChange={(value) => change("useIndex", value)}
-            />
-            <SettingReveal open={values.useIndex}>
-              <SettingTextField
-                label="目录编号"
-                inputMode="numeric"
-                value={values.indexId ? String(values.indexId) : ""}
-                placeholder="Bangumi 目录编号"
-                description={directoryNotice || undefined}
-                onChange={(text) => {
-                  const value = Number(text);
-                  change("indexId", text && Number.isInteger(value) && value > 0 ? value : null);
-                }}
-                action={
-                  <Button
-                    variant="outline"
-                    className="h-10 shrink-0"
-                    loading={pending.has("cee.directory.import")}
-                    disabled={!draft.indexId}
-                    onClick={() => {
-                      if (draft.indexId) void syncDirectory(draft.indexId);
-                    }}
-                  >
-                    同步目录
-                  </Button>
-                }
-              />
-            </SettingReveal>
-            <SettingYearRange
-              label="年份范围"
-              start={values.startYear}
-              end={values.endYear}
-              disabled={scopedByDirectory}
-              onChange={(start, end) =>
-                setDraft((current) => ({
-                  ...current,
-                  startYear: start ?? current.startYear,
-                  endYear: end ?? current.endYear,
-                }))
-              }
-            />
-            <SettingStepper
-              label="热度前几部"
-              value={values.topNSubjects}
-              minimum={1}
-              maximum={1000}
-              step={5}
-              disabled={scopedByDirectory}
-              format={(value) => `前 ${value} 部`}
-              onChange={(value) => change("topNSubjects", value)}
-            />
-            <SettingSwitchRow
-              label="按年榜抽题"
-              description="每年各取热度前几部，而不是整段年份合并排名。"
-              checked={values.useSubjectPerYear}
-              onCheckedChange={(value) => change("useSubjectPerYear", value)}
-            />
-            <div className={readOnly ? "space-y-4" : "grid gap-3 sm:grid-cols-3"}>
-              {META_TAGS.map((tag, index) => (
-                <SettingSelect
-                  key={tag.label}
-                  label={tag.label}
-                  value={values.metaTags[index] ?? ""}
-                  onChange={(value) => setMetaTag(index, value)}
-                  options={tag.values.map((value) => ({ value, label: value || tag.all }))}
-                />
-              ))}
-            </div>
-          </SettingsSection>
-
-          <SettingsSection title="角色范围" icon={Users}>
-            <SettingSwitchRow
-              label="仅主角"
-              checked={values.mainCharacterOnly}
-              onCheckedChange={(value) => change("mainCharacterOnly", value)}
-            />
-            <SettingStepper
-              label="每部候选角色数"
-              unit="人"
-              value={values.characterNum}
-              minimum={1}
-              maximum={100}
-              onChange={(value) => change("characterNum", value)}
-            />
-          </SettingsSection>
-
-          <SettingsSection title={`追加作品（${values.addedSubjects.length}）`} icon={BookOpen}>
-            {readOnly ? (
-              <SettingValue
-                label="作品"
-                value={values.addedSubjects.map(subjects.nameOf).join("、") || "无"}
-              />
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-1.5 empty:hidden">
-                  <AnimatePresence initial={false}>
-                    {draft.addedSubjects.map((id) => (
-                      <motion.span
-                        key={id}
-                        variants={listItem}
-                        initial="initial"
-                        animate="animate"
-                        exit="exit"
-                        layout="position"
-                        className="inline-flex max-w-full items-center gap-1 rounded-md border bg-secondary py-0.5 pr-0.5 pl-2 text-xs text-secondary-foreground"
-                      >
-                        <Hint label={subjects.nameOf(id)}>
-                          <span className="min-w-0 truncate">{subjects.nameOf(id)}</span>
-                        </Hint>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
-                          aria-label={`移除作品 ${subjects.nameOf(id)}`}
-                          onClick={() =>
-                            change(
-                              "addedSubjects",
-                              draft.addedSubjects.filter((value) => value !== id)
-                            )
-                          }
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </motion.span>
-                    ))}
-                  </AnimatePresence>
-                </div>
-                <CEESubjectSearch
-                  addedIds={draft.addedSubjects}
-                  disabled={draft.addedSubjects.length >= MAX_ADDED_SUBJECTS}
-                  onAdd={(subject) => {
-                    subjects.remember(subject.id, subject.nameCn || subject.name);
-                    change("addedSubjects", [...new Set([...draft.addedSubjects, subject.id])]);
-                  }}
-                />
-              </>
-            )}
-          </SettingsSection>
-        </div>
-      </SettingsAccordion>
-
-      <SettingsAccordion
-        icon={Search}
-        title="猜测设置"
-        summary={summary.guess}
+      <CEEGuessPanel
+        values={values}
+        draft={draft}
+        change={change}
         readOnly={readOnly}
+        summary={summary.guess}
         open={guessOpen}
         onOpenChange={setGuessOpen}
-      >
-        <div>
-          <SettingsSection>
-            <SettingStepper
-              label="猜测次数"
-              unit="次"
-              value={values.maxAttempts}
-              minimum={1}
-              maximum={100}
-              onChange={(value) => change("maxAttempts", value)}
-            />
-            <SettingStepper
-              label="每次行动限时"
-              // 「设为 0」是给房主的操作说明，只读视角的取值已写成「不限」
-              description={readOnly ? undefined : "设为 0 表示不限行动时间。"}
-              unit="秒"
-              value={values.timeLimit}
-              minimum={0}
-              maximum={120}
-              step={10}
-              format={(value) => (value ? `${value} 秒` : "不限")}
-              onChange={(value) => change("timeLimit", value)}
-            />
-            <SettingSwitchRow
-              label="允许搜索作品"
-              description="关闭后猜题者只能按角色名搜索。"
-              checked={values.subjectSearch}
-              onCheckedChange={(value) => change("subjectSearch", value)}
-            />
-          </SettingsSection>
-
-          <SettingsSection title="标签" icon={Tags}>
-            <SettingStepper
-              label="作品标签数"
-              value={values.subjectTagNum}
-              minimum={0}
-              maximum={10}
-              onChange={(value) => change("subjectTagNum", value)}
-            />
-            <SettingStepper
-              label="角色标签数"
-              value={values.characterTagNum}
-              minimum={0}
-              maximum={10}
-              onChange={(value) => change("characterTagNum", value)}
-            />
-          </SettingsSection>
-
-          <SettingsSection title="提示" icon={Lightbulb}>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {readOnly
-                ? "提示在剩余次数降到设定值时出现。"
-                : "提示在剩余次数降到设定值时出现，0 为关闭，按从大到小填写。"}
-            </p>
-            {[0, 1, 2].map((index) => (
-              <SettingStepper
-                key={index}
-                label={`第 ${index + 1} 条文本提示`}
-                value={values.useHints[index] ?? 0}
-                minimum={0}
-                maximum={values.maxAttempts}
-                format={(value) => offOr(value, `剩 ${value} 次时`)}
-                onChange={(value) => setHint(index, value)}
-              />
-            ))}
-            <SettingStepper
-              label="图片提示"
-              value={values.useImageHint}
-              minimum={0}
-              maximum={values.maxAttempts}
-              format={(value) => offOr(value, `剩 ${value} 次时`)}
-              onChange={(value) => change("useImageHint", value)}
-            />
-          </SettingsSection>
-
-          <SettingsSection title="玩法规则" icon={Swords}>
-            <SettingSwitchRow
-              label="同步模式"
-              description="每轮所有人都提交后再统一判定。"
-              checked={values.syncMode}
-              onCheckedChange={(value) => change("syncMode", value)}
-            />
-            <SettingSwitchRow
-              label="血战模式"
-              description="有人猜中后继续，直到所有人结束。"
-              checked={values.nonstopMode}
-              onCheckedChange={(value) => change("nonstopMode", value)}
-            />
-            <SettingSwitchRow
-              label="角色全局 BP"
-              description="别人猜过的角色不能再猜。"
-              checked={values.globalPick}
-              onCheckedChange={(value) => change("globalPick", value)}
-            />
-            <SettingSwitchRow
-              label="标签全局 BP"
-              description="已被发现的标签对其他人隐藏。"
-              checked={values.tagBan}
-              onCheckedChange={(value) => change("tagBan", value)}
-            />
-          </SettingsSection>
-        </div>
-      </SettingsAccordion>
+      />
 
       {validation ? (
         <p role="alert" className="text-xs text-destructive">
