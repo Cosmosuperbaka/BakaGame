@@ -364,6 +364,11 @@ export function advanceCEERound(room: CEERoom, now: number): boolean {
   // 临时断线保留未结束席位，等待重连或房间离线清理；刷新页面不能直接判负。
   if (!active.length) return false;
   if (!round.settings.syncMode || !syncComplete) return false;
+  startNextSyncRound(room, round, active, now);
+  return true;
+}
+/** 同步轮全部完成：把待定标签并入所有者，进入下一同步轮并重置各单位的行动状态。 */
+function startNextSyncRound(room: CEERoom, round: CEERound, active: CEEUnit[], now: number): void {
   for (const [tag, owners] of round.pendingTagOwners) {
     for (const unit of active) unit.memberIds.forEach((id) => owners.add(id));
     round.tagOwners.set(tag, owners);
@@ -377,32 +382,45 @@ export function advanceCEERound(room: CEERoom, now: number): boolean {
     unit.deadlineAt = round.settings.timeLimit ? now + round.settings.timeLimit * 1000 : null;
     copyUnit(room, unit);
   }
-  return true;
 }
-export function settleCEERound(room: CEERoom): boolean {
-  const round = room.round;
-  if (!round || room.phase !== "guessing") return false;
+const emptyScoreDetail = (playerId: string, playerName: string): CEEScoreDetail => ({
+  playerId,
+  playerName,
+  score: 0,
+  base: 0,
+  firstGuess: 0,
+  quickGuess: 0,
+  partial: 0,
+  setter: 0,
+  reason: "",
+});
+/** 每位参与者先记一行零分明细，之后各步骤往里加分。 */
+function initScores(room: CEERoom, round: CEERound): Map<string, CEEScoreDetail> {
   const scores = new Map<string, CEEScoreDetail>();
   for (const id of round.participants) {
     const player = room.players.get(id);
-    if (player)
-      scores.set(id, {
-        playerId: id,
-        playerName: player.name,
-        score: 0,
-        base: 0,
-        firstGuess: 0,
-        quickGuess: 0,
-        partial: 0,
-        setter: 0,
-        reason: "",
-      });
+    if (player) scores.set(id, emptyScoreDetail(id, player.name));
   }
+  return scores;
+}
+/** 胜者入账：明细取猜中时已算好的结果；血战在结算时不再累计到总分。 */
+function applyWinnerScores(
+  room: CEERoom,
+  round: CEERound,
+  scores: Map<string, CEEScoreDetail>
+): void {
   for (const winner of round.winners) {
     scores.set(winner.playerId, winner.detail);
     const player = room.players.get(winner.playerId);
     if (player && !round.settings.nonstopMode) player.score += winner.detail.score;
   }
+}
+/** 共同作品分：每个单位里先选最早命中共同作品的队员，再排除本人实际猜中的情况。 */
+function awardSharedAppearancePoint(
+  room: CEERoom,
+  round: CEERound,
+  scores: Map<string, CEEScoreDetail>
+): void {
   for (const unit of round.units.values()) {
     const hits = unit.memberIds
       .map((id) => ({
@@ -420,30 +438,34 @@ export function settleCEERound(room: CEERoom): boolean {
       detail.reason = "猜中共同作品";
     }
   }
+}
+/** 出题人得分与明细。 */
+function scoreSetter(room: CEERoom, round: CEERound, scores: Map<string, CEEScoreDetail>): void {
   const setter = room.setterPlayerId ? room.players.get(room.setterPlayerId) : undefined;
-  if (setter) {
-    const result = calculateCEESetterScore({
-      nonstop: round.settings.nonstopMode,
-      totalPlayers: round.initialCount,
-      winnerCount: round.winners.length,
-      firstWinnerAttempts: round.winners[0]?.attempts ?? 0,
-      maxAttempts: round.settings.maxAttempts,
-      bigWinnerScore:
-        round.winners.find((winner) => winner.detail.firstGuess > 0)?.detail.score ?? 0,
-    });
-    setter.score += result.score;
-    scores.set(setter.id, {
-      playerId: setter.id,
-      playerName: setter.name,
-      score: result.score,
-      base: 0,
-      firstGuess: 0,
-      quickGuess: 0,
-      partial: 0,
-      setter: result.score,
-      reason: result.reason,
-    });
-  }
+  if (!setter) return;
+  const result = calculateCEESetterScore({
+    nonstop: round.settings.nonstopMode,
+    totalPlayers: round.initialCount,
+    winnerCount: round.winners.length,
+    firstWinnerAttempts: round.winners[0]?.attempts ?? 0,
+    maxAttempts: round.settings.maxAttempts,
+    bigWinnerScore: round.winners.find((winner) => winner.detail.firstGuess > 0)?.detail.score ?? 0,
+  });
+  setter.score += result.score;
+  scores.set(setter.id, {
+    ...emptyScoreDetail(setter.id, setter.name),
+    score: result.score,
+    setter: result.score,
+    reason: result.reason,
+  });
+}
+export function settleCEERound(room: CEERoom): boolean {
+  const round = room.round;
+  if (!round || room.phase !== "guessing") return false;
+  const scores = initScores(room, round);
+  applyWinnerScores(room, round, scores);
+  awardSharedAppearancePoint(room, round, scores);
+  scoreSetter(room, round, scores);
   room.summary = {
     answer: structuredClone(round.answer),
     scores: [...scores.values()],
