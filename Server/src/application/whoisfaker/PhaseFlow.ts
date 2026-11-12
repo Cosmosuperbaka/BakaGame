@@ -755,7 +755,7 @@ const resolveNight = async (service: WhoIsFakerServiceInternals, room: WhoIsFake
     targetId: action.targetId,
   }));
 
-  const eliminatedIds = resolveNightEliminations(round, round.nightActions);
+  const eliminatedIds = resolveNightEliminations(round.nightActions);
 
   if (eliminatedIds.length > 0) {
     recordEliminations(round.assignments, eliminatedIds, "夜晚结算", service.now());

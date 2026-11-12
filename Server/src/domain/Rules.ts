@@ -339,10 +339,7 @@ export const computeVoteOutcome = (votes: VoteRecord[]) => {
   };
 };
 
-export const resolveNightEliminations = (
-  round: GameRound,
-  actions: NightActionRecord[]
-): string[] => {
+export const resolveNightEliminations = (actions: NightActionRecord[]): string[] => {
   // 规则按 Project.md 直译：
   // 1. 选择“刀人”的平民自己出局
   // 2. 被卧底刀中的目标出局
