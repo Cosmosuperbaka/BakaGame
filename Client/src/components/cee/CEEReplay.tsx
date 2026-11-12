@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Pause, Play, RotateCcw, SkipBack, SkipForward } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Slider } from "@/components/ui/Slider";
 import { buildReplaySteps, isCeeReplayEnabled, type ReplayRound } from "@/lib/CeeReplay";
 import { readoutSwap } from "@/lib/Motion";
 import { CEECharacterImage } from "./CEECharacterImage";
@@ -165,14 +166,16 @@ export function CEEReplay({ rounds }: { rounds: ReplayRound[] }) {
         >
           <RotateCcw className="size-4" />
         </Button>
-        <input
-          type="range"
+        {/* 进度条用站内统一的滑块，原生 range 在暗色下是浏览器默认的灰白轨道 */}
+        <Slider
           min={0}
           max={Math.max(0, total - 1)}
-          value={index}
+          step={1}
+          value={[index]}
           aria-label="回放进度"
-          className="h-2 min-w-32 flex-1 accent-primary"
-          onChange={(event) => jump(Number(event.target.value))}
+          aria-valuetext={`第 ${index + 1} 条，共 ${total} 条`}
+          className="min-w-32 flex-1"
+          onValueChange={([next]) => jump(next ?? 0)}
         />
       </div>
     </section>
