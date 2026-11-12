@@ -1,12 +1,11 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useId, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { useState, type Ref } from "react";
 import { Check, Lightbulb } from "lucide-react";
 import type { CEEFeedback, CEEFeedbackValue, CEEGuess } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { Collapsible, DisclosureChevron } from "@/components/ui/Collapsible";
+import { ClampedText } from "@/components/ui/ClampedText";
+import { Collapsible } from "@/components/ui/Collapsible";
 import { Hint } from "@/components/ui/Tooltip";
-import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
 import {
   clueFlip,
   clueFlipChip,
@@ -16,7 +15,6 @@ import {
   listContainer,
   listItem,
   skeletonFade,
-  spring,
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
@@ -112,61 +110,15 @@ function ValueCell({
 
 // 角色列横向滚动时贴住左缘；底色须不透明，滚过的数值列才不会透出来。右缘一道细线把它与滚动区分开。
 // 容器窄于 30rem 时收起头像、收窄角色列：再窄就放不下带头像的整行，横滚前先让出这块宽度。
-/**
- * 共同作品：默认最多两行，书名多到放不下时行尾省略，第一行右上角的箭头展开全文、再点收起。
- * 只在两行确实放不下时出现箭头；展开后保留它用于收起。高度经 `useMeasuredHeight` 按 `spring.settle` 补间。
- */
+/** 共同作品：默认最多两行，书名多到放不下时行尾省略，右上角的箭头展开全文（`ClampedText`）。 */
 function SharedAppearances({ subjects }: { subjects: CEEFeedback["sharedAppearances"] }) {
   const text = subjects
     .map((subject) => subject.nameCn || subject.name || `作品 ${subject.id}`)
     .join("、");
-  const [expanded, setExpanded] = useState(false);
-  const [overflowing, setOverflowing] = useState(false);
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const height = useMeasuredHeight(textRef);
-  const id = useId();
-
-  // 收起时量是否被截断；列宽随容器变化，宽度一变就重量。展开后不量，箭头留着用来收起。
-  useLayoutEffect(() => {
-    const node = textRef.current;
-    if (!node || expanded) return;
-    const measure = () => setOverflowing(node.scrollHeight > node.clientHeight + 1);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [expanded, text]);
-
-  const toggleable = overflowing || expanded;
   return (
-    <motion.div
-      initial={false}
-      animate={height === null ? undefined : { height }}
-      transition={spring.settle}
-      className="relative overflow-hidden"
-    >
-      <p
-        ref={textRef}
-        id={id}
-        className={cn("text-xs text-success", !expanded && "line-clamp-2", toggleable && "pr-6")}
-      >
-        共同作品：{text}
-      </p>
-      {toggleable ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="absolute top-0 right-0 h-5 w-5 text-success"
-          aria-expanded={expanded}
-          aria-controls={id}
-          aria-label={expanded ? "收起共同作品" : "展开共同作品"}
-          onClick={() => setExpanded((open) => !open)}
-        >
-          <DisclosureChevron open={expanded} iconClassName="size-3.5" />
-        </Button>
-      ) : null}
-    </motion.div>
+    <ClampedText label="共同作品" className="text-xs text-success" toggleClassName="text-success">
+      共同作品：{text}
+    </ClampedText>
   );
 }
 
