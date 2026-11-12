@@ -262,10 +262,19 @@ export const startFallbackBlankGuessTimer = (
     durationSeconds,
     endsAt,
     phase: "blankGuess",
+    // 平票 PK 中打断猜词时 round.tieBreak 仍保留，守卫比对的是调度时刻捕获的这几项。
+    speechMode: round.speechMode,
+    tieBreakStage: round.tieBreak?.stage,
   };
   round.phaseTimer = timerState;
   const timer = setTimeout(() => {
-    void handlePhaseTimeout(service, room.id, "blankGuess");
+    void handlePhaseTimeout(
+      service,
+      room.id,
+      timerState.phase,
+      timerState.speechMode,
+      timerState.tieBreakStage
+    );
   }, durationSeconds * 1000);
   service.phaseTimerTimeoutByRoomId.set(room.id, timer);
 };

@@ -250,4 +250,65 @@ describe("白板猜词打断", () => {
     });
     expect(advanceResult).toBeDefined();
   });
+
+  test("平票 PK 中白板猜词掉线且出题人选等待，兜底到期后离开猜词而不是一直卡住", async () => {
+    const { service, advanceTime } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    const [player] = await joinPlayers(service, "Oblivionis", 1, "真人白板");
+
+    await execute(service, host, { id: "add-bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(service, host, {
+      id: "submit-words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+    await execute(service, player.connection, {
+      id: "set-blank",
+      type: "test.setMyRole",
+      payload: { role: "blank" },
+    });
+    await execute(service, host, {
+      id: "jump-to-tie-break",
+      type: "test.jumpToPhase",
+      payload: { phase: "tieBreak" },
+    });
+
+    // 候选人固定为白板与另一名存活玩家，保证白板掉线后平票上下文仍然成立。
+    const room = (
+      service as unknown as {
+        rooms: Map<string, { round: { tieBreak: { candidateIds: string[] } } }>;
+      }
+    ).rooms.get("Oblivionis")!;
+    const otherCandidateId =
+      room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+    room.round.tieBreak.candidateIds = [player.joinResult.playerId, otherCandidateId];
+
+    await execute(service, player.connection, {
+      id: "enter-blank-guess",
+      type: "game.enterBlankGuess",
+      payload: {},
+    });
+    await service.unregisterConnection(player.connection.record.id);
+    await execute(service, host, {
+      id: "resolve-disconnect-wait",
+      type: "game.resolveDisconnect",
+      payload: { playerId: player.joinResult.playerId, resolution: "wait" },
+    });
+
+    let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+    expect(snapshot?.status.phase).toBe("blankGuess");
+    expect(snapshot?.status.phaseTimer).toBeDefined();
+
+    // 兜底计时到期后由巡检接手，白板按失败收束，房间必须离开猜词阶段。
+    advanceTime(61_000);
+    await service.runHousekeeping();
+
+    snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+    expect(snapshot?.status.phase).not.toBe("blankGuess");
+  });
 });
