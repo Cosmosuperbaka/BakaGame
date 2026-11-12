@@ -1,14 +1,14 @@
-import { useCallback, useRef, type ReactNode, type Ref } from "react";
+import { useCallback, type ReactNode, type Ref } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, Sword, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
+import { useOriginStyle } from "@/hooks/UseOriginStyle";
 import {
   listItem,
   receiptCard,
   receiptMarkFollow,
   selectable,
-  useOriginStyle,
   type OriginPoint,
 } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -80,15 +80,14 @@ export function ActionReceipt({
   /** popLayout 需要量出退场元素的位置 */
   ref?: Ref<HTMLDivElement>;
 }) {
-  const localRef = useRef<HTMLDivElement>(null);
-  const originStyle = useOriginStyle(localRef, origin);
+  const { style: originStyle, measure } = useOriginStyle(origin);
   const setRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      localRef.current = node;
-      if (typeof ref === "function") ref(node);
-      else if (ref) ref.current = node;
+    (element: HTMLDivElement | null) => {
+      measure(element);
+      if (typeof ref === "function") ref(element);
+      else if (ref) ref.current = element;
     },
-    [ref]
+    [measure, ref]
   );
   return (
     <motion.div

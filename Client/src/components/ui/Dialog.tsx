@@ -2,7 +2,8 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
-import { backdrop, emergeFromOrigin, useOriginStyle, type OriginPoint } from "@/lib/Motion";
+import { useOriginStyle } from "@/hooks/UseOriginStyle";
+import { backdrop, emergeFromOrigin, type OriginPoint } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 const DialogPortal = DialogPrimitive.Portal;
@@ -51,17 +52,24 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
   const origin = React.useContext(DialogOriginContext);
-  const innerRef = React.useRef<HTMLDivElement>(null);
-  React.useImperativeHandle(ref, () => innerRef.current as HTMLDivElement);
   // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（DesignGuide §8）。
-  const originStyle = useOriginStyle(innerRef, origin);
+  // 原点在节点挂上时测量：Portal 首帧不挂子树，要等节点真正出现。
+  const { style: originStyle, measure } = useOriginStyle(origin);
+  const setRefs = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      measure(element);
+      if (typeof ref === "function") ref(element);
+      else if (ref) ref.current = element;
+    },
+    [measure, ref]
+  );
 
   return (
     <DialogPortal forceMount>
       <DialogOverlay />
       <DialogPrimitive.Content asChild {...props}>
         <motion.div
-          ref={innerRef}
+          ref={setRefs}
           variants={emergeFromOrigin}
           initial="initial"
           animate="animate"

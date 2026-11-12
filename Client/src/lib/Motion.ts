@@ -1,5 +1,4 @@
-import { useLayoutEffect, useState } from "react";
-import type { CSSProperties, RefObject } from "react";
+import { useState } from "react";
 import type { TargetAndTransition, Transition, Variants } from "framer-motion";
 
 // ==================== 过渡基线 ====================
@@ -768,46 +767,6 @@ export function useOriginTracker() {
   };
 
   return { origin, capture };
-}
-
-/**
- * 把来源点换算成浮层自身的 transform-origin。
- *
- * 测量要点：`getBoundingClientRect` 返回的是**已缩放**的盒子，
- * 直接用它的 left/width 会让原点算偏。因此这里用两个与变换无关的量还原真实盒子：
- * 尺寸取 `offsetWidth/offsetHeight`（布局值，不受 transform 影响），
- * 中心取 rect 中心 —— 挂载瞬间 transformOrigin 仍是默认的 50% 50%，
- * 此时缩放不会移动中心点，所以中心是准确的。
- * 浮层关闭即卸载，每次打开都从这一初始状态重新测量。
- */
-export function useOriginStyle(
-  ref: RefObject<HTMLElement | null>,
-  origin: OriginPoint | null
-): CSSProperties {
-  const [transformOrigin, setTransformOrigin] = useState("50% 50%");
-
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node || !origin) {
-      setTransformOrigin("50% 50%");
-      return;
-    }
-    const width = node.offsetWidth;
-    const height = node.offsetHeight;
-    if (width === 0 || height === 0) return;
-
-    const rect = node.getBoundingClientRect();
-    const left = rect.left + rect.width / 2 - width / 2;
-    const top = rect.top + rect.height / 2 - height / 2;
-
-    // 限制在浮层附近，避免来源远离时原点被推到极端位置。
-    const clamp = (value: number) => Math.max(-60, Math.min(160, value));
-    const x = clamp(((origin.x - left) / width) * 100);
-    const y = clamp(((origin.y - top) / height) * 100);
-    setTransformOrigin(`${x.toFixed(2)}% ${y.toFixed(2)}%`);
-  }, [ref, origin]);
-
-  return { transformOrigin };
 }
 
 /**

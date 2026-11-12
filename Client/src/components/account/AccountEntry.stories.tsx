@@ -1,14 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen } from "storybook/test";
 import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
-import { AccountButton, FeedbackButton } from "./AccountEntry";
+import { AccountButton, AccountDialogs, FeedbackButton } from "./AccountEntry";
 
-/** 主页右上角的账号与反馈入口，按账号状态分别呈现；故事给它套一条与页头同底色的栏。 */
+/**
+ * 主页右上角的账号与反馈入口，按账号状态分别呈现；故事给它套一条与页头同底色的栏。
+ * 同页挂上弹窗宿主（与首页一致），入口点开的弹窗才能看到自按钮展开的来源动效。
+ */
 function Bar() {
   return (
     <div className="flex items-center justify-end gap-1 rounded-md border bg-background p-2">
       <AccountButton />
       <FeedbackButton />
+      <AccountDialogs />
     </div>
   );
 }
