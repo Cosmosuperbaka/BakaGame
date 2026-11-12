@@ -397,8 +397,13 @@ export class AggregatedMusicProvider implements MusicProvider {
       });
 
       const bestCandidate = matched || candidates[0];
-      const parsed = parseSongUrn(bestCandidate.id);
-      return await targetProvider.getSong(parsed.rawId, targetCookie);
+      // 目标平台自己的 provider 检索返回裸标识（网易云）或带前缀的标识（QQ）：
+      // 两种都要接受，返回给调用方的 id 一律补成统一 URN，否则后续刷新播放地址会解析失败。
+      const rawId = bestCandidate.id.includes(":")
+        ? parseSongUrn(bestCandidate.id).rawId
+        : bestCandidate.id;
+      const details = await targetProvider.getSong(rawId, targetCookie);
+      return { ...details, id: buildSongUrn(targetPlatform, rawId) };
     } catch {
       return null;
     }

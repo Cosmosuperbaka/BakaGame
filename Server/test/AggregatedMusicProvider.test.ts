@@ -626,3 +626,73 @@ describe("AggregatedMusicProvider", () => {
     expect((await agg.getLoginStatus("c", "netease")).account.nickname).toBe("NCM");
   });
 });
+
+describe("AggregatedMusicProvider：跨平台兜底得到的歌曲标识", () => {
+  test("QQ 歌曲失败转网易云兜底后，返回带前缀的标识且可继续刷新播放地址", async () => {
+    // 真实的网易云 provider 返回裸数字标识；聚合层必须自己补平台前缀。
+    const refreshed: string[] = [];
+    const qqMock = createMockProvider("qq", {
+      getSong: mock(async () => {
+        throw new Error("qq song unavailable");
+      }),
+    });
+    const neteaseMock = createMockProvider("netease", {
+      search: mock(async () => [
+        { id: "5001", title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
+      ]),
+      getSong: mock(async (id: string) => ({
+        id,
+        title: "反方向的钟",
+        artist: "周杰伦",
+        durationMs: 258000,
+        lyrics: [],
+        audioUrl: "https://cdn.example/netease-failover.mp3",
+        encyclopedia: { tags: [] },
+      })),
+      refreshSongAudio: mock(async (id: string) => {
+        refreshed.push(id);
+        return "https://cdn.example/netease-refreshed.mp3";
+      }),
+    });
+
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const song = await agg.getSong("qq:0039abc", undefined, {
+      hint: { title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
+    });
+
+    expect(song.id).toBe("netease:5001");
+    expect(song.audioUrl).toBe("https://cdn.example/netease-failover.mp3");
+    await expect(agg.refreshSongAudio(song.id)).resolves.toBe(
+      "https://cdn.example/netease-refreshed.mp3"
+    );
+    expect(refreshed).toEqual(["5001"]);
+  });
+
+  test("网易云歌曲失败转 QQ 兜底后，标识同样带 qq 前缀", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async () => {
+        throw new Error("netease song unavailable");
+      }),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [
+        { id: "qq:hit", title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
+      ]),
+      getSong: mock(async (id: string) => ({
+        id,
+        title: "反方向的钟",
+        artist: "周杰伦",
+        durationMs: 258000,
+        lyrics: [],
+        audioUrl: "https://cdn.example/qq.mp3",
+        encyclopedia: { tags: [] },
+      })),
+    });
+
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+    const song = await agg.getSong("netease:1001", undefined, {
+      hint: { title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
+    });
+    expect(song.id).toBe("qq:hit");
+  });
+});
