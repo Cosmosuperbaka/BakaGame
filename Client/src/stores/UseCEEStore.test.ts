@@ -460,6 +460,31 @@ it("房间关闭作废在途入房：晚到 ACK 只用结果凭据离房并保�
   });
   expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
 });
+it.each(["cee.room.closed", "cee.player.kicked", "session.replaced", "cee.session.replaced"])(
+  "%s 的房号不是当前房间时只清那间的会话，不动当前房间",
+  (event) => {
+    writeCEESession("1111", "current-token");
+    writeCEESession("2222", "stale-token");
+    useCEEStore.setState({ roomId: "1111", sessionToken: "current-token", snapshot });
+    handleCEEMessage({ type: "event", event, payload: { roomId: "2222" } });
+    expect(readCEESession("2222")).toBeNull();
+    expect(readCEESession("1111")).not.toBeNull();
+    expect(useCEEStore.getState()).toMatchObject({
+      roomId: "1111",
+      sessionToken: "current-token",
+      roomClosedAt: null,
+    });
+    expect(useCEEStore.getState().snapshot).not.toBeNull();
+  }
+);
+it("房间结束事件带房号且与当前一致时，清该房会话并退房", () => {
+  writeCEESession("1111", "current-token");
+  useCEEStore.setState({ roomId: "1111", sessionToken: "current-token", snapshot });
+  handleCEEMessage({ type: "event", event: "cee.room.closed", payload: { roomId: "1111" } });
+  expect(readCEESession("1111")).toBeNull();
+  expect(useCEEStore.getState()).toMatchObject({ roomId: null, snapshot: null });
+  expect(useCEEStore.getState().roomClosedAt).not.toBeNull();
+});
 it("同步基线重置后，挂起的全量同步不压住下一次补丁缺口", async () => {
   const send = vi.spyOn(ceeWsClient, "send").mockImplementation((command: string) => {
     if (command === "cee.room.requestSync") return new Promise<never>(() => {});

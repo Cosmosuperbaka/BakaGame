@@ -1,3 +1,4 @@
+import { resolveEndedRoom } from "./RoomEndedEvent";
 import { create } from "zustand";
 import type {
   CEECommand,
@@ -436,11 +437,15 @@ export function handleCEEMessage(message: ServerMessage) {
     )
   ) {
     // 房间已经结束：在途入房/恢复的 ACK 即使晚到也不能再接回这个会话。
-    store.cancelEntry();
-    if (store.roomId) removeCEESession(store.roomId);
-    store.resetRoom(true);
-    const payload = message.payload as { reason?: string; message?: string };
-    store.showToast(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");
+    const payload = message.payload as { roomId?: string; reason?: string; message?: string };
+    const { roomId, foreign } = resolveEndedRoom(payload.roomId, store.roomId);
+    if (roomId) removeCEESession(roomId);
+    // 事件指向别的房间时只清它的会话，口径见 RoomEndedEvent。
+    if (!foreign) {
+      store.cancelEntry();
+      store.resetRoom(true);
+      store.showToast(payload.message ?? payload.reason ?? "房间会话已结束，请重新加入");
+    }
   } else if (message.event === "server.shutdown") {
     // 原地待命：不清会话、不重置房间。重启后由 useCEERoomLifecycle 带原票据重进；
     // 真回不去时会走上面的会话结束分支。

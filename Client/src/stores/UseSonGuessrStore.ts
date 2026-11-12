@@ -30,6 +30,7 @@ import {
 import * as ws from "@/lib/SonGuessrWs";
 import { getStoredSongMusicSession, saveSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { consumeStateSync } from "@/lib/StateSync";
+import { resolveEndedRoom } from "./RoomEndedEvent";
 
 const musicSearchCache = createQueryReuseCache<SongSearchResult[]>(keywordQueryKey);
 const bangumiSearchCache = createQueryReuseCache<BangumiSubjectSearchResult[]>(keywordQueryKey);
@@ -470,13 +471,20 @@ function applyChatMessageEvent(payload: unknown) {
  * 退出房间：清掉席位凭据与整套房间态。
  *
  * 差量同步基线必须一起重置：残留旧 revision 会让后续反复触发全量同步。
+ * 事件指向的不是当前房间时只清那间的令牌（口径见 RoomEndedEvent）。
  */
 function leaveRoom(
-  closedRoomId: string | null | undefined,
+  eventRoomId: string | null | undefined,
   toastText: string,
   toastDurationMs?: number
 ) {
+  const { roomId: closedRoomId, foreign } = resolveEndedRoom(
+    eventRoomId,
+    useSonGuessrStore.getState().roomId
+  );
   if (closedRoomId) clearSonGuessrSessionToken(closedRoomId);
+  if (foreign) return;
+  roomEntry.cancel();
   resetSonGuessrStateSync();
   useSonGuessrStore.setState({
     roomId: null,
@@ -538,25 +546,16 @@ export function initSonGuessrWs() {
         applyChatMessageEvent(evt.payload);
         break;
       case "song.room.closed": {
-        roomEntry.cancel();
-        const closedRoomId =
-          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
-        leaveRoom(closedRoomId, "房间已关闭");
+        leaveRoom((evt.payload as { roomId?: string }).roomId, "房间已关闭");
         break;
       }
       case "song.room.kicked": {
-        roomEntry.cancel();
-        const closedRoomId =
-          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
-        leaveRoom(closedRoomId, "你已被移出房间");
+        leaveRoom((evt.payload as { roomId?: string }).roomId, "你已被移出房间");
         break;
       }
       case "session.replaced":
       case "song.session.replaced": {
-        roomEntry.cancel();
-        const closedRoomId =
-          (evt.payload as { roomId?: string }).roomId ?? useSonGuessrStore.getState().roomId;
-        leaveRoom(closedRoomId, "当前席位已在另一个标签页接管");
+        leaveRoom((evt.payload as { roomId?: string }).roomId, "当前席位已在另一个标签页接管");
         break;
       }
       case "server.shutdown": {

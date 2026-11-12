@@ -3,6 +3,7 @@ import { createRoomEntry } from "@/lib/RoomEntry";
 import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError";
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
+import { resolveEndedRoom } from "./RoomEndedEvent";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
   isPermanentRoomError,
@@ -389,6 +390,21 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
   };
 });
 
+/** 房间已结束：事件指向别的房间时只清它的令牌，口径见 RoomEndedEvent。 */
+function endRoom(
+  currentStore: ReturnType<typeof useWhoIsFakerStore.getState>,
+  eventRoomId: string | undefined,
+  toastText: string
+) {
+  const { roomId, foreign } = resolveEndedRoom(eventRoomId, currentStore.roomId);
+  if (roomId) clearSessionToken(roomId);
+  if (foreign) return;
+  roomEntry.cancel();
+  currentStore.leaveRoomState();
+  currentStore.markRoomClosed();
+  currentStore.addToast(toastText, "error");
+}
+
 export function initWhoIsFakerWs() {
   const unsubMsg = ws.onMessage((msg: ServerMessage) => {
     if (msg.type !== "event") return;
@@ -438,28 +454,17 @@ export function initWhoIsFakerWs() {
         currentStore.addToast("房间即将因超时关闭", "error");
         break;
       case "room.closed": {
-        roomEntry.cancel();
         // 房间已在服务端删除，残留的会话令牌只会让下次进房重连一个不存在的房间。
-        const payload = evt.payload as { roomId?: string };
-        const closedRoomId = payload.roomId ?? currentStore.roomId;
-        if (closedRoomId) clearSessionToken(closedRoomId);
-        currentStore.leaveRoomState();
-        currentStore.markRoomClosed();
-        currentStore.addToast("房间已关闭", "error");
+        endRoom(currentStore, (evt.payload as { roomId?: string }).roomId, "房间已关闭");
         break;
       }
       case "session.replaced": {
-        const payload = evt.payload as { roomId?: string };
-        const roomId = payload.roomId;
-
-        if (roomId && currentStore.roomId === roomId) {
-          roomEntry.cancel();
-          clearSessionToken(roomId);
-          currentStore.leaveRoomState();
-          // 席位已被新标签页接管，本标签页同样必须退回大厅。
-          currentStore.markRoomClosed();
-        }
-        currentStore.addToast("您的连接已被新标签页替代", "error");
+        // 席位已被新标签页接管，本标签页同样必须退回大厅。
+        endRoom(
+          currentStore,
+          (evt.payload as { roomId?: string }).roomId,
+          "您的连接已被新标签页替代"
+        );
         break;
       }
       case "server.shutdown": {

@@ -493,3 +493,92 @@ for (const h of harnesses)
       });
     });
   });
+for (const h of harnesses)
+  describe(`${h.name} 房间结束事件口径`, () => {
+    let dispose: (() => void) | undefined;
+    const endEvents =
+      h.prefix === "song."
+        ? ["song.room.closed", "song.room.kicked", "session.replaced"]
+        : ["room.closed", "session.replaced"];
+    // 两个 store 的 setState 签名是联合类型，不能直接调用；这里只写通用的房间字段。
+    const commit = (state: Record<string, unknown>) =>
+      (h.store as unknown as { setState: (state: Record<string, unknown>) => void }).setState(
+        state
+      );
+    const emit = (event: string, payload: Record<string, unknown>) =>
+      h.socket.messages.forEach((fn) => fn({ type: "event", event, payload }));
+    beforeEach(() => {
+      sessionStorage.clear();
+      h.reset();
+      h.socket.send.mockReset();
+      h.socket.messages = [];
+      h.socket.statuses = [];
+      dispose = h.init();
+    });
+    afterEach(() => {
+      dispose?.();
+      dispose = undefined;
+      h.reset();
+    });
+    it.each(endEvents)("%s 的房号不是当前房间时只清那间的令牌，不动当前房间", (event) => {
+      h.save("1111", "current-token");
+      h.save("2222", "stale-token");
+      commit({
+        roomId: "1111",
+        sessionToken: "current-token",
+        snapshot: { ...h.snapshot, roomId: "1111" },
+        privateState: h.privateState,
+      });
+      emit(event, { roomId: "2222" });
+      expect(h.read("2222")).toBeNull();
+      expect(h.read("1111")).toBe("current-token");
+      expect(h.store.getState()).toMatchObject({
+        roomId: "1111",
+        sessionToken: "current-token",
+        roomClosedAt: null,
+      });
+      expect(h.store.getState().snapshot).not.toBeNull();
+    });
+    it.each(endEvents)("%s 不带房号时按当前房间处理并清令牌", (event) => {
+      h.save("1111", "current-token");
+      commit({
+        roomId: "1111",
+        sessionToken: "current-token",
+        snapshot: { ...h.snapshot, roomId: "1111" },
+        privateState: h.privateState,
+      });
+      emit(event, {});
+      expect(h.read("1111")).toBeNull();
+      expect(h.store.getState()).toMatchObject({
+        roomId: null,
+        sessionToken: null,
+        snapshot: null,
+      });
+      expect(h.store.getState().roomClosedAt).not.toBeNull();
+    });
+    it.each(endEvents)("%s 作废在途入房：晚到 ACK 只用结果凭据离房", async (event) => {
+      const ack = deferred<Record<string, unknown>>();
+      h.socket.send.mockReturnValueOnce(ack.promise).mockResolvedValue({});
+      const outcome = h.store
+        .getState()
+        .joinRoom("1234", "玩家")
+        .catch((e) => e);
+      emit(event, { roomId: "1234" });
+      ack.resolve({
+        roomId: "1234",
+        sessionToken: "late-token",
+        ...(h.ackCarriesStates
+          ? {
+              snapshot: { ...h.snapshot, roomId: "1234" },
+              privateState: { ...h.privateState, sessionToken: "late-token" },
+            }
+          : {}),
+      });
+      expect(await outcome).toMatchObject({ name: "AbortError" });
+      expect(h.socket.send.mock.calls.map(([type]) => type)).toEqual([
+        `${h.prefix}room.join`,
+        `${h.prefix}room.leave`,
+      ]);
+      expect(h.store.getState()).toMatchObject({ roomId: null, sessionToken: null });
+    });
+  });
