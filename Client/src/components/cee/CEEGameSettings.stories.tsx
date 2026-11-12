@@ -3,7 +3,7 @@ import { userEvent, within } from "storybook/test";
 import type { CEESettings } from "@bakagame/shared";
 import { SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { presetCEE } from "@/stories/StorePresets";
-import { CEE_CUSTOM_SETTINGS, ceeSettings } from "@/stories/fixtures/CEE";
+import { CEE_CUSTOM_SETTINGS, CEE_NATIVE_ROOM_ID, ceeSettings } from "@/stories/fixtures/CEE";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { CEEGameSettings } from "./CEEGameSettings";
 
@@ -44,6 +44,7 @@ const meta = {
   title: "CEE/CEEGameSettings",
   component: CEEGameSettings,
   args: {
+    roomId: CEE_NATIVE_ROOM_ID,
     settings: CEE_CUSTOM_SETTINGS,
     source: "native",
     waiting: true,

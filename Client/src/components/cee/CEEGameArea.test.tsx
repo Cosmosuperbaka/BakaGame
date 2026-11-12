@@ -299,7 +299,12 @@ describe("CEE 操作区", () => {
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
-    useCEEStore.setState({ source: "original", roomId: "1234", sessionToken: "token" });
+    useCEEStore.setState({
+      source: "original",
+      roomId: "1234",
+      sessionToken: "token",
+      snapshot: room({ source: "original" }),
+    });
     render(<CEEGameArea snapshot={room({ source: "original" })} privateState={privateState()} />);
     await user.click(screen.getByText("房间设置", { exact: true }));
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveAttribute("maxlength", "30");
@@ -607,9 +612,16 @@ describe("CEE 操作区", () => {
   it("设置面板覆盖四个玩法开关，且只在实际生效的阶段提交草稿", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
-    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const settings = createDefaultCEESettings(2026);
-    const view = render(<CEEGameSettings settings={settings} source="native" waiting={false} />);
+    useCEEStore.setState({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "token",
+      snapshot: room({ settings }),
+    });
+    const view = render(
+      <CEEGameSettings roomId="1234" settings={settings} source="native" waiting={false} />
+    );
     await user.click(screen.getByRole("button", { name: /猜测设置/ }));
     for (const name of ["角色全局 BP", "标签全局 BP", "同步模式", "血战模式"]) {
       expect(screen.getByRole("switch", { name })).toBeInTheDocument();
@@ -619,7 +631,7 @@ describe("CEE 操作区", () => {
     expect(screen.getByRole("switch", { name: "同步模式" })).toBeChecked();
     expect(send).not.toHaveBeenCalled();
 
-    view.rerender(<CEEGameSettings settings={settings} source="native" waiting />);
+    view.rerender(<CEEGameSettings roomId="1234" settings={settings} source="native" waiting />);
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith(
         "cee.room.settings",
@@ -637,18 +649,18 @@ describe("CEE 操作区", () => {
 
     // 原版房不显示：这套准入只存在于增强房。
     const original = render(
-      <CEEGameSettings settings={on} source="original" waiting readOnly={false} />
+      <CEEGameSettings roomId="1234" settings={on} source="original" waiting readOnly={false} />
     );
     expect(screen.queryByRole("button", { name: /反作弊/ })).not.toBeInTheDocument();
     original.unmount();
 
     // 增强房没开反作弊也不显示：既没有开关，也没有一行状态。
-    const plain = render(<CEEGameSettings settings={off} source="native" waiting />);
+    const plain = render(<CEEGameSettings roomId="1234" settings={off} source="native" waiting />);
     expect(screen.queryByRole("button", { name: /反作弊/ })).not.toBeInTheDocument();
     plain.unmount();
 
     // 已开启：非房主也看得见「这间房在反作弊」，但没有任何可改的东西。
-    render(<CEEGameSettings settings={on} source="native" waiting readOnly />);
+    render(<CEEGameSettings roomId="1234" settings={on} source="native" waiting readOnly />);
     await user.click(screen.getByRole("button", { name: /反作弊/ }));
     expect(screen.getByText("已开启")).toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "BakaAntiCheat" })).not.toBeInTheDocument();
@@ -657,9 +669,16 @@ describe("CEE 操作区", () => {
   it("房主在等待页也拿不到反作弊开关：标记只在建房那一刻定", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
-    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
     const settings = createDefaultCEESettings(2026);
-    render(<CEEGameSettings settings={settings} source="native" waiting readOnly={false} />);
+    useCEEStore.setState({
+      source: "native",
+      roomId: "1234",
+      sessionToken: "token",
+      snapshot: room({ settings }),
+    });
+    render(
+      <CEEGameSettings roomId="1234" settings={settings} source="native" waiting readOnly={false} />
+    );
     await user.click(screen.getByRole("button", { name: /猜测设置/ }));
     expect(screen.queryByRole("switch", { name: "BakaAntiCheat" })).not.toBeInTheDocument();
 

@@ -36,6 +36,7 @@ import { listItem } from "@/lib/Motion";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { ceePresets } from "./CEEPresets";
+import { waitingSnapshotOf } from "./CEEWaitingSave";
 import { useCEEDraft } from "./UseCEEDraft";
 import { CEESubjectSearch } from "./CEESearch";
 
@@ -176,11 +177,14 @@ function useSubjectNames(ids: number[]) {
  * 非房主看到同一份结构（`readOnly`），读的是当前设置；预设、导入导出与目录同步这些房主工具不出现。
  */
 export function CEEGameSettings({
+  roomId,
   settings,
   source,
   waiting,
   readOnly = false,
 }: {
+  /** 草稿所属的房间：保存时核对它仍是当前房间。 */
+  roomId: string;
   settings: CEESettings;
   source: CEESource;
   waiting: boolean;
@@ -211,10 +215,12 @@ export function CEEGameSettings({
     draft,
     (value) => {
       // MCP 是独立设置项，不随玩法设置记忆；保存时保留服务端当前的开关，避免旧草稿把它改回去。
-      const live = useCEEStore.getState().snapshot?.settings;
-      const next = { ...value, allowAgents: live?.allowAgents === true };
+      const room = waitingSnapshotOf(roomId);
+      if (!room) return Promise.resolve();
+      const live = room.settings;
+      const next = { ...value, allowAgents: live.allowAgents === true };
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
-      if (live && equal(next, live)) return Promise.resolve();
+      if (equal(next, live)) return Promise.resolve();
       saveRoomSettingsMemory("cee", { settings: { ...value, allowAgents: false } });
       return useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
     },

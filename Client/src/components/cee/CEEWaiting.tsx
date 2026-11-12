@@ -23,6 +23,7 @@ import { ceeRoomPath } from "@/lib/CEESession";
 import type { CEERoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { CEEGameSettings } from "./CEEGameSettings";
 import { CEETeamPicker } from "./CEETeamPicker";
+import { waitingSnapshotOf } from "./CEEWaitingSave";
 import { useCEEDraft } from "./UseCEEDraft";
 
 /**
@@ -285,10 +286,10 @@ export function CEEWaiting({
   useAutoSave(
     roomDraft,
     async (value) => {
-      const live = useCEEStore.getState().snapshot;
+      const live = waitingSnapshotOf(snapshot.roomId);
+      if (!live) return;
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
       if (
-        live &&
         !value.password.trim() &&
         value.name.trim() === live.name &&
         value.visibility === live.visibility &&
@@ -342,6 +343,7 @@ export function CEEWaiting({
 
       <SettingsStack>
         <CEEGameSettings
+          roomId={snapshot.roomId}
           settings={snapshot.settings}
           source={snapshot.source}
           waiting={snapshot.phase === "waiting"}

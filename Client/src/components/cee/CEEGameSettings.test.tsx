@@ -27,6 +27,7 @@ const inRoom = (
 };
 const panel = (settings: CEESettings, props: { waiting?: boolean; readOnly?: boolean } = {}) => (
   <CEEGameSettings
+    roomId={CEE_NATIVE_ROOM_ID}
     settings={settings}
     source="native"
     waiting={props.waiting ?? true}
@@ -119,5 +120,45 @@ describe("CEE 设置草稿与服务端同步", () => {
         expect.any(Object)
       )
     );
+  });
+});
+
+describe("CEE 设置自动保存的发送边界", () => {
+  /** 房主刚改完一项，还在防抖窗口里。 */
+  const editedWhileWaiting = async () => {
+    const user = userEvent.setup();
+    inRoom(base());
+    const view = render(panel(base()));
+    await user.click(screen.getByRole("button", { name: /猜测设置/ }));
+    await user.click(screen.getByRole("switch", { name: "同步模式" }));
+    return view;
+  };
+
+  it("仍在同一房间的等待阶段时，卸载会冲刷未保存的修改", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = await editedWhileWaiting();
+    view.unmount();
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.settings",
+      { settings: expect.objectContaining({ syncMode: true }) },
+      expect.any(Object)
+    );
+  });
+
+  it("防抖期间对局已开始，卸载冲刷不会发送", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = await editedWhileWaiting();
+    inRoom(base(), { phase: "guessing" });
+    view.unmount();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("防抖期间已换到另一间房，排队中的保存不会发给新房间", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = await editedWhileWaiting();
+    inRoom(base(), { roomId: "5678" });
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -126,4 +126,36 @@ describe("等待页的房间设置草稿", () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(send).not.toHaveBeenCalled();
   });
+
+  it("防抖期间对局已开始或已换房，卸载冲刷不会发送房间设置", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    for (const leave of ["started", "switched"] as const) {
+      const user = userEvent.setup();
+      const view = render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+      await user.click(screen.getByText("房间设置", { exact: true }));
+      await user.click(screen.getByRole("switch", { name: "允许旁观" }));
+      if (leave === "started") {
+        useCEEStore.setState({ snapshot: ceeSnapshot({ name: "房名", phase: "guessing" }) });
+      } else {
+        useCEEStore.setState({ snapshot: ceeSnapshot({ name: "房名", roomId: "5678" }) });
+      }
+      view.unmount();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("仍在同一房间的等待阶段时，卸载会冲刷房间设置", async () => {
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const user = userEvent.setup();
+    const view = render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    await user.click(screen.getByRole("switch", { name: "允许旁观" }));
+    view.unmount();
+    expect(send).toHaveBeenCalledWith(
+      "cee.room.update",
+      expect.objectContaining({ allowSpectators: false }),
+      expect.any(Object)
+    );
+  });
 });
