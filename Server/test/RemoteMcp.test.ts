@@ -47,6 +47,10 @@ const initialize = (clientKey: string) =>
 
 let sessionsRef: RemoteMcpSessions;
 
+/** 缺省的回环目标是一个没人监听的端口：不碰网络的用例不需要真服务端。 */
+const newSessions = (selfUrl = "http://127.0.0.1:9", now?: () => number) =>
+  new RemoteMcpSessions(logger, { selfUrl, siteUrl: "https://game.example.com" }, now);
+
 const fakeFakerServer = () => {
   /** 探针记录：升级路径与信封上的 `game`，用来看住「统一入口 + 显式归属」这两条契约。 */
   const seen = { paths: [] as string[], games: [] as Array<string | undefined> };
@@ -121,7 +125,7 @@ const fakeFakerServer = () => {
 
 test("远程 MCP 支持 initialize / 工具调用 / 本人私有状态，并随 initialize 下发反作弊声明", async () => {
   const { server, seen } = fakeFakerServer();
-  sessionsRef = new RemoteMcpSessions(logger);
+  sessionsRef = newSessions(`http://127.0.0.1:${server.port}`);
   const url = `http://127.0.0.1:${server.port}/api/mcp`;
 
   const initialized = await rpc(url, {
@@ -195,7 +199,7 @@ test("HTTP 路由回传 Mcp-Session-Id，GET 提示只接受 POST，DELETE 可�
     mcpRemoteRoutes({
       enabled: true,
       logger,
-      sessions: new RemoteMcpSessions(logger),
+      sessions: newSessions(),
     })
   );
   const initialized = await app.handle(
@@ -230,7 +234,7 @@ test("HTTP 路由回传 Mcp-Session-Id，GET 提示只接受 POST，DELETE 可�
 });
 
 test("远程 MCP 自动为首次调用建立会话，未进房时给出可执行的下一步", async () => {
-  sessionsRef = new RemoteMcpSessions(logger);
+  sessionsRef = newSessions();
   const result = await rpc("http://127.0.0.1:9/api/mcp", {
     jsonrpc: "2.0",
     id: 1,
@@ -243,7 +247,7 @@ test("远程 MCP 自动为首次调用建立会话，未进房时给出可执行
 });
 
 test("写额度按来源跨会话共享：换会话拿不到新额度，另一来源不受影响", async () => {
-  sessionsRef = new RemoteMcpSessions(logger);
+  sessionsRef = newSessions();
   // control_page 是写工具，且没有页面端口时立刻失败，适合只数额度。
   const write = (clientKey: string, session: string) =>
     rpc(
@@ -278,7 +282,7 @@ test("写额度按来源跨会话共享：换会话拿不到新额度，另一�
 
 test("同来源满额时不踢正在用的会话：共享出口背后可能是别的用户", async () => {
   let clock = 1_000_000;
-  sessionsRef = new RemoteMcpSessions(logger, () => clock);
+  sessionsRef = newSessions(undefined, () => clock);
   const own: string[] = [];
   for (let index = 0; index < 64; index += 1)
     own.push((await initialize("192.0.2.1")).headers["mcp-session-id"]!);
@@ -295,7 +299,7 @@ test("同来源满额时不踢正在用的会话：共享出口背后可能是�
 });
 
 test("会话表满时拒绝新会话而不挤掉别人的会话", async () => {
-  sessionsRef = new RemoteMcpSessions(logger);
+  sessionsRef = newSessions();
   const ids: string[] = [];
   for (let index = 0; index < 256; index += 1)
     ids.push((await initialize(`10.0.${index >> 6}.${index & 63}`)).headers["mcp-session-id"]!);
@@ -308,7 +312,7 @@ test("会话表满时拒绝新会话而不挤掉别人的会话", async () => {
 test("页面接管只经站内远程 MCP：没有页面端口时四个工具都明确拒绝", async () => {
   // stdio 进程既没有浏览器连接、也无法证明自己持有配对码，因此页面能力是可选注入的窄接口。
   // 这里锁住「明确报错」这条底线：静默降级会让 Agent 以为自己在驱动页面，实际什么也没发生。
-  sessionsRef = new RemoteMcpSessions(logger);
+  sessionsRef = newSessions();
   const cases: Array<[string, Record<string, unknown>]> = [
     ["control_page", { code: "ABCD2345" }],
     ["page_state", {}],
@@ -325,4 +329,24 @@ test("页面接管只经站内远程 MCP：没有页面端口时四个工具都�
     expect(result.payload.result.isError).toBe(true);
     expect(result.payload.result.content[0].text).toContain("页面接管只能经站内远程 MCP");
   }
+});
+
+test("请求 Host 指向别处时，服务端仍只连自己的回环地址，不向该主机发起任何连接", async () => {
+  const attacker = fakeFakerServer();
+  const own = fakeFakerServer();
+  sessionsRef = newSessions(`http://127.0.0.1:${own.server.port}`);
+  // request.url 由 Host 头决定：这里模拟攻击者把 Host 设成自己控制的主机。
+  const forged = `http://127.0.0.1:${attacker.server.port}/api/mcp`;
+  const created = await rpc(forged, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "create_room",
+      arguments: { game: "faker", roomId: "1234", name: "x", allowAgents: true },
+    },
+  });
+  expect(created.payload.result.content[0].text).toContain('"playerId":"player-remote"');
+  expect(attacker.seen.paths).toEqual([]);
+  expect(own.seen.paths).toContain("/api/ws");
 });

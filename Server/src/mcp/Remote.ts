@@ -40,7 +40,6 @@ const SESSIONS_FULL = "远程 MCP 会话已满，请稍后再试";
 export interface RemoteSession {
   id: string;
   client: AgentGameClient;
-  baseUrl: string;
   agentName: string;
   /** 建会话的来源（真实客户端 IP），用于按来源封顶会话数与写额度。 */
   clientKey: string;
@@ -64,6 +63,16 @@ const sanitizeName = (value: unknown): string => {
   return trimmed || "BakaAgent";
 };
 
+export interface RemoteMcpSessionsOptions {
+  /**
+   * 服务端自己的回环地址：Agent 的游戏连接只能连它。目标必须来自服务端配置，
+   * 请求的 Host 由调用方决定，拿来当出站目标等于让匿名请求指挥服务端去连任意主机。
+   */
+  selfUrl: string;
+  /** 站点对外基址：只用来给 Agent 拼人类可达的页面链接，不参与任何出站连接。 */
+  siteUrl: string;
+}
+
 export class RemoteMcpSessions {
   private readonly sessions = new Map<string, RemoteSession>();
   private sessionClosed: (id: string) => void = () => undefined;
@@ -74,6 +83,7 @@ export class RemoteMcpSessions {
 
   constructor(
     private readonly logger: EventLogger,
+    private readonly options: RemoteMcpSessionsOptions,
     private readonly now: () => number = Date.now
   ) {}
 
@@ -82,7 +92,7 @@ export class RemoteMcpSessions {
    * 建会话不需要任何凭据，按全局最旧淘汰等于让匿名调用方把别人的 Agent 连同座位一起踢下线；
    * 同来源内也一样——共享出口背后的另一个用户同样是「别人」。只回收本来源里已闲置的旧会话。
    */
-  create(baseUrl: string, agentName: string, clientKey: string): RemoteSession | undefined {
+  create(agentName: string, clientKey: string): RemoteSession | undefined {
     this.prune();
     const own = [...this.sessions.values()]
       .filter((session) => session.clientKey === clientKey)
@@ -95,8 +105,11 @@ export class RemoteMcpSessions {
     if (this.sessions.size >= MAX_SESSIONS) return undefined;
     const session: RemoteSession = {
       id: crypto.randomUUID(),
-      client: new AgentGameClient({ serverUrl: baseUrl, agentName }),
-      baseUrl,
+      client: new AgentGameClient({
+        serverUrl: this.options.selfUrl,
+        siteUrl: this.options.siteUrl,
+        agentName,
+      }),
       agentName,
       clientKey,
       createdAt: this.now(),
@@ -216,13 +229,12 @@ export async function handleRemoteMcp(
   }
   const id = message.id;
   const params = isRecord(message.params) ? message.params : {};
-  const baseUrl = originOf(request);
   const headers: Record<string, string> = {};
 
   switch (message.method) {
     case "initialize": {
       const clientInfo = isRecord(params.clientInfo) ? params.clientInfo : {};
-      const session = sessions.create(baseUrl, sanitizeName(clientInfo.name), clientKey);
+      const session = sessions.create(sanitizeName(clientInfo.name), clientKey);
       if (!session) return { status: 503, headers, payload: rpcError(id, -32000, SESSIONS_FULL) };
       headers["mcp-session-id"] = session.id;
       return {
@@ -268,7 +280,6 @@ export async function handleRemoteMcp(
     case "tools/call":
       if (id === undefined || id === null) return { status: 202, headers, payload: null };
       return handleRemoteToolCall(options, {
-        baseUrl,
         clientKey,
         headerSessionId: request.headers.get("mcp-session-id")?.trim() || "",
         id,
@@ -284,16 +295,7 @@ export async function handleRemoteMcp(
   }
 }
 
-const originOf = (request: Request): string => {
-  try {
-    return new URL(request.url).origin;
-  } catch {
-    return "http://127.0.0.1:4850";
-  }
-};
-
 interface ToolCallContext {
-  baseUrl: string;
   clientKey: string;
   headerSessionId: string;
   id: unknown;
@@ -311,7 +313,7 @@ const resolveToolSession = (
   const sessionId = context.headerSessionId || argSession;
   const existing = sessionId ? sessions.get(sessionId) : undefined;
   if (existing) return { session: existing, ephemeral: false };
-  const session = sessions.create(context.baseUrl, sanitizeName(args.agentName), context.clientKey);
+  const session = sessions.create(sanitizeName(args.agentName), context.clientKey);
   if (!session) return undefined;
   if (!context.headerSessionId) context.headers["mcp-session-id"] = session.id;
   return { session, ephemeral: EPHEMERAL_TOOLS.has(toolName) };

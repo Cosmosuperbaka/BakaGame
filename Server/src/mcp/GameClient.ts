@@ -112,7 +112,10 @@ interface SeatRecord {
 }
 
 export interface AgentGameClientOptions {
+  /** 游戏连接的目标；必须来自服务端配置，不得取自请求头。 */
   serverUrl?: string;
+  /** 站点公开基址，只用于给 Agent 拼人类可达的页面链接；缺省与 serverUrl 相同。 */
+  siteUrl?: string;
   agentName: string;
   /** 测试里关掉人类速度节拍；线上保持默认。 */
   uiPacing?: boolean;
@@ -170,6 +173,7 @@ export const gameOfEvent = (event: string): GameId => {
  */
 export class AgentGameClient {
   private readonly serverUrl: string;
+  private readonly siteUrl: string;
   private readonly agentName: string;
   private readonly sessions = new Map<GameId, GameSession>();
   private readonly seats = new Map<GameId, SeatRecord>();
@@ -184,6 +188,7 @@ export class AgentGameClient {
 
   constructor(options: AgentGameClientOptions) {
     this.serverUrl = (options.serverUrl ?? "http://127.0.0.1:4850").replace(/\/+$/, "");
+    this.siteUrl = (options.siteUrl ?? this.serverUrl).replace(/\/+$/, "");
     this.agentName = options.agentName;
     this.ui = new SeatUi(this, { pacing: options.uiPacing !== false });
   }
@@ -194,7 +199,7 @@ export class AgentGameClient {
 
   /** 站点公开地址：与 API 同源（边缘反代），用于把人类可达页面拼成绝对链接。 */
   get siteOrigin(): string {
-    return this.serverUrl;
+    return this.siteUrl;
   }
 
   currentRoom(game: GameId): string | undefined {

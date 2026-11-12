@@ -870,7 +870,11 @@ export const createApp = ({
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> =>
     (disposal ??= disposeResources ? disposeResources() : characterService.close());
-  const remoteMcpSessions = new RemoteMcpSessions(logger);
+  const remoteMcpSessions = new RemoteMcpSessions(logger, {
+    // 游戏连接只连本机回环：目标不能取自请求的 Host。
+    selfUrl: `http://127.0.0.1:${env.serverPort}`,
+    siteUrl: env.serverUrl,
+  });
   /** 站点级 Agent 活动：首页与大厅的只读广播，不参与任何游戏的房间状态。 */
   const sitePresence = new SitePresence();
   /** 标签页接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这张标签页。 */
