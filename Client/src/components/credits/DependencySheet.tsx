@@ -24,7 +24,8 @@ function Crumb({ name, current, onPick }: { name: string; current: boolean; onPi
     <button
       type="button"
       onClick={onPick}
-      className="min-w-0 shrink truncate rounded-sm font-mono text-muted-foreground transition-colors hover:text-foreground focus-visible:-outline-offset-2"
+      // 可回退的路径格带常驻淡下划线，与当前层（纯文字）分得开；口径同提交历史里的哈希链接。
+      className="min-w-0 shrink truncate rounded-sm font-mono text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/60 focus-visible:-outline-offset-2"
     >
       {name}
     </button>
@@ -208,7 +209,8 @@ export function DependencySheet({
               .filter((group) => group.entries.length > 0)
               .map((group) => (
                 <section key={group.label} aria-label={group.label}>
-                  <h3 className="text-2xs text-muted-foreground">
+                  {/* 区块小标题：与全站同一口径（xs 半粗弱化色），不低于上方统计格的说明字。 */}
+                  <h3 className="text-xs font-semibold text-muted-foreground">
                     {`${group.label} ${group.entries.length} 个`}
                   </h3>
                   <div className="mt-1 overflow-hidden rounded-md border bg-card">

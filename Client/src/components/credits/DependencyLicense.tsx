@@ -3,6 +3,7 @@ import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import type { CreditLicenseDocument } from "@/lib/Credits";
+import { reflowLicenseText } from "./LicenseText";
 
 /** 原文读取的三种落点：加载中、拿到结果（含「包里没有原文」的 null）、失败可重试。 */
 type LicenseLoad =
@@ -71,7 +72,12 @@ export function DependencyLicense({
 
   if (files.length === 0) {
     // 抽屉上方已有项目主页与 npm 页面的跳转按钮，这里不再重复链接，只说明原文缺失。
-    return <p className="text-sm text-muted-foreground">该包未附带许可证原文。</p>;
+    // 与同一抽屉里「无子依赖」同一种空状态：虚线凹块居中，而不是一行裸字。
+    return (
+      <p className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-4 text-center text-xs text-muted-foreground">
+        该包未附带许可证原文。
+      </p>
+    );
   }
 
   return (
@@ -80,7 +86,7 @@ export function DependencyLicense({
         <section key={file.name} className="space-y-1.5">
           <h4 className="font-mono text-xs text-muted-foreground">{file.name}</h4>
           <pre className="rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap break-words">
-            {file.text}
+            {reflowLicenseText(file.text)}
           </pre>
         </section>
       ))}
