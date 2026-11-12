@@ -273,9 +273,6 @@ importers:
       better-auth:
         specifier: 1.7.7
         version: 1.7.7(@opentelemetry/api@1.9.1)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@opentelemetry/api@1.9.1)(bun-types@1.4.3)(kysely@0.29.6)(mysql2@3.24.5(@types/node@26.6.5)))(mysql2@3.24.5(@types/node@26.6.5))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.3)
-      crypto-js:
-        specifier: ^4.2.0
-        version: 4.2.0
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(@opentelemetry/api@1.9.1)(bun-types@1.4.3)(kysely@0.29.6)(mysql2@3.24.5(@types/node@26.6.5))
@@ -319,9 +316,6 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.12.0(jiti@2.7.0))
-      '@types/crypto-js':
-        specifier: ^4.2.2
-        version: 4.2.2
       '@types/nodemailer':
         specifier: 8.0.2
         version: 8.0.2
@@ -3130,9 +3124,6 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
-
-  '@types/crypto-js@4.2.2':
-    resolution: {integrity: sha512-sDOLlVbHhXpAUAL0YHDUUwDZf3iN4Bwi4W6a0W0b+QcAezUbRtH4FVb+9J4h+XFPW7l/gQ9F8qC7P+Ec4k8QVQ==}
 
   '@types/css-font-loading-module@0.0.12':
     resolution: {integrity: sha512-x2tZZYkSxXqWvTDgveSynfjq/T2HyiZHXb00j/+gy19yp70PHCizM48XFdjBCWH7eHBD0R5i/pw9yMBP/BH5uA==}
@@ -8670,8 +8661,6 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
-
-  '@types/crypto-js@4.2.2': {}
 
   '@types/css-font-loading-module@0.0.12': {}
 
