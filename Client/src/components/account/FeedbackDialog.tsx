@@ -268,7 +268,8 @@ function FeedbackThread({
         type="button"
         variant="ghost"
         size="sm"
-        className="justify-self-start"
+        // 负外边距抵掉 ghost 的内边距，箭头与下方标题左缘对齐（与关于页、抽屉的返回按钮同写法）。
+        className="-ml-2 justify-self-start px-2"
         onClick={onBack}
       >
         <ArrowLeft />
@@ -423,7 +424,10 @@ function MyFeedbackPanel({
       ) : list.status === "error" ? (
         <FormAlert>{list.message}</FormAlert>
       ) : list.items.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
+        // 空列表与站内其它空状态同一种虚线框（依赖清单、事件区、战绩），不是一行悬在空白里的裸字。
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          还没有提交过反馈
+        </p>
       ) : (
         <ul className="grid grid-cols-1 gap-2">
           {list.items.map((item) => (

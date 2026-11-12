@@ -155,9 +155,14 @@ function SoundVolumeField({ disabled }: { disabled: boolean }) {
         >
           音量
         </span>
+        {/* 读数随标签一起置灰：提示音关掉后只淡了「音量」二字、百分比仍是满色，读起来像还能调。 */}
         <span
           aria-hidden="true"
-          className="text-xs font-semibold tabular-nums text-muted-foreground"
+          className={
+            disabled
+              ? "text-xs font-semibold tabular-nums text-muted-foreground opacity-50"
+              : "text-xs font-semibold tabular-nums text-muted-foreground"
+          }
         >
           {percentage}%
         </span>
