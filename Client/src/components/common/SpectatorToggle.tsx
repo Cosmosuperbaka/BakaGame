@@ -38,6 +38,7 @@ export function SpectatorToggle({
   return (
     <motion.div
       layoutId="spectator-toggle"
+      layoutCrossfade={false}
       layout="position"
       transition={playerRelayout}
       className="mt-1 min-w-0"

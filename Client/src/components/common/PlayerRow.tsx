@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 房主动作需要随 PlayerRow 一起被三个游戏消费，拆文件只会让调用点各写一遍。 */
-import { useState, type ReactNode, type Ref } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { useContext, useEffect, useState, type ReactNode, type Ref } from "react";
+import { AnimatePresence, LayoutGroupContext, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
@@ -61,6 +61,32 @@ export interface PlayerRowProps {
   ref?: Ref<HTMLDivElement>;
 }
 
+/** 当前挂着的共享布局行（按布局分组与编号计数）：新行挂载时同号旧行还在退场，说明这是换组而不是新玩家进来。 */
+const mountedLayoutRows = new Map<string, number>();
+
+/**
+ * 换组的行：新行从旧行的位置飞过去，全程必须是不透明的同一个对象。
+ * 共享布局关掉交叉淡化后，新行在飞行期间的不透明度停在挂载时的取值，所以换组的新行不能从 `listItem` 的透明起点出发，
+ * 直接以终态挂载、由布局动画把它从旧位置带过来；飞行期间抬高一层并垫底，压在沿途各行之上，落位后放回。
+ */
+function useRowMove(layoutId: string | undefined) {
+  const group = useContext(LayoutGroupContext).id;
+  const key = layoutId === undefined ? undefined : `${group ?? ""}:${layoutId}`;
+  const [moving, setMoving] = useState(
+    () => key !== undefined && (mountedLayoutRows.get(key) ?? 0) > 0
+  );
+  useEffect(() => {
+    if (key === undefined) return;
+    mountedLayoutRows.set(key, (mountedLayoutRows.get(key) ?? 0) + 1);
+    return () => {
+      const left = (mountedLayoutRows.get(key) ?? 1) - 1;
+      if (left) mountedLayoutRows.set(key, left);
+      else mountedLayoutRows.delete(key);
+    };
+  }, [key]);
+  return { moving, landed: () => setMoving(false) };
+}
+
 /**
  * 三游戏共用的玩家行：左端头像（登录玩家为账号头像，游客为首字），中间信息列首行是名字、房主徽章与分数，
  * 其下是状态徽章、补充文字与可选详情；登录玩家或有操作权限时整行是可聚焦的原生按钮，点击打开浮层：资料卡在上，操作在下。
@@ -90,6 +116,7 @@ export function PlayerRow({
   // 受控打开：浮层经 AnimatePresence 播完退场再卸载，开合是同一动作的正反两面。
   const [open, setOpen] = useState(false);
   const rowClass = playerRowClass({ me, interactive });
+  const move = useRowMove(embedded ? undefined : layoutId);
 
   const info = (
     <PlayerRowInfo
@@ -161,13 +188,20 @@ export function PlayerRow({
     <motion.div
       ref={ref}
       variants={listItem}
-      initial="initial"
+      initial={move.moving ? false : "initial"}
       animate="animate"
       exit="exit"
       layout="position"
       layoutId={layoutId}
+      layoutCrossfade={false}
       transition={playerRelayout}
-      className="min-w-0"
+      onLayoutAnimationComplete={move.landed}
+      className={cn(
+        "min-w-0",
+        // 飞行期间垫一层与玩家栏同色的底：行自身的底色是半透明的（本人行）或没有，压过别的行时会透出它们的字。
+        move.moving &&
+          "relative z-panel before:absolute before:inset-0 before:-z-10 before:rounded-md before:bg-panel"
+      )}
     >
       {content}
     </motion.div>

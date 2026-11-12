@@ -1,3 +1,4 @@
+import { AnimatePresence } from "framer-motion";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -183,5 +184,43 @@ describe("PlayerRow 悬停底", () => {
       "hover:bg-accent/40"
     );
     expect(container).toBeTruthy();
+  });
+});
+
+/** 玩家栏的一个分组：换组时行换 key、保留 layoutId（同 usePlayerRowKeys 的做法）。 */
+function Groups({ group }: { group: "players" | "spectators" }) {
+  return (
+    <>
+      <section aria-label="玩家">
+        <AnimatePresence>
+          {group === "players" ? (
+            <PlayerRow key="seal-0" name="海豹" score={0} layoutId="seal" />
+          ) : null}
+        </AnimatePresence>
+      </section>
+      <section aria-label="旁观">
+        <AnimatePresence>
+          {group === "spectators" ? (
+            <PlayerRow key="seal-1" name="海豹" score={0} layoutId="seal" />
+          ) : null}
+        </AnimatePresence>
+      </section>
+    </>
+  );
+}
+
+const rowShell = (label: string) =>
+  screen.getByRole("region", { name: label }).querySelector<HTMLElement>(":scope > div");
+
+describe("PlayerRow 换组", () => {
+  it("换组挂上的新行以终态出现、由布局动画带过去，不从透明起点淡入（飞行中才不会半透明）", () => {
+    const { rerender } = render(<Groups group="players" />);
+    rerender(<Groups group="spectators" />);
+    expect(rowShell("旁观")?.style.opacity).toBe("1");
+  });
+
+  it("新进来的玩家照常从 listItem 起点入场", () => {
+    render(<Groups group="spectators" />);
+    expect(rowShell("旁观")?.style.opacity).toBe("0");
   });
 });
