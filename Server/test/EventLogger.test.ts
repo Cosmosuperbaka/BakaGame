@@ -326,6 +326,54 @@ test("装配的日志资源在省略部署环境时用统一缺省值", () => {
   }
 });
 
+test("领域事件都有中文标签与检索范围，不落回「事件 xxx」兜底", async () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    undefined,
+    {
+      sinks: [sink],
+    }
+  );
+  const emitted = [
+    "game.blank_guess_entered",
+    "game.blank_guess_reviewed",
+    "room.host_transferred",
+    "song.auth.cookieRejected",
+    "song.auth.poolSharing",
+    "song.auto.exhausted",
+    "song.auto.failed",
+    "song.auto.pool",
+    "song.game.round_finished",
+    "song.game.started",
+    "song.player.disconnected",
+    "song.room.created",
+    "song.room.joined",
+  ];
+  for (const type of emitted) await logger.write({ type, createdAt: 1_000 });
+  for (const [index, type] of emitted.entries()) {
+    expect(records[index]!.body, type).not.toStartWith("事件 ");
+    expect(records[index]!.attributes["log.scope"], type).not.toBe("系统");
+  }
+});
+
+test("显式 scope 优先于正文关键词推断", () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    undefined,
+    {
+      sinks: [sink],
+    }
+  );
+  logger.warn("客户端完整性校验未通过", { scope: "安全" });
+  expect(records[0]!.attributes["log.scope"]).toBe("安全");
+});
+
 test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {
   const { records, sink } = memorySink();
   const logger = new EventLogger(

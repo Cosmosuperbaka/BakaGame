@@ -231,7 +231,8 @@ export function createServer(
       clientType === "desktop"
         ? settings.version("clientMinDesktopVersion")
         : settings.version("clientMinMobileVersion"),
-    onWarn: (message, detail) => logger.warn(message, detail),
+    // 完整性类告警显式归「安全」：检索范围不再靠正文关键词猜，改文案不会改分类。
+    onWarn: (message, detail) => logger.warn(message, { ...detail, scope: "安全" }),
     // 没配期望包名就不装配：证明链留在设备上没被验过，注册只记 degraded，不假装 trusted。
     attestation: env.androidAttestationPackage
       ? createAndroidAttestationChecker({

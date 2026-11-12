@@ -45,6 +45,8 @@ const SENTRY_LEVEL: Record<EventLogLevel, "info" | "warning" | "error"> = {
 
 const EVENT_LABELS: Record<string, string> = {
   "chat.sent": "聊天消息已发送",
+  "game.blank_guess_entered": "白板已进入猜词",
+  "game.blank_guess_reviewed": "白板猜词已评审",
   "game.blank_guess_submitted": "白板已提交猜词",
   "game.description_submitted": "描述已提交",
   "game.disconnect_resolved": "掉线玩家已处理",
@@ -66,12 +68,23 @@ const EVENT_LABELS: Record<string, string> = {
   "room.closed": "房间已关闭",
   "room.create": "收到创建房间请求",
   "room.created": "房间已创建",
+  "room.host_transferred": "房主已转让",
   "room.join": "收到加入房间请求",
   "room.joined": "玩家已加入房间",
   "room.reconnect": "收到房间重连请求",
   "room.reconnected": "玩家已重连房间",
   "room.settings_changed": "房间设置已更新",
   "room.updateSettings": "收到房间设置更新请求",
+  "song.auth.cookieRejected": "猜歌账号凭据被拒绝",
+  "song.auth.poolSharing": "猜歌账号曲库共享已切换",
+  "song.auto.exhausted": "猜歌自动出题候选已耗尽",
+  "song.auto.failed": "猜歌自动出题失败",
+  "song.auto.pool": "猜歌自动出题候选池已确定",
+  "song.game.round_finished": "猜歌回合已结束",
+  "song.game.started": "猜歌对局已开始",
+  "song.player.disconnected": "猜歌玩家已掉线",
+  "song.room.created": "猜歌房间已创建",
+  "song.room.joined": "玩家已加入猜歌房间",
 };
 
 /** 控制台只展示这几类领域事件；其余事件仍完整进入结构化日志。 */
@@ -110,13 +123,17 @@ const getEventLevel = (entry: LogEntry): EventLogLevel => {
   }
 };
 
-const eventScope = (type: string): string => {
-  if (type.startsWith("room.")) return "房间";
-  if (type.startsWith("game.")) return "对局";
-  if (type.startsWith("player.")) return "玩家";
-  if (type.startsWith("chat.")) return "聊天";
-  return "系统";
-};
+/** 领域事件按类型前缀归属检索范围；新领域的事件加一行，不靠正文猜。 */
+const EVENT_SCOPES: ReadonlyArray<readonly [prefix: string, scope: string]> = [
+  ["room.", "房间"],
+  ["game.", "对局"],
+  ["player.", "玩家"],
+  ["chat.", "聊天"],
+  ["song.", "猜歌"],
+];
+
+const eventScope = (type: string): string =>
+  EVENT_SCOPES.find(([prefix]) => type.startsWith(prefix))?.[1] ?? "系统";
 
 /** 系统日志没有显式 scope 时按正文关键词归类，避免每条调用点都补参数。 */
 const inferSystemScope = (message: string, context: Record<string, unknown>): string => {
