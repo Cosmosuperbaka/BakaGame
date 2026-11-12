@@ -83,12 +83,16 @@ export class BangumiImageStore implements ImageStore {
     return this.connections[Bun.hash.crc32(path) % this.connections.length]!;
   }
 
+  /**
+   * 这张图是否已缓存。只认「有字节」或「已登记在 R2」：空字节又不在 R2 的行是半截写入的残留，
+   * 把它当已缓存，更新器就永远不会再补这张图。
+   */
   has(path: string): boolean {
-    return (
-      this.shard(path)
-        .query<{ present: number }, [string]>("SELECT 1 AS present FROM images WHERE path=?")
-        .get(path) !== null
-    );
+    const row = this.shard(path)
+      .query<{ size: number }, [string]>("SELECT length(bytes) AS size FROM images WHERE path=?")
+      .get(path);
+    if (row === null) return false;
+    return row.size > 0 || this.isRemote(path);
   }
 
   /**
@@ -113,10 +117,13 @@ export class BangumiImageStore implements ImageStore {
   markRemote(path: string, contentType = "image/avif"): void {
     if (this.readOnly) throw new Error("只读图床实例不能写入");
     const db = this.shard(path);
-    db.query<never, [string, string, number]>(
-      "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,x'',?,?)"
-    ).run(path, contentType, this.now());
-    db.query<never, [string]>("INSERT OR REPLACE INTO images_remote (path) VALUES (?)").run(path);
+    // 两条写入同生共死：只成功一半会留下空字节的索引行，读取侧既拿不到字节也不会 302。
+    db.transaction(() => {
+      db.query<never, [string, string, number]>(
+        "INSERT OR REPLACE INTO images (path, bytes, content_type, fetched_at) VALUES (?,x'',?,?)"
+      ).run(path, contentType, this.now());
+      db.query<never, [string]>("INSERT OR REPLACE INTO images_remote (path) VALUES (?)").run(path);
+    })();
   }
 
   get(path: string): StoredImage | undefined {

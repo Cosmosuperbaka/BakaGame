@@ -498,8 +498,11 @@ export class SubjectUpdater {
       // 只认 avif：上游异常时不要把 jpeg / 错误页写进图床（坏字节入库就不会再重下）。
       if (!hasAvifMagic(bytes)) return;
       await this.images.put(path, bytes, "image/avif");
-    } catch {
-      // 缺一张图不是可用性问题：下轮刷新会再试。
+    } catch (error) {
+      // 缺一张图不是可用性问题：下轮刷新会再试。但要留一笔：R2 通道断了在这条路径上否则完全不可见。
+      this.logger?.warn?.(
+        `封面写入图床失败：${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 

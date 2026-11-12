@@ -756,3 +756,39 @@ test("状态表建在数据集里：重建实例不丢已有进度", async () =>
     db.close();
   });
 });
+
+test("封面写入图床失败不影响刷新结果，但会留下一条告警", async () => {
+  await withTemp(async (directory) => {
+    const db = dataset(directory, [{ id: 12, heat: 10 }]);
+    const { fetcher } = upstream((url) =>
+      url.includes("/pic/cover/")
+        ? { bytes: AVIF }
+        : {
+            body: {
+              name: "有封面",
+              images: { large: "https://lain.bgm.tv/pic/cover/l/ab/cd/12.jpg" },
+            },
+          }
+    );
+    const warnings: string[] = [];
+    const images = {
+      has: () => false,
+      put: async () => {
+        throw new Error("R2 通道不可用");
+      },
+    } as unknown as BangumiImageStore;
+    const updater = new SubjectUpdater({
+      db,
+      base: "https://api.bgm.tv",
+      images,
+      imageSource: "https://lain.bgm.tv",
+      fetcher,
+      logger: { warn: (message) => warnings.push(message) },
+      now: () => 0,
+      sleep: () => Promise.resolve(),
+    });
+    expect(await updater.refresh(12)).toBe(true);
+    expect(warnings.some((message) => message.includes("R2 通道不可用"))).toBe(true);
+    db.close();
+  });
+});

@@ -97,3 +97,47 @@ test("markRemote 只落索引：has 为真、isRemote 为真、get 不再回字�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("markRemote 两步写入是原子的：第二步失败不留下空字节的索引行", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    // 破坏 images_remote：第一条写 images 成功、第二条写 images_remote 必然失败。
+    const shard = join(
+      dir,
+      `images-${String(Bun.hash.crc32("/x/r.jpg") % 16).padStart(2, "0")}.sqlite`
+    );
+    const raw = new Database(shard);
+    raw.exec("DROP TABLE images_remote");
+    raw.close();
+    expect(() => store.markRemote("/x/r.jpg")).toThrow();
+    // 半截状态会让更新器永远以为「已缓存」而不再补图。
+    expect(store.has("/x/r.jpg")).toBe(false);
+    expect(store.count()).toBe(0);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("has 只认真有内容的图：空字节且不在 R2 的残留行不算已缓存，已标记在 R2 的算", () => {
+  const dir = fixture();
+  try {
+    const store = BangumiImageStore.open(dir)!;
+    const shardOf = (path: string) =>
+      join(dir, `images-${String(Bun.hash.crc32(path) % 16).padStart(2, "0")}.sqlite`);
+    // 历史上的半截写入留下的残留：有索引行、字节为空、也没有登记在 R2。
+    const raw = new Database(shardOf("/x/broken.jpg"));
+    raw.query("INSERT INTO images VALUES (?, x'', 'image/avif', 0)").run("/x/broken.jpg");
+    raw.close();
+    expect(store.has("/x/broken.jpg")).toBe(false);
+
+    store.markRemote("/x/cloud.jpg");
+    expect(store.has("/x/cloud.jpg")).toBe(true);
+    store.put("/x/local.jpg", new Uint8Array([1]));
+    expect(store.has("/x/local.jpg")).toBe(true);
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

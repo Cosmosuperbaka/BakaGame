@@ -3,7 +3,7 @@ import type { ImageStore, StoredImage } from "./BangumiImageStore";
 /**
  * 图床的 R2 后端。**写入侧**：新图直接进 Cloudflare R2，本地 SQLite 只留一条
  * 「这张图在 R2」的索引，不再存字节；**读取侧**由路由 302 到 CDN（见
- * `BakaGameImageService` 的 `cdnBase`）。
+ * `BangumiImageService` 的 `cdnBase`）。
  *
  * 为什么不上 S3 SDK：`*.r2.cloudflarestorage.com` 在境内网络被 TLS 层阻断
  * （ClientHello 阶段 reset，本机与腾讯云都复现），SigV4 那条路走不通。Cloudflare
