@@ -319,6 +319,8 @@ export class QQMusicProvider implements MusicProvider {
   private readonly amllClient: AmllLyricClient;
   /** 登录态复用与网易云同口径：普通 LRU + 单 TTL，不进软/硬双 TTL 的公共缓存。 */
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
+  /** 同一凭据、同一模式的在途校验共用一次回源；键是指纹，Cookie 原文不留在任何 Map 里。 */
+  private readonly loginStatusInFlight = new Map<string, Promise<MusicLoginSession>>();
   private readonly options: QQMusicProviderOptions;
   private readonly now: () => number;
   private anonymousFailureStreak = 0;
@@ -1241,19 +1243,45 @@ export class QQMusicProvider implements MusicProvider {
     options: { forceRefresh?: boolean }
   ): Promise<MusicLoginSession> {
     const extracted = extractQqCookie(rawCookie);
-    let currentCookie = extracted ?? (typeof rawCookie === "string" ? rawCookie : "");
+    const currentCookie = extracted ?? (typeof rawCookie === "string" ? rawCookie : "");
     const trimmed = currentCookie.trim();
     if (!trimmed) {
       throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录 Cookie 不能为空");
     }
 
-    const cacheKey = `login-status:${trimmed}`;
+    const cacheKey = this.loginStatusKey(trimmed);
     // 强制续期必须绕过缓存：缓存里是上一次校验结果，不会替我们换新 key。
     const reused = options.forceRefresh ? undefined : this.loginStatusCache.get(cacheKey);
     if (reused) {
       return { cookie: reused.cookie, account: { ...reused.account } };
     }
 
+    // 房间接入、开局复验与后台续期会同时到达：同凭据的在途校验合并，
+    // 否则续期接口被并行打两次，一次性的 refresh 凭据会让后一次失败。
+    const flightKey = `${cacheKey}:${options.forceRefresh ? "refresh" : "check"}`;
+    let flight = this.loginStatusInFlight.get(flightKey);
+    if (!flight) {
+      flight = this.verifyLoginSession(currentCookie, trimmed, options).finally(() => {
+        this.loginStatusInFlight.delete(flightKey);
+      });
+      this.loginStatusInFlight.set(flightKey, flight);
+    }
+    const session = await flight;
+    // 对齐网易云：返回副本，调用方对返回值的改写不得污染复用缓存或其它并发调用方。
+    return { cookie: session.cookie, account: { ...session.account } };
+  }
+
+  private loginStatusKey(trimmedCookie: string): string {
+    return `login-status:${this.audioCacheScope(trimmedCookie)}`;
+  }
+
+  private async verifyLoginSession(
+    initialCookie: string,
+    trimmed: string,
+    options: { forceRefresh?: boolean }
+  ): Promise<MusicLoginSession> {
+    let currentCookie = initialCookie;
+    const cacheKey = this.loginStatusKey(trimmed);
     let statusRes = await this.callUpstream(currentCookie, () =>
       qqmusic.login_status({ cookie: currentCookie })
     );
@@ -1303,11 +1331,9 @@ export class QQMusicProvider implements MusicProvider {
 
     this.loginStatusCache.set(cacheKey, session);
     if (currentCookie.trim() !== trimmed) {
-      this.loginStatusCache.set(`login-status:${currentCookie.trim()}`, session);
+      this.loginStatusCache.set(this.loginStatusKey(currentCookie.trim()), session);
     }
-
-    // 对齐网易云：返回副本，调用方对返回值的改写不得污染复用缓存。
-    return { cookie: session.cookie, account: { ...session.account } };
+    return session;
   }
 
   /**

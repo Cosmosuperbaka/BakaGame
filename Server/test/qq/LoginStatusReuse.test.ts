@@ -80,4 +80,65 @@ describe("QQ音乐登录态复用（对齐网易云口径）", () => {
     expect(again.cookie).toBe("qm_keyst=fresh");
     expect(statusCalls).toBe(1);
   });
+
+  it("同一 Cookie 的并发校验合并为一次回源，各调用方拿到互不污染的副本", async () => {
+    let statusCalls = 0;
+    const provider = new QQMusicProvider();
+    qqmusic.login_status = mock(async () => {
+      statusCalls += 1;
+      await Bun.sleep(10);
+      return { status: 200, body: { isLogin: true, account: { userId: "5", nickname: "并发" } } };
+    }) as any;
+
+    const [first, second] = await Promise.all([
+      provider.getLoginStatus("qm_keyst=concurrent"),
+      provider.getLoginStatus("qm_keyst=concurrent"),
+    ]);
+    expect(statusCalls).toBe(1);
+    first.account.nickname = "被改写";
+    expect(second.account.nickname).toBe("并发");
+  });
+
+  it("并发的强制续期也合并，续期接口只被调用一次", async () => {
+    let refreshCalls = 0;
+    const provider = new QQMusicProvider();
+    qqmusic.login_status = mock(async () => ({
+      status: 200,
+      body: { isLogin: true, account: { userId: "5", nickname: "续期" } },
+    })) as any;
+    qqmusic.login_refresh = mock(async () => {
+      refreshCalls += 1;
+      await Bun.sleep(10);
+      return { status: 200, body: { code: 200, cookieStr: "qm_keyst=renewed" } };
+    }) as any;
+
+    const sessions = await Promise.all([
+      provider.getLoginStatus("qm_keyst=old", undefined, { forceRefresh: true }),
+      provider.getLoginStatus("qm_keyst=old", undefined, { forceRefresh: true }),
+    ]);
+    expect(refreshCalls).toBe(1);
+    expect(sessions.map((session) => session.cookie)).toEqual([
+      "qm_keyst=renewed",
+      "qm_keyst=renewed",
+    ]);
+  });
+
+  it("校验失败不缓存，失败的在途校验结束后下一次仍会回源", async () => {
+    let statusCalls = 0;
+    const provider = new QQMusicProvider();
+    qqmusic.login_status = mock(async () => {
+      statusCalls += 1;
+      return statusCalls === 1
+        ? { status: 200, body: { isLogin: false } }
+        : { status: 200, body: { isLogin: true, account: { userId: "1", nickname: "恢复" } } };
+    }) as any;
+    qqmusic.login_refresh = mock(async () => ({ status: 200, body: { code: 500 } })) as any;
+
+    await expect(provider.getLoginStatus("qm_keyst=flaky")).rejects.toMatchObject({
+      code: "MUSIC_SESSION_INVALID",
+    });
+    await expect(provider.getLoginStatus("qm_keyst=flaky")).resolves.toMatchObject({
+      account: { nickname: "恢复" },
+    });
+  });
 });

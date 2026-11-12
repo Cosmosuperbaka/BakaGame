@@ -108,4 +108,26 @@ describe("登录状态", () => {
       code: "MUSIC_SESSION_INVALID",
     });
   });
+
+  test("同一凭据的并发登录态校验合并为一次回源", async () => {
+    let statusCalls = 0;
+    const provider = new NeteaseMusicProvider({
+      randomCNIP: false,
+      loadApi: async () => ({
+        login_status: async () => {
+          statusCalls += 1;
+          await Bun.sleep(10);
+          return { body: { data: { code: 200, profile: { userId: 7, nickname: "并发" } } } };
+        },
+      }),
+    });
+
+    const [first, second] = await Promise.all([
+      provider.getLoginStatus("MUSIC_U=concurrent"),
+      provider.getLoginStatus("MUSIC_U=concurrent"),
+    ]);
+    expect(statusCalls).toBe(1);
+    first.account.nickname = "被改写";
+    expect(second.account.nickname).toBe("并发");
+  });
 });

@@ -535,6 +535,7 @@ export class NeteaseMusicProvider implements MusicProvider {
   private readonly randomCNIP: boolean;
   private anonymousCookie?: string;
   private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
+  private readonly loginStatusInFlight = new Map<string, Promise<MusicLoginSession>>();
   private readonly ipScopes: MusicIpScopeRegistry;
   private readonly musicCache: MusicCache;
   private readonly requestQueue: UpstreamRequestQueue;
@@ -1141,8 +1142,20 @@ export class NeteaseMusicProvider implements MusicProvider {
     const reused = this.loginStatusCache.get(cacheKey);
     // 复用期内直接返回同一份校验结果；校验失败不写缓存，所以失效的凭据下一次仍会回源。
     if (reused) return { cookie: reused.cookie, account: { ...reused.account } };
-    const session = await this.verifyLoginStatus(cookie, loginScope);
-    this.loginStatusCache.set(cacheKey, session);
+    // 同凭据的并发校验合并：房间接入与开局复验经常同时到达，各打一次上游没有收益。
+    let flight = this.loginStatusInFlight.get(cacheKey);
+    if (!flight) {
+      flight = this.verifyLoginStatus(cookie, loginScope)
+        .then((verified) => {
+          this.loginStatusCache.set(cacheKey, verified);
+          return verified;
+        })
+        .finally(() => {
+          this.loginStatusInFlight.delete(cacheKey);
+        });
+      this.loginStatusInFlight.set(cacheKey, flight);
+    }
+    const session = await flight;
     return { cookie: session.cookie, account: { ...session.account } };
   }
 
