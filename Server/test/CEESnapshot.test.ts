@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ceeTestHarness } from "./CEENativeFixtures";
+import { HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import type { SnapshottedRoom } from "../src/shared/RoomSnapshot";
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
@@ -43,6 +44,23 @@ describe("CEE 房间快照", () => {
     // 答案冻结在快照里：恢复后猜中原答案即获胜，而不是被重新抽题。
     await after.guess(back, 1);
     expect(after.snapshot(back).roundSummary!.winners[0].playerId).toBe(guest.id!);
+  });
+
+  test("恢复后房主带完整重连宽限：成员先回来不抢房主，宽限过后才轮换给在线成员", async () => {
+    const before = harness();
+    const host = await before.create();
+    const guest = await before.join("玩家");
+    // 停机时房主在线，没有任何截止在身上。
+    const rooms = throughDisk(before.service.exportSnapshots());
+
+    const after = harness();
+    after.service.restoreSnapshots(rooms, before.now());
+    const back = after.connect("玩家回来");
+    await after.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+    expect(after.snapshot(back).hostPlayerId).toBe(host.id!);
+
+    after.advance(HOST_RECONNECT_TIMEOUT_MS + 1);
+    expect(after.snapshot(back).hostPlayerId).toBe(guest.id!);
   });
 
   test("停机时长不计入作答时限：截止时刻按暂停时长整体后移", async () => {

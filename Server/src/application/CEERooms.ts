@@ -42,10 +42,12 @@ import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from "./CEEViews";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
 import type { RoomShape } from "./room/RoomCore";
+import { reassignHost, resolveHostGrace, transferHost as handOverHost } from "./room/HostPolicy";
 import {
   assertAgentAdmission,
   assertSeatResumable,
   assertTabAgentsAllowed,
+  bindSeat,
   findSeat,
   markSeatOffline,
   roomsOfTab,
@@ -380,24 +382,6 @@ export class CEERooms {
     player: CEEPlayerRecord
   ): CEERoomEnterResult {
     assertSeatResumable(player, connection);
-    if (player.connectionId && player.connectionId !== connection.id) {
-      const previous = this.connections.findConnection(player.connectionId);
-      if (previous) {
-        // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
-        // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
-        try {
-          previous.send(createEvent("session.replaced", { reason: "此身份已在另一连接恢复" }));
-        } catch {
-          /* 发不出去就不发，接管照常 */
-        }
-        this.connections.detach(previous);
-        try {
-          previous.close(4001, "session replaced");
-        } catch {
-          /* 已经关掉的连接不需要再关一次 */
-        }
-      }
-    }
     this.attach(connection, room, player);
     const unit = getCEEUnit(room, player);
     if (
@@ -564,13 +548,10 @@ export class CEERooms {
   transferHost(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
     this.requireHost(room, actor);
     const target = this.member(room, id);
-    if (!target.online || target.membership !== "active")
-      throw new AppError("INVALID_PLAYER", "请选择在线参与玩家");
+    handOverHost(room, target, { code: "INVALID_PLAYER", message: "请选择在线参与玩家" });
     // 房主没有准备态：新房主视同已准备，卸任的房主回到未准备，需要自己再点准备。
     actor.ready = false;
     target.ready = true;
-    room.hostPlayerId = id;
-    delete room.hostReconnectDeadlineAt;
     this.system(room, `${target.name} 成为房主`);
   }
   /** 私密即有密码：切到私密时必须带新密码或已有密码；留空保留原密码；公开房清除密码。 */
@@ -705,8 +686,9 @@ export class CEERooms {
       }
       let changed = false;
       if (this.sweepOfflinePlayers(room, now)) changed = true;
-      if (room.hostReconnectDeadlineAt !== undefined && now >= room.hostReconnectDeadlineAt) {
-        this.assignHost(room);
+      const hostChange = resolveHostGrace(room, room.players.values(), now);
+      if (hostChange.changed) {
+        this.markHostReady(room);
         changed = true;
       }
       if (room.phaseDeadlineAt !== null && now >= room.phaseDeadlineAt) {
@@ -778,22 +760,20 @@ export class CEERooms {
       lastSeenAt: this.now(),
     };
   }
+  /**
+   * 把连接绑到座位：顶号、标在线与房主接任都由内核完成。
+   * 房主没有准备态，所以新当选的房主（不一定是回来的这个人）要同步置为已准备。
+   */
   private attach(connection: ConnectionRecord, room: CEERoom, player: CEEPlayerRecord): void {
-    connection.resetStateSync?.();
-    this.connections.attach(connection, room.id, player.id);
+    const previousHostId = room.hostPlayerId;
+    bindSeat(this.seatContext, room, player, connection);
     connection.lobbySubscribed = false;
-    player.connectionId = connection.id;
-    player.online = true;
-    player.account = connection.account;
-    player.lastSeenAt = this.now();
-    delete room.emptySinceAt;
-    if (!room.players.has(room.hostPlayerId)) {
-      // 房主被移除时只剩离线保留座位：回来的第一个人当场接任，不必等巡检。
-      room.hostPlayerId = player.id;
-      player.ready = true;
-      delete room.hostReconnectDeadlineAt;
-    } else if (player.id === room.hostPlayerId) delete room.hostReconnectDeadlineAt;
     room.lastActivityAt = this.now();
+    if (room.hostPlayerId !== previousHostId) this.markHostReady(room);
+  }
+  private markHostReady(room: CEERoom): void {
+    const host = room.players.get(room.hostPlayerId);
+    if (host) host.ready = true;
   }
   /** 公开快照：座位是否被 Agent 操作看连接所在的标签页，同房玩家据此看到 MCP 徽标。 */
   private snapshotOf(room: CEERoom) {
@@ -840,26 +820,12 @@ export class CEERooms {
       room.setterPlayerId === player.id
     )
       this.resetWaiting(room);
-    if (room.hostPlayerId === player.id) this.assignHost(room);
+    if (reassignHost(room, room.players.values())) this.markHostReady(room);
     if (!room.players.size) this.closeRoom(room, "房间已关闭");
     else {
       if (![...room.players.values()].some((member) => member.online)) room.emptySinceAt = this.now();
       advanceCEERound(room, this.now());
       this.publishRoom(room);
-    }
-  }
-  private assignHost(room: CEERoom) {
-    const next =
-      [...room.players.values()].find(
-        (player) => player.online && player.membership === "active"
-      ) ?? [...room.players.values()].find((player) => player.online);
-    if (next) {
-      room.hostPlayerId = next.id;
-      next.ready = true;
-      delete room.hostReconnectDeadlineAt;
-    } else {
-      // 没有在线候选：留下截止让巡检每跳重试，不让房主一直悬空。
-      room.hostReconnectDeadlineAt = this.now();
     }
   }
   private closeRoom(room: CEERoom, reason: string): void {
@@ -972,8 +938,9 @@ const deserializeRoom = (
     phaseDeadlineAt: saved.phaseDeadlineAt === null ? null : saved.phaseDeadlineAt + pausedMs,
     lastActivityAt: now,
     emptySinceAt: undefined,
-    hostReconnectDeadlineAt:
-      saved.hostReconnectDeadlineAt === undefined ? undefined : now + HOST_RECONNECT_TIMEOUT_MS,
+    // 恢复后所有人都离线，房主一律带完整的重连宽限：没有截止的离线房主按「宽限已过」处理，
+    // 第一个回来的人会当场抢走房主。
+    hostReconnectDeadlineAt: now + HOST_RECONNECT_TIMEOUT_MS,
     round,
   };
 };

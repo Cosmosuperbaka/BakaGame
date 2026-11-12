@@ -228,6 +228,10 @@ export function ceeTestHarness(
     clock += milliseconds;
     service.runHousekeeping();
   };
+  /** 只拨时钟、不跑巡检：用来观察「巡检还没来得及处理」的窗口里，上线路径自己的判断。 */
+  const passTime = (milliseconds: number) => {
+    clock += milliseconds;
+  };
   return {
     service,
     data,
@@ -243,6 +247,7 @@ export function ceeTestHarness(
     guess,
     chooseSetter,
     advance,
+    passTime,
     provenance,
     getCalls,
     now: () => clock,

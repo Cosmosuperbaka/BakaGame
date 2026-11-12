@@ -559,6 +559,50 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(host).players).toHaveLength(1);
   });
 
+  test("房主离开而其余成员全部离线：房主进入待选而不是指向已离开的人，巡检照常运行", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    h.service.unregisterConnection(guest.record.id);
+    await h.send(host, "cee.room.leave", {});
+
+    expect(h.service.state.rooms.get("1234")?.hostPlayerId).toBe("");
+    h.advance(1_000);
+    expect(h.service.state.rooms.get("1234")?.hostPlayerId).toBe("");
+  });
+
+  test("房主掉线且宽限已过：回来的人不一定当选，在线的正式玩家优先", async () => {
+    const h = harness();
+    const host = await h.create();
+    const first = await h.join("先来的");
+    h.passTime(1);
+    const second = await h.join("后来的");
+    h.service.unregisterConnection(second.record.id);
+    h.service.unregisterConnection(host.record.id);
+    // 只拨时钟不跑巡检：改选由「有人上线」这条路径当场完成。
+    h.passTime(HOST_RECONNECT_TIMEOUT_MS + 1);
+
+    const back = h.connect("后来的回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: second.token! });
+    expect(h.snapshot(back).hostPlayerId).toBe(first.id!);
+  });
+
+  test("房主掉线但宽限未过：其他成员上线不抢房主，房主回来仍是房主", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    h.service.unregisterConnection(guest.record.id);
+    h.service.unregisterConnection(host.record.id);
+    h.passTime(HOST_RECONNECT_TIMEOUT_MS - 1);
+
+    const guestBack = h.connect("客人回来");
+    await h.send(guestBack, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+    expect(h.snapshot(guestBack).hostPlayerId).toBe(host.id!);
+    const hostBack = h.connect("房主回来");
+    await h.send(hostBack, "cee.room.reconnect", { roomId: "1234", sessionToken: host.token! });
+    expect(h.snapshot(hostBack).hostPlayerId).toBe(host.id!);
+  });
+
   test("房主离开而其余成员全部离线保留座位：回来的人当场成为房主并能改设置", async () => {
     const h = harness();
     const host = await h.create();
