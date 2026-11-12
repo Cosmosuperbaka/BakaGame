@@ -38,6 +38,37 @@ afterEach(async () => {
 });
 
 describe("CEE 本地角色资料", () => {
+  test("整表重建标签：替换旧内容，失败时整体回滚", async () => {
+    const { repository, dbPath } = create();
+    const read = () => {
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        return db
+          .query("SELECT character_id, position, tag FROM character_tags ORDER BY 1,2")
+          .all();
+      } finally {
+        db.close();
+      }
+    };
+    await repository.replaceAllTags([
+      [1, ["蓝发", "眼镜"]],
+      [2, ["主角"]],
+    ]);
+    expect(read()).toEqual([
+      { character_id: 1, position: 0, tag: "蓝发" },
+      { character_id: 1, position: 1, tag: "眼镜" },
+      { character_id: 2, position: 0, tag: "主角" },
+    ]);
+    // 中途抛错（标签含非法值）：清空与已灌入的部分都要回滚，旧内容原样保留。
+    await expect(
+      repository.replaceAllTags([
+        [3, ["新"]],
+        [4, [Symbol("坏") as unknown as string]],
+      ])
+    ).rejects.toThrow();
+    expect(read()).toHaveLength(3);
+  });
+
   test("额外游戏作品保留独立判定关系和外部标签，不混入动画数量及标签池", async () => {
     const { repository, dbPath } = create();
     const fixture = new Database(dbPath);

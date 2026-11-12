@@ -113,7 +113,11 @@ export function createServer(
     // 有 R2 凭证就让新图直接进 R2（本地分片退成索引），没配就维持本地写入。
     r2: env.r2,
     tagDiff: env.bangumiTagDiffUrl
-      ? { diffUrl: env.bangumiTagDiffUrl, statePath: `${env.bangumiDbPath}.tagdiff.json` }
+      ? {
+          diffUrl: env.bangumiTagDiffUrl,
+          fullUrl: env.bangumiTagFullUrl,
+          statePath: `${env.bangumiDbPath}.tagdiff.json`,
+        }
       : undefined,
     // 更新器只在显式开启（生产默认）、有上游地址、且本进程是数据集写者时装配：
     // E2E 与本地开发不该打线上 API；非写者片装了就会去写只读连接，必然报 SQLITE_READONLY。

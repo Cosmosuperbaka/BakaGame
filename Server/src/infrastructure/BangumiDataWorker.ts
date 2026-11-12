@@ -149,6 +149,8 @@ export type BangumiDataFrame = BangumiDataReply | BangumiDataLogFrame;
 /** 角色标签增量的来源与已应用版本的记录位置。 */
 export interface TagDiffOptions {
   diffUrl: string;
+  /** 基线对不上时回退的全量产物地址；缺省由 diffUrl 同目录推导。 */
+  fullUrl?: string;
   statePath: string;
 }
 
@@ -329,6 +331,7 @@ const scheduleRuntimeMaintenance = (request: InitRequest): void => {
     ? scheduleTagDiffSync({
         repository: () => requireCee(),
         diffUrl: tagDiff!.diffUrl,
+        fullUrl: tagDiff!.fullUrl,
         statePath: tagDiff!.statePath,
         logger: bridgedLogger("maintenance.tagDiff"),
         onResult: (run) => updater?.recordMaintenanceRun({ task: "tagDiff", ...run }),
@@ -499,7 +502,12 @@ const dispatchCeeRequest = async (
       return repository.resolveSubjectImage(request.subjectId, request.size);
     case "cee.syncTagDiff": {
       if (!tagDiff) throw new AppError("CEE_DATA_UNAVAILABLE", "标签增量未配置");
-      return syncTagDiff({ repository, diffUrl: tagDiff.diffUrl, statePath: tagDiff.statePath });
+      return syncTagDiff({
+        repository,
+        diffUrl: tagDiff.diffUrl,
+        fullUrl: tagDiff.fullUrl,
+        statePath: tagDiff.statePath,
+      });
     }
   }
   return undefined;

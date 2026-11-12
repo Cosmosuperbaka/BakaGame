@@ -81,6 +81,10 @@ export interface EnvBangumi {
    * 打一条连不上的告警，所以这里留空由运维按当时可用的地址显式开启。
    */
   bangumiTagDiffUrl?: string;
+  /**
+   * 增量基线对不上时回退用的全量标签产物地址；不给就取增量地址同目录的 `id_tags.json`。
+   */
+  bangumiTagFullUrl?: string;
   /** Bangumi API 回填缓存（可写）。只读数据集不能落盘，这里存 API 取到的补充字段。 */
   bangumiEnrichmentPath?: string;
   /** 搜索服务地址：未配置时调用方取回环缺省，要求搜索服务与本进程在同一网络命名空间。 */
@@ -144,6 +148,7 @@ export const readBangumiEnv = (deploymentEnvironment: string): EnvBangumi => ({
   // 不配就不跑：上游 diff 产物并不长期存在（仓库只稳定发布 id_tags.js / id_tags.json），
   // 写死默认地址只会让每次启动都报「连不上」。
   bangumiTagDiffUrl: Bun.env.BANGUMI_TAG_DIFF_URL?.trim() || undefined,
+  bangumiTagFullUrl: Bun.env.BANGUMI_TAG_FULL_URL?.trim() || undefined,
   bangumiEnrichmentPath: resolveDefaultBangumiEnrichmentPath(),
   // 容器部署时 Meilisearch 可能与 app 不在同一网络命名空间（回环地址不通）：
   // 用 MEILISEARCH_URL 覆盖为容器可达地址。

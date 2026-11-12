@@ -450,6 +450,13 @@ export const ENV_ENTRIES: EnvEntry[] = [
     note: ["CCB-TagsCI 的角色标签增量地址；不配就不跑增量同步（上游不保证这条产物长期存在）。"],
   },
   {
+    name: "BANGUMI_TAG_FULL_URL",
+    layer: "T2",
+    documented: true,
+    sample: "",
+    note: ["增量基线对不上时回退的全量标签产物地址；不配就取增量地址同目录的 id_tags.json。"],
+  },
+  {
     name: "MEILISEARCH_URL",
     layer: "T2",
     documented: true,

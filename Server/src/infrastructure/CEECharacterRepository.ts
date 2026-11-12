@@ -317,6 +317,21 @@ export class CEECharacterRepository implements CEEDataProvider {
   }
 
   /**
+   * 用全量产物整表重建角色标签：增量基线对不上时的唯一安全出路。
+   * 单事务内先清后灌，任何一步失败都整体回滚，不会留下半张标签表。
+   */
+  async replaceAllTags(entries: Array<[number, string[]]>): Promise<void> {
+    this.assertOpen();
+    const insert = this.db.query("INSERT OR IGNORE INTO character_tags VALUES (?,?,?)");
+    this.db.transaction(() => {
+      this.db.query("DELETE FROM character_tags").run();
+      for (const [characterId, tags] of entries) {
+        tags.forEach((tag, position) => insert.run(characterId, position, tag));
+      }
+    })();
+  }
+
+  /**
    * 发现并导入新条目（每日维护调用）。
    *
    * 数据集是构建产物，两份 dump 之间新出的作品不会自己出现 —— 没有这一步，

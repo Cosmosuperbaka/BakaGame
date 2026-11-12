@@ -335,9 +335,15 @@ describe("readEnv 环境变量与启动断言", () => {
       expect(readEnv().bangumiTagDiffUrl).toBe("https://mirror.example.test/id_tags.diff.json");
       Bun.env.BANGUMI_TAG_DIFF_URL = "   ";
       expect(readEnv().bangumiTagDiffUrl).toBeUndefined();
+      // 全量回退地址同理：不配则由增量地址同目录推导，空白视作未配。
+      delete Bun.env.BANGUMI_TAG_FULL_URL;
+      expect(readEnv().bangumiTagFullUrl).toBeUndefined();
+      Bun.env.BANGUMI_TAG_FULL_URL = " https://mirror.example.test/id_tags.json ";
+      expect(readEnv().bangumiTagFullUrl).toBe("https://mirror.example.test/id_tags.json");
     } finally {
       if (saved === undefined) delete Bun.env.BANGUMI_TAG_DIFF_URL;
       else Bun.env.BANGUMI_TAG_DIFF_URL = saved;
+      delete Bun.env.BANGUMI_TAG_FULL_URL;
     }
   });
 
