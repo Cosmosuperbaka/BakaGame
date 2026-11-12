@@ -280,3 +280,9 @@ test("阵营配置判定与校验对同一约束给出一致答复", () => {
     }
   }
 });
+
+test("词对按码点排序，不随本地化排序规则变化", () => {
+  // localeCompare 会把 a 排在 B 前面；码点序下大写在前，结果与运行环境无关。
+  expect(normalizeWordPair(["a", "B"])).toEqual(["B", "a"]);
+  expect(normalizeWordPair(["B", "a"])).toEqual(["B", "a"]);
+});

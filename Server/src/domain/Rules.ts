@@ -59,7 +59,11 @@ export const normalizeWord = (value: string): string =>
 // 所以先排后验与先验后排等价。
 const normalizedWordPair = (values: [string, string]): [string, string] => {
   const normalized = [normalizeWord(values[0]), normalizeWord(values[1])];
-  return normalized.sort((left, right) => left.localeCompare(right)) as [string, string];
+  // 按码点排序而不是 localeCompare：后者随运行时的 ICU 版本变化，同一词对会排成不同顺序。
+  return normalized.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)) as [
+    string,
+    string,
+  ];
 };
 
 export const normalizeWordPair = (values: [string, string]): [string, string] => {
