@@ -10,10 +10,19 @@ export type DatabaseClient = MySql2Database<typeof schema>;
 export interface Database {
   db: DatabaseClient;
   /**
-   * 启动连通性检查完成的信号。所有读写先等它：连不上时数据库功能整体不可用并持续报错，
+   * 连通性检查完成的信号。所有读写先等它：连不上时数据库功能整体不可用并持续报错，
    * 游戏本身不受影响（数据库不参与 readiness）。启动不改表结构，表结构变更走一次性脚本。
+   *
+   * 这是 getter：检查失败后不会永久钉死，冷却期过后的下一次访问会重新检查（同一时刻
+   * 只发起一次），数据库恢复后无需重启进程。
    */
-  ready: Promise<void>;
+  readonly ready: Promise<void>;
+  /**
+   * 首次就绪时触发一次回调（已就绪则立即异步触发）。供「就绪后补齐」类的启动任务使用：
+   * 启动时连不上，这类任务要等到数据库真的可用才执行，而不是失败一次就放弃。
+   * 注册回调期间，未就绪时会在后台按冷却间隔持续重试。
+   */
+  onReady(callback: () => void): void;
   /** 轻量连通性检查，供管理后台展示；不参与游戏就绪判定。 */
   ping(): Promise<boolean>;
   close(): Promise<void>;
@@ -27,8 +36,14 @@ export interface Database {
 export const CONNECT_RETRY_ATTEMPTS = 3;
 export const CONNECT_RETRY_BASE_DELAY_MS = 1_000;
 
+/** 检查失败后到允许重新检查的间隔：既不让每个请求都去敲不可达的库，也不拖长恢复。 */
+export const CONNECT_RETRY_COOLDOWN_MS = 10_000;
+
 export interface CreateDatabaseOptions {
   attempts?: number;
+  retryCooldownMs?: number;
+  /** 连通性检查本身；缺省是对连接池执行一次 `SELECT 1`，测试可注入以模拟库的故障与恢复。 */
+  check?: () => Promise<void>;
   /** 每次重试前触发，用于落日志；不传则静默重试。 */
   onRetry?: (context: { attempt: number; error: unknown }) => void;
 }
@@ -62,10 +77,12 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
   });
   const db = drizzle({ client: pool, schema, mode: "default" });
   const attempts = Math.max(1, Math.floor(options.attempts ?? CONNECT_RETRY_ATTEMPTS));
+  const cooldownMs = options.retryCooldownMs ?? CONNECT_RETRY_COOLDOWN_MS;
+  const probe = options.check ?? (async () => void (await db.execute(sql`SELECT 1`)));
   const checkConnection = async (): Promise<void> => {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        await db.execute(sql`SELECT 1`);
+        await probe();
         return;
       } catch (error) {
         if (attempt >= attempts) throw error;
@@ -76,13 +93,64 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
       }
     }
   };
-  const ready = checkConnection();
-  // 失败由调用方经 ready 观察并记录；这里只防止未订阅时成为未处理拒绝。
-  ready.catch(() => {});
+
+  const readyCallbacks: Array<() => void> = [];
+  let everReady = false;
+  let closed = false;
+  /** 最近一次检查失败的时刻；为 undefined 表示检查在进行中或已成功。 */
+  let failedAt: number | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let current: Promise<void>;
+
+  const attempt = (): void => {
+    failedAt = undefined;
+    const run = checkConnection();
+    current = run;
+    void run.then(
+      () => {
+        everReady = true;
+        for (const callback of readyCallbacks.splice(0)) callback();
+      },
+      () => {
+        failedAt = Date.now();
+        // 有人在等「就绪后补齐」时不能只靠请求来触发重试：可能没有任何请求会访问数据库。
+        if (readyCallbacks.length > 0 && !closed) {
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            if (!closed && failedAt !== undefined) attempt();
+          }, cooldownMs);
+          retryTimer.unref?.();
+        }
+      }
+    );
+  };
+  attempt();
 
   return {
     db,
-    ready,
+    get ready() {
+      if (!everReady && failedAt !== undefined && Date.now() - failedAt >= cooldownMs) attempt();
+      return current;
+    },
+    onReady: (callback) => {
+      if (everReady) {
+        queueMicrotask(callback);
+        return;
+      }
+      readyCallbacks.push(callback);
+      // 回调在检查失败之后才注册时，补一个后台重试。
+      if (failedAt !== undefined && retryTimer === undefined && !closed) {
+        retryTimer = setTimeout(
+          () => {
+            retryTimer = undefined;
+            if (!closed && failedAt !== undefined) attempt();
+          },
+          Math.max(0, cooldownMs - (Date.now() - failedAt))
+        );
+        retryTimer.unref?.();
+      }
+    },
     ping: async () => {
       try {
         await db.execute(sql`SELECT 1`);
@@ -91,6 +159,10 @@ export const createDatabase = (url: string, options: CreateDatabaseOptions = {})
         return false;
       }
     },
-    close: () => pool.end(),
+    close: () => {
+      closed = true;
+      clearTimeout(retryTimer);
+      return pool.end();
+    },
   };
 };

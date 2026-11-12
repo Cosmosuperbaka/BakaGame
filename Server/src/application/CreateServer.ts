@@ -399,18 +399,23 @@ const createAccount = (
   accountCreated = (user) => service.afterRegistration(user);
   const adminQqNumbers = env.account.adminQqNumbers;
   // 徽章目录是授予关系的外键目标：先补齐目录，再补齐注册序号与系统徽章；失败只记错误，不挡启动。
-  void database.ready
-    .then(() => badges.ensureCatalog())
-    .then(() => service.ensureAutomaticBadges())
-    .catch((error: unknown) =>
-      logger.error("徽章自动授予失败", {
-        error: error instanceof Error ? (error.stack ?? error.message) : String(error),
-      })
-    );
+  // 经 onReady：启动时数据库不可达，也要等到它真的可用后再补齐，而不是失败一次就放弃。
+  database.onReady(() => {
+    void badges
+      .ensureCatalog()
+      .then(() => service.ensureAutomaticBadges())
+      .catch((error: unknown) =>
+        logger.error("徽章自动授予失败", {
+          error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+        })
+      );
+  });
   // 管理员引导只提升不降级：之后的角色变更在后台完成，不被环境变量反复覆盖。
-  void database.ready
-    .then(() => service.promoteAdmins(adminQqNumbers))
-    .catch((error: unknown) => logger.error("管理员引导失败", { error: String(error) }));
+  database.onReady(() => {
+    void service
+      .promoteAdmins(adminQqNumbers)
+      .catch((error: unknown) => logger.error("管理员引导失败", { error: String(error) }));
+  });
   const feedback = new DatabaseFeedbackRepository(database);
   const userData = new UserDataService({
     settings: new DatabaseUserSettingRepository(database),

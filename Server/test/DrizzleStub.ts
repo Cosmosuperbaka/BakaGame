@@ -95,6 +95,7 @@ export const createDrizzleStub = (options: { ready?: Promise<void> } = {}): Driz
     database: {
       db,
       ready: options.ready ?? Promise.resolve(),
+      onReady: (callback) => queueMicrotask(callback),
       ping: async () => true,
       close: async () => {
         closed = true;

@@ -30,6 +30,94 @@ describe("Database（启动连通性检查的失败语义）", () => {
     await database.close();
   });
 
+  it("一次性失败后不永久钉死：冷却期内沿用失败结果，冷却后的下一次访问重新检查", async () => {
+    let calls = 0;
+    let healthy = false;
+    const database = createDatabase(UNREACHABLE_URL, {
+      attempts: 1,
+      retryCooldownMs: 30,
+      check: async () => {
+        calls += 1;
+        if (!healthy) throw new Error("数据库暂时不可达");
+      },
+    });
+    try {
+      await expect(database.ready).rejects.toThrow("暂时不可达");
+      // 冷却期内每次访问拿到的都是同一个失败结果，不会每个请求都去敲数据库。
+      await expect(database.ready).rejects.toThrow("暂时不可达");
+      expect(calls).toBe(1);
+
+      healthy = true;
+      await Bun.sleep(50);
+      await expect(database.ready).resolves.toBeUndefined();
+      expect(calls).toBe(2);
+      // 成功后缓存，不再重复检查。
+      await database.ready;
+      expect(calls).toBe(2);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("冷却后并发访问只发起一次重新检查", async () => {
+    let calls = 0;
+    let healthy = false;
+    const database = createDatabase(UNREACHABLE_URL, {
+      attempts: 1,
+      retryCooldownMs: 20,
+      check: async () => {
+        calls += 1;
+        await Bun.sleep(10);
+        if (!healthy) throw new Error("暂时不可达");
+      },
+    });
+    try {
+      await expect(database.ready).rejects.toThrow();
+      healthy = true;
+      await Bun.sleep(40);
+      await Promise.all([database.ready, database.ready, database.ready]);
+      expect(calls).toBe(2);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("onReady 回调在首次就绪时触发一次，启动失败后也会后台重试直到就绪", async () => {
+    let healthy = false;
+    const database = createDatabase(UNREACHABLE_URL, {
+      attempts: 1,
+      retryCooldownMs: 20,
+      check: async () => {
+        if (!healthy) throw new Error("暂时不可达");
+      },
+    });
+    try {
+      let fired = 0;
+      database.onReady(() => {
+        fired += 1;
+      });
+      await Bun.sleep(50);
+      expect(fired).toBe(0);
+      healthy = true;
+      // 没有任何请求访问 ready，后台重试也要把启动补齐的回调等到。
+      const deadline = Date.now() + 1_000;
+      while (fired === 0 && Date.now() < deadline) await Bun.sleep(10);
+      expect(fired).toBe(1);
+      await database.ready;
+      await Bun.sleep(40);
+      expect(fired).toBe(1);
+      // 已就绪之后注册的回调立即（异步）触发。
+      let late = 0;
+      database.onReady(() => {
+        late += 1;
+      });
+      await Bun.sleep(5);
+      expect(late).toBe(1);
+    } finally {
+      await database.close();
+    }
+  });
+
   it("非法连接串立即失败，不进入重试", () => {
     expect(() => createDatabase("not-a-url")).toThrow(/DATABASE_URL/);
   });
