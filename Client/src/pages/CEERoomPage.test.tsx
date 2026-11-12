@@ -2,7 +2,13 @@ import { act, render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCEEStore } from "@/stores/UseCEEStore";
-import { CEE_NATIVE_ROOM_ID, ceePrivateState, ceeSnapshot } from "@/stories/fixtures/CEE";
+import {
+  CEE_NATIVE_ROOM_ID,
+  ceePrivateState,
+  ceeSettledRoom,
+  ceeSnapshot,
+} from "@/stories/fixtures/CEE";
+import { CEE_REPLAY_STORAGE_KEY } from "@/lib/CeeReplay";
 import CEERoomPage from "./CEERoomPage";
 
 // 房间页的入房流程由 UseCEERoomLifecycle 的测试负责；这里只关心「在房间里」时页面对壳做了什么。
@@ -24,7 +30,13 @@ vi.mock("@/hooks/UseCEERoomLifecycle", () => ({
     leave: vi.fn(),
   }),
 }));
-vi.mock("@/components/cee/CEEGameArea", () => ({ CEEGameArea: () => null }));
+const gameArea = vi.hoisted(() => vi.fn<(props: { replayRounds?: unknown[] }) => void>());
+vi.mock("@/components/cee/CEEGameArea", () => ({
+  CEEGameArea: (props: { replayRounds?: unknown[] }) => {
+    gameArea(props);
+    return null;
+  },
+}));
 vi.mock("@/components/cee/CEEPlayerList", () => ({ CEEPlayerList: () => null }));
 
 const initial = useCEEStore.getState();
@@ -62,6 +74,8 @@ afterEach(() => {
   useCEEStore.setState(initial, true);
   delete window.__BAKA_CHANNEL__;
   setSecureScreen.mockClear();
+  gameArea.mockClear();
+  window.localStorage.clear();
   lifecycle.roomId = "1234";
 });
 
@@ -105,5 +119,27 @@ describe("CEE 房间页的窗口级防截屏", () => {
     enterRoom(true);
     expect(() => mount().unmount()).not.toThrow();
     expect(setSecureScreen).not.toHaveBeenCalled();
+  });
+});
+
+describe("CEE 房间页的猜测回放数据", () => {
+  const settle = () => {
+    const { snapshot, privateState } = ceeSettledRoom();
+    useCEEStore.setState({ connected: true, roomId: snapshot.roomId, snapshot, privateState });
+    lifecycle.roomId = snapshot.roomId;
+  };
+  const lastRounds = () => gameArea.mock.calls.at(-1)?.[0].replayRounds ?? [];
+
+  it("回放功能关闭时不累积回合数据", () => {
+    settle();
+    mount();
+    expect(lastRounds()).toEqual([]);
+  });
+
+  it("回放功能打开时累积已结算的回合", () => {
+    window.localStorage.setItem(CEE_REPLAY_STORAGE_KEY, "1");
+    settle();
+    mount();
+    expect(lastRounds()).toHaveLength(1);
   });
 });

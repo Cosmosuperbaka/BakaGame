@@ -12,6 +12,7 @@ import { useCEESecureScreen } from "@/components/cee/UseCEESecureScreen";
 import { CEE_PASSWORD_ERROR_CODES, useCEERoomLifecycle } from "@/hooks/UseCEERoomLifecycle";
 import { useCEERoundHistory } from "@/hooks/UseCEERoundHistory";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
+import { isCeeReplayEnabled } from "@/lib/CeeReplay";
 import { CEE_SOURCE_LABELS, ceeDisplayRound, ceePerspective, ceeRoomPath } from "@/lib/CEESession";
 
 export default function CEERoomPage() {
@@ -19,7 +20,9 @@ export default function CEERoomPage() {
   const snapshot = useCEEStore((state) => state.snapshot);
   const privateState = useCEEStore((state) => state.privateState);
   // 整局回放的历史要在房间页累积：游戏区按局数重挂载，放进去会被换局清空。
-  const replayRounds = useCEERoundHistory(snapshot);
+  // 回放目前对玩家关闭（见 lib/CeeReplay），关闭时不累积，避免每个房间白存整局猜测。
+  const [replayEnabled] = useState(() => isCeeReplayEnabled());
+  const replayRounds = useCEERoundHistory(replayEnabled ? snapshot : null);
   const [panel, setPanel] = useState<"players" | "chat" | null>(null);
   const showError = (error: unknown) => useCEEStore.getState().showToast(ceeErrorMessage(error));
   const sendChat = async (text: string) => {
