@@ -88,6 +88,18 @@ describe("CEE 检索台账", () => {
     expect(ledger.trackedConnections).toBe(2);
     expect(ledger.match("c-1", 1).at).toBeNull();
   });
+  test("满表后已在表中的连接再检索不误淘汰别人，淘汰的是最久没检索的", () => {
+    const ledger = new CEESearchProvenance(() => 1, 2);
+    ledger.note("c-1", [1]);
+    ledger.note("c-2", [1]);
+    ledger.note("c-2", [2]);
+    expect(ledger.trackedConnections).toBe(2);
+    expect(ledger.match("c-1", 1).matched).toBe(true);
+    // c-1 此刻比 c-2 更久没检索：新连接进来挤掉的是 c-1，而不是刚更新的 c-2。
+    ledger.note("c-3", [1]);
+    expect(ledger.match("c-1", 1).at).toBeNull();
+    expect(ledger.match("c-2", 2).matched).toBe(true);
+  });
   test("检索结果形状不符即当作没有候选", () => {
     expect(ceeCharacterIdsOf({ results: [{ id: 3 }, { id: "4" }, {}, null] })).toEqual([3]);
     expect(ceeCharacterIdsOf(undefined)).toEqual([]);

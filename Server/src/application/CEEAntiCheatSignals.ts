@@ -25,7 +25,7 @@ export interface CEEGuessSignal {
   createdAt: number;
 }
 
-/** 检索过的连接上限：超出后按最早记录淘汰，防止按需扩张内存。 */
+/** 检索过的连接上限：超出后淘汰最久没有检索的连接，防止按需扩张内存。 */
 export const CEE_SEARCH_PROVENANCE_MAX = 20_000;
 /** 每次检索只保留有限个候选 ID；检索一页最多几十条，留足余量。 */
 export const CEE_SEARCH_RESULT_IDS_MAX = 256;
@@ -44,6 +44,8 @@ export class CEESearchProvenance {
     private readonly maxKeys: number = CEE_SEARCH_PROVENANCE_MAX
   ) {}
   note(connectionId: string, ids: readonly number[]): void {
+    // 先摘掉旧条目：更新不占新名额，且 Map 的迭代序随之刷新为「最近一次检索」，淘汰的才是最久没动的。
+    this.last.delete(connectionId);
     while (this.last.size >= this.maxKeys) {
       const oldest = this.last.keys().next().value;
       if (oldest === undefined) break;
