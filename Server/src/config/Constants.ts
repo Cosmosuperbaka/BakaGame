@@ -10,6 +10,9 @@ export const CEE_ORIGINAL_ENTER_MAX_PER_WINDOW = 10;
 /** 房间无活动清理超时时间（10分钟） */
 export const ROOM_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** 房间因闲置被关闭前的预警提前量：有人在线时提前这么久通知，免得玩家突然收到「房间已关闭」。 */
+export const ROOM_EXPIRING_WARNING_MS = 60 * 1000;
+
 /**
  * 快照最长可恢复的停机时长：超过它就直接丢弃，不恢复。
  * 取空闲超时同值 —— 停机这么久，按现有规则那些房间本来就该被回收，

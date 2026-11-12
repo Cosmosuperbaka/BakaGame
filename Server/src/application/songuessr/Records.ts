@@ -127,6 +127,22 @@ export interface SonGuessrRoundRecord {
   startedAt: number;
 }
 
+/**
+ * 房间的进程内运行时状态。开局与登录的在途锁都在这里：它们对应的异步操作不会跨重启存活，
+ * 放进可落盘的房间记录里，布尔锁会随快照保留下来，恢复后的房间就永久开不了局。
+ */
+export interface SonGuessrRoomRuntime {
+  /** 登录操作按「人 + 平台」记账，最新一次发起的获胜。 */
+  musicAuthOperations?: Record<string, symbol>;
+  automaticRoundLoading?: boolean;
+  automaticRoundOperation?: symbol;
+  manualRoundStarting?: boolean;
+}
+
+/** 取房间的运行时状态，没有就建一份。只读判断用 `room.runtime?.` 不必建。 */
+export const roomRuntime = (room: { runtime?: SonGuessrRoomRuntime }): SonGuessrRoomRuntime =>
+  (room.runtime ??= {});
+
 export interface SonGuessrRoomRecord {
   id: string;
   name: string;
@@ -149,7 +165,6 @@ export interface SonGuessrRoomRecord {
   currentRound?: SonGuessrRoundRecord;
   roundSummary?: SonGuessrRoundSummary;
   finalScores?: SonGuessrScore[];
-  musicAuthOperations?: Record<string, symbol>;
   /**
    * 音乐账号池：每个玩家自愿贡献的账号各一条，条目带第三方 `cookie`。
    *
@@ -163,19 +178,18 @@ export interface SonGuessrRoomRecord {
   updatedAt: number;
   lastActivityAt: number;
   emptySinceAt?: number;
-  automaticRoundLoading?: boolean;
-  automaticRoundOperation?: symbol;
-  manualRoundStarting?: boolean;
   hostReconnectDeadlineAt?: number;
+  /** 进程内运行时状态：快照编码整键丢弃，恢复出来的房间没有任何在途操作。 */
+  runtime?: SonGuessrRoomRuntime;
   recentSongIds?: string[];
   /**
    * 近期取不到音频的候选（候选 ID → 记下的时刻）。纯内存态：
    * 同一批取不到的歌不再每轮占用有限的尝试次数，也让命中率不再决定「实际抽到的是哪几首」。
    */
   unavailableSongIds?: Record<string, number>;
+  /** 已为哪一次活动发过闲置预警（记的是当时的 `lastActivityAt`），有新活动后下一段闲置会重新预警。 */
+  idleWarningFor?: number;
   recentSubjectIds?: string[];
-  /** 空闲关闭预警是否已经广播过，避免每个巡检周期重复下发。 */
-  expiringNotified?: boolean;
 }
 
 export type SongUpdateSettingsPayload = Extract<
@@ -370,9 +384,6 @@ export const MUSIC_SESSION_REFRESH_SWEEP_MS = 10 * 60_000;
 export const MUSIC_COOKIE_FRESH_MS = 24 * 60 * 60_000;
 /** 成功率只统计最近这么多次取号，避免历史战绩把当前状态淹没。 */
 export const MUSIC_POOL_STATS_WINDOW = 20;
-
-/** 房间因空闲被关闭前的预警提前量。 */
-export const ROOM_EXPIRING_WARNING_MS = 60_000;
 
 /** 音频就绪宽限期：超时仅强制置为可答题并启动倒计时，绝不扣减猜测配额。 */
 export const AUDIO_READY_GRACE_MS = 15_000;

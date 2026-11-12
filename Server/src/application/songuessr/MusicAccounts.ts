@@ -29,6 +29,7 @@ import {
   SonGuessrRoomRecord,
   SonGuessrRoundRecord,
   musicAuthOperationKey,
+  roomRuntime,
 } from "./Records";
 import type { SonGuessrServiceInternals } from "./ServiceInternals";
 
@@ -130,15 +131,12 @@ export const beginMusicAuthentication = (
   platform: "netease" | "qq" = "netease"
 ) => {
   const operation = Symbol(`musicAuthentication_${platform}`);
-  if (!room.musicAuthOperations) {
-    room.musicAuthOperations = {};
-  }
   const key = musicAuthOperationKey(player.id, platform);
-  room.musicAuthOperations[key] = operation;
+  (roomRuntime(room).musicAuthOperations ??= {})[key] = operation;
   return () => {
     if (
       service.rooms.get(room.id) !== room ||
-      room.musicAuthOperations?.[key] !== operation ||
+      room.runtime?.musicAuthOperations?.[key] !== operation ||
       room.players[player.id] !== player ||
       !player.online ||
       connection.roomId !== room.id ||
@@ -181,7 +179,9 @@ export const installMusicSession = (
   // 硬约束，默认打开等于绕开它。回到准备页后由号主自己打开，池子因此在局中只会变小不会变大。
   // 开局加载期间阶段仍是 waiting，但开关已经锁死：同样不入池。
   const active =
-    room.phase === "waiting" && !room.automaticRoundLoading && !room.manualRoundStarting;
+    room.phase === "waiting" &&
+    !room.runtime?.automaticRoundLoading &&
+    !room.runtime?.manualRoundStarting;
   const pool = musicPool(room);
   const existing = pool.find(
     (entry) => entry.playerId === ownerPlayerId && entry.platform === platform
@@ -268,9 +268,9 @@ export const clearMusicSession = (
   // 在途登录锁按「人 + 平台」清：清掉自己的号时顺手作废自己那一次在途登录，
   // 不动别人正在跑的那次（否则 A 退出登录会把 B 的扫码结果一起作废）。
   const platforms: MusicAuthPlatform[] = platform === "all" ? ["netease", "qq"] : [platform];
-  if (ownerPlayerId !== undefined && room.musicAuthOperations) {
+  if (ownerPlayerId !== undefined && room.runtime?.musicAuthOperations) {
     for (const key of platforms) {
-      delete room.musicAuthOperations[musicAuthOperationKey(ownerPlayerId, key)];
+      delete room.runtime?.musicAuthOperations[musicAuthOperationKey(ownerPlayerId, key)];
     }
   }
   room.musicPool = pool.filter(
@@ -296,7 +296,7 @@ export const setPoolSharing = (
 ) => {
   const { room, player } = service.requireRoomPlayer(connection);
   // 自动开局加载期间阶段仍停在 waiting，但出题链路已经在按池取号，同样算已开局。
-  if (room.phase !== "waiting" || room.automaticRoundLoading) {
+  if (room.phase !== "waiting" || room.runtime?.automaticRoundLoading) {
     throw new AppError("INVALID_PHASE", "开局后不能再改账号共享开关");
   }
   const entry = musicPool(room).find(
@@ -979,7 +979,7 @@ export const refreshMusicSessionAccount = async (
         error.code === "MUSIC_SESSION_INVALID" &&
         musicPool(room).includes(entry) &&
         entry.cookie === sentCookie &&
-        room.musicAuthOperations?.[key] === operation
+        room.runtime?.musicAuthOperations?.[key] === operation
       ) {
         // 凭据已被平台判死：关掉这一号并标记失效，条目留在面板里提示号主重登
         // （其余号与其它玩家的号都不动），房间因此可能整体降级到「无号」，由开局门槛承接。

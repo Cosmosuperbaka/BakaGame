@@ -52,10 +52,7 @@ import {
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
-  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
-  ROOM_EMPTY_GRACE_PERIOD_MS,
-  ROOM_IDLE_TIMEOUT_MS,
-  SPECTATOR_OFFLINE_GRACE_MS,
+  ROOM_EXPIRING_WARNING_MS,
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
 } from "../config/Constants";
@@ -97,12 +94,26 @@ import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
-import { adoptRoomCore } from "./room/RoomSnapshotCodec";
+import {
+  expiredOfflineSeats,
+  forEachRoomIsolated,
+  isIdleWarningDue,
+  judgeReclaim,
+  markIdleWarningSent,
+} from "./room/RoomJanitor";
+import { publishRoomState } from "./room/RoomPublisher";
+import {
+  adoptRoomCore,
+  exportRoomJson,
+  hasSnapshotShape,
+  restoreRooms,
+} from "./room/RoomSnapshotCodec";
 import {
   assertAgentAdmission,
   assertSeatResumable,
   assertTabAgentsAllowed,
   bindSeat,
+  dissolveRoom,
   findSeat,
   markSeatOffline,
   roomsOfTab,
@@ -127,7 +138,6 @@ import {
   MUSIC_RATE_LIMIT_WINDOW_MS,
   MusicAuthPlatform,
   MusicSessionRevalidation,
-  ROOM_EXPIRING_WARNING_MS,
   ROUND_HARD_TIMEOUT_MARGIN_S,
   SUBMIT_SONG_TIMEOUT_MS,
   SonGuessrMusicPoolEntry,
@@ -140,6 +150,7 @@ import {
   cloneSettings,
   direction,
   musicAuthOperationKey,
+  roomRuntime,
 } from "./songuessr/Records";
 import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
@@ -214,7 +225,7 @@ export class SonGuessrService implements AdminRoomControl {
   private readonly passwordGate: RoomPasswordGate;
   /** 座位绑定、转离线与标签页座位共用的内核上下文。 */
   private readonly roomKernel: SeatBindingContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> &
-    TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord>;
+    TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> & { recorder: GameRecorder };
 
   constructor(readonly options: SonGuessrServiceOptions) {
     this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
@@ -224,6 +235,7 @@ export class SonGuessrService implements AdminRoomControl {
       connections: this.connections,
       rooms: this.rooms,
       now: () => this.now(),
+      recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
     };
     this.passwordGate = new RoomPasswordGate({
       now: () => this.now(),
@@ -270,10 +282,9 @@ export class SonGuessrService implements AdminRoomControl {
   /**
    * 导出全部房间以供停机保存。
    *
-   * 三类字段挡在落盘之外：
-   * - 开局与登录的在途锁：`symbol` 锁 JSON 往返会丢键，但 `automaticRoundLoading` /
-   *   `manualRoundStarting` 是布尔值会被原样保留，所以恢复时由 `adoptSnapshot` 统一清掉 ——
-   *   重启后不存在任何在途操作。
+   * 两类字段挡在落盘之外：
+   * - 运行时状态（`runtime`）：开局与登录的在途锁都在里面，重启后不存在任何在途操作，
+   *   恢复出来的房间天然没有这些锁。
    * - 音乐账号池（`musicPool`）的每条都带着第三方 `cookie`，落盘等于把玩家的登录态写进
    *   本机文件。整段丢弃，恢复后由各贡献者重新登录，宁可少一段体验也不留凭据。
    */
@@ -281,10 +292,7 @@ export class SonGuessrService implements AdminRoomControl {
     const snapshots: SnapshottedRoom[] = [];
     for (const room of this.rooms.values()) {
       try {
-        const copy = JSON.parse(JSON.stringify(room)) as SnapshottedRoom;
-        const record = copy as Record<string, unknown>;
-        delete record.musicPool;
-        snapshots.push(copy);
+        snapshots.push(exportRoomJson(room, ["musicPool"]));
       } catch (error) {
         this.options.eventLogger?.warn("猜歌房间快照导出失败，已跳过该房间", {
           roomId: room.id,
@@ -303,17 +311,20 @@ export class SonGuessrService implements AdminRoomControl {
    * 必须从恢复时刻重新起算。混在一起做，恢复瞬间就会清场。
    */
   restoreSnapshots(rooms: readonly SnapshottedRoom[], savedAt: number): number {
-    const now = this.now();
-    const pausedMs = Math.max(0, now - savedAt);
-    let restored = 0;
-    for (const raw of rooms) {
-      const room = this.adoptSnapshot(raw, now, pausedMs);
-      if (!room || this.rooms.has(room.id)) continue;
-      this.rooms.set(room.id, room);
-      this.absorbSnapshotIds(room);
-      restored += 1;
-    }
-    return restored;
+    return restoreRooms(
+      this.rooms,
+      rooms,
+      { savedAt, now: this.now() },
+      {
+        adopt: (raw, now, pausedMs) => this.adoptSnapshot(raw, now, pausedMs),
+        onRestored: (room) => this.absorbSnapshotIds(room),
+        onError: (raw, error) =>
+          this.options.eventLogger?.warn("猜歌房间快照恢复失败，已跳过该房间", {
+            roomId: raw.id,
+            error: String(error),
+          }),
+      }
+    );
   }
 
   /**
@@ -343,19 +354,12 @@ export class SonGuessrService implements AdminRoomControl {
     now: number,
     pausedMs: number
   ): SonGuessrRoomRecord | undefined {
-    if (!raw || typeof raw.id !== "string" || !raw.id) return undefined;
-    if (!raw.players || typeof raw.players !== "object") return undefined;
+    if (!hasSnapshotShape(raw)) return undefined;
     const room = raw as unknown as SonGuessrRoomRecord;
 
     // 全员离线、掉线与空房计时从恢复时刻起算；房主此刻必然离线，一律带一段完整的重连宽限，
     // 否则第一个回来的人会因为「离线房主没有截止」而抢走房主。
     adoptRoomCore(room, Object.values(room.players), now);
-    // 开局锁与登录锁是运行时状态：布尔锁会随 JSON 往返保留下来，重启后那次开局不会再有结果，
-    // 留着会让房间永久无法开局（手动出题的锁没有任何别的清除路径）。
-    room.automaticRoundLoading = false;
-    room.manualRoundStarting = false;
-    room.automaticRoundOperation = undefined;
-    room.musicAuthOperations = undefined;
     room.updatedAt = now;
     if (room.pendingSubmitterDeadlineAt !== undefined) {
       room.pendingSubmitterDeadlineAt += pausedMs;
@@ -533,15 +537,26 @@ export class SonGuessrService implements AdminRoomControl {
 
   async runHousekeeping(): Promise<void> {
     const currentTime = this.now();
-    for (const room of [...this.rooms.values()]) {
-      if (this.reclaimIdleRoom(room, currentTime) !== "keep") continue;
-      this.cleanupOfflinePlayers(room, currentTime);
-      this.resolveHost(room, currentTime);
-      this.expirePendingSubmitter(room, currentTime);
-      this.settlePlayingRound(room, currentTime);
-      this.publishRoomCalibration(room);
-    }
+    await forEachRoomIsolated(
+      this.rooms,
+      (room) => this.sweepRoom(room, currentTime),
+      (room, error) =>
+        this.options.eventLogger?.warn("猜歌房间巡检失败，已跳过该房间", {
+          roomId: room.id,
+          ...describeError(error),
+        })
+    );
     this.scheduleMusicSessionRefresh(currentTime);
+  }
+
+  /** 单间房的巡检：回收判定之后才做离线清理、房主改选与回合推进。 */
+  private sweepRoom(room: SonGuessrRoomRecord, currentTime: number): void {
+    if (this.reclaimIdleRoom(room, currentTime) !== "keep") return;
+    this.cleanupOfflinePlayers(room, currentTime);
+    this.resolveHost(room, currentTime);
+    this.expirePendingSubmitter(room, currentTime);
+    this.settlePlayingRound(room, currentTime);
+    this.publishRoomCalibration(room);
   }
 
   private scheduleMusicSessionRefresh(currentTime: number): void {
@@ -549,59 +564,35 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 无人房间与空闲房间的回收：测试房间豁免「无人立即回收」但仍受空闲超时约束，
+   * 无人房间与空闲房间的回收：测试房间只豁免「无人立即回收」，仍受空闲超时约束，
    * 无人房间先给一段宽限期，宽限期内只补一次校准便跳过其余巡检阶段。
+   * 闲置关房前提前一段时间预警：每一段闲置只预警一次，有新活动后重新计。
    */
   private reclaimIdleRoom(room: SonGuessrRoomRecord, currentTime: number): RoomReclaim {
-    const isEmpty = this.onlineCount(room) === 0;
-    const isIdleTimeout = currentTime - room.lastActivityAt >= ROOM_IDLE_TIMEOUT_MS;
-    // 测试房间豁免「无人立即回收」——它常态就是一间等人加入的空房；
-    // 但仍受空闲超时约束：否则那唯一的房间记录会永久驻留，
-    // 加出来的机器人也永远不会被回收，只能靠重启释放。
-    if (this.isTestRoom(room) && isEmpty && !isIdleTimeout) return "skip";
-    // 空闲关闭前提前一分钟预警一次：客户端的 `song.room.expiring` 分支
-    // 此前是死代码（服务端从来没下发过），玩家只会突然收到「房间已关闭」。
-    const idleRemaining = ROOM_IDLE_TIMEOUT_MS - (currentTime - room.lastActivityAt);
-    if (!isEmpty && idleRemaining <= ROOM_EXPIRING_WARNING_MS && !room.expiringNotified) {
-      room.expiringNotified = true;
+    const onlineCount = this.onlineCount(room);
+    const emptyRoomExempt = this.isTestRoom(room);
+    if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
+      markIdleWarningSent(room);
       this.broadcastRoomEvent(room, "song.room.expiring", { roomId: room.id, idle: true });
     }
-
-    if (isEmpty || isIdleTimeout) {
-      if (isEmpty) {
-        room.emptySinceAt ??= currentTime;
-        if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) {
-          this.publishRoomCalibration(room);
-          return "grace";
-        }
-      }
-      this.closeRoom(room, isEmpty ? "empty" : "idle_timeout");
-      return "skip";
+    const verdict = judgeReclaim(room, onlineCount, currentTime, { emptyRoomExempt });
+    switch (verdict) {
+      case "grace":
+        this.publishRoomCalibration(room);
+        return "grace";
+      case "close-empty":
+      case "close-idle":
+        this.closeRoom(room, onlineCount === 0 ? "empty" : "idle_timeout");
+        return "skip";
+      case "keep":
+        // 测试房常态就是一间等人加入的空房：没人时不推进任何巡检阶段。
+        return emptyRoomExempt && onlineCount === 0 ? "skip" : "keep";
     }
-    room.emptySinceAt = undefined;
-    return "keep";
-  }
-
-  /** 离线席位保留多久：0 分真人旁观者没有分数可保留，只留够一次刷新的时间。 */
-  private offlineSeatGraceMs(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord): number {
-    return player.membership === "spectator" &&
-      player.score === 0 &&
-      !player.isBot &&
-      room.hostPlayerId !== player.id
-      ? SPECTATOR_OFFLINE_GRACE_MS
-      : PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS;
   }
 
   /** 清理离线超过保留时长的真人玩家；被清掉的是房主时先移交，房间空了立即回收。 */
   private cleanupOfflinePlayers(room: SonGuessrRoomRecord, currentTime: number): void {
-    for (const player of Object.values(room.players)) {
-      if (
-        player.online ||
-        player.isBot ||
-        currentTime - player.lastSeenAt < this.offlineSeatGraceMs(room, player)
-      ) {
-        continue;
-      }
+    for (const player of expiredOfflineSeats(room, Object.values(room.players), currentTime)) {
       delete room.players[player.id];
       // 掉线超过宽限：人和他贡献的号一起清出房间（宽限内号仍在，房主面板也能看到）。
       this.clearMusicSession(room, player.id);
@@ -1041,7 +1032,9 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 房间正在开局：自动与手动两种开局共用同一口径，设置、开局与入池开关都按它拦。 */
   private isStarting(room: SonGuessrRoomRecord) {
-    return room.automaticRoundLoading === true || room.manualRoundStarting === true;
+    return (
+      room.runtime?.automaticRoundLoading === true || room.runtime?.manualRoundStarting === true
+    );
   }
 
   /** 先算出公开/私密的密码归属再校验，校验失败时 room 上还没有任何写入。 */
@@ -1551,7 +1544,9 @@ export class SonGuessrService implements AdminRoomControl {
                 platform,
                 entry,
                 operation:
-                  room.musicAuthOperations?.[musicAuthOperationKey(entry.playerId, platform)],
+                  room.runtime?.musicAuthOperations?.[
+                    musicAuthOperationKey(entry.playerId, platform)
+                  ],
                 label: platform === "qq" ? "QQ音乐" : "网易云",
               },
             ]
@@ -1570,7 +1565,7 @@ export class SonGuessrService implements AdminRoomControl {
         for (const target of revalidations) {
           if (platform !== undefined && target.platform !== platform) continue;
           const current =
-            room.musicAuthOperations?.[
+            room.runtime?.musicAuthOperations?.[
               musicAuthOperationKey(target.entry.playerId, target.platform)
             ];
           if (!this.musicPool(room).includes(target.entry) || current !== target.operation) {
@@ -1608,7 +1603,7 @@ export class SonGuessrService implements AdminRoomControl {
       if (automatic) {
         await startAutomaticRound(this, room, () => {
           verifySession();
-          if (room.phase !== "waiting" || room.automaticRoundOperation !== operation) {
+          if (room.phase !== "waiting" || room.runtime?.automaticRoundOperation !== operation) {
             throw new AppError("ROUND_EXPIRED", "出题操作已失效");
           }
         });
@@ -1629,24 +1624,24 @@ export class SonGuessrService implements AdminRoomControl {
   /** 自动与手动开局互斥：占住对应的开局标记。 */
   private acquireStartLock(room: SonGuessrRoomRecord, automatic: boolean, operation: symbol) {
     if (!automatic) {
-      room.manualRoundStarting = true;
+      roomRuntime(room).manualRoundStarting = true;
       return;
     }
 
-    room.automaticRoundOperation = operation;
-    room.automaticRoundLoading = true;
+    roomRuntime(room).automaticRoundOperation = operation;
+    roomRuntime(room).automaticRoundLoading = true;
   }
 
   /** 开局标记只在仍属于本次操作时清空，避免踩掉后来者的锁。 */
   private releaseStartLock(room: SonGuessrRoomRecord, automatic: boolean, operation: symbol) {
     if (!automatic) {
-      room.manualRoundStarting = false;
+      roomRuntime(room).manualRoundStarting = false;
       return;
     }
 
-    if (room.automaticRoundOperation !== operation) return;
-    room.automaticRoundOperation = undefined;
-    room.automaticRoundLoading = false;
+    if (room.runtime?.automaticRoundOperation !== operation) return;
+    roomRuntime(room).automaticRoundOperation = undefined;
+    roomRuntime(room).automaticRoundLoading = false;
   }
 
   private async refreshMusicSessionAccount(check: MusicSessionRevalidation): Promise<void> {
@@ -2017,7 +2012,7 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     // 页面切后台/重连时可能补发旧回合的 ready；状态过渡期间应幂等忽略，
     // 不把一个正常的陈旧通知显示成「当前没有进行中的回合」。
-    if (room.phase !== "playing" || !room.currentRound || room.automaticRoundLoading) {
+    if (room.phase !== "playing" || !room.currentRound || room.runtime?.automaticRoundLoading) {
       return { ignored: true };
     }
     const round = room.currentRound;
@@ -2455,15 +2450,15 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord
   ) {
-    if (room.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
+    if (room.runtime?.automaticRoundLoading) throw new AppError("ROUND_BUSY", "正在准备下一回合");
     const previousRound = room.currentRound;
     const previousSummary = room.roundSummary;
     const operation = Symbol("automaticRound");
-    room.automaticRoundOperation = operation;
-    room.automaticRoundLoading = true;
+    roomRuntime(room).automaticRoundOperation = operation;
+    roomRuntime(room).automaticRoundLoading = true;
     const isCurrent = () =>
       this.rooms.get(room.id) === room &&
-      room.automaticRoundOperation === operation &&
+      room.runtime?.automaticRoundOperation === operation &&
       room.phase === "roundResult" &&
       room.currentRound === previousRound &&
       room.hostPlayerId === player.id &&
@@ -2492,9 +2487,9 @@ export class SonGuessrService implements AdminRoomControl {
       }
       throw error;
     } finally {
-      if (room.automaticRoundOperation === operation) {
-        room.automaticRoundOperation = undefined;
-        room.automaticRoundLoading = false;
+      if (room.runtime?.automaticRoundOperation === operation) {
+        roomRuntime(room).automaticRoundOperation = undefined;
+        roomRuntime(room).automaticRoundLoading = false;
       }
     }
     this.touch(room);
@@ -2539,8 +2534,8 @@ export class SonGuessrService implements AdminRoomControl {
     this.ensureHost(room, player.id);
     if (room.phase !== "roundResult")
       throw new AppError("INVALID_PHASE", "只能在回合结算后返回等待阶段");
-    room.automaticRoundOperation = undefined;
-    room.automaticRoundLoading = false;
+    roomRuntime(room).automaticRoundOperation = undefined;
+    roomRuntime(room).automaticRoundLoading = false;
     room.phase = "waiting";
     room.pendingSubmitterPlayerId = undefined;
     room.pendingSubmitterDeadlineAt = undefined;
@@ -2925,20 +2920,11 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   publishRoom(room: SonGuessrRoomRecord, targetConnection?: ConnectionRecord) {
-    const snapshot = this.buildRoomSnapshot(room);
-    const connections = targetConnection
-      ? [targetConnection]
-      : this.connections.getRoomConnections(room.id);
-    for (const connection of connections) {
-      connection.send(createEvent("song.room.snapshot", snapshot));
-      if (connection.playerId) {
-        const player = room.players[connection.playerId];
-        if (player)
-          connection.send(
-            createEvent("song.game.privateState", this.buildPrivateState(room, player))
-          );
-      }
-    }
+    this.fanOutRoom(
+      room,
+      targetConnection ? [targetConnection] : this.connections.getRoomConnections(room.id),
+      "state"
+    );
   }
 
   private publishPrivateState(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
@@ -2947,17 +2933,27 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private publishRoomCalibration(room: SonGuessrRoomRecord) {
+    this.fanOutRoom(room, this.connections.getRoomConnections(room.id), "calibration");
+  }
+
+  /** 快照与私有态扇出：正常发布与校准共用同一份帧来源，公共快照每次发布只构造一次。 */
+  private fanOutRoom(
+    room: SonGuessrRoomRecord,
+    targets: readonly ConnectionRecord[],
+    mode: "state" | "calibration"
+  ) {
     const snapshot = this.buildRoomSnapshot(room);
-    for (const connection of this.connections.getRoomConnections(room.id)) {
-      connection.sendStateSyncCalibration?.(createEvent("song.room.snapshot", snapshot));
-      if (!connection.playerId) continue;
-      const player = room.players[connection.playerId];
-      if (player) {
-        connection.sendStateSyncCalibration?.(
-          createEvent("song.game.privateState", this.buildPrivateState(room, player))
-        );
-      }
-    }
+    publishRoomState(
+      targets,
+      (connection) => (connection.playerId ? room.players[connection.playerId] : undefined),
+      {
+        snapshotEvent: SONG_ROOM_SHAPE.events.snapshot,
+        privateEvent: SONG_ROOM_SHAPE.events.privateState,
+        snapshotFor: () => snapshot,
+        privateFor: (player) => this.buildPrivateState(room, player),
+      },
+      mode
+    );
   }
 
   publishLobby() {
@@ -2965,20 +2961,8 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
-    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
-    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).finishRoom({
-      game: "song",
-      roomId: room.id,
-      roomCreatedAt: room.createdAt,
-      endedAt: this.now(),
-    });
-    this.connections.broadcastToRoom(
-      room.id,
-      createEvent("song.room.closed", { roomId: room.id, reason })
-    );
-    for (const connection of this.connections.getRoomConnections(room.id)) {
-      this.connections.detach(connection);
-    }
+    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、刷新大厅。
+    dissolveRoom(this.roomKernel, room, { roomId: room.id, reason });
     room.musicPool = [];
     // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
     this.wakeMusicPoolWaiters(room.id);
@@ -3125,8 +3109,8 @@ export class SonGuessrService implements AdminRoomControl {
     if (room.hostPlayerId === previousHostId) return;
     const host = room.players[room.hostPlayerId];
     if (!host) return;
-    room.automaticRoundOperation = undefined;
-    room.automaticRoundLoading = false;
+    roomRuntime(room).automaticRoundOperation = undefined;
+    roomRuntime(room).automaticRoundLoading = false;
     host.isReady = true;
   }
 

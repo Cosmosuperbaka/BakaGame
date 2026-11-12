@@ -1,3 +1,10 @@
+import {
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
+  ROOM_EXPIRING_WARNING_MS,
+  ROOM_IDLE_TIMEOUT_MS,
+} from "../../src/config/Constants";
+import { TEST_ROOMS_ON } from "../TestRoomPolicy";
 import { AppError } from "../../src/domain/Errors";
 import { SongLyricLine } from "../../src/shared/SonGuessr";
 import { LOBBY_MERGE_WINDOW_MS } from "../../src/application/LobbyFanout";
@@ -31,6 +38,7 @@ import {
   lastEvent,
   provider,
   songs,
+  startRound,
   wrongAnime,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
@@ -1353,6 +1361,220 @@ describe("SonGuessrService", () => {
       now += 70_000;
       await restarted.runHousekeeping();
       expect(restarted.rooms.get("1234")!.hostPlayerId).toBe(guestState.playerId);
+    });
+  });
+
+  describe("巡检与发布", () => {
+    const expiringCount = (client: TestConnection) =>
+      client.sent.filter((item) => item.event === "song.room.expiring").length;
+    const chat = (service: SonGuessrService, client: TestConnection) =>
+      execute(service, client, {
+        id: "activity",
+        type: "song.chat.send",
+        roomId: "1234",
+        payload: { text: "还在" },
+      });
+
+    test("闲置预警每段闲置只发一次，有新活动后下一段闲置重新预警", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "warn-host");
+      await createRoom(service, host);
+
+      now += ROOM_IDLE_TIMEOUT_MS - ROOM_EXPIRING_WARNING_MS / 2;
+      await service.runHousekeeping();
+      await service.runHousekeeping();
+      expect(expiringCount(host)).toBe(1);
+
+      // 有新活动：这一段闲置结束，下一段闲置到点要再预警一次（布尔标记会一次用尽）。
+      await chat(service, host);
+      now += ROOM_IDLE_TIMEOUT_MS - ROOM_EXPIRING_WARNING_MS / 2;
+      await service.runHousekeeping();
+      expect(expiringCount(host)).toBe(2);
+      expect(service.rooms.has("1234")).toBe(true);
+
+      now += ROOM_EXPIRING_WARNING_MS;
+      await service.runHousekeeping();
+      expect(service.rooms.has("1234")).toBe(false);
+    });
+
+    test("一间房巡检抛错只记日志，其余房间照常回收", async () => {
+      let now = 1_000_000;
+      const warned: string[] = [];
+      const service = new SonGuessrService({
+        musicProvider: provider,
+        now: () => now,
+        eventLogger: { write: () => {}, warn: (message: string) => warned.push(message) } as never,
+      });
+      await createRoom(service, connection(service, "broken-host"), { roomId: "1111" });
+      await createRoom(service, connection(service, "idle-host"), { roomId: "2222" });
+      // 白盒让第一间房的活动时刻读取即抛错：它的巡检必然失败，且排在第二间之前。
+      Object.defineProperty(service.rooms.get("1111"), "lastActivityAt", {
+        get: () => {
+          throw new Error("坏状态");
+        },
+      });
+
+      now += ROOM_IDLE_TIMEOUT_MS + 1;
+      await service.runHousekeeping();
+
+      expect(service.rooms.has("2222")).toBe(false);
+      expect(warned).toEqual(["猜歌房间巡检失败，已跳过该房间"]);
+    });
+
+    test("同一次发布里公共快照帧只封一次，各人的私有态各自构造", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "frame-host");
+      const guest = connection(service, "frame-guest");
+      await createRoom(service, host);
+      await joinRoom(service, guest, "客人");
+      host.sent.length = 0;
+      guest.sent.length = 0;
+
+      await execute(service, guest, {
+        id: "frame-ready",
+        type: "song.player.setReady",
+        roomId: "1234",
+        payload: { ready: true },
+      });
+
+      const snapshotOf = (client: TestConnection) =>
+        client.sent.find((item) => item.event === "song.room.snapshot");
+      const privateOf = (client: TestConnection) =>
+        client.sent.find((item) => item.event === "song.game.privateState");
+      expect(snapshotOf(host)).toBeDefined();
+      expect(snapshotOf(host)).toBe(snapshotOf(guest));
+      expect(privateOf(host)).not.toBe(privateOf(guest));
+    });
+  });
+
+  describe("房间生命周期的玩法侧收尾", () => {
+    const leave = (service: SonGuessrService, client: TestConnection) =>
+      execute(service, client, {
+        id: "leave",
+        type: "song.room.leave",
+        roomId: "1234",
+        payload: {},
+      });
+
+    test("房主易主后新房主恒为已准备，并作废在途的自动开局操作", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "settle-host");
+      const guest = connection(service, "settle-guest");
+      await createRoom(service, host);
+      const guestState = await joinRoom(service, guest, "客人");
+      const room = service.rooms.get("1234")!;
+      expect(room.players[guestState.playerId].isReady).toBe(false);
+      room.runtime = { automaticRoundLoading: true, automaticRoundOperation: Symbol("loading") };
+
+      await leave(service, host);
+
+      expect(room.hostPlayerId).toBe(guestState.playerId);
+      expect(room.players[guestState.playerId].isReady).toBe(true);
+      expect(room.runtime?.automaticRoundLoading).toBe(false);
+      expect(room.runtime?.automaticRoundOperation).toBeUndefined();
+    });
+
+    test("手动转让房主同样让新房主已准备", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "move-ready-host");
+      await createRoom(service, host);
+      const guestState = await joinRoom(service, connection(service, "move-ready-guest"), "客人");
+      await execute(service, host, {
+        id: "move-ready",
+        type: "song.room.transferHost",
+        roomId: "1234",
+        payload: { playerId: guestState.playerId },
+      });
+      expect(service.rooms.get("1234")!.players[guestState.playerId].isReady).toBe(true);
+    });
+
+    test("闲置关房与空房关房向全员发关闭事件并写明原因，音乐池清空、等号请求被叫醒", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "close-host");
+      await createRoom(service, host);
+      const room = service.rooms.get("1234")!;
+      let woken = 0;
+      service.musicPoolWaiters.set("1234", new Set([() => woken++]));
+
+      now += ROOM_IDLE_TIMEOUT_MS + 1;
+      await service.runHousekeeping();
+
+      expect(lastEvent<{ roomId: string; reason: string }>(host, "song.room.closed")).toEqual({
+        roomId: "1234",
+        reason: "idle_timeout",
+      });
+      expect(room.musicPool).toEqual([]);
+      expect(woken).toBe(1);
+      expect(host.record.roomId).toBeUndefined();
+      expect(service.rooms.has("1234")).toBe(false);
+
+      const lonely = connection(service, "close-empty-host");
+      await createRoom(service, lonely);
+      const watcher = connection(service, "close-watcher");
+      await joinRoom(service, watcher, "旁人");
+      await service.unregisterConnection(lonely.record.id);
+      await service.unregisterConnection(watcher.record.id);
+      now += ROOM_EMPTY_GRACE_PERIOD_MS + 1;
+      await service.runHousekeeping();
+      expect(service.rooms.has("1234")).toBe(false);
+    });
+
+    test("空房宽限内只补校准不关房，宽限满后以 empty 关房", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "grace-host");
+      await createRoom(service, host);
+      const watcher = connection(service, "grace-watcher");
+      await joinRoom(service, watcher, "旁人");
+      await service.unregisterConnection(host.record.id);
+      await service.unregisterConnection(watcher.record.id);
+      now += ROOM_EMPTY_GRACE_PERIOD_MS - 1_000;
+      await service.runHousekeeping();
+      expect(service.rooms.has("1234")).toBe(true);
+      now += 2_000;
+      await service.runHousekeeping();
+      expect(service.rooms.has("1234")).toBe(false);
+    });
+
+    test("空的测试房不推进后续巡检：离线席位不被清理", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({
+        musicProvider: provider,
+        testRooms: TEST_ROOMS_ON,
+        now: () => now,
+      });
+      const host = connection(service, "tr-host");
+      await createRoom(service, host, { roomId: "Oblivionis" });
+      await service.unregisterConnection(host.record.id);
+      now += PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS + 1_000;
+      await service.runHousekeeping();
+      const room = service.rooms.get("Oblivionis")!;
+      expect(Object.keys(room.players)).toHaveLength(1);
+    });
+
+    test("回座重新补齐本回合的作答状态", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "round-host");
+      const guest = connection(service, "round-guest");
+      await createRoom(service, host);
+      const guestState = await joinRoom(service, guest, "客人");
+      await startRound(
+        service,
+        host,
+        guest,
+        lastEvent<SonGuessrPrivateState>(host, "song.game.privateState").playerId
+      );
+      const round = service.rooms.get("1234")!.currentRound!;
+      delete round.players[guestState.playerId];
+      await service.unregisterConnection(guest.record.id);
+      await execute(service, connection(service, "round-guest-2"), {
+        id: "round-back",
+        type: "song.room.reconnect",
+        payload: { roomId: "1234", sessionToken: guestState.sessionToken },
+      });
+      expect(round.players[guestState.playerId]).toBeDefined();
     });
   });
 

@@ -1627,7 +1627,7 @@ describe("账号池凭据与开关的竞态边界", () => {
     const service = ownerService();
     const host = connection(service, "loading-host");
     const { room } = await hostEntry(service, host);
-    room.automaticRoundLoading = true;
+    room.runtime = { automaticRoundLoading: true };
     await expect(
       execute(service, host, {
         id: "toggle-while-loading",
