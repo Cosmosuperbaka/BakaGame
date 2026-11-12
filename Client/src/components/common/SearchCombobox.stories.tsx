@@ -73,7 +73,8 @@ function Demo({
           </>
         }
       />
-      <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+      {/* 说明文字压在占位区底部：只有一行的状态面板（查询中、失败、空结果）盖不到它，不会切出半行残字 */}
+      <p className="flex min-h-40 items-end justify-center rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
         {picked ? `已选择：${picked.nameCn || picked.name}` : "游戏操作区：结果面板浮在这里之上"}
       </p>
     </div>
@@ -116,7 +117,8 @@ export const Failed: Story = {
   args: { empty: true, status: { tone: "error", text: "Bangumi 暂时无法访问，请稍后重试" } },
 };
 
+// 故事级 `play: undefined` 会退回元数据里的点击，面板照样展开；给一个空函数才真正不聚焦。
 export const Collapsed: Story = {
   name: "收起",
-  play: undefined,
+  play: async () => {},
 };

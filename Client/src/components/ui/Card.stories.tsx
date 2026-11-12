@@ -22,7 +22,7 @@ export const Composed: Story = {
           <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-label="需要密码" />
         </CardTitle>
         <CardDescription>
-          房间号: <span className="font-mono">4821</span>
+          房间号 <span className="font-mono">4821</span>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -51,7 +51,7 @@ export const ContentOnly: Story = {
         <div className="min-w-0">
           <div className="truncate text-base font-medium">周五晚上一起猜歌</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            房间号: <span className="font-mono">0937</span>
+            房间号 <span className="font-mono">0937</span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground">

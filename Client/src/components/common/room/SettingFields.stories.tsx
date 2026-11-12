@@ -111,12 +111,15 @@ export const Steppers: Story = {
   ),
 };
 
-/** 窄容器（约 14rem，相当于 390 宽手机上的设置面板）：短标签仍与按钮组同行，放不下的整组折到标签下方靠右。 */
+/**
+ * 窄容器（14rem）：标签列至少 10rem，加上间距与 8rem 的凹槽放不下一行，步进器整组折到标签下方靠右。
+ * 虚线框标出容器边界，靠右是对着它的右缘，而不是对着外面的故事卡片。
+ */
 export const SteppersNarrow: Story = {
   name: "数值步进 · 窄容器",
   decorators: [
     (Story) => (
-      <div className="w-56">
+      <div className="w-56 rounded-md border border-dashed p-2">
         <Story />
       </div>
     ),
