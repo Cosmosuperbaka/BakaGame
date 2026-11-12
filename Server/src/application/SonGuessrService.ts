@@ -2275,6 +2275,10 @@ export class SonGuessrService implements AdminRoomControl {
   private async guess(connection: ConnectionRecord, songId: string) {
     const { room, player } = this.requireRoomPlayer(connection);
     const round = this.requireActiveRound(room);
+    // 猜番回合的答案是番剧，不是歌：用猜歌命令认出出题歌曲就会绕过猜番。按回合本身判定题型。
+    if (round.settings.questionType !== "song" || round.anime) {
+      throw new AppError("INVALID_QUESTION_TYPE", "当前房间是听歌猜番模式");
+    }
     if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
     const state = this.ensureRoundPlayerState(room, player) ?? round.players[player.id];
     if (player.id === round.submitterPlayerId && !this.canTestSubmitterGuess(room, player.id)) {

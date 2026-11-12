@@ -184,6 +184,36 @@ describe("SonGuessrService", () => {
     ]);
   });
 
+  test("听歌猜番回合拒绝用猜歌命令作答，也不占用猜测次数", async () => {
+    const bangumiProvider = {
+      getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
+      searchSubjects: async () => [anime],
+    } as unknown as BangumiDataProvider;
+    const service = new SonGuessrService({ musicProvider: provider, bangumiProvider });
+    const host = connection(service, "anime-gate-host");
+    const guest = connection(service, "anime-gate-guest");
+    await createRoom(service, host);
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await joinRoom(service, guest, "猜番玩家");
+    const send = (id: string, type: string, payload: unknown, client = host) =>
+      execute(service, client, { id, type, roomId: "1234", payload } as never);
+    await send("gate-settings", "song.room.updateSettings", { questionType: "anime" });
+    await send("gate-ready", "song.player.setReady", { ready: true }, guest);
+    await send("gate-start", "song.game.start", {});
+    await send("gate-choose", "song.game.chooseSubmitter", { playerId: hostState.playerId });
+    await send("gate-submit", "song.game.submitAnime", { subjectId: anime.id });
+    await send("gate-audio", "song.game.audioReady", { roundNumber: 1 }, guest);
+
+    // 出题歌曲就是答案：若猜歌命令能判对，整个猜番回合就被绕过了。
+    await expect(
+      send("gate-song-guess", "song.game.guess", { songId: "answer" }, guest)
+    ).rejects.toMatchObject({ code: "INVALID_QUESTION_TYPE" });
+    expect(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").phase).toBe("playing");
+    await expect(
+      send("gate-anime-guess", "song.game.guessAnime", { subjectId: wrongAnime.id }, guest)
+    ).resolves.toMatchObject({ attempt: { guessNumber: 1, result: "wrong" } });
+  });
+
   test("听歌猜番手动出题支持查询匹配歌曲并指定关联曲出题", async () => {
     const multiTrackAnime: BangumiSubjectDetails = {
       ...anime,
