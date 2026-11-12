@@ -428,6 +428,7 @@ const createAccount = (
     badges,
     settings,
     qq: nicknames,
+    ownerQqNumber: env.account.ownerQqNumber,
     statusEvents,
     bangumiMirror,
     environment: statusEnvironment,

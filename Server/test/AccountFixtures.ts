@@ -548,6 +548,7 @@ export const createAccountTestApp = (
     settings: options.settings ?? new AppSettings({ defaults: {} }),
     sentry: options.sentry ?? null,
     qq: nicknames,
+    ownerQqNumber: options.ownerQqNumber ?? options.adminQqNumbers?.[0],
     statusEvents: options.statusEvents,
     environment: "development",
     now: options.now,

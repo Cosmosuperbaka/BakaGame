@@ -98,6 +98,8 @@ export interface AdminServiceOptions {
   bangumiMirror?: { status(): Promise<AdminBangumiMirrorStatus> } | null;
   /** 状态页事件仓储；缺省时 `admin.statusEvents.*` 回 503（未配置数据库的实例）。 */
   statusEvents?: StatusEventRepository;
+  /** 主理人（最高管理员）的 QQ 号；其他管理员不能降级、封禁或强制下线他。 */
+  ownerQqNumber?: string | undefined;
   /** 本进程的部署环境标记：状态事件按它隔离，与状态历史同一口径。 */
   environment: string;
   now?: () => number;
@@ -272,7 +274,15 @@ export class AdminService {
     selfMessage: string
   ): Promise<UserRow> {
     if (actorId === userId) throw new AppError("CANNOT_TARGET_SELF", selfMessage);
-    return this.requireUser(userId);
+    const row = await this.requireUser(userId);
+    this.requireNotOwner(row);
+    return row;
+  }
+
+  /** 主理人不能被其他管理员降级、封禁或强制下线；校验在写审计之前，被拒的操作不留审计。 */
+  private requireNotOwner(row: UserRow): void {
+    if (this.options.ownerQqNumber && row.qqNumber === this.options.ownerQqNumber)
+      throw new AppError("CANNOT_TARGET_ADMIN", "不能对主理人执行该操作");
   }
 
   async banUser(
@@ -328,6 +338,8 @@ export class AdminService {
 
   async revokeSessions(actorId: string, userId: string): Promise<{ ok: true }> {
     const row = await this.requireUser(userId);
+    // 主理人自己退出各端不受限，只拦别人对他动手。
+    if (actorId !== row.id) this.requireNotOwner(row);
     await this.audit(actorId, "user.revokeSessions", "user", row.id, { name: row.name });
     await (await this.context()).internalAdapter.deleteUserSessions(row.id);
     return { ok: true };
