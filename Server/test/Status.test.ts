@@ -23,7 +23,11 @@ import type {
   StatusEventRepository,
 } from "../src/infrastructure/db/StatusEventRepository";
 import type { PublicStatusEvent } from "../src/shared/Status";
-import { statusRoutes, type StatusRoutesDependencies } from "../src/transport/routes/Status";
+import {
+  createStatusAggregator,
+  statusRoutes,
+  type StatusRoutesDependencies,
+} from "../src/transport/routes/Status";
 import { createTestApp } from "./AppFixtures";
 
 const INTERNAL_SEARCH_URL = "http://10.23.45.67:7700";
@@ -484,6 +488,51 @@ describe("公开状态事件接口", () => {
     expect(body.events[0].title).toBe("上游异常");
     expect(body.events[0].resolvedAt).toBeNull();
     expect(body.events[1].resolvedAt).not.toBeNull();
+  });
+
+  test("读取事件失败时降级为空列表，并把故障交给 onError 留痕", async () => {
+    const failures: Array<[string, unknown]> = [];
+    class BrokenEvents extends MemoryStatusEventRepository {
+      override async list(): Promise<never> {
+        throw new Error("仓储不可用");
+      }
+    }
+    const now = Date.parse("2026-10-25T12:00:00Z");
+    const app = statusRoutes({
+      environment: "production",
+      history: new StatusHistoryStore({ environment: "production", now: () => now }),
+      samples: new StatusSampleStore({ environment: "production", now: () => now }),
+      events: new BrokenEvents(),
+      onError: (scope, error) => failures.push([scope, error]),
+    });
+    const response = await app.handle(new Request("http://localhost/api/status/events"));
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { events: unknown[] }).events).toEqual([]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0][0]).toBe("status-events");
+  });
+});
+
+describe("状态聚合并行探测", () => {
+  test("外部监测读取与搜索探测并行：总耗时取最慢的一项，而不是各项之和", async () => {
+    const delayMs = 150;
+    const wait = () => new Promise((resolve) => setTimeout(resolve, delayMs));
+    const aggregator = createStatusAggregator({
+      meilisearchUrl: "http://127.0.0.1:9/",
+      fetcher: (async () => {
+        await wait();
+        return new Response("{}");
+      }) as unknown as typeof fetch,
+      externalProbe: {
+        read: async () => {
+          await wait();
+          return {};
+        },
+      } as unknown as ExternalStatusProbe,
+    });
+    const startedAt = performance.now();
+    await aggregator.readSnapshot();
+    expect(performance.now() - startedAt).toBeLessThan(delayMs * 1.8);
   });
 });
 

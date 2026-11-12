@@ -31,8 +31,8 @@ export interface StatusProbeDependencies {
   imageCache?: { available: boolean };
   /** 前端公开基址：服务端从外侧探一次静态站点是否可达；缺省时该组件为未知。 */
   frontendUrl?: string;
-  /** 三个游戏的房间与连接汇总；未装配游戏服务时省略，状态显示未知。 */
-  roomHealth?: () => { roomCount: number; connectionCount: number };
+  /** 三个游戏的对局服务是否已装配；未装配时省略，状态显示未知。房间与连接数不进公开状态。 */
+  roomsAvailable?: boolean;
   /** 后端发布版本；由调用方从 changelog.json 同源处解析，缺省显示未知。 */
   version?: () => string;
   externalProbe?: ExternalStatusProbe;
@@ -55,6 +55,8 @@ export interface StatusRoutesDependencies extends StatusProbeDependencies {
    * 省略时按上面的探测依赖自建，单测因此不必先装配整个 App。
    */
   aggregator?: StatusAggregator;
+  /** 读取事件失败这类被降级吞掉的故障要留痕，不能静默。 */
+  onError?: (scope: string, error: unknown) => void;
 }
 
 /** 状态聚合同一时刻只跑一轮，短时缓存避免刷新页面就重新探测全部外部依赖。 */
@@ -97,7 +99,7 @@ export const createStatusAggregator = ({
   datasetPath,
   imageCache,
   frontendUrl,
-  roomHealth,
+  roomsAvailable,
   version = () => "unknown",
   externalProbe = new MockExternalStatusProbe(),
   fetcher = fetch,
@@ -165,8 +167,7 @@ export const createStatusAggregator = ({
    * 精确在线数是可被无限轮询的实时经营指标，公开状态页只给等级。
    */
   const probeRooms = (): PublicStatusLevel => {
-    if (!roomHealth) return "unknown";
-    return levelOf(Boolean(roomHealth()));
+    return roomsAvailable ? "operational" : "unknown";
   };
 
   let resolvedVersion: string | undefined;
@@ -182,7 +183,14 @@ export const createStatusAggregator = ({
 
   const buildSnapshot = async (): Promise<PublicStatusSnapshot> => {
     const observedAt = now();
-    const external = await probeExternal();
+    // 彼此无依赖的探测并行跑：串行时最坏耗时是各自超时之和。
+    const [external, frontend, rooms, search, dataset] = await Promise.all([
+      probeExternal(),
+      settle(probeFrontend, "degraded"),
+      settle(probeRooms, "degraded"),
+      settle(probeSearch, "degraded"),
+      settle(probeDataset, "degraded"),
+    ]);
     const upstreamOf = (id: (typeof UPSTREAM_STATUS_COMPONENT_IDS)[number]) => {
       const reading = external[id];
       return { level: reading?.level ?? "unknown", latencyMs: reading?.latencyMs ?? null };
@@ -192,15 +200,15 @@ export const createStatusAggregator = ({
     const netease = upstreamOf("netease");
     const qq = upstreamOf("qq");
     const components: PublicStatusComponent[] = [
-      { id: "frontend", ...(await settle(probeFrontend, "degraded")) },
+      { id: "frontend", ...frontend },
       { id: "backend", level: levelOf(isServiceAvailable?.() ?? true), latencyMs: null },
       { id: "bangumi", ...bangumi },
       { id: "qqmusic", ...qqmusic },
       { id: "netease", ...netease },
       { id: "qq", ...qq },
-      { id: "rooms", ...(await settle(probeRooms, "degraded")) },
-      { id: "search", ...(await settle(probeSearch, "degraded")) },
-      { id: "dataset", ...(await settle(probeDataset, "degraded")) },
+      { id: "rooms", ...rooms },
+      { id: "search", ...search },
+      { id: "dataset", ...dataset },
       {
         id: "images",
         level: imageCache ? levelOf(imageCache.available) : "unknown",
@@ -290,7 +298,7 @@ const levelSchema = t.Union([
   t.Literal("unknown"),
 ]);
 
-const snapshotSchema = t.Object({
+export const snapshotSchema = t.Object({
   observedAt: t.Number(),
   level: levelSchema,
   version: t.String(),
@@ -403,7 +411,7 @@ const readPublicEvents = async (
 export const statusRoutes = (deps: StatusRoutesDependencies) => {
   const aggregator = deps.aggregator ?? createStatusAggregator(deps);
   const environment = deps.environment ?? "development";
-  const { history, samples, events } = deps;
+  const { history, samples, events, onError } = deps;
   const routes = new Elysia({ name: "public-status", normalize: false }).get(
     "/api/status",
     async ({ set }) => {
@@ -470,10 +478,10 @@ export const statusRoutes = (deps: StatusRoutesDependencies) => {
     "/api/status/events",
     async ({ set }) => {
       set.headers["cache-control"] = "no-store";
-      return readPublicEvents(events, environment, Date.now()).catch(() => ({
-        generatedAt: Date.now(),
-        events: [],
-      }));
+      return readPublicEvents(events, environment, Date.now()).catch((error: unknown) => {
+        onError?.("status-events", error);
+        return { generatedAt: Date.now(), events: [] };
+      });
     },
     {
       detail: {

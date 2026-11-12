@@ -1170,16 +1170,7 @@ export const createApp = ({
     datasetPath: env.bangumiDbPath,
     imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
     frontendUrl: env.statusFrontendUrl,
-    roomHealth: () => ({
-      roomCount:
-        fakerService.getHealthSnapshot().roomCount +
-        (songService?.getHealthSnapshot().roomCount ?? 0) +
-        (characterService?.getHealthSnapshot().roomCount ?? 0),
-      connectionCount:
-        fakerService.getHealthSnapshot().connectionCount +
-        (songService?.getHealthSnapshot().connectionCount ?? 0) +
-        (characterService?.getHealthSnapshot().connectionCount ?? 0),
-    }),
+    roomsAvailable: true,
     version: () => resolveServerRelease() ?? "unknown",
     // 探针在 CreateServer 装配（外部监测与直连探测的组合），未传时聚合器回落到 Mock：
     // createApp 的单测装配因此不请求任何外网。
@@ -1377,6 +1368,7 @@ export const createApp = ({
         history: statusHistory,
         samples: statusSamples,
         events: statusEvents,
+        onError: (scope, error) => logger.warn(`${scope} 读取失败`, describeError(error)),
       })
     )
     // ==================== 站点配置（入口可见性，公开只读） ====================

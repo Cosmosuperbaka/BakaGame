@@ -1,9 +1,9 @@
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import { AppError } from "../../domain/Errors";
 import type { PublicStatusSnapshot } from "../../shared/Status";
 import { resolveClientIp } from "../ClientIp";
 import type { HandshakeLease, WsHandshakeQuota } from "../WsHandshakeQuota";
-import type { StatusAggregator } from "./Status";
+import { snapshotSchema, type StatusAggregator } from "./Status";
 
 /**
  * 推送间隔与快照缓存同值：每个间隔最多触发一轮真实探测，
@@ -13,19 +13,6 @@ const PUSH_INTERVAL_MS = 15_000;
 
 /** 公开端点的扇出上限：超出的连接直接拒，保护小规格主机上的探测与游戏服务。 */
 const MAX_CLIENTS = 128;
-
-const snapshotSchema = t.Object({
-  observedAt: t.Number(),
-  level: t.Union([t.Literal("operational"), t.Literal("degraded"), t.Literal("unknown")]),
-  version: t.String(),
-  components: t.Array(
-    t.Object({
-      id: t.String(),
-      level: t.Union([t.Literal("operational"), t.Literal("degraded"), t.Literal("unknown")]),
-      latencyMs: t.Nullable(t.Number()),
-    })
-  ),
-});
 
 export interface StatusWsDependencies {
   aggregator: StatusAggregator;
