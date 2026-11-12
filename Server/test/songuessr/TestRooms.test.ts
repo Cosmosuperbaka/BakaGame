@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
+import { HOST_RECONNECT_TIMEOUT_MS, ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { createTestRoomPolicy } from "../../src/domain/TestRooms";
-import type { SonGuessrRoomSnapshot } from "../../src/shared/Index";
+import type { SonGuessrPrivateState, SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { TEST_ROOMS_ON } from "../TestRoomPolicy";
 import { connection, createRoom, execute, joinRoom, lastEvent, provider } from "./Fixtures";
 
@@ -127,5 +127,30 @@ describe("猜歌测试房守卫", () => {
     now += ROOM_EMPTY_GRACE_PERIOD_MS + 1;
     await service.runHousekeeping();
     expect(service.getHealthSnapshot().roomCount).toBe(0);
+  });
+
+  test("测试房房主掉线也有重连宽限：期间新进来的人不接任，宽限过后才接任", async () => {
+    let now = 1_000_000;
+    const service = new SonGuessrService({
+      musicProvider: provider,
+      testRooms: TEST_ROOMS_ON,
+      now: () => now,
+    });
+    const host = connection(service, "grace-host");
+    await createRoom(service, host, { roomId: TEST_ROOM });
+    const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+    await service.unregisterConnection(host.record.id);
+
+    now += HOST_RECONNECT_TIMEOUT_MS - 1_000;
+    const early = connection(service, "grace-early");
+    const earlyState = await joinRoom(service, early, "早到的人", TEST_ROOM);
+    expect(service.rooms.get(TEST_ROOM)!.hostPlayerId).toBe(hostState.playerId);
+    await service.runHousekeeping();
+    expect(service.rooms.get(TEST_ROOM)!.hostPlayerId).toBe(hostState.playerId);
+
+    // 宽限耗尽：巡检把房主交给在线的人。
+    now += 2_000;
+    await service.runHousekeeping();
+    expect(service.rooms.get(TEST_ROOM)!.hostPlayerId).toBe(earlyState.playerId);
   });
 });

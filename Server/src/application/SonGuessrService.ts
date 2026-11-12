@@ -63,12 +63,7 @@ import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView, type AdminRoomControl } from "../domain/AdminRoom";
 import { AppError, unsupportedCommand } from "../domain/Errors";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
-import {
-  ensureRoomId,
-  normalizeName,
-  normalizeWord,
-  type RandomSource,
-} from "../domain/Rules";
+import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
 import {
   BangumiMusicTrack,
   BangumiSubjectSearchResult,
@@ -394,10 +389,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (player.connectionId !== connection.id) return;
 
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
-    const { wasHost } = markSeatOffline(this.roomKernel, room, player, {
-      emptyRoomExempt: this.isTestRoom(room),
-    });
-    if (wasHost && this.isTestRoom(room)) room.hostReconnectDeadlineAt = undefined;
+    markSeatOffline(this.roomKernel, room, player, { emptyRoomExempt: this.isTestRoom(room) });
     this.releasePendingSubmitter(
       room,
       player.id,

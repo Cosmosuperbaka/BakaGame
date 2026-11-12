@@ -1,3 +1,4 @@
+import { HOST_RECONNECT_TIMEOUT_MS } from "../../src/config/Constants";
 import { AppError } from "../../src/domain/Errors";
 import { GameRoundRecord } from "../../src/domain/GameRecord";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -79,7 +80,12 @@ describe("SonGuessrService", () => {
   });
 
   test("Oblivionis 测试房支持人机并不会进入大厅或被空房清理", async () => {
-    const service = new SonGuessrService({ testRooms: TEST_ROOMS_ON, musicProvider: provider });
+    let now = 1_000_000;
+    const service = new SonGuessrService({
+      testRooms: TEST_ROOMS_ON,
+      musicProvider: provider,
+      now: () => now,
+    });
     const host = connection(service, "host");
     await createRoom(service, host, { roomId: "Oblivionis", name: "测试房" });
 
@@ -95,6 +101,8 @@ describe("SonGuessrService", () => {
     expect(service.getRoomSummaries()).toHaveLength(0);
 
     await service.unregisterConnection(host.record.id);
+    // 测试房的房主掉线同样有重连宽限：宽限过后新进来的人才会接任。
+    now += HOST_RECONNECT_TIMEOUT_MS + 1;
     await service.runHousekeeping();
     const replacement = connection(service, "replacement");
     const replacementState = await joinRoom(service, replacement, "新房主", "Oblivionis");
