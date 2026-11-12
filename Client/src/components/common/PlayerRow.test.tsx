@@ -164,3 +164,24 @@ describe("PlayerRow 资料卡", () => {
     expect(publicProfile).toHaveBeenCalledTimes(3);
   });
 });
+
+describe("PlayerRow 悬停底", () => {
+  it("只有能点开的行才有悬停底，不可操作的行不假装可点", () => {
+    const { container } = render(
+      <>
+        <PlayerRow name="旁观的人" score={0} />
+        <PlayerRow
+          name="可操作的人"
+          score={0}
+          actions={[{ icon: null, label: "踢出玩家", onClick: () => {} }]}
+        />
+      </>
+    );
+    const plain = screen.getByText("旁观的人").closest("div.relative");
+    expect(plain?.className).not.toContain("hover:bg-accent/40");
+    expect(screen.getByRole("button", { name: "可操作的人 操作" }).className).toContain(
+      "hover:bg-accent/40"
+    );
+    expect(container).toBeTruthy();
+  });
+});
