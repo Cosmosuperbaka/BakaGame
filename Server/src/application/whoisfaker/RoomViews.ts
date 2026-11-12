@@ -6,6 +6,7 @@ import {
   type DescriptionRecord,
   type GameRound,
   type PublicPlayerView,
+  type RoundFeedback,
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerPrivateState,
   type WhoIsFakerRoomRecord,
@@ -114,6 +115,13 @@ const buildPublicDescriptions = (round: GameRound | undefined): DescriptionRecor
   ];
 };
 
+/** 关闭死亡身份揭露时抹掉去向预告：它由真实身份算出，会反推出局者是谁。 */
+const publicFeedback = (room: WhoIsFakerRoomRecord): RoundFeedback | undefined => {
+  const feedback = room.round?.feedback;
+  if (!feedback || (room.settings.revealRoleOnDeath ?? true)) return feedback;
+  return { ...feedback, next: "continue" };
+};
+
 export const buildRoomSnapshot = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
@@ -166,7 +174,7 @@ export const buildRoomSnapshot = (
           )
         : undefined,
       phaseTimer: room.round?.phaseTimer,
-      feedback: room.round?.feedback,
+      feedback: publicFeedback(room),
     },
     players: buildPublicPlayers(service, room),
     descriptions: buildPublicDescriptions(room.round),

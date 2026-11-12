@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { createRoom, joinPlayers } from "./Fixtures";
 import { ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
-import { type WhoIsFakerPrivateState, type WhoIsFakerRole } from "../../src/shared/WhoIsFaker";
+import {
+  ABSTAIN_TARGET_ID,
+  type WhoIsFakerPrivateState,
+  type WhoIsFakerRole,
+} from "../../src/shared/WhoIsFaker";
 import {
   createConnection,
   createTestContext,
@@ -486,5 +490,47 @@ describe("隐私开关与 Agent 接管", () => {
     await execute(service, host, { id: "touch", type: "chat.send", payload: { text: "刷新" } });
     frame = getLastEventPayload<WhoIsFakerPrivateState>(player.connection, "game.privateState");
     expect(frame?.canActAtNight).toBe(false);
+  });
+
+  test("关闭死亡身份揭露时，反馈预告不再暴露去向，开启时照常给出", async () => {
+    const nextOf = async (reveal: boolean) => {
+      const { service } = createTestContext();
+      const { host } = await createRoom(service, "Oblivionis");
+      const [p1] = await joinPlayers(service, "Oblivionis", 1, "玩家");
+      await execute(service, host, {
+        id: "settings",
+        type: "room.updateSettings",
+        payload: { revealRoleOnDeath: reveal },
+      });
+      await execute(service, host, { id: "bots", type: "test.addBot", payload: { count: 3 } });
+      await execute(service, host, {
+        id: "jump-words",
+        type: "test.jumpToPhase",
+        payload: { phase: "wordSubmission" },
+      });
+      await execute(service, host, {
+        id: "words",
+        type: "game.submitWords",
+        payload: { words: ["苹果", "香蕉"] },
+      });
+      await execute(service, host, {
+        id: "jump-voting",
+        type: "test.jumpToPhase",
+        payload: { phase: "voting" },
+      });
+      // 真人弃权，机器人自行投票；具体去向由真实身份与票型决定，这里只比较公开预告。
+      await execute(service, p1.connection, {
+        id: "abstain",
+        type: "game.submitVote",
+        payload: { targetId: ABSTAIN_TARGET_ID },
+      });
+      await execute(service, host, { id: "resolve", type: "game.advancePhase", payload: {} });
+      const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(p1.connection, "room.snapshot");
+      expect(snapshot?.status.phase).toBe("feedback");
+      return snapshot?.status.feedback?.next;
+    };
+
+    expect(await nextOf(true)).not.toBe("continue");
+    expect(await nextOf(false)).toBe("continue");
   });
 });

@@ -204,7 +204,11 @@ export interface RoundFeedback {
   blankGuess?: BlankGuessRecord;
   /** 白板猜词反馈：这次猜测经过主持人裁定（含裁定超时）。 */
   blankGuessReviewed?: boolean;
-  next: FeedbackNext;
+  /**
+   * 继续后的去向预告。关闭死亡身份揭露时，预告本身会泄漏出局者的身份（是否最后一个卧底、
+   * 白板是否还在），公开快照里统一给 `continue`，只表示「继续」。
+   */
+  next: FeedbackNext | "continue";
 }
 
 /**
