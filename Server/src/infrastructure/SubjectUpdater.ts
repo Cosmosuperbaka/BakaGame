@@ -475,7 +475,7 @@ export class SubjectUpdater {
       this.db
         .query<never, [number, number]>(
           "INSERT INTO bangumi_index_pending (subject_id, queued_at, attempts) VALUES (?,?,0)" +
-            " ON CONFLICT(subject_id) DO UPDATE SET queued_at = excluded.queued_at"
+            " ON CONFLICT(subject_id) DO UPDATE SET queued_at = max(excluded.queued_at, queued_at + 1)"
         )
         .run(subjectId, now);
     }
@@ -506,8 +506,8 @@ export class SubjectUpdater {
   /** 把待同步队列里的条目批量写进索引；失败计数，超过上限就丢弃。 */
   async flushIndex(limit = DEFAULT_ROUND_LIMIT): Promise<number> {
     const pending = this.db
-      .query<{ subject_id: number; attempts: number }, [number]>(
-        "SELECT subject_id, attempts FROM bangumi_index_pending ORDER BY queued_at ASC LIMIT ?"
+      .query<{ subject_id: number; attempts: number; queued_at: number }, [number]>(
+        "SELECT subject_id, attempts, queued_at FROM bangumi_index_pending ORDER BY queued_at ASC LIMIT ?"
       )
       .all(limit);
     if (!pending.length) return 0;
@@ -525,9 +525,14 @@ export class SubjectUpdater {
       .all(...ids) as Array<Record<string, unknown>>;
     try {
       await this.search.updateSubjects(rows.map((row) => this.search!.toSubjectDocument(row)));
-      // 队列里的条目若已被裁掉（上游删了 / 被剔除），这里一并清掉：留着只会每轮重试。
-      for (const id of ids)
-        this.db.query("DELETE FROM bangumi_index_pending WHERE subject_id = ?").run(id);
+      // 只清掉「读到时的那一版」：等索引任务期间条目可能被重新入队（`queued_at` 严格递增），
+      // 按编号清会抹掉它，新内容就永远进不了索引。队列里已被裁掉的条目随这批一并清掉。
+      const clear = this.db.query<never, [number, number]>(
+        "DELETE FROM bangumi_index_pending WHERE subject_id = ? AND queued_at = ?"
+      );
+      this.db.transaction(() => {
+        for (const row of pending) clear.run(Number(row.subject_id), Number(row.queued_at));
+      })();
       return rows.length;
     } catch (error) {
       this.logger?.warn?.(

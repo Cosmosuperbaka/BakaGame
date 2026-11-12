@@ -480,6 +480,52 @@ test("nsfw 守卫：上游标记 nsfw 的条目不落库且长期不再尝试", 
   });
 });
 
+test("索引同步期间同一条目被重新入队，不会被这批清理抹掉，新内容留待下次同步", async () => {
+  await withTemp(async (directory) => {
+    const db = dataset(directory, [{ id: 7, heat: 10 }]);
+    let version = 1;
+    const { fetcher } = upstream(() => ({ body: { name: `版本${version}` } }));
+    const received: string[] = [];
+    const holder: { updater?: SubjectUpdater } = {};
+    let requeued = false;
+    const index = {
+      updateSubjects: async (documents: SubjectSearchDocument[]) => {
+        received.push(...documents.map((document) => document.name));
+        // 等待 Meilisearch 任务期间，玩家点开该条目触发了新一轮刷新：库里已是新内容，条目重新入队。
+        if (!requeued) {
+          requeued = true;
+          version = 2;
+          await holder.updater!.refresh(7);
+        }
+      },
+      toSubjectDocument: (row: Record<string, unknown>) => ({
+        id: Number(row.id),
+        name: String(row.name),
+      }),
+    } as unknown as BangumiSearchIndex;
+    // 固定时钟：重新入队与上次入队同一毫秒，旧写法按 queued_at 也分不出先后。
+    const updater = new SubjectUpdater({
+      db,
+      base: "https://api.bgm.tv",
+      search: index,
+      fetcher,
+      now: () => 1_000,
+      sleep: () => Promise.resolve(),
+    });
+    holder.updater = updater;
+    expect(await updater.refresh(7)).toBe(true);
+    expect(await updater.flushIndex()).toBe(1);
+    expect(received).toEqual(["版本1"]);
+    // 新内容尚未进索引，队列里必须还留着它。
+    expect(db.query("SELECT count(*) AS n FROM bangumi_index_pending").get()).toEqual({ n: 1 });
+
+    expect(await updater.flushIndex()).toBe(1);
+    expect(received).toEqual(["版本1", "版本2"]);
+    expect(db.query("SELECT count(*) AS n FROM bangumi_index_pending").get()).toEqual({ n: 0 });
+    db.close();
+  });
+});
+
 test("缺图才下载：只回源一次并落库，已有则不再请求", async () => {
   await withTemp(async (directory) => {
     const db = dataset(directory, [{ id: 11, heat: 10 }]);
