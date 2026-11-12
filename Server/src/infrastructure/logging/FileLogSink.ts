@@ -15,12 +15,12 @@ import { formatOtelLogLine, type LogSink, type OtelLogRecord, type OtelResource 
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024 * 1024;
 /** 每个 UTC 日最多写多少个分段：与单文件上限相乘就是单日磁盘占用的硬上限。 */
 const DEFAULT_MAX_SEGMENTS_PER_DAY = 16;
-/** 非错误记录的合并写周期：错误级记录不等它，立即落盘。 */
+/** 低级别记录的合并写周期：告警及以上不等它，立即落盘。 */
 const DEFAULT_FLUSH_INTERVAL_MS = 200;
 /** 缓冲累计到这个量就不等周期、当场合并写，避免突发日志把内存撑大。 */
 const MAX_PENDING_BYTES = 256 * 1024;
-/** OTel 严重级别数字：错误级起（17）必须立即落盘。 */
-const ERROR_SEVERITY = 17;
+/** OTel 严重级别数字：告警级起（13）必须立即落盘，这类记录是事后排障最需要的，且量级很小。 */
+const IMMEDIATE_SEVERITY = 13;
 
 export interface FileLogSinkOptions {
   directory: string;
@@ -59,10 +59,10 @@ interface PendingLine {
 /**
  * 本地 OTel JSONL 文件出口。
  *
- * 写入按「错误立即、其余合并」两档：错误级记录当场同步落盘（进程被强杀前最后一条错误必须在盘上，
- * 停机看门狗的强制终止日志也走这一档），其余记录进内存缓冲，按短周期或体量阈值合并成一次写入，
+ * 写入按「告警及以上立即、其余合并」两档：告警与错误记录当场同步落盘（进程被强杀前最后一条错误必须在盘上，
+ * 停机看门狗的强制终止日志也走这一档），信息与调试记录进内存缓冲，按短周期或体量阈值合并成一次写入，
  * 不再每条日志阻塞一次事件循环。`flush`/`close` 同步排空，停机流程据此保证不丢；
- * 非错误记录在强杀时最多丢一个合并窗口。
+ * 低级别记录在强杀时最多丢一个合并窗口。
  *
  * 一行一条 OTLP/JSON，文件名按部署环境与 UTC 日区分，同一台机器同时跑开发与生产也不会混进同一个文件。
  * 单文件有字节上限，超限滚到下一个分段；每日分段数也有上限，封顶后当日记录直接丢弃并提示一次，
@@ -107,7 +107,7 @@ export class FileLogSink implements LogSink {
       const text = `${formatOtelLogLine(record, this.resource, this.scopeName)}\n`;
       this.pending.push({ date: dateKey(record), text });
       this.pendingBytes += text.length;
-      if (record.severityNumber >= ERROR_SEVERITY || this.pendingBytes >= MAX_PENDING_BYTES) {
+      if (record.severityNumber >= IMMEDIATE_SEVERITY || this.pendingBytes >= MAX_PENDING_BYTES) {
         this.drain();
       } else this.schedule();
     } catch (error) {

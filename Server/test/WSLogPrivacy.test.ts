@@ -377,6 +377,8 @@ test("security-baseline-001：真实隔离三协议畸形WS正文与凭据不落
       );
       sockets.push(ticketed.socket);
     }
+    // 文件出口对低级别记录做短周期合并写；强杀前多等一个合并窗口，验收的是内容而不是强杀丢窗口。
+    await Bun.sleep(600);
     // 停机信号不是此用例验收目标；只强制回收已核对 owner 的自有进程，Windows 不冒充 OS listener 验收。
     for (const socket of sockets) socket.close();
     child.kill("SIGKILL");

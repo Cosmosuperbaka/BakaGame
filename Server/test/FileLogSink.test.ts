@@ -140,12 +140,12 @@ test("非错误记录先进批量缓冲，flush 后按原顺序整批落盘", ()
   sink.close();
 });
 
-test("错误级记录立即落盘并带上此前缓冲的记录，强杀前的最后一条不丢", () => {
+test("告警及以上记录立即落盘并带上此前缓冲的记录，强杀前的最后一条不丢", () => {
   const directory = temporaryDirectory();
   const sink = sinkOf(directory, { flushIntervalMs: 60_000 });
   sink.write(record(DAY, "先发生的信息"));
   sink.write(
-    createOtelLogRecord({ createdAt: DAY + 1, level: "error", body: "随后的错误", attributes: {} })
+    createOtelLogRecord({ createdAt: DAY + 1, level: "warn", body: "随后的错误", attributes: {} })
   );
   const path = join(directory, "server-development-2026-10-24.log");
   // 没有 flush、没有 close：错误已经在盘上，且顺序在信息之后。
