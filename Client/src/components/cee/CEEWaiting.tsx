@@ -226,7 +226,7 @@ function WaitingActions({
       <Button
         variant={activeMe.ready ? "outline" : "default"}
         size="lg"
-        className="min-w-[120px] gap-2"
+        className="min-w-30 gap-2"
         disabled={readying}
         loading={readying}
         onClick={() => onToggleReady(activeMe.ready)}

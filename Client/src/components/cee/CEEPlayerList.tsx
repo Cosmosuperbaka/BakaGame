@@ -206,7 +206,8 @@ export function CEEPlayerList({
                 {pendingRequests.map((request) => (
                   <div
                     key={request.playerId}
-                    className="flex min-w-0 items-center justify-between gap-2 py-1"
+                    // 与上方「等待房主批准」条、加入旁观同一左缘
+                    className="flex min-w-0 items-center justify-between gap-2 px-2 py-1"
                   >
                     <span className="min-w-0 truncate text-sm">{request.name}</span>
                     <span className="flex shrink-0 items-center gap-1">
