@@ -61,3 +61,18 @@ export const CEE: Story = {
   name: "CEE 提示",
   args: { toasts: [{ id: "cee-notice", text: "设置已保存", type: "success" }] },
 };
+
+/** 短时间里连着来好几条：等宽右对齐堆叠，最长的一条决定整列宽度，长文与短句混排不参差。 */
+export const ManyStacked: Story = {
+  name: "多条堆叠",
+  args: {
+    toasts: [
+      { id: 1, text: "小布丁加入了房间", type: "info" },
+      { id: 2, text: "房间链接已复制", type: "success" },
+      { id: 3, text: "海豹已准备", type: "info" },
+      { id: 4, text: "网易云登录状态已失效，请重新扫码登录", type: "error" },
+      { id: 5, text: "设置已保存", type: "success" },
+      { id: 6, text: "有玩家掉线，等待出题人处理", type: "info" },
+    ],
+  },
+};
