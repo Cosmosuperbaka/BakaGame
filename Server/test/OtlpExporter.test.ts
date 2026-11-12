@@ -3,11 +3,11 @@ import {
   createOtlpExporter,
   OtlpExporter,
   OtlpShutdownError,
-  toUnixNanoString,
   type OtlpDrop,
   type OtlpFetcher,
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
+import { toUnixNanoString } from "../src/infrastructure/logging/OtelEncoding";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
 import { createTestApp as createApp } from "./AppFixtures";

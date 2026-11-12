@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { AppError } from "../domain/Errors";
+import { formatOtlpSpanId, formatOtlpTraceId, toUnixNanoString } from "./logging/OtelEncoding";
 import { countServerMetric } from "./Sentry";
 
 export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -90,36 +90,6 @@ export class OtlpShutdownError extends Error {
     this.name = "OtlpShutdownError";
   }
 }
-
-export const formatOtlpTraceId = (traceId?: string): string => {
-  if (!traceId) {
-    return crypto.randomUUID().replace(/-/g, "").toLowerCase();
-  }
-  // 合法形状（32 位十六进制，或去掉连字符后恰为 32 位的 UUID）原样沿用，与上游 trace 对得上。
-  const compact = traceId.replace(/-/g, "").toLowerCase();
-  if (/^[0-9a-f]{32}$/.test(compact)) return compact;
-  // 其余取摘要：补零或截断会让不同的号撞成同一条 trace，摘要至少保证「不同输入、不同结果」。
-  return createHash("sha256").update(traceId).digest("hex").slice(0, 32);
-};
-
-export const formatOtlpSpanId = (spanId?: string): string => {
-  if (!spanId) {
-    return crypto.randomUUID().replace(/-/g, "").slice(0, 16).toLowerCase();
-  }
-  const clean = spanId.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
-  if (clean.length === 16) return clean;
-  if (clean.length > 16) return clean.slice(0, 16);
-  return clean.padEnd(16, "0");
-};
-
-export const toUnixNanoString = (timeMs: number): string => {
-  if (!Number.isFinite(timeMs) || timeMs < 0) {
-    return String(BigInt(Date.now()) * 1_000_000n);
-  }
-  const ms = Math.trunc(timeMs);
-  const nanos = Math.round((timeMs - ms) * 1_000_000);
-  return String(BigInt(ms) * 1_000_000n + BigInt(nanos));
-};
 
 const toAnyValue = (v: unknown): Record<string, unknown> => {
   if (typeof v === "boolean") return { boolValue: v };

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolveRequestTraceId } from "../src/transport/RequestTraceId";
 import { acceptTraceId } from "../src/infrastructure/logging/TraceId";
-import { formatOtlpTraceId } from "../src/infrastructure/OtlpExporter";
+import { formatOtlpTraceId } from "../src/infrastructure/logging/OtelEncoding";
 
 const W3C = "4bf92f3577b34da6a3ce929d0e0e4736";
 const SENTRY = "771a43a4192642f0b136d5159a501700";
