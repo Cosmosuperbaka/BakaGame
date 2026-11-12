@@ -267,14 +267,17 @@
   --questioner: oklch(0.768 0.128 300);
   --questioner-foreground: oklch(0.2747 0.0139 57.6523);
   --radius: 0.25rem;
-  --shadow-2xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
-  --shadow-xs: 2px 3px 5px 0px hsl(28 13% 20% / 0.06);
-  --shadow-sm: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 1px 2px -1px hsl(28 13% 20% / 0.12);
-  --shadow: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 1px 2px -1px hsl(28 13% 20% / 0.12);
-  --shadow-md: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 2px 4px -1px hsl(28 13% 20% / 0.12);
-  --shadow-lg: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 4px 6px -1px hsl(28 13% 20% / 0.12);
-  --shadow-xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.12), 2px 8px 10px -1px hsl(28 13% 20% / 0.12);
-  --shadow-2xl: 2px 3px 5px 0px hsl(28 13% 20% / 0.3);
+  /* 暗色投影不能沿用亮色的 hsl(28 13% 20%)：那个颜色比暗色页面底（约 hsl(25 15% 15%)）还亮，
+     叠上去不是变暗而是发灰，浮层、提示条与弹窗在暗色下完全失去浮起感。改用近黑的暖褐，
+     透明度按暗底需要的可见度抬高；偏移与档位结构与亮色一致，三档用法见 DesignGuide §5。 */
+  --shadow-2xs: 2px 3px 5px 0px hsl(28 30% 4% / 0.25);
+  --shadow-xs: 2px 3px 5px 0px hsl(28 30% 4% / 0.25);
+  --shadow-sm: 2px 3px 5px 0px hsl(28 30% 4% / 0.35), 2px 1px 2px -1px hsl(28 30% 4% / 0.35);
+  --shadow: 2px 3px 5px 0px hsl(28 30% 4% / 0.35), 2px 1px 2px -1px hsl(28 30% 4% / 0.35);
+  --shadow-md: 2px 3px 5px 0px hsl(28 30% 4% / 0.4), 2px 2px 4px -1px hsl(28 30% 4% / 0.4);
+  --shadow-lg: 2px 3px 6px 0px hsl(28 30% 4% / 0.45), 2px 4px 8px -1px hsl(28 30% 4% / 0.45);
+  --shadow-xl: 2px 3px 6px 0px hsl(28 30% 4% / 0.45), 2px 8px 12px -1px hsl(28 30% 4% / 0.45);
+  --shadow-2xl: 2px 3px 6px 0px hsl(28 30% 4% / 0.6);
   /* 暗色纸纹理改用极淡柔和暖象牙白微纸齿，深邃静谧无雪花感（baseFrequency 0.75，Alpha 峰值约 4.0%，平均提亮约 1.5%）。 */
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.95 0 0 0 0 0.90 0 0 0 0 0.82 0.06 0 0 0 -0.02'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
 }
