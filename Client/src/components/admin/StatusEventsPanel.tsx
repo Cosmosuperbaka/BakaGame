@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Textarea } from "@/components/ui/Textarea";
 import {
   SettingSelect,
@@ -104,7 +105,10 @@ const draftOf = (event?: PublicStatusEvent): EventDraft => ({
       : "",
 });
 
-/** 影响组件的多选：留空表示全站；chips 自带按压反馈，与设置页同一手感。 */
+/**
+ * 影响组件的多选：留空表示全站；chips 自带按压反馈，与设置页同一手感。
+ * 未选态的虚线取弱前景色而不是 --border：后者在暗色弹窗底上几乎看不见，胶囊只剩一行字。
+ */
 function ComponentChips({
   selected,
   onChange,
@@ -136,7 +140,7 @@ function ComponentChips({
                 "rounded-full border px-3 py-1 text-xs transition-colors",
                 pressed
                   ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                  : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground"
+                  : "border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground hover:border-solid hover:text-foreground"
               )}
             >
               {option.label}
@@ -356,10 +360,23 @@ export function StatusEventsPanel() {
     <div>
       <AdminToolbar
         title="状态事件"
-        count={total}
+        compact
+        // 读取中不显示计数：与其它面板一致，避免先闪一个 0。
+        count={query.data ? total : null}
         onReload={reload}
         loading={query.loading && Boolean(query.data)}
       >
+        {/* 筛选与其它面板一样放进标题行；原先独占一行的设置行写法在手机上放不下四个选项，把页面撑出右缘。 */}
+        <SegmentedControl
+          aria-label="筛选"
+          size="sm"
+          value={filter}
+          onValueChange={(next) => {
+            setFilter(next);
+            setOffset(0);
+          }}
+          options={FILTER_OPTIONS}
+        />
         <Button type="button" size="sm" onClick={() => setCreating(true)}>
           发布事件
         </Button>
@@ -368,17 +385,6 @@ export function StatusEventsPanel() {
         面向状态页的故障通告与维护窗口：进行中的一律展示，已结束的回看一个月。
         事件与维护只出现在本部署环境的状态页上。
       </p>
-      <div className="mb-4">
-        <SettingSegmented
-          label="筛选"
-          value={filter}
-          onValueChange={(next) => {
-            setFilter(next);
-            setOffset(0);
-          }}
-          options={FILTER_OPTIONS}
-        />
-      </div>
       <QueryState
         loading={query.loading}
         error={query.error}
