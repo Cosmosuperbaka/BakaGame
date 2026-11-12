@@ -85,6 +85,7 @@ async function setup(options: Partial<ConstructorParameters<typeof CEEOriginalSe
     aesSecret: "fixture-key",
     socketFactory: room.factory,
     fetcher: async () => Response.json([{ id: "1234" }]),
+    ackTimeoutMs: 20,
     ...options,
   });
   services.push(service);
@@ -425,7 +426,7 @@ describe("原版准备事务的异步归属", () => {
       expect(h.snapshot().phase).toBe("guessing");
       h.room.pendingAck?.({ ok: true });
       expect(h.snapshot().phase).toBe("guessing");
-    }, 10_000);
+    });
 
     for (const ackMode of ["normal", "reject", "hold"] as const)
       test(`${command} 有效归属区分${ackMode}确认`, async () => {

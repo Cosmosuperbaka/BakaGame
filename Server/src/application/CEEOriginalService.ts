@@ -12,6 +12,7 @@ import {
   createCEEOriginalSocket,
   originalConfirmedEvent,
   originalRequest,
+  type CEEOriginalSocket,
   type CEEOriginalSocketFactory,
 } from "../infrastructure/CEEOriginalSocket";
 import {
@@ -62,6 +63,8 @@ interface CEEOriginalOptions {
   socketFactory?: CEEOriginalSocketFactory;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   imageHints?: Pick<CEEImageHints, "render">;
+  /** 上游请求与事件确认的等待上限；缺省取生产值，测试注入小值避免真实等待。 */
+  ackTimeoutMs?: number;
 }
 
 export class CEEOriginalService {
@@ -92,6 +95,24 @@ export class CEEOriginalService {
       .update(options.serverUrl || "")
       .digest("hex")
       .slice(0, 12);
+  }
+
+  /** 上游请求统一带上本服务的确认超时。 */
+  private upstreamRequest(
+    socket: CEEOriginalSocket,
+    event: string,
+    payload: unknown
+  ): Promise<Record<string, unknown>> {
+    return originalRequest(socket, event, payload, this.options.ackTimeoutMs);
+  }
+
+  private upstreamConfirmed(
+    socket: CEEOriginalSocket,
+    event: string,
+    predicate: (payload: unknown) => boolean,
+    send: () => void
+  ): Promise<unknown> {
+    return originalConfirmedEvent(socket, event, predicate, send, this.options.ackTimeoutMs);
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -224,13 +245,13 @@ export class CEEOriginalService {
     event: string,
     payload: Record<string, unknown> = {}
   ): Promise<unknown> {
-    return originalRequest(session.socket, event, { roomId: session.roomId, ...payload });
+    return this.upstreamRequest(session.socket, event, { roomId: session.roomId, ...payload });
   }
 
   /** 房主没有准备态，开局只看其他玩家，与增强房一致。 */
   private async toggleReady(session: CEEOriginalSession, ready: boolean): Promise<unknown> {
     if (this.me(session).isHost || this.me(session).ready === ready) return {};
-    await originalConfirmedEvent(
+    await this.upstreamConfirmed(
       session.socket,
       "updatePlayers",
       () => this.me(session).ready === ready,
@@ -403,7 +424,7 @@ export class CEEOriginalService {
     this.byConnection.set(connection.id, session);
     this.listen(session);
     try {
-      await originalConfirmedEvent(
+      await this.upstreamConfirmed(
         socket,
         "connect",
         () => true,
@@ -411,7 +432,7 @@ export class CEEOriginalService {
       );
       // 原版会自行裁剪/规范化用户名，谓词不能做全等比对，否则加入确认要等到 8s 超时才失败。
       const expected = name.trim();
-      await originalConfirmedEvent(
+      await this.upstreamConfirmed(
         socket,
         "updatePlayers",
         () =>
@@ -436,7 +457,7 @@ export class CEEOriginalService {
       connection.roomId = `original:${roomId}`;
       connection.playerId = socket.id;
       if (create) {
-        await originalRequest(socket, "updateGameSettings", {
+        await this.upstreamRequest(socket, "updateGameSettings", {
           roomId,
           settings: toOriginalSettings(session.settings),
         });
@@ -532,14 +553,14 @@ export class CEEOriginalService {
     isPublic: boolean
   ): Promise<void> {
     if (name !== session.roomName)
-      await originalConfirmedEvent(
+      await this.upstreamConfirmed(
         session.socket,
         "roomNameUpdated",
         (payload) => originalString(originalObject(payload).roomName) === name.trim().slice(0, 30),
         () => session.socket.emit("updateRoomName", { roomId: session.roomId, roomName: name })
       );
     if (isPublic !== session.isPublic)
-      await originalConfirmedEvent(
+      await this.upstreamConfirmed(
         session.socket,
         "updatePlayers",
         () => session.isPublic === isPublic,
@@ -641,7 +662,7 @@ export class CEEOriginalService {
         character.imageUrl = await this.options.data.resolveCharacterImage(character.id);
         this.requirePreparation(session, operation);
       }
-      return await originalRequest(session.socket, "gameStart", {
+      return await this.upstreamRequest(session.socket, "gameStart", {
         roomId: session.roomId,
         character: encodeOriginalCharacter(character, this.options.aesSecret!),
         settings: toOriginalSettings(operation.settings),
@@ -669,7 +690,7 @@ export class CEEOriginalService {
         character.imageUrl = await this.options.data.resolveCharacterImage(id);
         this.requirePreparation(session, operation);
       }
-      return await originalRequest(session.socket, "setAnswer", {
+      return await this.upstreamRequest(session.socket, "setAnswer", {
         roomId: session.roomId,
         character: encodeOriginalCharacter(character, this.options.aesSecret!),
         hints,
@@ -703,7 +724,7 @@ export class CEEOriginalService {
     const tags = session.settings.tagBan
       ? feedback.tags.filter((tag) => tag.matched).map((tag) => tag.text)
       : [];
-    const result = await originalRequest(session.socket, "playerGuess", {
+    const result = await this.upstreamRequest(session.socket, "playerGuess", {
       roomId: session.roomId,
       guessResult: {
         isCorrect: id === answer.id,

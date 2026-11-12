@@ -1,4 +1,5 @@
 import { io } from "socket.io-client";
+import { CEE_ORIGINAL_ACK_TIMEOUT_MS } from "../config/Constants";
 import { AppError } from "../domain/Errors";
 import { originalObject, originalString } from "./CEEOriginalProtocol";
 
@@ -25,7 +26,8 @@ export const createCEEOriginalSocket: CEEOriginalSocketFactory = (url) =>
 export function originalRequest(
   socket: CEEOriginalSocket,
   event: string,
-  payload: unknown
+  payload: unknown,
+  timeoutMs: number = CEE_ORIGINAL_ACK_TIMEOUT_MS
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const finish = (error?: Error, result?: Record<string, unknown>) => {
@@ -39,7 +41,7 @@ export function originalRequest(
     const timer = setTimeout(
       () =>
         finish(new AppError("CEE_ORIGINAL_TIMEOUT", "原版服务器未确认操作，请同步房间状态后重试")),
-      8000
+      timeoutMs
     );
     socket.on("disconnect", disconnected);
     socket.emit(event, payload, (response) => {
@@ -65,7 +67,8 @@ export function originalConfirmedEvent(
   socket: CEEOriginalSocket,
   event: string,
   predicate: (payload: unknown) => boolean,
-  send: () => void
+  send: () => void,
+  timeoutMs: number = CEE_ORIGINAL_ACK_TIMEOUT_MS
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const finish = (error?: Error, payload?: unknown) => {
@@ -89,7 +92,7 @@ export function originalConfirmedEvent(
     const disconnected = () => finish(new AppError("CEE_ORIGINAL_DISCONNECTED", "原版连接已中断"));
     const timer = setTimeout(
       () => finish(new AppError("CEE_ORIGINAL_TIMEOUT", "原版服务器未确认操作")),
-      8000
+      timeoutMs
     );
     socket.on(event, received);
     socket.on("error", failed);
