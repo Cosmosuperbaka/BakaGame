@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Meilisearch } from "meilisearch";
+import { MeilisearchApiError, type Meilisearch } from "meilisearch";
 import {
   BangumiSearchIndex,
   CHARACTER_FILTERABLE,
@@ -173,10 +173,8 @@ describe("统一搜索索引契约", () => {
       123,
       ""
     );
-    const path = join(tmpdir(), `bangumi-index-src-${crypto.randomUUID()}.sqlite`);
-    new Database(path).close();
     try {
-      await new BangumiSearchIndex({ client }).initialize(db, path);
+      await new BangumiSearchIndex({ client }).initialize(db);
       const written = documents.find((entry) => entry.index === "subjects")!.documents[0] as Record<
         string,
         unknown
@@ -195,6 +193,146 @@ describe("统一搜索索引契约", () => {
       });
       // nsfw 不再进文档：filterable 已去掉该字段。
       expect(written.nsfw).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/** 有状态的假 Meilisearch：记住每个索引里的文档，才能验证「第二次初始化是否又重建」。 */
+function createStatefulClient() {
+  const stores = new Map<string, Map<unknown, Record<string, unknown>>>();
+  const calls = { health: 0, deleteAll: 0, addDocuments: 0, updateSettings: 0 };
+  const store = (uid: string) => {
+    let docs = stores.get(uid);
+    if (!docs) stores.set(uid, (docs = new Map()));
+    return docs;
+  };
+  const done = { waitTask: async () => ({ status: "succeeded" }) };
+  const client = {
+    health: async () => {
+      calls.health += 1;
+      return { status: "available" };
+    },
+    createIndex: (uid: string) => {
+      store(uid);
+      return done;
+    },
+    index(uid: string) {
+      return {
+        uid,
+        fetchInfo: async () => ({ uid }),
+        updateSettings: () => {
+          calls.updateSettings += 1;
+          return done;
+        },
+        getStats: async () => ({ numberOfDocuments: store(uid).size }),
+        getDocument: async (id: string) => {
+          const doc = store(uid).get(id);
+          if (!doc)
+            throw new MeilisearchApiError({ status: 404, statusText: "", url: "" } as Response, {
+              message: "not found",
+              code: "document_not_found",
+              type: "invalid_request",
+              link: "",
+            });
+          return doc;
+        },
+        deleteAllDocuments: () => {
+          calls.deleteAll += 1;
+          store(uid).clear();
+          return done;
+        },
+        addDocuments: (items: Array<Record<string, unknown>>) => {
+          calls.addDocuments += 1;
+          for (const item of items) store(uid).set(item.id, item);
+          return done;
+        },
+      };
+    },
+  } as unknown as Meilisearch;
+  return { client, calls, store };
+}
+
+function createDataset(options: { userVersion?: number } = {}) {
+  const path = join(tmpdir(), `bangumi-index-rev-${crypto.randomUUID()}.sqlite`);
+  const db = new Database(path);
+  db.exec(`
+    CREATE TABLE subjects(id INTEGER PRIMARY KEY,type INTEGER,name TEXT,name_cn TEXT,aliases TEXT,date TEXT,tags TEXT,meta_tags TEXT,score REAL,rating_count INTEGER,heat INTEGER,rank INTEGER);
+    CREATE TABLE characters(id INTEGER PRIMARY KEY,name TEXT,name_cn TEXT,aliases TEXT,comments INTEGER,collects INTEGER);
+    INSERT INTO subjects VALUES (1,2,'A','甲','[]','2020-01-01','[]','[]',8,10,5,1);
+    INSERT INTO subjects VALUES (2,2,'B','乙','[]','2021-01-01','[]','[]',7,10,4,2);
+    INSERT INTO characters VALUES (1,'X','叉','[]',1,1);
+  `);
+  if (options.userVersion) db.exec(`PRAGMA user_version = ${options.userVersion}`);
+  return db;
+}
+
+describe("搜索索引初始化的修订号", () => {
+  test("数据集文件在两次启动之间被正常写入（刷新、发现）不触发全量重灌", async () => {
+    const { client, calls } = createStatefulClient();
+    const db = createDataset();
+    try {
+      await new BangumiSearchIndex({ client }).initialize(db);
+      expect(calls.addDocuments).toBeGreaterThan(0);
+      const before = { ...calls };
+      // 更新器每轮都在改库：文件字节变了，但索引内容由待同步队列增量维护。
+      db.exec("UPDATE subjects SET heat = heat + 1, score = 9 WHERE id = 1");
+      await new BangumiSearchIndex({ client }).initialize(db);
+      expect(calls.deleteAll).toBe(before.deleteAll);
+      expect(calls.addDocuments).toBe(before.addDocuments);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("基线标识变化（整库替换）或文档数与库不一致时才重灌", async () => {
+    const { client, calls, store } = createStatefulClient();
+    const db = createDataset();
+    try {
+      await new BangumiSearchIndex({ client }).initialize(db);
+      const afterFirst = calls.deleteAll;
+      // 文档数偏离：只重灌对应索引。
+      store("characters").clear();
+      await new BangumiSearchIndex({ client }).initialize(db);
+      expect(calls.deleteAll).toBe(afterFirst + 1);
+      expect(store("characters").size).toBe(1);
+      // 基线标识提升：两个索引都重灌。
+      db.exec("PRAGMA user_version = 7");
+      await new BangumiSearchIndex({ client }).initialize(db);
+      expect(calls.deleteAll).toBe(afterFirst + 3);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("同一适配器被多条链路并发初始化时只执行一次", async () => {
+    const { client, calls } = createStatefulClient();
+    const db = createDataset();
+    try {
+      const search = new BangumiSearchIndex({ client });
+      await Promise.all([search.initialize(db), search.initialize(db), search.initialize(db)]);
+      // 每次完整初始化会对两个索引各 updateSettings 一次。
+      expect(calls.updateSettings).toBe(2);
+      expect(calls.health).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  test("初始化失败后可以重试，不会把失败钉死", async () => {
+    const { client } = createStatefulClient();
+    const db = createDataset();
+    try {
+      let failures = 1;
+      const original = client.health.bind(client);
+      client.health = (async () => {
+        if (failures-- > 0) throw new Error("暂时不可达");
+        return original();
+      }) as typeof client.health;
+      const search = new BangumiSearchIndex({ client });
+      await expect(search.initialize(db)).rejects.toThrow("暂时不可达");
+      await expect(search.initialize(db)).resolves.toBeUndefined();
     } finally {
       db.close();
     }

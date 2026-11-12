@@ -200,6 +200,8 @@ const initSongLink = async (request: InitRequest): Promise<void> => {
     // 玩家点开的条目登记到更新器：闭包引用，更新器晚一步创建也没关系。
     song = new LocalBangumiProvider({
       ...request.song,
+      // 与 CEE 链路共用同一个搜索适配器：索引只初始化一次，也只有一份连接池。
+      search: searchIndex,
       onSubjectView: (id) => updater?.requestRefresh(id),
       logger: bridgedLogger("song"),
     });
@@ -213,7 +215,7 @@ const initSongLink = async (request: InitRequest): Promise<void> => {
 /** CEE 链路建库：同样失败只记在该侧，查询时再抛出来。 */
 const initCeeLink = async (request: InitRequest): Promise<void> => {
   try {
-    cee = new CEECharacterRepository(request.cee);
+    cee = new CEECharacterRepository({ ...request.cee, search: searchIndex });
     await cee.initialize();
   } catch (error) {
     cee = undefined;

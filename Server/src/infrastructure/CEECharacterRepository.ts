@@ -111,8 +111,10 @@ export class CEECharacterRepository implements CEEDataProvider {
       throw error;
     }
     this.now = options.now ?? Date.now;
-    this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
-    this.ready = this.search?.initialize(this.db, options.dbPath) ?? Promise.resolve();
+    this.search =
+      options.search ??
+      (options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined);
+    this.ready = this.search?.initialize(this.db) ?? Promise.resolve();
   }
 
   async initialize(): Promise<void> {

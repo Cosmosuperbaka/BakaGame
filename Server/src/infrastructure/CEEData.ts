@@ -7,7 +7,7 @@ import type {
   CEESettings,
   CEESubjectSummary,
 } from "../shared/CEE";
-import type { BangumiSearchOptions } from "./BangumiSearchIndex";
+import type { BangumiSearchIndex, BangumiSearchOptions } from "./BangumiSearchIndex";
 
 /** SQLite 的原始输入，不包含随房间设置变化的标签池。 */
 export interface CEERawAppearance {
@@ -66,8 +66,10 @@ export interface CEEDataOptions {
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   now?: () => number;
   meilisearch?: BangumiSearchOptions;
+  /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
+  search?: BangumiSearchIndex;
 }
 
-export type CEEDataInit = Omit<CEEDataOptions, "fetcher" | "now" | "meilisearch"> & {
+export type CEEDataInit = Omit<CEEDataOptions, "fetcher" | "now" | "meilisearch" | "search"> & {
   meilisearch?: Omit<BangumiSearchOptions, "client">;
 };

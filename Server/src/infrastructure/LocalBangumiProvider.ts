@@ -145,6 +145,8 @@ export interface LocalBangumiProviderOptions {
   imageBase?: string;
   apiBase?: string;
   meilisearch?: BangumiSearchOptions;
+  /** 已构造好的搜索适配器；注入后不再按 `meilisearch` 另建，让多条链路共用一个实例与一次初始化。 */
+  search?: BangumiSearchIndex;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   /**
    * 玩家请求条目时的回调：交给更新器异步回源刷新（阶段 6）。
@@ -160,7 +162,7 @@ export interface LocalBangumiProviderOptions {
 /** 可跨 Worker 传递的初始化参数：`fetcher` 是函数，无法结构化克隆。 */
 export type BangumiProviderInit = Omit<
   LocalBangumiProviderOptions,
-  "fetcher" | "meilisearch" | "logger"
+  "fetcher" | "meilisearch" | "search" | "logger"
 > & {
   meilisearch?: Omit<BangumiSearchOptions, "client">;
 };
@@ -201,10 +203,10 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       `);
       this.enrichment = enrichment;
     }
-    this.search = options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined;
-    this.searchReady = this.search
-      ? this.search.initialize(this.db, options.dbPath)
-      : Promise.resolve();
+    this.search =
+      options.search ??
+      (options.meilisearch ? new BangumiSearchIndex(options.meilisearch) : undefined);
+    this.searchReady = this.search ? this.search.initialize(this.db) : Promise.resolve();
     this.onSubjectView = options.onSubjectView;
   }
 

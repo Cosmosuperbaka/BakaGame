@@ -1,6 +1,4 @@
 import type { Database } from "bun:sqlite";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import {
   Meilisearch,
   type EnqueuedTaskPromise,
@@ -137,6 +135,7 @@ export class BangumiSearchIndex {
   private readonly subjects: IndexWithDocuments<SubjectSearchDocument>;
   private readonly characters: IndexWithDocuments<CharacterSearchDocument>;
   private readonly metadata: Index<{ [key: string]: unknown; id: string; revision: string }>;
+  private initialization: Promise<void> | undefined;
 
   constructor(options: BangumiSearchOptions = {}) {
     // httpClient 用 node:http 单写 + keep-alive 替代 fetch，消除容器网络路径上的 TCP 罚时。
@@ -171,7 +170,24 @@ export class BangumiSearchIndex {
     };
   }
 
-  async initialize(db: Database, sourcePath: string): Promise<void> {
+  /**
+   * 初始化索引：配置、必要时全量灌入。同一适配器只执行一次——猜歌与 CEE 两条链路共用
+   * 一个适配器，并发调用拿到的是同一个 Promise；失败不缓存，下次调用可以重试。
+   *
+   * 重灌条件只有三个：索引架构版本变了、数据集基线标识变了、文档数与库不一致。
+   * **不能**用数据集文件内容当修订号：数据集可写，更新器、发现、备份每一轮都在改文件，
+   * 那样每次重启都会清空并重灌数十万文档，期间本地数据查询全部挂起。
+   * 平时的变更由待同步队列增量写进索引，所以修订号只绑定「会改变索引内容的基线」。
+   */
+  initialize(db: Database): Promise<void> {
+    this.initialization ??= this.runInitialize(db).catch((error: unknown) => {
+      this.initialization = undefined;
+      throw error;
+    });
+    return this.initialization;
+  }
+
+  private async runInitialize(db: Database): Promise<void> {
     await this.client.health();
     await this.configureIndex(
       this.subjects,
@@ -189,7 +205,11 @@ export class BangumiSearchIndex {
     );
     await this.ensureIndex(this.metadata);
 
-    const revision = `${INDEX_SCHEMA_VERSION}:${await fingerprint(sourcePath)}`;
+    // 基线标识取 SQLite 的 user_version：构建出新基线时由构建方提升它，日常写入不会动它。
+    const baseline = Number(
+      (db.query("PRAGMA user_version").get() as { user_version: number }).user_version
+    );
+    const revision = `${INDEX_SCHEMA_VERSION}:${baseline}`;
     const subjectCount = Number(
       (db.query("SELECT count(*) AS count FROM subjects").get() as { count: number }).count
     );
@@ -308,45 +328,48 @@ export class BangumiSearchIndex {
 
   private async replaceSubjects(db: Database): Promise<void> {
     await waitForIndexTask(this.subjects.deleteAllDocuments());
-    const rows = db
-      .query(
-        "SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects ORDER BY id"
-      )
-      .all() as Array<Record<string, unknown>>;
-    await this.addBatches(
+    await this.addPaged(
       this.subjects,
-      rows.map((row) => ({
-        id: Number(row.id),
-        name: String(row.name),
-        aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
-        // 官方 `document.Tag` 取的是标签名数组（subjects.tags），不是 raw_tags 的票数对象。
-        tag: parseJsonStrings(row.tags),
-        meta_tag: parseJsonStrings(row.meta_tags),
-        date: parseDate(String(row.date)),
-        score: Number(row.score),
-        rating_count: Number(row.rating_count),
-        heat: Number(row.heat),
-        rank: Number(row.rank ?? 0),
-        type: Number(row.type),
-      }))
+      db,
+      "SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects",
+      (row) => this.toSubjectDocument(row)
     );
   }
 
   private async replaceCharacters(db: Database): Promise<void> {
     await waitForIndexTask(this.characters.deleteAllDocuments());
-    const rows = db
-      .query("SELECT id,name,name_cn,aliases,comments,collects FROM characters ORDER BY id")
-      .all() as Array<Record<string, unknown>>;
-    await this.addBatches(
+    await this.addPaged(
       this.characters,
-      rows.map((row) => ({
+      db,
+      "SELECT id,name,name_cn,aliases,comments,collects FROM characters",
+      (row) => ({
         id: Number(row.id),
         name: String(row.name),
-        aliases: uniqueStrings(String(row.name_cn), parseJsonStrings(row.aliases)),
-        comment: Number(row.comments),
-        collect: Number(row.collects),
-      }))
+        aliases: uniqueStrings(cellText(row.name_cn), parseJsonStrings(row.aliases)),
+        comment: Number(row.comments ?? 0),
+        collect: Number(row.collects ?? 0),
+      })
     );
+  }
+
+  /**
+   * 按主键分页读、分批写：数十万行不一次性展开进内存，也不在等待 Meilisearch 任务期间
+   * 长时间持有读游标（会挡住同库的写者）。
+   */
+  private async addPaged<T extends Record<string, unknown>>(
+    index: Index<T>,
+    db: Database,
+    selectSql: string,
+    toDocument: (row: Record<string, unknown>) => T
+  ): Promise<void> {
+    const page = db.query(`${selectSql} WHERE id > ? ORDER BY id LIMIT ${BATCH_SIZE}`);
+    let lastId = Number.NEGATIVE_INFINITY;
+    for (;;) {
+      const rows = page.all(lastId) as Array<Record<string, unknown>>;
+      if (rows.length === 0) return;
+      await waitForIndexTask(index.addDocuments(rows.map(toDocument), { primaryKey: "id" }));
+      lastId = Number(rows[rows.length - 1]!.id);
+    }
   }
 
   private async addBatches<T extends Record<string, unknown>>(
@@ -366,12 +389,6 @@ export class BangumiSearchIndex {
       estimatedTotalHits: result.estimatedTotalHits ?? result.hits.length,
     };
   }
-}
-
-async function fingerprint(path: string): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
-  return hash.digest("hex");
 }
 
 async function waitForIndexTask(task: EnqueuedTaskPromise): Promise<void> {
