@@ -53,9 +53,6 @@ import {
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
   HOST_RECONNECT_TIMEOUT_MS,
-  JOIN_PASSWORD_MAX_ATTEMPTS,
-  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
-  JOIN_PASSWORD_WINDOW_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
@@ -103,6 +100,8 @@ import {
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
+import { RoomIdReservations } from "./room/RoomIdReservations";
+import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
   MusicSearchOptions,
   musicIpScope,
@@ -137,6 +136,9 @@ import {
 } from "./songuessr/Records";
 import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
+/** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
+const normalizeRoomPassword = (password: string): string => password.trim();
+
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
   bangumiProvider?: BangumiDataProvider;
@@ -151,6 +153,8 @@ export interface SonGuessrServiceOptions {
   testRooms?: TestRoomPolicy;
   /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
+  /** 口令摘要器；只供测试把「建房算摘要」那段 await 停在手里，缺省用运行时的慢哈希。 */
+  passwordHasher?: RoomPasswordGateOptions["hasher"];
 }
 
 /** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
@@ -184,22 +188,6 @@ export class SonGuessrService implements AdminRoomControl {
     windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
     maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
   });
-  /**
-   * 加入私密房间的密码尝试配额（按「连接 + 房间」计数）。
-   * 房间号只有 9000 个且私密房带锁出现在大厅，不设限流就能一直试。
-   */
-  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: JOIN_PASSWORD_MAX_ATTEMPTS,
-  });
-  /**
-   * 同一房间的聚合密码尝试配额（只按房间计数）。
-   * 每连接各算一份时，开 N 条连接就有 N 份额度，词表爆破在聚合上不受限。
-   */
-  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
-  });
   /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。 */
   private readonly chatLimiter = new SlidingWindowRateLimiter({
     windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
@@ -214,10 +202,20 @@ export class SonGuessrService implements AdminRoomControl {
   musicRefreshSweepInFlight = false;
 
   readonly testRooms: TestRoomPolicy;
+  /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
+  private readonly reservations = new RoomIdReservations();
+  private readonly passwordGate: RoomPasswordGate;
 
   constructor(readonly options: SonGuessrServiceOptions) {
     this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
     this.now = options.now ?? (() => Date.now());
+    this.passwordGate = new RoomPasswordGate({
+      now: () => this.now(),
+      normalize: normalizeRoomPassword,
+      missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
+      missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
+      hasher: options.passwordHasher,
+    });
     this.random = options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
     };
@@ -736,72 +734,67 @@ export class SonGuessrService implements AdminRoomControl {
   ) {
     const roomId = ensureRoomId(payload.roomId, this.testRooms);
     assertTextAllowed(payload.name, payload.userName);
-    if (this.rooms.has(roomId)) throw new AppError("ROOM_EXISTS", "该房间号已被使用");
-    const password =
-      payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
-
-    const player = this.createPlayer(
-      payload.userName,
-      true,
-      false,
-      tabSeatId(connection, "song", roomId)
-    );
-    if (connection.isAgent === true) player.isAgent = true;
-    const now = this.now();
-    const solo = payload.solo === true;
-    const room: SonGuessrRoomRecord = {
-      id: roomId,
-      name: normalizeWord(payload.name),
-      solo,
-      visibility: payload.visibility,
-      allowSpectators: solo ? false : payload.allowSpectators,
-      hostPlayerId: player.id,
-      settings: cloneSettings({
-        ...DEFAULT_SETTINGS,
-        questionMode: solo ? "automatic" : DEFAULT_SETTINGS.questionMode,
-        allowAgents: payload.allowAgents === true || connection.agentDriven?.() === true,
-      }),
-      phase: "waiting",
-      roundNumber: 0,
-      players: { [player.id]: player },
-      chat: [],
-      createdAt: now,
-      updatedAt: now,
-      lastActivityAt: now,
-      recentSongIds: [],
-      recentSubjectIds: [],
-    };
-
-    // 算摘要要跨一次 await，先占住房号再算，避免并发建房互相覆盖（与 CEE 同一口径）。
-    this.rooms.set(roomId, room);
-    if (password) {
-      try {
-        room.passwordHash = await Bun.password.hash(password);
-      } catch (error) {
-        this.rooms.delete(roomId);
-        throw error;
-      }
-    }
-    // 目标校验全部通过后才解绑旧席位：被拒绝的建房不得销毁原绑定。
-    // 这里仍可能因连接残留的半截状态抛错，新房号要随之撤销。
+    // 算摘要要跨一次 await：先同步占号挡住并发建房，房间对象在摘要算完、连接复核通过之前
+    // 不进房间表，入房、大厅与巡检都看不到没有摘要的私密房。
+    const release = this.reservations.hold(roomId, (id) => this.rooms.has(id));
     try {
+      const password =
+        payload.visibility === "private" ? this.passwordGate.require(payload.password) : undefined;
+
+      const player = this.createPlayer(
+        payload.userName,
+        true,
+        false,
+        tabSeatId(connection, "song", roomId)
+      );
+      if (connection.isAgent === true) player.isAgent = true;
+      const now = this.now();
+      const solo = payload.solo === true;
+      const room: SonGuessrRoomRecord = {
+        id: roomId,
+        name: normalizeWord(payload.name),
+        solo,
+        visibility: payload.visibility,
+        allowSpectators: solo ? false : payload.allowSpectators,
+        hostPlayerId: player.id,
+        settings: cloneSettings({
+          ...DEFAULT_SETTINGS,
+          questionMode: solo ? "automatic" : DEFAULT_SETTINGS.questionMode,
+          allowAgents: payload.allowAgents === true || connection.agentDriven?.() === true,
+        }),
+        phase: "waiting",
+        roundNumber: 0,
+        players: { [player.id]: player },
+        chat: [],
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+        recentSongIds: [],
+        recentSubjectIds: [],
+      };
+
+      if (password) room.passwordHash = await this.passwordGate.hash(password);
+      // 摘要期间连接可能已经断开：断开后再登记会留下一个没有连接的在线房主，房间永远不空。
+      if (!this.connections.findConnection(connection.id))
+        throw new AppError("SESSION_INVALID", "连接状态已经变化，请重新加入");
+      // 目标校验全部通过后才解绑旧席位：被拒绝的建房不得销毁原绑定。
       this.ensureConnectionFree(connection);
-    } catch (error) {
-      this.rooms.delete(roomId);
-      throw error;
+      this.rooms.set(roomId, room);
+      this.attachConnection(room, player, connection);
+      this.appendSystemMessage(room, `${player.name} 创建了房间`);
+      this.publishRoom(room);
+      this.publishLobby();
+      this.log("song.room.created", room.id, player.id);
+      return {
+        roomId,
+        playerId: player.id,
+        sessionToken: player.sessionToken,
+        snapshot: this.buildRoomSnapshot(room),
+        privateState: this.buildPrivateState(room, player),
+      };
+    } finally {
+      release();
     }
-    this.attachConnection(room, player, connection);
-    this.appendSystemMessage(room, `${player.name} 创建了房间`);
-    this.publishRoom(room);
-    this.publishLobby();
-    this.log("song.room.created", room.id, player.id);
-    return {
-      roomId,
-      playerId: player.id,
-      sessionToken: player.sessionToken,
-      snapshot: this.buildRoomSnapshot(room),
-      privateState: this.buildPrivateState(room, player),
-    };
   }
 
   private async joinRoom(
@@ -817,7 +810,7 @@ export class SonGuessrService implements AdminRoomControl {
     this.ensureAgentsAllowed(room, connection);
     if (connection.agentDriven?.() === true && room.settings.allowAgents !== true)
       throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
-    await this.ensurePassword(room, payload.password, connection);
+    await this.passwordGate.verify(room, room.visibility, payload.password, connection.id);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     const name = this.requireName(payload.userName);
@@ -1112,9 +1105,9 @@ export class SonGuessrService implements AdminRoomControl {
     if (payload.allowSpectators !== undefined) next.allowSpectators = payload.allowSpectators;
     if (payload.visibility === "public") next.passwordHash = undefined;
     // 留空保留原口令，给了新值才换摘要：明文只在这段局部变量里存在一次。
-    const password = payload.password?.trim();
+    const password = normalizeRoomPassword(payload.password ?? "");
     if (next.visibility === "private" && password) {
-      next.passwordHash = await Bun.password.hash(password);
+      next.passwordHash = await this.passwordGate.hash(password);
     }
     if (next.visibility === "private" && !next.passwordHash) {
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
@@ -3190,36 +3183,6 @@ export class SonGuessrService implements AdminRoomControl {
       const room = this.rooms.get(roomId);
       if (room) this.publishRoom(room);
     }
-  }
-
-  private async ensurePassword(
-    room: SonGuessrRoomRecord,
-    password: string | undefined,
-    connection: ConnectionRecord
-  ) {
-    if (room.visibility !== "private") return;
-    const normalized = password?.trim();
-    // 缺少密码只是提示玩家输入，不消耗尝试次数。
-    if (!normalized) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
-    // 先计数再校验：只在猜错时计数的话，猜中那一次不经过限流，超限后的成功与失败仍可区分。
-    if (!this.joinPasswordLimiter.allow(`${connection.id}:${room.id}`, this.now())) {
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    }
-    // 房间级聚合额度：多开连接各自占一份额度时，爆破速度随连接数线性增长。
-    if (!this.joinRoomPasswordLimiter.allow(room.id, this.now())) {
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    }
-    // 只按摘要比对：房间记录里没有可读的口令。
-    const matched = room.passwordHash
-      ? await Bun.password.verify(normalized, room.passwordHash)
-      : false;
-    if (!matched) throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
-  }
-
-  private requirePassword(password?: string) {
-    const normalized = password?.trim();
-    if (!normalized) throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
-    return normalized;
   }
 
   private requireName(value: string) {

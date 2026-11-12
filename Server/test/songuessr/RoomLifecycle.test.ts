@@ -25,6 +25,7 @@ import {
   anime,
   connection,
   createRoom,
+  deferredServiceResult,
   execute,
   joinRoom,
   lastEvent,
@@ -1256,6 +1257,91 @@ describe("SonGuessrService", () => {
         ctx.guestId
       );
       await expect(renameRoom(ctx.service, back)).resolves.toMatchObject({});
+    });
+  });
+
+  describe("建私密房期间（口令摘要尚未算完）", () => {
+    /** 把摘要停在手里：测试决定它何时算完，窗口内的一切读写都发生在 await 之间。 */
+    const holdDigest = () => {
+      const digest = deferredServiceResult<string>();
+      const hasher = {
+        hash: () => digest.promise,
+        verify: async (password: string, stored: string) => stored === `digest:${password}`,
+      };
+      return { digest, hasher };
+    };
+    const createPrivate = (service: SonGuessrService, client: TestConnection, roomId = "1234") =>
+      execute(service, client, {
+        id: `create-${roomId}`,
+        type: "song.room.create",
+        payload: {
+          roomId,
+          name: "私房",
+          visibility: "private",
+          password: "secret",
+          allowSpectators: true,
+          userName: "房主",
+        },
+      });
+
+    test("窗口内房间不可见，无口令与同号建房都被拒，摘要算完后凭口令可进", async () => {
+      const { digest, hasher } = holdDigest();
+      const service = new SonGuessrService({ musicProvider: provider, passwordHasher: hasher });
+      const host = connection(service, "window-host");
+      const creating = createPrivate(service, host);
+
+      expect(service.rooms.has("1234")).toBe(false);
+      expect(service.getRoomSummaries()).toEqual([]);
+      const intruder = connection(service, "window-intruder");
+      await expect(
+        execute(service, intruder, {
+          id: "window-join",
+          type: "song.room.join",
+          roomId: "1234",
+          payload: { userName: "闯入者" },
+        })
+      ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+      await expect(
+        createPrivate(service, connection(service, "window-rival"))
+      ).rejects.toMatchObject({ code: "ROOM_EXISTS" });
+
+      digest.resolve("digest:secret");
+      await creating;
+      await expect(
+        execute(service, intruder, {
+          id: "window-join-2",
+          type: "song.room.join",
+          roomId: "1234",
+          payload: { userName: "闯入者" },
+        })
+      ).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+      const guest = connection(service, "window-guest");
+      await expect(joinRoom(service, guest, "客人", "1234", "secret")).resolves.toMatchObject({});
+    });
+
+    test("摘要期间连接已断开：不登记房间，房号随即释放", async () => {
+      const { digest, hasher } = holdDigest();
+      const service = new SonGuessrService({ musicProvider: provider, passwordHasher: hasher });
+      const host = connection(service, "gone-host");
+      const creating = createPrivate(service, host);
+      await service.unregisterConnection(host.record.id);
+      digest.resolve("digest:secret");
+      await expect(creating).rejects.toMatchObject({ code: "SESSION_INVALID" });
+      expect(service.rooms.has("1234")).toBe(false);
+
+      const retry = connection(service, "gone-retry");
+      await expect(createRoom(service, retry)).resolves.toMatchObject({ roomId: "1234" });
+    });
+
+    test("摘要算失败：房号释放，可以重新建房", async () => {
+      const { digest, hasher } = holdDigest();
+      const service = new SonGuessrService({ musicProvider: provider, passwordHasher: hasher });
+      const creating = createPrivate(service, connection(service, "fail-host"));
+      digest.reject(new Error("hash failed"));
+      await expect(creating).rejects.toThrow("hash failed");
+      await expect(createRoom(service, connection(service, "fail-retry"))).resolves.toMatchObject({
+        roomId: "1234",
+      });
     });
   });
 });
