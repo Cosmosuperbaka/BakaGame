@@ -19,7 +19,6 @@ import type {
 } from "./NeteaseMusicProvider";
 import type {
   SongArtistSearchResult,
-  SongChorus,
   SongDetails,
   SongLyricLine,
   SongPlaylistInfo,
@@ -749,26 +748,6 @@ export class QQMusicProvider implements MusicProvider {
 
     baseDetails.lyrics = await this.loadLyrics(mid, baseDetails, cookie);
     return baseDetails;
-  }
-
-  async getSongPopularity(
-    songId: string,
-    rawCookie?: MusicCookieInput
-  ): Promise<number | undefined> {
-    const cookie = extractQqCookie(rawCookie);
-    const mid = this.resolveMid(songId);
-    const meta = await this.getSongMetadata(mid, cookie);
-    return meta.popularity;
-  }
-
-  async getSongChorus(
-    songId: string,
-    rawCookie?: MusicCookieInput
-  ): Promise<SongChorus | undefined> {
-    const cookie = extractQqCookie(rawCookie);
-    const mid = this.resolveMid(songId);
-    const meta = await this.getSongMetadata(mid, cookie);
-    return meta.chorus;
   }
 
   /** 播放地址按 Cookie 指纹分键（原文不进缓存键），匿名请求共用同一桶。 */

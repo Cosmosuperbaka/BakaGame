@@ -856,3 +856,23 @@ describe("QQMusicProvider · stripHtmlTags", () => {
     expect(stripHtmlTags({} as any)).toBe("");
   });
 });
+
+describe("QQMusicProvider · 没有热度与副歌数据", () => {
+  it("经聚合层查询 QQ 歌曲热度与副歌直接得到空，不触发元数据加载", async () => {
+    const { AggregatedMusicProvider } =
+      await import("../src/infrastructure/AggregatedMusicProvider");
+    const { NeteaseMusicProvider } = await import("../src/infrastructure/NeteaseMusicProvider");
+    const detail = mock(async () => {
+      throw new Error("不应加载元数据");
+    });
+    qqmusic.song_detail = detail as any;
+    const aggregated = new AggregatedMusicProvider({
+      neteaseProvider: new NeteaseMusicProvider({ loadApi: async () => ({}) }),
+      qqProvider: new QQMusicProvider(offlineAmll),
+    });
+
+    await expect(aggregated.getSongPopularity("qq:0039abc")).resolves.toBeUndefined();
+    await expect(aggregated.getSongChorus("qq:0039abc")).resolves.toBeUndefined();
+    expect(detail).not.toHaveBeenCalled();
+  });
+});
