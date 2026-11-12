@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
@@ -81,6 +81,7 @@ export class RoomSnapshotStore {
         const insert = db.query("INSERT INTO room_snapshot (room_id, payload) VALUES (?1, ?2)");
         for (const [id, payload] of rows) insert.run(id, payload);
       })();
+      this.scrub(db);
       return rows.length;
     } catch (error) {
       this.markUnavailable(game, error);
@@ -136,9 +137,18 @@ export class RoomSnapshotStore {
     if (!db) return;
     try {
       db.exec("DELETE FROM room_snapshot");
+      this.scrub(db);
     } catch (error) {
       this.markUnavailable(game, error);
     }
+  }
+
+  /**
+   * 快照里有座位令牌与口令摘要：删除后不能留在空闲页与 WAL 里等被覆盖。
+   * `secure_delete` 让释放的页被清零，检查点截断 WAL 把旧版本的页一并丢掉。
+   */
+  private scrub(db: Database): void {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   }
 
   close(): void {
@@ -162,10 +172,13 @@ export class RoomSnapshotStore {
     if (this.unavailable.has(game)) return undefined;
     try {
       const path = this.path(game);
-      mkdirSync(dirname(path), { recursive: true });
+      // 快照含座位令牌，只给属主读写；WAL 与共享内存文件沿用主库文件的权限。
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
       const db = new Database(path, { create: true });
+      chmodSync(path, 0o600);
       // WAL 让「写到一半被 kill」也能回滚到上一个完整事务；busy_timeout 兜住偶发的并发打开。
       db.exec(`PRAGMA journal_mode=WAL;
+        PRAGMA secure_delete=ON;
         PRAGMA busy_timeout=1000;
         CREATE TABLE IF NOT EXISTS snapshot_meta (
           id       INTEGER PRIMARY KEY CHECK (id = 1),

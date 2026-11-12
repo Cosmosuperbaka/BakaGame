@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RoomSnapshotStore } from "../src/infrastructure/RoomSnapshotStore";
@@ -114,5 +114,29 @@ describe("RoomSnapshotStore", () => {
     const store = create(dir);
     store.save("song", [{ id: "1001" }], 1);
     expect(store.load("song")?.rooms).toEqual([{ id: "1001" }]);
+  });
+
+  test("清除快照后，座位令牌不残留在数据库文件与 WAL 里", () => {
+    const directory = tempDir();
+    const store = create(directory);
+    const secret = "seat-token-should-not-linger-0123456789";
+    store.save("faker", [{ id: "1001", players: [{ sessionToken: secret }] }], 1);
+    store.clear("faker");
+
+    // 不关闭存储：关闭时 SQLite 会自己合并 WAL，这里要验证的是清除当下就不留残余。
+    for (const name of readdirSync(directory)) {
+      expect(readFileSync(join(directory, name)).includes(secret)).toBe(false);
+    }
+  });
+
+  test.skipIf(process.platform === "win32")("快照目录与文件只有属主可读写", () => {
+    const directory = join(tempDir(), "nested");
+    const store = create(directory);
+    store.save("faker", [{ id: "1001" }], 1);
+
+    expect(statSync(directory).mode & 0o077).toBe(0);
+    for (const name of readdirSync(directory)) {
+      expect(statSync(join(directory, name)).mode & 0o077).toBe(0);
+    }
   });
 });
