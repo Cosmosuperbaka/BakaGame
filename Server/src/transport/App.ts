@@ -792,7 +792,7 @@ interface GameSocketHandlersOptions<
 }
 
 /**
- * 握手闸门：Origin → 登录身份 → Agent 标记 → 配额，CEE 额外换通道证明。
+ * 握手闸门：Origin → Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明。
  * 顺序是安全语义（拒绝不消耗配额、身份先于业务），旧入口与统一入口必须逐字一致。
  */
 const applyHandshakeGates = async (
@@ -812,10 +812,11 @@ const applyHandshakeGates = async (
   }
 ): Promise<void> => {
   rejectDisallowedOrigin(context.headers, context.request, env.clientUrl);
-  await resolveSocketAccount(context, account, logger);
   resolveAgentIdentity(context, env.mcpEnabled);
   reserveHandshakeSlot(context, handshakeQuota);
   try {
+    // 查库放在占位之后：被配额拒绝的握手不该先打一次数据库。
+    await resolveSocketAccount(context, account, logger);
     if (clientChannel) resolveSocketChannel(context, clientChannel);
   } catch (error) {
     // 占位之后的步骤抛错，升级随之失败，open/close 都不会触发：当场归还。
@@ -826,7 +827,7 @@ const applyHandshakeGates = async (
 
 /**
  * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
- * 握手闸门顺序（Origin → 登录身份 → Agent 标记 → 配额，CEE 额外换通道证明）是安全语义，
+ * 握手闸门顺序（Origin → Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明）是安全语义，
  * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
  * 留在各路由字面量里交给 Elysia 推断。
  */

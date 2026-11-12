@@ -18,6 +18,7 @@ import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import { OPEN_SITE_FEATURES, type SiteFeatures } from "../src/shared/SiteFeatures";
 import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
+import type { AccountDependencies } from "../src/transport/routes/Account";
 import { WsHandshakeQuota } from "../src/transport/WsHandshakeQuota";
 import { createTestApp as createApp } from "./AppFixtures";
 
@@ -213,6 +214,7 @@ const startTestServer = (options?: {
   siteFeatures?: () => SiteFeatures;
   handshakeQuota?: WsHandshakeQuota;
   clientChannel?: ClientChannel;
+  account?: AccountDependencies;
 }) => {
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
@@ -236,6 +238,7 @@ const startTestServer = (options?: {
     siteFeatures: options?.siteFeatures,
     handshakeQuota: options?.handshakeQuota,
     clientChannel: options?.clientChannel,
+    account: options?.account,
     onTriggerShutdown: async () => {
       shuttingDown = true;
       if (options?.onTriggerShutdown) {
@@ -523,6 +526,81 @@ test("占位之后的握手步骤抛错，名额当场归还", async () => {
   try {
     const status = await upgradeStatusLine(port, undefined, { path: "/api/cee/ws?ticket=unknown" });
     expect(status).toContain("500");
+    expect(handshakeQuota.liveConnections()).toBe(0);
+  } finally {
+    await stop();
+  }
+});
+
+/** 只实现握手用得到的 `socketAccount`；其余账号能力在握手测试里不会被触达。 */
+const accountWithLookup = (lookup: () => Promise<undefined>) =>
+  ({ service: { socketAccount: lookup } }) as unknown as AccountDependencies;
+
+const quotaOf = (overrides: Partial<ConstructorParameters<typeof WsHandshakeQuota>[0]> = {}) =>
+  new WsHandshakeQuota({
+    windowMs: 60_000,
+    ipMaxRequests: 1_000,
+    globalMaxRequests: 10_000,
+    ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+    ...overrides,
+  });
+
+test("被配额拒绝的握手不会先查账号", async () => {
+  let lookups = 0;
+  const handshakeQuota = quotaOf({ ipMaxConnections: 1 });
+  const { port, stop } = startTestServer({
+    handshakeQuota,
+    account: accountWithLookup(async () => {
+      lookups += 1;
+      return undefined;
+    }),
+  });
+  const withCookie = [...VALID_HANDSHAKE_HEADERS, "Cookie: session=abc"];
+  try {
+    // 同一进程内直接占满该来源的在途名额。
+    const held = handshakeQuota.reserve("127.0.0.1", "127.0.0.1");
+    expect(held).toBeDefined();
+    expect(await upgradeStatusLine(port, undefined, { headers: withCookie })).toContain("429");
+    expect(lookups).toBe(0);
+    // 名额恢复后同样的握手放行，并确实查了账号：说明上面的零次不是因为桩没接上。
+    held!.release();
+    expect(await upgradeStatusLine(port, undefined, { headers: withCookie })).toContain("101");
+    expect(lookups).toBe(1);
+  } finally {
+    await stop();
+  }
+});
+
+test("账号查询期间客户端断开，升级没能完成，租约到期后名额归还", async () => {
+  const handshakeQuota = quotaOf({ leaseMs: 30 });
+  const { port, stop } = startTestServer({
+    handshakeQuota,
+    account: accountWithLookup(() => new Promise((resolve) => setTimeout(() => resolve(undefined), 250))),
+  });
+  try {
+    await new Promise<void>((resolve) => {
+      const socket = connect({ host: "127.0.0.1", port }, () => {
+        socket.write(
+          [
+            "GET /api/ws HTTP/1.1",
+            `Host: 127.0.0.1:${port}`,
+            ...VALID_HANDSHAKE_HEADERS,
+            "Cookie: session=abc",
+            "",
+            "",
+          ].join("\r\n")
+        );
+        setTimeout(() => {
+          socket.destroy();
+          resolve();
+        }, 20);
+      });
+    });
+    // 查询还没返回（250ms），升级尚未完成：占位已经在，到期（30ms）后必须自动归还。
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(handshakeQuota.liveConnections()).toBe(0);
+    // 查询返回后升级对已断开的连接失败或立即关闭，最终都不会留下名额。
+    await new Promise((resolve) => setTimeout(resolve, 300));
     expect(handshakeQuota.liveConnections()).toBe(0);
   } finally {
     await stop();
