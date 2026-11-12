@@ -259,8 +259,9 @@ export function CEERankedHome({
             </motion.div>
           )}
         </AnimatePresence>
-        <Collapsible title="规则" size="sm">
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+        {/* 规则是卡片的页脚：分隔线另起一节；标题与条目同为 sm，展开间距交给 Collapsible 自己的内边距 */}
+        <Collapsible title="规则" className="border-t pt-4">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             <li>三局两胜：每局双方猜同一个角色，先猜中者赢下这局，先赢两局者胜。</li>
             <li>一局双方都没猜中就不算，加赛一局，直到有人赢满两局。</li>
             <li>每局 3 分钟、各 10 次；都没猜中进入 45 秒加时，各加 2 次并公开一条提示。</li>
