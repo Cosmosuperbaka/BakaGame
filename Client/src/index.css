@@ -839,8 +839,7 @@ img {
   height: clamp(15rem, 46dvh, 26rem);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
+  /* 不画滚动条：全站规则（上方对 `*` 的 !important）一律隐藏，可滚由上下淡出提示。 */
   /* 上下轻淡出，提示还有歌词可滚，同时不把选点后的首行切成一刀。 */
   mask-image: linear-gradient(
     to bottom,
