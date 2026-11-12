@@ -55,7 +55,7 @@ export function RankedRecordMeter({
   return (
     <div className="space-y-1.5">
       <div
-        className="flex h-2 gap-px overflow-hidden rounded-full bg-muted"
+        className="flex h-2 gap-px overflow-hidden rounded-full bg-foreground/10"
         role="img"
         aria-label={total ? `${wins} 胜 ${losses} 负，胜率 ${rate}%` : "还没有对局"}
       >

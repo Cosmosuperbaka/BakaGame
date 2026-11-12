@@ -63,7 +63,10 @@ function RatingSummary({
                 aria-hidden="true"
                 className={cn(
                   "h-2 flex-1 rounded-full border",
-                  index < profile.placementPlayed ? "border-primary bg-primary" : "border-border"
+                  // 未完成的场次取前景色淡档空槽：只画 border 色描边在暗色卡片上约 1.3:1，五段几乎看不出。
+                  index < profile.placementPlayed
+                    ? "border-primary bg-primary"
+                    : "border-transparent bg-foreground/10"
                 )}
               />
             ))}

@@ -105,7 +105,8 @@ function PlacementPips({ played, total }: { played: number; total: number }) {
             key={index}
             className={cn(
               "size-2.5 rounded-full border",
-              index < played ? "border-primary bg-primary" : "border-border"
+              // 空心点描边取前景色淡档：border 色在暗色卡片上约 1.25:1，空点几乎看不见。
+              index < played ? "border-primary bg-primary" : "border-foreground/30"
             )}
           />
         ))}
