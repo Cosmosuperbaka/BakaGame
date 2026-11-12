@@ -143,14 +143,17 @@ test("stdio MCP 可列房间、进房并按公开快照读取状态，审计日�
 
   try {
     const initialized = await call(1, "initialize", {
-      protocolVersion: "2024-11-05",
+      protocolVersion: "2025-11-25",
       capabilities: {},
       clientInfo: { name: "test", version: "1" },
     });
     expect(initialized.result).toMatchObject({
-      protocolVersion: "2024-11-05",
+      protocolVersion: "2025-11-25",
       serverInfo: { name: "bakagame-mcp" },
     });
+    // 不认识的版本不原样回显，而是回服务端支持的默认版本，由客户端决定是否继续。
+    const unknown = await call(6, "initialize", { protocolVersion: "1999-01-01" });
+    expect(unknown.result).toMatchObject({ protocolVersion: "2025-06-18" });
 
     const tools = await call(2, "tools/list");
     const names = (tools.result as { tools: Array<{ name: string }> }).tools.map(
@@ -196,6 +199,56 @@ test("stdio MCP 可列房间、进房并按公开快照读取状态，审计日�
     expect(stderr).toContain('"roomId":"1234"');
   }
 }, 20_000);
+
+test("stdio 写限流按 Agent 与游戏计数：每次换房号拿不到新额度", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch(request, srv) {
+      if (srv.upgrade(request)) return;
+      return new Response("upgrade required", { status: 400 });
+    },
+    websocket: {
+      message(ws, raw) {
+        const message = JSON.parse(String(raw)) as { id: string; type: string };
+        ws.send(
+          JSON.stringify({ type: "ack", id: message.id, requestType: message.type, payload: {} })
+        );
+      },
+    },
+  });
+  servers.push(server);
+  const process = spawnMcp({
+    MCP_ENABLED: "true",
+    SERVER_URL: `http://127.0.0.1:${server.port}`,
+    MCP_AGENT_NAME: "RateAgent",
+  });
+  const stdoutReader = process.stdout.getReader();
+  const stderrPromise = new Response(process.stderr).text();
+  const buffered = { text: "" };
+  try {
+    const texts: string[] = [];
+    for (let index = 0; index < 31; index += 1) {
+      // control_page 是写工具，stdio 没有页面端口时立刻失败，只数额度；每次换一个房号。
+      await process.stdin.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: index + 1,
+          method: "tools/call",
+          params: { name: "control_page", arguments: { code: "ABCD2345", game: "faker", roomId: `r${index}` } },
+        })}
+`
+      );
+      const line = await readLine(stdoutReader, buffered);
+      texts.push((JSON.parse(line!) as { result: { content: Array<{ text: string }> } }).result.content[0]!.text);
+    }
+    expect(texts.slice(0, 30).every((text) => text.includes("页面接管只能经站内远程"))).toBe(true);
+    expect(texts[30]).toContain("Agent 操作过于频繁");
+  } finally {
+    await process.stdin.end();
+    await process.exited;
+    void stderrPromise;
+  }
+}, 30_000);
 
 test("状态同步 full / patch 都能落到公开快照", () => {
   const full = applyStateSync(undefined, {

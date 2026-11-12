@@ -1,7 +1,12 @@
 import { createInterface } from "node:readline";
 import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
-import { MCP_INSTRUCTIONS } from "./Policy";
+import {
+  DEFAULT_PROTOCOL_VERSION,
+  MCP_INSTRUCTIONS,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  protocolVersionOf,
+} from "./Policy";
 import { TOOLS } from "./Tools";
 import { isRecord } from "../shared/Json";
 
@@ -29,7 +34,10 @@ const client = new AgentGameClient({
   agentName,
 });
 
-/** 按「Agent + 游戏 + 房间」限制写操作：窗口 60 秒最多 30 次。 */
+/**
+ * 按「Agent + 游戏」限制写操作：窗口 60 秒最多 30 次。
+ * 键里不能放调用方可控的房号：每次换个房号就得到新桶，限流形同虚设，Map 也会无限增长。
+ */
 const WRITE_WINDOW_MS = 60_000;
 const WRITE_MAX = 30;
 const writeBuckets = new Map<string, number[]>();
@@ -73,7 +81,7 @@ const handleToolCall = async (id: unknown, params: unknown): Promise<void> => {
   const game = toolGame(args);
   const roomId =
     typeof args.roomId === "string" ? args.roomId : game ? client.currentRoom(game) : undefined;
-  const bucketKey = `${agentName}:${game ?? "auto"}:${roomId ?? "lobby"}`;
+  const bucketKey = `${agentName}:${game ?? "auto"}`;
   const action = typeof args.action === "string" ? args.action : undefined;
   const startedAt = performance.now();
   try {
@@ -147,15 +155,11 @@ const handleLine = async (line: string): Promise<void> => {
   const hasId = id !== undefined;
 
   if (method === "initialize") {
-    const requested =
-      isRecord(params) && typeof params.protocolVersion === "string"
-        ? params.protocolVersion
-        : "2024-11-05";
     writeStdout({
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: requested,
+        protocolVersion: protocolVersionOf(isRecord(params) ? params.protocolVersion : undefined),
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
         instructions: MCP_INSTRUCTIONS,
@@ -170,8 +174,8 @@ const handleLine = async (line: string): Promise<void> => {
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: "2026-07-28",
-        supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
+        protocolVersion: DEFAULT_PROTOCOL_VERSION,
+        supportedVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "bakagame-mcp", version: "1.0.0" },
         instructions: MCP_INSTRUCTIONS,

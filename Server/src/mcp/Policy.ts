@@ -25,3 +25,19 @@ export const MCP_INSTRUCTIONS = [
   "SongGuessr 需要人类在房间内登录网易云或 QQ 音乐；Agent 听不到音频，屏幕 panel.audio 只给出片段区间与歌词开关，歌词关闭时不会下发歌词；不提供音轨地址。",
   "猜歌/猜角色的搜索框停止输入后会自动检索，点结果才提交；出题选歌会先打开片段确认，确认后才真正提交。",
 ].join("\n");
+
+/** 协议版本协商的单一来源：stdio 与远程入口共用，避免两处分叉。 */
+export const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2026-07-28",
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+] as const;
+export const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
+
+/** 客户端请求的版本在支持表内就沿用，否则回服务端默认版本，不原样回显任意字符串。 */
+export const protocolVersionOf = (requested: unknown): string =>
+  typeof requested === "string" &&
+  (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
+    ? requested
+    : DEFAULT_PROTOCOL_VERSION;

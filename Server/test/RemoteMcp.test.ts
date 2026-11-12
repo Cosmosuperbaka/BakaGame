@@ -578,3 +578,23 @@ test("持有方超过持有上限会被强制放行，后续调用不必等它�
   expect(performance.now() - startedAt).toBeLessThan(600);
   await Promise.all([stuck, next]);
 });
+
+test("JSON-RPC 通知不回响应，带 id 的未知方法才回错误；不认识的协议版本回默认版本", async () => {
+  sessionsRef = newSessions();
+  const url = "http://127.0.0.1:9/api/mcp";
+  const notification = await rpc(url, { jsonrpc: "2.0", method: "notifications/roots/list_changed" });
+  expect(notification.status).toBe(202);
+  expect(notification.payload).toBeNull();
+
+  const request = await rpc(url, { jsonrpc: "2.0", id: 7, method: "nope/nothing" });
+  expect(request.payload.error).toMatchObject({ code: -32601 });
+  expect(request.payload.id).toBe(7);
+
+  const negotiated = await rpc(url, {
+    jsonrpc: "2.0",
+    id: 8,
+    method: "initialize",
+    params: { protocolVersion: "1999-01-01", clientInfo: { name: "v" } },
+  });
+  expect(negotiated.payload.result.protocolVersion).toBe("2025-06-18");
+});

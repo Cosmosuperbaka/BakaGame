@@ -4,13 +4,16 @@ import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
 import { AgentGameClient } from "./GameClient";
-import { MCP_INSTRUCTIONS } from "./Policy";
+import {
+  DEFAULT_PROTOCOL_VERSION,
+  MCP_INSTRUCTIONS,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  protocolVersionOf,
+} from "./Policy";
 import { TOOLS, withRemoteSessionSchema, type PageControlPort } from "./Tools";
 import { isRecord } from "../shared/Json";
 
 const SERVER_INFO = { name: "bakagame-mcp", version: "1.0.0" };
-const SUPPORTED_VERSIONS = ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"] as const;
-const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_SESSIONS = 256;
 /**
@@ -264,16 +267,6 @@ const toolFailure = (text: string) => ({
   isError: true,
 });
 
-const protocolVersionOf = (requested: unknown): string => {
-  if (
-    typeof requested === "string" &&
-    (SUPPORTED_VERSIONS as readonly string[]).includes(requested)
-  ) {
-    return requested;
-  }
-  return DEFAULT_PROTOCOL_VERSION;
-};
-
 export interface RemoteMcpHandlerOptions {
   enabled: boolean;
   sessions: RemoteMcpSessions;
@@ -337,7 +330,7 @@ export async function handleRemoteMcp(
         headers,
         payload: rpcResult(id, {
           protocolVersion: DEFAULT_PROTOCOL_VERSION,
-          supportedVersions: [...SUPPORTED_VERSIONS],
+          supportedVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
           capabilities: { tools: { listChanged: false } },
           serverInfo: SERVER_INFO,
           instructions: MCP_INSTRUCTIONS,
@@ -367,6 +360,8 @@ export async function handleRemoteMcp(
         headers,
       });
     default:
+      // 通知没有 id，规范要求不回任何响应；对它回错误响应会被合规客户端当成协议错误。
+      if (id === undefined) return { status: 202, headers, payload: null };
       return {
         status: 200,
         headers,
