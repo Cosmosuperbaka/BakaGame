@@ -141,7 +141,8 @@ export function EmojiPicker({ open, activeTab, onTabChange, onSelect, onClose }:
                       )}
                     >
                       <img src={p.preview} alt={p.name} className="h-8 w-8 object-contain" />
-                      {p.animated && <AnimatedBadge className="right-0 top-0" />}
+                      {/* 角标收进页签右上角、离上沿一格：贴着 top-0 会压住标签栏的分隔线，读成浮在两区之间的碎片 */}
+                      {p.animated && <AnimatedBadge className="right-0.5 top-1" />}
                     </motion.button>
                   </Hint>
                 ))}
