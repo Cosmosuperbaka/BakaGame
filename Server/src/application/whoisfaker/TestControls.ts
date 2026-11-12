@@ -10,6 +10,7 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../config/Constants";
+import { reassignHost } from "../room/HostPolicy";
 import { pickBotName, runBots } from "./BotActors";
 import { forceRemovePlayer } from "./OfflineSettlement";
 import {
@@ -390,7 +391,7 @@ export const testRemoveBot = async (
     delete room.players[bot.id];
   }
 
-  service.reassignHost(room);
+  reassignHost(room, Object.values(room.players));
   normalizeRoomRoleConfig(room);
   service.touch(room);
   publishRoom(service, room);
@@ -404,8 +405,7 @@ export const testRemoveBot = async (
  * 非测试房（含策略关闭）一律当作协议里没有这条指令，与未知指令同码同文案，
  * 不给探测者区分「开关关了」与「这间房不是测试房」的信号；房主校验在后，
  * 因为测试指令能改身份、加删机器人，不能让房里任意玩家使用。
- * 唯一的例外是房主被交给了机器人：机器人不会发指令，此时放行房内真人，
- * 否则交出房主的真人会被锁死在一间永不回收的调试房里。
+ * 机器人当不了房主（转让会被拒、空缺时也不会选中），所以没有「房主是机器人」的例外。
  */
 const ensureTestRoomHost = (
   service: WhoIsFakerServiceInternals,
@@ -413,6 +413,5 @@ const ensureTestRoomHost = (
   playerId: string
 ) => {
   if (!service.testRooms.isTestRoom(room.id)) unsupportedCommand();
-  if (room.players[room.hostPlayerId ?? ""]?.isBot) return;
   service.ensureHost(room, playerId);
 };

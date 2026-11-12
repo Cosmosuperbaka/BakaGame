@@ -50,7 +50,6 @@ export interface WhoIsFakerServiceInternals {
   getPhaseNoticeKey(snapshot: WhoIsFakerRoomSnapshot): string;
   describePhaseChange(snapshot: WhoIsFakerRoomSnapshot, room: WhoIsFakerRoomRecord): string;
   getConnectionByPlayer(playerId: string): ConnectionRecord | undefined;
-  reassignHost(room: WhoIsFakerRoomRecord): void;
   createPlayer(name: string, isBot: boolean, isAgent?: boolean): WhoIsFakerPlayerRecord;
   createId(prefix: string): string;
   appendSystemMessage(room: WhoIsFakerRoomRecord, text: string): void;

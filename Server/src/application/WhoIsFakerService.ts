@@ -58,6 +58,7 @@ import {
 } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
+import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
@@ -441,18 +442,19 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       }
       delete room.players[player.id];
       if (room.hostPlayerId === player.id) {
-        this.reassignHost(room);
+        reassignHost(room, Object.values(room.players));
       }
       normalizeRoomRoleConfig(room);
       this.touch(room);
     }
   }
 
-  /** 房主与出题人各自的重连截止时刻到了就交接或结束本局。 */
+  /**
+   * 房主与出题人各自的重连截止时刻到了就交接或结束本局。
+   * 房主每一跳都过内核的不变量检查：宽限已过、空缺或悬空时按候选规则改选，选不到下一跳再试。
+   */
   private async handOverStalledRoles(room: WhoIsFakerRoomRecord, currentTime: number) {
-    if (room.hostReconnectDeadlineAt !== undefined && currentTime >= room.hostReconnectDeadlineAt) {
-      await this.transferHostAfterDisconnect(room);
-    }
+    await this.settleHostGrace(room, currentTime);
 
     if (
       room.round?.questionerReconnectDeadlineAt &&
@@ -550,9 +552,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     room.emptySinceAt = undefined;
     room.updatedAt = now;
     room.lastActivityAt = now;
-    if (room.hostReconnectDeadlineAt !== undefined) {
-      room.hostReconnectDeadlineAt = now + HOST_RECONNECT_TIMEOUT_MS;
-    }
+    // 恢复后所有人都离线，房主必然也是：一律给完整的重连宽限，而不是等第一个回来的人抢走房主。
+    room.hostReconnectDeadlineAt = room.hostPlayerId ? now + HOST_RECONNECT_TIMEOUT_MS : undefined;
 
     const round = room.round;
     if (round) {
@@ -1625,7 +1626,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   private async transferHost(connection: ConnectionRecord, targetPlayerId: string) {
-    // 房主手动转移：任意阶段均可转移给房间内未被踢出的成员。
+    // 房主手动转移：任意阶段均可，目标必须是在线的正式玩家（真人）。
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
 
@@ -1639,7 +1640,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
     }
 
-    room.hostPlayerId = target.id;
+    transferHost(room, target);
     this.touch(room);
     this.appendSystemMessage(room, `${player.name} 将房主转移给了 ${target.name}`);
 
@@ -1995,65 +1996,33 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
   }
 
-  reassignHost(room: WhoIsFakerRoomRecord) {
-    const candidates = Object.values(room.players).filter(
-      (player) => player.membership !== "kicked"
+  private async settleHostGrace(room: WhoIsFakerRoomRecord, currentTime: number) {
+    const { changed, previous, next } = resolveHostGrace(
+      room,
+      Object.values(room.players),
+      currentTime
     );
-    const current = room.hostPlayerId ? room.players[room.hostPlayerId] : undefined;
+    if (!changed) return;
 
-    // 现任房主仍在且未被踢出 → 保留。
-    if (current && current.membership !== "kicked") {
-      return;
-    }
-
-    const nextHost = [...candidates].sort((left, right) => {
-      // 真人优先，其次在线玩家：避免把房主塞给机器人或已掉线的人。
-      if (left.isBot !== right.isBot) {
-        return left.isBot ? 1 : -1;
-      }
-      if (left.online !== right.online) {
-        return left.online ? -1 : 1;
-      }
-      return left.joinedAt - right.joinedAt;
-    })[0];
-
-    if (nextHost) {
-      room.hostPlayerId = nextHost.id;
-    }
-  }
-
-  private async transferHostAfterDisconnect(room: WhoIsFakerRoomRecord) {
-    const previousHostId = room.hostPlayerId;
-    const previousHost = room.players[previousHostId];
-
-    if (!previousHost || previousHost.online || previousHost.membership === "kicked") {
-      room.hostReconnectDeadlineAt = undefined;
-      return;
-    }
-
-    const nextHost = Object.values(room.players)
-      .filter((player) => player.membership === "active" && player.online && !player.isBot)
-      .sort((left, right) => left.joinedAt - right.joinedAt)[0];
-
-    if (!nextHost) {
-      return;
-    }
-
-    room.hostReconnectDeadlineAt = undefined;
-    room.hostPlayerId = nextHost.id;
     this.touch(room);
-    this.appendSystemMessage(room, `${previousHost.name} 断线超时，房主已转移给 ${nextHost.name}`);
-
-    await this.log({
-      type: "room.host_transferred",
-      createdAt: this.now(),
-      roomId: room.id,
-      payload: {
-        previousHostId,
-        nextHostId: nextHost.id,
-        reason: "disconnect_timeout",
-      },
-    });
+    if (next) {
+      this.appendSystemMessage(
+        room,
+        previous
+          ? `${previous.name} 断线超时，房主已转移给 ${next.name}`
+          : `房主已转移给 ${next.name}`
+      );
+      await this.log({
+        type: "room.host_transferred",
+        createdAt: this.now(),
+        roomId: room.id,
+        payload: {
+          previousHostId: previous?.id,
+          nextHostId: next.id,
+          reason: "disconnect_timeout",
+        },
+      });
+    }
 
     this.publishRoom(room);
     this.publishLobby();

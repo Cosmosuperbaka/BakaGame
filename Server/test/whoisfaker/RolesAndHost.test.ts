@@ -403,16 +403,16 @@ describe("角色可见性与房主", () => {
     ).toBe(result.playerId);
   });
 
-  test("宽限期到达时没有正式玩家会在其加入后继续转移", async () => {
+  test("宽限期到达时只有在线旁观者，房主交给旁观者，之后加入的正式玩家不再抢房主", async () => {
     const { service, advanceTime } = createTestContext();
     const { host } = await createRoom(service, "2525");
     const spectator = createConnection(service, "2525-spectator");
-    await execute(service, spectator, {
+    const spectatorJoin = (await execute(service, spectator, {
       id: "spectator-join",
       type: "room.join",
       roomId: "2525",
       payload: { userName: "旁观者" },
-    });
+    })) as { playerId: string };
     await execute(service, spectator, {
       id: "become-spectator",
       type: "player.setSpectator",
@@ -424,16 +424,17 @@ describe("角色可见性与房主", () => {
     await service.runHousekeeping();
 
     const player = createConnection(service, "2525-player");
-    const playerJoin = (await execute(service, player, {
+    await execute(service, player, {
       id: "player-join",
       type: "room.join",
       roomId: "2525",
       payload: { userName: "后来玩家" },
-    })) as { playerId: string };
+    });
     await service.runHousekeeping();
 
+    // 房主必须是在线成员：没有在线正式玩家时由在线旁观者接任，而不是空着等人。
     expect(getLastEventPayload<WhoIsFakerRoomSnapshot>(player, "room.snapshot")?.hostPlayerId).toBe(
-      playerJoin.playerId
+      spectatorJoin.playerId
     );
   });
 

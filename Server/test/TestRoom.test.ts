@@ -61,17 +61,20 @@ const snapshotOf = (connection: ReturnType<typeof createConnection>) =>
 const privateOf = (connection: ReturnType<typeof createConnection>) =>
   getLastEventPayload<WhoIsFakerPrivateState>(connection, "game.privateState")!;
 
-test("房主转给机器人后移除该机器人，房主自动转移给仍在的玩家", async () => {
+test("房主不能转给机器人，移除机器人后房主仍是原来的真人", async () => {
   const { service } = createTestContext();
   const { host, playerId } = await createTestRoom(service, 2);
   const botId = snapshotOf(host).players.find((player) => player.name === "机器人A")!.id;
 
-  await execute(service, host, {
-    id: "transfer",
-    type: "room.transferHost",
-    payload: { playerId: botId },
-  });
-  expect(snapshotOf(host).hostPlayerId).toBe(botId);
+  // 机器人不会开局也拿不到管理操作，把房主交给它等于锁死房间。
+  await expect(
+    execute(service, host, {
+      id: "transfer",
+      type: "room.transferHost",
+      payload: { playerId: botId },
+    })
+  ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+  expect(snapshotOf(host).hostPlayerId).toBe(playerId);
 
   await execute(service, host, {
     id: "remove",
@@ -80,27 +83,17 @@ test("房主转给机器人后移除该机器人，房主自动转移给仍在�
   });
 
   const snapshot = snapshotOf(host);
-  // 房主不能悬空在已被移除的机器人身上。
   expect(snapshot.players.some((player) => player.id === botId)).toBe(false);
   expect(snapshot.hostPlayerId).toBe(playerId);
 });
 
-test("房主转给机器人后，踢其他机器人不会将房主移交回玩家", async () => {
+test("踢机器人不会改动房主：界面上的减一个不带 playerId 时取末尾的机器人", async () => {
   const { service } = createTestContext();
-  const { host } = await createTestRoom(service, 2);
+  const { host, playerId } = await createTestRoom(service, 2);
   const before = snapshotOf(host);
   const botA = before.players.find((player) => player.name === "机器人A")!.id;
   const botB = before.players.find((player) => player.name === "机器人B")!.id;
 
-  await execute(service, host, {
-    id: "transfer",
-    type: "room.transferHost",
-    payload: { playerId: botA },
-  });
-  expect(snapshotOf(host).hostPlayerId).toBe(botA);
-
-  // 界面上的「减一个」不带 playerId，服务端取末尾的机器人B。
-  // 房主停在机器人A上会锁死房间：机器人不会开局，真人又因非房主拿不到管理操作。
   await execute(service, host, {
     id: "remove-tail",
     type: "test.removeBot",
@@ -110,7 +103,7 @@ test("房主转给机器人后，踢其他机器人不会将房主移交回玩�
   const after = snapshotOf(host);
   expect(after.players.some((player) => player.id === botB)).toBe(false);
   expect(after.players.some((player) => player.id === botA)).toBe(true);
-  expect(after.hostPlayerId).toBe(botA);
+  expect(after.hostPlayerId).toBe(playerId);
 });
 
 test("游戏进行中加入的机器人进旁观，不进玩家列", async () => {

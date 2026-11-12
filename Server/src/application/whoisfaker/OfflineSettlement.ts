@@ -20,6 +20,7 @@ import {
   resolveAbandonedBlankGuess,
   startFallbackBlankGuessTimer,
 } from "./BlankGuess";
+import { reassignHost } from "../room/HostPolicy";
 import { markSeatOffline } from "../room/SeatBinding";
 import { runBots } from "./BotActors";
 import { clearPhaseTimer, finishRound } from "./PhaseFlow";
@@ -150,7 +151,7 @@ export const handlePlayerOffline = async (
   await settleOfflineInsideRound(service, ctx, round);
 
   if (ctx.wasHost && reason === "leave") {
-    service.reassignHost(room);
+    reassignHost(room, Object.values(room.players));
   }
 
   service.touch(room);
@@ -196,9 +197,9 @@ const settleOfflineOutsideRound = async (
   }
 
   if (ctx.wasHost && ctx.reason === "leave") {
-    // 先临时置空，让 reassignHost 按加入时间重新选出首位。
+    // 先临时置空，让 reassignHost 按候选规则（在线正式玩家优先、同级按加入先后）重新选人。
     room.hostPlayerId = "";
-    service.reassignHost(room);
+    reassignHost(room, Object.values(room.players));
   }
 
   normalizeRoomRoleConfig(room);
@@ -571,7 +572,7 @@ const finishForcedRemoval = async (
   ctx: ForcedRemovalContext
 ) => {
   const room = ctx.room;
-  service.reassignHost(room);
+  reassignHost(room, Object.values(room.players));
   normalizeRoomRoleConfig(room);
   service.touch(room);
   // 猜词的白板被移除后没人能推进阻塞阶段，必须就地收束。
