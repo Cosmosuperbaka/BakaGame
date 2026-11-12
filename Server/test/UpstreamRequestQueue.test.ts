@@ -121,3 +121,40 @@ describe("网易云 provider：挂起的上游请求不拖垮后续请求", () =
     await expect(provider.search("正常关键词")).resolves.toEqual([]);
   });
 });
+
+describe("上游请求队列：限流退避的连击记忆", () => {
+  const limitedTask = async () => ({ limited: true });
+
+  it("作用域 A 连续限流退避翻倍，期间作用域 B 限流不会清掉 A 的连击记忆", async () => {
+    let now = 1_000_000;
+    const records: CooldownRecord[] = [];
+    const queue = createQueue({ now: () => now }, records);
+
+    await queue.scheduleRequest(limitedTask, "scope:a");
+    // A 的冷却已到期；B 此时限流会触发冷却表清理。
+    now += 61_000;
+    await queue.scheduleRequest(limitedTask, "scope:b");
+    now += 1_000;
+    await queue.scheduleRequest(limitedTask, "scope:a");
+
+    expect(records).toEqual([
+      { scope: "scope:a", strikes: 1, durationMs: 60_000 },
+      { scope: "scope:b", strikes: 1, durationMs: 60_000 },
+      { scope: "scope:a", strikes: 2, durationMs: 120_000 },
+    ]);
+  });
+
+  it("连击记忆超过退避上限窗口后失效，退避回到起点", async () => {
+    let now = 1_000_000;
+    const records: CooldownRecord[] = [];
+    const queue = createQueue({ now: () => now }, records);
+
+    await queue.scheduleRequest(limitedTask, "scope:a");
+    now += 600_001;
+    await queue.scheduleRequest(limitedTask, "scope:b");
+    now += 1_000;
+    await queue.scheduleRequest(limitedTask, "scope:a");
+
+    expect(records.at(-1)).toEqual({ scope: "scope:a", strikes: 1, durationMs: 60_000 });
+  });
+});

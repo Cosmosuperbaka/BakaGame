@@ -23,7 +23,7 @@ const DEFAULT_QUEUE_TIMEOUT_MS = 8_000;
  */
 const GLOBAL_COOLDOWN_SCOPE = "*";
 
-/** 冷却表条目上限：scope 数量与在线玩家 / 账号同量级，超出按插入顺序淘汰最老的。 */
+/** 冷却表条目上限：scope 数量与在线玩家 / 账号同量级，超出淘汰最久没有限流的。 */
 const MAX_COOLDOWN_SCOPES = 512;
 
 /** 限流退避发生时的上下文，供调用方做 IP 轮换与结构化告警。 */
@@ -343,6 +343,8 @@ export class UpstreamRequestQueue {
       lastLimitAt: now,
       message: this.lastRateLimitMessage,
     };
+    // 先删后写：Map 的迭代序随最近一次限流刷新，容量淘汰才会优先丢最久没限流的作用域。
+    this.cooldowns.delete(key);
     this.cooldowns.set(key, state);
     this.pruneCooldowns(now);
 
@@ -385,10 +387,20 @@ export class UpstreamRequestQueue {
     return scoped && now < scoped.until ? scoped : undefined;
   }
 
-  /** 清掉已到期的条目并限制表大小；被淘汰的作用域下次请求重新分配 IP 即可。 */
+  /**
+   * 清掉连击记忆已过期的条目并限制表大小。
+   *
+   * 冷却到期不等于可以忘记：连续限流的次数要保留到退避上限的时长之后才归零，
+   * 否则别的作用域一触发清理，这个作用域的指数退避就退回起点。被淘汰的作用域下次请求重新分配 IP 即可。
+   */
   private pruneCooldowns(now: number) {
     for (const [scope, state] of this.cooldowns) {
-      if (scope !== GLOBAL_COOLDOWN_SCOPE && now >= state.until) this.cooldowns.delete(scope);
+      if (
+        scope !== GLOBAL_COOLDOWN_SCOPE &&
+        now - state.lastLimitAt > this.maxRateLimitCooldownMs
+      ) {
+        this.cooldowns.delete(scope);
+      }
     }
     while (this.cooldowns.size > MAX_COOLDOWN_SCOPES) {
       const oldest = this.cooldowns.keys().next().value;
