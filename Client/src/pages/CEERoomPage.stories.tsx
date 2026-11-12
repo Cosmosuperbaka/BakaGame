@@ -87,7 +87,9 @@ async function loadLazyImages(canvasElement: HTMLElement) {
       if (!image.complete) throw new Error("图片尚未加载");
     });
   }
-  main.scrollTop = 0;
+  // 真正滚动的是阶段舞台而不是 main：把 main 里所有滚过的容器都归零。
+  for (const element of [main, ...main.querySelectorAll<HTMLElement>("*")])
+    if (element.scrollTop) element.scrollTop = 0;
 }
 
 const meta = {
@@ -125,10 +127,10 @@ export const AntiCheatPending: Story = {
   beforeEach: () => inRoom(ceeAntiCheatPendingRoom()),
 };
 
-/** 反作弊开关落在等待页的「反作弊」面板里；原版房不显示这块面板。 */
+/** 反作弊开关落在等待页的「反作弊」面板里，只有建房时开了反作弊的房间才有；原版房不显示这块面板。 */
 export const AntiCheatSetting: Story = {
   name: "设置面板 · 反作弊开关",
-  beforeEach: () => inRoom(ceeWaitingHostRoom()),
+  beforeEach: () => inRoom(ceeAntiCheatHostRoom()),
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: /反作弊/ }));
     dropFocus();
@@ -280,6 +282,48 @@ export const GuessingImageHint: Story = {
   },
 };
 
+/** 图片提示请求在途：占位格先展开，格里转圈说明正在生成，按钮转圈。 */
+export const GuessingImageHintLoading: Story = {
+  name: "猜测阶段 · 图片提示生成中",
+  beforeEach: () => {
+    inRoom(ceeGuessingRoom("player"));
+    const sendCommand = useCEEStore.getState().sendCommand;
+    useCEEStore.setState({
+      sendCommand: ((command, payload) =>
+        command === "cee.game.imageHint"
+          ? new Promise<never>(() => {})
+          : sendCommand(command, payload)) as typeof sendCommand,
+    });
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "查看图片提示" }));
+    await within(canvasElement).findByText("正在生成图片提示");
+    dropFocus();
+  },
+};
+
+/** 房主取消本局的确认弹窗：继续在前、危险操作在后，自按钮展开。 */
+export const PreparingCancelConfirm: Story = {
+  name: "准备题目 · 取消本局确认",
+  tags: ["!page", "overlay"],
+  beforeEach: () => inRoom(ceePreparingRoom()),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "取消本局" }));
+    await screen.findByRole("dialog", { name: "取消本局" });
+  },
+};
+
+/** 放弃本局的确认弹窗：组队时影响整队，写在说明里。 */
+export const GuessingSurrenderConfirm: Story = {
+  name: "猜测阶段 · 放弃本局确认",
+  tags: ["!page", "overlay"],
+  beforeEach: () => inRoom(ceeGuessingRoom("player")),
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "放弃本局" }));
+    await screen.findByRole("dialog", { name: "放弃本局" });
+  },
+};
+
 export const SyncWaiting: Story = {
   name: "同步模式 · 等待其他玩家",
   beforeEach: () => inRoom(ceeSyncWaitingRoom()),
@@ -311,6 +355,8 @@ export const JoinDialog: Story = {
     // 没有本房凭据也没有快照：页面生命周期自动用本地用户名（或访客名）加入。
     removeCEESession(CEE_NATIVE_ROOM_ID);
     presetCEE({ connected: true, lobbyReady: true, originalAvailable: true });
+    // 加入请求一直在途：默认实现没有真实连接，会立即失败并把页面带回大厅。
+    useCEEStore.setState({ joinRoom: () => new Promise<never>(() => {}) });
     return presetSavedUsername();
   },
   play: async () => {

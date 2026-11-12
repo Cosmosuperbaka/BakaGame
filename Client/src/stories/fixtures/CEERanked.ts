@@ -395,7 +395,8 @@ export function rankedLeaderboard(): CEERankedLeaderboard {
   const entries = Array.from({ length: 30 }, (_, index) => ({
     rank: index + 1,
     name: names[index] ?? `玩家${index + 1}`,
-    rating: 2140 - index * 23,
+    // 第 4 名是本人，分数与资料里的 1532 一致，首页左右两栏读得通。
+    rating: 1601 - index * 23,
     wins: 60 - index,
     losses: 20 + (index % 7),
     seriesPlayed: 80 - index + (index % 7),

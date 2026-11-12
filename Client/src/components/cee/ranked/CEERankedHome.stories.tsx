@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import {
   RANKED_IDLE_STATE,
   rankedLeaderboard,
@@ -51,27 +51,65 @@ export const QueuedBotReady: Story = {
   name: "排队满 10 秒 · 可先打人机",
   args: { state: rankedQueuedState(12_000) },
 };
+
+/** 战绩列表在面板内固定高度滚动：滚到底才看得到末尾的翻页按钮或到底提示。 */
+async function scrollHistoryToEnd({ canvasElement }: { canvasElement: HTMLElement }) {
+  const list = await within(canvasElement).findByLabelText("全部战绩");
+  list.scrollTop = list.scrollHeight;
+}
+
+/** 排行榜在第二个标签页里，切过去才渲染。 */
+async function openLeaderboard({ canvasElement }: { canvasElement: HTMLElement }) {
+  await userEvent.click(within(canvasElement).getByRole("tab", { name: "排行榜" }));
+  (document.activeElement as HTMLElement | null)?.blur();
+}
+
 export const HistoryEnd: Story = {
   name: "战绩翻到底",
   args: { profile: { ...rankedProfile("rated"), recentHasMore: false } },
+  play: scrollHistoryToEnd,
 };
 export const HistoryLoading: Story = {
   name: "战绩翻页中",
   args: { historyLoading: true },
+  play: scrollHistoryToEnd,
+};
+export const Leaderboard: Story = {
+  name: "已定级看排行榜",
+  play: openLeaderboard,
 };
 export const LeaderboardLoading: Story = {
   name: "排行榜读取中",
   args: { leaderboard: null },
+  play: openLeaderboard,
 };
 export const LeaderboardUnplaced: Story = {
   name: "定级中看排行榜",
   args: {
     profile: rankedProfile("placement"),
-    leaderboard: { ...rankedLeaderboard(), self: null },
+    // 定级中的本人不上榜：榜单里也不能有标着「你」的那一行。
+    leaderboard: (() => {
+      const board = rankedLeaderboard();
+      return {
+        ...board,
+        self: null,
+        entries: board.entries.map((entry) => ({ ...entry, self: false })),
+      };
+    })(),
+  },
+  play: openLeaderboard,
+};
+export const RulesOpen: Story = {
+  name: "规则展开",
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "规则" }));
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };
+/** `mobile` 标签让截图脚本按 390 宽视口拍：只设 Storybook 的视口全局量，脚本仍按 1440 截图。 */
 export const Narrow: Story = {
   name: "窄屏",
+  tags: ["mobile"],
   globals: { viewport: { value: "mobile", isRotated: false } },
 };
 

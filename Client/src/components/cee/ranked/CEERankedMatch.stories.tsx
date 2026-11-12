@@ -94,7 +94,9 @@ export const OpponentOffline: Story = {
     })(),
   },
 };
+/** `mobile` 标签让截图脚本按 390 宽视口拍：只设 Storybook 的视口全局量，脚本仍按 1440 截图。 */
 export const Narrow: Story = {
   name: "窄屏",
+  tags: ["mobile"],
   globals: { viewport: { value: "mobile", isRotated: false } },
 };
