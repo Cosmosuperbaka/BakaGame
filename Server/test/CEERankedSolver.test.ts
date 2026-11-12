@@ -341,6 +341,18 @@ describe("CEE 排位候选过滤与二分评估", () => {
     ).toEqual([2, 3, 4, 5, 6]);
   });
 
+  it("chooseCEEBisectionGuess 在海量候选下有评估上界，不会卡住主线程", () => {
+    const huge = Array.from({ length: 3000 }, (_, index) =>
+      candidate(1000 + index, 1 + (index % 7), { popularity: index })
+    );
+    const started = performance.now();
+    const picked = chooseCEEBisectionGuess(huge, settings, new Set());
+    // 不设上界要对 3000×3000 对做反馈，远超一秒；有上界只评估权重最高的少数几个。
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(picked.id).toBeGreaterThanOrEqual(1000);
+    expect(chooseCEEBisectionGuess(huge, settings, new Set([picked.id])).id).not.toBe(picked.id);
+  });
+
   it("chooseCEEBisectionGuess 取最坏组最小的候选并按规则打破并列", () => {
     expect(chooseCEEBisectionGuess(popularityPool, settings, new Set()).id).toBe(22);
     expect(chooseCEEBisectionGuess(popularityPool, settings, new Set([22])).id).toBe(23);

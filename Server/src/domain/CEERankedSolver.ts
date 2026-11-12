@@ -182,13 +182,27 @@ export function rankCEEOpenings(
   );
 }
 
-/** 二分选法：只在 candidates 内选，按 worstClass 升序 → expectedRemaining 升序 → weight 降序 → id 升序取第一个。 */
+/** 二分选法最多评估多少个待选猜测：每个要对全部候选算一遍反馈，不设上界时代价随题库平方增长。 */
+export const CEE_RANKED_BISECTION_MAX_EVALUATED = 32;
+
+/**
+ * 二分选法：只在 candidates 内选，按 worstClass 升序 → expectedRemaining 升序 → weight 降序 → id 升序取第一个。
+ *
+ * 待选猜测超过上限时只评估权重最高的那些（仍对全部候选求分组），复杂度从 c² 降到 上限·c；
+ * 候选数不超过上限时与逐个评估完全一致。
+ */
 export function chooseCEEBisectionGuess(
   candidates: readonly CEERankedCandidate[],
   settings: CEESettings,
-  excluded: ReadonlySet<number>
+  excluded: ReadonlySet<number>,
+  maxEvaluated: number = CEE_RANKED_BISECTION_MAX_EVALUATED
 ): CEECharacterView {
-  const ranked = candidates
+  const byWeight = (a: CEERankedCandidate, b: CEERankedCandidate): number =>
+    b.weight - a.weight || a.character.id - b.character.id;
+  const pickable = candidates.filter((candidate) => !excluded.has(candidate.character.id));
+  const evaluated =
+    pickable.length > maxEvaluated ? [...pickable].sort(byWeight).slice(0, maxEvaluated) : pickable;
+  const ranked = evaluated
     .map((candidate) => ({
       candidate,
       split: evaluateCEEGuess(candidate.character, candidates, CEE_RANKED_ALL_DIMENSIONS, settings),
@@ -197,10 +211,9 @@ export function chooseCEEBisectionGuess(
       (a, b) =>
         a.split.worstClass - b.split.worstClass ||
         a.split.expectedRemaining - b.split.expectedRemaining ||
-        b.candidate.weight - a.candidate.weight ||
-        a.candidate.character.id - b.candidate.character.id
+        byWeight(a.candidate, b.candidate)
     );
-  const picked = ranked.find((entry) => !excluded.has(entry.candidate.character.id));
+  const picked = ranked[0];
   if (!picked) throw new AppError("RANKED_NO_CANDIDATE", "题库里没有可以继续二分的选择");
   return picked.candidate.character;
 }
