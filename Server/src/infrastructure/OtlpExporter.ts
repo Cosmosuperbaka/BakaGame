@@ -1,4 +1,5 @@
 import { AppError } from "../domain/Errors";
+import { countServerMetric } from "./Sentry";
 
 export type OtlpFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -10,6 +11,20 @@ export interface OtlpExporterConfig {
   deploymentEnvironment?: string;
   fetcher?: typeof fetch | OtlpFetcher;
   now?: () => number;
+  /** 丢弃数的汇报出口；缺省记成指标，保证「丢了多少」从外部看得见。 */
+  onDrop?: (drop: OtlpDrop) => void;
+}
+
+/**
+ * 一次汇总的丢弃：`overflow` 是缓冲满了淘汰最旧，`rejected` 是对端明确拒收（永久失败，重试无益）。
+ * 按信号与原因（及拒收状态码）汇总后在导出周期里汇报，不在热路径上逐条回调。
+ */
+export interface OtlpDrop {
+  signal: OtlpSignal;
+  reason: "overflow" | "rejected";
+  count: number;
+  /** 仅 `rejected`：对端返回的状态码。 */
+  status?: number;
 }
 
 export interface OtlpLogRecord {
@@ -114,6 +129,13 @@ const toAnyValue = (v: unknown): Record<string, unknown> => {
   return { stringValue: JSON.stringify(v) };
 };
 
+/**
+ * 只有「对端暂时处理不了」的状态才值得重发：超时、限流与 5xx。
+ * 其余 4xx（坏载荷、过大、认证失败）原样重发只会得到同样的结果，还会堵住后面的日志。
+ */
+const isRetryableStatus = (status: number): boolean =>
+  status === 408 || status === 429 || status >= 500;
+
 export class OtlpExporter {
   private static readonly MAX_BUFFER_SIZE = 500;
   readonly logsEndpoint?: string;
@@ -124,6 +146,9 @@ export class OtlpExporter {
   readonly deploymentEnvironment?: string;
   private readonly fetcher: typeof fetch | OtlpFetcher;
   private readonly now: () => number;
+  private readonly onDrop: (drop: OtlpDrop) => void;
+  /** 自上次汇报以来的丢弃：键为 `信号|原因|状态码`，值为条数。 */
+  private readonly pendingDrops = new Map<string, number>();
 
   private logBuffer: OtlpLogRecord[] = [];
   private spanBuffer: OtlpSpanRecord[] = [];
@@ -173,6 +198,14 @@ export class OtlpExporter {
     this.deploymentEnvironment = config.deploymentEnvironment ?? "production";
     this.fetcher = config.fetcher ?? fetch;
     this.now = config.now ?? (() => Date.now());
+    this.onDrop =
+      config.onDrop ??
+      ((drop) =>
+        countServerMetric("bakagame.otlp.dropped", drop.count, {
+          signal: drop.signal,
+          reason: drop.reason,
+          ...(drop.status === undefined ? {} : { status: drop.status }),
+        }));
 
     if (this.logsEndpoint || this.tracesEndpoint) {
       this.flushTimer = setInterval(() => {
@@ -232,7 +265,7 @@ export class OtlpExporter {
     if (!this.logsEndpoint || this.isShuttingDown) return;
     if (this.logBuffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
       this.logBuffer.shift(); // 缓冲区达上限时淘汰最旧条目
-      this.stats.droppedCount++;
+      this.noteDrop("logs", "overflow", 1);
     }
     this.logBuffer.push(record);
     if (this.logBuffer.length >= 50) {
@@ -244,7 +277,7 @@ export class OtlpExporter {
     if (!this.tracesEndpoint || this.isShuttingDown) return;
     if (this.spanBuffer.length >= OtlpExporter.MAX_BUFFER_SIZE) {
       this.spanBuffer.shift();
-      this.stats.droppedCount++;
+      this.noteDrop("spans", "overflow", 1);
     }
     this.spanBuffer.push(record);
     if (this.spanBuffer.length >= 50) {
@@ -252,28 +285,91 @@ export class OtlpExporter {
     }
   }
 
-  private handleFailure(batch: OtlpLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
+  private noteDrop(
+    signal: OtlpSignal,
+    reason: OtlpDrop["reason"],
+    count: number,
+    status?: number
+  ): void {
+    if (count <= 0) return;
+    this.stats.droppedCount += count;
+    const key = `${signal}|${reason}|${status ?? ""}`;
+    this.pendingDrops.set(key, (this.pendingDrops.get(key) ?? 0) + count);
+  }
+
+  /** 把累计的丢弃汇报出去；汇报自身的故障不能影响导出。 */
+  private reportDrops(): void {
+    if (this.pendingDrops.size === 0) return;
+    const drops = [...this.pendingDrops];
+    this.pendingDrops.clear();
+    for (const [key, count] of drops) {
+      const [signal, reason, status] = key.split("|") as [OtlpSignal, OtlpDrop["reason"], string];
+      try {
+        this.onDrop({
+          signal,
+          reason,
+          count,
+          ...(status ? { status: Number(status) } : {}),
+        });
+      } catch {
+        // 汇报出口故障只丢汇报本身。
+      }
+    }
+  }
+
+  private bumpBackoff(signal: OtlpSignal): void {
     this.stats.failureCount++;
-    const backoff = this.backoff[type];
+    const backoff = this.backoff[signal];
     backoff.consecutiveFailures++;
     backoff.nextRetryTime =
       this.now() + Math.min(30000, 1000 * Math.pow(2, backoff.consecutiveFailures - 1));
+  }
 
+  /** 可重试的失败：批次放回队首，缓冲超限时淘汰最旧。 */
+  private handleFailure(batch: OtlpLogRecord[] | OtlpSpanRecord[], type: OtlpSignal): void {
+    this.bumpBackoff(type);
     if (type === "logs") {
       this.logBuffer.unshift(...(batch as OtlpLogRecord[]));
       if (this.logBuffer.length > OtlpExporter.MAX_BUFFER_SIZE) {
         const excess = this.logBuffer.length - OtlpExporter.MAX_BUFFER_SIZE;
         this.logBuffer.splice(0, excess);
-        this.stats.droppedCount += excess;
+        this.noteDrop("logs", "overflow", excess);
       }
     } else {
       this.spanBuffer.unshift(...(batch as OtlpSpanRecord[]));
       if (this.spanBuffer.length > OtlpExporter.MAX_BUFFER_SIZE) {
         const excess = this.spanBuffer.length - OtlpExporter.MAX_BUFFER_SIZE;
         this.spanBuffer.splice(0, excess);
-        this.stats.droppedCount += excess;
+        this.noteDrop("spans", "overflow", excess);
       }
     }
+  }
+
+  /**
+   * 永久失败：对端明确拒收，批次直接丢弃并计数，不回队。
+   * 仍然进退避：认证失败这类问题持续存在时，不能每个批次都去撞一次对端。
+   */
+  private handleRejected(batchSize: number, signal: OtlpSignal, status: number): void {
+    this.bumpBackoff(signal);
+    this.noteDrop(signal, "rejected", batchSize, status);
+  }
+
+  /** 按响应结算一个批次：成功清退避，可重试回队，永久失败丢弃。 */
+  private settle(
+    batch: OtlpLogRecord[] | OtlpSpanRecord[],
+    signal: OtlpSignal,
+    response: Response
+  ): boolean {
+    if (response.ok) {
+      this.sentRecords += batch.length;
+      this.stats.successCount++;
+      this.backoff[signal].consecutiveFailures = 0;
+      this.backoff[signal].nextRetryTime = 0;
+      return true;
+    }
+    if (isRetryableStatus(response.status)) this.handleFailure(batch, signal);
+    else this.handleRejected(batch.length, signal, response.status);
+    return false;
   }
 
   async sendHeartbeatTrace(): Promise<boolean> {
@@ -371,22 +467,13 @@ export class OtlpExporter {
         ];
 
         const response = await this.post(this.logsEndpoint!, { resourceLogs });
-
-        if (response.ok) {
-          this.sentRecords += batch.length;
-          this.stats.successCount++;
-          this.backoff.logs.consecutiveFailures = 0;
-          this.backoff.logs.nextRetryTime = 0;
-          return true;
-        }
-
-        this.handleFailure(batch, "logs");
-        return false;
+        return this.settle(batch, "logs", response);
       } catch {
         this.handleFailure(batch, "logs");
         return false;
       } finally {
         this.inFlightRecords -= batch.length;
+        this.reportDrops();
       }
     })();
 
@@ -445,22 +532,13 @@ export class OtlpExporter {
         ];
 
         const response = await this.post(this.tracesEndpoint!, { resourceSpans });
-
-        if (response.ok) {
-          this.sentRecords += batch.length;
-          this.stats.successCount++;
-          this.backoff.spans.consecutiveFailures = 0;
-          this.backoff.spans.nextRetryTime = 0;
-          return true;
-        }
-
-        this.handleFailure(batch, "spans");
-        return false;
+        return this.settle(batch, "spans", response);
       } catch {
         this.handleFailure(batch, "spans");
         return false;
       } finally {
         this.inFlightRecords -= batch.length;
+        this.reportDrops();
       }
     })();
 
@@ -486,6 +564,7 @@ export class OtlpExporter {
     const attemptsBefore = this.stats.totalAttempts;
     const sentBefore = this.sentRecords;
     await Promise.all([this.flushLogs(), this.flushSpans()]);
+    this.reportDrops();
     return this.result(attemptsBefore, sentBefore);
   }
 
@@ -519,6 +598,7 @@ export class OtlpExporter {
             }, budget);
           }),
         ]);
+        this.reportDrops();
         const result = this.result(attemptsBefore, sentBefore);
         if (!result.success) throw new OtlpShutdownError(result, this.getStats());
       } finally {

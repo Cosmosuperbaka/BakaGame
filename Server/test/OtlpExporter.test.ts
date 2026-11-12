@@ -4,6 +4,7 @@ import {
   OtlpExporter,
   OtlpShutdownError,
   toUnixNanoString,
+  type OtlpDrop,
   type OtlpFetcher,
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
@@ -548,6 +549,76 @@ test("OtlpExporter 反复失败导致积压超过 500 条时淘汰最旧记录�
   expect(exporter.buffer[0].message).toBe("日志条目 60");
   expect(exporter.buffer[499].message).toBe("日志条目 559");
 
+  await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
+});
+
+test.each([400, 401, 403, 413, 422])(
+  "OtlpExporter 对永久失败（HTTP %i）直接丢弃并计数，不回队重试",
+  async (status) => {
+    let virtualTime = 1_700_000_000_000;
+    let calls = 0;
+    const drops: OtlpDrop[] = [];
+    const exporter = createExporter({
+      endpoint: "http://127.0.0.1:9999/v1/logs",
+      fetcher: async () => {
+        calls += 1;
+        return new Response("bad", { status });
+      },
+      now: () => virtualTime,
+      onDrop: (drop) => drops.push(drop),
+    });
+    for (let i = 0; i < 3; i += 1)
+      exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: `坏批次 ${i}` });
+
+    expect(await exporter.flushLogs()).toBe(false);
+    // 坏批次不回队：队列里没有它，后续日志不会被它堵住。
+    expect(exporter.buffer.length).toBe(0);
+    expect(exporter.getStats().droppedCount).toBe(3);
+    expect(drops).toEqual([{ signal: "logs", reason: "rejected", count: 3, status }]);
+
+    // 退避窗口过后新日志照常发送，只发一次。
+    virtualTime += 5_000;
+    exporter.enqueue({ timestamp: virtualTime, level: "INFO", message: "后续日志" });
+    await exporter.flushLogs();
+    expect(calls).toBe(2);
+    expect(exporter.buffer.length).toBe(0);
+  }
+);
+
+test.each([408, 429, 500, 503])(
+  "OtlpExporter 对可重试失败（HTTP %i）仍回队重试",
+  async (status) => {
+    const exporter = createExporter({
+      endpoint: "http://127.0.0.1:9999/v1/logs",
+      fetcher: async () => new Response("later", { status }),
+      now: () => 1_700_000_000_000,
+    });
+    exporter.enqueue({ timestamp: 1, level: "INFO", message: "待重试" });
+    await exporter.flushLogs();
+    expect(exporter.buffer.length).toBe(1);
+    expect(exporter.getStats().droppedCount).toBe(0);
+  }
+);
+
+test("OtlpExporter 缓冲溢出的丢弃数通过 onDrop 汇总上报，而不是只躺在内部计数里", async () => {
+  const virtualTime = 1_700_000_000_000;
+  const drops: OtlpDrop[] = [];
+  const exporter = createExporter({
+    endpoint: "http://127.0.0.1:9999/v1/logs",
+    fetcher: async () => new Response("down", { status: 503 }),
+    now: () => virtualTime,
+    onDrop: (drop) => drops.push(drop),
+  });
+  for (let i = 0; i < 520; i += 1)
+    exporter.enqueue({ timestamp: virtualTime + i, level: "INFO", message: `条目 ${i}` });
+  await exporter.flush();
+
+  const overflow = drops.filter((drop) => drop.reason === "overflow");
+  expect(overflow.reduce((sum, drop) => sum + drop.count, 0)).toBe(
+    exporter.getStats().droppedCount
+  );
+  expect(overflow.every((drop) => drop.signal === "logs")).toBe(true);
+  expect(exporter.getStats().droppedCount).toBeGreaterThanOrEqual(20);
   await expect(exporter.shutdown()).rejects.toBeInstanceOf(OtlpShutdownError);
 });
 
