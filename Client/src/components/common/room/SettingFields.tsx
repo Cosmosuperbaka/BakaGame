@@ -10,6 +10,7 @@ import {
 } from "react";
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion";
 import { Minus, Plus, type LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
@@ -54,7 +55,8 @@ function ReadOnlyValue({ children, muted = false }: { children: ReactNode; muted
   return (
     <span
       className={cn(
-        "shrink-0 text-right text-sm tabular-nums",
+        // max-w-full：取值很长（多选列表、歌单名）时在行内折行，不顶出面板。
+        "max-w-full shrink-0 text-right text-sm tabular-nums",
         muted ? "text-muted-foreground" : "text-foreground"
       )}
     >
@@ -813,17 +815,18 @@ export function SettingToggleChips<T extends string>({
   const chosen = new Set(selected);
   const all = options.every((option) => chosen.has(option.value));
   if (readOnly) {
+    // 与其它只读字段同一种行：标签在左、取值在右，选项多时取值在右列内折行。
     return (
-      <StackedField label={label}>
-        <p className="text-sm leading-relaxed">
+      <SettingRow label={label}>
+        <ReadOnlyValue>
           {all
             ? "全部"
             : options
                 .filter((option) => chosen.has(option.value))
                 .map((option) => option.label)
                 .join("、")}
-        </p>
-      </StackedField>
+        </ReadOnlyValue>
+      </SettingRow>
     );
   }
   const toggle = (value: T) => {
@@ -839,13 +842,15 @@ export function SettingToggleChips<T extends string>({
           {label}
         </span>
         {!all ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => onChange(options.map((option) => option.value))}
-            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="-my-1 h-6 px-1.5 text-xs text-muted-foreground"
           >
             全选
-          </button>
+          </Button>
         ) : null}
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby={labelId}>
@@ -911,17 +916,21 @@ export function SettingValue({
 /**
  * 折叠组内的小节：可选的小标题（带图标）与一组字段。相邻小节之间一道分隔线，组内平铺的长列表由此分出层次。
  * `open` 为假时整节按 `collapsible` 收起（自动出题的筛选随出题方式出现）；分隔线与上间距算在节内，随高度一起补间。
- * 小节须是同一容器里的兄弟元素，第一节不画分隔线。
+ * 小节须是同一容器里的兄弟元素，第一节不画分隔线：不要再给某一节外面套一层包装，否则它会被当成「第一节」，
+ * 分隔线与上间距一起消失。Agent 不该替人类改的一节传 `agentSensitive`，标记直接落在节上。
  */
 export function SettingsSection({
   title,
   icon: Icon,
   open = true,
+  agentSensitive = false,
   children,
 }: {
   title?: string;
   icon?: LucideIcon;
   open?: boolean;
+  /** 整节对 Agent 不可操作（账号相关的设置），等同于在节上挂 `data-agent-sensitive`。 */
+  agentSensitive?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -934,6 +943,7 @@ export function SettingsSection({
           animate="animate"
           exit="exit"
           className="flow-root"
+          data-agent-sensitive={agentSensitive || undefined}
         >
           <div className="[section:not(:first-child)>&]:mt-4 [section:not(:first-child)>&]:border-t [section:not(:first-child)>&]:pt-4">
             <SettingsFields>

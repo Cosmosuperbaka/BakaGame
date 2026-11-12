@@ -132,11 +132,15 @@ export function SettingsAccordion({
                   id={summaryId}
                   className="block pt-1 text-xs leading-relaxed text-muted-foreground"
                 >
-                  {summaryItems.map((item, index) => (
-                    // 每一项整体不断行，窄屏只在「·」处换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
+                  {summaryItems.map((item, index, items) => (
+                    // 每一项整体不断行，窄屏只在「·」后换行，不把「60 秒」拆成两行；超过一行的长项（歌单名、昵称）截断。
+                    // 间隔号随前一项（与结算表的明细次行同一口径），换行后不落到行首。
                     <Fragment key={index}>
-                      {index ? " · " : null}
-                      <span className="inline-block max-w-full truncate align-bottom">{item}</span>
+                      {index ? " " : null}
+                      <span className="inline-block max-w-full truncate align-bottom">
+                        {item}
+                        {index < items.length - 1 ? " ·" : null}
+                      </span>
                     </Fragment>
                   ))}
                 </span>

@@ -100,6 +100,16 @@ describe("SettingsEntry", () => {
     expect(window.localStorage.getItem(CLOUD_SYNC_STORAGE_KEY)).toBe("0");
   });
 
+  it("云同步对 Agent 不可见，且与其它小节是同级兄弟（才画得出分隔线）", async () => {
+    const { dialog } = await openSettings();
+    const section = within(dialog)
+      .getByRole("switch", { name: "启用云同步" })
+      .closest("section[data-agent-sensitive]");
+    expect(section).not.toBeNull();
+    // 分隔线由「不是第一节」的兄弟选择器给出：外面再包一层，它就成了自己父级里的第一节。
+    expect(section?.previousElementSibling?.tagName).toBe("SECTION");
+  });
+
   it("房间内与任何页面是同一块配对入口；房主开了 MCP 才能交给 Agent", async () => {
     useWhoIsFakerStore.setState({
       snapshot: { settings: { allowAgents: true } } as never,

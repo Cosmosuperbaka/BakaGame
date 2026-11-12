@@ -181,7 +181,8 @@ function CloudSyncSection() {
   const enabled = useCloudSyncEnabled();
   const status = useAccountStore((state) => state.status);
   return (
-    <SettingsSection title="云同步" icon={Cloud}>
+    // 云同步绑定账号：Agent 不替人类改账号相关的设置。
+    <SettingsSection title="云同步" icon={Cloud} agentSensitive>
       <SettingSwitchRow
         label="启用云同步"
         description="登录后同步昵称、房间设置记忆与音乐账号；关闭即停止读写云端。"
@@ -242,10 +243,8 @@ export function SettingsDialog({
             <SoundVolumeField disabled={!soundEnabled} />
           </SettingsSection>
 
-          {/* 云同步绑定账号：Agent 不替人类改账号相关的设置。 */}
-          <div data-agent-sensitive>
-            <CloudSyncSection />
-          </div>
+          {/* 敏感标记落在节上：再套一层包装会让它成为「第一节」，丢掉分隔线与上间距。 */}
+          <CloudSyncSection />
         </div>
       </DialogContent>
     </Dialog>
