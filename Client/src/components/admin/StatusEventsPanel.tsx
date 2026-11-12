@@ -463,7 +463,7 @@ export function StatusEventsPanel() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="text-destructive hover:bg-destructive/10"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       disabled={query.loading}
                       onClick={() => setRemoving(event)}
                     >
