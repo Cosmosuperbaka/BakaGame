@@ -283,7 +283,8 @@ export function SongClipRail({
           aria-valuemax={endTime}
           aria-valuenow={Math.round(clamp(currentTimeMs, startTime, endTime))}
           aria-valuetext={formatClipTime(clamp(currentTimeMs, startTime, endTime))}
-          className="absolute inset-0 rounded-sm focus-visible:outline-offset-2"
+          // 整条轨道就是这个滑块：环外扩会压到下方「选段 / 时间」读数行，改为内收（DesignGuide §7）
+          className="absolute inset-0 rounded-sm focus-visible:-outline-offset-2"
           onPointerDown={(event) => beginDrag("seek", event)}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
