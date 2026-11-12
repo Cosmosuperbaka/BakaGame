@@ -565,6 +565,10 @@ export class AggregatedMusicProvider implements MusicProvider {
     }));
   }
 
+  /**
+   * 专辑只来自网易云：QQ 音乐的依赖库没有专辑曲目接口，
+   * 产出 QQ 专辑只会让调用方选中一张点不开的专辑。
+   */
   async searchAlbums(
     keyword: string,
     limit = 10,
@@ -572,26 +576,14 @@ export class AggregatedMusicProvider implements MusicProvider {
     options: MusicSearchOptions = {}
   ): Promise<SongAlbumSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-    const qqCookie = resolvePlatformCookie(cookie, "qq");
-    const qqSearch =
-      qqCookie || this.anonymousQqAllowed()
-        ? this.qqProvider.searchAlbums?.(keyword, limit, qqCookie)
-        : Promise.resolve([] as SongAlbumSearchResult[]);
-    const [netease, qq] = await Promise.allSettled([
-      this.neteaseProvider.searchAlbums?.(keyword, limit, neteaseCookie),
-      qqSearch,
-    ]);
-    const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
+    const netease = await this.neteaseProvider.searchAlbums?.(keyword, limit, neteaseCookie);
+    const list = (netease ?? []).map((a) => ({
       ...a,
       id: a.id.startsWith("netease:") ? a.id : buildSongUrn("netease", a.id),
     }));
-    const list2 = (qq.status === "fulfilled" ? qq.value || [] : []).map((a) => ({
-      ...a,
-      id: a.id.startsWith("qq:") ? a.id : buildSongUrn("qq", a.id),
-    }));
     return mergeSearchLists(
-      list1,
-      list2,
+      list,
+      [],
       (album) => {
         const nameKey = normalizeComparableText(album.name);
         return nameKey ? `${nameKey}|${normalizeComparableText(album.artist ?? "")}` : album.id;
@@ -603,18 +595,17 @@ export class AggregatedMusicProvider implements MusicProvider {
 
   async getAlbumSongs(albumId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
     const { platform, rawId } = parseSongUrn(albumId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      const songs = await this.neteaseProvider.getAlbumSongs!(rawId, platformCookie);
-      return songs.map((s) => ({
-        ...s,
-        id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
-      }));
+    if (platform === "qq") {
+      // 与「歌曲不可用」同口径：猜番候选解析会按不可用候选跳过，而不是把它当全局故障。
+      throw new AppError("SONG_NOT_FOUND", "QQ 音乐暂不提供专辑曲目");
     }
-    const songs = await this.qqProvider.getAlbumSongs!(rawId, platformCookie);
+    const songs = await this.neteaseProvider.getAlbumSongs!(
+      rawId,
+      resolvePlatformCookie(cookie, platform)
+    );
     return songs.map((s) => ({
       ...s,
-      id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
+      id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
     }));
   }
 

@@ -164,7 +164,7 @@ describe("AggregatedMusicProvider", () => {
     expect(qqFirst[0]?.sources?.length).toBe(2);
   });
 
-  test("匿名补充关闭时 QQ 歌单、歌手与专辑检索都不再发往上游", async () => {
+  test("匿名补充关闭时 QQ 歌单与歌手检索都不再发往上游", async () => {
     const neteaseMock = createMockProvider("netease", {
       searchArtists: mock(async () => [{ id: "netease:10", name: "周杰伦" }]),
       searchAlbums: mock(async () => [{ id: "netease:20", name: "范特西" }]),
@@ -175,7 +175,6 @@ describe("AggregatedMusicProvider", () => {
         songs: [],
       })),
       searchArtists: mock(async () => [{ id: "qq:10", name: "周杰伦" }]),
-      searchAlbums: mock(async () => [{ id: "qq:20", name: "范特西" }]),
     });
     const agg = new AggregatedMusicProvider({
       neteaseProvider: neteaseMock,
@@ -186,7 +185,6 @@ describe("AggregatedMusicProvider", () => {
     await agg.searchArtists("周杰伦", 10, { netease: "nc_cookie_only" });
     await agg.searchAlbums("范特西", 10, { netease: "nc_cookie_only" });
     expect(qqMock.searchArtists).not.toHaveBeenCalled();
-    expect(qqMock.searchAlbums).not.toHaveBeenCalled();
     await expect(agg.getPlaylistSongs("qq:12345", { netease: "nc_cookie_only" })).rejects.toThrow(
       "QQ 音乐匿名音源已关闭"
     );
@@ -352,26 +350,6 @@ describe("AggregatedMusicProvider", () => {
     expect(qqFirst.find((artist) => artist.name === "共同")?.id).toBe("qq:shared");
   });
 
-  test("searchAlbums 按名称与歌手去重并交错保留双平台", async () => {
-    const neteaseMock = createMockProvider("netease", {
-      searchAlbums: mock(async () => [
-        { id: "netease:a", name: "甲专辑", artist: "甲" },
-        { id: "netease:shared", name: "共同专辑", artist: "丙" },
-      ]),
-    });
-    const qqMock = createMockProvider("qq", {
-      searchAlbums: mock(async () => [
-        { id: "qq:b", name: "乙专辑", artist: "乙" },
-        { id: "qq:shared", name: "共同专辑", artist: "丙" },
-      ]),
-    });
-    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
-
-    const results = await agg.searchAlbums("x", 10, { netease: "nc", qq: "qc" });
-    expect(results.map((album) => album.name)).toEqual(["甲专辑", "乙专辑", "共同专辑"]);
-    expect(results.find((album) => album.name === "共同专辑")?.id).toBe("netease:shared");
-  });
-
   test("双平台聚合 Cookie 正确解构并透传给对应提供商", async () => {
     const neteaseMock = createMockProvider("netease", {
       getPlaylistSongs: mock(async (id: string, _cookie?: string) => ({
@@ -411,12 +389,6 @@ describe("AggregatedMusicProvider", () => {
       ]),
       getArtistSongs: mock(async (_id: string, _cookie?: string) => [
         { id: "qq:2", title: "Artist Track QQ", artist: "Artist B" },
-      ]),
-      searchAlbums: mock(async (_keyword: string, _limit?: number, _cookie?: string) => [
-        { id: "qq:30", name: "Album B" },
-      ]),
-      getAlbumSongs: mock(async (_id: string, _cookie?: string) => [
-        { id: "qq:2", title: "Album Track QQ", artist: "Artist B" },
       ]),
     });
 
@@ -465,13 +437,9 @@ describe("AggregatedMusicProvider", () => {
     // 4. searchAlbums & getAlbumSongs
     await agg.searchAlbums("范特西", 5, aggregatedCookie);
     expect(neteaseMock.searchAlbums).toHaveBeenCalledWith("范特西", 5, "nc_cookie_123");
-    expect(qqMock.searchAlbums).toHaveBeenCalledWith("范特西", 5, "qc_cookie_456");
 
     await agg.getAlbumSongs("netease:20", aggregatedCookie);
     expect(neteaseMock.getAlbumSongs).toHaveBeenCalledWith("20", "nc_cookie_123");
-
-    await agg.getAlbumSongs("qq:30", aggregatedCookie);
-    expect(qqMock.getAlbumSongs).toHaveBeenCalledWith("30", "qc_cookie_456");
   });
 
   test("getSong 主平台失败时按歌名+歌手跨平台 Failover", async () => {
@@ -694,5 +662,37 @@ describe("AggregatedMusicProvider：跨平台兜底得到的歌曲标识", () =>
       hint: { title: "反方向的钟", artist: "周杰伦", durationMs: 258000 },
     });
     expect(song.id).toBe("qq:hit");
+  });
+});
+
+describe("AggregatedMusicProvider：QQ 没有专辑接口", () => {
+  test("专辑检索只发网易云，不产出点不开的 QQ 专辑", async () => {
+    const neteaseMock = createMockProvider("netease", {
+      searchAlbums: mock(async () => [{ id: "netease:20", name: "范特西", artist: "周杰伦" }]),
+    });
+    const qqMock = createMockProvider("qq", {
+      searchAlbums: mock(async () => [{ id: "qq:0039abc", name: "范特西", artist: "周杰伦" }]),
+    });
+    const agg = new AggregatedMusicProvider({ neteaseProvider: neteaseMock, qqProvider: qqMock });
+
+    const albums = await agg.searchAlbums("范特西", 10, { netease: "nc", qq: "qc" });
+    expect(albums.map((album) => album.id)).toEqual(["netease:20"]);
+    expect(qqMock.searchAlbums).not.toHaveBeenCalled();
+  });
+
+  test("QQ 专辑曲目如实报不可用，由调用方按候选不可用处理，不去检索专辑标识", async () => {
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => [{ id: "qq:wrong", title: "不该被检索", artist: "x" }]),
+    });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: createMockProvider("netease"),
+      qqProvider: qqMock,
+    });
+
+    await expect(agg.getAlbumSongs("qq:0039abc", { qq: "qc" })).rejects.toMatchObject({
+      code: "SONG_NOT_FOUND",
+    });
+    expect(qqMock.getAlbumSongs).not.toHaveBeenCalled();
+    expect(qqMock.search).not.toHaveBeenCalled();
   });
 });

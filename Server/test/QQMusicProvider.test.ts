@@ -572,23 +572,10 @@ describe("QQMusicProvider · 歌单 / 歌手 / 专辑", () => {
     expect(songs[0].album).toBe("寻找周杰伦");
   });
 
-  it("searchAlbums 映射专辑与曲目数", async () => {
-    const provider = new QQMusicProvider();
-    qqmusic.search = mock(async () => ({
-      status: 200,
-      body: {
-        data: {
-          body: {
-            item_album: [{ albumMID: "alb1", albumID: 4321, albumName: "范特西", song_count: 10 }],
-          },
-        },
-      },
-    })) as any;
-
-    const albums = await provider.searchAlbums("范特西", 5);
-    expect(albums[0].id).toBe("qq:alb1");
-    expect(albums[0].name).toBe("范特西");
-    expect(albums[0].songCount).toBe(10);
+  it("不提供专辑能力：依赖库没有专辑接口，不保留把专辑标识当关键词的检索", () => {
+    const provider = new QQMusicProvider() as unknown as Record<string, unknown>;
+    expect(provider.searchAlbums).toBeUndefined();
+    expect(provider.getAlbumSongs).toBeUndefined();
   });
 });
 

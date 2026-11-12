@@ -18,7 +18,6 @@ import type {
   MusicQrLoginCheck,
 } from "./NeteaseMusicProvider";
 import type {
-  SongAlbumSearchResult,
   SongArtistSearchResult,
   SongChorus,
   SongDetails,
@@ -1096,50 +1095,6 @@ export class QQMusicProvider implements MusicProvider {
         };
       })
       .filter((s) => s.id && s.title);
-  }
-
-  async searchAlbums(
-    keyword: string,
-    limit = 10,
-    rawCookie?: MusicCookieInput
-  ): Promise<SongAlbumSearchResult[]> {
-    const cookie = extractQqCookie(rawCookie);
-    const normalized = keyword.trim();
-    if (!normalized) return [];
-
-    const searchRes = await this.callUpstream(cookie, () =>
-      qqmusic.search({ keywords: normalized, type: 2, limit, cookie })
-    );
-    const searchResBody = asRecord(searchRes.body);
-    const dataBody = firstRecord(
-      asRecord(searchResBody.data).body,
-      searchResBody.body,
-      searchResBody.data,
-      searchResBody
-    );
-    const items = readRecords(dataBody.item_album || dataBody.album);
-
-    return items
-      .filter((item) => readText(item.albumMID || item.mid))
-      .map((item): SongAlbumSearchResult => {
-        const albumMid = readText(item.albumMID || item.mid);
-        const albumId = Number(item.albumID || item.id);
-
-        return {
-          id: buildSongUrn("qq", albumMid),
-          name: stripHtmlTags(item.albumName || item.name || "") || "未知专辑",
-          artist: Array.isArray(item.singer) ? singerNames(item.singer).join(" / ") : undefined,
-          pictureUrl: albumPictureUrl(albumId),
-          songCount: readNumber(item.song_count || item.total_song_num),
-        };
-      });
-  }
-
-  async getAlbumSongs(albumId: string, rawCookie?: MusicCookieInput): Promise<SongSearchResult[]> {
-    const cookie = extractQqCookie(rawCookie);
-    const mid = this.resolveMid(albumId);
-    const searchRes = await this.search(mid, 50, cookie);
-    return searchRes;
   }
 
   async createQrLogin(
