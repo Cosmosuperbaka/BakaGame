@@ -77,6 +77,58 @@ describe("出站地址护栏", () => {
     for (const host of allowed) expect(isBlockedOutboundHost(host)).toBe(false);
   });
 
+  test("网段边界：段内最后一个地址拒绝，紧邻段外的第一个地址放行", () => {
+    const edges: Array<[blockedHost: string, publicHost: string]> = [
+      ["10.255.255.255", "11.0.0.0"],
+      ["172.31.255.255", "172.32.0.0"],
+      ["172.16.0.0", "172.15.255.255"],
+      ["192.168.255.255", "192.169.0.0"],
+      ["192.0.255.255", "192.1.0.0"],
+      ["100.127.255.255", "100.128.0.0"],
+      ["100.64.0.0", "100.63.255.255"],
+      ["198.19.255.255", "198.20.0.0"],
+      ["198.18.0.0", "198.17.255.255"],
+      ["169.254.255.255", "169.255.0.0"],
+      ["127.255.255.255", "126.255.255.255"],
+      ["0.255.255.255", "1.0.0.0"],
+      ["224.0.0.0", "223.255.255.255"],
+    ];
+    for (const [blockedHost, publicHost] of edges) {
+      expect(isBlockedOutboundHost(blockedHost)).toBe(true);
+      expect(isBlockedOutboundHost(publicHost)).toBe(false);
+    }
+  });
+
+  test("IPv6 与 IPv4 映射地址：映射的公网放行，映射的内网拒绝，文档前缀不误伤", () => {
+    for (const host of [
+      "[::ffff:a00:1]",
+      "[::ffff:10.0.0.1]",
+      "[::ffff:c0a8:101]",
+      "[64:ff9b::a00:1]",
+      "[fe80::1%eth0]",
+      "[febf::1]",
+      "[fdff::1]",
+      "[ffff::1]",
+    ]) {
+      expect(isBlockedOutboundHost(host)).toBe(true);
+    }
+    for (const host of [
+      "[::ffff:8.8.8.8]",
+      "[::ffff:808:808]",
+      "[2001:db8::1]",
+      "[2606:4700::1111]",
+      "[fec0::1]",
+    ]) {
+      expect(isBlockedOutboundHost(host)).toBe(false);
+    }
+  });
+
+  test("不是规范点分四段的纯数字主机按拒绝处理", () => {
+    for (const host of ["010.0.0.1", "1.2.3", "8.8.8"]) {
+      expect(isBlockedOutboundHost(host)).toBe(true);
+    }
+  });
+
   test("URL 解析器归一化的等价写法同样落到拒绝侧", () => {
     for (const raw of [
       "http://2130706433/",

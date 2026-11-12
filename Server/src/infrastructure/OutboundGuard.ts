@@ -1,38 +1,48 @@
+import { BlockList, isIP } from "node:net";
+
 type OutboundFetcher = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 const BLOCKED_DOMAIN_SUFFIXES = [".localhost", ".local", ".internal", ".localdomain", ".home.arpa"];
 
-/** 点分四段（或已被 URL 解析器归一化的等价写法）是否落在内网、链路本地与保留网段。 */
-const isBlockedIpv4 = (host: string): boolean => {
-  const parts = host.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255))
-    return false;
-  const [a, b] = parts;
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 169 && b === 254) return true; // 链路本地：云厂商元数据服务在这里
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && (b === 0 || b === 168)) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
-  if (a === 198 && (b === 18 || b === 19)) return true; // 设备基准测试网段
-  return a >= 224; // 组播与保留段
-};
+/**
+ * 禁止出站的网段：内网、链路本地（云厂商元数据服务在 169.254）、CGNAT、设备基准测试段、
+ * 组播与保留段，以及 NAT64 前缀（可把内网 v4 包进去）。
+ * 规则是数据而不是分支；新增保留段只改这张表。注意 `BlockList` 把 IPv4 与 `::ffff:0:0/96`
+ * 视为等价，映射地址由它自己还原判定，表里不要再登记映射段。
+ */
+const BLOCKED_SUBNETS: ReadonlyArray<
+  readonly [network: string, prefix: number, family: "ipv4" | "ipv6"]
+> = [
+  ["0.0.0.0", 8, "ipv4"],
+  ["10.0.0.0", 8, "ipv4"],
+  ["100.64.0.0", 10, "ipv4"],
+  ["127.0.0.0", 8, "ipv4"],
+  ["169.254.0.0", 16, "ipv4"],
+  ["172.16.0.0", 12, "ipv4"],
+  ["192.0.0.0", 16, "ipv4"],
+  ["192.168.0.0", 16, "ipv4"],
+  ["198.18.0.0", 15, "ipv4"],
+  ["224.0.0.0", 3, "ipv4"],
+  ["::", 128, "ipv6"],
+  ["::1", 128, "ipv6"],
+  ["64:ff9b::", 32, "ipv6"],
+  ["fc00::", 7, "ipv6"],
+  ["fe80::", 10, "ipv6"],
+  ["ff00::", 8, "ipv6"],
+];
 
-const isBlockedIpv6 = (host: string): boolean => {
-  const plain = host.replace(/^\[|\]$/g, "").split("%")[0]!;
-  // `::ffff:7f00:1`：URL 解析器会把 IPv4 映射地址里的十进制段转成十六进制，得还原后再判定。
-  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(plain);
-  if (mappedHex) {
-    const high = Number.parseInt(mappedHex[1]!, 16);
-    const low = Number.parseInt(mappedHex[2]!, 16);
-    return isBlockedIpv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
-  }
-  const mappedDotted = /^::ffff:(.+)$/i.exec(plain)?.[1];
-  if (mappedDotted?.includes(".")) return isBlockedIpv4(mappedDotted);
-  if (plain === "::" || plain === "::1") return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(plain)) return true; // ULA fc00::/7
-  if (/^fe[89ab]/i.test(plain)) return true; // 链路本地 fe80::/10
-  if (/^ff[0-9a-f]{2}:/i.test(plain)) return true; // 组播
-  return /^64:ff9b:/i.test(plain); // NAT64 前缀可以把内网 v4 包进去
+const blockedSubnets = new BlockList();
+for (const [network, prefix, family] of BLOCKED_SUBNETS) {
+  blockedSubnets.addSubnet(network, prefix, family);
+}
+
+/** IPv4 / IPv6 字面量是否落在禁止网段；不是 IP 字面量返回 undefined 交给域名规则。 */
+const isBlockedIpLiteral = (host: string): boolean | undefined => {
+  // 区域标识（`%eth0`）不属于地址本身。
+  const plain = host.split("%")[0]!;
+  const family = isIP(plain);
+  if (family === 0) return undefined;
+  return blockedSubnets.check(plain, family === 4 ? "ipv4" : "ipv6");
 };
 
 /**
@@ -46,9 +56,10 @@ export const isBlockedOutboundHost = (rawHost: string): boolean => {
     .trim()
     .toLowerCase();
   if (!host) return true;
-  if (host.includes(":")) return isBlockedIpv6(host);
-  if (/^\d+$/.test(host)) return true; // 十进制整数形态的 IPv4 不该出现在归一化之后的 URL 里
-  if (isBlockedIpv4(host)) return true;
+  if (host.includes(":")) return isBlockedIpLiteral(host) ?? false;
+  // 纯数字与点组成却不是规范点分四段（整数形态、前导零、段数不足）：URL 归一化之后
+  // 不该出现，出现就按拒绝处理，不去猜它会被解析成哪个地址。
+  if (/^[\d.]+$/.test(host)) return isBlockedIpLiteral(host) ?? true;
   if (host === "localhost" || !host.includes(".")) return true;
   return BLOCKED_DOMAIN_SUFFIXES.some((suffix) => host.endsWith(suffix));
 };
