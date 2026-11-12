@@ -417,6 +417,9 @@ test("节流键表有上限：被挤出的键下次出现时重新记一条，�
   logger.warnThrottled("首个键", 60_000, "告警");
   for (let index = 0; index < 400; index += 1) logger.warnThrottled(`键 ${index}`, 60_000, "告警");
   const before = records.length;
+  // 最近的键仍在表里：被压制，不产生新记录。
+  logger.warnThrottled("键 399", 60_000, "告警");
+  expect(records.length).toBe(before);
   logger.warnThrottled("首个键", 60_000, "告警");
   expect(records.length).toBe(before + 1);
 });
