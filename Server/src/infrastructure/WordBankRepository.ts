@@ -26,7 +26,11 @@ export class DatabaseWordBankRepository implements WordBankRepository {
           set: { useCount: sql`${wordPair.useCount} + 1`, lastUsedAt: new Date() },
         });
     });
-    const tracked = operation.finally(() => this.pending.delete(tracked));
+    // 跟踪用的 Promise 没有调用方持有：吞掉拒绝，失败只经返回的 operation 上报一次，
+    // 否则每次写库失败都会多出一条未处理拒绝。
+    const tracked: Promise<void> = operation
+      .catch(() => undefined)
+      .finally(() => this.pending.delete(tracked));
     this.pending.add(tracked);
     return operation;
   }
