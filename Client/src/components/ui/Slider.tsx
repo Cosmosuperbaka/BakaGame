@@ -51,9 +51,10 @@ const Slider = React.forwardRef<
         )}
         {...props}
       >
+        {/* 轨道取前景色淡档，与准备进度条同一口径：bg-muted 在暗色下比面板、卡片都暗，轨道几乎消失，读不出总长。 */}
         <SliderPrimitive.Track
           className={cn(
-            "relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted",
+            "relative h-1.5 w-full grow overflow-hidden rounded-full bg-foreground/10",
             trackClassName
           )}
         >

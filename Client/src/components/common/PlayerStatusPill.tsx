@@ -51,7 +51,8 @@ export const PLAYER_ME_MARK =
  * 底部淡色底让「准备」「离线」这类关键状态不必逐字阅读也能扫到。
  */
 const PLAYER_STATUS_TONES: Record<PlayerStatusTone, string> = {
-  default: "bg-muted text-muted-foreground",
+  // 中性底取前景色淡档：bg-muted 在暗色下与面板只差 1.05:1，胶囊轮廓消失、只剩散字。
+  default: "bg-foreground/8 text-muted-foreground",
   success: "bg-success/15 text-success",
   questioner: "bg-questioner/15 text-questioner",
   warning: "bg-warning/15 text-warning",

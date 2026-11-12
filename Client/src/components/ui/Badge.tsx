@@ -20,14 +20,15 @@ const badgeVariants = cva(
         secondary: "border-transparent bg-secondary text-secondary-foreground",
         destructive: "border-transparent bg-destructive text-destructive-foreground shadow-sm",
         outline: "text-foreground",
-        muted: "border-transparent bg-muted font-sans font-normal text-foreground",
+        // muted / upcoming 的底取前景色淡档：bg-muted 在暗色面板与卡片上只差约 1.05~1.1:1，徽章轮廓消失。
+        muted: "border-transparent bg-foreground/8 font-sans font-normal text-foreground",
         matched: "border-success/40 bg-success/10 font-sans font-normal text-success",
         subtle: "border-border font-sans font-normal text-muted-foreground",
         active: "border-primary/40 bg-primary/10 font-sans font-normal text-primary",
         // 不可用整体降不透明度（DesignGuide §3），文字仍取 muted-foreground，不另叠一档文字透明度。
         unavailable:
           "border-dashed border-border font-sans font-normal text-muted-foreground opacity-60",
-        upcoming: "border-transparent bg-muted font-sans font-normal text-muted-foreground",
+        upcoming: "border-transparent bg-foreground/8 font-sans font-normal text-muted-foreground",
         restricted: "border-warning/40 bg-warning/10 font-sans font-medium text-warning",
         alert: "border-destructive/40 bg-destructive/10 font-sans font-normal text-destructive",
         placeholder: "border-transparent bg-foreground/8",
