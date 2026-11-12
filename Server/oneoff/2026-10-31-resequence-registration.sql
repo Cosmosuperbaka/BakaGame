@@ -29,7 +29,7 @@ UPDATE `user_registration` r
 -- 3. 目录行兜底：`user_badge` 的外键指向 `badge`，空环境里也要能一次跑完。
 --    文案与 `Server/src/shared/Badges.ts` 的 BADGE_CATALOG 保持一致。
 INSERT INTO `badge` (`id`, `label`, `description`, `sort_order`)
-VALUES ('pioneer', '先行者', 'BakaGame的第X位注册用户', 3)
+VALUES ('pioneer', '先行者', 'BakaGame最早的一批注册用户', 3)
 ON DUPLICATE KEY UPDATE `label` = VALUES(`label`),
                         `description` = VALUES(`description`),
                         `sort_order` = VALUES(`sort_order`);

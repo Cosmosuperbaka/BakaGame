@@ -22,7 +22,7 @@ export const BADGE_LABELS: Record<BadgeKind, string> = {
 export const BADGE_DESCRIPTIONS: Record<BadgeKind, string> = {
   owner: "BakaGame的第一因",
   contributor: "为BakaGame做出卓越贡献的玩家",
-  pioneer: "BakaGame的第X位注册用户",
+  pioneer: "BakaGame最早的一批注册用户",
 };
 
 /** 一枚已授予的徽章；先行者带注册序号，其余徽章没有序号。 */
@@ -31,17 +31,30 @@ export interface AccountBadge {
   serial: number | null;
 }
 
+/**
+ * 先行者序号可展示：只有名额内的序号才有意义。超出名额说明序号被历史跳号写坏，
+ * 宁可退回不带序号的文案，也不把明显不对的数字给玩家看。
+ */
+const pioneerSerialOf = (badge: AccountBadge): number | null =>
+  badge.kind === "pioneer" &&
+  badge.serial !== null &&
+  Number.isInteger(badge.serial) &&
+  badge.serial >= 1 &&
+  badge.serial <= PIONEER_BADGE_LIMIT
+    ? badge.serial
+    : null;
+
 /** 展示文案：先行者把注册序号写进名字，如「先行者·№42」。 */
-export const badgeLabelOf = (badge: AccountBadge): string =>
-  badge.kind === "pioneer" && badge.serial
-    ? `${BADGE_LABELS.pioneer}·№${badge.serial}`
-    : BADGE_LABELS[badge.kind];
+export const badgeLabelOf = (badge: AccountBadge): string => {
+  const serial = pioneerSerialOf(badge);
+  return serial === null ? BADGE_LABELS[badge.kind] : `${BADGE_LABELS.pioneer}·№${serial}`;
+};
 
 /** 悬停描述；先行者按持有人的实际注册序号生成。 */
-export const badgeDescriptionOf = (badge: AccountBadge): string =>
-  badge.kind === "pioneer" && badge.serial
-    ? `BakaGame的第${badge.serial}位注册用户`
-    : BADGE_DESCRIPTIONS[badge.kind];
+export const badgeDescriptionOf = (badge: AccountBadge): string => {
+  const serial = pioneerSerialOf(badge);
+  return serial === null ? BADGE_DESCRIPTIONS[badge.kind] : `BakaGame的第${serial}位注册用户`;
+};
 
 export interface BadgeCatalogEntry {
   id: BadgeKind;
