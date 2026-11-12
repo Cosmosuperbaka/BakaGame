@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { FlaskConical, Minus, Plus, Users } from "lucide-react";
+import { Bot, FlaskConical, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
 import { headerTappable, spring } from "@/lib/Motion";
@@ -39,7 +39,8 @@ export function SongTestController({ snapshot, run, isPending }: SongTestControl
           <CollapsibleRegion open={open}>
             <div className="space-y-2 border-t px-4 pb-4 pt-3">
               <div className="flex items-center gap-1.5 text-2xs font-semibold text-muted-foreground">
-                <Users className="h-3.5 w-3.5 text-info" />
+                {/* 与谁是卧底测试控制器、玩家栏的人机标记同一枚 Bot 图标 */}
+                <Bot className="h-3.5 w-3.5 text-info" aria-hidden="true" />
                 测试人机
               </div>
               <div className="flex items-center gap-1.5">

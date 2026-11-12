@@ -759,7 +759,8 @@ export function AnimeAutoFilterSummary({ snapshot }: { snapshot: SonGuessrRoomSn
           : "",
         `${filters.ranking === "year" ? "年榜" : "总榜"}前${filters.subjectLimit ?? 50}部`,
         kinds ? `歌曲 ${kinds}` : "",
-        `网易云热度 ≥ ${popularityValue(filters.songMinPopularity ?? 0)}`,
+        // 与歌曲摘要同一种写法（「不限热度」「热度 1,000+」），只在前面点明是网易云的热度
+        `网易云${popularityText(filters.songMinPopularity ?? 0)}`,
       ]}
     />
   );

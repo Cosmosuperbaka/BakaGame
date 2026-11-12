@@ -289,7 +289,8 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
                 data-testid="song-clip-clock"
               >
                 {formatClipTime(currentTimeMs)}
-                <span className="px-1 text-border">/</span>
+                {/* 分隔符比读数弱一档即可；描边色当字色在暗色下几乎消失，两段时间读成两个孤立数字 */}
+                <span className="px-1 text-muted-foreground/60">/</span>
                 {formatClipTime(domain)}
               </span>
             </div>

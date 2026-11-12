@@ -55,7 +55,8 @@ export function VipStatus({
       {badge ? (
         <VipBadgeMark badge={badge} />
       ) : (
-        <span className="font-medium text-foreground">{vip.label}</span>
+        // 没有官方徽章的档位（非会员、状态未知）与账号池同口径：随外层 xs 弱化字，不加粗抢昵称的层级
+        <span>{vip.label}</span>
       )}
       {vip.expire ? (
         <>
