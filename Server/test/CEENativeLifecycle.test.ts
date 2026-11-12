@@ -6,6 +6,9 @@ import {
   HOST_RECONNECT_TIMEOUT_MS,
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
+  PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
+  ROOM_IDLE_TIMEOUT_MS,
 } from "../src/config/Constants";
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
@@ -690,5 +693,114 @@ describe("CEE 会话与异步边界", () => {
     await h.send(host, "cee.game.start", {});
     expect(h.snapshot(host).phase).toBe("choosingSetter");
     expect(h.snapshot(host).roundSummary).toBeNull();
+  });
+});
+
+describe("房主改选后的准备态与上线副作用", () => {
+  type Harness = ReturnType<typeof harness>;
+  type Client = ReturnType<Harness["connect"]>;
+  /** 公开快照里某位玩家的准备态：房主没有准备按钮，新当选的房主必须已是准备。 */
+  const readyOf = (h: Harness, viewer: Client, playerId: string) =>
+    h.snapshot(viewer).players.find((player) => player.id === playerId)?.ready;
+
+  test("房主空缺后成员回来当选：新房主已准备", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    expect(readyOf(h, host, guest.id!)).toBe(false);
+    h.service.unregisterConnection(guest.record.id);
+    await h.send(host, "cee.room.leave", {});
+
+    const back = h.connect("客人回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+    expect(h.snapshot(back).hostPlayerId).toBe(guest.id!);
+    expect(readyOf(h, back, guest.id!)).toBe(true);
+  });
+
+  test("回来的人不是当选者：当选的在线玩家同样已准备", async () => {
+    const h = harness();
+    const host = await h.create();
+    const first = await h.join("先来的");
+    h.passTime(1);
+    const second = await h.join("后来的");
+    expect(readyOf(h, first, first.id!)).toBe(false);
+    h.service.unregisterConnection(second.record.id);
+    h.service.unregisterConnection(host.record.id);
+    h.passTime(HOST_RECONNECT_TIMEOUT_MS + 1);
+
+    const back = h.connect("后来的回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: second.token! });
+    expect(h.snapshot(back).hostPlayerId).toBe(first.id!);
+    expect(readyOf(h, back, first.id!)).toBe(true);
+  });
+
+  test("房主离线宽限到期，巡检改选出的新房主已准备", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    expect(readyOf(h, guest, guest.id!)).toBe(false);
+    h.service.unregisterConnection(host.record.id);
+    h.advance(HOST_RECONNECT_TIMEOUT_MS + 1);
+
+    expect(h.snapshot(guest).hostPlayerId).toBe(guest.id!);
+    expect(readyOf(h, guest, guest.id!)).toBe(true);
+  });
+
+  test("房主主动离开或被后台移出：改选出的新房主已准备，其余人都准备后可直接开局", async () => {
+    for (const remove of ["leave", "kick"] as const) {
+      const h = harness();
+      const host = await h.create();
+      const next = await h.join("接任者");
+      const other = await h.join("队友");
+      await h.ready(other);
+      if (remove === "leave") await h.send(host, "cee.room.leave", {});
+      else h.service.adminKickPlayer("1234", host.id!);
+
+      expect(h.snapshot(next).hostPlayerId).toBe(next.id!);
+      expect(readyOf(h, next, next.id!)).toBe(true);
+      await h.send(next, "cee.game.start", {});
+      expect(h.snapshot(next).phase).not.toBe("waiting");
+    }
+  });
+
+  test("上线路径的其余副作用：顶号通知、空房计时清除、活动时刻刷新", async () => {
+    const h = harness();
+    const host = await h.create();
+    // 顶号：旧连接收到带原因的通知并以 4001 关闭。
+    const replacement = h.connect("替换");
+    await h.send(replacement, "cee.room.reconnect", { roomId: "1234", sessionToken: host.token! });
+    const notice = host.sent.find((packet) => packet.event === "session.replaced");
+    expect(notice?.payload).toEqual({ reason: "此身份已在另一连接恢复" });
+    expect(host.closed).toEqual([{ code: 4001, reason: "session replaced" }]);
+
+    // 空房计时：全员离线后在宽限内回来，计时被清掉，房间不会按旧起点被回收。
+    h.service.unregisterConnection(replacement.record.id);
+    h.advance(ROOM_EMPTY_GRACE_PERIOD_MS - 1000);
+    const back = h.connect("回来");
+    back.record.lobbySubscribed = true;
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: host.token! });
+    // 入座后不再是大厅订阅者：房间事件与大厅推送不能同时落到一条连接上。
+    expect(back.record.lobbySubscribed).toBe(false);
+    h.advance(2000);
+    expect(h.service.getHealthSnapshot().roomCount).toBe(1);
+
+    // 活动时刻：回来那一刻起算闲置，不按建房时刻回收。
+    h.advance(ROOM_IDLE_TIMEOUT_MS - 3000);
+    expect(h.service.getHealthSnapshot().roomCount).toBe(1);
+  });
+
+  test("上线后离线保留座位的清理起点是最近一次离线", async () => {
+    const h = harness();
+    const host = await h.create();
+    const guest = await h.join("客人");
+    h.service.unregisterConnection(guest.record.id);
+    h.advance(PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS - 1000);
+    const back = h.connect("客人回来");
+    await h.send(back, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! });
+    h.service.unregisterConnection(back.record.id);
+    h.advance(PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS - 1000);
+    expect(h.snapshot(host).players).toHaveLength(2);
+    h.advance(1001);
+    expect(h.snapshot(host).players).toHaveLength(1);
   });
 });
