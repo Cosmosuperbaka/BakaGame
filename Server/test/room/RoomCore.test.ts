@@ -12,15 +12,12 @@ import { kernelShape, makeRoom, makeSeat } from "./RoomKernelFixtures";
 /** 编译期断言：左边可以赋给右边。不满足时 `bun run check` 失败。 */
 type Assignable<TFrom extends TTo, TTo> = [TFrom, TTo];
 
-// 卧底与猜歌的记录今天已经逐字段满足内核的最小接口：接入时不需要改记录类型。
+// 三款的房间与座位记录都逐字段满足内核的最小接口。
 export type FakerRoomFits = Assignable<WhoIsFakerRoomRecord, RoomCore>;
 export type FakerSeatFits = Assignable<WhoIsFakerPlayerRecord, SeatCore>;
 export type SongRoomFits = Assignable<SonGuessrRoomRecord, RoomCore>;
 export type SongSeatFits = Assignable<SonGuessrPlayerRecord, SeatCore>;
-// CEE 还差四个同义异名字段；对齐字段名的那一步完成后这两行的期望错误消失，届时改成上面的写法。
-// @ts-expect-error CEE 房间仍用 lastActiveAt / emptyAt / hostDeadlineAt
 export type CEERoomFits = Assignable<CEERoom, RoomCore>;
-// @ts-expect-error CEE 座位仍用 offlineAt，没有 lastSeenAt
 export type CEESeatFits = Assignable<CEEPlayerRecord, SeatCore>;
 
 describe("内核类型底座", () => {
