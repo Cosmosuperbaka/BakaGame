@@ -598,3 +598,33 @@ test("JSON-RPC 通知不回响应，带 id 的未知方法才回错误；不认�
   });
   expect(negotiated.payload.result.protocolVersion).toBe("2025-06-18");
 });
+
+test("远程审计日志带动作、游戏、房间与来源摘要，不含原始来源地址", async () => {
+  const records: unknown[] = [];
+  const spy = new EventLogger(() => {}, undefined, undefined, undefined, {
+    sinks: [{ write: (record) => void records.push(record) }],
+  });
+  const { server } = fakeFakerServer();
+  sessionsRef = newSessions(`http://127.0.0.1:${server.port}`);
+  await handleRemoteMcp(
+    { enabled: true, sessions: sessionsRef, logger: spy },
+    new Request("http://127.0.0.1:9/api/mcp", { method: "POST" }),
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "create_room",
+        arguments: { game: "faker", roomId: "1234", name: "x", allowAgents: true },
+      },
+    },
+    "198.51.100.7"
+  );
+  const entry = JSON.stringify(
+    records.find((record) => JSON.stringify(record).includes("mcp.remote.tool\""))
+  );
+  expect(entry).toContain('"game":"faker"');
+  expect(entry).toContain('"roomId":"1234"');
+  expect(entry).toMatch(/"client":"[0-9a-f]{8}"/);
+  expect(entry).not.toContain("198.51.100.7");
+});

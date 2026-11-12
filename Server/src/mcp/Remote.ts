@@ -3,7 +3,7 @@ import type { EventLogger } from "../infrastructure/EventLogger";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { FOCUS_AFTER_TOOLS, publishToolFocus } from "./Focus";
-import { AgentGameClient } from "./GameClient";
+import { AgentGameClient, GAME_IDS, type GameId } from "./GameClient";
 import {
   DEFAULT_PROTOCOL_VERSION,
   MCP_INSTRUCTIONS,
@@ -433,6 +433,29 @@ async function handleRemoteToolCall(
   );
 }
 
+/**
+ * 审计字段与 stdio 入口同名：按动作、游戏、房间与来源追溯滥用。
+ * 来源只记不可逆的短摘要，原始 IP 不进日志出口；会话号同理只记摘要。
+ */
+const auditContext = (
+  session: RemoteSession,
+  args: Record<string, unknown>
+): Record<string, unknown> => {
+  const game =
+    typeof args.game === "string" && (GAME_IDS as readonly string[]).includes(args.game)
+      ? (args.game as GameId)
+      : undefined;
+  return {
+    session: refOf(session.id),
+    client: refOf(session.clientKey),
+    agent: session.agentName,
+    action: typeof args.action === "string" ? args.action : undefined,
+    game,
+    roomId:
+      typeof args.roomId === "string" ? args.roomId : game ? session.client.currentRoom(game) : undefined,
+  };
+};
+
 /** 已解析出会话后的一次工具执行：扣额度、发焦点、执行、写审计日志。 */
 async function runRemoteTool(
   options: RemoteMcpHandlerOptions,
@@ -460,8 +483,7 @@ async function runRemoteTool(
     const enriched = !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
     const stepFailed = isRecord(enriched) && enriched.ok === false;
     logger.info("mcp.remote.tool", {
-      session: refOf(session.id),
-      agent: session.agentName,
+      ...auditContext(session, args),
       tool: tool.name,
       ok: !stepFailed,
       durationMs: Math.round(performance.now() - startedAt),
@@ -477,9 +499,10 @@ async function runRemoteTool(
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
-    logger.warn("mcp.remote.tool_failed", {
-      session: refOf(session.id),
-      agent: session.agentName,
+    // 工具失败是回给调用方的业务拒绝（未入房、阶段不对、被限流等），属调用方的错，信息级；
+    // 告警级留给需要人看的安全事件。
+    logger.info("mcp.remote.tool_failed", {
+      ...auditContext(session, args),
       tool: tool.name,
       code,
       message: messageText,
