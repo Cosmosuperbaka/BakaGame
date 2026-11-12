@@ -15,6 +15,8 @@ import {
   type WhoIsFakerRoomRecord,
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
+  type RoleConfig,
+  type RoomSettings,
   type RoundWinner,
   type SpeechMode,
   type TieBreakStage,
@@ -122,8 +124,34 @@ import {
   publishRoomCalibration,
 } from "./whoisfaker/RoomViews";
 
+/** 私密房口令的慢哈希：生产用 Bun 自带的 argon2，隔离测试注入可控实现来卡住 await 窗口。 */
+export interface PasswordHasher {
+  hash(password: string): Promise<string>;
+  verify(password: string, digest: string): Promise<boolean>;
+}
+
+const BUN_PASSWORD_HASHER: PasswordHasher = {
+  hash: (password) => Bun.password.hash(password),
+  verify: (password, digest) => Bun.password.verify(password, digest),
+};
+
+/** 改设置的纯校验产物：失败在产生它之前就抛出，不会留下半截设置。 */
+interface SettingsPatch {
+  name?: string;
+  visibility?: RoomSettings["visibility"];
+  allowSpectators?: boolean;
+  revealRoleOnDeath?: boolean;
+  spectatorsSeeAnswers?: boolean;
+  allowAgents?: boolean;
+  roleConfig?: RoleConfig;
+  /** 需要重新算摘要的明文口令；仅最终为私密房且本次带了口令时才有。 */
+  password?: string;
+}
+
 export interface WhoIsFakerServiceOptions {
   now?: () => number;
+  /** 缺省为 Bun 的 argon2；测试可注入以控制慢哈希期间的并发窗口。 */
+  passwordHasher?: PasswordHasher;
   random?: RandomSource;
   /** 未配置数据库（本地开发、隔离测试）时为空：词对不落库。 */
   wordBankRepository?: WordBankRepository;
@@ -206,8 +234,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;
   private idCounter = 0;
+  private readonly passwordHasher: PasswordHasher;
 
   constructor(readonly options: WhoIsFakerServiceOptions) {
+    this.passwordHasher = options.passwordHasher ?? BUN_PASSWORD_HASHER;
     this.now = options.now ?? (() => Date.now());
     this.random =
       options.random ??
@@ -681,7 +711,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     this.rooms.set(room.id, room);
     if (password) {
       try {
-        room.passwordHash = await Bun.password.hash(password);
+        room.passwordHash = await this.passwordHasher.hash(password);
       } catch (error) {
         this.rooms.delete(room.id);
         throw error;
@@ -844,73 +874,20 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   ) {
     const { room, player } = this.requireRoomPlayer(connection);
 
-    this.ensureHost(room, player.id);
+    // 两阶段：纯校验产出补丁（失败不改任何状态）→ 必要时 await 慢哈希 → 复核后同步一次写入。
+    const patch = this.buildSettingsPatch(room, player.id, payload);
+    const passwordHash =
+      patch.password === undefined ? undefined : await this.passwordHasher.hash(patch.password);
 
-    if (this.isRoundActive(room)) {
-      throw new AppError("ROUND_ACTIVE", "游戏进行中无法修改房间设置");
+    // await 期间房间可能已被关闭、房主换人或开局，回来先复核再写（Spec §4.2）。
+    if (this.rooms.get(room.id) !== room) {
+      throw new AppError("ROOM_NOT_FOUND", "房间不存在");
     }
-
-    if (payload.name != null) {
-      const normalized = normalizeName(payload.name);
-      assertTextAllowed(normalized);
-
-      if (!normalized) {
-        throw new AppError("INVALID_ROOM_NAME", "房间名不能为空");
-      }
-
-      room.settings.name = normalized;
+    const current = this.buildSettingsPatch(room, player.id, payload);
+    if (current.password !== patch.password && current.password !== undefined) {
+      throw new AppError("SETTINGS_CHANGED", "房间设置刚刚发生变化，请重试");
     }
-
-    if (payload.visibility != null) {
-      room.settings.visibility = payload.visibility;
-    }
-
-    if (payload.password != null) {
-      room.passwordHash =
-        room.settings.visibility === "private"
-          ? await Bun.password.hash(this.requirePassword(payload.password))
-          : undefined;
-    }
-
-    if (payload.allowSpectators != null) {
-      if (
-        !payload.allowSpectators &&
-        Object.values(room.players).some((item) => item.membership === "spectator")
-      ) {
-        throw new AppError("SPECTATOR_EXISTS", "房间内仍有旁观者，无法关闭旁观");
-      }
-
-      room.settings.allowSpectators = payload.allowSpectators;
-    }
-
-    if (room.settings.visibility === "public") room.passwordHash = undefined;
-
-    if (room.settings.visibility === "private" && !room.passwordHash) {
-      throw new AppError("PASSWORD_REQUIRED", "私密房间必须设置密码");
-    }
-
-    if (payload.revealRoleOnDeath != null) {
-      room.settings.revealRoleOnDeath = payload.revealRoleOnDeath;
-    }
-
-    if (payload.spectatorsSeeAnswers != null) {
-      room.settings.spectatorsSeeAnswers = payload.spectatorsSeeAnswers;
-    }
-
-    if (payload.allowAgents != null) {
-      room.settings.allowAgents = payload.allowAgents;
-    }
-
-    if (payload.roleConfig) {
-      // 人数不够时不再直接拒绝保存，而是静默夹到当前允许的范围；这样房主依然能把
-      // 其它设置（房间名、私密、旁观等）改掉。前端通过 roleLimits 给出禁用提示。
-      room.settings.roleConfig = clampRoleConfig(
-        payload.roleConfig,
-        getConfigurableParticipantCount(room)
-      );
-    } else {
-      normalizeRoomRoleConfig(room);
-    }
+    this.applySettingsPatch(room, current, passwordHash);
 
     this.touch(room);
 
@@ -928,6 +905,90 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return {
       settings: room.settings,
     };
+  }
+
+  /** 校验权限、阶段与全部字段，返回补丁；不写房间。 */
+  private buildSettingsPatch(
+    room: WhoIsFakerRoomRecord,
+    playerId: string,
+    payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"]
+  ): SettingsPatch {
+    this.ensureHost(room, playerId);
+
+    if (this.isRoundActive(room)) {
+      throw new AppError("ROUND_ACTIVE", "游戏进行中无法修改房间设置");
+    }
+
+    const patch: SettingsPatch = {
+      visibility: payload.visibility ?? undefined,
+      allowSpectators: payload.allowSpectators ?? undefined,
+      revealRoleOnDeath: payload.revealRoleOnDeath ?? undefined,
+      spectatorsSeeAnswers: payload.spectatorsSeeAnswers ?? undefined,
+      allowAgents: payload.allowAgents ?? undefined,
+      roleConfig: payload.roleConfig ?? undefined,
+    };
+
+    if (payload.name != null) {
+      const normalized = normalizeName(payload.name);
+      assertTextAllowed(normalized);
+
+      if (!normalized) {
+        throw new AppError("INVALID_ROOM_NAME", "房间名不能为空");
+      }
+
+      patch.name = normalized;
+    }
+
+    if (
+      patch.allowSpectators === false &&
+      Object.values(room.players).some((item) => item.membership === "spectator")
+    ) {
+      throw new AppError("SPECTATOR_EXISTS", "房间内仍有旁观者，无法关闭旁观");
+    }
+
+    // 公开房没有口令；私密房本次带了口令就换新，没带则沿用已有摘要，两者都没有才拒绝。
+    if ((patch.visibility ?? room.settings.visibility) === "private") {
+      if (payload.password != null) {
+        patch.password = this.requirePassword(payload.password);
+      } else if (!room.passwordHash) {
+        throw new AppError("PASSWORD_REQUIRED", "私密房间必须设置密码");
+      }
+    }
+
+    return patch;
+  }
+
+  /** 同步写入已通过校验的补丁；`passwordHash` 与补丁里的明文口令一一对应。 */
+  private applySettingsPatch(
+    room: WhoIsFakerRoomRecord,
+    patch: SettingsPatch,
+    passwordHash: string | undefined
+  ): void {
+    const settings = room.settings;
+    if (patch.name !== undefined) settings.name = patch.name;
+    if (patch.visibility !== undefined) settings.visibility = patch.visibility;
+    if (patch.allowSpectators !== undefined) settings.allowSpectators = patch.allowSpectators;
+    if (patch.revealRoleOnDeath !== undefined) {
+      settings.revealRoleOnDeath = patch.revealRoleOnDeath;
+    }
+    if (patch.spectatorsSeeAnswers !== undefined) {
+      settings.spectatorsSeeAnswers = patch.spectatorsSeeAnswers;
+    }
+    if (patch.allowAgents !== undefined) settings.allowAgents = patch.allowAgents;
+
+    if (settings.visibility === "public") {
+      room.passwordHash = undefined;
+    } else if (passwordHash !== undefined) {
+      room.passwordHash = passwordHash;
+    }
+
+    if (patch.roleConfig) {
+      // 人数不够时不再直接拒绝保存，而是静默夹到当前允许的范围；这样房主依然能把
+      // 其它设置（房间名、私密、旁观等）改掉。前端通过 roleLimits 给出禁用提示。
+      settings.roleConfig = clampRoleConfig(patch.roleConfig, getConfigurableParticipantCount(room));
+    } else {
+      normalizeRoomRoleConfig(room);
+    }
   }
 
   private async kick(connection: ConnectionRecord, targetPlayerId: string) {
@@ -1927,7 +1988,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     }
     // 只按摘要比对：房间记录里没有可读的口令。
     const matched = room.passwordHash
-      ? await Bun.password.verify(normalized, room.passwordHash)
+      ? await this.passwordHasher.verify(normalized, room.passwordHash)
       : false;
     if (!matched) {
       throw new AppError("PASSWORD_INCORRECT", "房间密码错误");

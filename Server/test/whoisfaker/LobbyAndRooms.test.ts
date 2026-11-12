@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { type JoinedPlayer, createRoom } from "./Fixtures";
+import { type JoinedPlayer, createRoom, joinPlayers } from "./Fixtures";
 import { LOBBY_MERGE_WINDOW_MS } from "../../src/application/LobbyFanout";
+import { WhoIsFakerService } from "../../src/application/WhoIsFakerService";
+import { EventLogger } from "../../src/infrastructure/EventLogger";
 import {
   JOIN_PASSWORD_MAX_ATTEMPTS,
   JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
@@ -439,5 +441,105 @@ describe("大厅与房间", () => {
       }
       expect(errorCode).toBe("ROUND_ACTIVE");
     }
+  });
+
+  test("无口令的公开房改成私密被拒后，设置原样不变且仍可无口令加入", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "2121");
+
+    await expect(
+      execute(service, host, {
+        id: "to-private-without-password",
+        type: "room.updateSettings",
+        payload: { name: "新房名", visibility: "private" },
+      })
+    ).rejects.toMatchObject({ code: "PASSWORD_REQUIRED" });
+
+    const room = service.rooms.get("2121")!;
+    expect(room.settings.visibility).toBe("public");
+    expect(room.settings.name).toBe("2121-房间");
+    expect(room.passwordHash).toBeUndefined();
+
+    const guest = createConnection(service, "2121-guest");
+    await execute(service, guest, {
+      id: "join-after-reject",
+      type: "room.join",
+      roomId: "2121",
+      payload: { userName: "访客" },
+    });
+  });
+
+  test("同一请求里关闭旁观被旁观者挡住时，同请求的其它字段不会写入", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "2122");
+    const spectator = createConnection(service, "2122-spec");
+    await execute(service, spectator, {
+      id: "join-spec",
+      type: "room.join",
+      roomId: "2122",
+      payload: { userName: "旁观者" },
+    });
+    await execute(service, spectator, {
+      id: "set-spec",
+      type: "player.setSpectator",
+      payload: { spectator: true },
+    });
+
+    await expect(
+      execute(service, host, {
+        id: "rename-and-close-spectate",
+        type: "room.updateSettings",
+        payload: { name: "改名", allowSpectators: false },
+      })
+    ).rejects.toMatchObject({ code: "SPECTATOR_EXISTS" });
+
+    const settings = service.rooms.get("2122")!.settings;
+    expect(settings.name).toBe("2122-房间");
+    expect(settings.allowSpectators).toBe(true);
+  });
+
+  test("慢哈希期间房主已开局时，改设置在回来后被拒且设置不被改写", async () => {
+    // 可控哈希器把 await 窗口卡住，确定性地在窗口内插入开局命令。
+    let releaseHash: () => void = () => {};
+    const hashGate = new Promise<void>((resolve) => {
+      releaseHash = resolve;
+    });
+    const service = new WhoIsFakerService({
+      eventLogger: new EventLogger(),
+      passwordHasher: {
+        hash: async (password) => {
+          await hashGate;
+          return `digest:${password}`;
+        },
+        verify: async (password, digest) => digest === `digest:${password}`,
+      },
+    });
+    const { host } = await createRoom(service, "2123");
+    const others = await joinPlayers(service, "2123", 4, "玩家");
+    for (const other of others) {
+      await execute(service, other.connection, {
+        id: `ready-${other.joinResult.playerId}`,
+        type: "player.setReady",
+        payload: { ready: true },
+      });
+    }
+
+    const pending = execute(service, host, {
+      id: "slow-update",
+      type: "room.updateSettings",
+      payload: { visibility: "private", password: "secret", name: "不该生效" },
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string }
+    );
+
+    await execute(service, host, { id: "start-round", type: "game.advancePhase", payload: {} });
+    releaseHash();
+
+    expect(await pending).toMatchObject({ code: "ROUND_ACTIVE" });
+    const room = service.rooms.get("2123")!;
+    expect(room.settings.visibility).toBe("public");
+    expect(room.settings.name).toBe("2123-房间");
+    expect(room.passwordHash).toBeUndefined();
   });
 });
