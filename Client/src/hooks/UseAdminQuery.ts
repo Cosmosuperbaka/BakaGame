@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 import { apiErrorMessage } from "@/lib/Api";
 
 export interface AdminQuery<T> {
@@ -28,15 +28,12 @@ export function useAdminQuery<T>(
     error: string | null;
   } | null>(null);
   const [latest, setLatest] = useState<T | null>(null);
-  const fetcherRef = useRef(fetcher);
-  // 先于下面的读取执行：读取总是用本次渲染的 fetcher。
-  useEffect(() => {
-    fetcherRef.current = fetcher;
-  });
+  // 读取总是用最新一次渲染的 fetcher，而 fetcher 变化本身不触发重新查询。
+  const runFetcher = useEffectEvent(fetcher);
 
   useEffect(() => {
     let alive = true;
-    fetcherRef.current().then(
+    runFetcher().then(
       (data) => {
         if (!alive) return;
         setLatest(data);

@@ -78,6 +78,29 @@ beforeEach(() => {
 });
 afterEach(() => useSonGuessrStore.setState(initial, true));
 
+describe("长耗时命令的同步轮询", () => {
+  afterEach(() => vi.useRealTimers());
+  it("开局命令在途期间按间隔补发同步请求，结束后停止", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const start = deferred<void>();
+    send.mockImplementation((type: string) =>
+      type === "song.game.start" ? start.promise : Promise.resolve()
+    );
+    const h = mount();
+    act(() => {
+      void h.result.current.runCommand("song.game.start", {});
+    });
+    const syncCalls = () => send.mock.calls.filter(([type]) => type === "song.room.requestSync");
+    expect(syncCalls()).toHaveLength(0);
+    void act(() => vi.advanceTimersByTime(3_000));
+    expect(syncCalls()).toHaveLength(1);
+    void act(() => vi.advanceTimersByTime(3_000));
+    expect(syncCalls()).toHaveLength(2);
+    await act(async () => start.resolve());
+    void act(() => vi.advanceTimersByTime(9_000));
+    expect(syncCalls()).toHaveLength(2);
+  });
+});
 describe("猜歌直链 caller 取消归属（真实 hook / Store，deferred WS）", () => {
   it("等连接期间卸载不发恢复或加入", async () => {
     const connection = deferred<void>();

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -133,7 +133,6 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   const [pendingJoinName, setPendingJoinName] = useState("");
   const [musicSessionRevision, setMusicSessionRevision] = useState(0);
 
-  const sendCommandRef = useRef(sendCommand);
   const leavingRef = useRef(false);
   const entryRef = useRef<AbortController | null>(null);
   const [mountTime] = useState(() => Date.now());
@@ -143,10 +142,6 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   }>({ netease: null, qq: null });
   const inFlightCommandsRef = useRef<Set<string>>(new Set());
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    sendCommandRef.current = sendCommand;
-  }, [sendCommand]);
 
   /** 终止指定或全部平台的当前装载事务：在途请求与待执行的退避都作废，下一次快照变化可重新发起。 */
   const cancelMusicSessionUpload = useCallback((platform?: "netease" | "qq") => {
@@ -211,10 +206,14 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
   );
 
   const longRunningPending = LONG_RUNNING_COMMANDS.some((type) => Boolean(pendingCommands[type]));
+  // 轮询定时器在 effect 内创建，用 Effect Event 读最新的 sendCommand，不让它进依赖导致定时器重建。
+  const pollSync = useEffectEvent(() => {
+    void sendCommand("song.room.requestSync").catch(() => {});
+  });
   useEffect(() => {
     if (!longRunningPending) return;
     const timer = setInterval(() => {
-      void sendCommandRef.current("song.room.requestSync").catch(() => {});
+      pollSync();
     }, LONG_RUNNING_POLL_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [longRunningPending]);
