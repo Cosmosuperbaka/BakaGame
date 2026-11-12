@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { CircleAlert, CircleCheck, Info, type LucideIcon } from "lucide-react";
 import { spring, toastItem } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -7,6 +8,13 @@ export interface ToastItem {
   text: string;
   type: "info" | "error" | "success";
 }
+
+/** 每种语义一枚前导图标：状态不只靠底色与字色区分（DesignGuide §3），色弱与灰度下也读得出成败。 */
+const TOAST_ICONS: Record<ToastItem["type"], LucideIcon> = {
+  info: Info,
+  success: CircleCheck,
+  error: CircleAlert,
+};
 
 export function ToastViewport({ toasts }: { toasts: readonly ToastItem[] }) {
   return (
@@ -39,19 +47,29 @@ export function ToastViewport({ toasts }: { toasts: readonly ToastItem[] }) {
               t.type === "info" && "border-primary/40"
             )}
           >
-            <div
-              className={cn(
-                "px-4 py-3",
-                t.type === "error" && "bg-destructive/10 text-destructive",
-                t.type === "success" && "bg-success/10 text-success",
-                t.type === "info" && "bg-primary/10 text-primary"
-              )}
-            >
-              {t.text}
-            </div>
+            <ToastBody item={t} />
           </motion.div>
         ))}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** 提示正文：图标与首行文字居中对齐；正文用段落，窄屏折行走全局的 pretty 换行，末行不剩单字。 */
+function ToastBody({ item }: { item: ToastItem }) {
+  const Icon = TOAST_ICONS[item.type];
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 px-4 py-3",
+        item.type === "error" && "bg-destructive/10 text-destructive",
+        item.type === "success" && "bg-success/10 text-success",
+        item.type === "info" && "bg-primary/10 text-primary"
+      )}
+    >
+      {/* 行高 1.25rem 的首行中线落在 0.625rem：图标 1rem 下移 0.125rem 与之对齐 */}
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p className="min-w-0">{item.text}</p>
     </div>
   );
 }

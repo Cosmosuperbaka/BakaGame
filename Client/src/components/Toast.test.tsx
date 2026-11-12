@@ -36,4 +36,22 @@ describe("ToastViewport", () => {
     expect(status).toHaveTextContent("设置已保存");
     expect(status).toHaveAttribute("aria-live", "polite");
   });
+
+  it("每种语义都带一枚前导图标，状态不只靠颜色区分", () => {
+    render(
+      <ToastViewport
+        toasts={[
+          { id: 1, text: "等待玩家", type: "info" },
+          { id: 2, text: "设置已保存", type: "success" },
+          { id: 3, text: "密码错误", type: "error" },
+        ]}
+      />
+    );
+    const icons = ["等待玩家", "设置已保存", "密码错误"].map((text) =>
+      screen.getByText(text).parentElement?.querySelector("svg")
+    );
+    for (const icon of icons) expect(icon).toHaveAttribute("aria-hidden", "true");
+    // 三种语义的图标形状互不相同
+    expect(new Set(icons.map((icon) => icon?.getAttribute("class"))).size).toBe(3);
+  });
 });

@@ -125,9 +125,10 @@ export function VersionUpdateBanner({ open, onReload }: VersionUpdateBannerProps
           exit="exit"
           className="fixed bottom-[max(1.25rem,env(safe-area-inset-bottom,1.25rem))] left-1/2 z-toast flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-md border border-border bg-card/95 px-4 py-3 text-card-foreground shadow-lg backdrop-blur-md"
         >
-          <span className="min-w-0 flex-1 text-sm font-medium leading-snug">
+          {/* 短句按标点断行（keep-all）：窄屏折成「游戏有新版本，」「请刷新后继续游玩」两半，不在「继续」中间断开 */}
+          <p className="min-w-0 flex-1 break-keep text-sm font-medium leading-snug">
             游戏有新版本，请刷新后继续游玩
-          </span>
+          </p>
           <Button size="sm" className="shrink-0 gap-1.5" onClick={onReload}>
             <RefreshCw className="h-3.5 w-3.5" />
             刷新
