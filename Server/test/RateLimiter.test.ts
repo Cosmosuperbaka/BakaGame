@@ -126,3 +126,44 @@ test("键数达到上限时挤掉最久未被用到的键，内存不随对方�
   expect(roomy.allow("a", 1000)).toBe(true);
   expect(roomy.allow("a", 1000)).toBe(false);
 });
+
+test("三层桶：单地址超额不耗尽全局与同 peer 额度，别的地址仍放行", () => {
+  const limiter = new ThreeTierRateLimiter({
+    windowMs: 60_000,
+    ipMaxRequests: 5,
+    peerMaxRequests: 100,
+    globalMaxRequests: 20,
+  });
+  for (let i = 0; i < 200; i += 1) limiter.consume("ipA", "peerA", 0);
+  expect(limiter.consume("ipB", "peerB", 1).allowed).toBe(true);
+
+  // peer 额度较小的变体：ipA 超额后，同 peer 的另一个地址仍有额度。
+  const sharedPeer = new ThreeTierRateLimiter({
+    windowMs: 60_000,
+    ipMaxRequests: 5,
+    peerMaxRequests: 10,
+    globalMaxRequests: 1_000,
+  });
+  for (let i = 0; i < 200; i += 1) sharedPeer.consume("ipA", "peerA", 0);
+  expect(sharedPeer.consume("ipC", "peerA", 1).allowed).toBe(true);
+});
+
+test("三层桶：被粗键拒绝的请求不消耗细键额度，细键拒绝先于粗键报出", () => {
+  const limiter = new ThreeTierRateLimiter({
+    windowMs: 100,
+    ipMaxRequests: 2,
+    peerMaxRequests: 100,
+    globalMaxRequests: 1,
+  });
+  expect(limiter.consume("ip1", "p", 0).allowed).toBe(true);
+  // 全局已满：ip2 被拒，且这次拒绝不能占掉 ip2 自己的额度。
+  expect(limiter.consume("ip2", "p", 10).limit).toBe(1);
+  expect(limiter.consume("ip2", "p", 20).allowed).toBe(false);
+  // 窗口滚过后 ip2 的两次额度都还在。
+  expect(limiter.consume("ip2", "p", 101).allowed).toBe(true);
+  expect(limiter.consume("ip2", "p", 102).allowed).toBe(false);
+  // ip1 与全局同时耗尽时，报的是更细的 ip 桶。
+  const both = new ThreeTierRateLimiter({ windowMs: 100, ipMaxRequests: 1, globalMaxRequests: 1 });
+  both.consume("ip1", "ip1", 0);
+  expect(both.consume("ip1", "ip1", 1).limit).toBe(1);
+});

@@ -77,6 +77,29 @@ export class SlidingWindowRateLimiter {
     };
   }
 
+  /** 只读判定：给出 `consume` 此刻会得到的结论，但不记账、不回收键。 */
+  public peek(key: string, now = Date.now()): RateLimitVerdict {
+    const windowStart = now - this.windowMs;
+    const timestamps = (this.windows.get(key) ?? []).filter((t) => t > windowStart);
+    const resetAt = (timestamps[0] ?? now) + this.windowMs;
+    if (timestamps.length >= this.maxRequests) {
+      return {
+        allowed: false,
+        retryAfterMs: Math.max(1, resetAt - now),
+        resetAt,
+        limit: this.maxRequests,
+        remaining: 0,
+      };
+    }
+    return {
+      allowed: true,
+      retryAfterMs: 0,
+      resetAt,
+      limit: this.maxRequests,
+      remaining: this.maxRequests - timestamps.length - 1,
+    };
+  }
+
   public allow(key: string, now = Date.now()): boolean {
     return this.consume(key, now).allowed;
   }
@@ -99,7 +122,8 @@ const GLOBAL_BUCKET = "__global__";
  * 单客户端桶按 边缘层写入的真实 IP 分桶，否则同一节点后面的所有玩家共享一个桶，
  * 按用户计预算会退化成按节点计。peer 桶只封顶「伪造标头自造新桶」这条滥用路径，
  * 因此给到单客户端额度的十倍：一个节点服务的用户量远大于单个用户的请求量。
- * `consume` 返回第一个被拒的桶，响应头才说得出「是谁的额度用完了」。
+ * `consume` 按单客户端 → peer → 全局的顺序返回第一个被拒的桶，响应头才说得出「是谁的额度用完了」；
+ * 记账是全有或全无：任何一层拒绝，三个桶都不记。
  */
 export class ThreeTierRateLimiter {
   private readonly ipLimiter: SlidingWindowRateLimiter;
@@ -135,10 +159,16 @@ export class ThreeTierRateLimiter {
   }
 
   public consume(ip: string, peerIp = ip, now = Date.now()): RateLimitVerdict {
-    const global = this.globalLimiter.consume(GLOBAL_BUCKET, now);
-    if (!global.allowed) return global;
-    const peer = this.peerLimiter.consume(peerIp, now);
-    if (!peer.allowed) return peer;
+    // 先只读判定、全部放行才统一记账，且从最细的键查起：被细键拒绝的请求不消耗粗键额度，
+    // 否则单个地址超额后的每一次请求仍在扣全局与同 peer 的额度，一个来源就能耗尽全站。
+    const ip0 = this.ipLimiter.peek(ip, now);
+    if (!ip0.allowed) return ip0;
+    const peer0 = this.peerLimiter.peek(peerIp, now);
+    if (!peer0.allowed) return peer0;
+    const global0 = this.globalLimiter.peek(GLOBAL_BUCKET, now);
+    if (!global0.allowed) return global0;
+    this.globalLimiter.consume(GLOBAL_BUCKET, now);
+    this.peerLimiter.consume(peerIp, now);
     return this.ipLimiter.consume(ip, now);
   }
 

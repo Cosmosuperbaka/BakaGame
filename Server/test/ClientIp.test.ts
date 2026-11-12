@@ -79,3 +79,27 @@ describe("源站被直连时的额度兜底", () => {
     expect(Number(denied!.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 });
+
+describe("单个来源超额不影响其他来源", () => {
+  it("一个地址把自己的额度打爆并持续请求，别的地址的 /health 仍然放行", async () => {
+    const { systemRoutes } = await import("../src/transport/routes/System");
+    const { ThreeTierRateLimiter } = await import("../src/infrastructure/RateLimiter");
+    const app = systemRoutes({
+      probeRateLimiter: new ThreeTierRateLimiter({
+        windowMs: 60_000,
+        ipMaxRequests: 2,
+        peerMaxRequests: 1_000,
+        globalMaxRequests: 10,
+      }),
+    });
+    const probe = (ip: string) =>
+      app.handle(new Request("http://localhost/health", { headers: { "x-real-ip": ip } }));
+
+    // 攻击者地址放行 2 次后持续超额：被拒的请求不得再扣全局额度。
+    const statuses: number[] = [];
+    for (let index = 0; index < 100; index += 1) statuses.push((await probe("203.0.113.9")).status);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(2);
+
+    expect((await probe("198.51.100.1")).status).toBe(200);
+  });
+});

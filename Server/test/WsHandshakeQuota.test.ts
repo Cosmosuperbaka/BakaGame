@@ -93,4 +93,10 @@ describe("WebSocket 握手配额", () => {
     expect(quota.reserve("5.5.5.5", "5.5.5.5")).toBeDefined();
     expect(quota.reserve("6.6.6.6", "6.6.6.6")).toBeUndefined();
   });
+
+  test("单个地址打满自己的速率额度后，别的地址仍能握手", () => {
+    const quota = quotaOf({ ipMaxRequests: 5, globalMaxRequests: 20, ipMaxConnections: 1_000 });
+    for (let index = 0; index < 200; index += 1) quota.reserve("7.7.7.7", "7.7.7.7")?.release();
+    expect(quota.reserve("8.8.8.8", "8.8.8.8")).toBeDefined();
+  });
 });
