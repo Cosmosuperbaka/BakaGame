@@ -14,7 +14,9 @@ const buttonVariants = cva(
         // 聚焦环与主色同色（--ring = --primary）：贴边画在主色实底上只像按钮胖了 2px，外移一格让页面底色把环与按钮隔开。
         default:
           "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline-offset-2",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        // 危险色与聚焦环同为高明度（暗色 1.04:1、亮色也同档），贴边的环会融进实底，与 default 一样外移留缝。
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 focus-visible:outline-offset-2",
         outline:
           "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
         // secondary/80 与原色只差几级亮度，两种主题下悬停都几乎看不出；换成 accent，与 outline、ghost 的悬停底同一档。
