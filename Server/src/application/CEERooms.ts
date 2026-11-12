@@ -41,6 +41,15 @@ import {
 import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from "./CEEViews";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
+import type { RoomShape } from "./room/RoomCore";
+import {
+  assertAgentAdmission,
+  assertSeatResumable,
+  assertTabAgentsAllowed,
+  findSeat,
+  markSeatOffline,
+  roomsOfTab,
+} from "./room/SeatBinding";
 
 /**
  * 口令规范化只取首尾空白：摘要绑定规范化后的值，建房、改设置与入房必须同一口径。
@@ -52,9 +61,46 @@ export const CEE_SPECTATE_APPROVAL_TIMEOUT_MS = 120_000;
 /** 一间房最多挂多少个待批准请求：防止刷请求骚扰房主。 */
 export const CEE_SPECTATE_QUEUE_MAX = 8;
 
+/** 内核认识增强房房间与座位的方式：容器是 Map，准入字段在房间层与设置里，事件名带 cee 前缀。 */
+const CEE_ROOM_SHAPE: RoomShape<CEERoom, CEEPlayerRecord> = {
+  game: "cee",
+  seats: (room) => room.players.values(),
+  seat: (room, seatId) => room.players.get(seatId),
+  addSeat: (room, seat) => {
+    room.players.set(seat.id, seat);
+  },
+  dropSeat: (room, seatId) => {
+    room.players.delete(seatId);
+  },
+  admission: (room) => ({
+    visibility: room.visibility,
+    allowSpectators: room.allowSpectators,
+    allowAgents: room.settings.allowAgents === true,
+  }),
+  events: {
+    snapshot: "cee.room.snapshot",
+    privateState: "cee.game.privateState",
+    closed: "cee.room.closed",
+    sessionReplaced: "session.replaced",
+  },
+  // TODO(行为统一)：另两款下发 `{ roomId }` 与 `session_replaced`，增强房保持现值。
+  sessionReplacedPayload: () => ({ reason: "此身份已在另一连接恢复" }),
+  sessionReplacedCloseReason: "session replaced",
+};
+
 export class CEERooms {
   readonly connections = new ConnectionRegistry();
   readonly rooms = new Map<string, CEERoom>();
+  private readonly seatContext = {
+    shape: CEE_ROOM_SHAPE,
+    connections: this.connections,
+    now: () => this.now(),
+  };
+  private readonly tabContext = {
+    shape: CEE_ROOM_SHAPE,
+    connections: this.connections,
+    rooms: this.rooms,
+  };
   onChange?: () => void;
   /** 建房期间的房号占用：占号与「房间可见」分开，算摘要的窗口里房间表里没有这间房。 */
   private readonly reservations = new RoomIdReservations();
@@ -214,12 +260,7 @@ export class CEERooms {
   }
   /** 座位转为离线保留：与网络断线同一套后果，给人类留出用会话凭证重连的时间。调用方先解绑连接。 */
   private markSeatOffline(room: CEERoom, player: CEEPlayerRecord): void {
-    player.online = false;
-    player.lastSeenAt = this.now();
-    delete player.connectionId;
-    if (room.hostPlayerId === player.id)
-      room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
-    if (![...room.players.values()].some((member) => member.online)) room.emptySinceAt = this.now();
+    markSeatOffline(this.seatContext, room, player, { emptyRoomExempt: false });
     if (room.phase === "answering" && room.setterPlayerId === player.id) this.resetWaiting(room);
     advanceCEERound(room, this.now());
     this.publishRoom(room);
@@ -295,10 +336,8 @@ export class CEERooms {
     this.ensureFree(connection);
     const room = this.room(roomId);
     this.requireAdmission(connection, room);
-    if (connection.agentDriven?.() === true && room.settings.allowAgents !== true)
-      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
-    const seat = this.tabSeat(room, connection);
+    const seat = findSeat(this.seatContext, room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
     const name = this.name(payload.userName);
     // 口令门以可见性为准、摘要为空一律不匹配：私密房任何时候都不能无口令进入。
@@ -328,19 +367,10 @@ export class CEERooms {
     const room = this.room(payload.roomId);
     this.requireAdmission(connection, room);
 
-    const player =
-      [...room.players.values()].find((member) =>
-        safeEqualToken(member.sessionToken, payload.sessionToken ?? undefined)
-      ) ?? this.tabSeat(room, connection);
+    const player = findSeat(this.seatContext, room, connection, payload.sessionToken);
     if (!player) throw new AppError("SESSION_NOT_FOUND", "会话凭证无效或座位已不存在");
 
     return this.resumeSeat(connection, room, player);
-  }
-
-  /** 这张标签页在本房的席位记录；没有标签页身份的连接恒为空。 */
-  private tabSeat(room: CEERoom, connection: ConnectionRecord): CEEPlayerRecord | undefined {
-    const seatId = tabSeatId(connection, "cee", room.id);
-    return seatId ? room.players.get(seatId) : undefined;
   }
 
   /** 把连接接回既有席位：重连与同标签页再次加入共用，准入判定只有这一份。 */
@@ -349,9 +379,7 @@ export class CEERooms {
     room: CEERoom,
     player: CEEPlayerRecord
   ): CEERoomEnterResult {
-    if (connection.isAgent === true && player.isAgent !== true)
-      throw new AppError("AGENT_SEAT_FORBIDDEN", "Agent 不能接手人类座位");
-
+    assertSeatResumable(player, connection);
     if (player.connectionId && player.connectionId !== connection.id) {
       const previous = this.connections.findConnection(player.connectionId);
       if (previous) {
@@ -411,8 +439,7 @@ export class CEERooms {
    * 开关为假的房间一行都不执行——普通房间的连接路径与以往完全一致。
    */
   requireAdmission(connection: ConnectionRecord, room: CEERoom): void {
-    if (connection.isAgent === true && room.settings.allowAgents !== true)
-      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
+    assertAgentAdmission(connection, CEE_ROOM_SHAPE.admission(room));
     if (isCEEAntiCheatRoom(room.settings)) this.requireClientAdmission(connection);
   }
   /**
@@ -774,20 +801,13 @@ export class CEERooms {
       this.connections.isAgentDriven(room.players.get(playerId)?.connectionId)
     );
   }
-  /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
+  /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，反作弊房一律不开放。 */
   assertTabAgentsAllowed(tabKey: string): void {
-    for (const roomId of this.connections.roomIdsOfTab(tabKey)) {
-      const settings = this.rooms.get(roomId)?.settings;
-      if (settings?.allowAgents !== true || isCEEAntiCheatRoom(settings))
-        throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
-    }
+    assertTabAgentsAllowed(this.tabContext, tabKey, (room) => isCEEAntiCheatRoom(room.settings));
   }
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
-    for (const roomId of this.connections.roomIdsOfTab(tabKey)) {
-      const room = this.rooms.get(roomId);
-      if (room) this.publishRoom(room);
-    }
+    for (const room of roomsOfTab(this.tabContext, tabKey)) this.publishRoom(room);
   }
   private entry(room: CEERoom, player: CEEPlayerRecord): CEERoomEnterResult {
     return {

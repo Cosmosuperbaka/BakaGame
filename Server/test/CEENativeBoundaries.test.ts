@@ -356,3 +356,20 @@ test("Agent 默认被拒绝，房主打开 allowAgents 后可进入并带身份�
   expect(h.snapshot(host).settings.allowAgents).toBe(true);
   expect(h.snapshot(host).players.find((player) => player.name === "AgentOne")?.isAgent).toBe(true);
 });
+
+test("标签页正被 Agent 操作时，重连与加入同样受房间的 Agent 开关约束", async () => {
+  const h = keep(ceeTestHarness());
+  const host = await h.create();
+  const guest = await h.join("客人");
+  h.service.unregisterConnection(guest.record.id);
+  const driven = h.connect("被接管的标签页");
+  driven.record.agentDriven = () => true;
+
+  await expect(
+    h.send(driven, "cee.room.join", { userName: "被接管的标签页" })
+  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+  await expect(
+    h.send(driven, "cee.room.reconnect", { roomId: "1234", sessionToken: guest.token! })
+  ).rejects.toMatchObject({ code: "AGENTS_NOT_ALLOWED" });
+  expect(h.snapshot(host).players).toHaveLength(2);
+});
