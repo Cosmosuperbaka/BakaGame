@@ -4,6 +4,7 @@ import { badgeDescriptionOf } from "@bakagame/shared/values";
 import type { AccountBadge, AccountProfile, BadgeKind } from "@bakagame/shared";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
+import { FormAlert } from "./FormAlert";
 import {
   Dialog,
   DialogContent,
@@ -209,9 +210,9 @@ function PasskeySection() {
           正在读取通行密钥
         </div>
       ) : state.status === "error" ? (
-        <p className="text-xs text-destructive">{state.message}</p>
+        <FormAlert>{state.message}</FormAlert>
       ) : (
-        <ul className="grid gap-2">
+        <ul className="grid grid-cols-1 gap-2">
           {items.length === 0 ? (
             <li className="text-xs text-muted-foreground">还没有添加通行密钥。</li>
           ) : null}
@@ -312,9 +313,7 @@ function PasskeySection() {
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <FormAlert>{error}</FormAlert>
       ) : null}
     </SettingsSection>
   );
@@ -376,14 +375,12 @@ function BadgeSection({ profile }: { profile: AccountProfile }) {
   return (
     <SettingsSection title="身份徽章" icon={Award}>
       {profile.badges.length ? (
-        <ul className="grid gap-2">{profile.badges.map(row)}</ul>
+        <ul className="grid grid-cols-1 gap-2">{profile.badges.map(row)}</ul>
       ) : (
         <p className="text-xs text-muted-foreground">还没有获得徽章。</p>
       )}
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <FormAlert>{error}</FormAlert>
       ) : null}
     </SettingsSection>
   );
@@ -417,7 +414,9 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
 
   return (
     <DialogContent>
-      <form onSubmit={(event) => void submit(event)} className="grid gap-4">
+      {/* min-w-0：弹窗本体是 grid，表单作为网格项默认不小于内容最小宽度；
+          通行密钥名一行不换行（截断），会把整张表单撑出弹窗右缘。 */}
+      <form onSubmit={(event) => void submit(event)} className="grid min-w-0 gap-4">
         <DialogHeader>
           <DialogTitle>账号资料</DialogTitle>
           <DialogDescription>
@@ -444,9 +443,7 @@ function ProfileDialogBody({ profile, onDone }: { profile: AccountProfile; onDon
         <BadgeSection profile={profile} />
         {supportsPasskey ? <PasskeySection /> : null}
         {error ? (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
+          <FormAlert>{error}</FormAlert>
         ) : null}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onDone}>

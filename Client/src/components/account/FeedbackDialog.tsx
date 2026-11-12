@@ -4,6 +4,7 @@ import { FEEDBACK_CONTENT_MAX_LENGTH, FEEDBACK_TITLE_MAX_LENGTH } from "@bakagam
 import type { FeedbackDetail, FeedbackKind, FeedbackSummary } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { FormAlert } from "./FormAlert";
 import {
   Dialog,
   DialogContent,
@@ -123,7 +124,8 @@ function FeedbackForm({
     <form onSubmit={handleSubmit} className="grid gap-4">
       <SettingsFields>
         <div className="flex items-center justify-between gap-3">
-          <span id={kindLabelId} className="text-sm font-medium">
+          {/* 三个字段的标签同一口径：设置表单的衬线 sm 常规字重（SettingTextField 的「标题」就是这样）。 */}
+          <span id={kindLabelId} className="font-serif text-sm leading-snug">
             类型
           </span>
           <SegmentedControl
@@ -145,7 +147,9 @@ function FeedbackForm({
           inputClassName="h-10"
         />
         <div className="grid gap-1.5">
-          <Label htmlFor={contentId}>详细说明</Label>
+          <Label htmlFor={contentId} className="font-serif leading-snug font-normal">
+            详细说明
+          </Label>
           <Textarea
             id={contentId}
             value={content}
@@ -160,9 +164,7 @@ function FeedbackForm({
         </div>
       </SettingsFields>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <FormAlert>{error}</FormAlert>
       ) : null}
       {guest && confirming ? (
         <div
@@ -261,9 +263,7 @@ function FeedbackThread({
         返回列表
       </Button>
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
+        <FormAlert>{error}</FormAlert>
       ) : !detail ? (
         <div role="status" className="flex justify-center py-8">
           <Spinner className="size-5 text-muted-foreground" />
@@ -409,9 +409,7 @@ function MyFeedbackPanel({
           <span className="sr-only">加载中</span>
         </div>
       ) : list.status === "error" ? (
-        <p role="alert" className="text-sm text-destructive">
-          {list.message}
-        </p>
+        <FormAlert>{list.message}</FormAlert>
       ) : list.items.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">还没有提交过反馈</p>
       ) : (

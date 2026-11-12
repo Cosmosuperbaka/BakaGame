@@ -10,6 +10,7 @@ import {
   QQ_NUMBER_PATTERN,
 } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
+import { FormAlert } from "./FormAlert";
 import { Collapsible, CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/Dialog";
 import { SettingTextField } from "@/components/common/room/SettingFields";
@@ -114,7 +115,8 @@ function LoginAvatar({
 function LoginNotice() {
   return (
     <Collapsible title="登录说明" size="sm">
-      <div className="space-y-1.5 text-xs text-muted-foreground">
+      {/* 展开的说明收进凹块：与设置面板「连接信息」同一种折叠区内容外框，不是一片贴着按钮的裸字。 */}
+      <div className="space-y-1.5 rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
         <p>
           登录只用于少数需要身份验证的功能：云同步设置、查看自己反馈的回复、房间内显示你的头像。
         </p>
@@ -335,9 +337,7 @@ function LoginDialogBody({
                 />
               )}
               <CollapsibleRegion open={Boolean(error)}>
-                <p role="alert" className="text-sm text-destructive">
-                  {error}
-                </p>
+                <FormAlert>{error}</FormAlert>
               </CollapsibleRegion>
             </motion.div>
           </AnimatePresence>
