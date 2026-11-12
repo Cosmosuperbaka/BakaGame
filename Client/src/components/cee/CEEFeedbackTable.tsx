@@ -5,6 +5,7 @@ import type { CEECharacterView, CEEFeedback, CEEFeedbackValue, CEEGuess } from "
 import { Badge } from "@/components/ui/Badge";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { Collapsible } from "@/components/ui/Collapsible";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { Hint } from "@/components/ui/Tooltip";
 import {
   clueFlip,
@@ -336,11 +337,14 @@ function FeedbackRows({
             ))}
           </tr>
         </thead>
-        <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
-          {rows.map((guess) => (
-            <GuessRow key={guess.id} guess={guess} showRound={showRound} fresh={isFresh(guess)} />
-          ))}
-        </motion.tbody>
+        {/* 表格常是首屏就在的那一项：边界让之后到的猜测照常翻牌，而不是被当成首屏直接出现。 */}
+        <PresenceBoundary>
+          <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
+            {rows.map((guess) => (
+              <GuessRow key={guess.id} guess={guess} showRound={showRound} fresh={isFresh(guess)} />
+            ))}
+          </motion.tbody>
+        </PresenceBoundary>
       </table>
     </div>
   );

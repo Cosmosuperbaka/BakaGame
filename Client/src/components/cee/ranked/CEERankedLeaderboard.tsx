@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Crown, Medal } from "lucide-react";
 import type { CEERankedLeaderboard, CEERankedLeaderboardEntry } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { listContainer, listItem, skeletonFade } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { rankedRecordLabel, rankedWinRate } from "./CEERankedFormat";
@@ -133,9 +134,12 @@ export function CEERankedLeaderboardPanel({
                 className="scroll-fade-y max-h-88 space-y-0.5 py-3"
                 aria-label="排行榜"
               >
-                {leaderboard.entries.map((entry) => (
-                  <LeaderboardRow key={entry.rank} entry={entry} />
-                ))}
+                {/* 榜单常是首屏那一项（沿用上次取到的榜）：重新取榜后多出的名次照常入场 */}
+                <PresenceBoundary>
+                  {leaderboard.entries.map((entry) => (
+                    <LeaderboardRow key={entry.rank} entry={entry} />
+                  ))}
+                </PresenceBoundary>
               </motion.ol>
             ) : (
               <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">

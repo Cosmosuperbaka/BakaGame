@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { collapsible, headerTappable, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -66,7 +67,8 @@ export function CollapsibleRegion({
           exit="exit"
           className={cn(as === "span" && "block", className)}
         >
-          {children}
+          {/* 默认展开时区内之后才挂载的内容照常入场 */}
+          <PresenceBoundary>{children}</PresenceBoundary>
         </Region>
       ) : null}
     </AnimatePresence>

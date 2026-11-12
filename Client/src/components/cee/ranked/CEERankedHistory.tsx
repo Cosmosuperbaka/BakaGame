@@ -4,6 +4,7 @@ import type { CEERankedHistoryEntry } from "@bakagame/shared";
 import { ceeRankedTier } from "@bakagame/shared/values";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { listContainer, listItem, skeletonFade } from "@/lib/Motion";
 import { formatRelativeTime } from "@/lib/Time";
 import { formatRankedPoints } from "./CEERankedFormat";
@@ -108,9 +109,12 @@ export function CEERankedHistory({
               animate="animate"
               className="divide-y"
             >
-              {entries.map((entry) => (
-                <HistoryRow key={entry.seriesId} entry={entry} />
-              ))}
+              {/* 列表常是首屏那一项（沿用已取到的战绩）：往前翻出的条目照常入场 */}
+              <PresenceBoundary>
+                {entries.map((entry) => (
+                  <HistoryRow key={entry.seriesId} entry={entry} />
+                ))}
+              </PresenceBoundary>
             </motion.ol>
             <div ref={sentinelRef} className="flex justify-center pt-2">
               {hasMore ? (

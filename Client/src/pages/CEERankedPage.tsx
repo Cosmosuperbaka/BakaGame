@@ -6,6 +6,7 @@ import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
 import { Seo } from "@/components/common/Seo";
 import { SettingsEntry } from "@/components/settings/SettingsEntry";
 import { Button } from "@/components/ui/Button";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { CEERankedGameRecap } from "@/components/cee/ranked/CEERankedGameRecap";
 import { CEERankedGate } from "@/components/cee/ranked/CEERankedGate";
 import { CEERankedHome } from "@/components/cee/ranked/CEERankedHome";
@@ -209,7 +210,10 @@ function RankedBody({
         animate="animate"
         exit="exit"
       >
-        {inSeries ? <RankedSeriesStage /> : <RankedHomeStage />}
+        {/* 刷新或重连后直接落在系列赛里时整块是首屏那一项：边界让之后换上的局分标记照常入场 */}
+        <PresenceBoundary>
+          {inSeries ? <RankedSeriesStage /> : <RankedHomeStage />}
+        </PresenceBoundary>
       </motion.div>
     </AnimatePresence>
   );

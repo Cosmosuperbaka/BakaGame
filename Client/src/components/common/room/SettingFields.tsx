@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import {
   Select,
@@ -953,7 +954,8 @@ export function SettingsSection({
                   {title}
                 </h4>
               ) : null}
-              {children}
+              {/* 默认展开的设置组里之后才出现的字段照常入场 */}
+              <PresenceBoundary>{children}</PresenceBoundary>
             </SettingsFields>
           </div>
         </motion.section>

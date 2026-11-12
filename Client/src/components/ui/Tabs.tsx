@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
 import { AnimatePresence, motion } from "framer-motion";
+import { PresenceBoundary } from "@/components/ui/PresenceBoundary";
 import { SlidingIndicator } from "@/components/ui/SlidingIndicator";
 import { useIndicatorRect } from "@/hooks/UseIndicatorRect";
 import { tabPushSwap, tappable } from "@/lib/Motion";
@@ -147,7 +148,8 @@ const TabsContent = React.forwardRef<
             }}
             className={className}
           >
-            {children}
+            {/* 首屏那一页里之后才挂载的内容照常入场，不随整页一起被跳过 */}
+            <PresenceBoundary>{children}</PresenceBoundary>
           </motion.div>
         </TabsPrimitive.Content>
       ) : null}
