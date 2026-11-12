@@ -349,3 +349,99 @@ test("已应用到最新版本时，即使 diff 带非空基线也判为已是�
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+/** 只在被 abort 时才结束的挂起请求：模拟半开连接。 */
+const hangUntilAborted = (init?: RequestInit) =>
+  new Promise<Response>((_, reject) => {
+    init?.signal?.addEventListener(
+      "abort",
+      () =>
+        reject(init.signal!.reason instanceof Error ? init.signal!.reason : new Error("已中止")),
+      { once: true }
+    );
+  });
+
+test("拉取 diff 与全量产物都带超时信号，挂起的上游不会让一轮永不结束", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
+  try {
+    const statePath = join(directory, "state.json");
+    const signals: Array<AbortSignal | undefined> = [];
+    const fetcher = (async (url: string, init?: RequestInit) => {
+      signals.push(init?.signal ?? undefined);
+      if (url.endsWith("id_tags.json")) return Response.json({ "1": ["蓝发"] });
+      return Response.json({ baseSha256: "aaa", targetSha256: "bbb" });
+    }) as unknown as typeof fetch;
+    await syncTagDiff({
+      repository: { applyTagChanges: async () => {}, replaceAllTags: async () => {} },
+      diffUrl: "https://example.invalid/id_tags.diff.json",
+      statePath,
+      fetcher,
+    });
+    expect(signals).toHaveLength(2);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("某一轮拉取挂起被超时中止后，定时链仍会续排下一轮", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
+  const statePath = join(directory, "state.json");
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    const results: Array<{ ok: boolean; summary: string; error: string | null }> = [];
+    // 以「立刻被中止」代替真等 30 秒：fetcher 收到信号后马上以超时错误拒绝。
+    const fetcher = (async (_url: string, init?: RequestInit) => {
+      const timeout = new Error("The operation timed out");
+      timeout.name = "TimeoutError";
+      return init?.signal ? Promise.reject(timeout) : hangUntilAborted(init);
+    }) as unknown as typeof fetch;
+    const stop = scheduleTagDiffSync({
+      repository: () => ({ applyTagChanges: async () => {}, replaceAllTags: async () => {} }),
+      diffUrl: "https://example.invalid/diff.json",
+      statePath,
+      fetcher,
+      onResult: (result) => results.push(result),
+    });
+    const ticksBeforeRun = spy.mock.calls.length;
+    (spy.mock.calls.at(-1)![0] as () => void)();
+    for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1)
+      await Bun.sleep(1);
+    expect(results[0]).toMatchObject({ ok: false, summary: "增量同步失败" });
+    // 失败之后必须仍排上了下一轮（6 小时）。
+    expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);
+    stop();
+  } finally {
+    spy.mockRestore();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("回调自身抛错也不会断掉定时链", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-tagdiff-"));
+  const statePath = join(directory, "state.json");
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    const fetcher = (async () =>
+      Response.json({ baseSha256: null, targetSha256: "v1" })) as unknown as typeof fetch;
+    const stop = scheduleTagDiffSync({
+      repository: () => ({ applyTagChanges: async () => {}, replaceAllTags: async () => {} }),
+      diffUrl: "https://example.invalid/diff.json",
+      statePath,
+      fetcher,
+      // 状态页留痕出错（例如数据集被锁）不应让轮询停摆。
+      onResult: () => {
+        throw new Error("留痕失败");
+      },
+    });
+    const ticksBeforeRun = spy.mock.calls.length;
+    (spy.mock.calls.at(-1)![0] as () => void)();
+    for (let attempt = 0; attempt < 50 && spy.mock.calls.length === ticksBeforeRun; attempt += 1)
+      await Bun.sleep(1);
+    expect(Number(spy.mock.calls.at(-1)![1])).toBe(6 * 60 * 60 * 1_000);
+    stop();
+  } finally {
+    spy.mockRestore();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { BANGUMI_TAG_DIFF_TIMEOUT_MS, BANGUMI_TAG_FULL_TIMEOUT_MS } from "../config/Constants";
 import { AppError } from "../domain/Errors";
 import type { CEECharacterRepository } from "./CEECharacterRepository";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
@@ -92,7 +93,14 @@ export function scheduleTagDiffSync(options: {
   const schedule = (delay: number): void => {
     if (stopped) return;
     timer = setTimeout(() => {
-      void run().then(() => schedule(SYNC_INTERVAL_MS));
+      // 无论这一轮怎么收场（含回调自己抛错）都要续排，否则轮询会悄无声息地永久停摆。
+      void run()
+        .catch((error: unknown) =>
+          options.logger?.warn?.(
+            `角色标签增量收尾失败：${error instanceof Error ? error.message : String(error)}`
+          )
+        )
+        .finally(() => schedule(SYNC_INTERVAL_MS));
     }, delay);
   };
   schedule(FIRST_DELAY_MS);
@@ -182,15 +190,21 @@ export async function syncTagDiff(options: {
   fetcher?: typeof fetch;
 }): Promise<TagDiffResult> {
   const fetcher = options.fetcher ?? fetch;
-  const fetchJson = async (url: string, what: string): Promise<unknown> => {
+  const fetchJson = async (url: string, what: string, timeoutMs: number): Promise<unknown> => {
     const response = await fetcher(url, {
       headers: { Accept: "application/json", "User-Agent": BANGUMI_USER_AGENT },
+      // 半开连接或卡住的反代不会自己结束：没有超时，这一轮永不返回，定时链就此断掉。
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok)
       throw new AppError("BANGUMI_DATA_UNAVAILABLE", `拉取${what}失败：HTTP ${response.status}`);
     return response.json();
   };
-  const payload = (await fetchJson(options.diffUrl, "标签增量")) as TagDiffPayload;
+  const payload = (await fetchJson(
+    options.diffUrl,
+    "标签增量",
+    BANGUMI_TAG_DIFF_TIMEOUT_MS
+  )) as TagDiffPayload;
   if (!payload?.targetSha256)
     throw new AppError("BANGUMI_DATA_INVALID", "标签增量缺少 targetSha256");
 
@@ -207,7 +221,11 @@ export async function syncTagDiff(options: {
   }
   if (plan.stale) {
     const entries = parseFullTags(
-      await fetchJson(options.fullUrl ?? deriveFullTagsUrl(options.diffUrl), "全量标签")
+      await fetchJson(
+        options.fullUrl ?? deriveFullTagsUrl(options.diffUrl),
+        "全量标签",
+        BANGUMI_TAG_FULL_TIMEOUT_MS
+      )
     );
     await options.repository.replaceAllTags(entries);
     writeTagDiffState(options.statePath, {
