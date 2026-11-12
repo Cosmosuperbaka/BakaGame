@@ -142,7 +142,7 @@ function NightFeedback({
   const eliminated = feedback.eliminatedPlayerIds.map((id) => playerNameOf(snapshot.players, id));
   return (
     <div className="space-y-5">
-      <div className="flex min-h-[5.5rem] flex-col items-center justify-start text-center">
+      <div className="flex min-h-22 flex-col items-center justify-start text-center">
         {/* 日出图标自下升起，与「天亮」语义一致 */}
         <motion.span
           className="flex h-11 w-11 items-center justify-center rounded-md bg-muted"
