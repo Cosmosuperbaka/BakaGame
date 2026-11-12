@@ -325,13 +325,25 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     const currentTime = this.now();
 
     for (const room of [...this.rooms.values()]) {
-      if (await this.closeEmptyRoomIfNeeded(room, currentTime)) continue;
-      if (await this.closeIdleRoomIfNeeded(room, currentTime)) continue;
-      await this.removeOfflinePlayers(room, currentTime);
-      await this.handOverStalledRoles(room, currentTime);
-      await this.finishExpiredPhaseTimer(room, currentTime);
-      this.publishRoomCalibration(room);
+      // 逐房隔离：一间房的状态异常不能让迭代顺序里靠后的房间本轮都不被清理。
+      try {
+        await this.housekeepRoom(room, currentTime);
+      } catch (error) {
+        this.options.eventLogger.error("房间巡检失败", {
+          roomId: room.id,
+          ...describeError(error),
+        });
+      }
     }
+  }
+
+  private async housekeepRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<void> {
+    if (await this.closeEmptyRoomIfNeeded(room, currentTime)) return;
+    if (await this.closeIdleRoomIfNeeded(room, currentTime)) return;
+    await this.removeOfflinePlayers(room, currentTime);
+    await this.handOverStalledRoles(room, currentTime);
+    await this.finishExpiredPhaseTimer(room, currentTime);
+    this.publishRoomCalibration(room);
   }
 
   /** 空房宽限期：整房离线满一个宽限期才真正关闭，否则只记录空房起点。 */

@@ -3,8 +3,10 @@ import { createRoom, joinPlayers } from "./Fixtures";
 import {
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
   SPECTATOR_OFFLINE_GRACE_MS,
 } from "../../src/config/Constants";
+import { NOOP_GAME_RECORDER } from "../../src/domain/GameRecord";
 import { type WhoIsFakerRoomSnapshot } from "../../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from ".././Helpers";
 
@@ -303,5 +305,30 @@ describe("清理与聊天", () => {
         payload: { text: "恢复" },
       })
     ).resolves.toEqual({ sent: true });
+  });
+
+  test("一间房巡检抛错时，其余房间照常被清理", async () => {
+    // 记录器在关闭 1111 房时故障：该房的清理会抛错，巡检循环不能因此跳过后面的房间。
+    const { service, advanceTime } = createTestContext({
+      gameRecorder: {
+        ...NOOP_GAME_RECORDER,
+        finishRoom: (entry) => {
+          if (entry.roomId === "1111") throw new Error("对局记录器故障");
+        },
+      },
+    });
+    const rooms = ["1111", "2222", "3333"];
+    for (const roomId of rooms) {
+      const { host } = await createRoom(service, roomId);
+      await service.unregisterConnection(host.record.id);
+    }
+
+    // 第一轮巡检只记录空房起点，宽限期满后第二轮才真正关闭。
+    await service.runHousekeeping();
+    advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS + 1_000);
+    await service.runHousekeeping();
+
+    const remaining = [...(service as any).rooms.keys()] as string[];
+    expect(remaining).toEqual(["1111"]);
   });
 });
