@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { rm } from "node:fs/promises";
 import { CEECharacterRepository } from "../src/infrastructure/CEECharacterRepository";
 import {
@@ -100,6 +101,33 @@ test("排位题库的成员与随机出题能抽到的角色完全一致", async
       drawn.add(character.id);
     }
     for (const id of poolIds) expect(drawn.has(id)).toBe(true);
+  } finally {
+    await disposeAll();
+  }
+});
+
+test("铺开大题库时周期性让出事件循环，数据线程不会对其他请求失声", async () => {
+  const { repository, dbPath } = createRepository();
+  const fixture = new Database(dbPath);
+  for (let index = 0; index < 180; index += 1) {
+    const id = 5_000 + index;
+    fixture
+      .query("INSERT INTO characters VALUES (?,1,?,?,'?','[]','',0,?)")
+      .run(id, `大题库${index}`, `大题库${index}`, index);
+    fixture.query("INSERT INTO character_subject_relations VALUES (?,20,1,?)").run(id, 10 + index);
+  }
+  fixture.close();
+  try {
+    let done = false;
+    let timerRanBeforeDone = false;
+    // 只有真正让出宏任务，这个 0 毫秒定时器才有机会在题库铺完之前运行。
+    setTimeout(() => {
+      timerRanBeforeDone = !done;
+    }, 0);
+    const pool = await repository.listRankedCandidates(rankedSettings());
+    done = true;
+    expect(pool.length).toBeGreaterThan(180);
+    expect(timerRanBeforeDone).toBe(true);
   } finally {
     await disposeAll();
   }

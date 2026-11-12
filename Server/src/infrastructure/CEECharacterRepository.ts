@@ -43,6 +43,8 @@ interface SubjectRow {
 }
 const boundedLimit = (limit: number, maximum = 50) =>
   Math.min(maximum, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : 20));
+/** 铺开排位题库时每处理这么多角色让出一次事件循环。 */
+const RANKED_YIELD_EVERY = 50;
 const like = (keyword: string) => `%${escapeLike(keyword)}%`;
 const positiveId = (id: number) => Number.isSafeInteger(id) && id > 0;
 const validTypes = (types: number[]) =>
@@ -565,6 +567,9 @@ export class CEECharacterRepository implements CEEDataProvider {
     const candidates: CEERankedCandidate[] = [];
     for (const [id, weight] of [...weights].sort(([a], [b]) => a - b)) {
       candidates.push({ weight, character: await this.getCharacter(id, settings) });
+      // getCharacter 内部只有微任务级等待，整个循环不会让出线程：数据线程在这期间对其他请求
+      // （猜歌查询、搜索、头像）完全失声。周期性让出一个宏任务，让它们能插队被处理。
+      if (candidates.length % RANKED_YIELD_EVERY === 0) await Bun.sleep(0);
     }
     return candidates;
   }
