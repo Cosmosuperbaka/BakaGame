@@ -24,11 +24,13 @@ import { AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
+import { Hint } from "@/components/ui/Tooltip";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
 import {
   byAxes,
   chatMessageLaunch,
   chatThrow,
+  iconTappable,
   jitterShape,
   optionTappable,
   popover,
@@ -337,18 +339,23 @@ function MessageText({
   );
 }
 
-/** 复读按钮：点击即以当前玩家身份再发一条相同文本，不做计数。 */
+/**
+ * 复读按钮：点击即以当前玩家身份再发一条相同文本，不做计数。
+ * 悬停说明走 `Hint`（原生 title 不进设计系统的表面与动效），按下走 `iconTappable`，与图标钮同一档手感。
+ */
 function RepeatButton({ onRepeat }: { onRepeat: () => void }) {
   return (
-    <button
-      type="button"
-      aria-label="复读这条消息"
-      title="复读这条消息"
-      onClick={onRepeat}
-      className="absolute bottom-0 left-full ml-1.5 flex h-5 items-center rounded-full border border-border bg-background/85 px-1.5 font-mono text-2xs leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-    >
-      +1
-    </button>
+    <Hint label="复读这条消息">
+      <motion.button
+        type="button"
+        aria-label="复读这条消息"
+        {...iconTappable}
+        onClick={onRepeat}
+        className="absolute bottom-0 left-full ml-1.5 flex h-5 cursor-pointer items-center rounded-full border border-border bg-background/85 px-1.5 font-mono text-2xs leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        +1
+      </motion.button>
+    </Hint>
   );
 }
 

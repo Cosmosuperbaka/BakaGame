@@ -77,7 +77,7 @@ const GHOST_CHAT: ChatMessage[] = [
 
 const LONG_CHAT: ChatMessage[] = [
   notice(`${host.name} 断线超时，房主已转移给 ${me.name}`, 0),
-  say(azumi, "拉朋友一起来：https://game.baka.website/whoisfaker/room/4821", 10),
+  say(azumi, "拉朋友一起来：https://example.com/whoisfaker/room/4821", 10),
   say(peach, "6666666666666666666666666666666666666666666666666666666666666666666666", 22),
   say(
     me,
