@@ -111,7 +111,7 @@ function QuestionerAdvancePanel({
 }) {
   if (mode === "supplement") return supplement.hint;
   return (
-    <div className="space-y-3 pt-2">
+    <div className="pt-2">
       {supplement.panel}
       <div className="flex flex-wrap items-center justify-center gap-3">
         {mode === "normal" ? supplement.trigger : null}

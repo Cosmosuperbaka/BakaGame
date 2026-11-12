@@ -12,15 +12,16 @@ import {
   VenetianMask,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ReadyProgress } from "@/components/common/room/ReadyProgress";
 import { RoomLinkShare } from "@/components/common/room/RoomLinkShare";
 import { McpSettingsSection } from "@/components/common/room/McpSettingsSection";
 import {
+  SettingReveal,
   SettingStepper,
   SettingSwitchRow,
   SettingTextField,
+  SettingsFields,
 } from "@/components/common/room/SettingFields";
 import { SettingsAccordion, SettingsStack } from "@/components/common/room/SettingsAccordion";
 import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallback";
@@ -293,7 +294,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
           values.revealRoleOnDeath ? "死亡揭露身份" : "死亡隐藏身份",
         ]}
       >
-        <div className="space-y-4">
+        <SettingsFields>
           <SettingStepper
             label="卧底人数"
             description={`上限 ${limits.maxUndercoverCount}`}
@@ -323,7 +324,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
             checked={values.revealRoleOnDeath}
             onCheckedChange={(value) => edit("revealRoleOnDeath", value)}
           />
-        </div>
+        </SettingsFields>
       </SettingsAccordion>
 
       <SettingsAccordion
@@ -338,7 +339,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
           values.spectatorsSeeAnswers ? "旁观可见答案" : "旁观隐藏答案",
         ]}
       >
-        <div className="space-y-4">
+        <SettingsFields>
           <SettingTextField
             label="房间名称"
             value={values.name}
@@ -353,7 +354,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
             onCheckedChange={(value) => edit("isPrivate", value)}
           />
           {!readOnly ? (
-            <CollapsibleRegion open={values.isPrivate}>
+            <SettingReveal open={values.isPrivate}>
               {/* 还没有密码时留空不会保存（私密房间必须有密码），占位文案按是否已有密码区分。 */}
               <SettingTextField
                 label="房间密码"
@@ -362,7 +363,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
                 onChange={(value) => edit("password", value)}
                 placeholder={snapshot.hasPassword ? "留空则保留当前密码" : "设置房间密码"}
               />
-            </CollapsibleRegion>
+            </SettingReveal>
           ) : null}
           <SettingSwitchRow
             label="允许旁观"
@@ -377,7 +378,7 @@ function FakerSettings({ snapshot, readOnly, sendCommand, addToast }: FakerSetti
             checked={values.spectatorsSeeAnswers}
             onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
           />
-        </div>
+        </SettingsFields>
       </SettingsAccordion>
 
       <McpSettingsSection

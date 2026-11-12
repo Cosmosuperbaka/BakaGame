@@ -201,7 +201,8 @@ export function FakerVotingPhase() {
       ) : null}
 
       {isQuestioner ? (
-        <div className="space-y-3 pt-2">
+        // 选人面板自带与按钮行的间距（在折叠区内随高度补间），这里不用 space-y
+        <div className="pt-2">
           {supplement.panel}
           <div className="flex flex-wrap items-center justify-center gap-3">
             {supplement.trigger}
@@ -216,7 +217,7 @@ export function FakerVotingPhase() {
               结算投票
             </Button>
           </div>
-          {supplement.hint}
+          {supplement.hint ? <div className="mt-3">{supplement.hint}</div> : null}
         </div>
       ) : null}
     </div>

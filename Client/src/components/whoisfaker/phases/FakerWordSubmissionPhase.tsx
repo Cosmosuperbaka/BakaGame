@@ -193,8 +193,9 @@ export function FakerWordSubmissionPhase({
           />
         ) : null}
 
-        {/* 随机/自定义分配身份 */}
-        <div className="space-y-3 border-t pt-4">
+        {/* 随机/自定义分配身份。表格的上间距放在折叠区内部、随高度一起补间，
+            不用 space-y：那样展开时外边距先跳出 12px，收起后才整体移除。 */}
+        <div className="border-t pt-4">
           <SettingSwitchRow
             label="随机分配身份"
             icon={Dices}
@@ -203,62 +204,64 @@ export function FakerWordSubmissionPhase({
           />
 
           <CollapsibleRegion open={!isRandomRole}>
-            <div className="overflow-hidden rounded-md border bg-background text-sm">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/40 px-3 py-2.5 sm:grid-cols-4">
-                {availableRoles.map((availableRole) => {
-                  const valid =
-                    assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole];
-                  return (
-                    <div
-                      key={availableRole}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="text-muted-foreground">
-                        {ROLE_FULL_LABELS[availableRole]}
-                      </span>
-                      <span
-                        className={cn(
-                          "font-semibold tabular-nums",
-                          valid ? "text-foreground" : "text-destructive"
-                        )}
+            <div className="pt-3">
+              <div className="overflow-hidden rounded-md border bg-background text-sm">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b bg-muted/40 px-3 py-2.5 sm:grid-cols-4">
+                  {availableRoles.map((availableRole) => {
+                    const valid =
+                      assignedRoleCounts[availableRole] === requiredRoleCounts[availableRole];
+                    return (
+                      <div
+                        key={availableRole}
+                        className="flex items-center justify-between gap-2 text-xs"
                       >
-                        {assignedRoleCounts[availableRole]}/{requiredRoleCounts[availableRole]}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* 数量不符时提交按钮禁用，原因就写在这里，并经 aria-describedby 挂到按钮上 */}
-              {manualRolesInvalid ? (
-                <p id={roleCountId} className="border-b px-3 py-2 text-xs text-destructive">
-                  各身份数量需与房间配置一致
-                </p>
-              ) : null}
-              {participants.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0"
-                >
-                  <Hint label={p.name}>
-                    <span className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">
-                      {p.name}
-                    </span>
-                  </Hint>
-                  <SegmentedControl
-                    size="sm"
-                    aria-label={`为 ${p.name} 分配身份`}
-                    className="ml-auto w-auto"
-                    value={manualRoles[p.id] ?? "civilian"}
-                    options={roleOptions}
-                    onValueChange={(availableRole) =>
-                      setManualRoles((previousRoles) => ({
-                        ...previousRoles,
-                        [p.id]: availableRole,
-                      }))
-                    }
-                  />
+                        <span className="text-muted-foreground">
+                          {ROLE_FULL_LABELS[availableRole]}
+                        </span>
+                        <span
+                          className={cn(
+                            "font-semibold tabular-nums",
+                            valid ? "text-foreground" : "text-destructive"
+                          )}
+                        >
+                          {assignedRoleCounts[availableRole]}/{requiredRoleCounts[availableRole]}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+                {/* 数量不符时提交按钮禁用，原因就写在这里，并经 aria-describedby 挂到按钮上 */}
+                {manualRolesInvalid ? (
+                  <p id={roleCountId} className="border-b px-3 py-2 text-xs text-destructive">
+                    各身份数量需与房间配置一致
+                  </p>
+                ) : null}
+                {participants.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 last:border-b-0"
+                  >
+                    <Hint label={p.name}>
+                      <span className="min-w-0 flex-1 basis-20 truncate text-xs font-medium">
+                        {p.name}
+                      </span>
+                    </Hint>
+                    <SegmentedControl
+                      size="sm"
+                      aria-label={`为 ${p.name} 分配身份`}
+                      className="ml-auto w-auto"
+                      value={manualRoles[p.id] ?? "civilian"}
+                      options={roleOptions}
+                      onValueChange={(availableRole) =>
+                        setManualRoles((previousRoles) => ({
+                          ...previousRoles,
+                          [p.id]: availableRole,
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </CollapsibleRegion>
         </div>

@@ -101,12 +101,14 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
       ) : null,
     panel: (
       <CollapsibleRegion open={panelOpen} id={panelId}>
-        <div className="space-y-3 rounded-md bg-muted p-4 text-left">
+        {/* 与投票反馈的「得票」「票型」同为 bg-muted 凹块，标题取同一套区块小标题；
+            与下方按钮行的间距放在折叠区内部，随高度补间，不在展开瞬间先跳出外边距 */}
+        <div className="mb-3 space-y-3 rounded-md bg-muted p-4 text-left">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Users className="h-4 w-4 text-info" />
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Users className="h-3.5 w-3.5" aria-hidden="true" />
               选择补充发言玩家
-            </div>
+            </h3>
             <CloseButton className="h-7 w-7" onClick={close} aria-label="收起补充发言" />
           </div>
           <div className="flex flex-wrap gap-2">
