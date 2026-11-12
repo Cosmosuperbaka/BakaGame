@@ -311,4 +311,72 @@ describe("白板猜词打断", () => {
     snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
     expect(snapshot?.status.phase).not.toBe("blankGuess");
   });
+
+  test("平票 PK 的候选被移出后改入夜晚，原 PK 倒计时不再留在公开快照里", async () => {
+    const { service } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    const [player] = await joinPlayers(service, "Oblivionis", 1, "候选玩家");
+    await execute(service, host, { id: "add-bots", type: "test.addBot", payload: { count: 3 } });
+    await execute(service, host, {
+      id: "jump-words",
+      type: "test.jumpToPhase",
+      payload: { phase: "wordSubmission" },
+    });
+    await execute(service, host, {
+      id: "submit-words",
+      type: "game.submitWords",
+      payload: { words: ["苹果", "香蕉"] },
+    });
+    await execute(service, host, {
+      id: "jump-to-tie-break",
+      type: "test.jumpToPhase",
+      payload: { phase: "tieBreak" },
+    });
+    const room = (
+      service as unknown as {
+        rooms: Map<
+          string,
+          {
+            round: {
+              tieBreak: { candidateIds: string[] };
+              assignments: Record<string, { role: string; side: string; alive: boolean }>;
+            };
+          }
+        >;
+      }
+    ).rooms.get("Oblivionis")!;
+    // 固定成一卧底加多名平民，保证候选被移出后胜负未分、房间进入夜晚而不是结算。
+    const others = Object.keys(room.round.assignments).filter(
+      (id) => id !== player.joinResult.playerId
+    );
+    others.forEach((id, index) => {
+      room.round.assignments[id] = {
+        role: index === 0 ? "undercover" : "civilian",
+        side: index === 0 ? "undercover" : "good",
+        alive: true,
+      };
+    });
+    const other =
+      room.round.tieBreak.candidateIds.find((id) => id !== player.joinResult.playerId) ?? "bot_1";
+    room.round.tieBreak.candidateIds = [player.joinResult.playerId, other];
+
+    await execute(service, host, {
+      id: "start-timer",
+      type: "game.startPhaseTimer",
+      payload: { durationSeconds: 60 },
+    });
+    let snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+    expect(snapshot?.status.phaseTimer?.phase).toBe("tieBreak");
+
+    // 候选只剩一人，PK 失去意义，房间改入夜晚。
+    await execute(service, host, {
+      id: "kick-candidate",
+      type: "room.kick",
+      payload: { playerId: player.joinResult.playerId },
+    });
+
+    snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
+    expect(snapshot?.status.phase).toBe("night");
+    expect(snapshot?.status.phaseTimer).toBeUndefined();
+  });
 });

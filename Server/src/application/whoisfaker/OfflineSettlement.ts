@@ -522,6 +522,8 @@ const exitRosterMember = async (
   const liveRound = ctx.room.round;
   if (liveRound && !liveRound.summary) {
     restoreRosterRound(liveRound, ctx.preserved, resumePhase);
+    // 平票候选不足改入夜晚时阶段变了：原阶段的倒计时不能留在快照里。
+    if (liveRound.phase !== previousPhase) clearPhaseTimer(service, ctx.room);
   }
 };
 
