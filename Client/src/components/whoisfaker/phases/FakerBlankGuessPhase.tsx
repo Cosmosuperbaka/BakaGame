@@ -192,7 +192,8 @@ function BlankGuessInput() {
   return (
     <div className="mx-auto max-w-md space-y-5">
       <PhaseHeader icon={CircleHelp} title="白板猜词" iconClassName="text-warning" />
-      <p className="text-center text-sm text-muted-foreground">
+      {/* 居中的两行说明用 balance 均分行长，平板宽度下不在末行留下孤字「一次。」 */}
+      <p className="text-center text-sm text-balance text-muted-foreground">
         猜出两个词，不分顺序。全场都能看到你的输入，机会只有一次。
       </p>
       <div className="space-y-2">

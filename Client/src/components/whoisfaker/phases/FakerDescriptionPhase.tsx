@@ -315,8 +315,11 @@ export function FakerDescriptionPhase() {
             loading={submitting}
             disabled={!text.trim()}
             data-agent-control="faker.description.send"
+            aria-label="发送"
           >
-            {submitting ? null : <Send className="h-4 w-4" />} 发送
+            {/* 手机上只留图标（与聊天发送钮同形），把宽度让给 20 字的输入框 */}
+            {submitting ? null : <Send className="h-4 w-4" />}
+            <span className="hidden sm:inline">发送</span>
           </Button>
         </div>
       ) : !isQuestioner && me?.membership === "active" && !amAlive ? (

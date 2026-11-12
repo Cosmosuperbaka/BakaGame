@@ -27,7 +27,13 @@ function ActionRow({
     <li className="flex min-w-0 items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs">
       <span className="min-w-0 truncate font-medium">{actor}</span>
       <span className="shrink-0 text-muted-foreground">{verb}</span>
-      <span className={cn("min-w-0 truncate", muted ? "text-muted-foreground" : "font-medium")}>
+      {/* 对象是这一行的结论，与投票反馈的票型同一口径：不随行动者一起压缩，最多占半行 */}
+      <span
+        className={cn(
+          "min-w-0 max-w-1/2 shrink-0 truncate",
+          muted ? "text-muted-foreground" : "font-medium"
+        )}
+      >
         {target}
       </span>
     </li>

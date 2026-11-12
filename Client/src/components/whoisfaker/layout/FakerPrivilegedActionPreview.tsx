@@ -80,7 +80,8 @@ export function FakerPrivilegedActionPreview({ mode }: Props) {
       aria-label={mode === "vote" ? "投票预览" : "夜间行动预览"}
     >
       {mode === "vote" ? (
-        <div className="grid grid-cols-2 gap-2">
+        // 每张票数卡里有身份徽章、名字与票数三样：手机上两列只剩一个字的名字，sm 起再并成两列
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {voteTargets.map((player) => {
             const role = roleByPlayerId.get(player.id);
             return (
