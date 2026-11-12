@@ -76,18 +76,10 @@ export interface UiContext {
 export const str = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 
-export const num = (value: unknown): number | undefined =>
-  typeof value === "number" && Number.isFinite(value) ? value : undefined;
-
-export const bool = (value: unknown): boolean => value === true;
-
 export const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 export const recordList = (value: unknown): Array<Record<string, unknown>> =>
   list(value).filter(isRecord);
-
-export const text = (value: unknown, max = 200): string =>
-  typeof value === "string" ? value.slice(0, max) : "";
 
 export const control = (
   id: string,
@@ -146,9 +138,6 @@ export const playerName = (snapshot: Record<string, unknown>, id: unknown): stri
   return str(found?.name) ?? "该玩家";
 };
 
-export const playerExists = (snapshot: Record<string, unknown>, id: string): boolean =>
-  recordList(snapshot.players).some((player) => player.id === id);
-
 /** 把页面标题、提示、玩家栏、聊天栏统一挂到每个游戏屏幕上。 */
 export const assemble = (
   context: UiContext,
@@ -171,11 +160,4 @@ export const assemble = (
     ...(context.state.lastFeedback ? { feedback: context.state.lastFeedback } : {}),
     updatedAt: context.now,
   };
-};
-
-export const describeCommandResult = (value: unknown, fallback: string): string => {
-  if (!isRecord(value)) return fallback;
-  if (typeof value.message === "string") return value.message;
-  if (typeof value.sent === "boolean" && value.sent) return fallback;
-  return fallback;
 };

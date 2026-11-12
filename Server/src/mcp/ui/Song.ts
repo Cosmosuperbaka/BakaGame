@@ -184,9 +184,6 @@ const initialClip = (preview: Record<string, unknown>) => {
   return clampRange(rawStart, rawEnd, domain);
 };
 
-const searchPrefixFor = (purpose: UiSearchState["purpose"]): string =>
-  purpose === "song_submit" ? "song.submit.search" : "song.guess.search";
-
 const canStart = (context: UiContext): boolean => {
   if (!hasMusic(context)) return false;
   if (context.snapshot.solo === true) return true;
@@ -500,9 +497,6 @@ const startSearch = (
   context.state.search = search;
   return search;
 };
-
-export const songSearchPrefix = (purpose: UiSearchState["purpose"]): string =>
-  searchPrefixFor(purpose);
 
 export async function autoSearchSong(context: UiContext, controlId: string): Promise<void> {
   const prefix = controlId.endsWith(".input") ? controlId.slice(0, -".input".length) : "";

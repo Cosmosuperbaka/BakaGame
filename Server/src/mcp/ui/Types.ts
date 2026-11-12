@@ -74,7 +74,3 @@ export interface UiRunResult {
   steps: UiStepReport[];
   screen: UiScreen;
 }
-
-/** 构建屏幕时下发给客户端的控件与焦点共用同一套 ID，客户端据此精确框住控件。 */
-export const controlId = (prefix: string, suffix?: string | number): string =>
-  suffix === undefined ? prefix : `${prefix}.${suffix}`;
