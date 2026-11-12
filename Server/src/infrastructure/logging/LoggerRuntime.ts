@@ -46,6 +46,18 @@ export const createServerLogger = (env: AppEnv, otlpExporter?: OtlpExporter): Ev
         message: "本地 OTel 日志文件不可用，已停止文件出口",
         fields: [["error", String(error)]],
       }),
+    // 当日分段封顶：之后的记录只丢不写，磁盘占用有硬上限。提示一次，让丢失可见。
+    onLimit: ({ date, dropped }) =>
+      console.write({
+        createdAt: Date.now(),
+        level: "warn",
+        scope: "日志",
+        message: "本地 OTel 日志已达当日容量上限，之后的记录将被丢弃",
+        fields: [
+          ["date", date],
+          ["dropped", dropped],
+        ],
+      }),
   });
   const operationLogging: OperationLogging = env.logOperations === "all" ? "all" : "errors";
   return new EventLogger(undefined, undefined, otlpExporter, undefined, {
