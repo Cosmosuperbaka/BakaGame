@@ -483,8 +483,10 @@ export const ADMIN_GAME_DETAIL = {
   ...ADMIN_GAMES[0],
   rounds: Array.from({ length: 6 }, (_, index) => ({
     number: index + 1,
-    startedAt: new Date(ms("2027-01-01T08:00:00") + index * 300_000).toISOString(),
-    endedAt: new Date(ms("2027-01-01T08:00:00") + index * 300_000 + 95_000).toISOString(),
+    startedAt: new Date(Date.parse(ADMIN_GAMES[0].startedAt) + index * 300_000).toISOString(),
+    endedAt: new Date(
+      Date.parse(ADMIN_GAMES[0].startedAt) + index * 300_000 + 95_000
+    ).toISOString(),
     players: ADMIN_GAMES[0].players
       .slice(0, 4)
       .map((item, slot) => ({ ...item, score: slot === 3 ? -5 : 10 - slot * 3 })),
@@ -495,7 +497,7 @@ export const ADMIN_GAME_DETAIL = {
     },
   })),
   timeline: Array.from({ length: 30 }, (_, index) => ({
-    at: ms("2027-01-01T08:00:00") + index * 61_000,
+    at: Date.parse(ADMIN_GAMES[0].startedAt) + index * 61_000,
     type: ["round.start", "guess", "guess.correct", "player.join", "round.end"][index % 5],
     ...(index % 5 === 4 ? {} : { round: Math.floor(index / 5) + 1 }),
     ...(index % 5 === 1
