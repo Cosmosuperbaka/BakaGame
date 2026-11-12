@@ -42,6 +42,32 @@ class GatedRatingStore extends InMemoryCEERankedStore {
   }
 }
 
+/** 指定账号的评级读取在 `arm` 之后挂起，直到测试放行：用来卡住同一跳里的第一对。 */
+class GatedUserRatingStore extends InMemoryCEERankedStore {
+  private resolve: (() => void) | null = null;
+  private gate: Promise<void> | null = null;
+
+  constructor(private readonly gatedUserId: string) {
+    super();
+  }
+
+  arm(): void {
+    this.gate = new Promise<void>((resolve) => {
+      this.resolve = resolve;
+    });
+  }
+
+  release(): void {
+    this.resolve?.();
+    this.gate = null;
+  }
+
+  override async getRating(userId: string): Promise<CEERankedRatingRecord | null> {
+    if (userId === this.gatedUserId && this.gate) await this.gate;
+    return super.getRating(userId);
+  }
+}
+
 /** 第一次写库挂起，用来验证结算不阻塞命令 ACK。 */
 class GatedSettlementStore extends InMemoryCEERankedStore {
   private readonly waiters: Array<() => void> = [];
@@ -141,6 +167,41 @@ describe("正在开赛时的排队与取消", () => {
     // 报的是「请先打完当前这场」而不是「正在为你开赛」：说明 starting 已经清空。
     const inSeries = await appErrorOf(() => harness.send(client, "cee.ranked.queue", {}));
     expect(inSeries.code).toBe("RANKED_IN_SERIES");
+  });
+
+  test("同一跳配出两对时，第二对玩家在第一对开赛挂起期间排队报忙、取消不推 idle", async () => {
+    // 只卡住 u-甲 的评级读取：第一对（甲乙）开赛挂起，第二对（丙丁）尚未轮到。
+    const store = new GatedUserRatingStore("u-甲");
+    const harness = rankedHarness({ store });
+    harness.seedRated("u-甲", { rating: 1500, rd: 100 });
+    harness.seedRated("u-乙", { rating: 1500, rd: 100 });
+    harness.seedRated("u-丙", { rating: 2600, rd: 100 });
+    harness.seedRated("u-丁", { rating: 2600, rd: 100 });
+    const [first, second, third, fourth] = ["甲", "乙", "丙", "丁"].map((name) =>
+      harness.connect(name)
+    );
+    if (!first || !second || !third || !fourth) throw new Error("夹具连接缺失");
+    for (const client of [first, second, third, fourth])
+      await harness.send(client, "cee.ranked.queue", {});
+    store.arm();
+
+    await harness.advance(1_000);
+
+    // 配好的人在出队的同一刻就已处于开赛中：排队报忙，取消不生效也不多推 idle。
+    const busy = await appErrorOf(() => harness.send(third, "cee.ranked.queue", {}));
+    expect(busy.code).toBe("RANKED_STARTING");
+    const framesBefore = harness.states(third).length;
+    expect(await harness.send(third, "cee.ranked.cancel", {})).toEqual({});
+    expect(harness.states(third).length).toBe(framesBefore);
+
+    store.release();
+    await harness.advance(0);
+
+    // 两对都开成真人局；没有人同时留在队列里再被配出第二场。
+    for (const client of [first, second, third, fourth])
+      expect(harness.seriesView(client).opponent.isBot).toBe(false);
+    expect(harness.seriesView(third).seriesId).not.toBe(harness.seriesView(first).seriesId);
+    expect(harness.states(third).filter((state) => state.status === "queued")).toHaveLength(1);
   });
 
   test("开赛窗口里断线：这一场照常开出，重连后看得到", async () => {

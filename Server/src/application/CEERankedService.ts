@@ -624,6 +624,11 @@ export class CEERankedService {
   /** 开赛护栏：组装是异步的，这期间同一账号的 `queue` 报忙、`cancel` 无效。 */
   private async guardedStart(userIds: readonly string[], open: () => Promise<void>): Promise<void> {
     for (const userId of userIds) this.starting.add(userId);
+    await this.openClaimed(userIds, open);
+  }
+
+  /** 开赛护栏的释放半边：账号已在同一同步段里占位，这里只在自己结束时释放自己的那几位。 */
+  private async openClaimed(userIds: readonly string[], open: () => Promise<void>): Promise<void> {
     try {
       await open();
     } finally {
@@ -649,10 +654,16 @@ export class CEERankedService {
   private async tickMatch(): Promise<void> {
     const now = this.now();
     const { pairs, fallbacks } = this.queue.tick(now);
+    // 出队与占位必须在同一个同步段：后面几对要等前面的 await，这期间不能让他们处于「既不在队列也不在开赛中」。
+    for (const [first, second] of pairs) {
+      this.starting.add(first.userId);
+      this.starting.add(second.userId);
+    }
+    for (const entry of fallbacks) this.starting.add(entry.userId);
     // 一场开失败不能带走整跳：其余候选照常开赛，失败的两位回队列外等下一次点排队。
     for (const [first, second] of pairs) {
       try {
-        await this.guardedStart([first.userId, second.userId], () =>
+        await this.openClaimed([first.userId, second.userId], () =>
           this.startHumanSeries(first, second, now)
         );
       } catch (error) {
@@ -666,7 +677,7 @@ export class CEERankedService {
     }
     for (const entry of fallbacks) {
       try {
-        await this.guardedStart([entry.userId], () =>
+        await this.openClaimed([entry.userId], () =>
           this.startBotSeries(entry.userId, "auto", entry, now)
         );
       } catch (error) {
