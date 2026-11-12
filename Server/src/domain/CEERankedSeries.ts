@@ -164,10 +164,8 @@ function finishByLeaving(
   settleSeries(series, otherSeriesSeat(seat), reason, now);
 }
 
-/** 推进时间驱动的变化（离线判负、局结算、局间开局）；有变化返回 true。 */
-export function tickCEERankedSeries(series: CEERankedSeries, now: number): boolean {
-  if (series.phase === "settled") return false;
-  // 双方都已超过阈值时判先离线的一方负；同一时刻离线才按席位序。
+/** 离线满阈值要判负的席位：双方都超时时判先离线的一方，同一时刻才按席位序；没有则 null。 */
+function offlineForfeitSeat(series: CEERankedSeries, now: number): CEERankedSeatIndex | null {
   let forfeitSeat: CEERankedSeatIndex | null = null;
   let earliest = Number.POSITIVE_INFINITY;
   for (const seat of [0, 1] as const) {
@@ -179,6 +177,13 @@ export function tickCEERankedSeries(series: CEERankedSeries, now: number): boole
       forfeitSeat = seat;
     }
   }
+  return forfeitSeat;
+}
+
+/** 推进时间驱动的变化（离线判负、局结算、局间开局）；有变化返回 true。 */
+export function tickCEERankedSeries(series: CEERankedSeries, now: number): boolean {
+  if (series.phase === "settled") return false;
+  const forfeitSeat = offlineForfeitSeat(series, now);
   if (forfeitSeat !== null) {
     finishByLeaving(series, forfeitSeat, "offline", now);
     return true;
