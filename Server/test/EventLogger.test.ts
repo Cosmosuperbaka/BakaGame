@@ -68,7 +68,7 @@ test("控制台 / 文件 / OTLP / Sentry 共用脱敏且保留错误 cause 诊�
       { sinks: [sink] }
     ).error("operation failed", context);
     await exporter.flush();
-    for (const channel of [output, bodies, logs.mock.calls, extras, records]) {
+    for (const channel of [output, bodies, extras, records]) {
       const text = JSON.stringify(channel);
       for (const secret of [
         "dummy-cookie-long",
@@ -298,6 +298,53 @@ test("玩家掉线与房间正常关闭不产生告警级事件日志", async ()
   expect(records.map((record) => record.severityText)).toEqual(["INFO", "INFO"]);
 });
 
+test("LOG_LEVEL=debug 时成功操作与 info 档一样进入 OTLP，本地文件按详细度独立过滤", async () => {
+  const bodies: string[] = [];
+  exporter = new OtlpExporter({
+    endpoint: "https://collector.example.com",
+    fetcher: async (_input: string | URL | Request, options?: RequestInit) => {
+      bodies.push(requestBodyText(options));
+      return new Response("{}");
+    },
+  });
+  for (const level of ["INFO", "DEBUG"] as const) {
+    bodies.length = 0;
+    const logger = new EventLogger(
+      () => undefined,
+      () => 1_000,
+      exporter,
+      level
+    );
+    logger.logOperation({ action: "WS room.join", status: 200, durationMs: 5 });
+    await exporter.flush();
+    const logBodies = bodies.filter((body) => body.includes("实时命令完成"));
+    expect(logBodies, `level=${level}`).toHaveLength(1);
+  }
+});
+
+test("ERROR 系统日志只走异常事件一条路，不再同时写一条 Sentry log", () => {
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const errorLog = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
+  const captures = spyOn(Sentry, "captureException").mockImplementation(() => "");
+  const scoped = spyOn(Sentry, "withScope").mockImplementation(((fn: (scope: unknown) => unknown) =>
+    fn({ setTag: () => scoped, setExtras: () => scoped } as never)) as never);
+  try {
+    initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as never);
+    const error = new Error("boom");
+    new EventLogger(
+      () => undefined,
+      () => 1_000
+    ).error("失败了", { error });
+    expect(captures).toHaveBeenCalledTimes(1);
+    expect(errorLog).not.toHaveBeenCalled();
+  } finally {
+    init.mockRestore();
+    errorLog.mockRestore();
+    captures.mockRestore();
+    scoped.mockRestore();
+  }
+});
+
 test("LOG_LEVEL 过滤 debug/info，错误仍按等级落盘并保留异常栈", () => {
   const output: string[] = [];
   const { records, sink } = memorySink();
@@ -357,7 +404,7 @@ test("debug 等级下完整记录进入文件，控制台不输出，敏感字�
  * 结构化记录不再触达 `console.*`：Sentry 侧只剩显式出口这一条真相源，
  * WARN/ERROR 不会因为 console 集成被重复计数。
  */
-test("默认输出下一条 logger 记录恰好产出一条 Sentry log，且不写 console", () => {
+test("默认输出下一条 logger 记录恰好产出一条 Sentry 出口，且不写 console", () => {
   const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
   const errorLog = spyOn(Sentry.logger, "error").mockImplementation(() => undefined);
   const warnLog = spyOn(Sentry.logger, "warn").mockImplementation(() => undefined);
@@ -383,7 +430,8 @@ test("默认输出下一条 logger 记录恰好产出一条 Sentry log，且不�
 
     expect(infoLog).toHaveBeenCalledTimes(1);
     expect(warnLog).toHaveBeenCalledTimes(1);
-    expect(errorLog).toHaveBeenCalledTimes(1);
+    // 错误级只走异常事件（captureMessage/captureException）一条路，不再多写一条 log。
+    expect(errorLog).not.toHaveBeenCalled();
     expect(messages).toHaveBeenCalledTimes(1);
     expect(captures).not.toHaveBeenCalled();
 

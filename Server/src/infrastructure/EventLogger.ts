@@ -394,11 +394,11 @@ export class EventLogger {
       });
       this.enqueueOtlp(record, level);
       if (isServerSentryEnabled()) {
+        // 错误级只走异常事件一条路：再写一条 Sentry log 会让同一个错误计两次。
         if (level === "ERROR") {
           if (rawError instanceof Error) captureServerException(rawError, safeContext);
           else captureServerMessage(body, "error", safeContext);
-        }
-        captureServerLog(body, SENTRY_LEVEL[level], safeContext);
+        } else captureServerLog(body, SENTRY_LEVEL[level], safeContext);
       }
     }
   }
@@ -422,15 +422,18 @@ export class EventLogger {
   }): void {
     const { body, scope, replay } = operationBody(action, status, durationMs, this.slowOperationMs);
     const slow = durationMs >= this.slowOperationMs;
+    // 本地文件的取舍：默认只留失败与慢操作；成功操作降为 debug 档，随详细度调高才出现。
     let structuredLevel: LogLevel = level;
-    // 失败（4xx 起）是排障线索，与慢操作一样留在本地文件，即使它已按口径记为信息级。
     if (level === "INFO" && this.operationLogging === "errors" && !slow && status < 400)
       structuredLevel = "DEBUG";
 
-    if (this.isEnabled(structuredLevel)) {
+    // 本地文件与 OTLP 的过滤相互独立：记录只按真实级别构造一次，各出口各自判断是否收。
+    const toLocal = this.isEnabled(structuredLevel);
+    const toOtlp = !!this.otlpExporter?.isEnabled && level !== "DEBUG";
+    if (toLocal || toOtlp) {
       const record = createOtelLogRecord({
         createdAt,
-        level: LOWER_LEVEL[structuredLevel],
+        level: LOWER_LEVEL[level],
         body,
         attributes: operationAttributes({
           action,
@@ -442,26 +445,8 @@ export class EventLogger {
         }),
         traceId,
       });
-      this.dispatch(record);
-      if (structuredLevel !== "DEBUG") this.enqueueOtlp(record, structuredLevel);
-    } else if (this.otlpExporter?.isEnabled && level !== "DEBUG") {
-      this.enqueueOtlp(
-        createOtelLogRecord({
-          createdAt,
-          level: LOWER_LEVEL[level],
-          body,
-          attributes: operationAttributes({
-            action,
-            status,
-            durationMs,
-            identifier,
-            scope,
-            replay,
-          }),
-          traceId,
-        }),
-        level
-      );
+      if (toLocal) this.dispatch(record);
+      if (toOtlp) this.enqueueOtlp(record, level);
     }
 
     if (
