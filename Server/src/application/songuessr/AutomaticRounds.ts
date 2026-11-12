@@ -51,16 +51,13 @@ export const normalizeAutoFilters = (
   const playlist = filters.playlist
     ? {
         id: service.parsePlaylistId(filters.playlist.id),
-        name: filters.playlist.name?.trim().slice(0, 120),
+        name: filters.playlist.name?.trim(),
         songCount: filters.playlist.songCount,
       }
     : undefined;
+  // 数量与长度的上限由入站 Schema 守住，这里只做规范化与去空。
   const artists = (filters.artists ?? [])
-    .slice(0, 20)
-    .map((artist) => ({
-      id: artist.id.trim().slice(0, 64),
-      name: normalizeWord(artist.name).slice(0, 80),
-    }))
+    .map((artist) => ({ id: artist.id.trim(), name: normalizeWord(artist.name) }))
     .filter((artist) => artist.id && artist.name);
   const minPopularity = clampInt(filters.minPopularity ?? 0, 0, MAX_MIN_POPULARITY);
   return { playlist, artists, minPopularity };

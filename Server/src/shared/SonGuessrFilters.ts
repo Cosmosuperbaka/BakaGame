@@ -7,7 +7,7 @@ export const MinPopularitySchema = t.Integer({ minimum: 0, maximum: MAX_MIN_POPU
 export const SongPlaylistFilterSchema = t.Object(
   {
     id: t.String({ minLength: 1, maxLength: 64 }),
-    name: t.Optional(t.String({ maxLength: 128 })),
+    name: t.Optional(t.String({ maxLength: 120 })),
     songCount: t.Optional(t.Integer({ minimum: 0 })),
   },
   strict
@@ -15,7 +15,7 @@ export const SongPlaylistFilterSchema = t.Object(
 export const SongArtistFilterSchema = t.Object(
   {
     id: t.String({ minLength: 1, maxLength: 64 }),
-    name: t.String({ minLength: 1, maxLength: 128 }),
+    name: t.String({ minLength: 1, maxLength: 80 }),
   },
   strict
 );
@@ -23,7 +23,7 @@ export const SongArtistFilterSchema = t.Object(
 export const SongAutoFiltersSchema = t.Object(
   {
     playlist: t.Optional(SongPlaylistFilterSchema),
-    artists: t.Array(SongArtistFilterSchema),
+    artists: t.Array(SongArtistFilterSchema, { maxItems: 20 }),
     minPopularity: MinPopularitySchema,
   },
   strict

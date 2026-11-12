@@ -99,6 +99,65 @@ test("SonGuessr 热度门槛接受 0 到 1000000 的整数，越界与小数拒�
   }
 });
 
+test("SonGuessr 协议的设置与聊天范围就是服务端真正采用的范围", () => {
+  const settings = (payload: Record<string, unknown>) => ({
+    id: "range",
+    type: "song.room.updateSettings",
+    payload,
+  });
+  const accepted: Array<Record<string, unknown>> = [
+    { lyricsLineCount: 1 },
+    { lyricsLineCount: 10 },
+    { maxGuessesPerRound: 1 },
+    { maxGuessesPerRound: 10 },
+    { guessDurationSeconds: 10 },
+    { guessDurationSeconds: 180 },
+    {
+      autoFilters: {
+        artists: Array.from({ length: 20 }, (_, i) => ({ id: `a${i}`, name: "歌手" })),
+      },
+    },
+    { autoFilters: { artists: [{ id: "a", name: "名".repeat(80) }] } },
+    { autoFilters: { playlist: { id: "1", name: "名".repeat(120) } } },
+  ];
+  for (const payload of accepted) {
+    expect(() => parseSonGuessrMessage(settings(payload))).not.toThrow();
+  }
+  // 越界一律在入口拒收：不能放行后再由服务端悄悄改写成别的值。
+  const rejected: Array<Record<string, unknown>> = [
+    { lyricsLineCount: 11 },
+    { maxGuessesPerRound: 11 },
+    { guessDurationSeconds: 9 },
+    { guessDurationSeconds: 181 },
+    {
+      autoFilters: {
+        artists: Array.from({ length: 21 }, (_, i) => ({ id: `a${i}`, name: "歌手" })),
+      },
+    },
+    { autoFilters: { artists: [{ id: "a", name: "名".repeat(81) }] } },
+    { autoFilters: { playlist: { id: "1", name: "名".repeat(121) } } },
+  ];
+  for (const payload of rejected) {
+    expect(() => parseSonGuessrMessage(settings(payload))).toThrow(
+      expect.objectContaining({ code: "INVALID_MESSAGE" })
+    );
+  }
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "chat",
+      type: "song.chat.send",
+      payload: { text: "字".repeat(200) },
+    })
+  ).not.toThrow();
+  expect(() =>
+    parseSonGuessrMessage({
+      id: "chat",
+      type: "song.chat.send",
+      payload: { text: "字".repeat(201) },
+    })
+  ).toThrow(expect.objectContaining({ code: "INVALID_MESSAGE" }));
+});
+
 test("SonGuessr 协议解析听歌猜番新筛选并拒绝旧字段", () => {
   expect(
     parseSonGuessrMessage({

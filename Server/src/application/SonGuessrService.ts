@@ -1140,14 +1140,13 @@ export class SonGuessrService implements AdminRoomControl {
     if (payload.animeAutoFilters !== undefined) {
       settings.animeAutoFilters = normalizeAnimeAutoFilters(payload.animeAutoFilters);
     }
-    if (payload.lyricsLineCount !== undefined)
-      settings.lyricsLineCount = clampInt(payload.lyricsLineCount, 1, 10);
+    if (payload.lyricsLineCount !== undefined) settings.lyricsLineCount = payload.lyricsLineCount;
     if (payload.showLyrics !== undefined) settings.showLyrics = payload.showLyrics;
     if (payload.maxGuessesPerRound !== undefined) {
-      settings.maxGuessesPerRound = clampInt(payload.maxGuessesPerRound, 1, 10);
+      settings.maxGuessesPerRound = payload.maxGuessesPerRound;
     }
     if (payload.guessDurationSeconds !== undefined) {
-      settings.guessDurationSeconds = clampInt(payload.guessDurationSeconds, 10, 180);
+      settings.guessDurationSeconds = payload.guessDurationSeconds;
     }
     if (payload.showGuessTimer !== undefined) settings.showGuessTimer = payload.showGuessTimer;
     if (payload.bloodMode !== undefined) settings.bloodMode = payload.bloodMode;
@@ -1394,7 +1393,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (!this.chatLimiter.allow(connection.id, this.now())) {
       throw new AppError("RATE_LIMITED", "发言过于频繁，请稍后再试");
     }
-    const text = normalizeWord(rawText).slice(0, 200);
+    const text = normalizeWord(rawText);
     if (!text) throw new AppError("INVALID_MESSAGE", "消息不能为空");
     assertTextAllowed(text);
     const message: ChatMessage = {

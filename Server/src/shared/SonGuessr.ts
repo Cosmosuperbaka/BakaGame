@@ -624,10 +624,10 @@ export const SonGuessrPayloadSchemas = {
       allowCustomClip: t.Optional(t.Boolean()),
       autoFilters: t.Optional(SongAutoFiltersInputSchema),
       animeAutoFilters: t.Optional(AnimeAutoFiltersSchema),
-      lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+      lyricsLineCount: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
       showLyrics: t.Optional(t.Boolean()),
-      maxGuessesPerRound: t.Optional(positiveInt),
-      guessDurationSeconds: t.Optional(t.Integer({ minimum: 5 })),
+      maxGuessesPerRound: t.Optional(t.Integer({ minimum: 1, maximum: 10 })),
+      guessDurationSeconds: t.Optional(t.Integer({ minimum: 10, maximum: 180 })),
       bloodMode: t.Optional(t.Boolean()),
       showGuessTimer: t.Optional(t.Boolean()),
       allowAgents: t.Optional(t.Boolean()),
@@ -636,7 +636,7 @@ export const SonGuessrPayloadSchemas = {
   ),
   "song.room.kick": t.Object({ playerId }, strict),
   "song.room.transferHost": t.Object({ playerId }, strict),
-  "song.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 500 }) }, strict),
+  "song.chat.send": t.Object({ text: t.String({ minLength: 1, maxLength: 200 }) }, strict),
   "song.auth.qr.create": t.Object(
     { platform: t.Optional(musicPlatform), type: t.Optional(qrChannelType) },
     strict
