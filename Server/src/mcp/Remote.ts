@@ -131,7 +131,7 @@ export class RemoteMcpSessions {
       writes: [],
     };
     this.sessions.set(session.id, session);
-    this.logger.info("mcp.remote.session", { session: session.id, agent: agentName });
+    this.logger.info("mcp.remote.session", { session: refOf(session.id), agent: agentName });
     return session;
   }
 
@@ -402,7 +402,7 @@ async function runRemoteTool(
     const enriched = !ephemeral && isRecord(result) ? { ...result, session: session.id } : result;
     const stepFailed = isRecord(enriched) && enriched.ok === false;
     logger.info("mcp.remote.tool", {
-      session: session.id,
+      session: refOf(session.id),
       agent: session.agentName,
       tool: tool.name,
       ok: !stepFailed,
@@ -420,7 +420,7 @@ async function runRemoteTool(
     const messageText = error instanceof Error ? error.message : String(error);
     const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
     logger.warn("mcp.remote.tool_failed", {
-      session: session.id,
+      session: refOf(session.id),
       agent: session.agentName,
       tool: tool.name,
       code,

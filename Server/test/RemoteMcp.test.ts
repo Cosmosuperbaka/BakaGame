@@ -401,6 +401,39 @@ test("全表满额回收只动闲置的会话：正被页面接管的会话不�
   expect(sessionsRef.get(ids[1]!)).toBeUndefined();
 });
 
+test("日志里只有会话号的短摘要，不出现可用来接管会话的完整会话号", async () => {
+  const records: unknown[] = [];
+  const spy = new EventLogger(() => {}, undefined, undefined, undefined, {
+    sinks: [{ write: (record) => void records.push(record) }],
+  });
+  sessionsRef = newSessions();
+  const call = (name: string, args: Record<string, unknown>, session?: string) =>
+    handleRemoteMcp(
+      { enabled: true, sessions: sessionsRef, logger: spy },
+      new Request("http://127.0.0.1:9/api/mcp", {
+        method: "POST",
+        headers: session ? { "mcp-session-id": session } : {},
+      }),
+      { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } },
+      "198.51.100.7"
+    );
+  const first = await call("get_screen", { game: "faker" });
+  const id = first.headers["mcp-session-id"]!;
+  await call("get_screen", { game: "faker" }, id);
+  await call("get_mcp_policy", {});
+  const init = await handleRemoteMcp(
+    { enabled: true, sessions: sessionsRef, logger: spy },
+    new Request("http://127.0.0.1:9/api/mcp", { method: "POST" }),
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    "198.51.100.7"
+  );
+  const initId = init.headers["mcp-session-id"]!;
+  const output = JSON.stringify(records);
+  expect(output).toContain("mcp.remote");
+  expect(output).not.toContain(id);
+  expect(output).not.toContain(initId);
+});
+
 test("全表满额回收不动占着座位的会话", async () => {
   let clock = 1_000_000;
   const { server } = fakeFakerServer();
