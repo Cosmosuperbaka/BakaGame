@@ -42,6 +42,8 @@ export interface QQMusicProviderOptions {
   /** 等待队列的容量和最长停留时间，避免限流恢复后集中补发陈旧请求。 */
   maxQueuedRequests?: number;
   queueTimeoutMs?: number;
+  /** 已开始执行的单个上游请求的运行时限，默认取公共常量。 */
+  requestTimeoutMs?: number;
   /** 匿名请求单独限流，避免补充音源挤占已登录账号的并发位。 */
   anonymousMaxConcurrentRequests?: number;
   /** 匿名检索的等待上限；超时只影响这次补充，不阻塞另一侧音源。 */
@@ -339,8 +341,10 @@ export class QQMusicProvider implements MusicProvider {
       maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
       maxQueuedRequests: options.maxQueuedRequests,
       queueTimeoutMs: options.queueTimeoutMs,
+      requestTimeoutMs: options.requestTimeoutMs,
       queueFullMessage: "QQ音乐请求排队过多，请稍后重试",
       queueTimeoutMessage: "QQ音乐请求等待超时，请稍后重试",
+      requestTimeoutMessage: "QQ音乐请求超时，请稍后重试",
       rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
@@ -363,6 +367,8 @@ export class QQMusicProvider implements MusicProvider {
         new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
       createRateLimitError: (message, retryAfterMs) =>
         new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
+      createTimeoutError: (message, timeoutMs) =>
+        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
     });
     this.anonymousQueue = new UpstreamRequestQueue({
       now: this.now,
@@ -373,8 +379,10 @@ export class QQMusicProvider implements MusicProvider {
       maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
       maxQueuedRequests: options.maxQueuedRequests,
       queueTimeoutMs: options.queueTimeoutMs,
+      requestTimeoutMs: options.requestTimeoutMs,
       queueFullMessage: "QQ音乐匿名请求排队过多，请稍后重试",
       queueTimeoutMessage: "QQ音乐匿名请求等待超时，请稍后重试",
+      requestTimeoutMessage: "QQ音乐匿名请求超时，请稍后重试",
       rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
@@ -397,6 +405,8 @@ export class QQMusicProvider implements MusicProvider {
         new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
       createRateLimitError: (message, retryAfterMs) =>
         new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
+      createTimeoutError: (message, timeoutMs) =>
+        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
     });
     this.musicCache = new MusicCache({
       maxEntries: options.cacheMaxEntries ?? CACHE_MAX_ENTRIES,

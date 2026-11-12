@@ -105,3 +105,10 @@ export const BOT_DESCRIPTION_TEMPLATES = [
  * 与 WS 侧 256KB 单帧上限同一口径，超限由运行时直接回 413，不进业务解析。
  */
 export const HTTP_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+
+/**
+ * 音乐上游单次请求的运行时限（已出队、正在执行的任务）。
+ * 排队等待另有独立计时；运行期没有上界时，一个永不落定的上游请求会永久占住并发槽，
+ * 攒满槽位后整条队列失效。取值要大于任何合法单次请求的耗时，又不能长到让队列卡死太久。
+ */
+export const MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS = 30_000;

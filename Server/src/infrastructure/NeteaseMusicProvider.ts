@@ -157,6 +157,8 @@ export interface NeteaseMusicProviderOptions {
   /** 等待队列的容量和最长停留时间，避免限流恢复后集中补发陈旧请求。 */
   maxQueuedRequests?: number;
   queueTimeoutMs?: number;
+  /** 已开始执行的单个上游请求的运行时限，默认取公共常量。 */
+  requestTimeoutMs?: number;
   cacheMaxEntries?: number;
   cacheMaxBytes?: number;
   /** 是否开启全局音乐解灰，默认开启。针对无版权、VIP试听或无可用地址的歌曲自动尝试匹配跨平台可用音源。传函数则每次请求现读（运行期设置走这条）。 */
@@ -595,8 +597,10 @@ export class NeteaseMusicProvider implements MusicProvider {
       maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
       maxQueuedRequests: options.maxQueuedRequests,
       queueTimeoutMs: options.queueTimeoutMs,
+      requestTimeoutMs: options.requestTimeoutMs,
       queueFullMessage: "网易云请求排队过多，请稍后重试",
       queueTimeoutMessage: "网易云请求等待超时，请稍后重试",
+      requestTimeoutMessage: "网易云请求超时，请稍后重试",
       rateLimitFallbackMessage: "操作频繁，请稍候再试",
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => responseMessage(responseBody(error), fallback),
@@ -623,6 +627,8 @@ export class NeteaseMusicProvider implements MusicProvider {
         new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
       createRateLimitError: (message, retryAfterMs) =>
         new AppError("MUSIC_API_RATE_LIMITED", message, { upstreamCode: 405, retryAfterMs }),
+      createTimeoutError: (message, timeoutMs) =>
+        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
     });
     this.musicCache = new MusicCache({
       maxEntries: options.cacheMaxEntries,

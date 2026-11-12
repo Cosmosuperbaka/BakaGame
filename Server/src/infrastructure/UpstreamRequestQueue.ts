@@ -1,4 +1,5 @@
 import PQueue from "p-queue";
+import { MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS } from "../config/Constants";
 import type { AppError } from "../domain/Errors";
 
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 3;
@@ -50,10 +51,14 @@ interface UpstreamRequestQueueOptions {
   /** 等待队列的容量和最长停留时间，避免限流恢复后集中补发陈旧请求。 */
   maxQueuedRequests?: number;
   queueTimeoutMs?: number;
+  /** 已开始执行的单个请求的运行时限；到时释放并发槽并以超时错误结算调用方。 */
+  requestTimeoutMs?: number;
   /** 本地队列拥塞（排队过多）时的用户可见文案。 */
   queueFullMessage: string;
   /** 本地队列拥塞（等待超时）时的用户可见文案。 */
   queueTimeoutMessage: string;
+  /** 已开始的请求超过运行时限时的用户可见文案。 */
+  requestTimeoutMessage: string;
   /** 限流文案的初始值；后续被 `readRateLimitMessage` 从响应里读出的值覆盖。 */
   rateLimitFallbackMessage: string;
   /** 判定一次结果 / 错误是否上游限流；平台各自的响应形态差异由调用方收口。 */
@@ -66,6 +71,8 @@ interface UpstreamRequestQueueOptions {
   createBusyError: (message: string, retryAfterMs: number) => AppError;
   /** 构造上游限流错误（含冷却期内的快速拒绝）。 */
   createRateLimitError: (message: string, retryAfterMs: number) => AppError;
+  /** 构造运行时限错误：请求已发出却迟迟没有结果，与本地拥塞、上游限流都不是一回事。 */
+  createTimeoutError: (message: string, timeoutMs: number) => AppError;
 }
 
 /** 一个出口作用域当前这一轮限流退避。 */
@@ -113,10 +120,12 @@ export class UpstreamRequestQueue {
   private readonly maxRateLimitCooldownMs: number;
   private readonly maxQueuedRequests: number;
   private readonly queueTimeoutMs: number;
+  private readonly requestTimeoutMs: number;
   private readonly cooldowns = new Map<string, CooldownState>();
   private lastRateLimitMessage: string;
   private readonly queueFullMessage: string;
   private readonly queueTimeoutMessage: string;
+  private readonly requestTimeoutMessage: string;
   private readonly now: () => number;
   private readonly random: { nextFloat?: () => number };
   private readonly isRateLimitError: (error: unknown) => boolean;
@@ -124,6 +133,7 @@ export class UpstreamRequestQueue {
   private readonly onRateLimitCooldown?: (info: RateLimitCooldownInfo) => void;
   private readonly createBusyError: (message: string, retryAfterMs: number) => AppError;
   private readonly createRateLimitError: (message: string, retryAfterMs: number) => AppError;
+  private readonly createTimeoutError: (message: string, timeoutMs: number) => AppError;
 
   constructor(options: UpstreamRequestQueueOptions) {
     this.now = options.now;
@@ -146,14 +156,20 @@ export class UpstreamRequestQueue {
     );
     this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
     this.queueTimeoutMs = Math.max(1, options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS);
+    this.requestTimeoutMs = Math.max(
+      1,
+      options.requestTimeoutMs ?? MUSIC_UPSTREAM_REQUEST_TIMEOUT_MS
+    );
     this.lastRateLimitMessage = options.rateLimitFallbackMessage;
     this.queueFullMessage = options.queueFullMessage;
     this.queueTimeoutMessage = options.queueTimeoutMessage;
+    this.requestTimeoutMessage = options.requestTimeoutMessage;
     this.isRateLimitError = options.isRateLimitError;
     this.readRateLimitMessage = options.readRateLimitMessage;
     this.onRateLimitCooldown = options.onRateLimitCooldown;
     this.createBusyError = options.createBusyError;
     this.createRateLimitError = options.createRateLimitError;
+    this.createTimeoutError = options.createTimeoutError;
     this.queue = new PQueue({
       concurrency: this.maxConcurrentRequests,
       ...(this.minRequestIntervalMs > 0
@@ -236,22 +252,61 @@ export class UpstreamRequestQueue {
           return;
         }
 
-        try {
-          const result = await pending.task();
-          if (this.isRateLimitError(result)) {
-            this.enterRateLimitCooldown(result, pending.scope);
-          }
-          pending.resolve(result);
-        } catch (error) {
-          if (this.isRateLimitError(error)) {
-            this.enterRateLimitCooldown(error, pending.scope);
-          }
-          pending.reject(error);
+        const outcome = await this.runWithinTimeLimit(pending.task);
+        if (outcome.kind === "timeout") {
+          // 槽位随本函数返回释放；迟到的结果由 runWithinTimeLimit 吞掉，
+          // 不再结算、不再触发退避，避免对已经放弃的请求重复记账。
+          pending.reject(
+            this.createTimeoutError(this.requestTimeoutMessage, this.requestTimeoutMs)
+          );
+          return;
         }
+        if (outcome.kind === "value") {
+          if (this.isRateLimitError(outcome.value)) {
+            this.enterRateLimitCooldown(outcome.value, pending.scope);
+          }
+          pending.resolve(outcome.value);
+          return;
+        }
+        if (this.isRateLimitError(outcome.error)) {
+          this.enterRateLimitCooldown(outcome.error, pending.scope);
+        }
+        pending.reject(outcome.error);
       })
       .catch(() => {
         /* 任务异常已在内部结算，p-queue 的返回 Promise 不再需要结果 */
       });
+  }
+
+  /**
+   * 给已开始的任务加运行时限。
+   *
+   * 解灰音源等上游存在「请求被丢弃、Promise 永不落定」的情况：只靠任务自己落定来释放并发槽，
+   * 攒满槽位后整条队列永久失效。到时返回 `timeout`，由调用方释放槽位并结算超时错误；
+   * 原任务仍可能稍后落定，其结果与异常都在这里吞掉（不吞会变成 unhandledRejection，
+   * Bun 会直接终止进程）。
+   */
+  private async runWithinTimeLimit(
+    task: () => Promise<unknown>
+  ): Promise<
+    { kind: "value"; value: unknown } | { kind: "error"; error: unknown } | { kind: "timeout" }
+  > {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<{ kind: "timeout" }>((resolve) => {
+      timer = setTimeout(() => resolve({ kind: "timeout" }), this.requestTimeoutMs);
+    });
+    const settled = (async () => {
+      try {
+        return { kind: "value" as const, value: await task() };
+      } catch (error) {
+        return { kind: "error" as const, error };
+      }
+    })();
+    try {
+      return await Promise.race([settled, timedOut]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
