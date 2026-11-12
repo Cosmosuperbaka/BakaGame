@@ -513,7 +513,7 @@ describe("CEERankedResultCard", () => {
       <CEERankedResultCard {...props} series={rankedSeries("lost")} />
     );
     expect(screen.getByRole("heading", { name: "惜败" })).toBeInTheDocument();
-    expect(screen.getByText("-13")).toBeInTheDocument();
+    expect(screen.getByText("−13")).toBeInTheDocument();
     unmount();
 
     withProviders(<CEERankedResultCard {...props} series={rankedSeries("drawn")} />);

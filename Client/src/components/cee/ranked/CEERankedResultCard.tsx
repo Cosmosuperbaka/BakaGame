@@ -167,7 +167,8 @@ function RatingBlock({
         className="font-serif text-4xl font-semibold tabular-nums"
       />
       <Badge variant={delta > 0 ? "matched" : delta < 0 ? "muted" : "subtle"} className="font-mono">
-        {delta > 0 ? `+${delta}` : delta === 0 ? "±0" : delta}
+        {/* 负号用数学减号，与战绩列表的分差同一写法 */}
+        {delta > 0 ? `+${delta}` : delta === 0 ? "±0" : `−${Math.abs(delta)}`}
       </Badge>
     </div>
   );
