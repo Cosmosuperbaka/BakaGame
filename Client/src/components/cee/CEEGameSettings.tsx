@@ -473,7 +473,7 @@ export function CEEGameSettings({
                         animate="animate"
                         exit="exit"
                         layout="position"
-                        className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground"
+                        className="inline-flex max-w-full items-center gap-1 rounded-md border bg-secondary py-0.5 pr-0.5 pl-2 text-xs text-secondary-foreground"
                       >
                         <Hint label={subjects.nameOf(id)}>
                           <span className="min-w-0 truncate">{subjects.nameOf(id)}</span>
@@ -481,7 +481,7 @@ export function CEEGameSettings({
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
+                          className="h-5 w-5 shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
                           aria-label={`移除作品 ${subjects.nameOf(id)}`}
                           onClick={() =>
                             change(
