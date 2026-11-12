@@ -717,6 +717,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         this.rooms.delete(room.id);
         throw error;
       }
+      // 算摘要期间连接可能已断开：此时再绑定会留下没有任何连接会触发离线的幽灵席位。
+      if (!this.connectionRegistry.findConnection(connection.id)) {
+        this.rooms.delete(room.id);
+        throw new AppError("CONNECTION_CLOSED", "连接已断开");
+      }
     }
 
     const previousRoomUpdate = this.attachConnection(room, host, connection);
@@ -763,6 +768,9 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room)
       throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
+    // 同理连接也可能在比对期间断开，已不在册就不能再占座位。
+    if (!this.connectionRegistry.findConnection(connection.id))
+      throw new AppError("CONNECTION_CLOSED", "连接已断开");
     // 同名重入不按「自己让给自己」放行：掉线席位默认保留在名册里等凭票重连，
     // 例外放行会让名册里同时留下两个同名玩家。要走接管就用 room.reconnect 的会话票据。
     assertTextAllowed(message.payload.userName);

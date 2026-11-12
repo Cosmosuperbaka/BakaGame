@@ -542,4 +542,94 @@ describe("大厅与房间", () => {
     expect(room.settings.name).toBe("2123-房间");
     expect(room.passwordHash).toBeUndefined();
   });
+
+  test("私密房建房在慢哈希期间连接已断开时，房间被撤销而不留幽灵座位", async () => {
+    let releaseHash: () => void = () => {};
+    const hashGate = new Promise<void>((resolve) => {
+      releaseHash = resolve;
+    });
+    const service = new WhoIsFakerService({
+      eventLogger: new EventLogger(),
+      passwordHasher: {
+        hash: async (password) => {
+          await hashGate;
+          return `digest:${password}`;
+        },
+        verify: async (password, digest) => {
+          await hashGate;
+          return digest === `digest:${password}`;
+        },
+      },
+    });
+
+    // 建房：哈希期间连接断开，房间必须被撤销。
+    const creator = createConnection(service, "2131-host");
+    const creating = execute(service, creator, {
+      id: "create-private",
+      type: "room.create",
+      payload: {
+        roomId: "2131",
+        name: "私房",
+        visibility: "private",
+        password: "secret",
+        allowSpectators: true,
+        userName: "房主",
+      },
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string }
+    );
+    await service.unregisterConnection(creator.record.id);
+    releaseHash();
+    expect(await creating).toMatchObject({ code: "CONNECTION_CLOSED" });
+    expect(service.rooms.has("2131")).toBe(false);
+  });
+
+  test("入私密房比对口令期间连接断开，座位不会被标成在线", async () => {
+    let gate: Promise<void> = Promise.resolve();
+    let releaseVerify: () => void = () => {};
+    const service = new WhoIsFakerService({
+      eventLogger: new EventLogger(),
+      passwordHasher: {
+        hash: async (password) => `digest:${password}`,
+        verify: async (password, digest) => {
+          await gate;
+          return digest === `digest:${password}`;
+        },
+      },
+    });
+    const host = createConnection(service, "2132-host");
+    await execute(service, host, {
+      id: "create-private",
+      type: "room.create",
+      payload: {
+        roomId: "2132",
+        name: "私房",
+        visibility: "private",
+        password: "secret",
+        allowSpectators: true,
+        userName: "房主",
+      },
+    });
+
+    gate = new Promise<void>((resolve) => {
+      releaseVerify = resolve;
+    });
+    const guest = createConnection(service, "2132-guest");
+    const joining = execute(service, guest, {
+      id: "join-private",
+      type: "room.join",
+      roomId: "2132",
+      payload: { userName: "访客", password: "secret" },
+    }).then(
+      () => undefined,
+      (error: unknown) => error as { code?: string }
+    );
+    await service.unregisterConnection(guest.record.id);
+    releaseVerify();
+
+    expect(await joining).toMatchObject({ code: "CONNECTION_CLOSED" });
+    const players = Object.values(service.rooms.get("2132")!.players);
+    expect(players).toHaveLength(1);
+  });
 });
