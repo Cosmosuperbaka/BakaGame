@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
@@ -55,6 +56,13 @@ interface JsonRpcRequest {
   params?: unknown;
 }
 
+/**
+ * 会话号既是 Mcp-Session-Id 也是座位与页面租约的承载凭证，日志读者拿到它就能接管 Agent。
+ * 日志里只留不可逆的短摘要，足够把同一会话的几条记录串起来。
+ */
+const refOf = (value: string): string =>
+  createHash("sha256").update(value).digest("hex").slice(0, 8);
+
 const sanitizeName = (value: unknown): string => {
   if (typeof value !== "string") return "BakaAgent";
   const trimmed = value.trim().slice(0, 24);
@@ -90,9 +98,15 @@ export class RemoteMcpSessions {
   /**
    * 新建会话。全表或本来源已满时拒绝（返回 undefined），不挤掉正在用的会话：
    * 建会话不需要任何凭据，按全局最旧淘汰等于让匿名调用方把别人的 Agent 连同座位一起踢下线；
-   * 同来源内也一样——共享出口背后的另一个用户同样是「别人」。只回收本来源里已闲置的旧会话。
+   * 同来源内也一样——共享出口背后的另一个用户同样是「别人」。只回收闲置够久、
+   * 既无座位也无页面租约的旧会话：本来源的优先，全表满时再回收任何来源的，
+   * 否则匿名方用少数来源占满全表后，其余人要等占位会话自然过期才能进来。
    */
-  create(agentName: string, clientKey: string): RemoteSession | undefined {
+  create(
+    agentName: string,
+    clientKey: string,
+    pages?: Pick<PageControlPort, "isControlling">
+  ): RemoteSession | undefined {
     this.prune();
     const own = [...this.sessions.values()]
       .filter((session) => session.clientKey === clientKey)
@@ -102,7 +116,7 @@ export class RemoteMcpSessions {
       if (this.now() - oldest.lastUsedAt < RECYCLE_IDLE_MS) return undefined;
       this.close(oldest.id);
     }
-    if (this.sessions.size >= MAX_SESSIONS) return undefined;
+    if (this.sessions.size >= MAX_SESSIONS && !this.recycleOneIdle(pages)) return undefined;
     const session: RemoteSession = {
       id: crypto.randomUUID(),
       client: new AgentGameClient({
@@ -119,6 +133,20 @@ export class RemoteMcpSessions {
     this.sessions.set(session.id, session);
     this.logger.info("mcp.remote.session", { session: session.id, agent: agentName });
     return session;
+  }
+
+  /** 全表满时回收一个最旧的可回收会话（闲置够久、无座位、无页面租约）；没有则返回 false。 */
+  private recycleOneIdle(pages?: Pick<PageControlPort, "isControlling">): boolean {
+    const now = this.now();
+    let oldest: RemoteSession | undefined;
+    for (const session of this.sessions.values()) {
+      if (now - session.lastUsedAt < RECYCLE_IDLE_MS) continue;
+      if (session.client.holdsSeat() || pages?.isControlling(session.id)) continue;
+      if (!oldest || session.lastUsedAt < oldest.lastUsedAt) oldest = session;
+    }
+    if (!oldest) return false;
+    this.close(oldest.id);
+    return true;
   }
 
   /** 会话结束的回调：被它接管的标签页要立刻解锁，不能等租约到期。 */
@@ -234,7 +262,7 @@ export async function handleRemoteMcp(
   switch (message.method) {
     case "initialize": {
       const clientInfo = isRecord(params.clientInfo) ? params.clientInfo : {};
-      const session = sessions.create(sanitizeName(clientInfo.name), clientKey);
+      const session = sessions.create(sanitizeName(clientInfo.name), clientKey, options.pages);
       if (!session) return { status: 503, headers, payload: rpcError(id, -32000, SESSIONS_FULL) };
       headers["mcp-session-id"] = session.id;
       return {
@@ -305,6 +333,7 @@ interface ToolCallContext {
 
 const resolveToolSession = (
   sessions: RemoteMcpSessions,
+  pages: PageControlPort | undefined,
   toolName: string,
   context: ToolCallContext,
   args: Record<string, unknown>
@@ -313,7 +342,7 @@ const resolveToolSession = (
   const sessionId = context.headerSessionId || argSession;
   const existing = sessionId ? sessions.get(sessionId) : undefined;
   if (existing) return { session: existing, ephemeral: false };
-  const session = sessions.create(sanitizeName(args.agentName), context.clientKey);
+  const session = sessions.create(sanitizeName(args.agentName), context.clientKey, pages);
   if (!session) return undefined;
   if (!context.headerSessionId) context.headers["mcp-session-id"] = session.id;
   return { session, ephemeral: EPHEMERAL_TOOLS.has(toolName) };
@@ -335,7 +364,7 @@ async function handleRemoteToolCall(
     };
   }
 
-  const resolved = resolveToolSession(sessions, tool.name, context, args);
+  const resolved = resolveToolSession(sessions, options.pages, tool.name, context, args);
   if (!resolved) {
     return {
       status: 200,

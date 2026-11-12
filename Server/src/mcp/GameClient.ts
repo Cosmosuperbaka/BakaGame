@@ -202,6 +202,11 @@ export class AgentGameClient {
     return this.siteUrl;
   }
 
+  /** 是否在任一游戏里占着座位：占着座位的会话不能被当作闲置占位回收。 */
+  holdsSeat(): boolean {
+    return GAME_IDS.some((game) => this.currentRoom(game) !== undefined || this.seats.has(game));
+  }
+
   currentRoom(game: GameId): string | undefined {
     return this.sessions.get(game)?.roomId;
   }

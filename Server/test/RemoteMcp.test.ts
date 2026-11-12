@@ -350,3 +350,83 @@ test("请求 Host 指向别处时，服务端仍只连自己的回环地址，�
   expect(attacker.seen.paths).toEqual([]);
   expect(own.seen.paths).toContain("/api/ws");
 });
+
+test("四个来源各占满自己的额度后，别的来源在占位会话闲置够久时仍能建会话", async () => {
+  let clock = 1_000_000;
+  sessionsRef = newSessions(undefined, () => clock);
+  for (let source = 0; source < 4; source += 1)
+    for (let index = 0; index < 64; index += 1)
+      expect((await initialize(`198.51.100.${source}`)).status).toBe(200);
+  // 刚占满时不挤任何人：占位会话可能正有人在用。
+  expect((await initialize("192.0.2.50")).status).toBe(503);
+  // 无座位、无页面租约、闲置够久：匿名占位不能把全表锁死。
+  clock += 3 * 60_000;
+  const admitted = await initialize("192.0.2.50");
+  expect(admitted.status).toBe(200);
+  expect(admitted.headers["mcp-session-id"]).toBeTruthy();
+});
+
+test("全表满额回收只动闲置的会话：正被页面接管的会话不会被淘汰", async () => {
+  let clock = 1_000_000;
+  sessionsRef = newSessions(undefined, () => clock);
+  const controlling = new Set<string>();
+  const pages = {
+    isControlling: (id: string) => controlling.has(id),
+    claim: () => ({ pageId: "p", agentName: "a" }),
+    dispatch: async () => ({ ok: true }),
+    closeByController: () => false,
+  } as never;
+  const ids: string[] = [];
+  for (let source = 0; source < 4; source += 1)
+    for (let index = 0; index < 64; index += 1) {
+      const result = await handleRemoteMcp(
+        { enabled: true, sessions: sessionsRef, logger, pages },
+        new Request("http://127.0.0.1:9/api/mcp", { method: "POST" }),
+        { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+        `198.51.100.${source}`
+      );
+      ids.push(result.headers["mcp-session-id"]!);
+    }
+  // 最旧的一条正被接管：回收要跳过它，改动下一条最旧的闲置会话。
+  controlling.add(ids[0]!);
+  clock += 3 * 60_000;
+  const admitted = await handleRemoteMcp(
+    { enabled: true, sessions: sessionsRef, logger, pages },
+    new Request("http://127.0.0.1:9/api/mcp", { method: "POST" }),
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: {} },
+    "192.0.2.50"
+  );
+  expect(admitted.status).toBe(200);
+  expect(sessionsRef.get(ids[0]!)).toBeDefined();
+  expect(sessionsRef.get(ids[1]!)).toBeUndefined();
+});
+
+test("全表满额回收不动占着座位的会话", async () => {
+  let clock = 1_000_000;
+  const { server } = fakeFakerServer();
+  sessionsRef = newSessions(`http://127.0.0.1:${server.port}`, () => clock);
+  const url = `http://127.0.0.1:${server.port}/api/mcp`;
+  const seated = await rpc(
+    url,
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "create_room",
+        arguments: { game: "faker", roomId: "1234", name: "x", allowAgents: true },
+      },
+    },
+    undefined,
+    "203.0.113.1"
+  );
+  const seatedId = seated.headers["mcp-session-id"]!;
+  const others: string[] = [];
+  for (let source = 0; source < 4; source += 1)
+    for (let index = 0; index < (source === 3 ? 63 : 64); index += 1)
+      others.push((await initialize(`198.51.100.${source}`)).headers["mcp-session-id"]!);
+  clock += 3 * 60_000;
+  expect((await initialize("192.0.2.50")).status).toBe(200);
+  expect(sessionsRef.get(seatedId)).toBeDefined();
+  expect(others.filter((id) => sessionsRef.get(id)).length).toBe(254);
+});
