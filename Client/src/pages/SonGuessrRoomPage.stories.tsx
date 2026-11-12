@@ -106,15 +106,25 @@ export const PasswordDialog: Story = {
 
 // ==================== 等待阶段 ====================
 
+/** 等待页的开局按钮在设置组之下，桌面视口也看不到：滚到按钮露出，故事所说的状态才进得了截图。 */
+async function revealStartButton(canvasElement: HTMLElement, name: string) {
+  const button = await within(canvasElement).findByRole("button", { name });
+  button.scrollIntoView({ block: "end" });
+}
+
 export const WaitingHostLoggedOut: Story = {
   name: "等待阶段 · 房主 · 未登录网易云",
   beforeEach: () =>
     presetSongRoom(songSnapshot({ musicAccountReady: false, players: allReady() }), asHost),
+  // 两条故事的差别只在页底的开局按钮：不滚到它，截图与「可以开始」逐像素相同。
+  play: async ({ canvasElement }) =>
+    revealStartButton(canvasElement, "请先登录网易云或 QQ 音乐账号"),
 };
 
 export const WaitingHostReady: Story = {
   name: "等待阶段 · 房主 · 可以开始",
   beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), asHost),
+  play: async ({ canvasElement }) => revealStartButton(canvasElement, "开始游戏"),
 };
 
 export const WaitingHostNotReady: Story = {

@@ -48,11 +48,15 @@ export const Muted: Story = { name: "静音", args: { volume: 0 } };
 
 export const Max: Story = { name: "最大音量", args: { volume: 1 } };
 
-/** 悬停时轨道变粗、滑块显出；截图停在悬停态，便于对照细轨与粗轨。 */
-export const Hovered: Story = {
-  name: "悬停 · 轨道变粗",
+/**
+ * 键盘聚焦时轨道变粗、滑块显出（与悬停同一组样式，`group-focus-within`）。
+ * 合成的 hover 事件触发不了 CSS `:hover`，原先的「悬停」故事截出来与默认态一模一样；
+ * 鼠标悬停由交互实拍覆盖，这里用聚焦把粗轨与拇指稳定地留在截图里。
+ */
+export const Focused: Story = {
+  name: "键盘聚焦 · 轨道变粗",
   play: async ({ canvasElement }) => {
-    await userEvent.hover(within(canvasElement).getByRole("slider", { name: "播放音量" }));
+    within(canvasElement).getByRole("slider", { name: "播放音量" }).focus();
   },
 };
 

@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { SonGuessrMusicPoolView } from "@bakagame/shared";
+import { STORY_EPOCH } from "@/stories/fixtures/Common";
 import { userEvent, within } from "storybook/test";
 import { clearStoredSongMusicSession } from "@/lib/SonGuessrMusicSession";
 import { dropFocus } from "@/stories/PlayHelpers";
@@ -6,6 +8,7 @@ import {
   pending,
   seedMusicSession,
   SONG_ACCOUNTS,
+  SONG_PEOPLE,
   SONG_QR,
   songSnapshot,
   stubSongCommand,
@@ -54,10 +57,68 @@ export const RoomConnected: Story = {
   beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
 };
 
-export const SoloConnected: Story = {
-  name: "单人模式 · 已登录",
-  args: { snapshot: songSnapshot({ solo: true }) },
-  beforeEach: () => seedMusicSession(SONG_ACCOUNTS.vip),
+// 原「单人模式 · 已登录」与「已登录 · 收起」逐像素相同：组件没有单人专属分支，那条故事不呈现任何新状态，
+// 换成账号池（B4）带来的几种真实状态——共享开关、开局后锁定、被服务端暂停后重新登录、QQ 扫码方式。
+const poolMe = songSnapshot().players.find((player) => player.id === SONG_PEOPLE.me.id);
+const myPoolEntry = (overrides: Partial<SonGuessrMusicPoolView> = {}): SonGuessrMusicPoolView => ({
+  playerId: SONG_PEOPLE.me.id,
+  playerName: SONG_PEOPLE.me.name,
+  platform: "netease",
+  account: { ...SONG_ACCOUNTS.vip, platform: "netease" },
+  enabled: true,
+  inFlight: 0,
+  recentOk: 4,
+  recentTotal: 4,
+  ...overrides,
+});
+const expandUntilLogout = async (canvasElement: HTMLElement) => {
+  const canvas = await expand(canvasElement);
+  await canvas.findByRole("button", { name: "退出登录" });
+  dropFocus();
+};
+
+export const PoolSharing: Story = {
+  name: "账号池 · 共享开关",
+  args: { snapshot: songSnapshot({ musicPool: [myPoolEntry()] }), me: poolMe },
+  play: async ({ canvasElement }) => expandUntilLogout(canvasElement),
+};
+
+export const PoolLocked: Story = {
+  name: "账号池 · 开局后锁定共享",
+  args: { snapshot: songSnapshot({ phase: "playing", musicPool: [myPoolEntry()] }), me: poolMe },
+  play: async ({ canvasElement }) => expandUntilLogout(canvasElement),
+};
+
+export const PoolPaused: Story = {
+  name: "账号池 · 凭据失效需重新登录",
+  args: {
+    snapshot: songSnapshot({
+      musicPool: [
+        myPoolEntry({
+          enabled: false,
+          cooldownUntil: STORY_EPOCH + 86_400_000,
+          lastFailureReason: "网易云登录状态已失效",
+        }),
+      ],
+    }),
+    me: poolMe,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = await expand(canvasElement);
+    await canvas.findByRole("button", { name: "重新登录" });
+    dropFocus();
+  },
+};
+
+export const QqScanTypes: Story = {
+  name: "扫码登录 · QQ 音乐选择扫码方式",
+  beforeEach: () => stubSongCommand(qrWaiting),
+  play: async ({ canvasElement }) => {
+    const canvas = await expand(canvasElement);
+    await userEvent.click(canvas.getByRole("radio", { name: /QQ音乐/ }));
+    await canvas.findByAltText("QQ音乐登录二维码");
+    dropFocus();
+  },
 };
 
 export const VipExpanded: Story = {
