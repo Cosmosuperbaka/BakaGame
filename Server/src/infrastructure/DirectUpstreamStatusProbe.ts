@@ -24,7 +24,7 @@ export interface DirectUpstreamStatusProbeOptions {
 
 /**
  * 四个上游接口的缺省探测目标：都是本项目实际依赖的公网接口地址（代码常量，非运维注入），
- * 路径取最轻的可达性探针。3xx/4xx 都说明对端在应答，读作 operational。
+ * 路径取最轻的可达性探针。3xx 与除 403/429 以外的 4xx 都说明对端在应答，读作 operational。
  */
 export const defaultUpstreamTargets = (
   bangumiApiUrl: string
@@ -47,7 +47,7 @@ const DEFAULT_TIMEOUT_MS = 4_000;
  *
  * 目标全部来自代码常量与运维配置（非第三方输入），且 `redirect: "manual"` 永不跟随跳转，
  * 因此不需要 `fetchWithGuardedRedirects` 的逐跳护栏。超时与网络错误一律 degraded：
- * 探不到就是不可达证据，与「未接入监测」的 unknown 分开。
+ * 探不到就是不可达证据，与「未接入监测」的 unknown 分开；被对端 403/429 拒绝则没有结论。
  */
 export class DirectUpstreamStatusProbe implements ExternalStatusProbe {
   private readonly targets: Partial<Record<UpstreamStatusComponentId, DirectUpstreamTarget>>;
@@ -103,7 +103,11 @@ export class DirectUpstreamStatusProbe implements ExternalStatusProbe {
       // 计时到响应头为止；正文立即释放，探测不消费 body。
       const latencyMs = Math.round(performance.now() - startedAt);
       await response.body?.cancel().catch(() => {});
-      // 拿到任何 HTTP 响应且状态码 < 500 都说明对端在应答；5xx 才是服务端故障。
+      // 拿到 HTTP 响应且状态码 < 500 说明对端在应答；5xx 才是服务端故障。
+      // 403 与 429 例外：那是对端在封禁或限流**我们**，应答本身不能证明服务可用，
+      // 记成正常会让「出口 IP 被封」的状态页仍一片绿，读作没有结论才诚实。
+      if (response.status === 403 || response.status === 429)
+        return { level: "unknown", latencyMs: null };
       const level = response.status < 500 ? "operational" : "degraded";
       return { level, latencyMs: level === "operational" ? latencyMs : null };
     } catch {

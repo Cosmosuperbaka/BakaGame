@@ -37,8 +37,9 @@ export class MockExternalStatusProbe implements ExternalStatusProbe {
 /**
  * 组合两个探针：主探针定等级，副探针只补缺失的读数与延迟。
  *
- * Better Stack 的 monitor 列表不带响应耗时字段，延迟只能靠直连探测补上；
- * 等级仍以运维显式配置的外部监测为准。两边并行读，任一抛错按 null 处理。
+ * Better Stack 的 monitor 列表带平均响应耗时，但它是监测方的统计口径而且可能缺失；
+ * 外部监测没给出延迟时由直连探测补上。等级仍以运维显式配置的外部监测为准。
+ * 两边并行读，任一抛错按 null 处理。
  */
 export const combineStatusProbes = (
   primary: ExternalStatusProbe,

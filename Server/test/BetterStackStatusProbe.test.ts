@@ -79,16 +79,28 @@ describe("Better Stack 外部监测探针", () => {
     });
   });
 
-  test("上游异常时回未知，且失败结果不缓存", async () => {
+  test("上游异常时回未知，失败结果只短暂缓存：期内不重打，期满恢复重试", async () => {
     let calls = 0;
+    let clock = 1_000;
     const fetcher = (async () => {
       calls += 1;
       if (calls === 1) return new Response("{}", { status: 503 });
       return json([monitor("up", false, 100, "111")]);
     }) as unknown as typeof fetch;
-    const probe = new BetterStackStatusProbe({ apiKey: fixtureToken, monitors, fetcher });
+    const probe = new BetterStackStatusProbe({
+      apiKey: fixtureToken,
+      monitors,
+      fetcher,
+      now: () => clock,
+    });
 
     expect(await probe.read()).toBeNull();
+    // 故障期间每次状态快照都打一次上游只会放大请求：短暂缓存失败。
+    clock += 5_000;
+    expect(await probe.read()).toBeNull();
+    expect(calls).toBe(1);
+    // 缓存期满后立刻恢复重试，不会把一次抖动固化成长时间未知。
+    clock += 6_000;
     expect(await probe.read()).toEqual({ bangumi: { level: "operational", latencyMs: 100 } });
     expect(calls).toBe(2);
   });

@@ -10,6 +10,11 @@ const DEFAULT_BASE_URL = "https://uptime.betterstack.com/api/v2";
 const PROBE_TIMEOUT_MS = 4_000;
 /** 与状态快照的 15 秒缓存叠加：外部监测最多每 30 秒被请求一次。 */
 const DEFAULT_CACHE_TTL_MS = 30_000;
+/**
+ * 失败结果的缓存时长：外部监测故障期间，每次状态快照都重试只会放大对一个已经出问题的上游的请求。
+ * 取得很短，恢复后很快回到正常读数。
+ */
+const FAILURE_CACHE_MS = 10_000;
 /** 一次拉全工作区的 monitor：上游接口只有四个，这一页足够，翻页场景不属于本项目。 */
 const MONITORS_PAGE_SIZE = 100;
 
@@ -85,6 +90,7 @@ export class BetterStackStatusProbe implements ExternalStatusProbe {
   private readonly now: () => number;
   private readonly cacheTtlMs: number;
   private cached?: { at: number; reading: ExternalStatusReading };
+  private failedAt?: number;
 
   constructor(options: BetterStackStatusProbeOptions) {
     if (!options.apiKey.trim()) throw new Error("Better Stack API key 不能为空");
@@ -99,6 +105,7 @@ export class BetterStackStatusProbe implements ExternalStatusProbe {
   async read(): Promise<ExternalStatusReading | null> {
     const at = this.now();
     if (this.cached && at - this.cached.at < this.cacheTtlMs) return this.cached.reading;
+    if (this.failedAt !== undefined && at - this.failedAt < FAILURE_CACHE_MS) return null;
     try {
       const response = await fetchWithGuardedRedirects(
         this.fetcher,
@@ -112,12 +119,18 @@ export class BetterStackStatusProbe implements ExternalStatusProbe {
         },
         { pinOrigin: true }
       );
-      if (!response.ok) return null;
+      if (!response.ok) return this.fail(at);
       const reading = monitorReadings((await response.json()).data, this.monitors);
+      this.failedAt = undefined;
       if (Object.keys(reading).length > 0) this.cached = { at, reading };
       return reading;
     } catch {
-      return null;
+      return this.fail(at);
     }
+  }
+
+  private fail(at: number): null {
+    this.failedAt = at;
+    return null;
   }
 }

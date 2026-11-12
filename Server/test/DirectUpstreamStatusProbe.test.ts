@@ -58,6 +58,19 @@ describe("直连上游探针", () => {
     expect(reading?.qq).toEqual({ level: "degraded", latencyMs: null });
   });
 
+  test("403 与 429 说明我们被对端拒绝或限流，不是可达性的证据：读作未知而不是正常", async () => {
+    const { fetcher } = makeFetcher(
+      respondWith({ bangumi: 403, qqmusic: 429, netease: 401, qq: 404 })
+    );
+    const probe = new DirectUpstreamStatusProbe({ targets: probeTargets, fetcher });
+    const reading = await probe.read();
+    expect(reading?.bangumi).toEqual({ level: "unknown", latencyMs: null });
+    expect(reading?.qqmusic).toEqual({ level: "unknown", latencyMs: null });
+    // 其余 4xx（含 401、404）仍说明对端在应答。
+    expect(reading?.netease?.level).toBe("operational");
+    expect(reading?.qq?.level).toBe("operational");
+  });
+
   test("网络错误读作降级，延迟为 null", async () => {
     const { fetcher } = makeFetcher(() => {
       throw new Error("connect refused");
