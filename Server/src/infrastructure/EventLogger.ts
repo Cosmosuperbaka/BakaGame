@@ -90,10 +90,18 @@ export interface EventLoggerOptions {
   operationLogging?: OperationLogging;
 }
 
+/**
+ * 操作结果 → 日志级别的唯一口径：
+ * - 调用方的错（所有 4xx：口令错、房间不存在、限流、扫描探测）是预期流量，记信息级；
+ *   失败仍进结构化文件当排障线索，但不上控制台、不占告警配额；
+ * - 服务端的错（5xx 与未预期异常）记错误级；
+ * - 告警级留给需要人看的安全事件，由发现点显式记一条 warn，操作日志不再重复记一次。
+ */
+export const levelForStatus = (status: number): Exclude<LogLevel, "DEBUG" | "WARN"> =>
+  status >= 500 ? "ERROR" : "INFO";
+
 const getEventLevel = (entry: LogEntry): EventLogLevel => {
   switch (entry.type) {
-    case "player.disconnect":
-      return "WARN";
     case "room.closed":
       return isRecord(entry.payload) && entry.payload.reason === "empty" ? "INFO" : "WARN";
     default:
@@ -415,7 +423,9 @@ export class EventLogger {
     const { body, scope, replay } = operationBody(action, status, durationMs, this.slowOperationMs);
     const slow = durationMs >= this.slowOperationMs;
     let structuredLevel: LogLevel = level;
-    if (level === "INFO" && this.operationLogging === "errors" && !slow) structuredLevel = "DEBUG";
+    // 失败（4xx 起）是排障线索，与慢操作一样留在本地文件，即使它已按口径记为信息级。
+    if (level === "INFO" && this.operationLogging === "errors" && !slow && status < 400)
+      structuredLevel = "DEBUG";
 
     if (this.isEnabled(structuredLevel)) {
       const record = createOtelLogRecord({
@@ -559,7 +569,7 @@ export class EventLogger {
     durationMs = 0,
     identifier = "system",
     action,
-    level = "INFO",
+    level,
     createdAt = this.now(),
     traceId,
   }: {
@@ -567,6 +577,7 @@ export class EventLogger {
     durationMs?: number;
     identifier?: string;
     action: string;
+    /** 缺省按状态码走 `levelForStatus`；只有口径之外的特例（如扫描探测降为 debug）才显式传入。 */
     level?: LogLevel;
     createdAt?: number;
     traceId?: string;
@@ -576,7 +587,7 @@ export class EventLogger {
       durationMs,
       identifier: sanitizeLogText(identifier, 64),
       action,
-      level,
+      level: level ?? levelForStatus(status),
       createdAt,
       traceId,
     });

@@ -247,6 +247,57 @@ test("成功操作默认不落盘，慢操作与失败操作进入文件与控�
   expect(output[1]).toContain("实时命令失败 room.join");
 });
 
+/**
+ * 「状态类别 → 级别」口径：调用方的错记信息级（仍进文件，失败是排障线索），
+ * 服务端的错记错误级，WARN 只留给显式的安全事件，操作日志本身不产生告警。
+ */
+test.each([
+  [200, "INFO"],
+  [400, "INFO"],
+  [401, "INFO"],
+  [403, "INFO"],
+  [404, "INFO"],
+  [429, "INFO"],
+  [500, "ERROR"],
+  [502, "ERROR"],
+  [503, "ERROR"],
+] as const)("操作日志级别口径：状态 %i 记为 %s", (status, expected) => {
+  const output: string[] = [];
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    (message) => output.push(message),
+    () => 1_000,
+    undefined,
+    undefined,
+    { sinks: [sink] }
+  );
+  logger.logOperation({ action: "WS room.join", status, durationMs: 5 });
+  if (status < 400) {
+    expect(records).toHaveLength(0);
+    return;
+  }
+  // 失败进文件；只有服务端的错才上控制台，调用方的错不吵人。
+  expect(records).toHaveLength(1);
+  expect(records[0]!.severityText).toBe(expected);
+  expect(output).toHaveLength(expected === "ERROR" ? 1 : 0);
+});
+
+test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    undefined,
+    {
+      sinks: [sink],
+    }
+  );
+  await logger.write({ type: "player.disconnect", createdAt: 1_000, roomId: "r1" });
+  await logger.write({ type: "room.closed", createdAt: 1_000, payload: { reason: "empty" } });
+  expect(records.map((record) => record.severityText)).toEqual(["INFO", "INFO"]);
+});
+
 test("LOG_LEVEL 过滤 debug/info，错误仍按等级落盘并保留异常栈", () => {
   const output: string[] = [];
   const { records, sink } = memorySink();

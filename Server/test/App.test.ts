@@ -1226,6 +1226,53 @@ test("HTTP 操作名归一到路由模板，未命中落固定桶", () => {
   expect(httpOperationAction(templates, "FOO", "/health")).toBe(UNROUTED_HTTP_ACTION);
 });
 
+test("客户端完整性拒绝只产生一条告警级日志，4xx 与扫描探测不产生告警", async () => {
+  const records: OtelLogRecord[] = [];
+  const logger = new EventLogger(() => undefined, undefined, undefined, "DEBUG", {
+    sinks: [{ write: (record) => records.push(record) }],
+  });
+  const clientChannel = new ClientChannel({
+    store: new InMemoryClientChannelStore(),
+    minimumVersion: () => "",
+    onWarn: (message, detail) => logger.warn(message, detail),
+  });
+  const { port, stop } = startTestServer({ logger, clientChannel });
+  try {
+    // 自检硬失败：注册接口拒绝并抛出 CLIENT_UNTRUSTED（调用方的错，4xx）。
+    const registered = await fetch(`http://127.0.0.1:${port}/api/client/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        clientType: "desktop",
+        platform: "windows",
+        clientVersion: "1.0.0",
+        keyAlgorithm: "ed25519",
+        publicKey: "A".repeat(43),
+        selfCheck: { hardFail: ["debugger_attached"], softFail: [], keyProtection: "hardware" },
+      }),
+    });
+    expect(registered.status).toBeGreaterThanOrEqual(400);
+    expect(registered.status).toBeLessThan(500);
+    await fetch(`http://127.0.0.1:${port}/wp-login.php`);
+    // afterResponse 在响应发送后才排队执行：等两条请求的操作日志都落下再断言。
+    const operations = () =>
+      records.filter((record) => record.attributes["log.kind"] === "operation");
+    for (let attempt = 0; attempt < 40 && operations().length < 2; attempt += 1)
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(operations()).toHaveLength(2);
+
+    const warnings = records.filter((record) => record.severityText === "WARN");
+    expect(warnings.map((record) => record.body)).toEqual(["客户端完整性校验未通过"]);
+    // 扫描探测降为 debug，既不告警也不进信息级。
+    const scan = operations().find((record) =>
+      String(record.attributes["operation.action"]).includes("UNROUTED")
+    );
+    expect(scan?.severityText).toBe("DEBUG");
+  } finally {
+    await stop();
+  }
+});
+
 test("未注册路径的 HTTP 操作日志只落固定桶，已注册路由仍拿到具体模板名", async () => {
   // onAfterResponse 只在真实监听下触发（app.handle 不走该生命周期），必须经 server 验证。
   const logger = new EventLogger(() => undefined);

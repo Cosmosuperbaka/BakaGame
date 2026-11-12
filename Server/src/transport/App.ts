@@ -208,11 +208,10 @@ const executeWithDeduplication = async ({
       sendPacket(ws, createAck(parsed, outcome.payload));
     } else if (isAppError(outcome.error)) {
       logger.logOperation({
-        status: 400,
+        status: statusOfAppError(outcome.error.code),
         durationMs,
         identifier: connectionId,
         action: `WS ${parsedType} (replay)`,
-        level: "WARN",
         traceId,
       });
       sendPacket(
@@ -231,7 +230,6 @@ const executeWithDeduplication = async ({
         durationMs,
         identifier: connectionId,
         action: `WS ${parsedType} (replay)`,
-        level: "ERROR",
         traceId,
       });
       sendPacket(
@@ -275,11 +273,10 @@ const executeWithDeduplication = async ({
     const error = outcome.error;
     if (isAppError(error)) {
       logger.logOperation({
-        status: 400,
+        status: statusOfAppError(error.code),
         durationMs,
         identifier: connectionId,
         action: `WS ${parsedType}`,
-        level: "WARN",
         traceId,
       });
       sendPacket(
@@ -302,7 +299,6 @@ const executeWithDeduplication = async ({
       durationMs,
       identifier: connectionId,
       action: `WS ${parsedType}`,
-      level: "ERROR",
       traceId,
     });
     sendPacket(
@@ -1276,17 +1272,21 @@ export const createApp = ({
       const context = requests.get(request);
       if (!context) return;
       const statusCode = response instanceof Response ? response.status : Number(set.status ?? 200);
+      const action = httpOperationAction(
+        (routeTemplates ??= compileRouteTemplates(app.routes)),
+        request.method,
+        new URL(request.url).pathname
+      );
       logger.logOperation({
         status: statusCode,
         durationMs: performance.now() - context.startedAt,
         identifier: context.clientIp,
-        action: httpOperationAction(
-          (routeTemplates ??= compileRouteTemplates(app.routes)),
-          request.method,
-          new URL(request.url).pathname
-        ),
+        action,
         traceId: context.traceId,
-        level: statusCode >= 500 ? "ERROR" : statusCode >= 400 ? "WARN" : "INFO",
+        // 级别由状态码口径决定；互联网扫描命中的未注册路径是背景噪音，只留指标计数。
+        ...(action === UNROUTED_HTTP_ACTION && statusCode === 404
+          ? { level: "DEBUG" as const }
+          : {}),
       });
     })
     .onError(({ code, error, set, path, request }) => {
