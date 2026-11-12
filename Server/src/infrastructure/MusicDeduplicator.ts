@@ -49,8 +49,7 @@ export interface SongPlayabilityContext {
  */
 export function isPlayableSong(song: SongSearchResult, context: SongPlayabilityContext): boolean {
   const platform = songPlatform(song.id);
-  // 网易云之外还有别的平台时同样不按账号档判死：本方法只服务这两家音源。
-  if (platform === "netease") return true;
+  // 本方法只服务这两家音源：QQ 之外一律按可播处理，不按账号档判死。
   if (platform !== "qq") return true;
   if (!context.availablePlatforms.includes("qq")) return false;
   return !song.requiresVip || (context.vipPlatforms ?? []).includes("qq");
@@ -123,27 +122,17 @@ const ARTIST_ALIASES: Record<string, string[]> = {
  * 检查两个歌手集合是否存在显著交集.
  */
 export function artistsOverlap(artistsA: string[], artistsB: string[]): boolean {
-  if (artistsA.length === 0 || artistsB.length === 0) return false;
-  for (const a of artistsA) {
-    const aliasesA = [a, ...(ARTIST_ALIASES[a] || [])];
-    for (const b of artistsB) {
-      const aliasesB = [b, ...(ARTIST_ALIASES[b] || [])];
-      for (const aliasA of aliasesA) {
-        for (const aliasB of aliasesB) {
-          if (
-            aliasA === aliasB ||
-            (aliasA.length >= 2 &&
-              aliasB.length >= 2 &&
-              (aliasA.includes(aliasB) || aliasB.includes(aliasA)))
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-  }
-  return false;
+  const aliasesA = artistsA.flatMap((artist) => [artist, ...(ARTIST_ALIASES[artist] || [])]);
+  const aliasesB = artistsB.flatMap((artist) => [artist, ...(ARTIST_ALIASES[artist] || [])]);
+  return aliasesA.some((aliasA) => aliasesB.some((aliasB) => aliasesMatch(aliasA, aliasB)));
 }
+
+/** 两个歌手别名相同，或都不短于两个字符且互相包含。 */
+const aliasesMatch = (aliasA: string, aliasB: string): boolean =>
+  aliasA === aliasB ||
+  (aliasA.length >= 2 &&
+    aliasB.length >= 2 &&
+    (aliasA.includes(aliasB) || aliasB.includes(aliasA)));
 
 /**
  * 物理时长容差门限：原版同一录音室母带在各平台的编码时长偏差通常 <= 3000ms.
@@ -155,12 +144,34 @@ export function durationMatches(durA?: number, durB?: number, toleranceMs = 3000
   return Math.abs(durA - durB) <= toleranceMs;
 }
 
+/** 比较一首歌所需的规范化结果；聚类时每首歌只算一次，不在 O(n²) 比较里反复规范化。 */
+interface SongFingerprint {
+  canonTitle: string;
+  normTitle: string;
+  artistTokens: string[];
+}
+
+const fingerprintOf = (song: SongSearchResult): SongFingerprint => ({
+  canonTitle: extractCanonicalTitle(song.title),
+  normTitle: normalizeComparableText(song.title),
+  artistTokens: extractArtistTokens(song.artist),
+});
+
 /**
  * 判定两首歌曲是否属于同一作品实体 (Canonical Work).
  */
 export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult): boolean {
-  const canonA = extractCanonicalTitle(songA.title);
-  const canonB = extractCanonicalTitle(songB.title);
+  return matchesSameWork(songA, fingerprintOf(songA), songB, fingerprintOf(songB));
+}
+
+function matchesSameWork(
+  songA: SongSearchResult,
+  fpA: SongFingerprint,
+  songB: SongSearchResult,
+  fpB: SongFingerprint
+): boolean {
+  const { canonTitle: canonA } = fpA;
+  const { canonTitle: canonB } = fpB;
   if (!canonA || !canonB) return false;
 
   const titleMatches =
@@ -172,9 +183,7 @@ export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult)
     return false;
   }
 
-  const artistsA = extractArtistTokens(songA.artist);
-  const artistsB = extractArtistTokens(songB.artist);
-  if (!artistsOverlap(artistsA, artistsB)) {
+  if (!artistsOverlap(fpA.artistTokens, fpB.artistTokens)) {
     return false;
   }
 
@@ -187,12 +196,9 @@ export function isSameSongWork(songA: SongSearchResult, songB: SongSearchResult)
     typeof songB.durationMs === "number" &&
     songB.durationMs > 0;
   if (bothHaveDuration) {
-    if (!durationMatches(songA.durationMs, songB.durationMs, 3000)) return false;
-  } else if (normalizeComparableText(songA.title) !== normalizeComparableText(songB.title)) {
-    return false;
+    return durationMatches(songA.durationMs, songB.durationMs, 3000);
   }
-
-  return true;
+  return fpA.normTitle === fpB.normTitle;
 }
 
 /** 识别翻唱或消音/衍生版本. */
@@ -463,9 +469,20 @@ export function aggregateAndDeduplicateSongs(
 ): AggregatedSongSearchResult[] {
   const normKeyword = normalizeComparableText(keyword);
   const clusters: SongCluster[] = [];
+  const fingerprints = new Map<SongSearchResult, SongFingerprint>();
+  const fingerprint = (song: SongSearchResult): SongFingerprint => {
+    let known = fingerprints.get(song);
+    if (!known) {
+      known = fingerprintOf(song);
+      fingerprints.set(song, known);
+    }
+    return known;
+  };
 
   for (const song of songs) {
-    const matchedCluster = clusters.find((cluster) => isSameSongWork(cluster.primary, song));
+    const matchedCluster = clusters.find((cluster) =>
+      matchesSameWork(cluster.primary, fingerprint(cluster.primary), song, fingerprint(song))
+    );
 
     if (!matchedCluster) {
       clusters.push({

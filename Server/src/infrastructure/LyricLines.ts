@@ -29,7 +29,7 @@ if (typeof globalThis.XMLSerializer === "undefined") {
   globalThis.XMLSerializer = XMLSerializer as unknown as typeof globalThis.XMLSerializer;
 }
 
-const normalizeComparableText = (value: string) =>
+const normalizeLyricComparable = (value: string) =>
   value
     .normalize("NFKC")
     .toLowerCase()
@@ -698,7 +698,7 @@ const INSTRUMENTAL_MARKERS = new Set([
 
 /** 过滤 LRC 中表示间奏/纯音乐的占位行，避免把无歌词段落当作可猜片段。 */
 export const isInstrumentalLyricLine = (text: string) => {
-  const normalized = normalizeComparableText(text);
+  const normalized = normalizeLyricComparable(text);
   if (INSTRUMENTAL_MARKERS.has(normalized)) return true;
   // 网易云会把间奏写成 Music1、[Music] 或 Music - Instrumental 等占位文本。
   if (/^(?:music|instrumental|interlude|intro|outro|inst)(?:\d+)?$/.test(normalized)) return true;
@@ -709,7 +709,7 @@ export const isInstrumentalLyricLine = (text: string) => {
   )
     return true;
   // `纯音乐，请欣赏`、`纯音乐 请欣赏`、`本曲为纯音乐，请欣赏` 这类带后缀的占位说明。
-  // `normalizeComparableText` 会保留逗号，因此整串不等于 `纯音乐`，需要单独按前缀判定。
+  // `normalizeLyricComparable` 会保留逗号，因此整串不等于 `纯音乐`，需要单独按前缀判定。
   return /^(?:本曲为|本首歌为|此曲为)?(?:纯音乐|純音樂|纯音乐请欣赏)/.test(normalized);
 };
 
@@ -1165,13 +1165,13 @@ export const sanitizeLyrics = (
   lyrics: SongLyricLine[],
   song: Pick<SongSearchResult, "title" | "artist" | "album">
 ): SongLyricLine[] => {
-  const title = normalizeComparableText(song.title);
-  const album = song.album ? normalizeComparableText(song.album) : "";
+  const title = normalizeLyricComparable(song.title);
+  const album = song.album ? normalizeLyricComparable(song.album) : "";
   const artistTokens = song.artist
     .split(/[/,、&与和]/)
-    .map(normalizeComparableText)
+    .map(normalizeLyricComparable)
     .filter((token) => token.length >= 2);
-  const wholeArtist = normalizeComparableText(song.artist);
+  const wholeArtist = normalizeLyricComparable(song.artist);
 
   const forbidden = new Set(
     [
@@ -1199,7 +1199,7 @@ export const sanitizeLyrics = (
   const filtered = lyrics.filter((line, index) => {
     if (invalid[index]) return false;
 
-    const normalizedLine = normalizeComparableText(line.text);
+    const normalizedLine = normalizeLyricComparable(line.text);
     if (forbidden.has(normalizedLine)) return false;
     return true;
   });
