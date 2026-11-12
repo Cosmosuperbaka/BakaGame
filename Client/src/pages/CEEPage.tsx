@@ -36,6 +36,8 @@ export default function CEEPage() {
   const originalAvailable = useCEEStore((state) => state.originalAvailable);
   const [server, setServer] = useState<CEESource>("native");
   const [antiCheat, setAntiCheat] = useState(false);
+  // 本地存储是同步读取，不放在渲染体里：大厅每次推送都会重渲染。挂载时读一次，每次打开建房弹窗前再读。
+  const [rememberedCreate, setRememberedCreate] = useState(() => readRoomCreateDefaults("cee"));
   const accountStatus = useAccountStore((state) => state.status);
   /**
    * 反作弊房只接受客户端接入且全员登录，建房那条连接自己就得先达标：
@@ -122,7 +124,6 @@ export default function CEEPage() {
   });
 
   // 上次的选项只在同一种服务器上沿用：原版房的「不公开」与增强房的「私密」不是一回事。
-  const rememberedCreate = readRoomCreateDefaults("cee");
   const createDefaults =
     rememberedCreate && rememberedCreate.source === server ? rememberedCreate : null;
 
@@ -140,6 +141,7 @@ export default function CEEPage() {
       nameMaxLength={32}
       onCreate={(event) => {
         createOrigin.capture(event);
+        setRememberedCreate(readRoomCreateDefaults("cee"));
         setCreateOpen(true);
       }}
       onSelectRoom={(room, event) => {

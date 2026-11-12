@@ -1,5 +1,6 @@
 import { StrictMode, type ReactNode } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   peekPendingRestore,
@@ -11,9 +12,18 @@ import { useCEEStore } from "@/stores/UseCEEStore";
 import CEEPage from "./CEEPage";
 vi.mock("@/hooks/UsePageTransition", () => ({ usePageNavigate: () => vi.fn() }));
 vi.mock("@/components/common/lobby/LobbyPage", () => ({
-  LobbyPage: ({ disabled, dialogs }: { disabled: boolean; dialogs?: ReactNode }) => (
+  LobbyPage: ({
+    disabled,
+    dialogs,
+    onCreate,
+  }: {
+    disabled: boolean;
+    dialogs?: ReactNode;
+    onCreate: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  }) => (
     <div>
       <button disabled={disabled}>加入房间</button>
+      <button onClick={onCreate}>新建房间</button>
       {dialogs}
     </div>
   ),
@@ -115,6 +125,35 @@ it("创建时沿用同服务器的上次选项，成功后就地记住本次选�
     source: "native",
   });
   expect(peekPendingRestore("cee")).toBe(String(createRoom.mock.calls[0]?.[0]?.roomId));
+});
+it("大厅列表推送引起的重渲染不重复读取建房记忆", async () => {
+  localStorage.setItem("bakagame:username", "玩家");
+  const reads = vi.spyOn(window.localStorage, "getItem");
+  const memoryReads = () =>
+    reads.mock.calls.filter(([key]) => key === "bakagame:room-create:cee").length;
+  render(<CEEPage />);
+  const afterMount = memoryReads();
+  for (const rooms of [[], [], []]) {
+    await act(async () => useCEEStore.setState({ rooms: [...rooms] }));
+  }
+  expect(memoryReads()).toBe(afterMount);
+  reads.mockRestore();
+});
+it("每次打开建房弹窗前重新读取建房记忆", async () => {
+  localStorage.setItem("bakagame:username", "玩家");
+  render(<CEEPage />);
+  expect(dialogProps.current?.defaults).toBeNull();
+  saveRoomCreateDefaults("cee", {
+    visibility: "private",
+    allowSpectators: false,
+    source: "native",
+  });
+  await userEvent.click(screen.getByRole("button", { name: "新建房间" }));
+  expect(dialogProps.current?.defaults).toEqual({
+    visibility: "private",
+    allowSpectators: false,
+    source: "native",
+  });
 });
 it("切到兼容原版后建房：旁观强制允许，记忆带 original 来源", async () => {
   localStorage.setItem("bakagame:username", "玩家");
