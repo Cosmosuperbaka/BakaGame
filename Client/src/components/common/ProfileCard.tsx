@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PlayerAccount, PublicProfile } from "@bakagame/shared";
 import { EquippedBadge } from "@/components/common/BadgeList";
 import { loadPublicProfile } from "@/lib/ProfileCache";
+import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Hint } from "@/components/ui/Tooltip";
 import { apiErrorMessage, avatarSrc } from "@/lib/Api";
@@ -79,13 +80,15 @@ export function ProfileCard({
             <span role="alert" className="text-destructive">
               {state.message}
             </span>
-            <button
+            <Button
               type="button"
-              className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-xs text-muted-foreground"
               onClick={() => setAttempt((value) => value + 1)}
             >
               重试
-            </button>
+            </Button>
           </span>
         ) : (
           <>

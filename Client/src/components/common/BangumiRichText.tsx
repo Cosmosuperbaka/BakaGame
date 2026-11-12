@@ -68,12 +68,13 @@ function render(nodes: MarkupNode[], masked: boolean, prefix = ""): ReactNode[] 
         const href = safeUrl(node.value ?? plainText(node.children));
         if (!href || masked) return <span key={key}>{children}</span>;
         return (
+          // 主色与正文色在亮色主题下几乎同一档褐色：常驻一道淡下划线，链接不只靠颜色辨认（DesignGuide §3）。
           <a
             key={key}
             href={href}
             target="_blank"
             rel="noopener noreferrer nofollow"
-            className="text-primary underline-offset-2 hover:underline"
+            className="text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:decoration-primary"
           >
             {children}
           </a>
