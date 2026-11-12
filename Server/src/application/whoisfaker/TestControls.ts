@@ -10,7 +10,6 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../config/Constants";
-import { reassignHost } from "../room/HostPolicy";
 import { pickBotName, runBots } from "./BotActors";
 import { forceRemovePlayer } from "./OfflineSettlement";
 import {
@@ -391,7 +390,6 @@ export const testRemoveBot = async (
     delete room.players[bot.id];
   }
 
-  reassignHost(room, Object.values(room.players));
   normalizeRoomRoleConfig(room);
   service.touch(room);
   publishRoom(service, room);

@@ -141,7 +141,6 @@ export const handlePlayerOffline = async (
   };
 
   markPlayerDisconnected(service, ctx);
-  releaseHostSlot(ctx);
 
   if (!round || round.phase === "gameOver") {
     await settleOfflineOutsideRound(service, ctx);
@@ -175,16 +174,6 @@ const markPlayerDisconnected = (service: WhoIsFakerServiceInternals, ctx: Offlin
   });
 };
 
-/** 显式离开的房主直接腾空席位；掉线的房主保留席位，截止时刻已由 markPlayerDisconnected 写好。 */
-const releaseHostSlot = (ctx: OfflineContext) => {
-  if (!ctx.wasHost || ctx.reason !== "leave") {
-    return;
-  }
-
-  ctx.room.hostPlayerId = "";
-  ctx.room.hostReconnectDeadlineAt = undefined;
-};
-
 /** 局外掉线：显式离开的真人无条件移出房间，房主离开后重选房主。 */
 const settleOfflineOutsideRound = async (
   service: WhoIsFakerServiceInternals,
@@ -197,8 +186,7 @@ const settleOfflineOutsideRound = async (
   }
 
   if (ctx.wasHost && ctx.reason === "leave") {
-    // 先临时置空，让 reassignHost 按候选规则（在线正式玩家优先、同级按加入先后）重新选人。
-    room.hostPlayerId = "";
+    // 离开者的席位已删除，房主指针悬空，按候选规则（在线正式玩家优先、同级按加入先后）重新选人。
     reassignHost(room, Object.values(room.players));
   }
 

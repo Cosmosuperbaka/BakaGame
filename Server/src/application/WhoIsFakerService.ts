@@ -58,7 +58,7 @@ import {
 } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
-import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
+import { resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
@@ -441,9 +441,6 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         }
       }
       delete room.players[player.id];
-      if (room.hostPlayerId === player.id) {
-        reassignHost(room, Object.values(room.players));
-      }
       normalizeRoomRoleConfig(room);
       this.touch(room);
     }
