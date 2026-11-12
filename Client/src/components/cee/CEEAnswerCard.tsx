@@ -4,6 +4,7 @@ import { BangumiRichText } from "@/components/common/BangumiRichText";
 import { Badge } from "@/components/ui/Badge";
 import { ClampedText } from "@/components/ui/ClampedText";
 import { revealCard } from "@/lib/Motion";
+import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
 
 const GENDER_TEXT: Record<CEECharacterView["gender"], string> = {
@@ -11,6 +12,13 @@ const GENDER_TEXT: Record<CEECharacterView["gender"], string> = {
   male: "男",
   "?": "未知",
 };
+
+/**
+ * 资料表的一行：窄屏字段名在上、内容占满整宽（并排时简介每行只剩六七个字，作品名也被截得只剩开头），
+ * `sm` 起左列字段名、右列内容。
+ */
+const DETAIL_ROW = "flex flex-col gap-1 sm:flex-row sm:gap-3";
+const DETAIL_LABEL = "shrink-0 text-xs text-muted-foreground sm:w-10 sm:text-sm";
 
 /** 资料格：小号字段名在上、数值在下，几格并排成一行，窄屏自动折行。 */
 function Fact({ label, value }: { label: string; value: string | number }) {
@@ -82,14 +90,14 @@ export function CEEAnswerCard({
       </div>
     </div>
   );
-  // 作品、声优、简介是同一张资料表的三行：左列字段名、右列内容。简介就地收成三行，右上角箭头展开全文，
+  // 作品、声优、简介是同一张资料表的三行：字段名与内容（排布见 DETAIL_ROW）。简介就地收成三行，右上角箭头展开全文，
   // 不另起一个折叠标题（那样会在卡片里冒出一行没有容器语言的裸文字）。
   const details =
     answer.appearances.length || answer.voiceActors.length || answer.summary ? (
-      <dl className="space-y-2 border-t border-background pt-3 text-sm">
+      <dl className="space-y-3 border-t border-background pt-3 text-sm sm:space-y-2">
         {answer.appearances.length ? (
-          <div className="flex gap-3">
-            <dt className="w-10 shrink-0 text-muted-foreground">作品</dt>
+          <div className={DETAIL_ROW}>
+            <dt className={DETAIL_LABEL}>作品</dt>
             <dd className="flex min-w-0 flex-wrap gap-1">
               {answer.appearances.map((entry) => (
                 <Badge key={entry.id} variant="subtle" className="max-w-full">
@@ -103,15 +111,15 @@ export function CEEAnswerCard({
           </div>
         ) : null}
         {answer.voiceActors.length ? (
-          <div className="flex gap-3">
-            <dt className="w-10 shrink-0 text-muted-foreground">声优</dt>
+          <div className={DETAIL_ROW}>
+            <dt className={DETAIL_LABEL}>声优</dt>
             <dd className="min-w-0 break-words">{answer.voiceActors.join("、")}</dd>
           </div>
         ) : null}
         {answer.summary ? (
-          // 字段名与正文取同一行高，两列首行对齐。
-          <div className="flex gap-3 leading-relaxed">
-            <dt className="w-10 shrink-0 text-muted-foreground">简介</dt>
+          // 字段名与正文取同一行高，并排时两列首行对齐。
+          <div className={cn(DETAIL_ROW, "leading-relaxed")}>
+            <dt className={DETAIL_LABEL}>简介</dt>
             <dd className="min-w-0 flex-1">
               <ClampedText label="角色简介" lines={3}>
                 <BangumiRichText text={answer.summary} />
