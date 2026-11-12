@@ -1,15 +1,6 @@
 import { useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  CheckCircle2,
-  Dices,
-  Flag,
-  Image,
-  Lightbulb,
-  PenLine,
-  Search,
-  Trophy,
-} from "lucide-react";
+import { CheckCircle2, Dices, Flag, Image, Lightbulb, PenLine, Search, Trophy } from "lucide-react";
 import type {
   CEECharacterSummary,
   CEEGuess,
@@ -22,14 +13,6 @@ import { CloseButton } from "@/components/ui/CloseButton";
 import { CollapsibleRegion } from "@/components/ui/Collapsible";
 import { Input } from "@/components/ui/Input";
 import { Spinner } from "@/components/ui/Spinner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { SearchOptionContent } from "@/components/common/SearchCombobox";
 import { CountdownBadge } from "@/components/common/room/CountdownBadge";
@@ -44,6 +27,7 @@ import { CEEAnswerCard } from "./CEEAnswerCard";
 import { CEECharacterImage } from "./CEECharacterImage";
 import { CEEFeedbackTable } from "./CEEFeedbackTable";
 import { CEEReplay } from "./CEEReplay";
+import { CEEConfirmDialog } from "./CEEConfirmDialog";
 import { CEEWaiting } from "./CEEWaiting";
 import { CEEChoosingSetter } from "./CEEChoosingSetter";
 
@@ -187,33 +171,17 @@ function CancelRound({ snapshot, playerId }: { snapshot: CEERoomSnapshot; player
       >
         取消本局
       </Button>
-      <Dialog open={open} onOpenChange={setOpen} origin={origin.origin}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>取消本局</DialogTitle>
-            <DialogDescription>
-              本局不计分，房间回到等待阶段，可以调整设置后重新开始。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-              data-agent-control="cee.dialog.cancel"
-            >
-              继续本局
-            </Button>
-            <Button
-              variant="destructive"
-              loading={cancelling}
-              onClick={() => void handleCancel()}
-              data-agent-control="cee.dialog.confirm"
-            >
-              确认取消
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CEEConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        origin={origin.origin}
+        title="取消本局"
+        description="本局不计分，房间回到等待阶段，可以调整设置后重新开始。"
+        cancelLabel="继续本局"
+        confirmLabel="确认取消"
+        busy={cancelling}
+        onConfirm={() => void handleCancel()}
+      />
     </>
   );
 }
@@ -555,31 +523,17 @@ function CEEGuessing({
         />
       ) : null}
       <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
-      <Dialog open={surrenderOpen} onOpenChange={setSurrenderOpen} origin={origin.origin}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>放弃本局</DialogTitle>
-            <DialogDescription>确认后本局无法继续猜测，组队时会影响整个队伍。</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSurrenderOpen(false)}
-              data-agent-control="cee.dialog.cancel"
-            >
-              继续猜测
-            </Button>
-            <Button
-              variant="destructive"
-              loading={surrendering}
-              onClick={() => void handleSurrender()}
-              data-agent-control="cee.dialog.confirm"
-            >
-              确认放弃
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CEEConfirmDialog
+        open={surrenderOpen}
+        onOpenChange={setSurrenderOpen}
+        origin={origin.origin}
+        title="放弃本局"
+        description="确认后本局无法继续猜测，组队时会影响整个队伍。"
+        cancelLabel="继续猜测"
+        confirmLabel="确认放弃"
+        busy={surrendering}
+        onConfirm={() => void handleSurrender()}
+      />
     </div>
   );
 }

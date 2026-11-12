@@ -471,6 +471,38 @@ describe("CEE 操作区", () => {
     expect(send).toHaveBeenCalledWith("cee.game.cancel", {}, expect.any(Object));
   });
 
+  it("取消本局的请求在途时，弹窗不能被 Esc 关掉", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(ceeWsClient, "send").mockReturnValue(new Promise(() => {}));
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    render(<CEEGameArea snapshot={room({ phase: "preparing" })} privateState={privateState()} />);
+    await user.click(screen.getByRole("button", { name: "取消本局" }));
+    const dialog = await screen.findByRole("dialog", { name: "取消本局" });
+    await user.click(within(dialog).getByRole("button", { name: "确认取消" }));
+    await user.keyboard("{Escape}");
+    // 关闭带退场动画：等它播完再看弹窗是否还在。
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.getByRole("dialog", { name: "取消本局" })).toBeInTheDocument();
+  });
+
+  it("放弃本局的请求在途时，弹窗不能被 Esc 关掉", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(ceeWsClient, "send").mockReturnValue(new Promise(() => {}));
+    useCEEStore.setState({ source: "native", roomId: "1234", sessionToken: "token" });
+    render(
+      <CEEGameArea
+        snapshot={room({ phase: "guessing" })}
+        privateState={privateState({ canGuess: true, canSurrender: true })}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: "放弃本局" }));
+    const dialog = await screen.findByRole("dialog", { name: "放弃本局" });
+    await user.click(within(dialog).getByRole("button", { name: "确认放弃" }));
+    await user.keyboard("{Escape}");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.getByRole("dialog", { name: "放弃本局" })).toBeInTheDocument();
+  });
+
   it("结算后仍在猜测中的玩家标为未猜中", () => {
     const [host] = room().players;
     const snapshot = room({

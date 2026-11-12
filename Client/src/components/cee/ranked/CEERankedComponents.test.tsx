@@ -630,6 +630,20 @@ describe("CEERankedMatch", () => {
     expect(onExit).toHaveBeenCalledOnce();
   });
 
+  it("退出请求在途时，确认弹窗不能被 Esc 关掉", async () => {
+    withProviders(
+      <CEERankedMatch {...props} pending={{ exit: true }} series={rankedSeries("playing")} />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /退出这场/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "继续比赛" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    // 关闭带退场动画：等它播完再看弹窗是否还在。
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("认输只放弃本局，交给上层提交", async () => {
     const onSurrender = vi.fn();
     withProviders(

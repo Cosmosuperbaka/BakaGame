@@ -3,53 +3,12 @@ import { useState } from "react";
 import { Flag, Lightbulb, LogOut } from "lucide-react";
 import type { CEERankedSeriesView } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { bannerRise, dropIn, readoutTick } from "@/lib/Motion";
+import { CEEConfirmDialog } from "../CEEConfirmDialog";
 import { CEEFeedbackTable } from "../CEEFeedbackTable";
 import { CEESearch } from "../CEESearch";
 import { CEERankedOpponentClues } from "./CEERankedOpponentClues";
-
-/** 退出整场是判负的操作：显式确认，取消在前、确认用危险色。 */
-function ExitDialog({
-  open,
-  busy,
-  onOpenChange,
-  onConfirm,
-}: {
-  open: boolean;
-  busy: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>退出这场排位？</DialogTitle>
-          <DialogDescription>
-            退出即判负整场，排位分按输掉这场结算。只想放弃当前这一局，用「认输本局」。
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
-            继续比赛
-          </Button>
-          <Button variant="destructive" loading={busy} onClick={onConfirm}>
-            退出并判负
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /** 读秒：局号与秒数居中，秒数每次换一个节点顶上来。 */
 function GameCountdown({ number, startsAt }: { number: number; startsAt: number }) {
@@ -183,10 +142,15 @@ export function CEERankedMatch({
           </Button>
         </aside>
       </div>
-      <ExitDialog
+      {/* 退出整场是判负的操作：显式确认，不会误触。 */}
+      <CEEConfirmDialog
         open={exitOpen}
-        busy={Boolean(pending.exit)}
         onOpenChange={setExitOpen}
+        title="退出这场排位？"
+        description="退出即判负整场，排位分按输掉这场结算。只想放弃当前这一局，用「认输本局」。"
+        cancelLabel="继续比赛"
+        confirmLabel="退出并判负"
+        busy={Boolean(pending.exit)}
         onConfirm={onExit}
       />
     </div>
