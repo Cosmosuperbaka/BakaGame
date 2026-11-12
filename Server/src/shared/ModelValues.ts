@@ -59,3 +59,6 @@ export const compareDottedVersion = (a: string, b: string): number => {
   }
   return 0;
 };
+
+/** 账号角色：账号契约的四处取值共用这一份。 */
+export const ACCOUNT_ROLES = ["user", "admin"] as const;

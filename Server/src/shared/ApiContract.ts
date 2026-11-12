@@ -9,6 +9,7 @@ import {
   QQ_NUMBER_PATTERN,
 } from "./Account";
 import { BADGE_KINDS } from "./Badges";
+import { ACCOUNT_ROLES } from "./ModelValues";
 import { GAME_IDS } from "./Protocol";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
 import { adminBangumiMirrorStatusSchema } from "./BangumiMirror";
@@ -45,7 +46,7 @@ export const accountProfileSchema = z.object({
   /** 站内代理头像地址；首次抓取完成前为空。 */
   image: z.string().nullable(),
   showQq: z.boolean(),
-  role: z.enum(["user", "admin"]),
+  role: z.enum(ACCOUNT_ROLES),
   badges: z.array(accountBadgeSchema),
   /** 当前佩戴的徽章；只能是自己已获得的一枚，空表示不佩戴。 */
   equippedBadge: badgeKindSchema.nullable(),
@@ -178,7 +179,7 @@ export const adminUserSchema = z.object({
   name: z.string(),
   qqNumber: z.string(),
   image: z.string().nullable(),
-  role: z.enum(["user", "admin"]),
+  role: z.enum(ACCOUNT_ROLES),
   banned: z.boolean(),
   banReason: z.string().nullable(),
   banExpires: z.string().nullable(),
@@ -409,7 +410,7 @@ const adminContract = {
       .input(
         z.object({
           query: z.string().trim().max(64).optional(),
-          role: z.enum(["user", "admin"]).optional(),
+          role: z.enum(ACCOUNT_ROLES).optional(),
           banned: z.boolean().optional(),
           ...page,
         })
@@ -439,7 +440,7 @@ const adminContract = {
       .input(z.object({ userId }))
       .output(adminUserSchema),
     setRole: op("切换 `user` / `admin` 角色。", "admin")
-      .input(z.object({ userId, role: z.enum(["user", "admin"]) }))
+      .input(z.object({ userId, role: z.enum(ACCOUNT_ROLES) }))
       .output(adminUserSchema),
     revokeSessions: op("吊销该账号的全部会话（强制下线），不改资料与封禁状态。", "admin")
       .input(z.object({ userId }))
