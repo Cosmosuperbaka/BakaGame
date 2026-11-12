@@ -53,7 +53,7 @@ export function SongSettlementDetails({
   const related = variant === "related";
   const Title = related ? "h4" : "h3";
   return (
-    <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+    <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
       {song.pictureUrl ? (
         <img src={song.pictureUrl} alt="" className="h-28 w-28 rounded-md object-cover shadow-sm" />
       ) : (
@@ -226,6 +226,8 @@ export function SongRoundResultPhase({
 
   const isNextRound = Boolean(isPending?.("song.game.nextRound"));
   const isFinishing = Boolean(isPending?.("song.game.finish"));
+  const nextRoundBlocked =
+    snapshot.settings.questionMode === "automatic" && !hasMusicAccount(snapshot);
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -242,7 +244,7 @@ export function SongRoundResultPhase({
       >
         {snapshot.settings.questionType === "anime" && summary.anime ? (
           <>
-            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
               {summary.anime.imageUrl ? (
                 <img
                   src={summary.anime.imageUrl}
@@ -320,30 +322,35 @@ export function SongRoundResultPhase({
         />
       )}
       {isHost ? (
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={isFinishing || isNextRound}
-            loading={isFinishing}
-            onClick={() => void run("song.game.finish")}
-            data-agent-control="song.finish"
-          >
-            {snapshot.solo ? "结束本局" : "返回等待阶段"}
-          </Button>
-          <Button
-            size="lg"
-            disabled={
-              (snapshot.settings.questionMode === "automatic" && !hasMusicAccount(snapshot)) ||
-              isNextRound ||
-              isFinishing
-            }
-            loading={isNextRound}
-            onClick={() => void run("song.game.nextRound")}
-            data-agent-control="song.nextRound"
-          >
-            再来一轮
-          </Button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button
+              variant="outline"
+              size="lg"
+              disabled={isFinishing || isNextRound}
+              loading={isFinishing}
+              onClick={() => void run("song.game.finish")}
+              data-agent-control="song.finish"
+            >
+              {snapshot.solo ? "结束本局" : "返回等待阶段"}
+            </Button>
+            <Button
+              size="lg"
+              disabled={nextRoundBlocked || isNextRound || isFinishing}
+              loading={isNextRound}
+              onClick={() => void run("song.game.nextRound")}
+              data-agent-control="song.nextRound"
+            >
+              再来一轮
+            </Button>
+          </div>
+          {/* 自动出题缺账号时「再来一轮」是灰的：说出原因和出路，否则房主只看到按钮按不动 */}
+          {nextRoundBlocked ? (
+            <p className="text-center text-xs text-muted-foreground">
+              自动出题需要可用的网易云或 QQ 音乐账号，{snapshot.solo ? "结束本局" : "返回等待阶段"}
+              登录后再继续。
+            </p>
+          ) : null}
         </div>
       ) : (
         // 自动出题同样由房主点「再来一轮」才开始，措辞不分出题方式
