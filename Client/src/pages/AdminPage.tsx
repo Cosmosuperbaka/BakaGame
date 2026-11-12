@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
@@ -37,10 +37,19 @@ type TabValue = (typeof TABS)[number]["value"];
 const isTab = (value: string | null): value is TabValue => TABS.some((tab) => tab.value === value);
 
 /** 未登录、无权限与账号系统未启用时的居中提示。 */
-function Gate({ title, children }: { title: string; children?: ReactNode }) {
+function Gate({
+  title,
+  icon: Icon = ShieldCheck,
+  children,
+}: {
+  title: string;
+  /** 拒绝类提示用划掉的盾牌：带勾的盾牌读作「已通过」，与「没有权限」「未启用」意思相反。 */
+  icon?: LucideIcon;
+  children?: ReactNode;
+}) {
   return (
     <div className="mx-auto grid max-w-sm justify-items-center gap-3 py-20 text-center">
-      <ShieldCheck className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+      <Icon className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
       <h2 className="text-lg font-semibold">{title}</h2>
       {children}
     </div>
@@ -94,7 +103,7 @@ function AdminPage() {
     );
   } else if (status === "unavailable") {
     body = (
-      <Gate title="账号系统未启用">
+      <Gate title="账号系统未启用" icon={ShieldOff}>
         <p className="text-sm text-muted-foreground">
           管理后台依赖账号系统，当前环境未配置数据库。
         </p>
@@ -112,7 +121,7 @@ function AdminPage() {
     );
   } else if (role !== "admin") {
     body = (
-      <Gate title="没有访问权限">
+      <Gate title="没有访问权限" icon={ShieldOff}>
         <p className="text-sm text-muted-foreground">当前账号不是管理员。</p>
       </Gate>
     );
@@ -140,7 +149,8 @@ function AdminPage() {
             <span>返回主页</span>
           </Button>
           <div className="h-4 w-px shrink-0 bg-border" />
-          <h1 className="text-lg font-bold sm:text-2xl">管理后台</h1>
+          {/* 与关于页、状态页同构的顶栏，标题同一字号。 */}
+          <h1 className="text-lg font-bold sm:text-xl">管理后台</h1>
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 pb-10 pt-6 md:px-10">{body}</main>
