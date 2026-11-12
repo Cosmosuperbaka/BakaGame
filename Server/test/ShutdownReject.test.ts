@@ -6,6 +6,7 @@ import {
   shutdownRejection,
   systemRoutes,
 } from "../src/transport/routes/System";
+import { statusOfAppError } from "../src/transport/routes/Account";
 
 /**
  * 停机闸门的行为契约：`/readyz` 的 503 只让上游停止分配新流量，进程内的新握手照样会完成升级。
@@ -49,4 +50,8 @@ test("停机拒绝码是可判别的单一常量，不在各处各写一份字�
   expect(shutdownRejection(() => true)?.status).toBe(503);
   expect(SHUTDOWN_REJECT_CODE).toBe("SERVICE_UNAVAILABLE");
   expect(SHUTDOWN_REJECT_MESSAGE).toContain("停机");
+});
+
+test("停机拒绝码经业务错误映射也是 503，不会落到缺省的 400", () => {
+  expect(statusOfAppError(SHUTDOWN_REJECT_CODE)).toBe(503);
 });

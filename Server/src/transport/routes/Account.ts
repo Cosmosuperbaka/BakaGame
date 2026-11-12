@@ -75,6 +75,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   QQ_NICKNAME_UNAVAILABLE: 503,
   ACCOUNT_DISABLED: 503,
   STATUS_EVENTS_DISABLED: 503,
+  SERVICE_UNAVAILABLE: 503,
 };
 
 export const statusOfAppError = (code: string): number => STATUS_BY_CODE[code] ?? 400;
