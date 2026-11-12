@@ -537,6 +537,43 @@ describe("一次性建连凭据 ticket 不进任何采集出口", () => {
     expect(JSON.stringify(metric)).not.toContain(TICKET);
     expect(metric?.attributes?.operation).toBe("HTTP GET /api/cee/ws");
   });
+
+  it("事务事件（采样命中的整条请求）的地址、查询串、子跨度与事务名同样不含凭据原值", async () => {
+    const options = captureInitOptions();
+    expect(typeof options.beforeSendTransaction).toBe("function");
+
+    const transaction: any = {
+      type: "transaction",
+      transaction: `GET /api/cee/ws?ticket=${TICKET}`,
+      request: {
+        url: WS_URL,
+        query_string: `clientType=desktop&ticket=${TICKET}`,
+        headers: { cookie: "dummy-cookie-long", "user-agent": "Baka/1" },
+      },
+      contexts: {
+        trace: {
+          op: "http.server",
+          data: { "url.full": WS_URL, "http.target": `/api/cee/ws?ticket=${TICKET}&room=1` },
+        },
+      },
+      tags: { target: `/api/cee/ws?ticket=${TICKET}` },
+      spans: [
+        {
+          description: `GET /api/cee/ws?ticket=${TICKET}`,
+          data: { "url.full": WS_URL, "http.status_code": 101 },
+        },
+      ],
+    };
+    const sent = (await options.beforeSendTransaction!(transaction, {})) as any;
+    const text = JSON.stringify(sent);
+    for (const secret of [TICKET, "dummy-cookie-long"]) expect(text).not.toContain(secret);
+    // 非敏感部分原样保留，排障线索不受损。
+    expect(sent.request.url).toContain("clientType=desktop");
+    expect(sent.request.headers["user-agent"]).toBe("Baka/1");
+    expect(sent.transaction).toContain("GET /api/cee/ws");
+    expect(sent.contexts.trace.data["http.target"]).toContain("room=1");
+    expect(sent.spans[0].data["http.status_code"]).toBe(101);
+  });
 });
 
 /**

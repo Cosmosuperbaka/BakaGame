@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/bun";
-import type { ErrorEvent } from "@sentry/bun";
+import type { Event } from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
 import { DEFAULT_SENTRY_TRACES_SAMPLE_RATE } from "../config/env/Observability";
 import { AppError } from "../domain/Errors";
@@ -249,7 +249,7 @@ export const _resetServerSentryForTest = (): void => {
  * 事件根节点的可控字段：只脱敏值本身，不截断根节点，
  * 保留异常栈、SDK 元数据和协议结构。
  */
-const redactEventFields = (event: ErrorEvent): void => {
+const redactEventFields = (event: Event): void => {
   if (event.extra) event.extra = redactData(event.extra) as typeof event.extra;
   if (event.contexts) event.contexts = redactData(event.contexts) as typeof event.contexts;
   if (event.user) event.user = redactData(event.user) as typeof event.user;
@@ -267,7 +267,7 @@ const maskHeaderValue = (key: string, value: string): string =>
  * 一次性建连凭据 `ticket` 正是从这里被长期保存到第三方平台（F05）。
  * 头部按「键名匹配敏感键表」处理，因为 SDK 可能给对象也可能给键值对数组。
  */
-const redactEventRequest = (event: ErrorEvent): void => {
+const redactEventRequest = (event: Event): void => {
   const request = event.request;
   if (!request) return;
   if (request.url) request.url = redactUrlQuery(redactLogText(request.url));
@@ -293,7 +293,7 @@ const redactEventRequest = (event: ErrorEvent): void => {
 };
 
 /** 异常文本、栈帧里的变量表与文件名都走同一条脱敏链。 */
-const redactEventExceptions = (event: ErrorEvent): void => {
+const redactEventExceptions = (event: Event): void => {
   for (const exception of event.exception?.values ?? []) {
     if (exception.value) exception.value = redactLogText(exception.value);
     for (const frame of exception.stacktrace?.frames ?? []) {
@@ -303,11 +303,38 @@ const redactEventExceptions = (event: ErrorEvent): void => {
   }
 };
 
-const redactEventBreadcrumbs = (event: ErrorEvent): void => {
+const redactEventBreadcrumbs = (event: Event): void => {
   for (const breadcrumb of event.breadcrumbs ?? []) {
     if (breadcrumb.message) breadcrumb.message = redactLogText(breadcrumb.message);
     if (breadcrumb.data) breadcrumb.data = redactData(breadcrumb.data) as typeof breadcrumb.data;
   }
+};
+
+/** span 的描述与属性表：自动埋点带整串请求目标，事务事件里的子跨度与独立 span 出口共用这一份。 */
+const redactSpanJson = <T extends { description?: string; data?: unknown }>(span: T): T => ({
+  ...span,
+  ...(span.description
+    ? { description: redactUrlQuery(redactLogText(span.description)) }
+    : {}),
+  data: redactScalarAttributes((span.data ?? {}) as Record<string, unknown>),
+});
+
+/**
+ * 事务事件除通用字段外还有三处自带请求目标：事务名、根跨度属性（contexts.trace.data）
+ * 与子跨度列表。通用字段那一路按键名与文本脱敏，认不出查询串形态，所以这里逐项补洗。
+ */
+const redactTransactionEvent = (event: Event): void => {
+  redactEventFields(event);
+  redactEventBreadcrumbs(event);
+  if (event.transaction) event.transaction = redactUrlQuery(redactLogText(event.transaction));
+  // redactData 产出的对象属性只读，根跨度属性要整体重建而不是就地赋值。
+  const trace = event.contexts?.trace;
+  if (event.contexts && trace?.data)
+    event.contexts = {
+      ...event.contexts,
+      trace: { ...trace, data: redactScalarAttributes(trace.data) as typeof trace.data },
+    };
+  if (event.spans) event.spans = event.spans.map(redactSpanJson);
 };
 
 export const initServerSentry = (env: AppEnv): void => {
@@ -366,14 +393,11 @@ export const initServerSentry = (env: AppEnv): void => {
       };
     },
     // 自动埋点的 span 与 metric 同样带整串请求目标：查询串里的凭据必须在离开进程前洗掉。
-    beforeSendSpan(span) {
-      return {
-        ...span,
-        ...(span.description
-          ? { description: redactUrlQuery(redactLogText(span.description)) }
-          : {}),
-        data: redactScalarAttributes(span.data as Record<string, unknown>) as typeof span.data,
-      };
+    beforeSendSpan: redactSpanJson,
+    // 事务事件由请求数据集成补入 request.url 与 query_string，不经 beforeSend，必须单独洗。
+    beforeSendTransaction(event) {
+      redactTransactionEvent(event);
+      return event;
     },
     beforeSendMetric(metric) {
       if (!metric.attributes) return metric;
