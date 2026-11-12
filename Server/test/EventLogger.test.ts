@@ -282,6 +282,28 @@ test.each([
   expect(output).toHaveLength(expected === "ERROR" ? 1 : 0);
 });
 
+test("客户端自报的追踪号形状不合格时不进日志记录，合格的原样保留", () => {
+  const { records, sink } = memorySink();
+  const logger = new EventLogger(
+    () => undefined,
+    () => 1_000,
+    undefined,
+    "DEBUG",
+    {
+      sinks: [sink],
+    }
+  );
+  const good = "4bf92f3577b34da6a3ce929d0e0e4736";
+  logger.logOperation({ action: "WS room.join", status: 400, traceId: good });
+  logger.logOperation({ action: "WS room.join", status: 400, traceId: "x".repeat(300) });
+  logger.warn("系统日志也一样", { traceId: "<script>alert(1)</script>" });
+  expect(records[0]!.traceId).toBe(good);
+  expect(records[1]!.traceId).toBeUndefined();
+  expect(records[2]!.traceId).toBeUndefined();
+  expect(JSON.stringify(records)).not.toContain("script");
+  expect(JSON.stringify(records)).not.toContain("xxxxxxxx");
+});
+
 test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {
   const { records, sink } = memorySink();
   const logger = new EventLogger(

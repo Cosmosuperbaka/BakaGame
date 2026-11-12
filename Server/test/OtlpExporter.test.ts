@@ -358,28 +358,28 @@ test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
   // 1. 成功请求
   const resSuccess = await app.handle(
     new Request("http://localhost/livez", {
-      headers: { "x-trace-id": "custom-trace-success-123" },
+      headers: { "x-trace-id": "8f3e2a1b-5c4d-4e6f-9a0b-1c2d3e4f5a6b" },
     })
   );
   expect(resSuccess.status).toBe(200);
   await new Promise((resolve) => setImmediate(resolve));
   const successOp = operations.find((o) => o.action.includes("/livez"));
   expect(successOp).toBeTruthy();
-  expect(successOp?.traceId).toBe("custom-trace-success-123");
+  expect(successOp?.traceId).toBe("8f3e2a1b-5c4d-4e6f-9a0b-1c2d3e4f5a6b");
 
   // 2. 404 请求
   const resNotFound = await app.handle(
     new Request("http://localhost/non-existent-path", {
-      headers: { "x-trace-id": "custom-trace-404-456" },
+      headers: { "x-trace-id": "1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9" },
     })
   );
   expect(resNotFound.status).toBe(404);
   await new Promise((resolve) => setImmediate(resolve));
   // 未命中路由的请求按追踪号定位：操作名归一到固定桶，原始路径不再出现在名字里。
-  const notFoundOp = operations.find((o) => o.traceId === "custom-trace-404-456");
+  const notFoundOp = operations.find((o) => o.traceId === "1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9");
   expect(notFoundOp).toBeTruthy();
   expect(notFoundOp?.action).toBe(UNROUTED_HTTP_ACTION);
-  expect(notFoundOp?.traceId).toBe("custom-trace-404-456");
+  expect(notFoundOp?.traceId).toBe("1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9");
   await dispose();
   await whoIsFakerService.drainPendingWrites();
 });

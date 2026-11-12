@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { AppError } from "../domain/Errors";
 import { countServerMetric } from "./Sentry";
 
@@ -94,10 +95,11 @@ export const formatOtlpTraceId = (traceId?: string): string => {
   if (!traceId) {
     return crypto.randomUUID().replace(/-/g, "").toLowerCase();
   }
-  const clean = traceId.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
-  if (clean.length === 32) return clean;
-  if (clean.length > 32) return clean.slice(0, 32);
-  return clean.padEnd(32, "0");
+  // 合法形状（32 位十六进制，或去掉连字符后恰为 32 位的 UUID）原样沿用，与上游 trace 对得上。
+  const compact = traceId.replace(/-/g, "").toLowerCase();
+  if (/^[0-9a-f]{32}$/.test(compact)) return compact;
+  // 其余取摘要：补零或截断会让不同的号撞成同一条 trace，摘要至少保证「不同输入、不同结果」。
+  return createHash("sha256").update(traceId).digest("hex").slice(0, 32);
 };
 
 export const formatOtlpSpanId = (spanId?: string): string => {

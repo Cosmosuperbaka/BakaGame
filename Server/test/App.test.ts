@@ -663,7 +663,7 @@ test("HTTP 响应头携带 x-trace-id，且 WebSocket 请求透传 traceId 并�
   const { port, stop } = startTestServer();
 
   try {
-    const customTraceId = "trace-test-123456";
+    const customTraceId = "5d2f6c1e-7a3b-4c9d-8e0f-1a2b3c4d5e6f";
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
       headers: { "x-trace-id": customTraceId },
     });

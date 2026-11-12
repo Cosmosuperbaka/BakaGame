@@ -1,6 +1,7 @@
 import { isLogLevelEnabled, resolveLogLevel, type StructuredLogLevel } from "./StructuredLog";
 import { ConsoleLogSink, type LogOutputLike } from "./logging/ConsoleLog";
 import { createOtelLogRecord, type LogSink, type OtelLogRecord } from "./logging/OtelLog";
+import { acceptTraceId } from "./logging/TraceId";
 import type { OtlpExporter } from "./OtlpExporter";
 import {
   redactData,
@@ -219,8 +220,9 @@ const scalarFields = (
   return fields;
 };
 
+/** 追踪号可能来自客户端自报（WS 信封、请求头）：形状不合格的不进任何出口。 */
 const traceIdOf = (context: Record<string, unknown> | undefined): string | undefined =>
-  typeof context?.traceId === "string" && context.traceId ? context.traceId : undefined;
+  typeof context?.traceId === "string" ? acceptTraceId(context.traceId) : undefined;
 
 const operationTarget = (action: string): { isHttp: boolean; isWs: boolean; target: string } => {
   if (action.startsWith("HTTP ")) return { isHttp: true, isWs: false, target: action.slice(5) };
@@ -574,7 +576,7 @@ export class EventLogger {
       action,
       level: level ?? levelForStatus(status),
       createdAt,
-      traceId,
+      traceId: acceptTraceId(traceId),
     });
   }
 

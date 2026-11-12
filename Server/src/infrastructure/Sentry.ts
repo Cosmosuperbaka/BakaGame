@@ -313,9 +313,7 @@ const redactEventBreadcrumbs = (event: Event): void => {
 /** span 的描述与属性表：自动埋点带整串请求目标，事务事件里的子跨度与独立 span 出口共用这一份。 */
 const redactSpanJson = <T extends { description?: string; data?: unknown }>(span: T): T => ({
   ...span,
-  ...(span.description
-    ? { description: redactUrlQuery(redactLogText(span.description)) }
-    : {}),
+  ...(span.description ? { description: redactUrlQuery(redactLogText(span.description)) } : {}),
   data: redactScalarAttributes((span.data ?? {}) as Record<string, unknown>),
 });
 
