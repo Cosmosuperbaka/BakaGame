@@ -1,7 +1,10 @@
 import * as Sentry from "@sentry/bun";
 import type { Event } from "@sentry/bun";
 import type { AppEnv } from "../config/Env";
-import { DEFAULT_SENTRY_TRACES_SAMPLE_RATE } from "../config/env/Observability";
+import {
+  DEFAULT_DEPLOYMENT_ENVIRONMENT,
+  DEFAULT_SENTRY_TRACES_SAMPLE_RATE,
+} from "../config/env/Observability";
 import { AppError } from "../domain/Errors";
 import { resolveServerRelease } from "./Release";
 
@@ -361,7 +364,7 @@ export const initServerSentry = (env: AppEnv): void => {
       })}\n`
     );
 
-  activeEnvironment = env.otelDeploymentEnvironment ?? "development";
+  activeEnvironment = env.otelDeploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
 
   Sentry.init({
     dsn: env.sentryDsn,

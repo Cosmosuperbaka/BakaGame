@@ -6,6 +6,12 @@ import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { _resetServerSentryForTest, initServerSentry } from "../src/infrastructure/Sentry";
 import { OtlpExporter } from "../src/infrastructure/OtlpExporter";
 import { requestBodyText } from "./RequestFixtures";
+import type { AppEnv } from "../src/config/Env";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../src/config/env/Observability";
+import { createServerLogger } from "../src/infrastructure/logging/LoggerRuntime";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 let exporter: OtlpExporter | undefined;
 let release: ReturnType<typeof spyOn>;
@@ -302,6 +308,22 @@ test("客户端自报的追踪号形状不合格时不进日志记录，合格�
   expect(records[2]!.traceId).toBeUndefined();
   expect(JSON.stringify(records)).not.toContain("script");
   expect(JSON.stringify(records)).not.toContain("xxxxxxxx");
+});
+
+test("装配的日志资源在省略部署环境时用统一缺省值", () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-logger-env-"));
+  try {
+    const logger = createServerLogger({ logDirectory: directory } as AppEnv);
+    logger.warn("环境缺省值核对");
+    void logger.close();
+    const [file] = readdirSync(directory);
+    const text = readFileSync(join(directory, file!), "utf8");
+    expect(text).toContain(
+      `"deployment.environment","value":{"stringValue":"${DEFAULT_DEPLOYMENT_ENVIRONMENT}"}`
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {

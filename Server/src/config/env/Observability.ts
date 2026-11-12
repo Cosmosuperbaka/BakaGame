@@ -115,9 +115,16 @@ const deploymentMarkerChain = (): string[] => {
   ].map((value) => value?.trim() ?? "");
 };
 
+/**
+ * 部署环境缺省值的唯一定义：环境解析、日志资源、Sentry 与 OTLP 导出器在没有显式环境时
+ * 都落到它。生产靠显式标记校验把关，缺省只服务本地与嵌入用法，各处必须同一个值，
+ * 否则同一份配置在不同出口里会被标成不同的环境。
+ */
+export const DEFAULT_DEPLOYMENT_ENVIRONMENT = "development";
+
 /** 环境解析：显式环境变量优先，缺省 development；不按操作系统猜测。 */
 export const resolveDeploymentEnvironment = (): string =>
-  deploymentMarkerChain().find(Boolean) ?? "development";
+  deploymentMarkerChain().find(Boolean) ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
 
 /**
  * `BETTERSTACK_MONITOR_MAP` 形如 `bangumi=12345,qqmusic=67890`：

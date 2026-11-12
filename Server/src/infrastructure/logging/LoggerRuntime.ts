@@ -2,7 +2,10 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 
 import type { AppEnv } from "../../config/Env";
-import type { LogConsoleColor } from "../../config/env/Observability";
+import {
+  DEFAULT_DEPLOYMENT_ENVIRONMENT,
+  type LogConsoleColor,
+} from "../../config/env/Observability";
 import { EventLogger, type OperationLogging } from "../EventLogger";
 import type { OtlpExporter } from "../OtlpExporter";
 import { ConsoleLogSink } from "./ConsoleLog";
@@ -23,7 +26,7 @@ export const resolveConsoleColor = (mode: LogConsoleColor | undefined): boolean 
 const buildResource = (env: AppEnv): OtelResource => ({
   serviceName: env.otelServiceName ?? "Bakagame-Server",
   serviceNamespace: env.otelServiceNamespace ?? "Bakagame",
-  deploymentEnvironment: env.otelDeploymentEnvironment ?? "development",
+  deploymentEnvironment: env.otelDeploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT,
   hostName: hostname(),
 });
 

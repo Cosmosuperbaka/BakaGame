@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, spyOn } from "bun:test";
 import * as Sentry from "@sentry/bun";
 import type { AppEnv } from "../src/config/Env";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../src/config/env/Observability";
 import { readEnv } from "../src/config/Env";
 import { resolve } from "node:path";
 import * as Release from "../src/infrastructure/Release";
@@ -98,6 +99,11 @@ describe("Sentry (服务端异常监控托管与优雅排空)", () => {
 
       initSpy.mockRestore();
     });
+  });
+
+  it("省略部署环境时回落到统一的缺省环境，而不是各处自写一个", () => {
+    const options = captureInitOptions();
+    expect(options.environment).toBe(DEFAULT_DEPLOYMENT_ENVIRONMENT);
   });
 
   describe("未初始化状态的空操作防护", () => {

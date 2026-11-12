@@ -7,6 +7,7 @@ import {
   type OtlpFetcher,
   type OtlpExporterConfig,
 } from "../src/infrastructure/OtlpExporter";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../src/config/env/Observability";
 import { toUnixNanoString } from "../src/infrastructure/logging/OtelEncoding";
 import { createOtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { EventLogger } from "../src/infrastructure/EventLogger";
@@ -913,6 +914,12 @@ test("traces 端点持续 5xx 时日志导出照常进行，两路退避互不�
   expect(stats.droppedCount).toBe(0);
   expect(stats.failureCount).toBe(4);
   expect(stats.successCount).toBe(1);
+});
+
+test("省略部署环境时导出器、日志资源与 Sentry 落到同一个缺省值，且不是生产", async () => {
+  const exporter = createExporter({ endpoint: "https://collector.example.com/otlp" });
+  expect(exporter.deploymentEnvironment).toBe(DEFAULT_DEPLOYMENT_ENVIRONMENT);
+  expect(DEFAULT_DEPLOYMENT_ENVIRONMENT).not.toBe("production");
 });
 
 test("配了 OTLP 端点却没有显式环境标记时拒启，不带着推测的环境外发", () => {

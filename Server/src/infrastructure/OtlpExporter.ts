@@ -1,3 +1,4 @@
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../config/env/Observability";
 import { AppError } from "../domain/Errors";
 import {
   formatOtlpSpanId,
@@ -157,7 +158,7 @@ export class OtlpExporter {
     };
     this.serviceName = config.serviceName ?? "Bakagame-Server";
     this.serviceNamespace = config.serviceNamespace ?? "Bakagame";
-    this.deploymentEnvironment = config.deploymentEnvironment ?? "production";
+    this.deploymentEnvironment = config.deploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
     this.fetcher = config.fetcher ?? fetch;
     this.now = config.now ?? (() => Date.now());
     this.onDrop =
