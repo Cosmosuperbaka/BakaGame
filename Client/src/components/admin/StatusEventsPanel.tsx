@@ -396,7 +396,9 @@ export function StatusEventsPanel() {
               <th scope="col">进度</th>
               <th scope="col">影响组件</th>
               <th scope="col">时间</th>
-              <th scope="col"> </th>
+              <th scope="col">
+                <span className="sr-only">操作</span>
+              </th>
             </tr>
           </thead>
           <tbody>

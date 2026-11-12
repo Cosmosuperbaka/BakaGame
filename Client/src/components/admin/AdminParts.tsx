@@ -134,7 +134,9 @@ export function AdminTable({
   className?: string;
 }) {
   return (
-    <div className={cn("overflow-x-auto rounded-md border bg-card", className)}>
+    // relative：表格里的 sr-only 等绝对定位元素以滚动容器为包含块，才会被一起裁进横向滚动区；
+    // 否则它们按静态位置落在表格最右侧，把整页撑出横向滚动条。
+    <div className={cn("relative overflow-x-auto rounded-md border bg-card", className)}>
       <table
         aria-label={label}
         // 单元格默认样式放在 :where() 里：特异性降到最低，列上自己写的 text-right、font-normal 直接生效，

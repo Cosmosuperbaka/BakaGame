@@ -157,15 +157,18 @@ export function RuntimeSettingsPanel() {
               <th scope="col">取值来源</th>
               <th scope="col">缺省值</th>
               <th scope="col">最后修改</th>
-              <th scope="col"> </th>
+              <th scope="col">
+                <span className="sr-only">操作</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.key}>
-                <td className="max-w-64">
-                  <span className="block font-serif font-medium">{item.title}</span>
-                  <span className="block text-xs leading-relaxed text-muted-foreground">
+                {/* 限宽写在块级子元素上：表格单元格上的 max-width 不生效，窄屏时其余不折行的列会把这一列挤到三个字宽。 */}
+                <td>
+                  <span className="block w-56 font-serif font-medium">{item.title}</span>
+                  <span className="block w-56 text-xs leading-relaxed text-muted-foreground">
                     {item.note}
                   </span>
                 </td>
