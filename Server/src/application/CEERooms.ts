@@ -31,7 +31,6 @@ import {
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
 } from "../config/Constants";
-import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { createEvent } from "../transport/Packets";
 import {
   NOOP_ANTI_CHEAT_REVIEW_QUEUE,
@@ -40,12 +39,14 @@ import {
   type CEEAntiCheatReviewQueue,
 } from "./CEEAntiCheatSignals";
 import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from "./CEEViews";
+import { RoomIdReservations } from "./room/RoomIdReservations";
+import { RoomPasswordGate } from "./room/RoomPasswordGate";
 
-/** 同一连接对同一房间每分钟最多尝试的密码次数。 */
-export const CEE_JOIN_PASSWORD_MAX_ATTEMPTS = 5;
-/** 同一房间每分钟所有连接合计最多尝试的密码次数：只按连接计数时，多开连接就多倍爆破速度。 */
-export const CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS = CEE_JOIN_PASSWORD_MAX_ATTEMPTS * 6;
-const CEE_JOIN_PASSWORD_WINDOW_MS = 60_000;
+/**
+ * 口令规范化只取首尾空白：摘要绑定规范化后的值，建房、改设置与入房必须同一口径。
+ * TODO(行为统一)：卧底用 `normalizeWord`，两种口径算出的摘要互不相认，统一前各款保留现值。
+ */
+const normalizePassword = (value: string): string => value.trim();
 /** 反作弊房里旁观请求的等待上限：超时自动拒绝，房主挂机不会让请求永久悬空。 */
 export const CEE_SPECTATE_APPROVAL_TIMEOUT_MS = 120_000;
 /** 一间房最多挂多少个待批准请求：防止刷请求骚扰房主。 */
@@ -55,17 +56,17 @@ export class CEERooms {
   readonly connections = new ConnectionRegistry();
   readonly rooms = new Map<string, CEERoom>();
   onChange?: () => void;
+  /** 建房期间的房号占用：占号与「房间可见」分开，算摘要的窗口里房间表里没有这间房。 */
+  private readonly reservations = new RoomIdReservations();
   /**
-   * 私密房带锁出现在大厅，房间号又只有 9000 个，密码尝试必须封顶。
-   * 在校验密码之前计数：超限后正确密码同样被拒，才能真正挡住穷举。
+   * 私密房带锁出现在大厅，房间号又只有 9000 个，密码尝试必须封顶：
+   * 口令门在校验之前计数，超限后正确密码同样被拒。
    */
-  private readonly joinPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: CEE_JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: CEE_JOIN_PASSWORD_MAX_ATTEMPTS,
-  });
-  private readonly joinRoomPasswordLimiter = new SlidingWindowRateLimiter({
-    windowMs: CEE_JOIN_PASSWORD_WINDOW_MS,
-    maxRequests: CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
+  private readonly passwords = new RoomPasswordGate({
+    now: () => this.now(),
+    normalize: normalizePassword,
+    missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
+    missingOnJoin: { code: "PASSWORD_REQUIRED", message: "该房间需要密码" },
   });
   /** 已交给对局记录的结算摘要：结算后的多次发布只记一次。 */
   private readonly recordedSummaries = new WeakSet<object>();
@@ -83,6 +84,10 @@ export class CEERooms {
     /** 测试房特权（大厅隐藏、豁免回收、单人开局）的唯一判定来源；缺省关闭。 */
     readonly testRooms: TestRoomPolicy = TEST_ROOMS_DISABLED
   ) {}
+  /** 房号是否已被增强房占用：含建房途中尚未登记的房间，统一房号目录据此避让。 */
+  isRoomIdTaken(roomId: string): boolean {
+    return this.rooms.has(roomId) || this.reservations.has(roomId);
+  }
   /** 提交猜测时由服务层登记：那里才拿得到连接（平台类型与检索台账）。 */
   noteGuessSignal(roomId: string, signal: CEEGuessSignal): void {
     let held = this.guessSignals.get(roomId);
@@ -225,54 +230,61 @@ export class CEERooms {
   ): Promise<CEERoomEnterResult> {
     this.ensureFree(connection);
     const id = ensureRoomId(payload.roomId, this.testRooms);
-    if (this.rooms.has(id) || this.isRoomIdReserved(id))
-      throw new AppError("ROOM_EXISTS", "该房间号已被使用");
-    const password =
-      payload.visibility === "private" ? this.requirePassword(payload.password) : undefined;
-    const name = this.name(payload.name);
-    const userName = this.name(payload.userName);
-    // 反作弊只在这一步落地：先查建房的这条连接够不够格，再把那一位写进初始设置。
-    const antiCheat = payload.bakaAntiCheat === true;
-    if (antiCheat) this.requireClientAdmission(connection);
-    // 密码处理前占用房号，失败时由局部事务撤销，防止并发创建覆盖。
-    const player = this.player(userName, tabSeatId(connection, "cee", id));
-    if (connection.isAgent === true) player.isAgent = true;
-    const room: CEERoom = {
+    // 算摘要要让出事件循环：先同步占号，房间构造好后在复核通过的那一刻才登记，
+    // 窗口里入房、大厅与巡检都看不到这间还没有摘要的私密房。
+    const release = this.reservations.hold(
       id,
-      name,
-      visibility: payload.visibility,
-      allowSpectators: payload.allowSpectators,
-      hostPlayerId: player.id,
-      players: new Map([[player.id, player]]),
-      settings: {
-        ...createDefaultCEESettings(),
-        bakaAntiCheat: antiCheat,
-        allowAgents: payload.allowAgents === true || connection.agentDriven?.() === true,
-      },
-      phase: "waiting",
-      roundNumber: 0,
-      setterPlayerId: null,
-      phaseDeadlineAt: null,
-      round: null,
-      summary: null,
-      chat: [],
-      spectatorRequests: new Map(),
-      createdAt: this.now(),
-      lastActivityAt: this.now(),
-    };
-    this.rooms.set(id, room);
+      (roomId) => this.rooms.has(roomId) || this.isRoomIdReserved(roomId)
+    );
     try {
-      if (password) room.passwordHash = await Bun.password.hash(password);
+      const password =
+        payload.visibility === "private" ? this.passwords.require(payload.password) : undefined;
+      const name = this.name(payload.name);
+      const userName = this.name(payload.userName);
+      // 反作弊只在这一步落地：先查建房的这条连接够不够格，再把那一位写进初始设置。
+      const antiCheat = payload.bakaAntiCheat === true;
+      if (antiCheat) this.requireClientAdmission(connection);
+      const player = this.player(userName, tabSeatId(connection, "cee", id));
+      if (connection.isAgent === true) player.isAgent = true;
+      const room: CEERoom = {
+        id,
+        name,
+        visibility: payload.visibility,
+        allowSpectators: payload.allowSpectators,
+        hostPlayerId: player.id,
+        players: new Map([[player.id, player]]),
+        settings: {
+          ...createDefaultCEESettings(),
+          bakaAntiCheat: antiCheat,
+          allowAgents: payload.allowAgents === true || connection.agentDriven?.() === true,
+        },
+        phase: "waiting",
+        roundNumber: 0,
+        setterPlayerId: null,
+        phaseDeadlineAt: null,
+        round: null,
+        summary: null,
+        chat: [],
+        spectatorRequests: new Map(),
+        createdAt: this.now(),
+        lastActivityAt: this.now(),
+      };
+      if (password) room.passwordHash = await this.passwords.hash(password);
       if (!this.connections.findConnection(connection.id) || connection.roomId)
         throw new AppError("SESSION_INVALID", "连接状态已经变化，请重新加入");
       player.ready = true;
-      this.attach(connection, room, player);
-      this.system(room, `${player.name} 创建了房间`);
-      this.publishRoom(room);
+      this.rooms.set(id, room);
+      try {
+        this.attach(connection, room, player);
+        this.system(room, `${player.name} 创建了房间`);
+        this.publishRoom(room);
+      } catch (error) {
+        this.rooms.delete(id);
+        throw error;
+      }
       return this.entry(room, player);
-    } catch (error) {
-      this.rooms.delete(id);
-      throw error;
+    } finally {
+      release();
     }
   }
   async joinRoom(
@@ -289,9 +301,8 @@ export class CEERooms {
     const seat = this.tabSeat(room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
     const name = this.name(payload.userName);
-    // 以可见性为准而不是以摘要是否存在为准：建房途中摘要尚未算出，私密房也不能无口令进入。
-    if (room.visibility === "private")
-      await this.verifyPassword(connection, room.id, room.passwordHash, payload.password);
+    // 口令门以可见性为准、摘要为空一律不匹配：私密房任何时候都不能无口令进入。
+    await this.passwords.verify(room, room.visibility, payload.password, connection.id);
     this.ensureFree(connection);
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     if (
@@ -544,14 +555,14 @@ export class CEERooms {
     this.requireHost(room, actor);
     this.requireWaiting(room);
     const name = this.name(payload.name);
-    const password = payload.password?.trim();
+    const password = normalizePassword(payload.password ?? "");
     if (payload.visibility === "private" && !password && !room.passwordHash)
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
     const passwordHash =
       payload.visibility === "public"
         ? undefined
         : password
-          ? await Bun.password.hash(password)
+          ? await this.passwords.hash(password)
           : room.passwordHash;
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     this.requireHost(room, actor);
@@ -716,27 +727,6 @@ export class CEERooms {
     const result = value.trim();
     if (!result) throw new AppError("INVALID_NAME", "名称不能为空");
     return result.slice(0, 32);
-  }
-  private requirePassword(value: string | null | undefined): string {
-    const password = value?.trim();
-    if (!password) throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
-    return password;
-  }
-  private async verifyPassword(
-    connection: ConnectionRecord,
-    roomId: string,
-    hash: string | undefined,
-    value: string | null | undefined
-  ): Promise<void> {
-    const password = value?.trim();
-    if (!password) throw new AppError("PASSWORD_REQUIRED", "该房间需要密码");
-    if (!this.joinPasswordLimiter.allow(`${connection.id}:${roomId}`, this.now()))
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    if (!this.joinRoomPasswordLimiter.allow(roomId, this.now()))
-      throw new AppError("TOO_MANY_ATTEMPTS", "密码错误次数过多，请稍后再试");
-    // 没有摘要可比对（房间仍在初始化）一律不匹配。
-    if (hash === undefined || !(await Bun.password.verify(password, hash)))
-      throw new AppError("PASSWORD_INCORRECT", "房间密码错误");
   }
   private ensureFree(connection: ConnectionRecord) {
     if (this.connections.findConnection(connection.id) !== connection)

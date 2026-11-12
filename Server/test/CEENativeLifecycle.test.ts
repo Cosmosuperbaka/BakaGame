@@ -2,11 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { ceeTestHarness, character, deferred } from "./CEENativeFixtures";
 import { ROOM_ID_TEST_MODE, type CEECharacterView } from "../src/shared/Index";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
-import { HOST_RECONNECT_TIMEOUT_MS } from "../src/config/Constants";
 import {
-  CEE_JOIN_PASSWORD_MAX_ATTEMPTS,
-  CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
-} from "../src/application/CEERooms";
+  HOST_RECONNECT_TIMEOUT_MS,
+  JOIN_PASSWORD_MAX_ATTEMPTS,
+  JOIN_PASSWORD_ROOM_MAX_ATTEMPTS,
+} from "../src/config/Constants";
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
 const harness = (data: Partial<CEEDataProvider> = {}) => {
@@ -418,7 +418,7 @@ describe("CEE 会话与异步边界", () => {
       password: "正确密码",
     });
     const attacker = h.connect("尝试者");
-    for (let attempt = 0; attempt < CEE_JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
+    for (let attempt = 0; attempt < JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
       await expect(
         h.send(attacker, "cee.room.join", { userName: "尝试者", password: `猜测${attempt}` })
       ).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
@@ -450,12 +450,12 @@ describe("CEE 会话与异步边界", () => {
       password: "正确密码",
     });
     const sockets = Array.from(
-      { length: CEE_JOIN_PASSWORD_ROOM_MAX_ATTEMPTS / CEE_JOIN_PASSWORD_MAX_ATTEMPTS + 1 },
+      { length: JOIN_PASSWORD_ROOM_MAX_ATTEMPTS / JOIN_PASSWORD_MAX_ATTEMPTS + 1 },
       (_, index) => h.connect(`尝试者${index}`)
     );
     const burst = sockets.slice(0, -1);
     for (const socket of burst) {
-      for (let attempt = 0; attempt < CEE_JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < JOIN_PASSWORD_MAX_ATTEMPTS; attempt++) {
         await expect(
           h.send(socket, "cee.room.join", { userName: "尝试者", password: `猜测${attempt}` })
         ).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
@@ -477,7 +477,7 @@ describe("CEE 会话与异步边界", () => {
     expect(h.snapshot(host).players.map((player) => player.name)).toEqual(["房主", "溢出者"]);
   });
 
-  test("私密房创建途中并发加入：无口令与带口令都被拒，创建完成后仍只有房主", async () => {
+  test("私密房创建途中并发加入：房间尚不可见，无口令与带口令都被拒，创建完成后仍只有房主", async () => {
     const h = harness();
     const host = h.connect("房主");
     const intruder = h.connect("闯入者");
@@ -491,14 +491,15 @@ describe("CEE 会话与异步边界", () => {
       allowSpectators: true,
       password: "正确密码",
     });
-    const withoutPassword = h.send(intruder, "cee.room.join", { userName: "闯入者" });
-    await expect(withoutPassword).rejects.toMatchObject({ code: "PASSWORD_REQUIRED" });
-    // 窗口里连正确口令也不能进：此刻还没有可供比对的摘要，一律不匹配。
-    const withPassword = h.send(intruder, "cee.room.join", {
-      userName: "闯入者",
-      password: "正确密码",
-    });
-    await expect(withPassword).rejects.toMatchObject({ code: "PASSWORD_INCORRECT" });
+    // 窗口里房间还没登记：大厅与后台看不到，入房无论带不带口令都找不到房间。
+    expect(h.service.state.listRooms()).toHaveLength(0);
+    expect(h.service.state.adminListRooms()).toHaveLength(0);
+    await expect(
+      h.send(intruder, "cee.room.join", { userName: "闯入者" })
+    ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+    await expect(
+      h.send(intruder, "cee.room.join", { userName: "闯入者", password: "正确密码" })
+    ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
     await creating;
 
     await expect(h.send(intruder, "cee.room.join", { userName: "闯入者" })).rejects.toMatchObject({
@@ -508,6 +509,54 @@ describe("CEE 会话与异步边界", () => {
     // 房主自己的创建不受影响，口令正确的人事后照常能进。
     await h.send(intruder, "cee.room.join", { userName: "闯入者", password: "正确密码" });
     expect(h.snapshot(host).players).toHaveLength(2);
+  });
+
+  test("建房途中同号再建被拒，统一房号目录也不会把该号分给原版房", async () => {
+    const h = harness();
+    const host = h.connect("房主");
+    const rival = h.connect("对手");
+    const creating = h.send(host, "cee.room.create", {
+      source: "native",
+      roomId: "1234",
+      name: "加密房",
+      userName: "房主",
+      visibility: "private",
+      allowSpectators: true,
+      password: "正确密码",
+    });
+    expect(h.service.state.isRoomIdTaken("1234")).toBe(true);
+    await expect(
+      h.send(rival, "cee.room.create", {
+        source: "native",
+        roomId: "1234",
+        name: "抢号",
+        userName: "对手",
+        visibility: "public",
+        allowSpectators: true,
+      })
+    ).rejects.toMatchObject({ code: "ROOM_EXISTS" });
+    await creating;
+    expect(h.service.state.rooms.get("1234")?.name).toBe("加密房");
+  });
+
+  test("建房失败（摘要期间连接已断开）后占号释放，同号可重新创建", async () => {
+    const h = harness();
+    const ghost = h.connect("幽灵");
+    const creating = h.send(ghost, "cee.room.create", {
+      source: "native",
+      roomId: "1234",
+      name: "加密房",
+      userName: "幽灵",
+      visibility: "private",
+      allowSpectators: true,
+      password: "正确密码",
+    });
+    h.service.unregisterConnection(ghost.record.id);
+    await expect(creating).rejects.toMatchObject({ code: "SESSION_INVALID" });
+    expect(h.service.state.isRoomIdTaken("1234")).toBe(false);
+    expect(h.service.state.rooms.has("1234")).toBe(false);
+    const host = await h.create();
+    expect(h.snapshot(host).players).toHaveLength(1);
   });
 
   test("房主离开而其余成员全部离线保留座位：回来的人当场成为房主并能改设置", async () => {

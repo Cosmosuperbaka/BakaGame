@@ -94,7 +94,7 @@ export class CEEService implements AdminRoomControl {
     this.now = options.now ?? Date.now;
     this.searchQuota = new CEESearchQuota(this.now);
     this.provenance = new CEESearchProvenance(this.now);
-    this.directory = new CEERoomDirectory((roomId) => this.native.state.rooms.has(roomId));
+    this.directory = new CEERoomDirectory((roomId) => this.native.state.isRoomIdTaken(roomId));
     this.native = new CEENativeService({
       ...options,
       provenance: this.provenance,
