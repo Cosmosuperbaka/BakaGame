@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { AppError } from "../domain/Errors";
 import { normalizeRoomId } from "../domain/Rules";
-import { ROOM_ID_TEST_MODE } from "../shared/Index";
 
 /** 统一房号解析出的房间归属：增强房由本服务运行，原版房对应原版服务器上的真实房号。 */
 export type CEEOriginalTarget = { source: "original"; roomId: string; upstreamRoomId: string };
