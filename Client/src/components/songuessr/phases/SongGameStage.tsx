@@ -534,15 +534,31 @@ function RoundAnswerNotice({
   );
 }
 
+/**
+ * 旁观与队友观战的说明：与投降、用尽回执同一套中性虚线框加图标，
+ * 不再是一行夹在答案条与猜测表之间、看不出归属的裸灰字。
+ */
+function ObserverNotice({ icon: Icon, text }: { icon: LucideIcon; text: string }) {
+  return (
+    <p
+      role="status"
+      className="flex items-center justify-center gap-2 rounded-md border border-dashed bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+    >
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {text}
+    </p>
+  );
+}
+
 /** 作答区：旁观与队友观战各一条提示，出题人答完后不再出控件，其余按 stage 交叉换入。 */
 function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessStage }) {
   const { snapshot, privateState, me } = props;
 
   if (me?.membership === "spectator") {
-    return <p className="text-center text-sm text-muted-foreground">你正在旁观本轮游戏</p>;
+    return <ObserverNotice icon={Eye} text="你正在旁观本轮游戏" />;
   }
   if (privateState.teamObserver) {
-    return <p className="text-center text-sm text-muted-foreground">队友出题，你本局观战</p>;
+    return <ObserverNotice icon={Users} text="队友出题，你本局观战" />;
   }
   if (privateState.isSubmitter && stage !== "guessing") return null;
 
@@ -561,7 +577,7 @@ function AttemptArea({ props, stage }: { props: PlayingPhaseProps; stage: GuessS
           role="status"
           className="text-center text-sm text-muted-foreground"
         >
-          音频准备中，请稍候...
+          音频准备中，请稍候…
         </motion.p>
       ) : (
         // 入场交给回执卡自己的回弹，外层只负责退场
@@ -768,7 +784,11 @@ function SubmittingSongPhase({
             initial="initial"
             animate="animate"
             exit="exit"
-            className={cn("flex w-full flex-col items-center", preview ? "max-w-2xl" : "max-w-md")}
+            // gap-4：说明文字与搜索框之间留出与页面其它「说明 + 控件」相同的呼吸，原先末行贴着框沿
+            className={cn(
+              "flex w-full flex-col items-center gap-4",
+              preview ? "max-w-2xl" : "max-w-md"
+            )}
           >
             {preview ? (
               <Suspense
@@ -857,7 +877,7 @@ function GuessBar({
         <span>
           {privateState.canGuess
             ? `剩余 ${privateState.remainingGuesses} 次猜测`
-            : "音频准备中，请稍候..."}
+            : "音频准备中，请稍候…"}
         </span>
         {snapshot.settings.showGuessTimer &&
         privateState.canGuess &&
