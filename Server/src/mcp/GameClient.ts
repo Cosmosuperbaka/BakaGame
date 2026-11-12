@@ -339,13 +339,13 @@ export class AgentGameClient {
   async leave(game: GameId): Promise<boolean> {
     const session = this.sessions.get(game);
     if (!session?.roomId) return false;
-    await this.command(game, GAME_META[game].leave, {});
-    session.roomId = undefined;
-    session.playerId = undefined;
-    session.sessionToken = undefined;
-    session.snapshot = undefined;
-    session.privateState = undefined;
-    this.seats.delete(game);
+    try {
+      await this.command(game, GAME_META[game].leave, {});
+    } catch (error) {
+      // 座位已被服务端判失效时，离开命令必然被拒；本地仍要清干净，否则这个旧房间会永远挡住后续加入与建房。
+      if (!isPermanentRoomError(error)) throw error;
+    }
+    this.dropSeat(game, session);
     return true;
   }
 
@@ -615,7 +615,7 @@ export class AgentGameClient {
     } catch (error) {
       // 与玩家客户端同一张永久码表：手写一份会漏掉服务端实际发出的码（如 SESSION_NOT_FOUND），
       // 死座位就会被反复拿去重连。
-      if (isPermanentRoomError(error)) this.seats.delete(game);
+      if (isPermanentRoomError(error)) this.dropSeat(game, session);
       throw error;
     }
   }
@@ -711,13 +711,21 @@ export class AgentGameClient {
 
   private clearClosedSession(session: GameSession, game: GameId, event: string): void {
     if (!event.endsWith("room.closed")) return;
+    this.dropSeat(game, session);
+  }
+
+  /**
+   * 座位不在了（主动离开、房间关闭、服务端判凭据永久失效）：座位表与会话态必须一起清。
+   * 只删座位表会留下旧房间号与失效凭据，之后加入同房回「已在房间」、离开与建房被失效凭据拒绝。
+   */
+  private dropSeat(game: GameId, session: GameSession): void {
     session.roomId = undefined;
     session.playerId = undefined;
     session.sessionToken = undefined;
     session.snapshot = undefined;
     session.privateState = undefined;
-    this.bumpState(session);
     this.seats.delete(game);
+    this.bumpState(session);
   }
 
   private resolveWaiters(event: string, payload: unknown): void {

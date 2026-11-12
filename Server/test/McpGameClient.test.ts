@@ -435,12 +435,72 @@ describe("MCP 游戏客户端（真实 WebSocket）", () => {
       socket.drop();
       const failure = await sendAfterDrop(client, socket);
       expect(failure).toMatchObject({ ok: false, message: "凭据失效" });
-      // 座位已被丢弃：下一次连接不再尝试接回，而是直接以无座位状态发命令。
+      // 座位已被丢弃：下一次调用不再尝试接回，也不会拿失效凭据发命令，而是如实报未入房。
       socket.inbound.length = 0;
-      await client.sendInRoom("faker", "game.advancePhase");
-      expect(socket.inbound.map((message) => message.type)).toEqual(["game.advancePhase"]);
+      await expect(client.sendInRoom("faker", "game.advancePhase")).rejects.toThrow("尚未加入");
+      expect(socket.inbound.map((message) => message.type)).not.toContain("room.reconnect");
     }
   );
+
+  // 回归走完整链路：座位被服务端判永久失效 → 会话态复位 → 重新加入、建房、离开都不再被旧房间卡住。
+  test.each(["SESSION_INVALID", "SESSION_NOT_FOUND"])(
+    "凭据失效（%s）后会话态完整复位，Agent 能重新加入与建房",
+    async (code) => {
+      const { socket, client } = await harness();
+      const options = {
+        name: "f",
+        visibility: "public" as const,
+        allowSpectators: true,
+        allowAgents: true,
+        userName: "TestAgent",
+      };
+      await client.create("faker", "1234", options);
+      socket.route((message) => {
+        if (message.type === "room.reconnect")
+          return { reply: { type: "error", error: { code, message: "凭据失效" } } };
+        // 失效的座位凭据携带到旧房间的离开命令同样会被服务端拒绝。
+        if (message.type === "room.leave" && message.payload?.sessionToken === "seat-token")
+          return { reply: { type: "error", error: { code, message: "凭据失效" } } };
+        if (message.type === "room.join")
+          return { reply: { type: "ack", payload: roomAck({ roomId: "5678", sessionToken: "t2" }) } };
+        if (message.type === "room.create")
+          return { reply: { type: "ack", payload: roomAck({ roomId: "9999", sessionToken: "t3" }) } };
+        return { reply: { type: "ack", payload: { ok: true } } };
+      });
+      socket.drop();
+      expect(await sendAfterDrop(client, socket)).toMatchObject({ ok: false });
+
+      // 失效后旧房间的会话态必须一并清掉：不再显示「已在房间」。
+      expect(client.currentRoom("faker")).toBeUndefined();
+      expect(client.currentPlayerId("faker")).toBeUndefined();
+      expect(client.currentSnapshot("faker")).toBeUndefined();
+      expect(await client.leave("faker")).toBe(false);
+
+      const joined = await client.join("faker", "1234");
+      expect(joined.roomId).toBe("5678");
+      const created = await client.create("faker", "9999", options);
+      expect(created.roomId).toBe("9999");
+      expect(client.currentRoom("faker")).toBe("9999");
+    }
+  );
+
+  test("离开房间时服务端判座位已失效，也算已离开并清掉本地状态", async () => {
+    const { socket, client } = await harness();
+    await client.create("faker", "1234", {
+      name: "f",
+      visibility: "public",
+      allowSpectators: true,
+      allowAgents: true,
+      userName: "TestAgent",
+    });
+    socket.route((message) =>
+      message.type === "room.leave"
+        ? { reply: { type: "error", error: { code: "SESSION_NOT_FOUND", message: "座位不存在" } } }
+        : { reply: { type: "ack", payload: { ok: true } } }
+    );
+    expect(await client.leave("faker")).toBe(true);
+    expect(client.currentRoom("faker")).toBeUndefined();
+  });
 
   test("网络抖动不算凭据失效，座位留给下一次重试", async () => {
     const { socket, client } = await harness();
