@@ -136,11 +136,7 @@ import {
   direction,
   musicAuthOperationKey,
 } from "./songuessr/Records";
-import {
-  normalizeSongText,
-  normalizeSongTitle,
-  normalizedArtists,
-} from "./songuessr/SongTitleMatching";
+import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
@@ -2309,7 +2305,7 @@ export class SonGuessrService implements AdminRoomControl {
 
     // 异步返回后复验房间与回合状态
     this.requireGuessStillCurrent(room, round, player, state);
-    const correct = this.isCorrectSong(guessedSong, round.song);
+    const correct = this.isCorrectSong(guessedSong, round);
     const attempt: SongGuessAttempt = {
       id: this.createId("song_guess"),
       playerId: player.id,
@@ -2885,11 +2881,8 @@ export class SonGuessrService implements AdminRoomControl {
     };
   }
 
-  private isCorrectSong(guess: SongDetails, answer: SongDetails) {
-    if (guess.id === answer.id) return true;
-    if (normalizeSongTitle(guess.title) !== normalizeSongTitle(answer.title)) return false;
-    const answerArtists = normalizedArtists(answer.artist);
-    return [...normalizedArtists(guess.artist)].some((artist) => answerArtists.has(artist));
+  private isCorrectSong(guess: SongDetails, round: SonGuessrRoundRecord) {
+    return isSameAnswerSong(guess, round.song, round.alternateSongIds ?? []);
   }
 
   private applyQueuedMemberships(room: SonGuessrRoomRecord) {

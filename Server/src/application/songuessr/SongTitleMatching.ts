@@ -8,9 +8,15 @@ import {
   VERSION_MARKER_PATTERN,
 } from "../../domain/TitlePatterns";
 import {
+  artistsOverlap,
+  extractArtistTokens,
+  extractCanonicalTitle,
+} from "../../infrastructure/MusicDeduplicator";
+import {
   BangumiMusicTrack,
   BangumiMusicTrackKind,
   BangumiSubjectDetails,
+  SongDetails,
   SongSearchResult,
   isBangumiCreditsEntry,
 } from "../../shared/Index";
@@ -84,6 +90,29 @@ export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string):
     minLen >= MIN_TRUNCATED_TITLE_LENGTH &&
     minLen / maxLen >= MIN_TRUNCATED_TITLE_RATIO
   );
+};
+
+/**
+ * 判对用的曲名键：先去掉版本后缀，再走聚合去重同一套归一（繁简、全半角、标点）。
+ * 判对与去重必须同源：去重已把两个平台的同一作品并成一个代表，
+ * 判对若用更弱的归一，玩家选到「对的那首」仍会被判错。
+ */
+const answerTitleKey = (title: string) => extractCanonicalTitle(stripSongVersionInfo(title));
+
+/**
+ * 猜测是否就是答案：歌曲 id 相同或是答案的备用音源 id，
+ * 否则曲名（归一后）相同且歌手有交集（含别名）。
+ * 归一后为空串的曲名（纯符号）没有可比较的内容，不能互相判对。
+ */
+export const isSameAnswerSong = (
+  guess: Pick<SongDetails, "id" | "title" | "artist">,
+  answer: Pick<SongDetails, "id" | "title" | "artist">,
+  alternateSongIds: readonly string[]
+): boolean => {
+  if (guess.id === answer.id || alternateSongIds.includes(guess.id)) return true;
+  const guessTitle = answerTitleKey(guess.title);
+  if (!guessTitle || guessTitle !== answerTitleKey(answer.title)) return false;
+  return artistsOverlap(extractArtistTokens(guess.artist), extractArtistTokens(answer.artist));
 };
 
 export const normalizedArtists = (value: string) =>
