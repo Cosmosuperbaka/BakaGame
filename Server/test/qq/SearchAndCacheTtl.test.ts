@@ -124,3 +124,41 @@ describe("QQ音乐检索缓存（MusicCache 语义）", () => {
     expect(audioCalls).toBe(2);
   });
 });
+
+describe("QQ音乐歌手检索：缓存与条数钳制", () => {
+  const artistOriginals = { search: qqmusic.search, artist_songs: qqmusic.artist_songs };
+  afterEach(() => Object.assign(qqmusic, artistOriginals));
+
+  it("同一关键词的歌手检索命中缓存，条数上限被钳制", async () => {
+    const seenLimits: unknown[] = [];
+    const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
+    qqmusic.search = mock(async ({ limit }: { limit?: number }) => {
+      seenLimits.push(limit);
+      return {
+        status: 200,
+        body: { data: { body: { singer: [{ singerMID: "s1", singerName: "歌手甲" }] } } },
+      };
+    }) as any;
+
+    const first = await provider.searchArtists("歌手甲", 9_999);
+    const second = await provider.searchArtists("歌手甲", 9_999);
+    expect(second).toEqual(first);
+    expect(seenLimits).toEqual([50]);
+  });
+
+  it("歌手曲目命中缓存，不重复回源", async () => {
+    let calls = 0;
+    const provider = new QQMusicProvider({ minRequestIntervalMs: 0 });
+    qqmusic.artist_songs = mock(async () => {
+      calls += 1;
+      return {
+        status: 200,
+        body: { songs: [{ mid: "m1", name: "轨迹", singer: [{ name: "歌手甲" }] }] },
+      };
+    }) as any;
+
+    await provider.getArtistSongs("qq:s1");
+    await provider.getArtistSongs("qq:s1");
+    expect(calls).toBe(1);
+  });
+});

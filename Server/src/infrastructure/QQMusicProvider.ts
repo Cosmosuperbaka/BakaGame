@@ -72,6 +72,11 @@ const ANONYMOUS_EMPTY_THRESHOLD = 5;
 const ANONYMOUS_COOLDOWN_MS = 60 * 1000;
 const SONG_METADATA_CACHE_TTL_MS = 10 * 60 * 1000;
 const PLAYLIST_CACHE_TTL_MS = 30 * 60 * 1000;
+/** 歌手检索与歌手曲目是公开数据，与网易云同口径缓存；歌手曲目变化慢，缓存更久。 */
+const ARTIST_SEARCH_CACHE_TTL_MS = 30 * 60 * 1000;
+const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** 歌手检索条数上限：与网易云一致，调用方传多大都不放大上游一次的取量。 */
+const ARTIST_SEARCH_MAX_LIMIT = 50;
 const SONG_AUDIO_CACHE_TTL_MS = 5 * 60 * 1000;
 const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
 const LOGIN_STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -1029,33 +1034,41 @@ export class QQMusicProvider implements MusicProvider {
     const normalized = keyword.trim();
     if (!normalized) return [];
 
-    const searchRes = await this.callUpstream(cookie, () =>
-      qqmusic.search({ keywords: normalized, type: 1, limit, cookie })
-    );
-    const searchResBody = asRecord(searchRes.body);
-    const dataBody = firstRecord(
-      asRecord(searchResBody.data).body,
-      searchResBody.body,
-      searchResBody.data,
-      searchResBody
-    );
-    const items = readRecords(dataBody.singer || dataBody.item_singer);
+    const normalizedLimit = Math.max(1, Math.min(limit, ARTIST_SEARCH_MAX_LIMIT));
+    // 公开数据：缓存键不含凭据，所有玩家共享。
+    return this.musicCache.cached(
+      `artist-search:${normalized.toLowerCase()}:${normalizedLimit}`,
+      ARTIST_SEARCH_CACHE_TTL_MS,
+      async () => {
+        const searchRes = await this.callUpstream(cookie, () =>
+          qqmusic.search({ keywords: normalized, type: 1, limit: normalizedLimit, cookie })
+        );
+        const searchResBody = asRecord(searchRes.body);
+        const dataBody = firstRecord(
+          asRecord(searchResBody.data).body,
+          searchResBody.body,
+          searchResBody.data,
+          searchResBody
+        );
+        const items = readRecords(dataBody.singer || dataBody.item_singer);
 
-    return items
-      .filter((item) => readText(item.singerMID || item.mid))
-      .map((item): SongArtistSearchResult => {
-        const singerMid = readText(item.singerMID || item.mid);
-        const singerId = Number(item.singerID || item.id);
-        const avatarUrl = singerId
-          ? `https://imgcache.qq.com/music/photo/singer_300/${singerId % 100}/300_singerpic_${singerId}_0.jpg`
-          : undefined;
+        return items
+          .filter((item) => readText(item.singerMID || item.mid))
+          .map((item): SongArtistSearchResult => {
+            const singerMid = readText(item.singerMID || item.mid);
+            const singerId = Number(item.singerID || item.id);
+            const avatarUrl = singerId
+              ? `https://imgcache.qq.com/music/photo/singer_300/${singerId % 100}/300_singerpic_${singerId}_0.jpg`
+              : undefined;
 
-        return {
-          id: buildSongUrn("qq", singerMid),
-          name: stripHtmlTags(item.singerName || item.name || "") || "未知歌手",
-          avatarUrl,
-        };
-      });
+            return {
+              id: buildSongUrn("qq", singerMid),
+              name: stripHtmlTags(item.singerName || item.name || "") || "未知歌手",
+              avatarUrl,
+            };
+          });
+      }
+    );
   }
 
   async getArtistSongs(
@@ -1064,39 +1077,41 @@ export class QQMusicProvider implements MusicProvider {
   ): Promise<SongSearchResult[]> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(artistId);
-    const songsRes = await this.callUpstream(cookie, () =>
-      qqmusic.artist_songs({ id: mid, limit: 100, cookie })
-    );
-    const songsBody = asRecord(songsRes.body);
-    const rawSongs = readRecords(songsBody.songs || asRecord(songsBody.data).songList);
+    return this.musicCache.cached(`artist-songs:${mid}`, ARTIST_SONGS_CACHE_TTL_MS, async () => {
+      const songsRes = await this.callUpstream(cookie, () =>
+        qqmusic.artist_songs({ id: mid, limit: 100, cookie })
+      );
+      const songsBody = asRecord(songsRes.body);
+      const rawSongs = readRecords(songsBody.songs || asRecord(songsBody.data).songList);
 
-    return rawSongs
-      .filter((item) => readText(asRecord(item.songInfo).mid || item.mid))
-      .map((item): SongSearchResult => {
-        const songInfo = asRecord(item.songInfo);
-        const songMid = readText(songInfo.mid || item.mid);
-        const rawTitle = readText(songInfo.name || songInfo.title || item.name);
-        const title = stripHtmlTags(rawTitle);
-        const singerValue = songInfo.singer || item.singer;
-        const artist = Array.isArray(singerValue)
-          ? singerNames(singerValue).filter(Boolean).join(" / ")
-          : "未知歌手";
-        const songInfoAlbum = asRecord(songInfo.album);
-        const itemAlbum = asRecord(item.album);
-        const rawAlbum = songInfoAlbum.name || itemAlbum.name || undefined;
-        const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-        const durationMs = Number(songInfo.interval || item.interval || 0) * 1000;
+      return rawSongs
+        .filter((item) => readText(asRecord(item.songInfo).mid || item.mid))
+        .map((item): SongSearchResult => {
+          const songInfo = asRecord(item.songInfo);
+          const songMid = readText(songInfo.mid || item.mid);
+          const rawTitle = readText(songInfo.name || songInfo.title || item.name);
+          const title = stripHtmlTags(rawTitle);
+          const singerValue = songInfo.singer || item.singer;
+          const artist = Array.isArray(singerValue)
+            ? singerNames(singerValue).filter(Boolean).join(" / ")
+            : "未知歌手";
+          const songInfoAlbum = asRecord(songInfo.album);
+          const itemAlbum = asRecord(item.album);
+          const rawAlbum = songInfoAlbum.name || itemAlbum.name || undefined;
+          const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
+          const durationMs = Number(songInfo.interval || item.interval || 0) * 1000;
 
-        return {
-          id: buildSongUrn("qq", songMid),
-          title,
-          artist,
-          album: albumName,
-          pictureUrl: albumPictureUrl(Number(songInfoAlbum.id || itemAlbum.id)),
-          durationMs: durationMs > 0 ? durationMs : undefined,
-        };
-      })
-      .filter((s) => s.id && s.title);
+          return {
+            id: buildSongUrn("qq", songMid),
+            title,
+            artist,
+            album: albumName,
+            pictureUrl: albumPictureUrl(Number(songInfoAlbum.id || itemAlbum.id)),
+            durationMs: durationMs > 0 ? durationMs : undefined,
+          };
+        })
+        .filter((s) => s.id && s.title);
+    });
   }
 
   async createQrLogin(
