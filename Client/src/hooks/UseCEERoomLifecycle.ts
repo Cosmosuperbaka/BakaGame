@@ -26,7 +26,14 @@ export function useCEERoomLifecycle() {
   const navigate = usePageNavigate();
   const connected = useCEEStore((state) => state.connected);
   const lobbyReady = useCEEStore((state) => state.lobbyReady);
-  const closed = useCEEStore((state) => state.roomClosedAt);
+  const roomClosedAt = useCEEStore((state) => state.roomClosedAt);
+  // 只认本次挂载之后发生的关闭：更早的标记是上一次房间留下的，不能弹走再次进入的玩家。
+  const [mountTime] = useState(() => Date.now());
+  const closed = roomClosedAt !== null && roomClosedAt >= mountTime;
+  useEffect(() => {
+    useCEEStore.getState().clearRoomClosed();
+    return () => useCEEStore.getState().clearRoomClosed();
+  }, []);
   const [joining, setJoining] = useState(true);
   const [needsJoin, setNeedsJoin] = useState(false);
   const [name, setName] = useState(getSavedUsername);

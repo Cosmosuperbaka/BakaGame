@@ -84,6 +84,8 @@ export interface CEEStore {
   /** 作废在途的入房/恢复事务，但不改动当前房间状态（供房间结束类事件调用）。 */
   cancelEntry: () => void;
   resetRoom: (closed?: boolean) => void;
+  /** 清掉「房间已结束」标记；页面挂载与卸载时各调一次，避免旧标记把下次进入立刻弹回大厅。 */
+  clearRoomClosed: () => void;
   sendCommand: ws.CEESendCommand;
   /** 搜角色；同一关键词在复用窗口内不会重复请求上游。 */
   searchCharacters: (keyword: string) => Promise<CEEResponse<"cee.character.search">["results"]>;
@@ -331,6 +333,7 @@ export const useCEEStore = create<CEEStore>((set, get) => {
         roomClosedAt: closed ? Date.now() : null,
       });
     },
+    clearRoomClosed: () => set({ roomClosedAt: null }),
     cancelEntry,
     sendCommand: (command, payload) => {
       const { roomId, sessionToken } = get();

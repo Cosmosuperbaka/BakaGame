@@ -57,6 +57,32 @@ it("持有凭据的房间已不在（如服务器重启）：退回大厅，不�
   expect(joinRoom).not.toHaveBeenCalled();
   expect(createRoom).not.toHaveBeenCalled();
 });
+it("上一次房间被关留下的关闭标记不会把再次进入的同一路由立即弹回大厅", async () => {
+  writeCEESession("1234", "fresh-token");
+  const reconnect = vi.fn().mockResolvedValue(true);
+  useCEEStore.setState({
+    connected: true,
+    lobbyReady: true,
+    roomClosedAt: Date.now() - 60_000,
+    reconnectRoom: reconnect,
+  });
+  const h = renderHook(() => useCEERoomLifecycle(), {
+    wrapper: ({ children }) => (
+      <MemoryRouter initialEntries={["/cee/room/1234"]}>
+        <Routes>
+          <Route path="/cee/room/:roomId" element={children} />
+        </Routes>
+      </MemoryRouter>
+    ),
+  });
+  await waitFor(() => expect(h.result.current.joining).toBe(false));
+  expect(reconnect).toHaveBeenCalledWith("1234", expect.any(AbortSignal));
+  expect(navigate).not.toHaveBeenCalledWith("/cee", { replace: true });
+  expect(useCEEStore.getState().roomClosedAt).toBeNull();
+  useCEEStore.setState({ roomClosedAt: Date.now() });
+  h.unmount();
+  expect(useCEEStore.getState().roomClosedAt).toBeNull();
+});
 it("测试房直链房间不存在时自动用本地用户名按规范房号创建后进入，不弹设置用户名", async () => {
   localStorage.setItem("bakagame:username", "测试房主");
   const joinRoom = vi
