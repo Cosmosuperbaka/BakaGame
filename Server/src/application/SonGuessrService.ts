@@ -3249,7 +3249,7 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private installHost(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
-    room.musicAuthOperations = undefined;
+    // 只清开局锁：登录锁按「人 + 平台」记账，与房主身份无关，不能作废别人正在进行的扫码。
     room.automaticRoundOperation = undefined;
     room.automaticRoundLoading = false;
     room.hostPlayerId = player.id;

@@ -545,6 +545,52 @@ describe("SonGuessr service 音乐认证意图", () => {
   });
 });
 
+describe("房主变更与他人的在途登录", () => {
+  test("房主转让时，其他玩家正在进行的登录不被作废", async () => {
+    const pending =
+      deferredServiceResult<Awaited<ReturnType<NonNullable<MusicProvider["getLoginStatus"]>>>>();
+    let delay = false;
+    const service = new SonGuessrService({
+      musicProvider: {
+        ...provider,
+        getLoginStatus: async (cookie) =>
+          delay && cookie === "guest-cookie"
+            ? pending.promise
+            : { cookie, account: { nickname: cookie, vipStatus: "vip" } },
+      },
+    });
+    const host = connection(service, "auth-keep-host");
+    const guest = connection(service, "auth-keep-guest");
+    const other = connection(service, "auth-keep-other");
+    await createRoom(service, host);
+    await joinRoom(service, guest, "扫码的人");
+    const otherState = await joinRoom(service, other, "接任房主");
+
+    delay = true;
+    const login = execute<{ account: { nickname: string } }>(service, guest, {
+      id: "keep-login",
+      type: "song.auth.useCookie",
+      roomId: "1234",
+      payload: { cookie: "guest-cookie" },
+    });
+    await execute(service, host, {
+      id: "keep-transfer",
+      type: "song.room.transferHost",
+      roomId: "1234",
+      payload: { playerId: otherState.playerId },
+    });
+    pending.resolve({
+      cookie: "guest-cookie",
+      account: { nickname: "扫码的人", vipStatus: "vip" },
+    });
+
+    // 房主变了，扫码的人那次登录跟房主身份无关，仍然生效。
+    await expect(login).resolves.toMatchObject({ account: { nickname: "扫码的人" } });
+    const pool = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").musicPool ?? [];
+    expect(pool.some((entry) => entry.playerName === "扫码的人")).toBe(true);
+  });
+});
+
 describe("SonGuessr service 设置原子更新", () => {
   for (const invalid of ["password", "playlist"] as const) {
     test(invalid + "校验失败整包保持原状态并仍能公开加入", async () => {
