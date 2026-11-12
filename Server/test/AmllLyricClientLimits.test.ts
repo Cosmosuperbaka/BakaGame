@@ -53,7 +53,7 @@ describe("AMLL 歌词客户端：出站边界", () => {
     const client = createClient(
       (_url, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason as Error));
         })
     );
     expect(await client.getTtmlLyrics("1", {})).toBeUndefined();
