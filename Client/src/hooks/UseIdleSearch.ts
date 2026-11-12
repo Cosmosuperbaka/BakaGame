@@ -39,7 +39,11 @@ export function useIdleSearch<T>(
   const immediate = useRef(false);
 
   useEffect(() => {
-    if (!query || !enabled) return;
+    if (!query || !enabled) {
+      // 没有可查的关键词时点了「立即查询」：标记不能留给下一次输入，否则首个字符会跳过防抖。
+      immediate.current = false;
+      return;
+    }
     let cancelled = false;
     const delay = immediate.current ? 0 : IDLE_SEARCH_MS;
     immediate.current = false;
