@@ -263,7 +263,7 @@ function PasskeySection() {
                       loading={busy === "rename"}
                       onClick={() => startRename(item)}
                     >
-                      <Pencil />
+                      {busy === "rename" ? null : <Pencil />}
                     </Button>
                   )}
                   <Button

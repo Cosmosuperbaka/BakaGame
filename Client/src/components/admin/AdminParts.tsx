@@ -43,7 +43,8 @@ export function AdminToolbar({
         {children}
         {onReload ? (
           <Button type="button" variant="outline" size="sm" loading={loading} onClick={onReload}>
-            <RotateCw />
+            {/* 读取中由按钮自己的转圈表示，刷新图标让位：两枚旋转图标并排读不出哪个在转。 */}
+            {loading ? null : <RotateCw />}
             刷新
           </Button>
         ) : null}

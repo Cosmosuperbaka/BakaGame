@@ -353,7 +353,8 @@ function LoginDialogBody({
                 loading={busy === "passkey"}
                 onClick={() => void signInByPasskey()}
               >
-                <KeyRound />
+                {/* 读取中由按钮的转圈表示，钥匙图标让位，不并排两枚图标。 */}
+                {busy === "passkey" ? null : <KeyRound />}
                 通行密钥
               </Button>
             ) : null}
