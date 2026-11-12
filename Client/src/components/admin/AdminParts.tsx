@@ -169,11 +169,14 @@ export function Stat({
       </div>
       {parts.length ? (
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {/* 间隔号留在不折行的片段外面：换行只发生在两段之间。 */}
+          {/* 间隔号粘在前一段末尾：换行只发生在间隔号之后，下一行不会以「·」开头。 */}
           {parts.map((part, index) => (
             <Fragment key={`${index}:${part}`}>
-              {index ? " · " : null}
-              <span className="whitespace-nowrap">{part}</span>
+              {index ? " " : null}
+              <span className="whitespace-nowrap">
+                {part}
+                {index < parts.length - 1 ? " ·" : null}
+              </span>
             </Fragment>
           ))}
         </div>

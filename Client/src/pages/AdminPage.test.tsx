@@ -602,4 +602,29 @@ describe("管理后台", () => {
     // 标题旁带队列总数，accessible name 是「反作弊复核 3」，按前缀匹配。
     expect(await screen.findByRole("heading", { name: /^反作弊复核/ })).toBeInTheDocument();
   });
+
+  it("窄屏标签栏横滑时，直链进入的当前标签被挪进可见范围", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.audit.list.mockResolvedValue({ items: [], total: 0 });
+    // jsdom 没有布局：只给标签栏滚动容器与当前标签各一个矩形，其余元素都是零矩形。
+    const rect = (left: number, right: number) =>
+      ({ left, right, top: 0, bottom: 40, width: right - left, height: 40, x: left, y: 0 }) as DOMRect;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.getAttribute("role") === "tab" && this.dataset.state === "active")
+          return rect(600, 640);
+        if (this.querySelector(':scope > [role="tablist"]')) return rect(0, 340);
+        return rect(0, 0);
+      });
+    try {
+      renderAdmin("/admin?tab=audit");
+      expect(await screen.findByRole("tab", { name: "审计", selected: true })).toBeInTheDocument();
+      const scroller = screen.getByRole("tablist").parentElement as HTMLElement;
+      // 640 - 340 + 32 的余量。
+      expect(scroller.scrollLeft).toBe(332);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

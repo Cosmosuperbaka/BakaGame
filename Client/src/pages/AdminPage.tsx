@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ArrowLeft, ShieldCheck, ShieldOff, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -60,6 +60,19 @@ function AdminTabs() {
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
   const tab: TabValue = isTab(requested) ? requested : "overview";
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  // 窄屏 11 个标签只露出前五个：直链或跨标签跳转（如「去复核」）进来时当前标签在视口外，读不出自己在哪一页。
+  // 当前标签变了就把它横向挪进可见范围，留一点余量露出相邻标签；与关于页标签栏同一写法。
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const active = scroller?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    if (!scroller || !active) return;
+    const bounds = scroller.getBoundingClientRect();
+    const target = active.getBoundingClientRect();
+    const margin = 32;
+    if (target.right > bounds.right) scroller.scrollLeft += target.right - bounds.right + margin;
+    else if (target.left < bounds.left) scroller.scrollLeft -= bounds.left - target.left + margin;
+  }, [tab]);
   return (
     <Tabs
       value={tab}
@@ -67,8 +80,8 @@ function AdminTabs() {
         setParams(next === "overview" ? {} : { tab: next }, { replace: true })
       }
     >
-      {/* 窄屏九个标签放不下时横向滚动，不折行。 */}
-      <div className="scrollbar-hidden mb-6 overflow-x-auto">
+      {/* 窄屏 11 个标签放不下时横向滚动，不折行。 */}
+      <div ref={scrollerRef} className="scrollbar-hidden mb-6 overflow-x-auto">
         <TabsList className="min-w-full">
           {TABS.map((item) => (
             <TabsTrigger key={item.value} value={item.value}>
