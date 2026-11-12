@@ -7,6 +7,7 @@ import { isMeiliApiError, meiliHttpClient } from "../src/infrastructure/MeiliHtt
 // - GET /health           → 200 {"status":"available"}
 // - GET /empty            → 200 空响应体
 // - GET /indexes/slow     → 600ms 后响应（用于超时 abort）
+// - GET /html502 / /badjson / /huge → 非 JSON 的 502、非法 JSON 的 200、超限响应体
 // - 其余（如 /indexes/missing）→ 404 index_not_found
 let server: Server;
 let base = "";
@@ -22,6 +23,21 @@ beforeAll(async () => {
     if (url === "/empty") {
       res.writeHead(200);
       res.end();
+      return;
+    }
+    if (url === "/html502") {
+      res.writeHead(502, { "content-type": "text/html" });
+      res.end("<html><body>Bad Gateway</body></html>");
+      return;
+    }
+    if (url === "/badjson") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("<not-json>");
+      return;
+    }
+    if (url === "/huge") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(`"${"x".repeat(9 * 1024 * 1024)}"`);
       return;
     }
     if (url.startsWith("/indexes/slow")) {
@@ -76,6 +92,52 @@ describe("meiliHttpClient", () => {
     }
     expect(caught).toBeInstanceOf(MeilisearchApiError);
     expect(isMeiliApiError(caught, "index_not_found")).toBe(true);
+  });
+
+  test("502 返回 HTML 时拒绝为 MeilisearchApiError，不触发未捕获异常", async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      let caught: unknown;
+      try {
+        await meiliHttpClient(new URL(`${base}/html502`), { method: "GET" });
+      } catch (error) {
+        caught = error;
+      }
+      await Bun.sleep(20);
+      expect(caught).toBeInstanceOf(MeilisearchApiError);
+      expect((caught as MeilisearchApiError).message).toContain("502");
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+
+  test("200 返回非法 JSON 时拒绝为请求错误，不触发未捕获异常", async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      let caught: unknown;
+      try {
+        await meiliHttpClient(new URL(`${base}/badjson`), { method: "GET" });
+      } catch (error) {
+        caught = error;
+      }
+      await Bun.sleep(20);
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toContain("非 JSON");
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
+
+  test("响应体超过上限时中止并拒绝", async () => {
+    await expect(meiliHttpClient(new URL(`${base}/huge`), { method: "GET" })).rejects.toThrow(
+      "过大"
+    );
   });
 
   test("已中止的 signal 立即拒绝，不发起请求", async () => {

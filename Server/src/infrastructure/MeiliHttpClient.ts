@@ -2,6 +2,9 @@ import { Agent, request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { MeilisearchApiError, type MeilisearchErrorResponse } from "meilisearch";
 
+/** 响应体大小上限：超出说明对端异常，直接中止比撑爆线程内存安全。 */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
 /**
  * Meilisearch SDK 的自定义 HTTP 客户端。
  *
@@ -41,14 +44,46 @@ export async function meiliHttpClient(...args: Parameters<typeof fetch>): Promis
       },
       (response) => {
         let data = "";
+        let size = 0;
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
+          size += Buffer.byteLength(chunk);
+          if (size > MAX_RESPONSE_BYTES) {
+            reject(new Error("Meilisearch 响应体过大"));
+            request.destroy();
+            return;
+          }
           data += chunk;
         });
+        // 事件回调里抛错不会进入 Promise 链，会变成线程级未捕获异常，
+        // 所以所有失败都必须在这里转成 reject。
+        response.on("error", reject);
+        response.on("aborted", () => reject(new Error("Meilisearch 响应被中断")));
         response.on("end", () => {
-          const parsed = data === "" ? undefined : (JSON.parse(data) as unknown);
           const status = response.statusCode ?? 0;
-          if (status < 200 || status >= 300) {
+          const ok = status >= 200 && status < 300;
+          let parsed: unknown;
+          if (data !== "") {
+            try {
+              parsed = JSON.parse(data) as unknown;
+            } catch (error) {
+              // 反向代理或实例重启途中常返回 HTML 或纯文本错误页。
+              if (ok) {
+                reject(new Error("Meilisearch 返回了非 JSON 响应", { cause: error }));
+              } else {
+                reject(
+                  new MeilisearchApiError(toErrorResponse(url, response), {
+                    message: `HTTP ${status}：${data.slice(0, 200)}`,
+                    code: "non_json_response",
+                    type: "system",
+                    link: "",
+                  })
+                );
+              }
+              return;
+            }
+          }
+          if (!ok) {
             reject(
               new MeilisearchApiError(
                 toErrorResponse(url, response),
