@@ -52,7 +52,6 @@ import {
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
-  HOST_RECONNECT_TIMEOUT_MS,
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
   ROOM_IDLE_TIMEOUT_MS,
@@ -68,7 +67,6 @@ import {
   ensureRoomId,
   normalizeName,
   normalizeWord,
-  safeEqualToken,
   type RandomSource,
 } from "../domain/Rules";
 import {
@@ -100,8 +98,22 @@ import {
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
+import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
+import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
+import { adoptRoomCore } from "./room/RoomSnapshotCodec";
+import {
+  assertAgentAdmission,
+  assertSeatResumable,
+  assertTabAgentsAllowed,
+  bindSeat,
+  findSeat,
+  markSeatOffline,
+  roomsOfTab,
+  type SeatBindingContext,
+  type TabSeatContext,
+} from "./room/SeatBinding";
 import {
   MusicSearchOptions,
   musicIpScope,
@@ -205,10 +217,19 @@ export class SonGuessrService implements AdminRoomControl {
   /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
   private readonly reservations = new RoomIdReservations();
   private readonly passwordGate: RoomPasswordGate;
+  /** 座位绑定、转离线与标签页座位共用的内核上下文。 */
+  private readonly roomKernel: SeatBindingContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> &
+    TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord>;
 
   constructor(readonly options: SonGuessrServiceOptions) {
     this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
     this.now = options.now ?? (() => Date.now());
+    this.roomKernel = {
+      shape: SONG_ROOM_SHAPE,
+      connections: this.connections,
+      rooms: this.rooms,
+      now: () => this.now(),
+    };
     this.passwordGate = new RoomPasswordGate({
       now: () => this.now(),
       normalize: normalizeRoomPassword,
@@ -331,14 +352,9 @@ export class SonGuessrService implements AdminRoomControl {
     if (!raw.players || typeof raw.players !== "object") return undefined;
     const room = raw as unknown as SonGuessrRoomRecord;
 
-    for (const player of Object.values(room.players)) {
-      player.online = false;
-      player.connectionId = undefined;
-      // 掉线清理从 lastSeenAt 起算，保留停机前的值会让重启超过 3 分钟的房间一次巡检清空。
-      player.lastSeenAt = now;
-    }
-
-    room.emptySinceAt = undefined;
+    // 全员离线、掉线与空房计时从恢复时刻起算；房主此刻必然离线，一律带一段完整的重连宽限，
+    // 否则第一个回来的人会因为「离线房主没有截止」而抢走房主。
+    adoptRoomCore(room, Object.values(room.players), now);
     // 开局锁与登录锁是运行时状态：布尔锁会随 JSON 往返保留下来，重启后那次开局不会再有结果，
     // 留着会让房间永久无法开局（手动出题的锁没有任何别的清除路径）。
     room.automaticRoundLoading = false;
@@ -346,10 +362,6 @@ export class SonGuessrService implements AdminRoomControl {
     room.automaticRoundOperation = undefined;
     room.musicAuthOperations = undefined;
     room.updatedAt = now;
-    room.lastActivityAt = now;
-    if (room.hostReconnectDeadlineAt !== undefined) {
-      room.hostReconnectDeadlineAt = now + HOST_RECONNECT_TIMEOUT_MS;
-    }
     if (room.pendingSubmitterDeadlineAt !== undefined) {
       room.pendingSubmitterDeadlineAt += pausedMs;
       if (room.pendingSubmitterAssignedAt !== undefined)
@@ -381,38 +393,22 @@ export class SonGuessrService implements AdminRoomControl {
     this.connections.detach(connection);
     if (player.connectionId !== connection.id) return;
 
-    this.markSeatOffline(room, player, `${player.name} 断线，出题已中止，请重新指定出题人`);
-    this.log("song.player.disconnected", room.id, player.id);
-  }
-
-  /**
-   * 座位转为离线保留：与网络断线同一套后果（空房计时、房主重连期限、中止待出题），
-   * 给人类留出用会话凭证重连的时间。调用方先解绑连接。
-   */
-  private markSeatOffline(
-    room: SonGuessrRoomRecord,
-    player: SonGuessrPlayerRecord,
-    submitterNotice: string
-  ) {
-    player.online = false;
-    player.connectionId = undefined;
-    player.lastSeenAt = this.now();
-
-    if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
-      room.emptySinceAt ??= this.now();
-    }
-
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
-    if (room.hostPlayerId === player.id && !this.isTestRoom(room)) {
-      room.hostReconnectDeadlineAt = this.now() + HOST_RECONNECT_TIMEOUT_MS;
-    }
-    this.releasePendingSubmitter(room, player.id, submitterNotice);
-
+    const { wasHost } = markSeatOffline(this.roomKernel, room, player, {
+      emptyRoomExempt: this.isTestRoom(room),
+    });
+    if (wasHost && this.isTestRoom(room)) room.hostReconnectDeadlineAt = undefined;
+    this.releasePendingSubmitter(
+      room,
+      player.id,
+      `${player.name} 断线，出题已中止，请重新指定出题人`
+    );
     // 普通断线可能只是刷新或切到后台，不能因此把仍在进行的回合提前结算。
     // 显式离开和踢出会移除正式席位，并在各自路径重新检查回合完成状态。
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();
+    this.log("song.player.disconnected", room.id, player.id);
   }
 
   async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
@@ -548,12 +544,7 @@ export class SonGuessrService implements AdminRoomControl {
     for (const room of [...this.rooms.values()]) {
       if (this.reclaimIdleRoom(room, currentTime) !== "keep") continue;
       this.cleanupOfflinePlayers(room, currentTime);
-      if (
-        room.hostReconnectDeadlineAt !== undefined &&
-        currentTime >= room.hostReconnectDeadlineAt
-      ) {
-        this.transferHostAfterDisconnect(room);
-      }
+      this.resolveHost(room, currentTime);
       this.expirePendingSubmitter(room, currentTime);
       this.settlePlayingRound(room, currentTime);
       this.publishRoomCalibration(room);
@@ -622,9 +613,7 @@ export class SonGuessrService implements AdminRoomControl {
       delete room.players[player.id];
       // 掉线超过宽限：人和他贡献的号一起清出房间（宽限内号仍在，房主面板也能看到）。
       this.clearMusicSession(room, player.id);
-      if (room.hostPlayerId === player.id) {
-        this.reassignHost(room);
-      }
+      if (room.hostPlayerId === player.id) this.reassignRemovedHost(room);
       this.touch(room);
       if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
         this.closeRoom(room, "empty");
@@ -804,12 +793,10 @@ export class SonGuessrService implements AdminRoomControl {
   ) {
     const room = this.getRoom(ensureRoomId(roomIdValue ?? "", this.testRooms));
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
-    const seat = this.tabSeat(room, connection);
+    const seat = findSeat(this.roomKernel, room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
-    this.ensureAgentsAllowed(room, connection);
-    if (connection.agentDriven?.() === true && room.settings.allowAgents !== true)
-      throw new AppError("AGENTS_NOT_ALLOWED", "房主已禁止 Agent 进入");
+    assertAgentAdmission(connection, SONG_ROOM_SHAPE.admission(room));
     await this.passwordGate.verify(room, room.visibility, payload.password, connection.id);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
@@ -833,15 +820,6 @@ export class SonGuessrService implements AdminRoomControl {
     if (connection.isAgent === true) player.isAgent = true;
     player.membership = membership;
     room.players[player.id] = player;
-    const currentHost = room.players[room.hostPlayerId];
-    const hostGraceExpired =
-      room.hostReconnectDeadlineAt === undefined || this.now() >= room.hostReconnectDeadlineAt;
-    if (
-      this.isHostSeatVacant(room) ||
-      (!currentHost?.online && (this.isTestRoom(room) || hostGraceExpired))
-    ) {
-      this.installHost(room, player);
-    }
     this.attachConnection(room, player, connection);
     this.touch(room);
     this.appendSystemMessage(room, `${player.name} 加入了房间`);
@@ -862,21 +840,10 @@ export class SonGuessrService implements AdminRoomControl {
     const room = this.getRoom(targetRoomId);
     this.ensureAgentsAllowed(room, connection);
 
-    const player =
-      Object.values(room.players).find(
-        (candidate) =>
-          safeEqualToken(candidate.sessionToken, token) && candidate.membership !== "kicked"
-      ) ?? this.tabSeat(room, connection);
+    const player = findSeat(this.roomKernel, room, connection, token);
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
     return this.resumeSeat(connection, room, player);
-  }
-
-  /** 这张标签页在本房的席位；被踢的记录不算座位，再进来走普通加入。 */
-  private tabSeat(room: SonGuessrRoomRecord, connection: ConnectionRecord) {
-    const seatId = tabSeatId(connection, "song", room.id);
-    const seat = seatId ? room.players[seatId] : undefined;
-    return seat?.membership === "kicked" ? undefined : seat;
   }
 
   /** 把连接接回既有席位：重连与同标签页再次加入共用，准入判定只有这一份。 */
@@ -885,21 +852,17 @@ export class SonGuessrService implements AdminRoomControl {
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord
   ) {
-    if (connection.isAgent === true && player.isAgent !== true)
-      throw new AppError("AGENT_SEAT_FORBIDDEN", "Agent 不能接手人类座位");
+    assertSeatResumable(player, connection);
 
-    // 同一条连接重连它本来就在的那个房间时，不能走 detachFromRoom：
+    // 同一条连接重连它本来就在的那个座位时，不能走 detachFromRoom：
     // 那会先把自己的 player 记录删掉，随后的按 token 查找必然落空，重连反而失败。
-    // 换房重连则要等目标房号与令牌都校验通过后再解绑旧席位。
-    if (!(connection.roomId === room.id && connection.playerId)) {
+    // 换房或换座重连则要等目标房号与令牌都校验通过后再释放旧席位：绑定座位的前提是连接空闲。
+    if (!(connection.roomId === room.id && connection.playerId === player.id)) {
       this.ensureConnectionFree(connection);
     }
 
-    this.attachConnection(room, player, connection);
-    room.emptySinceAt = undefined;
     // 房主空缺时回座的人当场接任：重选只挑在线的人，空缺期间回来的人不会再有第二次机会。
-    if (room.hostPlayerId === player.id) room.hostReconnectDeadlineAt = undefined;
-    else if (this.isHostSeatVacant(room) && !player.isBot) this.installHost(room, player);
+    this.attachConnection(room, player, connection);
     this.ensureRoundPlayerState(room, player);
 
     // 网易云播放地址可能带有效期。刷新页面后重新取一次当前回合地址，
@@ -967,10 +930,7 @@ export class SonGuessrService implements AdminRoomControl {
       return { left: true, roomClosed: true };
     }
 
-    if (room.hostPlayerId === player.id) {
-      room.hostPlayerId = "";
-      this.reassignHost(room);
-    }
+    if (room.hostPlayerId === player.id) this.reassignRemovedHost(room);
     this.releasePendingSubmitter(
       room,
       player.id,
@@ -1318,7 +1278,7 @@ export class SonGuessrService implements AdminRoomControl {
       target.id,
       `出题人 ${target.name} 已被移出，请重新指定出题人`
     );
-    if (room.hostPlayerId === target.id) this.reassignHost(room);
+    if (room.hostPlayerId === target.id) this.reassignRemovedHost(room);
     if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
     this.touch(room);
     this.publishRoom(room);
@@ -1373,13 +1333,12 @@ export class SonGuessrService implements AdminRoomControl {
     const { room, player } = this.requireRoomPlayer(connection);
     this.ensureHost(room, player.id);
     const target = room.players[targetPlayerId];
-    if (!target || !target.online || target.membership !== "active") {
-      throw new AppError("INVALID_TARGET", "只能转让给在线正式玩家");
-    }
-    this.installHost(room, target);
+    const previousHostId = room.hostPlayerId;
+    transferHost(room, target);
+    this.settleHostChange(room, previousHostId);
     this.touch(room);
     this.publishRoom(room);
-    return { hostPlayerId: target.id };
+    return { hostPlayerId: room.hostPlayerId };
   }
 
   private sendChat(connection: ConnectionRecord, rawText: string) {
@@ -3035,36 +2994,15 @@ export class SonGuessrService implements AdminRoomControl {
     this.publishLobby();
   }
 
+  /** 把连接绑到座位；内核可能在绑定时改选房主，易主后的猜歌收尾在这里统一做。 */
   private attachConnection(
     room: SonGuessrRoomRecord,
     player: SonGuessrPlayerRecord,
     connection: ConnectionRecord
   ) {
-    const previous = this.connections.findConnectionByPlayer(room.id, player.id);
-    if (previous && previous.id !== connection.id) {
-      // 旧连接多半已经死了（客户端断网才会重连），通知与关闭都不许抛：
-      // 让顶号失败把新连接一起挡在门外，等于把一次掉线放大成进不去房。口径同 broadcastToRoom。
-      try {
-        // 统一带上 song. 前缀；客户端保留对裸名的兼容分支，避免旧客户端收不到。
-        (previous.sendPacket ?? previous.send)(
-          createEvent("song.session.replaced", { roomId: room.id })
-        );
-      } catch {
-        /* 发不出去就不发，接管照常 */
-      }
-      this.connections.detach(previous);
-      try {
-        previous.close(4001, "session_replaced");
-      } catch {
-        /* 已经关掉的连接不需要再关一次 */
-      }
-    }
-    player.online = true;
-    player.connectionId = connection.id;
-    player.account = connection.account;
-    player.lastSeenAt = this.now();
-    connection.resetStateSync?.();
-    this.connections.attach(connection, room.id, player.id);
+    const previousHostId = room.hostPlayerId;
+    bindSeat(this.roomKernel, room, player, connection);
+    this.settleHostChange(room, previousHostId);
   }
 
   private appendSystemMessage(room: SonGuessrRoomRecord, text: string) {
@@ -3172,17 +3110,12 @@ export class SonGuessrService implements AdminRoomControl {
 
   /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
   assertTabAgentsAllowed(tabKey: string): void {
-    for (const roomId of this.connections.roomIdsOfTab(tabKey))
-      if (this.rooms.get(roomId)?.settings.allowAgents !== true)
-        throw new AppError("AGENTS_NOT_ALLOWED", "本房间未开启 MCP 接入");
+    assertTabAgentsAllowed(this.roomKernel, tabKey);
   }
 
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
-    for (const roomId of this.connections.roomIdsOfTab(tabKey)) {
-      const room = this.rooms.get(roomId);
-      if (room) this.publishRoom(room);
-    }
+    for (const room of roomsOfTab(this.roomKernel, tabKey)) this.publishRoom(room);
   }
 
   private requireName(value: string) {
@@ -3193,57 +3126,31 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   /**
-   * 房主席位是否空缺：没有房主记录、房主被踢或是机器人，或房主离线且重连期限已过。
-   * 离线但仍在期限内的房主不算空缺，给他留出重连的时间。
+   * 房主易主后的猜歌收尾：新房主恒为已准备；开局加载在途时作废那次开局的操作，
+   * 它回来复核会发现自己已不是当前操作。登录锁按「人 + 平台」记账，与房主身份无关，不碰。
    */
-  private isHostSeatVacant(room: SonGuessrRoomRecord) {
+  private settleHostChange(room: SonGuessrRoomRecord, previousHostId: string) {
+    if (room.hostPlayerId === previousHostId) return;
     const host = room.players[room.hostPlayerId];
-    if (!host || host.isBot || host.membership === "kicked") return true;
-    return (
-      !host.online &&
-      room.hostReconnectDeadlineAt !== undefined &&
-      this.now() >= room.hostReconnectDeadlineAt
-    );
-  }
-
-  private installHost(room: SonGuessrRoomRecord, player: SonGuessrPlayerRecord) {
-    // 只清开局锁：登录锁按「人 + 平台」记账，与房主身份无关，不能作废别人正在进行的扫码。
+    if (!host) return;
     room.automaticRoundOperation = undefined;
     room.automaticRoundLoading = false;
-    room.hostPlayerId = player.id;
-    room.hostReconnectDeadlineAt = undefined;
-    player.isReady = true;
+    host.isReady = true;
   }
 
-  /**
-   * 重选房主，只挑在线的真人。选不到时房主置空，但保留一个已到期的截止：
-   * 巡检每一跳都会重试，不会因为这一刻没人在线就永远没有房主。
-   */
-  private reassignHost(room: SonGuessrRoomRecord) {
-    const next =
-      Object.values(room.players)
-        .filter((player) => player.online && player.membership === "active" && !player.isBot)
-        .sort((left, right) => left.joinedAt - right.joinedAt)[0] ??
-      Object.values(room.players)
-        .filter((player) => player.online && player.membership !== "kicked" && !player.isBot)
-        .sort((left, right) => left.joinedAt - right.joinedAt)[0];
-    if (next) {
-      this.installHost(room, next);
-    } else {
-      room.hostPlayerId = "";
-      room.hostReconnectDeadlineAt = this.now();
-    }
+  /** 房主被移除（离开、被踢、被清理）后按内核规则改选；没有在线真人时房主待选。 */
+  private reassignRemovedHost(room: SonGuessrRoomRecord) {
+    const previousHostId = room.hostPlayerId;
+    reassignHost(room, Object.values(room.players));
+    this.settleHostChange(room, previousHostId);
   }
 
-  /** 房主离线超时或席位空缺时由巡检调用；这一跳选不到人就保留截止，下一跳再试。 */
-  private transferHostAfterDisconnect(room: SonGuessrRoomRecord) {
-    if (room.players[room.hostPlayerId]?.online) {
-      room.hostReconnectDeadlineAt = undefined;
-      return;
-    }
-    const before = room.hostPlayerId;
-    this.reassignHost(room);
-    if (room.hostPlayerId === before) return;
+  /** 巡检每跳调用：房主空缺或离线宽限已过时改选，选不到就保持现状、下一跳再试。 */
+  private resolveHost(room: SonGuessrRoomRecord, currentTime: number) {
+    const previousHostId = room.hostPlayerId;
+    const { changed } = resolveHostGrace(room, Object.values(room.players), currentTime);
+    if (!changed) return;
+    this.settleHostChange(room, previousHostId);
     this.touch(room);
     this.publishRoom(room);
     this.publishLobby();

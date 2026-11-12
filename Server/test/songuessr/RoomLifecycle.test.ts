@@ -1260,6 +1260,102 @@ describe("SonGuessrService", () => {
     });
   });
 
+  describe("座位绑定与房主", () => {
+    const reconnect = (service: SonGuessrService, client: TestConnection, sessionToken: string) =>
+      execute(service, client, {
+        id: `reconnect-${client.record.id}`,
+        type: "song.room.reconnect",
+        payload: { roomId: "1234", sessionToken },
+      });
+    const transfer = (service: SonGuessrService, client: TestConnection, playerId: string) =>
+      execute(service, client, {
+        id: "transfer",
+        type: "song.room.transferHost",
+        roomId: "1234",
+        payload: { playerId },
+      });
+
+    test("同一连接用另一座位的令牌重连：旧座位随之释放，不留在线的影子座位", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "swap-host");
+      const guest = connection(service, "swap-guest");
+      await createRoom(service, host);
+      const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+      const guestState = await joinRoom(service, guest, "客人");
+
+      // 客人的连接拿房主的令牌重连：连接换到房主座位，原来的客人座位不能还挂着在线。
+      await reconnect(service, guest, hostState.sessionToken);
+
+      const room = service.rooms.get("1234")!;
+      expect(room.players[guestState.playerId]).toBeUndefined();
+      expect(room.players[hostState.playerId]).toMatchObject({
+        online: true,
+        connectionId: "swap-guest",
+      });
+      expect(service.connections.findConnectionByPlayer("1234", hostState.playerId)?.id).toBe(
+        "swap-guest"
+      );
+    });
+
+    test("手动转让房主：目标必须是在线的正式真人", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "move-host");
+      const guest = connection(service, "move-guest");
+      const spectator = connection(service, "move-spectator");
+      await createRoom(service, host);
+      const guestState = await joinRoom(service, guest, "客人");
+      await execute(service, spectator, {
+        id: "spectate-join",
+        type: "song.room.join",
+        roomId: "1234",
+        payload: { userName: "旁观者" },
+      });
+      const spectatorId = lastEvent<SonGuessrPrivateState>(
+        spectator,
+        "song.game.privateState"
+      ).playerId;
+      await execute(service, spectator, {
+        id: "spectate",
+        type: "song.player.setSpectator",
+        roomId: "1234",
+        payload: { spectator: true },
+      });
+
+      await expect(transfer(service, host, spectatorId)).rejects.toMatchObject({
+        code: "INVALID_TARGET",
+      });
+      await service.unregisterConnection(guest.record.id);
+      await expect(transfer(service, host, guestState.playerId)).rejects.toMatchObject({
+        code: "INVALID_TARGET",
+      });
+      expect(service.rooms.get("1234")!.hostPlayerId).not.toBe(guestState.playerId);
+    });
+
+    test("停机恢复后房主带完整重连宽限：先回来的客人不会抢走房主", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "restore-host");
+      const guest = connection(service, "restore-guest");
+      await createRoom(service, host);
+      const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
+      const guestState = await joinRoom(service, guest, "客人");
+      // 停机前房主在线，快照里没有任何重连截止。
+      const exported = service.exportSnapshots();
+
+      now += 5_000;
+      const restarted = new SonGuessrService({ musicProvider: provider, now: () => now });
+      expect(restarted.restoreSnapshots(exported, now)).toBe(1);
+      const back = connection(restarted, "restore-guest-2");
+      await reconnect(restarted, back, guestState.sessionToken);
+      expect(restarted.rooms.get("1234")!.hostPlayerId).toBe(hostState.playerId);
+
+      // 宽限内房主回来仍是房主；宽限耗尽后巡检把房主交给在线的客人。
+      now += 70_000;
+      await restarted.runHousekeeping();
+      expect(restarted.rooms.get("1234")!.hostPlayerId).toBe(guestState.playerId);
+    });
+  });
+
   describe("建私密房期间（口令摘要尚未算完）", () => {
     /** 把摘要停在手里：测试决定它何时算完，窗口内的一切读写都发生在 await 之间。 */
     const holdDigest = () => {
