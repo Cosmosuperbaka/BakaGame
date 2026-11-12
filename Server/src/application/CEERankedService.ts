@@ -114,6 +114,8 @@ const BOT_SEAT: CEERankedSeatIndex = 1;
 type CEERankedBotEntry = "manual" | "auto" | "placement" | null;
 /** 匹配跳周期：1 秒一跳，只在队列非空时运行。 */
 const MATCH_TICK_MS = 1_000;
+/** 唤醒抛错后的重排退避：同一异常不会让计时器贴着 1ms 空转。 */
+const WAKE_RETRY_BACKOFF_MS = 5_000;
 /** 结算写库缺省重试等待：1 / 3 / 9 秒。 */
 const DEFAULT_SETTLE_RETRY_DELAYS_MS = [1_000, 3_000, 9_000];
 /** 缺省昵称解析失败时的显示名。 */
@@ -342,7 +344,7 @@ export class CEERankedService {
     for (const runtime of [...this.seriesById.values()]) {
       if (runtime.timerWakeAt === null || runtime.timerWakeAt > now) continue;
       this.cancelTimer(runtime);
-      void this.wakeSeries(runtime);
+      this.fireWake(runtime);
     }
   }
 
@@ -905,18 +907,19 @@ export class CEERankedService {
 
   // ==================== 计时与推进 ====================
 
-  private scheduleTimer(runtime: CEERankedSeriesRuntime): void {
+  private scheduleTimer(runtime: CEERankedSeriesRuntime, minDelayMs = 0): void {
     this.cancelTimer(runtime);
     if (this.closed) return;
     if (runtime.series.phase === "settled" && runtime.settlementDone) return;
-    const wake = this.nextWakeAt(runtime);
-    if (wake === null) return;
+    const nextWake = this.nextWakeAt(runtime);
+    if (nextWake === null) return;
+    const wake = Math.max(nextWake, this.now() + minDelayMs);
     runtime.timerWakeAt = wake;
     const cancel = this.setTimer(
       () => {
         runtime.timerCancel = null;
         runtime.timerWakeAt = null;
-        void this.wakeSeries(runtime);
+        this.fireWake(runtime);
       },
       Math.max(1, wake - this.now())
     );
@@ -949,6 +952,18 @@ export class CEERankedService {
     }
     if (times.length === 0) return null;
     return Math.min(...times);
+  }
+
+  /** 计时器与巡检的统一唤醒入口：唤醒是时间轴上唯一的驱动，抛错不能变成未处理拒绝并丢掉计时器。 */
+  private fireWake(runtime: CEERankedSeriesRuntime): void {
+    this.wakeSeries(runtime).catch((error: unknown) => {
+      this.logger?.error("排位唤醒异常", {
+        seriesId: runtime.series.id,
+        error: errorMessageOf(error),
+      });
+      if (this.seriesById.has(runtime.series.id))
+        this.scheduleTimer(runtime, WAKE_RETRY_BACKOFF_MS);
+    });
   }
 
   private async wakeSeries(runtime: CEERankedSeriesRuntime): Promise<void> {

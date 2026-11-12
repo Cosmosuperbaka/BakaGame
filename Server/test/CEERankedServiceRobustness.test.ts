@@ -247,3 +247,31 @@ describe("结算不阻塞命令", () => {
     expect(await harness.store.getSeriesAudit(seriesId)).not.toBeNull();
   });
 });
+
+describe("计时器唤醒容错", () => {
+  test("唤醒时推送抛错：记错误日志并重排计时器，场次不会停摆", async () => {
+    const harness = rankedHarness();
+    const client = harness.connect("甲");
+    await startBotSeries(harness, client);
+    expect(harness.seriesView(client).game?.phase).toBe("countdown");
+    const send = client.record.send;
+    let armed = true;
+    client.record.send = (payload) => {
+      if (armed) {
+        armed = false;
+        throw new Error("测试用推送失败");
+      }
+      send(payload);
+    };
+
+    // 读秒结束的那次唤醒在推送时抛错：不能变成未处理拒绝，也不能丢掉计时器。
+    await harness.advance(CEE_RANKED_COUNTDOWN_MS);
+    expect(harness.logs.error.map((item) => item.message)).toContain("排位唤醒异常");
+    expect(harness.seriesView(client).game?.phase).toBe("countdown");
+
+    // 唤醒已经把本局推进到进行中，只是那一帧没送出去；计时器必须还在，后续的截止与人机出手才会继续送帧。
+    await harness.advance(10 * 60_000);
+    const phase = harness.seriesView(client).game?.phase;
+    expect(phase === undefined || phase !== "countdown").toBe(true);
+  });
+});
