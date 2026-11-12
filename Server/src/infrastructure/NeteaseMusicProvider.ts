@@ -702,10 +702,18 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
+    let degraded = false;
     return this.musicCache.cached(
       this.cacheKey("metadata", undefined, id),
       SONG_METADATA_CACHE_TTL_MS,
-      () => this.loadSong(id, false, cookie)
+      () => {
+        degraded = false;
+        return this.loadSong(id, false, cookie, () => {
+          degraded = true;
+        });
+      },
+      // 可选数据（百科、热度）因瞬态失败缺席时照常返回，但不入缓存，下次重新回源补全。
+      { ttlForResult: () => (degraded ? 0 : SONG_METADATA_CACHE_TTL_MS) }
     );
   }
 
@@ -716,7 +724,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("popularity", undefined, id),
       POPULARITY_CACHE_TTL_MS,
       async () => {
-        const response = await this.callOptional(["song_red_count"], { id }, cookie);
+        const response = await this.callIfAvailable(["song_red_count"], { id }, cookie);
         if (!response) return undefined;
         const body = responseBody(response);
         const data = asRecord(body.data);
@@ -732,7 +740,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       this.cacheKey("song-chorus", undefined, id),
       SONG_CHORUS_CACHE_TTL_MS,
       async () => {
-        const response = await this.callOptional(["song_chorus"], { id }, cookie);
+        const response = await this.callIfAvailable(["song_chorus"], { id }, cookie);
         if (!response) return undefined;
         const body = responseBody(response);
         const list = asArray(body.chorus ?? asRecord(body.data).chorus ?? body.data);
@@ -763,10 +771,26 @@ export class NeteaseMusicProvider implements MusicProvider {
   async getPlaylistSongs(playlistId: string, cookie?: MusicCookieInput) {
     const id = playlistId.trim();
     if (!/^\d+$/.test(id)) throw new AppError("INVALID_PLAYLIST", "歌单 ID 无效");
+    // 补充请求（歌单详情、后续分页）因瞬态失败降级时，结果可能缺名称或被截断，只做短缓存。
+    let degraded = false;
+    const readOptional = async (names: string[], params: Record<string, unknown>) => {
+      try {
+        return await this.callIfAvailable(names, { ...params }, cookie);
+      } catch (error) {
+        if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) throw error;
+        degraded = true;
+        this.logger?.warn("网易云可选接口调用降级", {
+          endpoints: names,
+          error: describeError(error),
+        });
+        return undefined;
+      }
+    };
     return this.musicCache.cached(
       this.cacheKey("playlist", cookie, id),
       COLLECTION_CACHE_TTL_MS,
       async () => {
+        degraded = false;
         const songs: SongSearchResult[] = [];
         const seenIds = new Set<string>();
         let name: string | undefined;
@@ -803,7 +827,7 @@ export class NeteaseMusicProvider implements MusicProvider {
 
         // `playlist_track_all` 不返回歌单名与曲目总数，必须再取一次详情补上。
         if (!name || songCount === undefined) {
-          const detailResponse = await this.callOptional(["playlist_detail"], { id }, cookie);
+          const detailResponse = await readOptional(["playlist_detail"], { id });
           if (detailResponse) {
             const detail = asRecord(responseBody(detailResponse).playlist);
             name = name ?? readString(detail.name);
@@ -816,15 +840,11 @@ export class NeteaseMusicProvider implements MusicProvider {
         // 因此用「本页是否带来新歌曲」兜底判定，避免重复整页；翻页失败不丢弃已取到的部分。
         for (let page = 1; page < PLAYLIST_MAX_PAGES && firstAdded > 0; page += 1) {
           if (songCount !== undefined && songs.length >= songCount) break;
-          const response = await this.callOptional(
-            ["playlist_track_all", "playlist_detail"],
-            {
-              id,
-              limit: PLAYLIST_PAGE_SIZE,
-              offset: page * PLAYLIST_PAGE_SIZE,
-            },
-            cookie
-          );
+          const response = await readOptional(["playlist_track_all", "playlist_detail"], {
+            id,
+            limit: PLAYLIST_PAGE_SIZE,
+            offset: page * PLAYLIST_PAGE_SIZE,
+          });
           if (!response) break;
           const body = responseBody(response);
           const rawSongs = asArray(
@@ -848,7 +868,7 @@ export class NeteaseMusicProvider implements MusicProvider {
       },
       {
         ttlForResult: (result) =>
-          isPlaylistTruncated(result.info.songCount, result.songs.length)
+          degraded || isPlaylistTruncated(result.info.songCount, result.songs.length)
             ? PLAYLIST_TRUNCATED_CACHE_TTL_MS
             : COLLECTION_CACHE_TTL_MS,
       }
@@ -1155,7 +1175,8 @@ export class NeteaseMusicProvider implements MusicProvider {
   private async loadSong(
     songId: string,
     includeResources: boolean,
-    cookie?: MusicCookieInput
+    cookie?: MusicCookieInput,
+    onDegraded?: () => void
   ): Promise<SongDetails> {
     const id = songId.trim();
     if (!id) throw new AppError("INVALID_SONG", "歌曲 ID 不能为空");
@@ -1173,7 +1194,7 @@ export class NeteaseMusicProvider implements MusicProvider {
     const wikiPromise = this.musicCache.cached(
       this.cacheKey("song-wiki", undefined, id),
       SONG_WIKI_CACHE_TTL_MS,
-      () => this.callOptional(["song_wiki_summary", "song_wiki_home"], { id }, cookie)
+      () => this.callIfAvailable(["song_wiki_summary", "song_wiki_home"], { id }, cookie)
     );
     const lyricPromise = includeResources
       ? this.musicCache.cached(
@@ -1182,14 +1203,29 @@ export class NeteaseMusicProvider implements MusicProvider {
           () => this.call(["lyric_new", "lyric"], { id }, cookie)
         )
       : Promise.resolve(undefined);
-    const popularityPromise = this.getSongPopularity(id, cookie).catch(() => undefined);
+    // 可选数据失败不拖垮出题，但要告诉调用方这份详情是降级的，别把它当完整结果缓存。
+    const tolerate = <T>(promise: Promise<T>, rethrowLimits = false): Promise<T | undefined> =>
+      promise.catch((error: unknown) => {
+        // 百科沿用旧语义：限流与拥塞整次失败，让上层换路；热度与副歌一律降级。
+        if (
+          rethrowLimits &&
+          error instanceof AppError &&
+          NON_RETRYABLE_API_ERROR_CODES.has(error.code)
+        ) {
+          throw error;
+        }
+        this.logger?.warn("网易云可选接口调用降级", { songId: id, error: describeError(error) });
+        onDegraded?.();
+        return undefined;
+      });
+    const popularityPromise = tolerate(this.getSongPopularity(id, cookie));
     const chorusPromise = includeResources
-      ? this.getSongChorus(id, cookie).catch(() => undefined)
+      ? tolerate(this.getSongChorus(id, cookie))
       : Promise.resolve(undefined);
     const urlPromise = includeResources ? this.loadAudioUrl(id, cookie) : Promise.resolve("");
 
     const [wikiResponse, lyricResponse, urlResponse, popularity, chorus] = await Promise.all([
-      wikiPromise,
+      tolerate(wikiPromise, true),
       lyricPromise,
       urlPromise,
       popularityPromise,
@@ -1513,6 +1549,23 @@ export class NeteaseMusicProvider implements MusicProvider {
     if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) throw error;
     if (this.isRateLimitError(error)) throw this.upstreamError(error);
     return "body" in asRecord(error) ? (error as ApiResponse) : undefined;
+  }
+
+  /**
+   * 调用「可能不存在」的端点：只有接口包确实没有该能力时才返回 undefined（可当作「上游没有」缓存），
+   * 其余失败一律抛出，调用方放在缓存加载器里时失败不会落缓存。
+   */
+  private async callIfAvailable(
+    names: string[],
+    params: Record<string, unknown>,
+    cookie?: string | Record<string, unknown>
+  ): Promise<ApiResponse | undefined> {
+    try {
+      return await this.call(names, params, cookie);
+    } catch (error) {
+      if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
+      throw error;
+    }
   }
 
   private async callOptional(

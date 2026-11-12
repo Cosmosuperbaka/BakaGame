@@ -75,7 +75,10 @@ export class MusicCache {
       priority?: number;
       background?: boolean;
       cacheNegative?: boolean;
-      /** 按结果决定实际生效的 TTL：加载前无法区分的场景（如匿名检索的空结果沿用短 TTL）用它覆写。 */
+      /**
+       * 按结果决定实际生效的 TTL：加载前无法区分的场景（如匿名检索的空结果沿用短 TTL）用它覆写。
+       * 返回 0 表示这次结果不入缓存（结果由瞬态失败降级而来，下次必须回源）。
+       */
       ttlForResult?: (value: T) => number;
     } = {}
   ): Promise<T> {
@@ -113,10 +116,10 @@ export class MusicCache {
         // 负结果不写缓存：上游抖动可能返回空地址 / 空值，一旦落缓存就会被钉死整个 TTL，
         // 玩家重试也只会拿到同一个空值。`cacheNegative` 缺省为 true 以保持既有缓存语义，
         // 播放地址这类「重试可能成功」的取值显式传 false，只跳过空结果、正常地址照旧缓存。
-        const storeResult = allowNegative || Boolean(value);
+        const effectiveTtl = Math.max(0, options.ttlForResult?.(value) ?? ttlMs);
+        const storeResult = (allowNegative || Boolean(value)) && effectiveTtl > 0;
         if (storeResult) {
           const fetchedAt = this.now();
-          const effectiveTtl = Math.max(0, options.ttlForResult?.(value) ?? ttlMs);
           const serializedSize =
             value === undefined ? 32 : Math.max(32, JSON.stringify(value).length * 2);
           this.cache.set(key, {

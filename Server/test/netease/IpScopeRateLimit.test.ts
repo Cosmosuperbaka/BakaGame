@@ -527,6 +527,9 @@ describe("IP 作用域与限流", () => {
     const provider = new NeteaseMusicProvider({
       logger: fakeLogger,
       loadApi: async () => ({
+        song_detail: async () => ({
+          body: { songs: [{ id: 123, name: "歌", ar: [{ name: "手" }], al: { name: "辑" } }] },
+        }),
         song_red_count: async () => {
           throw new Error("上游网络抖动");
         },
@@ -535,15 +538,14 @@ describe("IP 作用域与限流", () => {
 
     // 包上玩家作用域：本用例只验「可选接口降级」这一条告警。作用域缺失会另外发一条自己的
     // 告警（见下面那条专项用例），不在这儿混进同一条计数。
-    const popularity = await musicIpScope.run("player:conn-optional", () =>
-      provider.getSongPopularity("123")
+    // 热度单独读取时失败原样抛出（不落缓存）；详情加载把它降级为缺席并留下告警。
+    const details = await musicIpScope.run("player:conn-optional", () =>
+      provider.getSongMetadata("123")
     );
-    expect(popularity).toBeUndefined();
+    expect(details.popularity).toBeUndefined();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toBe("网易云可选接口调用降级");
-    expect(warnings[0]?.meta).toMatchObject({
-      endpoints: ["song_red_count"],
-    });
+    expect(warnings[0]?.meta).toMatchObject({ songId: "123" });
   });
 
   /**
