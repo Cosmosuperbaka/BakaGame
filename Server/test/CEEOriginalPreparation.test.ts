@@ -134,6 +134,7 @@ const ROOM_CHANGES = [
   "kicked",
   "host-return",
   "setter-return",
+  "setter-moved",
   "cancel-return",
   "new-round",
   "peer-new-round",
@@ -190,6 +191,10 @@ const ROOM_CHANGE_APPLIERS: Record<
     const [first, second] = fixture.room.sockets;
     fixture.room.broadcast("waitForAnswer", { answerSetterId: second.id });
     fixture.room.broadcast("waitForAnswer", { answerSetterId: first.id });
+  },
+  // 出题权被他人夺走且不换回：不能靠「终态又回到原样」蒙混。
+  "setter-moved": ({ fixture }) => {
+    fixture.room.broadcast("waitForAnswer", { answerSetterId: fixture.room.sockets[1].id });
   },
   "cancel-return": ({ fixture, command }) => {
     fixture.room.broadcast("waitForAnswerCanceled", {});
@@ -361,6 +366,7 @@ describe("原版准备事务的异步归属", () => {
           }
           if (
             change === "setter-return" ||
+            change === "setter-moved" ||
             (change === "cancel-return" && command === "cee.game.setAnswer")
           )
             expect(h.snapshot().phase).toBe("answering");

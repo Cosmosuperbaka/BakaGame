@@ -582,7 +582,6 @@ export class CEEOriginalService {
       connectionId: session.connectionId,
       phase,
       hostId: session.players.find((player) => player.isHost)?.id || "",
-      setterId: session.setterId,
       roomGeneration: room.generation,
       roundKey: room.round?.id ?? null,
       settings: structuredClone(session.settings),
@@ -611,7 +610,6 @@ export class CEEOriginalService {
       room?.generation === operation.roomGeneration &&
       (room.round?.id ?? null) === operation.roundKey &&
       (session.players.find((player) => player.isHost)?.id || "") === operation.hostId &&
-      session.setterId === operation.setterId &&
       (operation.phase === "answering" ? state.canSetAnswer : state.canStart)
     );
   }

@@ -46,7 +46,6 @@ export interface CEEOriginalPreparation {
   connectionId: string;
   phase: "waiting" | "settled" | "answering";
   hostId: string;
-  setterId: string | null;
   roomGeneration: string;
   roundKey: string | null;
   settings: CEESettings;
