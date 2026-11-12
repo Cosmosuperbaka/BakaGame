@@ -684,7 +684,9 @@ export class EventLogger {
     }
 
     this.enqueueOtlp(record, level);
-    if (isServerSentryEnabled()) {
+    // 领域事件的信息级是每局成百上千条的常态流量，文件与 OTLP 已完整留存，不再占 Sentry Logs 配额；
+    // 事件量由下面的指标承担。告警级仍进 Sentry，那是需要人看的。
+    if (level !== "INFO" && isServerSentryEnabled()) {
       captureServerLog(headline, SENTRY_LEVEL[level], {
         event: entry.type,
         roomId: entry.roomId,

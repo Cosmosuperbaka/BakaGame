@@ -424,6 +424,31 @@ test("节流键表有上限：被挤出的键下次出现时重新记一条，�
   expect(records.length).toBe(before + 1);
 });
 
+test("领域事件的信息级常态流量不进 Sentry Logs，告警级事件仍进；指标按事件计数不受影响", async () => {
+  const init = spyOn(Sentry, "init").mockImplementation(() => undefined);
+  const infoLog = spyOn(Sentry.logger, "info").mockImplementation(() => undefined);
+  const warnLog = spyOn(Sentry.logger, "warn").mockImplementation(() => undefined);
+  const counts = spyOn(Sentry.metrics, "count").mockImplementation(() => undefined);
+  try {
+    initServerSentry({ sentryDsn: "https://dummy@o000000.ingest.sentry.io/100001" } as never);
+    const logger = new EventLogger(
+      () => undefined,
+      () => 1_000
+    );
+    await logger.write({ type: "player.ready_changed", createdAt: 1_000, roomId: "r1" });
+    await logger.write({ type: "room.closed", createdAt: 1_000, payload: { reason: "idle" } });
+    expect(infoLog).not.toHaveBeenCalled();
+    expect(warnLog).toHaveBeenCalledTimes(1);
+    // 事件量仍可从指标估算：配额由指标而不是逐条日志承担。
+    expect(counts.mock.calls.filter((call) => call[0] === "bakagame.events")).toHaveLength(2);
+  } finally {
+    init.mockRestore();
+    infoLog.mockRestore();
+    warnLog.mockRestore();
+    counts.mockRestore();
+  }
+});
+
 test("玩家掉线与房间正常关闭不产生告警级事件日志", async () => {
   const { records, sink } = memorySink();
   const logger = new EventLogger(
