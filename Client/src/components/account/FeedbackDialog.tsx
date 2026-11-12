@@ -31,7 +31,12 @@ import { formatAbsoluteTime, formatRelativeTime } from "@/lib/Time";
 import { cn } from "@/lib/Utils";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
-const PANEL = "scrollbar-hidden h-[min(56vh,30rem)] overflow-y-auto overscroll-contain";
+/**
+ * 两个标签共用的定高滚动区。全站不画滚动条，内容超出时上下淡出一段（scroll-fade-y），
+ * 读得出「下面还有」——游客的二次确认框就落在底部，不淡出时只露半截按钮像是被切坏了。
+ * 上下内边距给淡出段留位，首末行停稳后不被淡掉。
+ */
+const PANEL = "scrollbar-hidden scroll-fade-y h-[min(56vh,30rem)] py-3";
 
 type ListState =
   | { status: "loading" }
@@ -78,6 +83,12 @@ function FeedbackForm({
   const kindLabelId = useId();
   const confirmId = useId();
   const autoStarted = useRef(false);
+  const confirmRef = useRef<HTMLDivElement>(null);
+
+  // 二次确认框出现在表单底部，定高滚动区里常常落在可视范围外：出现时把它挪进来。
+  useEffect(() => {
+    if (confirming) confirmRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [confirming]);
   const ready = title.trim().length > 0 && content.trim().length > 0;
 
   const submit = useCallback(async () => {
@@ -168,6 +179,7 @@ function FeedbackForm({
       ) : null}
       {guest && confirming ? (
         <div
+          ref={confirmRef}
           role="alertdialog"
           aria-labelledby={confirmId}
           className="grid gap-2 rounded-md border border-border bg-muted/40 p-3"

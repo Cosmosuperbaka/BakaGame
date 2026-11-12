@@ -246,7 +246,8 @@ function PasskeySection() {
                   ) : (
                     <div className="leading-6 truncate">{label}</div>
                   )}
-                  <div className="mt-0.5 text-xs text-muted-foreground">
+                  {/* 时间与「添加」不拆行：窄屏宁可截断，也不把「添加」两字甩到第二行。 */}
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {formatAbsoluteTime(item.createdAt)} 添加
                   </div>
                 </div>
