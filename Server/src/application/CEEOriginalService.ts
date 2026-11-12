@@ -67,6 +67,13 @@ interface CEEOriginalOptions {
   ackTimeoutMs?: number;
 }
 
+/** 日志里的失败原因：业务错误取码，我们自己抛的简短说明原样保留，其余取异常名；不含载荷与密钥。 */
+function reasonOf(error: unknown): string {
+  if (error instanceof AppError) return error.code;
+  if (error instanceof Error) return error.name === "Error" ? error.message : error.name;
+  return "unknown";
+}
+
 export class CEEOriginalService {
   private readonly connections = new Map<string, ConnectionRecord>();
   private readonly sessions = new Map<string, CEEOriginalSession>();
@@ -815,11 +822,13 @@ export class CEEOriginalService {
       const response = await this.fetcher(new URL("/api/list-rooms", this.options.serverUrl), {
         signal: AbortSignal.timeout(8000),
       });
-      if (!response.ok) throw new Error("HTTP");
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload: unknown = await response.json();
       if (!Array.isArray(payload)) throw new Error("shape");
       return payload.map(originalObject);
-    } catch {
+    } catch (error) {
+      // 对外仍是统一的不可用文案；超时、HTTP 状态与形状错误只进日志，便于分清是哪一种。
+      this.options.logger?.warn("原版房间列表请求失败", { reason: reasonOf(error) });
       throw new AppError("CEE_ORIGINAL_UNAVAILABLE", "暂时无法连接原版服务器");
     }
   }
@@ -934,8 +943,9 @@ export class CEEOriginalService {
             host
           );
           this.publish(session);
-        } catch {
-          this.options.logger?.warn("原版房间状态转换失败", { event });
+        } catch (error) {
+          // 只记原因类别，不记载荷与密钥：区分密钥配错、载荷形状变化与其他异常。
+          this.options.logger?.warn("原版房间状态转换失败", { event, reason: reasonOf(error) });
           this.revoke(session, "原版返回的房间状态无法解析，请重新加入");
         }
       });

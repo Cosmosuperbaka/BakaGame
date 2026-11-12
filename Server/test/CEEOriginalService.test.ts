@@ -143,6 +143,54 @@ describe("原版房间适配", () => {
     expect(upstream.sockets).toHaveLength(0);
   });
 
+  test("房间列表请求失败：对外统一不可用，日志里保留 HTTP 状态与超时等具体原因", async () => {
+    const warns: Array<{ message: string; detail: unknown }> = [];
+    const logger = { warn: (message: string, detail?: unknown) => warns.push({ message, detail }) };
+    const http = setup({ logger, fetcher: async () => new Response("x", { status: 503 }) });
+    await expect(http.service.listUpstreamRooms()).rejects.toMatchObject({
+      code: "CEE_ORIGINAL_UNAVAILABLE",
+    });
+    const shape = setup({ logger, fetcher: async () => Response.json({ not: "list" }) });
+    await expect(shape.service.listUpstreamRooms()).rejects.toMatchObject({
+      code: "CEE_ORIGINAL_UNAVAILABLE",
+    });
+    const timeout = setup({
+      logger,
+      fetcher: async () => {
+        throw new DOMException("timeout", "TimeoutError");
+      },
+    });
+    await expect(timeout.service.listUpstreamRooms()).rejects.toMatchObject({
+      code: "CEE_ORIGINAL_UNAVAILABLE",
+    });
+    expect(warns.map((item) => item.detail)).toEqual([
+      { reason: "HTTP 503" },
+      { reason: "shape" },
+      { reason: "TimeoutError" },
+    ]);
+  });
+
+  test("上游事件载荷无法转换：撤销会话，日志带事件名与失败类别而不含载荷", async () => {
+    const warns: Array<{ message: string; detail: unknown }> = [];
+    const { service, upstream } = setup({
+      logger: { warn: (message, detail) => warns.push({ message, detail }) },
+    });
+    await request(service, "first", {
+      id: "join",
+      type: "cee.room.join",
+      roomId: "1234",
+      payload: { userName: "甲" },
+    });
+    upstream.broadcast("updatePlayers", "secret-payload-text");
+    expect(warns).toEqual([
+      {
+        message: "原版房间状态转换失败",
+        detail: { event: "updatePlayers", reason: "CEE_ORIGINAL_PROTOCOL" },
+      },
+    ]);
+    expect(service.hasSession("first")).toBe(false);
+  });
+
   test("原版非公开房在上游列表中标记为非公开，仍可按房号加入", async () => {
     const { service, upstream } = setup({
       fetcher: async () => Response.json([{ id: "1234", isPublic: false, playerCount: 1 }]),
