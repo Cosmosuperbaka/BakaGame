@@ -69,10 +69,12 @@ export function useClipPreviewAudio({ range, volume }: ClipPreviewAudioOptions) 
     return () => cancelAnimationFrame(frame);
   }, [applyVolume, playing, stopAtEnd]);
 
+  // 卸载时 ref 已被置空，只能靠每次提交后记下的元素来停播；元素晚于挂载才渲染时也能停到。
+  const mountedAudioRef = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
-    const audio = audioRef.current;
-    return () => audio?.pause();
-  }, []);
+    mountedAudioRef.current = audioRef.current;
+  });
+  useEffect(() => () => mountedAudioRef.current?.pause(), []);
 
   const seek = useCallback(
     (ms: number) => {
@@ -134,6 +136,8 @@ export function useClipPreviewAudio({ range, volume }: ClipPreviewAudioOptions) 
       onPause: () => setPlaying(false),
       onTimeUpdate,
       onEnded,
+      // 换了音源重新开始加载：上一次的失败提示作废。
+      onLoadStart: () => setFailed(false),
       onError: () => setFailed(true),
     },
   };
