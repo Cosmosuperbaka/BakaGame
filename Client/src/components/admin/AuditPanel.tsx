@@ -93,8 +93,15 @@ export function AuditPanel() {
                     {entry.targetType}:{entry.targetId}
                   </td>
                 </Hint>
-                <td className="max-w-80 break-words text-xs text-muted-foreground">
-                  {describeDetail(entry.detail)}
+                {/* 详情最多两行、悬停看全文：长标题平铺会把整行撑到四五行高，手机上看不见这一列却留下大段空白。 */}
+                <td className="text-xs text-muted-foreground">
+                  {entry.detail ? (
+                    <Hint label={describeDetail(entry.detail)}>
+                      <span className="line-clamp-2 max-w-80 break-words">
+                        {describeDetail(entry.detail)}
+                      </span>
+                    </Hint>
+                  ) : null}
                 </td>
               </tr>
             ))}
