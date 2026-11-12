@@ -31,7 +31,7 @@ export function AdminToolbar({
   loading?: boolean;
   /**
    * 筛选控件是 sm 高度（如概览的分段控件）时传入。缺省时刷新按钮与面板筛选用的
-   * SettingSelect / SettingTextField（h-10）同高，底边对齐的一排控件才不会一高一矮。
+   * SettingSelect / SettingTextField（h-9）同高，底边对齐的一排控件才不会一高一矮。
    */
   compact?: boolean;
 }) {
@@ -40,7 +40,8 @@ export function AdminToolbar({
       <h2 className="flex items-center gap-2 text-lg font-semibold">
         {title}
         {count === null || count === undefined ? null : (
-          <span className="font-mono text-sm font-normal text-muted-foreground">
+          // 计数不用等宽字体：等宽体的 0 带斜杠，空列表的「0」读成字母 Ø。
+          <span className="font-sans text-sm font-normal tabular-nums text-muted-foreground">
             {formatNumber(count)}
           </span>
         )}
@@ -52,7 +53,7 @@ export function AdminToolbar({
             type="button"
             variant="outline"
             size="sm"
-            className={compact ? undefined : "h-10"}
+            className={compact ? undefined : "h-9"}
             loading={loading}
             onClick={onReload}
           >
@@ -246,7 +247,8 @@ export function UserCell({
 }) {
   if (!user) return <span className="text-muted-foreground">{fallback}</span>;
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    // 限宽：表格按内容分配列宽，一个超长昵称会把账号列撑到半张表宽、手机上只剩这一列可见。
+    <span className="flex min-w-0 max-w-64 items-center gap-2">
       <PlayerAvatar name={user.name} image={user.image} className="h-6 w-6 text-xs" />
       <span className="min-w-0">
         <span className="block truncate">{user.name}</span>

@@ -148,7 +148,8 @@ export function UsersPanel() {
                       {ROLE_LABELS.admin}
                     </Badge>
                   ) : (
-                    ROLE_LABELS.user
+                    // 普通用户是常态，弱化成灰字；只有管理员用徽章突出。
+                    <span className="text-muted-foreground">{ROLE_LABELS.user}</span>
                   )}
                 </td>
                 <td>
