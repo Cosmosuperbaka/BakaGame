@@ -42,7 +42,7 @@ pnpm dev
 
 猜歌和猜角色依赖不进 Git 的 Bangumi 数据集，说明见 [Server/data/README.md](Server/data/README.md)。提交代码前请读 [CONTRIBUTING](CONTRIBUTING.md#开发者)。
 
-房间号 `Oblivionis` 是专用测试房，带调试控制台，可以跳阶段、加机器人，适合本地试玩法。
+房间号 `Oblivionis` 是专用测试房，带调试控制台，可以跳阶段、加机器人，适合本地试玩法。它缺省关闭（关闭时是非法房号）：本地要用，需在自己的 `Server/.env` 里把 `ENABLE_TEST_ROOMS` 设为 `true`；生产不得打开。
 
 ## 项目结构
 

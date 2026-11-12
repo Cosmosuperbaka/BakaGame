@@ -18,6 +18,7 @@ export const runtimeSettingKeySchema = z.enum([
   "enableSongMultiplayerEntry",
   "enableCeeMultiplayerEntry",
   "enableCeeRankedEntry",
+  "enableTestRooms",
 ]);
 
 export type RuntimeSettingKey = z.infer<typeof runtimeSettingKeySchema>;
@@ -61,6 +62,7 @@ export interface RuntimeSettingDefaults {
   enableGeneralUnblock?: boolean;
   enableAnonymousQqSearch?: boolean;
   enableCeeRankedEntry?: boolean;
+  enableTestRooms?: boolean;
 }
 
 export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescriptor> = {
@@ -143,6 +145,17 @@ export const RUNTIME_SETTINGS: Record<RuntimeSettingKey, RuntimeSettingDescripto
     note: "关闭后主页上的排位入口置灰并标注「暂时关闭」，不可进入，下一次读取站点配置即生效；只停入口不停服务，直连 /cee/ranked 与已在页面内的玩家不受影响。",
     schema: booleanText,
     defaultValue: (defaults) => (defaults.enableCeeRankedEntry === false ? "false" : "true"),
+    kind: "boolean",
+  },
+  enableTestRooms: {
+    key: "enableTestRooms",
+    envVar: "ENABLE_TEST_ROOMS",
+    title: "测试房",
+    // 缺省关闭且不随部署形态推断：缺标记时推断会静默失效，而测试房的特权（单人开局、测试指令、
+    // 调试信息、不写对局记录）一旦被任何人用同号房间拿到就是越权。
+    note: "打开后测试房号成为合法房号并享有测试特权；关闭时该房号与其它非法房号一样被拒。只应在本地开发与测试环境打开，改动只影响其后的建房与入房。",
+    schema: booleanText,
+    defaultValue: (defaults) => (defaults.enableTestRooms === true ? "true" : "false"),
     kind: "boolean",
   },
 };

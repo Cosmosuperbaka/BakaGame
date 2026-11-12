@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { AppSettings } from "../src/application/AppSettings";
 import { AppError } from "../src/domain/Errors";
-import { RUNTIME_SETTING_KEYS } from "../src/shared/RuntimeSettings";
+import { RUNTIME_SETTING_KEYS, type RuntimeSettingDefaults } from "../src/shared/RuntimeSettings";
 import type {
   AppSettingRepository,
   StoredAppSetting,
@@ -27,7 +27,10 @@ const warnings: string[] = [];
 
 const make = (
   repository: AppSettingRepository | undefined,
-  defaults = { clientMinDesktopVersion: "0.1.1", enableGeneralUnblock: true }
+  defaults: RuntimeSettingDefaults = {
+    clientMinDesktopVersion: "0.1.1",
+    enableGeneralUnblock: true,
+  }
 ) =>
   new AppSettings({
     repository,
@@ -165,5 +168,19 @@ describe("AppSettings 运行期旋钮", () => {
     expect(settings.boolean("enableCeeRankedEntry")).toBe(true);
     await settings.update("enableCeeRankedEntry", "false", "actor-1");
     expect(settings.boolean("enableCeeRankedEntry")).toBe(false);
+  });
+
+  it("测试房开关缺省关闭，只有环境变量缺省显式为真或后台打开才生效", async () => {
+    // 缺省是安全侧：没有任何配置（包括没有部署标记）时测试房号就是非法房号。
+    expect(make(undefined).boolean("enableTestRooms")).toBe(false);
+    expect(make(new FakeRepository()).boolean("enableTestRooms")).toBe(false);
+    expect(make(undefined, { enableTestRooms: true }).boolean("enableTestRooms")).toBe(true);
+
+    const repository = new FakeRepository();
+    const settings = make(repository);
+    await settings.update("enableTestRooms", "true", "actor-1");
+    expect(settings.boolean("enableTestRooms")).toBe(true);
+    await settings.update("enableTestRooms", "false", "actor-1");
+    expect(settings.boolean("enableTestRooms")).toBe(false);
   });
 });

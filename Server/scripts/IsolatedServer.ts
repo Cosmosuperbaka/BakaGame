@@ -49,6 +49,8 @@ export function isolatedEnvironment(
     OTEL_EXPORTER_OTLP_HEADERS: "",
     // 标签页接管的浏览器回归要走真实的远程 MCP 端点。
     MCP_ENABLED: "true",
+    // 浏览器回归要用测试房（调试控制器、单人开局）；生产缺省是关闭的，这里显式打开。
+    ENABLE_TEST_ROOMS: "true",
     BAKAGAME_TEST_OWNER: owner,
   });
 }

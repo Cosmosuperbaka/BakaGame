@@ -4565,7 +4565,8 @@
                                   "enableSongSoloEntry",
                                   "enableSongMultiplayerEntry",
                                   "enableCeeMultiplayerEntry",
-                                  "enableCeeRankedEntry"
+                                  "enableCeeRankedEntry",
+                                  "enableTestRooms"
                                 ]
                               },
                               "title": {
@@ -4696,7 +4697,8 @@
                           "enableSongSoloEntry",
                           "enableSongMultiplayerEntry",
                           "enableCeeMultiplayerEntry",
-                          "enableCeeRankedEntry"
+                          "enableCeeRankedEntry",
+                          "enableTestRooms"
                         ]
                       },
                       "value": {
@@ -4744,7 +4746,8 @@
                                   "enableSongSoloEntry",
                                   "enableSongMultiplayerEntry",
                                   "enableCeeMultiplayerEntry",
-                                  "enableCeeRankedEntry"
+                                  "enableCeeRankedEntry",
+                                  "enableTestRooms"
                                 ]
                               },
                               "title": {

@@ -561,6 +561,16 @@ export const ENV_ENTRIES: EnvEntry[] = [
       "关掉后落地页的排位入口置灰并标注「暂时关闭」、不可进入；只停入口不停服务，直连与在途对局不受影响。",
     ],
   },
+  {
+    name: "ENABLE_TEST_ROOMS",
+    layer: "T3",
+    documented: true,
+    sample: "false",
+    note: [
+      "测试房开关的缺省值（默认关闭，缺省不随部署形态推断）：线上生效值存 app_setting。",
+      "关闭时测试房号是非法房号，拿不到单人开局、测试指令与调试信息；只应在本地开发与测试环境打开。",
+    ],
+  },
 
   // ==================== DEV 脚本与 CI 专用 ====================
   { name: "NETEASE_COOKIE", layer: "DEV", secret: true },

@@ -48,6 +48,8 @@ export interface EnvClientChannel {
   enableAnonymousQqSearch?: boolean;
   /** CEE 排位赛入口的缺省可见性：默认开启，线上生效值由运行期旋钮覆盖。 */
   enableCeeRankedEntry?: boolean;
+  /** 测试房开关的缺省值：缺省关闭，只有显式写 true 才打开。 */
+  enableTestRooms?: boolean;
 }
 
 export const readClientChannelEnv = (): EnvClientChannel => ({
@@ -81,4 +83,5 @@ export const readClientChannelEnv = (): EnvClientChannel => ({
     Bun.env.ENABLE_CEE_RANKED_ENTRY !== undefined
       ? Bun.env.ENABLE_CEE_RANKED_ENTRY === "true"
       : true,
+  enableTestRooms: Bun.env.ENABLE_TEST_ROOMS === "true",
 });
