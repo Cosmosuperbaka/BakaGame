@@ -11,58 +11,24 @@ import {
   type PublicStatusSnapshot,
 } from "../shared/Status";
 import type { Database } from "./db/Database";
+import {
+  addSample,
+  cellFigures,
+  emptyCount,
+  ratioOf,
+  sumCounts,
+  type StatusCount,
+} from "./StatusCounts";
 import { statusSample } from "./db/Schema";
-
-/** 一个组件在一个采样间隔内的累计。 */
-interface SampleCount {
-  total: number;
-  operational: number;
-  degraded: number;
-  unknown: number;
-  latencySum: number;
-  latencyCount: number;
-}
-
-const emptyCount = (): SampleCount => ({
-  total: 0,
-  operational: 0,
-  degraded: 0,
-  unknown: 0,
-  latencySum: 0,
-  latencyCount: 0,
-});
-
-const sumCounts = (left: SampleCount, right: SampleCount): SampleCount => ({
-  total: left.total + right.total,
-  operational: left.operational + right.operational,
-  degraded: left.degraded + right.degraded,
-  unknown: left.unknown + right.unknown,
-  latencySum: left.latencySum + right.latencySum,
-  latencyCount: left.latencyCount + right.latencyCount,
-});
 
 /** 格子起点对齐采样间隔：与时钟漂移无关，同一格永远同一起点。 */
 export const sampleBucketOf = (time: number): number =>
   Math.floor(time / PUBLIC_STATUS_SAMPLE_INTERVAL_MS) * PUBLIC_STATUS_SAMPLE_INTERVAL_MS;
 
-/** 可用率只由「有结论」的样本算：unknown 表示没有结论，不进分母，既不压成 0% 也不抬高真故障。 */
-const toCell = (start: number, count: SampleCount): PublicStatusSampleCell => {
-  const decided = count.operational + count.degraded;
-  return {
-    start,
-    total: count.total,
-    ratio: decided > 0 ? count.operational / decided : null,
-    level:
-      count.total === 0
-        ? "unknown"
-        : count.degraded > 0
-          ? "degraded"
-          : count.operational > 0
-            ? "operational"
-            : "unknown",
-    latencyMs: count.latencyCount > 0 ? Math.round(count.latencySum / count.latencyCount) : null,
-  };
-};
+const toCell = (start: number, count: StatusCount): PublicStatusSampleCell => ({
+  start,
+  ...cellFigures(count),
+});
 
 export interface StatusSampleStoreOptions {
   /** 本进程的部署环境标记，口径与状态历史账本一致。 */
@@ -82,7 +48,7 @@ export class StatusSampleStore {
   private readonly database?: Database;
   private readonly now: () => number;
   /** componentId → 格子起点（UTC 毫秒）→ 累计。 */
-  private readonly buckets = new Map<PublicStatusComponentId, Map<number, SampleCount>>();
+  private readonly buckets = new Map<PublicStatusComponentId, Map<number, StatusCount>>();
   private readonly dirty = new Set<string>();
   private loading: Promise<void> | undefined;
   private loaded = false;
@@ -128,7 +94,7 @@ export class StatusSampleStore {
     for (const row of rows) {
       const bucket = this.buckets.get(row.componentId as PublicStatusComponentId);
       if (!bucket) continue;
-      const stored: SampleCount = {
+      const stored: StatusCount = {
         total: row.total,
         operational: row.operational,
         degraded: row.degraded,
@@ -149,12 +115,7 @@ export class StatusSampleStore {
       const bucket = this.buckets.get(component.id);
       if (!bucket) continue;
       const count = bucket.get(start) ?? emptyCount();
-      count.total += 1;
-      count[component.level] += 1;
-      if (component.latencyMs !== null && component.latencyMs >= 0) {
-        count.latencySum += component.latencyMs;
-        count.latencyCount += 1;
-      }
+      addSample(count, component.level, component.latencyMs);
       bucket.set(start, count);
       this.dirty.add(`${component.id}|${start}`);
     }
@@ -222,17 +183,14 @@ export class StatusSampleStore {
     const entries: PublicStatusRealtimeEntry[] = [];
     for (const [id, bucket] of this.buckets) {
       const cells: PublicStatusSampleCell[] = [];
-      let operational = 0;
-      let degraded = 0;
+      const windowCounts: StatusCount[] = [];
       for (const [start, count] of bucket) {
         if (start < windowStart) continue;
         cells.push(toCell(start, count));
-        operational += count.operational;
-        degraded += count.degraded;
+        windowCounts.push(count);
       }
       cells.sort((left, right) => left.start - right.start);
-      const decided = operational + degraded;
-      entries.push({ id, uptime: decided > 0 ? operational / decided : null, cells });
+      entries.push({ id, uptime: ratioOf(windowCounts), cells });
     }
     this.prune(sampleBucketOf(now - PUBLIC_STATUS_SAMPLE_RETENTION_MS));
     return {

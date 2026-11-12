@@ -8,84 +8,31 @@ import {
   type PublicStatusComponentId,
   type PublicStatusHistory,
   type PublicStatusHistoryEntry,
-  type PublicStatusLevel,
   type PublicStatusSnapshot,
   type PublicStatusUptime,
 } from "../shared/Status";
 import type { Database } from "./db/Database";
+import {
+  addSample,
+  cellFigures,
+  emptyCount,
+  latencyOf,
+  ratioOf,
+  sumCounts,
+  type StatusCount,
+} from "./StatusCounts";
 import { statusDaily } from "./db/Schema";
 
-/** 一个组件在一天之内的探测计数。 */
-interface DayCount {
-  total: number;
-  operational: number;
-  degraded: number;
-  unknown: number;
-  latencySum: number;
-  latencyCount: number;
-}
-
-const emptyCount = (): DayCount => ({
-  total: 0,
-  operational: 0,
-  degraded: 0,
-  unknown: 0,
-  latencySum: 0,
-  latencyCount: 0,
+/** 日格与窗口可用率都只由计数派生，算法见 StatusCounts。 */
+const toCell = (day: string, count: StatusCount): PublicStatusCell => ({
+  day,
+  ...cellFigures(count),
 });
 
-const sumCounts = (left: DayCount, right: DayCount): DayCount => ({
-  total: left.total + right.total,
-  operational: left.operational + right.operational,
-  degraded: left.degraded + right.degraded,
-  unknown: left.unknown + right.unknown,
-  latencySum: left.latencySum + right.latencySum,
-  latencyCount: left.latencyCount + right.latencyCount,
+const windowRatio = (counts: StatusCount[], days: number): PublicStatusUptime => ({
+  days,
+  ratio: ratioOf(counts.slice(-days)),
 });
-
-const addLevel = (count: DayCount, level: PublicStatusLevel): void => {
-  count.total += 1;
-  count[level] += 1;
-};
-
-/**
- * 日格与窗口可用率都只由计数派生。可用率的分母只算有结论的样本（operational+degraded）：
- * 内部组件探测失败已经记成 degraded，unknown 只表示「没有结论」（未接入监测或监测本身取不到），
- * 它不进分母——既不把「没接入」压成 0%，也不把真故障抬高。
- */
-const toCell = (day: string, count: DayCount): PublicStatusCell => {
-  const decided = count.operational + count.degraded;
-  return {
-    day,
-    total: count.total,
-    ratio: decided > 0 ? count.operational / decided : null,
-    level:
-      count.total === 0
-        ? "unknown"
-        : count.degraded > 0
-          ? "degraded"
-          : count.operational > 0
-            ? "operational"
-            : "unknown",
-    latencyMs: count.latencyCount > 0 ? Math.round(count.latencySum / count.latencyCount) : null,
-  };
-};
-
-const windowRatio = (counts: DayCount[], days: number): PublicStatusUptime => {
-  const window = counts.slice(-days);
-  const operational = window.reduce((sum, count) => sum + count.operational, 0);
-  const degraded = window.reduce((sum, count) => sum + count.degraded, 0);
-  const decided = operational + degraded;
-  return { days, ratio: decided > 0 ? operational / decided : null };
-};
-
-/** 窗口内的日均延迟：按样本加权的均值（Σ 和值 / Σ 个数），样本多的日子权重大；没有延迟样本时为 null。 */
-const windowLatency = (counts: DayCount[], days: number): number | null => {
-  const window = counts.slice(-days);
-  const latencySum = window.reduce((sum, count) => sum + count.latencySum, 0);
-  const latencyCount = window.reduce((sum, count) => sum + count.latencyCount, 0);
-  return latencyCount > 0 ? Math.round(latencySum / latencyCount) : null;
-};
 
 export interface StatusHistoryStoreOptions {
   /** 本进程的部署环境标记：开发与生产共用一个库时，账本按它分行。 */
@@ -113,7 +60,7 @@ export class StatusHistoryStore {
   private readonly now: () => number;
   private readonly retentionDays: number;
   /** componentId → 北京时间自然日 → 计数。 */
-  private readonly days = new Map<PublicStatusComponentId, Map<string, DayCount>>();
+  private readonly days = new Map<PublicStatusComponentId, Map<string, StatusCount>>();
   private readonly dirty = new Set<string>();
   private loading: Promise<void> | undefined;
   private loaded = false;
@@ -162,7 +109,7 @@ export class StatusHistoryStore {
     for (const row of rows) {
       const bucket = this.days.get(row.componentId as PublicStatusComponentId);
       if (!bucket) continue;
-      const stored: DayCount = {
+      const stored: StatusCount = {
         total: row.total,
         operational: row.operational,
         degraded: row.degraded,
@@ -187,11 +134,7 @@ export class StatusHistoryStore {
       const bucket = this.days.get(component.id);
       if (!bucket) continue;
       const count = bucket.get(day) ?? emptyCount();
-      addLevel(count, component.level);
-      if (component.latencyMs !== null && component.latencyMs >= 0) {
-        count.latencySum += component.latencyMs;
-        count.latencyCount += 1;
-      }
+      addSample(count, component.level, component.latencyMs);
       bucket.set(day, count);
       this.dirty.add(`${component.id}|${day}`);
     }
@@ -273,7 +216,7 @@ export class StatusHistoryStore {
       entries.push({
         id,
         cells,
-        latencyMs: windowLatency(counts, days),
+        latencyMs: latencyOf(counts),
         uptime: PUBLIC_STATUS_UPTIME_DAYS.map((span) => windowRatio(counts, span)),
       });
     }
