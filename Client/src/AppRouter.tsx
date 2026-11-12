@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import { RouteErrorFallback } from "@/components/common/AppErrorFallback";
 import { PageLoadingFallback } from "@/components/common/PageLoadingFallback";
 import { RootLayout } from "@/layouts/RootLayout";
 import { retryLazyImport } from "@/lib/LazyImport";
@@ -17,6 +18,8 @@ export function createAppRouter() {
   return createBrowserRouter([
     {
       element: <RootLayout />,
+      // 页面渲染错误与分块加载失败都落到这里，与入口的错误边界同一套上报与回退界面。
+      errorElement: <RouteErrorFallback />,
       // 首次进入时页面分块还没到，由这里占位；之后的导航都先取分块，旧页留到新页就绪。
       hydrateFallbackElement: <PageLoadingFallback />,
       children: [
