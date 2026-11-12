@@ -17,6 +17,8 @@ import { describeError, EventLogger, redactData } from "../src/infrastructure/Ev
 import type { OtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { SERVER_SHUTDOWN_MESSAGE } from "../src/shared/Index";
 import { OPEN_SITE_FEATURES, type SiteFeatures } from "../src/shared/SiteFeatures";
+import { ClientChannel, InMemoryClientChannelStore } from "../src/infrastructure/ClientChannel";
+import { WsHandshakeQuota } from "../src/transport/WsHandshakeQuota";
 import { createTestApp as createApp } from "./AppFixtures";
 
 // ==================== 真实 HTTP / WebSocket 集成测试 ====================
@@ -191,8 +193,10 @@ const createSocketCollector = (socket: WebSocket) => {
     });
 };
 
-const openSocket = async (port: number, game = "whoisfaker") => {
-  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/${game}/ws`);
+const openSocket = async (port: number, game = "whoisfaker") => openSocketAt(port, `/api/${game}/ws`);
+
+const openSocketAt = async (port: number, path: string) => {
+  const socket = new WebSocket(`ws://127.0.0.1:${port}${path}`);
   await new Promise<void>((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new Error("WebSocket 打开失败")), {
@@ -207,6 +211,8 @@ const startTestServer = (options?: {
   isShuttingDown?: () => boolean;
   logger?: EventLogger;
   siteFeatures?: () => SiteFeatures;
+  handshakeQuota?: WsHandshakeQuota;
+  clientChannel?: ClientChannel;
 }) => {
   const env: AppEnv = {
     maintenanceToken: "test-maintenance-token",
@@ -228,6 +234,8 @@ const startTestServer = (options?: {
     logger,
     isShuttingDown: options?.isShuttingDown ?? (() => shuttingDown),
     siteFeatures: options?.siteFeatures,
+    handshakeQuota: options?.handshakeQuota,
+    clientChannel: options?.clientChannel,
     onTriggerShutdown: async () => {
       shuttingDown = true;
       if (options?.onTriggerShutdown) {
@@ -431,6 +439,92 @@ test("WebSocket 握手按来源地址配额：在途连接超限回 429，断开
     expect(status).toContain("101");
   } finally {
     for (const socket of sockets) socket.close();
+    await stop();
+  }
+});
+
+// 畸形升级：带 `Upgrade: websocket` 却缺握手必需头。运行时会在钩子之后拒掉它们，
+// 既不会触发 open 也不会触发 close，名额若在钩子里就记为在途，就永远没有人归还。
+const MALFORMED_UPGRADES: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["缺 Sec-WebSocket-Key", ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Version: 13"]],
+  [
+    "缺 Sec-WebSocket-Version",
+    ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=="],
+  ],
+  [
+    "Sec-WebSocket-Key 长度不对",
+    ["Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: abc", "Sec-WebSocket-Version: 13"],
+  ],
+  [
+    "Sec-WebSocket-Version 不是 13",
+    [
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+      "Sec-WebSocket-Version: 8",
+    ],
+  ],
+];
+
+for (const path of ["/api/ws", "/api/whoisfaker/ws", "/api/songuessr/ws", "/api/cee/ws"]) {
+  test(`${path} 的畸形升级回 400 且不占握手名额，随后同来源仍能握手并收到命令 ACK`, async () => {
+    const handshakeQuota = new WsHandshakeQuota({
+      windowMs: 60_000,
+      ipMaxRequests: 1_000,
+      globalMaxRequests: 10_000,
+      ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+    });
+    const { port, stop } = startTestServer({ handshakeQuota });
+    try {
+      // 总数超过单来源在途上限：名额一旦泄漏，后半段就会回 429 而不是 400。
+      for (let index = 0; index < WS_HANDSHAKE_IP_MAX_CONNECTIONS + 6; index += 1) {
+        const [name, headers] = MALFORMED_UPGRADES[index % MALFORMED_UPGRADES.length];
+        expect(await upgradeStatusLine(port, undefined, { path, headers }), name).toContain("400");
+      }
+      expect(handshakeQuota.liveConnections()).toBe(0);
+
+      // 握手成功不等于链路可用：再发一条真实命令，必须看到 ACK。
+      const socket = await openSocketAt(port, path);
+      const collect = createSocketCollector(socket);
+      const command =
+        path === "/api/songuessr/ws"
+          ? "song.lobby.subscribeRooms"
+          : path === "/api/cee/ws"
+            ? "cee.lobby.subscribeRooms"
+            : "lobby.subscribeRooms";
+      socket.send(JSON.stringify({ id: "after-malformed", type: command, payload: {} }));
+      const ack = (await collect(
+        (payload) => (payload as { id?: string }).id === "after-malformed"
+      )) as { type: string };
+      expect(ack.type).toBe("ack");
+      socket.close();
+    } finally {
+      await stop();
+    }
+  });
+}
+
+test("占位之后的握手步骤抛错，名额当场归还", async () => {
+  const handshakeQuota = new WsHandshakeQuota({
+    windowMs: 60_000,
+    ipMaxRequests: 1_000,
+    globalMaxRequests: 10_000,
+    ipMaxConnections: WS_HANDSHAKE_IP_MAX_CONNECTIONS,
+  });
+  // 通道票据换证在占位之后执行；日志出口故障让它抛错，升级随之失败，open/close 都不会触发。
+  const clientChannel = new ClientChannel({
+    store: new InMemoryClientChannelStore(),
+    minimumVersion: () => "",
+    onWarn: () => {
+      throw new Error("日志出口故障");
+    },
+  });
+  const { port, stop } = startTestServer({ handshakeQuota, clientChannel });
+  try {
+    const status = await upgradeStatusLine(port, undefined, { path: "/api/cee/ws?ticket=unknown" });
+    expect(status).toContain("500");
+    expect(handshakeQuota.liveConnections()).toBe(0);
+  } finally {
     await stop();
   }
 });
@@ -799,15 +893,24 @@ test("WebSocket 幂等重传在执行中到达时等待并回放相同响应包"
  * 整道防线形同虚设却无人发现——因为当时没有任何用例覆盖它。现在改为 throw，
  * 并用下面这条钉死：改回 return 会立刻失败。
  */
-const upgradeStatusLine = (port: number, origin?: string) =>
+const VALID_HANDSHAKE_HEADERS = [
+  "Upgrade: websocket",
+  "Connection: Upgrade",
+  "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+  "Sec-WebSocket-Version: 13",
+];
+
+/** 原始 TCP 发一条升级请求，返回响应状态行；`headers` 默认是一份合法握手头，可整组替换来构造畸形升级。 */
+const upgradeStatusLine = (
+  port: number,
+  origin?: string,
+  options: { path?: string; headers?: readonly string[] } = {}
+) =>
   new Promise<string>((resolve) => {
     const lines = [
-      "GET /api/whoisfaker/ws HTTP/1.1",
+      `GET ${options.path ?? "/api/whoisfaker/ws"} HTTP/1.1`,
       `Host: 127.0.0.1:${port}`,
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-      "Sec-WebSocket-Version: 13",
+      ...(options.headers ?? VALID_HANDSHAKE_HEADERS),
     ];
     if (origin) lines.push(`Origin: ${origin}`);
     lines.push("", "");

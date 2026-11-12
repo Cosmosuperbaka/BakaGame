@@ -14,7 +14,7 @@ import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
 import { resolveRequestTraceId } from "./RequestTraceId";
 import { securityHeaders } from "./SecurityHeaders";
-import { WsHandshakeQuota } from "./WsHandshakeQuota";
+import { WsHandshakeQuota, type HandshakeLease } from "./WsHandshakeQuota";
 import {
   WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
@@ -22,7 +22,7 @@ import {
   WS_HANDSHAKE_WINDOW_MS,
 } from "../config/Constants";
 import { createAck, createErrorPacket, createEvent } from "./Packets";
-import { traceIdOf } from "./HttpErrorEnvelope";
+import { httpError, traceIdOf } from "./HttpErrorEnvelope";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
 import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
@@ -418,6 +418,15 @@ export const httpOperationAction = (
   return UNROUTED_HTTP_ACTION;
 };
 
+/**
+ * RFC 6455 握手必需头：`Sec-WebSocket-Key` 是 16 字节随机数的 base64，版本只有 13。
+ * 运行时对不合格的握手回 4xx 且不触发任何连接事件。
+ */
+const HANDSHAKE_KEY_PATTERN = /^[A-Za-z0-9+/]{22}==$/;
+const isValidHandshakeHeaders = (headers: Headers): boolean =>
+  HANDSHAKE_KEY_PATTERN.test(headers.get("sec-websocket-key") ?? "") &&
+  headers.get("sec-websocket-version") === "13";
+
 /** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
 interface GameSocketLike {
   data: unknown;
@@ -470,26 +479,26 @@ const resolveSocketAccount = async (
 };
 
 /**
- * 握手配额闸门：Origin 与登录身份都过之后、真正接受连接之前占一个名额。
+ * 握手配额闸门：Origin 通过之后、真正接受连接之前占一个名额。
  *
  * 超限必须 **throw**（理由同 `rejectDisallowedOrigin`：upgrade 钩子的返回值会被 Elysia 忽略）。
- * 抛 `RATE_LIMITED` 由全局错误钩子回 429；占位成功时把桶键写进上下文，
- * Elysia 会把它带进 `ws.data`，close 钩子据此归还名额。
+ * 抛 `RATE_LIMITED` 由全局错误钩子回 429；占位成功时把租约写进上下文，Elysia 会把它带进
+ * `ws.data`：open 钩子确认、close 钩子归还；钩子之后升级若失败，租约到期自行归还。
  */
 const reserveHandshakeSlot = (
   context: {
     request: Request;
     server?: { requestIP(request: Request): { address?: string } | null } | null;
-    handshakeSlot?: string;
+    handshakeLease?: HandshakeLease;
     clientIp?: string;
   },
   quota: WsHandshakeQuota
 ): void => {
   const peerIp = context.server?.requestIP(context.request)?.address;
   const clientIp = resolveClientIp(context.request.headers, peerIp);
-  const slot = quota.acquire(clientIp, peerIp ?? clientIp);
-  if (!slot) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
-  context.handshakeSlot = slot;
+  const lease = quota.reserve(clientIp, peerIp ?? clientIp);
+  if (!lease) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
+  context.handshakeLease = lease;
   // 业务层的按地址配额要用同一个来源身份，不能到 application 层再反查 HTTP 头。
   context.clientIp = clientIp;
 };
@@ -737,9 +746,14 @@ const closeGameConnection = async (
   if (connectionId) await unregister(connectionId);
 };
 
+/** 连接打开即确认租约：此后名额只由 close 归还。 */
+const confirmHandshakeLease = (ws: GameSocketLike): void => {
+  (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.confirm();
+};
+
 /** 连接断开必须归还握手名额，否则同一个来源地址的名额会被历史连接吃光。 */
-const releaseHandshakeSlot = (ws: GameSocketLike, quota: WsHandshakeQuota): void => {
-  quota.release((ws.data as { handshakeSlot?: string }).handshakeSlot);
+const releaseHandshakeLease = (ws: GameSocketLike): void => {
+  (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.release();
 };
 
 /** 三款游戏 ws 握手上下文的公共形状；Elysia 会把这里的字段展开进 `ws.data`。 */
@@ -749,7 +763,7 @@ type GameUpgradeContext = {
   server?: { requestIP(request: Request): { address?: string } | null } | null;
   account?: PlayerAccount;
   isAgent?: boolean;
-  handshakeSlot?: string;
+  handshakeLease?: HandshakeLease;
   clientIp?: string;
   clientChannel?: ClientChannelProof;
 };
@@ -801,7 +815,13 @@ const applyHandshakeGates = async (
   await resolveSocketAccount(context, account, logger);
   resolveAgentIdentity(context, env.mcpEnabled);
   reserveHandshakeSlot(context, handshakeQuota);
-  if (clientChannel) resolveSocketChannel(context, clientChannel);
+  try {
+    if (clientChannel) resolveSocketChannel(context, clientChannel);
+  } catch (error) {
+    // 占位之后的步骤抛错，升级随之失败，open/close 都不会触发：当场归还。
+    context.handshakeLease?.release();
+    throw error;
+  }
 };
 
 /**
@@ -824,8 +844,10 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
 }: GameSocketHandlersOptions<TMessage>) => ({
   upgrade: (context: GameUpgradeContext) =>
     applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
-  open: (ws: GameSocketLike) =>
-    openGameConnection(ws, (connection) => service.registerConnection(connection)),
+  open: (ws: GameSocketLike) => {
+    confirmHandshakeLease(ws);
+    openGameConnection(ws, (connection) => service.registerConnection(connection));
+  },
   message: (ws: GameSocketLike, incoming: TMessage) =>
     handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, logger, {
       serviceName,
@@ -835,7 +857,7 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
       },
     }),
   close: (ws: GameSocketLike) => {
-    releaseHandshakeSlot(ws, handshakeQuota);
+    releaseHandshakeLease(ws);
     return closeGameConnection(ws, (connectionId) => service.unregisterConnection(connectionId));
   },
 });
@@ -1111,11 +1133,12 @@ export const createApp = ({
     upgrade: (context: GameUpgradeContext) =>
       applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
     open: (ws: GameSocketLike) => {
+      confirmHandshakeLease(ws);
       connectionIdFor(ws);
     },
     message: (ws: GameSocketLike, incoming: unknown) => handleUnifiedMessage(ws, incoming),
     close: async (ws: GameSocketLike) => {
-      releaseHandshakeSlot(ws, handshakeQuota);
+      releaseHandshakeLease(ws);
       (ws.data as { socketClosed?: boolean }).socketClosed = true;
       const connectionId = connectionIdOf(ws);
       if (!connectionId) return;
@@ -1220,8 +1243,16 @@ export const createApp = ({
       // 判在 Origin 与握手配额之前：拒绝不消耗配额桶，也不给来源探测留可分辨的差异。
       const rejection = shutdownRejection(isShuttingDown, traceIdOf(set.headers));
       if (rejection) return rejection;
-      if (isAllowedOrigin(request.headers.get("origin"), env.clientUrl)) return;
-      throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
+      if (!isAllowedOrigin(request.headers.get("origin"), env.clientUrl))
+        throw new AppError("FORBIDDEN_ORIGIN", "来源不被允许");
+      // 缺握手必需头的升级运行时一定会拒，但它会先进入 upgrade 钩子：在这里直接回 400，不进钩子。
+      if (!isValidHandshakeHeaders(request.headers))
+        return new Response(
+          JSON.stringify(
+            httpError("INVALID_HANDSHAKE", "WebSocket 握手头不合法", traceIdOf(set.headers))
+          ),
+          { status: 400, headers: { "content-type": "application/json" } }
+        );
     })
     // ==================== 原生插件与全局中间件 ====================
     .use(

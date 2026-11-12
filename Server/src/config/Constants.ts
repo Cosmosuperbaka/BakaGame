@@ -62,6 +62,8 @@ export const WS_HANDSHAKE_IP_MAX_CONNECTIONS = 64;
 export const WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW = 120;
 export const WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW = 3_000;
 export const WS_HANDSHAKE_WINDOW_MS = 60 * 1000;
+/** 握手名额租约的确认时限：占位后这么久还没等到连接打开，就当升级已经失败并自动归还。 */
+export const WS_HANDSHAKE_LEASE_MS = 10_000;
 
 /** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
 export const PHASE_RESULT_DISPLAY_MS = 1_500;

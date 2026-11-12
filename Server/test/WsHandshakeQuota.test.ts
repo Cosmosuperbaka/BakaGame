@@ -8,6 +8,7 @@ const quotaOf = (
     ipMaxRequests: number;
     globalMaxRequests: number;
     ipMaxConnections: number;
+    leaseMs: number;
   }> = {}
 ) =>
   new WsHandshakeQuota({
@@ -18,51 +19,78 @@ const quotaOf = (
     ...overrides,
   });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 describe("WebSocket 握手配额", () => {
   test("在途连接占满即拒绝，归还后重新放行且不会重复扣减", () => {
     const quota = quotaOf();
-    const slots = Array.from({ length: 4 }, () => quota.acquire("1.1.1.1", "1.1.1.1"));
-    expect(slots.every((slot) => slot === "1.1.1.1")).toBe(true);
-    expect(quota.acquire("1.1.1.1", "1.1.1.1")).toBeUndefined();
+    const leases = Array.from({ length: 4 }, () => quota.reserve("1.1.1.1", "1.1.1.1"));
+    expect(leases.every((lease) => lease !== undefined)).toBe(true);
+    expect(quota.reserve("1.1.1.1", "1.1.1.1")).toBeUndefined();
     expect(quota.liveConnections()).toBe(4);
 
-    quota.release("1.1.1.1");
-    expect(quota.acquire("1.1.1.1", "1.1.1.1")).toBe("1.1.1.1");
-    // 未占过名额的键与重复归还都不能把计数压成负数。
-    quota.release("9.9.9.9");
-    quota.release("1.1.1.1");
-    quota.release("1.1.1.1");
-    quota.release("1.1.1.1");
-    quota.release("1.1.1.1");
+    leases[0]!.release();
+    const again = quota.reserve("1.1.1.1", "1.1.1.1");
+    expect(again).toBeDefined();
+    // 重复归还同一份租约不能把计数压成负数，也不能挤掉别人的名额。
+    for (let index = 0; index < 4; index += 1) leases[0]!.release();
+    expect(quota.liveConnections()).toBe(4);
+    for (const lease of [...leases.slice(1), again]) lease!.release();
     expect(quota.liveConnections()).toBe(0);
-    expect(quota.acquire("1.1.1.1", "1.1.1.1")).toBe("1.1.1.1");
+  });
+
+  test("未确认的租约到期自动归还，确认过的不会过期", async () => {
+    const quota = quotaOf({ leaseMs: 20 });
+    const abandoned = quota.reserve("1.1.1.1", "1.1.1.1");
+    const confirmed = quota.reserve("1.1.1.1", "1.1.1.1");
+    confirmed!.confirm();
+    expect(quota.liveConnections()).toBe(2);
+
+    await sleep(60);
+    expect(quota.liveConnections()).toBe(1);
+    // 到期后再归还是空操作，不会多扣。
+    abandoned!.release();
+    expect(quota.liveConnections()).toBe(1);
+    confirmed!.release();
+    expect(quota.liveConnections()).toBe(0);
+  });
+
+  test("到期之后才打开的连接重新记上名额，关闭时归还", async () => {
+    const quota = quotaOf({ leaseMs: 10 });
+    const lease = quota.reserve("1.1.1.1", "1.1.1.1");
+    await sleep(40);
+    expect(quota.liveConnections()).toBe(0);
+    lease!.confirm();
+    expect(quota.liveConnections()).toBe(1);
+    lease!.confirm();
+    expect(quota.liveConnections()).toBe(1);
+    lease!.release();
+    expect(quota.liveConnections()).toBe(0);
   });
 
   test("单客户端新建速率独立于在途数：反复开合同样被封顶", () => {
     const quota = quotaOf({ ipMaxRequests: 2, ipMaxConnections: 100 });
-    expect(quota.acquire("2.2.2.2", "2.2.2.2")).toBe("2.2.2.2");
-    quota.release("2.2.2.2");
-    expect(quota.acquire("2.2.2.2", "2.2.2.2")).toBe("2.2.2.2");
-    quota.release("2.2.2.2");
-    expect(quota.acquire("2.2.2.2", "2.2.2.2")).toBeUndefined();
+    quota.reserve("2.2.2.2", "2.2.2.2")!.release();
+    quota.reserve("2.2.2.2", "2.2.2.2")!.release();
+    expect(quota.reserve("2.2.2.2", "2.2.2.2")).toBeUndefined();
   });
 
   test("伪造真实客户端地址自造新桶时，由回源 peer 的十倍额度封顶", () => {
     const quota = quotaOf({ ipMaxRequests: 2, ipMaxConnections: 100 });
-    // peer 桶默认取单客户端十倍：20 次。用十个伪造地址各刷两次正好打满，第十一次起全拒。
+    // peer 桶默认取单客户端十倍：20 次。用二十个伪造地址各刷一次正好打满，第二十一次起全拒。
     for (let index = 0; index < 20; index += 1) {
-      expect(quota.acquire(`10.0.0.${index}`, "198.51.100.7")).toBe(`10.0.0.${index}`);
+      expect(quota.reserve(`10.0.0.${index}`, "198.51.100.7")).toBeDefined();
     }
-    expect(quota.acquire("10.0.1.200", "198.51.100.7")).toBeUndefined();
+    expect(quota.reserve("10.0.1.200", "198.51.100.7")).toBeUndefined();
     // 换回源地址即不受这个 peer 桶影响，说明桶键确实是来源身份而非客户端自报值。
-    expect(quota.acquire("10.0.1.201", "198.51.100.8")).toBe("10.0.1.201");
+    expect(quota.reserve("10.0.1.201", "198.51.100.8")).toBeDefined();
   });
 
-  test("全局额度打满后任何来源都拒绝，速率窗口滚过再恢复", () => {
+  test("全局额度打满后任何来源都拒绝", () => {
     const quota = quotaOf({ ipMaxRequests: 100, globalMaxRequests: 3, ipMaxConnections: 100 });
-    expect(quota.acquire("3.3.3.3", "3.3.3.3")).toBe("3.3.3.3");
-    expect(quota.acquire("4.4.4.4", "4.4.4.4")).toBe("4.4.4.4");
-    expect(quota.acquire("5.5.5.5", "5.5.5.5")).toBe("5.5.5.5");
-    expect(quota.acquire("6.6.6.6", "6.6.6.6")).toBeUndefined();
+    expect(quota.reserve("3.3.3.3", "3.3.3.3")).toBeDefined();
+    expect(quota.reserve("4.4.4.4", "4.4.4.4")).toBeDefined();
+    expect(quota.reserve("5.5.5.5", "5.5.5.5")).toBeDefined();
+    expect(quota.reserve("6.6.6.6", "6.6.6.6")).toBeUndefined();
   });
 });
