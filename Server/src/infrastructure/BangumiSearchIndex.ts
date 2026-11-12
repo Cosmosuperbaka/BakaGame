@@ -299,6 +299,26 @@ export class BangumiSearchIndex {
     };
   }
 
+  /**
+   * 构造角色索引文档：整库重灌、新条目发现与按需同步共用这一份口径。
+   * `supplement` 是回填缓存里同步回来的名称，存在时覆盖库内值。
+   */
+  toCharacterDocument(
+    row: Record<string, unknown>,
+    supplement: { name?: string; nameCn?: string; aliases?: string[] } = {}
+  ): CharacterSearchDocument {
+    return {
+      id: Number(row.id),
+      name: supplement.name ?? String(row.name),
+      aliases: uniqueStrings(
+        supplement.nameCn ?? cellText(row.name_cn),
+        supplement.aliases ?? parseJsonStrings(row.aliases)
+      ),
+      comment: Number(row.comments ?? 0),
+      collect: Number(row.collects ?? 0),
+    };
+  }
+
   private async configureIndex<T extends Record<string, unknown>>(
     index: Index<T>,
     rankingRules: string[],
@@ -342,13 +362,7 @@ export class BangumiSearchIndex {
       this.characters,
       db,
       "SELECT id,name,name_cn,aliases,comments,collects FROM characters",
-      (row) => ({
-        id: Number(row.id),
-        name: String(row.name),
-        aliases: uniqueStrings(cellText(row.name_cn), parseJsonStrings(row.aliases)),
-        comment: Number(row.comments ?? 0),
-        collect: Number(row.collects ?? 0),
-      })
+      (row) => this.toCharacterDocument(row)
     );
   }
 

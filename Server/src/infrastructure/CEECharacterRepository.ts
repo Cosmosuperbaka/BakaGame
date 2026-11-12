@@ -673,21 +673,9 @@ export class CEECharacterRepository implements CEEDataProvider {
       .get(id) as CharacterRow | null;
     if (!row || !this.search) return;
     const supplement = this.enrichment.readCharacter(id);
-    await this.search.updateCharacter({
-      id: row.id,
-      name: supplement.name ?? row.name,
-      aliases: [
-        ...new Set(
-          [
-            supplement.nameCn ?? row.name_cn,
-            ...(supplement.aliases ?? (JSON.parse(row.aliases) as string[])),
-          ].filter(Boolean)
-        ),
-      ],
-      comment: row.comments,
-      collect: row.collects,
-      nsfw: false,
-    });
+    await this.search.updateCharacter(
+      this.search.toCharacterDocument(row as unknown as Record<string, unknown>, supplement)
+    );
   }
 
   private assertOpen(): void {

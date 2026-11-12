@@ -338,3 +338,54 @@ describe("搜索索引初始化的修订号", () => {
     }
   });
 });
+
+describe("索引文档映射只有一份口径", () => {
+  const { client } = createClient();
+  const search = new BangumiSearchIndex({ client });
+
+  test("作品文档：空列不写成字面 null，只有年月的日期按 parseDate 口径记 0", () => {
+    const document = search.toSubjectDocument({
+      id: 5,
+      name: "作品",
+      name_cn: null,
+      aliases: null,
+      tags: null,
+      meta_tags: null,
+      date: "2024-04",
+      score: null,
+      rating_count: null,
+      heat: null,
+      rank: null,
+      type: 2,
+    });
+    expect(document.aliases).toEqual([]);
+    expect(document.date).toBe(0);
+    expect(document).toMatchObject({
+      score: 0,
+      rating_count: 0,
+      heat: 0,
+      rank: 0,
+      tag: [],
+      meta_tag: [],
+    });
+  });
+
+  test("角色文档：中文名与别名合并去重，补充资料覆盖库内值，空列不写成 null", () => {
+    expect(
+      search.toCharacterDocument({
+        id: 7,
+        name: "甲",
+        name_cn: null,
+        aliases: '["乙","乙"]',
+        comments: null,
+        collects: 9,
+      })
+    ).toEqual({ id: 7, name: "甲", aliases: ["乙"], comment: 0, collect: 9 });
+    expect(
+      search.toCharacterDocument(
+        { id: 7, name: "甲", name_cn: "旧中文名", aliases: '["旧别名"]', comments: 1, collects: 2 },
+        { name: "新名", nameCn: "新中文名", aliases: ["新别名"] }
+      )
+    ).toEqual({ id: 7, name: "新名", aliases: ["新中文名", "新别名"], comment: 1, collect: 2 });
+  });
+});

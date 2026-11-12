@@ -5,11 +5,7 @@ import {
   BANGUMI_DISCOVERY_REQUEST_TIMEOUT_MS,
   BANGUMI_DISCOVERY_TOTAL_BUDGET_MS,
 } from "../config/Constants";
-import type {
-  BangumiSearchIndex,
-  CharacterSearchDocument,
-  SubjectSearchDocument,
-} from "./BangumiSearchIndex";
+import type { BangumiSearchIndex } from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
 /**
@@ -287,11 +283,22 @@ async function importSubject(
 ): Promise<boolean> {
   const bundle = await fetchBundle(context, db, subjectId);
   if (!bundle) return false;
-  const characterDocuments = db.transaction(() => writeBundle(db, subjectId, bundle))();
-  // 索引在提交之后再写：索引失败不影响数据落库，下轮重建会补上。
+  const insertedCharacterIds = db.transaction(() => writeBundle(db, subjectId, bundle))();
+  // 索引在提交之后再写：索引失败不影响数据落库，下轮重建会补上。文档从刚落库的行构造，
+  // 与整库重灌、更新器走同一份映射，不再各写一套。
   if (search) {
-    search.updateSubject(subjectDocument(subjectId, bundle.subject)).catch(() => {});
-    for (const document of characterDocuments) search.updateCharacter(document).catch(() => {});
+    const subjectRow = db
+      .query(
+        "SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects WHERE id=?"
+      )
+      .get(subjectId) as Record<string, unknown>;
+    search.updateSubject(search.toSubjectDocument(subjectRow)).catch(() => {});
+    for (const characterId of insertedCharacterIds) {
+      const characterRow = db
+        .query("SELECT id,name,name_cn,aliases,comments,collects FROM characters WHERE id=?")
+        .get(characterId) as Record<string, unknown>;
+      search.updateCharacter(search.toCharacterDocument(characterRow)).catch(() => {});
+    }
   }
   return true;
 }
@@ -364,26 +371,8 @@ const heatOf = (subject: ApiSubject): number =>
     0
   );
 
-const subjectDocument = (subjectId: number, subject: ApiSubject): SubjectSearchDocument => ({
-  id: subjectId,
-  name: String(subject.name ?? ""),
-  aliases: [String(subject.name_cn ?? "")].filter(Boolean),
-  tag: (subject.tags ?? []).map((tag) => String(tag.name)).filter(Boolean),
-  meta_tag: (subject.meta_tags ?? []).map(String),
-  date: Number(String(subject.date ?? "").replace(/-/g, "")) || 0,
-  score: Number(subject.rating?.score ?? 0),
-  rating_count: Number(subject.rating?.total ?? 0),
-  heat: heatOf(subject),
-  rank: Number(subject.rating?.rank ?? 0),
-  type: Number(subject.type ?? 0),
-});
-
-/** 写库阶段（在事务内同步执行）：作品、角色、关联一起落库；返回需要写进索引的角色文档。 */
-function writeBundle(
-  db: Database,
-  subjectId: number,
-  bundle: SubjectBundle
-): CharacterSearchDocument[] {
+/** 写库阶段（在事务内同步执行）：作品、角色、关联一起落库；返回新写入的角色编号。 */
+function writeBundle(db: Database, subjectId: number, bundle: SubjectBundle): number[] {
   const { subject } = bundle;
   const tags = subject.tags ?? [];
   const tagNames = tags.map((tag) => String(tag.name)).filter(Boolean);
@@ -413,18 +402,14 @@ function writeBundle(
     String((subject.images ?? {}).large ?? "")
   );
 
-  const characterDocuments = writeCharacters(db, subjectId, bundle);
+  const insertedCharacterIds = writeCharacters(db, subjectId, bundle);
   writeMusicRelations(db, subjectId, bundle);
-  return characterDocuments;
+  return insertedCharacterIds;
 }
 
 /** 角色：只补库中没有的，已有角色不动（它们的详情由各自的作品覆盖）。 */
-function writeCharacters(
-  db: Database,
-  subjectId: number,
-  bundle: SubjectBundle
-): CharacterSearchDocument[] {
-  const documents: CharacterSearchDocument[] = [];
+function writeCharacters(db: Database, subjectId: number, bundle: SubjectBundle): number[] {
+  const inserted: number[] = [];
   for (const [order, row] of bundle.characterRows.entries()) {
     const characterId = Number(row.id);
     if (!Number.isInteger(characterId) || characterId <= 0) continue;
@@ -446,13 +431,7 @@ function writeCharacters(
         comments,
         collects
       );
-      documents.push({
-        id: characterId,
-        name: String(detail.name ?? ""),
-        aliases: [nameCn, ...characterAliases].filter(Boolean),
-        comment: comments,
-        collect: collects,
-      });
+      inserted.push(characterId);
     } else if (!hasCharacter(db, characterId)) {
       // 上游已无此角色（404）且库里也没有：不建指向不存在角色的关联。
       continue;
@@ -464,7 +443,7 @@ function writeCharacters(
       order
     );
   }
-  return documents;
+  return inserted;
 }
 
 /** 关联作品：音乐条目要连曲目一起带出来（猜歌的出题素材）。 */

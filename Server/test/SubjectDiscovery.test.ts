@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { BangumiSearchIndex } from "../src/infrastructure/BangumiSearchIndex";
 import { discoverNewSubjects, infoboxToWikitext } from "../src/infrastructure/SubjectDiscovery";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
 
@@ -469,5 +470,29 @@ test("同一部作品的角色与关联详情并发抓取，但不超过并发�
   expect(peak).toBeGreaterThan(1);
   expect(peak).toBeLessThanOrEqual(3);
   expect(countRows(db).characters).toBe(8);
+  db.close();
+});
+
+test("新入库作品与角色写进索引的文档与整库重灌同一口径：只有年月的日期记 0，空中文名不写成 null", async () => {
+  const db = makeDb();
+  const subjects: Array<Record<string, unknown>> = [];
+  const characters: Array<Record<string, unknown>> = [];
+  const search = Object.assign(Object.create(BangumiSearchIndex.prototype) as BangumiSearchIndex, {
+    updateSubject: async (document: Record<string, unknown>) => void subjects.push(document),
+    updateCharacter: async (document: Record<string, unknown>) => void characters.push(document),
+  });
+  const fetcher = makeSingleSubjectFetcher(
+    {
+      [`${BASE}/v0/subjects/900001`]: { id: 900001, type: 2, name: "新番", date: "2024-04" },
+      [`${BASE}/v0/subjects/900001/characters`]: [{ id: 700001, name: "角色", type: 1 }],
+      [`${BASE}/v0/subjects/900001/subjects`]: [],
+      [`${BASE}/v0/characters/700001`]: { id: 700001, name: "角色", stat: { collects: 3 } },
+    },
+    new Set()
+  );
+  await discoverNewSubjects({ db, base: BASE, fetcher, search, pauseMs: 0 });
+  expect(subjects).toHaveLength(1);
+  expect(subjects[0]).toMatchObject({ id: 900001, date: 0, aliases: [] });
+  expect(characters).toEqual([{ id: 700001, name: "角色", aliases: [], comment: 0, collect: 3 }]);
   db.close();
 });
