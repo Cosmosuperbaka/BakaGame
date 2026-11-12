@@ -393,10 +393,13 @@ export class BangumiProvider {
   private readonly requestTimeoutMs: number;
   private requestIdCounter = 0;
   private cooldownUntil = 0;
-  private readonly cache: LRUCache<string, { value: unknown; expiresAt: number }>;
+  /** 响应缓存：过期交给 lru-cache 原生 `ttl`，每个键按自己的时效写入。 */
+  private readonly cache: LRUCache<string, { value: unknown }>;
   private readonly inFlight = new Map<string, Promise<unknown>>();
   /** 角色立绘成功缓存。见 `resolveCharacterImage`：失败结果不得进入任何缓存。有界（LRU），否则长进程按累计角色数无上限增长。 */
   private readonly characterImageCache: LRUCache<number, string>;
+  /** 作品封面成功缓存，口径与角色立绘一致：只缓存成功结果、有界。 */
+  private readonly subjectImageCache: LRUCache<number, string>;
 
   constructor(options: BangumiProviderOptions) {
     this.fetcher = options.fetcher ?? fetch;
@@ -408,8 +411,13 @@ export class BangumiProvider {
     this.maxQueuedRequests = Math.max(1, options.maxQueuedRequests ?? DEFAULT_MAX_QUEUED_REQUESTS);
     this.cache = new LRUCache({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+      // 写入时必须带 ttl（见 `cached`）；这里给一个兜底值，防止漏传的键永不过期。
+      ttl: SUBJECT_TTL_MS,
     });
     this.characterImageCache = new LRUCache({
+      max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
+    });
+    this.subjectImageCache = new LRUCache({
       max: Math.max(1, options.cacheMaxEntries ?? DEFAULT_CACHE_MAX_ENTRIES),
     });
     this.queue = new PQueue({
@@ -510,10 +518,14 @@ export class BangumiProvider {
   async resolveSubjectImage(subjectId: string): Promise<string | undefined> {
     const id = Number(subjectId);
     if (!Number.isInteger(id) || id <= 0) return undefined;
+    const cachedImage = this.subjectImageCache.get(id);
+    if (cachedImage) return cachedImage;
     try {
       const body = asRecord(await this.requestJson(`/v0/subjects/${id}`));
       const images = asRecord(body.images);
-      return rewriteBangumiImageUrl(images.large, this.imageUrl);
+      const image = rewriteBangumiImageUrl(images.large, this.imageUrl);
+      if (image) this.subjectImageCache.set(id, image);
+      return image;
     } catch {
       return undefined;
     }
@@ -521,14 +533,13 @@ export class BangumiProvider {
 
   private async cached<T>(key: string, ttl: number, loader: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key);
-    if (hit && hit.expiresAt > this.now()) return structuredClone(hit.value) as T;
-    if (hit) this.cache.delete(key);
+    if (hit) return structuredClone(hit.value) as T;
     const existing = this.inFlight.get(key) as Promise<T> | undefined;
     if (existing) return structuredClone(await existing);
     const request = loader()
       .then((value) => {
         const cachedValue = structuredClone(value);
-        this.cache.set(key, { value: cachedValue, expiresAt: this.now() + ttl });
+        this.cache.set(key, { value: cachedValue }, { ttl });
         return cachedValue;
       })
       .finally(() => {

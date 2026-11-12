@@ -539,4 +539,32 @@ describe("BangumiProvider 远端接口", () => {
     expect(await provider.resolveSubjectImage("13")).toBeUndefined();
     expect(calls).toBe(2);
   });
+
+  test("resolveSubjectImage：成功结果进缓存，失败与空结果不缓存、下次仍会回源", async () => {
+    let calls = 0;
+    let mode: "fail" | "empty" | "ok" = "fail";
+    const provider = new BangumiProvider({
+      apiUrl: "https://api.invalid",
+      imageUrl: "https://img.example",
+      fetcher: async () => {
+        calls++;
+        if (mode === "fail") throw new Error("down");
+        if (mode === "empty") return jsonResponse({ images: {} });
+        return jsonResponse({
+          images: { large: "https://lain.bgm.tv/pic/cover/l/aa/bb/12_x.jpg" },
+        });
+      },
+    });
+    expect(await provider.resolveSubjectImage("12")).toBeUndefined();
+    mode = "empty";
+    expect(await provider.resolveSubjectImage("12")).toBeUndefined();
+    mode = "ok";
+    const expected = "https://img.example/r/200/pic/cover/l/aa/bb/12_x.jpg";
+    expect(await provider.resolveSubjectImage("12")).toBe(expected);
+    expect(calls).toBe(3);
+    // 与角色立绘同一套规则：成功后不再回源。
+    expect(await provider.resolveSubjectImage("12")).toBe(expected);
+    expect(await provider.resolveSubjectImage("12")).toBe(expected);
+    expect(calls).toBe(3);
+  });
 });
