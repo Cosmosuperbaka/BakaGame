@@ -1,7 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nextDailyRunAt, scheduleDatasetBackup } from "../src/infrastructure/DatasetBackup";
@@ -40,7 +39,7 @@ test("启动时立即备份，且备份是可读的完整快照", () => {
   }
 });
 
-test("只保留一份：新一轮覆盖旧快照，不留历史备份", () => {
+test("每日备份轮转为两代：新快照换入，上一份留作 .prev", () => {
   const directory = mkdtempSync(join(tmpdir(), "bakagame-backup-"));
   const dbPath = makeDataset(directory);
   const backupPath = `${dbPath}.backup`;
@@ -48,8 +47,8 @@ test("只保留一份：新一轮覆盖旧快照，不留历史备份", () => {
   const spy = spyOn(globalThis, "setTimeout");
   try {
     const stop = scheduleDatasetBackup({ dbPath, backupPath });
-    // 旧快照必须先删再写：VACUUM INTO 要求目标不存在，而这正好就是「只留一份」的语义。
     expect(read(backupPath)).toEqual({ name: "最初" });
+    expect(existsSync(`${backupPath}.prev`)).toBe(false);
 
     const db = new Database(dbPath);
     db.query("UPDATE subjects SET name = '更新后' WHERE id = 1").run();
@@ -59,7 +58,70 @@ test("只保留一份：新一轮覆盖旧快照，不留历史备份", () => {
     const fire = spy.mock.calls.at(-1)![0] as () => void;
     fire();
     expect(read(backupPath)).toEqual({ name: "更新后" });
+    expect(read(`${backupPath}.prev`)).toEqual({ name: "最初" });
+    // 临时文件不残留。
+    expect(existsSync(`${backupPath}.tmp`)).toBe(false);
     stop();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("备份失败不毁掉现有快照：旧文件与上一代都原样保留，也不残留临时文件", () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-backup-"));
+  const dbPath = makeDataset(directory);
+  const backupPath = `${dbPath}.backup`;
+  const results: Array<{ ok: boolean; error: string | null }> = [];
+
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    const stop = scheduleDatasetBackup({
+      dbPath,
+      backupPath,
+      onResult: (result) => results.push(result),
+    });
+    expect(results[0]).toEqual({ ok: true, error: null });
+    // 把源库换成一个不是数据库的文件：VACUUM INTO 必然失败。
+    writeFileSync(dbPath, "this is not a database".repeat(200));
+
+    (spy.mock.calls.at(-1)![0] as () => void)();
+    expect(results[1]!.ok).toBe(false);
+    // 失败前上一份可用快照已被删掉是旧写法的缺陷：这里必须仍然可读。
+    expect(read(backupPath)).toEqual({ name: "最初" });
+    expect(existsSync(`${backupPath}.tmp`)).toBe(false);
+    stop();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("启动时已有足够新的快照就不重做，避免重启用坏库覆盖唯一的好快照", () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-backup-"));
+  const dbPath = makeDataset(directory);
+  const backupPath = `${dbPath}.backup`;
+  const results: Array<{ ok: boolean; error: string | null }> = [];
+
+  const spy = spyOn(globalThis, "setTimeout");
+  try {
+    scheduleDatasetBackup({ dbPath, backupPath })();
+    const db = new Database(dbPath);
+    db.query("UPDATE subjects SET name = '之后的写入' WHERE id = 1").run();
+    db.close();
+
+    // 一小时前的快照算新：重启不重备。
+    const recent = new Date(Date.now() - 60 * 60 * 1_000);
+    utimesSync(backupPath, recent, recent);
+    scheduleDatasetBackup({ dbPath, backupPath, onResult: (r) => results.push(r) })();
+    expect(results).toHaveLength(0);
+    expect(read(backupPath)).toEqual({ name: "最初" });
+
+    // 超过一天的旧快照：启动时补做一份。
+    const stale = new Date(Date.now() - 25 * 60 * 60 * 1_000);
+    utimesSync(backupPath, stale, stale);
+    scheduleDatasetBackup({ dbPath, backupPath, onResult: (r) => results.push(r) })();
+    expect(results).toHaveLength(1);
+    expect(read(backupPath)).toEqual({ name: "之后的写入" });
+    expect(read(`${backupPath}.prev`)).toEqual({ name: "最初" });
   } finally {
     spy.mockRestore();
   }
