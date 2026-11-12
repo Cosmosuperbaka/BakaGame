@@ -19,7 +19,7 @@ export interface EnvObservability {
   otelDeploymentEnvironment?: string;
   /**
    * HTTP 文档页（`/openapi`）是否挂载。缺省视为开启（测试与本地开发装配 env 时不必逐个声明），
-   * 生产由 `loadEnv` 依 `DEPLOYMENT_ENVIRONMENT` 关掉。
+   * 生产由 `readObservabilityEnv` 依 `DEPLOYMENT_ENVIRONMENT` 关掉。
    */
   openapiEnabled?: boolean;
   maintenanceToken?: string;

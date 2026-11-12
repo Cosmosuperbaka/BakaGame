@@ -74,7 +74,7 @@ export const readBootstrapEnv = (): EnvBootstrap => {
   );
 
   // 显式配置成空串（CLIENT_URL=""）时必须回落到默认值，不能把空串透出去：
-  // 下游 `isAllowedOrigin` 见到空串会当成「未限制来源」而放行全部 Origin。
+  // 下游 `isAllowedOrigin` 见到空串会退化为只认私网来源，等于把公网前端全挡掉。
   const clientUrl = (Bun.env.CLIENT_URL ?? "").trim() || DEFAULT_CLIENT_URL;
 
   return {
