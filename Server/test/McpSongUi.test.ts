@@ -22,7 +22,7 @@ const player = (id: string, overrides: Record<string, unknown> = {}) => ({
 const round = {
   roundNumber: 3,
   submitterPlayerId: "p2",
-  audioUrl: "https://audio.example/3.mp3",
+  audioUrl: "https://qq.example/M500abcdefabcdef.mp3",
   lyricClip: {
     startTime: 1000,
     endTime: 16000,
@@ -86,7 +86,7 @@ const searchResults = (
         title: "测试歌",
         artist: "歌手",
         durationMs: 120_000,
-        audioUrl: "https://audio.example/9.mp3",
+        audioUrl: "https://qq.example/M500preview9999.mp3",
         lyrics: [
           { time: 1000, endTime: 5000, text: "第一句" },
           { time: 6000, endTime: 40000, text: "第二句" },
@@ -237,7 +237,6 @@ describe("猜歌界面：阶段与控件", () => {
       audio: {
         available: true,
         roundNumber: 3,
-        audioUrl: "https://audio.example/3.mp3",
         clip: { startTime: 1000, endTime: 16000, lines: [{ time: 1000, text: "歌词" }] },
         lyricsVisible: true,
       },
@@ -257,6 +256,34 @@ describe("猜歌界面：阶段与控件", () => {
     expect(
       screen.controls.find((control) => control.id === "song.guess.search.result.0")
     ).toMatchObject({ disabled: false });
+  });
+
+  test("局中屏幕与播放反馈里没有上游主机名、歌曲标识和音轨地址", async () => {
+    const { ui } = open("playing", { privateState: { canGuess: true } });
+    const screen = await ui.screen("song");
+    const run = await ui.run("song", [{ action: "click", control: "song.audio.play" }]);
+    const dumped = JSON.stringify([screen, run]);
+    for (const leak of ["qq.example", "abcdef", "M500", ".mp3", "audioUrl"])
+      expect(dumped).not.toContain(leak);
+    // 片段区间与歌词开关仍在：Agent 看屏幕、搜索、提交的流程不依赖播放地址。
+    expect(screen.panel).toMatchObject({
+      audio: { clip: { startTime: 1000, endTime: 16000 }, lyricsVisible: true },
+    });
+  });
+
+  test("出题确认台不下发选中歌曲的上游音轨地址", async () => {
+    const { ui } = open("submittingSong", { privateState: { canSubmitSong: true } });
+    await ui.screen("song");
+    ui.state("song").songPreview = {
+      id: "netease:9",
+      title: "测试歌",
+      durationMs: 120_000,
+      audioUrl: "https://qq.example/M500preview9999.mp3",
+    };
+    ui.state("song").songClip = { startTime: 1000, endTime: 16000 };
+    const dumped = JSON.stringify(await ui.screen("song"));
+    for (const leak of ["qq.example", "M500", ".mp3", "audioUrl"])
+      expect(dumped).not.toContain(leak);
   });
 
   test("已猜过的歌曲与番剧按本人尝试记录禁用", async () => {
@@ -781,9 +808,8 @@ describe("猜歌界面：控件动作", () => {
     const { ui, calls } = open("playing", { privateState: { canGuess: true } });
     await ui.screen("song");
     let run = await ui.run("song", [{ action: "click", control: "song.audio.play" }]);
-    expect(run.steps[0]?.feedback).toBe(
-      "请播放 https://audio.example/3.mp3 的 1000–16000 毫秒区间"
-    );
+    expect(run.steps[0]?.feedback).toContain("1000–16000 毫秒");
+    expect(run.steps[0]?.feedback).not.toContain("qq.example");
 
     run = await ui.run("song", [{ action: "click", control: "song.audio.retry" }]);
     expect(run.ok).toBe(true);

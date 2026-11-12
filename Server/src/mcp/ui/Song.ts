@@ -325,12 +325,12 @@ const playingControls = (context: UiContext): UiControl[] => {
   if (round) {
     controls.push(
       button("song.audio.play", "播放片段", "game", {
-        hint: "点击后返回音频地址与截取区间；由 Agent 自行播放",
+        hint: "点击后返回本回合的片段区间；音频本身 Agent 听不到",
       })
     );
     controls.push(
       button("song.audio.retry", "重新获取音频", "game", {
-        hint: "音频地址失效时使用",
+        hint: "音频加载失败时使用",
       })
     );
   }
@@ -382,14 +382,13 @@ const audioPanel = (context: UiContext): Record<string, unknown> => {
     available: true,
     roundNumber: round.roundNumber,
     submitterPlayerId: round.submitterPlayerId,
-    audioUrl: round.audioUrl,
     clip: {
       startTime: clip.startTime,
       endTime: clip.endTime,
       ...(showLyrics && Array.isArray(clip.lines) ? { lines: clip.lines } : {}),
     },
     lyricsVisible: showLyrics,
-    hint: "audioUrl 是上游完整音轨；按 clip.startTime/endTime 播放",
+    hint: "Agent 听不到音频：只给出片段区间与歌词开关；开启歌词时线索在 clip.lines",
   };
 };
 
@@ -403,7 +402,6 @@ const previewPanel = (context: UiContext): Record<string, unknown> | undefined =
     album: preview.album,
     durationMs: preview.durationMs,
     pictureUrl: preview.pictureUrl,
-    audioUrl: preview.audioUrl,
     lyrics: preview.lyrics,
     chorus: preview.chorus,
     suggestedClip: preview.suggestedClip,
@@ -616,7 +614,7 @@ const clickSongAudio = async (context: UiContext, id: string): Promise<string> =
     const clip = isRecord(round.lyricClip) ? round.lyricClip : {};
     const start = typeof clip.startTime === "number" ? clip.startTime : 0;
     const end = typeof clip.endTime === "number" ? clip.endTime : 0;
-    return `请播放 ${str(round.audioUrl) ?? ""} 的 ${start}–${end} 毫秒区间`;
+    return `本回合片段区间为 ${start}–${end} 毫秒；音频不下发给 Agent，歌词开启时见 panel.audio.clip.lines`;
   }
   const roundNumber = round.roundNumber;
   if (typeof roundNumber !== "number") throw new Error("当前没有播放中的回合");

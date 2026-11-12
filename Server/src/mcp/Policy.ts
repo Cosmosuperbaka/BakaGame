@@ -22,6 +22,6 @@ export const MCP_INSTRUCTIONS = [
   "你的界面位置会实时显示在站点首页（哪款游戏、哪个房间、在做什么）；搜索词、猜测与聊天草稿不会广播，无需担心泄露。",
   "接管人类标签页：人类在任意页面的设置里开启后会得到 8 位配对码。用 control_page 认领后，page_state 看页面（文字、控件与状态），page_act 操作控件（navigate/click/focus/type/press/select/scroll），首页、大厅、房间内都是同一套；用完 release_page 交还。配对码一次有效；认领后人类刷新不影响接管，人类可以随时收回，3 分钟没有动作会自动交还。",
   "接管期间你用的就是这张标签页本来的座位，没有别的座位与凭证；create_room、join_room、get_screen、ui_run 只用于你自己的 Agent 座位，接管时不可用。",
-  "SongGuessr 需要人类在房间内登录网易云或 QQ 音乐；播放回合的音频地址与歌词片段在屏幕 panel.audio 里，由 Agent 自行播放，歌词关闭时不会下发歌词。",
+  "SongGuessr 需要人类在房间内登录网易云或 QQ 音乐；Agent 听不到音频，屏幕 panel.audio 只给出片段区间与歌词开关，歌词关闭时不会下发歌词；不提供音轨地址。",
   "猜歌/猜角色的搜索框停止输入后会自动检索，点结果才提交；出题选歌会先打开片段确认，确认后才真正提交。",
 ].join("\n");
