@@ -1,9 +1,5 @@
 import { useEffect } from "react";
-
-/** Tailwind 断点；媒体查询里的 rem 按浏览器初始字号计算，不受 html 120% 字号影响。 */
-const BREAKPOINTS = { sm: "40rem", md: "48rem", lg: "64rem", xl: "80rem" } as const;
-
-export type Breakpoint = keyof typeof BREAKPOINTS;
+import { BREAKPOINTS, type Breakpoint } from "@/hooks/UseMinWidth";
 
 /**
  * 窄屏浮层在视口放大越过 `breakpoint` 时自动关闭。

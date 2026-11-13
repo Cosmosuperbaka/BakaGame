@@ -1,6 +1,8 @@
 import { createRef, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import type { LucideIcon } from "lucide-react";
 import { PLAYER_COLUMN_WIDTH } from "@/components/common/PlayerStatusPill";
+import { ChatDraftContext, useChatDraftSource } from "@/hooks/UseChatDraft";
+import { useMinWidth } from "@/hooks/UseMinWidth";
 import { roomEntranceMs } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { RoomDrawer } from "./RoomDrawer";
@@ -118,6 +120,12 @@ export function RoomShell({
   onDrawerChange?: (key: string | null) => void;
 }) {
   const leaveRef = useRef<HTMLButtonElement>(null);
+  // 桌面栏按断点决定挂不挂，而不是挂着再用样式藏起来：窄屏下聊天只在抽屉里有一份。
+  // 断点要与 PlayerColumn、ChatColumn 的显示断点一致。
+  const showPlayer = useMinWidth("md");
+  const showChat = useMinWidth("xl");
+  // 草稿留在外壳：抽屉关闭、旋转屏幕换了挂载位置，没发出去的文字不丢。
+  const chatDraft = useChatDraftSource();
   const [triggerRefs] = useState(
     () => new Map<string, ReturnType<typeof createRef<HTMLButtonElement>>>()
   );
@@ -142,63 +150,65 @@ export function RoomShell({
   }, []);
 
   return (
-    <div
-      data-room-entering={entering || undefined}
-      className="flex h-full min-h-0 flex-col overflow-hidden"
-    >
-      {before}
-      <RoomHeader
-        onLeave={onLeave}
-        leaveRef={leaveRef}
-        title={title}
-        roomId={roomId}
-        roomTag={roomTag}
-        center={center}
-        actions={actions}
-        connectionIssue={connectionIssue}
-        toggles={drawers.map((drawer) => ({
-          key: drawer.key,
-          triggerRef: triggerRefs.get(drawer.key),
-          icon: drawer.icon,
-          label: drawer.label,
-          expanded: openDrawer === drawer.key,
-          onClick: () => onDrawerChange?.(openDrawer === drawer.key ? null : drawer.key),
-          hideFrom: drawer.closeFrom,
-        }))}
-      />
+    <ChatDraftContext.Provider value={chatDraft}>
+      <div
+        data-room-entering={entering || undefined}
+        className="flex h-full min-h-0 flex-col overflow-hidden"
+      >
+        {before}
+        <RoomHeader
+          onLeave={onLeave}
+          leaveRef={leaveRef}
+          title={title}
+          roomId={roomId}
+          roomTag={roomTag}
+          center={center}
+          actions={actions}
+          connectionIssue={connectionIssue}
+          toggles={drawers.map((drawer) => ({
+            key: drawer.key,
+            triggerRef: triggerRefs.get(drawer.key),
+            icon: drawer.icon,
+            label: drawer.label,
+            expanded: openDrawer === drawer.key,
+            onClick: () => onDrawerChange?.(openDrawer === drawer.key ? null : drawer.key),
+            hideFrom: drawer.closeFrom,
+          }))}
+        />
 
-      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
-        <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
-          {player}
-          {/* `isolate` 使游戏区内的浮层只在游戏区内部层级，不会越过玩家面板去盖住骑缝的展开按钮。 */}
-          <main
-            ref={gameRef}
-            data-room-part="game"
-            className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel"
-          >
-            {game}
-          </main>
-        </section>
-        {chat}
+        <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden px-2 pb-2 md:gap-3 md:px-3 md:pb-3">
+          <section className="relative flex min-h-0 min-w-0 flex-1 gap-2 overflow-hidden md:gap-3">
+            {showPlayer ? player : null}
+            {/* `isolate` 使游戏区内的浮层只在游戏区内部层级，不会越过玩家面板去盖住骑缝的展开按钮。 */}
+            <main
+              ref={gameRef}
+              data-room-part="game"
+              className="isolate flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-md border bg-panel"
+            >
+              {game}
+            </main>
+          </section>
+          {showChat ? chat : null}
 
-        {opened ? (
-          <RoomDrawer
-            key={opened.key}
-            triggerRef={triggerRefs.get(opened.key)}
-            fallbackFocusRef={leaveRef}
-            open
-            side={opened.side}
-            title={opened.title}
-            closeFrom={opened.closeFrom}
-            className={opened.className}
-            onOpenChange={(next) => {
-              if (!next) onDrawerChange?.(null);
-            }}
-          >
-            {opened.content}
-          </RoomDrawer>
-        ) : null}
+          {opened ? (
+            <RoomDrawer
+              key={opened.key}
+              triggerRef={triggerRefs.get(opened.key)}
+              fallbackFocusRef={leaveRef}
+              open
+              side={opened.side}
+              title={opened.title}
+              closeFrom={opened.closeFrom}
+              className={opened.className}
+              onOpenChange={(next) => {
+                if (!next) onDrawerChange?.(null);
+              }}
+            >
+              {opened.content}
+            </RoomDrawer>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </ChatDraftContext.Provider>
   );
 }

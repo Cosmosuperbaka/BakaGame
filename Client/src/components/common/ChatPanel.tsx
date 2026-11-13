@@ -56,6 +56,7 @@ import {
   splitMentions,
 } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
+import { useChatDraft } from "@/hooks/UseChatDraft";
 import { useStickToBottom } from "@/hooks/UseStickToBottom";
 import type { ChatMessage } from "@bakagame/shared";
 
@@ -479,7 +480,7 @@ export function ChatPanel({
   maxLength = 200,
   className,
 }: ChatPanelProps) {
-  const [text, setText] = useState("");
+  const [text, setText] = useChatDraft();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
