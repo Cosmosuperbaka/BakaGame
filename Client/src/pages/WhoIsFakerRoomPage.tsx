@@ -6,15 +6,13 @@ import { useMinWidth } from "@/hooks/UseMinWidth";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
-import { wordRevealTiming } from "@/lib/Motion";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
-import {
-  FakerPlayerList,
-  type PlayerMark,
-  type PlayerMarks,
-} from "@/components/whoisfaker/layout/FakerPlayerList";
+import { FakerPlayerList } from "@/components/whoisfaker/layout/FakerPlayerList";
 import { buildSpeechHistory } from "@/components/whoisfaker/layout/FakerSpeechHistory";
 import { FakerRoomHeaderCenter } from "@/components/whoisfaker/layout/FakerRoomHeaderCenter";
+import { usePlayerMarks } from "@/components/whoisfaker/layout/UsePlayerMarks";
+import { useFakerWordReveal } from "@/components/whoisfaker/layout/UseFakerWordReveal";
+import { resolveAssignedWordText } from "@/components/whoisfaker/layout/FakerAssignedWordText";
 import { useFakerHistoryPanel } from "@/components/whoisfaker/layout/UseFakerHistoryPanel";
 import { FakerRoomPlayerAside } from "@/components/whoisfaker/layout/FakerRoomPlayerAside";
 import { FakerAssignedWord } from "@/components/whoisfaker/layout/FakerAssignedWord";
@@ -24,24 +22,7 @@ import { ChatColumn, RoomShell } from "@/components/common/room/RoomShell";
 import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { isValidRoomId } from "@bakagame/shared/values";
-import type { WhoIsFakerPrivateState, WhoIsFakerRole } from "@bakagame/shared";
-
-/** 玩家可见的自己那份词：天使拿到两个候选，白板只拿到提示。 */
-const angelOrBlankWordText = (
-  privateState: WhoIsFakerPrivateState | null | undefined
-): string | undefined => {
-  if (privateState?.angelWordOptions)
-    return `天使：${privateState.angelWordOptions[0]}/${privateState.angelWordOptions[1]}`;
-  return privateState?.blankHint ? `白板提示：${privateState.blankHint}` : undefined;
-};
-
-const resolveAssignedWordText = (
-  privateState: WhoIsFakerPrivateState | null | undefined,
-  isSpectator: boolean
-): string | undefined => {
-  if (isSpectator || privateState?.isQuestioner) return undefined;
-  return privateState?.word ?? angelOrBlankWordText(privateState);
-};
+import type { WhoIsFakerRole } from "@bakagame/shared";
 
 export default function WhoIsFakerRoomPage() {
   const { roomId: routeRoomId } = useParams<{ roomId: string }>();
@@ -87,13 +68,6 @@ export default function WhoIsFakerRoomPage() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState("");
   const [pendingJoinName, setPendingJoinName] = useState("");
-  // 身份预测推理笔记按局次 (roundId) 隔离，换局自动读取新局空映射，杜绝渲染期 setState 截断
-  const [playerMarksByRound, setPlayerMarksByRound] = useState<Record<string, PlayerMarks>>({});
-  // 词语揭示：true 时居中放大，false 时停靠顶栏；始终是同一个元素在移动
-  const [wordRevealed, setWordRevealed] = useState(false);
-  const [dockSize, setDockSize] = useState({ width: 0, height: 0 });
-  const hasRevealedThisGameRef = useRef(false);
-  const wordAnchorRef = useRef<HTMLSpanElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const [mountTime] = useState(() => Date.now());
   const entryRef = useRef<AbortController | null>(null);
@@ -268,24 +242,7 @@ export default function WhoIsFakerRoomPage() {
   }, [navigate]);
 
   const roundId = snapshot?.status.roundId;
-  const playerMarks = useMemo<PlayerMarks>(
-    () => (roundId ? (playerMarksByRound[roundId] ?? {}) : {}),
-    [roundId, playerMarksByRound]
-  );
-
-  const handleMarkChange = useCallback(
-    (playerId: string, mark: PlayerMark) => {
-      if (!roundId) return;
-      setPlayerMarksByRound((cur) => ({
-        ...cur,
-        [roundId]: {
-          ...(cur[roundId] ?? {}),
-          [playerId]: mark,
-        },
-      }));
-    },
-    [roundId]
-  );
+  const { playerMarks, onMarkChange: handleMarkChange } = usePlayerMarks(roundId);
 
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
@@ -304,25 +261,11 @@ export default function WhoIsFakerRoomPage() {
 
   const assignedWordText = resolveAssignedWordText(privateState, isSpectator);
 
-  // 重置揭词标记——新局开始时（phase 回到 waiting）清除
-  useEffect(() => {
-    if (phase === "waiting") hasRevealedThisGameRef.current = false;
-  }, [phase]);
-
-  // 仅第一天描述阶段揭示词语，且每局只触发一次
-  useEffect(() => {
-    if (phase !== "description" || day !== 1 || !assignedWordText || hasRevealedThisGameRef.current)
-      return;
-    hasRevealedThisGameRef.current = true;
-    const show = window.setTimeout(() => setWordRevealed(true), wordRevealTiming.showAfterMs);
-    const dock = window.setTimeout(() => setWordRevealed(false), wordRevealTiming.dockAfterMs);
-    return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(dock);
-      // 揭示途中离开该阶段时收回停靠态，避免下一局残留居中放大。
-      setWordRevealed(false);
-    };
-  }, [phase, day, assignedWordText]);
+  const { wordRevealed, dockSize, setDockSize, wordAnchorRef } = useFakerWordReveal({
+    phase,
+    day,
+    assignedWordText,
+  });
 
   // 发言历史列模型。展开侧栏时按行嵌入玩家列表，与玩家名同行。
   const history = useMemo(
