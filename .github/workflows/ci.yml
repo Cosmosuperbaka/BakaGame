@@ -22,9 +22,10 @@ permissions:
 env:
   NODE_VERSION: "22"
 
+# main 上的推送不取消：部署门禁认「该提交的那次 CI 成功」，被后一次推送取消就等于这个提交没有门禁结论。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # 文档门禁：纯文档改动也要跑，无需安装依赖。
@@ -159,6 +160,13 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
+      # 与 client 作业同一口径：缓存 pnpm store，避免每次从注册表整树重装。
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
@@ -234,12 +242,43 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
+      # 与 client 作业同一口径：缓存 pnpm store，避免每次从注册表整树重装。
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Exercise the graceful shutdown sequence
         timeout-minutes: 5
         run: pnpm --filter server exec bun --no-env-file run scripts/ShutdownSmoke.ts
+
+  # 依赖公告报告：只报告、不阻塞合并（步骤 continue-on-error，整次运行不因它变红）。
+  # 是否升级为门禁由维护者决定；先看一段时间的噪声再定阈值。
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Report known vulnerabilities (high and above)
+        continue-on-error: true
+        run: pnpm audit --audit-level=high
 
   client:
     name: Client CI
