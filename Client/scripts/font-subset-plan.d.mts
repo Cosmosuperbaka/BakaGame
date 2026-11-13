@@ -1,6 +1,14 @@
 export type FontFamilyId = "sans" | "mono";
 export type FontCoverage = "cjk" | "data";
-export type FontChunkKind = "base" | "common" | "rest";
+export type FontChunkKind = "base" | "common" | "frequent" | "gb2312" | "rest";
+
+export interface ChunkSizes {
+  base: number;
+  common: number;
+  frequent: number;
+  gb2312: number;
+  rest: number;
+}
 
 export interface FontWeightSource {
   weight: number;
@@ -24,7 +32,8 @@ export interface ChunkPlanOptions {
   baseCodepoints: readonly number[];
   extendedCodepoints?: readonly number[];
   frequencyOrder?: readonly number[];
-  chunkSizes?: { base: number; common: number; rest: number };
+  gb2312Order?: readonly number[];
+  chunkSizes?: Partial<ChunkSizes>;
   commonCodepointCount?: number;
 }
 
@@ -48,9 +57,8 @@ export const GENERATED_FAMILY_DIR: string;
 export const GENERATED_CSS_NAME: string;
 export const GENERATED_MANIFEST_NAME: string;
 export const GENERATED_ASSET_URL_PREFIX: string;
-export const PROJECT_CJK_ROOT: string;
 export const FAMILIES: readonly FontFamilyDefinition[];
-export const CHUNK_SIZES: { base: number; common: number; rest: number };
+export const CHUNK_SIZES: ChunkSizes;
 export const COMMON_CHAR_COUNT: number;
 export const SANS_BASE_RANGES: readonly (readonly [number, number])[];
 export const MONO_BASE_RANGES: readonly (readonly [number, number])[];
@@ -73,7 +81,6 @@ export function buildFontCss(input: {
   sansChunks: readonly FontChunk[];
   monoChunks: readonly FontChunk[];
 }): string;
-export function collectProjectCjk(sourceDir: string): Promise<number[]>;
 export function sha256(buffer: Buffer): string;
 export function hashCodepoints(codepoints: readonly number[]): string;
 export function hashText(text: string): string;

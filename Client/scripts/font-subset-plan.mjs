@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
 
 /**
  * 上游版本与发布资产摘要固定在这里。GitHub Release 的 API 会给出官方 SHA-256；
@@ -16,10 +14,6 @@ export const FONT_RELEASE = Object.freeze({
     "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/",
   ]),
   files: Object.freeze({
-    "LXGWWenKai-Light.ttf": {
-      bytes: 28_625_516,
-      sha256: "9a50e3f0f51fad60d68152d5191bce1a495bfc4b9ceb1cee24833835511d1dca",
-    },
     "LXGWWenKai-Regular.ttf": {
       bytes: 25_928_940,
       sha256: "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b",
@@ -27,10 +21,6 @@ export const FONT_RELEASE = Object.freeze({
     "LXGWWenKai-Medium.ttf": {
       bytes: 25_800_076,
       sha256: "f4b8a34d1f838fe411540cb7c97b1c384ac9738a876c4104500bc42508b2312a",
-    },
-    "LXGWWenKaiMono-Light.ttf": {
-      bytes: 28_645_564,
-      sha256: "b3144f534329d6b17188967d3843fb479cef1aa59949e976186d2d6015e3bc01",
     },
     "LXGWWenKaiMono-Regular.ttf": {
       bytes: 25_957_300,
@@ -50,11 +40,12 @@ export const GENERATED_FAMILY_DIR = "lxgw-wenkai";
 export const GENERATED_CSS_NAME = "lxgw-wenkai.css";
 export const GENERATED_MANIFEST_NAME = "lxgw-wenkai.manifest.json";
 export const GENERATED_ASSET_URL_PREFIX = `./assets/fonts/${GENERATED_FAMILY_DIR}/`;
-export const PROJECT_CJK_ROOT = "src";
 
 /**
- * 字重只保留实际会用到的三档。WenKai 没有 700，浏览器会在 500 的基础上合成粗体，
- * 因此不要在 CSS 里声明 600/700，否则会拿到一档不存在的字重。
+ * 字重只保留实际会用到的两档（400、500）：界面里没有任何 300 及更细的字重，
+ * 声明它只会白白多出一半的子集文件与样式规则。WenKai 没有 700，浏览器会在 500 的基础上
+ * 合成粗体，因此不要在 CSS 里声明 600/700，否则会拿到一档不存在的字重。
+ * 新增细字重用法时先在这里恢复对应档位（连同 FONT_RELEASE 里的源文件摘要）。
  */
 export const FAMILIES = Object.freeze([
   {
@@ -62,7 +53,6 @@ export const FAMILIES = Object.freeze([
     family: "LXGW WenKai",
     coverage: "cjk",
     weights: [
-      { weight: 300, file: "LXGWWenKai-Light.ttf" },
       { weight: 400, file: "LXGWWenKai-Regular.ttf" },
       { weight: 500, file: "LXGWWenKai-Medium.ttf" },
     ],
@@ -72,14 +62,23 @@ export const FAMILIES = Object.freeze([
     family: "LXGW WenKai Mono",
     coverage: "data",
     weights: [
-      { weight: 300, file: "LXGWWenKaiMono-Light.ttf" },
       { weight: 400, file: "LXGWWenKaiMono-Regular.ttf" },
       { weight: 500, file: "LXGWWenKaiMono-Medium.ttf" },
     ],
   },
 ]);
 
-export const CHUNK_SIZES = Object.freeze({ base: 700, common: 400, rest: 2_000 });
+/**
+ * 分片大小按「一个字约 250 字节」折算成下载量：常用字块要大到少发请求，越往后越稀有，
+ * 块越小——页面里零星出现一个冷僻字时，只该多下一小片，而不是一整片两千字（约 0.5MB）。
+ */
+export const CHUNK_SIZES = Object.freeze({
+  base: 700,
+  common: 400,
+  frequent: 250,
+  gb2312: 400,
+  rest: 2_000,
+});
 export const COMMON_CHAR_COUNT = 2_000;
 
 /**
@@ -142,17 +141,6 @@ const CJK_RANGES = Object.freeze([
   [0x4e00, 0x9fff],
   [0xf900, 0xfaff],
   [0x20000, 0x2fa1f],
-]);
-
-const TEXT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".html", ".md"]);
-const IGNORED_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "coverage",
-  "storybook-static",
-  "storybook-shots",
-  "test-results",
-  "playwright-report",
 ]);
 
 let gb2312Cache;
@@ -234,17 +222,22 @@ export function chunkCodepoints(codepoints, size) {
 }
 
 /**
- * 常用字按词频分片，其余**完整字体字符集**按码位分片。常用字跨码位分散，
- * CSS 里的 unicode-range 会多出一些区间，但典型页面只需要下载排序靠前的一两个分片；
- * 生僻字、CJK 扩展区、假名以外的符号也都进入后续分片，浏览器只按 unicode-range 命中下载。
+ * 分片按「出现概率」从高到低分层，越稀有的层块越小：
+ * base（基础字符，按码位）→ common（词频前 N，按词频）→ frequent（其余有词频的字，按词频）
+ * → gb2312（词频表之外的国标汉字）→ rest（完整字符集的剩余，按码位）。
+ * 每个字只落在一片里，浏览器按 unicode-range 命中才下载，所以块越小、冷僻字的代价越小。
+ * 分片只决定字落在哪个文件，不改任何字形数据；分片不依赖项目源码里出现了哪些字，
+ * 新增文案不会使字体缓存失效。
  */
 export function buildChunkPlan({
   baseCodepoints,
   extendedCodepoints = [],
   frequencyOrder = [],
+  gb2312Order = [],
   chunkSizes = CHUNK_SIZES,
   commonCodepointCount = COMMON_CHAR_COUNT,
 }) {
+  const sizes = { ...CHUNK_SIZES, ...chunkSizes };
   const base = new Set(baseCodepoints);
   const extended = new Set(extendedCodepoints);
   for (const codepoint of extended) {
@@ -253,20 +246,28 @@ export function buildChunkPlan({
     }
   }
 
-  const common = [];
-  const commonSet = new Set();
-  for (const codepoint of frequencyOrder) {
-    if (!extended.has(codepoint) || commonSet.has(codepoint)) continue;
-    common.push(codepoint);
-    commonSet.add(codepoint);
-    if (common.length >= commonCodepointCount) break;
-  }
-  const rest = [...extended].filter((codepoint) => !commonSet.has(codepoint)).sort((a, b) => a - b);
+  const placed = new Set();
+  const takeInOrder = (order, limit = Infinity) => {
+    const taken = [];
+    for (const codepoint of order) {
+      if (!extended.has(codepoint) || placed.has(codepoint)) continue;
+      placed.add(codepoint);
+      taken.push(codepoint);
+      if (taken.length >= limit) break;
+    }
+    return taken;
+  };
+  const common = takeInOrder(frequencyOrder, commonCodepointCount);
+  const frequent = takeInOrder(frequencyOrder);
+  const gb2312 = takeInOrder(gb2312Order);
+  const rest = [...extended].filter((codepoint) => !placed.has(codepoint)).sort((a, b) => a - b);
 
   const sections = [
-    { kind: "base", codepoints: [...base].sort((a, b) => a - b), size: chunkSizes.base },
-    { kind: "common", codepoints: common, size: chunkSizes.common },
-    { kind: "rest", codepoints: rest, size: chunkSizes.rest },
+    { kind: "base", codepoints: [...base].sort((a, b) => a - b), size: sizes.base },
+    { kind: "common", codepoints: common, size: sizes.common },
+    { kind: "frequent", codepoints: frequent, size: sizes.frequent },
+    { kind: "gb2312", codepoints: gb2312, size: sizes.gb2312 },
+    { kind: "rest", codepoints: rest, size: sizes.rest },
   ];
   const chunks = [];
   for (const section of sections) {
@@ -308,29 +309,6 @@ export function buildFontCss({ sansChunks, monoChunks }) {
     }
   }
   return `${lines.join("\n")}\n`;
-}
-
-/** 扫描实际参与前端的源文件，把当前 UI 里出现的 CJK 一并纳入子集，避免新文案回退到系统字体。 */
-export async function collectProjectCjk(sourceDir) {
-  const found = new Set();
-  async function walk(directory) {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(entry.name)) await walk(path.join(directory, entry.name));
-        continue;
-      }
-      if (!entry.isFile() || !TEXT_EXTENSIONS.has(path.extname(entry.name))) continue;
-      const text = await readFile(path.join(directory, entry.name), "utf8");
-      for (const character of text) {
-        const codepoint = character.codePointAt(0);
-        if (isCjkCodepoint(codepoint)) found.add(codepoint);
-      }
-    }
-  }
-  await walk(sourceDir);
-  return [...found].sort((left, right) => left - right);
 }
 
 export function sha256(buffer) {

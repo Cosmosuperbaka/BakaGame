@@ -1,8 +1,9 @@
 import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import { create } from "fontkit";
-import subsetFont from "subset-font";
 import subtlex from "subtlex-ch-chr";
 
 import {
@@ -15,15 +16,12 @@ import {
   GENERATED_FAMILY_DIR,
   GENERATED_MANIFEST_NAME,
   MONO_BASE_RANGES,
-  PROJECT_CJK_ROOT,
   SANS_BASE_RANGES,
   buildChunkPlan,
   buildFontCss,
   codepointsFromRanges,
-  collectProjectCjk,
   fontFileName,
   gb2312Codepoints,
-  hashCodepoints,
   hashText,
   isCjkCodepoint,
   sha256,
@@ -39,20 +37,30 @@ const publicLicenseDir = path.join(clientDir, "public", "assets", "fonts", GENER
 const inputScriptPaths = [
   fileURLToPath(import.meta.url),
   path.join(clientDir, "scripts", "font-subset-plan.mjs"),
+  path.join(clientDir, "scripts", "font-subset-worker.mjs"),
 ];
 const packageJsonPath = path.join(clientDir, "package.json");
 const FONT_TOOL_NAMES = ["fontkit", "subset-font", "subtlex-ch-chr"];
 const DOWNLOAD_HEADER_TIMEOUT_MS = 30_000;
 const DOWNLOAD_STALL_TIMEOUT_MS = 120_000;
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
+const SUBSET_WORKER_PATH = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "font-subset-worker.mjs"
+);
+const MAX_SUBSET_WORKERS = 8;
 
 function fail(message) {
   throw new Error(message);
 }
 
+/**
+ * 缓存键只含真正影响产物的输入：发布信息、生成脚本、许可证与工具版本。
+ * 项目源码里出现了哪些字不参与分片（完整字符集已全部覆盖），所以不进键——
+ * 否则每新增一个汉字都会触发全量重新子集化。
+ */
 async function computeInputs() {
-  const [projectCjk, scriptBuffers, license, packageJsonText] = await Promise.all([
-    collectProjectCjk(path.join(clientDir, PROJECT_CJK_ROOT)),
+  const [scriptBuffers, license, packageJsonText] = await Promise.all([
     Promise.all(inputScriptPaths.map((file) => readFile(file))),
     readFile(licenseSourcePath),
     readFile(packageJsonPath, "utf8"),
@@ -64,13 +72,12 @@ async function computeInputs() {
   const inputHash = sha256(
     JSON.stringify({
       release: { version: FONT_RELEASE.version, files: FONT_RELEASE.files },
-      projectCjk,
       scripts: scriptBuffers.map((buffer) => sha256(buffer)),
       license: sha256(license),
       toolVersions,
     })
   );
-  return { projectCjk, inputHash };
+  return { inputHash };
 }
 
 async function mapLimit(items, limit, mapper) {
@@ -205,7 +212,7 @@ function parseSources(buffers) {
   return sources;
 }
 
-function planFont(sources, projectCjk) {
+function planFont(sources) {
   const sansSets = FAMILIES.find((family) => family.id === "sans").weights.map(
     ({ file }) => sources.get(file).characters
   );
@@ -233,6 +240,7 @@ function planFont(sources, projectCjk) {
     baseCodepoints: sansBase,
     extendedCodepoints: sansExtended,
     frequencyOrder,
+    gb2312Order: gb2312Codepoints(),
   });
   const sansCommon = sansChunks
     .filter((chunk) => chunk.kind === "common")
@@ -244,22 +252,18 @@ function planFont(sources, projectCjk) {
     counts: {
       gb2312: gb2312Codepoints().length,
       subtlex: frequencyOrder.length,
-      project: projectCjk.length,
       sansTotal: sansCharacters.size,
       sansBase: sansBase.length,
       sansExtended: sansExtended.length,
       sansCommon,
       monoBase: monoBase.length,
     },
-    projectCjkSha256: hashCodepoints(
-      projectCjk.filter((codepoint) => sansCharacters.has(codepoint))
-    ),
   };
 }
 
 function chunkCounts(chunks) {
-  const counts = { base: 0, common: 0, rest: 0 };
-  for (const chunk of chunks) counts[chunk.kind] += 1;
+  const counts = {};
+  for (const chunk of chunks) counts[chunk.kind] = (counts[chunk.kind] ?? 0) + 1;
   return counts;
 }
 
@@ -271,7 +275,6 @@ function manifestFrom({ inputHash, sources, plan, css, files }) {
     sourceFiles: Object.fromEntries(
       [...sources.entries()].map(([file, source]) => [file, sha256(source.buffer)])
     ),
-    projectCjkSha256: plan.projectCjkSha256,
     cssSha256: hashText(css),
     counts: plan.counts,
     chunks: {
@@ -287,7 +290,7 @@ function planSummary(plan, files) {
   const totalBytes = files.reduce((total, file) => total + file.data.length, 0);
   return [
     `全量覆盖   sans ${plan.counts.sansTotal} 字（基础 ${plan.counts.sansBase} + 扩展 ${plan.counts.sansExtended}；常用优先 ${plan.counts.sansCommon}）`,
-    `字面统计   GB2312 ${plan.counts.gb2312} · SUBTLEX ${plan.counts.subtlex} · 项目用字 ${plan.counts.project}`,
+    `字面统计   GB2312 ${plan.counts.gb2312} · SUBTLEX ${plan.counts.subtlex}`,
     `分片       sans ${plan.sansChunks.length} 片 × ${FAMILIES[0].weights.length} 字重 · mono ${plan.monoChunks.length} 片 × ${FAMILIES[1].weights.length} 字重`,
     `产物       ${files.length} 个 woff2 / ${(totalBytes / 1024 / 1024).toFixed(2)} MB`,
   ];
@@ -323,8 +326,66 @@ async function publishLicense() {
   await copyFile(licenseSourcePath, path.join(publicLicenseDir, "OFL.txt"));
 }
 
+/**
+ * 线程池并行子集化。任务按源文件顺序入队，线程依次领取，
+ * 各线程一般连续处理同一份源字体，只在换文件时重读一次。
+ */
+async function subsetInWorkers(jobs) {
+  const workerCount = Math.max(
+    1,
+    Math.min(availableParallelism(), MAX_SUBSET_WORKERS, jobs.length)
+  );
+  const results = new Array(jobs.length);
+  let cursor = 0;
+  let completed = 0;
+
+  const runWorker = () =>
+    new Promise((resolve, reject) => {
+      const worker = new Worker(SUBSET_WORKER_PATH, { workerData: { sourceDir: sourceCacheDir } });
+      const next = () => {
+        if (cursor >= jobs.length) {
+          void worker.terminate().then(resolve, reject);
+          return;
+        }
+        const id = cursor;
+        cursor += 1;
+        const job = jobs[id];
+        const text = job.chunk.cps.map((codepoint) => String.fromCodePoint(codepoint)).join("");
+        worker.postMessage({ id, file: job.file, text });
+      };
+      worker.on("message", ({ id, data, error }) => {
+        const job = jobs[id];
+        if (error) {
+          void worker.terminate();
+          reject(
+            new Error(
+              `子集化失败（${job.familyId} ${job.weight} 第 ${job.chunk.index} 片）：${error}`
+            )
+          );
+          return;
+        }
+        const buffer = Buffer.from(data);
+        results[id] = {
+          name: fontFileName(job.familyId, job.weight, job.chunk.index),
+          data: buffer,
+          sha256: sha256(buffer),
+        };
+        completed += 1;
+        if (completed % 12 === 0 || completed === jobs.length) {
+          console.log(`  子集化 ${completed}/${jobs.length}`);
+        }
+        next();
+      });
+      worker.on("error", reject);
+      next();
+    });
+
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+  return results;
+}
+
 export async function ensureFonts({ force = false } = {}) {
-  const { projectCjk, inputHash } = await computeInputs();
+  const { inputHash } = await computeInputs();
   if (!force) {
     const cached = await validateGenerated(inputHash);
     if (cached) {
@@ -336,7 +397,7 @@ export async function ensureFonts({ force = false } = {}) {
 
   const buffers = await loadSourceFonts();
   const sources = parseSources(buffers);
-  const plan = planFont(sources, projectCjk);
+  const plan = planFont(sources);
   const css = buildFontCss({ sansChunks: plan.sansChunks, monoChunks: plan.monoChunks });
 
   const jobs = [];
@@ -344,32 +405,12 @@ export async function ensureFonts({ force = false } = {}) {
     const chunks = family.id === "sans" ? plan.sansChunks : plan.monoChunks;
     for (const { weight, file } of family.weights) {
       for (const chunk of chunks) {
-        jobs.push({ familyId: family.id, weight, chunk, source: sources.get(file) });
+        jobs.push({ familyId: family.id, weight, chunk, file });
       }
     }
   }
 
-  let completed = 0;
-  const files = await mapLimit(jobs, 3, async (job) => {
-    const text = job.chunk.cps.map((codepoint) => String.fromCodePoint(codepoint)).join("");
-    let data;
-    try {
-      data = await subsetFont(job.source.buffer, text, { targetFormat: "woff2" });
-    } catch (error) {
-      fail(
-        `子集化失败（${job.familyId} ${job.weight} 第 ${job.chunk.index} 片）：${error.message}`
-      );
-    }
-    completed += 1;
-    if (completed % 12 === 0 || completed === jobs.length) {
-      console.log(`  子集化 ${completed}/${jobs.length}`);
-    }
-    return {
-      name: fontFileName(job.familyId, job.weight, job.chunk.index),
-      data,
-      sha256: sha256(data),
-    };
-  });
+  const files = await subsetInWorkers(jobs);
 
   const manifest = manifestFrom({ inputHash, sources, plan, css, files });
 

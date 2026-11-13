@@ -1,7 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   FAMILIES,
@@ -9,16 +6,10 @@ import {
   buildChunkPlan,
   buildFontCss,
   chunkCodepoints,
-  collectProjectCjk,
   formatUnicodeRange,
   gb2312Codepoints,
   hashCodepoints,
 } from "../../scripts/font-subset-plan.mjs";
-
-const tempDirs: string[] = [];
-afterEach(async () => {
-  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
 
 describe("font-subset-plan", () => {
   it("GB2312 覆盖一级与二级常用汉字", () => {
@@ -56,6 +47,41 @@ describe("font-subset-plan", () => {
     expect(new Set(chunks.flatMap((chunk) => chunk.cps)).size).toBe(6);
   });
 
+  it("词频表之外的字按层分片：越稀有的层块越小，每个字只落一片", () => {
+    const extended = Array.from({ length: 40 }, (_, index) => 0x4e00 + index);
+    const chunks = buildChunkPlan({
+      baseCodepoints: [0x20],
+      extendedCodepoints: extended,
+      // 前 4 个是常用字，随后 6 个是有词频的次常用字，再 5 个只在国标字表里。
+      frequencyOrder: extended.slice(0, 10),
+      gb2312Order: extended.slice(10, 15),
+      chunkSizes: { base: 10, common: 4, frequent: 3, gb2312: 2, rest: 100 },
+      commonCodepointCount: 4,
+    });
+    expect(chunks.map((chunk) => [chunk.kind, chunk.cps.length])).toEqual([
+      ["base", 1],
+      ["common", 4],
+      ["frequent", 3],
+      ["frequent", 3],
+      ["gb2312", 2],
+      ["gb2312", 2],
+      ["gb2312", 1],
+      ["rest", 25],
+    ]);
+    const placed = chunks.flatMap((chunk) => chunk.cps);
+    expect(new Set(placed).size).toBe(placed.length);
+    expect(placed).toHaveLength(41);
+  });
+
+  it("分片不依赖项目源码：同一份字体输入永远得到同一份分片", () => {
+    const options = {
+      baseCodepoints: [0x20],
+      extendedCodepoints: [0x4e00, 0x4e01, 0x4e02],
+      frequencyOrder: [0x4e01],
+    };
+    expect(buildChunkPlan(options)).toEqual(buildChunkPlan(options));
+  });
+
   it("完整字符集里的非 CJK 扩展字符也会进入分包", () => {
     const chunks = buildChunkPlan({
       baseCodepoints: [0x20],
@@ -75,7 +101,7 @@ describe("font-subset-plan", () => {
     ).toThrow(/重复/);
   });
 
-  it("字体 CSS 只引用 woff2 子集并覆盖三档字重", () => {
+  it("字体 CSS 只引用 woff2 子集并覆盖声明的全部字重", () => {
     const chunk = { index: 0, kind: "base" as const, cps: [0x20, 0x21] };
     const css = buildFontCss({ sansChunks: [chunk], monoChunks: [chunk] });
     for (const family of FAMILIES) {
@@ -87,20 +113,6 @@ describe("font-subset-plan", () => {
     expect(css).toContain("font-display: swap");
     expect(css).toContain("unicode-range: U+20-21");
     expect(css).not.toMatch(/\.ttf|\.otf/);
-  });
-
-  it("扫描项目用字时跳过依赖目录与非文本文件", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "font-subset-"));
-    tempDirs.push(dir);
-    await mkdir(path.join(dir, "pages"), { recursive: true });
-    await mkdir(path.join(dir, "node_modules"), { recursive: true });
-    await writeFile(path.join(dir, "pages", "A.tsx"), "中文");
-    await writeFile(path.join(dir, "node_modules", "B.tsx"), "忽略");
-    await writeFile(path.join(dir, "C.bin"), "忽略");
-    const codepoints = await collectProjectCjk(dir);
-    expect(codepoints).toContain("中".codePointAt(0));
-    expect(codepoints).toContain("文".codePointAt(0));
-    expect(codepoints).not.toContain("忽".codePointAt(0));
   });
 
   it("码位哈希与顺序无关", () => {
