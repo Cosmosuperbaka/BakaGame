@@ -5,6 +5,7 @@ import {
 } from "../../src/config/Constants";
 import type { SnapshottedRoom } from "../../src/shared/RoomSnapshot";
 import {
+  codeOf,
   connect,
   createWorld,
   joinAs,
@@ -152,6 +153,30 @@ describe("巡检里的截止与计时", () => {
     // 补充发言超时：被点名者以空发言补齐，补充请求收掉
     expect(r.supplement).toBeUndefined();
     expect(r.speechMode).not.toBe("supplement");
+  });
+});
+
+describe("后台入口与机器人清理", () => {
+  test("后台关房与移人对不存在的房间直接拒绝", async () => {
+    const world = createWorld();
+    const close = await codeOf(world.service.adminCloseRoom("nope"));
+    const kick = await codeOf(world.service.adminKickPlayer("nope", "x"));
+    expect(close).toBe("ROOM_NOT_FOUND");
+    expect(kick).toBe("ROOM_NOT_FOUND");
+  });
+
+  test("离线清理不碰机器人：机器人名义上离线，过了保留时长仍在名册里", async () => {
+    const world = createWorld();
+    const host = await makeRoom(world, "Oblivionis");
+    await send(world, host.conn, { id: "b", type: "test.addBot", payload: { count: 2 } });
+    const bots = Object.values(world.room("Oblivionis").players).filter((p) => p.isBot);
+    expect(bots).toHaveLength(2);
+    world.advance(PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS * 2);
+    await world.service.runHousekeeping();
+    const left = Object.values(world.service.rooms.get("Oblivionis")?.players ?? {}).filter(
+      (p) => p.isBot
+    );
+    expect(left).toHaveLength(2);
   });
 });
 
