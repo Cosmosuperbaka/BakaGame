@@ -11,46 +11,12 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import { BangumiSearchIndex } from "./BangumiSearchIndex";
+import { BangumiSearchIndex, parseJsonStrings } from "./BangumiSearchIndex";
+import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
 import { escapeLike, ftsPhrase } from "./db/FtsQuery";
 import type { BangumiSearchOptions } from "./BangumiSearchIndex";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 
-export interface BangumiDataProvider {
-  initialize?: () => Promise<void>;
-  searchSubjects(
-    keyword: string,
-    limit?: number,
-    filters?: AnimeAutoFilters
-  ): Promise<BangumiSubjectSearchResult[]>;
-  getSubject(subjectId: string): Promise<BangumiSubjectDetails>;
-  chooseRandomSubject(
-    filters?: AnimeAutoFilters,
-    random?: () => number
-  ): Promise<BangumiSubjectDetails>;
-  /** 角色立绘：本地数据集不含图片，只能回源取，结果写进回填缓存。 */
-  resolveCharacterImage(characterId: number): Promise<string | undefined>;
-  /**
-   * 番剧封面：只读数据集没有图片列，命中回填缓存就直接返回，否则回源一次并落盘。
-   * 搜索列表缺的封面由客户端滚进视口时经 `song.subject.image` 按需补。
-   */
-  resolveSubjectImage(subjectId: string): Promise<string | undefined>;
-  /**
-   * 释放底层资源（SQLite 句柄等）。声明为可选：远端 provider 不需要它。
-   * 有了这个声明，回退 provider 就不必再写双重 `as unknown as` 去探测方法是否存在。
-   */
-  close?: () => void | Promise<void>;
-}
-
-const parseList = (value: string | null | undefined) => {
-  if (typeof value !== "string" || !value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-};
 /**
  * Bangumi 关联类型码到曲目类型的映射。
  *
@@ -117,8 +83,8 @@ const toResult = (row: SubjectRow, imageBase = ""): BangumiSubjectSearchResult =
   year: row.date ? Number(String(row.date).slice(0, 4)) : undefined,
   rating: row.score || undefined,
   ratingCount: row.rating_count || undefined,
-  tags: parseList(row.tags),
-  metaTags: parseList(row.meta_tags),
+  tags: parseJsonStrings(row.tags),
+  metaTags: parseJsonStrings(row.meta_tags),
 });
 
 /** 回填缓存的实体类型：番剧与角色共用同一张表。 */
@@ -443,10 +409,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
       musicTracks,
     };
   }
-  async chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
-    const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
-    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
-    return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);
+  chooseRandomSubject(filters: AnimeAutoFilters = {}, random = Math.random) {
+    return pickRandomSubject(this, filters, random);
   }
   close() {
     this.db.close();

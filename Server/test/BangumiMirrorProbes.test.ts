@@ -5,7 +5,7 @@ import {
   BANGUMI_LOCAL_RETRY_COOLDOWN_MS,
   FallbackBangumiProvider,
 } from "../src/infrastructure/FallbackBangumiProvider";
-import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../src/infrastructure/BangumiDataProvider";
 
 const subjectProvider = (getSubject: () => Promise<unknown>) =>
   ({ getSubject }) as unknown as BangumiDataProvider;

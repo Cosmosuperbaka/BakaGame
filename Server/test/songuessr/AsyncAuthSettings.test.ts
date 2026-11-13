@@ -24,7 +24,7 @@ import {
 import { AppError } from "../../src/domain/Errors";
 import { type MusicCookieInput, type MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { AggregatedMusicProvider } from "../../src/infrastructure/music/AggregatedMusicProvider";
-import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
+import { type BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
 
 describe("SonGuessr service 异步归属回归", () => {
   for (const fails of [false, true]) {

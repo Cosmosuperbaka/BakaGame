@@ -3,7 +3,7 @@ import type {
   CEERawAppearance,
   CEERawCharacter,
 } from "../../src/infrastructure/CEEData";
-import type { BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
 import type { MusicCookieInput, MusicLoginSession, MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import type {
   CEEAppearance,

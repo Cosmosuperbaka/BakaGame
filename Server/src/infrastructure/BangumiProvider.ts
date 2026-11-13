@@ -4,13 +4,8 @@ import PQueue from "p-queue";
 import { isBangumiCreditsEntry } from "../shared/Index";
 import { bangumiImageUrl } from "./BangumiImagePaths";
 import { asArray, asRecord, readNumber, readString } from "./JsonReaders";
-import {
-  BARE_VERSION_SUFFIX_PATTERN,
-  BRACKETED_VERSION_PATTERN,
-  DECORATED_VERSION_SUFFIX_PATTERN,
-  FEAT_SUFFIX_PATTERN,
-  VERSION_MARKER_PATTERN,
-} from "../domain/TitlePatterns";
+import { stripVersionInfo } from "../domain/TitlePatterns";
+import { pickRandomSubject } from "./BangumiDataProvider";
 import type {
   AnimeAutoFilters,
   BangumiMusicTrack,
@@ -48,22 +43,6 @@ const parseYear = (value: unknown) => {
 
 const STAFF_KEY_PATTERN =
   /分[镜鏡]|演出|作画|動画|动画|制作|製作|设定|設定|设计|設計|监[督修]|企画|企划|录音|録音|混音|音效|音响|音響|选曲|選曲|协助|協力|协力|角色[设設]|主要角色|CAST|STAFF|作[词詞]|作曲|编曲|編曲|制作人|制片人/i;
-
-const stripTrackVersion = (value: string) => {
-  let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>
-    VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-  );
-  while (true) {
-    const next = result
-      .replace(DECORATED_VERSION_SUFFIX_PATTERN, (match, metadata: string) =>
-        VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-      )
-      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
-      .replace(FEAT_SUFFIX_PATTERN, "");
-    if (next === result) return result;
-    result = next;
-  }
-};
 
 const extractPerformers = (infobox: unknown): string[] => {
   const artists: string[] = [];
@@ -143,7 +122,7 @@ const slashSplitRelatedTracks = (
   const tracks: BangumiMusicTrack[] = [];
   for (const part of candidates) {
     if (artist && part.toLowerCase() === artist.toLowerCase()) continue;
-    const cleanPart = stripTrackVersion(part).trim();
+    const cleanPart = stripVersionInfo(part).trim();
     if (cleanPart.length >= 2) {
       tracks.push({ title: cleanPart, artist, kind });
     }
@@ -174,7 +153,7 @@ const relatedMusicTracksFor = (
     tracks.push({ title: subTitle, artist, kind });
   }
 
-  const stripped = stripTrackVersion(rawName).trim();
+  const stripped = stripVersionInfo(rawName).trim();
   if (stripped && stripped !== rawName && stripped.length >= 2) {
     tracks.push({ title: stripped, artist, kind });
   }
@@ -483,16 +462,11 @@ export class BangumiProvider {
     });
   }
 
-  async chooseRandomSubject(
+  chooseRandomSubject(
     filters: AnimeAutoFilters = {},
     random = Math.random
   ): Promise<BangumiSubjectDetails> {
-    const result = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
-    const candidates = result;
-    if (candidates.length === 0) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
-    const selected =
-      candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
-    return this.getSubject(selected.id);
+    return pickRandomSubject(this, filters, random);
   }
 
   /**

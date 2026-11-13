@@ -43,7 +43,7 @@ import {
 } from "../../src/shared/Index";
 import { type BangumiMusicTrack, type SongSearchResult } from "../../src/shared/SonGuessr";
 import { type MusicProvider } from "../../src/infrastructure/music/MusicProvider";
-import { type BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
+import { type BangumiDataProvider } from "../../src/infrastructure/BangumiDataProvider";
 
 describe("SonGuessr 非歌音轨否决", () => {
   // 实测事故：Bangumi 把整张特典 CD 挂成关联曲目，网易云对应专辑里排在前面的

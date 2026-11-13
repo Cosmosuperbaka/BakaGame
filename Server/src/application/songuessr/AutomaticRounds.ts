@@ -5,7 +5,7 @@ import {
   extractCanonicalTitle,
   isPlayableSong,
 } from "../../infrastructure/music/MusicDeduplicator";
-import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../../infrastructure/BangumiDataProvider";
 import type {
   MusicCookieInput,
   MusicSearchOptions,

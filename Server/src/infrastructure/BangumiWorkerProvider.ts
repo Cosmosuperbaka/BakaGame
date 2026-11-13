@@ -1,10 +1,9 @@
-import { AppError } from "../domain/Errors";
 import type {
   AnimeAutoFilters,
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import type { BangumiDataProvider } from "./LocalBangumiProvider";
+import { pickRandomSubject, type BangumiDataProvider } from "./BangumiDataProvider";
 import type { BangumiDataWorkerClient } from "./BangumiDataWorkerClient";
 
 /**
@@ -54,13 +53,11 @@ export class BangumiWorkerProvider implements BangumiDataProvider {
     >;
   }
 
-  async chooseRandomSubject(
+  chooseRandomSubject(
     filters: AnimeAutoFilters = {},
     random = Math.random
   ): Promise<BangumiSubjectDetails> {
-    const rows = await this.searchSubjects("", Math.min(filters.subjectLimit ?? 50, 50), filters);
-    if (!rows.length) throw new AppError("BANGUMI_NO_SUBJECT", "选不到符合条件的番剧");
-    return this.getSubject(rows[Math.min(rows.length - 1, Math.floor(random() * rows.length))].id);
+    return pickRandomSubject(this, filters, random);
   }
 
   close() {

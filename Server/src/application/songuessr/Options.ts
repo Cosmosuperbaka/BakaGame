@@ -2,7 +2,7 @@ import type { GameRecorder } from "../../domain/GameRecord";
 import type { TestRoomPolicy } from "../../domain/TestRooms";
 import type { RandomSource } from "../../domain/Rules";
 import type { EventLogger } from "../../infrastructure/EventLogger";
-import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../../infrastructure/BangumiDataProvider";
 import type { MusicProvider } from "../../infrastructure/music/MusicProvider";
 import type { LobbyFanoutSchedule } from "../LobbyFanout";
 import type { RoomPasswordGateOptions } from "../room/RoomPasswordGate";

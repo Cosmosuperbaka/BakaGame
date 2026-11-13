@@ -3,7 +3,7 @@ import {
   BANGUMI_LOCAL_RETRY_COOLDOWN_MS,
   FallbackBangumiProvider,
 } from "../src/infrastructure/FallbackBangumiProvider";
-import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../src/infrastructure/BangumiDataProvider";
 import { AppError } from "../src/domain/Errors";
 
 const result = [{ id: "1", name: "远程", nameCn: "远程", tags: [], metaTags: [] }];

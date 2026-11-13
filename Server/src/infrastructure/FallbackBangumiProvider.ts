@@ -3,7 +3,7 @@ import type {
   BangumiSubjectDetails,
   BangumiSubjectSearchResult,
 } from "../shared/Index";
-import type { BangumiDataProvider } from "./LocalBangumiProvider";
+import type { BangumiDataProvider } from "./BangumiDataProvider";
 
 /**
  * 本地数据集降级后重新探测的冷却期。

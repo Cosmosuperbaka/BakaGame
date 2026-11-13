@@ -11,7 +11,7 @@ import {
 } from "../src/shared/Index";
 import type { MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import { chosenSongId } from "./songuessr/Fixtures";
-import type { BangumiDataProvider } from "../src/infrastructure/LocalBangumiProvider";
+import type { BangumiDataProvider } from "../src/infrastructure/BangumiDataProvider";
 
 const makeSong = (id: string, title: string, album: string, artist: string): SongDetails => ({
   id,
