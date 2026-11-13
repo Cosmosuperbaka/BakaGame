@@ -56,7 +56,32 @@ export default defineConfig(({ command }) => {
       seoArtifactsPlugin(),
       uploadSourcemaps ? sentrySourcemapsPlugin(changelogPath, process.env) : [],
     ],
-    build: { sourcemap: uploadSourcemaps ? "hidden" : false },
+    build: {
+      sourcemap: uploadSourcemaps ? "hidden" : false,
+      rolldownOptions: {
+        output: {
+          // 稳定的第三方依赖单独成块：块名里的内容哈希只随依赖本身变，
+          // 只改业务代码的部署不会让它们的文件名变化，老用户的缓存继续命中。
+          // 只挑体积大、几乎不按页拆开的几组（Sentry 只在空闲时才加载）。动画库与 radix 一类
+          // 各页面用到的部分不同，合成一块会把只在个别页面用到的代码拉进首屏，不在此列。
+          codeSplitting: {
+            groups: [
+              {
+                name: "vendor-react",
+                test: /node_modules\/(react|react-dom|scheduler)\//,
+                priority: 30,
+              },
+              {
+                name: "vendor-router",
+                test: /node_modules\/(react-router|react-router-dom)\//,
+                priority: 30,
+              },
+              { name: "vendor-sentry", test: /node_modules\/@sentry\//, priority: 30 },
+            ],
+          },
+        },
+      },
+    },
     resolve: {
       // 共享源码的运行依赖按客户端安装边界解析。独立安装的构建只在 Client 里
       // 装依赖：从 Server/src/shared 出发的裸导入必须落到这里的副本，
