@@ -784,3 +784,60 @@ describe("ChatPanel 表情选择器", () => {
     );
   });
 });
+
+describe("ChatPanel 提及候选的光标与焦点", () => {
+  const players = [
+    { id: "p-me", name: "我" },
+    { id: "p-other", name: "小明" },
+  ];
+  const send = vi.fn().mockResolvedValue(undefined);
+  const renderPanel = () =>
+    render(<ChatPanel messages={[]} players={players} myPlayerId="p-me" onSendMessage={send} />);
+
+  it("光标移出提及范围后候选收起，回车发送的是原文而不是拼坏的草稿", async () => {
+    const user = userEvent.setup();
+    send.mockClear();
+    renderPanel();
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    await user.type(input, "你好 @小");
+    expect(screen.getByRole("listbox", { name: "提及玩家" })).toBeInTheDocument();
+    await user.keyboard("{Home}");
+    await waitFor(() =>
+      expect(screen.queryByRole("listbox", { name: "提及玩家" })).not.toBeInTheDocument()
+    );
+    await user.keyboard("{Enter}");
+    expect(send).toHaveBeenCalledExactlyOnceWith("你好 @小");
+    expect(input).toHaveValue("");
+  });
+
+  it("光标移回提及范围内，候选重新出现", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    await user.type(input, "你好 @小");
+    await user.keyboard("{Home}");
+    await user.keyboard("{End}");
+    expect(screen.getByRole("listbox", { name: "提及玩家" })).toBeInTheDocument();
+  });
+
+  it("输入框失焦后候选收起", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    await user.type(input, "@小");
+    expect(screen.getByRole("listbox", { name: "提及玩家" })).toBeInTheDocument();
+    await user.click(document.body);
+    await waitFor(() =>
+      expect(screen.queryByRole("listbox", { name: "提及玩家" })).not.toBeInTheDocument()
+    );
+  });
+
+  it("点候选不会先让输入框失焦，选中后文本完整", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    await user.type(input, "你好 @小");
+    await user.click(screen.getByRole("option", { name: "小明" }));
+    expect(input).toHaveValue("你好 @小明 ");
+  });
+});

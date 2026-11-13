@@ -584,11 +584,21 @@ export function ChatPanel({
     setMentionIndex(0);
   }, []);
 
+  /** 光标移动、选区变化时重算提及查询：光标离开 `@` 片段，候选就该收起。 */
+  const handleSelect = useCallback((event: React.SyntheticEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    setMention((current) => {
+      const next = readMentionQuery(input.value, input.selectionStart ?? input.value.length);
+      return next?.query === current?.query && next?.start === current?.start ? current : next;
+    });
+  }, []);
+
   /** 选中候选：写回输入框并把光标留在名字之后 */
   const pickMention = useCallback(
     (name: string) => {
       if (!mention) return;
-      const caret = inputRef.current?.selectionStart ?? text.length;
+      // 光标在 `@` 之前时 slice(caret) 会把前面的文字又拼一遍，最后一道防线。
+      const caret = Math.max(mention.start, inputRef.current?.selectionStart ?? text.length);
       const applied = applyMention(text, mention.start, caret, name);
       setText(applied.value);
       closeMention();
@@ -794,6 +804,8 @@ export function ChatPanel({
                   exit="exit"
                   style={{ originY: 1 }}
                   id={mentionListId}
+                  // 点候选不能先让输入框失焦：失焦会把候选收起，点击就落空。
+                  onMouseDown={(event) => event.preventDefault()}
                   role="listbox"
                   aria-label="提及玩家"
                   className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
@@ -840,6 +852,8 @@ export function ChatPanel({
               ref={inputRef}
               value={text}
               onChange={handleChange}
+              onSelect={handleSelect}
+              onBlur={closeMention}
               placeholder={placeholder}
               className="flex-1"
               data-agent-control="chat.input"
