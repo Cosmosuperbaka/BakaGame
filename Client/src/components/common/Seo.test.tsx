@@ -2,7 +2,7 @@ import { render, waitFor } from "@testing-library/react";
 import { HelmetProvider } from "react-helmet-async";
 import { describe, expect, it } from "vitest";
 import { Seo } from "./Seo";
-import { PAGE_META, SITE_TAGLINE, findPageMeta } from "@/data/PageMeta";
+import { PAGE_META, SITE_ORIGIN, SITE_TAGLINE, findPageMeta } from "@/data/PageMeta";
 
 // react-helmet-async 需要一个独立的 context 实例，否则同一个 Provider 在
 // 多个用例之间会复用同一份状态，断言到上一个用例残留的标签。
@@ -83,7 +83,7 @@ describe("Seo", () => {
       ).toBe("BakaGame");
       expect(
         document.head.querySelector('meta[property="og:image"]')?.getAttribute("content")
-      ).toBe("https://game.baka.website/og/og-song.jpg");
+      ).toBe(`${SITE_ORIGIN}/og/og-song.jpg`);
       expect(
         document.head.querySelector('meta[name="twitter:card"]')?.getAttribute("content")
       ).toBe("summary_large_image");

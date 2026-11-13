@@ -464,7 +464,7 @@ export const PAGE_META: PageMeta[] = [
     shortTitle: "猜动漫角色 CEE",
     oneLiner: "二刺猿笑传之猜猜呗增强版",
     lastmod: "2026-11-14",
-    description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房猜同一个动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
+    description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房一起猜动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
     image: `${SITE_ORIGIN}/og/og-cee.jpg`,
     imageAlt: "CEE 分享卡片：游戏图标与猜动漫角色字样",
     keywords: [
