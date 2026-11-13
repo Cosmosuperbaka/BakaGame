@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readRepoFile, workflow as parsedWorkflow, workflowText } from "./support/Workflow.mjs";
 
 /**
- * 构建工具链版本的一致性断言（审查 F61），用 `node --test` 运行，与 ServerCiFilter.mjs 同口径。
+ * 构建工具链版本的一致性断言（审查 F61），用 `node --test` 运行（`test:ci`），与 ServerCiFilter.mjs 同口径。
  *
  * 为什么不做成文档表格：同一条版本往往声明在两处以上——Gradle 同时写在
  * `Mobile/android/gradle/wrapper/gradle-wrapper.properties`（本地那条构建路径）、
@@ -15,11 +13,10 @@ import assert from "node:assert/strict";
  * 本文件不复制任何声明，只从真实文件解析后核对关系；升级时改声明即可，这里只保证它们仍互相兼容。
  */
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const read = (...segments) =>
-  readFileSync(join(repoRoot, ...segments), "utf8").replaceAll("\r\n", "\n");
+const read = (...segments) => readRepoFile(...segments);
 
-const workflow = read(".github/workflows/ci.yml");
+// 标量声明（版本号、坐标）仍从原文取，结构性的键走解析后的对象。
+const workflow = workflowText;
 
 /** 解析失败必须报红：静默返回 undefined 会让断言等于没在检查任何东西。 */
 function declaredVersion(source, pattern, label) {
@@ -127,9 +124,8 @@ test("Node：各作业只用单点声明的主版本，且落在 engines 允许�
       "${{ env.NODE_VERSION }}",
       "作业写死了 Node 版本：主版本只在 ci.yml 顶部 env.NODE_VERSION 声明一次"
     );
-  const major = Number(
-    declaredVersion(workflow, /^ {2}NODE_VERSION:\s*"?(\d+)"?$/m, "env.NODE_VERSION")
-  );
+  const major = Number(parsedWorkflow.env?.NODE_VERSION);
+  assert.ok(Number.isInteger(major), "ci.yml 顶层 env.NODE_VERSION 不是整数主版本");
   const engines = declaredVersion(
     read("package.json"),
     /"engines":\s*\{[^}]*"node":\s*"([^"]+)"/,
@@ -186,10 +182,13 @@ test("桌面打包 CLI 与 tauri crate 同主次版本", () => {
   );
 });
 
-test("本文件挂在 Server CI 上，否则这套断言等于不存在", () => {
-  assert.match(
-    workflow,
-    /node --test scripts\/BuildToolchain\.mjs/,
-    "ci.yml 里不再运行 scripts/BuildToolchain.mjs：工具链一致性回到没人核对的状态"
+test("本文件挂在 Server CI 与本地 verify 上，否则这套断言等于不存在", () => {
+  const runs = (parsedWorkflow.jobs.server.steps ?? []).map((step) => step.run ?? "");
+  assert.ok(
+    runs.some((run) => /pnpm --filter server test:ci\b/.test(run)),
+    "Server CI 不再运行 test:ci：工具链一致性回到没人核对的状态"
   );
+  const scripts = JSON.parse(read("Server/package.json")).scripts;
+  assert.match(scripts["test:ci"], /test\/ci\//, "test:ci 没有覆盖 test/ci 目录");
+  assert.match(scripts.verify, /test:ci/, "本地 verify 不包含 test:ci：改了工作流看不到这里的结果");
 });

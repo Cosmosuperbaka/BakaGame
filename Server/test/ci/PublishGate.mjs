@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { conditionOf, job as jobOf, stepsOf } from "./support/Workflow.mjs";
 
 /**
  * 客户端发布门禁（ci.yml 的 client-publish）判定表单测。
@@ -14,72 +12,18 @@ import assert from "node:assert/strict";
  * 而且流水线全绿，没有任何地方报错。修法是把门禁拆成分平台判定，
  * 但 GitHub 的 `if:` 是自由文本，没人核对——本文件就是那张核对表。
  *
- * 做法：从 ci.yml 原文里抽出真实的表达式（不复制一份），把 `needs.*` / `github.*` / `env.*`
+ * 做法：用 YAML 解析器从 ci.yml 取出真实的表达式（不复制一份），把 `needs.*` / `github.*` / `env.*`
  * 换成夹具值后求值。GitHub 表达式去掉 `${{ }}` 后的 `== || &&` 子集就是合法 JS，
  * 因此这个求值近似但不假装精确：它守的是**我们自己写的判定关系**。
  */
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, "../..");
-const workflow = readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8").replaceAll(
-  "\r\n",
-  "\n"
-);
-
-/** 取某个作业（2 空格缩进的键）的正文行。 */
-function jobLines(source, jobId) {
-  const at = source.search(new RegExp(`\\n {2}${jobId}:\\n`));
-  assert.notEqual(at, -1, `ci.yml 里找不到作业 ${jobId}`);
-  const out = [];
-  for (const line of source
-    .slice(at + 1)
-    .split("\n")
-    .slice(1)) {
-    if (line.trim() === "") continue;
-    if (!/^ {4,}/.test(line)) break;
-    out.push(line);
-  }
-  return out;
-}
-
-/** 读一条 `if:` 的值；折叠标量（`>-`）按空格续行拼接。 */
-function readIf(lines, from, to, ifIndent) {
-  for (let index = from; index < to; index += 1) {
-    const match = lines[index].match(new RegExp(`^ {${ifIndent}}if:\\s*(.*)$`));
-    if (!match) continue;
-    const head = match[1].trim();
-    const parts = /^[>|][-+0-9]*$/.test(head) ? [] : [head];
-    for (let next = index + 1; next < to; next += 1) {
-      const indent = lines[next].match(/^(\s*)/)[1].length;
-      if (indent <= ifIndent) {
-        if (parts.length === 0) assert.fail(`if 折叠标量没有内容：${lines[index]}`);
-        return { text: parts.join(" ").trim(), at: index };
-      }
-      parts.push(lines[next].trim());
-    }
-    return { text: parts.join(" ").trim(), at: index };
-  }
-  return undefined;
-}
-
-/** 解析作业内每个步骤的 `{ name, if }`；步骤正文从 6 空格 `- name:` 起。 */
-function stepsOf(lines) {
-  const starts = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => /^ {6}- /.test(line));
-  return starts.map(({ index }, order) => {
-    const end = order + 1 < starts.length ? starts[order + 1].index : lines.length;
-    const name = lines[index].match(/^ {6}- name:\s*(.+)$/)?.[1]?.trim();
-    assert.ok(name, `步骤必须写成 "- name: ..."：${lines[index]}`);
-    return { name, if: readIf(lines, index, end, 8) };
-  });
-}
-
 const job = "client-publish";
-const block = jobLines(workflow, job);
-const jobIf = readIf(block, 0, block.length, 4);
-assert.ok(jobIf, `作业 ${job} 没有作业级 if`);
-const steps = stepsOf(block);
+const jobIf = { text: conditionOf(jobOf(job)) };
+assert.ok(jobIf.text, `作业 ${job} 没有作业级 if`);
+const steps = stepsOf(job).map((entry) => {
+  const text = conditionOf(entry);
+  return { name: entry.name, if: text === undefined ? undefined : { text } };
+});
 const step = (name) => {
   const found = steps.find((entry) => entry.name === name);
   assert.ok(found, `ci.yml 里没有名为 ${name} 的步骤（改名会让这张表失去意义）`);

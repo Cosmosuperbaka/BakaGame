@@ -1,9 +1,9 @@
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { changeFilters, declaredOutputs, repoRoot } from "./support/Workflow.mjs";
 
 /**
  * dorny/paths-filter 过滤集合的单测。
@@ -12,70 +12,20 @@ import assert from "node:assert/strict";
  * 跑哪些测试，而「测试守护的文件」与「触发该测试的过滤集合」分属两处，任何人都可能只改一边。
  * ci.yml 里的规则是自由文本，没人核对；本文件把两边钉在一起：
  *
- * 1. 从 ci.yml 真实解析 `filters: |` 块（不复制规则），改 workflow 会立刻反映到这里；
+ * 1. 用 YAML 解析器从 ci.yml 真实取出 `filters` 输入（不复制规则），改 workflow 会立刻反映到这里；
  * 2. 夹具矩阵断言每类改动的入选/不入选；
  * 3. 反向不变量：扫描 Server 测试里以仓库根为锚读取的**真实仓库文件路径**，逐条要求它命中
  *    所在作业所需的过滤集合——新增一份被测试读取的壳文件却忘了加过滤，就会红。
  *
  * 匹配语义用 picomatch({ dot: true }) 近似 paths-filter 的内部实现；本文件守护的是「我们自己声明的
  * 规则是否覆盖该覆盖的东西」，不声称复刻该 Action 的选项细节（升级 Action 若语义变化，
- * 由这里的夹具失败暴露）。用 `node --test` 运行，与 ClientCiFilter.mjs 同口径。
+ * 由这里的夹具失败暴露）。用 `node --test` 运行（`test:ci`），客户端过滤集合也由本文件守护。
  */
 
-const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, "../..");
 const require = createRequire(join(repoRoot, "Server/package.json"));
 const picomatch = require("picomatch");
 
-const workflow = readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8").replaceAll(
-  "\r\n",
-  "\n"
-);
-
-/**
- * 按缩进解析 `filters: |` 块，返回 `{ 过滤名: [模式...] }`。
- * 刻意不写 `split("            server:\n")` 这类锚点抽取——历史上出过「中间插了新段，
- * 于是把后一节的规则一并算进来」的假绿（见 ClientCiFilter.mjs 顶部注释）。
- */
-function parseFilters(source) {
-  const start = source.search(/\n {10}filters: \|\n/);
-  assert.notEqual(start, -1, "ci.yml 里找不到 `filters: |`（缩进或位置变了，解析器要跟着改）");
-  const lines = source.slice(start + 1).split("\n");
-  const keyIndent = " ".repeat(12);
-  const ruleIndent = " ".repeat(14);
-  const filters = {};
-  let current = null;
-  for (const line of lines.slice(1)) {
-    if (line.trim() === "") continue;
-    // 首个缩进不足 12 空格的行宣告块标量结束。
-    if (!/^ {12,}/.test(line)) break;
-    if (line.trim().startsWith("#")) continue;
-    if (line.startsWith(keyIndent) && !line.startsWith(ruleIndent)) {
-      const key = line.slice(keyIndent.length).match(/^([A-Za-z][\w-]*):$/)?.[1];
-      assert.ok(key, `filters 块里出现无法识别的行：${line}`);
-      current = key;
-      filters[key] = [];
-      continue;
-    }
-    assert.ok(current, `过滤名之前出现规则：${line}`);
-    const rule = line.slice(ruleIndent.length).match(/^- '([^']+)'$/);
-    assert.ok(rule, `规则必须写成 14 空格缩进的单引号串：${line}`);
-    filters[current].push(rule[1]);
-  }
-  return filters;
-}
-
-/** 解析 changes 作业对外导出的过滤名，用于核对「过滤名 ↔ 作业消费的名字」不漏不重。 */
-function parseDeclaredOutputs(source) {
-  const at = source.search(/\n {2}changes:\n/);
-  assert.notEqual(at, -1, "ci.yml 里找不到 changes 作业");
-  const block = source.slice(at);
-  return [...block.matchAll(/([a-z][a-z0-9_-]*): \$\{\{ steps\.force\.outputs\./g)].map(
-    (match) => match[1]
-  );
-}
-
-const filters = parseFilters(workflow);
+const filters = changeFilters();
 const matchers = new Map(
   Object.entries(filters).map(([name, patterns]) => [
     name,
@@ -89,7 +39,12 @@ function hit(name, path) {
   return rules.some((rule) => rule(path));
 }
 
-const REPO_FILE = /["']((?:Client|Desktop|Mobile|Agents|tools)\/[^"']+?\.[A-Za-z0-9]+)["']/g;
+// 既认「以仓库根为锚的字面量」，也认 `../../Client/x` 这类向上相对的写法（McpDiscovery 就是后者）。
+const REPO_FILE =
+  /["'](?:(?:\.\.\/)+)?((?:Client|Desktop|Mobile|Agents|tools)\/[^"']+?\.[A-Za-z0-9]+)["']/g;
+// 向上相对写法本身就证明它在读仓库内别处的文件，不需要再找根锚。
+const RELATIVE_REPO_FILE =
+  /["'](?:\.\.\/)+((?:Client|Desktop|Mobile|Agents|tools)\/[^"']+?\.[A-Za-z0-9]+)["']/g;
 
 test("filters 解析本身可信：六个过滤集合都非空", () => {
   assert.deepEqual(Object.keys(filters).sort(), [
@@ -105,7 +60,7 @@ test("filters 解析本身可信：六个过滤集合都非空", () => {
 });
 
 test("过滤名与 steps.filter 对外导出的名字一一对应", () => {
-  assert.deepEqual(parseDeclaredOutputs(workflow).sort(), Object.keys(filters).sort());
+  assert.deepEqual(declaredOutputs().sort(), Object.keys(filters).sort());
 });
 
 /**
@@ -118,20 +73,33 @@ for (const [filter, dir] of [
   ["client", "Client/src"],
 ]) {
   const root = join(repoRoot, dir);
-  const files = readdirSync(root)
+  const files = readdirSync(root, { recursive: true })
     .filter((name) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(name))
     .sort();
   if (files.length === 0) continue;
   const guarded = new Set();
   for (const name of files) {
     const source = readFileSync(join(root, name), "utf8");
-    if (!/import\.meta\.dir,\s*["']\.\.\/\.\.["']/.test(source)) continue;
-    for (const match of source.matchAll(REPO_FILE)) guarded.add(match[1]);
+    const rooted = /import\.meta\.dir,\s*["']\.\.\/\.\.["']/.test(source);
+    for (const match of source.matchAll(rooted ? REPO_FILE : RELATIVE_REPO_FILE))
+      guarded.add(match[1]);
   }
-  test(`${dir} 按仓库根读取的文件都在 ${filter} 过滤里（当前 ${guarded.size} 项）`, () => {
+  test(`${dir} 读取的仓库内其他文件都在 ${filter} 过滤里（当前 ${guarded.size} 项）`, () => {
     for (const path of guarded) assert.equal(hit(filter, path), true, path);
   });
 }
+
+test("向上相对写法的字面量也会被护栏识别（防正则回退）", () => {
+  const sample = 'new URL("../../Client/public/llms.txt", import.meta.url)';
+  assert.deepEqual(
+    [...sample.matchAll(RELATIVE_REPO_FILE)].map((match) => match[1]),
+    ["Client/public/llms.txt"]
+  );
+  assert.deepEqual(
+    [...sample.matchAll(REPO_FILE)].map((match) => match[1]),
+    ["Client/public/llms.txt"]
+  );
+});
 
 test("被守护的具体文件清单符合预期（防解析空转）", () => {
   const source = readFileSync(
@@ -153,7 +121,7 @@ test("被守护的具体文件清单符合预期（防解析空转）", () => {
  * 正是 F55 那一类静默失效。清单写死在这里，脚本新读一个文件却不登记就会红。
  */
 test("BuildToolchain.mjs 守护的文件都在 server 过滤里", () => {
-  const source = readFileSync(join(repoRoot, "Server/scripts/BuildToolchain.mjs"), "utf8");
+  const source = readFileSync(join(repoRoot, "Server/test/ci/BuildToolchain.mjs"), "utf8");
   const guarded = [...source.matchAll(REPO_FILE)].map((match) => match[1]);
   assert.deepEqual([...new Set(guarded)].sort(), [
     "Desktop/src-tauri/Cargo.lock",
@@ -175,6 +143,9 @@ const cases = [
   ["server", "Mobile/android/gradle/wrapper/gradle-wrapper.properties", true],
   // 发布元数据：deploy.yml 把它喂给 buildServerReleaseMetadata，没有稳定 semver 要在这里红。
   ["server", "Client/src/data/changelog.json", true],
+  // MCP 发现文档由服务端用例读取，只改它们也要跑服务端作业。
+  ["server", "Client/public/.well-known/mcp.json", true],
+  ["server", "Client/public/llms.txt", true],
   ["server", "Server/test/ClientVersionConsistency.test.ts", true],
   ["server", "Server/src/Index.ts", true],
   // F56：只改依赖清单也要跑两端测试与部署门禁。
@@ -183,6 +154,7 @@ const cases = [
   ["server", "package.json", true],
   ["server", ".github/workflows/ci.yml", true],
   ["server", ".github/workflows/deploy.yml", true],
+  ["server", "Client/public/robots.txt", false],
   ["server", "Client/src/App.tsx", false],
   ["server", "Client/package.json", false],
   ["server", "Client/src/data/Awards.ts", false],
@@ -195,8 +167,10 @@ const cases = [
   ["client", "Client/package.json", true],
   ["client", "Client/.storybook/main.ts", true],
   ["client", "Client/e2e/App.spec.ts", false],
+  ["client", "Client/e2e/fixtures/deep/a.ts", false],
+  ["client", "Client/playwright.config.ts", true],
   ["client", "Server/src/shared/models/A.ts", true],
-  ["client", "Server/scripts/ClientCiFilter.mjs", true],
+  ["client", "Server/test/ci/ServerCiFilter.mjs", false],
   ["client", "pnpm-lock.yaml", true],
   ["client", "pnpm-workspace.yaml", true],
   ["client", "package.json", true],
@@ -229,7 +203,7 @@ const cases = [
   ["knip", "knip.jsonc", true],
   ["knip", "Client/src/App.tsx", true],
   ["knip", "Server/src/Index.ts", true],
-  ["knip", "Server/scripts/ServerCiFilter.mjs", true],
+  ["knip", "Server/test/ci/ServerCiFilter.mjs", true],
   ["knip", "pnpm-lock.yaml", true],
   ["knip", "Mobile/package.json", false],
 

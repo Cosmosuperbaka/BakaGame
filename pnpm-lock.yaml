@@ -19,6 +19,9 @@ importers:
       prettier:
         specifier: 3.9.10
         version: 3.9.10
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   Client:
     dependencies:

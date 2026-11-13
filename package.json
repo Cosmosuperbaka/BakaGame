@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "knip": "6.41.0",
-    "prettier": "3.9.10"
+    "prettier": "3.9.10",
+    "yaml": "2.9.1"
   }
 }

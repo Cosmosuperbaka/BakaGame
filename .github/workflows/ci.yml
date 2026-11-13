@@ -86,6 +86,8 @@ jobs:
               - 'Desktop/**'
               - 'Mobile/**'
               - 'Client/src/data/changelog.json'
+              - 'Client/public/.well-known/**'
+              - 'Client/public/llms.txt'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
@@ -95,7 +97,6 @@ jobs:
               - 'Client/*'
               - 'Client/!(e2e)/**'
               - 'Server/src/shared/**'
-              - 'Server/scripts/ClientCiFilter.mjs'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
@@ -161,18 +162,15 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      # 本作业自身的触发集合是门禁的一部分：上面过滤里少了壳目录/锁文件时，
-      # 版本一致性与依赖变更的测试就会「在跑但永不触发」。改过滤必须同改这个夹具测试。
-      - name: Verify CI path filter fixtures
-        working-directory: Server
-        run: node --test scripts/ServerCiFilter.mjs
-
-      # 构建工具链版本的一致性（Gradle wrapper↔Setup Gradle↔AGP 支持范围、e2e 的 bun↔工作区 pin、
-      # Node 主版本↔engines 下界、打包 CLI↔tauri crate）。这些值各写在两个以上文件里，
-      # 漂移的后果是本地那条构建路径不可用而 CI 全绿，所以由代码核对，不靠文档表格。
-      - name: Verify build toolchain versions agree
-        working-directory: Server
-        run: node --test scripts/BuildToolchain.mjs
+      # 工作流自身的门禁，与本地 verify 同一个入口（Server/test/ci）：
+      # - 路径过滤：本作业自身的触发集合是门禁的一部分，过滤里少了壳目录/锁文件时，
+      #   版本一致性与依赖变更的测试就会「在跑但永不触发」；两端的过滤集合都由它核对；
+      # - 发布判定表：client-publish 的作业级与步骤级条件；
+      # - 构建工具链版本一致性（Gradle wrapper↔Setup Gradle↔AGP 支持范围、e2e 的 bun↔工作区 pin、
+      #   Node 主版本↔engines 下界、打包 CLI↔tauri crate）：这些值各写在两个以上文件里，
+      #   漂移的后果是本地那条构建路径不可用而 CI 全绿，所以由代码核对，不靠文档表格。
+      - name: Verify workflow gates
+        run: pnpm --filter server test:ci
 
       - name: Type check server
         run: pnpm --filter server check
@@ -269,10 +267,6 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Verify CI path filter fixtures
-        working-directory: Client
-        run: node --test ../Server/scripts/ClientCiFilter.mjs
 
       # 共享契约的解析边界：Server/src/shared 的裸导入必须能按「Client 独立安装」
       # 布局解析（托管构建正是这种布局），细节与背景见脚本头注释。
@@ -489,7 +483,7 @@ jobs:
 
       # 版本必须与 Mobile/android/gradle/wrapper/gradle-wrapper.properties 一致，且落在
       # Mobile/android/build.gradle 里 AGP 的支持范围内；这层关系由 Server CI 的
-      # scripts/BuildToolchain.mjs 断言，本注释不复写数值。
+      # Server/test/ci/BuildToolchain.mjs 断言，本注释不复写数值。
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
@@ -565,7 +559,7 @@ jobs:
     # 用单一 needs.desktop.result == 'success' 当门禁，会让「每次都构建、永远不发布」成为常态，
     # 玩家包长期落后于获验产物。所以作业级只要求「至少一个平台成功」，各平台的下载/上传步骤
     # 再各判自己那个作业的结果：某平台 skipped/failure 只影响它自己那一侧的发布。
-    # 判定表由 Server/scripts/PublishGate.mjs 的夹具测试逐格锁死，改表达式必须同改那里。
+    # 判定表由 Server/test/ci/PublishGate.mjs 的夹具测试逐格锁死，改表达式必须同改那里。
     # 作业级 if 里读不到 secrets 上下文（GitHub 只给 github/needs/vars/inputs），
     # 所以凭证有没有只在各步骤里判，缺凭证时作业照常绿。
     # 手动 dispatch 也允许发布：客户端制品此前一次都没出过包，需要一个能主动发版的入口。

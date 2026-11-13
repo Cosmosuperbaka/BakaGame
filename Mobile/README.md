@@ -156,7 +156,7 @@ Mobile/
 `android/gradle.properties` 里注释掉的 `org.gradle.java.home` 指定）；Android SDK
 （本机在 `D:\AndroidSdk`，需设 `ANDROID_HOME` 或让 Studio 写 `android/local.properties`）；
 Gradle 的版本出处是 `android/gradle/wrapper/gradle-wrapper.properties`（必须与 CI 的 Setup Gradle
-同一枚、且落在 `android/build.gradle` 里 AGP 的支持范围内，由 `Server/scripts/BuildToolchain.mjs` 断言）；
+同一枚、且落在 `android/build.gradle` 里 AGP 的支持范围内，由 `Server/test/ci/BuildToolchain.mjs` 断言）；
 `apk.mjs` 只取缓存里与声明同枚的发行版，取不到就报错，不会退回版本号最大的那一枚。
 
 JVM 依赖由 Gradle 依赖锁约束：插件类路径锁在 `android/buildscript-gradle.lockfile`，

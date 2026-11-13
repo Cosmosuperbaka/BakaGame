@@ -98,7 +98,7 @@ TypeScript 业务代码与测试文件使用 **PascalCase**，目录沿用现有
 | 桌面安装包（Rust + 打包 CLI） | `Desktop/src-tauri/Cargo.lock` 的 crate 版本；`ci.yml` 的打包 CLI 版本变量 |
 | 安卓 APK（Gradle + AGP） | `Mobile/android/gradle/wrapper/gradle-wrapper.properties`（本地路径）、`ci.yml` 的 Setup Gradle（CI 路径）、`Mobile/android/build.gradle` 的 AGP 支持范围 |
 
-  跨这些文件的核对集中在 `Server/scripts/BuildToolchain.mjs`（挂在 Server CI 上）；升级时改声明，不改断言的口径。
+  跨这些文件的核对集中在 `Server/test/ci/BuildToolchain.mjs`（挂在 Server CI 上）；升级时改声明，不改断言的口径。
 
 - 升级前后在受影响包运行同一组检查；预检优于装完再测（比较新旧 tarball 的导出面与依赖字段，注意不要漏掉 `.d.mts/.d.cts`）。
 
