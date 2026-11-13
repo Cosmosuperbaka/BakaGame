@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback, useEffect, useId, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
-import { ArrowDown, AtSign, Send, Smile } from "lucide-react";
+import { ArrowDown, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { MessageBubble, type ChatMentionPlayer } from "@/components/common/chat/ChatMessage";
+import { MentionList } from "@/components/common/chat/MentionList";
 import { trailingRepeatChain } from "@/components/common/chat/RepeatChain";
 import {
   MessageShell,
@@ -19,21 +20,17 @@ import {
   chatMessageLaunch,
   chatThrow,
   jitterShape,
-  optionTappable,
   popover,
   repeatStair,
   stepJitterAnimation,
   systemNotice,
 } from "@/lib/Motion";
 import { STICKER_PREFIX, loadStickerLabels, type StickerLabelIndex } from "@/lib/Stickers";
-import { applyMention, filterMentionCandidates, readMentionQuery } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
 import { useChatDraft } from "@/hooks/UseChatDraft";
+import { useMentionInput } from "@/hooks/UseMentionInput";
 import { useStickToBottom } from "@/hooks/UseStickToBottom";
 import type { ChatMessage } from "@bakagame/shared";
-
-/** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
-const MENTION_LIMIT = 6;
 
 /** 系统提示、阶段提醒与频道说明共用的无背景居中文本 */
 const SYSTEM_TEXT =
@@ -84,8 +81,6 @@ export function ChatPanel({
   const [text, setText] = useChatDraft();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const [mention, setMention] = useState<{ query: string; start: number } | null>(null);
-  const [mentionIndex, setMentionIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const sendIconRef = useRef<HTMLSpanElement>(null);
   const reducedMotion = useReducedMotion();
@@ -114,9 +109,6 @@ export function ChatPanel({
   }, [setText]);
   /** 一次发送的业务回执：成败只看 promise 有没有正常返回，动画时序不参与判定。 */
   const attemptRef = useRef<{ acked: boolean } | null>(null);
-  // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
-  const mentionListId = useId();
-  const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
   // 只在玩家本来就在底部时跟随；自己发出的那条无论玩家翻到哪都贴底，胶囊交接要落在可见的落点上。
   const lastMessage = messages.at(-1);
   const { viewportRef, contentRef, unseen, scrollToBottom } = useStickToBottom(
@@ -129,6 +121,14 @@ export function ChatPanel({
     () => players.filter((player) => player.id !== myPlayerId),
     [players, myPlayerId]
   );
+
+  const mentionInput = useMentionInput({
+    text,
+    setText,
+    inputRef,
+    players: mentionablePlayers,
+  });
+  const closeMention = mentionInput.close;
 
   // 本人最新一条消息：发送后它换了，就是这次发送的回显
   const lastMineId = useMemo(
@@ -159,14 +159,6 @@ export function ChatPanel({
     return () => window.clearTimeout(timer);
   }, [waitingKey, waitingText, recallThrow]);
 
-  const candidates = useMemo(
-    () =>
-      mention
-        ? filterMentionCandidates(mentionablePlayers, mention.query).slice(0, MENTION_LIMIT)
-        : [],
-    [mention, mentionablePlayers]
-  );
-
   // 表情的替代文本要用清单里的表情名。清单仍旧按需加载：只在消息里真的出现表情时才取，
   // 没发过表情的房间不为整份清单买单。
   const [stickerLabels, setStickerLabels] = useState<StickerLabelIndex | null>(null);
@@ -177,48 +169,6 @@ export function ChatPanel({
   useEffect(() => {
     if (hasSticker && !stickerLabels) void loadStickerLabels().then(setStickerLabels);
   }, [hasSticker, stickerLabels]);
-
-  const closeMention = useCallback(() => {
-    setMention(null);
-    setMentionIndex(0);
-  }, []);
-
-  /** 输入时同步提及查询：光标位置决定当前是否正在写一个提及 */
-  const handleChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const next = event.target.value;
-      setText(next);
-      setMention(readMentionQuery(next, event.target.selectionStart ?? next.length));
-      setMentionIndex(0);
-    },
-    [setText]
-  );
-
-  /** 光标移动、选区变化时重算提及查询：光标离开 `@` 片段，候选就该收起。 */
-  const handleSelect = useCallback((event: React.SyntheticEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    setMention((current) => {
-      const next = readMentionQuery(input.value, input.selectionStart ?? input.value.length);
-      return next?.query === current?.query && next?.start === current?.start ? current : next;
-    });
-  }, []);
-
-  /** 选中候选：写回输入框并把光标留在名字之后 */
-  const pickMention = useCallback(
-    (name: string) => {
-      if (!mention) return;
-      // 光标在 `@` 之前时 slice(caret) 会把前面的文字又拼一遍，最后一道防线。
-      const caret = Math.max(mention.start, inputRef.current?.selectionStart ?? text.length);
-      const applied = applyMention(text, mention.start, caret, name);
-      setText(applied.value);
-      closeMention();
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.setSelectionRange(applied.caret, applied.caret);
-      });
-    },
-    [mention, text, closeMention, setText]
-  );
 
   /**
    * 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。
@@ -440,48 +390,14 @@ export function ChatPanel({
             />
 
             {/* 候选自输入框上缘展开 */}
-            <AnimatePresence>
-              {candidates.length > 0 && (
-                <motion.div
-                  variants={popover}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  style={{ originY: 1 }}
-                  id={mentionListId}
-                  // 点候选不能先让输入框失焦：失焦会把候选收起，点击就落空。
-                  onMouseDown={(event) => event.preventDefault()}
-                  role="listbox"
-                  aria-label="提及玩家"
-                  className="absolute bottom-full left-3 right-3 z-dropdown mb-1 overflow-hidden floating-surface shadow-md"
-                >
-                  {candidates.map((player, index) => (
-                    <motion.button
-                      key={player.id}
-                      id={mentionOptionId(index)}
-                      type="button"
-                      role="option"
-                      aria-selected={index === mentionIndex}
-                      // 焦点留在输入框里，候选只经 aria-activedescendant 指向，不进 Tab 序列。
-                      tabIndex={-1}
-                      {...optionTappable}
-                      onMouseEnter={() => setMentionIndex(index)}
-                      onClick={() => pickMention(player.name)}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors",
-                        "border-t first:border-t-0",
-                        index === mentionIndex
-                          ? "bg-accent text-accent-foreground"
-                          : "text-foreground hover:bg-accent hover:text-accent-foreground"
-                      )}
-                    >
-                      <AtSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate font-medium">{player.name}</span>
-                    </motion.button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <MentionList
+              candidates={mentionInput.candidates}
+              activeIndex={mentionInput.activeIndex}
+              listId={mentionInput.listId}
+              optionId={mentionInput.optionId}
+              onPick={mentionInput.pick}
+              onHover={mentionInput.setActiveIndex}
+            />
 
             <Popover.Trigger asChild>
               <Button
@@ -496,8 +412,8 @@ export function ChatPanel({
             <Input
               ref={inputRef}
               value={text}
-              onChange={handleChange}
-              onSelect={handleSelect}
+              onChange={mentionInput.handleChange}
+              onSelect={mentionInput.handleSelect}
               onBlur={closeMention}
               placeholder={placeholder}
               className="flex-1"
@@ -505,36 +421,17 @@ export function ChatPanel({
               role="combobox"
               aria-label="聊天消息"
               aria-autocomplete="list"
-              aria-expanded={candidates.length > 0}
-              aria-controls={candidates.length > 0 ? mentionListId : undefined}
+              aria-expanded={mentionInput.candidates.length > 0}
+              aria-controls={mentionInput.candidates.length > 0 ? mentionInput.listId : undefined}
               aria-activedescendant={
-                candidates.length > 0 ? mentionOptionId(mentionIndex) : undefined
+                mentionInput.candidates.length > 0
+                  ? mentionInput.optionId(mentionInput.activeIndex)
+                  : undefined
               }
               onKeyDown={(event) => {
                 // 输入法选词的回车只确认候选字，不发送、不选提及。
                 if (event.nativeEvent.isComposing) return;
-                if (candidates.length > 0) {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    setMentionIndex((cur) => (cur + 1) % candidates.length);
-                    return;
-                  }
-                  if (event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setMentionIndex((cur) => (cur - 1 + candidates.length) % candidates.length);
-                    return;
-                  }
-                  if (event.key === "Enter" || event.key === "Tab") {
-                    event.preventDefault();
-                    pickMention(candidates[mentionIndex].name);
-                    return;
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    closeMention();
-                    return;
-                  }
-                }
+                if (mentionInput.handleKeyDown(event)) return;
                 if (event.key === "Enter") void handleSend();
               }}
               maxLength={maxLength}
