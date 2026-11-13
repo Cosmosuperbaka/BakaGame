@@ -1,6 +1,5 @@
 import { AppError } from "../../domain/Errors";
 import type { SonGuessrClientMessage, SonGuessrPhase } from "../../shared/Index";
-import type { SonGuessrService } from "../SonGuessrService";
 import type { CommandDispatcher, CommandTable, Guard, PhaseRule } from "../room/CommandTable";
 import {
   checkMusicQrLogin,
@@ -30,22 +29,13 @@ import {
   transferHostCommand,
 } from "./Membership";
 import { isTestRoom } from "./RoomAccess";
+import { requestSync, setReady, setSpectator, setTeam, updateSettings } from "./SeatCommands";
 import { chooseSubmitter, finishGame, isRoomStarting, nextRound, startGame } from "./RoundFlow";
 import { getSongClipPreview, submitAnime, submitSong } from "./SongSubmission";
 import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from "./RoundEngine";
 
-/**
- * 仍在服务门面里的命令处理：它们牵涉回合、计分与选歌，随回合逻辑后续拆出后，
- * 这里的成员会换成模块函数。表只依赖这一小块窄接口。
- */
-type RoomHandlers = Pick<
-  SonGuessrService,
-  "requestSync" | "setReady" | "setSpectator" | "setTeam" | "updateSettings"
->;
-
 export interface SonGuessrCommandDeps {
   readonly ctx: SonGuessrContext;
-  readonly handlers: RoomHandlers;
 }
 
 export type SonGuessrCommandTable = CommandTable<
@@ -164,18 +154,18 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.room.requestSync": {
     access: "seat",
     phases: "any",
-    run: (deps, at) => deps.handlers.requestSync(at),
+    run: (deps, at) => requestSync(deps.ctx, at),
   },
   "song.player.setReady": {
     access: "seat",
     phases: phaseRule(["waiting"], "只能在等待阶段准备"),
     guards: [activeMemberOnly("旁观者不能准备")],
-    run: (deps, at, m) => deps.handlers.setReady(at, m.payload.ready),
+    run: (deps, at, m) => setReady(deps.ctx, at, m.payload.ready),
   },
   "song.player.setSpectator": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.setSpectator(at, m.payload.spectator),
+    run: (deps, at, m) => setSpectator(deps.ctx, at, m.payload.spectator),
   },
   "song.player.setTeam": {
     access: "seat",
@@ -185,13 +175,13 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
       inPhase(["waiting"], "只能在等待阶段更换队伍"),
       activeMemberOnly("旁观者没有队伍"),
     ],
-    run: (deps, at, m) => deps.handlers.setTeam(at, m.payload.team),
+    run: (deps, at, m) => setTeam(deps.ctx, at, m.payload.team),
   },
   "song.room.updateSettings": {
     access: "host",
     phases: phaseRule(["waiting"], "只能在等待阶段修改房间设置"),
     guards: [notStarting("只能在等待阶段修改房间设置")],
-    run: (deps, at, m) => deps.handlers.updateSettings(at, m.payload),
+    run: (deps, at, m) => updateSettings(deps.ctx, at, m.payload),
   },
   "song.room.kick": {
     access: "host",
