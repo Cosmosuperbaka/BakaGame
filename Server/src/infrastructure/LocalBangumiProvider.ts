@@ -256,8 +256,8 @@ export class LocalBangumiProvider implements BangumiDataProvider {
   /**
    * 列表结果补上已回填的封面。
    *
-   * 只读数据集的 `subjects.image` 全库为空（构建脚本不写图片），所以搜索结果默认
-   * 一张封面都没有。这里只**读**回填缓存、绝不回源 —— 一次搜索二十条，逐条回源
+   * 构建脚本不写封面地址，更新器也只给刷新到的条目补，所以搜索结果里大量条目
+   * 默认没有封面。这里只**读**回填缓存、绝不回源 —— 一次搜索二十条，逐条回源
    * 会把上游打爆并撞上限流。缺的那部分留给客户端按需补。
    */
   private fillPersistedImage(row: SubjectRow): SubjectRow {
