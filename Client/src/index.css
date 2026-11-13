@@ -70,7 +70,7 @@
      不配 --text-2xs--line-height：只给字号，行高沿用所在元素。 */
   --text-2xs: 11px;
 
-  /* `transition-colors` 等过渡类不写 duration-* / ease-* 时取这里，指向 lib/Motion.ts 生成的变量，
+  /* `transition-colors` 等过渡类不写 duration-* / ease-* 时取这里，指向 lib/motion/ 生成的变量，
      业务组件不再写 `duration-150` 之类的裸数字（DesignGuide §8）。 */
   --default-transition-duration: var(--motion-duration-quick);
   --default-transition-timing-function: var(--motion-ease-out);
@@ -98,7 +98,7 @@
   /* 验证码、配对码这类逐位核对的短码：拉开字距方便逐位读与抄，是业务组件唯一可用的加宽字距。 */
   --tracking-code: calc(var(--tracking-normal) + 0.3em);
 
-  /* 持续状态的呼吸（断线提示、骨架屏、在线点）：只动不透明度，时长与曲线取 Motion.ts 生成的变量。
+  /* 持续状态的呼吸（断线提示、骨架屏、在线点）：只动不透明度，时长与曲线取 lib/motion/ 生成的变量。
      CSS 关键帧不受 MotionConfig 约束，调用处一律写 `motion-safe:animate-breathe`。 */
   --animate-breathe: breathe var(--motion-duration-breath) var(--motion-ease-in-out) infinite;
 
@@ -364,7 +364,7 @@ html {
 }
 
 /* 纯 CSS 动效的 `--motion-*` 变量（曲线、时长、弹性 linear()、浮层尺度）不在这里手写：
-   由 lib/Motion.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 DesignGuide §8。 */
+   由 lib/motion/CssTokens.ts 的 installMotionTokens 从同一组令牌生成并写入 :root，见 DesignGuide §8。 */
 
 /* Radix 自带 data-state 的浮层（Select / Tooltip）不经过 framer-motion，
    在此提供与 popover 变体同尺度、同曲线的开合动画，保持全站节奏一致。 */
@@ -513,7 +513,7 @@ html {
 }
 
 /* 进房编排（RoomShell 挂载后的 roomEntranceMs 内带 data-room-entering）：
-   顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 Motion.ts 生成。
+   顶栏、玩家栏、游戏区、聊天栏按 roomEntrance.parts 的顺序晚一步就位，延迟变量由 lib/motion/ 生成。
    玩家栏、聊天栏自外侧边缘等比展开；顶栏与游戏区只显影，游戏区内容另由 phaseSwap 自后推入，两层不叠缩放。
    fill-mode 只取 backwards：延迟期间停在起点，结束后不留任何 transform。 */
 @keyframes room-part-fade {
@@ -557,7 +557,7 @@ html {
 
 /* 答案卡抬起的投影（revealCard）：伪元素只带投影、不带底色，透明度按 revealCard 的 times 起落，
    卡片抬到最高时投影最远，放回原位后消失，落定的卡片不留重阴影。
-   关键帧 reveal-lift-shadow 的百分比必须与 times 一致，由 Motion.ts 的 motionTokenCss 生成，不在这里手写。 */
+   关键帧 reveal-lift-shadow 的百分比必须与 times 一致，由 lib/motion/CssTokens.ts 的 motionTokenCss 生成，不在这里手写。 */
 .reveal-lift {
   position: relative;
 }
