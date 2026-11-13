@@ -8,13 +8,14 @@ import { RoomJoinGate } from "@/components/common/room/RoomJoinGate";
 import { RoomUtilityActions } from "@/components/common/room/RoomUtilityActions";
 import { errorMessage } from "@/components/songuessr/SongErrorMessage";
 import { SongPlayerList } from "@/components/songuessr/SongPlayerList";
+import { sendSongChoice } from "@/components/songuessr/SongSubmission";
 import { SongVolumeControl } from "@/components/songuessr/layout/SongVolumeControl";
 import { SongGameArea } from "@/components/songuessr/phases/SongGameStage";
 import { useAudioClipPlayer } from "@/hooks/UseAudioClipPlayer";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useSongRoomLifecycle } from "@/hooks/UseSongRoomLifecycle";
 import { songDisplayRound } from "@/lib/SonGuessrRound";
-import type { SongClipRange, SonGuessrRoomSnapshot } from "@bakagame/shared";
+import type { SonGuessrRoomSnapshot } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 
 /**
@@ -155,6 +156,35 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
   const isSpectator = me?.membership === "spectator";
   const displayRound = songDisplayRound(snapshot.phase, snapshot.roundNumber);
 
+  /** 桌面栏与窄屏抽屉各挂一份（按断点只挂其一）：两处共用一个定义，只有桌面栏多一层裁圆角的容器。 */
+  const playerList = (inColumn: boolean) => {
+    const list = (
+      <SongPlayerList
+        players={snapshot.players}
+        myPlayerId={privateState.playerId}
+        isHost={isHost}
+        phase={snapshot.phase}
+        allowSpectators={snapshot.allowSpectators}
+        questionType={snapshot.settings.questionType}
+        maxGuesses={snapshot.settings.maxGuessesPerRound}
+      />
+    );
+    return inColumn ? (
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">{list}</div>
+    ) : (
+      list
+    );
+  };
+  const chatPanel = (
+    <ChatPanel
+      messages={snapshot.chat ?? []}
+      players={snapshot.players}
+      myPlayerId={privateState.playerId}
+      onSendMessage={handleSendChatMessage}
+      onRepeatMessage={handleSendChatMessage}
+    />
+  );
+
   return (
     <>
       <RoomShell
@@ -183,23 +213,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
           </>
         }
         connectionIssue={connected ? null : "断线中..."}
-        player={
-          solo ? undefined : (
-            <PlayerColumn>
-              <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-md">
-                <SongPlayerList
-                  players={snapshot.players}
-                  myPlayerId={privateState.playerId}
-                  isHost={isHost}
-                  phase={snapshot.phase}
-                  allowSpectators={snapshot.allowSpectators}
-                  questionType={snapshot.settings.questionType}
-                  maxGuesses={snapshot.settings.maxGuessesPerRound}
-                />
-              </div>
-            </PlayerColumn>
-          )
-        }
+        player={solo ? undefined : <PlayerColumn>{playerList(true)}</PlayerColumn>}
         game={
           <SongGameArea
             snapshot={snapshot}
@@ -213,57 +227,22 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
             audioPlaybackState={audioPlaybackState}
             onPlayAudio={() => void playAudio()}
             onRetryAudio={retryAudio}
-            onSelectSearchSong={async (songId, mode, extraId, clip, pick) => {
-              // 出题不设请求超时：回源取题（含歌词、音频与猜番解析）耗时由上游决定，
-              // 10 秒默认超时会把一次正常的慢提交报成「提交失败」，题目其实还在后端装配。
-              const options = mode === "submit" ? { timeout: 0 } : undefined;
-              if (snapshot.settings.questionType === "anime") {
-                const payload: { subjectId: string; songId?: string } = { subjectId: songId };
-                if (mode === "submit" && extraId) {
-                  payload.songId = extraId;
-                }
-                await sendCommand(
-                  mode === "submit" ? "song.game.submitAnime" : "song.game.guessAnime",
-                  payload,
-                  options
-                );
-              } else {
-                const payload: {
-                  songId: string;
-                  clip?: SongClipRange;
-                  sources?: string[];
-                  requiresVip?: boolean;
-                } = { songId };
-                if (mode === "submit" && clip) payload.clip = clip;
-                if (mode === "submit" && pick?.sources?.length) payload.sources = pick.sources;
-                if (mode === "submit" && pick?.requiresVip !== undefined) {
-                  payload.requiresVip = pick.requiresVip;
-                }
-                await sendCommand(
-                  mode === "submit" ? "song.game.submitSong" : "song.game.guess",
-                  payload,
-                  options
-                );
-              }
-            }}
+            onSelectSearchSong={(songId, mode, extraId, clip, pick) =>
+              sendSongChoice(sendCommand, {
+                questionType: snapshot.settings.questionType,
+                mode,
+                id: songId,
+                extraId,
+                clip,
+                pick,
+              })
+            }
             run={runCommand}
             isPending={isPending}
             audioRef={audioRef}
           />
         }
-        chat={
-          solo ? undefined : (
-            <ChatColumn>
-              <ChatPanel
-                messages={snapshot.chat ?? []}
-                players={snapshot.players}
-                myPlayerId={privateState.playerId}
-                onSendMessage={handleSendChatMessage}
-                onRepeatMessage={handleSendChatMessage}
-              />
-            </ChatColumn>
-          )
-        }
+        chat={solo ? undefined : <ChatColumn>{chatPanel}</ChatColumn>}
         openDrawer={solo ? null : mobilePanel === "none" ? null : mobilePanel}
         onDrawerChange={(key) => setMobilePanel((key ?? "none") as "none" | "players" | "chat")}
         drawers={
@@ -277,17 +256,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   side: "left",
                   title: "玩家",
                   closeFrom: "md",
-                  content: (
-                    <SongPlayerList
-                      players={snapshot.players}
-                      myPlayerId={privateState.playerId}
-                      isHost={isHost}
-                      phase={snapshot.phase}
-                      allowSpectators={snapshot.allowSpectators}
-                      questionType={snapshot.settings.questionType}
-                      maxGuesses={snapshot.settings.maxGuessesPerRound}
-                    />
-                  ),
+                  content: playerList(false),
                 },
                 {
                   key: "chat",
@@ -296,15 +265,7 @@ export default function SonGuessrRoomPage({ solo = false }: { solo?: boolean }) 
                   side: "right",
                   title: "聊天",
                   closeFrom: "xl",
-                  content: (
-                    <ChatPanel
-                      messages={snapshot.chat ?? []}
-                      players={snapshot.players}
-                      myPlayerId={privateState.playerId}
-                      onSendMessage={handleSendChatMessage}
-                      onRepeatMessage={handleSendChatMessage}
-                    />
-                  ),
+                  content: chatPanel,
                 },
               ]
         }

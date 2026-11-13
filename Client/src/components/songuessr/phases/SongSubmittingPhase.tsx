@@ -4,6 +4,7 @@ import { Film, Music2 } from "lucide-react";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
+import { NO_REQUEST_TIMEOUT, songPickFields } from "@/components/songuessr/SongSubmission";
 import { phaseSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
@@ -49,16 +50,12 @@ export function SongSubmittingPhase({
       });
       return;
     }
-    const payload: { songId: string; sources?: string[]; requiresVip?: boolean } = {
-      songId: song.id,
-    };
-    if (song.sources?.length) payload.sources = song.sources;
-    if (song.requiresVip !== undefined) payload.requiresVip = song.requiresVip;
+    const payload = { songId: song.id, ...songPickFields(song) };
     const { song: detail } = await sendCommand(
       "song.music.detail",
       payload,
       // 与提交出题同口径：回源取音频与歌词的耗时由上游决定，不拿默认超时误报失败。
-      { timeout: 0 }
+      NO_REQUEST_TIMEOUT
     );
     setPreview(detail);
   };
