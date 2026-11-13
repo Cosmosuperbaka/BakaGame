@@ -17,8 +17,9 @@ import { resolve } from "node:path";
  */
 
 const repoRoot = resolve(import.meta.dir, "../..");
+/** Windows 工作区按 core.autocrlf 检出为 CRLF，解析前统一成 LF，断言才与检出方式无关。 */
 const read = (relativePath: string): string =>
-  readFileSync(resolve(repoRoot, relativePath), "utf8");
+  readFileSync(resolve(repoRoot, relativePath), "utf8").replace(/\r\n/g, "\n");
 
 const jsonVersion = (relativePath: string): string => {
   const parsed: unknown = JSON.parse(read(relativePath));
@@ -63,8 +64,8 @@ test("安卓壳：versionName 与 Mobile/package.json 一致", () => {
 });
 
 test("安卓壳：versionCode 是正整数（升级安装的前提）", () => {
-  // 锁文件不行：Mobile/package-lock.json 被 .gitignore 排除（npm 自己生成），
-  // 干净检出里并不存在，断言它会让本地绿、CI 红。
+  // 不拿 Mobile/package-lock.json 比对：它由 npm 在壳目录里自行生成，
+  // 版本号以 package.json 为准，versionCode 本就与它无关。
   const versionCode = read("Mobile/android/app/build.gradle").match(
     /^\s*versionCode\s+(\d+)\s*$/m
   )?.[1];
