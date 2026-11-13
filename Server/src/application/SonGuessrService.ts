@@ -1,7 +1,7 @@
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
 import { clearMusicSession } from "./songuessr/MusicAuth";
 import { scheduleMusicSessionRefresh } from "./songuessr/MusicSessionRefresh";
-import { wakeMusicPoolWaiters, withSongAccount } from "./songuessr/MusicPool";
+import { withSongAccount } from "./songuessr/MusicPool";
 import { normalizeAnimeAutoFilters, normalizeAutoFilters } from "./songuessr/AutomaticRounds";
 import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
@@ -47,6 +47,7 @@ import { finishRound, isRoundComplete, settlePlayingRound } from "./songuessr/Ro
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { CommandQuota, dispatchCommand } from "./room/CommandTable";
 import { broadcastRoomEvent } from "./songuessr/Chat";
+import { closeRoom } from "./songuessr/RoomClosure";
 import { exportSnapshots, restoreSnapshots } from "./songuessr/SnapshotCodec";
 
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
@@ -63,7 +64,6 @@ import {
   assertSeatResumable,
   assertTabAgentsAllowed,
   bindSeat,
-  dissolveRoom,
   findSeat,
   markSeatOffline,
   roomsOfTab,
@@ -247,7 +247,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
         return "grace";
       case "close-empty":
       case "close-idle":
-        this.closeRoom(room, onlineCount === 0 ? "empty" : "idle_timeout");
+        closeRoom(this.ctx, room, onlineCount === 0 ? "empty" : "idle_timeout");
         return "skip";
       case "keep":
         // 测试房常态就是一间等人加入的空房：没人时不推进任何巡检阶段。
@@ -264,7 +264,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       if (room.hostPlayerId === player.id) this.reassignRemovedHost(room);
       this.ctx.touch(room);
       if (countOnline(Object.values(room.players)) === 0 && !isTestRoom(this.ctx, room)) {
-        this.closeRoom(room, "empty");
+        closeRoom(this.ctx, room, "empty");
       } else {
         this.ctx.publishRoom(room);
         this.ctx.publishLobby();
@@ -508,7 +508,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.connections.detach(connection);
 
     if (Object.keys(room.players).length === 0 && !isTestRoom(this.ctx, room)) {
-      this.closeRoom(room, "empty");
+      closeRoom(this.ctx, room, "empty");
       return { left: true, roomClosed: true };
     }
 
@@ -732,7 +732,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {
-    this.closeRoom(requireAdminRoom(this.ctx.rooms, roomId), ADMIN_CLOSE_REASON);
+    closeRoom(this.ctx, requireAdminRoom(this.ctx.rooms, roomId), ADMIN_CLOSE_REASON);
   }
 
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
@@ -752,16 +752,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     return { hostPlayerId: room.hostPlayerId };
-  }
-
-  private closeRoom(room: SonGuessrRoomRecord, reason: string) {
-    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、刷新大厅。
-    dissolveRoom(this.ctx.kernel, room, { roomId: room.id, reason });
-    room.musicPool = [];
-    // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
-    wakeMusicPoolWaiters(this.ctx, room.id);
-    this.ctx.rooms.delete(room.id);
-    this.ctx.publishLobby();
   }
 
   /** 把连接绑到座位；内核可能在绑定时改选房主，易主后的猜歌收尾在这里统一做。 */
