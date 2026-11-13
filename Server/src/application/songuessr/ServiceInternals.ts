@@ -7,7 +7,7 @@ import type {
   SongLyricClip,
 } from "../../shared/Index";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
-import type { SonGuessrServiceOptions } from "../SonGuessrService";
+import type { SonGuessrServiceOptions } from "./Options";
 import type {
   SonGuessrPlayerRecord,
   SonGuessrRoomRecord,

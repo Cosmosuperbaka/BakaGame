@@ -83,15 +83,16 @@ import {
   type SonGuessrRoundMark,
 } from "../shared/Index";
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
-import { describeError, type EventLogger } from "../infrastructure/EventLogger";
+import { describeError } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
+import type { SonGuessrServiceOptions } from "./songuessr/Options";
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { ChatLimiter, acceptChatText, appendChat, systemMessage } from "./room/ChatLog";
 import { IdCounter } from "./room/IdCounter";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { RoomIdReservations } from "./room/RoomIdReservations";
-import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
+import { RoomPasswordGate } from "./room/RoomPasswordGate";
 import {
   expiredOfflineSeats,
   forEachRoomIsolated,
@@ -122,12 +123,10 @@ import {
   MusicSearchOptions,
   musicIpScope,
   type MusicCookieInput,
-  type MusicProvider,
 } from "../infrastructure/NeteaseMusicProvider";
-import { type BangumiDataProvider } from "../infrastructure/LocalBangumiProvider";
 import { createEvent } from "../transport/Packets";
 import { ConnectionRegistry } from "./ConnectionRegistry";
-import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
+import { LobbyFanout } from "./LobbyFanout";
 import {
   AUDIO_READY_GRACE_MS,
   DEFAULT_SETTINGS,
@@ -157,24 +156,6 @@ import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatchi
 const SONG_CHAT_TEXT_MAX_LENGTH = 200;
 
 const normalizeRoomPassword = (password: string): string => password.trim();
-
-export interface SonGuessrServiceOptions {
-  musicProvider: MusicProvider;
-  bangumiProvider?: BangumiDataProvider;
-  now?: () => number;
-  random?: RandomSource;
-  eventLogger?: EventLogger;
-  /** QQ 凭证主动续期间隔；缺省 6 小时，测试用短间隔覆盖。 */
-  musicSessionRefreshIntervalMs?: number;
-  /** 未配置数据库时为空：对局记录不落库。 */
-  gameRecorder?: GameRecorder;
-  /** 测试房策略；缺省关闭，只有组合根与测试夹具显式注入打开的策略时测试房才存在。 */
-  testRooms?: TestRoomPolicy;
-  /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
-  lobbyFanoutSchedule?: LobbyFanoutSchedule;
-  /** 口令摘要器；只供测试把「建房算摘要」那段 await 停在手里，缺省用运行时的慢哈希。 */
-  passwordHasher?: RoomPasswordGateOptions["hasher"];
-}
 
 /** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
 type RoomReclaim = "skip" | "grace" | "keep";
