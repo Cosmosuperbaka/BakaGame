@@ -128,7 +128,7 @@ export function CEERankedOpponentClues({
   return (
     <section aria-label="对手的线索" className="space-y-2">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-serif text-sm font-semibold">对手的线索</h3>
+        <h3 className="text-sm font-semibold">对手的线索</h3>
         <span className="font-mono text-xs text-muted-foreground tabular-nums">
           已猜 {attempts} / {allowance}
         </span>

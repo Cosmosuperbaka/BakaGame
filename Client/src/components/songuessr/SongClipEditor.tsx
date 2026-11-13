@@ -299,7 +299,7 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
 
       <div className="border-t">
         <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-1.5 sm:px-5">
-          <h3 className="shrink-0 font-serif text-xs font-semibold text-muted-foreground">歌词</h3>
+          <h3 className="shrink-0 text-xs font-semibold text-muted-foreground">歌词</h3>
           <div className="flex min-w-0 items-center gap-1">
             <div aria-live="polite" className="min-w-0">
               <AnimatePresence initial={false} mode="wait">

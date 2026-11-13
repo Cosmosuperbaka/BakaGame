@@ -11,7 +11,7 @@ import { cn } from "@/lib/Utils";
 function GuessList({ title, guesses }: { title: string; guesses: CEEGuess[] }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <h4 className="text-xs font-medium text-muted-foreground">
+      <h4 className="text-xs font-semibold text-muted-foreground">
         {title} · {guesses.length} 次
       </h4>
       {guesses.length ? (
