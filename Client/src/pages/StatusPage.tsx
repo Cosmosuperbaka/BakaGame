@@ -133,7 +133,8 @@ export default function StatusPage() {
         </div>
       </header>
 
-      <article className="mx-auto w-full max-w-3xl px-6 pb-12">
+      {/* 页面主体是 main 地标：读屏与抓取器据此跳过顶栏。 */}
+      <main className="mx-auto w-full max-w-3xl px-6 pb-12">
         <section
           aria-labelledby="status-summary"
           className={cn(
@@ -257,7 +258,7 @@ export default function StatusPage() {
         <p className="mt-10 text-center text-2xs text-muted-foreground">
           时间均为北京时间 · 实时条带每 {SAMPLE_MINUTES} 分钟一格 · 页面自动刷新
         </p>
-      </article>
+      </main>
     </div>
   );
 }

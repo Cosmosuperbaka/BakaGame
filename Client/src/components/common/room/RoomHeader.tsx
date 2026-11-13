@@ -134,7 +134,11 @@ export function RoomHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
+        {/* 房名是房间页的标题：读屏与抓取器需要一个 h1，但窄屏顶栏放不下房名，
+            所以 h1 视觉隐藏、各宽度都在；看得见的房名只在宽屏出现，并承担跨页共享元素。 */}
+        <h1 className="sr-only">{title}</h1>
         <span
+          aria-hidden="true"
           className="hidden truncate text-base font-semibold md:block"
           style={{ viewTransitionName: titleName }}
         >

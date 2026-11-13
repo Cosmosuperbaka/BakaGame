@@ -172,7 +172,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     renderRoomPage();
 
     // 房间名与房间号展示
-    expect(screen.getByText("猜歌测试房")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "猜歌测试房" })).toBeInTheDocument();
     expect(screen.getByText("#TEST_ROOM")).toBeInTheDocument();
 
     // 房主控制面板与开始按钮

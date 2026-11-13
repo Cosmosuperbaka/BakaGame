@@ -185,74 +185,77 @@ export function CreditsView({
         </div>
       </header>
 
-      <Tabs
-        value={tab}
-        onValueChange={(next) => onTabChange(next as CreditsTab)}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        <div className="shrink-0">
-          {/* 窄屏五个标签放不下时整行横向滚动，不折行。 */}
-          <div
-            ref={tabScrollerRef}
-            className="scrollbar-hidden scroll-fade-x mx-auto w-full max-w-6xl px-6 md:px-10"
+      {/* 标签栏与标签内容一起是页面主体（main 地标）；顶栏在它之外。 */}
+      <main className="flex min-h-0 flex-1 flex-col">
+        <Tabs
+          value={tab}
+          onValueChange={(next) => onTabChange(next as CreditsTab)}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="shrink-0">
+            {/* 窄屏五个标签放不下时整行横向滚动，不折行。 */}
+            <div
+              ref={tabScrollerRef}
+              className="scrollbar-hidden scroll-fade-x mx-auto w-full max-w-6xl px-6 md:px-10"
+            >
+              <TabsList className="w-full justify-start">
+                {TAB_ITEMS.map((item) => (
+                  <TabsTrigger key={item.value} value={item.value}>
+                    {item.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+          </div>
+          {/* 每个标签自己滚动：切换即从顶部开始，popLayout 的退场内容也不会因公共滚动容器的偏移跳位。 */}
+          <TabsContent
+            value="credits"
+            className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
-            <TabsList className="w-full justify-start">
-              {TAB_ITEMS.map((item) => (
-                <TabsTrigger key={item.value} value={item.value}>
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-        </div>
-        {/* 每个标签自己滚动：切换即从顶部开始，popLayout 的退场内容也不会因公共滚动容器的偏移跳位。 */}
-        <TabsContent
-          value="credits"
-          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
-            <CreditsPanel
-              dependencies={dependencies}
-              models={models}
-              techStack={techStack}
-              onSelectDependency={openDependency}
-            />
-          </div>
-        </TabsContent>
-        <TabsContent
-          value="changelog"
-          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
-            <ChangelogPanel entries={changelogEntries} />
-          </div>
-        </TabsContent>
-        <TabsContent
-          value="commits"
-          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
-            <CommitPanel commits={commits} />
-          </div>
-        </TabsContent>
-        {/* 隐私与条款只作为「关于项目」的标签页，不再单独占整页路由。 */}
-        <TabsContent
-          value="privacy"
-          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          <LegalTabPanel updatedAt={PRIVACY_UPDATED_AT}>
-            <PrivacyBody />
-          </LegalTabPanel>
-        </TabsContent>
-        <TabsContent
-          value="terms"
-          className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        >
-          <LegalTabPanel updatedAt={TERMS_UPDATED_AT}>
-            <TermsBody />
-          </LegalTabPanel>
-        </TabsContent>
-      </Tabs>
+            <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
+              <CreditsPanel
+                dependencies={dependencies}
+                models={models}
+                techStack={techStack}
+                onSelectDependency={openDependency}
+              />
+            </div>
+          </TabsContent>
+          <TabsContent
+            value="changelog"
+            className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
+              <ChangelogPanel entries={changelogEntries} />
+            </div>
+          </TabsContent>
+          <TabsContent
+            value="commits"
+            className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <div className="mx-auto w-full max-w-6xl px-6 py-5 md:px-10 md:py-6">
+              <CommitPanel commits={commits} />
+            </div>
+          </TabsContent>
+          {/* 隐私与条款只作为「关于项目」的标签页，不再单独占整页路由。 */}
+          <TabsContent
+            value="privacy"
+            className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <LegalTabPanel updatedAt={PRIVACY_UPDATED_AT}>
+              <PrivacyBody />
+            </LegalTabPanel>
+          </TabsContent>
+          <TabsContent
+            value="terms"
+            className="scrollbar-hidden h-full min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          >
+            <LegalTabPanel updatedAt={TERMS_UPDATED_AT}>
+              <TermsBody />
+            </LegalTabPanel>
+          </TabsContent>
+        </Tabs>
+      </main>
 
       <Sheet
         open={sheetOpen}

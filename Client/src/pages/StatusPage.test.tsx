@@ -206,6 +206,8 @@ describe("公开状态页", () => {
     connectAndPush();
 
     expect(await screen.findByText("2 项服务异常")).toBeInTheDocument();
+    // 状态内容在 main 地标里，顶栏标题在它之外。
+    expect(within(screen.getByRole("main")).getByText("2 项服务异常")).toBeInTheDocument();
     // 手动刷新与连接指示已随自动更新移除：通道断了也不再把「连接状态」摆到页头。
     expect(screen.queryByRole("button", { name: /刷新/ })).not.toBeInTheDocument();
     expect(screen.queryByText("已断开")).not.toBeInTheDocument();

@@ -88,6 +88,10 @@ describe("CreditsView", () => {
 
     const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
     expect(tabs).toEqual(["开源致谢", "更新日志", "提交历史", "隐私说明", "用户条款"]);
+    // 标签栏与内容是页面主体：有且只有一个 main 地标，顶栏在它之外。
+    const main = screen.getByRole("main");
+    expect(within(main).getAllByRole("tab")).toHaveLength(5);
+    expect(within(main).queryByRole("heading", { name: "关于项目" })).toBeNull();
     expect(screen.getByRole("heading", { name: "参与开发的大模型" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "更新日志" }));
@@ -280,7 +284,16 @@ describe("CreditsView", () => {
   it("窄屏标签栏横滑时，当前标签被挪进可见范围", () => {
     // jsdom 没有布局：只给标签栏滚动容器与当前标签各一个矩形，其余元素都是零矩形。
     const rect = (left: number, right: number) =>
-      ({ left, right, top: 0, bottom: 40, width: right - left, height: 40, x: left, y: 0 }) as DOMRect;
+      ({
+        left,
+        right,
+        top: 0,
+        bottom: 40,
+        width: right - left,
+        height: 40,
+        x: left,
+        y: 0,
+      }) as DOMRect;
     const spy = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {

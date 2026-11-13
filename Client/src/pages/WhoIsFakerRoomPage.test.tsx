@@ -151,7 +151,7 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
     renderRoomPage();
 
     // 房间名与房间号
-    expect(screen.getByText("卧底测试房")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "卧底测试房" })).toBeInTheDocument();
     expect(screen.getByText("#FAKER_ROOM")).toBeInTheDocument();
 
     // 房主控制区
