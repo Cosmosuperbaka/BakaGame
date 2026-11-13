@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWhoIsFakerStore, initWhoIsFakerWs } from "@/stores/UseWhoIsFakerStore";
@@ -227,5 +227,66 @@ describe("卧底直链入房归属（真实页面与Store，隔离WS）", () => 
     expect(navigate).not.toHaveBeenCalled();
     view.unmount();
     dispose();
+  });
+
+  describe("私密房直链", () => {
+    /** 无密码或密码不对都按服务端口径拒绝；只有密码为 secret 才放行。 */
+    function lockRoom() {
+      send.mockImplementation(async (type: string, payload?: { password?: string }) => {
+        if (type === "room.leave") return undefined;
+        if (type !== "room.join") throw new Error(`测试禁止命令 ${type}`);
+        if (payload?.password === "secret") return receipt();
+        return rejectedProtocol({ code: "PASSWORD_INCORRECT", message: "房间密码错误" });
+      });
+    }
+    const typePassword = (value: string) =>
+      fireEvent.change(screen.getByLabelText("房间密码"), { target: { value } });
+
+    it("先出现密码步骤，不报错也不踢回大厅", async () => {
+      lockRoom();
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      expect(navigate).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().addToast).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("输对密码后入房", async () => {
+      lockRoom();
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      typePassword("secret");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+      expect(send).toHaveBeenLastCalledWith(
+        "room.join",
+        { userName: "玩家", password: "secret" },
+        { roomId: "1234" }
+      );
+      expect(navigate).not.toHaveBeenCalled();
+      view.unmount();
+    });
+    it("输错密码仍留在密码步骤，可以重试", async () => {
+      lockRoom();
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      typePassword("wrong");
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      const retry = await screen.findByLabelText("房间密码");
+      expect(navigate).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().roomId).toBeNull();
+      fireEvent.change(retry, { target: { value: "secret" } });
+      fireEvent.click(screen.getByRole("button", { name: "加入房间" }));
+      await waitFor(() => expect(useWhoIsFakerStore.getState().roomId).toBe("1234"));
+      view.unmount();
+    });
+    it("取消密码步骤回到大厅", async () => {
+      lockRoom();
+      const view = mount();
+      await screen.findByLabelText("房间密码");
+      fireEvent.click(screen.getByRole("button", { name: "返回大厅" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/whoisfaker"));
+      view.unmount();
+    });
   });
 });

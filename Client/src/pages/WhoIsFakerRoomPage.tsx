@@ -245,6 +245,10 @@ export default function WhoIsFakerRoomPage() {
   // 从分享链接直接进房、本地又没存过名字时，先问名字再进房，而不是踢回大厅。
   const [needsName, setNeedsName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  // 私密房：不带密码的加入被拒后先问密码；名字沿用已确认的那个
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState("");
+  const [pendingJoinName, setPendingJoinName] = useState("");
   const [mobilePanel, setMobilePanel] = useState<"none" | "players" | "chat">("none");
   // 发言历史的展开状态记下展开时的局次，而不是一个布尔值：回到等待阶段、换局后自然收起，
   // 不会在切换按钮已隐藏时仍盖住游戏区，也不会在下一局一进描述阶段就自己弹开。
@@ -281,25 +285,33 @@ export default function WhoIsFakerRoomPage() {
     }
   }, [mountTime, roomClosedAt, navigate]);
 
-  // 主动离开等其它原因导致的脱离房间。等用户填名字的这段时间同样没有 snapshot，
+  // 主动离开等其它原因导致的脱离房间。等用户填名字或密码的这段时间同样没有 snapshot，
   // 但那是正常状态，不能当成房间已关闭。
   useEffect(() => {
-    if (!joining && !needsName && !snapshot && !storeRoomId) void navigate("/whoisfaker");
-  }, [joining, needsName, snapshot, storeRoomId, navigate]);
+    if (!joining && !needsName && !needsPassword && !snapshot && !storeRoomId)
+      void navigate("/whoisfaker");
+  }, [joining, needsName, needsPassword, snapshot, storeRoomId, navigate]);
 
   /** 用给定名字加入房间；房间不存在就以该名字开一间。 */
   const enterWithName = useCallback(
-    async (name: string, signal: AbortSignal) => {
+    async (name: string, signal: AbortSignal, password?: string) => {
       if (!roomId || signal.aborted) return;
       setJoining(true);
       try {
-        await joinRoom(roomId, name, undefined, signal);
+        await joinRoom(roomId, name, password, signal);
         if (signal.aborted) return;
+        setNeedsPassword(false);
         setJoining(false);
       } catch (e) {
         if (signal.aborted) return;
         const err = e as { code?: string; message?: string };
-        if (err.code === "ROOM_NOT_FOUND") {
+        if (err.code === "PASSWORD_INCORRECT" || err.code === "PASSWORD_REQUIRED") {
+          // 密码缺失与密码错误都回到密码框重输，而不是踢回大厅
+          setPendingJoinName(name);
+          setPasswordDraft("");
+          setNeedsPassword(true);
+          setJoining(false);
+        } else if (err.code === "ROOM_NOT_FOUND") {
           try {
             await createRoom(
               {
@@ -402,6 +414,14 @@ export default function WhoIsFakerRoomPage() {
     await enterWithName(name, signal);
     if (signal.aborted) return;
   }, [nameDraft, addToast, enterWithName]);
+
+  const handleConfirmPassword = useCallback(async () => {
+    if (!pendingJoinName || !passwordDraft.trim()) return;
+    setNeedsPassword(false);
+    const signal = entryRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    await enterWithName(pendingJoinName, signal, passwordDraft);
+  }, [pendingJoinName, passwordDraft, enterWithName]);
 
   // 先换页、页面卸载后再退房：退房会清空快照，若先退再走，过渡拍下的旧页就成了加入中的转圈，
   // 清空还会触发上面「脱离房间」的 effect 再导航一次，打断进行中的过渡（DesignGuide §8）。
@@ -546,18 +566,18 @@ export default function WhoIsFakerRoomPage() {
   );
 
   // 加载中、等待加入，或等用户填名字
-  if (joining || needsName || !snapshot || snapshot.roomId !== roomId) {
+  if (joining || needsName || needsPassword || !snapshot || snapshot.roomId !== roomId) {
     return (
       <RoomJoinGate
         roomId={roomId}
         needsName={needsName}
-        needsPassword={false}
+        needsPassword={needsPassword}
         nameDraft={nameDraft}
         onNameDraftChange={setNameDraft}
         onConfirmName={() => void handleConfirmName()}
-        passwordDraft=""
-        onPasswordDraftChange={() => {}}
-        onConfirmPassword={() => {}}
+        passwordDraft={passwordDraft}
+        onPasswordDraftChange={setPasswordDraft}
+        onConfirmPassword={() => void handleConfirmPassword()}
         onExit={handleLeave}
       >
         {seoNode}
