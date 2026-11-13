@@ -12,4 +12,6 @@ export const RECONNECT_MIN_INTERVAL_MS = 1000;
 export const RECONNECT_STABLE_MS = 10000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
 export const CONNECT_WAIT_TIMEOUT_MS = 8000;
+/** 站点 HTTP JSON 接口（状态页、客户端包、站点配置）的默认超时：后端挂起时最多等这么久。 */
+export const HTTP_JSON_TIMEOUT_MS = 5000;
 export const TEST_ROOM_ID = "Oblivionis";

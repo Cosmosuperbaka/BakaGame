@@ -1,4 +1,4 @@
-import { PUBLIC_STATUS_COMPONENT_IDS, PUBLIC_STATUS_GROUP_IDS } from "@bakagame/shared/values";
+import { PUBLIC_STATUS_COMPONENT_IDS } from "@bakagame/shared/values";
 import type {
   PublicStatusCell,
   PublicStatusComponent,
@@ -13,10 +13,10 @@ import type {
   PublicStatusSampleCell,
   PublicStatusSnapshot,
 } from "@bakagame/shared";
-import { resolveServerUrl } from "@/lib/ServerEndpoint";
+import { fetchJson } from "@/lib/HttpJson";
 
-/** 后端状态探测超时：后端不可达时页面最多等这么久就开始降级展示。 */
-export const STATUS_REQUEST_TIMEOUT_MS = 5_000;
+/** 状态接口的请求选项：永远读最新，不吃缓存；超时用 `fetchJson` 的默认值，后端不可达时页面据此降级展示。 */
+const STATUS_INIT = { cache: "no-store", headers: { accept: "application/json" } } as const;
 /** 实时条带与事件的轮询间隔：采样本身 3 分钟一轮，页面没必要比它更勤。 */
 export const STATUS_POLL_INTERVAL_MS = 60_000;
 
@@ -107,13 +107,9 @@ export const parseSystemStatus = (value: unknown): PublicStatusSnapshot => {
 
 /** 页面手动刷新时调用；失败直接抛给页面按「未知」降级。 */
 export const fetchSystemStatus = async (): Promise<PublicStatusSnapshot> => {
-  const response = await fetch(resolveServerUrl("/api/status"), {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`状态接口返回 HTTP ${response.status}`);
-  return parseSystemStatus(await response.json());
+  return parseSystemStatus(
+    await fetchJson("/api/status", { label: "状态接口", init: STATUS_INIT })
+  );
 };
 
 const parseRatio = (value: unknown): number | null =>
@@ -176,13 +172,9 @@ export const parseStatusHistory = (value: unknown): PublicStatusHistory => {
 
 /** 历史一次读满展示窗口；读失败由页面单独降级，不影响当前状态。 */
 export const fetchStatusHistory = async (): Promise<PublicStatusHistory> => {
-  const response = await fetch(resolveServerUrl("/api/status/history"), {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`历史接口返回 HTTP ${response.status}`);
-  return parseStatusHistory(await response.json());
+  return parseStatusHistory(
+    await fetchJson("/api/status/history", { label: "历史接口", init: STATUS_INIT })
+  );
 };
 
 const parseSampleCells = (value: unknown): PublicStatusSampleCell[] => {
@@ -252,15 +244,9 @@ export const parseStatusRealtime = (value: unknown): PublicStatusRealtime => {
 export const fetchStatusRealtime = async (
   onRoundTrip?: (milliseconds: number) => void
 ): Promise<PublicStatusRealtime> => {
-  const startedAt = performance.now();
-  const response = await fetch(resolveServerUrl("/api/status/realtime"), {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`实时接口返回 HTTP ${response.status}`);
-  onRoundTrip?.(Math.max(0, Math.round(performance.now() - startedAt)));
-  return parseStatusRealtime(await response.json());
+  return parseStatusRealtime(
+    await fetchJson("/api/status/realtime", { label: "实时接口", init: STATUS_INIT, onRoundTrip })
+  );
 };
 
 /**
@@ -312,14 +298,7 @@ export const parseStatusEvents = (value: unknown): PublicStatusEvent[] => {
 };
 
 export const fetchStatusEvents = async (): Promise<PublicStatusEvent[]> => {
-  const response = await fetch(resolveServerUrl("/api/status/events"), {
-    cache: "no-store",
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(STATUS_REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`事件接口返回 HTTP ${response.status}`);
-  return parseStatusEvents(await response.json());
+  return parseStatusEvents(
+    await fetchJson("/api/status/events", { label: "事件接口", init: STATUS_INIT })
+  );
 };
-
-/** 公开的分组顺序也在这里过一遍：页面按它渲染，后端漏掉某组时不至于丢段。 */
-export const STATUS_GROUP_ORDER: PublicStatusGroupId[] = [...PUBLIC_STATUS_GROUP_IDS];

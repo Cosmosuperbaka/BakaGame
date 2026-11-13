@@ -14,6 +14,7 @@ describe("站点功能可见性", () => {
   afterEach(() => {
     resetSiteFeaturesForTest();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("服务端说关就关，各模式互不牵连", async () => {
@@ -60,5 +61,26 @@ describe("站点功能可见性", () => {
     respond(OPEN_SITE_FEATURES);
     await Promise.all([loadSiteFeatures(), loadSiteFeatures()]);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("后端挂起时按读失败处理：超时后沿用当前值，并留给下次挂载重试", async () => {
+    const hangs = vi.fn(
+      (_input: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason as Error));
+        })
+    );
+    vi.stubGlobal("fetch", hangs);
+    // 把默认超时缩到 20 毫秒，避免用例真等 5 秒。
+    const shortTimeout = () => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("超时", "TimeoutError")), 20);
+      return controller.signal;
+    };
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(shortTimeout);
+    await expect(loadSiteFeatures()).resolves.toEqual(OPEN_SITE_FEATURES);
+
+    // 挂起的请求不留在飞行表里：下一次挂载重新问，并拿到这次的结果。
+    respond(rankedClosed);
+    await expect(loadSiteFeatures()).resolves.toEqual(rankedClosed);
   });
 });

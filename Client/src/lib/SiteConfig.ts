@@ -1,7 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { SiteFeatures } from "@bakagame/shared";
 import { OPEN_SITE_FEATURES, SITE_FEATURE_KEYS, parseSiteFeatures } from "@bakagame/shared/values";
-import { resolveServerUrl } from "@/lib/ServerEndpoint";
+import { fetchJson } from "@/lib/HttpJson";
 
 export type { SiteFeatures };
 
@@ -25,10 +25,8 @@ const listeners = new Set<() => void>();
 /** 失败回 `null`：这一次读不到就沿用上次的值，而不是把已经关掉的入口又亮出来。 */
 const request = async (): Promise<SiteFeatures | null> => {
   try {
-    const response = await fetch(resolveServerUrl("/api/site/config"));
-    if (!response.ok) return null;
     // 只有明确的 false 才关：少字段、类型不对都当开放，避免把「服务端没说清」读成「关掉」。
-    return parseSiteFeatures(await response.json());
+    return parseSiteFeatures(await fetchJson("/api/site/config", { label: "站点配置接口" }));
   } catch {
     return null;
   }

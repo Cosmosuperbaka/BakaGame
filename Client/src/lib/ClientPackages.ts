@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatDateTime } from "@/lib/AdminFormat";
-import { resolveServerUrl } from "@/lib/ServerEndpoint";
+import { fetchJson } from "@/lib/HttpJson";
 
 /**
  * 首页下载弹窗用的制品信息：地址、架构、文件大小与构建日期都由服务端
@@ -59,9 +59,7 @@ let inflight: Promise<ClientPackagesState> | null = null;
 
 const request = async (): Promise<ClientPackagesState> => {
   try {
-    const response = await fetch(resolveServerUrl("/api/client/packages"));
-    if (!response.ok) return EMPTY;
-    return parse(await response.json());
+    return parse(await fetchJson("/api/client/packages", { label: "安装包接口" }));
   } catch {
     return EMPTY;
   }
