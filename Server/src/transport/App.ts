@@ -291,6 +291,8 @@ export const createApp = ({
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
   const characterService = ceeService;
+  // 版本在进程内不会变：装配时解析一次，状态接口的首个请求不再同步 spawn git。
+  const releaseVersion = resolveServerRelease() ?? "unknown";
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> =>
     (disposal ??= disposeResources ? disposeResources() : characterService.close());
@@ -597,7 +599,7 @@ export const createApp = ({
     imageCache: bangumiImages ? { available: bangumiImages.available } : undefined,
     frontendUrl: env.statusFrontendUrl,
     roomsAvailable: true,
-    version: () => resolveServerRelease() ?? "unknown",
+    version: () => releaseVersion,
     // 探针在 CreateServer 装配（外部监测与直连探测的组合），未传时聚合器回落到 Mock：
     // createApp 的单测装配因此不请求任何外网。
     externalProbe: statusExternalProbe,
