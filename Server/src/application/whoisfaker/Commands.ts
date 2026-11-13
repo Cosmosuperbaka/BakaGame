@@ -6,7 +6,6 @@ import type {
   WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import type { WhoIsFakerClientMessage } from "../../transport/WhoIsFakerProtocol";
-import type { WhoIsFakerService } from "../WhoIsFakerService";
 import type { CommandDispatcher, CommandTable, Guard } from "../room/CommandTable";
 import { resolveDisconnect } from "./OfflineSettlement";
 import { advancePhase } from "./PhaseFlow";
@@ -29,6 +28,16 @@ import {
   submitVote,
   submitWords,
 } from "./RoundCommands";
+import {
+  createRoom,
+  joinRoom,
+  kick,
+  leaveRoom,
+  reconnectRoom,
+  requestSync,
+  transferRoomHost,
+  updateSettings,
+} from "./RoomLifecycle";
 import { renamePlayer, setReady, setSpectator } from "./PlayerCommands";
 import {
   ensureHost,
@@ -40,25 +49,8 @@ import {
 } from "./RoomAccess";
 import { testAddBot, testJumpToPhase, testRemoveBot, testSetMyRole } from "./dev/TestControls";
 
-/**
- * 仍在服务门面里的命令处理：它们牵涉房间生命周期、出题、发言与投票，随服务拆分后续迁出，
- * 这里的成员会换成模块函数。命令表只依赖这一小块窄接口。
- */
-type RoomHandlers = Pick<
-  WhoIsFakerService,
-  | "createRoom"
-  | "joinRoom"
-  | "reconnectRoom"
-  | "leaveRoom"
-  | "requestSync"
-  | "updateSettings"
-  | "kick"
-  | "transferHost"
->;
-
 interface WhoIsFakerCommandDeps {
   readonly ctx: WhoIsFakerContext;
-  readonly handlers: RoomHandlers;
 }
 
 type WhoIsFakerCommandTable = CommandTable<
@@ -189,41 +181,41 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
   },
   "room.create": {
     access: "lobby",
-    run: (deps, connection, m) => deps.handlers.createRoom(connection, m),
+    run: (deps, connection, m) => createRoom(deps.ctx, connection, m),
   },
   "room.join": {
     access: "lobby",
-    run: (deps, connection, m) => deps.handlers.joinRoom(connection, m),
+    run: (deps, connection, m) => joinRoom(deps.ctx, connection, m),
   },
   "room.reconnect": {
     access: "lobby",
-    run: (deps, connection, m) => deps.handlers.reconnectRoom(connection, m),
+    run: (deps, connection, m) => reconnectRoom(deps.ctx, connection, m),
   },
   "room.leave": {
     access: "seat",
     phases: "any",
-    run: (deps, at) => deps.handlers.leaveRoom(at),
+    run: (deps, at) => leaveRoom(deps.ctx, at),
   },
   "room.requestSync": {
     access: "seat",
     phases: "any",
-    run: (deps, at) => deps.handlers.requestSync(at),
+    run: (deps, at) => requestSync(deps.ctx, at),
   },
   "room.updateSettings": {
     access: "host",
     phases: "any",
     guards: [roundIdle("游戏进行中无法修改房间设置")],
-    run: (deps, at, m) => deps.handlers.updateSettings(at, m.payload),
+    run: (deps, at, m) => updateSettings(deps.ctx, at, m.payload),
   },
   "room.kick": {
     access: "host",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.kick(at, m.payload.playerId),
+    run: (deps, at, m) => kick(deps.ctx, at, m.payload.playerId),
   },
   "room.transferHost": {
     access: "host",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.transferHost(at, m.payload.playerId),
+    run: (deps, at, m) => transferRoomHost(deps.ctx, at, m.payload.playerId),
   },
   "chat.send": {
     access: "seat",
@@ -379,12 +371,9 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
   },
 });
 
-export const createWhoIsFakerDispatcher = (
-  ctx: WhoIsFakerContext,
-  handlers: RoomHandlers
-): WhoIsFakerDispatcher => ({
+export const createWhoIsFakerDispatcher = (ctx: WhoIsFakerContext): WhoIsFakerDispatcher => ({
   table: createWhoIsFakerCommands(ctx),
-  deps: { ctx, handlers },
+  deps: { ctx },
   resolveSeat: (connection) => {
     const { room, player } = requireRoomPlayer(ctx, connection);
     return { room, seat: player };
