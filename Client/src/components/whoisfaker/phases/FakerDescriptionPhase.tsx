@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { fadeSwap, listContainer, listItem, speechReveal } from "@/lib/Motion";
 import { FastForward, MessageSquarePlus, MessageSquareText, Scale, Send } from "lucide-react";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Hint } from "@/components/ui/Tooltip";
 import { FakerPendingSpeech, SubmittedSpeech } from "../layout/FakerPendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
+import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
 import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
@@ -134,7 +135,6 @@ export function FakerDescriptionPhase() {
   const privateState = useWhoIsFakerStore((state) => state.privateState);
   const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
   const addToast = useWhoIsFakerStore((state) => state.addToast);
-  const phaseTimedOutEndsAt = useWhoIsFakerStore((state) => state.phaseTimedOutEndsAt);
   const [text, setText] = useState("");
 
   const mode = resolveSpeechMode(snapshot.status);
@@ -239,21 +239,11 @@ export function FakerDescriptionPhase() {
   }, [addToast, sendCommand, text, submitting]);
 
   // 阶段倒计时归零时，自动将本地已输入的内容发送提交
-  useEffect(() => {
-    if (
-      phaseTimedOutEndsAt &&
-      snapshot.status.phaseTimer &&
-      phaseTimedOutEndsAt === snapshot.status.phaseTimer.endsAt &&
-      canSpeak &&
-      text.trim() &&
-      !submitting
-    ) {
-      const timer = window.setTimeout(() => {
-        void handleSubmit();
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [phaseTimedOutEndsAt, snapshot.status.phaseTimer, canSpeak, text, submitting, handleSubmit]);
+  useAutoSubmitOnTimeout({
+    enabled: canSpeak && !submitting,
+    hasContent: Boolean(text.trim()),
+    submit: handleSubmit,
+  });
 
   // 主持人在普通描述里可以发起补充发言；入口在按钮行，选人面板是按钮行上方的整宽块。
   const supplement = useSupplementRequest({

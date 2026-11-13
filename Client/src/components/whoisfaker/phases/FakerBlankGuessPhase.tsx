@@ -1,4 +1,5 @@
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
+import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CircleHelp, Gavel, HelpCircle, Send } from "lucide-react";
@@ -118,7 +119,6 @@ function BlankGuessInput() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const phaseTimedOutEndsAt = useWhoIsFakerStore((s) => s.phaseTimedOutEndsAt);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
   const { run, busy: submitting } = useFakerPhaseAction();
@@ -155,28 +155,11 @@ function BlankGuessInput() {
   }, [run, wordA, wordB, sendCommand, addToast]);
 
   // 阶段倒计时归零时，若两个词都已填则自动提交（与手动提交的口径一致）
-  useEffect(() => {
-    if (
-      phaseTimedOutEndsAt &&
-      snapshot.status.phaseTimer &&
-      phaseTimedOutEndsAt === snapshot.status.phaseTimer.endsAt &&
-      !pendingReview &&
-      ready &&
-      !submitting
-    ) {
-      const timer = window.setTimeout(() => {
-        void handleSubmit();
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [
-    phaseTimedOutEndsAt,
-    snapshot.status.phaseTimer,
-    pendingReview,
-    ready,
-    submitting,
-    handleSubmit,
-  ]);
+  useAutoSubmitOnTimeout({
+    enabled: !pendingReview && !submitting,
+    hasContent: ready,
+    submit: handleSubmit,
+  });
 
   if (pendingReview) {
     return (

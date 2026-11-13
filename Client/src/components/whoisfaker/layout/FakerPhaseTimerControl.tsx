@@ -78,20 +78,17 @@ const formatTime = (seconds: number) => {
 
 interface Props {
   className?: string;
-  onTimeout?: () => void;
 }
 
-export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
+export function FakerPhaseTimerControl({ className }: Props) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const triggerPhaseTimeout = useWhoIsFakerStore((s) => s.triggerPhaseTimeout);
 
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const firedTimeoutForEndsAt = useRef<number | null>(null);
 
   const phase = snapshot?.status.phase;
   const phaseTimer = snapshot?.status.phaseTimer;
@@ -107,10 +104,7 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
   // 毫秒级倒计时平滑时钟
   const [now, setNow] = useState(serverNow);
   useEffect(() => {
-    if (!phaseTimer) {
-      firedTimeoutForEndsAt.current = null;
-      return;
-    }
+    if (!phaseTimer) return;
     const interval = window.setInterval(() => {
       setNow(serverNow());
     }, countdownTickMs);
@@ -125,16 +119,6 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
     : 0;
   const runningTone = timerTone(remainingSec);
   const isCritical = runningTone === "critical";
-
-  // 倒计时归零时触发 store 动作与本地回调，供输入框自动提交草稿
-  useEffect(() => {
-    if (!phaseTimer) return;
-    if (remainingMs <= 0 && firedTimeoutForEndsAt.current !== phaseTimer.endsAt) {
-      firedTimeoutForEndsAt.current = phaseTimer.endsAt;
-      triggerPhaseTimeout();
-      onTimeout?.();
-    }
-  }, [phaseTimer, remainingMs, triggerPhaseTimeout, onTimeout]);
 
   const handleStartTimer = useCallback(async () => {
     setStarting(true);

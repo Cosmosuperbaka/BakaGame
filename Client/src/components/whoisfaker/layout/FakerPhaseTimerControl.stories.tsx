@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
 import { fromNow } from "@/stories/fixtures/Common";
 import {
   presetWifRoom,
@@ -18,7 +17,6 @@ const endingIn = (seconds: number) => fromNow(seconds * 1000);
 const meta = {
   title: "谁是卧底/PhaseTimerControl",
   component: FakerPhaseTimerControl,
-  args: { onTimeout: fn() },
   decorators: [
     (Story) => (
       <div className={`${WIF_STAGE_FRAME} mx-auto`}>
