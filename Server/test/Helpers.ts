@@ -1,6 +1,7 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
 import type { TestRoomPolicy } from "../src/domain/TestRooms";
 import { TEST_ROOMS_ON } from "./TestRoomPolicy";
+import type { TimerSeam } from "../src/application/room/RoomTimers";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { ConnectionRecord, WhoIsFakerClientMessage } from "../src/shared/Index";
@@ -14,7 +15,7 @@ export interface TestConnection {
 // 为每条测试创建独立的服务实例和可控时钟，避免用例互相污染。
 // 夹具缺省打开测试房策略（生产缺省是关闭的）；要验证关闭行为的用例显式传 `TEST_ROOMS_DISABLED`。
 export const createTestContext = (
-  options: { gameRecorder?: GameRecorder; testRooms?: TestRoomPolicy } = {}
+  options: { gameRecorder?: GameRecorder; testRooms?: TestRoomPolicy; setTimer?: TimerSeam } = {}
 ) => {
   let currentTime = Date.UTC(2026, 3, 10, 0, 0, 0);
   // 大厅合并窗的尾沿跟着注入时钟走：挂在真实定时器上的话，「窗口内不重复下发」这类断言
@@ -29,6 +30,7 @@ export const createTestContext = (
   const service = new WhoIsFakerService({
     gameRecorder: options.gameRecorder,
     testRooms: options.testRooms ?? TEST_ROOMS_ON,
+    setTimer: options.setTimer,
     now: () => currentTime,
     random: {
       nextInt: (maxExclusive: number) => Math.max(maxExclusive - 1, 0),
@@ -50,6 +52,26 @@ export const createTestContext = (
       drainLobbyFlush();
     },
   };
+};
+
+/**
+ * 计数的定时器接缝：挂的是真实定时器（不拖住进程退出），只多记「挂了几次、取消了几次」。
+ * 断言「没有重挂」用它的计数，不去取内部句柄。
+ */
+export const countingTimers = () => {
+  const calls = { armed: 0, cancelled: 0 };
+  const setTimer: TimerSeam = (fire, delayMs) => {
+    calls.armed += 1;
+    const timer = setTimeout(fire, delayMs);
+    timer.unref();
+    return {
+      cancel: () => {
+        calls.cancelled += 1;
+        clearTimeout(timer);
+      },
+    };
+  };
+  return { setTimer, calls };
 };
 
 // 测试连接只保留最小能力：收消息和记录 close 调用。

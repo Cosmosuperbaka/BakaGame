@@ -22,9 +22,9 @@ import { runBots } from "./BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
 import {
   broadcastPhaseAndPublish,
+  armPhaseTimer,
   clearPhaseTimer,
   finishRound,
-  handlePhaseTimeout,
   restoreInterruptedTimer,
 } from "./PhaseFlow";
 import { publishRoom } from "./RoomViews";
@@ -267,16 +267,7 @@ export const startFallbackBlankGuessTimer = (
     tieBreakStage: round.tieBreak?.stage,
   };
   round.phaseTimer = timerState;
-  const timer = setTimeout(() => {
-    void handlePhaseTimeout(
-      service,
-      room.id,
-      timerState.phase,
-      timerState.speechMode,
-      timerState.tieBreakStage
-    );
-  }, durationSeconds * 1000);
-  service.phaseTimerTimeoutByRoomId.set(room.id, timer);
+  armPhaseTimer(service, room, timerState, durationSeconds * 1000);
 };
 
 /** 白板猜词超时：没有猜词上下文时什么都不做。 */

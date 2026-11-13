@@ -6,13 +6,20 @@ import type {
   WhoIsFakerRoomRecord,
   WhoIsFakerRole,
 } from "../src/shared/Index";
-import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
+import {
+  countingTimers,
+  createConnection,
+  createTestContext,
+  execute,
+  getLastEventPayload,
+} from "./Helpers";
 
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
 
 // 正常开局与真实指令，不用调试跳阶段构造状态机前置条件。
 const setupRound = async (roomId = "8920", botCount = 0) => {
-  const context = createTestContext();
+  const { setTimer, calls: timerCalls } = countingTimers();
+  const context = createTestContext({ setTimer });
   const { service } = context;
   const questioner = createConnection(service, `${roomId}-questioner`);
   await execute(service, questioner, {
@@ -84,6 +91,7 @@ const setupRound = async (roomId = "8920", botCount = 0) => {
   };
   return {
     ...context,
+    timerCalls,
     questioner,
     participants,
     blank: participants[0],
@@ -101,15 +109,11 @@ test("提前推进描述、投票、PK两子阶段及夜晚失败不撤销倒计
   const assertRejectedKeepsTimer = async () => {
     await f.startTimer();
     const before = f.snapshot().status.phaseTimer;
-    const timers = (
-      f.service as unknown as {
-        phaseTimerTimeoutByRoomId: Map<string, ReturnType<typeof setTimeout>>;
-      }
-    ).phaseTimerTimeoutByRoomId;
-    const handle = timers.get("8920");
+    const armedBefore = { ...f.timerCalls };
     await expect(f.advance()).rejects.toMatchObject({ code: "PHASE_INCOMPLETE" });
     expect(f.snapshot().status.phaseTimer).toEqual(before);
-    expect(timers.get("8920")).toBe(handle);
+    // 被拒的推进既不重挂也不取消底层定时器：原倒计时原样在跑。
+    expect(f.timerCalls).toEqual(armedBefore);
     // 请求拒绝不会发布快照，因此再主动同步确认服务端真相源。
     await f.command(f.questioner, { type: "room.requestSync", payload: {} });
     expect(f.snapshot().status.phaseTimer).toEqual(before);

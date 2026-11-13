@@ -9,7 +9,6 @@ import {
   type ConnectionRecord,
   type WhoIsFakerPhase,
   type GameRound,
-  type PhaseTimerState,
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRole,
   type WhoIsFakerPrivateState,
@@ -58,6 +57,8 @@ import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import { resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { RoomIdReservations } from "./room/RoomIdReservations";
+import { RoomTimers, type TimerSeam } from "./room/RoomTimers";
+import { IdCounter } from "./room/IdCounter";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
   assertAgentAdmission,
@@ -105,6 +106,7 @@ import {
   type PlayerOfflineReason,
 } from "./whoisfaker/OfflineSettlement";
 import {
+  armPhaseTimer,
   clearPhaseTimer,
   finishRound,
   advancePhase,
@@ -172,6 +174,8 @@ export interface WhoIsFakerServiceOptions {
   testRooms?: TestRoomPolicy;
   /** 大厅合并窗的尾沿调度；缺省挂真实定时器，测试按注入时钟驱动。 */
   lobbyFanoutSchedule?: LobbyFanoutSchedule;
+  /** 阶段定时器的挂载接缝；缺省挂真实定时器（不拖住进程退出），测试按注入时钟驱动。 */
+  setTimer?: TimerSeam;
 }
 
 /** 反馈标题按结算来源分四类，其余情况按普通投票结果。 */
@@ -215,6 +219,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   readonly connectionRegistry: ConnectionRegistry;
   readonly seatContext: SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord> & {
     recorder: GameRecorder;
+    timers: RoomTimers;
   };
   /** 标签页接管 Agent 时按标签页找房间用的上下文。 */
   private readonly tabSeats: TabSeatContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
@@ -226,7 +231,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   readonly gameOverAdvanceAllowedAtByRoomId = new Map<string, number>();
   /** 对局记录用的开局时间，按回合 ID 索引；结算或删房时移除。 */
   readonly roundStartedAtById = new Map<string, number>();
-  readonly phaseTimerTimeoutByRoomId = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 按房具名的定时器：阶段倒计时只有一个名字，同房重挂先清，关房清本房全部。 */
+  readonly timers: RoomTimers;
   /** 建房期间的房号占用：半成品房间不进房间表，读房间表的路径看不到它。 */
   private readonly reservations = new RoomIdReservations({
     takenError: { code: "ROOM_ALREADY_EXISTS", message: "房间已存在" },
@@ -240,7 +246,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   });
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;
-  private idCounter = 0;
+  /** 号的形状只认本玩法自己发的前缀：快照恢复后据此把计数器抬过已用过的最大序号。 */
+  private readonly ids = new IdCounter(/^(?:round|description|chat|player|session)_([0-9a-z]+)$/);
 
   readonly testRooms: TestRoomPolicy;
 
@@ -261,11 +268,21 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       hasher: options.passwordHasher,
     });
     this.connectionRegistry = new ConnectionRegistry();
+    this.timers = new RoomTimers({
+      onError: (roomId, name, error) =>
+        this.options.eventLogger.error("房间定时器回调失败", {
+          roomId,
+          timer: name,
+          ...describeError(error),
+        }),
+      setTimer: options.setTimer,
+    });
     this.seatContext = {
       shape: whoIsFakerShape,
       connections: this.connectionRegistry,
       now: () => this.now(),
       recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
+      timers: this.timers,
     };
     this.tabSeats = {
       shape: whoIsFakerShape,
@@ -528,7 +545,10 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
         onRestored: (room) => {
           // 对局记录的开局时间没有进快照：用快照写入时刻当下界，比按恢复时刻起算更接近真实。
           if (room.round) this.roundStartedAtById.set(room.round.id, savedAt);
-          this.absorbSnapshotIds(room);
+          this.ids.absorb(room);
+          // 倒计时只在房间真正登记时才重挂：被判重复而跳过的房间不能留下孤儿定时器。
+          const timer = room.round?.phaseTimer;
+          if (timer) armPhaseTimer(this, room, timer, timer.endsAt - this.now());
         },
         onError: (raw, error) =>
           this.options.eventLogger?.warn("房间快照恢复失败，已跳过该房间", {
@@ -563,40 +583,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       }
     }
 
-    if (round?.phaseTimer) this.rearmSnapshotTimer(room, round.phaseTimer);
     return room;
-  }
-
-  private rearmSnapshotTimer(room: WhoIsFakerRoomRecord, timer: PhaseTimerState): void {
-    const existing = this.phaseTimerTimeoutByRoomId.get(room.id);
-    if (existing) clearTimeout(existing);
-    const delay = Math.max(0, timer.endsAt - this.now());
-    const handle = setTimeout(() => {
-      void this.handlePhaseTimeout(room.id, timer.phase, timer.speechMode, timer.tieBreakStage);
-    }, delay);
-    this.phaseTimerTimeoutByRoomId.set(room.id, handle);
-  }
-
-  /**
-   * 把 id 计数器抬到快照里已用过的最大序号之上。
-   * 计数器每次启动从 0 重来，而恢复回来的房间带着 `player_7`、`round_2` 这类 id，
-   * 不抬高就会在同一个房间里生成重复 id：座位串号、对局记录错挂。
-   */
-  private absorbSnapshotIds(room: WhoIsFakerRoomRecord): void {
-    const seen = new Set<object>();
-    const visit = (value: unknown): void => {
-      if (typeof value === "string") {
-        const matched = /^(?:round|description|chat|player|session)_([0-9a-z]+)$/.exec(value);
-        if (!matched) return;
-        const index = Number.parseInt(matched[1], 36);
-        if (Number.isFinite(index) && index > this.idCounter) this.idCounter = index;
-        return;
-      }
-      if (!value || typeof value !== "object" || seen.has(value)) return;
-      seen.add(value);
-      for (const item of Object.values(value as Record<string, unknown>)) visit(item);
-    };
-    visit(room);
   }
 
   getHealthSnapshot() {
@@ -1691,8 +1678,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   async closeRoom(room: WhoIsFakerRoomRecord, reason: string) {
-    this.clearPhaseTimer(room);
-    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、记日志、刷新大厅。
+    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接、清本房全部定时器，随后清玩法旁表、删房、记日志、刷新大厅。
     dissolveRoom(this.seatContext, room, { roomId: room.id, reason });
 
     this.rooms.delete(room.id);
@@ -1890,8 +1876,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   createId(prefix: string) {
-    this.idCounter += 1;
-    return `${prefix}_${this.idCounter.toString(36)}`;
+    return this.ids.next(prefix);
   }
 
   touch(room: WhoIsFakerRoomRecord) {

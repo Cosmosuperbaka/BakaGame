@@ -10,6 +10,7 @@ import type { TestRoomPolicy } from "../../domain/TestRooms";
 import type { LogEntry } from "../../infrastructure/EventLogger";
 import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { LobbyFanout } from "../LobbyFanout";
+import type { RoomTimers } from "../room/RoomTimers";
 import type { SeatBindingContext } from "../room/SeatBinding";
 import type { WhoIsFakerServiceOptions } from "../WhoIsFakerService";
 
@@ -33,7 +34,8 @@ export interface WhoIsFakerServiceInternals {
   readonly random: RandomSource;
   /** 测试房策略：测试房特权一律问它，不再比较房号。 */
   readonly testRooms: TestRoomPolicy;
-  readonly phaseTimerTimeoutByRoomId: Map<string, ReturnType<typeof setTimeout>>;
+  /** 按房具名的定时器；阶段倒计时只经 PhaseFlow 的 armPhaseTimer 与 clearPhaseTimer 触碰它。 */
+  readonly timers: RoomTimers;
   readonly publishedPhaseKeyByRoomId: Map<string, string>;
   readonly gameOverAdvanceAllowedAtByRoomId: Map<string, number>;
   /** 对局记录用的开局时间，按回合 ID 索引；结算或删房时移除。 */

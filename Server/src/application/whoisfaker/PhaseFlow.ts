@@ -265,17 +265,7 @@ export const startPhaseTimer = (
 
   round.phaseTimer = timerState;
 
-  const timeoutMs = Math.max(0, endsAt - service.now());
-  const timer = setTimeout(() => {
-    void handlePhaseTimeout(
-      service,
-      room.id,
-      phase,
-      timerState.speechMode,
-      timerState.tieBreakStage
-    );
-  }, timeoutMs);
-  service.phaseTimerTimeoutByRoomId.set(room.id, timer);
+  armPhaseTimer(service, room, timerState, endsAt - service.now());
 
   service.touch(room);
   service.appendSystemMessage(room, `主持人开启了本阶段倒计时（${durationSeconds / 60}分钟）`);
@@ -307,15 +297,36 @@ export const stopPhaseTimer = (
   return { stopped: true };
 };
 
+/** 阶段倒计时在房间定时器里的名字：同房只有一个，重挂先清。 */
+const PHASE_TIMER = "phase";
+
+/**
+ * 挂阶段倒计时的唯一入口（开启、恢复被打断的倒计时、白板猜词兜底、快照恢复共用）。
+ * 回调的比对基准一律取调度时刻捕获的阶段、发言模式与 PK 档位：读 round.phase 等于拿当前值
+ * 和它自己比，阶段在中途被推进时这道守卫恒成立，迟到的定时器照样强制推进。
+ */
+export const armPhaseTimer = (
+  service: WhoIsFakerServiceInternals,
+  room: WhoIsFakerRoomRecord,
+  timerState: PhaseTimerState,
+  delayMs: number
+): void => {
+  service.timers.arm(room.id, PHASE_TIMER, delayMs, () =>
+    handlePhaseTimeout(
+      service,
+      room.id,
+      timerState.phase,
+      timerState.speechMode,
+      timerState.tieBreakStage
+    )
+  );
+};
+
 export const clearPhaseTimer = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
 ): void => {
-  const existing = service.phaseTimerTimeoutByRoomId.get(room.id);
-  if (existing) {
-    clearTimeout(existing);
-    service.phaseTimerTimeoutByRoomId.delete(room.id);
-  }
+  service.timers.clear(room.id, PHASE_TIMER);
   if (room.round?.phaseTimer) {
     room.round.phaseTimer = undefined;
   }
@@ -339,18 +350,7 @@ export const restoreInterruptedTimer = (
     tieBreakStage: round.tieBreak?.stage,
   };
   round.phaseTimer = timerState;
-  const timer = setTimeout(() => {
-    void handlePhaseTimeout(
-      service,
-      room.id,
-      // 比对基准取调度时刻捕获的阶段：读 round.phase 等于拿当前值和它自己比，
-      // 阶段在中途被推进时这道守卫恒成立，迟到的定时器照样强制推进。
-      timerState.phase,
-      timerState.speechMode,
-      timerState.tieBreakStage
-    );
-  }, remainingMs);
-  service.phaseTimerTimeoutByRoomId.set(room.id, timer);
+  armPhaseTimer(service, room, timerState, remainingMs);
 };
 
 /** 倒计时到点后按阶段强制推进：阶段 → 处理函数；未登记的阶段（如 feedback）不动作。 */
