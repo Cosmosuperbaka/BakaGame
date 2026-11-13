@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BangumiImageStore } from "../src/infrastructure/BangumiImageStore";
-import { DEFAULT_REFRESH_TIERS, SubjectUpdater } from "../src/infrastructure/SubjectUpdater";
+import { SubjectUpdater } from "../src/infrastructure/SubjectUpdater";
+import { DEFAULT_REFRESH_TIERS } from "../src/infrastructure/updater/RefreshPlanner";
 import type {
   BangumiSearchIndex,
   SubjectSearchDocument,

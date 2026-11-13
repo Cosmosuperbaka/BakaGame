@@ -25,18 +25,20 @@ import { BangumiUpstream } from "./BangumiUpstream";
  */
 
 import { subjectColumnsFromApi, type ApiSubject } from "./BangumiApiTypes";
+import { IndexQueue } from "./updater/IndexQueue";
+import {
+  DAY_MS,
+  DEFAULT_REFRESH_TIERS,
+  RefreshPlanner,
+  type RefreshTier,
+} from "./updater/RefreshPlanner";
+import type { SubjectUpdaterLogger } from "./updater/UpdaterLogger";
 import {
   readDatasetStatus,
   type BangumiDatasetStatus,
   type MaintenanceRun,
 } from "./BangumiMirrorStatus";
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
-const HOUR_MS = 60 * 60 * 1_000;
-/** 失败退避上限：连续失败也别把条目永久钉死，一周后总得再试一次。 */
-const MAX_BACKOFF_MS = 7 * DAY_MS;
-/** 索引待同步的失败次数上限：超过就丢弃（下一轮刷新会重新入队）。 */
-const MAX_INDEX_ATTEMPTS = 5;
 /** 单轮刷新上限：一轮跑太久会让按需更新排不到。 */
 const DEFAULT_ROUND_LIMIT = 1_000;
 /** 错误摘要的长度上限：给后台看个大概，完整上下文在日志里。 */
@@ -49,24 +51,6 @@ const MANUAL_QUEUE_LIMIT = 512;
 const NSFW_RETRY_MS = 30 * DAY_MS;
 /** 单次回源超时。 */
 const UPSTREAM_TIMEOUT_MS = 8_000;
-
-/** 一层刷新策略：`coverage` 是热度排名前多少比例（按 heat 降序）。 */
-export interface RefreshTier {
-  coverage: number;
-  intervalDays: number;
-}
-
-/** 默认三层：前 20% 两天一次，前 50% 一周一次，其余一个月一次。 */
-export const DEFAULT_REFRESH_TIERS: RefreshTier[] = [
-  { coverage: 0.2, intervalDays: 2 },
-  { coverage: 0.5, intervalDays: 7 },
-  { coverage: 1, intervalDays: 30 },
-];
-
-export interface SubjectUpdaterLogger {
-  warn?: (message: string) => void;
-  info?: (message: string) => void;
-}
 
 /** 可跨线程传递的更新器参数（只含可结构化克隆的值）。 */
 export interface SubjectUpdaterInit {
@@ -94,13 +78,6 @@ export interface SubjectUpdaterOptions extends SubjectUpdaterInit {
   sleep?: (ms: number) => Promise<void>;
 }
 
-interface DueRow {
-  id: number | string;
-  heat: number | null;
-  refreshed_at: number | null;
-  next_at: number | null;
-}
-
 /** 循环自身的状态：只含内存里的量，后台状态页跨线程读。 */
 export interface UpdaterRuntimeStatus {
   running: boolean;
@@ -126,7 +103,8 @@ export class SubjectUpdater {
   private readonly minRate: number;
   private readonly maxRate: number;
   private readonly playerScale: number;
-  private readonly tiers: RefreshTier[];
+  private readonly planner: RefreshPlanner;
+  private readonly indexQueue: IndexQueue;
   private readonly roundLimit: number;
   private readonly roundDelayMs: number;
   private readonly upstream: BangumiUpstream;
@@ -151,7 +129,6 @@ export class SubjectUpdater {
     this.minRate = Math.max(1, options.minRate ?? 10);
     this.maxRate = Math.max(this.minRate, options.maxRate ?? 100);
     this.playerScale = options.playerScale ?? 20;
-    this.tiers = options.tiers ?? DEFAULT_REFRESH_TIERS;
     this.roundLimit = options.roundLimit ?? DEFAULT_ROUND_LIMIT;
     this.roundDelayMs = options.roundDelayMs ?? DEFAULT_ROUND_DELAY_MS;
     this.upstream =
@@ -164,6 +141,13 @@ export class SubjectUpdater {
       });
     this.logger = options.logger;
     this.now = options.now ?? Date.now;
+    this.planner = new RefreshPlanner(
+      this.db,
+      this.now,
+      options.tiers ?? DEFAULT_REFRESH_TIERS,
+      this.roundLimit
+    );
+    this.indexQueue = new IndexQueue(this.db, this.search, this.logger);
     this.ensureSchema();
   }
 
@@ -265,7 +249,7 @@ export class SubjectUpdater {
    */
   async runRound(): Promise<number> {
     let refreshed = 0;
-    for (const item of this.selectDue()) {
+    for (const item of this.planner.selectDue()) {
       if (this.paused) break;
       if (await this.refresh(Number(item.id), item.tier)) refreshed += 1;
     }
@@ -275,28 +259,22 @@ export class SubjectUpdater {
       if (this.paused) break;
       // 按需只对「确实过期」的条目发请求：玩家翻目录会连续点开一批作品，
       // 不做这道闸门的话，热门条目会被重复刷新，白耗上游配额。
-      if (!this.isStale(subjectId)) continue;
+      if (!this.planner.isStale(subjectId)) continue;
       if (await this.refresh(subjectId)) refreshed += 1;
     }
     await this.flushIndex();
     return refreshed;
   }
 
-  /**
-   * 把库里现有作品登记为「此刻已刷新」（只补没有记录的条目）。
-   *
-   * 不登记的话，部署首轮会把三万多条全部当成「从未刷新」，于是一上线就把全库刷一遍
-   * —— 可这些数据是刚随构建产物流下来的，本来就是新鲜的。登记之后三层节奏从部署
-   * 时刻起算，真正的首次刷新落在 2 / 7 / 30 天之后。
-   */
+
+  /** 把库里现有作品登记为「此刻已刷新」，细则见刷新计划。 */
   markDatasetFresh(): number {
-    const result = this.db
-      .query<never, [number]>(
-        "INSERT OR IGNORE INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at)" +
-          " SELECT id, -1, ?, 0, 0 FROM subjects"
-      )
-      .run(this.now());
-    return result.changes;
+    return this.planner.markDatasetFresh();
+  }
+
+  /** 把待同步队列里的条目批量写进索引。 */
+  flushIndex(limit = DEFAULT_ROUND_LIMIT): Promise<number> {
+    return this.indexQueue.flush(limit);
   }
 
   /** 玩家请求触发的按需更新：只登记，真正的请求排在下一轮（异步、不挡查询）。 */
@@ -306,59 +284,8 @@ export class SubjectUpdater {
     this.manual.add(subjectId);
   }
 
-  /**
-   * 挑出本轮到期的条目。
-   *
-   * 到期判定有两条且必须同时满足：
-   * - **新鲜度**：`now - refreshed_at >= 该层间隔`（分位本轮重算，所以同一条
-   *   作品变热后会提前到期、变冷后会被推迟）。`refreshed_at` 只记**成功**刷新的时刻，
-   *   失败不会把它推到现在，否则层间隔（天级）会压过退避，失败的条目被晾上几天甚至一个月。
-   * - **退避**：`now >= next_at`（连续失败的条目按指数退避往后压）。
-   */
-  private selectDue(): Array<{ id: number | string; tier: number }> {
-    const rows = this.db
-      .query<DueRow, []>(
-        "SELECT s.id AS id, s.heat AS heat, r.refreshed_at AS refreshed_at, r.next_at AS next_at" +
-          " FROM subjects s LEFT JOIN bangumi_refresh r ON r.subject_id = s.id" +
-          " ORDER BY s.heat DESC, s.id ASC"
-      )
-      .all();
-    const total = Math.max(1, rows.length);
-    const now = this.now();
-    const due: Array<{ id: number | string; tier: number }> = [];
-    for (let index = 0; index < rows.length; index += 1) {
-      const row = rows[index]!;
-      const tier = this.tierAt(index / total);
-      const intervalMs = (this.tiers[tier]?.intervalDays ?? 30) * DAY_MS;
-      const stale = row.refreshed_at === null || now - row.refreshed_at >= intervalMs;
-      const allowed = row.next_at === null || now >= row.next_at;
-      if (stale && allowed) due.push({ id: row.id, tier });
-      if (due.length >= this.roundLimit) break;
-    }
-    return due;
-  }
 
-  /** 热度排名（0 = 最热）落在哪一层。 */
-  private tierAt(ratio: number): number {
-    for (let index = 0; index < this.tiers.length; index += 1) {
-      if (ratio < (this.tiers[index]?.coverage ?? 1)) return index;
-    }
-    return Math.max(0, this.tiers.length - 1);
-  }
 
-  /** 是否过期到值得为一次玩家请求回源（口径取最热的那一层间隔）。 */
-  private isStale(subjectId: number): boolean {
-    const row = this.db
-      .query<{ refreshed_at: number; next_at: number }, [number]>(
-        "SELECT refreshed_at, next_at FROM bangumi_refresh WHERE subject_id = ?"
-      )
-      .get(subjectId);
-    if (!row) return true;
-    // 退避期内的失败条目不接受按需刷新：否则玩家反复点开同一条就会反复打上游。
-    if (this.now() < row.next_at) return false;
-    const shortest = Math.min(...this.tiers.map((tier) => tier.intervalDays));
-    return this.now() - row.refreshed_at >= shortest * DAY_MS;
-  }
 
   /** 刷新单个作品：拉详情 → 覆盖落库 → 入索引待同步队列。返回是否成功。 */
   async refresh(subjectId: number, tier = 0): Promise<boolean> {
@@ -377,7 +304,7 @@ export class SubjectUpdater {
       // 这里绝不把它写进来 —— 只记状态、长期不再尝试。
       if (subject.nsfw) {
         this.logger?.warn?.(`作品 ${subjectId} 上游标记 nsfw，跳过本次更新`);
-        this.markFailed(subjectId, tier, 0, now + NSFW_RETRY_MS);
+        this.planner.markFailed(subjectId, tier, 0, now + NSFW_RETRY_MS);
         return false;
       }
       ok = this.applySubject(subjectId, subject, now);
@@ -392,10 +319,10 @@ export class SubjectUpdater {
         `作品 ${subjectId} 刷新失败：${error instanceof Error ? error.message : String(error)}`
       );
     }
-    if (ok) this.markRefreshed(subjectId, now, tier);
+    if (ok) this.planner.markRefreshed(subjectId, now, tier);
     else {
-      const failures = this.failuresOf(subjectId) + 1;
-      this.markFailed(subjectId, tier, failures, now + this.backoffFor(failures));
+      const failures = this.planner.failuresOf(subjectId) + 1;
+      this.planner.markFailed(subjectId, tier, failures, now + this.planner.backoffFor(failures));
     }
     return ok;
   }
@@ -487,95 +414,10 @@ export class SubjectUpdater {
     }
   }
 
-  /** 把待同步队列里的条目批量写进索引；失败计数，超过上限就丢弃。 */
-  async flushIndex(limit = DEFAULT_ROUND_LIMIT): Promise<number> {
-    const pending = this.db
-      .query<{ subject_id: number; attempts: number; queued_at: number }, [number]>(
-        "SELECT subject_id, attempts, queued_at FROM bangumi_index_pending ORDER BY queued_at ASC LIMIT ?"
-      )
-      .all(limit);
-    if (!pending.length) return 0;
-    // 没有配置索引时队列根本不该存在（入队处已挡），这里只兜底清理。
-    if (!this.search) {
-      this.db.exec("DELETE FROM bangumi_index_pending");
-      return 0;
-    }
-    const ids = pending.map((row) => Number(row.subject_id));
-    const placeholders = ids.map(() => "?").join(",");
-    const rows = this.db
-      .query(
-        `SELECT id,name,name_cn,aliases,tags,meta_tags,date,score,rating_count,heat,rank,type FROM subjects WHERE id IN (${placeholders})`
-      )
-      .all(...ids) as Array<Record<string, unknown>>;
-    try {
-      await this.search.updateSubjects(rows.map((row) => this.search!.toSubjectDocument(row)));
-      // 只清掉「读到时的那一版」：等索引任务期间条目可能被重新入队（`queued_at` 严格递增），
-      // 按编号清会抹掉它，新内容就永远进不了索引。队列里已被裁掉的条目随这批一并清掉。
-      const clear = this.db.query<never, [number, number]>(
-        "DELETE FROM bangumi_index_pending WHERE subject_id = ? AND queued_at = ?"
-      );
-      this.db.transaction(() => {
-        for (const row of pending) clear.run(Number(row.subject_id), Number(row.queued_at));
-      })();
-      return rows.length;
-    } catch (error) {
-      this.logger?.warn?.(
-        `索引同步失败：${error instanceof Error ? error.message : String(error)}`
-      );
-      for (const row of pending) {
-        const attempts = Number(row.attempts) + 1;
-        if (attempts >= MAX_INDEX_ATTEMPTS) {
-          this.db
-            .query("DELETE FROM bangumi_index_pending WHERE subject_id = ?")
-            .run(Number(row.subject_id));
-          continue;
-        }
-        this.db
-          .query("UPDATE bangumi_index_pending SET attempts = ? WHERE subject_id = ?")
-          .run(attempts, Number(row.subject_id));
-      }
-      return 0;
-    }
-  }
 
-  private failuresOf(subjectId: number): number {
-    const row = this.db
-      .query<{ failures: number }, [number]>(
-        "SELECT failures FROM bangumi_refresh WHERE subject_id = ?"
-      )
-      .get(subjectId);
-    return Number(row?.failures ?? 0);
-  }
 
-  /** 连续失败的指数退避：1h → 2h → 4h … 封顶一周。 */
-  private backoffFor(failures: number): number {
-    return Math.min(MAX_BACKOFF_MS, HOUR_MS * 2 ** Math.max(0, failures - 1));
-  }
 
-  /** 成功：记下刷新时刻，清零失败计数与退避。 */
-  private markRefreshed(subjectId: number, now: number, tier: number): void {
-    this.db
-      .query<never, [number, number, number, number, number]>(
-        "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,?,?,?)" +
-          " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier, refreshed_at = excluded.refreshed_at," +
-          " failures = excluded.failures, next_at = excluded.next_at"
-      )
-      .run(subjectId, tier, now, 0, 0);
-  }
 
-  /**
-   * 失败（或 nsfw 跳过）：只推后下次尝试时刻，**保留**上一次成功刷新的时刻。
-   * 从未成功过的新条目写 0，表示「从未刷新」，退避一过就会被再次选中。
-   */
-  private markFailed(subjectId: number, tier: number, failures: number, nextAt: number): void {
-    this.db
-      .query<never, [number, number, number, number]>(
-        "INSERT INTO bangumi_refresh (subject_id, tier, refreshed_at, failures, next_at) VALUES (?,?,0,?,?)" +
-          " ON CONFLICT(subject_id) DO UPDATE SET tier = excluded.tier," +
-          " failures = excluded.failures, next_at = excluded.next_at"
-      )
-      .run(subjectId, tier, failures, nextAt);
-  }
 
   /**
    * 记下维护任务的结果。存进数据集而不是内存：每日任务只在固定时刻跑，部署重启后
