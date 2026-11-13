@@ -151,9 +151,3 @@ export function commitHistoryPlugin(options: {
     },
   };
 }
-
-// ==================== Vite 插件：构建期解析展示版本号 ====================
-// 落地页与 Sentry 只需要「最新版本号」这一个字符串，此前各自静态 import 整份
-// changelog.json，把 94KB gz 的日志数据挂进了首屏 modulepreload 图。
-// 这里仍在构建期从同一份 changelog.json 取最大版本号：展示版本号的唯一真相源不变，
-// 只是不再随首屏下载。完整日志留给按需加载的致谢页。

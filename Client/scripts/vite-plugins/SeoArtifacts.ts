@@ -1,4 +1,16 @@
 /** 输出 OG 分享图等 SEO 构建产物。 */
+// ==================== Vite 插件：SEO 产物生成（站点地图与分享图） ====================
+// 两个产物、同一个来源：PageMeta。
+//
+// 站点地图曾手写在 public/sitemap.xml：新增可收录页面靠人记得同步，漏改没有任何报错，
+// 而缺页只会让搜索引擎更晚发现新内容——静默漂移。改为构建末尾按 PAGE_META 生成，
+// URL 集合回到单一真相源；lastmod 由各页在文案显著变更时手动维护，不随构建刷新
+// （每次构建都变的 lastmod 会被搜索引擎判定不可信，进而整体忽略）。
+//
+// 分享图：全站图片管线只产 webp，而部分分享抓取器（QQ 实测）不认 webp，卡片显示不出图。
+// 这里为 PageMeta.image 指向的每张站内分享图转制一份 jpg（/og/<名>.jpg，源图为
+// public/assets 下的同名文件，png / jpg / gif / webp 均可；gif 取第一帧）。
+// 外链分享图原样放行，不转制。
 import path from "path";
 import fs from "fs";
 import sharp from "sharp";
@@ -129,9 +141,3 @@ export function seoArtifactsPlugin() {
     },
   };
 }
-
-// ==================== Vite 插件：霞鹜文楷字体子集 ====================
-// 源 TTF 从固定版本的上游仓库或 Release 拉取并核对 SHA-256，woff2、CSS 与清单都在
-// dev / build / Storybook 启动时生成到 Git 忽略的目录。index.css 只留一个占位注释，
-// 这里在载入时替换成真实 @font-face，避免源码 import 一个尚未生成的文件。
-// 生成器按输入哈希缓存；源字体、项目用字或生成脚本变化时才重新下载与分包。

@@ -1,4 +1,9 @@
 /** 按需生成霞鹜文楷子集并注入 index.css。 */
+// ==================== Vite 插件：霞鹜文楷字体子集 ====================
+// 源 TTF 从固定版本的上游仓库或 Release 拉取并核对 SHA-256，woff2、CSS 与清单都在
+// dev / build / Storybook 启动时生成到 Git 忽略的目录。index.css 只留一个占位注释，
+// 这里在载入时替换成真实 @font-face，避免源码 import 一个尚未生成的文件。
+// 生成器按输入哈希缓存；源字体、项目用字或生成脚本变化时才重新下载与分包。
 import { type Plugin } from "vite";
 import path from "path";
 import fs from "fs";
