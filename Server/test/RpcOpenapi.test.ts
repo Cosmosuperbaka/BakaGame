@@ -71,7 +71,7 @@ const EXPECTED_OPERATIONS = [
 
 /**
  * Elysia 声明的 HTTP 路径：探活、优雅停机、公开状态页、站点配置、MCP 发现与远程入口、Sentry 隧道、
- * 猜歌播放跳转、客户端通道。与运行时共用同一份路由组合，路由集合一致性由 HttpRoutesParity 守着。
+ * 自建图床、猜歌播放跳转、客户端通道。与运行时共用同一份路由组合，路由集合一致性由 HttpRoutesParity 守着。
  */
 const EXPECTED_HTTP_PATHS = [
   "/livez",
@@ -87,6 +87,7 @@ const EXPECTED_HTTP_PATHS = [
   "/api/mcp/server-card",
   "/api/mcp",
   "/api/monitoring/sentry",
+  "/api/bangumi/*",
   "/api/songuessr/audio/{roomId}/{ticket}",
   "/api/client/register",
   "/api/client/challenge",

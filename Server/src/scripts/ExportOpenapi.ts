@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { Elysia } from "elysia";
 
 import { compareDottedVersion } from "../shared/ModelValues";
-import { createSwaggerPlugin } from "../transport/Openapi";
+import { createOpenapiPlugin } from "../transport/Openapi";
 import { RPC_BASE_PATH } from "../transport/routes/Account";
 import type { AppEnv } from "../config/Env";
 import { EventLogger } from "../infrastructure/EventLogger";
@@ -49,7 +49,7 @@ export function createDocumentationApp(serverUrl = DOC_SERVER_URL) {
   const logger = new EventLogger(() => undefined);
   const environment = "documentation";
   const statusHistory = new StatusHistoryStore({ environment });
-  return new Elysia({ normalize: false }).use(createSwaggerPlugin({ serverUrl })).use(
+  return new Elysia({ normalize: false }).use(createOpenapiPlugin({ serverUrl })).use(
     createHttpRoutes({
       env,
       logger,

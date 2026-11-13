@@ -29,7 +29,7 @@ type Json = Record<string, unknown>;
  * oRPC 契约 → OpenAPI 片段。
  *
  * 账号 API 不经过 Elysia 的路由声明（整棵契约挂在 `POST /api/rpc/*` 上由 oRPC 自己分发），
- * 所以 `@elysiajs/swagger` 生成不到它。这里按契约树遍历补出一份等价文档，让 Postman 与
+ * 所以 `@elysiajs/openapi` 生成不到它。这里按契约树遍历补出一份等价文档，让 Postman 与
  * AI Agent 拿到与客户端调用点逐字对齐的过程清单——缺了它，对外可见的接口面就只剩打点与探活。
  */
 

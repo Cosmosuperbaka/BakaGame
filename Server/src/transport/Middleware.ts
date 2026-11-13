@@ -14,7 +14,7 @@ import {
   type RouteTemplate,
 } from "./HttpOperation";
 import { isAllowedOrigin } from "./Origin";
-import { createSwaggerPlugin } from "./Openapi";
+import { createOpenapiPlugin } from "./Openapi";
 import { resolveRequestTraceId } from "./RequestTraceId";
 import { statusOfAppError } from "./routes/Account";
 import { shutdownRejection } from "./routes/System";
@@ -113,7 +113,7 @@ export const globalMiddleware = ({
         })
       )
       .use(
-        createSwaggerPlugin({
+        createOpenapiPlugin({
           serverUrl: env.serverUrl,
           enabled: env.openapiEnabled,
         })

@@ -1,4 +1,4 @@
-import { swagger } from "@elysiajs/swagger";
+import { openapi } from "@elysiajs/openapi";
 import { Elysia } from "elysia";
 
 export interface OpenApiOptions {
@@ -7,15 +7,17 @@ export interface OpenApiOptions {
   enabled?: boolean;
 }
 
-// ==================== OpenAPI Swagger 插件构建 ====================
+// ==================== OpenAPI 文档插件构建 ====================
 
-export const createSwaggerPlugin = ({ serverUrl, enabled = true }: OpenApiOptions) => {
+export const createOpenapiPlugin = ({ serverUrl, enabled = true }: OpenApiOptions) => {
   // 文档页把全部路由、参数与管理端点面列成一份可直接照打的清单，生产不该对外交付它。
   // 契约产物由 `scripts/ExportOpenapi.ts` 离线生成，不依赖线上文档。
   if (!enabled) return new Elysia({ name: "docs" });
-  return swagger({
+  return openapi({
     provider: "swagger-ui",
     path: "/openapi",
+    // 插件缺省会把文档版本改成 3.1.2；契约产物一直声明 3.1.0，版本号不随换库变动。
+    openapiVersion: "3.1.0",
     documentation: {
       openapi: "3.1.0",
       info: {
