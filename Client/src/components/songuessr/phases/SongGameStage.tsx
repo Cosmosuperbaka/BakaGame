@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type ReactNode, type Ref, type RefObject } from "react";
+import { lazy, Suspense, useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -45,10 +45,9 @@ import { listItem, phaseSwap, readoutSwap, receiptCard, receiptMarkFollow } from
 import { withTeamName } from "@/lib/Teams";
 import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
-import type { SongRunCommand } from "@/hooks/UseSongRoomLifecycle";
+import type { SongGameAreaProps } from "./SongGameAreaProps";
 import type {
   SongClipPreview,
-  SongClipRange,
   SongGuessAttempt,
   SongGuessDirection,
   SongSearchResult,
@@ -217,31 +216,6 @@ export function AttemptList({
       </CollapsibleRegion>
     </div>
   );
-}
-
-export interface SongGameAreaProps {
-  snapshot: SonGuessrRoomSnapshot;
-  privateState: SonGuessrPrivateState;
-  me?: SonGuessrPlayerView;
-  isHost: boolean;
-  guessDeadlineAt?: number | null;
-  volume: number;
-  onVolumeChange: (value: number) => void;
-  audioStatus: "loading" | "ready" | "error";
-  audioPlaybackState: "idle" | "playing" | "completed";
-  onPlayAudio: () => void;
-  onRetryAudio: () => void;
-  onSelectSearchSong: (
-    songId: string,
-    mode: "submit" | "guess",
-    extraId?: string,
-    clip?: SongClipRange,
-    /** 聚合检索给出的备用音源与会员标记，随出题请求回传给服务端做兜底。 */
-    pick?: { sources?: string[]; requiresVip?: boolean }
-  ) => Promise<void>;
-  run: SongRunCommand;
-  isPending?: (type: string) => boolean;
-  audioRef?: RefObject<HTMLAudioElement | null>;
 }
 
 /** 当前回合快照：`GameStage` 只在 `playing` 且回合存在时才进入作答阶段组件。 */

@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SongClipPreview, SongSearchResult } from "@bakagame/shared";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { songSettings, submittingSnapshot, submitterPrivate } from "@/stories/fixtures/SonGuessr";
-import { GameStage, type SongGameAreaProps } from "./SongGameStage";
+import type { SongGameAreaProps } from "./SongGameAreaProps";
+import { GameStage } from "./SongGameStage";
 
 const initialState = useSonGuessrStore.getState();
 afterEach(() => {

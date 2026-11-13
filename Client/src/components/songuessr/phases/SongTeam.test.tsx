@@ -16,7 +16,8 @@ import {
   teamPlayingPlayers,
   teamWaitingPlayers,
 } from "@/stories/fixtures/SonGuessr";
-import { GameStage, type SongGameAreaProps } from "./SongGameStage";
+import type { SongGameAreaProps } from "./SongGameAreaProps";
+import { GameStage } from "./SongGameStage";
 import { SongWaitingPhase } from "./SongWaitingPhase";
 
 const { host, me, kanade, long, azumi } = SONG_PEOPLE;
