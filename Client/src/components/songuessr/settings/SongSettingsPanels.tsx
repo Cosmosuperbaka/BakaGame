@@ -4,6 +4,7 @@ import { Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { errorMessage } from "@/components/songuessr/SongErrorMessage";
 import type { SegmentedOption } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { SearchCombobox } from "@/components/common/SearchCombobox";
@@ -135,8 +136,7 @@ export function SongQuestionSettings({
     },
     {
       enabled: !readOnly && snapshot.phase === "waiting",
-      onError: (error) =>
-        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
+      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
     }
   );
 
@@ -246,8 +246,7 @@ function FilterChip({
   );
 }
 
-const describeArtistError = (error: unknown) =>
-  (error as { message?: string } | null)?.message ?? "搜索歌手失败";
+const describeArtistError = (error: unknown) => errorMessage(error, "搜索歌手失败");
 
 /** 歌手头像：圆形，与歌曲的方形封面区分；没有头像时用图标占位。 */
 function ArtistAvatar({ artist }: { artist: SongArtistSearchResult }) {
@@ -319,7 +318,7 @@ function SongAutoFilters({
       edit("playlist", result);
       showToast(`已读取歌单：${result.name}（${result.songCount} 首）`, "success");
     } catch (error) {
-      showToast((error as { message?: string }).message ?? "读取歌单失败", "error");
+      showToast(errorMessage(error, "读取歌单失败"), "error");
     } finally {
       setResolvingPlaylist(false);
     }
@@ -540,8 +539,7 @@ export function SongGameSettings({
     },
     {
       enabled: !readOnly && snapshot.phase === "waiting",
-      onError: (error) =>
-        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
+      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
     }
   );
 
@@ -634,8 +632,7 @@ export function SongRoomSettings({
         !readOnly &&
         snapshot.phase === "waiting" &&
         (!draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0),
-      onError: (error) =>
-        showToast((error as { message?: string }).message ?? "保存设置失败", "error"),
+      onError: (error) => showToast(errorMessage(error, "保存设置失败"), "error"),
     }
   );
 

@@ -20,6 +20,7 @@ import {
 import { readoutSwap } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { vipBadge, vipText } from "./SongAccountBadges";
+import { errorMessage } from "./SongErrorMessage";
 import { AccountAvatar, VipStatus } from "./SongAccountIdentity";
 import type {
   SonGuessrAck,
@@ -296,7 +297,7 @@ function usePoolSharing() {
     try {
       await sendCommand("song.auth.setPoolSharing", { platform, enabled });
     } catch (error) {
-      showToast((error as { message?: string }).message ?? "切换账号共享失败，请重试", "error");
+      showToast(errorMessage(error, "切换账号共享失败，请重试"), "error");
     } finally {
       setSharingBusy(false);
     }
@@ -422,8 +423,8 @@ function RoomAccountSettings({
         }
       } catch (error) {
         if (generation !== loginGenerationRef.current) return;
-        setQrStatus((error as { message?: string }).message ?? "二维码生成失败，请稍后重试");
-        showToast((error as { message?: string }).message ?? "二维码生成失败", "error");
+        setQrStatus(errorMessage(error, "二维码生成失败，请稍后重试"));
+        showToast(errorMessage(error, "二维码生成失败"), "error");
       } finally {
         if (generation === loginGenerationRef.current) setBusy(false);
       }

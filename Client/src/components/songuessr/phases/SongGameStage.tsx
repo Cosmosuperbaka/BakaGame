@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -241,7 +241,7 @@ export interface SongGameAreaProps {
   ) => Promise<void>;
   run: SongRunCommand;
   isPending?: (type: string) => boolean;
-  audioRef?: React.RefObject<HTMLAudioElement | null>;
+  audioRef?: RefObject<HTMLAudioElement | null>;
 }
 
 /** 当前回合快照：`GameStage` 只在 `playing` 且回合存在时才进入作答阶段组件。 */
@@ -859,7 +859,7 @@ function GuessBar({
   guessedIds,
 }: SongGameAreaProps & {
   guessedIds: string[];
-  ref?: React.Ref<HTMLElement>;
+  ref?: Ref<HTMLElement>;
 }) {
   const givingUp = isPending?.("song.game.giveUp") ?? false;
   const anime = snapshot.settings.questionType === "anime";

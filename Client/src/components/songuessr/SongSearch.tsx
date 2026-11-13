@@ -14,13 +14,12 @@ import { Badge } from "@/components/ui/Badge";
 import { Hint } from "@/components/ui/Tooltip";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { cn } from "@/lib/Utils";
+import { errorMessage } from "./SongErrorMessage";
 import { NeteaseCloudMusicIcon, QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 
-const messageOf = (error: unknown, fallback: string) =>
-  (error as { message?: string } | null)?.message ?? fallback;
 // 自动搜索要求稳定的错误文案函数：写在模块级，不随渲染重建。
-const describeSongError = (error: unknown) => messageOf(error, "搜索歌曲失败");
-const describeAnimeError = (error: unknown) => messageOf(error, "搜索番剧失败");
+const describeSongError = (error: unknown) => errorMessage(error, "搜索歌曲失败");
+const describeAnimeError = (error: unknown) => errorMessage(error, "搜索番剧失败");
 
 /** 封面缩略图：歌曲取方形，番剧取竖版海报；没有图时用同尺寸的图标占位。 */
 function Cover({
@@ -205,7 +204,7 @@ export function SongSearch({
       await onSelect(song);
       setKeyword("");
     } catch (error) {
-      setSubmitError(messageOf(error, mode === "submit" ? "提交歌曲失败" : "提交猜测失败"));
+      setSubmitError(errorMessage(error, mode === "submit" ? "提交歌曲失败" : "提交猜测失败"));
     } finally {
       setPendingId(null);
     }
@@ -303,7 +302,7 @@ export function AnimeSearch({
       setKeyword("");
       setPicked(null);
     } catch (error) {
-      setSubmitError(messageOf(error, mode === "submit" ? "提交出题失败" : "提交番剧失败"));
+      setSubmitError(errorMessage(error, mode === "submit" ? "提交出题失败" : "提交番剧失败"));
     } finally {
       setPendingKey((current) => (current === key ? null : current));
     }
@@ -318,7 +317,7 @@ export function AnimeSearch({
       const songs = await resolveAnimeSongs(subject.id);
       if (request === generation.current) setPicked({ subject, songs });
     } catch (error) {
-      if (request === generation.current) setSubmitError(messageOf(error, "获取关联歌曲失败"));
+      if (request === generation.current) setSubmitError(errorMessage(error, "获取关联歌曲失败"));
     } finally {
       if (request === generation.current) setPendingKey(null);
     }

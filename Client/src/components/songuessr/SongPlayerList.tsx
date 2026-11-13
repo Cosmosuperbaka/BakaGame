@@ -12,6 +12,7 @@ import {
 } from "@/components/common/PlayerStatusPill";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { TeamSection } from "@/components/common/TeamSection";
+import { errorMessage } from "@/components/songuessr/SongErrorMessage";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer } from "@/lib/Motion";
 import { teamGroups } from "@/lib/Teams";
@@ -67,7 +68,7 @@ export function SongPlayerList({
       try {
         await sendCommand("song.room.kick", { playerId });
       } catch (error) {
-        showToast((error as { message: string }).message, "error");
+        showToast(errorMessage(error, "操作失败，请重试"), "error");
       }
     },
     [sendCommand, showToast]
@@ -78,7 +79,7 @@ export function SongPlayerList({
       try {
         await sendCommand("song.room.transferHost", { playerId });
       } catch (error) {
-        showToast((error as { message: string }).message, "error");
+        showToast(errorMessage(error, "操作失败，请重试"), "error");
       }
     },
     [sendCommand, showToast]
@@ -89,7 +90,7 @@ export function SongPlayerList({
       try {
         await sendCommand("song.player.setSpectator", { spectator });
       } catch (error) {
-        showToast((error as { message: string }).message, "error");
+        showToast(errorMessage(error, "操作失败，请重试"), "error");
       }
     },
     [sendCommand, showToast]

@@ -1,4 +1,4 @@
-import React from "react";
+import type { ReactNode } from "react";
 import { motion, type Variants } from "framer-motion";
 import { Check, Film, Music2, Trophy, X } from "lucide-react";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
@@ -47,7 +47,7 @@ export function SongSettlementDetails({
   variant = "answer",
 }: {
   song: SonGuessrRoundSummary["song"];
-  trackKindBadge?: React.ReactNode;
+  trackKindBadge?: ReactNode;
   variant?: "answer" | "related";
 }) {
   const related = variant === "related";

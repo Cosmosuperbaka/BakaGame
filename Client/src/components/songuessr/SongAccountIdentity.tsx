@@ -32,7 +32,7 @@ export function AccountAvatar({
  *  QQ 音乐官方母版 PNG 画布高 46px 但徽章实体仅占 28px（上下含 9px 透明边距），
  *  需将图像高放大约 1.64 倍至 26px 并配合 -my-[5px] 负外边距，使视觉实体高度与网易云（无透明边距 16px）绝对对齐且不撑高外层行高。 */
 export function VipBadgeMark({ badge }: { badge: VipBadge }) {
-  const isQq = badge.platform === "qq" || badge.src.includes("qqmusic-vip");
+  const isQq = badge.platform === "qq";
   return (
     <img
       src={badge.src}

@@ -28,6 +28,7 @@ import {
 } from "./SongClipEditing";
 import { SongClipLyricSheet } from "./SongClipLyricSheet";
 import { SongClipRail } from "./SongClipRail";
+import { errorMessage } from "./SongErrorMessage";
 
 const formatLength = (ms: number) => `${(Math.max(0, ms) / 1_000).toFixed(1)} 秒`;
 
@@ -183,7 +184,7 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
     try {
       await onConfirm({ startTime, endTime });
     } catch (submitError) {
-      setError((submitError as { message?: string }).message ?? "提交出题失败，请重试");
+      setError(errorMessage(submitError, "提交出题失败，请重试"));
     } finally {
       setSubmitting(false);
     }
