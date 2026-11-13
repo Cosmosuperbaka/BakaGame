@@ -556,18 +556,8 @@ html {
 }
 
 /* 答案卡抬起的投影（revealCard）：伪元素只带投影、不带底色，透明度按 revealCard 的 times 起落，
-   卡片抬到最高时投影最远，放回原位后消失，落定的卡片不留重阴影。 */
-@keyframes reveal-lift-shadow {
-  0%,
-  25%,
-  100% {
-    opacity: 0;
-  }
-  65% {
-    opacity: 1;
-  }
-}
-
+   卡片抬到最高时投影最远，放回原位后消失，落定的卡片不留重阴影。
+   关键帧 reveal-lift-shadow 的百分比必须与 times 一致，由 Motion.ts 的 motionTokenCss 生成，不在这里手写。 */
 .reveal-lift {
   position: relative;
 }
@@ -1149,12 +1139,12 @@ img {
 
 @keyframes agent-click-echo {
   from {
-    opacity: 0.55;
+    opacity: var(--motion-agent-echo-opacity);
     transform: scale(1);
   }
   to {
     opacity: 0;
-    transform: scale(1.045);
+    transform: scale(var(--motion-agent-echo-scale));
   }
 }
 
@@ -1170,7 +1160,7 @@ img {
 @keyframes agent-bar-enter {
   from {
     opacity: 0;
-    transform: translateY(0.5rem) scale(0.96);
+    transform: translateY(var(--motion-agent-bar-rise)) scale(var(--motion-agent-bar-scale));
   }
   to {
     opacity: 1;
@@ -1180,7 +1170,7 @@ img {
 
 @keyframes agent-bar-nudge {
   from {
-    transform: scale(1.04);
+    transform: scale(var(--motion-agent-nudge-scale));
   }
   to {
     transform: none;

@@ -161,7 +161,21 @@ export function motionCssVariables(): Record<string, string> {
   roomEntrance.parts.forEach((part, index) => {
     variables[`room-entrance-delay-${part}`] = seconds(index * roomEntrance.step);
   });
+  for (const [name, value] of Object.entries(agentGesture))
+    variables[`agent-${kebab(name)}`] = String(value);
   return variables;
+}
+
+const percent = (fraction: number) => `${Number((fraction * 100).toFixed(2))}%`;
+
+/**
+ * 答案卡抬起的投影关键帧：百分比不能读变量，所以整段由 `revealCard` 的 `times` 生成——
+ * 沉之前与放回之后没有投影，抬到最高处投影最远。改揭晓的分段时，投影跟着一起变。
+ */
+function revealLiftShadowKeyframes(): string {
+  const [start, sink, lift, end] = revealCard.transition.times;
+  const hidden = [start, sink, end].map(percent).join(", ");
+  return `@keyframes reveal-lift-shadow { ${hidden} { opacity: 0; } ${percent(lift)} { opacity: 1; } }`;
 }
 
 /**
@@ -176,7 +190,11 @@ export function motionTokenCss(): string {
   const reduced = Object.keys(variables)
     .filter((name) => name.startsWith("spring-") && name.endsWith("-duration"))
     .map((name) => `--motion-${name}: 0s;`);
-  return `:root { ${declarations.join(" ")} }\n@media (prefers-reduced-motion: reduce) { :root { ${reduced.join(" ")} } }`;
+  return [
+    `:root { ${declarations.join(" ")} }`,
+    `@media (prefers-reduced-motion: reduce) { :root { ${reduced.join(" ")} } }`,
+    revealLiftShadowKeyframes(),
+  ].join("\n");
 }
 
 /** 把动效变量装进文档。应用入口与 Storybook 预览在首次渲染前各调用一次，重复调用只更新同一个样式节点。 */
@@ -535,6 +553,18 @@ export const agentPace = {
   scrollPageRatio: 0.8,
   barReservePx: 72,
   sliderStepLimit: 200,
+} as const;
+
+/**
+ * Agent 接管时的几个 CSS 手势幅度（`index.css` 的 `agent-*` 关键帧经 `--motion-agent-*` 读取）：
+ * 点击回声自框上扩开并消散；接管条自底边浮起并略放大到位；人类试图操作时接管条轻顶一下。
+ */
+export const agentGesture = {
+  echoOpacity: 0.55,
+  echoScale: 1.045,
+  barRise: "0.5rem",
+  barScale: 0.96,
+  nudgeScale: 1.04,
 } as const;
 
 /** 拖动中连续变化的读数：起点更贴近终值，快速连续刷新时不闪烁。 */
