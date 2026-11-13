@@ -12,6 +12,7 @@ vi.mock("framer-motion", async (importOriginal) => {
 });
 
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { stubMatchMedia } from "@/test/MatchMedia";
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import WhoIsFakerRoomPage from "./WhoIsFakerRoomPage";
 
@@ -325,6 +326,71 @@ describe("WhoIsFakerRoomPage 页面级集成测试", () => {
       "aria-expanded",
       "false"
     );
+  });
+
+  describe("桌面发言历史展开时的键盘与读屏路径", () => {
+    const aside = (container: HTMLElement) =>
+      container.querySelector<HTMLElement>("section > aside")!;
+    const game = (container: HTMLElement) => container.querySelector<HTMLElement>("main")!;
+
+    it("展开后游戏区不可交互，收起后恢复", () => {
+      const { container } = renderRoomPage();
+      setRoundPhase("description", "round-100");
+      expect(game(container).querySelector("[inert]")).toBeNull();
+
+      fireEvent.click(within(aside(container)).getByRole("button", { name: "展开发言历史" }));
+      expect(game(container).querySelector("[inert]")).not.toBeNull();
+
+      fireEvent.click(within(aside(container)).getByRole("button", { name: "收起发言历史" }));
+      expect(game(container).querySelector("[inert]")).toBeNull();
+    });
+
+    it("手机宽度下侧栏不存在，桌面展开的状态不让游戏区变成不可交互", () => {
+      const media = stubMatchMedia(true);
+      try {
+        const { container } = renderRoomPage();
+        setRoundPhase("description", "round-100");
+        fireEvent.click(within(aside(container)).getByRole("button", { name: "展开发言历史" }));
+        expect(game(container).querySelector("[inert]")).not.toBeNull();
+        act(() => media.crossBreakpoint(false));
+        expect(game(container).querySelector("[inert]")).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("展开按钮用 aria-controls 指向侧栏", () => {
+      const { container } = renderRoomPage();
+      setRoundPhase("description", "round-100");
+      const toggle = within(aside(container)).getByRole("button", { name: "展开发言历史" });
+      expect(aside(container).id).not.toBe("");
+      expect(toggle).toHaveAttribute("aria-controls", aside(container).id);
+    });
+
+    it("展开与 Escape 收起后，焦点都落在切换按钮上", () => {
+      const { container } = renderRoomPage();
+      setRoundPhase("description", "round-100");
+      fireEvent.click(within(aside(container)).getByRole("button", { name: "展开发言历史" }));
+      const toggle = within(aside(container)).getByRole("button", { name: "收起发言历史" });
+      expect(toggle).toHaveFocus();
+
+      // 焦点掉到页面根（原先所在的游戏区控件被置为不可交互）时，Escape 把焦点还给切换按钮
+      toggle.blur();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(within(aside(container)).getByRole("button", { name: "展开发言历史" })).toHaveFocus();
+    });
+
+    it("Escape 收起时不抢走聊天输入框里的焦点", () => {
+      const { container } = renderRoomPage();
+      setRoundPhase("description", "round-100");
+      fireEvent.click(within(aside(container)).getByRole("button", { name: "展开发言历史" }));
+      const outside = document.createElement("input");
+      document.body.append(outside);
+      outside.focus();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(outside).toHaveFocus();
+      outside.remove();
+    });
   });
 
   it("手机发言历史抽屉在回到等待时关闭，下一局不会自己重新打开", () => {

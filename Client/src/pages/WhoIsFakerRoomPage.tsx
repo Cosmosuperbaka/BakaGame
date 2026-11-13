@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { getSavedUsername, normalizeRoomId, saveUsername } from "@/lib/Storage";
+import { useMinWidth } from "@/hooks/UseMinWidth";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
@@ -118,6 +120,9 @@ interface RoomPlayerAsideProps {
   historyAvailable: boolean;
   historyOpen: boolean;
   onToggleHistory: () => void;
+  /** 侧栏自身的 id：展开按钮用 aria-controls 指向它 */
+  panelId: string;
+  toggleRef: RefObject<HTMLButtonElement | null>;
   list: ReactNode;
 }
 
@@ -126,6 +131,8 @@ function RoomPlayerAside({
   historyAvailable,
   historyOpen,
   onToggleHistory,
+  panelId,
+  toggleRef,
   list,
 }: RoomPlayerAsideProps) {
   return (
@@ -141,6 +148,7 @@ function RoomPlayerAside({
         宽度必须真实重排（列表要按新宽度排版），是补间布局属性的例外；
         浮起的重阴影放在伪元素上只淡入淡出，不逐帧重算阴影。 */}
       <motion.aside
+        id={panelId}
         data-room-part="player"
         data-history-open={historyOpen}
         className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel shadow-2xs after:pointer-events-none after:absolute after:-inset-px after:rounded-[inherit] after:opacity-0 after:shadow-lg after:transition-opacity after:duration-(--motion-duration-base) data-[history-open=true]:after:opacity-100 md:flex"
@@ -159,9 +167,11 @@ function RoomPlayerAside({
             transition={spring.settle}
           >
             <motion.button
+              ref={toggleRef}
               type="button"
               aria-label={historyOpen ? "收起发言历史" : "展开发言历史"}
               aria-expanded={historyOpen}
+              aria-controls={panelId}
               onClick={onToggleHistory}
               {...iconTappable}
               className="flex h-8 w-8 items-center justify-center floating-surface text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
@@ -544,15 +554,36 @@ export default function WhoIsFakerRoomPage() {
     return () => window.clearTimeout(t);
   }, [historyOpen]);
 
-  // Escape 收起历史
+  // 桌面侧栏向右扩张时盖住游戏区：被盖住的控件不能再停留在 Tab 序与可访问树里。
+  // 窄屏没有这块侧栏（历史走抽屉），不能因为桌面留下的展开状态把游戏区锁死。
+  const historyPanelId = useId();
+  const historyToggleRef = useRef<HTMLButtonElement>(null);
+  const desktopSidebar = useMinWidth("md");
+  const gameInert = historyOpen && desktopSidebar;
+
+  const toggleHistory = () => {
+    setHistoryRoundKey(historyOpen ? null : roundKey);
+    // 原来在游戏区的焦点会随游戏区一起失效（浏览器丢到页面根；Safari 点按钮本就不取焦点）：
+    // 展开后焦点留在收起按钮上，收起后留在展开按钮上
+    historyToggleRef.current?.focus({ preventScroll: true });
+  };
+
+  // Escape 收起历史；只在焦点已丢失或本来就在侧栏里时把焦点还给切换按钮，不抢聊天输入框等别处的焦点
   useEffect(() => {
     if (!historyOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHistoryRoundKey(null);
+      if (e.key !== "Escape") return;
+      const active = document.activeElement;
+      const focusLost =
+        !active ||
+        active === document.body ||
+        document.getElementById(historyPanelId)?.contains(active);
+      setHistoryRoundKey(null);
+      if (focusLost) historyToggleRef.current?.focus({ preventScroll: true });
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [historyOpen]);
+  }, [historyOpen, historyPanelId]);
 
   // 对局页内容全部来自服务端运行时状态，对搜索引擎无索引价值，
   // 统一标记 noindex；robots.txt 里也同步屏蔽了本路径。
@@ -641,12 +672,19 @@ export default function WhoIsFakerRoomPage() {
           <RoomPlayerAside
             historyAvailable={historyAvailable}
             historyOpen={historyOpen}
-            onToggleHistory={() => setHistoryRoundKey(historyOpen ? null : roundKey)}
+            onToggleHistory={toggleHistory}
+            panelId={historyPanelId}
+            toggleRef={historyToggleRef}
             list={playerList(historyRendered)}
           />
         }
         gameRef={stageRef}
-        game={<FakerGameArea wordRevealed={wordRevealed} />}
+        game={
+          // contents 包一层只为挂 inert，不产生盒子，布局与直接放 FakerGameArea 相同
+          <div className="contents" inert={gameInert}>
+            <FakerGameArea wordRevealed={wordRevealed} />
+          </div>
+        }
         chat={
           <ChatColumn>
             <ChatPanel
