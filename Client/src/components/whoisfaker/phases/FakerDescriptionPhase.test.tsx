@@ -155,6 +155,18 @@ describe("DescriptionPhase", () => {
     expect(screen.getByPlaceholderText("输入你的描述...")).toBeInTheDocument();
   });
 
+  it("输入按共享字宽表限长：汉字算 2、字母算 1，上限 20 单位", () => {
+    useWhoIsFakerStore.setState({ snapshot, privateState });
+    render(<FakerDescriptionPhase />);
+    const input = screen.getByPlaceholderText("输入你的描述...");
+    fireEvent.change(input, { target: { value: "一二三四五六七八九十十一" } });
+    expect(input).toHaveValue("一二三四五六七八九十");
+    expect(screen.getByText("20/20")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "ab中文" } });
+    expect(input).toHaveValue("ab中文");
+    expect(screen.getByText("6/20")).toBeInTheDocument();
+  });
+
   it("当阶段倒计时归零且输入框有内容时，自动提交发言", async () => {
     const sendCommand = vi.fn().mockResolvedValue({});
     mountWithTimer(NOW + 10_000, sendCommand);

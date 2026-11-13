@@ -9,6 +9,7 @@ import { FakerPendingSpeech, SubmittedSpeech } from "../layout/FakerPendingSpeec
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
 import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
+import { FAKER_DESCRIPTION_MAX_UNITS, clampUnits, textUnits } from "@bakagame/shared/values";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 import type { SpeechMode, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
@@ -34,46 +35,6 @@ interface SpeechRow {
   /** 本人本轮发言，用于高亮自己那一行 */
   isMe: boolean;
 }
-
-// 字符宽度计数：CJK 及全角字符算 2 个单位，其余算 1 个单位。上限 20 单位（≈10 中文/20 英文）。
-const DESCRIPTION_MAX_UNITS = 20;
-
-const getCharUnits = (char: string): number => {
-  const code = char.codePointAt(0) ?? 0;
-  // CJK 统一汉字、扩展区、全角标点、Katakana/Hiragana 等宽字符
-  if (
-    (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
-    (code >= 0x2e80 && code <= 0x9fff) || // CJK、部首、康熙等
-    (code >= 0xa960 && code <= 0xa97f) || // Hangul Jamo Extended
-    (code >= 0xac00 && code <= 0xd7ff) || // Hangul Syllables
-    (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility
-    (code >= 0xfe10 && code <= 0xfe1f) || // Vertical Forms
-    (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
-    (code >= 0xff01 && code <= 0xff60) || // Fullwidth Forms
-    (code >= 0xffe0 && code <= 0xffe6) || // Fullwidth Signs
-    (code >= 0x1b000 && code <= 0x1b0ff) || // Kana Supplement
-    (code >= 0x20000 && code <= 0x2fffd) || // CJK Unified Ideographs Extension B-F
-    (code >= 0x30000 && code <= 0x3fffd) // CJK Unified Ideographs Extension G
-  ) {
-    return 2;
-  }
-  return 1;
-};
-
-const countTextUnits = (text: string): number =>
-  [...text].reduce((sum, ch) => sum + getCharUnits(ch), 0);
-
-const clampToLimit = (text: string): string => {
-  let units = 0;
-  let result = "";
-  for (const ch of text) {
-    const w = getCharUnits(ch);
-    if (units + w > DESCRIPTION_MAX_UNITS) break;
-    units += w;
-    result += ch;
-  }
-  return result;
-};
 
 /**
  * 发言模式：普通描述时服务端不下发 speechMode，按阶段回退，PK 阶段的语气仍是 PK。
@@ -266,7 +227,7 @@ export function FakerDescriptionPhase() {
               value={text}
               aria-label={speechInputLabel(mode)}
               aria-describedby={counterId}
-              onChange={(e) => setText(clampToLimit(e.target.value))}
+              onChange={(e) => setText(clampUnits(e.target.value, FAKER_DESCRIPTION_MAX_UNITS))}
               placeholder={speechInputPlaceholder(mode)}
               className="h-10 pr-14"
               data-agent-control="faker.description.input"
@@ -279,7 +240,7 @@ export function FakerDescriptionPhase() {
               id={counterId}
               className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground"
             >
-              {countTextUnits(text)}/{DESCRIPTION_MAX_UNITS}
+              {textUnits(text)}/{FAKER_DESCRIPTION_MAX_UNITS}
             </span>
           </div>
           <Button

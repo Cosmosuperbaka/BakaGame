@@ -64,6 +64,7 @@ export {
   PUBLIC_STATUS_REALTIME_WINDOW_MS,
   PUBLIC_STATUS_SAMPLE_INTERVAL_MS,
 } from "./Status";
+export { FAKER_DESCRIPTION_MAX_UNITS, clampUnits, textUnits } from "./TextUnits";
 export {
   SITE_SESSION_ALIVE_COMMAND,
   SITE_SESSION_ATTACH_COMMAND,
