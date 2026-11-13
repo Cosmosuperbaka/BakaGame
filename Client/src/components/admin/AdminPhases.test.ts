@@ -1,12 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { SONGUESSR_PHASES, WHOISFAKER_PHASES } from "@bakagame/shared";
 import { roomPhaseLabel } from "./AdminPhases";
+
+// 枚举本身由 AdminPhases 里的 Record 在编译期钉住；这里列出当前取值，守「每个都有中文名」。
+const FAKER_PHASES = [
+  "waiting",
+  "assigningQuestioner",
+  "wordSubmission",
+  "description",
+  "voting",
+  "tieBreak",
+  "night",
+  "blankGuess",
+  "feedback",
+  "gameOver",
+];
+const SONG_PHASES = ["waiting", "choosingSubmitter", "submittingSong", "playing", "roundResult"];
 
 describe("房间阶段中文名", () => {
   it("三款玩法的每个阶段都有中文名，不露出英文枚举", () => {
-    for (const phase of WHOISFAKER_PHASES)
-      expect(roomPhaseLabel("faker", phase)).toMatch(/[一-龥]/);
-    for (const phase of SONGUESSR_PHASES) expect(roomPhaseLabel("song", phase)).toMatch(/[一-龥]/);
+    for (const phase of FAKER_PHASES) expect(roomPhaseLabel("faker", phase)).toMatch(/[一-龥]/);
+    for (const phase of SONG_PHASES) expect(roomPhaseLabel("song", phase)).toMatch(/[一-龥]/);
     for (const phase of [
       "waiting",
       "choosingSetter",
