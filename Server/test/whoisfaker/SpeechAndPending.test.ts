@@ -630,6 +630,15 @@ describe("「还在等谁」：推进判定、掉线队列、超时补位与机�
     const actors = night.nightActions.map((n) => n.actorId);
     expect(actors).not.toContain(x.id);
     expect(actors).toContain(y.id);
+    expect(night.nightActions.find((n) => n.actorId === y.id)?.actorRole).toBe("civilian");
+    // 没有预设行动的卧底机器人：记的是卧底身份并带上目标
+    const w = bots[3];
+    night.assignments[w.id].role = "undercover";
+    night.nightActions = night.nightActions.filter((n) => n.actorId !== w.id);
+    await nudge();
+    const acted = night.nightActions.find((n) => n.actorId === w.id);
+    expect(acted?.actorRole).toBe("undercover");
+    expect(acted?.targetId).toBeDefined();
     expect(night.nightActions.find((n) => n.actorId === z.id)?.targetId).toBe(alive[0]);
     // 平票：记录取当前加赛次数
     await send(world, host.conn, {
