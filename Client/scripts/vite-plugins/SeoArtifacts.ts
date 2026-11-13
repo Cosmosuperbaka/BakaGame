@@ -49,11 +49,16 @@ function collectOgTargets(sourceDir: string): Map<string, string> {
 }
 
 export function seoArtifactsPlugin() {
+  let distDir = path.resolve(import.meta.dirname, "../../dist");
   return {
     name: "seo-artifacts",
     apply: "build" as const,
+    // 产物目录取自实际生效的构建配置，而不是写死 ../../dist：别的构建（如 Storybook）
+    // 即使误引入本插件，也只写进自己的 outDir。
+    configResolved(config: { root: string; build: { outDir: string } }) {
+      distDir = path.resolve(config.root, config.build.outDir);
+    },
     async closeBundle() {
-      const distDir = path.resolve(import.meta.dirname, "../../dist");
 
       // ---- 站点地图 ----
       const seenPaths = new Set<string>();

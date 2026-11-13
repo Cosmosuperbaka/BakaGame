@@ -130,11 +130,15 @@ function buildShellPage(
 }
 
 export function staticShellPlugin() {
+  let distDir = path.resolve(import.meta.dirname, "../../dist");
   return {
     name: "static-shell",
     apply: "build" as const,
+    // 产物目录取自实际生效的构建配置，不写死 ../../dist。
+    configResolved(config: { root: string; build: { outDir: string } }) {
+      distDir = path.resolve(config.root, config.build.outDir);
+    },
     async closeBundle() {
-      const distDir = path.resolve(import.meta.dirname, "../../dist");
       const indexPath = path.join(distDir, "index.html");
       const original = fs.readFileSync(indexPath, "utf8");
 

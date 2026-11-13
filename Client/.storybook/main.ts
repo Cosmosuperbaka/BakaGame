@@ -1,9 +1,11 @@
 import type { StorybookConfig } from "@storybook/react-vite";
 import type { Plugin, PluginOption } from "vite";
 
-// 只在生产构建里有意义、会改写 dist/ 的插件，以及读实时 git 数据、会让截图随每次提交变化的插件。
-// Storybook 复用 vite.config.ts 时把它们剔除；提交历史改由下方的固定数据提供。
-const EXCLUDED_PLUGINS = new Set(["static-shell", "commit-history"]);
+// 只在生产构建里有意义、会往 dist/ 写文件的插件（静态外壳、站点地图与分享图），
+// 以及读实时 git 数据、会让截图随每次提交变化的插件。Storybook 复用 vite.config.ts 时把它们剔除：
+// 漏掉任何一个都会让「没有 dist/ 的干净检出」上的 Storybook 构建失败，或把文件写进 dist/。
+// 提交历史改由下方的固定数据提供。
+const EXCLUDED_PLUGINS = new Set(["static-shell", "seo-artifacts", "commit-history"]);
 
 async function withoutExcludedPlugins(plugins: PluginOption[] = []): Promise<PluginOption[]> {
   const resolved = await Promise.all(plugins);
