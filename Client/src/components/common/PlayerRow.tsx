@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 房主动作需要随 PlayerRow 一起被三个游戏消费，拆文件只会让调用点各写一遍。 */
-import { useContext, useEffect, useState, type ReactNode, type Ref } from "react";
+import { useContext, useEffect, useId, useState, type ReactNode, type Ref } from "react";
 import { AnimatePresence, LayoutGroupContext, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { ArrowUpRightFromCircle, Bot, Crown, Skull, UserX, WifiOff } from "lucide-react";
@@ -117,9 +117,13 @@ export function PlayerRow({
   const [open, setOpen] = useState(false);
   const rowClass = playerRowClass({ me, interactive });
   const move = useRowMove(embedded ? undefined : layoutId);
+  // 按钮的名字只有「名字 操作」，房主、离线、出局、分数与徽章写在信息列里；
+  // 经描述关联给读屏，可操作的行与不可点的行读到的信息一致。
+  const infoId = useId();
 
   const info = (
     <PlayerRowInfo
+      id={interactive ? infoId : undefined}
       name={name}
       score={score}
       me={me}
@@ -141,6 +145,7 @@ export function PlayerRow({
         <motion.button
           type="button"
           aria-label={hasActions ? `${name} 操作` : `${name} 资料`}
+          aria-describedby={infoId}
           {...headerTappable}
           className={rowClass}
         >
@@ -223,6 +228,7 @@ const playerRowClass = ({ me, interactive }: { me: boolean; interactive: boolean
 
 /** 行内信息：头像、名字与房主标识、状态徽章与补充文字、可选第三行、右侧分数。 */
 function PlayerRowInfo({
+  id,
   name,
   score,
   me,
@@ -234,7 +240,7 @@ function PlayerRowInfo({
   badges,
   meta,
   detail,
-}: Pick<
+}: { id?: string } & Pick<
   PlayerRowProps,
   | "name"
   | "score"
@@ -253,7 +259,7 @@ function PlayerRowInfo({
     <>
       {me ? <span className={PLAYER_ME_MARK} /> : null}
       <PlayerAvatar name={name} me={me} image={account?.image} />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span id={id} className="flex min-w-0 flex-1 flex-col gap-0.5">
         {/* 首行是身份：名字、房主、账号徽章与当前状态。状态图标挨着名字读，
             不必把视线甩到下一行去找「他到底准备好了没有」。 */}
         <span className="flex min-w-0 items-center gap-1.5">

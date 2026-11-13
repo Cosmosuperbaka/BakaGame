@@ -1,5 +1,5 @@
 import { AnimatePresence } from "framer-motion";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -48,6 +48,34 @@ describe("PlayerRow 资料卡", () => {
     // 单测在这里先钉住，免得玩家行再改版时只剩图标、名字又一次悄悄丢掉。
     expect(screen.getByRole("img", { name: "已出局" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "测试人机" })).toBeInTheDocument();
+  });
+
+  it("可点的行按钮名字仍是「名字 操作」，状态与分数写进它的描述，读屏不丢房主、离线与分数", () => {
+    render(
+      <>
+        <PlayerRow
+          name="房主小明"
+          score={12}
+          host
+          actions={[{ icon: null, label: "移交房主", onClick: vi.fn() }]}
+        />
+        <PlayerRow
+          name="掉线的小红"
+          score={3}
+          online={false}
+          actions={[{ icon: null, label: "移出房间", onClick: vi.fn() }]}
+        />
+      </>
+    );
+    // jsdom 的可访问描述计算不认「描述指向按钮自己的子节点」，这里直接核对被指向的那块内容；
+    // 读屏实际读到什么，由 Storybook 里的真机 AX 树实测。
+    const described = (button: HTMLElement) =>
+      document.getElementById(button.getAttribute("aria-describedby") ?? "") as HTMLElement;
+    const host = described(screen.getByRole("button", { name: "房主小明 操作" }));
+    expect(within(host).getByRole("img", { name: "房主" })).toBeInTheDocument();
+    expect(within(host).getByLabelText("12 分")).toBeInTheDocument();
+    const dropped = described(screen.getByRole("button", { name: "掉线的小红 操作" }));
+    expect(within(dropped).getByRole("img", { name: "离线" })).toBeInTheDocument();
   });
 
   it("游客且无操作权限时整行不可点", () => {
