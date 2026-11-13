@@ -13,7 +13,10 @@ export class FakeSocket {
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
 
-  constructor(readonly url: string) {
+  readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
     FakeSocket.instances.push(this);
   }
 
