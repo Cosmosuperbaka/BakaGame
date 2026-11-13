@@ -8,7 +8,8 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import { resolveAbandonedBlankGuess } from "./BlankGuess";
-import { applyEliminationAndMove, predictFeedbackNext } from "./Feedback";
+import { predictFeedbackNext, settleOutcome } from "./Feedback";
+import { publishRoom } from "./RoomPublish";
 import { reassignHost } from "../room/HostPolicy";
 import { clearPendingDisconnect, requeuePendingDisconnects } from "./PendingDisconnects";
 import { clearPhaseTimer, completeSupplementIfReady } from "./PhaseTimers";
@@ -20,22 +21,18 @@ import {
 } from "./RoundRules";
 import type { WhoIsFakerContext } from "./Context";
 
-/** 强制移除的上下文：踢人通知、出局恢复与收尾日志共用同一份快照。 */
+/** 强制移除的上下文：踢人通知、出局结算与收尾日志共用。 */
 type ForcedRemovalContext = {
   room: WhoIsFakerRoomRecord;
   playerId: string;
   player: WhoIsFakerPlayerRecord;
   reason: string;
-  preserved: RoundPreservation;
+  /** 抹除引用之后，回合上是否仍有没补完的补充发言（补充可能正好在这次抹除中被判定完成）。 */
+  supplementActive: boolean;
 };
 
-/** 移除前从回合里抄下来的待恢复数据，回合未开始时全为空。 */
-type RoundPreservation = {
-  votes?: GameRound["votes"];
-  nightActions?: GameRound["nightActions"];
-  tieBreak?: GameRound["tieBreak"];
-  supplementActive?: boolean;
-};
+/** 出局后回到的阶段：开局前的两个阶段没有出局的概念，不在其内。 */
+type ResumePhase = Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">;
 
 /** 白板猜词者离场可能当场终局，此时必须跳过踢人收尾与日志。 */
 type ForcedRemovalFlow = "continue" | "done";
@@ -55,11 +52,11 @@ export const forceRemovePlayer = async (
   sendKickNotice(ctx, room, player);
   markPlayerAsKicked(player);
 
-  // 先清掉回合里的引用，再抄恢复现场要用的快照：补充发言可能正好在这次清理中被判定完成。
-  const preserved: RoundPreservation = room.round
+  // 先清掉回合里的引用：补充发言可能正好在这次清理中被判定完成，是否仍在补充要在清理之后看。
+  const supplementActive = room.round
     ? scrubPlayerFromRound(ctx, room, room.round, player.id)
-    : {};
-  const flow: ForcedRemovalContext = { room, playerId, player, reason, preserved };
+    : false;
+  const flow: ForcedRemovalContext = { room, playerId, player, reason, supplementActive };
 
   recordRemovalHistory(ctx, flow);
 
@@ -99,15 +96,15 @@ const markPlayerAsKicked = (player: WhoIsFakerPlayerRecord) => {
 };
 
 /**
- * 把这名玩家从当前回合的每一处引用中抹掉，并返回抹除后现场的回滚快照。
- * 快照必须在清理之后抄：补充发言被判定完成时，`supplement` 已经不在回合上了。
+ * 把这名玩家从当前回合的每一处引用中抹掉，返回抹除之后补充发言是否仍在进行。
+ * 要在清理之后看：补充发言被判定完成时，`supplement` 已经不在回合上了。
  */
 const scrubPlayerFromRound = (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   playerId: string
-): RoundPreservation => {
+): boolean => {
   clearPendingDisconnect(round, playerId);
   round.votes = round.votes.filter(
     (vote) => vote.voterId !== playerId && vote.targetId !== playerId
@@ -145,19 +142,7 @@ const scrubPlayerFromRound = (
     completeSupplementIfReady(ctx, room);
   }
 
-  return {
-    votes: [...round.votes],
-    nightActions: round.nightActions.map((action) => ({ ...action })),
-    tieBreak: round.tieBreak
-      ? {
-          ...round.tieBreak,
-          candidateIds: [...round.tieBreak.candidateIds],
-          descriptionsDone: [...round.tieBreak.descriptionsDone],
-          votes: round.tieBreak.votes.map((vote) => ({ ...vote })),
-        }
-      : undefined,
-    supplementActive: Boolean(round.supplement),
-  };
+  return Boolean(round.supplement);
 };
 
 /** 移除记录只留给仍在局的玩家：终局轮次与已出局的玩家都不再追加。 */
@@ -234,17 +219,11 @@ const exitAsBlankGuesser = async (
 
   const effectivePhase = resumePhase ?? "gameOver";
   const targetNextPhase =
-    effectivePhase === "tieBreak" && (flow.preserved.tieBreak?.candidateIds.length ?? 0) <= 1
+    effectivePhase === "tieBreak" && (round.tieBreak?.candidateIds.length ?? 0) <= 1
       ? "night"
       : effectivePhase;
 
-  await applyEliminationAndMove(ctx, flow.room, [flow.player.id], flow.reason, targetNextPhase);
-
-  // 淘汰可能已经决出胜负：只有回合仍在继续时才需要把清理掉的现场恢复回去。
-  const liveRound = flow.room.round;
-  if (liveRound && !liveRound.summary) {
-    restoreGuesserRound(liveRound, flow.preserved, targetNextPhase);
-  }
+  await eliminateAndSettle(ctx, flow, round, targetNextPhase);
   ctx.appendSystemMessage(flow.room, "白板已离场，本次猜词作废，游戏继续");
   return "continue";
 };
@@ -256,63 +235,47 @@ const exitRosterMember = async (
 ) => {
   const previousPhase = round.phase;
   const resumePhase =
-    previousPhase === "tieBreak" && (flow.preserved.tieBreak?.candidateIds.length ?? 0) <= 1
+    previousPhase === "tieBreak" && (round.tieBreak?.candidateIds.length ?? 0) <= 1
       ? "night"
       : getResumePhaseAfterForcedRemoval(previousPhase);
-  await applyEliminationAndMove(ctx, flow.room, [flow.player.id], flow.reason, resumePhase);
+  await eliminateAndSettle(ctx, flow, round, resumePhase);
 
-  const liveRound = flow.room.round;
-  if (liveRound && !liveRound.summary) {
-    restoreRosterRound(liveRound, flow.preserved, resumePhase);
-    // 平票候选不足改入夜晚时阶段变了：原阶段的倒计时不能留在快照里。
-    if (liveRound.phase !== previousPhase) clearPhaseTimer(ctx, flow.room);
-  }
+  // 平票候选不足改入夜晚时阶段变了：原阶段的倒计时不能留在快照里。
+  if (!round.summary && round.phase !== previousPhase) clearPhaseTimer(ctx, flow.room);
 };
 
-const restoreGuesserRound = (
+/**
+ * 记淘汰并决定结算去向：先把这名玩家记为出局并发布一次快照，再判残局猜词与胜负。
+ * 局面没有分出结果时，回合就留在（或回到）`resumePhase`，只清掉那个阶段用不到的临时容器，
+ * 抹除引用之后留下的投票、夜晚行动与平票状态原样保留，不再先清空整个回合再从快照恢复。
+ */
+const eliminateAndSettle = async (
+  ctx: WhoIsFakerContext,
+  flow: ForcedRemovalContext,
   round: GameRound,
-  preserved: RoundPreservation,
-  targetNextPhase: Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">
+  resumePhase: ResumePhase
 ) => {
-  if (targetNextPhase === "voting" || preserved.supplementActive) {
-    round.votes = preserved.votes ?? [];
-  }
-  if (targetNextPhase === "night") {
-    round.nightActions = preserved.nightActions ?? [];
-    round.tieBreak = undefined;
-    round.speechMode = undefined;
-  }
-  if (targetNextPhase === "tieBreak" && preserved.tieBreak) {
-    round.tieBreak = preserved.tieBreak;
-    round.speechMode = preserved.tieBreak.stage === "description" ? "tieBreak" : undefined;
-  }
-  if (preserved.supplementActive) {
-    round.phase = "description";
-    round.speechMode = "supplement";
-  }
-};
+  recordEliminations(round.assignments, [flow.player.id], flow.reason, ctx.now());
+  publishRoom(ctx, flow.room);
 
-const restoreRosterRound = (
-  round: GameRound,
-  preserved: RoundPreservation,
-  resumePhase: Exclude<WhoIsFakerPhase, "assigningQuestioner" | "wordSubmission">
-) => {
-  if (resumePhase === "voting" || preserved.supplementActive) {
-    round.votes = preserved.votes ?? [];
+  const outcome = await settleOutcome(ctx, flow.room);
+  if (outcome === "finished") return;
+
+  if (outcome === "open") {
+    round.phase = resumePhase;
+    round.speechMode = resumePhase === "description" ? "normal" : undefined;
+    // 白板猜词阶段不拥有任何一个容器，三样都得留给它被打断前的阶段。
+    const interrupted = resumePhase === "blankGuess";
+    if (!(resumePhase === "voting" || interrupted || flow.supplementActive)) round.votes = [];
+    if (!(resumePhase === "night" || interrupted)) round.nightActions = [];
+    if (!(resumePhase === "tieBreak" || interrupted)) round.tieBreak = undefined;
   }
-  if (resumePhase === "night") {
-    round.nightActions = preserved.nightActions ?? [];
+
+  if (resumePhase === "tieBreak" && round.tieBreak) {
+    round.speechMode = round.tieBreak.stage === "description" ? "tieBreak" : undefined;
   }
-  if (resumePhase === "tieBreak" && preserved.tieBreak) {
-    round.tieBreak = preserved.tieBreak;
-    round.speechMode = preserved.tieBreak.stage === "description" ? "tieBreak" : undefined;
-  }
-  if (resumePhase === "blankGuess") {
-    if (preserved.tieBreak) round.tieBreak = preserved.tieBreak;
-    if (preserved.votes) round.votes = preserved.votes;
-    if (preserved.nightActions) round.nightActions = preserved.nightActions;
-  }
-  if (preserved.supplementActive) {
+  // 补充发言仍在进行时，阶段与发言模式一律回到补充发言。
+  if (flow.supplementActive) {
     round.phase = "description";
     round.speechMode = "supplement";
   }

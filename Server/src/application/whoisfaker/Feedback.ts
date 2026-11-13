@@ -43,6 +43,29 @@ export const tryTransitionToFinaleBlankGuess = (
   return false;
 };
 
+/** 淘汰落地后的结算去向：进了残局猜词、已经分出胜负并结算、还没有结果（由调用方决定去哪个阶段）。 */
+export type SettledOutcome = "finale" | "finished" | "open";
+
+/** 淘汰落地之后判结局：先看白板残局猜词，再看胜负，都没有才算还没完。 */
+export const settleOutcome = async (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord
+): Promise<SettledOutcome> => {
+  if (tryTransitionToFinaleBlankGuess(ctx, room)) {
+    return "finale";
+  }
+
+  const round = requireRound(room);
+  const winner = getWinnerAfterBlankFailure(round.assignments);
+
+  if (winner) {
+    await finishRound(ctx, room, winner, "阶段结算后已满足胜利条件");
+    return "finished";
+  }
+
+  return "open";
+};
+
 export const applyEliminationAndMove = async (
   ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
@@ -59,14 +82,7 @@ export const applyEliminationAndMove = async (
     publishRoom(ctx, room);
   }
 
-  if (tryTransitionToFinaleBlankGuess(ctx, room)) {
-    return;
-  }
-
-  const winner = getWinnerAfterBlankFailure(round.assignments);
-
-  if (winner) {
-    await finishRound(ctx, room, winner, "阶段结算后已满足胜利条件");
+  if ((await settleOutcome(ctx, room)) !== "open") {
     return;
   }
 
