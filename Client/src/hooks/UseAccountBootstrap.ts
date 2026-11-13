@@ -10,6 +10,7 @@ import { useAccountStore } from "@/stores/UseAccountStore";
  */
 export function useAccountBootstrap() {
   const status = useAccountStore((state) => state.status);
+  const userId = useAccountStore((state) => state.profile?.id);
   const load = useAccountStore((state) => state.load);
   const syncEnabled = useCloudSyncEnabled();
   const { pathname } = useLocation();
@@ -20,9 +21,9 @@ export function useAccountBootstrap() {
   }, [load]);
 
   useEffect(() => {
-    if (status !== "signedIn" || !syncEnabled) return;
-    return startCloudSync();
-  }, [status, syncEnabled]);
+    if (status !== "signedIn" || !syncEnabled || !userId) return;
+    return startCloudSync(userId);
+  }, [status, syncEnabled, userId]);
 
   useEffect(() => {
     const section = visitSection(pathname);

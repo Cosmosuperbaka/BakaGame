@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AccountProfile } from "@bakagame/shared";
 import { setCloudSyncEnabled } from "@/lib/CloudSync";
 import { useAccountStore } from "@/stores/UseAccountStore";
 import { useAccountBootstrap } from "./UseAccountBootstrap";
@@ -34,13 +35,18 @@ afterEach(() => {
 describe("useAccountBootstrap cloud sync switch", () => {
   it("关闭后不启动同步，重新开启才启动，再关闭立即停止", () => {
     setCloudSyncEnabled(false);
-    useAccountStore.setState({ status: "signedIn", load: vi.fn(async () => {}) });
+    useAccountStore.setState({
+      status: "signedIn",
+      profile: { id: "user-1" } as AccountProfile,
+      load: vi.fn(async () => {}),
+    });
 
     renderHook(() => useAccountBootstrap(), { wrapper });
     expect(startCloudSync).not.toHaveBeenCalled();
 
     act(() => setCloudSyncEnabled(true));
     expect(startCloudSync).toHaveBeenCalledTimes(1);
+    expect(startCloudSync).toHaveBeenCalledWith("user-1");
     expect(stopCloudSync).not.toHaveBeenCalled();
 
     act(() => setCloudSyncEnabled(false));

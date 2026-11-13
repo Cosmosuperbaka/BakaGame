@@ -36,7 +36,7 @@ const fakeClient = (cloud: CloudSettings) => {
 };
 
 const flush = async () => {
-  for (let index = 0; index < 5; index += 1) await Promise.resolve();
+  for (let index = 0; index < 30; index += 1) await Promise.resolve();
 };
 
 beforeEach(() => {
@@ -76,7 +76,7 @@ describe("云同步", () => {
       music: { netease: null, qq: null },
     });
 
-    const stop = startCloudSync(client);
+    const stop = startCloudSync("user-1", client);
     await flush();
     expect(window.localStorage.getItem("songuessr_volume")).toBe("0.9");
     expect(window.localStorage.getItem("bakagame:room-create:faker")).toBe(
@@ -100,7 +100,7 @@ describe("云同步", () => {
       preferences: { value: { songuessr_volume: "0.5" }, updatedAt: "x" },
       music: { netease: null, qq: null },
     });
-    const stop = startCloudSync(client);
+    const stop = startCloudSync("user-1", client);
     await flush();
     expect(savePreferences).not.toHaveBeenCalled();
 
@@ -121,7 +121,7 @@ describe("云同步", () => {
       preferences: null,
       music: { netease: null, qq: null },
     });
-    const stop = startCloudSync(client);
+    const stop = startCloudSync("user-1", client);
     await flush();
     notifyPreferencesChanged();
     await vi.advanceTimersByTimeAsync(2_000);
@@ -139,7 +139,7 @@ describe("云同步", () => {
       preferences: null,
       music: { netease, qq: null },
     });
-    const stop = startCloudSync(client);
+    const stop = startCloudSync("user-1", client);
     await flush();
 
     expect(getStoredSongMusicSession("netease")).toMatchObject({
@@ -170,7 +170,7 @@ describe("云同步", () => {
         saveMusicSession: vi.fn(),
       },
     } as unknown as ApiClient;
-    const stop = startCloudSync(client);
+    const stop = startCloudSync("user-1", client);
     await flush();
     saveUsername("甲");
     await vi.advanceTimersByTimeAsync(2_000);
