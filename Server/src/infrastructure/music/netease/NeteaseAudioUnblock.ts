@@ -1,5 +1,6 @@
 import { asArray, asRecord, readString } from "../../JsonReaders";
 import type { MusicCookieInput } from "../MusicProvider";
+import { raceWithTimeout } from "../RaceTimeout";
 import type { NeteaseApiGateway } from "./NeteaseApiGateway";
 import { normalizeAudioUrl, responseBody } from "./NeteaseResponse";
 import type { NeteaseMusicProviderOptions } from "./NeteaseTypes";
@@ -35,19 +36,12 @@ const DEFAULT_UNBLOCK_TOTAL_BUDGET_MS = 12_000;
  * 必须同时给原 Promise 挂上 `catch`：它在超时之后才拒绝时，若没有处理器就会变成
  * unhandledRejection —— Bun 会直接终止整个进程。
  */
-const settleWithin = async <T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise.catch(() => fallback),
-      new Promise<T>((resolve) => {
-        timer = setTimeout(() => resolve(fallback), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-};
+const settleWithin = <T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> =>
+  raceWithTimeout(
+    promise.catch(() => fallback),
+    timeoutMs,
+    () => fallback
+  );
 
 /**
  * 识别「伪解灰」：解灰结果指回网易云官方外链 `/song/media/outer/url`。

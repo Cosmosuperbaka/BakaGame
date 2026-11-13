@@ -1,31 +1,17 @@
 import { AppError } from "../../../domain/Errors";
 import type { EventLogger } from "../../EventLogger";
+import { raceWithTimeout } from "../RaceTimeout";
 
 /** 匿名检索连续失败/空结果的上限：达到后短暂停止补充，避免持续打限流中的上游。 */
 const ANONYMOUS_FAILURE_THRESHOLD = 3;
 const ANONYMOUS_EMPTY_THRESHOLD = 5;
 const ANONYMOUS_COOLDOWN_MS = 60 * 1000;
 
-/**
- * 给匿名补充检索加等待上限。超时后原请求仍可能完成，因此必须提前挂一个
- * `catch`，否则迟到的拒绝会变成 unhandledRejection（Bun 会终止进程）。
- */
-export async function withAnonymousTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new AppError("MUSIC_API_TIMEOUT", "QQ 音乐匿名检索超时")),
-      timeoutMs
-    );
-    (timer as { unref?: () => void }).unref?.();
+/** 给匿名补充检索加等待上限：超时只影响这次补充，不阻塞另一侧音源。 */
+export const withAnonymousTimeout = <T>(task: Promise<T>, timeoutMs: number): Promise<T> =>
+  raceWithTimeout(task, timeoutMs, () => {
+    throw new AppError("MUSIC_API_TIMEOUT", "QQ 音乐匿名检索超时");
   });
-  void task.catch(() => {});
-  try {
-    return await Promise.race([task, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 /** 匿名检索熔断的结算回调：已登录检索不需要计数，走这份空实现。 */
 export interface SearchSettlementNotes {

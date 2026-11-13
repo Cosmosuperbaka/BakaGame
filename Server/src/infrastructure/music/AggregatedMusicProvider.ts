@@ -1,6 +1,7 @@
 import { AppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../EventLogger";
 import { parseSongUrn, buildSongUrn } from "./MusicUrn";
+import { raceWithTimeout } from "./RaceTimeout";
 import {
   aggregateAndDeduplicateSongs,
   markSongPlayability,
@@ -39,30 +40,11 @@ const DEFAULT_SEARCH_TIMEOUT_MS = { netease: 8000, qq: 6000 };
 const resolveSwitch = (value: boolean | (() => boolean) | undefined, fallback: boolean): boolean =>
   typeof value === "function" ? value() : (value ?? fallback);
 
-/**
- * 给单源搜索加等待上限。超时后原请求仍可能完成，必须提前挂 `catch`，
- * 否则迟到的拒绝会变成 unhandledRejection（Bun 会终止进程）。
- */
-async function withSearchTimeout<T>(
-  task: Promise<T>,
-  timeoutMs: number,
-  source: string
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new AppError("MUSIC_API_TIMEOUT", `${source}搜索超时`)),
-      timeoutMs
-    );
-    (timer as { unref?: () => void }).unref?.();
+/** 给单源搜索加等待上限：慢的一侧超时后按单音源降级，不拖住另一侧结果。 */
+const withSearchTimeout = <T>(task: Promise<T>, timeoutMs: number, source: string): Promise<T> =>
+  raceWithTimeout(task, timeoutMs, () => {
+    throw new AppError("MUSIC_API_TIMEOUT", `${source}搜索超时`);
   });
-  void task.catch(() => {});
-  try {
-    return await Promise.race([task, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 /**
  * 歌手/专辑这类非歌曲实体的双平台合并：按规范化键去重，再按平台偏好交错输出。
