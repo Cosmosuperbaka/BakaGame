@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ORPCError } from "@orpc/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -69,14 +69,44 @@ describe("登录弹窗", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
 
     await user.type(input, "45");
-    const avatar = screen.getByRole("img", { name: "QQ 12345 的头像" });
-    expect(avatar).toHaveAttribute("src", "https://q1.qlogo.cn/g?b=qq&nk=12345&s=640");
+    // 头像等停输后才出现：敲字过程中不逐位去第三方取图。
+    const avatar = await screen.findByRole("img", { name: "QQ 12345 的头像" });
+    expect(avatar).toHaveAttribute("src", "https://q1.qlogo.cn/g?b=qq&nk=12345&s=100");
     expect(avatar).toHaveAttribute("referrerpolicy", "no-referrer");
     // 头像格在字段之上：DOM 顺序即视觉顺序
     expect(avatar.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     // 身份区同时落出 QQ 号一行，与头像一起确认「这是谁的号」
     expect(screen.getByText("QQ 12345")).toBeInTheDocument();
     expect(send).toBeEnabled();
+  });
+
+  it("连续敲字期间不取头像，停输后只取最终号码的一张小图", async () => {
+    render(<LoginDialog open onOpenChange={vi.fn()} />);
+    const input = screen.getByLabelText("QQ 号");
+    // 记下期间出现过的每一个 <img> 地址：浏览器一旦见到 src 就会发请求，中间态也算一次。
+    const requested = new Set<string>();
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        // 只看记录里的新增节点：中间态的 <img> 可能在回调执行前就已被后一个换掉。
+        record.addedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          const images =
+            node instanceof HTMLImageElement ? [node] : [...node.querySelectorAll("img")];
+          images.forEach((image) => requested.add(image.getAttribute("src") ?? ""));
+        });
+      }
+    });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true });
+    try {
+      for (const value of ["12345", "123456", "1234567", "12345678"]) {
+        fireEvent.change(input, { target: { value } });
+      }
+      const avatar = await screen.findByRole("img", { name: "QQ 12345678 的头像" });
+      expect(avatar).toHaveAttribute("src", "https://q1.qlogo.cn/g?b=qq&nk=12345678&s=100");
+      expect([...requested]).toEqual(["https://q1.qlogo.cn/g?b=qq&nk=12345678&s=100"]);
+    } finally {
+      observer.disconnect();
+    }
   });
 
   it("输完 QQ 号即回显昵称，不等发码", async () => {

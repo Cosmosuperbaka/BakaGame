@@ -21,6 +21,9 @@ import { listItem, phaseSwap, readoutSwap, type OriginPoint } from "@/lib/Motion
 import { passkeyErrorMessage, passkeySupported } from "@/lib/Passkey";
 import { useAccountStore } from "@/stores/UseAccountStore";
 
+/** 头像框 80px：取 100 的小图已足够清晰，640 的大图只会白白多下载几十倍字节。 */
+const AVATAR_PREVIEW_SIZE = 100;
+
 type Step = { kind: "qq" } | { kind: "code"; registered: boolean; qqName: string | null };
 
 /** 重发倒计时：只记到期时刻，每秒重渲染一次。 */
@@ -69,8 +72,18 @@ function useQQName(qq: string, qqNames: QueryReuseCache<string | null>): string 
   return valid && shown?.qq === qq ? shown.name : null;
 }
 
+/** 值停住 `ms` 之后才跟上：连续变化的中间态不触发依赖它的副作用（取图、请求）。 */
+function useIdleValue<T>(value: T, ms: number): T {
+  const [idle, setIdle] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIdle(value), ms);
+    return () => window.clearTimeout(timer);
+  }, [value, ms]);
+  return idle;
+}
+
 /**
- * 身份区的圆头像：QQ 号合法即按该号取 qlogo（此时 QQ 号就是用户自己刚输入的，见 Server/docs/Account.md §4），
+ * 身份区的圆头像：QQ 号合法且停输后才按该号取 qlogo（此时 QQ 号就是用户自己刚输入的，见 Server/docs/Account.md §4），
  * 未填或取不到时是同一尺寸的占位圆，号一变新头像自原位缩放接手，读作「换了一张脸」而不是闪一下。
  */
 function LoginAvatar({
@@ -98,7 +111,7 @@ function LoginAvatar({
       variants={listItem}
       initial="initial"
       animate="animate"
-      src={qlogoUrlOf(qq)}
+      src={qlogoUrlOf(qq, AVATAR_PREVIEW_SIZE)}
       alt={`QQ ${qq} 的头像`}
       referrerPolicy="no-referrer"
       onError={onFailed}
@@ -183,6 +196,8 @@ function LoginDialogBody({
 
   const validQq = QQ_NUMBER_PATTERN.test(qq);
   const lookedUpName = useQQName(qq, qqNames);
+  // 头像在号停输后才取；号被删到不合法时立刻回占位圆，不为等防抖留着上一张脸。
+  const idleQq = useIdleValue(qq, IDLE_SEARCH_MS);
 
   const sendCode = async (mode: "send" | "resend") => {
     setBusy(mode);
@@ -259,7 +274,11 @@ function LoginDialogBody({
               {title}
             </motion.span>
           </DialogTitle>
-          <LoginAvatar qq={qq} failed={avatarFailed} onFailed={() => setAvatarFailed(true)} />
+          <LoginAvatar
+            qq={validQq ? idleQq : ""}
+            failed={avatarFailed}
+            onFailed={() => setAvatarFailed(true)}
+          />
           <div className="flex w-full flex-col items-center gap-0.5">
             <span className="flex h-6 max-w-full items-center justify-center">
               {identityName ? (
