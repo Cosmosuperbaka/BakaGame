@@ -53,12 +53,12 @@ type RoomHandlers = Pick<
   | "requestSupplement"
 >;
 
-export interface WhoIsFakerCommandDeps {
+interface WhoIsFakerCommandDeps {
   readonly ctx: WhoIsFakerContext;
   readonly handlers: RoomHandlers;
 }
 
-export type WhoIsFakerCommandTable = CommandTable<
+type WhoIsFakerCommandTable = CommandTable<
   WhoIsFakerClientMessage,
   WhoIsFakerCommandDeps,
   WhoIsFakerRoomRecord,

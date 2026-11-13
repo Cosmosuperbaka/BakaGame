@@ -32,7 +32,7 @@ import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
 /** 玩家离线的两种来源：连接断开与主动离开房间。 */
-export type PlayerOfflineReason = "disconnect" | "leave";
+type PlayerOfflineReason = "disconnect" | "leave";
 
 /** 离线处理的上下文：房主身份在清理前读一次，供各阶段共用。 */
 type OfflineContext = {
