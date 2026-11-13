@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
-import { resolveAgentIdentity } from "../src/transport/App";
+import { resolveAgentIdentity } from "../src/transport/ws/Handshake";
 import {
   compileRouteTemplates,
   httpOperationAction,

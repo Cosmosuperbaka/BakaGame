@@ -6,14 +6,14 @@ import { SonGuessrService } from "../application/SonGuessrService";
 import { CEEService } from "../application/CEEService";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
-import type { ConnectionRecord, PlayerAccount, ClientChannelProof } from "../shared/Index";
+import type { ConnectionRecord } from "../shared/Index";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
 import { resolveRequestTraceId } from "./RequestTraceId";
 import { securityHeaders } from "./SecurityHeaders";
-import { WsHandshakeQuota, type HandshakeLease } from "./WsHandshakeQuota";
+import { WsHandshakeQuota } from "./WsHandshakeQuota";
 import {
   WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW,
   WS_HANDSHAKE_IP_MAX_CONNECTIONS,
@@ -25,7 +25,21 @@ import {
   WS_IN_FLIGHT_MAX_ENTRIES,
 } from "../config/Constants";
 import { createAck, createErrorPacket, createEvent } from "./Packets";
-import { sendPacket } from "./ws/ConnectionRecord";
+import {
+  connectionIdFor,
+  connectionIdOf,
+  createConnectionRecord,
+  openGameConnection,
+  sendPacket,
+  type GameSocketLike,
+} from "./ws/ConnectionRecord";
+import {
+  applyHandshakeGates,
+  confirmHandshakeLease,
+  isValidHandshakeHeaders,
+  releaseHandshakeLease,
+  type GameUpgradeContext,
+} from "./ws/Handshake";
 import { createCommandDeduplicator, type CommandDeduplicator } from "./ws/Dedup";
 import { httpError, traceIdOf } from "./HttpErrorEnvelope";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
@@ -33,7 +47,7 @@ import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessr
 import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
 import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
-import type { GameId, ServerMessage } from "../shared/Protocol";
+import type { GameId } from "../shared/Protocol";
 import { isRecord } from "../shared/Json";
 import type { SiteFeatures } from "../shared/SiteFeatures";
 import { assertModeOpen } from "./ModeGate";
@@ -77,7 +91,6 @@ import {
   gameSocketError,
   salvageMessageIdentity,
 } from "./ws/FrameDiagnostics";
-import { createStateSyncSender } from "./StateSync";
 import { shutdownRejection, systemRoutes } from "./routes/System";
 import { createStatusAggregator, startStatusSampler, statusRoutes } from "./routes/Status";
 import { siteConfigRoutes } from "./routes/SiteConfig";
@@ -152,174 +165,11 @@ export interface AppDependencies {
   siteFeatures?: () => SiteFeatures;
 }
 
-/**
- * RFC 6455 握手必需头：`Sec-WebSocket-Key` 是 16 字节随机数的 base64，版本只有 13。
- * 运行时对不合格的握手回 4xx 且不触发任何连接事件。
- */
-const HANDSHAKE_KEY_PATTERN = /^[A-Za-z0-9+/]{22}==$/;
-const isValidHandshakeHeaders = (headers: Headers): boolean =>
-  HANDSHAKE_KEY_PATTERN.test(headers.get("sec-websocket-key") ?? "") &&
-  headers.get("sec-websocket-version") === "13";
-
-/** 传输层只需要 WebSocket 的这几个能力，避免依赖 Elysia 的内部类型。 */
-interface GameSocketLike {
-  data: unknown;
-  send: (data: ServerMessage) => unknown;
-  close: (code?: number, reason?: string) => unknown;
-  raw?: unknown;
-}
-
 interface GameSocketHandlers<TMessage extends { id: string; type: string; traceId?: string }> {
   /** 只用于错误日志前缀，便于把异常定位到具体游戏。 */
   serviceName: string;
   execute: (connectionId: string, message: TMessage) => Promise<unknown>;
 }
-
-const connectionIdOf = (ws: GameSocketLike): string | undefined =>
-  (ws.data as { connectionId?: string }).connectionId;
-
-/**
- * 握手阶段解析登录身份，结果挂到升级上下文上（Elysia 会把上下文展开进 `ws.data`）。
- * 账号系统故障只让本次连接以游客身份进入，绝不拦截游戏握手。
- */
-const resolveSocketAccount = async (
-  context: { request: Request; account?: PlayerAccount },
-  account: AccountDependencies | undefined,
-  logger: EventLogger
-): Promise<void> => {
-  if (!account || !context.request.headers.get("cookie")) return;
-  try {
-    context.account = await account.service.socketAccount(context.request.headers);
-  } catch (error) {
-    logger.warn("握手时解析登录状态失败，按游客处理", describeError(error));
-  }
-};
-
-/**
- * 握手配额闸门：Origin 通过之后、真正接受连接之前占一个名额。
- *
- * 超限必须 **throw**（upgrade 钩子的返回值会被 Elysia 忽略）。
- * 抛 `RATE_LIMITED` 由全局错误钩子回 429；占位成功时把租约写进上下文，Elysia 会把它带进
- * `ws.data`：open 钩子确认、close 钩子归还；钩子之后升级若失败，租约到期自行归还。
- */
-const reserveHandshakeSlot = (
-  context: {
-    request: Request;
-    server?: { requestIP(request: Request): { address?: string } | null } | null;
-    handshakeLease?: HandshakeLease;
-    clientIp?: string;
-  },
-  quota: WsHandshakeQuota
-): void => {
-  const peerIp = context.server?.requestIP(context.request)?.address;
-  const clientIp = resolveClientIp(context.request.headers, peerIp);
-  const lease = quota.reserve(clientIp, peerIp ?? clientIp);
-  if (!lease) throw new AppError("RATE_LIMITED", "连接过于频繁，请稍后重试");
-  context.handshakeLease = lease;
-  // 业务层的按地址配额要用同一个来源身份，不能到 application 层再反查 HTTP 头。
-  context.clientIp = clientIp;
-};
-
-/**
- * 握手阶段把壳带来的 ticket 换成通道证明。
- *
- * 只有 CEE 入口调用：ticket 是一次性的，三个游戏都去消费会让先到的那个用掉它，
- * 而反作弊房只存在于 CEE。网页没有 ticket，`clientChannel` 即为空。
- */
-const resolveSocketChannel = (
-  context: { request: Request; clientIp?: string; clientChannel?: ClientChannelProof },
-  channel: ClientChannel | undefined
-): void => {
-  if (!channel) return;
-  const ticket = new URL(context.request.url).searchParams.get("ticket") ?? undefined;
-  const proof = channel.consume(ticket, context.clientIp ?? "");
-  if (proof) context.clientChannel = proof;
-};
-
-/**
- * 这条连接攒着没发出去的字节数。Bun 原生 socket 有 `getBufferedAmount`，
- * 但 Elysia 的 `raw` 用的是它自己裁剪过的 `ServerWebSocket` 声明（不含该方法），
- * 所以这里按结构收窄后再调用。读不到（测试里的假 socket）就返回 0，等价于不启用丢弃。
- */
-const socketBacklog = (ws: GameSocketLike): number => {
-  const raw = ws.raw as { getBufferedAmount?: () => number } | undefined;
-  if (!raw?.getBufferedAmount) return 0;
-  return raw.getBufferedAmount();
-};
-
-/** 建立连接上下文，后续所有命令都靠它定位会话。 */
-/**
- * Agent 身份标记：独立的 MCP server 在握手 URL 上带 `agent=1`（或用同名请求头）。
- * 这只是一个自报标记，不能防住人类伪装；它的用途是让房间设置能拒绝 Agent，并让界面明示。
- */
-export const resolveAgentIdentity = (
-  context: { request: Request; isAgent?: boolean },
-  mcpEnabled?: boolean
-): void => {
-  const requested =
-    context.request.headers.get("x-bakagame-agent") === "1" ||
-    new URL(context.request.url).searchParams.get("agent") === "1";
-  if (!requested) return;
-  if (!mcpEnabled) throw new AppError("AGENTS_DISABLED", "Agent 接入未启用");
-  context.isAgent = true;
-};
-
-/** 连接号在一条物理 socket 上只发一次：统一入口要把同一条连接登记进多个服务。 */
-const connectionIdFor = (ws: GameSocketLike): string => {
-  const data = ws.data as { connectionId?: string };
-  return (data.connectionId ??= crypto.randomUUID());
-};
-
-/**
- * 为**一个服务**构造连接记录。状态同步基线属于服务，不属于 socket：统一入口上
- * 同一条连接会分别登记进三款游戏，各自必须持有独立的差量基线，不能共用一份。
- */
-const createConnectionRecord = (
-  ws: GameSocketLike,
-  connectionId: string,
-  isTabDriven: (tabKey: string) => boolean = () => false
-): ConnectionRecord => {
-  const {
-    account,
-    clientIp,
-    clientChannel: proof,
-    isAgent,
-    tabKey,
-  } = ws.data as {
-    account?: PlayerAccount;
-    clientIp?: string;
-    clientChannel?: ClientChannelProof;
-    isAgent?: boolean;
-    tabKey?: string;
-  };
-  const stateSync = createStateSyncSender(
-    (payload) => {
-      sendPacket(ws, payload as ServerMessage);
-    },
-    () => socketBacklog(ws)
-  );
-  return {
-    id: connectionId,
-    ...(account ? { account } : {}),
-    ...(clientIp ? { clientIp } : {}),
-    ...(proof ? { clientChannel: proof } : {}),
-    ...(isAgent ? { isAgent: true } : {}),
-    ...(tabKey ? { tabKey, agentDriven: () => isTabDriven(tabKey) } : {}),
-    lobbySubscribed: false,
-    send: stateSync.send,
-    resetStateSync: stateSync.reset,
-    sendStateSyncCalibration: stateSync.calibrate,
-    sendPacket: (payload: unknown) => sendPacket(ws, payload as ServerMessage),
-    close: (code?: number, reason?: string) => ws.close(code, reason),
-  };
-};
-
-const openGameConnection = (
-  ws: GameSocketLike,
-  register: (connection: ConnectionRecord) => void
-): void => {
-  register(createConnectionRecord(ws, connectionIdFor(ws)));
-};
 
 /**
  * 三个游戏共用的消息处理：解析 → 幂等执行 → ACK/错误封包。
@@ -354,28 +204,6 @@ const closeGameConnection = async (
   if (connectionId) await unregister(connectionId);
 };
 
-/** 连接打开即确认租约：此后名额只由 close 归还。 */
-const confirmHandshakeLease = (ws: GameSocketLike): void => {
-  (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.confirm();
-};
-
-/** 连接断开必须归还握手名额，否则同一个来源地址的名额会被历史连接吃光。 */
-const releaseHandshakeLease = (ws: GameSocketLike): void => {
-  (ws.data as { handshakeLease?: HandshakeLease }).handshakeLease?.release();
-};
-
-/** 三款游戏 ws 握手上下文的公共形状；Elysia 会把这里的字段展开进 `ws.data`。 */
-type GameUpgradeContext = {
-  request: Request;
-  headers: unknown;
-  server?: { requestIP(request: Request): { address?: string } | null } | null;
-  account?: PlayerAccount;
-  isAgent?: boolean;
-  handshakeLease?: HandshakeLease;
-  clientIp?: string;
-  clientChannel?: ClientChannelProof;
-};
-
 interface GameSocketHandlersOptions<
   TMessage extends { id: string; type: string; traceId?: string },
 > {
@@ -399,39 +227,6 @@ interface GameSocketHandlersOptions<
     execute(connectionId: string, message: TMessage): Promise<unknown>;
   };
 }
-
-/**
- * 握手闸门：Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明；Origin 与停机闸在全局 onRequest 统一判定。
- * 顺序是安全语义（拒绝不消耗配额、身份先于业务），旧入口与统一入口必须逐字一致。
- */
-const applyHandshakeGates = async (
-  context: GameUpgradeContext,
-  {
-    env,
-    logger,
-    account,
-    handshakeQuota,
-    clientChannel,
-  }: {
-    env: AppEnv;
-    logger: EventLogger;
-    account: AccountDependencies | undefined;
-    handshakeQuota: WsHandshakeQuota;
-    clientChannel?: ClientChannel;
-  }
-): Promise<void> => {
-  resolveAgentIdentity(context, env.mcpEnabled);
-  reserveHandshakeSlot(context, handshakeQuota);
-  try {
-    // 查库放在占位之后：被配额拒绝的握手不该先打一次数据库。
-    await resolveSocketAccount(context, account, logger);
-    if (clientChannel) resolveSocketChannel(context, clientChannel);
-  } catch (error) {
-    // 占位之后的步骤抛错，升级随之失败，open/close 都不会触发：当场归还。
-    context.handshakeLease?.release();
-    throw error;
-  }
-};
 
 /**
  * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
