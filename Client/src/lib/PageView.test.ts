@@ -44,6 +44,27 @@ describe("Agent 看到的页面", () => {
     ]);
   });
 
+  it("对人不可见的控件，Agent 既看不到也操作不了（模糊遮挡、压成一个像素）", () => {
+    mount(`
+      <div style="filter:blur(4px)">
+        <button data-agent-control="room.answer">答案</button>
+      </div>
+      <div style="position:absolute;width:1px;height:1px">
+        <button data-agent-control="room.clip">屏幕阅读器专用</button>
+      </div>
+      <button data-agent-control="room.ready">准备</button>
+    `);
+    const view = readPageView();
+    expect(view.controls.map((control) => control.id)).toEqual(["room.ready"]);
+    // 语义名是可猜的：看不到的控件即使猜中了名字也必须找不到。
+    expect(findPageControl("room.answer")).toBeNull();
+    expect(findPageControl("room.clip")).toBeNull();
+    expect(
+      isOperable(document.querySelector<HTMLElement>("[data-agent-control='room.answer']")!)
+    ).toBe(false);
+    expect(findPageControl("room.ready")).not.toBeNull();
+  });
+
   it("敏感区域与接管层对 Agent 不存在：读不到，也操作不了", () => {
     mount(`
       <section data-agent-sensitive>

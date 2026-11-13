@@ -177,23 +177,43 @@ export const controlLabelOf = (element: HTMLElement): string =>
   clip(element.title ?? "", MAX_LABEL) ||
   clip(element.textContent ?? "", MAX_LABEL);
 
-/** 控件当前值。密码类输入框永不读取：Agent 只需要知道它存在，填过什么不该再带出去。 */
-const controlValueOf = (element: HTMLElement): string | undefined => {
-  if (element instanceof HTMLInputElement) {
-    if (element.type === "password" || element.type === "checkbox" || element.type === "radio")
-      return undefined;
-    return element.value ? clip(element.value, MAX_LINE_LENGTH) : undefined;
-  }
-  if (element instanceof HTMLTextAreaElement)
-    return element.value ? clip(element.value, MAX_LINE_LENGTH) : undefined;
-  if (element instanceof HTMLSelectElement)
-    return clip(element.selectedOptions[0]?.textContent ?? "", MAX_LABEL) || undefined;
-  const ranged = element.getAttribute("aria-valuetext") ?? element.getAttribute("aria-valuenow");
-  if (ranged) return clip(ranged, MAX_LABEL);
-  if (element.getAttribute("role") === "combobox" || element.isContentEditable)
-    return clip(element.textContent ?? "", MAX_LINE_LENGTH) || undefined;
-  return undefined;
-};
+const NEVER_READ_INPUT_TYPES = new Set(["password", "checkbox", "radio"]);
+
+const rangedValueOf = (element: HTMLElement): string | null =>
+  element.getAttribute("aria-valuetext") ?? element.getAttribute("aria-valuenow");
+
+/**
+ * 控件当前值的读取表，按顺序取第一个命中的。表首的条目不可挪动：
+ * 密码类输入框永不读取，Agent 只需要知道它存在，填过什么不该再带出去；勾选类的状态走 `states`。
+ */
+const VALUE_READERS: ReadonlyArray<
+  readonly [
+    matches: (element: HTMLElement) => boolean,
+    read: (element: HTMLElement) => string | undefined,
+  ]
+> = [
+  [(e) => e instanceof HTMLInputElement && NEVER_READ_INPUT_TYPES.has(e.type), () => undefined],
+  [
+    (e) => e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement,
+    (e) => {
+      const { value } = e as HTMLInputElement;
+      return value ? clip(value, MAX_LINE_LENGTH) : undefined;
+    },
+  ],
+  [
+    (e) => e instanceof HTMLSelectElement,
+    (e) =>
+      clip((e as HTMLSelectElement).selectedOptions[0]?.textContent ?? "", MAX_LABEL) || undefined,
+  ],
+  [(e) => Boolean(rangedValueOf(e)), (e) => clip(rangedValueOf(e) ?? "", MAX_LABEL)],
+  [
+    (e) => e.getAttribute("role") === "combobox" || e.isContentEditable,
+    (e) => clip(e.textContent ?? "", MAX_LINE_LENGTH) || undefined,
+  ],
+];
+
+const controlValueOf = (element: HTMLElement): string | undefined =>
+  VALUE_READERS.find(([matches]) => matches(element))?.[1](element);
 
 const ARIA_STATES: ReadonlyArray<readonly [string, string, string]> = [
   ["aria-checked", "true", "checked"],
@@ -420,13 +440,23 @@ export const readPageView = (): SitePageView => {
   };
 };
 
-/** 人类此刻能不能操作这个元素：隐藏、敏感区域与接管层都不算。 */
+/**
+ * 人类此刻能不能操作这个元素：隐藏、敏感区域与接管层都不算。
+ * 与读视图共用同一个「对人不可见」判据，沿祖先链逐个核对：视图里没有列出的控件，
+ * 即使 Agent 猜中它的语义名也操作不了。
+ */
 export const isOperable = (element: HTMLElement): boolean => {
   if (!element.isConnected) return false;
-  if (element.closest(`${OFF_LIMITS_SELECTOR},[aria-hidden='true'],[inert],[hidden]`)) return false;
-  return typeof element.checkVisibility === "function"
-    ? element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
-    : true;
+  if (
+    typeof element.checkVisibility === "function" &&
+    !element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+  ) {
+    return false;
+  }
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (isHiddenFromHuman(node, getComputedStyle(node))) return false;
+  }
+  return true;
 };
 
 const namedControls = (id: string): HTMLElement[] =>
