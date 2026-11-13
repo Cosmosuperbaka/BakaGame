@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { LogOut, QrCode, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -11,9 +11,7 @@ import { SettingsAccordion } from "@/components/common/room/SettingsAccordion";
 import { NeteaseCloudMusicIcon, QQMusicIcon } from "@/components/common/MusicPlatformIcons";
 import {
   clearStoredSongMusicSession,
-  getStoredSongMusicSession,
   saveSongMusicSession,
-  onSongMusicSessionChanged,
   type SongMusicPlatform,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
@@ -21,17 +19,16 @@ import { readoutSwap } from "@/lib/Motion";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { vipBadge, vipText } from "./SongAccountBadges";
 import { errorMessage } from "./SongErrorMessage";
+import { SONG_PLATFORM_NAME, type QqScanMode, type QrCreateResponse } from "./SongQrLogin";
+import { useSongQrLogin } from "./UseSongQrLogin";
+import { useStoredSongMusicSession } from "./UseStoredSongMusicSession";
 import { AccountAvatar, VipStatus } from "./SongAccountIdentity";
 import type {
-  SonGuessrAck,
   SonGuessrMusicAccount,
   SonGuessrMusicPoolView,
   SonGuessrPlayerView,
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
-
-/** 二维码回包：形状由 shared 的 ack 契约给出，这里只留别名让状态与 props 好读。 */
-type QrCreateResponse = SonGuessrAck<"song.auth.qr.create">;
 
 export function SongAccountSettings({
   snapshot,
@@ -44,16 +41,20 @@ export function SongAccountSettings({
   return <RoomAccountSettings key={snapshot.roomId} snapshot={snapshot} me={me} />;
 }
 
-type QqScanMode = "qq" | "wx" | "mobile";
+/** 各平台在面板里的图标与分段标签；提示文案里的称呼见 SONG_PLATFORM_NAME。 */
+const PLATFORM_META: Record<
+  SongMusicPlatform,
+  { tabLabel: string; Icon: ComponentType<{ className?: string }> }
+> = {
+  netease: { tabLabel: "网易云音乐", Icon: NeteaseCloudMusicIcon },
+  qq: { tabLabel: "QQ音乐", Icon: QQMusicIcon },
+};
+const PLATFORMS: readonly SongMusicPlatform[] = ["netease", "qq"];
 
-const PLATFORM_TABS: readonly {
-  platform: SongMusicPlatform;
-  label: string;
-  Icon: ComponentType<{ className?: string }>;
-}[] = [
-  { platform: "netease", label: "网易云音乐", Icon: NeteaseCloudMusicIcon },
-  { platform: "qq", label: "QQ音乐", Icon: QQMusicIcon },
-];
+function PlatformIcon({ platform, className }: { platform: SongMusicPlatform; className: string }) {
+  const { Icon } = PLATFORM_META[platform];
+  return <Icon className={className} />;
+}
 
 /**
  * 平台切换器：分段单选，选中的那一端决定下方展示哪份账号信息与哪一条登录二维码。
@@ -76,12 +77,12 @@ function PlatformSwitcher({
       aria-label="音乐平台"
       value={active}
       onValueChange={onSelect}
-      options={PLATFORM_TABS.map(({ platform, label, Icon }) => ({
+      options={PLATFORMS.map((platform) => ({
         value: platform,
         label: (
           <span className="flex items-center gap-1.5">
-            <Icon className="size-3.5" />
-            <span>{label}</span>
+            <PlatformIcon platform={platform} className="size-3.5" />
+            <span>{PLATFORM_META[platform].tabLabel}</span>
             {ready[platform] ? (
               <>
                 <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
@@ -141,12 +142,6 @@ function ScanSteps({ platform, scanType }: { platform: SongMusicPlatform; scanTy
     </ol>
   );
 }
-
-const qrAlt = (platform: SongMusicPlatform): string =>
-  platform === "qq" ? "QQ音乐登录二维码" : "网易云登录二维码";
-
-const connectingLabel = (platform: SongMusicPlatform): string =>
-  platform === "qq" ? "正在连接QQ音乐账号…" : "正在连接网易云账号…";
 
 /** 二维码画框：拿到图就换图，否则按忙闲显示转圈或占位图标。
  *  画框底恒定取白而不跟随主题：二维码要一圈亮度恒定的静区才扫得出来，
@@ -318,45 +313,28 @@ function RoomAccountSettings({
   const [activePlatform, setActivePlatform] = useState<SongMusicPlatform>("netease");
   const [qqScanType, setQqScanType] = useState<QqScanMode>("qq");
 
-  const [storedNetease, setStoredNetease] = useState<StoredSongMusicSession | null>(() =>
-    getStoredSongMusicSession("netease")
-  );
-  const [storedQq, setStoredQq] = useState<StoredSongMusicSession | null>(() =>
-    getStoredSongMusicSession("qq")
-  );
-
-  const [rememberNetease, setRememberNetease] = useState(() => storedNetease?.persistent ?? true);
-  const [rememberQq, setRememberQq] = useState(() => storedQq?.persistent ?? true);
-
-  const [busy, setBusy] = useState(false);
+  const storedNetease = useStoredSongMusicSession("netease");
+  const storedQq = useStoredSongMusicSession("qq");
+  const [remember, setRemember] = useState<Record<SongMusicPlatform, boolean>>(() => ({
+    netease: storedNetease?.persistent ?? true,
+    qq: storedQq?.persistent ?? true,
+  }));
   const { sharingBusy, setSharing } = usePoolSharing();
-  const [qr, setQr] = useState<QrCreateResponse | null>(null);
-  const [qrStatus, setQrStatus] = useState("正在准备登录二维码…");
-  const qrCheckingRef = useRef<number | null>(null);
-  const loginGenerationRef = useRef(0);
-  const rememberRef = useRef({ netease: rememberNetease, qq: rememberQq });
-
-  const cancelLogin = useCallback(() => {
-    loginGenerationRef.current += 1;
-    qrCheckingRef.current = null;
-    setBusy(false);
-    setQr(null);
-  }, []);
-
-  useEffect(
-    () => () => {
-      loginGenerationRef.current += 1;
+  const {
+    qr,
+    status: qrStatus,
+    busy,
+    login,
+  } = useSongQrLogin({
+    send: sendCommand,
+    onAuthorized: (platform, session) => {
+      const account =
+        platform === "qq" ? { ...session.account, platform: "qq" as const } : session.account;
+      saveSongMusicSession({ cookie: session.cookie, account }, remember[platform], platform);
+      showToast(`${SONG_PLATFORM_NAME[platform]}账号已加载到当前房间`, "success");
     },
-    []
-  );
-
-  useEffect(() => {
-    const sync = () => {
-      setStoredNetease(getStoredSongMusicSession("netease"));
-      setStoredQq(getStoredSongMusicSession("qq"));
-    };
-    return onSongMusicSessionChanged(sync);
-  }, []);
+    onCreateFailed: (message) => showToast(message, "error"),
+  });
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;
   const poolAware = snapshot.musicPool !== undefined;
@@ -372,178 +350,49 @@ function RoomAccountSettings({
   // 只在「我这端既没进池、本机也没凭据」时才摆二维码；本机有凭据就等自动装载，先显示正在连接。
   const showQr = poolAware ? currentAccount === undefined && !currentStored : !currentStored;
 
-  const completeLogin = useCallback(
-    (platform: SongMusicPlatform, session: { cookie: string; account: SonGuessrMusicAccount }) => {
-      loginGenerationRef.current += 1;
-      const persistent = rememberRef.current[platform];
-      const accountToSave =
-        platform === "qq" ? { ...session.account, platform: "qq" as const } : session.account;
-      saveSongMusicSession(
-        { cookie: session.cookie, account: accountToSave },
-        persistent,
-        platform
-      );
-      if (platform === "qq") {
-        setStoredQq({ cookie: session.cookie, account: accountToSave, persistent });
-        showToast("QQ音乐账号已加载到当前房间", "success");
-      } else {
-        setStoredNetease({ cookie: session.cookie, account: accountToSave, persistent });
-        showToast("网易云账号已加载到当前房间", "success");
-      }
-      setQr(null);
-      setQrStatus("登录成功");
-    },
-    [showToast]
-  );
-
-  const createQr = useCallback(
-    async (targetPlatform = activePlatform, scanType = qqScanType) => {
-      const generation = ++loginGenerationRef.current;
-      setBusy(true);
-      try {
-        const result =
-          targetPlatform === "qq"
-            ? await sendCommand("song.auth.qr.create", {
-                platform: "qq",
-                type: scanType,
-              })
-            : await sendCommand("song.auth.qr.create");
-        if (generation !== loginGenerationRef.current) return;
-        setQr(result);
-        if (targetPlatform === "qq") {
-          setQrStatus(
-            scanType === "wx"
-              ? "请使用微信扫码"
-              : scanType === "mobile"
-                ? "请使用 QQ 音乐 App 扫码"
-                : "请使用手机 QQ 扫码"
-          );
-        } else {
-          setQrStatus("请使用网易云音乐 App 扫码");
-        }
-      } catch (error) {
-        if (generation !== loginGenerationRef.current) return;
-        setQrStatus(errorMessage(error, "二维码生成失败，请稍后重试"));
-        showToast(errorMessage(error, "二维码生成失败"), "error");
-      } finally {
-        if (generation === loginGenerationRef.current) setBusy(false);
-      }
-    },
-    [activePlatform, qqScanType, sendCommand, showToast]
-  );
-
-  const checkQr = useCallback(async () => {
-    if (!qr || qrCheckingRef.current === loginGenerationRef.current) return;
-    const generation = loginGenerationRef.current;
-    const qrKey = qr.key;
-    const platform = activePlatform;
-    const scanType = qqScanType;
-    qrCheckingRef.current = generation;
-    try {
-      const result =
-        platform === "qq"
-          ? await sendCommand("song.auth.qr.check", {
-              key: qrKey,
-              platform: "qq",
-              type: scanType,
-            })
-          : await sendCommand("song.auth.qr.check", { key: qrKey });
-      if (generation !== loginGenerationRef.current) return;
-      setQrStatus(result.message || "等待扫码");
-      if (result.status === "expired") {
-        setQr(null);
-        setQrStatus("二维码已过期，请点击刷新");
-      } else if (result.status === "authorized" && result.cookie && result.account) {
-        completeLogin(platform, { cookie: result.cookie, account: result.account });
-      }
-    } catch (error) {
-      if (generation !== loginGenerationRef.current) return;
-      const appError = error as { code?: string; message?: string };
-      if (appError.code === "MUSIC_LOGIN_RISK") {
-        setQr(null);
-        setQrStatus(
-          platform === "qq"
-            ? "QQ音乐暂时拒绝了本次登录，请稍后重新扫码"
-            : "网易云暂时拒绝了本次登录，请稍后重新扫码"
-        );
-      } else if (
-        appError.code === "MUSIC_LOGIN_CANCELLED" ||
-        appError.code === "MUSIC_LOGIN_FAILED" ||
-        appError.code === "MUSIC_SESSION_INVALID"
-      ) {
-        // 取消、授权失效与上游协议失败都是该二维码的终态：不再轮询同一张码
-        // （重复提交会反复消耗一次性授权），提示原因并等待玩家刷新。
-        setQr(null);
-        setQrStatus(appError.message ?? "登录失败，请点击刷新二维码");
-      } else {
-        setQrStatus(appError.message ?? "二维码状态检查失败");
-      }
-    } finally {
-      if (qrCheckingRef.current === generation) qrCheckingRef.current = null;
-    }
-  }, [activePlatform, completeLogin, qqScanType, qr, sendCommand]);
-
   useEffect(() => {
     if (!open || !showQr || !qr) return;
-    const timer = window.setInterval(() => void checkQr(), 2_000);
+    const timer = window.setInterval(() => void login.check(activePlatform, qqScanType), 2_000);
     return () => window.clearInterval(timer);
-  }, [checkQr, open, qr, showQr]);
+  }, [activePlatform, login, open, qqScanType, qr, showQr]);
 
   const refreshQr = () => {
-    cancelLogin();
-    void createQr(activePlatform, qqScanType);
+    login.cancel();
+    void login.start(activePlatform, qqScanType);
   };
 
   const switchPlatform = (platform: SongMusicPlatform) => {
     if (platform === activePlatform) return;
-    cancelLogin();
+    login.cancel();
     setActivePlatform(platform);
     const targetStored = platform === "qq" ? storedQq : storedNetease;
     if (!targetStored && open) {
-      void createQr(platform, qqScanType);
+      void login.start(platform, qqScanType);
     }
   };
 
   const handleQqScanTypeChange = (mode: QqScanMode) => {
     if (mode === qqScanType) return;
     setQqScanType(mode);
-    cancelLogin();
+    login.cancel();
     if (open && activePlatform === "qq" && !storedQq) {
-      void createQr("qq", mode);
+      void login.start("qq", mode);
     }
   };
 
-  /** 退出登录：清掉当前平台房间里的凭据与本机存储 */
+  /** 退出登录：清掉当前平台房间里的凭据与本机存储；服务端没清掉就什么都不动，让玩家重试。 */
   const logout = async () => {
-    cancelLogin();
-    const generation = loginGenerationRef.current;
     const platform = activePlatform;
-    setBusy(true);
-    try {
-      if (platform === "qq") {
-        await sendCommand("song.auth.clear", { platform: "qq" });
-      } else {
-        await sendCommand("song.auth.clear");
-      }
-    } catch {
-      // 服务端没清掉就不能谎称已退出：号还在账号池里被房内共享，本机凭据也留着，玩家可以重试。
-      if (generation !== loginGenerationRef.current) return;
-      setBusy(false);
+    const outcome = await login.clear(platform);
+    if (outcome === "superseded") return;
+    if (outcome === "failed") {
+      // 号还在账号池里被房内共享，本机凭据也留着，不能谎称已退出。
       showToast("退出失败，请重试", "error");
       return;
     }
-    if (generation !== loginGenerationRef.current) return;
-    setBusy(false);
     clearStoredSongMusicSession(platform);
-    if (platform === "qq") {
-      setStoredQq(null);
-      showToast("已退出QQ音乐账号", "success");
-    } else {
-      setStoredNetease(null);
-      showToast("已退出网易云账号", "success");
-    }
-    setQr(null);
-    if (open) void createQr(platform, qqScanType);
+    showToast(`已退出${SONG_PLATFORM_NAME[platform]}账号`, "success");
+    if (open) void login.start(platform, qqScanType);
   };
 
   const neteaseAccount = displayAccountFor(snapshot, me, "netease", storedNetease);
@@ -556,11 +405,10 @@ function RoomAccountSettings({
     account?: SonGuessrMusicAccount,
     connecting?: boolean
   ) => {
-    const isQq = platform === "qq";
-    const Icon = isQq ? QQMusicIcon : NeteaseCloudMusicIcon;
+    const { Icon } = PLATFORM_META[platform];
     const iconClass = "size-3.5 shrink-0";
 
-    const platformName = isQq ? "QQ音乐" : "网易云";
+    const platformName = SONG_PLATFORM_NAME[platform];
 
     if (account) {
       const vip = vipText(account);
@@ -603,12 +451,12 @@ function RoomAccountSettings({
 
   const toggle = (next: boolean) => {
     if (!next) {
-      cancelLogin();
+      login.cancel();
       setOpen(false);
       return;
     }
     setOpen(true);
-    if (showQr && !qr && !busy) void createQr(activePlatform, qqScanType);
+    if (showQr && !qr && !busy) void login.start(activePlatform, qqScanType);
   };
 
   const vip = currentAccount ? vipText(currentAccount) : null;
@@ -649,7 +497,7 @@ function RoomAccountSettings({
           ) : (
             <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
               <Spinner />
-              {connectingLabel(activePlatform)}
+              正在连接{SONG_PLATFORM_NAME[activePlatform]}账号…
             </p>
           )}
           <PoolSharingRow
@@ -679,7 +527,7 @@ function RoomAccountSettings({
           ) : null}
 
           <div className="flex flex-wrap items-center gap-4">
-            <QrFrame qr={qr} busy={busy} alt={qrAlt(activePlatform)} />
+            <QrFrame qr={qr} busy={busy} alt={`${SONG_PLATFORM_NAME[activePlatform]}登录二维码`} />
             <div className="min-w-0 basis-44 flex-1 space-y-3">
               <ScanSteps platform={activePlatform} scanType={qqScanType} />
               <p aria-live="polite" className="text-sm">
@@ -700,16 +548,10 @@ function RoomAccountSettings({
           <SettingSwitchRow
             label="保存登录状态"
             description="仅保存在当前浏览器；登录本站并开启云同步时，会加密存入你的云端设置，换设备自动登录。关闭则只在本标签页有效，不会上传"
-            checked={activePlatform === "qq" ? rememberQq : rememberNetease}
-            onCheckedChange={(value) => {
-              if (activePlatform === "qq") {
-                rememberRef.current.qq = value;
-                setRememberQq(value);
-              } else {
-                rememberRef.current.netease = value;
-                setRememberNetease(value);
-              }
-            }}
+            checked={remember[activePlatform]}
+            onCheckedChange={(value) =>
+              setRemember((current) => ({ ...current, [activePlatform]: value }))
+            }
           />
         </div>
       </CollapsibleRegion>

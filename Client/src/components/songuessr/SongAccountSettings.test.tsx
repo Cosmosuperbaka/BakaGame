@@ -257,6 +257,23 @@ describe("SongAccountSettings", () => {
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
 
+  it("本机凭据在别处写入或清除时，面板跟着变（走模块订阅，不靠窗口事件）", () => {
+    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    const toggle = screen.getByRole("button", { name: /音乐账号配置/ });
+    expect(within(toggle).getAllByText("未配置")).toHaveLength(2);
+
+    act(() => {
+      saveSongMusicSession(
+        { cookie: "MUSIC_U=from-cloud", account: { nickname: "云端账号", vipStatus: "nonVip" } },
+        true
+      );
+    });
+    expect(within(toggle).getByText("正在连接网易云账号…")).toBeInTheDocument();
+
+    act(() => clearStoredSongMusicSession("netease"));
+    expect(within(toggle).getAllByText("未配置")).toHaveLength(2);
+  });
+
   it("说明如实：不声称服务器完全不保存，写明云同步与保存登录状态的关系", () => {
     render(<SongAccountSettings snapshot={snapshot(false)} />);
     fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
