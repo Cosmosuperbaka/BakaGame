@@ -19,10 +19,6 @@ import {
 } from "../../shared/Index";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
-/** 房间内在线玩家数。 */
-export const getOnlineCount = (room: WhoIsFakerRoomRecord): number =>
-  Object.values(room.players).filter((player) => player.online).length;
-
 /** 正式席位（membership 为 active）的玩家 id，不含旁观者。 */
 export const getActivePlayerIds = (room: WhoIsFakerRoomRecord): string[] =>
   Object.values(room.players)

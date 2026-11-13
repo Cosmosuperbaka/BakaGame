@@ -5,7 +5,6 @@ import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   type ChatChannel,
-  type ChatMessage,
   type ConnectionRecord,
   type WhoIsFakerPhase,
   type GameRound,
@@ -41,22 +40,17 @@ import {
 import type { LogEntry } from "../infrastructure/EventLogger";
 
 import { describeError, EventLogger } from "../infrastructure/EventLogger";
-import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import type { WordBankRepository } from "../infrastructure/WordBankRepository";
 import { createEvent } from "../transport/Packets";
 import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 
-import {
-  QUESTIONER_RECONNECT_TIMEOUT_MS,
-  ROOM_EXPIRING_WARNING_MS,
-  CHAT_LIMIT,
-  CHAT_RATE_LIMIT_PER_CONNECTION,
-  CHAT_RATE_LIMIT_WINDOW_MS,
-} from "../config/Constants";
+import { QUESTIONER_RECONNECT_TIMEOUT_MS, ROOM_EXPIRING_WARNING_MS } from "../config/Constants";
 import { ConnectionRegistry } from "./ConnectionRegistry";
 import { LobbyFanout, type LobbyFanoutSchedule } from "./LobbyFanout";
 import { resolveHostGrace, transferHost } from "./room/HostPolicy";
+import { acceptChatText, appendChat, ChatLimiter, systemMessage } from "./room/ChatLog";
 import { RoomIdReservations } from "./room/RoomIdReservations";
+import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { RoomTimers, type TimerSeam } from "./room/RoomTimers";
 import { IdCounter } from "./room/IdCounter";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
@@ -122,7 +116,6 @@ import {
   createDescriptionOrder,
   ensureCanVote,
   getConfigurableParticipantCount,
-  getOnlineCount,
   getParticipantCount,
   hasValidQuestionerCandidate,
   isDescriptionComplete,
@@ -239,11 +232,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   });
   /** 私密房口令：规范化、摘要与入房校验（含两层尝试限流）。 */
   private readonly passwords: RoomPasswordGate;
-  /** 每条聊天都会广播全房快照，限流口径与 SonGuessr 一致。 */
-  private readonly chatLimiter = new SlidingWindowRateLimiter({
-    windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
-    maxRequests: CHAT_RATE_LIMIT_PER_CONNECTION,
-  });
+  /** 每条聊天都会广播全房快照：每连接的聊天额度。 */
+  private readonly chatLimiter: ChatLimiter;
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobbyFanout: LobbyFanout;
   /** 号的形状只认本玩法自己发的前缀：快照恢复后据此把计数器抬过已用过的最大序号。 */
@@ -268,6 +258,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       hasher: options.passwordHasher,
     });
     this.connectionRegistry = new ConnectionRegistry();
+    this.chatLimiter = new ChatLimiter({ now: () => this.now() });
     this.timers = new RoomTimers({
       onError: (roomId, name, error) =>
         this.options.eventLogger.error("房间定时器回调失败", {
@@ -424,7 +415,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
    * 与它加出来的机器人仍要回收，否则只能靠重启释放。
    */
   private async reclaimIdleRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<boolean> {
-    const onlineCount = getOnlineCount(room);
+    const onlineCount = countOnline(Object.values(room.players));
     if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
       markIdleWarningSent(room);
       this.broadcastRoomEvent(room, "room.expiring", {
@@ -591,7 +582,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       roomCount: this.rooms.size,
       connectionCount: this.connectionRegistry.stats.totalConnections,
       onlinePlayerCount: [...this.rooms.values()].reduce(
-        (sum, room) => sum + getOnlineCount(room),
+        (sum, room) => sum + countOnline(Object.values(room.players)),
         0
       ),
     };
@@ -608,47 +599,28 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   }
 
   adminListRooms(): AdminRoomView[] {
-    return [...this.rooms.values()].map((room) => ({
-      game: "faker",
-      roomId: room.id,
-      name: room.settings.name,
-      phase: room.round?.phase ?? "waiting",
-      visibility: room.settings.visibility,
-      hasPassword: Boolean(room.passwordHash),
-      hidden: this.testRooms.isTestRoom(room.id),
-      roundNumber: room.roundCount ?? 0,
-      createdAt: room.createdAt,
-      lastActiveAt: room.lastActivityAt,
-      players: Object.values(room.players)
-        .filter((player) => player.membership !== "kicked")
-        .map((player) => ({
-          id: player.id,
-          name: player.name,
-          online: player.online,
-          membership: player.membership,
-          host: player.id === room.hostPlayerId,
-          bot: player.isBot,
-          userId: player.account?.userId ?? null,
-        })),
-    }));
+    return [...this.rooms.values()].map((room) =>
+      adminRoomView(room, Object.values(room.players), {
+        game: "faker",
+        name: room.settings.name,
+        phase: room.round?.phase ?? "waiting",
+        visibility: room.settings.visibility,
+        hidden: this.testRooms.isTestRoom(room.id),
+        roundNumber: room.roundCount ?? 0,
+      })
+    );
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {
-    await this.closeRoom(this.requireAdminRoom(roomId), ADMIN_CLOSE_REASON);
+    await this.closeRoom(requireAdminRoom(this.rooms, roomId), ADMIN_CLOSE_REASON);
   }
 
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
-    const room = this.requireAdminRoom(roomId);
+    const room = requireAdminRoom(this.rooms, roomId);
     const target = room.players[playerId];
     if (!target || target.membership === "kicked")
       throw new AppError("PLAYER_NOT_FOUND", "目标玩家不存在");
     await this.kickPlayer(room, target, "管理员");
-  }
-
-  private requireAdminRoom(roomId: string): WhoIsFakerRoomRecord {
-    const room = this.rooms.get(roomId);
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
-    return room;
   }
 
   private async createRoom(
@@ -1571,28 +1543,24 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   private async sendChat(connection: ConnectionRecord, text: string) {
     // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
     const { room, player } = this.requireRoomPlayer(connection);
-    if (!this.chatLimiter.allow(connection.id, this.now())) {
-      throw new AppError("RATE_LIMITED", "发言过于频繁，请稍后再试");
-    }
-    const normalized = normalizeWord(text);
-
-    if (!normalized) {
-      throw new AppError("INVALID_CHAT", "聊天内容不能为空");
-    }
-    assertTextAllowed(normalized);
+    this.chatLimiter.consume(connection.id);
+    const normalized = acceptChatText(text, {
+      maxLength: undefined,
+      emptyError: { code: "INVALID_CHAT", message: "聊天内容不能为空" },
+    });
 
     const { channel, ghostRole } = this.chatChannelOf(room, player);
 
-    const message = this.createChatMessage(
-      player.id,
-      player.name,
-      normalized,
-      false,
+    appendChat(room, {
+      id: this.createId("chat"),
+      playerId: player.id,
+      playerName: player.name,
+      text: normalized,
+      createdAt: this.now(),
+      system: false,
       channel,
-      ghostRole
-    );
-    room.chat.push(message);
-    room.chat = room.chat.slice(-CHAT_LIMIT);
+      ghostRole,
+    });
     this.touch(room);
 
     await this.log({
@@ -1735,29 +1703,11 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
     return attachConnection(this, room, player, connection);
   }
 
-  private createChatMessage(
-    playerId: string,
-    playerName: string,
-    text: string,
-    system: boolean,
-    channel?: ChatChannel,
-    ghostRole?: "dead" | "spectator"
-  ): ChatMessage {
-    return {
-      id: this.createId("chat"),
-      playerId,
-      playerName,
-      text,
-      createdAt: this.now(),
-      system,
-      channel,
-      ghostRole,
-    };
-  }
-
   appendSystemMessage(room: WhoIsFakerRoomRecord, text: string) {
-    room.chat.push(this.createChatMessage("system", "系统", text, true, "main"));
-    room.chat = room.chat.slice(-CHAT_LIMIT);
+    appendChat(
+      room,
+      systemMessage({ id: this.createId("chat"), text, createdAt: this.now(), channel: "main" })
+    );
   }
 
   describePhaseChange(snapshot: WhoIsFakerRoomSnapshot, room: WhoIsFakerRoomRecord): string {

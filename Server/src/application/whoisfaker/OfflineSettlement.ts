@@ -19,9 +19,10 @@ import {
 import { reassignHost } from "../room/HostPolicy";
 import { markSeatOffline } from "../room/SeatBinding";
 import { runBots } from "./BotActors";
+import { countOnline } from "../room/RoomSummaries";
 import { clearPhaseTimer, finishRound } from "./PhaseFlow";
 import { broadcastRoomEvent, getCurrentSpeechState, publishLobby, publishRoom } from "./RoomViews";
-import { getOnlineCount, normalizeRoomRoleConfig } from "./RoundRules";
+import { normalizeRoomRoleConfig } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
 /** 玩家离线的两种来源：连接断开与主动离开房间。 */
@@ -241,7 +242,7 @@ const publishOrCloseIfEmpty = async (
   room: WhoIsFakerRoomRecord,
   reason: PlayerOfflineReason
 ) => {
-  if (reason === "leave" && getOnlineCount(room) === 0) {
+  if (reason === "leave" && countOnline(Object.values(room.players)) === 0) {
     await service.closeRoom(room, "empty");
     return;
   }
