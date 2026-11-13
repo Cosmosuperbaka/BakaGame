@@ -8,10 +8,9 @@ import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
 import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import { resolveAnimeSong, resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
+import { clearMusicSession, refreshMusicSessionAccount } from "./songuessr/MusicAuth";
 import {
-  clearMusicSession,
   loadSongWithSources,
-  refreshMusicSessionAccount,
   refreshRoundAudio,
   scheduleMusicSessionRefresh,
 } from "./songuessr/MusicAccounts";

@@ -8,7 +8,7 @@ import {
   createMusicQrLogin,
   setPoolSharing,
   useMusicCookie,
-} from "./MusicAccounts";
+} from "./MusicAuth";
 import {
   getAnimeSongs,
   getSubjectImage,

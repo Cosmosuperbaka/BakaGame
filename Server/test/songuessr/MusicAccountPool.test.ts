@@ -20,10 +20,8 @@ import {
   startRound,
 } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import {
-  publishMusicSession,
-  refreshMusicPoolEntry,
-} from "../../src/application/songuessr/MusicAccounts";
+import { publishMusicSession } from "../../src/application/songuessr/MusicAuth";
+import { refreshMusicPoolEntry } from "../../src/application/songuessr/MusicAccounts";
 import { releaseMusicAccount } from "../../src/application/songuessr/MusicPool";
 import {
   SongDetails,
