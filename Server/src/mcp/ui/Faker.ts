@@ -1,4 +1,4 @@
-import { FAKER_DESCRIPTION_MAX_UNITS, textUnits } from "../../shared/TextUnits";
+import { fakerDescriptionOverflow } from "../../shared/TextUnits";
 import { ABSTAIN_TARGET_ID } from "../../shared/WhoIsFaker";
 import {
   assemble,
@@ -516,11 +516,9 @@ const clickFakerBasic = async (context: UiContext, id: string): Promise<string |
     const value = needDraft(context, "faker.description.input", "描述内容").trim();
     if (!value) throw new Error("描述内容不能为空");
     // 超长如实拒绝而不是静默截断：截断后的内容 Agent 并不知情，却会被当作它的发言公开给全桌。
-    const units = textUnits(value);
-    if (units > FAKER_DESCRIPTION_MAX_UNITS)
-      throw new Error(
-        `描述超出上限：最多 ${FAKER_DESCRIPTION_MAX_UNITS} 个字宽单位（约 10 个汉字或 20 个英文字符，汉字与全角字符算 2），当前 ${units}；请缩短后再发送`
-      );
+    // 判定与服务端命令入口是同一个函数；这里先拒是为了让说明带上「请缩短后再发送」。
+    const overflow = fakerDescriptionOverflow(value);
+    if (overflow) throw new Error(`${overflow}；请缩短后再发送`);
     await send(context, "game.submitDescription", { text: value });
     delete context.state.drafts["faker.description.input"];
     return "描述已发送";

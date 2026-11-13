@@ -14,6 +14,7 @@ import {
   SERVER_SHUTDOWN_MESSAGE,
 } from "../shared/Index";
 import type { SnapshottedRoom } from "../shared/RoomSnapshot";
+import { fakerDescriptionOverflow } from "../shared/TextUnits";
 import { tabSeatId } from "./TabSeat";
 import type { GameService } from "./GameService";
 import {
@@ -958,6 +959,9 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
     if (!normalized) {
       throw new AppError("INVALID_DESCRIPTION", "描述不能为空");
     }
+    // 协议只限 500 个字符，字宽上限必须在这里强制：改过的客户端不受输入框约束。
+    const overflow = fakerDescriptionOverflow(normalized);
+    if (overflow) throw new AppError("INVALID_DESCRIPTION", overflow);
     assertTextAllowed(normalized);
 
     const pendingSupplement =
