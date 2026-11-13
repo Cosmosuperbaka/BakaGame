@@ -20,7 +20,6 @@ export type ClientSentryTransportOptions = Parameters<typeof Sentry.makeFetchTra
 export interface SentrySdkDriver {
   init: (options: Sentry.BrowserOptions) => void;
   captureException: (error: unknown) => string;
-  captureMessage: (message: string, level?: Sentry.SeverityLevel) => string;
   withScope: (callback: (scope: Sentry.Scope) => void) => void;
   log: (
     level: ClientLogLevel,
@@ -87,7 +86,6 @@ export const wrapTelemetryTransport = (
 const defaultDriver: SentrySdkDriver = {
   init: (opts) => Sentry.init(opts),
   captureException: (err) => Sentry.captureException(err),
-  captureMessage: (msg, lvl) => Sentry.captureMessage(msg, lvl),
   withScope: (cb) => Sentry.withScope(cb),
   log: (level, message, attributes) => {
     const attrs = attributes as never;
@@ -239,24 +237,6 @@ export const captureClientException = (error: unknown, context?: Record<string, 
       scope.setExtras(context);
     }
     activeDriver.captureException(error);
-  });
-};
-
-export const captureClientMessage = (
-  message: string,
-  level: Sentry.SeverityLevel = "info",
-  context?: Record<string, unknown>
-): void => {
-  if (!isInitialized) return;
-
-  activeDriver.withScope((scope) => {
-    if (context) {
-      if (context.traceId && typeof context.traceId === "string") {
-        scope.setTag("traceId", context.traceId);
-      }
-      scope.setExtras(context);
-    }
-    activeDriver.captureMessage(message, level);
   });
 };
 

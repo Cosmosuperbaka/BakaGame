@@ -4,7 +4,6 @@ import {
   initClientSentry,
   isInjectedBrowserAdRejection,
   captureClientException,
-  captureClientMessage,
   captureClientLog,
   countClientMetric,
   recordClientMetric,
@@ -23,7 +22,6 @@ const createMockDriver = () => {
   const driver: SentrySdkDriver = {
     init: vi.fn(),
     captureException: vi.fn(),
-    captureMessage: vi.fn(),
     withScope: vi.fn(),
     log: vi.fn(),
     metricCount: vi.fn(),
@@ -317,13 +315,13 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     expect(mockDriver.makeTransport).toHaveBeenCalledTimes(1);
   });
 
-  it("captureClientException 与 captureClientMessage 在初始化后正常派发", () => {
+  it("captureClientException 在初始化后正常派发，并带上追踪号标签", () => {
     const mockDriver = createMockDriver();
     const mockCaptureException = mockDriver.captureException as ReturnType<typeof vi.fn>;
-    const mockCaptureMessage = mockDriver.captureMessage as ReturnType<typeof vi.fn>;
     const mockWithScope = mockDriver.withScope as ReturnType<typeof vi.fn>;
+    const setTag = vi.fn();
     mockWithScope.mockImplementation((cb) => {
-      cb({ setTag: vi.fn(), setExtras: vi.fn() });
+      cb({ setTag, setExtras: vi.fn() });
     });
 
     initClientSentry(
@@ -336,10 +334,7 @@ describe("Client Sentry 客户端接入与异常转发", () => {
     captureClientException(new Error("渲染崩溃测试"), { traceId: "test-trace-1" });
     expect(mockWithScope).toHaveBeenCalledTimes(1);
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
-
-    captureClientMessage("手动上报告警", "warning", { traceId: "test-trace-2" });
-    expect(mockWithScope).toHaveBeenCalledTimes(2);
-    expect(mockCaptureMessage).toHaveBeenCalledWith("手动上报告警", "warning");
+    expect(setTag).toHaveBeenCalledWith("traceId", "test-trace-1");
   });
 
   it("严格禁止注册性能剖析集成与采样率，避免触发浏览器策略违规", () => {
