@@ -23,9 +23,13 @@ describe("useCopyFeedback", () => {
     expect(ok).toBe(true);
     expect(writeText).toHaveBeenCalledWith("abc");
     expect(result.current.copied).toBe("code");
-    act(() => vi.advanceTimersByTime(999));
+    await act(async () => {
+      vi.advanceTimersByTime(999);
+    });
     expect(result.current.copied).toBe("code");
-    act(() => vi.advanceTimersByTime(1));
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
     expect(result.current.copied).toBeNull();
   });
 
@@ -35,13 +39,19 @@ describe("useCopyFeedback", () => {
     await act(async () => {
       await result.current.copy("a", "first");
     });
-    act(() => vi.advanceTimersByTime(800));
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+    });
     await act(async () => {
       await result.current.copy("b", "second");
     });
-    act(() => vi.advanceTimersByTime(800));
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+    });
     expect(result.current.copied).toBe("second");
-    act(() => vi.advanceTimersByTime(200));
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
     expect(result.current.copied).toBeNull();
   });
 
