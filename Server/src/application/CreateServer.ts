@@ -68,10 +68,7 @@ import type { TestRoomPolicy } from "../domain/TestRooms";
 
 /** 生产资源的唯一装配入口；文档与隔离路由测试不调用它。 */
 export function createServer(
-  options: Omit<
-    AppDependencies,
-    "whoIsFakerService" | "sonGuessrService" | "ceeService" | "disposeResources"
-  > & {
+  options: Omit<AppDependencies, "games" | "disposeResources"> & {
     database?: Database;
     gameRecords?: GameRecordService;
     /** 运行期旋钮快照：由入口创建，测试房策略与它的开关同源。 */
@@ -315,9 +312,7 @@ export function createServer(
     statusSamples,
     statusEvents,
     statusExternalProbe,
-    whoIsFakerService: faker,
-    sonGuessrService: song,
-    ceeService: cee,
+    games,
     account,
     clientChannel,
     clientArtifacts,

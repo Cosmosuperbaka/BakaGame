@@ -27,7 +27,7 @@ function fixture(badHealth = false) {
       bangumiImageUrl: "",
       maintenanceToken: "fixture-token",
     },
-    whoIsFakerService: faker,
+    games: { faker },
     logger,
   });
   return {

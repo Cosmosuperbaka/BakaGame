@@ -167,8 +167,8 @@ function setup(options: { fetcher?: typeof fetch; initialClock?: number } = {}) 
       bangumiApiUrl: "https://bangumi.invalid",
       bangumiImageUrl: "",
     },
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
-    ceeService: service,
+    games: { faker: new WhoIsFakerService({ eventLogger: logger }), cee: service },
+    
     logger,
   });
   app.listen({ hostname: "127.0.0.1", port: 0 });

@@ -144,7 +144,7 @@ test("Elysia 原生 app.handle 可以直接测试 HTTP 与 CORS 逻辑", async (
   const logger = new EventLogger();
   const { app } = createApp({
     env,
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     logger,
   });
 
@@ -234,7 +234,7 @@ const startTestServer = (options?: {
   });
   const { app } = createApp({
     env,
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     logger,
     isShuttingDown: options?.isShuttingDown ?? (() => shuttingDown),
     siteFeatures: options?.siteFeatures,
@@ -633,7 +633,7 @@ test("HTTP 请求体超过上限由运行时回 413，不进业务解析", async
   const { app } = createApp({
     env,
     logger,
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
   });
   const started = app.listen({
     hostname: env.serverListenHost,
@@ -769,7 +769,7 @@ test("系统探针 /livez 与 /readyz 正确反映就绪度与优雅停机状态
 
   const { app } = createApp({
     env,
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     logger,
     isShuttingDown: () => shuttingDown,
   });
@@ -1195,7 +1195,7 @@ test("关闭文档页时 /openapi 落到 404 信封，不再向公网公开整�
     createApp({
       env: { ...env, openapiEnabled },
       logger,
-      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+      games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
     }).app;
   const closed = await build(false).handle(new Request("http://localhost/openapi/json"));
   expect(closed.status).toBe(404);

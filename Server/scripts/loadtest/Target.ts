@@ -1,4 +1,5 @@
 import { CEEService } from "../../src/application/CEEService";
+import { eachGame, type GameServices } from "../../src/application/GameRegistry";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { WhoIsFakerService } from "../../src/application/WhoIsFakerService";
 import { readEnv } from "../../src/config/Env";
@@ -21,13 +22,14 @@ import {
 
 const env = readEnv();
 const logger = new EventLogger();
-const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
-const sonGuessrService = new SonGuessrService({
+const faker = new WhoIsFakerService({ eventLogger: logger });
+const song = new SonGuessrService({
   eventLogger: logger,
   musicProvider: createStubMusicProvider(),
   bangumiProvider: createStubBangumiProvider(),
 });
-const ceeService = new CEEService({ data: createStubCEEDataProvider(), eventLogger: logger });
+const cee = new CEEService({ data: createStubCEEDataProvider(), eventLogger: logger });
+const games: GameServices = { faker, song, cee };
 
 // 握手配额按客户端地址分桶：压测的几百条连接都来自同一台机器，真实额度会先把它们挡在
 // 闸门外，测到的就只是这条防御。放开额度只发生在本进程，生产装配线仍用常量默认值。
@@ -41,20 +43,16 @@ const handshakeQuota = new WsHandshakeQuota({
 const { app, dispose } = createApp({
   env,
   logger,
-  whoIsFakerService,
-  sonGuessrService,
-  ceeService,
+  games,
   handshakeQuota,
   disposeResources: async () => {
-    await ceeService.close();
+    await cee.close();
   },
 });
 
 // 与 Index.ts 一致的 10 s 房务：不清房间就会让长测的内存曲线失真。
 const housekeepingId = setInterval(() => {
-  void whoIsFakerService.runHousekeeping().catch(() => {});
-  void sonGuessrService.runHousekeeping().catch(() => {});
-  void ceeService.runHousekeeping().catch(() => {});
+  eachGame(games, (_, service) => void service.runHousekeeping().catch(() => {}));
 }, 10_000);
 
 const metricsPort = Number(Bun.env.LOADTEST_METRICS_PORT ?? env.serverPort + 1);
@@ -76,9 +74,6 @@ lagId.unref();
 const snapshot = () => {
   const cpu = process.cpuUsage(cpuBase);
   const memory = process.memoryUsage();
-  const health = (service: {
-    getHealthSnapshot(): { roomCount: number; connectionCount: number; onlinePlayerCount: number };
-  }) => service.getHealthSnapshot();
   return {
     at: Date.now(),
     uptimeMs: Date.now() - startedAt,
@@ -89,9 +84,9 @@ const snapshot = () => {
     heapUsedBytes: memory.heapUsed,
     externalBytes: memory.external ?? 0,
     arrayBuffersBytes: (memory as { arrayBuffers?: number }).arrayBuffers ?? 0,
-    faker: health(whoIsFakerService),
-    song: health(sonGuessrService),
-    cee: health(ceeService),
+    faker: games.faker.getHealthSnapshot(),
+    song: games.song.getHealthSnapshot(),
+    cee: games.cee.getHealthSnapshot(),
   };
 };
 
@@ -112,9 +107,7 @@ const shutdown = async () => {
   clearInterval(housekeepingId);
   clearInterval(lagId);
   try {
-    whoIsFakerService.notifyShutdown();
-    sonGuessrService.notifyShutdown();
-    ceeService.notifyShutdown();
+    eachGame(games, (_, service) => service.notifyShutdown());
     await app.stop(true);
     await dispose();
     await metricsServer.stop(true);

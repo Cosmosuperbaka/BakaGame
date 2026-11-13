@@ -23,7 +23,11 @@ const baseEnv = (overrides: Partial<AppEnv> = {}): AppEnv => ({
 const start = (overrides: Partial<AppEnv> = {}) => {
   const logger = new EventLogger();
   const whoIsFakerService = new WhoIsFakerService({ eventLogger: logger });
-  const { app } = createTestApp({ env: baseEnv(overrides), whoIsFakerService, logger });
+  const { app } = createTestApp({
+    env: baseEnv(overrides),
+    games: { faker: whoIsFakerService },
+    logger,
+  });
   const started = app.listen({ hostname: "127.0.0.1", port: 0 });
   const port = started.server?.port;
   if (!port) throw new Error("未能获取测试端口");

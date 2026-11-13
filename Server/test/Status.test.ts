@@ -548,7 +548,7 @@ test("完整应用装配后 /api/status 可访问，版本号与 changelog.json 
   };
   const { app } = createTestApp({
     env,
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: new EventLogger() }),
+    games: { faker: new WhoIsFakerService({ eventLogger: new EventLogger() }) },
     logger: new EventLogger(),
   });
 

@@ -161,9 +161,11 @@ test("CORS 支持 POST 预检与 x-trace-id 头，并放行局域网私网 IP", 
   };
   const { app } = createApp({
     env,
-    whoIsFakerService: new WhoIsFakerService({
-      eventLogger: new EventLogger(),
-    }),
+    games: {
+      faker: new WhoIsFakerService({
+        eventLogger: new EventLogger(),
+      }),
+    },
     logger: new EventLogger(),
   });
 
@@ -417,7 +419,7 @@ test("App.ts HTTP 路由在最终响应日志中贯穿 traceId", async () => {
 
   const { app, dispose } = createApp({
     env,
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     logger: mockLogger,
   });
 

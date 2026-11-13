@@ -38,7 +38,7 @@ describe("账号系统未启用", () => {
     const { app } = createTestApp({
       env,
       logger,
-      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+      games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
     });
     for (const url of ["/api/auth/get-session", "/api/account/avatar/someone"]) {
       const response = await app.handle(new Request(`http://localhost${url}`));
@@ -77,7 +77,7 @@ describe("账号路由限流", () => {
     return createTestApp({
       env,
       logger,
-      whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+      games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
     }).app;
   };
 

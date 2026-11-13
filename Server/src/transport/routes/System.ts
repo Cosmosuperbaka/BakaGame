@@ -1,9 +1,7 @@
 import { Elysia, t } from "elysia";
 import { safeEqualToken } from "../../domain/Rules";
 
-import type { WhoIsFakerService } from "../../application/WhoIsFakerService";
-import type { SonGuessrService } from "../../application/SonGuessrService";
-import type { CEEService } from "../../application/CEEService";
+import type { GameServices } from "../../application/GameRegistry";
 import { resolveDeploymentEnvironment } from "../../config/env/Observability";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
@@ -68,9 +66,8 @@ export const shutdownRejection = (
 };
 
 export interface SystemRoutesDependencies {
-  whoIsFakerService?: WhoIsFakerService;
-  sonGuessrService?: SonGuessrService;
-  ceeService?: CEEService;
+  /** 缺省时（独立挂载本组路由的测试与接口文档导出）健康快照全为零、停机通知空转。 */
+  games?: GameServices;
   logger?: EventLogger;
   maintenanceToken?: string;
   isShuttingDown?: () => boolean;
@@ -80,17 +77,13 @@ export interface SystemRoutesDependencies {
 }
 
 export const systemRoutes = ({
-  whoIsFakerService,
-  sonGuessrService,
-  ceeService,
+  games,
   logger,
   isShuttingDown,
   onTriggerShutdown,
   probeRateLimiter,
   maintenanceToken,
 }: SystemRoutesDependencies) => {
-  const fakerService = whoIsFakerService;
-  const songService = sonGuessrService;
   const probeLimiter =
     probeRateLimiter ??
     new ThreeTierRateLimiter({
@@ -172,18 +165,18 @@ export const systemRoutes = ({
           return httpError("RATE_LIMITED", "状态查询过于频繁，请稍后重试", traceIdOf(set.headers));
         }
 
-        const fakerHealth = fakerService?.getHealthSnapshot() ?? {
+        const fakerHealth = games?.faker.getHealthSnapshot() ?? {
           roomCount: 0,
           connectionCount: 0,
           onlinePlayerCount: 0,
         };
-        const sonHealth = songService?.getHealthSnapshot() ?? {
+        const sonHealth = games?.song.getHealthSnapshot() ?? {
           roomCount: 0,
           connectionCount: 0,
           onlinePlayerCount: 0,
         };
 
-        const ceeHealth = ceeService?.getHealthSnapshot() ?? {
+        const ceeHealth = games?.cee.getHealthSnapshot() ?? {
           roomCount: 0,
           connectionCount: 0,
           onlinePlayerCount: 0,
@@ -241,9 +234,9 @@ export const systemRoutes = ({
           return httpError("FORBIDDEN", "运维接口需要维护凭据", traceIdOf(set.headers));
         }
 
-        fakerService?.notifyShutdown();
-        songService?.notifyShutdown();
-        ceeService?.notifyShutdown();
+        games?.faker.notifyShutdown();
+        games?.song.notifyShutdown();
+        games?.cee.notifyShutdown();
 
         if (onTriggerShutdown) {
           await onTriggerShutdown();

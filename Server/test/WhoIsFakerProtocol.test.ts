@@ -239,7 +239,7 @@ test("协议辅助包与 Elysia 原生 OpenAPI 快照可以正确生成", async 
       bangumiApiUrl: "https://api.bgm.tv",
       bangumiImageUrl: "",
     },
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     logger,
   });
 

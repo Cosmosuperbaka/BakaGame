@@ -22,7 +22,7 @@ const boot = (env: AppEnv, logger: EventLogger) =>
   createTestApp({
     env,
     logger,
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: logger }),
+    games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
   });
 
 const captureLogger = () => {

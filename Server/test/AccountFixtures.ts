@@ -562,7 +562,7 @@ export const createAccountTestApp = (
   const { app } = createTestApp({
     env,
     logger,
-    whoIsFakerService,
+    games: { faker: whoIsFakerService },
     account: { auth, service, userData, admin, visits, ready: Promise.resolve() },
   });
 

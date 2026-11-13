@@ -3,8 +3,7 @@ import { expect, test } from "bun:test";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
 import { resolveDeploymentEnvironment } from "../src/config/env/Observability";
-import type { CEEService } from "../src/application/CEEService";
-import type { SonGuessrService } from "../src/application/SonGuessrService";
+import type { GameServices } from "../src/application/GameRegistry";
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import { systemRoutes } from "../src/transport/routes/System";
 import { ThreeTierRateLimiter } from "../src/infrastructure/RateLimiter";
@@ -25,7 +24,7 @@ const appUnderTest = () =>
   createTestApp({
     env,
     logger: silentLogger,
-    whoIsFakerService: new WhoIsFakerService({ eventLogger: silentLogger }),
+    games: { faker: new WhoIsFakerService({ eventLogger: silentLogger }) },
   }).app;
 
 test("HTTP 出口统一带安全响应头，明文直连不回 HSTS", async () => {
@@ -64,13 +63,11 @@ const healthApp = (input: {
   probeRateLimiter?: ThreeTierRateLimiter;
 }) =>
   systemRoutes({
-    whoIsFakerService: { getHealthSnapshot: () => input.counts } as unknown as WhoIsFakerService,
-    sonGuessrService: {
-      getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }),
-    } as unknown as SonGuessrService,
-    ceeService: {
-      getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }),
-    } as unknown as CEEService,
+    games: {
+      faker: { getHealthSnapshot: () => input.counts },
+      song: { getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }) },
+      cee: { getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }) },
+    } as unknown as GameServices,
     logger: silentLogger,
     maintenanceToken: input.maintenanceToken,
     probeRateLimiter: input.probeRateLimiter,

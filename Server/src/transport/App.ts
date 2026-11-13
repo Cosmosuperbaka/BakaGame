@@ -1,9 +1,7 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia, ValidationError } from "elysia";
 
-import { WhoIsFakerService } from "../application/WhoIsFakerService";
-import { SonGuessrService } from "../application/SonGuessrService";
-import { CEEService } from "../application/CEEService";
+import type { GameServices } from "../application/GameRegistry";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord } from "../shared/Index";
@@ -117,10 +115,9 @@ import { countServerMetric } from "../infrastructure/Sentry";
 
 export interface AppDependencies {
   env: AppEnv;
-  whoIsFakerService: WhoIsFakerService;
+  /** 三款游戏服务：键就是三个具名位置，由组合根一起装配。 */
+  games: GameServices;
   logger: EventLogger;
-  sonGuessrService: SonGuessrService;
-  ceeService: CEEService;
   disposeResources?: () => Promise<void>;
   isShuttingDown?: () => boolean;
   onTriggerShutdown?: () => Promise<void> | void;
@@ -270,10 +267,8 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
 
 export const createApp = ({
   env,
-  whoIsFakerService,
+  games,
   logger,
-  sonGuessrService,
-  ceeService,
   isShuttingDown,
   onTriggerShutdown,
   disposeResources,
@@ -290,14 +285,11 @@ export const createApp = ({
   siteFeatures,
 }: AppDependencies) => {
   warnMissingDeploymentMarker(env, logger);
-  const fakerService = whoIsFakerService;
-  const songService = sonGuessrService;
-  const characterService = ceeService;
   // 版本在进程内不会变：装配时解析一次，状态接口的首个请求不再同步 spawn git。
   const releaseVersion = resolveServerRelease() ?? "unknown";
   let disposal: Promise<void> | undefined;
   const dispose = (): Promise<void> =>
-    (disposal ??= disposeResources ? disposeResources() : characterService.close());
+    (disposal ??= disposeResources ? disposeResources() : games.cee.close());
   const remoteMcpSessions = new RemoteMcpSessions(logger, {
     // 游戏连接只连本机回环：目标不能取自请求的 Host。
     selfUrl: `http://127.0.0.1:${env.serverPort}`,
@@ -308,14 +300,14 @@ export const createApp = ({
   /** 标签页接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这张标签页。 */
   const sitePages = new SitePages({
     admitTab: (tabKey) => {
-      fakerService.assertTabAgentsAllowed(tabKey);
-      songService.assertTabAgentsAllowed(tabKey);
-      characterService.assertTabAgentsAllowed(tabKey);
+      games.faker.assertTabAgentsAllowed(tabKey);
+      games.song.assertTabAgentsAllowed(tabKey);
+      games.cee.assertTabAgentsAllowed(tabKey);
     },
     onControlChange: (tabKey) => {
-      fakerService.publishTabRooms(tabKey);
-      songService.publishTabRooms(tabKey);
-      characterService.publishTabRooms(tabKey);
+      games.faker.publishTabRooms(tabKey);
+      games.song.publishTabRooms(tabKey);
+      games.cee.publishTabRooms(tabKey);
     },
   });
   remoteMcpSessions.onSessionClosed((id) => sitePages.closeByController(id, "agent_left"));
@@ -343,9 +335,9 @@ export const createApp = ({
     const record = createConnectionRecord(ws, connectionIdFor(ws), (tabKey) =>
       sitePages.isTabControlled(tabKey)
     );
-    if (game === "faker") fakerService.registerConnection(record);
-    else if (game === "song") songService.registerConnection(record);
-    else characterService.registerConnection(record);
+    if (game === "faker") games.faker.registerConnection(record);
+    else if (game === "song") games.song.registerConnection(record);
+    else games.cee.registerConnection(record);
   };
 
   /**
@@ -508,7 +500,7 @@ export const createApp = ({
           serviceName: "SonGuessr",
           execute: async (connectionId, message) => {
             assertModeOpen("song", message, siteFeatures);
-            return songService.execute(connectionId, message);
+            return games.song.execute(connectionId, message);
           },
         });
       } else if (game === "cee") {
@@ -516,7 +508,7 @@ export const createApp = ({
           serviceName: "CEE",
           execute: async (connectionId, message) => {
             assertModeOpen("cee", message, siteFeatures);
-            return characterService.execute(connectionId, message);
+            return games.cee.execute(connectionId, message);
           },
         });
       } else {
@@ -524,7 +516,7 @@ export const createApp = ({
           serviceName: "WhoIsFaker",
           execute: async (connectionId, message) => {
             assertModeOpen("faker", message, siteFeatures);
-            return fakerService.execute(connectionId, message);
+            return games.faker.execute(connectionId, message);
           },
         });
       }
@@ -564,9 +556,9 @@ export const createApp = ({
       const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
       for (const game of registered ?? []) {
         try {
-          if (game === "faker") await fakerService.unregisterConnection(connectionId);
-          else if (game === "song") await songService.unregisterConnection(connectionId);
-          else await characterService.unregisterConnection(connectionId);
+          if (game === "faker") await games.faker.unregisterConnection(connectionId);
+          else if (game === "song") await games.song.unregisterConnection(connectionId);
+          else await games.cee.unregisterConnection(connectionId);
         } catch (error) {
           logger.error("统一 WS 连接注销失败", { ...describeError(error), game, connectionId });
         }
@@ -786,9 +778,7 @@ export const createApp = ({
     // ==================== 系统 HTTP 业务模块 ====================
     .use(
       systemRoutes({
-        whoIsFakerService: fakerService,
-        sonGuessrService: songService,
-        ceeService: characterService,
+        games,
         logger,
         isShuttingDown,
         onTriggerShutdown,
@@ -865,7 +855,7 @@ export const createApp = ({
         account,
         handshakeQuota,
         dedup,
-        service: fakerService,
+        service: games.faker,
       }),
     })
     .ws("/api/cee/ws", {
@@ -884,7 +874,7 @@ export const createApp = ({
         dedup,
         clientChannel,
         normalizeMessage: normalizeCEEEnvelope,
-        service: characterService,
+        service: games.cee,
       }),
     })
     .ws("/api/songuessr/ws", {
@@ -901,15 +891,13 @@ export const createApp = ({
         account,
         handshakeQuota,
         dedup,
-        service: songService,
+        service: games.song,
       }),
     });
 
   return {
     app,
     dispose,
-    whoIsFakerService: fakerService,
-    sonGuessrService: songService,
-    ceeService: characterService,
+    games,
   };
 };
