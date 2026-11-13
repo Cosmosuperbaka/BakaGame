@@ -499,9 +499,9 @@ describe("CEE 会话与异步边界", () => {
     // 窗口里房间还没登记：大厅与后台看不到，入房无论带不带口令都找不到房间。
     expect(h.service.state.listRooms()).toHaveLength(0);
     expect(h.service.state.adminListRooms()).toHaveLength(0);
-    await expect(
-      h.send(intruder, "cee.room.join", { userName: "闯入者" })
-    ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });
+    await expect(h.send(intruder, "cee.room.join", { userName: "闯入者" })).rejects.toMatchObject({
+      code: "ROOM_NOT_FOUND",
+    });
     await expect(
       h.send(intruder, "cee.room.join", { userName: "闯入者", password: "正确密码" })
     ).rejects.toMatchObject({ code: "ROOM_NOT_FOUND" });

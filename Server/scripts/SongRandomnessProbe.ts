@@ -419,14 +419,15 @@ async function main() {
     runtime: Bun.version,
     sourceSha256: Object.fromEntries(
       await Promise.all(
-        ["src/application/SonGuessrService.ts", "src/infrastructure/music/netease/NeteaseMusicProvider.ts"].map(
-          async (path) => [
-            path,
-            createHash("sha256")
-              .update(await Bun.file(path).text())
-              .digest("hex"),
-          ]
-        )
+        [
+          "src/application/SonGuessrService.ts",
+          "src/infrastructure/music/netease/NeteaseMusicProvider.ts",
+        ].map(async (path) => [
+          path,
+          createHash("sha256")
+            .update(await Bun.file(path).text())
+            .digest("hex"),
+        ])
       )
     ),
     assumptions: {

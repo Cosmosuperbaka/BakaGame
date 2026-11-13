@@ -205,7 +205,10 @@ const descriptionControls = (context: UiContext): UiControl[] => {
         "描述内容",
         context.state.drafts["faker.description.input"] ?? "",
         "game",
-        { maxLength: 20, hint: "上限 10 个汉字或 20 个英文字符（汉字算 2 个字宽）；超限发送会被拒绝，需自行缩短；按 Enter 或点发送" }
+        {
+          maxLength: 20,
+          hint: "上限 10 个汉字或 20 个英文字符（汉字算 2 个字宽）；超限发送会被拒绝，需自行缩短；按 Enter 或点发送",
+        }
       ),
       button("faker.description.send", "发送", "game", {
         disabled: !(context.state.drafts["faker.description.input"] ?? "").trim(),
