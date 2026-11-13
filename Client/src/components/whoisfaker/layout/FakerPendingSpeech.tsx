@@ -1,4 +1,4 @@
-﻿import { motion } from "framer-motion";
+﻿import { motion, useReducedMotion } from "framer-motion";
 import { Check } from "lucide-react";
 import { ellipsisDot, receiptMark } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -8,6 +8,8 @@ const DOTS = [0, 1, 2];
 /**
  * 尚未提交或尚未轮到展示的发言占位。
  * 三点依次浮起再落回，读作“还在等这一句”，而非一个空值。
+ * 减弱动效时三点静止：这是透明度的无限循环，`MotionConfig reducedMotion="user"` 只关变换、关不掉它；
+ * 等待由读屏标签与三点本身表达，不靠闪烁。
  */
 export function FakerPendingSpeech({
   className,
@@ -16,6 +18,7 @@ export function FakerPendingSpeech({
   className?: string;
   label?: string;
 }) {
+  const reduced = useReducedMotion();
   return (
     <span
       className={cn("inline-flex items-center gap-0.5 align-middle", className)}
@@ -26,7 +29,7 @@ export function FakerPendingSpeech({
         <motion.span
           key={index}
           custom={index}
-          variants={ellipsisDot}
+          variants={reduced ? undefined : ellipsisDot}
           animate="animate"
           aria-hidden="true"
           className="block size-1 rounded-full bg-muted-foreground"

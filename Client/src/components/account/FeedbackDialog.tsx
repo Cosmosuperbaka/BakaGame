@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useReducedMotion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { FEEDBACK_CONTENT_MAX_LENGTH, FEEDBACK_TITLE_MAX_LENGTH } from "@bakagame/shared/values";
 import type { FeedbackDetail, FeedbackKind, FeedbackSummary } from "@bakagame/shared";
@@ -84,11 +85,17 @@ function FeedbackForm({
   const confirmId = useId();
   const autoStarted = useRef(false);
   const confirmRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   // 二次确认框出现在表单底部，定高滚动区里常常落在可视范围外：出现时把它挪进来。
+  // 平滑滚过去，读得出确认框在表单下方；减弱动效时直接到位。
   useEffect(() => {
-    if (confirming) confirmRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [confirming]);
+    if (confirming)
+      confirmRef.current?.scrollIntoView?.({
+        block: "nearest",
+        behavior: reducedMotion ? "auto" : "smooth",
+      });
+  }, [confirming, reducedMotion]);
   const ready = title.trim().length > 0 && content.trim().length > 0;
 
   const submit = useCallback(async () => {

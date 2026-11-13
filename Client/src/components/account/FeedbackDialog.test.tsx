@@ -8,6 +8,12 @@ import { FeedbackDialog, type FeedbackDraft } from "./FeedbackDialog";
 const create = vi.hoisted(() => vi.fn());
 const listMine = vi.hoisted(() => vi.fn());
 const get = vi.hoisted(() => vi.fn());
+const motionPreference = vi.hoisted(() => ({ reduced: false }));
+
+vi.mock("framer-motion", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("framer-motion")>()),
+  useReducedMotion: () => motionPreference.reduced,
+}));
 
 vi.mock("@/lib/Api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/Api")>()),
@@ -47,6 +53,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  motionPreference.reduced = false;
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   useAccountStore.setState({ status: "loading", profile: null, unreadFeedback: 0 });
   create.mockReset();
   listMine.mockReset();
@@ -54,6 +62,29 @@ afterEach(() => {
 });
 
 describe("反馈弹窗", () => {
+  it.each([
+    { reduced: false, behavior: "smooth" },
+    { reduced: true, behavior: "auto" },
+  ])(
+    "二次确认框出现时滚进视野：常规偏好平滑滚动，减弱动效直接到位（reduced=$reduced）",
+    async ({ reduced, behavior }) => {
+      motionPreference.reduced = reduced;
+      const scrollIntoView = vi.fn();
+      Object.defineProperty(Element.prototype, "scrollIntoView", {
+        configurable: true,
+        value: scrollIntoView,
+      });
+      useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
+      const user = userEvent.setup();
+      renderDialog();
+
+      await fillDraft(user);
+      await user.click(screen.getByRole("button", { name: "匿名提交" }));
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior });
+    }
+  );
+
   it("未登录给出匿名提交与登录并提交，匿名提交需二次确认", async () => {
     useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
     const user = userEvent.setup();
