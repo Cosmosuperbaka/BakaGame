@@ -15,6 +15,9 @@ import { installMotionTokens } from "./lib/motion/CssTokens";
 import { initTheme } from "./lib/Theme";
 import { initSoundEffects } from "./lib/SoundEffects";
 
+// 中文字体样式表：生产构建里 index.html 已非阻塞地加载它，这条导入只让构建把它拆成独立文件
+// （开发服务器里则靠它真正载入）；浏览器发现同一份样式表已在页面里就不会重复下载。
+void import("./fonts.css");
 initClientSentry();
 // 页面分块下载失败时先自愈重载一次（只有构建产物会派发该事件）。
 installChunkLoadRecovery();

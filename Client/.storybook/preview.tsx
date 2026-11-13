@@ -7,6 +7,7 @@ import { resetAllStores } from "@/stories/StorePresets";
 import { NavigatedAway, ThemeScope } from "./StoryShell";
 import { installMotionTokens } from "@/lib/motion/CssTokens";
 import "@/index.css";
+import "@/fonts.css";
 import "./Preview.css";
 
 // 与应用入口一致：CSS 动效变量由 lib/motion/ 的令牌生成。

@@ -1,0 +1,8 @@
+/* 中文字体声明，与 index.css 分开：这些声明体积远大于样式本身（数百条 @font-face），
+   放进渲染阻塞的主样式表会白白拖慢首绘。index.html 以非阻塞方式加载本文件，
+   字体本来就用 font-display: swap 先以回落字体出字，晚到几十毫秒不改变字形。
+   Storybook 的预览入口同样引入本文件。 */
+@import "@fontsource-variable/noto-serif-sc";
+
+/* 霞鹜文楷的 @font-face 由 Vite 插件在 dev / build 启动时注入，生成器见 scripts/build-fonts.mjs。 */
+/* __LXGW_WENKAI_FONT_FACES__ */

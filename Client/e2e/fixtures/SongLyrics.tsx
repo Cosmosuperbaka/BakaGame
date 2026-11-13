@@ -12,6 +12,7 @@ import {
 } from "@/components/songuessr/SongClipLyricSheet";
 import "@applemusic-like-lyrics/core/style.css";
 import "@/index.css";
+import "@/fonts.css";
 
 // 浏览器桥接只接受可序列化属性；audioRef 始终由夹具持有，不能跨 page.evaluate 传递。
 export type SongLyricsFixtureProps = Partial<Omit<SongLyricPlayerProps, "audioRef">>;
