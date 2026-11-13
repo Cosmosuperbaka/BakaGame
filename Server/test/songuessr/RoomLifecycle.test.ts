@@ -14,7 +14,7 @@ import {
   buildAlbumQueries,
   isSongTitleMatch,
 } from "../../src/application/songuessr/SongTitleMatching";
-import { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { BangumiDataProvider } from "../../src/infrastructure/LocalBangumiProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,

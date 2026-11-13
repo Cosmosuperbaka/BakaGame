@@ -3,10 +3,7 @@ import { SonGuessrRoomSnapshot } from "../../src/shared/Index";
 import { describe, expect, test } from "bun:test";
 import { connection, createRoom, execute, joinRoom, lastEvent, provider, songs } from "./Fixtures";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
-import {
-  type MusicCookieInput,
-  type MusicProvider,
-} from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { type MusicCookieInput, type MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 
 describe("账号池单号并发", () => {
   const gatedProvider = (usedCookies: Array<MusicCookieInput | undefined>) => {

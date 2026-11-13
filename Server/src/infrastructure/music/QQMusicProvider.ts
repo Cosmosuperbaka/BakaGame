@@ -10,13 +10,7 @@ import { asArray, asRecord, readNumber } from "../JsonReaders";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "./MusicCache";
 import { UpstreamRequestQueue } from "./UpstreamRequestQueue";
 import { AmllLyricClient } from "./AmllLyricClient";
-import type {
-  MusicCookieInput,
-  MusicLoginSession,
-  MusicProvider,
-  MusicQrLogin,
-  MusicQrLoginCheck,
-} from "./NeteaseMusicProvider";
+import type { MusicCookieInput, MusicLoginSession, MusicProvider, MusicQrLogin, MusicQrLoginCheck } from "./MusicProvider";
 import type {
   SongArtistSearchResult,
   SongDetails,

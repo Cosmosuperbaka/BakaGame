@@ -6,10 +6,7 @@ import {
   isPlayableSong,
 } from "../../infrastructure/music/MusicDeduplicator";
 import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
-import type {
-  MusicCookieInput,
-  MusicSearchOptions,
-} from "../../infrastructure/music/NeteaseMusicProvider";
+import type { MusicCookieInput, MusicSearchOptions } from "../../infrastructure/music/MusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   MAX_MIN_POPULARITY,

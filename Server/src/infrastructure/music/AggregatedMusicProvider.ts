@@ -10,16 +10,7 @@ import {
   MUSIC_PLATFORM_PREFERENCE,
   type SongPlayabilityContext,
 } from "./MusicDeduplicator";
-import type {
-  MusicCookieInput,
-  MusicLoginSession,
-  MusicPlatform,
-  MusicProvider,
-  MusicQrLogin,
-  MusicQrLoginCheck,
-  MusicSearchOptions,
-  SongFailoverHint,
-} from "./NeteaseMusicProvider";
+import type { MusicCookieInput, MusicLoginSession, MusicPlatform, MusicProvider, MusicQrLogin, MusicQrLoginCheck, MusicSearchOptions, SongFailoverHint } from "./MusicProvider";
 import type {
   SongAlbumSearchResult,
   SongArtistSearchResult,

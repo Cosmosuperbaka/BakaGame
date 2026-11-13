@@ -4,7 +4,7 @@ import {
   MUSIC_POOL_MAX_COOLDOWN_MS,
 } from "../../src/application/songuessr/Records";
 import { AppError } from "../../src/domain/Errors";
-import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
   TestConnection,

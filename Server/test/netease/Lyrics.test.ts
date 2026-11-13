@@ -1,10 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import {
-  NeteaseMusicProvider,
-  parseLrc,
-  parseYrc,
-  mergeTranslations,
-} from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { parseLrc, parseYrc, mergeTranslations } from "../../src/infrastructure/music/NeteaseLyricParse";
 import {
   isBopomofoOnlyLyricLine,
   isBracketedStageDirectionLine,

@@ -1,4 +1,4 @@
-import { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
   connection,

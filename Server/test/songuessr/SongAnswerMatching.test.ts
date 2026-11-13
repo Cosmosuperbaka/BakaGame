@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SonGuessrService } from "../../src/application/SonGuessrService";
 import { isSameAnswerSong } from "../../src/application/songuessr/SongTitleMatching";
-import { MusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { type SongDetails } from "../../src/shared/Index";
 import {
   connection,

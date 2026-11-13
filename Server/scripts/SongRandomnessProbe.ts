@@ -3,10 +3,8 @@ import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { SonGuessrService } from "../src/application/SonGuessrService";
 import { resolveRecentSongWindow } from "../src/application/songuessr/Records";
-import {
-  NeteaseMusicProvider,
-  type MusicProvider,
-} from "../src/infrastructure/music/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../src/infrastructure/music/NeteaseMusicProvider";
+import { type MusicProvider } from "../src/infrastructure/music/MusicProvider";
 import type {
   ConnectionRecord,
   SongDetails,

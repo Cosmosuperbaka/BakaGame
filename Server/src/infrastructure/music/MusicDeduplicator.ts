@@ -1,5 +1,5 @@
 import type { SongSearchResult } from "../../shared/SonGuessr";
-import type { MusicPlatform } from "./NeteaseMusicProvider";
+import type { MusicPlatform } from "./MusicProvider";
 import { toSimplified } from "../ChineseConverter";
 
 export interface AggregatedSongSearchResult extends SongSearchResult {

@@ -4,12 +4,7 @@ import {
   type ConnectionRecord,
   type SongDetails,
 } from "../../shared/Index";
-import type {
-  MusicCookieInput,
-  MusicLoginSession,
-  MusicPlatform,
-  MusicSearchOptions,
-} from "../../infrastructure/music/NeteaseMusicProvider";
+import type { MusicCookieInput, MusicLoginSession, MusicPlatform, MusicSearchOptions } from "../../infrastructure/music/MusicProvider";
 import type { SongPlayabilityContext } from "../../infrastructure/music/MusicDeduplicator";
 import { createEvent } from "../../transport/Packets";
 import {

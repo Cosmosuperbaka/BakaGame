@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { NeteaseMusicProvider, parseLrc } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { NeteaseMusicProvider } from "../../src/infrastructure/music/NeteaseMusicProvider";
+import { parseLrc } from "../../src/infrastructure/music/NeteaseLyricParse";
 import {
   isCreditLyricLine,
   isInstrumentalLyricLine,

@@ -1,6 +1,5 @@
 import { AppError } from "../../domain/Errors";
-
-export type MusicPlatform = "netease" | "qq";
+import type { MusicPlatform } from "./MusicProvider";
 
 export interface ParsedSongUrn {
   platform: MusicPlatform;
