@@ -28,7 +28,8 @@ import {
   waitForLyrics,
 } from "@/stories/fixtures/SonGuessr";
 import { ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
-import { AttemptList, GameStage, SongGameArea } from "./SongGameStage";
+import { AttemptList } from "../SongAttemptList";
+import { GameStage, SongGameArea } from "./SongGameStage";
 
 const { host, me, peach, azumi, kanade, long } = SONG_PEOPLE;
 const meView = playingPlayers().find((player) => player.id === me.id);
