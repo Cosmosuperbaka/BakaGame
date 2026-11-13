@@ -213,6 +213,114 @@ export interface SongRoundResultPhaseProps {
   isPending?: (type: string) => boolean;
 }
 
+/** 猜番的答案：番剧封面与资料，下面晚一拍推入关联歌曲（答案的从属信息）。 */
+function AnimeAnswerCard({
+  anime,
+  summary,
+}: {
+  anime: NonNullable<SonGuessrRoundSummary["anime"]>;
+  summary: SonGuessrRoundSummary;
+}) {
+  return (
+    <>
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+        {anime.imageUrl ? (
+          <img
+            src={anime.imageUrl}
+            alt=""
+            className="h-28 w-20 rounded-md object-cover shadow-sm"
+          />
+        ) : (
+          <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-md bg-background">
+            <Film className="h-9 w-9 text-muted-foreground" aria-hidden="true" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <h3 className="break-words text-xl font-semibold">{anime.nameCn || anime.name}</h3>
+          <p className="mt-1 text-muted-foreground">{anime.name}</p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
+            {anime.year ? <Badge variant="outline">{anime.year}</Badge> : null}
+            {anime.rating ? <Badge variant="outline">评分 {anime.rating.toFixed(1)}</Badge> : null}
+            {anime.tags.slice(0, 5).map((tag) => (
+              <Badge key={tag} variant="outline">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 关联歌曲是答案的从属信息：分隔线随卡片就位，内容晚一拍推入 */}
+      <motion.div
+        variants={RELATED_SONG_REVEAL}
+        initial="initial"
+        animate="animate"
+        className="border-t border-background pt-4"
+      >
+        <motion.div variants={listItem} className="origin-left">
+          <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
+            <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>关联歌曲</span>
+          </div>
+          <SongSettlementDetails
+            variant="related"
+            song={summary.song}
+            trackKindBadge={
+              <Badge variant="default">
+                {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
+              </Badge>
+            }
+          />
+        </motion.div>
+      </motion.div>
+    </>
+  );
+}
+
+/** 房主的回合收尾操作：返回等待阶段（单人为结束本局）与再来一轮，在途命令期间互斥禁用。 */
+function RoundActions({
+  snapshot,
+  run,
+  isPending,
+}: Pick<SongRoundResultPhaseProps, "snapshot" | "run" | "isPending">) {
+  const isNextRound = Boolean(isPending?.("song.game.nextRound"));
+  const isFinishing = Boolean(isPending?.("song.game.finish"));
+  const nextRoundBlocked =
+    snapshot.settings.questionMode === "automatic" && !hasMusicAccount(snapshot);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap justify-center gap-2">
+        <Button
+          variant="outline"
+          size="lg"
+          disabled={isFinishing || isNextRound}
+          loading={isFinishing}
+          onClick={() => void run("song.game.finish")}
+          data-agent-control="song.finish"
+        >
+          {snapshot.solo ? "结束本局" : "返回等待阶段"}
+        </Button>
+        <Button
+          size="lg"
+          disabled={nextRoundBlocked || isNextRound || isFinishing}
+          loading={isNextRound}
+          onClick={() => void run("song.game.nextRound")}
+          data-agent-control="song.nextRound"
+        >
+          再来一轮
+        </Button>
+      </div>
+      {/* 自动出题缺账号时「再来一轮」是灰的：说出原因和出路，否则房主只看到按钮按不动 */}
+      {nextRoundBlocked ? (
+        <p className="text-center text-xs text-muted-foreground">
+          自动出题需要可用的网易云或 QQ 音乐账号，{snapshot.solo ? "结束本局" : "返回等待阶段"}
+          登录后再继续。
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function SongRoundResultPhase({
   snapshot,
   privateState,
@@ -223,11 +331,6 @@ export function SongRoundResultPhase({
 }: SongRoundResultPhaseProps) {
   const summary = snapshot.roundSummary;
   if (!summary) return null;
-
-  const isNextRound = Boolean(isPending?.("song.game.nextRound"));
-  const isFinishing = Boolean(isPending?.("song.game.finish"));
-  const nextRoundBlocked =
-    snapshot.settings.questionMode === "automatic" && !hasMusicAccount(snapshot);
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -243,64 +346,7 @@ export function SongRoundResultPhase({
         className="reveal-lift space-y-4 rounded-md bg-muted p-4"
       >
         {snapshot.settings.questionType === "anime" && summary.anime ? (
-          <>
-            <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
-              {summary.anime.imageUrl ? (
-                <img
-                  src={summary.anime.imageUrl}
-                  alt=""
-                  className="h-28 w-20 rounded-md object-cover shadow-sm"
-                />
-              ) : (
-                <div className="flex h-28 w-20 shrink-0 items-center justify-center rounded-md bg-background">
-                  <Film className="h-9 w-9 text-muted-foreground" aria-hidden="true" />
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <h3 className="break-words text-xl font-semibold">
-                  {summary.anime.nameCn || summary.anime.name}
-                </h3>
-                <p className="mt-1 text-muted-foreground">{summary.anime.name}</p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2 text-xs sm:justify-start">
-                  {summary.anime.year ? (
-                    <Badge variant="outline">{summary.anime.year}</Badge>
-                  ) : null}
-                  {summary.anime.rating ? (
-                    <Badge variant="outline">评分 {summary.anime.rating.toFixed(1)}</Badge>
-                  ) : null}
-                  {summary.anime.tags.slice(0, 5).map((tag) => (
-                    <Badge key={tag} variant="outline">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 关联歌曲是答案的从属信息：分隔线随卡片就位，内容晚一拍推入 */}
-            <motion.div
-              variants={RELATED_SONG_REVEAL}
-              initial="initial"
-              animate="animate"
-              className="border-t border-background pt-4"
-            >
-              <motion.div variants={listItem} className="origin-left">
-                <div className="mb-3 flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground sm:justify-start">
-                  <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>关联歌曲</span>
-                </div>
-                <SongSettlementDetails
-                  variant="related"
-                  song={summary.song}
-                  trackKindBadge={
-                    <Badge variant="default">
-                      {formatTrackKind(summary.animeTrack?.kind, summary.animeTrack, summary.song)}
-                    </Badge>
-                  }
-                />
-              </motion.div>
-            </motion.div>
-          </>
+          <AnimeAnswerCard anime={summary.anime} summary={summary} />
         ) : (
           <SongSettlementDetails song={summary.song} />
         )}
@@ -322,36 +368,7 @@ export function SongRoundResultPhase({
         />
       )}
       {isHost ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap justify-center gap-2">
-            <Button
-              variant="outline"
-              size="lg"
-              disabled={isFinishing || isNextRound}
-              loading={isFinishing}
-              onClick={() => void run("song.game.finish")}
-              data-agent-control="song.finish"
-            >
-              {snapshot.solo ? "结束本局" : "返回等待阶段"}
-            </Button>
-            <Button
-              size="lg"
-              disabled={nextRoundBlocked || isNextRound || isFinishing}
-              loading={isNextRound}
-              onClick={() => void run("song.game.nextRound")}
-              data-agent-control="song.nextRound"
-            >
-              再来一轮
-            </Button>
-          </div>
-          {/* 自动出题缺账号时「再来一轮」是灰的：说出原因和出路，否则房主只看到按钮按不动 */}
-          {nextRoundBlocked ? (
-            <p className="text-center text-xs text-muted-foreground">
-              自动出题需要可用的网易云或 QQ 音乐账号，{snapshot.solo ? "结束本局" : "返回等待阶段"}
-              登录后再继续。
-            </p>
-          ) : null}
-        </div>
+        <RoundActions snapshot={snapshot} run={run} isPending={isPending} />
       ) : (
         // 自动出题同样由房主点「再来一轮」才开始，措辞不分出题方式
         <p className="text-center text-sm text-muted-foreground">等待房主开始下一轮</p>
