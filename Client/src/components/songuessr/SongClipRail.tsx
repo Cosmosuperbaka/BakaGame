@@ -196,6 +196,11 @@ export function SongClipRail({
     setHoverMs(null);
   };
 
+  /** 指针离开轨道时收起悬停读数，拖动中不收（指针已被捕获，仍在拖）。 */
+  const leaveRail = () => {
+    if (!dragRef.current) setHoverMs(null);
+  };
+
   const handleProps = (kind: "start" | "end") => ({
     role: "slider" as const,
     tabIndex: 0,
@@ -223,9 +228,7 @@ export function SongClipRail({
           dragKind ? "cursor-ew-resize" : "cursor-pointer"
         )}
         data-testid="song-clip-rail"
-        onPointerLeave={() => {
-          if (!dragRef.current) setHoverMs(null);
-        }}
+        onPointerLeave={leaveRail}
       >
         <div
           aria-hidden="true"
@@ -299,9 +302,7 @@ export function SongClipRail({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onLostPointerCapture={loseDrag}
-          onPointerLeave={() => {
-            if (!dragRef.current) setHoverMs(null);
-          }}
+          onPointerLeave={leaveRail}
           onKeyDown={nudgeSeek}
           onBlur={() => setHoverMs(null)}
         />

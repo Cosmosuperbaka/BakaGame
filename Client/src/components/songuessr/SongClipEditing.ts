@@ -86,3 +86,6 @@ export function defaultClipRange(song: SongClipPreview): [number, number] {
   const rawEnd = chorusEnd !== undefined && chorusEnd > start ? chorusEnd : start + 15_000;
   return clampClipRange(start, rawEnd, domain);
 }
+
+/** 选段时长的读数：保留一位小数的秒。 */
+export const formatClipLength = (ms: number) => `${(Math.max(0, ms) / 1_000).toFixed(1)} 秒`;

@@ -1,23 +1,11 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  ArrowLeft,
-  AudioLines,
-  Minus,
-  Music2,
-  Pause,
-  Play,
-  Plus,
-  RotateCcw,
-  TriangleAlert,
-  X,
-} from "lucide-react";
+import { AudioLines, Minus, Music2, Plus, RotateCcw, TriangleAlert, X } from "lucide-react";
 import type { SongClipPreview, SongClipRange } from "@bakagame/shared";
 import { isLyricLineInClip, SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { useClipPreviewAudio } from "@/hooks/UseClipPreviewAudio";
-import { iconToggle, readoutSwap } from "@/lib/Motion";
-import { cn } from "@/lib/Utils";
+import { readoutSwap } from "@/lib/Motion";
 import {
   chorusRange,
   clampClipRange,
@@ -27,10 +15,9 @@ import {
   resolveClipDuration,
 } from "./SongClipEditing";
 import { SongClipLyricSheet } from "./SongClipLyricSheet";
-import { SongClipRail } from "./SongClipRail";
+import { SongClipFooter } from "./SongClipFooter";
+import { SongClipTransport } from "./SongClipTransport";
 import { errorMessage } from "./SongErrorMessage";
-
-const formatLength = (ms: number) => `${(Math.max(0, ms) / 1_000).toFixed(1)} 秒`;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -234,69 +221,21 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
       </div>
 
       <div className="px-4 pb-3 pt-3 sm:px-5">
-        <div className="flex items-start gap-3">
-          <Button
-            type="button"
-            size="icon"
-            onClick={() => void togglePlay()}
-            disabled={audioFailed}
-            aria-label={audioFailed ? "试听不可用" : playing ? "暂停试听" : "试听片段"}
-            data-agent-control="song.clip.play"
-            className="size-11 shrink-0 rounded-full shadow-sm [&_svg]:size-5"
-          >
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
-                key={playing ? "pause" : "play"}
-                variants={iconToggle}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                className="flex items-center justify-center"
-              >
-                {playing ? (
-                  <Pause aria-hidden="true" fill="currentColor" />
-                ) : (
-                  <Play aria-hidden="true" fill="currentColor" className="translate-x-px" />
-                )}
-              </motion.span>
-            </AnimatePresence>
-          </Button>
-
-          <div className="min-w-0 flex-1">
-            <SongClipRail
-              domain={domain}
-              range={range}
-              currentTimeMs={currentTimeMs}
-              chorus={song.chorus}
-              onSeek={movePlayhead}
-              onRangeChange={updateRange}
-            />
-            <div className="flex items-baseline justify-between gap-3 px-2 text-2xs">
-              <span
-                className={cn(
-                  "min-w-0 truncate",
-                  selectionValid ? "text-muted-foreground" : "text-destructive"
-                )}
-                data-testid="song-clip-summary"
-              >
-                <span className="mr-1 hidden sm:inline">选段</span>
-                <span className="mr-1 font-mono tabular-nums text-foreground">
-                  {formatLength(selectedLength)}
-                </span>
-                {song.lyrics.length > 0 ? `· ${lineCount} 句` : ""}
-              </span>
-              <span
-                className="shrink-0 font-mono tabular-nums text-muted-foreground"
-                data-testid="song-clip-clock"
-              >
-                {formatClipTime(currentTimeMs)}
-                {/* 分隔符比读数弱一档即可；描边色当字色在暗色下几乎消失，两段时间读成两个孤立数字 */}
-                <span className="px-1 text-muted-foreground/60">/</span>
-                {formatClipTime(domain)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <SongClipTransport
+          domain={domain}
+          range={range}
+          currentTimeMs={currentTimeMs}
+          chorus={song.chorus}
+          playing={playing}
+          audioFailed={audioFailed}
+          onTogglePlay={() => void togglePlay()}
+          onSeek={movePlayhead}
+          onRangeChange={updateRange}
+          selectionValid={selectionValid}
+          selectedLength={selectedLength}
+          lineCount={lineCount}
+          hasLyrics={song.lyrics.length > 0}
+        />
 
         <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -403,41 +342,14 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
         </div>
       </div>
 
-      <div className="border-t px-4 py-3 sm:px-5">
-        {error ? (
-          <p role="alert" className="mb-3 text-sm text-destructive">
-            {error}
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-center text-2xs leading-relaxed text-muted-foreground sm:max-w-xs sm:text-left">
-            出题后，全房会听到这段 {formatLength(selectedLength)} 的音频。
-          </p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={submitting}
-              onClick={onCancel}
-              data-agent-control="song.clip.cancel"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft aria-hidden="true" />
-              返回重新选歌
-            </Button>
-            <Button
-              type="button"
-              className="sm:min-w-32"
-              loading={submitting}
-              disabled={!selectionValid || submitting}
-              onClick={() => void confirm()}
-              data-agent-control="song.clip.confirm"
-            >
-              用这段出题
-            </Button>
-          </div>
-        </div>
-      </div>
+      <SongClipFooter
+        error={error}
+        selectedLength={selectedLength}
+        submitting={submitting}
+        selectionValid={selectionValid}
+        onCancel={onCancel}
+        onConfirm={() => void confirm()}
+      />
     </section>
   );
 }
