@@ -12,18 +12,17 @@ type Routes = ReturnType<typeof createApp>["app"]["~Routes"];
 type FakerBody = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["body"];
 type SongBody = Routes["api"]["songuessr"]["ws"]["subscribe"]["body"];
 type CEEBody = Routes["api"]["cee"]["ws"]["subscribe"]["body"];
-type FakerResponse = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["response"][200];
-export type PacketKind = Assert<
-  FakerResponse["type"] extends "ack" | "error" | "event" ? true : false
+/**
+ * 旧路径不声明出站 `response` 模式：出站口径与统一入口一致，帧只经 `Packets` 工厂构造，
+ * 框架不再对每一帧做全量结构校验。路由类型里只剩框架自带的 422 校验错误；有人重新挂上
+ * `response` 时这里会编译失败，必须连同出站口径的用例一起重新决定。
+ */
+type FakerResponses = Routes["api"]["whoisfaker"]["ws"]["subscribe"]["response"];
+type SongResponses = Routes["api"]["songuessr"]["ws"]["subscribe"]["response"];
+type CEEResponses = Routes["api"]["cee"]["ws"]["subscribe"]["response"];
+export type NoOutboundSchema = Assert<
+  [keyof FakerResponses | keyof SongResponses | keyof CEEResponses] extends [422] ? true : false
 >;
-export type AckId = Assert<
-  Extract<FakerResponse, { type: "ack" }>["id"] extends string ? true : false
->;
-export type ErrorCode = Assert<
-  Extract<FakerResponse, { type: "error" }>["error"]["code"] extends string ? true : false
->;
-// @ts-expect-error 事件 payload 尚未声明业务状态类型，不能冒充完整端到端安全。
-export type EventRoomId = Extract<FakerResponse, { type: "event" }>["payload"]["roomId"];
 type Ready = Routes["readyz"]["get"]["response"];
 export type ReadySuccess = Assert<Ready[200]["ready"] extends true ? true : false>;
 export type ReadyFailure = Assert<Ready[503]["ready"] extends false ? true : false>;

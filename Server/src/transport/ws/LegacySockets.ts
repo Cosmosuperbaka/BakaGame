@@ -3,12 +3,13 @@ import { Elysia } from "elysia";
 import type { AppEnv } from "../../config/Env";
 import type { ClientChannel } from "../../infrastructure/ClientChannel";
 import type { EventLogger } from "../../infrastructure/EventLogger";
+import { countServerMetric } from "../../infrastructure/Sentry";
 import { normalizeCEEEnvelope } from "../../shared/CEE";
-import { ServerMessageSchema } from "../../shared/PacketSchemas";
 import type { SiteFeatures } from "../../shared/SiteFeatures";
 import { CEEClientMessageSchema } from "../CEEProtocol";
 import type { GameEndpoint, GameEndpoints, GameMessage } from "../GameEndpoints";
 import { assertModeOpen } from "../ModeGate";
+import { LEGACY_WS_PATHS } from "../UnifiedSocket";
 import type { AccountDependencies } from "../routes/Account";
 import { SonGuessrClientMessageSchema } from "../SonGuessrProtocol";
 import { WhoIsFakerClientMessageSchema } from "../WhoIsFakerProtocol";
@@ -48,10 +49,13 @@ interface GameSocketHandlersOptions<TMessage extends GameMessage> {
   normalizeMessage?: (incoming: TMessage) => TMessage;
 }
 
+/** 旧路径建连计数的指标名；移除条件见 Engineering 的实时通道一节。 */
+const LEGACY_CONNECTION_METRIC = "bakagame.ws.legacy_path";
+
 /**
  * 三款游戏 ws 路由共用的四件套 handler（upgrade/open/message/close）。
  * 握手闸门顺序（Agent 标记 → 配额 → 登录身份，CEE 额外换通道证明）是安全语义，
- * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
+ * 工厂化是为了不再出现三份手抄副本各自漂移；body/parse/error 与 schema 强相关，
  * 留在各路由字面量里交给 Elysia 推断。
  */
 const gameSocketHandlers = <TMessage extends GameMessage>({
@@ -69,6 +73,8 @@ const gameSocketHandlers = <TMessage extends GameMessage>({
     applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
   open: (ws: GameSocketLike) => {
     confirmHandshakeLease(ws);
+    // 旧路径还有多少连接是删除它的唯一证据：按路径各记一次，不带任何用户维度。
+    countServerMetric(LEGACY_CONNECTION_METRIC, 1, { path: LEGACY_WS_PATHS[endpoint.game] });
     openGameConnection(ws, (connection) => endpoint.service.registerConnection(connection));
   },
   message: (ws: GameSocketLike, incoming: TMessage) =>
@@ -113,9 +119,8 @@ export const legacyGameSocketRoutes = ({
   siteFeatures,
 }: LegacySocketDependencies) =>
   new Elysia({ name: "legacy-game-sockets" })
-    .ws("/api/whoisfaker/ws", {
+    .ws(LEGACY_WS_PATHS.faker, {
       body: WhoIsFakerClientMessageSchema,
-      response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, endpoints.faker.serviceName, endpoints.faker.parse),
       ...gameSocketHandlers({
@@ -128,9 +133,8 @@ export const legacyGameSocketRoutes = ({
         dedup,
       }),
     })
-    .ws("/api/cee/ws", {
+    .ws(LEGACY_WS_PATHS.cee, {
       body: CEEClientMessageSchema,
-      response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, endpoints.cee.serviceName, endpoints.cee.parse),
       ...gameSocketHandlers({
@@ -145,9 +149,8 @@ export const legacyGameSocketRoutes = ({
         normalizeMessage: normalizeCEEEnvelope,
       }),
     })
-    .ws("/api/songuessr/ws", {
+    .ws(LEGACY_WS_PATHS.song, {
       body: SonGuessrClientMessageSchema,
-      response: ServerMessageSchema,
       parse: decodeGameFrame,
       error: gameSocketError(logger, endpoints.song.serviceName, endpoints.song.parse),
       ...gameSocketHandlers({
