@@ -76,9 +76,13 @@ export function Sheet({
                 initial="initial"
                 animate="animate"
                 exit="exit"
+                // 贴边一侧多投一道同色实影：面板落位过冲离开视口边缘的那几像素由它补上，
+                // 不露出底下的遮罩；静止时它在视口之外。面板自身裁切内容，伪元素外延会被裁掉，所以用投影。
                 className={cn(
                   "fixed inset-y-0 z-modal flex w-[min(92vw,32rem)] max-w-full flex-col overflow-hidden border bg-popover text-popover-foreground shadow-lg",
-                  side === "right" ? "right-0 border-l" : "left-0 border-r"
+                  side === "right"
+                    ? "right-0 border-l [--tw-ring-shadow:1rem_0_0_0_var(--color-popover)]"
+                    : "left-0 border-r [--tw-ring-shadow:-1rem_0_0_0_var(--color-popover)]"
                 )}
               >
                 <div className="flex h-12 shrink-0 items-center gap-3 border-b pl-4 pr-2">

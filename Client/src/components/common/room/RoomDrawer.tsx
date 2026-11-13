@@ -3,7 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { useCloseFrom } from "@/hooks/UseCloseFrom";
-import { backdrop, duration, ease, spring } from "@/lib/Motion";
+import { backdrop, sheetSlide } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 /**
@@ -37,7 +37,6 @@ export function RoomDrawer({
   className?: string;
   children: ReactNode;
 }) {
-  const offset = side === "left" ? "-100%" : "100%";
   const restoreFallback = useRef(false);
   useCloseFrom(
     open,
@@ -82,12 +81,17 @@ export function RoomDrawer({
               }
             >
               <motion.aside
-                initial={{ x: offset }}
-                animate={{ x: 0, transition: spring.swift }}
-                exit={{ x: offset, transition: { duration: duration.quick, ease: ease.inOut } }}
+                custom={side}
+                variants={sheetSlide}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                // 贴边同色实影补上落位过冲露出的缝，静止时落在房间容器之外被裁掉（同 Sheet）。
                 className={cn(
                   "absolute inset-y-0 z-drawer flex min-w-0 max-w-full flex-col overflow-hidden bg-panel shadow-lg",
-                  side === "left" ? "left-0 border-r" : "right-0 border-l",
+                  side === "left"
+                    ? "left-0 border-r [--tw-ring-shadow:-1rem_0_0_0_var(--color-panel)]"
+                    : "right-0 border-l [--tw-ring-shadow:1rem_0_0_0_var(--color-panel)]",
                   className ?? (side === "left" ? "w-72" : "w-80")
                 )}
               >
