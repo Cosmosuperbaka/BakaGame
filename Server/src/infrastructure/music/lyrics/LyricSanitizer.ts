@@ -93,12 +93,12 @@ export const sanitizeLyrics = (
     return true;
   });
 
-  return filtered.map((line, index) => ({
-    ...line,
-    endTime:
-      line.words && line.words.length > 0 && line.endTime > line.time
-        ? line.endTime
-        : (filtered[index + 1]?.time ?? Math.max(line.endTime, line.time + 5_000)),
-  }));
+  return filtered.map((line, index) => {
+    if (line.words && line.words.length > 0 && line.endTime > line.time) return line;
+    // 行级歌词的结束时刻取下一个起点严格更晚的行：原文与译文同起点时共享结束时刻，
+    // 否则前一行的时长为零，会被出题切片判成不可用而丢掉整首歌的歌词窗口。
+    const next = filtered.slice(index + 1).find((candidate) => candidate.time > line.time);
+    return { ...line, endTime: next?.time ?? Math.max(line.endTime, line.time + 5_000) };
+  });
 };
 
