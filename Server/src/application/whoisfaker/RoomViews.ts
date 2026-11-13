@@ -12,8 +12,10 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
+import { publishRoomState } from "../room/RoomPublisher";
 import { bindSeat } from "../room/SeatBinding";
 import { handlePlayerOffline } from "./OfflineSettlement";
+import { whoIsFakerShape } from "./RoomShape";
 import { getConfigurableParticipantCount } from "./RoundRules";
 import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
 
@@ -379,6 +381,30 @@ const createRoomSnapshotViewSelector = (
   };
 };
 
+/**
+ * 快照扇出：正常发布与校准共用同一份帧来源，两条路径的口径不会分叉。
+ * 公共快照按「能否看幽灵频道」只有两种投影，内核对同一投影只封一次包。
+ */
+const fanOutRoom = (
+  service: WhoIsFakerServiceInternals,
+  room: WhoIsFakerRoomRecord,
+  targets: readonly ConnectionRecord[],
+  snapshot: WhoIsFakerRoomSnapshot,
+  mode: "state" | "calibration"
+) => {
+  publishRoomState(
+    targets,
+    (connection) => (connection.playerId ? room.players[connection.playerId] : undefined),
+    {
+      snapshotEvent: whoIsFakerShape.events.snapshot,
+      privateEvent: whoIsFakerShape.events.privateState,
+      snapshotFor: createRoomSnapshotViewSelector(room, snapshot),
+      privateFor: (player) => buildPrivateState(service, room, player),
+    },
+    mode
+  );
+};
+
 export const publishRoom = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord,
@@ -397,38 +423,26 @@ export const publishRoom = (
     service.publishedPhaseKeyByRoomId.set(room.id, phaseKey);
   }
 
-  const selectSnapshot = createRoomSnapshotViewSelector(room, snapshot);
-  const connections = targetConnection
-    ? [targetConnection]
-    : service.connectionRegistry.getRoomConnections(room.id);
-  for (const connection of connections) {
-    const player = connection.playerId ? room.players[connection.playerId] : undefined;
-    const connectionSnapshot = selectSnapshot(player);
-
-    connection.send(createEvent("room.snapshot", connectionSnapshot));
-
-    if (connection.playerId && player) {
-      connection.send(createEvent("game.privateState", buildPrivateState(service, room, player)));
-    }
-  }
+  fanOutRoom(
+    service,
+    room,
+    targetConnection ? [targetConnection] : service.connectionRegistry.getRoomConnections(room.id),
+    snapshot,
+    "state"
+  );
 };
 
 export const publishRoomCalibration = (
   service: WhoIsFakerServiceInternals,
   room: WhoIsFakerRoomRecord
 ) => {
-  const snapshot = buildRoomSnapshot(service, room);
-  const selectSnapshot = createRoomSnapshotViewSelector(room, snapshot);
-  for (const connection of service.connectionRegistry.getRoomConnections(room.id)) {
-    const player = connection.playerId ? room.players[connection.playerId] : undefined;
-    const connectionSnapshot = selectSnapshot(player);
-    connection.sendStateSyncCalibration?.(createEvent("room.snapshot", connectionSnapshot));
-
-    if (!connection.playerId || !player) continue;
-    connection.sendStateSyncCalibration?.(
-      createEvent("game.privateState", buildPrivateState(service, room, player))
-    );
-  }
+  fanOutRoom(
+    service,
+    room,
+    service.connectionRegistry.getRoomConnections(room.id),
+    buildRoomSnapshot(service, room),
+    "calibration"
+  );
 };
 
 export const publishLobby = (service: WhoIsFakerServiceInternals) => {
