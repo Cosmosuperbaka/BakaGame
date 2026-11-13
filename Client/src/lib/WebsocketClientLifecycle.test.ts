@@ -6,7 +6,11 @@ vi.mock("@/lib/Sentry", () => ({
   countClientMetric: vi.fn(),
   recordClientMetric: vi.fn(),
   withClientSpan: async (_name: string, callback: (span: unknown) => unknown) =>
-    callback({ setStatus: () => {}, setAttribute: () => {} }),
+    callback({
+      setStatus: () => {},
+      setAttribute: () => {},
+      spanContext: () => ({ traceId: "0af7651916cd43dd8448eb211c80319c" }),
+    }),
 }));
 
 import { WebSocketClient } from "./WebsocketClient";

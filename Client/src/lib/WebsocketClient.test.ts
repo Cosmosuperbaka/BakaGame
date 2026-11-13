@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   captureClientException: vi.fn(),
   captureClientLog: vi.fn(),
-  spanAttributes: vi.fn(),
+  spanAttribute: vi.fn(),
+  /** 假的「当前活动跨度」的追踪号；置成全零模拟没有活动跨度。 */
+  spanTraceId: { current: "0af7651916cd43dd8448eb211c80319c" },
 }));
 
 vi.mock("@/lib/Sentry", () => ({
@@ -11,14 +13,12 @@ vi.mock("@/lib/Sentry", () => ({
   captureClientException: mocks.captureClientException,
   countClientMetric: vi.fn(),
   recordClientMetric: vi.fn(),
-  withClientSpan: async (
-    _name: string,
-    callback: (span: unknown) => unknown,
-    attributes: unknown
-  ) => {
-    mocks.spanAttributes(attributes);
-    return callback({ setStatus: () => {}, setAttribute: () => {} });
-  },
+  withClientSpan: async (_name: string, callback: (span: unknown) => unknown) =>
+    callback({
+      setStatus: () => {},
+      setAttribute: mocks.spanAttribute,
+      spanContext: () => ({ traceId: mocks.spanTraceId.current }),
+    }),
 }));
 
 import {
@@ -99,6 +99,25 @@ describe("WebSocketClient", () => {
       if (originalRandomUuid) {
         globalThis.crypto.randomUUID = originalRandomUuid;
       }
+    }
+  });
+
+  it("非安全上下文的降级只用 crypto.getRandomValues，不碰 Math.random", () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- 只保存原引用并在 finally 写回同一个 crypto，从不解绑调用
+    const originalRandomUuid = globalThis.crypto.randomUUID;
+    const random = vi.spyOn(Math, "random");
+    try {
+      // @ts-expect-error 模拟非安全上下文缺少 randomUUID
+      globalThis.crypto.randomUUID = undefined;
+      const uuids = new Set(Array.from({ length: 50 }, () => generateUuid()));
+      expect(uuids.size).toBe(50);
+      for (const uuid of uuids)
+        expect(uuid).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+        );
+      expect(random).not.toHaveBeenCalled();
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUuid;
     }
   });
 
@@ -396,9 +415,9 @@ describe("传输边界与命令诊断", () => {
         }),
       });
       await rejection;
-      expect(mocks.spanAttributes).toHaveBeenCalledWith(
-        expect.objectContaining({ traceId: envelope.traceId })
-      );
+      // 追踪号取自当前活动跨度，与错误上报同号；信封、span 属性与失败日志共用它。
+      expect(envelope.traceId).toBe("0af7651916cd43dd8448eb211c80319c");
+      expect(mocks.spanAttribute).toHaveBeenCalledWith("traceId", envelope.traceId);
       expect(mocks.captureClientLog).toHaveBeenCalledWith(
         "WebSocket 命令失败",
         "error",
@@ -413,7 +432,6 @@ describe("传输边界与命令诊断", () => {
       expect(vi.getTimerCount()).toBe(0);
       const accepted = client.send("cee.room.get");
       const next = JSON.parse(socket.sent[1]);
-      expect(next.traceId).not.toBe(envelope.traceId);
       socket.onmessage!({
         data: JSON.stringify({ type: "ack", id: next.id, payload: { ok: true } }),
       });
@@ -422,6 +440,28 @@ describe("传输边界与命令诊断", () => {
       client.disconnect();
     } finally {
       vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("没有活动跨度（追踪号全零）时自造 UUID 作追踪号，每条命令各一个", async () => {
+    const Socket = createMockSocketClass();
+    vi.stubGlobal("WebSocket", Socket);
+    mocks.spanTraceId.current = "00000000000000000000000000000000";
+    try {
+      const client = new WebSocketClient("/api/cee/ws");
+      client.connect();
+      const socket = Socket.instances[0];
+      void client.send("cee.room.get").catch(() => undefined);
+      void client.send("cee.room.get").catch(() => undefined);
+      const [first, second] = socket.sent.map((frame) => JSON.parse(frame) as { traceId: string });
+      expect(first.traceId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+      expect(second.traceId).not.toBe(first.traceId);
+      client.disconnect();
+    } finally {
+      mocks.spanTraceId.current = "0af7651916cd43dd8448eb211c80319c";
       vi.unstubAllGlobals();
     }
   });

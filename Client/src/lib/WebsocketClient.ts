@@ -1,3 +1,4 @@
+import type { Span } from "@sentry/react";
 import type { ErrorPacket, ServerMessage } from "@bakagame/shared";
 import {
   CONNECT_WAIT_TIMEOUT_MS,
@@ -70,16 +71,23 @@ interface PendingRequest {
 }
 
 export function generateUuid(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  // 兼容局域网 HTTP 等非安全上下文环境
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // 局域网 HTTP 等非安全上下文没有 randomUUID，但 getRandomValues 照常可用：按 RFC 4122 v4 手工拼。
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+/**
+ * 命令的追踪号取当前活动跨度的追踪号，与同一跨度里的错误上报同号，排障时能从前端跨度直接串到
+ * 服务端日志。没有活动跨度（SDK 未初始化时追踪号是全零）就自造 UUID，保持每条命令各有一个标识。
+ */
+const commandTraceId = (span: Span): string => {
+  const { traceId } = span.spanContext();
+  return /^[0-9a-f]{32}$/.test(traceId) && !/^0+$/.test(traceId) ? traceId : generateUuid();
+};
 
 /**
  * 连接打开后、对外宣告可用之前要走完的前置帧（领取或挂上标签页身份）。
@@ -371,11 +379,12 @@ export class WebSocketClient {
       }
     }
 
-    const traceId = generateUuid();
-    const startedAt = performance.now();
     return withClientSpan(
       `WS ${type}`,
       async (span) => {
+        const traceId = commandTraceId(span);
+        span.setAttribute("traceId", traceId);
+        const startedAt = performance.now();
         try {
           const result = await new Promise<T>((resolve, reject) => {
             const socket = this.socket;
@@ -455,7 +464,7 @@ export class WebSocketClient {
           throw error;
         }
       },
-      { "ws.path": this.path, "ws.command": type, traceId }
+      { "ws.path": this.path, "ws.command": type }
     );
   }
 
