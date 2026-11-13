@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const captureClientException = vi.hoisted(() => vi.fn());
@@ -80,8 +80,11 @@ describe("路由错误出口", () => {
 
     expect(await screen.findByRole("button", { name: "刷新页面" })).toBeInTheDocument();
     expect(screen.queryByText(/Unexpected Application Error/i)).toBeNull();
-    expect(captureClientException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "page-render-boom" })
+    // 上报在回退界面挂载后的副作用里，按钮出现时未必已经执行。
+    await waitFor(() =>
+      expect(captureClientException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "page-render-boom" })
+      )
     );
   });
 
@@ -90,12 +93,14 @@ describe("路由错误出口", () => {
 
     expect(await screen.findByRole("button", { name: "刷新页面" })).toBeInTheDocument();
     // 模块工厂抛出的错误被测试框架包了一层，原始错误在 cause 里。
-    expect(captureClientException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        cause: expect.objectContaining({
-          message: expect.stringContaining("Failed to fetch dynamically"),
-        }),
-      })
+    await waitFor(() =>
+      expect(captureClientException).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cause: expect.objectContaining({
+            message: expect.stringContaining("Failed to fetch dynamically"),
+          }),
+        })
+      )
     );
     // 路由层本身不再触发重载：自愈只在预加载失败事件里做。
     expect(reload).not.toHaveBeenCalled();
