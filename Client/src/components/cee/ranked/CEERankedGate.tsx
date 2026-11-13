@@ -43,7 +43,9 @@ export function CEERankedGate({
           </Button>
         )}
         <Button variant="outline" asChild>
-          <Link to="/cee">返回多人模式</Link>
+          <Link to="/cee" viewTransition>
+            返回多人模式
+          </Link>
         </Button>
       </div>
     </section>

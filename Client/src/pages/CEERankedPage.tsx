@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { CEE_RANKED_PLACEMENT_SERIES } from "@bakagame/shared/values";
@@ -122,7 +122,7 @@ function RankedHomeStage() {
  * 其余由服务端推送的排位状态驱动（空闲 / 排队 / 系列赛），页面不自行推断准入。
  */
 export default function CEERankedPage() {
-  const navigate = useNavigate();
+  const navigate = usePageNavigate();
   const accountStatus = useAccountStore((state) => state.status);
   const connected = useCEEStore((state) => state.connected);
   const ready = useCEERankedStore((state) => state.ready);

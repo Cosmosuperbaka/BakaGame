@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { HelmetProvider } from "react-helmet-async";
-import { MemoryRouter } from "react-router-dom";
+import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
 import { RANKED_IDLE_STATE, rankedProfile, rankedSeries } from "@/stories/fixtures/CEERanked";
@@ -152,4 +152,64 @@ describe("CEERankedPage", () => {
       expect(sendCommand).not.toHaveBeenCalled();
     }
   );
+});
+
+describe("CEERankedPage 的离页导航", () => {
+  /** 数据路由下才走 View Transitions；桩住浏览器入口，看两处离页导航是否都经它换页。 */
+  function renderInRouter() {
+    const startViewTransition = vi.fn((update: () => void) => {
+      update();
+      const done = Promise.resolve();
+      return { finished: done, ready: done, updateCallbackDone: done, skipTransition: () => {} };
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition,
+    });
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/cee/ranked",
+          element: (
+            <TooltipProvider>
+              <CEERankedPage />
+            </TooltipProvider>
+          ),
+        },
+        { path: "/", element: <p>主页</p> },
+        { path: "/cee", element: <p>多人大厅</p> },
+      ],
+      { initialEntries: ["/cee/ranked"] }
+    );
+    render(
+      <HelmetProvider context={{}}>
+        <RouterProvider router={router} />
+      </HelmetProvider>
+    );
+    return startViewTransition;
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(document, "startViewTransition");
+  });
+
+  it("返回主页经统一的页面过渡换页", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const startViewTransition = renderInRouter();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回主页" }));
+
+    await screen.findByText("主页");
+    expect(startViewTransition).toHaveBeenCalled();
+  });
+
+  it("准入页的返回多人模式经统一的页面过渡换页", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: {} as never });
+    const startViewTransition = renderInRouter();
+
+    fireEvent.click(screen.getByRole("link", { name: "返回多人模式" }));
+
+    await screen.findByText("多人大厅");
+    expect(startViewTransition).toHaveBeenCalled();
+  });
 });
