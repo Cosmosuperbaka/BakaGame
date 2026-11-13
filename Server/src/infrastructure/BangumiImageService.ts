@@ -54,6 +54,8 @@ export type BangumiImageOutcome =
 const AVIF_MAGIC = "ftypav";
 /** 与 CEEImageHints 同族的双上限：条目数挡慢泄漏，总字节挡大图撑爆内存。 */
 export const IMAGE_CACHE_MAX_ENTRIES = 128;
+/** 已确认进 R2 的路径缓存条数：只存路径字符串，成本很低，放大些让热点图常驻。 */
+const REMOTE_PATH_CACHE_MAX_ENTRIES = 4096;
 export const IMAGE_CACHE_MAX_BYTES = 16 * 1024 * 1024;
 
 /** 与构建脚本同款校验：avif 魔数必须出现在前 16 字节内。 */
@@ -87,6 +89,11 @@ export class BangumiImageService {
     maxSize: IMAGE_CACHE_MAX_BYTES,
     sizeCalculation: (image) => image.bytes.byteLength,
   });
+  /**
+   * 已确认进了 R2 的路径。路径即内容，进了 R2 就不会再变，热点图的 302 不必每次都查一次
+   * 主线程上的同步 SQLite；「还没搬走」会随迁移变化，所以不缓存。
+   */
+  private readonly remotePaths = new LRUCache<string, true>({ max: REMOTE_PATH_CACHE_MAX_ENTRIES });
   private readonly now: () => number;
 
   constructor(options: BangumiImageServiceOptions) {
@@ -107,6 +114,13 @@ export class BangumiImageService {
     });
   }
 
+  private isRemote(path: string): boolean {
+    if (this.remotePaths.has(path)) return true;
+    if (!this.store?.isRemote(path)) return false;
+    this.remotePaths.set(path, true);
+    return true;
+  }
+
   get available(): boolean {
     return this.store !== undefined;
   }
@@ -120,7 +134,7 @@ export class BangumiImageService {
   async fetch(path: string, clientIp = "anonymous"): Promise<BangumiImageOutcome> {
     // 已进 R2 的图在边缘有缓存，让浏览器直接去 CDN 取：本进程只回一个 302，
     // 不再为每个请求读分片、也不再吐字节。放在字节缓存之前，避免迁移后仍走老路径。
-    if (this.cdnBase && this.store?.isRemote(path)) {
+    if (this.cdnBase && this.isRemote(path)) {
       return { state: "redirect", location: `${this.cdnBase}${path}` };
     }
     const cached = this.imageCache.get(path);

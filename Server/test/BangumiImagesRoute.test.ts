@@ -360,3 +360,39 @@ test("配了 CDN 但图还没搬走时仍回本地字节（迁移中途不裂图
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("已进 R2 的路径只查一次索引；没搬走的路径每次都再查，迁移完成后能立刻改走 302", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bakagame-images-route-"));
+  const remotePath = "/r/200/pic/cover/l/ab/cd/1.jpg";
+  const localPath = "/r/200/pic/cover/l/ab/cd/2.jpg";
+  const spy = spyOn(BangumiImageStore.prototype, "isRemote");
+  try {
+    const store = BangumiImageStore.open(shards(join(directory, "images")))!;
+    store.markRemote(remotePath);
+    store.put(localPath, AVIF);
+    store.close();
+    const service = new BangumiImageService({
+      directory: join(directory, "images"),
+      cdnBase: "https://cdn.baka.website/files/bangumi",
+      now: () => 0,
+    });
+    try {
+      spy.mockClear();
+      for (let index = 0; index < 3; index += 1) {
+        expect((await service.fetch(remotePath)).state).toBe("redirect");
+      }
+      // 路径即内容，进了 R2 就不会再变：热点图的 302 不必每次都查一次同步 SQLite。
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      spy.mockClear();
+      for (let index = 0; index < 3; index += 1) await service.fetch(localPath);
+      // 「还没搬走」不能缓存：否则迁移完成后仍会一直吐本地字节。
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      service.close();
+    }
+  } finally {
+    spy.mockRestore();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
