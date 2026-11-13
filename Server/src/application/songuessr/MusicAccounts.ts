@@ -32,16 +32,14 @@ import {
   roomRuntime,
 } from "./Records";
 import type { SonGuessrContext } from "./Context";
-import { requireRoomPlayer } from "./RoomAccess";
+import type { SongCommandAt } from "./RoomAccess";
 
 /** 猜歌音乐账号池、凭证装载与上游租约：状态仍由 SonGuessrService 持有，这里只放共享行为。 */
 export const createMusicQrLogin = async (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
   platform: "netease" | "qq" = "netease",
   type?: "qq" | "wx" | "mobile"
 ) => {
-  requireRoomPlayer(ctx, connection);
   const provider = ctx.options.musicProvider;
   const createQrLogin = provider.createQrLogin?.bind(provider);
   if (!createQrLogin) throw new AppError("MUSIC_AUTH_UNAVAILABLE", "音乐登录功能不可用");
@@ -50,12 +48,12 @@ export const createMusicQrLogin = async (
 
 export const checkMusicQrLogin = async (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
+  at: SongCommandAt,
   keyValue: string,
   platform: "netease" | "qq" = "netease",
   type?: "qq" | "wx" | "mobile"
 ) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { connection, room, seat: player } = at;
   const key = keyValue.trim();
   if (!key || key.length > 512) throw new AppError("INVALID_LOGIN", "二维码登录密钥无效");
   const provider = ctx.options.musicProvider;
@@ -80,11 +78,11 @@ export const checkMusicQrLogin = async (
 
 export const useMusicCookie = async (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
+  at: SongCommandAt,
   cookieValue: string,
   platform: "netease" | "qq" = "netease"
 ) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { connection, room, seat: player } = at;
   const cookie = requireMusicCookie(cookieValue);
   const provider = ctx.options.musicProvider;
   const getLoginStatus = provider.getLoginStatus?.bind(provider);
@@ -114,10 +112,10 @@ export const useMusicCookie = async (
 
 export const clearMusicAccount = (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
+  at: SongCommandAt,
   platform: "netease" | "qq" | "all" = "all"
 ) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   clearMusicSession(ctx, room, player.id, platform);
   ctx.touch(room);
   ctx.publishRoom(room);
@@ -291,11 +289,11 @@ export const clearMusicSession = (
  */
 export const setPoolSharing = (
   ctx: SonGuessrContext,
-  connection: ConnectionRecord,
+  at: SongCommandAt,
   platform: MusicAuthPlatform,
   enabled: boolean
 ) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   // 自动开局加载期间阶段仍停在 waiting，但出题链路已经在按池取号，同样算已开局。
   if (room.phase !== "waiting" || room.runtime?.automaticRoundLoading) {
     throw new AppError("INVALID_PHASE", "开局后不能再改账号共享开关");

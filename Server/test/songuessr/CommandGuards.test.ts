@@ -165,6 +165,10 @@ describe("命令守卫顺序：开局中不可操作", () => {
         message: "当前不能开始新游戏",
       });
       expect(room.settings.questionType).toBe("song");
+      // 开局中的判定排在口令与名称校验之前：缺口令的私密化请求也先拿到阶段错误。
+      expect(
+        await rejected(host, "song.room.updateSettings", { visibility: "private" })
+      ).toMatchObject({ code: "INVALID_PHASE", message: "只能在等待阶段修改房间设置" });
     }
   });
 
