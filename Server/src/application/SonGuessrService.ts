@@ -18,7 +18,6 @@ import {
   normalizeAutoFilters,
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
-import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
@@ -45,6 +44,7 @@ import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import type { SonGuessrServiceOptions } from "./songuessr/Options";
 import {
   createSonGuessrContext,
+  normalizeRoomPassword,
   publishRoomCalibration,
   type SonGuessrContext,
 } from "./songuessr/Context";
@@ -75,8 +75,6 @@ import { exportSnapshots, restoreSnapshots } from "./songuessr/SnapshotCodec";
 
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
-import { RoomIdReservations } from "./room/RoomIdReservations";
-import { RoomPasswordGate } from "./room/RoomPasswordGate";
 import {
   expiredOfflineSeats,
   forEachRoomIsolated,
@@ -93,8 +91,6 @@ import {
   findSeat,
   markSeatOffline,
   roomsOfTab,
-  type SeatBindingContext,
-  type TabSeatContext,
 } from "./room/SeatBinding";
 import { musicIpScope } from "../infrastructure/music/MusicIpScope";
 import { createEvent } from "../transport/Packets";
@@ -110,9 +106,6 @@ import {
   roomRuntime,
 } from "./songuessr/Records";
 
-/** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
-const normalizeRoomPassword = (password: string): string => password.trim();
-
 /** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
 type RoomReclaim = "skip" | "grace" | "keep";
 
@@ -121,30 +114,10 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   private readonly dispatcher: SonGuessrDispatcher;
   /** 每连接的命令总额度：任何命令都先扣它，音乐、封面与登录的按成本配额在它之后。 */
   private readonly commandQuota: CommandQuota;
-  /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
-  private readonly reservations = new RoomIdReservations();
-  private readonly passwordGate: RoomPasswordGate;
-  /** 座位绑定、转离线与标签页座位共用的内核上下文。 */
-  private readonly roomKernel: SeatBindingContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> &
-    TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> & { recorder: GameRecorder };
 
   constructor(readonly options: SonGuessrServiceOptions) {
     this.ctx = createSonGuessrContext(options);
     const { ctx } = this;
-    this.roomKernel = {
-      shape: SONG_ROOM_SHAPE,
-      connections: ctx.connections,
-      rooms: ctx.rooms,
-      now: () => ctx.now(),
-      recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
-    };
-    this.passwordGate = new RoomPasswordGate({
-      now: () => ctx.now(),
-      normalize: normalizeRoomPassword,
-      missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
-      missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
-      hasher: options.passwordHasher,
-    });
     this.commandQuota = new CommandQuota({
       now: () => ctx.now(),
       windowMs: COMMAND_RATE_LIMIT_WINDOW_MS,
@@ -231,7 +204,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     if (player.connectionId !== connection.id) return;
 
     // 断线不是显式离开：保留房主身份和房间音乐会话，给移动端后台重连留出时间。
-    markSeatOffline(this.roomKernel, room, player, { emptyRoomExempt: isTestRoom(this.ctx, room) });
+    markSeatOffline(this.ctx.kernel, room, player, { emptyRoomExempt: isTestRoom(this.ctx, room) });
     this.releasePendingSubmitter(
       room,
       player.id,
@@ -350,10 +323,10 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     assertTextAllowed(payload.name, payload.userName);
     // 算摘要要跨一次 await：先同步占号挡住并发建房，房间对象在摘要算完、连接复核通过之前
     // 不进房间表，入房、大厅与巡检都看不到没有摘要的私密房。
-    const release = this.reservations.hold(roomId, (id) => this.ctx.rooms.has(id));
+    const release = this.ctx.reservations.hold(roomId, (id) => this.ctx.rooms.has(id));
     try {
       const password =
-        payload.visibility === "private" ? this.passwordGate.require(payload.password) : undefined;
+        payload.visibility === "private" ? this.ctx.passwords.require(payload.password) : undefined;
 
       const player = createPlayer(
         this.ctx,
@@ -388,7 +361,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
         recentSubjectIds: [],
       };
 
-      if (password) room.passwordHash = await this.passwordGate.hash(password);
+      if (password) room.passwordHash = await this.ctx.passwords.hash(password);
       // 摘要期间连接可能已经断开：断开后再登记会留下一个没有连接的在线房主，房间永远不空。
       if (!this.ctx.connections.findConnection(connection.id))
         throw new AppError("SESSION_INVALID", "连接状态已经变化，请重新加入");
@@ -419,11 +392,11 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   ) {
     const room = getRoom(this.ctx, ensureRoomId(roomIdValue ?? "", this.ctx.testRooms));
     // 同一张标签页再次加入就是回到原座位：已经进过门，不重复核对口令，也不会与自己撞名。
-    const seat = findSeat(this.roomKernel, room, connection);
+    const seat = findSeat(this.ctx.kernel, room, connection);
     if (seat) return this.resumeSeat(connection, room, seat);
     if (room.solo) throw new AppError("SOLO_ROOM_FORBIDDEN", "单人房间不接受其他玩家加入");
     assertAgentAdmission(connection, SONG_ROOM_SHAPE.admission(room));
-    await this.passwordGate.verify(room, room.visibility, payload.password, connection.id);
+    await this.ctx.passwords.verify(room, room.visibility, payload.password, connection.id);
     // 比对摘要要跨一次 await，期间房间可能已关闭：写入前先确认拿到的还是登记中的那一份。
     if (this.ctx.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     const name = requireName(payload.userName);
@@ -472,7 +445,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     const room = getRoom(this.ctx, targetRoomId);
     this.ensureAgentsAllowed(room, connection);
 
-    const player = findSeat(this.roomKernel, room, connection, token);
+    const player = findSeat(this.ctx.kernel, room, connection, token);
     if (!player) throw new AppError("SESSION_INVALID", "会话令牌无效");
 
     return this.resumeSeat(connection, room, player);
@@ -689,7 +662,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     // 留空保留原口令，给了新值才换摘要：明文只在这段局部变量里存在一次。
     const password = normalizeRoomPassword(payload.password ?? "");
     if (next.visibility === "private" && password) {
-      next.passwordHash = await this.passwordGate.hash(password);
+      next.passwordHash = await this.ctx.passwords.hash(password);
     }
     if (next.visibility === "private" && !next.passwordHash) {
       throw new AppError("PASSWORD_REQUIRED", "私密房间需要密码");
@@ -1316,7 +1289,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
     // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、刷新大厅。
-    dissolveRoom(this.roomKernel, room, { roomId: room.id, reason });
+    dissolveRoom(this.ctx.kernel, room, { roomId: room.id, reason });
     room.musicPool = [];
     // 房间没了：叫醒仍在等号的请求，让它们下一轮检查直接返回无租约。
     wakeMusicPoolWaiters(this.ctx, room.id);
@@ -1331,7 +1304,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     connection: ConnectionRecord
   ) {
     const previousHostId = room.hostPlayerId;
-    bindSeat(this.roomKernel, room, player, connection);
+    bindSeat(this.ctx.kernel, room, player, connection);
     this.settleHostChange(room, previousHostId);
   }
 
@@ -1354,12 +1327,12 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
   /** 这张标签页要交给 Agent：它坐着的房间必须开着 MCP，否则其他玩家的知情就被绕过了。 */
   assertTabAgentsAllowed(tabKey: string): void {
-    assertTabAgentsAllowed(this.roomKernel, tabKey);
+    assertTabAgentsAllowed(this.ctx.kernel, tabKey);
   }
 
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
-    for (const room of roomsOfTab(this.roomKernel, tabKey)) this.ctx.publishRoom(room);
+    for (const room of roomsOfTab(this.ctx.kernel, tabKey)) this.ctx.publishRoom(room);
   }
 
   /**

@@ -11,15 +11,22 @@ import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../../domain/TestRooms
 import type { RandomSource } from "../../domain/Rules";
 import { SlidingWindowRateLimiter } from "../../infrastructure/RateLimiter";
 import { createEvent } from "../../transport/Packets";
+import { NOOP_GAME_RECORDER, type GameRecorder } from "../../domain/GameRecord";
 import { ConnectionRegistry } from "../ConnectionRegistry";
 import { LobbyFanout } from "../LobbyFanout";
 import { ChatLimiter } from "../room/ChatLog";
 import { IdCounter } from "../room/IdCounter";
+import { RoomIdReservations } from "../room/RoomIdReservations";
+import { RoomPasswordGate } from "../room/RoomPasswordGate";
+import type { SeatBindingContext, TabSeatContext } from "../room/SeatBinding";
 import { publishRoomState } from "../room/RoomPublisher";
 import type { SonGuessrServiceOptions } from "./Options";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import { buildPrivateState, buildRoomSnapshot, listRoomSummaries } from "./RoomViews";
 import { SONG_ROOM_SHAPE } from "./RoomShape";
+
+/** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
+export const normalizeRoomPassword = (password: string): string => password.trim();
 
 /**
  * 猜歌上下文：只放数据与叶子工具（房间表、连接登记、时钟、随机源、发号器、配额、发布与日志）。
@@ -55,6 +62,13 @@ export interface SonGuessrContext {
   readonly musicPoolWaiters: Map<string, Set<() => void>>;
   nextMusicRefreshSweepAt: number;
   musicRefreshSweepInFlight: boolean;
+  /** 座位绑定、转离线与标签页座位共用的内核上下文。 */
+  readonly kernel: SeatBindingContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> &
+    TabSeatContext<SonGuessrRoomRecord, SonGuessrPlayerRecord> & { recorder: GameRecorder };
+  /** 建房与入房、改设置共用的口令门（规范化、摘要、校验与限流）。 */
+  readonly passwords: RoomPasswordGate;
+  /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
+  readonly reservations: RoomIdReservations;
   /** 大厅列表的唯一出口：合并窗内的多次变更并为一次全量下发，订阅者单独取当前列表。 */
   readonly lobby: LobbyFanout;
   touch(room: SonGuessrRoomRecord): void;
@@ -66,10 +80,12 @@ export interface SonGuessrContext {
 
 export const createSonGuessrContext = (options: SonGuessrServiceOptions): SonGuessrContext => {
   const now = options.now ?? (() => Date.now());
+  const rooms = new Map<string, SonGuessrRoomRecord>();
+  const connections = new ConnectionRegistry();
   const ctx: SonGuessrContext = {
     options,
-    rooms: new Map(),
-    connections: new ConnectionRegistry(),
+    rooms,
+    connections,
     now,
     random: options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
@@ -89,6 +105,21 @@ export const createSonGuessrContext = (options: SonGuessrServiceOptions): SonGue
       maxRequests: MUSIC_AUTH_RATE_LIMIT_PER_CONNECTION,
     }),
     chatLimiter: new ChatLimiter({ now: () => now() }),
+    kernel: {
+      shape: SONG_ROOM_SHAPE,
+      connections,
+      rooms,
+      now: () => now(),
+      recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
+    },
+    passwords: new RoomPasswordGate({
+      now: () => now(),
+      normalize: normalizeRoomPassword,
+      missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
+      missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
+      hasher: options.passwordHasher,
+    }),
+    reservations: new RoomIdReservations(),
     musicPoolWaiters: new Map(),
     nextMusicRefreshSweepAt: 0,
     musicRefreshSweepInFlight: false,
