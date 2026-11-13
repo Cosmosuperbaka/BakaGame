@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -157,6 +157,34 @@ describe("PhaseTimerControl", () => {
     fireEvent.click(cancelButton);
     await waitFor(() => {
       expect(sendCommandMock).toHaveBeenCalledWith("game.stopPhaseTimer", {});
+    });
+  });
+
+  describe("读数时刻", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("无倒计时期间过了很久再开启，第一帧就按当前时刻读数而不是挂载时的陈旧时刻", () => {
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      const start = 1_700_000_000_000;
+      vi.setSystemTime(start);
+      useWhoIsFakerStore.setState({
+        snapshot: createBaseSnapshot("description"),
+        privateState: createPrivateState(true, "host_1"),
+      });
+      render(<FakerPhaseTimerControl />);
+
+      // 挂载后三分钟没有倒计时，随后主持人开启 1 分钟倒计时
+      act(() => void vi.setSystemTime(start + 180_000));
+      const withTimer = createBaseSnapshot("description");
+      withTimer.status.phaseTimer = {
+        durationSeconds: 60,
+        endsAt: start + 180_000 + 60_000,
+        phase: "description",
+      };
+      act(() => useWhoIsFakerStore.setState({ snapshot: withTimer }));
+
+      expect(screen.getByText("01:00")).toBeInTheDocument();
+      expect(screen.queryByText("04:00")).toBeNull();
     });
   });
 });

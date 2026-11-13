@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -101,15 +101,15 @@ export function FakerPhaseTimerControl({ className }: Props) {
   );
   const canControl = (isQuestioner || isTestRoomHost) && isSupportedPhase;
 
-  // 毫秒级倒计时平滑时钟
-  const [now, setNow] = useState(serverNow);
+  // 毫秒级倒计时平滑时钟：间隔只负责触发重渲染，「现在」在渲染时现取。
+  // 存成状态会让无倒计时期间的时刻停在挂载那一刻，新倒计时的第一帧就按陈旧时刻读数。
+  const [, tick] = useReducer((count: number) => count + 1, 0);
   useEffect(() => {
     if (!phaseTimer) return;
-    const interval = window.setInterval(() => {
-      setNow(serverNow());
-    }, countdownTickMs);
+    const interval = window.setInterval(tick, countdownTickMs);
     return () => window.clearInterval(interval);
   }, [phaseTimer]);
+  const now = serverNow();
 
   const remainingMs = phaseTimer ? Math.max(0, phaseTimer.endsAt - now) : 0;
   const remainingSec = Math.ceil(remainingMs / 1000);
