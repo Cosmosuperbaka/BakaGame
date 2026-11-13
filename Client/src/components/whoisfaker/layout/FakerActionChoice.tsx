@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode, type Ref } from "react";
+import { useCallback, useEffect, useRef, type ReactNode, type Ref } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, Sword, Undo2, Vote } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -58,6 +58,18 @@ export function TargetOption({
 }
 
 /**
+ * 回执的读屏播报位。回执是选项被替换后才新插入的节点，插入本身不会被播报；
+ * 播报位必须常驻，随回执出现再写入文案，读屏才会念出来。
+ */
+export function ReceiptAnnouncer({ text }: { text: string }) {
+  return (
+    <div role="status" className="sr-only">
+      {text}
+    </div>
+  );
+}
+
+/**
  * 提交回执。选项网格与回执是同一次决定的前后两面：两者经 `AnimatePresence mode="popLayout"` 交叉，
  * 回执的缩放原点落在被点的那张选项上（`origin`），读作「这张卡被接住了」；撤销时沿原路收回。
  * 没有点击来源（刷新后已投过票）时从自身中心展开。
@@ -69,6 +81,7 @@ export function ActionReceipt({
   busy,
   onUndo,
   undoControlId,
+  focusUndo = false,
   ref,
 }: {
   title: string;
@@ -77,10 +90,18 @@ export function ActionReceipt({
   busy: boolean;
   onUndo: () => void;
   undoControlId?: string;
+  /** 回执出现时把焦点交给「撤销」：点选的那个选项已卸载，焦点不能掉回页面根 */
+  focusUndo?: boolean;
   /** popLayout 需要量出退场元素的位置 */
   ref?: Ref<HTMLDivElement>;
 }) {
   const { style: originStyle, measure } = useOriginStyle(origin);
+  const undoRef = useRef<HTMLButtonElement>(null);
+  // 只在回执出现的那一刻取一次焦点，之后 focusUndo 怎么变都不再抢
+  const focusOnMount = useRef(focusUndo);
+  useEffect(() => {
+    if (focusOnMount.current) undoRef.current?.focus({ preventScroll: true });
+  }, []);
   const setRef = useCallback(
     (element: HTMLDivElement | null) => {
       measure(element);
@@ -109,6 +130,7 @@ export function ActionReceipt({
         </div>
       </div>
       <Button
+        ref={undoRef}
         variant="ghost"
         size="sm"
         className="shrink-0"

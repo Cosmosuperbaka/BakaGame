@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ABSTAIN_TARGET_ID, ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
 import type { WhoIsFakerRoomSnapshot } from "@bakagame/shared";
@@ -119,6 +119,53 @@ describe.each([false, true])("投票权限 UI（testMode=%s）", (testMode) => {
         targetId: ABSTAIN_TARGET_ID,
       })
     );
+  });
+});
+
+/** 服务端确认投票后下发的私有状态。 */
+const castVote = (targetId: string) =>
+  act(() =>
+    useWhoIsFakerStore.setState((state) => ({
+      privateState: { ...state.privateState!, myCurrentVoteTargetId: targetId },
+    }))
+  );
+
+describe("投票回执的可访问性", () => {
+  it("回执写进常驻的状态播报节点，节点先存在、再换文案", () => {
+    preset("voting", me);
+    render(<FakerVotingPhase />);
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("");
+    castVote(peach.id);
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status).toHaveTextContent(`已完成投票，投给 ${peach.name}`);
+  });
+
+  it("弃票的回执同样播报", () => {
+    preset("voting", me);
+    render(<FakerVotingPhase />);
+    castVote(ABSTAIN_TARGET_ID);
+    expect(screen.getByRole("status")).toHaveTextContent("已弃票，本轮不投出任何一票");
+  });
+
+  it("点选投票后选项卸载，焦点落到回执的「撤销」上而不是丢到页面根", async () => {
+    preset("voting", me);
+    render(<FakerVotingPhase />);
+    const option = screen.getByRole("button", { name: peach.name });
+    option.focus();
+    fireEvent.click(option);
+    await waitFor(() => expect(sendCommand).toHaveBeenCalled());
+    castVote(peach.id);
+    await waitFor(() => expect(screen.getByRole("button", { name: "撤销" })).toHaveFocus());
+  });
+
+  it("刷新后已投过票，回执出现时不抢走焦点", () => {
+    preset("voting", me);
+    useWhoIsFakerStore.setState((state) => ({
+      privateState: { ...state.privateState!, myCurrentVoteTargetId: peach.id },
+    }));
+    render(<FakerVotingPhase />);
+    expect(screen.getByRole("button", { name: "撤销" })).not.toHaveFocus();
   });
 });
 

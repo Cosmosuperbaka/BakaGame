@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
@@ -131,5 +131,48 @@ describe("FakerNightPhase", () => {
     setup({});
 
     expect(screen.queryByRole("button", { name: /不行动/ })).toBeNull();
+  });
+
+  describe("回执的可访问性", () => {
+    const submitNight = (patch: Partial<WhoIsFakerPrivateState>) =>
+      act(() =>
+        useWhoIsFakerStore.setState((state) => ({
+          privateState: { ...state.privateState!, ...patch },
+        }))
+      );
+
+    it("回执写进常驻的状态播报节点，节点先存在、再换文案", () => {
+      setup({ canActAtNight: true });
+      const status = screen.getByRole("status");
+      expect(status).toHaveTextContent("");
+      submitNight({ nightActionSubmitted: true, myCurrentNightTargetId: "player_3" });
+      expect(screen.getByRole("status")).toBe(status);
+      expect(status).toHaveTextContent("已完成夜晚决策，目标 玩家3");
+    });
+
+    it("本夜不行动的回执同样播报", () => {
+      setup({ canActAtNight: true });
+      submitNight({ nightActionSubmitted: true, myCurrentNightTargetId: undefined });
+      expect(screen.getByRole("status")).toHaveTextContent("已完成夜晚决策，本夜不行动");
+    });
+
+    it("点选后选项卸载，焦点落到回执的「撤销」上", async () => {
+      const sendCommand = setup({ canActAtNight: true });
+      const option = screen.getByRole("button", { name: /玩家3/ });
+      option.focus();
+      fireEvent.click(option);
+      await waitFor(() => expect(sendCommand).toHaveBeenCalled());
+      submitNight({ nightActionSubmitted: true, myCurrentNightTargetId: "player_3" });
+      await waitFor(() => expect(screen.getByRole("button", { name: "撤销" })).toHaveFocus());
+    });
+
+    it("刷新后已提交过，回执出现时不抢走焦点", () => {
+      setup({
+        canActAtNight: true,
+        nightActionSubmitted: true,
+        myCurrentNightTargetId: "player_3",
+      });
+      expect(screen.getByRole("button", { name: "撤销" })).not.toHaveFocus();
+    });
   });
 });

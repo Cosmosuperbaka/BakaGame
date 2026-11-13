@@ -11,7 +11,7 @@ import { FakerPrivilegedActionPreview } from "../layout/FakerPrivilegedActionPre
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
 import { FakerAbstainOption } from "../layout/FakerAbstainOption";
-import { ActionReceipt, TargetOption } from "../layout/FakerActionChoice";
+import { ActionReceipt, ReceiptAnnouncer, TargetOption } from "../layout/FakerActionChoice";
 
 /** 投票候选：平票 PK 只在候选人里选，任何情况下都不投自己，测试房间也一样。 */
 const pickVoteTargets = <P extends { id: string }>(
@@ -74,6 +74,10 @@ const receiptDetail = (abstained: boolean, targetPlayerName?: string) =>
       投给 <span className="font-medium text-foreground">{targetPlayerName}</span>
     </>
   ) : null;
+
+/** 读屏播报的回执：与可见回执同一件事，写成一句话。 */
+const receiptSpeech = (abstained: boolean, targetPlayerName?: string) =>
+  abstained ? "已弃票，本轮不投出任何一票" : `已完成投票，投给 ${targetPlayerName ?? ""}`.trim();
 
 export function FakerVotingPhase() {
   const {
@@ -184,10 +188,12 @@ export function FakerVotingPhase() {
               origin={origin}
               busy={pendingCommand === "cancel"}
               undoControlId="faker.cancelVote"
+              focusUndo={origin !== null}
               onUndo={handleCancelVote}
             />
           ) : null}
         </AnimatePresence>
+        <ReceiptAnnouncer text={showReceipt ? receiptSpeech(abstained, targetPlayerName) : ""} />
       </div>
 
       {isTieBreak && amAlive && isCandidate && !votedId ? (

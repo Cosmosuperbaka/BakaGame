@@ -9,7 +9,11 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { FakerPrivilegedActionPreview } from "../layout/FakerPrivilegedActionPreview";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { FakerAbstainOption } from "../layout/FakerAbstainOption";
-import { ActionReceipt, TargetOption } from "../layout/FakerActionChoice";
+import { ActionReceipt, ReceiptAnnouncer, TargetOption } from "../layout/FakerActionChoice";
+
+/** 读屏播报的夜晚回执：与可见回执同一件事，写成一句话。 */
+const nightReceiptSpeech = (targetName?: string) =>
+  `已完成夜晚决策，${targetName ? `目标 ${targetName}` : "本夜不行动"}`;
 
 export function FakerNightPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
@@ -134,10 +138,12 @@ export function FakerNightPhase() {
               origin={origin}
               busy={pendingCommand === "cancel"}
               undoControlId="faker.cancelNight"
+              focusUndo={origin !== null}
               onUndo={handleCancelNightAction}
             />
           ) : null}
         </AnimatePresence>
+        <ReceiptAnnouncer text={canAct && acted ? nightReceiptSpeech(actionTargetName) : ""} />
       </div>
 
       {idleNote ? <p className="text-center text-sm text-muted-foreground">{idleNote}</p> : null}
