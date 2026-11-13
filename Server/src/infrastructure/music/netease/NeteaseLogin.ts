@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { LRUCache } from "lru-cache";
 import { AppError } from "../../../domain/Errors";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { asRecord, readNumber, readString } from "../../JsonReaders";
 import type { MusicLoginSession, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
 import type { SonGuessrMusicAccount } from "../../../shared/Index";
+import { LoginStatusCache } from "../MusicCredential";
 import type { NeteaseApiGateway } from "./NeteaseApiGateway";
 import {
   musicLoginError,
@@ -36,8 +36,7 @@ export interface NeteaseLoginDeps {
 
 /** 扫码登录、登录态校验与会员信息补全。出站一律经网关，复用缓存与在途合并状态在本类里。 */
 export class NeteaseLogin {
-  private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  private readonly loginStatusInFlight = new Map<string, Promise<MusicLoginSession>>();
+  private readonly loginStatus: LoginStatusCache;
   private readonly gateway: NeteaseApiGateway;
   private readonly deviceName: string;
   private readonly logger?: EventLogger;
@@ -48,9 +47,9 @@ export class NeteaseLogin {
     this.deviceName = deps.deviceName;
     this.logger = deps.logger;
     this.now = deps.now;
-    this.loginStatusCache = new LRUCache<string, MusicLoginSession>({
-      max: LOGIN_STATUS_CACHE_MAX_ENTRIES,
-      ttl: LOGIN_STATUS_REUSE_TTL_MS,
+    this.loginStatus = new LoginStatusCache({
+      maxEntries: LOGIN_STATUS_CACHE_MAX_ENTRIES,
+      ttlMs: LOGIN_STATUS_REUSE_TTL_MS,
     });
   }
 
@@ -184,24 +183,9 @@ export class NeteaseLogin {
     const cookie = cookieValue.trim();
     if (!cookie) throw new AppError("MUSIC_SESSION_INVALID", "登录 Cookie 不能为空");
     const cacheKey = this.gateway.cacheKey("login-status", cookie);
-    const reused = this.loginStatusCache.get(cacheKey);
     // 复用期内直接返回同一份校验结果；校验失败不写缓存，所以失效的凭据下一次仍会回源。
-    if (reused) return { cookie: reused.cookie, account: { ...reused.account } };
     // 同凭据的并发校验合并：房间接入与开局复验经常同时到达，各打一次上游没有收益。
-    let flight = this.loginStatusInFlight.get(cacheKey);
-    if (!flight) {
-      flight = this.verifyLoginStatus(cookie, loginScope)
-        .then((verified) => {
-          this.loginStatusCache.set(cacheKey, verified);
-          return verified;
-        })
-        .finally(() => {
-          this.loginStatusInFlight.delete(cacheKey);
-        });
-      this.loginStatusInFlight.set(cacheKey, flight);
-    }
-    const session = await flight;
-    return { cookie: session.cookie, account: { ...session.account } };
+    return this.loginStatus.resolve(cacheKey, () => this.verifyLoginStatus(cookie, loginScope));
   }
 
   private async verifyLoginStatus(cookie: string, loginScope?: string): Promise<MusicLoginSession> {

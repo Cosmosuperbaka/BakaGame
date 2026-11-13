@@ -1,10 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
 import { LRUCache } from "lru-cache";
 import type { EventLogger } from "../EventLogger";
 import { countServerMetric } from "../Sentry";
 import { stableStringify } from "../JsonReaders";
 import { randomChineseIp, type ChinaIpRange } from "./ChinaIpRanges";
+import { fingerprintCookie } from "./MusicCredential";
 
 /** 把凭据窄化成组合包形态；裸字符串与非对象凭据都走 `false` 分支。 */
 const isCookieRecord = (cookie: unknown): cookie is Record<string, unknown> =>
@@ -170,7 +170,7 @@ export class MusicIpScopeRegistry {
   /** 凭据原文的稳定指纹（sha256 前 16 位）；无凭据时返回空串，供缓存键等场景复用。 */
   cookieFingerprint(cookie: unknown): string {
     const cookieStr = this.platformCookieString(cookie);
-    return cookieStr ? createHash("sha256").update(cookieStr).digest("hex").slice(0, 16) : "";
+    return cookieStr ? fingerprintCookie(cookieStr) : "";
   }
 
   private platformCookieString(cookie: unknown): string {

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { fingerprintCookie } from "../MusicCredential";
 import type { MusicCookieInput } from "../MusicProvider";
 
 export const extractQqCookie = (cookie?: MusicCookieInput): string | undefined => {
@@ -12,5 +12,5 @@ export const extractQqCookie = (cookie?: MusicCookieInput): string | undefined =
 export const audioCacheScope = (cookie?: string): string => {
   const value = cookie?.trim();
   if (!value) return "anonymous";
-  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+  return fingerprintCookie(value);
 };

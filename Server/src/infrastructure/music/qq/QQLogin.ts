@@ -1,9 +1,9 @@
-import { LRUCache } from "lru-cache";
 import qqmusic from "qqmusic-api-enhanced";
 import { AppError } from "../../../domain/Errors";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { asRecord, readNumber } from "../../JsonReaders";
 import type { MusicCookieInput, MusicLoginSession, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
+import { LoginStatusCache } from "../MusicCredential";
 import { audioCacheScope, extractQqCookie } from "./QQCookie";
 import { readString, readText } from "./QQResponse";
 import type { QQCallUpstream } from "./QQUpstream";
@@ -20,18 +20,16 @@ export interface QQLoginDeps {
 /** QQ 音乐扫码登录、登录态校验与续期；登录态复用缓存与在途合并状态都在本类里。 */
 export class QQLogin {
   /** 登录态复用与网易云同口径：普通 LRU + 单 TTL，不进软/硬双 TTL 的公共缓存。 */
-  private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  /** 同一凭据、同一模式的在途校验共用一次回源；键是指纹，Cookie 原文不留在任何 Map 里。 */
-  private readonly loginStatusInFlight = new Map<string, Promise<MusicLoginSession>>();
+  private readonly loginStatus: LoginStatusCache;
   private readonly callUpstream: QQCallUpstream;
   private readonly options: { logger?: EventLogger };
 
   constructor(deps: QQLoginDeps) {
     this.callUpstream = deps.callUpstream;
     this.options = { logger: deps.logger };
-    this.loginStatusCache = new LRUCache<string, MusicLoginSession>({
-      max: LOGIN_STATUS_CACHE_MAX_ENTRIES,
-      ttl: LOGIN_STATUS_CACHE_TTL_MS,
+    this.loginStatus = new LoginStatusCache({
+      maxEntries: LOGIN_STATUS_CACHE_MAX_ENTRIES,
+      ttlMs: LOGIN_STATUS_CACHE_TTL_MS,
     });
   }
 
@@ -185,26 +183,14 @@ export class QQLogin {
       throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录 Cookie 不能为空");
     }
 
-    const cacheKey = this.loginStatusKey(trimmed);
     // 强制续期必须绕过缓存：缓存里是上一次校验结果，不会替我们换新 key。
-    const reused = options.forceRefresh ? undefined : this.loginStatusCache.get(cacheKey);
-    if (reused) {
-      return { cookie: reused.cookie, account: { ...reused.account } };
-    }
-
     // 房间接入、开局复验与后台续期会同时到达：同凭据的在途校验合并，
     // 否则续期接口被并行打两次，一次性的 refresh 凭据会让后一次失败。
-    const flightKey = `${cacheKey}:${options.forceRefresh ? "refresh" : "check"}`;
-    let flight = this.loginStatusInFlight.get(flightKey);
-    if (!flight) {
-      flight = this.verifyLoginSession(currentCookie, trimmed, options).finally(() => {
-        this.loginStatusInFlight.delete(flightKey);
-      });
-      this.loginStatusInFlight.set(flightKey, flight);
-    }
-    const session = await flight;
-    // 对齐网易云：返回副本，调用方对返回值的改写不得污染复用缓存或其它并发调用方。
-    return { cookie: session.cookie, account: { ...session.account } };
+    return this.loginStatus.resolve(
+      this.loginStatusKey(trimmed),
+      () => this.verifyLoginSession(currentCookie, trimmed, options),
+      { force: options.forceRefresh }
+    );
   }
 
   private loginStatusKey(trimmedCookie: string): string {
@@ -217,7 +203,6 @@ export class QQLogin {
     options: { forceRefresh?: boolean }
   ): Promise<MusicLoginSession> {
     let currentCookie = initialCookie;
-    const cacheKey = this.loginStatusKey(trimmed);
     let statusRes = await this.callUpstream(currentCookie, () =>
       qqmusic.login_status({ cookie: currentCookie })
     );
@@ -265,9 +250,9 @@ export class QQLogin {
       },
     };
 
-    this.loginStatusCache.set(cacheKey, session);
+    // 原键的写入由复用缓存统一做；凭据被上游轮换时，新凭据的键也登记同一份结果。
     if (currentCookie.trim() !== trimmed) {
-      this.loginStatusCache.set(this.loginStatusKey(currentCookie.trim()), session);
+      this.loginStatus.remember(this.loginStatusKey(currentCookie.trim()), session);
     }
     return session;
   }
