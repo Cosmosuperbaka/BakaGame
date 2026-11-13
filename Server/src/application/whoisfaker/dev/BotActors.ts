@@ -5,7 +5,7 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../../shared/Index";
 import { BOT_DESCRIPTION_TEMPLATES, BOT_NAME_SUFFIXES } from "../../../config/Constants";
-import { requeuePendingDisconnects } from "../OfflineSettlement";
+import { requeuePendingDisconnects } from "../PendingDisconnects";
 import { completeSupplementIfReady } from "../PhaseFlow";
 import { publishRoom } from "../RoomPublish";
 import {

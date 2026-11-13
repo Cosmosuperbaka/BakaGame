@@ -27,7 +27,7 @@ import {
   timeoutBlankGuessPhase,
 } from "./BlankGuess";
 import { runBots } from "./dev/BotActors";
-import { requeuePendingDisconnects } from "./OfflineSettlement";
+import { requeuePendingDisconnects } from "./PendingDisconnects";
 import { publishLobby, publishRoom } from "./RoomPublish";
 import {
   createDescription,
@@ -558,12 +558,6 @@ const timeoutNightPhase = async (
   ctx.touch(room);
   publishRoom(ctx, room);
   await runBots(ctx, room);
-};
-
-export const broadcastPhaseAndPublish = (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
-  // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
-  requeuePendingDisconnects(ctx, room);
-  publishRoom(ctx, room);
 };
 
 export const startRound = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
