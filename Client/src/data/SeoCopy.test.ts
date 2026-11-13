@@ -56,40 +56,43 @@ describe("SEO 文案", () => {
 });
 
 describe("robots.txt", () => {
-  /** 按空行分组，记录每组的 User-agent 与 Disallow。 */
+  /** 按空行分组，记录每组的 User-agent、Allow 与 Disallow。 */
   const groups = readPublic("robots.txt")
     .split(/\n\s*\n/)
     .map((block) => block.split("\n").map((line) => line.trim()))
-    .reduce<{ agents: string[]; disallow: string[] }[]>((all, lines) => {
-      const agents = lines
-        .filter((l) => l.startsWith("User-agent:"))
-        .map((l) => l.slice(11).trim());
-      const disallow = lines.filter((l) => l.startsWith("Disallow:")).map((l) => l.slice(9).trim());
-      if (agents.length > 0) all.push({ agents, disallow: [...disallow] });
-      else if (all.length > 0) all[all.length - 1].disallow.push(...disallow);
+    .reduce<{ agents: string[]; allow: string[]; disallow: string[] }[]>((all, lines) => {
+      const pick = (prefix: string) =>
+        lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length).trim());
+      const agents = pick("User-agent:");
+      if (agents.length > 0) {
+        all.push({ agents, allow: pick("Allow:"), disallow: pick("Disallow:") });
+      } else if (all.length > 0) {
+        all[all.length - 1].allow.push(...pick("Allow:"));
+        all[all.length - 1].disallow.push(...pick("Disallow:"));
+      }
       return all;
     }, []);
 
-  it("主流 AI 爬虫被具名放行", () => {
-    const named = groups.flatMap((group) => group.agents);
-    for (const agent of [
-      "GPTBot",
-      "OAI-SearchBot",
-      "ClaudeBot",
-      "PerplexityBot",
-      "Google-Extended",
-    ]) {
-      expect(named).toContain(agent);
-    }
+  // 命名分组不继承 * 分组：多一个照抄的分组就多一处漏抄的机会（少抄一条，那家爬虫就能进后台）。
+  // 没有差异化规则时只留 *，所有爬虫（含 AI 搜索与训练爬虫）按同一组规则抓取。
+  it("只有一个通配分组", () => {
+    expect(groups.map((group) => group.agents)).toEqual([["*"]]);
   });
 
-  // 命名分组不继承 * 分组：少抄一条，AI 爬虫就能进后台与房间页。
-  it("每个分组的屏蔽清单完全一致，且都挡住后台与房间页", () => {
-    const [base, ...rest] = groups.map((group) => [...group.disallow].sort());
-    expect(rest.length).toBeGreaterThan(0);
-    for (const list of rest) expect(list).toEqual(base);
-    expect(base).toEqual(
-      expect.arrayContaining(["/admin", "/whoisfaker/room/", "/songuessr/room/", "/cee/room/"])
+  it("挡住后台、房间页与接口，只放行 MCP 服务发现", () => {
+    const [all] = groups;
+    expect(all.disallow).toEqual(
+      expect.arrayContaining([
+        "/admin",
+        "/whoisfaker/room/",
+        "/songuessr/room/",
+        "/cee/room/",
+        "/songuessr/solo",
+        "/cee/ranked",
+        "/status",
+        "/api/",
+      ])
     );
+    expect(all.allow).toEqual(expect.arrayContaining(["/", "/api/.well-known/"]));
   });
 });
