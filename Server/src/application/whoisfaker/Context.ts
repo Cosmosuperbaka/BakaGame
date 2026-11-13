@@ -21,10 +21,7 @@ import { whoIsFakerShape } from "./RoomShape";
 import { listRoomSummaries } from "./RoomViews";
 
 /** 内核座位绑定用的上下文：绑定、转离线、解散都经它，对局记录与定时器随它进内核。 */
-type WhoIsFakerSeatContext = SeatBindingContext<
-  WhoIsFakerRoomRecord,
-  WhoIsFakerPlayerRecord
-> & {
+type WhoIsFakerSeatContext = SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord> & {
   recorder: GameRecorder;
   timers: RoomTimers;
 };
