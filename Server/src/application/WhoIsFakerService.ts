@@ -65,6 +65,7 @@ import {
   assertAgentAdmission,
   assertSeatResumable,
   assertTabAgentsAllowed,
+  dissolveRoom,
   findSeat,
   roomsOfTab,
   type SeatBindingContext,
@@ -202,7 +203,9 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
   readonly rooms = new Map<string, WhoIsFakerRoomRecord>();
   readonly connectionRegistry: ConnectionRegistry;
-  readonly seatContext: SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
+  readonly seatContext: SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord> & {
+    recorder: GameRecorder;
+  };
   /** 标签页接管 Agent 时按标签页找房间用的上下文。 */
   private readonly tabSeats: TabSeatContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
   /** MCP 座位配对与控制器：进程内状态，重启即失效。 */
@@ -252,6 +255,7 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
       shape: whoIsFakerShape,
       connections: this.connectionRegistry,
       now: () => this.now(),
+      recorder: options.gameRecorder ?? NOOP_GAME_RECORDER,
     };
     this.tabSeats = {
       shape: whoIsFakerShape,
@@ -1690,23 +1694,8 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
 
   async closeRoom(room: WhoIsFakerRoomRecord, reason: string) {
     this.clearPhaseTimer(room);
-    // 房间销毁 = 这一局结束：把聚合后的对局记录收尾到销毁时刻。
-    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).finishRoom({
-      game: "faker",
-      roomId: room.id,
-      roomCreatedAt: room.createdAt,
-      endedAt: this.now(),
-    });
-    // closeRoom 负责房间生命周期的最后一步：通知、解绑、删除、记日志。
-    for (const connection of this.connectionRegistry.getRoomConnections(room.id)) {
-      (connection.sendPacket ?? connection.send)(
-        createEvent("room.closed", {
-          roomId: room.id,
-          reason,
-        })
-      );
-      this.connectionRegistry.detach(connection);
-    }
+    // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、记日志、刷新大厅。
+    dissolveRoom(this.seatContext, room, { roomId: room.id, reason });
 
     this.rooms.delete(room.id);
     if (room.round) this.roundStartedAtById.delete(room.round.id);
