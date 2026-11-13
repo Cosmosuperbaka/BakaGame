@@ -14,7 +14,7 @@ import { CEERankedMatch } from "@/components/cee/ranked/CEERankedMatch";
 import { useCEESecureScreen } from "@/components/cee/UseCEESecureScreen";
 import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard";
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
-import { CEEDataSourceContext, rankedCEEDataSource } from "@/lib/CEEDataSource";
+import { CEEDataSourceContext, rankedCEEDataSource } from "@/components/cee/CEEDataSource";
 import { isBakaClient } from "@/lib/BakaChannel";
 import { dropIn, phaseSwap } from "@/lib/Motion";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";

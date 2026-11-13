@@ -8,7 +8,7 @@ import {
 } from "@/components/common/SearchCombobox";
 import { Button } from "@/components/ui/Button";
 import { useIdleSearch } from "@/hooks/UseIdleSearch";
-import { useCEEDataSource } from "@/lib/CEEDataSource";
+import { useCEEDataSource } from "./CEEDataSource";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { CEECharacterImage, CEESubjectImage } from "./CEECharacterImage";
 

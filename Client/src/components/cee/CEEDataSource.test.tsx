@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CEECharacterSummary, CEESubjectSummary } from "@bakagame/shared";
 import type { ReactNode } from "react";
 import { ceeWsClient, type CEESendCommand } from "@/lib/CEEWs";
-import { CEECharacterImage } from "@/components/cee/CEECharacterImage";
+import { CEECharacterImage } from "./CEECharacterImage";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { clearCEERankedQueryCache, useCEERankedStore } from "@/stores/UseCEERankedStore";
 import {

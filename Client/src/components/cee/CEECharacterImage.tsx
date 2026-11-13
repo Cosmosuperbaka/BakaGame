@@ -1,7 +1,7 @@
 import { UserRound } from "lucide-react";
 import type { CEECharacterSummary, CEEImageSize, CEESubjectSummary } from "@bakagame/shared";
 import { LazyImage } from "@/components/common/LazyImage";
-import { useCEEDataSource } from "@/lib/CEEDataSource";
+import { useCEEDataSource } from "./CEEDataSource";
 import { cn } from "@/lib/Utils";
 
 /**
