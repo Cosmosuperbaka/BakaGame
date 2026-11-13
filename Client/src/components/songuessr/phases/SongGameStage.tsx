@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type Ref } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AudioLines,
@@ -16,11 +16,9 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { CountdownBadge } from "@/components/common/room/CountdownBadge";
 import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
@@ -38,6 +36,7 @@ import { cn } from "@/lib/Utils";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { AttemptList } from "@/components/songuessr/SongAttemptList";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
+import { GuessBar } from "./SongGuessBar";
 import type {
   SongClipPreview,
   SongSearchResult,
@@ -55,11 +54,6 @@ type Round = NonNullable<SonGuessrRoomSnapshot["currentRound"]>;
 
 /** 作答阶段各组件共用的入参：整包区域属性加上已确认存在的当前回合。 */
 type PlayingPhaseProps = SongGameAreaProps & { round: Round };
-
-export function SongGuessCountdown({ deadlineAt }: { deadlineAt?: number | null }) {
-  const secondsLeft = useSecondsLeft(deadlineAt);
-  return <CountdownBadge secondsLeft={secondsLeft} />;
-}
 
 type AudioCue = "loading" | "error" | "idle" | "playing" | "completed";
 
@@ -645,83 +639,6 @@ function SubmittingSongPhase({
         </p>
       )}
     </div>
-  );
-}
-
-/**
- * 猜测栏：搜索框与投降按钮独立成行，放在歌词卡之下，不和歌词挤在同一块里。
- * 上方一行是剩余次数与限时；音频还没就绪时搜索框禁用，投降仍可用。
- * md 以下歌词卡就占满首屏，猜测栏贴在游戏区滚动视口的底边（区内遮罩档 `bg-panel/90 backdrop-blur-sm`），
- * 左右以负外边距铺满游戏区内边距；滚到它的原位后随内容回到流内。
- */
-function GuessBar({
-  ref,
-  snapshot,
-  privateState,
-  guessDeadlineAt,
-  onSelectSearchSong,
-  run,
-  isPending,
-  guessedIds,
-}: SongGameAreaProps & {
-  guessedIds: string[];
-  ref?: Ref<HTMLElement>;
-}) {
-  const givingUp = isPending?.("song.game.giveUp") ?? false;
-  const anime = snapshot.settings.questionType === "anime";
-  return (
-    <motion.section
-      ref={ref}
-      variants={listItem}
-      initial="initial"
-      animate="animate"
-      exit="exit"
-      aria-label="提交猜测"
-      className="origin-left space-y-2 max-md:sticky max-md:bottom-0 max-md:z-panel max-md:-mx-6 max-md:bg-panel/90 max-md:px-6 max-md:pt-3 max-md:pb-3 max-md:backdrop-blur-sm"
-    >
-      <div className="flex min-h-7 items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>
-          {privateState.canGuess
-            ? `剩余 ${privateState.remainingGuesses} 次猜测`
-            : "音频准备中，请稍候…"}
-        </span>
-        {snapshot.settings.showGuessTimer &&
-        privateState.canGuess &&
-        privateState.guessDeadlineAt ? (
-          <SongGuessCountdown deadlineAt={guessDeadlineAt} />
-        ) : null}
-      </div>
-      <div className="flex gap-2">
-        {anime ? (
-          <AnimeSearch
-            mode="guess"
-            className="flex-1"
-            disabled={!privateState.canGuess}
-            guessedIds={guessedIds}
-            onSelect={(subject) => onSelectSearchSong(subject.id, "guess")}
-          />
-        ) : (
-          <SongSearch
-            mode="guess"
-            className="flex-1"
-            disabled={!privateState.canGuess}
-            guessedIds={guessedIds}
-            onSelect={(song) => onSelectSearchSong(song.id, "guess")}
-          />
-        )}
-        {privateState.canGiveUp ? (
-          <Button
-            variant="outline"
-            className="h-10 shrink-0"
-            loading={givingUp}
-            onClick={() => void run("song.game.giveUp")}
-            data-agent-control="song.guess.giveup"
-          >
-            {givingUp ? null : <Flag />}投降
-          </Button>
-        ) : null}
-      </div>
-    </motion.section>
   );
 }
 
