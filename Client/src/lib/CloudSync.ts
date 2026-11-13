@@ -4,18 +4,14 @@ import type { CloudSettings, MusicPlatform } from "@bakagame/shared";
 import { api, type ApiClient } from "@/lib/Api";
 import { ROOM_MEMORY_SYNC_PREFIXES } from "@/lib/RoomSettingsMemory";
 import { captureClientLog } from "@/lib/Sentry";
+import { notifyPreferencesApplied, onPreferencesChanged } from "@/lib/PreferenceBus";
 import {
   getStoredSongMusicSession,
+  onSongMusicSessionChanged,
   saveSongMusicSession,
-  SONGUESSR_MUSIC_SESSION_CHANGED,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
-import {
-  PREFERENCES_APPLIED,
-  PREFERENCES_CHANGED,
-  SONG_VOLUME_KEY,
-  USERNAME_KEY,
-} from "@/lib/Storage";
+import { SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
 
 /**
  * 已登录时的云同步（见 Server/docs/Account.md §6）。
@@ -203,7 +199,7 @@ export function startCloudSync(client: ApiClient = api): () => void {
       } catch {
         // 本地存储不可写：本机继续用原有偏好。
       }
-      window.dispatchEvent(new Event(PREFERENCES_APPLIED));
+      notifyPreferencesApplied();
     }
     // 云端没有文档时按空文档记：之后本地仍为空的通知不会建出空文档。
     lastPushed = sortedJson(remote);
@@ -229,14 +225,14 @@ export function startCloudSync(client: ApiClient = api): () => void {
     for (const [platform, session] of uploads) void uploadMusic(platform, session);
   };
 
-  window.addEventListener(PREFERENCES_CHANGED, schedulePush);
-  window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, onMusicChanged);
+  const stopPreferences = onPreferencesChanged(schedulePush);
+  const stopMusic = onSongMusicSessionChanged(onMusicChanged);
   void initialize();
 
   return () => {
     active = false;
     if (pushTimer !== undefined) clearTimeout(pushTimer);
-    window.removeEventListener(PREFERENCES_CHANGED, schedulePush);
-    window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, onMusicChanged);
+    stopPreferences();
+    stopMusic();
   };
 }

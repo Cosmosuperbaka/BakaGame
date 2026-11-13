@@ -4,7 +4,7 @@ import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
-  SONGUESSR_MUSIC_SESSION_CHANGED,
+  onSongMusicSessionChanged,
 } from "./SonGuessrMusicSession";
 
 const session = {
@@ -15,13 +15,13 @@ const session = {
 describe("SonGuessr browser music session", () => {
   it("stores remembered login state only in localStorage", () => {
     const changed = vi.fn();
-    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, changed);
+    const stop = onSongMusicSessionChanged(changed);
     saveSongMusicSession(session, true);
     expect(window.localStorage.length).toBe(1);
     expect(window.sessionStorage.length).toBe(0);
     expect(getStoredSongMusicSession()).toEqual({ ...session, persistent: true });
     expect(changed).toHaveBeenCalledOnce();
-    window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, changed);
+    stop();
   });
 
   it("uses sessionStorage when the user disables saved login", () => {

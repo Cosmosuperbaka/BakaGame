@@ -14,7 +14,8 @@ import {
   saveSongMusicSession,
   clearStoredSongMusicSession,
 } from "./SonGuessrMusicSession";
-import { notifyPreferencesChanged, PREFERENCES_APPLIED, saveUsername } from "./Storage";
+import { notifyPreferencesChanged, onPreferencesApplied } from "./PreferenceBus";
+import { saveUsername } from "./Storage";
 
 const netease = {
   cookie: "MUSIC_U=cloud",
@@ -66,7 +67,7 @@ describe("云同步", () => {
     window.localStorage.setItem("songuessr_volume", "0.4");
     window.localStorage.setItem("bakagame:username", "本机");
     const applied = vi.fn();
-    window.addEventListener(PREFERENCES_APPLIED, applied);
+    const stopApplied = onPreferencesApplied(applied);
     const { client, savePreferences } = fakeClient({
       preferences: {
         value: { songuessr_volume: "0.9", "bakagame:room-create:faker": '{"visibility":"public"}' },
@@ -90,7 +91,7 @@ describe("云同步", () => {
       },
     });
     stop();
-    window.removeEventListener(PREFERENCES_APPLIED, applied);
+    stopApplied();
   });
 
   it("云端与本地一致时不上传；之后的本地改动防抖合并成一次上传，停止后不再上传", async () => {

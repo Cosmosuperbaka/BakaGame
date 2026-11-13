@@ -1,4 +1,5 @@
 import { TEST_ROOM_ID } from "@/config/Constants";
+import { notifyPreferencesChanged } from "@/lib/PreferenceBus";
 
 /**
  * 存储键命名空间。
@@ -90,17 +91,6 @@ function migrateLegacyKeys(): void {
   } catch {
     // 存储被禁用或中途失败：保留旧键，视为未搬迁。
   }
-}
-
-/**
- * 云同步偏好的变更通知（见 lib/CloudSync.ts）：写入同步范围内的本地键后派发，
- * 已登录时由云同步合并上传；云端偏好写回本地后派发 `PREFERENCES_APPLIED`，让已挂载的读取方重读。
- */
-export const PREFERENCES_CHANGED = "bakagame:preferences-changed";
-export const PREFERENCES_APPLIED = "bakagame:preferences-applied";
-
-export function notifyPreferencesChanged(): void {
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(PREFERENCES_CHANGED));
 }
 
 export function getSavedUsername(): string {

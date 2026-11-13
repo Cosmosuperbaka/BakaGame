@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { clipVolume } from "@/lib/ClipFade";
 import type { SonGuessrSendCommand } from "@/lib/SonGuessrWs";
-import { notifyPreferencesChanged, PREFERENCES_APPLIED, SONG_VOLUME_KEY } from "@/lib/Storage";
+import { notifyPreferencesChanged, onPreferencesApplied } from "@/lib/PreferenceBus";
+import { SONG_VOLUME_KEY } from "@/lib/Storage";
 
 const DEFAULT_SONG_VOLUME = 0.65;
 
@@ -45,8 +46,7 @@ export function useAudioClipPlayer({
   // 登录后云端音量写回本地：已在播放的房间同步改用新音量。
   useEffect(() => {
     const reload = () => setVolumeState(readSavedVolume());
-    window.addEventListener(PREFERENCES_APPLIED, reload);
-    return () => window.removeEventListener(PREFERENCES_APPLIED, reload);
+    return onPreferencesApplied(reload);
   }, []);
 
   const [audioStatus, setAudioStatus] = useState<"loading" | "ready" | "error">("loading");

@@ -15,7 +15,7 @@ import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
-  SONGUESSR_MUSIC_SESSION_CHANGED,
+  onSongMusicSessionChanged,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
 import { isValidRoomId, ROOM_ID_TEST_MODE } from "@bakagame/shared/values";
@@ -409,8 +409,7 @@ export function useSongRoomLifecycle({ solo = false }: { solo?: boolean } = {}) 
 
   useEffect(() => {
     const handleSessionChanged = () => setMusicSessionRevision((revision) => revision + 1);
-    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
-    return () => window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, handleSessionChanged);
+    return onSongMusicSessionChanged(handleSessionChanged);
   }, []);
 
   useEffect(() => {

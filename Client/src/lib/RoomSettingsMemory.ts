@@ -1,5 +1,5 @@
 import type { GameId } from "@bakagame/shared";
-import { notifyPreferencesChanged } from "@/lib/Storage";
+import { notifyPreferencesChanged } from "@/lib/PreferenceBus";
 import type {
   AnimeAutoFilters,
   CEESettings,

@@ -13,7 +13,7 @@ import {
   clearStoredSongMusicSession,
   getStoredSongMusicSession,
   saveSongMusicSession,
-  SONGUESSR_MUSIC_SESSION_CHANGED,
+  onSongMusicSessionChanged,
   type SongMusicPlatform,
   type StoredSongMusicSession,
 } from "@/lib/SonGuessrMusicSession";
@@ -354,8 +354,7 @@ function RoomAccountSettings({
       setStoredNetease(getStoredSongMusicSession("netease"));
       setStoredQq(getStoredSongMusicSession("qq"));
     };
-    window.addEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, sync);
-    return () => window.removeEventListener(SONGUESSR_MUSIC_SESSION_CHANGED, sync);
+    return onSongMusicSessionChanged(sync);
   }, []);
 
   const currentStored = activePlatform === "qq" ? storedQq : storedNetease;

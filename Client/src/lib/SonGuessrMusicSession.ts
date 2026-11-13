@@ -1,4 +1,5 @@
 import type { SonGuessrMusicAccount } from "@bakagame/shared";
+import { createSignal } from "@/lib/Signal";
 
 export type SongMusicPlatform = "netease" | "qq";
 
@@ -13,7 +14,10 @@ const STORAGE_KEYS: Record<SongMusicPlatform, { local: string; session: string }
   },
 };
 
-export const SONGUESSR_MUSIC_SESSION_CHANGED = "songuessr-music-session-changed";
+const sessionChanged = createSignal();
+
+/** 本机保存或清除任一平台的音乐账号之后通知；返回取消订阅函数。 */
+export const onSongMusicSessionChanged = sessionChanged.subscribe;
 
 export interface StoredSongMusicSession {
   cookie: string;
@@ -40,12 +44,6 @@ const parseSession = (raw: string | null, persistent: boolean): StoredSongMusicS
     };
   } catch {
     return null;
-  }
-};
-
-const notifyChanged = () => {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SONGUESSR_MUSIC_SESSION_CHANGED));
   }
 };
 
@@ -78,7 +76,7 @@ export const saveSongMusicSession = (
   window.localStorage.removeItem(keys.local);
   window.sessionStorage.removeItem(keys.session);
   targetStorage.setItem(persistent ? keys.local : keys.session, serialized);
-  notifyChanged();
+  sessionChanged.emit();
 };
 
 export const clearStoredSongMusicSession = (platform: SongMusicPlatform | "all" = "netease") => {
@@ -93,5 +91,5 @@ export const clearStoredSongMusicSession = (platform: SongMusicPlatform | "all" 
     window.localStorage.removeItem(keys.local);
     window.sessionStorage.removeItem(keys.session);
   }
-  notifyChanged();
+  sessionChanged.emit();
 };
