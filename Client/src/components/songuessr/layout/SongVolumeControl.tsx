@@ -389,10 +389,20 @@ function VolumeReadout({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  const readout = useRef<HTMLButtonElement>(null);
+  /** 键盘提交或放弃后输入框卸载，焦点会落到 body；等读数按钮重新挂上再还给它。失焦提交不抢焦点。 */
+  const restoreFocus = useRef(false);
   const tone = muted ? "text-muted-foreground" : "text-foreground";
 
   useEffect(() => {
-    if (editing) input.current?.select();
+    if (editing) {
+      // 不依赖 select() 顺带聚焦：并非所有环境都会这样做，键盘用户要直接能键入。
+      input.current?.focus();
+      input.current?.select();
+    } else if (restoreFocus.current) {
+      restoreFocus.current = false;
+      readout.current?.focus();
+    }
   }, [editing]);
 
   const commit = () => {
@@ -403,10 +413,16 @@ function VolumeReadout({
       onCommit(Math.min(100, Math.max(0, Math.round(value))));
   };
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") commit();
+    if (event.key === "Enter") {
+      // 焦点马上要回到读数按钮，同一次按键不能再去触发它：拦掉默认行为，否则输入框刚收起又被点开。
+      event.preventDefault();
+      restoreFocus.current = true;
+      commit();
+    }
     if (event.key === "Escape") {
       // 只收起输入框，不让 Esc 再冒泡去关掉外层弹出层。
       event.stopPropagation();
+      restoreFocus.current = true;
       setEditing(false);
     }
   };
@@ -428,6 +444,7 @@ function VolumeReadout({
     />
   ) : (
     <motion.button
+      ref={readout}
       type="button"
       {...iconTappable}
       onClick={() => {

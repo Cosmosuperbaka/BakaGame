@@ -112,3 +112,23 @@ it("点击静音开关时平滑过渡音量显示值，手动交互时立即响�
     expect(readout).toHaveTextContent(/^0$/);
   });
 });
+
+it("键盘提交或放弃读数输入后，焦点回到读数按钮；点到别处失焦则不抢焦点", async () => {
+  const user = userEvent.setup();
+  stubMatchMedia(true);
+  render(<SongVolumeControl volume={0.26} onVolumeChange={vi.fn()} />);
+  const readoutName = "音量 26%，点击输入";
+
+  await user.click(screen.getByRole("button", { name: readoutName }));
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("button", { name: readoutName })).toHaveFocus();
+
+  await user.keyboard("{Enter}");
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("button", { name: readoutName })).toHaveFocus();
+
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("textbox", { name: "输入音量百分比" })).toHaveFocus();
+  await user.click(screen.getByRole("button", { name: "静音" }));
+  expect(screen.getByRole("button", { name: /^(取消静音|静音)$/ })).toHaveFocus();
+});
