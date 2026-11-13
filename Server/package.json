@@ -11,7 +11,6 @@
     "lint": "eslint .",
     "db:push": "drizzle-kit push",
     "db:oneoff": "bun run scripts/RunOneOffSql.ts",
-    "db:import-word-bank": "bun run scripts/ImportWordBank.ts",
     "test": "bun test",
     "test:music:real": "bun test ./integration/NeteaseMusicProvider.integration.ts",
     "test:music:login": "bun test ./integration/NeteaseLogin.integration.ts",
