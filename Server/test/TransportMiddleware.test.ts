@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 
+import type { SonGuessrService } from "../src/application/SonGuessrService";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
 import type { AppEnv } from "../src/config/Env";
 import { EventLogger } from "../src/infrastructure/EventLogger";
@@ -30,13 +31,15 @@ const WS_PATHS = [
   "/api/status/ws",
 ] as const;
 
-const startServer = (options: { isShuttingDown?: () => boolean; logger?: EventLogger } = {}) => {
+const startServer = (
+  options: { isShuttingDown?: () => boolean; logger?: EventLogger; song?: SonGuessrService } = {}
+) => {
   const logger = options.logger ?? new EventLogger(() => undefined);
   const { app } = createTestApp({
     env,
     logger,
     isShuttingDown: options.isShuttingDown,
-    games: { faker: new WhoIsFakerService({ eventLogger: logger }) },
+    games: { faker: new WhoIsFakerService({ eventLogger: logger }), song: options.song },
   });
   const started = app.listen({ hostname: "127.0.0.1", port: 0 });
   const port = started.server?.port;
@@ -145,6 +148,27 @@ test("路由自己抛业务错误与回错误体：信封形状与追踪号一�
     expectGlobalHeaders(audio, "audio-404");
     expect(audio.headers.get("cache-control")).toBe("no-store");
     await expectEnvelope(audio, 404, "AUDIO_NOT_FOUND", "audio-404");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("路由自建的 Response（302 跳转）不经过 set.headers，也被补上追踪号与安全头", async () => {
+  // 只用到服务的一个能力：按房号与票据取跳转目标。
+  const song = {
+    resolveAudioRedirect: () => "https://audio.example/a.mp3",
+  } as unknown as SonGuessrService;
+  const server = startServer({ song });
+  try {
+    const response = await fetch(server.url("/api/songuessr/audio/1234/ticket"), {
+      redirect: "manual",
+      headers: { "x-trace-id": "5d2f6c1e-7a3b-4c9d-8e0f-1a2b3c4d5e04" },
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://audio.example/a.mp3");
+    expectGlobalHeaders(response, "302");
+    expect(response.headers.get("x-trace-id")).toBe("5d2f6c1e-7a3b-4c9d-8e0f-1a2b3c4d5e04");
+    expect(response.headers.get("cache-control")).toBe("no-store");
   } finally {
     await server.stop();
   }
