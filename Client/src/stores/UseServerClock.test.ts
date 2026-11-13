@@ -3,6 +3,7 @@ import {
   estimateClockSample,
   getClockOffsetMs,
   preferClockSample,
+  expireClockSample,
   recordClockSample,
   resetClockSample,
   serverNow,
@@ -83,11 +84,44 @@ describe("校正后的当前时刻", () => {
     expect(getClockOffsetMs()).toBe(-6_000);
   });
 
-  it("重连后样本作废：偏差回到零，等新连接重新取样", () => {
+  it("断线后旧偏差继续使用，读秒不因重连间隙跳一下", () => {
+    recordClockSample(4_100, 10_000, 10_200);
+    expireClockSample();
+    expect(getClockOffsetMs()).toBe(-6_000);
+    expect(serverNow()).toBe(4_000);
+  });
+
+  it("重连后的第一个新样本无条件取代过期样本，即使往返更长", () => {
+    recordClockSample(4_100, 10_000, 10_200);
+    expireClockSample();
+    // 往返 900 毫秒，远长于旧样本的 200，但旧样本已过期，必须被取代
+    recordClockSample(4_650, 10_000, 10_900);
+    expect(getClockOffsetMs()).toBe(-5_800);
+  });
+
+  it("过期样本被取代之后恢复往返最短优先", () => {
+    recordClockSample(4_100, 10_000, 10_200);
+    expireClockSample();
+    recordClockSample(4_650, 10_000, 10_900);
+    // 往返更长的样本不再覆盖
+    recordClockSample(4_800, 10_000, 11_500);
+    expect(getClockOffsetMs()).toBe(-5_800);
+    // 往返更短的样本取代
+    recordClockSample(4_050, 10_000, 10_100);
+    expect(getClockOffsetMs()).toBe(-6_000);
+  });
+
+  it("没有样本时标过期没有影响，之后第一个样本照常采信", () => {
+    expireClockSample();
+    expect(getClockOffsetMs()).toBe(0);
+    recordClockSample(4_100, 10_000, 10_200);
+    recordClockSample(4_500, 10_000, 10_900);
+    expect(getClockOffsetMs()).toBe(-6_000);
+  });
+
+  it("完全清除样本后偏差回到零", () => {
     recordClockSample(4_100, 10_000, 10_200);
     resetClockSample();
     expect(getClockOffsetMs()).toBe(0);
-    recordClockSample(4_650, 10_000, 10_900);
-    expect(getClockOffsetMs()).toBe(-5_800);
   });
 });

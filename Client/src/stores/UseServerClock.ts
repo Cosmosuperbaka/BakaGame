@@ -30,19 +30,35 @@ export function preferClockSample(current: ClockSample | null, next: ClockSample
 interface ServerClockState {
   /** 当前采信的样本；没有样本时偏差为零，行为退回直接使用本机时钟。 */
   sample: ClockSample | null;
+  /** 样本已过期：连接断开后偏差仍照常使用，但下一个新样本无条件取代它。 */
+  stale: boolean;
 }
 
-export const useServerClockStore = create<ServerClockState>(() => ({ sample: null }));
+export const useServerClockStore = create<ServerClockState>(() => ({
+  sample: null,
+  stale: false,
+}));
 
-/** 记下一次确认帧得到的样本。 */
+/** 记下一次确认帧得到的样本。过期样本无条件被取代，之后恢复「往返最短的优先」。 */
 export function recordClockSample(serverNow: number, sentAt: number, receivedAt: number): void {
   const next = estimateClockSample(serverNow, sentAt, receivedAt);
-  useServerClockStore.setState((state) => ({ sample: preferClockSample(state.sample, next) }));
+  useServerClockStore.setState((state) => ({
+    sample: state.stale ? next : preferClockSample(state.sample, next),
+    stale: false,
+  }));
 }
 
-/** 连接全部断开后样本作废：重连后在新连接上重新取样。 */
+/**
+ * 连接断开：旧偏差继续使用（时钟不准的玩家在重连间隙读秒不能跳一下），只是标成过期，
+ * 重连后的第一个新样本无条件取代它——新连接的往返可能更长，但旧样本已不可信。
+ */
+export function expireClockSample(): void {
+  useServerClockStore.setState((state) => (state.sample ? { stale: true } : state));
+}
+
+/** 彻底清除样本，偏差回到零。生产路径不用，测试在用例之间复位。 */
 export function resetClockSample(): void {
-  useServerClockStore.setState({ sample: null });
+  useServerClockStore.setState({ sample: null, stale: false });
 }
 
 /** 当前偏差（毫秒）；没有样本为零。 */

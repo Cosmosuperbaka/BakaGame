@@ -494,7 +494,7 @@ describe("传输边界与命令诊断", () => {
       vi.stubGlobal("WebSocket", Socket);
       const client = new WebSocketClient("/api/ws");
       client.connect();
-      return { client, socket: Socket.instances[0] };
+      return { client, socket: Socket.instances[0], Socket };
     };
     const requestIdOf = (socket: MockSocketInstance, index = 0) =>
       (JSON.parse(socket.sent[index]) as { id: string }).id;
@@ -566,8 +566,8 @@ describe("传输边界与命令诊断", () => {
       client.disconnect();
     });
 
-    it("连接断开后样本作废，重连后重新取样", async () => {
-      const { client, socket } = openClock();
+    it("连接断开后保留旧偏差继续用，重连的第一个确认帧无条件取代它", async () => {
+      const { client, socket, Socket } = openClock();
       const pending = client.send("room.get");
       socket.onmessage!({
         data: JSON.stringify({ type: "ack", id: requestIdOf(socket), serverNow: 4_000 }),
@@ -577,7 +577,21 @@ describe("传输边界与命令诊断", () => {
 
       socket.readyState = 3;
       socket.onclose!();
-      expect(getClockOffsetMs()).toBe(0);
+      // 重连间隙里读秒仍按旧偏差走，不跳回本机时钟
+      expect(getClockOffsetMs()).toBe(-6_000);
+
+      // 重连后的第一个确认帧即使往返更长也取代过期样本
+      await vi.advanceTimersByTimeAsync(5_000);
+      const reopened = Socket.instances[Socket.instances.length - 1];
+      expect(reopened).not.toBe(socket);
+      const next = client.send("room.get");
+      vi.setSystemTime(10_000 + 5_000 + 900);
+      reopened.onmessage!({
+        data: JSON.stringify({ type: "ack", id: requestIdOf(reopened), serverNow: 9_650 }),
+      });
+      await next;
+      // 往返 900 毫秒也取代过期样本：偏差 = 9650 - (15000 + 450)
+      expect(getClockOffsetMs()).toBe(-5_800);
       client.disconnect();
     });
   });

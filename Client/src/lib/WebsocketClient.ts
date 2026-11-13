@@ -12,7 +12,7 @@ import {
 import { resolveServerBase } from "@/lib/ServerEndpoint";
 import { rejectProtocol } from "@/lib/ProtocolFailure";
 import type { PreludeExchange } from "@/lib/TabSession";
-import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
+import { expireClockSample, recordClockSample } from "@/stores/UseServerClock";
 import {
   captureClientLog,
   captureClientException,
@@ -240,8 +240,8 @@ export class WebSocketClient {
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       this.statusHandlers.forEach((handler) => handler(false));
-      // 偏差样本属于这次连接：断线后作废，重连的第一个确认帧重新取样。
-      resetClockSample();
+      // 偏差样本不立即丢：重连间隙里读秒继续用旧偏差，重连的第一个确认帧再取代它。
+      expireClockSample();
       this.scheduleReconnect();
     };
 
@@ -297,7 +297,7 @@ export class WebSocketClient {
       pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
     }
     this.pendingRequests.clear();
-    resetClockSample();
+    expireClockSample();
     for (const waiter of this.connectWaiters)
       waiter.reject({ code: "DISCONNECTED", message: "连接已断开" });
     this.connectWaiters = [];
