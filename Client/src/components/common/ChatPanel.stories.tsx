@@ -199,3 +199,59 @@ export const MentionCandidates: Story = {
     await canvas.findByRole("listbox", { name: "提及玩家" });
   },
 };
+
+/** 够长的历史：一屏装不下，才有「上翻」可言。 */
+const HISTORY: ChatMessage[] = Array.from({ length: 24 }, (_, index) =>
+  say(
+    index % 3 === 0 ? me : [peach, azumi, kanade][index % 3],
+    `第 ${index + 1} 条：这一轮的描述大家怎么看`,
+    index * 4
+  )
+);
+
+/**
+ * 别人发言的演示件：面板外藏着一枚只给脚本用的按钮（读屏不可见、不占版面），点一下来一条他人的新消息。
+ * 玩家上翻时不被拽回，出现「有新消息」入口；在底部时照常跟随。
+ */
+function ArrivalChat(props: React.ComponentProps<typeof ChatPanel>) {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [...props.messages]);
+  return (
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden="true"
+        data-testid="story-arrive"
+        className="sr-only"
+        onClick={() =>
+          setMessages((current) => [...current, say(peach, "新来的一条", 900 + current.length)])
+        }
+      />
+      <ChatPanel
+        {...props}
+        messages={messages}
+        onSendMessage={async (text) => {
+          await props.onSendMessage(text);
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          setMessages((current) => [...current, say(me, text, 600 + current.length)]);
+        }}
+      />
+    </>
+  );
+}
+
+export const UnseenArrival: Story = {
+  name: "上翻时来新消息",
+  args: { messages: HISTORY },
+  render: (args) => <ArrivalChat {...args} />,
+  play: async ({ canvasElement, canvas }) => {
+    const region = canvasElement.querySelector<HTMLElement>("[data-scroll-region]");
+    if (!region) throw new Error("找不到消息滚动区");
+    // 先贴底再往上翻一屏，随后来一条别人的消息
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    region.scrollTop = 0;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await fireEvent.click(canvas.getByTestId("story-arrive"));
+    await canvas.findByRole("button", { name: "有新消息" });
+  },
+};

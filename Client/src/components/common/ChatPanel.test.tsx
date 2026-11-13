@@ -841,3 +841,112 @@ describe("ChatPanel 提及候选的光标与焦点", () => {
     expect(input).toHaveValue("你好 @小明 ");
   });
 });
+
+describe("ChatPanel 滚动跟随", () => {
+  const players = [
+    { id: "p-me", name: "我" },
+    { id: "p-other", name: "对手" },
+  ];
+  const message = (id: string, playerId = "p-other"): ChatMessage => ({
+    id,
+    playerId,
+    playerName: playerId === "p-me" ? "我" : "对手",
+    text: `消息 ${id}`,
+    createdAt: Number(id.replace(/\D/g, "")) * 1000,
+    system: false,
+  });
+  /** jsdom 不做布局：给滚动区装上可读写的几何，赋值 scrollTop 时像浏览器一样补发 scroll 事件。 */
+  async function installViewport(container: HTMLElement, state: { top: number }) {
+    const viewport = container.querySelector<HTMLElement>("[data-scroll-region]")!;
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(viewport, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(viewport, "scrollTop", {
+      configurable: true,
+      get: () => state.top,
+      set: (value: number) => {
+        state.top = value;
+        fireEvent.scroll(viewport);
+      },
+    });
+    // 挂载时排的那次贴底先落定，再开始模拟玩家的操作。
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return viewport;
+  }
+  const scrollTo = (viewport: HTMLElement, state: { top: number }, top: number) => {
+    state.top = top;
+    fireEvent.scroll(viewport);
+  };
+  const renderPanel = (messages: ChatMessage[]) => {
+    const view = render(
+      <ChatPanel messages={messages} players={players} myPlayerId="p-me" onSendMessage={vi.fn()} />
+    );
+    const rerender = (next: ChatMessage[]) =>
+      view.rerender(
+        <ChatPanel messages={next} players={players} myPlayerId="p-me" onSendMessage={vi.fn()} />
+      );
+    return { ...view, rerender };
+  };
+
+  it("玩家在底部时新消息跟随到底，不出现「有新消息」", async () => {
+    const state = { top: 0 };
+    const view = renderPanel([message("m1")]);
+    const viewport = await installViewport(view.container, state);
+    scrollTo(viewport, state, 700);
+    view.rerender([message("m1"), message("m2")]);
+    await waitFor(() => expect(state.top).toBe(1000));
+    expect(screen.queryByRole("button", { name: "有新消息" })).not.toBeInTheDocument();
+  });
+
+  it("玩家上翻时新消息不拽回底部，出现「有新消息」，点击回到底部", async () => {
+    const state = { top: 0 };
+    const view = renderPanel([message("m1")]);
+    const viewport = await installViewport(view.container, state);
+    scrollTo(viewport, state, 100);
+    view.rerender([message("m1"), message("m2")]);
+    const jump = await screen.findByRole("button", { name: "有新消息" });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(state.top).toBe(100);
+    fireEvent.click(jump);
+    expect(state.top).toBe(1000);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "有新消息" })).not.toBeInTheDocument()
+    );
+  });
+
+  it("上翻后自己手动回到底部，提示消失", async () => {
+    const state = { top: 0 };
+    const view = renderPanel([message("m1")]);
+    const viewport = await installViewport(view.container, state);
+    scrollTo(viewport, state, 100);
+    view.rerender([message("m1"), message("m2")]);
+    await screen.findByRole("button", { name: "有新消息" });
+    scrollTo(viewport, state, 690);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "有新消息" })).not.toBeInTheDocument()
+    );
+  });
+
+  it("自己发的消息即使上翻中也贴底，且不提示", async () => {
+    const state = { top: 0 };
+    const view = renderPanel([message("m1")]);
+    const viewport = await installViewport(view.container, state);
+    scrollTo(viewport, state, 100);
+    view.rerender([message("m1"), message("m2", "p-me")]);
+    await waitFor(() => expect(state.top).toBe(1000));
+    expect(screen.queryByRole("button", { name: "有新消息" })).not.toBeInTheDocument();
+  });
+
+  it("窗口满后条数不再变化，仍按最后一条的标识判断新消息", async () => {
+    const state = { top: 0 };
+    const view = renderPanel([message("m1"), message("m2")]);
+    const viewport = await installViewport(view.container, state);
+    scrollTo(viewport, state, 700);
+    view.rerender([message("m2"), message("m3")]);
+    await waitFor(() => expect(state.top).toBe(1000));
+    scrollTo(viewport, state, 100);
+    view.rerender([message("m3"), message("m4")]);
+    expect(await screen.findByRole("button", { name: "有新消息" })).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(state.top).toBe(100);
+  });
+});

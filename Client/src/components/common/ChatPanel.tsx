@@ -21,7 +21,7 @@ import {
   type MotionValue,
   type Transition,
 } from "framer-motion";
-import { AtSign, Send, Smile } from "lucide-react";
+import { ArrowDown, AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
@@ -56,7 +56,7 @@ import {
   splitMentions,
 } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
-import { useAutoScrollToBottom } from "@/hooks/UseAutoScrollToBottom";
+import { useStickToBottom } from "@/hooks/UseStickToBottom";
 import type { ChatMessage } from "@bakagame/shared";
 
 /** 提及候选一次最多列出的人数，超出靠继续输入收窄 */
@@ -515,7 +515,12 @@ export function ChatPanel({
   // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
   const mentionListId = useId();
   const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
-  const messagesRef = useAutoScrollToBottom(messages.length);
+  // 只在玩家本来就在底部时跟随；自己发出的那条无论玩家翻到哪都贴底，胶囊交接要落在可见的落点上。
+  const lastMessage = messages.at(-1);
+  const { viewportRef, contentRef, unseen, scrollToBottom } = useStickToBottom(
+    lastMessage?.id,
+    Boolean(lastMessage && !lastMessage.system && lastMessage.playerId === myPlayerId)
+  );
 
   // 提及只对照当前房间名单判断，改名或退房不会留下失效标记
   const mentionablePlayers = useMemo(
@@ -693,11 +698,11 @@ export function ChatPanel({
   return (
     <div className={cn("flex h-full min-w-0 flex-col overflow-hidden", className)}>
       {/* 内边距留在滚动区之外：滚动内容在内边距处被裁切，与滚动区自己带内边距时不同 */}
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden px-3 py-3">
-        <ScrollArea className="h-full min-w-0">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden px-3 py-3">
+        <ScrollArea ref={viewportRef} className="h-full min-w-0">
           {/* 消息流按 log 播报：只报新到的那几条，不每次把整段历史重读一遍 */}
           <div
-            ref={messagesRef}
+            ref={contentRef}
             role="log"
             aria-live="polite"
             aria-relevant="additions"
@@ -785,6 +790,29 @@ export function ChatPanel({
             </AnimatePresence>
           </div>
         </ScrollArea>
+        {/* 玩家上翻期间来了新消息：给一个回到底部的入口，不替他滚动 */}
+        <AnimatePresence>
+          {unseen ? (
+            <motion.div
+              variants={popover}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ originY: 1 }}
+              className="pointer-events-none absolute inset-x-0 bottom-3 z-panel flex justify-center"
+            >
+              <Button
+                size="sm"
+                variant="secondary"
+                className="pointer-events-auto shadow-md"
+                onClick={scrollToBottom}
+              >
+                <ArrowDown />
+                有新消息
+              </Button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
 
       {/* 底部输入区：表情包选择器浮层 + 提及候选浮层 + 输入框；选择器以这一行为锚点展开 */}
