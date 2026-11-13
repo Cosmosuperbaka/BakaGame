@@ -189,7 +189,9 @@ export default function CEEPage() {
                 : undefined
             }
             privacy={server === "original" ? "unlisted" : "password"}
-            spectatorsDisabledReason={server === "original" ? "原版房间不允许禁止旁观" : undefined}
+            spectatorsDisabledReason={
+              server === "original" ? "原版房间不允许禁止旁观。" : undefined
+            }
             defaults={createDefaults}
             onCreate={(params) => handleCreateRoom(params)}
           />

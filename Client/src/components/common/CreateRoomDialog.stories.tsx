@@ -86,7 +86,7 @@ function CompatibleDemo(props: CreateRoomDialogProps) {
         onCheckedChange: setOriginal,
       }}
       privacy={original ? "unlisted" : "password"}
-      spectatorsDisabledReason={original ? "原版房间不允许禁止旁观" : undefined}
+      spectatorsDisabledReason={original ? "原版房间不允许禁止旁观。" : undefined}
     />
   );
 }
