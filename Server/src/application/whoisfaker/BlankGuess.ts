@@ -1,5 +1,4 @@
 import { AppError } from "../../domain/Errors";
-import { assertTextAllowed } from "../../infrastructure/SensitiveText";
 import {
   evaluateBlankGuess,
   evaluateBlankGuessDraft,
@@ -9,7 +8,6 @@ import {
 } from "../../domain/Rules";
 import type {
   BlankGuessRecord,
-  ConnectionRecord,
   FeedbackContinuation,
   FeedbackNext,
   GameRound,
@@ -29,17 +27,16 @@ import {
 } from "./PhaseFlow";
 import { publishRoom } from "./RoomPublish";
 import { ensurePhaseNotBlocked } from "./RoundRules";
-import { requireRoomPlayer, requireRound, ensureQuestioner } from "./RoomAccess";
+import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
 export const submitBlankGuess = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   words: [string, string]
 ) => {
-  assertTextAllowed(words[0], words[1]);
   // 白板可以主动猜，也可以在被动 blankGuess 阶段猜，但总次数只有一次。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   const round = requireRound(room);
   const state = round.assignments[player.id];
 
@@ -100,9 +97,9 @@ export const submitBlankGuess = async (
   return { success: guess.success, pendingReview: !guess.success };
 };
 
-export const enterBlankGuess = async (ctx: WhoIsFakerContext, connection: ConnectionRecord) => {
+export const enterBlankGuess = async (ctx: WhoIsFakerContext, at: WhoIsFakerSeatAt) => {
   // 白板主动猜词：先把房间切进阻塞阶段，其他人一起等这一次猜词。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   const round = requireRound(room);
   const state = round.assignments[player.id];
 
@@ -170,12 +167,11 @@ export const enterBlankGuess = async (ctx: WhoIsFakerContext, connection: Connec
 
 export const updateBlankGuessDraft = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   words: [string, string]
 ) => {
-  assertTextAllowed(words[0], words[1]);
   // 猜词过程本身是这一阶段的看点，草稿实时广播给全房。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   const round = requireRound(room);
 
   if (round.phase !== "blankGuess" || round.blankGuessContext?.playerId !== player.id) {
@@ -194,13 +190,13 @@ export const updateBlankGuessDraft = async (
 
 export const reviewBlankGuess = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   approve: boolean
 ) => {
   // 自动比对只认完全一致，主持人在此纠正细微差异导致的误判。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  // 出题人判定已由命令表守卫完成，这里取出回合只为收窄类型。
+  const { room, seat: player } = at;
   const round = requireRound(room);
-  ensureQuestioner(round, player.id);
 
   const pending = round.blankGuessContext?.pendingReview;
 

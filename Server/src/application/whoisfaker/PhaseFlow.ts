@@ -8,7 +8,6 @@ import {
 import { NOOP_GAME_RECORDER, type GameRecordEvent } from "../../domain/GameRecord";
 import {
   ABSTAIN_TARGET_ID,
-  type ConnectionRecord,
   type GameRound,
   type PhaseTimerState,
   type RoundSummary,
@@ -42,7 +41,7 @@ import {
   isTieBreakDescriptionComplete,
   isVotingComplete,
 } from "./RoundRules";
-import { requireRoomPlayer, requireRound, ensureHost, ensureQuestioner } from "./RoomAccess";
+import { ensureHost, ensureQuestioner, requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
 /** 结算给分：白板阵营猜中得 2 分，好人与卧底阵营各自获胜得 1 分。 */
@@ -66,9 +65,9 @@ const summarizeRoundWords = (words: GameRound["words"]): RoundSummary["words"] =
       }
     : undefined;
 
-export const advancePhase = async (ctx: WhoIsFakerContext, connection: ConnectionRecord) => {
+export const advancePhase = async (ctx: WhoIsFakerContext, at: WhoIsFakerSeatAt) => {
   // waiting 由房主开局；gameOver 先退回等待房间，避免跳过下一局准备环节。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room, seat: player } = at;
   const phase = room.round?.phase ?? "waiting";
 
   if (phase === "gameOver") {
@@ -218,29 +217,14 @@ const advanceFromNight = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomReco
 
 export const startPhaseTimer = (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   durationSeconds: number
 ) => {
-  if (durationSeconds !== 60 && durationSeconds !== 120 && durationSeconds !== 180) {
-    throw new AppError("INVALID_ARGUMENT", "倒计时时长只能在1、2、3分钟之间选择");
-  }
-
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  const { room } = at;
+  // 回合存在、阶段支持倒计时、发起人是出题人（测试房不限）都已由命令表守卫确认，
+  // 这里取出回合只为收窄类型。
   const round = requireRound(room);
   const phase = round.phase;
-
-  if (
-    phase === "assigningQuestioner" ||
-    phase === "wordSubmission" ||
-    phase === "feedback" ||
-    phase === "gameOver"
-  ) {
-    throw new AppError("INVALID_PHASE", "当前阶段不支持设置倒计时");
-  }
-
-  if (!ctx.testRooms.isTestRoom(room.id)) {
-    ensureQuestioner(round, player.id);
-  }
   ensurePhaseNotBlocked(round);
 
   clearPhaseTimer(ctx, room);
@@ -266,13 +250,10 @@ export const startPhaseTimer = (
   return { phaseTimer: timerState };
 };
 
-export const stopPhaseTimer = (ctx: WhoIsFakerContext, connection: ConnectionRecord) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
+export const stopPhaseTimer = (ctx: WhoIsFakerContext, at: WhoIsFakerSeatAt) => {
+  const { room } = at;
+  // 出题人判定（测试房不限）已由命令表守卫完成，这里取出回合只为收窄类型。
   const round = requireRound(room);
-
-  if (!ctx.testRooms.isTestRoom(room.id)) {
-    ensureQuestioner(round, player.id);
-  }
 
   const hadTimer = Boolean(round.phaseTimer);
   clearPhaseTimer(ctx, room);

@@ -2,7 +2,6 @@ import { AppError } from "../../domain/Errors";
 import { createEvent } from "../../transport/Packets";
 import { isRoleConfigSatisfied, recordEliminations } from "../../domain/Rules";
 import {
-  type ConnectionRecord,
   type GameRound,
   type RoundHistoryEntry,
   type WhoIsFakerPhase,
@@ -29,7 +28,7 @@ import {
   hasValidQuestionerCandidate,
   normalizeRoomRoleConfig,
 } from "./RoundRules";
-import { requireRoomPlayer, requireRound, ensureQuestioner } from "./RoomAccess";
+import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
 /** 玩家离线的两种来源：连接断开与主动离开房间。 */
@@ -66,14 +65,14 @@ type ForcedRemovalFlow = "continue" | "done";
 
 export const resolveDisconnect = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   targetPlayerId: string,
   resolution: "wait" | "eliminate"
 ) => {
-  // 只有出题人能决定掉线正式玩家是继续等待还是直接淘汰。
-  const { room, player } = requireRoomPlayer(ctx, connection);
+  // 只有出题人能决定掉线正式玩家是继续等待还是直接淘汰：出题人判定由命令表守卫完成，
+  // 这里取出回合只为收窄类型。
+  const { room, seat: player } = at;
   const round = requireRound(room);
-  ensureQuestioner(round, player.id);
 
   if (!round.pendingDisconnectPlayerIds.includes(targetPlayerId)) {
     throw new AppError("PLAYER_NOT_PENDING", "当前没有等待处理的掉线玩家");

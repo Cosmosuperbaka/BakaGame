@@ -1,7 +1,6 @@
-import { AppError, unsupportedCommand } from "../../../domain/Errors";
+import { AppError } from "../../../domain/Errors";
 import { assignRoles, getBlankPlayerId } from "../../../domain/Rules";
 import {
-  type ConnectionRecord,
   type GameRound,
   type RoleConfig,
   type WhoIsFakerPhase,
@@ -26,7 +25,7 @@ import {
   getActivePlayerIds,
   normalizeRoomRoleConfig,
 } from "../RoundRules";
-import { requireRoomPlayer, requireRound, ensureHost, isRoundActive } from "../RoomAccess";
+import { requireRound, isRoundActive, type WhoIsFakerSeatAt } from "../RoomAccess";
 import type { WhoIsFakerContext } from "../Context";
 
 /**
@@ -130,12 +129,12 @@ const ensureTestJumpWords = (
 
 export const testJumpToPhase = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   target: WhoIsFakerPhase
 ) => {
   // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
-  const { room, player } = requireRoomPlayer(ctx, connection);
-  ensureTestRoomHost(ctx, room, player.id);
+  // 测试房与房主判定由命令表守卫完成。
+  const { room, seat: player } = at;
 
   // 反馈阶段只由结算产生，没有可凭空构造的结果。
   if (target === "feedback") {
@@ -281,12 +280,11 @@ export const testJumpToPhase = async (
 
 export const testSetMyRole = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   role: WhoIsFakerRole
 ) => {
   // 仅测试房间：强制替换当前玩家在本局中的角色分配。
-  const { room, player } = requireRoomPlayer(ctx, connection);
-  ensureTestRoomHost(ctx, room, player.id);
+  const { room, seat: player } = at;
 
   const round = requireRound(room);
 
@@ -327,13 +325,8 @@ export const testSetMyRole = async (
  * 机器人是真实的 WhoIsFakerPlayerRecord，走与真人完全相同的规则校验，
  * 只是没有连接、由 runBots 代为提交发言/投票/夜晚行动。
  */
-export const testAddBot = async (
-  ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
-  count: number
-) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
-  ensureTestRoomHost(ctx, room, player.id);
+export const testAddBot = async (ctx: WhoIsFakerContext, at: WhoIsFakerSeatAt, count: number) => {
+  const { room } = at;
 
   const added: string[] = [];
 
@@ -366,12 +359,11 @@ export const testAddBot = async (
 /** 测试房间：移除机器人。未指定 playerId 时从最后加入的开始移除。 */
 export const testRemoveBot = async (
   ctx: WhoIsFakerContext,
-  connection: ConnectionRecord,
+  at: WhoIsFakerSeatAt,
   playerId: string | undefined,
   count: number
 ) => {
-  const { room, player } = requireRoomPlayer(ctx, connection);
-  ensureTestRoomHost(ctx, room, player.id);
+  const { room } = at;
 
   const bots = Object.values(room.players).filter((player) => player.isBot);
   const targets = playerId ? bots.filter((bot) => bot.id === playerId) : bots.slice(-count);
@@ -397,20 +389,4 @@ export const testRemoveBot = async (
   await runBots(ctx, room);
 
   return { removed: targets.map((bot) => bot.id) };
-};
-
-/**
- * 四条测试指令的统一入口守卫：先问策略、再验房主。
- * 非测试房（含策略关闭）一律当作协议里没有这条指令，与未知指令同码同文案，
- * 不给探测者区分「开关关了」与「这间房不是测试房」的信号；房主校验在后，
- * 因为测试指令能改身份、加删机器人，不能让房里任意玩家使用。
- * 机器人当不了房主（转让会被拒、空缺时也不会选中），所以没有「房主是机器人」的例外。
- */
-const ensureTestRoomHost = (
-  ctx: WhoIsFakerContext,
-  room: WhoIsFakerRoomRecord,
-  playerId: string
-) => {
-  if (!ctx.testRooms.isTestRoom(room.id)) unsupportedCommand();
-  ensureHost(room, playerId);
 };

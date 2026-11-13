@@ -56,24 +56,18 @@ import {
   restoreRooms,
 } from "./room/RoomSnapshotCodec";
 import { whoIsFakerShape } from "./whoisfaker/RoomShape";
-import type { CommandHandler } from "./whoisfaker/CommandHandler";
-import { createGameCommandHandler } from "./whoisfaker/GameCommandHandler";
-import { createPlayerCommandHandler } from "./whoisfaker/PlayerCommandHandler";
-import { createRoomCommandHandler } from "./whoisfaker/RoomCommandHandler";
-import { createTestCommandHandler } from "./whoisfaker/TestCommandHandler";
 import {
-  enterBlankGuess,
-  reviewBlankGuess,
-  submitBlankGuess,
-  updateBlankGuessDraft,
-} from "./whoisfaker/BlankGuess";
+  createWhoIsFakerDispatcher,
+  screenCommand,
+  type WhoIsFakerDispatcher,
+} from "./whoisfaker/Commands";
+import { dispatchCommand } from "./room/CommandTable";
 import { createWhoIsFakerContext, type WhoIsFakerContext } from "./whoisfaker/Context";
 import type { WhoIsFakerServiceOptions } from "./whoisfaker/Options";
 import {
   clearPendingDisconnect,
   forceRemovePlayer,
   handlePlayerOffline,
-  resolveDisconnect,
   requeuePendingDisconnects,
   shouldAutoCloseWhenEmpty,
 } from "./whoisfaker/OfflineSettlement";
@@ -82,10 +76,7 @@ import {
   clearPhaseTimer,
   completeSupplementIfReady,
   finishRound,
-  advancePhase,
   handlePhaseTimeout,
-  startPhaseTimer,
-  stopPhaseTimer,
 } from "./whoisfaker/PhaseFlow";
 import { runBots } from "./whoisfaker/dev/BotActors";
 import {
@@ -100,22 +91,15 @@ import {
   replaceNightAction,
   replaceVote,
 } from "./whoisfaker/RoundRules";
-import {
-  testAddBot,
-  testJumpToPhase,
-  testRemoveBot,
-  testSetMyRole,
-} from "./whoisfaker/dev/TestControls";
 import { attachConnection } from "./whoisfaker/RoomAttach";
 import { closeRoom } from "./whoisfaker/RoomClosure";
 import {
   ensureHost,
-  ensureQuestioner,
   ensureUniqueName,
   getRoom,
   isRoundActive,
   requireRound,
-  requireRoomPlayer,
+  type WhoIsFakerSeatAt,
 } from "./whoisfaker/RoomAccess";
 import {
   broadcastRoomEvent,
@@ -145,7 +129,7 @@ export class WhoIsFakerService implements AdminRoomControl {
   readonly ctx: WhoIsFakerContext;
   /** 标签页接管 Agent 时按标签页找房间用的上下文。 */
   private readonly tabSeats: TabSeatContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
-  private readonly commandHandlers: CommandHandler[];
+  private readonly dispatcher: WhoIsFakerDispatcher;
 
   /** 房间表的只读视图：测试与外部只读它，写入只经上下文里的玩法函数。 */
   get rooms(): ReadonlyMap<string, WhoIsFakerRoomRecord> {
@@ -160,64 +144,7 @@ export class WhoIsFakerService implements AdminRoomControl {
       connections: ctx.connectionRegistry,
       rooms: ctx.rooms,
     };
-    this.commandHandlers = [
-      createRoomCommandHandler({
-        subscribeRooms: (connection) => {
-          connection.lobbySubscribed = true;
-          // 只回给这条连接：向全服重发一遍等价于「N 人同时打开大厅 = N×N 帧」，
-          // 而新来的玩家要的只是自己那份列表。
-          ctx.lobbyFanout.sendTo(connection);
-          return { subscribed: true };
-        },
-        create: (connection, message) => this.createRoom(connection, message),
-        join: (connection, message) => this.joinRoom(connection, message),
-        reconnect: (connection, message) => this.reconnectRoom(connection, message),
-        leave: (connection) => this.leaveRoom(connection),
-        requestSync: (connection) => this.requestSync(connection),
-        updateSettings: (connection, payload) => this.updateSettings(connection, payload),
-        kick: (connection, playerId) => this.kick(connection, playerId),
-        transferHost: (connection, playerId) => this.transferHost(connection, playerId),
-        sendChat: (connection, text) => this.sendChat(connection, text),
-      }),
-      createPlayerCommandHandler({
-        now: () => ctx.now(),
-        requireRoomPlayer: (connection) => requireRoomPlayer(ctx, connection),
-        ensureUniqueName,
-        isRoundActive,
-        normalizeRoleConfig: (room) => normalizeRoomRoleConfig(room),
-        touch: (room) => ctx.touch(room),
-        log: (entry) => ctx.log(entry),
-        publishRoom: (room) => publishRoom(ctx, room),
-        publishLobby: () => publishLobby(ctx),
-      }),
-      createGameCommandHandler({
-        assignQuestioner: (connection, playerId) => this.assignQuestioner(connection, playerId),
-        submitWords: (connection, payload) =>
-          this.submitWords(connection, payload.words, payload.blankHint, payload.manualRoles),
-        advancePhase: (connection) => advancePhase(ctx, connection),
-        submitDescription: (connection, text) => this.submitDescription(connection, text),
-        submitVote: (connection, targetId) => this.submitVote(connection, targetId),
-        submitNightAction: (connection, targetId) => this.submitNightAction(connection, targetId),
-        submitBlankGuess: (connection, words) => submitBlankGuess(ctx, connection, words),
-        enterBlankGuess: (connection) => enterBlankGuess(ctx, connection),
-        updateBlankGuessDraft: (connection, words) => updateBlankGuessDraft(ctx, connection, words),
-        reviewBlankGuess: (connection, approve) => reviewBlankGuess(ctx, connection, approve),
-        cancelVote: (connection) => this.cancelVote(connection),
-        cancelNightAction: (connection) => this.cancelNightAction(connection),
-        requestSupplement: (connection, playerIds) => this.requestSupplement(connection, playerIds),
-        resolveDisconnect: (connection, payload) =>
-          resolveDisconnect(ctx, connection, payload.playerId, payload.resolution),
-        startPhaseTimer: (connection, durationSeconds) =>
-          startPhaseTimer(ctx, connection, durationSeconds),
-        stopPhaseTimer: (connection) => stopPhaseTimer(ctx, connection),
-      }),
-      createTestCommandHandler({
-        jumpToPhase: (connection, phase) => testJumpToPhase(ctx, connection, phase),
-        setMyRole: (connection, role) => testSetMyRole(ctx, connection, role),
-        addBot: (connection, count) => testAddBot(ctx, connection, count),
-        removeBot: (connection, playerId, count) => testRemoveBot(ctx, connection, playerId, count),
-      }),
-    ];
+    this.dispatcher = createWhoIsFakerDispatcher(ctx, this);
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -248,13 +175,8 @@ export class WhoIsFakerService implements AdminRoomControl {
   async execute(connectionId: string, message: WhoIsFakerClientMessage): Promise<unknown> {
     // 所有命令都从这里进入，方便统一做连接上下文解析与后续审计。
     const connection = this.ctx.connectionRegistry.getConnection(connectionId);
-    const handler = this.commandHandlers.find((candidate) => candidate.canHandle(message.type));
-
-    if (!handler) {
-      throw new AppError("UNSUPPORTED_COMMAND", "暂不支持的命令");
-    }
-
-    return handler.execute(connection, message);
+    screenCommand(message);
+    return dispatchCommand(this.dispatcher, connection, message);
   }
 
   async runHousekeeping(): Promise<void> {
@@ -490,7 +412,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     await this.kickPlayer(room, target, "管理员");
   }
 
-  private async createRoom(
+  async createRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.create" }>
   ) {
@@ -597,7 +519,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { room, host };
   }
 
-  private async joinRoom(
+  async joinRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.join" }>
   ) {
@@ -668,7 +590,7 @@ export class WhoIsFakerService implements AdminRoomControl {
     };
   }
 
-  private async reconnectRoom(
+  async reconnectRoom(
     connection: ConnectionRecord,
     message: Extract<WhoIsFakerClientMessage, { type: "room.reconnect" }>
   ) {
@@ -708,28 +630,29 @@ export class WhoIsFakerService implements AdminRoomControl {
     });
   }
 
-  private async leaveRoom(connection: ConnectionRecord) {
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+  async leaveRoom(at: WhoIsFakerSeatAt) {
+    const { room, seat: player } = at;
     await handlePlayerOffline(this.ctx, room, player.id, "leave");
 
     return { left: true };
   }
 
-  private requestSync(connection: ConnectionRecord) {
-    const { room } = requireRoomPlayer(this.ctx, connection);
+  requestSync(at: WhoIsFakerSeatAt) {
+    const { room, connection } = at;
     connection.resetStateSync?.();
     publishRoom(this.ctx, room, connection);
     return { synced: true };
   }
 
-  private async updateSettings(
-    connection: ConnectionRecord,
+  async updateSettings(
+    at: WhoIsFakerSeatAt,
     payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"]
   ) {
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    const { room, seat: player } = at;
 
     // 两阶段：纯校验产出补丁（失败不改任何状态）→ 必要时 await 慢哈希 → 复核后同步一次写入。
-    const patch = this.buildSettingsPatch(room, player.id, payload);
+    // 房主与回合空闲由命令表守卫在进入前确认，await 回来后在下面按同一顺序复核。
+    const patch = this.buildSettingsPatch(room, payload);
     const passwordHash =
       patch.password === undefined ? undefined : await this.ctx.passwords.hash(patch.password);
 
@@ -737,7 +660,8 @@ export class WhoIsFakerService implements AdminRoomControl {
     if (this.ctx.rooms.get(room.id) !== room) {
       throw new AppError("ROOM_NOT_FOUND", "房间不存在");
     }
-    const current = this.buildSettingsPatch(room, player.id, payload);
+    this.assertSettingsEditable(room, player.id);
+    const current = this.buildSettingsPatch(room, payload);
     if (current.password !== patch.password && current.password !== undefined) {
       throw new AppError("SETTINGS_CHANGED", "房间设置刚刚发生变化，请重试");
     }
@@ -761,18 +685,20 @@ export class WhoIsFakerService implements AdminRoomControl {
     };
   }
 
-  /** 校验权限、阶段与全部字段，返回补丁；不写房间。 */
-  private buildSettingsPatch(
-    room: WhoIsFakerRoomRecord,
-    playerId: string,
-    payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"]
-  ): SettingsPatch {
+  /** await 之后的复核：仍是房主、且回合没有开始；与命令表声明的守卫同序同码。 */
+  private assertSettingsEditable(room: WhoIsFakerRoomRecord, playerId: string): void {
     ensureHost(room, playerId);
 
     if (isRoundActive(room)) {
       throw new AppError("ROUND_ACTIVE", "游戏进行中无法修改房间设置");
     }
+  }
 
+  /** 校验全部字段，返回补丁；不写房间。 */
+  private buildSettingsPatch(
+    room: WhoIsFakerRoomRecord,
+    payload: Extract<WhoIsFakerClientMessage, { type: "room.updateSettings" }>["payload"]
+  ): SettingsPatch {
     const patch: SettingsPatch = {
       visibility: payload.visibility ?? undefined,
       allowSpectators: payload.allowSpectators ?? undefined,
@@ -848,9 +774,8 @@ export class WhoIsFakerService implements AdminRoomControl {
     }
   }
 
-  private async kick(connection: ConnectionRecord, targetPlayerId: string) {
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
-    ensureHost(room, player.id);
+  async kick(at: WhoIsFakerSeatAt, targetPlayerId: string) {
+    const { room, seat: player } = at;
 
     if (targetPlayerId === player.id) {
       throw new AppError("INVALID_KICK", "房主不能踢出自己");
@@ -886,16 +811,11 @@ export class WhoIsFakerService implements AdminRoomControl {
     await runBots(this.ctx, room);
   }
 
-  private async assignQuestioner(connection: ConnectionRecord, targetPlayerId: string) {
+  async assignQuestioner(at: WhoIsFakerSeatAt, targetPlayerId: string) {
     // 出题人可以是正式玩家，也可以是旁观者；旁观者出题时所有正式玩家直接参赛。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
-    ensureHost(room, player.id);
-
+    // 房主、回合存在与阶段由命令表守卫确认，这里取出回合只为收窄类型。
+    const { room } = at;
     const round = requireRound(room);
-
-    if (round.phase !== "assigningQuestioner") {
-      throw new AppError("INVALID_PHASE", "当前阶段不能指定出题人");
-    }
 
     const target = room.players[targetPlayerId];
 
@@ -936,20 +856,16 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { questionerPlayerId: target.id };
   }
 
-  private async submitWords(
-    connection: ConnectionRecord,
+  async submitWords(
+    at: WhoIsFakerSeatAt,
     words: [string, string],
     blankHint?: string,
     manualRoles?: Record<string, WhoIsFakerRole>
   ) {
     // 提交词语后，真正的身份分配与词语映射都在服务端一次性完成。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    // 出题人与阶段由命令表守卫确认，这里取出回合只为收窄类型。
+    const { room, seat: player } = at;
     const round = requireRound(room);
-    ensureQuestioner(round, player.id);
-
-    if (round.phase !== "wordSubmission") {
-      throw new AppError("INVALID_PHASE", "当前阶段不能提交词语");
-    }
     assertTextAllowed(words[0], words[1], blankHint);
 
     let participantIds = listPlayablePlayerIds(room).filter(
@@ -1024,9 +940,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { phase: round.phase };
   }
 
-  private async submitDescription(connection: ConnectionRecord, text: string) {
+  async submitDescription(at: WhoIsFakerSeatAt, text: string) {
     // 描述和 PK 补充描述都复用同一份存储结构，只靠 kind 区分。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    const { room, seat: player } = at;
     const round = requireRound(room);
     const normalized = normalizeWord(text);
 
@@ -1127,9 +1043,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     );
   }
 
-  private async cancelVote(connection: ConnectionRecord) {
+  async cancelVote(at: WhoIsFakerSeatAt) {
     // 撤销设计为幂等操作：客户端重试或快速连点时仍会收到最新私有状态。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    const { room, seat: player } = at;
     const round = requireRound(room);
     let cancelled: boolean;
 
@@ -1148,14 +1064,10 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { cancelled };
   }
 
-  private async cancelNightAction(connection: ConnectionRecord) {
-    // 允许已提交夜晚操作的玩家在主持人推进前撤销。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+  async cancelNightAction(at: WhoIsFakerSeatAt) {
+    // 允许已提交夜晚操作的玩家在主持人推进前撤销。回合存在与夜晚阶段由命令表守卫确认。
+    const { room, seat: player } = at;
     const round = requireRound(room);
-
-    if (round.phase !== "night") {
-      throw new AppError("INVALID_PHASE", "当前阶段不能撤销夜晚操作");
-    }
 
     const cancelled = round.nightActions.some((a) => a.actorId === player.id);
     round.nightActions = round.nightActions.filter((a) => a.actorId !== player.id);
@@ -1164,12 +1076,11 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { cancelled };
   }
 
-  private async requestSupplement(connection: ConnectionRecord, playerIds: string[]) {
+  async requestSupplement(at: WhoIsFakerSeatAt, playerIds: string[]) {
     // 出题人在本轮描述完成后、投票结算前，可点名若干玩家补充发言一次。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    // 出题人判定由命令表守卫完成，这里取出回合只为收窄类型。
+    const { room } = at;
     const round = requireRound(room);
-
-    ensureQuestioner(round, player.id);
 
     if (
       (round.phase !== "description" || round.speechMode !== "normal") &&
@@ -1225,9 +1136,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { requested: true };
   }
 
-  private async submitVote(connection: ConnectionRecord, targetId: string) {
+  async submitVote(at: WhoIsFakerSeatAt, targetId: string) {
     // 第一轮投票与平票第二轮投票复用同一个入口，但资格校验不同。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    const { room, seat: player } = at;
     const round = requireRound(room);
 
     if (round.phase === "voting") {
@@ -1257,14 +1168,10 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { submitted: true };
   }
 
-  private async submitNightAction(connection: ConnectionRecord, targetId?: string | null) {
-    // 空 targetId 表示“本夜不行动”，不是错误输入。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+  async submitNightAction(at: WhoIsFakerSeatAt, targetId?: string | null) {
+    // 空 targetId 表示“本夜不行动”，不是错误输入。回合存在与夜晚阶段由命令表守卫确认。
+    const { room, seat: player } = at;
     const round = requireRound(room);
-
-    if (round.phase !== "night") {
-      throw new AppError("INVALID_PHASE", "当前阶段不能提交夜晚操作");
-    }
 
     const state = round.assignments[player.id];
 
@@ -1324,9 +1231,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { channel: "main" };
   }
 
-  private async sendChat(connection: ConnectionRecord, text: string) {
+  async sendChat(at: WhoIsFakerSeatAt, text: string) {
     // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
+    const { room, seat: player, connection } = at;
     this.ctx.chatLimiter.consume(connection.id);
     const normalized = acceptChatText(text, {
       maxLength: undefined,
@@ -1363,10 +1270,9 @@ export class WhoIsFakerService implements AdminRoomControl {
     return { sent: true };
   }
 
-  private async transferHost(connection: ConnectionRecord, targetPlayerId: string) {
-    // 房主手动转移：任意阶段均可，目标必须是在线的正式玩家（真人）。
-    const { room, player } = requireRoomPlayer(this.ctx, connection);
-    ensureHost(room, player.id);
+  async transferHost(at: WhoIsFakerSeatAt, targetPlayerId: string) {
+    // 房主手动转移：任意阶段均可，目标必须是在线的正式玩家（真人）。房主判定由命令表守卫完成。
+    const { room, seat: player } = at;
 
     if (targetPlayerId === player.id) {
       throw new AppError("INVALID_TARGET", "不能将房主转移给自己");
