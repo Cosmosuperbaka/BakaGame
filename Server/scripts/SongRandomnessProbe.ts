@@ -85,7 +85,13 @@ export async function createProbeRoom(
   cookie: string,
   playlist: { id: string; name: string; songCount: number }
 ) {
-  const service = new SonGuessrService({ musicProvider: provider });
+  // 实测驱动在进程内以机器速度连发命令，远快于真人；每轮把服务的时钟拨快一秒，
+  // 每连接的命令总额度才按真人节奏计，不会把一次几十轮的实测当成高频乱发。
+  let clockSkewMs = 0;
+  const service = new SonGuessrService({
+    musicProvider: provider,
+    now: () => Date.now() + clockSkewMs,
+  });
   let snapshot: SonGuessrRoomSnapshot | undefined;
   const errors: string[] = [];
   const connection: ConnectionRecord = {
@@ -141,6 +147,7 @@ export async function createProbeRoom(
       return errors.at(-1);
     },
     async next() {
+      clockSkewMs += 1_000;
       await command(started ? "song.game.nextRound" : "song.game.start");
       started = true;
       await command("song.game.giveUp");

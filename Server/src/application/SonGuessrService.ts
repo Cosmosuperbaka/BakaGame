@@ -19,7 +19,11 @@ import {
   startAutomaticRound,
 } from "./songuessr/AutomaticRounds";
 import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
-import { ROOM_EXPIRING_WARNING_MS } from "../config/Constants";
+import {
+  COMMAND_RATE_LIMIT_PER_CONNECTION,
+  COMMAND_RATE_LIMIT_WINDOW_MS,
+  ROOM_EXPIRING_WARNING_MS,
+} from "../config/Constants";
 import { tabSeatId } from "./TabSeat";
 import { ADMIN_CLOSE_REASON, AdminRoomView } from "../domain/AdminRoom";
 import type { GameService } from "./GameService";
@@ -64,7 +68,7 @@ import {
 import { installRound } from "./songuessr/RoundInstall";
 import { finishRound, isRoundComplete, settlePlayingRound } from "./songuessr/RoundEngine";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
-import { dispatchCommand } from "./room/CommandTable";
+import { CommandQuota, dispatchCommand } from "./room/CommandTable";
 import { requireMusicQuota } from "./songuessr/MusicCommands";
 import { broadcastRoomEvent } from "./songuessr/Chat";
 import { exportSnapshots, restoreSnapshots } from "./songuessr/SnapshotCodec";
@@ -115,6 +119,8 @@ type RoomReclaim = "skip" | "grace" | "keep";
 export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   readonly ctx: SonGuessrContext;
   private readonly dispatcher: SonGuessrDispatcher;
+  /** 每连接的命令总额度：任何命令都先扣它，音乐、封面与登录的按成本配额在它之后。 */
+  private readonly commandQuota: CommandQuota;
   /** 建房期间的房号占用：占号与「房间可见」分开，登记进房间表之前没有人看得到半成品房间。 */
   private readonly reservations = new RoomIdReservations();
   private readonly passwordGate: RoomPasswordGate;
@@ -138,6 +144,11 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
       missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
       hasher: options.passwordHasher,
+    });
+    this.commandQuota = new CommandQuota({
+      now: () => ctx.now(),
+      windowMs: COMMAND_RATE_LIMIT_WINDOW_MS,
+      maxRequests: COMMAND_RATE_LIMIT_PER_CONNECTION,
     });
     this.dispatcher = {
       table: createSonGuessrCommands(ctx),
@@ -236,6 +247,8 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
   async execute(connectionId: string, message: SonGuessrClientMessage): Promise<unknown> {
     const connection = this.ctx.connections.getConnection(connectionId);
+    // 总额度排在一切之前，与卧底、猜猜呗同一个窗口与额度。
+    this.commandQuota.consume(connection);
     // 玩家级伪装 IP 归属：同一连接的匿名请求复用同一个 CN IP，不同玩家各持一个，
     // 避免全服匿名请求共享同一份网易云限流配额（见 NeteaseMusicProvider 的 musicIpScope）。
     // 作用域只能在最外层建立，下游 provider 才可能在任意调用深度读到玩家身份。

@@ -39,7 +39,13 @@ const startSoloService = async (
   seed: number,
   poolSize: number
 ) => {
-  const service = new SonGuessrService({ musicProvider, random: seeded(seed) });
+  // 自动游玩用例按真人的节奏推进注入时钟：每轮一秒，每条连接的命令总额度才不会被机器速度的循环打满。
+  let clock = Date.now();
+  const service = new SonGuessrService({
+    musicProvider,
+    random: seeded(seed),
+    now: () => clock,
+  });
   const solo = connection(service, `solo-${roomId}`);
   await createRoom(service, solo, {
     roomId,
@@ -62,6 +68,7 @@ const startSoloService = async (
   });
   /** 打一轮并返回结算后公开的答案 ID；开局失败时返回错误码。 */
   const playRound = async (round: number): Promise<{ id?: string; error?: string }> => {
+    clock += 1_000;
     try {
       await execute(service, solo, {
         id: `start-${round}`,

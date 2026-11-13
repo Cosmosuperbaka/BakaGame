@@ -1143,7 +1143,9 @@ describe("上线前 P0 修复回归", () => {
       }),
       getSong: async (songId) => makeSong(songId, `池内曲目${songId}`, 2020),
     };
-    const service = new SonGuessrService({ musicProvider: bigProvider });
+    // 按真人的节奏推进注入时钟：每轮一秒，每条连接的命令总额度才不会被机器速度的循环打满。
+    let clock = Date.now();
+    const service = new SonGuessrService({ musicProvider: bigProvider, now: () => clock });
     const solo = connection(service, "window-solo");
     await createRoom(service, solo, {
       roomId: "7799",
@@ -1167,6 +1169,7 @@ describe("上线前 P0 修复回归", () => {
 
     const chosen: string[] = [];
     for (let round = 1; round <= 60; round += 1) {
+      clock += 1_000;
       await execute(service, solo, {
         id: `window-round-${round}`,
         type: round === 1 ? "song.game.start" : "song.game.nextRound",
