@@ -60,21 +60,6 @@ const albumPictureUrl = (albumId: number): string | undefined =>
     ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
     : undefined;
 
-/**
- * 从 XML 包裹的 QRC 中剥出 `LyricContent` 属性值；已是裸格式则原样返回。
- *
- * 属性值里的 `\n` 是字面量转义（XML 属性不能含真实换行），需还原成真实换行，
- * 否则所有行会被拼成一行。
- *
- * 必须「提取属性值」而非「剔除标签」：剥离标签的正则会把开标签、结尾自闭合
- * 与两者之间的整段歌词一并吃掉，结果为空。
- */
-export const extractQrcPayload = (raw: string): string => {
-  const attr = /LyricContent="([\s\S]*?)"/.exec(raw);
-  const payload = attr ? attr[1] : raw;
-  return payload.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
-};
-
 /** 各上游形状里取出的歌曲原始字段：形状差异留在读取函数里，归一与映射只此一份。 */
 export interface QqSongFields {
   mid: string;
