@@ -22,7 +22,7 @@ import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import { publishRoom } from "./RoomPublish";
 import {
   clampRoleConfig,
-  createDescription,
+  appendSpeech,
   createDescriptionOrder,
   ensureCanVote,
   getParticipantCount,
@@ -224,14 +224,7 @@ const submitSupplementDescription = (
   if (!round.assignments[player.id]?.alive || round.phase !== "description") {
     throw new AppError("ACTION_FORBIDDEN", "当前玩家不能补充发言");
   }
-  supplement.donePlayers.push(player.id);
-  const order = (supplement.requestedPlayerIds ?? []).indexOf(player.id) + 1;
-  round.descriptions.push(
-    createDescription(ctx, player, text, "supplement", round.descriptionCycle, {
-      supplementIndex: supplement.index,
-      order: order > 0 ? order : undefined,
-    })
-  );
+  appendSpeech(ctx, round, player, text, { kind: "supplement", supplement });
   completeSupplementIfReady(ctx, room);
 };
 
@@ -247,13 +240,7 @@ const submitNormalDescription = (
   if (round.descriptionSubmittedBy.includes(player.id)) {
     throw new AppError("ALREADY_SUBMITTED", "你已经提交过描述");
   }
-  round.descriptionSubmittedBy.push(player.id);
-  const order = (round.descriptionOrder ?? []).indexOf(player.id) + 1;
-  round.descriptions.push(
-    createDescription(ctx, player, text, "description", round.descriptionCycle, {
-      order: order > 0 ? order : undefined,
-    })
-  );
+  appendSpeech(ctx, round, player, text, { kind: "description" });
 };
 
 const submitTieBreakDescription = (
@@ -272,14 +259,7 @@ const submitTieBreakDescription = (
     throw new AppError("ALREADY_SUBMITTED", "你已经提交过补充描述");
   }
 
-  tieBreak.descriptionsDone.push(player.id);
-  const order = (tieBreak.candidateIds ?? []).indexOf(player.id) + 1;
-  round.descriptions.push(
-    createDescription(ctx, player, text, "tieBreak", round.descriptionCycle, {
-      tieBreakIndex: round.tieBreakCount,
-      order: order > 0 ? order : undefined,
-    })
-  );
+  appendSpeech(ctx, round, player, text, { kind: "tieBreak", tieBreak });
 };
 
 export const cancelVote = async (ctx: WhoIsFakerContext, at: WhoIsFakerSeatAt) => {

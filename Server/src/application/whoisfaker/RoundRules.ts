@@ -280,7 +280,48 @@ export const replaceNightAction = (
 };
 
 /** 构造一条描述记录：常规描述、补充描述与平票描述共用同一份结构，只靠 kind 区分。 */
-export const createDescription = (
+/** 发言落点：三类发言共用「完成名单 + 顺位表 + 记录」模型，只有这三样随类型不同。 */
+export type SpeechSlot =
+  | { kind: "description" }
+  | { kind: "supplement"; supplement: NonNullable<GameRound["supplement"]> }
+  | { kind: "tieBreak"; tieBreak: NonNullable<GameRound["tieBreak"]> };
+
+/**
+ * 追加一条发言：记入本类发言的完成名单，按发言顺位表算出位次，再写入发言记录。
+ * 命令提交、超时补位与机器人补发言都走这里，三类发言的记录字段只在这一处拼装。
+ */
+export const appendSpeech = (
+  ctx: WhoIsFakerContext,
+  round: GameRound,
+  speaker: Pick<WhoIsFakerPlayerRecord, "id" | "name">,
+  text: string,
+  slot: SpeechSlot
+): void => {
+  const lists =
+    slot.kind === "supplement"
+      ? {
+          done: slot.supplement.donePlayers,
+          table: slot.supplement.requestedPlayerIds,
+          extra: { supplementIndex: slot.supplement.index },
+        }
+      : slot.kind === "tieBreak"
+        ? {
+            done: slot.tieBreak.descriptionsDone,
+            table: slot.tieBreak.candidateIds,
+            extra: { tieBreakIndex: round.tieBreakCount },
+          }
+        : { done: round.descriptionSubmittedBy, table: round.descriptionOrder, extra: {} };
+  lists.done.push(speaker.id);
+  const order = (lists.table ?? []).indexOf(speaker.id) + 1;
+  round.descriptions.push(
+    createDescription(ctx, speaker, text, slot.kind, round.descriptionCycle, {
+      ...lists.extra,
+      order: order > 0 ? order : undefined,
+    })
+  );
+};
+
+const createDescription = (
   ctx: WhoIsFakerContext,
   player: Pick<WhoIsFakerPlayerRecord, "id" | "name">,
   text: string,

@@ -9,21 +9,12 @@ import { requeuePendingDisconnects } from "../PendingDisconnects";
 import { completeSupplementIfReady } from "../PhaseTimers";
 import { publishRoom } from "../RoomPublish";
 import {
-  createDescription,
+  appendSpeech,
   getAliveAssignedPlayerIds,
   replaceNightAction,
   replaceVote,
 } from "../RoundRules";
 import type { WhoIsFakerContext } from "../Context";
-
-/** 发言位次：按给定的发言顺序表取 1 起的序号，不在表里的玩家不标序。 */
-const speechOrderOf = (
-  order: readonly string[] | undefined,
-  playerId: string
-): number | undefined => {
-  const index = (order ?? []).indexOf(playerId) + 1;
-  return index > 0 ? index : undefined;
-};
 
 /**
  * 机器人补齐当前阶段所有必需的提交。
@@ -103,20 +94,10 @@ const fillBotSupplement = (
     return false;
   }
 
-  supplement.donePlayers.push(bot.id);
-  round.descriptions.push(
-    createDescription(
-      ctx,
-      bot,
-      pickBotDescription(round, bot.id),
-      "supplement",
-      round.descriptionCycle,
-      {
-        supplementIndex: supplement.index,
-        order: speechOrderOf(supplement.requestedPlayerIds, bot.id),
-      }
-    )
-  );
+  appendSpeech(ctx, round, bot, pickBotDescription(round, bot.id), {
+    kind: "supplement",
+    supplement,
+  });
   return true;
 };
 
@@ -129,19 +110,7 @@ const fillBotDescription = (
   if (round.phase !== "description" || round.speechMode === "supplement") return false;
   if (round.descriptionSubmittedBy.includes(bot.id)) return false;
 
-  round.descriptionSubmittedBy.push(bot.id);
-  round.descriptions.push(
-    createDescription(
-      ctx,
-      bot,
-      pickBotDescription(round, bot.id),
-      "description",
-      round.descriptionCycle,
-      {
-        order: speechOrderOf(round.descriptionOrder, bot.id),
-      }
-    )
-  );
+  appendSpeech(ctx, round, bot, pickBotDescription(round, bot.id), { kind: "description" });
   return true;
 };
 
@@ -156,20 +125,7 @@ const fillBotTieBreakDescription = (
   if (!tieBreak.candidateIds.includes(bot.id) || tieBreak.descriptionsDone.includes(bot.id))
     return false;
 
-  tieBreak.descriptionsDone.push(bot.id);
-  round.descriptions.push(
-    createDescription(
-      ctx,
-      bot,
-      pickBotDescription(round, bot.id),
-      "tieBreak",
-      round.descriptionCycle,
-      {
-        tieBreakIndex: round.tieBreakCount,
-        order: speechOrderOf(tieBreak.candidateIds, bot.id),
-      }
-    )
-  );
+  appendSpeech(ctx, round, bot, pickBotDescription(round, bot.id), { kind: "tieBreak", tieBreak });
   return true;
 };
 

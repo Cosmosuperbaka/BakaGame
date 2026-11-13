@@ -14,7 +14,7 @@ import { resolveNight, resolveVoting } from "./Resolution";
 import { publishRoom } from "./RoomPublish";
 import { finishRound } from "./RoundSettlement";
 import {
-  createDescription,
+  appendSpeech,
   getAliveAssignedPlayerIds,
   isTwoPlayerUndercoverEndgame,
 } from "./RoundRules";
@@ -103,13 +103,7 @@ const fillDescriptionTimeouts = (
   for (const playerId of round.descriptionOrder) {
     if (!round.descriptionSubmittedBy.includes(playerId)) {
       const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
-      round.descriptionSubmittedBy.push(playerId);
-      const order = round.descriptionOrder.indexOf(playerId) + 1;
-      round.descriptions.push(
-        createDescription(ctx, player, "（超时未发言）", "description", round.descriptionCycle, {
-          order: order > 0 ? order : undefined,
-        })
-      );
+      appendSpeech(ctx, round, player, "（超时未发言）", { kind: "description" });
     }
   }
 };
@@ -124,14 +118,7 @@ const fillSupplementTimeouts = (
   for (const playerId of supplement.requestedPlayerIds) {
     if (!supplement.donePlayers.includes(playerId)) {
       const player = room.players[playerId] ?? { id: playerId, name: "超时玩家" };
-      supplement.donePlayers.push(playerId);
-      const order = supplement.requestedPlayerIds.indexOf(playerId) + 1;
-      round.descriptions.push(
-        createDescription(ctx, player, "（超时未发言）", "supplement", round.descriptionCycle, {
-          supplementIndex: supplement.index,
-          order: order > 0 ? order : undefined,
-        })
-      );
+      appendSpeech(ctx, round, player, "（超时未发言）", { kind: "supplement", supplement });
     }
   }
   completeSupplementIfReady(ctx, room);
@@ -204,14 +191,7 @@ const fillTieBreakTimeouts = (
   for (const candidateId of tieBreak.candidateIds) {
     if (!tieBreak.descriptionsDone.includes(candidateId)) {
       const player = room.players[candidateId] ?? { id: candidateId, name: "超时玩家" };
-      tieBreak.descriptionsDone.push(candidateId);
-      const order = tieBreak.candidateIds.indexOf(candidateId) + 1;
-      round.descriptions.push(
-        createDescription(ctx, player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
-          tieBreakIndex: round.tieBreakCount,
-          order: order > 0 ? order : undefined,
-        })
-      );
+      appendSpeech(ctx, round, player, "（超时未发言）", { kind: "tieBreak", tieBreak });
     }
   }
 };
