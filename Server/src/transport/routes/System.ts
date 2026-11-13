@@ -6,7 +6,7 @@ import { resolveDeploymentEnvironment } from "../../config/env/Observability";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 
 export const isPrivateLanHost = (rawHost: string): boolean => {
   const host = rawHost
@@ -98,6 +98,7 @@ export const systemRoutes = ({
   });
   // 全组路由的失败响应共用同一份信封：状态码不同、形状相同，客户端不必按路由分支。
   return new Elysia({ name: "system", normalize: false })
+    .use(requestContext)
     .guard({
       response: {
         400: errorSchema,
@@ -154,11 +155,8 @@ export const systemRoutes = ({
     )
     .get(
       "/health",
-      ({ headers, request, server, set }) => {
-        const verdict = probeLimiter.consume(
-          resolveClientIp(request.headers, server?.requestIP(request)?.address),
-          server?.requestIP(request)?.address ?? "unknown"
-        );
+      ({ headers, peerIp, clientIp, set }) => {
+        const verdict = probeLimiter.consume(clientIp, peerIp ?? "unknown");
         Object.assign(set.headers, rateLimitHeaders(verdict));
         if (!verdict.allowed) {
           set.status = 429;

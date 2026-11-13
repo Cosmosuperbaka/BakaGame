@@ -6,6 +6,7 @@ import { compareDottedVersion } from "../../shared/ModelValues";
 import type { ClientWebBundle } from "../../infrastructure/ClientWebBundle";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 
 /**
@@ -74,6 +75,7 @@ export const clientChannelRoutes = (
   // 限流挂在请求入口、先于 body 校验：挂在 beforeHandle 上，校验失败的请求就不计额度，
   // 非法请求体成了不限速的探测通道。
   return new Elysia({ name: "client-channel", normalize: false })
+    .use(requestContext)
     .onRequest(({ request, server, set }) => {
       if (request.method !== "POST" || !new URL(request.url).pathname.startsWith("/api/client/"))
         return;
@@ -119,9 +121,8 @@ export const clientChannelRoutes = (
     )
     .post(
       "/api/client/attest",
-      async ({ body, request, server }) => {
+      async ({ body, clientIp }) => {
         // 票绑定签发时的来源地址：抓到的票在另一台机器上用不掉。
-        const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
         return require().attest(body, clientIp);
       },
       {

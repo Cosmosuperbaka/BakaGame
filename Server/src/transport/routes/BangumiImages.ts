@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import type { BangumiImageService } from "../../infrastructure/BangumiImageService";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 
 /**
@@ -34,9 +34,9 @@ const SERVEABLE_IMAGE_TYPES = new Set([
 ]);
 
 export const bangumiImageRoutes = (images?: BangumiImageService) =>
-  new Elysia({ name: "bangumi-images" }).get(
+  new Elysia({ name: "bangumi-images" }).use(requestContext).get(
     "/api/bangumi/*",
-    async ({ params, request, server, set }) => {
+    async ({ params, clientIp, set }) => {
       const rest = typeof params["*"] === "string" ? params["*"] : "";
       const path = `/${rest}`;
       if (!IMAGE_PATH_PATTERN.test(path) || path.includes("..") || path.includes("//")) {
@@ -44,10 +44,7 @@ export const bangumiImageRoutes = (images?: BangumiImageService) =>
         return httpError("INVALID_IMAGE_PATH", "图片路径不合法", traceIdOf(set.headers));
       }
       // 回源配额按来源地址分桶：边缘反代后 peer 恒为节点地址，只能用真实 IP 标头。
-      const peerIp = server?.requestIP(request)?.address ?? "unknown";
-      const outcome = images
-        ? await images.fetch(path, resolveClientIp(request.headers, peerIp))
-        : ({ state: "missing" } as const);
+      const outcome = images ? await images.fetch(path, clientIp) : ({ state: "missing" } as const);
       if (outcome.state === "limited") {
         Object.assign(set.headers, rateLimitHeaders(outcome.verdict));
         set.status = 429;

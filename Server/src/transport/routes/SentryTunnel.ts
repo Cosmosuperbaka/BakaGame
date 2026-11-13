@@ -3,7 +3,7 @@ import { captureServerMessage, countServerMetric } from "../../infrastructure/Se
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { httpError, rateLimitHeaders, traceIdOf, type HttpErrorBody } from "../HttpErrorEnvelope";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 
 export const MAX_ENVELOPE_BYTES = 256 * 1024; // 256KB
 
@@ -426,9 +426,9 @@ export const sentryTunnelRoutes = ({
   const limiter = rateLimiter ?? new ThreeTierRateLimiter();
   const policy: SentryTunnelPolicy = { allowedProjects: allowedSet, allowedHosts: allowedHostSet };
 
-  return new Elysia({ name: "sentry-tunnel" }).post(
+  return new Elysia({ name: "sentry-tunnel" }).use(requestContext).post(
     "/api/monitoring/sentry",
-    async ({ request, set, server }) => {
+    async ({ request, set, peerIp, clientIp }) => {
       // 失败出口只有一处：状态码与错误码由校验环节决定，信封形状统一由 HttpErrorEnvelope 产出。
       const traceId = traceIdOf(set.headers);
       const reject = (failure: TunnelFailure): HttpErrorBody => {
@@ -438,10 +438,7 @@ export const sentryTunnelRoutes = ({
       try {
         // 客户端身份取 边缘层写入的真实 IP 标头（无法被客户端伪造），
         // 缺失或不是 IP 字面量时退回 transport peer；peer 桶另行封顶，防止标头被伪造成新桶。
-        const peerIp = server?.requestIP(request)?.address ?? "unknown";
-        const clientIp = resolveClientIp(request.headers, peerIp);
-
-        const verdict = limiter.consume(clientIp, peerIp);
+        const verdict = limiter.consume(clientIp, peerIp ?? "unknown");
         Object.assign(set.headers, rateLimitHeaders(verdict));
         if (!verdict.allowed)
           return reject(tunnelFailure(429, "RATE_LIMITED", "Too Many Requests"));

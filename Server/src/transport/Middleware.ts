@@ -118,8 +118,7 @@ export const globalMiddleware = ({
           enabled: env.openapiEnabled,
         })
       )
-      // ==================== 原生耗时与链路追踪派生 ====================
-      .derive(({ request }) => requests.get(request)!)
+      // ==================== 操作日志 ====================
       .onAfterResponse(({ request, response, set }) => {
         const context = requests.get(request);
         if (!context) return;

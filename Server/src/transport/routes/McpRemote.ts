@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import type { EventLogger } from "../../infrastructure/EventLogger";
 import { handleRemoteMcp, RemoteMcpSessions } from "../../mcp/Remote";
 import type { PageControlPort } from "../../mcp/Tools";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 
 /**
  * 远程 MCP（Streamable HTTP）入口。
@@ -22,8 +22,8 @@ export const mcpRemoteRoutes = ({
   pages?: PageControlPort;
 }) =>
   new Elysia({ name: "mcp-remote", normalize: false })
-    .post("/api/mcp", async ({ request, body, set, server }) => {
-      const clientKey = resolveClientIp(request.headers, server?.requestIP(request)?.address);
+    .use(requestContext)
+    .post("/api/mcp", async ({ request, body, set, clientIp: clientKey }) => {
       const outcome = await handleRemoteMcp(
         { enabled, sessions, logger, pages },
         request,

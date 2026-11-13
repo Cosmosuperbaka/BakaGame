@@ -6,7 +6,7 @@ import {
   SONG_AUDIO_REDIRECT_WINDOW_MS,
 } from "../../config/Constants";
 import { ThreeTierRateLimiter } from "../../infrastructure/RateLimiter";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 import { httpError, rateLimitHeaders, traceIdOf } from "../HttpErrorEnvelope";
 
 /** 路由只需要服务的这一个能力：按房号与票据取当前回合保存的上游地址。 */
@@ -52,15 +52,13 @@ export const songAudioRoutes = ({ song, rateLimiter }: SongAudioRoutesOptions) =
       globalMaxRequests: SONG_AUDIO_REDIRECT_GLOBAL_MAX_PER_WINDOW,
     });
 
-  return new Elysia({ name: "song-audio" }).get(
+  return new Elysia({ name: "song-audio" }).use(requestContext).get(
     `${SONG_AUDIO_ROUTE_PREFIX}/:roomId/:ticket`,
-    ({ params, request, server, set }) => {
+    ({ params, peerIp, clientIp, set }) => {
       set.headers["cache-control"] = NO_STORE;
       const traceId = traceIdOf(set.headers);
       // 限流先于查表：枚举票据的每一次尝试都要先过额度，且被拒不暴露任何房间信息。
-      const peerIp = server?.requestIP(request)?.address ?? "unknown";
-      const clientIp = resolveClientIp(request.headers, peerIp);
-      const verdict = limiter.consume(clientIp, peerIp);
+      const verdict = limiter.consume(clientIp, peerIp ?? "unknown");
       Object.assign(set.headers, rateLimitHeaders(verdict));
       if (!verdict.allowed) {
         set.status = 429;

@@ -9,7 +9,7 @@ import type { UserDataService } from "../../application/UserDataService";
 import { isAppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../../infrastructure/EventLogger";
 import { AUTH_HTTP_PATHS, type Auth } from "../../infrastructure/auth/Auth";
-import { resolveClientIp } from "../ClientIp";
+import { requestContext } from "../RequestContext";
 import {
   httpError,
   rateLimitHeaders,
@@ -340,16 +340,11 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     );
   };
   return new Elysia({ name: "account-routes" })
+    .use(requestContext)
     .all(
       `${AUTH_BASE_PATH}/*`,
-      async ({ request, server, set }) => {
-        const peerIp = server?.requestIP(request)?.address;
-        const overQuota = rejectOverQuota(
-          resolveClientIp(request.headers, peerIp),
-          peerIp,
-          false,
-          traceIdOf(set.headers)
-        );
+      async ({ request, peerIp, clientIp, set }) => {
+        const overQuota = rejectOverQuota(clientIp, peerIp, false, traceIdOf(set.headers));
         if (overQuota) return overQuota;
         if (!account) return accountDisabled(traceIdOf(set.headers));
         const path = new URL(request.url).pathname.slice(AUTH_BASE_PATH.length);
@@ -363,9 +358,7 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     )
     .all(
       `${RPC_BASE_PATH}/*`,
-      async ({ request, server, set }) => {
-        const peerIp = server?.requestIP(request)?.address;
-        const clientIp = resolveClientIp(request.headers, peerIp);
+      async ({ request, peerIp, clientIp, set }) => {
         const overQuota = rejectOverQuota(clientIp, peerIp, true, traceIdOf(set.headers));
         if (overQuota) return overQuota;
         if (!account || !rpc) return rpcAccountDisabled();
@@ -388,12 +381,8 @@ export const accountRoutes = (account: AccountDependencies | undefined, logger: 
     )
     .get(
       `${ACCOUNT_AVATAR_PATH}/:userId`,
-      async ({ params, query, request, server, set }) => {
-        const clientIp = resolveClientIp(request.headers, server?.requestIP(request)?.address);
-        const verdict = avatarLimiter.consume(
-          clientIp,
-          server?.requestIP(request)?.address ?? clientIp
-        );
+      async ({ params, query, peerIp, clientIp, set }) => {
+        const verdict = avatarLimiter.consume(clientIp, peerIp ?? clientIp);
         Object.assign(set.headers, rateLimitHeaders(verdict));
         if (!verdict.allowed) {
           set.status = 429;
