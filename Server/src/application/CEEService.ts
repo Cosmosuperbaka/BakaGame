@@ -1,6 +1,8 @@
 import {
   CEE_ORIGINAL_ENTER_MAX_PER_WINDOW,
   CEE_ORIGINAL_ENTER_WINDOW_MS,
+  COMMAND_RATE_LIMIT_PER_CONNECTION,
+  COMMAND_RATE_LIMIT_WINDOW_MS,
 } from "../config/Constants";
 import type { AdminRoomView } from "../domain/AdminRoom";
 import type { GameService } from "./GameService";
@@ -54,7 +56,10 @@ export class CEEService implements GameService<CEEClientMessage> {
   /** 统一房号目录：增强房与原版房共用一个 4 位号空间，客户端只见到这一个号。 */
   readonly directory: CEERoomDirectory;
   private readonly connections = new Map<string, ConnectionRecord>();
-  private readonly limiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 80 });
+  private readonly limiter = new SlidingWindowRateLimiter({
+    windowMs: COMMAND_RATE_LIMIT_WINDOW_MS,
+    maxRequests: COMMAND_RATE_LIMIT_PER_CONNECTION,
+  });
   /** 增强房自己的聊天额度（窗口、次数与文案）：TODO(行为统一) 与另两款统一前保持现值。 */
   private readonly chatLimiter = new ChatLimiter({
     now: () => this.now(),
