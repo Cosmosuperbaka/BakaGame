@@ -310,6 +310,9 @@ describe("CEE 操作区", () => {
     expect(screen.queryByText("本局已结束行动，等待结算")).not.toBeInTheDocument();
     expect(screen.queryByText(/答案对猜题者隐藏/)).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // 线索表的占位不能叫旁观位去「提交猜测」：他整局都收不到猜测，要等揭晓。
+    expect(screen.getByText("揭晓后，这里会显示全场的猜测")).toBeInTheDocument();
+    expect(screen.queryByText("提交第一个猜测后，这里会显示线索")).not.toBeInTheDocument();
     // 中途加入的正式座位同样是旁观位。
     view.rerender(
       <CEEGameArea
@@ -330,6 +333,7 @@ describe("CEE 操作区", () => {
     );
     expect(screen.getByText("本局已结束行动，等待结算")).toBeInTheDocument();
     expect(screen.queryByText("答案揭晓前不对旁观者显示")).not.toBeInTheDocument();
+    expect(screen.queryByText("揭晓后，这里会显示全场的猜测")).not.toBeInTheDocument();
   });
 
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {

@@ -284,9 +284,12 @@ const HEADERS: Array<{ key: string; lines: string[]; name?: string }> = [
 export function CEEFeedbackTable({
   guesses,
   showRound = false,
+  emptyText = "提交第一个猜测后，这里会显示线索",
 }: {
   guesses: CEEGuess[];
   showRound?: boolean;
+  /** 还没有任何猜测时的占位说明；收不到猜测的旁观位要换一句，不能让他去「提交猜测」。 */
+  emptyText?: string;
 }) {
   const rows = [...guesses].reverse();
   // 挂载时已有的猜测（进房、重连、换阶段）照常整行推入；之后才到的才逐格翻开。减弱动效下一律不翻。
@@ -305,7 +308,7 @@ export function CEEFeedbackTable({
             exit={skeletonFade.exit}
             className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground [grid-area:1/1]"
           >
-            提交第一个猜测后，这里会显示线索
+            {emptyText}
           </motion.p>
         )}
       </AnimatePresence>

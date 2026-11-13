@@ -529,7 +529,11 @@ function CEEGuessing({
           onPick={handlePick}
         />
       ) : null}
-      <CEEFeedbackTable guesses={privateState.guesses} showRound={snapshot.settings.syncMode} />
+      <CEEFeedbackTable
+        guesses={privateState.guesses}
+        showRound={snapshot.settings.syncMode}
+        emptyText={slot === "sealed" ? "揭晓后，这里会显示全场的猜测" : undefined}
+      />
       <CEEConfirmDialog
         open={surrenderOpen}
         onOpenChange={setSurrenderOpen}
