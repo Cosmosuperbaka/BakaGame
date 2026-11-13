@@ -1662,4 +1662,91 @@ describe("SonGuessrService", () => {
       });
     });
   });
+  describe("后台视图与在线计数", () => {
+    test("单人房在后台照样列出且标为不进大厅；健康快照只数在线且未被移出的玩家", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const solo = connection(service, "admin-solo");
+      await createRoom(service, solo, { roomId: "5678", solo: true });
+      const host = connection(service, "admin-host");
+      const guest = connection(service, "admin-guest");
+      await createRoom(service, host);
+      const guestState = await joinRoom(service, guest, "玩家");
+
+      const views = service.adminListRooms();
+      expect(views.find((view) => view.roomId === "5678")?.hidden).toBe(true);
+      expect(views.find((view) => view.roomId === "1234")?.hidden).toBe(false);
+      expect(service.getHealthSnapshot().onlinePlayerCount).toBe(3);
+
+      await execute(service, host, {
+        id: "admin-kick",
+        type: "song.room.kick",
+        roomId: "1234",
+        payload: { playerId: guestState.playerId },
+      });
+      expect(service.getHealthSnapshot().onlinePlayerCount).toBe(2);
+      await expect(service.adminCloseRoom("9999")).rejects.toMatchObject({
+        code: "ROOM_NOT_FOUND",
+      });
+    });
+  });
+
+  describe("聊天与系统消息", () => {
+    const say = (service: SonGuessrService, client: TestConnection, id: string, text: string) =>
+      execute(service, client, {
+        id,
+        type: "song.chat.send",
+        roomId: "1234",
+        payload: { text },
+      });
+
+    test("聊天只走增量事件，文本去空白与控制字符，系统消息发送者占位保持现值", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "chat-host");
+      const guest = connection(service, "chat-guest");
+      await createRoom(service, host);
+      await joinRoom(service, guest, "玩家");
+
+      await say(service, host, "c1", "  你好​   世界 ");
+      expect(
+        lastEvent<{ message: { text: string; system: boolean } }>(guest, "song.chat.message")
+      ).toMatchObject({ message: { text: "你好 世界", system: false } });
+
+      const [created, joined] = service.rooms.get("1234")!.chat;
+      expect(created).toMatchObject({ playerId: "system", playerName: "系统", system: true });
+      expect(joined).toMatchObject({ playerId: "system", playerName: "系统", system: true });
+    });
+
+    test("空消息报 INVALID_MESSAGE，超长文本在服务层截到 200，频率超限报 RATE_LIMITED", async () => {
+      const service = new SonGuessrService({ musicProvider: provider });
+      const host = connection(service, "chat-limit-host");
+      await createRoom(service, host);
+
+      await expect(say(service, host, "empty", " ​ ")).rejects.toMatchObject({
+        code: "INVALID_MESSAGE",
+      });
+      await say(service, host, "long", "字".repeat(300));
+      expect(service.rooms.get("1234")!.chat.at(-1)!.text).toHaveLength(200);
+
+      for (let index = 0; index < 3; index += 1) await say(service, host, `ok-${index}`, "好");
+      await expect(say(service, host, "over", "好")).rejects.toMatchObject({
+        code: "RATE_LIMITED",
+        message: "发言过于频繁，请稍后再试",
+      });
+    });
+
+    test("聊天记录只留最近一个窗口，挤掉最旧的", async () => {
+      let now = 1_000_000;
+      const service = new SonGuessrService({ musicProvider: provider, now: () => now });
+      const host = connection(service, "chat-window-host");
+      await createRoom(service, host);
+      for (let index = 0; index < 30; index += 1) {
+        now += 1_000;
+        await say(service, host, `w-${index}`, `消息 ${index} 号`);
+      }
+      const texts = service.rooms.get("1234")!.chat.map((message) => message.text);
+      expect(texts).toHaveLength(20);
+      expect(texts.at(-1)).toBe("消息 29 号");
+      expect(texts[0]).toBe("消息 10 号");
+    });
+  });
 });

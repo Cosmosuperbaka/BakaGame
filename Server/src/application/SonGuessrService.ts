@@ -49,9 +49,6 @@ import { NOOP_GAME_RECORDER, type GameRecorder } from "../domain/GameRecord";
 import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../domain/TestRooms";
 import {
   BOT_NAME_SUFFIXES,
-  CHAT_LIMIT,
-  CHAT_RATE_LIMIT_PER_CONNECTION,
-  CHAT_RATE_LIMIT_WINDOW_MS,
   ROOM_EXPIRING_WARNING_MS,
   TEST_BOT_BATCH_LIMIT,
   TEST_MODE_MAX_PLAYERS,
@@ -92,7 +89,9 @@ import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
+import { ChatLimiter, acceptChatText, appendChat, systemMessage } from "./room/ChatLog";
 import { IdCounter } from "./room/IdCounter";
+import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
@@ -156,6 +155,9 @@ import {
 import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
 /** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
+/** 与协议里单条聊天的长度上限一致，服务层再截一次，不依赖入口校验。 */
+const SONG_CHAT_TEXT_MAX_LENGTH = 200;
+
 const normalizeRoomPassword = (password: string): string => password.trim();
 
 export interface SonGuessrServiceOptions {
@@ -208,11 +210,8 @@ export class SonGuessrService implements AdminRoomControl {
     windowMs: MUSIC_RATE_LIMIT_WINDOW_MS,
     maxRequests: MUSIC_RATE_LIMIT_PER_CONNECTION,
   });
-  /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。 */
-  private readonly chatLimiter = new SlidingWindowRateLimiter({
-    windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
-    maxRequests: CHAT_RATE_LIMIT_PER_CONNECTION,
-  });
+  /** 聊天频率配额：每条聊天都会触发全房广播，不限流等于放大 DoS。额度取公共常量。 */
+  private readonly chatLimiter: ChatLimiter;
   /**
    * 每个房间在等号的请求。所有可用号都达到单号并发上限时在这里排队，任一租约归还
    * 或池子变化即唤醒重试；只在进程内，房间关闭时整段丢弃。
@@ -246,6 +245,7 @@ export class SonGuessrService implements AdminRoomControl {
       missingOnJoin: { code: "PASSWORD_INCORRECT", message: "房间密码错误" },
       hasher: options.passwordHasher,
     });
+    this.chatLimiter = new ChatLimiter({ now: () => this.now() });
     this.random = options.random ?? {
       nextInt: (maxExclusive) => Math.floor(Math.random() * Math.max(1, maxExclusive)),
     };
@@ -267,7 +267,7 @@ export class SonGuessrService implements AdminRoomControl {
       roomCount: this.rooms.size,
       connectionCount: this.connections.stats.totalConnections,
       onlinePlayerCount: [...this.rooms.values()].reduce(
-        (sum, room) => sum + this.onlineCount(room),
+        (sum, room) => sum + countOnline(Object.values(room.players)),
         0
       ),
     };
@@ -549,7 +549,7 @@ export class SonGuessrService implements AdminRoomControl {
    * 闲置关房前提前一段时间预警：每一段闲置只预警一次，有新活动后重新计。
    */
   private reclaimIdleRoom(room: SonGuessrRoomRecord, currentTime: number): RoomReclaim {
-    const onlineCount = this.onlineCount(room);
+    const onlineCount = countOnline(Object.values(room.players));
     const emptyRoomExempt = this.isTestRoom(room);
     if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
       markIdleWarningSent(room);
@@ -578,7 +578,7 @@ export class SonGuessrService implements AdminRoomControl {
       this.clearMusicSession(room, player.id);
       if (room.hostPlayerId === player.id) this.reassignRemovedHost(room);
       this.touch(room);
-      if (this.onlineCount(room) === 0 && !this.isTestRoom(room)) {
+      if (countOnline(Object.values(room.players)) === 0 && !this.isTestRoom(room)) {
         this.closeRoom(room, "empty");
       } else {
         this.publishRoom(room);
@@ -1251,47 +1251,28 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   adminListRooms(): AdminRoomView[] {
-    return [...this.rooms.values()].map((room) => ({
-      game: "song",
-      roomId: room.id,
-      name: room.name,
-      phase: room.phase,
-      visibility: room.visibility,
-      hasPassword: Boolean(room.passwordHash),
-      hidden: this.isTestRoom(room) || room.solo,
-      roundNumber: room.roundNumber,
-      createdAt: room.createdAt,
-      lastActiveAt: room.lastActivityAt,
-      players: Object.values(room.players)
-        .filter((player) => player.membership !== "kicked")
-        .map((player) => ({
-          id: player.id,
-          name: player.name,
-          online: player.online,
-          membership: player.membership,
-          host: player.id === room.hostPlayerId,
-          bot: player.isBot,
-          userId: player.account?.userId ?? null,
-        })),
-    }));
+    return [...this.rooms.values()].map((room) =>
+      adminRoomView(room, Object.values(room.players), {
+        game: "song",
+        name: room.name,
+        phase: room.phase,
+        visibility: room.visibility,
+        hidden: this.isTestRoom(room) || room.solo,
+        roundNumber: room.roundNumber,
+      })
+    );
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {
-    this.closeRoom(this.requireAdminRoom(roomId), ADMIN_CLOSE_REASON);
+    this.closeRoom(requireAdminRoom(this.rooms, roomId), ADMIN_CLOSE_REASON);
   }
 
   async adminKickPlayer(roomId: string, playerId: string): Promise<void> {
-    const room = this.requireAdminRoom(roomId);
+    const room = requireAdminRoom(this.rooms, roomId);
     const target = room.players[playerId];
     if (!target || target.membership === "kicked")
       throw new AppError("PLAYER_NOT_FOUND", "玩家不存在");
     this.kickPlayer(room, target);
-  }
-
-  private requireAdminRoom(roomId: string): SonGuessrRoomRecord {
-    const room = this.rooms.get(roomId);
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
-    return room;
   }
 
   private transferHost(connection: ConnectionRecord, targetPlayerId: string) {
@@ -1308,12 +1289,11 @@ export class SonGuessrService implements AdminRoomControl {
 
   private sendChat(connection: ConnectionRecord, rawText: string) {
     const { room, player } = this.requireRoomPlayer(connection);
-    if (!this.chatLimiter.allow(connection.id, this.now())) {
-      throw new AppError("RATE_LIMITED", "发言过于频繁，请稍后再试");
-    }
-    const text = normalizeWord(rawText);
-    if (!text) throw new AppError("INVALID_MESSAGE", "消息不能为空");
-    assertTextAllowed(text);
+    this.chatLimiter.consume(connection.id);
+    const text = acceptChatText(rawText, {
+      maxLength: SONG_CHAT_TEXT_MAX_LENGTH,
+      emptyError: { code: "INVALID_MESSAGE", message: "消息不能为空" },
+    });
     const message: ChatMessage = {
       id: this.ids.next("song_chat"),
       playerId: player.id,
@@ -1322,7 +1302,7 @@ export class SonGuessrService implements AdminRoomControl {
       createdAt: this.now(),
       system: false,
     };
-    room.chat = [...room.chat, message].slice(-CHAT_LIMIT);
+    appendChat(room, message);
     this.touch(room);
     // 只走增量事件，不再为一条聊天广播整套房间快照：
     // N 人房间刷 M 条消息会从 O(N×M) 次全量序列化降到 O(N) 次小事件。
@@ -2962,17 +2942,10 @@ export class SonGuessrService implements AdminRoomControl {
   }
 
   private appendSystemMessage(room: SonGuessrRoomRecord, text: string) {
-    room.chat = [
-      ...room.chat,
-      {
-        id: this.ids.next("song_chat"),
-        playerId: "system",
-        playerName: "系统",
-        text,
-        createdAt: this.now(),
-        system: true,
-      },
-    ].slice(-CHAT_LIMIT);
+    appendChat(
+      room,
+      systemMessage({ id: this.ids.next("song_chat"), text, createdAt: this.now() })
+    );
   }
 
   private createPlayer(
@@ -3003,12 +2976,6 @@ export class SonGuessrService implements AdminRoomControl {
 
   activePlayers(room: SonGuessrRoomRecord) {
     return Object.values(room.players).filter((player) => player.membership === "active");
-  }
-
-  private onlineCount(room: SonGuessrRoomRecord) {
-    return Object.values(room.players).filter(
-      (player) => player.online && player.membership !== "kicked"
-    ).length;
   }
 
   private publicSong(song: SongDetails): SongSearchResult {
