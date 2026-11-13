@@ -241,6 +241,12 @@ export const CONTRIBUTING_MODELS: readonly ContributingCompany[] = [
         logo: "claude",
         url: "https://www.anthropic.com/news/claude-sonnet-5-5",
       },
+      {
+        name: "Claude Fable 5.2",
+        releasedAt: "2026-11-09",
+        logo: "claude",
+        url: "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      },
     ],
   },
   {
