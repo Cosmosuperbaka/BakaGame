@@ -554,6 +554,27 @@ describe("「还在等谁」：推进判定、掉线队列、超时补位与机�
     expect(entry.actions.map((x) => x.actorId).sort()).toEqual([a.id, b.id, c.id].sort());
   });
 
+  test("发言者不在顺位表里时不标顺位：机器人补发言取不到位次", async () => {
+    const world = createWorld();
+    const host = await makeRoom(world, "Oblivionis");
+    await send(world, host.conn, { id: "b", type: "test.addBot", payload: { count: 4 } });
+    await send(world, host.conn, {
+      id: "j",
+      type: "test.jumpToPhase",
+      payload: { phase: "description" },
+    });
+    const room = world.room("Oblivionis");
+    const r = round(world, "Oblivionis");
+    const bot = Object.values(room.players).find((p) => p.isBot)!;
+    r.descriptionOrder = r.descriptionOrder.filter((id) => id !== bot.id);
+    r.descriptionSubmittedBy = r.descriptionSubmittedBy.filter((id) => id !== bot.id);
+    r.descriptions = r.descriptions.filter((d) => d.playerId !== bot.id);
+    await send(world, host.conn, { id: "b2", type: "test.addBot", payload: { count: 1 } });
+    const again = r.descriptions.filter((d) => d.playerId === bot.id);
+    expect(again).toHaveLength(1);
+    expect(again[0].order).toBeUndefined();
+  });
+
   test("机器人：已投的不再改票、非夜晚不行动、夜晚只有平民与卧底、已行动的不覆盖、平票记录取当前加赛次数", async () => {
     const world = createWorld();
     const host = await makeRoom(world, "Oblivionis");
