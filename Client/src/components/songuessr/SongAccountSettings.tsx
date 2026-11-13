@@ -525,7 +525,11 @@ function RoomAccountSettings({
         await sendCommand("song.auth.clear");
       }
     } catch {
-      // 本地状态仍需立即清除
+      // 服务端没清掉就不能谎称已退出：号还在账号池里被房内共享，本机凭据也留着，玩家可以重试。
+      if (generation !== loginGenerationRef.current) return;
+      setBusy(false);
+      showToast("退出失败，请重试", "error");
+      return;
     }
     if (generation !== loginGenerationRef.current) return;
     setBusy(false);

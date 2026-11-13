@@ -215,6 +215,36 @@ describe("SongAccountSettings", () => {
     );
   });
 
+  it("退出登录时服务端清除失败：不清本机、不提示已退出，可以重试", async () => {
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=browser-only", account: { nickname: "旧账号", vipStatus: "vip" } },
+      true
+    );
+    sendCommand.mockRejectedValueOnce(new Error("连接已断开"));
+    render(<SongAccountSettings snapshot={snapshot(true)} />);
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    });
+
+    expect(sendCommand.mock.calls).toEqual([["song.auth.clear"]]);
+    expect(getStoredSongMusicSession()).not.toBeNull();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith("退出失败，请重试", "error");
+    expect(screen.queryByAltText("网易云登录二维码")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出登录" })).toBeEnabled();
+
+    sendCommand.mockImplementation(async (type: string) =>
+      type === "song.auth.qr.create" ? qrResponse("after-retry") : {}
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    });
+    expect(getStoredSongMusicSession()).toBeNull();
+    expect(showToast).toHaveBeenLastCalledWith("已退出网易云账号", "success");
+  });
+
   // 「记住登录状态」默认值此前没有任何断言保护：改默认值不会打断现有用例，
   // 也就没人会发现默认值被悄悄改掉。这里钉住当前行为（默认 true = 持久化）。
   it("未存过登录状态时，记住登录开关默认为开启", () => {
