@@ -224,6 +224,8 @@ function LoginDialogBody({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // 按钮的转圈只拦得住点击，回车触发的隐式提交要在这里拦：验证码一次性，重复提交只会作废它。
+    if (busy !== null) return;
     if (step.kind === "qq") {
       if (validQq) await sendCode("send");
       return;

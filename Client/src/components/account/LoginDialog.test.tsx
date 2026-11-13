@@ -109,6 +109,32 @@ describe("登录弹窗", () => {
     }
   });
 
+  it("验证码登录在途时再次提交（回车）不会重复登录", async () => {
+    requestLoginCode.mockResolvedValue({ registered: true, resendAfterSeconds: 60, qqName: null });
+    signIn.mockReturnValue(new Promise<void>(() => {}));
+    const { user } = renderDialog();
+    await user.type(screen.getByLabelText("QQ 号"), "12345");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+    await user.type(await screen.findByLabelText("验证码"), "123456");
+
+    const form = screen.getByLabelText("验证码").closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(signIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("发码在途时再次提交（回车）不会重复发码", async () => {
+    requestLoginCode.mockReturnValue(new Promise(() => {}));
+    const { user } = renderDialog();
+    await user.type(screen.getByLabelText("QQ 号"), "12345");
+
+    const form = screen.getByLabelText("QQ 号").closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(requestLoginCode).toHaveBeenCalledTimes(1);
+  });
+
   it("输完 QQ 号即回显昵称，不等发码", async () => {
     qqName.mockResolvedValue("阿狸");
     const { user } = renderDialog();
