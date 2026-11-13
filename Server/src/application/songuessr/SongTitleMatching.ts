@@ -1,12 +1,6 @@
 /** 曲名/专辑/歌手的归一、相似度与匹配门禁（出题候选过滤的纯函数）。 */
 import { AppError } from "../../domain/Errors";
-import {
-  BARE_VERSION_SUFFIX_PATTERN,
-  BRACKETED_VERSION_PATTERN,
-  DECORATED_VERSION_SUFFIX_PATTERN,
-  FEAT_SUFFIX_PATTERN,
-  VERSION_MARKER_PATTERN,
-} from "../../domain/TitlePatterns";
+import { stripVersionInfo } from "../../domain/TitlePatterns";
 import {
   artistsOverlap,
   extractArtistTokens,
@@ -27,24 +21,7 @@ export const normalizeSongText = (value: string) =>
     .toLowerCase()
     .replace(/[\s\-_'"“”‘’·.，,。!！?？()（）[\]【】]/g, "");
 
-export const stripSongVersionInfo = (value: string) => {
-  let result = value.replace(BRACKETED_VERSION_PATTERN, (match, metadata: string) =>
-    VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-  );
-
-  while (true) {
-    const next = result
-      .replace(DECORATED_VERSION_SUFFIX_PATTERN, (match, metadata: string) =>
-        VERSION_MARKER_PATTERN.test(metadata) ? "" : match
-      )
-      .replace(BARE_VERSION_SUFFIX_PATTERN, "")
-      .replace(FEAT_SUFFIX_PATTERN, "");
-    if (next === result) return result;
-    result = next;
-  }
-};
-
-export const normalizeSongTitle = (value: string) => normalizeSongText(stripSongVersionInfo(value));
+export const normalizeSongTitle = (value: string) => normalizeSongText(stripVersionInfo(value));
 
 /**
  * 「候选名是期望名的截断」这一方向的匹配门槛：截断名既够长、又占原名足够比例才算匹配。
@@ -97,7 +74,7 @@ export const isSongTitleMatch = (candidateTitle: string, expectedTitle: string):
  * 判对与去重必须同源：去重已把两个平台的同一作品并成一个代表，
  * 判对若用更弱的归一，玩家选到「对的那首」仍会被判错。
  */
-const answerTitleKey = (title: string) => extractCanonicalTitle(stripSongVersionInfo(title));
+const answerTitleKey = (title: string) => extractCanonicalTitle(stripVersionInfo(title));
 
 /**
  * 猜测是否就是答案：歌曲 id 相同或是答案的备用音源 id，

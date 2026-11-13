@@ -8,7 +8,8 @@
 import { VERSION_MARKER_PATTERN } from "../../domain/TitlePatterns";
 import { normalizeComparableText } from "../../infrastructure/music/MusicDeduplicator";
 import type { SongDetails, SongLyricLine } from "../../shared/Index";
-import { splitTitleSegments, stripSongVersionInfo } from "./SongTitleMatching";
+import { stripVersionInfo } from "../../domain/TitlePatterns";
+import { splitTitleSegments } from "./SongTitleMatching";
 
 /**
  * 「短歌名」上限（归一化后的字符数），短歌名只按整行等同判定，不做子串匹配。
@@ -52,7 +53,7 @@ export const songTitleNames = (
   };
   const base = song.title ?? "";
   add(base);
-  const core = stripSongVersionInfo(base);
+  const core = stripVersionInfo(base);
   add(core);
   for (const source of [base, core]) {
     add(source.replace(BRACKET_PARTS, " "));
