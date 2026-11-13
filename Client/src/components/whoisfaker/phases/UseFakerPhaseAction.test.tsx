@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 
 function deferred() {
@@ -87,5 +88,96 @@ describe("usePhaseAction", () => {
     });
     expect(retry).toHaveBeenCalledTimes(1);
     expect(result.current.busy).toBe(false);
+  });
+
+  describe("exec", () => {
+    const setup = (sendCommand: ReturnType<typeof vi.fn>) => {
+      const addToast = vi.fn();
+      useWhoIsFakerStore.setState({
+        sendCommand: sendCommand as never,
+        addToast,
+      });
+      return { addToast, hook: renderHook(useFakerPhaseAction) };
+    };
+
+    it("发命令期间登记在等哪个命令，完成后清空并执行成功回调", async () => {
+      const ack = deferred();
+      const send = vi.fn(() => ack.promise);
+      const { hook } = setup(send);
+      const onSuccess = vi.fn();
+      let done!: Promise<void>;
+      act(() => {
+        done = hook.result.current.exec("game.advancePhase", undefined, {
+          key: "advance",
+          onSuccess,
+        });
+      });
+      expect(hook.result.current.pending).toBe("advance");
+      expect(hook.result.current.busy).toBe(true);
+      await act(async () => {
+        ack.resolve();
+        await done;
+      });
+      expect(send).toHaveBeenCalledWith("game.advancePhase", undefined);
+      expect(hook.result.current.pending).toBeNull();
+      expect(hook.result.current.busy).toBe(false);
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+
+    it("键默认取命令名，载荷原样透传", async () => {
+      const ack = deferred();
+      const { hook } = setup(vi.fn(() => ack.promise));
+      let done!: Promise<void>;
+      act(() => {
+        done = hook.result.current.exec("game.submitVote", { targetId: "p1" });
+      });
+      expect(hook.result.current.pending).toBe("game.submitVote");
+      await act(async () => {
+        ack.resolve();
+        await done;
+      });
+    });
+
+    it("失败落成错误提示且不抛出、不执行成功回调，随后可重试", async () => {
+      const send = vi.fn().mockRejectedValueOnce({ message: "阶段已变化" }).mockResolvedValue({});
+      const { hook, addToast } = setup(send);
+      const onSuccess = vi.fn();
+      await act(async () => {
+        await hook.result.current.exec("game.advancePhase", undefined, { onSuccess });
+      });
+      expect(addToast).toHaveBeenCalledExactlyOnceWith("阶段已变化", "error");
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(hook.result.current.pending).toBeNull();
+      await act(async () => {
+        await hook.result.current.exec("game.advancePhase", undefined, { onSuccess });
+      });
+      expect(onSuccess).toHaveBeenCalledTimes(1);
+    });
+
+    it("错误没有文案时用兜底提示", async () => {
+      const { hook, addToast } = setup(vi.fn().mockRejectedValue({}));
+      await act(async () => {
+        await hook.result.current.exec("game.advancePhase", undefined, {
+          fallback: "返回房间失败",
+        });
+      });
+      expect(addToast).toHaveBeenCalledWith("返回房间失败", "error");
+    });
+
+    it("在途时再发任何命令都被同一把锁挡住", async () => {
+      const ack = deferred();
+      const send = vi.fn(() => ack.promise);
+      const { hook } = setup(send);
+      let first!: Promise<void>;
+      act(() => {
+        first = hook.result.current.exec("game.advancePhase");
+        void hook.result.current.exec("game.cancelVote");
+      });
+      expect(send).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        ack.resolve();
+        await first;
+      });
+    });
   });
 });
