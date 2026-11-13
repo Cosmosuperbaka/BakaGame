@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useState } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
@@ -17,6 +17,7 @@ import {
   type ClientPackage,
   type ClientPackagePlatform,
 } from "@/lib/ClientPackages";
+import { useOriginTracker } from "@/hooks/UseOriginTracker";
 import type { OriginPoint } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
@@ -26,11 +27,6 @@ const OPTIONS: { value: ClientPackagePlatform; label: string }[] = [
 ];
 
 const LABELS: Record<ClientPackagePlatform, string> = { windows: "Windows", android: "Android" };
-
-const originOf = (event: MouseEvent<HTMLElement>): OriginPoint => {
-  const rect = event.currentTarget.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-};
 
 /** 手机上默认停在安卓那一档：多数人不会再去点一次分段控件。 */
 const guessPlatform = (): ClientPackagePlatform =>
@@ -135,7 +131,7 @@ export function ClientDownloadDialog({ open, onOpenChange, origin }: ClientDownl
  */
 export function ClientDownloadEntry({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [origin, setOrigin] = useState<OriginPoint | null>(null);
+  const { origin, capture } = useOriginTracker();
   if (isBakaClient()) return null;
 
   return (
@@ -146,7 +142,7 @@ export function ClientDownloadEntry({ compact = false }: { compact?: boolean }) 
         aria-label="下载客户端"
         className={compact ? "gap-1.5 px-2 text-xs text-muted-foreground" : undefined}
         onClick={(event) => {
-          setOrigin(originOf(event));
+          capture(event);
           setOpen(true);
         }}
       >

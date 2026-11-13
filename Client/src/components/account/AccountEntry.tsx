@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- 打开登录弹窗与弹窗本体共用同一份入口状态，拆文件会让状态定义漂到别处。 */
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import * as Popover from "@radix-ui/react-popover";
 import { create } from "zustand";
@@ -12,6 +12,7 @@ import { FeedbackDialog, type FeedbackDraft } from "@/components/account/Feedbac
 import { FormAlert } from "@/components/account/FormAlert";
 import { LoginDialog } from "@/components/account/LoginDialog";
 import { ProfileDialog } from "@/components/account/ProfileDialog";
+import { originOfEvent, useOriginTracker } from "@/hooks/UseOriginTracker";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { headerTappable, popover, type OriginPoint } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
@@ -35,11 +36,6 @@ const useEntryStore = create<{
   feedbackDraft: null,
   submitAfterLogin: false,
 }));
-
-const originOf = (event: MouseEvent<HTMLElement>): OriginPoint => {
-  const rect = event.currentTarget.getBoundingClientRect();
-  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-};
 
 const openDialog = (dialog: DialogKind, origin: OriginPoint | null) =>
   useEntryStore.setState({
@@ -98,7 +94,7 @@ export function AccountButton() {
   // 退出失败要让人看见：公共设备上以为退出了、实际还登录着是隐私风险。下次重试或重开菜单即清除。
   const [signOutFailed, setSignOutFailed] = useState(false);
   // 菜单项被点时浮层已在关闭，弹窗从菜单按钮处展开。
-  const [menuOrigin, setMenuOrigin] = useState<OriginPoint | null>(null);
+  const { origin: menuOrigin, capture: captureMenuOrigin } = useOriginTracker();
 
   return (
     <>
@@ -119,7 +115,7 @@ export function AccountButton() {
               type="button"
               {...headerTappable}
               aria-label={`账号菜单：${profile.name}${unread ? `，${unread} 条未读回复` : ""}`}
-              onClick={(event) => setMenuOrigin(originOf(event))}
+              onClick={captureMenuOrigin}
               className="relative flex h-9 max-w-44 items-center gap-2 rounded-md px-1.5 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <PlayerAvatar name={profile.name} image={profile.image} className="h-7 w-7" />
@@ -203,7 +199,7 @@ export function AccountButton() {
           data-agent-sensitive
           variant="ghost"
           disabled={status === "loading"}
-          onClick={(event) => openDialog("login", originOf(event))}
+          onClick={(event) => openDialog("login", originOfEvent(event))}
         >
           <UserRound />
           账号
@@ -223,7 +219,7 @@ export function FeedbackButton({ compact = false }: { compact?: boolean }) {
       size={compact ? "icon" : "default"}
       className="relative"
       aria-label={unread ? `反馈（${unread} 条新回复）` : "反馈"}
-      onClick={(event) => openDialog("feedback", originOf(event))}
+      onClick={(event) => openDialog("feedback", originOfEvent(event))}
     >
       <MessageSquareText aria-hidden="true" />
       {/* 矮屏（横屏手机）上页头本来就挤，这一排又贴着标题的位置：只留图标，名称走 aria-label。 */}
