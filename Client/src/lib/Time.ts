@@ -37,6 +37,18 @@ export function formatRelativeTime(dateStr: string): string {
   return rtf.format(-Math.floor(months / 12), "year");
 }
 
+/** 绝对时间一律按北京时间写（与后台、构建时间同口径），格式器建一次复用，不随系统时区变化。 */
+const ABSOLUTE_FORMAT = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  // h23：午夜写 00:00，不写 24:00。
+  hourCycle: "h23",
+});
+
 /**
  * 格式化绝对时间，用相对时间的悬停提示。
  * 「3 天前」说不出到底是哪一天，排查「我这边是不是旧版本」时需要确切时刻。
@@ -45,12 +57,5 @@ export function formatAbsoluteTime(dateStr: string): string {
   const then = parseInstant(dateStr);
   if (!then) return dateStr;
 
-  return then.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return ABSOLUTE_FORMAT.format(then);
 }

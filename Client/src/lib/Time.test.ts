@@ -54,6 +54,19 @@ describe("formatAbsoluteTime", () => {
     expect(formatAbsoluteTime(ago(3 * DAY))).toMatch(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/);
   });
 
+  it("锁定北京时间：同一时刻在任何系统时区下都写成同一个字符串，午夜写 00 而不是 24", () => {
+    const originalZone = process.env.TZ;
+    // 把进程时区切到美西：旧实现跟随系统时区，输出就会变成前一天的下午。
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      expect(formatAbsoluteTime("2026-10-06T16:00:00Z")).toBe("2026/10/07 00:00");
+      expect(formatAbsoluteTime("2026-10-06T07:30:00+00:00")).toBe("2026/10/06 15:30");
+    } finally {
+      if (originalZone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalZone;
+    }
+  });
+
   it("accepts the plain-date form used by changelog entries", () => {
     expect(formatAbsoluteTime("2026-10-06")).toMatch(/^2026\/10\/06 \d{2}:\d{2}$/);
   });
