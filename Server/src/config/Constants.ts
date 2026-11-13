@@ -102,6 +102,15 @@ export const WS_HANDSHAKE_LEASE_MS = 10_000;
 /** 公开状态页实时通道的单来源在途连接上限：一个页面只需要一条，远小于游戏通道的额度。 */
 export const STATUS_WS_IP_MAX_CONNECTIONS = 4;
 
+/**
+ * 每条游戏连接的命令总额度：三款玩法共用同一个窗口与额度，任何命令都先扣它（含被守卫拒绝的）。
+ * 它挡的是单连接的高频乱发，不是业务节流：额度取自猜猜呗原有的现值（10 秒 80 条，每秒 8 条），
+ * 对照正常游玩的量级（准备、描述、投票、聊天；白板草稿有客户端 220 毫秒节流，每秒不到 5 条）
+ * 与 Agent 连续操作（每步要等一次模型往返，远低于每秒 8 条）留有一个数量级以上的余量。
+ */
+export const COMMAND_RATE_LIMIT_WINDOW_MS = 10_000;
+export const COMMAND_RATE_LIMIT_PER_CONNECTION = 80;
+
 /** 阶段淘汰结果的最短展示时间，期间不能跳过结算返回等待房间。 */
 export const PHASE_RESULT_DISPLAY_MS = 1_500;
 

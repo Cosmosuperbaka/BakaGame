@@ -33,7 +33,12 @@ import { describeError } from "../infrastructure/EventLogger";
 import { createEvent } from "../transport/Packets";
 import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 
-import { QUESTIONER_RECONNECT_TIMEOUT_MS, ROOM_EXPIRING_WARNING_MS } from "../config/Constants";
+import {
+  COMMAND_RATE_LIMIT_PER_CONNECTION,
+  COMMAND_RATE_LIMIT_WINDOW_MS,
+  QUESTIONER_RECONNECT_TIMEOUT_MS,
+  ROOM_EXPIRING_WARNING_MS,
+} from "../config/Constants";
 import { resolveHostGrace, transferHost } from "./room/HostPolicy";
 import { acceptChatText, appendChat } from "./room/ChatLog";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
@@ -64,7 +69,7 @@ import {
   screenCommand,
   type WhoIsFakerDispatcher,
 } from "./whoisfaker/Commands";
-import { dispatchCommand } from "./room/CommandTable";
+import { CommandQuota, dispatchCommand } from "./room/CommandTable";
 import { createWhoIsFakerContext, type WhoIsFakerContext } from "./whoisfaker/Context";
 import type { WhoIsFakerServiceOptions } from "./whoisfaker/Options";
 import { forceRemovePlayer } from "./whoisfaker/ForcedRemoval";
@@ -131,6 +136,8 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   /** 标签页接管 Agent 时按标签页找房间用的上下文。 */
   private readonly tabSeats: TabSeatContext<WhoIsFakerRoomRecord, WhoIsFakerPlayerRecord>;
   private readonly dispatcher: WhoIsFakerDispatcher;
+  /** 每连接的命令总额度：在预检、解析与守卫之前扣，高频乱发的连接在最便宜的地方被挡住。 */
+  private readonly commandQuota: CommandQuota;
 
   /** 房间表的只读视图：测试与外部只读它，写入只经上下文里的玩法函数。 */
   get rooms(): ReadonlyMap<string, WhoIsFakerRoomRecord> {
@@ -156,6 +163,11 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
       rooms: ctx.rooms,
     };
     this.dispatcher = createWhoIsFakerDispatcher(ctx, this);
+    this.commandQuota = new CommandQuota({
+      now: () => ctx.now(),
+      windowMs: COMMAND_RATE_LIMIT_WINDOW_MS,
+      maxRequests: COMMAND_RATE_LIMIT_PER_CONNECTION,
+    });
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -186,6 +198,8 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   async execute(connectionId: string, message: WhoIsFakerClientMessage): Promise<unknown> {
     // 所有命令都从这里进入，方便统一做连接上下文解析与后续审计。
     const connection = this.ctx.connectionRegistry.getConnection(connectionId);
+    // 额度排在预检之前：预检里有敏感词扫描，高频草稿不该先白白扫一遍再被限流。
+    this.commandQuota.consume(connection);
     screenCommand(message);
     return dispatchCommand(this.dispatcher, connection, message);
   }
