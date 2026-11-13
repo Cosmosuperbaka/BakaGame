@@ -4,6 +4,7 @@ import {
   type ExternalMonitorReading,
   type ExternalStatusProbe,
 } from "../../infrastructure/ExternalStatusProbe";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../../config/env/Observability";
 import { fetchWithGuardedRedirects } from "../../infrastructure/OutboundGuard";
 import type { StatusHistoryStore } from "../../infrastructure/StatusHistoryStore";
 import type { StatusSampleStore } from "../../infrastructure/StatusSampleStore";
@@ -410,7 +411,7 @@ const readPublicEvents = async (
  */
 export const statusRoutes = (deps: StatusRoutesDependencies) => {
   const aggregator = deps.aggregator ?? createStatusAggregator(deps);
-  const environment = deps.environment ?? "development";
+  const environment = deps.environment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
   const { history, samples, events, onError } = deps;
   const routes = new Elysia({ name: "public-status", normalize: false }).get(
     "/api/status",

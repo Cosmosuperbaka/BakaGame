@@ -1,4 +1,5 @@
 import { createApp, type AppDependencies } from "../transport/App";
+import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../config/env/Observability";
 import { warmUpSensitiveText } from "../infrastructure/SensitiveText";
 import { CEEService } from "./CEEService";
 import { SonGuessrService } from "./SonGuessrService";
@@ -207,7 +208,7 @@ export function createServer(
   });
   // 状态事件的部署环境标记与仓储：与状态账本同一口径，先于账号装配创建，两边共用一个实例。
   // 标记缺省读作 development，与 `resolveDeploymentEnvironment` 的缺省一致。
-  const statusEnvironment = env.otelDeploymentEnvironment ?? "development";
+  const statusEnvironment = env.otelDeploymentEnvironment ?? DEFAULT_DEPLOYMENT_ENVIRONMENT;
   const statusEvents = database ? new DatabaseStatusEventRepository(database) : undefined;
   const account = createAccount(
     env,
