@@ -61,6 +61,7 @@ export function SearchPanel<T>({
 }: SearchPanelProps<T>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const height = useMeasuredHeight(scrollRef);
+  const backRows = items[0]?.kind === "back" ? 1 : 0;
 
   return (
     <motion.div
@@ -107,9 +108,8 @@ export function SearchPanel<T>({
               {items.map((item, index) => {
                 const blocked = unavailable(item);
                 const highlighted = index === activeIndex;
-                const optionIndex = items
-                  .slice(0, index)
-                  .filter((entry) => entry.kind === "option").length;
+                // 返回行至多一条且排在最前，候选的序号就是行号减去它占的那一行
+                const optionIndex = index - backRows;
                 return (
                   <motion.li
                     key={item.key}

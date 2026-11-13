@@ -44,6 +44,60 @@ export interface SearchComboboxProps<T> {
 }
 
 /**
+ * 组合框的高亮与键盘：上下键在候选间循环移动，回车选中高亮项，没有高亮时回车走 `onSubmit`。
+ * 高亮跟着这一批候选走：换了一批或列表变短，高亮回到「无」，不会落在别的候选上。
+ */
+function useComboboxNavigation<T>({
+  items,
+  listKey,
+  open,
+  optionId,
+  onChoose,
+  onEngage,
+  onSubmit,
+}: {
+  items: SearchItem<T>[];
+  listKey: string;
+  open: boolean;
+  optionId: (index: number) => string;
+  onChoose: (item: SearchItem<T>) => void;
+  /** 键盘操作让面板展开（方向键叫出、回车搜索） */
+  onEngage: () => void;
+  onSubmit?: () => void;
+}) {
+  const [active, setActive] = useState({ listKey, index: -1 });
+  const activeIndex = active.listKey === listKey && active.index < items.length ? active.index : -1;
+
+  const highlight = (index: number, reveal: boolean) => {
+    setActive({ listKey, index });
+    if (reveal) document.getElementById(optionId(index))?.scrollIntoView({ block: "nearest" });
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    // 输入法组字时的方向键与回车属于输入法，不能拿来选候选或提交。
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (items.length === 0) return;
+      event.preventDefault();
+      onEngage();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const start = step > 0 ? 0 : items.length - 1;
+      highlight(activeIndex < 0 ? start : (activeIndex + step + items.length) % items.length, true);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const item = open && activeIndex >= 0 ? items[activeIndex] : undefined;
+      if (item) onChoose(item);
+      else {
+        onEngage();
+        onSubmit?.();
+      }
+    }
+  };
+
+  return { activeIndex, highlight, onKeyDown };
+}
+
+/**
  * 浮动搜索框：结果面板浮在下方内容之上，不把页面往下挤。
  * 面板随焦点进出：输入框（或右侧按钮）获得焦点且有内容可显示时展开，焦点离开、按 Esc 或点外面就收起，不设关闭按钮；
  * 再次聚焦时旧结果原样回来。点整行即选中，上下键移动高亮、回车选中，没有高亮时回车走 `onSubmit`。
@@ -79,15 +133,12 @@ export function SearchCombobox<T>({
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [engaged, setEngaged] = useState(false);
-  const [active, setActive] = useState({ listKey, index: -1 });
 
   const items: SearchItem<T>[] = [
     ...(back ? [{ kind: "back" as const, key: "__back", back }] : []),
     ...options.map((option) => ({ kind: "option" as const, key: getKey(option), option })),
   ];
   const open = engaged && !disabled && (items.length > 0 || status !== null);
-  // 高亮跟着这一批候选走：换了一批或列表变短，高亮回到「无」，不会落在别的候选上。
-  const activeIndex = active.listKey === listKey && active.index < items.length ? active.index : -1;
   const optionId = (index: number) => `${listId}-option-${index}`;
 
   const unavailable = (item: SearchItem<T>) =>
@@ -98,31 +149,15 @@ export function SearchCombobox<T>({
     else if (!unavailable(item)) onSelect(item.option);
   };
 
-  const highlight = (index: number, reveal: boolean) => {
-    setActive({ listKey, index });
-    if (reveal) document.getElementById(optionId(index))?.scrollIntoView({ block: "nearest" });
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    // 输入法组字时的方向键与回车属于输入法，不能拿来选候选或提交。
-    if (event.nativeEvent.isComposing) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (items.length === 0) return;
-      event.preventDefault();
-      setEngaged(true);
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      const start = step > 0 ? 0 : items.length - 1;
-      highlight(activeIndex < 0 ? start : (activeIndex + step + items.length) % items.length, true);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const item = open && activeIndex >= 0 ? items[activeIndex] : undefined;
-      if (item) choose(item);
-      else {
-        setEngaged(true);
-        onSubmit?.();
-      }
-    }
-  };
+  const { activeIndex, highlight, onKeyDown } = useComboboxNavigation({
+    items,
+    listKey,
+    open,
+    optionId,
+    onChoose: choose,
+    onEngage: () => setEngaged(true),
+    onSubmit,
+  });
 
   return (
     <Popover.Root
