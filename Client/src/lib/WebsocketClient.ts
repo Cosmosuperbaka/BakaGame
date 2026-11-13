@@ -61,6 +61,8 @@ interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
   reject: (error: ProtocolError) => void;
   timer?: ReturnType<typeof setTimeout>;
+  /** 请求发出所在的连接：连接关闭只拒绝它自己的请求，不连累后建的新连接。 */
+  socket: WebSocket;
 }
 
 export function generateUuid(): string {
@@ -157,8 +159,11 @@ export class WebSocketClient {
       return;
     }
 
+    // 三个处理器都以闭包里的 socket 核对身份：`refreshIdentity` 之后旧连接还在关闭中，
+    // 此时页面可能已建了新连接，旧连接迟到的事件一律不能碰当前连接的状态。
     const socket = this.socket;
-    this.socket.onopen = () => {
+    socket.onopen = () => {
+      if (this.socket !== socket) return;
       this.reconnectAttempts = 0;
       captureClientLog("WebSocket 已连接", "info", { path: this.path });
       countClientMetric("bakagame.websocket.connections", 1, { path: this.path });
@@ -166,7 +171,8 @@ export class WebSocketClient {
       else this.announceOpen();
     };
 
-    this.socket.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (this.socket !== socket) return;
       let message: ServerMessage;
       try {
         const parsed: unknown = JSON.parse(event.data as string);
@@ -197,23 +203,30 @@ export class WebSocketClient {
       }
     };
 
-    this.socket.onclose = () => {
+    socket.onclose = () => {
+      this.rejectPendingOf(socket);
+      if (this.socket !== socket) return;
       this.socket = null;
       this.preluding = false;
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
-      for (const [id, pending] of this.pendingRequests) {
-        if (pending.timer !== undefined) clearTimeout(pending.timer);
-        pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
-        this.pendingRequests.delete(id);
-      }
       this.statusHandlers.forEach((handler) => handler(false));
       this.scheduleReconnect();
     };
 
-    this.socket.onerror = () => {
+    socket.onerror = () => {
       // 浏览器随后会触发 close，由统一路径处理重连与请求拒绝。
     };
+  }
+
+  /** 拒绝某条连接上还没应答的请求；其它连接的请求不受影响。 */
+  private rejectPendingOf(socket: WebSocket): void {
+    for (const [id, pending] of this.pendingRequests) {
+      if (pending.socket !== socket) continue;
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      this.pendingRequests.delete(id);
+      pending.reject({ code: "DISCONNECTED", message: "连接已断开" });
+    }
   }
 
   /** 主动离开游戏页面：终止连接与待处理请求，不再自动重连。 */
@@ -273,7 +286,7 @@ export class WebSocketClient {
         this.pendingRequests.delete(id);
         rejectProtocol(reject, { code: "TIMEOUT", message: "请求超时" });
       }, PRELUDE_REQUEST_TIMEOUT_MS);
-      this.pendingRequests.set(id, { resolve, reject, timer });
+      this.pendingRequests.set(id, { resolve, reject, timer, socket });
       socket.send(JSON.stringify({ id, traceId: generateUuid(), type, payload }));
     });
   }
@@ -342,7 +355,8 @@ export class WebSocketClient {
       async (span) => {
         try {
           const result = await new Promise<T>((resolve, reject) => {
-            if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+            const socket = this.socket;
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
               rejectProtocol(reject, { code: "NOT_CONNECTED", message: "WebSocket 未连接" });
               return;
             }
@@ -360,12 +374,13 @@ export class WebSocketClient {
               resolve: resolve as (payload: Record<string, unknown>) => void,
               reject,
               timer,
+              socket,
             });
 
             const envelope: Record<string, unknown> = { id, traceId, type, payload };
             if (options?.roomId) envelope.roomId = options.roomId;
             if (options?.sessionToken) envelope.sessionToken = options.sessionToken;
-            this.socket.send(JSON.stringify(envelope));
+            socket.send(JSON.stringify(envelope));
           });
 
           const durationMs = performance.now() - startedAt;
