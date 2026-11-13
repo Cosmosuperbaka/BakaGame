@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { prioritizeCandidatesByRoomAccounts } from "../../src/application/songuessr/MusicAccounts";
+import { prioritizeCandidatesByRoomAccounts } from "../../src/application/songuessr/MusicSongLoading";
 
 const fakeService = { now: () => 1_000 } as never;
 const roomWith = (...platforms: Array<"qq" | "netease">) =>

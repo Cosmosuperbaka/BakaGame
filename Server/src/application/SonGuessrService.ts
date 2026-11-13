@@ -9,11 +9,8 @@ import { isAudioTicketMatch } from "./songuessr/AudioTicket";
 import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import { resolveAnimeSong, resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
 import { clearMusicSession, refreshMusicSessionAccount } from "./songuessr/MusicAuth";
-import {
-  loadSongWithSources,
-  refreshRoundAudio,
-  scheduleMusicSessionRefresh,
-} from "./songuessr/MusicAccounts";
+import { loadSongWithSources, refreshRoundAudio } from "./songuessr/MusicSongLoading";
+import { scheduleMusicSessionRefresh } from "./songuessr/MusicAccounts";
 import {
   hasEnabledPoolAccount,
   musicPool,
