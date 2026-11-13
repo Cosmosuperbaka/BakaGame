@@ -178,6 +178,18 @@ describe("猜歌旁观者的答案可见性", () => {
     expect(snapshotOf(late).settings.spectatorsSeeAnswers ?? false).toBe(false);
   });
 
+  test("旧房间的设置里没有这个字段：局中进房的旁观者照样拿不到答案", async () => {
+    const scene = await startPlaying();
+    // 旧快照恢复出来的房间没有这个字段：直接删掉模拟，再让一名旁观者局中进房，看视图怎么判。
+    delete (scene.service.rooms.get("1234")!.settings as { spectatorsSeeAnswers?: boolean })
+      .spectatorsSeeAnswers;
+    const late = connection(scene.service, "sa-legacy-late");
+    await joinRoom(scene.service, late, "老房旁观");
+    expect(stateOf(late).submittedSong).toBeUndefined();
+    expect(stateOf(late).visibleAttempts).toEqual([]);
+    for (const clue of SONG_CLUES) expect(frameText(late)).not.toContain(clue);
+  });
+
   test("听歌猜番：旁观者局中同样拿不到番剧答案，打开开关后可见", async () => {
     const bangumiProvider = {
       getSubject: async (subjectId: string) => (subjectId === anime.id ? anime : wrongAnime),
