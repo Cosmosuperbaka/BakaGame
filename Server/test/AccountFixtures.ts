@@ -43,7 +43,7 @@ import type {
 import { EventLogger } from "../src/infrastructure/EventLogger";
 import type { FeedbackStatus } from "../src/shared/ApiContract";
 import { BADGE_KINDS, type AccountBadge, type BadgeKind } from "../src/shared/Badges";
-import { isAllowedOrigin } from "../src/transport/App";
+import { isAllowedOrigin } from "../src/transport/Origin";
 import { createTestApp } from "./AppFixtures";
 
 export const ACCOUNT_TEST_SECRET = "fixture-secret-fixture-secret-fixture-secret";

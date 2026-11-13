@@ -11,7 +11,7 @@ import { DEFAULT_DEPLOYMENT_ENVIRONMENT } from "../src/config/env/Observability"
 import { toUnixNanoString } from "../src/infrastructure/logging/OtelEncoding";
 import { createOtelLogRecord } from "../src/infrastructure/logging/OtelLog";
 import { EventLogger } from "../src/infrastructure/EventLogger";
-import { UNROUTED_HTTP_ACTION } from "../src/transport/App";
+import { UNROUTED_HTTP_ACTION } from "../src/transport/HttpOperation";
 import { createTestApp as createApp } from "./AppFixtures";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";

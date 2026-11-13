@@ -55,7 +55,7 @@ import {
   DatabaseUserSettingRepository,
 } from "../infrastructure/db/UserDataRepository";
 import { captureServerFeedback } from "../infrastructure/Sentry";
-import { isAllowedOrigin } from "../transport/App";
+import { isAllowedOrigin } from "../transport/Origin";
 import type { AppEnv } from "../config/Env";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import type { AdminRoomControl } from "../domain/AdminRoom";

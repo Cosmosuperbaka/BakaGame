@@ -2,12 +2,12 @@ import { expect, spyOn, test } from "bun:test";
 import { connect } from "node:net";
 
 import { WhoIsFakerService } from "../src/application/WhoIsFakerService";
+import { resolveAgentIdentity } from "../src/transport/App";
 import {
   compileRouteTemplates,
   httpOperationAction,
-  resolveAgentIdentity,
   UNROUTED_HTTP_ACTION,
-} from "../src/transport/App";
+} from "../src/transport/HttpOperation";
 import {
   HTTP_MAX_REQUEST_BODY_BYTES,
   STATUS_WS_IP_MAX_CONNECTIONS,

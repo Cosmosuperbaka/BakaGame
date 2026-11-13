@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { isAllowedOrigin } from "../src/transport/App";
+import { isAllowedOrigin } from "../src/transport/Origin";
 
 /**
  * 来源白名单是 HTTP CORS 与 WebSocket 握手共用的同一道闸门（见 `App.ts` 的
