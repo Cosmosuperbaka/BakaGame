@@ -3,8 +3,8 @@ import { expect, test } from "bun:test";
 import { isAllowedOrigin } from "../src/transport/Origin";
 
 /**
- * 来源白名单是 HTTP CORS 与 WebSocket 握手共用的同一道闸门（见 `App.ts` 的
- * `rejectDisallowedOrigin` 与 `cors({ origin })`）。
+ * 来源白名单是 HTTP CORS 与 WebSocket 握手共用的同一道闸门（见 `App.ts` 全局
+ * onRequest 的 WS 来源判定与 `cors({ origin })`）。
  *
  * 这里重点锁住两条口径：
  * 1. 内嵌安卓壳的固定 origin `https://localhost` 恒可信 —— 壳把前端产物打进 WebView，
@@ -39,4 +39,21 @@ test("缺 Origin 的请求放行（原生客户端与健康检查不带 Origin�
 test("白名单支持逗号分隔多来源", () => {
   const list = `${PROD},https://alt.example.com`;
   expect(isAllowedOrigin("https://alt.example.com", list)).toBe(true);
+});
+
+test("没有配置白名单时只放行本机与私网来源，公网页面一律拒绝", () => {
+  expect(isAllowedOrigin("http://localhost:5173", undefined)).toBe(true);
+  expect(isAllowedOrigin("http://192.168.1.20:5173", undefined)).toBe(true);
+  expect(isAllowedOrigin("https://evil.example.com", undefined)).toBe(false);
+});
+
+test("白名单与来源都落在私网时互相放行，只有一侧私网时不放行", () => {
+  expect(isAllowedOrigin("http://192.168.1.20:5173", "http://10.0.0.5:5173")).toBe(true);
+  expect(isAllowedOrigin("http://192.168.1.20:5173", PROD)).toBe(false);
+});
+
+test("无法解析的来源与白名单项被拒绝而不是抛错", () => {
+  expect(isAllowedOrigin("not a url", PROD)).toBe(false);
+  expect(isAllowedOrigin("not a url", undefined)).toBe(false);
+  expect(isAllowedOrigin(PROD, `garbage,${PROD}`)).toBe(true);
 });
