@@ -25,8 +25,9 @@ import {
 } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
 import { Switch } from "@/components/ui/Switch";
+import { ToggleChip } from "@/components/ui/ToggleChip";
 import { useValueChange } from "@/hooks/UseValueChange";
-import { collapsible, iconTappable, readoutTick, tappable } from "@/lib/Motion";
+import { collapsible, iconTappable, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
 // 等待页设置面板共用的字段：标签与控件显式关联，说明经 aria-describedby 挂到控件上，读屏能读出每个开关与输入的名称和说明。
@@ -873,26 +874,15 @@ export function SettingToggleChips<T extends string>({
         ) : null}
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby={labelId}>
-        {options.map((option) => {
-          const pressed = chosen.has(option.value);
-          return (
-            <motion.button
-              key={option.value}
-              type="button"
-              {...tappable}
-              aria-pressed={pressed}
-              onClick={() => toggle(option.value)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs transition-colors",
-                pressed
-                  ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                  : "border-dashed border-border bg-transparent text-muted-foreground hover:border-solid hover:text-foreground"
-              )}
-            >
-              {option.label}
-            </motion.button>
-          );
-        })}
+        {options.map((option) => (
+          <ToggleChip
+            key={option.value}
+            pressed={chosen.has(option.value)}
+            onPressedChange={() => toggle(option.value)}
+          >
+            {option.label}
+          </ToggleChip>
+        ))}
       </div>
     </div>
   );

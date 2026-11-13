@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { PUBLIC_STATUS_COMPONENT_IDS } from "@bakagame/shared/values";
 import type {
   PublicStatusComponentId,
@@ -20,13 +19,13 @@ import {
 import { Input } from "@/components/ui/Input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Textarea } from "@/components/ui/Textarea";
+import { ToggleChip } from "@/components/ui/ToggleChip";
 import {
   SettingSelect,
   SettingSegmented,
   SettingTextField,
   SettingsFields,
 } from "@/components/common/room/SettingFields";
-import { tappable } from "@/lib/Motion";
 import {
   AdminTable,
   AdminToolbar,
@@ -38,7 +37,6 @@ import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { formatDateTime } from "@/lib/AdminFormat";
 import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
-import { cn } from "@/lib/Utils";
 
 const PAGE_LIMIT = 20;
 
@@ -124,27 +122,20 @@ function ComponentChips({
         {COMPONENT_OPTIONS.map((option) => {
           const pressed = chosen.has(option.value);
           return (
-            <motion.button
+            <ToggleChip
               key={option.value}
-              type="button"
-              {...tappable}
-              aria-pressed={pressed}
-              onClick={() =>
+              pressed={pressed}
+              idleClassName="border-muted-foreground/40"
+              onPressedChange={() =>
                 onChange(
                   pressed
                     ? selected.filter((item) => item !== option.value)
                     : [...selected, option.value]
                 )
               }
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs transition-colors",
-                pressed
-                  ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                  : "border-dashed border-muted-foreground/40 bg-transparent text-muted-foreground hover:border-solid hover:text-foreground"
-              )}
             >
               {option.label}
-            </motion.button>
+            </ToggleChip>
           );
         })}
       </div>

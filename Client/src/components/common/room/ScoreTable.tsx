@@ -1,6 +1,7 @@
-import { Fragment, useId, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { DotSeparated } from "@/components/ui/DotSeparated";
 import {
   contributorWash,
   contributorWashDelay,
@@ -90,15 +91,7 @@ export function ScoreTable({
           {row.detail?.length ? (
             <span className="mt-0.5 block text-xs text-muted-foreground">
               {/* 只在项与项之间折行；间隔号随前一项，不落到行首 */}
-              {row.detail.map((item, index, items) => (
-                <Fragment key={index}>
-                  {index > 0 ? " " : null}
-                  <span className="whitespace-nowrap">
-                    {item}
-                    {index < items.length - 1 ? " ·" : null}
-                  </span>
-                </Fragment>
-              ))}
+              <DotSeparated items={row.detail} itemClassName="whitespace-nowrap" />
             </span>
           ) : null}
         </th>
