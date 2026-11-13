@@ -1,33 +1,20 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowDown, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { MessageBubble, type ChatMentionPlayer } from "@/components/common/chat/ChatMessage";
 import { MentionList } from "@/components/common/chat/MentionList";
 import { trailingRepeatChain } from "@/components/common/chat/RepeatChain";
-import {
-  MessageShell,
-  SendThrow,
-  type SendThrowState,
-  type ThrowHandle,
-  type ThrowHandoff,
-} from "@/components/common/chat/ChatThrow";
+import { MessageShell, SendThrow } from "@/components/common/chat/ChatThrow";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
-import {
-  chatMessageLaunch,
-  chatThrow,
-  jitterShape,
-  popover,
-  repeatStair,
-  stepJitterAnimation,
-  systemNotice,
-} from "@/lib/Motion";
+import { chatMessageLaunch, popover, repeatStair, systemNotice } from "@/lib/Motion";
 import { STICKER_PREFIX, loadStickerLabels, type StickerLabelIndex } from "@/lib/Stickers";
 import { cn } from "@/lib/Utils";
 import { useChatDraft } from "@/hooks/UseChatDraft";
+import { useChatSend } from "@/hooks/UseChatSend";
 import { useMentionInput } from "@/hooks/UseMentionInput";
 import { useStickToBottom } from "@/hooks/UseStickToBottom";
 import type { ChatMessage } from "@bakagame/shared";
@@ -83,32 +70,6 @@ export function ChatPanel({
   const [activeTab, setActiveTab] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const sendIconRef = useRef<HTMLSpanElement>(null);
-  const reducedMotion = useReducedMotion();
-  // 发送动画：文字凝成胶囊掷出输入框（thrown），回显到达后自己那条气泡从胶囊手里接过去（handoffId）
-  const [thrown, setThrown] = useState<SendThrowState | null>(null);
-  const capsuleRef = useRef<ThrowHandle>(null);
-  const [pendingEcho, setPendingEcho] = useState<{ baselineId: string | undefined } | null>(null);
-  const [handoffId, setHandoffId] = useState<string | null>(null);
-  const handoff = useMemo<ThrowHandoff>(
-    () => ({ capsule: capsuleRef, onTake: () => setThrown(null) }),
-    []
-  );
-  // 收回动画承诺还给输入框的内容；落点写回，业务确认后撤掉。空串表示只是撤掉胶囊。
-  const recalledTextRef = useRef("");
-  const recallThrow = useCallback((sent: string) => {
-    recalledTextRef.current = sent;
-    setThrown((current) => current && { ...current, phase: "recall" });
-  }, []);
-  // 收回播完：胶囊撤掉，内容在这刻真正回到输入框；之后才到的回显按别人的消息那样弹出。
-  const finishRecall = useCallback(() => {
-    const recalled = recalledTextRef.current;
-    setThrown(null);
-    setPendingEcho(null);
-    // 玩家已经接着打字就不覆盖他的输入
-    setText((current) => (current ? current : recalled));
-  }, [setText]);
-  /** 一次发送的业务回执：成败只看 promise 有没有正常返回，动画时序不参与判定。 */
-  const attemptRef = useRef<{ acked: boolean } | null>(null);
   // 只在玩家本来就在底部时跟随；自己发出的那条无论玩家翻到哪都贴底，胶囊交接要落在可见的落点上。
   const lastMessage = messages.at(-1);
   const { viewportRef, contentRef, unseen, scrollToBottom } = useStickToBottom(
@@ -128,36 +89,25 @@ export function ChatPanel({
     inputRef,
     players: mentionablePlayers,
   });
-  const closeMention = mentionInput.close;
 
-  // 本人最新一条消息：发送后它换了，就是这次发送的回显
-  const lastMineId = useMemo(
-    () => messages.findLast((message) => !message.system && message.playerId === myPlayerId)?.id,
-    [messages, myPlayerId]
-  );
+  const { thrown, capsuleRef, handoff, handoffId, finishRecall, handleSend } = useChatSend({
+    messages,
+    myPlayerId,
+    text,
+    setText,
+    inputRef,
+    sendIconRef,
+    onSendMessage,
+    onError,
+    onSent: mentionInput.close,
+  });
+
   // 最新一条玩家消息：只有它可以被 +1；系统提示没有气泡，不算复读对象
   const latestMessageId = useMemo(
     () => messages.findLast((message) => !message.system)?.id,
     [messages]
   );
   const repeatChain = useMemo(() => trailingRepeatChain(messages), [messages]);
-  if (pendingEcho && lastMineId && lastMineId !== pendingEcho.baselineId) {
-    setHandoffId(lastMineId);
-    setPendingEcho(null);
-  }
-
-  // 胶囊悬停等回显。等不到时按业务回执分流：ACK 已到只是频道不回显，撤掉胶囊即可；
-  // 没 ACK 才把内容收回输入框，别让玩家重打。
-  const waitingKey = pendingEcho && thrown?.phase === "fly" ? thrown.key : null;
-  const waitingText = thrown?.phase === "fly" ? thrown.text : "";
-  useEffect(() => {
-    if (waitingKey === null) return;
-    const timer = window.setTimeout(
-      () => recallThrow(attemptRef.current?.acked ? "" : waitingText),
-      chatThrow.waitMs
-    );
-    return () => window.clearTimeout(timer);
-  }, [waitingKey, waitingText, recallThrow]);
 
   // 表情的替代文本要用清单里的表情名。清单仍旧按需加载：只在消息里真的出现表情时才取，
   // 没发过表情的房间不为整份清单买单。
@@ -169,65 +119,6 @@ export function ChatPanel({
   useEffect(() => {
     if (hasSticker && !stickerLabels) void loadStickerLabels().then(setStickerLabels);
   }, [hasSticker, stickerLabels]);
-
-  /**
-   * 记下发送这一刻的输入框位置，把文字掷出去等回显；发送按钮的图标被反冲得逐格抖一下。
-   * 返回是否真的掷出：减弱动效或量不到输入框时没有胶囊可收回，失败要把内容直接写回输入框。
-   */
-  const startThrow = (sent: string) => {
-    const input = inputRef.current;
-    if (reducedMotion || !input) return false;
-    const rect = input.getBoundingClientRect();
-    setThrown({
-      key: performance.now(),
-      text: sent,
-      anchor: { left: rect.left, top: rect.top, height: rect.height, maxWidth: rect.width },
-      phase: "fly",
-    });
-    setPendingEcho({ baselineId: lastMineId });
-    const icon = sendIconRef.current;
-    if (icon) {
-      const { keyframes, transition } = stepJitterAnimation(jitterShape.sendRecoil);
-      void animate(icon, keyframes, transition);
-    }
-    return true;
-  };
-
-  /**
-   * 发送成功只认 ACK：回显晚于等待窗口时内容不曾回到输入框，玩家看不到「没发出去」的假信号。
-   * 万一先前已经收回，确认后就撤掉那一条原样文本，避免玩家照着它再发一遍；改过就留给他自己判断。
-   */
-  const confirmSent = (sent: string) => {
-    if (recalledTextRef.current !== sent) return;
-    recalledTextRef.current = "";
-    setText((current) => (current === sent ? "" : current));
-  };
-
-  // 发送序号：胶囊、收回动画与回执只有一份，前一条的失败不能去动后一条的胶囊。
-  const sendSeqRef = useRef(0);
-
-  const handleSend = async () => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const attempt = { acked: false };
-    attemptRef.current = attempt;
-    const seq = ++sendSeqRef.current;
-    // 先清输入框再 await：乐观清除是防重复提交，内容找回来看下面的业务回执
-    const flying = startThrow(trimmed);
-    setText("");
-    closeMention();
-    try {
-      await onSendMessage(trimmed);
-      attempt.acked = true;
-      confirmSent(trimmed);
-    } catch (error) {
-      // 掷出过且胶囊还是这一条的，就交给收回动画，落点把内容写回；
-      // 没有动画可走（或胶囊已经换成后一条）时立刻写回，输入框里已有新草稿就不覆盖
-      if (flying && seq === sendSeqRef.current) recallThrow(trimmed);
-      else setText((current) => (current ? current : trimmed));
-      onError?.(error);
-    }
-  };
 
   const handleSendSticker = async (path: string) => {
     try {
@@ -414,7 +305,7 @@ export function ChatPanel({
               value={text}
               onChange={mentionInput.handleChange}
               onSelect={mentionInput.handleSelect}
-              onBlur={closeMention}
+              onBlur={mentionInput.close}
               placeholder={placeholder}
               className="flex-1"
               data-agent-control="chat.input"
