@@ -27,7 +27,7 @@ const GLOBAL_COOLDOWN_SCOPE = "*";
 const MAX_COOLDOWN_SCOPES = 512;
 
 /** 限流退避发生时的上下文，供调用方做 IP 轮换与结构化告警。 */
-interface RateLimitCooldownInfo {
+export interface RateLimitCooldownInfo {
   error: unknown;
   scope?: string;
   strikes: number;
@@ -37,7 +37,7 @@ interface RateLimitCooldownInfo {
   reason: string;
 }
 
-interface UpstreamRequestQueueOptions {
+export interface UpstreamRequestQueueOptions {
   now: () => number;
   /** 随机源（注入以便确定性测试）；缺省回落 `Math.random`。 */
   random?: { nextFloat?: () => number };

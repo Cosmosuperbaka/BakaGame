@@ -2,7 +2,8 @@ import { AppError } from "../../../domain/Errors";
 import { describeError, type EventLogger } from "../../EventLogger";
 import { readChinaIpRanges } from "../ChinaIpRanges";
 import { IP_SCOPE_ANONYMOUS, MusicIpScopeRegistry } from "../MusicIpScope";
-import { UpstreamRequestQueue } from "../UpstreamRequestQueue";
+import type { UpstreamRequestQueue } from "../UpstreamRequestQueue";
+import { createMusicQueue } from "../UpstreamQueueFactory";
 import { asRecord, readNumber } from "../../JsonReaders";
 import { responseBody, responseCode, responseCookie, responseMessage } from "./NeteaseResponse";
 import type {
@@ -67,20 +68,16 @@ export class NeteaseApiGateway {
       platformKey: "netease",
       logger: this.logger,
     });
-    this.requestQueue = new UpstreamRequestQueue({
+    this.requestQueue = createMusicQueue({
       now: this.now,
       random: this.random,
-      maxConcurrentRequests: options.maxConcurrentRequests,
-      minRequestIntervalMs: options.minRequestIntervalMs,
-      rateLimitCooldownMs: options.rateLimitCooldownMs,
-      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
-      maxQueuedRequests: options.maxQueuedRequests,
-      queueTimeoutMs: options.queueTimeoutMs,
-      requestTimeoutMs: options.requestTimeoutMs,
-      queueFullMessage: "网易云请求排队过多，请稍后重试",
-      queueTimeoutMessage: "网易云请求等待超时，请稍后重试",
-      requestTimeoutMessage: "网易云请求超时，请稍后重试",
-      rateLimitFallbackMessage: "操作频繁，请稍候再试",
+      tuning: options,
+      messages: {
+        queueFull: "网易云请求排队过多，请稍后重试",
+        queueTimeout: "网易云请求等待超时，请稍后重试",
+        requestTimeout: "网易云请求超时，请稍后重试",
+        rateLimitFallback: "操作频繁，请稍候再试",
+      },
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => responseMessage(responseBody(error), fallback),
       onRateLimitCooldown: ({
@@ -102,12 +99,7 @@ export class NeteaseApiGateway {
           reason,
         });
       },
-      createBusyError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
-      createRateLimitError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_RATE_LIMITED", message, { upstreamCode: 405, retryAfterMs }),
-      createTimeoutError: (message, timeoutMs) =>
-        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
+      rateLimitUpstreamCode: 405,
     });
   }
 

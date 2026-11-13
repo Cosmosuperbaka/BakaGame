@@ -1,6 +1,7 @@
 import { AppError } from "../../../domain/Errors";
 import { asRecord, readNumber } from "../../JsonReaders";
-import { UpstreamRequestQueue } from "../UpstreamRequestQueue";
+import { createMusicQueue, type MusicQueueTuning } from "../UpstreamQueueFactory";
+import type { UpstreamRequestQueue } from "../UpstreamRequestQueue";
 import { audioCacheScope } from "./QQCookie";
 import { readString } from "./QQResponse";
 import type { QQMusicProviderOptions } from "./QQTypes";
@@ -31,20 +32,39 @@ export class QQUpstream {
     private readonly now: () => number,
     random: { nextFloat?: () => number }
   ) {
-    this.requestQueue = new UpstreamRequestQueue({
+    this.requestQueue = this.createQueue(
+      random,
+      { ...options, maxConcurrentRequests: options.maxConcurrentRequests ?? 4 },
+      {
+        queueFull: "QQ音乐请求排队过多，请稍后重试",
+        queueTimeout: "QQ音乐请求等待超时，请稍后重试",
+        requestTimeout: "QQ音乐请求超时，请稍后重试",
+      },
+      "QQ音乐接口触发限流退避"
+    );
+    this.anonymousQueue = this.createQueue(
+      random,
+      { ...options, maxConcurrentRequests: options.anonymousMaxConcurrentRequests ?? 1 },
+      {
+        queueFull: "QQ音乐匿名请求排队过多，请稍后重试",
+        queueTimeout: "QQ音乐匿名请求等待超时，请稍后重试",
+        requestTimeout: "QQ音乐匿名请求超时，请稍后重试",
+      },
+      "QQ音乐匿名请求触发限流退避"
+    );
+  }
+
+  private createQueue(
+    random: { nextFloat?: () => number },
+    tuning: MusicQueueTuning,
+    messages: { queueFull: string; queueTimeout: string; requestTimeout: string },
+    cooldownLog: string
+  ): UpstreamRequestQueue {
+    return createMusicQueue({
       now: this.now,
       random,
-      maxConcurrentRequests: options.maxConcurrentRequests ?? 4,
-      minRequestIntervalMs: options.minRequestIntervalMs,
-      rateLimitCooldownMs: options.rateLimitCooldownMs,
-      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
-      maxQueuedRequests: options.maxQueuedRequests,
-      queueTimeoutMs: options.queueTimeoutMs,
-      requestTimeoutMs: options.requestTimeoutMs,
-      queueFullMessage: "QQ音乐请求排队过多，请稍后重试",
-      queueTimeoutMessage: "QQ音乐请求等待超时，请稍后重试",
-      requestTimeoutMessage: "QQ音乐请求超时，请稍后重试",
-      rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
+      tuning,
+      messages: { ...messages, rateLimitFallback: QQ_RATE_LIMIT_FALLBACK_MESSAGE },
       isRateLimitError: (error) => this.isRateLimitError(error),
       readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
       onRateLimitCooldown: ({
@@ -54,7 +74,7 @@ export class QQUpstream {
         droppedQueuedRequests,
         reason,
       }) => {
-        this.options.logger?.warn?.("QQ音乐接口触发限流退避", {
+        this.options.logger?.warn?.(cooldownLog, {
           strikes,
           cooldownDurationMs,
           cooldownUntil: new Date(cooldownUntil).toISOString(),
@@ -62,50 +82,6 @@ export class QQUpstream {
           reason,
         });
       },
-      createBusyError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
-      createRateLimitError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
-      createTimeoutError: (message, timeoutMs) =>
-        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
-    });
-    this.anonymousQueue = new UpstreamRequestQueue({
-      now: this.now,
-      random,
-      maxConcurrentRequests: options.anonymousMaxConcurrentRequests ?? 1,
-      minRequestIntervalMs: options.minRequestIntervalMs,
-      rateLimitCooldownMs: options.rateLimitCooldownMs,
-      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
-      maxQueuedRequests: options.maxQueuedRequests,
-      queueTimeoutMs: options.queueTimeoutMs,
-      requestTimeoutMs: options.requestTimeoutMs,
-      queueFullMessage: "QQ音乐匿名请求排队过多，请稍后重试",
-      queueTimeoutMessage: "QQ音乐匿名请求等待超时，请稍后重试",
-      requestTimeoutMessage: "QQ音乐匿名请求超时，请稍后重试",
-      rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
-      isRateLimitError: (error) => this.isRateLimitError(error),
-      readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
-      onRateLimitCooldown: ({
-        strikes,
-        cooldownDurationMs,
-        cooldownUntil,
-        droppedQueuedRequests,
-        reason,
-      }) => {
-        this.options.logger?.warn?.("QQ音乐匿名请求触发限流退避", {
-          strikes,
-          cooldownDurationMs,
-          cooldownUntil: new Date(cooldownUntil).toISOString(),
-          droppedQueuedRequests,
-          reason,
-        });
-      },
-      createBusyError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
-      createRateLimitError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
-      createTimeoutError: (message, timeoutMs) =>
-        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
     });
   }
 
