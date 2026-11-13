@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   markPendingRestore,
   peekPendingRestore,
+  readRoomSettingsMemory,
   saveRoomSettingsMemory,
   type FakerRoomSettingsMemory,
   type SongRoomSettingsMemory,
@@ -29,6 +30,13 @@ function deferred<T>() {
 }
 
 describe("useRoomSettingsRestore", () => {
+  // 记忆的形状校验按需动态加载共享 schema：先暖好模块缓存，用例里的等待才不被首次加载拖超时。
+  beforeAll(async () => {
+    await readRoomSettingsMemory("faker");
+    window.localStorage.setItem("bakagame:room-settings:faker", "{}");
+    await readRoomSettingsMemory("faker");
+  }, 30_000);
+
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -49,7 +57,7 @@ describe("useRoomSettingsRestore", () => {
     const hook = renderHook(() => useRoomSettingsRestore("faker", "ROOM1", send));
 
     // 发送在途期间保持占位，避免设置面板的草稿先于恢复落定。
-    expect(send).toHaveBeenCalledExactlyOnceWith(fakerMemory, "ROOM1");
+    await waitFor(() => expect(send).toHaveBeenCalledExactlyOnceWith(fakerMemory, "ROOM1"));
     expect(hook.result.current).toBe(true);
     expect(peekPendingRestore("faker")).toBeNull();
 

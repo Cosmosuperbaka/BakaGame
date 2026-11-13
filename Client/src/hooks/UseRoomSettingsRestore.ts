@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 import {
+  hasRoomSettingsMemory,
   peekPendingRestore,
-  readRoomSettingsMemory,
   takePendingRestoreMemory,
   type RoomGame,
   type RoomSettingsMemoryByGame,
@@ -36,17 +36,14 @@ export function useRoomSettingsRestore<G extends RoomGame>(
   send: (memory: RoomSettingsMemoryByGame[G], roomId: string) => Promise<void>
 ): boolean {
   const [restoring, setRestoring] = useState(
-    () =>
-      Boolean(roomId) &&
-      peekPendingRestore(game) === roomId &&
-      readRoomSettingsMemory(game) !== null
+    () => Boolean(roomId) && peekPendingRestore(game) === roomId && hasRoomSettingsMemory(game)
   );
 
   useEffect(() => {
     if (!restoring || !roomId) return;
     let alive = true;
     void runRestoreJob(`${game}:${roomId}`, async () => {
-      const memory = takePendingRestoreMemory(game, roomId);
+      const memory = await takePendingRestoreMemory(game, roomId);
       if (!memory) return;
       try {
         await send(memory, roomId);

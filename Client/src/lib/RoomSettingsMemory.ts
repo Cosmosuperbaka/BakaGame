@@ -125,12 +125,138 @@ export function saveRoomCreateDefaults(game: RoomGame, defaults: RoomCreateDefau
   });
 }
 
-/** 读取房间内设置记忆；没有或损坏时返回 null，由调用方按「无记忆」跳过恢复。 */
-export function readRoomSettingsMemory<G extends RoomGame>(
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const SONG_QUESTION_KEYS = [
+  "questionType",
+  "questionMode",
+  "autoRotateSubmitter",
+  "allowCustomClip",
+  "autoFilters",
+  "animeAutoFilters",
+] as const;
+const SONG_QUESTION_REQUIRED = [
+  "questionType",
+  "questionMode",
+  "autoRotateSubmitter",
+  "autoFilters",
+  "animeAutoFilters",
+] as const;
+const SONG_GAME_KEYS = [
+  "lyricsLineCount",
+  "showLyrics",
+  "maxGuessesPerRound",
+  "guessDurationSeconds",
+  "showGuessTimer",
+  "bloodMode",
+] as const;
+
+type MemoryValidator = (value: unknown) => boolean;
+
+/**
+ * 各游戏记忆的形状校验，和重放给服务端的命令载荷用同一份共享 schema，不在这里另写一套。
+ * schema 与校验库只在需要读记忆时才动态加载：它们体积不小，而客户端的运行时值入口
+ * 不允许把它们带进首屏。
+ */
+const loadValidators = async (): Promise<Record<RoomGame, MemoryValidator>> => {
+  const [{ Value }, shared] = await Promise.all([
+    import("@sinclair/typebox/value"),
+    import("@bakagame/shared"),
+  ]);
+  /** 一段记忆按载荷 schema 校验：键只能来自 `allowed`（口令等不该落盘的字段因此被拒），`required` 必须存在。 */
+  const matchesPayload = (
+    schema: Parameters<typeof Value.Check>[0],
+    value: unknown,
+    allowed: readonly string[],
+    required: readonly string[]
+  ): boolean =>
+    isRecord(value) &&
+    Object.keys(value).every((key) => allowed.includes(key)) &&
+    required.every((key) => key in value) &&
+    Value.Check(schema, value);
+  const fakerUpdate = shared.WhoIsFakerPayloadSchemas["room.updateSettings"];
+  const songUpdate = shared.SonGuessrPayloadSchemas["song.room.updateSettings"];
+  return {
+    faker: (value) =>
+      matchesPayload(
+        fakerUpdate,
+        value,
+        ["revealRoleOnDeath", "spectatorsSeeAnswers", "roleConfig"],
+        ["revealRoleOnDeath", "roleConfig"]
+      ),
+    song: (value) =>
+      isRecord(value) &&
+      Object.keys(value).every((key) => key === "question" || key === "game") &&
+      (value.question === undefined ||
+        matchesPayload(songUpdate, value.question, SONG_QUESTION_KEYS, SONG_QUESTION_REQUIRED)) &&
+      (value.game === undefined ||
+        matchesPayload(songUpdate, value.game, SONG_GAME_KEYS, SONG_GAME_KEYS)),
+    cee: (value) =>
+      isRecord(value) &&
+      Object.keys(value).length === 1 &&
+      "settings" in value &&
+      Value.Check(shared.CEESettingsSchema, value.settings),
+  };
+};
+
+let validators: Promise<Record<RoomGame, MemoryValidator>> | null = null;
+
+const removeSettingsKey = (key: string): void => {
+  try {
+    getLocalStorage()?.removeItem(key);
+  } catch {
+    // 存储被禁用：没有可删的。
+  }
+};
+
+/** 是否存有该游戏的设置记忆（只看有没有，不校验形状）：用于决定要不要先渲染恢复占位。 */
+export function hasRoomSettingsMemory(game: RoomGame): boolean {
+  try {
+    return Boolean(getLocalStorage()?.getItem(SETTINGS_PREFIX + game));
+  } catch {
+    return false;
+  }
+}
+
+/** 校验一段原始记忆；不合规（含损坏）时删掉该键，返回 null。 */
+const validateRawMemory = async <G extends RoomGame>(
+  game: G,
+  raw: string | null | undefined
+): Promise<RoomSettingsMemoryByGame[G] | null> => {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    validators ??= loadValidators();
+    if ((await validators)[game](value)) return value as RoomSettingsMemoryByGame[G];
+  } catch {
+    // 解析或加载校验器失败：与形状不合规一样按无记忆处理。
+  }
+  // 删之前复核：校验期间别处可能已写入了新的合规记忆，只删仍是这份原文的键。
+  try {
+    const storage = getLocalStorage();
+    if (storage?.getItem(SETTINGS_PREFIX + game) === raw) removeSettingsKey(SETTINGS_PREFIX + game);
+  } catch {
+    // 忽略。
+  }
+  return null;
+};
+
+/**
+ * 读取房间内设置记忆：没有、JSON 损坏或形状不合规（旧版本或别的设备经云同步带来的数据）
+ * 一律按「无记忆」处理并删掉该键，避免畸形数据被重放给服务端、或经合并写回再同步出去。
+ * 这是偏好类本地记忆的产品选择，不套用「损坏数据 Fail-Fast」。
+ */
+export async function readRoomSettingsMemory<G extends RoomGame>(
   game: G
-): RoomSettingsMemoryByGame[G] | null {
-  const value = readJson<unknown>(SETTINGS_PREFIX + game);
-  return value && typeof value === "object" ? (value as RoomSettingsMemoryByGame[G]) : null;
+): Promise<RoomSettingsMemoryByGame[G] | null> {
+  let raw: string | null | undefined;
+  try {
+    raw = getLocalStorage()?.getItem(SETTINGS_PREFIX + game);
+  } catch {
+    return null;
+  }
+  return validateRawMemory(game, raw);
 }
 
 /** 覆盖写入房间内设置记忆。 */
@@ -141,12 +267,19 @@ export function saveRoomSettingsMemory<G extends RoomGame>(
   writeJson(SETTINGS_PREFIX + game, memory);
 }
 
-/** 读取-合并-写回：同一游戏有多个面板各存各的部分时用（如猜歌的题、猜两组）。 */
+let updateQueue: Promise<void> = Promise.resolve();
+
+/**
+ * 读取-合并-写回：同一游戏有多个面板各存各的部分时用（如猜歌的题、猜两组）。
+ * 读记忆要先校验，是异步的；更新排成一条队依次执行，两个面板几乎同时保存也不会互相覆盖。
+ */
 export function updateRoomSettingsMemory<G extends RoomGame>(
   game: G,
   patch: (current: RoomSettingsMemoryByGame[G] | null) => RoomSettingsMemoryByGame[G]
 ): void {
-  saveRoomSettingsMemory(game, patch(readRoomSettingsMemory(game)));
+  updateQueue = updateQueue.then(async () => {
+    saveRoomSettingsMemory(game, patch(await readRoomSettingsMemory(game)));
+  });
 }
 
 /** 登记「这个房间刚由本机创建」：进房后的等待页凭它套用上次设置。 */
@@ -171,16 +304,19 @@ export function peekPendingRestore(game: RoomGame): string | null {
  * 原子取走待恢复标记：只有与当前房间匹配时才清掉它，并返回房间内设置记忆（可能为空）。
  * 不匹配（标记属于别的房间、或已被消费）时不动存储并返回 null。
  */
-export function takePendingRestoreMemory<G extends RoomGame>(
+export async function takePendingRestoreMemory<G extends RoomGame>(
   game: G,
   roomId: string
-): RoomSettingsMemoryByGame[G] | null {
+): Promise<RoomSettingsMemoryByGame[G] | null> {
+  let raw: string | null | undefined;
   try {
     const storage = getLocalStorage();
     if (!storage || storage.getItem(RESTORE_PREFIX + game) !== roomId) return null;
+    // 标记先同步取走再等校验：并发的第二次挂载拿不到同一份恢复。
     storage.removeItem(RESTORE_PREFIX + game);
-    return readRoomSettingsMemory(game);
+    raw = storage.getItem(SETTINGS_PREFIX + game);
   } catch {
     return null;
   }
+  return validateRawMemory(game, raw);
 }

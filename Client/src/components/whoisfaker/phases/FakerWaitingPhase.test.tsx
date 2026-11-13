@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
 import {
@@ -69,6 +69,13 @@ const privateState: WhoIsFakerPrivateState = {
 };
 
 describe("waiting room sharing", () => {
+  // 记忆的形状校验按需动态加载共享 schema：先暖好模块缓存，免得首次加载拖超时。
+  beforeAll(async () => {
+    window.localStorage.setItem("bakagame:room-settings:faker", "{}");
+    await readRoomSettingsMemory("faker");
+    window.localStorage.clear();
+  }, 30_000);
+
   beforeEach(() => {
     useWhoIsFakerStore.setState({ ...initialStoreState, snapshot, privateState }, true);
   });
@@ -242,8 +249,8 @@ describe("waiting room sharing", () => {
     fireEvent.click(screen.getByRole("switch", { name: "死亡时揭露身份" }));
 
     // 修改经防抖保存进服务端，同时把这次的房间内设置写进记忆，供下次创建时重放。
-    await waitFor(() =>
-      expect(readRoomSettingsMemory("faker")).toEqual({
+    await waitFor(async () =>
+      expect(await readRoomSettingsMemory("faker")).toEqual({
         revealRoleOnDeath: false,
         // 快照没带这个字段时按服务端的默认（关闭）记，不臆造房主没选过的偏好。
         spectatorsSeeAnswers: false,
@@ -298,11 +305,13 @@ describe("waiting room sharing", () => {
     // 恢复在途：占位先行，设置面板还没挂载；重放的正是上次保存的那份设置。
     expect(screen.getByRole("status", { name: "正在恢复上次的房间设置" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "身份设置" })).not.toBeInTheDocument();
-    expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
-      revealRoleOnDeath: false,
-      spectatorsSeeAnswers: true,
-      roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
-    });
+    await waitFor(() =>
+      expect(sendCommand).toHaveBeenCalledExactlyOnceWith("room.updateSettings", {
+        revealRoleOnDeath: false,
+        spectatorsSeeAnswers: true,
+        roleConfig: { undercoverCount: 1, hasAngel: false, hasBlank: false },
+      })
+    );
 
     await act(async () => {
       resolve({});
