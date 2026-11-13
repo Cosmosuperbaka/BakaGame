@@ -50,6 +50,11 @@ export function buildSongUrn(platform: MusicPlatform, rawId: string): string {
   return `${platform}:${trimmed}`;
 }
 
+/** 补统一 URN 前缀：已带本平台前缀的原样返回（子 provider 的检索结果可能是裸标识，也可能已带前缀）。 */
+export function withUrn(platform: MusicPlatform, id: string): string {
+  return id.startsWith(`${platform}:`) ? id : buildSongUrn(platform, id);
+}
+
 /**
  * 判断是否为合法音源 URN.
  */

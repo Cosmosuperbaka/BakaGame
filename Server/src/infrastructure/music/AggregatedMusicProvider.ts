@@ -1,6 +1,6 @@
 import { AppError } from "../../domain/Errors";
 import { describeError, type EventLogger } from "../EventLogger";
-import { parseSongUrn, buildSongUrn } from "./MusicUrn";
+import { parseSongUrn, buildSongUrn, withUrn } from "./MusicUrn";
 import { resolvePlatformCookie } from "./MusicCookieResolver";
 import { raceWithTimeout } from "./RaceTimeout";
 import {
@@ -36,6 +36,9 @@ export interface AggregatedMusicProviderOptions {
 
 const DEFAULT_SEARCH_TIMEOUT_MS = { netease: 8000, qq: 6000 };
 
+/** 日志里的平台称呼（QQ 音乐沿用既有写法，不带空格）。 */
+const PLATFORM_LABEL: Record<MusicPlatform, string> = { netease: "网易云", qq: "QQ音乐" };
+
 const resolveSwitch = (value: boolean | (() => boolean) | undefined, fallback: boolean): boolean =>
   typeof value === "function" ? value() : (value ?? fallback);
 
@@ -65,6 +68,34 @@ export class AggregatedMusicProvider implements MusicProvider {
 
   private anonymousQqAllowed(): boolean {
     return resolveSwitch(this.allowAnonymousQqSearch, true);
+  }
+
+  private providerFor(platform: MusicPlatform): MusicProvider {
+    return platform === "qq" ? this.qqProvider : this.neteaseProvider;
+  }
+
+  /** 把单侧检索结果整理成带统一 URN 与上游名次的候选；该侧失败时按单音源降级并告警。 */
+  private settleSearchSide(
+    settled: PromiseSettledResult<SongSearchResult[]>,
+    platform: MusicPlatform,
+    failureLog: string,
+    keyword: string,
+    playability: SongPlayabilityContext
+  ): (SongSearchResult & { upstreamRank?: number })[] {
+    if (settled.status === "rejected") {
+      this.logger?.warn?.(failureLog, { keyword, ...describeError(settled.reason) });
+      return [];
+    }
+    return settled.value.map((s, index) => ({
+      ...markSongPlayability(s, playability),
+      id: withUrn(platform, s.id),
+      upstreamRank: index,
+    }));
+  }
+
+  /** 子 provider 返回的条目补统一 URN 前缀。 */
+  private withPlatformIds<T extends { id: string }>(platform: MusicPlatform, items: T[]): T[] {
+    return items.map((item) => ({ ...item, id: withUrn(platform, item.id) }));
   }
 
   async search(
@@ -116,37 +147,20 @@ export class AggregatedMusicProvider implements MusicProvider {
         : Promise.resolve([] as SongSearchResult[]),
     ]);
 
-    const neteaseSongs: (SongSearchResult & { upstreamRank?: number })[] =
-      neteaseSettled.status === "fulfilled"
-        ? neteaseSettled.value.map((s, index) => ({
-            ...markSongPlayability(s, playability),
-            id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
-            upstreamRank: index,
-          }))
-        : [];
-
-    if (neteaseSettled.status === "rejected") {
-      this.logger?.warn?.("网易云搜索失败，降级为单音源", {
-        keyword: normalized,
-        ...describeError(neteaseSettled.reason),
-      });
-    }
-
-    const qqSongs: (SongSearchResult & { upstreamRank?: number })[] =
-      qqSettled.status === "fulfilled"
-        ? qqSettled.value.map((s, index) => ({
-            ...markSongPlayability(s, playability),
-            id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
-            upstreamRank: index,
-          }))
-        : [];
-
-    if (qqSettled.status === "rejected") {
-      this.logger?.warn?.("QQ音乐搜索失败，降级为单音源", {
-        keyword: normalized,
-        ...describeError(qqSettled.reason),
-      });
-    }
+    const neteaseSongs = this.settleSearchSide(
+      neteaseSettled,
+      "netease",
+      "网易云搜索失败，降级为单音源",
+      normalized,
+      playability
+    );
+    const qqSongs = this.settleSearchSide(
+      qqSettled,
+      "qq",
+      "QQ音乐搜索失败，降级为单音源",
+      normalized,
+      playability
+    );
 
     const allCandidates = [...neteaseSongs, ...qqSongs];
     if (allCandidates.length === 0) return [];
@@ -167,76 +181,41 @@ export class AggregatedMusicProvider implements MusicProvider {
     options: { allowFailover?: boolean; hint?: SongFailoverHint } = {}
   ): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-
-    if (platform === "netease") {
-      try {
-        const details = await this.neteaseProvider.getSong(rawId, platformCookie);
-        return {
-          ...details,
-          id: buildSongUrn("netease", rawId),
-        };
-      } catch (error) {
-        if (options.allowFailover === false) throw error;
-        this.logger?.warn?.("网易云歌曲加载失败，尝试触发音源 Failover", {
-          songId,
-          ...describeError(error),
-        });
-        // 尝试按歌名+歌手在 QQ 音乐中兜底检索并播放
-        const qqCookie = resolvePlatformCookie(cookie, "qq");
-        const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-        const fallback = await this.tryFailover(
-          songId,
-          this.qqProvider,
-          "qq",
-          neteaseCookie,
-          qqCookie,
-          options.hint
-        );
-        if (fallback) return fallback;
-        throw error;
-      }
+    try {
+      const details = await this.providerFor(platform).getSong(
+        rawId,
+        resolvePlatformCookie(cookie, platform)
+      );
+      return { ...details, id: buildSongUrn(platform, rawId) };
+    } catch (error) {
+      if (options.allowFailover === false) throw error;
+      this.logger?.warn?.(`${PLATFORM_LABEL[platform]}歌曲加载失败，尝试触发音源 Failover`, {
+        songId,
+        ...describeError(error),
+      });
+      // 按歌名+歌手在另一侧平台兜底检索并播放
+      const targetPlatform: MusicPlatform = platform === "qq" ? "netease" : "qq";
+      const fallback = await this.tryFailover({
+        originalSongId: songId,
+        targetPlatform,
+        originCookie: resolvePlatformCookie(cookie, platform),
+        targetCookie: resolvePlatformCookie(cookie, targetPlatform),
+        hint: options.hint,
+      });
+      if (fallback) return fallback;
+      throw error;
     }
-
-    if (platform === "qq") {
-      try {
-        const details = await this.qqProvider.getSong(rawId, platformCookie);
-        return {
-          ...details,
-          id: buildSongUrn("qq", rawId),
-        };
-      } catch (error) {
-        if (options.allowFailover === false) throw error;
-        this.logger?.warn?.("QQ音乐歌曲加载失败，尝试触发音源 Failover", {
-          songId,
-          ...describeError(error),
-        });
-        const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-        const qqCookie = resolvePlatformCookie(cookie, "qq");
-        const fallback = await this.tryFailover(
-          songId,
-          this.neteaseProvider,
-          "netease",
-          qqCookie,
-          neteaseCookie,
-          options.hint
-        );
-        if (fallback) return fallback;
-        throw error;
-      }
-    }
-
-    throw new AppError("INVALID_PLATFORM", `未知音源平台: ${platform}`);
   }
 
-  private async tryFailover(
-    originalSongId: string,
-    targetProvider: MusicProvider,
-    targetPlatform: MusicPlatform,
-    originCookie?: string,
-    targetCookie?: string,
-    hint?: SongFailoverHint
-  ): Promise<SongDetails | null> {
+  private async tryFailover(input: {
+    originalSongId: string;
+    targetPlatform: MusicPlatform;
+    originCookie?: string;
+    targetCookie?: string;
+    hint?: SongFailoverHint;
+  }): Promise<SongDetails | null> {
+    const { originalSongId, targetPlatform, originCookie, targetCookie, hint } = input;
+    const targetProvider = this.providerFor(targetPlatform);
     // 匿名 QQ 只是检索补充源；开关关闭时不再用它做隐式 failover。
     if (targetPlatform === "qq" && !targetCookie && !this.anonymousQqAllowed()) return null;
     try {
@@ -271,67 +250,55 @@ export class AggregatedMusicProvider implements MusicProvider {
         : bestCandidate.id;
       const details = await targetProvider.getSong(rawId, targetCookie);
       return { ...details, id: buildSongUrn(targetPlatform, rawId) };
-    } catch {
+    } catch (error) {
+      // 兜底失败不改变语义（调用方照旧抛原错误），但吞掉的错误要留痕：上游瞬态失败是信息级。
+      this.logger?.info?.("音源 Failover 未能取得备用歌曲", {
+        songId: originalSongId,
+        targetPlatform,
+        ...describeError(error),
+      });
       return null;
     }
   }
 
   async refreshSongAudio(songId: string, cookie?: MusicCookieInput): Promise<string> {
     const { platform, rawId } = parseSongUrn(songId);
+    const provider = this.providerFor(platform);
     const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      return (
-        this.neteaseProvider.refreshSongAudio?.(rawId, platformCookie) ??
-        (await this.neteaseProvider.getSong(rawId, platformCookie)).audioUrl
-      );
-    }
     return (
-      this.qqProvider.refreshSongAudio?.(rawId, platformCookie) ??
-      (await this.qqProvider.getSong(rawId, platformCookie)).audioUrl
+      provider.refreshSongAudio?.(rawId, platformCookie) ??
+      (await provider.getSong(rawId, platformCookie)).audioUrl
     );
   }
 
   async getSongMetadata(songId: string, cookie?: MusicCookieInput): Promise<SongDetails> {
     const { platform, rawId } = parseSongUrn(songId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      const res = await this.neteaseProvider.getSongMetadata(rawId, platformCookie);
-      return {
-        ...res,
-        id: buildSongUrn("netease", rawId),
-      };
-    }
-    const res = await this.qqProvider.getSongMetadata(rawId, platformCookie);
-    return {
-      ...res,
-      id: buildSongUrn("qq", rawId),
-    };
+    const res = await this.providerFor(platform).getSongMetadata(
+      rawId,
+      resolvePlatformCookie(cookie, platform)
+    );
+    return { ...res, id: buildSongUrn(platform, rawId) };
   }
 
   async getSongPopularity(songId: string, cookie?: MusicCookieInput): Promise<number | undefined> {
     const { platform, rawId } = parseSongUrn(songId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      return this.neteaseProvider.getSongPopularity?.(rawId, platformCookie);
-    }
-    return this.qqProvider.getSongPopularity?.(rawId, platformCookie);
+    return this.providerFor(platform).getSongPopularity?.(
+      rawId,
+      resolvePlatformCookie(cookie, platform)
+    );
   }
 
   async getSongChorus(songId: string, cookie?: MusicCookieInput): Promise<SongChorus | undefined> {
     const { platform, rawId } = parseSongUrn(songId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      return this.neteaseProvider.getSongChorus?.(rawId, platformCookie);
-    }
-    return this.qqProvider.getSongChorus?.(rawId, platformCookie);
+    return this.providerFor(platform).getSongChorus?.(
+      rawId,
+      resolvePlatformCookie(cookie, platform)
+    );
   }
 
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
     const { platform, rawId } = parseSongUrn(songId);
-    if (platform === "netease") {
-      return this.neteaseProvider.getAmllTtmlLyrics?.(rawId);
-    }
-    return this.qqProvider.getAmllTtmlLyrics?.(rawId);
+    return this.providerFor(platform).getAmllTtmlLyrics?.(rawId);
   }
 
   async searchAmllTtmlLyrics(songName: string, artistName?: string): Promise<string | undefined> {
@@ -346,39 +313,21 @@ export class AggregatedMusicProvider implements MusicProvider {
     cookie?: MusicCookieInput
   ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }> {
     const trimmed = playlistId.trim();
-    if (trimmed.startsWith("qq:") || /y\.qq\.com/i.test(trimmed)) {
-      const rawId = trimmed.startsWith("qq:") ? trimmed.slice(3) : trimmed;
-      const qqCookie = resolvePlatformCookie(cookie, "qq");
-      if (!qqCookie && !this.anonymousQqAllowed()) {
-        throw new AppError(
-          "MUSIC_LOGIN_REQUIRED",
-          "QQ 音乐匿名音源已关闭，请登录 QQ 音乐后读取歌单"
-        );
-      }
-      const res = await this.qqProvider.getPlaylistSongs!(rawId, qqCookie);
-      return {
-        info: {
-          ...res.info,
-          id: res.info.id.startsWith("qq:") ? res.info.id : buildSongUrn("qq", res.info.id),
-        },
-        songs: res.songs.map((s) => ({
-          ...s,
-          id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
-        })),
-      };
+    const platform: MusicPlatform =
+      trimmed.startsWith("qq:") || /y\.qq\.com/i.test(trimmed) ? "qq" : "netease";
+    const prefix = `${platform}:`;
+    const rawId = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed;
+    const platformCookie = resolvePlatformCookie(cookie, platform);
+    if (platform === "qq" && !platformCookie && !this.anonymousQqAllowed()) {
+      throw new AppError(
+        "MUSIC_LOGIN_REQUIRED",
+        "QQ 音乐匿名音源已关闭，请登录 QQ 音乐后读取歌单"
+      );
     }
-    const rawId = trimmed.startsWith("netease:") ? trimmed.slice(8) : trimmed;
-    const neteaseCookie = resolvePlatformCookie(cookie, "netease");
-    const res = await this.neteaseProvider.getPlaylistSongs!(rawId, neteaseCookie);
+    const res = await this.providerFor(platform).getPlaylistSongs!(rawId, platformCookie);
     return {
-      info: {
-        ...res.info,
-        id: res.info.id.startsWith("netease:") ? res.info.id : buildSongUrn("netease", res.info.id),
-      },
-      songs: res.songs.map((s) => ({
-        ...s,
-        id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
-      })),
+      info: { ...res.info, id: withUrn(platform, res.info.id) },
+      songs: this.withPlatformIds(platform, res.songs),
     };
   }
 
@@ -398,14 +347,11 @@ export class AggregatedMusicProvider implements MusicProvider {
       this.neteaseProvider.searchArtists?.(keyword, limit, neteaseCookie),
       qqSearch,
     ]);
-    const list1 = (netease.status === "fulfilled" ? netease.value || [] : []).map((a) => ({
-      ...a,
-      id: a.id.startsWith("netease:") ? a.id : buildSongUrn("netease", a.id),
-    }));
-    const list2 = (qq.status === "fulfilled" ? qq.value || [] : []).map((a) => ({
-      ...a,
-      id: a.id.startsWith("qq:") ? a.id : buildSongUrn("qq", a.id),
-    }));
+    const list1 = this.withPlatformIds(
+      "netease",
+      netease.status === "fulfilled" ? netease.value || [] : []
+    );
+    const list2 = this.withPlatformIds("qq", qq.status === "fulfilled" ? qq.value || [] : []);
     return mergeSearchLists(
       list1,
       list2,
@@ -417,19 +363,11 @@ export class AggregatedMusicProvider implements MusicProvider {
 
   async getArtistSongs(artistId: string, cookie?: MusicCookieInput): Promise<SongSearchResult[]> {
     const { platform, rawId } = parseSongUrn(artistId);
-    const platformCookie = resolvePlatformCookie(cookie, platform);
-    if (platform === "netease") {
-      const songs = await this.neteaseProvider.getArtistSongs!(rawId, platformCookie);
-      return songs.map((s) => ({
-        ...s,
-        id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
-      }));
-    }
-    const songs = await this.qqProvider.getArtistSongs!(rawId, platformCookie);
-    return songs.map((s) => ({
-      ...s,
-      id: s.id.startsWith("qq:") ? s.id : buildSongUrn("qq", s.id),
-    }));
+    const songs = await this.providerFor(platform).getArtistSongs!(
+      rawId,
+      resolvePlatformCookie(cookie, platform)
+    );
+    return this.withPlatformIds(platform, songs);
   }
 
   /**
@@ -444,10 +382,7 @@ export class AggregatedMusicProvider implements MusicProvider {
   ): Promise<SongAlbumSearchResult[]> {
     const neteaseCookie = resolvePlatformCookie(cookie, "netease");
     const netease = await this.neteaseProvider.searchAlbums?.(keyword, limit, neteaseCookie);
-    const list = (netease ?? []).map((a) => ({
-      ...a,
-      id: a.id.startsWith("netease:") ? a.id : buildSongUrn("netease", a.id),
-    }));
+    const list = this.withPlatformIds("netease", netease ?? []);
     return mergeSearchLists(
       list,
       [],
@@ -470,10 +405,7 @@ export class AggregatedMusicProvider implements MusicProvider {
       rawId,
       resolvePlatformCookie(cookie, platform)
     );
-    return songs.map((s) => ({
-      ...s,
-      id: s.id.startsWith("netease:") ? s.id : buildSongUrn("netease", s.id),
-    }));
+    return this.withPlatformIds("netease", songs);
   }
 
   createQrLogin(platform?: "netease" | "qq", type?: "qq" | "wx" | "mobile"): Promise<MusicQrLogin> {

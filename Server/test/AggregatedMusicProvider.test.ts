@@ -692,3 +692,38 @@ describe("AggregatedMusicProvider：QQ 没有专辑接口", () => {
     expect(qqMock.search).not.toHaveBeenCalled();
   });
 });
+
+describe("AggregatedMusicProvider · 跨平台兜底失败留痕", () => {
+  test("兜底也失败时仍抛原错误，吞掉的兜底错误以信息级记日志", async () => {
+    const infos: Array<{ message: string; context?: Record<string, unknown> }> = [];
+    const logger = {
+      debug: () => {},
+      info: (message: string, context?: Record<string, unknown>) => infos.push({ message, context }),
+      warn: () => {},
+      error: () => {},
+    };
+    const original = new Error("netease song unavailable");
+    const neteaseMock = createMockProvider("netease", {
+      getSong: mock(async () => {
+        throw original;
+      }),
+    });
+    const qqMock = createMockProvider("qq", {
+      search: mock(async () => {
+        throw new AppError("MUSIC_API_RATE_LIMITED", "QQ 限流");
+      }),
+    });
+    const agg = new AggregatedMusicProvider({
+      neteaseProvider: neteaseMock,
+      qqProvider: qqMock,
+      logger: logger as never,
+    });
+
+    await expect(
+      agg.getSong("netease:1001", undefined, { hint: { title: "反方向的钟", artist: "周杰伦" } })
+    ).rejects.toBe(original);
+    const swallowed = infos.find((entry) => entry.message.includes("Failover"));
+    expect(swallowed?.context).toMatchObject({ songId: "netease:1001", targetPlatform: "qq" });
+    expect(JSON.stringify(swallowed?.context)).toContain("QQ 限流");
+  });
+});
