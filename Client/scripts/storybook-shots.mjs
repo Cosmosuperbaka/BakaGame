@@ -16,6 +16,7 @@ import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
+import { OUTPUT_MARKER, assertSafeOutputDir } from "./output-dir-guard.mjs";
 
 const { values: options } = parseArgs({
   options: {
@@ -28,7 +29,8 @@ const { values: options } = parseArgs({
 });
 
 const clientDir = process.cwd();
-const outDir = path.resolve(clientDir, options.out);
+// 先校验再使用：下面会递归删除这个目录。
+const outDir = assertSafeOutputDir(clientDir, options.out);
 const port = Number(options.port);
 /** 组件截图在故事根元素外保留的边距（像素），容纳投影。 */
 const FRAME_MARGIN = 12;
@@ -332,6 +334,7 @@ async function main() {
   try {
     if (!filter) await rm(outDir, { recursive: true, force: true });
     await mkdir(outDir, { recursive: true });
+    await writeFile(path.join(outDir, OUTPUT_MARKER), "");
     storybook = options.url
       ? { baseUrl: options.url.replace(/\/+$/, ""), child: null }
       : await startStorybook();
