@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Tooltip";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { AdminToolbar, ConfirmDialog, QueryState } from "@/components/admin/AdminParts";
+import { roomPhaseLabel } from "@/components/admin/AdminPhases";
 import { useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { GAME_LABELS, GAME_OPTIONS, formatShortDateTime } from "@/lib/AdminFormat";
@@ -54,9 +55,10 @@ function RoomCard({
             ) : null}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            <span className="font-mono">{room.roomId}</span> · {room.phase} · 第 {room.roundNumber}{" "}
-            轮 · 在线 {online}/{room.players.length} · 创建 {formatShortDateTime(room.createdAt)} ·
-            活跃 {formatShortDateTime(room.lastActiveAt)}
+            <span className="font-mono">{room.roomId}</span> ·{" "}
+            {roomPhaseLabel(room.game, room.phase)} · 第 {room.roundNumber} 轮 · 在线 {online}/
+            {room.players.length} · 创建 {formatShortDateTime(room.createdAt)} · 活跃{" "}
+            {formatShortDateTime(room.lastActiveAt)}
           </div>
         </div>
         {/* 危险操作用危险色文字与悬停底，与状态事件的「删除」同一口径；真正执行前还有确认弹窗。 */}

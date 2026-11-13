@@ -461,6 +461,13 @@ describe("管理后台", () => {
     expect(admin.rooms.list).toHaveBeenCalledTimes(2);
   });
 
+  it("房间卡的阶段显示中文名，不露出英文枚举", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    renderAdmin("/admin?tab=rooms");
+    expect(await screen.findByText(/等待中/)).toBeInTheDocument();
+    expect(screen.queryByText(/waiting/)).toBeNull();
+  });
+
   it("对局记录一房一行，详情按回合展开并合并时间线", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     const startedAt = "2026-10-13T00:00:00.000Z";
