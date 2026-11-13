@@ -1,5 +1,6 @@
 import type { GameId } from "@bakagame/shared";
 import { notifyPreferencesChanged } from "@/lib/PreferenceBus";
+import { localStore } from "@/lib/SafeStorage";
 import type {
   AnimeAutoFilters,
   CEESettings,
@@ -76,31 +77,18 @@ const RESTORE_PREFIX = "bakagame:room-restore:";
 /** 跟随账号云同步的记忆键前缀；待恢复标记只属于本机这一次建房，不同步。 */
 export const ROOM_MEMORY_SYNC_PREFIXES = [CREATE_PREFIX, SETTINGS_PREFIX] as const;
 
-const getLocalStorage = (): Storage | null => {
-  try {
-    if (typeof window === "undefined") return null;
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-};
-
 const readJson = <T>(key: string): T | null => {
   try {
-    const raw = getLocalStorage()?.getItem(key);
+    const raw = localStore.get(key);
     return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
 };
 
+/** 存储被禁用或写满时静默：记忆是增强，不影响建房主流程。 */
 const writeJson = (key: string, value: unknown): void => {
-  try {
-    getLocalStorage()?.setItem(key, JSON.stringify(value));
-    notifyPreferencesChanged();
-  } catch {
-    // 存储被禁用或写满时静默：记忆是增强，不影响建房主流程。
-  }
+  if (localStore.set(key, JSON.stringify(value))) notifyPreferencesChanged();
 };
 
 /** 读取创建弹窗的默认选项；没有记忆或形状不对时返回 null。 */
@@ -202,27 +190,15 @@ const loadValidators = async (): Promise<Record<RoomGame, MemoryValidator>> => {
 
 let validators: Promise<Record<RoomGame, MemoryValidator>> | null = null;
 
-const removeSettingsKey = (key: string): void => {
-  try {
-    getLocalStorage()?.removeItem(key);
-  } catch {
-    // 存储被禁用：没有可删的。
-  }
-};
-
 /** 是否存有该游戏的设置记忆（只看有没有，不校验形状）：用于决定要不要先渲染恢复占位。 */
 export function hasRoomSettingsMemory(game: RoomGame): boolean {
-  try {
-    return Boolean(getLocalStorage()?.getItem(SETTINGS_PREFIX + game));
-  } catch {
-    return false;
-  }
+  return Boolean(localStore.get(SETTINGS_PREFIX + game));
 }
 
 /** 校验一段原始记忆；不合规（含损坏）时删掉该键，返回 null。 */
 const validateRawMemory = async <G extends RoomGame>(
   game: G,
-  raw: string | null | undefined
+  raw: string | null
 ): Promise<RoomSettingsMemoryByGame[G] | null> => {
   if (!raw) return null;
   try {
@@ -233,12 +209,7 @@ const validateRawMemory = async <G extends RoomGame>(
     // 解析或加载校验器失败：与形状不合规一样按无记忆处理。
   }
   // 删之前复核：校验期间别处可能已写入了新的合规记忆，只删仍是这份原文的键。
-  try {
-    const storage = getLocalStorage();
-    if (storage?.getItem(SETTINGS_PREFIX + game) === raw) removeSettingsKey(SETTINGS_PREFIX + game);
-  } catch {
-    // 忽略。
-  }
+  if (localStore.get(SETTINGS_PREFIX + game) === raw) localStore.remove(SETTINGS_PREFIX + game);
   return null;
 };
 
@@ -250,13 +221,7 @@ const validateRawMemory = async <G extends RoomGame>(
 export async function readRoomSettingsMemory<G extends RoomGame>(
   game: G
 ): Promise<RoomSettingsMemoryByGame[G] | null> {
-  let raw: string | null | undefined;
-  try {
-    raw = getLocalStorage()?.getItem(SETTINGS_PREFIX + game);
-  } catch {
-    return null;
-  }
-  return validateRawMemory(game, raw);
+  return validateRawMemory(game, localStore.get(SETTINGS_PREFIX + game));
 }
 
 /** 覆盖写入房间内设置记忆。 */
@@ -284,20 +249,12 @@ export function updateRoomSettingsMemory<G extends RoomGame>(
 
 /** 登记「这个房间刚由本机创建」：进房后的等待页凭它套用上次设置。 */
 export function markPendingRestore(game: RoomGame, roomId: string): void {
-  try {
-    getLocalStorage()?.setItem(RESTORE_PREFIX + game, roomId);
-  } catch {
-    // 忽略浏览器禁用存储的情况。
-  }
+  localStore.set(RESTORE_PREFIX + game, roomId);
 }
 
 /** 读取待恢复的房间号；没有时返回 null。 */
 export function peekPendingRestore(game: RoomGame): string | null {
-  try {
-    return getLocalStorage()?.getItem(RESTORE_PREFIX + game) ?? null;
-  } catch {
-    return null;
-  }
+  return localStore.get(RESTORE_PREFIX + game);
 }
 
 /**
@@ -308,15 +265,8 @@ export async function takePendingRestoreMemory<G extends RoomGame>(
   game: G,
   roomId: string
 ): Promise<RoomSettingsMemoryByGame[G] | null> {
-  let raw: string | null | undefined;
-  try {
-    const storage = getLocalStorage();
-    if (!storage || storage.getItem(RESTORE_PREFIX + game) !== roomId) return null;
-    // 标记先同步取走再等校验：并发的第二次挂载拿不到同一份恢复。
-    storage.removeItem(RESTORE_PREFIX + game);
-    raw = storage.getItem(SETTINGS_PREFIX + game);
-  } catch {
-    return null;
-  }
-  return validateRawMemory(game, raw);
+  if (localStore.get(RESTORE_PREFIX + game) !== roomId) return null;
+  // 标记先同步取走再等校验：并发的第二次挂载拿不到同一份恢复。
+  localStore.remove(RESTORE_PREFIX + game);
+  return validateRawMemory(game, localStore.get(SETTINGS_PREFIX + game));
 }

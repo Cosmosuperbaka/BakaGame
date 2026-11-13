@@ -4,6 +4,7 @@ import {
   SITE_SESSION_ATTACH_COMMAND,
   SITE_SESSION_CLAIM_COMMAND,
 } from "@bakagame/shared/values";
+import { sessionStore } from "@/lib/SafeStorage";
 import { clearSeatCredentials } from "@/lib/Storage";
 
 /**
@@ -32,47 +33,15 @@ export type PreludeExchange = (
   payload: Record<string, unknown>
 ) => Promise<Record<string, unknown>>;
 
-const sessionStore = (): Storage | null => {
-  try {
-    return typeof window === "undefined" ? null : window.sessionStorage;
-  } catch {
-    return null;
-  }
-};
-
 /** 内存里留一份：存储被禁用时，本页存活期间身份依然稳定。 */
 let tabToken: string | null = null;
 let settled = false;
 let waiters: Array<() => void> = [];
 let serverRestartedAt: number | null = null;
 
-const readStored = (key: string): string | null => {
-  try {
-    return sessionStore()?.getItem(key) ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const writeStored = (key: string, value: string): void => {
-  try {
-    sessionStore()?.setItem(key, value);
-  } catch {
-    // 存储不可用时只影响刷新后的连续性，不阻塞本页。
-  }
-};
-
-const removeStored = (key: string): void => {
-  try {
-    sessionStore()?.removeItem(key);
-  } catch {
-    // 同上。
-  }
-};
-
 const forgetInheritedIdentity = (): void => {
   tabToken = null;
-  removeStored(TAB_TOKEN_KEY);
+  sessionStore.remove(TAB_TOKEN_KEY);
   clearSeatCredentials();
 };
 
@@ -87,13 +56,13 @@ const forgetInheritedIdentity = (): void => {
 const claimTabStorage = (): void => {
   if (typeof window === "undefined") return;
   const discarded = (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true;
-  if (readStored(TAB_OPEN_KEY) !== null && !discarded) forgetInheritedIdentity();
-  else tabToken = readStored(TAB_TOKEN_KEY);
-  writeStored(TAB_OPEN_KEY, "1");
-  window.addEventListener("pagehide", () => removeStored(TAB_OPEN_KEY));
+  if (sessionStore.get(TAB_OPEN_KEY) !== null && !discarded) forgetInheritedIdentity();
+  else tabToken = sessionStore.get(TAB_TOKEN_KEY);
+  sessionStore.set(TAB_OPEN_KEY, "1");
+  window.addEventListener("pagehide", () => sessionStore.remove(TAB_OPEN_KEY));
   // 从往返缓存恢复时页面不重新执行，标记要补回来。
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted) writeStored(TAB_OPEN_KEY, "1");
+    if (event.persisted) sessionStore.set(TAB_OPEN_KEY, "1");
   });
 };
 
@@ -109,9 +78,9 @@ const settle = (): void => {
 /** 两种连接都带回 epoch：重启后谁先连上由退避决定，游戏连接先到时也要先知道服务端重启过。 */
 const noteServerEpoch = (epoch: unknown): void => {
   if (typeof epoch !== "string") return;
-  const previous = readStored(SERVER_EPOCH_KEY);
+  const previous = sessionStore.get(SERVER_EPOCH_KEY);
   if (previous !== null && previous !== epoch) serverRestartedAt = Date.now();
-  writeStored(SERVER_EPOCH_KEY, epoch);
+  sessionStore.set(SERVER_EPOCH_KEY, epoch);
 };
 
 const applyClaim = (ack: Record<string, unknown>): void => {
@@ -119,7 +88,7 @@ const applyClaim = (ack: Record<string, unknown>): void => {
   // 带去的身份正被另一张开着的标签页占用：这份存储是继承来的，座位凭证也要一起丢。
   if (ack.rotated === true) forgetInheritedIdentity();
   tabToken = ack.token;
-  writeStored(TAB_TOKEN_KEY, ack.token);
+  sessionStore.set(TAB_TOKEN_KEY, ack.token);
   noteServerEpoch(ack.serverEpoch);
 };
 

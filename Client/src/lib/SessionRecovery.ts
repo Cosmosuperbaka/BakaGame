@@ -1,3 +1,5 @@
+import { sessionStore } from "@/lib/SafeStorage";
+
 /**
  * 会话级一次性恢复门闩。
  *
@@ -7,13 +9,7 @@
  * 绝不把存储异常伪装成加载失败。
  */
 export function reserveSessionRecovery(storageKey: string): boolean {
-  try {
-    if (typeof window === "undefined") return false;
-    const storage = window.sessionStorage;
-    if (storage.getItem(storageKey) === "1") return false;
-    storage.setItem(storageKey, "1");
-    return true;
-  } catch {
-    return false;
-  }
+  if (sessionStore.get(storageKey) === "1") return false;
+  // 写不进去、或写进去读不回来（存储被禁用）都当作没拿到门闩：宁可不重载，也不无限重载。
+  return sessionStore.set(storageKey, "1") && sessionStore.get(storageKey) === "1";
 }

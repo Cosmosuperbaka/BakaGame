@@ -1,4 +1,5 @@
 import { TEST_ROOM_ID } from "@/config/Constants";
+import { sessionStore } from "@/lib/SafeStorage";
 import { CEE_SESSION_PREFIX } from "@/lib/Storage";
 import type { CEEPhase, CEERoomSnapshot, CEESource } from "@bakagame/shared";
 
@@ -14,27 +15,16 @@ export function normalizeCEERoomId(roomId: string): string {
 const sessionKey = (roomId: string) =>
   `${CEE_SESSION_PREFIX}${encodeURIComponent(normalizeCEERoomId(roomId))}`;
 export function readCEESession(roomId: string): string | null {
-  try {
-    return sessionStorage.getItem(sessionKey(roomId));
-  } catch {
-    return null;
-  }
+  return sessionStore.get(sessionKey(roomId));
 }
 
+/** 标签页存储不可用时仍允许本次连接游玩，只是刷新后接不回座位。 */
 export function writeCEESession(roomId: string, token: string) {
-  try {
-    sessionStorage.setItem(sessionKey(roomId), token);
-  } catch {
-    /* 标签页存储不可用时仍允许本次连接游玩。 */
-  }
+  sessionStore.set(sessionKey(roomId), token);
 }
 
 export function removeCEESession(roomId: string) {
-  try {
-    sessionStorage.removeItem(sessionKey(roomId));
-  } catch {
-    /* 存储被浏览器禁用时无可清理的凭据。 */
-  }
+  sessionStore.remove(sessionKey(roomId));
 }
 
 export const ceeRoomPath = (roomId: string) =>

@@ -4,6 +4,7 @@ import type { CloudSettings, MusicPlatform } from "@bakagame/shared";
 import { api, type ApiClient } from "@/lib/Api";
 import { notifyPreferencesApplied, onPreferencesChanged } from "@/lib/PreferenceBus";
 import { ROOM_MEMORY_SYNC_PREFIXES } from "@/lib/RoomSettingsMemory";
+import { localStore } from "@/lib/SafeStorage";
 import { captureClientLog } from "@/lib/Sentry";
 import {
   clearStoredSongMusicSession,
@@ -87,22 +88,11 @@ const isSyncedKey = (key: string): boolean =>
   key === SONG_VOLUME_KEY ||
   ROOM_MEMORY_SYNC_PREFIXES.some((prefix) => key.startsWith(prefix));
 
-const storage = (): Storage | null => {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-};
-
 export const readLocalPreferences = (): Record<string, string> => {
-  const local = storage();
   const entries: Record<string, string> = {};
-  if (!local) return entries;
-  for (let index = 0; index < local.length; index += 1) {
-    const key = local.key(index);
-    if (!key || !isSyncedKey(key)) continue;
-    const value = local.getItem(key);
+  for (const key of localStore.keys()) {
+    if (!isSyncedKey(key)) continue;
+    const value = localStore.get(key);
     if (value !== null) entries[key] = value;
   }
   return entries;
@@ -146,30 +136,21 @@ const applyRemoteEntries = (
 ): boolean => {
   const changed = Object.keys(remote).filter((key) => !(key in keep) && local[key] !== remote[key]);
   if (!changed.length) return false;
-  const target = storage();
-  try {
-    for (const key of changed) target?.setItem(key, remote[key]);
-  } catch {
-    // 本地存储不可写：本机继续用原有偏好。
-  }
+  // 本地存储不可写时本机继续用原有偏好。
+  for (const key of changed) localStore.set(key, remote[key]);
   return true;
 };
 
 /** 换了账号登录：上一个账号的同步键与音乐账号凭据一律清掉，再记下新账号。 */
 const bindAccount = (userId: string): void => {
-  const target = storage();
-  if (!target) return;
-  try {
-    const bound = target.getItem(ACCOUNT_BINDING_KEY);
-    if (bound !== null && bound !== userId) {
-      for (const key of Object.keys(readLocalPreferences())) target.removeItem(key);
-      clearStoredSongMusicSession("all");
-      notifyPreferencesApplied();
-    }
-    target.setItem(ACCOUNT_BINDING_KEY, userId);
-  } catch {
-    // 存储不可用：没有本机缓存可串，也就无需隔离。
+  // 存储不可用时没有本机缓存可串，也就无需隔离：读到 null 即按「没有归属记录」处理。
+  const bound = localStore.get(ACCOUNT_BINDING_KEY);
+  if (bound !== null && bound !== userId) {
+    for (const key of Object.keys(readLocalPreferences())) localStore.remove(key);
+    clearStoredSongMusicSession("all");
+    notifyPreferencesApplied();
   }
+  localStore.set(ACCOUNT_BINDING_KEY, userId);
 };
 
 /** 开始同步，返回停止函数（退出登录或页面卸载时调用）。 */

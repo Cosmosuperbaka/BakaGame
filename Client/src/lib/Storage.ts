@@ -1,5 +1,6 @@
 import { TEST_ROOM_ID } from "@/config/Constants";
 import { notifyPreferencesChanged } from "@/lib/PreferenceBus";
+import { localStore, sessionStore } from "@/lib/SafeStorage";
 
 /**
  * 存储键命名空间。
@@ -25,47 +26,27 @@ export function normalizeRoomId(roomId: string): string {
   return normalized.toLowerCase() === TEST_ROOM_ID.toLowerCase() ? TEST_ROOM_ID : normalized;
 }
 
-function getSessionKey(roomId: string): string {
-  return SESSION_PREFIX + normalizeRoomId(roomId);
-}
+/**
+ * 按房号存放的座位令牌：键 = 前缀 + 规范化房号，存在标签页存储里，关标签页即灭。
+ * 三种凭据（卧底、猜歌）形态相同，只差前缀。
+ */
+const createRoomTokenStore = (prefix: string) => ({
+  get: (roomId: string): string | null => sessionStore.get(prefix + normalizeRoomId(roomId)),
+  save: (roomId: string, token: string): void => {
+    sessionStore.set(prefix + normalizeRoomId(roomId), token);
+  },
+  clear: (roomId: string): void => sessionStore.remove(prefix + normalizeRoomId(roomId)),
+});
 
-function getSongSessionKey(roomId: string): string {
-  return SONG_SESSION_PREFIX + normalizeRoomId(roomId);
-}
-
-function getSessionStorage(): Storage | null {
-  try {
-    if (typeof window === "undefined") return null;
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-function getLocalStorage(): Storage | null {
-  try {
-    if (typeof window === "undefined") return null;
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
+const whoIsFakerTokens = createRoomTokenStore(SESSION_PREFIX);
+const sonGuessrTokens = createRoomTokenStore(SONG_SESSION_PREFIX);
 
 export function getSavedUsername(): string {
-  try {
-    return getLocalStorage()?.getItem(USERNAME_KEY) ?? "";
-  } catch {
-    return "";
-  }
+  return localStore.get(USERNAME_KEY) ?? "";
 }
 
 export function saveUsername(name: string): void {
-  try {
-    getLocalStorage()?.setItem(USERNAME_KEY, name);
-    notifyPreferencesChanged();
-  } catch {
-    // 忽略
-  }
+  if (localStore.set(USERNAME_KEY, name)) notifyPreferencesChanged();
 }
 
 /**
@@ -81,96 +62,29 @@ export function guestName(): string {
  * 昵称在 localStorage，本就是跨标签页共用的，不受影响。
  */
 export function clearSeatCredentials(): void {
-  const storage = getSessionStorage();
-  if (!storage) return;
-  try {
-    const seatKeys: string[] = [];
-    for (let index = 0; index < storage.length; index += 1) {
-      const key = storage.key(index);
-      if (
-        key &&
-        (key === SOLO_ROOM_KEY ||
-          key.startsWith(SESSION_PREFIX) ||
-          key.startsWith(SONG_SESSION_PREFIX) ||
-          key.startsWith(CEE_SESSION_PREFIX))
-      )
-        seatKeys.push(key);
-    }
-    for (const key of seatKeys) storage.removeItem(key);
-  } catch {
-    // 存储被禁用时没有可清理的凭证。
-  }
+  const seatKeys = [SESSION_PREFIX, SONG_SESSION_PREFIX, CEE_SESSION_PREFIX].flatMap((prefix) =>
+    sessionStore.keys(prefix)
+  );
+  for (const key of [...seatKeys, SOLO_ROOM_KEY]) sessionStore.remove(key);
 }
 
-export function getSessionToken(roomId: string): string | null {
-  try {
-    return getSessionStorage()?.getItem(getSessionKey(roomId)) ?? null;
-  } catch {
-    return null;
-  }
-}
+export const getSessionToken = whoIsFakerTokens.get;
+export const saveSessionToken = whoIsFakerTokens.save;
+export const clearSessionToken = whoIsFakerTokens.clear;
 
-export function saveSessionToken(roomId: string, token: string): void {
-  try {
-    getSessionStorage()?.setItem(getSessionKey(roomId), token);
-  } catch {
-    // 忽略
-  }
-}
-
-export function clearSessionToken(roomId: string): void {
-  try {
-    getSessionStorage()?.removeItem(getSessionKey(roomId));
-  } catch {
-    // 忽略
-  }
-}
-
-export function getSonGuessrSessionToken(roomId: string): string | null {
-  try {
-    return getSessionStorage()?.getItem(getSongSessionKey(roomId)) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function saveSonGuessrSessionToken(roomId: string, token: string): void {
-  try {
-    getSessionStorage()?.setItem(getSongSessionKey(roomId), token);
-  } catch {
-    // 忽略浏览器禁用存储的情况。
-  }
-}
-
-export function clearSonGuessrSessionToken(roomId: string): void {
-  try {
-    getSessionStorage()?.removeItem(getSongSessionKey(roomId));
-  } catch {
-    // 忽略浏览器禁用存储的情况。
-  }
-}
+export const getSonGuessrSessionToken = sonGuessrTokens.get;
+export const saveSonGuessrSessionToken = sonGuessrTokens.save;
+export const clearSonGuessrSessionToken = sonGuessrTokens.clear;
 
 /** 单人模式房间号：刷新页面后仍可重连同一局，退出单人模式时清除。 */
 export function getSongSoloRoomId(): string | null {
-  try {
-    return getSessionStorage()?.getItem(SOLO_ROOM_KEY) ?? null;
-  } catch {
-    return null;
-  }
+  return sessionStore.get(SOLO_ROOM_KEY);
 }
 
 export function saveSongSoloRoomId(roomId: string): void {
-  try {
-    getSessionStorage()?.setItem(SOLO_ROOM_KEY, roomId);
-  } catch {
-    // 忽略浏览器禁用存储的情况。
-  }
+  sessionStore.set(SOLO_ROOM_KEY, roomId);
 }
 
 export function clearSongSoloRoomId(): void {
-  try {
-    getSessionStorage()?.removeItem(SOLO_ROOM_KEY);
-  } catch {
-    // 忽略浏览器禁用存储的情况。
-  }
+  sessionStore.remove(SOLO_ROOM_KEY);
 }
