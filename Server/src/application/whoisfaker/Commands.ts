@@ -19,6 +19,16 @@ import {
 } from "./BlankGuess";
 import { sendChat } from "./Chat";
 import type { WhoIsFakerContext } from "./Context";
+import {
+  assignQuestioner,
+  cancelNightAction,
+  cancelVote,
+  requestSupplement,
+  submitDescription,
+  submitNightAction,
+  submitVote,
+  submitWords,
+} from "./RoundCommands";
 import { renamePlayer, setReady, setSpectator } from "./PlayerCommands";
 import {
   ensureHost,
@@ -44,14 +54,6 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "assignQuestioner"
-  | "submitWords"
-  | "submitDescription"
-  | "submitVote"
-  | "submitNightAction"
-  | "cancelVote"
-  | "cancelNightAction"
-  | "requestSupplement"
 >;
 
 interface WhoIsFakerCommandDeps {
@@ -249,14 +251,14 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
     access: "host",
     phases: "any",
     guards: [roundStarted, inPhase(["assigningQuestioner"], "当前阶段不能指定出题人")],
-    run: (deps, at, m) => deps.handlers.assignQuestioner(at, m.payload.playerId),
+    run: (deps, at, m) => assignQuestioner(deps.ctx, at, m.payload.playerId),
   },
   "game.submitWords": {
     access: "seat",
     phases: "any",
     guards: [questionerOnly, inPhase(["wordSubmission"], "当前阶段不能提交词语")],
     run: (deps, at, m) =>
-      deps.handlers.submitWords(at, m.payload.words, m.payload.blankHint, m.payload.manualRoles),
+      submitWords(deps.ctx, at, m.payload.words, m.payload.blankHint, m.payload.manualRoles),
   },
   "game.advancePhase": {
     access: "seat",
@@ -267,19 +269,19 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
     access: "seat",
     phases: "any",
     guards: [roundStarted],
-    run: (deps, at, m) => deps.handlers.submitDescription(at, m.payload.text),
+    run: (deps, at, m) => submitDescription(deps.ctx, at, m.payload.text),
   },
   "game.submitVote": {
     access: "seat",
     phases: "any",
     guards: [roundStarted],
-    run: (deps, at, m) => deps.handlers.submitVote(at, m.payload.targetId),
+    run: (deps, at, m) => submitVote(deps.ctx, at, m.payload.targetId),
   },
   "game.submitNightAction": {
     access: "seat",
     phases: "any",
     guards: [roundStarted, inPhase(["night"], "当前阶段不能提交夜晚操作")],
-    run: (deps, at, m) => deps.handlers.submitNightAction(at, m.payload.targetId),
+    run: (deps, at, m) => submitNightAction(deps.ctx, at, m.payload.targetId),
   },
   "game.submitBlankGuess": {
     access: "seat",
@@ -309,19 +311,19 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
     access: "seat",
     phases: "any",
     guards: [roundStarted],
-    run: (deps, at) => deps.handlers.cancelVote(at),
+    run: (deps, at) => cancelVote(deps.ctx, at),
   },
   "game.cancelNightAction": {
     access: "seat",
     phases: "any",
     guards: [roundStarted, inPhase(["night"], "当前阶段不能撤销夜晚操作")],
-    run: (deps, at) => deps.handlers.cancelNightAction(at),
+    run: (deps, at) => cancelNightAction(deps.ctx, at),
   },
   "game.requestSupplement": {
     access: "seat",
     phases: "any",
     guards: [questionerOnly],
-    run: (deps, at, m) => deps.handlers.requestSupplement(at, m.payload.playerIds),
+    run: (deps, at, m) => requestSupplement(deps.ctx, at, m.payload.playerIds),
   },
   "game.resolveDisconnect": {
     access: "seat",
