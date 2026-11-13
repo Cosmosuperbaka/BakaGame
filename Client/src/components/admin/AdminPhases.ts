@@ -3,23 +3,23 @@ import { PHASE_LABELS as FAKER_PHASE_LABELS } from "@/config/WhoIsFakerPresentat
 
 /**
  * 管理端房间卡的阶段名。卧底复用客户端已有的阶段文案；猜歌与 CEE 客户端没有按阶段枚举的文案表
- * （房间里的标题随画面内容变化），这里按各阶段在玩家眼里的含义写一份简短名称。
+ * （房间里的标题随画面内容变化），这里按卧底那份的写法给每个阶段一个简短名称。
  * 用 Record 钉住枚举：服务端新增阶段时这里编译不过，不会静默漏译。
  */
 const SONG_PHASE_LABELS: Record<SonGuessrPhase, string> = {
-  waiting: "等待开始",
+  waiting: "等待中",
   choosingSubmitter: "指定出题人",
-  submittingSong: "选择本局题目",
-  playing: "听歌作答",
+  submittingSong: "出题阶段",
+  playing: "猜歌阶段",
   roundResult: "答案揭晓",
 };
 
 const CEE_PHASE_LABELS: Record<CEEPhase, string> = {
-  waiting: "等待开始",
+  waiting: "等待中",
   choosingSetter: "指定出题人",
-  preparing: "正在准备题目",
-  answering: "选择本局答案",
-  guessing: "猜猜是哪位角色",
+  preparing: "准备题目",
+  answering: "出题阶段",
+  guessing: "猜题阶段",
   settled: "答案揭晓",
 };
 

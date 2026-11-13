@@ -33,7 +33,7 @@ describe("房间阶段中文名", () => {
 
   it("同一个英文词在不同玩法里按各自的口径", () => {
     expect(roomPhaseLabel("faker", "waiting")).toBe("等待中");
-    expect(roomPhaseLabel("song", "playing")).toBe("听歌作答");
+    expect(roomPhaseLabel("song", "playing")).toBe("猜歌阶段");
   });
 
   it("服务端新增了尚未登记的阶段时原样显示，不空白", () => {
