@@ -35,9 +35,8 @@ import {
   COMMAND_RATE_LIMIT_PER_CONNECTION,
   COMMAND_RATE_LIMIT_WINDOW_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
-  ROOM_EXPIRING_WARNING_MS,
 } from "../config/Constants";
-import { resolveHostGrace, transferHost } from "./room/HostPolicy";
+import { transferHost } from "./room/HostPolicy";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import {
   assertAgentAdmission,
@@ -47,13 +46,6 @@ import {
   roomsOfTab,
   type TabSeatContext,
 } from "./room/SeatBinding";
-import {
-  forEachRoomIsolated,
-  isIdleWarningDue,
-  judgeReclaim,
-  markIdleWarningSent,
-  offlineSeatGraceMs,
-} from "./room/RoomJanitor";
 import {
   adoptRoomCore,
   exportRoomJson,
@@ -71,6 +63,7 @@ import { createWhoIsFakerContext, type WhoIsFakerContext } from "./whoisfaker/Co
 import type { WhoIsFakerServiceOptions } from "./whoisfaker/Options";
 import { forceRemovePlayer } from "./whoisfaker/ForcedRemoval";
 import { handlePlayerOffline } from "./whoisfaker/OfflineSettlement";
+import { runHousekeeping } from "./whoisfaker/Housekeeping";
 import { clearPendingDisconnect, requeuePendingDisconnects } from "./whoisfaker/PendingDisconnects";
 import { handlePhaseTimeout } from "./whoisfaker/PhaseTimeouts";
 import { finishRound } from "./whoisfaker/RoundSettlement";
@@ -93,7 +86,7 @@ import {
   replaceVote,
 } from "./whoisfaker/RoundRules";
 import { attachConnection } from "./whoisfaker/RoomAttach";
-import { closeRoom, shouldAutoCloseWhenEmpty } from "./whoisfaker/RoomClosure";
+import { closeRoom } from "./whoisfaker/RoomClosure";
 import {
   ensureHost,
   ensureUniqueName,
@@ -102,12 +95,7 @@ import {
   requireRound,
   type WhoIsFakerSeatAt,
 } from "./whoisfaker/RoomAccess";
-import {
-  broadcastRoomEvent,
-  publishLobby,
-  publishRoom,
-  publishRoomCalibration,
-} from "./whoisfaker/RoomPublish";
+import { publishLobby, publishRoom } from "./whoisfaker/RoomPublish";
 import { listRoomSummaries } from "./whoisfaker/RoomViews";
 
 /** 改设置的纯校验产物：失败在产生它之前就抛出，不会留下半截设置。 */
@@ -200,108 +188,7 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   }
 
   async runHousekeeping(): Promise<void> {
-    // 统一处理空房清理、闲置超时和出题人掉线超时。
-    const currentTime = this.ctx.now();
-    // 逐房隔离：一间房的状态异常不能让迭代顺序里靠后的房间本轮都不被清理。
-    await forEachRoomIsolated(
-      this.ctx.rooms,
-      (room) => this.housekeepRoom(room, currentTime),
-      (room, error) =>
-        this.ctx.options.eventLogger.error("房间巡检失败", {
-          roomId: room.id,
-          ...describeError(error),
-        })
-    );
-  }
-
-  private async housekeepRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<void> {
-    if (await this.reclaimIdleRoom(room, currentTime)) return;
-    await this.removeOfflinePlayers(room, currentTime);
-    await this.handOverStalledRoles(room, currentTime);
-    await this.finishExpiredPhaseTimer(room, currentTime);
-    publishRoomCalibration(this.ctx, room);
-  }
-
-  /**
-   * 空房与闲置回收，返回本房是否已关闭。
-   * 闲置关房前提前一段时间预警，每一段闲置只预警一次，有新活动后重新计。
-   * 测试房只豁免「空房回收」：测试房常态是一间等人加入的空房，但长期闲置的测试房
-   * 与它加出来的机器人仍要回收，否则只能靠重启释放。
-   */
-  private async reclaimIdleRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<boolean> {
-    const onlineCount = countOnline(Object.values(room.players));
-    if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
-      markIdleWarningSent(room);
-      broadcastRoomEvent(this.ctx, room, "room.expiring", {
-        roomId: room.id,
-        reason: "idle_timeout",
-      });
-    }
-    const verdict = judgeReclaim(room, onlineCount, currentTime, {
-      emptyRoomExempt: !shouldAutoCloseWhenEmpty(this.ctx, room),
-    });
-    // 空房宽限内（grace）与 keep 一样继续后面的步骤：宽限只决定要不要关，不暂停回合推进。
-    if (verdict === "close-empty") {
-      await closeRoom(this.ctx, room, "empty");
-      return true;
-    }
-    if (verdict === "close-idle") {
-      await closeRoom(this.ctx, room, "idle_timeout");
-      return true;
-    }
-    return false;
-  }
-
-  /** 清理离线超过保留时长的玩家：时长按席位而定，见 `offlineSeatGraceMs`。 */
-  private async removeOfflinePlayers(room: WhoIsFakerRoomRecord, currentTime: number) {
-    for (const player of Object.values(room.players)) {
-      if (
-        player.online ||
-        player.isBot ||
-        currentTime - player.lastSeenAt < offlineSeatGraceMs(room, player)
-      ) {
-        continue;
-      }
-      // 被踢记录在踢人当时已完成强制移除，这里只清掉占位。
-      if (player.membership !== "kicked" && room.round && room.round.phase !== "gameOver") {
-        if (room.round.questionerPlayerId === player.id) {
-          await finishRound(this.ctx, room, "aborted", "出题人掉线超时，本局已结束");
-        } else {
-          await forceRemovePlayer(this.ctx, room, player.id, "timeout");
-        }
-      }
-      delete room.players[player.id];
-      normalizeRoomRoleConfig(room);
-      this.ctx.touch(room);
-    }
-  }
-
-  /**
-   * 房主与出题人各自的重连截止时刻到了就交接或结束本局。
-   * 房主每一跳都过内核的不变量检查：宽限已过、空缺或悬空时按候选规则改选，选不到下一跳再试。
-   */
-  private async handOverStalledRoles(room: WhoIsFakerRoomRecord, currentTime: number) {
-    await this.settleHostGrace(room, currentTime);
-
-    if (
-      room.round?.questionerReconnectDeadlineAt &&
-      currentTime >= room.round.questionerReconnectDeadlineAt
-    ) {
-      await finishRound(this.ctx, room, "aborted", "出题人掉线超时，本局已结束");
-    }
-  }
-
-  private async finishExpiredPhaseTimer(room: WhoIsFakerRoomRecord, currentTime: number) {
-    const activeTimer = room.round?.phaseTimer;
-    if (!activeTimer || currentTime < activeTimer.endsAt) return;
-
-    await handlePhaseTimeout(
-      this.ctx,
-      room.id,
-      activeTimer.phase,
-      activeTimer.speechMode,
-      activeTimer.tieBreakStage
-    );
+    await runHousekeeping(this.ctx);
   }
 
   notifyShutdown(): void {
@@ -1318,38 +1205,6 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   /** 接管开始或结束：同房玩家要立刻看到座位上的 MCP 徽标变化。 */
   publishTabRooms(tabKey: string): void {
     for (const room of roomsOfTab(this.tabSeats, tabKey)) publishRoom(this.ctx, room);
-  }
-
-  private async settleHostGrace(room: WhoIsFakerRoomRecord, currentTime: number) {
-    const { changed, previous, next } = resolveHostGrace(
-      room,
-      Object.values(room.players),
-      currentTime
-    );
-    if (!changed) return;
-
-    this.ctx.touch(room);
-    if (next) {
-      this.ctx.appendSystemMessage(
-        room,
-        previous
-          ? `${previous.name} 断线超时，房主已转移给 ${next.name}`
-          : `房主已转移给 ${next.name}`
-      );
-      await this.ctx.log({
-        type: "room.host_transferred",
-        createdAt: this.ctx.now(),
-        roomId: room.id,
-        payload: {
-          previousHostId: previous?.id,
-          nextHostId: next.id,
-          reason: "disconnect_timeout",
-        },
-      });
-    }
-
-    publishRoom(this.ctx, room);
-    publishLobby(this.ctx);
   }
 
   async drainPendingWrites(): Promise<void> {
