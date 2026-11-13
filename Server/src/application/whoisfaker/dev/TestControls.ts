@@ -10,7 +10,7 @@ import {
 } from "../../../shared/Index";
 import { TEST_MODE_DEFAULT_WORD, TEST_MODE_MAX_PLAYERS } from "../../../config/Constants";
 import { pickBotName, runBots } from "./BotActors";
-import { forceRemovePlayer } from "../OfflineSettlement";
+import { forceRemovePlayer } from "../ForcedRemoval";
 import { broadcastPhaseAndPublish } from "../PendingDisconnects";
 import { returnRoomToWaiting, startRound } from "../PhaseFlow";
 import { finishRound } from "../RoundSettlement";

@@ -65,11 +65,8 @@ import {
 import { dispatchCommand } from "./room/CommandTable";
 import { createWhoIsFakerContext, type WhoIsFakerContext } from "./whoisfaker/Context";
 import type { WhoIsFakerServiceOptions } from "./whoisfaker/Options";
-import {
-  forceRemovePlayer,
-  handlePlayerOffline,
-  shouldAutoCloseWhenEmpty,
-} from "./whoisfaker/OfflineSettlement";
+import { forceRemovePlayer } from "./whoisfaker/ForcedRemoval";
+import { handlePlayerOffline, shouldAutoCloseWhenEmpty } from "./whoisfaker/OfflineSettlement";
 import { clearPendingDisconnect, requeuePendingDisconnects } from "./whoisfaker/PendingDisconnects";
 import { handlePhaseTimeout } from "./whoisfaker/PhaseTimeouts";
 import { finishRound } from "./whoisfaker/RoundSettlement";
