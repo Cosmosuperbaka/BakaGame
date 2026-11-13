@@ -510,7 +510,7 @@ export function ChatPanel({
     setPendingEcho(null);
     // 玩家已经接着打字就不覆盖他的输入
     setText((current) => (current ? current : recalled));
-  }, []);
+  }, [setText]);
   /** 一次发送的业务回执：成败只看 promise 有没有正常返回，动画时序不参与判定。 */
   const attemptRef = useRef<{ acked: boolean } | null>(null);
   // 输入框是提及候选的组合框：候选列表与当前高亮项经 id 关联，读屏随上下键读出高亮的名字。
@@ -588,7 +588,7 @@ export function ChatPanel({
     setText(next);
     setMention(readMentionQuery(next, event.target.selectionStart ?? next.length));
     setMentionIndex(0);
-  }, []);
+  }, [setText]);
 
   /** 光标移动、选区变化时重算提及查询：光标离开 `@` 片段，候选就该收起。 */
   const handleSelect = useCallback((event: React.SyntheticEvent<HTMLInputElement>) => {
@@ -613,7 +613,7 @@ export function ChatPanel({
         inputRef.current?.setSelectionRange(applied.caret, applied.caret);
       });
     },
-    [mention, text, closeMention]
+    [mention, text, closeMention, setText]
   );
 
   /**
