@@ -80,10 +80,7 @@ export class NeteaseLogin {
       ["login_qr_key"],
       { ua: loginUa },
       loginCookie,
-      this.gateway.randomCNIP,
-      true,
-      false,
-      scope
+      { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope: scope }
     );
     const keyBody = responseBody(keyResponse);
     if (responseCode(keyBody) !== 200) throw musicLoginError(keyBody, "无法创建登录二维码");
@@ -96,10 +93,7 @@ export class NeteaseLogin {
         ["login_qr_create"],
         { key, qrimg: true, platform: this.deviceName, ua: loginUa },
         loginCookie,
-        this.gateway.randomCNIP,
-        true,
-        false,
-        scope
+        { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope: scope }
       );
       const qrBody = responseBody(qrResponse);
       if (responseCode(qrBody) !== 200) throw musicLoginError(qrBody, "无法生成登录二维码");
@@ -123,10 +117,7 @@ export class NeteaseLogin {
       ["login_qr_check"],
       { key, ua: this.loginUserAgent() },
       this.loginCookie(),
-      this.gateway.randomCNIP,
-      true,
-      false,
-      scope
+      { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope: scope }
     );
     const body = responseBody(response);
     const code = responseCode(body);
@@ -168,9 +159,7 @@ export class NeteaseLogin {
         ["deviceinfo_center_upload"],
         { deviceName: name },
         `${cookie}; os=pc`,
-        this.gateway.randomCNIP,
-        false,
-        loginScope
+        { includeAnonymousCookie: false, loginScope }
       );
       return Boolean(response);
     } catch (error) {
@@ -195,10 +184,7 @@ export class NeteaseLogin {
       ["login_status"],
       {},
       cookie,
-      this.gateway.randomCNIP,
-      true,
-      false,
-      loginScope
+      { preserveErrorResponse: true, includeAnonymousCookie: false, loginScope }
     );
     const body = responseBody(response);
     const data = asRecord(body.data);

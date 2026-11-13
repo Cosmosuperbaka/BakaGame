@@ -40,6 +40,26 @@ export const NON_RETRYABLE_API_ERROR_CODES: ReadonlySet<string> = new Set([
   "MUSIC_API_BUSY",
 ]);
 
+/** 单次出站调用的选项：原先是一串位置参数，布尔值挤在一起很难读对。 */
+export interface NeteaseCallOptions {
+  /** 覆写是否伪装随机中国出口 IP；缺省取网关设置。 */
+  randomCNIP?: boolean;
+  /** 全部端点失败时返回最后一个带 body 的错误响应而不是抛错（扫码轮询要读业务码）。 */
+  preserveErrorResponse?: boolean;
+  /** 没有显式凭据时是否附上进程共享的匿名令牌；缺省附上。 */
+  includeAnonymousCookie?: boolean;
+  /** 扫码登录会话的出口作用域：整轮握手固定同一个出口 IP。 */
+  loginScope?: string;
+}
+
+/** 单个端点的出站路由：凭据与出口作用域在调度前一次定好。 */
+interface EndpointRoute {
+  randomCNIP: boolean;
+  includeAnonymousCookie: boolean;
+  loginScope: string | undefined;
+  ipScope: string | undefined;
+}
+
 /**
  * 网易云上游请求网关：独占接口包加载、匿名令牌、出口作用域与请求队列这几份可变状态。
  * 登录、解灰与业务 provider 都经它出站，保证限流退避与出口归属只有一处裁决。
@@ -164,11 +184,14 @@ export class NeteaseApiGateway {
     names: string[],
     params: Record<string, unknown>,
     cookie?: string | Record<string, unknown>,
-    randomCNIP = this.randomCNIP,
-    preserveErrorResponse = false,
-    includeAnonymousCookie = true,
-    loginScope?: string
+    options: NeteaseCallOptions = {}
   ): Promise<ApiResponse> {
+    const {
+      randomCNIP = this.randomCNIP,
+      preserveErrorResponse = false,
+      includeAnonymousCookie = true,
+      loginScope,
+    } = options;
     const api = await this.loadApi();
     // 在调度前定好 IP 归属：限流发生时要按同一个 scope 刷新 IP，两处必须一致。
     const ipScope = this.ipScopes.resolveIpScope(cookie, loginScope, names);
@@ -180,15 +203,12 @@ export class NeteaseApiGateway {
       if (typeof fn !== "function") continue;
       hasEndpoint = true;
       try {
-        return await this.invokeApiEndpoint(
-          fn as ApiFunction,
-          params,
-          cookie,
+        return await this.invokeApiEndpoint(fn as ApiFunction, params, cookie, {
           randomCNIP,
           includeAnonymousCookie,
           loginScope,
-          ipScope
-        );
+          ipScope,
+        });
       } catch (error) {
         lastError = error;
         // 同一能力可能有多个兼容端点；当前端点运行失败时继续尝试后备实现。
@@ -208,17 +228,11 @@ export class NeteaseApiGateway {
     fn: ApiFunction,
     params: Record<string, unknown>,
     cookie: string | Record<string, unknown> | undefined,
-    randomCNIP: boolean,
-    includeAnonymousCookie: boolean,
-    loginScope: string | undefined,
-    ipScope: string | undefined
+    route: EndpointRoute
   ): Promise<ApiResponse> {
     const response = await this.requestQueue.scheduleRequest(
-      () =>
-        fn(
-          this.withCookie(params, cookie, randomCNIP, includeAnonymousCookie, loginScope, ipScope)
-        ),
-      ipScope
+      () => fn(this.withCookie(params, cookie, route)),
+      route.ipScope
     );
     // Enhanced API 的不同端点可能选择 reject，也可能正常 resolve 一个 405 body。
     // scheduleRequest 内部已统一触发 enterRateLimitCooldown，此处将 405 body 转为业务异常。
@@ -259,20 +273,10 @@ export class NeteaseApiGateway {
     names: string[],
     params: Record<string, unknown>,
     cookie?: string | Record<string, unknown>,
-    randomCNIP = this.randomCNIP,
-    includeAnonymousCookie = true,
-    loginScope?: string
+    options: Omit<NeteaseCallOptions, "preserveErrorResponse"> = {}
   ): Promise<ApiResponse | undefined> {
     try {
-      return await this.call(
-        names,
-        params,
-        cookie,
-        randomCNIP,
-        false,
-        includeAnonymousCookie,
-        loginScope
-      );
+      return await this.call(names, params, cookie, { ...options, preserveErrorResponse: false });
     } catch (error) {
       if (error instanceof AppError && error.code === "MUSIC_API_UNAVAILABLE") return undefined;
       if (error instanceof AppError && NON_RETRYABLE_API_ERROR_CODES.has(error.code)) throw error;
@@ -314,12 +318,10 @@ export class NeteaseApiGateway {
 
   private withCookie(
     params: Record<string, unknown>,
-    cookie?: string | Record<string, unknown>,
-    randomCNIP = this.randomCNIP,
-    includeAnonymousCookie = true,
-    loginScope?: string,
-    ipScope?: string
+    cookie: string | Record<string, unknown> | undefined,
+    route: EndpointRoute
   ): Record<string, unknown> {
+    const { randomCNIP, includeAnonymousCookie, loginScope, ipScope } = route;
     const rawCookie =
       typeof cookie === "object" && cookie !== null && "netease" in cookie
         ? cookie.netease
