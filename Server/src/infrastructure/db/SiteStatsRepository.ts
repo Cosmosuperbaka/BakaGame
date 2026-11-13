@@ -1,6 +1,7 @@
-import { and, desc, gte, inArray, lt, sql } from "drizzle-orm";
+import { desc, gte, lt, sql } from "drizzle-orm";
 
 import type { Database } from "./Database";
+import { beijingDayOf, inBatches } from "./SqlHelpers";
 import { sitePageDaily, siteVisitDaily, user } from "./Schema";
 
 /** 一次刷写里某访客当天的增量。 */
@@ -42,19 +43,11 @@ export interface SiteStatsRepository {
 
 const INSERT_CHUNK = 500;
 
-const chunks = <T>(items: T[]): T[][] => {
-  const result: T[][] = [];
-  for (let index = 0; index < items.length; index += INSERT_CHUNK)
-    result.push(items.slice(index, index + INSERT_CHUNK));
-  return result;
-};
-
 /**
  * 单表查询时 Drizzle 在 SELECT 里省略表名、在 GROUP BY 里保留表名，开启严格
  * `only_full_group_by` 的库会把两者视为不同表达式而报错；因此按别名分组。
  */
-const userBeijingDay =
-  sql<string>`date_format(date_add(${user.createdAt}, interval 8 hour), '%Y-%m-%d')`.as("day");
+const userBeijingDay = beijingDayOf(user.createdAt).as("day");
 
 export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   constructor(private readonly database: Database) {}
@@ -62,7 +55,7 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
   async addVisits(visitors: VisitorDelta[], pages: PageDelta[]): Promise<void> {
     await this.database.ready;
     await this.database.db.transaction(async (tx) => {
-      for (const rows of chunks(visitors)) {
+      for (const rows of inBatches(visitors, INSERT_CHUNK)) {
         await tx
           .insert(siteVisitDaily)
           .values(rows)
@@ -73,7 +66,7 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
             },
           });
       }
-      for (const rows of chunks(pages)) {
+      for (const rows of inBatches(pages, INSERT_CHUNK)) {
         await tx
           .insert(sitePageDaily)
           .values(rows)
@@ -86,23 +79,12 @@ export class DatabaseSiteStatsRepository implements SiteStatsRepository {
 
   async purgeVisitors(beforeDay: string, batch: number): Promise<number> {
     await this.database.ready;
-    const rows = await this.database.db
-      .select({ day: siteVisitDaily.day, visitorHash: siteVisitDaily.visitorHash })
-      .from(siteVisitDaily)
+    // MySQL 与 TiDB 都支持带 LIMIT 的 DELETE，一条语句完成「限量删除」，不必先查主键再分天删。
+    const [result] = await this.database.db
+      .delete(siteVisitDaily)
       .where(lt(siteVisitDaily.day, beforeDay))
       .limit(batch);
-    if (!rows.length) return 0;
-    // 复合主键按天分组删除，避免拼超长 OR 条件。
-    const byDay = new Map<string, string[]>();
-    for (const row of rows) byDay.set(row.day, [...(byDay.get(row.day) ?? []), row.visitorHash]);
-    for (const [day, hashes] of byDay) {
-      await this.database.db
-        .delete(siteVisitDaily)
-        .where(
-          and(sql`${siteVisitDaily.day} = ${day}`, inArray(siteVisitDaily.visitorHash, hashes))
-        );
-    }
-    return rows.length;
+    return result.affectedRows;
   }
 
   async daily(sinceDay: string): Promise<SiteDailyCount[]> {

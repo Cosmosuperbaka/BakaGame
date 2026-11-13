@@ -67,31 +67,22 @@ describe("站点访问统计仓储（连接桩）", () => {
     expect(stub.queryAt(2).params).toHaveLength(1 * 4);
   });
 
-  test("清理按天分组删除，只动早于阈值的访客行并返回条数", async () => {
+  test("清理一条限量删除语句，只动早于阈值的访客行并返回条数", async () => {
     const stub = createDrizzleStub();
     const repository = new DatabaseSiteStatsRepository(stub.database);
-    stub.reply([
-      tupleOf("2025-12-30", "h1"),
-      tupleOf("2025-12-31", "h2"),
-      tupleOf("2025-12-31", "h3"),
-    ]);
+    stub.reply({ affectedRows: 3 });
 
     expect(await repository.purgeVisitors("2026-01-01", 100)).toBe(3);
-    const probe = stub.queryAt(0);
-    expect(probe.statement).toContain("where `site_visit_daily`.`day` < ?");
-    expect(probe.params).toEqual(["2026-01-01", 100]);
-
-    // 复合主键按天分组，避免拼超长 OR 条件。
-    expect(stub.queries).toHaveLength(3);
-    expect(stub.queryAt(1).params).toEqual(["2025-12-30", "h1"]);
-    expect(stub.queryAt(2).params).toEqual(["2025-12-31", "h2", "h3"]);
-    expect(stub.queryAt(2).statement).toContain("`site_visit_daily`.`visitor_hash` in (?, ?)");
+    expect(stub.queries).toHaveLength(1);
+    const query = stub.queryAt(0);
+    expect(query.statement).toBe("delete from `site_visit_daily` where `site_visit_daily`.`day` < ? limit ?");
+    expect(query.params).toEqual(["2026-01-01", 100]);
   });
 
-  test("没有到期数据时不发出删除语句", async () => {
+  test("没有到期数据时返回零", async () => {
     const stub = createDrizzleStub();
     const repository = new DatabaseSiteStatsRepository(stub.database);
-    stub.reply([]);
+    stub.reply({ affectedRows: 0 });
 
     expect(await repository.purgeVisitors("2026-01-01", 100)).toBe(0);
     expect(stub.queries).toHaveLength(1);

@@ -29,6 +29,7 @@ import type {
   CEERankedStore,
 } from "../../application/CEERankedStore";
 import type { Database } from "./Database";
+import { inBatches } from "./SqlHelpers";
 import {
   ceeRankedGame,
   ceeRankedGuess,
@@ -124,14 +125,6 @@ const leaderboardScope = (minSeries: number): SQL | undefined =>
     gte(ceeRankedRating.seriesPlayed, minSeries),
     or(isNull(user.banned), eq(user.banned, false))
   );
-
-/** 按批大小切开；空数组返回空列表，调用方据此跳过语句。 */
-const inBatches = <T>(items: readonly T[], size: number): T[][] => {
-  const batches: T[][] = [];
-  for (let index = 0; index < items.length; index += size)
-    batches.push(items.slice(index, index + size));
-  return batches;
-};
 
 /**
  * 排位审计的 MySQL 适配。写路径只有「一场结算的全部行 + 评级 upsert」，在一个事务里完成；

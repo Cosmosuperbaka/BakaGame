@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, sql, type SQL } from "drizzle-orm";
 
 import type { GameRecordEvent, GameRecordPlayer, RecordedGame } from "../../domain/GameRecord";
 import type { Database } from "./Database";
+import { beijingDayOf } from "./SqlHelpers";
 import { gameRecord, gameRecordPlayer, gameRecordRound } from "./Schema";
 
 /** 一局：一个房间从创建到销毁。玩家行是本局累计总分。 */
@@ -65,7 +66,7 @@ export interface GameRecordRepository {
 }
 
 /** UTC 落库时间 → 北京时间自然日；与站点访问统计同一口径。 */
-const beijingDay = sql<string>`date_format(date_add(${gameRecord.endedAt}, interval 8 hour), '%Y-%m-%d')`;
+const beijingDay = beijingDayOf(gameRecord.endedAt);
 
 export class DatabaseGameRecordRepository implements GameRecordRepository {
   constructor(private readonly database: Database) {}
