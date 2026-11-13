@@ -18,7 +18,8 @@ const TabsMotionContext = React.createContext<TabsMotion>({ value: undefined, di
 /**
  * 标签页根节点。受控与非受控都支持；切换由标签触发时按标签的先后算出方向，
  * 内容据此从目标一侧推入。外部直接改 `value` 时方向未知，内容直接换掉。
- * 根节点是定位元素并横向裁切：切换时旧内容被抽出文档流、叠在原位被推出去，推出根节点的部分不露在外面。
+ * 根节点是定位元素并横向裁切：切换时旧内容被抽出文档流、叠在原位被推出去，推出根节点的部分不露在外面；
+ * 裁切边比内容宽出的那一截只够容下落位过冲；所在容器两侧要留有不少于它的内边距，否则会撑出横向溢出。
  */
 const Tabs = React.forwardRef<
   React.ComponentRef<typeof TabsPrimitive.Root>,
@@ -47,7 +48,10 @@ const Tabs = React.forwardRef<
       ref={rootRef}
       value={current}
       onValueChange={change}
-      className={cn("relative overflow-x-clip", className)}
+      // 裁切边外推一截（负外边距配等量内边距，内容盒尺寸计量，调用处写的宽度仍是内容宽度、位置不变）：
+      // 新内容带着动量冲过落点的那几像素要看得见，否则过冲读作首字被剪掉。
+      // overflow-clip-margin 在只裁一个方向时浏览器不生效，所以不用它。
+      className={cn("relative -mx-3 box-content overflow-x-clip px-3", className)}
       {...props}
     >
       <TabsMotionContext.Provider value={swap}>{children}</TabsMotionContext.Provider>
