@@ -1,7 +1,7 @@
 import { LegalSection } from "@/components/common/LegalPage";
 
 /** 正文与「最后更新」日期只有一份：只在「关于项目」的隐私标签页渲染。 */
-export const PRIVACY_UPDATED_AT = "2026-10-22";
+export const PRIVACY_UPDATED_AT = "2026-11-13";
 
 /** 一条信息项：来源、用途（与可选的说明）固定三段样板，标签与样式只在这里写一份。 */
 function DataItem({
@@ -49,7 +49,7 @@ export function PrivacyBody() {
         <dl className="space-y-4">
           <DataItem
             title="QQ 号、QQ 昵称与 QQ 头像"
-            source="你使用账号功能时主动输入的 QQ 邮箱；昵称由运营方自建的 QQ 昵称服务读取；头像经站内代理从 QQ 头像源获取。"
+            source="你使用账号功能时主动输入的 QQ 邮箱；昵称由运营方自建的 QQ 昵称服务读取；头像经站内代理从 QQ 头像源获取；登录时输入 QQ 号后显示的预览头像例外，由你的浏览器直接向 QQ 头像服务请求。"
             purpose="创建与识别账号、展示昵称与头像、账号安全与找回。QQ 号默认不公开，只有你本人在资料设置中开启后，其他玩家才能通过资料卡看到。"
           />
 

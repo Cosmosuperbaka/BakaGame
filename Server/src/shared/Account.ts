@@ -23,7 +23,11 @@ export const qqEmailOf = (qqNumber: string): string => `${qqNumber}@qq.com`;
 export const qqNumberOfEmail = (email: string): string | undefined =>
   QQ_EMAIL_PATTERN.exec(email.trim().toLowerCase())?.[1];
 
-/** QQ 官方头像地址：只在注册确认时由前端直接展示（此时 QQ 号就是用户自己刚输入的）。 */
+/**
+ * QQ 官方头像地址，地址里带 QQ 号，不得出现在任何他人可见的响应里。服务端的头像代理用它回源；
+ * 浏览器直接请求它只有一处：登录弹窗里停输后的预览头像（此时 QQ 号是用户自己刚输入的）。
+ * 隐私页写明了这处例外，改用途时同步那里的说法。
+ */
 export const qlogoUrlOf = (qqNumber: string, size: 100 | 640 = 640): string =>
   `https://q1.qlogo.cn/g?b=qq&nk=${qqNumber}&s=${size}`;
 
