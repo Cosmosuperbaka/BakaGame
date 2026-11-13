@@ -43,6 +43,7 @@ import {
 import { ceePrivateState, ceeSnapshot, ceeRoomSummary } from "./CEEViews";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate } from "./room/RoomPasswordGate";
+import { RoomTimers, type TimerSeam } from "./room/RoomTimers";
 import type { RoomShape } from "./room/RoomCore";
 import { reassignHost, resolveHostGrace, transferHost as handOverHost } from "./room/HostPolicy";
 import { expiredOfflineSeats, forEachRoomIsolated, judgeReclaim } from "./room/RoomJanitor";
@@ -117,6 +118,10 @@ export class CEERooms {
     rooms: this.rooms,
   };
   onChange?: () => void;
+  /** 每房一个「截止」定时器：关房由内核一并清掉，服务关闭时清全部。 */
+  readonly timers: RoomTimers;
+  readonly testRooms: TestRoomPolicy;
+  private readonly logger?: EventLogger;
   /** 建房期间的房号占用：占号与「房间可见」分开，算摘要的窗口里房间表里没有这间房。 */
   private readonly reservations = new RoomIdReservations();
   /**
@@ -142,11 +147,23 @@ export class CEERooms {
     private readonly isRoomIdReserved: (roomId: string) => boolean = () => false,
     private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER,
     private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE,
-    /** 测试房特权（大厅隐藏、豁免回收、单人开局）的唯一判定来源；缺省关闭。 */
-    readonly testRooms: TestRoomPolicy = TEST_ROOMS_DISABLED,
-    /** 巡检与快照恢复的失败出口：一间坏房只记一条日志，不连累其余房间。 */
-    private readonly logger?: EventLogger
-  ) {}
+    deps: {
+      /** 测试房特权（大厅隐藏、单人开局）的唯一判定来源；缺省关闭。 */
+      testRooms?: TestRoomPolicy;
+      /** 巡检、快照恢复与定时回调的失败出口：一间坏房只记一条日志，不连累其余房间。 */
+      logger?: EventLogger;
+      /** 定时器接缝：测试注入假时钟，缺省真实定时器（不拖住进程退出）。 */
+      setTimer?: TimerSeam;
+    } = {}
+  ) {
+    this.testRooms = deps.testRooms ?? TEST_ROOMS_DISABLED;
+    this.logger = deps.logger;
+    this.timers = new RoomTimers({
+      onError: (roomId, name, error) =>
+        this.logger?.warn("增强房定时回调失败", { roomId, name, ...describeError(error) }),
+      setTimer: deps.setTimer,
+    });
+  }
   /** 房号是否已被增强房占用：含建房途中尚未登记的房间，统一房号目录据此避让。 */
   isRoomIdTaken(roomId: string): boolean {
     return this.rooms.has(roomId) || this.reservations.has(roomId);
@@ -865,7 +882,9 @@ export class CEERooms {
   }
   private closeRoom(room: CEERoom, reason: string): void {
     // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房。
-    dissolveRoom({ ...this.seatContext, recorder: this.gameRecorder }, room, { reason });
+    dissolveRoom({ ...this.seatContext, recorder: this.gameRecorder, timers: this.timers }, room, {
+      reason,
+    });
     // 回合中途关房时结算不会再来清，信号表要随房间一起走。
     this.guessSignals.delete(room.id);
     this.rooms.delete(room.id);

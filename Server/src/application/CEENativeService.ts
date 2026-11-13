@@ -22,6 +22,10 @@ import { CEEImageHints } from "../infrastructure/CEEImageHints";
 import type { CEEAntiCheatReviewQueue, CEESearchProvenance } from "./CEEAntiCheatSignals";
 import { ceeClientTypeOf } from "./CEEAntiCheatSignals";
 import { CEERooms } from "./CEERooms";
+import type { TimerSeam } from "./room/RoomTimers";
+
+/** 每间房唯一的定时器名：到最近一个截止时刻时推进回合并重发快照。 */
+const ROOM_DEADLINE_TIMER = "deadline";
 
 /** 增强房处理的命令：大厅订阅由统一入口 `CEEService` 先行处理，不会下沉到这里。 */
 export type CEENativeMessage = Exclude<CEERoomClientMessage, { type: "cee.lobby.subscribeRooms" }>;
@@ -35,7 +39,6 @@ export class CEENativeService {
   /** 检索台账由入口层持有（原版房与增强房共用一条命令入口），这里只读。 */
   private readonly provenance?: CEESearchProvenance;
   private readonly inFlight = new Set<string>();
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   constructor(options: {
     data: CEEDataProvider;
     now?: () => number;
@@ -47,6 +50,8 @@ export class CEENativeService {
     provenance?: CEESearchProvenance;
     testRooms?: TestRoomPolicy;
     eventLogger?: EventLogger;
+    /** 定时器接缝：测试注入，用来数残留定时器或手动触发到点回调。 */
+    setTimer?: TimerSeam;
   }) {
     this.data = options.data;
     this.now = options.now ?? Date.now;
@@ -58,8 +63,7 @@ export class CEENativeService {
       options.isRoomIdReserved,
       options.gameRecorder,
       options.reviewQueue,
-      options.testRooms,
-      options.eventLogger
+      { testRooms: options.testRooms, logger: options.eventLogger, setTimer: options.setTimer }
     );
   }
   registerConnection(connection: ConnectionRecord) {
@@ -99,8 +103,7 @@ export class CEENativeService {
     return this.state.restoreSnapshots(rooms, savedAt);
   }
   close() {
-    for (const timer of this.timers.values()) clearTimeout(timer);
-    this.timers.clear();
+    this.state.timers.clearAll();
   }
   runHousekeeping() {
     this.state.housekeeping();
@@ -399,37 +402,32 @@ export class CEENativeService {
       throw new AppError("HINT_LOCKED", "图片提示已失效");
     return { dataUrl };
   }
+  /** 关房已由房间集合清掉本房的定时器，这里只给仍在的房间重挂。 */
   private rescheduleAll() {
-    for (const [id, timer] of this.timers)
-      if (!this.state.rooms.has(id)) {
-        clearTimeout(timer);
-        this.timers.delete(id);
-      }
     for (const room of this.state.rooms.values()) this.schedule(room);
   }
+  /** 每房只留一个「最近截止」定时器：每次命令、巡检与到点回调之后重算。 */
   private schedule(room: CEERoom): void {
-    const current = this.timers.get(room.id);
-    if (current) clearTimeout(current);
-    this.timers.delete(room.id);
-    if (!this.state.rooms.has(room.id)) return;
+    const { timers } = this.state;
+    if (!this.state.rooms.has(room.id)) {
+      timers.clear(room.id);
+      return;
+    }
     const times = [
       room.phaseDeadlineAt,
       ...[...(room.round?.units.values() ?? [])].map((unit) => unit.deadlineAt),
     ].filter((value): value is number => value !== null);
-    if (!times.length) return;
-    const timer = setTimeout(
-      () => {
-        this.timers.delete(room.id);
-        if (!this.state.rooms.has(room.id)) return;
-        if (room.phaseDeadlineAt !== null && this.now() >= room.phaseDeadlineAt)
-          this.state.resetWaiting(room);
-        tickCEERound(room, this.now());
-        this.state.publishRoom(room);
-        this.schedule(room);
-      },
-      Math.max(1, Math.min(...times) - this.now())
-    );
-    timer.unref();
-    this.timers.set(room.id, timer);
+    if (!times.length) {
+      timers.clear(room.id, ROOM_DEADLINE_TIMER);
+      return;
+    }
+    timers.arm(room.id, ROOM_DEADLINE_TIMER, Math.max(1, Math.min(...times) - this.now()), () => {
+      if (!this.state.rooms.has(room.id)) return;
+      if (room.phaseDeadlineAt !== null && this.now() >= room.phaseDeadlineAt)
+        this.state.resetWaiting(room);
+      tickCEERound(room, this.now());
+      this.state.publishRoom(room);
+      this.schedule(room);
+    });
   }
 }

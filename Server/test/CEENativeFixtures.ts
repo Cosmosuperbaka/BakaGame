@@ -11,6 +11,7 @@ import { AppError } from "../src/domain/Errors";
 import type { CEEDataProvider } from "../src/infrastructure/CEEData";
 import type { CEEImageHints } from "../src/infrastructure/CEEImageHints";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
+import type { TimerSeam } from "../src/application/room/RoomTimers";
 import {
   createDefaultCEESettings,
   type CEECharacterView,
@@ -83,12 +84,14 @@ export function ceeTestHarness(
     reviewQueue,
     testRooms = TEST_ROOMS_ON,
     eventLogger,
+    setTimer,
   }: {
     roomId?: string;
     gameRecorder?: GameRecorder;
     reviewQueue?: CEEAntiCheatReviewQueue;
     testRooms?: TestRoomPolicy;
     eventLogger?: EventLogger;
+    setTimer?: TimerSeam;
   } = {}
 ) {
   let clock = 1_000_000;
@@ -137,6 +140,7 @@ export function ceeTestHarness(
     provenance,
     testRooms,
     eventLogger,
+    setTimer,
   });
   const connect = (name: string, identity: CEETestIdentity = {}): CEETestClient => {
     const sent: Packet[] = [],

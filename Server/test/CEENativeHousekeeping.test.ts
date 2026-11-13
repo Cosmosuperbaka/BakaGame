@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { ceeTestHarness, type CEETestClient } from "./CEENativeFixtures";
+import { ceeTestHarness, character, deferred, type CEETestClient } from "./CEENativeFixtures";
 import type { GameRecorder } from "../src/domain/GameRecord";
 import type { EventLogger } from "../src/infrastructure/EventLogger";
-import { ROOM_ID_TEST_MODE, type ConnectionRecord } from "../src/shared/Index";
+import {
+  ROOM_ID_TEST_MODE,
+  type CEECharacterView,
+  type ConnectionRecord,
+} from "../src/shared/Index";
 import {
   PLAYER_OFFLINE_CLEANUP_TIMEOUT_MS,
   ROOM_EMPTY_GRACE_PERIOD_MS,
@@ -10,6 +14,7 @@ import {
   SPECTATOR_OFFLINE_GRACE_MS,
 } from "../src/config/Constants";
 import type { SnapshottedRoom } from "../src/shared/RoomSnapshot";
+import type { TimerSeam } from "../src/application/room/RoomTimers";
 
 const active: ReturnType<typeof ceeTestHarness>[] = [];
 const keep = (harness: ReturnType<typeof ceeTestHarness>) => {
@@ -214,5 +219,88 @@ describe("CEE 快照恢复", () => {
     abandoned.advance(0);
     abandoned.advance(ROOM_EMPTY_GRACE_PERIOD_MS);
     expect(abandoned.service.getHealthSnapshot().roomCount).toBe(0);
+  });
+});
+
+/** 注入的定时器接缝：数得出还有几个没到点也没取消的定时器，也能手动让某一个到点。 */
+const fakeTimers = () => {
+  const pending = new Set<{ fire: () => void; delayMs: number }>();
+  const setTimer: TimerSeam = (fire, delayMs) => {
+    const timer = { fire, delayMs };
+    pending.add(timer);
+    return { cancel: () => pending.delete(timer) };
+  };
+  const fireNext = () => {
+    const [timer] = pending;
+    pending.delete(timer);
+    timer.fire();
+  };
+  return { pending, setTimer, fireNext };
+};
+
+describe("CEE 房间定时器", () => {
+  /** 房主指定自己为出题人：进入出题阶段，挂上 120 秒的出题截止。 */
+  const answeringRoom = async (timers: ReturnType<typeof fakeTimers>) => {
+    const h = keep(ceeTestHarness({}, undefined, { setTimer: timers.setTimer }));
+    const host = await h.create("房主");
+    const guest = await h.join("猜题人");
+    await h.configure(host, {});
+    await h.chooseSetter(host, host.id!);
+    return { h, host, guest };
+  };
+
+  test("每间房只留一个定时器，到点后推进回合并重发快照", async () => {
+    const timers = fakeTimers();
+    const { h, host } = await answeringRoom(timers);
+    expect(timers.pending.size).toBe(1);
+    expect([...timers.pending][0].delayMs).toBe(120_000);
+    expect(h.snapshot(host).phase).toBe("answering");
+
+    h.passTime(120_001);
+    timers.fireNext();
+    expect(h.snapshot(host).phase).toBe("waiting");
+    // 回到等待阶段后没有截止，不再挂定时器。
+    expect(timers.pending.size).toBe(0);
+  });
+
+  test("后台关房后没有残留定时器", async () => {
+    const timers = fakeTimers();
+    const { h } = await answeringRoom(timers);
+    expect(timers.pending.size).toBe(1);
+    h.service.adminCloseRoom("1234");
+    expect(timers.pending.size).toBe(0);
+  });
+
+  test("最后一人离开关房的同一次命令里不会为已关的房间重挂定时器", async () => {
+    const timers = fakeTimers();
+    const pendingAnswer = deferred<CEECharacterView>();
+    const h = keep(
+      ceeTestHarness({ chooseRandomCharacter: () => pendingAnswer.promise }, undefined, {
+        setTimer: timers.setTimer,
+      })
+    );
+    const host = await h.create("房主");
+    const guest = await h.join("猜题人");
+    await h.configure(host, {});
+    await h.ready(guest);
+    // 随机出题在等题库：房间处于带 30 秒截止的出题阶段，截止仍挂在房间对象上。
+    const starting = h.send(host, "cee.game.start", {});
+    await Promise.resolve();
+    expect(timers.pending.size).toBe(1);
+    await h.send(guest, "cee.room.leave", {});
+    await h.send(host, "cee.room.leave", {});
+    expect(h.service.getHealthSnapshot().roomCount).toBe(0);
+    expect(timers.pending.size).toBe(0);
+    pendingAnswer.resolve(character(1));
+    await starting.catch(() => undefined);
+    expect(timers.pending.size).toBe(0);
+  });
+
+  test("服务关闭时清掉全部定时器", async () => {
+    const timers = fakeTimers();
+    const { h } = await answeringRoom(timers);
+    expect(timers.pending.size).toBe(1);
+    h.service.close();
+    expect(timers.pending.size).toBe(0);
   });
 });
