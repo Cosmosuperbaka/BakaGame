@@ -89,6 +89,8 @@ const setupViews = async (connectionCount = 150) => {
     type: "room.updateSettings",
     payload: {
       roleConfig: { undercoverCount: 1, hasBlank: false, hasAngel: false },
+      // 这组用例钉的是「按权限分组复用视图」，所以让旁观者与亡者同属能读亡者频道的一组。
+      spectatorsSeeAnswers: true,
     },
   });
   for (const client of active)

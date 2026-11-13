@@ -94,8 +94,10 @@ import {
   ensureHost,
   ensureUniqueName,
   getRoom,
+  isGhostChatActive,
   isRoundActive,
   requireRound,
+  spectatorReadsGhostChat,
   type WhoIsFakerSeatAt,
 } from "./whoisfaker/RoomAccess";
 import {
@@ -1222,15 +1224,12 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
     room: WhoIsFakerRoomRecord,
     player: WhoIsFakerPlayerRecord
   ): { channel: ChatChannel; ghostRole?: "dead" | "spectator" } {
-    const isIngame = Boolean(
-      room.round &&
-      ["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(
-        room.round.phase
-      )
-    );
-    if (!isIngame) return { channel: "main" };
+    if (!isGhostChatActive(room)) return { channel: "main" };
+    // 读不到亡者频道的旁观者不往里写：否则他发的话自己都看不见，也等不到回复。
     const isSpectator =
-      player.membership === "spectator" && room.round?.questionerPlayerId !== player.id;
+      player.membership === "spectator" &&
+      room.round?.questionerPlayerId !== player.id &&
+      spectatorReadsGhostChat(room);
     const isDead = room.round?.assignments[player.id]?.alive === false;
     if (isSpectator || isDead) {
       return { channel: "ghost", ghostRole: isSpectator ? "spectator" : "dead" };

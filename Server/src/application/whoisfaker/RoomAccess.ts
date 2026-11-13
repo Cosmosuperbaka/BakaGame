@@ -1,5 +1,6 @@
 import { AppError } from "../../domain/Errors";
 import { normalizeName } from "../../domain/Rules";
+import { canSeeRoundSecrets } from "../../domain/Visibility";
 import type {
   ConnectionRecord,
   GameRound,
@@ -20,6 +21,29 @@ export const phaseOf = (room: WhoIsFakerRoomRecord): WhoIsFakerPhase =>
 /** 回合进行中：已开局且尚未进入结算。结算阶段与等待阶段一样，允许改设置与换阵营。 */
 export const isRoundActive = (room: WhoIsFakerRoomRecord): boolean =>
   Boolean(room.round && room.round.phase !== "gameOver");
+
+/** 亡者频道开放的阶段：只有回合真正进行时才有「亡者」，其余阶段只有主频道。 */
+const GHOST_CHAT_PHASES: readonly WhoIsFakerPhase[] = [
+  "description",
+  "voting",
+  "tieBreak",
+  "night",
+  "blankGuess",
+  "feedback",
+];
+export const isGhostChatActive = (room: WhoIsFakerRoomRecord): boolean =>
+  Boolean(room.round && GHOST_CHAT_PHASES.includes(room.round.phase));
+
+/**
+ * 旁观者（出题人除外）能否读亡者频道。亡者知道自己的身份与词，旁观者读它等于读答案，
+ * 所以与私有态里的上帝视角是同一道门；读写同口径，读不到的人也不往里写。
+ */
+export const spectatorReadsGhostChat = (room: WhoIsFakerRoomRecord): boolean =>
+  canSeeRoundSecrets(
+    { setsRound: false, spectator: true },
+    true,
+    room.settings.spectatorsSeeAnswers ?? false
+  );
 
 export const requireRound = (room: WhoIsFakerRoomRecord): GameRound => {
   if (!room.round) {

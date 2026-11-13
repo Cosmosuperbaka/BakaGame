@@ -120,8 +120,8 @@ const startRound = async (spectatorsSeeAnswers?: boolean) => {
       });
   })();
 
-  /** 描述 -> 投票全票出局卧底 -> 反馈 -> 结算。 */
-  const playToGameOver = async () => {
+  /** 描述 -> 投票全票出局卧底 -> 进入反馈阶段（卧底已出局，成了亡者）。 */
+  const playToFeedback = async () => {
     for (const seat of [host, seats[0], seats[1], seats[2]]) {
       await execute(service, seat.connection, {
         id: `desc-${seat.playerId}`,
@@ -144,8 +144,14 @@ const startRound = async (spectatorsSeeAnswers?: boolean) => {
     });
     await advance();
     expect(snapshotOf(host).status.phase).toBe("feedback");
+  };
+  const finishFeedback = async () => {
     await advance();
     expect(snapshotOf(host).status.phase).toBe("gameOver");
+  };
+  const playToGameOver = async () => {
+    await playToFeedback();
+    await finishFeedback();
   };
 
   expect(
@@ -162,6 +168,8 @@ const startRound = async (spectatorsSeeAnswers?: boolean) => {
     spectator,
     snapshotOf,
     privateStateOf,
+    playToFeedback,
+    finishFeedback,
     playToGameOver,
   };
 };
@@ -240,4 +248,64 @@ test("开关打开也不经公共快照或参与者私有视图泄漏答案", as
   }
   // 公开快照对所有连接同构，答案只在字段缺席时才算真的没下发。
   expect(JSON.stringify(f.snapshotOf(f.spectator))).not.toContain(UNDERCOVER_WORD);
+});
+
+const GHOST_TEXT = "亡者才知道的悄悄话";
+
+const say = (f: Awaited<ReturnType<typeof startRound>>, seat: Seat, text: string) =>
+  execute(f.service, seat.connection, {
+    id: `chat-${seat.playerId}-${text}`,
+    type: "chat.send",
+    payload: { text },
+  });
+
+const chatTexts = (f: Awaited<ReturnType<typeof startRound>>, seat: Seat) =>
+  f.snapshotOf(seat).chat.map((message) => message.text);
+
+test("默认关闭：局中旁观者读不到亡者频道，全部下行帧里搜不到亡者的话，揭晓后恢复", async () => {
+  const f = await startRound();
+  await f.playToFeedback();
+  await say(f, f.undercover, GHOST_TEXT);
+
+  // 亡者自己读得到；旁观者读不到，帧里连文本都没有。
+  expect(chatTexts(f, f.undercover)).toContain(GHOST_TEXT);
+  expect(chatTexts(f, f.spectator)).not.toContain(GHOST_TEXT);
+  expect(JSON.stringify(f.spectator.connection.sent)).not.toContain(GHOST_TEXT);
+  // 局中不属于亡者频道的人本来就读不到。
+  expect(chatTexts(f, f.host)).not.toContain(GHOST_TEXT);
+
+  await f.finishFeedback();
+  expect(chatTexts(f, f.spectator)).toContain(GHOST_TEXT);
+});
+
+test("默认关闭：局中旁观者读不到亡者频道，所以发言走主频道，活人看得见", async () => {
+  const f = await startRound();
+  await f.playToFeedback();
+  await say(f, f.spectator, "旁观者的主频道发言");
+  const posted = f.snapshotOf(f.host).chat.find((m) => m.text === "旁观者的主频道发言");
+  expect(posted?.channel).toBe("main");
+  expect(chatTexts(f, f.spectator)).toContain("旁观者的主频道发言");
+});
+
+test("开关打开：局中旁观者读得到亡者频道，发言仍归亡者频道且活人看不见", async () => {
+  const f = await startRound(true);
+  await f.playToFeedback();
+  await say(f, f.undercover, GHOST_TEXT);
+  await say(f, f.spectator, "旁观者的悄悄话");
+  expect(chatTexts(f, f.spectator)).toContain(GHOST_TEXT);
+  expect(chatTexts(f, f.undercover)).toContain("旁观者的悄悄话");
+  expect(chatTexts(f, f.host)).not.toContain(GHOST_TEXT);
+  expect(chatTexts(f, f.host)).not.toContain("旁观者的悄悄话");
+});
+
+test("局中不能把自己切成旁观者，所以没有「中途换座读答案」的路径", async () => {
+  const f = await startRound();
+  await expect(
+    execute(f.service, f.seats[1].connection, {
+      id: "switch",
+      type: "player.setSpectator",
+      payload: { spectator: true },
+    })
+  ).rejects.toMatchObject({ code: expect.any(String) });
+  expect(f.privateStateOf(f.seats[1]).globalWords).toBeUndefined();
 });

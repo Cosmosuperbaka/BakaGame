@@ -137,6 +137,12 @@ describe("隐私开关与 Agent 接管", () => {
       payload: { spectator: true },
     });
 
+    // 旁观者与亡者同属一个频道，以旁观者能读亡者频道为前提；关闭时的口径另有用例。
+    await execute(service, host, {
+      id: "spectators-see",
+      type: "room.updateSettings",
+      payload: { spectatorsSeeAnswers: true },
+    });
     for (const conn of [host, p1Connection, p2Connection, p3Connection]) {
       await execute(service, conn, {
         id: `ready-${conn.record.id}`,

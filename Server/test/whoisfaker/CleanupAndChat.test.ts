@@ -185,6 +185,13 @@ describe("清理与聊天", () => {
       payload: { spectator: true },
     });
 
+    // 旁观者读亡者频道要房主打开旁观可见答案；关闭时的口径另有用例。
+    await execute(service, host, {
+      id: "spectators-see",
+      type: "room.updateSettings",
+      roomId: "7777",
+      payload: { spectatorsSeeAnswers: true },
+    });
     // 全员准备并开局
     for (const item of joined) {
       await execute(service, item.connection, {

@@ -1,3 +1,4 @@
+import { canSeeRoundSecrets } from "../../domain/Visibility";
 import { getRoomRoleLimits } from "../../domain/Rules";
 import {
   type DescriptionRecord,
@@ -10,7 +11,7 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
-import { isRoundActive } from "./RoomAccess";
+import { isGhostChatActive, isRoundActive, spectatorReadsGhostChat } from "./RoomAccess";
 import { getConfigurableParticipantCount } from "./RoundRules";
 import type { WhoIsFakerContext } from "./Context";
 
@@ -268,7 +269,11 @@ export const buildPrivateState = (
   // 结算后答案随公开快照（summary 与 revealedRole）全房可见，这里不再收紧。
   const spectatorSeesAnswers =
     player.membership === "spectator" &&
-    ((room.settings.spectatorsSeeAnswers ?? false) || !isRoundActive(room));
+    canSeeRoundSecrets(
+      { setsRound: false, spectator: true },
+      isRoundActive(room),
+      room.settings.spectatorsSeeAnswers ?? false
+    );
   const hasPrivilegedIdentityView = Boolean(round && (isQuestioner || spectatorSeesAnswers));
 
   if (!round) {
@@ -345,17 +350,10 @@ const canViewerAccessGhostChat = (
   room: WhoIsFakerRoomRecord,
   player?: WhoIsFakerPlayerRecord
 ): boolean => {
-  if (
-    !room.round ||
-    !["description", "voting", "tieBreak", "night", "blankGuess", "feedback"].includes(
-      room.round.phase
-    )
-  ) {
-    return true;
-  }
+  if (!room.round || !isGhostChatActive(room)) return true;
   if (!player) return false;
   if (player.membership === "spectator" && room.round.questionerPlayerId !== player.id) {
-    return true;
+    return spectatorReadsGhostChat(room);
   }
   const assignment = room.round.assignments[player.id];
   if (assignment && !assignment.alive) {
