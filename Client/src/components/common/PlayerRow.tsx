@@ -222,7 +222,8 @@ const playerRowClass = ({ me, interactive }: { me: boolean; interactive: boolean
     "gap-2.5",
     me && "bg-primary/10",
     // 悬停底只给能点开的行：不可操作的行悬停也铺底，读作「可以点」，点了却什么都不发生。
-    !me && interactive && "transition-colors hover:bg-accent/40",
+    // 浮层打开期间保持同一档底色（触发器带 data-state=open）：指针移进浮层后仍读得出菜单属于哪一行。
+    !me && interactive && "transition-colors hover:bg-accent/40 data-[state=open]:bg-accent/40",
     // 行贴着滚动区边缘，聚焦环向内收，免得被裁掉。
     interactive && "cursor-pointer focus-visible:-outline-offset-2"
   );
