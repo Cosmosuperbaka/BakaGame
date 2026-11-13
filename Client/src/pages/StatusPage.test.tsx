@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { STATUS_LIVE_GRACE_MS } from "@/components/status/UseStatusSnapshot";
+import { STATUS_POLL_INTERVAL_MS } from "@/lib/SystemStatus";
 import StatusPage from "./StatusPage";
 
 const snapshot = {
@@ -109,7 +111,10 @@ const stubStatusFetch = (
     "/api/status/realtime": realtime,
     "/api/status/events": events,
     ...Object.fromEntries(
-      Object.entries(overrides).map(([key, value]) => [`/api/status/${key}`, value])
+      Object.entries(overrides).map(([key, value]) => [
+        key === "status" ? "/api/status" : `/api/status/${key}`,
+        value,
+      ])
     ),
   };
   return vi.fn(async (input: string | URL | Request) => {
@@ -422,6 +427,57 @@ describe("公开状态页", () => {
     });
     expect(FakeSocket.instances).toHaveLength(4);
   });
+  it("实时通道一直没有首帧时，回落到状态查询接口显示快照，且不被稍旧的数据覆盖", async () => {
+    vi.useFakeTimers();
+    stubSocket();
+    vi.stubGlobal("fetch", stubStatusFetch());
+    renderPage();
+    expect(screen.getByText("正在读取服务状态…")).toBeInTheDocument();
+
+    // 宽限期内通道仍在尝试，不抢跑去查接口。
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATUS_LIVE_GRACE_MS - 100);
+    });
+    expect(screen.getByText("正在读取服务状态…")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(screen.getByText("2 项服务异常")).toBeInTheDocument();
+
+    // 通道随后恢复并推来更新的一帧：以更新的为准；回落查询再拿到旧的也不倒退。
+    act(() => {
+      FakeSocket.latest().fireOpen();
+      FakeSocket.latest().fireMessage({
+        ...snapshot,
+        observedAt: snapshot.observedAt + 15_000,
+        level: "operational",
+        components: snapshot.components.map((component) => ({
+          ...component,
+          level: "operational",
+        })),
+      });
+    });
+    expect(screen.getByText("所有系统运行正常")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATUS_POLL_INTERVAL_MS * 2);
+    });
+    expect(screen.getByText("所有系统运行正常")).toBeInTheDocument();
+  });
+
+  it("实时通道与状态查询都读不到时，主卡说明读不到而不是一直读取中", async () => {
+    vi.useFakeTimers();
+    stubSocket();
+    vi.stubGlobal("fetch", stubStatusFetch({ status: null }));
+    renderPage();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATUS_LIVE_GRACE_MS + 200);
+    });
+    expect(screen.queryByText("正在读取服务状态…")).not.toBeInTheDocument();
+    expect(screen.getByText("暂时读不到服务状态")).toBeInTheDocument();
+  });
+
   it("异常说明按组件名整体换行；进行中故障的图标是危险色", async () => {
     stubSocket();
     vi.stubGlobal("fetch", stubStatusFetch());
@@ -431,7 +487,9 @@ describe("公开状态页", () => {
 
     // 每个组件名一个不换行的片段，读屏仍读到一整句。
     const detail = screen.getByText(/^异常：/).closest("p")!;
-    const names = [...detail.querySelectorAll(".whitespace-nowrap")].map((node) => node.textContent);
+    const names = [...detail.querySelectorAll(".whitespace-nowrap")].map(
+      (node) => node.textContent
+    );
     expect(names.length).toBeGreaterThan(1);
     expect(detail.textContent).toMatch(/^异常：.+、.+$/);
 

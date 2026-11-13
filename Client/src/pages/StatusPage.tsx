@@ -35,7 +35,7 @@ import { Button } from "@/components/ui/Button";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
-import { useStatusLive } from "@/hooks/UseStatusLive";
+import { useStatusSnapshot } from "@/components/status/UseStatusSnapshot";
 import { readoutSwap, statusGlyphSwap, uptimeReveal, vanish } from "@/lib/Motion";
 import {
   fetchStatusEvents,
@@ -104,9 +104,7 @@ const PLACEHOLDER = "—";
 const readoutVariants: Variants = {
   ...readoutSwap,
   exit: (value: string): TargetAndTransition =>
-    value === PLACEHOLDER
-      ? vanish
-      : (readoutSwap.exit as TargetAndTransition),
+    value === PLACEHOLDER ? vanish : (readoutSwap.exit as TargetAndTransition),
 };
 
 function Readout({ value }: { value: string }) {
@@ -180,9 +178,14 @@ const tallyOf = (
 /** 主卡标题与说明：异常点名到组件；部分组件没有监测结论时不说「所有系统正常」。 */
 const headlineOf = (
   snapshot: PublicStatusSnapshot | null,
-  tally: Tally
+  tally: Tally,
+  failed: boolean
 ): { title: string; detail: string; names?: string[] } => {
-  if (!snapshot) return { title: "正在读取服务状态…", detail: "连上实时通道后自动更新" };
+  if (!snapshot) {
+    return failed
+      ? { title: "暂时读不到服务状态", detail: "实时通道与状态接口都没有响应，稍后会自动重试" }
+      : { title: "正在读取服务状态…", detail: "连上实时通道后自动更新" };
+  }
   const total = ALL_COMPONENTS.length;
   if (tally.degraded.length > 0) {
     const names = tally.degraded.map((id) => STATUS_COMPONENT_LABELS[id]);
@@ -351,7 +354,7 @@ function ComponentRow({
 
 export default function StatusPage() {
   const navigate = usePageNavigate();
-  const { snapshot } = useStatusLive();
+  const { snapshot, failed: snapshotFailed } = useStatusSnapshot();
   const [view, setView] = useState<StatusView>("realtime");
   const [history, setHistory] = useState<Loadable<PublicStatusHistory>>(undefined);
   const [realtime, setRealtime] = useState<Loadable<PublicStatusRealtime>>(undefined);
@@ -496,7 +499,7 @@ export default function StatusPage() {
 
   const tally = tallyOf(ALL_COMPONENTS, levelOf);
   const overall = snapshot?.level ?? "unknown";
-  const headline = headlineOf(snapshot, tally);
+  const headline = headlineOf(snapshot, tally, snapshotFailed);
   const overallUptime = meanOf(ALL_COMPONENTS.map(ratioOf));
   const viewData = view === "month" ? history : realtime;
 
@@ -532,7 +535,7 @@ export default function StatusPage() {
           )}
         >
           <div className="flex items-start gap-3 sm:gap-4">
-            <StatusGlyph level={overall} loading={!snapshot} />
+            <StatusGlyph level={overall} loading={!snapshot && !snapshotFailed} />
             {/* 只播报标题与说明：数字每分钟都在变，放进 live region 会一直打断读屏。 */}
             <div className="min-w-0 flex-1 pt-0.5" aria-live="polite">
               <h2 id="status-summary" className="text-base leading-snug font-semibold sm:text-lg">
