@@ -61,6 +61,15 @@ export async function installLoopbackGuard(context: BrowserContext) {
   });
   return Object.assign(() => expect(failures, failures.join("\n")).toEqual([]), {
     async drain() {
+      // 页面资源还在加载时就收尾，下面的 unrouteAll 会一直等在途的处理函数：用例报「收尾超时」而断言全过。
+      // 先等各页网络安静下来。有上限：持续有请求的页面（轮询、流式音频）不会把收尾拖长太多。
+      await Promise.all(
+        context
+          .pages()
+          .map((page) =>
+            page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => undefined)
+          )
+      );
       // Keep a fail-closed page guard while native unrouteAll waits for context handlers.
       // Removing the context guard without this would briefly reopen external egress.
       for (const page of context.pages()) {
