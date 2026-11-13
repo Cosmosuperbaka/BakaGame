@@ -89,6 +89,20 @@ const CEE_ROOM_SHAPE: RoomShape<CEERoom, CEEPlayerRecord> = {
   sessionReplacedCloseReason: "session replaced",
 };
 
+export interface CEERoomsOptions {
+  now: () => number;
+  /** 统一房号目录的判定：该号已分配给原版房时增强房必须避让；缺省不避让。 */
+  isRoomIdReserved?: (roomId: string) => boolean;
+  gameRecorder?: GameRecorder;
+  reviewQueue?: CEEAntiCheatReviewQueue;
+  /** 测试房特权（大厅隐藏、单人开局）的唯一判定来源；缺省关闭。 */
+  testRooms?: TestRoomPolicy;
+  /** 巡检、快照恢复与定时回调的失败出口：一间坏房只记一条日志，不连累其余房间。 */
+  logger?: EventLogger;
+  /** 定时器接缝：测试注入假时钟，缺省真实定时器（不拖住进程退出）。 */
+  setTimer?: TimerSeam;
+}
+
 export class CEERooms {
   readonly connections = new ConnectionRegistry();
   readonly rooms = new Map<string, CEERoom>();
@@ -121,28 +135,25 @@ export class CEERooms {
     missingOnCreate: { code: "PASSWORD_REQUIRED", message: "私密房间需要密码" },
     missingOnJoin: { code: "PASSWORD_REQUIRED", message: "该房间需要密码" },
   });
-  /** `isRoomIdReserved` 由统一房号目录提供：该号已分配给原版房时增强房不能占用。 */
-  constructor(
-    readonly now: () => number,
-    private readonly isRoomIdReserved: (roomId: string) => boolean = () => false,
-    private readonly gameRecorder: GameRecorder = NOOP_GAME_RECORDER,
-    private readonly reviewQueue: CEEAntiCheatReviewQueue = NOOP_ANTI_CHEAT_REVIEW_QUEUE,
-    deps: {
-      /** 测试房特权（大厅隐藏、单人开局）的唯一判定来源；缺省关闭。 */
-      testRooms?: TestRoomPolicy;
-      /** 巡检、快照恢复与定时回调的失败出口：一间坏房只记一条日志，不连累其余房间。 */
-      logger?: EventLogger;
-      /** 定时器接缝：测试注入假时钟，缺省真实定时器（不拖住进程退出）。 */
-      setTimer?: TimerSeam;
-    } = {}
-  ) {
-    this.recording = new CEERoomRecording(now, gameRecorder, reviewQueue);
-    this.testRooms = deps.testRooms ?? TEST_ROOMS_DISABLED;
-    this.logger = deps.logger;
+  readonly now: () => number;
+  /** 由统一房号目录提供：该号已分配给原版房时增强房不能占用。 */
+  private readonly isRoomIdReserved: (roomId: string) => boolean;
+  private readonly gameRecorder: GameRecorder;
+  constructor(options: CEERoomsOptions) {
+    this.now = options.now;
+    this.isRoomIdReserved = options.isRoomIdReserved ?? (() => false);
+    this.gameRecorder = options.gameRecorder ?? NOOP_GAME_RECORDER;
+    this.recording = new CEERoomRecording(
+      options.now,
+      this.gameRecorder,
+      options.reviewQueue ?? NOOP_ANTI_CHEAT_REVIEW_QUEUE
+    );
+    this.testRooms = options.testRooms ?? TEST_ROOMS_DISABLED;
+    this.logger = options.logger;
     this.timers = new RoomTimers({
       onError: (roomId, name, error) =>
         this.logger?.warn("增强房定时回调失败", { roomId, name, ...describeError(error) }),
-      setTimer: deps.setTimer,
+      setTimer: options.setTimer,
     });
   }
   /** 房号是否已被增强房占用：含建房途中尚未登记的房间，统一房号目录据此避让。 */

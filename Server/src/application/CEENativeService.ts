@@ -40,13 +40,15 @@ export class CEENativeService {
     setTimer?: TimerSeam;
   }) {
     this.now = options.now ?? Date.now;
-    this.state = new CEERooms(
-      this.now,
-      options.isRoomIdReserved,
-      options.gameRecorder,
-      options.reviewQueue,
-      { testRooms: options.testRooms, logger: options.eventLogger, setTimer: options.setTimer }
-    );
+    this.state = new CEERooms({
+      now: this.now,
+      isRoomIdReserved: options.isRoomIdReserved,
+      gameRecorder: options.gameRecorder,
+      reviewQueue: options.reviewQueue,
+      testRooms: options.testRooms,
+      logger: options.eventLogger,
+      setTimer: options.setTimer,
+    });
     const ctx: CEENativeContext = {
       state: this.state,
       data: options.data,
