@@ -29,7 +29,7 @@ import {
 } from "./BlankGuess";
 import { runBots } from "./BotActors";
 import { requeuePendingDisconnects } from "./OfflineSettlement";
-import { publishLobby, publishRoom } from "./RoomViews";
+import { publishLobby, publishRoom } from "./RoomPublish";
 import {
   createDescription,
   createDescriptionOrder,
@@ -42,7 +42,8 @@ import {
   isTieBreakDescriptionComplete,
   isVotingComplete,
 } from "./RoundRules";
-import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
+import { requireRoomPlayer, requireRound, ensureHost, ensureQuestioner } from "./RoomAccess";
+import type { WhoIsFakerContext } from "./Context";
 
 /** 结算给分：白板阵营猜中得 2 分，好人与卧底阵营各自获胜得 1 分。 */
 const roundScoreDelta = (
@@ -65,36 +66,33 @@ const summarizeRoundWords = (words: GameRound["words"]): RoundSummary["words"] =
       }
     : undefined;
 
-export const advancePhase = async (
-  service: WhoIsFakerServiceInternals,
-  connection: ConnectionRecord
-) => {
+export const advancePhase = async (ctx: WhoIsFakerContext, connection: ConnectionRecord) => {
   // waiting 由房主开局；gameOver 先退回等待房间，避免跳过下一局准备环节。
-  const { room, player } = service.requireRoomPlayer(connection);
+  const { room, player } = requireRoomPlayer(ctx, connection);
   const phase = room.round?.phase ?? "waiting";
 
   if (phase === "gameOver") {
-    service.ensureHost(room, player.id);
-    const advanceAllowedAt = service.gameOverAdvanceAllowedAtByRoomId.get(room.id) ?? 0;
-    if (service.now() < advanceAllowedAt) {
+    ensureHost(room, player.id);
+    const advanceAllowedAt = ctx.gameOverAdvanceAllowedAtByRoomId.get(room.id) ?? 0;
+    if (ctx.now() < advanceAllowedAt) {
       throw new AppError("PHASE_RESULT_PENDING", "阶段结果展示中，请稍候");
     }
-    returnRoomToWaiting(service, room);
+    returnRoomToWaiting(ctx, room);
     return { phase: "waiting" as WhoIsFakerPhase };
   }
 
   if (phase === "waiting") {
-    service.ensureHost(room, player.id);
+    ensureHost(room, player.id);
     ensureAllReady(room);
     ensureMinimumPlayers(room);
-    await startRound(service, room);
+    await startRound(ctx, room);
     return { phase: room.round?.phase ?? "waiting" };
   }
 
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   // 测试房跳转后可能没有出题人，反馈继续与计时一样放开给房内任何人，免得卡在反馈里。
-  if (!(phase === "feedback" && service.testRooms.isTestRoom(room.id))) {
-    service.ensureQuestioner(round, player.id);
+  if (!(phase === "feedback" && ctx.testRooms.isTestRoom(room.id))) {
+    ensureQuestioner(round, player.id);
   }
   ensurePhaseNotBlocked(round);
 
@@ -105,30 +103,30 @@ export const advancePhase = async (
 
   switch (phase) {
     case "description":
-      await advanceFromDescription(service, room, round);
+      await advanceFromDescription(ctx, room, round);
       break;
     case "voting":
-      await advanceFromVoting(service, room);
+      await advanceFromVoting(ctx, room);
       break;
     case "tieBreak":
-      await advanceFromTieBreak(service, room, round);
+      await advanceFromTieBreak(ctx, room, round);
       break;
     case "night":
-      await advanceFromNight(service, room);
+      await advanceFromNight(ctx, room);
       break;
     case "feedback":
-      await applyFeedbackContinuation(service, room);
+      await applyFeedbackContinuation(ctx, room);
       break;
     default:
       throw new AppError("INVALID_PHASE", "当前阶段不能手动推进");
   }
 
-  service.touch(room);
+  ctx.touch(room);
   // 新阶段可能开始等待某个此前被放过的掉线玩家，这里补上暂停。
-  requeuePendingDisconnects(service, room);
-  await service.log({
+  requeuePendingDisconnects(ctx, room);
+  await ctx.log({
     type: "game.phase_changed",
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     roomId: room.id,
     playerId: player.id,
     payload: {
@@ -136,8 +134,8 @@ export const advancePhase = async (
     },
   });
 
-  publishRoom(service, room);
-  await runBots(service, room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 
   return { phase: room.round?.phase ?? "waiting" };
 };
@@ -153,16 +151,16 @@ const isTwoPlayerUndercoverEndgame = (round: GameRound): boolean => {
 };
 
 const advanceFromDescription = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ) => {
   if (!isDescriptionComplete(round)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未描述");
   }
-  clearPhaseTimer(service, room);
+  clearPhaseTimer(ctx, room);
   if (isTwoPlayerUndercoverEndgame(round)) {
-    await finishRound(service, room, "undercover", "2人残局卧底胜");
+    await finishRound(ctx, room, "undercover", "2人残局卧底胜");
     return;
   }
   round.phase = "voting";
@@ -170,62 +168,56 @@ const advanceFromDescription = async (
   round.votes = [];
 };
 
-const advanceFromVoting = async (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  if (!isVotingComplete(service, room, false)) {
+const advanceFromVoting = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  if (!isVotingComplete(ctx, room, false)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未投票");
   }
-  clearPhaseTimer(service, room);
-  await resolveVoting(service, room, false);
+  clearPhaseTimer(ctx, room);
+  await resolveVoting(ctx, room, false);
 };
 
 /** 平票：候选不足直接进夜晚，否则按补充描述、PK 投票两个子状态推进。 */
 const advanceFromTieBreak = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ) => {
   if (!round.tieBreak || round.tieBreak.candidateIds.length <= 1) {
-    clearPhaseTimer(service, room);
-    await applyEliminationAndMove(service, room, [], "平票候选不足，直接进入夜晚", "night");
+    clearPhaseTimer(ctx, room);
+    await applyEliminationAndMove(ctx, room, [], "平票候选不足，直接进入夜晚", "night");
     return;
   }
 
   if (round.tieBreak.stage === "description") {
-    if (!isTieBreakDescriptionComplete(service, room)) {
+    if (!isTieBreakDescriptionComplete(ctx, room)) {
       throw new AppError("PHASE_INCOMPLETE", "平票玩家尚未完成补充描述");
     }
 
-    clearPhaseTimer(service, room);
+    clearPhaseTimer(ctx, room);
     round.tieBreak.stage = "vote";
     round.speechMode = undefined;
     round.tieBreak.votes = [];
     return;
   }
 
-  if (!isVotingComplete(service, room, true)) {
+  if (!isVotingComplete(ctx, room, true)) {
     throw new AppError("PHASE_INCOMPLETE", "平票投票尚未完成");
   }
 
-  clearPhaseTimer(service, room);
-  await resolveVoting(service, room, true);
+  clearPhaseTimer(ctx, room);
+  await resolveVoting(ctx, room, true);
 };
 
-const advanceFromNight = async (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  if (!isNightActionComplete(service, room)) {
+const advanceFromNight = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  if (!isNightActionComplete(ctx, room)) {
     throw new AppError("PHASE_INCOMPLETE", "仍有玩家尚未提交夜晚操作");
   }
-  clearPhaseTimer(service, room);
-  await resolveNight(service, room);
+  clearPhaseTimer(ctx, room);
+  await resolveNight(ctx, room);
 };
 
 export const startPhaseTimer = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   connection: ConnectionRecord,
   durationSeconds: number
 ) => {
@@ -233,8 +225,8 @@ export const startPhaseTimer = (
     throw new AppError("INVALID_ARGUMENT", "倒计时时长只能在1、2、3分钟之间选择");
   }
 
-  const { room, player } = service.requireRoomPlayer(connection);
-  const round = service.requireRound(room);
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  const round = requireRound(room);
   const phase = round.phase;
 
   if (
@@ -246,14 +238,14 @@ export const startPhaseTimer = (
     throw new AppError("INVALID_PHASE", "当前阶段不支持设置倒计时");
   }
 
-  if (!service.testRooms.isTestRoom(room.id)) {
-    service.ensureQuestioner(round, player.id);
+  if (!ctx.testRooms.isTestRoom(room.id)) {
+    ensureQuestioner(round, player.id);
   }
   ensurePhaseNotBlocked(round);
 
-  clearPhaseTimer(service, room);
+  clearPhaseTimer(ctx, room);
 
-  const now = service.now();
+  const now = ctx.now();
   const endsAt = now + durationSeconds * 1000;
   const timerState: PhaseTimerState = {
     durationSeconds,
@@ -265,33 +257,30 @@ export const startPhaseTimer = (
 
   round.phaseTimer = timerState;
 
-  armPhaseTimer(service, room, timerState, endsAt - service.now());
+  armPhaseTimer(ctx, room, timerState, endsAt - ctx.now());
 
-  service.touch(room);
-  service.appendSystemMessage(room, `主持人开启了本阶段倒计时（${durationSeconds / 60}分钟）`);
-  publishRoom(service, room);
+  ctx.touch(room);
+  ctx.appendSystemMessage(room, `主持人开启了本阶段倒计时（${durationSeconds / 60}分钟）`);
+  publishRoom(ctx, room);
 
   return { phaseTimer: timerState };
 };
 
-export const stopPhaseTimer = (
-  service: WhoIsFakerServiceInternals,
-  connection: ConnectionRecord
-) => {
-  const { room, player } = service.requireRoomPlayer(connection);
-  const round = service.requireRound(room);
+export const stopPhaseTimer = (ctx: WhoIsFakerContext, connection: ConnectionRecord) => {
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  const round = requireRound(room);
 
-  if (!service.testRooms.isTestRoom(room.id)) {
-    service.ensureQuestioner(round, player.id);
+  if (!ctx.testRooms.isTestRoom(room.id)) {
+    ensureQuestioner(round, player.id);
   }
 
   const hadTimer = Boolean(round.phaseTimer);
-  clearPhaseTimer(service, room);
+  clearPhaseTimer(ctx, room);
 
   if (hadTimer) {
-    service.touch(room);
-    service.appendSystemMessage(room, "主持人取消了本阶段倒计时");
-    publishRoom(service, room);
+    ctx.touch(room);
+    ctx.appendSystemMessage(room, "主持人取消了本阶段倒计时");
+    publishRoom(ctx, room);
   }
 
   return { stopped: true };
@@ -306,14 +295,14 @@ const PHASE_TIMER = "phase";
  * 和它自己比，阶段在中途被推进时这道守卫恒成立，迟到的定时器照样强制推进。
  */
 export const armPhaseTimer = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   timerState: PhaseTimerState,
   delayMs: number
 ): void => {
-  service.timers.arm(room.id, PHASE_TIMER, delayMs, () =>
+  ctx.timers.arm(room.id, PHASE_TIMER, delayMs, () =>
     handlePhaseTimeout(
-      service,
+      ctx,
       room.id,
       timerState.phase,
       timerState.speechMode,
@@ -322,25 +311,49 @@ export const armPhaseTimer = (
   );
 };
 
-export const clearPhaseTimer = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-): void => {
-  service.timers.clear(room.id, PHASE_TIMER);
+export const clearPhaseTimer = (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord): void => {
+  ctx.timers.clear(room.id, PHASE_TIMER);
   if (room.round?.phaseTimer) {
     room.round.phaseTimer = undefined;
   }
 };
 
+/** 补充发言全部完成后切回原阶段；返回是否发生了切换。 */
+export const completeSupplementIfReady = (
+  ctx: WhoIsFakerContext,
+  room: WhoIsFakerRoomRecord
+): boolean => {
+  const round = room.round;
+  const supplement = round?.supplement;
+  if (
+    !round ||
+    !supplement ||
+    supplement.donePlayers.length < supplement.requestedPlayerIds.length
+  ) {
+    return false;
+  }
+  round.supplement = undefined;
+  if (round.phase === "blankGuess" && round.blankGuessContext?.resumePhase === "description") {
+    round.blankGuessContext.resumePhase = supplement.resumePhase;
+    // 原补充已完成，其剩余倒计时不能移植到恢复后的投票。
+    round.blankGuessContext.interruptedRemainingTimerMs = undefined;
+  } else {
+    clearPhaseTimer(ctx, room);
+    round.phase = supplement.resumePhase;
+    round.speechMode = supplement.resumePhase === "description" ? "normal" : undefined;
+  }
+  return true;
+};
+
 export const restoreInterruptedTimer = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   remainingMs: number
 ): void => {
   const round = room.round;
   if (!round) return;
-  clearPhaseTimer(service, room);
-  const endsAt = service.now() + remainingMs;
+  clearPhaseTimer(ctx, room);
+  const endsAt = ctx.now() + remainingMs;
   const durationSeconds = Math.max(1, Math.round(remainingMs / 1000));
   const timerState: PhaseTimerState = {
     durationSeconds,
@@ -350,35 +363,31 @@ export const restoreInterruptedTimer = (
     tieBreakStage: round.tieBreak?.stage,
   };
   round.phaseTimer = timerState;
-  armPhaseTimer(service, room, timerState, remainingMs);
+  armPhaseTimer(ctx, room, timerState, remainingMs);
 };
 
 /** 倒计时到点后按阶段强制推进：阶段 → 处理函数；未登记的阶段（如 feedback）不动作。 */
 const phaseTimeoutHandlers: Partial<
   Record<
     WhoIsFakerPhase,
-    (
-      service: WhoIsFakerServiceInternals,
-      room: WhoIsFakerRoomRecord,
-      round: GameRound
-    ) => Promise<void>
+    (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord, round: GameRound) => Promise<void>
   >
 > = {
-  description: (service, room, round) => timeoutDescriptionPhase(service, room, round),
-  voting: (service, room, round) => timeoutVotingPhase(service, room, round),
-  tieBreak: (service, room, round) => timeoutTieBreakPhase(service, room, round),
-  night: (service, room, round) => timeoutNightPhase(service, room, round),
-  blankGuess: (service, room, round) => timeoutBlankGuessPhase(service, room, round),
+  description: (ctx, room, round) => timeoutDescriptionPhase(ctx, room, round),
+  voting: (ctx, room, round) => timeoutVotingPhase(ctx, room, round),
+  tieBreak: (ctx, room, round) => timeoutTieBreakPhase(ctx, room, round),
+  night: (ctx, room, round) => timeoutNightPhase(ctx, room, round),
+  blankGuess: (ctx, room, round) => timeoutBlankGuessPhase(ctx, room, round),
 };
 
 export const handlePhaseTimeout = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   roomId: string,
   expectedPhase: WhoIsFakerPhase,
   expectedSpeechMode?: SpeechMode,
   expectedTieBreakStage?: TieBreakStage
 ) => {
-  const room = service.rooms.get(roomId);
+  const room = ctx.rooms.get(roomId);
   if (!room) return;
 
   const currentPhase = room.round?.phase ?? "waiting";
@@ -386,13 +395,13 @@ export const handlePhaseTimeout = async (
   if (room.round?.speechMode !== expectedSpeechMode) return;
   if (room.round?.tieBreak?.stage !== expectedTieBreakStage) return;
 
-  clearPhaseTimer(service, room);
-  service.appendSystemMessage(room, "本阶段倒计时结束，系统已强制推进");
+  clearPhaseTimer(ctx, room);
+  ctx.appendSystemMessage(room, "本阶段倒计时结束，系统已强制推进");
 
   const round = room.round;
   if (!round) return;
 
-  await phaseTimeoutHandlers[currentPhase]?.(service, room, round);
+  await phaseTimeoutHandlers[currentPhase]?.(ctx, room, round);
 };
 
 /**
@@ -400,40 +409,40 @@ export const handlePhaseTimeout = async (
  * 只剩一卧一民时不再进投票，直接按卧底胜结算（见 `isTwoPlayerUndercoverEndgame`）。
  */
 const timeoutDescriptionPhase = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
   const supplement = round.supplement;
   if (supplement && round.speechMode === "supplement") {
-    fillSupplementTimeouts(service, room, round, supplement);
+    fillSupplementTimeouts(ctx, room, round, supplement);
   } else {
-    fillDescriptionTimeouts(service, room, round);
-    if (await settleTwoPlayerUndercoverEndgame(service, room, round)) return;
+    fillDescriptionTimeouts(ctx, room, round);
+    if (await settleTwoPlayerUndercoverEndgame(ctx, room, round)) return;
     round.phase = "voting";
     round.speechMode = undefined;
     round.votes = [];
   }
-  service.touch(room);
-  requeuePendingDisconnects(service, room);
-  publishRoom(service, room);
-  await runBots(service, room);
+  ctx.touch(room);
+  requeuePendingDisconnects(ctx, room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 };
 
 /** 2 人残局只剩一卧一民：按卧底胜结算并返回 true，调用方不再推进阶段。 */
 const settleTwoPlayerUndercoverEndgame = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<boolean> => {
   if (!isTwoPlayerUndercoverEndgame(round)) return false;
-  await finishRound(service, room, "undercover", "2人残局卧底胜");
+  await finishRound(ctx, room, "undercover", "2人残局卧底胜");
   return true;
 };
 
 /** 描述超时的玩家按发言顺序补一条「（超时未发言）」，不让他们卡住整轮。 */
 const fillDescriptionTimeouts = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): void => {
@@ -443,16 +452,9 @@ const fillDescriptionTimeouts = (
       round.descriptionSubmittedBy.push(playerId);
       const order = round.descriptionOrder.indexOf(playerId) + 1;
       round.descriptions.push(
-        createDescription(
-          service,
-          player,
-          "（超时未发言）",
-          "description",
-          round.descriptionCycle,
-          {
-            order: order > 0 ? order : undefined,
-          }
-        )
+        createDescription(ctx, player, "（超时未发言）", "description", round.descriptionCycle, {
+          order: order > 0 ? order : undefined,
+        })
       );
     }
   }
@@ -460,7 +462,7 @@ const fillDescriptionTimeouts = (
 
 /** 补充发言超时同样补位；补完即判这一轮补充是否已经齐了。 */
 const fillSupplementTimeouts = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   supplement: NonNullable<GameRound["supplement"]>
@@ -471,23 +473,23 @@ const fillSupplementTimeouts = (
       supplement.donePlayers.push(playerId);
       const order = supplement.requestedPlayerIds.indexOf(playerId) + 1;
       round.descriptions.push(
-        createDescription(service, player, "（超时未发言）", "supplement", round.descriptionCycle, {
+        createDescription(ctx, player, "（超时未发言）", "supplement", round.descriptionCycle, {
           supplementIndex: supplement.index,
           order: order > 0 ? order : undefined,
         })
       );
     }
   }
-  service.completeSupplementIfReady(room);
+  completeSupplementIfReady(ctx, room);
 };
 
 /** 投票超时：活着的普通玩家（出题人除外）一律记一次弃权，交给正常计票收口。 */
 const timeoutVotingPhase = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
-  const aliveIds = getAliveAssignedPlayerIds(service, room).filter(
+  const aliveIds = getAliveAssignedPlayerIds(ctx, room).filter(
     (id) => id !== round.questionerPlayerId
   );
   for (const voterId of aliveIds) {
@@ -495,15 +497,15 @@ const timeoutVotingPhase = async (
       round.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
     }
   }
-  await resolveVoting(service, room, false);
-  service.touch(room);
-  publishRoom(service, room);
-  await runBots(service, room);
+  await resolveVoting(ctx, room, false);
+  ctx.touch(room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 };
 
 /** 平票 PK 超时：发言段补位后转投票段；投票段同样记弃权后按 PK 计票收口。 */
 const timeoutTieBreakPhase = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
@@ -511,19 +513,19 @@ const timeoutTieBreakPhase = async (
   if (!tieBreak) return;
 
   if (tieBreak.stage === "description") {
-    fillTieBreakTimeouts(service, room, round, tieBreak);
+    fillTieBreakTimeouts(ctx, room, round, tieBreak);
     tieBreak.stage = "vote";
     round.speechMode = undefined;
     tieBreak.votes = [];
-    service.touch(room);
-    requeuePendingDisconnects(service, room);
-    publishRoom(service, room);
-    await runBots(service, room);
+    ctx.touch(room);
+    requeuePendingDisconnects(ctx, room);
+    publishRoom(ctx, room);
+    await runBots(ctx, room);
     return;
   }
 
   if (tieBreak.stage === "vote") {
-    const aliveIds = getAliveAssignedPlayerIds(service, room).filter(
+    const aliveIds = getAliveAssignedPlayerIds(ctx, room).filter(
       (id) => id !== round.questionerPlayerId
     );
     for (const voterId of aliveIds) {
@@ -531,16 +533,16 @@ const timeoutTieBreakPhase = async (
         tieBreak.votes.push({ voterId, targetId: ABSTAIN_TARGET_ID });
       }
     }
-    await resolveVoting(service, room, true);
-    service.touch(room);
-    publishRoom(service, room);
-    await runBots(service, room);
+    await resolveVoting(ctx, room, true);
+    ctx.touch(room);
+    publishRoom(ctx, room);
+    await runBots(ctx, room);
   }
 };
 
 /** PK 发言超时补位：只给没发言的候选人记一条「（超时未发言）」。 */
 const fillTieBreakTimeouts = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   tieBreak: NonNullable<GameRound["tieBreak"]>
@@ -551,7 +553,7 @@ const fillTieBreakTimeouts = (
       tieBreak.descriptionsDone.push(candidateId);
       const order = tieBreak.candidateIds.indexOf(candidateId) + 1;
       round.descriptions.push(
-        createDescription(service, player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
+        createDescription(ctx, player, "（超时未发言）", "tieBreak", round.descriptionCycle, {
           tieBreakIndex: round.tieBreakCount,
           order: order > 0 ? order : undefined,
         })
@@ -562,7 +564,7 @@ const fillTieBreakTimeouts = (
 
 /** 入夜超时：活着的平民与卧底一律记一次「未指定目标」的行动，再按正常夜晚收口。 */
 const timeoutNightPhase = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound
 ): Promise<void> => {
@@ -577,30 +579,24 @@ const timeoutNightPhase = async (
       }
     }
   }
-  await resolveNight(service, room);
-  service.touch(room);
-  publishRoom(service, room);
-  await runBots(service, room);
+  await resolveNight(ctx, room);
+  ctx.touch(room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 };
 
-export const broadcastPhaseAndPublish = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
+export const broadcastPhaseAndPublish = (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
   // 阶段变了就要重新判断掉线玩家是否已成为当前阶段的阻塞点。
-  requeuePendingDisconnects(service, room);
-  publishRoom(service, room);
+  requeuePendingDisconnects(ctx, room);
+  publishRoom(ctx, room);
 };
 
-export const startRound = async (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  clearPhaseTimer(service, room);
+export const startRound = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  clearPhaseTimer(ctx, room);
   room.roundCount = (room.roundCount ?? 0) + 1;
   // 每次开局都创建全新的 round 对象，避免上一局残留状态污染新局。
   room.round = {
-    id: service.createId("round"),
+    id: ctx.createId("round"),
     phase: "assigningQuestioner",
     day: 1,
     assignments: {},
@@ -617,13 +613,13 @@ export const startRound = async (
     pendingDisconnectPlayerIds: [],
     history: [],
   };
-  service.roundStartedAtById.set(room.round.id, service.now());
+  ctx.roundStartedAtById.set(room.round.id, ctx.now());
 
-  service.touch(room);
+  ctx.touch(room);
 
-  await service.log({
+  await ctx.log({
     type: "game.started",
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     roomId: room.id,
     payload: {
       playerCount: Object.values(room.players).filter((item) => item.membership === "active")
@@ -631,35 +627,32 @@ export const startRound = async (
     },
   });
 
-  publishRoom(service, room);
+  publishRoom(ctx, room);
 };
 
-export const returnRoomToWaiting = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  clearPhaseTimer(service, room);
-  service.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
+export const returnRoomToWaiting = (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  clearPhaseTimer(ctx, room);
+  ctx.gameOverAdvanceAllowedAtByRoomId.delete(room.id);
   // 正常结算时记录侧已取走开局时间；测试房直接跳回等待会跳过结算，这里兜底，否则每跳一次漏一条。
-  if (room.round) service.roundStartedAtById.delete(room.round.id);
+  if (room.round) ctx.roundStartedAtById.delete(room.round.id);
   room.round = undefined;
   for (const player of Object.values(room.players)) {
     // 机器人无法自行点击准备；旁观者则始终不参与准备计数。
     player.isReady = player.membership === "active" && player.isBot;
   }
 
-  service.touch(room);
-  publishRoom(service, room);
-  publishLobby(service);
+  ctx.touch(room);
+  publishRoom(ctx, room);
+  publishLobby(ctx);
 };
 
 const resolveVoting = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   tieBreak: boolean
 ) => {
   // 投票结算：出局立即落地并进入反馈，胜负与下一阶段留到出题人继续时统一判定。
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const votes = (tieBreak ? (round.tieBreak?.votes ?? []) : round.votes).map((vote) => ({
     ...vote,
   }));
@@ -668,13 +661,13 @@ const resolveVoting = async (
     tieBreak,
     votes: votes.map((vote) => ({ ...vote })),
   });
-  const aliveIds = getAliveAssignedPlayerIds(service, room);
+  const aliveIds = getAliveAssignedPlayerIds(ctx, room);
   const outcome = computeVoteOutcome(votes);
   const leaders = outcome.leaders;
 
-  await service.log({
+  await ctx.log({
     type: "game.vote_resolved",
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     roomId: room.id,
     payload: {
       tieBreak,
@@ -711,14 +704,14 @@ const resolveVoting = async (
       round.assignments,
       eliminatedIds,
       tieBreak ? "平票再次出局" : "投票出局",
-      service.now()
+      ctx.now()
     );
   }
 
   round.history.push({
     kind: "vote",
     day: round.day,
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     tieBreak: tieBreak || undefined,
     votes: votes.map((vote) => ({ ...vote })),
     eliminatedPlayerIds: [...eliminatedIds],
@@ -728,7 +721,7 @@ const resolveVoting = async (
   round.votes = [];
   round.tieBreak = undefined;
   enterFeedback(
-    service,
+    ctx,
     room,
     {
       kind: "vote",
@@ -744,10 +737,10 @@ const resolveVoting = async (
   );
 };
 
-const resolveNight = async (service: WhoIsFakerServiceInternals, room: WhoIsFakerRoomRecord) => {
+const resolveNight = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
   // 夜晚结算：出局立即落地并进入天亮反馈（只公开死者，不公开凶手），
   // 白板残局猜词与胜负留到出题人继续时判定。
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const actions = round.nightActions.map((action) => ({
     actorId: action.actorId,
     actorRole: action.actorRole,
@@ -757,20 +750,20 @@ const resolveNight = async (service: WhoIsFakerServiceInternals, room: WhoIsFake
   const eliminatedIds = resolveNightEliminations(round.nightActions);
 
   if (eliminatedIds.length > 0) {
-    recordEliminations(round.assignments, eliminatedIds, "夜晚结算", service.now());
+    recordEliminations(round.assignments, eliminatedIds, "夜晚结算", ctx.now());
   }
 
   round.history.push({
     kind: "night",
     day: round.day,
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     actions,
     eliminatedPlayerIds: [...eliminatedIds],
   });
 
-  await service.log({
+  await ctx.log({
     type: "game.night_resolved",
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     roomId: room.id,
     payload: {
       eliminatedIds,
@@ -779,7 +772,7 @@ const resolveNight = async (service: WhoIsFakerServiceInternals, room: WhoIsFake
 
   round.nightActions = [];
   enterFeedback(
-    service,
+    ctx,
     room,
     { kind: "night", day: round.day, eliminatedPlayerIds: eliminatedIds },
     { type: "advance", to: "daybreak", winnerReason: "夜晚结算后已满足胜利条件" }
@@ -787,11 +780,8 @@ const resolveNight = async (service: WhoIsFakerServiceInternals, room: WhoIsFake
 };
 
 /** 出题人在反馈阶段点继续：执行结算时存下的续接动作。 */
-const applyFeedbackContinuation = async (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  const round = service.requireRound(room);
+const applyFeedbackContinuation = async (ctx: WhoIsFakerContext, room: WhoIsFakerRoomRecord) => {
+  const round = requireRound(room);
   const continuation = round.feedbackContinuation;
 
   if (!continuation) {
@@ -802,16 +792,16 @@ const applyFeedbackContinuation = async (
   round.feedbackContinuation = undefined;
 
   if (continuation.type === "finish") {
-    await finishRound(service, room, continuation.winner, continuation.reason);
+    await finishRound(ctx, room, continuation.winner, continuation.reason);
     return;
   }
 
   if (continuation.type === "blankFailed") {
-    await continueAfterBlankFailure(service, room, round, continuation);
+    await continueAfterBlankFailure(ctx, room, round, continuation);
     return;
   }
 
-  if (tryTransitionToFinaleBlankGuess(service, room)) {
+  if (tryTransitionToFinaleBlankGuess(ctx, room)) {
     return;
   }
 
@@ -819,7 +809,7 @@ const applyFeedbackContinuation = async (
 
   if (winner) {
     await finishRound(
-      service,
+      ctx,
       room,
       winner,
       continuation.type === "advance" ? continuation.winnerReason : "阶段结算后已满足胜利条件"
@@ -847,24 +837,24 @@ const applyFeedbackContinuation = async (
   round.speechMode = "normal";
   round.day += 1;
   round.descriptionCycle += 1;
-  round.descriptionOrder = createDescriptionOrder(service, room);
+  round.descriptionOrder = createDescriptionOrder(ctx, room);
   round.descriptionSubmittedBy = [];
   round.supplement = undefined;
 };
 
 export const finishRound = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   winner: RoundWinner,
   reason: string
 ) => {
-  clearPhaseTimer(service, room);
+  clearPhaseTimer(ctx, room);
   // 结算时既要给分，也要冻结当局摘要，供房间页在局后复盘。
-  const round = service.requireRound(room);
-  const awardedScores = awardRoundScores(service, room, round, winner);
+  const round = requireRound(room);
+  const awardedScores = awardRoundScores(ctx, room, round, winner);
 
   round.phase = "gameOver";
-  service.gameOverAdvanceAllowedAtByRoomId.set(room.id, service.now() + PHASE_RESULT_DISPLAY_MS);
+  ctx.gameOverAdvanceAllowedAtByRoomId.set(room.id, ctx.now() + PHASE_RESULT_DISPLAY_MS);
   round.speechMode = undefined;
   round.pendingDisconnectPlayerIds = [];
   round.questionerReconnectDeadlineAt = undefined;
@@ -889,18 +879,18 @@ export const finishRound = async (
     })),
     history: structuredClone(round.history),
   };
-  recordRound(service, room, round, round.summary);
+  recordRound(ctx, room, round, round.summary);
 
   for (const player of Object.values(room.players)) {
     // 结算后统一重置为“未准备”，房主返回等待阶段后由全员重新确认。
     player.isReady = false;
   }
 
-  service.touch(room);
+  ctx.touch(room);
 
-  await service.log({
+  await ctx.log({
     type: "game.finished",
-    createdAt: service.now(),
+    createdAt: ctx.now(),
     roomId: room.id,
     payload: {
       winner,
@@ -910,12 +900,12 @@ export const finishRound = async (
 
   // 结算必然改变阶段与摘要，这里统一发布快照；对局小结只走状态通道，
   // 调用方无需也不得再补发 game.roundSummary 事件。
-  publishRoom(service, room);
+  publishRoom(ctx, room);
 };
 
 /** 只给获胜阵营的玩家加分；加到分的玩家进当局摘要，其余不进。 */
 const awardRoundScores = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   winner: RoundWinner
@@ -939,13 +929,13 @@ const awardRoundScores = (
 
 /** 结算快照转成对局记录：摘要放胜负与词对，时间线按时间合并发言与全局历史。 */
 const recordRound = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   summary: RoundSummary
 ) => {
-  const startedAt = service.roundStartedAtById.get(round.id) ?? service.now();
-  service.roundStartedAtById.delete(round.id);
+  const startedAt = ctx.roundStartedAtById.get(round.id) ?? ctx.now();
+  ctx.roundStartedAtById.delete(round.id);
   const deltas = new Map(summary.awardedScores.map((item) => [item.playerId, item.delta]));
   const nameOf = (playerId: string) => room.players[playerId]?.name ?? playerId;
   const timeline: GameRecordEvent[] = [
@@ -996,13 +986,13 @@ const recordRound = (
       }
     }),
   ].sort((left, right) => left.at - right.at);
-  (service.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
+  (ctx.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
     game: "faker",
     roomId: room.id,
     roomCreatedAt: room.createdAt,
     roundNumber: room.roundCount ?? 1,
     startedAt,
-    endedAt: service.now(),
+    endedAt: ctx.now(),
     players: Object.keys(round.assignments).flatMap((playerId) => {
       const player = room.players[playerId];
       return player

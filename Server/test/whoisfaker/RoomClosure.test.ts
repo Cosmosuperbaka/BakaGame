@@ -38,8 +38,8 @@ describe("关房", () => {
     const { host } = await createRoom(service, "4001");
     const [guest] = await joinPlayers(service, "4001", 1, "客人");
     // 旁表里各挂一条：关房后一条都不能留（房号可能被新房复用）。
-    service.gameOverAdvanceAllowedAtByRoomId.set("4001", 1);
-    expect(service.publishedPhaseKeyByRoomId.has("4001")).toBe(true);
+    service.ctx.gameOverAdvanceAllowedAtByRoomId.set("4001", 1);
+    expect(service.ctx.publishedPhaseKeyByRoomId.has("4001")).toBe(true);
 
     await service.adminCloseRoom("4001");
 
@@ -52,8 +52,8 @@ describe("关房", () => {
       expect(client.record.playerId).toBeUndefined();
     }
     expect(service.rooms.has("4001")).toBe(false);
-    expect(service.publishedPhaseKeyByRoomId.has("4001")).toBe(false);
-    expect(service.gameOverAdvanceAllowedAtByRoomId.has("4001")).toBe(false);
+    expect(service.ctx.publishedPhaseKeyByRoomId.has("4001")).toBe(false);
+    expect(service.ctx.gameOverAdvanceAllowedAtByRoomId.has("4001")).toBe(false);
     expect(finishes.map((entry) => entry.roomId)).toEqual(["4001"]);
     expect(entries.filter((entry) => entry.type === "room.closed")).toEqual([
       expect.objectContaining({ roomId: "4001", payload: { reason: ADMIN_CLOSE_REASON } }),
@@ -74,11 +74,11 @@ describe("关房", () => {
       type: "game.submitWords",
       payload: { words: ["苹果", "香蕉"] },
     });
-    expect(service.roundStartedAtById.size).toBe(1);
+    expect(service.ctx.roundStartedAtById.size).toBe(1);
 
     await service.adminCloseRoom("Oblivionis");
 
-    expect(service.roundStartedAtById.size).toBe(0);
+    expect(service.ctx.roundStartedAtById.size).toBe(0);
   });
 
   test("一条发不出去的连接不挡住其余成员的关闭通知，房间照常删除", async () => {

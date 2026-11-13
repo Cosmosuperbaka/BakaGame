@@ -1,7 +1,5 @@
-import { createEvent } from "../../transport/Packets";
 import { getRoomRoleLimits } from "../../domain/Rules";
 import {
-  type ConnectionRecord,
   type DescriptionRecord,
   type GameRound,
   type PublicPlayerView,
@@ -12,15 +10,19 @@ import {
   type WhoIsFakerRoomSnapshot,
   type WhoIsFakerRoomSummary,
 } from "../../shared/Index";
-import { publishRoomState } from "../room/RoomPublisher";
-import { bindSeat } from "../room/SeatBinding";
-import { handlePlayerOffline } from "./OfflineSettlement";
-import { whoIsFakerShape } from "./RoomShape";
+import { isRoundActive } from "./RoomAccess";
 import { getConfigurableParticipantCount } from "./RoundRules";
-import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
+import type { WhoIsFakerContext } from "./Context";
+
+/** 大厅列表：测试房间不出现，避免污染正式用户视线。 */
+export const listRoomSummaries = (ctx: WhoIsFakerContext): WhoIsFakerRoomSummary[] =>
+  [...ctx.rooms.values()]
+    .filter((room) => !ctx.testRooms.isTestRoom(room.id))
+    .map((room) => buildRoomSummary(ctx, room))
+    .sort((left, right) => left.roomId.localeCompare(right.roomId));
 
 export const buildRoomSummary = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): WhoIsFakerRoomSummary => {
   const activeCount = Object.values(room.players).filter(
@@ -39,7 +41,7 @@ export const buildRoomSummary = (
     spectatorCount,
     onlineCount: activeCount + spectatorCount,
     phase: room.round?.phase ?? "waiting",
-    testMode: service.testRooms.isTestRoom(room.id),
+    testMode: ctx.testRooms.isTestRoom(room.id),
     allowAgents: room.settings.allowAgents === true,
   };
 };
@@ -141,7 +143,7 @@ const publicFeedback = (room: WhoIsFakerRoomRecord): RoundFeedback | undefined =
 };
 
 export const buildRoomSnapshot = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): WhoIsFakerRoomSnapshot => {
   // 快照是前端渲染主数据源，尽量保证“一包就够渲染当前房间”。
@@ -156,7 +158,7 @@ export const buildRoomSnapshot = (
     allowSpectators: room.settings.allowSpectators,
     hasPassword: Boolean(room.passwordHash),
     hostPlayerId: room.hostPlayerId,
-    testMode: service.testRooms.isTestRoom(room.id),
+    testMode: ctx.testRooms.isTestRoom(room.id),
     roleLimits: getRoomRoleLimits(getConfigurableParticipantCount(room)),
     settings: {
       roleConfig: room.settings.roleConfig,
@@ -194,7 +196,7 @@ export const buildRoomSnapshot = (
       phaseTimer: room.round?.phaseTimer,
       feedback: publicFeedback(room),
     },
-    players: buildPublicPlayers(service, room),
+    players: buildPublicPlayers(ctx, room),
     descriptions: buildPublicDescriptions(room.round),
     chat: room.chat,
     summary: room.round?.summary,
@@ -202,7 +204,7 @@ export const buildRoomSnapshot = (
 };
 
 const buildPublicPlayers = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): PublicPlayerView[] => {
   return Object.values(room.players)
@@ -235,7 +237,7 @@ const buildPublicPlayers = (
           player.isReady || (room.hostPlayerId === player.id && player.membership === "active"),
         isBot: player.isBot,
         ...(player.isAgent ? { isAgent: true } : {}),
-        ...(service.connectionRegistry.isAgentDriven(player.connectionId)
+        ...(ctx.connectionRegistry.isAgentDriven(player.connectionId)
           ? { mcpControlled: true }
           : {}),
         isHost: room.hostPlayerId === player.id,
@@ -253,7 +255,7 @@ const buildPublicPlayers = (
 };
 
 export const buildPrivateState = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   player: WhoIsFakerPlayerRecord
 ): WhoIsFakerPrivateState => {
@@ -266,7 +268,7 @@ export const buildPrivateState = (
   // 结算后答案随公开快照（summary 与 revealedRole）全房可见，这里不再收紧。
   const spectatorSeesAnswers =
     player.membership === "spectator" &&
-    ((room.settings.spectatorsSeeAnswers ?? false) || !service.isRoundActive(room));
+    ((room.settings.spectatorsSeeAnswers ?? false) || !isRoundActive(room));
   const hasPrivilegedIdentityView = Boolean(round && (isQuestioner || spectatorSeesAnswers));
 
   if (!round) {
@@ -320,7 +322,7 @@ export const buildPrivateState = (
       Boolean(state?.alive) && (state?.role === "civilian" || state?.role === "undercover"),
     specialRole: state?.role === "angel" || state?.role === "blank" ? state.role : undefined,
     // 调试身份只在测试房下发，普通房间的私有帧里没有任何能区分平民与卧底的字段。
-    debugRole: service.testRooms.isTestRoom(room.id) ? state?.role : undefined,
+    debugRole: ctx.testRooms.isTestRoom(room.id) ? state?.role : undefined,
     word: state?.role === "angel" ? undefined : state?.word,
     angelWordOptions: state?.role === "angel" && round.words ? round.words.pair : undefined,
     blankHint: state?.role === "blank" ? round.words?.blankHint : undefined,
@@ -362,7 +364,8 @@ const canViewerAccessGhostChat = (
   return false;
 };
 
-const createRoomSnapshotViewSelector = (
+/** 公共快照按「能否看幽灵频道」分两种只读投影，缓存只活在本次发布里。 */
+export const createRoomSnapshotViewSelector = (
   room: WhoIsFakerRoomRecord,
   snapshot: WhoIsFakerRoomSnapshot
 ) => {
@@ -379,113 +382,4 @@ const createRoomSnapshotViewSelector = (
     });
     return mainChatSnapshot;
   };
-};
-
-/**
- * 快照扇出：正常发布与校准共用同一份帧来源，两条路径的口径不会分叉。
- * 公共快照按「能否看幽灵频道」只有两种投影，内核对同一投影只封一次包。
- */
-const fanOutRoom = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord,
-  targets: readonly ConnectionRecord[],
-  snapshot: WhoIsFakerRoomSnapshot,
-  mode: "state" | "calibration"
-) => {
-  publishRoomState(
-    targets,
-    (connection) => (connection.playerId ? room.players[connection.playerId] : undefined),
-    {
-      snapshotEvent: whoIsFakerShape.events.snapshot,
-      privateEvent: whoIsFakerShape.events.privateState,
-      snapshotFor: createRoomSnapshotViewSelector(room, snapshot),
-      privateFor: (player) => buildPrivateState(service, room, player),
-    },
-    mode
-  );
-};
-
-export const publishRoom = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord,
-  targetConnection?: ConnectionRecord
-) => {
-  // 每次状态变化都同时推送公共快照与当前连接的私有视图。
-  const snapshot = buildRoomSnapshot(service, room);
-
-  if (!targetConnection) {
-    const phaseKey = service.getPhaseNoticeKey(snapshot);
-    const previousPhaseKey = service.publishedPhaseKeyByRoomId.get(room.id);
-    if (previousPhaseKey !== undefined && previousPhaseKey !== phaseKey) {
-      service.appendSystemMessage(room, service.describePhaseChange(snapshot, room));
-      snapshot.chat = room.chat;
-    }
-    service.publishedPhaseKeyByRoomId.set(room.id, phaseKey);
-  }
-
-  fanOutRoom(
-    service,
-    room,
-    targetConnection ? [targetConnection] : service.connectionRegistry.getRoomConnections(room.id),
-    snapshot,
-    "state"
-  );
-};
-
-export const publishRoomCalibration = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord
-) => {
-  fanOutRoom(
-    service,
-    room,
-    service.connectionRegistry.getRoomConnections(room.id),
-    buildRoomSnapshot(service, room),
-    "calibration"
-  );
-};
-
-export const publishLobby = (service: WhoIsFakerServiceInternals) => {
-  service.lobbyFanout.request();
-};
-
-export const broadcastRoomEvent = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord,
-  event: string,
-  payload: unknown
-) => {
-  service.connectionRegistry.broadcastToRoom(room.id, createEvent(event, payload));
-};
-
-export const attachConnection = (
-  service: WhoIsFakerServiceInternals,
-  room: WhoIsFakerRoomRecord,
-  player: WhoIsFakerPlayerRecord,
-  connection: ConnectionRecord
-) => {
-  // 目标先校验；旧席位断线状态和新绑定在首次 await 前完成，防止并发建房/同名加入穿透。
-  // handlePlayerOffline 的 disconnect 分支在首个 await 前完成所有领域状态变更，
-  // 它会把连接从旧席位上解下来：内核的 bindSeat 要求连接空闲，旧席位必须先按玩法规则释放。
-  const previousRoom = connection.roomId ? service.rooms.get(connection.roomId) : undefined;
-  const previousRoomUpdate =
-    previousRoom &&
-    connection.playerId &&
-    (previousRoom.id !== room.id || connection.playerId !== player.id)
-      ? handlePlayerOffline(service, previousRoom, connection.playerId, "disconnect")
-      : Promise.resolve();
-
-  // 房主空缺或宽限已过时，回来的人可能当场接任（也可能是另一位在线正式玩家）。
-  const hostBefore = room.players[room.hostPlayerId];
-  bindSeat(service.seatContext, room, player, connection);
-  const hostAfter = room.players[room.hostPlayerId];
-  if (hostAfter && hostAfter !== hostBefore) {
-    service.appendSystemMessage(
-      room,
-      hostBefore
-        ? `${hostBefore.name} 断线超时，房主已转移给 ${hostAfter.name}`
-        : `房主已转移给 ${hostAfter.name}`
-    );
-  }
-  return previousRoomUpdate;
 };

@@ -256,6 +256,6 @@ describe("WhoIsFaker 房间快照", () => {
     const room = restarted.service.rooms.get("Oblivionis");
     expect(room?.updatedAt).toBe(restoredAt);
     expect(room?.lastActivityAt).toBe(restoredAt);
-    expect(restarted.service.roundStartedAtById.get(roundId)).toBe(savedAt);
+    expect(restarted.service.ctx.roundStartedAtById.get(roundId)).toBe(savedAt);
   });
 });

@@ -198,14 +198,14 @@ describe("内核接入后玩法侧补做的副作用", () => {
     const { host, result } = await createRoom(service, "2807");
     const [guest] = await joinPlayers(service, "2807", 1, "接任");
     const logged: Array<{ type: string; payload?: unknown }> = [];
-    const originalLog = service.log.bind(service);
-    service.log = async (entry) => {
+    const originalLog = service.ctx.log.bind(service.ctx);
+    service.ctx.log = async (entry) => {
       logged.push(entry);
       await originalLog(entry);
     };
     let lobbyRequests = 0;
-    const originalRequest = service.lobbyFanout.request.bind(service.lobbyFanout);
-    service.lobbyFanout.request = () => {
+    const originalRequest = service.ctx.lobbyFanout.request.bind(service.ctx.lobbyFanout);
+    service.ctx.lobbyFanout.request = () => {
       lobbyRequests += 1;
       originalRequest();
     };
@@ -217,7 +217,7 @@ describe("内核接入后玩法侧补做的副作用", () => {
     await service.runHousekeeping();
 
     const room = service.rooms.get("2807")!;
-    expect(room.lastActivityAt).toBe(service.now());
+    expect(room.lastActivityAt).toBe(service.ctx.now());
     expect(room.chat.some((message) => message.text === "房主 断线超时，房主已转移给 接任1")).toBe(
       true
     );

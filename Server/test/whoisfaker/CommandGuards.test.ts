@@ -133,7 +133,7 @@ describe("命令守卫顺序：身份先于一切守卫", () => {
 
   test("房间已不存在时先得到房间不存在，房主命令也不例外", async () => {
     const { service, host, rejected } = await setup();
-    service.rooms.delete("1616");
+    service.ctx.rooms.delete("1616");
     for (const type of ["room.updateSettings", "game.advancePhase", "room.leave", "test.addBot"]) {
       expect(await rejected(host, type, {})).toMatchObject({
         code: "ROOM_NOT_FOUND",

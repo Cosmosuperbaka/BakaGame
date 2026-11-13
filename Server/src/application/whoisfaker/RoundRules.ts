@@ -17,7 +17,8 @@ import {
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
-import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
+import { requireRound } from "./RoomAccess";
+import type { WhoIsFakerContext } from "./Context";
 
 /** 正式席位（membership 为 active）的玩家 id，不含旁观者。 */
 export const getActivePlayerIds = (room: WhoIsFakerRoomRecord): string[] =>
@@ -137,13 +138,13 @@ export const ensurePhaseNotBlocked = (round: GameRound): void => {
 
 /** 投票资格校验：存活、不投自己，平票第二轮只能由非候选人生存者投给候选人或弃票。 */
 export const ensureCanVote = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   voterId: string,
   targetId: string,
   tieBreak: boolean
 ): void => {
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const voter = round.assignments[voterId];
   const target = round.assignments[targetId];
   const isAbstain = targetId === ABSTAIN_TARGET_ID;
@@ -177,10 +178,10 @@ export const isDescriptionComplete = (round: GameRound): boolean => {
 
 /** 平票 PK 的描述段是否完成：候选人里还活着的都要补过一句。 */
 export const isTieBreakDescriptionComplete = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): boolean => {
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const candidates = round.tieBreak?.candidateIds ?? [];
 
   return candidates.every(
@@ -191,12 +192,12 @@ export const isTieBreakDescriptionComplete = (
 
 /** 投票阶段是否完成：该投的人都投了；平票第二轮里候选人自己不投。 */
 export const isVotingComplete = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   tieBreak: boolean
 ): boolean => {
-  const round = service.requireRound(room);
-  const aliveIds = getAliveAssignedPlayerIds(service, room);
+  const round = requireRound(room);
+  const aliveIds = getAliveAssignedPlayerIds(ctx, room);
 
   if (tieBreak) {
     const candidates = round.tieBreak?.candidateIds ?? [];
@@ -210,10 +211,10 @@ export const isVotingComplete = (
 
 /** 夜晚阶段是否完成：只有平民与卧底需要行动，其余角色不参与也不被等待。 */
 export const isNightActionComplete = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): boolean => {
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const actorIds = Object.entries(round.assignments)
     .filter(
       ([, state]) => state.alive && (state.role === "civilian" || state.role === "undercover")
@@ -227,20 +228,20 @@ export const isNightActionComplete = (
 
 /** 本局已分配身份且仍存活的玩家 id。 */
 export const getAliveAssignedPlayerIds = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): string[] =>
-  Object.entries(service.requireRound(room).assignments)
+  Object.entries(requireRound(room).assignments)
     .filter(([, state]) => state.alive)
     .map(([playerId]) => playerId);
 
 /** 本轮发言顺序：存活者洗牌；首日白板若落在前半段，随机换到后半段。 */
 export const createDescriptionOrder = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord
 ): string[] => {
-  const round = service.requireRound(room);
-  const order = shuffle(getAliveAssignedPlayerIds(service, room), service.random);
+  const round = requireRound(room);
+  const order = shuffle(getAliveAssignedPlayerIds(ctx, room), ctx.random);
 
   if (round.day === 1) {
     const blankPlayerId = getBlankPlayerId(round.assignments);
@@ -248,7 +249,7 @@ export const createDescriptionOrder = (
     const secondHalfStart = Math.floor(order.length / 2);
 
     if (blankIndex >= 0 && blankIndex < secondHalfStart) {
-      const swapIndex = secondHalfStart + service.random.nextInt(order.length - secondHalfStart);
+      const swapIndex = secondHalfStart + ctx.random.nextInt(order.length - secondHalfStart);
       [order[blankIndex], order[swapIndex]] = [order[swapIndex], order[blankIndex]];
     }
   }
@@ -280,7 +281,7 @@ export const replaceNightAction = (
 
 /** 构造一条描述记录：常规描述、补充描述与平票描述共用同一份结构，只靠 kind 区分。 */
 export const createDescription = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   player: Pick<WhoIsFakerPlayerRecord, "id" | "name">,
   text: string,
   kind: DescriptionRecord["kind"],
@@ -288,7 +289,7 @@ export const createDescription = (
   extra?: { tieBreakIndex?: number; supplementIndex?: number; order?: number }
 ): DescriptionRecord => {
   return {
-    id: service.createId("description"),
+    id: ctx.createId("description"),
     playerId: player.id,
     playerName: player.name,
     text,
@@ -297,6 +298,6 @@ export const createDescription = (
     tieBreakIndex: extra?.tieBreakIndex,
     supplementIndex: extra?.supplementIndex,
     order: extra?.order,
-    createdAt: service.now(),
+    createdAt: ctx.now(),
   };
 };

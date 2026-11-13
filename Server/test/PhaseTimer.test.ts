@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
-import type { WhoIsFakerRoomRecord, WhoIsFakerRoomSnapshot } from "../src/shared/Index";
+import { restoreInterruptedTimer } from "../src/application/whoisfaker/PhaseFlow";
+import type { WhoIsFakerRoomSnapshot } from "../src/shared/Index";
 import { createConnection, createTestContext, execute, getLastEventPayload } from "./Helpers";
 
 test("倒计时参数校验：仅允许 1、2、3 分钟（60s / 120s / 180s）", async () => {
@@ -569,12 +570,8 @@ const advanceAfterRestoredTimer = async (movePhaseAway: boolean): Promise<boolea
     payload: { phase: "voting" },
   });
 
-  const internals = service as unknown as {
-    rooms: Map<string, WhoIsFakerRoomRecord>;
-    restoreInterruptedTimer: (room: WhoIsFakerRoomRecord, remainingMs: number) => void;
-  };
-  const room = internals.rooms.get("Oblivionis")!;
-  internals.restoreInterruptedTimer(room, 5);
+  const room = service.ctx.rooms.get("Oblivionis")!;
+  restoreInterruptedTimer(service.ctx, room, 5);
   if (movePhaseAway) room.round!.phase = "description";
   await Bun.sleep(80);
   return room.chat.some((message) => message.text.includes("系统已强制推进"));

@@ -19,14 +19,15 @@ import {
   returnRoomToWaiting,
   startRound,
 } from "./PhaseFlow";
-import { publishRoom } from "./RoomViews";
+import { publishRoom } from "./RoomPublish";
 import {
   clampRoleConfig,
   createDescriptionOrder,
   getActivePlayerIds,
   normalizeRoomRoleConfig,
 } from "./RoundRules";
-import type { WhoIsFakerServiceInternals } from "./ServiceInternals";
+import { requireRoomPlayer, requireRound, ensureHost, isRoundActive } from "./RoomAccess";
+import type { WhoIsFakerContext } from "./Context";
 
 /**
  * 测试跳转回「指定出题人」时逐字段重置 round 的默认值表。
@@ -95,7 +96,7 @@ const planTestJumpRoster = (
 
 /** 词与身份只在缺失或参战名单变动时重分配，跳转本身不换已定好的词。 */
 const ensureTestJumpWords = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   round: GameRound,
   participantIds: string[],
@@ -115,7 +116,7 @@ const ensureTestJumpWords = (
       effectiveConfig,
       TEST_MODE_DEFAULT_WORD,
       effectiveConfig.hasBlank ? "测试提示" : undefined,
-      service.random
+      ctx.random
     );
     round.words = {
       pair: assigned.pair,
@@ -128,23 +129,23 @@ const ensureTestJumpWords = (
 };
 
 export const testJumpToPhase = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   connection: ConnectionRecord,
   target: WhoIsFakerPhase
 ) => {
   // 仅测试房间可用：预填必要的 round 状态后直接切到目标阶段，方便逐个阶段验收 UI。
-  const { room, player } = service.requireRoomPlayer(connection);
-  ensureTestRoomHost(service, room, player.id);
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  ensureTestRoomHost(ctx, room, player.id);
 
   // 反馈阶段只由结算产生，没有可凭空构造的结果。
   if (target === "feedback") {
     throw new AppError("INVALID_PHASE", "阶段反馈由结算产生，不能直接跳转");
   }
 
-  clearPhaseTimer(service, room);
+  clearPhaseTimer(ctx, room);
 
   if (target === "waiting") {
-    returnRoomToWaiting(service, room);
+    returnRoomToWaiting(ctx, room);
     return { phase: "waiting" as WhoIsFakerPhase };
   }
 
@@ -152,15 +153,15 @@ export const testJumpToPhase = async (
 
   // 确保 round 存在。
   if (!room.round) {
-    await startRound(service, room);
+    await startRound(ctx, room);
   }
 
-  const round = service.requireRound(room);
+  const round = requireRound(room);
   const participantIds = plannedParticipants;
 
   if (target === "assigningQuestioner") {
     resetRoundForTestJump(round, "assigningQuestioner");
-    broadcastPhaseAndPublish(service, room);
+    broadcastPhaseAndPublish(ctx, room);
     return { phase: round.phase };
   }
 
@@ -170,7 +171,7 @@ export const testJumpToPhase = async (
   round.pendingDisconnectPlayerIds = [];
   round.questionerReconnectDeadlineAt = undefined;
 
-  ensureTestJumpWords(service, room, round, participantIds, target);
+  ensureTestJumpWords(ctx, room, round, participantIds, target);
 
   round.feedback = undefined;
   round.feedbackContinuation = undefined;
@@ -198,7 +199,7 @@ export const testJumpToPhase = async (
       round.phase = "description";
       round.speechMode = "normal";
       round.descriptionCycle = Math.max(1, round.descriptionCycle);
-      round.descriptionOrder = createDescriptionOrder(service, room);
+      round.descriptionOrder = createDescriptionOrder(ctx, room);
       round.descriptionSubmittedBy = [];
       round.votes = [];
       round.tieBreak = undefined;
@@ -267,27 +268,27 @@ export const testJumpToPhase = async (
       break;
     }
     case "gameOver":
-      await finishRound(service, room, "good", "手动结束本局");
+      await finishRound(ctx, room, "good", "手动结束本局");
       return { phase: "gameOver" as WhoIsFakerPhase };
   }
 
-  service.touch(room);
-  broadcastPhaseAndPublish(service, room);
+  ctx.touch(room);
+  broadcastPhaseAndPublish(ctx, room);
   // 跳转后让机器人补齐新阶段的提交，否则出题人永远推不动。
-  await runBots(service, room);
+  await runBots(ctx, room);
   return { phase: round.phase };
 };
 
 export const testSetMyRole = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   connection: ConnectionRecord,
   role: WhoIsFakerRole
 ) => {
   // 仅测试房间：强制替换当前玩家在本局中的角色分配。
-  const { room, player } = service.requireRoomPlayer(connection);
-  ensureTestRoomHost(service, room, player.id);
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  ensureTestRoomHost(ctx, room, player.id);
 
-  const round = service.requireRound(room);
+  const round = requireRound(room);
 
   if (round.questionerPlayerId === player.id) {
     throw new AppError("INVALID_TARGET", "出题人不能切换身份");
@@ -316,8 +317,8 @@ export const testSetMyRole = async (
     round.words.blankHint = "测试提示";
   }
 
-  service.touch(room);
-  publishRoom(service, room);
+  ctx.touch(room);
+  publishRoom(ctx, room);
   return { role };
 };
 
@@ -327,12 +328,12 @@ export const testSetMyRole = async (
  * 只是没有连接、由 runBots 代为提交发言/投票/夜晚行动。
  */
 export const testAddBot = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   connection: ConnectionRecord,
   count: number
 ) => {
-  const { room, player } = service.requireRoomPlayer(connection);
-  ensureTestRoomHost(service, room, player.id);
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  ensureTestRoomHost(ctx, room, player.id);
 
   const added: string[] = [];
 
@@ -341,10 +342,10 @@ export const testAddBot = async (
       break;
     }
 
-    const bot = service.createPlayer(pickBotName(room), true);
+    const bot = ctx.createPlayer(pickBotName(room), true);
     bot.isReady = true;
     // 与真人加入同规则：局内加入只能旁观，下一局才参战。
-    bot.membership = service.isRoundActive(room) ? "spectator" : "active";
+    bot.membership = isRoundActive(room) ? "spectator" : "active";
     room.players[bot.id] = bot;
     added.push(bot.id);
   }
@@ -355,22 +356,22 @@ export const testAddBot = async (
 
   // 人数变了，阵营配置的上限也跟着变，必须重新夹一次。
   normalizeRoomRoleConfig(room);
-  service.touch(room);
-  publishRoom(service, room);
-  await runBots(service, room);
+  ctx.touch(room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 
   return { added };
 };
 
 /** 测试房间：移除机器人。未指定 playerId 时从最后加入的开始移除。 */
 export const testRemoveBot = async (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   connection: ConnectionRecord,
   playerId: string | undefined,
   count: number
 ) => {
-  const { room, player } = service.requireRoomPlayer(connection);
-  ensureTestRoomHost(service, room, player.id);
+  const { room, player } = requireRoomPlayer(ctx, connection);
+  ensureTestRoomHost(ctx, room, player.id);
 
   const bots = Object.values(room.players).filter((player) => player.isBot);
   const targets = playerId ? bots.filter((bot) => bot.id === playerId) : bots.slice(-count);
@@ -382,7 +383,7 @@ export const testRemoveBot = async (
   // 走与房主踢人完全相同的路径：局内淘汰、房主改选、阵营夹取、人数不足中止
   // 全都由 forceRemovePlayer 负责，机器人不再有独立的移除逻辑。
   for (const bot of targets) {
-    await forceRemovePlayer(service, room, bot.id, "kicked");
+    await forceRemovePlayer(ctx, room, bot.id, "kicked");
   }
 
   // 机器人被踢后只是标记为 kicked，测试房间要真正腾出名额，因此彻底删除记录。
@@ -391,9 +392,9 @@ export const testRemoveBot = async (
   }
 
   normalizeRoomRoleConfig(room);
-  service.touch(room);
-  publishRoom(service, room);
-  await runBots(service, room);
+  ctx.touch(room);
+  publishRoom(ctx, room);
+  await runBots(ctx, room);
 
   return { removed: targets.map((bot) => bot.id) };
 };
@@ -406,10 +407,10 @@ export const testRemoveBot = async (
  * 机器人当不了房主（转让会被拒、空缺时也不会选中），所以没有「房主是机器人」的例外。
  */
 const ensureTestRoomHost = (
-  service: WhoIsFakerServiceInternals,
+  ctx: WhoIsFakerContext,
   room: WhoIsFakerRoomRecord,
   playerId: string
 ) => {
-  if (!service.testRooms.isTestRoom(room.id)) unsupportedCommand();
-  service.ensureHost(room, playerId);
+  if (!ctx.testRooms.isTestRoom(room.id)) unsupportedCommand();
+  ensureHost(room, playerId);
 };
