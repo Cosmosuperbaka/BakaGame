@@ -950,3 +950,72 @@ describe("ChatPanel 滚动跟随", () => {
     expect(state.top).toBe(100);
   });
 });
+
+describe("ChatPanel 并发发送的失败回写", () => {
+  const players = [
+    { id: "p-me", name: "我" },
+    { id: "p-other", name: "对手" },
+  ];
+  /** 手动控制成败的发送：每次调用返回一个可由测试决定结果的 promise。 */
+  function controllableSend() {
+    const calls: { text: string; resolve: () => void; reject: (error: Error) => void }[] = [];
+    const send = vi.fn(
+      (text: string) =>
+        new Promise<void>((resolve, reject) => {
+          calls.push({ text, resolve, reject: (error) => reject(error) });
+        })
+    );
+    return { send, calls };
+  }
+  const type = (input: HTMLElement, value: string) =>
+    fireEvent.change(input, { target: { value } });
+
+  it("减弱动效下，前一条失败回写不覆盖玩家已经打出的新草稿", async () => {
+    stubMatchMedia(true);
+    try {
+      const { send, calls } = controllableSend();
+      render(<ChatPanel messages={[]} players={players} myPlayerId="p-me" onSendMessage={send} />);
+      const input = screen.getByRole("combobox", { name: "聊天消息" });
+      type(input, "第一条");
+      fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+      type(input, "第二条打到一半");
+      calls[0].reject(new Error("断线"));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(input).toHaveValue("第二条打到一半");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("减弱动效下，输入框是空的才把失败的原文放回去", async () => {
+    stubMatchMedia(true);
+    try {
+      const { send, calls } = controllableSend();
+      render(<ChatPanel messages={[]} players={players} myPlayerId="p-me" onSendMessage={send} />);
+      const input = screen.getByRole("combobox", { name: "聊天消息" });
+      type(input, "第一条");
+      fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+      calls[0].reject(new Error("断线"));
+      await waitFor(() => expect(input).toHaveValue("第一条"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("两条都在途时，前一条失败不收回后一条的胶囊，原文直接回到空输入框", async () => {
+    const { send, calls } = controllableSend();
+    render(<ChatPanel messages={[]} players={players} myPlayerId="p-me" onSendMessage={send} />);
+    const input = screen.getByRole("combobox", { name: "聊天消息" });
+    type(input, "甲");
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    type(input, "乙");
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    expect(send).toHaveBeenCalledTimes(2);
+    calls[0].reject(new Error("断线"));
+    // 甲没有胶囊可收：当场回到输入框；乙的胶囊仍悬停在途，没被借去播收回动画
+    await waitFor(() => expect(input).toHaveValue("甲"), { timeout: 150 });
+    expect(screen.getByText("乙").closest("[aria-hidden='true']")).not.toBeNull();
+    calls[1].resolve();
+  });
+});

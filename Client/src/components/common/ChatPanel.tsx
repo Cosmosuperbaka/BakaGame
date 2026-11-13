@@ -648,11 +648,15 @@ export function ChatPanel({
     setText((current) => (current === sent ? "" : current));
   };
 
+  // 发送序号：胶囊、收回动画与回执只有一份，前一条的失败不能去动后一条的胶囊。
+  const sendSeqRef = useRef(0);
+
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed) return;
     const attempt = { acked: false };
     attemptRef.current = attempt;
+    const seq = ++sendSeqRef.current;
     // 先清输入框再 await：乐观清除是防重复提交，内容找回来看下面的业务回执
     const flying = startThrow(trimmed);
     setText("");
@@ -662,9 +666,10 @@ export function ChatPanel({
       attempt.acked = true;
       confirmSent(trimmed);
     } catch (error) {
-      // 掷出过就交给收回动画，落点把内容写回；没有动画可走时立刻写回，不让内容丢
-      if (flying) recallThrow(trimmed);
-      else setText(trimmed);
+      // 掷出过且胶囊还是这一条的，就交给收回动画，落点把内容写回；
+      // 没有动画可走（或胶囊已经换成后一条）时立刻写回，输入框里已有新草稿就不覆盖
+      if (flying && seq === sendSeqRef.current) recallThrow(trimmed);
+      else setText((current) => (current ? current : trimmed));
       onError?.(error);
     }
   };
