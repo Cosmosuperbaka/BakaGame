@@ -21,6 +21,14 @@ import { sendChat } from "./Chat";
 import { addBots, removeBots } from "./dev/TestBots";
 import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
+import {
+  createRoom,
+  joinRoom,
+  kick,
+  leaveRoom,
+  reconnectRoom,
+  transferHostCommand,
+} from "./Membership";
 import { isTestRoom } from "./RoomAccess";
 import { chooseSubmitter, finishGame, isRoomStarting, nextRound, startGame } from "./RoundFlow";
 import { getSongClipPreview, submitAnime, submitSong } from "./SongSubmission";
@@ -32,17 +40,7 @@ import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from ".
  */
 type RoomHandlers = Pick<
   SonGuessrService,
-  | "createRoom"
-  | "joinRoom"
-  | "reconnectRoom"
-  | "leaveRoom"
-  | "requestSync"
-  | "setReady"
-  | "setSpectator"
-  | "setTeam"
-  | "updateSettings"
-  | "kick"
-  | "transferHost"
+  "requestSync" | "setReady" | "setSpectator" | "setTeam" | "updateSettings"
 >;
 
 export interface SonGuessrCommandDeps {
@@ -147,21 +145,21 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   },
   "song.room.create": {
     access: "lobby",
-    run: (deps, connection, m) => deps.handlers.createRoom(connection, m.payload),
+    run: (deps, connection, m) => createRoom(deps.ctx, connection, m.payload),
   },
   "song.room.join": {
     access: "lobby",
-    run: (deps, connection, m) => deps.handlers.joinRoom(connection, m.roomId, m.payload),
+    run: (deps, connection, m) => joinRoom(deps.ctx, connection, m.roomId, m.payload),
   },
   "song.room.reconnect": {
     access: "lobby",
     run: (deps, connection, m) =>
-      deps.handlers.reconnectRoom(connection, m.payload.roomId, m.payload.sessionToken),
+      reconnectRoom(deps.ctx, connection, m.payload.roomId, m.payload.sessionToken),
   },
   "song.room.leave": {
     access: "seat",
     phases: "any",
-    run: (deps, at) => deps.handlers.leaveRoom(at),
+    run: (deps, at) => leaveRoom(deps.ctx, at),
   },
   "song.room.requestSync": {
     access: "seat",
@@ -198,12 +196,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.room.kick": {
     access: "host",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.kick(at, m.payload.playerId),
+    run: (deps, at, m) => kick(deps.ctx, at, m.payload.playerId),
   },
   "song.room.transferHost": {
     access: "host",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.transferHost(at, m.payload.playerId),
+    run: (deps, at, m) => transferHostCommand(deps.ctx, at, m.payload.playerId),
   },
   "song.chat.send": {
     access: "seat",
