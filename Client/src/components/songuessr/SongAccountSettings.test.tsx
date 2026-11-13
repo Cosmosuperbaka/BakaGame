@@ -280,8 +280,10 @@ describe("SongAccountSettings", () => {
 
     expect(screen.queryByText(/服务器不持久化账号信息/)).not.toBeInTheDocument();
     expect(screen.queryByText(/服务器不会保存账号信息/)).not.toBeInTheDocument();
-    expect(panel().getByText(/开启云同步时，会加密存入你的云端设置/)).toBeInTheDocument();
-    expect(panel().getByText(/只有登录本站、开启云同步并保存登录状态时/)).toBeInTheDocument();
+    expect(panel().getByText(/开启云同步时会加密同步到你的账号/)).toBeInTheDocument();
+    expect(
+      panel().getByText(/开启云同步并保存登录状态时，另会加密存入你的云端设置/)
+    ).toBeInTheDocument();
   });
 
   it.each(["success", "failure"])(
