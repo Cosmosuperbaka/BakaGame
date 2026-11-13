@@ -9,7 +9,6 @@ import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { createCEEOriginalSocket } from "../infrastructure/CEEOriginalSocket";
 import {
   decodeOriginalCharacter,
-  encodeOriginalCharacter,
   originalArray,
   originalCharacter,
   originalNumber,
@@ -18,12 +17,10 @@ import {
   originalSettings,
   originalString,
   originalStrings,
-  toOriginalCharacter,
   toOriginalSettings,
 } from "../infrastructure/CEEOriginalProtocol";
 import {
   createDefaultCEESettings,
-  type CEECharacterView,
   type CEERoomClientMessage,
   type CEEGuess,
   type CEEPayload,
@@ -36,12 +33,7 @@ import {
   type CEEOriginalEventHost,
 } from "./CEEOriginalEvents";
 import { createEvent } from "../transport/Packets";
-import type {
-  CEEOriginalChatRoom,
-  CEEOriginalPreparation,
-  CEEOriginalSession,
-  CEEUpstreamRoom,
-} from "./CEEOriginalModel";
+import type { CEEOriginalChatRoom, CEEOriginalSession, CEEUpstreamRoom } from "./CEEOriginalModel";
 import type { CEEOriginalTarget } from "./CEERoomDirectory";
 import { originalPrivateState, originalSnapshot } from "./CEEOriginalView";
 import { CEEOriginalRoundData } from "./CEEOriginalRoundData";
@@ -59,6 +51,18 @@ import {
   type CEEOriginalOptions,
 } from "./CEEOriginalContext";
 import { fetchRooms, listUpstreamRooms } from "./CEEOriginalLobby";
+import {
+  enterChoosingSetter,
+  isCurrentRound,
+  leaveChoosingSetter,
+  ownsPreparation,
+  requestImageHint,
+  roundData,
+  startRound,
+  submitAnswer,
+  submitGuess,
+  supplementAnswer,
+} from "./CEEOriginalRoundFlow";
 
 export class CEEOriginalService {
   private readonly connections = new Map<string, ConnectionRecord>();
@@ -258,7 +262,7 @@ export class CEEOriginalService {
     await this.sendToRoom(session, "enterManualMode");
     const result = await this.sendToRoom(session, "setAnswerSetter", { setterId: playerId });
     // 上游确认出题人后会推 waitForAnswer 切到出题阶段；还没到的话先退出选人阶段，免得停在这里。
-    if (session.phase === "choosingSetter") this.leaveChoosingSetter(session);
+    if (session.phase === "choosingSetter") leaveChoosingSetter(session);
     publish(this.ctx, session);
     return result;
   }
@@ -297,7 +301,7 @@ export class CEEOriginalService {
       case "cee.subject.image":
         return runCEEDataCommand(data, message.type, message.payload);
       case "cee.game.imageHint":
-        return this.imageHint(session);
+        return requestImageHint(this.ctx, session);
       case "cee.chat.send":
         return this.chat(session, message.payload.text);
       case "cee.player.team":
@@ -330,19 +334,19 @@ export class CEEOriginalService {
         return this.chooseSetter(session, message.payload.playerId);
       case "cee.game.start":
       case "cee.game.next":
-        if (session.settings.answerMode === "manual") return this.enterChoosingSetter(session);
-        return this.start(session);
+        if (session.settings.answerMode === "manual") return enterChoosingSetter(this.ctx, session);
+        return startRound(this.ctx, session);
       case "cee.game.setAnswer":
-        return this.setAnswer(session, message.payload.characterId, message.payload.hints);
+        return submitAnswer(this.ctx, session, message.payload.characterId, message.payload.hints);
       case "cee.game.guess":
-        return this.guess(session, message.payload.characterId);
+        return submitGuess(this.ctx, session, message.payload.characterId);
       case "cee.game.surrender":
         return send("enterObserverMode");
       case "cee.game.cancel":
         // 选人阶段只在本服务端，可以退回；进入出题后原版服务器没有取消指令。
         if (session.phase === "choosingSetter") {
           requireHost(session);
-          this.leaveChoosingSetter(session);
+          leaveChoosingSetter(session);
           publish(this.ctx, session);
           return {};
         }
@@ -546,215 +550,10 @@ export class CEEOriginalService {
       );
   }
 
-  private beginPreparation(session: CEEOriginalSession): CEEOriginalPreparation {
-    const phase = session.phase;
-    if (
-      !session.connectionId ||
-      (phase !== "waiting" && phase !== "settled" && phase !== "answering")
-    ) {
-      throw new AppError("CEE_ROUND_CHANGED", "准备状态已变化");
-    }
-    const room = this.chats.get(session.roomId)!;
-    const operation: CEEOriginalPreparation = {
-      id: randomUUID(),
-      connectionId: session.connectionId,
-      phase,
-      hostId: session.players.find((player) => player.isHost)?.id || "",
-      roomGeneration: room.generation,
-      roundKey: room.round?.id ?? null,
-      settings: structuredClone(session.settings),
-    };
-    session.preparation = operation;
-    if (phase !== "answering") {
-      session.phase = "preparing";
-      publish(this.ctx, session);
-    }
-    return operation;
-  }
-
-  private ownsPreparation(session: CEEOriginalSession, operation: CEEOriginalPreparation): boolean {
-    const room = this.chats.get(session.roomId);
-    const phase = operation.phase === "answering" ? "answering" : "preparing";
-    const state = originalPrivateState({ ...session, phase: operation.phase });
-    return (
-      session.preparation?.id === operation.id &&
-      !session.revoked &&
-      session.confirmed &&
-      session.socket.connected &&
-      session.connectionId === operation.connectionId &&
-      this.connections.has(operation.connectionId) &&
-      this.byConnection.get(operation.connectionId) === session &&
-      session.phase === phase &&
-      room?.generation === operation.roomGeneration &&
-      (room.round?.id ?? null) === operation.roundKey &&
-      (session.players.find((player) => player.isHost)?.id || "") === operation.hostId &&
-      (operation.phase === "answering" ? state.canSetAnswer : state.canStart)
-    );
-  }
-
-  private requirePreparation(session: CEEOriginalSession, operation: CEEOriginalPreparation): void {
-    if (!this.ownsPreparation(session, operation))
-      throw new AppError("CEE_ROUND_CHANGED", "准备操作已失效，请重新操作");
-  }
-
-  /** 手动出题：开局条件与随机出题相同，满足后进入本服务端的选出题人阶段。 */
-  private enterChoosingSetter(session: CEEOriginalSession): unknown {
-    requireHost(session);
-    if (!originalPrivateState(session).canStart)
-      throw new AppError("CEE_CANNOT_START", "请等待玩家准备或本局结束");
-    session.choosingSetterFrom = session.phase === "settled" ? "settled" : "waiting";
-    session.phase = "choosingSetter";
-    publish(this.ctx, session);
-    return {};
-  }
-
   private peerAnswerMode(roomId: string): CEESettings["answerMode"] {
     for (const peer of this.sessions.values())
       if (peer.roomId === roomId && peer.confirmed) return peer.settings.answerMode;
     return "random";
-  }
-
-  private leaveChoosingSetter(session: CEEOriginalSession): void {
-    if (session.phase === "choosingSetter") session.phase = session.choosingSetterFrom ?? "waiting";
-    delete session.choosingSetterFrom;
-  }
-
-  private async start(session: CEEOriginalSession): Promise<unknown> {
-    requireHost(session);
-    if (!originalPrivateState(session).canStart)
-      throw new AppError("CEE_CANNOT_START", "请等待玩家准备或本局结束");
-    const operation = this.beginPreparation(session);
-    try {
-      const character = await this.options.data.chooseRandomCharacter(operation.settings);
-      this.requirePreparation(session, operation);
-      if (!character.imageUrl) {
-        character.imageUrl = await this.options.data.resolveCharacterImage(character.id);
-        this.requirePreparation(session, operation);
-      }
-      return await upstreamRequest(this.ctx, session.socket, "gameStart", {
-        roomId: session.roomId,
-        character: encodeOriginalCharacter(character, this.options.aesSecret!),
-        settings: toOriginalSettings(operation.settings),
-      });
-    } finally {
-      if (session.preparation?.id === operation.id) {
-        cancelPreparation(session);
-        publish(this.ctx, session);
-      }
-    }
-  }
-
-  private async setAnswer(
-    session: CEEOriginalSession,
-    id: number,
-    hints: string[]
-  ): Promise<unknown> {
-    if (!originalPrivateState(session).canSetAnswer)
-      throw new AppError("CEE_NOT_SETTER", "只有指定出题人可以提交答案");
-    const operation = this.beginPreparation(session);
-    try {
-      const character = await this.options.data.getCharacter(id, operation.settings);
-      this.requirePreparation(session, operation);
-      if (!character.imageUrl) {
-        character.imageUrl = await this.options.data.resolveCharacterImage(id);
-        this.requirePreparation(session, operation);
-      }
-      return await upstreamRequest(this.ctx, session.socket, "setAnswer", {
-        roomId: session.roomId,
-        character: encodeOriginalCharacter(character, this.options.aesSecret!),
-        hints,
-      });
-    } finally {
-      if (session.preparation?.id === operation.id) cancelPreparation(session);
-    }
-  }
-
-  private async guess(session: CEEOriginalSession, id: number): Promise<unknown> {
-    if (!originalPrivateState(session).canGuess || !session.answer)
-      throw new AppError("CEE_CANNOT_GUESS", "当前不能猜测");
-    const roundKey = session.roundKey;
-    const syncRound = session.syncRound;
-    const attempts = selfOf(session).attempts;
-    const data = this.roundData(session);
-    if (this.chats.get(session.roomId)!.round!.phase !== "guessing")
-      throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    const [answer, character] = await Promise.all([
-      this.supplementAnswer(session),
-      data.getCharacter(id, session.settings),
-    ]);
-    if (
-      !this.isCurrentRound(session, roundKey) ||
-      session.syncRound !== syncRound ||
-      selfOf(session).attempts !== attempts ||
-      !originalPrivateState(session).canGuess
-    )
-      throw new AppError("CEE_ROUND_CHANGED", "本轮状态已变化，请重新操作");
-    const feedback = buildCEEFeedback(character, answer, session.settings);
-    const tags = session.settings.tagBan
-      ? feedback.tags.filter((tag) => tag.matched).map((tag) => tag.text)
-      : [];
-    const result = await upstreamRequest(this.ctx, session.socket, "playerGuess", {
-      roomId: session.roomId,
-      guessResult: {
-        isCorrect: id === answer.id,
-        isPartialCorrect: feedback.sharedAppearances.length > 0,
-        guessData: toOriginalCharacter(character),
-      },
-      sharedMetaTags: tags,
-    });
-    if (!this.isCurrentRound(session, roundKey))
-      throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    // 旧部署只有独立标签事件；新部署在猜测事务中登记并通过 ACK 确认。
-    if (
-      result.tagBanApplied !== true &&
-      tags.length &&
-      this.isCurrentRound(session, roundKey) &&
-      session.phase === "guessing" &&
-      this.chats.get(session.roomId)?.round?.phase === "guessing"
-    ) {
-      session.socket.emit("tagBanSharedMetaTags", { roomId: session.roomId, tags });
-    }
-    return result;
-  }
-
-  private roundData(session: CEEOriginalSession): CEEOriginalRoundData {
-    if (!this.isCurrentRound(session)) throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    return this.chats.get(session.roomId)!.round!.data;
-  }
-
-  private isCurrentRound(session: CEEOriginalSession, key = session.roundKey): boolean {
-    return (
-      !session.revoked &&
-      key !== null &&
-      session.roundKey === key &&
-      this.chats.get(session.roomId)?.round?.id === key
-    );
-  }
-
-  private async supplementAnswer(session: CEEOriginalSession): Promise<CEECharacterView> {
-    const key = session.roundKey;
-    if (!session.answer) throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    const answer = await this.roundData(session).supplement(session.answer);
-    if (!this.isCurrentRound(session, key))
-      throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    session.answer = answer;
-    if (session.roundSummary) session.roundSummary.answer = answer;
-    return answer;
-  }
-
-  private async imageHint(session: CEEOriginalSession): Promise<{ dataUrl: string }> {
-    this.roundData(session);
-    const state = originalPrivateState(session);
-    if (!state.imageHintAvailable || !session.answer)
-      throw new AppError("CEE_HINT_LOCKED", "图片提示尚未解锁");
-    const roundKey = session.roundKey;
-    const image =
-      session.answer.imageUrl || (await this.options.data.resolveCharacterImage(session.answer.id));
-    if (!image) throw new AppError("CEE_IMAGE_UNAVAILABLE", "暂时无法取得图片提示");
-    const dataUrl = await this.imageHints.render(image, Math.max(1, state.imageHintLevel));
-    if (!this.isCurrentRound(session, roundKey))
-      throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
-    return { dataUrl };
   }
 
   private chat(session: CEEOriginalSession, text: string): unknown {
@@ -826,7 +625,7 @@ export class CEEOriginalService {
     const host: CEEOriginalEventHost = {
       publish: (target, calibration) => publish(this.ctx, target, calibration),
       revoke: (target, reason, notify, kicked) => revoke(this.ctx, target, reason, notify, kicked),
-      ownsPreparation: (target, operation) => this.ownsPreparation(target, operation),
+      ownsPreparation: (target, operation) => ownsPreparation(this.ctx, target, operation),
       cancelPreparation: (target) => cancelPreparation(target),
       gameStarted: (target, payload) => this.gameStarted(target, payload),
       updateHistory: (target, value) => this.updateHistory(target, value),
@@ -929,10 +728,10 @@ export class CEEOriginalService {
       session.deadlineAt = null;
     }
     session.hints = round.hints;
-    void this.supplementAnswer(session)
+    void supplementAnswer(this.ctx, session)
       .then(() => publish(this.ctx, session))
       .catch(() => {
-        if (this.isCurrentRound(session, key))
+        if (isCurrentRound(this.ctx, session, key))
           this.options.logger?.warn("原版答案附加标签读取失败", { roomId: session.roomId });
       });
   }
@@ -969,13 +768,13 @@ export class CEEOriginalService {
           feedback: buildCEEFeedback(character, session.answer!, session.settings),
         };
         const key = session.roundKey;
-        if (!this.isCurrentRound(session, key)) return guess;
+        if (!isCurrentRound(this.ctx, session, key)) return guess;
         void Promise.all([
-          this.roundData(session).supplement(character),
-          this.supplementAnswer(session),
+          roundData(this.ctx, session).supplement(character),
+          supplementAnswer(this.ctx, session),
         ])
           .then(([supplemented, answer]) => {
-            if (!this.isCurrentRound(session, key) || !session.guesses.includes(guess)) return;
+            if (!isCurrentRound(this.ctx, session, key) || !session.guesses.includes(guess)) return;
             const feedback = buildCEEFeedback(supplemented, answer, session.settings);
             guess.feedback = {
               ...guess.feedback,
@@ -985,7 +784,7 @@ export class CEEOriginalService {
             publish(this.ctx, session);
           })
           .catch(() => {
-            if (this.isCurrentRound(session, key))
+            if (isCurrentRound(this.ctx, session, key))
               this.options.logger?.warn("原版猜测附加标签读取失败", { roomId: session.roomId });
           });
         return guess;
