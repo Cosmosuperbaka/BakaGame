@@ -162,7 +162,7 @@ function noteGuessSignal(
 ): void {
   if (!ctx.provenance) return;
   const { at, matched } = ctx.provenance.match(connection.id, characterId);
-  ctx.state.noteGuessSignal(room.id, {
+  ctx.state.recording.noteGuessSignal(room.id, {
     guessId: guess.id,
     playerId: guess.playerId,
     attempts,

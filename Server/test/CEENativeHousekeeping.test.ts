@@ -120,7 +120,7 @@ describe("CEE 巡检与回收", () => {
     await h.send(host, "cee.game.setAnswer", { characterId: 1, hints: [] });
     await h.guess(guest, 3);
     // 信号表是服务内部的旁表，没有对外出口：只能直接看它有没有跟着房间走。
-    const signals = (h.service.state as unknown as { guessSignals: Map<string, unknown> })
+    const signals = (h.service.state.recording as unknown as { guessSignals: Map<string, unknown> })
       .guessSignals;
     expect(signals.has("1234")).toBe(true);
     h.service.adminCloseRoom("1234");
