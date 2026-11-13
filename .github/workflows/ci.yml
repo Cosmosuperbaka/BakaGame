@@ -256,12 +256,14 @@ jobs:
         timeout-minutes: 5
         run: pnpm --filter server exec bun --no-env-file run scripts/ShutdownSmoke.ts
 
-  # 依赖公告报告：只报告、不阻塞合并（步骤 continue-on-error，整次运行不因它变红）。
+  # 依赖公告报告：只报告、不阻塞合并。作业级与步骤级都 continue-on-error：
+  # 部署认的是整次运行的结论，这个作业连检出或装工具失败都不能让它变红。
   # 是否升级为门禁由维护者决定；先看一段时间的噪声再定阈值。
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    continue-on-error: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
