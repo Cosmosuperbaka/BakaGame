@@ -78,6 +78,7 @@ import { SitePresence } from "./SitePresence";
 import { SitePages } from "./SitePages";
 import { tabKeyOf, TabSessions } from "./TabSessions";
 import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
+import { warnMissingDeploymentMarker } from "./DeploymentMarkerWarning";
 import { isAllowedOrigin } from "./Origin";
 import {
   compileRouteTemplates,
@@ -288,6 +289,7 @@ export const createApp = ({
   clientWebBundle,
   siteFeatures,
 }: AppDependencies) => {
+  warnMissingDeploymentMarker(env, logger);
   const fakerService = whoIsFakerService;
   const songService = sonGuessrService;
   const characterService = ceeService;
