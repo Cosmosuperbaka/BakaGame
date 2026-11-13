@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  usePageLinkClick,
   usePageNavigate,
   usePageTransitionDirection,
   usePageTransitionEnds,
@@ -204,5 +205,58 @@ describe("usePageTransitionEnds", () => {
     );
     expect(screen.getByText("idle")).toBeInTheDocument();
     expect(snapshot().names).toEqual({ solo: null });
+  });
+});
+
+describe("usePageLinkClick", () => {
+  function LinkProbe({ onNavigate }: { onNavigate?: () => boolean | void }) {
+    const linkClick = usePageLinkClick();
+    return (
+      <a href="/cee" onClick={linkClick("/cee", onNavigate)}>
+        去大厅
+      </a>
+    );
+  }
+
+  const renderProbe = (onNavigate?: () => boolean | void) => {
+    const router = createMemoryRouter(
+      [
+        { path: "/", element: <LinkProbe onNavigate={onNavigate} /> },
+        { path: "/cee", element: <h1>大厅</h1> },
+      ],
+      { initialEntries: ["/"] }
+    );
+    render(<RouterProvider router={router} />);
+    return router;
+  };
+
+  it("普通左键截下默认跳转，走站内导航", async () => {
+    const router = renderProbe();
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(screen.getByRole("link", { name: "去大厅" }), event);
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/cee"));
+  });
+
+  // 中键与带修饰键的点击是「在新标签页打开」，交还浏览器按 href 处理。
+  it.each([
+    ["中键", { button: 1 }],
+    ["Ctrl", { button: 0, ctrlKey: true }],
+    ["Cmd", { button: 0, metaKey: true }],
+    ["Shift", { button: 0, shiftKey: true }],
+  ])("%s 点击不拦截、不站内导航", (_label, init) => {
+    const router = renderProbe();
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...init });
+    fireEvent(screen.getByRole("link", { name: "去大厅" }), event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(router.state.location.pathname).toBe("/");
+  });
+
+  it("onNavigate 返回 false 时只吞掉默认跳转，不导航", () => {
+    const router = renderProbe(() => false);
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(screen.getByRole("link", { name: "去大厅" }), event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(router.state.location.pathname).toBe("/");
   });
 });

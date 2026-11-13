@@ -1,4 +1,4 @@
-import { useCallback, useContext, useLayoutEffect } from "react";
+import { useCallback, useContext, useLayoutEffect, type MouseEvent } from "react";
 import {
   UNSAFE_ViewTransitionContext,
   useNavigate,
@@ -14,6 +14,29 @@ export function usePageNavigate() {
   const navigate = useNavigate();
   return useCallback(
     (to: To, options?: NavigateOptions) => navigate(to, { viewTransition: true, ...options }),
+    [navigate]
+  );
+}
+
+/** 普通左键单击：新标签、新窗口与下载类点击（中键、带修饰键）交还浏览器处理。 */
+export function isPlainLeftClick(event: MouseEvent<HTMLElement>): boolean {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
+/**
+ * 站内真链接的点击处理：元素本身是 `a[href]`，抓取器、中键与「在新标签页打开」都拿得到地址；
+ * 普通左键截下来走 `usePageNavigate` 的页面过渡，观感与按钮式导航一致。
+ * `onNavigate` 返回 false 时不导航（例如已有一次导航在途），但仍吞掉默认跳转。
+ */
+export function usePageLinkClick() {
+  const navigate = usePageNavigate();
+  return useCallback(
+    (to: string, onNavigate?: () => boolean | void) => (event: MouseEvent<HTMLElement>) => {
+      if (!isPlainLeftClick(event)) return;
+      event.preventDefault();
+      if (onNavigate?.() === false) return;
+      void navigate(to);
+    },
     [navigate]
   );
 }

@@ -28,6 +28,7 @@ vi.mock("@/layouts/RootLayout", async () => ({
   RootLayout: (await import("react-router-dom")).Outlet,
 }));
 vi.mock("@/pages/LandingPage", () => ({ default: () => <h1>landing-page</h1> }));
+vi.mock("@/pages/NotFoundPage", () => ({ default: () => <h1>not-found-page</h1> }));
 vi.mock("@/layouts/SonGuessrLayout", async () => ({
   default: (await import("react-router-dom")).Outlet,
 }));
@@ -112,5 +113,13 @@ describe("路由错误出口", () => {
   ])("猜歌房间路由 %s 渲染对应的页面形态", async (path, text) => {
     renderAt(path);
     expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  // 乱码地址静默跳回首页，等于告诉抓取器「这里有一张首页」（软 404）；要明说页面不存在，地址也留在原处。
+  it("全局未知路径渲染页面不存在，不跳回首页", async () => {
+    renderAt("/no-such-page");
+    expect(await screen.findByText("not-found-page")).toBeInTheDocument();
+    expect(screen.queryByText("landing-page")).toBeNull();
+    expect(router?.state.location.pathname).toBe("/no-such-page");
   });
 });

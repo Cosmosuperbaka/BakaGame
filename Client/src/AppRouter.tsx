@@ -71,8 +71,8 @@ export function createAppRouter() {
         { path: "/abouts", lazy: page(() => import("@/pages/CreditsPage")) },
         // 公开状态页：noindex，不进营销页登记位；后端不可达时按未知降级。
         { path: "/status", lazy: page(() => import("@/pages/StatusPage")) },
-        // 其余无法识别的路径一律回落地页
-        { path: "*", element: <Navigate to="/" replace /> },
+        // 其余无法识别的路径明说页面不存在：静默跳回首页会让乱码地址被当成首页的重复页。
+        { path: "*", lazy: page(() => import("@/pages/NotFoundPage")) },
       ],
     },
   ]);
