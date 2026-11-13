@@ -8,8 +8,10 @@ const { mockCommitHistory } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("virtual:commit-history", () => ({
-  default: mockCommitHistory,
+vi.mock("virtual:build-info", () => ({
+  get currentCommit() {
+    return mockCommitHistory.currentCommit;
+  },
 }));
 
 import { VERSION_CHECK_INTERVAL_MS, VersionUpdateNotice } from "./VersionUpdateNotice";

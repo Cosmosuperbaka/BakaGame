@@ -18,6 +18,11 @@ import { type CommitEntry, type CommitHistory } from "../../src/lib/CommitHistor
 // 接口取不到时逐级降级回本地 git 日志、再到空数组——任何一步失败都不该让构建挂掉。
 
 const COMMIT_HISTORY_ID = "virtual:commit-history";
+/**
+ * 只含当前提交号的轻量虚拟模块：首屏（入口、落地页、版本提示）只要这一个值，
+ * 不该为它带上整份提交列表。完整列表只给按需加载的致谢页。
+ */
+const BUILD_INFO_ID = "virtual:build-info";
 
 /** 构建期等接口的硬上限：构建机出网慢时不能把整次构建拖住。 */
 const COMMIT_HISTORY_API_TIMEOUT_MS = 3000;
@@ -32,6 +37,7 @@ export function commitHistoryPlugin(options: {
   execGit?: (args: string) => string;
 }) {
   const resolvedId = "\0" + COMMIT_HISTORY_ID;
+  const resolvedBuildInfoId = "\0" + BUILD_INFO_ID;
 
   // load 与 transformIndexHtml 都要用，同一次构建里跑一次就够。
   let collected: Promise<CommitHistory> | undefined;
@@ -127,9 +133,14 @@ export function commitHistoryPlugin(options: {
   return {
     name: "commit-history",
     resolveId(id: string) {
-      return id === COMMIT_HISTORY_ID ? resolvedId : null;
+      if (id === COMMIT_HISTORY_ID) return resolvedId;
+      return id === BUILD_INFO_ID ? resolvedBuildInfoId : null;
     },
     async load(id: string) {
+      // 当前提交号只读本地 git，不等 GitHub 接口：与提交列表第一条、页面 meta 同一个口径。
+      if (id === resolvedBuildInfoId) {
+        return `export const currentCommit = ${JSON.stringify(shortRevision())};`;
+      }
       if (id !== resolvedId) return null;
 
       collected ??= collect();

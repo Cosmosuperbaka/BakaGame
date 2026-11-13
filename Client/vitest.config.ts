@@ -13,6 +13,7 @@ export default defineConfig({
       name: "test-virtual-modules",
       resolveId(id) {
         if (id === "virtual:commit-history") return "\0virtual:commit-history";
+        if (id === "virtual:build-info") return "\0virtual:build-info";
         if (id === "virtual:app-version") return "\0virtual:app-version";
         if (id === "virtual:sticker-manifest") return "\0virtual:sticker-manifest";
         if (id === "virtual:credits") return "\0virtual:credits";
@@ -24,6 +25,7 @@ export default defineConfig({
         if (id === "\0virtual:commit-history") {
           return 'export default { generatedAt: "", currentCommit: "dev", commits: [] }';
         }
+        if (id === "\0virtual:build-info") return 'export const currentCommit = "dev";';
         // 版本号按构建期同一份推导取，单测里断言的版本才不会与真实日志脱节。
         if (id === "\0virtual:app-version") {
           const text = readFileSync(

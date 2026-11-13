@@ -26,6 +26,14 @@ declare module "virtual:commit-history" {
 }
 
 /**
+ * 构建期当前提交的短哈希，由同一个 commit-history 插件提供。
+ * 首屏只需要这一个值：单独成模块，免得为它把整份提交列表打进入口。
+ */
+declare module "virtual:build-info" {
+  export const currentCommit: string;
+}
+
+/**
  * 构建期从 `src/data/changelog.json` 解析出的展示版本号（日志里的最大版本号），
  * 由 vite.config.ts 的 app-version 插件提供。落地页与 Sentry 只要这一个字符串，
  * 不再静态 import 整份日志数据；完整更新日志仍由按需加载的致谢页取。

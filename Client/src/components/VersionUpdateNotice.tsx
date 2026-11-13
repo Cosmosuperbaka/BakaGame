@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
-import commitHistory from "virtual:commit-history";
+import { currentCommit } from "virtual:build-info";
 import { Button } from "@/components/ui/Button";
 import { bakaClientType } from "@/lib/BakaChannel";
 import { bannerRise } from "@/lib/Motion";
@@ -38,7 +38,7 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
       !active ||
       isDevEnvironment() ||
       bakaClientType() === "mobile" ||
-      commitHistory.currentCommit === "dev"
+      currentCommit === "dev"
     ) {
       return;
     }
@@ -65,7 +65,7 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
           !disposed &&
           deployedBuild &&
           deployedBuild !== "dev" &&
-          deployedBuild !== commitHistory.currentCommit
+          deployedBuild !== currentCommit
         ) {
           setUpdateAvailable(true);
           // 提示已经出现，再查只是白白回源：停掉定时与监听，用户刷新后页面重新开始检测。

@@ -20,7 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/Tooltip
 import { ClientDownloadEntry } from "@/components/ClientDownloadEntry";
 // 展示版本号构建期从 changelog.json 解析（与致谢页同一真相源），整份日志不随首屏下载。
 import appVersion from "virtual:app-version";
-import commitHistory from "virtual:commit-history";
+import { currentCommit } from "virtual:build-info";
 import { REPOSITORY_URL } from "@/data/PageMeta";
 import { useSiteFeatures, type SiteFeatures } from "@/lib/SiteConfig";
 import { cn } from "@/lib/Utils";
@@ -387,7 +387,7 @@ export default function LandingPage() {
   // 展示版本号取自更新日志里的最大版本号，与 package.json 无关；
   // 解析在构建期完成，运行时不再为了一个字符串背下整份日志。
   const version = appVersion || undefined;
-  const commit = commitHistory.currentCommit;
+  const commit = currentCommit;
   // 日志为空时版本号未知，用 ∞ 占位而不是留空。
   const versionLabel = `V${version ?? "∞"}${commit ? `(${commit})` : ""}`;
 

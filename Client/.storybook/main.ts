@@ -34,11 +34,16 @@ const STORY_COMMITS: Array<[string, string, number]> = [
  */
 function storyCommitHistory(): Plugin {
   const id = "virtual:commit-history";
+  const buildInfoId = "virtual:build-info";
   return {
     name: "story-commit-history",
     enforce: "pre",
-    resolveId: (source) => (source === id ? `\0${id}` : null),
+    resolveId: (source) => {
+      if (source === id) return `\0${id}`;
+      return source === buildInfoId ? `\0${buildInfoId}` : null;
+    },
     load(source) {
+      if (source === `\0${buildInfoId}`) return `export const currentCommit = "a1c3e5f";`;
       if (source !== `\0${id}`) return null;
       return `const now = Date.now();
 export default {

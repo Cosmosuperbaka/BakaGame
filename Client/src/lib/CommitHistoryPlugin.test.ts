@@ -86,6 +86,18 @@ describe("commitHistoryPlugin", () => {
     expect(await plugin.load("\0virtual:other")).toBeNull();
   });
 
+  it("当前提交号单独成模块：只含这一个值，也不等远端接口", async () => {
+    const fetchMock = stubFetch({ ok: true, json: GITHUB_PAYLOAD });
+    const plugin = commitHistoryPlugin({ useRemote: true, execGit: fakeGit });
+
+    expect(plugin.resolveId("virtual:build-info")).toBe("\0virtual:build-info");
+    const code = await plugin.load("\0virtual:build-info");
+    // 首屏拿它只为一个字符串：模块里不能带提交列表，否则整份列表又回到入口。
+    expect(code).toBe('export const currentCommit = "0123456";');
+    expect(code).not.toContain("commits");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("reads the remote list when building, pinned to the built revision", async () => {
     const fetchMock = stubFetch({ ok: true, json: GITHUB_PAYLOAD });
     const history = await loadHistory(commitHistoryPlugin({ useRemote: true, execGit: fakeGit }));
