@@ -13,6 +13,7 @@ import {
   type PlayerMarks,
   type PlayerRowProps,
 } from "./FakerPlayerRow";
+import { useScrollFade } from "@/hooks/UseScrollFade";
 import { cn } from "@/lib/Utils";
 import {
   PLAYER_COLUMN_WIDTH,
@@ -60,6 +61,7 @@ export interface PlayerListProps {
 }
 
 export function FakerPlayerList(props: PlayerListProps) {
+  const [, historyScrollerRef] = useScrollFade<HTMLDivElement>("x");
   const {
     players,
     myPlayerId,
@@ -316,8 +318,10 @@ export function FakerPlayerList(props: PlayerListProps) {
   if (history) {
     return (
       <div
+        ref={historyScrollerRef}
         data-testid="player-history-scroll"
-        className="scrollbar-hidden h-full min-h-0 overflow-auto"
+        // 右缘还有发言列时淡出；左侧是钉住的玩家列，不淡出。
+        className="scrollbar-hidden scroll-fade-x h-full min-h-0 overflow-auto [--scroll-fade-start:0px]"
       >
         {body}
       </div>

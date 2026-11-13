@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useActiveTabIntoView, useScrollFade } from "@/hooks/UseScrollFade";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -111,20 +112,9 @@ export function CreditsView({
 }: CreditsViewProps) {
   const byName = useMemo(() => creditDependencyIndex(dependencies), [dependencies]);
   const [path, setPath] = useState<string[]>([]);
-  const tabScrollerRef = useRef<HTMLDivElement>(null);
-
-  // 窄屏五个标签放不下、整行横滑：带着 `?tab=terms` 进来时当前标签在视口外，读不出自己在哪一页。
-  // 当前标签变了就把它横向挪进可见范围（留一点余量露出相邻标签，读得出「还能滑」）；放得下时不动。
-  useEffect(() => {
-    const scroller = tabScrollerRef.current;
-    const active = scroller?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
-    if (!scroller || !active) return;
-    const bounds = scroller.getBoundingClientRect();
-    const target = active.getBoundingClientRect();
-    const margin = 32;
-    if (target.right > bounds.right) scroller.scrollLeft += target.right - bounds.right + margin;
-    else if (target.left < bounds.left) scroller.scrollLeft -= bounds.left - target.left + margin;
-  }, [tab]);
+  // 窄屏标签放不下时整行横滑：右缘淡出读得出还有标签；直链进来时当前标签挪进可见范围。
+  const [tabScroller, tabScrollerRef] = useScrollFade<HTMLDivElement>("x");
+  useActiveTabIntoView(tabScroller, tab);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const currentName = path.length > 0 ? path[path.length - 1] : null;
@@ -206,7 +196,7 @@ export function CreditsView({
           {/* 窄屏五个标签放不下时整行横向滚动，不折行。 */}
           <div
             ref={tabScrollerRef}
-            className="scrollbar-hidden mx-auto w-full max-w-6xl overflow-x-auto px-6 md:px-10"
+            className="scrollbar-hidden scroll-fade-x mx-auto w-full max-w-6xl px-6 md:px-10"
           >
             <TabsList className="w-full justify-start">
               {TAB_ITEMS.map((item) => (

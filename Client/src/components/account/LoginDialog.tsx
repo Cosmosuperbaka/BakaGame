@@ -264,7 +264,7 @@ function LoginDialogBody({
   };
 
   return (
-    <DialogContent data-agent-sensitive className="max-w-sm gap-0 p-0">
+    <DialogContent data-agent-sensitive className="max-w-sm" bodyClassName="gap-0 p-0">
       <form onSubmit={(event) => void submit(event)} className="grid">
         <div className="flex flex-col items-center gap-3 rounded-t-md border-b border-border/60 bg-muted/40 px-6 pb-5 pt-8">
           <DialogTitle className="text-center">

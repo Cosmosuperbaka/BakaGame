@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AnimatePresence, motion } from "framer-motion";
 import { CloseButton } from "@/components/ui/CloseButton";
 import { useOriginStyle } from "@/hooks/UseOriginStyle";
+import { useScrollFade } from "@/hooks/UseScrollFade";
 import { backdrop } from "@/lib/motion/Choreography";
 import { emergeFromOrigin, type OriginPoint } from "@/lib/motion/Origin";
 import { cn } from "@/lib/Utils";
@@ -53,50 +54,69 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
-const DialogContent = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => {
-  const origin = React.useContext(DialogOriginContext);
-  // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（DesignGuide §8）。
-  // 原点在节点挂上时测量：Portal 首帧不挂子树，要等节点真正出现。
-  const { style: originStyle, measure } = useOriginStyle(origin);
-  const setRefs = React.useCallback(
-    (element: HTMLDivElement | null) => {
-      measure(element);
-      if (typeof ref === "function") ref(element);
-      else if (ref) ref.current = element;
-    },
-    [measure, ref]
-  );
+interface DialogContentProps extends React.ComponentPropsWithoutRef<
+  typeof DialogPrimitive.Content
+> {
+  /** 窗口外框：宽度档等。正文的内边距与间距改写在 `bodyClassName`。 */
+  className?: string;
+  /** 正文滚动区：默认 `grid gap-4 p-6`，需要贴边排版的弹窗在这里收掉内边距。 */
+  bodyClassName?: string;
+}
 
-  return (
-    <DialogPortal forceMount>
-      <DialogOverlay />
-      <DialogPrimitive.Content asChild {...props}>
-        <motion.div
-          ref={setRefs}
-          variants={emergeFromOrigin}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          style={originStyle}
-          className={cn(
-            // 窄屏两侧各留 1rem：先从宽度里扣掉边距再居中；mx-4 配 w-full 会把右缘推出视口。
-            "fixed left-1/2 top-1/2 z-modal grid max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
-            "scrollbar-hidden gap-4 overflow-y-auto rounded-md border bg-popover p-6 text-popover-foreground shadow-lg",
-            className
-          )}
-        >
-          {children}
-          <DialogPrimitive.Close asChild>
-            <CloseButton className="absolute right-3 top-3" />
-          </DialogPrimitive.Close>
-        </motion.div>
-      </DialogPrimitive.Content>
-    </DialogPortal>
-  );
-});
+const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
+  ({ className, bodyClassName, children, ...props }, ref) => {
+    const origin = React.useContext(DialogOriginContext);
+    const [, bodyRef] = useScrollFade<HTMLDivElement>("y");
+    // 缩放原点落在触发按钮上：窗口从按钮里被吸出来，关闭时沿同一原点收回（DesignGuide §8）。
+    // 原点在节点挂上时测量：Portal 首帧不挂子树，要等节点真正出现。
+    const { style: originStyle, measure } = useOriginStyle(origin);
+    const setRefs = React.useCallback(
+      (element: HTMLDivElement | null) => {
+        measure(element);
+        if (typeof ref === "function") ref(element);
+        else if (ref) ref.current = element;
+      },
+      [measure, ref]
+    );
+
+    return (
+      <DialogPortal forceMount>
+        <DialogOverlay />
+        <DialogPrimitive.Content asChild {...props}>
+          <motion.div
+            ref={setRefs}
+            variants={emergeFromOrigin}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            style={originStyle}
+            className={cn(
+              // 窄屏两侧各留 1rem：先从宽度里扣掉边距再居中；mx-4 配 w-full 会把右缘推出视口。
+              "fixed left-1/2 top-1/2 z-modal flex max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col",
+              "overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-lg",
+              className
+            )}
+          >
+            {/* 超出 90vh 时只有正文滚动：外框的描边、圆角与投影不被遮罩裁掉，关闭钮停在右上角；
+            还有内容的那一头边缘淡出，读得出页脚的按钮在下面（DesignGuide §7）。 */}
+            <div
+              ref={bodyRef}
+              className={cn(
+                "scrollbar-hidden scroll-fade-y grid min-h-0 gap-4 p-6 [--scroll-fade-size:2rem]",
+                bodyClassName
+              )}
+            >
+              {children}
+            </div>
+            <DialogPrimitive.Close asChild>
+              <CloseButton className="absolute right-3 top-3" />
+            </DialogPrimitive.Close>
+          </motion.div>
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  }
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

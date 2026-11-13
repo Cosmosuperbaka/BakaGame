@@ -312,8 +312,12 @@
 }
 
 /**
- * 面板内的纵向滚动列表（战绩、排行榜等）。全站不画滚动条，上下边缘各淡出一小段，
- * 读得出「还有内容可滚」；调用处给出上下内边距，首末行停稳后不会被淡出段切掉。
+ * 滚动区的边缘淡出（纵向：战绩、排行榜、弹窗正文；横向：标签栏、宽表格）。全站不画滚动条，
+ * 边缘淡出一小段读得出「还有内容可滚」，所有滚动区只用这一种提示。
+ * 单用时两头常驻淡出，调用处给出不小于淡出段的内边距，首末项停稳后不会被切掉；
+ * 贴边排版的滚动区配 `useScrollFade`，只在那一头还有内容时淡出（它把对应变量收成 0）。
+ * 遮罩连同边框、底色与投影一起裁切，带边框的容器把工具类挂在内层。
+ * 淡出段长度可由 `--scroll-fade-size` 调大（如弹窗正文），只在配了钩子的滚动区上这样做。
  */
 @utility scroll-fade-y {
   overflow-y: auto;
@@ -321,8 +325,21 @@
   mask-image: linear-gradient(
     to bottom,
     transparent 0,
-    black 0.75rem,
-    black calc(100% - 0.75rem),
+    black var(--scroll-fade-start, var(--scroll-fade-size, 0.75rem)),
+    black calc(100% - var(--scroll-fade-end, var(--scroll-fade-size, 0.75rem))),
+    transparent 100%
+  );
+}
+
+/** 横向版本：标签栏与宽表格。淡出段比纵向宽，窄屏上一眼看得出右侧还有一截。 */
+@utility scroll-fade-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--scroll-fade-start, var(--scroll-fade-size, 1.5rem)),
+    black calc(100% - var(--scroll-fade-end, var(--scroll-fade-size, 1.5rem))),
     transparent 100%
   );
 }

@@ -17,6 +17,7 @@ import {
   clueHammerBar,
 } from "@/lib/motion/NamedMoves";
 import { listContainer, listItem, skeletonFade } from "@/lib/motion/Choreography";
+import { useScrollFade } from "@/hooks/UseScrollFade";
 import { cn } from "@/lib/Utils";
 import { CEECharacterImage } from "./CEECharacterImage";
 import {
@@ -327,51 +328,63 @@ function FeedbackRows({
   showRound: boolean;
   isFresh: (guess: CEEGuess) => boolean;
 }) {
+  const [, scrollerRef] = useScrollFade<HTMLDivElement>("x");
   return (
+    // 外框管描边与底色，内层横滑：右缘还有列时淡出；左侧是钉住的名字列，不淡出。
     <div
       ref={ref}
-      className="@container overflow-x-auto rounded-md border bg-panel [grid-area:1/1]"
-      tabIndex={0}
-      role="region"
-      aria-label="猜测反馈"
+      className="@container overflow-hidden rounded-md border bg-panel [grid-area:1/1]"
     >
-      <table className="w-full text-sm">
-        <thead className="bg-muted text-xs text-muted-foreground">
-          <tr>
-            <th
-              scope="col"
-              className={cn(pinned, "z-sticky bg-muted py-2 pr-2 pl-3 text-left font-medium")}
-            >
-              角色
-            </th>
-            {HEADERS.map((header) => (
+      <div
+        ref={scrollerRef}
+        className="scrollbar-hidden scroll-fade-x [--scroll-fade-start:0px]"
+        tabIndex={0}
+        role="region"
+        aria-label="猜测反馈"
+      >
+        <table className="w-full text-sm">
+          <thead className="bg-muted text-xs text-muted-foreground">
+            <tr>
               <th
-                key={header.key}
                 scope="col"
-                aria-label={header.name}
-                className={cn(
-                  "px-1 py-2 font-medium whitespace-nowrap last:pr-3",
-                  header.key === "tags" ? "px-2 text-left" : "text-center"
-                )}
+                className={cn(pinned, "z-sticky bg-muted py-2 pr-2 pl-3 text-left font-medium")}
               >
-                {header.lines.map((line) => (
-                  <span key={line} className="block leading-tight">
-                    {line}
-                  </span>
-                ))}
+                角色
               </th>
-            ))}
-          </tr>
-        </thead>
-        {/* 表格常是首屏就在的那一项：边界让之后到的猜测照常翻牌，而不是被当成首屏直接出现。 */}
-        <PresenceBoundary>
-          <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
-            {rows.map((guess) => (
-              <GuessRow key={guess.id} guess={guess} showRound={showRound} fresh={isFresh(guess)} />
-            ))}
-          </motion.tbody>
-        </PresenceBoundary>
-      </table>
+              {HEADERS.map((header) => (
+                <th
+                  key={header.key}
+                  scope="col"
+                  aria-label={header.name}
+                  className={cn(
+                    "px-1 py-2 font-medium whitespace-nowrap last:pr-3",
+                    header.key === "tags" ? "px-2 text-left" : "text-center"
+                  )}
+                >
+                  {header.lines.map((line) => (
+                    <span key={line} className="block leading-tight">
+                      {line}
+                    </span>
+                  ))}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          {/* 表格常是首屏就在的那一项：边界让之后到的猜测照常翻牌，而不是被当成首屏直接出现。 */}
+          <PresenceBoundary>
+            <motion.tbody variants={listContainer(rows.length)} initial="initial" animate="animate">
+              {rows.map((guess) => (
+                <GuessRow
+                  key={guess.id}
+                  guess={guess}
+                  showRound={showRound}
+                  fresh={isFresh(guess)}
+                />
+              ))}
+            </motion.tbody>
+          </PresenceBoundary>
+        </table>
+      </div>
     </div>
   );
 }

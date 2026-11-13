@@ -15,6 +15,7 @@ import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import type { AdminQuery } from "@/hooks/UseAdminQuery";
+import { useScrollFade } from "@/hooks/UseScrollFade";
 import { apiErrorMessage } from "@/lib/Api";
 import { formatNumber } from "@/lib/AdminFormat";
 import { cn } from "@/lib/Utils";
@@ -252,18 +253,22 @@ export function AdminTable({
   children: ReactNode;
   className?: string;
 }) {
+  const [, scrollerRef] = useScrollFade<HTMLDivElement>("x");
   return (
-    // relative：表格里的 sr-only 等绝对定位元素以滚动容器为包含块，才会被一起裁进横向滚动区；
-    // 否则它们按静态位置落在表格最右侧，把整页撑出横向滚动条。
-    <div className={cn("relative overflow-x-auto rounded-md border bg-card", className)}>
-      <table
-        aria-label={label}
-        // 单元格默认样式放在 :where() 里：特异性降到最低，列上自己写的 text-right、font-normal 直接生效，
-        // 调用处不必再用 `!` 去压表格的后代选择器。
-        className="w-full min-w-160 text-sm [:where(&)_td]:px-3 [:where(&)_td]:py-2 [:where(&)_th]:px-3 [:where(&)_th]:py-2 [:where(&)_th]:text-left [:where(&)_th]:font-medium [:where(&)_th]:text-muted-foreground [&_thead]:border-b [&_tbody_tr+tr]:border-t"
-      >
-        {children}
-      </table>
+    // 外框管描边与底色，内层负责横滑：边缘淡出的遮罩只裁表格内容，不裁外框（窄屏看得出右侧还有列）。
+    <div className={cn("overflow-hidden rounded-md border bg-card", className)}>
+      {/* relative：表格里的 sr-only 等绝对定位元素以滚动容器为包含块，才会被一起裁进横向滚动区；
+        否则它们按静态位置落在表格最右侧，把整页撑出横向滚动条。 */}
+      <div ref={scrollerRef} className="scrollbar-hidden scroll-fade-x relative">
+        <table
+          aria-label={label}
+          // 单元格默认样式放在 :where() 里：特异性降到最低，列上自己写的 text-right、font-normal 直接生效，
+          // 调用处不必再用 `!` 去压表格的后代选择器。
+          className="w-full min-w-160 text-sm [:where(&)_td]:px-3 [:where(&)_td]:py-2 [:where(&)_th]:px-3 [:where(&)_th]:py-2 [:where(&)_th]:text-left [:where(&)_th]:font-medium [:where(&)_th]:text-muted-foreground [&_thead]:border-b [&_tbody_tr+tr]:border-t"
+        >
+          {children}
+        </table>
+      </div>
     </div>
   );
 }

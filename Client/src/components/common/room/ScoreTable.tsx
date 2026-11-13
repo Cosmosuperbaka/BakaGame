@@ -9,6 +9,7 @@ import {
   scoreRollDelay,
   scoreRow,
 } from "@/lib/motion/Choreography";
+import { useScrollFade } from "@/hooks/UseScrollFade";
 import { cn } from "@/lib/Utils";
 
 export interface ScoreTableColumn {
@@ -76,6 +77,7 @@ export function ScoreTable({
   /** 行按名次排列、第一名在最上：自末行往上揭示，第一名最后落定。缺省按座次自上而下（谁是卧底的身份开牌） */
   ranked?: boolean;
 }) {
+  const [, scrollerRef] = useScrollFade<HTMLDivElement>("x");
   const titleId = useId();
   const body = rows.map((row, rowIndex) => {
     const rollDelay = scoreRollDelay(rowIndex, rows.length, ranked);
@@ -149,7 +151,7 @@ export function ScoreTable({
         </h3>
       </div>
       {/* 窄屏或系统放大字号时表格可能放不下：只让表格横滚，数值列不被圆角容器裁掉，标题留在原位。容器查询供贡献者浅底取行宽 */}
-      <div className="@container overflow-x-auto">
+      <div ref={scrollerRef} className="@container scrollbar-hidden scroll-fade-x">
         <table aria-labelledby={titleId} className="w-full text-sm">
           <thead>
             {/* 名字列的下限防止短名被挤成逐字折行：扣去内边距仍放得下三个字，四列的表在 360 宽的手机上也不横滚 */}
