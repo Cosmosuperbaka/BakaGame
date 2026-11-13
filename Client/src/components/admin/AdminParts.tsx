@@ -13,6 +13,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { FormAlert } from "@/components/account/FormAlert";
 import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
+import { SettingsFields } from "@/components/common/room/settings/Layout";
 import type { AdminQuery } from "@/hooks/UseAdminQuery";
 import { apiErrorMessage } from "@/lib/Api";
 import { formatNumber } from "@/lib/AdminFormat";
@@ -379,6 +380,50 @@ export function UserCell({
         <span className="block font-mono text-xs text-muted-foreground">{user.qqNumber}</span>
       </span>
     </span>
+  );
+}
+
+/** 「标题 + 字段 + 失败说明 + 取消/确认」的表单弹窗外壳；请求在途时不能关闭。 */
+export function AdminFormDialog({
+  title,
+  description,
+  busy,
+  error,
+  submitLabel,
+  submitDisabled = false,
+  onClose,
+  onSubmit,
+  children,
+}: {
+  title: string;
+  description: ReactNode;
+  busy: boolean;
+  error: string | null;
+  submitLabel: string;
+  submitDisabled?: boolean;
+  onClose: () => void;
+  onSubmit: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog open onOpenChange={(next) => !busy && !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <SettingsFields>{children}</SettingsFields>
+        {error ? <FormAlert>{error}</FormAlert> : null}
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+            取消
+          </Button>
+          <Button type="button" loading={busy} disabled={submitDisabled} onClick={onSubmit}>
+            {submitLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

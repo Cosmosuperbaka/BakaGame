@@ -5,22 +5,13 @@ import type {
   PublicStatusEvent,
   PublicStatusIncidentKind,
 } from "@bakagame/shared";
-import { FormAlert } from "@/components/account/FormAlert";
-import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { ToggleChip } from "@/components/ui/ToggleChip";
-import { SettingsFields, SettingsReadOnly } from "@/components/common/room/settings/Layout";
+import { SettingsReadOnly } from "@/components/common/room/settings/Layout";
 import { SettingSelect, SettingSegmented } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
+import { AdminFormDialog } from "@/components/admin/AdminParts";
 import { useAdminAction } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
@@ -176,126 +167,110 @@ export function EventDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(next) => !action.busy && onOpenChange(next)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{editing ? "修改状态事件" : "发布状态事件"}</DialogTitle>
-          <DialogDescription>
-            {draft.kind === "incident"
-              ? "事件面向玩家说明正在发生的故障，恢复时把进度改为「已恢复」。"
-              : "维护窗口说明计划中的停机或升级，到点后改为「进行中」，完成后改为「已完成」。"}
-            发布与修改都会记进审计。
-          </DialogDescription>
-        </DialogHeader>
-        <SettingsFields>
-          {/* 服务端更新沿用既有类型：编辑时类型只读，只在新建时给切换。 */}
-          <SettingsReadOnly readOnly={editing}>
-            <SettingSegmented
-              label="类型"
-              value={draft.kind}
-              onValueChange={(kind) =>
-                setDraft((current) => ({
-                  ...current,
-                  kind,
-                  status: kind === "incident" ? "investigating" : "scheduled",
-                }))
-              }
-              options={[
-                { value: "incident", label: "故障事件" },
-                { value: "maintenance", label: "维护窗口" },
-              ]}
-            />
-          </SettingsReadOnly>
-          {editing ? (
-            <SettingSelect
-              label="进度"
-              value={draft.status}
-              options={STATUS_OPTIONS[draft.kind]}
-              onChange={(status) => setDraft((current) => ({ ...current, status }))}
-            />
-          ) : null}
-          <SettingTextField
-            label="标题"
-            value={draft.title}
-            onChange={(title) => setDraft((current) => ({ ...current, title }))}
-            placeholder="一句话说清影响"
-            maxLength={120}
+    <AdminFormDialog
+      title={editing ? "修改状态事件" : "发布状态事件"}
+      description={
+        <>
+          {draft.kind === "incident"
+            ? "事件面向玩家说明正在发生的故障，恢复时把进度改为「已恢复」。"
+            : "维护窗口说明计划中的停机或升级，到点后改为「进行中」，完成后改为「已完成」。"}
+          发布与修改都会记进审计。
+        </>
+      }
+      busy={Boolean(action.busy)}
+      error={action.error}
+      submitLabel={editing ? "保存修改" : "发布"}
+      submitDisabled={invalid}
+      onClose={() => onOpenChange(false)}
+      onSubmit={() => void save()}
+    >
+      {/* 服务端更新沿用既有类型：编辑时类型只读，只在新建时给切换。 */}
+      <SettingsReadOnly readOnly={editing}>
+        <SettingSegmented
+          label="类型"
+          value={draft.kind}
+          onValueChange={(kind) =>
+            setDraft((current) => ({
+              ...current,
+              kind,
+              status: kind === "incident" ? "investigating" : "scheduled",
+            }))
+          }
+          options={[
+            { value: "incident", label: "故障事件" },
+            { value: "maintenance", label: "维护窗口" },
+          ]}
+        />
+      </SettingsReadOnly>
+      {editing ? (
+        <SettingSelect
+          label="进度"
+          value={draft.status}
+          options={STATUS_OPTIONS[draft.kind]}
+          onChange={(status) => setDraft((current) => ({ ...current, status }))}
+        />
+      ) : null}
+      <SettingTextField
+        label="标题"
+        value={draft.title}
+        onChange={(title) => setDraft((current) => ({ ...current, title }))}
+        placeholder="一句话说清影响"
+        maxLength={120}
+      />
+      <div className="grid gap-2">
+        <label htmlFor="status-event-body" className="font-serif text-sm leading-snug">
+          内容
+        </label>
+        <Textarea
+          id="status-event-body"
+          value={draft.body}
+          maxLength={4000}
+          placeholder="影响范围、原因与预计恢复时间"
+          aria-invalid={(bodyTouched && draft.body.trim().length === 0) || undefined}
+          onChange={(event) => {
+            setBodyTouched(true);
+            setDraft((current) => ({ ...current, body: event.target.value }));
+          }}
+        />
+      </div>
+      <ComponentChips
+        selected={draft.components}
+        onChange={(components) => setDraft((current) => ({ ...current, components }))}
+      />
+      <div className="grid gap-2">
+        <label htmlFor="status-event-start" className="font-serif text-sm leading-snug">
+          {draft.kind === "maintenance" ? "窗口开始" : "开始时间"}
+        </label>
+        <Input
+          id="status-event-start"
+          type="datetime-local"
+          value={draft.startedAt}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, startedAt: event.target.value }))
+          }
+        />
+      </div>
+      {draft.kind === "maintenance" ? (
+        <div className="grid gap-2">
+          <label htmlFor="status-event-end" className="font-serif text-sm leading-snug">
+            窗口结束
+          </label>
+          <Input
+            id="status-event-end"
+            type="datetime-local"
+            value={draft.plannedEndAt}
+            aria-invalid={
+              endedMs === null || (startedMs !== null && endedMs <= startedMs) || undefined
+            }
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, plannedEndAt: event.target.value }))
+            }
           />
-          <div className="grid gap-2">
-            <label htmlFor="status-event-body" className="font-serif text-sm leading-snug">
-              内容
-            </label>
-            <Textarea
-              id="status-event-body"
-              value={draft.body}
-              maxLength={4000}
-              placeholder="影响范围、原因与预计恢复时间"
-              aria-invalid={(bodyTouched && draft.body.trim().length === 0) || undefined}
-              onChange={(event) => {
-                setBodyTouched(true);
-                setDraft((current) => ({ ...current, body: event.target.value }));
-              }}
-            />
-          </div>
-          <ComponentChips
-            selected={draft.components}
-            onChange={(components) => setDraft((current) => ({ ...current, components }))}
-          />
-          <div className="grid gap-2">
-            <label htmlFor="status-event-start" className="font-serif text-sm leading-snug">
-              {draft.kind === "maintenance" ? "窗口开始" : "开始时间"}
-            </label>
-            <Input
-              id="status-event-start"
-              type="datetime-local"
-              value={draft.startedAt}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, startedAt: event.target.value }))
-              }
-            />
-          </div>
-          {draft.kind === "maintenance" ? (
-            <div className="grid gap-2">
-              <label htmlFor="status-event-end" className="font-serif text-sm leading-snug">
-                窗口结束
-              </label>
-              <Input
-                id="status-event-end"
-                type="datetime-local"
-                value={draft.plannedEndAt}
-                aria-invalid={
-                  endedMs === null || (startedMs !== null && endedMs <= startedMs) || undefined
-                }
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, plannedEndAt: event.target.value }))
-                }
-              />
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                维护窗口必须给出晚于开始时刻的结束时间。
-              </p>
-            </div>
-          ) : null}
-        </SettingsFields>
-        {action.error ? <FormAlert>{action.error}</FormAlert> : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={Boolean(action.busy)}
-            onClick={() => onOpenChange(false)}
-          >
-            取消
-          </Button>
-          <Button
-            type="button"
-            loading={Boolean(action.busy)}
-            disabled={invalid}
-            onClick={() => void save()}
-          >
-            {editing ? "保存修改" : "发布"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            维护窗口必须给出晚于开始时刻的结束时间。
+          </p>
+        </div>
+      ) : null}
+    </AdminFormDialog>
   );
 }

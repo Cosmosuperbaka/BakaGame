@@ -1,20 +1,15 @@
 import { useState } from "react";
 import type { AdminRuntimeSetting } from "@bakagame/shared";
-import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
-import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSwitchRow } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import { AdminTable, AdminToolbar, QueryState } from "@/components/admin/AdminParts";
+import {
+  AdminFormDialog,
+  AdminTable,
+  AdminToolbar,
+  QueryState,
+} from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { formatDateTime } from "@/lib/AdminFormat";
@@ -82,35 +77,21 @@ function EditDialog({
     if (ok) onOpenChange(false);
   };
   return (
-    <Dialog open onOpenChange={(next) => !action.busy && onOpenChange(next)}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{item.title}</DialogTitle>
-          <DialogDescription>
-            {item.envVar
-              ? `环境变量 ${item.envVar} 的缺省值是 ${readValue(item.kind, item.defaultValue)}。这里填的值会盖过它；填成与缺省相同的值即可回到跟随环境变量。`
-              : `缺省为${readValue(item.kind, item.defaultValue)}，没有对应的环境变量。这里填的值会盖过缺省，改回${readValue(item.kind, item.defaultValue)}即恢复。`}
-          </DialogDescription>
-        </DialogHeader>
-        <SettingsFields>
-          <Editor item={item} value={value} onChange={setValue} />
-        </SettingsFields>
-        {action.error ? <FormAlert>{action.error}</FormAlert> : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={Boolean(action.busy)}
-            onClick={() => onOpenChange(false)}
-          >
-            取消
-          </Button>
-          <Button type="button" loading={Boolean(action.busy)} onClick={() => void save()}>
-            保存
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <AdminFormDialog
+      title={item.title}
+      description={
+        item.envVar
+          ? `环境变量 ${item.envVar} 的缺省值是 ${readValue(item.kind, item.defaultValue)}。这里填的值会盖过它；填成与缺省相同的值即可回到跟随环境变量。`
+          : `缺省为${readValue(item.kind, item.defaultValue)}，没有对应的环境变量。这里填的值会盖过缺省，改回${readValue(item.kind, item.defaultValue)}即恢复。`
+      }
+      busy={Boolean(action.busy)}
+      error={action.error}
+      submitLabel="保存"
+      onClose={() => onOpenChange(false)}
+      onSubmit={() => void save()}
+    >
+      <Editor item={item} value={value} onChange={setValue} />
+    </AdminFormDialog>
   );
 }
 
