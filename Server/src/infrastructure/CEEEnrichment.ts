@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
@@ -69,6 +69,36 @@ export interface CEECharacterSupplement {
   popularity?: number;
 }
 
+/**
+ * 把一次角色响应里的有效字段合进已有补充资料：缺失或空字段不覆盖已有值。
+ * 纯函数，不碰存储。
+ */
+const mergeCharacterSupplement = (
+  previous: CEECharacterSupplement,
+  raw: Static<typeof CharacterResponse>
+): CEECharacterSupplement => {
+  const next: CEECharacterSupplement = { ...previous };
+  if (raw.name?.trim()) next.name = raw.name.trim();
+  if (raw.summary?.trim()) next.summary = raw.summary;
+  if (raw.gender === "male" || raw.gender === "female") next.gender = raw.gender;
+  if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined)
+    next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
+  for (const entry of raw.infobox ?? []) {
+    if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim())
+      next.nameCn = entry.value.trim();
+    if (entry.key === "别名" && Array.isArray(entry.value)) {
+      const aliases = entry.value.flatMap((value: unknown) => {
+        if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+        if (value && typeof value === "object" && "v" in value && typeof value.v === "string")
+          return value.v.trim() ? [value.v.trim()] : [];
+        return [];
+      });
+      if (aliases.length) next.aliases = [...new Set(aliases)];
+    }
+  }
+  return next;
+};
+
 /** 与 LocalBangumiProvider 共用图片表；可变角色资料与目录有各自的版本表。 */
 export class CEEEnrichment {
   readonly db: Database;
@@ -106,6 +136,9 @@ export class CEEEnrichment {
   /**
    * 搬迁改名前的 `ccb_*` 表。存量库只有旧前缀，直接建新表会被当成空库、
    * 让已回填的角色资料与目录全部重新回源；新库或已搬迁过时什么都不做。
+   *
+   * TODO：这是迁移垫片。所有环境都已用新版本启动过一次（旧表已改名）后，连同
+   * 对应用例一起删除；仓库里没有任何环境搬迁情况的记录，所以暂不能判定可删。
    */
   private renameLegacyTables() {
     const legacy: Array<[string, string]> = [
@@ -209,25 +242,7 @@ export class CEEEnrichment {
     if (raw === undefined) return undefined;
     if (!Value.Check(CharacterResponse, raw))
       throw new AppError("CEE_DATA_INVALID", "角色补充资料格式无效");
-    const next: CEECharacterSupplement = { ...this.readCharacter(id) };
-    if (raw.name?.trim()) next.name = raw.name.trim();
-    if (raw.summary?.trim()) next.summary = raw.summary;
-    if (raw.gender === "male" || raw.gender === "female") next.gender = raw.gender;
-    if (raw.stat?.collects !== undefined && raw.stat.comments !== undefined)
-      next.popularity = Math.max(0, raw.stat.collects + raw.stat.comments);
-    for (const entry of raw.infobox ?? []) {
-      if (entry.key === "简体中文名" && typeof entry.value === "string" && entry.value.trim())
-        next.nameCn = entry.value.trim();
-      if (entry.key === "别名" && Array.isArray(entry.value)) {
-        const aliases = entry.value.flatMap((value: unknown) => {
-          if (typeof value === "string") return value.trim() ? [value.trim()] : [];
-          if (value && typeof value === "object" && "v" in value && typeof value.v === "string")
-            return value.v.trim() ? [value.v.trim()] : [];
-          return [];
-        });
-        if (aliases.length) next.aliases = [...new Set(aliases)];
-      }
-    }
+    const next = mergeCharacterSupplement(this.readCharacter(id), raw);
     const picked = pickImages(raw.images, "character");
     const chosen = size === "grid" ? (picked.grid ?? picked.image) : (picked.image ?? picked.grid);
     this.db.transaction(() => {

@@ -28,9 +28,9 @@ const compareCharacterMatchRank = (
   b: CharacterCandidate,
   query: string
 ): number => {
-  const aExact = Number(a.summary.name !== query && a.summary.nameCn !== query);
-  const bExact = Number(b.summary.name !== query && b.summary.nameCn !== query);
-  return aExact - bExact || b.row.collects - a.row.collects || a.row.id - b.row.id;
+  const aInexact = Number(a.summary.name !== query && a.summary.nameCn !== query);
+  const bInexact = Number(b.summary.name !== query && b.summary.nameCn !== query);
+  return aInexact - bInexact || b.row.collects - a.row.collects || a.row.id - b.row.id;
 };
 
 /** 角色与作品的搜索、按编号取作品、作品下的角色；只读，不持有可变状态。 */

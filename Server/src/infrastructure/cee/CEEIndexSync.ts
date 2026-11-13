@@ -26,9 +26,20 @@ export class CEEIndexSync {
     this.search = ctx.search;
   }
 
-  /** 每个角色只同步一次索引；未启用索引时直接空转。 */
-  async syncCharacterIndexOnce(id: number): Promise<void> {
-    if (!this.search || this.syncedCharacters.has(id)) return;
+  /** 同一角色正在进行的同步：并发调用共用它，不各自再等一次索引任务。 */
+  private readonly syncing = new Map<number, Promise<void>>();
+
+  /** 每个角色只同步一次索引；未启用索引时直接空转。失败不记为已同步，下次再试。 */
+  syncCharacterIndexOnce(id: number): Promise<void> {
+    if (!this.search || this.syncedCharacters.has(id)) return Promise.resolve();
+    const running = this.syncing.get(id);
+    if (running) return running;
+    const request = this.syncCharacterIndexAndRemember(id).finally(() => this.syncing.delete(id));
+    this.syncing.set(id, request);
+    return request;
+  }
+
+  private async syncCharacterIndexAndRemember(id: number): Promise<void> {
     await this.syncCharacterIndex(id);
     if (this.syncedCharacters.size >= SYNCED_CHARACTER_CAP) {
       const oldest = this.syncedCharacters.values().next().value;
