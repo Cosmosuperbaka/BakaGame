@@ -1,10 +1,7 @@
 import { describe, expect, it, mock, afterEach } from "bun:test";
-import {
-  QQMusicProvider,
-  stripHtmlTags,
-  parseQrcLyrics,
-  parseLrcLyrics,
-} from "../src/infrastructure/music/qq/QQMusicProvider";
+import { QQMusicProvider } from "../src/infrastructure/music/qq/QQMusicProvider";
+import { parseLrcLyrics, parseQrcLyrics } from "../src/infrastructure/music/qq/QQLyrics";
+import { stripHtmlTags } from "../src/infrastructure/music/qq/QQResponse";
 import qqmusic from "qqmusic-api-enhanced";
 
 const originals = {

@@ -1,68 +1,42 @@
-import { createHash } from "node:crypto";
 import { AppError } from "../../../domain/Errors";
-import { LRUCache } from "lru-cache";
-import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
 import qqmusic from "qqmusic-api-enhanced";
-import { describeError, type EventLogger } from "../../EventLogger";
+import { describeError } from "../../EventLogger";
 import { parseSongUrn, buildSongUrn } from "../MusicUrn";
-import { parseTTML, sanitizeLyrics } from "../lyrics/LyricLines";
 import { asArray, asRecord, readNumber } from "../../JsonReaders";
 import { isPlaylistTruncated, MusicCache, PLAYLIST_TRUNCATED_CACHE_TTL_MS } from "../MusicCache";
-import { UpstreamRequestQueue } from "../UpstreamRequestQueue";
 import { AmllLyricClient } from "../lyrics/AmllLyricClient";
 import type { MusicCookieInput, MusicLoginSession, MusicProvider, MusicQrLogin, MusicQrLoginCheck } from "../MusicProvider";
+import {
+  NO_OP_SEARCH_NOTES,
+  QQAnonymousCircuit,
+  withAnonymousTimeout,
+  type SearchSettlementNotes,
+} from "./QQAnonymousCircuit";
+import { audioCacheScope, extractQqCookie } from "./QQCookie";
+import { QQLogin } from "./QQLogin";
+import { QQLyricChain } from "./QQLyrics";
+import {
+  albumPictureUrl,
+  firstRecord,
+  normalizeSearchSong,
+  readRecords,
+  readText,
+  requiresVipAccount,
+  singerNames,
+  stripHtmlTags,
+} from "./QQResponse";
+import type { QQMusicProviderOptions } from "./QQTypes";
+import { QQUpstream } from "./QQUpstream";
 import type {
   SongArtistSearchResult,
   SongDetails,
-  SongLyricLine,
   SongPlaylistInfo,
   SongSearchResult,
 } from "../../../shared/SonGuessr";
 
-export interface QQMusicProviderOptions {
-  logger?: EventLogger;
-  now?: () => number;
-  /** 随机源（注入以便确定性测试）：限流退避抖动。 */
-  random?: { nextFloat?: () => number };
-  /** 单个 provider 允许同时访问 QQ 音乐上游的请求数（匿名请求另有独立并发位）。 */
-  maxConcurrentRequests?: number;
-  /** 两次上游请求启动之间的最小间隔。 */
-  minRequestIntervalMs?: number;
-  /** 首次遇到上游限流后的冷却时间；连续限流会指数增长。 */
-  rateLimitCooldownMs?: number;
-  maxRateLimitCooldownMs?: number;
-  /** 等待队列的容量和最长停留时间，避免限流恢复后集中补发陈旧请求。 */
-  maxQueuedRequests?: number;
-  queueTimeoutMs?: number;
-  /** 已开始执行的单个上游请求的运行时限，默认取公共常量。 */
-  requestTimeoutMs?: number;
-  /** 匿名请求单独限流，避免补充音源挤占已登录账号的并发位。 */
-  anonymousMaxConcurrentRequests?: number;
-  /** 匿名检索的等待上限；超时只影响这次补充，不阻塞另一侧音源。 */
-  anonymousSearchTimeoutMs?: number;
-  /** 匿名检索缓存时长；公共检索结果可以跨房间复用，压低上游请求量。 */
-  anonymousSearchCacheTtlMs?: number;
-  /** 公共缓存（检索 / 元数据）的条目数上限。 */
-  cacheMaxEntries?: number;
-  /** 公共缓存的字节总量上限。 */
-  cacheMaxBytes?: number;
-  /** AMLL 歌词缓存的条目数上限。 */
-  amllCacheMaxEntries?: number;
-  amllMaxConcurrentRequests?: number;
-  amllMaxQueuedRequests?: number;
-  amllRequestTimeoutMs?: number;
-  amllFetcher?: (input: string, init?: RequestInit) => Promise<Response>;
-  fetchAmllLyrics?: (id: string) => Promise<string | undefined>;
-  fetchAmllSearchLyrics?: (songName: string, artistName?: string) => Promise<string | undefined>;
-}
-
 const SEARCH_CACHE_TTL_MS = 60 * 1000;
 const ANONYMOUS_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const ANONYMOUS_SEARCH_TIMEOUT_MS = 4000;
-/** 匿名检索连续失败/空结果的上限：达到后短暂停止补充，避免持续打限流中的上游。 */
-const ANONYMOUS_FAILURE_THRESHOLD = 3;
-const ANONYMOUS_EMPTY_THRESHOLD = 5;
-const ANONYMOUS_COOLDOWN_MS = 60 * 1000;
 const SONG_METADATA_CACHE_TTL_MS = 10 * 60 * 1000;
 const PLAYLIST_CACHE_TTL_MS = 30 * 60 * 1000;
 /** 歌手检索与歌手曲目是公开数据，与网易云同口径缓存；歌手曲目变化慢，缓存更久。 */
@@ -72,14 +46,10 @@ const ARTIST_SONGS_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const ARTIST_SEARCH_MAX_LIMIT = 50;
 const SONG_AUDIO_CACHE_TTL_MS = 5 * 60 * 1000;
 const AMLL_LYRICS_CACHE_TTL_MS = 60 * 60 * 1000;
-const LOGIN_STATUS_CACHE_TTL_MS = 2 * 60 * 1000;
 /** 公共缓存（检索 / 元数据）的条目数上限，与改造前 LRU 一致。 */
 const CACHE_MAX_ENTRIES = 1000;
 /** AMLL 歌词缓存的条目数上限，与改造前 LRU 一致。 */
 const AMLL_CACHE_MAX_ENTRIES = 500;
-/** 登录态复用缓存的条目上限；每个玩家一份，超出按 LRU 淘汰。 */
-const LOGIN_STATUS_CACHE_MAX_ENTRIES = 512;
-
 /** 歌单单页曲目上限：`playlist_track_all` 的 limit 上限就是 1000（对齐网易云口径）。 */
 const PLAYLIST_PAGE_SIZE = 1000;
 /**
@@ -88,336 +58,34 @@ const PLAYLIST_PAGE_SIZE = 1000;
  */
 const PLAYLIST_MAX_PAGES = 50;
 
-/**
- * QQ 音乐上游的限流响应码集合。
- *
- * CGI 网关以 HTTP 层 429 / 503 表达限流；与网易云同口径同时检查响应封面的 `status`
- * 与 `body.code`。上游没有公开的限流码表，匿名限流更多表现为连续失败或空结果，
- * 由匿名熔断（streak 计数）兜底，这里只认明确形态。
- */
-const QQ_RATE_LIMIT_CODES: ReadonlySet<number> = new Set([429, 503]);
-const QQ_RATE_LIMIT_FALLBACK_MESSAGE = "QQ音乐请求过于频繁，请稍候再试";
-
-const isQqRateLimitCode = (code: number | undefined) =>
-  code !== undefined && QQ_RATE_LIMIT_CODES.has(code);
-
-/**
- * 给匿名补充检索加等待上限。超时后原请求仍可能完成，因此必须提前挂一个
- * `catch`，否则迟到的拒绝会变成 unhandledRejection（Bun 会终止进程）。
- */
-async function withAnonymousTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new AppError("MUSIC_API_TIMEOUT", "QQ 音乐匿名检索超时")),
-      timeoutMs
-    );
-    (timer as { unref?: () => void }).unref?.();
-  });
-  void task.catch(() => {});
-  try {
-    return await Promise.race([task, timeout]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-export const stripHtmlTags = (val: unknown): string => {
-  if (typeof val !== "string") return "";
-  return val.replace(/<[^>]+>/g, "").trim();
-};
-
 // QQ 音乐上游返回的是未标注类型的 JSON：通用窄化助手取自 JsonReaders（与网易云
 // 同一套约定）；`readString` 留在本地——它不 trim、不接受数字，与通用版语义不同，
 // 音频直链与 Cookie 判定依赖这一差异。不引入 any。
 
-/** 按顺序取第一个对象；用于 `data.body / body / data / 顶层` 这类历史形状兜底链。 */
-const firstRecord = (...values: unknown[]): Record<string, unknown> => {
-  for (const value of values) {
-    if (value && typeof value === "object" && !Array.isArray(value))
-      return value as Record<string, unknown>;
-  }
-  return {};
-};
-
-/** 列表字段有时直接是数组，有时包一层 `{ items: [...] }`；非对象项归一成空记录。 */
-const readRecords = (value: unknown): Record<string, unknown>[] => {
-  const list = Array.isArray(value) ? value : asArray(asRecord(value).items);
-  return list.map((entry) => asRecord(entry));
-};
-
-const readString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.trim() ? value : undefined;
-
-/** 取标量字段并转文本（上游 mid 只可能是字符串或数字）；对象与空值按缺失处理。 */
-const readText = (value: unknown): string => {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return "";
-};
-
-/**
- * 是否必须会员账号才能在线播放。
- *
- * `pay_down` 只约束下载，计入播放门槛会把 `pay_play=0` 的可播曲误标成会员专享；
- * `time_free=1` 是限时免费，此时即使 `pay_play=1` 也先放行，交给真实音频判定兜底。
- */
-const requiresVipAccount = (pay: Record<string, unknown>): boolean =>
-  Number(pay.pay_play) === 1 && Number(pay.time_free) !== 1;
-
-/** 歌手字段是对象数组（`name` / `title` 两种键），也见过裸字符串。 */
-const singerNames = (value: unknown): string[] => {
-  if (typeof value === "string") return [stripHtmlTags(value)];
-  return asArray(value).map((singer) => {
-    const record = asRecord(singer);
-    return stripHtmlTags(record.name || record.title);
-  });
-};
-
-/** QQ 音乐专辑封面的固定 CDN 路径按 albumId 取模分桶。 */
-const albumPictureUrl = (albumId: number): string | undefined =>
-  albumId
-    ? `https://imgcache.qq.com/music/photo/album_500/${albumId % 100}/500_albumpic_${albumId}_0.jpg`
-    : undefined;
-
-/**
- * 从 XML 包裹的 QRC 中剥出 `LyricContent` 属性值；已是裸格式则原样返回。
- *
- * 属性值里的 `\n` 是字面量转义（XML 属性不能含真实换行），需还原成真实换行，
- * 否则所有行会被拼成一行。
- *
- * 必须「提取属性值」而非「剔除标签」：剥离标签的正则会把开标签、结尾自闭合
- * 与两者之间的整段歌词一并吃掉，结果为空。
- */
-export const extractQrcPayload = (raw: string): string => {
-  const attr = /LyricContent="([\s\S]*?)"/.exec(raw);
-  const payload = attr ? attr[1] : raw;
-  return payload.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
-};
-
-/**
- * 解析 QQ 音乐逐字歌词（QRC）。
- *
- * 上游有两种形态：裸 QRC 文本（`[行起,行长]字(起,长)...`），以及被
- * `<QrcInfos><LyricInfo><Lyric_1 LyricContent="...">` 包裹的 XML（解密后的原始返回）。
- * AMLL 的 `parseQrc` 只认裸格式，直接喂 XML 会得到空数组 —— 因此这里先剥出
- * `LyricContent` 属性值，再交给 `parseQrc`，两种形态都能解析。
- */
-export const parseQrcLyrics = (raw: string): SongLyricLine[] => {
-  if (!raw || !raw.trim()) return [];
-  const normalized = extractQrcPayload(raw);
-  try {
-    const amllLines = amllParseQrc(normalized);
-    return amllLines
-      .map((line) => {
-        const text =
-          line.words && line.words.length > 0
-            ? line.words
-                .map((w) => w.word)
-                .join("")
-                .trim()
-            : "";
-        const hasTranslation = Boolean(line.translatedLyric);
-        return {
-          time: line.startTime,
-          endTime: line.endTime,
-          text,
-          words:
-            line.words && line.words.length > 0
-              ? line.words.map((w) => ({
-                  startTime: w.startTime,
-                  endTime: w.endTime,
-                  word: w.word,
-                  romanWord: hasTranslation ? undefined : w.romanWord || undefined,
-                }))
-              : undefined,
-          translatedLyric: line.translatedLyric || undefined,
-          romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
-          isBG: line.isBG || undefined,
-          isDuet: line.isDuet || undefined,
-        };
-      })
-      .filter((line) => line.text.length > 0);
-  } catch {
-    return [];
-  }
-};
-
-export const parseLrcLyrics = (raw: string): SongLyricLine[] => {
-  if (!raw || !raw.trim()) return [];
-  try {
-    const amllLines = amllParseLrc(raw);
-    return amllLines
-      .map((line) => {
-        const text =
-          line.words && line.words.length > 0
-            ? line.words
-                .map((w) => w.word)
-                .join("")
-                .trim()
-            : "";
-        return {
-          time: line.startTime,
-          endTime: line.endTime,
-          text,
-          translatedLyric: line.translatedLyric || undefined,
-          romanLyric: line.romanLyric || undefined,
-        };
-      })
-      .filter((line) => line.text.length > 0);
-  } catch {
-    return [];
-  }
-};
-
-const extractQqCookie = (cookie?: MusicCookieInput): string | undefined => {
-  if (typeof cookie === "string") return cookie;
-  if (typeof cookie !== "object" || cookie === null) return undefined;
-  const val = cookie.qq;
-  return typeof val === "string" ? val : undefined;
-};
-
-/** 匿名检索熔断的结算回调：已登录检索不需要计数，走这份空实现。 */
-interface SearchSettlementNotes {
-  onSettled: (resultCount: number) => void;
-  onFailure: () => void;
-}
-
-const NO_OP_SEARCH_NOTES: SearchSettlementNotes = {
-  onSettled: () => {},
-  onFailure: () => {},
-};
-
-/** 检索结果条目的字段映射（`body.songs` / `data.body.item_song` 两种形状归一后）。 */
-const normalizeSearchSong = (item: Record<string, unknown>): SongSearchResult => {
-  const mid = readText(item.mid || item.songmid);
-  const rawTitle = readText(item.title || item.name || item.songname);
-  const title = stripHtmlTags(rawTitle);
-  const artist = singerNames(item.singer).filter(Boolean).join(" / ");
-  const album = asRecord(item.album);
-  const rawAlbum = album.name || album.title || item.albumname || undefined;
-  const albumName = rawAlbum ? stripHtmlTags(rawAlbum) || undefined : undefined;
-  const durationMs = Number(item.interval || 0) * 1000;
-
-  return {
-    id: buildSongUrn("qq", mid),
-    title,
-    artist: artist || "未知歌手",
-    album: albumName,
-    pictureUrl: albumPictureUrl(Number(album.id || item.albumid)),
-    durationMs: durationMs > 0 ? durationMs : undefined,
-    requiresVip: requiresVipAccount(asRecord(item.pay)),
-  };
-};
-
 export class QQMusicProvider implements MusicProvider {
   private readonly musicCache: MusicCache;
-  private readonly requestQueue: UpstreamRequestQueue;
-  private readonly anonymousQueue: UpstreamRequestQueue;
   private readonly amllClient: AmllLyricClient;
-  /** 登录态复用与网易云同口径：普通 LRU + 单 TTL，不进软/硬双 TTL 的公共缓存。 */
-  private readonly loginStatusCache: LRUCache<string, MusicLoginSession>;
-  /** 同一凭据、同一模式的在途校验共用一次回源；键是指纹，Cookie 原文不留在任何 Map 里。 */
-  private readonly loginStatusInFlight = new Map<string, Promise<MusicLoginSession>>();
+  private readonly upstream: QQUpstream;
+  private readonly circuit: QQAnonymousCircuit;
+  private readonly login: QQLogin;
+  private readonly lyricChain: QQLyricChain;
   private readonly options: QQMusicProviderOptions;
   private readonly now: () => number;
-  private anonymousFailureStreak = 0;
-  /** 当前这段连续空结果里出现过的不同关键词。 */
-  private readonly anonymousEmptyKeywords = new Set<string>();
-  private anonymousBlockedUntil = 0;
   private warmupPromise?: Promise<void>;
 
   constructor(options: QQMusicProviderOptions = {}) {
     this.options = options;
     this.now = options.now ?? (() => Date.now());
     const random = options.random ?? { nextFloat: () => Math.random() };
-    this.requestQueue = new UpstreamRequestQueue({
-      now: this.now,
-      random,
-      maxConcurrentRequests: options.maxConcurrentRequests ?? 4,
-      minRequestIntervalMs: options.minRequestIntervalMs,
-      rateLimitCooldownMs: options.rateLimitCooldownMs,
-      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
-      maxQueuedRequests: options.maxQueuedRequests,
-      queueTimeoutMs: options.queueTimeoutMs,
-      requestTimeoutMs: options.requestTimeoutMs,
-      queueFullMessage: "QQ音乐请求排队过多，请稍后重试",
-      queueTimeoutMessage: "QQ音乐请求等待超时，请稍后重试",
-      requestTimeoutMessage: "QQ音乐请求超时，请稍后重试",
-      rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
-      isRateLimitError: (error) => this.isRateLimitError(error),
-      readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
-      onRateLimitCooldown: ({
-        strikes,
-        cooldownDurationMs,
-        cooldownUntil,
-        droppedQueuedRequests,
-        reason,
-      }) => {
-        this.options.logger?.warn?.("QQ音乐接口触发限流退避", {
-          strikes,
-          cooldownDurationMs,
-          cooldownUntil: new Date(cooldownUntil).toISOString(),
-          droppedQueuedRequests,
-          reason,
-        });
-      },
-      createBusyError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
-      createRateLimitError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
-      createTimeoutError: (message, timeoutMs) =>
-        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
-    });
-    this.anonymousQueue = new UpstreamRequestQueue({
-      now: this.now,
-      random,
-      maxConcurrentRequests: options.anonymousMaxConcurrentRequests ?? 1,
-      minRequestIntervalMs: options.minRequestIntervalMs,
-      rateLimitCooldownMs: options.rateLimitCooldownMs,
-      maxRateLimitCooldownMs: options.maxRateLimitCooldownMs,
-      maxQueuedRequests: options.maxQueuedRequests,
-      queueTimeoutMs: options.queueTimeoutMs,
-      requestTimeoutMs: options.requestTimeoutMs,
-      queueFullMessage: "QQ音乐匿名请求排队过多，请稍后重试",
-      queueTimeoutMessage: "QQ音乐匿名请求等待超时，请稍后重试",
-      requestTimeoutMessage: "QQ音乐匿名请求超时，请稍后重试",
-      rateLimitFallbackMessage: QQ_RATE_LIMIT_FALLBACK_MESSAGE,
-      isRateLimitError: (error) => this.isRateLimitError(error),
-      readRateLimitMessage: (error, fallback) => this.readUpstreamMessage(error, fallback),
-      onRateLimitCooldown: ({
-        strikes,
-        cooldownDurationMs,
-        cooldownUntil,
-        droppedQueuedRequests,
-        reason,
-      }) => {
-        this.options.logger?.warn?.("QQ音乐匿名请求触发限流退避", {
-          strikes,
-          cooldownDurationMs,
-          cooldownUntil: new Date(cooldownUntil).toISOString(),
-          droppedQueuedRequests,
-          reason,
-        });
-      },
-      createBusyError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_BUSY", message, { retryAfterMs }),
-      createRateLimitError: (message, retryAfterMs) =>
-        new AppError("MUSIC_API_RATE_LIMITED", message, { retryAfterMs }),
-      createTimeoutError: (message, timeoutMs) =>
-        new AppError("MUSIC_API_TIMEOUT", message, { timeoutMs }),
-    });
+    this.upstream = new QQUpstream(options, this.now, random);
+    this.circuit = new QQAnonymousCircuit(this.now, options);
     this.musicCache = new MusicCache({
       maxEntries: options.cacheMaxEntries ?? CACHE_MAX_ENTRIES,
       maxBytes: options.cacheMaxBytes,
       now: this.now,
       // 匿名熔断期内同样跳过主动刷新：熔断说明匿名上游正被限流，后台刷新只会火上浇油。
       isUpstreamBusy: () =>
-        this.requestQueue.isCoolingDown() ||
-        this.requestQueue.queuedCount > 0 ||
-        this.anonymousQueue.isCoolingDown() ||
-        this.anonymousQueue.queuedCount > 0 ||
-        this.anonymousCircuitOpen(),
+        this.upstream.isCoolingDown() || this.upstream.hasQueued() || this.circuit.isOpen(),
       onRefreshFailure: (key, error) => {
         this.options.logger?.warn?.("QQ音乐缓存预刷新失败", {
           key,
@@ -431,10 +99,7 @@ export class QQMusicProvider implements MusicProvider {
       cache: new MusicCache({
         maxEntries: options.amllCacheMaxEntries ?? AMLL_CACHE_MAX_ENTRIES,
         now: this.now,
-        isUpstreamBusy: () =>
-          this.requestQueue.isCoolingDown() ||
-          this.anonymousQueue.isCoolingDown() ||
-          this.anonymousCircuitOpen(),
+        isUpstreamBusy: () => this.upstream.isCoolingDown() || this.circuit.isOpen(),
         onRefreshFailure: (key, error) => {
           this.options.logger?.warn?.("AMLL 歌词缓存预刷新失败", {
             key,
@@ -450,91 +115,13 @@ export class QQMusicProvider implements MusicProvider {
       fetchById: options.fetchAmllLyrics,
       fetchBySearch: options.fetchAmllSearchLyrics,
     });
-    this.loginStatusCache = new LRUCache<string, MusicLoginSession>({
-      max: LOGIN_STATUS_CACHE_MAX_ENTRIES,
-      ttl: LOGIN_STATUS_CACHE_TTL_MS,
-    });
-  }
-
-  private queueFor(cookie?: string): UpstreamRequestQueue {
-    return cookie ? this.requestQueue : this.anonymousQueue;
-  }
-
-  /** QQ 上游限流判定：封面 `status` 与 `body.code` 同时覆盖（口径与网易云一致）。 */
-  private isRateLimitError(error: unknown): boolean {
-    const record = asRecord(error);
-    return (
-      isQqRateLimitCode(readNumber(record.status)) ||
-      isQqRateLimitCode(readNumber(asRecord(record.body).code))
-    );
-  }
-
-  private readUpstreamMessage(error: unknown, fallback: string): string {
-    const body = asRecord(asRecord(error).body);
-    return readString(body.message) ?? readString(body.msg) ?? fallback;
-  }
-
-  /** 排队执行一次 QQ 音乐上游请求；正常 resolve 的限流形状响应转成业务异常。 */
-  private async callUpstream<T>(cookie: string | undefined, task: () => Promise<T>): Promise<T> {
-    // 带凭据的请求按账号指纹记限流退避：一个号撞限流只冷却它自己，
-    // 池里其它账号照常工作；匿名请求仍共用一条退避。
-    const response = await this.queueFor(cookie).scheduleRequest(
-      task,
-      cookie ? `account:${this.audioCacheScope(cookie)}` : undefined
-    );
-    if (this.isRateLimitError(response)) {
-      const record = asRecord(response);
-      const bodyCode = readNumber(asRecord(record.body).code);
-      throw new AppError(
-        "MUSIC_API_RATE_LIMITED",
-        this.readUpstreamMessage(response, QQ_RATE_LIMIT_FALLBACK_MESSAGE),
-        {
-          // 限流码可能出现在 HTTP 状态上（429/503），也可能在 HTTP 200 的 body 里，
-          // 报错时优先带上真正命中限流集合的那个。
-          upstreamCode: isQqRateLimitCode(bodyCode) ? bodyCode : readNumber(record.status),
-        }
-      );
-    }
-    return response;
-  }
-
-  private anonymousCircuitOpen(): boolean {
-    return this.now() < this.anonymousBlockedUntil;
-  }
-
-  private noteAnonymousSearchResult(keyword: string, resultCount: number): void {
-    if (resultCount > 0) {
-      this.anonymousFailureStreak = 0;
-      this.anonymousEmptyKeywords.clear();
-      return;
-    }
-    this.anonymousFailureStreak = 0;
-    // 空结果按不同关键词计数：同一首歌被反复检索（重试、兜底、多处同时问）只算一次，
-    // 否则一首 QQ 本来就没有的曲子就能独自凑够连续空结果，把正常的未收录误当限流。
-    this.anonymousEmptyKeywords.add(keyword.trim().toLowerCase());
-    if (this.anonymousEmptyKeywords.size >= ANONYMOUS_EMPTY_THRESHOLD) {
-      this.openAnonymousCircuit(keyword, "empty", this.anonymousEmptyKeywords.size);
-    }
-  }
-
-  private noteAnonymousSearchFailure(keyword: string): void {
-    this.anonymousEmptyKeywords.clear();
-    this.anonymousFailureStreak += 1;
-    if (this.anonymousFailureStreak >= ANONYMOUS_FAILURE_THRESHOLD) {
-      this.openAnonymousCircuit(keyword, "failure", this.anonymousFailureStreak);
-    }
-  }
-
-  private openAnonymousCircuit(keyword: string, reason: "empty" | "failure", streak: number): void {
-    this.anonymousFailureStreak = 0;
-    this.anonymousEmptyKeywords.clear();
-    this.anonymousBlockedUntil = this.now() + ANONYMOUS_COOLDOWN_MS;
-    // 带上触发原因：「连续空结果」与「连续抛错/超时」的处置完全不同，只写一句话无法区分。
-    this.options.logger?.warn?.("QQ 音乐匿名检索连续失败，暂时熔断", {
-      keyword,
-      reason,
-      streak,
-      cooldownMs: ANONYMOUS_COOLDOWN_MS,
+    const callUpstream = <T,>(cookie: string | undefined, task: () => Promise<T>) =>
+      this.upstream.callUpstream(cookie, task);
+    this.login = new QQLogin({ callUpstream, logger: options.logger });
+    this.lyricChain = new QQLyricChain({
+      amllClient: this.amllClient,
+      callUpstream,
+      logger: options.logger,
     });
   }
 
@@ -572,7 +159,7 @@ export class QQMusicProvider implements MusicProvider {
     const hit = this.musicCache.peek<SongSearchResult[]>(cacheKey);
     if (hit) return hit;
 
-    if (!cookie && this.anonymousCircuitOpen()) {
+    if (!cookie && this.circuit.isOpen()) {
       this.options.logger?.debug?.("QQ 音乐匿名检索处于熔断期，本轮跳过", {
         keyword: normalized,
       });
@@ -606,10 +193,10 @@ export class QQMusicProvider implements MusicProvider {
     };
     return {
       onSettled: (resultCount) => {
-        if (consume()) this.noteAnonymousSearchResult(keyword, resultCount);
+        if (consume()) this.circuit.noteResult(keyword, resultCount);
       },
       onFailure: () => {
-        if (consume()) this.noteAnonymousSearchFailure(keyword);
+        if (consume()) this.circuit.noteFailure(keyword);
       },
     };
   }
@@ -643,7 +230,7 @@ export class QQMusicProvider implements MusicProvider {
     cookie: string | undefined
   ): Promise<SongSearchResult[]> {
     // 先过 callUpstream 再映射：限流形态挂在原始响应封面上，映射后的数组看不出来。
-    const res = await this.callUpstream(cookie, () =>
+    const res = await this.upstream.callUpstream(cookie, () =>
       qqmusic.search({
         keywords: normalized,
         limit: normalizedLimit,
@@ -669,7 +256,7 @@ export class QQMusicProvider implements MusicProvider {
 
     let lyrics = meta.lyrics;
     if (!lyrics || lyrics.length === 0) {
-      lyrics = await this.loadLyrics(mid, meta, cookie);
+      lyrics = await this.lyricChain.loadLyrics(mid, meta, cookie);
     }
 
     return {
@@ -682,7 +269,7 @@ export class QQMusicProvider implements MusicProvider {
   async refreshSongAudio(songId: string, rawCookie?: MusicCookieInput): Promise<string> {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(songId);
-    this.musicCache.invalidate(`audio:${this.audioCacheScope(cookie)}:${mid}`);
+    this.musicCache.invalidate(`audio:${audioCacheScope(cookie)}:${mid}`);
     return this.loadAudioUrl(mid, cookie, true);
   }
 
@@ -701,7 +288,7 @@ export class QQMusicProvider implements MusicProvider {
   private async fetchSongMetadata(mid: string, cookie?: string): Promise<SongDetails> {
     // 详情请求单独占一个队列位；映射与歌词链路在队列外进行——歌词请求还要自己排队，
     // 嵌在同一个任务里会在匿名队列（并发 1）上自我死锁。
-    const detailRes = await this.callUpstream(cookie, () =>
+    const detailRes = await this.upstream.callUpstream(cookie, () =>
       qqmusic.song_detail({ id: mid, cookie })
     );
     const body = asRecord(detailRes.body);
@@ -740,19 +327,12 @@ export class QQMusicProvider implements MusicProvider {
       encyclopedia: { tags: [] },
     };
 
-    baseDetails.lyrics = await this.loadLyrics(mid, baseDetails, cookie);
+    baseDetails.lyrics = await this.lyricChain.loadLyrics(mid, baseDetails, cookie);
     return baseDetails;
   }
 
-  /** 播放地址按 Cookie 指纹分键（原文不进缓存键），匿名请求共用同一桶。 */
-  private audioCacheScope(cookie?: string): string {
-    const value = cookie?.trim();
-    if (!value) return "anonymous";
-    return createHash("sha256").update(value).digest("hex").slice(0, 16);
-  }
-
   private async loadAudioUrl(mid: string, cookie?: string, force = false): Promise<string> {
-    const cacheKey = `audio:${this.audioCacheScope(cookie)}:${mid}`;
+    const cacheKey = `audio:${audioCacheScope(cookie)}:${mid}`;
     const audioUrl = await this.musicCache.cached(
       cacheKey,
       SONG_AUDIO_CACHE_TTL_MS,
@@ -763,7 +343,7 @@ export class QQMusicProvider implements MusicProvider {
 
         for (const quality of qualities) {
           try {
-            const res = await this.callUpstream(cookie, async () =>
+            const res = await this.upstream.callUpstream(cookie, async () =>
               qqmusic.song_url({
                 id: mid,
                 type: quality,
@@ -803,73 +383,6 @@ export class QQMusicProvider implements MusicProvider {
     return audioUrl;
   }
 
-  private async loadLyrics(
-    mid: string,
-    base: Pick<SongSearchResult, "title" | "artist" | "album">,
-    cookie?: string
-  ): Promise<SongLyricLine[]> {
-    // 严格遵循优先级标准：AMLL 官方 TTML > 平台原生逐字 (QRC) > 普通歌词 (LRC)
-
-    // 1. 尝试 AMLL 官方歌词库通过 qqMusicId / mid 匹配
-    try {
-      const ttmlById = await this.amllClient.getTtmlLyrics(mid, { songId: mid });
-      if (ttmlById) {
-        const parsed = parseTTML(ttmlById);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("AMLL qqMusicId 匹配失败", { mid, ...describeError(error) });
-    }
-
-    // 2. 尝试 AMLL 官方歌词库按歌曲名与歌手检索
-    try {
-      const ttmlBySearch = await this.amllClient.searchTtmlLyrics(base.title, base.artist, {
-        title: base.title,
-      });
-      if (ttmlBySearch) {
-        const parsed = parseTTML(ttmlBySearch);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("AMLL 歌曲名搜索匹配失败", {
-        title: base.title,
-        ...describeError(error),
-      });
-    }
-
-    // 3. 尝试 QQ 音乐原生逐字歌词 (QRC via parseQrc)
-    try {
-      const lyricRes = await this.callUpstream(cookie, async () =>
-        qqmusic.lyric({ id: mid, qrc: true, cookie })
-      );
-      const body = asRecord(lyricRes.body);
-      const rawQrc = readString(body.lyric);
-      if (rawQrc?.includes("<QrcInfos>")) {
-        const parsed = parseQrcLyrics(rawQrc);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-
-      // 4. 普通 LRC 歌词降级
-      const rawLrc = readString(body.lyric) ?? readString(asRecord(body.raw).lyric);
-      if (rawLrc) {
-        const parsed = parseLrcLyrics(rawLrc);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("QQ 音乐平台原生歌词拉取失败", { mid, ...describeError(error) });
-    }
-
-    return [];
-  }
-
   async getAmllTtmlLyrics(songId: string): Promise<string | undefined> {
     const mid = this.resolveMid(songId);
     return this.amllClient.getTtmlLyrics(mid, { songId: mid });
@@ -894,7 +407,7 @@ export class QQMusicProvider implements MusicProvider {
     // 自动出题每一轮都要读题库：不缓存时 1500 首的歌单每轮要打三次上游，
     // 既拖慢开局又白白推高限流计数。按账号作用域缓存，私密歌单不会串号。
     return this.musicCache.cached(
-      `playlist:${this.audioCacheScope(cookie)}:${dissId}`,
+      `playlist:${audioCacheScope(cookie)}:${dissId}`,
       PLAYLIST_CACHE_TTL_MS,
       () => this.fetchPlaylistSongs(dissId, cookie),
       {
@@ -910,7 +423,7 @@ export class QQMusicProvider implements MusicProvider {
     dissId: string,
     cookie: string | undefined
   ): Promise<{ info: SongPlaylistInfo; songs: SongSearchResult[] }> {
-    const detailRes = await this.callUpstream(cookie, async () =>
+    const detailRes = await this.upstream.callUpstream(cookie, async () =>
       qqmusic.playlist_detail({ id: dissId, cookie })
     );
     const detailBody = asRecord(detailRes.body);
@@ -951,7 +464,7 @@ export class QQMusicProvider implements MusicProvider {
     // 单页装不下的歌单必须继续翻页（对齐网易云 getPlaylistSongs 的翻页口径）：
     // 按 `song_begin` 偏移逐页取，按 mid 去重；曲目总数优先读全量接口的 total。
     const fetchPage = (offset: number) =>
-      this.callUpstream(cookie, async () =>
+      this.upstream.callUpstream(cookie, async () =>
         qqmusic.playlist_track_all({ id: dissId, limit: PLAYLIST_PAGE_SIZE, offset, cookie })
       );
 
@@ -1013,7 +526,7 @@ export class QQMusicProvider implements MusicProvider {
       `artist-search:${normalized.toLowerCase()}:${normalizedLimit}`,
       ARTIST_SEARCH_CACHE_TTL_MS,
       async () => {
-        const searchRes = await this.callUpstream(cookie, () =>
+        const searchRes = await this.upstream.callUpstream(cookie, () =>
           qqmusic.search({ keywords: normalized, type: 1, limit: normalizedLimit, cookie })
         );
         const searchResBody = asRecord(searchRes.body);
@@ -1051,7 +564,7 @@ export class QQMusicProvider implements MusicProvider {
     const cookie = extractQqCookie(rawCookie);
     const mid = this.resolveMid(artistId);
     return this.musicCache.cached(`artist-songs:${mid}`, ARTIST_SONGS_CACHE_TTL_MS, async () => {
-      const songsRes = await this.callUpstream(cookie, () =>
+      const songsRes = await this.upstream.callUpstream(cookie, () =>
         qqmusic.artist_songs({ id: mid, limit: 100, cookie })
       );
       const songsBody = asRecord(songsRes.body);
@@ -1088,240 +601,26 @@ export class QQMusicProvider implements MusicProvider {
   }
 
   async createQrLogin(
-    _platform?: "netease" | "qq",
+    platform?: "netease" | "qq",
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLogin> {
-    const qrType = type || "qq";
-    // QQ 和微信二维码走独立的登录域名，不占用 musicu 的限流队列；
-    // App 二维码要调 musicu 的 CreateQRCode，并开一条实时通道，必须继续排队限速。
-    const create = () => qqmusic.login_qr_create({ type: qrType });
-    let res: Awaited<ReturnType<typeof qqmusic.login_qr_create>>;
-    try {
-      res = qrType === "mobile" ? await this.callUpstream(undefined, create) : await create();
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      this.options.logger?.warn?.("QQ 音乐登录二维码生成失败", { qrType, ...describeError(error) });
-      throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
-    }
-    const body = asRecord(res.body);
-    if (qrType === "qq") {
-      const qrsig = readText(body.qrsig);
-      const ptqrtoken = readText(body.ptqrtoken);
-      const qrImage = readText(body.qrimg);
-      if (!qrsig || !ptqrtoken || !qrImage) {
-        throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
-      }
-      return { key: `${qrsig}:::${ptqrtoken}`, qrUrl: readText(body.url), qrImage };
-    }
-    if (qrType === "wx") {
-      const uuid = readText(body.uuid);
-      if (!uuid) throw new AppError("MUSIC_LOGIN_FAILED", "无法生成微信登录二维码，请稍后重试");
-      const qrurl = readString(body.qrurl) || `https://open.weixin.qq.com/connect/qrcode/${uuid}`;
-      return { key: uuid, qrUrl: qrurl, qrImage: qrurl };
-    }
-    const qrcodeID = readText(body.qrcodeID);
-    const qrImage = readText(body.qrcode);
-    if (!qrcodeID || !qrImage) {
-      throw new AppError("MUSIC_LOGIN_FAILED", "无法生成登录二维码，请稍后重试");
-    }
-    return { key: qrcodeID, qrUrl: "https://y.qq.com", qrImage };
+    return this.login.createQrLogin(platform, type);
   }
 
   async checkQrLogin(
     key: string,
-    _platform?: "netease" | "qq",
+    platform?: "netease" | "qq",
     type: "qq" | "wx" | "mobile" = "qq"
   ): Promise<MusicQrLoginCheck> {
-    const qrType = type || "qq";
-    const [qrsig, ptqrtoken] = key.split(":::");
-    let res: Awaited<ReturnType<typeof qqmusic.login_qr_check>>;
-    try {
-      res = await qqmusic.login_qr_check(
-        qrType === "qq"
-          ? { type: "qq", qrsig, ptqrtoken: ptqrtoken || undefined }
-          : qrType === "wx"
-            ? { type: "wx", uuid: key }
-            : { type: "mobile", qrcodeID: key }
-      );
-    } catch (error) {
-      // 轮询自身的瞬时异常不等于二维码作废：继续等，下一轮重试。
-      this.options.logger?.debug?.("QQ 音乐扫码轮询异常，按等待处理", {
-        qrType,
-        ...describeError(error),
-      });
-      return { status: "waiting", message: "等待扫码" };
-    }
-    const body = asRecord(res.body);
-
-    const code = readNumber(body.code);
-    if (code === 200) {
-      const cookieStr = readString(body.cookieStr) ?? "";
-      if (!cookieStr) {
-        throw new AppError("MUSIC_LOGIN_FAILED", "扫码成功但未取得登录凭证，请重新扫码");
-      }
-      let session: MusicLoginSession;
-      try {
-        session = await this.resolveLoginSession(cookieStr, {});
-      } catch (error) {
-        if (error instanceof AppError && error.code === "MUSIC_SESSION_INVALID") {
-          // 凭证刚签发就校验不过：说明扫码链路拿到的是无效凭证，而不是“旧登录态过期”。
-          // 单独标记，避免玩家看到笼统的“登录状态已失效”而不知道该重新扫码。
-          this.options.logger?.warn?.("QQ 音乐扫码登录后凭证校验未通过", { qrType });
-          throw new AppError("MUSIC_LOGIN_FAILED", "扫码已通过但 QQ 音乐校验未通过，请重新扫码");
-        }
-        throw error;
-      }
-      return {
-        status: "authorized",
-        message: "登录成功",
-        session,
-      };
-    }
-    if (code === 800) {
-      return { status: "expired", message: "二维码已过期，请点击刷新" };
-    }
-    if (code === 802 || code === 67) {
-      return { status: "scanned", message: "已扫码，等待确认" };
-    }
-    if (code === 803) {
-      throw new AppError("MUSIC_LOGIN_CANCELLED", "已在手机上取消登录，请重新扫码");
-    }
-    if (code === 500) throw this.qrProtocolError(qrType, body);
-    return { status: "waiting", message: readString(body.message) ?? "等待扫码" };
-  }
-
-  /** 上游协议失败 → 业务异常：保留阶段与上游码进日志，面向玩家的文案按原因区分。 */
-  private qrProtocolError(qrType: string, body: Record<string, unknown>): AppError {
-    const reason = readString(body.reason) ?? "protocol";
-    const stage = readString(body.stage) ?? "unknown";
-    const upstreamCode = readNumber(body.upstreamCode);
-    this.options.logger?.warn?.("QQ 音乐扫码登录协议失败", {
-      qrType,
-      stage,
-      reason,
-      upstreamCode,
-      detail: body.detail,
-    });
-    if (reason === "rate_limited") {
-      return new AppError("MUSIC_LOGIN_RISK", "QQ 音乐暂时拒绝了本次登录，请稍后重新扫码", {
-        upstreamCode,
-      });
-    }
-    const message =
-      reason === "auth_invalid"
-        ? "本次扫码授权已失效，请重新扫码"
-        : reason === "device_limit"
-          ? "该账号登录设备数量已达上限，请先在 QQ 音乐中下线其他设备"
-          : reason === "account_restricted"
-            ? "该账号当前被 QQ 音乐限制登录"
-            : `QQ 音乐登录接口异常（${stage}），请稍后重新扫码`;
-    return new AppError("MUSIC_LOGIN_FAILED", message, { upstreamCode });
+    return this.login.checkQrLogin(key, platform, type);
   }
 
   async getLoginStatus(
     rawCookie: MusicCookieInput,
-    _platform?: "netease" | "qq",
+    platform?: "netease" | "qq",
     options: { forceRefresh?: boolean } = {}
   ): Promise<MusicLoginSession> {
-    return this.resolveLoginSession(rawCookie, options);
-  }
-
-  private async resolveLoginSession(
-    rawCookie: MusicCookieInput,
-    options: { forceRefresh?: boolean }
-  ): Promise<MusicLoginSession> {
-    const extracted = extractQqCookie(rawCookie);
-    const currentCookie = extracted ?? (typeof rawCookie === "string" ? rawCookie : "");
-    const trimmed = currentCookie.trim();
-    if (!trimmed) {
-      throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录 Cookie 不能为空");
-    }
-
-    const cacheKey = this.loginStatusKey(trimmed);
-    // 强制续期必须绕过缓存：缓存里是上一次校验结果，不会替我们换新 key。
-    const reused = options.forceRefresh ? undefined : this.loginStatusCache.get(cacheKey);
-    if (reused) {
-      return { cookie: reused.cookie, account: { ...reused.account } };
-    }
-
-    // 房间接入、开局复验与后台续期会同时到达：同凭据的在途校验合并，
-    // 否则续期接口被并行打两次，一次性的 refresh 凭据会让后一次失败。
-    const flightKey = `${cacheKey}:${options.forceRefresh ? "refresh" : "check"}`;
-    let flight = this.loginStatusInFlight.get(flightKey);
-    if (!flight) {
-      flight = this.verifyLoginSession(currentCookie, trimmed, options).finally(() => {
-        this.loginStatusInFlight.delete(flightKey);
-      });
-      this.loginStatusInFlight.set(flightKey, flight);
-    }
-    const session = await flight;
-    // 对齐网易云：返回副本，调用方对返回值的改写不得污染复用缓存或其它并发调用方。
-    return { cookie: session.cookie, account: { ...session.account } };
-  }
-
-  private loginStatusKey(trimmedCookie: string): string {
-    return `login-status:${this.audioCacheScope(trimmedCookie)}`;
-  }
-
-  private async verifyLoginSession(
-    initialCookie: string,
-    trimmed: string,
-    options: { forceRefresh?: boolean }
-  ): Promise<MusicLoginSession> {
-    let currentCookie = initialCookie;
-    const cacheKey = this.loginStatusKey(trimmed);
-    let statusRes = await this.callUpstream(currentCookie, () =>
-      qqmusic.login_status({ cookie: currentCookie })
-    );
-    // 状态接口本身也可能轮换 Cookie；有回写就先接住，避免继续拿旧 key 去续期。
-    if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
-    if (options.forceRefresh || !statusRes.body?.isLogin) {
-      try {
-        const refreshRes = await this.callUpstream(currentCookie, () =>
-          qqmusic.login_refresh({ cookie: currentCookie })
-        );
-        if (refreshRes.body?.code === 200 && refreshRes.body.cookieStr) {
-          currentCookie = refreshRes.body.cookieStr;
-          statusRes = await this.callUpstream(currentCookie, () =>
-            qqmusic.login_status({ cookie: currentCookie })
-          );
-          if (statusRes.body?.cookieStr?.trim()) currentCookie = statusRes.body.cookieStr;
-        } else {
-          this.options.logger?.warn?.("QQ 音乐凭证续期未取得新 key", {
-            code: refreshRes.body?.code,
-            message: refreshRes.body?.message,
-          });
-        }
-      } catch (error) {
-        this.options.logger?.warn?.("QQ 音乐凭证续期失败", describeError(error));
-      }
-    }
-
-    if (!statusRes.body?.isLogin) {
-      throw new AppError("MUSIC_SESSION_INVALID", "QQ 音乐登录状态已失效，请重新扫码登录");
-    }
-
-    const acc = statusRes.body?.account;
-    const session: MusicLoginSession = {
-      cookie: currentCookie,
-      account: {
-        platform: "qq",
-        userId: acc?.userId || "",
-        nickname: acc?.nickname || "QQ音乐用户",
-        avatarUrl: acc?.avatarUrl,
-        vipStatus: acc?.vipStatus || "unknown",
-        vipTier: acc?.vipTier,
-        vipLevel: acc?.vipLevel,
-        vipYear: acc?.vipYear,
-        vipExpireTime: acc?.vipExpireTime,
-      },
-    };
-
-    this.loginStatusCache.set(cacheKey, session);
-    if (currentCookie.trim() !== trimmed) {
-      this.loginStatusCache.set(this.loginStatusKey(currentCookie.trim()), session);
-    }
-    return session;
+    return this.login.getLoginStatus(rawCookie, platform, options);
   }
 
   /**
@@ -1331,8 +630,8 @@ export class QQMusicProvider implements MusicProvider {
    */
   async warmUp(): Promise<void> {
     if (!this.warmupPromise) {
-      this.warmupPromise = this.anonymousQueue
-        .scheduleRequest(
+      this.warmupPromise = this.upstream
+        .scheduleAnonymous(
           // 探测结果不写入检索缓存：固定关键词的结果对真实玩家没有价值，
           // 只为建连；失败在 catch 里消化，不会计入匿名熔断的失败 streak。
           () => qqmusic.search({ keywords: "周杰伦", limit: 1 })
