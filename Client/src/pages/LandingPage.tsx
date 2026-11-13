@@ -412,7 +412,9 @@ export default function LandingPage() {
         <AccountButton />
         <FeedbackButton />
       </div>
-      <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
+      {/* 手机竖屏收紧纵向节奏：标题下的说明行占掉的高度从这里的留白里让出来，三款游戏的全部入口仍一屏看全。
+          上留白不低于右上角那排按钮的高度，标题不与它重叠；sm 起与矮屏的规则不受影响。 */}
+      <header className="px-6 pb-[clamp(0.5rem,3svh,1.75rem)] pt-[clamp(0.75rem,8svh,5rem)] text-center [@media(width<40rem)_and_(height>680px)]:pb-[clamp(0.25rem,1svh,1.75rem)] [@media(width<40rem)_and_(height>680px)]:pt-[clamp(3rem,6svh,5rem)] [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-2">
         <motion.h1
           variants={listItem}
           initial="initial"
@@ -434,7 +436,7 @@ export default function LandingPage() {
           variants={listItem}
           initial="initial"
           animate="animate"
-          className="mt-2 text-xs text-muted-foreground sm:mt-4 sm:text-base [@media(max-height:680px)]:hidden"
+          className="mt-0.5 text-xs text-muted-foreground sm:mt-4 sm:text-base [@media(max-height:680px)]:hidden"
         >
           {/* 两句各自成块：放不下一行时在句间换行，不把「开一间房」拆成两半。 */}
           <span className="inline-block">谁是卧底、听歌猜歌、猜动漫角色。</span>
@@ -442,12 +444,12 @@ export default function LandingPage() {
         </motion.p>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-xl overflow-y-auto sm:overflow-hidden px-4 py-2 sm:px-6 [@media(max-height:680px)]:py-1">
+      <main className="mx-auto flex min-h-0 w-full max-w-xl overflow-y-auto sm:overflow-hidden px-4 py-1 sm:px-6 sm:py-2 [@media(max-height:680px)]:py-1">
         {/* 纵向居中交给子元素的 my-auto，而不是父级的 items-center：
             父级在内容超出容器时会把内容向上下两侧同时溢出，顶部那部分越过 header 且滚不回来；
             auto 边距在有空间时居中、空间不足时归零，矮屏下自然退化为顶部对齐。 */}
         <motion.div
-          className="my-auto flex w-full flex-col gap-2.5 sm:gap-3"
+          className="my-auto flex w-full flex-col gap-2 sm:gap-3"
           variants={listContainer(GAMES.length)}
           initial="initial"
           animate="animate"
@@ -463,7 +465,7 @@ export default function LandingPage() {
         </motion.div>
       </main>
 
-      <footer className="flex flex-col items-center gap-2 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-2 [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:flex-wrap [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-x-4 [@media(max-height:680px)]:gap-y-1 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
+      <footer className="flex flex-col items-center gap-1 px-6 pb-[clamp(0.5rem,4svh,3rem)] pt-1.5 sm:gap-2 sm:pt-2 [@media(width<40rem)_and_(height>680px)]:pb-[clamp(0.5rem,2svh,3rem)] [@media(max-height:680px)]:flex-row [@media(max-height:680px)]:flex-wrap [@media(max-height:680px)]:justify-center [@media(max-height:680px)]:gap-x-4 [@media(max-height:680px)]:gap-y-1 [@media(max-height:680px)]:pb-1 [@media(max-height:680px)]:pt-1">
         {/* 友情链接 */}
         <motion.div
           className="flex flex-wrap items-center justify-center gap-1 text-xs"
