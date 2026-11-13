@@ -1,5 +1,10 @@
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
+import {
+  CLIENT_DEVICE_IDLE_RETENTION_MS,
+  CLIENT_DEVICE_PURGE_INTERVAL_MS,
+} from "../config/Constants";
 import { AppError } from "../domain/Errors";
+import { describeError } from "./EventLogger";
 import { compareDottedVersion } from "../shared/ModelValues";
 import type { ClientChannelProof } from "../shared/Model";
 import type { AndroidAttestationChecker } from "./AndroidAttestation";
@@ -70,11 +75,13 @@ export interface StoredClientDevice {
   lastSeenAt: number;
 }
 
-/** 只暴露三个动作：设备表在 MySQL，测试与本地用内存实现，判定逻辑不关心差异。 */
+/** 只暴露四个动作：设备表在 MySQL，测试与本地用内存实现，判定逻辑不关心差异。 */
 export interface ClientChannelStore {
   save(device: StoredClientDevice): Promise<void>;
   find(clientId: string): Promise<StoredClientDevice | undefined>;
   touch(clientId: string, at: number): Promise<void>;
+  /** 删除最近活跃时间早于 `before` 的登记，返回删除条数。 */
+  purgeIdle(before: number): Promise<number>;
 }
 
 export class InMemoryClientChannelStore implements ClientChannelStore {
@@ -88,6 +95,15 @@ export class InMemoryClientChannelStore implements ClientChannelStore {
   async touch(clientId: string, at: number): Promise<void> {
     const found = this.devices.get(clientId);
     if (found) this.devices.set(clientId, { ...found, lastSeenAt: at });
+  }
+  async purgeIdle(before: number): Promise<number> {
+    let removed = 0;
+    for (const [clientId, device] of this.devices) {
+      if (device.lastSeenAt >= before) continue;
+      this.devices.delete(clientId);
+      removed += 1;
+    }
+    return removed;
   }
 }
 
@@ -232,6 +248,7 @@ export class ClientChannel {
   private readonly minimumVersion: ClientChannelOptions["minimumVersion"];
   private readonly onWarn: (message: string, context?: Record<string, unknown>) => void;
   private readonly attestation: AndroidAttestationChecker | undefined;
+  private lastPurgeAt: number | undefined;
   private readonly challenges = new Map<string, { clientId: string; expiresAt: number }>();
   private readonly tickets = new Map<
     string,
@@ -322,12 +339,31 @@ export class ClientChannel {
       registeredAt: at,
       lastSeenAt: at,
     });
+    this.purgeWhenDue(at);
     return {
       clientId,
       minimumVersion: this.minimumVersion(input.clientType),
       outdated: this.isOutdated(input.clientType, input.clientVersion),
     };
   }
+  /**
+   * 登记表只会在注册路径上变大，回收也搭在这条路径上：到了间隔才清一次，
+   * 失败只告警——清理是维护动作，不能拖垮注册。
+   */
+  private purgeWhenDue(at: number): void {
+    if (this.lastPurgeAt !== undefined && at - this.lastPurgeAt < CLIENT_DEVICE_PURGE_INTERVAL_MS)
+      return;
+    this.lastPurgeAt = at;
+    void this.purgeIdleDevices().catch((error: unknown) => {
+      this.onWarn("设备登记表清理失败", describeError(error));
+    });
+  }
+
+  /** 清掉闲置超过保留期的设备登记；只动设备表，不碰在途挑战与票据。 */
+  async purgeIdleDevices(): Promise<number> {
+    return this.store.purgeIdle(this.now() - CLIENT_DEVICE_IDLE_RETENTION_MS);
+  }
+
   issue(clientId: string): { challenge: string; expiresAt: number } {
     const issuedAt = this.now();
     const challenge = `${clientId}.${randomBytes(24).toString("base64url")}.${issuedAt}`;

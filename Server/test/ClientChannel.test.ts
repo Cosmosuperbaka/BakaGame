@@ -13,6 +13,10 @@ import {
   type ClientSelfCheckReport,
   type StoredClientDevice,
 } from "../src/infrastructure/ClientChannel";
+import {
+  CLIENT_DEVICE_IDLE_RETENTION_MS,
+  CLIENT_DEVICE_PURGE_INTERVAL_MS,
+} from "../src/config/Constants";
 import { compareDottedVersion } from "../src/shared/ModelValues";
 import type { AndroidAttestationChecker } from "../src/infrastructure/AndroidAttestation";
 
@@ -683,5 +687,99 @@ describe("Android 平台证明接入", () => {
         "203.0.113.7"
       )
     ).rejects.toMatchObject({ code: "CLIENT_UNTRUSTED" });
+  });
+});
+
+describe("设备登记表清理", () => {
+  const registerDevice = async (channel: ClientChannel) => {
+    const { device, sign } = desktopDevice();
+    const { clientId } = await channel.register({
+      clientType: "desktop",
+      platform: "windows",
+      clientVersion: "1.0.0",
+      keyAlgorithm: "ed25519",
+      publicKey: device.publicKey,
+      selfCheck: clean,
+    });
+    return { clientId, sign };
+  };
+  const attestWith = (
+    channel: ClientChannel,
+    device: { clientId: string; sign: (challenge: string) => string },
+    challenge: string
+  ) =>
+    channel.attest(
+      {
+        clientId: device.clientId,
+        challenge,
+        signature: device.sign(challenge),
+        clientType: "desktop",
+        clientVersion: "1.0.0",
+        selfCheck: clean,
+      },
+      "203.0.113.7"
+    );
+
+  test("闲置超过保留期的登记被清，期内活跃的保留", async () => {
+    const { channel, clock, store } = harness();
+    const idle = await registerDevice(channel);
+    const active = await registerDevice(channel);
+    clock.value += CLIENT_DEVICE_IDLE_RETENTION_MS - 1_000;
+    await attestWith(channel, active, channel.issue(active.clientId).challenge);
+    clock.value += 2_000;
+
+    expect(await channel.purgeIdleDevices()).toBe(1);
+    expect(await store.find(idle.clientId)).toBeUndefined();
+    expect(await store.find(active.clientId)).toBeDefined();
+  });
+
+  test("清理不动在途挑战与已发的票", async () => {
+    const { channel, clock, store } = harness();
+    const idle = await registerDevice(channel);
+    const active = await registerDevice(channel);
+    clock.value += CLIENT_DEVICE_IDLE_RETENTION_MS - 1_000;
+    const issued = await attestWith(channel, active, channel.issue(active.clientId).challenge);
+    const { challenge } = channel.issue(active.clientId);
+
+    clock.value += 2_000;
+    await channel.purgeIdleDevices();
+    expect(await store.find(idle.clientId)).toBeUndefined();
+    // 清理发生在挑战签发之后：该挑战仍可换票，先前的票仍可消费。
+    const next = await attestWith(channel, active, challenge);
+    expect(channel.consume(next.ticket, "203.0.113.7")).toBeDefined();
+    expect(channel.consume(issued.ticket, "203.0.113.7")).toBeDefined();
+  });
+
+  test("注册路径上到期自动清理，窗口内不重复触发", async () => {
+    const { channel, clock, store } = harness();
+    let purges = 0;
+    const purge = store.purgeIdle.bind(store);
+    store.purgeIdle = async (before) => {
+      purges += 1;
+      return purge(before);
+    };
+    const idle = await registerDevice(channel);
+    await Bun.sleep(5);
+    expect(purges).toBe(1);
+    await registerDevice(channel);
+    await Bun.sleep(5);
+    expect(purges).toBe(1);
+
+    clock.value += CLIENT_DEVICE_IDLE_RETENTION_MS + CLIENT_DEVICE_PURGE_INTERVAL_MS;
+    const fresh = await registerDevice(channel);
+    await Bun.sleep(5);
+    expect(purges).toBe(2);
+    expect(await store.find(idle.clientId)).toBeUndefined();
+    expect(await store.find(fresh.clientId)).toBeDefined();
+  });
+
+  test("清理失败只告警，不拖垮注册", async () => {
+    const { channel, store, warnings } = harness();
+    store.purgeIdle = async () => {
+      throw new Error("db down");
+    };
+    await expect(registerDevice(channel)).resolves.toBeDefined();
+    await Bun.sleep(5);
+    expect(warnings).toContain("设备登记表清理失败");
   });
 });

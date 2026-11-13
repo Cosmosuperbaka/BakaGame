@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import type { ClientChannelStore, StoredClientDevice } from "../../infrastructure/ClientChannel";
 import type { Database } from "./Database";
 import { clientChannelDevice } from "./Schema";
@@ -62,5 +62,12 @@ export class ClientChannelRepository implements ClientChannelStore {
       .update(clientChannelDevice)
       .set({ lastSeenAt: new Date(at) })
       .where(eq(clientChannelDevice.clientId, clientId));
+  }
+  async purgeIdle(before: number): Promise<number> {
+    await this.database.ready;
+    const [result] = await this.database.db
+      .delete(clientChannelDevice)
+      .where(lt(clientChannelDevice.lastSeenAt, new Date(before)));
+    return result.affectedRows;
   }
 }
