@@ -25,7 +25,6 @@ import {
   CEE_RANKED_SERIES_MAX_GAMES,
   CEE_RANKED_STATE_EVENT,
   ceeRankedTierFor,
-  type CEERankedSettlement,
   type CEERankedTier,
 } from "../shared/CEERanked";
 import { AppError } from "../domain/Errors";
@@ -38,7 +37,6 @@ import {
   setCEERankedSeatOnline,
   surrenderCEERankedSeriesGame,
   tickCEERankedSeries,
-  type CEERankedSeries,
 } from "../domain/CEERankedSeries";
 import {
   ceeRankedGameSeatFinished,
@@ -56,8 +54,6 @@ import {
 import {
   ceeRankedBotStrength,
   pickCEERankedPersona,
-  type CEERankedBotStrength,
-  type CEERankedPersona,
   type CEERankedPersonaId,
 } from "../domain/CEERankedBotProfile";
 import { ceeRankedBotThinkMs } from "../domain/CEERankedBotTiming";
@@ -74,7 +70,6 @@ import type { EventLogger } from "../infrastructure/EventLogger";
 import { createEvent } from "../transport/Packets";
 import {
   ceeClientTypeOf,
-  type CEEGuessClientType,
   type CEESearchProvenance,
 } from "./CEEAntiCheatSignals";
 import { requireCEEClientAdmission } from "./CEEClientAdmission";
@@ -89,9 +84,7 @@ import type { CEERankedPool, CEERankedPoolProvider } from "./CEERankedPool";
 import { runCEEDataCommand } from "./CEEDataCommands";
 import {
   ceeRankedSeriesView,
-  type CEERankedSeatMeta,
   type CEERankedSeatResultMeta,
-  type CEERankedViewMeta,
 } from "./CEERankedViews";
 import {
   ceeRankedBotSampleOf,
@@ -106,6 +99,22 @@ import {
   type CEERankedStore,
 } from "./CEERankedStore";
 
+import {
+  errorMessageOf,
+  idleState,
+  connectionFor,
+  metaFor,
+  pushSeries,
+  pushState,
+  requirePool,
+  requireStore,
+  type CEERankedBotEntry,
+  type CEERankedBotSpec,
+  type CEERankedContext,
+  type CEERankedSeatRuntime,
+  type CEERankedSeriesRuntime,
+} from "./CEERankedRuntime";
+
 /**
  * 排位命令信封的可穷尽联合：`switch (message.type)` 在这一层就能把 payload 收窄到对应命令，
  * 泛型 `T` 做不到（`CEERankedPayload<T>` 在 T 未实例化时是全部 payload 的并集）。
@@ -116,8 +125,6 @@ type CEERankedMessage = {
 
 /** 人机席位固定在 1 号席：真人对局里 0 号是发起者，人机对局里真人也排在 0 号。 */
 const BOT_SEAT: CEERankedSeatIndex = 1;
-/** 进入人机局的来路：定级期直接开、排队后主动选、排队超时兜底；真人局为空。 */
-type CEERankedBotEntry = "manual" | "auto" | "placement" | null;
 /** 匹配跳周期：1 秒一跳，只在队列非空时运行。 */
 const MATCH_TICK_MS = 1_000;
 /** 唤醒抛错后的重排退避：同一异常不会让计时器贴着 1ms 空转。 */
@@ -143,56 +150,6 @@ const ADMISSION_COMMANDS: readonly CEERankedCommand[] = [
   "cee.ranked.queue",
   "cee.ranked.playBot",
 ];
-
-/** 席位运行时：赛前的评级记录整条留着，结算时的胜平负与当日额度都在它基础上加。 */
-interface CEERankedSeatRuntime {
-  userId: string | null;
-  isBot: boolean;
-  name: string;
-  /** 赛前评级记录；人机席位为 null。 */
-  prior: CEERankedRatingRecord | null;
-  clientType: CEEGuessClientType | null;
-  clientVersion: string | null;
-  /** 真人开赛前的排队时长；人机没有排队来源时为 null。 */
-  queueWaitMs: number | null;
-}
-
-/** 人机席位的整场常量：目标分用于结算，抽定后不再变。 */
-interface CEERankedBotSpec {
-  persona: CEERankedPersona;
-  /** 计分用的对手 μ：普通人格为标称分，爱噶为标称分加该组校准偏差。 */
-  targetRating: number;
-  /** 生成 `strength` 与爱噶思考节奏时真正喂进去的分数：普通人格为标称分减偏差，爱噶为标称分。 */
-  strengthRating: number;
-  strength: CEERankedBotStrength;
-}
-
-interface CEERankedSeriesRuntime {
-  series: CEERankedSeries;
-  tier: CEERankedTier;
-  rated: boolean;
-  unratedReason: string | null;
-  bot: boolean;
-  botEntry: CEERankedBotEntry;
-  seats: [CEERankedSeatRuntime, CEERankedSeatRuntime];
-  /** 人机对局的目标分、人格与强度；真人对局为 null。 */
-  botSpec: CEERankedBotSpec | null;
-  pool: CEERankedPool;
-  /** 当前局的人机大脑；进入新局时重建。 */
-  brain: { brain: CEERankedBotBrain; gameNumber: number } | null;
-  /** 人机下一次出手时刻；null 表示本局不再出手。 */
-  botNextGuessAt: number | null;
-  settlement: CEERankedSettlement;
-  results: [CEERankedSeatResultMeta | null, CEERankedSeatResultMeta | null];
-  /** 写库已经落定（成功或彻底失败），不再重复结算。 */
-  settlementDone: boolean;
-  /** 结算中的工作：并发进入时等同一个 Promise。 */
-  settling: Promise<void> | null;
-  /** 猜测 id → 该次猜测前最近一次角色检索的台账。 */
-  guessLedger: Map<string, { searchedAt: number | null; searchMatched: boolean }>;
-  timerCancel: (() => void) | null;
-  timerWakeAt: number | null;
-}
 
 export interface CEERankedServiceOptions {
   data: CEEDataProvider;
@@ -220,29 +177,12 @@ export interface CEERankedServiceOptions {
  */
 export class CEERankedService {
   private readonly data: CEEDataProvider;
-  private readonly store?: CEERankedStore;
-  private readonly poolProvider?: CEERankedPoolProvider;
   private readonly provenance: CEESearchProvenance;
-  private readonly resolveName?: (userId: string) => Promise<string | null>;
-  private readonly logger?: Pick<EventLogger, "info" | "warn" | "error">;
-  private readonly now: () => number;
-  private readonly random: () => number;
-  private readonly setTimer: (callback: () => void, ms: number) => () => void;
-  private readonly settleRetryDelaysMs: readonly number[];
+  private readonly ctx: CEERankedContext;
 
   private readonly queue = new CEERankedQueue();
-  private readonly connections = new Map<string, ConnectionRecord>();
-  /** 账号 → 当前排位连接。 */
-  private readonly attachment = new Map<string, string>();
   /** 连接 → 账号：断开时据此解绑。 */
   private readonly attachedBy = new Map<string, string>();
-  /** 账号 → 系列赛（含结算后仍停在结果页的那场）。 */
-  private readonly seriesByUser = new Map<string, CEERankedSeriesRuntime>();
-  private readonly seriesById = new Map<string, CEERankedSeriesRuntime>();
-  /** 账号 → 上一位真人与该场结束时刻：三分钟内不重复匹配。 */
-  private readonly lastOpponent = new Map<string, { userId: string; at: number }>();
-  /** 账号 → 上一场人机人格：抽人格时避开。 */
-  private readonly lastPersona = new Map<string, { id: CEERankedPersonaId; at: number }>();
   /** 排行榜头部缓存；本人名次每次单独算，不进缓存。 */
   private leaderboardCache: {
     rows: CEERankedLeaderboardRecord[];
@@ -257,78 +197,85 @@ export class CEERankedService {
   private readonly pushedWindow = new Map<string, number>();
   /** 正在开赛的账号：异步组装题库与昵称期间，`queue` 报忙、`cancel` 无效。 */
   private readonly starting = new Set<string>();
-  /** 人机强度校准：把历史人机战绩折算成每组的偏差，生成强度时扣掉。 */
-  private readonly handicap = new CEERankedHandicap();
   private matchCancel: (() => void) | null = null;
   private closed = false;
 
   constructor(options: CEERankedServiceOptions) {
     this.data = options.data;
-    this.store = options.store;
-    this.poolProvider = options.pool;
     this.provenance = options.provenance;
-    this.resolveName = options.resolveName;
-    this.logger = options.logger;
-    this.now = options.now ?? Date.now;
-    this.random = options.random ?? Math.random;
-    this.setTimer =
-      options.setTimer ??
-      ((callback, ms) => {
-        const timer = setTimeout(callback, ms);
-        timer.unref();
-        return () => clearTimeout(timer);
-      });
-    this.settleRetryDelaysMs = options.settleRetryDelaysMs ?? DEFAULT_SETTLE_RETRY_DELAYS_MS;
+    this.ctx = {
+      store: options.store,
+      poolProvider: options.pool,
+      resolveName: options.resolveName,
+      logger: options.logger,
+      now: options.now ?? Date.now,
+      random: options.random ?? Math.random,
+      setTimer:
+        options.setTimer ??
+        ((callback, ms) => {
+          const timer = setTimeout(callback, ms);
+          timer.unref();
+          return () => clearTimeout(timer);
+        }),
+      settleRetryDelaysMs: options.settleRetryDelaysMs ?? DEFAULT_SETTLE_RETRY_DELAYS_MS,
+      handicap: new CEERankedHandicap(),
+      connections: new Map(),
+      attachment: new Map(),
+      seriesByUser: new Map(),
+      seriesById: new Map(),
+      lastOpponent: new Map(),
+      lastPersona: new Map(),
+    };
     this.seedHandicap();
   }
 
   /** 启动灌入近期人机战绩作为校准种子：读不到就从零攒，不影响排位可用。 */
   private seedHandicap(): void {
-    const store = this.store;
+    const store = this.ctx.store;
     if (store === undefined) return;
     void store
       .listRecentBotSamples(HANDICAP_SEED_LIMIT)
       .then((samples) => {
-        this.handicap.seed(samples);
+        this.ctx.handicap.seed(samples);
       })
       .catch((error: unknown) => {
-        this.logger?.warn("排位人机校准种子读取失败", { error: errorMessageOf(error) });
+        this.ctx.logger?.warn("排位人机校准种子读取失败", { error: errorMessageOf(error) });
       });
   }
 
   // ==================== 连接生命周期 ====================
 
   registerConnection(connection: ConnectionRecord): void {
-    this.connections.set(connection.id, connection);
+    this.ctx.connections.set(connection.id, connection);
   }
 
   unregisterConnection(connectionId: string): void {
-    this.connections.delete(connectionId);
+    this.ctx.connections.delete(connectionId);
     const userId = this.attachedBy.get(connectionId);
     if (userId === undefined) return;
-    if (this.attachment.get(userId) !== connectionId) return;
-    this.attachment.delete(userId);
+    if (this.ctx.attachment.get(userId) !== connectionId) return;
+    this.ctx.attachment.delete(userId);
     this.attachedBy.delete(connectionId);
     if (this.queue.remove(userId)) this.pushedWindow.delete(userId);
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (!runtime || runtime.series.phase === "settled") return;
     const seat = this.seatOf(runtime, userId);
     if (seat === null) return;
-    setCEERankedSeatOnline(runtime.series, seat, false, this.now());
+    setCEERankedSeatOnline(runtime.series, seat, false, this.ctx.now());
     // 对手要立刻看到「离线」：安静期里可能几分钟都没有别的状态变化顺带把它推出去。
-    this.pushSeries(runtime);
+    pushSeries(this.ctx, runtime);
     this.scheduleTimer(runtime);
   }
 
   /** 关停：只推 idle 并记账作废的系列赛，计时器由 `close` 清。 */
   notifyShutdown(): void {
-    for (const connectionId of this.attachment.values()) {
-      const connection = this.connections.get(connectionId);
+    for (const connectionId of this.ctx.attachment.values()) {
+      const connection = this.ctx.connections.get(connectionId);
       if (connection) connection.send(createEvent(CEE_RANKED_STATE_EVENT, idleState()));
     }
-    for (const runtime of this.seriesById.values()) {
+    for (const runtime of this.ctx.seriesById.values()) {
       if (runtime.series.phase === "settled") continue;
-      this.logger?.warn("进程关停，排位系列赛作废", { seriesId: runtime.series.id });
+      this.ctx.logger?.warn("进程关停，排位系列赛作废", { seriesId: runtime.series.id });
     }
   }
 
@@ -338,17 +285,17 @@ export class CEERankedService {
       this.matchCancel();
       this.matchCancel = null;
     }
-    for (const runtime of this.seriesById.values()) this.cancelTimer(runtime);
+    for (const runtime of this.ctx.seriesById.values()) this.cancelTimer(runtime);
   }
 
   /** 兜底巡检：队列非空但匹配计时器断了就重排，唤醒时刻已过但计时器没动的场次补一次唤醒。 */
   runHousekeeping(): void {
     if (this.closed) return;
     if (this.queue.size > 0 && !this.matchCancel) this.scheduleMatchTick();
-    const now = this.now();
+    const now = this.ctx.now();
     this.sweepSettled(now);
     this.sweepRecentOpponents(now);
-    for (const runtime of [...this.seriesById.values()]) {
+    for (const runtime of [...this.ctx.seriesById.values()]) {
       if (runtime.timerWakeAt === null || runtime.timerWakeAt > now) continue;
       this.cancelTimer(runtime);
       this.fireWake(runtime);
@@ -361,8 +308,8 @@ export class CEERankedService {
     connection: ConnectionRecord,
     message: ClientEnvelope<T, CEERankedPayload<T>>
   ): Promise<CEERankedResponse<T>> {
-    this.requireStore();
-    this.requirePool();
+    requireStore(this.ctx);
+    requirePool(this.ctx);
     const needsAdmission = ADMISSION_COMMANDS.includes(message.type);
     if (needsAdmission) requireCEEClientAdmission(connection, "ranked");
     const userId = connection.account?.userId;
@@ -371,7 +318,7 @@ export class CEERankedService {
       throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
     }
     if (needsAdmission) this.bind(userId, connection);
-    else if (this.attachment.get(userId) !== connection.id)
+    else if (this.ctx.attachment.get(userId) !== connection.id)
       throw new AppError("RANKED_NOT_ATTACHED", "请重新进入排位");
     // 泛型 `T` 在函数体内不可解析，逐命令收窄只能在 `CEERankedMessage` 这一层做；
     // 两个方向都是「同一条命令的信封」，转换不改变运行时形状。
@@ -440,22 +387,22 @@ export class CEERankedService {
 
   /** 设定该账号的排位连接；旧连接收一帧 idle 后不再收推送，重连则恢复在线。 */
   private bind(userId: string, connection: ConnectionRecord): void {
-    const previous = this.attachment.get(userId);
+    const previous = this.ctx.attachment.get(userId);
     if (previous !== undefined && previous !== connection.id) {
-      const old = this.connections.get(previous);
+      const old = this.ctx.connections.get(previous);
       if (old) old.send(createEvent(CEE_RANKED_STATE_EVENT, idleState()));
       this.attachedBy.delete(previous);
     }
-    this.attachment.set(userId, connection.id);
+    this.ctx.attachment.set(userId, connection.id);
     this.attachedBy.set(connection.id, userId);
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (!runtime || runtime.series.phase === "settled") return;
     const seat = this.seatOf(runtime, userId);
     if (seat === null) return;
     const wasOffline = runtime.series.seats[seat].offlineSince !== null;
-    setCEERankedSeatOnline(runtime.series, seat, true, this.now());
+    setCEERankedSeatOnline(runtime.series, seat, true, this.ctx.now());
     // 重连回来同样要让对手立刻看到恢复在线；本人这一帧由随后的状态回包负责。
-    if (wasOffline) this.pushSeries(runtime);
+    if (wasOffline) pushSeries(this.ctx, runtime);
     this.scheduleTimer(runtime);
   }
 
@@ -465,38 +412,17 @@ export class CEERankedService {
     return null;
   }
 
-  private connectionFor(userId: string): ConnectionRecord | undefined {
-    const connectionId = this.attachment.get(userId);
-    if (connectionId === undefined) return undefined;
-    return this.connections.get(connectionId);
-  }
-
   /** 命令要求账号正在打一场未结束的系列赛。 */
   private requireInSeries(userId: string): void {
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (runtime && runtime.series.phase !== "settled") return;
     throw new AppError("INVALID_PHASE", "排位搜索只在系列赛进行中可用");
   }
 
   /** 命令要求账号正看着一场系列赛：进行中或停在结果页都算。 */
   private requireSeriesView(userId: string): void {
-    if (this.seriesByUser.has(userId)) return;
+    if (this.ctx.seriesByUser.has(userId)) return;
     throw new AppError("INVALID_PHASE", "当前没有排位对局");
-  }
-
-  private push(userId: string, state: CEERankedState): void {
-    const connection = this.connectionFor(userId);
-    if (!connection) return;
-    connection.send(createEvent(CEE_RANKED_STATE_EVENT, state));
-  }
-
-  private pushSeries(runtime: CEERankedSeriesRuntime): void {
-    for (const index of [0, 1] as const) {
-      const seat = runtime.seats[index];
-      if (seat.isBot || seat.userId === null) continue;
-      const view = ceeRankedSeriesView(runtime.series, index, this.metaFor(runtime));
-      this.push(seat.userId, { status: "series", series: view });
-    }
   }
 
   private queuedState(entry: CEERankedQueueEntry, now: number): CEERankedState {
@@ -512,16 +438,16 @@ export class CEERankedService {
   }
 
   private snapshot(userId: string): CEERankedState {
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (runtime) {
       const seat = this.requireSeat(runtime, userId);
       return {
         status: "series",
-        series: ceeRankedSeriesView(runtime.series, seat, this.metaFor(runtime)),
+        series: ceeRankedSeriesView(runtime.series, seat, metaFor(runtime)),
       };
     }
     const entry = this.queue.get(userId);
-    if (entry) return this.queuedState(entry, this.now());
+    if (entry) return this.queuedState(entry, this.ctx.now());
     return { status: "idle" };
   }
 
@@ -532,32 +458,11 @@ export class CEERankedService {
     return seat;
   }
 
-  private seatMeta(runtime: CEERankedSeriesRuntime, index: CEERankedSeatIndex): CEERankedSeatMeta {
-    const seat = runtime.seats[index];
-    const prior = seat.prior;
-    if (seat.isBot || prior === null) return { rating: null, placementPlayed: null, online: true };
-    const placed = prior.seriesPlayed >= CEE_RANKED_PLACEMENT_SERIES;
-    return {
-      rating: placed ? displayCEERating(prior) : null,
-      placementPlayed: placed ? null : prior.seriesPlayed,
-      online: runtime.series.seats[index].offlineSince === null,
-    };
-  }
-
-  private metaFor(runtime: CEERankedSeriesRuntime): CEERankedViewMeta {
-    return {
-      seats: [this.seatMeta(runtime, 0), this.seatMeta(runtime, 1)],
-      rated: runtime.rated,
-      settlement: runtime.settlement,
-      results: runtime.results,
-    };
-  }
-
   // ==================== 排队与开赛场次 ====================
 
   private async handleStatus(userId: string): Promise<CEERankedState> {
     const state = this.snapshot(userId);
-    this.push(userId, state);
+    pushState(this.ctx, userId, state);
     return state;
   }
 
@@ -565,23 +470,23 @@ export class CEERankedService {
     if (this.settling.has(userId)) throw new AppError("RANKED_SETTLING", "上一场还在结算");
     if (this.starting.has(userId)) throw new AppError("RANKED_STARTING", "正在为你开赛");
     if (this.queue.get(userId)) throw new AppError("RANKED_ALREADY_QUEUED", "已经在排队了");
-    const current = this.seriesByUser.get(userId);
+    const current = this.ctx.seriesByUser.get(userId);
     if (current) {
       if (current.series.phase !== "settled")
         throw new AppError("RANKED_IN_SERIES", "请先打完当前这场");
       // 结果页还留着：重新排队前先自动离开。
       this.forgetSeries(current, userId);
-      this.push(userId, idleState());
+      pushState(this.ctx, userId, idleState());
     }
     // 在读评级之前就先占位：连点两次 `queue` 不会开出两场。
     this.starting.add(userId);
     try {
-      const prior = (await this.requireStore().getRating(userId)) ?? initialRatingRecord(userId);
+      const prior = (await requireStore(this.ctx).getRating(userId)) ?? initialRatingRecord(userId);
       const entry: CEERankedQueueEntry = {
         userId,
         rating: prior.rating,
-        queuedAt: this.now(),
-        lastOpponent: this.lastOpponent.get(userId) ?? null,
+        queuedAt: this.ctx.now(),
+        lastOpponent: this.ctx.lastOpponent.get(userId) ?? null,
       };
       // 定级赛只打人机：不满 5 场不进真人队列，直接开一场，推给客户端的就是系列赛。
       if (prior.seriesPlayed < CEE_RANKED_PLACEMENT_SERIES) {
@@ -589,7 +494,7 @@ export class CEERankedService {
         return {};
       }
       this.queue.add(entry);
-      this.push(userId, this.queuedState(entry, this.now()));
+      pushState(this.ctx, userId, this.queuedState(entry, this.ctx.now()));
       if (!this.closed) this.scheduleMatchTick();
       return {};
     } catch (error) {
@@ -605,14 +510,14 @@ export class CEERankedService {
     if (this.starting.has(userId)) return {};
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
-    this.push(userId, idleState());
+    pushState(this.ctx, userId, idleState());
     return {};
   }
 
   private async handlePlayBot(userId: string): Promise<Record<string, never>> {
     const entry = this.queue.get(userId);
     if (!entry) throw new AppError("INVALID_PHASE", "当前不在排队中");
-    if (this.now() - entry.queuedAt < CEE_RANKED_BOT_OPTION_MS)
+    if (this.ctx.now() - entry.queuedAt < CEE_RANKED_BOT_OPTION_MS)
       throw new AppError("RANKED_BOT_NOT_READY", "再等一会儿才能选择人机");
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
@@ -642,11 +547,11 @@ export class CEERankedService {
 
   private scheduleMatchTick(): void {
     if (this.matchCancel !== null || this.queue.size === 0 || this.closed) return;
-    this.matchCancel = this.setTimer(() => {
+    this.matchCancel = this.ctx.setTimer(() => {
       this.matchCancel = null;
       void this.tickMatch()
         .catch((error: unknown) => {
-          this.logger?.error("排位匹配跳异常", { error: errorMessageOf(error) });
+          this.ctx.logger?.error("排位匹配跳异常", { error: errorMessageOf(error) });
         })
         .finally(() => {
           if (!this.closed && this.queue.size > 0 && this.matchCancel === null)
@@ -656,7 +561,7 @@ export class CEERankedService {
   }
 
   private async tickMatch(): Promise<void> {
-    const now = this.now();
+    const now = this.ctx.now();
     const { pairs, fallbacks } = this.queue.tick(now);
     // 出队与占位必须在同一个同步段：后面几对要等前面的 await，这期间不能让他们处于「既不在队列也不在开赛中」。
     for (const [first, second] of pairs) {
@@ -671,7 +576,7 @@ export class CEERankedService {
           this.startHumanSeries(first, second, now)
         );
       } catch (error) {
-        this.logger?.error("排位开赛失败", {
+        this.ctx.logger?.error("排位开赛失败", {
           userIds: [first.userId, second.userId],
           error: errorMessageOf(error),
         });
@@ -685,7 +590,7 @@ export class CEERankedService {
           this.startBotSeries(entry.userId, "auto", entry, now)
         );
       } catch (error) {
-        this.logger?.error("排位开赛失败", {
+        this.ctx.logger?.error("排位开赛失败", {
           userIds: [entry.userId],
           error: errorMessageOf(error),
         });
@@ -693,11 +598,11 @@ export class CEERankedService {
       }
     }
     // 仍在排队的人窗口可能又放宽了一档，只给变化的推一帧。
-    for (const userId of this.attachment.keys()) {
+    for (const userId of this.ctx.attachment.keys()) {
       const entry = this.queue.get(userId);
       if (!entry) continue;
       if (ceeRankedWindow(entry, now) === this.pushedWindow.get(userId)) continue;
-      this.push(userId, this.queuedState(entry, now));
+      pushState(this.ctx, userId, this.queuedState(entry, now));
     }
   }
 
@@ -707,7 +612,7 @@ export class CEERankedService {
     second: CEERankedQueueEntry,
     now: number
   ): Promise<void> {
-    const store = this.requireStore();
+    const store = requireStore(this.ctx);
     const [priorA, priorB] = await Promise.all([
       store.getRating(first.userId),
       store.getRating(second.userId),
@@ -719,10 +624,10 @@ export class CEERankedService {
     const tier = ceeRankedTierFor(
       (conservativeCEERating(ratingA, now) + conservativeCEERating(ratingB, now)) / 2
     );
-    const pool = await this.requirePool().getRankedPool(tier.id, now);
-    const answers = pickAnswers(pool.candidates, this.random);
+    const pool = await requirePool(this.ctx).getRankedPool(tier.id, now);
+    const answers = pickAnswers(pool.candidates, this.ctx.random);
     if (!answers) {
-      this.logger?.error("排位题库不足三题", {
+      this.ctx.logger?.error("排位题库不足三题", {
         userId: first.userId,
         opponentId: second.userId,
         tier: tier.id,
@@ -757,23 +662,23 @@ export class CEERankedService {
     userId: string,
     botEntry: Exclude<CEERankedBotEntry, null>,
     entry: CEERankedQueueEntry,
-    now = this.now()
+    now = this.ctx.now()
   ): Promise<void> {
-    const prior = (await this.requireStore().getRating(userId)) ?? initialRatingRecord(userId);
+    const prior = (await requireStore(this.ctx).getRating(userId)) ?? initialRatingRecord(userId);
     const rating = toRating(prior);
     const tier = ceeRankedTierFor(conservativeCEERating(rating, now));
-    const pool = await this.requirePool().getRankedPool(tier.id, now);
-    const answers = pickAnswers(pool.candidates, this.random);
+    const pool = await requirePool(this.ctx).getRankedPool(tier.id, now);
+    const answers = pickAnswers(pool.candidates, this.ctx.random);
     if (!answers) {
-      this.logger?.error("排位题库不足三题", { userId, tier: tier.id });
+      this.ctx.logger?.error("排位题库不足三题", { userId, tier: tier.id });
       this.resetToIdle(userId);
       return;
     }
-    const persona = pickCEERankedPersona(this.random, this.lastPersona.get(userId)?.id);
+    const persona = pickCEERankedPersona(this.ctx.random, this.ctx.lastPersona.get(userId)?.id);
     // 爱噶的标称分就是玩家自己的分数，其余人格在 ±120 内浮动。
     const nominal =
-      persona.id === "aiga" ? rating.rating : rating.rating + (this.random() * 240 - 120);
-    const bias = this.handicap.bias(botGroupOf(persona.id));
+      persona.id === "aiga" ? rating.rating : rating.rating + (this.ctx.random() * 240 - 120);
+    const bias = this.ctx.handicap.bias(botGroupOf(persona.id));
     // 普通人格：按校准偏差回退后才生成强度，计分用标称分，真人对它的期望得分因此回到标称。
     // 爱噶：她有意比同分人机强，强度只跟玩家分数走；偏差加到计分用的分数上，赢她多涨、输给她少掉。
     const strengthRating = persona.id === "aiga" ? nominal : nominal - bias;
@@ -806,10 +711,10 @@ export class CEERankedService {
         persona,
         targetRating,
         strengthRating,
-        strength: ceeRankedBotStrength(strengthRating, this.random),
+        strength: ceeRankedBotStrength(strengthRating, this.ctx.random),
       },
     });
-    this.lastPersona.set(userId, { id: persona.id, at: this.now() });
+    this.ctx.lastPersona.set(userId, { id: persona.id, at: this.ctx.now() });
   }
 
   private humanSeat(
@@ -819,7 +724,7 @@ export class CEERankedService {
     entry: CEERankedQueueEntry,
     now: number
   ): CEERankedSeatRuntime {
-    const connection = this.connectionFor(userId);
+    const connection = connectionFor(this.ctx, userId);
     const channel = connection?.clientChannel;
     return {
       userId,
@@ -833,7 +738,7 @@ export class CEERankedService {
   }
 
   private async displayName(userId: string): Promise<string> {
-    const found = await this.resolveName?.(userId);
+    const found = await this.ctx.resolveName?.(userId);
     return found ?? FALLBACK_NAME;
   }
 
@@ -841,8 +746,8 @@ export class CEERankedService {
   private resetToIdle(userId: string): void {
     this.queue.remove(userId);
     this.pushedWindow.delete(userId);
-    this.seriesByUser.delete(userId);
-    this.push(userId, idleState());
+    this.ctx.seriesByUser.delete(userId);
+    pushState(this.ctx, userId, idleState());
   }
 
   private open(input: {
@@ -875,7 +780,7 @@ export class CEERankedService {
         },
       ],
       now: input.now,
-      random: this.random,
+      random: this.ctx.random,
     });
     const runtime: CEERankedSeriesRuntime = {
       series,
@@ -897,16 +802,16 @@ export class CEERankedService {
       timerCancel: null,
       timerWakeAt: null,
     };
-    this.seriesById.set(series.id, runtime);
+    this.ctx.seriesById.set(series.id, runtime);
     for (const [index, seat] of input.seats.entries()) {
       if (seat.isBot || seat.userId === null) continue;
-      this.seriesByUser.set(seat.userId, runtime);
+      this.ctx.seriesByUser.set(seat.userId, runtime);
       this.pushedWindow.delete(seat.userId);
       // 开赛是异步的：窗口里断线的人此刻没有系列赛可标，开出来后补记离线，否则永远没人给他计时。
-      if (!this.attachment.has(seat.userId))
-        setCEERankedSeatOnline(series, index === 0 ? 0 : 1, false, this.now());
+      if (!this.ctx.attachment.has(seat.userId))
+        setCEERankedSeatOnline(series, index === 0 ? 0 : 1, false, this.ctx.now());
     }
-    this.pushSeries(runtime);
+    pushSeries(this.ctx, runtime);
     this.scheduleTimer(runtime);
   }
 
@@ -918,15 +823,15 @@ export class CEERankedService {
     if (runtime.series.phase === "settled" && runtime.settlementDone) return;
     const nextWake = this.nextWakeAt(runtime);
     if (nextWake === null) return;
-    const wake = Math.max(nextWake, this.now() + minDelayMs);
+    const wake = Math.max(nextWake, this.ctx.now() + minDelayMs);
     runtime.timerWakeAt = wake;
-    const cancel = this.setTimer(
+    const cancel = this.ctx.setTimer(
       () => {
         runtime.timerCancel = null;
         runtime.timerWakeAt = null;
         this.fireWake(runtime);
       },
-      Math.max(1, wake - this.now())
+      Math.max(1, wake - this.ctx.now())
     );
     runtime.timerCancel = () => {
       cancel();
@@ -962,34 +867,34 @@ export class CEERankedService {
   /** 计时器与巡检的统一唤醒入口：唤醒是时间轴上唯一的驱动，抛错不能变成未处理拒绝并丢掉计时器。 */
   private fireWake(runtime: CEERankedSeriesRuntime): void {
     this.wakeSeries(runtime).catch((error: unknown) => {
-      this.logger?.error("排位唤醒异常", {
+      this.ctx.logger?.error("排位唤醒异常", {
         seriesId: runtime.series.id,
         error: errorMessageOf(error),
       });
-      if (this.seriesById.has(runtime.series.id))
+      if (this.ctx.seriesById.has(runtime.series.id))
         this.scheduleTimer(runtime, WAKE_RETRY_BACKOFF_MS);
     });
   }
 
   private async wakeSeries(runtime: CEERankedSeriesRuntime): Promise<void> {
-    if (!this.seriesById.has(runtime.series.id)) return;
+    if (!this.ctx.seriesById.has(runtime.series.id)) return;
     await this.afterChange(runtime);
   }
 
   /** 任何改动系列赛之后的统一收尾：推进时间、驱动人机、必要时结算、推送、重排计时器。 */
   private async afterChange(runtime: CEERankedSeriesRuntime): Promise<void> {
-    const now = this.now();
+    const now = this.ctx.now();
     tickCEERankedSeries(runtime.series, now);
     if (runtime.bot) this.driveBot(runtime, now);
     // 写库可能带重试，不能压住命令 ACK：结算自己会先推「结算中」再推结果。
     if (runtime.series.phase === "settled" && !runtime.settlementDone)
       void this.settle(runtime).catch((error: unknown) => {
-        this.logger?.error("排位结算异常", {
+        this.ctx.logger?.error("排位结算异常", {
           seriesId: runtime.series.id,
           error: errorMessageOf(error),
         });
       });
-    this.pushSeries(runtime);
+    pushSeries(this.ctx, runtime);
     this.scheduleTimer(runtime);
   }
 
@@ -1000,7 +905,7 @@ export class CEERankedService {
     connection: ConnectionRecord,
     characterId: number
   ): Promise<Record<string, never>> {
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (!runtime || runtime.series.phase === "settled")
       throw new AppError("INVALID_PHASE", "当前没有进行中的对局");
     const seat = this.requireSeat(runtime, userId);
@@ -1021,7 +926,7 @@ export class CEERankedService {
         current.seats[seat].attempts !== attempts
       )
         throw new AppError("ROUND_CANCELLED", "本次行动已超时，请重新猜测");
-      const guess = applyCEERankedSeriesGuess(runtime.series, seat, view, this.now());
+      const guess = applyCEERankedSeriesGuess(runtime.series, seat, view, this.ctx.now());
       const ledger = this.provenance.match(connection.id, characterId);
       runtime.guessLedger.set(guess.id, { searchedAt: ledger.at, searchMatched: ledger.matched });
       await this.afterChange(runtime);
@@ -1034,7 +939,7 @@ export class CEERankedService {
   private async handleSurrender(userId: string): Promise<Record<string, never>> {
     const runtime = this.requirePlaying(userId);
     const seat = this.requireSeat(runtime, userId);
-    surrenderCEERankedSeriesGame(runtime.series, seat, this.now());
+    surrenderCEERankedSeriesGame(runtime.series, seat, this.ctx.now());
     await this.afterChange(runtime);
     return {};
   }
@@ -1042,32 +947,32 @@ export class CEERankedService {
   private async handleExit(userId: string): Promise<Record<string, never>> {
     const runtime = this.requirePlaying(userId);
     const seat = this.requireSeat(runtime, userId);
-    exitCEERankedSeries(runtime.series, seat, this.now());
+    exitCEERankedSeries(runtime.series, seat, this.ctx.now());
     await this.afterChange(runtime);
     return {};
   }
 
   private handleLeave(userId: string): Record<string, never> {
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (!runtime || runtime.series.phase !== "settled")
       throw new AppError("INVALID_PHASE", "当前没有可离开的结果页");
     this.forgetSeries(runtime, userId);
-    this.push(userId, idleState());
+    pushState(this.ctx, userId, idleState());
     return {};
   }
 
   private requirePlaying(userId: string): CEERankedSeriesRuntime {
-    const runtime = this.seriesByUser.get(userId);
+    const runtime = this.ctx.seriesByUser.get(userId);
     if (runtime && runtime.series.phase !== "settled") return runtime;
     throw new AppError("INVALID_PHASE", "当前没有进行中的对局");
   }
 
   private async handleProfile(userId: string): Promise<CEERankedProfile> {
-    const store = this.requireStore();
+    const store = requireStore(this.ctx);
     const record = (await store.getRating(userId)) ?? initialRatingRecord(userId);
     const page = await this.historyPage(userId);
     const placed = record.seriesPlayed >= CEE_RANKED_PLACEMENT_SERIES;
-    const today = beijingDay(this.now());
+    const today = beijingDay(this.ctx.now());
     return {
       rating: placed ? displayCEERating(record) : null,
       placementPlayed: Math.min(record.seriesPlayed, CEE_RANKED_PLACEMENT_SERIES),
@@ -1089,7 +994,7 @@ export class CEERankedService {
 
   /** 多取一条判断是否还有更早的战绩，不另发计数查询。 */
   private async historyPage(userId: string, before?: number): Promise<CEERankedHistoryPage> {
-    const rows = await this.requireStore().listHistory(userId, HISTORY_PAGE + 1, before);
+    const rows = await requireStore(this.ctx).listHistory(userId, HISTORY_PAGE + 1, before);
     return {
       entries: rows.slice(0, HISTORY_PAGE).map(historyEntryOf),
       hasMore: rows.length > HISTORY_PAGE,
@@ -1097,8 +1002,8 @@ export class CEERankedService {
   }
 
   private async handleLeaderboard(userId: string): Promise<CEERankedLeaderboard> {
-    const store = this.requireStore();
-    const now = this.now();
+    const store = requireStore(this.ctx);
+    const now = this.ctx.now();
     let cache = this.leaderboardCache;
     if (!cache || now - cache.at >= LEADERBOARD_TTL_MS) {
       const [rows, counted] = await Promise.all([
@@ -1172,7 +1077,7 @@ export class CEERankedService {
       // 爱噶的思考节奏按开赛时定下的强度分（已扣校准偏差），整场不变，与审计记录一致。
       opponentRating: spec.strengthRating,
       pool: runtime.pool.candidates,
-      random: this.random,
+      random: this.ctx.random,
     });
     runtime.brain = { brain, gameNumber: game.number };
     runtime.botNextGuessAt = Math.max(game.startsAt, now) + this.thinkMs(runtime, brain);
@@ -1180,7 +1085,7 @@ export class CEERankedService {
   }
 
   private thinkMs(runtime: CEERankedSeriesRuntime, brain: CEERankedBotBrain): number {
-    return ceeRankedBotThinkMs(brain, this.consistentCount(runtime, brain), this.random);
+    return ceeRankedBotThinkMs(brain, this.consistentCount(runtime, brain), this.ctx.random);
   }
 
   /** 一致候选数：人机「知道自己还没排除掉多少个」，影响它的犹豫程度。 */
@@ -1208,7 +1113,7 @@ export class CEERankedService {
         runtime.pool.candidates,
         runtime.pool.openings,
         settings,
-        this.random
+        this.ctx.random
       );
     } catch (error) {
       // 没有可猜的已知角色：本局不再出手，交给截止与加时规则收口。
@@ -1258,7 +1163,7 @@ export class CEERankedService {
   }
 
   private async doSettle(runtime: CEERankedSeriesRuntime): Promise<void> {
-    const endedAt = runtime.series.endedAt ?? this.now();
+    const endedAt = runtime.series.endedAt ?? this.ctx.now();
     const userIds: string[] = [];
     for (const seat of runtime.seats) {
       if (seat.isBot || seat.userId === null) continue;
@@ -1267,7 +1172,7 @@ export class CEERankedService {
     for (const userId of userIds) this.settling.add(userId);
     try {
       runtime.settlement = "pending";
-      this.pushSeries(runtime);
+      pushSeries(this.ctx, runtime);
 
       const outcome = await this.writeSettlement(runtime, endedAt);
       runtime.results = outcome.results;
@@ -1281,7 +1186,7 @@ export class CEERankedService {
       for (const userId of userIds) this.settling.delete(userId);
     }
     this.rememberOpponents(runtime, endedAt);
-    this.pushSeries(runtime);
+    pushSeries(this.ctx, runtime);
   }
 
   /** 算新评级、组装审计、写库；返回视图要用的结果元数据。 */
@@ -1318,12 +1223,12 @@ export class CEERankedService {
   private rememberBotSample(players: readonly CEERankedSeriesPlayerRecord[]): void {
     const sample = ceeRankedBotSampleOf(players);
     if (sample === null) return;
-    this.handicap.add(sample);
-    const samples = this.handicap.count(sample.group);
+    this.ctx.handicap.add(sample);
+    const samples = this.ctx.handicap.count(sample.group);
     if (samples % HANDICAP_LOG_EVERY !== 0) return;
-    this.logger?.info("排位人机校准", {
+    this.ctx.logger?.info("排位人机校准", {
       group: sample.group,
-      bias: this.handicap.bias(sample.group),
+      bias: this.ctx.handicap.bias(sample.group),
       samples,
     });
   }
@@ -1332,8 +1237,8 @@ export class CEERankedService {
     record: CEERankedSettlementRecord,
     seriesId: string
   ): Promise<boolean> {
-    const store = this.requireStore();
-    const attempts = this.settleRetryDelaysMs.length + 1;
+    const store = requireStore(this.ctx);
+    const attempts = this.ctx.settleRetryDelaysMs.length + 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         await store.saveSettlement(record);
@@ -1347,14 +1252,14 @@ export class CEERankedService {
           return true;
         }
         if (attempt + 1 >= attempts) {
-          this.logger?.error("排位结算写库失败", {
+          this.ctx.logger?.error("排位结算写库失败", {
             seriesId,
             record,
             error: errorMessageOf(error),
           });
           return false;
         }
-        await this.wait(this.settleRetryDelaysMs[attempt] ?? 0);
+        await this.wait(this.ctx.settleRetryDelaysMs[attempt] ?? 0);
       }
     }
     return false;
@@ -1363,9 +1268,9 @@ export class CEERankedService {
   /** 审计里已有这场系列赛；读失败按「未落库」处理，交给重试。 */
   private async alreadySaved(seriesId: string): Promise<boolean> {
     try {
-      return (await this.requireStore().getSeriesAudit(seriesId)) !== null;
+      return (await requireStore(this.ctx).getSeriesAudit(seriesId)) !== null;
     } catch (error) {
-      this.logger?.warn("排位结算落库确认读取失败", { seriesId, error: errorMessageOf(error) });
+      this.ctx.logger?.warn("排位结算落库确认读取失败", { seriesId, error: errorMessageOf(error) });
       return false;
     }
   }
@@ -1377,7 +1282,7 @@ export class CEERankedService {
         return;
       }
       let cancel: (() => void) | null = null;
-      cancel = this.setTimer(() => {
+      cancel = this.ctx.setTimer(() => {
         if (cancel) cancel();
         resolve();
       }, ms);
@@ -1392,9 +1297,9 @@ export class CEERankedService {
       if (self.isBot || self.userId === null) continue;
       if (other.isBot) {
         const spec = runtime.botSpec;
-        if (spec !== null) this.lastPersona.set(self.userId, { id: spec.persona.id, at });
+        if (spec !== null) this.ctx.lastPersona.set(self.userId, { id: spec.persona.id, at });
       } else if (other.userId !== null)
-        this.lastOpponent.set(self.userId, { userId: other.userId, at });
+        this.ctx.lastOpponent.set(self.userId, { userId: other.userId, at });
     }
   }
 
@@ -1403,13 +1308,13 @@ export class CEERankedService {
    * 另一方可能还停在结果页上，替他解绑会让他的「返回」报「没有可离开的结果页」。
    */
   private forgetSeries(runtime: CEERankedSeriesRuntime, userId: string): void {
-    if (this.seriesByUser.get(userId) === runtime) this.seriesByUser.delete(userId);
+    if (this.ctx.seriesByUser.get(userId) === runtime) this.ctx.seriesByUser.delete(userId);
     const stillWatched = runtime.seats.some(
-      (seat) => seat.userId !== null && this.seriesByUser.get(seat.userId) === runtime
+      (seat) => seat.userId !== null && this.ctx.seriesByUser.get(seat.userId) === runtime
     );
     if (stillWatched) return;
     this.cancelTimer(runtime);
-    this.seriesById.delete(runtime.series.id);
+    this.ctx.seriesById.delete(runtime.series.id);
   }
 
   /**
@@ -1418,46 +1323,28 @@ export class CEERankedService {
    */
   /** 上一位对手与人格只在各自的避让窗口内有意义，过期即清，账号数再多也不会无界增长。 */
   private sweepRecentOpponents(now: number): void {
-    for (const [userId, last] of this.lastOpponent)
-      if (now - last.at >= CEE_RANKED_REMATCH_COOLDOWN_MS) this.lastOpponent.delete(userId);
-    for (const [userId, last] of this.lastPersona)
-      if (now - last.at >= SETTLED_RETENTION_MS) this.lastPersona.delete(userId);
+    for (const [userId, last] of this.ctx.lastOpponent)
+      if (now - last.at >= CEE_RANKED_REMATCH_COOLDOWN_MS) this.ctx.lastOpponent.delete(userId);
+    for (const [userId, last] of this.ctx.lastPersona)
+      if (now - last.at >= SETTLED_RETENTION_MS) this.ctx.lastPersona.delete(userId);
   }
 
   private sweepSettled(now: number): void {
-    for (const runtime of [...this.seriesById.values()]) {
+    for (const runtime of [...this.ctx.seriesById.values()]) {
       const { series } = runtime;
       if (series.phase !== "settled" || !runtime.settlementDone) continue;
       if ((series.endedAt ?? now) + SETTLED_RETENTION_MS > now) continue;
       for (const seat of runtime.seats) {
-        if (seat.userId === null || this.seriesByUser.get(seat.userId) !== runtime) continue;
+        if (seat.userId === null || this.ctx.seriesByUser.get(seat.userId) !== runtime) continue;
         this.forgetSeries(runtime, seat.userId);
-        this.push(seat.userId, idleState());
+        pushState(this.ctx, seat.userId, idleState());
       }
       // 没有任何人挂着（理论上不会出现）也照样丢掉。
       this.cancelTimer(runtime);
-      this.seriesById.delete(series.id);
+      this.ctx.seriesById.delete(series.id);
     }
   }
 
-  private requireStore(): CEERankedStore {
-    const store = this.store;
-    if (store === undefined) throw new AppError("RANKED_UNAVAILABLE", "排位赛暂不可用");
-    return store;
-  }
-
-  private requirePool(): CEERankedPoolProvider {
-    const pool = this.poolProvider;
-    if (pool === undefined) throw new AppError("RANKED_UNAVAILABLE", "排位赛暂不可用");
-    return pool;
-  }
-}
-
-const idleState = (): CEERankedState => ({ status: "idle" });
-
-/** 写日志用的错误摘要：Error 取 message，其余原样转字符串。 */
-function errorMessageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** 校准分组：爱噶单独一组，其余人格共用一组。 */
