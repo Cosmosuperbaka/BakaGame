@@ -14,8 +14,8 @@ import {
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import type { SonGuessrServiceOptions } from "./songuessr/Options";
 import { createSonGuessrContext, type SonGuessrContext } from "./songuessr/Context";
-import { listRoomSummaries } from "./songuessr/RoomViews";
-import { isTestRoom, requireRoomPlayer } from "./songuessr/RoomAccess";
+import { buildHealthSnapshot, listAdminRooms, listRoomSummaries } from "./songuessr/RoomViews";
+import { requireRoomPlayer } from "./songuessr/RoomAccess";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { CommandQuota, dispatchCommand } from "./room/CommandTable";
 import { closeRoom } from "./songuessr/RoomClosure";
@@ -23,7 +23,7 @@ import { runHousekeeping } from "./songuessr/Housekeeping";
 import { adminKickPlayer, disconnectSeat } from "./songuessr/Membership";
 import { exportSnapshots, restoreSnapshots } from "./songuessr/SnapshotCodec";
 
-import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
+import { requireAdminRoom } from "./room/RoomSummaries";
 import { assertTabAgentsAllowed, roomsOfTab } from "./room/SeatBinding";
 import { musicIpScope } from "../infrastructure/music/MusicIpScope";
 import { createEvent } from "../transport/Packets";
@@ -82,14 +82,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   }
 
   getHealthSnapshot() {
-    return {
-      roomCount: this.ctx.rooms.size,
-      connectionCount: this.ctx.connections.stats.totalConnections,
-      onlinePlayerCount: [...this.ctx.rooms.values()].reduce(
-        (sum, room) => sum + countOnline(Object.values(room.players)),
-        0
-      ),
-    };
+    return buildHealthSnapshot(this.ctx);
   }
 
   notifyShutdown(): void {
@@ -131,16 +124,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   }
 
   adminListRooms(): AdminRoomView[] {
-    return [...this.ctx.rooms.values()].map((room) =>
-      adminRoomView(room, Object.values(room.players), {
-        game: "song",
-        name: room.name,
-        phase: room.phase,
-        visibility: room.visibility,
-        hidden: isTestRoom(this.ctx, room) || room.solo,
-        roundNumber: room.roundNumber,
-      })
-    );
+    return listAdminRooms(this.ctx);
   }
 
   async adminCloseRoom(roomId: string): Promise<void> {

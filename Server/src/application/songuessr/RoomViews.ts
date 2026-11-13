@@ -13,7 +13,9 @@ import type {
   SonGuessrRoundSummary,
   SonGuessrScore,
 } from "../../shared/Index";
+import type { AdminRoomView } from "../../domain/AdminRoom";
 import { canSeeRoundSecrets } from "../../domain/Visibility";
+import { adminRoomView, countOnline } from "../room/RoomSummaries";
 import { audioTicketUrl } from "./AudioTicket";
 import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicPool";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
@@ -350,3 +352,26 @@ export const publicAnime = (anime: BangumiSubjectDetails): BangumiSubjectSearchR
     metaTags: [],
   };
 };
+
+/** 后台房间列表：测试房与单人房对大厅隐藏，后台照常看得到。 */
+export const listAdminRooms = (ctx: SonGuessrContext): AdminRoomView[] =>
+  [...ctx.rooms.values()].map((room) =>
+    adminRoomView(room, Object.values(room.players), {
+      game: "song",
+      name: room.name,
+      phase: room.phase,
+      visibility: room.visibility,
+      hidden: isTestRoom(ctx, room) || room.solo,
+      roundNumber: room.roundNumber,
+    })
+  );
+
+/** 健康探针用的房间、连接与在线人数。 */
+export const buildHealthSnapshot = (ctx: SonGuessrContext) => ({
+  roomCount: ctx.rooms.size,
+  connectionCount: ctx.connections.stats.totalConnections,
+  onlinePlayerCount: [...ctx.rooms.values()].reduce(
+    (sum, room) => sum + countOnline(Object.values(room.players)),
+    0
+  ),
+});
