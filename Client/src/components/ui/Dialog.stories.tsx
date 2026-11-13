@@ -17,6 +17,8 @@ import { Input } from "./Input";
 const meta = {
   title: "基础控件/Dialog",
   component: Dialog,
+  // 各故事用自己的演示件接管开合，这里只满足必填的受控属性
+  args: { open: true },
   tags: ["overlay"],
   parameters: { layout: "fullscreen" },
 } satisfies Meta<typeof Dialog>;

@@ -85,6 +85,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     return (
       <motion.button
+        // 没写类型就是普通按钮：放进表单不该顺手变成提交钮，要提交的调用点显式写 type="submit"。
+        type="button"
         className={classes}
         ref={ref}
         disabled={isDisabled}

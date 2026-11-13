@@ -40,6 +40,7 @@ export function ClampedText({
   const id = useId();
 
   // 收起时量是否被截断；所在列宽随容器变化，宽度一变就重量。展开后不量，箭头留着用来收起。
+  // 内容换了也会让截断框的尺寸变化而被观察器发现；依赖里不放 children——父组件每次渲染它都是新引用，会白白重建观察器。
   useLayoutEffect(() => {
     const node = textRef.current;
     if (!node || expanded) return;
@@ -48,7 +49,7 @@ export function ClampedText({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [expanded, children]);
+  }, [expanded]);
 
   const toggleable = overflowing || expanded;
   return (

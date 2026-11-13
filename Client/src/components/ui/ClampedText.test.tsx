@@ -69,3 +69,25 @@ describe("ClampedText", () => {
     );
   });
 });
+
+describe("ClampedText 观察器", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("父组件每次渲染传来新的子节点引用，不重建尺寸观察器", () => {
+    let created = 0;
+    class CountingObserver {
+      constructor() {
+        created += 1;
+      }
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
+    vi.stubGlobal("ResizeObserver", CountingObserver);
+    const { rerender } = render(<ClampedText label="简介">{<span>同样的内容</span>}</ClampedText>);
+    const first = created;
+    rerender(<ClampedText label="简介">{<span>同样的内容</span>}</ClampedText>);
+    rerender(<ClampedText label="简介">{<span>同样的内容</span>}</ClampedText>);
+    expect(created).toBe(first);
+  });
+});

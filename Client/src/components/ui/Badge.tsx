@@ -18,7 +18,8 @@ const badgeVariants = cva(
       variant: {
         default: "border-transparent bg-primary text-primary-foreground shadow-sm",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive-solid text-destructive-foreground shadow-sm",
+        destructive:
+          "border-transparent bg-destructive-solid text-destructive-foreground shadow-sm",
         outline: "text-foreground",
         // muted / upcoming 的底取前景色淡档：bg-muted 在暗色面板与卡片上只差约 1.05~1.1:1，徽章轮廓消失。
         muted: "border-transparent bg-foreground/8 font-sans font-normal text-foreground",
@@ -49,10 +50,13 @@ const badgeVariants = cva(
 );
 
 export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof badgeVariants> {
+  ref?: React.Ref<HTMLSpanElement>;
+}
 
+/** 行内标记：根是 span，放进段落、按钮、标题里都不构成非法嵌套；需要块级排布的调用点自己加布局类。 */
 function Badge({ className, variant, size, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant, size }), className)} {...props} />;
+  return <span className={cn(badgeVariants({ variant, size }), className)} {...props} />;
 }
 
 export { Badge };

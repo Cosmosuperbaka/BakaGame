@@ -41,7 +41,6 @@ const Slider = React.forwardRef<
     return (
       <SliderPrimitive.Root
         ref={ref}
-        aria-label={ariaLabel}
         value={value}
         defaultValue={defaultValue}
         className={cn(

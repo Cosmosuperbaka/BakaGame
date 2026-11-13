@@ -67,4 +67,10 @@ describe("Slider", () => {
       "不限"
     );
   });
+
+  it("名字只落在拇指上，根节点（无角色的布局容器）不重复挂 aria-label", () => {
+    const { container } = render(<Slider value={[1]} min={0} max={2} aria-label="只一份名字" />);
+    expect(container.querySelectorAll("[aria-label='只一份名字']")).toHaveLength(1);
+    expect(screen.getByRole("slider", { name: "只一份名字" })).toBeInTheDocument();
+  });
 });

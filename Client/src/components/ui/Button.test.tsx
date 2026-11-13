@@ -151,3 +151,30 @@ describe("Button", () => {
     expect(motionButtonProps).not.toHaveBeenCalled();
   });
 });
+
+describe("Button 默认类型", () => {
+  it("没写 type 时是 button，放进表单也不会误提交；显式 submit 仍提交", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Button>取消</Button>
+        <Button type="submit">确认</Button>
+      </form>
+    );
+    expect(screen.getByRole("button", { name: "取消" })).toHaveAttribute("type", "button");
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "确认" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("asChild 时不替子元素设 type（链接不该带 type）", () => {
+    render(
+      <Button asChild>
+        <a href="/x">去看看</a>
+      </Button>
+    );
+    expect(screen.getByRole("link", { name: "去看看" })).not.toHaveAttribute("type");
+  });
+});

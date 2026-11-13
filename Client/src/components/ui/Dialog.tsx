@@ -12,7 +12,12 @@ const DialogClose = DialogPrimitive.Close;
 /** 由 Root 向 Content 传递本次打开的来源坐标。 */
 const DialogOriginContext = React.createContext<OriginPoint | null>(null);
 
-interface DialogProps extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root> {
+interface DialogProps extends Omit<
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>,
+  "open" | "defaultOpen"
+> {
+  /** 只支持受控：开合要交给 AnimatePresence 接管，缺省时子树永远不渲染。 */
+  open: boolean;
   /** 触发按钮的视口中心点；浮层由此处展开与收回。 */
   origin?: OriginPoint | null;
 }
