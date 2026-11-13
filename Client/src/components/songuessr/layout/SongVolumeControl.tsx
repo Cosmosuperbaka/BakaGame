@@ -3,6 +3,8 @@ import {
   animate,
   AnimatePresence,
   motion,
+  useMotionValue,
+  useMotionValueEvent,
   useReducedMotion,
   useSpring,
   useTransform,
@@ -253,49 +255,37 @@ function VolumeCapsule({
   expanded = false,
   className,
 }: VolumeCapsuleProps) {
+  // 显示值是一个连续动画的数值：补间由 motion value 驱动，React 状态只在它变化的回调里跟随，
+  // 不在 effect 里同步写状态。
+  const display = useMotionValue(volume);
   const [displayVolume, setDisplayVolume] = useState(volume);
+  useMotionValueEvent(display, "change", setDisplayVolume);
   const isDragging = useRef(false);
   const animControls = useRef<{ stop: () => void } | null>(null);
 
   // 外部 volume 变更（静音切换、输入框提交、外部重置）时，在非手动拖动下驱动平滑过渡动画
   useEffect(() => {
     if (isDragging.current) {
-      setDisplayVolume(volume);
+      display.set(volume);
       return;
     }
 
     // 差值已在显示精度以内：若目标是静音则强收束到 0
-    if (Math.abs(volume - displayVolume) < 0.002) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 静音时把动画显示值收束到 0，属于外部 prop 同步，不是渲染期派生状态
-      if (volume === 0 && displayVolume !== 0) setDisplayVolume(0);
+    if (Math.abs(volume - display.get()) < 0.002) {
+      if (volume === 0 && display.get() !== 0) display.set(0);
       return;
     }
 
-    if (animControls.current) {
-      animControls.current.stop();
-      animControls.current = null;
-    }
-
-    const controls = animate(displayVolume, volume, {
+    animControls.current?.stop();
+    const controls = animate(display, volume, {
       duration: duration.base,
       ease: ease.emphasized,
-      onUpdate: (latest) => {
-        setDisplayVolume(latest);
-      },
-      onComplete: () => {
-        setDisplayVolume(volume);
-        animControls.current = null;
-      },
     });
-
     animControls.current = controls;
-
     return () => {
       controls.stop();
     };
-    // displayVolume 只作为动画起点读取：放进依赖会让动画每推进一帧就重启。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [volume]);
+  }, [volume, display]);
 
   const isMuted = volume === 0;
   // 静音时若补间尾段极微小（< 0.008，对应百分比四舍五入前临界），直接归零，杜绝读数残留在 1
@@ -345,20 +335,16 @@ function VolumeCapsule({
         step={0.01}
         onPointerDown={() => {
           isDragging.current = true;
-          if (animControls.current) {
-            animControls.current.stop();
-            animControls.current = null;
-          }
+          animControls.current?.stop();
+          animControls.current = null;
         }}
         onPointerUp={() => {
           isDragging.current = false;
         }}
         onValueChange={([val]) => {
-          if (animControls.current) {
-            animControls.current.stop();
-            animControls.current = null;
-          }
-          setDisplayVolume(val);
+          animControls.current?.stop();
+          animControls.current = null;
+          display.set(val);
           onVolumeChange(val);
         }}
         aria-label="播放音量"
