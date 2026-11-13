@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -201,6 +201,28 @@ describe("SongSearch", () => {
     expect(
       screen.getByRole("option", { name: /双源曲.*网易云 \+ QQ 音乐双源/ })
     ).toBeInTheDocument();
+  });
+
+  it("平台标识是带名称的图像角色，读屏读得出每个音源", async () => {
+    const user = setup();
+    const songs: SongSearchResult[] = [
+      { id: "qq:001", title: "晴天", artist: "周杰伦" },
+      { id: "netease:002", title: "七里香", artist: "周杰伦" },
+      { id: "netease:004", title: "双源曲", artist: "某歌手", sources: ["netease:004", "qq:005"] },
+    ];
+    useSonGuessrStore.setState({ searchMusic: vi.fn().mockResolvedValue(songs) });
+    render(<SongSearch mode="guess" onSelect={vi.fn()} />);
+
+    await user.type(screen.getByRole("combobox", { name: "搜索歌曲" }), "周");
+    await flushDebounce();
+
+    const logoOf = (title: RegExp) =>
+      within(screen.getByRole("option", { name: title })).getAllByRole("img");
+    expect(logoOf(/晴天/).map((img) => img.getAttribute("aria-label"))).toEqual(["QQ音乐"]);
+    expect(logoOf(/七里香/).map((img) => img.getAttribute("aria-label"))).toEqual(["网易云"]);
+    expect(logoOf(/双源曲/).map((img) => img.getAttribute("aria-label"))).toEqual([
+      "网易云 + QQ 音乐双源",
+    ]);
   });
 
   it("当下播不了的候选标出平台与原因，但不可选", async () => {

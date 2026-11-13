@@ -55,6 +55,37 @@ function Cover({
 const songDetail = (song: SongSearchResult) =>
   [song.artist, song.album].filter(Boolean).join(" · ");
 
+type SongPlatform = "netease" | "qq" | "both";
+
+/** 音源平台：取主实体的 URN；聚合器同时给出两家时算双源，提示这首有两个音源可兜底。 */
+function platformOf(song: SongSearchResult): SongPlatform | null {
+  const ids = song.sources?.length ? song.sources : [song.id];
+  if (ids.some((id) => id.startsWith("netease:")) && ids.some((id) => id.startsWith("qq:"))) {
+    return "both";
+  }
+  if (song.id.startsWith("qq:")) return "qq";
+  return song.id.startsWith("netease:") ? "netease" : null;
+}
+
+const PLATFORM_LABEL: Record<SongPlatform, string> = {
+  netease: "网易云",
+  qq: "QQ音乐",
+  both: "网易云 + QQ 音乐双源",
+};
+
+/** 平台只以品牌图标出现，名称走统一悬停；同一段文字也是图像角色的名称，读屏读得出。 */
+function PlatformLogo({ platform }: { platform: SongPlatform }) {
+  const label = PLATFORM_LABEL[platform];
+  return (
+    <Hint label={label}>
+      <span role="img" aria-label={label} className="inline-flex items-center gap-0.5">
+        {platform !== "qq" ? <NeteaseCloudMusicIcon className="size-4 shrink-0" /> : null}
+        {platform !== "netease" ? <QQMusicIcon className="size-4 shrink-0" /> : null}
+      </span>
+    </Hint>
+  );
+}
+
 function SongRow({
   song,
   guessed,
@@ -64,38 +95,11 @@ function SongRow({
   guessed?: boolean;
   badge?: string;
 }) {
-  // 平台图标取主实体的 URN；聚合器同时给出两家时并排显示，提示这首有两个音源可兜底。
-  const platformIds = song.sources?.length ? song.sources : [song.id];
-  const isQqSong = song.id.startsWith("qq:");
-  const isNeteaseSong = song.id.startsWith("netease:");
-  const dualSource =
-    platformIds.some((id) => id.startsWith("netease:")) &&
-    platformIds.some((id) => id.startsWith("qq:"));
-  // 平台只以品牌图标出现，名称走统一悬停；`aria-label` 保留给读屏
-  const platformLogo = dualSource ? (
-    <Hint label="网易云 + QQ 音乐双源">
-      <span aria-label="网易云 + QQ 音乐双源" className="inline-flex items-center gap-0.5">
-        <NeteaseCloudMusicIcon className="size-4 shrink-0" />
-        <QQMusicIcon className="size-4 shrink-0" />
-      </span>
-    </Hint>
-  ) : isQqSong ? (
-    <Hint label="QQ音乐">
-      <span aria-label="QQ音乐" className="inline-flex items-center">
-        <QQMusicIcon className="size-4 shrink-0" />
-      </span>
-    </Hint>
-  ) : isNeteaseSong ? (
-    <Hint label="网易云">
-      <span aria-label="网易云" className="inline-flex items-center">
-        <NeteaseCloudMusicIcon className="size-4 shrink-0" />
-      </span>
-    </Hint>
-  ) : null;
-
   // 不可播放的来源（目前只有「QQ 会员专享、池里没有会员账号」）：仍在列表里露头，
   // 让房主知道这首确实存在、补个会员账号就能出，而不是点下去才发现播不了。
   const unplayable = song.playable === false;
+  const platform = platformOf(song);
+  const platformLogo = platform ? <PlatformLogo platform={platform} /> : null;
 
   return (
     <SearchOptionContent
@@ -254,6 +258,93 @@ type AnimeOption =
 const animeKey = (option: AnimeOption) =>
   option.kind === "subject" ? `subject:${option.subject.id}` : `song:${option.candidate.song.id}`;
 
+/** 出题时选中的番剧与它匹配到的关联曲 */
+interface PickedSubject {
+  subject: BangumiSubjectSearchResult;
+  songs: BangumiSongCandidate[];
+}
+
+/**
+ * 猜番搜索的选择状态：在途标记、提交错误与出题时「进入某番剧的关联曲」。
+ * 进入关联曲要等一次请求，期间换了番剧、离开或卸载都让旧回包作废（代际号）。
+ */
+function useAnimePicker({
+  mode,
+  onSelect,
+  onSubmitted,
+}: {
+  mode: SearchBaseProps["mode"];
+  onSelect: (subject: BangumiSubjectSearchResult, songId?: string) => Promise<void>;
+  /** 提交成功后：调用方清空输入 */
+  onSubmitted: () => void;
+}) {
+  const resolveAnimeSongs = useSonGuessrStore((state) => state.resolveAnimeSongs);
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState("");
+  const [picked, setPicked] = useState<PickedSubject | null>(null);
+  const generation = useRef(0);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    []
+  );
+
+  const leavePicked = () => {
+    generation.current++;
+    setPicked(null);
+    setPendingKey(null);
+    setSubmitError("");
+  };
+
+  const submit = async (key: string, subject: BangumiSubjectSearchResult, songId?: string) => {
+    setPendingKey(key);
+    setSubmitError("");
+    try {
+      await onSelect(subject, songId);
+      onSubmitted();
+      setPicked(null);
+    } catch (error) {
+      setSubmitError(errorMessage(error, mode === "submit" ? "提交出题失败" : "提交番剧失败"));
+    } finally {
+      setPendingKey((current) => (current === key ? null : current));
+    }
+  };
+
+  const openSubject = async (subject: BangumiSubjectSearchResult) => {
+    const request = ++generation.current;
+    setPendingKey(`subject:${subject.id}`);
+    setSubmitError("");
+    try {
+      const songs = await resolveAnimeSongs(subject.id);
+      if (request === generation.current) setPicked({ subject, songs });
+    } catch (error) {
+      if (request === generation.current) setSubmitError(errorMessage(error, "获取关联歌曲失败"));
+    } finally {
+      if (request === generation.current) setPendingKey(null);
+    }
+  };
+
+  return { picked, pendingKey, submitError, leavePicked, submit, openSubject };
+}
+
+/** 搜索面板顶部的状态行：错误优先，其次关联曲为空、查询中与无结果。 */
+function animeStatus(
+  error: string,
+  picked: PickedSubject | null,
+  search: { loading: boolean; empty: boolean },
+  optionCount: number
+): SearchStatus | null {
+  if (error) return { tone: "error", text: error };
+  if (picked) {
+    return picked.songs.length === 0
+      ? { tone: "info", text: "该番剧未匹配到可播放的关联歌曲" }
+      : null;
+  }
+  if (search.loading && optionCount === 0) return { tone: "busy", text: "正在查询 Bangumi" };
+  return search.empty ? { tone: "info", text: "没有找到匹配番剧" } : null;
+}
+
 /**
  * 猜番的番剧搜索。猜测时点番剧即提交；出题时点番剧进入它的关联曲列表，再点一首作为题目，
  * 列表顶上一行「更换番剧」回到番剧结果。
@@ -268,77 +359,25 @@ export function AnimeSearch({
   onSelect: (subject: BangumiSubjectSearchResult, songId?: string) => Promise<void>;
 }) {
   const searchBangumi = useSonGuessrStore((state) => state.searchBangumi);
-  const resolveAnimeSongs = useSonGuessrStore((state) => state.resolveAnimeSongs);
   const controlPrefix = mode === "submit" ? "song.submit.search" : "song.guess.search";
   const [keyword, setKeyword] = useState("");
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState("");
-  /** 出题时选中的番剧与它匹配到的关联曲 */
-  const [picked, setPicked] = useState<{
-    subject: BangumiSubjectSearchResult;
-    songs: BangumiSongCandidate[];
-  } | null>(null);
-  const generation = useRef(0);
-  useEffect(
-    () => () => {
-      generation.current++;
-    },
-    []
-  );
+  const { picked, pendingKey, submitError, leavePicked, submit, openSubject } = useAnimePicker({
+    mode,
+    onSelect,
+    onSubmitted: () => setKeyword(""),
+  });
   const search = useIdleSearch(keyword, searchBangumi, describeAnimeError);
-
-  const leavePicked = () => {
-    generation.current++;
-    setPicked(null);
-    setPendingKey(null);
-    setSubmitError("");
-  };
-
-  const submit = async (key: string, subject: BangumiSubjectSearchResult, songId?: string) => {
-    setPendingKey(key);
-    setSubmitError("");
-    try {
-      await onSelect(subject, songId);
-      setKeyword("");
-      setPicked(null);
-    } catch (error) {
-      setSubmitError(errorMessage(error, mode === "submit" ? "提交出题失败" : "提交番剧失败"));
-    } finally {
-      setPendingKey((current) => (current === key ? null : current));
-    }
-  };
-
-  const openSubject = async (subject: BangumiSubjectSearchResult) => {
-    const request = ++generation.current;
-    const key = `subject:${subject.id}`;
-    setPendingKey(key);
-    setSubmitError("");
-    try {
-      const songs = await resolveAnimeSongs(subject.id);
-      if (request === generation.current) setPicked({ subject, songs });
-    } catch (error) {
-      if (request === generation.current) setSubmitError(errorMessage(error, "获取关联歌曲失败"));
-    } finally {
-      if (request === generation.current) setPendingKey(null);
-    }
-  };
 
   const options: AnimeOption[] = picked
     ? picked.songs.map((candidate) => ({ kind: "song", candidate }))
     : search.items.map((subject) => ({ kind: "subject", subject }));
 
-  const error = submitError || (picked ? "" : search.error);
-  const status: SearchStatus | null = error
-    ? { tone: "error", text: error }
-    : picked
-      ? picked.songs.length === 0
-        ? { tone: "info", text: "该番剧未匹配到可播放的关联歌曲" }
-        : null
-      : search.loading && options.length === 0
-        ? { tone: "busy", text: "正在查询 Bangumi" }
-        : search.empty
-          ? { tone: "info", text: "没有找到匹配番剧" }
-          : null;
+  const status = animeStatus(
+    submitError || (picked ? "" : search.error),
+    picked,
+    search,
+    options.length
+  );
 
   return (
     <SearchCombobox
