@@ -132,7 +132,7 @@ describe("云同步", () => {
   it("音乐账号：云端有则写回本地且不回传，只有本地有则上传", async () => {
     saveSongMusicSession(
       { cookie: "qqmusic_key=local", account: { platform: "qq", nickname: "本机" } },
-      false,
+      true,
       "qq"
     );
     const { client, saveMusicSession } = fakeClient({
@@ -154,6 +154,55 @@ describe("云同步", () => {
 
     // 登录期间退出音乐账号：删除云端副本。
     clearStoredSongMusicSession("netease");
+    await flush();
+    expect(saveMusicSession).toHaveBeenLastCalledWith({ platform: "netease", session: null });
+    stop();
+  });
+
+  it("音乐账号：没勾选保存登录状态的凭据不上传，开始同步前就在本机的也不上传", async () => {
+    saveSongMusicSession(
+      { cookie: "qqmusic_key=session-only", account: { platform: "qq", nickname: "临时" } },
+      false,
+      "qq"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(saveMusicSession).not.toHaveBeenCalled();
+
+    // 同步期间新登录、同样不勾选保存登录状态：仍然一个字节都不上传。
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=session-only", account: { platform: "netease", nickname: "临时" } },
+      false,
+      "netease"
+    );
+    await flush();
+    expect(saveMusicSession).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("音乐账号：同一平台从保存登录状态改为不保存时，云端旧副本随之删除", async () => {
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=kept", account: { platform: "netease", nickname: "保存" } },
+      true,
+      "netease"
+    );
+    const { client, saveMusicSession } = fakeClient({
+      preferences: null,
+      music: { netease: null, qq: null },
+    });
+    const stop = startCloudSync("user-1", client);
+    await flush();
+    expect(saveMusicSession).toHaveBeenCalledOnce();
+
+    saveSongMusicSession(
+      { cookie: "MUSIC_U=other", account: { platform: "netease", nickname: "另一个" } },
+      false,
+      "netease"
+    );
     await flush();
     expect(saveMusicSession).toHaveBeenLastCalledWith({ platform: "netease", session: null });
     stop();

@@ -30,6 +30,7 @@ import { SONG_VOLUME_KEY, USERNAME_KEY } from "@/lib/Storage";
  *
  * 猜歌音乐账号：按平台比较，只有一边有时补到另一边；两边不同时以云端为准
  * （云端只在登录期间被改写，代表这个账号最近一次的登录）。之后本地登录或退出即上传或删除云端副本。
+ * 没勾选「保存登录状态」的本机凭据不上传：它在云端视同没有，所以改成不保存会删掉云端旧副本。
  */
 const PLATFORMS: MusicPlatform[] = ["netease", "qq"];
 const PUSH_DELAY_MS = 2_000;
@@ -111,6 +112,15 @@ const cloudEntries = (preferences: CloudSettings["preferences"]): Record<string,
     if (isSyncedKey(key) && typeof value === "string") entries[key] = value;
   }
   return entries;
+};
+
+/**
+ * 能进云端的只有玩家勾选了「保存登录状态」的凭据：没勾选的凭据只在本标签页的会话存储里，
+ * 界面对玩家的承诺就是它不会离开浏览器。本机是临时凭据时，云端视同没有。
+ */
+const cloudBoundMusicSession = (platform: MusicPlatform): StoredSongMusicSession | null => {
+  const session = getStoredSongMusicSession(platform);
+  return session?.persistent ? session : null;
 };
 
 const musicFingerprint = (session: StoredSongMusicSession | null) =>
@@ -239,7 +249,7 @@ export function startCloudSync(userId: string, client: ApiClient = api): () => v
   const onMusicChanged = () => {
     if (!ready || !active) return;
     for (const platform of PLATFORMS) {
-      const session = getStoredSongMusicSession(platform);
+      const session = cloudBoundMusicSession(platform);
       const fingerprint = musicFingerprint(session);
       if (fingerprint === lastMusic[platform]) continue;
       lastMusic[platform] = fingerprint;
@@ -263,6 +273,7 @@ export function startCloudSync(userId: string, client: ApiClient = api): () => v
     const uploads: Array<[MusicPlatform, StoredSongMusicSession]> = [];
     for (const platform of PLATFORMS) {
       const localSession = getStoredSongMusicSession(platform);
+      const uploadable = cloudBoundMusicSession(platform);
       const remoteSession = cloud.music[platform];
       if (remoteSession) {
         const next = { ...remoteSession, persistent: true };
@@ -270,8 +281,8 @@ export function startCloudSync(userId: string, client: ApiClient = api): () => v
         if (musicFingerprint(localSession) !== lastMusic[platform])
           saveSongMusicSession(remoteSession, true, platform);
       } else {
-        lastMusic[platform] = musicFingerprint(localSession);
-        if (localSession) uploads.push([platform, localSession]);
+        lastMusic[platform] = musicFingerprint(uploadable);
+        if (uploadable) uploads.push([platform, uploadable]);
       }
     }
     return uploads;
