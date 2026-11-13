@@ -241,8 +241,9 @@ export class SongClipLyricScene {
     );
     const first = inClip[0];
     const last = inClip.at(-1);
+    const selectedIndexes = new Set(inClip);
     for (const [index, { element }] of this.rows) {
-      const selected = inClip.includes(index);
+      const selected = selectedIndexes.has(index);
       element.setAttribute("aria-pressed", String(selected));
       setFlag(element, "selected", selected);
       setFlag(element, "anchor", index === this.anchorIndex);

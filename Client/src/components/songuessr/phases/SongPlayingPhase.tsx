@@ -26,6 +26,7 @@ import { cn } from "@/lib/Utils";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 import { SongGuessBar } from "./SongGuessBar";
 import type {
+  SongLyricLine,
   SonGuessrPlayerView,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
@@ -203,6 +204,9 @@ const myGuessedIds = (privateState: SonGuessrPrivateState): string[] =>
     .filter((attempt) => attempt.playerId === privateState.playerId)
     .flatMap((attempt) => attempt.guessedAnime?.id ?? attempt.guessedSong?.id ?? []);
 
+/** 没有歌词时传同一个空数组：每次渲染新建一个会让歌词播放器把它当成新歌词，白白重排一遍。 */
+const NO_LINES: SongLyricLine[] = [];
+
 /** 片段展示区：开歌词挂歌词播放器，关掉后给同一外壳的提示。 */
 function ClipArea({
   snapshot,
@@ -221,7 +225,7 @@ function ClipArea({
   }
   return (
     <SongLyricPlayer
-      lines={round.lyricClip?.lines ?? []}
+      lines={round.lyricClip?.lines ?? NO_LINES}
       clipStartTime={round.lyricClip?.startTime}
       audioRef={audioRef}
       audioPlaybackState={audioPlaybackState}
