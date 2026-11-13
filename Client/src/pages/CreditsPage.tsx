@@ -4,7 +4,7 @@ import { Seo } from "@/components/common/Seo";
 import { CreditsView, type CreditsTab } from "@/components/credits/CreditsView";
 import changelogData from "@/data/changelog.json";
 import { CONTRIBUTING_MODELS, CORE_TECH_STACK } from "@/data/CreditsContent";
-import { resolveLatestVersion, sortEntriesByVersion, type ChangelogEntry } from "@/lib/Changelog";
+import { resolveLatestVersion, type ChangelogEntry } from "@/lib/Changelog";
 import { loadCreditsLicense } from "@/lib/CreditsLicenseLoader";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import creditsManifest from "virtual:credits";
@@ -35,8 +35,8 @@ function CreditsPage() {
   const requested = params.get("tab");
 
   // 与页脚版本号同一口径：取更新日志里的最大版本号，不依赖数组书写顺序。
-  const entries = useMemo(() => sortEntriesByVersion(changelog.entries), []);
-  const version = useMemo(() => resolveLatestVersion(entries), [entries]);
+  // 条目的排序由更新日志面板负责，这里原样传入。
+  const version = useMemo(() => resolveLatestVersion(changelog.entries), []);
 
   if (!isCreditsTab(requested)) {
     return <Navigate to="/abouts?tab=credits" replace />;
@@ -55,7 +55,7 @@ function CreditsPage() {
         dependencies={creditsManifest.dependencies}
         models={CONTRIBUTING_MODELS}
         techStack={CORE_TECH_STACK}
-        changelogEntries={entries}
+        changelogEntries={changelog.entries}
         commits={commitHistory.commits}
         loadLicense={loadCreditsLicense}
       />
