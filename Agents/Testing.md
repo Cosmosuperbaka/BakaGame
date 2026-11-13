@@ -38,7 +38,7 @@
 ## 静态检查与格式化
 
 - 两端使用同一套规则面：推荐规则集 + 认知复杂度上限 + 一组缺陷类的类型感知规则（浮动 Promise、误用 Promise、对非 thenable 的 await、对象转字符串、抛非 Error、非 Error 的 reject、未绑定方法）。具体规则与阈值读 `eslint.config.*`。
-- **类型感知的工程指向要显式**：Client 的类型感知只对 `src/**` 开启，且必须显式指向应用 tsconfig（根 tsconfig 是 references 壳，项目服务会撞上它而报文件找不到）；Server 用项目服务覆盖源码、脚本与测试。不在工程内的文件（E2E、构建配置、集成脚本）只走语法级检查。
+- **类型感知的工程指向要显式**：Client 的类型感知只对 `src/**` 开启，且必须显式指向应用 tsconfig（根 tsconfig 是 references 壳，项目服务会撞上它而报文件找不到）；Server 用项目服务覆盖源码、脚本与测试。不在工程内的文件（构建配置、集成脚本）只走语法级检查；E2E 有自己的类型工程并登记在 `tsc -b` 里，类型错误在类型检查就暴露，但 lint 对它仍不开类型感知。
 - **lint 与类型检查是两条 TypeScript 线**（见 [Conventions](Conventions.md)）：规则崩溃只在 lint 出现，lib 类型收紧只在类型检查出现。动 TypeScript 依赖或 override 后两端都要重跑。
 - 新增违规直接失败；存量违规的处理方式以仓库当前 lint 配置为准，**不新增内联禁用来掩盖问题**，只有刻意的设计才允许就地 `eslint-disable-next-line`，且必须写明理由。改规则、阈值或覆盖范围时同批重跑两端 lint，并确认静态分析仍零问题（新增的 lint 依赖必须被配置直接导入）。
 - 格式化器是根级 Prettier，改格式只用它的 write / check 入口；忽略范围读 `.prettierignore`。`endOfLine` 的 `auto` 不许改（原因见 Conventions）。格式化改动单独提交（`style(Core)`），不与业务改动混提；全仓重排的提交记进 `.git-blame-ignore-revs`。
