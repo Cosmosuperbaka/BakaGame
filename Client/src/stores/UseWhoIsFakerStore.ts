@@ -51,7 +51,6 @@ export interface WhoIsFakerGameState {
    * 关闭是一次明确的服务端事件，不能靠「没有快照」这种同时也匹配初次挂载的推断来判断。
    */
   roomClosedAt: number | null;
-  phaseTimedOutEndsAt: number | null;
 
   // Actions
   setConnected: (connected: boolean) => void;
@@ -60,7 +59,6 @@ export interface WhoIsFakerGameState {
   leaveRoomState: () => void;
   markRoomClosed: () => void;
   clearRoomClosed: () => void;
-  triggerPhaseTimeout: () => void;
   setSnapshot: (snapshot: WhoIsFakerRoomSnapshot | null) => void;
   setPrivateState: (privateState: WhoIsFakerPrivateState | null) => void;
   addToast: (text: string, type?: "info" | "error" | "success", durationMs?: number) => void;
@@ -247,7 +245,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
     toasts: [],
     channelNotices: [],
     roomClosedAt: null,
-    phaseTimedOutEndsAt: null,
 
     setConnected: (connected) => set(connected ? { connected } : { connected, lobbyReady: false }),
     setRooms: (rooms) => set({ rooms, lobbyReady: true }),
@@ -258,7 +255,6 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         roomId,
         sessionToken,
         roomClosedAt: null,
-        phaseTimedOutEndsAt: null,
         ...(changedRoom ? { channelNotices: [] } : {}),
       });
     },
@@ -272,16 +268,11 @@ export const useWhoIsFakerStore = create<WhoIsFakerGameState>((set, get) => {
         snapshot: null,
         privateState: null,
         channelNotices: [],
-        phaseTimedOutEndsAt: null,
         roomClosedAt: null,
       });
     },
     markRoomClosed: () => set({ roomClosedAt: Date.now() }),
     clearRoomClosed: () => set({ roomClosedAt: null }),
-    triggerPhaseTimeout: () => {
-      const timer = get().snapshot?.status.phaseTimer;
-      set({ phaseTimedOutEndsAt: timer?.endsAt ?? Date.now() });
-    },
     setSnapshot: (incomingSnapshot) => {
       if (!incomingSnapshot) {
         set({ snapshot: null });
