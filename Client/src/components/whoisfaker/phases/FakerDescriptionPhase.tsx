@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Hint } from "@/components/ui/Tooltip";
 import { FakerPendingSpeech, SubmittedSpeech } from "../layout/FakerPendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
-import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
+import { useFakerAutoSubmitOnTimeout } from "./UseFakerAutoSubmitOnTimeout";
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
 import { FAKER_DESCRIPTION_MAX_UNITS, clampUnits, textUnits } from "@bakagame/shared/values";
@@ -176,7 +176,7 @@ export function FakerDescriptionPhase() {
   }, [exec, text]);
 
   // 阶段倒计时归零时，自动将本地已输入的内容发送提交
-  useAutoSubmitOnTimeout({
+  useFakerAutoSubmitOnTimeout({
     enabled: canSpeak && !submitting,
     hasContent: Boolean(text.trim()),
     submit: handleSubmit,

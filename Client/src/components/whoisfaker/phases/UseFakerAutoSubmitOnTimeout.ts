@@ -9,7 +9,7 @@ import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
  * 一是到点按校正后的服务端时钟判断（与读秒同一个钟），本机钟快慢都不能让提交早于或晚于读秒归零；
  * 二是每个截止时刻最多自动提交一次，被拒或失败后留给玩家手动，不能因为「提交中」状态复位就再触发。
  */
-export function useAutoSubmitOnTimeout({
+export function useFakerAutoSubmitOnTimeout({
   enabled,
   hasContent,
   submit,

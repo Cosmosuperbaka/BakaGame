@@ -8,7 +8,7 @@ import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerSt
 import { FakerPlayerList } from "@/components/whoisfaker/layout/FakerPlayerList";
 import { buildSpeechHistory } from "@/components/whoisfaker/layout/FakerSpeechHistory";
 import { FakerRoomHeaderCenter } from "@/components/whoisfaker/layout/FakerRoomHeaderCenter";
-import { usePlayerMarks } from "@/components/whoisfaker/layout/UsePlayerMarks";
+import { useFakerPlayerMarks } from "@/components/whoisfaker/layout/UseFakerPlayerMarks";
 import { useFakerWordReveal } from "@/components/whoisfaker/layout/UseFakerWordReveal";
 import { resolveAssignedWordText } from "@/components/whoisfaker/layout/FakerAssignedWordText";
 import { useFakerRoomEntry } from "@/components/whoisfaker/layout/UseFakerRoomEntry";
@@ -66,7 +66,7 @@ export default function WhoIsFakerRoomPage() {
   } = useFakerRoomEntry(roomId);
 
   const roundId = snapshot?.status.roundId;
-  const { playerMarks, onMarkChange: handleMarkChange } = usePlayerMarks(roundId);
+  const { playerMarks, onMarkChange: handleMarkChange } = useFakerPlayerMarks(roundId);
 
   const me = snapshot?.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;

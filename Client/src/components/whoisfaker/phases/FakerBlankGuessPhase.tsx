@@ -1,5 +1,5 @@
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
-import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
+import { useFakerAutoSubmitOnTimeout } from "./UseFakerAutoSubmitOnTimeout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CircleHelp, Gavel, HelpCircle, Send } from "lucide-react";
@@ -135,7 +135,7 @@ function BlankGuessInput() {
   }, [exec, wordA, wordB, addToast]);
 
   // 阶段倒计时归零时，若两个词都已填则自动提交（与手动提交的口径一致）
-  useAutoSubmitOnTimeout({
+  useFakerAutoSubmitOnTimeout({
     enabled: !pendingReview && !submitting,
     hasContent: ready,
     submit: handleSubmit,
