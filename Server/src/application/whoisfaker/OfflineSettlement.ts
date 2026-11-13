@@ -9,12 +9,8 @@ import {
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
 import { QUESTIONER_RECONNECT_TIMEOUT_MS } from "../../config/Constants";
-import {
-  applyEliminationAndMove,
-  predictFeedbackNext,
-  resolveAbandonedBlankGuess,
-  startFallbackBlankGuessTimer,
-} from "./BlankGuess";
+import { resolveAbandonedBlankGuess, startFallbackBlankGuessTimer } from "./BlankGuess";
+import { applyEliminationAndMove, predictFeedbackNext } from "./Feedback";
 import { reassignHost } from "../room/HostPolicy";
 import { markSeatOffline } from "../room/SeatBinding";
 import { runBots } from "./dev/BotActors";

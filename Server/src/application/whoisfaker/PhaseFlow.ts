@@ -13,14 +13,13 @@ import {
   type WhoIsFakerPhase,
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
+import { continueAfterBlankFailure, timeoutBlankGuessPhase } from "./BlankGuess";
 import {
   applyEliminationAndMove,
   applyTieBreakContinuation,
-  continueAfterBlankFailure,
   enterFeedback,
   tryTransitionToFinaleBlankGuess,
-  timeoutBlankGuessPhase,
-} from "./BlankGuess";
+} from "./Feedback";
 import { runBots } from "./dev/BotActors";
 import { requeuePendingDisconnects } from "./PendingDisconnects";
 import { clearPhaseTimer, completeSupplementIfReady } from "./PhaseTimers";
