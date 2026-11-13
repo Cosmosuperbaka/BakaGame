@@ -4,24 +4,21 @@ import type { AdminFeedbackDetail, FeedbackKind, FeedbackStatus } from "@bakagam
 import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { Textarea } from "@/components/ui/Textarea";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import {
+  AdminDetailDialog,
+  AdminFilterSelect,
   AdminTable,
   AdminToolbar,
+  ListState,
   Pager,
-  QueryState,
+  QueryStatus,
   RowButton,
   UserCell,
 } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
 import { api } from "@/lib/Api";
 import { formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
 import {
@@ -187,14 +184,7 @@ function FeedbackLoader({ id, onChanged }: { id: string; onChanged: () => void }
   const detail = override ?? query.data;
   return (
     <>
-      <QueryState
-        loading={query.loading}
-        error={query.error}
-        empty={false}
-        hasData={Boolean(detail)}
-        onRetry={query.reload}
-        emptyText=""
-      />
+      <QueryStatus query={query} hasData={Boolean(detail)} />
       {detail ? (
         <FeedbackThread
           detail={detail}
@@ -211,60 +201,38 @@ function FeedbackLoader({ id, onChanged }: { id: string; onChanged: () => void }
 export function FeedbackPanel() {
   const [status, setStatus] = useState("open");
   const [kind, setKind] = useState("");
-  const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState<{ id: string; title: string } | null>(null);
-  const input = {
-    ...(status ? { status: status as FeedbackStatus } : {}),
-    ...(kind ? { kind: kind as FeedbackKind } : {}),
+  const list = useAdminList({
+    name: "feedback",
+    filters: {
+      ...(status ? { status: status as FeedbackStatus } : {}),
+      ...(kind ? { kind: kind as FeedbackKind } : {}),
+    },
     limit: LIMIT,
-    offset,
-  };
-  const list = useAdminQuery(
-    `feedback:${JSON.stringify(input)}`,
-    () => api.admin.feedback.list(input),
-    "反馈列表加载失败"
-  );
-  const items = list.data?.items ?? [];
+    fallback: "反馈列表加载失败",
+    fetch: (input) => api.admin.feedback.list(input),
+  });
+  const { items } = list;
 
   return (
     <div>
-      <AdminToolbar
-        title="反馈"
-        count={list.data?.total ?? null}
-        onReload={list.reload}
-        loading={list.loading && Boolean(list.data)}
-      >
-        <div className="w-32">
-          <SettingSelect
-            label="状态"
-            value={status}
-            options={STATUS_FILTER}
-            onChange={(value) => {
-              setStatus(value);
-              setOffset(0);
-            }}
-          />
-        </div>
-        <div className="w-32">
-          <SettingSelect
-            label="类型"
-            value={kind}
-            options={KIND_FILTER}
-            onChange={(value) => {
-              setKind(value);
-              setOffset(0);
-            }}
-          />
-        </div>
+      <AdminToolbar title="反馈" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-32"
+          label="状态"
+          value={status}
+          options={STATUS_FILTER}
+          onChange={setStatus}
+        />
+        <AdminFilterSelect
+          width="w-32"
+          label="类型"
+          value={kind}
+          options={KIND_FILTER}
+          onChange={setKind}
+        />
       </AdminToolbar>
-      <QueryState
-        loading={list.loading}
-        error={list.error}
-        empty={Boolean(list.data) && !items.length}
-        hasData={Boolean(list.data)}
-        onRetry={list.reload}
-        emptyText="没有符合条件的反馈"
-      />
+      <ListState list={list} emptyText="没有符合条件的反馈" />
       {items.length ? (
         <AdminTable label="反馈列表">
           <thead>
@@ -305,23 +273,16 @@ export function FeedbackPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={LIMIT} total={list.data?.total ?? 0} onChange={setOffset} />
-      <Dialog
+      <Pager {...list.pager} />
+      <AdminDetailDialog
         open={open !== null}
-        onOpenChange={(next) => {
-          if (!next) setOpen(null);
-        }}
+        onClose={() => setOpen(null)}
+        title={open?.title}
+        titleClassName="break-words leading-snug"
+        description="回复会出现在登录用户的「我的反馈」里；匿名反馈无法收到回复。"
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="break-words leading-snug">{open?.title}</DialogTitle>
-            <DialogDescription>
-              回复会出现在登录用户的「我的反馈」里；匿名反馈无法收到回复。
-            </DialogDescription>
-          </DialogHeader>
-          {open ? <FeedbackLoader key={open.id} id={open.id} onChanged={list.reload} /> : null}
-        </DialogContent>
-      </Dialog>
+        {open ? <FeedbackLoader key={open.id} id={open.id} onChanged={list.query.reload} /> : null}
+      </AdminDetailDialog>
     </div>
   );
 }

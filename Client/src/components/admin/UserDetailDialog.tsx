@@ -5,17 +5,16 @@ import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { BadgeChip } from "@/components/common/BadgeList";
 import { Button } from "@/components/ui/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import { AdminNotice, ConfirmDialog, QueryState, UserCell } from "@/components/admin/AdminParts";
+import {
+  AdminDetailDialog,
+  AdminNotice,
+  ConfirmDialog,
+  QueryStatus,
+  UserCell,
+} from "@/components/admin/AdminParts";
 import { UserActionBar } from "@/components/admin/UserActionBar";
 import {
   userActionSpec,
@@ -272,17 +271,15 @@ export function UserDetailDialog({
   onChanged: () => void;
 }) {
   return (
-    <Dialog open={userId !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>用户详情</DialogTitle>
-          <DialogDescription>
-            封禁、改角色、徽章与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。
-          </DialogDescription>
-        </DialogHeader>
-        {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}
-      </DialogContent>
-    </Dialog>
+    <AdminDetailDialog
+      open={userId !== null}
+      onClose={() => onOpenChange(false)}
+      title="用户详情"
+      description="封禁、改角色、徽章与强制下线都会写入审计。账号昵称取自 QQ 昵称，不可修改。"
+      contentClassName="sm:max-w-xl"
+    >
+      {userId ? <UserDetailLoader key={userId} userId={userId} onChanged={onChanged} /> : null}
+    </AdminDetailDialog>
   );
 }
 
@@ -294,14 +291,7 @@ function UserDetailLoader({ userId, onChanged }: { userId: string; onChanged: ()
   );
   return (
     <>
-      <QueryState
-        loading={detail.loading}
-        error={detail.error}
-        empty={false}
-        hasData={Boolean(detail.data)}
-        onRetry={detail.reload}
-        emptyText=""
-      />
+      <QueryStatus query={detail} />
       {detail.data ? (
         // 不按角色与封禁状态换 key：操作成功后详情重读，重挂载会吞掉成功说明、切断确认框的退场动画。
         <UserDetailBody

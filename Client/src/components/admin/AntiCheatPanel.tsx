@@ -4,22 +4,17 @@ import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/Dialog";
-import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
-import {
+  AdminDetailDialog,
+  AdminFilterSelect,
   AdminTable,
   AdminToolbar,
+  ListState,
   Pager,
-  QueryState,
   RowButton,
   UserCell,
 } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
 import { api } from "@/lib/Api";
 import { formatDateTime, formatShortDateTime } from "@/lib/AdminFormat";
 import {
@@ -197,49 +192,29 @@ function ReviewDetail({ item, onChanged }: { item: AdminAntiCheatReview; onChang
 
 export function AntiCheatPanel() {
   const [status, setStatus] = useState("open");
-  const [offset, setOffset] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
-  const input = {
-    ...(status ? { status: status as AntiCheatReviewStatus } : {}),
+  const list = useAdminList({
+    name: "anticheat",
+    filters: status ? { status: status as AntiCheatReviewStatus } : {},
     limit: LIMIT,
-    offset,
-  };
-  const list = useAdminQuery(
-    `anticheat:${JSON.stringify(input)}`,
-    () => api.admin.antiCheat.list(input),
-    "复核队列加载失败"
-  );
-  const items = list.data?.items ?? [];
+    fallback: "复核队列加载失败",
+    fetch: (input) => api.admin.antiCheat.list(input),
+  });
+  const { items } = list;
   const detail = items.find((item) => item.id === openId) ?? null;
 
   return (
     <div>
-      <AdminToolbar
-        title="反作弊复核"
-        count={list.data?.total ?? null}
-        onReload={list.reload}
-        loading={list.loading && Boolean(list.data)}
-      >
-        <div className="w-32">
-          <SettingSelect
-            label="状态"
-            value={status}
-            options={STATUS_FILTER}
-            onChange={(value) => {
-              setStatus(value);
-              setOffset(0);
-            }}
-          />
-        </div>
+      <AdminToolbar title="反作弊复核" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-32"
+          label="状态"
+          value={status}
+          options={STATUS_FILTER}
+          onChange={setStatus}
+        />
       </AdminToolbar>
-      <QueryState
-        loading={list.loading}
-        error={list.error}
-        empty={Boolean(list.data) && !items.length}
-        hasData={Boolean(list.data)}
-        onRetry={list.reload}
-        emptyText="没有待复核的条目"
-      />
+      <ListState list={list} emptyText="没有待复核的条目" />
       {items.length ? (
         <AdminTable label="复核队列">
           <thead>
@@ -286,25 +261,16 @@ export function AntiCheatPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={LIMIT} total={list.data?.total ?? 0} onChange={setOffset} />
-      <Dialog
+      <Pager {...list.pager} />
+      <AdminDetailDialog
         open={detail !== null}
-        onOpenChange={(next) => {
-          if (!next) setOpenId(null);
-        }}
+        onClose={() => setOpenId(null)}
+        title={detail ? `${detail.playerName} · 第 ${detail.roundNumber} 回合` : ""}
+        titleClassName="break-words leading-snug"
+        description="放行表示确认无误，已处置表示已经人工处理过；两者都只是给队列记账，不会改动对局。"
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="break-words leading-snug">
-              {detail ? `${detail.playerName} · 第 ${detail.roundNumber} 回合` : ""}
-            </DialogTitle>
-            <DialogDescription>
-              放行表示确认无误，已处置表示已经人工处理过；两者都只是给队列记账，不会改动对局。
-            </DialogDescription>
-          </DialogHeader>
-          {detail ? <ReviewDetail item={detail} onChanged={list.reload} /> : null}
-        </DialogContent>
-      </Dialog>
+        {detail ? <ReviewDetail item={detail} onChanged={list.query.reload} /> : null}
+      </AdminDetailDialog>
     </div>
   );
 }

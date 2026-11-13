@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import {
+  AdminFilterSelect,
   AdminTable,
   AdminToolbar,
+  ListState,
   Pager,
-  QueryState,
   UserCell,
 } from "@/components/admin/AdminParts";
 import { Hint } from "@/components/ui/Tooltip";
-import { useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
 import { api } from "@/lib/Api";
 import { AUDIT_ACTION_LABELS, auditActionLabel, formatShortDateTime } from "@/lib/AdminFormat";
 
@@ -30,43 +30,27 @@ const describeDetail = (detail: Record<string, unknown> | null) =>
 
 export function AuditPanel() {
   const [action, setAction] = useState("");
-  const [offset, setOffset] = useState(0);
-  const input = { ...(action ? { action } : {}), limit: LIMIT, offset };
-  const list = useAdminQuery(
-    `audit:${JSON.stringify(input)}`,
-    () => api.admin.audit.list(input),
-    "审计日志加载失败"
-  );
-  const items = list.data?.items ?? [];
+  const list = useAdminList({
+    name: "audit",
+    filters: action ? { action } : {},
+    limit: LIMIT,
+    fallback: "审计日志加载失败",
+    fetch: (input) => api.admin.audit.list(input),
+  });
+  const { items } = list;
 
   return (
     <div>
-      <AdminToolbar
-        title="审计日志"
-        count={list.data?.total ?? null}
-        onReload={list.reload}
-        loading={list.loading && Boolean(list.data)}
-      >
-        <div className="w-40">
-          <SettingSelect
-            label="操作"
-            value={action}
-            options={ACTION_FILTER}
-            onChange={(value) => {
-              setAction(value);
-              setOffset(0);
-            }}
-          />
-        </div>
+      <AdminToolbar title="审计日志" {...list.toolbar}>
+        <AdminFilterSelect
+          width="w-40"
+          label="操作"
+          value={action}
+          options={ACTION_FILTER}
+          onChange={setAction}
+        />
       </AdminToolbar>
-      <QueryState
-        loading={list.loading}
-        error={list.error}
-        empty={Boolean(list.data) && !items.length}
-        hasData={Boolean(list.data)}
-        onRetry={list.reload}
-        emptyText="没有审计记录"
-      />
+      <ListState list={list} emptyText="没有审计记录" />
       {items.length ? (
         <AdminTable label="审计日志">
           <thead>
@@ -108,7 +92,7 @@ export function AuditPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={LIMIT} total={list.data?.total ?? 0} onChange={setOffset} />
+      <Pager {...list.pager} />
     </div>
   );
 }
