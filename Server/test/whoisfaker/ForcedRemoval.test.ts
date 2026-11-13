@@ -530,6 +530,24 @@ const SCENARIOS: Record<string, Scenario> = {
       };
     },
   },
+  白板猜词中_其他人被移除_原阶段是夜晚: {
+    target: "机2",
+    timer: true,
+    build: (round, id) => {
+      round.phase = "blankGuess";
+      round.speechMode = undefined;
+      round.nightActions = [
+        { actorId: id("房主"), actorRole: "civilian", targetId: id("机3") },
+        { actorId: id("机2"), actorRole: "civilian", targetId: id("机4") },
+        { actorId: id("机1"), actorRole: "civilian", targetId: id("机4") },
+      ];
+      round.blankGuessContext = {
+        playerId: id("机5"),
+        reason: "active",
+        resumePhase: "night",
+      };
+    },
+  },
   白板猜词中_其他人被移除_等待主持人裁定: {
     target: "机1",
     build: (round, id) => {
