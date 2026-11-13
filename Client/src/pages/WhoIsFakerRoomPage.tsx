@@ -24,7 +24,7 @@ import { getSavedUsername, normalizeRoomId, saveUsername } from "@/lib/Storage";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { Seo } from "@/components/common/Seo";
 import { waitForConnection } from "@/lib/WhoIsFakerWs";
-import { duration, iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
+import { iconTappable, spring, springSettleMs, wordRevealTiming } from "@/lib/Motion";
 import { useWhoIsFakerStore, withChannelNotices } from "@/stores/UseWhoIsFakerStore";
 import {
   PLAYER_COLUMN_WIDTH,
@@ -137,25 +137,25 @@ function RoomPlayerAside({
         aria-hidden="true"
       />
 
-      {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区 */}
+      {/* 玩家栏（桌面）。展开时向右扩张覆盖游戏区。
+        宽度必须真实重排（列表要按新宽度排版），是补间布局属性的例外；
+        浮起的重阴影放在伪元素上只淡入淡出，不逐帧重算阴影。 */}
       <motion.aside
         data-room-part="player"
-        className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel md:flex"
+        data-history-open={historyOpen}
+        className="absolute inset-y-0 left-0 z-drawer hidden flex-col rounded-md border bg-panel shadow-2xs after:pointer-events-none after:absolute after:-inset-px after:rounded-[inherit] after:opacity-0 after:shadow-lg after:transition-opacity after:duration-(--motion-duration-base) data-[history-open=true]:after:opacity-100 md:flex"
         initial={false}
-        animate={{
-          width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH,
-          boxShadow: historyOpen ? "var(--shadow-lg)" : "var(--shadow-2xs)",
-        }}
-        transition={{ width: spring.settle, boxShadow: { duration: duration.base } }}
+        animate={{ width: historyOpen ? "100%" : PLAYER_COLUMN_WIDTH }}
+        transition={{ width: spring.settle }}
       >
         {/* 展开/收起按钮：仅在游戏开始后显示。
           收起时骑在面板右边框上；展开后面板已占满整段，按钮内收，
           否则会落到 section 的裁切区外被切掉。 */}
         {historyAvailable ? (
           <motion.div
-            className="absolute top-1/2 z-dropdown -translate-y-1/2"
+            className="absolute -right-4 top-1/2 z-dropdown -translate-y-1/2"
             initial={false}
-            animate={{ right: historyOpen ? "0.5rem" : "-1rem" }}
+            animate={{ x: historyOpen ? "-1.5rem" : 0 }}
             transition={spring.settle}
           >
             <motion.button

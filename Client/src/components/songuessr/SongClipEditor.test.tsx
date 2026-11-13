@@ -242,7 +242,9 @@ describe("SongClipEditor", () => {
     fireEvent.timeUpdate(audio.audio);
     const progress = screen.getByTestId("song-clip-play-progress");
     expect(parseFloat(progress.style.left)).toBeCloseTo((10_000 / 120_000) * 100, 4);
-    expect(parseFloat(progress.style.width)).toBeCloseTo((5_000 / 120_000) * 100, 4);
+    // 进度条是选区宽的条按已播比例横向缩放：可见长度 = 条宽 × 缩放。
+    const scale = Number(/scaleX\(([\d.]+)\)/.exec(progress.style.transform)?.[1]);
+    expect(parseFloat(progress.style.width) * scale).toBeCloseTo((5_000 / 120_000) * 100, 4);
 
     audio.seek(25_000);
     fireEvent.timeUpdate(audio.audio);

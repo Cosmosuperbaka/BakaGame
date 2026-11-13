@@ -243,11 +243,15 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
                   <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
                     <div
                       className={cn(
-                        // 宽度在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
-                        "h-full rounded-full transition-[width] ease-linear",
+                        // 在两次刷新之间匀速补间（见 countdownTickMs），读作连续流逝的时间。
+                        // 整宽条在裁切轨道里平移而不是改宽度：不触发重排，右端圆头也不会被缩放压扁。
+                        "h-full w-full rounded-full transition-transform ease-linear",
                         TONE_PROGRESS_BAR[runningTone]
                       )}
-                      style={{ width: `${percent}%`, transitionDuration: `${countdownTickMs}ms` }}
+                      style={{
+                        transform: `translateX(${percent - 100}%)`,
+                        transitionDuration: `${countdownTickMs}ms`,
+                      }}
                     />
                   </div>
                 </motion.div>

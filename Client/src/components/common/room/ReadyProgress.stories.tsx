@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { Button } from "@/components/ui/Button";
 import { ReadyProgress } from "./ReadyProgress";
 
 const meta = {
@@ -42,4 +44,34 @@ export const Guest: Story = {
       ))}
     </div>
   ),
+};
+
+/** 准备人数变化：进度条伸缩到新比例、人数滚到新值（核对补间与圆角端头）。 */
+export const Changing: Story = {
+  name: "人数变化",
+  tags: ["no-shot"],
+  render: function Render() {
+    const [ready, setReady] = useState(1);
+    return (
+      <div className="space-y-4">
+        <ReadyProgress ready={ready} total={3} variant="host" />
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setReady((value) => Math.min(3, value + 1))}
+          >
+            有人准备
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setReady((value) => Math.max(0, value - 1))}
+          >
+            有人取消
+          </Button>
+        </div>
+      </div>
+    );
+  },
 };

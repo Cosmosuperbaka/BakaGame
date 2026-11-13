@@ -86,6 +86,8 @@ export function SongClipRail({
   const endPercent = percentOf(endTime, domain);
   const playPercent = percentOf(clamp(currentTimeMs, startTime, endTime), domain);
   const playedWidth = ((clamp(currentTimeMs, startTime, endTime) - startTime) / domain) * 100;
+  // 播放进度在选区宽的条上横向缩放（直角条，缩放不变形），只动 transform，播放中不逐帧重排。
+  const playedScale = endPercent > startPercent ? playedWidth / (endPercent - startPercent) : 0;
   const bubbleLeft = hoverMs === null ? 0 : percentOf(hoverMs, domain);
 
   const timeAt = (clientX: number) => {
@@ -245,10 +247,11 @@ export function SongClipRail({
         <div
           aria-hidden="true"
           data-testid="song-clip-play-progress"
-          className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 bg-primary transition-[width] ease-linear"
+          className="pointer-events-none absolute top-1/2 h-1.5 origin-left -translate-y-1/2 bg-primary transition-transform ease-linear"
           style={{
             left: `${startPercent}%`,
-            width: `${playedWidth}%`,
+            width: `${endPercent - startPercent}%`,
+            transform: `scaleX(${playedScale})`,
             transitionDuration: `${countdownTickMs}ms`,
           }}
         />
@@ -269,11 +272,17 @@ export function SongClipRail({
             </div>
           </>
         ) : null}
+        {/* 播放头挂在与轨道同宽的层上平移：百分比位移按层宽计，等同于按轨道定位，但不触发重排。 */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 h-7 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-primary transition-[left] ease-linear"
-          style={{ left: `${playPercent}%`, transitionDuration: `${countdownTickMs}ms` }}
-        />
+          className="pointer-events-none absolute inset-0 transition-transform ease-linear"
+          style={{
+            transform: `translateX(${playPercent}%)`,
+            transitionDuration: `${countdownTickMs}ms`,
+          }}
+        >
+          <div className="absolute left-0 top-1/2 h-7 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-primary" />
+        </div>
         <div
           role="slider"
           tabIndex={0}
