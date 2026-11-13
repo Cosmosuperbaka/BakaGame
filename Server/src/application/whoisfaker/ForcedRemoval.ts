@@ -258,27 +258,26 @@ const eliminateAndSettle = async (
   recordEliminations(round.assignments, [flow.player.id], flow.reason, ctx.now());
   publishRoom(ctx, flow.room);
 
-  const outcome = await settleOutcome(ctx, flow.room);
-  if (outcome === "finished") return;
+  // 已经结算则到此为止；进了残局猜词，或本来就停在猜词：白板猜词优先，阶段不动，被它打断的补充发言、平票加赛、
+  // 投票与夜晚行动原样留着，等猜词收束后走恢复路径回去；发言模式也不写成被打断阶段的模式。
+  if ((await settleOutcome(ctx, flow.room)) !== "open") return;
 
-  if (outcome === "open") {
-    round.phase = resumePhase;
-    round.speechMode = resumePhase === "description" ? "normal" : undefined;
-    // 白板猜词阶段不拥有任何一个容器，三样都得留给它被打断前的阶段。
-    const interrupted = resumePhase === "blankGuess";
-    if (!(resumePhase === "voting" || interrupted || flow.supplementActive)) round.votes = [];
-    if (!(resumePhase === "night" || interrupted)) round.nightActions = [];
-    if (!(resumePhase === "tieBreak" || interrupted)) round.tieBreak = undefined;
-  }
-
-  if (resumePhase === "tieBreak" && round.tieBreak) {
-    round.speechMode = round.tieBreak.stage === "description" ? "tieBreak" : undefined;
-  }
-  // 补充发言仍在进行时，阶段与发言模式一律回到补充发言。
-  if (flow.supplementActive) {
-    round.phase = "description";
-    round.speechMode = "supplement";
-  }
+  round.phase = resumePhase;
+  round.speechMode =
+    resumePhase === "description"
+      ? flow.supplementActive
+        ? "supplement"
+        : "normal"
+      : resumePhase === "tieBreak" && round.tieBreak
+        ? round.tieBreak.stage === "description"
+          ? "tieBreak"
+          : undefined
+        : undefined;
+  // 白板猜词阶段不拥有任何一个容器，三样都得留给它被打断前的阶段。
+  const interrupted = resumePhase === "blankGuess";
+  if (!(resumePhase === "voting" || interrupted || flow.supplementActive)) round.votes = [];
+  if (!(resumePhase === "night" || interrupted)) round.nightActions = [];
+  if (!(resumePhase === "tieBreak" || interrupted)) round.tieBreak = undefined;
 };
 
 /** 名册变动后，开局前的两个阶段若人数已不够，系统取消本局。 */

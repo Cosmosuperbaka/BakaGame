@@ -992,9 +992,9 @@ describe("强制移除玩家的关键结论", () => {
         speechMode?: string;
         votes: unknown[];
         nightActions: Array<{ actorId: string; targetId?: string }>;
-        supplement?: unknown;
-        tieBreak?: { candidateIds: string[] };
-        blankGuessContext?: unknown;
+        supplement?: { requestedPlayerIds: string[] };
+        tieBreak?: { candidateIds: string[]; stage: string };
+        blankGuessContext?: { reason: string; resumePhase?: string; draft?: string[] };
         移除记录: unknown[];
       };
       定时器: { 在挂: boolean; 未取消: number[] };
@@ -1036,6 +1036,42 @@ describe("强制移除玩家的关键结论", () => {
     expect(result.回合.phase).toBe("night");
     expect(result.回合.nightActions).toHaveLength(1);
     expect(result.定时器).toEqual({ 在挂: true, 未取消: [60_000] });
+  });
+
+  // 白板猜词优先：猜词机会未决期间，任何人被强制移除都不改变阶段，仍停在白板猜词，
+  // 发言模式不写成被打断阶段的模式；被打断的补充发言与平票加赛原样保留，等猜词收束后走恢复路径。
+  test("猜词打断补充发言时移除别人：仍停在猜词，补充发言与猜词上下文原样保留", async () => {
+    const result = await run("白板猜词中_其他人被移除_补充发言被打断");
+    expect(result.回合.phase).toBe("blankGuess");
+    expect(result.回合.speechMode).toBeUndefined();
+    expect(result.回合.supplement?.requestedPlayerIds).toHaveLength(2);
+    expect(result.回合.blankGuessContext).toMatchObject({
+      reason: "active",
+      resumePhase: "description",
+      draft: ["苹果", ""],
+    });
+  });
+
+  test("补充发言中移除致残局：进入残局猜词，阶段与发言模式一致，补充发言状态不动", async () => {
+    const result = await run("补充发言中_移除致残局_白板还有猜词机会");
+    expect(result.回合.phase).toBe("blankGuess");
+    expect(result.回合.speechMode).toBeUndefined();
+    expect(result.回合.blankGuessContext?.reason).toBe("finale");
+    expect(result.回合.supplement?.requestedPlayerIds).toHaveLength(2);
+  });
+
+  test("平票加赛中移除致残局：进入残局猜词，发言模式不写成平票发言，平票状态不动", async () => {
+    for (const [key, stage] of [
+      ["平票发言中_移除致残局_白板还有猜词机会", "description"],
+      ["平票投票中_移除致残局_白板还有猜词机会", "vote"],
+    ] as const) {
+      const result = await run(key);
+      expect(result.回合.phase).toBe("blankGuess");
+      expect(result.回合.speechMode).toBeUndefined();
+      expect(result.回合.blankGuessContext?.reason).toBe("finale");
+      expect(result.回合.tieBreak?.stage).toBe(stage);
+      expect(result.回合.tieBreak?.candidateIds).toHaveLength(2);
+    }
   });
 
   test("已出局的人被移除不再追加移除记录", async () => {
