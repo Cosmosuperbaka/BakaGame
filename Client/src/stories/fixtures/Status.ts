@@ -250,16 +250,19 @@ export function statusFixture(scenario: StatusScenario, now = Date.now()) {
 /**
  * 给故事装上假接口与假实时通道：fetch 按路径回 fixture，WebSocket 连上后推一帧快照。
  * 实时接口按 `roundTripMs` 回来（页面拿它当往返延迟），历史与事件晚一些，看得到骨架与显影；返回还原函数。
+ * `live: false` 让实时通道一直连不上，页面要靠状态查询接口回落出快照。
  */
 export function installStatusFixture(
   fixture: ReturnType<typeof statusFixture> | null,
-  roundTripMs = 46
+  roundTripMs = 46,
+  { live = true }: { live?: boolean } = {}
 ): () => void {
   const delayMs = 420;
   const originalFetch = window.fetch.bind(window);
   const OriginalSocket = window.WebSocket;
   const bodies: Record<string, unknown> = fixture
     ? {
+        "/api/status": fixture.snapshot,
         "/api/status/realtime": fixture.realtime,
         "/api/status/history": fixture.history,
         "/api/status/events": fixture.events,
@@ -268,7 +271,10 @@ export function installStatusFixture(
 
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
-    const path = Object.keys(bodies).find((key) => url.includes(key));
+    // 最长的键先匹配：`/api/status` 是其它几个路径的前缀。
+    const path = Object.keys(bodies)
+      .sort((left, right) => right.length - left.length)
+      .find((key) => url.includes(key));
     if (!url.includes("/api/status")) return originalFetch(input, init);
     // 读取中的故事：接口永远不回，页面停在骨架。
     if (!path) return new Promise<Response>(() => {});
@@ -289,7 +295,7 @@ export function installStatusFixture(
     onerror: (() => void) | null = null;
     private timer: ReturnType<typeof setTimeout> | undefined;
     constructor() {
-      if (!fixture) return;
+      if (!fixture || !live) return;
       this.timer = setTimeout(() => {
         this.readyState = 1;
         this.onopen?.();
@@ -354,10 +360,11 @@ export function emptyStatusFixture(now = Date.now()) {
  * 主卡有结论，条带静止在矮桩、可用率读作「—」，事件区写「暂时读不到」而不是「没有事件」。
  */
 export function installFailingStatusFixture(
-  snapshot: ReturnType<typeof statusFixture>["snapshot"]
+  snapshot: ReturnType<typeof statusFixture>["snapshot"],
+  options: { live?: boolean } = {}
 ): () => void {
   const fixture = statusFixture("healthy");
-  const restore = installStatusFixture({ ...fixture, snapshot });
+  const restore = installStatusFixture({ ...fixture, snapshot }, 46, options);
   const stubbedFetch = window.fetch.bind(window);
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);

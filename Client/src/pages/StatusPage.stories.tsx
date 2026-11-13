@@ -113,6 +113,24 @@ export const LoadFailed: Story = {
   },
 };
 
+/** 实时通道一直连不上（挡 WebSocket 的网络）：几秒后回落到状态查询接口，主卡与徽章照常有结论。 */
+export const LiveUnavailable: Story = {
+  name: "实时通道不通 · 回落接口",
+  beforeEach: () => installStatusFixture(statusFixture("incident"), 46, { live: false }),
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { name: "2 项服务异常" }, { timeout: 12_000 });
+  },
+};
+
+/** 实时通道与状态接口都读不到：主卡说明读不到，而不是一直写「正在读取」。 */
+export const SnapshotUnavailable: Story = {
+  name: "实时通道与接口都不通",
+  beforeEach: () => installFailingStatusFixture(statusFixture("healthy").snapshot, { live: false }),
+  play: async ({ canvas }) => {
+    await canvas.findByRole("heading", { name: "暂时读不到服务状态" }, { timeout: 12_000 });
+  },
+};
+
 export const Loading: Story = {
   name: "读取中",
   beforeEach: () => installStatusFixture(null),

@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { screen } from "storybook/test";
 import { STORY_PROFILE, presetAccount } from "@/stories/fixtures/Account";
+import { useAccountStore } from "@/stores/UseAccountStore";
 import { AccountButton, AccountDialogs, FeedbackButton } from "./AccountEntry";
 
 /**
@@ -62,5 +63,25 @@ export const MenuOpen: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button", { name: /^账号菜单/ }));
     await screen.findByRole("button", { name: "退出登录" });
+  },
+};
+
+/** 退出请求失败：菜单保持打开，在菜单内给出失败提示，按钮恢复可点。 */
+export const SignOutFailed: Story = {
+  name: "菜单 · 退出失败",
+  tags: ["overlay"],
+  beforeEach: () => {
+    const restore = presetAccount({ status: "signedIn", profile: STORY_PROFILE });
+    const original = useAccountStore.getState().signOut;
+    useAccountStore.setState({ signOut: () => Promise.reject(new Error("network")) });
+    return () => {
+      useAccountStore.setState({ signOut: original });
+      restore();
+    };
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(canvas.getByRole("button", { name: /^账号菜单/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "退出登录" }));
+    await screen.findByRole("alert");
   },
 };
