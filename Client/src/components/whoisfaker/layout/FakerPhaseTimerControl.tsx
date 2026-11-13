@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Clock, Play, Timer, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -8,6 +8,7 @@ import { useUrgentPulse } from "@/hooks/UseUrgentPulse";
 import { countdownTickMs, dropIn, readoutSwap, spring } from "@/lib/Motion";
 import { serverNow } from "@/stores/UseServerClock";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
+import { useFakerPhaseAction } from "../phases/UseFakerPhaseAction";
 import { cn } from "@/lib/Utils";
 
 const DURATION_OPTIONS: SegmentedOption<string>[] = [
@@ -83,12 +84,12 @@ interface Props {
 export function FakerPhaseTimerControl({ className }: Props) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
 
   const [selectedDuration, setSelectedDuration] = useState<number>(60);
-  const [starting, setStarting] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  // 开启与取消互斥；与阶段命令各用各的锁，不互相挡
+  const { exec, pending } = useFakerPhaseAction();
+  const starting = pending === "start";
+  const stopping = pending === "stop";
 
   const phase = snapshot?.status.phase;
   const phaseTimer = snapshot?.status.phaseTimer;
@@ -120,27 +121,9 @@ export function FakerPhaseTimerControl({ className }: Props) {
   const runningTone = timerTone(remainingSec);
   const isCritical = runningTone === "critical";
 
-  const handleStartTimer = useCallback(async () => {
-    setStarting(true);
-    try {
-      await sendCommand("game.startPhaseTimer", { durationSeconds: selectedDuration });
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    } finally {
-      setStarting(false);
-    }
-  }, [selectedDuration, sendCommand, addToast]);
-
-  const handleStopTimer = useCallback(async () => {
-    setStopping(true);
-    try {
-      await sendCommand("game.stopPhaseTimer", {});
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    } finally {
-      setStopping(false);
-    }
-  }, [sendCommand, addToast]);
+  const handleStartTimer = () =>
+    void exec("game.startPhaseTimer", { durationSeconds: selectedDuration }, { key: "start" });
+  const handleStopTimer = () => void exec("game.stopPhaseTimer", {}, { key: "stop" });
 
   // 有倒计时时全员可见；没有时只有能开启的人看到限时栏。两态共用同一个外框，只替换框内内容。
   const visible = Boolean(phaseTimer) || canControl;
@@ -210,7 +193,7 @@ export function FakerPhaseTimerControl({ className }: Props) {
                           size="sm"
                           variant="ghost"
                           className="text-muted-foreground"
-                          onClick={() => void handleStopTimer()}
+                          onClick={handleStopTimer}
                           loading={stopping}
                         >
                           {stopping ? null : <X className="h-3.5 w-3.5" />}
@@ -265,7 +248,7 @@ export function FakerPhaseTimerControl({ className }: Props) {
                     size="sm"
                     variant="outline"
                     className="w-full @md:w-auto"
-                    onClick={() => void handleStartTimer()}
+                    onClick={handleStartTimer}
                     loading={starting}
                   >
                     {starting ? null : <Play className="h-3 w-3 fill-current" />}

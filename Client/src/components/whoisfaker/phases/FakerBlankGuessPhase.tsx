@@ -39,10 +39,8 @@ const REASON_TEXT: Record<BlankGuessReason, string> = {
 export function BlankGuessButton() {
   const privateState = useWhoIsFakerStore((s) => s.privateState);
   const phase = useWhoIsFakerStore((s) => s.snapshot?.status.phase);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const [confirming, setConfirming] = useState(false);
-  const { run, busy } = useFakerPhaseAction();
+  const { exec, busy } = useFakerPhaseAction();
   // 确认弹窗从入口按钮展开，关闭时收回
   const { origin, capture } = useOriginTracker();
 
@@ -54,16 +52,8 @@ export function BlankGuessButton() {
     phase !== "blankGuess" &&
     phase !== "feedback";
 
-  const handleEnter = useCallback(async () => {
-    await run(async () => {
-      try {
-        await sendCommand("game.enterBlankGuess");
-        setConfirming(false);
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
-    });
-  }, [run, sendCommand, addToast]);
+  const handleEnter = () =>
+    void exec("game.enterBlankGuess", undefined, { onSuccess: () => setConfirming(false) });
 
   if (!canEnter) return null;
 
@@ -99,11 +89,7 @@ export function BlankGuessButton() {
             >
               再想想
             </Button>
-            <Button
-              loading={busy}
-              onClick={() => void handleEnter()}
-              data-agent-control="faker.blank.confirm"
-            >
+            <Button loading={busy} onClick={handleEnter} data-agent-control="faker.blank.confirm">
               {busy ? null : <HelpCircle className="h-4 w-4" />}
               进入猜词
             </Button>
@@ -121,7 +107,7 @@ function BlankGuessInput() {
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const [wordA, setWordA] = useState("");
   const [wordB, setWordB] = useState("");
-  const { run, busy: submitting } = useFakerPhaseAction();
+  const { exec, busy: submitting } = useFakerPhaseAction();
   const pushTimer = useRef<number | undefined>(undefined);
   const pendingReview = snapshot.status.blankGuessPendingReview ?? false;
   // 两个词都填了才能提交：回车与按钮同一口径
@@ -138,21 +124,15 @@ function BlankGuessInput() {
     return () => window.clearTimeout(pushTimer.current);
   }, [wordA, wordB, pendingReview, sendCommand]);
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     const a = wordA.trim();
     const b = wordB.trim();
     if (!a || !b) {
       addToast("请输入两个词语", "error");
-      return;
+      return Promise.resolve();
     }
-    await run(async () => {
-      try {
-        await sendCommand("game.submitBlankGuess", { words: [a, b] });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
-    });
-  }, [run, wordA, wordB, sendCommand, addToast]);
+    return exec("game.submitBlankGuess", { words: [a, b] });
+  }, [exec, wordA, wordB, addToast]);
 
   // 阶段倒计时归零时，若两个词都已填则自动提交（与手动提交的口径一致）
   useAutoSubmitOnTimeout({
@@ -275,10 +255,7 @@ export function GuessReadout({
 export function BlankGuessWaiting() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const { run, busy: reviewing } = useFakerPhaseAction();
-  const [verdict, setVerdict] = useState<boolean | null>(null);
+  const { exec, busy: reviewing, pending } = useFakerPhaseAction();
 
   const status = snapshot.status;
   const guesser = snapshot.players.find((player) => player.id === status.blankGuessPlayerId);
@@ -286,21 +263,8 @@ export function BlankGuessWaiting() {
   const isQuestioner = privateState?.isQuestioner ?? false;
   const words = privateState?.globalWords;
 
-  const handleReview = useCallback(
-    async (approve: boolean) => {
-      await run(async () => {
-        setVerdict(approve);
-        try {
-          await sendCommand("game.reviewBlankGuess", { approve });
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        } finally {
-          setVerdict(null);
-        }
-      });
-    },
-    [run, sendCommand, addToast]
-  );
+  const handleReview = (approve: boolean) =>
+    void exec("game.reviewBlankGuess", { approve }, { key: approve ? "approve" : "reject" });
 
   return (
     <div className="mx-auto max-w-md space-y-5">
@@ -340,8 +304,8 @@ export function BlankGuessWaiting() {
                   size="lg"
                   variant="outline"
                   disabled={reviewing}
-                  loading={verdict === false}
-                  onClick={() => void handleReview(false)}
+                  loading={pending === "reject"}
+                  onClick={() => handleReview(false)}
                   data-agent-control="faker.blank.reject"
                 >
                   判定错误
@@ -349,11 +313,11 @@ export function BlankGuessWaiting() {
                 <Button
                   size="lg"
                   disabled={reviewing}
-                  loading={verdict === true}
-                  onClick={() => void handleReview(true)}
+                  loading={pending === "approve"}
+                  onClick={() => handleReview(true)}
                   data-agent-control="faker.blank.approve"
                 >
-                  {verdict === true ? null : <Gavel className="h-4 w-4" />}
+                  {pending === "approve" ? null : <Gavel className="h-4 w-4" />}
                   算作正确
                 </Button>
               </div>

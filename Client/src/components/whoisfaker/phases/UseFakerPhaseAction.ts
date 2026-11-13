@@ -44,7 +44,8 @@ export function useFakerPhaseAction() {
       run(async () => {
         setPending(key ?? type);
         try {
-          await sendCommand(type, payload);
+          // 无载荷的命令不带第二个参数，与逐处手写时的调用形状一致
+          await (payload === undefined ? sendCommand(type) : sendCommand(type, payload));
           onSuccess?.();
         } catch (error) {
           addToast((error as { message?: string }).message ?? fallback, "error");

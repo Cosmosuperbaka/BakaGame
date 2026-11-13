@@ -1,5 +1,4 @@
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
-import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Moon, FastForward } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -18,11 +17,7 @@ const nightReceiptSpeech = (targetName?: string) =>
 export function FakerNightPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const action = useFakerPhaseAction();
-  const { run, busy } = action;
-  const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
+  const { exec, busy, pending } = useFakerPhaseAction();
   // 回执从被点的那张选项上展开
   const { origin, capture } = useOriginTracker();
   const isQuestioner = privateState?.isQuestioner ?? false;
@@ -41,35 +36,11 @@ export function FakerNightPhase() {
     (p) => p.roundStatus === "alive" && p.id !== privateState?.playerId
   );
 
-  const handleNightAction = useCallback(
-    async (targetId?: string) => {
-      await run(async () => {
-        try {
-          await sendCommand("game.submitNightAction", { targetId: targetId ?? null });
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        }
-      });
-    },
-    [run, sendCommand, addToast]
-  );
-
-  const runPending = useCallback(
-    (key: "cancel" | "advance", type: "game.cancelNightAction" | "game.advancePhase") =>
-      run(async () => {
-        setPendingCommand(key);
-        try {
-          await sendCommand(type);
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        } finally {
-          setPendingCommand(null);
-        }
-      }),
-    [run, sendCommand, addToast]
-  );
-  const handleCancelNightAction = () => void runPending("cancel", "game.cancelNightAction");
-  const handleAdvance = () => void runPending("advance", "game.advancePhase");
+  const handleNightAction = (targetId?: string) =>
+    void exec("game.submitNightAction", { targetId: targetId ?? null });
+  const handleCancelNightAction = () =>
+    void exec("game.cancelNightAction", undefined, { key: "cancel" });
+  const handleAdvance = () => void exec("game.advancePhase", undefined, { key: "advance" });
 
   // 夜里不行动的人各自说明原因，不留一块空白
   const idleNote =
@@ -108,7 +79,7 @@ export function FakerNightPhase() {
                   controlId={`faker.night.${p.id}`}
                   onSelect={(event) => {
                     capture(event);
-                    void handleNightAction(p.id);
+                    handleNightAction(p.id);
                   }}
                 />
               ))}
@@ -118,7 +89,7 @@ export function FakerNightPhase() {
                 controlId="faker.night.skip"
                 onSelect={(event) => {
                   capture(event);
-                  void handleNightAction();
+                  handleNightAction();
                 }}
               />
             </motion.div>
@@ -136,7 +107,7 @@ export function FakerNightPhase() {
                 )
               }
               origin={origin}
-              busy={pendingCommand === "cancel"}
+              busy={pending === "cancel"}
               undoControlId="faker.cancelNight"
               focusUndo={origin !== null}
               onUndo={handleCancelNightAction}
@@ -153,11 +124,11 @@ export function FakerNightPhase() {
           <Button
             onClick={handleAdvance}
             disabled={busy}
-            loading={pendingCommand === "advance"}
+            loading={pending === "advance"}
             size="lg"
             data-agent-control="faker.advance"
           >
-            {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
+            {pending === "advance" ? null : <FastForward className="h-4 w-4" />}
             天亮了
           </Button>
         </div>

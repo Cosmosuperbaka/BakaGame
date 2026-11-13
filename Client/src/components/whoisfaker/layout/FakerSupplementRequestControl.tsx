@@ -32,10 +32,8 @@ interface SupplementRequest {
 export function useSupplementRequest({ canRequest, action }: Options): SupplementRequest {
   const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
   const isQuestioner = useWhoIsFakerStore((state) => state.privateState?.isQuestioner ?? false);
-  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
-  const addToast = useWhoIsFakerStore((state) => state.addToast);
   const ownAction = useFakerPhaseAction();
-  const { run, busy } = action ?? ownAction;
+  const { exec, busy } = action ?? ownAction;
   const [open, setOpen] = useState(false);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
   const panelId = useId();
@@ -59,16 +57,10 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
     );
   };
 
-  const requestSupplement = () =>
-    run(async () => {
-      if (selectedPlayerIds.length === 0) return;
-      try {
-        await sendCommand("game.requestSupplement", { playerIds: selectedPlayerIds });
-        close();
-      } catch (error) {
-        addToast((error as { message: string }).message, "error");
-      }
-    });
+  const requestSupplement = () => {
+    if (selectedPlayerIds.length === 0) return;
+    void exec("game.requestSupplement", { playerIds: selectedPlayerIds }, { onSuccess: close });
+  };
 
   if (!isQuestioner) {
     return {
@@ -155,7 +147,7 @@ export function useSupplementRequest({ canRequest, action }: Options): Supplemen
               size="sm"
               loading={busy}
               disabled={selectedPlayerIds.length === 0}
-              onClick={() => void requestSupplement()}
+              onClick={requestSupplement}
             >
               {busy ? null : <Send className="h-3.5 w-3.5" />}
               发起补充 ({selectedPlayerIds.length})

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   Check,
   X,
@@ -25,6 +25,7 @@ import { RoomRestoreFallback } from "@/components/common/room/RoomRestoreFallbac
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import type { WhoIsFakerSendCommand } from "@/lib/WhoIsFakerWs";
 import { useAutoSave } from "@/hooks/UseAutoSave";
+import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { saveRoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import type {
@@ -54,31 +55,11 @@ export function FakerWaitingPhase() {
   const showProgress = nonHostActive.length > 0;
 
   // 与猜歌同口径：准备、开始在等服务端应答期间显示加载态并禁用，避免连点发出相反的两条命令。
-  const [readying, setReadying] = useState(false);
-  const handleReady = useCallback(async () => {
-    if (readying) return;
-    setReadying(true);
-    try {
-      await sendCommand("player.setReady", { ready: !me?.isReady });
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    } finally {
-      setReadying(false);
-    }
-  }, [me, sendCommand, addToast, readying]);
-
-  const [starting, setStarting] = useState(false);
-  const handleStart = useCallback(async () => {
-    if (starting) return;
-    setStarting(true);
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (e) {
-      addToast((e as { message: string }).message, "error");
-    } finally {
-      setStarting(false);
-    }
-  }, [sendCommand, addToast, starting]);
+  const { exec, busy, pending } = useFakerPhaseAction();
+  const readying = pending === "ready";
+  const starting = pending === "start";
+  const handleReady = () => void exec("player.setReady", { ready: !me?.isReady }, { key: "ready" });
+  const handleStart = () => void exec("game.advancePhase", undefined, { key: "start" });
 
   // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
   const restoring = useRoomSettingsRestore("faker", snapshot.roomId, async (memory) => {
@@ -100,7 +81,7 @@ export function FakerWaitingPhase() {
         nonHostTotal={nonHostActive.length}
         allReady={allReady}
         starting={starting}
-        onStart={() => void handleStart()}
+        onStart={handleStart}
         sendCommand={sendCommand}
         addToast={addToast}
       />
@@ -121,9 +102,9 @@ export function FakerWaitingPhase() {
           <Button
             variant={me.isReady ? "outline" : "default"}
             size="lg"
-            disabled={readying}
+            disabled={busy}
             loading={readying}
-            onClick={() => void handleReady()}
+            onClick={handleReady}
             data-agent-control="faker.ready"
           >
             {/* 进行中只把图标换成转圈，文案不变，按钮宽度不跳 */}

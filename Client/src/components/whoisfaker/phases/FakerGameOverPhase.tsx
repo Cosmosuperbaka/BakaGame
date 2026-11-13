@@ -1,4 +1,4 @@
-﻿import { useCallback, useState } from "react";
+﻿import { useState } from "react";
 import { motion } from "framer-motion";
 import { Trophy, BookOpen, History, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +11,7 @@ import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { FakerRoleBadge } from "../layout/FakerRoleBadge";
 import { FakerRoundHistoryTimeline } from "./FakerRoundHistoryTimeline";
+import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 
 /** 区块小标题：与公共结算表、得票与票型同一口径 */
 const SECTION_TITLE = "flex items-center gap-1.5 text-xs font-semibold text-muted-foreground";
@@ -56,22 +57,19 @@ function DisclosureHeader({
 export function FakerGameOverPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
   const summary = snapshot.summary;
   const [showHistory, setShowHistory] = useState(true);
-  const [returning, setReturning] = useState(false);
+  const { exec, busy } = useFakerPhaseAction();
+  // 成功后保持加载态直到快照切回等待阶段（本组件随之卸载），避免应答与快照之间的空档里再点一次
+  const [returned, setReturned] = useState(false);
+  const returning = busy || returned;
   const isHost = snapshot.hostPlayerId === privateState?.playerId;
 
-  const handleReturnToWaiting = useCallback(async () => {
-    setReturning(true);
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (error) {
-      addToast((error as { message?: string }).message ?? "返回房间失败", "error");
-      setReturning(false);
-    }
-  }, [addToast, sendCommand]);
+  const handleReturnToWaiting = () =>
+    void exec("game.advancePhase", undefined, {
+      onSuccess: () => setReturned(true),
+      fallback: "返回房间失败",
+    });
 
   if (!summary) {
     return (
@@ -179,7 +177,7 @@ export function FakerGameOverPhase() {
         {isHost ? (
           <Button
             size="lg"
-            onClick={() => void handleReturnToWaiting()}
+            onClick={handleReturnToWaiting}
             loading={returning}
             data-agent-control="faker.advance"
           >

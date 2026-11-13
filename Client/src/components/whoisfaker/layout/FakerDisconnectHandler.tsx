@@ -1,4 +1,3 @@
-import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, Clock, UserX } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -14,30 +13,16 @@ import { useFakerPhaseAction } from "../phases/UseFakerPhaseAction";
 export function FakerDisconnectHandler() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot);
   const isQuestioner = useWhoIsFakerStore((s) => s.privateState?.isQuestioner ?? false);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
-  // 两个决定互斥，共用一把锁：等应答期间另一个按钮同样不可点。
-  const { run, busy } = useFakerPhaseAction();
+  // 两个决定互斥，共用一把锁：等应答期间另一个按钮同样不可点；
   // 记下按下的是哪一个，加载指示只落在它身上。
-  const [choice, setChoice] = useState<"wait" | "eliminate" | null>(null);
+  const { exec, busy, pending: choice } = useFakerPhaseAction();
   const pendingId = snapshot?.status.pendingDisconnectPlayerId;
   const pendingPlayer = snapshot?.players.find((p) => p.id === pendingId);
 
-  const handleResolve = useCallback(
-    (resolution: "wait" | "eliminate") =>
-      run(async () => {
-        if (!pendingId) return;
-        setChoice(resolution);
-        try {
-          await sendCommand("game.resolveDisconnect", { playerId: pendingId, resolution });
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        } finally {
-          setChoice(null);
-        }
-      }),
-    [run, pendingId, sendCommand, addToast]
-  );
+  const handleResolve = (resolution: "wait" | "eliminate") => {
+    if (!pendingId) return;
+    void exec("game.resolveDisconnect", { playerId: pendingId, resolution }, { key: resolution });
+  };
 
   return (
     <AnimatePresence initial={false}>
@@ -62,7 +47,7 @@ export function FakerDisconnectHandler() {
                 variant="outline"
                 disabled={busy}
                 loading={choice === "wait"}
-                onClick={() => void handleResolve("wait")}
+                onClick={() => handleResolve("wait")}
               >
                 <Clock className="h-3.5 w-3.5" />
                 等待重连
@@ -72,7 +57,7 @@ export function FakerDisconnectHandler() {
                 variant="destructive"
                 disabled={busy}
                 loading={choice === "eliminate"}
-                onClick={() => void handleResolve("eliminate")}
+                onClick={() => handleResolve("eliminate")}
               >
                 <UserX className="h-3.5 w-3.5" />
                 淘汰并踢出

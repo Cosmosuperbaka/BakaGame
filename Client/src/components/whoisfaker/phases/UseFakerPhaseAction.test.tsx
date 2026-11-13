@@ -118,7 +118,7 @@ describe("usePhaseAction", () => {
         ack.resolve();
         await done;
       });
-      expect(send).toHaveBeenCalledWith("game.advancePhase", undefined);
+      expect(send).toHaveBeenCalledExactlyOnceWith("game.advancePhase");
       expect(hook.result.current.pending).toBeNull();
       expect(hook.result.current.busy).toBe(false);
       expect(onSuccess).toHaveBeenCalledTimes(1);

@@ -24,10 +24,8 @@ export function FakerWordSubmissionPhase({
 }) {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const action = useFakerPhaseAction();
-  const { run, busy } = action;
+  const { exec, busy } = useFakerPhaseAction();
   const isQuestioner = privateState?.isQuestioner ?? false;
 
   const { civilianWord, undercoverWord, blankHint } = wordDraft;
@@ -115,19 +113,13 @@ export function FakerWordSubmissionPhase({
       addToast("手动身份数量与房间配置不一致", "error");
       return;
     }
-    await run(async () => {
-      try {
-        await sendCommand("game.submitWords", {
-          words: [civilianWord.trim(), undercoverWord.trim()],
-          blankHint: hasBlank ? blankHint.trim() : undefined,
-          manualRoles: isRandomRole ? undefined : manualRoles,
-        });
-      } catch (e) {
-        addToast((e as { message: string }).message, "error");
-      }
+    await exec("game.submitWords", {
+      words: [civilianWord.trim(), undercoverWord.trim()],
+      blankHint: hasBlank ? blankHint.trim() : undefined,
+      manualRoles: isRandomRole ? undefined : manualRoles,
     });
   }, [
-    run,
+    exec,
     civilianWord,
     undercoverWord,
     blankHint,
@@ -135,7 +127,6 @@ export function FakerWordSubmissionPhase({
     isRandomRole,
     manualRoles,
     manualRoleCountsValid,
-    sendCommand,
     addToast,
   ]);
 

@@ -8,6 +8,7 @@ import { Hint } from "@/components/ui/Tooltip";
 import { FakerPendingSpeech, SubmittedSpeech } from "../layout/FakerPendingSpeech";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { useAutoSubmitOnTimeout } from "./UseAutoSubmitOnTimeout";
+import { useFakerPhaseAction } from "./UseFakerPhaseAction";
 import { useSupplementRequest } from "../layout/FakerSupplementRequestControl";
 import { FAKER_DESCRIPTION_MAX_UNITS, clampUnits, textUnits } from "@bakagame/shared/values";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
@@ -84,8 +85,6 @@ function QuestionerAdvancePanel({
 export function FakerDescriptionPhase() {
   const snapshot = useWhoIsFakerStore((state) => state.snapshot)!;
   const privateState = useWhoIsFakerStore((state) => state.privateState);
-  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
-  const addToast = useWhoIsFakerStore((state) => state.addToast);
   const [text, setText] = useState("");
 
   const mode = resolveSpeechMode(snapshot.status);
@@ -165,22 +164,16 @@ export function FakerDescriptionPhase() {
     !submittedPlayerIds.has(myId) &&
     (mode === "normal" || waitingPlayerIds.includes(myId));
 
-  const [submitting, setSubmitting] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
+  // 提交与推进共用一把锁：等应答期间另一个按钮同样不可点
+  const { exec, pending } = useFakerPhaseAction();
+  const submitting = pending === "game.submitDescription";
+  const advancing = pending === "game.advancePhase";
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     const normalized = text.trim();
-    if (!normalized || submitting) return;
-    setSubmitting(true);
-    try {
-      await sendCommand("game.submitDescription", { text: normalized });
-      setText("");
-    } catch (error) {
-      addToast((error as { message: string }).message, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [addToast, sendCommand, text, submitting]);
+    if (!normalized) return Promise.resolve();
+    return exec("game.submitDescription", { text: normalized }, { onSuccess: () => setText("") });
+  }, [exec, text]);
 
   // 阶段倒计时归零时，自动将本地已输入的内容发送提交
   useAutoSubmitOnTimeout({
@@ -195,17 +188,7 @@ export function FakerDescriptionPhase() {
   });
   const counterId = useId();
 
-  const handleAdvance = useCallback(async () => {
-    if (advancing) return;
-    setAdvancing(true);
-    try {
-      await sendCommand("game.advancePhase");
-    } catch (error) {
-      addToast((error as { message: string }).message, "error");
-    } finally {
-      setAdvancing(false);
-    }
-  }, [addToast, sendCommand, advancing]);
+  const handleAdvance = () => void exec("game.advancePhase");
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -266,7 +249,7 @@ export function FakerDescriptionPhase() {
           mode={mode}
           supplement={supplement}
           advancing={advancing}
-          onAdvance={() => void handleAdvance()}
+          onAdvance={handleAdvance}
         />
       ) : null}
     </div>

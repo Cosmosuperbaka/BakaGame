@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { motion } from "framer-motion";
 import { CircleHelp, FastForward, Sunrise, Vote } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -194,24 +193,12 @@ function BlankGuessFeedback({
 export function FakerFeedbackPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const { run, busy } = useFakerPhaseAction();
+  const { exec, busy } = useFakerPhaseAction();
   const feedback = snapshot.status.feedback;
   // 测试房跳转后可能没有出题人，服务端放开给房内任何人继续
   const canContinue = (privateState?.isQuestioner ?? false) || snapshot.testMode;
 
-  const handleContinue = useCallback(
-    () =>
-      void run(async () => {
-        try {
-          await sendCommand("game.advancePhase");
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        }
-      }),
-    [run, sendCommand, addToast]
-  );
+  const handleContinue = () => void exec("game.advancePhase");
 
   if (!feedback) {
     return <p className="py-12 text-center text-sm text-muted-foreground">结果同步中…</p>;

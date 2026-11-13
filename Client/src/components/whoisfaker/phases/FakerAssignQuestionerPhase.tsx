@@ -1,5 +1,4 @@
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
-import { useCallback } from "react";
 import { UserCheck, Eye, AlertTriangle } from "lucide-react";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -8,28 +7,14 @@ import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid"
 export function FakerAssignQuestionerPhase() {
   const snapshot = useWhoIsFakerStore((s) => s.snapshot)!;
   const privateState = useWhoIsFakerStore((s) => s.privateState);
-  const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
-  const addToast = useWhoIsFakerStore((s) => s.addToast);
-  const action = useFakerPhaseAction();
-  const { run, busy } = action;
+  const { exec, busy } = useFakerPhaseAction();
   const me = snapshot.players.find((p) => p.id === privateState?.playerId);
   const isHost = me?.isHost ?? false;
 
   const activeCandidates = snapshot.players.filter((p) => p.membership === "active");
   const spectatorCandidates = snapshot.players.filter((p) => p.membership === "spectator");
 
-  const handleAssign = useCallback(
-    async (playerId: string) => {
-      await run(async () => {
-        try {
-          await sendCommand("game.assignQuestioner", { playerId });
-        } catch (e) {
-          addToast((e as { message: string }).message, "error");
-        }
-      });
-    },
-    [run, sendCommand, addToast]
-  );
+  const handleAssign = (playerId: string) => void exec("game.assignQuestioner", { playerId });
 
   return (
     <div className="flex flex-col items-center gap-6">
@@ -52,7 +37,7 @@ export function FakerAssignQuestionerPhase() {
               <CandidateGrid
                 candidates={spectatorCandidates}
                 disabled={busy}
-                onPick={(playerId) => void handleAssign(playerId)}
+                onPick={handleAssign}
                 tone="recommended"
                 nameWrap="wrap"
                 agentControlPrefix="faker.questioner"
@@ -77,7 +62,7 @@ export function FakerAssignQuestionerPhase() {
             <CandidateGrid
               candidates={activeCandidates}
               disabled={busy}
-              onPick={(playerId) => void handleAssign(playerId)}
+              onPick={handleAssign}
               tone="default"
               nameWrap="wrap"
               agentControlPrefix="faker.questioner"

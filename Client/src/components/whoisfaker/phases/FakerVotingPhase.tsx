@@ -1,5 +1,4 @@
 import { useFakerPhaseAction } from "./UseFakerPhaseAction";
-import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { FastForward, Vote } from "lucide-react";
 import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
@@ -93,44 +92,15 @@ export function FakerVotingPhase() {
     showReceipt,
     targets,
   } = useVotingView();
-  const sendCommand = useWhoIsFakerStore((state) => state.sendCommand);
-  const addToast = useWhoIsFakerStore((state) => state.addToast);
   const action = useFakerPhaseAction();
-  const { run, busy } = action;
-  // 哪个命令在等应答：加载指示只落在发起它的按钮上，其余按钮照常禁用。
-  const [pendingCommand, setPendingCommand] = useState<"cancel" | "advance" | null>(null);
+  const { exec, busy, pending } = action;
   // 回执从被点的那张选项上展开
   const { origin, capture } = useOriginTracker();
 
-  const handleVote = useCallback(
-    async (targetId: string) => {
-      await run(async () => {
-        try {
-          await sendCommand("game.submitVote", { targetId });
-        } catch (error) {
-          addToast((error as { message: string }).message, "error");
-        }
-      });
-    },
-    [run, addToast, sendCommand]
-  );
-
-  const runPending = useCallback(
-    (key: "cancel" | "advance", type: "game.cancelVote" | "game.advancePhase") =>
-      run(async () => {
-        setPendingCommand(key);
-        try {
-          await sendCommand(type);
-        } catch (error) {
-          addToast((error as { message: string }).message, "error");
-        } finally {
-          setPendingCommand(null);
-        }
-      }),
-    [run, addToast, sendCommand]
-  );
-  const handleCancelVote = () => void runPending("cancel", "game.cancelVote");
-  const handleAdvance = () => void runPending("advance", "game.advancePhase");
+  const handleVote = (targetId: string) => void exec("game.submitVote", { targetId });
+  // 哪个命令在等应答：加载指示只落在发起它的按钮上，其余按钮照常禁用。
+  const handleCancelVote = () => void exec("game.cancelVote", undefined, { key: "cancel" });
+  const handleAdvance = () => void exec("game.advancePhase", undefined, { key: "advance" });
   const supplement = useSupplementRequest({ canRequest: !isTieBreak, action });
 
   return (
@@ -164,7 +134,7 @@ export function FakerVotingPhase() {
                   controlId={`faker.vote.${player.id}`}
                   onSelect={(event) => {
                     capture(event);
-                    void handleVote(player.id);
+                    handleVote(player.id);
                   }}
                 />
               ))}
@@ -176,7 +146,7 @@ export function FakerVotingPhase() {
                 controlId="faker.vote.abstain"
                 onSelect={(event) => {
                   capture(event);
-                  void handleVote(ABSTAIN_TARGET_ID);
+                  handleVote(ABSTAIN_TARGET_ID);
                 }}
               />
             </motion.div>
@@ -186,7 +156,7 @@ export function FakerVotingPhase() {
               title={receiptTitle(abstained)}
               detail={receiptDetail(abstained, targetPlayerName)}
               origin={origin}
-              busy={pendingCommand === "cancel"}
+              busy={pending === "cancel"}
               undoControlId="faker.cancelVote"
               focusUndo={origin !== null}
               onUndo={handleCancelVote}
@@ -216,11 +186,11 @@ export function FakerVotingPhase() {
             <Button
               onClick={handleAdvance}
               disabled={busy}
-              loading={pendingCommand === "advance"}
+              loading={pending === "advance"}
               size="lg"
               data-agent-control="faker.advance"
             >
-              {pendingCommand === "advance" ? null : <FastForward className="h-4 w-4" />}
+              {pending === "advance" ? null : <FastForward className="h-4 w-4" />}
               结算投票
             </Button>
           </div>
