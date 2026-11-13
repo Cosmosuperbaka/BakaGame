@@ -1,6 +1,6 @@
 import { AppError } from "../../domain/Errors";
 import type { ConnectionRecord } from "../../shared/Index";
-import { resolveAnimeMatchedSongs } from "./AnimeResolution";
+import { resolveAnimeMatchedSongs } from "./AnimeManualList";
 import type { SonGuessrContext } from "./Context";
 import { musicSearchOptions, withAggregatedAccounts, withSongAccount } from "./MusicPool";
 import { parsePlaylistId } from "./PlaylistId";

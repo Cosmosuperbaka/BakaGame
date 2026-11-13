@@ -28,7 +28,7 @@ import {
 } from "./AnimeCandidateSearch";
 import { requireRoomPlayer } from "./RoomAccess";
 
-/** 猜番出题的番剧关联曲目解析：检索、专辑/番剧级兜底与逐候选验证。 */
+/** 猜番手动选曲：指定曲目的解析，以及按番剧曲目逐条匹配出可选歌曲列表。 */
 
 /** 手动选曲的条目匹配上下文：一次解析内共享的检索资源、预算与已产出的结果。 */
 interface AnimeTrackMatchContext {
