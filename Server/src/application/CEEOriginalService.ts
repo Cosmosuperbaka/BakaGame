@@ -4,17 +4,9 @@ import { AppError } from "../domain/Errors";
 import { buildCEEFeedback, createCEEHints, validateCEESettings } from "../domain/CEERules";
 import { safeEqualToken } from "../domain/Rules";
 import type { ConnectionRecord } from "../shared/Index";
-import type { CEEDataProvider } from "../infrastructure/CEEData";
 import { CEEImageHints } from "../infrastructure/CEEImageHints";
-import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
-import {
-  createCEEOriginalSocket,
-  originalConfirmedEvent,
-  originalRequest,
-  type CEEOriginalSocket,
-  type CEEOriginalSocketFactory,
-} from "../infrastructure/CEEOriginalSocket";
+import { createCEEOriginalSocket } from "../infrastructure/CEEOriginalSocket";
 import {
   decodeOriginalCharacter,
   encodeOriginalCharacter,
@@ -54,26 +46,18 @@ import type { CEEOriginalTarget } from "./CEERoomDirectory";
 import { originalPrivateState, originalSnapshot } from "./CEEOriginalView";
 import { CEEOriginalRoundData } from "./CEEOriginalRoundData";
 import { runCEEDataCommand } from "./CEEDataCommands";
-
-interface CEEOriginalOptions {
-  data: CEEDataProvider;
-  serverUrl?: string;
-  aesSecret?: string;
-  now?: () => number;
-  logger?: Pick<EventLogger, "warn">;
-  socketFactory?: CEEOriginalSocketFactory;
-  fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  imageHints?: Pick<CEEImageHints, "render">;
-  /** 上游请求与事件确认的等待上限；缺省取生产值，测试注入小值避免真实等待。 */
-  ackTimeoutMs?: number;
-}
-
-/** 日志里的失败原因：业务错误取码，我们自己抛的简短说明原样保留，其余取异常名；不含载荷与密钥。 */
-function reasonOf(error: unknown): string {
-  if (error instanceof AppError) return error.code;
-  if (error instanceof Error) return error.name === "Error" ? error.message : error.name;
-  return "unknown";
-}
+import {
+  cancelPreparation,
+  selfOf,
+  publish,
+  reasonOf,
+  requireHost,
+  revoke,
+  upstreamConfirmed,
+  upstreamRequest,
+  type CEEOriginalContext,
+  type CEEOriginalOptions,
+} from "./CEEOriginalContext";
 
 export class CEEOriginalService {
   private readonly connections = new Map<string, ConnectionRecord>();
@@ -85,6 +69,7 @@ export class CEEOriginalService {
   private readonly now: () => number;
   private readonly fetcher: NonNullable<CEEOriginalOptions["fetcher"]>;
   private readonly imageHints: Pick<CEEImageHints, "render">;
+  private readonly ctx: CEEOriginalContext;
   readonly sourceKey: string;
   readonly configured: boolean;
 
@@ -99,28 +84,21 @@ export class CEEOriginalService {
         throw new AppError("CEE_ORIGINAL_CONFIG", "原版地址必须是无凭据的 HTTP 或 HTTPS 地址");
       }
     }
+    this.ctx = {
+      options,
+      connections: this.connections,
+      sessions: this.sessions,
+      byConnection: this.byConnection,
+      chats: this.chats,
+      now: this.now,
+      fetcher: this.fetcher,
+      imageHints: this.imageHints,
+      configured: this.configured,
+    };
     this.sourceKey = createHash("sha256")
       .update(options.serverUrl || "")
       .digest("hex")
       .slice(0, 12);
-  }
-
-  /** 上游请求统一带上本服务的确认超时。 */
-  private upstreamRequest(
-    socket: CEEOriginalSocket,
-    event: string,
-    payload: unknown
-  ): Promise<Record<string, unknown>> {
-    return originalRequest(socket, event, payload, this.options.ackTimeoutMs);
-  }
-
-  private upstreamConfirmed(
-    socket: CEEOriginalSocket,
-    event: string,
-    predicate: (payload: unknown) => boolean,
-    send: () => void
-  ): Promise<unknown> {
-    return originalConfirmedEvent(socket, event, predicate, send, this.options.ackTimeoutMs);
   }
 
   registerConnection(connection: ConnectionRecord): void {
@@ -131,7 +109,7 @@ export class CEEOriginalService {
     const session = this.byConnection.get(id);
     this.byConnection.delete(id);
     if (session) {
-      this.cancelPreparation(session);
+      cancelPreparation(session);
       session.connectionId = undefined;
       session.detachedAt = this.now();
     }
@@ -224,7 +202,7 @@ export class CEEOriginalService {
       throw new AppError("ROOM_NOT_FOUND", "房间与当前会话不一致");
     // 离房撤销是生命周期边界，不能排在悬挂的资料查询后等待。
     if (message.type === "cee.room.leave") {
-      this.revoke(session, "已离开房间", false);
+      revoke(this.ctx, session, "已离开房间", false);
       return {};
     }
     const task = session.queue.then(() => {
@@ -253,16 +231,17 @@ export class CEEOriginalService {
     event: string,
     payload: Record<string, unknown> = {}
   ): Promise<unknown> {
-    return this.upstreamRequest(session.socket, event, { roomId: session.roomId, ...payload });
+    return upstreamRequest(this.ctx, session.socket, event, { roomId: session.roomId, ...payload });
   }
 
   /** 房主没有准备态，开局只看其他玩家，与增强房一致。 */
   private async toggleReady(session: CEEOriginalSession, ready: boolean): Promise<unknown> {
-    if (this.me(session).isHost || this.me(session).ready === ready) return {};
-    await this.upstreamConfirmed(
+    if (selfOf(session).isHost || selfOf(session).ready === ready) return {};
+    await upstreamConfirmed(
+      this.ctx,
       session.socket,
       "updatePlayers",
-      () => this.me(session).ready === ready,
+      () => selfOf(session).ready === ready,
       () => session.socket.emit("toggleReady", { roomId: session.roomId })
     );
     return {};
@@ -273,7 +252,7 @@ export class CEEOriginalService {
     session: CEEOriginalSession,
     settings: CEESettings
   ): Promise<unknown> {
-    this.requireHost(session);
+    requireHost(session);
     validateCEESettings(settings);
     const { answerMode } = settings;
     for (const peer of this.sessions.values())
@@ -284,14 +263,14 @@ export class CEEOriginalService {
   }
 
   private async chooseSetter(session: CEEOriginalSession, playerId: string): Promise<unknown> {
-    this.requireHost(session);
+    requireHost(session);
     if (session.phase !== "choosingSetter")
       throw new AppError("INVALID_PHASE", "请先开始游戏再指定出题人");
     await this.sendToRoom(session, "enterManualMode");
     const result = await this.sendToRoom(session, "setAnswerSetter", { setterId: playerId });
     // 上游确认出题人后会推 waitForAnswer 切到出题阶段；还没到的话先退出选人阶段，免得停在这里。
     if (session.phase === "choosingSetter") this.leaveChoosingSetter(session);
-    this.publish(session);
+    publish(this.ctx, session);
     return result;
   }
 
@@ -307,7 +286,7 @@ export class CEEOriginalService {
     switch (message.type) {
       case "cee.room.requestSync":
         if (session.connectionId) this.connections.get(session.connectionId)?.resetStateSync?.();
-        this.publish(session);
+        publish(this.ctx, session);
         return this.enterResult(session);
       case "cee.character.search":
         return runCEEDataCommand(data, message.type, message.payload);
@@ -321,7 +300,7 @@ export class CEEOriginalService {
         return runCEEDataCommand(data, message.type, message.payload);
       case "cee.directory.import":
         // 导入会改本地的目录库，并占用耗时的后台任务：与增强房同一口径，只有房主能在等待阶段发起。
-        this.requireHost(session);
+        requireHost(session);
         this.requireWaiting(session);
         return runCEEDataCommand(data, message.type, message.payload);
       case "cee.character.image":
@@ -343,7 +322,7 @@ export class CEEOriginalService {
       case "cee.room.settings":
         return this.applyRoomSettings(session, message.payload.settings);
       case "cee.room.update": {
-        this.requireHost(session);
+        requireHost(session);
         if (!message.payload.allowSpectators) this.unsupported("原版房间不支持禁止观战");
         await this.updateRoom(
           session,
@@ -353,10 +332,10 @@ export class CEEOriginalService {
         return {};
       }
       case "cee.room.kick":
-        this.requireHost(session);
+        requireHost(session);
         return send("kickPlayer", { playerId: message.payload.playerId });
       case "cee.room.transferHost":
-        this.requireHost(session);
+        requireHost(session);
         return send("transferHost", { newHostId: message.payload.playerId });
       case "cee.game.chooseSetter":
         return this.chooseSetter(session, message.payload.playerId);
@@ -373,9 +352,9 @@ export class CEEOriginalService {
       case "cee.game.cancel":
         // 选人阶段只在本服务端，可以退回；进入出题后原版服务器没有取消指令。
         if (session.phase === "choosingSetter") {
-          this.requireHost(session);
+          requireHost(session);
           this.leaveChoosingSetter(session);
-          this.publish(session);
+          publish(this.ctx, session);
           return {};
         }
         return this.unsupported("原版服务器没有取消出题或中止对局的指令，可重新指定出题人");
@@ -430,7 +409,8 @@ export class CEEOriginalService {
     this.byConnection.set(connection.id, session);
     this.listen(session);
     try {
-      await this.upstreamConfirmed(
+      await upstreamConfirmed(
+        this.ctx,
         socket,
         "connect",
         () => true,
@@ -438,7 +418,8 @@ export class CEEOriginalService {
       );
       // 原版会自行裁剪/规范化用户名，谓词不能做全等比对，否则加入确认要等到 8s 超时才失败。
       const expected = name.trim();
-      await this.upstreamConfirmed(
+      await upstreamConfirmed(
+        this.ctx,
         socket,
         "updatePlayers",
         () =>
@@ -463,16 +444,16 @@ export class CEEOriginalService {
       connection.roomId = `original:${roomId}`;
       connection.playerId = socket.id;
       if (create) {
-        await this.upstreamRequest(socket, "updateGameSettings", {
+        await upstreamRequest(this.ctx, socket, "updateGameSettings", {
           roomId,
           settings: toOriginalSettings(session.settings),
         });
         await this.updateRoom(session, create.name, create.visibility === "public");
       } else socket.emit("requestGameSettings", { roomId });
-      this.publish(session);
+      publish(this.ctx, session);
       return this.enterResult(session);
     } catch (error) {
-      this.revoke(session, "无法加入原版房间", false);
+      revoke(this.ctx, session, "无法加入原版房间", false);
       throw error;
     }
   }
@@ -542,14 +523,14 @@ export class CEEOriginalService {
       }
       this.byConnection.delete(session.connectionId);
     }
-    this.cancelPreparation(session);
+    cancelPreparation(session);
     session.connectionId = connection.id;
     session.detachedAt = undefined;
     this.byConnection.set(connection.id, session);
     connection.roomId = `original:${roomId}`;
     connection.playerId = session.socket.id;
     connection.resetStateSync?.();
-    this.publish(session);
+    publish(this.ctx, session);
     return this.enterResult(session);
   }
 
@@ -559,14 +540,16 @@ export class CEEOriginalService {
     isPublic: boolean
   ): Promise<void> {
     if (name !== session.roomName)
-      await this.upstreamConfirmed(
+      await upstreamConfirmed(
+        this.ctx,
         session.socket,
         "roomNameUpdated",
         (payload) => originalString(originalObject(payload).roomName) === name.trim().slice(0, 30),
         () => session.socket.emit("updateRoomName", { roomId: session.roomId, roomName: name })
       );
     if (isPublic !== session.isPublic)
-      await this.upstreamConfirmed(
+      await upstreamConfirmed(
+        this.ctx,
         session.socket,
         "updatePlayers",
         () => session.isPublic === isPublic,
@@ -595,7 +578,7 @@ export class CEEOriginalService {
     session.preparation = operation;
     if (phase !== "answering") {
       session.phase = "preparing";
-      this.publish(session);
+      publish(this.ctx, session);
     }
     return operation;
   }
@@ -625,21 +608,14 @@ export class CEEOriginalService {
       throw new AppError("CEE_ROUND_CHANGED", "准备操作已失效，请重新操作");
   }
 
-  private cancelPreparation(session: CEEOriginalSession): void {
-    const operation = session.preparation;
-    if (!operation) return;
-    if (session.phase === "preparing") session.phase = operation.phase;
-    delete session.preparation;
-  }
-
   /** 手动出题：开局条件与随机出题相同，满足后进入本服务端的选出题人阶段。 */
   private enterChoosingSetter(session: CEEOriginalSession): unknown {
-    this.requireHost(session);
+    requireHost(session);
     if (!originalPrivateState(session).canStart)
       throw new AppError("CEE_CANNOT_START", "请等待玩家准备或本局结束");
     session.choosingSetterFrom = session.phase === "settled" ? "settled" : "waiting";
     session.phase = "choosingSetter";
-    this.publish(session);
+    publish(this.ctx, session);
     return {};
   }
 
@@ -655,7 +631,7 @@ export class CEEOriginalService {
   }
 
   private async start(session: CEEOriginalSession): Promise<unknown> {
-    this.requireHost(session);
+    requireHost(session);
     if (!originalPrivateState(session).canStart)
       throw new AppError("CEE_CANNOT_START", "请等待玩家准备或本局结束");
     const operation = this.beginPreparation(session);
@@ -666,15 +642,15 @@ export class CEEOriginalService {
         character.imageUrl = await this.options.data.resolveCharacterImage(character.id);
         this.requirePreparation(session, operation);
       }
-      return await this.upstreamRequest(session.socket, "gameStart", {
+      return await upstreamRequest(this.ctx, session.socket, "gameStart", {
         roomId: session.roomId,
         character: encodeOriginalCharacter(character, this.options.aesSecret!),
         settings: toOriginalSettings(operation.settings),
       });
     } finally {
       if (session.preparation?.id === operation.id) {
-        this.cancelPreparation(session);
-        this.publish(session);
+        cancelPreparation(session);
+        publish(this.ctx, session);
       }
     }
   }
@@ -694,13 +670,13 @@ export class CEEOriginalService {
         character.imageUrl = await this.options.data.resolveCharacterImage(id);
         this.requirePreparation(session, operation);
       }
-      return await this.upstreamRequest(session.socket, "setAnswer", {
+      return await upstreamRequest(this.ctx, session.socket, "setAnswer", {
         roomId: session.roomId,
         character: encodeOriginalCharacter(character, this.options.aesSecret!),
         hints,
       });
     } finally {
-      if (session.preparation?.id === operation.id) this.cancelPreparation(session);
+      if (session.preparation?.id === operation.id) cancelPreparation(session);
     }
   }
 
@@ -709,7 +685,7 @@ export class CEEOriginalService {
       throw new AppError("CEE_CANNOT_GUESS", "当前不能猜测");
     const roundKey = session.roundKey;
     const syncRound = session.syncRound;
-    const attempts = this.me(session).attempts;
+    const attempts = selfOf(session).attempts;
     const data = this.roundData(session);
     if (this.chats.get(session.roomId)!.round!.phase !== "guessing")
       throw new AppError("CEE_ROUND_CHANGED", "本局状态已变化");
@@ -720,7 +696,7 @@ export class CEEOriginalService {
     if (
       !this.isCurrentRound(session, roundKey) ||
       session.syncRound !== syncRound ||
-      this.me(session).attempts !== attempts ||
+      selfOf(session).attempts !== attempts ||
       !originalPrivateState(session).canGuess
     )
       throw new AppError("CEE_ROUND_CHANGED", "本轮状态已变化，请重新操作");
@@ -728,7 +704,7 @@ export class CEEOriginalService {
     const tags = session.settings.tagBan
       ? feedback.tags.filter((tag) => tag.matched).map((tag) => tag.text)
       : [];
-    const result = await this.upstreamRequest(session.socket, "playerGuess", {
+    const result = await upstreamRequest(this.ctx, session.socket, "playerGuess", {
       roomId: session.roomId,
       guessResult: {
         isCorrect: id === answer.id,
@@ -799,7 +775,7 @@ export class CEEOriginalService {
     // 限流 Map 会随对方重进的次数一直长。
     if (!connectionId || !this.chatLimiter.allow(connectionId, this.now()))
       throw new AppError("CHAT_RATE_LIMIT", "发送消息太快，请稍后重试");
-    const me = this.me(session);
+    const me = selfOf(session);
     const room = this.chats.get(session.roomId)!;
     const message = {
       id: `cee_chat_${randomUUID()}`,
@@ -812,7 +788,7 @@ export class CEEOriginalService {
     if (!message.text) throw new AppError("CHAT_EMPTY", "消息不能为空");
     room.chat = [...room.chat, message].slice(-100);
     for (const peer of this.sessions.values())
-      if (peer.confirmed && peer.roomId === session.roomId) this.publish(peer);
+      if (peer.confirmed && peer.roomId === session.roomId) publish(this.ctx, peer);
     return { message };
   }
 
@@ -836,14 +812,6 @@ export class CEEOriginalService {
     const session = this.byConnection.get(id);
     if (!session?.confirmed) throw new AppError("NOT_IN_ROOM", "尚未加入原版房间");
     return session;
-  }
-  private me(session: CEEOriginalSession) {
-    const player = session.players.find((player) => player.id === session.socket.id);
-    if (!player) throw new AppError("NOT_IN_ROOM", "原版房间内没有当前玩家");
-    return player;
-  }
-  private requireHost(session: CEEOriginalSession): void {
-    if (!this.me(session).isHost) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
   private requireWaiting(session: CEEOriginalSession): void {
     if (session.phase !== "waiting") throw new AppError("INVALID_PHASE", "请在等待阶段修改");
@@ -869,64 +837,24 @@ export class CEEOriginalService {
       privateState: originalPrivateState(session),
     };
   }
-  private publish(session: CEEOriginalSession, calibration = false): void {
-    if (!session.confirmed || !session.connectionId) return;
-    const connection = this.connections.get(session.connectionId);
-    if (!connection) return;
-    const send = calibration ? connection.sendStateSyncCalibration : connection.send;
-    send?.(
-      createEvent("cee.room.snapshot", originalSnapshot(session, this.chats.get(session.roomId)))
-    );
-    send?.(createEvent("cee.game.privateState", originalPrivateState(session)));
-  }
-
-  private revoke(session: CEEOriginalSession, reason: string, notify = true, kicked = false): void {
-    if (session.revoked) return;
-    this.cancelPreparation(session);
-    session.revoked = true;
-    session.confirmed = false;
-    if (session.connectionId) {
-      const connection = this.connections.get(session.connectionId);
-      if (notify)
-        connection?.send(
-          createEvent(kicked ? "cee.player.kicked" : "cee.room.closed", {
-            roomId: session.alias,
-            source: "original",
-            reason,
-          })
-        );
-      if (connection) {
-        connection.roomId = undefined;
-        connection.playerId = undefined;
-      }
-      this.byConnection.delete(session.connectionId);
-    }
-    this.sessions.delete(session.token);
-    session.socket.removeAllListeners();
-    session.socket.disconnect();
-    if (
-      ![...this.sessions.values()].some((peer) => peer.confirmed && peer.roomId === session.roomId)
-    )
-      this.chats.delete(session.roomId);
-  }
   runHousekeeping(): void {
     for (const session of this.sessions.values()) {
       if (session.detachedAt !== undefined && this.now() - session.detachedAt >= 60_000)
-        this.revoke(session, "重连等待已结束", false);
-      else this.publish(session, true);
+        revoke(this.ctx, session, "重连等待已结束", false);
+      else publish(this.ctx, session, true);
     }
   }
   close(): void {
-    for (const session of this.sessions.values()) this.revoke(session, "服务已关闭", false);
+    for (const session of this.sessions.values()) revoke(this.ctx, session, "服务已关闭", false);
     this.connections.clear();
   }
 
   private listen(session: CEEOriginalSession): void {
     const host: CEEOriginalEventHost = {
-      publish: (target, calibration) => this.publish(target, calibration),
-      revoke: (target, reason, notify, kicked) => this.revoke(target, reason, notify, kicked),
+      publish: (target, calibration) => publish(this.ctx, target, calibration),
+      revoke: (target, reason, notify, kicked) => revoke(this.ctx, target, reason, notify, kicked),
       ownsPreparation: (target, operation) => this.ownsPreparation(target, operation),
-      cancelPreparation: (target) => this.cancelPreparation(target),
+      cancelPreparation: (target) => cancelPreparation(target),
       gameStarted: (target, payload) => this.gameStarted(target, payload),
       updateHistory: (target, value) => this.updateHistory(target, value),
       settleChatRound: (target) => {
@@ -944,15 +872,17 @@ export class CEEOriginalService {
             value === undefined ? {} : originalObject(value),
             host
           );
-          this.publish(session);
+          publish(this.ctx, session);
         } catch (error) {
           // 只记原因类别，不记载荷与密钥：区分密钥配错、载荷形状变化与其他异常。
           this.options.logger?.warn("原版房间状态转换失败", { event, reason: reasonOf(error) });
-          this.revoke(session, "原版返回的房间状态无法解析，请重新加入");
+          revoke(this.ctx, session, "原版返回的房间状态无法解析，请重新加入");
         }
       });
     }
-    session.socket.on("disconnect", () => this.revoke(session, "原版连接已中断，请重新加入房间"));
+    session.socket.on("disconnect", () =>
+      revoke(this.ctx, session, "原版连接已中断，请重新加入房间")
+    );
   }
 
   private gameStarted(session: CEEOriginalSession, payload: Record<string, unknown>): void {
@@ -1006,7 +936,7 @@ export class CEEOriginalService {
     const isNew = session.roundKey !== key;
     session.settings = settings;
     session.answer = answer;
-    this.cancelPreparation(session);
+    cancelPreparation(session);
     delete session.choosingSetterFrom;
     session.phase = "guessing";
     session.setterId = null;
@@ -1027,7 +957,7 @@ export class CEEOriginalService {
     }
     session.hints = round.hints;
     void this.supplementAnswer(session)
-      .then(() => this.publish(session))
+      .then(() => publish(this.ctx, session))
       .catch(() => {
         if (this.isCurrentRound(session, key))
           this.options.logger?.warn("原版答案附加标签读取失败", { roomId: session.roomId });
@@ -1079,7 +1009,7 @@ export class CEEOriginalService {
               extraTags: feedback.extraTags,
               sharedAppearances: feedback.sharedAppearances,
             };
-            this.publish(session);
+            publish(this.ctx, session);
           })
           .catch(() => {
             if (this.isCurrentRound(session, key))
