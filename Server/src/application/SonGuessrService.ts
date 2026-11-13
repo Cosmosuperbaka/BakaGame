@@ -1,8 +1,4 @@
-import {
-  computeSongAnswererFactors,
-  computeSongDifficulty,
-  computeSongSubmitterScore,
-} from "../domain/SongRules";
+import { computeSongAnswererFactors } from "../domain/SongRules";
 import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
 import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
@@ -37,16 +33,12 @@ import {
   SONGUESSR_MAX_TEAM,
   SonGuessrClientMessage,
   SonGuessrRoomSummary,
-  SonGuessrRoundSummary,
-  SonGuessrScoreBreakdown,
   SongClipPreview,
   SongClipRange,
   SongDetails,
   SongGuessAttempt,
-  SongGuessFeedback,
   type BangumiSubjectDetails,
   type ConnectionRecord,
-  type SonGuessrRoundMark,
 } from "../shared/Index";
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
 import { describeError } from "../infrastructure/EventLogger";
@@ -82,6 +74,15 @@ import {
   submitterCandidates,
 } from "./songuessr/RoundParticipants";
 import { installRound } from "./songuessr/RoundInstall";
+import {
+  answerableUnits,
+  answerElapsedRatio,
+  appendRoundMarks,
+  buildFeedback,
+  isCorrectSong,
+  recordRound,
+  roundScoring,
+} from "./songuessr/RoundScoring";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { dispatchCommand } from "./room/CommandTable";
 import { requireMusicQuota } from "./songuessr/MusicCommands";
@@ -125,11 +126,9 @@ import {
   SonGuessrRoundRecord,
   SongUpdateSettingsPayload,
   cloneSettings,
-  direction,
   musicAuthOperationKey,
   roomRuntime,
 } from "./songuessr/Records";
-import { normalizeSongText, isSameAnswerSong } from "./songuessr/SongTitleMatching";
 
 /** 口令只去首尾空白；摘要绑定规范化后的值，建房、改设置与入房必须同一口径。 */
 const normalizeRoomPassword = (password: string): string => password.trim();
@@ -1371,33 +1370,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     state.inFlight = false;
   }
 
-  /**
-   * 可作答的作答单元：出题人（测试房里出题人自己也能猜）、出题人的观战队友与人机都不算。
-   * 计分的分母（正确率、血战排名、难度分）统一取自这里，不能再各自用 `activePlayers` 凑。
-   *
-   * 单元一经登记就留在分母里：已猜中的人随后离房或被清理，名次（分子）不会回退，
-   * 分母若按结算时的在房成员重算就会小于名次，血战速度系数变负。口径与 CEE 的
-   * 「血战分母冻结为开局实际猜题人数」一致；回合中途加入的玩家登记新单元时同样计入。
-   */
-  private answerableUnits(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord
-  ): SonGuessrRoundPlayerState[] {
-    const submitterState = round.players[round.submitterPlayerId];
-    const submitterAnswers = canTestSubmitterGuess(this.ctx, room, round.submitterPlayerId);
-    return [...new Set(Object.values(round.players))].filter(
-      (unit) => !unit.bot && (submitterAnswers || unit !== submitterState)
-    );
-  }
-
-  /** 用时占比：从「首名玩家能答题」起算，除以单次作答时限，夹到 0–1。 */
-  private answerElapsedRatio(round: SonGuessrRoundRecord, at: number): number {
-    const startedAt = round.answeringStartedAt ?? round.startedAt;
-    const limitMs = round.settings.guessDurationSeconds * 1_000;
-    if (limitMs <= 0) return 1;
-    return Math.min(1, Math.max(0, (at - startedAt) / limitMs));
-  }
-
   /** 猜中计分，猜错则续期下一次猜测的倒计时。 */
   private settleGuessResult(
     room: SonGuessrRoomRecord,
@@ -1417,54 +1389,14 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       bloodMode: round.settings.bloodMode,
       // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
       rank: round.correctPlayerIds.length + 1,
-      answerableCount: this.answerableUnits(room, round).length,
-      elapsedRatio: this.answerElapsedRatio(round, this.ctx.now()),
+      answerableCount: answerableUnits(this.ctx, room, round).length,
+      elapsedRatio: answerElapsedRatio(round, this.ctx.now()),
       guessesUsed: state.guessesUsed,
       maxGuessesPerRound: round.settings.maxGuessesPerRound,
     });
     player.score += factors.score;
     round.answererBreakdown.push({ playerId: player.id, ...factors });
     round.correctPlayerIds.push(player.id);
-  }
-
-  /**
-   * 本轮结算：出题人得分与计分拆解。
-   *
-   * 难度分要先知道整轮的猜中率、平均尝试与平均用时，所以只能在这里算，
-   * 不能像答题者那样随每次猜中即时入账。`answererBreakdown` 里已是逐人系数，
-   * 这里只补平均用时与难度分，不在两处各算一遍。
-   */
-  private roundScoring(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord
-  ): { submitterScore: number; breakdown?: SonGuessrScoreBreakdown } {
-    const units = this.answerableUnits(room, round);
-    const answerableCount = units.length;
-    const correctCount = round.correctPlayerIds.length;
-    const difficulty = computeSongDifficulty({
-      answerableCount,
-      correctCount,
-      totalAttempts: units.reduce((sum, unit) => sum + unit.guessesUsed, 0),
-      correctElapsedRatios: round.answererBreakdown.map((factor) => {
-        const attempt = round.attempts.find(
-          (item) => item.playerId === factor.playerId && item.result === "correct"
-        );
-        return this.answerElapsedRatio(round, attempt?.createdAt ?? this.ctx.now());
-      }),
-      maxGuessesPerRound: round.settings.maxGuessesPerRound,
-    });
-    const averageAnswererScore = correctCount
-      ? round.answererBreakdown.reduce((sum, factor) => sum + factor.score, 0) / correctCount
-      : 0;
-    return {
-      submitterScore: computeSongSubmitterScore({
-        answerableCount,
-        correctCount,
-        averageAnswererScore,
-        difficulty,
-      }),
-      breakdown: { difficulty, answerableCount, players: [...round.answererBreakdown] },
-    };
   }
 
   async guess(at: SongCommandAt, songId: string) {
@@ -1507,7 +1439,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
     // 异步返回后复验房间与回合状态
     this.requireGuessStillCurrent(room, round, player, state);
-    const correct = this.isCorrectSong(guessedSong, round);
+    const correct = isCorrectSong(guessedSong, round);
     const attempt: SongGuessAttempt = {
       id: this.ctx.ids.next("song_guess"),
       playerId: player.id,
@@ -1516,7 +1448,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       createdAt: this.ctx.now(),
       result: correct ? "correct" : "wrong",
       guessedSong: publicSong(guessedSong),
-      feedback: this.buildFeedback(guessedSong, round.song),
+      feedback: buildFeedback(guessedSong, round.song),
     };
     round.attempts.push(attempt);
 
@@ -1886,30 +1818,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   }
 
   /**
-   * 给每个「本应作答」的玩家写入本轮结局标记。
-   *
-   * 出题人、其队友（本局观战）与旁观者不作答，因此不产生标记。
-   * 结果取 `SonGuessrRoundMark` 枚举，不沿用猜猜呗的 emoji 标记串：那套是为兼容原版房
-   */
-  private appendRoundMarks(room: SonGuessrRoomRecord, round: SonGuessrRoundRecord): void {
-    const maxGuesses = round.settings.maxGuessesPerRound;
-    for (const player of Object.values(room.players)) {
-      if (player.membership !== "active") continue;
-      if (player.id === round.submitterPlayerId || round.observerIds.includes(player.id)) continue;
-      const state = round.players[player.id];
-      if (!state) continue;
-      const mark: SonGuessrRoundMark = state.correct
-        ? "correct"
-        : state.gaveUp
-          ? "gaveUp"
-          : state.guessesUsed >= maxGuesses
-            ? "outOfGuesses"
-            : "timeout";
-      player.roundMarks.push(mark);
-    }
-  }
-
-  /**
    * @param skipped 房主直接跳过本回合。跳过不是「无人猜中」，
    *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
    *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
@@ -1918,11 +1826,11 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     const round = room.currentRound;
     if (!round || room.phase !== "playing") return;
     const submitter = room.players[round.submitterPlayerId];
-    const scoring = this.roundScoring(room, round);
+    const scoring = roundScoring(this.ctx, room, round);
     if (submitter && !skipped) submitter.score += scoring.submitterScore;
 
     for (const state of Object.values(round.players)) state.deadlineAt = undefined;
-    this.appendRoundMarks(room, round);
+    appendRoundMarks(room, round);
     room.roundSummary = {
       roundNumber: round.number,
       song: {
@@ -1942,78 +1850,12 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       ...(scoring.breakdown ? { breakdown: scoring.breakdown } : {}),
     };
     room.phase = "roundResult";
-    this.recordRound(room, round, room.roundSummary, skipped);
+    recordRound(this.ctx, room, round, room.roundSummary, skipped);
     this.ctx.touch(room);
     this.ctx.log("song.game.round_finished", room.id, round.submitterPlayerId, {
       roundNumber: round.number,
       correctCount: round.correctPlayerIds.length,
     });
-  }
-
-  /** 结算快照转成对局记录：摘要放答案与出题人，时间线为逐次猜测。 */
-  private recordRound(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
-    summary: SonGuessrRoundSummary,
-    skipped: boolean
-  ) {
-    const nameOf = (playerId: string) => room.players[playerId]?.name ?? playerId;
-    (this.options.gameRecorder ?? NOOP_GAME_RECORDER).record({
-      game: "song",
-      roomId: room.id,
-      roomCreatedAt: room.createdAt,
-      roundNumber: round.number,
-      startedAt: round.startedAt,
-      endedAt: this.ctx.now(),
-      players: summary.scores.map((score) => ({
-        playerId: score.playerId,
-        userId: room.players[score.playerId]?.account?.userId ?? null,
-        name: score.playerName,
-        score: score.delta,
-      })),
-      summary: {
-        questionType: round.settings.questionType,
-        song: { id: round.song.id, title: round.song.title, artist: round.song.artist },
-        ...(round.anime
-          ? { anime: { id: round.anime.id, name: round.anime.name, nameCn: round.anime.nameCn } }
-          : {}),
-        submitter: nameOf(round.submitterPlayerId),
-        correct: round.correctPlayerIds.map(nameOf),
-        skipped,
-        solo: room.solo,
-      },
-      timeline: round.attempts.map((attempt) => ({
-        at: attempt.createdAt,
-        type: "guess",
-        name: attempt.playerName,
-        result: attempt.result,
-        ...(attempt.guessedSong
-          ? { song: `${attempt.guessedSong.title} - ${attempt.guessedSong.artist}` }
-          : {}),
-        ...(attempt.guessedAnime
-          ? { anime: attempt.guessedAnime.nameCn || attempt.guessedAnime.name }
-          : {}),
-      })),
-    });
-  }
-
-  private buildFeedback(guess: SongDetails, answer: SongDetails): SongGuessFeedback {
-    const answerTags = new Set(answer.encyclopedia.tags.map((tag) => tag.toLowerCase()));
-    return {
-      releaseYear: guess.releaseYear,
-      releaseYearDirection: direction(guess.releaseYear, answer.releaseYear),
-      popularity: guess.popularity,
-      popularityDirection: direction(guess.popularity, answer.popularity),
-      languageMatch:
-        guess.language && answer.language
-          ? normalizeSongText(guess.language) === normalizeSongText(answer.language)
-          : undefined,
-      sharedTags: guess.encyclopedia.tags.filter((tag) => answerTags.has(tag.toLowerCase())),
-    };
-  }
-
-  private isCorrectSong(guess: SongDetails, round: SonGuessrRoundRecord) {
-    return isSameAnswerSong(guess, round.song, round.alternateSongIds ?? []);
   }
 
   private applyQueuedMemberships(room: SonGuessrRoomRecord) {
