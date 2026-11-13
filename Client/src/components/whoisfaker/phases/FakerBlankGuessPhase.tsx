@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { useOriginTracker } from "@/hooks/UseOriginTracker";
-import { duration, readoutSwap } from "@/lib/Motion";
+import { fadeSwap, readoutSwap } from "@/lib/Motion";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { FakerPendingSpeech } from "../layout/FakerPendingSpeech";
@@ -266,9 +266,10 @@ export function GuessReadout({
             ) : (
               <motion.span
                 key="empty"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: duration.instant } }}
+                variants={fadeSwap}
+                initial="initial"
+                animate="animate"
+                exit="exit"
               >
                 {submitted ? (
                   <span className="text-sm font-normal text-muted-foreground">未填写</span>

@@ -14,7 +14,7 @@ import {
   usePageTransitionEnds,
   useSharedElementName,
 } from "@/hooks/UsePageTransition";
-import { duration, ease, listContainer, skeletonFade } from "@/lib/Motion";
+import { fadeSwap, listContainer, skeletonFade } from "@/lib/Motion";
 import { RoomListCard, type LobbyRoomView } from "./RoomListCard";
 import { RoomListEmpty } from "./RoomListEmpty";
 
@@ -92,9 +92,9 @@ export function LobbyPage({
   return (
     // 整页只做显影，不带纵向位移（DesignGuide §8）；列表项的入场由 listItem 负责。
     <motion.div
-      initial={arriving ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: duration.base, ease: ease.out }}
+      variants={fadeSwap}
+      initial={arriving ? false : "initial"}
+      animate="animate"
       className="scrollbar-hidden flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto"
     >
       <Seo path={path} />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { duration, listContainer, listItem, speechReveal } from "@/lib/Motion";
+import { fadeSwap, listContainer, listItem, speechReveal } from "@/lib/Motion";
 import { FastForward, MessageSquarePlus, MessageSquareText, Scale, Send } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -404,9 +404,10 @@ function SpeechTable({ rows }: { rows: SpeechRow[] }) {
                 ) : (
                   <motion.span
                     key={submitted ? "submitted" : "pending"}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0, transition: { duration: duration.instant } }}
+                    variants={fadeSwap}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
                     className="block"
                   >
                     {/* 已提交只是还没轮到公开，与「还在等这位玩家」是两种状态 */}

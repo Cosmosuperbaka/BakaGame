@@ -16,7 +16,7 @@ import type { SongClipPreview, SongClipRange } from "@bakagame/shared";
 import { isLyricLineInClip, SONG_CLIP_MIN_MS } from "@bakagame/shared/values";
 import { Button } from "@/components/ui/Button";
 import { useClipPreviewAudio } from "@/hooks/UseClipPreviewAudio";
-import { readoutSwap, spring } from "@/lib/Motion";
+import { iconToggle, readoutSwap } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import {
   chorusRange,
@@ -246,10 +246,10 @@ export function SongClipEditor({ song, volume, onConfirm, onCancel }: SongClipEd
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
                 key={playing ? "pause" : "play"}
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6 }}
-                transition={spring.snap}
+                variants={iconToggle}
+                initial="initial"
+                animate="animate"
+                exit="exit"
                 className="flex items-center justify-center"
               >
                 {playing ? (

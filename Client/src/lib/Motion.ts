@@ -533,6 +533,40 @@ export const statusGlyphSwap: Variants = {
 };
 
 /**
+ * 纯显影：整页、等待提示、占位文字这类「换了一块内容」的出现，不带位移（DesignGuide §8 不拿位移做批量进场）。
+ * 进场用 base 让人看得到「换了」，退场 instant 让位给接替它的内容。
+ */
+export const fadeSwap: Variants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: duration.base, ease: ease.out } },
+  exit: { opacity: 0, transition: { duration: duration.instant } },
+};
+
+/** 跟手的悬停标记显隐：指针扫过时要跟得上，进退都用 instant，不拖尾。 */
+export const hoverMarkFade: Variants = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: duration.instant } },
+  exit: { opacity: 0, transition: { duration: duration.instant } },
+};
+
+/** 直接撤走、不播退场：占位符被第一次读到的真实值替换时，两者不叠在一起闪一下。 */
+export const vanish: TargetAndTransition = { opacity: 0, transition: { duration: duration.none } };
+
+/** 按钮里两枚图标对换（播放与暂停）：在同一位置缩小淡出、放大淡入，按压级的 snap 跟得上连点。 */
+export const iconToggle: Variants = {
+  initial: { opacity: 0, scale: 0.6 },
+  animate: { opacity: 1, scale: 1, transition: spring.snap },
+  exit: { opacity: 0, scale: 0.6, transition: spring.snap },
+};
+
+/** 比分板的局分圆点换成结果时以 impulse 回弹落定，读作「这一局记上了」。 */
+export const pipSettle = {
+  initial: { scale: 0.6 },
+  animate: { scale: 1 },
+  transition: spring.impulse,
+} as const;
+
+/**
  * Agent 操作页面的节拍。`moveMs` 是焦点框从上一个控件落到新控件的时间，与 `.agent-focus-box`
  * 的过渡是同一枚弹簧：框到位才动手，人类才来得及看清它要做什么。
  * 其余是等页面响应的上限，不是动效，放在一起便于统一调整。

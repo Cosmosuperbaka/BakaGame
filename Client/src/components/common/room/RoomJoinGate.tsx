@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { Spinner } from "@/components/ui/Spinner";
-import { duration, ease } from "@/lib/Motion";
+import { fadeSwap } from "@/lib/Motion";
 
 /** 进房弹窗里一次加入失败的文案；`invalid` 只在确属密码错误时标红输入框。 */
 export interface RoomPasswordError {
@@ -103,9 +103,9 @@ export function RoomJoinGate({
       {!needsName && !needsPassword ? (
         <motion.div
           role="status"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: duration.base, ease: ease.out }}
+          variants={fadeSwap}
+          initial="initial"
+          animate="animate"
           className="flex flex-col items-center gap-3"
         >
           <Spinner className="size-8 text-primary" />

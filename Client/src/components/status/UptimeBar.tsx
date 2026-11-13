@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AnimatePresence, motion, useSpring } from "framer-motion";
 import { TriangleAlert, Wrench } from "lucide-react";
-import { duration, popover, uptimeGlide, uptimeReveal } from "@/lib/Motion";
+import { hoverMarkFade, popover, uptimeGlide, uptimeReveal } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { LEVEL_TEXT, cellTone, formatLatency, formatRatio, type BarCell } from "./StatusFormat";
 
@@ -192,10 +192,10 @@ export function UptimeBar({
               key="mark"
               aria-hidden="true"
               style={{ x: markX, width: hover.width }}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: duration.instant }}
+              variants={hoverMarkFade}
+              initial="initial"
+              animate="animate"
+              exit="exit"
               className="pointer-events-none absolute -inset-y-1 left-0 rounded-xs ring-1 ring-foreground/60"
             />
           ) : null}

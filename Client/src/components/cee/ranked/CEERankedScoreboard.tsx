@@ -4,7 +4,7 @@ import type { CEERankedSeatView, CEERankedSeriesView } from "@bakagame/shared";
 import { CEE_RANKED_SERIES_GAMES } from "@bakagame/shared/values";
 import { Badge } from "@/components/ui/Badge";
 import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
-import { readoutTick, spring } from "@/lib/Motion";
+import { pipSettle, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { formatRankedClock, formatRankedPoints } from "./CEERankedFormat";
 import { RankedAttemptMeter } from "./CEERankedMarks";
@@ -94,9 +94,9 @@ function GamePips({ series }: { series: CEERankedSeriesView }) {
           <li key={index} aria-label={label}>
             <motion.span
               key={game ? `done-${game.winner ?? "draw"}` : live ? "live" : "idle"}
-              initial={game ? { scale: 0.6 } : false}
-              animate={{ scale: 1 }}
-              transition={spring.impulse}
+              initial={game ? pipSettle.initial : false}
+              animate={pipSettle.animate}
+              transition={pipSettle.transition}
               className={cn(
                 "block size-2.5 rounded-full border",
                 game?.winner === "self" && "border-primary bg-primary",

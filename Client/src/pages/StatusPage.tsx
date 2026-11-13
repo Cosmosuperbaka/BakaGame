@@ -36,7 +36,7 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Hint } from "@/components/ui/Tooltip";
 import { usePageNavigate } from "@/hooks/UsePageTransition";
 import { useStatusLive } from "@/hooks/UseStatusLive";
-import { duration, readoutSwap, statusGlyphSwap, uptimeReveal } from "@/lib/Motion";
+import { readoutSwap, statusGlyphSwap, uptimeReveal, vanish } from "@/lib/Motion";
 import {
   fetchStatusEvents,
   fetchStatusHistory,
@@ -105,7 +105,7 @@ const readoutVariants: Variants = {
   ...readoutSwap,
   exit: (value: string): TargetAndTransition =>
     value === PLACEHOLDER
-      ? { opacity: 0, transition: { duration: duration.none } }
+      ? vanish
       : (readoutSwap.exit as TargetAndTransition),
 };
 
