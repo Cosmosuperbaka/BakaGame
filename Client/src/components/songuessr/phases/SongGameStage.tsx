@@ -1,4 +1,3 @@
-import { lazy, Suspense, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AudioLines,
@@ -6,13 +5,10 @@ import {
   CircleAlert,
   CircleSlash,
   Eye,
-  Film,
   Flag,
   Headphones,
-  Music2,
   Play,
   RotateCcw,
-  UserCheck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -23,31 +19,23 @@ import { PhaseStage } from "@/components/common/room/PhaseStage";
 import { SongWaitingPhase } from "@/components/songuessr/phases/SongWaitingPhase";
 import { SongRoundResultPhase } from "@/components/songuessr/phases/SongRoundResultPhase";
 import { SongTestController } from "@/components/songuessr/layout/SongTestController";
-import { AnimeSearch, SongSearch } from "@/components/songuessr/SongSearch";
 import { SongLyricPlayer } from "@/components/songuessr/lyrics/SongLyricPlayer";
 import {
   AnimeAutoFilterSummary,
   SongAutoFilterSummary,
 } from "@/components/songuessr/settings/SongSettingsPanels";
-import { CandidateGrid, SectionHeader } from "@/components/common/CandidateGrid";
-import { listItem, phaseSwap, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
-import { withTeamName } from "@/lib/Teams";
+import { listItem, readoutSwap, receiptCard, receiptMarkFollow } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { useSonGuessrStore } from "@/stores/UseSonGuessrStore";
 import { AttemptList } from "@/components/songuessr/SongAttemptList";
 import type { SongGameAreaProps } from "./SongGameAreaProps";
 import { GuessBar } from "./SongGuessBar";
+import { ChoosingSubmitterPhase } from "./SongChoosingSubmitterPhase";
+import { SubmittingSongPhase } from "./SongSubmittingPhase";
 import type {
-  SongClipPreview,
-  SongSearchResult,
   SonGuessrPlayerView,
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
 } from "@bakagame/shared";
-
-const SongClipEditor = lazy(async () => ({
-  default: (await import("@/components/songuessr/SongClipEditor")).SongClipEditor,
-}));
 
 /** 当前回合快照：`GameStage` 只在 `playing` 且回合存在时才进入作答阶段组件。 */
 type Round = NonNullable<SonGuessrRoomSnapshot["currentRound"]>;
@@ -442,202 +430,6 @@ function SongPlayingPhase(props: PlayingPhaseProps) {
         title={attemptListTitle(canObserveAllAttempts, teamAttempts)}
         showPlayerName={canObserveAllAttempts || teamAttempts}
       />
-    </div>
-  );
-}
-
-/**
- * 房主指定出题人：候选取服务端下发的 `submitterCandidateIds`（在线真人，且他出题、队友一起观战后仍留得下猜歌的人）。
- * 组队时候选名后带上队伍，并提示指定后其队友本局一起观战。
- */
-function ChoosingSubmitterPhase({
-  snapshot,
-  privateState,
-  isHost,
-  run,
-  isPending,
-}: Pick<SongGameAreaProps, "snapshot" | "privateState" | "isHost" | "run" | "isPending">) {
-  const allowed = new Set(privateState.submitterCandidateIds);
-  const candidates = snapshot.players.filter((player) => allowed.has(player.id));
-  const activeCandidates = candidates
-    .filter((player) => player.membership === "active")
-    .map(withTeamName);
-  const spectatorCandidates = candidates.filter((player) => player.membership === "spectator");
-  const teamed = snapshot.players.some(
-    (player) => player.membership === "active" && player.team !== null
-  );
-  const choosing = isPending?.("song.game.chooseSubmitter") ?? false;
-  const pick = (playerId: string) => void run("song.game.chooseSubmitter", { playerId });
-  return (
-    <div className="flex flex-col items-center gap-6">
-      <PhaseHeader icon={UserCheck} title="指定出题人" />
-      {snapshot.submitterPrompt ? (
-        <p className="max-w-xl text-center text-sm text-muted-foreground">
-          {snapshot.submitterPrompt}
-        </p>
-      ) : null}
-      {isHost ? (
-        <div className="w-full max-w-xl space-y-5">
-          {spectatorCandidates.length > 0 ? (
-            <section>
-              <SectionHeader title="旁观玩家" icon={<Eye className="h-3.5 w-3.5" />} />
-              <CandidateGrid
-                candidates={spectatorCandidates}
-                tone="recommended"
-                nameWrap="wrap"
-                disabled={choosing}
-                onPick={pick}
-                agentControlPrefix="song.submitter"
-              />
-            </section>
-          ) : null}
-          {activeCandidates.length > 0 ? (
-            <section>
-              <SectionHeader title="玩家" icon={<UserCheck className="h-3.5 w-3.5" />} />
-              <CandidateGrid
-                candidates={activeCandidates}
-                tone="default"
-                nameWrap="wrap"
-                disabled={choosing}
-                onPick={pick}
-                agentControlPrefix="song.submitter"
-              />
-            </section>
-          ) : null}
-          {candidates.length === 0 ? (
-            <p className="text-center text-sm text-muted-foreground">暂无可选出题人</p>
-          ) : teamed ? (
-            <p className="text-center text-xs text-muted-foreground">指定后其队友本局一起观战</p>
-          ) : null}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">等待房主指定本局出题人</p>
-      )}
-    </div>
-  );
-}
-
-const submitPrompt = (anime: boolean, customClip: boolean) => {
-  if (anime) return "搜索一部有主题曲的番剧，再挑一首关联曲作为题目。";
-  return customClip
-    ? "搜索一首可播放的歌曲，选中后可试听并截取片段。"
-    : "搜索一首可播放的歌曲，选中即出题，片段由系统随机截取。";
-};
-
-/**
- * 手动出题：先搜歌，选中后进入片段配置，再由出题人确认区间。
- *
- * 猜番仍是一步提交：番剧与关联曲由服务端匹配，没有「选歌词片段」这一层。
- */
-function SubmittingSongPhase({
-  snapshot,
-  privateState,
-  volume,
-  onSelectSearchSong,
-}: SongGameAreaProps) {
-  const anime = snapshot.settings.questionType === "anime";
-  const sendCommand = useSonGuessrStore((state) => state.sendCommand);
-  const [preview, setPreview] = useState<SongClipPreview | null>(null);
-  const submitter = snapshot.players.find(
-    (player) => player.id === snapshot.pendingSubmitterPlayerId
-  );
-
-  const customClip = snapshot.settings.allowCustomClip !== false;
-
-  const pickSong = async (song: SongSearchResult) => {
-    if (!customClip) {
-      await onSelectSearchSong(song.id, "submit", undefined, undefined, {
-        sources: song.sources,
-        requiresVip: song.requiresVip,
-      });
-      return;
-    }
-    const payload: { songId: string; sources?: string[]; requiresVip?: boolean } = {
-      songId: song.id,
-    };
-    if (song.sources?.length) payload.sources = song.sources;
-    if (song.requiresVip !== undefined) payload.requiresVip = song.requiresVip;
-    const { song: detail } = await sendCommand(
-      "song.music.detail",
-      payload,
-      // 与提交出题同口径：回源取音频与歌词的耗时由上游决定，不拿默认超时误报失败。
-      { timeout: 0 }
-    );
-    setPreview(detail);
-  };
-
-  return (
-    <div className="mx-auto flex w-full flex-col items-center gap-6 text-center">
-      <PhaseHeader
-        icon={anime ? Film : Music2}
-        title={
-          privateState.canSubmitSong ? "轮到你出题" : anime ? "等待出题人选番" : "等待出题人选歌"
-        }
-      />
-      {privateState.canSubmitSong ? (
-        // 搜歌表单与片段配置共用这一格：换内容时按阶段切换的前后推入语汇互为进退，
-        // 宽度档也随内容走，退出的那幅不会被挤压变形。
-        <AnimatePresence initial={false} mode="wait">
-          <motion.div
-            key={preview ? "clip" : "search"}
-            variants={phaseSwap}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            // gap-4：说明文字与搜索框之间留出与页面其它「说明 + 控件」相同的呼吸，原先末行贴着框沿
-            className={cn(
-              "flex w-full flex-col items-center gap-4",
-              preview ? "max-w-2xl" : "max-w-md"
-            )}
-          >
-            {preview ? (
-              <Suspense
-                fallback={
-                  <div
-                    role="status"
-                    aria-label="正在加载片段编辑器"
-                    className="flex min-h-40 items-center justify-center"
-                  >
-                    <Spinner className="size-6 text-primary" />
-                  </div>
-                }
-              >
-                <SongClipEditor
-                  song={preview}
-                  volume={volume}
-                  onConfirm={(clip) =>
-                    onSelectSearchSong(preview.id, "submit", undefined, clip, {
-                      sources: preview.sources,
-                      requiresVip: preview.requiresVip,
-                    })
-                  }
-                  onCancel={() => setPreview(null)}
-                />
-              </Suspense>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  {submitPrompt(anime, customClip)}
-                  歌曲信息只会在回合结束后公开。
-                </p>
-                {anime ? (
-                  <AnimeSearch
-                    mode="submit"
-                    className="w-full"
-                    onSelect={(subject, songId) => onSelectSearchSong(subject.id, "submit", songId)}
-                  />
-                ) : (
-                  <SongSearch mode="submit" className="w-full" onSelect={pickSong} />
-                )}
-              </>
-            )}
-          </motion.div>
-        </AnimatePresence>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          {submitter?.name ?? "出题人"} 正在选择{anime ? "番剧" : "歌曲"}
-        </p>
-      )}
     </div>
   );
 }
