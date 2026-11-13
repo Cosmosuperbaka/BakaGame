@@ -694,7 +694,7 @@ function RoomAccountSettings({
           </div>
           <SettingSwitchRow
             label="保存登录状态"
-            description="仅保存在当前浏览器，服务器不持久化账号信息"
+            description="仅保存在当前浏览器；登录本站并开启云同步时，会加密存入你的云端设置，换设备自动登录。关闭则只在本标签页有效，不会上传"
             checked={activePlatform === "qq" ? rememberQq : rememberNetease}
             onCheckedChange={(value) => {
               if (activePlatform === "qq") {
@@ -712,7 +712,7 @@ function RoomAccountSettings({
       <p className="mt-4 flex gap-2 border-t pt-4 text-2xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
         <span>
-          服务器不会保存账号信息。账号信息仅保存在登录者浏览器，在房间中临时加载到服务器内存，按你的共享开关供本房取歌；关掉开关、离开房间或房间关闭即销毁。
+          房间不会保存账号信息。账号信息保存在登录者浏览器，在房间中临时加载到服务器内存，按你的共享开关供本房取歌；关掉开关、离开房间或房间关闭即销毁。只有登录本站、开启云同步并保存登录状态时，才会加密存入你的云端设置。
         </span>
       </p>
     </SettingsAccordion>

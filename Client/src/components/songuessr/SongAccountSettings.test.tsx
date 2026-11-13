@@ -227,6 +227,16 @@ describe("SongAccountSettings", () => {
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", "true");
   });
 
+  it("说明如实：不声称服务器完全不保存，写明云同步与保存登录状态的关系", () => {
+    render(<SongAccountSettings snapshot={snapshot(false)} />);
+    fireEvent.click(screen.getByRole("button", { name: /音乐账号配置/ }));
+
+    expect(screen.queryByText(/服务器不持久化账号信息/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/服务器不会保存账号信息/)).not.toBeInTheDocument();
+    expect(panel().getByText(/开启云同步时，会加密存入你的云端设置/)).toBeInTheDocument();
+    expect(panel().getByText(/只有登录本站、开启云同步并保存登录状态时/)).toBeInTheDocument();
+  });
+
   it.each(["success", "failure"])(
     "关闭重开后忽略旧二维码创建的迟到%s，不清除新请求加载态",
     async (outcome) => {
