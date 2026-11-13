@@ -4,8 +4,14 @@
 
 import { Type as t, type Static, type TSchema } from "@sinclair/typebox";
 
+import { GAME_IDS } from "./Protocol";
+import { schemaUnion } from "./SchemaUnion";
+
 // 纯值住在 ModelValues.ts：客户端经 `@bakagame/shared/values` 取值时不带上 TypeBox。
 export * from "./ModelValues";
+
+/** 游戏标识的运行时校验：取值只来自 `GAME_IDS`，新增一款不需要再改信封。 */
+export const GameIdSchema = schemaUnion(GAME_IDS.map((game) => t.Literal(game)));
 
 /**
  * 房间可见性：三款游戏同一个契约，类型与运行时校验只在这里写一次。
@@ -110,7 +116,7 @@ export const createClientEnvelopeSchema = <TType extends string, TPayload extend
       type: t.Literal(type),
       traceId: t.Optional(t.String({ maxLength: 128 })),
       // 统一入口的显式归属；缺省时按命令前缀推断，旧路径与旧客户端不需要它。
-      game: t.Optional(t.Union([t.Literal("faker"), t.Literal("song"), t.Literal("cee")])),
+      game: t.Optional(GameIdSchema),
       roomId: t.Optional(t.String({ maxLength: 32 })),
       sessionToken: t.Optional(t.String({ maxLength: 128 })),
       payload,
