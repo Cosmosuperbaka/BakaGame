@@ -736,7 +736,7 @@ test("Songuessr direct room URL creates the room and leaving returns cleanly", a
     .poll(() => qrImage.evaluate((image: HTMLImageElement) => image.naturalWidth))
     .toBeGreaterThan(0);
   expect(qrCreates).toBe(1);
-  await expect(page.getByText(/服务器不会保存账号信息/)).toBeVisible();
+  await expect(page.getByText(/房间不会保存账号信息/)).toBeVisible();
 
   await page.getByRole("button", { name: "离开房间" }).click();
   await expect(page).toHaveURL(/\/songuessr$/);
@@ -926,9 +926,10 @@ test("大厅卡片在亮暗移动桌面均不透光、人数用等宽数字且�
       )
     )
     .toBe(true);
-  await page.addStyleTag({
-    content:
-      '[role="button"] { background-color: white !important; min-width: 2000px !important; }',
+  // 直接改这张卡片自己的样式：不依赖它是哪种元素、带不带角色属性。
+  await card.evaluate((element: HTMLElement) => {
+    element.style.setProperty("background-color", "white", "important");
+    element.style.setProperty("min-width", "2000px", "important");
   });
   await expect
     .poll(() =>
