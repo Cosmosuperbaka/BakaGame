@@ -135,29 +135,26 @@ describe("CEE 反作弊房旁观审批", () => {
     expect(h.snapshot(host).spectateRequests).toHaveLength(1);
     expect(h.privateState(viewer).spectatePending).toBe(true);
   });
-  test("开局后批准：缺省不给答案，揭晓后才公开；房主打开旁观可见答案则局中就有出题人视角", async () => {
-    const closed = await antiCheatRoom();
-    const mate = await closed.h.join("玩家二", trusted("u-two"));
-    const viewer = await closed.h.join("观众三", trusted("u-view"));
-    await closed.h.send(viewer, "cee.player.spectate", { spectator: true });
-    await closed.h.ready(mate);
-    await closed.h.send(closed.host, "cee.game.start", {});
-    await closed.h.send(closed.host, "cee.player.approveSpectate", {
-      playerId: viewer.id as string,
-      approved: true,
-    });
-    // 批准是房主的信任，但答案可见性由房间开关单独决定，缺省关闭。
-    expect(closed.h.privateState(viewer).spectatePending).toBe(false);
-    expect(closed.h.privateState(viewer).answer).toBeNull();
-    expect(closed.h.privateState(viewer).guesses).toEqual([]);
-    await closed.h.guess(closed.host, 1);
-    expect(closed.h.privateState(viewer).answer?.id).toBe(1);
+  test("中途加入者不经批准：即使房间开着旁观可见答案，局中也拿不到答案，揭晓后才公开", async () => {
+    const { h, host } = await antiCheatRoom();
+    const mate = await h.join("玩家二", trusted("u-two"));
+    // 反作弊房里这道门是旁观审批，房间开关不参与：开着也不放行没被批准的人。
+    await h.configure(host, { spectatorsSeeAnswers: true });
+    await h.ready(mate);
+    await h.send(host, "cee.game.start", {});
+    const late = await h.join("迟到四", trusted("u-late"));
+    expect(h.privateState(late).spectatePending).toBe(false);
+    expect(h.privateState(late).answer).toBeNull();
+    expect(h.privateState(late).guesses).toEqual([]);
+    await h.guess(host, 1);
+    expect(h.snapshot(host).phase).toBe("settled");
+    expect(h.privateState(late).answer?.id).toBe(1);
   });
-  test("开局后批准，开着旁观可见答案时旁观者拿到出题人视角", async () => {
+  test("开局后批准，旁观者拿到出题人视角：批准就是这道门，不看房间的旁观可见答案开关", async () => {
     const { h, host } = await antiCheatRoom();
     const mate = await h.join("玩家二", trusted("u-two"));
     const viewer = await h.join("观众三", trusted("u-view"));
-    await h.configure(host, { spectatorsSeeAnswers: true });
+    expect(h.snapshot(host).settings.spectatorsSeeAnswers ?? false).toBe(false);
     await h.send(viewer, "cee.player.spectate", { spectator: true });
     await h.ready(mate);
     await h.send(host, "cee.game.start", {});

@@ -155,13 +155,18 @@ export function ceePrivateState(
   // （旁观者、中途加入者、开局时不在线者）是旁观位：局中是否可见由房间开关决定，揭晓后恒可见。
   const bystander =
     Boolean(round) && !ceeSetsRound(room, player) && !round!.participants.includes(player.id);
+  // 反作弊房里旁观要房主逐个批准，批准就是这道门：批准过的旁观者局中可见，
+  // 其余旁观位（中途加入者、开局时不在线者）要等揭晓，房间开关不参与。
+  const spectatorsSeeAnswers = isCEEAntiCheatRoom(room.settings)
+    ? player.membership === "spectator"
+    : (room.settings.spectatorsSeeAnswers ?? false);
   const seesSecrets =
     observing &&
     (!bystander ||
       canSeeRoundSecrets(
         { setsRound: false, spectator: true },
         room.phase === "guessing",
-        room.settings.spectatorsSeeAnswers ?? false
+        spectatorsSeeAnswers
       ));
   const remaining = ceeRemainingAttempts(round, unit);
   const inGame = room.phase === "guessing" && Boolean(unit) && player.status === "playing";
