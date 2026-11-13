@@ -104,11 +104,11 @@ describe("SonGuessrPage 房间列表渲染与卡片隔离", () => {
     expect(screen.getByText("等待中")).toBeInTheDocument();
     expect(screen.getByText("禁止旁观")).toBeInTheDocument();
 
-    const roomOne = screen.getByText("绫地喰喰的房间").closest('[role="button"]');
+    const roomOne = screen.getByText("绫地喰喰的房间").closest("button");
     expect(roomOne).toHaveTextContent("2 人");
     expect(roomOne).toHaveTextContent("3 旁观");
 
-    const roomTwo = screen.getByText("日常听歌房").closest('[role="button"]');
+    const roomTwo = screen.getByText("日常听歌房").closest("button");
     expect(roomTwo).toHaveTextContent("5 人");
     expect(roomTwo).toHaveTextContent("0 旁观");
 

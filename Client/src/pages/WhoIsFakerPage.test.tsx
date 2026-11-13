@@ -121,11 +121,11 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
     expect(screen.getByText("游戏中")).toBeInTheDocument();
     expect(screen.getByText("禁止旁观")).toBeInTheDocument();
 
-    const roomOne = screen.getByText("测试房间一").closest('[role="button"]');
+    const roomOne = screen.getByText("测试房间一").closest("button");
     expect(roomOne).toHaveTextContent("4 人");
     expect(roomOne).toHaveTextContent("1 旁观");
 
-    const roomTwo = screen.getByText("测试房间二").closest('[role="button"]');
+    const roomTwo = screen.getByText("测试房间二").closest("button");
     expect(roomTwo).toHaveTextContent("6 人");
     expect(roomTwo).toHaveTextContent("0 旁观");
 
@@ -136,7 +136,7 @@ describe("WhoIsFakerPage 房间列表渲染与卡片隔离", () => {
 
     // 验证外层卡片容器应用了 rounded-md 与 bg-card 实底类，杜绝透光穿透
     const roomOneName = screen.getByText("测试房间一");
-    const cardElement = roomOneName.closest('[role="button"]');
+    const cardElement = roomOneName.closest("button");
     expect(cardElement).toBeInTheDocument();
     const motionWrapper = cardElement?.parentElement;
     expect(motionWrapper).toHaveClass("bg-card");

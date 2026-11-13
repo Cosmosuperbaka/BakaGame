@@ -106,92 +106,91 @@ export function RoomListCard({
       // framer-motion 会因为 whileTap 自动补上 tabIndex=0，把这里变成多出来的焦点停靠点。
       tabIndex={-1}
     >
-      <Card
-        role="button"
-        data-agent-control={`lobby.room.${room.roomId}`}
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled || undefined}
-        aria-busy={pending || undefined}
-        className={cn(
-          "cursor-pointer transition-colors hover:border-primary/40 hover:bg-accent/40",
-          disabled && "pointer-events-none",
-          dimmed && "opacity-60"
-        )}
-        onClick={onSelect}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onSelect(event as unknown as React.MouseEvent<HTMLElement>);
-          }
-        }}
-      >
-        <RoomCardLayout
-          name={
-            <>
-              <span className="truncate" style={{ viewTransitionName: titleName }}>
-                {room.name}
-              </span>
-              {room.hasPassword ? (
-                <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : null}
-              {room.tag ? (
-                <Badge variant="subtle" size="xs" className="shrink-0">
-                  {room.tag}
-                </Badge>
-              ) : null}
-              {room.requiresClient ? (
-                <Badge variant="subtle" size="xs" className="shrink-0">
-                  需客户端
-                </Badge>
-              ) : null}
-              {room.mcpAvailable ? (
-                <Badge variant="subtle" size="xs" className="shrink-0" aria-label="支持 MCP 接入">
-                  <Bot className="h-3 w-3" />
-                  MCP
-                </Badge>
-              ) : null}
-              {/* 进房在途：转圈接在房名行末，房名本就留有截断余地，不推动整张卡片或整列。 */}
-              {pending ? (
-                <span role="status" className="flex shrink-0 items-center text-muted-foreground">
-                  <Spinner className="size-4" />
-                  <span className="sr-only">正在进入房间</span>
+      {/* 整张卡是一个真正的按钮：Enter、空格由浏览器当点击处理，不再手写键盘分支与伪造事件 */}
+      <Card asChild>
+        <button
+          type="button"
+          data-agent-control={`lobby.room.${room.roomId}`}
+          tabIndex={disabled ? -1 : 0}
+          aria-disabled={disabled || undefined}
+          aria-busy={pending || undefined}
+          className={cn(
+            "block w-full cursor-pointer text-left transition-colors hover:border-primary/40 hover:bg-accent/40",
+            disabled && "pointer-events-none",
+            dimmed && "opacity-60"
+          )}
+          onClick={(event) => {
+            if (!disabled) onSelect(event);
+          }}
+        >
+          <RoomCardLayout
+            name={
+              <>
+                <span className="truncate" style={{ viewTransitionName: titleName }}>
+                  {room.name}
                 </span>
-              ) : null}
-            </>
-          }
-          id={
-            <>
-              房间号 <span className="font-mono">{room.roomId}</span>
-            </>
-          }
-          badges={
-            <>
-              <Badge variant={room.inGame ? "active" : "subtle"}>
-                {room.inGame ? "游戏中" : "等待中"}
-              </Badge>
-              {room.allowSpectators ? (
-                <Badge variant="subtle">
-                  <Eye className="h-3.5 w-3.5" />
-                  可旁观
+                {room.hasPassword ? (
+                  <Lock aria-label="需要密码" className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : null}
+                {room.tag ? (
+                  <Badge variant="subtle" size="xs" className="shrink-0">
+                    {room.tag}
+                  </Badge>
+                ) : null}
+                {room.requiresClient ? (
+                  <Badge variant="subtle" size="xs" className="shrink-0">
+                    需客户端
+                  </Badge>
+                ) : null}
+                {room.mcpAvailable ? (
+                  <Badge variant="subtle" size="xs" className="shrink-0" aria-label="支持 MCP 接入">
+                    <Bot className="h-3 w-3" />
+                    MCP
+                  </Badge>
+                ) : null}
+                {/* 进房在途：转圈接在房名行末，房名本就留有截断余地，不推动整张卡片或整列。 */}
+                {pending ? (
+                  <span role="status" className="flex shrink-0 items-center text-muted-foreground">
+                    <Spinner className="size-4" />
+                    <span className="sr-only">正在进入房间</span>
+                  </span>
+                ) : null}
+              </>
+            }
+            id={
+              <>
+                房间号 <span className="font-mono">{room.roomId}</span>
+              </>
+            }
+            badges={
+              <>
+                <Badge variant={room.inGame ? "active" : "subtle"}>
+                  {room.inGame ? "游戏中" : "等待中"}
                 </Badge>
-              ) : (
-                <Badge variant="unavailable">
-                  <EyeOff className="h-3.5 w-3.5" />
-                  禁止旁观
-                </Badge>
-              )}
-            </>
-          }
-          counts={
-            <>
-              <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="tabular-nums">
-                {room.playerCount} 人
-                {room.spectatorCount !== null ? <> · {room.spectatorCount} 旁观</> : null}
-              </span>
-            </>
-          }
-        />
+                {room.allowSpectators ? (
+                  <Badge variant="subtle">
+                    <Eye className="h-3.5 w-3.5" />
+                    可旁观
+                  </Badge>
+                ) : (
+                  <Badge variant="unavailable">
+                    <EyeOff className="h-3.5 w-3.5" />
+                    禁止旁观
+                  </Badge>
+                )}
+              </>
+            }
+            counts={
+              <>
+                <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="tabular-nums">
+                  {room.playerCount} 人
+                  {room.spectatorCount !== null ? <> · {room.spectatorCount} 旁观</> : null}
+                </span>
+              </>
+            }
+          />
+        </button>
       </Card>
     </motion.div>
   );
