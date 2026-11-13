@@ -21,7 +21,8 @@ import { sendChat } from "./Chat";
 import { addBots, removeBots } from "./dev/TestBots";
 import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
-import { isRoomStarting, isTestRoom } from "./RoomAccess";
+import { isTestRoom } from "./RoomAccess";
+import { chooseSubmitter, finishGame, isRoomStarting, nextRound, startGame } from "./RoundFlow";
 import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from "./RoundEngine";
 
 /**
@@ -41,13 +42,9 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "startGame"
-  | "chooseSubmitter"
   | "getSongClipPreview"
   | "submitSong"
   | "submitAnime"
-  | "nextRound"
-  | "finishGame"
 >;
 
 export interface SonGuessrCommandDeps {
@@ -288,12 +285,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
     access: "host",
     phases: phaseRule(["waiting"], "当前不能开始新游戏"),
     guards: [notStarting("当前不能开始新游戏")],
-    run: (deps, at) => deps.handlers.startGame(at),
+    run: (deps, at) => startGame(deps.ctx, at),
   },
   "song.game.chooseSubmitter": {
     access: "host",
     phases: phaseRule(["choosingSubmitter"], "当前不能选择出题人"),
-    run: (deps, at, m) => deps.handlers.chooseSubmitter(at, m.payload.playerId),
+    run: (deps, at, m) => chooseSubmitter(deps.ctx, at, m.payload.playerId),
   },
   "song.game.submitSong": {
     access: "seat",
@@ -347,12 +344,12 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.game.nextRound": {
     access: "host",
     phases: phaseRule(["roundResult"], "当前不在回合结算阶段"),
-    run: (deps, at) => deps.handlers.nextRound(at),
+    run: (deps, at) => nextRound(deps.ctx, at),
   },
   "song.game.finish": {
     access: "host",
     phases: phaseRule(["roundResult"], "只能在回合结算后返回等待阶段"),
-    run: (deps, at) => deps.handlers.finishGame(at),
+    run: (deps, at) => finishGame(deps.ctx, at),
   },
   "song.test.addBot": {
     access: "host",

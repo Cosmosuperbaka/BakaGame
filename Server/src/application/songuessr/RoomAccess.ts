@@ -10,10 +10,6 @@ import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 /** 命令表交给处理函数的席位上下文：连接、房间与已确认的席位。 */
 export type SongCommandAt = CommandAt<SonGuessrRoomRecord, SonGuessrPlayerRecord>;
 
-/** 房间正在开局：自动与手动两种开局共用同一口径，设置、开局与入池开关都按它拦。 */
-export const isRoomStarting = (room: SonGuessrRoomRecord): boolean =>
-  room.runtime?.automaticRoundLoading === true || room.runtime?.manualRoundStarting === true;
-
 export const getRoom = (ctx: SonGuessrContext, roomId: string) => {
   const room = ctx.rooms.get(roomId);
   if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在");
