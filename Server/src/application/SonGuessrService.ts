@@ -60,7 +60,6 @@ import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { ensureRoomId, normalizeName, normalizeWord, type RandomSource } from "../domain/Rules";
 import {
   BangumiMusicTrack,
-  BangumiSubjectSearchResult,
   ChatMessage,
   SERVER_SHUTDOWN_MESSAGE,
   SONGUESSR_LOBBY_ROOMS_EVENT,
@@ -78,7 +77,6 @@ import {
   SongGuessAttempt,
   SongGuessFeedback,
   SongLyricClip,
-  SongSearchResult,
   type BangumiSongCandidate,
   type BangumiSubjectDetails,
   type ConnectionRecord,
@@ -2233,7 +2231,7 @@ export class SonGuessrService implements AdminRoomControl {
       guessNumber: state.guessesUsed,
       createdAt: this.now(),
       result: correct ? "correct" : "wrong",
-      guessedSong: this.publicSong(guessedSong),
+      guessedSong: publicSong(guessedSong),
       feedback: this.buildFeedback(guessedSong, round.song),
     };
     round.attempts.push(attempt);
@@ -2293,7 +2291,7 @@ export class SonGuessrService implements AdminRoomControl {
       guessNumber: state.guessesUsed,
       createdAt: this.now(),
       result: correct ? "correct" : "wrong",
-      guessedAnime: this.publicAnime(guessedAnime),
+      guessedAnime: publicAnime(guessedAnime),
     };
     round.attempts.push(attempt);
     this.settleGuessResult(room, round, player, state, correct);
@@ -2712,7 +2710,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.roundSummary = {
       roundNumber: round.number,
       song: {
-        ...this.publicSong(round.song),
+        ...publicSong(round.song),
         audioUrl: round.song.audioUrl,
         chorus: round.song.chorus,
         releaseYear: round.song.releaseYear,
@@ -2720,7 +2718,7 @@ export class SonGuessrService implements AdminRoomControl {
         language: round.song.language,
         encyclopedia: round.song.encyclopedia,
       },
-      ...(round.anime ? { anime: this.publicAnime(round.anime) } : {}),
+      ...(round.anime ? { anime: publicAnime(round.anime) } : {}),
       ...(round.animeTrack ? { animeTrack: round.animeTrack } : {}),
       submitterPlayerId: round.submitterPlayerId,
       correctPlayerIds: [...round.correctPlayerIds],
@@ -2978,14 +2976,6 @@ export class SonGuessrService implements AdminRoomControl {
 
   activePlayers(room: SonGuessrRoomRecord) {
     return Object.values(room.players).filter((player) => player.membership === "active");
-  }
-
-  private publicSong(song: SongDetails): SongSearchResult {
-    return publicSong(song);
-  }
-
-  private publicAnime(anime: BangumiSubjectDetails): BangumiSubjectSearchResult {
-    return publicAnime(anime);
   }
 
   requireRoomPlayer(connection: ConnectionRecord) {
