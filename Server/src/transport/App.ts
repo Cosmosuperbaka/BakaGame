@@ -8,7 +8,6 @@ import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
 import type { ConnectionRecord, PlayerAccount, ClientChannelProof } from "../shared/Index";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
-import { LRUCache } from "lru-cache";
 
 import { createSwaggerPlugin } from "./Openapi";
 import { resolveClientIp } from "./ClientIp";
@@ -21,8 +20,13 @@ import {
   WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW,
   WS_HANDSHAKE_WINDOW_MS,
   STATUS_WS_IP_MAX_CONNECTIONS,
+  WS_ACK_REPLAY_MAX_ENTRIES,
+  WS_ACK_REPLAY_TTL_MS,
+  WS_IN_FLIGHT_MAX_ENTRIES,
 } from "../config/Constants";
 import { createAck, createErrorPacket, createEvent } from "./Packets";
+import { sendPacket } from "./ws/ConnectionRecord";
+import { createCommandDeduplicator, type CommandDeduplicator } from "./ws/Dedup";
 import { httpError, traceIdOf } from "./HttpErrorEnvelope";
 import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
 import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
@@ -147,179 +151,6 @@ export interface AppDependencies {
    */
   siteFeatures?: () => SiteFeatures;
 }
-
-const messageAckCache = new LRUCache<string, object>({
-  max: 2048,
-  ttl: 15_000,
-});
-type InFlightOutcome = { success: true; payload: unknown } | { success: false; error: unknown };
-
-/**
- * 飞行中请求的去重表，按 `${connectionId}:${messageId}` 记。
- *
- * 必须封顶：大量连接持续发新 ID 时，无上限的 Map 会一直堆积，
- * 挤占正常条目所属的堆内存，也让"还在飞"的判定失去意义。
- * 超过上限时丢弃最旧的条目——它要么已完成（早已被 delete），
- * 要么属于长时间卡住的连接，此时不再为其提供去重反而是更安全的行为。
- */
-const MAX_IN_FLIGHT_OPERATIONS = 4096;
-const inFlightOperations = new Map<string, Promise<InFlightOutcome>>();
-
-const rememberInFlight = (key: string, promise: Promise<InFlightOutcome>) => {
-  if (inFlightOperations.size >= MAX_IN_FLIGHT_OPERATIONS) {
-    const oldest = inFlightOperations.keys().next().value;
-    if (oldest !== undefined) inFlightOperations.delete(oldest);
-  }
-  inFlightOperations.set(key, promise);
-};
-
-const sendPacket = (ws: { send: (data: ServerMessage) => unknown }, payload: ServerMessage) => {
-  ws.send(payload);
-};
-
-const executeWithDeduplication = async ({
-  ws,
-  connectionId,
-  parsed,
-  startTime,
-  logger,
-  execute,
-  serviceName,
-}: {
-  ws: { send: (data: ServerMessage) => unknown };
-  connectionId: string;
-  parsed: { id: string; type: string; traceId?: string };
-  startTime: number;
-  logger: EventLogger;
-  execute: () => Promise<unknown>;
-  serviceName?: string;
-}) => {
-  const parsedId = parsed.id;
-  const parsedType = parsed.type;
-  const traceId = parsed.traceId;
-  const dedupKey = `${connectionId}:${parsedId}`;
-
-  // 1. 已有完成缓存：直接回放 ACK
-  if (messageAckCache.has(dedupKey)) {
-    sendPacket(ws, createAck(parsed, messageAckCache.get(dedupKey)));
-    return;
-  }
-
-  // 2. 正在飞行中：等待其结果并回放响应，避免网络重传被静默丢弃
-  const inFlight = inFlightOperations.get(dedupKey);
-  if (inFlight) {
-    const outcome = await inFlight;
-    const durationMs = performance.now() - startTime;
-    if (outcome.success) {
-      logger.logOperation({
-        status: 200,
-        durationMs,
-        identifier: connectionId,
-        action: `WS ${parsedType} (replay)`,
-        traceId,
-      });
-      sendPacket(ws, createAck(parsed, outcome.payload));
-    } else if (isAppError(outcome.error)) {
-      logger.logOperation({
-        status: statusOfAppError(outcome.error.code),
-        durationMs,
-        identifier: connectionId,
-        action: `WS ${parsedType} (replay)`,
-        traceId,
-      });
-      sendPacket(
-        ws,
-        createErrorPacket(
-          parsedId,
-          outcome.error.code,
-          outcome.error.message,
-          outcome.error.details,
-          traceId
-        )
-      );
-    } else {
-      logger.logOperation({
-        status: 500,
-        durationMs,
-        identifier: connectionId,
-        action: `WS ${parsedType} (replay)`,
-        traceId,
-      });
-      sendPacket(
-        ws,
-        createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId)
-      );
-    }
-    return;
-  }
-
-  // 3. 首次执行：启动执行并缓存 Promise
-  const executePromise = (async (): Promise<InFlightOutcome> => {
-    try {
-      const payload = await execute();
-      return { success: true, payload };
-    } catch (error) {
-      return { success: false, error };
-    }
-  })();
-
-  rememberInFlight(dedupKey, executePromise);
-  let outcome: InFlightOutcome;
-  try {
-    outcome = await executePromise;
-  } finally {
-    inFlightOperations.delete(dedupKey);
-  }
-
-  const durationMs = performance.now() - startTime;
-  if (outcome.success) {
-    messageAckCache.set(dedupKey, (outcome.payload as object) ?? {});
-    logger.logOperation({
-      status: 200,
-      durationMs,
-      identifier: connectionId,
-      action: `WS ${parsedType}`,
-      traceId,
-    });
-    sendPacket(ws, createAck(parsed, outcome.payload));
-  } else {
-    const error = outcome.error;
-    if (isAppError(error)) {
-      logger.logOperation({
-        status: statusOfAppError(error.code),
-        durationMs,
-        identifier: connectionId,
-        action: `WS ${parsedType}`,
-        traceId,
-      });
-      sendPacket(
-        ws,
-        createErrorPacket(parsedId, error.code, error.message, error.details, traceId)
-      );
-      return;
-    }
-
-    const logPrefix = serviceName ? `${serviceName} ` : "";
-    logger.error(`${logPrefix}WS 内部异常 [${parsedType}]`, {
-      ...describeError(error),
-      connectionId,
-      traceId,
-      parsedId,
-    });
-
-    logger.logOperation({
-      status: 500,
-      durationMs,
-      identifier: connectionId,
-      action: `WS ${parsedType}`,
-      traceId,
-    });
-    sendPacket(
-      ws,
-      createErrorPacket(parsedId, "INTERNAL_ERROR", "服务器内部错误", undefined, traceId)
-    );
-  }
-};
 
 /**
  * RFC 6455 握手必需头：`Sec-WebSocket-Key` 是 16 字节随机数的 base64，版本只有 13。
@@ -500,17 +331,16 @@ const openGameConnection = (
 const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
   ws: GameSocketLike,
   parsed: TMessage,
-  logger: EventLogger,
+  dedup: CommandDeduplicator,
   { serviceName, execute }: GameSocketHandlers<TMessage>
 ): Promise<void> => {
   const connectionId = connectionIdOf(ws);
   if (!connectionId) return;
-  await executeWithDeduplication({
+  await dedup.run({
     ws,
     connectionId,
     parsed,
     startTime: performance.now(),
-    logger,
     execute: () => execute(connectionId, parsed),
     serviceName,
   });
@@ -558,6 +388,7 @@ interface GameSocketHandlersOptions<
   logger: EventLogger;
   account: AccountDependencies | undefined;
   handshakeQuota: WsHandshakeQuota;
+  dedup: CommandDeduplicator;
   /** 仅 CEE：握手时把壳带来的 ticket 换成通道证明。 */
   clientChannel?: ClientChannel;
   /** 仅 CEE：上游信封归一。 */
@@ -616,6 +447,7 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
   logger,
   account,
   handshakeQuota,
+  dedup,
   clientChannel,
   normalizeMessage,
   service,
@@ -627,7 +459,7 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
     openGameConnection(ws, (connection) => service.registerConnection(connection));
   },
   message: (ws: GameSocketLike, incoming: TMessage) =>
-    handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, logger, {
+    handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, dedup, {
       serviceName,
       execute: async (connectionId, message) => {
         assertModeOpen(game, message, siteFeatures);
@@ -690,6 +522,13 @@ export const createApp = ({
   remoteMcpSessions.onSessionClosed((id) => sitePages.closeByController(id, "agent_left"));
   /** 标签页身份的在线索引：站点连接领取，游戏连接挂上同一身份。 */
   const tabSessions = new TabSessions();
+  /** 命令幂等表：归本应用实例，停机时清空。 */
+  const dedup = createCommandDeduplicator({
+    ackTtlMs: WS_ACK_REPLAY_TTL_MS,
+    ackMax: WS_ACK_REPLAY_MAX_ENTRIES,
+    inFlightMax: WS_IN_FLIGHT_MAX_ENTRIES,
+    logger,
+  });
   /**
    * 统一入口按需把连接登记进对应游戏的服务。
    *
@@ -866,7 +705,7 @@ export const createApp = ({
       const game = gameOfMessage(incoming);
       ensureGameConnection(ws, game);
       if (game === "song") {
-        await handleGameMessage(ws, parseSonGuessrMessage(incoming), logger, {
+        await handleGameMessage(ws, parseSonGuessrMessage(incoming), dedup, {
           serviceName: "SonGuessr",
           execute: async (connectionId, message) => {
             assertModeOpen("song", message, siteFeatures);
@@ -874,7 +713,7 @@ export const createApp = ({
           },
         });
       } else if (game === "cee") {
-        await handleGameMessage(ws, parseCEEMessage(incoming), logger, {
+        await handleGameMessage(ws, parseCEEMessage(incoming), dedup, {
           serviceName: "CEE",
           execute: async (connectionId, message) => {
             assertModeOpen("cee", message, siteFeatures);
@@ -882,7 +721,7 @@ export const createApp = ({
           },
         });
       } else {
-        await handleGameMessage(ws, parseWhoIsFakerMessage(incoming), logger, {
+        await handleGameMessage(ws, parseWhoIsFakerMessage(incoming), dedup, {
           serviceName: "WhoIsFaker",
           execute: async (connectionId, message) => {
             assertModeOpen("faker", message, siteFeatures);
@@ -990,6 +829,7 @@ export const createApp = ({
     },
   })
     .onStop(() => {
+      dedup.clear();
       stopStatusSampler?.();
       remoteMcpSessions.closeAll();
       void dispose().catch((error: unknown) =>
@@ -1225,6 +1065,7 @@ export const createApp = ({
         logger,
         account,
         handshakeQuota,
+        dedup,
         service: fakerService,
       }),
     })
@@ -1241,6 +1082,7 @@ export const createApp = ({
         logger,
         account,
         handshakeQuota,
+        dedup,
         clientChannel,
         normalizeMessage: normalizeCEEEnvelope,
         service: characterService,
@@ -1259,6 +1101,7 @@ export const createApp = ({
         logger,
         account,
         handshakeQuota,
+        dedup,
         service: songService,
       }),
     });

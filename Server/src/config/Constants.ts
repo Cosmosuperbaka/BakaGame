@@ -72,6 +72,14 @@ export const WS_HANDSHAKE_IP_MAX_CONNECTIONS = 64;
 export const WS_HANDSHAKE_IP_MAX_NEW_PER_WINDOW = 120;
 export const WS_HANDSHAKE_GLOBAL_MAX_NEW_PER_WINDOW = 3_000;
 export const WS_HANDSHAKE_WINDOW_MS = 60 * 1000;
+
+/**
+ * WebSocket 命令幂等：已完成命令的 ACK 在窗口内可回放，飞行中的命令按 `${连接号}:${消息号}` 去重。
+ * 两张表都必须封顶：大量连接持续发新消息号时，无上限的表会一直占堆。
+ */
+export const WS_ACK_REPLAY_TTL_MS = 15_000;
+export const WS_ACK_REPLAY_MAX_ENTRIES = 2048;
+export const WS_IN_FLIGHT_MAX_ENTRIES = 4096;
 /** 握手名额租约的确认时限：占位后这么久还没等到连接打开，就当升级已经失败并自动归还。 */
 export const WS_HANDSHAKE_LEASE_MS = 10_000;
 /** 公开状态页实时通道的单来源在途连接上限：一个页面只需要一条，远小于游戏通道的额度。 */
