@@ -23,7 +23,7 @@ export default defineConfig({
       },
       load(id) {
         if (id === "\0virtual:commit-history") {
-          return 'export default { generatedAt: "", currentCommit: "dev", commits: [] }';
+          return 'export default { currentCommit: "dev", commits: [] }';
         }
         if (id === "\0virtual:build-info") return 'export const currentCommit = "dev";';
         // 版本号按构建期同一份推导取，单测里断言的版本才不会与真实日志脱节。
@@ -35,11 +35,10 @@ export default defineConfig({
           return `export default ${JSON.stringify(latestVersionOf(text) ?? "")}`;
         }
         if (id === "\0virtual:sticker-manifest") {
-          return 'export default { generatedAt: "", packs: [] }';
+          return "export default { packs: [] }";
         }
         // 依赖清单与桶都只给空桩：单测断言页面行为，不依赖本机安装树。
-        if (id === "\0virtual:credits")
-          return 'export default { generatedAt: "", dependencies: [] }';
+        if (id === "\0virtual:credits") return "export default { dependencies: [] }";
         if (id === "\0virtual:credits-licenses") return "export default {}";
         if (id.startsWith("\0virtual:credits-licenses-")) return "export default {}";
         return null;

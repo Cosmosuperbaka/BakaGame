@@ -126,8 +126,9 @@ export function commitHistoryPlugin(options: {
     if (commits.length === 0) commits = collectFromGit();
 
     // 不输出版本号：展示版本号一律以 changelog.json 为准，
-    // 免得 package.json 与更新日志各说一套。
-    return { generatedAt: new Date().toISOString(), currentCommit: shortRevision(), commits };
+    // 免得 package.json 与更新日志各说一套。也不写构建时间戳：没有人读它，
+    // 却会让同一份提交列表每次构建都得到不同的内容哈希。
+    return { currentCommit: shortRevision(), commits };
   }
 
   return {

@@ -126,7 +126,7 @@ export function stickerManifestPlugin(emojiDir: string) {
       /* 目录不存在时输出空清单，前端表情按钮自然为空 */
     }
 
-    return { generatedAt: new Date().toISOString(), packs };
+    return { packs };
   }
 
   return {

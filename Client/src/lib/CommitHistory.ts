@@ -21,7 +21,6 @@ export interface CommitEntry {
 
 /** 虚拟模块的完整形状，与 `src/vite-env.d.ts` 里 `virtual:commit-history` 的声明一一对应。 */
 export interface CommitHistory {
-  generatedAt: string;
   currentCommit: string;
   commits: CommitEntry[];
 }

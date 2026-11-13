@@ -47,7 +47,6 @@ function storyCommitHistory(): Plugin {
       if (source !== `\0${id}`) return null;
       return `const now = Date.now();
 export default {
-  generatedAt: new Date(now).toISOString(),
   currentCommit: "a1c3e5f",
   commits: ${JSON.stringify(STORY_COMMITS)}.map(([hash, message, hoursAgo]) => ({
     hash, message, author: "BakaGame", date: new Date(now - hoursAgo * ${HOUR}).toISOString(),

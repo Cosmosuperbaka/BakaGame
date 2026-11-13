@@ -46,7 +46,6 @@ function revisionOnlyGit(args: string) {
 }
 
 interface HistoryModule {
-  generatedAt: string;
   currentCommit: string;
   commits: { hash: string; message: string; date: string; author: string }[];
 }
@@ -118,7 +117,26 @@ describe("commitHistoryPlugin", () => {
     ]);
     // 版本提示与 Sentry release 都读它，必须是本地 HEAD 而不是接口返回的最新提交。
     expect(history.currentCommit).toBe("0123456");
-    expect(history.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // 不带构建时间戳：同一份提交列表每次构建的产物必须逐字节相同。
+    expect(history).not.toHaveProperty("generatedAt");
+  });
+
+  it("同一份提交列表在不同时刻构建，产物逐字节相同", async () => {
+    stubFetch({ ok: true, json: GITHUB_PAYLOAD });
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      const first = await commitHistoryPlugin({ useRemote: true, execGit: fakeGit }).load(
+        RESOLVED_ID
+      );
+      vi.setSystemTime(new Date("2026-06-01T00:00:00Z"));
+      const second = await commitHistoryPlugin({ useRemote: true, execGit: fakeGit }).load(
+        RESOLVED_ID
+      );
+      expect(second).toBe(first);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("never ships the author email to visitors", async () => {

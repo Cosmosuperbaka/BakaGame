@@ -338,7 +338,7 @@ describe("creditsManifestPlugin", () => {
   describe("依赖闭包与归类", () => {
     it("直接依赖按声明归类，传递依赖沿依赖链归类", async () => {
       const manifest = await loadCreditsManifest(plugin);
-      expect(manifest.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      expect(manifest).not.toHaveProperty("generatedAt");
 
       expect(dependencyOf(manifest, "alpha-runtime")).toMatchObject({
         direct: true,

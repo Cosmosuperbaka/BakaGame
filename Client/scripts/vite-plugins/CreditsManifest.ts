@@ -49,7 +49,6 @@ interface InstalledPackage {
 type LicenseBuckets = Record<string, CreditLicenseBucket>;
 
 interface CollectedCredits {
-  generatedAt: string;
   dependencies: CreditDependency[];
   buckets: LicenseBuckets;
 }
@@ -371,7 +370,7 @@ export function creditsManifestPlugin(options: { clientDir?: string } = {}) {
       sortedBuckets[bucket] = buckets[bucket];
     }
 
-    return { generatedAt: new Date().toISOString(), dependencies, buckets: sortedBuckets };
+    return { dependencies, buckets: sortedBuckets };
   }
 
   function collectOnce(): Promise<CollectedCredits> {
@@ -381,10 +380,7 @@ export function creditsManifestPlugin(options: { clientDir?: string } = {}) {
 
   function manifestModule(data: CollectedCredits): string {
     // 只写元数据：许可证原文留在桶模块里，否则打开页面就得下载全部法律文本。
-    const manifest: CreditsManifest = {
-      generatedAt: data.generatedAt,
-      dependencies: data.dependencies,
-    };
+    const manifest: CreditsManifest = { dependencies: data.dependencies };
     return `export default ${JSON.stringify(manifest)}`;
   }
 

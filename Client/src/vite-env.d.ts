@@ -17,7 +17,6 @@ declare module "virtual:commit-history" {
   }
 
   const history: {
-    generatedAt: string;
     currentCommit: string;
     commits: CommitEntry[];
   };
@@ -53,7 +52,7 @@ declare module "virtual:app-version" {
  * 避免在类型层重复一份可能与实际扫描结果不一致的结构。
  */
 declare module "virtual:sticker-manifest" {
-  const manifest: { generatedAt: string; packs: unknown[] };
+  const manifest: { packs: unknown[] };
   export default manifest;
 }
 

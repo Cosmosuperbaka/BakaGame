@@ -35,7 +35,6 @@ export interface CreditDependency {
 
 /** 虚拟模块 `virtual:credits` 的完整形状。 */
 export interface CreditsManifest {
-  generatedAt: string;
   dependencies: CreditDependency[];
 }
 
