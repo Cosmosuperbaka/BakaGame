@@ -97,7 +97,7 @@ const SONG_SUMMARY =
 const CEE_SUMMARY =
   "CEE（二刺猿笑传之猜猜呗增强版）是多人猜动漫角色：全房猜同一个角色，从二十多万条 Bangumi 角色资料里，靠性别、登场年份、作品评分和标签一路排除。";
 const ABOUTS_SUMMARY =
-  "BakaGame 的关于项目页：开源致谢列出技术栈、参与开发的大模型和全部前端依赖的许可证，另有玩家更新日志、提交历史、隐私说明与用户条款。";
+  "BakaGame 的开源致谢、玩家更新日志、提交历史、隐私说明与用户条款。开源致谢列出技术栈、参与开发的大模型和全部前端依赖的许可证。";
 
 /** 三款游戏共用的结构化数据字段：都是房间制的网页游戏，不收费，界面为中文。 */
 const GAME_ENTITY = {
@@ -116,8 +116,8 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/",
     title: `${SITE_NAME} - ${SITE_SLOGAN}`,
-    lastmod: "2026-11-07",
-    description: `${SITE_TAGLINE}${HOME_SUMMARY}开一间房，把房号发进群，人齐就开。`,
+    lastmod: "2026-11-14",
+    description: `${SITE_TAGLINE}BakaGame 是开给二次元朋友的游戏室：谁是卧底、听歌猜歌、猜动漫角色。开一间房，把房号发进群，手机电脑都能进，人齐就开。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame",
@@ -155,7 +155,7 @@ export const PAGE_META: PageMeta[] = [
       },
     ],
     shell: {
-      h1: "BakaGame：二次元朋友局的游戏室，玩谁是卧底、听歌猜歌和猜动漫角色",
+      h1: "BakaGame：二次元朋友的游戏室",
       paragraphs: [
         `${SITE_TAGLINE}${HOME_SUMMARY}`,
         "群友凑不齐一桌桌游，又不想只在群里发表情包的时候，这里有三张现成的桌子。",
@@ -220,8 +220,8 @@ export const PAGE_META: PageMeta[] = [
   {
     path: "/whoisfaker",
     title: `谁是卧底 Who is Faker - ${SITE_NAME}`,
-    lastmod: "2026-11-07",
-    description: `${SITE_TAGLINE}${FAKER_SUMMARY}5 人起开局，参战满 8 人可加白板和天使。`,
+    lastmod: "2026-11-14",
+    description: `${SITE_TAGLINE}Who is Faker 是出题人现场写词的谁是卧底，5 人起。投票后入夜：平民动刀，倒下的是自己。满 8 人可加白板和天使。`,
     image: `${SITE_ORIGIN}/og/Faker.jpg`,
     keywords: [
       "谁是卧底",
@@ -230,7 +230,6 @@ export const PAGE_META: PageMeta[] = [
       "谁是卧底白板规则",
       "谁是卧底出题",
       "Who is Faker",
-      "WhoisFaker",
       "语言推理游戏",
       "朋友聚会游戏",
     ],
@@ -320,9 +319,9 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/songuessr",
-    title: `听歌猜歌 Songuessr - ${SITE_NAME}`,
-    lastmod: "2026-11-07",
-    description: `${SITE_TAGLINE}${SONG_SUMMARY}听歌识曲猜错时，年份、热度、语种和共同标签都会告诉你偏到了哪里。曲库来自网易云音乐与 QQ 音乐，番剧资料来自 Bangumi。`,
+    title: `听歌猜歌 Songuessr：听歌识曲与听歌识番 - ${SITE_NAME}`,
+    lastmod: "2026-11-14",
+    description: `${SITE_TAGLINE}Songuessr 听歌猜歌：听一段音乐猜歌名，或猜 OP、ED 出自哪部番。能和朋友比，也能一个人练，还能用自己的歌单出题。`,
     image: `${SITE_ORIGIN}/og/SongGuessr.jpg`,
     keywords: [
       "Songuessr",
@@ -422,9 +421,9 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/cee",
-    title: `猜动漫角色 CEE - ${SITE_NAME}`,
-    lastmod: "2026-11-07",
-    description: `${SITE_TAGLINE}${CEE_SUMMARY}能组队、能 BP、能进原版房间，专治自称看过很多番的人。`,
+    title: `猜动漫角色 CEE（猜猜呗增强版） - ${SITE_NAME}`,
+    lastmod: "2026-11-14",
+    description: `${SITE_TAGLINE}CEE 是二刺猿笑传之猜猜呗增强版：全房猜同一个动漫角色，靠性别、登场年份和标签一路排除。能组队、能 BP，也能进原版房间。`,
     image: `${SITE_ORIGIN}/og/CEE.jpg`,
     keywords: [
       "CEE",
@@ -529,9 +528,9 @@ export const PAGE_META: PageMeta[] = [
   },
   {
     path: "/abouts",
-    title: `关于 ${SITE_NAME}`,
-    lastmod: "2026-11-07",
-    description: `${SITE_TAGLINE}${ABOUTS_SUMMARY}`,
+    title: `关于 ${SITE_NAME}：更新日志、开源致谢与隐私条款`,
+    lastmod: "2026-11-14",
+    description: `${SITE_TAGLINE}BakaGame 的更新日志、提交历史、开源致谢、隐私说明与用户条款都在这一页，每个前端依赖的许可证原文都能按包查看。`,
     image: `${SITE_ORIGIN}/og/logo.jpg`,
     keywords: [
       "BakaGame 开源",

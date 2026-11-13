@@ -29,7 +29,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("听歌猜歌大厅有独立标题、描述与 canonical", async ({ page }) => {
     await page.goto("/songuessr");
-    await expect(page).toHaveTitle("听歌猜歌 Songuessr - BakaGame");
+    await expect(page).toHaveTitle("听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame");
 
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /听歌猜歌/);
@@ -40,7 +40,7 @@ test.describe("页面 SEO 元信息", () => {
 
   test("猜角色大厅具有独立描述、分享元信息与结构化数据", async ({ page }) => {
     await page.goto("/cee");
-    await expect(page).toHaveTitle("猜动漫角色 CEE - BakaGame");
+    await expect(page).toHaveTitle("猜动漫角色 CEE（猜猜呗增强版） - BakaGame");
     const description = page.locator('head meta[name="description"]');
     await expect(description).toHaveAttribute("content", /猜动漫角色/);
     await expect(page.locator('head meta[property="og:description"]')).toHaveAttribute(

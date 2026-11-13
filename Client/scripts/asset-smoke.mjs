@@ -100,7 +100,7 @@ try {
   // 静态外壳：不执行 JS 的爬虫必须能读到正文与 head 元信息（构建期由 static-shell 插件注入）。
   // 这里只做「有没有」的断言；「会不会产生重复标签」由 E2E 用真实浏览器断言（strict 定位器）。
   const shellChecks = [
-    { route: "/", text: "二次元朋友局的游戏室", canonical: "https://game.baka.website/" },
+    { route: "/", text: "二次元朋友的游戏室", canonical: "https://game.baka.website/" },
     { route: "/whoisfaker", text: "谁是卧底", canonical: "https://game.baka.website/whoisfaker" },
     {
       route: "/songuessr",
@@ -113,9 +113,9 @@ try {
   const shellTitles = {
     "/": "BakaGame - 1000万以内最好玩的小游戏网站",
     "/whoisfaker": "谁是卧底 Who is Faker - BakaGame",
-    "/songuessr": "听歌猜歌 Songuessr - BakaGame",
-    "/cee": "猜动漫角色 CEE - BakaGame",
-    "/abouts": "关于 BakaGame",
+    "/songuessr": "听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame",
+    "/cee": "猜动漫角色 CEE（猜猜呗增强版） - BakaGame",
+    "/abouts": "关于 BakaGame：更新日志、开源致谢与隐私条款",
   };
   for (const { route, text, canonical } of shellChecks) {
     const html = await (await fetch(`${baseUrl}${route}`)).text();

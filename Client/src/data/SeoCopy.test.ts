@@ -38,6 +38,15 @@ describe("SEO 文案", () => {
     expect(PAGE_META[0].shell.paragraphs[0].startsWith(SITE_TAGLINE)).toBe(true);
   });
 
+  // 搜索结果的摘要只显示八十字上下：标语占掉开头之后，剩下的一句话必须在截断前说完。
+  it("每页描述不超过 80 字，且标语之后的正文各不相同", () => {
+    for (const meta of PAGE_META) {
+      expect(meta.description.length, meta.path).toBeLessThanOrEqual(80);
+    }
+    const bodies = PAGE_META.map((meta) => meta.description.slice(SITE_TAGLINE.length));
+    expect(new Set(bodies).size).toBe(bodies.length);
+  });
+
   it("结构化数据的地址指向页面自身", () => {
     for (const meta of PAGE_META) {
       expect(meta.structuredData.url).toBe(`${SITE_ORIGIN}${meta.path}`);

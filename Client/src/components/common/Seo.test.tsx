@@ -74,7 +74,7 @@ describe("Seo", () => {
     await waitFor(() => {
       expect(
         document.head.querySelector('meta[property="og:title"]')?.getAttribute("content")
-      ).toBe("听歌猜歌 Songuessr - BakaGame");
+      ).toBe("听歌猜歌 Songuessr：听歌识曲与听歌识番 - BakaGame");
       expect(document.head.querySelector('meta[property="og:url"]')?.getAttribute("content")).toBe(
         "https://game.baka.website/songuessr"
       );
