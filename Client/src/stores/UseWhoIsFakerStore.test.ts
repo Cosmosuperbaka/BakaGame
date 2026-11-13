@@ -619,15 +619,45 @@ describe("game store integration", () => {
     useWhoIsFakerStore.getState().setSnapshot(wordSubState);
     expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
 
-    // 3. 描述阶段（正式开局）-> 触发进入观战频道提示
+    // 3. 描述阶段（正式开局）-> 开着旁观可见答案时触发进入观战频道提示
     const descState: WhoIsFakerRoomSnapshot = {
       ...assigningState,
+      settings: { ...assigningState.settings, spectatorsSeeAnswers: true },
       status: { phase: "description", roundId: "round-spec", started: true, day: 1 },
     };
     useWhoIsFakerStore.getState().setSnapshot(descState);
     const chat = useWhoIsFakerStore.getState().channelNotices;
     expect(chat).toHaveLength(1);
     expect(chat[0]?.text).toBe("已进入观战频道，发言仅对淘汰玩家与观战者可见");
+  });
+
+  it("旁观可见答案关闭时旁观者留在主频道：局中不出现进入观战频道的提示", () => {
+    useWhoIsFakerStore.getState().setPrivateState({
+      playerId: "spec-2",
+      sessionToken: "token-spec-2",
+      isQuestioner: false,
+      canSubmitBlankGuess: false,
+      blankGuessUsed: false,
+      nightActionSubmitted: false,
+    });
+    const specPlayer = {
+      id: "spec-2",
+      name: "旁观者",
+      score: 0,
+      membership: "spectator" as const,
+      online: true,
+      isReady: true,
+      isBot: false,
+      isHost: false,
+      roundStatus: "spectator" as const,
+    };
+    useWhoIsFakerStore.getState().setSnapshot({
+      ...gameOverSnapshot("round-spec-off"),
+      status: { phase: "description", roundId: "round-spec-off", started: true, day: 1 },
+      players: [specPlayer],
+      chat: [],
+    });
+    expect(useWhoIsFakerStore.getState().channelNotices).toHaveLength(0);
   });
 });
 

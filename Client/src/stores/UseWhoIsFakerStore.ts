@@ -130,8 +130,10 @@ const computePlayerChannel = (
   if (isQuestioner) return "main";
   const me = snapshot.players.find((p) => p.id === playerId);
   if (!me) return "main";
-  const isDeadOrSpectator = me.roundStatus === "dead" || me.roundStatus === "spectator";
-  return isDeadOrSpectator ? "ghost" : "main";
+  // 服务端对读不到亡者频道的旁观者把发言留在主频道（房间没有开启旁观可见答案时），这里同口径。
+  const spectatorInGhost =
+    me.roundStatus === "spectator" && snapshot.settings.spectatorsSeeAnswers === true;
+  return me.roundStatus === "dead" || spectatorInGhost ? "ghost" : "main";
 };
 
 const channelNotice = (
