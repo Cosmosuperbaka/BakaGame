@@ -105,13 +105,21 @@ describe("room settings memory", () => {
 
       updateRoomSettingsMemory("song", (current) => ({ ...current, question }));
       updateRoomSettingsMemory("song", (current) => ({ ...current, game }));
+      updateRoomSettingsMemory("song", (current) => ({
+        ...current,
+        room: { spectatorsSeeAnswers: true },
+      }));
       await vi.waitFor(() =>
         expect(window.localStorage.getItem("bakagame:room-settings:song")).toContain(
-          "lyricsLineCount"
+          "spectatorsSeeAnswers"
         )
       );
 
-      expect(await readRoomSettingsMemory("song")).toEqual({ question, game });
+      expect(await readRoomSettingsMemory("song")).toEqual({
+        question,
+        game,
+        room: { spectatorsSeeAnswers: true },
+      });
     });
 
     it("treats corrupt storage as no memory", async () => {
@@ -144,6 +152,9 @@ describe("room settings memory", () => {
         ["song", { question: { ...validQuestion, questionType: "weird" } }],
         ["song", { question: { questionType: "anime" } }],
         ["song", { unknown: {} }],
+        ["song", { room: { spectatorsSeeAnswers: "yes" } }],
+        ["song", { room: { spectatorsSeeAnswers: true, password: "123456" } }],
+        ["song", { room: {} }],
         ["cee", { settings: null }],
         ["cee", { settings: { startYear: "2020" } }],
         ["cee", []],
@@ -167,6 +178,11 @@ describe("room settings memory", () => {
         });
         put("song", { question: validQuestion });
         expect(await readRoomSettingsMemory("song")).toEqual({ question: validQuestion });
+        // 猜歌与猜猜呗的旁观可见答案晚于记忆格式加入：旧记录没有它照常读出。
+        const legacy = createDefaultCEESettings(2020);
+        delete legacy.spectatorsSeeAnswers;
+        put("cee", { settings: legacy });
+        expect(await readRoomSettingsMemory("cee")).toEqual({ settings: legacy });
       });
 
       it("读取畸形记忆时 update 不会把畸形字段合并写回", async () => {

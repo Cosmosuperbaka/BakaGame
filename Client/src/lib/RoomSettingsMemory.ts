@@ -52,10 +52,16 @@ export interface SongRoomGameMemory {
   bloodMode: boolean;
 }
 
-/** 题、猜两组分开记：两个面板各存各的，互不覆盖。 */
+/** 猜歌/猜番的房间设置：旁观者局中能否看到答案，与卧底、猜猜呗同名同义。 */
+export interface SongRoomRoomMemory {
+  spectatorsSeeAnswers: boolean;
+}
+
+/** 题、猜、房间三组分开记：三个面板各存各的，互不覆盖。 */
 export interface SongRoomSettingsMemory {
   question?: SongRoomQuestionMemory;
   game?: SongRoomGameMemory;
+  room?: SongRoomRoomMemory;
 }
 
 /** 猜猜呗的房间内设置：整个 `CEESettings` 原样记录、原样重放。 */
@@ -140,6 +146,8 @@ const SONG_GAME_KEYS = [
   "bloodMode",
 ] as const;
 
+const SONG_ROOM_KEYS = ["spectatorsSeeAnswers"] as const;
+
 type MemoryValidator = (value: unknown) => boolean;
 
 /**
@@ -175,11 +183,13 @@ const loadValidators = async (): Promise<Record<RoomGame, MemoryValidator>> => {
       ),
     song: (value) =>
       isRecord(value) &&
-      Object.keys(value).every((key) => key === "question" || key === "game") &&
+      Object.keys(value).every((key) => key === "question" || key === "game" || key === "room") &&
       (value.question === undefined ||
         matchesPayload(songUpdate, value.question, SONG_QUESTION_KEYS, SONG_QUESTION_REQUIRED)) &&
       (value.game === undefined ||
-        matchesPayload(songUpdate, value.game, SONG_GAME_KEYS, SONG_GAME_KEYS)),
+        matchesPayload(songUpdate, value.game, SONG_GAME_KEYS, SONG_GAME_KEYS)) &&
+      (value.room === undefined ||
+        matchesPayload(songUpdate, value.room, SONG_ROOM_KEYS, SONG_ROOM_KEYS)),
     cee: (value) =>
       isRecord(value) &&
       Object.keys(value).length === 1 &&

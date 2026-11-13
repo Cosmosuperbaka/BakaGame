@@ -123,6 +123,17 @@ export const ReadOnlyGame: Story = {
   render: () => <AccordionGroup initiallyOpen="game" readOnly />,
 };
 
+export const ReadOnlyRoom: Story = {
+  name: "只读 · 展开房间设置 · 旁观可见答案",
+  render: () => (
+    <AccordionGroup
+      initiallyOpen="room"
+      readOnly
+      snapshot={songSnapshot({ settings: songSettings({ spectatorsSeeAnswers: true }) })}
+    />
+  ),
+};
+
 export const QuestionManual: Story = {
   name: "题目设置 · 手动出题",
   render: () => (
@@ -280,6 +291,17 @@ export const RoomPublic: Story = {
   render: () => (
     <div className={panel}>
       <SongRoomSettings snapshot={songSnapshot()} />
+    </div>
+  ),
+};
+
+export const RoomSpectatorsSeeAnswers: Story = {
+  name: "房间设置 · 旁观者可见答案",
+  render: () => (
+    <div className={panel}>
+      <SongRoomSettings
+        snapshot={songSnapshot({ settings: songSettings({ spectatorsSeeAnswers: true }) })}
+      />
     </div>
   ),
 };

@@ -107,6 +107,7 @@ export function songSettings(overrides: Partial<SonGuessrSettings> = {}): SonGue
     maxGuessesPerRound: 3,
     guessDurationSeconds: 60,
     showGuessTimer: true,
+    spectatorsSeeAnswers: false,
     ...overrides,
   };
 }

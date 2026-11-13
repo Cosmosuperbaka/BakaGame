@@ -159,7 +159,14 @@ export const WaitingSpectator: Story = {
 
 export const SettingsPanels: Story = {
   name: "设置面板 · 房主",
-  beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), asHost),
+  beforeEach: () =>
+    presetSongRoom(
+      songSnapshot({
+        players: allReady(),
+        settings: songSettings({ spectatorsSeeAnswers: true }),
+      }),
+      asHost
+    ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     for (const name of [/题目设置/, /猜测设置/, /房间设置/]) {
@@ -169,13 +176,13 @@ export const SettingsPanels: Story = {
   },
 };
 
-/** 非房主展开题目与猜测设置：同一份结构，字段只显示取值。 */
+/** 非房主展开题目、猜测与房间设置：同一份结构，字段只显示取值。 */
 export const SettingsPanelsGuest: Story = {
   name: "设置面板 · 玩家 · 只读",
   beforeEach: () => presetSongRoom(songSnapshot({ players: allReady() }), songPrivate()),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["题目设置", "猜测设置"])
+    for (const name of ["题目设置", "猜测设置", "房间设置"])
       await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },

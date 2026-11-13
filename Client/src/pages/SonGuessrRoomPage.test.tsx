@@ -594,6 +594,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
                 visibility: "public",
                 password: "",
                 allowSpectators: true,
+                spectatorsSeeAnswers: false,
               },
         ]);
       }

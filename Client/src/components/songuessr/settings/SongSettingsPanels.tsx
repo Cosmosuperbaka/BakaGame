@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 折叠组摘要与面板读同一份设置口径，放在一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Disc3, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
+import { Disc3, Eye, EyeOff, Globe, ListMusic, Lock, Mic2, Tv, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -583,9 +583,11 @@ const roomOf = (snapshot: SonGuessrRoomSnapshot) => ({
   isPrivate: snapshot.visibility === "private",
   password: "",
   allowSpectators: snapshot.allowSpectators,
+  // 旧房间的设置里没有这一项：按服务端缺省（关闭）显示。
+  spectatorsSeeAnswers: snapshot.settings.spectatorsSeeAnswers ?? false,
 });
 
-/** 房间设置：名称、私密与密码、旁观。非房主只看到名称、公开与否和旁观，看不到密码。 */
+/** 房间设置：名称、私密与密码、旁观与旁观可见答案。非房主只看到名称、公开与否和旁观设置，看不到密码。 */
 export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot }) {
   const readOnly = useSettingsReadOnly();
   const [draft, setDraft] = useState(() => roomOf(snapshot));
@@ -600,9 +602,18 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
       visibility: draft.isPrivate ? "private" : "public",
       password: draft.isPrivate ? draft.password || undefined : "",
       allowSpectators: draft.allowSpectators,
+      spectatorsSeeAnswers: draft.spectatorsSeeAnswers,
     },
-    // 私密房间必须有密码：还没有、也没填新的就先不保存。
-    { enabled: !draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0 }
+    {
+      // 私密房间必须有密码：还没有、也没填新的就先不保存。
+      enabled: !draft.isPrivate || snapshot.hasPassword || draft.password.trim().length > 0,
+      // 名称与口令不进记忆，下次建房沿用的只有旁观可见答案。
+      remember: (payload) =>
+        updateRoomSettingsMemory("song", (current) => ({
+          ...current,
+          room: { spectatorsSeeAnswers: payload.spectatorsSeeAnswers },
+        })),
+    }
   );
 
   return (
@@ -637,6 +648,13 @@ export function SongRoomSettings({ snapshot }: { snapshot: SonGuessrRoomSnapshot
         icon={Users}
         checked={values.allowSpectators}
         onCheckedChange={(value) => edit("allowSpectators", value)}
+      />
+      <SettingSwitchRow
+        label="旁观者可见答案"
+        description="局中把本题答案与全部猜测发给旁观者；关闭时旁观者看不到答案，揭晓后照常公开。"
+        icon={values.spectatorsSeeAnswers ? Eye : EyeOff}
+        checked={values.spectatorsSeeAnswers}
+        onCheckedChange={(value) => edit("spectatorsSeeAnswers", value)}
       />
     </SettingsFields>
   );
@@ -688,6 +706,7 @@ export function songSettingsSummary(snapshot: SonGuessrRoomSnapshot) {
     room: [
       snapshot.visibility === "private" ? "私密房间" : "公开房间",
       snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
+      snapshot.settings.spectatorsSeeAnswers ? "旁观可见答案" : "旁观隐藏答案",
     ],
   };
 }

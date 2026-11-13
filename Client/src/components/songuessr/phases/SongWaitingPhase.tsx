@@ -241,9 +241,11 @@ export function SongWaitingPhase({
 }: SongWaitingPhaseProps) {
   // 新建房间的首次进房：先套用上次的房间内设置（标记匹配才触发），落定前不让设置面板先挂载。
   const restoring = useRoomSettingsRestore("song", snapshot.roomId, async (memory) => {
-    await useSonGuessrStore
-      .getState()
-      .sendCommand("song.room.updateSettings", { ...memory.question, ...memory.game });
+    await useSonGuessrStore.getState().sendCommand("song.room.updateSettings", {
+      ...memory.question,
+      ...memory.game,
+      ...memory.room,
+    });
   });
   if (restoring) return <RoomRestoreFallback />;
 

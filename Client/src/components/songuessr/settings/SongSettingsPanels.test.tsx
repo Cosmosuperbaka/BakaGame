@@ -154,7 +154,45 @@ describe("猜歌设置面板的自动保存", () => {
       "song.room.updateSettings",
       expect.objectContaining({ visibility: "private", password: "abc123" })
     );
-    // 房间设置不进建房记忆。
+    // 名称与口令不进建房记忆：记下的只有「旁观可见答案」这一项。
+    const written = vi
+      .mocked(updateRoomSettingsMemory)
+      .mock.calls.map(([, patch]) => (patch as (current: null) => unknown)(null));
+    expect(JSON.stringify(written)).not.toContain("abc123");
+    expect(written).toEqual([{ room: { spectatorsSeeAnswers: false } }]);
+  });
+
+  it("房间设置：旁观可见答案缺省关闭，打开后保存并记入 room 名下", async () => {
+    render(<SongRoomSettings snapshot={snapshot()} />);
+    const toggle = screen.getByRole("switch", { name: "旁观者可见答案" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle);
+    await settle();
+
+    expect(sendCommand).toHaveBeenCalledWith(
+      "song.room.updateSettings",
+      expect.objectContaining({ spectatorsSeeAnswers: true })
+    );
+    const patch = vi.mocked(updateRoomSettingsMemory).mock.calls.at(-1)![1] as (
+      current: null
+    ) => unknown;
+    expect(patch(null)).toEqual({ room: { spectatorsSeeAnswers: true } });
+  });
+
+  it("房间设置：旧快照没有这个字段时按关闭显示；非房主只读，不保存也不写记忆", async () => {
+    const legacy = snapshot();
+    delete (legacy.settings as { spectatorsSeeAnswers?: boolean }).spectatorsSeeAnswers;
+    render(
+      <SettingsReadOnly readOnly>
+        <SongRoomSettings snapshot={legacy} />
+      </SettingsReadOnly>
+    );
+    // 只读态不出开关，只显示取值；字段缺席按「关闭」显示。
+    expect(screen.queryByRole("switch", { name: "旁观者可见答案" })).not.toBeInTheDocument();
+    expect(screen.getByText("旁观者可见答案")).toBeInTheDocument();
+    expect(screen.getAllByText("关闭").length).toBeGreaterThan(0);
+    await settle();
+    expect(sendCommand).not.toHaveBeenCalled();
     expect(updateRoomSettingsMemory).not.toHaveBeenCalled();
   });
 });
