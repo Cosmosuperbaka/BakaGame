@@ -22,7 +22,7 @@ const OG_SOURCE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 /**
  * 收集「目标名 → 源文件」。
  *
- * 多个页面可以共用同一张分享图（首页与 /ceo 都用 logo.jpg），所以这里按名字去重：
+ * 多个页面可以共用同一张分享图（首页与 /abouts 都用 logo.jpg），所以这里按名字去重：
  * 同一个目标路径不能交给两路 sharp 并发写 —— 写完的那路与截断的那路重叠，
  * 紧接着的 size 检查会读到 0 字节，报「分享图是空文件」，而源图与产物本身都没问题。
  * 校验仍然对每个页面各做一次，只有落盘按唯一目标执行。
@@ -71,7 +71,6 @@ export function seoArtifactsPlugin() {
       distDir = path.resolve(config.root, config.build.outDir);
     },
     async closeBundle() {
-
       // ---- 站点地图 ----
       const seenPaths = new Set<string>();
       for (const page of PAGE_META) {
