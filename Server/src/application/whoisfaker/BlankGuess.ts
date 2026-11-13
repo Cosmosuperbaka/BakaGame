@@ -21,15 +21,9 @@ import { ensurePhaseNotBlocked } from "./RoundRules";
 import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
 
-export const submitBlankGuess = async (
-  ctx: WhoIsFakerContext,
-  at: WhoIsFakerSeatAt,
-  words: [string, string]
-) => {
-  // 白板可以主动猜，也可以在被动 blankGuess 阶段猜，但总次数只有一次。
-  const { room, seat: player } = at;
-  const round = requireRound(room);
-  const state = round.assignments[player.id];
+/** 猜词的共同前置：本人是白板、还活着、这局的猜词机会还没用掉；校验顺序即错误码的先后。 */
+const requireLiveBlankWithChance = (round: GameRound, playerId: string): void => {
+  const state = round.assignments[playerId];
 
   if (!state || state.role !== "blank") {
     throw new AppError("ACTION_FORBIDDEN", "只有白板可以猜词");
@@ -42,6 +36,18 @@ export const submitBlankGuess = async (
   if (round.blankGuessUsed) {
     throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
   }
+};
+
+export const submitBlankGuess = async (
+  ctx: WhoIsFakerContext,
+  at: WhoIsFakerSeatAt,
+  words: [string, string]
+) => {
+  // 白板可以主动猜，也可以在被动 blankGuess 阶段猜，但总次数只有一次。
+  const { room, seat: player } = at;
+  const round = requireRound(room);
+
+  requireLiveBlankWithChance(round, player.id);
 
   // 猜词已改为阻塞阶段：必须先进入 blankGuess，且只有本人能提交。
   if (round.phase !== "blankGuess" || round.blankGuessContext?.playerId !== player.id) {
@@ -92,19 +98,8 @@ export const enterBlankGuess = async (ctx: WhoIsFakerContext, at: WhoIsFakerSeat
   // 白板主动猜词：先把房间切进阻塞阶段，其他人一起等这一次猜词。
   const { room, seat: player } = at;
   const round = requireRound(room);
-  const state = round.assignments[player.id];
 
-  if (!state || state.role !== "blank") {
-    throw new AppError("ACTION_FORBIDDEN", "只有白板可以猜词");
-  }
-
-  if (!state.alive) {
-    throw new AppError("ACTION_FORBIDDEN", "白板出局后不能再猜词");
-  }
-
-  if (round.blankGuessUsed) {
-    throw new AppError("BLANK_GUESS_USED", "白板已经使用过猜词机会");
-  }
+  requireLiveBlankWithChance(round, player.id);
 
   if (round.phase === "blankGuess") {
     throw new AppError("INVALID_PHASE", "已经处于白板猜词阶段");
