@@ -558,6 +558,100 @@ const SCENARIOS: Record<string, Scenario> = {
       };
     },
   },
+  // ---- 旧实现里恢复现场会覆盖阶段的几种边界：按现状钉住，改写后也要一致 ----
+  白板猜词中_其他人被移除_补充发言被打断: {
+    target: "机2",
+    build: (round, id) => {
+      round.phase = "blankGuess";
+      round.speechMode = undefined;
+      round.supplement = {
+        index: 1,
+        requestedPlayerIds: [id("机1"), id("机2"), id("机3")],
+        donePlayers: [id("机1")],
+        resumePhase: "voting",
+      };
+      round.votes = [{ voterId: id("房主"), targetId: id("机3") }];
+      round.blankGuessContext = {
+        playerId: id("机5"),
+        reason: "active",
+        resumePhase: "description",
+        draft: ["苹果", ""],
+      };
+    },
+  },
+  补充发言中_移除致残局_白板还有猜词机会: {
+    target: "机3",
+    build: (round, id) => {
+      dead(round, id, "机4");
+      round.speechMode = "supplement";
+      round.supplement = {
+        index: 1,
+        requestedPlayerIds: [id("机1"), id("机2")],
+        donePlayers: [id("机1")],
+        resumePhase: "voting",
+      };
+    },
+  },
+  平票发言中_移除致残局_白板还有猜词机会: {
+    target: "机3",
+    build: (round, id) => {
+      dead(round, id, "机4");
+      round.phase = "tieBreak";
+      round.speechMode = "tieBreak";
+      round.tieBreakCount = 1;
+      round.tieBreak = {
+        candidateIds: [id("机1"), id("机2"), id("机3")],
+        stage: "description",
+        descriptionsDone: [id("机1")],
+        votes: [],
+      };
+    },
+  },
+  平票投票中_移除致残局_白板还有猜词机会: {
+    target: "机3",
+    build: (round, id) => {
+      dead(round, id, "机4");
+      round.phase = "tieBreak";
+      round.speechMode = undefined;
+      round.tieBreakCount = 1;
+      round.tieBreak = {
+        candidateIds: [id("机1"), id("机2"), id("机3")],
+        stage: "vote",
+        descriptionsDone: [id("机1"), id("机2"), id("机3")],
+        votes: [{ voterId: id("房主"), targetId: id("机1") }],
+      };
+    },
+  },
+  白板猜词_猜词者被移除_移除后胜负已分: {
+    target: "机5",
+    timer: true,
+    build: (round, id) => {
+      dead(round, id, "机1", "机2");
+      round.phase = "blankGuess";
+      round.speechMode = undefined;
+      round.votes = [{ voterId: id("房主"), targetId: id("机3") }];
+      round.blankGuessContext = { playerId: id("机5"), reason: "active", resumePhase: "voting" };
+    },
+  },
+  白板猜词_猜词者被移除_补充发言仍在进行且残局已定: {
+    target: "机5",
+    build: (round, id) => {
+      dead(round, id, "机3", "机4");
+      round.phase = "blankGuess";
+      round.speechMode = undefined;
+      round.supplement = {
+        index: 1,
+        requestedPlayerIds: [id("机1"), id("机2")],
+        donePlayers: [id("机1")],
+        resumePhase: "voting",
+      };
+      round.blankGuessContext = {
+        playerId: id("机5"),
+        reason: "active",
+        resumePhase: "description",
+      };
+    },
+  },
   // ---- 反馈 ----
   反馈中_投票后入夜_在场者被移除: {
     target: "机2",
@@ -728,8 +822,28 @@ const PICK_PRIVATE = [
   "myCurrentNightTargetId",
 ] as const;
 
+/** 一条下行帧的紧凑摘要：事件名，快照取公开状态，私有态取与阶段有关的几个字段，其余取载荷。 */
+const summarizeFrames = (sent: unknown[]) =>
+  sent.map((frame) => {
+    const entry = frame as { event?: string; payload?: unknown };
+    if (entry.event === "room.snapshot") {
+      const snapshot = entry.payload as WhoIsFakerRoomSnapshot;
+      const status = { ...snapshot.status };
+      delete status.roundId;
+      return { 事件: entry.event, status, 玩家: snapshot.players.map((p) => p.roundStatus) };
+    }
+    if (entry.event === "game.privateState") {
+      const state = entry.payload as WhoIsFakerPrivateState;
+      return {
+        事件: entry.event,
+        ...Object.fromEntries(PICK_PRIVATE.map((key) => [key, state[key]])),
+      };
+    }
+    return { 事件: entry.event, 载荷: entry.payload };
+  });
+
 /** 观察到的全部现状：回合数据、公开快照、各真人座位的私有态、阶段定时器。玩家 id 一律换成名字。 */
-const observe = (h: Harness, scenario: Scenario) => {
+const observe = (h: Harness, scenario: Scenario, frames: unknown) => {
   const room: WhoIsFakerRoomRecord = h.room;
   const round = room.round!;
   const names = new Map(Object.values(room.players).map((player) => [player.id, player.name]));
@@ -805,6 +919,7 @@ const observe = (h: Harness, scenario: Scenario) => {
       未取消: h.timers.live().map((t) => t.delayMs),
     },
     最近系统消息: room.chat.slice(-3).map((message) => message.text),
+    移除过程中的下行帧: frames,
   });
 };
 
@@ -823,9 +938,18 @@ const runScenario = async (scenario: Scenario) => {
     round.phaseTimer = state;
     armPhaseTimer(h.service.ctx, h.room, state, 60_000);
   }
+  const before = {
+    房主: h.host.sent.length,
+    路人1: h.human.connection.sent.length,
+  };
   await forceRemovePlayer(h.service.ctx, h.room, h.idOf(scenario.target), "kicked");
+  // 强制移除函数自己发出的帧（调用方随后补发的发布不在内）：顺序与内容都是行为的一部分。
+  const frames = {
+    房主: summarizeFrames(h.host.sent.slice(before.房主)),
+    路人1: summarizeFrames(h.human.connection.sent.slice(before.路人1)),
+  };
   publishRoom(h.service.ctx, h.room);
-  return observe(h, scenario);
+  return observe(h, scenario, frames);
 };
 
 describe("强制移除玩家的现状刻画", () => {
