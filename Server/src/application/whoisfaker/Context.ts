@@ -5,6 +5,9 @@ import { TEST_ROOMS_DISABLED, type TestRoomPolicy } from "../../domain/TestRooms
 import { describeError, type LogEntry } from "../../infrastructure/EventLogger";
 import {
   WHOISFAKER_LOBBY_ROOMS_EVENT,
+  type SpeechMode,
+  type TieBreakStage,
+  type WhoIsFakerPhase,
   type WhoIsFakerPlayerRecord,
   type WhoIsFakerRoomRecord,
 } from "../../shared/Index";
@@ -26,6 +29,14 @@ type WhoIsFakerSeatContext = SeatBindingContext<WhoIsFakerRoomRecord, WhoIsFaker
   timers: RoomTimers;
 };
 
+/** 阶段倒计时到点后的处理入口：参数是挂定时器时捕获的阶段、发言模式与 PK 档位。 */
+export type PhaseTimeoutHandler = (
+  roomId: string,
+  expectedPhase: WhoIsFakerPhase,
+  expectedSpeechMode?: SpeechMode,
+  expectedTieBreakStage?: TieBreakStage
+) => Promise<void>;
+
 /**
  * 卧底上下文：只放数据与叶子工具（房间表、连接登记、时钟、随机源、发号器、口令与聊天限流、
  * 定时器与旁表、日志）。玩法行为是以它为第一个参数的自由函数；子模块拿上下文而不是整个服务门面，
@@ -42,6 +53,11 @@ export interface WhoIsFakerContext {
   readonly testRooms: TestRoomPolicy;
   /** 按房具名的定时器：阶段倒计时只有一个名字，同房重挂先清，关房清本房全部。 */
   readonly timers: RoomTimers;
+  /**
+   * 倒计时到点后的处理入口，由门面在构造时注入：定时器模块只负责挂与清，
+   * 到点要走的超时处理在更上层，直接 import 会让两层互相依赖。
+   */
+  readonly onPhaseTimeout: PhaseTimeoutHandler;
   /** 号的形状只认本玩法自己发的前缀：快照恢复后据此把计数器抬过已用过的最大序号。 */
   readonly ids: IdCounter;
   /** 建房期间的房号占用：半成品房间不进房间表，读房间表的路径看不到它。 */
@@ -68,7 +84,10 @@ export interface WhoIsFakerContext {
   ): WhoIsFakerPlayerRecord;
 }
 
-export const createWhoIsFakerContext = (options: WhoIsFakerServiceOptions): WhoIsFakerContext => {
+export const createWhoIsFakerContext = (
+  options: WhoIsFakerServiceOptions,
+  onPhaseTimeout: PhaseTimeoutHandler
+): WhoIsFakerContext => {
   const now = options.now ?? (() => Date.now());
   const connectionRegistry = new ConnectionRegistry();
   const timers = new RoomTimers({
@@ -100,6 +119,7 @@ export const createWhoIsFakerContext = (options: WhoIsFakerServiceOptions): WhoI
       } satisfies RandomSource),
     testRooms: options.testRooms ?? TEST_ROOMS_DISABLED,
     timers,
+    onPhaseTimeout,
     ids: new IdCounter(/^(?:round|description|chat|player|session)_([0-9a-z]+)$/),
     reservations: new RoomIdReservations({
       takenError: { code: "ROOM_ALREADY_EXISTS", message: "房间已存在" },

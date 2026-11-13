@@ -282,13 +282,7 @@ export const armPhaseTimer = (
   delayMs: number
 ): void => {
   ctx.timers.arm(room.id, PHASE_TIMER, delayMs, () =>
-    handlePhaseTimeout(
-      ctx,
-      room.id,
-      timerState.phase,
-      timerState.speechMode,
-      timerState.tieBreakStage
-    )
+    ctx.onPhaseTimeout(room.id, timerState.phase, timerState.speechMode, timerState.tieBreakStage)
   );
 };
 

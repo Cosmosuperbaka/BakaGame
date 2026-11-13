@@ -51,7 +51,11 @@ type MissingCommandType = Exclude<
 const allCommandTypesCovered: MissingCommandType extends never ? true : never = true;
 void allCommandTypesCovered;
 
-const ctx = createWhoIsFakerContext({ eventLogger: new EventLogger(), testRooms: TEST_ROOMS_ON });
+// 这里只看命令表的形状，不会有倒计时到点，处理入口给个空实现。
+const ctx = createWhoIsFakerContext(
+  { eventLogger: new EventLogger(), testRooms: TEST_ROOMS_ON },
+  async () => {}
+);
 const table = createWhoIsFakerCommands(ctx);
 const TABLE_COMMAND_TYPES = Object.keys(table);
 

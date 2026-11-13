@@ -138,7 +138,17 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
   }
 
   constructor(options: WhoIsFakerServiceOptions) {
-    this.ctx = createWhoIsFakerContext(options);
+    this.ctx = createWhoIsFakerContext(
+      options,
+      (roomId, expectedPhase, expectedSpeechMode, expectedTieBreakStage) =>
+        handlePhaseTimeout(
+          this.ctx,
+          roomId,
+          expectedPhase,
+          expectedSpeechMode,
+          expectedTieBreakStage
+        )
+    );
     const ctx = this.ctx;
     this.tabSeats = {
       shape: whoIsFakerShape,
