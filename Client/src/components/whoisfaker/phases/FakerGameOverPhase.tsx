@@ -1,15 +1,12 @@
 ﻿import { useCallback, useState } from "react";
 import { motion } from "framer-motion";
-import { Trophy, BookOpen, History, RotateCcw, Vote } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
+import { Trophy, BookOpen, History, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { CollapsibleRegion, DisclosureChevron } from "@/components/ui/Collapsible";
-import { Hint } from "@/components/ui/Tooltip";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
-import { WINNER_LABELS } from "@/config/WhoIsFakerPresentation";
+import { WINNER_LABELS, WINNER_TONE } from "@/config/WhoIsFakerPresentation";
 import { headerTappable } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
-import { ABSTAIN_TARGET_ID } from "@bakagame/shared/values";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
 import { ScoreTable, type ScoreTableColumn } from "@/components/common/room/ScoreTable";
 import { FakerRoleBadge } from "../layout/FakerRoleBadge";
@@ -62,7 +59,6 @@ export function FakerGameOverPhase() {
   const sendCommand = useWhoIsFakerStore((s) => s.sendCommand);
   const addToast = useWhoIsFakerStore((s) => s.addToast);
   const summary = snapshot.summary;
-  const [showVotes, setShowVotes] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
   const [returning, setReturning] = useState(false);
   const isHost = snapshot.hostPlayerId === privateState?.playerId;
@@ -94,15 +90,7 @@ export function FakerGameOverPhase() {
 
   const hasHistory = Boolean(summary.history?.length);
 
-  // 胜方色与 ROLE_COLORS 同源：好人阵营随平民取 info，卧底阵营取 destructive，白板取中性色。
-  const winnerTone =
-    summary.winner === "aborted"
-      ? "text-muted-foreground"
-      : summary.winner === "undercover"
-        ? "text-destructive"
-        : summary.winner === "blank"
-          ? "text-muted-foreground"
-          : "text-info";
+  const winnerTone = WINNER_TONE[summary.winner];
 
   return (
     <div className="mx-auto max-w-2xl space-y-5">
@@ -171,7 +159,7 @@ export function FakerGameOverPhase() {
         })}
       />
 
-      {/* 全局历史已含每次投票与白板猜词，有它时不再重复下面两块旧复盘 */}
+      {/* 全局历史已含每次投票与白板猜词 */}
       {hasHistory ? (
         <section className="overflow-hidden rounded-md bg-muted">
           <DisclosureHeader
@@ -185,86 +173,6 @@ export function FakerGameOverPhase() {
           </CollapsibleRegion>
         </section>
       ) : null}
-
-      {/* 投票复盘：按天顺序展示（没有全局历史的旧结算） */}
-      {!hasHistory && summary.voteHistory && summary.voteHistory.length > 0 && (
-        <section className="overflow-hidden rounded-md bg-muted">
-          <DisclosureHeader
-            icon={<Vote className="h-3.5 w-3.5" aria-hidden="true" />}
-            label="投票明细"
-            open={showVotes}
-            onToggle={() => setShowVotes((v) => !v)}
-          />
-          <CollapsibleRegion open={showVotes}>
-            <div className="space-y-3 p-4">
-              {[...summary.voteHistory]
-                .sort((a, b) => a.day - b.day || (a.tieBreak ? 1 : 0) - (b.tieBreak ? 1 : 0))
-                .map((item, idx) => (
-                  <div key={idx} className="space-y-1.5 text-sm">
-                    <div className="font-semibold text-xs text-muted-foreground">
-                      第 {item.day} 天{item.tieBreak ? " · 平票 PK" : ""}：
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {item.votes.map((v, vIdx) => {
-                        const voter = snapshot.players.find((p) => p.id === v.voterId);
-                        const abstained = v.targetId === ABSTAIN_TARGET_ID;
-                        const target = snapshot.players.find((p) => p.id === v.targetId);
-                        return (
-                          <div
-                            key={vIdx}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background text-xs"
-                          >
-                            <span className="font-medium">{voter?.name ?? v.voterId}</span>
-                            <span className="text-muted-foreground">
-                              {abstained ? "选择了" : "投给了"}
-                            </span>
-                            <Badge variant="outline" size="xs">
-                              {abstained ? "弃票" : (target?.name ?? v.targetId)}
-                            </Badge>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </CollapsibleRegion>
-        </section>
-      )}
-
-      {/* 白板猜词记录 */}
-      {!hasHistory && summary.blankGuesses.length > 0 && (
-        <section className="overflow-hidden rounded-md bg-muted">
-          <div className="border-b border-background px-4 py-2.5">
-            <h3 className="text-xs font-semibold text-muted-foreground">白板猜词记录</h3>
-          </div>
-          <div className="divide-y divide-background">
-            {summary.blankGuesses.map((g, i) => {
-              const player = snapshot.players.find((p) => p.id === g.playerId);
-              return (
-                <div key={i} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  <Hint label={player?.name}>
-                    <span className="w-1/3 min-w-0 shrink-0 truncate font-medium">
-                      {player?.name}
-                    </span>
-                  </Hint>
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                    {g.guessedWords[0]} / {g.guessedWords[1]}
-                  </span>
-                  {/* 猜中是成功状态，取 success；猜错取 destructive，两者都有文字 */}
-                  <Badge
-                    variant={g.success ? "matched" : "destructive"}
-                    size="xs"
-                    className="shrink-0"
-                  >
-                    {g.success ? "正确" : "错误"}
-                  </Badge>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* 房主可让全房回到等待阶段。 */}
       <div className="flex flex-wrap justify-center gap-2 pt-2">

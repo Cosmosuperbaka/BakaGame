@@ -42,3 +42,11 @@ export const WINNER_LABELS: Record<RoundWinner, string> = {
   blank: "白板胜利",
   aborted: "游戏中断",
 };
+
+/** 胜方色与 ROLE_COLORS 同源：好人阵营随平民取 info，卧底阵营取 destructive，白板与中断取中性色。 */
+export const WINNER_TONE: Record<RoundWinner, string> = {
+  good: "text-info",
+  undercover: "text-destructive",
+  blank: "text-muted-foreground",
+  aborted: "text-muted-foreground",
+};
