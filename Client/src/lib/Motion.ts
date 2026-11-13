@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { TargetAndTransition, Transition, Variants } from "framer-motion";
 
 // ==================== 过渡基线 ====================
@@ -782,24 +781,6 @@ export interface OriginPoint {
 }
 
 /**
- * 记录最近一次点击的触发元素位置。
- * 浮层据此把 transform-origin 落在按钮上，读作从按钮里被拉出来，
- * 而不是从屏幕正中凭空出现。
- */
-export function useOriginTracker() {
-  const [origin, setOrigin] = useState<OriginPoint | null>(null);
-
-  const capture = (event: { currentTarget: EventTarget | null }) => {
-    const node = event.currentTarget;
-    if (!(node instanceof Element)) return;
-    const rect = node.getBoundingClientRect();
-    setOrigin({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-  };
-
-  return { origin, capture };
-}
-
-/**
  * 从来源点被吸出的浮层。缩放与轻微位移同时发生，
  * 配合 transform-origin 形成窗口自按钮展开的观感；
  * 退出时反向收回同一位置，保证开合互为逆过程。
@@ -860,7 +841,7 @@ export function springWithVelocity(
 }
 
 /** 标签内容推移：一整幅面板加一道缝的行程（百分比）、途中纵向的压扁程度、点击带来的初速度。 */
-export const tabPush = { travel: 104, squash: 0.96, launch: 1.5 } as const;
+const tabPush = { travel: 104, squash: 0.96, launch: 1.5 } as const;
 
 /**
  * 标签内容切换。`custom` 是切换方向（1 往后、-1 往前、0 未知）：
