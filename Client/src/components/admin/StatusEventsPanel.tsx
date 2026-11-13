@@ -27,10 +27,11 @@ import {
   AdminTable,
   AdminToolbar,
   ConfirmDialog,
+  ListState,
   Pager,
-  QueryState,
 } from "@/components/admin/AdminParts";
-import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
+import { useAdminAction } from "@/hooks/UseAdminQuery";
+import { useAdminList } from "@/hooks/UseAdminList";
 import { api, apiErrorMessage } from "@/lib/Api";
 import { formatDateTime } from "@/lib/AdminFormat";
 import { STATUS_COMPONENT_LABELS, STATUS_EVENT_STATUS_LABELS } from "@/lib/SystemStatus";
@@ -332,45 +333,32 @@ function EventDialog({
  */
 export function StatusEventsPanel() {
   const [filter, setFilter] = useState<StatusEventFilter>("all");
-  const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<PublicStatusEvent | null>(null);
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState<PublicStatusEvent | null>(null);
 
-  const query = useAdminQuery(
-    `statusEvents:${filter}:${offset}`,
-    async () =>
-      api.admin.statusEvents.list({
-        ...(filter === "active" ? { active: true } : {}),
-        ...(filter === "incident" || filter === "maintenance" ? { kind: filter } : {}),
-        limit: PAGE_LIMIT,
-        offset,
-      }),
-    "状态事件加载失败"
-  );
-  const items = query.data?.items ?? [];
-  const total = query.data?.total ?? 0;
+  const list = useAdminList({
+    name: "statusEvents",
+    filters: {
+      ...(filter === "active" ? { active: true } : {}),
+      ...(filter === "incident" || filter === "maintenance" ? { kind: filter } : {}),
+    },
+    limit: PAGE_LIMIT,
+    fallback: "状态事件加载失败",
+    fetch: (input) => api.admin.statusEvents.list(input),
+  });
+  const { items, query } = list;
   const reload = query.reload;
 
   return (
     <div>
-      <AdminToolbar
-        title="状态事件"
-        compact
-        // 读取中不显示计数：与其它面板一致，避免先闪一个 0。
-        count={query.data ? total : null}
-        onReload={reload}
-        loading={query.loading && Boolean(query.data)}
-      >
+      <AdminToolbar title="状态事件" compact {...list.toolbar}>
         {/* 筛选与其它面板一样放进标题行；原先独占一行的设置行写法在手机上放不下四个选项，把页面撑出右缘。 */}
         <SegmentedControl
           aria-label="筛选"
           size="sm"
           value={filter}
-          onValueChange={(next) => {
-            setFilter(next);
-            setOffset(0);
-          }}
+          onValueChange={setFilter}
           options={FILTER_OPTIONS}
         />
         <Button type="button" size="sm" onClick={() => setCreating(true)}>
@@ -381,14 +369,7 @@ export function StatusEventsPanel() {
         面向状态页的故障通告与维护窗口：进行中的一律展示，已结束的回看一个月。
         事件与维护只出现在本部署环境的状态页上。
       </p>
-      <QueryState
-        loading={query.loading}
-        error={query.error}
-        empty={Boolean(query.data) && items.length === 0}
-        hasData={Boolean(query.data)}
-        onRetry={reload}
-        emptyText="没有匹配的状态事件"
-      />
+      <ListState list={list} emptyText="没有匹配的状态事件" />
       {items.length ? (
         <AdminTable label="状态事件">
           <thead>
@@ -472,7 +453,7 @@ export function StatusEventsPanel() {
           </tbody>
         </AdminTable>
       ) : null}
-      <Pager offset={offset} limit={PAGE_LIMIT} total={total} onChange={setOffset} />
+      <Pager {...list.pager} />
 
       {creating ? (
         <EventDialog

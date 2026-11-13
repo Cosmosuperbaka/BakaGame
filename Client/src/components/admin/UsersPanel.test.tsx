@@ -34,8 +34,12 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 beforeEach(() => {
   users.list.mockResolvedValue({ items: [alice], total: 57 });
   // jsdom 没有指针捕获，Radix 下拉的点选会读到它。
-  Element.prototype.hasPointerCapture ??= () => false;
-  Element.prototype.releasePointerCapture ??= () => {};
+  if (!("hasPointerCapture" in Element.prototype)) {
+    Object.assign(Element.prototype, {
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+    });
+  }
 });
 afterEach(() => vi.clearAllMocks());
 
