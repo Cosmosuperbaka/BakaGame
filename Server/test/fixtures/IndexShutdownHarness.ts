@@ -86,15 +86,24 @@ export async function createIndexShutdownHarness(
       throw new Error(`injected:${stage}`, { cause: new Error("injected cause") });
     calls.push(`${stage}:end`);
   };
-  const snapshot = () => ({ onlinePlayerCount: 0, roomCount: 0, connectionCount: 0 });
+  /** 三款各给不同的读数：求和与按款上报漏掉任何一款，数字都对不上。 */
+  const health = {
+    faker: { onlinePlayerCount: 1, roomCount: 10, connectionCount: 100 },
+    song: { onlinePlayerCount: 2, roomCount: 20, connectionCount: 200 },
+    cee: { onlinePlayerCount: 4, roomCount: 40, connectionCount: 400 },
+  };
+  const gauges: { name: string; value: number; tags?: Record<string, unknown> }[] = [];
+  const bangumiLoads: number[] = [];
+  const snapshotTargets: { services: Record<string, unknown> }[] = [];
   const service = (game: "faker" | "song" | "cee") => ({
     notifyShutdown: () => execute(`notify.${game}`),
     runHousekeeping: () => options.housekeeping?.(game) ?? Promise.resolve(),
-    getHealthSnapshot: snapshot,
+    getHealthSnapshot: () => health[game],
     // 只有谁是卧底自带可排队写入队列；猜歌与 CEE 的落库都汇进共享的对局记录队列，
     // 因此它们没有 drainPendingWrites —— 出现即为凭空造 API。
     ...(game === "faker" ? { drainPendingWrites: () => execute("drain.faker") } : {}),
   });
+  const games = { faker: service("faker"), song: service("song"), cee: service("cee") };
   class Logger {
     warn(message: string, details?: unknown) {
       logs.push({ level: "warn", message, details });
@@ -140,7 +149,8 @@ export async function createIndexShutdownHarness(
     },
     "./application/RoomSnapshots": {
       restoreRoomSnapshots: () => ({ restored: {}, discarded: [] }),
-      saveRoomSnapshots: () => {
+      saveRoomSnapshots: (targets: { services: Record<string, unknown> }) => {
+        snapshotTargets.push(targets);
         recordSync("persist");
         return { saved: 0 };
       },
@@ -202,7 +212,9 @@ export async function createIndexShutdownHarness(
     "./infrastructure/Sentry": {
       initServerSentry() {},
       captureServerCheckIn() {},
-      gaugeServerMetric() {},
+      gaugeServerMetric(name: string, value: number, tags?: Record<string, unknown>) {
+        gauges.push({ name, value, tags });
+      },
       SERVER_HEARTBEAT_INTERVAL_MS: 60_000,
       flushServerSentry: (ms: number) => execute("sentry.flush", ms),
       closeServerSentry: (ms: number) => execute("sentry.close", ms),
@@ -222,9 +234,9 @@ export async function createIndexShutdownHarness(
           // 真实装配下 Index 会读回状态历史与实时样本并定时落库；这里空转，只验证它们不拖停机。
           statusHistory: { load: async () => {}, flush: async () => {} },
           statusSamples: { load: async () => {}, flush: async () => {} },
-          games: { faker: service("faker"), song: service("song"), cee: service("cee") },
+          games,
           // 真实装配下它把玩家数报给数据 Worker（更新器限速用）；这里只是空转。
-          reportBangumiLoad: () => {},
+          reportBangumiLoad: (players: number) => bangumiLoads.push(players),
         };
       },
     },
@@ -288,6 +300,12 @@ export async function createIndexShutdownHarness(
     intervals,
     timeouts,
     listenOptions,
+    games,
+    health,
+    gauges,
+    bangumiLoads,
+    /** 停机时交给快照保存的目标：服务表必须逐款对应各自的服务。 */
+    snapshotTargets,
     /** 真实 Index 的停机总预算常量：断言看门狗与它同源，而不是各自抄一个数字。 */
     budgetMs: runInContext("exports.SHUTDOWN_BUDGET_MS", context) as number,
     isShuttingDown: () => configuration.isShuttingDown(),

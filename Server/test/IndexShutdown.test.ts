@@ -268,3 +268,30 @@ test("真实 Index：房务巡检逐款执行，某款失败只记一条带玩�
     details: { game: "song", message: "巡检失败" },
   });
 });
+
+test("真实 Index：运行时指标按款上报并把三款的在线人数求和交给更新器", async () => {
+  const harness = await createIndexShutdownHarness();
+  for (const game of ["faker", "song", "cee"] as const) {
+    for (const [name, key] of [
+      ["bakagame.players.online", "onlinePlayerCount"],
+      ["bakagame.rooms.active", "roomCount"],
+      ["bakagame.connections.active", "connectionCount"],
+    ] as const) {
+      expect(harness.gauges).toContainEqual({
+        name,
+        value: harness.health[game][key],
+        tags: { game },
+      });
+    }
+  }
+  expect(harness.bangumiLoads).toEqual([1 + 2 + 4]);
+});
+
+test("真实 Index：停机时房间快照的服务表逐款对应各自的服务", async () => {
+  const harness = await createIndexShutdownHarness();
+  await harness.shutdown();
+  expect(harness.snapshotTargets).toHaveLength(1);
+  const { services } = harness.snapshotTargets[0];
+  for (const game of ["faker", "song", "cee"] as const)
+    expect(services[game]).toBe(harness.games[game]);
+});
