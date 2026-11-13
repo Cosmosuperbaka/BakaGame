@@ -17,6 +17,7 @@ import {
   submitBlankGuess,
   updateBlankGuessDraft,
 } from "./BlankGuess";
+import { sendChat } from "./Chat";
 import type { WhoIsFakerContext } from "./Context";
 import { renamePlayer, setReady, setSpectator } from "./PlayerCommands";
 import {
@@ -43,7 +44,6 @@ type RoomHandlers = Pick<
   | "updateSettings"
   | "kick"
   | "transferHost"
-  | "sendChat"
   | "assignQuestioner"
   | "submitWords"
   | "submitDescription"
@@ -226,7 +226,7 @@ export const createWhoIsFakerCommands = (ctx: WhoIsFakerContext): WhoIsFakerComm
   "chat.send": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.sendChat(at, m.payload.text),
+    run: (deps, at, m) => sendChat(deps.ctx, at, m.payload.text),
   },
   "player.rename": {
     access: "seat",

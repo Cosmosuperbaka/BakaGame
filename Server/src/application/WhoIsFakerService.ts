@@ -2,7 +2,6 @@ import { ADMIN_CLOSE_REASON, type AdminRoomView } from "../domain/AdminRoom";
 import { assertTextAllowed } from "../infrastructure/SensitiveText";
 import { AppError } from "../domain/Errors";
 import {
-  type ChatChannel,
   type ConnectionRecord,
   type GameRound,
   type WhoIsFakerPlayerRecord,
@@ -39,7 +38,6 @@ import {
   ROOM_EXPIRING_WARNING_MS,
 } from "../config/Constants";
 import { resolveHostGrace, transferHost } from "./room/HostPolicy";
-import { acceptChatText, appendChat } from "./room/ChatLog";
 import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
 import {
   assertAgentAdmission,
@@ -100,10 +98,8 @@ import {
   ensureHost,
   ensureUniqueName,
   getRoom,
-  isGhostChatActive,
   isRoundActive,
   requireRound,
-  spectatorReadsGhostChat,
   type WhoIsFakerSeatAt,
 } from "./whoisfaker/RoomAccess";
 import {
@@ -1236,62 +1232,6 @@ export class WhoIsFakerService implements GameService<WhoIsFakerClientMessage> {
     await runBots(this.ctx, room);
 
     return { submitted: true };
-  }
-
-  private chatChannelOf(
-    room: WhoIsFakerRoomRecord,
-    player: WhoIsFakerPlayerRecord
-  ): { channel: ChatChannel; ghostRole?: "dead" | "spectator" } {
-    if (!isGhostChatActive(room)) return { channel: "main" };
-    // 读不到亡者频道的旁观者不往里写：否则他发的话自己都看不见，也等不到回复。
-    const isSpectator =
-      player.membership === "spectator" &&
-      room.round?.questionerPlayerId !== player.id &&
-      spectatorReadsGhostChat(room);
-    const isDead = room.round?.assignments[player.id]?.alive === false;
-    if (isSpectator || isDead) {
-      return { channel: "ghost", ghostRole: isSpectator ? "spectator" : "dead" };
-    }
-    return { channel: "main" };
-  }
-
-  async sendChat(at: WhoIsFakerSeatAt, text: string) {
-    // 聊天区在任意阶段都开放，所以不受 round.phase 限制。
-    const { room, seat: player, connection } = at;
-    this.ctx.chatLimiter.consume(connection.id);
-    const normalized = acceptChatText(text, {
-      maxLength: undefined,
-      emptyError: { code: "INVALID_CHAT", message: "聊天内容不能为空" },
-    });
-
-    const { channel, ghostRole } = this.chatChannelOf(room, player);
-
-    appendChat(room, {
-      id: this.ctx.createId("chat"),
-      playerId: player.id,
-      playerName: player.name,
-      text: normalized,
-      createdAt: this.ctx.now(),
-      system: false,
-      channel,
-      ghostRole,
-    });
-    this.ctx.touch(room);
-
-    await this.ctx.log({
-      type: "chat.sent",
-      createdAt: this.ctx.now(),
-      roomId: room.id,
-      playerId: player.id,
-      payload: {
-        text: normalized,
-        channel,
-        ghostRole,
-      },
-    });
-
-    publishRoom(this.ctx, room);
-    return { sent: true };
   }
 
   async transferHost(at: WhoIsFakerSeatAt, targetPlayerId: string) {
