@@ -619,6 +619,23 @@ export const receiptCard = {
   transition: spring.impulse,
 } as const;
 
+/**
+ * 匹配成功「成局」的一拍：从排队切进系列赛时，比分板先以回执的回弹落定（对阵锁定了），
+ * 对局区等比分板第一次落到原大（回弹之前）再自后方推入（同 `phaseSwap`），两拍分得开：先锁定对阵，再开局。刷新或重连直接落在系列赛里时整块是首屏，两者都不播。
+ */
+export const seriesStart = {
+  board: {
+    initial: receiptCard.initial,
+    animate: receiptCard.animate,
+    transition: receiptCard.transition,
+  },
+  stage: {
+    initial: { opacity: 0, scale: 0.97 },
+    animate: { opacity: 1, scale: 1 },
+    transition: { ...spring.swift, delay: springReachMs(receiptCard.transition, 1) / 1000 },
+  },
+} as const;
+
 /** 谁是卧底分到的词语揭示后停靠到顶栏时的缩放：停靠位按这个比例预留宽高。 */
 export const wordDock = { scale: 0.34 } as const;
 

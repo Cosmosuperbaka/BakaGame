@@ -16,7 +16,7 @@ import { CEERankedResultCard } from "@/components/cee/ranked/CEERankedResultCard
 import { CEERankedScoreboard } from "@/components/cee/ranked/CEERankedScoreboard";
 import { CEEDataSourceContext, rankedCEEDataSource } from "@/components/cee/CEEDataSource";
 import { isBakaClient } from "@/lib/BakaChannel";
-import { dropIn, phaseSwap } from "@/lib/Motion";
+import { dropIn, phaseSwap, seriesStart } from "@/lib/Motion";
 import { useAccountStore, type AccountStatus } from "@/stores/UseAccountStore";
 import { useCEEStore } from "@/stores/UseCEEStore";
 import { useCEERankedStore } from "@/stores/UseCEERankedStore";
@@ -39,47 +39,51 @@ function RankedSeriesStage() {
   return (
     <CEEDataSourceContext.Provider value={rankedCEEDataSource}>
       <div className="space-y-4">
-        <CEERankedScoreboard series={series} />
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.div
-            key={
-              stage === "play"
-                ? `play-${series.game?.number ?? 0}`
-                : `${stage}-${series.games.length}`
-            }
-            variants={phaseSwap}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="space-y-6"
-          >
-            {stage === "settled" ? (
-              <>
-                <CEERankedResultCard
+        <motion.div {...seriesStart.board}>
+          <CEERankedScoreboard series={series} />
+        </motion.div>
+        <motion.div {...seriesStart.stage}>
+          <AnimatePresence initial={false} mode="popLayout">
+            <motion.div
+              key={
+                stage === "play"
+                  ? `play-${series.game?.number ?? 0}`
+                  : `${stage}-${series.games.length}`
+              }
+              variants={phaseSwap}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="space-y-6"
+            >
+              {stage === "settled" ? (
+                <>
+                  <CEERankedResultCard
+                    series={series}
+                    placementTotal={CEE_RANKED_PLACEMENT_SERIES}
+                    requeueing={Boolean(pending.queue)}
+                    leaving={Boolean(pending.leave)}
+                    onRequeue={() => void store.queue()}
+                    onLeave={() => void store.leave()}
+                  />
+                  {[...series.games].reverse().map((game) => (
+                    <CEERankedGameRecap key={game.number} game={game} />
+                  ))}
+                </>
+              ) : stage === "recap" && last ? (
+                <CEERankedGameRecap game={last} reveal />
+              ) : (
+                <CEERankedMatch
                   series={series}
-                  placementTotal={CEE_RANKED_PLACEMENT_SERIES}
-                  requeueing={Boolean(pending.queue)}
-                  leaving={Boolean(pending.leave)}
-                  onRequeue={() => void store.queue()}
-                  onLeave={() => void store.leave()}
+                  pending={pending}
+                  onGuess={(characterId) => store.guess(characterId)}
+                  onSurrender={() => void store.surrender()}
+                  onExit={() => void store.exit()}
                 />
-                {[...series.games].reverse().map((game) => (
-                  <CEERankedGameRecap key={game.number} game={game} />
-                ))}
-              </>
-            ) : stage === "recap" && last ? (
-              <CEERankedGameRecap game={last} reveal />
-            ) : (
-              <CEERankedMatch
-                series={series}
-                pending={pending}
-                onGuess={(characterId) => store.guess(characterId)}
-                onSurrender={() => void store.surrender()}
-                onExit={() => void store.exit()}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </motion.div>
       </div>
     </CEEDataSourceContext.Provider>
   );
