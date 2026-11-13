@@ -8,10 +8,7 @@ import { PlayerAvatar } from "@/components/common/PlayerAvatar";
 import { SpectatorToggle } from "@/components/common/SpectatorToggle";
 import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer, listItem, tappable } from "@/lib/Motion";
-import {
-  DESCRIPTION_HEAD_TONES,
-  descriptionCellShadeForPlayer,
-} from "@/lib/DescriptionColumns";
+import { DESCRIPTION_HEAD_TONES, descriptionCellShadeForPlayer } from "@/lib/DescriptionColumns";
 import type { PlayerListHistory } from "./FakerSpeechHistory";
 import { FakerPendingSpeech, SubmittedSpeech } from "./FakerPendingSpeech";
 import { FakerRoleBadge } from "./FakerRoleBadge";
@@ -32,6 +29,8 @@ import { buildKnownRoleMap, resolveStatus } from "./FakerPlayerPresentation";
 import { COMPACT_PLAYER_COLUMN_WIDTH, speechGridTemplate } from "./FakerPlayerListLayout";
 import type {
   DescriptionRecord,
+  WhoIsFakerCommand,
+  WhoIsFakerPayload,
   WhoIsFakerPhase,
   WhoIsFakerRole,
   WhoIsFakerPrivateState,
@@ -131,38 +130,24 @@ export function FakerPlayerList(props: PlayerListProps) {
     ...observers.map((player) => ({ id: player.id, group: "observer" })),
   ]);
 
-  const handleKick = useCallback(
-    async (playerId: string) => {
+  // 房主与旁观操作互相独立，不需要锁：发命令，失败落成错误提示
+  const send = useCallback(
+    async <TCommand extends WhoIsFakerCommand>(
+      type: TCommand,
+      payload: WhoIsFakerPayload<TCommand>
+    ) => {
       try {
-        await sendCommand("room.kick", { playerId });
+        await sendCommand(type, payload);
       } catch (error) {
         addToast((error as { message: string }).message, "error");
       }
     },
     [addToast, sendCommand]
   );
-
-  const handleTransferHost = useCallback(
-    async (playerId: string) => {
-      try {
-        await sendCommand("room.transferHost", { playerId });
-      } catch (error) {
-        addToast((error as { message: string }).message, "error");
-      }
-    },
-    [addToast, sendCommand]
-  );
-
-  const handleSetSpectator = useCallback(
-    async (spectator: boolean) => {
-      try {
-        await sendCommand("player.setSpectator", { spectator });
-      } catch (error) {
-        addToast((error as { message: string }).message, "error");
-      }
-    },
-    [addToast, sendCommand]
-  );
+  const handleKick = (playerId: string) => void send("room.kick", { playerId });
+  const handleTransferHost = (playerId: string) => void send("room.transferHost", { playerId });
+  const handleSetSpectator = (spectator: boolean) =>
+    void send("player.setSpectator", { spectator });
 
   /**
    * 渲染一行。展开发言历史时，玩家名与该行的发言单元格是同一个
@@ -190,8 +175,8 @@ export function FakerPlayerList(props: PlayerListProps) {
       ),
       availableMarks,
       onMarkChange,
-      onKick: (playerId) => void handleKick(playerId),
-      onTransferHost: (playerId) => void handleTransferHost(playerId),
+      onKick: handleKick,
+      onTransferHost: handleTransferHost,
     };
 
     // 未展开历史时 PlayerRow 自带进出场动画，直接返回。
@@ -314,10 +299,7 @@ export function FakerPlayerList(props: PlayerListProps) {
       </motion.div>
 
       {showSpectatorToggle && isSpectator ? (
-        <SpectatorToggle
-          spectator={false}
-          onToggle={(spectator) => void handleSetSpectator(spectator)}
-        />
+        <SpectatorToggle spectator={false} onToggle={handleSetSpectator} />
       ) : null}
 
       {observers.length > 0 || (showSpectatorToggle && !isSpectator) ? (
@@ -334,10 +316,7 @@ export function FakerPlayerList(props: PlayerListProps) {
             </AnimatePresence>
           </motion.div>
           {showSpectatorToggle && !isSpectator ? (
-            <SpectatorToggle
-              spectator
-              onToggle={(spectator) => void handleSetSpectator(spectator)}
-            />
+            <SpectatorToggle spectator onToggle={handleSetSpectator} />
           ) : null}
         </>
       ) : null}
@@ -432,6 +411,10 @@ function SpeechCell({
   /** 棋盘格底色，由所在行列的奇偶决定 */
   shade?: string;
 }) {
+  const orderBadge =
+    order !== undefined ? (
+      <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">#{order}</span>
+    ) : null;
   return (
     <div
       className={cn(
@@ -444,29 +427,17 @@ function SpeechCell({
       {/* 列宽已按本列最长发言取值，因此单行不再换行 */}
       {description ? (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
-          {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
-              #{order}
-            </span>
-          ) : null}
+          {orderBadge}
           <span>{description.text}</span>
         </span>
       ) : submitted ? (
         <div className="flex items-center gap-1.5">
-          {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
-              #{order}
-            </span>
-          ) : null}
+          {orderBadge}
           <SubmittedSpeech />
         </div>
       ) : expected ? (
         <div className="flex items-center gap-1.5">
-          {order !== undefined ? (
-            <span className="font-mono text-xs text-muted-foreground shrink-0 font-medium">
-              #{order}
-            </span>
-          ) : null}
+          {orderBadge}
           <FakerPendingSpeech />
         </div>
       ) : null}
