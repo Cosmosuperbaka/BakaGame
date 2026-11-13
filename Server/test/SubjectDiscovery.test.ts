@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { BangumiSearchIndex } from "../src/infrastructure/BangumiSearchIndex";
-import { discoverNewSubjects, infoboxToWikitext } from "../src/infrastructure/SubjectDiscovery";
+import { discoverNewSubjects } from "../src/infrastructure/SubjectDiscovery";
+import { infoboxToWikitext } from "../src/infrastructure/BangumiApiTypes";
 import { requestBodyText, requestUrlText } from "./RequestFixtures";
 
 const BASE = "https://bgm.invalid";

@@ -23,7 +23,7 @@ import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
  * 不需要额外的锁或队列（见 BangumiDataWorker 的注释）。
  */
 
-import { infoboxToWikitext, type ApiInfobox } from "./SubjectDiscovery";
+import { subjectColumnsFromApi, type ApiSubject } from "./BangumiApiTypes";
 import {
   readDatasetStatus,
   type BangumiDatasetStatus,
@@ -91,34 +91,12 @@ export interface SubjectUpdaterOptions extends SubjectUpdaterInit {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/** `/v0/subjects/{id}` 里更新器用得到的字段。 */
-interface ApiSubject {
-  name?: string;
-  name_cn?: string;
-  date?: string;
-  infobox?: string;
-  summary?: string;
-  nsfw?: boolean;
-  tags?: Array<{ name?: string; count?: number }>;
-  meta_tags?: string[];
-  images?: { large?: string };
-  rating?: { score?: number; total?: number; rank?: number };
-  collection?: Record<string, number>;
-}
-
 interface DueRow {
   id: number | string;
   heat: number | null;
   refreshed_at: number | null;
   next_at: number | null;
 }
-
-/** 从 API 响应取热度：收藏分布各桶求和，与全量构建脚本同一口径。 */
-const heatOf = (subject: ApiSubject): number =>
-  Object.values(subject.collection ?? {}).reduce<number>(
-    (sum, value) => sum + Number(value ?? 0),
-    0
-  );
 
 /** 循环自身的状态：只含内存里的量，后台状态页跨线程读。 */
 export interface UpdaterRuntimeStatus {
@@ -414,14 +392,7 @@ export class SubjectUpdater {
 
   /** 覆盖式更新：上游是权威，除了类型与 nsfw（数据集的裁剪依据）之外全量覆盖。 */
   private applySubject(subjectId: number, subject: ApiSubject, now: number): boolean {
-    const tags = Array.isArray(subject.tags) ? subject.tags : [];
-    const tagNames = tags.map((tag) => String(tag.name ?? "")).filter(Boolean);
-    const rawTags = Object.fromEntries(
-      tags.filter((tag) => tag.name).map((tag) => [String(tag.name), Number(tag.count ?? 0)])
-    );
-    const rating = subject.rating ?? {};
-    const image = String(subject.images?.large ?? "");
-    const heat = heatOf(subject);
+    const columns = subjectColumnsFromApi(subject);
 
     // 上游没给的字段保持原值：匿名接口偶尔缺 collection / images，拿 0 或空串覆盖
     // 会把一条热门作品的封面和热度抹掉 —— 比不更新更糟。
@@ -454,19 +425,19 @@ export class SubjectUpdater {
           " score=?, rating_count=?, heat=?, rank=?, image=? WHERE id=?"
       )
       .run(
-        String(subject.name ?? ""),
-        String(subject.name_cn ?? ""),
-        infoboxToWikitext(subject.infobox as ApiInfobox | undefined),
-        String(subject.summary ?? ""),
-        String(subject.date ?? ""),
-        JSON.stringify(tagNames),
-        JSON.stringify(rawTags),
-        JSON.stringify(subject.meta_tags ?? []),
-        Number(rating.score ?? 0),
-        Number(rating.total ?? 0),
-        heat || Number(current?.heat ?? 0),
-        Number(rating.rank ?? 0),
-        image || String(current?.image ?? ""),
+        columns.name,
+        columns.nameCn,
+        columns.infobox,
+        columns.summary,
+        columns.date,
+        JSON.stringify(columns.tagNames),
+        JSON.stringify(columns.rawTags),
+        JSON.stringify(columns.metaTags),
+        columns.score,
+        columns.ratingCount,
+        columns.heat || Number(current?.heat ?? 0),
+        columns.rank,
+        columns.image || String(current?.image ?? ""),
         subjectId
       );
     // 更新 0 行 = 库里没有这个条目（被裁剪或已删除）：不算失败，但也不必排队索引。
