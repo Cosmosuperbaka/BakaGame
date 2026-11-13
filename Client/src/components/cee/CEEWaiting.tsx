@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- 恢复函数与等待页共享同一份目录同步规则，放一起改动时不会漏掉一边。 */
 import { useState } from "react";
-import { Check, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
+import { Check, Eye, EyeOff, Gamepad2, Globe, Lock, Settings, Users, X } from "lucide-react";
 import type { CEEPrivateState, CEERoomSnapshot } from "@bakagame/shared";
 import { Button } from "@/components/ui/Button";
 import { PhaseHeader } from "@/components/common/PhaseHeader";
@@ -17,7 +17,7 @@ import { useCEEAction } from "@/hooks/UseCEEAction";
 import { useRoomSettingsRestore } from "@/hooks/UseRoomSettingsRestore";
 import { ceeErrorMessage, useCEEStore } from "@/stores/UseCEEStore";
 import { ceeRoomPath } from "@/lib/CEESession";
-import type { CEERoomSettingsMemory } from "@/lib/RoomSettingsMemory";
+import { updateRoomSettingsMemory, type CEERoomSettingsMemory } from "@/lib/RoomSettingsMemory";
 import { CEEGameSettings } from "./CEEGameSettings";
 import { CEETeamPicker } from "./CEETeamPicker";
 import { waitingSnapshotOf } from "./CEEWaitingSave";
@@ -57,7 +57,7 @@ const roomValidationText = (
     ? "私密房间需要密码，填写后才会保存"
     : "";
 
-/** 折叠面板收起时显示的两行摘要，与面板里的开关口径一致。 */
+/** 折叠面板收起时显示的摘要，与面板里的开关口径一致；原版房没有「旁观可见答案」这一项。 */
 const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
   snapshot.visibility === "private"
     ? snapshot.source === "original"
@@ -65,7 +65,33 @@ const roomSummaryLines = (snapshot: CEERoomSnapshot): string[] => [
       : "私密房间"
     : "公开房间",
   snapshot.allowSpectators ? "允许旁观" : "不允许旁观",
+  snapshot.source === "native"
+    ? snapshot.settings.spectatorsSeeAnswers
+      ? "旁观可见答案"
+      : "旁观隐藏答案"
+    : "",
 ];
+
+/**
+ * 旁观可见答案是玩法设置里的一项，但摆在房间设置里（与卧底、猜歌同位）：它不进题目与猜测的草稿，
+ * 开关一动就把「房间里当前的整份设置」改这一项后发出，玩法设置的自动保存也始终沿用房间里的当前值。
+ * 下次建房的记忆跟着记，没有记忆时以当前设置起一份（MCP 开关属于房间级，不进记忆）。
+ */
+async function saveSpectatorsSeeAnswers(roomId: string, value: boolean): Promise<void> {
+  const live = waitingSnapshotOf(roomId);
+  if (!live) return;
+  await useCEEStore
+    .getState()
+    .sendCommand("cee.room.settings", {
+      settings: { ...live.settings, spectatorsSeeAnswers: value },
+    });
+  updateRoomSettingsMemory("cee", (current) => ({
+    settings: {
+      ...(current?.settings ?? { ...live.settings, allowAgents: false }),
+      spectatorsSeeAnswers: value,
+    },
+  }));
+}
 
 /** 与建房弹窗同一措辞：增强房的私密房设密码，原版房没有密码机制，开关只控制是否进大厅。 */
 const visibilityIcon = (
@@ -95,6 +121,9 @@ type RoomSettingsSectionProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: <K extends keyof RoomDraft>(key: K, value: RoomDraft[K]) => void;
+  /** 旁观可见答案：不进草稿，改一下就保存。 */
+  seeAnswersPending: boolean;
+  onSeeAnswersChange: (value: boolean) => void;
 };
 
 /**
@@ -110,6 +139,8 @@ function RoomSettingsSection({
   open,
   onOpenChange,
   onEdit,
+  seeAnswersPending,
+  onSeeAnswersChange,
 }: RoomSettingsSectionProps) {
   // 非房主读当前快照；房主读草稿。
   const roomValues = isHost
@@ -154,12 +185,22 @@ function RoomSettingsSection({
           </SettingReveal>
         ) : null}
         {snapshot.source === "native" ? (
-          <SettingSwitchRow
-            label="允许旁观"
-            icon={Users}
-            checked={roomValues.allowSpectators}
-            onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
-          />
+          <>
+            <SettingSwitchRow
+              label="允许旁观"
+              icon={Users}
+              checked={roomValues.allowSpectators}
+              onCheckedChange={(checked) => onEdit("allowSpectators", checked)}
+            />
+            <SettingSwitchRow
+              label="旁观者可见答案"
+              description="局中把答案与全场猜测发给旁观者与中途加入的人；关闭时他们看不到答案，揭晓后照常公开。"
+              icon={snapshot.settings.spectatorsSeeAnswers ? Eye : EyeOff}
+              checked={snapshot.settings.spectatorsSeeAnswers === true}
+              disabled={seeAnswersPending}
+              onCheckedChange={onSeeAnswersChange}
+            />
+          </>
         ) : null}
         {validation ? (
           <p role="alert" className="text-xs text-destructive">
@@ -277,6 +318,14 @@ export function CEEWaiting({
     isHost
   );
   const [roomNotice, setRoomNotice] = useState("");
+  const [seeAnswersPending, setSeeAnswersPending] = useState(false);
+  const changeSeeAnswers = (value: boolean) => {
+    setSeeAnswersPending(true);
+    saveSpectatorsSeeAnswers(snapshot.roomId, value)
+      .then(() => setRoomNotice(""))
+      .catch((error: unknown) => setRoomNotice(ceeErrorMessage(error)))
+      .finally(() => setSeeAnswersPending(false));
+  };
 
   const roomValidation = roomValidationText(snapshot.source, roomDraft, snapshot.hasPassword);
 
@@ -356,6 +405,8 @@ export function CEEWaiting({
           open={roomOpen}
           onOpenChange={setRoomOpen}
           onEdit={editRoom}
+          seeAnswersPending={seeAnswersPending}
+          onSeeAnswersChange={changeSeeAnswers}
         />
 
         {snapshot.source === "native" ? (

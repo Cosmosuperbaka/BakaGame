@@ -59,14 +59,21 @@ export function CEEGameSettings({
   useAutoSave(
     draft,
     (value) => {
-      // MCP 是独立设置项，不随玩法设置记忆；保存时保留服务端当前的开关，避免旧草稿把它改回去。
+      // MCP 与旁观可见答案是房间级的独立设置项，不随玩法草稿：保存时保留服务端当前的开关，
+      // 避免旧草稿（含导入的设置文件）把它们改回去。
       const room = waitingSnapshotOf(roomId);
       if (!room) return Promise.resolve();
       const live = room.settings;
-      const next = { ...value, allowAgents: live.allowAgents === true };
+      const rest = { ...value };
+      delete rest.spectatorsSeeAnswers;
+      const seeAnswers =
+        live.spectatorsSeeAnswers === undefined
+          ? {}
+          : { spectatorsSeeAnswers: live.spectatorsSeeAnswers };
+      const next = { ...rest, ...seeAnswers, allowAgents: live.allowAgents === true };
       // 草稿被重置为服务端当前值后与之相同，没有要保存的内容，不再原样写一遍。
       if (equal(next, live)) return Promise.resolve();
-      saveRoomSettingsMemory("cee", { settings: { ...value, allowAgents: false } });
+      saveRoomSettingsMemory("cee", { settings: { ...next, allowAgents: false } });
       return useCEEStore.getState().sendCommand("cee.room.settings", { settings: next });
     },
     {

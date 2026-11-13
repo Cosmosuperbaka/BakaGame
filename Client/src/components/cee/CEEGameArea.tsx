@@ -291,7 +291,7 @@ function CEESetter({
 }
 
 /** 猜测阶段的行动状态：搜索栏、同步回执、已结束等待结算，或不给可行动者入口。 */
-type GuessSlotKind = "search" | "done" | "ended";
+type GuessSlotKind = "search" | "done" | "ended" | "sealed";
 
 /** 次数行的身份说明：出题人、其观战队友与中途加入者在服务端都记为观战，次数对他们没有意义。 */
 function standingNote(
@@ -316,12 +316,13 @@ function guessingTitle(canGuess: boolean, waitingSync: boolean): string {
 function guessSlotKind(
   canGuess: boolean,
   waitingSync: boolean,
-  watching: boolean
+  watching: boolean,
+  sealed: boolean
 ): GuessSlotKind | null {
   if (canGuess) return "search";
   if (waitingSync) return "done";
   if (watching) return null;
-  return "ended";
+  return sealed ? "sealed" : "ended";
 }
 
 /** 次数与倒计时同一行：身份说明、答案保密提示与同步轮号，倒计时靠右。 */
@@ -369,15 +370,18 @@ function SyncDoneReceipt({ trailing }: { trailing: ReactNode }) {
   );
 }
 
-/** 本局不再接受行动：只剩等待结算的说明。 */
-function RoundEndedNote({ trailing }: { trailing: ReactNode }) {
+/**
+ * 本局不再接受行动：只剩等待结算的说明。旁观位在房间没有开启「旁观可见答案」时拿不到答案，
+ * 同一格改说「答案揭晓前保密」，不冒充自己已经答完。
+ */
+function RoundEndedNote({ trailing, sealed = false }: { trailing: ReactNode; sealed?: boolean }) {
   return (
     <>
       <p
         role="status"
         className="flex min-h-10 min-w-0 flex-1 items-center text-sm text-muted-foreground"
       >
-        本局已结束行动，等待结算
+        {sealed ? "答案揭晓前不对旁观者显示" : "本局已结束行动，等待结算"}
       </p>
       {trailing}
     </>
@@ -426,8 +430,8 @@ function GuessSubmitArea({
               <SyncDoneReceipt trailing={trailing} />
             </GuessSlot>
           ) : (
-            <GuessSlot key="ended" className="flex items-start gap-2">
-              <RoundEndedNote trailing={trailing} />
+            <GuessSlot key={slot} className="flex items-start gap-2">
+              <RoundEndedNote trailing={trailing} sealed={slot === "sealed"} />
             </GuessSlot>
           )}
         </AnimatePresence>
@@ -482,7 +486,9 @@ function CEEGuessing({
       放弃本局
     </Button>
   ) : null;
-  const slot = guessSlotKind(privateState.canGuess, waitingSync, watching);
+  // 旁观位（旁观者、中途加入者）在房间没有开启旁观可见答案时收不到答案，字段缺席就按「保密」渲染。
+  const sealed = me?.membership === "spectator" || me?.status === "observing";
+  const slot = guessSlotKind(privateState.canGuess, waitingSync, watching, sealed);
   const handleSurrender = async () => {
     if (await run("cee.game.surrender", {})) setSurrenderOpen(false);
   };

@@ -158,4 +158,78 @@ describe("等待页的房间设置草稿", () => {
       expect.any(Object)
     );
   });
+
+  it("房主打开旁观可见答案：整份设置发给服务端，只改这一项，并记入下次建房的记忆", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    const toggle = screen.getByRole("switch", { name: "旁观者可见答案" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "cee.room.settings",
+        {
+          settings: {
+            ...useCEEStore.getState().snapshot!.settings,
+            spectatorsSeeAnswers: true,
+          },
+        },
+        expect.any(Object)
+      )
+    );
+    expect(JSON.parse(window.localStorage.getItem("bakagame:room-settings:cee")!)).toMatchObject({
+      settings: { spectatorsSeeAnswers: true, allowAgents: false },
+    });
+  });
+
+  it("非房主只读：不出开关，按快照显示取值；旧房间缺这个字段按关闭显示", async () => {
+    const user = userEvent.setup();
+    const snapshot = room("房名", "old-host");
+    delete (snapshot.settings as { spectatorsSeeAnswers?: boolean }).spectatorsSeeAnswers;
+    render(<CEEWaiting snapshot={snapshot} privateState={me} />);
+    expect(screen.getByText("旁观隐藏答案")).toBeInTheDocument();
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    expect(screen.queryByRole("switch", { name: "旁观者可见答案" })).not.toBeInTheDocument();
+    expect(screen.getByText("旁观者可见答案")).toBeInTheDocument();
+  });
+
+  it("原版房没有这个设置：不显示该行", async () => {
+    const user = userEvent.setup();
+    const snapshot = ceeSnapshot({
+      source: "original",
+      hostPlayerId: "me",
+      players: [player("me")],
+    });
+    useCEEStore.setState({
+      source: "original",
+      roomId: snapshot.roomId,
+      sessionToken: "t",
+      snapshot,
+    });
+    render(<CEEWaiting snapshot={snapshot} privateState={me} />);
+    await user.click(screen.getByText("房间设置", { exact: true }));
+    expect(screen.queryByText("旁观者可见答案")).not.toBeInTheDocument();
+  });
+
+  it("玩法设置的自动保存保留房间里当前的旁观可见答案，不被旧草稿改回去", async () => {
+    const user = userEvent.setup();
+    const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
+    const view = render(<CEEWaiting snapshot={room("房名", "me")} privateState={me} />);
+    await user.click(screen.getByRole("button", { name: /猜测设置/ }));
+    await user.click(screen.getByRole("switch", { name: "血战模式" }));
+    // 草稿还没保存时，房间里的开关被打开了（本人在房间设置里点的，或另一端同步来的）。
+    const live = room("房名", "me");
+    live.settings = { ...live.settings, spectatorsSeeAnswers: true };
+    useCEEStore.setState({ snapshot: live });
+    view.rerender(<CEEWaiting snapshot={live} privateState={me} />);
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        "cee.room.settings",
+        { settings: expect.objectContaining({ nonstopMode: true, spectatorsSeeAnswers: true }) },
+        expect.any(Object)
+      )
+    );
+  });
 });

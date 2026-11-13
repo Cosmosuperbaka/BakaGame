@@ -163,7 +163,7 @@ export const ChoosingSetterGuest: Story = {
   beforeEach: () => inRoom(ceeChoosingSetterRoom("guest")),
 };
 
-/** 非房主展开两组玩法设置：同一份结构，字段只显示取值，房主工具（预设、导入导出、目录同步）不出现。 */
+/** 非房主展开三组设置：同一份结构，字段只显示取值，房主工具（预设、导入导出、目录同步）不出现。 */
 export const SettingsPanelsGuest: Story = {
   name: "设置面板 · 玩家 · 只读",
   beforeEach: () => {
@@ -173,7 +173,7 @@ export const SettingsPanelsGuest: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    for (const name of ["题目设置", "猜测设置"])
+    for (const name of ["题目设置", "猜测设置", "房间设置"])
       await userEvent.click(canvas.getByRole("button", { name }));
     dropFocus();
   },
@@ -237,6 +237,12 @@ export const GuessingSpectator: Story = {
   name: "猜测阶段 · 旁观",
   beforeEach: () => inRoom(ceeGuessingRoom("spectator")),
   play: ({ canvasElement }) => loadLazyImages(canvasElement),
+};
+
+/** 房间没有开启「旁观可见答案」：旁观者局中收不到答案与猜测，同一格说明「答案揭晓前不对旁观者显示」。 */
+export const GuessingSpectatorSealed: Story = {
+  name: "猜测阶段 · 旁观 · 答案保密",
+  beforeEach: () => inRoom(ceeGuessingRoom("sealedSpectator")),
 };
 
 /** 出题人从搜索结果选中答案：「已选择」与搜索结果同一款行，行尾可清除。 */

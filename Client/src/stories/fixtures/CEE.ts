@@ -579,6 +579,7 @@ export const CEE_CUSTOM_SETTINGS = ceeSettings({
   useImageHint: 6,
   globalPick: true,
   addedSubjects: [328609, 1424],
+  spectatorsSeeAnswers: true,
 });
 /** 打完两局回到等待：同步血战、不限时，已分好队；本人未准备，Kanade 断线。 */
 export function ceeWaitingGuestRoom(): CEERoomScenario {
@@ -673,7 +674,10 @@ export function ceeTeamGuessingRoom(): CEERoomScenario {
   return { ...scenario, snapshot: { ...scenario.snapshot, players } };
 }
 
-export function ceeGuessingRoom(viewer: "player" | "spectator"): CEERoomScenario {
+/** `sealedSpectator`：房间没有开启「旁观可见答案」时，旁观者局中收到的私有态里没有答案与猜测。 */
+export function ceeGuessingRoom(
+  viewer: "player" | "spectator" | "sealedSpectator"
+): CEERoomScenario {
   const guesses = ROUND3.map((step) => ceeGuess(step, "nijika", GUESSING_SETTINGS));
   const snapshot = ceeSnapshot({
     phase: "guessing",
@@ -710,6 +714,9 @@ export function ceeGuessingRoom(viewer: "player" | "spectator"): CEERoomScenario
         imageHintLevel: 10,
       }),
     };
+  }
+  if (viewer === "sealedSpectator") {
+    return { snapshot, privateState: ceePrivateState({ playerId: PASSERBY.id }) };
   }
   return {
     snapshot,

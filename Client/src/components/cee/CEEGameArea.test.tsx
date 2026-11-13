@@ -296,6 +296,42 @@ describe("CEE 操作区", () => {
     expect(screen.queryByText(/已用/)).not.toBeInTheDocument();
   });
 
+  it("旁观位拿不到答案时不出答案卡，也不冒充「已结束行动」：说明答案揭晓前保密", () => {
+    const [host] = room().players;
+    const spectator = { ...host, membership: "spectator" as const, status: "observing" as const };
+    const view = render(
+      <CEEGameArea
+        snapshot={room({ phase: "guessing", players: [spectator] })}
+        privateState={privateState()}
+      />
+    );
+    expect(screen.getByText("旁观中")).toBeInTheDocument();
+    expect(screen.getByText("答案揭晓前不对旁观者显示")).toBeInTheDocument();
+    expect(screen.queryByText("本局已结束行动，等待结算")).not.toBeInTheDocument();
+    expect(screen.queryByText(/答案对猜题者隐藏/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // 中途加入的正式座位同样是旁观位。
+    view.rerender(
+      <CEEGameArea
+        snapshot={room({ phase: "guessing", players: [{ ...host, status: "observing" }] })}
+        privateState={privateState()}
+      />
+    );
+    expect(screen.getByText("答案揭晓前不对旁观者显示")).toBeInTheDocument();
+  });
+
+  it("答完的正式玩家没有「答案保密」说明：他们的视图保持原样", () => {
+    const [host] = room().players;
+    render(
+      <CEEGameArea
+        snapshot={room({ phase: "guessing", players: [{ ...host, status: "exhausted" }] })}
+        privateState={privateState()}
+      />
+    );
+    expect(screen.getByText("本局已结束行动，等待结算")).toBeInTheDocument();
+    expect(screen.queryByText("答案揭晓前不对旁观者显示")).not.toBeInTheDocument();
+  });
+
   it("原版房主可以改房名与大厅可见性且没有禁用旁观入口", async () => {
     const user = userEvent.setup();
     const send = vi.spyOn(ceeWsClient, "send").mockResolvedValue({});
