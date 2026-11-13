@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Bot, Check, Copy, Lock } from "lucide-react";
 import { SettingSwitchRow } from "@/components/common/room/SettingFields";
 import { Button } from "@/components/ui/Button";
+import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { mcpEndpoint, mcpSiteOrigin } from "@/lib/McpConfig";
 import { closePageControl, openPageControl } from "@/lib/SiteWs";
 import { resetPageControl, usePageControl } from "@/stores/UsePageControl";
@@ -14,22 +15,8 @@ const pageControlPrompt = (code: string): string =>
 
 /** 配对码区块：人类把它（或整段指令）交给 Agent；页面侧不落盘，刷新后要重新生成。 */
 function PageCodeBlock({ code }: { code: string }) {
-  const [copied, setCopied] = useState<"code" | "prompt" | null>(null);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(null), 1_600);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  const copy = (kind: "code" | "prompt", text: string) => {
-    const writing = navigator.clipboard?.writeText(text);
-    if (writing === undefined) return;
-    void writing.then(
-      () => setCopied(kind),
-      () => {}
-    );
-  };
+  // 复制失败（没有剪贴板接口或被拒绝）这里不打扰人类：按钮不变成「已复制」就是反馈
+  const { copied, copy } = useCopyFeedback();
 
   return (
     <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
@@ -41,7 +28,7 @@ function PageCodeBlock({ code }: { code: string }) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1.5 px-2 text-xs"
-            onClick={() => copy("code", code)}
+            onClick={() => void copy(code, "code")}
           >
             {copied === "code" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
             {copied === "code" ? "已复制" : "复制码"}
@@ -51,7 +38,7 @@ function PageCodeBlock({ code }: { code: string }) {
             variant="ghost"
             size="sm"
             className="h-7 gap-1.5 px-2 text-xs"
-            onClick={() => copy("prompt", pageControlPrompt(code))}
+            onClick={() => void copy(pageControlPrompt(code), "prompt")}
           >
             {copied === "prompt" ? <Check aria-hidden="true" /> : <Bot aria-hidden="true" />}
             {copied === "prompt" ? "已复制" : "复制指令"}

@@ -1,34 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Link } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { useMeasuredWidth } from "@/hooks/UseMeasuredHeight";
 import { readoutSwap, spring } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 
-/** 「已复制」反馈的停留时长：给玩家读完提示的时间，不参与任何业务时序。 */
-const COPIED_FEEDBACK_MS = 2_000;
-
 /** 等待页的房间链接：展示完整地址并一键复制，复制失败交给调用方提示。 */
 export function RoomLinkShare({ path, onCopyError }: { path: string; onCopyError: () => void }) {
-  const [copied, setCopied] = useState(false);
+  const { copied: copiedKey, copy } = useCopyFeedback();
+  const copied = copiedKey !== null;
   const labelRef = useRef<HTMLSpanElement>(null);
   const labelWidth = useMeasuredWidth(labelRef);
   const shareUrl = `${window.location.origin}${path}`;
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-    } catch {
-      onCopyError();
-    }
+    if (!(await copy(shareUrl))) onCopyError();
   };
 
   return (

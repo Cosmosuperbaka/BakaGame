@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId } from "react";
 import { Bot, Check, Cloud, Copy, SunMoon, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Collapsible } from "@/components/ui/Collapsible";
@@ -12,6 +12,7 @@ import {
 import { Slider } from "@/components/ui/Slider";
 import { McpPairingPanel } from "@/components/common/McpPairingPanel";
 import { SettingsSection, SettingSwitchRow } from "@/components/common/room/SettingFields";
+import { useCopyFeedback } from "@/hooks/UseCopyFeedback";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/SegmentedControl";
 import { setCloudSyncEnabled, useCloudSyncEnabled } from "@/lib/CloudSync";
 import { mcpEndpoint, type McpGameId } from "@/lib/McpConfig";
@@ -38,23 +39,11 @@ const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
 
 /** 连接信息：站点连接的当前状态、远程端点与取用方式，与当前在哪个页面无关。 */
 function McpConnectionDetails({ connected }: { connected: boolean }) {
-  const [copied, setCopied] = useState(false);
+  const { copied: copiedKey, copy } = useCopyFeedback();
+  const copied = copiedKey !== null;
   const endpoint = mcpEndpoint();
 
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1_600);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  const copyEndpoint = () => {
-    const writing = navigator.clipboard?.writeText(endpoint);
-    if (writing === undefined) return;
-    void writing.then(
-      () => setCopied(true),
-      () => {}
-    );
-  };
+  const copyEndpoint = () => void copy(endpoint);
 
   return (
     <div className="rounded-md border border-border bg-muted/30 p-3">
