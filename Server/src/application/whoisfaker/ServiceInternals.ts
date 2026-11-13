@@ -12,7 +12,7 @@ import type { ConnectionRegistry } from "../ConnectionRegistry";
 import type { LobbyFanout } from "../LobbyFanout";
 import type { RoomTimers } from "../room/RoomTimers";
 import type { SeatBindingContext } from "../room/SeatBinding";
-import type { WhoIsFakerServiceOptions } from "../WhoIsFakerService";
+import type { WhoIsFakerServiceOptions } from "./Options";
 
 /**
  * WhoIsFakerService 拆出的子系统自由函数所需的成员面。
