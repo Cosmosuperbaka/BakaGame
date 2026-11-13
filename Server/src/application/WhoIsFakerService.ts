@@ -48,9 +48,8 @@ import { createEvent } from "../transport/Packets";
 import type { WhoIsFakerClientMessage } from "../transport/WhoIsFakerProtocol";
 
 import {
-  ROOM_IDLE_TIMEOUT_MS,
   QUESTIONER_RECONNECT_TIMEOUT_MS,
-  ROOM_EMPTY_GRACE_PERIOD_MS,
+  ROOM_EXPIRING_WARNING_MS,
   CHAT_LIMIT,
   CHAT_RATE_LIMIT_PER_CONNECTION,
   CHAT_RATE_LIMIT_WINDOW_MS,
@@ -70,6 +69,13 @@ import {
   type SeatBindingContext,
   type TabSeatContext,
 } from "./room/SeatBinding";
+import {
+  forEachRoomIsolated,
+  isIdleWarningDue,
+  judgeReclaim,
+  markIdleWarningSent,
+  offlineSeatGraceMs,
+} from "./room/RoomJanitor";
 import {
   adoptRoomCore,
   exportRoomJson,
@@ -93,7 +99,6 @@ import {
   clearPendingDisconnect,
   forceRemovePlayer,
   handlePlayerOffline,
-  offlineSeatGraceMs,
   resolveDisconnect,
   requeuePendingDisconnects,
   shouldAutoCloseWhenEmpty,
@@ -375,60 +380,54 @@ export class WhoIsFakerService implements AdminRoomControl, WhoIsFakerServiceInt
   async runHousekeeping(): Promise<void> {
     // 统一处理空房清理、闲置超时和出题人掉线超时。
     const currentTime = this.now();
-
-    for (const room of [...this.rooms.values()]) {
-      // 逐房隔离：一间房的状态异常不能让迭代顺序里靠后的房间本轮都不被清理。
-      try {
-        await this.housekeepRoom(room, currentTime);
-      } catch (error) {
+    // 逐房隔离：一间房的状态异常不能让迭代顺序里靠后的房间本轮都不被清理。
+    await forEachRoomIsolated(
+      this.rooms,
+      (room) => this.housekeepRoom(room, currentTime),
+      (room, error) =>
         this.options.eventLogger.error("房间巡检失败", {
           roomId: room.id,
           ...describeError(error),
-        });
-      }
-    }
+        })
+    );
   }
 
   private async housekeepRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<void> {
-    if (await this.closeEmptyRoomIfNeeded(room, currentTime)) return;
-    if (await this.closeIdleRoomIfNeeded(room, currentTime)) return;
+    if (await this.reclaimIdleRoom(room, currentTime)) return;
     await this.removeOfflinePlayers(room, currentTime);
     await this.handOverStalledRoles(room, currentTime);
     await this.finishExpiredPhaseTimer(room, currentTime);
     this.publishRoomCalibration(room);
   }
 
-  /** 空房宽限期：整房离线满一个宽限期才真正关闭，否则只记录空房起点。 */
-  private async closeEmptyRoomIfNeeded(
-    room: WhoIsFakerRoomRecord,
-    currentTime: number
-  ): Promise<boolean> {
-    if (!shouldAutoCloseWhenEmpty(this, room) || getOnlineCount(room) !== 0) {
-      room.emptySinceAt = undefined;
-      return false;
+  /**
+   * 空房与闲置回收，返回本房是否已关闭。
+   * 闲置关房前提前一段时间预警，每一段闲置只预警一次，有新活动后重新计。
+   * 测试房只豁免「空房回收」：测试房常态是一间等人加入的空房，但长期闲置的测试房
+   * 与它加出来的机器人仍要回收，否则只能靠重启释放。
+   */
+  private async reclaimIdleRoom(room: WhoIsFakerRoomRecord, currentTime: number): Promise<boolean> {
+    const onlineCount = getOnlineCount(room);
+    if (isIdleWarningDue(room, onlineCount, currentTime, ROOM_EXPIRING_WARNING_MS)) {
+      markIdleWarningSent(room);
+      this.broadcastRoomEvent(room, "room.expiring", {
+        roomId: room.id,
+        reason: "idle_timeout",
+      });
     }
-
-    if (room.emptySinceAt === undefined) room.emptySinceAt = currentTime;
-    if (currentTime - room.emptySinceAt < ROOM_EMPTY_GRACE_PERIOD_MS) return false;
-
-    await this.closeRoom(room, "empty");
-    return true;
-  }
-
-  /** 闲置超时：先广播即将关闭，再按 idle_timeout 关闭。测试房间不参与自动清理，方便开发者随时回来继续调试。 */
-  private async closeIdleRoomIfNeeded(
-    room: WhoIsFakerRoomRecord,
-    currentTime: number
-  ): Promise<boolean> {
-    if (this.testRooms.isTestRoom(room.id)) return false;
-    if (currentTime - room.lastActivityAt < ROOM_IDLE_TIMEOUT_MS) return false;
-
-    this.broadcastRoomEvent(room, "room.expiring", {
-      roomId: room.id,
-      reason: "idle_timeout",
+    const verdict = judgeReclaim(room, onlineCount, currentTime, {
+      emptyRoomExempt: !shouldAutoCloseWhenEmpty(this, room),
     });
-    await this.closeRoom(room, "idle_timeout");
-    return true;
+    // 空房宽限内（grace）与 keep 一样继续后面的步骤：宽限只决定要不要关，不暂停回合推进。
+    if (verdict === "close-empty") {
+      await this.closeRoom(room, "empty");
+      return true;
+    }
+    if (verdict === "close-idle") {
+      await this.closeRoom(room, "idle_timeout");
+      return true;
+    }
+    return false;
   }
 
   /** 清理离线超过保留时长的玩家：时长按席位而定，见 `offlineSeatGraceMs`。 */

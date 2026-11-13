@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { type JoinedPlayer, createRoom, joinPlayers } from "./Fixtures";
 import { createTestRoomPolicy, TEST_ROOMS_DISABLED } from "../../src/domain/TestRooms";
-import { PHASE_RESULT_DISPLAY_MS, ROOM_EMPTY_GRACE_PERIOD_MS } from "../../src/config/Constants";
+import {
+  PHASE_RESULT_DISPLAY_MS,
+  ROOM_EMPTY_GRACE_PERIOD_MS,
+  ROOM_IDLE_TIMEOUT_MS,
+} from "../../src/config/Constants";
 import {
   SERVER_SHUTDOWN_MESSAGE,
   type WhoIsFakerPrivateState,
@@ -16,9 +20,9 @@ import {
 } from ".././Helpers";
 
 describe("测试房间", () => {
-  test("Oblivionis 测试房间不含机器人、不进大厅、不自动清理", async () => {
-    // 新版测试模式改为手动跳转阶段；服务端不再注入 Bot、不入大厅列表、housekeeping 不清理。
-    const { service, advanceTime } = createTestContext();
+  test("Oblivionis 测试房间不含机器人、不进大厅", async () => {
+    // 新版测试模式改为手动跳转阶段；服务端不再注入 Bot、不入大厅列表。
+    const { service } = createTestContext();
     const { host } = await createRoom(service, "Oblivionis");
 
     const snapshot = getLastEventPayload<WhoIsFakerRoomSnapshot>(host, "room.snapshot");
@@ -26,13 +30,46 @@ describe("测试房间", () => {
 
     // 测试房间不应出现在大厅摘要里。
     expect(service.getRoomSummaries().find((item) => item.roomId === "Oblivionis")).toBeUndefined();
+  });
 
-    // 闲置超时后也不应被清理。读房间当前状态与 room.closed 事件：
-    // 房间被关闭时不会再发快照，读最后一帧快照会把「已关闭」读成「还在」。
-    advanceTime(30 * 60 * 1000);
+  test("测试房间只豁免空房回收：全员离线超过空房宽限仍保留，闲置超时照样回收", async () => {
+    // 豁免闲置的话，那间房的记录与加出来的机器人永远不会被回收，只能靠重启释放。
+    const { service, advanceTime } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    await service.unregisterConnection(host.record.id);
+
+    // 第一轮巡检才会记下空房起点（测试房不在掉线时起计时），宽限期满后的第二轮才会真正回收。
     await service.runHousekeeping();
-    expect(getEventPayloads(host, "room.closed")).toHaveLength(0);
+    advanceTime(ROOM_EMPTY_GRACE_PERIOD_MS + 1);
+    await service.runHousekeeping();
     expect(service.rooms.has("Oblivionis")).toBe(true);
+
+    // 读房间当前状态与 room.closed 事件：房间被关闭时不会再发快照，读最后一帧快照会把「已关闭」读成「还在」。
+    const watcher = createConnection(service, "oblivionis-watcher");
+    await execute(service, watcher, {
+      id: "rejoin",
+      type: "room.join",
+      roomId: "Oblivionis",
+      payload: { userName: "回来的人" },
+    });
+    advanceTime(ROOM_IDLE_TIMEOUT_MS + 1);
+    await service.runHousekeeping();
+
+    expect(service.rooms.has("Oblivionis")).toBe(false);
+    expect(getLastEventPayload<{ reason: string }>(watcher, "room.closed")?.reason).toBe(
+      "idle_timeout"
+    );
+  });
+
+  test("测试房间全员离线且闲置超时：按闲置关闭，不再因测试房豁免而永远留着", async () => {
+    const { service, advanceTime } = createTestContext();
+    const { host } = await createRoom(service, "Oblivionis");
+    await service.unregisterConnection(host.record.id);
+
+    advanceTime(ROOM_IDLE_TIMEOUT_MS + 1);
+    await service.runHousekeeping();
+
+    expect(service.rooms.has("Oblivionis")).toBe(false);
   });
 
   test("测试房间最后一人掉线后仍然保留，可凭令牌回到原席位", async () => {
