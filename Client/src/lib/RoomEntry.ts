@@ -1,4 +1,4 @@
-/** Own one socket's room-entry transaction until its ACK and any abandoned-seat release settle. */
+/** 持有一条连接上的入房事务，直到它的 ACK 以及被放弃座位的退房都落定。 */
 export function createRoomEntry<T>(options: {
   generation: () => number;
   begin: () => void;
@@ -39,7 +39,7 @@ export function createRoomEntry<T>(options: {
       }
       if (generation !== options.generation()) throw cancelled();
       if (isAbandoned()) {
-        // Never install stale credentials. Release the exact acknowledged seat before a new entry.
+        // 绝不安装过期凭据：先把这个已确认的座位精确退掉，再放行下一次入房。
         await options.discard(receipt);
         throw cancelled();
       }
