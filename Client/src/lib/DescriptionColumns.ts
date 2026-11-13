@@ -39,25 +39,29 @@ function columnKeyOf(record: DescriptionRecord): string {
  * 只有处于发言阶段时才有值；投票、夜晚等阶段没有待提交的格子。
  */
 export function pendingColumn(status: SpeechStatus): { key: string; playerIds: string[] } | null {
+  const pending = pendingColumnOf(status);
+  return pending && { key: columnKeyOfPending(pending), playerIds: pending.playerIds };
+}
+
+/** 进行中的发言列：种类与编号分开保存，收集各类列编号时不必从字符串键里再解码。 */
+interface PendingColumn {
+  kind: "cycle" | "tie" | "sup";
+  index: number;
+  playerIds: string[];
+}
+
+const columnKeyOfPending = ({ kind, index }: PendingColumn): string => `${kind}-${index}`;
+
+function pendingColumnOf(status: SpeechStatus): PendingColumn | null {
   const mode = status.speechMode ?? (status.phase === "tieBreak" ? "tieBreak" : undefined);
-  if (mode === "supplement") {
-    return {
-      key: `sup-${status.supplementIndex ?? 1}`,
-      playerIds: status.speechOrder ?? [],
-    };
-  }
+  const playerIds = status.speechOrder ?? [];
+  if (mode === "supplement") return { kind: "sup", index: status.supplementIndex ?? 1, playerIds };
   if (mode === "tieBreak") {
     if (status.tieBreakStage !== "description") return null;
-    return {
-      key: `tie-${status.tieBreakIndex ?? 1}`,
-      playerIds: status.speechOrder ?? [],
-    };
+    return { kind: "tie", index: status.tieBreakIndex ?? 1, playerIds };
   }
   if (status.phase !== "description") return null;
-  return {
-    key: `cycle-${status.day}`,
-    playerIds: status.speechOrder ?? [],
-  };
+  return { kind: "cycle", index: status.day, playerIds };
 }
 
 /** 三类列的编号集合，加上「该列应发言的人」的登记表。 */
@@ -97,13 +101,13 @@ function collectSpokenColumns(records: DescriptionRecord[], buckets: ColumnBucke
 
 /** 进行中的列还没人齐，用服务端下发的名单补出待提交的格子。 */
 function collectPendingColumns(status: SpeechStatus, buckets: ColumnBuckets): void {
-  const pending = pendingColumn(status);
+  const pending = pendingColumnOf(status);
   if (!pending) return;
-  const { key, playerIds } = pending;
-  if (key.startsWith("cycle-")) buckets.cycles.add(Number(key.slice(6)));
-  else if (key.startsWith("tie-")) buckets.ties.add(Number(key.slice(4)));
-  else buckets.supplements.add(Number(key.slice(4)));
-  const bucket = buckets.expectFor(key);
+  const { kind, index, playerIds } = pending;
+  if (kind === "cycle") buckets.cycles.add(index);
+  else if (kind === "tie") buckets.ties.add(index);
+  else buckets.supplements.add(index);
+  const bucket = buckets.expectFor(columnKeyOfPending(pending));
   for (const playerId of playerIds) bucket.add(playerId);
 }
 
@@ -185,16 +189,6 @@ export function buildDescriptionColumns(
 
   return { columns, byPlayer, playerOrder };
 }
-
-/**
- * 发言内容一律用正文色：发言本身是同一类信息，
- * 列的种类由列标题表达，不靠正文变色区分。
- */
-export const DESCRIPTION_TONES: Record<DescriptionColumn["tone"], string> = {
-  default: "text-foreground",
-  tieBreak: "text-foreground",
-  supplement: "text-foreground",
-};
 
 /** 列标题的文字色，用于区分轮次、平票与补充三类列。 */
 export const DESCRIPTION_HEAD_TONES: Record<DescriptionColumn["tone"], string> = {

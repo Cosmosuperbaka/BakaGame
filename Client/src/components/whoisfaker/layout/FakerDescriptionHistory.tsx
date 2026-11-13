@@ -4,7 +4,6 @@ import { cn } from "@/lib/Utils";
 import {
   buildDescriptionColumns,
   DESCRIPTION_HEAD_TONES,
-  DESCRIPTION_TONES,
   descriptionCellShadeForPlayer,
   type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
@@ -151,7 +150,8 @@ export function DescriptionTable({
                     className={cn(
                       "whitespace-nowrap border-r text-sm leading-relaxed",
                       cellPad,
-                      DESCRIPTION_TONES[column.tone],
+                      // 发言内容一律用正文色，列的种类由列标题表达，不靠正文变色区分。
+                      "text-foreground",
                       descriptionCellShadeForPlayer(player, rowIndex, column.index)
                     )}
                   >

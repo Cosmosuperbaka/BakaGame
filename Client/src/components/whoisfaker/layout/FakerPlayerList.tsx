@@ -10,7 +10,6 @@ import { usePlayerRowKeys } from "@/hooks/UsePlayerRowKeys";
 import { listContainer, listItem, tappable } from "@/lib/Motion";
 import {
   DESCRIPTION_HEAD_TONES,
-  DESCRIPTION_TONES,
   descriptionCellShadeForPlayer,
   type DescriptionColumn,
 } from "@/lib/DescriptionColumns";
@@ -249,7 +248,6 @@ export function FakerPlayerList(props: PlayerListProps) {
         {history.columns.map((column) => (
           <SpeechCell
             key={column.key}
-            tone={column.tone}
             description={history.byPlayer.get(player.id)?.get(column.key)}
             order={
               history.playerOrder?.get(player.id)?.get(column.key) ??
@@ -450,14 +448,12 @@ function CompactNameCell({ player, me }: { player: PublicPlayerView; me: boolean
  */
 function SpeechCell({
   description,
-  tone,
   expected,
   order,
   submitted,
   shade,
 }: {
   description?: DescriptionRecord;
-  tone: DescriptionColumn["tone"];
   expected: boolean;
   order?: number;
   /** 已提交但顺序未到，内容仍折起 */
@@ -469,7 +465,8 @@ function SpeechCell({
     <div
       className={cn(
         "flex items-center px-4 py-1.5 text-sm leading-relaxed",
-        DESCRIPTION_TONES[tone],
+        // 发言内容一律用正文色，列的种类由列标题表达，不靠正文变色区分。
+        "text-foreground",
         shade
       )}
     >
