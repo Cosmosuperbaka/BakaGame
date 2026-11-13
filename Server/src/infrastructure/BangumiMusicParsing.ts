@@ -146,26 +146,34 @@ const extractRelatedMusicTracks = (
   return tracks;
 };
 
+/**
+ * 关联类型文本 → 曲目类型。规则顺序即优先级：靠前的先命中，没有任何规则命中时按主题曲处理
+ * （原先末尾的「主题」规则与缺省结果相同，所以不再单列）。同一段文本可能同时命中多条规则，
+ * 调整顺序会改变归类结果。
+ */
+const KIND_RULES: ReadonlyArray<readonly [RegExp, BangumiMusicTrackKind]> = [
+  [/片头|片頭|opening|\bop\d*\b/i, "opening"],
+  [/片尾|ending|\bed\d*\b/i, "ending"],
+  [/插[入]?[曲歌]|insert|\bin\d*\b/i, "insert"],
+  [/原声|soundtrack|\bost\b/i, "ost"],
+  [/角色[歌曲]|character(?:\s*song)?/i, "character"],
+  [/\bremix\b|重混/i, "remix"],
+  [/同人/i, "doujin"],
+  [/印象[曲歌]|image(?:\s*song)?/i, "image"],
+  [/vocaloid/i, "vocaloid"],
+  [/\bdrama\b|广播剧|廣播劇/i, "drama"],
+  [/\bvocal\b/i, "vocal"],
+  [/\bradio\b|广播|廣播/i, "radio"],
+  [/\barrange\b|改编|改編|编曲|編曲/i, "arrange"],
+  [/单曲|單曲|\bsingle\b/i, "single"],
+  [/精选|精選|\bbest\b|collection/i, "collection"],
+  [/朗读|朗讀/i, "reading"],
+  [/艺人|藝人|album/i, "artistAlbum"],
+];
+
 const normalizeKind = (key: string): BangumiMusicTrackKind => {
   const normalized = key.trim();
-  if (/片头|片頭|opening|\bop\d*\b/i.test(normalized)) return "opening";
-  if (/片尾|ending|\bed\d*\b/i.test(normalized)) return "ending";
-  if (/插[入]?[曲歌]|insert|\bin\d*\b/i.test(normalized)) return "insert";
-  if (/原声|soundtrack|\bost\b/i.test(normalized)) return "ost";
-  if (/角色[歌曲]|character(?:\s*song)?/i.test(normalized)) return "character";
-  if (/\bremix\b|重混/i.test(normalized)) return "remix";
-  if (/同人/i.test(normalized)) return "doujin";
-  if (/印象[曲歌]|image(?:\s*song)?/i.test(normalized)) return "image";
-  if (/vocaloid/i.test(normalized)) return "vocaloid";
-  if (/\bdrama\b|广播剧|廣播劇/i.test(normalized)) return "drama";
-  if (/\bvocal\b/i.test(normalized)) return "vocal";
-  if (/\bradio\b|广播|廣播/i.test(normalized)) return "radio";
-  if (/\barrange\b|改编|改編|编曲|編曲/i.test(normalized)) return "arrange";
-  if (/单曲|單曲|\bsingle\b/i.test(normalized)) return "single";
-  if (/精选|精選|\bbest\b|collection/i.test(normalized)) return "collection";
-  if (/朗读|朗讀/i.test(normalized)) return "reading";
-  if (/艺人|藝人|album/i.test(normalized)) return "artistAlbum";
-  if (/主题|主題|theme|\btm\d*\b/i.test(normalized)) return "theme";
+  for (const [pattern, kind] of KIND_RULES) if (pattern.test(normalized)) return kind;
   return "theme";
 };
 
