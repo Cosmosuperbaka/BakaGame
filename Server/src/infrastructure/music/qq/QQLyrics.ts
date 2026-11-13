@@ -1,8 +1,10 @@
 import { parseQrc as amllParseQrc, parseLrc as amllParseLrc } from "@applemusic-like-lyrics/lyric";
 import qqmusic from "qqmusic-api-enhanced";
-import { describeError, type EventLogger } from "../../EventLogger";
+import type { EventLogger } from "../../EventLogger";
 import { asRecord } from "../../JsonReaders";
-import type { AmllLyricClient } from "../lyrics/AmllLyricClient";
+import { fromAmllLines } from "../lyrics/AmllLineMapper";
+import type { AmllLookup, AmllLyricClient } from "../lyrics/AmllLyricClient";
+import { resolveLyricChain, type LyricTierOutcome } from "../lyrics/LyricSourceChain";
 import { parseTTML } from "../lyrics/LyricTtml";
 import { sanitizeLyrics } from "../lyrics/LyricSanitizer";
 import { readString } from "./QQResponse";
@@ -36,37 +38,7 @@ export const parseQrcLyrics = (raw: string): SongLyricLine[] => {
   if (!raw || !raw.trim()) return [];
   const normalized = extractQrcPayload(raw);
   try {
-    const amllLines = amllParseQrc(normalized);
-    return amllLines
-      .map((line) => {
-        const text =
-          line.words && line.words.length > 0
-            ? line.words
-                .map((w) => w.word)
-                .join("")
-                .trim()
-            : "";
-        const hasTranslation = Boolean(line.translatedLyric);
-        return {
-          time: line.startTime,
-          endTime: line.endTime,
-          text,
-          words:
-            line.words && line.words.length > 0
-              ? line.words.map((w) => ({
-                  startTime: w.startTime,
-                  endTime: w.endTime,
-                  word: w.word,
-                  romanWord: hasTranslation ? undefined : w.romanWord || undefined,
-                }))
-              : undefined,
-          translatedLyric: line.translatedLyric || undefined,
-          romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
-          isBG: line.isBG || undefined,
-          isDuet: line.isDuet || undefined,
-        };
-      })
-      .filter((line) => line.text.length > 0);
+    return fromAmllLines(amllParseQrc(normalized));
   } catch {
     return [];
   }
@@ -105,82 +77,91 @@ export interface QQLyricChainDeps {
   logger?: EventLogger;
 }
 
-/** QQ 歌词的四级优先取法：AMLL 按标识、AMLL 按歌名、平台逐字 QRC、普通 LRC。 */
+type LyricBase = Pick<SongSearchResult, "title" | "artist" | "album">;
+
+/** QQ 歌词的优先取法：AMLL 按标识、AMLL 按歌名、平台逐字 QRC、普通 LRC。 */
 export class QQLyricChain {
   private readonly amllClient: AmllLyricClient;
   private readonly callUpstream: QQCallUpstream;
-  private readonly options: { logger?: EventLogger };
+  private readonly logger?: EventLogger;
 
   constructor(deps: QQLyricChainDeps) {
     this.amllClient = deps.amllClient;
     this.callUpstream = deps.callUpstream;
-    this.options = { logger: deps.logger };
+    this.logger = deps.logger;
   }
 
+  /**
+   * 严格遵循优先级标准：AMLL 官方 TTML > 平台原生逐字 (QRC) > 普通歌词 (LRC)。
+   *
+   * `onDegraded`：排在命中者之前的来源没取到（瞬态失败）时回调一次，调用方据此不把这份
+   * 结果随元数据缓存——「确实没有」照常缓存，「没取到」下次重新回源。
+   */
   async loadLyrics(
     mid: string,
-    base: Pick<SongSearchResult, "title" | "artist" | "album">,
-    cookie?: string
+    base: LyricBase,
+    cookie?: string,
+    onDegraded?: () => void
   ): Promise<SongLyricLine[]> {
-    // 严格遵循优先级标准：AMLL 官方 TTML > 平台原生逐字 (QRC) > 普通歌词 (LRC)
+    const { lines, degraded } = await resolveLyricChain(
+      [
+        {
+          // 1. AMLL 官方歌词库通过 qqMusicId / mid 匹配
+          run: async () =>
+            this.adoptTtml(await this.amllClient.lookupTtmlLyrics(mid, { songId: mid }), base),
+          onError: { message: "AMLL qqMusicId 匹配失败", context: { mid } },
+        },
+        {
+          // 2. AMLL 官方歌词库按歌曲名与歌手检索
+          run: async () =>
+            this.adoptTtml(
+              await this.amllClient.lookupTtmlLyricsBySearch(base.title, base.artist, {
+                title: base.title,
+              }),
+              base
+            ),
+          onError: { message: "AMLL 歌曲名搜索匹配失败", context: { title: base.title } },
+        },
+        {
+          // 3. 平台原生逐字歌词（QRC），4. 普通 LRC 降级：同一次上游请求
+          run: () => this.loadNativeLyrics(mid, base, cookie),
+          onError: { message: "QQ 音乐平台原生歌词拉取失败", context: { mid } },
+        },
+      ],
+      this.logger
+    );
+    if (degraded) onDegraded?.();
+    return lines;
+  }
 
-    // 1. 尝试 AMLL 官方歌词库通过 qqMusicId / mid 匹配
-    try {
-      const ttmlById = await this.amllClient.getTtmlLyrics(mid, { songId: mid });
-      if (ttmlById) {
-        const parsed = parseTTML(ttmlById);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("AMLL qqMusicId 匹配失败", { mid, ...describeError(error) });
+  private adoptTtml(lookup: AmllLookup, base: LyricBase): LyricTierOutcome {
+    if (lookup.status === "failed") return { lines: [], failed: true };
+    if (lookup.status === "missing") return { lines: [] };
+    const parsed = parseTTML(lookup.ttml);
+    if (parsed.length === 0) return { lines: [] };
+    return { lines: sanitizeLyrics(parsed, base), settled: true };
+  }
+
+  private async loadNativeLyrics(
+    mid: string,
+    base: LyricBase,
+    cookie?: string
+  ): Promise<LyricTierOutcome> {
+    const lyricRes = await this.callUpstream(cookie, async () =>
+      qqmusic.lyric({ id: mid, qrc: true, cookie })
+    );
+    const body = asRecord(lyricRes.body);
+    const rawQrc = readString(body.lyric);
+    if (rawQrc?.includes("<QrcInfos>")) {
+      const parsed = parseQrcLyrics(rawQrc);
+      if (parsed.length > 0) return { lines: sanitizeLyrics(parsed, base), settled: true };
     }
 
-    // 2. 尝试 AMLL 官方歌词库按歌曲名与歌手检索
-    try {
-      const ttmlBySearch = await this.amllClient.searchTtmlLyrics(base.title, base.artist, {
-        title: base.title,
-      });
-      if (ttmlBySearch) {
-        const parsed = parseTTML(ttmlBySearch);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("AMLL 歌曲名搜索匹配失败", {
-        title: base.title,
-        ...describeError(error),
-      });
+    const rawLrc = readString(body.lyric) ?? readString(asRecord(body.raw).lyric);
+    if (rawLrc) {
+      const parsed = parseLrcLyrics(rawLrc);
+      if (parsed.length > 0) return { lines: sanitizeLyrics(parsed, base), settled: true };
     }
-
-    // 3. 尝试 QQ 音乐原生逐字歌词 (QRC via parseQrc)
-    try {
-      const lyricRes = await this.callUpstream(cookie, async () =>
-        qqmusic.lyric({ id: mid, qrc: true, cookie })
-      );
-      const body = asRecord(lyricRes.body);
-      const rawQrc = readString(body.lyric);
-      if (rawQrc?.includes("<QrcInfos>")) {
-        const parsed = parseQrcLyrics(rawQrc);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-
-      // 4. 普通 LRC 歌词降级
-      const rawLrc = readString(body.lyric) ?? readString(asRecord(body.raw).lyric);
-      if (rawLrc) {
-        const parsed = parseLrcLyrics(rawLrc);
-        if (parsed.length > 0) {
-          return sanitizeLyrics(parsed, base);
-        }
-      }
-    } catch (error) {
-      this.options.logger?.warn?.("QQ 音乐平台原生歌词拉取失败", { mid, ...describeError(error) });
-    }
-
-    return [];
+    return { lines: [] };
   }
 }

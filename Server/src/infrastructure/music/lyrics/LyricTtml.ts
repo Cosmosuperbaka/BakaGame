@@ -5,6 +5,7 @@
 import { parseTTML as amllParseTTML } from "@applemusic-like-lyrics/ttml";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { SongLyricLine } from "../../../shared/Index";
+import { fromAmllLines } from "./AmllLineMapper";
 
 // AMLL 的 TTML 解析器要求 globalThis.DOMParser；谁提供解析就谁负责补齐它需要的运行环境。
 if (typeof globalThis.DOMParser === "undefined") {
@@ -27,34 +28,5 @@ export const parseTTML = (raw: string): SongLyricLine[] => {
     normalizedRaw = normalizedRaw.replace(/<p(\s+)/gi, () => `<p itunes:key="L${lineIndex++}" `);
   }
   const parsed = amllParseTTML(normalizedRaw);
-  return parsed.lines
-    .map((line) => {
-      const text =
-        line.words && line.words.length > 0
-          ? line.words
-              .map((w) => w.word)
-              .join("")
-              .trim()
-          : "";
-      const hasTranslation = Boolean(line.translatedLyric);
-      return {
-        time: line.startTime,
-        endTime: line.endTime,
-        text,
-        words:
-          line.words && line.words.length > 0
-            ? line.words.map((w) => ({
-                startTime: w.startTime,
-                endTime: w.endTime,
-                word: w.word,
-                romanWord: hasTranslation ? undefined : w.romanWord || undefined,
-              }))
-            : undefined,
-        translatedLyric: line.translatedLyric || undefined,
-        romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
-        isBG: line.isBG || undefined,
-        isDuet: line.isDuet || undefined,
-      };
-    })
-    .filter((line) => line.text.length > 0);
+  return fromAmllLines(parsed.lines);
 };

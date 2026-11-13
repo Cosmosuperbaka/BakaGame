@@ -7,6 +7,15 @@ import type { MusicCache } from "../MusicCache";
 /** 单次响应体上限：数百 KB 的 TTML 是正常上限，超过它说明上游异常，不值得读进内存。 */
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
+/**
+ * 一次歌词库查询的结果。「确定没有」与「没取到」必须分开：前者可以按 TTL 缓存，
+ * 后者是瞬态失败（超时、排队过多、上游 5xx、响应无效），调用方据此决定结果能否固化。
+ */
+export type AmllLookup =
+  | { status: "found"; ttml: string }
+  | { status: "missing" }
+  | { status: "failed" };
+
 export interface AmllLyricClientOptions {
   /** 按 ID 取正文的查询参数名：网易云 `ncmMusicId`、QQ 音乐 `qqMusicId`。 */
   idQueryParam: string;
@@ -48,7 +57,12 @@ export class AmllLyricClient {
     this.requestTimeoutMs = Math.max(1, options.requestTimeoutMs ?? 3_000);
   }
 
+  /** 按平台歌曲 ID 取正文；没有或没取到都返回 undefined（供不关心二者区别的调用方）。 */
   async getTtmlLyrics(id: string, context: Record<string, string>): Promise<string | undefined> {
+    return unwrapLookup(await this.lookupTtmlLyrics(id, context));
+  }
+
+  async lookupTtmlLyrics(id: string, context: Record<string, string>): Promise<AmllLookup> {
     return this.load(`amll:${id}`, context, async (signal) => {
       if (this.options.fetchById) return this.options.fetchById(id);
       const json = await this.requestJson(
@@ -64,8 +78,16 @@ export class AmllLyricClient {
     artistName: string | undefined,
     context: Record<string, string>
   ): Promise<string | undefined> {
+    return unwrapLookup(await this.lookupTtmlLyricsBySearch(songName, artistName, context));
+  }
+
+  async lookupTtmlLyricsBySearch(
+    songName: string,
+    artistName: string | undefined,
+    context: Record<string, string>
+  ): Promise<AmllLookup> {
     const title = songName.trim();
-    if (!title) return undefined;
+    if (!title) return { status: "missing" };
     return this.load(`amll-search:${title}:${artistName ?? ""}`, context, async (signal) => {
       if (this.options.fetchBySearch) return this.options.fetchBySearch(title, artistName);
       const query = artistName ? `${title} ${artistName}` : title;
@@ -89,10 +111,10 @@ export class AmllLyricClient {
     key: string,
     context: Record<string, string>,
     loader: (signal: AbortSignal) => Promise<string | undefined>
-  ): Promise<string | undefined> {
+  ): Promise<AmllLookup> {
     try {
       // 瞬态失败 reject cached loader，当次降级但不固化为空；只有确定缺失缓存 undefined。
-      return await this.options.cache.cached(key, this.options.cacheTtlMs, async () => {
+      const lyrics = await this.options.cache.cached(key, this.options.cacheTtlMs, async () => {
         if (this.queue.size >= this.maxQueuedRequests) throw new Error("AMLL 请求排队过多");
         // 超时同时覆盖排队等待与请求本身；原生超时信号自带定时器回收，无需手写 finally。
         const signal = AbortSignal.timeout(this.requestTimeoutMs);
@@ -107,9 +129,10 @@ export class AmllLyricClient {
           { signal }
         );
       });
+      return lyrics === undefined ? { status: "missing" } : { status: "found", ttml: lyrics };
     } catch (error) {
       this.options.logger?.warn?.("获取 AMLL 歌词失败", { ...context, ...describeError(error) });
-      return undefined;
+      return { status: "failed" };
     }
   }
 
@@ -145,6 +168,9 @@ export class AmllLyricClient {
     return lyrics.trim();
   }
 }
+
+const unwrapLookup = (lookup: AmllLookup): string | undefined =>
+  lookup.status === "found" ? lookup.ttml : undefined;
 
 /** 读取 JSON 响应体并限制总字节数：先看声明长度，再在流式读取时累计，超限立即中止。 */
 const readBoundedJson = async (response: Response): Promise<unknown> => {

@@ -1,4 +1,5 @@
 import { parseYrc as amllParseYrc } from "@applemusic-like-lyrics/lyric";
+import { fromAmllLines } from "../lyrics/AmllLineMapper";
 import { isCreditLyricLine } from "../lyrics/LyricCreditClassifier";
 import { sanitizeLyrics } from "../lyrics/LyricSanitizer";
 import { asRecord, readString } from "../../JsonReaders";
@@ -36,39 +37,7 @@ export const parseLrc = (raw: string): SongLyricLine[] => {
   }));
 };
 
-export const parseYrc = (raw: string): SongLyricLine[] => {
-  const amllLines = amllParseYrc(raw);
-  return amllLines
-    .map((line) => {
-      const text =
-        line.words && line.words.length > 0
-          ? line.words
-              .map((w) => w.word)
-              .join("")
-              .trim()
-          : "";
-      const hasTranslation = Boolean(line.translatedLyric);
-      return {
-        time: line.startTime,
-        endTime: line.endTime,
-        text,
-        words:
-          line.words && line.words.length > 0
-            ? line.words.map((w) => ({
-                startTime: w.startTime,
-                endTime: w.endTime,
-                word: w.word,
-                romanWord: hasTranslation ? undefined : w.romanWord || undefined,
-              }))
-            : undefined,
-        translatedLyric: line.translatedLyric || undefined,
-        romanLyric: hasTranslation ? undefined : line.romanLyric || undefined,
-        isBG: line.isBG || undefined,
-        isDuet: line.isDuet || undefined,
-      };
-    })
-    .filter((line) => line.text.length > 0);
-};
+export const parseYrc = (raw: string): SongLyricLine[] => fromAmllLines(amllParseYrc(raw));
 
 const pickNearestLyric = (candidates: SongLyricLine[], time: number): string | undefined => {
   let best: SongLyricLine | undefined;
