@@ -194,8 +194,8 @@ export function CreditBrandMark({
 }
 
 /**
- * 依赖包名 → 品牌的精确映射。只收清单里实际会出现、且有官方字形的包；
- * 拆分包（`@radix-ui/react-dialog` 等）交给下面的 scope 前缀兜底，其余回退通用包图标。
+ * 依赖包名 → 品牌的精确映射。前缀表承载 scope 包与同族包，这里只放没有 scope、
+ * 或与前缀品牌不同的包；与前缀同值的包不要再登记一遍。清单里没有官方字形的包回退通用包图标。
  */
 const DEPENDENCY_BRANDS = new Map<string, CreditBrandId>([
   // 前端
@@ -203,7 +203,6 @@ const DEPENDENCY_BRANDS = new Map<string, CreditBrandId>([
   ["react-dom", "react"],
   ["typescript", "typescript"],
   ["tailwindcss", "tailwindcss"],
-  ["@tailwindcss/vite", "tailwindcss"],
   ["framer-motion", "framer"],
   ["lucide-react", "lucide"],
   ["zustand", "zustand"],
@@ -212,28 +211,13 @@ const DEPENDENCY_BRANDS = new Map<string, CreditBrandId>([
   ["zod", "zod"],
   // 脚手架与开发辅助
   ["vite", "vite"],
-  ["@vitejs/plugin-react", "vite"],
   ["vitest", "vitest"],
-  ["@vitest/coverage-v8", "vitest"],
   ["storybook", "storybook"],
-  ["@storybook/react-vite", "storybook"],
   ["eslint", "eslint"],
-  ["@eslint/js", "eslint"],
   ["typescript-eslint", "eslint"],
-  ["eslint-plugin-react-hooks", "eslint"],
-  ["eslint-plugin-react-refresh", "eslint"],
-  ["@playwright/test", "playwright"],
   ["playwright", "playwright"],
   // 依赖清单里会出现的品牌
-  ["@sentry/react", "sentry"],
-  ["@applemusic-like-lyrics/core", "applemusic"],
   ["@icons-pack/react-simple-icons", "simpleicons"],
-  ["@fortawesome/react-fontawesome", "fontawesome"],
-  ["@fortawesome/fontawesome-svg-core", "fontawesome"],
-  ["@fortawesome/free-brands-svg-icons", "fontawesome"],
-  ["@testing-library/react", "testinglibrary"],
-  ["@testing-library/user-event", "testinglibrary"],
-  ["@testing-library/jest-dom", "testinglibrary"],
   // 服务端与工具链
   ["elysia", "elysia"],
   ["drizzle-orm", "drizzle"],
@@ -250,9 +234,6 @@ const DEPENDENCY_BRANDS = new Map<string, CreditBrandId>([
   ["esbuild", "esbuild"],
   ["postcss", "postcss"],
   ["eslint-plugin-sonarjs", "sonar"],
-  ["@orpc/client", "orpc"],
-  ["@orpc/contract", "orpc"],
-  ["@lobehub/icons-static-svg", "lobehub"],
   // npm 别名：`typescript7` 装的就是 TypeScript 7，与 `typescript` 共用字形。
   ["typescript7", "typescript"],
 ]);
