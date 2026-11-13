@@ -62,3 +62,19 @@ export const compareDottedVersion = (a: string, b: string): number => {
 
 /** 账号角色：账号契约的四处取值共用这一份。 */
 export const ACCOUNT_ROLES = ["user", "admin"] as const;
+
+/** 客户端类型：账号契约与后台复核条目共用。 */
+export const CLIENT_TYPES = ["web", "desktop", "mobile"] as const;
+
+/** 房间可见性。 */
+export const ROOM_VISIBILITIES = ["public", "private"] as const;
+
+/** 反馈类别与处理状态。 */
+export const FEEDBACK_KINDS = ["suggestion", "bug"] as const;
+export const FEEDBACK_STATUSES = ["open", "processing", "resolved", "closed"] as const;
+
+/** 反作弊复核条目状态。 */
+export const ANTI_CHEAT_REVIEW_STATUSES = ["open", "cleared", "actioned"] as const;
+
+/** 音乐平台。 */
+export const MUSIC_PLATFORMS = ["netease", "qq"] as const;

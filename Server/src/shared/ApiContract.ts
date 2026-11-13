@@ -9,7 +9,15 @@ import {
   QQ_NUMBER_PATTERN,
 } from "./Account";
 import { BADGE_KINDS } from "./Badges";
-import { ACCOUNT_ROLES } from "./ModelValues";
+import {
+  ACCOUNT_ROLES,
+  ANTI_CHEAT_REVIEW_STATUSES,
+  CLIENT_TYPES,
+  FEEDBACK_KINDS,
+  FEEDBACK_STATUSES,
+  MUSIC_PLATFORMS,
+  ROOM_VISIBILITIES,
+} from "./ModelValues";
 import { GAME_IDS } from "./Protocol";
 import { adminRuntimeSettingSchema, runtimeSettingKeySchema } from "./RuntimeSettings";
 import { adminBangumiMirrorStatusSchema } from "./BangumiMirror";
@@ -70,7 +78,7 @@ const preferences = z
     "设置数据过大"
   );
 
-export const musicPlatformSchema = z.enum(["netease", "qq"]);
+export const musicPlatformSchema = z.enum(MUSIC_PLATFORMS);
 
 const musicAccountSchema = z.object({
   platform: musicPlatformSchema.optional(),
@@ -102,8 +110,8 @@ export const cloudSettingsSchema = z.object({
   }),
 });
 
-export const feedbackKindSchema = z.enum(["suggestion", "bug"]);
-export const feedbackStatusSchema = z.enum(["open", "processing", "resolved", "closed"]);
+export const feedbackKindSchema = z.enum(FEEDBACK_KINDS);
+export const feedbackStatusSchema = z.enum(FEEDBACK_STATUSES);
 
 export const feedbackSummarySchema = z.object({
   id: z.string(),
@@ -238,7 +246,7 @@ export const adminFeedbackDetailSchema = adminFeedbackSchema.extend({
 });
 
 /** 复核条目状态：只有人能在后台改，代码路径永不写除 `open` 以外的值。 */
-export const antiCheatReviewStatusSchema = z.enum(["open", "cleared", "actioned"]);
+export const antiCheatReviewStatusSchema = z.enum(ANTI_CHEAT_REVIEW_STATUSES);
 
 /** 触发这条复核的服务端可观测特征原值，后台直接摊开给人对照，不做二次加工。 */
 const reviewFeaturesSchema = z.object({
@@ -261,7 +269,7 @@ export const adminAntiCheatReviewSchema = z.object({
   playerName: z.string(),
   /** 条目按账号补充资料；游客参与或账号已注销时为空。 */
   player: userRefSchema.nullable(),
-  clientType: z.enum(["web", "desktop", "mobile"]),
+  clientType: z.enum(CLIENT_TYPES),
   score: z.number().int(),
   /** 中文短句，说明是哪几条特征把它抬进队列。 */
   reasons: z.array(z.string()),
@@ -289,7 +297,7 @@ export const adminRoomSchema = z.object({
   roomId: z.string(),
   name: z.string(),
   phase: z.string(),
-  visibility: z.enum(["public", "private"]),
+  visibility: z.enum(ROOM_VISIBILITIES),
   hasPassword: z.boolean(),
   hidden: z.boolean(),
   roundNumber: z.number(),
