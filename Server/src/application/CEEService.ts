@@ -24,6 +24,7 @@ import { AppError } from "../domain/Errors";
 import type { CEEDataProvider } from "../infrastructure/CEEData";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
+import { CommandQuota } from "./room/CommandTable";
 import { createEvent } from "../transport/Packets";
 import { CEENativeService } from "./CEENativeService";
 import {
@@ -56,7 +57,9 @@ export class CEEService implements GameService<CEEClientMessage> {
   /** 统一房号目录：增强房与原版房共用一个 4 位号空间，客户端只见到这一个号。 */
   readonly directory: CEERoomDirectory;
   private readonly connections = new Map<string, ConnectionRecord>();
-  private readonly limiter = new SlidingWindowRateLimiter({
+  /** 每连接的命令总额度：与卧底、猜歌同一个类、同一组常量，在预检与分发之前扣。 */
+  private readonly commandQuota = new CommandQuota({
+    now: () => this.now(),
     windowMs: COMMAND_RATE_LIMIT_WINDOW_MS,
     maxRequests: COMMAND_RATE_LIMIT_PER_CONNECTION,
   });
@@ -163,8 +166,7 @@ export class CEEService implements GameService<CEEClientMessage> {
   async execute(id: string, message: CEEClientMessage): Promise<unknown> {
     const connection = this.connections.get(id);
     if (!connection) throw new AppError("CONNECTION_NOT_FOUND", "连接已经断开");
-    if (!this.limiter.allow(id, this.now()))
-      throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
+    this.commandQuota.consume(connection);
     if (message.type === "cee.chat.send") this.chatLimiter.consume(id);
     // 敏感词在服务端入口统一检查：名称、昵称、聊天与自填提示都会展示给其他玩家。
     switch (message.type) {

@@ -88,8 +88,6 @@ export interface CommandDispatcher<
   isSeated(room: TRoom, seat: TSeat): boolean;
   hostIdOf(room: TRoom): string;
   phaseOf(room: TRoom): TPhase;
-  /** 入口额度：每连接总额度，按成本另计的桶由玩法在这里追加。在解析与守卫之前扣。 */
-  quota?(connection: ConnectionRecord, message: TMessage): void;
 }
 
 const admit = <
@@ -126,7 +124,6 @@ export const dispatchCommand = async <
   connection: ConnectionRecord,
   message: TMessage
 ): Promise<CommandResult> => {
-  dispatcher.quota?.(connection, message);
   // 映射类型按命令类型逐条收窄，按运行时的 type 取出来时 TS 只能给出并集；
   // 表的键与 message.type 来自同一份协议类型，这里放宽到整条消息的口径是等价的。
   const table = dispatcher.table as Record<
@@ -148,7 +145,11 @@ export const dispatchCommand = async <
   return spec.run(dispatcher.deps, at, message);
 };
 
-/** 每连接的命令总额度：任何命令都先扣它，按成本另计的配额在它之后。 */
+/**
+ * 每连接的命令总额度：任何命令都先扣它，按成本另计的配额在它之后。
+ * 由各玩法在自己的命令入口、预检与分发之前调用：预检（如敏感词扫描）排在分发外层，
+ * 额度放进分发器里就会让高频命令先白做一遍预检再被限流。
+ */
 export class CommandQuota {
   private readonly limiter: SlidingWindowRateLimiter;
 

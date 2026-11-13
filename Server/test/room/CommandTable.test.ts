@@ -103,7 +103,6 @@ const createSetup = () => {
       },
     },
   };
-  const quotaCalls: string[] = [];
   const dispatcher: CommandDispatcher<Message, Deps, Room, Seat, Phase> = {
     table,
     deps,
@@ -117,14 +116,10 @@ const createSetup = () => {
     isSeated: (candidate, seat) => candidate.seats.get(seat.id) === seat,
     hostIdOf: (candidate) => candidate.hostPlayerId,
     phaseOf: (candidate) => candidate.phase,
-    quota: (connection) => {
-      quotaCalls.push(connection.id);
-      if (connection.id === "flood") throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
-    },
   };
   const as = (playerId?: string, id = `c-${playerId ?? "lobby"}`) =>
     makeConnection(id, { overrides: { roomId: "1234", playerId } });
-  return { rooms, room, deps, gate, resolved, quotaCalls, dispatcher, as };
+  return { rooms, room, deps, gate, resolved, dispatcher, as };
 };
 
 const open = (setup: ReturnType<typeof createSetup>) => {
@@ -141,16 +136,6 @@ describe("命令分发与准入", () => {
     expect(result).toEqual({ subscribed: true });
     expect(setup.resolved).toEqual([]);
     expect(setup.deps.log).toEqual(["lobby:c1"]);
-  });
-
-  test("入口额度先于解析与守卫扣除，超额时什么都不执行", async () => {
-    const setup = createSetup();
-    await expectAppErrorAsync(
-      () => dispatchCommand(setup.dispatcher, setup.as("guest", "flood"), act(1)),
-      "RATE_LIMITED"
-    );
-    expect(setup.resolved).toEqual([]);
-    expect(setup.deps.log).toEqual([]);
   });
 
   test("access：解析不到席位由玩法报错；房主命令拒绝非房主", async () => {
