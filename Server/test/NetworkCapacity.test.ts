@@ -8,7 +8,6 @@ import {
   type ConnectionRecord,
   type WhoIsFakerRoomSummary,
 } from "../src/shared/Index";
-import { FAKER_ROOM_MAX_MEMBERS } from "../src/shared/WhoIsFaker";
 import { createAck } from "../src/transport/Packets";
 import { StateSyncEncoder } from "../src/transport/StateSync";
 import { createTestContext, execute, type TestConnection } from "./Helpers";
@@ -27,8 +26,7 @@ const utf8Bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "
 const websocketFrameBytes = (payloadBytes: number) =>
   payloadBytes + (payloadBytes < 126 ? 2 : payloadBytes < 65_536 ? 4 : 10);
 
-test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步（满员房间）", async () => {
-  // 房间人数有上限：150 人的总量由若干间满员房间分担，每次状态变化只扇出给本房成员。
+test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步", async () => {
   const { service, advanceTime } = createTestContext();
   let networkNow = 0;
   let measuredBytes = 0;
@@ -55,51 +53,40 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步（满员房间
     return { record, sent: [], closed: [] };
   };
 
-  const roomCount = Math.ceil(TARGET_PLAYERS / FAKER_ROOM_MAX_MEMBERS);
-  const roomIds = Array.from({ length: roomCount }, (_, room) => String(Number(ROOM_ID) + room));
-  const players: Array<{ connection: TestConnection; roomId: string }> = [];
-  for (const [roomIndex, roomId] of roomIds.entries()) {
-    const remaining = TARGET_PLAYERS - roomIndex * FAKER_ROOM_MAX_MEMBERS;
-    const size = Math.min(FAKER_ROOM_MAX_MEMBERS, remaining);
-    for (let seat = 0; seat < size; seat += 1) {
-      const connection = createMeasuredConnection(`capacity-${roomId}-${seat}`);
-      players.push({ connection, roomId });
-      await execute(
-        service,
-        connection,
-        seat === 0
-          ? {
-              id: `create-${roomId}`,
-              type: "room.create",
-              payload: {
-                roomId,
-                name: `承载测试房间${roomId}`,
-                visibility: "public",
-                allowSpectators: true,
-                userName: "玩家0",
-              },
-            }
-          : {
-              id: `join-${roomId}-${seat}`,
-              type: "room.join",
-              roomId,
-              payload: { userName: `玩家${seat}` },
-            }
-      );
-    }
+  const players: TestConnection[] = [createMeasuredConnection("capacity-host")];
+  await execute(service, players[0], {
+    id: "create-capacity-room",
+    type: "room.create",
+    payload: {
+      roomId: ROOM_ID,
+      name: "150人承载测试房间",
+      visibility: "public",
+      allowSpectators: true,
+      userName: "玩家0",
+    },
+  });
+
+  for (let index = 1; index < TARGET_PLAYERS; index += 1) {
+    const connection = createMeasuredConnection(`capacity-${index}`);
+    players.push(connection);
+    await execute(service, connection, {
+      id: `join-${index}`,
+      type: "room.join",
+      roomId: ROOM_ID,
+      payload: { userName: `玩家${index}` },
+    });
   }
-  expect(players).toHaveLength(TARGET_PLAYERS);
 
   // 建房与加入属于一次性冷启动流量，不计入满房游玩时的持续带宽。
   measuredBytes = 0;
   const mutationCount = MUTATIONS_PER_SECOND * TEST_DURATION_SECONDS;
   for (let mutation = 0; mutation < mutationCount; mutation += 1) {
-    const { connection, roomId } = players[mutation % players.length];
+    const connection = players[mutation % players.length];
     const ready = Math.floor(mutation / players.length) % 2 === 0;
     const message = {
       id: `ready-${mutation}`,
       type: "player.setReady" as const,
-      roomId,
+      roomId: ROOM_ID,
       payload: { ready },
     };
     await execute(service, connection, message);
@@ -116,9 +103,7 @@ test("6Mbps 可以承载 150 人 WhoIsFaker 的高频状态同步（满员房间
   await service.runHousekeeping();
 
   const bitsPerSecond = (measuredBytes * TRANSPORT_OVERHEAD_RATIO * 8) / TEST_DURATION_SECONDS;
-  console.info(
-    `150 人（${roomCount} 间满员房间）真实房间容量估算: ${(bitsPerSecond / 1_000_000).toFixed(2)} Mbps`
-  );
+  console.info(`150 人真实房间容量估算: ${(bitsPerSecond / 1_000_000).toFixed(2)} Mbps`);
   expect(bitsPerSecond).toBeLessThanOrEqual(TARGET_BITS_PER_SECOND);
 }, 30_000);
 
