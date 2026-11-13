@@ -172,7 +172,9 @@ export class CEEService implements AdminRoomControl {
         assertTextAllowed(message.payload.name);
         break;
       case "cee.chat.send":
-        assertTextAllowed(message.payload.text);
+        // 增强房的聊天由房间内核在受理时检测一次（针对规范化、截断之后真正展示的文本）；
+        // 原版房的聊天不经内核，只能在这里检测。每条聊天只看一遍。
+        if (this.original.hasSession(id)) assertTextAllowed(message.payload.text);
         break;
       case "cee.game.setAnswer":
         assertTextAllowed(...message.payload.hints);
