@@ -122,6 +122,44 @@ describe("反馈弹窗", () => {
     expect(listMine).not.toHaveBeenCalled();
   });
 
+  it("匿名确认条出现时焦点移入其中，取消后回到「匿名提交」", async () => {
+    useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
+    const user = userEvent.setup();
+    renderDialog();
+    await fillDraft(user);
+
+    await user.click(screen.getByRole("button", { name: "匿名提交" }));
+    // 点击的按钮随确认条替换而卸载：焦点不能掉回 body，要交给确认条。
+    expect(screen.getByRole("alertdialog")).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.getByRole("button", { name: "匿名提交" })).toHaveFocus();
+  });
+
+  it("未读标记写成读屏读得出的文字，不把 aria-label 挂在无角色的 span 上", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: null, unreadFeedback: 2 });
+    listMine.mockResolvedValue({
+      items: [
+        {
+          id: "f1",
+          kind: "bug",
+          title: "有回复的反馈",
+          status: "open",
+          createdAt: new Date().toISOString(),
+          lastReplyAt: new Date().toISOString(),
+          unread: true,
+        },
+      ],
+      unread: 2,
+    });
+    const { container } = renderDialog();
+
+    const row = await screen.findByRole("button", { name: /有回复的反馈/ });
+    expect(row).toHaveTextContent("有新回复");
+    expect(screen.getByRole("tab", { name: /我的反馈/ })).toHaveTextContent("2 条未读回复");
+    expect(container.ownerDocument.querySelectorAll("span[aria-label]")).toHaveLength(0);
+  });
+
   it("登录并提交把当前草稿交给登录流程", async () => {
     useAccountStore.setState({ status: "unavailable", profile: null, unreadFeedback: 0 });
     const user = userEvent.setup();

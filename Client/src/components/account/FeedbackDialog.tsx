@@ -86,6 +86,8 @@ function FeedbackForm({
   const confirmId = useId();
   const autoStarted = useRef(false);
   const confirmRef = useRef<HTMLDivElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
   const reducedMotion = useReducedMotion();
 
   // 二次确认框出现在表单底部，定高滚动区里常常落在可视范围外：出现时把它挪进来。
@@ -97,6 +99,16 @@ function FeedbackForm({
         behavior: reducedMotion ? "auto" : "smooth",
       });
   }, [confirming, reducedMotion]);
+  // 点中的「匿名提交」会随确认条替换而卸载，焦点不处理就掉回 body：
+  // 出现时交给确认条（读屏读出问句），收起时回到「匿名提交」，键盘用户不必重新找位置。
+  useEffect(() => {
+    if (confirming) {
+      confirmRef.current?.focus({ preventScroll: true });
+    } else if (wasConfirming.current) {
+      submitButtonRef.current?.focus({ preventScroll: true });
+    }
+    wasConfirming.current = confirming;
+  }, [confirming]);
   const ready = title.trim().length > 0 && content.trim().length > 0;
 
   const submit = useCallback(async () => {
@@ -188,6 +200,7 @@ function FeedbackForm({
           ref={confirmRef}
           role="alertdialog"
           aria-labelledby={confirmId}
+          tabIndex={-1}
           className="grid gap-2 rounded-md border border-border bg-muted/40 p-3"
         >
           <p id={confirmId} className="text-sm font-medium">
@@ -227,7 +240,7 @@ function FeedbackForm({
               登录并提交
             </Button>
           ) : null}
-          <Button type="submit" disabled={!ready} loading={busy}>
+          <Button ref={submitButtonRef} type="submit" disabled={!ready} loading={busy}>
             {guest ? "匿名提交" : "提交反馈"}
           </Button>
         </DialogFooter>
@@ -452,10 +465,13 @@ function MyFeedbackPanel({
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2">
                     {item.unread ? (
-                      <span
-                        aria-label="有新回复"
-                        className="h-2 w-2 shrink-0 rounded-full bg-destructive"
-                      />
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="h-2 w-2 shrink-0 rounded-full bg-destructive"
+                        />
+                        <span className="sr-only">有新回复，</span>
+                      </>
                     ) : null}
                     <span className="truncate text-sm font-medium">{item.title}</span>
                   </span>
@@ -559,12 +575,15 @@ function FeedbackDialogBody({
             <TabsTrigger value="mine" className="flex-1">
               我的反馈
               {unread > 0 ? (
-                <span
-                  aria-label={`${unread} 条未读回复`}
-                  className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
-                >
-                  {unread}
-                </span>
+                <>
+                  <span
+                    aria-hidden="true"
+                    className="ml-1.5 rounded-full bg-destructive px-1.5 text-2xs leading-4 text-destructive-foreground tabular-nums"
+                  >
+                    {unread}
+                  </span>
+                  <span className="sr-only">，{unread} 条未读回复</span>
+                </>
               ) : null}
             </TabsTrigger>
           </TabsList>
