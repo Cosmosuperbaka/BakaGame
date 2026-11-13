@@ -17,7 +17,7 @@
     "test:integration:cee": "bun test ./integration/CEEOriginal.integration.ts",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage && bun run scripts/CheckCoverage.ts",
     "test:ci": "node --test \"test/ci/*.mjs\"",
-    "test:production-smoke": "bun run scripts/ProductionSmoke.ts",
+    "test:isolated-smoke": "bun run scripts/IsolatedSmoke.ts",
     "test:shutdown-smoke": "bun --no-env-file run scripts/ShutdownSmoke.ts",
     "test:npm-lock": "node scripts/ExportNpmLock.mjs --out build/server-npm-lock.json",
     "verify": "bun run lint && bun run check && bun run test:coverage && bun run test:ci",

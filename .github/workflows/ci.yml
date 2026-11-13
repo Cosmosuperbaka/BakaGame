@@ -192,7 +192,7 @@ jobs:
       # 冒烟走工作区固定版 bun（devDependency 钉的 1.4.2，与测试链、生产容器同一枚）：
       # pnpm 化后作业里不再有 Setup Bun，裸 `bun` 不在 PATH 上会以 127 直接退出。
       - name: Smoke test production server
-        run: pnpm --filter server exec bun --no-env-file run scripts/ProductionSmoke.ts
+        run: pnpm --filter server exec bun --no-env-file run scripts/IsolatedSmoke.ts
 
       # 生产运行时依赖由 npm 安装（见 Server/.npmrc），而 CI 的解析权威是根 pnpm-lock.yaml，
       # 两条路径并存时线上装到的可能与获验那套不同。这一步用 CI 已解析出的直接依赖版本喂
