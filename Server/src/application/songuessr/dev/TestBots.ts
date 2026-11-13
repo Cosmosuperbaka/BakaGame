@@ -5,17 +5,9 @@ import {
 } from "../../../config/Constants";
 import { AppError } from "../../../domain/Errors";
 import type { SonGuessrContext } from "../Context";
-import { clampInt, type SonGuessrRoomRecord } from "../Records";
+import { clampInt } from "../Records";
 import { createPlayer, type SongCommandAt } from "../RoomAccess";
-
-/**
- * 移除机器人后「回合是否已完整、是否该结算」仍由门面的回合逻辑判定；回合引擎拆出前，
- * 门面把这两步以闭包交进来，拆出后本模块直接依赖回合引擎，这个接口随之删除。
- */
-export interface TestBotRoundHooks {
-  isRoundComplete(room: SonGuessrRoomRecord): boolean;
-  finishRound(room: SonGuessrRoomRecord): void;
-}
+import { finishRound, isRoundComplete } from "../RoundEngine";
 
 export function addBots(ctx: SonGuessrContext, at: SongCommandAt, countValue?: number) {
   const { room } = at;
@@ -44,12 +36,7 @@ export function addBots(ctx: SonGuessrContext, at: SongCommandAt, countValue?: n
   return { addedPlayerIds: added };
 }
 
-export function removeBots(
-  ctx: SonGuessrContext,
-  round: TestBotRoundHooks,
-  at: SongCommandAt,
-  countValue?: number
-) {
+export function removeBots(ctx: SonGuessrContext, at: SongCommandAt, countValue?: number) {
   const { room } = at;
   const count = clampInt(countValue ?? 1, 1, TEST_BOT_BATCH_LIMIT);
   const bots = Object.values(room.players)
@@ -57,7 +44,7 @@ export function removeBots(
     .sort((left, right) => right.joinedAt - left.joinedAt)
     .slice(0, count);
   for (const bot of bots) delete room.players[bot.id];
-  if (room.phase === "playing" && round.isRoundComplete(room)) round.finishRound(room);
+  if (room.phase === "playing" && isRoundComplete(ctx, room)) finishRound(ctx, room);
   ctx.touch(room);
   ctx.publishRoom(room);
   return { removedPlayerIds: bots.map((bot) => bot.id) };

@@ -144,10 +144,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       deps: {
         ctx,
         handlers: this,
-        testBotRound: {
-          isRoundComplete: (room) => isRoundComplete(this.ctx, room),
-          finishRound: (room) => finishRound(this.ctx, room),
-        },
       },
       resolveSeat: (connection) => {
         const { room, player } = requireRoomPlayer(ctx, connection);
