@@ -3,6 +3,10 @@ import {
   CONNECT_WAIT_TIMEOUT_MS,
   DEFAULT_REQUEST_TIMEOUT_MS,
   MAX_RECONNECT_DELAY_MS,
+  RECONNECT_BASE_DELAY_MS,
+  RECONNECT_MIN_DELAY_MS,
+  RECONNECT_MIN_INTERVAL_MS,
+  RECONNECT_STABLE_MS,
 } from "@/config/Constants";
 import { resolveServerBase } from "@/lib/ServerEndpoint";
 import { rejectProtocol } from "@/lib/ProtocolFailure";
@@ -106,6 +110,11 @@ export class WebSocketClient {
   private requestCounter = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
+  private reconnectDueAt = 0;
+  /** 上一次发起建连的时刻：立即重连据此守住最小间隔。 */
+  private lastAttemptAt = 0;
+  /** 业务可用后的稳定计时：到点才清零退避，握手即断的服务端不会造成紧密重连。 */
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private connectWaiters: Array<{ resolve: () => void; reject: (error: ProtocolError) => void }> =
     [];
   private readonly path: string;
@@ -119,6 +128,7 @@ export class WebSocketClient {
     this.handshakeQuery = options.handshakeQuery;
     this.prelude = options.prelude;
     clients.add(this);
+    installNetworkListeners();
   }
 
   private isReady(): boolean {
@@ -146,6 +156,7 @@ export class WebSocketClient {
       return;
     }
 
+    this.lastAttemptAt = Date.now();
     try {
       // 生产走同源相对路径（由边缘中间件反代），本地开发由 VITE_SERVER_URL 指定端口。
       // WebSocket 相对地址无法直接构造，必须显式补全协议与主机。
@@ -164,7 +175,6 @@ export class WebSocketClient {
     const socket = this.socket;
     socket.onopen = () => {
       if (this.socket !== socket) return;
-      this.reconnectAttempts = 0;
       captureClientLog("WebSocket 已连接", "info", { path: this.path });
       countClientMetric("bakagame.websocket.connections", 1, { path: this.path });
       if (this.prelude) void this.runPrelude(this.prelude, socket);
@@ -208,6 +218,7 @@ export class WebSocketClient {
       if (this.socket !== socket) return;
       this.socket = null;
       this.preluding = false;
+      this.clearStableTimer();
       captureClientLog("WebSocket 已断开", "warning", { path: this.path });
       countClientMetric("bakagame.websocket.disconnects", 1, { path: this.path });
       this.statusHandlers.forEach((handler) => handler(false));
@@ -233,6 +244,8 @@ export class WebSocketClient {
   disconnect(): void {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.clearStableTimer();
     const socket = this.socket;
     this.socket = null;
     this.preluding = false;
@@ -254,7 +267,17 @@ export class WebSocketClient {
     this.statusHandlers.forEach((handler) => handler(false));
   }
 
+  private clearStableTimer(): void {
+    if (this.stableTimer) clearTimeout(this.stableTimer);
+    this.stableTimer = null;
+  }
+
   private announceOpen(): void {
+    this.clearStableTimer();
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null;
+      this.reconnectAttempts = 0;
+    }, RECONNECT_STABLE_MS);
     this.statusHandlers.forEach((handler) => handler(true));
     const waiters = this.connectWaiters;
     this.connectWaiters = [];
@@ -451,16 +474,52 @@ export class WebSocketClient {
     };
   }
 
+  /** 全抖动退避：在 [下限, 当前档上限] 内随机，发布后重连的客户端才不会在同一时刻涌来。 */
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
-    const delay = Math.min(1_000 * 2 ** this.reconnectAttempts, MAX_RECONNECT_DELAY_MS);
+    const ceiling = Math.min(
+      RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempts,
+      MAX_RECONNECT_DELAY_MS
+    );
     this.reconnectAttempts += 1;
+    this.armReconnect(Math.max(RECONNECT_MIN_DELAY_MS, Math.random() * ceiling));
+  }
+
+  private armReconnect(delay: number): void {
+    this.reconnectDueAt = Date.now() + delay;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
     }, delay);
   }
+
+  /**
+   * 联网恢复或页面回到前台时把已排定的重连提前：仍受最小间隔约束，且只提前不推后。
+   * 没有排定重连（连接正常，或已主动断开）时什么都不做。
+   */
+  reconnectNow(): void {
+    if (!this.reconnectTimer) return;
+    const wait = Math.max(0, this.lastAttemptAt + RECONNECT_MIN_INTERVAL_MS - Date.now());
+    if (this.reconnectDueAt - Date.now() <= wait) return;
+    clearTimeout(this.reconnectTimer);
+    this.armReconnect(wait);
+  }
 }
+
+let networkListenersInstalled = false;
+
+/** 睡眠唤醒、切网或回到前台之后不等退避走完：全站只挂一份监听，逐个通知有排定重连的客户端。 */
+const installNetworkListeners = (): void => {
+  if (networkListenersInstalled || typeof window === "undefined") return;
+  networkListenersInstalled = true;
+  const nudge = () => {
+    for (const client of clients) client.reconnectNow();
+  };
+  window.addEventListener("online", nudge);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") nudge();
+  });
+};
 
 export const createWebSocketClient = (path: string, options?: WebSocketClientOptions) =>
   new WebSocketClient(path, options);
