@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { SHARED_DEDUPE } from "./shared-dependencies.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(root, "..");
@@ -52,13 +53,15 @@ const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, root);
 // 静态断言读原始配置：解析后的 options.paths 已被内部归一化，不适合核对书写形态。
 const rawPaths = config.config.compilerOptions?.paths ?? {};
 
+// dedupe 列表由 shared-dependencies.mjs 单点声明；这里只确认 vite.config.ts 确实引用了它。
 const viteText = fs.readFileSync(path.join(root, "vite.config.ts"), "utf8");
-const dedupeBlock = /dedupe:\s*\[([^\]]*)\]/m.exec(viteText)?.[1] ?? "";
-const deduped = new Set([...dedupeBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]));
-assert.ok(
-  deduped.has("@sinclair/typebox"),
-  "vite.config.ts resolve.dedupe 解析失效（找不到已知条目）"
+assert.match(
+  viteText,
+  /dedupe:\s*SHARED_DEDUPE\b/,
+  "vite.config.ts 的 resolve.dedupe 必须引用 SHARED_DEDUPE，否则门禁核对的列表不是实际生效的列表"
 );
+const deduped = new Set(SHARED_DEDUPE);
+assert.ok(deduped.has("@sinclair/typebox"), "SHARED_DEDUPE 缺少已知条目");
 
 const packageOf = (specifier) => {
   const parts = specifier.split("/");

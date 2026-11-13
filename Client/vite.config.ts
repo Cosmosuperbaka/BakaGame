@@ -10,6 +10,7 @@ import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp.ts";
 import { staticShellPlugin } from "./scripts/vite-plugins/StaticShell.ts";
 import { seoArtifactsPlugin } from "./scripts/vite-plugins/SeoArtifacts.ts";
 import { generatedFontsPlugin } from "./scripts/vite-plugins/GeneratedFonts.ts";
+import { SHARED_DEDUPE } from "./scripts/shared-dependencies.mjs";
 import {
   sentrySourcemapsPlugin,
   sourcemapUploadEnabled,
@@ -60,7 +61,7 @@ export default defineConfig(({ command }) => {
       // 共享源码的运行依赖按客户端安装边界解析。独立安装的构建只在 Client 里
       // 装依赖：从 Server/src/shared 出发的裸导入必须落到这里的副本，
       // 否则打包阶段同样解析不到（与 tsconfig paths 是同一份边界的两侧）。
-      dedupe: ["@sinclair/typebox", "@orpc/contract", "zod"],
+      dedupe: SHARED_DEDUPE,
       alias: [
         // 更具体的前缀必须排在前面：运行时值走 Values.ts，类型仍从 Index.ts 取。
         {
