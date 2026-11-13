@@ -1,3 +1,4 @@
+import { BLANK_GUESS_DRAFT_PUBLISH_WINDOW_MS } from "../../config/Constants";
 import { AppError } from "../../domain/Errors";
 import {
   evaluateBlankGuess,
@@ -20,6 +21,9 @@ import { publishRoom } from "./RoomPublish";
 import { ensurePhaseNotBlocked } from "./RoundRules";
 import { requireRound, type WhoIsFakerSeatAt } from "./RoomAccess";
 import type { WhoIsFakerContext } from "./Context";
+
+/** 草稿发布合并窗口的定时器名：同房同名只留一个，正好表达「窗口内只挂一个待发布」。 */
+const BLANK_DRAFT_TIMER = "blankGuessDraftPublish";
 
 /** 猜词的共同前置：本人是白板、还活着、这局的猜词机会还没用掉；校验顺序即错误码的先后。 */
 const requireLiveBlankWithChance = (round: GameRound, playerId: string): void => {
@@ -168,9 +172,20 @@ export const updateBlankGuessDraft = async (
     throw new AppError("ACTION_FORBIDDEN", "本次猜词正在等待主持人裁定");
   }
 
+  // 草稿本身立刻落进房间状态（提交、重连与任何一次别的发布都读得到最新值），
+  // 只把「全房扇出」合并：窗口内的多次更新由窗口末尾发布一次，最后一次的值不会丢。
   round.blankGuessContext.draft = words;
   ctx.touch(room);
-  publishRoom(ctx, room);
+  if (!ctx.timers.isArmed(room.id, BLANK_DRAFT_TIMER)) {
+    ctx.timers.arm(room.id, BLANK_DRAFT_TIMER, BLANK_GUESS_DRAFT_PUBLISH_WINDOW_MS, () => {
+      // 窗口期间阶段可能已经走远，或本次猜词已提交待裁定（提交与阶段转换自己发布过）：
+      // 那些发布带出的已经是最新状态，这里不再补发。
+      const context = room.round?.blankGuessContext;
+      if (ctx.rooms.get(room.id) !== room || room.round?.phase !== "blankGuess") return;
+      if (!context || context.pendingReview) return;
+      publishRoom(ctx, room);
+    });
+  }
   return { updated: true };
 };
 

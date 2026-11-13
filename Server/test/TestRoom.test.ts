@@ -363,7 +363,14 @@ const prepareBlank = async (
 };
 
 test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束", async () => {
-  const { service } = createTestContext();
+  // 草稿的全房发布合并在窗口末尾：用手动定时器把窗口走完，不依赖墙钟。
+  const pending: Array<() => void> = [];
+  const { service } = createTestContext({
+    setTimer: (fire) => {
+      pending.push(fire);
+      return { cancel: () => {} };
+    },
+  });
   const { host, playerId } = await createTestRoom(service, 4);
   await prepareBlank(service, host);
 
@@ -392,12 +399,14 @@ test("白板猜词是阻塞阶段：进入后全房停下，猜中即刻结束",
   expect(entered.status.blankGuessPlayerId).toBe(playerId);
   expect(entered.status.blankGuessReason).toBe("active");
 
-  // 输入草稿实时广播，其他人能看到白板正在猜什么。
+  // 输入草稿广播给全房（窗口内合并、窗口末尾发布），其他人能看到白板正在猜什么。
   await execute(service, host, {
     id: "draft",
     type: "game.updateBlankGuessDraft",
     payload: { words: ["苹", ""] },
   });
+  expect(snapshotOf(host).status.blankGuessDraft).toBeUndefined();
+  for (const fire of pending.splice(0)) fire();
   expect(snapshotOf(host).status.blankGuessDraft).toEqual(["苹", ""]);
 
   const result = (await execute(service, host, {

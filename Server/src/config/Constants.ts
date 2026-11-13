@@ -108,6 +108,13 @@ export const PHASE_RESULT_DISPLAY_MS = 1_500;
 /** 测试模式默认词对（用于快速跳转阶段） */
 export const TEST_MODE_DEFAULT_WORD: [string, string] = ["苹果", "香蕉"];
 
+/**
+ * 白板猜词草稿的全房发布合并窗口：窗口内同一房间的多次草稿更新只在窗口末尾发布一次。
+ * 取百毫秒量级：比一次击键间隔长得多、比人眼觉出「实时」的延迟短得多；
+ * 客户端自己还有一层输入节流，这一层挡的是改过的客户端与高频脚本。
+ */
+export const BLANK_GUESS_DRAFT_PUBLISH_WINDOW_MS = 150;
+
 /** 测试房间玩家数上限（含机器人），防止误触把房间撑爆 */
 export const TEST_MODE_MAX_PLAYERS = 12;
 
