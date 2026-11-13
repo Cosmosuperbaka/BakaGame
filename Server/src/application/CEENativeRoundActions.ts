@@ -5,7 +5,6 @@ import { ceeUnitId } from "../domain/CEEModel";
 import {
   applyCEEGuess,
   beginCEERound,
-  canStartCEERound,
   ceeImageHintAvailability,
   ceeParticipants,
   requireCEEAction,
@@ -31,17 +30,12 @@ export interface CEENativeContext {
   readonly inFlight: Set<string>;
   /** 每房只留一个「最近截止」定时器：状态变化之后重算。 */
   schedule(room: CEERoom): void;
+  /** 命令改变了多间房（重连、关房）之后，给仍在的房间全部重挂。 */
+  rescheduleAll(): void;
 }
 
-export function chooseCEESetter(
-  ctx: CEENativeContext,
-  room: CEERoom,
-  player: CEEPlayerRecord,
-  playerId: string
-): void {
-  ctx.state.requireHost(room, player);
-  if (room.phase !== "choosingSetter")
-    throw new AppError("INVALID_PHASE", "请先开始游戏再指定出题人");
+/** 房主与阶段由命令表守卫：调用时房间一定处在选出题人阶段。 */
+export function chooseCEESetter(ctx: CEENativeContext, room: CEERoom, playerId: string): void {
   const setter = ctx.state.member(room, playerId);
   if (!setter.online) throw new AppError("PLAYER_OFFLINE", "出题人已离线");
   if (!ceeParticipants(room, setter.id).length)
@@ -51,32 +45,20 @@ export function chooseCEESetter(
   room.preparationId = crypto.randomUUID();
   room.phaseDeadlineAt = ctx.now() + 120000;
 }
-export function cancelCEEPreparation(
-  ctx: CEENativeContext,
-  room: CEERoom,
-  player: CEEPlayerRecord
-): void {
-  ctx.state.requireHost(room, player);
+/** 房主与「有任务可取消」的阶段由命令表守卫。 */
+export function cancelCEEPreparation(ctx: CEENativeContext, room: CEERoom): void {
   // 选出题人阶段还没开局，退回等待只换阶段，大家的准备状态原样保留。
   if (room.phase === "choosingSetter") {
     room.phase = "waiting";
     return;
   }
-  if (room.phase !== "answering" && room.phase !== "preparing")
-    throw new AppError("INVALID_PHASE", "当前没有等待中的出题任务");
   ctx.state.resetWaiting(room);
 }
-/** 开始游戏：随机出题直接抽题开局；手动出题进入选出题人阶段，由房主在那里指定出题人。 */
-export async function startCEEGame(
-  ctx: CEENativeContext,
-  room: CEERoom,
-  player: CEEPlayerRecord
-): Promise<void> {
-  ctx.state.requireHost(room, player);
-  if (room.phase !== "waiting" && room.phase !== "settled")
-    throw new AppError("INVALID_PHASE", "当前阶段无法开始游戏");
-  if (!canStartCEERound(room, player, ctx.state.testRooms))
-    throw new AppError("PLAYERS_NOT_READY", "至少两名玩家在线，且其他参与者准备后才能开始");
+/**
+ * 开始游戏：随机出题直接抽题开局；手动出题进入选出题人阶段，由房主在那里指定出题人。
+ * 房主、阶段与「人数与准备」由命令表守卫。
+ */
+export async function startCEEGame(ctx: CEENativeContext, room: CEERoom): Promise<void> {
   validateCEESettings(room.settings);
   room.round = null;
   room.summary = null;
@@ -116,8 +98,6 @@ export async function submitCEEAnswer(
   id: number,
   hints: string[]
 ): Promise<void> {
-  if (room.phase !== "answering" || room.setterPlayerId !== player.id)
-    throw new AppError("NOT_SETTER", "仅当前出题人可以提交答案");
   const key = `answer:${room.id}`;
   if (ctx.inFlight.has(key)) throw new AppError("ACTION_PENDING", "答案正在提交");
   ctx.inFlight.add(key);

@@ -450,10 +450,10 @@ export class CEERooms {
     return { room, player };
   }
 
-  requireHost(room: CEERoom, player: CEEPlayerRecord): void {
+  private requireHost(room: CEERoom, player: CEEPlayerRecord): void {
     if (player.id !== room.hostPlayerId) throw new AppError("FORBIDDEN", "只有房主可以执行该操作");
   }
-  requireWaiting(room: CEERoom): void {
+  private requireWaiting(room: CEERoom): void {
     if (room.phase !== "waiting") throw new AppError("INVALID_PHASE", "请在等待阶段修改");
   }
   /**
@@ -514,7 +514,6 @@ export class CEERooms {
   }
   /** 房主处理旁观请求。拒绝立即退回参与态，不等 120 秒超时；结果单独回给请求方以便提示。 */
   approveSpectate(room: CEERoom, actor: CEEPlayerRecord, id: string, approved: boolean): void {
-    this.requireHost(room, actor);
     if (!isCEEAntiCheatRoom(room.settings))
       throw new AppError("SPECTATE_NOT_PENDING", "该房间不需要批准旁观");
     if (!room.spectatorRequests.has(id))
@@ -533,7 +532,6 @@ export class CEERooms {
     this.remove(room, player);
   }
   kick(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
-    this.requireHost(room, actor);
     if (id === actor.id) throw new AppError("INVALID_PLAYER", "不能移除自己");
     this.kickPlayer(room, this.member(room, id), "你已被房主移出房间");
   }
@@ -571,7 +569,6 @@ export class CEERooms {
     this.remove(room, target);
   }
   transferHost(room: CEERoom, actor: CEEPlayerRecord, id: string): void {
-    this.requireHost(room, actor);
     const target = this.member(room, id);
     handOverHost(room, target, { code: "INVALID_PLAYER", message: "请选择在线参与玩家" });
     // 房主没有准备态：新房主视同已准备，卸任的房主回到未准备，需要自己再点准备。
@@ -585,8 +582,6 @@ export class CEERooms {
     actor: CEEPlayerRecord,
     payload: CEEPayload<"cee.room.update">
   ): Promise<void> {
-    this.requireHost(room, actor);
-    this.requireWaiting(room);
     const name = this.name(payload.name);
     const password = normalizePassword(payload.password ?? "");
     if (payload.visibility === "private" && !password && !room.passwordHash)
@@ -597,6 +592,7 @@ export class CEERooms {
         : password
           ? await this.passwords.hash(password)
           : room.passwordHash;
+    // 入口处的房主与阶段由命令表守卫；口令摘要期间房主或阶段可能变了，回来要再核一遍。
     if (this.rooms.get(room.id) !== room) throw new AppError("ROOM_NOT_FOUND", "房间已经关闭");
     this.requireHost(room, actor);
     this.requireWaiting(room);

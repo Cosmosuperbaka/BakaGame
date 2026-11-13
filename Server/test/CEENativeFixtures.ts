@@ -1,7 +1,8 @@
 import type { GameRecorder } from "../src/domain/GameRecord";
 import type { TestRoomPolicy } from "../src/domain/TestRooms";
 import { TEST_ROOMS_ON } from "./TestRoomPolicy";
-import { CEENativeService, type CEENativeMessage } from "../src/application/CEENativeService";
+import { CEENativeService } from "../src/application/CEENativeService";
+import type { CEENativeMessage } from "../src/application/CEENativeCommands";
 import {
   CEESearchProvenance,
   ceeCharacterIdsOf,
