@@ -659,6 +659,51 @@ describe("手动出题片段", () => {
     expect(resumed.playerId).toBe(guestState.playerId);
   });
 
+  test("重启恢复后新发的聊天编号不与快照里已有的撞，各服务实例的发号互不影响", async () => {
+    const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    const host = connection(service, "chat-id-host");
+    await createRoom(service, host);
+    await joinRoom(service, connection(service, "chat-id-guest"), "老玩家");
+    await execute(service, host, {
+      id: "chat-before",
+      type: "song.chat.send",
+      roomId: "1234",
+      payload: { text: "重启前的一句" },
+    });
+    const usedIds = service.rooms.get("1234")!.chat.map((message) => message.id);
+    expect(usedIds.length).toBeGreaterThan(2);
+
+    const restarted = new SonGuessrService({ musicProvider: provider });
+    expect(restarted.restoreSnapshots(service.exportSnapshots(), Date.now())).toBe(1);
+    const restoredHost = connection(restarted, "chat-id-restored");
+    await execute(restarted, restoredHost, {
+      id: "chat-reconnect",
+      type: "song.room.reconnect",
+      payload: {
+        roomId: "1234",
+        sessionToken: lastEvent<SonGuessrPrivateState>(host, "song.game.privateState")
+          .sessionToken,
+      },
+    });
+    // 发够条数，让没有抬高的计数器一定会扫过快照里已用过的序号。
+    for (let index = 0; index < 4; index += 1) {
+      await execute(restarted, restoredHost, {
+        id: `chat-after-${index}`,
+        type: "song.chat.send",
+        roomId: "1234",
+        payload: { text: `重启后的第${index}句` },
+      });
+    }
+    const ids = restarted.rooms.get("1234")!.chat.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.slice(0, usedIds.length)).toEqual(usedIds);
+
+    // 另一个实例没有恢复过任何快照，计数器不受上面那个实例影响。
+    const fresh = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
+    await createRoom(fresh, connection(fresh, "chat-id-fresh"));
+    expect(fresh.rooms.get("1234")!.chat[0]?.id).toBe(usedIds[0]);
+  });
+
   test("无效手动片段回退到原来的随机切片", async () => {
     const service = new SonGuessrService({ musicProvider: provider, random: { nextInt: () => 0 } });
     const { host, guest } = await enterSubmittingPhase(service);

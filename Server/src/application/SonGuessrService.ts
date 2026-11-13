@@ -92,6 +92,7 @@ import { describeError, type EventLogger } from "../infrastructure/EventLogger";
 import { SlidingWindowRateLimiter } from "../infrastructure/RateLimiter";
 import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import { reassignHost, resolveHostGrace, transferHost } from "./room/HostPolicy";
+import { IdCounter } from "./room/IdCounter";
 import { RoomIdReservations } from "./room/RoomIdReservations";
 import { RoomPasswordGate, type RoomPasswordGateOptions } from "./room/RoomPasswordGate";
 import {
@@ -195,7 +196,8 @@ export class SonGuessrService implements AdminRoomControl {
   private readonly lobbyFanout: LobbyFanout;
   readonly now: () => number;
   readonly random: RandomSource;
-  private idCounter = 0;
+  /** 只回收本玩法发的前缀；会话令牌与标签页座位号不落进来。 */
+  private readonly ids = new IdCounter(/^song_(?:chat|guess|player)_([0-9a-z]+)$/);
   /**
    * 按连接统计的音乐上游调用配额。
    *
@@ -317,7 +319,7 @@ export class SonGuessrService implements AdminRoomControl {
       { savedAt, now: this.now() },
       {
         adopt: (raw, now, pausedMs) => this.adoptSnapshot(raw, now, pausedMs),
-        onRestored: (room) => this.absorbSnapshotIds(room),
+        onRestored: (room) => this.ids.absorb(room),
         onError: (raw, error) =>
           this.options.eventLogger?.warn("猜歌房间快照恢复失败，已跳过该房间", {
             roomId: raw.id,
@@ -325,28 +327,6 @@ export class SonGuessrService implements AdminRoomControl {
           }),
       }
     );
-  }
-
-  /**
-   * 把 id 计数器抬到快照里已用过的最大序号之上。
-   * 计数器每次启动从 0 重来，不抬高的话重启后第一个新玩家就会拿到 `song_player_1`，
-   * 直接盖掉恢复回来的同号玩家：被盖的人再刷新，凭证就对不上任何座位了。
-   */
-  private absorbSnapshotIds(room: SonGuessrRoomRecord): void {
-    const seen = new Set<object>();
-    const visit = (value: unknown): void => {
-      if (typeof value === "string") {
-        const matched = /^song_(?:chat|guess|player)_([0-9a-z]+)$/.exec(value);
-        if (!matched) return;
-        const index = Number.parseInt(matched[1], 36);
-        if (Number.isFinite(index) && index > this.idCounter) this.idCounter = index;
-        return;
-      }
-      if (!value || typeof value !== "object" || seen.has(value)) return;
-      seen.add(value);
-      for (const item of Object.values(value as Record<string, unknown>)) visit(item);
-    };
-    visit(room);
   }
 
   private adoptSnapshot(
@@ -1335,7 +1315,7 @@ export class SonGuessrService implements AdminRoomControl {
     if (!text) throw new AppError("INVALID_MESSAGE", "消息不能为空");
     assertTextAllowed(text);
     const message: ChatMessage = {
-      id: this.createId("song_chat"),
+      id: this.ids.next("song_chat"),
       playerId: player.id,
       playerName: player.name,
       text,
@@ -2265,7 +2245,7 @@ export class SonGuessrService implements AdminRoomControl {
     this.requireGuessStillCurrent(room, round, player, state);
     const correct = this.isCorrectSong(guessedSong, round);
     const attempt: SongGuessAttempt = {
-      id: this.createId("song_guess"),
+      id: this.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed,
@@ -2325,7 +2305,7 @@ export class SonGuessrService implements AdminRoomControl {
     this.requireGuessStillCurrent(room, round, player, state);
     const correct = guessedAnime.id === round.anime.id;
     const attempt: SongGuessAttempt = {
-      id: this.createId("song_guess"),
+      id: this.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed,
@@ -2374,7 +2354,7 @@ export class SonGuessrService implements AdminRoomControl {
     state.gaveUp = true;
     state.deadlineAt = undefined;
     round.attempts.push({
-      id: this.createId("song_guess"),
+      id: this.ids.next("song_guess"),
       playerId: player.id,
       playerName: player.name,
       guessNumber: state.guessesUsed + 1,
@@ -2612,7 +2592,7 @@ export class SonGuessrService implements AdminRoomControl {
       state.guessesUsed += 1;
       player.totalGuesses += 1;
       round.attempts.push({
-        id: this.createId("song_guess"),
+        id: this.ids.next("song_guess"),
         playerId,
         playerName: player.name,
         guessNumber: state.guessesUsed,
@@ -2985,7 +2965,7 @@ export class SonGuessrService implements AdminRoomControl {
     room.chat = [
       ...room.chat,
       {
-        id: this.createId("song_chat"),
+        id: this.ids.next("song_chat"),
         playerId: "system",
         playerName: "系统",
         text,
@@ -3004,8 +2984,8 @@ export class SonGuessrService implements AdminRoomControl {
     const name = this.requireName(nameValue);
     const now = this.now();
     return {
-      id: seatId ?? this.createId("song_player"),
-      sessionToken: `${this.createId("song_session")}_${crypto.randomUUID()}`,
+      id: seatId ?? this.ids.next("song_player"),
+      sessionToken: `${this.ids.next("song_session")}_${crypto.randomUUID()}`,
       name,
       membership: "active",
       online: true,
@@ -3140,11 +3120,6 @@ export class SonGuessrService implements AdminRoomControl {
   touch(room: SonGuessrRoomRecord) {
     room.updatedAt = this.now();
     room.lastActivityAt = this.now();
-  }
-
-  private createId(prefix: string) {
-    this.idCounter += 1;
-    return `${prefix}_${this.idCounter.toString(36)}`;
   }
 
   log(type: string, roomId?: string, playerId?: string, payload?: unknown) {
