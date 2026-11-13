@@ -12,7 +12,7 @@ vi.mock("virtual:commit-history", () => ({
   default: mockCommitHistory,
 }));
 
-import { VersionUpdateNotice } from "./VersionUpdateNotice";
+import { VERSION_CHECK_INTERVAL_MS, VersionUpdateNotice } from "./VersionUpdateNotice";
 
 describe("VersionUpdateNotice", () => {
   const originalFetch = globalThis.fetch;
@@ -211,5 +211,72 @@ describe("VersionUpdateNotice", () => {
     const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit;
     expect(init.signal).toBeUndefined();
     await act(async () => release?.());
+  });
+
+  describe("轮询节制", () => {
+    const html = (build: string) =>
+      ({
+        ok: true,
+        text: async () =>
+          `<!doctype html><html><head><meta name="bakagame-build" content="${build}"></head></html>`,
+      }) as Response;
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("页面在后台时不请求，回到前台才补一次检查", async () => {
+      vi.useFakeTimers();
+      const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v1"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS * 3);
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+
+      visibility.mockReturnValue("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("前台按固定间隔检查", async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v1"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("发现新版之后停止轮询，也不再响应聚焦与可见性变化", async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.fn().mockResolvedValue(html("commit-v2"));
+      globalThis.fetch = fetchMock;
+
+      render(<VersionUpdateNotice />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      expect(screen.getByRole("status")).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(VERSION_CHECK_INTERVAL_MS * 3);
+      });
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

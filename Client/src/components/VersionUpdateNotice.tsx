@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { bakaClientType } from "@/lib/BakaChannel";
 import { bannerRise } from "@/lib/Motion";
 
-const VERSION_CHECK_INTERVAL_MS = 60_000;
+export const VERSION_CHECK_INTERVAL_MS = 60_000;
 
 /**
  * 开发环境不做版本检测。
@@ -48,8 +48,9 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
     // 变成未处理的 AbortError 上报。改为同一时刻只保留一个在途检查，其余直接跳过。
     let checking = false;
 
+    // 后台标签页不检查：它回到前台时 visibilitychange 会补一次，没人看的页面不必每分钟回源。
     const check = async () => {
-      if (checking) return;
+      if (checking || document.visibilityState === "hidden") return;
       checking = true;
       try {
         const url = new URL(import.meta.env.BASE_URL, window.location.origin);
@@ -67,6 +68,8 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
           deployedBuild !== commitHistory.currentCommit
         ) {
           setUpdateAvailable(true);
+          // 提示已经出现，再查只是白白回源：停掉定时与监听，用户刷新后页面重新开始检测。
+          stop();
         }
       } catch {
         // 版本检查失败不影响正常游玩，下一次定时或回到前台时继续检查。
@@ -75,24 +78,23 @@ export function VersionUpdateNotice({ active = true, onReload }: VersionUpdateNo
       }
     };
 
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void check();
-    };
-
-    const handleFocus = () => {
+    const handleTrigger = () => {
       void check();
     };
 
+    const timer = window.setInterval(handleTrigger, VERSION_CHECK_INTERVAL_MS);
+    const stop = () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", handleTrigger);
+      document.removeEventListener("visibilitychange", handleTrigger);
+    };
+    window.addEventListener("focus", handleTrigger);
+    document.addEventListener("visibilitychange", handleTrigger);
     void check();
-    const timer = window.setInterval(() => void check(), VERSION_CHECK_INTERVAL_MS);
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       disposed = true;
-      window.clearInterval(timer);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      stop();
     };
   }, [active]);
 
