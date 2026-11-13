@@ -8,6 +8,7 @@ import { MusicCookieInput, MusicProvider } from "../../src/infrastructure/music/
 import { describe, expect, test } from "bun:test";
 import {
   TestConnection,
+  audioTicketOf,
   connection,
   createRoom,
   execute,
@@ -1245,7 +1246,10 @@ describe("SonGuessrService", () => {
     expect(refreshCookies.at(-1)).toBe("qm_keyst=qq-vip");
     expect(submittedCookies).not.toContain("qm_keyst=qq-free");
     expect(
-      lastEvent<SonGuessrRoomSnapshot>(vipGuest, "song.room.snapshot").currentRound?.audioUrl
+      service.resolveAudioRedirect(
+        "1234",
+        audioTicketOf(lastEvent<SonGuessrRoomSnapshot>(vipGuest, "song.room.snapshot"))
+      )
     ).toBe("https://audio/refreshed.mp3");
   });
 

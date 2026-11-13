@@ -101,6 +101,7 @@ import { siteConfigRoutes } from "./routes/SiteConfig";
 import { statusWsRoutes } from "./routes/StatusWs";
 import { sentryTunnelRoutes } from "./routes/SentryTunnel";
 import { bangumiImageRoutes } from "./routes/BangumiImages";
+import { songAudioRoutes } from "./routes/SongAudio";
 import { accountRoutes, statusOfAppError, type AccountDependencies } from "./routes/Account";
 import { clientChannelRoutes } from "./routes/ClientChannelRoutes";
 import { isPublicSiteOrigin, mcpDiscoveryRoutes } from "./routes/McpDiscovery";
@@ -808,6 +809,8 @@ export const createApp = ({
     )
     // ==================== 自建图床（avif 分片缓存） ====================
     .use(bangumiImageRoutes(bangumiImages))
+    // ==================== 猜歌站内播放地址（只回跳转，音频不经过服务端） ====================
+    .use(songAudioRoutes({ song: games.song }))
     // ==================== 账号（Better Auth 白名单 / oRPC / 头像代理） ====================
     .use(accountRoutes(account, logger))
     .use(clientChannelRoutes(clientChannel, clientArtifacts, clientWebBundle))

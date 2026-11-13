@@ -9,6 +9,11 @@ import type { RoomPasswordGateOptions } from "../room/RoomPasswordGate";
 
 export interface SonGuessrServiceOptions {
   musicProvider: MusicProvider;
+  /**
+   * 服务端对外基址，用来拼站内播放地址的绝对形态。旧版桌面与移动壳把快照里的地址原样交给
+   * 播放器，相对路径会落到壳自己的来源上；组合根必须传入，缺省只给不经壳的测试与脚本用。
+   */
+  publicBaseUrl?: string;
   bangumiProvider?: BangumiDataProvider;
   now?: () => number;
   random?: RandomSource;

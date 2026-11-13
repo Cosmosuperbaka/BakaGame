@@ -64,6 +64,15 @@ export const CHAT_RATE_LIMIT_PER_CONNECTION = 5;
 export const CHAT_RATE_LIMIT_WINDOW_MS = 2_500;
 
 /**
+ * 猜歌站内播放地址的跳转配额（按客户端地址、回源对端、全局三层）。
+ * 响应禁止缓存，浏览器每次拖动、断流续播都会重新请求一次；路由本身不发任何出站请求，
+ * 单次成本极小，额度只用来封顶枚举票据与刷请求，要给多人共用出口的正常听众留足余量。
+ */
+export const SONG_AUDIO_REDIRECT_IP_MAX_PER_WINDOW = 240;
+export const SONG_AUDIO_REDIRECT_GLOBAL_MAX_PER_WINDOW = 6_000;
+export const SONG_AUDIO_REDIRECT_WINDOW_MS = 60 * 1000;
+
+/**
  * WebSocket 握手配额：单个客户端地址的在途连接数与每分钟新建连接数。
  * 在途数封顶长期持有的连接，速率封顶反复开关的握手开销，两者缺一都能绕过对方。
  * 浏览器一个标签页只有一条游戏连接，正常玩家远达不到这个量级。

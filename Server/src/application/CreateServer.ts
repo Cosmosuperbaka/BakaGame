@@ -191,6 +191,7 @@ export function createServer(
     testRooms,
   });
   const song = new SonGuessrService({
+    publicBaseUrl: env.serverUrl,
     eventLogger: logger,
     musicProvider: music,
     bangumiProvider: bangumi,

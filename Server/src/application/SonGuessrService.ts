@@ -5,6 +5,7 @@ import {
 } from "../domain/SongRules";
 import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
 import { songTitleNames } from "./songuessr/LyricTitleGuard";
+import { isAudioTicketMatch, issueAudioTicket } from "./songuessr/AudioTicket";
 import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import { resolveAnimeSong, resolveSpecifiedAnimeSong } from "./songuessr/AnimeResolution";
 import {
@@ -209,6 +210,17 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     return this.ctx.rooms;
   }
 
+  /**
+   * 站内播放地址的跳转目标：按房号与票据取当前回合保存在服务端的上游地址。
+   * 房间不在、没有进行中的回合、票据不符都返回 undefined，调用方不得把三者区分开来回给客户端。
+   * 目标只来自回合记录，不接受任何请求里的地址。
+   */
+  resolveAudioRedirect(roomId: string, ticket: string): string | undefined {
+    const round = this.ctx.rooms.get(roomId)?.currentRound;
+    if (!round || !isAudioTicketMatch(ticket, round.audioTicket)) return undefined;
+    return round.song.audioUrl || undefined;
+  }
+
   getRoomSummaries(): SonGuessrRoomSummary[] {
     return listRoomSummaries(this.ctx);
   }
@@ -244,12 +256,17 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
    *   恢复出来的房间天然没有这些锁。
    * - 音乐账号池（`musicPool`）的每条都带着第三方 `cookie`，落盘等于把玩家的登录态写进
    *   本机文件。整段丢弃，恢复后由各贡献者重新登录，宁可少一段体验也不留凭据。
+   * - 当前回合的播放地址票据：它是访问凭据，恢复时由 `adoptSnapshot` 重新签发。
    */
   exportSnapshots(): SnapshottedRoom[] {
     const snapshots: SnapshottedRoom[] = [];
     for (const room of this.ctx.rooms.values()) {
       try {
-        snapshots.push(exportRoomJson(room, ["musicPool"]));
+        const snapshot = exportRoomJson(room, ["musicPool"]);
+        const round = snapshot.currentRound;
+        if (typeof round === "object" && round !== null)
+          delete (round as { audioTicket?: string }).audioTicket;
+        snapshots.push(snapshot);
       } catch (error) {
         this.options.eventLogger?.warn("猜歌房间快照导出失败，已跳过该房间", {
           roomId: room.id,
@@ -304,6 +321,8 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
 
     const round = room.currentRound;
     if (round) {
+      // 票据不落盘：恢复时一律重新签发，旧客户端手里的旧地址随停机作废，重连后拿到新的。
+      round.audioTicket = issueAudioTicket();
       round.audioPreparationDeadlineAt += pausedMs;
       if (round.audioReadyDeadlineAt !== undefined) round.audioReadyDeadlineAt += pausedMs;
       if (round.hardDeadlineAt !== undefined) round.hardDeadlineAt += pausedMs;
@@ -2060,7 +2079,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       roundNumber: round.number,
       song: {
         ...publicSong(round.song),
-        audioUrl: round.song.audioUrl,
         chorus: round.song.chorus,
         releaseYear: round.song.releaseYear,
         popularity: round.song.popularity,

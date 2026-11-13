@@ -8,8 +8,10 @@ import type {
   SonGuessrPrivateState,
   SonGuessrRoomSnapshot,
   SonGuessrRoomSummary,
+  SonGuessrRoundSummary,
   SonGuessrScore,
 } from "../../shared/Index";
+import { audioTicketUrl } from "./AudioTicket";
 import { hasEnabledPoolAccount, isCoolingDown, musicPool, primaryPoolEntry } from "./MusicAccounts";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import type { SonGuessrContext } from "./Context";
@@ -108,7 +110,7 @@ export const buildRoomSnapshot = (
         ? {
             roundNumber: round.number,
             submitterPlayerId: round.submitterPlayerId,
-            audioUrl: round.song.audioUrl,
+            audioUrl: audioTicketUrl(ctx.options.publicBaseUrl, room.id, round),
             lyricClip: room.settings.showLyrics
               ? round.lyricClip
               : { ...round.lyricClip, lines: [] },
@@ -119,10 +121,31 @@ export const buildRoomSnapshot = (
       .sort((left, right) => left.joinedAt - right.joinedAt)
       .map((player) => buildPlayerView(ctx, room, player)),
     chat: room.chat,
-    ...(room.roundSummary ? { roundSummary: room.roundSummary } : {}),
+    ...(room.roundSummary
+      ? { roundSummary: buildRoundSummaryView(ctx, room, room.roundSummary) }
+      : {}),
     ...(room.finalScores ? { finalScores: room.finalScores } : {}),
   };
 };
+
+/**
+ * 结算摘要的下发形态：揭晓之后答案已公开，但播放不能中断，所以摘要里的播放地址与猜题阶段
+ * 是同一个站内地址。地址每次现算而不存进摘要：摘要会随快照落盘，票据却不落盘；
+ * 摘要里即便残留了上游地址也会被这里覆盖，不会原样发出去。
+ */
+const buildRoundSummaryView = (
+  ctx: SonGuessrContext,
+  room: SonGuessrRoomRecord,
+  summary: SonGuessrRoundSummary
+): SonGuessrRoundSummary => ({
+  ...summary,
+  song: {
+    ...summary.song,
+    audioUrl: room.currentRound
+      ? audioTicketUrl(ctx.options.publicBaseUrl, room.id, room.currentRound)
+      : undefined,
+  },
+});
 
 export const buildPlayerView = (
   ctx: SonGuessrContext,

@@ -13,6 +13,7 @@ import type {
   SongLyricClip,
 } from "../../shared/Index";
 import type { SonGuessrContext } from "./Context";
+import { issueAudioTicket } from "./AudioTicket";
 import { createSongLyricClip } from "./LyricClip";
 import { songTitleNames } from "./LyricTitleGuard";
 import { activePlayers, appendSystemMessage } from "./RoomAccess";
@@ -87,6 +88,7 @@ export const installRound = (
     number: roundNumber,
     submitterPlayerId,
     song,
+    audioTicket: issueAudioTicket(),
     anime,
     animeTrack,
     lyricClip,

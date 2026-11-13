@@ -422,6 +422,13 @@ const searchPanel = (context: UiContext): Record<string, unknown> | undefined =>
   };
 };
 
+/** 结算摘要里的播放地址只对能听的人类页面有用，Agent 屏幕不带：既无用处，也不该有任何音轨地址。 */
+const withoutAudioUrl = (summary: Record<string, unknown>): Record<string, unknown> => {
+  if (!isRecord(summary.song)) return summary;
+  const { audioUrl: _omitted, ...song } = summary.song;
+  return { ...summary, song };
+};
+
 export function buildSongScreen(context: UiContext): UiScreen {
   const phase = str(context.snapshot.phase) ?? "waiting";
   const sections = [
@@ -429,7 +436,7 @@ export function buildSongScreen(context: UiContext): UiScreen {
     section("song.chat", "聊天", chatControls(context.state)),
   ];
   const roundSummary = isRecord(context.snapshot.roundSummary)
-    ? context.snapshot.roundSummary
+    ? withoutAudioUrl(context.snapshot.roundSummary)
     : undefined;
   return assemble(
     context,

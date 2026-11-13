@@ -8,6 +8,7 @@ import {
 import { MusicProvider } from "../../src/infrastructure/music/MusicProvider";
 import { describe, expect, test } from "bun:test";
 import {
+  audioTicketOf,
   chosenSongId,
   connection,
   createRoom,
@@ -616,7 +617,10 @@ describe("上线前 P0 修复回归", () => {
     ).resolves.toMatchObject({ refreshed: true });
 
     expect(
-      lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot").currentRound?.audioUrl
+      service.resolveAudioRedirect(
+        "6666",
+        audioTicketOf(lastEvent<SonGuessrRoomSnapshot>(guest, "song.room.snapshot"))
+      )
     ).toBe("https://audio/refreshed.mp3");
   });
 

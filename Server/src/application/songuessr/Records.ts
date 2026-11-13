@@ -92,6 +92,11 @@ export interface SonGuessrRoundRecord {
   number: number;
   submitterPlayerId: string;
   song: SongDetails;
+  /**
+   * 站内播放地址的访问票据，装题时签发、不含任何上游信息；回合换了即失效。
+   * 它是凭据，不随停机快照落盘（恢复时重新签发）。
+   */
+  audioTicket: string;
   /** 本回合歌曲的备用音源 URN（不含当前播放源）：刷新直链时按序兜底。 */
   alternateSongIds?: string[];
   anime?: BangumiSubjectDetails;

@@ -6,6 +6,7 @@ import {
   SonGuessrClientMessage,
   SonGuessrPrivateState,
   type SongDetails,
+  type SonGuessrRoomSnapshot,
 } from "../../src/shared/Index";
 
 export const makeSong = (id: string, title: string, year: number): SongDetails => ({
@@ -97,6 +98,14 @@ export const lastEvent = <T>(client: TestConnection, event: string): T =>
 export const chosenSongId = (service: SonGuessrService, roomId: string): string | undefined =>
   service.rooms.get(roomId)?.currentRound?.song.id;
 
+/** 快照里站内播放地址的最后一段：票据。地址形态不对就当场失败。 */
+export const audioTicketOf = (snapshot: SonGuessrRoomSnapshot): string => {
+  const audioUrl = snapshot.currentRound?.audioUrl;
+  const match = audioUrl?.match(/\/api\/songuessr\/audio\/[^/]+\/([^/?#]+)$/);
+  if (!match) throw new Error(`播放地址不是站内票据地址：${audioUrl}`);
+  return match[1]!;
+};
+
 export const createRoom = async (
   service: SonGuessrService,
   host: TestConnection,
@@ -143,7 +152,8 @@ export const startRound = async (
   service: SonGuessrService,
   host: TestConnection,
   guest: TestConnection,
-  submitterPlayerId: string
+  submitterPlayerId: string,
+  songId = "answer"
 ) => {
   await execute(service, guest, {
     id: "ready",
@@ -167,7 +177,7 @@ export const startRound = async (
     id: "submit",
     type: "song.game.submitSong",
     roomId: "1234",
-    payload: { songId: "answer" },
+    payload: { songId },
   });
 };
 

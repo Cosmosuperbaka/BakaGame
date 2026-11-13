@@ -3,6 +3,7 @@ import { AppError } from "../../src/domain/Errors";
 import { GameRoundRecord } from "../../src/domain/GameRecord";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  audioTicketOf,
   chosenSongId,
   connection,
   createRoom,
@@ -196,6 +197,9 @@ describe("SonGuessrService", () => {
     });
 
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
+    const playingAudioUrl = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot")
+      .currentRound?.audioUrl;
+    expect(playingAudioUrl).toMatch(/\/api\/songuessr\/audio\/Oblivionis\//);
     expect(lastEvent<SonGuessrPrivateState>(host, "song.game.privateState")).toMatchObject({
       isSubmitter: true,
       canGuess: false,
@@ -230,7 +234,8 @@ describe("SonGuessrService", () => {
     const result = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot");
     expect(result.phase).toBe("roundResult");
     expect(result.roundSummary?.correctPlayerIds).toContain(hostState.playerId);
-    expect(result.roundSummary?.song.audioUrl).toBe("https://audio/answer.mp3");
+    // 揭晓后继续用同一个站内地址，播放不中断；上游地址不下发。
+    expect(result.roundSummary?.song.audioUrl).toBe(playingAudioUrl);
     expect(result.roundSummary?.song.chorus).toEqual({ startTime: 50_000, endTime: 90_000 });
   });
 
@@ -358,9 +363,10 @@ describe("SonGuessrService", () => {
     const hostState = lastEvent<SonGuessrPrivateState>(host, "song.game.privateState");
     const guestState = await joinRoom(service, guest, "刷新玩家");
     await startRound(service, host, guest, hostState.playerId);
-    expect(
-      lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound?.audioUrl
-    ).toBe("https://audio/refresh-1.mp3");
+    const playingUrl = lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").currentRound
+      ?.audioUrl;
+    const ticket = audioTicketOf(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot"));
+    expect(service.resolveAudioRedirect("1234", ticket)).toBe("https://audio/refresh-1.mp3");
 
     await service.unregisterConnection(guest.record.id);
     expect(lastEvent<SonGuessrRoomSnapshot>(host, "song.room.snapshot").phase).toBe("playing");
@@ -374,11 +380,10 @@ describe("SonGuessrService", () => {
     const snapshot = lastEvent<SonGuessrRoomSnapshot>(refreshed, "song.room.snapshot");
     expect(snapshot).toMatchObject({
       phase: "playing",
-      currentRound: {
-        roundNumber: 1,
-        audioUrl: "https://audio/refresh-2.mp3",
-      },
+      // 刷新只换服务端保存的上游地址，客户端拿到的站内地址不变。
+      currentRound: { roundNumber: 1, audioUrl: playingUrl },
     });
+    expect(service.resolveAudioRedirect("1234", ticket)).toBe("https://audio/refresh-2.mp3");
     expect(lastEvent<SonGuessrPrivateState>(refreshed, "song.game.privateState").canGiveUp).toBe(
       true
     );
