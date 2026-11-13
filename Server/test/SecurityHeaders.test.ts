@@ -65,8 +65,12 @@ const healthApp = (input: {
   systemRoutes({
     games: {
       faker: { getHealthSnapshot: () => input.counts },
-      song: { getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }) },
-      cee: { getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }) },
+      song: {
+        getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }),
+      },
+      cee: {
+        getHealthSnapshot: () => ({ roomCount: 0, connectionCount: 0, onlinePlayerCount: 0 }),
+      },
     } as unknown as GameServices,
     logger: silentLogger,
     maintenanceToken: input.maintenanceToken,

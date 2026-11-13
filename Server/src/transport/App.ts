@@ -1,10 +1,9 @@
 import { cors } from "@elysiajs/cors";
 import { Elysia, ValidationError } from "elysia";
 
-import type { GameServices } from "../application/GameRegistry";
+import { eachGame, type GameServices } from "../application/GameRegistry";
 import type { AppEnv } from "../config/Env";
 import { AppError, isAppError } from "../domain/Errors";
-import type { ConnectionRecord } from "../shared/Index";
 import { describeError, EventLogger, sanitizeLogText } from "../infrastructure/EventLogger";
 
 import { createSwaggerPlugin } from "./Openapi";
@@ -40,9 +39,15 @@ import {
 } from "./ws/Handshake";
 import { createCommandDeduplicator, type CommandDeduplicator } from "./ws/Dedup";
 import { httpError, traceIdOf } from "./HttpErrorEnvelope";
-import { parseWhoIsFakerMessage, WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
-import { parseSonGuessrMessage, SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
-import { parseCEEMessage, CEEClientMessageSchema } from "./CEEProtocol";
+import { WhoIsFakerClientMessageSchema } from "./WhoIsFakerProtocol";
+import { SonGuessrClientMessageSchema } from "./SonGuessrProtocol";
+import { CEEClientMessageSchema } from "./CEEProtocol";
+import {
+  createGameEndpoints,
+  gameOfMessage,
+  type GameEndpoint,
+  type GameMessage,
+} from "./GameEndpoints";
 import { normalizeCEEEnvelope } from "../shared/CEE";
 import { ServerMessageSchema } from "../shared/PacketSchemas";
 import type { GameId } from "../shared/Protocol";
@@ -75,7 +80,7 @@ import { Value } from "@sinclair/typebox/value";
 import { SitePresence } from "./SitePresence";
 import { SitePages } from "./SitePages";
 import { tabKeyOf, TabSessions } from "./TabSessions";
-import { gameOfMessage, UNIFIED_WS_PATH } from "./UnifiedSocket";
+import { UNIFIED_WS_PATH } from "./UnifiedSocket";
 import { warnMissingDeploymentMarker } from "./DeploymentMarkerWarning";
 import { isAllowedOrigin } from "./Origin";
 import {
@@ -163,7 +168,7 @@ export interface AppDependencies {
   siteFeatures?: () => SiteFeatures;
 }
 
-interface GameSocketHandlers<TMessage extends { id: string; type: string; traceId?: string }> {
+interface GameSocketHandlers<TMessage extends GameMessage> {
   /** 只用于错误日志前缀，便于把异常定位到具体游戏。 */
   serviceName: string;
   execute: (connectionId: string, message: TMessage) => Promise<unknown>;
@@ -176,7 +181,7 @@ interface GameSocketHandlers<TMessage extends { id: string; type: string; traceI
  * 网关对称消费各游戏解析器），其余部分单点实现，避免三份拷贝在后续改动中各自漂移。
  */
 /** 成功帧已通过 Elysia body 校验，业务层不重复枚举 Value.Errors。 */
-const handleGameMessage = async <TMessage extends { id: string; type: string; traceId?: string }>(
+const handleGameMessage = async <TMessage extends GameMessage>(
   ws: GameSocketLike,
   parsed: TMessage,
   dedup: CommandDeduplicator,
@@ -202,12 +207,9 @@ const closeGameConnection = async (
   if (connectionId) await unregister(connectionId);
 };
 
-interface GameSocketHandlersOptions<
-  TMessage extends { id: string; type: string; traceId?: string },
-> {
-  serviceName: string;
-  /** 建房闸门按它判断这条消息要开哪个模式的房间。 */
-  game: GameId;
+interface GameSocketHandlersOptions<TMessage extends GameMessage> {
+  /** 日志前缀、建房闸门的判定与承载命令的服务都取自端点表。 */
+  endpoint: GameEndpoint<TMessage>;
   /** 各模式入口的生效值；未提供时不拦建房。 */
   siteFeatures?: () => SiteFeatures;
   env: AppEnv;
@@ -219,11 +221,6 @@ interface GameSocketHandlersOptions<
   clientChannel?: ClientChannel;
   /** 仅 CEE：上游信封归一。 */
   normalizeMessage?: (incoming: TMessage) => TMessage;
-  service: {
-    registerConnection(connection: ConnectionRecord): void;
-    unregisterConnection(connectionId: string): Promise<void>;
-    execute(connectionId: string, message: TMessage): Promise<unknown>;
-  };
 }
 
 /**
@@ -232,9 +229,8 @@ interface GameSocketHandlersOptions<
  * 工厂化是为了不再出现三份手抄副本各自漂移；body/response/parse/error 与 schema 强相关，
  * 留在各路由字面量里交给 Elysia 推断。
  */
-const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId?: string }>({
-  serviceName,
-  game,
+const gameSocketHandlers = <TMessage extends GameMessage>({
+  endpoint,
   siteFeatures,
   env,
   logger,
@@ -243,25 +239,26 @@ const gameSocketHandlers = <TMessage extends { id: string; type: string; traceId
   dedup,
   clientChannel,
   normalizeMessage,
-  service,
 }: GameSocketHandlersOptions<TMessage>) => ({
   upgrade: (context: GameUpgradeContext) =>
     applyHandshakeGates(context, { env, logger, account, handshakeQuota, clientChannel }),
   open: (ws: GameSocketLike) => {
     confirmHandshakeLease(ws);
-    openGameConnection(ws, (connection) => service.registerConnection(connection));
+    openGameConnection(ws, (connection) => endpoint.service.registerConnection(connection));
   },
   message: (ws: GameSocketLike, incoming: TMessage) =>
     handleGameMessage(ws, normalizeMessage ? normalizeMessage(incoming) : incoming, dedup, {
-      serviceName,
+      serviceName: endpoint.serviceName,
       execute: async (connectionId, message) => {
-        assertModeOpen(game, message, siteFeatures);
-        return service.execute(connectionId, message);
+        assertModeOpen(endpoint, message, siteFeatures);
+        return endpoint.service.execute(connectionId, message);
       },
     }),
   close: (ws: GameSocketLike) => {
     releaseHandshakeLease(ws);
-    return closeGameConnection(ws, (connectionId) => service.unregisterConnection(connectionId));
+    return closeGameConnection(ws, (connectionId) =>
+      endpoint.service.unregisterConnection(connectionId)
+    );
   },
 });
 
@@ -285,6 +282,7 @@ export const createApp = ({
   siteFeatures,
 }: AppDependencies) => {
   warnMissingDeploymentMarker(env, logger);
+  const endpoints = createGameEndpoints(games);
   // 版本在进程内不会变：装配时解析一次，状态接口的首个请求不再同步 spawn git。
   const releaseVersion = resolveServerRelease() ?? "unknown";
   let disposal: Promise<void> | undefined;
@@ -299,16 +297,10 @@ export const createApp = ({
   const sitePresence = new SitePresence();
   /** 标签页接管租约：人类页面出一次性配对码，Agent 用远程 MCP 认领后由服务端驱动这张标签页。 */
   const sitePages = new SitePages({
-    admitTab: (tabKey) => {
-      games.faker.assertTabAgentsAllowed(tabKey);
-      games.song.assertTabAgentsAllowed(tabKey);
-      games.cee.assertTabAgentsAllowed(tabKey);
-    },
-    onControlChange: (tabKey) => {
-      games.faker.publishTabRooms(tabKey);
-      games.song.publishTabRooms(tabKey);
-      games.cee.publishTabRooms(tabKey);
-    },
+    admitTab: (tabKey) =>
+      void eachGame(games, (_, service) => service.assertTabAgentsAllowed(tabKey)),
+    onControlChange: (tabKey) =>
+      void eachGame(games, (_, service) => service.publishTabRooms(tabKey)),
   });
   remoteMcpSessions.onSessionClosed((id) => sitePages.closeByController(id, "agent_left"));
   /** 标签页身份的在线索引：站点连接领取，游戏连接挂上同一身份。 */
@@ -335,10 +327,25 @@ export const createApp = ({
     const record = createConnectionRecord(ws, connectionIdFor(ws), (tabKey) =>
       sitePages.isTabControlled(tabKey)
     );
-    if (game === "faker") games.faker.registerConnection(record);
-    else if (game === "song") games.song.registerConnection(record);
-    else games.cee.registerConnection(record);
+    endpoints[game].service.registerConnection(record);
   };
+
+  /**
+   * 解析、幂等执行并回执一条游戏命令。三款的命令类型不同，所以经泛型函数落到单个端点上，
+   * 而不是把三个端点放进同一个数组丢掉各自的类型。
+   */
+  const runOn = <TMessage extends GameMessage>(
+    ws: GameSocketLike,
+    endpoint: GameEndpoint<TMessage>,
+    incoming: unknown
+  ): Promise<void> =>
+    handleGameMessage(ws, endpoint.parse(incoming), dedup, {
+      serviceName: endpoint.serviceName,
+      execute: async (connectionId, message) => {
+        assertModeOpen(endpoint, message, siteFeatures);
+        return endpoint.service.execute(connectionId, message);
+      },
+    });
 
   /**
    * 标签页接管的人类侧命令：开/关租约、回报指令结果。
@@ -495,31 +502,9 @@ export const createApp = ({
       if (handleSiteCommand(ws, incoming)) return;
       const game = gameOfMessage(incoming);
       ensureGameConnection(ws, game);
-      if (game === "song") {
-        await handleGameMessage(ws, parseSonGuessrMessage(incoming), dedup, {
-          serviceName: "SonGuessr",
-          execute: async (connectionId, message) => {
-            assertModeOpen("song", message, siteFeatures);
-            return games.song.execute(connectionId, message);
-          },
-        });
-      } else if (game === "cee") {
-        await handleGameMessage(ws, parseCEEMessage(incoming), dedup, {
-          serviceName: "CEE",
-          execute: async (connectionId, message) => {
-            assertModeOpen("cee", message, siteFeatures);
-            return games.cee.execute(connectionId, message);
-          },
-        });
-      } else {
-        await handleGameMessage(ws, parseWhoIsFakerMessage(incoming), dedup, {
-          serviceName: "WhoIsFaker",
-          execute: async (connectionId, message) => {
-            assertModeOpen("faker", message, siteFeatures);
-            return games.faker.execute(connectionId, message);
-          },
-        });
-      }
+      // 按共有形状放宽：同一个端点的解析与执行仍成对使用，只是不在联合类型上重新推断。
+      const endpoint: GameEndpoint<GameMessage> = endpoints[game];
+      await runOn(ws, endpoint, incoming);
     } catch (error) {
       if (isAppError(error)) {
         // 只在解析类失败上补原始帧的形状诊断：业务拒绝已经有 code 与消息。
@@ -556,9 +541,7 @@ export const createApp = ({
       const registered = (ws.data as { registeredGames?: Set<GameId> }).registeredGames;
       for (const game of registered ?? []) {
         try {
-          if (game === "faker") await games.faker.unregisterConnection(connectionId);
-          else if (game === "song") await games.song.unregisterConnection(connectionId);
-          else await games.cee.unregisterConnection(connectionId);
+          await endpoints[game].service.unregisterConnection(connectionId);
         } catch (error) {
           logger.error("统一 WS 连接注销失败", { ...describeError(error), game, connectionId });
         }
@@ -845,27 +828,24 @@ export const createApp = ({
       body: WhoIsFakerClientMessageSchema,
       response: ServerMessageSchema,
       parse: decodeGameFrame,
-      error: gameSocketError(logger, "WhoIsFaker", parseWhoIsFakerMessage),
+      error: gameSocketError(logger, endpoints.faker.serviceName, endpoints.faker.parse),
       ...gameSocketHandlers({
-        serviceName: "WhoIsFaker",
-        game: "faker",
+        endpoint: endpoints.faker,
         siteFeatures,
         env,
         logger,
         account,
         handshakeQuota,
         dedup,
-        service: games.faker,
       }),
     })
     .ws("/api/cee/ws", {
       body: CEEClientMessageSchema,
       response: ServerMessageSchema,
       parse: decodeGameFrame,
-      error: gameSocketError(logger, "CEE", parseCEEMessage),
+      error: gameSocketError(logger, endpoints.cee.serviceName, endpoints.cee.parse),
       ...gameSocketHandlers({
-        serviceName: "CEE",
-        game: "cee",
+        endpoint: endpoints.cee,
         siteFeatures,
         env,
         logger,
@@ -874,24 +854,21 @@ export const createApp = ({
         dedup,
         clientChannel,
         normalizeMessage: normalizeCEEEnvelope,
-        service: games.cee,
       }),
     })
     .ws("/api/songuessr/ws", {
       body: SonGuessrClientMessageSchema,
       response: ServerMessageSchema,
       parse: decodeGameFrame,
-      error: gameSocketError(logger, "SonGuessr", parseSonGuessrMessage),
+      error: gameSocketError(logger, endpoints.song.serviceName, endpoints.song.parse),
       ...gameSocketHandlers({
-        serviceName: "SonGuessr",
-        game: "song",
+        endpoint: endpoints.song,
         siteFeatures,
         env,
         logger,
         account,
         handshakeQuota,
         dedup,
-        service: games.song,
       }),
     });
 

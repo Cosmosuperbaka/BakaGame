@@ -6,7 +6,7 @@ import { EventLogger } from "../src/infrastructure/EventLogger";
 import { CEEPayloadSchemas } from "../src/shared/CEE";
 import { SonGuessrPayloadSchemas } from "../src/shared/SonGuessr";
 import { WhoIsFakerPayloadSchemas } from "../src/shared/WhoIsFaker";
-import { gameOfMessage } from "../src/transport/UnifiedSocket";
+import { gameOfMessage } from "../src/transport/GameEndpoints";
 import { createTestApp } from "./AppFixtures";
 
 const baseEnv = (overrides: Partial<AppEnv> = {}): AppEnv => ({
