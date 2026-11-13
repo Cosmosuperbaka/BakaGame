@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { CircleCheck, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type { QQLookupStatus } from "@bakagame/shared";
 import { FormAlert } from "@/components/account/FormAlert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { AdminToolbar, QueryState } from "@/components/admin/AdminParts";
+import { AdminNotice, AdminToolbar, QueryState } from "@/components/admin/AdminParts";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
 import { api } from "@/lib/Api";
 import { formatDateTime, formatNumber } from "@/lib/AdminFormat";
-import { cn } from "@/lib/Utils";
 
 type Notice = { tone: "info" | "error"; text: string };
 
@@ -99,18 +98,7 @@ export function QQLookupPanel() {
           <StatusSummary status={current} />
           {/* 结果说明与失败说明同一种「图标 + xs」写法，成功用对勾与成功色；裸正文像是卡片里多出来的一段说明。
               「重新检测」与标题行的「刷新」做同一件事，已去掉，只留一个入口。 */}
-          {notice ? (
-            <p
-              role={notice.tone === "error" ? "alert" : "status"}
-              className={cn(
-                "flex items-start gap-1.5 text-xs leading-relaxed",
-                notice.tone === "error" ? "text-destructive" : "text-success"
-              )}
-            >
-              <CircleCheck aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-              <span className="min-w-0">{notice.text}</span>
-            </p>
-          ) : null}
+          {notice ? <AdminNotice tone={notice.tone}>{notice.text}</AdminNotice> : null}
           {action.error ? <FormAlert>{action.error}</FormAlert> : null}
           <div className="flex flex-wrap gap-2">
             <Button

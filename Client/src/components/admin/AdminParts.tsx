@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, CircleAlert, RotateCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -107,6 +107,31 @@ export function QueryState({
   }
   if (empty) return <EmptyNote className="py-10">{emptyText}</EmptyNote>;
   return null;
+}
+
+/**
+ * 操作结果的一行说明：成功用对勾与成功色，失败用危险色；与 `FormAlert` 同一种「图标 + xs」写法。
+ * 成功读作 `status`，失败读作 `alert`。
+ */
+export function AdminNotice({
+  tone = "info",
+  children,
+}: {
+  tone?: "info" | "error";
+  children: ReactNode;
+}) {
+  return (
+    <p
+      role={tone === "error" ? "alert" : "status"}
+      className={cn(
+        "flex items-start gap-1.5 text-xs leading-relaxed",
+        tone === "error" ? "text-destructive" : "text-success"
+      )}
+    >
+      <CircleCheck aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+      <span className="min-w-0">{children}</span>
+    </p>
+  );
 }
 
 /** 区块内的空态：虚线框加居中灰字，与列表空态同一写法；小区块传更小的内边距。 */
@@ -271,6 +296,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  destructive = true,
   onConfirm,
 }: {
   open: boolean;
@@ -278,6 +304,8 @@ export function ConfirmDialog({
   title: string;
   description: string;
   confirmLabel: string;
+  /** 确认钮是否用危险色；授予类的正向操作传 false。 */
+  destructive?: boolean;
   /** 返回失败文案，成功返回 null。 */
   onConfirm: () => Promise<string | null>;
 }) {
@@ -316,7 +344,12 @@ export function ConfirmDialog({
           >
             取消
           </Button>
-          <Button type="button" variant="destructive" loading={busy} onClick={() => void confirm()}>
+          <Button
+            type="button"
+            variant={destructive ? "destructive" : "default"}
+            loading={busy}
+            onClick={() => void confirm()}
+          >
             {confirmLabel}
           </Button>
         </DialogFooter>

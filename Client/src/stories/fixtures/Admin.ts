@@ -142,6 +142,16 @@ export const ADMIN_USER_SELF: AdminUserDetail = {
   feedbackCount: 0,
 };
 
+/** 用户详情：主理人账号（别人看它时，强制下线与取消管理员禁用）。 */
+export const ADMIN_USER_OWNER: AdminUserDetail = {
+  ...ADMIN_USERS[0],
+  role: "admin",
+  badges: [{ kind: "owner", serial: null }],
+  equippedBadge: "owner",
+  recentGames: ADMIN_USER_FULL.recentGames.slice(0, 2),
+  feedbackCount: 0,
+};
+
 // ---------- 概览 ----------
 
 const DAYS = Array.from({ length: 30 }, (_, index) => {
@@ -642,10 +652,17 @@ export const ADMIN_ROUTES: Record<string, StubReply> = {
   "admin/rooms/kick": null,
   "admin/statusEvents/list": (input: unknown) => pageOf(ADMIN_STATUS_EVENTS, input),
   "admin/users/list": (input: unknown) => pageOf(ADMIN_USERS, input),
+  "admin/users/revokeSessions": { ok: true },
+  "admin/users/setRole": null,
+  "admin/users/grantBadge": { ok: true },
+  "admin/users/revokeBadge": { ok: true },
+  "admin/users/ban": null,
+  "admin/users/unban": null,
   "admin/users/get": (input: unknown) => {
     const id = (input as { userId?: string } | undefined)?.userId;
     if (id === ADMIN_USER_FULL.id) return ADMIN_USER_FULL;
     if (id === ADMIN_USER_SELF.id) return ADMIN_USER_SELF;
+    if (id === ADMIN_USER_OWNER.id) return ADMIN_USER_OWNER;
     return ADMIN_USER_SPARSE;
   },
   "admin/feedback/list": (input: unknown) => {

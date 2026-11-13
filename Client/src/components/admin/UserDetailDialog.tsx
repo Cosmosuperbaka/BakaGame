@@ -9,17 +9,21 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/Dialog";
 import { SettingsFields } from "@/components/common/room/settings/Layout";
 import { SettingSelect } from "@/components/common/room/settings/ChoiceFields";
 import { SettingTextField } from "@/components/common/room/settings/TextFields";
-import { QueryState, UserCell } from "@/components/admin/AdminParts";
+import { AdminNotice, ConfirmDialog, QueryState, UserCell } from "@/components/admin/AdminParts";
+import { UserActionBar } from "@/components/admin/UserActionBar";
+import {
+  userActionSpec,
+  type UserActionKind,
+  type UserActionSpec,
+} from "@/components/admin/UserActions";
 import { useAdminAction, useAdminQuery } from "@/hooks/UseAdminQuery";
-import { api } from "@/lib/Api";
-import { invalidatePublicProfile } from "@/lib/ProfileCache";
+import { api, apiErrorMessage } from "@/lib/Api";
 import {
   BAN_DURATIONS,
   GAME_LABELS,
@@ -47,44 +51,6 @@ const banStatusText = (user: AdminUserDetail) => {
   return `封禁中（${user.banReason ?? "未写原因"}，${until}）`;
 };
 
-/** 封禁与解封共用一个入口位：自己的账号与管理员都不给，已封禁时反转为解封。 */
-function BanActionButton({
-  self,
-  role,
-  banned,
-  disabled,
-  unbanLoading,
-  onUnban,
-  onBan,
-}: {
-  self: boolean;
-  role: AdminUserDetail["role"];
-  banned: boolean;
-  disabled: boolean;
-  unbanLoading: boolean;
-  onUnban: () => void;
-  onBan: () => void;
-}) {
-  if (self || role === "admin") return null;
-  if (banned)
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        loading={unbanLoading}
-        disabled={disabled}
-        onClick={onUnban}
-      >
-        解封
-      </Button>
-    );
-  return (
-    <Button type="button" variant="destructive" disabled={disabled} onClick={onBan}>
-      封禁
-    </Button>
-  );
-}
-
 function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged: () => void }) {
   const selfId = useAccountStore((state) => state.profile?.id);
   const self = selfId === user.id;
@@ -92,6 +58,9 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   const [reason, setReason] = useState("");
   const [hours, setHours] = useState("24");
   const action = useAdminAction();
+  // 确认框的文案在点下按钮时定稿（见 userActionSpec），open 与 spec 分开存：关闭后文案保留到退场动画结束。
+  const [confirm, setConfirm] = useState<{ spec: UserActionSpec; open: boolean } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const hasContributor = user.badges.some((badge) => badge.kind === "contributor");
   const banFormRef = useRef<HTMLFormElement>(null);
   // 封禁表单接在长弹窗末尾，弹窗滚动条是隐藏的：展开后把整张表单（含确认按钮）滚进可见范围。
@@ -99,10 +68,29 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
   useEffect(() => {
     if (mode === "ban") banFormRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [mode]);
-  const after = (ok: boolean) => {
+  const after = (ok: boolean, success: string) => {
     if (!ok) return;
     setMode("view");
+    setReason("");
+    setHours("24");
+    setNotice(success);
     onChanged();
+  };
+  const ask = (kind: UserActionKind) => {
+    setNotice(null);
+    action.clearError();
+    setConfirm({ spec: userActionSpec(kind, user, self), open: true });
+  };
+  const confirmed = async () => {
+    if (!confirm) return null;
+    try {
+      await confirm.spec.run();
+    } catch (cause) {
+      return apiErrorMessage(cause, "操作失败，请稍后重试");
+    }
+    setNotice(confirm.spec.success);
+    onChanged();
+    return null;
   };
 
   const submit = async (event: FormEvent) => {
@@ -115,7 +103,8 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
             reason: reason.trim(),
             ...(hours !== "0" ? { expiresInHours: Number(hours) } : {}),
           })
-        )
+        ),
+        `已封禁「${user.name}」并踢下线。`
       );
     }
   };
@@ -183,20 +172,8 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
             // 授予与撤销同为描边：实心主色在一屏操作里比「封禁」还抢眼，状态由按钮文字表达。
             variant="outline"
             size="sm"
-            loading={action.busy === "badge"}
             disabled={action.busy !== null}
-            onClick={() =>
-              void action
-                .run("badge", () =>
-                  hasContributor
-                    ? api.admin.users.revokeBadge({ userId: user.id, badge: "contributor" })
-                    : api.admin.users.grantBadge({ userId: user.id, badge: "contributor" })
-                )
-                .then((ok) => {
-                  if (ok) invalidatePublicProfile(user.id);
-                  after(ok);
-                })
-            }
+            onClick={() => ask("badge")}
           >
             {hasContributor ? "撤销贡献者" : "授予贡献者"}
           </Button>
@@ -251,59 +228,35 @@ function UserDetailBody({ user, onChanged }: { user: AdminUserDetail; onChanged:
       ) : (
         <>
           {action.error ? <FormAlert>{action.error}</FormAlert> : null}
-          {self ? (
-            <p className="text-xs text-muted-foreground">这是你自己的账号，不能封禁或修改角色。</p>
-          ) : null}
-          <DialogFooter className="flex-wrap">
-            <Button
-              type="button"
-              variant="outline"
-              loading={action.busy === "revoke"}
-              disabled={action.busy !== null}
-              onClick={() =>
-                void action
-                  .run("revoke", () => api.admin.users.revokeSessions({ userId: user.id }))
-                  .then(after)
-              }
-            >
-              强制下线
-            </Button>
-            {self ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                loading={action.busy === "role"}
-                disabled={action.busy !== null || (user.banned && user.role === "user")}
-                onClick={() =>
-                  void action
-                    .run("role", () =>
-                      api.admin.users.setRole({
-                        userId: user.id,
-                        role: user.role === "admin" ? "user" : "admin",
-                      })
-                    )
-                    .then(after)
-                }
-              >
-                {user.role === "admin" ? "取消管理员" : "设为管理员"}
-              </Button>
-            )}
-            <BanActionButton
-              self={self}
-              role={user.role}
-              banned={user.banned}
-              disabled={action.busy !== null}
-              unbanLoading={action.busy === "unban"}
-              onUnban={() =>
-                void action
-                  .run("unban", () => api.admin.users.unban({ userId: user.id }))
-                  .then(after)
-              }
-              onBan={() => setMode("ban")}
-            />
-          </DialogFooter>
+          {notice ? <AdminNotice>{notice}</AdminNotice> : null}
+          <UserActionBar
+            user={user}
+            self={self}
+            busy={action.busy}
+            onAsk={ask}
+            onUnban={() =>
+              void action
+                .run("unban", () => api.admin.users.unban({ userId: user.id }))
+                .then((ok) => after(ok, `已解封「${user.name}」。`))
+            }
+            onBan={() => {
+              setNotice(null);
+              setMode("ban");
+            }}
+          />
         </>
       )}
+      {confirm ? (
+        <ConfirmDialog
+          open={confirm.open}
+          onOpenChange={(open) => setConfirm((current) => current && { ...current, open })}
+          title={confirm.spec.title}
+          description={confirm.spec.description}
+          confirmLabel={confirm.spec.confirmLabel}
+          destructive={confirm.spec.destructive}
+          onConfirm={confirmed}
+        />
+      ) : null}
     </div>
   );
 }
@@ -350,8 +303,8 @@ function UserDetailLoader({ userId, onChanged }: { userId: string; onChanged: ()
         emptyText=""
       />
       {detail.data ? (
+        // 不按角色与封禁状态换 key：操作成功后详情重读，重挂载会吞掉成功说明、切断确认框的退场动画。
         <UserDetailBody
-          key={`${detail.data.role}:${detail.data.banned}:${detail.data.name}`}
           user={detail.data}
           onChanged={() => {
             detail.reload();

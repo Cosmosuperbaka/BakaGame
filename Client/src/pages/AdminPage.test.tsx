@@ -1,4 +1,4 @@
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -215,6 +215,12 @@ const renderAdmin = (path = "/admin") => {
   return userEvent.setup();
 };
 
+/** 在用户列表里点开 Alice 的详情，返回详情弹窗。 */
+const openUserDetail = async (events: ReturnType<typeof userEvent.setup>, table: HTMLElement) => {
+  await events.click(within(table).getByRole("button", { name: /Alice/ }));
+  return screen.findByRole("dialog", { name: "用户详情" });
+};
+
 beforeEach(() => {
   admin.stats.overview.mockResolvedValue(overview);
   admin.stats.sentry.mockResolvedValue({
@@ -295,23 +301,151 @@ describe("管理后台", () => {
     });
   });
 
-  it("用户页展示徽章，详情可授予贡献者", async () => {
+  it("用户页展示徽章，授予贡献者要先确认", async () => {
     useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
     admin.users.grantBadge.mockResolvedValue({ ok: true });
     const events = renderAdmin("/admin?tab=users");
     const table = await screen.findByRole("table", { name: "用户列表" });
     expect(within(table).getByText("先行者·№42")).toBeInTheDocument();
 
-    await events.click(within(table).getByRole("button", { name: /Alice/ }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await openUserDetail(events, table);
     expect(await within(dialog).findByText("先行者·№42")).toBeInTheDocument();
     expect(within(dialog).getByText("佩戴中")).toBeInTheDocument();
 
     await events.click(within(dialog).getByRole("button", { name: "授予贡献者" }));
+    const confirm = await screen.findByRole("dialog", { name: "授予贡献者徽章" });
+    expect(admin.users.grantBadge).not.toHaveBeenCalled();
+    await events.click(within(confirm).getByRole("button", { name: "授予" }));
+    expect(admin.users.grantBadge).toHaveBeenCalledTimes(1);
     expect(admin.users.grantBadge).toHaveBeenCalledWith({
       userId: "u-1",
       badge: "contributor",
     });
+    expect(await within(dialog).findByText("已授予「Alice」贡献者徽章。")).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      "强制下线",
+      "强制下线",
+      "revokeSessions",
+      { userId: "u-1" },
+      "已让「Alice」的全部登录会话失效",
+    ],
+    [
+      "设为管理员",
+      "设为管理员",
+      "setRole",
+      { userId: "u-1", role: "admin" },
+      "已把「Alice」设为管理员。",
+    ],
+  ] as const)(
+    "%s要先确认：未确认不发请求，取消不发请求，确认后只发一次并给出结果",
+    async (button, label, method, args, success) => {
+      useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+      admin.users[method].mockResolvedValue({ ok: true });
+      const events = renderAdmin("/admin?tab=users");
+      const table = await screen.findByRole("table", { name: "用户列表" });
+      const dialog = await openUserDetail(events, table);
+      await within(dialog).findByText("还没有对局记录");
+
+      await events.click(within(dialog).getByRole("button", { name: button }));
+      const confirm = await screen.findByRole("dialog", { name: label });
+      // 确认框点名对象，写清后果。
+      expect(confirm).toHaveTextContent("「Alice」");
+      expect(admin.users[method]).not.toHaveBeenCalled();
+
+      await events.click(within(confirm).getByRole("button", { name: "取消" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: label })).toBeNull());
+      expect(admin.users[method]).not.toHaveBeenCalled();
+
+      await events.click(within(dialog).getByRole("button", { name: button }));
+      const again = await screen.findByRole("dialog", { name: label });
+      await events.click(within(again).getByRole("button", { name: label }));
+      expect(admin.users[method]).toHaveBeenCalledTimes(1);
+      expect(admin.users[method]).toHaveBeenCalledWith(args);
+      expect(await within(dialog).findByText(new RegExp(success))).toBeInTheDocument();
+    }
+  );
+
+  it("确认后请求失败：原因留在确认框内，框不关闭，可以重试", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.revokeSessions.mockRejectedValueOnce(new Error("boom")).mockResolvedValue({
+      ok: true,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "强制下线" }));
+    const confirm = await screen.findByRole("dialog", { name: "强制下线" });
+    await events.click(within(confirm).getByRole("button", { name: "强制下线" }));
+    expect(await within(confirm).findByRole("alert")).toBeInTheDocument();
+    expect(confirm).toBeInTheDocument();
+
+    await events.click(within(confirm).getByRole("button", { name: "强制下线" }));
+    expect(admin.users.revokeSessions).toHaveBeenCalledTimes(2);
+  });
+
+  it("确认请求在途时确认框不可再点，不会重复发请求", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    let finish: (value: { ok: true }) => void = () => {};
+    admin.users.revokeSessions.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    await events.click(within(dialog).getByRole("button", { name: "强制下线" }));
+    const confirm = await screen.findByRole("dialog", { name: "强制下线" });
+    const submit = within(confirm).getByRole("button", { name: "强制下线" });
+    await events.click(submit);
+    expect(submit).toBeDisabled();
+    expect(within(confirm).getByRole("button", { name: "取消" })).toBeDisabled();
+    await events.click(submit);
+    expect(admin.users.revokeSessions).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true }));
+  });
+
+  it("主理人账号：强制下线与取消管理员禁用并写明原因，服务端一定会拒绝它们", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      role: "admin",
+      badges: [{ kind: "owner", serial: null }],
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    expect(within(dialog).getByRole("button", { name: "强制下线" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "取消管理员" })).toBeDisabled();
+    expect(within(dialog).getByText(/主理人账号不能被强制下线或取消管理员/)).toBeInTheDocument();
+  });
+
+  it("其它管理员账号可以被取消管理员与强制下线（服务端只保护主理人）", async () => {
+    useAccountStore.setState({ status: "signedIn", profile: profile("admin") });
+    admin.users.get.mockResolvedValue({
+      ...user,
+      role: "admin",
+      recentGames: [],
+      feedbackCount: 0,
+    });
+    const events = renderAdmin("/admin?tab=users");
+    const table = await screen.findByRole("table", { name: "用户列表" });
+    const dialog = await openUserDetail(events, table);
+    await within(dialog).findByText("还没有对局记录");
+
+    expect(within(dialog).getByRole("button", { name: "强制下线" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "取消管理员" })).toBeEnabled();
   });
 
   it("关闭房间需要确认，失败文案留在确认框内", async () => {
@@ -608,7 +742,16 @@ describe("管理后台", () => {
     admin.audit.list.mockResolvedValue({ items: [], total: 0 });
     // jsdom 没有布局：只给标签栏滚动容器与当前标签各一个矩形，其余元素都是零矩形。
     const rect = (left: number, right: number) =>
-      ({ left, right, top: 0, bottom: 40, width: right - left, height: 40, x: left, y: 0 }) as DOMRect;
+      ({
+        left,
+        right,
+        top: 0,
+        bottom: 40,
+        width: right - left,
+        height: 40,
+        x: left,
+        y: 0,
+      }) as DOMRect;
     const spy = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
