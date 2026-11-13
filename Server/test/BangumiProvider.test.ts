@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  BangumiProvider,
-  extractBangumiMusicTracks,
-  rewriteBangumiImageUrl,
-} from "../src/infrastructure/BangumiProvider";
+import { BangumiProvider, rewriteBangumiImageUrl } from "../src/infrastructure/BangumiProvider";
+import { extractBangumiMusicTracks } from "../src/infrastructure/BangumiMusicParsing";
 import { requestBodyText } from "./RequestFixtures";
 
 const results = () => Response.json({ data: [] });
