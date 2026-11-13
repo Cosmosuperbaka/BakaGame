@@ -2,7 +2,7 @@ import { AppError } from "../../domain/Errors";
 import type { ConnectionRecord } from "../../shared/Index";
 import { resolveAnimeMatchedSongs } from "./AnimeResolution";
 import type { SonGuessrContext } from "./Context";
-import { musicSearchOptions, withAggregatedAccounts, withSongAccount } from "./MusicAccounts";
+import { musicSearchOptions, withAggregatedAccounts, withSongAccount } from "./MusicPool";
 import { parsePlaylistId } from "./PlaylistId";
 import type { SongCommandAt } from "./RoomAccess";
 

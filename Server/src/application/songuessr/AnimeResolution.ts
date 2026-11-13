@@ -25,7 +25,7 @@ import {
   type FallbackPickEntry,
   type TrackCandidatePool,
 } from "./AnimeSongEvidence";
-import { withAggregatedAccounts, withSongAccount } from "./MusicAccounts";
+import { withAggregatedAccounts, withSongAccount } from "./MusicPool";
 import {
   ANIME_SONG_DETAIL_BUDGET,
   ANIME_SONG_SEARCH_BUDGET,

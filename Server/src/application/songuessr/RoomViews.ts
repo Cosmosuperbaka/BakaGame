@@ -14,7 +14,7 @@ import type {
   SonGuessrScore,
 } from "../../shared/Index";
 import { audioTicketUrl } from "./AudioTicket";
-import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicAccounts";
+import { hasEnabledPoolAccount, isCoolingDown, musicPool } from "./MusicPool";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import type { SonGuessrContext } from "./Context";
 import { canTestSubmitterGuess, activePlayers, isTestRoom } from "./RoomAccess";

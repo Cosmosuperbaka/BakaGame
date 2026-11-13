@@ -23,8 +23,8 @@ import { SonGuessrService } from "../../src/application/SonGuessrService";
 import {
   publishMusicSession,
   refreshMusicPoolEntry,
-  releaseMusicAccount,
 } from "../../src/application/songuessr/MusicAccounts";
+import { releaseMusicAccount } from "../../src/application/songuessr/MusicPool";
 import {
   SongDetails,
   SongSearchResult,

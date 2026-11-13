@@ -6,7 +6,10 @@ import {
   isPlayableSong,
 } from "../../infrastructure/music/MusicDeduplicator";
 import type { BangumiDataProvider } from "../../infrastructure/LocalBangumiProvider";
-import type { MusicCookieInput, MusicSearchOptions } from "../../infrastructure/music/MusicProvider";
+import type {
+  MusicCookieInput,
+  MusicSearchOptions,
+} from "../../infrastructure/music/MusicProvider";
 import {
   ALL_BANGUMI_TRACK_KINDS,
   MAX_MIN_POPULARITY,
@@ -24,7 +27,7 @@ import {
   songPlayabilityContext,
   withAggregatedAccounts,
   withSongAccount,
-} from "./MusicAccounts";
+} from "./MusicPool";
 import {
   AUTO_ANIME_CANDIDATE_LIMIT,
   AUTO_POPULARITY_LOOKUP_LIMIT,
