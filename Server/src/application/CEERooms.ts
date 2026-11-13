@@ -19,7 +19,7 @@ import {
   unitHasActor,
 } from "../domain/CEERound";
 import { tabSeatId } from "./TabSeat";
-import { ensureRoomId, normalizeWord, safeEqualToken } from "../domain/Rules";
+import { ensureRoomId, safeEqualToken } from "../domain/Rules";
 import {
   createDefaultCEESettings,
   isCEEAntiCheatRoom,
@@ -30,7 +30,6 @@ import {
   type CEESettings,
   type ConnectionRecord,
 } from "../shared/Index";
-import { CHAT_LIMIT } from "../config/Constants";
 import type { EventLogger } from "../infrastructure/EventLogger";
 import { describeError } from "../infrastructure/Sentry";
 import { createEvent } from "../transport/Packets";
@@ -48,7 +47,8 @@ import type { RoomShape } from "./room/RoomCore";
 import { reassignHost, resolveHostGrace, transferHost as handOverHost } from "./room/HostPolicy";
 import { expiredOfflineSeats, forEachRoomIsolated, judgeReclaim } from "./room/RoomJanitor";
 import { publishRoomState } from "./room/RoomPublisher";
-import { countOnline } from "./room/RoomSummaries";
+import { adminRoomView, countOnline, requireAdminRoom } from "./room/RoomSummaries";
+import { acceptChatText, appendChat, systemMessage } from "./room/ChatLog";
 import {
   adoptRoomCore,
   exportRoomJson,
@@ -72,6 +72,10 @@ import {
  * TODO(行为统一)：卧底用 `normalizeWord`，两种口径算出的摘要互不相认，统一前各款保留现值。
  */
 const normalizePassword = (value: string): string => value.trim();
+/** 空消息的错误码：三款各不相同，增强房保持现值。TODO(行为统一) */
+const EMPTY_CHAT_ERROR = { code: "EMPTY_MESSAGE", message: "消息不能为空" };
+/** 系统消息的发送者占位：增强房是两个空串，客户端按空串识别。TODO(行为统一) */
+const CEE_SYSTEM_SENDER = { playerId: "", playerName: "" };
 /** 反作弊房里旁观请求的等待上限：超时自动拒绝，房主挂机不会让请求永久悬空。 */
 export const CEE_SPECTATE_APPROVAL_TIMEOUT_MS = 120_000;
 /** 一间房最多挂多少个待批准请求：防止刷请求骚扰房主。 */
@@ -267,7 +271,7 @@ export class CEERooms {
       roomCount: this.rooms.size,
       playerCount: [...this.rooms.values()].reduce((sum, room) => sum + room.players.size, 0),
       onlinePlayerCount: [...this.rooms.values()].reduce(
-        (sum, room) => sum + [...room.players.values()].filter((player) => player.online).length,
+        (sum, room) => sum + countOnline(room.players.values()),
         0
       ),
       connectionCount: this.connections.stats.totalConnections,
@@ -534,27 +538,16 @@ export class CEERooms {
     this.kickPlayer(room, this.member(room, id), "你已被房主移出房间");
   }
   adminListRooms(): AdminRoomView[] {
-    return [...this.rooms.values()].map((room) => ({
-      game: "cee",
-      roomId: room.id,
-      name: room.name,
-      phase: room.phase,
-      visibility: room.visibility,
-      hasPassword: Boolean(room.passwordHash),
-      hidden: this.testRooms.isTestRoom(room.id),
-      roundNumber: room.roundNumber,
-      createdAt: room.createdAt,
-      lastActiveAt: room.lastActivityAt,
-      players: [...room.players.values()].map((player) => ({
-        id: player.id,
-        name: player.name,
-        online: player.online,
-        membership: player.membership,
-        host: player.id === room.hostPlayerId,
-        bot: false,
-        userId: player.account?.userId ?? null,
-      })),
-    }));
+    return [...this.rooms.values()].map((room) =>
+      adminRoomView(room, room.players.values(), {
+        game: "cee",
+        name: room.name,
+        phase: room.phase,
+        visibility: room.visibility,
+        hidden: this.testRooms.isTestRoom(room.id),
+        roundNumber: room.roundNumber,
+      })
+    );
   }
   adminCloseRoom(roomId: string): void {
     this.closeRoom(this.adminRoom(roomId), ADMIN_CLOSE_MESSAGE);
@@ -565,9 +558,7 @@ export class CEERooms {
     this.kickPlayer(room, this.member(room, playerId), ADMIN_KICK_MESSAGE);
   }
   private adminRoom(roomId: string): CEERoom {
-    const room = this.rooms.get(roomId);
-    if (!room) throw new AppError("ROOM_NOT_FOUND", "房间不存在或已关闭");
-    return room;
+    return requireAdminRoom(this.rooms, roomId);
   }
   private kickPlayer(room: CEERoom, target: CEEPlayerRecord, reason: string): void {
     const connection = target.connectionId
@@ -622,9 +613,8 @@ export class CEERooms {
   }
   sendChat(room: CEERoom, player: CEEPlayerRecord, rawText: string): void {
     // 与另两款同一口径：剔除控制字符并折叠空白，只剩空白或不可见字符的消息按空消息拒绝。
-    const text = normalizeWord(rawText).slice(0, 500);
-    if (!text) throw new AppError("EMPTY_MESSAGE", "消息不能为空");
-    room.chat.push({
+    const text = acceptChatText(rawText, { maxLength: 500, emptyError: EMPTY_CHAT_ERROR });
+    appendChat(room, {
       id: crypto.randomUUID(),
       playerId: player.id,
       playerName: player.name,
@@ -632,7 +622,6 @@ export class CEERooms {
       createdAt: this.now(),
       system: false,
     });
-    room.chat = room.chat.slice(-CHAT_LIMIT);
   }
   resetWaiting(room: CEERoom): void {
     room.phase = "waiting";
@@ -850,15 +839,15 @@ export class CEERooms {
     };
   }
   private system(room: CEERoom, text: string) {
-    room.chat.push({
-      id: crypto.randomUUID(),
-      playerId: "",
-      playerName: "",
-      text,
-      createdAt: this.now(),
-      system: true,
-    });
-    room.chat = room.chat.slice(-CHAT_LIMIT);
+    appendChat(
+      room,
+      systemMessage({
+        id: crypto.randomUUID(),
+        text,
+        createdAt: this.now(),
+        sender: CEE_SYSTEM_SENDER,
+      })
+    );
   }
   private remove(room: CEERoom, player: CEEPlayerRecord): void {
     const unit = getCEEUnit(room, player);

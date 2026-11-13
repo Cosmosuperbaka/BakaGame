@@ -36,6 +36,7 @@ import type { CEEUpstreamRoom } from "./CEEOriginalModel";
 import { CEEOriginalService } from "./CEEOriginalService";
 import { CEERoomDirectory, type CEERoomTarget } from "./CEERoomDirectory";
 import { LobbyFanout } from "./LobbyFanout";
+import { ChatLimiter } from "./room/ChatLog";
 
 /** 上游房间列表的缓存时长；失败后同样等待该时长再重试，避免每次房号未命中都回源。 */
 const REMOTE_ROOMS_TTL_MS = 5000;
@@ -53,7 +54,13 @@ export class CEEService implements AdminRoomControl {
   readonly directory: CEERoomDirectory;
   private readonly connections = new Map<string, ConnectionRecord>();
   private readonly limiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 80 });
-  private readonly chatLimiter = new SlidingWindowRateLimiter({ windowMs: 10000, maxRequests: 8 });
+  /** 增强房自己的聊天额度（窗口、次数与文案）：TODO(行为统一) 与另两款统一前保持现值。 */
+  private readonly chatLimiter = new ChatLimiter({
+    now: () => this.now(),
+    windowMs: 10000,
+    maxRequests: 8,
+    rejection: { code: "RATE_LIMITED", message: "消息发送过快，请稍后再试" },
+  });
   /** 原版房入房额度：按来源地址聚合，换连接不换额度。 */
   private readonly originalEnterLimiter = new SlidingWindowRateLimiter({
     windowMs: CEE_ORIGINAL_ENTER_WINDOW_MS,
@@ -152,8 +159,7 @@ export class CEEService implements AdminRoomControl {
     if (!connection) throw new AppError("CONNECTION_NOT_FOUND", "连接已经断开");
     if (!this.limiter.allow(id, this.now()))
       throw new AppError("RATE_LIMITED", "操作过于频繁，请稍后再试");
-    if (message.type === "cee.chat.send" && !this.chatLimiter.allow(id, this.now()))
-      throw new AppError("RATE_LIMITED", "消息发送过快，请稍后再试");
+    if (message.type === "cee.chat.send") this.chatLimiter.consume(id);
     // 敏感词在服务端入口统一检查：名称、昵称、聊天与自填提示都会展示给其他玩家。
     switch (message.type) {
       case "cee.room.create":
