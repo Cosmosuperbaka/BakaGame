@@ -59,6 +59,18 @@ try {
     await assertAsset(asset);
   }
 
+  // 根目录站点图标与清单：不走 webp 管线，抓取器按固定路径取，缺了就是软 404。
+  for (const [asset, type] of [
+    ["/favicon.ico", "image/x-icon"],
+    ["/favicon-192.png", "image/png"],
+    ["/apple-touch-icon.png", "image/png"],
+  ]) {
+    if (!relativeFiles.includes(asset)) throw new Error(`构建产物缺少 ${asset}`);
+    await assertAsset(asset, type);
+  }
+  if (!relativeFiles.includes("/site.webmanifest"))
+    throw new Error("构建产物缺少 /site.webmanifest");
+
   // 自备品牌 SVG：页面用 CSS mask 引用这些固定路径，构建时既不能被 webp 管线改写，
   // 也不能因为漏拷 public/ 而在线上变成空白图标。AI 厂商/模型字形来自
   // @lobehub/icons-static-svg 的 ?url 导入，SVG 体积小会被 Vite 内联进页面分块，

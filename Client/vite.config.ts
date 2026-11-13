@@ -9,6 +9,7 @@ import { creditsManifestPlugin } from "./scripts/vite-plugins/CreditsManifest.ts
 import { publicWebpPlugin } from "./scripts/vite-plugins/PublicWebp.ts";
 import { staticShellPlugin } from "./scripts/vite-plugins/StaticShell.ts";
 import { seoArtifactsPlugin } from "./scripts/vite-plugins/SeoArtifacts.ts";
+import { siteIconsPlugin } from "./scripts/vite-plugins/SiteIcons.ts";
 import { generatedFontsPlugin } from "./scripts/vite-plugins/GeneratedFonts.ts";
 import { SHARED_DEDUPE } from "./scripts/shared-dependencies.mjs";
 import {
@@ -54,6 +55,7 @@ export default defineConfig(({ command }) => {
       publicWebpPlugin(),
       staticShellPlugin(),
       seoArtifactsPlugin(),
+      siteIconsPlugin(),
       uploadSourcemaps ? sentrySourcemapsPlugin(changelogPath, process.env) : [],
     ],
     build: {

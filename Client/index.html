@@ -2,7 +2,11 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/assets/favicon.png" />
+    <!-- 站点图标与清单由构建期从同一张源图生成到产物根目录（scripts/vite-plugins/SiteIcons.ts）。 -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
       首帧主题恢复：必须在样式表与入口模块之前同步执行，否则深色偏好会先闪一帧亮色。
