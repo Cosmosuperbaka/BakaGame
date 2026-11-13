@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { BangumiProvider, rewriteBangumiImageUrl } from "../src/infrastructure/BangumiProvider";
+import { BangumiProvider } from "../src/infrastructure/BangumiProvider";
 import { extractBangumiMusicTracks } from "../src/infrastructure/BangumiMusicParsing";
 import { requestBodyText } from "./RequestFixtures";
 
@@ -270,18 +270,6 @@ describe("曲目解析：infobox 与关联条目两路来源", () => {
     );
     expect(tracks.some((track) => track.title.includes("©"))).toBe(false);
     expect(tracks.filter((track) => track.title === "Same Song")).toHaveLength(1);
-  });
-});
-
-describe("rewriteBangumiImageUrl", () => {
-  test("无镜像前缀原样透传，标准封面形状映射到图床档位", () => {
-    expect(rewriteBangumiImageUrl(undefined)).toBeUndefined();
-    expect(rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg")).toBe(
-      "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg"
-    );
-    expect(
-      rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg", "https://img.example")
-    ).toBe("https://img.example/r/200/pic/cover/l/aa/bb/1_x.jpg");
   });
 });
 

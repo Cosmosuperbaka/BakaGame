@@ -1,3 +1,5 @@
+import { readString } from "./JsonReaders";
+
 /**
  * 图床缓存路径的唯一映射规则：上游原始 URL → 缓存里的路径。
  *
@@ -66,3 +68,14 @@ export function bangumiImageUrl(value: unknown, base: string): string | undefine
   const mapped = bangumiImageCachePath(value);
   return `${prefix}${mapped ?? rest}`;
 }
+
+/**
+ * 上游原始 URL → 对外 URL：镜像前缀 + 图床缓存路径（档位选定见 BangumiImagePaths，
+ * 与构建脚本严格一致）。映射不了的形状退回「只换 host」的历史行为，交给图床路由的
+ * 缺失回源兜底。
+ */
+export const rewriteBangumiImageUrl = (value: unknown, imageUrl = "") => {
+  const raw = readString(value);
+  if (!raw || !imageUrl) return raw;
+  return bangumiImageUrl(raw, imageUrl) ?? raw;
+};

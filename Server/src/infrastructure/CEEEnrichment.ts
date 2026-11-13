@@ -6,7 +6,7 @@ import { Value } from "@sinclair/typebox/value";
 import { LRUCache } from "lru-cache";
 import PQueue from "p-queue";
 import { AppError } from "../domain/Errors";
-import { rewriteBangumiImageUrl } from "./BangumiProvider";
+import { rewriteBangumiImageUrl } from "./BangumiImagePaths";
 import { BANGUMI_USER_AGENT } from "./BangumiUserAgent";
 import type { CEEDirectoryResult, CEEImageSize } from "../shared/CEE";
 import type { CEEDataOptions } from "./CEEData";

@@ -1,5 +1,9 @@
-import { expect, test } from "bun:test";
-import { bangumiImageCachePath, bangumiImageUrl } from "../src/infrastructure/BangumiImagePaths";
+import { describe, expect, test } from "bun:test";
+import {
+  bangumiImageCachePath,
+  bangumiImageUrl,
+  rewriteBangumiImageUrl,
+} from "../src/infrastructure/BangumiImagePaths";
 
 test("路径映射与构建脚本一致：作品 r200 / 角色 r400 / 角色 grid 原路径", () => {
   // 作品：large 原图 → /r/200/（缓存里作品只有这一档）
@@ -47,4 +51,16 @@ test("对外 URL：镜像前缀 + 缓存路径；映射不了就退回只换 hos
   expect(bangumiImageUrl("https://lain.bgm.tv/pic/cover/m/a.jpg", "https://img.baka.website")).toBe(
     "https://img.baka.website/pic/cover/m/a.jpg"
   );
+});
+
+describe("rewriteBangumiImageUrl", () => {
+  test("无镜像前缀原样透传，标准封面形状映射到图床档位", () => {
+    expect(rewriteBangumiImageUrl(undefined)).toBeUndefined();
+    expect(rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg")).toBe(
+      "https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg"
+    );
+    expect(
+      rewriteBangumiImageUrl("https://lain.bgm.tv/pic/cover/l/aa/bb/1_x.jpg", "https://img.example")
+    ).toBe("https://img.example/r/200/pic/cover/l/aa/bb/1_x.jpg");
+  });
 });
