@@ -19,7 +19,7 @@ import { reassignHost } from "../room/HostPolicy";
 import { markSeatOffline } from "../room/SeatBinding";
 import { runBots } from "./dev/BotActors";
 import { countOnline } from "../room/RoomSummaries";
-import { finishRound } from "./PhaseFlow";
+import { finishRound } from "./RoundSettlement";
 import { clearPhaseTimer, completeSupplementIfReady } from "./PhaseTimers";
 import { broadcastRoomEvent, publishLobby, publishRoom } from "./RoomPublish";
 import { closeRoom } from "./RoomClosure";
