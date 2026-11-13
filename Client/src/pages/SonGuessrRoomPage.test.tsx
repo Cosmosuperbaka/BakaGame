@@ -478,7 +478,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
 
       renderRoomPage();
       fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-      const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+      const duration = screen.getByRole("spinbutton", { name: "每次猜测时限（秒）" });
       expect(duration).toHaveValue("60");
       fireEvent.change(duration, { target: { value: "90" } });
       fireEvent.blur(duration);
@@ -508,7 +508,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
           });
         });
         expect(
-          screen.queryByRole("textbox", { name: "每次猜测时限（秒）" })
+          screen.queryByRole("spinbutton", { name: "每次猜测时限（秒）" })
         ).not.toBeInTheDocument();
         expect(settingsCalls()).toHaveLength(0);
       }
@@ -615,7 +615,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
       useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
       const { unmount } = renderRoomPage();
       fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-      const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+      const duration = screen.getByRole("spinbutton", { name: "每次猜测时限（秒）" });
       fireEvent.change(duration, { target: { value: "90" } });
       fireEvent.blur(duration);
       const settingsCalls = () =>
@@ -660,7 +660,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     useSonGuessrStore.setState({ sendCommand: sendCommandSpy });
     renderRoomPage();
     fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    const duration = screen.getByRole("spinbutton", { name: "每次猜测时限（秒）" });
     fireEvent.change(duration, { target: { value: "90" } });
     fireEvent.blur(duration);
     const settingsCalls = () =>
@@ -975,7 +975,7 @@ describe("SonGuessrRoomPage 页面级集成测试", () => {
     expect(screen.getByLabelText("房间密码")).toHaveAttribute("placeholder", "设置房间密码");
 
     fireEvent.click(screen.getByRole("button", { name: "猜测设置" }));
-    const duration = screen.getByRole("textbox", { name: "每次猜测时限（秒）" });
+    const duration = screen.getByRole("spinbutton", { name: "每次猜测时限（秒）" });
     // 输入多位数的第一位时不提前夹到下限。
     fireEvent.change(duration, { target: { value: "1" } });
     expect(duration).toHaveValue("1");

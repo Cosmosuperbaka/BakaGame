@@ -310,6 +310,11 @@ export function SettingStepper({
           id={id}
           type="text"
           inputMode="numeric"
+          // 文本框承载数值输入，语义上是数值调节控件：读屏要知道范围、当前值与上下方向键可调
+          role="spinbutton"
+          aria-valuemin={minimum}
+          aria-valuemax={maximum}
+          aria-valuenow={value}
           aria-describedby={description ? descriptionId : undefined}
           value={draft}
           disabled={disabled}
@@ -711,7 +716,11 @@ function YearInput({
     <input
       type="text"
       inputMode="numeric"
+      role="spinbutton"
       aria-label={label}
+      aria-valuemin={minimum}
+      aria-valuemax={maximum}
+      aria-valuenow={value}
       value={draft}
       disabled={disabled}
       placeholder={optional ? "不限" : undefined}
@@ -719,6 +728,15 @@ function YearInput({
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === "Enter") commit();
+        else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          // 留空（不限）时上键落到下限、下键落到上限，与方向键「从哪头进来」的直觉一致
+          const up = event.key === "ArrowUp";
+          const next = value === undefined ? (up ? minimum : maximum) : value + (up ? 1 : -1);
+          const clamped = Math.max(minimum, Math.min(maximum, next));
+          setDraft(String(clamped));
+          if (clamped !== value) onCommit(clamped);
+        }
       }}
       className="h-7 w-14 rounded-full bg-transparent text-center text-sm font-medium tabular-nums outline-none placeholder:font-normal placeholder:text-muted-foreground focus-visible:bg-background disabled:cursor-not-allowed dark:focus-visible:bg-secondary"
     />

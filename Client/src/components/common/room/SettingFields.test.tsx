@@ -1,7 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import { SettingSelect, SettingStepper, SettingSwitchRow, SettingTextField } from "./SettingFields";
+import {
+  SettingSelect,
+  SettingStepper,
+  SettingSwitchRow,
+  SettingTextField,
+  SettingYearRange,
+} from "./SettingFields";
 
 it("开关行用可见标签命名开关，说明挂为开关的描述", () => {
   render(
@@ -37,7 +43,7 @@ it("步进输入框由可见标签连同单位命名，手动输入在失焦时�
       onChange={onChange}
     />
   );
-  const input = screen.getByRole("textbox", { name: "每次行动限时（秒）" });
+  const input = screen.getByRole("spinbutton", { name: "每次行动限时（秒）" });
   expect(input).toHaveAccessibleDescription("设为 0 表示不限行动时间。");
   expect(screen.getByRole("button", { name: "减少每次行动限时" })).toBeDisabled();
 
@@ -90,4 +96,52 @@ it("下拉选择的可见标签命名触发器，没有候选时整项禁用", (
   const trigger = screen.getByRole("combobox", { name: "指定出题人" });
   expect(trigger).toBeDisabled();
   expect(trigger).toHaveTextContent("暂无可选出题人");
+});
+
+it("步进输入框是数值调节控件：读得出范围与当前值，上下方向键调节", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  render(
+    <SettingStepper
+      label="每次行动限时"
+      unit="秒"
+      value={30}
+      minimum={0}
+      maximum={120}
+      step={10}
+      onChange={onChange}
+    />
+  );
+  const input = screen.getByRole("spinbutton", { name: "每次行动限时（秒）" });
+  expect(input).toHaveAttribute("aria-valuemin", "0");
+  expect(input).toHaveAttribute("aria-valuemax", "120");
+  expect(input).toHaveAttribute("aria-valuenow", "30");
+  await user.click(input);
+  await user.keyboard("{ArrowUp}");
+  expect(onChange).toHaveBeenLastCalledWith(40);
+});
+
+it("年份输入同样是数值调节控件，留空时不报当前值", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  render(
+    <SettingYearRange
+      label="番剧年份"
+      start={2010}
+      end={undefined}
+      optional
+      minimum={1900}
+      maximum={2200}
+      onChange={onChange}
+    />
+  );
+  const start = screen.getByRole("spinbutton", { name: "番剧年份起始" });
+  expect(start).toHaveAttribute("aria-valuemin", "1900");
+  expect(start).toHaveAttribute("aria-valuemax", "2200");
+  expect(start).toHaveAttribute("aria-valuenow", "2010");
+  const end = screen.getByRole("spinbutton", { name: "番剧年份结束" });
+  expect(end).not.toHaveAttribute("aria-valuenow");
+  await user.click(start);
+  await user.keyboard("{ArrowUp}");
+  expect(onChange).toHaveBeenLastCalledWith(2011, undefined);
 });

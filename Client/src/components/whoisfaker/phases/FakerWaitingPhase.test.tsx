@@ -124,7 +124,7 @@ describe("waiting room sharing", () => {
     expect(screen.getByText("死亡时揭露身份")).toBeInTheDocument();
     expect(screen.getByText("1 名")).toBeInTheDocument();
     expect(screen.queryByRole("switch")).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "卧底人数" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "卧底人数" })).not.toBeInTheDocument();
   });
 
   it("非房主在设置关闭揭露时摘要写死亡隐藏身份", () => {
@@ -185,7 +185,7 @@ describe("waiting room sharing", () => {
 
     expect(screen.getByRole("textbox", { name: "房间名称" })).toHaveValue("房间");
     // 只有两名参与者：卧底上限为 1，天使不可开启；上限与开启条件都挂在控件的说明上。
-    const undercover = screen.getByRole("textbox", { name: "卧底人数" });
+    const undercover = screen.getByRole("spinbutton", { name: "卧底人数" });
     expect(undercover).toHaveValue("1");
     expect(undercover).toHaveAccessibleDescription("上限 1");
     expect(screen.getByRole("button", { name: "增加卧底人数" })).toBeDisabled();

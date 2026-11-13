@@ -101,7 +101,7 @@ test("增强房双浏览器连续两局、重连、聊天与三档布局", async
     const guestGuessSettings = guest.getByRole("button", { name: "猜测设置", exact: true });
     await expect(guestGuessSettings).toHaveAccessibleDescription(/每次 60 秒/);
     await page.getByRole("button", { name: "猜测设置", exact: true }).click();
-    const actionLimit = page.getByRole("textbox", { name: "每次行动限时" });
+    const actionLimit = page.getByRole("spinbutton", { name: "每次行动限时" });
     await actionLimit.fill("0");
     await actionLimit.press("Enter");
     await expect(guestGuessSettings).toHaveAccessibleDescription(/不限行动时间/);
