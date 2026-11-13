@@ -1,12 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Bot, Crown, History, ListOrdered, Search } from "lucide-react";
 import type { CEERankedLeaderboard, CEERankedProfile, CEERankedState } from "@bakagame/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/Tabs";
-import { useSecondsLeft } from "@/hooks/UseSecondsLeft";
+import { useSecondsLeft, useSecondsSince } from "@/hooks/UseSecondsLeft";
 import { dropIn, readoutTick } from "@/lib/Motion";
 import { cn } from "@/lib/Utils";
 import { formatRankedClock } from "./CEERankedFormat";
@@ -15,24 +15,6 @@ import { CEERankedLeaderboardPanel } from "./CEERankedLeaderboard";
 import { RankedRecentForm, RankedRecordMeter } from "./CEERankedMarks";
 
 type QueuedState = Extract<CEERankedState, { status: "queued" }>;
-
-/** 已排队的整秒数；只在跨秒时写入，避免心跳里白跑渲染。 */
-function useElapsedSeconds(since: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(
-      () =>
-        setNow((current) =>
-          Math.floor((current - since) / 1000) === Math.floor((Date.now() - since) / 1000)
-            ? current
-            : Date.now()
-        ),
-      250
-    );
-    return () => window.clearInterval(timer);
-  }, [since]);
-  return Math.max(0, Math.floor((now - since) / 1000));
-}
 
 /**
  * 分数区：定级中只给进度圆点，打满定级赛才亮出整数分（上榜时旁边挂全服名次）。
@@ -110,7 +92,7 @@ function QueuePanel({
   onCancel: () => void;
   onPlayBot: () => void;
 }) {
-  const elapsed = useElapsedSeconds(queued.queuedAt);
+  const elapsed = useSecondsSince(queued.queuedAt);
   const toFallback = useSecondsLeft(queued.botFallbackAt);
   const botReady = elapsed * 1000 >= queued.botAvailableAt - queued.queuedAt;
   return (

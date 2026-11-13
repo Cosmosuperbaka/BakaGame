@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SERVER_SHUTDOWN_MESSAGE } from "@bakagame/shared/values";
+import { recordClockSample, resetClockSample } from "./UseServerClock";
 import type { WhoIsFakerRoomSnapshot, RoundSummary, ServerMessage } from "@bakagame/shared";
 
 const wsMock = vi.hoisted(() => {
@@ -535,6 +536,47 @@ describe("game store integration", () => {
     const { snapshot, channelNotices } = useWhoIsFakerStore.getState();
     expect(snapshot?.chat).toEqual([]);
     expect(withChannelNotices(snapshot!.chat, channelNotices)).toHaveLength(2);
+  });
+
+  it("本地频道提示的时间戳取校正后的时刻，与服务端聊天按时间排序时不错位", () => {
+    vi.setSystemTime(500_000);
+    // 本机时钟比服务端快 60 秒：服务端此刻是 440_000。
+    recordClockSample(440_000, 500_000, 500_000);
+    useWhoIsFakerStore.getState().setPrivateState({
+      playerId: "p1",
+      sessionToken: "token-1",
+      isQuestioner: false,
+      canSubmitBlankGuess: false,
+      blankGuessUsed: false,
+      nightActionSubmitted: false,
+    });
+    const player = {
+      id: "p1",
+      name: "玩家1",
+      score: 0,
+      membership: "active" as const,
+      online: true,
+      isReady: true,
+      isBot: false,
+      isHost: true,
+      roundStatus: "alive" as const,
+    };
+    const alive: WhoIsFakerRoomSnapshot = {
+      ...gameOverSnapshot("round-1"),
+      status: { phase: "description", roundId: "round-1", started: true, day: 1 },
+      players: [player],
+      chat: [],
+    };
+    useWhoIsFakerStore.getState().setSnapshot(alive);
+    useWhoIsFakerStore.getState().setSnapshot({
+      ...alive,
+      players: [{ ...player, roundStatus: "dead" }],
+    });
+
+    const notices = useWhoIsFakerStore.getState().channelNotices;
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.createdAt).toBe(440_000);
+    resetClockSample();
   });
 
   it("keeps spectators in main channel during assigningQuestioner and wordSubmission, and transitions to ghost upon description", () => {

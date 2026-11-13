@@ -4,8 +4,9 @@ import type { CEERankedGameSummary } from "@bakagame/shared";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/Tooltip";
+import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import {
   RANKED_IDLE_STATE,
   rankedLeaderboard,
@@ -281,6 +282,52 @@ describe("CEERankedHome", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: /先打人机/ }));
     expect(onPlayBot).toHaveBeenCalledOnce();
+  });
+
+  describe("本机时钟不准", () => {
+    afterEach(() => {
+      resetClockSample();
+    });
+
+    /** 把排队态整体挪到服务端时间轴：本机时钟比服务端快 `skewMs`。 */
+    const skewedQueued = (waitedMs: number, skewMs: number) => {
+      const queued = rankedQueuedState(waitedMs);
+      return {
+        ...queued,
+        queuedAt: queued.queuedAt - skewMs,
+        botAvailableAt: queued.botAvailableAt - skewMs,
+        botFallbackAt: queued.botFallbackAt - skewMs,
+      };
+    };
+
+    it("本机时钟快 60 秒：刚排上的队不会显示成已等一分钟、先打人机也不会提前出现", () => {
+      recordClockSample(Date.now() - 60_000, Date.now(), Date.now());
+      withProviders(
+        <CEERankedHome
+          {...props}
+          profile={rankedProfile("rated")}
+          state={skewedQueued(3_000, 60_000)}
+        />
+      );
+
+      expect(screen.getByLabelText(/已等待 3 秒/)).toBeInTheDocument();
+      expect(screen.getByText(/27 秒后自动匹配人机/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /先打人机/ })).not.toBeInTheDocument();
+    });
+
+    it("本机时钟慢 60 秒：已满十秒的队伍照常出现先打人机", () => {
+      recordClockSample(Date.now() + 60_000, Date.now(), Date.now());
+      withProviders(
+        <CEERankedHome
+          {...props}
+          profile={rankedProfile("rated")}
+          state={skewedQueued(12_000, -60_000)}
+        />
+      );
+
+      expect(screen.getByLabelText(/已等待 12 秒/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /先打人机/ })).toBeInTheDocument();
+    });
   });
 
   it("排队中取消匹配与先打人机互斥", async () => {

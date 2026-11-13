@@ -4,6 +4,7 @@ import { permanentRoomErrorMessage, roomIsGone } from "@/lib/PermanentRoomError"
 import * as ws from "@/lib/WhoIsFakerWs";
 import { consumeStateSync } from "@/lib/StateSync";
 import { resolveEndedRoom } from "./RoomEndedEvent";
+import { serverNow } from "./UseServerClock";
 import { saveSessionToken, getSessionToken, clearSessionToken } from "@/lib/Storage";
 import {
   isPermanentRoomError,
@@ -146,7 +147,7 @@ const channelNotice = (
     channel === "ghost"
       ? "已进入观战频道，发言仅对淘汰玩家与观战者可见"
       : "已返回公共聊天频道，所有玩家均可见发言",
-  createdAt: Date.now(),
+  createdAt: serverNow(),
   system: true,
   channel,
 });

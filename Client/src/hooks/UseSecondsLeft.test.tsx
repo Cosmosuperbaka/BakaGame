@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSecondsLeft } from "./UseSecondsLeft";
+import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
+import { useSecondsLeft, useSecondsSince } from "./UseSecondsLeft";
 
 /**
  * 心跳仍按 200ms 走，但显示值只在整秒边界变化：这里数的就是「组件被叫起重跑了几次」，
@@ -22,6 +23,7 @@ describe("useSecondsLeft", () => {
   });
 
   afterEach(() => {
+    resetClockSample();
     vi.useRealTimers();
   });
 
@@ -84,5 +86,57 @@ describe("useSecondsLeft", () => {
     });
     expect(view.result.current).toBe(0);
     expect(renders()).toBe(1);
+  });
+
+  describe("本机时钟不准", () => {
+    it("本机时钟快 60 秒：按服务端时间轴显示剩余秒数，并随时间正常归零", () => {
+      // 本机此刻 100_000，服务端此刻 40_000；截止时刻 70_000 是服务端时间。
+      recordClockSample(40_000, 100_000, 100_000);
+      const { view } = renderCounting(70_000);
+      expect(view.result.current).toBe(30);
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(view.result.current).toBe(20);
+
+      act(() => {
+        vi.advanceTimersByTime(25_000);
+      });
+      expect(view.result.current).toBe(0);
+    });
+
+    it("本机时钟慢 45 秒：不会把还剩半分钟的倒计时显示成 75 秒", () => {
+      recordClockSample(145_000, 100_000, 100_000);
+      const { view } = renderCounting(175_000);
+      expect(view.result.current).toBe(30);
+    });
+
+    it("没有样本时按本机时钟计算", () => {
+      const { view } = renderCounting(130_000);
+      expect(view.result.current).toBe(30);
+    });
+  });
+
+  describe("useSecondsSince", () => {
+    it("本机时钟快 60 秒：已排队秒数按服务端时刻起算，不是一上来就多出一分钟", () => {
+      recordClockSample(40_000, 100_000, 100_000);
+      const view = renderHook(() => useSecondsSince(35_000));
+      expect(view.result.current).toBe(5);
+
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+      expect(view.result.current).toBe(8);
+    });
+
+    it("没有样本时按本机时钟起算，且只在跨秒时更新", () => {
+      const view = renderHook(() => useSecondsSince(97_000));
+      expect(view.result.current).toBe(3);
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(view.result.current).toBe(4);
+    });
   });
 });

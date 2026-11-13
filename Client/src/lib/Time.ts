@@ -1,4 +1,6 @@
-﻿const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "always" });
+﻿import { serverNow } from "@/stores/UseServerClock";
+
+const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "always" });
 
 /** 解析时间串；非法输入返回 null，调用方原样回退。 */
 function parseInstant(dateStr: string): Date | null {
@@ -16,7 +18,7 @@ export function formatRelativeTime(dateStr: string): string {
   const then = parseInstant(dateStr);
   if (!then) return dateStr;
 
-  const seconds = Math.floor((Date.now() - then.getTime()) / 1000);
+  const seconds = Math.floor((serverNow() - then.getTime()) / 1000);
   // 时钟偏差或未来时间戳，显示刚刚。
   if (seconds <= 0) return "刚刚";
 

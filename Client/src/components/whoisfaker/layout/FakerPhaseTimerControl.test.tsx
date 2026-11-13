@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WhoIsFakerPrivateState, WhoIsFakerRoomSnapshot } from "@bakagame/shared";
+import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { FakerPhaseTimerControl } from "./FakerPhaseTimerControl";
 
@@ -182,6 +183,45 @@ describe("PhaseTimerControl", () => {
     await waitFor(() => {
       expect(timeoutListener).toHaveBeenCalled();
       expect(useWhoIsFakerStore.getState().phaseTimedOutEndsAt).toBe(endsAt);
+    });
+  });
+
+  describe("本机时钟不准", () => {
+    const renderWithTimer = (endsAt: number, onTimeout: () => void) => {
+      const snapshot = createBaseSnapshot("description");
+      snapshot.status.phaseTimer = { durationSeconds: 60, endsAt, phase: "description" };
+      useWhoIsFakerStore.setState({
+        snapshot,
+        privateState: createPrivateState(false, "player_2"),
+        phaseTimedOutEndsAt: null,
+      });
+      render(<FakerPhaseTimerControl onTimeout={onTimeout} />);
+    };
+
+    afterEach(() => {
+      resetClockSample();
+    });
+
+    it("本机时钟快 60 秒：服务端时刻还剩 50 秒就不能提前触发超时自动提交", async () => {
+      // 样本：本机此刻比服务端快 60 秒。
+      recordClockSample(Date.now() - 60_000, Date.now(), Date.now());
+      const onTimeout = vi.fn();
+      renderWithTimer(Date.now() - 60_000 + 50_000, onTimeout);
+
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(onTimeout).not.toHaveBeenCalled();
+      expect(useWhoIsFakerStore.getState().phaseTimedOutEndsAt).toBeNull();
+    });
+
+    it("本机时钟慢 60 秒：服务端时刻已到点就要按时触发，不能拖到本机时钟走完", async () => {
+      recordClockSample(Date.now() + 60_000, Date.now(), Date.now());
+      const onTimeout = vi.fn();
+      // 本机看还有 30 秒，服务端时间轴上已过期 30 秒。
+      renderWithTimer(Date.now() + 30_000, onTimeout);
+
+      await waitFor(() => {
+        expect(onTimeout).toHaveBeenCalled();
+      });
     });
   });
 });

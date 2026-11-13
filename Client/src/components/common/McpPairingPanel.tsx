@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { mcpEndpoint, mcpSiteOrigin } from "@/lib/McpConfig";
 import { closePageControl, openPageControl } from "@/lib/SiteWs";
 import { resetPageControl, usePageControl } from "@/stores/UsePageControl";
+import { serverNow } from "@/stores/UseServerClock";
 
 /** 交给 Agent 的接管指令：端点 + 这把一次性配对码，别的一概不需要。 */
 const pageControlPrompt = (code: string): string =>
@@ -77,7 +78,7 @@ export function McpPairingPanel({ blockedReason }: { blockedReason?: string }) {
   // 过期的码已经认领不了，留在面板上只会让人类发出一条没用的指令。
   useEffect(() => {
     if (status !== "open" || expiresAt === undefined) return;
-    const timer = window.setTimeout(resetPageControl, Math.max(0, expiresAt - Date.now()));
+    const timer = window.setTimeout(resetPageControl, Math.max(0, expiresAt - serverNow()));
     return () => window.clearTimeout(timer);
   }, [status, expiresAt]);
 

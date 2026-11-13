@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { recordClockSample, resetClockSample } from "@/stores/UseServerClock";
 import { formatAbsoluteTime, formatRelativeTime } from "./Time";
 
 /** 固定「现在」，否则跨秒的用例会在测试机慢时抖成上一档。 */
@@ -19,7 +20,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetClockSample();
   vi.useRealTimers();
+});
+
+describe("formatRelativeTime 本机时钟不准", () => {
+  it("本机时钟快 10 分钟：服务端 5 分钟前的时刻仍读作 5 分钟前", () => {
+    recordClockSample(NOW.getTime() - 10 * MINUTE, NOW.getTime(), NOW.getTime());
+    expect(formatRelativeTime(ago(15 * MINUTE))).toBe("5分钟前");
+  });
+
+  it("本机时钟慢 2 小时：不会把刚发生的事读成「刚刚」", () => {
+    recordClockSample(NOW.getTime() + 2 * HOUR, NOW.getTime(), NOW.getTime());
+    expect(formatRelativeTime(NOW.toISOString())).toBe("2小时前");
+  });
 });
 
 describe("formatRelativeTime", () => {

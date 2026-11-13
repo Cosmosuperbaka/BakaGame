@@ -6,6 +6,7 @@ import { SegmentedControl, type SegmentedOption } from "@/components/ui/Segmente
 import { useMeasuredHeight } from "@/hooks/UseMeasuredHeight";
 import { useUrgentPulse } from "@/hooks/UseUrgentPulse";
 import { countdownTickMs, dropIn, readoutSwap, spring } from "@/lib/Motion";
+import { serverNow } from "@/stores/UseServerClock";
 import { useWhoIsFakerStore } from "@/stores/UseWhoIsFakerStore";
 import { cn } from "@/lib/Utils";
 
@@ -104,14 +105,14 @@ export function FakerPhaseTimerControl({ className, onTimeout }: Props) {
   const canControl = (isQuestioner || isTestRoomHost) && isSupportedPhase;
 
   // 毫秒级倒计时平滑时钟
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(serverNow);
   useEffect(() => {
     if (!phaseTimer) {
       firedTimeoutForEndsAt.current = null;
       return;
     }
     const interval = window.setInterval(() => {
-      setNow(Date.now());
+      setNow(serverNow());
     }, countdownTickMs);
     return () => window.clearInterval(interval);
   }, [phaseTimer]);
