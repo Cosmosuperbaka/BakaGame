@@ -55,6 +55,7 @@ export default function CEEPage() {
     void release.current
       .then(() => {
         if (active && useCEEStore.getState().connected) return store.subscribeLobby();
+        return undefined;
       })
       .catch((failure) => {
         if (active) store.showToast(ceeErrorMessage(failure));

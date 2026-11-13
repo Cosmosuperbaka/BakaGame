@@ -47,16 +47,18 @@ async function stretchFadeOut(page: Page, text: string) {
         options?: number | KeyframeAnimationOptions
       ) {
         const opacity = (keyframes as unknown as { opacity?: number[] }).opacity;
+        const duration = typeof options === "object" ? options.duration : undefined;
         const fadingOut =
-          typeof options === "object" &&
-          typeof options.duration === "number" &&
+          typeof duration === "number" &&
           opacity?.[0] === 1 &&
           opacity?.[1] === 0 &&
           this.textContent?.includes(text);
         return original.call(
           this,
           keyframes,
-          fadingOut ? { ...options, duration: options.duration * 20 } : options
+          fadingOut
+            ? { ...(options as KeyframeAnimationOptions), duration: duration * 20 }
+            : options
         );
       };
     },

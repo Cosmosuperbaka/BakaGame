@@ -1,7 +1,7 @@
 import {
   expect,
   type BrowserContext,
-  type Console,
+  type ConsoleMessage,
   type Page,
   type Response,
 } from "@playwright/test";
@@ -39,7 +39,7 @@ export function createPageQuality(): PageQuality {
     let telemetryDegraded = false;
     let accountLayerDisabled = false;
     const onPageError = (error: Error) => collected.push(`pageerror: ${error.message}`);
-    const onConsole = (message: Console) => {
+    const onConsole = (message: ConsoleMessage) => {
       if (message.type() !== "error") return;
       if (muted.has(page) && message.text().startsWith("Failed to load resource")) return;
       if (telemetryDegraded && message.text().includes("429 (Too Many Requests)")) return;

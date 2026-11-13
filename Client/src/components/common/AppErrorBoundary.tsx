@@ -17,18 +17,18 @@ interface AppErrorBoundaryState {
  * 不再用 SDK 自带的边界，入口脚本才不必静态引用整个 SDK；SDK 尚未加载时上报会排队补发。
  */
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
-  state: AppErrorBoundaryState = { failed: false };
+  override state: AppErrorBoundaryState = { failed: false };
 
   static getDerivedStateFromError(): AppErrorBoundaryState {
     return { failed: true };
   }
 
-  componentDidCatch(error: unknown, info: ErrorInfo): void {
+  override componentDidCatch(error: unknown, info: ErrorInfo): void {
     captureClientException(error, { componentStack: info.componentStack ?? undefined });
     this.props.onError?.(error);
   }
 
-  render(): ReactNode {
+  override render(): ReactNode {
     return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
