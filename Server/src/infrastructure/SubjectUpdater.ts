@@ -379,14 +379,7 @@ export class SubjectUpdater {
       );
     // 更新 0 行 = 库里没有这个条目（被裁剪或已删除）：不算失败，但也不必排队索引。
     if (!result.changes) return true;
-    if (this.search) {
-      this.db
-        .query<never, [number, number]>(
-          "INSERT INTO bangumi_index_pending (subject_id, queued_at, attempts) VALUES (?,?,0)" +
-            " ON CONFLICT(subject_id) DO UPDATE SET queued_at = max(excluded.queued_at, queued_at + 1)"
-        )
-        .run(subjectId, now);
-    }
+    this.indexQueue.enqueue(subjectId, now);
     return true;
   }
 

@@ -17,6 +17,20 @@ export class IndexQueue {
   ) {}
 
   /** 把待同步队列里的条目批量写进索引；失败计数，超过上限就丢弃。 */
+  /**
+   * 登记一个待同步条目。没有配置索引时队列根本不该存在，直接忽略；重复登记时
+   * 登记时刻严格递增，让「读到的那一版」与之后的重新登记分得清先后。
+   */
+  enqueue(subjectId: number, now: number): void {
+    if (!this.search) return;
+    this.db
+      .query<never, [number, number]>(
+        "INSERT INTO bangumi_index_pending (subject_id, queued_at, attempts) VALUES (?,?,0)" +
+          " ON CONFLICT(subject_id) DO UPDATE SET queued_at = max(excluded.queued_at, queued_at + 1)"
+      )
+      .run(subjectId, now);
+  }
+
   async flush(limit: number): Promise<number> {
     const pending = this.db
       .query<{ subject_id: number; attempts: number; queued_at: number }, [number]>(
