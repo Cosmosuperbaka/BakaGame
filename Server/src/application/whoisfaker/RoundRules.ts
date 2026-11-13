@@ -301,3 +301,13 @@ export const createDescription = (
     createdAt: ctx.now(),
   };
 };
+
+/** 只剩一卧一民两人时，描述结束即卧底胜，不再进投票。 */
+export const isTwoPlayerUndercoverEndgame = (round: GameRound): boolean => {
+  const aliveStates = Object.values(round.assignments).filter((state) => state.alive);
+  return (
+    aliveStates.length === 2 &&
+    aliveStates.filter((state) => state.role === "undercover").length === 1 &&
+    aliveStates.filter((state) => state.role === "civilian").length === 1
+  );
+};
