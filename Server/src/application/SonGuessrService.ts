@@ -1,12 +1,10 @@
-import { computeSongAnswererFactors } from "../domain/SongRules";
 import { createManualLyricClip, createSongLyricClip } from "./songuessr/LyricClip";
 import { songTitleNames } from "./songuessr/LyricTitleGuard";
 import { isAudioTicketMatch } from "./songuessr/AudioTicket";
-import { publicAnime, publicSong } from "./songuessr/RoomViews";
 import { resolveAnimeSong } from "./songuessr/AnimeAutoPick";
 import { resolveSpecifiedAnimeSong } from "./songuessr/AnimeManualList";
 import { clearMusicSession, refreshMusicSessionAccount } from "./songuessr/MusicAuth";
-import { loadSongWithSources, refreshRoundAudio } from "./songuessr/MusicSongLoading";
+import { loadSongWithSources } from "./songuessr/MusicSongLoading";
 import { scheduleMusicSessionRefresh } from "./songuessr/MusicSessionRefresh";
 import {
   hasEnabledPoolAccount,
@@ -35,9 +33,6 @@ import {
   SonGuessrRoomSummary,
   SongClipPreview,
   SongClipRange,
-  SongDetails,
-  SongGuessAttempt,
-  type BangumiSubjectDetails,
   type ConnectionRecord,
 } from "../shared/Index";
 import { type SnapshottedRoom } from "../shared/RoomSnapshot";
@@ -46,22 +41,15 @@ import { SONG_ROOM_SHAPE } from "./songuessr/RoomShape";
 import type { SonGuessrServiceOptions } from "./songuessr/Options";
 import {
   createSonGuessrContext,
-  publishPrivateState,
   publishRoomCalibration,
   type SonGuessrContext,
 } from "./songuessr/Context";
-import {
-  buildPrivateState,
-  buildRoomSnapshot,
-  buildScores,
-  listRoomSummaries,
-} from "./songuessr/RoomViews";
+import { buildPrivateState, buildRoomSnapshot, listRoomSummaries } from "./songuessr/RoomViews";
 import {
   type SongCommandAt,
   isRoomStarting,
   activePlayers,
   appendSystemMessage,
-  canTestSubmitterGuess,
   createPlayer,
   getRoom,
   isTestRoom,
@@ -74,15 +62,7 @@ import {
   submitterCandidates,
 } from "./songuessr/RoundParticipants";
 import { installRound } from "./songuessr/RoundInstall";
-import {
-  answerableUnits,
-  answerElapsedRatio,
-  appendRoundMarks,
-  buildFeedback,
-  isCorrectSong,
-  recordRound,
-  roundScoring,
-} from "./songuessr/RoundScoring";
+import { finishRound, isRoundComplete, settlePlayingRound } from "./songuessr/RoundEngine";
 import { createSonGuessrCommands, type SonGuessrDispatcher } from "./songuessr/Commands";
 import { dispatchCommand } from "./room/CommandTable";
 import { requireMusicQuota } from "./songuessr/MusicCommands";
@@ -115,15 +95,11 @@ import {
 import { musicIpScope } from "../infrastructure/music/MusicIpScope";
 import { createEvent } from "../transport/Packets";
 import {
-  AUDIO_READY_GRACE_MS,
   DEFAULT_SETTINGS,
   MusicAuthPlatform,
-  ROUND_HARD_TIMEOUT_MARGIN_S,
   SUBMIT_SONG_TIMEOUT_MS,
   SonGuessrPlayerRecord,
   SonGuessrRoomRecord,
-  SonGuessrRoundPlayerState,
-  SonGuessrRoundRecord,
   SongUpdateSettingsPayload,
   cloneSettings,
   musicAuthOperationKey,
@@ -135,16 +111,6 @@ const normalizeRoomPassword = (password: string): string => password.trim();
 
 /** 巡检的房间回收结论：`skip` 整间跳过、`grace` 已补校准并跳过、`keep` 继续后续阶段。 */
 type RoomReclaim = "skip" | "grace" | "keep";
-
-/** 一轮回合巡检的共享扫描状态：同一时刻与同一硬超时判定贯穿「补就绪」与「判超时」两步。 */
-type RoundSweep = {
-  room: SonGuessrRoomRecord;
-  round: NonNullable<SonGuessrRoomRecord["currentRound"]>;
-  currentTime: number;
-  /** 硬超时只在巡检开始时判一次：`armRoundDeadlines` 会改写回合时限，事后重算会读到新值。 */
-  isRoundHardExpired: boolean;
-  units: Set<SonGuessrRoundPlayerState>;
-};
 
 export class SonGuessrService implements GameService<SonGuessrClientMessage> {
   readonly ctx: SonGuessrContext;
@@ -179,8 +145,8 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
         ctx,
         handlers: this,
         testBotRound: {
-          isRoundComplete: (room) => this.isRoundComplete(room),
-          finishRound: (room) => this.finishRound(room),
+          isRoundComplete: (room) => isRoundComplete(this.ctx, room),
+          finishRound: (room) => finishRound(this.ctx, room),
         },
       },
       resolveSeat: (connection) => {
@@ -302,7 +268,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.cleanupOfflinePlayers(room, currentTime);
     this.resolveHost(room, currentTime);
     this.expirePendingSubmitter(room, currentTime);
-    this.settlePlayingRound(room, currentTime);
+    settlePlayingRound(this.ctx, room, currentTime);
     publishRoomCalibration(this.ctx, room);
   }
 
@@ -365,78 +331,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     );
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
-  }
-
-  /** 进行中的回合：先按人补音频就绪，再按作答单元判超时，最后按变化结算与广播。 */
-  private settlePlayingRound(room: SonGuessrRoomRecord, currentTime: number): void {
-    const round = room.currentRound;
-    if (room.phase !== "playing" || !round) return;
-    const sweep: RoundSweep = {
-      room,
-      round,
-      currentTime,
-      isRoundHardExpired: round.hardDeadlineAt !== undefined && currentTime >= round.hardDeadlineAt,
-      units: new Set<SonGuessrRoundPlayerState>(),
-    };
-    // 两步都必须跑完：`||` 的短路会让补就绪改动过的回合漏判超时。
-    const armed = this.armExpiredAudioUnits(sweep);
-    const timedOut = this.recordExpiredGuesses(sweep);
-    const changed = armed || timedOut;
-
-    if (changed || sweep.isRoundHardExpired) {
-      if (this.isRoundComplete(room) || sweep.isRoundHardExpired) this.finishRound(room);
-      this.ctx.publishRoom(room);
-    }
-  }
-
-  /**
-   * 音频就绪宽限期结束的补偿：仅强制置为就绪并启动答题计时，绝不能当作「答题超时」扣除猜测配额。
-   * 收下的作答单元交给 `recordExpiredGuesses` 判超时 —— 同队共用一份限时，逐人判会让一次超时扣好几遍。
-   */
-  private armExpiredAudioUnits(sweep: RoundSweep): boolean {
-    const { room, round, currentTime } = sweep;
-    const audioReadyDeadlineAt = round.audioReadyDeadlineAt ?? round.audioPreparationDeadlineAt;
-    let changed = false;
-    for (const [playerId, state] of Object.entries(round.players)) {
-      if (
-        playerId === round.submitterPlayerId &&
-        !canTestSubmitterGuess(this.ctx, room, playerId)
-      ) {
-        continue;
-      }
-      if (this.isUnitFinished(round, state)) continue;
-
-      if (!round.audioReady[playerId] && currentTime >= audioReadyDeadlineAt) {
-        this.armRoundDeadlines(room);
-        round.audioReady[playerId] = true;
-        // 宽限期本身就晚于锚点 15 秒，这里的倒计时必须重新起算，
-        // 不能再用 audioReadyDeadlineAt —— 那样会立刻得到一个已过期的截止时刻，
-        // 下一轮巡检就把补偿出来的答题时间又当成超时收走。队友先就绪时全队计时已在走，不重开。
-        if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
-        changed = true;
-      }
-      sweep.units.add(state);
-    }
-    return changed;
-  }
-
-  /** 按作答单元判答题超时；in-flight 的猜测由回源流程自己结算，硬超时除外。 */
-  private recordExpiredGuesses(sweep: RoundSweep): boolean {
-    let changed = false;
-    for (const state of sweep.units) {
-      // 上游正在校验这次猜测（占位已扣、结果未回）：超时由 in-flight 流程自己判定。
-      // 巡检在这里抢先记一次 timeout，会让一次真实猜测扣掉两次配额，
-      // 并在 attempts 里留下「timeout + wrong/correct」两条互相矛盾的记录。
-      // 例外保留：硬超时必须仍然强制结算，否则一次卡死的 in-flight 会拖住整个回合。
-      if (state.inFlight && !sweep.isRoundHardExpired) continue;
-      const isGuessTimeout =
-        state.deadlineAt !== undefined && state.deadlineAt <= sweep.currentTime;
-      if (isGuessTimeout || sweep.isRoundHardExpired) {
-        this.recordTimeout(sweep.room, state);
-        changed = true;
-      }
-    }
-    return changed;
   }
 
   async createRoom(
@@ -667,7 +561,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       player.id,
       `${player.name} 离开房间，出题已中止，请重新指定出题人`
     );
-    if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
+    if (room.phase === "playing" && isRoundComplete(this.ctx, room)) finishRound(this.ctx, room);
 
     this.ctx.touch(room);
     appendSystemMessage(this.ctx, room, `${player.name} 离开了房间`);
@@ -856,7 +750,7 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
       `出题人 ${target.name} 已被移出，请重新指定出题人`
     );
     if (room.hostPlayerId === target.id) this.reassignRemovedHost(room);
-    if (room.phase === "playing" && this.isRoundComplete(room)) this.finishRound(room);
+    if (room.phase === "playing" && isRoundComplete(this.ctx, room)) finishRound(this.ctx, room);
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     this.ctx.publishLobby();
@@ -1183,8 +1077,8 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.publishRoom(room);
     this.ctx.publishLobby();
 
-    if (this.isRoundComplete(room)) {
-      this.finishRound(room);
+    if (isRoundComplete(this.ctx, room)) {
+      finishRound(this.ctx, room);
       this.ctx.publishRoom(room);
     }
     return { roundNumber };
@@ -1219,364 +1113,11 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     this.ctx.touch(room);
     this.ctx.publishRoom(room);
     this.ctx.publishLobby();
-    if (this.isRoundComplete(room)) {
-      this.finishRound(room);
+    if (isRoundComplete(this.ctx, room)) {
+      finishRound(this.ctx, room);
       this.ctx.publishRoom(room);
     }
     return { roundNumber };
-  }
-
-  /**
-   * 首名玩家真正具备答题条件时，才锚定本回合的「音频就绪宽限期」与「硬截止」。
-   * 幂等：同一回合只锚定一次，后续玩家就绪不会顺延其他玩家的倒计时。
-   */
-  private armRoundDeadlines(room: SonGuessrRoomRecord) {
-    const round = room.currentRound;
-    if (!round || round.hardDeadlineAt !== undefined) return;
-    const now = this.ctx.now();
-    round.audioReadyDeadlineAt = now + AUDIO_READY_GRACE_MS;
-    // 硬截止必须覆盖本回合全部猜测窗口：每次作答（猜错、超时或宽限补偿）都会重开
-    // 一整段 `guessDurationSeconds`。只按单次窗口计算时，第一次超时后剩余窗口就只会
-    // 剩下一段裕量，后续猜测的倒计时被越截越短，最后一次往往提交即判超时。
-    // 裕量同样按窗口计，吸收每次校验猜测回源的往返耗时。
-    round.hardDeadlineAt =
-      now +
-      round.settings.maxGuessesPerRound *
-        (round.settings.guessDurationSeconds + ROUND_HARD_TIMEOUT_MARGIN_S) *
-        1_000;
-    round.answeringStartedAt = now;
-  }
-
-  audioReady(at: SongCommandAt, roundNumber: number) {
-    const { room, seat: player } = at;
-    // 页面切后台/重连时可能补发旧回合的 ready；状态过渡期间应幂等忽略，
-    // 不把一个正常的陈旧通知显示成「当前没有进行中的回合」。
-    if (room.phase !== "playing" || !room.currentRound || room.runtime?.automaticRoundLoading) {
-      return { ignored: true };
-    }
-    const round = room.currentRound;
-    if (round.number !== roundNumber) return { ignored: true };
-    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
-    if (
-      !state ||
-      (player.id === round.submitterPlayerId &&
-        !canTestSubmitterGuess(this.ctx, room, player.id)) ||
-      player.membership !== "active"
-    ) {
-      return { ignored: true };
-    }
-    if (!round.audioReady[player.id] && !this.isUnitFinished(round, state)) {
-      // 首个就绪的玩家定义本回合的倒计时起点；此时才锚定硬截止。
-      this.armRoundDeadlines(room);
-      round.audioReady[player.id] = true;
-      // 必须用「当前时刻」起算，不能复用本回合统一的 audioReadyDeadlineAt：
-      // 自动选曲会占用数秒到数十秒，用旧锚点会得到一个可能已过期的截止时刻，
-      // 巡检随即把它当成答题超时，玩家还没数到 0 就被判超时。
-      // 队伍共用一份限时：队友先就绪时计时已经开始，不再重开。
-      if (state.deadlineAt === undefined) this.restartGuessDeadline(room, state);
-    }
-    this.ctx.touch(room);
-    // 全队的截止时刻可能刚起算，队友的私有状态一并刷新。
-    for (const memberId of state.memberIds) {
-      const member = room.players[memberId];
-      if (member) publishPrivateState(this.ctx, room, member);
-    }
-    return { deadlineAt: state.deadlineAt };
-  }
-
-  async audioFailed(at: SongCommandAt, roundNumber: number) {
-    const { connection, room, seat: player } = at;
-    const round = room.currentRound;
-    if (room.phase !== "playing" || !round || round.number !== roundNumber)
-      return { ignored: true };
-    if (
-      player.membership !== "active" ||
-      (player.id === round.submitterPlayerId && !canTestSubmitterGuess(this.ctx, room, player.id))
-    ) {
-      return { ignored: true };
-    }
-    // 刷新播放地址同样命中那个共享的上游实例，必须一起计入配额。
-    if (!this.ctx.musicLimiter.allow(connection.id, this.ctx.now())) {
-      throw new AppError("RATE_LIMITED", "音乐请求过于频繁，请稍后再试");
-    }
-    const provider = this.options.musicProvider;
-    const refresh = provider.refreshSongAudio?.bind(provider);
-    if (!refresh) throw new AppError("MUSIC_API_UNAVAILABLE", "当前音乐 API 不支持刷新播放地址");
-    const audioUrl = await refreshRoundAudio(this.ctx, room, round, refresh);
-    if (room.phase !== "playing" || room.currentRound !== round) return { ignored: true };
-    round.song = { ...round.song, audioUrl };
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return { refreshed: true };
-  }
-
-  /**
-   * 提交时补结算已经过去的猜测窗口。
-   *
-   * 巡检每 10 秒才落一次超时，旧窗口到期到巡检落账之间存在空窗：这期间提交的猜测
-   * 属于下一段窗口（玩家搜歌时还没超时、点提交时才过点），不能拿旧截止时刻直接拒绝。
-   * 这里按巡检同一口径先记一次超时并重开倒计时，让本次提交作为新窗口的第一次作答继续；
-   * 次数刚好用尽时由调用方重新校验后拒绝。
-   *
-   * 回合硬截止已过时与巡检一致：强制结算整回合，不再接受猜测。
-   */
-  private settleExpiredGuessWindow(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
-    const round = room.currentRound;
-    if (!round) return;
-    const now = this.ctx.now();
-    if (round.hardDeadlineAt !== undefined && now >= round.hardDeadlineAt) {
-      this.settlePlayingRound(room, now);
-      return;
-    }
-    if (state.deadlineAt === undefined || state.deadlineAt > now) return;
-    this.recordTimeout(room, state);
-    if (this.isRoundComplete(room)) this.finishRound(room);
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-  }
-
-  /** 关键修复：在让出事件循环前先占位自增并加锁，防止并发穿透配额上限。 */
-  private beginGuessAttempt(state: SonGuessrRoundPlayerState, player: SonGuessrPlayerRecord) {
-    state.inFlight = true;
-    state.guessesUsed += 1;
-    player.totalGuesses += 1;
-  }
-
-  /** 上游查询失败只回滚本回合的占位：回合已切换时计数归入上一局，不再改动。 */
-  private rollbackGuessAttempt(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
-    player: SonGuessrPlayerRecord,
-    state: SonGuessrRoundPlayerState
-  ) {
-    if (room.phase === "playing" && room.currentRound === round) {
-      state.guessesUsed = Math.max(0, state.guessesUsed - 1);
-      player.totalGuesses = Math.max(0, player.totalGuesses - 1);
-    }
-    state.inFlight = false;
-  }
-
-  /** 异步返回后复验房间与回合状态，失效时先释放占位再报错。 */
-  private requireGuessStillCurrent(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
-    player: SonGuessrPlayerRecord,
-    state: SonGuessrRoundPlayerState
-  ) {
-    if (room.phase !== "playing" || room.currentRound !== round || player.membership !== "active") {
-      state.inFlight = false;
-      throw new AppError("ROUND_EXPIRED", "该回合已结束");
-    }
-    state.inFlight = false;
-  }
-
-  /** 猜中计分，猜错则续期下一次猜测的倒计时。 */
-  private settleGuessResult(
-    room: SonGuessrRoomRecord,
-    round: SonGuessrRoundRecord,
-    player: SonGuessrPlayerRecord,
-    state: SonGuessrRoundPlayerState,
-    correct: boolean
-  ) {
-    if (!correct) {
-      this.restartGuessDeadline(room, state);
-      return;
-    }
-    state.correct = true;
-    state.deadlineAt = undefined;
-    player.correctGuesses += 1;
-    const factors = computeSongAnswererFactors({
-      bloodMode: round.settings.bloodMode,
-      // 每队只有一位猜中者进 correctPlayerIds，名次即本单元的抢答顺序。
-      rank: round.correctPlayerIds.length + 1,
-      answerableCount: answerableUnits(this.ctx, room, round).length,
-      elapsedRatio: answerElapsedRatio(round, this.ctx.now()),
-      guessesUsed: state.guessesUsed,
-      maxGuessesPerRound: round.settings.maxGuessesPerRound,
-    });
-    player.score += factors.score;
-    round.answererBreakdown.push({ playerId: player.id, ...factors });
-    round.correctPlayerIds.push(player.id);
-  }
-
-  async guess(at: SongCommandAt, songId: string) {
-    const { room, seat: player } = at;
-    const round = this.requireActiveRound(room);
-    // 猜番回合的答案是番剧，不是歌：用猜歌命令认出出题歌曲就会绕过猜番。按回合本身判定题型。
-    if (round.settings.questionType !== "song" || round.anime) {
-      throw new AppError("INVALID_QUESTION_TYPE", "当前房间是听歌猜番模式");
-    }
-    if (player.membership !== "active") throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜歌");
-    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
-    if (
-      player.id === round.submitterPlayerId &&
-      !canTestSubmitterGuess(this.ctx, room, player.id)
-    ) {
-      throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜歌");
-    }
-    if (round.observerIds.includes(player.id))
-      throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
-    if (!state) throw new AppError("SPECTATOR_FORBIDDEN", "你本局不参与猜歌");
-    if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
-    this.ensureUnitOpen(round, state, player.id);
-    this.settleExpiredGuessWindow(room, state);
-    if (room.phase !== "playing" || room.currentRound !== round) {
-      throw new AppError("ROUND_EXPIRED", "该回合已结束");
-    }
-    // 补记的超时可能正好用掉最后一次机会，必须按结算后的状态重新校验。
-    this.ensureUnitOpen(round, state, player.id);
-    this.beginGuessAttempt(state, player);
-
-    let guessedSong: SongDetails;
-    try {
-      guessedSong = await withSongAccount(this.ctx, room, songId, (cookie) =>
-        this.options.musicProvider.getSongMetadata(songId, cookie)
-      );
-    } catch (error) {
-      this.rollbackGuessAttempt(room, round, player, state);
-      throw error;
-    }
-
-    // 异步返回后复验房间与回合状态
-    this.requireGuessStillCurrent(room, round, player, state);
-    const correct = isCorrectSong(guessedSong, round);
-    const attempt: SongGuessAttempt = {
-      id: this.ctx.ids.next("song_guess"),
-      playerId: player.id,
-      playerName: player.name,
-      guessNumber: state.guessesUsed,
-      createdAt: this.ctx.now(),
-      result: correct ? "correct" : "wrong",
-      guessedSong: publicSong(guessedSong),
-      feedback: buildFeedback(guessedSong, round.song),
-    };
-    round.attempts.push(attempt);
-
-    this.settleGuessResult(room, round, player, state, correct);
-
-    if (this.isRoundComplete(room)) {
-      this.finishRound(room);
-    }
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return {
-      attempt,
-      remainingGuesses: Math.max(0, round.settings.maxGuessesPerRound - state.guessesUsed),
-    };
-  }
-
-  async guessAnime(at: SongCommandAt, subjectId: string) {
-    const { room, seat: player } = at;
-    const round = this.requireActiveRound(room);
-    if (room.settings.questionType !== "anime" || !round.anime) {
-      throw new AppError("INVALID_QUESTION_TYPE", "当前房间不是听歌猜番模式");
-    }
-    if (round.observerIds.includes(player.id))
-      throw new AppError("TEAM_OBSERVER", "队友出题，你本局观战");
-    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
-    if (!state || player.membership !== "active")
-      throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能猜番");
-    if (
-      player.id === round.submitterPlayerId &&
-      !canTestSubmitterGuess(this.ctx, room, player.id)
-    ) {
-      throw new AppError("SUBMITTER_CANNOT_GUESS", "出题人不能参与猜番");
-    }
-    if (!round.audioReady[player.id]) throw new AppError("AUDIO_NOT_READY", "音频尚未准备完成");
-    this.ensureUnitOpen(round, state, player.id);
-    this.settleExpiredGuessWindow(room, state);
-    if (room.phase !== "playing" || room.currentRound !== round) {
-      throw new AppError("ROUND_EXPIRED", "该回合已结束");
-    }
-    // 补记的超时可能正好用掉最后一次机会，必须按结算后的状态重新校验。
-    this.ensureUnitOpen(round, state, player.id);
-
-    const provider = this.options.bangumiProvider;
-    if (!provider) throw new AppError("BANGUMI_API_UNAVAILABLE", "当前未配置 Bangumi 接口");
-    this.beginGuessAttempt(state, player);
-    let guessedAnime: BangumiSubjectDetails;
-    try {
-      guessedAnime = await provider.getSubject(subjectId);
-    } catch (error) {
-      this.rollbackGuessAttempt(room, round, player, state);
-      throw error;
-    }
-    this.requireGuessStillCurrent(room, round, player, state);
-    const correct = guessedAnime.id === round.anime.id;
-    const attempt: SongGuessAttempt = {
-      id: this.ctx.ids.next("song_guess"),
-      playerId: player.id,
-      playerName: player.name,
-      guessNumber: state.guessesUsed,
-      createdAt: this.ctx.now(),
-      result: correct ? "correct" : "wrong",
-      guessedAnime: publicAnime(guessedAnime),
-    };
-    round.attempts.push(attempt);
-    this.settleGuessResult(room, round, player, state, correct);
-    if (this.isRoundComplete(room)) this.finishRound(room);
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return {
-      attempt,
-      remainingGuesses: Math.max(0, round.settings.maxGuessesPerRound - state.guessesUsed),
-    };
-  }
-
-  giveUp(at: SongCommandAt) {
-    const { room, seat: player } = at;
-    const round = this.requireActiveRound(room);
-    const state = ensureRoundPlayerState(this.ctx, room, player) ?? round.players[player.id];
-    if (!state || player.membership !== "active") {
-      throw new AppError("SPECTATOR_FORBIDDEN", "旁观者不能执行猜歌操作");
-    }
-    if (
-      player.id === round.submitterPlayerId &&
-      !canTestSubmitterGuess(this.ctx, room, player.id)
-    ) {
-      throw new AppError("SUBMITTER_CANNOT_GIVE_UP", "出题人无需放弃");
-    }
-    if (state.inFlight)
-      throw new AppError(
-        "GUESS_IN_PROGRESS",
-        state.memberIds.length > 1 ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候"
-      );
-    if (state.correct)
-      throw new AppError(
-        "ALREADY_CORRECT",
-        state.memberIds.length > 1 ? "本队已经猜中了" : "你已经猜对了"
-      );
-    if (state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound) {
-      throw new AppError(
-        "ROUND_ACTION_FINISHED",
-        state.memberIds.length > 1 ? "本队已完成本回合" : "你已完成本回合操作"
-      );
-    }
-
-    state.gaveUp = true;
-    state.deadlineAt = undefined;
-    round.attempts.push({
-      id: this.ctx.ids.next("song_guess"),
-      playerId: player.id,
-      playerName: player.name,
-      guessNumber: state.guessesUsed + 1,
-      createdAt: this.ctx.now(),
-      result: "gaveUp",
-    });
-    if (this.isRoundComplete(room)) this.finishRound(room);
-    this.ctx.touch(room);
-    this.ctx.publishRoom(room);
-    return { gaveUp: true };
-  }
-
-  skipRound(at: SongCommandAt) {
-    const { room } = at;
-    this.requireActiveRound(room);
-    // 跳过不参与结算：出题人拿不到任何奖励，避免「选出题人 → 立刻跳过」的零成本刷分。
-    this.finishRound(room, true);
-    this.ctx.publishRoom(room);
-    this.ctx.publishLobby();
-    return { skipped: true };
   }
 
   async nextRound(at: SongCommandAt) {
@@ -1729,135 +1270,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     return { waiting: true, roundNumber: room.roundNumber };
   }
 
-  /**
-   * 记一次超时。队伍与 CEE 同口径：按当时在线的队员人数扣次数（不超过剩余次数），每人记一条；
-   * 无人在线时（含个人掉线）仍扣一次，记在第一位队员名下，回合不会因为掉线卡住。
-   */
-  private recordTimeout(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
-    const round = room.currentRound;
-    if (!round || this.isUnitFinished(round, state)) return;
-    const members = state.memberIds.filter((id) => room.players[id]);
-    const online = members.filter((id) => room.players[id]!.online);
-    const actors = (online.length ? online : members.slice(0, 1)).slice(
-      0,
-      round.settings.maxGuessesPerRound - state.guessesUsed
-    );
-    for (const playerId of actors) {
-      const player = room.players[playerId]!;
-      state.guessesUsed += 1;
-      player.totalGuesses += 1;
-      round.attempts.push({
-        id: this.ctx.ids.next("song_guess"),
-        playerId,
-        playerName: player.name,
-        guessNumber: state.guessesUsed,
-        createdAt: this.ctx.now(),
-        result: "timeout",
-      });
-    }
-    this.restartGuessDeadline(room, state);
-  }
-
-  /** 作答单元已结束：猜中、放弃或次数用尽。 */
-  private isUnitFinished(round: SonGuessrRoundRecord, state: SonGuessrRoundPlayerState) {
-    return state.correct || state.gaveUp || state.guessesUsed >= round.settings.maxGuessesPerRound;
-  }
-
-  /** 猜歌、猜番共用的单元检查；队伍里的提示写「本队」，免得队友以为是自己点过。 */
-  private ensureUnitOpen(
-    round: SonGuessrRoundRecord,
-    state: SonGuessrRoundPlayerState,
-    playerId: string
-  ) {
-    const teamed = state.memberIds.length > 1;
-    if (state.correct) {
-      throw new AppError(
-        "ALREADY_CORRECT",
-        round.correctPlayerIds.includes(playerId) ? "你已经猜对了" : "队友已经猜中了"
-      );
-    }
-    if (state.gaveUp)
-      throw new AppError("ALREADY_GAVE_UP", teamed ? "本队已经放弃本回合" : "你已经放弃本回合");
-    if (state.inFlight)
-      throw new AppError(
-        "GUESS_IN_PROGRESS",
-        teamed ? "队友正在提交猜测，请稍候" : "正在校验上一次猜测，请稍候"
-      );
-    if (state.guessesUsed >= round.settings.maxGuessesPerRound) {
-      throw new AppError(
-        "NO_MORE_GUESSES",
-        teamed ? "本队本回合猜测次数已用完" : "本回合猜测次数已用完"
-      );
-    }
-  }
-
-  /** 与 `submitterId` 同队的其他参与玩家；出题人个人游玩或没有出题人（自动出题）时为空。 */
-  /**
-   * 重开一次猜测倒计时。倒计时的锚点必须永远取「当前时刻」，且不得超过回合硬截止：
-   * 用旧锚点（如本回合统一的 audioReadyDeadlineAt）续期，会得到一个可能已经过期的时刻，
-   * 巡检随即把它当成一次「答题超时」——玩家的倒计时还没归零就被判超时，
-   * 或者归零后要等下一轮 10 秒巡检才真正结算。
-   */
-  private restartGuessDeadline(room: SonGuessrRoomRecord, state: SonGuessrRoundPlayerState) {
-    const round = room.currentRound;
-    if (
-      !round ||
-      !round.settings.showGuessTimer ||
-      state.correct ||
-      state.gaveUp ||
-      state.guessesUsed >= round.settings.maxGuessesPerRound
-    ) {
-      state.deadlineAt = undefined;
-      return;
-    }
-    const deadlineAt = this.ctx.now() + round.settings.guessDurationSeconds * 1_000;
-    // 单次猜测的倒计时绝不能越过回合硬截止，否则玩家的可见倒计时会长于真实剩余时间：
-    // 界面显示还剩数十秒，房间却已经强制结算。
-    state.deadlineAt =
-      round.hardDeadlineAt === undefined ? deadlineAt : Math.min(deadlineAt, round.hardDeadlineAt);
-  }
-
-  /**
-   * @param skipped 房主直接跳过本回合。跳过不是「无人猜中」，
-   *   而是「这一轮没有真正发生过」，因此不计出题人奖励 ——
-   *   否则房主反复「选出题人 → 立刻跳过」就能零成本刷分。
-   */
-  private finishRound(room: SonGuessrRoomRecord, skipped = false) {
-    const round = room.currentRound;
-    if (!round || room.phase !== "playing") return;
-    const submitter = room.players[round.submitterPlayerId];
-    const scoring = roundScoring(this.ctx, room, round);
-    if (submitter && !skipped) submitter.score += scoring.submitterScore;
-
-    for (const state of Object.values(round.players)) state.deadlineAt = undefined;
-    appendRoundMarks(room, round);
-    room.roundSummary = {
-      roundNumber: round.number,
-      song: {
-        ...publicSong(round.song),
-        chorus: round.song.chorus,
-        releaseYear: round.song.releaseYear,
-        popularity: round.song.popularity,
-        language: round.song.language,
-        encyclopedia: round.song.encyclopedia,
-      },
-      ...(round.anime ? { anime: publicAnime(round.anime) } : {}),
-      ...(round.animeTrack ? { animeTrack: round.animeTrack } : {}),
-      submitterPlayerId: round.submitterPlayerId,
-      correctPlayerIds: [...round.correctPlayerIds],
-      attempts: [...round.attempts],
-      scores: buildScores(this.ctx, room, round.startScores),
-      ...(scoring.breakdown ? { breakdown: scoring.breakdown } : {}),
-    };
-    room.phase = "roundResult";
-    recordRound(this.ctx, room, round, room.roundSummary, skipped);
-    this.ctx.touch(room);
-    this.ctx.log("song.game.round_finished", room.id, round.submitterPlayerId, {
-      roundNumber: round.number,
-      correctCount: round.correctPlayerIds.length,
-    });
-  }
-
   private applyQueuedMemberships(room: SonGuessrRoomRecord) {
     for (const player of Object.values(room.players)) {
       const membership = player.nextRoundMembership;
@@ -1890,23 +1302,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     return candidates[(previousIndex + 1 + candidates.length) % candidates.length];
   }
 
-  private isRoundComplete(room: SonGuessrRoomRecord) {
-    const round = room.currentRound;
-    if (!round) return false;
-    // 关掉血战时，第一个猜中就把本局结束：其余人不再继续作答，也没有名次可争。
-    if (!round.settings.bloodMode && round.correctPlayerIds.length > 0) return true;
-    const guessers = activePlayers(room).filter(
-      (player) =>
-        (player.id !== round.submitterPlayerId ||
-          canTestSubmitterGuess(this.ctx, room, player.id)) &&
-        !round.observerIds.includes(player.id)
-    );
-    return guessers.every((player) => {
-      const state = round.players[player.id];
-      return !state || this.isUnitFinished(round, state);
-    });
-  }
-
   private closeRoom(room: SonGuessrRoomRecord, reason: string) {
     // 房间销毁 = 这一局结束：收尾对局记录、通知并解绑全部连接，随后清玩法旁表、删房、刷新大厅。
     dissolveRoom(this.roomKernel, room, { roomId: room.id, reason });
@@ -1926,13 +1321,6 @@ export class SonGuessrService implements GameService<SonGuessrClientMessage> {
     const previousHostId = room.hostPlayerId;
     bindSeat(this.roomKernel, room, player, connection);
     this.settleHostChange(room, previousHostId);
-  }
-
-  private requireActiveRound(room: SonGuessrRoomRecord) {
-    if (room.phase !== "playing" || !room.currentRound) {
-      throw new AppError("NO_ACTIVE_ROUND", "当前没有进行中的回合");
-    }
-    return room.currentRound;
   }
 
   private ensureConnectionFree(connection: ConnectionRecord) {

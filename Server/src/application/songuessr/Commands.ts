@@ -22,6 +22,7 @@ import { addBots, removeBots, type TestBotRoundHooks } from "./dev/TestBots";
 import type { SonGuessrContext } from "./Context";
 import type { SonGuessrPlayerRecord, SonGuessrRoomRecord } from "./Records";
 import { isRoomStarting, isTestRoom } from "./RoomAccess";
+import { audioFailed, audioReady, giveUp, guess, guessAnime, skipRound } from "./RoundEngine";
 
 /**
  * 仍在服务门面里的命令处理：它们牵涉回合、计分与选歌，随回合逻辑后续拆出后，
@@ -45,12 +46,6 @@ type RoomHandlers = Pick<
   | "getSongClipPreview"
   | "submitSong"
   | "submitAnime"
-  | "audioReady"
-  | "audioFailed"
-  | "guess"
-  | "guessAnime"
-  | "giveUp"
-  | "skipRound"
   | "nextRound"
   | "finishGame"
 >;
@@ -324,32 +319,32 @@ export const createSonGuessrCommands = (ctx: SonGuessrContext): SonGuessrCommand
   "song.game.audioReady": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.audioReady(at, m.payload.roundNumber),
+    run: (deps, at, m) => audioReady(deps.ctx, at, m.payload.roundNumber),
   },
   "song.game.audioFailed": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.audioFailed(at, m.payload.roundNumber),
+    run: (deps, at, m) => audioFailed(deps.ctx, at, m.payload.roundNumber),
   },
   "song.game.guess": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.guess(at, m.payload.songId),
+    run: (deps, at, m) => guess(deps.ctx, at, m.payload.songId),
   },
   "song.game.guessAnime": {
     access: "seat",
     phases: "any",
-    run: (deps, at, m) => deps.handlers.guessAnime(at, m.payload.subjectId),
+    run: (deps, at, m) => guessAnime(deps.ctx, at, m.payload.subjectId),
   },
   "song.game.giveUp": {
     access: "seat",
     phases: "any",
-    run: (deps, at) => deps.handlers.giveUp(at),
+    run: (deps, at) => giveUp(deps.ctx, at),
   },
   "song.game.skipRound": {
     access: "host",
     phases: "any",
-    run: (deps, at) => deps.handlers.skipRound(at),
+    run: (deps, at) => skipRound(deps.ctx, at),
   },
   "song.game.nextRound": {
     access: "host",
