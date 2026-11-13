@@ -1,60 +1,32 @@
-import {
-  useState,
-  useRef,
-  useCallback,
-  useEffect,
-  useId,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  type Ref,
-  type RefObject,
-} from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef, useCallback, useEffect, useId, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import {
-  AnimatePresence,
-  animate,
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  type MotionValue,
-  type Transition,
-} from "framer-motion";
+import { AnimatePresence, animate, motion, useReducedMotion } from "framer-motion";
 import { ArrowDown, AtSign, Send, Smile } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { MessageBubble, type ChatMentionPlayer } from "@/components/common/chat/ChatMessage";
+import { trailingRepeatChain } from "@/components/common/chat/RepeatChain";
+import {
+  MessageShell,
+  SendThrow,
+  type SendThrowState,
+  type ThrowHandle,
+  type ThrowHandoff,
+} from "@/components/common/chat/ChatThrow";
 import { Input } from "@/components/ui/Input";
 import { ScrollArea } from "@/components/ui/ScrollArea";
-import { Hint } from "@/components/ui/Tooltip";
 import { EmojiPicker } from "@/components/common/EmojiPicker";
 import {
-  byAxes,
   chatMessageLaunch,
   chatThrow,
-  iconTappable,
   jitterShape,
   optionTappable,
   popover,
-  receiptMark,
   repeatStair,
-  spring,
-  springWithVelocity,
   stepJitterAnimation,
   systemNotice,
 } from "@/lib/Motion";
-import {
-  STICKER_PREFIX,
-  isValidStickerPath,
-  loadStickerLabels,
-  type StickerLabelIndex,
-} from "@/lib/Stickers";
-import {
-  applyMention,
-  filterMentionCandidates,
-  mentionsPlayer,
-  readMentionQuery,
-  splitMentions,
-} from "@/lib/Mentions";
+import { STICKER_PREFIX, loadStickerLabels, type StickerLabelIndex } from "@/lib/Stickers";
+import { applyMention, filterMentionCandidates, readMentionQuery } from "@/lib/Mentions";
 import { cn } from "@/lib/Utils";
 import { useChatDraft } from "@/hooks/UseChatDraft";
 import { useStickToBottom } from "@/hooks/UseStickToBottom";
@@ -66,12 +38,6 @@ const MENTION_LIMIT = 6;
 /** 系统提示、阶段提醒与频道说明共用的无背景居中文本 */
 const SYSTEM_TEXT =
   "min-w-0 whitespace-pre-wrap py-1 text-center text-xs text-muted-foreground [overflow-wrap:anywhere]";
-
-/** 提及联想与高亮匹配所需的最小玩家契约 */
-export interface ChatMentionPlayer {
-  id: string;
-  name: string;
-}
 
 export interface ChatPanelProps {
   /** 聊天消息列表（按时间戳正序） */
@@ -100,371 +66,6 @@ export interface ChatPanelProps {
   maxLength?: number;
   /** 外层容器扩展类名 */
   className?: string;
-}
-
-/** 掷出中的胶囊：气泡接手时读它此刻的位置与速度。 */
-interface ThrowHandle {
-  node: HTMLDivElement | null;
-  x: MotionValue<number>;
-  y: MotionValue<number>;
-}
-
-/** 一次发送的胶囊：起点贴着输入框里的文字。 */
-interface SendThrowState {
-  key: number;
-  text: string;
-  anchor: { left: number; top: number; height: number; maxWidth: number };
-  /** `fly` 掷出并悬停等回显；`recall` 没发出去，退回输入框把内容还给玩家 */
-  phase: "fly" | "recall";
-}
-
-/** 回显接手胶囊所需的两样东西：胶囊句柄，与接手后撤掉胶囊的回调。 */
-interface ThrowHandoff {
-  capsule: RefObject<ThrowHandle | null>;
-  onTake: () => void;
-}
-
-const centerOf = (rect: DOMRect) => ({
-  x: rect.left + rect.width / 2,
-  y: rect.top + rect.height / 2,
-});
-
-/** 气泡接手时相对胶囊的尺寸比；量不到尺寸（未布局）时按原大处理。 */
-const handoffScale = (from: number, own: number) =>
-  own > 0 ? Math.min(chatThrow.scale.max, Math.max(chatThrow.scale.min, from / own)) : 1;
-
-/**
- * 发送的第一段：输入框里的文字凝成一枚胶囊，被掷到输入区右上方等回显。
- * 两轴推力不同：纵向走 `spring.thrust` 先到，横向走更慢的 `spring.push` 后到，轨迹是一道向右上方弯过去的弧；
- * 掷出的冲量（`chatThrow.impulse`）让主轴尺度鼓起、副轴收窄，起止都是原大，形变只来自初速度，按 thrust / wobble 回弹。
- * 收回时按 `spring.recall` 退回输入框、缩成一道缝。挂在 body 上，不被输入区与列表的滚动区裁切。
- */
-function SendThrow({
-  ref,
-  text,
-  anchor,
-  phase,
-  onRecalled,
-}: Omit<SendThrowState, "key"> & { ref: Ref<ThrowHandle>; onRecalled: () => void }) {
-  const nodeRef = useRef<HTMLDivElement>(null);
-  const vectorRef = useRef({ dx: 0, dy: 0 });
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const scaleX = useMotionValue(1);
-  const scaleY = useMotionValue(1);
-  useImperativeHandle(ref, () => ({ node: nodeRef.current, x, y }), [x, y]);
-
-  useLayoutEffect(() => {
-    const node = nodeRef.current;
-    if (!node) return;
-    // 落点：升到输入框上方，右缘对齐输入框右缘，靠向自己那一侧的气泡。
-    const vector = {
-      dx: Math.max(0, anchor.maxWidth - node.offsetWidth),
-      dy: -anchor.height * chatThrow.lift,
-    };
-    vectorRef.current = vector;
-    const { impulse, launch } = chatThrow;
-    const velocity = byAxes(vector, impulse.along, impulse.across);
-    const springs = byAxes<Transition>(vector, spring.thrust, spring.wobble);
-    const controls = [
-      animate(x, vector.dx, springWithVelocity(spring.push, launch, 0, vector.dx)),
-      animate(y, vector.dy, springWithVelocity(spring.thrust, launch, 0, vector.dy)),
-      animate(scaleX, 1, { ...springs.scaleX, velocity: velocity.scaleX }),
-      animate(scaleY, 1, { ...springs.scaleY, velocity: velocity.scaleY }),
-    ];
-    return () => controls.forEach((control) => control.stop());
-  }, [anchor, x, y, scaleX, scaleY]);
-
-  useLayoutEffect(() => {
-    if (phase !== "recall") return;
-    const shape = byAxes(vectorRef.current, chatThrow.into.along, chatThrow.into.across);
-    const controls = [
-      animate(x, 0, spring.recall),
-      animate(y, 0, spring.recall),
-      animate(scaleX, shape.scaleX, spring.recall),
-      animate(scaleY, shape.scaleY, spring.recall),
-    ];
-    void Promise.all(controls.map((control) => control.finished)).then(onRecalled);
-    return () => controls.forEach((control) => control.stop());
-  }, [phase, x, y, scaleX, scaleY, onRecalled]);
-
-  return createPortal(
-    <motion.div
-      ref={nodeRef}
-      aria-hidden="true"
-      className="pointer-events-none fixed z-popover flex items-center truncate rounded-xl rounded-br-sm bg-primary px-3 text-sm text-primary-foreground shadow-2xs"
-      style={{
-        left: anchor.left,
-        top: anchor.top,
-        height: anchor.height,
-        maxWidth: anchor.maxWidth,
-        x,
-        y,
-        scaleX,
-        scaleY,
-      }}
-    >
-      {text}
-    </motion.div>,
-    document.body
-  );
-}
-
-/**
- * 发送的第二段：回显的气泡从胶囊手里接过这条消息。
- * 先藏两帧（`visibility`，不经过透明度）等列表滚到底，再量出胶囊此刻的位置与尺寸，
- * 把气泡摆到胶囊上、继承胶囊的速度，按 thrust / wobble 飞进自己的落点；气泡显形与胶囊撤掉在同一帧。
- */
-function useThrowHandoff(ref: RefObject<HTMLDivElement | null>, handoff: ThrowHandoff | undefined) {
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node || !handoff) return;
-    node.style.visibility = "hidden";
-    let frame = 0;
-    let stop: (() => void) | undefined;
-    const reset = () => {
-      node.style.visibility = "";
-      node.style.transform = "";
-      node.style.transformOrigin = "";
-    };
-    const take = () => {
-      const capsule = handoff.capsule.current;
-      const bubble = node.querySelector<HTMLElement>("[data-testid='chat-message-bubble']");
-      if (!capsule?.node || !bubble) {
-        node.style.visibility = "";
-        return;
-      }
-      const shell = node.getBoundingClientRect();
-      const own = bubble.getBoundingClientRect();
-      const from = capsule.node.getBoundingClientRect();
-      const ownCenter = centerOf(own);
-      const fromCenter = centerOf(from);
-      const vector = { dx: fromCenter.x - ownCenter.x, dy: fromCenter.y - ownCenter.y };
-      const startScaleX = handoffScale(from.width, own.width);
-      const startScaleY = handoffScale(from.height, own.height);
-      // 以气泡中心为缩放原点：气泡与胶囊重合，名字随气泡一起被带过来。
-      node.style.transformOrigin = `${ownCenter.x - shell.left}px ${ownCenter.y - shell.top}px`;
-      const springs = byAxes<Transition>(vector, spring.thrust, spring.wobble);
-      const controls = animate(
-        node,
-        {
-          x: [vector.dx, 0],
-          y: [vector.dy, 0],
-          scaleX: [startScaleX, 1],
-          scaleY: [startScaleY, 1],
-        },
-        {
-          x: { ...spring.thrust, velocity: capsule.x.getVelocity() },
-          y: { ...spring.thrust, velocity: capsule.y.getVelocity() },
-          scaleX: springs.scaleX,
-          scaleY: springs.scaleY,
-        }
-      );
-      stop = () => controls.stop();
-      void controls.finished.then(reset);
-      // animate 在下一帧才写上第一帧；排在它之后再交接，气泡不会在落点上闪现一帧。
-      frame = requestAnimationFrame(() => {
-        node.style.visibility = "";
-        capsule.node!.style.visibility = "hidden";
-        handoff.onTake();
-      });
-    };
-    // 两帧：第一帧里自动滚到底（UseAutoScrollToBottom 的 rAF 排在这之后），第二帧量到的才是落点。
-    frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(take);
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-      stop?.();
-      reset();
-    };
-  }, [ref, handoff]);
-}
-
-/** 气泡外壳：贴合内容宽度，接手胶囊时整体被带过来。 */
-function MessageShell({
-  handoff,
-  isMe,
-  children,
-}: {
-  handoff?: ThrowHandoff;
-  isMe: boolean;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useThrowHandoff(ref, handoff);
-  return (
-    <div
-      ref={ref}
-      className={cn("flex min-w-0 max-w-[85%] flex-col", isMe ? "items-end" : "items-start")}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** 消息正文：命中房间成员的 `@名字` 高亮，其余按普通文本渲染 */
-function MessageText({
-  text,
-  players,
-  isMe,
-  isGhost,
-}: {
-  text: string;
-  players: ChatMentionPlayer[];
-  isMe: boolean;
-  isGhost?: boolean;
-}) {
-  const segments = splitMentions(text, players);
-
-  return (
-    <>
-      {segments.map((segment, index) =>
-        segment.kind === "mention" ? (
-          <span
-            key={index}
-            className={cn(
-              "rounded-md px-1 font-medium",
-              isMe && !isGhost
-                ? "bg-primary-foreground/20"
-                : // 他人气泡上主色作文字对比度不足（DesignGuide §3），浅底标出提及，文字保持正文色。
-                  "bg-primary/10 text-foreground"
-            )}
-          >
-            {segment.text}
-          </span>
-        ) : (
-          <span key={index}>{segment.text}</span>
-        )
-      )}
-    </>
-  );
-}
-
-/**
- * 复读按钮：点击即以当前玩家身份再发一条相同文本，不做计数。
- * 悬停说明走 `Hint`（原生 title 不进设计系统的表面与动效），按下走 `iconTappable`，与图标钮同一档手感。
- */
-function RepeatButton({ onRepeat }: { onRepeat: () => void }) {
-  return (
-    // 说明放在按钮右侧：默认朝上会盖住发言人名字与 ×N 角标
-    <Hint label="复读这条消息" side="right">
-      <motion.button
-        type="button"
-        aria-label="复读这条消息"
-        {...iconTappable}
-        onClick={onRepeat}
-        className="absolute bottom-0 left-full ml-1.5 flex h-5 cursor-pointer items-center rounded-full border border-border bg-background/85 px-1.5 font-mono text-2xs leading-none text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-      >
-        +1
-      </motion.button>
-    </Hint>
-  );
-}
-
-/**
- * 复读链：聊天末尾连续几条相同文本的玩家消息（系统提示不算、也不打断）。
- * 返回每条消息在链里的序号；不足两条不算链，返回空表。
- */
-function trailingRepeatChain(messages: ChatMessage[]): Map<string, number> {
-  const chain: string[] = [];
-  let text: string | null = null;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.system) continue;
-    if (text !== null && message.text !== text) break;
-    text = message.text;
-    chain.push(message.id);
-  }
-  if (chain.length < 2) return new Map();
-  return new Map(chain.reverse().map((id, order) => [id, order]));
-}
-
-/** 复读链最前面那条的 ×N 角标：计数变了就重新弹一次。只是视觉，读屏照旧逐条读消息。 */
-function RepeatCount({ count, isMe }: { count: number; isMe: boolean }) {
-  return (
-    <AnimatePresence initial={false}>
-      <motion.span
-        key={count}
-        aria-hidden="true"
-        initial={receiptMark.initial}
-        animate={receiptMark.animate}
-        transition={receiptMark.transition}
-        className={cn(
-          "pointer-events-none absolute -top-2 flex h-4 items-center rounded-full border border-border bg-background px-1 font-mono text-2xs leading-none tabular-nums text-muted-foreground",
-          isMe ? "-left-2" : "-right-2"
-        )}
-      >
-        ×{count}
-      </motion.span>
-    </AnimatePresence>
-  );
-}
-
-/** 玩家消息气泡与右侧 +1；按钮绝对定位，不改变气泡宽度或滚动位置。 */
-function MessageBubble({
-  message,
-  isMe,
-  isGhost,
-  stickerLabels,
-  players,
-  myPlayerId,
-  showRepeat,
-  repeatCount,
-  onRepeatMessage,
-}: {
-  message: ChatMessage;
-  isMe: boolean;
-  isGhost: boolean;
-  stickerLabels: StickerLabelIndex | null;
-  players: ChatMentionPlayer[];
-  myPlayerId?: string;
-  showRepeat: boolean;
-  /** 这条是复读链最前面那条时的链长，其余为 0 */
-  repeatCount: number;
-  onRepeatMessage: (text: string) => Promise<void> | void;
-}) {
-  const isSticker = message.text.startsWith(STICKER_PREFIX);
-  const stickerPath = isSticker ? message.text.slice(STICKER_PREFIX.length) : null;
-  const safeStickerPath = isValidStickerPath(stickerPath) ? stickerPath : null;
-  const mentionsMe =
-    !isSticker && Boolean(myPlayerId) && mentionsPlayer(message.text, myPlayerId!, players);
-
-  return (
-    <div className="relative w-fit max-w-full">
-      <div
-        data-testid="chat-message-bubble"
-        className={cn(
-          "min-w-0 max-w-full whitespace-pre-wrap rounded-xl text-sm leading-relaxed [overflow-wrap:anywhere] transition-colors",
-          safeStickerPath ? "p-1.5" : "px-3 py-1.5",
-          isMe
-            ? isGhost
-              ? "rounded-br-sm bg-primary/10 border border-dashed border-primary/40 text-foreground"
-              : "rounded-br-sm bg-primary text-primary-foreground shadow-2xs selection:bg-primary-foreground selection:text-primary"
-            : isGhost
-              ? // 半透明底上再叠透明度会把对比度压到线下，降档用语义色而不是 alpha。
-                "rounded-bl-sm bg-muted/40 border border-dashed border-border text-muted-foreground"
-              : "rounded-bl-sm bg-muted text-foreground",
-          mentionsMe && "ring-1 ring-primary/40"
-        )}
-      >
-        {safeStickerPath ? (
-          <img
-            src={safeStickerPath}
-            // 清单未到或路径不在清单里时退回通用文案，不把 alt 留空
-            alt={stickerLabels?.get(safeStickerPath) ?? "表情"}
-            className="h-20 w-20 object-contain"
-          />
-        ) : (
-          <MessageText text={message.text} players={players} isMe={isMe} isGhost={isGhost} />
-        )}
-      </div>
-      {repeatCount > 1 ? <RepeatCount count={repeatCount} isMe={isMe} /> : null}
-      {showRepeat && !isMe ? (
-        <RepeatButton onRepeat={() => void onRepeatMessage(message.text)} />
-      ) : null}
-    </div>
-  );
 }
 
 export function ChatPanel({
@@ -583,12 +184,15 @@ export function ChatPanel({
   }, []);
 
   /** 输入时同步提及查询：光标位置决定当前是否正在写一个提及 */
-  const handleChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const next = event.target.value;
-    setText(next);
-    setMention(readMentionQuery(next, event.target.selectionStart ?? next.length));
-    setMentionIndex(0);
-  }, [setText]);
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const next = event.target.value;
+      setText(next);
+      setMention(readMentionQuery(next, event.target.selectionStart ?? next.length));
+      setMentionIndex(0);
+    },
+    [setText]
+  );
 
   /** 光标移动、选区变化时重算提及查询：光标离开 `@` 片段，候选就该收起。 */
   const handleSelect = useCallback((event: React.SyntheticEvent<HTMLInputElement>) => {
